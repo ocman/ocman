@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -41,16 +40,7 @@ func bigConversation(id string, turns int, outputBytes int) *platforms.SessionDe
 // regression test for the reported failure: creating a share link for a
 // large conversation returned "chunk too large".
 func TestCreateShareHandlesConversationLargerThanChunkLimit(t *testing.T) {
-	store, err := share.NewDiskStore(t.TempDir())
-	if err != nil {
-		t.Fatalf("NewDiskStore: %v", err)
-	}
-	relaySrv, err := relay.New(relay.Config{Store: store})
-	if err != nil {
-		t.Fatalf("relay.New: %v", err)
-	}
-	ts := httptest.NewServer(relaySrv)
-	defer ts.Close()
+	ts := newTestRelay(t)
 
 	// Sized so the conversation is over the chunk limit both before
 	// truncation (~6 MiB raw) and after it (300 x 8 KiB ~= 2.4 MiB), so
@@ -106,54 +96,15 @@ func TestCreateShareHandlesConversationLargerThanChunkLimit(t *testing.T) {
 		t.Fatalf("ParseKey: %v", err)
 	}
 
-	resp, err := http.Get(ts.URL + "/s/" + link.RelayID + "?from=0")
-	if err != nil {
-		t.Fatalf("read relay: %v", err)
+	chunks := readRelayChunks(t, ts.URL, link.RelayID, key)
+	if len(chunks) < 2 {
+		t.Fatalf("expected the snapshot to span multiple chunks, got %d", len(chunks))
 	}
-	defer resp.Body.Close()
-	var body struct {
-		Chunks []struct {
-			Seq  uint64 `json:"seq"`
-			Data string `json:"data"`
-		} `json:"chunks"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		t.Fatalf("decode relay read: %v", err)
-	}
-	if len(body.Chunks) < 2 {
-		t.Fatalf("expected the snapshot to span multiple chunks, got %d", len(body.Chunks))
-	}
-
-	messages := map[string]bool{}
-	parts := map[string]bool{}
-	var sessionSeen bool
-	for _, chunk := range body.Chunks {
-		ciphertext, err := base64.RawStdEncoding.DecodeString(chunk.Data)
-		if err != nil {
-			t.Fatalf("decode chunk %d: %v", chunk.Seq, err)
-		}
-		plain, err := share.Open(key, link.RelayID, chunk.Seq, ciphertext)
-		if err != nil {
-			t.Fatalf("open chunk %d: %v", chunk.Seq, err)
-		}
-		var decoded relayChunk
-		if err := json.Unmarshal(plain, &decoded); err != nil {
-			t.Fatalf("unmarshal chunk %d: %v", chunk.Seq, err)
-		}
-		if decoded.Session != nil {
-			sessionSeen = true
-		}
-		for _, m := range decoded.Messages {
-			messages[m.ID] = true
-		}
-		for _, p := range decoded.Parts {
-			parts[p.ID] = true
-		}
-	}
-
-	if !sessionSeen {
+	if chunks[0].Session == nil {
 		t.Error("no chunk carried the session")
 	}
+
+	messages, parts := mergeChunks(chunks)
 	if len(messages) != len(detail.Messages) {
 		t.Errorf("recovered %d messages, want %d", len(messages), len(detail.Messages))
 	}
@@ -166,16 +117,7 @@ func TestCreateShareHandlesConversationLargerThanChunkLimit(t *testing.T) {
 // shortened tool output. This bounds the upload and, because tool output
 // is where secrets end up, limits what a leaked link discloses.
 func TestCreateShareTruncatesToolOutput(t *testing.T) {
-	store, err := share.NewDiskStore(t.TempDir())
-	if err != nil {
-		t.Fatalf("NewDiskStore: %v", err)
-	}
-	relaySrv, err := relay.New(relay.Config{Store: store})
-	if err != nil {
-		t.Fatalf("relay.New: %v", err)
-	}
-	ts := httptest.NewServer(relaySrv)
-	defer ts.Close()
+	ts := newTestRelay(t)
 
 	secret := strings.Repeat("A", 4<<10) + "SUPER_SECRET_TOKEN"
 	detail := &platforms.SessionDetail{
@@ -197,24 +139,25 @@ func TestCreateShareTruncatesToolOutput(t *testing.T) {
 	})
 	srv.WithRelay(ts.URL, "flag")
 
-	rr := httptest.NewRecorder()
-	srv.dispatchSessionSubpath(rr, httptest.NewRequest(http.MethodPost, "/api/session/ses_secret/share", nil))
-	if rr.Code != http.StatusCreated {
-		t.Fatalf("create status = %d, want 201; body=%s", rr.Code, rr.Body)
+	relayID, key := createShareForTest(t, srv, "ses_secret")
+
+	// Assert on the decrypted payload: the ciphertext obviously never
+	// contains the secret, so checking stored bytes would prove nothing.
+	chunks := readRelayChunks(t, ts.URL, relayID, key)
+	var published string
+	for _, chunk := range chunks {
+		for _, part := range chunk.Parts {
+			published += string(part.Data)
+		}
 	}
 
-	// Everything stored on the relay must be free of the tail content.
-	objects, err := store.List(t.Context(), "")
-	if err != nil {
-		t.Fatalf("List: %v", err)
+	if strings.Contains(published, "SUPER_SECRET_TOKEN") {
+		t.Error("the truncated tail was published to the relay")
 	}
-	for _, object := range objects {
-		blob, err := store.Get(t.Context(), object.Key)
-		if err != nil {
-			t.Fatalf("Get %s: %v", object.Key, err)
-		}
-		if strings.Contains(string(blob), "SUPER_SECRET_TOKEN") {
-			t.Fatalf("truncated tail reached the relay in %s", object.Key)
-		}
+	if !strings.Contains(published, "truncated for sharing") {
+		t.Error("published output carries no truncation marker")
+	}
+	if !strings.Contains(published, strings.Repeat("B", 1024)) {
+		t.Error("published output lost the retained head of the tool result")
 	}
 }
