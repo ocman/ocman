@@ -6,9 +6,9 @@
 # Directory-scoped host operations (git, worktree, tmux, terminals) must
 # be resolved via s.resolveOwner(w, dir, remoteId) / s.router().ForDir(dir)
 # and delegated to a hostsvc.Host. The local Host
-# (internal/hostsvc/local) is the only place that may call git.*/term.*
-# directly; the server-package tmux launchers live in tmux.go and are
-# wired into the local Host from host.go.
+# (internal/hostsvc/local) is the only place that may call
+# git.*/gitexec.*/term.* directly; the server-package tmux launchers live
+# in tmux.go and are wired into the local Host from host.go.
 #
 # internal/mcp is covered too: MCP tools split work into worktrees and
 # cancel sessions, and they get owner-routed adapters injected by the
@@ -41,7 +41,8 @@ command -v rg >/dev/null 2>&1 || {
 # or hostsvc.WorktreeSessionResult are not flagged.
 #
 # Keep this list in sync with the exported host-local helpers: `rg
-# '^func [A-Z]' internal/git internal/tmux internal/term`. Pure
+# '^func [A-Z]' internal/git internal/gitexec internal/tmux
+# internal/term`. Pure
 # predicates and name derivations (git.SlugForBranch, tmux.IsAvailable,
 # tmux.SessionNameForPath, term.IsWindowForDir, term.WindowPrefix) are
 # deliberately absent — they touch no host state, so a handler calling
@@ -71,6 +72,12 @@ PATTERNS=(
 	"term\\.CreateWindow\\("
 	"term\\.Windows\\("
 	"term\\.KillWindow\\("
+	# internal/gitexec — raw git subprocesses on *this* machine. Without
+	# these, wrapping the bypass one layer lower (gitexec.Output(ctx, dir,
+	# "diff", "--stat")) slipped past the git.*/tmux.* patterns entirely.
+	# gitexec.CleanEnv is deliberately absent: it only builds an env slice.
+	"gitexec\\.Output\\("
+	"gitexec\\.Command\\("
 )
 
 # Files allowed to reference these directly:

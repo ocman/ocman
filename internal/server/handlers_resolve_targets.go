@@ -91,7 +91,11 @@ func (s *Server) localProjectIdentities(r *http.Request) []remote.ProjectIdentit
 // localGitOrigin returns the git origin URL for a local directory, or ""
 // when the dir has no origin / isn't a repo.
 func localGitOrigin(r *http.Request, dir string) string {
-	out, err := gitexec.Output(r.Context(), dir, "remote", "get-url", "origin")
+	// Deliberately local: the caller is localProjectIdentities, which
+	// enumerates *this* machine's checkouts so ResolveTargets can offer
+	// the hub as a candidate. Routing it through a Host would ask the
+	// wrong machine.
+	out, err := gitexec.Output(r.Context(), dir, "remote", "get-url", "origin") // ocman:allow-host-helper
 	if err != nil {
 		return ""
 	}
