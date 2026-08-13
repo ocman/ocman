@@ -137,10 +137,15 @@ func (l *SessionLauncher) WithChildResults(results *ChildResultBroker) *SessionL
 // NewSessionLauncher creates a SessionLauncher with production dependencies.
 // createWorktree and ensureOpencode are owner-routed host adapters
 // injected by the server package (and faked in tests), so no host
-// operation runs on the hub for a remote-owned project. ensureOpencode
-// makes both same-directory and worktree splits self-heal: it launches the
-// project's single opencode instance when none is running, then Launch
-// creates the session in-app against the returned port (#268).
+// operation runs on the hub for a remote-owned project.
+//
+// ensureOpencode serves the same-directory split only: it launches the
+// project's single opencode instance when none is running, so Launch
+// creates the session in-app against the returned port instead of failing
+// with ErrPlatformUnreachable (#268). The worktree path does not use it —
+// there the owning host ensures its own instance inside
+// CreateWorktreeSession, and ensuring again from here would target the
+// worktree's repo top-level rather than the project root.
 func NewSessionLauncher(
 	stateDB childSessionStore,
 	platform platformAdapter,
@@ -188,10 +193,9 @@ func (l *SessionLauncher) Launch(ctx context.Context, req LaunchRequest) (string
 
 // launchWithPort creates the session on the given port (empty = let the
 // adapter discover), sends the prompt, and persists the child record.
-// It is the shared body of Launch and LaunchWithWorktree; the latter has
-// already ensured the project instance against the repo root, so it
-// passes that port instead of re-ensuring on the worktree path (which
-// resolves to a different repo top-level).
+// Only the same-directory path reaches it: on the worktree path the
+// owning host creates the session itself, and LaunchWithWorktree goes
+// straight to AttachChild.
 func (l *SessionLauncher) launchWithPort(ctx context.Context, req LaunchRequest, port string) (string, error) {
 	// Create the OpenCode session.
 	resp, err := l.platform.CreateSession(ctx, platforms.CreateSessionRequest{

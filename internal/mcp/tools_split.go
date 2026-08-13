@@ -474,6 +474,12 @@ func (t *splitTools) launchWorktree(ctx context.Context, req mcplib.CallToolRequ
 		return mcplib.NewToolResultError(fmt.Sprintf("session not found: %v", err)), nil
 	}
 
+	// Inherit the parent's always-allow permissions (issue #101). A pure
+	// read of the parent, so it stays above the mutation: nothing here
+	// needs the worktree, and anything read after the create would be
+	// read while an orphan is already on disk.
+	inherited, inheritedCount, inheritErr := t.inheritedRules(sessionID)
+
 	// The owning host resolves the repo root, creates the worktree and
 	// opens the session on the project's opencode instance. An empty
 	// base_ref lets it pick its own default (AD-16: no local git here).
@@ -491,14 +497,19 @@ func (t *splitTools) launchWorktree(ctx context.Context, req mcplib.CallToolRequ
 	// parent checkout.
 	opts.DirOverride = wtResult.WorktreePath
 
-	// Compose the enriched prompt.
+	// Compose the enriched prompt. This can only run after the create —
+	// only the owning host knows the worktree path the prompt points at —
+	// so a failure here must not abort: the worktree and its session
+	// already exist, and returning an error would strand both. Fall back
+	// to the bare intent instead.
 	prompt, err := t.composer.Compose(ctx, sessionID, intent, opts)
 	if err != nil {
-		return mcplib.NewToolResultError(fmt.Sprintf("composing prompt: %v", err)), nil
+		log.WithFields(log.Fields{
+			"parentSessionID": sessionID,
+			"error":           err,
+		}).Warn("mcp: composing worktree prompt failed; sending the bare intent")
+		prompt = intent
 	}
-
-	// Inherit the parent's always-allow permissions (issue #101).
-	inherited, inheritedCount, inheritErr := t.inheritedRules(sessionID)
 
 	childID := wtResult.SessionID
 	if err := t.launcher.AttachChild(ctx, LaunchRequest{
