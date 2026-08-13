@@ -566,6 +566,52 @@ describe('useSession — loadMore', () => {
     expect(result.current.messages.map((m) => m.id)).toEqual(['b1']);
   });
 
+  // The cleanup aborts the in-flight page, but `fetchSession` is an
+  // injected seam: an implementation that ignores the signal and never
+  // settles never reaches the `finally`. Leaving the in-flight ref set
+  // then disables pagination for the rest of the page's life and pins
+  // the spinner on.
+  it('resets the in-flight state when the session changes mid-page', async () => {
+    const detailA = makeDetail({
+      session: { ...makeDetail().session, id: 'sess-a' },
+      messages: [msg('a2', 'sess-a')],
+      totalMessages: 2,
+    });
+    const detailB = makeDetail({
+      session: { ...makeDetail().session, id: 'sess-b' },
+      messages: [msg('b2', 'sess-b')],
+      totalMessages: 2,
+    });
+    const olderB = makeDetail({
+      session: { ...makeDetail().session, id: 'sess-b' },
+      messages: [msg('b1', 'sess-b')],
+      totalMessages: 2,
+    });
+
+    const fetchSession = vi.fn((id: string, _limit: number, offset: number) => {
+      if (offset === 0) return Promise.resolve(id === 'sess-b' ? detailB : detailA);
+      // Session A's page never settles and ignores the abort signal.
+      if (id === 'sess-a') return new Promise<never>(() => {});
+      return Promise.resolve(olderB);
+    });
+
+    const { result, rerender } = renderHook(({ id }) => useSession(id, { fetchSession }), {
+      initialProps: { id: 'sess-a' as string | undefined },
+    });
+    await waitFor(() => expect(result.current.session?.id).toBe('sess-a'));
+
+    act(() => { void result.current.loadMore(); });
+    await waitFor(() => expect(result.current.loadingMore).toBe(true));
+
+    rerender({ id: 'sess-b' });
+    await waitFor(() => expect(result.current.session?.id).toBe('sess-b'));
+    expect(result.current.loadingMore).toBe(false);
+
+    // ...and pagination still works on the new session.
+    await act(async () => { await result.current.loadMore(); });
+    expect(result.current.messages.map((m) => m.id)).toEqual(['b1', 'b2']);
+  });
+
   it('ignores a second call while one is already in flight', async () => {
     const head = makeDetail({ messages: [msg('m2', SID)], totalMessages: 3 });
     let release: () => void = () => {};

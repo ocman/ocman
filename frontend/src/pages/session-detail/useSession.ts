@@ -709,6 +709,12 @@ export function useSession(
       abortRef.current = null;
       loadMoreAbortRef.current?.abort();
       loadMoreAbortRef.current = null;
+      // Abandon the page rather than wait for it: `fetchSession` is an
+      // injected seam, and an implementation that ignores the signal
+      // never reaches loadMore's `finally`. Leaving these set would
+      // disable pagination for good and pin the spinner on.
+      loadMoreInFlightRef.current = false;
+      setLoadingMore(false);
       evtSource?.close();
       evtSource = null;
       if (reconnectTimer) {
@@ -740,8 +746,10 @@ export function useSession(
     loadMoreInFlightRef.current = true;
     setLoadingMore(true);
     const offset = viewRef.current.messages.length;
+    // No abort of a previous controller here: the in-flight guard above
+    // means there is nothing to abort, and the cleanup already nulls the
+    // ref when it abandons a page.
     const controller = new AbortController();
-    loadMoreAbortRef.current?.abort();
     loadMoreAbortRef.current = controller;
     try {
       const detail = await fetchSession(sessionId, pageSize, offset, controller.signal, routedPlatform);
