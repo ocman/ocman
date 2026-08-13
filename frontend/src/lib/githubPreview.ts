@@ -11,6 +11,8 @@
  * therefore discovered at runtime from /api/integrations/status.
  */
 
+import { raiseForUnauthorized } from './api';
+
 export type GitHubPreviewKind = 'pr' | 'issue' | 'commit';
 
 export interface GitHubPreviewRef {
@@ -91,6 +93,10 @@ async function fetchFromBackend(url: string): Promise<GitHubPreviewData> {
   const res = await fetch(
     `/api/integrations/github/preview?url=${encodeURIComponent(url)}`,
   );
+  // Every caller below swallows the throw (a dead preview is not worth a
+  // crash), but the guard's real job is the AuthError fan-out: without it
+  // an expired cookie fails silently instead of showing the lockscreen.
+  await raiseForUnauthorized(res);
   if (!res.ok) throw new Error(`preview proxy ${res.status}`);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -228,6 +234,7 @@ export async function loadForgejoHosts(): Promise<string[]> {
   forgejoHostsInflight = (async () => {
     try {
       const res = await fetch('/api/integrations/status');
+      await raiseForUnauthorized(res);
       if (!res.ok) return [];
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const raw: any = await res.json();
@@ -289,6 +296,7 @@ async function fetchForgejoFromBackend(url: string, ref: GitHubPreviewRef): Prom
   const res = await fetch(
     `/api/integrations/forgejo/preview?url=${encodeURIComponent(url)}`,
   );
+  await raiseForUnauthorized(res);
   if (!res.ok) throw new Error(`forgejo preview proxy ${res.status}`);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const raw: any = await res.json();
