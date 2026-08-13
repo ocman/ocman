@@ -71,7 +71,10 @@ export function WorktreesView() {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         // A dirty worktree comes back as 409; offer a force retry inline
-        // rather than surfacing it as a generic error.
+        // rather than surfacing it as a generic error. 409 on this route
+        // only ever means a git-level conflict — a disconnected remote
+        // owner is 503 `remote_not_connected` — so matching the prose is
+        // unambiguous.
         if (/uncommitted changes/i.test(msg)) {
           setDirtyPath(wt.path);
         } else {

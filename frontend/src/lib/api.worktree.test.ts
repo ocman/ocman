@@ -115,6 +115,21 @@ describe('api.worktree', () => {
     ).rejects.toThrow(/uncommitted changes/);
   });
 
+  // A disconnected owner is 503 + a structured envelope, never 409: the
+  // dirty-worktree affordance keys off 409's body prose, so the two must
+  // not share a status. The envelope's message is what the user reads.
+  it('remove surfaces a disconnected owner as the envelope message, not raw JSON', async () => {
+    stubFetch(() => new Response(
+      JSON.stringify({ error: { code: 'remote_not_connected', remoteId: 'gone', message: 'remote gone is not connected' } }),
+      { status: 503 },
+    ));
+    const err = await api.worktree
+      .remove({ projectDir: '/a/r', path: '/a/wt' })
+      .then(() => null, (e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toBe('remote gone is not connected');
+  });
+
   it('createAndLaunch forwards parentSessionId and parses inherit fields (#101)', async () => {
     let capturedInit: RequestInit | undefined;
     stubFetch((_url, init) => {

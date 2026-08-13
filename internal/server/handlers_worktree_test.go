@@ -297,8 +297,11 @@ func TestHandleWorktreeRemove_NonRepo(t *testing.T) {
 }
 
 // TestHandleWorktreeRemove_UnknownRemote confirms a remove aimed at a
-// remote that is no longer registered fails closed with 409 instead of
-// silently deleting the hub's identically-pathed worktree.
+// remote that is no longer registered fails closed instead of silently
+// deleting the hub's identically-pathed worktree. The status is 503,
+// not 409: this route already returns 409 for a git-level conflict
+// (main worktree, dirty worktree — see the two tests below) which the
+// frontend recognises by its body prose, so the two must not collide.
 func TestHandleWorktreeRemove_UnknownRemote(t *testing.T) {
 	repo := initWorktreeTestRepo(t)
 	wtPath := filepath.Join(t.TempDir(), "wt")
@@ -313,8 +316,11 @@ func TestHandleWorktreeRemove_UnknownRemote(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/worktree/remove", strings.NewReader(body))
 	rr := httptest.NewRecorder()
 	srv.handleWorktreeRemove(rr, req)
-	if rr.Code != http.StatusConflict {
-		t.Fatalf("status = %d; want 409 (body: %q)", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d; want 503 (body: %q)", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), `"remote_not_connected"`) {
+		t.Errorf("body = %q; want a remote_not_connected envelope", rr.Body.String())
 	}
 	if _, statErr := os.Stat(wtPath); statErr != nil {
 		t.Errorf("local worktree was destroyed by a remote-scoped remove: %v", statErr)

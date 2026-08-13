@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -152,8 +153,31 @@ func TestHandlersFailClosedOnUnknownRemote(t *testing.T) {
 			if spy.count() != 0 {
 				t.Errorf("local host executed %d time(s) for an unknown remote owner", spy.count())
 			}
-			if rr.Code != http.StatusConflict {
-				t.Errorf("status = %d; want 409 (body: %q)", rr.Code, rr.Body.String())
+			// 503, never 409: two of these routes already use 409 for a
+			// genuine domain conflict (dirty worktree, branch checked out
+			// elsewhere) and the frontend tells them apart by the body
+			// text. Reusing 409 here would make the status two-valued.
+			if rr.Code != http.StatusServiceUnavailable {
+				t.Errorf("status = %d; want 503 (body: %q)", rr.Code, rr.Body.String())
+			}
+			var env struct {
+				Error struct {
+					Code     string `json:"code"`
+					RemoteID string `json:"remoteId"`
+					Message  string `json:"message"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal(rr.Body.Bytes(), &env); err != nil {
+				t.Fatalf("decode error envelope: %v (body: %q)", err, rr.Body.String())
+			}
+			if env.Error.Code != "remote_not_connected" {
+				t.Errorf("error.code = %q; want %q", env.Error.Code, "remote_not_connected")
+			}
+			if env.Error.RemoteID != "gone" {
+				t.Errorf("error.remoteId = %q; want %q", env.Error.RemoteID, "gone")
+			}
+			if env.Error.Message == "" {
+				t.Error("error.message is empty; the frontend renders it verbatim")
 			}
 		})
 	}

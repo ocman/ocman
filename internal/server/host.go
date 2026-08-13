@@ -37,16 +37,35 @@ func (s *Server) router() *hostsvc.Router {
 // named an owner explicitly it must resolve to a *registered* one: a
 // stale, disconnected or mistyped remote ID must never degrade to the
 // hub, which would run the action (worktree creation, process launch,
-// live shell) on the wrong machine. It writes a 409 and returns false in
-// that case. An empty remoteID falls back to directory inference; ""/
-// "local" resolve to this machine.
+// live shell) on the wrong machine. It writes the rejection and returns
+// false in that case. An empty remoteID falls back to directory
+// inference; ""/"local" resolve to this machine.
+//
+// Status choice — 503, deliberately *not* 409. Two of the routes that
+// call this already use 409 for a genuine domain conflict:
+// handleWorktreeRemove (ErrMainWorktree / ErrWorktreeDirty) and
+// handleWorktreeCreateAndLaunch (ErrBranchCheckedOutElsewhere /
+// ErrPathConflict), and the frontend distinguishes the dirty-worktree
+// case by matching the response *prose* so it can offer "Force delete".
+// Overloading 409 would make the status two-valued, separated only by
+// body text that any wording change silently breaks. 503 is also the
+// honest semantic: the machine that owns this work is unreachable right
+// now, and the request may succeed once it reconnects. The structured
+// envelope follows the `requires_fetch` precedent in
+// handlers_project_handle.go so clients can branch on a code, not prose.
 func (s *Server) resolveOwner(w http.ResponseWriter, dir, remoteID string) (hostsvc.Host, bool) {
 	if remoteID == "" {
 		return s.router().ForDir(dir), true
 	}
 	host, ok := s.router().LookupRemote(remoteID)
 	if !ok {
-		http.Error(w, "remote "+remoteID+" is not connected", http.StatusConflict)
+		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]any{
+			"error": map[string]string{
+				"code":     "remote_not_connected",
+				"remoteId": remoteID,
+				"message":  "remote " + remoteID + " is not connected",
+			},
+		})
 		return nil, false
 	}
 	return host, true

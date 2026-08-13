@@ -242,11 +242,30 @@ export function raiseAuthError(message = 'unauthorized'): AuthError {
 // Internal: surface a 401 as an AuthError and notify the registered
 // handler. Callers that catch this will receive an AuthError; anyone
 // who doesn't catch still lets the handler update global auth state.
+//
+// Structured error envelopes ({"error":{"code","message"}}, as returned
+// by resolveOwner's remote_not_connected and handle-worktree's
+// requires_fetch) are unwrapped to their message: callers render
+// err.message straight into the UI, so a raw JSON blob would leak.
+// Anything else keeps the plain-text body verbatim.
 async function throwForStatus(resp: Response): Promise<never> {
+  const body = await resp.text().catch(() => '');
   if (resp.status === 401) {
-    throw raiseAuthError(await resp.text().catch(() => 'unauthorized'));
+    throw raiseAuthError(body || 'unauthorized');
   }
-  throw new Error(await resp.text());
+  throw new Error(envelopeMessage(body) ?? body);
+}
+
+// envelopeMessage returns the human-readable message of a structured
+// error envelope, or undefined when the body isn't one.
+function envelopeMessage(body: string): string | undefined {
+  try {
+    const parsed = JSON.parse(body) as { error?: { message?: unknown } };
+    const msg = parsed?.error?.message;
+    return typeof msg === 'string' && msg !== '' ? msg : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export async function fetchJSON<T>(url: string, signal?: AbortSignal): Promise<T> {

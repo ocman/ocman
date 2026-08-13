@@ -64,7 +64,7 @@ func TestHandleProjectBeadsStatusResponses(t *testing.T) {
 		want *hostsvc.BeadsStatus
 	}{
 		{name: "rejects relative directory", url: "/api/project/beads-status?dir=relative", code: http.StatusBadRequest},
-		{name: "rejects unknown remote owner", url: "/api/project/beads-status?dir=/repo&remoteId=abc", host: &beadsHost{id: "local", err: errors.New("must not run")}, code: http.StatusConflict},
+		{name: "rejects unknown remote owner", url: "/api/project/beads-status?dir=/repo&remoteId=abc", host: &beadsHost{id: "local", err: errors.New("must not run")}, code: http.StatusServiceUnavailable},
 		{name: "unavailable", url: "/api/project/beads-status?dir=/repo", host: &beadsHost{id: "local"}, code: http.StatusOK},
 		{name: "available error", url: "/api/project/beads-status?dir=/repo", host: &beadsHost{id: "local", status: hostsvc.BeadsStatus{Available: true, Error: "status_unavailable"}}, code: http.StatusOK, want: &hostsvc.BeadsStatus{Available: true, Error: "status_unavailable"}},
 		{name: "host failure", url: "/api/project/beads-status?dir=/repo", host: &beadsHost{id: "local", err: errors.New("boom")}, code: http.StatusBadGateway},
