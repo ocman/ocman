@@ -414,9 +414,14 @@ graph TD
     each method to the owning remote, which executes its *own* local
     `Host` (R-C). This reuses the exact same gRPC channel/auth as
     `Platform`.
-  - **`hostsvc.Router`** — resolves `ForRemote(remoteID) Host` and
-    `ForDir(dir) Host`. `ForRemote` is the preferred path whenever the UI or
-    API request already knows the owner. `ForDir` is a convenience fallback
+  - **`hostsvc.Router`** — resolves `LookupRemote(remoteID) (Host, bool)` and
+    `ForDir(dir) Host`. `LookupRemote` is the preferred path whenever the UI or
+    API request already knows the owner: it **fails closed**, so a stale,
+    disconnected or mistyped ID is rejected rather than silently degrading to
+    the hub and running the action on the wrong machine. The permissive
+    variant (`forRemote`, which degrades an unknown ID to local) is
+    **unexported** and reachable only through `ForDir`, where inferred
+    ownership makes the fallback correct. `ForDir` is a convenience fallback
     for local/legacy calls and consults the project-inventory cache (AD-8): a
     dir that unambiguously matches a remote's known project resolves to that
     remote's `Host`; everything else (and all paths physically under the hub)
@@ -469,9 +474,9 @@ graph TD
   operation creates ambiguous routing.
 - **Options**:
   1. **Host-qualified refs**: requests that know the owner carry
-     `{ remoteId, dir }`. Handlers resolve via `HostRouter.ForRemote` and
-     execute the path on that host. `ForDir` remains a compatibility /
-     inference fallback.
+     `{ remoteId, dir }`. Handlers resolve via `HostRouter.LookupRemote` and
+     execute the path on that host, rejecting an unregistered owner.
+     `ForDir` remains a compatibility / inference fallback.
   2. Bare `dir` everywhere, with inventory-based inference. Simpler request
      shapes, fragile for duplicate paths and zero-match create.
 - **Decision**: Option 1.
@@ -743,7 +748,8 @@ graph TD
   the `remotePlatform`, which forwards over gRPC to the owner's
   `CreateSession`. When a worktree is requested, the worktree handler
   instead sends `{ remoteId, projectDir, ... }`; the handler resolves
-  `router.ForRemote(remoteId)` when supplied (preferred) or falls back to
+  `router.LookupRemote(remoteId)` when supplied (preferred; a
+  non-connected owner is rejected) or falls back to
   `router.ForDir(projectDir)` for backward-compatible local behavior, then
   calls `Host.CreateWorktreeSession` (AD-6/AD-16/AD-16b).
 - **Rationale**: Keeps creation on the proven `Platform.CreateSession`
@@ -800,7 +806,7 @@ graph TD
 
     subgraph HostSvc[internal/hostsvc - NEW seam]
       HIface[Host interface]
-      Router[Router.ForDir / ForRemote]
+      Router[Router.ForDir / LookupRemote]
       LocalHost[local Host<br/>wraps gitinfo/worktree/tmux/whisper]
     end
 
@@ -877,9 +883,11 @@ graph TD
   implementation. The directory analogue of `internal/platforms`.
 - **Sub-components**:
   - `host.go`: the `Host` interface + `HostCaps`.
-  - `router.go`: `Router.ForRemote(id)` / `ForDir(dir)` resolution against
-    explicit owner refs and the inventory cache; defaults to the local
-    `Host` when no remote owner is supplied/inferred.
+  - `router.go`: `Router.LookupRemote(id)` (strict, for explicit owner
+    refs) / `ForDir(dir)` (inference against the inventory cache);
+    defaults to the local `Host` when no remote owner is
+    supplied/inferred, and rejects an explicit owner that is not
+    registered.
   - `local/`: the local `Host` — the **only** package that imports
     `gitinfo`, `worktree`, tmux helpers, and `whisper`. Thin wrappers; no
     logic moves out of those packages.
@@ -900,7 +908,7 @@ graph TD
     token copy.
   - `POST /api/sessions/resolve-targets` — machine picker resolver (AD-15).
 - **git / worktree / tmux / projects handlers are migrated onto the seam**:
-  they resolve `router.ForRemote(remoteId)` when the request is
+  they resolve `router.LookupRemote(remoteId)` when the request is
   host-qualified, otherwise `router.ForDir(dir)`, and delegate to `Host`
   instead of calling `gitinfo.*` / `worktree.*` /
   `launchOpencodeInTmux*` directly
@@ -1255,7 +1263,7 @@ sequenceDiagram
 internal/
 ├── hostsvc/                        # NEW — directory-scoped seam (AD-16)
 │   ├── host.go                     # Host interface + HostCaps
-│   ├── router.go                   # Router.ForDir / ForRemote
+│   ├── router.go                   # Router.ForDir / LookupRemote
 │   └── local/                      # the ONLY importer of gitinfo/worktree/tmux/whisper
 │       ├── host.go                 # local Host wrapping existing helpers
 │       └── *_test.go
@@ -1417,7 +1425,7 @@ zero-remote install stays behaviorally identical throughout (NFR-6).
       `Manager` inventory cache; `NormalizeProjectIdentity` (AD-9; v1 treats
       the whole repo as one project, monorepo subdir keys deferred);
       `Router.ForDir` upgraded to consult the cache, while remote-aware calls
-      pass explicit `{ remoteId, dir }` and resolve with `ForRemote`;
+      pass explicit `{ remoteId, dir }` and resolve with `LookupRemote`;
       `POST /api/sessions/resolve-targets`; frontend chooser.
    - Test: identity normalization table; resolver returns correct
      candidates for 0/1/many matches, including preservation of opaque

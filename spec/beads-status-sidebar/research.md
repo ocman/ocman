@@ -81,7 +81,7 @@ Therefore the supported CLI can provide a logically read-only status integration
 
 ### Ocman integration constraints
 
-Beads status is directory/host scoped, not platform or session scoped. Ocman's `hostsvc.Host` is explicitly the seam for operations that touch a machine's filesystem or processes, with ownership resolved by `Router.ForDir` or, preferably when known, `Router.ForRemote`. [`internal/hostsvc/host.go:1-16`](../../internal/hostsvc/host.go) [`internal/hostsvc/router.go:74-100`](../../internal/hostsvc/router.go) [`spec/multi-remote-support/architecture.md:392-488`](../multi-remote-support/architecture.md)
+Beads status is directory/host scoped, not platform or session scoped. Ocman's `hostsvc.Host` is explicitly the seam for operations that touch a machine's filesystem or processes, with ownership resolved by `Router.ForDir` or, preferably when known, `Router.LookupRemote` (strict: an unregistered owner is rejected, not degraded to the hub). [`internal/hostsvc/host.go:1-16`](../../internal/hostsvc/host.go) [`internal/hostsvc/router.go:74-100`](../../internal/hostsvc/router.go) [`spec/multi-remote-support/architecture.md:392-488`](../multi-remote-support/architecture.md)
 
 The active session already includes `remoteId`; when the browser knows it, the multi-remote design says to send it explicitly rather than infer ownership from a path. [`internal/db/types.go:114-121`](../../internal/db/types.go) [`spec/multi-remote-support/architecture.md:463-488`](../multi-remote-support/architecture.md)
 
@@ -103,7 +103,7 @@ Expose one authenticated GET endpoint:
 GET /api/project/beads-status?dir=<absolute>&remoteId=<owner-if-known>
 ```
 
-Resolve with `ForRemote(remoteId)` when supplied, otherwise `ForDir(dir)`, matching current host-qualified terminal/worktree handlers. This prevents a remote path from accidentally executing on the hub. A static `/api/capabilities` flag is unnecessary: binary presence is host-wide but Beads availability is repository-specific, and the status response already carries the precise per-project result.
+Resolve with `LookupRemote(remoteId)` when supplied, otherwise `ForDir(dir)`, matching current host-qualified terminal/worktree handlers. This prevents a remote path from accidentally executing on the hub. A static `/api/capabilities` flag is unnecessary: binary presence is host-wide but Beads availability is repository-specific, and the status response already carries the precise per-project result.
 
 ### Availability and command sequence
 
