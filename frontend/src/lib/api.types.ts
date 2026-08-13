@@ -309,12 +309,31 @@ export interface SessionDetail {
 }
 
 /**
+ * Global sharing settings from GET/POST /api/settings/sharing.
+ *
+ * `enabled` is user-editable. `relayUrl` / `relaySource` are read-only:
+ * the relay is configured when ocman starts (-relay-url, the
+ * OCMAN_RELAY_URL env var, or the value baked into the build), so the
+ * UI only displays them. An empty `relayUrl` means no relay is
+ * configured and shares stay local to this machine.
+ */
+export interface SharingSettings {
+  enabled: boolean;
+  relayUrl: string;
+  relaySource: RelaySource;
+}
+
+/** Which input supplied the relay URL; empty when there is no relay. */
+export type RelaySource = 'flag' | 'env' | 'builtin' | '';
+
+/**
  * A public, read-only share link for a session's conversation. The
  * token is embedded in `url`; anyone with that URL can view the
  * conversation without authenticating.
  */
 export interface ShareLink {
   token: string;
+  /** Cross-machine relay URL. */
   url: string;
   createdAt: number;
   expiresAt?: number;

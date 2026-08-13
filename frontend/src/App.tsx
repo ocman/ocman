@@ -9,6 +9,7 @@ import { WorktreesView } from './pages/WorktreesView';
 import { Workflows } from './pages/Workflows';
 import { SessionDetail } from './pages/session-detail';
 import { SharedConversationView } from './pages/SharedConversationView';
+import { ImportSharedConversation } from './pages/ImportSharedConversation';
 import { Login } from './pages/Login';
 import { onSessionChanged } from './lib/useGlobalEvents';
 import { HeaderProvider } from './lib/HeaderProvider';
@@ -427,7 +428,7 @@ export default function App() {
       <QueryClientProvider client={queryClient}>
         <Routes>
           {/* Public, unauthenticated read-only conversation view. */}
-          <Route path="/share/:token" element={<SharedConversationView />} />
+          <Route path="/v/:token" element={<SharedConversationView relay />} />
           {/* Everything else is the authenticated app. */}
           <Route path="*" element={<AuthenticatedApp />} />
         </Routes>
@@ -480,6 +481,7 @@ export function AppRoutes() {
       <Route path="/project/:dir/worktrees" element={<WorktreesView />} />
       <Route path="/project/:dir" element={<ProjectDetail />} />
       <Route path="/session/:id" element={<SessionDetail />} />
+      <Route path="/import-share" element={<ImportSharedConversation />} />
     </Routes>
   );
 }

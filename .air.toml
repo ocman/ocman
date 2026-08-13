@@ -6,7 +6,7 @@ tmp_dir = "tmp"
   bin = "./tmp/ocman"
   full_bin = "./tmp/ocman -addr 127.0.0.1:8229"
   include_ext = ["go"]
-  exclude_dir = ["tmp", "frontend", "internal/server/static"]
+  exclude_dir = ["tmp", "frontend", "internal/webui/static"]
   delay = 1000
   # Send SIGINT (not SIGKILL) to the built binary and wait for a graceful
   # shutdown before forcing. Without this, the binary can outlive `air`

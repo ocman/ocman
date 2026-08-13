@@ -13,8 +13,8 @@ frontend/coverage/
 build/appicon.png
 build/bin/
 frontend/src/wailsjs/
-internal/server/static/*
-!internal/server/static/robots.txt
+internal/webui/static/*
+!internal/webui/static/robots.txt
 *.log
 *.local
 .envrc

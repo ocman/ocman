@@ -239,7 +239,7 @@ handlers don't bypass the `Host` seam). User-facing docs:
 - `internal/gui/` — Wails desktop shell used by `-gui`; wraps the same
   HTTP server in a native WebView window.
 - `frontend/` — React + TypeScript + Vite SPA (port 8228 in dev).
-- `internal/server/static/` — Vite build output; embedded into the Go
+- `internal/webui/static/` — Vite build output; embedded into the Go
   binary via `//go:embed`. Gitignored except for `robots.txt`, which
   is kept as a permanent placeholder so `go:embed static/*` always has
    at least one file to embed (avoiding churn from build-hashed assets
@@ -329,8 +329,8 @@ tea pulls merge <id>                   # merge a PR
 ## Build pipeline
 
 1. `cd frontend && pnpm install --frozen-lockfile && pnpm build` —
-   builds frontend into `internal/server/static/`.
-2. `go build -o ocman .` — embeds `internal/server/static/` via
+   builds frontend into `internal/webui/static/`.
+2. `go build -o ocman .` — embeds `internal/webui/static/` via
    `//go:embed`.
 
 Order matters: frontend must be built before `go build` so static

@@ -9,6 +9,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/share"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -110,10 +111,19 @@ func (s *Server) handleCreateSessionShare(w http.ResponseWriter, r *http.Request
 			http.Error(w, "sharing is disabled", http.StatusForbidden)
 			return
 		}
+		if s.relayURL == "" {
+			http.Error(w, "sharing requires a configured relay", http.StatusServiceUnavailable)
+			return
+		}
 		// expiresAt 0 = no expiry (the only mode the current UI uses).
 		link, err := s.stateDB.CreateShareLink(string(adapter.ID()), sessionID, 0)
 		if err != nil {
 			serverError(w, "creating share link", err)
+			return
+		}
+		link, err = s.createRelayShare(r.Context(), link, adapter)
+		if err != nil {
+			serverError(w, "creating relay share", err)
 			return
 		}
 		writeJSONStatus(w, http.StatusCreated, s.shareLinkView(r, link))
@@ -134,6 +144,7 @@ func (s *Server) handleRevokeSessionShare(w http.ResponseWriter, r *http.Request
 			http.Error(w, "state database not available", http.StatusServiceUnavailable)
 			return
 		}
+		link, _, _ := s.stateDB.GetActiveShareLink(token)
 		revoked, err := s.stateDB.RevokeShareLink(string(adapter.ID()), sessionID, token)
 		if err != nil {
 			serverError(w, "revoking share link", err)
@@ -143,16 +154,49 @@ func (s *Server) handleRevokeSessionShare(w http.ResponseWriter, r *http.Request
 			http.Error(w, "share link not found", http.StatusNotFound)
 			return
 		}
+		if link.RelayID != "" {
+			allocation := share.RelayAllocation{ID: link.RelayID, DeleteToken: link.RelayDeleteToken}
+			_ = s.relayClient(link.RelayURL).Delete(r.Context(), allocation)
+		}
 		w.WriteHeader(http.StatusNoContent)
 	})
 }
 
 // --- Sharing settings + global share list ---
 
+// sharingSettingView is the wire shape of /api/settings/sharing.
+//
+// Enabled is a persisted, user-editable setting. RelayURL and
+// RelaySource are read-only: they come from the -relay-url flag, the
+// OCMAN_RELAY_URL environment variable, or the value baked into the
+// build, and are reported so the Settings page can show an operator
+// which relay this instance uses and where that value came from.
+type sharingSettingView struct {
+	Enabled bool `json:"enabled"`
+	// RelayURL is empty when no relay is configured, which means shares
+	// stay local to this machine.
+	RelayURL string `json:"relayUrl"`
+	// RelaySource is "flag", "env", or "builtin", and empty when there
+	// is no relay.
+	RelaySource string `json:"relaySource"`
+}
+
+// sharingSettingView builds the current sharing settings payload.
+func (s *Server) sharingSettingView(enabled bool) sharingSettingView {
+	return sharingSettingView{
+		Enabled:     enabled,
+		RelayURL:    s.relayURL,
+		RelaySource: s.relaySource,
+	}
+}
+
 // handleSharingSetting dispatches GET/POST on /api/settings/sharing.
 //
-//	GET  → {"enabled": bool}. Defaults to enabled when unset.
-//	POST → accepts {"enabled": bool}, persists, returns the new state.
+//	GET  → the current settings. Sharing defaults to enabled when unset.
+//	POST → accepts {"enabled": bool}, persists it, returns the new state.
+//
+// The relay fields are returned by both methods so a client that toggles
+// sharing keeps a complete picture without a second request.
 func (s *Server) handleSharingSetting(w http.ResponseWriter, r *http.Request) {
 	if s.stateDB == nil {
 		http.Error(w, "state database not available", http.StatusServiceUnavailable)
@@ -166,7 +210,7 @@ func (s *Server) handleSharingSetting(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "sharing state unavailable", http.StatusServiceUnavailable)
 			return
 		}
-		writeJSON(w, map[string]bool{"enabled": enabled})
+		writeJSON(w, s.sharingSettingView(enabled))
 	case http.MethodPost:
 		var body struct {
 			Enabled bool `json:"enabled"`
@@ -182,7 +226,7 @@ func (s *Server) handleSharingSetting(w http.ResponseWriter, r *http.Request) {
 			serverError(w, "saving sharing setting", err)
 			return
 		}
-		writeJSON(w, map[string]bool{"enabled": body.Enabled})
+		writeJSON(w, s.sharingSettingView(body.Enabled))
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -212,89 +256,6 @@ func (s *Server) handleAllShares(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
-// --- Public (unauthenticated) share viewing ---
-
-// handleSharePublic dispatches the public /api/share/{token} routes.
-// Unauthenticated by design: the token is the only credential.
-//
-//	GET /api/share/{token}            -> conversation JSON (read-only)
-//	GET /api/share/{token}/export.md  -> conversation Markdown
-func (s *Server) handleSharePublic(w http.ResponseWriter, r *http.Request) {
-	rest := strings.TrimPrefix(r.URL.Path, "/api/share/")
-	token := rest
-	wantMarkdown := false
-	if idx := strings.IndexByte(rest, '/'); idx >= 0 {
-		token = rest[:idx]
-		sub := rest[idx+1:]
-		if sub == "export.md" {
-			wantMarkdown = true
-		} else {
-			http.Error(w, "not found", http.StatusNotFound)
-			return
-		}
-	}
-	if token == "" || !validateID(token) {
-		http.Error(w, "share link not found", http.StatusNotFound)
-		return
-	}
-	if s.stateDB == nil {
-		http.Error(w, "share link not found", http.StatusNotFound)
-		return
-	}
-
-	link, ok, err := s.stateDB.GetActiveShareLink(token)
-	if err != nil {
-		serverError(w, "resolving share link", err)
-		return
-	}
-	if !ok {
-		// Unknown, revoked, or expired all collapse to 404 so a
-		// revoked token can't be distinguished from a never-existing one.
-		http.Error(w, "share link not found", http.StatusNotFound)
-		return
-	}
-
-	adapter, ok := s.registry.Get(platforms.ID(link.Platform))
-	if !ok {
-		http.Error(w, "share link not found", http.StatusNotFound)
-		return
-	}
-
-	if wantMarkdown {
-		md, err := s.renderConversationMarkdown(r.Context(), adapter, link.SessionID)
-		if err != nil {
-			writePlatformError(w, "exporting shared session", err)
-			return
-		}
-		writeMarkdownDownload(w, link.SessionID, md)
-		return
-	}
-
-	detail, err := adapter.Session(r.Context(), link.SessionID, exportFetchLimit, 0)
-	if err != nil {
-		writePlatformError(w, "loading shared session", err)
-		return
-	}
-	if detail.Messages == nil {
-		detail.Messages = []db.Message{}
-	}
-	if detail.Parts == nil {
-		detail.Parts = []db.Part{}
-	}
-	if detail.Session != nil {
-		detail.Session.Notice = deriveSessionNotice(*detail.Session)
-	}
-	// The public payload deliberately omits live-only / actionable
-	// fields the read-only viewer doesn't need; the frontend renders
-	// purely from session/messages/parts.
-	writeJSON(w, map[string]interface{}{
-		"session":  detail.Session,
-		"messages": detail.Messages,
-		"parts":    detail.Parts,
-		"readOnly": true,
-	})
-}
-
 // --- shared helpers ---
 
 // renderConversationMarkdown fetches the full conversation for a session
@@ -318,7 +279,8 @@ func writeMarkdownDownload(w http.ResponseWriter, sessionID, md string) {
 // shareLinkView is the wire shape returned for a share link, augmenting
 // the stored row with the absolute, shareable URL.
 type shareLinkView struct {
-	Token     string `json:"token"`
+	Token string `json:"token"`
+	// URL is always a relay URL; sharing never creates localhost links.
 	URL       string `json:"url"`
 	CreatedAt int64  `json:"createdAt"`
 	ExpiresAt int64  `json:"expiresAt,omitempty"`
@@ -334,9 +296,13 @@ type globalShareLinkView struct {
 }
 
 func (s *Server) shareLinkView(r *http.Request, link state.ShareLink) shareLinkView {
+	relayURL := ""
+	if link.RelayID != "" {
+		relayURL = strings.TrimRight(link.RelayURL, "/") + "/v/" + link.RelayID + "#k=" + link.RelayKey
+	}
 	return shareLinkView{
 		Token:     link.Token,
-		URL:       s.shareURL(r, link.Token),
+		URL:       relayURL,
 		CreatedAt: link.CreatedAt,
 		ExpiresAt: link.ExpiresAt,
 	}
@@ -348,33 +314,4 @@ func (s *Server) shareLinkViews(r *http.Request, links []state.ShareLink) []shar
 		out = append(out, s.shareLinkView(r, l))
 	}
 	return out
-}
-
-// shareURL builds the absolute, user-facing URL for a share token. It
-// uses the configured publicBaseURL when set, otherwise derives the
-// origin from the incoming request (scheme + Host header) so localhost /
-// dev works without any configuration.
-func (s *Server) shareURL(r *http.Request, token string) string {
-	base := s.publicBaseURL
-	if base == "" {
-		base = requestOrigin(r)
-	}
-	return strings.TrimRight(base, "/") + "/share/" + token
-}
-
-// requestOrigin reconstructs the "scheme://host" the client used. It
-// honours X-Forwarded-Proto (set by reverse proxies) and falls back to
-// TLS state, defaulting to http for plain localhost.
-func requestOrigin(r *http.Request) string {
-	scheme := "http"
-	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
-		scheme = proto
-	} else if r.TLS != nil {
-		scheme = "https"
-	}
-	host := r.Host
-	if host == "" {
-		host = "localhost:8228"
-	}
-	return scheme + "://" + host
 }

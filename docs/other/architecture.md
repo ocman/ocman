@@ -11,6 +11,33 @@ system context — what ocman talks to, (2) backend composition — the Go
 packages, (3) the session/event data flow, (4) frontend composition.
 Each diagram is capped at ~10 blocks; detail lives in the text.
 
+### Cross-machine conversation sharing
+
+Ocman can publish a shared conversation through the standalone
+`ocman-relay` binary. The relay stores only AES-256-GCM ciphertext through
+the `share.Store` abstraction (disk today; object storage can implement the
+same `Put`/`Get`/`List`/`DeletePrefix` contract). The per-share key remains
+in the URL fragment and is therefore never sent to the relay.
+
+```mermaid
+flowchart LR
+    Owner[Owner ocman] -->|sealed completed turns| Relay[ocman-relay]
+    Relay --> Store[(share.Store)]
+    Viewer[Browser viewer] -->|ciphertext poll| Relay
+    Viewer -->|WebCrypto decrypt| Thread[Shared conversation]
+    Thread -->|explicit local fork| Local[Recipient ocman]
+```
+
+- Chunk zero is a complete snapshot; later chunks contain the latest
+  completed turn and are merged as id-keyed upserts by the viewer.
+- The owner allocates sequence numbers. Nonces derive from those sequence
+  numbers and the share id plus sequence is authenticated as GCM AAD.
+- Revocation deletes the relay prefix. The relay stores only a hash of its
+  append/delete token and requires no database.
+- Forking fetches and decrypts in the recipient's authenticated local ocman
+  UI, lets the recipient choose a local project, and parks the transcript as
+  an unsent composer draft. Imported text is never executed automatically.
+
 ## 1. System Context
 
 Everything external that the ocman process touches.

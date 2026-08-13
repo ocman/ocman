@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, type GlobalShareLink } from '../lib/api';
+import { api, type GlobalShareLink, type RelaySource } from '../lib/api';
 import { copyToClipboard } from '../lib/clipboard';
 import { relativeTime } from '../lib/format';
 import { SettingRow, SettingToggle } from './SettingRow';
@@ -14,8 +14,17 @@ import { useSettingSave } from '../lib/useSaveStatus';
  * Sharing is on by default; disabling it stops new links from being
  * minted but leaves existing links active until revoked here.
  */
+/** How each relay source is described in the UI. */
+const RELAY_SOURCE_LABELS: Record<Exclude<RelaySource, ''>, string> = {
+  flag: '-relay-url flag',
+  env: 'OCMAN_RELAY_URL environment variable',
+  builtin: 'built-in default',
+};
+
 export function SharingSettings() {
   const [enabled, setEnabled] = useState(true);
+  const [relayUrl, setRelayUrl] = useState('');
+  const [relaySource, setRelaySource] = useState<RelaySource>('');
   const [links, setLinks] = useState<GlobalShareLink[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -26,11 +35,13 @@ export function SharingSettings() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [{ enabled }, list] = await Promise.all([
+      const [sharing, list] = await Promise.all([
         api.getSharingEnabled(),
         api.listAllShares(),
       ]);
-      setEnabled(enabled);
+      setEnabled(sharing.enabled);
+      setRelayUrl(sharing.relayUrl);
+      setRelaySource(sharing.relaySource);
       setLinks(list);
       setLoaded(true);
     } catch (err) {
@@ -91,6 +102,24 @@ export function SharingSettings() {
           save={sharingSave}
           onSave={(next) => handleToggle(next)}
         />
+      </SettingRow>
+
+      <SettingRow
+        label="Share relay"
+        desc={
+          relayUrl
+            ? <>Conversations shared from this instance are stored on this relay,
+                encrypted, so they can be opened from another machine. Set by the{' '}
+                {RELAY_SOURCE_LABELS[relaySource as Exclude<RelaySource, ''>] ?? 'command line'};
+                restart ocman to change it.</>
+            : <>No relay configured, so share links only work on this machine. Start
+                ocman with <code>-relay-url</code> (or set{' '}
+                <code>OCMAN_RELAY_URL</code>) to share across machines.</>
+        }
+      >
+        <output className="mono" data-testid="sharing-relay-url">
+          {relayUrl || 'Not configured'}
+        </output>
       </SettingRow>
 
       <SettingRow

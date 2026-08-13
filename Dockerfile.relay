@@ -1,0 +1,26 @@
+# syntax=docker/dockerfile:1
+
+FROM node:25-alpine AS frontend
+WORKDIR /src/frontend
+RUN corepack enable && corepack prepare pnpm@10.11.1 --activate
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY frontend/ ./
+RUN pnpm build
+
+FROM golang:1.26.1-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+COPY --from=frontend /src/internal/webui/static/ ./internal/webui/static/
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /ocman-relay ./cmd/ocman-relay
+
+FROM alpine:3.22
+RUN adduser -D -H -u 36000 relay && mkdir /data && chown relay:relay /data
+COPY --from=build /ocman-relay /usr/local/bin/ocman-relay
+USER 36000
+EXPOSE 8080
+VOLUME ["/data"]
+ENTRYPOINT ["/usr/local/bin/ocman-relay"]
+CMD ["-addr=:8080", "-store=disk:///data"]

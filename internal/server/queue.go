@@ -148,6 +148,15 @@ func (s *Server) onSessionIdle(platformID, sessionID string) {
 	go runWithRecover("queue-flush", func() {
 		s.queueSvc().Flush(context.Background(), platformID, sessionID)
 	})
+	go runWithRecover("share-relay-publish", func() {
+		adapter, ok := s.adapterForSession(context.Background(), "", sessionID)
+		if !ok {
+			return
+		}
+		if err := s.publishCompletedTurn(context.Background(), adapter, sessionID); err != nil {
+			log.WithError(err).WithField("session_id", sessionID).Warn("publishing completed turn to share relay")
+		}
+	})
 }
 
 // broadcastQueueUpdated broadcasts that a session's follow-up queue

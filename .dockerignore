@@ -1,0 +1,15 @@
+.git
+.github
+.opencode
+.worktrees
+coverage
+dist
+frontend/dist
+frontend/e2e
+frontend/node_modules
+internal/webui/static/assets
+node_modules
+relay-data
+site/public
+tmp
+ocman

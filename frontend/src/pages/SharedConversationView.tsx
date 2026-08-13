@@ -6,6 +6,7 @@ import { AssistantThread } from '../components/AssistantThread';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { PrintCollapseContext } from '../lib/printCollapseContext';
 import './SharedConversationView.css';
+import { mergeRelayChunks, readRelayShare, relayKeyFromFragment, relayPollMs } from '../lib/relayShare';
 
 type LoadState =
   | { status: 'loading' }
@@ -24,7 +25,7 @@ type LoadState =
  * print stylesheet (SharedConversationView.css) hides the toolbar so
  * the browser's "Save as PDF" produces a clean document.
  */
-export function SharedConversationView() {
+export function SharedConversationView({ relay = false }: { relay?: boolean }) {
   const { token } = useParams<{ token: string }>();
   const [state, setState] = useState<LoadState>(
     token ? { status: 'loading' } : { status: 'error', message: 'Missing share token.' },
@@ -36,6 +37,34 @@ export function SharedConversationView() {
   useEffect(() => {
     if (!token) return;
     const controller = new AbortController();
+    if (relay) {
+      const key = relayKeyFromFragment();
+      if (!key) {
+        queueMicrotask(() => setState({ status: 'error', message: 'Missing share decryption key.' }));
+        return;
+      }
+      let current: SharedConversation | null = null;
+      let next = 0;
+      const poll = async () => {
+        try {
+          const result = await readRelayShare(token, key, next, controller.signal);
+          if (result.chunks.length > 0) {
+            current = mergeRelayChunks(current, result.chunks);
+            next = result.last + 1;
+            setState({ status: 'ready', data: current });
+          }
+        } catch (err) {
+          if (err instanceof DOMException && err.name === 'AbortError') return;
+          setState({ status: 'error', message: 'Failed to load or decrypt the shared conversation.' });
+        }
+      };
+      void poll();
+      const timer = window.setInterval(() => void poll(), relayPollMs);
+      return () => {
+        window.clearInterval(timer);
+        controller.abort();
+      };
+    }
     // setState calls below run inside async callbacks (not synchronously
     // in the effect body), which is the supported pattern for
     // synchronizing with an external data source.
@@ -51,7 +80,7 @@ export function SharedConversationView() {
         setState({ status: 'error', message });
       });
     return () => controller.abort();
-  }, [token]);
+  }, [relay, token]);
 
   useEffect(() => {
     if (state.status === 'ready') {
@@ -102,14 +131,23 @@ export function SharedConversationView() {
             />
             Collapse tool outputs
           </label>
-          <a
+          {!relay && <a
             className="oc-shared-action"
             href={token ? sharedExportMarkdownUrl(token) : '#'}
             download
             data-testid="shared-download-md"
           >
             Download Markdown
-          </a>
+          </a>}
+          {relay && (
+            <a
+              className="oc-shared-action"
+              href={`http://127.0.0.1:8228/import-share?url=${encodeURIComponent(window.location.href)}`}
+              data-testid="shared-fork-local"
+            >
+              Fork in local ocman
+            </a>
+          )}
           <button
             type="button"
             className="oc-shared-action"

@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"embed"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -35,9 +34,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/workflows"
 )
 
-//go:embed static/*
-var staticFS embed.FS
-
 const (
 	autoArchiveAfter        = 72 * time.Hour
 	autoArchiveProjectAfter = 7 * 24 * time.Hour
@@ -64,6 +60,15 @@ type Server struct {
 	// WithPublicBaseURL from the OCMAN_PUBLIC_BASE_URL env or
 	// -public-base-url flag. Trailing slash is trimmed.
 	publicBaseURL string
+
+	// relayURL is the base URL of the share relay used for
+	// cross-machine sharing, set by WithRelay from -relay-url, the
+	// OCMAN_RELAY_URL env, or the built-in default. Empty means no
+	// relay is configured and shares stay local to this machine.
+	relayURL string
+	// relaySource names which of those inputs supplied relayURL, so the
+	// Settings page can show an operator where the value came from.
+	relaySource string
 
 	// mcpAddr is the loopback address of the dedicated MCP listener.
 	// Empty means "no dedicated listener" — /mcp is then only reachable
@@ -339,6 +344,20 @@ func (s *Server) WithAutoApproveDefault(enabled bool) *Server {
 func (s *Server) WithPublicBaseURL(base string) *Server {
 	s.publicBaseURL = strings.TrimRight(strings.TrimSpace(base), "/")
 	s.auth.setSecureCookies(strings.HasPrefix(strings.ToLower(s.publicBaseURL), "https://"))
+	return s
+}
+
+// WithRelay records the share relay used for cross-machine sharing and
+// which input supplied it ("flag", "env", or "builtin"). An empty URL
+// leaves cross-machine sharing disabled, and clears the source so the
+// Settings page never shows a provenance without a value. Must be called
+// before Start.
+func (s *Server) WithRelay(relayURL, source string) *Server {
+	s.relayURL = strings.TrimRight(strings.TrimSpace(relayURL), "/")
+	s.relaySource = source
+	if s.relayURL == "" {
+		s.relaySource = ""
+	}
 	return s
 }
 

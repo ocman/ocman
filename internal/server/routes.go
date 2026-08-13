@@ -2,9 +2,10 @@ package server
 
 import (
 	"fmt"
-	"io/fs"
 	"net/http"
 	"strings"
+
+	"github.com/NoUseFreak/ocman/internal/webui"
 )
 
 // routes builds the full HTTP route table: API endpoints plus static
@@ -34,7 +35,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// Public, UNAUTHENTICATED share endpoints. A valid share token is
 	// the only credential: anyone with the unguessable URL can view the
 	// conversation read-only, even when password auth is configured.
-	mux.HandleFunc("/api/share/", requireGET(s.handleSharePublic))
 	// Signed proxy for agent-generated assets (images, SVG, PDF, ...).
 	// The HMAC in the token is what authorises the path; auth still
 	// applies on top.
@@ -168,7 +168,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/debug/log", requirePOST(s.requireLocalhost(s.handleDebugLog)))
 
 	// Static files with SPA fallback
-	staticContent, err := fs.Sub(staticFS, "static")
+	staticContent, err := webui.FS()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get static subtree: %w", err)
 	}

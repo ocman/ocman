@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -20,12 +21,30 @@ const shareTokenBytes = 32
 // expiry) for links created by the current UI. RevokedAt is 0 while the
 // link is active and set to the revocation time once revoked.
 type ShareLink struct {
-	Token     string `json:"token"`
-	Platform  string `json:"platform"`
-	SessionID string `json:"sessionId"`
-	CreatedAt int64  `json:"createdAt"`
-	ExpiresAt int64  `json:"expiresAt"`
-	RevokedAt int64  `json:"revokedAt"`
+	Token            string `json:"token"`
+	Platform         string `json:"platform"`
+	SessionID        string `json:"sessionId"`
+	CreatedAt        int64  `json:"createdAt"`
+	ExpiresAt        int64  `json:"expiresAt"`
+	RevokedAt        int64  `json:"revokedAt"`
+	RelayID          string `json:"-"`
+	RelayKey         string `json:"-"`
+	RelayDeleteToken string `json:"-"`
+	RelayURL         string `json:"-"`
+	RelayLastSeq     int64  `json:"-"`
+}
+
+const shareLinkColumns = `token, platform, session_id, created_at, expires_at, revoked_at,
+		relay_id, relay_key, relay_delete_token, relay_url, relay_last_seq`
+
+func scanShareLink(scanner interface{ Scan(...any) error }) (ShareLink, sql.NullInt64, sql.NullInt64, error) {
+	var link ShareLink
+	var expiresAt, revokedAt sql.NullInt64
+	err := scanner.Scan(
+		&link.Token, &link.Platform, &link.SessionID, &link.CreatedAt, &expiresAt, &revokedAt,
+		&link.RelayID, &link.RelayKey, &link.RelayDeleteToken, &link.RelayURL, &link.RelayLastSeq,
+	)
+	return link, expiresAt, revokedAt, err
 }
 
 // generateShareToken returns a cryptographically random, URL-safe token.
@@ -72,17 +91,13 @@ func (d *DB) CreateShareLink(platform, sessionID string, expiresAt int64) (Share
 // callers treat all three identically (404), so they need not be
 // distinguished.
 func (d *DB) GetActiveShareLink(token string) (ShareLink, bool, error) {
-	var (
-		link      ShareLink
-		expiresAt sql.NullInt64
-		revokedAt sql.NullInt64
-	)
-	err := d.db.QueryRow(`
-		SELECT token, platform, session_id, created_at, expires_at, revoked_at
+	row := d.db.QueryRow(`
+		SELECT `+shareLinkColumns+`
 		FROM share_link
 		WHERE token = ?
-	`, token).Scan(&link.Token, &link.Platform, &link.SessionID, &link.CreatedAt, &expiresAt, &revokedAt)
-	if err == sql.ErrNoRows {
+	`, token)
+	link, expiresAt, revokedAt, err := scanShareLink(row)
+	if errors.Is(err, sql.ErrNoRows) {
 		return ShareLink{}, false, nil
 	}
 	if err != nil {
@@ -105,7 +120,7 @@ func (d *DB) GetActiveShareLink(token string) (ShareLink, bool, error) {
 func (d *DB) ListActiveShareLinks(platform, sessionID string) ([]ShareLink, error) {
 	now := time.Now().UnixMilli()
 	rows, err := d.db.Query(`
-		SELECT token, platform, session_id, created_at, expires_at, revoked_at
+		SELECT `+shareLinkColumns+`
 		FROM share_link
 		WHERE platform = ? AND session_id = ?
 		  AND revoked_at IS NULL
@@ -119,12 +134,8 @@ func (d *DB) ListActiveShareLinks(platform, sessionID string) ([]ShareLink, erro
 
 	var out []ShareLink
 	for rows.Next() {
-		var (
-			link      ShareLink
-			expiresAt sql.NullInt64
-			revokedAt sql.NullInt64
-		)
-		if err := rows.Scan(&link.Token, &link.Platform, &link.SessionID, &link.CreatedAt, &expiresAt, &revokedAt); err != nil {
+		link, expiresAt, _, err := scanShareLink(rows)
+		if err != nil {
 			return nil, fmt.Errorf("scanning share link: %w", err)
 		}
 		if expiresAt.Valid {
@@ -144,7 +155,7 @@ func (d *DB) ListActiveShareLinks(platform, sessionID string) ([]ShareLink, erro
 func (d *DB) ListAllActiveShareLinks() ([]ShareLink, error) {
 	now := time.Now().UnixMilli()
 	rows, err := d.db.Query(`
-		SELECT token, platform, session_id, created_at, expires_at, revoked_at
+		SELECT `+shareLinkColumns+`
 		FROM share_link
 		WHERE revoked_at IS NULL
 		  AND (expires_at IS NULL OR expires_at > ?)
@@ -157,12 +168,8 @@ func (d *DB) ListAllActiveShareLinks() ([]ShareLink, error) {
 
 	var out []ShareLink
 	for rows.Next() {
-		var (
-			link      ShareLink
-			expiresAt sql.NullInt64
-			revokedAt sql.NullInt64
-		)
-		if err := rows.Scan(&link.Token, &link.Platform, &link.SessionID, &link.CreatedAt, &expiresAt, &revokedAt); err != nil {
+		link, expiresAt, _, err := scanShareLink(rows)
+		if err != nil {
 			return nil, fmt.Errorf("scanning share link: %w", err)
 		}
 		if expiresAt.Valid {
@@ -174,6 +181,24 @@ func (d *DB) ListAllActiveShareLinks() ([]ShareLink, error) {
 		return nil, fmt.Errorf("reading share links: %w", err)
 	}
 	return out, nil
+}
+
+// SetShareRelay attaches the relay allocation to a local share link.
+func (d *DB) SetShareRelay(token, relayURL, relayID, relayKey, deleteToken string) error {
+	_, err := d.db.Exec(`UPDATE share_link SET relay_url=?, relay_id=?, relay_key=?, relay_delete_token=?, relay_last_seq=-1 WHERE token=? AND revoked_at IS NULL`, relayURL, relayID, relayKey, deleteToken, token)
+	if err != nil {
+		return fmt.Errorf("setting share relay: %w", err)
+	}
+	return nil
+}
+
+// SetShareRelaySeq records the highest chunk sequence successfully stored.
+func (d *DB) SetShareRelaySeq(token string, seq int64) error {
+	_, err := d.db.Exec(`UPDATE share_link SET relay_last_seq=? WHERE token=? AND revoked_at IS NULL`, seq, token)
+	if err != nil {
+		return fmt.Errorf("setting share relay sequence: %w", err)
+	}
+	return nil
 }
 
 // RevokeShareLink marks a link revoked. Scoped to (platform, sessionID)

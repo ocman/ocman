@@ -1,4 +1,4 @@
-.PHONY: docs docs-build dev dev-backend dev-remote dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-platform-branching lint-settings-rows otel-up otel-down otel-logs otel-reset caddy-up caddy-down caddy-cert install-hooks help
+.PHONY: docs docs-build dev dev-backend dev-remote dev-relay dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-platform-branching lint-settings-rows otel-up otel-down otel-logs otel-reset caddy-up caddy-down caddy-cert install-hooks help
 
 # --- OTel dev defaults ----------------------------------------------------
 #
@@ -15,6 +15,17 @@
 # accepts both.
 export OTEL_EXPORTER_OTLP_ENDPOINT ?= http://localhost:4318
 export OTEL_SERVICE_NAME ?= ocman-dev
+
+# --- Share relay dev default ----------------------------------------------
+#
+# Dev targets point ocman at the local relay from `make dev-relay`, the same
+# way the OTel endpoint above is wired up: it costs nothing when the relay
+# is not running, and Settings → Sharing then shows the value so you can
+# confirm it took effect. Override per-invocation:
+#
+#   make dev OCMAN_RELAY_URL=                          # no relay (local-only shares)
+#   make dev OCMAN_RELAY_URL=https://share.example.com # a deployed relay
+export OCMAN_RELAY_URL ?= http://localhost:$(RELAY_PORT)
 
 # --- dev targets ----------------------------------------------------------
 #
@@ -60,15 +71,45 @@ dev-frontend:
 	@mkdir -p tmp
 	@cd frontend && pnpm dev 2>&1 | tee ../tmp/vite-dev.log
 
+# Run the share relay locally (cmd/ocman-relay) on :8231.
+#
+# Storage lives under tmp/ so `make clean` and .gitignore already cover it —
+# a relay store is disposable ciphertext, nothing worth keeping between runs.
+# Override any of these to test other configurations, e.g.
+#   make dev-relay RELAY_TTL=1m           # exercise expiry sweeps
+#   make dev-relay RELAY_STORE=/tmp/other # a store that survives make clean
+RELAY_PORT  ?= 8231
+RELAY_STORE ?= tmp/relay-data
+RELAY_TTL   ?= 720h
+
+dev-relay: ## Run the share relay locally (:8231, store in tmp/relay-data)
+	@mkdir -p tmp
+	@echo "Starting ocman share relay..."
+	@echo "  API:              http://localhost:$(RELAY_PORT)/s"
+	@echo "  Health:           http://localhost:$(RELAY_PORT)/healthz"
+	@echo "  Store:            $(RELAY_STORE)"
+	@echo "  TTL:              $(RELAY_TTL)"
+	@if [ ! -f internal/webui/static/index.html ]; then \
+		echo ""; \
+		echo "  NOTE: no frontend build found, so the /v/<id> viewer will 404."; \
+		echo "        Run 'cd frontend && pnpm build' to embed it."; \
+	fi
+	@echo ""
+	@exec go run ./cmd/ocman-relay \
+		-addr 127.0.0.1:$(RELAY_PORT) \
+		-store $(RELAY_STORE) \
+		-ttl $(RELAY_TTL)
+
 # Emergency nuke: kill anything holding the dev ports. Use when a previous
 # `make dev*` died badly and left orphans squatting on 8228 / 8229. Safe to
 # run even when nothing is listening — xargs is a no-op on empty stdin on
 # both BSD and GNU.
 kill-dev:
-	@echo "Reclaiming dev ports 8228, 8229, and 8230..."
+	@echo "Reclaiming dev ports 8228, 8229, 8230, and $(RELAY_PORT)..."
 	@lsof -tiTCP:8228 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true
 	@lsof -tiTCP:8229 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true
 	@lsof -tiTCP:8230 -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true
+	@lsof -tiTCP:$(RELAY_PORT) -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true
 	@pkill -x air 2>/dev/null || true
 	@echo "Done. Run 'make dev' / 'make dev-remote' / 'make dev-prod-watch' to restart."
 
@@ -100,8 +141,8 @@ build-backend:
 # Asset architecture: the desktop binary boots the same Go HTTP server used
 # in CLI mode and proxies the Wails WebView to it (see internal/gui/app.go).
 # All assets are therefore served from the Go `//go:embed static/*` FS in
-# internal/server/static — NOT from Wails's own asset server. So the frontend
-# must be built into internal/server/static (the default `pnpm build` output),
+# internal/webui/static — NOT from Wails's own asset server. So the frontend
+# must be built into internal/webui/static (the default `pnpm build` output),
 # not frontend/dist. If you set WAILS_BUILD=1 here the embed picks up only
 # the gitignored robots.txt placeholder and the desktop app shows a blank
 # page with "robots.txt" as the only visible content.
@@ -193,7 +234,7 @@ installer-mac: ## Build macOS DMG installer (requires create-dmg)
 
 installer-linux: ## Build Linux binary archive (cross-compiled from any host)
 	@mkdir -p dist
-	# Frontend must land in internal/server/static so go:embed picks it up.
+	# Frontend must land in internal/webui/static so go:embed picks it up.
 	# See the build-desktop comment for why WAILS_BUILD=1 (frontend/dist) is
 	# wrong for this proxy-based architecture.
 	cd frontend && pnpm install --frozen-lockfile && pnpm build
@@ -211,7 +252,7 @@ run: build
 	./ocman -addr 127.0.0.1:8228
 
 clean:
-	rm -rf ocman tmp internal/server/static/assets
+	rm -rf ocman tmp internal/webui/static/assets
 
 # Run both Go and frontend test suites
 test: test-backend test-frontend

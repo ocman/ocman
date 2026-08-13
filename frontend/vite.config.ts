@@ -84,9 +84,9 @@ function stripTestIdsPlugin(): Plugin {
 
 // When building for the Wails desktop bundle, output into the standard
 // Wails dist dir so `wails build` picks it up.  The normal `make build`
-// still targets ../internal/server/static (the go:embed source).
+// still targets ../internal/webui/static (the go:embed source).
 const isWailsBuild = process.env.WAILS_BUILD === '1'
-const buildOutDir = isWailsBuild ? '../frontend/dist' : '../internal/server/static'
+const buildOutDir = isWailsBuild ? '../frontend/dist' : '../internal/webui/static'
 
 export default defineConfig({
   plugins: [

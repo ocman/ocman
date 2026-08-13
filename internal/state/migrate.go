@@ -154,12 +154,14 @@ import (
 //	40 - recurring prompt timing, enablement, timezone, and session reuse.
 //	41 - link a workflow run to the external runner execution that drives
 //	     it, so the run mirror can find the Dagu run for an active row.
+<<<<<<< HEAD
 //	42 - host-qualify project archive state. A project's identity is
 //	     (remote_id, project_root): the same absolute path exists on
 //	     several machines, and keying on the path alone archived every
 //	     host's copy at once. Adds remote_id to `archived_project` and
 //	     `unarchived_entity`, backfilling existing rows as 'local'.
-const latestSchemaVersion = 42
+//	43 - add relay-side identity and writer state to each share link.
+const latestSchemaVersion = 43
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -348,6 +350,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV41(tx)
 	case 42:
 		return migrateToV42(tx)
+	case 43:
+		return migrateToV43(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -1372,7 +1376,6 @@ func migrateToV40(tx *sql.Tx) error {
 	}
 	return nil
 }
-
 // migrateToV42 host-qualifies project archive state. A project's identity is
 // (remote_id, project_root): with multi-remote, the same absolute path exists
 // on several machines, so keying archive state on the path alone archived
@@ -1410,6 +1413,25 @@ func migrateToV42(tx *sql.Tx) error {
 	`)
 	if err != nil {
 		return fmt.Errorf("host-qualifying project archive state: %w", err)
+	}
+	return nil
+}
+
+// migrateToV43 adds the relay-side identity and writer state to each
+// share link. The relay key and delete token are local secrets: the
+// relay itself stores only ciphertext and a hash of the delete token.
+// Existing local-only links keep empty values and continue to work.
+func migrateToV43(tx *sql.Tx) error {
+	for _, change := range []struct{ column, definition string }{
+		{"relay_id", "TEXT NOT NULL DEFAULT ''"},
+		{"relay_key", "TEXT NOT NULL DEFAULT ''"},
+		{"relay_delete_token", "TEXT NOT NULL DEFAULT ''"},
+		{"relay_url", "TEXT NOT NULL DEFAULT ''"},
+		{"relay_last_seq", "INTEGER NOT NULL DEFAULT -1"},
+	} {
+		if err := addColumnIfMissing(tx, "share_link", change.column, change.definition); err != nil {
+			return err
+		}
 	}
 	return nil
 }

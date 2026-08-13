@@ -40,6 +40,27 @@ func TestCreateAndGetShareLink(t *testing.T) {
 	}
 }
 
+func TestSetShareRelay(t *testing.T) {
+	db := openTestDB(t)
+	link, err := db.CreateShareLink("opencode", "ses_relay", 0)
+	if err != nil {
+		t.Fatalf("CreateShareLink: %v", err)
+	}
+	if err := db.SetShareRelay(link.Token, "https://share.example.com", "20260813-abc", "key", "delete"); err != nil {
+		t.Fatalf("SetShareRelay: %v", err)
+	}
+	if err := db.SetShareRelaySeq(link.Token, 3); err != nil {
+		t.Fatalf("SetShareRelaySeq: %v", err)
+	}
+	got, ok, err := db.GetActiveShareLink(link.Token)
+	if err != nil || !ok {
+		t.Fatalf("GetActiveShareLink: ok=%v err=%v", ok, err)
+	}
+	if got.RelayURL != "https://share.example.com" || got.RelayID != "20260813-abc" || got.RelayKey != "key" || got.RelayDeleteToken != "delete" || got.RelayLastSeq != 3 {
+		t.Fatalf("relay fields = %+v", got)
+	}
+}
+
 func TestShareTokensAreUnique(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()

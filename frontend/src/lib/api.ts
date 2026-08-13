@@ -70,6 +70,8 @@ export type {
   ShareLink,
   GlobalShareLink,
   SharedConversation,
+  SharingSettings,
+  RelaySource,
 	WorkflowVersion,
 	WorkflowDefinition,
 	WorkflowValidation,
@@ -120,6 +122,7 @@ import type {
   ShareLink,
   GlobalShareLink,
   SharedConversation,
+  SharingSettings,
   PermissionRule,
   RemoteStatus,
   RemoteAccessStatus,
@@ -403,10 +406,12 @@ export const api = {
 
   // --- Global sharing settings + list (Settings page) ---
   // Whether public sharing is allowed (master toggle, on by default).
+  // Also reports the relay this instance is configured to use, which is
+  // set on the command line and therefore read-only here.
   getSharingEnabled: (signal?: AbortSignal) =>
-    fetchJSON<{ enabled: boolean }>(`/api/settings/sharing`, signal),
+    fetchJSON<SharingSettings>(`/api/settings/sharing`, signal),
   setSharingEnabled: (enabled: boolean) =>
-    postJSON<{ enabled: boolean }>(`/api/settings/sharing`, { enabled }),
+    postJSON<SharingSettings>(`/api/settings/sharing`, { enabled }),
   // Whether worktree sessions inherit the parent's always-allow
   // permissions at split time (#101; on by default).
   getWorktreeInheritPermissions: (signal?: AbortSignal) =>

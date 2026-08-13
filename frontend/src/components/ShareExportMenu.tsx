@@ -46,8 +46,9 @@ export function ShareLinkModal({ sessionId, onClose }: ShareLinkModalProps) {
       setLoaded(true);
       // Best-effort copy of the freshly minted link.
       await copyToClipboard(link.url);
-      setCopied(link.token);
-      window.setTimeout(() => setCopied((c) => (c === link.token ? null : c)), 2000);
+      const copyID = link.token;
+      setCopied(copyID);
+      window.setTimeout(() => setCopied((c) => (c === copyID ? null : c)), 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create share link');
     } finally {
@@ -120,7 +121,7 @@ export function ShareLinkModal({ sessionId, onClose }: ShareLinkModalProps) {
                 readOnly
                 value={link.url}
                 className="oc-share-menu-url"
-                aria-label="Share URL"
+                aria-label="Relay share URL"
                 onFocus={(e) => e.currentTarget.select()}
               />
               <div className="oc-share-menu-link-actions">
@@ -129,7 +130,7 @@ export function ShareLinkModal({ sessionId, onClose }: ShareLinkModalProps) {
                   onClick={() => void handleCopy(link)}
                   data-testid="share-copy-link"
                 >
-                  {copied === link.token ? 'Copied!' : 'Copy'}
+                  {copied === link.token ? 'Copied!' : 'Copy relay link'}
                 </button>
                 <button
                   type="button"
