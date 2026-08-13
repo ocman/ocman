@@ -477,18 +477,34 @@ Implementation notes:
   separately keeps it unreachable through a reverse proxy pointed at
   `-addr`. Non-loopback `-mcp-addr` values are refused (fails closed).
 - `PromptComposer` enriches caller intent with parent-session context
-  (last 10 messages, git branch, `git diff --stat`); `SessionLauncher`
-  creates the child via the `Platform` interface.
+  (last 10 messages, git branch, uncommitted-change summary);
+  `SessionLauncher` creates the child via the `Platform` interface.
 - Host operations obey AD-16: `internal/mcp` imports neither `git` nor
   `tmux`. The server injects owner-routed adapters over
   `hostsvc.Router.ForDir` — `WorktreeSessionCreator`
   (`Host.CreateWorktreeSession`, so a worktree split runs on the machine
-  that owns the project), `GitContextReader` (`GitInfo` + `GitDiff` for
-  the branch/diffstat prompt sections, omitted when the owner can't
-  answer) and `TmuxTargetKiller`. `check-host-helpers.sh` covers
-  `internal/mcp` alongside `internal/server`. Killing a legacy child's
+  that owns the project), `GitContextReader` (`GitInfo` plus — only when
+  the caller actually wants it — `GitDiff`, for the branch/changes prompt
+  sections; omitted when the owner can't answer) and `TmuxTargetKiller`.
+  `check-host-helpers.sh` covers `internal/mcp` alongside
+  `internal/server`, and flags raw `gitexec.Output`/`gitexec.Command`
+  calls as well as `git.*`/`tmux.*`/`term.*`. Killing a legacy child's
   tmux target has no `Host` method, so it **fails closed** for a
   remote-owned session rather than killing a same-named pane on the hub.
+  Three user-visible consequences:
+  - A worktree session created through MCP (or `/project/.../worktrees`)
+    is **titled after its branch** — the owning host passes
+    `Title: req.Branch` to `CreateSession`. Previously these were
+    untitled.
+  - `cancel_session` no longer claims unqualified success when the tmux
+    kill was refused or skipped: the result carries `tmuxKill` /
+    `tmuxTarget` and sets `"success": false`, because the record is
+    terminal afterwards and a retry would silently report success.
+  - The `## Uncommitted Changes` prompt section is ocman's own per-file
+    summary (`path +N -M`, untracked files marked, `(truncated: ...)`
+    when the host hit its size cap) — deliberately **not** `git diff
+    --stat` shape, which excludes untracked files and would invite an
+    agent to read the counts as git's own.
 - Child session records live in `state.db`'s `child_sessions` table
   (migration v9); a background watcher polls every 5 s and returns the result
   through the waiting `new_session` MCP call. Migration v34 persists delivery
