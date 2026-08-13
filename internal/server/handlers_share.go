@@ -11,6 +11,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/share"
 	"github.com/NoUseFreak/ocman/internal/state"
+	log "github.com/sirupsen/logrus"
 )
 
 // exportFetchLimit is the per-fetch message cap used when assembling a
@@ -112,7 +113,8 @@ func (s *Server) handleCreateSessionShare(w http.ResponseWriter, r *http.Request
 			return
 		}
 		if s.relayURL == "" {
-			http.Error(w, "sharing requires a configured relay", http.StatusServiceUnavailable)
+			http.Error(w, "sharing needs a share relay: start ocman with -relay-url, or set OCMAN_RELAY_URL",
+				http.StatusServiceUnavailable)
 			return
 		}
 		// expiresAt 0 = no expiry (the only mode the current UI uses).
@@ -123,7 +125,12 @@ func (s *Server) handleCreateSessionShare(w http.ResponseWriter, r *http.Request
 		}
 		link, err = s.createRelayShare(r.Context(), link, adapter)
 		if err != nil {
-			serverError(w, "creating relay share", err)
+			// The local row is useless without its relay copy, so drop
+			// it rather than leaving a link that resolves to nothing.
+			if _, rerr := s.stateDB.RevokeShareLink(string(adapter.ID()), sessionID, link.Token); rerr != nil {
+				log.WithError(rerr).Warn("rolling back share link after relay failure")
+			}
+			writeShareRelayError(w, s.relayURL, err)
 			return
 		}
 		writeJSONStatus(w, http.StatusCreated, s.shareLinkView(r, link))

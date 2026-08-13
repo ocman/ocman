@@ -39,7 +39,7 @@ func (c RelayClient) Create(ctx context.Context) (RelayAllocation, error) {
 	}
 	resp, err := c.client().Do(req)
 	if err != nil {
-		return RelayAllocation{}, fmt.Errorf("creating relay share: %w", err)
+		return RelayAllocation{}, relayTransportError("creating", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
@@ -65,7 +65,7 @@ func (c RelayClient) Put(ctx context.Context, allocation RelayAllocation, seq ui
 	req.Header.Set("Authorization", "Bearer "+allocation.DeleteToken)
 	resp, err := c.client().Do(req)
 	if err != nil {
-		return fmt.Errorf("uploading relay chunk: %w", err)
+		return relayTransportError("uploading", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
@@ -83,7 +83,7 @@ func (c RelayClient) Delete(ctx context.Context, allocation RelayAllocation) err
 	req.Header.Set("Authorization", "Bearer "+allocation.DeleteToken)
 	resp, err := c.client().Do(req)
 	if err != nil {
-		return fmt.Errorf("deleting relay share: %w", err)
+		return relayTransportError("deleting", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
@@ -92,7 +92,44 @@ func (c RelayClient) Delete(ctx context.Context, allocation RelayAllocation) err
 	return nil
 }
 
+// RelayError reports a failed relay request. Status is 0 when the
+// request never reached the relay (DNS, refused connection, timeout),
+// which is the difference between "the relay is down" and "the relay
+// said no" — the two need different advice, so callers must be able to
+// tell them apart rather than seeing one opaque error.
+type RelayError struct {
+	// Op is the attempted operation: "creating", "uploading", "deleting".
+	Op string
+	// Status is the relay's HTTP status, or 0 when there was no response.
+	Status int
+	// Message is the relay's response body, trimmed.
+	Message string
+	// Err is the underlying transport error, when any.
+	Err error
+}
+
+func (e *RelayError) Error() string {
+	if e.Status == 0 {
+		return fmt.Sprintf("%s relay share: %v", e.Op, e.Err)
+	}
+	return fmt.Sprintf("%s relay share: status %d: %s", e.Op, e.Status, e.Message)
+}
+
+func (e *RelayError) Unwrap() error { return e.Err }
+
+// Unreachable reports whether the relay could not be contacted at all.
+func (e *RelayError) Unreachable() bool { return e.Status == 0 }
+
 func relayStatusError(action string, resp *http.Response) error {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
-	return fmt.Errorf("%s relay share: status %d: %s", action, resp.StatusCode, strings.TrimSpace(string(body)))
+	return &RelayError{
+		Op:      action,
+		Status:  resp.StatusCode,
+		Message: strings.TrimSpace(string(body)),
+	}
+}
+
+// relayTransportError wraps a request that never got a response.
+func relayTransportError(action string, err error) error {
+	return &RelayError{Op: action, Err: err}
 }
