@@ -208,7 +208,11 @@
   flex-shrink: 0;
 }
 .oc-meta-sep { color: var(--surface2); }
-.oc-error-banner {
+/* Renamed off `.oc-error-banner`: that class belongs to tokens.css (the
+   padded, bordered full-width banner). Redefining it here at the same
+   specificity won app-wide, because component CSS resolves later in the
+   import graph — every real banner rendered as this borderless note. */
+.oc-thread-error-note {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -220,7 +224,7 @@
   color: var(--danger);
   opacity: 0.75;
 }
-.oc-error-banner-abort {
+.oc-thread-error-note-abort {
   color: var(--text-dim);
   opacity: 1;
 }

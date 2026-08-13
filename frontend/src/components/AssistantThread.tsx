@@ -299,7 +299,7 @@ function AssistantMeta() {
   return (
     <>
       {isError && (
-        <div className={`oc-error-banner${isAbort ? ' oc-error-banner-abort' : ''}`}>
+        <div className={`oc-thread-error-note${isAbort ? ' oc-thread-error-note-abort' : ''}`}>
           {isAbort
             ? <><i className="bi bi-slash-circle" aria-hidden="true" /> Interrupted</>
             : <><i className="bi bi-exclamation-triangle-fill" aria-hidden="true" /> Session ended with an error</>
