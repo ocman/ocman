@@ -150,3 +150,92 @@ func TestPublishAdapters_SkipsASupersededRemote(t *testing.T) {
 		t.Error("superseded remote published its adapter fields")
 	}
 }
+
+// TestPublishAdapters_SkipsARemoteWithoutAnInstanceID pins the symmetry
+// between the two registrations: a handshake that yielded no remote ID
+// gives the router no key, so the platform must not be registered either
+// — an "r-:opencode" adapter nothing can address is a leak.
+func TestPublishAdapters_SkipsARemoteWithoutAnInstanceID(t *testing.T) {
+	reg := platforms.NewRegistry()
+	router := hostsvc.NewRouter(localStubHost{})
+	mr := &managedRemote{localID: 1, conn: connectedConn("", "host-1")}
+	m := &Manager{
+		base:      "opencode",
+		registry:  reg,
+		router:    router,
+		remotes:   map[int64]*managedRemote{1: mr},
+		inventory: map[string][]ProjectIdentity{},
+	}
+	platform := newRemotePlatform(mr.conn, m.base, func() string { return m.displayNameFor(1) })
+
+	if m.publishAdapters(1, mr, platform, newRemoteHost(mr.conn)) {
+		t.Fatal("publishAdapters reported success for a remote with no instance ID")
+	}
+	if _, ok := reg.Get(platform.ID()); ok {
+		t.Errorf("registered an unaddressable platform %q", platform.ID())
+	}
+	if got := router.Remotes(); len(got) != 0 {
+		t.Errorf("registered a host without a remote ID: %v", got)
+	}
+	if mr.platform != nil || mr.host != nil {
+		t.Error("published adapter fields for a remote with no instance ID")
+	}
+}
+
+// TestSupersededSupervisorPersistsTheConnectItMade pins that a supervisor
+// which connected but was superseded before publishing still writes the
+// outcome back to state.db. Returning early without persistHealth left
+// the row showing the pre-connect health for a remote that demonstrably
+// did connect.
+func TestSupersededSupervisorPersistsTheConnectItMade(t *testing.T) {
+	remoteReg := platforms.NewRegistry()
+	remoteReg.Register(&fakePlatform{id: "opencode"})
+	addr := startRealRemote(t, "tok", "inst-super", remoteReg)
+
+	raw, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { raw.Close() })
+	store, err := state.OpenFromSQL(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	localID, err := store.AddRemote(addr, "tok", "Box")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mgr := NewManager(platforms.NewRegistry(), hostsvc.NewRouter(localStubHost{}), store, "opencode")
+	parked := make(chan struct{})
+	resume := make(chan struct{})
+	var once sync.Once
+	mgr.beforeAdapterRegister = func() {
+		once.Do(func() {
+			close(parked)
+			<-resume
+		})
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mgr.Start(ctx)
+	<-parked
+
+	// Supersede the parked supervisor without re-dialling, so nothing
+	// else can write the health row.
+	mgr.disconnect(localID)
+	close(resume)
+	mgr.Stop()
+
+	r, err := store.GetRemote(localID)
+	if err != nil {
+		t.Fatalf("GetRemote: %v", err)
+	}
+	if r.LastHealth != string(HealthConnected) {
+		t.Errorf("persisted health = %q; want %q", r.LastHealth, HealthConnected)
+	}
+	if r.RemoteID != "inst-super" {
+		t.Errorf("persisted remote id = %q; want the id we handshook", r.RemoteID)
+	}
+}

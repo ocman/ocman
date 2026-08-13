@@ -217,14 +217,25 @@ func (m *Manager) connectAndRegister(ctx context.Context, mr *managedRemote, loc
 		if m.beforeAdapterRegister != nil {
 			m.beforeAdapterRegister()
 		}
+		// INVARIANT: nothing invoked while m.mu is held may call back
+		// into the Manager. This closure does — displayNameFor takes
+		// m.mu.RLock, and sync.RWMutex is not reentrant (see
+		// nameForRemoteIDLocked). publishAdapters below hands the
+		// platform to registry.Register while holding m.mu; that is
+		// safe only because Register *stores* the adapter and never
+		// calls it. Anything added there (or in router.RegisterRemote)
+		// that reads a platform's display name self-deadlocks while
+		// holding m.mu, stalling every remote operation.
 		platform := newRemotePlatform(mr.conn, m.base, func() string {
 			return m.displayNameFor(localID)
 		})
 		host := newRemoteHost(mr.conn)
 		if !m.publishAdapters(localID, mr, platform, host) {
-			// Superseded while connecting: a newer dial or a
-			// disconnect/removal owns this id now. Drop the transport we
-			// just brought up and stop supervising.
+			// Superseded while connecting, or an unusable handshake: a
+			// newer dial or a disconnect/removal owns this id now. Record
+			// the connect we did make, drop the transport we just brought
+			// up, and stop supervising.
+			m.persistHealth(localID, mr.conn)
 			mr.conn.Close()
 			return
 		}
@@ -252,8 +263,9 @@ func (m *Manager) connectAndRegister(ctx context.Context, mr *managedRemote, loc
 
 // publishAdapters publishes mr's adapters and registers them with the
 // registry/router, but only while mr is still the managed remote for
-// localID. Returns false when superseded, in which case nothing was
-// registered and the caller must stop supervising mr.
+// localID and the handshake yielded a usable remote ID. Returns false
+// otherwise, in which case nothing was registered and the caller must
+// stop supervising mr.
 //
 // Ownership is checked and the registration performed in one critical
 // section, because the two must be atomic with respect to disconnect():
@@ -264,14 +276,41 @@ func (m *Manager) connectAndRegister(ctx context.Context, mr *managedRemote, loc
 // remove — a stale platform/host wired to a dead connection forever.
 // Serialising on m.mu means a concurrent disconnect either runs first (we
 // see we're superseded and register nothing) or runs after (it tears down
-// exactly what we published). Holding m.mu across the registry/router
-// calls introduces no new lock ordering: unregisterLocked already
-// unregisters both while holding it, and neither the registry nor the
-// router calls back into the Manager.
+// exactly what we published).
+//
+// LOCK ORDER: m.mu is held across registry.Register / router.
+// RegisterRemote. That order is not introduced here — unregisterLocked
+// has always run registry.Unregister, router.UnregisterRemote and
+// conn.Close under m.mu, on all three of its callers (dial, disconnect,
+// Stop). Hoisting only this call-out behind a separate outer mutex would
+// therefore leave the coupling in place while adding a lock, so the
+// single critical section stays. What holds it up is one invariant, and
+// the code depends on it rather than on the reviewer noticing:
+//
+//	INVARIANT: nothing reached from inside m.mu may call back into the
+//	Manager. registry.Register and router.RegisterRemote only store the
+//	adapter; the platform's display-name closure (see connectAndRegister)
+//	*does* re-enter (m.mu.RLock), so a registry/router hook that ever
+//	calls it — or any capability probe on the host — self-deadlocks here,
+//	holding m.mu against every other remote operation.
+//
+// Breaking that invariant means moving both this and unregisterLocked's
+// call-outs out from under m.mu behind one outermost registration mutex,
+// not patching this function alone.
 func (m *Manager) publishAdapters(localID int64, mr *managedRemote, platform *remotePlatform, host *remoteHost) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.remotes[localID] != mr {
+		return false
+	}
+	// No remote ID means the handshake gave us nothing to address the
+	// remote by: the compound platform id would be "r-:opencode" and
+	// there is no router key at all. Register neither half rather than
+	// half of it — an unaddressable platform is a leak, not a degraded
+	// mode.
+	rid := mr.conn.RemoteID()
+	if rid == "" {
+		log.WithField("remote", localID).Warn("remote: connected without an instance ID; not registering adapters")
 		return false
 	}
 	// mr.platform / mr.host are read under m.mu by sessionCount and
@@ -280,9 +319,7 @@ func (m *Manager) publishAdapters(localID int64, mr *managedRemote, platform *re
 	// adapter pair.
 	mr.platform, mr.host = platform, host
 	m.registry.Register(platform)
-	if rid := mr.conn.RemoteID(); rid != "" {
-		m.router.RegisterRemote(rid, host)
-	}
+	m.router.RegisterRemote(rid, host)
 	return true
 }
 
