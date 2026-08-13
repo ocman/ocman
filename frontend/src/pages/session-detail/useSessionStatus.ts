@@ -36,8 +36,7 @@ export interface UseSessionStatusOptions {
 export interface UseSessionStatusResult {
   /**
    * Status displayed in the badge: the backend's settled status, with
-   * one transient local affordance layered on top (see
-   * `resolveDisplayStatus`).
+   * two display-only layers on top (see `resolveDisplayStatus`).
    *
    * There is no debounce and no local re-derivation: `sessionStatus` is
    * the agent's own turn state (see db.SettleSessionStatus), so it stays
@@ -68,23 +67,37 @@ export interface UseSessionStatusResult {
  * subagent tokens from the previous one into its TPS window.
  */
 /**
- * The status the badge shows. `sessionStatus` is authoritative — the
- * backend settles it from the agent's own turn lifecycle
- * (db.SettleSessionStatus), so the frontend reports it verbatim rather
- * than re-deriving one from message shape (which produced a *different*
- * answer and then overwrote the real one).
+ * The status the badge shows. It mirrors db.SettleSessionStatus: a live
+ * turn wins outright, and only once the turn is settled does message
+ * shape decide *which* terminal state it settled into.
  *
- * The single exception is `justSentPrompt`: the prompt has been accepted
- * but no assistant message exists for the turn yet, so the badge would
- * otherwise sit on the previous turn's terminal state for a beat. This is
- * a transient view affordance — it is never written back into the session
- * or into shared recent-session state.
+ * `sessionStatus` is the backend's own answer and is reported verbatim
+ * for every state it can express. Two layers sit on top:
+ *
+ *  - `justSentPrompt`: the prompt has been accepted but no assistant
+ *    message exists for the turn yet, so the badge would otherwise sit
+ *    on the previous turn's terminal state for a beat.
+ *  - `lastMsgErrored`: OpenCode's `session.status` vocabulary is
+ *    busy|retry|idle only (internal/platforms/opencode/live_status.go),
+ *    so it never reports a failure. A failed turn arrives as an errored
+ *    message followed by `session.idle` — which reduces to `done`.
+ *    Without this arm the badge claims a failed turn succeeded until the
+ *    REST reconcile round trip corrects it, and the active sidebar row
+ *    (which overlays this value) downgrades the correct `error` every
+ *    other row already shows.
+ *
+ * Both are display-only: neither is written back into the session or
+ * into shared recent-session state.
  */
 function resolveDisplayStatus(
   sessionStatus: Session['status'] | null | undefined,
   justSentPrompt: boolean,
+  lastMsgErrored: boolean,
 ): Session['status'] {
-  if (justSentPrompt) return 'busy';
+  // A live turn outranks the tail: an errored message from the previous
+  // turn must not mask the one that is running now.
+  if (justSentPrompt || sessionStatus === 'busy') return 'busy';
+  if (lastMsgErrored) return 'error';
   return sessionStatus ?? 'done';
 }
 
@@ -101,7 +114,8 @@ export function useSessionStatus({
 }: UseSessionStatusOptions): UseSessionStatusResult {
   trackRender('useSessionStatus', { isRunning, lastMsgId: lastMsg?.id });
   const justSentPrompt = awaitingAssistantResponse && lastMsg?.data?.role === 'user';
-  const optimisticStatus = resolveDisplayStatus(sessionStatus, justSentPrompt);
+  const lastMsgErrored = lastMsg?.data?.finish === 'error' || !!lastMsg?.data?.error;
+  const optimisticStatus = resolveDisplayStatus(sessionStatus, justSentPrompt, lastMsgErrored);
 
   // Live tokens-per-second: sum output tokens across all assistant
   // messages in the current run window (since the last user message)

@@ -1401,6 +1401,114 @@ describe('SessionDetail — status badge follows the backend', () => {
     expect(handle.result.container.querySelector('.status-error')).not.toBeInTheDocument();
   });
 
+  // The production failure sequence. OpenCode's `session.status`
+  // vocabulary is busy|retry|idle only (live_status.go) — it never emits
+  // `error`. A failed turn therefore arrives as
+  // `message.updated{finish:'error'}` followed by `session.idle`, and
+  // `session.idle` alone says "done". The badge must not spend that
+  // window claiming the failed turn succeeded.
+  it('never shows done for a failed turn on the real event sequence', async () => {
+    const running = makeSession({ id: 'sess_1', status: 'busy' });
+    // What the reconcile triggered by `session.idle` returns: the
+    // backend settles the terminal state from the errored tail
+    // (db.InferSessionStatus), so REST reports `error`.
+    const settled = makeSession({ id: 'sess_1', status: 'error' });
+    let settledYet = false;
+    const session = vi.fn(() => Promise.resolve(
+      settledYet
+        ? makeSessionDetail(settled, {
+          messages: [{
+            id: 'msg_1',
+            sessionId: 'sess_1',
+            timeCreated: 1_000,
+            data: { role: 'assistant', finish: 'error', error: { name: 'Boom' } },
+          }],
+          totalMessages: 1,
+        })
+        : makeSessionDetail(running),
+    ));
+
+    const handle = renderSessionPage({
+      sessionId: 'sess_1',
+      detail: makeSessionDetail(running),
+      sessions: [running],
+      apiOverrides: { session },
+    });
+    await flushPromises(8);
+    await waitFor(() => expect(handle.sse()).toBeDefined());
+    act(() => { handle.sse()!.open(); });
+    await flushPromises(4);
+
+    act(() => {
+      handle.sse()!.emitMessage({
+        type: 'message.updated',
+        properties: {
+          info: {
+            id: 'msg_1',
+            sessionID: 'sess_1',
+            role: 'assistant',
+            finish: 'error',
+            error: { name: 'Boom', data: { message: 'kaboom' } },
+            time: { created: 1_000 },
+          },
+          parts: [],
+        },
+      });
+    });
+    await flushPromises(4);
+
+    settledYet = true;
+    act(() => {
+      handle.sse()!.emitMessage({
+        type: 'session.idle',
+        properties: { sessionID: 'sess_1' },
+      });
+    });
+
+    // Asserted before the reconcile round trip resolves: that gap is
+    // exactly where the badge used to claim `done`.
+    expect(handle.result.container.querySelector('.status-done')).not.toBeInTheDocument();
+    expect(handle.result.container.querySelector('.status-error')).toBeInTheDocument();
+
+    await flushPromises(8);
+    expect(handle.result.container.querySelector('.status-done')).not.toBeInTheDocument();
+    expect(handle.result.container.querySelector('.status-error')).toBeInTheDocument();
+  });
+
+  // The active sidebar row overlays the page's display status on top of
+  // the polled row. If that overlay is less live than the row it
+  // replaces, every row shows the settled `error` except the one the
+  // user is actually looking at.
+  it('keeps the active sidebar row in step with the other rows on a settled error', async () => {
+    const active = makeSession({ id: 'sess_1', status: 'error' });
+    const other = makeSession({ id: 'sess_2', title: 'Other', status: 'error' });
+    const handle = renderSessionPage({
+      sessionId: 'sess_1',
+      detail: makeSessionDetail(makeSession({ id: 'sess_1', status: 'busy' })),
+      sessions: [active, other],
+    });
+    await flushPromises(8);
+    await waitFor(() => expect(handle.sse()).toBeDefined());
+
+    act(() => {
+      handle.sse()!.open();
+      handle.sse()!.emitMessage(erroredMessage);
+      // The live stream only ever reports idle for a finished turn.
+      handle.sse()!.emitMessage({
+        type: 'session.idle',
+        properties: { sessionID: 'sess_1' },
+      });
+    });
+    await flushPromises(8);
+
+    const rows = handle.result.container.querySelectorAll('.session-sidebar-item');
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+    for (const row of rows) {
+      expect(row.querySelector('.status-error')).not.toBeNull();
+      expect(row.querySelector('.status-done')).toBeNull();
+    }
+  });
+
   // Regression guard for the shared-state overwrite: the page's display
   // status is local, and must never be written back into the row every
   // other view reads.

@@ -164,6 +164,58 @@ describe('useSessionStatus', () => {
     expect(result.current.optimisticStatus).toBe('busy');
   });
 
+  // OpenCode's session.status vocabulary is busy|retry|idle only
+  // (live_status.go), so a failed turn reaches the page as an errored
+  // message plus `session.idle` — which reduces to `done`. Message shape
+  // is what decides *which* terminal state (db.InferSessionStatus), so
+  // the errored tail is the only in-band error signal until the REST
+  // reconcile lands.
+  it.each<[string, SessionStatus | undefined]>([
+    ['a done status', 'done'],
+    ['no reported status', undefined],
+  ])('reports error for an errored tail with %s', (_label, sessionStatus) => {
+    const t0 = Date.now();
+    const messages: Message[] = [
+      userMessage('u1', t0 - 5_000),
+      erroredAssistantMessage('a1', t0 - 1_000),
+    ];
+
+    const { result } = buildHook({
+      lastMsg: messages[messages.length - 1],
+      messages,
+      subagentTokens: new Map(),
+      sessionStatus,
+      isRunning: false,
+      pendingPermission: null,
+      pendingQuestion: null,
+    });
+
+    expect(result.current.optimisticStatus).toBe('error');
+  });
+
+  it('reports error for a finish=error tail', () => {
+    const t0 = Date.now();
+    const errored: Message = {
+      id: 'a1',
+      sessionId: 's1',
+      timeCreated: t0 - 1_000,
+      data: { role: 'assistant', finish: 'error', time: { created: t0 - 1_000 } },
+    };
+    const messages: Message[] = [userMessage('u1', t0 - 5_000), errored];
+
+    const { result } = buildHook({
+      lastMsg: errored,
+      messages,
+      subagentTokens: new Map(),
+      sessionStatus: 'done',
+      isRunning: false,
+      pendingPermission: null,
+      pendingQuestion: null,
+    });
+
+    expect(result.current.optimisticStatus).toBe('error');
+  });
+
   it('does not derive busy from a streaming assistant message', () => {
     const t0 = Date.now();
     const messages: Message[] = [
