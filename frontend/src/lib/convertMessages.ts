@@ -967,7 +967,7 @@ export function createConvertMessages(): ConvertMessagesFn {
     const msgStatus = role === 'assistant'
       ? (m.data.finish === 'error' || m.data.error)
         ? { type: 'incomplete' as const, reason: 'error' as const }
-        : m.data.finish || synthesizedTerminal
+        : m.data.finish || m.data.time?.completed !== undefined || synthesizedTerminal
           ? { type: 'complete' as const, reason: 'stop' as const }
           : { type: 'running' as const }
       : undefined;
