@@ -43,9 +43,18 @@ export function loadPendingQuestion(sessionId: string): PendingQuestion | null {
   return null;
 }
 
-/** Drop the persisted question for the session. */
-export function clearPendingQuestion(sessionId: string) {
+/**
+ * Drop the persisted question for the session.
+ *
+ * `requestId` makes the clear id-safe, mirroring the reducer's
+ * `clearPrompt`: a follow-up question asked between a dismissal being
+ * decided and it being applied stays in memory, and must keep its
+ * persisted copy too or a reload silently loses the prompt. Omit it
+ * only when the intent really is "drop whatever is stored".
+ */
+export function clearPendingQuestion(sessionId: string, requestId?: string) {
   try {
+    if (requestId && loadPendingQuestion(sessionId)?.requestId !== requestId) return;
     sessionStorage.removeItem(PENDING_QUESTION_KEY + sessionId);
   } catch {
     /* unavailable */
@@ -153,7 +162,7 @@ export function usePromptHandlers({
       await respondQuestion(session.id, repliedId, answers);
       clearPrompt('question', repliedId);
       setQuestionError(null);
-      clearPendingQuestion(session.id);
+      clearPendingQuestion(session.id, repliedId);
       notifyPromptDismissed(session.id);
     } catch (e) {
       remoteLog.error('Failed to respond to question', e);
@@ -170,7 +179,7 @@ export function usePromptHandlers({
     try {
       await rejectQuestion(session.id, repliedId);
       clearPrompt('question', repliedId);
-      clearPendingQuestion(session.id);
+      clearPendingQuestion(session.id, repliedId);
       notifyPromptDismissed(session.id);
     } catch (e) {
       remoteLog.error('Failed to dismiss question', e);

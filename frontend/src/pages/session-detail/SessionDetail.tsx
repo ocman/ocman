@@ -672,11 +672,11 @@ export function SessionDetail({ id }: SessionDetailProps) {
             return q?.requestId === pendingQuestionRequestId;
           });
           if (stillPending) return;
-          // clearPrompt is the id-safe path: it only takes the dialog
-          // down if the request id still matches, so a follow-up asked
-          // between the poll and its response survives.
+          // Both clears are id-safe: they only fire if the request id
+          // still matches, so a follow-up asked between the poll and its
+          // response survives — in memory *and* in session storage.
           clearPrompt('question', pendingQuestionRequestId);
-          clearPendingQuestion(id);
+          clearPendingQuestion(id, pendingQuestionRequestId);
         })
         .catch(() => { /* leave the prompt up; the next tick retries */ });
     };
