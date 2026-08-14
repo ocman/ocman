@@ -166,3 +166,55 @@ func TestMigrateV42IsIdempotentThroughOpen(t *testing.T) {
 		t.Fatalf("archived = %v, want the remote row to survive a reopen", archived)
 	}
 }
+
+func TestOpenRepairsStateDBStampedV42WithPreV42ArchiveTables(t *testing.T) {
+	path := t.TempDir() + "/state.db"
+	stateDB, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := stateDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`
+		DROP TABLE archived_project;
+		DROP TABLE unarchived_entity;
+		CREATE TABLE archived_project (project_root TEXT PRIMARY KEY, archived_at INTEGER NOT NULL);
+		CREATE TABLE unarchived_entity (kind TEXT NOT NULL, entity_key TEXT NOT NULL, unarchived_at INTEGER NOT NULL, PRIMARY KEY (kind, entity_key));
+		INSERT INTO archived_project VALUES ('/home/u/app', 111);
+		INSERT INTO unarchived_entity VALUES ('project', '/home/u/app', 222);
+		DELETE FROM schema_version WHERE version > 42;
+	`); err != nil {
+		raw.Close()
+		t.Fatal(err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	stateDB, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stateDB.Close()
+
+	archived, err := stateDB.ArchivedProjects()
+	if err != nil {
+		t.Fatalf("ArchivedProjects: %v", err)
+	}
+	if _, ok := archived[ProjectKey{RemoteID: LocalRemoteID, Root: "/home/u/app"}]; !ok {
+		t.Fatalf("archived = %v, want backfilled local project", archived)
+	}
+	keep, err := stateDB.ProjectsUnarchivedSince(0)
+	if err != nil {
+		t.Fatalf("ProjectsUnarchivedSince: %v", err)
+	}
+	if !keep[ProjectKey{RemoteID: LocalRemoteID, Root: "/home/u/app"}] {
+		t.Fatalf("keep = %v, want backfilled local project", keep)
+	}
+}

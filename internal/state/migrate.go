@@ -160,7 +160,9 @@ import (
 //	     host's copy at once. Adds remote_id to `archived_project` and
 //	     `unarchived_entity`, backfilling existing rows as 'local'.
 //	43 - add relay-side identity and writer state to each share link.
-const latestSchemaVersion = 43
+//	44 - repair databases marked v42 by a conflicting pre-merge migration,
+//	     whose archive tables lack remote_id.
+const latestSchemaVersion = 44
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -351,6 +353,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV42(tx)
 	case 43:
 		return migrateToV43(tx)
+	case 44:
+		return migrateToV44(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -1065,24 +1069,8 @@ func ensureWorkflowArtifactSchema(tx *sql.Tx) error {
 // present, so a migration stays idempotent against databases that reached
 // this shape via a different (pre-merge) migration ordering.
 func addColumnIfMissing(tx *sql.Tx, table, column, definition string) error {
-	rows, err := tx.Query(`PRAGMA table_info(` + table + `)`)
+	present, err := tableHasColumn(tx, table, column)
 	if err != nil {
-		return err
-	}
-	present := false
-	for rows.Next() {
-		var cid, notnull, primaryKey int
-		var name, columnType string
-		var defaultValue any
-		if err := rows.Scan(&cid, &name, &columnType, &notnull, &defaultValue, &primaryKey); err != nil {
-			rows.Close()
-			return err
-		}
-		if name == column {
-			present = true
-		}
-	}
-	if err := rows.Close(); err != nil {
 		return err
 	}
 	if present {
@@ -1090,6 +1078,32 @@ func addColumnIfMissing(tx *sql.Tx, table, column, definition string) error {
 	}
 	_, err = tx.Exec(`ALTER TABLE ` + table + ` ADD COLUMN ` + column + ` ` + definition)
 	return err
+}
+
+func tableHasColumn(tx *sql.Tx, table, column string) (bool, error) {
+	rows, err := tx.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return false, err
+	}
+	for rows.Next() {
+		var cid, notnull, primaryKey int
+		var name, columnType string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notnull, &defaultValue, &primaryKey); err != nil {
+			rows.Close()
+			return false, err
+		}
+		if name == column {
+			if err := rows.Close(); err != nil {
+				return false, err
+			}
+			return true, nil
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return false, err
+	}
+	return false, nil
 }
 
 // migrateToV27 adds the durable resource-lease table backing named
@@ -1415,7 +1429,6 @@ func migrateToV42(tx *sql.Tx) error {
 	}
 	return nil
 }
-
 // migrateToV43 adds the relay-side identity and writer state to each
 // share link. The relay key and delete token are local secrets: the
 // relay itself stores only ciphertext and a hash of the delete token.
@@ -1433,4 +1446,24 @@ func migrateToV43(tx *sql.Tx) error {
 		}
 	}
 	return nil
+}
+
+// migrateToV44 repairs state databases that were marked v42 by a conflicting
+// branch before v42 was assigned to host-qualified project archive state.
+func migrateToV44(tx *sql.Tx) error {
+	projectHasRemoteID, err := tableHasColumn(tx, "archived_project", "remote_id")
+	if err != nil {
+		return err
+	}
+	unarchivedHasRemoteID, err := tableHasColumn(tx, "unarchived_entity", "remote_id")
+	if err != nil {
+		return err
+	}
+	if projectHasRemoteID && unarchivedHasRemoteID {
+		return nil
+	}
+	if projectHasRemoteID || unarchivedHasRemoteID {
+		return fmt.Errorf("archive tables disagree on remote_id schema")
+	}
+	return migrateToV42(tx)
 }
