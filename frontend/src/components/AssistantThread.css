@@ -293,6 +293,9 @@
 .oc-turn-model .bi {
   opacity: 0.7;
 }
+.oc-turn-cache-warning {
+  color: var(--warning);
+}
 
 /* Centered "model changed" divider, drawn before the first assistant
    message that switches the active model mid-conversation. */

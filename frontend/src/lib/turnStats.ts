@@ -41,6 +41,8 @@ export interface TurnAggregate {
   tps: number | null;
   /** True when the last assistant message has neither finished nor completed. */
   isLive: boolean;
+  /** True when this completed turn likely rebuilt a previously used prompt cache. */
+  promptCacheRebuilt: boolean;
   /** Unix ms when the user message was sent (turn start). */
   startedAt: number;
   /**
@@ -131,6 +133,7 @@ export function computeTurnStats(
   }
 
   const lastTurn = turns[turns.length - 1];
+  let hadCompletedCacheRead = false;
 
   for (const turn of turns) {
     const { userMsg, assistantMsgs } = turn;
@@ -145,12 +148,19 @@ export function computeTurnStats(
     let totalTpsNumerator = 0;
     let totalTpsDenominator = 0;
     let model = '';
+    let cacheRead = 0;
+    let cacheWrite = 0;
+    let hasCacheMetrics = false;
 
     for (const a of assistantMsgs) {
       tokensOut += a.data.tokens?.output ?? 0;
       tokensIn += a.data.tokens?.input ?? 0;
       cost += a.data.cost ?? 0;
       toolCalls += toolCountByMsg[a.id] ?? 0;
+      const cache = a.data.tokens?.cache;
+      if (cache?.read !== undefined || cache?.write !== undefined) hasCacheMetrics = true;
+      cacheRead += cache?.read ?? 0;
+      cacheWrite += cache?.write ?? 0;
       // Keep the most recent model seen in the turn so the summary bar
       // reflects what actually produced the final reply.
       const ref = messageModelRef(a);
@@ -188,6 +198,8 @@ export function computeTurnStats(
     const wallClockEnd = isLive ? null : lastAsst.timeCreated;
     const wallClockMs =
       wallClockEnd !== null ? wallClockEnd - userMsg.timeCreated : null;
+    const promptCacheRebuilt = !isLive && hadCompletedCacheRead
+      && hasCacheMetrics && cacheRead === 0 && cacheWrite > 0;
 
     // Map the same aggregate to every assistant message in the turn so
     // the turn line never blanks out while ownership moves between
@@ -202,11 +214,13 @@ export function computeTurnStats(
         toolCalls,
         tps,
         isLive,
+        promptCacheRebuilt,
         startedAt: userMsg.timeCreated,
         model,
         isSummaryAnchor: a.id === lastAsst.id,
       });
     }
+    if (!isLive && cacheRead > 0) hadCompletedCacheRead = true;
   }
 
   return map;

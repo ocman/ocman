@@ -16,7 +16,7 @@ vi.hoisted(() => {
   });
 });
 
-const { message, threadState } = vi.hoisted(() => ({
+const { message, threadState, turnStats } = vi.hoisted(() => ({
   message: {
     id: 'assistant-1',
     content: [{ type: 'text', text: 'Reply' }],
@@ -25,6 +25,19 @@ const { message, threadState } = vi.hoisted(() => ({
     metadata: { custom: { model: 'openai/gpt-5', time: { created: 1000, completed: 2000 }, tokens: { output: 10 } } as Record<string, unknown> },
   },
   threadState: { renderUser: false },
+  turnStats: {
+    wallClockMs: 1000,
+    tokensOut: 10,
+    tokensIn: 5,
+    cost: 0,
+    toolCalls: 0,
+    tps: 10,
+    isLive: false,
+    startedAt: Date.parse('2026-07-16T12:00:00Z'),
+    model: 'openai/gpt-5',
+    isSummaryAnchor: true,
+    promptCacheRebuilt: false,
+  },
 }));
 
 vi.mock('@assistant-ui/react', async () => {
@@ -73,18 +86,7 @@ vi.mock('@assistant-ui/react', async () => {
 
 vi.mock('../lib/turnStats', () => ({
   useModelLabel: (model: string) => model,
-  useTurnStats: () => ({
-    wallClockMs: 1000,
-    tokensOut: 10,
-    tokensIn: 5,
-    cost: 0,
-    toolCalls: 0,
-    tps: 10,
-    isLive: false,
-    startedAt: Date.parse('2026-07-16T12:00:00Z'),
-    model: 'openai/gpt-5',
-    isSummaryAnchor: true,
-  }),
+  useTurnStats: () => turnStats,
 }));
 
 import { AssistantThread, ImageDisplay } from './AssistantThread';
@@ -99,6 +101,7 @@ beforeEach(() => {
   vi.stubGlobal('ResizeObserver', StubResizeObserver);
   useUiStore.getState().setShowMessageMetadata(false);
   threadState.renderUser = false;
+  turnStats.promptCacheRebuilt = false;
   message.metadata.custom = { model: 'openai/gpt-5', time: { created: 1000, completed: 2000 }, tokens: { output: 10 } };
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -173,6 +176,14 @@ describe('AssistantThread message metadata', () => {
     const { container } = render(<AssistantThread />);
 
     expect(container.querySelector('.oc-msg-meta')).not.toBeNull();
+  });
+
+  it('shows a prompt cache rebuild warning once in the turn summary', () => {
+    turnStats.promptCacheRebuilt = true;
+
+    render(<AssistantThread />);
+
+    expect(screen.getAllByText('Prompt cache rebuilt')).toHaveLength(1);
   });
 });
 
