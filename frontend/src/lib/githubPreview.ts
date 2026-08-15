@@ -161,40 +161,135 @@ function mapRawToPreviewData(url: string, raw: any, ref?: GitHubPreviewRef): Git
 }
 
 // ---------------------------------------------------------------------------
-// In-memory cache — avoids re-fetching on re-renders
+// In-memory cache (FR-11)
+//
+// One entry per normalized resource key (origin + kind + repo + number/sha),
+// so distinct forge hosts and resources never collide while `/pull/1` and
+// `/pull/1/files` share one entry. Rules:
+//
+//   - concurrent loads/refreshes join the entry's single in-flight promise,
+//     so N visible cards for one URL cause one backend request;
+//   - a completed attempt (success *or* failure) is "fresh" for
+//     PREVIEW_FRESH_MS, below the cards' 5 s cadence, so a revalidation cycle
+//     issues one request and an error backs off instead of hammering;
+//   - a failure never replaces a previous success: the stale success keeps
+//     rendering and the next cycle retries;
+//   - the map is capped at PREVIEW_MAX_ENTRIES with oldest-success eviction.
 // ---------------------------------------------------------------------------
 
-const cache = new Map<string, GitHubPreviewData | 'error'>();
+/** Window during which a completed attempt is reused instead of refetched. */
+export const PREVIEW_FRESH_MS = 4_000;
+/** Hard cap on cache entries; the oldest success is evicted past it. */
+export const PREVIEW_MAX_ENTRIES = 100;
 
-export async function cachedGitHubPreview(url: string): Promise<GitHubPreviewData | null> {
-  if (cache.has(url)) {
-    const hit = cache.get(url)!;
-    return hit === 'error' ? null : hit;
-  }
-  if (!parseGitHubUrl(url)) return null;
+interface PreviewEntry {
+  /** Last successful preview, kept across later failures. */
+  data?: GitHubPreviewData;
+  /** Completion time of the last attempt; 0 while none has completed. */
+  ts: number;
+  inflight?: Promise<GitHubPreviewData | null>;
+}
+
+const cache = new Map<string, PreviewEntry>();
+
+function previewKey(url: string, ref: GitHubPreviewRef): string {
+  let origin = url;
   try {
-    const data = await fetchFromBackend(url);
-    cache.set(url, data);
-    return data;
+    origin = new URL(url).origin;
   } catch {
-    cache.set(url, 'error');
-    return null;
+    // Not parseable as an absolute URL; the raw string still isolates hosts.
+  }
+  return `${origin}|${ref.kind}|${ref.owner}/${ref.repo}|${ref.number ?? ref.sha}`;
+}
+
+function isFresh(e: PreviewEntry, now: number): boolean {
+  return e.ts !== 0 && now - e.ts < PREVIEW_FRESH_MS;
+}
+
+function evictOldest(): void {
+  while (cache.size > PREVIEW_MAX_ENTRIES) {
+    // Map iterates in insertion order and a success re-inserts, so the first
+    // evictable key is the oldest success.
+    const victim = [...cache].find(([, e]) => !e.inflight)?.[0];
+    if (victim === undefined) return;
+    cache.delete(victim);
   }
 }
 
+// request starts (or joins) the single in-flight fetch for `key`.
+function request(
+  key: string,
+  fetcher: () => Promise<GitHubPreviewData>,
+): Promise<GitHubPreviewData | null> {
+  const existing = cache.get(key);
+  if (existing?.inflight) return existing.inflight;
+
+  const entry: PreviewEntry = existing ?? { ts: 0 };
+  // Self-referenced inside the callbacks below; they only run after
+  // initialization, so the binding is always set by then.
+  const inflight: Promise<GitHubPreviewData | null> = fetcher()
+    .then((data) => {
+      // Re-insert so insertion order tracks success recency.
+      cache.delete(key);
+      cache.set(key, { ...entry, data, ts: Date.now(), inflight });
+      return data;
+    })
+    .catch(() => {
+      // Keep the previous success; only mark the attempt time so the next
+      // cycle retries instead of retrying immediately.
+      entry.ts = Date.now();
+      return entry.data ?? null;
+    })
+    .finally(() => {
+      const cur = cache.get(key);
+      if (cur?.inflight === inflight) delete cur.inflight;
+      evictOldest();
+    });
+
+  entry.inflight = inflight;
+  cache.set(key, entry);
+  return inflight;
+}
+
+// loadPreview serves any cached success immediately (page-lifetime behaviour),
+// otherwise joins/starts one request.
+function loadPreview(
+  key: string,
+  fetcher: () => Promise<GitHubPreviewData>,
+): Promise<GitHubPreviewData | null> {
+  const e = cache.get(key);
+  if (e?.data) return Promise.resolve(e.data);
+  if (e?.inflight) return e.inflight;
+  if (e && isFresh(e, Date.now())) return Promise.resolve(null); // recent failure
+  return request(key, fetcher);
+}
+
+// refreshPreview revalidates, unless the last attempt is still inside the
+// freshness window or a request is already in flight.
+function refreshPreview(
+  key: string,
+  fetcher: () => Promise<GitHubPreviewData>,
+): Promise<GitHubPreviewData | null> {
+  const e = cache.get(key);
+  if (e?.inflight) return e.inflight;
+  if (e && isFresh(e, Date.now())) return Promise.resolve(e.data ?? null);
+  return request(key, fetcher);
+}
+
+export function cachedGitHubPreview(url: string): Promise<GitHubPreviewData | null> {
+  const ref = parseGitHubUrl(url);
+  if (!ref) return Promise.resolve(null);
+  return loadPreview(previewKey(url, ref), () => fetchFromBackend(url));
+}
+
 /**
- * Fetches fresh data from the backend, bypassing the in-memory cache.
- * Updates the cache on success; leaves any existing cached value intact on error.
+ * Revalidates the preview for `url`. Concurrent callers share one request and
+ * a failure leaves the last success in place, so a card keeps rendering.
  */
-export async function refreshGitHubPreview(url: string): Promise<GitHubPreviewData | null> {
-  if (!parseGitHubUrl(url)) return null;
-  try {
-    const data = await fetchFromBackend(url);
-    cache.set(url, data);
-    return data;
-  } catch {
-    return null;
-  }
+export function refreshGitHubPreview(url: string): Promise<GitHubPreviewData | null> {
+  const ref = parseGitHubUrl(url);
+  if (!ref) return Promise.resolve(null);
+  return refreshPreview(previewKey(url, ref), () => fetchFromBackend(url));
 }
 
 // ===========================================================================
@@ -296,37 +391,20 @@ async function fetchForgejoFromBackend(url: string, ref: GitHubPreviewRef): Prom
   return mapRawToPreviewData(url, raw, ref);
 }
 
-export async function cachedForgejoPreview(
+export function cachedForgejoPreview(
   url: string,
   hosts: string[],
 ): Promise<GitHubPreviewData | null> {
-  if (cache.has(url)) {
-    const hit = cache.get(url)!;
-    return hit === 'error' ? null : hit;
-  }
   const ref = parseForgejoUrl(url, hosts);
-  if (!ref) return null;
-  try {
-    const data = await fetchForgejoFromBackend(url, ref);
-    cache.set(url, data);
-    return data;
-  } catch {
-    cache.set(url, 'error');
-    return null;
-  }
+  if (!ref) return Promise.resolve(null);
+  return loadPreview(previewKey(url, ref), () => fetchForgejoFromBackend(url, ref));
 }
 
-export async function refreshForgejoPreview(
+export function refreshForgejoPreview(
   url: string,
   hosts: string[],
 ): Promise<GitHubPreviewData | null> {
   const ref = parseForgejoUrl(url, hosts);
-  if (!ref) return null;
-  try {
-    const data = await fetchForgejoFromBackend(url, ref);
-    cache.set(url, data);
-    return data;
-  } catch {
-    return null;
-  }
+  if (!ref) return Promise.resolve(null);
+  return refreshPreview(previewKey(url, ref), () => fetchForgejoFromBackend(url, ref));
 }

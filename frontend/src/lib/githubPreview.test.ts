@@ -17,6 +17,18 @@ async function freshModule() {
   return import('./githubPreview');
 }
 
+// deferred exposes a promise's resolve/reject so a test can hold a fetch
+// open and observe what concurrent callers do while it is in flight.
+function deferred<T>() {
+  let resolve!: (v: T) => void;
+  let reject!: (e: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 describe('parseGitHubUrl', () => {
   it('parses a PR URL', () => {
     const ref = parseGitHubUrl('https://github.com/example-org/example-repo/pull/15');
@@ -227,15 +239,21 @@ describe('cachedGitHubPreview / refreshGitHubPreview', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('refresh bypasses the cache and refetches', async () => {
-    const mod = await freshModule();
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ title: 'Fresh', state: 'open' }));
-    vi.stubGlobal('fetch', fetchMock);
+  it('refresh bypasses the cached value once it is stale', async () => {
+    vi.useFakeTimers();
+    try {
+      const mod = await freshModule();
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ title: 'Fresh', state: 'open' }));
+      vi.stubGlobal('fetch', fetchMock);
 
-    const url = 'https://github.com/o/r/pull/11';
-    await mod.cachedGitHubPreview(url);
-    await mod.refreshGitHubPreview(url);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+      const url = 'https://github.com/o/r/pull/11';
+      await mod.cachedGitHubPreview(url);
+      vi.setSystemTime(Date.now() + mod.PREVIEW_FRESH_MS + 1);
+      await mod.refreshGitHubPreview(url);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('refresh returns null on error and leaves cache intact', async () => {
@@ -329,15 +347,21 @@ describe('cachedForgejoPreview / refreshForgejoPreview', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('refresh refetches and returns mapped data', async () => {
-    const mod = await freshModule();
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ title: 'C', state: 'open' }));
-    vi.stubGlobal('fetch', fetchMock);
-    const url = 'https://code.example.com/o/r/pulls/7';
-    await mod.cachedForgejoPreview(url, hosts);
-    const data = await mod.refreshForgejoPreview(url, hosts);
-    expect(data).toMatchObject({ kind: 'pr', title: '#7 C' });
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+  it('refresh refetches and returns mapped data once stale', async () => {
+    vi.useFakeTimers();
+    try {
+      const mod = await freshModule();
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ title: 'C', state: 'open' }));
+      vi.stubGlobal('fetch', fetchMock);
+      const url = 'https://code.example.com/o/r/pulls/7';
+      await mod.cachedForgejoPreview(url, hosts);
+      vi.setSystemTime(Date.now() + mod.PREVIEW_FRESH_MS + 1);
+      const data = await mod.refreshForgejoPreview(url, hosts);
+      expect(data).toMatchObject({ kind: 'pr', title: '#7 C' });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('refresh returns null for an unknown host', async () => {
@@ -352,5 +376,189 @@ describe('cachedForgejoPreview / refreshForgejoPreview', () => {
     expect(
       await mod.refreshForgejoPreview('https://code.example.com/o/r/pulls/8', hosts),
     ).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FR-11: request coalescing + bounded cache
+// ---------------------------------------------------------------------------
+
+describe('preview request coalescing and bounded cache', () => {
+  const hosts = ['a.example.com', 'b.example.com'];
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it('shares one in-flight request between concurrent loads and refreshes', async () => {
+    const mod = await freshModule();
+    const d = deferred<Response>();
+    const fetchMock = vi.fn().mockReturnValue(d.promise);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const url = 'https://github.com/o/r/pull/1';
+    const pending = [
+      mod.cachedGitHubPreview(url),
+      mod.cachedGitHubPreview(url),
+      mod.cachedGitHubPreview(url),
+      mod.refreshGitHubPreview(url),
+    ];
+    d.resolve(jsonResponse({ title: 'Shared', state: 'open' }));
+    const results = await Promise.all(pending);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    for (const r of results) expect(r).toMatchObject({ title: '#1 Shared' });
+  });
+
+  it('shares one in-flight Forgejo request between concurrent callers', async () => {
+    const mod = await freshModule();
+    const d = deferred<Response>();
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(d.promise));
+
+    const url = 'https://a.example.com/o/r/pulls/1';
+    const pending = [
+      mod.cachedForgejoPreview(url, hosts),
+      mod.refreshForgejoPreview(url, hosts),
+    ];
+    d.resolve(jsonResponse({ title: 'FJ', state: 'open' }));
+    const results = await Promise.all(pending);
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    for (const r of results) expect(r).toMatchObject({ title: '#1 FJ' });
+  });
+
+  it('keys distinct forge hosts separately', async () => {
+    const mod = await freshModule();
+    const fetchMock = vi.fn().mockImplementation((req: string) =>
+      Promise.resolve(
+        jsonResponse({ title: req.includes('a.example.com') ? 'A' : 'B', state: 'open' }),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const a = await mod.cachedForgejoPreview('https://a.example.com/o/r/pulls/1', hosts);
+    const b = await mod.cachedForgejoPreview('https://b.example.com/o/r/pulls/1', hosts);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(a).toMatchObject({ title: '#1 A' });
+    expect(b).toMatchObject({ title: '#1 B' });
+  });
+
+  it('keys distinct resources on one host separately', async () => {
+    const mod = await freshModule();
+    const fetchMock = vi.fn().mockImplementation((req: string) =>
+      Promise.resolve(jsonResponse({ title: `t${req.slice(-1)}`, state: 'open' })),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const pr = await mod.cachedGitHubPreview('https://github.com/o/r/pull/1');
+    const issue = await mod.cachedGitHubPreview('https://github.com/o/r/issues/1');
+    const other = await mod.cachedGitHubPreview('https://github.com/o/r/pull/2');
+    const otherRepo = await mod.cachedGitHubPreview('https://github.com/o/r2/pull/1');
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(pr!.kind).toBe('pr');
+    expect(issue!.kind).toBe('issue');
+    expect(other).not.toBeNull();
+    expect(otherRepo).not.toBeNull();
+  });
+
+  it('normalizes trailing path segments onto one cache key', async () => {
+    const mod = await freshModule();
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ title: 'Same', state: 'open' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const a = await mod.cachedGitHubPreview('https://github.com/o/r/pull/42');
+    const b = await mod.cachedGitHubPreview('https://github.com/o/r/pull/42/files');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(b).toEqual(a);
+  });
+
+  it('dedupes refreshes inside the freshness window and refetches after it', async () => {
+    vi.useFakeTimers();
+    const mod = await freshModule();
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ title: 'W', state: 'open' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const url = 'https://github.com/o/r/pull/3';
+    await mod.cachedGitHubPreview(url);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Three cards revalidating inside the window share the last success.
+    vi.setSystemTime(Date.now() + mod.PREVIEW_FRESH_MS - 1);
+    await mod.refreshGitHubPreview(url);
+    await mod.refreshGitHubPreview(url);
+    await mod.refreshGitHubPreview(url);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(Date.now() + 2);
+    await mod.refreshGitHubPreview(url);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a previous success visible when a refresh fails, and recovers later', async () => {
+    vi.useFakeTimers();
+    const mod = await freshModule();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ title: 'First', state: 'open' }))
+      .mockResolvedValueOnce(jsonResponse({}, false, 502))
+      .mockResolvedValueOnce(jsonResponse({ title: 'Third', state: 'open' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const url = 'https://github.com/o/r/pull/4';
+    expect(await mod.cachedGitHubPreview(url)).toMatchObject({ title: '#4 First' });
+
+    // A failed refresh must not replace or poison the previous success.
+    vi.setSystemTime(Date.now() + mod.PREVIEW_FRESH_MS + 1);
+    expect(await mod.refreshGitHubPreview(url)).toMatchObject({ title: '#4 First' });
+    expect(await mod.cachedGitHubPreview(url)).toMatchObject({ title: '#4 First' });
+
+    // ...and the next cycle retries without a reload.
+    vi.setSystemTime(Date.now() + mod.PREVIEW_FRESH_MS + 1);
+    expect(await mod.refreshGitHubPreview(url)).toMatchObject({ title: '#4 Third' });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not hammer the backend on repeated errors but expires them', async () => {
+    vi.useFakeTimers();
+    const mod = await freshModule();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({}, false, 502))
+      .mockResolvedValue(jsonResponse({ title: 'Recovered', state: 'open' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const url = 'https://github.com/o/r/pull/5';
+    expect(await mod.cachedGitHubPreview(url)).toBeNull();
+    expect(await mod.cachedGitHubPreview(url)).toBeNull();
+    expect(await mod.refreshGitHubPreview(url)).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(Date.now() + mod.PREVIEW_FRESH_MS + 1);
+    expect(await mod.cachedGitHubPreview(url)).toMatchObject({ title: '#5 Recovered' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('bounds the cache with an entry cap, evicting the oldest success', async () => {
+    const mod = await freshModule();
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ title: 'E', state: 'open' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const cap = mod.PREVIEW_MAX_ENTRIES;
+    for (let i = 0; i < cap + 1; i++) {
+      await mod.cachedGitHubPreview(`https://github.com/o/r/pull/${i}`);
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(cap + 1);
+
+    // The newest entry is still cached...
+    await mod.cachedGitHubPreview(`https://github.com/o/r/pull/${cap}`);
+    expect(fetchMock).toHaveBeenCalledTimes(cap + 1);
+
+    // ...while the oldest was evicted and must be refetched.
+    await mod.cachedGitHubPreview('https://github.com/o/r/pull/0');
+    expect(fetchMock).toHaveBeenCalledTimes(cap + 2);
   });
 });
