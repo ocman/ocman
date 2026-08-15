@@ -482,8 +482,8 @@ test('pinned session aligns with grouped session rows', async ({ mockedPage: pag
 
   await page.goto(SESSION_URL);
   const sessionRows = page.getByRole('button', { name: /Fix the login bug/ });
-  const pinnedStatus = sessionRows.nth(0).getByTitle('Done');
-  const groupedStatus = sessionRows.nth(1).getByTitle('Done');
+  const pinnedStatus = sessionRows.nth(0).getByLabel(/^Session status:/);
+  const groupedStatus = sessionRows.nth(1).getByLabel(/^Session status:/);
   await expect(pinnedStatus).toBeVisible({ timeout: 5_000 });
   await expect(groupedStatus).toBeVisible({ timeout: 5_000 });
 

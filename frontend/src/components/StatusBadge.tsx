@@ -43,6 +43,7 @@ export function StatusBadge({ status, compact, seen, pending, draft, titleOverri
       return (
         <span
           className="status-icon-compact status-pending"
+          aria-label="Session status: Waiting for your response"
           title="Waiting for your response"
         >
           <ExclamationIcon />
@@ -53,6 +54,7 @@ export function StatusBadge({ status, compact, seen, pending, draft, titleOverri
       return (
         <span
           className={`status-icon-compact status-error${seen ? ' status-seen' : ''}`}
+          aria-label={`Session status: ${titleOverride || labels[status] || status}`}
           title={titleOverride || labels[status] || status}
         >
           <ExclamationIcon />
@@ -64,6 +66,7 @@ export function StatusBadge({ status, compact, seen, pending, draft, titleOverri
     return (
       <span
         className={`status-dot-compact status-${status}${seen ? ' status-seen' : ''}${draft ? ' has-draft' : ''}`}
+        aria-label={`Session status: ${draft ? 'Unsent draft' : titleOverride || hints[status] || labels[status] || status}`}
         title={draft ? 'Unsent draft' : titleOverride || hints[status] || labels[status] || status}
       />
     );
