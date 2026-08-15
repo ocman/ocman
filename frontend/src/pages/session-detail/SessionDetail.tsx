@@ -681,7 +681,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
         .catch(() => { /* leave the prompt up; the next tick retries */ });
     };
 
-    check();
     const timer = window.setInterval(() => {
       if (!document.hidden) check();
     }, 3000);

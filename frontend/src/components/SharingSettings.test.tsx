@@ -51,7 +51,7 @@ describe('SharingSettings', () => {
     renderUI();
     const toggle = await screen.findByTestId('sharing-toggle');
     expect((toggle as HTMLInputElement).checked).toBe(true);
-    expect(screen.getByText('No shared sessions.')).toBeInTheDocument();
+    expect(await screen.findByText('No shared sessions.')).toBeInTheDocument();
   });
 
   // The relay is configured on the command line, so Settings is the
