@@ -2,6 +2,8 @@ package opencode
 
 import (
 	"context"
+	"errors"
+	"sort"
 	"sync"
 	"time"
 
@@ -290,6 +292,20 @@ const sessionsTTL = 15 * time.Second
 // query.
 const sessionsRefreshInterval = 4 * time.Second
 
+// sessionsReconcileInterval is the longest the snapshot may go without
+// a full aggregate scan. Between reconciliations the refresher only
+// recomputes sessions the event stream marked dirty, which is what
+// takes the ~4.3 s scan on a 12 GB database off the every-few-seconds
+// path (~168 scans/hour down to ~12).
+//
+// It exists because incremental refresh is only as complete as the
+// event stream: a missed event, an event ocman cannot attribute, or a
+// change OpenCode does not announce at all would otherwise never be
+// corrected. Correctness therefore never depends on events or
+// timestamps — it depends on this scan, and the events only decide how
+// quickly a change is picked up in between.
+const sessionsReconcileInterval = 5 * time.Minute
+
 // sessionsFlightKey is the single singleflight slot for the snapshot
 // refresh. One constant key is correct because there is exactly one
 // snapshot; see the one-database note on sessionsSnapshot.
@@ -323,6 +339,12 @@ var (
 	// A successful refresh clears sessionsInvalidated, so ordinary TTL
 	// expiry goes back to the non-blocking path.
 	//
+	// Orthogonal to those three: sessionsDirty/sessionsFullDirty say
+	// *what* a refresh has to recompute. A snapshot can be fresh and
+	// dirty at once — the rows we hold are recent, but the event stream
+	// has told us which of them moved. That read still returns
+	// immediately and recomputes those rows behind the response.
+	//
 	// A failed refresh leaves all of these untouched, which is what
 	// keeps the last good value serving and the refresh retryable.
 	sessionsSnapshot    []db.Session
@@ -343,20 +365,95 @@ var (
 	// core and exhausts the read pool.
 	lastRefreshEnd  time.Time
 	lastRefreshCost time.Duration
+	// sessionsDirty holds the IDs of sessions whose row may have
+	// changed, as reported by the OpenCode event stream. The refresher
+	// drains it by recomputing exactly those rows (db.GetSessionSummary
+	// runs the same projection GetSessions does) and merging them into
+	// the snapshot. sessionsFullDirty is the fail-safe for events that
+	// cannot be attributed to a single session: it forces the next pass
+	// to be a full scan rather than let the pass guess. lastFullRefresh
+	// is when the last full scan finished, which is what schedules the
+	// periodic reconciliation. All three are guarded by sessionsMu.
+	sessionsDirty     = map[string]struct{}{}
+	sessionsFullDirty bool
+	lastFullRefresh   time.Time
 )
 
-// StartSessionsRefresher keeps the unfiltered sessions cache warm by
-// re-running GetSessions("", 0) every sessionsRefreshInterval until
-// ctx is cancelled. With a warm cache, /api/sessions and notify polls
-// read from memory instead of blocking ~5s on the query. The refresh
-// goes through refreshSessions, so it shares the singleflight slot and
-// writes the same snapshot that request handlers read.
+// MarkSessionDirty records that one session's row may have changed, so
+// the next refresh recomputes just that session instead of rescanning
+// the database. Safe to call at event rate: it is one map insert, and
+// repeat marks for the same session collapse into one recomputation.
+//
+// It deliberately does not expire the snapshot. Reads keep serving the
+// last good rows immediately; the refresh happens behind them.
+func MarkSessionDirty(sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	sessionsMu.Lock()
+	sessionsDirty[sessionID] = struct{}{}
+	sessionsMu.Unlock()
+}
+
+// MarkSessionsDirty marks the whole snapshot dirty, forcing the next
+// refresh to be a full scan. This is the honest answer for an event
+// that says something changed but not what: approximating which
+// sessions it touched would put wrong values in front of the user,
+// where a full scan only costs time.
+func MarkSessionsDirty() {
+	sessionsMu.Lock()
+	sessionsFullDirty = true
+	sessionsMu.Unlock()
+}
+
+// takeDirty claims the pending dirty work and clears it. Anything
+// marked after this returns stays queued for the next pass, so a change
+// that lands while a refresh runs is never cleared by that refresh.
+// Callers must hold sessionsMu.
+func takeDirty() (ids []string, full bool) {
+	full = sessionsFullDirty
+	sessionsFullDirty = false
+	ids = make([]string, 0, len(sessionsDirty))
+	for id := range sessionsDirty {
+		ids = append(ids, id)
+	}
+	sessionsDirty = map[string]struct{}{}
+	return ids, full
+}
+
+// restoreDirty puts claimed work back after a failed refresh so the
+// next pass retries it. Callers must not hold sessionsMu.
+func restoreDirty(ids []string, full bool) {
+	sessionsMu.Lock()
+	for _, id := range ids {
+		sessionsDirty[id] = struct{}{}
+	}
+	if full {
+		sessionsFullDirty = true
+	}
+	sessionsMu.Unlock()
+}
+
+// StartSessionsRefresher keeps the unfiltered sessions cache warm every
+// sessionsRefreshInterval until ctx is cancelled. With a warm cache,
+// /api/sessions and notify polls read from memory instead of blocking
+// ~5s on the query. The refresh goes through refreshSessionsIncremental,
+// so it shares the singleflight slot and writes the same snapshot that
+// request handlers read.
+//
+// A pass is incremental: it recomputes the sessions the event stream
+// marked dirty and merges them. It escalates to a full scan when there
+// is no snapshot yet, when something unattributable changed, or when
+// the periodic reconciliation is due — so a tick on an idle machine
+// costs nothing at all, and a missed event is still corrected within
+// sessionsReconcileInterval.
 func StartSessionsRefresher(ctx context.Context, d dbGetSessions) {
 	sessionsRefreshWG.Add(1)
 	go func() {
 		defer sessionsRefreshWG.Done()
 		// Warm immediately so the first request after startup hits cache.
-		refreshSessions(d)
+		// The snapshot is cold, so this pass is a full scan.
+		refreshSessionsIncremental(d)
 		for {
 			// Never spend more than half our time refreshing. On a
 			// multi-GB OpenCode DB the query can take longer than
@@ -380,7 +477,7 @@ func StartSessionsRefresher(ctx context.Context, d dbGetSessions) {
 				// itself via the singleflight slot, so a tick that
 				// arrives while the previous fetch is still running
 				// coalesces instead of piling up.
-				refreshSessions(d)
+				refreshSessionsIncremental(d)
 			}
 		}
 	}()
@@ -469,15 +566,24 @@ func ResetCachesForTests() {
 	sessionsHave = false
 	sessionsExpiresAt = time.Time{}
 	sessionsInvalidated = false
+	sessionsDirty = map[string]struct{}{}
+	sessionsFullDirty = false
 	lastRefreshEnd = time.Time{}
 	lastRefreshCost = 0
+	lastFullRefresh = time.Time{}
 	sessionsMu.Unlock()
 }
 
 // dbGetSessions is the subset of *db.DB used by getSessionsCached.
 // Defined as an interface so tests can stub the read.
+//
+// The two methods run the same projection: GetSessionSummary is
+// GetSessions' expressions with an id predicate, so a row it returns is
+// identical to that session's row in a full scan and can be merged
+// into the snapshot without drift.
 type dbGetSessions interface {
 	GetSessions(directory string, since int64) ([]db.Session, error)
+	GetSessionSummary(sessionID string) (db.Session, error)
 }
 
 // getSessionsCached returns directory and since filtered rows from one
@@ -493,10 +599,18 @@ func getSessionsCached(d dbGetSessions, directory string, since int64) ([]db.Ses
 	sessionsMu.RLock()
 	snapshot, have, expiresAt := sessionsSnapshot, sessionsHave, sessionsExpiresAt
 	invalidated := sessionsInvalidated
+	dirty := len(sessionsDirty) > 0 || sessionsFullDirty
 	sessionsMu.RUnlock()
 
 	if have && !time.Now().After(expiresAt) {
 		sessionsListMetrics.RecordHit(ctx)
+		if dirty {
+			// Fresh but known-changed. Serve now, recompute the changed
+			// sessions behind the response: the work is proportional to
+			// what moved, so there is no reason to make the reader wait
+			// for it.
+			startBackgroundSessionsRefresh(d)
+		}
 		return filterSessions(snapshot, directory, since), nil
 	}
 	sessionsListMetrics.RecordMiss(ctx)
@@ -530,6 +644,17 @@ func getSessionsCached(d dbGetSessions, directory string, since int64) ([]db.Ses
 	return filterSessions(sessions, directory, since), nil
 }
 
+// startBackgroundSessionsRefresh runs one refresh behind the caller.
+// Tracked on sessionsRefreshWG so tests can drain it; production never
+// waits. Concurrent starts coalesce in the singleflight slot.
+func startBackgroundSessionsRefresh(d dbGetSessions) {
+	sessionsRefreshWG.Add(1)
+	go func() {
+		defer sessionsRefreshWG.Done()
+		_, _ = refreshSessionsIncremental(d)
+	}()
+}
+
 // refreshSessions runs the global unfiltered GetSessions query and
 // overwrites the snapshot on success. Concurrent callers coalesce
 // through the one singleflight slot, so an in-flight refresh is never
@@ -551,31 +676,185 @@ func refreshSessions(d dbGetSessions) ([]db.Session, error) {
 		}
 		sessionsMu.RUnlock()
 
-		started := time.Now()
-		sessions, err := d.GetSessions("", 0)
-		if err != nil {
-			return nil, err
-		}
-		done := time.Now()
-		sessionsMu.Lock()
-		// Atomic swap: readers see the whole new slice or the whole
-		// old one, never a partial merge. This data is fresh, so it
-		// also satisfies any pending invalidation — later TTL expiry
-		// goes back to the non-blocking path.
-		sessionsSnapshot = sessions
-		sessionsHave = true
-		sessionsExpiresAt = done.Add(sessionsTTL)
-		sessionsInvalidated = false
-		lastRefreshEnd = done
-		lastRefreshCost = done.Sub(started)
-		sessionsMu.Unlock()
-		return sessions, nil
+		return runFullSessionsRefresh(d)
 	})
 	if err != nil {
 		return nil, err
 	}
 	sessions, _ := v.([]db.Session)
 	return sessions, nil
+}
+
+// refreshSessionsIncremental brings the snapshot up to date with the
+// least work that is still exact. It recomputes the sessions the event
+// stream marked dirty and merges them; it escalates to a full scan when
+// there is nothing to merge into (cold), when a change could not be
+// attributed to a session, when an explicit invalidation is pending, or
+// when the periodic reconciliation is due.
+//
+// It shares refreshSessions' singleflight slot, so an incremental pass
+// and a full one can never run against the snapshot at the same time.
+func refreshSessionsIncremental(d dbGetSessions) ([]db.Session, error) {
+	if afterTopLevelMiss != nil {
+		afterTopLevelMiss()
+	}
+	v, err, _ := sessionsFlight.Do(sessionsFlightKey, func() (interface{}, error) {
+		sessionsMu.Lock()
+		ids, fullDirty := takeDirty()
+		// An explicit invalidation is deliberately NOT a reason to
+		// escalate to a full scan here. It is answered by the blocking
+		// read path (which InvalidateSessionsCache expires the snapshot
+		// for), and that path applies invalidationFloor's rate limit.
+		// Escalating here would run the full scan the floor exists to
+		// defer.
+		full := fullDirty || !sessionsHave ||
+			time.Since(lastFullRefresh) >= sessionsReconcileInterval
+		snapshot := sessionsSnapshot
+		sessionsMu.Unlock()
+
+		if full {
+			sessions, err := runFullSessionsRefresh(d)
+			if err != nil {
+				restoreDirty(ids, fullDirty)
+				return nil, err
+			}
+			return sessions, nil
+		}
+
+		if len(ids) == 0 {
+			// Nothing is known to have changed. Extend the snapshot's
+			// freshness rather than let the TTL lapse into a full scan
+			// that would return the rows we already hold; the periodic
+			// reconciliation above is what bounds how long this can go
+			// on believing the event stream.
+			sessionsMu.Lock()
+			extendSnapshotFreshness()
+			out := sessionsSnapshot
+			sessionsMu.Unlock()
+			return out, nil
+		}
+
+		refreshed := make(map[string]db.Session, len(ids))
+		missing := make(map[string]struct{}, len(ids))
+		for _, id := range ids {
+			s, err := d.GetSessionSummary(id)
+			switch {
+			case errors.Is(err, db.ErrSessionNotFound):
+				// Deleted, or no longer part of the list (a parentless
+				// subagent). Either way the snapshot must lose it.
+				missing[id] = struct{}{}
+			case err != nil:
+				// Requeue everything, including rows already read: this
+				// pass merges nothing, so none of it has landed.
+				restoreDirty(ids, false)
+				return nil, err
+			default:
+				refreshed[id] = s
+			}
+		}
+
+		merged := mergeSessionRows(snapshot, refreshed, missing)
+		sessionsMu.Lock()
+		// Atomic swap, same as the full path: readers see the whole
+		// old slice or the whole new one.
+		sessionsSnapshot = merged
+		sessionsHave = true
+		extendSnapshotFreshness()
+		sessionsMu.Unlock()
+		return merged, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sessions, _ := v.([]db.Session)
+	return sessions, nil
+}
+
+// extendSnapshotFreshness marks the snapshot current for another TTL
+// after an incremental pass, so the TTL lapsing does not send the next
+// read into a full scan that would return rows we already hold.
+//
+// It does nothing while an explicit invalidation is pending: that
+// invalidation expired the snapshot precisely so the next read would
+// block on fresh data, and pushing the expiry back out would swallow
+// it. Only a full scan clears the invalidation. Callers must hold
+// sessionsMu.
+func extendSnapshotFreshness() {
+	if sessionsInvalidated {
+		return
+	}
+	sessionsExpiresAt = time.Now().Add(sessionsTTL)
+}
+
+// runFullSessionsRefresh performs the reconciliation scan and replaces
+// the snapshot on success. Callers must be inside the singleflight slot.
+func runFullSessionsRefresh(d dbGetSessions) ([]db.Session, error) {
+	// Claim the dirty set before the scan starts: everything marked so
+	// far is answered by this scan, and anything marked while it runs
+	// stays queued for the next pass.
+	sessionsMu.Lock()
+	claimed, claimedFull := takeDirty()
+	sessionsMu.Unlock()
+
+	started := time.Now()
+	sessions, err := d.GetSessions("", 0)
+	if err != nil {
+		restoreDirty(claimed, claimedFull)
+		return nil, err
+	}
+	done := time.Now()
+	sessionsMu.Lock()
+	// Atomic swap: readers see the whole new slice or the whole
+	// old one, never a partial merge. This data is fresh, so it
+	// also satisfies any pending invalidation — later TTL expiry
+	// goes back to the non-blocking path.
+	sessionsSnapshot = sessions
+	sessionsHave = true
+	sessionsExpiresAt = done.Add(sessionsTTL)
+	sessionsInvalidated = false
+	lastRefreshEnd = done
+	lastRefreshCost = done.Sub(started)
+	lastFullRefresh = done
+	sessionsMu.Unlock()
+	return sessions, nil
+}
+
+// mergeSessionRows replaces recomputed rows, drops rows the
+// single-session read reported missing, appends sessions the snapshot
+// did not have yet, and restores GetSessions' time_updated DESC order.
+//
+// The sort is stable, so rows sharing a timestamp keep the relative
+// order the last full scan gave them; the periodic reconciliation is
+// what re-derives tie order from the database.
+func mergeSessionRows(snapshot []db.Session, refreshed map[string]db.Session, missing map[string]struct{}) []db.Session {
+	out := make([]db.Session, 0, len(snapshot)+len(refreshed))
+	merged := make(map[string]struct{}, len(refreshed))
+	for _, s := range snapshot {
+		if _, gone := missing[s.ID]; gone {
+			continue
+		}
+		if updated, ok := refreshed[s.ID]; ok {
+			out = append(out, updated)
+			merged[s.ID] = struct{}{}
+			continue
+		}
+		out = append(out, s)
+	}
+	// Whatever is left is new to the snapshot. Appended in id order so
+	// two new rows sharing a timestamp land in a defined position
+	// rather than one map iteration order out of many.
+	added := make([]db.Session, 0, len(refreshed))
+	for id, s := range refreshed {
+		if _, already := merged[id]; !already {
+			added = append(added, s)
+		}
+	}
+	sort.Slice(added, func(i, j int) bool { return added[i].ID < added[j].ID })
+	out = append(out, added...)
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].TimeUpdated > out[j].TimeUpdated
+	})
+	return out
 }
 
 // filterSessions returns a shallow copy so read-time overlays cannot mutate the

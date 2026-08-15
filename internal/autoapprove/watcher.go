@@ -79,6 +79,15 @@ type autoApproveWatcher struct {
 	// to an http.Client with no timeout (SSE streams are long-lived).
 	httpClient *http.Client
 
+	// markSessionDirty records that one session's list row may have
+	// changed, so the snapshot cache recomputes that row instead of
+	// rescanning the database. markSessionsDirty is the fail-safe for
+	// an event that changed something the watcher cannot attribute to a
+	// session. Both default to the opencode package's cache; seams for
+	// tests, which must not touch that package's global state.
+	markSessionDirty  func(sessionID string)
+	markSessionsDirty func()
+
 	// rescanInterval and reconnectDelay are exposed so tests can run
 	// the loops on tight timings without changing the production
 	// constants.
@@ -115,13 +124,15 @@ func newAutoApproveWatcher(svc *Service) *autoApproveWatcher {
 		auth = svc.deps.OpenCodeAuth
 	}
 	w := &autoApproveWatcher{
-		svc:            svc,
-		discoverPorts:  opencode.DiscoverOpenCodePorts,
-		httpClient:     &http.Client{Transport: auth.Transport(http.DefaultTransport)}, // no timeout — SSE is long-lived
-		rescanInterval: autoApproveRescanInterval,
-		reconnectDelay: autoApproveReconnectDelay,
-		subs:           make(map[string]context.CancelFunc),
-		seenSessions:   make(map[string]struct{}),
+		svc:               svc,
+		discoverPorts:     opencode.DiscoverOpenCodePorts,
+		httpClient:        &http.Client{Transport: auth.Transport(http.DefaultTransport)}, // no timeout — SSE is long-lived
+		rescanInterval:    autoApproveRescanInterval,
+		reconnectDelay:    autoApproveReconnectDelay,
+		subs:              make(map[string]context.CancelFunc),
+		seenSessions:      make(map[string]struct{}),
+		markSessionDirty:  opencode.MarkSessionDirty,
+		markSessionsDirty: opencode.MarkSessionsDirty,
 	}
 
 	// Default onPermission routes through Ensure, which
@@ -277,16 +288,54 @@ func (w *autoApproveWatcher) subscribe(ctx context.Context, port string) {
 	}
 }
 
+// markSessionDirtyIfKnown routes an identified session to the snapshot
+// cache. An empty ID is dropped: the caller that cannot name a session
+// must decide whether that means "nothing" or "everything", and only
+// handleSessionDataChanged is in a position to say.
+func (w *autoApproveWatcher) markSessionDirtyIfKnown(sessionID string) {
+	if sessionID == "" || w.markSessionDirty == nil {
+		return
+	}
+	w.markSessionDirty(sessionID)
+}
+
+// handleSessionDataChanged reacts to an upstream message/part mutation
+// or a session deletion. These change the aggregates the session list
+// derives (message count, tokens, cost, last message state) or remove
+// the row outright, so the affected session must be recomputed.
+//
+// An empty sessionID means the payload did not name a session. Rather
+// than attribute the change to a guess, mark the whole snapshot dirty
+// and let the next pass be a full reconciliation.
+func (w *autoApproveWatcher) handleSessionDataChanged(sessionID string) {
+	if sessionID == "" {
+		if w.markSessionsDirty != nil {
+			w.markSessionsDirty()
+		}
+		return
+	}
+	w.markSessionDirtyIfKnown(sessionID)
+}
+
 // handleSessionChanged reacts to an upstream session.updated event.
-// It dedupes on the session ID so per-turn/per-token updates of an
-// already-known session are ignored; only the first sighting of a
-// session ID busts the sessions cache and broadcasts session.changed,
-// which is exactly what makes a freshly-created session appear without
-// waiting out the list-poll / refresher latency.
+//
+// Every update marks the session's row dirty, because every update can
+// change what the list shows for it (title, directory, timestamps,
+// share state, the aggregates behind it). That is cheap: the refresh it
+// schedules recomputes one session, not the database.
+//
+// The broadcast, by contrast, still dedupes on the session ID: only the
+// first sighting busts the sessions cache and broadcasts
+// session.changed, which is what makes a freshly-created session appear
+// without waiting out the list-poll / refresher latency. Per-turn and
+// per-token updates of a known session would otherwise broadcast on
+// every keystroke.
 func (w *autoApproveWatcher) handleSessionChanged(sessionID string) {
 	if sessionID == "" {
 		return
 	}
+	w.markSessionDirtyIfKnown(sessionID)
+
 	w.seenMu.Lock()
 	if _, ok := w.seenSessions[sessionID]; ok {
 		w.seenMu.Unlock()
@@ -416,6 +465,10 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 			}
 		},
 		OnSessionStatus: func(sessionID, statusType string) {
+			// A turn starting or ending rewrites the messages the list
+			// aggregates over, so the row needs recomputing regardless
+			// of whether the adapter is available to record the status.
+			w.markSessionDirtyIfKnown(sessionID)
 			if ocAdapter == nil {
 				return
 			}
@@ -426,6 +479,7 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 			// session.idle is the same edge as session.status=idle, but
 			// OpenCode emits it separately; record it so a missed
 			// status event can't leave the session pinned busy.
+			w.markSessionDirtyIfKnown(sessionID)
 			if ocAdapter != nil {
 				ocAdapter.ObserveSessionStatus(port, statusGeneration, sessionID, "idle")
 				w.broadcastSessionStatus(ocAdapter, port, sessionID, "idle")
@@ -436,7 +490,8 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 				w.svc.deps.BroadcastSessionIdle(string(opencode.PlatformID), sessionID)
 			}
 		},
-		OnSessionChanged: w.handleSessionChanged,
+		OnSessionChanged:     w.handleSessionChanged,
+		OnSessionDataChanged: w.handleSessionDataChanged,
 	}
 
 	// Copy bytes through the tee until the stream ends. io.Copy

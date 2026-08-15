@@ -78,6 +78,17 @@ type Tee struct {
 	// frequently (per turn / token); the consumer is expected to
 	// dedupe (e.g. only act on first-seen session IDs).
 	OnSessionChanged func(sessionID string)
+	// OnSessionDataChanged fires for upstream events that mutate the
+	// rows the session list aggregates over — message and part
+	// create/update/delta/remove — and for session.deleted.
+	//
+	// sessionID is the affected session, or "" when the payload does
+	// not identify one. An empty ID means "something changed, we don't
+	// know where": consumers must treat the whole list as stale rather
+	// than attribute the change to a guess, because a wrong attribution
+	// puts wrong numbers in front of the user while a full
+	// reconciliation only costs time. Optional.
+	OnSessionDataChanged func(sessionID string)
 }
 
 func (t *Tee) Write(p []byte) (int, error) {
@@ -230,6 +241,15 @@ func (t *Tee) dispatchEventInDirectory(eventType, dataJSON, directory string) {
 		t.dispatchSessionStatus(dataJSON)
 	case "session.updated":
 		t.dispatchSessionChanged(dataJSON)
+	case "message.updated", "message.removed",
+		"message.part.updated", "message.part.removed", "message.part.delta":
+		// These change the messages/parts the session list aggregates
+		// over (message count, tokens, cost, last role/finish/error,
+		// the synthesized-terminal flag) without necessarily emitting a
+		// session.updated of their own.
+		t.dispatchSessionDataChanged(messageEventSessionID(dataJSON))
+	case "session.deleted":
+		t.dispatchSessionDataChanged(deletedSessionID(dataJSON))
 	}
 }
 
@@ -548,6 +568,74 @@ func (t *Tee) dispatchSessionChanged(dataJSON string) {
 		return
 	}
 	t.OnSessionChanged(sessionID)
+}
+
+// sessionRefProps is every place OpenCode puts the owning session ID on
+// a message/part/session event: directly on the envelope's properties,
+// or on the nested record the event carries (info for messages and
+// sessions, part for parts).
+type sessionRefProps struct {
+	SessionID  string           `json:"sessionID"`
+	SessionID2 string           `json:"sessionId"`
+	Info       *sessionRefChild `json:"info"`
+	Part       *sessionRefChild `json:"part"`
+	Message    *sessionRefChild `json:"message"`
+}
+
+type sessionRefChild struct {
+	// ID is the record's own id: the session id on a session event, the
+	// message/part id on a message event. Only read where it is known
+	// to be a session id.
+	ID        string `json:"id"`
+	SessionID string `json:"sessionID"`
+}
+
+// parseSessionRef reads the enveloped shape, falling back to the flat
+// one, and returns the zero value when neither parses.
+func parseSessionRef(dataJSON string) sessionRefProps {
+	var envelope struct {
+		Properties *sessionRefProps `json:"properties"`
+	}
+	if err := json.Unmarshal([]byte(dataJSON), &envelope); err == nil && envelope.Properties != nil {
+		return *envelope.Properties
+	}
+	var flat sessionRefProps
+	if err := json.Unmarshal([]byte(dataJSON), &flat); err != nil {
+		return sessionRefProps{}
+	}
+	return flat
+}
+
+// messageEventSessionID resolves the session a message/part event
+// belongs to. It deliberately never falls back to the record's own id:
+// on a message event that is the message id, and treating it as a
+// session id would mark the wrong row dirty.
+func messageEventSessionID(dataJSON string) string {
+	props := parseSessionRef(dataJSON)
+	ids := []string{props.SessionID, props.SessionID2}
+	for _, child := range []*sessionRefChild{props.Info, props.Part, props.Message} {
+		if child != nil {
+			ids = append(ids, child.SessionID)
+		}
+	}
+	return firstNonEmpty(ids...)
+}
+
+// deletedSessionID resolves the session a session.deleted event refers
+// to. Here the nested record IS the session, so its own id counts.
+func deletedSessionID(dataJSON string) string {
+	props := parseSessionRef(dataJSON)
+	id := firstNonEmpty(props.SessionID, props.SessionID2)
+	if id == "" && props.Info != nil {
+		id = firstNonEmpty(props.Info.SessionID, props.Info.ID)
+	}
+	return id
+}
+
+func (t *Tee) dispatchSessionDataChanged(sessionID string) {
+	if t.OnSessionDataChanged != nil {
+		t.OnSessionDataChanged(sessionID)
+	}
 }
 
 // firstNonEmpty returns the first non-empty string from the arguments,

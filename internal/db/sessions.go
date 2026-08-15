@@ -17,10 +17,15 @@ func derefStr(s *string) string {
 	return *s
 }
 
-// GetSessions returns sessions, optionally filtered by directory and/or a minimum timestamp.
-// Uses SQL aggregation to avoid N+1 queries.
-func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
-	query := `
+// sessionListQuery is THE session-list projection. Both the full list
+// scan (GetSessions) and the single-session recomputation
+// (GetSessionSummary) run this exact SQL and differ only in their WHERE
+// clause, so an incremental refresh cannot drift from a full scan: there
+// is one set of expressions, not two. Changing a column here changes
+// both reads at once.
+//
+// Callers append their own ` WHERE ...` / ` ORDER BY ...`.
+const sessionListQuery = `
 		SELECT
 			s.id, s.project_id, s.parent_id, s.title, s.directory,
 			s.time_created, s.time_updated,
@@ -99,6 +104,96 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 			), 0) AS last_synth_terminal
 		FROM session s
 	`
+
+// ErrSessionNotFound reports that a session has no row in the
+// session-list projection — either it does not exist, or it is one of
+// the rows GetSessions drops after the query (a parentless subagent).
+// Both cases mean the same thing to a caller holding a cached list:
+// this session is not in it, so drop it.
+var ErrSessionNotFound = errors.New("session not found in the session list")
+
+// scanSessionRow scans one row of the sessionListQuery projection and
+// applies the post-query derivations GetSessions performs in Go.
+//
+// keep is false for rows the session list drops after the query, so
+// every caller of the projection filters identically. scan is
+// rows.Scan or row.Scan.
+func scanSessionRow(scan func(dest ...any) error) (s Session, keep bool, err error) {
+	var parentID *string
+	var lastRole, lastFinish, lastError *string
+	var lastErrorName, lastErrorMessage *string
+	var lastErrorAt *int64
+	var lastSynthTerminal int
+	err = scan(
+		&s.ID, &s.ProjectID, &parentID, &s.Title, &s.Directory,
+		&s.TimeCreated, &s.TimeUpdated,
+		&s.SummaryAdditions, &s.SummaryDeletions, &s.SummaryFiles,
+		&s.ShareURL,
+		&s.MessageCount,
+		&s.TotalInputTokens, &s.TotalOutputTokens, &s.TotalCost,
+		&lastRole, &lastFinish, &lastError,
+		&lastErrorName, &lastErrorMessage, &lastErrorAt,
+		&lastSynthTerminal,
+	)
+	if err != nil {
+		return Session{}, false, err
+	}
+	s.ParentID = derefStr(parentID)
+	s.DurationMs = s.TimeUpdated - s.TimeCreated
+
+	// Provisional status from the last message. The owning adapter
+	// re-settles it against the live turn signal (see
+	// SettleSessionStatus) before anything user-visible reads it;
+	// that is also where inactive children are filtered out, since
+	// deciding that here would use the un-settled guess.
+	role, finish, lastErr := derefStr(lastRole), derefStr(lastFinish), derefStr(lastError)
+	s.Status = InferSessionStatus(role, finish, lastErr, lastSynthTerminal == 1)
+
+	// Carry error metadata for the notice normalizer.
+	s.LastErrorName = derefStr(lastErrorName)
+	s.LastErrorMessage = derefStr(lastErrorMessage)
+	if lastErrorAt != nil {
+		s.LastErrorAt = *lastErrorAt
+	}
+
+	// Hide parentless sessions whose title marks them as a
+	// subagent (e.g. "(auto-approve subagent)", "(@explore
+	// subagent)"). These are created directly on the OpenCode
+	// port so the parent_id check never catches them, yet
+	// they should never surface as top-level rows. Subagents with
+	// a real parent_id are handled above.
+	if s.ParentID == "" && strings.HasSuffix(s.Title, " subagent)") {
+		return s, false, nil
+	}
+	return s, true, nil
+}
+
+// GetSessionSummary recomputes exactly one row of the session list. It
+// runs sessionListQuery — the same expressions GetSessions uses — with an
+// id predicate, so the result is byte-identical to that session's row in
+// a full scan. This is what lets the snapshot cache refresh a changed
+// session without rescanning the whole database.
+//
+// Returns ErrSessionNotFound when the session has no row in the list.
+func (d *DB) GetSessionSummary(sessionID string) (Session, error) {
+	row := d.db.QueryRow(sessionListQuery+` WHERE s.id = ?`, sessionID)
+	s, keep, err := scanSessionRow(row.Scan)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Session{}, ErrSessionNotFound
+		}
+		return Session{}, err
+	}
+	if !keep {
+		return Session{}, ErrSessionNotFound
+	}
+	return s, nil
+}
+
+// GetSessions returns sessions, optionally filtered by directory and/or a minimum timestamp.
+// Uses SQL aggregation to avoid N+1 queries.
+func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
+	query := sessionListQuery
 	var conditions []string
 	var args []interface{}
 	// Subagent sessions (non-NULL parent_id, conventionally titled
@@ -127,55 +222,14 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 
 	var sessions []Session
 	for rows.Next() {
-		var s Session
-		var parentID *string
-		var lastRole, lastFinish, lastError *string
-		var lastErrorName, lastErrorMessage *string
-		var lastErrorAt *int64
-		var lastSynthTerminal int
-		err := rows.Scan(
-			&s.ID, &s.ProjectID, &parentID, &s.Title, &s.Directory,
-			&s.TimeCreated, &s.TimeUpdated,
-			&s.SummaryAdditions, &s.SummaryDeletions, &s.SummaryFiles,
-			&s.ShareURL,
-			&s.MessageCount,
-			&s.TotalInputTokens, &s.TotalOutputTokens, &s.TotalCost,
-			&lastRole, &lastFinish, &lastError,
-			&lastErrorName, &lastErrorMessage, &lastErrorAt,
-			&lastSynthTerminal,
-		)
+		s, keep, err := scanSessionRow(rows.Scan)
 		if err != nil {
 			log.WithError(err).Warn("failed to scan session row")
 			continue
 		}
-		s.ParentID = derefStr(parentID)
-		s.DurationMs = s.TimeUpdated - s.TimeCreated
-
-		// Provisional status from the last message. The owning adapter
-		// re-settles it against the live turn signal (see
-		// SettleSessionStatus) before anything user-visible reads it;
-		// that is also where inactive children are filtered out, since
-		// deciding that here would use the un-settled guess.
-		role, finish, lastErr := derefStr(lastRole), derefStr(lastFinish), derefStr(lastError)
-		s.Status = InferSessionStatus(role, finish, lastErr, lastSynthTerminal == 1)
-
-		// Hide parentless sessions whose title marks them as a
-		// subagent (e.g. "(auto-approve subagent)", "(@explore
-		// subagent)"). These are created directly on the OpenCode
-		// port so the parent_id check above never catches them, yet
-		// they should never surface as top-level rows. Subagents with
-		// a real parent_id are handled above.
-		if s.ParentID == "" && strings.HasSuffix(s.Title, " subagent)") {
+		if !keep {
 			continue
 		}
-
-		// Carry error metadata for the notice normalizer.
-		s.LastErrorName = derefStr(lastErrorName)
-		s.LastErrorMessage = derefStr(lastErrorMessage)
-		if lastErrorAt != nil {
-			s.LastErrorAt = *lastErrorAt
-		}
-
 		sessions = append(sessions, s)
 	}
 	if err := rows.Err(); err != nil {

@@ -3,6 +3,7 @@ package opencode
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -486,6 +487,7 @@ func TestGetSessionDefaultsCached_ExpiresAfterTTL(t *testing.T) {
 // the most recent `since` argument so tests can assert the cache
 // always queries the unfiltered (since=0) superset.
 type fakeGetSessionsDB struct {
+	noSummaryDB
 	calls     atomic.Int64
 	lastSince atomic.Int64
 	out       []db.Session
@@ -499,6 +501,7 @@ func (f *fakeGetSessionsDB) GetSessions(directory string, since int64) ([]db.Ses
 }
 
 type controlledGetSessionsDB struct {
+	noSummaryDB
 	calls   atomic.Int64
 	started chan struct{}
 
@@ -524,6 +527,16 @@ func (f *controlledGetSessionsDB) set(out []db.Session, err error, block <-chan 
 	f.mu.Lock()
 	f.out, f.err, f.block = out, err, block
 	f.mu.Unlock()
+}
+
+// noSummaryDB satisfies the per-session read for fakes whose tests only
+// exercise the full-scan path. Reaching it means a test took the
+// incremental path without seeding rows for it, so it fails loudly
+// instead of silently returning an empty session.
+type noSummaryDB struct{}
+
+func (noSummaryDB) GetSessionSummary(sessionID string) (db.Session, error) {
+	return db.Session{}, fmt.Errorf("unexpected per-session read for %s", sessionID)
 }
 
 // expireSessionsCache makes the snapshot stale without discarding it,
@@ -566,8 +579,12 @@ func resetSessionsCache() {
 	sessionsSnapshot = nil
 	sessionsHave = false
 	sessionsExpiresAt = time.Time{}
+	sessionsInvalidated = false
+	sessionsDirty = map[string]struct{}{}
+	sessionsFullDirty = false
 	lastRefreshEnd = time.Time{}
 	lastRefreshCost = 0
+	lastFullRefresh = time.Time{}
 	sessionsMu.Unlock()
 }
 
@@ -1119,6 +1136,7 @@ func TestRefreshSessions_RechecksInsideFlight(t *testing.T) {
 // runtime, so we can warm the cache and then simulate the DB stalling
 // out (busy_timeout) on a later refresh.
 type failableGetSessionsDB struct {
+	noSummaryDB
 	mu  sync.Mutex
 	out []db.Session
 	err error
