@@ -218,3 +218,35 @@ func TestOpenRepairsStateDBStampedV42WithPreV42ArchiveTables(t *testing.T) {
 		t.Fatalf("keep = %v, want backfilled local project", keep)
 	}
 }
+
+func TestMigrateV43RejectsPartiallyRepairedArchiveTables(t *testing.T) {
+	raw, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+
+	tx, err := raw.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if err := migrateToV19(tx); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateToV38(tx); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateToV42(tx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`
+		DROP TABLE unarchived_entity;
+		CREATE TABLE unarchived_entity (kind TEXT NOT NULL, entity_key TEXT NOT NULL, unarchived_at INTEGER NOT NULL, PRIMARY KEY (kind, entity_key));
+	`); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateToV43(tx); err == nil {
+		t.Fatal("migrateToV43 succeeded with mismatched archive tables")
+	}
+}
