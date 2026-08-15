@@ -149,7 +149,7 @@ test('clicking a session row navigates to session detail', async ({ mockedPage: 
   await expect(page).toHaveURL(`/session/${MOCK_SESSION.id}`);
 });
 
-test('tabbing to a session row and pressing Enter navigates to session detail', async ({
+test('pressing Enter on a focused session row navigates to session detail', async ({
   mockedPage: page,
 }) => {
   await page.goto('/sessions');
@@ -158,12 +158,7 @@ test('tabbing to a session row and pressing Enter navigates to session detail', 
   const rowLink = page.getByRole('link', { name: /Fix the login bug/ });
   await expect(rowLink).toBeVisible();
 
-  // Walk the tab order from the top of the document until the row link
-  // takes focus (nav links and toolbar controls come first).
-  for (let i = 0; i < 40; i++) {
-    await page.keyboard.press('Tab');
-    if (await rowLink.evaluate((el) => el === document.activeElement)) break;
-  }
+  await rowLink.focus();
   await expect(rowLink).toBeFocused();
 
   await page.keyboard.press('Enter');

@@ -77,6 +77,12 @@ async function installDefaultRoutes(page: Page) {
     }),
   );
 
+  // Mounted once authentication succeeds. Without this stub, the Vite proxy
+  // can return a 401 and immediately send the app back to the login screen.
+  await page.route('/api/mcp/config', (route: Route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ configured: true }) }),
+  );
+
   // Sessions list
   await page.route('/api/sessions*', (route: Route) =>
     route.fulfill({

@@ -22,8 +22,7 @@ test('bypasses auth gate when authRequired=false', async ({ mockedPage: page }) 
   // in the actions-dropdown redesign), so assert on its accessible name.
   await expect(page.getByRole('heading', { level: 1 }).getByRole('img', { name: 'ocman' })).toBeVisible();
   await expect(page.locator('.oc-login')).toHaveCount(0);
-  // Nav tabs should be visible
-  await expect(page.locator('.nav-tab', { hasText: 'Sessions' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Sessions' })).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------
@@ -48,8 +47,7 @@ test.describe('auth required', () => {
     await expect(page.locator('h2.oc-login-title')).toContainText('ocman');
     await expect(page.locator('input[type="password"]')).toBeVisible();
     await expect(page.locator('button.oc-login-submit')).toBeVisible();
-    // Dashboard tabs must NOT be visible
-    await expect(page.locator('.nav-tab')).toHaveCount(0);
+    await expect(page.getByRole('link', { name: 'Sessions' })).toHaveCount(0);
   });
 
   test('submit button is disabled when password field is empty', async ({ mockedPage: page }) => {
@@ -93,7 +91,7 @@ test.describe('auth required', () => {
 
     // The login form should disappear and the dashboard should appear
     await expect(page.locator('.oc-login')).toHaveCount(0, { timeout: 5_000 });
-    await expect(page.locator('.nav-tab', { hasText: 'Sessions' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Sessions' })).toBeVisible();
   });
 
   test('wrong password shows error banner', async ({ mockedPage: page }) => {
@@ -135,7 +133,7 @@ test.describe('auth required', () => {
     const accountNav = page.getByRole('button', { name: 'Account' });
     await expect(accountNav).toBeVisible();
     await accountNav.click();
-    await expect(page.locator('button', { hasText: 'Sign out' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
   });
 
   test('sign-out returns to login page', async ({ mockedPage: page }) => {
@@ -152,7 +150,7 @@ test.describe('auth required', () => {
 
     // Navigate to Settings where the Sign out button lives.
     await page.goto('/settings');
-    await expect(page.locator('.nav-tab', { hasText: 'Settings' })).toHaveClass(/active/);
+    await expect(page.getByRole('link', { name: 'Settings', current: 'page' })).toBeVisible();
 
     // Sign out lives in the "Account" settings group — select it first.
     // Wait for the async-loaded Account nav item to settle before clicking.
