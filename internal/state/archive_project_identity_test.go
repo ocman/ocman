@@ -230,7 +230,7 @@ func TestMigrateV43RejectsPartiallyRepairedArchiveTables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if err := migrateToV19(tx); err != nil {
 		t.Fatal(err)
 	}
