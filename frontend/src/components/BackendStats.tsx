@@ -50,10 +50,35 @@ export function BackendStats() {
           }
         });
     };
-    load(); // Initial load
-    const interval = setInterval(load, 5000);
+    // Polling pauses while the tab is hidden (FR-10): a hidden tab would
+    // otherwise keep issuing ~720 requests/hour forever. Last successful
+    // values stay rendered; visibility return refreshes immediately.
+    let interval: number | null = null;
+    const start = () => {
+      if (interval !== null) return;
+      interval = window.setInterval(load, 5000);
+    };
+    const stop = () => {
+      if (interval === null) return;
+      window.clearInterval(interval);
+      interval = null;
+    };
+    const onVisibility = () => {
+      if (document.hidden) {
+        stop();
+      } else {
+        load();
+        start();
+      }
+    };
+    if (!document.hidden) {
+      load(); // Initial load
+      start();
+    }
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
-      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+      stop();
       abortRef.current?.abort();
     };
   }, [getSystemStats]);
