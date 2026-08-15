@@ -236,6 +236,10 @@ func (r registryRef) PlatformForSession(ctx context.Context, sessionID string) (
 // message scans) can take seconds and would otherwise block the create
 // response. The new session already exists; the index only feeds cached
 // stats, which the background ticker also keeps fresh.
+//
+// A burst of creations does not fan out into concurrent scans:
+// refreshProjectsIndex is singleflighted per owner and each request that
+// lands mid-scan is represented by the one dirty follow-up (FR-8).
 func (s *Server) refreshProjectsIndexAsync() {
 	go runWithRecover("projects-index-async", func() {
 		if err := s.refreshProjectsIndex(); err != nil {
