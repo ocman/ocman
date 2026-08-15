@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -863,5 +864,286 @@ func TestHandleSessionRestartOpencode_RejectsNonLoopback(t *testing.T) {
 
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", rr.Code)
+	}
+}
+
+// --- /api/sessions/notify state overlay (FR-3) ---
+//
+// These tests pin the notify path to the behaviour it had when it ran
+// the full applySessionState overlay. The overlay is expensive (it
+// resolves per-session unread counts through a message aggregate scan)
+// and notify throws every one of those fields away, so notify now uses
+// a narrower overlay. Anything observable must stay identical.
+
+// notifyFixtureSessions returns a fresh fixture covering every branch
+// of notify's eligibility filter and every state.db input that could
+// influence it. A fresh slice per call matters: the state overlay
+// mutates the slice in place, and fakePlatform hands out its backing
+// array directly.
+func notifyFixtureSessions() []db.Session {
+	mk := func(platform, id, title, dir string, updated int64, status db.SessionStatus) db.Session {
+		s := mkSession(platform, id, title, updated)
+		s.Directory = dir
+		s.Status = status
+		return s
+	}
+	perm := mk("fake", "prompt-perm", "needs permission", "/repo/a", 10_000, db.StatusBusy)
+	perm.PendingPermission = true
+	q := mk("fake", "prompt-q-seen", "needs answer", "/repo/b", 10_000, db.StatusBusy)
+	q.PendingQuestion = true
+	return []db.Session{
+		perm,
+		q,
+		mk("fake", "waiting-unseen", "waiting", "/repo/c", 10_000, db.StatusWaiting),
+		mk("fake", "waiting-seen", "waiting seen", "/repo/d", 10_000, db.StatusWaiting),
+		mk("fake", "waiting-stale-seen", "waiting stale seen", "/repo/e", 10_000, db.StatusWaiting),
+		mk("fake", "error-unseen", "errored", "/repo/f", 10_000, db.StatusError),
+		mk("fake", "busy-plain", "busy", "/repo/g", 10_000, db.StatusBusy),
+		mk("fake", "done-unseen", "done", "/repo/h", 10_000, db.StatusDone),
+		mk("fake", "archived-stale", "archived, untouched", "/repo/i", 10_000, db.StatusWaiting),
+		mk("fake", "archived-updated", "archived, touched since", "/repo/j", 10_000, db.StatusError),
+		mk("fake", "pinned-waiting", "pinned", "/repo/k", 10_000, db.StatusWaiting),
+		mk("fake", "child-of-mcp", "mcp child", "/repo/l", 10_000, db.StatusWaiting),
+		// Empty title + directory exercise the projection's omitempty.
+		mk("fake", "bare", "", "", 10_000, db.StatusWaiting),
+		// A second platform proves the merge/sort/limit ordering is
+		// unchanged across adapters.
+		mk("other", "other-waiting", "other machine", "/repo/m", 20_000, db.StatusWaiting),
+		mk("other", "other-done", "other done", "/repo/n", 20_000, db.StatusDone),
+	}
+}
+
+// notifyFixtureState is the state.db seed matching notifyFixtureSessions.
+var notifyFixtureState = stateSetup{
+	// seenAt >= TimeUpdated => Seen; seenAt < TimeUpdated => not seen.
+	seen: []stateRow{
+		{"fake", "prompt-q-seen", 10_000},
+		{"fake", "waiting-seen", 10_000},
+		{"fake", "waiting-stale-seen", 9_999},
+	},
+	// archivedAt >= TimeUpdated stays archived; archivedAt < TimeUpdated
+	// auto-unarchives on read.
+	archived: []stateRow{
+		{"fake", "archived-stale", 20_000},
+		{"fake", "archived-updated", 500},
+	},
+	pinned: []stateRow{{"fake", "pinned-waiting", 0}},
+}
+
+// newNotifyFixtureServer builds a server seeded with the shared notify
+// fixture: two adapters, the state.db rows above, and one MCP child
+// parent link (another applySessionState input notify must not need).
+func newNotifyFixtureServer(t *testing.T) *Server {
+	t.Helper()
+	srv, reg := newSessionsTestServer(t)
+	all := notifyFixtureSessions()
+	var fake, other []db.Session
+	for _, s := range all {
+		if s.Platform == "other" {
+			other = append(other, s)
+			continue
+		}
+		fake = append(fake, s)
+	}
+	reg.Register(&fakePlatform{id: "fake", sessions: fake})
+	reg.Register(&fakePlatform{id: "other", sessions: other})
+	applyStateSetup(t, srv.stateDB, notifyFixtureState)
+	if err := srv.stateDB.InsertChildSession(state.ChildSession{
+		ID: "child-of-mcp", ParentSessionID: "prompt-perm", Platform: "fake",
+	}); err != nil {
+		t.Fatalf("InsertChildSession: %v", err)
+	}
+	return srv
+}
+
+// notifyReference reproduces the pre-FR-3 notify pipeline: the same
+// fan-out, sort, and limit, then the FULL applySessionState overlay,
+// then notify's filter and projection. It is the equivalence oracle —
+// applySessionState is untouched by this change, so whatever it
+// produces here is exactly what notify used to return.
+func notifyReference(t *testing.T, srv *Server, since int64, limit int) []notifyEntry {
+	t.Helper()
+	all := srv.fanOutSessions(context.Background(), "", since, nil)
+	all = sortAndLimitSessions(all, limit)
+	if err := srv.applySessionState(all); err != nil {
+		t.Fatalf("applySessionState: %v", err)
+	}
+	out := make([]notifyEntry, 0, len(all))
+	for i := range all {
+		se := &all[i]
+		hasPrompt := se.PendingPermission || se.PendingQuestion
+		isUnseenTerminal := (se.Status == db.StatusWaiting || se.Status == db.StatusError) && !se.Seen
+		if !hasPrompt && !isUnseenTerminal {
+			continue
+		}
+		out = append(out, notifyEntry{
+			ID:                se.ID,
+			Status:            se.Status,
+			Seen:              se.Seen,
+			PendingPermission: se.PendingPermission,
+			PendingQuestion:   se.PendingQuestion,
+			Title:             se.Title,
+			Directory:         se.Directory,
+		})
+	}
+	return out
+}
+
+func getNotifyJSON(t *testing.T, srv *Server, query string) string {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/notify"+query, nil)
+	rr := httptest.NewRecorder()
+	srv.handleSessionsNotify(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body)
+	}
+	return strings.TrimSpace(rr.Body.String())
+}
+
+// TestHandleSessionsNotify_MatchesFullStateOverlay is the behaviour
+// -equivalence gate: the notify-scoped overlay must produce byte
+// -identical JSON to the full applySessionState overlay across seen,
+// archived, pinned, MCP-parent, prompt, status, and multi-adapter
+// fixtures — for several since/limit combinations.
+func TestHandleSessionsNotify_MatchesFullStateOverlay(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		query string
+		since int64
+		limit int
+	}{
+		{"defaults", "", 0, 500},
+		{"limit cuts before the filter", "?limit=2", 0, 2},
+		{"limit keeps everything", "?limit=100", 0, 100},
+		{"since is forwarded", "?since=5000", 5000, 500},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Two independently seeded servers: the overlay mutates
+			// state.db (auto-unarchive), so the reference run must not
+			// contaminate the handler run.
+			want, err := json.Marshal(notifyReference(t, newNotifyFixtureServer(t), tc.since, tc.limit))
+			if err != nil {
+				t.Fatalf("marshal reference: %v", err)
+			}
+			got := getNotifyJSON(t, newNotifyFixtureServer(t), tc.query)
+			if got != string(want) {
+				t.Errorf("notify JSON mismatch\n got: %s\nwant: %s", got, want)
+			}
+		})
+	}
+}
+
+// TestHandleSessionsNotify_JSONShape pins the wire shape itself: field
+// names, omitempty behaviour, and `[]` (never `null`) for an empty
+// result. The equivalence test compares two renderings of the same Go
+// type, so it cannot catch a tag change.
+func TestHandleSessionsNotify_JSONShape(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	full := mkSession("fake", "full", "titled", 10_000)
+	full.Directory = "/repo/a"
+	full.Status = db.StatusBusy
+	full.PendingPermission = true
+	full.PendingQuestion = true
+	bare := mkSession("fake", "bare", "", 5_000)
+	bare.Status = db.StatusWaiting
+	reg.Register(&fakePlatform{id: "fake", sessions: []db.Session{full, bare}})
+
+	got := getNotifyJSON(t, srv, "")
+	// Both land in the same 5-minute recency bucket, so the sort falls
+	// through to ProjectID ("proj-bare" < "proj-full").
+	want := `[{"id":"bare","status":"waiting","seen":false},` +
+		`{"id":"full","status":"busy","seen":false,"pendingPermission":true,"pendingQuestion":true,"title":"titled","directory":"/repo/a"}]`
+	if got != want {
+		t.Errorf("notify JSON = %s\nwant %s", got, want)
+	}
+
+	empty, _ := newSessionsTestServer(t)
+	if got := getNotifyJSON(t, empty, ""); got != "[]" {
+		t.Errorf("empty notify JSON = %s, want []", got)
+	}
+}
+
+// TestHandleSessionsNotify_AutoUnarchivesUpdatedSession pins the one
+// state.db side effect the old overlay performed on the notify path: a
+// session touched after it was archived is auto-unarchived. notify
+// polls every 10s, so this really did fire here; dropping it would
+// leave such a session archived until the next /api/sessions read.
+func TestHandleSessionsNotify_AutoUnarchivesUpdatedSession(t *testing.T) {
+	srv := newNotifyFixtureServer(t)
+	getNotifyJSON(t, srv, "")
+
+	archived, err := srv.stateDB.ArchivedSessions()
+	if err != nil {
+		t.Fatalf("ArchivedSessions: %v", err)
+	}
+	if _, ok := archived[state.Key{Platform: "fake", SessionID: "archived-updated"}]; ok {
+		t.Error("session updated after archiving must be auto-unarchived by notify")
+	}
+	if _, ok := archived[state.Key{Platform: "fake", SessionID: "archived-stale"}]; !ok {
+		t.Error("session untouched since archiving must stay archived")
+	}
+}
+
+// TestHandleSessionsNotify_IncludesArchivedSessions guards against the
+// tempting "archived sessions can't need attention" optimisation:
+// today they are returned, and the frontend depends on that.
+func TestHandleSessionsNotify_IncludesArchivedSessions(t *testing.T) {
+	srv := newNotifyFixtureServer(t)
+	var got []notifyEntry
+	mustUnmarshal(t, []byte(getNotifyJSON(t, srv, "")), &got)
+	for _, e := range got {
+		if e.ID == "archived-stale" {
+			return
+		}
+	}
+	t.Errorf("archived session missing from notify result: %+v", got)
+}
+
+// countingUnreadPlatform is a fakePlatform that also implements
+// platforms.UnreadCounter, recording each call. Unread counts are the
+// expensive part of the full overlay (a message aggregate scan per
+// unseen session) and notify's projection has no field for them.
+type countingUnreadPlatform struct {
+	fakePlatform
+	mu    sync.Mutex
+	calls int
+}
+
+func (f *countingUnreadPlatform) UnreadCounts(_ context.Context, _ map[string]int64) (map[string]int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls++
+	return map[string]int{}, nil
+}
+
+func (f *countingUnreadPlatform) callCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls
+}
+
+// TestHandleSessionsNotify_SkipsUnreadCounts is the performance
+// contract of FR-3: the notify read must not trigger the unread-count
+// aggregate. The /api/sessions leg is the control — it proves the
+// counter is reachable, so a zero on the notify leg means "not called",
+// not "not wired".
+func TestHandleSessionsNotify_SkipsUnreadCounts(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	waiting := mkSession("fake", "unseen-waiting", "waiting", 10_000)
+	waiting.Status = db.StatusWaiting
+	counter := &countingUnreadPlatform{
+		fakePlatform: fakePlatform{id: "fake", sessions: []db.Session{waiting}},
+	}
+	reg.Register(counter)
+
+	getNotifyJSON(t, srv, "")
+	if n := counter.callCount(); n != 0 {
+		t.Errorf("notify made %d unread-count lookups, want 0", n)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	srv.handleSessions(httptest.NewRecorder(), req)
+	if n := counter.callCount(); n != 1 {
+		t.Errorf("/api/sessions made %d unread-count lookups, want 1 (control)", n)
 	}
 }

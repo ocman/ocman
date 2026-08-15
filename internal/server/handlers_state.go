@@ -283,6 +283,53 @@ func (s *Server) applySessionState(sessions []db.Session) error {
 	return nil
 }
 
+// applyNotifySessionState is the notify-scoped counterpart of
+// applySessionState (FR-3). handleSessionsNotify filters on
+// prompt/status/Seen and projects seven fields, so this computes only
+// Seen — with identical semantics — and preserves the one state.db
+// side effect the full overlay performed on this path: auto-unarchiving
+// a session touched since it was archived.
+//
+// Everything else applySessionState derives is dropped on the floor by
+// the notify projection: pin state, the MCP parent link, the
+// archived-project fallback and host-identity stamping (both only feed
+// the Archived flag, which notify neither reads nor returns — archived
+// sessions are still listed), and the per-session unread counts, which
+// cost a message aggregate scan per unseen session.
+func (s *Server) applyNotifySessionState(sessions []db.Session) error {
+	seen, err := s.stateDB.SeenSessions()
+	if err != nil {
+		return err
+	}
+	archived, err := s.stateDB.ArchivedSessions()
+	if err != nil {
+		return err
+	}
+
+	for i := range sessions {
+		key := state.Key{Platform: sessions[i].Platform, SessionID: sessions[i].ID}
+
+		if seenAtUpdate, ok := seen[key]; ok {
+			sessions[i].SeenTimeUpdated = seenAtUpdate
+			if seenAtUpdate >= sessions[i].TimeUpdated {
+				sessions[i].Seen = true
+			}
+		}
+
+		// Same rule as applySessionState: activity strictly after the
+		// archive click resurfaces the session. notify polls far more
+		// often than the dashboard, so this is a live path, not a
+		// theoretical one.
+		if archivedAtUpdate, ok := archived[key]; ok && sessions[i].TimeUpdated > archivedAtUpdate {
+			if err := s.stateDB.UnarchiveSession(key.Platform, key.SessionID); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 // overlayUnreadCounts asks each platform's optional UnreadCounter for
 // counts at the cutoffs collected by applySessionState, then writes
 // them onto the matching session entries. Errors from a single

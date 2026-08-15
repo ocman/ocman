@@ -123,7 +123,7 @@ func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
 
 	all = sortAndLimitSessions(all, limit)
 
-	if err := s.applySessionState(all); err != nil {
+	if err := s.applyNotifySessionState(all); err != nil {
 		serverError(w, "fetching session state for notify", err)
 		return
 	}
