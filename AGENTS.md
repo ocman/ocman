@@ -389,6 +389,31 @@ minimal and match the surrounding code.
 - **OpenCode port discovery** uses `lsof` to find processes named
   `opencode` listening on TCP, then resolves their cwd. macOS/Linux
   only. Cached with a 10-second TTL.
+- **Session reads go through one snapshot**
+  (`internal/platforms/opencode/models_cache.go`). The full aggregate
+  query in `db.GetSessions` is expensive (~4.3 s on a 12 GB OpenCode
+  DB), so it runs as rarely as correctness allows:
+  - There is **one global snapshot**, not one per directory. A
+    directory-scoped listing filters that slice in Go; `since` is
+    filtered on read for the same reason (a rolling `since` would
+    otherwise leak one cache entry per poll). Filtering always copies,
+    so read-time overlays can never mutate the snapshot.
+  - A **TTL-expired** snapshot is served immediately and revalidated in
+    the background; a slow scan must not become endpoint latency. An
+    **explicitly invalidated** snapshot (`InvalidateSessionsCache`)
+    still forces a synchronous fetch, which is what makes a session
+    created elsewhere appear immediately — don't collapse those two
+    states back together.
+  - The refresher recomputes **only sessions the event stream marked
+    dirty**, via `db.GetSessionSummary`. That single-session read
+    reuses the list query's projection and scan so it cannot drift;
+    if you change one, you change both.
+  - Events are a hint, never the source of truth. An event with no
+    resolvable session id marks the whole snapshot dirty, and a full
+    reconciliation runs every 5 minutes regardless, so deletions and
+    missed events are always corrected.
+  - The cache is package-global and assumes **one local OpenCode
+    database** per process (see "Two databases" above).
 - **Session status** is a closed, typed set — `db.SessionStatus`
   (`busy`, `waiting`, `done`, `error`, `interrupted`), mirrored by the
   exported TS `SessionStatus` union. It is **settled from the agent's own
