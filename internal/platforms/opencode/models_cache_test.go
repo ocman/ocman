@@ -93,12 +93,12 @@ func TestGetRecentModelsCached_ConcurrentRequestsCoalesce(t *testing.T) {
 // The gate pins caller C in the window between its top-level miss and its
 // Do entry. The test:
 //
-//	1. starts caller A, which misses top-level, passes the hook (fillCache
-//	   not yet done, so A proceeds), enters Do, and runs the real DB read;
-//	2. starts caller C, which misses top-level, then blocks IN the hook;
-//	3. lets A finish so it fills the cache and retires the flight key;
-//	4. releases C, which now enters a fresh Do whose re-check finds the
-//	   cache warm and returns without a second DB read.
+//  1. starts caller A, which misses top-level, passes the hook (fillCache
+//     not yet done, so A proceeds), enters Do, and runs the real DB read;
+//  2. starts caller C, which misses top-level, then blocks IN the hook;
+//  3. lets A finish so it fills the cache and retires the flight key;
+//  4. releases C, which now enters a fresh Do whose re-check finds the
+//     cache warm and returns without a second DB read.
 //
 // installRecheckGate deterministically drives a cache function's
 // re-check-inside-flight branch. Usage per test:
@@ -498,9 +498,74 @@ func (f *fakeGetSessionsDB) GetSessions(directory string, since int64) ([]db.Ses
 	return f.out, f.err
 }
 
-func resetSessionsCache() {
+type controlledGetSessionsDB struct {
+	calls   atomic.Int64
+	started chan struct{}
+
+	mu    sync.Mutex
+	out   []db.Session
+	err   error
+	block <-chan struct{}
+}
+
+func (f *controlledGetSessionsDB) GetSessions(_ string, _ int64) ([]db.Session, error) {
+	f.calls.Add(1)
+	f.mu.Lock()
+	out, err, block := f.out, f.err, f.block
+	f.mu.Unlock()
+	if block != nil {
+		f.started <- struct{}{}
+		<-block
+	}
+	return out, err
+}
+
+func (f *controlledGetSessionsDB) set(out []db.Session, err error, block <-chan struct{}) {
+	f.mu.Lock()
+	f.out, f.err, f.block = out, err, block
+	f.mu.Unlock()
+}
+
+// expireSessionsCache makes the snapshot stale without discarding it,
+// so the next read takes the stale-while-revalidate path.
+func expireSessionsCache() {
 	sessionsMu.Lock()
-	sessionsCached = map[sessionsKey]sessionsEntry{}
+	sessionsExpiresAt = time.Now().Add(-time.Second)
+	sessionsMu.Unlock()
+}
+
+// drainSessionsRefresh blocks until every background refresh this
+// package started has finished. Tests use it instead of sleeping, both
+// to assert post-refresh state deterministically and to stop one test's
+// refresh goroutine from writing the global snapshot during the next
+// test. Callers must first release anything those refreshes block on
+// (and cancel any running refresher).
+func drainSessionsRefresh() {
+	sessionsRefreshWG.Wait()
+}
+
+type sessionsResult struct {
+	sessions []db.Session
+	err      error
+}
+
+func readSessionsAsync(d dbGetSessions, directory string) <-chan sessionsResult {
+	done := make(chan sessionsResult, 1)
+	go func() {
+		sessions, err := getSessionsCached(d, directory, 0)
+		done <- sessionsResult{sessions: sessions, err: err}
+	}()
+	return done
+}
+
+func resetSessionsCache() {
+	// Drain first: a background refresh still running from an earlier
+	// test would otherwise repopulate the snapshot we just cleared.
+	drainSessionsRefresh()
+	sessionsMu.Lock()
+	sessionsSnapshot = nil
+	sessionsHave = false
+	sessionsExpiresAt = time.Time{}
 	lastRefreshEnd = time.Time{}
 	lastRefreshCost = 0
 	sessionsMu.Unlock()
@@ -527,6 +592,305 @@ func TestGetSessionsCached_CachesAcrossCalls(t *testing.T) {
 	}
 }
 
+func TestGetSessionsCached_GlobalSnapshotServesExactDirectory(t *testing.T) {
+	resetSessionsCache()
+	t.Cleanup(resetSessionsCache)
+
+	d := &fakeGetSessionsDB{out: []db.Session{
+		{ID: "a-new", Directory: "/a", TimeUpdated: 2000},
+		{ID: "b", Directory: "/b", TimeUpdated: 1500},
+		{ID: "a-old", Directory: "/a", TimeUpdated: 500},
+	}}
+	if _, err := getSessionsCached(d, "", 0); err != nil {
+		t.Fatalf("warm global snapshot: %v", err)
+	}
+
+	got, err := getSessionsCached(d, "/a", 1000)
+	if err != nil {
+		t.Fatalf("directory read: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "a-new" {
+		t.Fatalf("directory read = %#v, want exact-directory rows after since filtering", got)
+	}
+	if calls := d.calls.Load(); calls != 1 {
+		t.Fatalf("DB calls = %d, want one global scan", calls)
+	}
+}
+
+func TestGetSessionsCached_AbsentDirectoryReturnsNonNilEmpty(t *testing.T) {
+	resetSessionsCache()
+	t.Cleanup(resetSessionsCache)
+
+	d := &fakeGetSessionsDB{out: []db.Session{{ID: "a", Directory: "/a"}}}
+	if _, err := getSessionsCached(d, "", 0); err != nil {
+		t.Fatalf("warm global snapshot: %v", err)
+	}
+
+	got, err := getSessionsCached(d, "/missing", 0)
+	if err != nil {
+		t.Fatalf("absent directory: %v", err)
+	}
+	if got == nil || len(got) != 0 {
+		t.Fatalf("absent directory = %#v, want non-nil empty slice", got)
+	}
+	if calls := d.calls.Load(); calls != 1 {
+		t.Fatalf("DB calls = %d, want one global scan", calls)
+	}
+}
+
+func TestGetSessionsCached_StaleReadReturnsWhileBackgroundRefreshRuns(t *testing.T) {
+	resetSessionsCache()
+	t.Cleanup(resetSessionsCache)
+
+	d := &controlledGetSessionsDB{started: make(chan struct{}, 1), out: []db.Session{{ID: "stale"}}}
+	if _, err := getSessionsCached(d, "", 0); err != nil {
+		t.Fatalf("warm: %v", err)
+	}
+	expireSessionsCache()
+	release := make(chan struct{})
+	d.set([]db.Session{{ID: "fresh"}}, nil, release)
+
+	done := readSessionsAsync(d, "")
+	<-d.started
+	select {
+	case result := <-done:
+		if result.err != nil || len(result.sessions) != 1 || result.sessions[0].ID != "stale" {
+			t.Fatalf("stale read = %#v, %v", result.sessions, result.err)
+		}
+		close(release)
+	case <-time.After(100 * time.Millisecond):
+		close(release)
+		<-done
+		t.Fatal("stale read waited for refresh")
+	}
+	// The background refresh must replace the snapshot atomically.
+	drainSessionsRefresh()
+	got, err := getSessionsCached(d, "", 0)
+	if err != nil || len(got) != 1 || got[0].ID != "fresh" {
+		t.Fatalf("after refresh = %#v, %v; want the fresh snapshot", got, err)
+	}
+}
+
+func TestGetSessionsCached_ConcurrentStaleReadsStartOneRefresh(t *testing.T) {
+	resetSessionsCache()
+	t.Cleanup(resetSessionsCache)
+
+	d := &controlledGetSessionsDB{started: make(chan struct{}, 8), out: []db.Session{{ID: "stale"}}}
+	if _, err := getSessionsCached(d, "", 0); err != nil {
+		t.Fatalf("warm: %v", err)
+	}
+	expireSessionsCache()
+	release := make(chan struct{})
+	d.set([]db.Session{{ID: "fresh"}}, nil, release)
+
+	const readers = 8
+	results := make([]<-chan sessionsResult, 0, readers)
+	for i := 0; i < readers; i++ {
+		results = append(results, readSessionsAsync(d, ""))
+	}
+	<-d.started
+	returned := 0
+	deadline := time.After(100 * time.Millisecond)
+	for returned < readers {
+		select {
+		case result := <-results[returned]:
+			if result.err != nil || len(result.sessions) != 1 || result.sessions[0].ID != "stale" {
+				t.Fatalf("stale read %d = %#v, %v", returned, result.sessions, result.err)
+			}
+			returned++
+		case <-deadline:
+			close(release)
+			for ; returned < readers; returned++ {
+				<-results[returned]
+			}
+			t.Fatal("concurrent stale reads waited for refresh")
+		}
+	}
+	if calls := d.calls.Load(); calls != 2 {
+		t.Fatalf("DB calls while refreshing = %d, want warm plus one refresh", calls)
+	}
+	close(release)
+	drainSessionsRefresh()
+}
+
+func TestGetSessionsCached_FailedBackgroundRefreshRetainsStaleAndRetries(t *testing.T) {
+	resetSessionsCache()
+	t.Cleanup(resetSessionsCache)
+
+	d := &controlledGetSessionsDB{started: make(chan struct{}, 8), out: []db.Session{{ID: "stale"}}}
+	if _, err := getSessionsCached(d, "", 0); err != nil {
+		t.Fatalf("warm: %v", err)
+	}
+	expireSessionsCache()
+	releaseFailure := make(chan struct{})
+	d.set(nil, errors.New("database is locked"), releaseFailure)
+
+	done := readSessionsAsync(d, "")
+	<-d.started
+	select {
+	case result := <-done:
+		if result.err != nil || len(result.sessions) != 1 || result.sessions[0].ID != "stale" {
+			t.Fatalf("stale read = %#v, %v", result.sessions, result.err)
+		}
+		close(releaseFailure)
+	case <-time.After(100 * time.Millisecond):
+		close(releaseFailure)
+		<-done
+		t.Fatal("stale read waited for failed refresh")
+	}
+
+	releaseRetry := make(chan struct{})
+	d.set([]db.Session{{ID: "fresh"}}, nil, releaseRetry)
+	// Wait for the failed refresh to retire before proving the next read
+	// retries rather than being served by a still-running flight.
+	drainSessionsRefresh()
+	retry := readSessionsAsync(d, "")
+	<-d.started
+	select {
+	case result := <-retry:
+		if result.err != nil || len(result.sessions) != 1 || result.sessions[0].ID != "stale" {
+			t.Fatalf("retry read = %#v, %v; want retained stale snapshot", result.sessions, result.err)
+		}
+		close(releaseRetry)
+	case <-time.After(100 * time.Millisecond):
+		close(releaseRetry)
+		<-retry
+		t.Fatal("retry read waited for background refresh")
+	}
+	drainSessionsRefresh()
+}
+
+// clearInvalidationFloor moves the last refresh far enough into the
+// past that invalidationFloor no longer defers an invalidation, so a
+// test can exercise the post-floor behaviour directly.
+func clearInvalidationFloor() {
+	sessionsMu.Lock()
+	lastRefreshCost = time.Millisecond
+	lastRefreshEnd = time.Now().Add(-time.Second)
+	sessionsMu.Unlock()
+}
+
+// Explicit invalidation is not ordinary staleness: it means something
+// changed (a session created in another tab, an upstream event), so the
+// next read must block on fresh data instead of serving the snapshot
+// that is known to be missing it. This fails if invalidation is treated
+// as a plain TTL expiry, because then the read returns "old"
+// immediately while the fetch is still running.
+func TestInvalidateSessionsCache_ForcesSynchronousFreshRead(t *testing.T) {
+	resetSessionsCache()
+	t.Cleanup(resetSessionsCache)
+
+	d := &controlledGetSessionsDB{started: make(chan struct{}, 1), out: []db.Session{{ID: "old"}}}
+	if _, err := getSessionsCached(d, "", 0); err != nil {
+		t.Fatalf("warm: %v", err)
+	}
+
+	release := make(chan struct{})
+	d.set([]db.Session{{ID: "new"}}, nil, release)
+	clearInvalidationFloor()
+	InvalidateSessionsCache()
+
+	done := readSessionsAsync(d, "")
+	<-d.started
+	select {
+	case result := <-done:
+		close(release)
+		t.Fatalf("invalidated read returned %#v (%v) before the fetch finished; it must not serve the stale snapshot", result.sessions, result.err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(release)
+
+	result := <-done
+	if result.err != nil || len(result.sessions) != 1 || result.sessions[0].ID != "new" {
+		t.Fatalf("invalidated read = %#v, %v; want the freshly fetched rows", result.sessions, result.err)
+	}
+
+	// The successful refresh clears the invalidation, so plain TTL
+	// expiry is non-blocking again.
+	expireSessionsCache()
+	blockNext := make(chan struct{})
+	d.set([]db.Session{{ID: "newer"}}, nil, blockNext)
+	stale := readSessionsAsync(d, "")
+	<-d.started
+	select {
+	case result := <-stale:
+		if result.err != nil || len(result.sessions) != 1 || result.sessions[0].ID != "new" {
+			t.Fatalf("post-invalidation TTL read = %#v, %v; want the last good snapshot", result.sessions, result.err)
+		}
+		close(blockNext)
+	case <-time.After(100 * time.Millisecond):
+		close(blockNext)
+		<-stale
+		t.Fatal("TTL expiry blocked: the invalidated state outlived its refresh")
+	}
+	drainSessionsRefresh()
+}
+
+// A forced fetch that fails must not turn a serviceable read into an
+// error: the last good snapshot still answers, and the snapshot stays
+// invalidated so the next read tries again.
+func TestInvalidateSessionsCache_ServesStaleWhenForcedFetchFails(t *testing.T) {
+	resetSessionsCache()
+	t.Cleanup(resetSessionsCache)
+
+	d := &controlledGetSessionsDB{started: make(chan struct{}, 1), out: []db.Session{{ID: "good"}}}
+	if _, err := getSessionsCached(d, "", 0); err != nil {
+		t.Fatalf("warm: %v", err)
+	}
+
+	d.set(nil, errors.New("database is locked"), nil)
+	clearInvalidationFloor()
+	InvalidateSessionsCache()
+
+	got, err := getSessionsCached(d, "", 0)
+	if err != nil {
+		t.Fatalf("expected the stale snapshot, got error: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "good" {
+		t.Fatalf("forced-fetch failure = %#v, want the retained 'good' rows", got)
+	}
+
+	// Still invalidated: the retry must fetch again, not serve stale in
+	// the background.
+	before := d.calls.Load()
+	d.set([]db.Session{{ID: "fresh"}}, nil, nil)
+	got, err = getSessionsCached(d, "", 0)
+	if err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "fresh" {
+		t.Fatalf("retry = %#v, want the freshly fetched rows", got)
+	}
+	if calls := d.calls.Load(); calls != before+1 {
+		t.Fatalf("retry DB calls = %d, want exactly one more than %d", calls, before)
+	}
+}
+
+func TestGetSessionsCached_ColdReadWaitsAndReturnsError(t *testing.T) {
+	resetSessionsCache()
+	t.Cleanup(resetSessionsCache)
+
+	release := make(chan struct{})
+	wantErr := errors.New("cold read failed")
+	d := &controlledGetSessionsDB{
+		started: make(chan struct{}, 1),
+		err:     wantErr,
+		block:   release,
+	}
+	done := readSessionsAsync(d, "")
+	<-d.started
+	select {
+	case <-done:
+		close(release)
+		t.Fatal("cold read returned before initial refresh completed")
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(release)
+	if result := <-done; !errors.Is(result.err, wantErr) {
+		t.Fatalf("cold read error = %v, want %v", result.err, wantErr)
+	}
+}
+
 func TestInvalidateSessionsCache_ForcesRefetch(t *testing.T) {
 	resetSessionsCache()
 	t.Cleanup(resetSessionsCache)
@@ -550,12 +914,13 @@ func TestInvalidateSessionsCache_ForcesRefetch(t *testing.T) {
 	if _, err := getSessionsCached(d, "", 0); err != nil {
 		t.Fatal(err)
 	}
+	drainSessionsRefresh()
 	if c := d.calls.Load(); c != 2 {
 		t.Errorf("expected 2 DB calls after invalidation, got %d", c)
 	}
 }
 
-func TestGetSessionsCached_KeyDistinguishesDirectoryOnly(t *testing.T) {
+func TestGetSessionsCached_DirectoriesShareGlobalSnapshot(t *testing.T) {
 	resetSessionsCache()
 	t.Cleanup(resetSessionsCache)
 
@@ -579,10 +944,9 @@ func TestGetSessionsCached_KeyDistinguishesDirectoryOnly(t *testing.T) {
 	if _, err := getSessionsCached(d, "/a", 0); err != nil {
 		t.Fatal(err)
 	}
-	// 2 distinct directories -> 2 DB calls; all the /a calls
-	// regardless of `since` share one cache slot.
-	if c := d.calls.Load(); c != 2 {
-		t.Errorf("expected 2 DB calls (one per directory), got %d", c)
+	// Every directory and since value filters the same global snapshot.
+	if c := d.calls.Load(); c != 1 {
+		t.Errorf("expected 1 global DB call, got %d", c)
 	}
 }
 
@@ -609,9 +973,9 @@ func TestGetSessionsCached_PostFiltersBySince(t *testing.T) {
 
 	// Three sessions spanning a wide time range.
 	d := &fakeGetSessionsDB{out: []db.Session{
-		{ID: "new", TimeUpdated: 2000},
-		{ID: "mid", TimeUpdated: 1500},
-		{ID: "old", TimeUpdated: 500},
+		{ID: "new", Directory: "/repo", TimeUpdated: 2000},
+		{ID: "mid", Directory: "/repo", TimeUpdated: 1500},
+		{ID: "old", Directory: "/repo", TimeUpdated: 500},
 	}}
 
 	// First call warms the cache (since=0 -> all three).
@@ -650,7 +1014,7 @@ func TestGetSessionsCached_ConcurrentRequestsCoalesce(t *testing.T) {
 	resetSessionsCache()
 	t.Cleanup(resetSessionsCache)
 
-	d := &fakeGetSessionsDB{out: []db.Session{{ID: "s"}}}
+	d := &fakeGetSessionsDB{out: []db.Session{{ID: "s", Directory: "/repo"}}}
 
 	const N = 32
 	var wg sync.WaitGroup
@@ -711,7 +1075,7 @@ func TestRefreshSessions_RechecksInsideFlight(t *testing.T) {
 	defer reset()
 
 	blockA := make(chan struct{})
-	d := &fakeGetSessionsDB{out: []db.Session{{ID: "s"}}}
+	d := &fakeGetSessionsDB{out: []db.Session{{ID: "s", Directory: "/repo"}}}
 	dGated := &blockingGetSessionsDB{
 		fakeGetSessionsDB: d,
 		block:             blockA,
@@ -780,20 +1144,15 @@ func TestGetSessionsCached_ServesStaleOnError(t *testing.T) {
 	resetSessionsCache()
 	t.Cleanup(resetSessionsCache)
 
-	d := &failableGetSessionsDB{out: []db.Session{{ID: "good"}}}
+	d := &failableGetSessionsDB{out: []db.Session{{ID: "good", Directory: "/repo"}}}
 
 	// Warm the cache with a good value.
 	if _, err := getSessionsCached(d, "/repo", 0); err != nil {
 		t.Fatalf("warm: %v", err)
 	}
 
-	// Expire the entry and make the DB start failing.
-	key := sessionsKey{directory: "/repo"}
-	sessionsMu.Lock()
-	e := sessionsCached[key]
-	e.expiresAt = time.Now().Add(-time.Second)
-	sessionsCached[key] = e
-	sessionsMu.Unlock()
+	// Expire the snapshot and make the DB start failing.
+	expireSessionsCache()
 	d.setErr(errors.New("database is locked"))
 
 	got, err := getSessionsCached(d, "/repo", 0)
@@ -803,6 +1162,16 @@ func TestGetSessionsCached_ServesStaleOnError(t *testing.T) {
 	if len(got) != 1 || got[0].ID != "good" {
 		t.Fatalf("expected stale 'good' value, got %#v", got)
 	}
+	// The failed background refresh must leave the stale value serving.
+	drainSessionsRefresh()
+	got, err = getSessionsCached(d, "/repo", 0)
+	if err != nil {
+		t.Fatalf("after failed refresh, expected stale value, got error: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "good" {
+		t.Fatalf("after failed refresh: expected stale 'good' value, got %#v", got)
+	}
+	drainSessionsRefresh()
 }
 
 func TestGetSessionsCached_ExpiresAfterTTL(t *testing.T) {
@@ -814,17 +1183,13 @@ func TestGetSessionsCached_ExpiresAfterTTL(t *testing.T) {
 		t.Fatalf("first call: %v", err)
 	}
 
-	// Force the cached entry to expire.
-	key := sessionsKey{directory: "/repo"}
-	sessionsMu.Lock()
-	e := sessionsCached[key]
-	e.expiresAt = time.Now().Add(-time.Second)
-	sessionsCached[key] = e
-	sessionsMu.Unlock()
+	// Force the snapshot to expire.
+	expireSessionsCache()
 
 	if _, err := getSessionsCached(d, "/repo", 0); err != nil {
 		t.Fatalf("second call: %v", err)
 	}
+	drainSessionsRefresh()
 	if c := d.calls.Load(); c != 2 {
 		t.Errorf("expected 2 DB calls across the TTL boundary, got %d", c)
 	}
@@ -860,10 +1225,10 @@ func TestStartSessionsRefresher_WarmsCacheOnStart(t *testing.T) {
 	waitFor(t, time.Second, func() bool { return d.calls.Load() >= 1 })
 
 	sessionsMu.RLock()
-	e, ok := sessionsCached[sessionsKey{directory: ""}]
+	snapshot, have := sessionsSnapshot, sessionsHave
 	sessionsMu.RUnlock()
-	if !ok || len(e.sessions) != 1 || e.sessions[0].ID != "s1" {
-		t.Fatalf("expected warm cache entry for the unfiltered key, got ok=%v entry=%#v", ok, e)
+	if !have || len(snapshot) != 1 || snapshot[0].ID != "s1" {
+		t.Fatalf("expected a warm global snapshot, got have=%v snapshot=%#v", have, snapshot)
 	}
 }
 
@@ -951,6 +1316,7 @@ func TestInvalidateSessionsCache_FloorsOnQueryCost(t *testing.T) {
 	if _, err := getSessionsCached(d, "", 0); err != nil {
 		t.Fatalf("post-floor read: %v", err)
 	}
+	drainSessionsRefresh()
 	if c := d.calls.Load(); c != 2 {
 		t.Errorf("calls = %d, want 2: invalidation stopped working", c)
 	}

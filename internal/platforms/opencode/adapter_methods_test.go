@@ -45,6 +45,9 @@ func TestAdapter_Sessions_ReturnsDBRows(t *testing.T) {
 	restore := setDiscoverPortsImplForTests(func() map[string]string { return nil })
 	resetPortCacheForTests()
 	t.Cleanup(func() { restore(); resetPortCacheForTests() })
+	// Seeded DB: force the listing below to read it rather than an
+	// earlier test's snapshot.
+	InvalidateSessionsCache()
 
 	a := New(database, nil)
 	sessions, err := a.Sessions(context.Background(), "", 0)

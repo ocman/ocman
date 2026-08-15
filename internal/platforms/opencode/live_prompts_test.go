@@ -29,6 +29,10 @@ func TestAdapterLivePromptsBackSessionFlagsAndListingWithoutFanout(t *testing.T)
 	defer server.Close()
 	withTestPort(t, dir, strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
 
+	// Seeded DB: force the listing below to read it rather than an
+	// earlier test's snapshot.
+	InvalidateSessionsCache()
+
 	a := New(newTestDBWithSession(t, sid, dir), nil)
 	a.ObservePromptAsked("", dir, "permission", platforms.LivePrompt{
 		"id": "perm-1", "sessionID": sid, "permission": "Bash",

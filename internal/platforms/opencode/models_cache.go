@@ -58,7 +58,13 @@ func init() {
 	telemetry.RegisterCacheSizeGauge("opencode.sessions_list", func() int64 {
 		sessionsMu.RLock()
 		defer sessionsMu.RUnlock()
-		return int64(len(sessionsCached))
+		// One global snapshot, so this is 0 or 1 — same shape as the
+		// recent_models gauge above. A stale snapshot still counts: it
+		// is retained and served while revalidation runs.
+		if !sessionsHave {
+			return 0
+		}
+		return 1
 	})
 }
 
@@ -255,17 +261,15 @@ func getSessionDefaultsCached(d dbSessionDefaults, excludeSessionID, directory s
 //
 // The TTL (sessionsTTL, below) is the trade-off: short enough
 // that "I started a new session in another tab" feels instant,
-// long enough that the 5s poll cycle hits the cache. The cache
-// is keyed by directory only — directory-filtered listings (the
-// project drill-down view) and the global listing are
-// independent, but the `since` filter is applied to the cached
-// (unfiltered) slice in Go so callers passing a rolling
-// `Date.now() - LOOKBACK` value don't blow up the keyspace
-// (each poll would otherwise be a fresh key, leaking ~one map
-// entry per poll forever — see the heap-growth investigation
-// in spec/perf-notes). The post-filter is cheap: a single
-// integer compare per row, applied to a slice that's already
-// in cache.
+// long enough that the 5s poll cycle hits the cache. One global
+// snapshot serves every directory: the directory and `since`
+// filters are applied to that slice in Go, so N project views
+// cost N in-memory scans rather than N full aggregate queries,
+// and a caller passing a rolling `Date.now() - LOOKBACK` value
+// can't grow the cache at all (there is nothing to key — see the
+// heap-growth investigation in spec/perf-notes). The post-filter
+// is cheap: a couple of compares per row over a slice that's
+// already in memory.
 //
 // Subsequent stats overlay (live connection, pending prompts)
 // still runs uncached because it depends on transient OpenCode
@@ -281,24 +285,56 @@ func getSessionDefaultsCached(d dbSessionDefaults, excludeSessionID, directory s
 const sessionsTTL = 15 * time.Second
 
 // sessionsRefreshInterval is how often the background refresher warms
-// the unfiltered ("") sessions cache. Kept below sessionsTTL so the
-// entry never goes cold between refreshes; reads are then always a
-// cache hit and never block on the query.
+// the snapshot. Kept below sessionsTTL so it never goes cold between
+// refreshes; reads are then always a cache hit and never block on the
+// query.
 const sessionsRefreshInterval = 4 * time.Second
 
-type sessionsKey struct {
-	directory string
-}
-
-type sessionsEntry struct {
-	sessions  []db.Session
-	expiresAt time.Time
-}
+// sessionsFlightKey is the single singleflight slot for the snapshot
+// refresh. One constant key is correct because there is exactly one
+// snapshot; see the one-database note on sessionsSnapshot.
+const sessionsFlightKey = "sessions"
 
 var (
-	sessionsMu     sync.RWMutex
-	sessionsCached = map[sessionsKey]sessionsEntry{}
-	sessionsFlight singleflight.Group
+	sessionsMu sync.RWMutex
+	// sessionsSnapshot is THE session list: one global, unfiltered
+	// []db.Session that every read filters in memory. It is a package
+	// global rather than a keyed cache because ocman opens exactly one
+	// local OpenCode database per process (AGENTS.md, "Two databases"),
+	// so a per-source key would only ever hold one entry. Keying it by
+	// the dbGetSessions value would additionally panic for a
+	// non-comparable implementation.
+	//
+	// Three states, in order of how much a read is allowed to do:
+	//
+	//	!sessionsHave                  cold  — read waits, error surfaces
+	//	expired                        stale — read serves this snapshot,
+	//	                                       one background refresh runs
+	//	expired && sessionsInvalidated dirty — read blocks on a fresh
+	//	                                       fetch (falling back to this
+	//	                                       snapshot only if it fails)
+	//
+	// The dirty state exists because TTL expiry and explicit
+	// invalidation are not the same event. Expiry says "this might be
+	// slightly old", which is what stale-while-revalidate is for.
+	// InvalidateSessionsCache says "something changed" — a session
+	// created in another tab or by an upstream event — and serving the
+	// old snapshot there would hide the new session until a later poll.
+	// A successful refresh clears sessionsInvalidated, so ordinary TTL
+	// expiry goes back to the non-blocking path.
+	//
+	// A failed refresh leaves all of these untouched, which is what
+	// keeps the last good value serving and the refresh retryable.
+	sessionsSnapshot    []db.Session
+	sessionsHave        bool
+	sessionsExpiresAt   time.Time
+	sessionsInvalidated bool
+	sessionsFlight      singleflight.Group
+	// sessionsRefreshWG tracks the refresh goroutines this package
+	// spawns (the background revalidation and the refresher loop) so
+	// tests can drain them deterministically instead of sleeping.
+	// Production never waits on it.
+	sessionsRefreshWG sync.WaitGroup
 	// lastRefreshEnd / lastRefreshCost record when the most recent
 	// successful unfiltered refresh finished and what it cost. Both are
 	// guarded by sessionsMu. They exist so the query's own cost can rate
@@ -313,12 +349,14 @@ var (
 // re-running GetSessions("", 0) every sessionsRefreshInterval until
 // ctx is cancelled. With a warm cache, /api/sessions and notify polls
 // read from memory instead of blocking ~5s on the query. The refresh
-// goes through getSessionsCached so it shares the singleflight slot
-// and writes the same cache entry that request handlers read.
+// goes through refreshSessions, so it shares the singleflight slot and
+// writes the same snapshot that request handlers read.
 func StartSessionsRefresher(ctx context.Context, d dbGetSessions) {
+	sessionsRefreshWG.Add(1)
 	go func() {
+		defer sessionsRefreshWG.Done()
 		// Warm immediately so the first request after startup hits cache.
-		refreshSessions(d, "")
+		refreshSessions(d)
 		for {
 			// Never spend more than half our time refreshing. On a
 			// multi-GB OpenCode DB the query can take longer than
@@ -342,7 +380,7 @@ func StartSessionsRefresher(ctx context.Context, d dbGetSessions) {
 				// itself via the singleflight slot, so a tick that
 				// arrives while the previous fetch is still running
 				// coalesces instead of piling up.
-				refreshSessions(d, "")
+				refreshSessions(d)
 			}
 		}
 	}()
@@ -376,7 +414,7 @@ func invalidationFloor() time.Time {
 	return lastRefreshEnd.Add(lastRefreshCost)
 }
 
-// InvalidateSessionsCache marks every cached sessions entry as expired
+// InvalidateSessionsCache marks the cached sessions snapshot as expired
 // so the next getSessionsCached read fetches fresh data. It does NOT
 // delete the entries: the last good value is retained for the
 // stale-on-busy fallback if the fresh fetch stalls on the live DB.
@@ -393,14 +431,16 @@ func invalidationFloor() time.Time {
 // anyway.
 func InvalidateSessionsCache() {
 	sessionsMu.Lock()
-	floor := invalidationFloor()
-	for k, e := range sessionsCached {
-		// Only ever bring an expiry forward, never push it back.
-		if floor.Before(e.expiresAt) {
-			e.expiresAt = floor
-			sessionsCached[k] = e
-		}
+	// Only ever bring the expiry forward, never push it back.
+	if floor := invalidationFloor(); sessionsHave && floor.Before(sessionsExpiresAt) {
+		sessionsExpiresAt = floor
 	}
+	// Mark it dirty, not merely stale: the next read that finds this
+	// snapshot expired must block on a fresh fetch rather than serve it
+	// and revalidate in the background. Set even while the floor still
+	// holds the snapshot fresh, so the fetch happens as soon as the
+	// floor passes.
+	sessionsInvalidated = true
 	sessionsMu.Unlock()
 }
 
@@ -412,6 +452,10 @@ func InvalidateSessionsCache() {
 // reach it without a circular import. Production code never needs it
 // — the TTLs handle eventual freshness on their own.
 func ResetCachesForTests() {
+	// Wait out any background refresh first, or it would repopulate the
+	// snapshot we are about to clear.
+	sessionsRefreshWG.Wait()
+
 	recentModelsMu.Lock()
 	recentModelsCached = recentModelsEntry{}
 	recentModelsMu.Unlock()
@@ -421,7 +465,10 @@ func ResetCachesForTests() {
 	sessionDefaultsMu.Unlock()
 
 	sessionsMu.Lock()
-	sessionsCached = map[sessionsKey]sessionsEntry{}
+	sessionsSnapshot = nil
+	sessionsHave = false
+	sessionsExpiresAt = time.Time{}
+	sessionsInvalidated = false
 	lastRefreshEnd = time.Time{}
 	lastRefreshCost = 0
 	sessionsMu.Unlock()
@@ -433,90 +480,92 @@ type dbGetSessions interface {
 	GetSessions(directory string, since int64) ([]db.Session, error)
 }
 
-// getSessionsCached returns a (possibly cached) result of
-// d.GetSessions(directory, 0), then applies the `since` filter
-// in Go. Concurrent callers on the same directory share a single
+// getSessionsCached returns directory and since filtered rows from one
+// global d.GetSessions("", 0) snapshot. Concurrent refreshes share one
 // underlying query via singleflight.
 //
-// `since` is intentionally NOT part of the cache key. The
-// frontend's notify poller passes Date.now() - LOOKBACK on every
-// tick, so a since-keyed cache would never hit and would leak
-// one map entry per poll. By caching the unfiltered slice and
-// filtering on read, every poll within the TTL window hits cache
-// and the keyspace stays bounded by the number of distinct
-// directories (a small finite set: "" + per-project-detail).
-//
-// The DB query for since=0 returns a small superset of any
-// since>0 query; cost is dominated by the join, not the row
-// count, so this is effectively free vs. the previous behaviour.
-//
-// The returned slice is shared with other cache readers; callers
-// must NOT mutate it. The OpenCode adapter only ever appends
-// per-session metadata to a copy of each Session struct, never
-// to the slice itself, so this is safe in practice. If a future
-// caller needs to mutate the result, copy it first.
+// Which of the three snapshot states applies decides whether this
+// blocks; see the state table on sessionsSnapshot.
 func getSessionsCached(d dbGetSessions, directory string, since int64) ([]db.Session, error) {
 	ctx := context.Background()
-	key := sessionsKey{directory: directory}
 
-	// Read whatever's cached, fresh or stale, in one lock.
+	// Read the snapshot and its state, fresh or stale, in one lock.
 	sessionsMu.RLock()
-	e, have := sessionsCached[key]
+	snapshot, have, expiresAt := sessionsSnapshot, sessionsHave, sessionsExpiresAt
+	invalidated := sessionsInvalidated
 	sessionsMu.RUnlock()
 
-	if have && !time.Now().After(e.expiresAt) {
+	if have && !time.Now().After(expiresAt) {
 		sessionsListMetrics.RecordHit(ctx)
-		return filterSessionsBySince(e.sessions, since), nil
+		return filterSessions(snapshot, directory, since), nil
 	}
 	sessionsListMetrics.RecordMiss(ctx)
+	if have && !invalidated {
+		// Stale-while-revalidate: the last good snapshot answers now,
+		// one background refresh (singleflighted, so concurrent stale
+		// readers share it) replaces it later. A failed refresh leaves
+		// the snapshot expired, so the next read retries.
+		sessionsRefreshWG.Add(1)
+		go func() {
+			defer sessionsRefreshWG.Done()
+			_, _ = refreshSessions(d)
+		}()
+		return filterSessions(snapshot, directory, since), nil
+	}
 
-	sessions, err := refreshSessions(d, directory)
+	// Cold or explicitly invalidated: this read waits for fresh data,
+	// so a session created elsewhere shows up on the very next request.
+	sessions, err := refreshSessions(d)
 	if err != nil {
 		// Stale-on-busy: the live OpenCode DB can stall a read on the
 		// WAL busy_timeout (multi-GB file, many concurrent writers).
 		// Rather than fail the poll, serve the last good value if we
-		// have one. The background refresher keeps trying, so this
-		// only papers over transient contention.
+		// have one; the snapshot stays invalidated, so the next read
+		// tries again.
 		if have {
-			return filterSessionsBySince(e.sessions, since), nil
+			return filterSessions(snapshot, directory, since), nil
 		}
 		return nil, err
 	}
-	return filterSessionsBySince(sessions, since), nil
+	return filterSessions(sessions, directory, since), nil
 }
 
-// refreshSessions runs the unfiltered GetSessions query for directory
-// and overwrites the cache entry on success. Concurrent callers on the
-// same directory coalesce through the singleflight slot, so an
-// in-flight refresh is never duplicated. The cache entry is only
-// replaced on success, so a slow/failed fetch leaves the previous good
-// value in place for getSessionsCached's stale-on-busy fallback.
-func refreshSessions(d dbGetSessions, directory string) ([]db.Session, error) {
-	key := sessionsKey{directory: directory}
+// refreshSessions runs the global unfiltered GetSessions query and
+// overwrites the snapshot on success. Concurrent callers coalesce
+// through the one singleflight slot, so an in-flight refresh is never
+// duplicated. The snapshot is only replaced on success, so a
+// slow/failed fetch leaves the previous good value in place for
+// getSessionsCached's stale-on-busy fallback.
+func refreshSessions(d dbGetSessions) ([]db.Session, error) {
 	if afterTopLevelMiss != nil {
 		afterTopLevelMiss()
 	}
-	v, err, _ := sessionsFlight.Do(directory, func() (interface{}, error) {
+	v, err, _ := sessionsFlight.Do(sessionsFlightKey, func() (interface{}, error) {
 		// Re-check inside the flight slot: a concurrent caller may
 		// have just refreshed it.
 		sessionsMu.RLock()
-		if e, ok := sessionsCached[key]; ok && !time.Now().After(e.expiresAt) {
+		if sessionsHave && !time.Now().After(sessionsExpiresAt) {
+			out := sessionsSnapshot
 			sessionsMu.RUnlock()
-			return e.sessions, nil
+			return out, nil
 		}
 		sessionsMu.RUnlock()
 
 		started := time.Now()
-		sessions, err := d.GetSessions(directory, 0)
+		sessions, err := d.GetSessions("", 0)
 		if err != nil {
 			return nil, err
 		}
 		done := time.Now()
 		sessionsMu.Lock()
-		sessionsCached[key] = sessionsEntry{
-			sessions:  sessions,
-			expiresAt: done.Add(sessionsTTL),
-		}
+		// Atomic swap: readers see the whole new slice or the whole
+		// old one, never a partial merge. This data is fresh, so it
+		// also satisfies any pending invalidation — later TTL expiry
+		// goes back to the non-blocking path.
+		sessionsSnapshot = sessions
+		sessionsHave = true
+		sessionsExpiresAt = done.Add(sessionsTTL)
+		sessionsInvalidated = false
 		lastRefreshEnd = done
 		lastRefreshCost = done.Sub(started)
 		sessionsMu.Unlock()
@@ -529,22 +578,18 @@ func refreshSessions(d dbGetSessions, directory string) ([]db.Session, error) {
 	return sessions, nil
 }
 
-// filterSessionsBySince returns the subset of `sessions` whose
-// TimeUpdated is >= since. When since <= 0 the input slice is
-// returned unchanged (no allocation). The input is sorted by
-// time_updated DESC so we could short-circuit on the first
-// non-matching row, but a linear scan over a few hundred rows
-// is below the noise floor and the explicit filter is easier
-// to reason about under future query changes.
-func filterSessionsBySince(sessions []db.Session, since int64) []db.Session {
-	if since <= 0 {
-		return sessions
-	}
+// filterSessions returns a shallow copy so read-time overlays cannot mutate the
+// snapshot. make preserves [] rather than nil when no rows match.
+func filterSessions(sessions []db.Session, directory string, since int64) []db.Session {
 	out := make([]db.Session, 0, len(sessions))
 	for _, s := range sessions {
-		if s.TimeUpdated >= since {
-			out = append(out, s)
+		if directory != "" && s.Directory != directory {
+			continue
 		}
+		if since > 0 && s.TimeUpdated < since {
+			continue
+		}
+		out = append(out, s)
 	}
 	return out
 }
