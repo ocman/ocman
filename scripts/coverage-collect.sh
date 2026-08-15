@@ -67,7 +67,7 @@ collect_go() {
 		exit 1
 	fi
 	# shellcheck disable=SC2086 # word splitting is the point
-	go test $pkgs -coverpkg=./internal/... -coverprofile=coverage/go.raw.out -covermode=atomic
+	go test $pkgs -count=1 -coverpkg=./internal/... -coverprofile=coverage/go.raw.out -covermode=atomic
 	# Drop generated files (e.g. *.pb.go) from the profile; the mode
 	# header line (first line) is preserved.
 	grep -vE '\.pb\.go:' coverage/go.raw.out > coverage/go.out
