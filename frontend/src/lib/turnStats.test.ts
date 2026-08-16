@@ -88,6 +88,42 @@ describe('computeTurnStats — completion', () => {
   });
 });
 
+describe('computeTurnStats — prompt cache', () => {
+  function cacheTurnMessages(previousCache?: { read?: number; write?: number }, currentCache?: { read?: number; write?: number }) {
+    return [
+      makeMessage('u1', { role: 'user' }, 1),
+      makeMessage('a1', { role: 'assistant', finish: 'stop', tokens: { input: 10, output: 1, cache: previousCache } }, 2),
+      makeMessage('u2', { role: 'user' }, 3),
+      makeMessage('a2', { role: 'assistant', finish: 'stop', tokens: { input: 10, output: 1, cache: currentCache } }, 4),
+    ];
+  }
+
+  it('marks a completed turn that rebuilds a previously used prompt cache', () => {
+    const stats = computeTurnStats(cacheTurnMessages({ read: 100 }, { read: 0, write: 80 }), []);
+
+    expect(stats.get('a2')?.promptCacheRebuilt).toBe(true);
+  });
+
+  it.each([
+    ['first cache creation', cacheTurnMessages(undefined, { read: 0, write: 80 })],
+    ['missing current cache metrics', cacheTurnMessages({ read: 100 }, undefined)],
+    ['normal cache hit', cacheTurnMessages({ read: 100 }, { read: 80, write: 0 })],
+    ['partial cache reuse', cacheTurnMessages({ read: 100 }, { read: 20, write: 60 })],
+  ])('does not mark %s', (_name, messages) => {
+    expect(computeTurnStats(messages, []).get('a2')?.promptCacheRebuilt).toBe(false);
+  });
+
+  it('does not mark a turn while it is live', () => {
+    const messages = cacheTurnMessages({ read: 100 }, { read: 0, write: 80 });
+    messages[3] = makeMessage('a2', {
+      role: 'assistant',
+      tokens: { input: 10, output: 1, cache: { read: 0, write: 80 } },
+    }, 4);
+
+    expect(computeTurnStats(messages, [], true).get('a2')?.promptCacheRebuilt).toBe(false);
+  });
+});
+
 describe('latestTurnModel', () => {
   it('uses the completed latest turn, not the previous turn', () => {
     const messages = [

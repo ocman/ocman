@@ -495,8 +495,21 @@ describe('reduceSessionView — session.status / session.idle', () => {
     expect(view._refetchRequested).toBe(true);
   });
 
-  it('marks a completed user shell message as done without an LLM finish', () => {
-    let view = makeView({ session: makeSession({ status: 'busy' }) });
+  // The backend settles lifecycle status from the agent's own turn
+  // (db.SettleSessionStatus), so a *message snapshot* must not re-derive
+  // and overwrite it. Note this is narrower than "message shape is never
+  // a lifecycle signal": a running/pending tool part and a streaming
+  // delta still flip the status to busy (reducePartSnapshot /
+  // reducePartDelta), and that is what keeps the badge alive mid-turn.
+  it('does not overwrite a busy status with a message snapshot', () => {
+    let view = makeView({ session: makeSession({ status: 'done' }) });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('session.status', { status: { type: 'busy' } }),
+    });
+    expect(view.session?.status).toBe('busy');
+
+    // A completed tool-only assistant envelope used to infer `done`.
     view = reduceSessionView(view, {
       type: 'sse',
       event: sseEvent('message.updated', {
@@ -507,11 +520,30 @@ describe('reduceSessionView — session.status / session.idle', () => {
         }],
       }),
     });
+    expect(view.session?.status).toBe('busy');
+    // The message itself is still applied.
+    expect(view.messages.map((m) => m.id)).toContain('m-shell');
+  });
 
+  it('does not overwrite a settled status with an in-flight message snapshot', () => {
+    let view = makeView({ session: makeSession({ status: 'done' }) });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.updated', {
+        info: { id: 'm-agent', sessionID: SID, role: 'assistant' },
+        parts: [
+          { id: 'p-start', messageID: 'm-agent', sessionID: SID, type: 'step-start' },
+        ],
+      }),
+    });
     expect(view.session?.status).toBe('done');
   });
 
-  it('keeps an LLM turn busy when its message contains a step-start', () => {
+  // Turn-start ordering: the first event of a turn is a message.updated
+  // carrying a step-start, and `session.status: busy` only arrives after
+  // it. The snapshot must leave the settled status alone, and the
+  // session.status that follows must still flip it.
+  it('leaves a step-start snapshot alone and flips on the session.status that follows', () => {
     let view = makeView({ session: makeSession({ status: 'done' }) });
     view = reduceSessionView(view, {
       type: 'sse',
@@ -526,8 +558,42 @@ describe('reduceSessionView — session.status / session.idle', () => {
         ],
       }),
     });
+    expect(view.session?.status).toBe('done');
 
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('session.status', { status: { type: 'busy' } }),
+    });
     expect(view.session?.status).toBe('busy');
+  });
+
+  // A running tool part is a live signal, not a message snapshot: it is
+  // what keeps the badge busy between session.status events. Deleting
+  // this writer in a future "message shape is never a lifecycle signal"
+  // cleanup would leave the badge stale mid-turn.
+  it('flips to busy on a running tool part', () => {
+    let view = makeView({ session: makeSession({ status: 'done' }) });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.part.updated', {
+        part: {
+          id: 'p-tool', messageID: 'm-agent', sessionID: SID,
+          type: 'tool', tool: 'bash', state: { status: 'running' },
+        },
+      }),
+    });
+    expect(view.session?.status).toBe('busy');
+  });
+
+  it('does not overwrite an error status reported by session.status', () => {
+    let view = makeView({ session: makeSession({ status: 'error' }) });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('message.updated', {
+        info: { id: 'm-ok', sessionID: SID, role: 'assistant', finish: 'stop' },
+      }),
+    });
+    expect(view.session?.status).toBe('error');
   });
 });
 

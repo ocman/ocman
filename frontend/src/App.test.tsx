@@ -40,4 +40,50 @@ describe('RootRedirect', () => {
 
     expect(await screen.findByTestId('location')).toHaveTextContent('/session/new');
   });
+
+  // A failed query is not "no sessions". Redirecting to /session/new on
+  // failure hides a backend outage behind the new-session onboarding
+  // screen, and strands the user away from the session they had open.
+  it('shows an error with a retry instead of redirecting when the query fails', async () => {
+    const refetch = vi.fn();
+    vi.mocked(useSessions).mockReturnValue({
+      isLoading: false,
+      isError: true,
+      error: new Error('backend is not responding'),
+      data: undefined,
+      refetch,
+    } as never);
+
+    renderRootRedirect();
+
+    expect(screen.queryByTestId('location')).not.toBeInTheDocument();
+    expect(screen.getByText(/backend is not responding/)).toBeInTheDocument();
+
+    screen.getByRole('button', { name: /retry/i }).click();
+    expect(refetch).toHaveBeenCalled();
+  });
+
+  // Only `isError` means the query failed. A settled query with an
+  // undefined payload is still a success, and labelling it a failure
+  // would show a backend-outage banner over a working backend.
+  it('treats a settled query with no payload as no sessions', async () => {
+    vi.mocked(useSessions).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: undefined,
+    } as never);
+
+    renderRootRedirect();
+
+    expect(await screen.findByTestId('location')).toHaveTextContent('/session/new');
+  });
+
+  it('renders nothing while the query is still loading', () => {
+    vi.mocked(useSessions).mockReturnValue({ isLoading: true, data: undefined } as never);
+
+    renderRootRedirect();
+
+    expect(screen.queryByTestId('location')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
+  });
 });

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, renderHook } from '@testing-library/react';
+import { renderHook } from '@testing-library/react';
 import type { Message, SessionStatus } from '../../lib/api';
 import { useSessionStatus } from './useSessionStatus';
 import type { SubagentTokenMap } from './useSubagentTracking';
@@ -61,7 +61,6 @@ interface HookProps {
   subagentTokens: SubagentTokenMap;
   sessionStatus?: SessionStatus;
   awaitingAssistantResponse?: boolean;
-  recentWorkEventAt?: number | null;
   isRunning: boolean;
   pendingPermission: null;
   pendingQuestion: null;
@@ -78,7 +77,6 @@ function buildHook(initial: HookProps) {
         setSubagentTokens: (next) => setSubagentTokens(next),
         sessionStatus: props.sessionStatus,
         awaitingAssistantResponse: props.awaitingAssistantResponse,
-        recentWorkEventAt: props.recentWorkEventAt ?? null,
         isRunning: props.isRunning,
         pendingPermission: props.pendingPermission,
         pendingQuestion: props.pendingQuestion,
@@ -97,7 +95,16 @@ describe('useSessionStatus', () => {
     vi.useRealTimers();
   });
 
-  it('returns waiting for a finished assistant message', () => {
+  // The backend settles lifecycle status (db.SettleSessionStatus); the
+  // hook reports it verbatim. It must NOT re-derive a status from the
+  // message list — that is what used to overwrite the authoritative value.
+  it.each<[SessionStatus]>([
+    ['busy'],
+    ['waiting'],
+    ['done'],
+    ['error'],
+    ['interrupted'],
+  ])('reports the backend status %s verbatim', (sessionStatus) => {
     const t0 = Date.now();
     const messages: Message[] = [
       userMessage('u1', t0 - 5_000),
@@ -108,15 +115,36 @@ describe('useSessionStatus', () => {
       lastMsg: messages[messages.length - 1],
       messages,
       subagentTokens: new Map(),
+      sessionStatus,
       isRunning: false,
       pendingPermission: null,
       pendingQuestion: null,
     });
 
-    expect(result.current.optimisticStatus).toBe('waiting');
+    expect(result.current.displayStatus).toBe(sessionStatus);
   });
 
-  it('returns error for an errored assistant message', () => {
+  it('does not derive waiting from a finished assistant message', () => {
+    const t0 = Date.now();
+    const messages: Message[] = [
+      userMessage('u1', t0 - 5_000),
+      finishedAssistantMessage('a1', t0 - 1_000),
+    ];
+
+    const { result } = buildHook({
+      lastMsg: messages[messages.length - 1],
+      messages,
+      subagentTokens: new Map(),
+      sessionStatus: 'busy',
+      isRunning: false,
+      pendingPermission: null,
+      pendingQuestion: null,
+    });
+
+    expect(result.current.displayStatus).toBe('busy');
+  });
+
+  it('does not derive error from an errored assistant message', () => {
     const t0 = Date.now();
     const messages: Message[] = [
       userMessage('u1', t0 - 5_000),
@@ -127,28 +155,68 @@ describe('useSessionStatus', () => {
       lastMsg: messages[messages.length - 1],
       messages,
       subagentTokens: new Map(),
+      sessionStatus: 'busy',
       isRunning: false,
       pendingPermission: null,
       pendingQuestion: null,
     });
 
-    expect(result.current.optimisticStatus).toBe('error');
+    expect(result.current.displayStatus).toBe('busy');
   });
 
-  it('returns done when there is no last message', () => {
+  // OpenCode's session.status vocabulary is busy|retry|idle only
+  // (live_status.go), so a failed turn reaches the page as an errored
+  // message plus `session.idle` — which reduces to `done`. Message shape
+  // is what decides *which* terminal state (db.InferSessionStatus), so
+  // the errored tail is the only in-band error signal until the REST
+  // reconcile lands.
+  it.each<[string, SessionStatus | undefined]>([
+    ['a done status', 'done'],
+    ['no reported status', undefined],
+  ])('reports error for an errored tail with %s', (_label, sessionStatus) => {
+    const t0 = Date.now();
+    const messages: Message[] = [
+      userMessage('u1', t0 - 5_000),
+      erroredAssistantMessage('a1', t0 - 1_000),
+    ];
+
     const { result } = buildHook({
-      lastMsg: null,
-      messages: [],
+      lastMsg: messages[messages.length - 1],
+      messages,
       subagentTokens: new Map(),
+      sessionStatus,
       isRunning: false,
       pendingPermission: null,
       pendingQuestion: null,
     });
 
-    expect(result.current.optimisticStatus).toBe('done');
+    expect(result.current.displayStatus).toBe('error');
   });
 
-  it('leaves busy alone (no debounce side-effect)', () => {
+  it('reports error for a finish=error tail', () => {
+    const t0 = Date.now();
+    const errored: Message = {
+      id: 'a1',
+      sessionId: 's1',
+      timeCreated: t0 - 1_000,
+      data: { role: 'assistant', finish: 'error', time: { created: t0 - 1_000 } },
+    };
+    const messages: Message[] = [userMessage('u1', t0 - 5_000), errored];
+
+    const { result } = buildHook({
+      lastMsg: errored,
+      messages,
+      subagentTokens: new Map(),
+      sessionStatus: 'done',
+      isRunning: false,
+      pendingPermission: null,
+      pendingQuestion: null,
+    });
+
+    expect(result.current.displayStatus).toBe('error');
+  });
+
+  it('does not derive busy from a streaming assistant message', () => {
     const t0 = Date.now();
     const messages: Message[] = [
       userMessage('u1', t0 - 5_000),
@@ -159,12 +227,28 @@ describe('useSessionStatus', () => {
       lastMsg: messages[messages.length - 1],
       messages,
       subagentTokens: new Map(),
-      isRunning: true,
+      sessionStatus: 'interrupted',
+      isRunning: false,
       pendingPermission: null,
       pendingQuestion: null,
     });
 
-    expect(result.current.optimisticStatus).toBe('busy');
+    // #488: an interrupted turn's last message looks like live streaming
+    // to every local heuristic. The backend knows the process is gone.
+    expect(result.current.displayStatus).toBe('interrupted');
+  });
+
+  it('falls back to done when no status has been reported yet', () => {
+    const { result } = buildHook({
+      lastMsg: null,
+      messages: [],
+      subagentTokens: new Map(),
+      isRunning: false,
+      pendingPermission: null,
+      pendingQuestion: null,
+    });
+
+    expect(result.current.displayStatus).toBe('done');
   });
 
   it('shows busy while awaiting the first assistant response after a user send', () => {
@@ -182,127 +266,7 @@ describe('useSessionStatus', () => {
       pendingQuestion: null,
     });
 
-    expect(result.current.optimisticStatus).toBe('busy');
-  });
-
-  it('treats server-reported busy as busy even when the last assistant message finished', () => {
-    const t0 = Date.now();
-    const messages: Message[] = [
-      userMessage('u1', t0 - 5_000),
-      finishedAssistantMessage('a1', t0 - 1_000),
-    ];
-
-    const { result } = buildHook({
-      lastMsg: messages[messages.length - 1],
-      messages,
-      subagentTokens: new Map(),
-      sessionStatus: 'busy',
-      awaitingAssistantResponse: false,
-      isRunning: true,
-      pendingPermission: null,
-      pendingQuestion: null,
-    });
-
-    expect(result.current.optimisticStatus).toBe('busy');
-  });
-
-  it('treats recent work events as busy during tool/subagent gaps', () => {
-    const t0 = Date.now();
-    const messages: Message[] = [
-      userMessage('u1', t0 - 5_000),
-      finishedAssistantMessage('a1', t0 - 1_000),
-    ];
-
-    const { result } = buildHook({
-      lastMsg: messages[messages.length - 1],
-      messages,
-      subagentTokens: new Map(),
-      sessionStatus: 'waiting',
-      awaitingAssistantResponse: false,
-      recentWorkEventAt: t0 - 100,
-      isRunning: true,
-      pendingPermission: null,
-      pendingQuestion: null,
-    });
-
-    expect(result.current.optimisticStatus).toBe('busy');
-  });
-
-  it('shows done immediately for an old finished conversation when session status is done', () => {
-    const t0 = Date.now();
-    const messages: Message[] = [
-      userMessage('u1', t0 - 20_000),
-      finishedAssistantMessage('a1', t0 - 19_000),
-    ];
-
-    const { result } = buildHook({
-      lastMsg: messages[messages.length - 1],
-      messages,
-      subagentTokens: new Map(),
-      sessionStatus: 'done',
-      awaitingAssistantResponse: false,
-      recentWorkEventAt: null,
-      isRunning: false,
-      pendingPermission: null,
-      pendingQuestion: null,
-    });
-
-    expect(result.current.optimisticStatus).toBe('done');
-  });
-
-  it('drops back to waiting as soon as the work-event window expires', () => {
-    const t0 = Date.now();
-    const messages: Message[] = [
-      userMessage('u1', t0 - 5_000),
-      finishedAssistantMessage('a1', t0 - 1_000),
-    ];
-
-    const { result } = buildHook({
-      lastMsg: messages[messages.length - 1],
-      messages,
-      subagentTokens: new Map(),
-      sessionStatus: 'waiting',
-      awaitingAssistantResponse: false,
-      recentWorkEventAt: t0,
-      isRunning: true,
-      pendingPermission: null,
-      pendingQuestion: null,
-    });
-
-    expect(result.current.optimisticStatus).toBe('busy');
-
-    act(() => {
-      vi.advanceTimersByTime(600);
-    });
-
-    // No grace window: the transition lands as soon as the work-event
-    // window expires. The badge no longer holds a stale 'busy'.
-    expect(result.current.optimisticStatus).toBe('waiting');
-  });
-  // #488: an interrupted session's last message is an unfinished assistant
-  // turn, which every local heuristic reads as "still streaming". The
-  // backend already knows the process that owned it is gone, so the badge
-  // must follow the backend and stop spinning.
-  it('reports interrupted instead of spinning on a lost turn', () => {
-    const t0 = Date.now();
-    const messages: Message[] = [
-      userMessage('u1', t0 - 60_000),
-      streamingAssistantMessage('a1', t0 - 59_000),
-    ];
-
-    const { result } = buildHook({
-      lastMsg: messages[messages.length - 1],
-      messages,
-      subagentTokens: new Map(),
-      sessionStatus: 'interrupted',
-      awaitingAssistantResponse: false,
-      recentWorkEventAt: null,
-      isRunning: false,
-      pendingPermission: null,
-      pendingQuestion: null,
-    });
-
-    expect(result.current.optimisticStatus).toBe('interrupted');
+    expect(result.current.displayStatus).toBe('busy');
   });
 
   it('lets a fresh prompt outrank a stale interrupted status', () => {
@@ -315,34 +279,35 @@ describe('useSessionStatus', () => {
       subagentTokens: new Map(),
       sessionStatus: 'interrupted',
       awaitingAssistantResponse: true,
-      recentWorkEventAt: null,
       isRunning: false,
       pendingPermission: null,
       pendingQuestion: null,
     });
 
-    expect(result.current.optimisticStatus).toBe('busy');
+    expect(result.current.displayStatus).toBe('busy');
   });
 
-  it('still reports error when an interrupted session also errored', () => {
+  // The send affordance only applies while the user's own message is
+  // still the tail. Once an assistant message exists for the turn, the
+  // backend status takes over unconditionally.
+  it('drops the send affordance once an assistant message lands', () => {
     const t0 = Date.now();
     const messages: Message[] = [
       userMessage('u1', t0 - 5_000),
-      erroredAssistantMessage('a1', t0 - 1_000),
+      finishedAssistantMessage('a1', t0 - 1_000),
     ];
 
     const { result } = buildHook({
       lastMsg: messages[messages.length - 1],
       messages,
       subagentTokens: new Map(),
-      sessionStatus: 'interrupted',
-      awaitingAssistantResponse: false,
-      recentWorkEventAt: null,
+      sessionStatus: 'waiting',
+      awaitingAssistantResponse: true,
       isRunning: false,
       pendingPermission: null,
       pendingQuestion: null,
     });
 
-    expect(result.current.optimisticStatus).toBe('error');
+    expect(result.current.displayStatus).toBe('waiting');
   });
 });

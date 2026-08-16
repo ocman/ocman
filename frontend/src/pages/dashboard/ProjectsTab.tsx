@@ -14,7 +14,9 @@ import { DashboardToolbar } from './DashboardToolbar';
 
 export function ProjectsTab() {
   usePageTitle('Projects');
-  const { projects, projectsLoading, dirScope, setDirScope } = useDashboardCtx();
+  const {
+    projects, projectsLoading, projectsError, refetchProjects, dirScope, setDirScope,
+  } = useDashboardCtx();
   const navigate = useNavigate();
   const openProjectPalette = useUiStore((s) => s.openProjectPalette);
   const [search, setSearch] = useState('');
@@ -31,13 +33,35 @@ export function ProjectsTab() {
     .filter((p) => matchesScope(p.directory, dirScope))
     .filter((p) => !q || fuzzyMatch(q, p.directory));
 
-  return projectsLoading && projects.length === 0 ? (
-    <div className="oc-list-loading">
-      <div className="oc-spinner" />
-      Loading projects...
-    </div>
-  ) : (
+  if (projectsLoading && projects.length === 0) {
+    return (
+      <div className="oc-list-loading">
+        <div className="oc-spinner" />
+        Loading projects...
+      </div>
+    );
+  }
+
+  // A failed query must never fall through to the table below: with no
+  // data, the empty branch would render the first-run onboarding state
+  // and tell a user with dozens of projects that they have none.
+  if (projectsError && projects.length === 0) {
+    return (
+      <div className="oc-error-banner">
+        {projectsError}
+        <button type="button" onClick={() => refetchProjects()}>Retry</button>
+      </div>
+    );
+  }
+
+  return (
     <div className="metrics-page" style={{ padding: 0 }}>
+      {projectsError && (
+        <div className="oc-error-banner">
+          {projectsError}
+          <button type="button" onClick={() => refetchProjects()}>Retry</button>
+        </div>
+      )}
       <DashboardToolbar
         projects={projects}
         dirScope={dirScope}

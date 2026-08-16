@@ -186,7 +186,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
     sseNextRetryAt,
     retryNow: sseRetryNow,
     sseDebugEvents,
-    recentWorkEventAt,
     changesDirtyTick,
     reload,
     loadMore,
@@ -673,13 +672,15 @@ export function SessionDetail({ id }: SessionDetailProps) {
             return q?.requestId === pendingQuestionRequestId;
           });
           if (stillPending) return;
-          setPendingQuestion(null);
-          clearPendingQuestion(id);
+          // Both clears are id-safe: they only fire if the request id
+          // still matches, so a follow-up asked between the poll and its
+          // response survives — in memory *and* in session storage.
+          clearPrompt('question', pendingQuestionRequestId);
+          clearPendingQuestion(id, pendingQuestionRequestId);
         })
         .catch(() => { /* leave the prompt up; the next tick retries */ });
     };
 
-    check();
     const timer = window.setInterval(() => {
       if (!document.hidden) check();
     }, 3000);
@@ -687,7 +688,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [id, pendingQuestionRequestId, portAvailable, listQuestions, setPendingQuestion]);
+  }, [id, pendingQuestionRequestId, portAvailable, listQuestions, clearPrompt]);
 
   // Mark session as seen on entry. Opening a session also unarchives it
   // server-side (handleSession), so optimistically clear the archived flag
@@ -1088,22 +1089,24 @@ export function SessionDetail({ id }: SessionDetailProps) {
     if (!isRunning) flushQueuedShell();
   }, [isRunning, flushQueuedShell]);
 
-  const { optimisticStatus, liveTokensPerSecond } = useSessionStatus({
+  const { displayStatus, liveTokensPerSecond } = useSessionStatus({
     lastMsg,
     messages,
     subagentTokens,
     setSubagentTokens,
     sessionStatus: session?.status,
     awaitingAssistantResponse,
-    recentWorkEventAt,
     isRunning,
     pendingPermission,
     pendingQuestion,
   });
-  useEffect(() => {
-    if (!id) return;
-    patchRecentSession(id, { status: optimisticStatus });
-  }, [id, optimisticStatus, patchRecentSession]);
+  // No status mirror into recentSessions. `displayStatus` layers a send
+  // affordance and the errored-tail signal on top of the reported
+  // status, and writing it into shared state let a page-local view
+  // overwrite the authoritative value for every other consumer of the
+  // row. The sidebar already gets the settled status straight from the
+  // `ocman.session.changed` patch (see useSidebarSessions); the active
+  // row layers those on for display only.
 
   // Flag for the composer's "launch session" button.
   const launchHintActive = canLaunchSession({
@@ -1125,7 +1128,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     }
 
     const effectiveStatus = (s: typeof recentSessions[0]): typeof s.status =>
-      s.id === id ? optimisticStatus : s.status;
+      s.id === id ? displayStatus : s.status;
     const rollup = (sessions: typeof recentSessions) => rollupGroupStatus(sessions, effectiveStatus);
 
     const groups: SidebarProjectGroup[] = Array.from(buckets.entries()).map(([directory, sessions]) => {
@@ -1204,7 +1207,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     }
 
     return visibleGroups;
-  }, [recentSessions, id, optimisticStatus, projectOrder, allProjects, archivedProjectRoots]);
+  }, [recentSessions, id, displayStatus, projectOrder, allProjects, archivedProjectRoots]);
 
   // Persist a new drag-and-drop order of the (non-pinned) project
   // groups. The synthetic "__pinned__" group is excluded — it always
@@ -1253,7 +1256,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
           collapsedProjectSet={collapsedProjectSet}
           toggleCollapsedProject={toggleCollapsedProject}
           siblingGitInfos={siblingGitInfos}
-          optimisticStatus={optimisticStatus}
+          activeDisplayStatus={displayStatus}
           debugMode={debugMode}
           pendingTmuxSession={pendingTmuxSession}
           pickerPos={pickerPos}

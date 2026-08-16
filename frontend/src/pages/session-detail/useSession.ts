@@ -105,11 +105,6 @@ export interface UseSessionResult extends SessionView {
   /** Last 50 SSE events (when `debug: true`). */
   sseDebugEvents: SseDebugEvent[];
   /**
-   * Timestamp of the most recent work-producing SSE event, or null.
-   * Drives the busy→waiting debounce in useSessionStatus.
-   */
-  recentWorkEventAt: number | null;
-  /**
    * Tick that bumps when an edit/write tool part lands. Wired to the
    * right-panel changes/info refresh.
    */
@@ -119,14 +114,16 @@ export interface UseSessionResult extends SessionView {
    *  through the reducer's clearPrompt action. */
   clearPrompt: (kind: 'permission' | 'question', id: string) => void;
   /** Imperatively set a pending permission. Used by the sidebar→
-   *  detail reverse sync when poll discovers a prompt SSE missed. */
+   *  detail reverse sync when poll discovers a prompt SSE missed.
+   *  Set-only by design — clearing goes through the id-safe
+   *  `clearPrompt`, so the type forbids passing null. */
   setPendingPermission: (
-    perm: import('../../lib/sseHelpers').PendingPermission | null,
+    perm: import('../../lib/sseHelpers').PendingPermission,
     ownerIds?: string[],
   ) => void;
   /** Imperatively set a pending question. Same rationale as
-   *  setPendingPermission. */
-  setPendingQuestion: (q: import('../../components/session/QuestionPrompt').PendingQuestion | null) => void;
+   *  setPendingPermission, including the set-only contract. */
+  setPendingQuestion: (q: import('../../components/session/QuestionPrompt').PendingQuestion) => void;
   /** Apply a partial patch to the session metadata. Used for
    *  page-local self-mutations like rename / mark-seen. */
   patchSession: (patch: Partial<import('../../lib/sessionReducer').SessionMetadata>) => void;
@@ -137,7 +134,6 @@ export interface UseSessionResult extends SessionView {
 }
 
 const DEFAULT_PAGE_SIZE = 30;
-const WORK_BUMP_THROTTLE_MS = 100;
 const DEBUG_RING_SIZE = 50;
 
 function normalizeSseEnvelope(event: SseEvent): SseEvent {
@@ -256,16 +252,20 @@ export function useSession(
   const [sseReconnectAttempt, setSseReconnectAttempt] = useState(0);
   const [sseNextRetryAt, setSseNextRetryAt] = useState<number | null>(null);
   const [sseDebugEvents, setSseDebugEvents] = useState<SseDebugEvent[]>([]);
-  const [recentWorkEventAt, setRecentWorkEventAt] = useState<number | null>(null);
   const [changesDirtyTick, setChangesDirtyTick] = useState(0);
 
   // Refs hold non-reactive pieces. retryNowRef / reloadRef expose
   // imperative handles across the effect-closure boundary without
   // forcing the effect to re-run.
   const abortRef = useRef<AbortController | null>(null);
+  // Pagination has its own controller so the session effect's cleanup
+  // can cancel an in-flight older-page fetch on navigation, plus an
+  // in-flight flag that (unlike the `loadingMore` state) is current
+  // within the same tick.
+  const loadMoreAbortRef = useRef<AbortController | null>(null);
+  const loadMoreInFlightRef = useRef(false);
   const reloadRef = useRef<() => Promise<void>>(async () => {});
   const retryNowRef = useRef<() => void>(() => {});
-  const workBumpAtRef = useRef<number>(0);
   // Snapshot of the latest view, kept current via render-phase
   // assignment. `loadMore` reads from it without taking a dep.
   const viewRef = useRef(view);
@@ -280,19 +280,13 @@ export function useSession(
     [],
   );
   const setPendingPermission = useCallback(
-    (perm: import('../../lib/sseHelpers').PendingPermission | null, ownerIds?: string[]) => {
-      if (perm === null) {
-        // No id to clear by — page-level callers always know the id;
-        // they should use clearPrompt directly.
-        return;
-      }
+    (perm: import('../../lib/sseHelpers').PendingPermission, ownerIds?: string[]) => {
       dispatch({ type: 'setPendingPermission', permission: perm, ownerIds });
     },
     [],
   );
   const setPendingQuestion = useCallback(
-    (q: import('../../components/session/QuestionPrompt').PendingQuestion | null) => {
-      if (q === null) return;
+    (q: import('../../components/session/QuestionPrompt').PendingQuestion) => {
       dispatch({
         type: 'sse',
         event: {
@@ -437,13 +431,6 @@ export function useSession(
     let attempt = 0;
     let hasConnectedOnce = false;
 
-    const bumpWorkEvent = () => {
-      const now = Date.now();
-      if (now - workBumpAtRef.current < WORK_BUMP_THROTTLE_MS) return;
-      workBumpAtRef.current = now;
-      setRecentWorkEventAt(now);
-    };
-
     // Refetch trigger for `session.diff` events. The server emits
     // these when an edit/write tool's `state.metadata.filediff` is
     // ready; without a fast refetch the user sees an empty tool
@@ -565,14 +552,6 @@ export function useSession(
         // Derive bumped/dirtied signals from event type. The
         // reducer itself stays platform-agnostic; these effects
         // are SSE-handler-side only.
-        if (
-          parsed.type === 'message.created' ||
-          parsed.type === 'message.updated' ||
-          parsed.type === 'message.part.updated' ||
-          parsed.type === 'message.part.delta'
-        ) {
-          bumpWorkEvent();
-        }
         if (parsed.type === 'message.part.updated') {
           const props = parsed.properties || {};
           const part = props.part as Record<string, unknown> | undefined;
@@ -728,6 +707,14 @@ export function useSession(
       cancelled = true;
       abortRef.current?.abort();
       abortRef.current = null;
+      loadMoreAbortRef.current?.abort();
+      loadMoreAbortRef.current = null;
+      // Abandon the page rather than wait for it: `fetchSession` is an
+      // injected seam, and an implementation that ignores the signal
+      // never reaches loadMore's `finally`. Leaving these set would
+      // disable pagination for good and pin the spinner on.
+      loadMoreInFlightRef.current = false;
+      setLoadingMore(false);
       evtSource?.close();
       evtSource = null;
       if (reconnectTimer) {
@@ -739,8 +726,6 @@ export function useSession(
       setSseReconnectAttempt(0);
       setSseNextRetryAt(null);
       setSseDebugEvents([]);
-      setRecentWorkEventAt(null);
-      workBumpAtRef.current = 0;
     };
   // We deliberately depend on sessionId/routedPlatform only. Options are captured
   // via closure on mount; tests don't change them at runtime and
@@ -754,14 +739,29 @@ export function useSession(
   // useSessionMessages.loadMore but writes through the reducer via
   // a synthesised `load` action that preserves delta-owned fields.
   const loadMore = useCallback(async () => {
-    if (!sessionId || loadingMore) return;
+    // The ref, not the `loadingMore` state, is what makes this
+    // re-entrant-safe: two calls in the same tick both see the
+    // pre-render state value.
+    if (!sessionId || loadMoreInFlightRef.current) return;
+    loadMoreInFlightRef.current = true;
     setLoadingMore(true);
-    const current = viewRef.current;
-    const offset = current.messages.length;
+    const offset = viewRef.current.messages.length;
+    // No abort of a previous controller here: the in-flight guard above
+    // means there is nothing to abort, and the cleanup already nulls the
+    // ref when it abandons a page.
     const controller = new AbortController();
+    loadMoreAbortRef.current = controller;
     try {
       const detail = await fetchSession(sessionId, pageSize, offset, controller.signal, routedPlatform);
       if (controller.signal.aborted) return;
+      // Re-read the view instead of using the pre-fetch snapshot: SSE
+      // may have appended messages while the page was in flight, and
+      // a navigation may have replaced the view entirely. Dispatching
+      // the stale snapshot would drop the former and splice the old
+      // session's history into the new one.
+      const current = viewRef.current;
+      if (current.sessionId !== sessionId) return;
+      if (detail.session.id !== sessionId) return;
       const newMsgs = detail.messages || [];
       const newParts = detail.parts || [];
       if (newMsgs.length === 0) return;
@@ -784,9 +784,11 @@ export function useSession(
       // important.
       remoteLog.error('loadMore failed', err);
     } finally {
+      if (loadMoreAbortRef.current === controller) loadMoreAbortRef.current = null;
+      loadMoreInFlightRef.current = false;
       setLoadingMore(false);
     }
-  }, [sessionId, loadingMore, fetchSession, pageSize, routedPlatform]);
+  }, [sessionId, fetchSession, pageSize, routedPlatform]);
 
   const hydrateHistory = useCallback((messages: Message[], parts: Part[]) => {
     const current = viewRef.current;
@@ -809,7 +811,6 @@ export function useSession(
     sseNextRetryAt,
     retryNow,
     sseDebugEvents,
-    recentWorkEventAt,
     changesDirtyTick,
     clearPrompt,
     setPendingPermission,

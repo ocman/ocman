@@ -125,7 +125,9 @@ zero hits in production code outside the helper module.
 The Phase 1 extraction faithfully preserved every inline behaviour:
 
 - `deriveRawStatus` matches the inline IIFE at lines 2752–2760 byte-
-  for-byte.
+  for-byte. (Historical: deleted in #507 — the frontend no longer
+  re-derives lifecycle status; the backend settles it in
+  db.SettleSessionStatus.)
 - `computeLiveTokens` matches the inline IIFE at lines 1989–2005;
   the `if/continue` early-out is just a stylistic refactor.
 - `mergeTokenStats` matches lines 2009–2018 byte-for-byte.
@@ -572,10 +574,18 @@ This hook went through three rounds of fixes:
    entirely and replaced it with reading `sessionStatus`
    (server-authoritative status mirrored into the hook).
 
-The current implementation reads `sessionStatus`, `awaitingAssistantResponse`,
-and `recentWorkEventAt` to compute `rawOptimisticStatus`. The
-`recentWorkEventAt` lives in `useSessionSSE` and is debounced
-(throttled 100 ms) to avoid the original setState-storm.
+The implementation at the time of this review read `sessionStatus`,
+`awaitingAssistantResponse`, and `recentWorkEventAt` to compute
+`rawOptimisticStatus`. The `recentWorkEventAt` lived in `useSessionSSE`
+and was debounced (throttled 100 ms) to avoid the original
+setState-storm.
+
+**Historical (superseded by #507):** the work-event window is gone. Once
+`sessionStatus` stopped lagging (#488) it only added staleness, so the
+badge now reports the settled status directly, plus two display-only
+layers — the just-sent affordance, and an errored tail (OpenCode's
+`session.status` vocabulary is busy|retry|idle and cannot report a
+failure).
 
 **Quality of the fix chain**: the final design (`130916a`) is the
 right one — separate the "raw signal" (event arrival) from the

@@ -232,6 +232,24 @@ describe('pending-question persistence helpers', () => {
     expect(loadPendingQuestion('sess-1')).toBeNull();
   });
 
+  // The poll that dismisses an externally-answered question is id-safe
+  // in memory (clearPrompt no-ops on a mismatched id). The persisted
+  // copy has to be too: a follow-up asked between the poll being issued
+  // and its response landing survives in memory but would lose its
+  // storage entry, so a reload would drop the prompt.
+  it('keeps a follow-up question that arrived after the cleared one', () => {
+    const followUp = { ...question, requestId: 'q-2' };
+    storePendingQuestion('sess-1', followUp);
+    clearPendingQuestion('sess-1', 'q-1');
+    expect(loadPendingQuestion('sess-1')).toEqual(followUp);
+  });
+
+  it('clears the persisted question when the request id matches', () => {
+    storePendingQuestion('sess-1', question);
+    clearPendingQuestion('sess-1', question.requestId);
+    expect(loadPendingQuestion('sess-1')).toBeNull();
+  });
+
   it('returns null for a missing question', () => {
     expect(loadPendingQuestion('absent')).toBeNull();
   });

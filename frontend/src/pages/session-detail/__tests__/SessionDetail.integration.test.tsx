@@ -948,6 +948,36 @@ describe('SessionDetail — question prompt', () => {
       expect(handle.result.container.textContent).toContain('Pick a colour');
     }, { timeout: 4000 });
   });
+
+  // A question answered outside ocman (another browser tab, or the
+  // OpenCode CLI) does not reliably produce a `question.replied` event.
+  // The 3 s poll is the only thing that takes the dialog down; if it
+  // can't, the prompt blocks the composer forever.
+  it('dismisses the question once the live list drops its request id', async () => {
+    let answered = false;
+    const listQuestions = vi.fn(() => Promise.resolve(answered ? [] : [questionPayload]));
+    // Fake timers must be installed before the mount: the poll's
+    // setInterval is registered during the mount effect.
+    vi.useFakeTimers();
+    try {
+      const handle = renderSessionPage({
+        sessionId: 'sess_1',
+        detail: makeSessionDetail(sessionWithQ),
+        sessions: [sessionWithQ],
+        storeOverrides: { listQuestions },
+      });
+      await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+      expect(handle.result.container.textContent).toContain('Pick a colour');
+
+      answered = true;
+      // Two poll ticks: one to observe the drop, one to prove the
+      // dialog doesn't get re-hydrated from session storage.
+      await act(async () => { await vi.advanceTimersByTimeAsync(6500); });
+      expect(handle.result.container.textContent).not.toContain('Pick a colour');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('SessionDetail — composer send', () => {
@@ -1309,8 +1339,23 @@ describe('SessionDetail — sidebar archive', () => {
   });
 });
 
-describe('SessionDetail — error finish on assistant message', () => {
-  it('flips the session status to error when the SSE message reports finish=error', async () => {
+describe('SessionDetail — status badge follows the backend', () => {
+  const erroredMessage = {
+    type: 'message.created',
+    properties: {
+      info: {
+        id: 'msg_1',
+        sessionID: 'sess_1',
+        role: 'assistant',
+        finish: 'error',
+        error: { name: 'Boom', data: { message: 'kaboom' } },
+        time: { created: 1_000 },
+      },
+      parts: [],
+    },
+  };
+
+  it('flips to error when a session.status event reports it', async () => {
     const handle = renderSessionPage({ sessionId: 'sess_1' });
     await flushPromises();
     await waitFor(() => expect(handle.sse()).toBeDefined());
@@ -1318,18 +1363,8 @@ describe('SessionDetail — error finish on assistant message', () => {
     act(() => {
       handle.sse()!.open();
       handle.sse()!.emitMessage({
-        type: 'message.created',
-        properties: {
-          info: {
-            id: 'msg_1',
-            sessionID: 'sess_1',
-            role: 'assistant',
-            finish: 'error',
-            error: { name: 'Boom', data: { message: 'kaboom' } },
-            time: { created: Date.now() },
-          },
-          parts: [],
-        },
+        type: 'session.status',
+        properties: { sessionID: 'sess_1', status: 'error' },
       });
     });
 
@@ -1338,6 +1373,163 @@ describe('SessionDetail — error finish on assistant message', () => {
       // component when `session.status === 'error'`.
       expect(handle.result.container.querySelector('.status-error')).toBeInTheDocument();
     });
+  });
+
+  // The backend settles lifecycle status from the agent's own turn
+  // (db.SettleSessionStatus). A message snapshot must not re-derive it:
+  // doing so overwrote the authoritative value with a local guess.
+  it('does not let a message snapshot overwrite the reported status', async () => {
+    const handle = renderSessionPage({ sessionId: 'sess_1' });
+    await flushPromises();
+    await waitFor(() => expect(handle.sse()).toBeDefined());
+
+    act(() => {
+      handle.sse()!.open();
+      handle.sse()!.emitMessage({
+        type: 'session.status',
+        properties: { sessionID: 'sess_1', status: { type: 'busy' } },
+      });
+    });
+    await waitFor(() => {
+      expect(handle.result.container.querySelector('.status-busy')).toBeInTheDocument();
+    });
+
+    act(() => { handle.sse()!.emitMessage(erroredMessage); });
+    await flushPromises(8);
+
+    expect(handle.result.container.querySelector('.status-busy')).toBeInTheDocument();
+    expect(handle.result.container.querySelector('.status-error')).not.toBeInTheDocument();
+  });
+
+  // The production failure sequence. OpenCode's `session.status`
+  // vocabulary is busy|retry|idle only (live_status.go) — it never emits
+  // `error`. A failed turn therefore arrives as
+  // `message.updated{finish:'error'}` followed by `session.idle`, and
+  // `session.idle` alone says "done". The badge must not spend that
+  // window claiming the failed turn succeeded.
+  it('never shows done for a failed turn on the real event sequence', async () => {
+    const running = makeSession({ id: 'sess_1', status: 'busy' });
+    // What the reconcile triggered by `session.idle` returns: the
+    // backend settles the terminal state from the errored tail
+    // (db.InferSessionStatus), so REST reports `error`.
+    const settled = makeSession({ id: 'sess_1', status: 'error' });
+    let settledYet = false;
+    const session = vi.fn(() => Promise.resolve(
+      settledYet
+        ? makeSessionDetail(settled, {
+          messages: [{
+            id: 'msg_1',
+            sessionId: 'sess_1',
+            timeCreated: 1_000,
+            data: { role: 'assistant', finish: 'error', error: { name: 'Boom' } },
+          }],
+          totalMessages: 1,
+        })
+        : makeSessionDetail(running),
+    ));
+
+    const handle = renderSessionPage({
+      sessionId: 'sess_1',
+      detail: makeSessionDetail(running),
+      sessions: [running],
+      apiOverrides: { session },
+    });
+    await flushPromises(8);
+    await waitFor(() => expect(handle.sse()).toBeDefined());
+    act(() => { handle.sse()!.open(); });
+    await flushPromises(4);
+
+    act(() => {
+      handle.sse()!.emitMessage({
+        type: 'message.updated',
+        properties: {
+          info: {
+            id: 'msg_1',
+            sessionID: 'sess_1',
+            role: 'assistant',
+            finish: 'error',
+            error: { name: 'Boom', data: { message: 'kaboom' } },
+            time: { created: 1_000 },
+          },
+          parts: [],
+        },
+      });
+    });
+    await flushPromises(4);
+
+    settledYet = true;
+    act(() => {
+      handle.sse()!.emitMessage({
+        type: 'session.idle',
+        properties: { sessionID: 'sess_1' },
+      });
+    });
+
+    // Asserted before the reconcile round trip resolves: that gap is
+    // exactly where the badge used to claim `done`.
+    expect(handle.result.container.querySelector('.status-done')).not.toBeInTheDocument();
+    expect(handle.result.container.querySelector('.status-error')).toBeInTheDocument();
+
+    await flushPromises(8);
+    expect(handle.result.container.querySelector('.status-done')).not.toBeInTheDocument();
+    expect(handle.result.container.querySelector('.status-error')).toBeInTheDocument();
+  });
+
+  // The active sidebar row overlays the page's display status on top of
+  // the polled row. If that overlay is less live than the row it
+  // replaces, every row shows the settled `error` except the one the
+  // user is actually looking at.
+  it('keeps the active sidebar row in step with the other rows on a settled error', async () => {
+    const active = makeSession({ id: 'sess_1', status: 'error' });
+    const other = makeSession({ id: 'sess_2', title: 'Other', status: 'error' });
+    const handle = renderSessionPage({
+      sessionId: 'sess_1',
+      detail: makeSessionDetail(makeSession({ id: 'sess_1', status: 'busy' })),
+      sessions: [active, other],
+    });
+    await flushPromises(8);
+    await waitFor(() => expect(handle.sse()).toBeDefined());
+
+    act(() => {
+      handle.sse()!.open();
+      handle.sse()!.emitMessage(erroredMessage);
+      // The live stream only ever reports idle for a finished turn.
+      handle.sse()!.emitMessage({
+        type: 'session.idle',
+        properties: { sessionID: 'sess_1' },
+      });
+    });
+    await flushPromises(8);
+
+    const rows = handle.result.container.querySelectorAll('.session-sidebar-item');
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+    for (const row of rows) {
+      expect(row.querySelector('.status-error')).not.toBeNull();
+      expect(row.querySelector('.status-done')).toBeNull();
+    }
+  });
+
+  // Regression guard for the shared-state overwrite: the page's display
+  // status is local, and must never be written back into the row every
+  // other view reads.
+  it('does not write its display status into shared recent-session state', async () => {
+    const patchRecentSession = vi.fn();
+    const handle = renderSessionPage({
+      sessionId: 'sess_1',
+      storeOverrides: { patchRecentSession },
+    });
+    await flushPromises(8);
+    await waitFor(() => expect(handle.sse()).toBeDefined());
+
+    act(() => {
+      handle.sse()!.open();
+      handle.sse()!.emitMessage(erroredMessage);
+    });
+    await flushPromises(8);
+
+    for (const call of patchRecentSession.mock.calls) {
+      expect(call[1]).not.toHaveProperty('status');
+    }
   });
 });
 

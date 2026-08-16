@@ -299,7 +299,7 @@ function AssistantMeta() {
   return (
     <>
       {isError && (
-        <div className={`oc-error-banner${isAbort ? ' oc-error-banner-abort' : ''}`}>
+        <div className={`oc-thread-error-note${isAbort ? ' oc-thread-error-note-abort' : ''}`}>
           {isAbort
             ? <><i className="bi bi-slash-circle" aria-hidden="true" /> Interrupted</>
             : <><i className="bi bi-exclamation-triangle-fill" aria-hidden="true" /> Session ended with an error</>
@@ -365,7 +365,7 @@ function TurnSummaryBar({ messageId }: { messageId: string }) {
   // ownership moves between messages mid-turn) but must not draw it.
   if (!stats || !stats.isSummaryAnchor) return null;
 
-  const { wallClockMs, tokensOut, tokensIn, cost, toolCalls, tps, isLive, startedAt, model } = stats;
+  const { wallClockMs, tokensOut, tokensIn, cost, toolCalls, tps, isLive, promptCacheRebuilt, startedAt, model } = stats;
 
   // For a live turn, compute elapsed wall-clock from startedAt → now.
   const displayMs = isLive ? now - startedAt : wallClockMs;
@@ -420,6 +420,14 @@ function TurnSummaryBar({ messageId }: { messageId: string }) {
     items.push(
       <span key="cost" className="oc-turn-stat">
         {formatCurrency(cost, cost < 0.001 ? 4 : 2)}
+      </span>
+    );
+  }
+  if (promptCacheRebuilt) {
+    items.push(
+      <span key="cache" className="oc-turn-stat oc-turn-cache-warning">
+        <i className="bi bi-arrow-clockwise" aria-hidden="true" />
+        Prompt cache rebuilt
       </span>
     );
   }

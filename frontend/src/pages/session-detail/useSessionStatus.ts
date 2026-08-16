@@ -1,19 +1,10 @@
 import { useEffect, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { Message, Session } from '../../lib/api';
-import { deriveRawStatus } from '../../lib/sessionStatus';
 import type { PendingPermission } from '../../lib/sseHelpers';
 import type { PendingQuestion } from '../../components/session/QuestionPrompt';
 import type { SubagentTokenMap } from './useSubagentTracking';
 import { trackRender } from '../../lib/renderRateMonitor';
-
-/**
- * Work-event freshness window. Only real work-producing events
- * (assistant message streaming, tool-part updates/deltas, subagent
- * assistant activity, explicit `session.status=busy`) should bump
- * this clock. Transport/session bookkeeping must not.
- */
-const WORK_EVENT_ACTIVE_MS = 500;
 
 export interface UseSessionStatusOptions {
   /** Most recent message in the page's messages array (or null). */
@@ -34,12 +25,6 @@ export interface UseSessionStatusOptions {
    * bubble, but the model is already queued/running.
    */
   awaitingAssistantResponse?: boolean;
-  /**
-   * Epoch-ms timestamp of the most recent *work-producing* event for
-   * this session tree (current session + bubbled subagent activity),
-   * or `null` when none has arrived recently.
-   */
-  recentWorkEventAt?: number | null;
   /** Whether the assistant is currently producing output. */
   isRunning: boolean;
   /** Pending permission, when one is waiting on the user. */
@@ -50,15 +35,16 @@ export interface UseSessionStatusOptions {
 
 export interface UseSessionStatusResult {
   /**
-   * Status displayed in the badge.
+   * Status displayed in the badge: the backend's settled status, with
+   * two display-only layers on top (see `resolveDisplayStatus`).
    *
-   * There is no debounce: `sessionStatus` is the agent's own turn state
-   * (see db.SettleSessionStatus), so it stays `busy` across tool-call
-   * boundaries instead of flickering to `waiting` between steps. A grace
-   * window used to hide that flicker; it only added three seconds of
-   * staleness once the underlying status stopped lagging.
+   * There is no debounce and no local re-derivation: `sessionStatus` is
+   * the agent's own turn state (see db.SettleSessionStatus), so it stays
+   * `busy` across tool-call boundaries instead of flickering to
+   * `waiting` between steps. A grace window used to hide that flicker;
+   * it only added staleness once the underlying status stopped lagging.
    */
-  optimisticStatus: Session['status'];
+  displayStatus: Session['status'];
   /**
    * Output tokens per second, scoped to the current run window.
    * `null` when the assistant isn't running, when there isn't enough
@@ -81,37 +67,38 @@ export interface UseSessionStatusResult {
  * subagent tokens from the previous one into its TPS window.
  */
 /**
- * Fold the reported session status together with the local signals into
- * the status the badge shows. Precedence, highest first:
+ * The status the badge shows. It mirrors db.SettleSessionStatus: a live
+ * turn wins outright, and only once the turn is settled does message
+ * shape decide *which* terminal state it settled into.
  *
- *  1. `error`       — either source saw a failure.
- *  2. `busy`        — the user just sent a prompt; this outranks a stale
- *                     `interrupted`, since they revived the session and
- *                     the backend hasn't caught up yet.
- *  3. `interrupted` — the agent process that owned the turn is gone, so
- *                     the local streaming signals describe a turn that
- *                     can never finish. Treating them as work would spin
- *                     the badge forever.
- *  4. `busy`        — any other active-work signal.
- *  5. `done`        — the backend says the session is settled.
+ * `sessionStatus` is the backend's own answer and is reported verbatim
+ * for every state it can express. Two layers sit on top:
+ *
+ *  - `justSentPrompt`: the prompt has been accepted but no assistant
+ *    message exists for the turn yet, so the badge would otherwise sit
+ *    on the previous turn's terminal state for a beat.
+ *  - `lastMsgErrored`: OpenCode's `session.status` vocabulary is
+ *    busy|retry|idle only (internal/platforms/opencode/live_status.go),
+ *    so it never reports a failure. A failed turn arrives as an errored
+ *    message followed by `session.idle` — which reduces to `done`.
+ *    Without this arm the badge claims a failed turn succeeded until the
+ *    REST reconcile round trip corrects it, and the active sidebar row
+ *    (which overlays this value) downgrades the correct `error` every
+ *    other row already shows.
+ *
+ * Both are display-only: neither is written back into the session or
+ * into shared recent-session state.
  */
-function resolveOptimisticStatus({
-  fromMessage,
-  sessionStatus,
-  justSentPrompt,
-  hasActiveWork,
-}: {
-  fromMessage: Session['status'];
-  sessionStatus: Session['status'] | null | undefined;
-  justSentPrompt: boolean;
-  hasActiveWork: boolean;
-}): Session['status'] {
-  if (sessionStatus === 'error' || fromMessage === 'error') return 'error';
-  if (justSentPrompt) return 'busy';
-  if (sessionStatus === 'interrupted') return 'interrupted';
-  if (hasActiveWork) return 'busy';
-  if (sessionStatus === 'done') return 'done';
-  return fromMessage;
+function resolveDisplayStatus(
+  sessionStatus: Session['status'] | null | undefined,
+  justSentPrompt: boolean,
+  lastMsgErrored: boolean,
+): Session['status'] {
+  // A live turn outranks the tail: an errored message from the previous
+  // turn must not mask the one that is running now.
+  if (justSentPrompt || sessionStatus === 'busy') return 'busy';
+  if (lastMsgErrored) return 'error';
+  return sessionStatus ?? 'done';
 }
 
 export function useSessionStatus({
@@ -121,60 +108,14 @@ export function useSessionStatus({
   setSubagentTokens,
   sessionStatus = null,
   awaitingAssistantResponse = false,
-  recentWorkEventAt = null,
   isRunning,
   pendingPermission,
   pendingQuestion,
 }: UseSessionStatusOptions): UseSessionStatusResult {
   trackRender('useSessionStatus', { isRunning, lastMsgId: lastMsg?.id });
-  // Base semantic status from the visible message snapshot.
-  const rawStatusFromMessage = deriveRawStatus(lastMsg);
-
-  // Active work is the union of four semantic signals:
-  //   1. user send is queued, first assistant message not visible yet
-  //   2. latest assistant message is still streaming
-  //   3. session status explicitly reports busy
-  //   4. a recent *work* event landed (tool/subagent/assistant)
-  // Bookkeeping noise like prompt sync / old-session hydration must
-  // not contribute here.
-  const assistantStreaming =
-    lastMsg?.data?.role === 'assistant' && !lastMsg.data.finish && !lastMsg.data.error;
-  // Reading the clock during render is deliberate and bounded: the
-  // work-expiry effect below schedules a re-render for the exact moment
-  // this comparison flips, so the derived status can't go stale. Before
-  // #488 the value reached the badge through a debounce state, which hid
-  // the read from this rule; the debounce is gone, the read isn't new.
-  const recentWorkActive =
-    recentWorkEventAt !== null &&
-    // eslint-disable-next-line react-hooks/purity -- see above: the expiry timer re-renders when this flips.
-    Date.now() - recentWorkEventAt < WORK_EVENT_ACTIVE_MS;
   const justSentPrompt = awaitingAssistantResponse && lastMsg?.data?.role === 'user';
-  const hasActiveWork =
-    justSentPrompt ||
-    assistantStreaming ||
-    sessionStatus === 'busy' ||
-    recentWorkActive;
-
-  // No debounce: `sessionStatus` already reflects the agent's own turn
-  // state, and the message-shape fallback only fills the gap until the
-  // next event lands. Deferring transitions here would re-introduce
-  // exactly the lag this hook used to compensate for.
-  const optimisticStatus = resolveOptimisticStatus({
-    fromMessage: rawStatusFromMessage,
-    sessionStatus,
-    justSentPrompt,
-    hasActiveWork,
-  });
-
-  const [, setWorkExpiryTick] = useState(0);
-  useEffect(() => {
-    if (recentWorkEventAt === null) return;
-    const elapsed = Date.now() - recentWorkEventAt;
-    const remaining = WORK_EVENT_ACTIVE_MS - elapsed;
-    if (remaining <= 0) return;
-    const handle = window.setTimeout(() => setWorkExpiryTick((n) => n + 1), remaining);
-    return () => window.clearTimeout(handle);
-  }, [recentWorkEventAt]);
+  const lastMsgErrored = lastMsg?.data?.finish === 'error' || !!lastMsg?.data?.error;
+  const displayStatus = resolveDisplayStatus(sessionStatus, justSentPrompt, lastMsgErrored);
 
   // Live tokens-per-second: sum output tokens across all assistant
   // messages in the current run window (since the last user message)
@@ -192,8 +133,14 @@ export function useSessionStatus({
   // `isRunning` flips from true to false, not on every render.
   // The polling branch only writes through setLiveTokensPerSecond
   // inside `setInterval` callbacks (already deferred).
+  //
+  // The disable below is not new behaviour: this write was always here,
+  // but the hook also read the clock during render, which made the
+  // react-hooks rules bail out before reaching it. Removing that read
+  // (the work-event window is gone) exposed the pre-existing report.
   useEffect(() => {
     if (!isRunning) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- run-end cleanup arm; fires on the isRunning true→false edge, not per render.
       setLiveTokensPerSecond(null);
       // Clear subagent token tracking when the run ends so the next
       // run starts fresh.
@@ -249,7 +196,7 @@ export function useSessionStatus({
   }, [isRunning, messages, subagentTokens, setSubagentTokens, pendingPermission, pendingQuestion]);
 
   return {
-    optimisticStatus,
+    displayStatus,
     liveTokensPerSecond,
   };
 }

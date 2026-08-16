@@ -1092,6 +1092,65 @@ describe('Workflows', { timeout: 10_000 }, () => {
     expect(apiMock.resolveUnknown).toHaveBeenCalledWith('wfr_1', 9, 'retry');
   });
 
+  // refresh() is fired from mount, every workflow-run event, every
+  // trigger event, every SSE reconnect and every mutation. Nothing
+  // serialised them, so a slow older response landing last overwrote
+  // newer state — runs regressed and stale run details reopened.
+  it('applies only the newest refresh when responses resolve out of order', async () => {
+    const user = userEvent.setup();
+    const staleRun: WorkflowRunDetail = { ...activeRun, id: 'wfr_stale', workflowId: 'stale' };
+    const freshRun: WorkflowRunDetail = { ...activeRun, id: 'wfr_fresh', workflowId: 'fresh' };
+
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    let runsCalls = 0;
+    apiMock.runs.mockImplementation(() => {
+      runsCalls += 1;
+      // The first (older) refresh resolves last.
+      if (runsCalls === 1) return firstGate.then(() => [staleRun]);
+      return Promise.resolve([freshRun]);
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/workflows?tab=runs']}>
+        <Workflows />
+      </MemoryRouter>,
+    );
+
+    // Second, newer refresh — issued while the first is still in flight.
+    await act(async () => { triggerListeners[0](); });
+    await waitFor(() => expect(screen.getByText('fresh')).toBeInTheDocument());
+
+    // Now let the stale first response land.
+    await act(async () => {
+      releaseFirst();
+      await firstGate;
+    });
+
+    expect(screen.getByText('fresh')).toBeInTheDocument();
+    expect(screen.queryByText('stale')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Run history' }));
+    expect(screen.queryByText('stale')).not.toBeInTheDocument();
+  });
+
+  // The run-history row opened a run without a .catch, unlike the
+  // identical path inside the run modal. A rejected fetch became an
+  // unhandled promise rejection with no user-visible error.
+  it('reports a failure to open a run from the run history table', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/workflows?tab=runs']}>
+        <Workflows />
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('region', { name: 'Workflow runs' });
+    apiMock.run.mockRejectedValueOnce(new Error('run vanished'));
+    await user.click(screen.getByRole('button', { name: /wfr_1/ }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('run vanished');
+  });
+
   it('retries a settled workflow from the selected node', async () => {
     const user = userEvent.setup();
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);

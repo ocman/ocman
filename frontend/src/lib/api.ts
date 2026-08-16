@@ -242,6 +242,21 @@ export function raiseAuthError(message = 'unauthorized'): AuthError {
   return err;
 }
 
+/**
+ * raiseForUnauthorized is the one guard every raw-Response endpoint
+ * must run *before* its own status handling. Endpoints that need the
+ * raw body (to tag 409/422/503, to read FormData replies) can't go
+ * through fetchJSON / postJSON, but they still have to participate in
+ * the AuthError fan-out — otherwise an expired cookie renders a
+ * generic error instead of the lockscreen (see authStore.ts).
+ */
+export async function raiseForUnauthorized(resp: Response): Promise<void> {
+  if (resp.status !== 401) return;
+  // An empty body has to fall through to raiseAuthError's default: ''
+  // would produce a message-less AuthError.
+  throw raiseAuthError((await resp.text().catch(() => '')) || undefined);
+}
+
 // Internal: surface a 401 as an AuthError and notify the registered
 // handler. Callers that catch this will receive an AuthError; anyone
 // who doesn't catch still lets the handler update global auth state.
@@ -531,6 +546,7 @@ export const api = {
       }),
     });
     if (!resp.ok) {
+      await raiseForUnauthorized(resp);
       const body = (await resp.text()).trim();
       // 503 maps to platforms.ErrPlatformUnreachable on the backend —
       // the directory is known but no live instance is running. Tag
@@ -566,6 +582,7 @@ export const api = {
       body: JSON.stringify({ message, images, model, agent, reasoning, queue }),
     });
     if (!resp.ok) {
+      await raiseForUnauthorized(resp);
       const body = (await resp.text()).trim();
       // 409 Conflict is AD-13's busy-guard: the target session is
       // mid-turn and accepting this prompt would fork its history.
@@ -596,6 +613,7 @@ export const api = {
   queuedMessages: async (sessionId: string, platform?: string): Promise<QueuedMessage[]> => {
     const query = platform ? `?platform=${encodeURIComponent(platform)}` : '';
     const resp = await apiFetch(`/api/session/${encodeURIComponent(sessionId)}/queue${query}`);
+    await raiseForUnauthorized(resp);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     return resp.json() as Promise<QueuedMessage[]>;
   },
@@ -605,6 +623,7 @@ export const api = {
       `/api/session/${encodeURIComponent(sessionId)}/queue/${encodeURIComponent(queuedId)}${query}`,
       { method: 'DELETE' },
     );
+    await raiseForUnauthorized(resp);
     if (!resp.ok && resp.status !== 404) throw new Error(`HTTP ${resp.status}`);
   },
   moveQueuedMessage: async (
@@ -622,6 +641,7 @@ export const api = {
         body: JSON.stringify({ direction }),
       },
     );
+    await raiseForUnauthorized(resp);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   },
   uploadComposerAttachment: async (sessionId: string, file: File) => {
@@ -632,6 +652,7 @@ export const api = {
       body: form,
     });
     if (!resp.ok) {
+      await raiseForUnauthorized(resp);
       const body = (await resp.text()).trim();
       throw new Error(body || `HTTP ${resp.status}`);
     }
@@ -723,6 +744,7 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dir, ...(remoteId && remoteId !== 'local' ? { remoteId } : {}) }),
       });
+      await raiseForUnauthorized(resp);
       if (!resp.ok) throw new Error(await resp.text());
       return resp.json();
     },
@@ -732,6 +754,7 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dir, window, ...(remoteId && remoteId !== 'local' ? { remoteId } : {}) }),
       });
+      await raiseForUnauthorized(resp);
       if (!resp.ok) throw new Error(await resp.text());
     },
   },
@@ -878,6 +901,7 @@ export const api = {
     const form = new FormData();
     form.append('audio', audio, `recording${ext}`);
     const resp = await apiFetch('/api/transcribe', { method: 'POST', body: form });
+    await raiseForUnauthorized(resp);
     if (!resp.ok) throw new Error(await resp.text());
     const data = await resp.json() as { text: string };
     return data.text;
@@ -948,6 +972,7 @@ export const api = {
 
 async function postWorkflowSource<T>(url: string, source: string): Promise<T> {
 	const response = await apiFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/yaml' }, body: source });
+	await raiseForUnauthorized(response);
 	if (!response.ok) throw new Error(await response.text());
 	return response.json();
 }

@@ -562,3 +562,37 @@ describe('preview request coalescing and bounded cache', () => {
     expect(fetchMock).toHaveBeenCalledTimes(cap + 2);
   });
 });
+
+// Every ocman-backed call has to participate in the AuthError fan-out
+// (see authStore.ts): on an expired cookie the user must land on the
+// lockscreen, not watch a preview strip silently fail. These calls keep
+// their raw Response (the callers only want the JSON body), so they run
+// the shared `raiseForUnauthorized` guard instead of going through
+// fetchJSON.
+describe('expired-cookie handling', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const cases: Array<[string, (mod: typeof import('./githubPreview')) => Promise<unknown>]> = [
+    ['github preview', (mod) => mod.cachedGitHubPreview('https://github.com/o/r/pull/1')],
+    ['forgejo host discovery', (mod) => mod.loadForgejoHosts()],
+    [
+      'forgejo preview',
+      (mod) => mod.cachedForgejoPreview('https://code.example.com/o/r/pulls/1', ['code.example.com']),
+    ],
+  ];
+
+  it.each(cases)('reports a 401 from the %s call as an auth error', async (_label, call) => {
+    const mod = await freshModule();
+    const { AuthError, registerAuthErrorHandler } = await import('./api');
+    const handler = vi.fn();
+    registerAuthErrorHandler(handler);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('session expired', { status: 401 })));
+
+    await call(mod);
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler.mock.calls[0][0]).toBeInstanceOf(AuthError);
+  });
+});

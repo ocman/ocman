@@ -498,6 +498,145 @@ describe('useSession — session change', () => {
   });
 });
 
+describe('useSession — loadMore', () => {
+  function msg(id: string, sessionId: string) {
+    return { id, sessionId, timeCreated: 1_000, data: { role: 'user' as const } };
+  }
+
+  it('prepends an older page to the current session', async () => {
+    const head = makeDetail({ messages: [msg('m2', SID)], totalMessages: 2 });
+    const older = makeDetail({ messages: [msg('m1', SID)], totalMessages: 2 });
+    const fetchSession = vi.fn()
+      .mockResolvedValueOnce(head)
+      .mockResolvedValueOnce(older);
+    const { result } = renderHook(() => useSession(SID, { fetchSession }));
+    await waitFor(() => expect(result.current.messages).toHaveLength(1));
+
+    await act(async () => { await result.current.loadMore(); });
+
+    expect(result.current.messages.map((m) => m.id)).toEqual(['m1', 'm2']);
+  });
+
+  // A pagination response that lands after the user navigated away
+  // used to be dispatched against the captured (old) view, splicing
+  // session A's history into session B.
+  it('cannot modify the new session when it resolves after a session change', async () => {
+    const detailA = makeDetail({
+      session: { ...makeDetail().session, id: 'sess-a' },
+      messages: [msg('a2', 'sess-a')],
+      totalMessages: 2,
+    });
+    const detailB = makeDetail({
+      session: { ...makeDetail().session, id: 'sess-b' },
+      messages: [msg('b1', 'sess-b')],
+      totalMessages: 1,
+    });
+    const olderA = makeDetail({
+      session: { ...makeDetail().session, id: 'sess-a' },
+      messages: [msg('a1', 'sess-a')],
+      totalMessages: 2,
+    });
+
+    let releaseOlderA: () => void = () => {};
+    const olderAGate = new Promise<void>((resolve) => { releaseOlderA = resolve; });
+
+    const fetchSession = vi.fn((id: string, _limit: number, offset: number) => {
+      if (id === 'sess-b') return Promise.resolve(detailB);
+      if (offset > 0) return olderAGate.then(() => olderA);
+      return Promise.resolve(detailA);
+    });
+
+    const { result, rerender } = renderHook(({ id }) => useSession(id, { fetchSession }), {
+      initialProps: { id: 'sess-a' as string | undefined },
+    });
+    await waitFor(() => expect(result.current.session?.id).toBe('sess-a'));
+
+    // Start pagination for A, then navigate to B before it resolves.
+    const pending = result.current.loadMore();
+    rerender({ id: 'sess-b' });
+    await waitFor(() => expect(result.current.session?.id).toBe('sess-b'));
+
+    await act(async () => {
+      releaseOlderA();
+      await pending;
+    });
+
+    expect(result.current.sessionId).toBe('sess-b');
+    expect(result.current.session?.id).toBe('sess-b');
+    expect(result.current.messages.map((m) => m.id)).toEqual(['b1']);
+  });
+
+  // The cleanup aborts the in-flight page, but `fetchSession` is an
+  // injected seam: an implementation that ignores the signal and never
+  // settles never reaches the `finally`. Leaving the in-flight ref set
+  // then disables pagination for the rest of the page's life and pins
+  // the spinner on.
+  it('resets the in-flight state when the session changes mid-page', async () => {
+    const detailA = makeDetail({
+      session: { ...makeDetail().session, id: 'sess-a' },
+      messages: [msg('a2', 'sess-a')],
+      totalMessages: 2,
+    });
+    const detailB = makeDetail({
+      session: { ...makeDetail().session, id: 'sess-b' },
+      messages: [msg('b2', 'sess-b')],
+      totalMessages: 2,
+    });
+    const olderB = makeDetail({
+      session: { ...makeDetail().session, id: 'sess-b' },
+      messages: [msg('b1', 'sess-b')],
+      totalMessages: 2,
+    });
+
+    const fetchSession = vi.fn((id: string, _limit: number, offset: number) => {
+      if (offset === 0) return Promise.resolve(id === 'sess-b' ? detailB : detailA);
+      // Session A's page never settles and ignores the abort signal.
+      if (id === 'sess-a') return new Promise<never>(() => {});
+      return Promise.resolve(olderB);
+    });
+
+    const { result, rerender } = renderHook(({ id }) => useSession(id, { fetchSession }), {
+      initialProps: { id: 'sess-a' as string | undefined },
+    });
+    await waitFor(() => expect(result.current.session?.id).toBe('sess-a'));
+
+    act(() => { void result.current.loadMore(); });
+    await waitFor(() => expect(result.current.loadingMore).toBe(true));
+
+    rerender({ id: 'sess-b' });
+    await waitFor(() => expect(result.current.session?.id).toBe('sess-b'));
+    expect(result.current.loadingMore).toBe(false);
+
+    // ...and pagination still works on the new session.
+    await act(async () => { await result.current.loadMore(); });
+    expect(result.current.messages.map((m) => m.id)).toEqual(['b1', 'b2']);
+  });
+
+  it('ignores a second call while one is already in flight', async () => {
+    const head = makeDetail({ messages: [msg('m2', SID)], totalMessages: 3 });
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const fetchSession = vi.fn((_id: string, _limit: number, offset: number) => {
+      if (offset > 0) return gate.then(() => makeDetail({ messages: [msg('m1', SID)], totalMessages: 3 }));
+      return Promise.resolve(head);
+    });
+    const { result } = renderHook(() => useSession(SID, { fetchSession }));
+    await waitFor(() => expect(result.current.messages).toHaveLength(1));
+
+    // Both calls issued in the same tick — `loadingMore` state has not
+    // re-rendered yet, so only an in-flight ref can block the second.
+    const first = result.current.loadMore();
+    const second = result.current.loadMore();
+    await act(async () => {
+      release();
+      await Promise.all([first, second]);
+    });
+
+    // 1 head fetch + exactly 1 pagination fetch.
+    expect(fetchSession).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('useSession — unmount', () => {
   it('closes the EventSource on unmount', async () => {
     const fetchSession = vi.fn().mockResolvedValue(makeDetail());
@@ -508,165 +647,6 @@ describe('useSession — unmount', () => {
     const sse = FakeEventSource.latest()!;
     unmount();
     expect(sse.closed).toBe(true);
-  });
-});
-
-describe('useSession — recentWorkEventAt', () => {
-  it('is null on initial mount before any SSE arrives', async () => {
-    const fetchSession = vi.fn().mockResolvedValue(makeDetail());
-    const { result } = renderHook(() => useSession(SID, { fetchSession }));
-    await waitFor(() => expect(result.current.session?.id).toBe(SID));
-    expect(result.current.recentWorkEventAt).toBeNull();
-  });
-
-  it('updates on work-producing events (message.created)', async () => {
-    vi.useFakeTimers();
-    const t0 = 1_000_000;
-    vi.setSystemTime(t0);
-    const fetchSession = vi.fn().mockResolvedValue(makeDetail());
-    const { result } = renderHook(() => useSession(SID, { fetchSession }));
-
-    await vi.waitFor(() => expect(result.current.session?.id).toBe(SID));
-    const sse = FakeEventSource.latest()!;
-    act(() => sse.open());
-
-    // Advance time past the 100 ms throttle window so the bump fires.
-    act(() => { vi.setSystemTime(t0 + 200); });
-    act(() => {
-      sse.emitMessage({
-        type: 'message.created',
-        properties: {
-          info: { id: 'm-1', sessionID: SID, role: 'assistant', time: { created: t0 } },
-          parts: [],
-        },
-      });
-    });
-
-    expect(result.current.recentWorkEventAt).not.toBeNull();
-  });
-
-  it('updates on message.part.delta events', async () => {
-    vi.useFakeTimers();
-    const t0 = 2_000_000;
-    vi.setSystemTime(t0);
-    const fetchSession = vi.fn().mockResolvedValue(makeDetail());
-    const { result } = renderHook(() => useSession(SID, { fetchSession }));
-
-    await vi.waitFor(() => expect(result.current.session?.id).toBe(SID));
-    const sse = FakeEventSource.latest()!;
-    act(() => sse.open());
-
-    act(() => { vi.setSystemTime(t0 + 200); });
-    act(() => {
-      sse.emitMessage({
-        type: 'message.part.delta',
-        properties: {
-          partID: 'p-1', messageID: 'm-1', sessionID: SID, field: 'text', delta: 'hello',
-        },
-      });
-    });
-
-    expect(result.current.recentWorkEventAt).not.toBeNull();
-  });
-
-  it('does NOT update on non-work events (session.status, session.idle)', async () => {
-    vi.useFakeTimers();
-    const t0 = 3_000_000;
-    vi.setSystemTime(t0);
-    const fetchSession = vi.fn().mockResolvedValue(makeDetail());
-    const { result } = renderHook(() => useSession(SID, { fetchSession }));
-
-    await vi.waitFor(() => expect(result.current.session?.id).toBe(SID));
-    const sse = FakeEventSource.latest()!;
-    act(() => sse.open());
-
-    act(() => { vi.setSystemTime(t0 + 200); });
-    act(() => {
-      sse.emitMessage({ type: 'session.status', properties: { status: 'idle' } });
-    });
-    act(() => {
-      sse.emitMessage({ type: 'session.idle', properties: {} });
-    });
-
-    expect(result.current.recentWorkEventAt).toBeNull();
-  });
-
-  it('is throttled — two events within 100 ms produce a single bump', async () => {
-    vi.useFakeTimers();
-    const t0 = 4_000_000;
-    vi.setSystemTime(t0);
-    const fetchSession = vi.fn().mockResolvedValue(makeDetail());
-    const { result } = renderHook(() => useSession(SID, { fetchSession }));
-
-    await vi.waitFor(() => expect(result.current.session?.id).toBe(SID));
-    const sse = FakeEventSource.latest()!;
-    act(() => sse.open());
-
-    // First event fires the bump.
-    act(() => { vi.setSystemTime(t0 + 200); });
-    act(() => {
-      sse.emitMessage({
-        type: 'message.part.delta',
-        properties: { partID: 'p-a', messageID: 'm-a', sessionID: SID, field: 'text', delta: 'a' },
-      });
-    });
-    const first = result.current.recentWorkEventAt;
-    expect(first).not.toBeNull();
-
-    // Second event within the 100 ms window — workBumpAtRef guards it.
-    act(() => { vi.setSystemTime(t0 + 250); }); // only 50 ms after first bump
-    act(() => {
-      sse.emitMessage({
-        type: 'message.part.delta',
-        properties: { partID: 'p-b', messageID: 'm-b', sessionID: SID, field: 'text', delta: 'b' },
-      });
-    });
-    expect(result.current.recentWorkEventAt).toBe(first); // still the same timestamp
-
-    // Third event after the throttle window — should update.
-    act(() => { vi.setSystemTime(t0 + 400); }); // 200 ms after first bump
-    act(() => {
-      sse.emitMessage({
-        type: 'message.part.delta',
-        properties: { partID: 'p-c', messageID: 'm-c', sessionID: SID, field: 'text', delta: 'c' },
-      });
-    });
-    expect(result.current.recentWorkEventAt).toBeGreaterThan(first!);
-  });
-
-  it('resets to null when the session ID changes', async () => {
-    vi.useFakeTimers();
-    const t0 = 5_000_000;
-    vi.setSystemTime(t0);
-    const fetchSession = vi.fn().mockResolvedValue(makeDetail());
-    const { result, rerender } = renderHook(
-      ({ id }) => useSession(id, { fetchSession }),
-      { initialProps: { id: SID as string | undefined } },
-    );
-
-    await vi.waitFor(() => expect(result.current.session?.id).toBe(SID));
-    const sse = FakeEventSource.latest()!;
-    act(() => sse.open());
-
-    // Bump recentWorkEventAt.
-    act(() => { vi.setSystemTime(t0 + 200); });
-    act(() => {
-      sse.emitMessage({
-        type: 'message.created',
-        properties: {
-          info: { id: 'm-1', sessionID: SID, role: 'assistant', time: { created: t0 } },
-          parts: [],
-        },
-      });
-    });
-    expect(result.current.recentWorkEventAt).not.toBeNull();
-
-    // Navigate to a different session — cleanup should null the value.
-    const SID2 = 'sess-2';
-    fetchSession.mockResolvedValue(makeDetail({ session: { ...makeDetail().session, id: SID2 } }));
-    rerender({ id: SID2 });
-
-    await vi.waitFor(() => expect(result.current.recentWorkEventAt).toBeNull());
   });
 });
 
@@ -817,24 +797,15 @@ describe('useSession — subagent event routing', () => {
     expect(result.current.messages.find((m) => m.id === 'm-subagent')).toBeUndefined();
   });
 
-  it('does not bump recentWorkEventAt for dropped subagent events', async () => {
-    vi.useFakeTimers();
-    const t0 = 6_000_000;
-    vi.setSystemTime(t0);
+  it('drops a part delta addressed to another session', async () => {
     const detail = makeDetail();
     const fetchSession = vi.fn().mockResolvedValue(detail);
     const { result } = renderHook(() => useSession(SID, { fetchSession }));
 
-    await vi.waitFor(() => expect(result.current.session?.id).toBe(SID));
+    await waitFor(() => expect(result.current.session?.id).toBe(SID));
     const sse = FakeEventSource.latest()!;
     act(() => sse.open());
 
-    // The work-event bump happens in useSession's onmessage handler
-    // BEFORE the reducer, so even subagent events trigger it — the
-    // hook does not guard on session ID for bumpWorkEvent. This is
-    // intentional: the parent session IS doing work when a subagent
-    // is active. Verify the current behaviour is stable.
-    act(() => { vi.setSystemTime(t0 + 200); });
     act(() => {
       sse.emitMessage({
         type: 'message.part.delta',
@@ -845,9 +816,6 @@ describe('useSession — subagent event routing', () => {
       });
     });
 
-    // bumpWorkEvent fires regardless of session ID — the timestamp updates.
-    expect(result.current.recentWorkEventAt).not.toBeNull();
-    // But the part itself is dropped by the reducer.
     expect(result.current.parts.find((p) => p.id === 'p-sub')).toBeUndefined();
   });
 });
