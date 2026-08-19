@@ -50,6 +50,16 @@ func (f *fakeStore) Delete(repoRoot string) error {
 	return nil
 }
 
+func (f *fakeStore) List() (map[string]ManagedInstance, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make(map[string]ManagedInstance, len(f.rows))
+	for root, inst := range f.rows {
+		out[root] = inst
+	}
+	return out, nil
+}
+
 func (f *fakeStore) has(repoRoot string) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()

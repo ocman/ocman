@@ -18,6 +18,27 @@ type ManagedInstance struct {
 	LaunchedAt time.Time
 }
 
+// ManagedOpencodes returns every persisted managed instance keyed by repo root.
+func (d *DB) ManagedOpencodes() (map[string]ManagedInstance, error) {
+	rows, err := d.db.Query(`SELECT repo_root, endpoint, kind, runtime_id, pid, launched_at FROM managed_opencode`)
+	if err != nil {
+		return nil, fmt.Errorf("listing managed opencode: %w", err)
+	}
+	defer rows.Close()
+	out := make(map[string]ManagedInstance)
+	for rows.Next() {
+		var root string
+		var inst ManagedInstance
+		var launchedAt int64
+		if err := rows.Scan(&root, &inst.Endpoint, &inst.Kind, &inst.RuntimeID, &inst.PID, &launchedAt); err != nil {
+			return nil, fmt.Errorf("scanning managed opencode: %w", err)
+		}
+		inst.LaunchedAt = time.Unix(launchedAt, 0)
+		out[root] = inst
+	}
+	return out, rows.Err()
+}
+
 // UpsertManagedOpencode records (or replaces) the managed instance for a
 // project keyed by its canonical repo root. launchedAt is stored as a
 // Unix-second timestamp.

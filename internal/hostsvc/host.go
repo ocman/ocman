@@ -153,6 +153,11 @@ type EnsureProjectOpencodeResult struct {
 	Launched bool               `json:"launched"`
 }
 
+// ManagedOpencode identifies a project with a managed OpenCode instance.
+type ManagedOpencode struct {
+	RepoRoot string `json:"repoRoot"`
+}
+
 // Port returns the TCP port from the instance Endpoint, or "" when the
 // endpoint is missing or unparseable. Provided for callers that still
 // thread a raw port (e.g. CreateSession) rather than a full URL.
@@ -272,6 +277,9 @@ type Host interface {
 	// Owner-routed via Router.ForDir exactly like EnsureProjectOpencode, so
 	// it works for local and remote native instances (AD-7).
 	RestartProjectOpencode(ctx context.Context, req EnsureProjectOpencodeRequest) (*EnsureProjectOpencodeResult, error)
+
+	// ManagedOpencodes lists every project with a managed OpenCode instance.
+	ManagedOpencodes(ctx context.Context) ([]ManagedOpencode, error)
 
 	// TmuxSessions lists the host's tmux sessions.
 	TmuxSessions(ctx context.Context) ([]TmuxSession, error)

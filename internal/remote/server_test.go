@@ -176,6 +176,9 @@ func (localStubHost) StopProjectOpencode(context.Context, hostsvc.EnsureProjectO
 func (localStubHost) RestartProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
 	return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:5678", RepoRoot: "/repo", Runtime: ocruntime.Instance{ID: "restarted"}, Launched: true}, nil
 }
+func (localStubHost) ManagedOpencodes(context.Context) ([]hostsvc.ManagedOpencode, error) {
+	return nil, nil
+}
 func (localStubHost) TmuxSessions(context.Context) ([]hostsvc.TmuxSession, error) { return nil, nil }
 func (localStubHost) Projects(context.Context) ([]db.ProjectStats, error) {
 	return []db.ProjectStats{{Directory: "/home/u/app"}}, nil

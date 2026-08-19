@@ -229,6 +229,19 @@ func (h *remoteHost) RestartProjectOpencode(ctx context.Context, req hostsvc.Ens
 	return &out, unmarshalJSON(resp.Payload, &out)
 }
 
+func (h *remoteHost) ManagedOpencodes(ctx context.Context) ([]hostsvc.ManagedOpencode, error) {
+	client := h.conn.Client()
+	if client == nil {
+		return nil, ErrRemoteOffline
+	}
+	resp, err := client.ManagedOpencodes(ctx, &pb.Empty{})
+	if err != nil {
+		return nil, err
+	}
+	var out []hostsvc.ManagedOpencode
+	return out, unmarshalJSON(resp.Payload, &out)
+}
+
 func (h *remoteHost) TmuxSessions(ctx context.Context) ([]hostsvc.TmuxSession, error) {
 	client := h.conn.Client()
 	if client == nil {

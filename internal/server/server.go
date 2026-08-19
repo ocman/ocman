@@ -329,6 +329,18 @@ func (m managedStore) Delete(repoRoot string) error {
 	return m.db.DeleteManagedOpencode(repoRoot)
 }
 
+func (m managedStore) List() (map[string]hostlocal.ManagedInstance, error) {
+	instances, err := m.db.ManagedOpencodes()
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]hostlocal.ManagedInstance, len(instances))
+	for root, inst := range instances {
+		out[root] = hostlocal.ManagedInstance{Endpoint: inst.Endpoint, Kind: inst.Kind, RuntimeID: inst.RuntimeID, PID: inst.PID, LaunchedAt: inst.LaunchedAt}
+	}
+	return out, nil
+}
+
 // WithAutoApproveDefault sets the server-wide default for auto-approve.
 // When true, sessions that have no per-session override start with
 // auto-approve enabled. Must be called before Start.

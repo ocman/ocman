@@ -106,6 +106,7 @@ type ManagedStore interface {
 	Upsert(repoRoot string, inst ManagedInstance) error
 	Get(repoRoot string) (ManagedInstance, bool, error)
 	Delete(repoRoot string) error
+	List() (map[string]ManagedInstance, error)
 }
 
 // Host is the local hostsvc.Host implementation.
@@ -363,6 +364,21 @@ func (h *Host) RestartProjectOpencode(ctx context.Context, req hostsvc.EnsurePro
 		return nil, err
 	}
 	return v.(*hostsvc.EnsureProjectOpencodeResult), nil
+}
+
+func (h *Host) ManagedOpencodes(context.Context) ([]hostsvc.ManagedOpencode, error) {
+	if h.store == nil {
+		return nil, nil
+	}
+	instances, err := h.store.List()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]hostsvc.ManagedOpencode, 0, len(instances))
+	for root := range instances {
+		out = append(out, hostsvc.ManagedOpencode{RepoRoot: root})
+	}
+	return out, nil
 }
 
 // ensureLocked is the guarded body run under singleflight for one repo

@@ -415,12 +415,28 @@ export function useSessionActions({
     }
 
     if (command === 'restart-opencode') {
+      const flags = args.trim() ? args.trim().toLowerCase().split(/\s+/) : [];
+      if (flags.some(flag => flag !== 'all' && flag !== 'now') || new Set(flags).size !== flags.length) {
+        pending.fail('Usage: /restart-opencode [all] [now]');
+        return;
+      }
+      const all = flags.includes('all');
+      const force = flags.includes('now');
       pending.begin('/restart-opencode');
-      setRestartToastMessage('Restarting OpenCode...');
+      setRestartToastMessage(force ? 'Checking running sessions...' : 'Restarting OpenCode when sessions are idle...');
       try {
-        await api.restartOpencode(session.id);
+        let result = await api.restartOpencode(session.id, { all, force });
+        if (result.confirmationRequired) {
+          const scope = all ? 'all managed OpenCode instances' : 'this managed OpenCode instance';
+          if (!window.confirm(`Running OpenCode instances and sessions will be stopped. Force restart ${scope}?`)) {
+            pending.clear();
+            setRestartToastMessage(null);
+            return;
+          }
+          result = await api.restartOpencode(session.id, { all, force: true, confirmed: true });
+        }
         pending.clear();
-        setRestartToastMessage('Restarted OpenCode');
+        setRestartToastMessage(result.restarted === 1 ? 'Restarted OpenCode' : `Restarted ${result.restarted ?? 0} OpenCode instances`);
       } catch (e) {
         setRestartToastMessage(null);
         remoteLog.error('Failed to restart OpenCode', e);

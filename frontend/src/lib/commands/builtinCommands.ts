@@ -44,7 +44,7 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: 'new', description: 'Start a new session in the same project directory (optionally add a title)' },
   { name: 'rename', description: 'Rename this session' },
   { name: 'redo', description: 'Restore messages and file changes reverted by /undo' },
-  { name: 'restart-opencode', description: 'Restart the tmux-managed OpenCode process for this session' },
+  { name: 'restart-opencode', description: 'Restart managed OpenCode after sessions are idle; add all and/or now' },
   { name: 'share', description: 'Copy this ocman session URL to the clipboard (reachable only by clients that can access this ocman instance)' },
   { name: 'skills', description: 'Insert a skill command into the prompt (opens a picker)' },
   { name: 'sessions', description: 'Open the session switcher (aliases: resume, continue)' },

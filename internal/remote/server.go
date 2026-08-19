@@ -476,6 +476,10 @@ func (s *Server) RestartProjectOpencode(ctx context.Context, req *pb.JsonReq) (*
 	return jsonResp(s.host.RestartProjectOpencode(ctx, er))
 }
 
+func (s *Server) ManagedOpencodes(ctx context.Context, _ *pb.Empty) (*pb.JsonResp, error) {
+	return jsonResp(s.host.ManagedOpencodes(ctx))
+}
+
 func (s *Server) TmuxSessions(ctx context.Context, _ *pb.Empty) (*pb.JsonResp, error) {
 	return jsonResp(s.host.TmuxSessions(ctx))
 }

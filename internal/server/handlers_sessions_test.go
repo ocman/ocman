@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
@@ -864,6 +865,113 @@ func TestHandleSessionRestartOpencode_RejectsNonLoopback(t *testing.T) {
 
 	if rr.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", rr.Code)
+	}
+}
+
+type restartTestHost struct {
+	hostsvc.Host
+	id        string
+	managed   []hostsvc.ManagedOpencode
+	restarted []string
+}
+
+func (h *restartTestHost) RemoteID() string {
+	if h.id == "" {
+		return "local"
+	}
+	return h.id
+}
+func (h *restartTestHost) ManagedOpencodes(context.Context) ([]hostsvc.ManagedOpencode, error) {
+	return h.managed, nil
+}
+func (h *restartTestHost) RestartProjectOpencode(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	h.restarted = append(h.restarted, req.ProjectDir)
+	return &hostsvc.EnsureProjectOpencodeResult{}, nil
+}
+
+func TestSameProject_IncludesOcmanWorktrees(t *testing.T) {
+	if !sameProject("/projects/ocman", "/projects/.worktrees/ocman/restart-mode") {
+		t.Fatal("ocman worktree should belong to its main project")
+	}
+}
+
+func TestHandleSessionRestartOpencode_DefersUntilSessionsIdle(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	host := &restartTestHost{managed: []hostsvc.ManagedOpencode{{RepoRoot: "/repo"}}}
+	srv.hostRouter = hostsvc.NewRouter(host)
+	checks := 0
+	reg.Register(&fakePlatform{
+		id:       "opencode",
+		sessions: []db.Session{{ID: "s1"}},
+		sessionsHook: func(context.Context, string, int64) ([]db.Session, error) {
+			checks++
+			status := db.StatusBusy
+			if checks > 1 {
+				status = db.StatusDone
+			}
+			return []db.Session{{ID: "s1", Directory: "/repo", Status: status}}, nil
+		},
+		sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+			return &platforms.SessionDetail{Session: &db.Session{ID: "s1", Directory: "/repo"}}, nil
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/session/s1/restart-opencode", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	rr := httptest.NewRecorder()
+	srv.handleSessionRestartOpencode(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rr.Code, rr.Body.String())
+	}
+	if checks < 2 || len(host.restarted) != 1 {
+		t.Fatalf("checks=%d restarted=%v, want wait then restart", checks, host.restarted)
+	}
+}
+
+func TestHandleSessionRestartOpencode_ForceNeedsConfirmationWhenBusy(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	host := &restartTestHost{managed: []hostsvc.ManagedOpencode{{RepoRoot: "/repo"}}}
+	srv.hostRouter = hostsvc.NewRouter(host)
+	reg.Register(&fakePlatform{
+		id:       "opencode",
+		sessions: []db.Session{{ID: "s1", Directory: "/repo", RemoteID: "local", Status: db.StatusBusy}},
+		sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+			return &platforms.SessionDetail{Session: &db.Session{ID: "s1", Directory: "/repo"}}, nil
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/session/s1/restart-opencode?force=true", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	rr := httptest.NewRecorder()
+	srv.handleSessionRestartOpencode(rr, req)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "confirmationRequired") {
+		t.Fatalf("status=%d body=%s, want confirmation", rr.Code, rr.Body.String())
+	}
+	if len(host.restarted) != 0 {
+		t.Fatalf("restarted=%v, want no restart before confirmation", host.restarted)
+	}
+}
+
+func TestHandleSessionRestartOpencode_AllIncludesConnectedRemoteHosts(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	local := &restartTestHost{managed: []hostsvc.ManagedOpencode{{RepoRoot: "/local"}}}
+	remote := &restartTestHost{id: "remote-1", managed: []hostsvc.ManagedOpencode{{RepoRoot: "/remote"}}}
+	srv.hostRouter = hostsvc.NewRouter(local)
+	srv.hostRouter.RegisterRemote("remote-1", remote)
+	reg.Register(&fakePlatform{
+		id:       "opencode",
+		sessions: []db.Session{{ID: "s1"}},
+		sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+			return &platforms.SessionDetail{Session: &db.Session{ID: "s1", Directory: "/remote", RemoteID: "remote-1"}}, nil
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/session/s1/restart-opencode?all=true", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	rr := httptest.NewRecorder()
+	srv.handleSessionRestartOpencode(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rr.Code, rr.Body.String())
+	}
+	if len(local.restarted) != 1 || len(remote.restarted) != 1 {
+		t.Fatalf("local=%v remote=%v, want both hosts restarted", local.restarted, remote.restarted)
 	}
 }
 

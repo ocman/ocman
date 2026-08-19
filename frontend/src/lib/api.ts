@@ -846,8 +846,17 @@ export const api = {
       { command, arguments: args, model, agent },
       { parseJSON: false },
     ),
-  restartOpencode: (sessionId: string): Promise<{ target: string }> =>
-    postJSON<{ target: string }>(`/api/session/${encodeURIComponent(sessionId)}/restart-opencode`, undefined),
+  restartOpencode: (
+    sessionId: string,
+    options: { all?: boolean; force?: boolean; confirmed?: boolean } = {},
+  ): Promise<{ restarted?: number; confirmationRequired?: boolean; busySessions?: string[] }> => {
+    const query = new URLSearchParams();
+    if (options.all) query.set('all', 'true');
+    if (options.force) query.set('force', 'true');
+    if (options.confirmed) query.set('confirmed', 'true');
+    const suffix = query.size ? `?${query}` : '';
+    return postJSON(`/api/session/${encodeURIComponent(sessionId)}/restart-opencode${suffix}`, undefined);
+  },
   /**
    * Run a raw shell command in the session's working directory,
    * bypassing the LLM. Backed by the platform's shell-tool primitive

@@ -76,7 +76,7 @@ beforeEach(() => {
 
 describe('useSessionActions — /restart-opencode', () => {
   it('shows progress then success toast on a successful restart', async () => {
-    restartOpencode.mockResolvedValue({ target: 'repo:oc' });
+    restartOpencode.mockResolvedValue({ restarted: 1 });
     const setRestartToastMessage = vi.fn();
     const pending = { pending: null, begin: vi.fn(), fail: vi.fn(), clear: vi.fn() };
     const opts = makeOptions({
@@ -89,9 +89,9 @@ describe('useSessionActions — /restart-opencode', () => {
       await result.current.handleCommand('restart-opencode', '');
     });
 
-    expect(restartOpencode).toHaveBeenCalledWith('sess-1');
+    expect(restartOpencode).toHaveBeenCalledWith('sess-1', { all: false, force: false });
     expect(setRestartToastMessage.mock.calls).toEqual([
-      ['Restarting OpenCode...'],
+      ['Restarting OpenCode when sessions are idle...'],
       ['Restarted OpenCode'],
     ]);
     expect(pending.clear).toHaveBeenCalled();
@@ -113,10 +113,53 @@ describe('useSessionActions — /restart-opencode', () => {
     });
 
     expect(setRestartToastMessage.mock.calls).toEqual([
-      ['Restarting OpenCode...'],
+      ['Restarting OpenCode when sessions are idle...'],
       [null],
     ]);
     expect(pending.fail).toHaveBeenCalledWith('no pane');
     expect(pending.clear).not.toHaveBeenCalled();
+  });
+
+  it('confirms before forcing a busy instance to restart', async () => {
+    restartOpencode.mockResolvedValueOnce({ confirmationRequired: true, busySessions: ['sess-1'] }).mockResolvedValueOnce({ restarted: 1 });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const opts = makeOptions();
+    const { result } = renderHook(() => useSessionActions(opts));
+
+    await act(async () => {
+      await result.current.handleCommand('restart-opencode', 'now');
+    });
+
+    expect(window.confirm).toHaveBeenCalledWith('Running OpenCode instances and sessions will be stopped. Force restart this managed OpenCode instance?');
+    expect(restartOpencode.mock.calls).toEqual([
+      ['sess-1', { all: false, force: true }],
+      ['sess-1', { all: false, force: true, confirmed: true }],
+    ]);
+  });
+
+  it('does not force restart when the busy-instance confirmation is cancelled', async () => {
+    restartOpencode.mockResolvedValue({ confirmationRequired: true, busySessions: ['sess-1'] });
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const opts = makeOptions();
+    const { result } = renderHook(() => useSessionActions(opts));
+
+    await act(async () => {
+      await result.current.handleCommand('restart-opencode', 'now');
+    });
+
+    expect(restartOpencode.mock.calls).toEqual([['sess-1', { all: false, force: true }]]);
+    expect(opts.pending.clear).toHaveBeenCalled();
+  });
+
+  it('rejects unsupported arguments without calling the API', async () => {
+    const opts = makeOptions();
+    const { result } = renderHook(() => useSessionActions(opts));
+
+    await act(async () => {
+      await result.current.handleCommand('restart-opencode', 'later');
+    });
+
+    expect(restartOpencode).not.toHaveBeenCalled();
+    expect(opts.pending.fail).toHaveBeenCalledWith('Usage: /restart-opencode [all] [now]');
   });
 });

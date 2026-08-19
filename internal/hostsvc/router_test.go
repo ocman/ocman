@@ -54,6 +54,7 @@ func (h stubHost) StopProjectOpencode(context.Context, EnsureProjectOpencodeRequ
 func (h stubHost) RestartProjectOpencode(context.Context, EnsureProjectOpencodeRequest) (*EnsureProjectOpencodeResult, error) {
 	return nil, nil
 }
+func (h stubHost) ManagedOpencodes(context.Context) ([]ManagedOpencode, error)   { return nil, nil }
 func (h stubHost) TmuxSessions(context.Context) ([]TmuxSession, error)           { return nil, nil }
 func (h stubHost) Projects(context.Context) ([]db.ProjectStats, error)           { return nil, nil }
 func (h stubHost) TermWindows(context.Context, string) ([]TermWindow, error)     { return nil, nil }

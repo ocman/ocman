@@ -65,6 +65,7 @@ service Ocman {
   rpc EnsureProjectOpencode(JsonReq) returns (JsonResp);
   rpc StopProjectOpencode(JsonReq) returns (Empty);
   rpc RestartProjectOpencode(JsonReq) returns (JsonResp);
+  rpc ManagedOpencodes(Empty) returns (JsonResp);
   rpc TmuxSessions(Empty) returns (JsonResp);
   rpc HostCapabilities(Empty) returns (JsonResp);         // hostsvc.HostCaps
   rpc BeadsStatus(JsonReq) returns (JsonResp);            // {dir} -> hostsvc.BeadsStatus
