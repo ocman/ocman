@@ -28,13 +28,26 @@ Supports [OpenCode](https://github.com/anomalyco/opencode).
 ## Quick start
 
 ```sh
-# Run directly against the OpenCode database
-./ocman
+curl -fsSL https://forgejo.nousefreak.be/dries/ocman/raw/branch/main/install.sh | bash -s -- install
 # Open http://localhost:8228
 ```
 
-Download the latest binary from the [releases page](https://forgejo.nousefreak.be/dries/ocman/releases),
-or build from source with `make build` (requires Go 1.24+ and Node.js 22+).
+The script checks your toolchain (git, go, node, pnpm), builds from source into
+`~/.local/share/ocman/src`, installs the binary to `~/.local/bin/ocman`, and
+starts it in the background. It also installs itself as `ocman-ctl`:
+
+```sh
+ocman-ctl status | start | stop | restart | logs
+ocman-ctl update              # pull, rebuild, restart
+ocman-ctl uninstall           # add --purge to also delete state.db
+ocman-ctl doctor              # dependency check only
+```
+
+Override with `OCMAN_ADDR`, `OCMAN_PREFIX`, `OCMAN_BRANCH`, `OCMAN_SRC`.
+
+Alternatively, download the latest binary from the
+[releases page](https://forgejo.nousefreak.be/dries/ocman/releases), or build
+from source with `make build` (requires Go 1.24+ and Node.js 22+).
 
 ### macOS desktop app
 
