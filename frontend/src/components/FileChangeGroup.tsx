@@ -29,7 +29,7 @@ interface FileChangeGroupProps {
 // `patch` (modern schema) over `before`/`after` (legacy schema).
 // Centralised so the per-file and per-edit disclosures share the
 // same fallback logic.
-function ChangeDiffBody({
+export function ChangeDiffBody({
   patch,
   before,
   after,

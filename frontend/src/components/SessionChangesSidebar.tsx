@@ -1,10 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import './SessionChangesSidebar.css';
 import { usePlatformCapabilities } from '../lib/useCapabilities';
 import { useSessionChanges } from '../lib/useSessionChanges';
 import { useInfiniteRows } from '../lib/useInfiniteRows';
 import { useSidebarCallbacks } from '../lib/useSidebarCallbacks';
-import { FileChangeGroup } from './FileChangeGroup';
+import { ChangeDiffBody, FileChangeGroup } from './FileChangeGroup';
+import { DiffFullscreenModal, FullscreenButton, type FullscreenDiffFile } from './DiffFullscreenModal';
 import { SidebarFileListSkeleton } from './Skeleton';
 
 // Lazy-mount budget for the per-file rows themselves. Sessions with
@@ -49,9 +50,13 @@ interface SessionChangesSidebarProps {
   // Lets embedded parents drive a spinner on their refresh button
   // without owning the data hook themselves.
   onLoadingChange?: (loading: boolean) => void;
+  // Called once with a stable callback that opens the fullscreen
+  // diff browser, so embedded parents can put the button in their
+  // own pane header. Mirrors onRefresh.
+  onFullscreen?: (open: () => void) => void;
 }
 
-export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedded = false, onSummaryChange, onRefresh, onLoadingChange }: SessionChangesSidebarProps) {
+export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedded = false, onSummaryChange, onRefresh, onLoadingChange, onFullscreen }: SessionChangesSidebarProps) {
   const caps = usePlatformCapabilities(platformId);
   const enabled = caps.fileChanges;
   const { data, loading, error, refresh } = useSessionChanges(sessionId, { enabled, dirtyTick });
@@ -60,7 +65,9 @@ export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedd
   // ship `null` instead of `[]` for files, or omit fields entirely.
   // Coerce here so the rest of the component never has to think
   // about it.
-  const files = data?.files ?? [];
+  // Memoised so the empty fallback keeps a stable identity (a fresh
+  // `[]` each render would thrash the downstream useMemo).
+  const files = useMemo(() => data?.files ?? [], [data]);
   const totalAdditions = data?.totalAdditions ?? 0;
   const totalDeletions = data?.totalDeletions ?? 0;
   const filesChanged = data?.filesChanged ?? files.length;
@@ -94,6 +101,40 @@ export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedd
   // it can wire the embedded pane's "Refresh" button and spin it while
   // a request is in flight.
   useSidebarCallbacks({ refresh, loading, onRefresh, onLoadingChange });
+
+  // Fullscreen diff browser. The sidebar owns the modal; the parent
+  // only gets a callback to open it.
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    onFullscreen?.(() => setFullscreen(true));
+  }, [onFullscreen]);
+
+  const fullscreenFiles: FullscreenDiffFile[] = useMemo(
+    () => files.map((change) => ({
+      key: change.path,
+      path: change.path,
+      label: change.displayPath || change.path,
+      additions: change.additions,
+      deletions: change.deletions,
+      body: (
+        <ChangeDiffBody
+          patch={change.patch}
+          before={change.before}
+          after={change.after}
+          filePath={change.path}
+        />
+      ),
+    })),
+    [files],
+  );
+
+  const Fullscreen = fullscreen ? (
+    <DiffFullscreenModal
+      title="Session changes"
+      files={fullscreenFiles}
+      onClose={() => setFullscreen(false)}
+    />
+  ) : null;
 
   const Body = (
     <div className="oc-changes-sidebar-body oc-changes-list-body">
@@ -141,7 +182,7 @@ export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedd
   );
 
   if (embedded) {
-    return <div className="oc-changes-sidebar-embedded">{Body}</div>;
+    return <div className="oc-changes-sidebar-embedded">{Body}{Fullscreen}</div>;
   }
 
   return (
@@ -160,9 +201,11 @@ export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedd
             </>
           )}
         </span>
+        <FullscreenButton onClick={() => setFullscreen(true)} disabled={files.length === 0} />
         <ChangesRefreshButton onClick={refresh} loading={loading} disabled={!enabled} />
       </div>
       {Body}
+      {Fullscreen}
     </aside>
   );
 }

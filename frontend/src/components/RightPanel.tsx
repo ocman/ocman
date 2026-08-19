@@ -3,6 +3,7 @@ import './SessionChangesSidebar.css';
 import './RightPanel.css';
 import { useUiStore, type ChangesSidebarTab } from '../lib/uiStore';
 import { ChangesSidebarResizer } from './ChangesSidebarResizer';
+import { FullscreenButton } from './DiffFullscreenModal';
 import { ChangesRefreshButton, SessionChangesSidebar, type PaneSummary } from './SessionChangesSidebar';
 import { WorkingTreeChangesSidebar } from './WorkingTreeChangesSidebar';
 import { SessionInfoSidebar } from './SessionInfoSidebar';
@@ -493,6 +494,19 @@ function Pane({
   const [loading, setLoading] = useState(false);
   const handleLoadingChange = useCallback((next: boolean) => setLoading(next), []);
 
+  // Same ref+flag dance as refresh, for the pane's fullscreen diff
+  // browser. Only the diff panes wire it up; the rest never set the
+  // flag so no button appears.
+  const fullscreenRef = useRef<(() => void) | null>(null);
+  const [hasFullscreen, setHasFullscreen] = useState(false);
+  const handleFullscreen = useCallback((fn: () => void) => {
+    fullscreenRef.current = fn;
+    setHasFullscreen(true);
+  }, []);
+  const onFullscreenClick = useCallback(() => {
+    fullscreenRef.current?.();
+  }, []);
+
   return (
     <>
       <PaneHeader
@@ -502,6 +516,8 @@ function Pane({
         hasRefresh={hasRefresh}
         loading={loading}
         onRefreshClick={onRefreshClick}
+        hasFullscreen={hasFullscreen}
+        onFullscreenClick={onFullscreenClick}
         resizeAboveIdx={resizeAboveIdx}
         openTabs={openTabs}
         sizes={sizes}
@@ -534,6 +550,7 @@ function Pane({
               onSummaryChange={handleSummary}
               onRefresh={handleRefresh}
               onLoadingChange={handleLoadingChange}
+              onFullscreen={handleFullscreen}
             />
           )}
           {tab === 'working-tree' && (
@@ -544,6 +561,7 @@ function Pane({
               onSummaryChange={handleSummary}
               onRefresh={handleRefresh}
               onLoadingChange={handleLoadingChange}
+              onFullscreen={handleFullscreen}
             />
           )}
           {tab === 'bookmarks' && (
@@ -587,6 +605,8 @@ interface PaneHeaderProps {
   hasRefresh: boolean;
   loading: boolean;
   onRefreshClick: () => void;
+  hasFullscreen: boolean;
+  onFullscreenClick: () => void;
   // When non-null, this header doubles as a resize handle for the
   // boundary between pane[resizeAboveIdx] and the current pane.
   resizeAboveIdx: number | null;
@@ -608,6 +628,8 @@ function PaneHeader({
   hasRefresh,
   loading,
   onRefreshClick,
+  hasFullscreen,
+  onFullscreenClick,
   resizeAboveIdx,
   openTabs,
   sizes,
@@ -737,6 +759,7 @@ function PaneHeader({
         )}
       </span>
       <span className="oc-right-panel-pane-actions">
+        {hasFullscreen && <FullscreenButton onClick={onFullscreenClick} />}
         {hasRefresh && (
           <ChangesRefreshButton onClick={onRefreshClick} loading={loading} />
         )}

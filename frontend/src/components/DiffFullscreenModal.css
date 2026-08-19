@@ -1,0 +1,138 @@
+/* ── Fullscreen diff browser (sidebar header expand button) ── */
+.oc-diff-fs-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.oc-diff-fs-modal {
+  width: 95vw;
+  height: 95vh;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.oc-diff-fs-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.oc-diff-fs-header h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.oc-diff-fs-header-count {
+  font-size: 12px;
+  color: var(--overlay0);
+  flex: 1;
+}
+
+.oc-diff-fs-close {
+  background: transparent;
+  border: 0;
+  color: var(--overlay0);
+  cursor: pointer;
+  padding: 4px 6px;
+}
+
+.oc-diff-fs-close:hover {
+  color: var(--text);
+}
+
+.oc-diff-fs-cols {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.oc-diff-fs-files {
+  width: 320px;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+}
+
+.oc-diff-fs-file {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 10px;
+  background: transparent;
+  border: 0;
+  border-left: 2px solid transparent;
+  color: var(--text);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.oc-diff-fs-file:hover {
+  background: var(--bg-hover);
+}
+
+.oc-diff-fs-file.selected {
+  background: var(--bg-active);
+  border-left-color: var(--accent);
+}
+
+.oc-diff-fs-file-name {
+  flex-shrink: 0;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oc-diff-fs-file-dir {
+  flex: 1;
+  min-width: 0;
+  color: var(--overlay0);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.oc-diff-fs-file-counts {
+  display: inline-flex;
+  gap: 5px;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.oc-diff-fs-diff {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 8px 4px;
+}
+
+.oc-diff-fs-diff-path {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  color: var(--accent);
+  padding: 2px 8px 8px;
+  word-break: break-all;
+}

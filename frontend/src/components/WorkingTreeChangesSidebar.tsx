@@ -4,6 +4,7 @@ import { useWorkingTreeDiff } from '../lib/useWorkingTreeDiff';
 import { useInfiniteRows } from '../lib/useInfiniteRows';
 import { useSidebarCallbacks } from '../lib/useSidebarCallbacks';
 import { RawDiffView } from './RawDiffView';
+import { DiffFullscreenModal, FullscreenButton, type FullscreenDiffFile } from './DiffFullscreenModal';
 import { ChangesRefreshButton, type PaneSummary } from './SessionChangesSidebar';
 import { groupWorkingTreeFiles } from './groupWorkingTreeFiles';
 import { SidebarFileListSkeleton } from './Skeleton';
@@ -49,6 +50,9 @@ interface WorkingTreeChangesSidebarProps {
   // Called whenever the underlying request's loading flag flips.
   // Mirrors SessionChangesSidebar.onLoadingChange.
   onLoadingChange?: (loading: boolean) => void;
+  // Mirrors SessionChangesSidebar.onFullscreen: hands the parent a
+  // stable callback that opens the fullscreen diff browser.
+  onFullscreen?: (open: () => void) => void;
 }
 
 const STATUS_LABELS: Record<WorkingTreeFile['status'], string> = {
@@ -59,7 +63,7 @@ const STATUS_LABELS: Record<WorkingTreeFile['status'], string> = {
   untracked: '?',
 };
 
-export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = false, onSummaryChange, onRefresh, onLoadingChange }: WorkingTreeChangesSidebarProps) {
+export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = false, onSummaryChange, onRefresh, onLoadingChange, onFullscreen }: WorkingTreeChangesSidebarProps) {
   const enabled = !!directory;
   const { data, loading, error, notRepo, refresh } = useWorkingTreeDiff(directory, { enabled, dirtyTick });
 
@@ -115,6 +119,36 @@ export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = fal
     () => groupWorkingTreeFiles(files.slice(0, visibleFileCount)),
     [files, visibleFileCount],
   );
+
+  // Fullscreen diff browser — same contract as SessionChangesSidebar.
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    onFullscreen?.(() => setFullscreen(true));
+  }, [onFullscreen]);
+
+  const fullscreenFiles: FullscreenDiffFile[] = useMemo(
+    () => files.map((f) => ({
+      key: f.path,
+      path: f.path,
+      label: f.oldPath && f.status === 'renamed' ? `${f.oldPath} → ${f.path}` : f.path,
+      status: f.status,
+      statusLabel: STATUS_LABELS[f.status],
+      additions: f.additions,
+      deletions: f.deletions,
+      body: f.isBinary
+        ? <div className="oc-diff-empty">Binary file — diff not shown.</div>
+        : <RawDiffView diff={f.diff} filePath={f.path} />,
+    })),
+    [files],
+  );
+
+  const Fullscreen = fullscreen ? (
+    <DiffFullscreenModal
+      title="Working tree"
+      files={fullscreenFiles}
+      onClose={() => setFullscreen(false)}
+    />
+  ) : null;
 
   const Body = (
     <div className="oc-changes-sidebar-body oc-changes-list-body">
@@ -187,6 +221,7 @@ export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = fal
           </div>
         )}
         {Body}
+        {Fullscreen}
       </div>
     );
   }
@@ -207,6 +242,7 @@ export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = fal
             </>
           )}
         </span>
+        <FullscreenButton onClick={() => setFullscreen(true)} disabled={files.length === 0} />
         <ChangesRefreshButton onClick={refresh} loading={loading} disabled={!enabled} />
       </div>
       {data && data.branch && (
@@ -221,6 +257,7 @@ export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = fal
         </div>
       )}
       {Body}
+      {Fullscreen}
     </aside>
   );
 }
