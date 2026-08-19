@@ -16,9 +16,10 @@
 // async-util timeout.
 
 import { vi } from 'vitest';
+import { useEffect } from 'react';
 import { render, type RenderResult } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter, Route, Routes, useParams } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import type {
   Session,
   SessionDetail as SessionDetailPayload,
@@ -323,6 +324,21 @@ function SessionDetailRouteAdapter() {
   return <SessionDetail id={id} />;
 }
 
+// Captures the router's navigate() so tests can drive an in-app
+// navigation (the page is deliberately NOT remounted on id change,
+// see ../index.tsx — so a real navigation is the only way to
+// exercise the "old session's state is still mounted" window).
+const navigateRef: { current: ((to: string) => void) | null } = { current: null };
+
+// eslint-disable-next-line react-refresh/only-export-components
+function NavCapture() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    navigateRef.current = navigate;
+  }, [navigate]);
+  return null;
+}
+
 /** Build a Session fixture with sensible defaults. */
 export function makeSession(overrides: Partial<Session> = {}): Session {
   const now = Date.now();
@@ -413,6 +429,8 @@ export interface RenderHandle {
   api: ReturnType<typeof makeApiStub>;
   /** Populated after the page mounts — undefined if SSE never started. */
   sse: () => FakeEventSource | undefined;
+  /** Navigate to another session without remounting the page. */
+  navigate: (to: string) => void;
 }
 
 /**
@@ -484,6 +502,7 @@ export function renderSessionPage(opts: RenderOptions = {}): RenderHandle {
   const result = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[`/session/${sessionId}`]}>
+        <NavCapture />
         <Routes>
           <Route path="/session/:id" element={<SessionDetailRouteAdapter />} />
         </Routes>
@@ -496,6 +515,7 @@ export function renderSessionPage(opts: RenderOptions = {}): RenderHandle {
     store: storeSpies,
     api: mockState.apiStub,
     sse: () => FakeEventSource.latest(),
+    navigate: (to: string) => navigateRef.current?.(to),
   };
 }
 

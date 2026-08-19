@@ -780,10 +780,15 @@ export function SessionDetail({ id }: SessionDetailProps) {
   useEffect(() => {
     if (!id) return;
     if (modelSeededSessionRef.current === id) return;
+    // The page is not remounted on navigation, so for a render or two
+    // after `id` flips `session`/`messages` still hold the previously
+    // viewed session. Seeding from those would latch the old session's
+    // model and the one-shot guard would then block the correct one.
+    if (session?.id !== id) return;
     if (!activeModel) return;
     setSelectedModel(activeModel);
     modelSeededSessionRef.current = id;
-  }, [activeModel, id, setSelectedModel]);
+  }, [activeModel, id, session?.id, setSelectedModel]);
 
   const handleNewSessionInDirectory = useCallback(async (directory: string, remoteId?: string, platform?: string, title?: string) => {
     // Prefer the target project's own platform/host (e.g. a remote
