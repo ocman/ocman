@@ -3,15 +3,14 @@ title: Profiling
 weight: 8
 ---
 
-Status snapshot and roadmap for ocman's frontend/backend performance work.
-This document records (a) the suspects we identified during recon,
-(b) the instrumentation we added so we can measure them, and (c) the
-prioritised list of fixes that *should* follow once we have data.
+Where ocman's performance work stands. This records the suspects we found
+during recon, the instrumentation we added to measure them, and the fixes that
+*should* follow once we have data, in priority order.
 
-The starting symptom was: **the frontend occasionally feels "stuck"**,
-and it wasn't clear whether the cause was slow API calls or the UI.
+The starting symptom: the frontend occasionally feels stuck, and it wasn't
+clear whether slow API calls or the UI itself caused it.
 
-## Phase 1 — Reconnaissance findings (OpenCode-only)
+## Phase 1: reconnaissance findings (OpenCode-only)
 
 ocman's default deployment runs only the OpenCode adapter
 (`-platforms opencode`). Findings below assume that configuration.
@@ -40,7 +39,7 @@ On the dashboard:
 | # | Source                  | Cadence | Notes                                                       |
 |---|-------------------------|---------|-------------------------------------------------------------|
 | 12| `Dashboard.tsx` line 132| 5 s     | `GET /api/sessions` (full fan-out + git status, all the time) |
-|   | + 1–5 above             |         |                                                             |
+|   | + 1-5 above             |         |                                                             |
 
 ### Top suspects
 
@@ -48,7 +47,7 @@ The list is ordered by likelihood × impact for an OpenCode-only
 deployment. The numeric IDs (S1, S2, …) are referenced from the
 Phase 3 task list further down.
 
-#### S1 — `setInterval(..., 0)` in `SessionDetail.tsx:579`
+#### S1: `setInterval(..., 0)` in `SessionDetail.tsx:579`
 
 ```ts
 useEffect(() => {
@@ -66,45 +65,45 @@ useEffect(() => {
 dependency array also includes `tmux` (which probably changes on
 parent re-renders), so the interval is also re-created frequently.
 
-This is the strongest candidate for the "stuck" feeling — it can
+This is the strongest candidate for the "stuck" feeling. It can
 saturate the event loop on a busy machine and fight against React
 scheduling. Suggested fix: convert to a `useUiStore.subscribe`
 selector or a normal `useEffect` keyed on `paletteCommand`.
 
-#### S2 — `/api/sessions` cost on a 5 s loop
+#### S2: `/api/sessions` cost on a 5 s loop
 
 Per request, `handleSessions` does:
 
-1. `db.GetSessions` — one SQLite query, indexed reads, fast.
-2. `discoverOpenCodePorts` — runs `lsof` on macOS/Linux. **3 s TTL
+1. `db.GetSessions`: one SQLite query, indexed reads, fast.
+2. `discoverOpenCodePorts`: runs `lsof` on macOS/Linux. **3 s TTL
    cache**, so the dashboard's 5 s poll cadence means roughly every
    *other* request shells out. macOS `lsof` invocations are
-   non-trivial (~30–150 ms) and fork a process.
-3. `collectPendingPromptsByDir(ports)` — HTTP probes to every running
+   non-trivial (~30-150 ms) and fork a process.
+3. `collectPendingPromptsByDir(ports)`: HTTP probes to every running
    OpenCode instance.
-4. `applyGitInfo` — up to 8 parallel `git status` per unique dir,
+4. `applyGitInfo`: up to 8 parallel `git status` per unique dir,
    30 s TTL. With many sessions across many repos, every 30 s = burst
    of fork/exec.
 5. SQLite reads in `applySessionState` (archived/seen).
 
 The dominant cost on the steady-state path is **lsof + per-port HTTP
-probes + git** — none of which are about the database. Worth
+probes + git**, none of which are about the database. Worth
 verifying with the timing middleware before optimising.
 
-#### S3 — `SessionDetail.tsx` size + render fan-out
+#### S3: `SessionDetail.tsx` size and render fan-out
 
 3102 lines, many `useEffect` chains, no obvious virtualization on
 `parts`. SSE event firehose during a busy turn could be triggering
 large re-renders. `useInfiniteRows.ts` exists but I haven't traced
 where it's wired.
 
-#### S4 — Duplicate `/api/sessions/notify` pollers (favicon + bell)
+#### S4: duplicate `/api/sessions/notify` pollers (favicon + bell)
 
 `useFaviconNotify` and `useBellNotify` independently call
 `api.sessionsNotify` every 10 s with identical params. Free
 request-coalescing if combined into one shared store subscription.
 
-#### S5 — Dashboard polls while hidden
+#### S5: dashboard polls while hidden
 
 `SessionDetail`'s sidebar refresh pauses on `document.hidden`, but
 `Dashboard.tsx:130-134` keeps polling regardless. Background tabs
@@ -120,10 +119,10 @@ keep flogging the backend.
 - SSE path exists; the 10 s fallback only fires when SSE is broken.
 - Session-detail cache in `apiStore` (3-entry LRU) makes back-nav
   instant.
-- `useMemoryMonitor` + `usePerformanceCleanup` already exist —
-  comments document past memory-pressure history.
+- `useMemoryMonitor` + `usePerformanceCleanup` already exist, and
+  their comments document past memory-pressure history.
 
-## Phase 2 — Instrumentation (landed)
+## Phase 2: instrumentation (landed)
 
 Three independent, low-risk additions, each on its own commit:
 
@@ -188,10 +187,10 @@ When the UI next feels stuck:
   (createSession, sendMessage, archiveSession, transcribe, etc.).
   Those are user-initiated POSTs; `perfRing` focuses on the
   polling-driven GETs that we suspect drive the stuckness.
-- No persistence — closing the tab loses the ring.
+- No persistence. Closing the tab loses the ring.
 - No alerting; the footer color tiers are the only UI signal.
 
-## Phase 2.5 — Measurement results
+## Phase 2.5: measurement results
 
 A representative `__ocmanPerf.summary()` snapshot, taken after ≈3
 minutes of "sit on dashboard, click a session, look at it":
@@ -224,7 +223,7 @@ The frontend `lt:` counter did *not* turn red during this session.
   bottleneck.
 - **The bottleneck is the OpenCode HTTP proxy.** Every per-session
   call that fans out to the running OpenCode instance lands in the
-  750 ms – 2.95 s range. `/api/system/stats` (38 ms) and
+  750 ms to 2.95 s range. `/api/system/stats` (38 ms) and
   `/api/projects` (12 ms) confirm the Go process is fine when it
   doesn't talk upstream.
 - **`/api/sessions` p95 522 ms / max 1340 ms is real** and matches S2:
@@ -244,7 +243,7 @@ numbers. Each one is referenced from a B-task below.
 1. **Catalog endpoints (`/agent`, `/command`, `/provider`) are
    uncached.** Configuration data that changes rarely is re-fetched
    on every call. **B1.**
-2. **`SessionInfo` makes 4 upstream HTTP calls per request** —
+2. **`SessionInfo` makes 4 upstream HTTP calls per request:**
    `/mcp`, `/lsp`, `/provider` in parallel, then `/session/{id}/message`
    sequentially after the parallel block. The 4th can join the wait
    group. **B2.**
@@ -263,14 +262,14 @@ numbers. Each one is referenced from a B-task below.
    pure DB walk. Needs a server-side timing split before we know
    whether to fix anything. **B5.**
 
-## Phase 2.6 — Diagnostic patterns (lessons learned)
+## Phase 2.6: diagnostic patterns (lessons learned)
 
 These are heuristics for diagnosing future regressions. They came
 out of chasing the wrong thing once and not wanting to do it again.
 
 ### `/api/system/stats` is the canary
 
-`/api/system/stats` does pure local work — it reads
+`/api/system/stats` does pure local work. It reads
 `runtime.MemStats` and a few uptime values. There is no path in
 that handler that can take more than single-digit milliseconds
 under any realistic load.
@@ -312,7 +311,7 @@ ocman's polling cost; the active snapshot adds the per-session
 catalog and proxy paths. Comparing them tells you which side
 regressions live on.
 
-## Phase 3 — Backend optimization plan
+## Phase 3: backend optimization plan
 
 Tasks are keyed `B1`…`B7`. Each is independent; any subset can be
 shipped. The order below is impact-first within reasonable risk.
@@ -323,23 +322,22 @@ the next one is still worth doing.
 
 | Task | Status        | Commit                                                              |
 |------|---------------|----------------------------------------------------------------------|
-| B5   | ✅ landed      | `feat: Log per-operation timing for SessionChanges DB calls`        |
-| B1   | ✅ landed      | `feat: Cache OpenCode catalog endpoints with 30s TTL and singleflight` |
-| B3   | ✅ landed      | `feat: Singleflight OpenCode port discovery to coalesce concurrent lsof` |
-| B2   | ✅ landed      | `perf: Run liveTokensAndCost in the SessionInfo parallel fan-out`   |
-| B6   | ✅ landed (+timeout) | `fix: Cap pending-prompt fetch at 500ms…` + `perf: Cache pending-prompt fetches per port with 3s TTL` |
-| B4   | ⏸ deferred    | Needs DB-vs-live freshness verification (see open questions)        |
-| B7   | ⏸ deferred    | Only if measurements still show unexplained Go-side latency         |
+| B5   | landed | `feat: Log per-operation timing for SessionChanges DB calls`        |
+| B1   | landed | `feat: Cache OpenCode catalog endpoints with 30s TTL and singleflight` |
+| B3   | landed | `feat: Singleflight OpenCode port discovery to coalesce concurrent lsof` |
+| B2   | landed | `perf: Run liveTokensAndCost in the SessionInfo parallel fan-out`   |
+| B6   | landed (+timeout) | `fix: Cap pending-prompt fetch at 500ms…` + `perf: Cache pending-prompt fetches per port with 3s TTL` |
+| B4   | deferred | Needs DB-vs-live freshness verification (see open questions)        |
+| B7   | deferred | Only if measurements still show unexplained Go-side latency         |
 
-The B6 work landed in two commits because we discovered (via the
-canary pattern above) that a hung OpenCode instance was dragging
-every dashboard request to 10s+ via the shared 10s HTTP timeout.
-The fix is a tight 500 ms per-call timeout *plus* the planned 3s
-TTL cache; together they ensure (a) one slow instance never blocks
-the dashboard fan-out, and (b) the steady-state poll cost is
-amortised over the cache window.
+The B6 work landed in two commits because the canary pattern above
+turned up something else: a hung OpenCode instance was dragging every
+dashboard request past 10 s through the shared 10 s HTTP timeout. The
+fix is a tight 500 ms per-call timeout *plus* the planned 3 s TTL
+cache. Together, one slow instance no longer blocks the dashboard
+fan-out, and the cache window amortises the steady-state poll cost.
 
-### B5 — Instrument `/api/session/:id/changes` (do first, lowest risk)
+### B5: instrument `/api/session/:id/changes` (do first, lowest risk)
 
 The 1.87 s sample is unexplained. Before touching anything, split
 that endpoint's timing into "DB" vs "everything else" so we know
@@ -353,14 +351,14 @@ whether it's a real bottleneck or a single noisy sample.
 - Risk: zero (instrumentation only).
 - Effort: 30 min.
 
-### B1 — Cache `/agent`, `/command`, `/provider` per (port, endpoint)
+### B1: cache `/agent`, `/command`, `/provider` per (port, endpoint)
 
 These are configuration data; OpenCode itself rebuilds them rarely.
 A 30-second TTL cache eliminates the bulk of the per-session-page
 load cost.
 
-- File: `internal/platforms/opencode/client.go` — add a
-  `getJSONCached(port, path, ttl)` helper.
+- File: `internal/platforms/opencode/client.go`, where a
+  `getJSONCached(port, path, ttl)` helper goes.
 - Wire into `AgentCatalog`, `SlashCommands`, and `fetchOpenCodeProviders`.
   The latter is shared by `SessionModels` and `SessionInfo`, so
   both endpoints benefit.
@@ -370,9 +368,9 @@ load cost.
   the first cache miss.
 - Risk: low. Stale config for ≤ TTL. Worst case: user changes
   agents.json and waits 30 s to see it.
-- Effort: 2–3 hours including TTL/race tests.
+- Effort: 2-3 hours including TTL/race tests.
 
-### B3 — Singleflight the lsof port discovery
+### B3: singleflight the lsof port discovery
 
 When five endpoints fire on a SessionDetail mount, only the first
 should pay for lsof. Today they all serialize on a `sync.Mutex` and
@@ -387,7 +385,7 @@ take turns observing the same answer.
 - Risk: low. Standard library pattern.
 - Effort: 1 h including the test.
 
-### B2 — Fold `liveTokensAndCost` into the SessionInfo parallel fan-out
+### B2: fold `liveTokensAndCost` into the SessionInfo parallel fan-out
 
 `SessionInfo` currently runs three calls in parallel, then a fourth
 sequentially. Move all four into the same wait group.
@@ -400,7 +398,7 @@ sequentially. Move all four into the same wait group.
   `liveTokensAndCost` depends on `mcp` / `lsp` / `provider` results.
 - Effort: 30 min.
 
-### B4 — Stop preferring live over DB for `/api/session/:id` (proposal, needs verification)
+### B4: stop preferring live over DB for `/api/session/:id` (proposal, needs verification)
 
 `fetchSessionFromOpenCode` proxies two upstream calls (`/session/{id}`
 and `/session/{id}/message`) on every refresh, even though the DB
@@ -421,13 +419,13 @@ is generating.
 - Risk: medium. The reason live-by-default exists is composer
   freshness; we'd need to confirm SSE-driven updates fully replace
   it.
-- Effort: 2–3 h, mostly verification.
+- Effort: 2-3 h, mostly verification.
 
-### B6 — Cache pending prompts per port
+### B6: cache pending prompts per port
 
 `/api/sessions` and `/api/sessions/notify` both fan out to every
 running OpenCode for `/permission` and `/question` on every call.
-A 3-second TTL (matching the lsof cache) eliminates ~60–80% of
+A 3-second TTL (matching the lsof cache) eliminates ~60-80% of
 those calls.
 
 - File: `internal/platforms/opencode/client.go`
@@ -438,7 +436,7 @@ those calls.
   pushes real-time updates to any connected SessionDetail.
 - Effort: 1 h.
 
-### B7 — Add backend pprof endpoint (only if needed after B1–B6)
+### B7: add backend pprof endpoint (only if needed after B1-B6)
 
 If post-B1 measurements still show unexplained Go-side latency, add
 `net/http/pprof` behind a build flag or a dev-only env var so we can
@@ -455,13 +453,13 @@ cause of perceived stalls per the measurement, but they're still
 worth fixing for cleanliness and to reduce backend load. Suggested
 order if/when we come back to them:
 
-- **F1 (= old S5)** — Pause Dashboard polling on `document.hidden`.
+- **F1 (= old S5).** Pause Dashboard polling on `document.hidden`.
   30 min, very low risk. Reduces idle traffic on background tabs.
-- **F2 (= old S4)** — Coalesce favicon + bell pollers into one
+- **F2 (= old S4).** Coalesce favicon + bell pollers into one
   shared `/api/sessions/notify` poll. 2 h, low risk. Halves the
   dashboard-adjacent backend pressure.
-- **F3 (= old S1)** — Replace the `setInterval(0)` palette
-  dispatcher with `useUiStore.subscribe`. 1–2 h, low risk.
+- **F3 (= old S1).** Replace the `setInterval(0)` palette
+  dispatcher with `useUiStore.subscribe`. 1-2 h, low risk.
   Cleanliness fix; not on the perf hot path.
 
 These are deliberately not in the B-numbered list because the
@@ -476,7 +474,7 @@ backend wins are larger and unblock more user pain.
   instrumentation now logs `parts_ms` and `session_ms` separately
   whenever the operation exceeds 200 ms. Next time the endpoint
   shows up slow in `__ocmanPerf`, grep the server log for
-  `op=session_changes` and look at the field breakdown — that
+  `op=session_changes` and look at the field breakdown. That
   tells us whether it's the parts query, the session metadata
   fetch, or the in-memory aggregation.
 - **Connection reuse to OpenCode:** the upstream `http.Client` has
@@ -484,31 +482,31 @@ backend wins are larger and unblock more user pain.
   loopback connections, but the latencies were too high for warm
   reuse during the original measurements. After B1/B2/B3/B6 most
   per-call latency is now upstream-bounded, so this is less
-  pressing — revisit only if measurements show OpenCode itself
+  pressing. Revisit only if measurements show OpenCode itself
   responding instantly while ocman still reports proxy latency.
 
 ## Reference: relevant files
 
 ### Backend
-- `internal/server/server.go` — mux assembly, middleware wiring.
-- `internal/server/middleware.go` — request-timing logger.
-- `internal/server/handlers.go` — `/api/sessions`, `/api/sessions/notify`,
+- `internal/server/server.go`: mux assembly, middleware wiring.
+- `internal/server/middleware.go`: request-timing logger.
+- `internal/server/handlers.go`: `/api/sessions`, `/api/sessions/notify`,
   `applyGitInfo`.
-- `internal/platforms/opencode/adapter.go` — Sessions(), port discovery.
-- `internal/platforms/opencode/client.go` — upstream HTTP helpers
+- `internal/platforms/opencode/adapter.go`: Sessions(), port discovery.
+- `internal/platforms/opencode/client.go`: upstream HTTP helpers
   (`getJSON`, lsof discovery, prompt fetch). Where B1/B3/B6 land.
-- `internal/platforms/opencode/operations.go` — per-session catalog
+- `internal/platforms/opencode/operations.go`: per-session catalog
   methods (`AgentCatalog`, `SlashCommands`, `SessionModels`,
   `Session`). Where B4 lands.
-- `internal/platforms/opencode/info.go` — `SessionInfo` parallel
+- `internal/platforms/opencode/info.go`: `SessionInfo` parallel
   fan-out. Where B2 lands.
-- `internal/git/info.go` — git status cache (30 s TTL).
+- `internal/git/info.go`: git status cache (30 s TTL).
 
 ### Frontend
-- `frontend/src/App.tsx` — top-level pollers and dev handles.
-- `frontend/src/pages/Dashboard.tsx` — 5 s `/api/sessions` poller.
-- `frontend/src/pages/SessionDetail.tsx` — the polling jungle.
-- `frontend/src/lib/api.ts` — `fetchJSON` / `postJSON` (instrumented).
-- `frontend/src/lib/perfRing.ts` — perf ring buffer.
-- `frontend/src/lib/useLongTaskMonitor.ts` — long-task observer.
-- `frontend/src/components/BackendStats.tsx` — footer display.
+- `frontend/src/App.tsx`: top-level pollers and dev handles.
+- `frontend/src/pages/Dashboard.tsx`: 5 s `/api/sessions` poller.
+- `frontend/src/pages/SessionDetail.tsx`: the polling jungle.
+- `frontend/src/lib/api.ts`: `fetchJSON` / `postJSON` (instrumented).
+- `frontend/src/lib/perfRing.ts`: perf ring buffer.
+- `frontend/src/lib/useLongTaskMonitor.ts`: long-task observer.
+- `frontend/src/components/BackendStats.tsx`: footer display.

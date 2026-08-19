@@ -3,36 +3,35 @@ title: MCP server
 weight: 3
 ---
 
-Ocman embeds an optional **MCP (Model Context Protocol)** server so an AI
-coding agent — or you, through the agent — can split work from an active
-session into new parallel sessions or isolated git worktrees, and
-coordinate between them.
+Ocman embeds an optional MCP (Model Context Protocol) server so an AI coding
+agent, or you through the agent, can split work from an active session into
+new parallel sessions or isolated git worktrees and coordinate between them.
 
 Ocman works fine as a plain dashboard without this. Install it only if
 you want agent-driven session splitting.
 
 ## Endpoint
 
-The server uses the Streamable HTTP transport and listens on its **own
-loopback-only port**, separate from the web UI:
+The server uses the Streamable HTTP transport and listens on its own
+loopback-only port, separate from the web UI:
 
-- `http://127.0.0.1:8227/mcp` — the dedicated MCP listener (`-mcp-addr`).
-  Works the same in dev and production, and needs no credentials.
-- `http://localhost:8228/mcp` (dev) / `http://localhost:8229/mcp`
-  (production binary) — the same endpoint on the web UI's port. Subject to
-  password auth, so a native MCP client gets `403` when auth is configured.
+- `http://127.0.0.1:8227/mcp` is the dedicated MCP listener (`-mcp-addr`).
+  It works the same in dev and production, and needs no credentials.
+- `http://localhost:8228/mcp` (dev) or `http://localhost:8229/mcp`
+  (production binary) is the same endpoint on the web UI's port. Password auth
+  applies there, so a native MCP client gets `403` when auth is configured.
 
-The recommended URL is also exposed via `/api/capabilities` as
-`mcpServer.url`. Both paths are **localhost-only**: origin-less native MCP
-clients are supported, cross-origin browser requests are rejected.
+`/api/capabilities` also reports the recommended URL as `mcpServer.url`. Both
+paths are localhost-only. Origin-less native MCP clients work,
+cross-origin browser requests are rejected.
 
 The dedicated listener exists because MCP clients cannot present an auth
 cookie, so it has to treat the loopback peer address as the credential. That
-would be unsafe on the web UI's port — behind a reverse proxy every forwarded
-request arrives from `127.0.0.1` — so it gets a listener bound to loopback
-only, which a proxy on the main port cannot reach. Ocman refuses to bind
-`-mcp-addr` to a non-loopback address; `-mcp-addr ""` disables the dedicated
-listener entirely.
+is unsafe on the web UI's port, where every request forwarded by a reverse
+proxy arrives from `127.0.0.1`. Binding a separate loopback-only listener
+keeps it out of reach of a proxy pointed at the main port. Ocman refuses to
+bind `-mcp-addr` to a non-loopback address, and `-mcp-addr ""` disables the
+dedicated listener entirely.
 
 ## Setup
 
@@ -41,13 +40,13 @@ find its own entry, shows a toast offering to install it. Clicking **Install**
 writes the entry below into `~/.config/opencode/opencode.json`
 (`$XDG_CONFIG_HOME` and `OPENCODE_CONFIG` are honoured), after copying the
 original to `opencode.<timestamp>-backup.json` in the same directory. Every
-other key in the file — including any other MCP servers — is preserved.
-**Restart OpenCode afterwards**; it reads the config at startup.
+other key in the file survives, including any other MCP servers. Restart
+OpenCode afterwards, since it reads the config at startup.
 
-Ocman won't touch a config it can't rewrite losslessly (a `.jsonc` file, or a
-`.json` file with comments): the toast then shows the URL to paste in
-yourself. It also offers to update a stale entry, e.g. one still pointing at
-an older port. The same information is available at `GET /api/mcp/config`.
+Ocman won't touch a config it can't rewrite losslessly, meaning a `.jsonc`
+file or a `.json` file with comments. The toast then shows the URL to paste in
+yourself. It also offers to update a stale entry, say one still pointing at an
+older port. `GET /api/mcp/config` returns the same information.
 
 To do it by hand, add the server to your project's `opencode.json` or the
 global config:
@@ -91,23 +90,26 @@ production binary. Change it if you moved the listener with `-mcp-addr`.
 ## How splitting works
 
 1. The model (or you, via the agent) calls `new_session` with a brief
-   `intent` and the current `session_id` (optionally `worktree=true` +
-   `branch`, and/or a `model`).
-2. Ocman gathers context from the parent session's directory — the last
-   10 messages, the current git branch, and `git diff --stat`.
-3. A structured Markdown prompt is assembled and sent to a new OpenCode
-   session.
-4. A background watcher polls the child session. After the terminal child turn,
-   `new_session` returns its status and final assistant text directly, or durably
-   queues it for the parent's next idle edge when called with `wait=false`. While a synchronous call
-   waits, ocman emits MCP progress immediately and every 10 seconds so clients
-   keep the request alive. If the MCP caller disconnects, ocman defers a parent
-   reminder to call `await_session_result`, which reconnects to that wait without
-   prompting the child again, including after an ocman restart. An explicit
-   child ID also lets `await_session_result` synchronize an asynchronous call. Direct
-   `send_message_to_parent` updates retain the explicit untrusted data boundary;
-   `send_message_to_child` reopens the child for its next turn and supports the
-   same direct-result behavior with `wait=true`.
+   `intent` and the current `session_id`, optionally with `worktree=true`
+   plus a `branch`, and a `model`.
+2. Ocman gathers context from the parent session's directory: the last 10
+   messages, the current git branch, and a per-file summary of uncommitted
+   changes.
+3. Ocman assembles a structured Markdown prompt and sends it to a new
+   OpenCode session.
+4. A background watcher polls the child session. After the child's terminal
+   turn, `new_session` returns its status and final assistant text directly.
+   Called with `wait=false`, it queues that result durably for the parent's
+   next idle edge instead. While a synchronous call waits, ocman emits MCP
+   progress immediately and every 10 seconds so clients keep the request
+   alive.
+5. If the MCP caller disconnects, ocman defers a reminder telling the parent
+   to call `await_session_result`. That reconnects to the same wait without
+   prompting the child again, and it survives an ocman restart. Passing an
+   explicit child ID also lets `await_session_result` pick up an asynchronous
+   call. Direct `send_message_to_parent` updates keep the untrusted-data
+   boundary explicit. `send_message_to_child` reopens the child for its next
+   turn and supports the same direct result with `wait=true`.
 
 ## Embedding generated assets
 
@@ -123,19 +125,19 @@ chart, an SVG diagram, a generated PDF. `embed_file` closes that gap.
    downloads.
 
 The token is an HMAC over the absolute path, signed with a key persisted
-in `state.db`, so links keep working across restarts but a hand-crafted
+in `state.db`, so links keep working across restarts while a hand-crafted
 or altered path is rejected with `403`. The endpoint sits behind the
 normal dashboard auth guard, and responses carry `nosniff` plus a
 `Content-Security-Policy: sandbox` header so an SVG or HTML asset opened
 as a top-level document cannot run script.
 
-Because MCP callers are local and already run as your user, the tool does
-not restrict which paths may be embedded — an agent that can call it can
-already read those files directly.
+MCP callers are local and already run as your user, so the tool does not
+restrict which paths may be embedded. An agent that can call it can read
+those files directly anyway.
 
 ## Splitting skill (optional)
 
-Ocman ships an OpenCode **skill** that gives the agent better heuristics
+Ocman ships an OpenCode skill that gives the agent better heuristics
 for *when and how* to split work, so the MCP tool descriptions can stay
 short and action-focused:
 

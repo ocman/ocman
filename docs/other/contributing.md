@@ -54,7 +54,7 @@ internal/state/                            ocman's own writable state DB (archiv
                                             auth secret, favorites, cached projects)
 internal/server/                           HTTP server, API handlers, static file serving,
                                             OpenCode port discovery, auth
-internal/server/static/                    Vite build output (embedded into Go binary)
+internal/webui/static/                     Vite build output (embedded into Go binary)
 internal/tmux/                             tmux process control + opencode launchers
 internal/term/                             in-app browser terminals (tmux windows + PTY bridge)
 internal/whisper/                          voice transcription via local whisper-cpp
@@ -69,12 +69,12 @@ spec/                                      Requirements + architecture notes per
 - Go 1.24+
 - Node.js 22+ (provided by `mise`)
 - [pnpm](https://pnpm.io/) (provided by `mise`; pinned via `packageManager` in `frontend/package.json`)
-- [mise](https://mise.jdx.dev/) — provides `air`, `node`, and `pnpm` (`mise install`)
+- [mise](https://mise.jdx.dev/), which provides `air`, `node`, and `pnpm` (`mise install`)
 - `tmux` on `PATH` for the in-UI launcher
 
-> **Note:** All Node-side commands use `pnpm`. `npm` is no longer
-> supported — running `npm install` will not produce the expected
-> `pnpm-lock.yaml` and will be rejected by CI.
+> All Node-side commands use `pnpm`. `npm` is no longer supported: running
+> `npm install` will not produce the expected `pnpm-lock.yaml`, and CI
+> rejects it.
 
 ### Quick command reference
 
@@ -100,39 +100,42 @@ spec/                                      Requirements + architecture notes per
 
 ### Build pipeline
 
-1. `cd frontend && pnpm install --frozen-lockfile && pnpm build` — builds frontend into `internal/server/static/`
-2. `go build -o ocman .` — embeds `internal/server/static/` via `//go:embed`
+1. `cd frontend && pnpm install --frozen-lockfile && pnpm build` builds the frontend into `internal/webui/static/`.
+2. `go build -o ocman .` embeds `internal/webui/static/` via `//go:embed`.
 
-Order matters: the frontend must be built before `go build`.
+Order matters: build the frontend before `go build`.
 
 ### Development workflows
 
-**Regular frontend development:**
+Regular frontend development:
+
 ```bash
 make dev
 # → Instant HMR updates; best for UI iteration
 ```
 
-**Memory profiling / production testing:**
+Memory profiling or production testing:
+
 ```bash
 make dev-prod-watch
 # → Edit code → auto-rebuild → manually refresh browser
 ```
 
-> Vite's preview mode doesn't include HMR. The watcher rebuilds automatically but you need to
-> refresh the browser manually. This is intentional — production builds are for testing, not
-> rapid iteration.
+> Vite's preview mode has no HMR. The watcher rebuilds automatically but you refresh the
+> browser yourself. That's deliberate: production builds are for testing, not rapid
+> iteration.
 
 ## Tests
 
-The repo has **180+ Go tests** (unit + integration), **81 frontend tests** (vitest), and a
-**Playwright end-to-end suite** covering auth, the dashboard, composer, SSE streaming, and
-prompts. CI runs all three on every PR; `make test` runs them locally.
+Three suites: Go tests (unit and integration), frontend tests in vitest, and a Playwright
+end-to-end suite covering auth, the dashboard, composer, SSE streaming, and prompts. CI runs
+all three on every PR, and `make test` runs them locally. Coverage is ratcheted, so new code
+ships with tests.
 
 ## Platform-agnostic frontend
 
 The frontend must not branch on `session.platform === 'opencode'` (or similar string comparisons).
-UI capability gating goes through `/api/capabilities` + `useCapabilities()` instead. This is
-enforced by `scripts/check-platform-branching.sh`, which `make lint` runs. If you hit a false
-positive, the pragma `// ocman:allow-platform-branch` suppresses the check on the next line —
-use sparingly (e.g. for generic helpers that legitimately need the platform identity).
+UI capability gating goes through `/api/capabilities` and `useCapabilities()` instead.
+`scripts/check-platform-branching.sh` enforces this, and `make lint` runs it. If you hit a false
+positive, the pragma `// ocman:allow-platform-branch` suppresses the check on the next line. Use
+it sparingly, for generic helpers that genuinely need the platform identity.

@@ -3,10 +3,11 @@ title: Workflows
 weight: 4
 ---
 
-Workflows are source-controlled YAML or JSON DAGs. Publish creates an immutable
-version; every run pins that version and its mapped subworkflow versions.
+Workflows are source-controlled YAML or JSON DAGs. Publishing one creates an
+immutable version, and every run pins that version plus its mapped subworkflow
+versions.
 
-## The Runner
+## The runner
 
 Install Dagu 2.x separately. Ocman starts one private loopback-only Dagu
 server on demand under `~/.local/share/ocman/dagu` and uses it to execute
@@ -23,22 +24,22 @@ projects run, node, and attempt state back into `state.db`. Polling rather
 than callbacks means a run survives an ocman restart and cannot miss an
 event. Nothing reads execution state back out to drive scheduling.
 
-Dagu only runs shell commands, so agent, approval, join, and conditional
-nodes are executed by `ocman workflow-step`, which the compiled spec
-invokes. The real node configuration stays in ocman: prompts, models, and
-credentials never reach a spec or a Dagu step log, and the private Dagu
-process gets a minimal environment with no LLM credentials.
+Dagu only runs shell commands, so `ocman workflow-step` executes agent,
+approval, join, and conditional nodes, invoked by the compiled spec. The real
+node configuration stays in ocman, so prompts, models, and credentials never
+reach a spec or a Dagu step log, and the private Dagu process gets a minimal
+environment with no LLM credentials.
 
-Features with no verified translation yet — resource pools, managed
-workspaces, path leases, secrets, run limits, fail-fast, and repeat — keep
-running on ocman's native dispatcher. A definition using them is declined by
-the compiler and routed there automatically, so nothing has to change in the
+Some features have no verified translation yet: resource pools, managed
+workspaces, path leases, secrets, run limits, fail-fast, and repeat. Those
+keep running on ocman's native dispatcher. The compiler declines a definition
+using them and routes it there automatically, so nothing has to change in the
 workflow.
 
 Cron triggers accept a `timezone`, so a schedule means the same wall-clock
 time wherever ocman runs.
 
-## Migration Preset
+## Migration preset
 
 `examples/workflows/adversarial-migration.yaml` is the reusable Bun-style
 campaign. Publish `migration-item.yaml` first, then publish and activate the
@@ -55,18 +56,18 @@ dependencies on both structured findings. The bounded repeat policy prevents a
 review/fix campaign from looping forever.
 
 The generic map join aggregates item outcomes in stable input order. Sibling
-review findings are joined by the fixer through its two declared dependencies;
-they are not a separate node type.
+review findings are joined by the fixer through its two declared dependencies,
+so they are not a separate node type.
 
-## Agent Output
+## Agent output
 
 Agent completion does not require JSON by default. Set `agent.outputSchema` when
 downstream nodes need structured output. Validate and publish compile the JSON
 Schema, and each run includes it in the agent prompt and validates the final
 response against it. A surrounding Markdown code fence is ignored. External
-schema references are rejected; use local `$defs` and fragment `$ref` values.
+schema references are rejected, so use local `$defs` and fragment `$ref` values.
 
-## Run It
+## Run it
 
 1. Copy the examples into the repository being migrated and replace
    `/workspace/repository` with its absolute path.
@@ -80,7 +81,7 @@ schema references are rejected; use local `$defs` and fragment `$ref` values.
    artifacts, resource waits, and held workspace leases in the run view. A
    failed validation blocks its commit.
 
-## Diagnostics Fixture
+## Diagnostics fixture
 
 `examples/workflows/diagnostic-partitions.yaml` captures compiler/test output
 once, turns its Node Result into a stable partition list, and maps the existing
@@ -88,7 +89,7 @@ item workflow over that list. Do not put the expensive diagnostic command in
 the per-item subworkflow: agents consume the partition Node Result rather than
 rerunning discovery.
 
-## Safety And Permissions
+## Safety and permissions
 
 - Command nodes need explicit `bash` allow rules. There is no workflow-only
   permission bypass.
@@ -101,14 +102,14 @@ rerunning discovery.
 - Command validation is the gate. An agent claiming completion does not let a
   commit run when validation fails.
 
-## Adapt It
+## Adapt it
 
 Use a stable key that survives reordered discovery, tune run concurrency and
 agent/compiler/commit pools to the host, and declare the smallest path leases.
 Change the validation command to the project's real test command. Add an
 approval before the commit coordinator when a human must inspect a batch.
 
-## Retry From A Node
+## Retry from a node
 
 After a run succeeds or fails, select a node and choose **Retry from**. Ocman
 creates a new run on the workflow's active immutable version, reuses successful
@@ -125,25 +126,25 @@ sources.
 
 ## Troubleshooting
 
-- **Map has no items:** inspect the source node's `output`; it must be a JSON
+- **Map has no items.** Inspect the source node's `output`; it must be a JSON
   array with unique non-empty keys.
-- **A node waits:** inspect the resource pool and workspace lease sections;
+- **A node waits.** Inspect the resource pool and workspace lease sections;
   lower demand or raise an explicitly bounded capacity.
-- **An item is unknown after restart:** pause, inspect its Node Result and
+- **An item is unknown after restart.** Pause, inspect its Node Result and
   historical artifacts, and resolve the attempt rather than blindly retrying a
   side effect.
-- **Validation failed:** fix the item and rerun the version; never bypass the
+- **Validation failed.** Fix the item and rerun the version. Never bypass the
   command gate by manually committing in a path-leased worker.
 
 ## Terminology
 
-- **Definition/version/run:** authored DAG, immutable published revision, and
-  one execution pinned to that revision.
-- **Node/attempt/Node Result:** a graph step, one executor invocation, and the
-  canonical `{id, name, started, ended, status, output}` result envelope.
-- **Artifact:** an immutable historical file or payload, not a node-output
+- **Definition, version, run.** The authored DAG, an immutable published
+  revision, and one execution pinned to that revision.
+- **Node, attempt, Node Result.** A graph step, one executor invocation, and
+  the canonical `{id, name, started, ended, status, output}` result envelope.
+- **Artifact.** An immutable historical file or payload, not a node-output
   channel.
-- **Map item/join:** one stable-key child run and the ordered aggregate of item
-  outcomes.
-- **Pool/shard/lease:** bounded execution capacity, a run-owned worktree, and
-  temporary exclusive or path-scoped ownership.
+- **Map item, join.** One stable-key child run, and the ordered aggregate of
+  item outcomes.
+- **Pool, shard, lease.** Bounded execution capacity, a run-owned worktree,
+  and temporary exclusive or path-scoped ownership.

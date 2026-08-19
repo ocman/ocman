@@ -3,14 +3,14 @@ title: Releases
 weight: 9
 ---
 
-This repository creates release tags automatically from Conventional Commit messages on `main`.
+Release tags are created automatically from Conventional Commit messages on `main`.
 
 ## Files
 
-- `.github/workflows/semantic-tag.yml`: inspects commits on `main`, computes the next semver version, and creates a `v*` tag through the Forgejo API
-- `.github/workflows/release.yml`: runs when a `v*` tag is pushed, builds platform archives, creates the Forgejo release entry, and uploads the assets
+- `.github/workflows/semantic-tag.yml` inspects commits on `main`, computes the next semver version, and creates a `v*` tag through the Forgejo API.
+- `.github/workflows/release.yml` runs when a `v*` tag is pushed, builds platform archives, creates the Forgejo release entry, and uploads the assets.
 
-## One-Time Setup
+## One-time setup
 
 1. Create a Forgejo access token for a user or bot that can create tags in this repository.
 2. Add that token to repository secrets as `RELEASE_TOKEN`.
@@ -18,7 +18,7 @@ This repository creates release tags automatically from Conventional Commit mess
 4. Push the workflow files to `main`.
 5. Trigger the `Semantic Tag` workflow with `workflow_dispatch` if you want to verify the setup immediately.
 
-## Commit Format
+## Commit format
 
 Use Conventional Commits for changes that should drive versioning.
 
@@ -42,7 +42,7 @@ The semantic tag workflow currently treats these commit types as releasable:
 
 If no releasable Conventional Commits are present since the latest `v*` tag, no new tag is created.
 
-## Normal Release Flow
+## Normal release flow
 
 1. Merge or push Conventional Commit changes onto `main`.
 2. The `Semantic Tag` workflow runs.
@@ -51,7 +51,7 @@ If no releasable Conventional Commits are present since the latest `v*` tag, no 
 5. It creates the new `v*` tag through the Forgejo API.
 6. The existing `Release` workflow sees the new tag, builds the platform archives, creates the release entry, and uploads the assets.
 
-## Direct Pushes To Main
+## Direct pushes to main
 
 Direct pushes to `main` are the normal case for this setup.
 
@@ -62,7 +62,7 @@ Direct pushes to `main` are the normal case for this setup.
 
 There is no release PR in this flow.
 
-## First Release
+## First release
 
 If the repository has no `v*` tags yet, the semantic tag workflow starts from `0.0.0`.
 
@@ -72,11 +72,11 @@ Examples:
 - first releasable `feat:` commit -> `v0.1.0`
 - first breaking change -> `v1.0.0`
 
-## Why A Dedicated Token Is Required
+## Why a dedicated token is required
 
-The semantic tag workflow uses `RELEASE_TOKEN` instead of the default automation token so the created tag can trigger the separate tag-based release workflow.
+The semantic tag workflow uses `RELEASE_TOKEN` instead of the default automation token so the tag it creates can trigger the separate tag-based release workflow.
 
-If your Forgejo instance suppresses follow-up workflow triggers from automation-created refs, using the default automation token can create the tag without starting `.github/workflows/release.yml`.
+If your Forgejo instance suppresses follow-up workflow triggers from automation-created refs, the default automation token will create the tag without starting `.github/workflows/release.yml`.
 
 ## Troubleshooting
 

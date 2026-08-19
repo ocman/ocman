@@ -11,10 +11,10 @@ same time.
 
 ## Can it corrupt my OpenCode data?
 
-Ocman opens OpenCode's database **read-only**
-(`~/.local/share/opencode/opencode.db` by default). Its own state — archived
-flags, favourites, settings, queued messages — lives in a separate writable
-database at `~/.local/share/ocman/state.db`.
+Ocman opens OpenCode's database read-only
+(`~/.local/share/opencode/opencode.db` by default). Its own state, meaning
+archived flags, favourites, settings and queued messages, lives in a separate
+writable database at `~/.local/share/ocman/state.db`.
 
 ## Why is the composer disabled on some sessions?
 
@@ -59,6 +59,6 @@ between OpenCode and whatever provider you configured there.
 
 ## Can I run it on several machines?
 
-Yes — one hub attaches to other ocman instances over gRPC and shows every
+Yes. One hub attaches to other ocman instances over gRPC and shows every
 machine's sessions in one list. It is off by default. See
 [Multi-remote](../features/multi-remote/).
