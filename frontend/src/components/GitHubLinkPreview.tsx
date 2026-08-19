@@ -10,7 +10,7 @@ import {
   loadForgejoHosts,
 } from '../lib/githubPreview';
 import type { GitHubPreviewData } from '../lib/githubPreview';
-import { relativeTimeISO } from '../lib/format';
+import { RelativeTime } from './RelativeTime';
 import './GitHubLinkPreview.css';
 
 const PreviewCard: FC<{ data: GitHubPreviewData }> = ({ data }) => (
@@ -57,7 +57,7 @@ const PreviewCard: FC<{ data: GitHubPreviewData }> = ({ data }) => (
         {data.updatedAt && (
           <>
             <span className="gh-preview__sep">·</span>
-            <span className="gh-preview__date">{relativeTimeISO(data.updatedAt)}</span>
+            <span className="gh-preview__date"><RelativeTime iso={data.updatedAt} /></span>
           </>
         )}
       </span>
