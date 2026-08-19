@@ -439,10 +439,10 @@ proto:
 #
 # Spins up grafana/otel-lgtm: Grafana on :3000, OTLP/gRPC on :4317,
 # OTLP/HTTP on :4318. Pre-wired Loki/Tempo/Mimir datasources, anonymous
-# Admin enabled (dev-only). See docker-compose.otel.yml.
+# Admin enabled (dev-only). See deploy/docker-compose.otel.yml.
 
 otel-up:
-	docker compose -f docker-compose.otel.yml up -d
+	docker compose -f deploy/docker-compose.otel.yml up -d
 	@echo ""
 	@echo "  Grafana:    http://localhost:3000  (anonymous Admin)"
 	@echo "  OTLP/gRPC:  localhost:4317"
@@ -451,51 +451,54 @@ otel-up:
 	@echo "  Run ocman with:  ./ocman --otel=http://localhost:4318"
 
 otel-down:
-	docker compose -f docker-compose.otel.yml down
+	docker compose -f deploy/docker-compose.otel.yml down
 
 otel-logs:
-	docker compose -f docker-compose.otel.yml logs -f lgtm
+	docker compose -f deploy/docker-compose.otel.yml logs -f lgtm
 
 # Wipe the persisted telemetry volume too. Use when stale data clutters
 # Grafana or you want a clean slate after schema changes.
 otel-reset:
-	docker compose -f docker-compose.otel.yml down -v
+	docker compose -f deploy/docker-compose.otel.yml down -v
 
 # --- Local HTTPS via Caddy + Tailscale -----------------------------------
 #
-# Exposes ocman at https://driess-macbook-pro.tail5f13e4.ts.net so that
-# browser APIs requiring a secure context (microphone, Web Speech API)
-# work on iPads connected to your tailnet.
+# Exposes ocman at https://$(OCMAN_CADDY_HOST) so that browser APIs
+# requiring a secure context (microphone, Web Speech API) work on other
+# devices connected to your tailnet.
+#
+# Set OCMAN_CADDY_HOST to your own Tailscale hostname (see .envrc.example):
+#   export OCMAN_CADDY_HOST=$$(tailscale status --json | jq -r .Self.DNSName | sed 's/\.$$//')
 #
 # Caddy uses `get_certificate tailscale` — it delegates cert issuance to
 # the Tailscale daemon, which gets a Let's Encrypt cert for your ts.net
-# hostname. No manual CA installation needed on the iPad; the cert is
-# already trusted by all devices.
+# hostname. No manual CA installation needed on the client; the cert is
+# already trusted by all devices on the tailnet.
 #
 # One-time setup:
 #   1. brew install caddy
 #   2. make caddy-up            # Caddy fetches the cert automatically on first start
-#
-# Then open https://driess-macbook-pro.tail5f13e4.ts.net on your iPad
-# (both devices must be connected to Tailscale).
 
-caddy-up: ## Start Caddy HTTPS proxy (https://driess-macbook-pro.tail5f13e4.ts.net → :8228)
-	@command -v caddy >/dev/null 2>&1 || { \
-		echo "caddy not found. Install with:  brew install caddy"; exit 1; }
+# ponytail: one guard shared by every caddy target.
+check-caddy-host:
+	@test -n "$(OCMAN_CADDY_HOST)" || { \
+		echo "OCMAN_CADDY_HOST is not set (e.g. my-machine.tailnet.ts.net). See .envrc.example"; exit 1; }
 	@command -v tailscale >/dev/null 2>&1 || { \
 		echo "tailscale not found or not running"; exit 1; }
-	caddy start --config Caddyfile
+
+caddy-up: check-caddy-host ## Start Caddy HTTPS proxy (OCMAN_CADDY_HOST → :8228)
+	@command -v caddy >/dev/null 2>&1 || { \
+		echo "caddy not found. Install with:  brew install caddy"; exit 1; }
+	caddy start --config deploy/Caddyfile
 	@echo ""
 	@echo "  ocman is now available at:"
-	@echo "  https://driess-macbook-pro.tail5f13e4.ts.net"
+	@echo "  https://$(OCMAN_CADDY_HOST)"
 
 caddy-down: ## Stop the Caddy HTTPS proxy
 	caddy stop
 
-caddy-cert: ## Pre-fetch the Tailscale TLS cert (optional; caddy-up does this automatically)
-	@command -v tailscale >/dev/null 2>&1 || { \
-		echo "tailscale not found or not running"; exit 1; }
-	tailscale cert driess-macbook-pro.tail5f13e4.ts.net
+caddy-cert: check-caddy-host ## Pre-fetch the Tailscale TLS cert (optional; caddy-up does this automatically)
+	tailscale cert $(OCMAN_CADDY_HOST)
 
 install-hooks: ## Install pre-commit + pre-push hooks (requires pre-commit: pip install pre-commit)
 	pre-commit install

@@ -28,8 +28,8 @@ services:
       # Bootstrap an "ocman" Grafana dashboards provider on top of the
       # image's defaults. The provider config (mounted read-only)
       # points at the dashboards/ directory below.
-      - ./observability/grafana/provisioning/dashboards/ocman.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/ocman.yaml:ro
-      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards/ocman:ro
+      - ../observability/grafana/provisioning/dashboards/ocman.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/ocman.yaml:ro
+      - ../observability/grafana/dashboards:/var/lib/grafana/dashboards/ocman:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]

@@ -235,6 +235,13 @@ handlers don't bypass the `Host` seam). User-facing docs:
   `POST /api/mcp/config/install`.
 - `internal/srvtiming/` — per-request phase timing rendered into the
   `Server-Timing` response header; no-op outside an HTTP request.
+- `internal/toolpath/` — `Ensure()` merges the login shell's PATH into
+  the process PATH at startup, so a launchd/login-item start still finds
+  homebrew and mise/asdf shims (`tmux`, `opencode`, `git`).
+- `internal/share/` — share snapshot format + relay client.
+  `ResolveRelayURL` picks the relay endpoint (`-relay-url` flag >
+  `OCMAN_RELAY_URL` > `DefaultRelayURL` baked into the build) and fails
+  startup on an invalid value rather than silently disabling sharing.
 - `internal/telemetry/` — OpenTelemetry wiring (see Key details).
 - `internal/gui/` — Wails desktop shell used by `-gui`; wraps the same
   HTTP server in a native WebView window.
@@ -251,6 +258,10 @@ handlers don't bypass the `Host` seam). User-facing docs:
   `configuration/`, `faq/`, `other/` — with a `_index.md` per chapter
   and `title:`/`weight:` front matter driving nav order. Serve it with
   `make docs`, build with `make docs-build`.
+- `deploy/` — deployment and local-proxy config: `Caddyfile` (HTTPS via
+  `tailscale cert`, host from `OCMAN_CADDY_HOST`), `Dockerfile.relay`
+  (build context is the repo root), `docker-compose.otel.yml` (the
+  `make otel-*` LGTM stack; volume paths point at `../observability/`).
 
 ## Dev commands
 

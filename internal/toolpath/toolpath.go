@@ -1,4 +1,4 @@
-package main
+package toolpath
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// ensureToolPath augments the process PATH with the PATH a login shell
+// Ensure augments the process PATH with the PATH a login shell
 // would provide. When ocman is started by launchd / a login item after
 // a reboot, it inherits a minimal PATH (e.g. /usr/bin:/bin) that omits
 // homebrew (/opt/homebrew/bin) and version-manager shims (mise/asdf),
@@ -23,7 +23,7 @@ import (
 // We ask the user's login shell for its PATH (the same trick the tmux
 // launcher uses via `sh -lc`) and merge any missing entries into our
 // own PATH. Best-effort: on any error we leave PATH untouched.
-func ensureToolPath() {
+func Ensure() {
 	if runtime.GOOS == "windows" {
 		return
 	}

@@ -10,3 +10,13 @@
 # Example:
 #   export OCMAN_ALLOWED_HOSTS=my-machine.tailnet.ts.net,foo.lan
 export OCMAN_ALLOWED_HOSTS=
+
+# Hostname Caddy serves on for `make caddy-up` (HTTPS via `tailscale cert`).
+# Your own Tailscale hostname; leave unset to skip the caddy targets.
+#   export OCMAN_CADDY_HOST=my-machine.tailnet.ts.net
+export OCMAN_CADDY_HOST=
+
+# Base URL clients should use when ocman is reached over a hostname rather
+# than localhost (share links, host-header checks).
+#   export OCMAN_PUBLIC_BASE_URL=https://my-machine.tailnet.ts.net
+export OCMAN_PUBLIC_BASE_URL=

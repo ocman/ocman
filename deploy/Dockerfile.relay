@@ -1,4 +1,7 @@
 # syntax=docker/dockerfile:1
+#
+# Build context is the repo root:
+#   docker build -f deploy/Dockerfile.relay -t ocman-relay .
 
 FROM node:25-alpine AS frontend
 WORKDIR /src/frontend

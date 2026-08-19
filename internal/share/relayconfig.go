@@ -1,4 +1,4 @@
-package main
+package share
 
 import (
 	"fmt"
@@ -6,29 +6,29 @@ import (
 	"strings"
 )
 
-// relayURLEnv supplies the share relay's base URL. Set it (or
+// RelayURLEnv supplies the share relay's base URL. Set it (or
 // -relay-url) to enable cross-machine conversation sharing; when unset,
 // share links stay local to this machine.
-const relayURLEnv = "OCMAN_RELAY_URL"
+const RelayURLEnv = "OCMAN_RELAY_URL"
 
-// defaultRelayURL is the relay baked into release builds. It is empty
+// DefaultRelayURL is the relay baked into release builds. It is empty
 // until a relay is deployed, so cross-machine sharing is off by default
 // and existing installs are unchanged.
 //
 // Deliberately only a URL: no upload credential is baked in, because a
 // secret shipped inside a distributed binary is public. The relay is
 // protected by rate limits and size caps instead.
-const defaultRelayURL = ""
+const DefaultRelayURL = ""
 
 // Where a resolved relay URL came from, reported to the Settings page so
 // an operator can tell a flag from an env var from the built-in default.
 const (
-	relaySourceFlag    = "flag"
-	relaySourceEnv     = "env"
-	relaySourceBuiltin = "builtin"
+	RelaySourceFlag    = "flag"
+	RelaySourceEnv     = "env"
+	RelaySourceBuiltin = "builtin"
 )
 
-// resolveRelayURL picks the share relay endpoint: the flag wins, then the
+// ResolveRelayURL picks the share relay endpoint: the flag wins, then the
 // environment, then the value baked into the build. It returns the
 // normalised URL and the name of the source that supplied it, or an empty
 // URL and source when no relay is configured.
@@ -36,14 +36,14 @@ const (
 // An invalid value is an error rather than a silent fallback: a typo'd
 // relay should stop startup, not quietly turn cross-machine sharing off
 // and look like a broken feature later.
-func resolveRelayURL(flagValue, envValue, builtin string) (relayURL, source string, err error) {
+func ResolveRelayURL(flagValue, envValue, builtin string) (relayURL, source string, err error) {
 	for _, candidate := range []struct {
 		value  string
 		source string
 	}{
-		{flagValue, relaySourceFlag},
-		{envValue, relaySourceEnv},
-		{builtin, relaySourceBuiltin},
+		{flagValue, RelaySourceFlag},
+		{envValue, RelaySourceEnv},
+		{builtin, RelaySourceBuiltin},
 	} {
 		trimmed := strings.TrimSpace(candidate.value)
 		if trimmed == "" {

@@ -1,4 +1,4 @@
-package main
+package share
 
 import "testing"
 
@@ -23,38 +23,38 @@ func TestResolveRelayURL(t *testing.T) {
 			env:        "https://env.example.com",
 			builtin:    "https://builtin.example.com",
 			wantURL:    "https://flag.example.com",
-			wantSource: relaySourceFlag,
+			wantSource: RelaySourceFlag,
 		},
 		{
 			name:       "env wins over builtin",
 			env:        "https://env.example.com",
 			builtin:    "https://builtin.example.com",
 			wantURL:    "https://env.example.com",
-			wantSource: relaySourceEnv,
+			wantSource: RelaySourceEnv,
 		},
 		{
 			name:       "builtin is the fallback",
 			builtin:    "https://builtin.example.com",
 			wantURL:    "https://builtin.example.com",
-			wantSource: relaySourceBuiltin,
+			wantSource: RelaySourceBuiltin,
 		},
 		{
 			name:       "surrounding whitespace is trimmed",
 			flag:       "  https://flag.example.com  ",
 			wantURL:    "https://flag.example.com",
-			wantSource: relaySourceFlag,
+			wantSource: RelaySourceFlag,
 		},
 		{
 			name:       "trailing slash is normalised away",
 			flag:       "https://flag.example.com/",
 			wantURL:    "https://flag.example.com",
-			wantSource: relaySourceFlag,
+			wantSource: RelaySourceFlag,
 		},
 		{
 			name:       "a dev relay on loopback is accepted",
 			flag:       "http://localhost:8231",
 			wantURL:    "http://localhost:8231",
-			wantSource: relaySourceFlag,
+			wantSource: RelaySourceFlag,
 		},
 		// A misconfigured relay must fail loudly at startup rather than
 		// silently disabling cross-machine sharing, which would look
@@ -68,15 +68,15 @@ func TestResolveRelayURL(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			url, source, err := resolveRelayURL(tc.flag, tc.env, tc.builtin)
+			url, source, err := ResolveRelayURL(tc.flag, tc.env, tc.builtin)
 			if tc.wantErr {
 				if err == nil {
-					t.Fatalf("resolveRelayURL(%q, %q, %q) succeeded, want error", tc.flag, tc.env, tc.builtin)
+					t.Fatalf("ResolveRelayURL(%q, %q, %q) succeeded, want error", tc.flag, tc.env, tc.builtin)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("resolveRelayURL: %v", err)
+				t.Fatalf("ResolveRelayURL: %v", err)
 			}
 			if url != tc.wantURL {
 				t.Fatalf("url = %q, want %q", url, tc.wantURL)
@@ -92,11 +92,11 @@ func TestResolveRelayURL(t *testing.T) {
 // var does not shadow the next source; otherwise `-relay-url=` would
 // disable a baked-in default in a way nobody expects.
 func TestResolveRelayURL_EmptyValuesFallThrough(t *testing.T) {
-	url, source, err := resolveRelayURL("", "   ", "https://builtin.example.com")
+	url, source, err := ResolveRelayURL("", "   ", "https://builtin.example.com")
 	if err != nil {
-		t.Fatalf("resolveRelayURL: %v", err)
+		t.Fatalf("ResolveRelayURL: %v", err)
 	}
-	if url != "https://builtin.example.com" || source != relaySourceBuiltin {
+	if url != "https://builtin.example.com" || source != RelaySourceBuiltin {
 		t.Fatalf("got (%q, %q), want the builtin default", url, source)
 	}
 }

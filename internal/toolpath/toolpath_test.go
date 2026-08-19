@@ -1,4 +1,4 @@
-package main
+package toolpath
 
 import (
 	"context"
@@ -35,7 +35,7 @@ func TestMergePath(t *testing.T) {
 }
 
 // TestEnsureToolPathRecoversBinary simulates the reboot scenario: a
-// stripped PATH that hides a binary, then asserts ensureToolPath
+// stripped PATH that hides a binary, then asserts Ensure
 // restores the login shell's PATH so the binary is found again.
 func TestEnsureToolPathRecoversBinary(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
@@ -50,9 +50,9 @@ func TestEnsureToolPathRecoversBinary(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err == nil {
 		t.Skip("sh still found under stripped PATH; cannot simulate")
 	}
-	ensureToolPath()
+	Ensure()
 	if _, err := exec.LookPath("sh"); err != nil {
-		t.Errorf("ensureToolPath did not restore sh on PATH: %v (PATH=%q)", err, os.Getenv("PATH"))
+		t.Errorf("Ensure did not restore sh on PATH: %v (PATH=%q)", err, os.Getenv("PATH"))
 	}
 }
 

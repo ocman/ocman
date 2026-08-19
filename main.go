@@ -24,8 +24,10 @@ import (
 	"github.com/NoUseFreak/ocman/internal/pricing"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/server"
+	"github.com/NoUseFreak/ocman/internal/share"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
+	"github.com/NoUseFreak/ocman/internal/toolpath"
 	"github.com/NoUseFreak/ocman/internal/workflowstep"
 )
 
@@ -101,7 +103,7 @@ func main() {
 	// inherits a minimal PATH that omits homebrew and version-manager
 	// shims, so tmux/opencode/git look unavailable. Recover the login
 	// shell's PATH before any exec.LookPath runs.
-	ensureToolPath()
+	toolpath.Ensure()
 
 	addr := flag.String("addr", "127.0.0.1:8228", "listen address")
 	guiMode := flag.Bool("gui", isAppBundle(), "open a native desktop window (Wails) instead of just serving HTTP")
@@ -118,7 +120,7 @@ func main() {
 	autoApprove := flag.Bool("auto-approve", false, "default new sessions to auto-approve mode (uses OpenCode's running instance as the LLM judge)")
 	mcpAddr := flag.String("mcp-addr", "127.0.0.1:8227", "loopback listen address for the MCP endpoint; local clients reach it without auth, so it must be a loopback address. Empty disables the dedicated listener (/mcp then only lives on -addr, behind auth).")
 	publicBaseURL := flag.String("public-base-url", "", "externally reachable base URL for share links (e.g. https://ocman.example.com); falls back to "+publicBaseURLEnv+" env, then the request Host")
-	relayURL := flag.String("relay-url", "", "base URL of the share relay for cross-machine sharing (e.g. https://share.example.com); falls back to "+relayURLEnv+" env, then the built-in default")
+	relayURL := flag.String("relay-url", "", "base URL of the share relay for cross-machine sharing (e.g. https://share.example.com); falls back to "+share.RelayURLEnv+" env, then the built-in default")
 	remoteListen := flag.String("remote-listen", "", "bind address for the remote-access gRPC server (e.g. 0.0.0.0:8230); empty disables it (multi-remote support)")
 	remoteTLSCert := flag.String("remote-tls-cert", "", "TLS certificate file for the remote-access gRPC server (enables TLS together with -remote-tls-key)")
 	remoteTLSKey := flag.String("remote-tls-key", "", "TLS key file for the remote-access gRPC server")
@@ -150,7 +152,7 @@ func main() {
 	// Resolve the share relay: flag, then env, then the built-in
 	// default. An invalid value stops startup rather than silently
 	// disabling cross-machine sharing.
-	resolvedRelayURL, relaySource, err := resolveRelayURL(*relayURL, os.Getenv(relayURLEnv), defaultRelayURL)
+	resolvedRelayURL, relaySource, err := share.ResolveRelayURL(*relayURL, os.Getenv(share.RelayURLEnv), share.DefaultRelayURL)
 	if err != nil {
 		log.Fatal(err)
 	}

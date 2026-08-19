@@ -6,13 +6,14 @@
 #
 # Prerequisites:
 #   brew install caddy
-#   tailscale cert driess-macbook-pro.tail5f13e4.ts.net   # pre-fetch the cert (optional)
+#   export OCMAN_CADDY_HOST=my-machine.tailnet.ts.net   # your Tailscale hostname
+#   make caddy-cert                                     # pre-fetch the cert (optional)
 #
 # Usage:
 #   make caddy-up           # start (background)
 #   make caddy-down         # stop
 #
-# Then open https://driess-macbook-pro.tail5f13e4.ts.net on your iPad
+# Then open https://$OCMAN_CADDY_HOST on your other device
 # (must be connected to Tailscale).
 
 {$OCMAN_CADDY_HOST:localhost} {
