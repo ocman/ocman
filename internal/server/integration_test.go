@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -319,6 +320,116 @@ func TestHandleCreateSession_RemoteEnsuresBeforeCreate(t *testing.T) {
 	}
 	if created.Port != "7788" {
 		t.Fatalf("create did not receive ensured port; got %q", created.Port)
+	}
+}
+
+// TestHandleCreateSession_LocalEnsuresBeforeCreate pins the recovery gap
+// for an externally-killed opencode: local Create only ever *discovered*
+// a port via lsof, so once the project's instance was killed the request
+// failed with "no running OpenCode instance for directory" forever. The
+// local path must ensure (relaunch) the project's instance too.
+func TestHandleCreateSession_LocalEnsuresBeforeCreate(t *testing.T) {
+	srv := testServer(t)
+	var ensured string
+	srv.hostRouter = hostsvc.NewRouter(&promptEnsureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+		ensured = req.ProjectDir
+		return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:6611", RepoRoot: req.ProjectDir}, nil
+	}})
+
+	var created platforms.CreateSessionRequest
+	reg := platforms.NewRegistry()
+	reg.Register(&fakePlatform{id: "opencode", createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+		created = req
+		return &platforms.CreateSessionResponse{ID: "local-session"}, nil
+	}})
+	srv.registry = reg
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions",
+		strings.NewReader(`{"platform":"opencode","directory":"/repo/killed"}`))
+	rr := httptest.NewRecorder()
+	srv.handleCreateSession(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if ensured != "/repo/killed" {
+		t.Fatalf("local host was not ensured; ensured=%q", ensured)
+	}
+	if created.Port != "6611" {
+		t.Fatalf("create did not receive ensured port; got %q", created.Port)
+	}
+}
+
+// TestHandleCreateSession_EnsuresProjectRootNotWorktree keeps the ensure
+// on the project's single shared instance: a session created in a worktree
+// directory must fold back to the main checkout instead of launching a
+// second opencode for the same project.
+func TestHandleCreateSession_EnsuresProjectRootNotWorktree(t *testing.T) {
+	srv := testServer(t)
+	var ensured string
+	srv.hostRouter = hostsvc.NewRouter(&promptEnsureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+		ensured = req.ProjectDir
+		return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:6612", RepoRoot: req.ProjectDir}, nil
+	}})
+
+	var created platforms.CreateSessionRequest
+	reg := platforms.NewRegistry()
+	reg.Register(&fakePlatform{id: "opencode", createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+		created = req
+		return &platforms.CreateSessionResponse{ID: "wt-session"}, nil
+	}})
+	srv.registry = reg
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions",
+		strings.NewReader(`{"platform":"opencode","directory":"/src/.worktrees/ocman/feat-x"}`))
+	rr := httptest.NewRecorder()
+	srv.handleCreateSession(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if ensured != "/src/ocman" {
+		t.Fatalf("ensure was not folded to the project root; ensured=%q", ensured)
+	}
+	// The session itself still lands in the worktree.
+	if created.Directory != "/src/.worktrees/ocman/feat-x" {
+		t.Fatalf("session directory = %q, want the worktree path", created.Directory)
+	}
+}
+
+// TestHandleCreateSession_LocalEnsureFailureFallsBackToDiscovery keeps the
+// local ensure a soft prerequisite: a directory that is not a git repo (or
+// a host that cannot launch) must still create a session against whatever
+// instance discovery finds, exactly as before.
+func TestHandleCreateSession_LocalEnsureFailureFallsBackToDiscovery(t *testing.T) {
+	srv := testServer(t)
+	srv.hostRouter = hostsvc.NewRouter(&promptEnsureHost{ensure: func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+		return nil, errors.New("not a git repository")
+	}})
+
+	var called bool
+	var created platforms.CreateSessionRequest
+	reg := platforms.NewRegistry()
+	reg.Register(&fakePlatform{id: "opencode", createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+		called = true
+		created = req
+		return &platforms.CreateSessionResponse{ID: "local-session"}, nil
+	}})
+	srv.registry = reg
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions",
+		strings.NewReader(`{"platform":"opencode","directory":"/not/a/repo"}`))
+	rr := httptest.NewRecorder()
+	srv.handleCreateSession(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if !called {
+		t.Fatal("create was not attempted after a failed local ensure")
+	}
+	if created.Port != "" {
+		t.Fatalf("create should fall back to discovery; got port %q", created.Port)
 	}
 }
 

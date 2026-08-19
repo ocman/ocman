@@ -471,29 +471,46 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		"platform":  req.Platform,
 		"directory": req.Directory,
 	}).Info("hub: create session request")
-	// A remote session must have its project's opencode instance running
-	// before Create, else the remote fails immediately when the directory
-	// has no running instance (a freshly-attached remote). Route the ensure
-	// to the platform's owning host via the compound id — the authoritative
-	// owner. Local Create discovers/launches its own port and needs no
-	// pre-ensure here.
+	// The project's opencode instance must be running before Create.
+	// Adapter-side port discovery only *finds* an instance, so an
+	// instance killed outside ocman left every subsequent create failing
+	// with "no running OpenCode instance for directory" — ensure is what
+	// relaunches it. Route to the platform's owning host via the compound
+	// id (the authoritative owner); an empty remote id resolves to the
+	// hub's local host.
+	//
+	// A remote ensure failure is fatal: the remote has no discovery
+	// fallback, so Create would fail anyway. A local ensure failure is
+	// soft — a non-repo directory (or a host that can't launch) can't be
+	// ensured, but discovery may still find a usable instance.
 	var port string
 	remoteID, _ := remote.SplitPlatformID(req.Platform)
-	if remoteID != "" && req.Directory != "" {
+	if req.Directory != "" {
 		host, ok := s.resolveOwner(w, req.Directory, remoteID)
 		if !ok {
 			return
 		}
-		ensured, err := host.EnsureProjectOpencode(r.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: req.Directory})
-		if err != nil {
+		// A worktree runs on the project's shared instance rooted at the
+		// main checkout; fold the path back so ensuring a worktree
+		// directory can't launch a second instance for the same project.
+		ensureDir := projectRootForDirectory(req.Directory)
+		ensured, err := host.EnsureProjectOpencode(r.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: ensureDir})
+		switch {
+		case err != nil && remoteID != "":
 			log.WithError(err).WithFields(log.Fields{
 				"platform":  req.Platform,
 				"directory": req.Directory,
 			}).Warn("hub: ensure project opencode failed")
 			writeSessionSvcError(w, "creating session", err)
 			return
+		case err != nil:
+			log.WithError(err).WithFields(log.Fields{
+				"platform":  req.Platform,
+				"directory": req.Directory,
+			}).Debug("hub: ensure project opencode failed; falling back to port discovery")
+		default:
+			port = ensured.Port()
 		}
-		port = ensured.Port()
 	}
 	resp, err := s.sessions.Create(r.Context(), req.Platform, platforms.CreateSessionRequest{
 		Directory: req.Directory,
