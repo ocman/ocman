@@ -312,13 +312,49 @@ func (h *Host) EnsureProjectOpencode(ctx context.Context, req hostsvc.EnsureProj
 
 	// singleflight on repoRoot: overlapping ensure calls for one project
 	// collapse into one launch; every caller gets the same result (AD-9).
-	v, err, _ := h.sf.Do(repoRoot, func() (any, error) {
-		return h.ensureLocked(ctx, repoRoot)
-	})
-	if err != nil {
+	return h.sfDoDetached(ctx, repoRoot, h.ensureLocked)
+}
+
+// sfLaunchTimeout bounds the detached singleflight body so an abandoned
+// launch cannot run forever. Comfortably above portWaitTimeout.
+const sfLaunchTimeout = 2 * time.Minute
+
+// sfDoDetached runs fn under the repo-root singleflight on a context
+// detached from the caller (#456). singleflight shares one execution
+// across all coalesced callers, so the body must not die with whichever
+// caller happened to win the race — a cancelled winner would fail every
+// waiter whose own context is still live. The calling goroutine still
+// honours its own ctx: it stops waiting, but the shared flight runs to
+// completion (bounded by sfLaunchTimeout) for the other waiters.
+func (h *Host) sfDoDetached(ctx context.Context, repoRoot string, fn func(context.Context, string) (*hostsvc.EnsureProjectOpencodeResult, error)) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return v.(*hostsvc.EnsureProjectOpencodeResult), nil
+	type sfResult struct {
+		v   any
+		err error
+	}
+	done := make(chan sfResult, 1)
+	detached, cancel := context.WithTimeout(context.WithoutCancel(ctx), sfLaunchTimeout)
+	go func() {
+		// cancel only releases this goroutine's timer: if another
+		// caller's fn is the one running, its own detached context
+		// governs the flight.
+		defer cancel()
+		v, err, _ := h.sf.Do(repoRoot, func() (any, error) {
+			return fn(detached, repoRoot)
+		})
+		done <- sfResult{v, err}
+	}()
+	select {
+	case r := <-done:
+		if r.err != nil {
+			return nil, r.err
+		}
+		return r.v.(*hostsvc.EnsureProjectOpencodeResult), nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 func (h *Host) StopProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) error {
@@ -357,13 +393,7 @@ func (h *Host) RestartProjectOpencode(ctx context.Context, req hostsvc.EnsurePro
 	if err != nil {
 		return nil, err
 	}
-	v, err, _ := h.sf.Do(repoRoot, func() (any, error) {
-		return h.restartLocked(ctx, repoRoot)
-	})
-	if err != nil {
-		return nil, err
-	}
-	return v.(*hostsvc.EnsureProjectOpencodeResult), nil
+	return h.sfDoDetached(ctx, repoRoot, h.restartLocked)
 }
 
 func (h *Host) ManagedOpencodes(context.Context) ([]hostsvc.ManagedOpencode, error) {

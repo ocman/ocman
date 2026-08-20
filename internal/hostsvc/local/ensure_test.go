@@ -358,6 +358,13 @@ func TestEnsureProjectOpencode_HealthTimeout(t *testing.T) {
 			if rt.launchCount() != 1 {
 				t.Errorf("launched %d times; want exactly 1", rt.launchCount())
 			}
+			// #456: a cancelled caller returns immediately while the
+			// detached flight finishes (and cleans up) in the background
+			// — wait for the cleanup to land before asserting on it.
+			cleanupDeadline := time.Now().Add(3 * time.Second)
+			for rt.stopCount() == 0 && time.Now().Before(cleanupDeadline) {
+				time.Sleep(5 * time.Millisecond)
+			}
 			// The unhealthy process must be stopped exactly once — not
 			// left running, and not stopped repeatedly.
 			if rt.stopCount() != 1 {
@@ -368,6 +375,10 @@ func TestEnsureProjectOpencode_HealthTimeout(t *testing.T) {
 			// when the caller cancelled — the case that leaks a process.
 			if err := rt.lastStopCtxErr(); err != nil {
 				t.Errorf("Stop ran on a cancelled context (%v); cleanup must use context.WithoutCancel", err)
+			}
+			// Same async window for the cache/store cleanup after Stop.
+			for store.has(repoRoot) && time.Now().Before(cleanupDeadline) {
+				time.Sleep(5 * time.Millisecond)
 			}
 			if inst := h.currentInstance(repoRoot); inst != nil {
 				t.Errorf("cached instance = %+v; want none after a failed launch", inst)
