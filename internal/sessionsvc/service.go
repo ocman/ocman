@@ -61,6 +61,24 @@ func New(registry Registry, hooks Hooks) *Service {
 	return &Service{registry: registry, hooks: hooks}
 }
 
+// KnownPlatform reports whether platformID names a registered adapter,
+// answering from the same registry Create validates against. Transports
+// use it to reject a request *before* performing side effects that
+// Create would only reject afterwards (#533).
+//
+// An empty id is "known": Create auto-picks when exactly one platform is
+// available, and reports its own validation error otherwise.
+func (s *Service) KnownPlatform(platformID string) bool {
+	if platformID == "" {
+		return true
+	}
+	if s == nil || s.registry == nil {
+		return false
+	}
+	_, ok := s.registry.Get(platforms.ID(platformID))
+	return ok
+}
+
 // ValidationError marks bad caller input. Transports map it to their
 // native shape: HTTP 400, gRPC InvalidArgument.
 type ValidationError struct{ msg string }

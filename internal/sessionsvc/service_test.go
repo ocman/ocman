@@ -482,3 +482,31 @@ func TestClientBindsPlatform(t *testing.T) {
 		t.Fatalf("expected ErrNotFound from SetPermissionRules, got %v", err)
 	}
 }
+
+// #533: transports call KnownPlatform to reject an unknown platform
+// before running side effects (e.g. launching a managed opencode) that
+// Create would only reject afterwards. It must answer from the same
+// registry Create uses, and never panic on a partially-built service.
+func TestKnownPlatform(t *testing.T) {
+	svc, _ := newService(&fakePlatform{id: "opencode", available: true}, Hooks{})
+
+	tests := []struct {
+		name     string
+		svc      *Service
+		platform string
+		want     bool
+	}{
+		{"registered", svc, "opencode", true},
+		{"unregistered", svc, "bogus", false},
+		{"empty is auto-pick", svc, "", true},
+		{"nil registry", New(nil, Hooks{}), "opencode", false},
+		{"nil service", nil, "opencode", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.svc.KnownPlatform(tt.platform); got != tt.want {
+				t.Fatalf("KnownPlatform(%q) = %v; want %v", tt.platform, got, tt.want)
+			}
+		})
+	}
+}
