@@ -28,7 +28,10 @@ func (m managedPromptSessions) CreateScheduledSession(ctx context.Context, remot
 	if !ok {
 		return "", nil, fmt.Errorf("%w: %s", ErrPromptScheduleRemoteUnavailable, remoteID)
 	}
-	ensured, err := host.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: directory})
+	// Ensure targets the project root (#532): a schedule against a
+	// managed worktree reuses the main checkout's single instance. The
+	// session itself still runs in the requested directory below.
+	ensured, err := host.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: projectRootForDirectory(directory)})
 	if err != nil {
 		return "", nil, err
 	}

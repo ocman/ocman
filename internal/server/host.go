@@ -130,7 +130,12 @@ func lookPathOK(bin string) bool {
 // owning host (ForDir) so a remote's project never launches on the hub
 // (#268 multi-remote requirement, same as CreateWorktreeSession). It is
 // the mcp.ProjectOpencodeEnsurer the SessionLauncher uses.
+//
+// dir is folded to the project root first (#532): a parent session
+// living in a managed worktree must reuse the main checkout's single
+// instance, not launch a second one keyed on the worktree's toplevel.
 func (s *Server) ensureProjectOpencodePort(ctx context.Context, dir string) (string, error) {
+	dir = projectRootForDirectory(dir)
 	res, err := s.router().ForDir(dir).EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir})
 	if err != nil {
 		return "", err
