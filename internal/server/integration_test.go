@@ -360,6 +360,51 @@ func TestHandleCreateSession_LocalEnsuresBeforeCreate(t *testing.T) {
 	}
 }
 
+// TestHandleCreateSession_LocalEnsurePinnedToHub pins the local ensure to
+// the hub's own host: a platform without a compound id is the hub's
+// adapter, so the ensure must never follow ForDir's directory inference to
+// a remote — the same absolute path can exist on an attached machine, and
+// ensuring there would launch opencode on the wrong host and hand Create a
+// port that means nothing on the hub.
+func TestHandleCreateSession_LocalEnsurePinnedToHub(t *testing.T) {
+	srv := testServer(t)
+	var ensured string
+	srv.hostRouter = hostsvc.NewRouter(&promptEnsureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+		ensured = req.ProjectDir
+		return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:6613", RepoRoot: req.ProjectDir}, nil
+	}})
+	// A remote whose inventory claims the same absolute path. ForDir would
+	// resolve the directory to it; the handler must not.
+	srv.hostRouter.RegisterRemote("rem1", &promptEnsureHost{ensure: func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+		t.Error("remote host must not be ensured for a local-platform session")
+		return nil, errors.New("wrong host")
+	}})
+	srv.hostRouter.SetDirResolver(func(string) string { return "rem1" })
+
+	var created platforms.CreateSessionRequest
+	reg := platforms.NewRegistry()
+	reg.Register(&fakePlatform{id: "opencode", createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+		created = req
+		return &platforms.CreateSessionResponse{ID: "local-session"}, nil
+	}})
+	srv.registry = reg
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions",
+		strings.NewReader(`{"platform":"opencode","directory":"/repo/shared-path"}`))
+	rr := httptest.NewRecorder()
+	srv.handleCreateSession(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if ensured != "/repo/shared-path" {
+		t.Fatalf("hub's local host was not ensured; ensured=%q", ensured)
+	}
+	if created.Port != "6613" {
+		t.Fatalf("create did not receive the hub's ensured port; got %q", created.Port)
+	}
+}
+
 // TestHandleCreateSession_EnsuresProjectRootNotWorktree keeps the ensure
 // on the project's single shared instance: a session created in a worktree
 // directory must fold back to the main checkout instead of launching a

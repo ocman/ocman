@@ -476,8 +476,11 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	// instance killed outside ocman left every subsequent create failing
 	// with "no running OpenCode instance for directory" — ensure is what
 	// relaunches it. Route to the platform's owning host via the compound
-	// id (the authoritative owner); an empty remote id resolves to the
-	// hub's local host.
+	// id (the authoritative owner). A platform without a compound id is
+	// the hub's own adapter, so the ensure is pinned to the local host —
+	// never ForDir inference, which could map the directory to a remote
+	// (the same absolute path can exist on an attached machine) and
+	// launch opencode there while Create targets the hub.
 	//
 	// A remote ensure failure is fatal: the remote has no discovery
 	// fallback, so Create would fail anyway. A local ensure failure is
@@ -486,7 +489,11 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 	var port string
 	remoteID, _ := remote.SplitPlatformID(req.Platform)
 	if req.Directory != "" {
-		host, ok := s.resolveOwner(w, req.Directory, remoteID)
+		owner := remoteID
+		if owner == "" {
+			owner = "local"
+		}
+		host, ok := s.resolveOwner(w, req.Directory, owner)
 		if !ok {
 			return
 		}
