@@ -17,9 +17,10 @@ loopback-only port, separate from the web UI:
 
 - `http://127.0.0.1:8227/mcp` is the dedicated MCP listener (`-mcp-addr`).
   It works the same in dev and production, and needs no credentials.
-- `http://localhost:8228/mcp` (dev) or `http://localhost:8229/mcp`
-  (production binary) is the same endpoint on the web UI's port. Password auth
-  applies there, so a native MCP client gets `403` when auth is configured.
+- `http://localhost:8228/mcp` is the same endpoint on the web UI's port,
+  both in dev (Vite proxies it to the backend on `:8229`) and for the
+  production binary's default `-addr`. Password auth applies there, so a
+  native MCP client gets `403` when auth is configured.
 
 `/api/capabilities` also reports the recommended URL as `mcpServer.url`. Both
 paths are localhost-only. Origin-less native MCP clients work,

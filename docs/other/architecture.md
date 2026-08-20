@@ -216,14 +216,16 @@ sequenceDiagram
     D-->>A: background /global/event prompt updates
     A->>D: SQL json_extract
     A->>A: overlay pending prompt registry
-    D-->>B: JSON (status inferred at query time)
+    D-->>B: JSON (status settled at query time)
      Note over S,E: background: workflow + prompt-schedule ticks,<br/>child-session watcher, remote gRPC streams
      E-->>B: SSE (session.updated, workflow.run.updated)
 ```
 
-The key property: ocman infers status rather than storing it. It derives
-session state from the last message row on every query, so there is no sync
-problem with OpenCode's DB.
+The key property: ocman never persists session status. The live turn signal
+from the running OpenCode instance decides whether a session is busy; the
+last stored message row only settles which terminal state a finished session
+is in. Nothing is written back, so there is no sync problem with OpenCode's
+DB.
 
 Workflow state takes the opposite path because ocman owns it. Publish,
 trigger and manual start, approval, command completion, agent supervision,
