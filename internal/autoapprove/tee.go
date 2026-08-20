@@ -24,11 +24,27 @@ import (
 // across Read boundaries so events split across multiple Write calls
 // are still detected. The tee is intentionally lossy on parse errors —
 // it always forwards every byte to the underlying writer unchanged.
+//
+// Parsing is incremental (#462): each Write consumes complete lines
+// immediately and carries the in-flight event (eventType/dataLines)
+// as parser state, so cost per Write is proportional to the new bytes,
+// never the accumulated buffer. Pending memory (partial line + data
+// lines) is capped at teeMaxPendingBytes; on overflow the buffer is
+// dropped and parsing resyncs at the next event terminator.
 type Tee struct {
 	W     io.Writer
 	Flush func()
-	buf   []byte
 	mu    sync.Mutex
+	// buf holds only the current, not-yet-terminated line.
+	buf []byte
+	// eventType / dataLines / pendingBytes are the in-flight event's
+	// parser state, persisted across Write calls.
+	eventType    string
+	dataLines    []string
+	pendingBytes int
+	// resyncing is set after an overflow: lines are discarded until the
+	// next blank-line event terminator, then parsing resumes clean.
+	resyncing bool
 	// onPermission fires when the upstream emits permission.asked.
 	//
 	// sessionID is the session ID *from the event payload*, not the
@@ -91,40 +107,60 @@ type Tee struct {
 	OnSessionDataChanged func(sessionID string)
 }
 
+// teeMaxPendingBytes caps the memory the tee holds for a single
+// in-flight SSE event (partial line + accumulated data lines). Real
+// OpenCode events are tiny; anything near this size is a malformed or
+// pathological stream. On overflow the pending state is dropped and
+// parsing resyncs at the next event terminator — the tee stays lossy
+// by design, and the byte stream itself is always forwarded unchanged.
+const teeMaxPendingBytes = 4 << 20
+
+// teeEvent is one complete parsed SSE event awaiting dispatch.
+type teeEvent struct {
+	typ  string
+	data string
+}
+
 func (t *Tee) Write(p []byte) (int, error) {
 	// Always forward bytes to the real writer first.
 	n, err := t.W.Write(p)
 
-	t.mu.Lock()
-	t.buf = append(t.buf, p[:n]...)
-	t.mu.Unlock()
-
-	t.drain()
+	// Parse under the lock, dispatch outside it — handlers must stay
+	// free to touch the tee without deadlocking.
+	for _, ev := range t.consume(p[:n]) {
+		t.dispatchEvent(ev.typ, ev.data)
+	}
 
 	return n, err
 }
 
-// drain processes all complete SSE events currently in the buffer.
-// Runs inline in the caller's Write goroutine.
-func (t *Tee) drain() {
+// consume appends p to the parse buffer and consumes every complete
+// line, returning the events completed by this write. Cost is
+// proportional to len(p): consumed bytes never get re-scanned (#462).
+func (t *Tee) consume(p []byte) []teeEvent {
 	t.mu.Lock()
-	data := t.buf
-	t.mu.Unlock()
+	defer t.mu.Unlock()
 
-	var (
-		eventType string
-		dataLines []string
-		consumed  int
-	)
+	t.buf = append(t.buf, p...)
 
-	rawLines := splitSSELines(data)
-	pos := 0
-	for _, line := range rawLines {
-		lineLen := len(line) + 1 // +1 for '\n'
-		if pos+lineLen > len(data) {
-			break
+	var events []teeEvent
+	for {
+		idx := bytes.IndexByte(t.buf, '\n')
+		if idx < 0 {
+			// No complete line yet. Cap the partial-line buffer: a
+			// single line larger than the budget can only be garbage.
+			if len(t.buf) > teeMaxPendingBytes {
+				t.overflowLocked("unterminated line")
+			}
+			return events
+		}
+		line := t.buf[:idx]
+		// Trim '\r' for \r\n line endings.
+		if len(line) > 0 && line[len(line)-1] == '\r' {
+			line = line[:len(line)-1]
 		}
 		raw := string(line)
+		t.buf = t.buf[idx+1:]
 
 		switch {
 		case raw == "":
@@ -134,52 +170,42 @@ func (t *Tee) drain() {
 			// as `"type": "..."`. dispatchEvent handles both shapes:
 			// named channels (eventType non-empty) and default channels
 			// (eventType empty, falls back to the JSON's "type" field).
-			if len(dataLines) > 0 {
-				t.dispatchEvent(eventType, strings.Join(dataLines, "\n"))
+			if t.resyncing {
+				t.resyncing = false
+			} else if len(t.dataLines) > 0 {
+				events = append(events, teeEvent{t.eventType, strings.Join(t.dataLines, "\n")})
 			}
-			eventType = ""
-			dataLines = dataLines[:0]
-			consumed = pos + lineLen
+			t.eventType = ""
+			t.dataLines = nil
+			t.pendingBytes = 0
+
+		case t.resyncing:
+			// Discarding the remainder of an overflowed event.
 
 		case strings.HasPrefix(raw, "event:"):
-			eventType = strings.TrimSpace(strings.TrimPrefix(raw, "event:"))
+			t.eventType = strings.TrimSpace(strings.TrimPrefix(raw, "event:"))
 
 		case strings.HasPrefix(raw, "data:"):
-			dataLines = append(dataLines, strings.TrimSpace(strings.TrimPrefix(raw, "data:")))
+			d := strings.TrimSpace(strings.TrimPrefix(raw, "data:"))
+			t.dataLines = append(t.dataLines, d)
+			t.pendingBytes += len(d)
+			if t.pendingBytes > teeMaxPendingBytes {
+				t.overflowLocked("event data")
+			}
 		}
-
-		pos += lineLen
-	}
-
-	// Trim the consumed prefix from the buffer.
-	if consumed > 0 {
-		t.mu.Lock()
-		if consumed <= len(t.buf) {
-			t.buf = t.buf[consumed:]
-		}
-		t.mu.Unlock()
 	}
 }
 
-// splitSSELines splits b into lines (split on '\n'), omitting the
-// terminator. Lines whose terminator has not yet arrived are excluded
-// (they remain in the buffer for the next drain pass).
-func splitSSELines(b []byte) [][]byte {
-	var lines [][]byte
-	for {
-		idx := bytes.IndexByte(b, '\n')
-		if idx < 0 {
-			break
-		}
-		line := b[:idx]
-		// Trim '\r' for \r\n line endings.
-		if len(line) > 0 && line[len(line)-1] == '\r' {
-			line = line[:len(line)-1]
-		}
-		lines = append(lines, line)
-		b = b[idx+1:]
-	}
-	return lines
+// overflowLocked drops all pending parse state and switches to resync
+// mode: lines are discarded until the next blank-line terminator.
+// Caller must hold t.mu.
+func (t *Tee) overflowLocked(what string) {
+	log.WithField("pending", what).Warn("autoapprove tee: pending SSE event exceeded cap; resyncing at next event boundary")
+	t.buf = nil
+	t.eventType = ""
+	t.dataLines = nil
+	t.pendingBytes = 0
+	t.resyncing = true
 }
 
 // dispatchEvent is called when a complete SSE event has been parsed.
