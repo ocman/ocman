@@ -81,6 +81,18 @@ func (b *ChildResultBroker) wait(ctx context.Context, childID string, remove boo
 	if !ok {
 		return ChildResult{}, fmt.Errorf("child session %s is not registered", childID)
 	}
+	// A result already in hand beats a cancellation that arrived in the
+	// same window (#458): once the waiter is removed the payload is
+	// unrecoverable, so never discard a delivered result in favour of
+	// ctx.Err(). Non-blocking receive first, then the cancellation check.
+	select {
+	case result := <-ch:
+		if remove {
+			b.remove(childID, ch)
+		}
+		return result, nil
+	default:
+	}
 	if err := ctx.Err(); err != nil {
 		if remove {
 			b.remove(childID, ch)
@@ -92,9 +104,6 @@ func (b *ChildResultBroker) wait(ctx context.Context, childID string, remove boo
 	case result := <-ch:
 		if remove {
 			b.remove(childID, ch)
-		}
-		if err := ctx.Err(); err != nil {
-			return ChildResult{}, err
 		}
 		return result, nil
 	case <-ctx.Done():

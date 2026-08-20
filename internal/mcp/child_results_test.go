@@ -134,6 +134,31 @@ func TestAwaitChildResult_MarksCancelledWaitDisconnected(t *testing.T) {
 	}
 }
 
+// #458: a result already received from the channel must be returned even
+// when the context is cancelled in the same scheduling window. Discarding
+// it (the old post-receive ctx.Err() check) lost the payload after the
+// waiter had been removed — the parent saw a timeout for a completed child.
+func TestWaitReturnsBufferedResultOverCancellation(t *testing.T) {
+	broker := NewChildResultBroker()
+	if !broker.Register("child-1") {
+		t.Fatal("registering waiter")
+	}
+	if !broker.Deliver("child-1", ChildResult{Status: "completed", Summary: "done"}) {
+		t.Fatal("delivering result")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // already cancelled: the result is buffered and must still win
+
+	result, err := broker.Wait(ctx, "child-1")
+	if err != nil {
+		t.Fatalf("Wait = %v; want the buffered result despite cancellation", err)
+	}
+	if result.Status != "completed" || result.Summary != "done" {
+		t.Fatalf("result = %+v; want the delivered payload", result)
+	}
+}
+
 func TestAwaitChildResultKeepsWaiterRegisteredUntilStateTransition(t *testing.T) {
 	broker := NewChildResultBroker()
 	if !broker.Register("child-1") {
