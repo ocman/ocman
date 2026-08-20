@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import './SessionChangesSidebar.css';
+import type { FileChange } from '../lib/api';
 import { usePlatformCapabilities } from '../lib/useCapabilities';
 import { useSessionChanges } from '../lib/useSessionChanges';
 import { useInfiniteRows } from '../lib/useInfiniteRows';
 import { useSidebarCallbacks } from '../lib/useSidebarCallbacks';
 import { ChangeDiffBody, FileChangeGroup } from './FileChangeGroup';
-import { DiffFullscreenModal, FullscreenButton, type FullscreenDiffFile } from './DiffFullscreenModal';
+import { FullscreenButton, type FullscreenDiffFile } from './DiffFullscreenModal';
+import { useFullscreenDiff } from './useFullscreenDiff';
 import { SidebarFileListSkeleton } from './Skeleton';
 
 // Lazy-mount budget for the per-file rows themselves. Sessions with
@@ -104,37 +106,12 @@ export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedd
 
   // Fullscreen diff browser. The sidebar owns the modal; the parent
   // only gets a callback to open it.
-  const [fullscreen, setFullscreen] = useState(false);
-  useEffect(() => {
-    onFullscreen?.(() => setFullscreen(true));
-  }, [onFullscreen]);
-
-  const fullscreenFiles: FullscreenDiffFile[] = useMemo(
-    () => files.map((change) => ({
-      key: change.path,
-      path: change.path,
-      label: change.displayPath || change.path,
-      additions: change.additions,
-      deletions: change.deletions,
-      body: (
-        <ChangeDiffBody
-          patch={change.patch}
-          before={change.before}
-          after={change.after}
-          filePath={change.path}
-        />
-      ),
-    })),
-    [files],
+  const fullscreenFiles = useMemo(() => toFullscreenFiles(files), [files]);
+  const { open: openFullscreen, modal: Fullscreen } = useFullscreenDiff(
+    'Session changes',
+    fullscreenFiles,
+    onFullscreen,
   );
-
-  const Fullscreen = fullscreen ? (
-    <DiffFullscreenModal
-      title="Session changes"
-      files={fullscreenFiles}
-      onClose={() => setFullscreen(false)}
-    />
-  ) : null;
 
   const Body = (
     <div className="oc-changes-sidebar-body oc-changes-list-body">
@@ -201,13 +178,34 @@ export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedd
             </>
           )}
         </span>
-        <FullscreenButton onClick={() => setFullscreen(true)} disabled={files.length === 0} />
+        <FullscreenButton onClick={openFullscreen} disabled={files.length === 0} />
         <ChangesRefreshButton onClick={refresh} loading={loading} disabled={!enabled} />
       </div>
       {Body}
       {Fullscreen}
     </aside>
   );
+}
+
+// toFullscreenFiles adapts the session-changes payload to the
+// fullscreen diff browser's file shape, reusing the sidebar's own
+// diff renderer for the body.
+function toFullscreenFiles(files: FileChange[]): FullscreenDiffFile[] {
+  return files.map((change) => ({
+    key: change.path,
+    path: change.path,
+    label: change.displayPath || change.path,
+    additions: change.additions,
+    deletions: change.deletions,
+    body: (
+      <ChangeDiffBody
+        patch={change.patch}
+        before={change.before}
+        after={change.after}
+        filePath={change.path}
+      />
+    ),
+  }));
 }
 
 // ChangesRefreshButton is a small icon button rendered in the
