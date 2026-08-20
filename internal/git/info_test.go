@@ -231,6 +231,38 @@ func TestCache_CancelledContextDoesNotCacheZeroInfo(t *testing.T) {
 	}
 }
 
+// TestCache_PanickingFetchReleasesSlot: the process-wide semaphore
+// slot must be released even when the fetch panics — net/http
+// recovers handler panics, so a leaked slot would silently shrink the
+// fetch cap for the life of the process.
+func TestCache_PanickingFetchReleasesSlot(t *testing.T) {
+	c := newCache(time.Minute, func(context.Context, string) Info {
+		panic("fetch boom")
+	})
+
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Error("expected the fetch panic to propagate")
+			}
+		}()
+		c.lookup(context.Background(), "/tmp/panics")
+	}()
+
+	// Every slot must still be free: filling the semaphore to
+	// capacity must never block.
+	for i := 0; i < cap(fetchSlots); i++ {
+		select {
+		case fetchSlots <- struct{}{}:
+		default:
+			t.Fatalf("semaphore slot leaked by panicking fetch (only %d of %d free)", i, cap(fetchSlots))
+		}
+	}
+	for i := 0; i < cap(fetchSlots); i++ {
+		<-fetchSlots
+	}
+}
+
 func TestLookup_NonGitDir(t *testing.T) {
 	// /tmp is almost certainly not a git repo; either way, this
 	// exercises the real git invocation path and confirms we don't

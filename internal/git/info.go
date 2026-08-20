@@ -118,8 +118,13 @@ func (c *cache) lookup(ctx context.Context, dir string) Info {
 	case <-ctx.Done():
 		return Info{}
 	}
-	info := c.fetch(ctx, dir)
-	<-fetchSlots
+	// Release via defer so a panicking fetch can't leak the slot —
+	// net/http recovers handler panics, and a permanently lost slot
+	// would shrink the process-wide cap for the life of the process.
+	info := func() Info {
+		defer func() { <-fetchSlots }()
+		return c.fetch(ctx, dir)
+	}()
 
 	// A cancelled caller must never write to the cache: git fails
 	// instantly under a dead context, and caching that fabricated
