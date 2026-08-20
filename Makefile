@@ -1,4 +1,4 @@
-.PHONY: docs docs-build dev dev-backend dev-remote dev-relay dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-platform-branching lint-settings-rows otel-up otel-down otel-logs otel-reset caddy-up caddy-down caddy-cert install-hooks help
+.PHONY: docs docs-build dev dev-backend dev-remote dev-relay dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-platform-branching lint-settings-rows otel-up otel-down otel-logs otel-reset check-caddy-host caddy-up caddy-down caddy-cert install-hooks help
 
 # --- OTel dev defaults ----------------------------------------------------
 #
