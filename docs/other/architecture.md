@@ -44,7 +44,7 @@ Everything external that the ocman process touches.
 
 ```mermaid
 flowchart LR
-    Browser[Browser SPA<br/>REST + SSE] --> Ocman[ocman<br/>Go binary :8229]
+    Browser[Browser SPA<br/>REST + SSE] --> Ocman[ocman<br/>Go binary :8228]
     Agent[AI agents<br/>MCP clients] -->|/mcp| Ocman
     Ocman -->|read-only SQLite| OCDB[(opencode.db)]
     Ocman -->|read/write SQLite| StateDB[(state.db)]
@@ -57,7 +57,8 @@ flowchart LR
 ```
 
 - **Browser SPA.** The only UI. It talks REST/SSE to the hub, never to
-  remotes directly.
+  remotes directly. `:8228` is the production `-addr` default; in dev the
+  Vite server on :8228 proxies `/api` to the air backend on :8229.
 - **opencode.db.** Foreign data, opened read-only. Ocman never writes to it.
 - **state.db.** Ocman's own state: archive flags, child sessions, immutable
   workflow versions and runs, workflow artifact metadata, workflow resource
