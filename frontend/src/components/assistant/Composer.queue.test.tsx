@@ -146,6 +146,36 @@ describe('Composer input', () => {
     outside.remove();
   });
 
+  // #459: with the backend down the retry loop must be bounded (with
+  // backoff), then give up — unlocking the composer with the draft
+  // intact so the user can edit, copy, or retry deliberately. The old
+  // loop retried every second forever and kept the composer locked.
+  it('gives up after bounded backoff and unlocks with the draft intact', async () => {
+    vi.useFakeTimers();
+    const onSend = vi.fn().mockRejectedValue(new BackendUnavailableError());
+    render(<Composer isRunning={false} onSend={onSend} />);
+    const input = screen.getByRole('textbox');
+
+    fireEvent.input(input, { target: { value: 'do not lose me' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await act(async () => {});
+    expect(onSend).toHaveBeenCalledTimes(1);
+
+    // Exhaust the backoff schedule (1s, 2s, 4s, 8s, 16s) plus slack.
+    for (let i = 0; i < 10; i++) {
+      await act(async () => { vi.advanceTimersByTime(20_000); });
+    }
+
+    // Bounded: initial attempt + 5 retries, then no more ticks fire.
+    expect(onSend).toHaveBeenCalledTimes(6);
+    await act(async () => { vi.advanceTimersByTime(60_000); });
+    expect(onSend).toHaveBeenCalledTimes(6);
+
+    // Unlocked, draft preserved.
+    expect(input).toHaveValue('do not lose me');
+    expect(input).not.toBeDisabled();
+  });
+
   it('keeps the draft locked and retries while the backend is unavailable', async () => {
     vi.useFakeTimers();
     const onSend = vi.fn()

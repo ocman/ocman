@@ -597,6 +597,12 @@ function ComposerImpl({
       const hadFocus = document.activeElement === el;
       sendingRef.current = true;
       setSending(true);
+      // #459: bounded retries with exponential backoff. After the budget
+      // is exhausted the composer unlocks with the draft intact (the
+      // input is only cleared on success), so the user can edit, copy,
+      // or retry deliberately instead of being locked out indefinitely.
+      let retries = 0;
+      const MAX_BACKEND_RETRIES = 5;
       while (mountedRef.current) {
         try {
           await onSendRef.current?.(text, imgs, queue);
@@ -610,7 +616,9 @@ function ComposerImpl({
           break;
         } catch (err) {
           if (!(err instanceof BackendUnavailableError)) break;
-          await new Promise(resolve => window.setTimeout(resolve, 1_000));
+          if (retries >= MAX_BACKEND_RETRIES) break;
+          retries += 1;
+          await new Promise(resolve => window.setTimeout(resolve, 1_000 * 2 ** (retries - 1)));
         }
       }
       if (mountedRef.current) {
