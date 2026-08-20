@@ -98,6 +98,32 @@ describe('useSessionActions — /restart-opencode', () => {
     expect(pending.fail).not.toHaveBeenCalled();
   });
 
+  it('reloads the agent + model catalog after a successful restart', async () => {
+    restartOpencode.mockResolvedValue({ restarted: 1 });
+    const reloadCapabilities = vi.fn();
+    const opts = makeOptions({ reloadCapabilities });
+    const { result } = renderHook(() => useSessionActions(opts));
+
+    await act(async () => {
+      await result.current.handleCommand('restart-opencode', '');
+    });
+
+    expect(reloadCapabilities).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reload the catalog when the restart fails', async () => {
+    restartOpencode.mockRejectedValue(new Error('no pane'));
+    const reloadCapabilities = vi.fn();
+    const opts = makeOptions({ reloadCapabilities });
+    const { result } = renderHook(() => useSessionActions(opts));
+
+    await act(async () => {
+      await result.current.handleCommand('restart-opencode', '');
+    });
+
+    expect(reloadCapabilities).not.toHaveBeenCalled();
+  });
+
   it('hides the toast and reports the error when the restart fails', async () => {
     restartOpencode.mockRejectedValue(new Error('no pane'));
     const setRestartToastMessage = vi.fn();

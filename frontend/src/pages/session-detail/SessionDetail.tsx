@@ -311,6 +311,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     selectedReasoning,
     setSelectedReasoning,
     refreshModels,
+    reloadCapabilities,
     handleToggleFavorite,
   } = useSessionCapabilities({
     id,
@@ -907,6 +908,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     setShowRenameToast,
     setShowDisconnectedToast,
     setRestartToastMessage,
+    reloadCapabilities,
     setCopyToastMessage,
     refreshThread: reload,
   });

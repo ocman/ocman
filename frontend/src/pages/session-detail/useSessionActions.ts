@@ -82,6 +82,10 @@ export interface UseSessionActionsOptions {
   setShowRenameToast: Dispatch<SetStateAction<boolean>>;
   setShowDisconnectedToast: Dispatch<SetStateAction<boolean>>;
   setRestartToastMessage: Dispatch<SetStateAction<string | null>>;
+  /** Re-fetch the agent catalog + model list. Called after a
+   *  successful OpenCode restart, since the fresh instance may have a
+   *  different config. */
+  reloadCapabilities?: () => void;
   /** Transient feedback toast for the `/copy` command. */
   setCopyToastMessage: Dispatch<SetStateAction<string | null>>;
   refreshThread?: () => Promise<void>;
@@ -168,6 +172,7 @@ export function useSessionActions({
   setShowRenameToast,
   setShowDisconnectedToast,
   setRestartToastMessage,
+  reloadCapabilities,
   setCopyToastMessage,
   refreshThread,
 }: UseSessionActionsOptions): UseSessionActionsResult {
@@ -451,6 +456,9 @@ export function useSessionActions({
         }
         pending.clear();
         setRestartToastMessage(result.restarted === 1 ? 'Restarted OpenCode' : `Restarted ${result.restarted ?? 0} OpenCode instances`);
+        // The new instance re-reads its config, so the agent catalog
+        // and model list we fetched from the old one may be stale.
+        reloadCapabilities?.();
       } catch (e) {
         setRestartToastMessage(null);
         remoteLog.error('Failed to restart OpenCode', e);
@@ -637,7 +645,7 @@ export function useSessionActions({
       remoteLog.error('Failed to execute command', e);
       pending.fail(e instanceof Error ? e.message : 'Unknown error');
     }
-  }, [activeAgent, archiveSession, caps.fork, caps.move, createSession, launchOpencodeInTmux, tmuxAvailable, seedNewSession, handleCompact, handleNewSession, handleTmuxShortcut, handleVSCodeShortcut, navigate, navigateToSession, openWorktreeForm, portAvailable, recentSessionsRef, messagesRef, partsRef, refreshThread, selectedAgent, selectedModel, session, setShowForkPicker, setShowDisconnectedToast, setShowMovePicker, setShowRenameModal, setShowRenameToast, setRestartToastMessage, setCopyToastMessage, pending]);
+  }, [activeAgent, archiveSession, caps.fork, caps.move, createSession, launchOpencodeInTmux, tmuxAvailable, seedNewSession, handleCompact, handleNewSession, handleTmuxShortcut, handleVSCodeShortcut, navigate, navigateToSession, openWorktreeForm, portAvailable, recentSessionsRef, messagesRef, partsRef, refreshThread, selectedAgent, selectedModel, session, setShowForkPicker, setShowDisconnectedToast, setShowMovePicker, setShowRenameModal, setShowRenameToast, setRestartToastMessage, reloadCapabilities, setCopyToastMessage, pending]);
 
   return {
     awaitingAssistantResponse,

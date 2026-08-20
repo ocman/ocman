@@ -50,6 +50,10 @@ export interface UseSessionCapabilitiesResult {
   /** Re-fetch the session-scoped model list. Falls back to the
    *  historical list when /api/session-models is unreachable. */
   refreshModels: (signal?: AbortSignal) => void;
+  /** Re-fetch both the agent catalog and the model list. Used after
+   *  the session's OpenCode instance is restarted, since the new
+   *  instance may expose a different config. */
+  reloadCapabilities: () => void;
   /** Toggle a favorite model on/off. Optimistic with revert. */
   handleToggleFavorite: (provider: string, model: string, nextFavorite: boolean) => Promise<void>;
 }
@@ -78,6 +82,9 @@ export function useSessionCapabilities({
   const [selectedReasoning, setSelectedReasoning] = useState('');
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [agentsLoaded, setAgentsLoaded] = useState(false);
+  // Bumped to force a re-fetch of the agent catalog when nothing in
+  // the session identity changed (e.g. after an OpenCode restart).
+  const [reloadNonce, setReloadNonce] = useState(0);
 
   // Ref-mirror for callers that must read portAvailable without
   // re-running on every change (palette commands, SSE handler).
@@ -134,7 +141,7 @@ export function useSessionCapabilities({
         setAgentsLoaded(true);
       });
     return () => controller.abort();
-  }, [id, directory, portAvailable]);
+  }, [id, directory, portAvailable, reloadNonce]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const refreshModels = useCallback((signal?: AbortSignal) => {
@@ -177,6 +184,11 @@ export function useSessionCapabilities({
     refreshModels(controller.signal);
     return () => controller.abort();
   }, [id, portAvailable, refreshModels]);
+
+  const reloadCapabilities = useCallback(() => {
+    setReloadNonce((n) => n + 1);
+    refreshModels();
+  }, [refreshModels]);
 
   // Toggle a favorite model. Optimistic flip in the picker first,
   // then re-fetch for authoritative ordering. On error revert.
@@ -225,6 +237,7 @@ export function useSessionCapabilities({
     selectedReasoning,
     setSelectedReasoning,
     refreshModels,
+    reloadCapabilities,
     handleToggleFavorite,
   };
 }
