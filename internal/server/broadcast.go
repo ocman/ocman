@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	log "github.com/sirupsen/logrus"
+
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
@@ -32,17 +34,26 @@ type broadcastEvent struct {
 	data  []byte
 }
 
-// coalescingEvents are last-write-wins full-state snapshots: a newer
-// payload fully supersedes an older one for the same key, so they must
-// never be dropped on a full buffer (unlike edge/notification events,
-// where the notify poll is an acceptable backstop). When the buffer is
-// full, the hub stores the latest payload per key on the subscriber and
-// the SSE writer flushes it — guaranteeing the freshest state reaches the
-// client without ever blocking a producer. The key is derived by
-// coalesceKey (event + session id).
+// coalescingEvents are last-write-wins per coalesceKey: a newer payload
+// fully supersedes an older one for the same key, so they must never be
+// dropped on a full buffer (unlike edge/notification events, where the
+// notify poll is an acceptable backstop). When the buffer is full, the
+// hub stores the latest payload per key on the subscriber and the SSE
+// writer flushes it — guaranteeing the freshest state reaches the client
+// without ever blocking a producer. The key is derived by coalesceKey
+// (event + session id).
+//
+// ocman.session.idle / ocman.session.changed are identity-keyed: the
+// consumer re-reads state on receipt (useGlobalEvents refetches; the
+// provisional session/patch payloads are optimizations ahead of that
+// refetch), so keeping only the newest per (event, session) is safe —
+// and dropping them stalled queue drain, notifications, and the sidebar
+// under bursts (#490).
 var coalescingEvents = map[string]bool{
-	"ocman.queue.updated":  true,
-	"workflow.run.updated": true,
+	"ocman.queue.updated":   true,
+	"workflow.run.updated":  true,
+	"ocman.session.idle":    true,
+	"ocman.session.changed": true,
 }
 
 // broadcastSub is one connected /api/events client. Non-coalescing events
@@ -128,8 +139,12 @@ func (h *broadcastHub) broadcast(event string, data []byte) {
 		default:
 			if coalescingEvents[event] {
 				sub.park(coalesceKey(event, data), ev)
+				continue
 			}
-			// else: non-coalescing edge event — drop (notify poll backstop).
+			// Non-coalescing edge event — drop (notify poll backstop).
+			// Logged so a systematic backlog is visible instead of
+			// presenting as unexplained lag (#490).
+			log.WithField("event", event).Debug("global SSE: dropped event for slow subscriber")
 		}
 	}
 }

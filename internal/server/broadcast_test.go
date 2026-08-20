@@ -134,6 +134,51 @@ func TestBroadcastHubCoalescesQueueUpdatedOnFullBuffer(t *testing.T) {
 	}
 }
 
+// #490: ocman.session.idle and ocman.session.changed drive queue drain,
+// notification state, and the sidebar. They are identity-keyed (the
+// consumer re-reads state), so on a full buffer they must coalesce
+// last-write-wins per session instead of being silently dropped.
+func TestBroadcastHubCoalescesSessionEventsOnFullBuffer(t *testing.T) {
+	h := newBroadcastHub()
+	sub, unsub := h.subscribe()
+	defer unsub()
+
+	// Fill the 16-slot buffer with unrelated events so it's full.
+	for i := 0; i < 16; i++ {
+		h.broadcast("filler", []byte(`{}`))
+	}
+
+	// A burst of idle/changed events for two sessions can't fit — they
+	// must park last-write-wins per (event, session), not drop.
+	h.broadcast("ocman.session.idle", []byte(`{"sessionID":"s1"}`))
+	h.broadcast("ocman.session.changed", []byte(`{"sessionID":"s1"}`))
+	h.broadcast("ocman.session.changed", []byte(`{"sessionID":"s1","patch":{"status":"busy"}}`))
+	h.broadcast("ocman.session.changed", []byte(`{"sessionID":"s2"}`))
+
+	select {
+	case <-sub.wake:
+	case <-time.After(time.Second):
+		t.Fatal("subscriber was never woken for coalesced session events")
+	}
+	pending := sub.drainPending()
+	if len(pending) != 3 {
+		t.Fatalf("pending = %d, want 3 (idle s1, changed s1, changed s2)", len(pending))
+	}
+	byKey := make(map[string]string, len(pending))
+	for _, ev := range pending {
+		byKey[coalesceKey(ev.event, ev.data)] = string(ev.data)
+	}
+	if got := byKey["ocman.session.changed\x00s1"]; got != `{"sessionID":"s1","patch":{"status":"busy"}}` {
+		t.Fatalf("changed s1 payload = %q, want the latest (patch) payload", got)
+	}
+	if _, ok := byKey["ocman.session.idle\x00s1"]; !ok {
+		t.Fatal("idle s1 was dropped instead of parked")
+	}
+	if _, ok := byKey["ocman.session.changed\x00s2"]; !ok {
+		t.Fatal("changed s2 was dropped instead of parked")
+	}
+}
+
 func TestHandleGlobalEventsStreamsBroadcast(t *testing.T) {
 	srv := &Server{broadcastHub: newBroadcastHub()}
 
