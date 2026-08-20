@@ -6,13 +6,18 @@ import (
 )
 
 // defaultLookupManyWorkers caps the number of concurrent `git status`
-// invocations a single LookupMany call will issue. Lifted out of the
-// /api/sessions handler where it lived as `gitInfoWorkers = 8`. Each
-// worker runs git in a child process, so the bound is a hedge against
-// fork() pressure on the Go runtime — every fork briefly stops the
-// world while the address space is duplicated, and a burst of
-// unbounded forks was observed to cause multi-second pauses across
-// unrelated handlers (see docs/other/profiling.md).
+// invocations. Lifted out of the /api/sessions handler where it lived
+// as `gitInfoWorkers = 8`. Each worker runs git in a child process,
+// so the bound is a hedge against fork() pressure on the Go runtime —
+// every fork briefly stops the world while the address space is
+// duplicated, and a burst of unbounded forks was observed to cause
+// multi-second pauses across unrelated handlers (see
+// docs/other/profiling.md).
+//
+// The cap is enforced process-wide by fetchSlots in info.go, not just
+// per LookupMany call: concurrent /api/git/info requests used to each
+// bring their own 8-worker pool, and the combined fork burst blocked
+// unrelated handlers (e.g. permission replies).
 const defaultLookupManyWorkers = 8
 
 // LookupMany returns Info for every unique non-empty directory in

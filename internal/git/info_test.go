@@ -146,6 +146,52 @@ func TestCache_EmptyDirShortCircuits(t *testing.T) {
 	}
 }
 
+// TestCache_CancelledContextWhileWaitingForSlot: a caller whose
+// request died while queued behind the process-wide fetch semaphore
+// must get a zero Info back without that zero being cached — caching
+// it would mark the dir "not a repo" for a full TTL.
+func TestCache_CancelledContextWhileWaitingForSlot(t *testing.T) {
+	var calls int64
+	c := newCache(time.Minute, func(_ context.Context, _ string) Info {
+		atomic.AddInt64(&calls, 1)
+		return Info{Branch: "main"}
+	})
+
+	// Saturate the semaphore so the lookup has to queue.
+	for i := 0; i < cap(fetchSlots); i++ {
+		fetchSlots <- struct{}{}
+	}
+	defer func() {
+		for i := 0; i < cap(fetchSlots); i++ {
+			<-fetchSlots
+		}
+	}()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if got := c.lookup(ctx, "/tmp/z"); got.IsRepo() {
+		t.Errorf("cancelled lookup returned %+v, want zero Info", got)
+	}
+	if atomic.LoadInt64(&calls) != 0 {
+		t.Error("cancelled lookup must not invoke fetch")
+	}
+
+	// Nothing cached: a later healthy lookup fetches for real.
+	for i := 0; i < cap(fetchSlots); i++ {
+		<-fetchSlots
+	}
+	got := c.lookup(context.Background(), "/tmp/z")
+	for i := 0; i < cap(fetchSlots); i++ {
+		fetchSlots <- struct{}{}
+	}
+	if got.Branch != "main" {
+		t.Errorf("post-cancel lookup got %q, want main (zero Info must not be cached)", got.Branch)
+	}
+	if atomic.LoadInt64(&calls) != 1 {
+		t.Errorf("expected exactly 1 fetch after the cancelled attempt, got %d", atomic.LoadInt64(&calls))
+	}
+}
+
 func TestLookup_NonGitDir(t *testing.T) {
 	// /tmp is almost certainly not a git repo; either way, this
 	// exercises the real git invocation path and confirms we don't

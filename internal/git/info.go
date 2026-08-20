@@ -83,6 +83,15 @@ func newCache(ttl time.Duration, fetch func(ctx context.Context, dir string) Inf
 
 var defaultCache = newCache(defaultTTL, fetchFromGit)
 
+// fetchSlots is a process-wide semaphore over git-status fetches.
+// The per-call worker cap in LookupMany is not enough on its own:
+// several HTTP handlers can each run their own LookupMany at the same
+// time (the sidebar mounts multiple useGitInfo hooks), and 3×8
+// concurrent `git status` forks were observed to stall unrelated
+// handlers — answering a permission prompt hung until git settled.
+// Cache hits never touch the semaphore, so a warm sidebar stays fast.
+var fetchSlots = make(chan struct{}, defaultLookupManyWorkers)
+
 func (c *cache) lookup(ctx context.Context, dir string) Info {
 	if dir == "" {
 		return Info{}
@@ -100,7 +109,19 @@ func (c *cache) lookup(ctx context.Context, dir string) Info {
 	// lookups against different dirs don't serialise. A rare
 	// duplicate fetch for the same dir is cheap — the alternative
 	// (singleflight) adds complexity for little gain here.
+	//
+	// The fetch does take a process-wide slot, though: it forks a git
+	// child, and unbounded fork bursts pause the whole Go runtime
+	// (docs/other/profiling.md). A caller whose context dies while
+	// waiting gets a zero Info back WITHOUT caching it — caching would
+	// poison the entry as "not a repo" for a full TTL.
+	select {
+	case fetchSlots <- struct{}{}:
+	case <-ctx.Done():
+		return Info{}
+	}
 	info := c.fetch(ctx, dir)
+	<-fetchSlots
 
 	c.mu.Lock()
 	c.entries[dir] = &cacheEntry{info: info, fetched: time.Now()}
