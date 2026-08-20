@@ -184,13 +184,38 @@ func TestEnvArgs(t *testing.T) {
 
 func TestOpencodeCommandForPort(t *testing.T) {
 	got := OpencodeCommandForPort(4242)
-	if got != "exec opencode --port 4242" {
+	if got != "exec env NODE_NO_WARNINGS=1 opencode --port 4242" {
 		t.Fatalf("OpencodeCommandForPort(4242) = %q", got)
 	}
-	// Same `exec opencode` shape as the --port 0 constant, so the pane
-	// behaves identically apart from the port.
-	if !strings.HasPrefix(got, "exec opencode --port ") ||
-		!strings.HasPrefix(OpencodeCommand, "exec opencode --port ") {
+	// Same `exec env … opencode` shape as the --port 0 constant, so the
+	// pane behaves identically apart from the port.
+	const prefix = "exec env NODE_NO_WARNINGS=1 opencode --port "
+	if !strings.HasPrefix(got, prefix) || !strings.HasPrefix(OpencodeCommand, prefix) {
 		t.Fatalf("port command %q drifted from %q", got, OpencodeCommand)
+	}
+}
+
+// TestOpencodeCommandSuppressesNodeWarnings pins the NODE_NO_WARNINGS=1
+// prefix on every pane command. Without it opencode's upstream
+// MaxListenersExceededWarning leak paints over the TUI on every LLM call
+// (see the comment on opencodeNoWarnings), which users report as an ocman
+// bug. Both builders must carry it: the launchers that take an env map and
+// the ones that don't (LaunchOpencodeWith, NewNamedWindow) share only the
+// command string, so that is the single choke point.
+func TestOpencodeCommandSuppressesNodeWarnings(t *testing.T) {
+	for name, command := range map[string]string{
+		"OpencodeCommand":        OpencodeCommand,
+		"OpencodeCommandForPort": OpencodeCommandForPort(1234),
+	} {
+		if !strings.Contains(command, "NODE_NO_WARNINGS=1") {
+			t.Errorf("%s = %q; want it to suppress node warnings", name, command)
+		}
+		// The `env` prefix must not hide the pane from window detection:
+		// WindowRunsOpencode reads pane_start_command, which is now the
+		// wrapped string. (pane_current_command stays "opencode" because
+		// env execs in place rather than forking.)
+		if !WindowRunsOpencode(Window{Command: "node", StartCommand: command}) {
+			t.Errorf("WindowRunsOpencode(%q) = false; want the pane still recognised", command)
+		}
 	}
 }

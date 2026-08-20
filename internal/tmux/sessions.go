@@ -366,20 +366,49 @@ func envArgs(env map[string]string) []string {
 	return args
 }
 
+// opencodeNoWarnings silences opencode's MaxListenersExceededWarning
+// spam. That warning is an upstream bug in opencode's bundled Effect-ts
+// runtime — listeners are added to an internal EventTarget per LLM call
+// and per SSE disconnect and never removed (anomalyco/opencode #34574,
+// #29204, #28492; the fix PR #31922 was closed unmerged, so it is still
+// live as of 1.18.x). It reproduces on a vanilla opencode with no ocman
+// involved, but because the warning is written to stderr it paints over
+// the TUI in the pane, and a pane ocman launched reads as an ocman bug.
+//
+// Bun honours NODE_NO_WARNINGS by never installing the warning printer
+// (see installDefaultWarningListener in bun's BunProcess.cpp), so the
+// warnings are suppressed at the source rather than filtered.
+//
+// This hides the noise, not the leak: memory still grows in a long-lived
+// instance, and RestartProjectOpencode is the only cure until upstream
+// fixes it.
+//
+// ponytail: blunt — this suppresses every process warning, not just this
+// one. Swap for an in-process opencode plugin setting
+// events.defaultMaxListeners = 0 if opencode ever emits a warning worth
+// reading in the pane.
+const opencodeNoWarnings = "env NODE_NO_WARNINGS=1"
+
 // OpencodeCommand is the shell command tmux runs in the worktree
 // window. We invoke it via `sh -lc` so the user's PATH is initialised
 // (opencode is installed via a mise/asdf/homebrew shim that depends on
 // shell init), but pass the command as a single literal argument so
 // nothing in the rc file (mise, starship, …) can race for keystrokes.
-const OpencodeCommand = "exec opencode --port 0"
+//
+// The env var goes in the command rather than tmux's `-e` because the
+// non-env launchers (LaunchOpencodeWith, NewNamedWindow) share only this
+// string, making it the single choke point every launch path passes
+// through. `exec env` still replaces the shell, so no extra process
+// lingers in the pane.
+const OpencodeCommand = "exec " + opencodeNoWarnings + " opencode --port 0"
 
 // OpencodeCommandForPort builds the pane command for a specific,
 // caller-allocated port (used by internal/ocruntime, which allocates a
 // free loopback port itself instead of letting opencode pick with
-// `--port 0`). Same `exec opencode` shape as OpencodeCommand so the
-// pane behaves identically otherwise.
+// `--port 0`). Same `exec env … opencode` shape as OpencodeCommand so
+// the pane behaves identically otherwise.
 func OpencodeCommandForPort(port int) string {
-	return fmt.Sprintf("exec opencode --port %d", port)
+	return fmt.Sprintf("exec %s opencode --port %d", opencodeNoWarnings, port)
 }
 
 // LaunchOpencodeCmdEnvWith is the env-aware, idempotent launcher that
