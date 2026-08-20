@@ -20,7 +20,7 @@ jobs:
       - name: Install pnpm
         run: npm install -g pnpm@10.11.1
       - run: make build-frontend
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v3
         with:
           name: frontend-dist
           path: internal/webui/static/
@@ -45,7 +45,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v3
         with:
           name: frontend-dist
           path: internal/webui/static/
@@ -57,7 +57,7 @@ jobs:
         run: go build -o ocman-${{ matrix.goos }}-${{ matrix.goarch }} -ldflags="-s -w" .
       - name: Package binary
         run: tar -czf ocman-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz ocman-${{ matrix.goos }}-${{ matrix.goarch }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v3
         with:
           name: ocman-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
           path: ocman-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz
@@ -88,7 +88,7 @@ jobs:
         run: make installer-mac
       - name: Rename DMG for release
         run: mv dist/ocman.dmg dist/ocman-darwin-arm64.dmg
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v3
         with:
           name: ocman-darwin-arm64.dmg
           path: dist/ocman-darwin-arm64.dmg
@@ -119,7 +119,7 @@ jobs:
           fi
           printf -- '--- changelog.md ---\n'
           cat changelog.md
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v3
         with:
           path: artifacts
       - name: Create Release
