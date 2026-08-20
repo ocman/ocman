@@ -315,3 +315,56 @@ func TestHandlersAcceptLocalOwner(t *testing.T) {
 		}
 	}
 }
+
+// #533: request validation must run before the ensure side effect. A
+// create naming a registered remote but an unknown platform must be
+// rejected without launching a managed opencode instance on that remote.
+func TestCreateSessionValidatesPlatformBeforeEnsure(t *testing.T) {
+	local := &ownerSpy{}
+	remoteSpy := &ownerSpy{}
+	s := newOwnerTestServer(local)
+	s.hostRouter.RegisterRemote("build-box", remoteSpy)
+	reg := platforms.NewRegistry()
+	reg.Register(&fakePlatform{id: "r-build-box:opencode"})
+	s.registry = reg
+	s.sessions = sessionsvc.New(reg, sessionsvc.Hooks{})
+
+	body := `{"platform":"r-build-box:bogus","directory":"/remote/repo"}`
+	rr := httptest.NewRecorder()
+	s.handleCreateSession(rr, httptest.NewRequest(http.MethodPost, "/api/sessions", strings.NewReader(body)))
+
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("status = %d; want 400 (body: %q)", rr.Code, rr.Body.String())
+	}
+	if remoteSpy.count() != 0 {
+		t.Errorf("remote host ensured %d time(s) for an invalid platform; want 0", remoteSpy.count())
+	}
+	if local.count() != 0 {
+		t.Errorf("local host executed %d time(s); want 0", local.count())
+	}
+}
+
+// The valid-platform remote create still ensures then creates.
+func TestCreateSessionEnsuresForValidRemotePlatform(t *testing.T) {
+	local := &ownerSpy{}
+	remoteSpy := &ownerSpy{}
+	s := newOwnerTestServer(local)
+	s.hostRouter.RegisterRemote("build-box", remoteSpy)
+	reg := platforms.NewRegistry()
+	reg.Register(&fakePlatform{id: "r-build-box:opencode", createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+		return &platforms.CreateSessionResponse{ID: "new-sess"}, nil
+	}})
+	s.registry = reg
+	s.sessions = sessionsvc.New(reg, sessionsvc.Hooks{})
+
+	body := `{"platform":"r-build-box:opencode","directory":"/remote/repo"}`
+	rr := httptest.NewRecorder()
+	s.handleCreateSession(rr, httptest.NewRequest(http.MethodPost, "/api/sessions", strings.NewReader(body)))
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("status = %d; want 200 (body: %q)", rr.Code, rr.Body.String())
+	}
+	if remoteSpy.count() != 1 {
+		t.Errorf("remote ensure calls = %d; want 1", remoteSpy.count())
+	}
+}

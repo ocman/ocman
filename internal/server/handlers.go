@@ -497,6 +497,18 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
+		// Validate the platform before the ensure side effect (#533): an
+		// unknown platform must not launch a managed opencode instance
+		// (locally or on the remote) only for Create to reject the
+		// request below. An empty platform is allowed — Create
+		// auto-picks when exactly one adapter is available. Same error
+		// shape as sessionsvc's validation.
+		if req.Platform != "" {
+			if _, registered := s.registry.Get(platforms.ID(req.Platform)); !registered {
+				http.Error(w, "unknown platform", http.StatusBadRequest)
+				return
+			}
+		}
 		// A worktree runs on the project's shared instance rooted at the
 		// main checkout; fold the path back so ensuring a worktree
 		// directory can't launch a second instance for the same project.
