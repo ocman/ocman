@@ -88,8 +88,13 @@ build() {
 	(cd "$SRC/frontend" && pnpm install --frozen-lockfile && pnpm build)
 	info "building binary"
 	mkdir -p "$(dirname "$BIN")"
-	(cd "$SRC" && go build -o "$BIN" .)
-	install -m 0755 "$SRC/install.sh" "$CTL"
+	# Build aside and rename: writing over a running binary fails on Linux
+	# (ETXTBSY) and can SIGKILL the running process on macOS (codesign);
+	# same for $CTL, which is the very script executing "ocman-ctl update".
+	(cd "$SRC" && go build -o "$BIN.new" .)
+	mv -f "$BIN.new" "$BIN"
+	install -m 0755 "$SRC/install.sh" "$CTL.new"
+	mv -f "$CTL.new" "$CTL"
 	info "installed $BIN and $CTL"
 }
 
@@ -195,7 +200,7 @@ ocman-ctl <command>
   doctor               dependency check only
 
 Environment: OCMAN_ADDR (default $ADDR), OCMAN_PREFIX, OCMAN_SRC,
-OCMAN_BRANCH, OCMAN_REPO, OCMAN_RUN
+OCMAN_BRANCH, OCMAN_REPO, OCMAN_RUN, OCMAN_BIN
 EOF
 }
 
