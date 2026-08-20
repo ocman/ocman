@@ -112,9 +112,7 @@ func (c *cache) lookup(ctx context.Context, dir string) Info {
 	//
 	// The fetch does take a process-wide slot, though: it forks a git
 	// child, and unbounded fork bursts pause the whole Go runtime
-	// (docs/other/profiling.md). A caller whose context dies while
-	// waiting gets a zero Info back WITHOUT caching it — caching would
-	// poison the entry as "not a repo" for a full TTL.
+	// (docs/other/profiling.md).
 	select {
 	case fetchSlots <- struct{}{}:
 	case <-ctx.Done():
@@ -122,6 +120,16 @@ func (c *cache) lookup(ctx context.Context, dir string) Info {
 	}
 	info := c.fetch(ctx, dir)
 	<-fetchSlots
+
+	// A cancelled caller must never write to the cache: git fails
+	// instantly under a dead context, and caching that fabricated
+	// zero would mark the dir "not a repo" for a full TTL. This
+	// guard is needed even with the ctx.Done select case above —
+	// when a slot is free AND ctx is already cancelled, select picks
+	// a ready case at random and can still run the fetch.
+	if ctx.Err() != nil {
+		return info
+	}
 
 	c.mu.Lock()
 	c.entries[dir] = &cacheEntry{info: info, fetched: time.Now()}

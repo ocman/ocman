@@ -192,6 +192,45 @@ func TestCache_CancelledContextWhileWaitingForSlot(t *testing.T) {
 	}
 }
 
+// TestCache_CancelledContextDoesNotCacheZeroInfo covers the free-slot
+// half of the cancellation story. When ctx is already cancelled AND a
+// semaphore slot is free, select picks a ready case at random, so the
+// lookup can proceed into the fetch with a dead context. The real
+// fetchFromGit fails instantly on a cancelled ctx and returns a zero
+// Info — which must NOT be cached, or the dir reads "not a repo" for
+// a full TTL. The frontend aborts git-info requests routinely (every
+// dirs change / unmount), so this path is hot, not exotic.
+func TestCache_CancelledContextDoesNotCacheZeroInfo(t *testing.T) {
+	var calls int64
+	// Mimic fetchFromGit: a cancelled ctx yields a zero Info.
+	c := newCache(time.Minute, func(ctx context.Context, _ string) Info {
+		if ctx.Err() != nil {
+			return Info{}
+		}
+		atomic.AddInt64(&calls, 1)
+		return Info{Branch: "main"}
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	// The semaphore is free, so each iteration flips a coin between
+	// the ctx.Done case and the fetch case. Repeat enough times that
+	// unguarded code caches a fabricated zero with near-certainty.
+	for i := 0; i < 32; i++ {
+		if got := c.lookup(ctx, "/tmp/w"); got.IsRepo() {
+			t.Fatalf("cancelled lookup returned %+v, want zero Info", got)
+		}
+	}
+
+	got := c.lookup(context.Background(), "/tmp/w")
+	if got.Branch != "main" {
+		t.Errorf("post-cancel lookup got %q, want main (cancellation result must not be cached)", got.Branch)
+	}
+	if n := atomic.LoadInt64(&calls); n != 1 {
+		t.Errorf("expected exactly 1 real fetch, got %d", n)
+	}
+}
+
 func TestLookup_NonGitDir(t *testing.T) {
 	// /tmp is almost certainly not a git repo; either way, this
 	// exercises the real git invocation path and confirms we don't
