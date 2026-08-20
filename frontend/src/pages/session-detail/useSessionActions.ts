@@ -33,6 +33,14 @@ interface ActionSession {
 
 export interface UseSessionActionsOptions {
   session: ActionSession | null;
+  /**
+   * The session id from the route (#529). When the URL changes there is
+   * a one-commit window before `session` is replaced; any send fired in
+   * that window would target the OLD session. Send paths fail closed
+   * when `session.id` doesn't match this. Optional so callers without a
+   * route context (tests) keep working — when omitted, no guard applies.
+   */
+  routeSessionId?: string;
   portAvailable: boolean;
   caps: PlatformCapabilities;
   pendingPermission: PendingPermission | null;
@@ -131,6 +139,7 @@ export interface UseSessionActionsResult {
  */
 export function useSessionActions({
   session,
+  routeSessionId,
   portAvailable,
   caps,
   pendingPermission,
@@ -236,6 +245,9 @@ export function useSessionActions({
 
   const handleSend = useCallback(async (text: string, images?: AttachedImage[], queue?: boolean) => {
     if (!session) return;
+    // #529: the route changed but the session state hasn't caught up
+    // yet — sending now would deliver to the OLD session. Drop it.
+    if (routeSessionId !== undefined && session.id !== routeSessionId) return;
     if (!portAvailable) throw new BackendUnavailableError();
     if (pendingPermission || pendingQuestion) return;
     // Explicit queue gesture (Ctrl/Cmd+Enter): the server holds this for
@@ -277,13 +289,15 @@ export function useSessionActions({
       selectedAgent || activeAgent || undefined,
       selectedReasoning || undefined,
     );
-  }, [activeAgent, pendingPermission, pendingQuestion, performSend, portAvailable, selectedAgent, selectedModel, selectedReasoning, sendMessage, session, pending]);
+  }, [activeAgent, pendingPermission, pendingQuestion, performSend, portAvailable, routeSessionId, selectedAgent, selectedModel, selectedReasoning, sendMessage, session, pending]);
 
   // Replay a previously failed send. Reuses the entry's text /
   // images / id so the bubble stays in place — the failed banner
   // either disappears on success or updates with the new error.
   const handleRetrySend = useCallback((entryId: string) => {
     if (!session) return;
+    // #529: same stale-route guard as handleSend.
+    if (routeSessionId !== undefined && session.id !== routeSessionId) return;
     const entry = failedSends.find((e) => e.id === entryId);
     if (!entry) return;
     // Re-establish the pending bubble so the user can see their
@@ -303,7 +317,7 @@ export function useSessionActions({
       entry.agent,
       entry.reasoning,
     );
-  }, [failedSends, performSend, session, pending]);
+  }, [failedSends, performSend, routeSessionId, session, pending]);
 
   // Drop a failed send (without retrying). Removes the persisted
   // entry and the pending bubble.

@@ -878,6 +878,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     flushQueuedShell,
   } = useSessionActions({
     session,
+    routeSessionId: id,
     portAvailable,
     caps,
     pendingPermission,
