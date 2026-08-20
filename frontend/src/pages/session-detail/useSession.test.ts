@@ -819,3 +819,46 @@ describe('useSession — subagent event routing', () => {
     expect(result.current.parts.find((p) => p.id === 'p-sub')).toBeUndefined();
   });
 });
+
+// #460: the cache mirror must not write on every streaming token delta —
+// each write clones the whole sessionCache Map and notifies every store
+// subscriber. It should batch (debounce) and flush on unmount so a
+// revisit is still warm.
+describe('useSession — cache mirror write amplification (#460)', () => {
+  it('writes O(1) per burst of deltas, with an unmount flush', async () => {
+    const detail = makeDetail();
+    const fetchSession = vi.fn().mockResolvedValue(detail);
+    const { result, unmount } = renderHook(() => useSession(SID, { fetchSession }));
+    await waitFor(() => expect(result.current.session?.id).toBe(SID));
+
+    // Seed the cache entry (updateCachedSession no-ops otherwise) and
+    // start counting writes.
+    act(() => useApiStore.getState().setCachedSession(SID, detail));
+    const original = useApiStore.getState().updateCachedSession;
+    const spy = vi.fn(original);
+    useApiStore.setState({ updateCachedSession: spy });
+
+    const sse = FakeEventSource.latest()!;
+    act(() => sse.open());
+    act(() => {
+      for (let i = 0; i < 50; i++) {
+        sse.emitMessage({
+          type: 'message.part.delta',
+          properties: {
+            partID: 'p-burst', messageID: 'm-burst', sessionID: SID,
+            field: 'text', delta: 'x',
+          },
+        });
+      }
+    });
+
+    expect(spy.mock.calls.length).toBeLessThanOrEqual(1);
+
+    // Unmount flushes the latest view so a revisit is warm.
+    unmount();
+    const cached = useApiStore.getState().getCachedSession(SID);
+    const part = cached?.parts.find((p) => p.id === 'p-burst');
+    const data = typeof part?.data === 'string' ? JSON.parse(part.data) : part?.data;
+    expect(data?.text).toBe('x'.repeat(50));
+  });
+});

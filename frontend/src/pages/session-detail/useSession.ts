@@ -135,6 +135,8 @@ export interface UseSessionResult extends SessionView {
 
 const DEFAULT_PAGE_SIZE = 30;
 const DEBUG_RING_SIZE = 50;
+/** Trailing debounce for the session-cache mirror (#460). */
+const CACHE_MIRROR_DEBOUNCE_MS = 500;
 
 function normalizeSseEnvelope(event: SseEvent): SseEvent {
   if (event.properties) return event;
@@ -355,20 +357,50 @@ export function useSession(
   // inside the main useEffect fires. Without this guard the cache mirror
   // would run with sessionId=B / view.messages=A_messages, corrupting
   // session B's cache entry with session A's content.
+  //
+  // Writes are debounced (#460): the deps change on every streaming
+  // token delta, and each write clones the whole sessionCache Map and
+  // notifies every store subscriber. The cache only exists to make a
+  // revisit warm, so a trailing write per burst plus a flush on
+  // unmount/session-switch gives the same behaviour at a tiny fraction
+  // of the cost.
+  const mirrorWriteRef = useRef<(() => void) | null>(null);
+  const mirrorTimerRef = useRef<number | null>(null);
   useEffect(() => {
     if (!sessionId || !view.session) return;
     if (view.sessionId !== sessionId) return;
     const { defaultAgent, defaultModel, ...sessionForCache } = view.session;
     void defaultAgent;
     void defaultModel;
-    updateCachedSession(sessionId, (prev) => ({
-      ...prev,
-      session: sessionForCache,
-      messages: view.messages,
-      parts: view.parts,
-      totalMessages: Math.max(prev.totalMessages ?? 0, totalMessages),
-    }));
+    mirrorWriteRef.current = () => {
+      updateCachedSession(sessionId, (prev) => ({
+        ...prev,
+        session: sessionForCache,
+        messages: view.messages,
+        parts: view.parts,
+        totalMessages: Math.max(prev.totalMessages ?? 0, totalMessages),
+      }));
+    };
+    if (mirrorTimerRef.current === null) {
+      mirrorTimerRef.current = window.setTimeout(() => {
+        mirrorTimerRef.current = null;
+        mirrorWriteRef.current?.();
+      }, CACHE_MIRROR_DEBOUNCE_MS);
+    }
   }, [sessionId, view.sessionId, view.session, view.messages, view.parts, totalMessages, updateCachedSession]);
+
+  // Flush the pending mirror on unmount and on session switch, so the
+  // cache is current when the user navigates away mid-stream. Cleanup
+  // runs before the next session's effects, so the captured write still
+  // belongs to the outgoing session.
+  useEffect(() => () => {
+    if (mirrorTimerRef.current !== null) {
+      window.clearTimeout(mirrorTimerRef.current);
+      mirrorTimerRef.current = null;
+    }
+    mirrorWriteRef.current?.();
+    mirrorWriteRef.current = null;
+  }, [sessionId]);
 
   useEffect(() => {
     if (!sessionId) {
