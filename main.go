@@ -476,7 +476,7 @@ func startRemoteServer(ctx context.Context, srv *server.Server, ident state.Inst
 		return false, "", false
 	}
 	if !ln.TLS() {
-		log.WithField("addr", ln.Addr()).Info("remote: gRPC server using trusted-overlay plaintext transport")
+		log.WithField("addr", ln.Addr()).Warn("remote: gRPC bearer tokens are unencrypted; plaintext transport is safe only over an encrypted trusted overlay such as Tailscale or WireGuard")
 	}
 	go func() {
 		if err := ln.Serve(); err != nil {

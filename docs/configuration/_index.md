@@ -148,6 +148,11 @@ ocman -remote-listen 0.0.0.0:8230 \
 ocman -remote-listen 0.0.0.0:8230 -remote-trusted-overlay # Tailscale/WireGuard only
 ```
 
+> **Warning:** `-remote-trusted-overlay` sends the bearer token and all session
+> traffic without TLS. Use it only when Tailscale, WireGuard, or an equivalent
+> encrypted overlay protects the complete route. A private LAN alone is not
+> sufficient.
+
 Then attach it from the hub's **Settings → Remotes** page using the
 remote's address and access token. This is off by default, so a fresh install
 with no remotes is unchanged. See [multi-remote](../features/multi-remote.md)

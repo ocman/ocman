@@ -85,7 +85,7 @@ and enter:
 - **Address.** Use `grpcs://workstation.lan:8230` to dial TLS. Plaintext
   requires an explicit `grpc://` address and `-remote-trusted-overlay` on
   the remote; use it only over Tailscale, WireGuard, or an equivalent private
-  overlay.
+  encrypted overlay.
 - **Token.** The value you revealed in step 2.
 - **Display name** (optional). A friendly label for the host badge.
 
@@ -129,6 +129,11 @@ cannot be edited.
   `-remote-tls-cert` and `-remote-tls-key`, and use a `grpcs://` address on
   the hub. Plaintext requires both `-remote-trusted-overlay` on the remote
   and an explicit `grpc://` address on the hub; bare addresses are rejected.
+- **Plaintext exposes the bearer token.** With `grpc://`, the remote-access
+  token and all session traffic are unencrypted. Use this mode only when an
+  encrypted trusted overlay such as Tailscale or WireGuard already protects
+  the complete route between hub and remote. A private LAN alone is not an
+  encrypted trusted overlay.
 - Stored remote tokens on the hub are encrypted at rest with an app-local
   key and are never returned to the browser. That protects against casual
   disclosure, not against an attacker who can read both the state DB and the
