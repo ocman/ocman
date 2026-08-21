@@ -230,6 +230,63 @@ func TestCheckAndInjectChildResults_UpdatesStatus(t *testing.T) {
 	}
 }
 
+func TestCheckAndInjectChildResults_UsesPersistedPlatform(t *testing.T) {
+	sdb := openWatcherTestStateDB(t)
+	if err := sdb.InsertChildSession(state.ChildSession{
+		ID:              "shared-child",
+		Platform:        "right",
+		ParentSessionID: "shared-parent",
+		Intent:          "test routing",
+		Status:          "running",
+		CreatedAt:       time.Now().UnixMilli(),
+		ResultDelivery:  state.ChildResultAsyncPending,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	wrong := &fakePlatform{id: "wrong", sessions: []db.Session{
+		{ID: "shared-child", Status: db.StatusBusy},
+		{ID: "shared-parent", Status: db.StatusWaiting},
+	}}
+	wrong.sessionDetailFn = func(id string) (*platforms.SessionDetail, error) {
+		return &platforms.SessionDetail{Session: &db.Session{ID: id, Status: db.StatusBusy}}, nil
+	}
+	right := &fakePlatform{id: "right", sessions: []db.Session{
+		{ID: "shared-child", Status: db.StatusDone},
+		{ID: "shared-parent", Status: db.StatusWaiting},
+	}}
+	right.sessionDetailFn = func(id string) (*platforms.SessionDetail, error) {
+		return &platforms.SessionDetail{
+			Session:  &db.Session{ID: id, Status: db.StatusDone},
+			Messages: []db.Message{{ID: "final", Data: []byte(`{"role":"assistant"}`)}},
+			Parts:    []db.Part{{MessageID: "final", Data: []byte(`{"type":"text","text":"right result"}`)}},
+		}, nil
+	}
+
+	reg := platforms.NewRegistry()
+	reg.Register(wrong)
+	reg.Register(right)
+	reg.RememberSessions("wrong", wrong.sessions)
+	s := New(nil, sdb, "127.0.0.1:0", reg, nil)
+	s.checkAndInjectChildResults(context.Background())
+
+	child, err := sdb.GetChildSession("shared-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if child.Status != "completed" || child.Summary != "right result" {
+		t.Fatalf("child result = status %q summary %q, want persisted platform result", child.Status, child.Summary)
+	}
+	queued, err := sdb.ListQueuedMessages("right", "shared-parent")
+	if err != nil || len(queued) != 1 {
+		t.Fatalf("right-platform queue = %+v, %v", queued, err)
+	}
+	wrongQueue, err := sdb.ListQueuedMessages("wrong", "shared-parent")
+	if err != nil || len(wrongQueue) != 0 {
+		t.Fatalf("wrong-platform queue = %+v, %v", wrongQueue, err)
+	}
+}
+
 func TestCheckAndInjectChildResults_ReturnsToWaitingMCPCall(t *testing.T) {
 	sdb := openWatcherTestStateDB(t)
 	insertWatcherChildSession(t, sdb, "child-waiting", "parent-1", "running")

@@ -1,11 +1,25 @@
 package workflows
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 )
+
+type artifactCleanupBarrierStore struct {
+	Store
+	selected chan struct{}
+	release  chan struct{}
+}
+
+func (s *artifactCleanupBarrierStore) ExpiredWorkflowArtifactHashes(now int64) ([]string, error) {
+	hashes, err := s.Store.ExpiredWorkflowArtifactHashes(now)
+	close(s.selected)
+	<-s.release
+	return hashes, err
+}
 
 func (h *harness) storeTestArtifact(t *testing.T, payload string, retentionDays int) (string, Artifact) {
 	t.Helper()
@@ -70,6 +84,56 @@ func TestArtifactDedupAndCleanup(t *testing.T) {
 	if !errors.Is(err, ErrPayloadMissing) {
 		t.Fatalf("download after cleanup = %v", err)
 	}
+}
+
+func TestArtifactCleanupDoesNotDeleteConcurrentFreshPayload(t *testing.T) {
+	h := newHarness(t)
+	runID, old := h.storeTestArtifact(t, `{"same":true}`, 1)
+	h.setNow(h.clock().Add(48 * time.Hour))
+	barrier := &artifactCleanupBarrierStore{
+		Store:    h.svc.store,
+		selected: make(chan struct{}),
+		release:  make(chan struct{}),
+	}
+	h.svc.store = barrier
+
+	cleanupDone := make(chan error, 1)
+	go func() {
+		_, err := h.svc.CleanupExpiredPayloads(context.Background())
+		cleanupDone <- err
+	}()
+	<-barrier.selected
+	storeDone := make(chan struct{})
+	go func() {
+		h.svc.storeArtifact(runID, "emit", 2, "fresh", KindJSON, []byte(`{"same":true}`), 7)
+		close(storeDone)
+	}()
+	select {
+	case <-storeDone:
+		close(barrier.release)
+		t.Fatal("fresh artifact was stored while cleanup could still delete its payload")
+	case <-time.After(50 * time.Millisecond):
+		close(barrier.release)
+	}
+	if err := <-cleanupDone; err != nil {
+		t.Fatal(err)
+	}
+	<-storeDone
+
+	artifacts, err := h.svc.ListArtifacts(t.Context(), runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, artifact := range artifacts {
+		if artifact.ID == old.ID {
+			continue
+		}
+		if _, _, err := h.svc.DownloadArtifact(t.Context(), runID, artifact.ID); err != nil {
+			t.Fatalf("fresh artifact payload was deleted: %v", err)
+		}
+		return
+	}
+	t.Fatal("fresh artifact was not stored")
 }
 
 func TestArtifactDownloadErrors(t *testing.T) {

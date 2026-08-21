@@ -154,6 +154,9 @@ func (s *Service) secretEnv(version Version, nodeEnv map[string]string) map[stri
 // storeArtifact writes one immutable artifact: payload to the content
 // store (deduplicated), metadata to state.db with a retention expiry.
 func (s *Service) storeArtifact(runID, nodeID string, attemptID int64, name, kind string, payload []byte, retentionDays int) {
+	s.artifactMu.Lock()
+	defer s.artifactMu.Unlock()
+
 	hash := Hash(payload)
 	if s.blobs != nil {
 		stored, err := s.blobs.Put(payload)
@@ -249,6 +252,9 @@ func (s *Service) downloadArtifact(id, runID string, internal bool) (Artifact, [
 // old run outcomes remain auditable. Returns the number of payloads
 // removed.
 func (s *Service) CleanupExpiredPayloads(_ context.Context) (int, error) {
+	s.artifactMu.Lock()
+	defer s.artifactMu.Unlock()
+
 	hashes, err := s.store.ExpiredWorkflowArtifactHashes(s.now().UnixMilli())
 	if err != nil {
 		return 0, err

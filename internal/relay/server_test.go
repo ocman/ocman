@@ -9,13 +9,43 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"testing/fstest"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/share"
 )
+
+type concurrentListStore struct {
+	share.Store
+	mu      sync.Mutex
+	waiters int
+	release chan struct{}
+	once    sync.Once
+}
+
+func (s *concurrentListStore) List(ctx context.Context, prefix string) ([]share.Object, error) {
+	objects, err := s.Store.List(ctx, prefix)
+	if err != nil || prefix == "" {
+		return objects, err
+	}
+	s.mu.Lock()
+	s.waiters++
+	if s.waiters == 2 {
+		s.once.Do(func() { close(s.release) })
+	}
+	s.mu.Unlock()
+	timer := time.NewTimer(100 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-s.release:
+	case <-timer.C:
+	}
+	return objects, nil
+}
 
 type harness struct {
 	t     *testing.T
@@ -217,6 +247,29 @@ func TestAppend_IsIdempotent(t *testing.T) {
 	resp := h.read(created.ID, 0)
 	if len(resp.Chunks) != 1 {
 		t.Fatalf("a retried append produced %d chunks, want 1", len(resp.Chunks))
+	}
+}
+
+func TestAppend_ConcurrentRequestsCannotExceedShareLimit(t *testing.T) {
+	var store *concurrentListStore
+	h := newHarness(t, func(cfg *Config) {
+		store = &concurrentListStore{Store: cfg.Store, release: make(chan struct{})}
+		cfg.Store = store
+		cfg.MaxShareBytes = 4
+	})
+	created := h.create()
+
+	results := make(chan int, 2)
+	for seq := range 2 {
+		go func() {
+			rec := h.do(http.MethodPut, fmt.Sprintf("/s/%s/%d", created.ID, seq), []byte("four"), created.DeleteToken)
+			results <- rec.Code
+		}()
+	}
+	statuses := []int{<-results, <-results}
+	sort.Ints(statuses)
+	if statuses[0] != http.StatusNoContent || statuses[1] != http.StatusRequestEntityTooLarge {
+		t.Fatalf("concurrent append statuses = %v, want one success and one rejection", statuses)
 	}
 }
 

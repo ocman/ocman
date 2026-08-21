@@ -313,6 +313,19 @@ func (m *Manager) publishAdapters(localID int64, mr *managedRemote, platform *re
 		log.WithField("remote", localID).Warn("remote: connected without an instance ID; not registering adapters")
 		return false
 	}
+	for otherLocalID, other := range m.remotes {
+		if otherLocalID == localID || other.platform == nil || other.conn == nil {
+			continue
+		}
+		if other.conn.RemoteID() == rid {
+			log.WithFields(log.Fields{
+				"remote":           localID,
+				"conflictingRemote": otherLocalID,
+				"remoteId":         rid,
+			}).Warn("remote: duplicate instance ID; not registering adapters")
+			return false
+		}
+	}
 	// mr.platform / mr.host are read under m.mu by sessionCount and
 	// unregisterLocked, so publish them under the same lock — a
 	// concurrent Stop()/disconnect() must never observe a half-written

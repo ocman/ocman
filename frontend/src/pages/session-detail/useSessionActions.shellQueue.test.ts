@@ -39,9 +39,11 @@ const runShell = vi.mocked(api.runShell);
 
 function makeOptions(
   isRunningRef: MutableRefObject<boolean>,
+  sessionID = 'sess-1',
 ): UseSessionActionsOptions {
   return {
-    session: { id: 'sess-1', platform: 'opencode', directory: '/p', timeUpdated: 0 },
+    session: { id: sessionID, platform: 'opencode', directory: '/p', timeUpdated: 0 },
+    routeSessionId: sessionID,
     portAvailable: true,
     caps: { shellExec: true } as UseSessionActionsOptions['caps'],
     pendingPermission: null,
@@ -183,5 +185,24 @@ describe('useSessionActions — shell command queue', () => {
     });
     await waitFor(() => expect(runShell).toHaveBeenCalledTimes(1));
     expect(runShell).toHaveBeenCalledWith('sess-1', 'second', 'build');
+  });
+
+  it('drops a queued command when navigating to another session', async () => {
+    const isRunningRef = { current: true };
+    const { result, rerender } = renderHook(
+      ({ sessionID }) => useSessionActions(makeOptions(isRunningRef, sessionID)),
+      { initialProps: { sessionID: 'sess-1' } },
+    );
+
+    await act(async () => {
+      await result.current.handleShell('rm -rf build');
+    });
+    rerender({ sessionID: 'sess-2' });
+    rerender({ sessionID: 'sess-1' });
+    isRunningRef.current = false;
+    act(() => result.current.flushQueuedShell());
+
+    expect(runShell).not.toHaveBeenCalled();
+    await waitFor(() => expect(result.current.queuedShellCommand).toBe(null));
   });
 });

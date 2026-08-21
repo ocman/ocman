@@ -504,6 +504,7 @@ type Service struct {
 	externalRunner ExternalRunner
 	dispatchMu     sync.Mutex
 	triggerMu      sync.Mutex
+	artifactMu     sync.Mutex
 	mu             sync.Mutex
 	running        map[string]map[string]*activeCommand
 	stopping       map[string]bool

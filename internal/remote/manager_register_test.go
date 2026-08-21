@@ -182,6 +182,45 @@ func TestPublishAdapters_SkipsARemoteWithoutAnInstanceID(t *testing.T) {
 	}
 }
 
+func TestPublishAdapters_RejectsDuplicateRemoteIdentity(t *testing.T) {
+	reg := platforms.NewRegistry()
+	router := hostsvc.NewRouter(localStubHost{})
+	first := &managedRemote{localID: 1, conn: connectedConn("shared-id", "host-1")}
+	second := &managedRemote{localID: 2, conn: connectedConn("shared-id", "host-2")}
+	m := &Manager{
+		base:      "opencode",
+		registry:  reg,
+		router:    router,
+		remotes:   map[int64]*managedRemote{1: first, 2: second},
+		inventory: map[string][]ProjectIdentity{},
+	}
+	firstPlatform := newRemotePlatform(first.conn, m.base, func() string { return "first" })
+	firstHost := newRemoteHost(first.conn)
+	if !m.publishAdapters(1, first, firstPlatform, firstHost) {
+		t.Fatal("first remote was not published")
+	}
+	secondPlatform := newRemotePlatform(second.conn, m.base, func() string { return "second" })
+	if m.publishAdapters(2, second, secondPlatform, newRemoteHost(second.conn)) {
+		t.Fatal("duplicate remote identity was published")
+	}
+
+	registered, ok := reg.Get(firstPlatform.ID())
+	if !ok || registered != firstPlatform {
+		t.Fatal("duplicate registration replaced the original platform")
+	}
+	routed, ok := router.LookupRemote("shared-id")
+	if !ok || routed != firstHost {
+		t.Fatal("duplicate registration replaced the original host")
+	}
+	if second.platform != nil || second.host != nil {
+		t.Fatal("rejected remote retained published adapters")
+	}
+	m.unregisterAdapters(second)
+	if registered, ok := reg.Get(firstPlatform.ID()); !ok || registered != firstPlatform {
+		t.Fatal("tearing down rejected remote removed the original platform")
+	}
+}
+
 // TestSupersededSupervisorPersistsTheConnectItMade pins that a supervisor
 // which connected but was superseded before publishing still writes the
 // outcome back to state.db. Returning early without persistHealth left

@@ -26,6 +26,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/share"
@@ -75,6 +76,9 @@ type Server struct {
 	cfg     Config
 	mux     *http.ServeMux
 	creates *rateLimiter
+	// ponytail: one relay-wide lock keeps quota checks and mutations atomic;
+	// use per-share/store transactions if append throughput ever matters.
+	mutations sync.Mutex
 }
 
 // New builds a relay server, applying defaults for unset limits.
@@ -193,6 +197,9 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 // number. Re-uploading the same chunk is a byte-identical overwrite, so
 // a client may retry a failed request safely.
 func (s *Server) handleAppend(w http.ResponseWriter, r *http.Request) {
+	s.mutations.Lock()
+	defer s.mutations.Unlock()
+
 	id := r.PathValue("id")
 	if _, ok := s.authorise(w, r, id); !ok {
 		return
@@ -344,6 +351,9 @@ func (s *Server) handleRead(w http.ResponseWriter, r *http.Request) {
 
 // handleDelete revokes a share, removing every chunk and its metadata.
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
+	s.mutations.Lock()
+	defer s.mutations.Unlock()
+
 	id := r.PathValue("id")
 	if _, ok := s.authorise(w, r, id); !ok {
 		return

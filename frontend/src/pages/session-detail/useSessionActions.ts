@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react';
 import { flushSync } from 'react-dom';
 import { api, BackendUnavailableError, type PlatformCapabilities } from '../../lib/api';
@@ -182,6 +182,8 @@ export function useSessionActions({
   // SessionDetail) reads the latest value without re-binding.
   const [queuedShellCommand, setQueuedShellCommand] = useState<string | null>(null);
   const queuedShellRef = useRef<string | null>(null);
+  const queuedShellSessionRef = useRef<string | null>(null);
+  const shellRouteMountedRef = useRef(false);
 
   const sendMessage = useApiStore((state) => state.sendMessage);
   const abortSession = useApiStore((state) => state.abortSession);
@@ -351,6 +353,7 @@ export function useSessionActions({
 
   const handleShell = useCallback(async (command: string) => {
     if (!session || !portAvailable) return;
+    if (routeSessionId !== undefined && session.id !== routeSessionId) return;
     if (pendingPermission || pendingQuestion) return;
     // OpenCode rejects POST /session/{id}/shell while the session is
     // streaming an assistant response. Rather than fire-and-fail
@@ -359,25 +362,42 @@ export function useSessionActions({
     // transition). The composer shows what we're waiting for.
     if (isRunningRef.current) {
       queuedShellRef.current = command;
+      queuedShellSessionRef.current = session.id;
       setQueuedShellCommand(command);
       return;
     }
     await runShellNow(command);
-  }, [isRunningRef, pendingPermission, pendingQuestion, portAvailable, runShellNow, session]);
+  }, [isRunningRef, pendingPermission, pendingQuestion, portAvailable, routeSessionId, runShellNow, session]);
 
   const cancelQueuedShell = useCallback(() => {
     queuedShellRef.current = null;
+    queuedShellSessionRef.current = null;
     setQueuedShellCommand(null);
   }, []);
+
+  useEffect(() => {
+    if (!shellRouteMountedRef.current) {
+      shellRouteMountedRef.current = true;
+      return;
+    }
+    queuedShellRef.current = null;
+    queuedShellSessionRef.current = null;
+    const timer = window.setTimeout(() => setQueuedShellCommand(null), 0);
+    return () => window.clearTimeout(timer);
+  }, [routeSessionId, session?.id]);
 
   const flushQueuedShell = useCallback(() => {
     const command = queuedShellRef.current;
     if (!command) return;
     if (isRunningRef.current) return; // still busy — wait for the next idle
+    const queuedSessionID = queuedShellSessionRef.current;
     queuedShellRef.current = null;
+    queuedShellSessionRef.current = null;
     setQueuedShellCommand(null);
+    if (!session || queuedSessionID !== session.id) return;
+    if (routeSessionId !== undefined && session.id !== routeSessionId) return;
     void runShellNow(command);
-  }, [isRunningRef, runShellNow]);
+  }, [isRunningRef, routeSessionId, runShellNow, session]);
 
   const handleAbort = useCallback(async () => {
     if (!session || !portAvailable || !caps.abort) return;

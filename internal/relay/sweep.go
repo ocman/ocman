@@ -28,7 +28,10 @@ func (s *Server) Sweep(ctx context.Context) error {
 	cutoff := s.cfg.Now().UTC().Add(-s.cfg.TTL)
 	for i := range sweepWindowDays {
 		day := cutoff.AddDate(0, 0, -i-1)
-		if err := s.cfg.Store.DeletePrefix(ctx, datePrefix(day)); err != nil {
+		s.mutations.Lock()
+		err := s.cfg.Store.DeletePrefix(ctx, datePrefix(day))
+		s.mutations.Unlock()
+		if err != nil {
 			return fmt.Errorf("relay: sweeping %s: %w", datePrefix(day), err)
 		}
 	}

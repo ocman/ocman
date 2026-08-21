@@ -13,7 +13,10 @@ import { createRef } from 'react';
 import type { MutableRefObject } from 'react';
 import { useSessionActions, type UseSessionActionsOptions } from './useSessionActions';
 
-const sendMessage = vi.fn().mockResolvedValue(undefined);
+const { sendMessage, runShell } = vi.hoisted(() => ({
+  sendMessage: vi.fn().mockResolvedValue(undefined),
+  runShell: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock('../../lib/apiStore', () => ({
   useApiStore: Object.assign(
@@ -30,7 +33,7 @@ vi.mock('../../lib/apiStore', () => ({
   ),
 }));
 vi.mock('../../lib/api', () => ({
-  api: {},
+  api: { runShell },
   BackendUnavailableError: class BackendUnavailableError extends Error {},
 }));
 vi.mock('../../lib/remoteLog', () => ({ remoteLog: { error: vi.fn() } }));
@@ -81,6 +84,7 @@ function makeOptions(overrides?: Partial<UseSessionActionsOptions>): UseSessionA
 
 beforeEach(() => {
   sendMessage.mockClear();
+  runShell.mockClear();
   begin.mockClear();
 });
 
@@ -121,6 +125,17 @@ describe('useSessionActions — stale route window (#529)', () => {
     });
 
     expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('drops a shell command when the session prop lags the route id', async () => {
+    const options = makeOptions({ routeSessionId: 'sess-new' });
+    const { result } = renderHook(() => useSessionActions(options));
+
+    await act(async () => {
+      await result.current.handleShell('rm -rf build');
+    });
+
+    expect(runShell).not.toHaveBeenCalled();
   });
 
   it('sends normally when session and route agree', async () => {

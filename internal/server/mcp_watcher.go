@@ -238,7 +238,10 @@ func (s *Server) deliverChildResult(ctx context.Context, cs state.ChildSession, 
 // and returns the inferred status and a brief summary. Returns ("", "")
 // if the session cannot be found or its status is unchanged.
 func (s *Server) inferChildStatus(ctx context.Context, cs state.ChildSession) (status, summary string) {
-	p, ok := s.registry.PlatformForSession(ctx, cs.ID)
+	p, ok := s.registry.Get(platforms.ID(cs.Platform))
+	if !ok && cs.Platform == "" {
+		p, ok = s.registry.PlatformForSession(ctx, cs.ID)
+	}
 	if !ok {
 		// Session not found in any platform — may have been deleted.
 		return "", ""
@@ -289,7 +292,10 @@ func (s *Server) inferChildStatus(ctx context.Context, cs state.ChildSession) (s
 // injectResultIntoParent durably holds the child's terminal turn for the
 // parent's next real idle edge or queue sweep.
 func (s *Server) injectResultIntoParent(ctx context.Context, cs state.ChildSession, status, summary string) {
-	p, ok := s.registry.PlatformForSession(ctx, cs.ParentSessionID)
+	p, ok := s.registry.Get(platforms.ID(cs.Platform))
+	if !ok && cs.Platform == "" {
+		p, ok = s.registry.PlatformForSession(ctx, cs.ParentSessionID)
+	}
 	if !ok {
 		// No parent to deliver to. Retrying forever re-listed this row
 		// every tick and logged a WARN each time; once the parent has
