@@ -8,6 +8,12 @@ import (
 	"time"
 )
 
+// artifactCleanupBarrierStore parks cleanup after it has chosen its
+// expired hashes but before it removes them, which is the window where a
+// concurrent store of an identical payload would be handed a blob that is
+// about to be deleted. Asserting the store is *blocked* is necessarily a
+// timeout, so this can only ever false-pass (if the goroutine is slow to
+// start), never false-fail.
 type artifactCleanupBarrierStore struct {
 	Store
 	selected chan struct{}

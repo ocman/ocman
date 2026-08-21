@@ -123,6 +123,12 @@ resolve an owner and delegate, so the HTTP layer is unchanged. An
 explicitly client-supplied `remoteId` is always resolved through
 `Server.resolveOwner`, which fails closed with 409 when that remote is not
 registered; only *inferred* ownership (`ForDir`) may degrade to the hub.
+An instance ID must be unique across connected remotes: the compound
+platform id and the router key are both derived from it, so a second
+remote claiming a live ID would rebind the first's sessions and host
+actions to the wrong machine. `publishAdapters` refuses it, publishes
+nothing, and marks that connection `duplicate-identity` so Settings shows
+why it never came up (the usual cause is a cloned `state.db`).
 Host-local
 actions (tmux, worktrees) execute on the owning host. The browser still
 talks REST/SSE to the hub only; the hub re-emits remote gRPC event streams

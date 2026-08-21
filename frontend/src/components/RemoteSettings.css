@@ -60,6 +60,7 @@
 
 .remote-health-offline,
 .remote-health-auth-failed,
+.remote-health-duplicate-identity,
 .remote-health-incompatible-version {
   color: var(--danger);
   border-color: color-mix(in srgb, var(--danger) 40%, transparent);

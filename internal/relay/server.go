@@ -197,9 +197,6 @@ func (s *Server) handleCreate(w http.ResponseWriter, r *http.Request) {
 // number. Re-uploading the same chunk is a byte-identical overwrite, so
 // a client may retry a failed request safely.
 func (s *Server) handleAppend(w http.ResponseWriter, r *http.Request) {
-	s.mutations.Lock()
-	defer s.mutations.Unlock()
-
 	id := r.PathValue("id")
 	if _, ok := s.authorise(w, r, id); !ok {
 		return
@@ -213,11 +210,23 @@ func (s *Server) handleAppend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Read the body BEFORE taking the mutation lock. Reading it under the
+	// lock would let one slow client stall every append and delete on
+	// every share for as long as the server's ReadTimeout allows — a
+	// cheaper denial of service than the quota bypass the lock exists to
+	// close, and trivially reachable because share creation is
+	// unauthenticated.
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, s.cfg.MaxChunkBytes))
 	if err != nil {
 		http.Error(w, "chunk too large", http.StatusRequestEntityTooLarge)
 		return
 	}
+
+	// Only the accounting needs to be atomic: quota is computed from a
+	// listing and then committed, so a concurrent append must not observe
+	// the same pre-write total (see TestAppend_ConcurrentRequestsCannotExceedShareLimit).
+	s.mutations.Lock()
+	defer s.mutations.Unlock()
 
 	prefix, _ := prefixFor(id)
 	objs, err := s.cfg.Store.List(r.Context(), prefix)

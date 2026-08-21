@@ -313,15 +313,24 @@ func (m *Manager) publishAdapters(localID int64, mr *managedRemote, platform *re
 		log.WithField("remote", localID).Warn("remote: connected without an instance ID; not registering adapters")
 		return false
 	}
+	// Two remotes claiming one instance ID would share a compound platform
+	// id and a router key, so publishing the second silently rebinds every
+	// session, terminal and worktree operation for the first to the wrong
+	// machine — and a later disconnect of either would unregister the
+	// survivor's entries. Refuse the newcomer and mark it, so the operator
+	// sees why it never came up instead of a healthy remote with no
+	// sessions. RemoteConn.RemoteID/setHealth take only the conn's own
+	// lock, so this respects publishAdapters' no-reentry invariant.
 	for otherLocalID, other := range m.remotes {
 		if otherLocalID == localID || other.platform == nil || other.conn == nil {
 			continue
 		}
 		if other.conn.RemoteID() == rid {
+			mr.conn.setHealth(HealthDuplicateID)
 			log.WithFields(log.Fields{
-				"remote":           localID,
+				"remote":            localID,
 				"conflictingRemote": otherLocalID,
-				"remoteId":         rid,
+				"remoteId":          rid,
 			}).Warn("remote: duplicate instance ID; not registering adapters")
 			return false
 		}

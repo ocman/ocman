@@ -6,12 +6,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -19,10 +21,15 @@ import (
 	"github.com/NoUseFreak/ocman/internal/share"
 )
 
+// concurrentListStore parks inside List until a second caller arrives,
+// so a quota check that is NOT serialised has both callers observe the
+// same pre-write total. When the accounting is serialised the second
+// caller never arrives while the first is parked, so the wait falls
+// through on a timer: the barrier can only ever produce a false pass
+// (both appends serialised anyway), never a false failure.
 type concurrentListStore struct {
 	share.Store
-	mu      sync.Mutex
-	waiters int
+	arrived atomic.Int32
 	release chan struct{}
 	once    sync.Once
 }
@@ -32,12 +39,9 @@ func (s *concurrentListStore) List(ctx context.Context, prefix string) ([]share.
 	if err != nil || prefix == "" {
 		return objects, err
 	}
-	s.mu.Lock()
-	s.waiters++
-	if s.waiters == 2 {
+	if s.arrived.Add(1) == 2 {
 		s.once.Do(func() { close(s.release) })
 	}
-	s.mu.Unlock()
 	timer := time.NewTimer(100 * time.Millisecond)
 	defer timer.Stop()
 	select {
@@ -45,6 +49,30 @@ func (s *concurrentListStore) List(ctx context.Context, prefix string) ([]share.
 	case <-timer.C:
 	}
 	return objects, nil
+}
+
+// blockingBody is a request body that reports when the server starts
+// reading it and then stalls until released, standing in for a slow
+// client dribbling out its chunk.
+type blockingBody struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+	done    bool
+}
+
+func (b *blockingBody) Read(p []byte) (int, error) {
+	b.once.Do(func() { close(b.started) })
+	if b.done {
+		return 0, io.EOF
+	}
+	<-b.release
+	b.done = true
+	if len(p) > 0 {
+		p[0] = 'x'
+		return 1, nil
+	}
+	return 0, nil
 }
 
 type harness struct {
@@ -77,8 +105,12 @@ func newHarness(t *testing.T, tweak func(*Config)) *harness {
 }
 
 func (h *harness) do(method, path string, body []byte, token string) *httptest.ResponseRecorder {
+	return h.doBody(method, path, bytes.NewReader(body), token)
+}
+
+func (h *harness) doBody(method, path string, body io.Reader, token string) *httptest.ResponseRecorder {
 	h.t.Helper()
-	req := httptest.NewRequest(method, path, bytes.NewReader(body))
+	req := httptest.NewRequest(method, path, body)
 	req.RemoteAddr = "192.0.2.1:1234"
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -270,6 +302,44 @@ func TestAppend_ConcurrentRequestsCannotExceedShareLimit(t *testing.T) {
 	sort.Ints(statuses)
 	if statuses[0] != http.StatusNoContent || statuses[1] != http.StatusRequestEntityTooLarge {
 		t.Fatalf("concurrent append statuses = %v, want one success and one rejection", statuses)
+	}
+}
+
+// TestAppend_SlowBodyDoesNotBlockOtherAppends is the guard on the cost of
+// serialising quota accounting: the lock must cover the accounting only.
+// Holding it across the body read would let one slow client stall every
+// append and delete on every share for the server's whole ReadTimeout.
+func TestAppend_SlowBodyDoesNotBlockOtherAppends(t *testing.T) {
+	h := newHarness(t, nil)
+	created := h.create()
+
+	slow := &blockingBody{started: make(chan struct{}), release: make(chan struct{})}
+	slowDone := make(chan int, 1)
+	go func() {
+		rec := h.doBody(http.MethodPut, "/s/"+created.ID+"/0", slow, created.DeleteToken)
+		slowDone <- rec.Code
+	}()
+	<-slow.started // the server is now parked mid-body-read
+
+	fastDone := make(chan int, 1)
+	go func() {
+		rec := h.do(http.MethodPut, "/s/"+created.ID+"/1", []byte("fast"), created.DeleteToken)
+		fastDone <- rec.Code
+	}()
+
+	select {
+	case code := <-fastDone:
+		if code != http.StatusNoContent {
+			t.Fatalf("unblocked append status %d, want 204", code)
+		}
+	case <-time.After(2 * time.Second):
+		close(slow.release)
+		t.Fatal("an append was blocked by another request's body read; the mutation lock covers body I/O")
+	}
+
+	close(slow.release)
+	if code := <-slowDone; code != http.StatusNoContent {
+		t.Fatalf("slow append status %d, want 204", code)
 	}
 }
 

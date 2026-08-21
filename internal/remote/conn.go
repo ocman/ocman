@@ -23,6 +23,13 @@ const (
 	HealthOffline      Health = "offline"
 	HealthAuthFailed   Health = "auth-failed"
 	HealthIncompatible Health = "incompatible-version"
+	// HealthDuplicateID means the remote handshook with an instance ID
+	// another connected remote already claims. The connection is usable
+	// but unaddressable — the compound platform id and router key would
+	// collide — so its adapters are never published. Without a distinct
+	// health state the Settings page would show a healthy remote that
+	// silently has no sessions and never works.
+	HealthDuplicateID Health = "duplicate-identity"
 )
 
 // RemoteConn owns one long-lived gRPC client connection to a remote

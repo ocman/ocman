@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react';
 import { flushSync } from 'react-dom';
 import { api, BackendUnavailableError, type PlatformCapabilities } from '../../lib/api';
@@ -29,6 +29,13 @@ interface ActionSession {
   title?: string;
   status?: string;
   timeUpdated: number;
+}
+
+// A `!command` held until the current turn ends, tagged with the session
+// that asked for it so it can never be flushed into a different one.
+interface QueuedShell {
+  command: string;
+  sessionID: string;
 }
 
 export interface UseSessionActionsOptions {
@@ -177,13 +184,26 @@ export function useSessionActions({
   refreshThread,
 }: UseSessionActionsOptions): UseSessionActionsResult {
   const [awaitingAssistantResponse, setAwaitingAssistantResponse] = useState(false);
-  // Shell command waiting for the current turn to finish. Mirrored in
-  // a ref so the idle-transition flush (driven by an effect in
-  // SessionDetail) reads the latest value without re-binding.
-  const [queuedShellCommand, setQueuedShellCommand] = useState<string | null>(null);
-  const queuedShellRef = useRef<string | null>(null);
-  const queuedShellSessionRef = useRef<string | null>(null);
-  const shellRouteMountedRef = useRef(false);
+  // Shell command waiting for the current turn to finish, tagged with the
+  // session that asked for it. Mirrored in a ref so the idle-transition
+  // flush (driven by an effect in SessionDetail) reads the latest value
+  // without re-binding.
+  //
+  // The session tag is what keeps a `!command` typed in one session from
+  // ever running in another: SessionDetail stays mounted across
+  // navigation, so a queued command outlives the session it was typed in
+  // (and the shell endpoint bypasses the LLM, so a stale one would edit
+  // the wrong checkout outright). Visibility is *derived* from the tag
+  // rather than cleared by an effect — no clearing effect means no window
+  // where the chip shows the previous session's command.
+  const [queuedShell, setQueuedShell] = useState<QueuedShell | null>(null);
+  const queuedShellRef = useRef<QueuedShell | null>(null);
+  const queuedShellCommand = queuedShell !== null
+    && session !== null
+    && queuedShell.sessionID === session.id
+    && (routeSessionId === undefined || session.id === routeSessionId)
+    ? queuedShell.command
+    : null;
 
   const sendMessage = useApiStore((state) => state.sendMessage);
   const abortSession = useApiStore((state) => state.abortSession);
@@ -361,9 +381,9 @@ export function useSessionActions({
     // (flushQueuedShell, driven by SessionDetail's isRunning
     // transition). The composer shows what we're waiting for.
     if (isRunningRef.current) {
-      queuedShellRef.current = command;
-      queuedShellSessionRef.current = session.id;
-      setQueuedShellCommand(command);
+      const queued: QueuedShell = { command, sessionID: session.id };
+      queuedShellRef.current = queued;
+      setQueuedShell(queued);
       return;
     }
     await runShellNow(command);
@@ -371,32 +391,21 @@ export function useSessionActions({
 
   const cancelQueuedShell = useCallback(() => {
     queuedShellRef.current = null;
-    queuedShellSessionRef.current = null;
-    setQueuedShellCommand(null);
+    setQueuedShell(null);
   }, []);
 
-  useEffect(() => {
-    if (!shellRouteMountedRef.current) {
-      shellRouteMountedRef.current = true;
-      return;
-    }
-    queuedShellRef.current = null;
-    queuedShellSessionRef.current = null;
-    const timer = window.setTimeout(() => setQueuedShellCommand(null), 0);
-    return () => window.clearTimeout(timer);
-  }, [routeSessionId, session?.id]);
-
   const flushQueuedShell = useCallback(() => {
-    const command = queuedShellRef.current;
-    if (!command) return;
+    const queued = queuedShellRef.current;
+    if (!queued) return;
     if (isRunningRef.current) return; // still busy — wait for the next idle
-    const queuedSessionID = queuedShellSessionRef.current;
+    // Drop it either way: an idle edge is the one chance to run it, and a
+    // command left in the ref would otherwise fire on some later idle edge
+    // after the user navigated back — a delayed surprise.
     queuedShellRef.current = null;
-    queuedShellSessionRef.current = null;
-    setQueuedShellCommand(null);
-    if (!session || queuedSessionID !== session.id) return;
+    setQueuedShell(null);
+    if (!session || queued.sessionID !== session.id) return;
     if (routeSessionId !== undefined && session.id !== routeSessionId) return;
-    void runShellNow(command);
+    void runShellNow(queued.command);
   }, [isRunningRef, routeSessionId, runShellNow, session]);
 
   const handleAbort = useCallback(async () => {

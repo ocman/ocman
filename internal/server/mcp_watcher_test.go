@@ -287,6 +287,71 @@ func TestCheckAndInjectChildResults_UsesPersistedPlatform(t *testing.T) {
 	}
 }
 
+// TestCheckAndInjectChildResults_RemoteOwnedChild covers the split that
+// straddles two machines: a worktree split records the MCP server's own
+// platform id on the child row, but the owning host created the session,
+// so the child lives on a remote adapter while the parent is local.
+// Trusting the persisted platform for the child resolves it to the local
+// adapter, which cannot see it — the child would never settle.
+func TestCheckAndInjectChildResults_RemoteOwnedChild(t *testing.T) {
+	sdb := openWatcherTestStateDB(t)
+	if err := sdb.InsertChildSession(state.ChildSession{
+		ID:              "remote-child",
+		Platform:        "opencode", // the MCP server's platform, not the child's owner
+		ParentSessionID: "local-parent",
+		Intent:          "worktree split onto a remote",
+		Status:          "running",
+		CreatedAt:       time.Now().UnixMilli(),
+		ResultDelivery:  state.ChildResultAsyncPending,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The local adapter owns only the parent.
+	local := &fakePlatform{id: "opencode", sessions: []db.Session{
+		{ID: "local-parent", Status: db.StatusWaiting},
+	}}
+	local.sessionDetailFn = func(id string) (*platforms.SessionDetail, error) {
+		if id != "local-parent" {
+			return nil, platforms.ErrNotFound
+		}
+		return &platforms.SessionDetail{Session: &db.Session{ID: id, Status: db.StatusWaiting}}, nil
+	}
+	// The remote adapter owns the child the host actually created.
+	remote := &fakePlatform{id: "r-b:opencode", sessions: []db.Session{
+		{ID: "remote-child", Status: db.StatusDone},
+	}}
+	remote.sessionDetailFn = func(id string) (*platforms.SessionDetail, error) {
+		if id != "remote-child" {
+			return nil, platforms.ErrNotFound
+		}
+		return &platforms.SessionDetail{
+			Session:  &db.Session{ID: id, Status: db.StatusDone},
+			Messages: []db.Message{{ID: "final", Data: []byte(`{"role":"assistant"}`)}},
+			Parts:    []db.Part{{MessageID: "final", Data: []byte(`{"type":"text","text":"worktree done"}`)}},
+		}, nil
+	}
+
+	reg := platforms.NewRegistry()
+	reg.Register(local)
+	reg.Register(remote)
+	s := New(nil, sdb, "127.0.0.1:0", reg, nil)
+	s.checkAndInjectChildResults(context.Background())
+
+	child, err := sdb.GetChildSession("remote-child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if child.Status != "completed" || child.Summary != "worktree done" {
+		t.Fatalf("remote-owned child = status %q summary %q, want it settled from its owning adapter", child.Status, child.Summary)
+	}
+	// The parent is local, so its result queues under the local platform.
+	queued, err := sdb.ListQueuedMessages("opencode", "local-parent")
+	if err != nil || len(queued) != 1 {
+		t.Fatalf("parent queue = %+v, %v", queued, err)
+	}
+}
+
 func TestCheckAndInjectChildResults_ReturnsToWaitingMCPCall(t *testing.T) {
 	sdb := openWatcherTestStateDB(t)
 	insertWatcherChildSession(t, sdb, "child-waiting", "parent-1", "running")

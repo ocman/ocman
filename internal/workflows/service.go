@@ -502,10 +502,21 @@ type Service struct {
 	blobs          *BlobStore
 	resolveSecret  func(string) string
 	externalRunner ExternalRunner
-	dispatchMu     sync.Mutex
-	triggerMu      sync.Mutex
-	artifactMu     sync.Mutex
-	mu             sync.Mutex
+	// Four independent mutexes, each guarding one concern. They are
+	// deliberately never held at the same time, so there is no lock order
+	// to get wrong — keep it that way: if a path ever needs two, acquire
+	// them in declaration order (dispatchMu, triggerMu, artifactMu, mu).
+	//
+	//	dispatchMu — serialises one scheduling pass over ready nodes.
+	//	triggerMu  — serialises one trigger-evaluation pass.
+	//	artifactMu — makes artifact write and retention cleanup exclusive,
+	//	             so content-addressed dedup cannot hand a fresh
+	//	             artifact a payload cleanup is about to remove.
+	//	mu         — guards the in-memory run bookkeeping maps below.
+	dispatchMu sync.Mutex
+	triggerMu  sync.Mutex
+	artifactMu sync.Mutex
+	mu         sync.Mutex
 	running        map[string]map[string]*activeCommand
 	stopping       map[string]bool
 	ownedRuns      map[string]bool

@@ -234,14 +234,37 @@ func (s *Server) deliverChildResult(ctx context.Context, cs state.ChildSession, 
 	s.injectResultIntoParent(ctx, *latest, status, summary)
 }
 
+// ownerOf resolves the adapter that owns sessionID, preferring the
+// platform persisted on the child row.
+//
+// The persisted platform is a preference, not a verdict. `child_sessions`
+// has one `platform` column but a split can straddle two machines: a
+// worktree split records the MCP server's own platform id while the
+// owning host — possibly a remote — is the one that actually created the
+// session (see mcp.splitTools.launchWorktree). Trusting the column
+// blindly there resolves a remote-owned child to the local adapter, which
+// cannot see it, and the child never settles.
+//
+// So: use the persisted platform only when it genuinely owns the session,
+// otherwise fall back to the registry fan-out. That keeps the persisted
+// identity authoritative for the case it exists to protect — two adapters
+// holding the same bare session id, where the fan-out could pick either —
+// without breaking cross-machine splits. Owns is cheap by contract (no
+// HTTP, no subprocess), so the extra probe costs nothing.
+func (s *Server) ownerOf(ctx context.Context, platform, sessionID string) (platforms.Platform, bool) {
+	if platform != "" {
+		if p, ok := s.registry.Get(platforms.ID(platform)); ok && p.Owns(ctx, sessionID) {
+			return p, true
+		}
+	}
+	return s.registry.PlatformForSession(ctx, sessionID)
+}
+
 // inferChildStatus looks up the child session via the platform adapter
 // and returns the inferred status and a brief summary. Returns ("", "")
 // if the session cannot be found or its status is unchanged.
 func (s *Server) inferChildStatus(ctx context.Context, cs state.ChildSession) (status, summary string) {
-	p, ok := s.registry.Get(platforms.ID(cs.Platform))
-	if !ok && cs.Platform == "" {
-		p, ok = s.registry.PlatformForSession(ctx, cs.ID)
-	}
+	p, ok := s.ownerOf(ctx, cs.Platform, cs.ID)
 	if !ok {
 		// Session not found in any platform — may have been deleted.
 		return "", ""
@@ -292,10 +315,7 @@ func (s *Server) inferChildStatus(ctx context.Context, cs state.ChildSession) (s
 // injectResultIntoParent durably holds the child's terminal turn for the
 // parent's next real idle edge or queue sweep.
 func (s *Server) injectResultIntoParent(ctx context.Context, cs state.ChildSession, status, summary string) {
-	p, ok := s.registry.Get(platforms.ID(cs.Platform))
-	if !ok && cs.Platform == "" {
-		p, ok = s.registry.PlatformForSession(ctx, cs.ParentSessionID)
-	}
+	p, ok := s.ownerOf(ctx, cs.Platform, cs.ParentSessionID)
 	if !ok {
 		// No parent to deliver to. Retrying forever re-listed this row
 		// every tick and logged a WARN each time; once the parent has

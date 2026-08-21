@@ -215,6 +215,14 @@ func TestPublishAdapters_RejectsDuplicateRemoteIdentity(t *testing.T) {
 	if second.platform != nil || second.host != nil {
 		t.Fatal("rejected remote retained published adapters")
 	}
+	// The refused remote is closed and abandoned, so its health is the
+	// only signal the operator gets: it must not read "connected".
+	if got := second.conn.Health(); got != HealthDuplicateID {
+		t.Errorf("refused remote health = %q, want %q", got, HealthDuplicateID)
+	}
+	if got := first.conn.Health(); got != HealthConnected {
+		t.Errorf("surviving remote health = %q, want %q", got, HealthConnected)
+	}
 	m.unregisterAdapters(second)
 	if registered, ok := reg.Get(firstPlatform.ID()); !ok || registered != firstPlatform {
 		t.Fatal("tearing down rejected remote removed the original platform")

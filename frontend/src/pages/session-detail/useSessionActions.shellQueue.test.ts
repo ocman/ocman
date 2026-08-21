@@ -187,7 +187,33 @@ describe('useSessionActions — shell command queue', () => {
     expect(runShell).toHaveBeenCalledWith('sess-1', 'second', 'build');
   });
 
-  it('drops a queued command when navigating to another session', async () => {
+  // The composer's shell path bypasses the LLM, so a command flushed into
+  // the wrong session edits the wrong checkout outright. SessionDetail
+  // stays mounted across navigation, so this is reachable: queue while A
+  // is busy, navigate to B, let B go idle.
+  it('never runs one session\'s queued command in another session', async () => {
+    const isRunningRef = { current: true };
+    const { result, rerender } = renderHook(
+      ({ sessionID }) => useSessionActions(makeOptions(isRunningRef, sessionID)),
+      { initialProps: { sessionID: 'sess-1' } },
+    );
+
+    await act(async () => {
+      await result.current.handleShell('rm -rf build');
+    });
+    expect(result.current.queuedShellCommand).toBe('rm -rf build');
+
+    // Navigate to session B. The chip must not follow us there.
+    rerender({ sessionID: 'sess-2' });
+    expect(result.current.queuedShellCommand).toBe(null);
+
+    // B finishes its turn and flushes: A's command must not run here.
+    isRunningRef.current = false;
+    act(() => result.current.flushQueuedShell());
+    expect(runShell).not.toHaveBeenCalled();
+  });
+
+  it('does not resurrect a flushed command after navigating back', async () => {
     const isRunningRef = { current: true };
     const { result, rerender } = renderHook(
       ({ sessionID }) => useSessionActions(makeOptions(isRunningRef, sessionID)),
@@ -198,11 +224,14 @@ describe('useSessionActions — shell command queue', () => {
       await result.current.handleShell('rm -rf build');
     });
     rerender({ sessionID: 'sess-2' });
-    rerender({ sessionID: 'sess-1' });
     isRunningRef.current = false;
     act(() => result.current.flushQueuedShell());
 
+    // Back on A: the command was consumed by B's idle edge, so it must be
+    // gone rather than waiting to surprise the user on A's next idle.
+    rerender({ sessionID: 'sess-1' });
+    expect(result.current.queuedShellCommand).toBe(null);
+    act(() => result.current.flushQueuedShell());
     expect(runShell).not.toHaveBeenCalled();
-    await waitFor(() => expect(result.current.queuedShellCommand).toBe(null));
   });
 });
