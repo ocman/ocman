@@ -1334,11 +1334,13 @@ func TestAutoArchive_UsesRegistry(t *testing.T) {
 	srv, rawDB := testServerWithRawDB(t)
 	defer rawDB.Close()
 
-	// Seed one old session (time_updated in 1970) so it qualifies as stale
-	// under the auto-archive window.
+	eightDaysAgo := time.Now().Add(-8 * 24 * time.Hour).UnixMilli()
+	fourDaysAgo := time.Now().Add(-4 * 24 * time.Hour).UnixMilli()
 	_, err := rawDB.Exec(
-		`INSERT INTO session (id, title, directory, time_created, time_updated)
-		 VALUES ('old-session', 'ancient', '/tmp', 1000, 1000)`,
+		`INSERT INTO session (id, title, directory, time_created, time_updated) VALUES
+		 ('old-session', 'ancient', '/tmp', ?, ?),
+		 ('recent-session', 'recent', '/tmp', ?, ?)`,
+		eightDaysAgo, eightDaysAgo, fourDaysAgo, fourDaysAgo,
 	)
 	if err != nil {
 		t.Fatalf("seeding session: %v", err)
@@ -1352,6 +1354,9 @@ func TestAutoArchive_UsesRegistry(t *testing.T) {
 	}
 	if _, ok := archived[state.Key{Platform: "opencode", SessionID: "old-session"}]; !ok {
 		t.Errorf("expected old-session to be archived under opencode after auto-archive pass, got %+v", archived)
+	}
+	if _, ok := archived[state.Key{Platform: "opencode", SessionID: "recent-session"}]; ok {
+		t.Errorf("expected recent-session to remain unarchived, got %+v", archived)
 	}
 }
 

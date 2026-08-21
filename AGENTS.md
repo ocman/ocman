@@ -449,7 +449,7 @@ minimal and match the surrounding code.
   the edge, but only for ordering independence, not because the status
   can't be trusted.
 - **Auto-archive**: background goroutine archives sessions inactive
-  for 3+ days (checked every 24 h). Runs against all registered
+  for 7+ days (checked every 24 h). Runs against all registered
   platforms.
 - **OpenTelemetry (optional)**: `--otel=<endpoint>` /
   `OTEL_EXPORTER_OTLP_ENDPOINT` ships traces + metrics to an OTLP

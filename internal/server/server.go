@@ -35,7 +35,7 @@ import (
 )
 
 const (
-	autoArchiveAfter        = 72 * time.Hour
+	autoArchiveAfter        = 7 * 24 * time.Hour
 	autoArchiveProjectAfter = 7 * 24 * time.Hour
 	autoArchiveInterval     = 24 * time.Hour
 	projectsScanInterval    = 5 * time.Minute
