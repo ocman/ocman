@@ -20,6 +20,7 @@ import type { FC } from 'react';
 import { LinkPreviewStrip } from './GitHubLinkPreview';
 import { MarkdownText } from './assistant/MarkdownText';
 import { ToolCallDisplay } from './assistant/ToolCallDisplay';
+import { ModelLabel } from './ModelLogo';
 
 interface MessageBookmarkContextValue {
   bookmarkedIds: Set<string>;
@@ -250,8 +251,7 @@ const ModelChangeDivider: FC<{ model: string }> = ({ model }) => {
     <div className="oc-model-change" role="separator" data-testid="model-change-divider">
       <span className="oc-model-change-line" aria-hidden="true" />
       <span className="oc-model-change-chip" title={model}>
-        <i className="bi bi-cpu" aria-hidden="true" />
-        Model changed to {label}
+        Model changed to <ModelLabel model={model}>{label}</ModelLabel>
       </span>
       <span className="oc-model-change-line" aria-hidden="true" />
     </div>
@@ -329,8 +329,7 @@ function AssistantMeta() {
           <>
             <span className="oc-meta-sep">·</span>
             <span className="oc-meta-model" title={model}>
-              <i className="bi bi-cpu" aria-hidden="true" />
-              {modelLabel}
+              <ModelLabel model={model}>{modelLabel}</ModelLabel>
             </span>
           </>
         )}
@@ -434,8 +433,7 @@ function TurnSummaryBar({ messageId }: { messageId: string }) {
   if (model) {
     items.push(
       <span key="model" className="oc-turn-stat oc-turn-model" title={model}>
-        <i className="bi bi-cpu" aria-hidden="true" />
-        {modelLabel}
+        <ModelLabel model={model}>{modelLabel}</ModelLabel>
       </span>
     );
   }

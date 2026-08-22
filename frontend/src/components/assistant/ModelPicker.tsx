@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import type { SessionModelEntry } from '../../lib/api';
+import { ModelLabel } from '../ModelLogo';
 import { CommandListPicker, type PickerEntryBase } from './CommandListPicker';
 import './ModelPicker.css';
 
@@ -132,7 +133,7 @@ export function ModelPicker({
     <>
       <div className="oc-cmd-item-content">
         <span className="oc-cmd-title">
-          {e.modelName}
+          <ModelLabel model={e.value}>{e.modelName}</ModelLabel>
           {e.isSessionDefault && (
             <span className="oc-model-picker-badge oc-model-picker-badge--star" title="Session default">
               <i className="bi bi-star-fill" />

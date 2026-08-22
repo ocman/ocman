@@ -6,3 +6,26 @@
   text-decoration: none;
   font: inherit;
 }
+.metrics-model-list {
+  position: relative;
+  display: inline-flex;
+}
+
+.metrics-model-list-tooltip {
+  position: absolute;
+  z-index: 10;
+  top: 100%;
+  left: 0;
+  display: none;
+  min-width: max-content;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  background: var(--base, var(--bg));
+  box-shadow: 0 8px 24px rgb(0 0 0 / 25%);
+}
+
+.metrics-model-list:hover .metrics-model-list-tooltip,
+.metrics-model-list:focus .metrics-model-list-tooltip {
+  display: grid;
+  gap: 4px;
+}

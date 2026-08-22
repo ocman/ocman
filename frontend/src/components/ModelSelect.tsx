@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { SearchSelect, type SearchSelectOption } from './SearchSelect';
+import { ModelLogo } from './ModelLogo';
 
 interface ModelSelectProps {
   value: string;
@@ -24,6 +25,7 @@ export function ModelSelect({ value, onChange, directory }: ModelSelectProps) {
           Array.from(new Set(rows.map((m) => `${m.provider}/${m.model}`))).map((model) => ({
             value: model,
             label: model,
+            icon: <ModelLogo model={model} />,
           })),
         ),
       )
@@ -33,7 +35,9 @@ export function ModelSelect({ value, onChange, directory }: ModelSelectProps) {
     return () => controller.abort();
   }, [directory]);
 
-  const current = value && !options.some((option) => option.value === value) ? [{ value, label: value }] : [];
+  const current = value && !options.some((option) => option.value === value)
+    ? [{ value, label: value, icon: <ModelLogo model={value} /> }]
+    : [];
   return (
     <SearchSelect
       value={value}

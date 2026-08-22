@@ -1,0 +1,16 @@
+.oc-model-logo {
+  width: 1em;
+  height: 1em;
+  flex: none;
+}
+
+.oc-model-logo--mono {
+  filter: invert(88%);
+}
+
+.oc-model-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  min-width: 0;
+}

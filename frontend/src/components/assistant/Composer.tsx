@@ -22,6 +22,7 @@ import { getContextWindow, formatTokenCount } from '../../lib/models/contextWind
 import { formatCurrency, formatDuration, formatTokensPerSecond } from '../../lib/format';
 import { BUILTIN_COMMANDS, KNOWN_AGENTS, modelHasVariants } from '../../lib/commands/builtinCommands';
 import { remoteLog } from '../../lib/remoteLog';
+import { ModelLabel } from '../ModelLogo';
 
 export interface AttachedImage {
   url: string;
@@ -1211,7 +1212,7 @@ function ComposerImpl({
                     {modelUnavailable && (
                       <i className="bi bi-exclamation-triangle-fill" aria-hidden="true" />
                     )}
-                    {modelButtonLabel || 'Model'}
+                    {modelButtonLabel ? <ModelLabel model={effectiveModel}>{modelButtonLabel}</ModelLabel> : 'Model'}
                   </button>
                 )}
                 {hasReasoning && (

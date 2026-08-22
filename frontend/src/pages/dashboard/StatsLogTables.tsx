@@ -33,6 +33,7 @@ import {
   STOP_REASON_COLORS,
 } from '../../lib/chartConfig';
 import { MetricCard, ChartCard } from './shared';
+import { ModelLabel } from '../../components/ModelLogo';
 
 const dim = { color: 'var(--text-dim)' } as const;
 const dash = <span style={dim}>—</span>;
@@ -180,7 +181,7 @@ function MetricsRowCells({ e }: { e: SessionOrProject }) {
         <span style={dim}> / </span>
         <span title="Token-based estimate" style={{ color: 'var(--accent4)' }}>{e.calcCost > 0 ? formatCurrency(e.calcCost) : '—'}</span>
       </td>
-      <td title={e.models.join(', ')}>{renderModels(e.models)}</td>
+      <td>{renderModels(e.models)}</td>
       <td>{e.errorCount > 0
         ? <span style={{ color: 'var(--accent3, #f38ba8)' }}>{e.errorCount}</span>
         : dash}</td>
@@ -190,8 +191,15 @@ function MetricsRowCells({ e }: { e: SessionOrProject }) {
 
 function renderModels(models: string[]) {
   if (models.length === 0) return dash;
-  if (models.length === 1) return renderModel(models[0]);
-  return `${renderModel(models[0])} +${models.length - 1}`;
+  if (models.length === 1) return <ModelLabel model={models[0]}>{renderModel(models[0])}</ModelLabel>;
+  return (
+    <span className="metrics-model-list" tabIndex={0}>
+      <ModelLabel model={models[0]}>{renderModel(models[0])} +{models.length - 1}</ModelLabel>
+      <span className="metrics-model-list-tooltip" role="tooltip">
+        {models.map((model) => <ModelLabel key={model} model={model}>{renderModel(model)}</ModelLabel>)}
+      </span>
+    </span>
+  );
 }
 
 // Common shape of the numeric fields shared by session and project rows.
@@ -364,7 +372,7 @@ export function RequestLogTable({
                   {shortSessionID(request.sessionId)}
                 </Link>
               </td>
-              <td>{renderModel(request.model)}</td>
+              <td><ModelLabel model={request.model}>{renderModel(request.model)}</ModelLabel></td>
               <td>{formatNumber(request.inputTokens)}</td>
               <td>{formatNumber(request.outputTokens)}</td>
               <td className="mono">{formatTokenCache(request.cacheReadTokens, request.cacheWriteTokens)}</td>

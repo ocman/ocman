@@ -15,6 +15,7 @@ import { SearchSelect } from '../../components/SearchSelect';
 import { useActivity, useModels, useHourly, useHourlyTokens } from '../../lib/queries';
 import { useDashboard } from './context';
 import { ChartCard } from './shared';
+import { ModelLogo } from '../../components/ModelLogo';
 
 const USAGE_RANGE_OPTIONS = [
   { label: '7 days', value: 7 },
@@ -56,7 +57,7 @@ export function UsageTab() {
         <ProjectScopePicker projects={projects} value={dirScope} onChange={setDirScope} showLabel />
         <label className="metrics-filter">
           <span>Model</span>
-          <SearchSelect value={selectedModel} ariaLabel="Model" placeholder="All models" searchLabel="Search models" onChange={setSelectedModel} options={[{ value: '', label: 'All models' }, ...allModels.map((model) => ({ value: `${model.provider}/${model.model}`, label: model.model }))]} />
+          <SearchSelect value={selectedModel} ariaLabel="Model" placeholder="All models" searchLabel="Search models" onChange={setSelectedModel} options={[{ value: '', label: 'All models' }, ...allModels.map((model) => ({ value: `${model.provider}/${model.model}`, label: model.model, icon: <ModelLogo model={`${model.provider}/${model.model}`} /> }))]} />
         </label>
         <label className="metrics-filter metrics-filter-small">
           <span>Last</span>

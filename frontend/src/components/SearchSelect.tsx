@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import Fuse from 'fuse.js';
 import { useClickOutside } from '../lib/useClickOutside';
 import './Control.css';
@@ -7,6 +7,7 @@ import './SearchSelect.css';
 export interface SearchSelectOption {
   value: string;
   label: string;
+  icon?: ReactNode;
 }
 
 interface SearchSelectProps {
@@ -62,7 +63,7 @@ export function SearchSelect({
           setOpen((current) => !current);
         }}
       >
-        <span>{selected?.label ?? (value || placeholder)}</span>
+        <span className="oc-search-select-label">{selected?.icon}{selected?.label ?? (value || placeholder)}</span>
         <i className="bi bi-chevron-down" aria-hidden="true" />
       </button>
       {open && (
@@ -87,7 +88,7 @@ export function SearchSelect({
                   setOpen(false);
                 }}
               >
-                {option.label}
+                <span className="oc-search-select-label">{option.icon}{option.label}</span>
               </button>
             ))}
             {visible.length === 0 && <small>No matches</small>}

@@ -8,6 +8,7 @@ import { useDashboard } from './context';
 import { MetricsPagination } from './shared';
 import { SessionLogTable, ProjectLogTable, RequestLogTable, StatsSummaryCharts, LogRange } from './StatsLogTables';
 import { METRICS_RANGE_OPTIONS } from './constants';
+import { ModelLogo } from '../../components/ModelLogo';
 
 export function StatsTab() {
   usePageTitle('Stats');
@@ -62,7 +63,7 @@ export function StatsTab() {
   const metricsLoading = metricsQ.isLoading;
   const metricsError = metricsQ.error instanceof Error ? metricsQ.error.message : null;
   const agentOptions = [{ value: '', label: 'All agents' }, ...(metrics?.availableAgents ?? []).map((agent) => ({ value: agent, label: agent }))];
-  const modelOptions = [{ value: '', label: 'All models' }, ...(metrics?.availableModels ?? []).map((model) => ({ value: model, label: renderModel(model) }))];
+  const modelOptions = [{ value: '', label: 'All models' }, ...(metrics?.availableModels ?? []).map((model) => ({ value: model, label: renderModel(model), icon: <ModelLogo model={model} /> }))];
 
   return (
     <div className="metrics-page">

@@ -19,6 +19,11 @@
   text-transform: none;
   letter-spacing: normal;
 }
+.oc-search-select-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+}
 .oc-search-select-menu {
   position: absolute;
   z-index: 20;
