@@ -292,17 +292,8 @@ func getSessionDefaultsCached(ctx context.Context, d dbSessionDefaults, excludeS
 
 // sessionsTTL must exceed the frontend poll interval (5s for the
 // dashboard/project views, ~10s for notify) or every poll lands on
-// an expired entry and pays the full ~5s GetSessions query. A
-// background refresher (StartSessionsRefresher) re-runs the
-// unfiltered query every sessionsRefreshInterval, so this TTL only
-// needs to outlive the gap between refreshes plus slack.
+// an expired entry and pays the full ~5s GetSessions query.
 const sessionsTTL = 15 * time.Second
-
-// sessionsRefreshInterval is how often the background refresher warms
-// the snapshot. Kept below sessionsTTL so it never goes cold between
-// refreshes; reads are then always a cache hit and never block on the
-// query.
-const sessionsRefreshInterval = 4 * time.Second
 
 // sessionsReconcileInterval is the longest the snapshot may go without
 // a full aggregate scan. Between reconciliations the refresher only
@@ -386,9 +377,10 @@ var (
 	// to be a full scan rather than let the pass guess. lastFullRefresh
 	// is when the last full scan finished, which is what schedules the
 	// periodic reconciliation. All three are guarded by sessionsMu.
-	sessionsDirty     = map[string]struct{}{}
-	sessionsFullDirty bool
-	lastFullRefresh   time.Time
+	sessionsDirty       = map[string]struct{}{}
+	sessionsFullDirty   bool
+	lastFullRefresh     time.Time
+	sessionsRefreshWake = make(chan struct{}, 1)
 )
 
 // MarkSessionDirty records that one session's row may have changed, so
@@ -405,6 +397,7 @@ func MarkSessionDirty(sessionID string) {
 	sessionsMu.Lock()
 	sessionsDirty[sessionID] = struct{}{}
 	sessionsMu.Unlock()
+	signalSessionsRefresh()
 }
 
 // MarkSessionsDirty marks the whole snapshot dirty, forcing the next
@@ -416,6 +409,14 @@ func MarkSessionsDirty() {
 	sessionsMu.Lock()
 	sessionsFullDirty = true
 	sessionsMu.Unlock()
+	signalSessionsRefresh()
+}
+
+func signalSessionsRefresh() {
+	select {
+	case sessionsRefreshWake <- struct{}{}:
+	default:
+	}
 }
 
 // takeDirty claims the pending dirty work and clears it. Anything
@@ -446,18 +447,15 @@ func restoreDirty(ids []string, full bool) {
 	sessionsMu.Unlock()
 }
 
-// StartSessionsRefresher keeps the unfiltered sessions cache warm every
-// sessionsRefreshInterval until ctx is cancelled. With a warm cache,
-// /api/sessions and notify polls read from memory instead of blocking
-// ~5s on the query. The refresh goes through refreshSessionsIncremental,
-// so it shares the singleflight slot and writes the same snapshot that
-// request handlers read.
+// StartSessionsRefresher warms the unfiltered sessions cache at startup,
+// refreshes it when events mark work dirty, and performs the five-minute
+// full reconciliation. It shares the request path's singleflight slot.
 //
 // A pass is incremental: it recomputes the sessions the event stream
 // marked dirty and merges them. It escalates to a full scan when there
 // is no snapshot yet, when something unattributable changed, or when
-// the periodic reconciliation is due — so a tick on an idle machine
-// costs nothing at all, and a missed event is still corrected within
+// the periodic reconciliation is due, so an idle machine does no work
+// between reconciliations and a missed event is still corrected within
 // sessionsReconcileInterval.
 func StartSessionsRefresher(ctx context.Context, d dbGetSessions) {
 	sessionsRefreshWG.Add(1)
@@ -466,51 +464,61 @@ func StartSessionsRefresher(ctx context.Context, d dbGetSessions) {
 		// Warm immediately so the first request after startup hits cache.
 		// The snapshot is cold, so this pass is a full scan.
 		refreshSessionsIncremental(ctx, d)
+		timer := time.NewTimer(nextSessionsReconcileDelay())
+		defer timer.Stop()
 		for {
-			// Never spend more than half our time refreshing. On a
-			// multi-GB OpenCode DB the query can take longer than
-			// sessionsRefreshInterval, and a fixed ticker then runs it
-			// back-to-back forever — one core pinned, read pool
-			// exhausted, every other request timing out.
-			// ponytail: fixed 50% duty cycle, make it adaptive if the
-			// staleness ever matters more than the CPU.
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(refreshDelay(lastRefreshDuration())):
-				// Refresh in place. We do NOT delete the entry first:
-				// against the live OpenCode DB (multi-GB file, many
-				// concurrent writers) the query can stall on the WAL
-				// busy_timeout for seconds. Deleting first would make
-				// every concurrent /api/sessions poll fall through to
-				// that cold blocking query. Instead we fetch a fresh
-				// copy and overwrite only on success, so reads always
-				// hit the last good value. refreshSessions also bounds
-				// itself via the singleflight slot, so a tick that
-				// arrives while the previous fetch is still running
-				// coalesces instead of piling up.
+			case <-sessionsRefreshWake:
+				if !waitForSessionsRefreshBudget(ctx) {
+					return
+				}
 				refreshSessionsIncremental(ctx, d)
+				resetTimer(timer, nextSessionsReconcileDelay())
+			case <-timer.C:
+				refreshSessionsIncremental(ctx, d)
+				resetTimer(timer, nextSessionsReconcileDelay())
 			}
 		}
 	}()
 }
 
-// refreshDelay is how long the refresher waits before its next pass:
-// at least sessionsRefreshInterval, but never less than the previous
-// pass took, capping the refresher at a 50% duty cycle.
-func refreshDelay(elapsed time.Duration) time.Duration {
-	if elapsed > sessionsRefreshInterval {
-		return elapsed
+func waitForSessionsRefreshBudget(ctx context.Context) bool {
+	sessionsMu.RLock()
+	delay := time.Until(lastRefreshEnd.Add(lastRefreshCost))
+	sessionsMu.RUnlock()
+	if delay <= 0 {
+		return true
 	}
-	return sessionsRefreshInterval
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
-// lastRefreshDuration reports what the most recent successful refresh
-// cost, or 0 if none has completed yet.
-func lastRefreshDuration() time.Duration {
+func nextSessionsReconcileDelay() time.Duration {
 	sessionsMu.RLock()
 	defer sessionsMu.RUnlock()
-	return lastRefreshCost
+	delay := time.Until(lastFullRefresh.Add(sessionsReconcileInterval))
+	if delay < 0 {
+		return 0
+	}
+	return delay
+}
+
+func resetTimer(timer *time.Timer, delay time.Duration) {
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+	timer.Reset(delay)
 }
 
 // invalidationFloor is the earliest an invalidated entry may expire:
@@ -584,6 +592,10 @@ func ResetCachesForTests() {
 	lastRefreshCost = 0
 	lastFullRefresh = time.Time{}
 	sessionsMu.Unlock()
+	select {
+	case <-sessionsRefreshWake:
+	default:
+	}
 }
 
 // dbGetSessions is the subset of *db.DB used by getSessionsCached.
@@ -605,7 +617,6 @@ type dbGetSessions interface {
 // Which of the three snapshot states applies decides whether this
 // blocks; see the state table on sessionsSnapshot.
 func getSessionsCached(ctx context.Context, d dbGetSessions, directory string, since int64) ([]db.Session, error) {
-
 	// Read the snapshot and its state, fresh or stale, in one lock.
 	sessionsMu.RLock()
 	snapshot, have, expiresAt := sessionsSnapshot, sessionsHave, sessionsExpiresAt

@@ -1309,23 +1309,20 @@ func TestStartSessionsRefresher_StopsOnContextCancel(t *testing.T) {
 	}
 }
 
-func TestRefreshDelayCapsDutyCycle(t *testing.T) {
-	tests := []struct {
-		name    string
-		elapsed time.Duration
-		want    time.Duration
-	}{
-		{"fast query waits the full interval", 100 * time.Millisecond, sessionsRefreshInterval},
-		{"query at the interval waits the interval", sessionsRefreshInterval, sessionsRefreshInterval},
-		{"slow query waits as long as it took", 30 * time.Second, 30 * time.Second},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := refreshDelay(tc.elapsed); got != tc.want {
-				t.Fatalf("refreshDelay(%v) = %v, want %v", tc.elapsed, got, tc.want)
-			}
-		})
-	}
+func TestStartSessionsRefresher_RefreshesDirtySessionOnEvent(t *testing.T) {
+	resetSessionsCache()
+	t.Cleanup(resetSessionsCache)
+
+	store := newFakeSessionStore(dirtyFixture...)
+	ctx, cancel := context.WithCancel(context.Background())
+	StartSessionsRefresher(ctx, store)
+	waitFor(t, time.Second, func() bool { return store.fullScans.Load() == 1 })
+
+	store.put(db.Session{ID: "s-mid", Title: "updated", TimeUpdated: 5000})
+	MarkSessionDirty("s-mid")
+	waitFor(t, time.Second, func() bool { return store.summaryReads.Load() == 1 })
+	cancel()
+	drainSessionsRefresh()
 }
 
 // TestInvalidateSessionsCache_FloorsOnQueryCost pins that invalidation

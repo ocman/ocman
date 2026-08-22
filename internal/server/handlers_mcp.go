@@ -90,6 +90,7 @@ func (s *Server) buildMCPHandler() http.Handler {
 		KillTmuxTarget:        internalmcp.TmuxTargetKiller(s.killHostTmuxTarget),
 		ChildResults:          s.childResults,
 		ChildDisconnected:     s.deferChildResultReconnect,
+		ChildStarted:          s.enqueueChildSession,
 		SignFile:              s.FileURL,
 	}
 	if s.stateDB != nil {

@@ -3,7 +3,9 @@ package server
 import (
 	"context"
 	"database/sql"
+	"io"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -163,7 +165,7 @@ func TestCheckAndInjectChildResults_NoChildren(t *testing.T) {
 	}
 }
 
-func TestCheckAndInjectChildResults_UpdatesStatus(t *testing.T) {
+func TestSettledStatusEventProcessesChild(t *testing.T) {
 	sdb := openWatcherTestStateDB(t)
 	insertWatcherChildSession(t, sdb, "child-watch-1", "parent-1", "starting")
 
@@ -203,7 +205,10 @@ func TestCheckAndInjectChildResults_UpdatesStatus(t *testing.T) {
 
 	s := New(nil, sdb, "127.0.0.1:0", reg, nil)
 
-	s.checkAndInjectChildResults(context.Background())
+	s.onLocalSessionStatus("child-watch-1", db.StatusDone)
+	if err := s.childSessionWorker().Drain(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 
 	// Verify the child session status was updated.
 	cs, err := sdb.GetChildSession(t.Context(), "child-watch-1")
@@ -227,6 +232,134 @@ func TestCheckAndInjectChildResults_UpdatesStatus(t *testing.T) {
 	}
 	if !strings.Contains(queued[0].Text, "Fixed the actual lint errors.") {
 		t.Errorf("queued message missing child final text: %q", queued[0].Text)
+	}
+}
+
+func TestRemoteTerminalEventProcessesChildWithoutSweep(t *testing.T) {
+	sdb := openWatcherTestStateDB(t)
+	if err := sdb.InsertChildSession(t.Context(), state.ChildSession{
+		ID:              "remote-event-child",
+		Platform:        "r-one:opencode",
+		ParentSessionID: "local-parent",
+		Intent:          "finish remotely",
+		Status:          "running",
+		CreatedAt:       time.Now().UnixMilli(),
+		ResultDelivery:  state.ChildResultAsyncPending,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var done atomic.Bool
+	subscribed := make(chan struct{})
+	emit := make(chan struct{})
+	emitted := make(chan struct{})
+	streamStopped := make(chan struct{})
+	remote := &fakePlatform{
+		id:       "r-one:opencode",
+		sessions: []db.Session{{ID: "remote-event-child"}},
+		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+			status := db.StatusBusy
+			if done.Load() {
+				status = db.StatusDone
+			}
+			return &platforms.SessionDetail{
+				Session:  &db.Session{ID: id, Status: status},
+				Messages: []db.Message{{ID: "final", Data: []byte(`{"role":"assistant"}`)}},
+				Parts:    []db.Part{{MessageID: "final", Data: []byte(`{"type":"text","text":"remote result"}`)}},
+			}, nil
+		},
+		proxyEventsFn: func(ctx context.Context, _ string, w io.Writer, _ func()) error {
+			close(subscribed)
+			<-emit
+			_, err := io.WriteString(w, "data: {\"type\":\"session.status\",\"properties\":{\"sessionID\":\"remote-event-child\",\"status\":{\"type\":\"idle\"}}}\n\n")
+			close(emitted)
+			if err != nil {
+				return err
+			}
+			<-ctx.Done()
+			close(streamStopped)
+			return ctx.Err()
+		},
+	}
+	local := &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "local-parent", Status: db.StatusWaiting}}}
+	reg := platforms.NewRegistry()
+	reg.Register(local)
+	reg.Register(remote)
+	s := New(nil, sdb, "127.0.0.1:0", reg, nil)
+	watcherCtx, cancelWatcher := context.WithCancel(t.Context())
+	s.startChildEventWatches(watcherCtx)
+	watcherStopped := make(chan struct{})
+	go func() {
+		s.runChildSessionWatcher(watcherCtx)
+		close(watcherStopped)
+	}()
+	t.Cleanup(func() {
+		cancelWatcher()
+		<-watcherStopped
+		s.stopChildEventWatches()
+	})
+
+	<-subscribed
+	if err := s.childSessionWorker().Drain(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if queued, err := sdb.ListQueuedMessages(t.Context(), "opencode", "local-parent"); err != nil || len(queued) != 0 {
+		t.Fatalf("queue before terminal event = %+v, %v", queued, err)
+	}
+
+	done.Store(true)
+	close(emit)
+	<-emitted
+	if err := s.childSessionWorker().Drain(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	<-streamStopped
+
+	child, err := sdb.GetChildSession(t.Context(), "remote-event-child")
+	if err != nil || child.Status != "completed" || child.Summary != "remote result" {
+		t.Fatalf("remote child = %+v, %v", child, err)
+	}
+	queued, err := sdb.ListQueuedMessages(t.Context(), "opencode", "local-parent")
+	if err != nil || len(queued) != 1 {
+		t.Fatalf("parent queue = %+v, %v", queued, err)
+	}
+}
+
+func TestNewRemoteChildRetriesOwnershipBeforeSweep(t *testing.T) {
+	sdb := openWatcherTestStateDB(t)
+	insertWatcherChildSession(t, sdb, "late-remote-child", "parent-1", "starting")
+	local := &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "parent-1"}}}
+	reg := platforms.NewRegistry()
+	reg.Register(local)
+	s := New(nil, sdb, "127.0.0.1:0", reg, nil)
+	ctx, cancel := context.WithCancel(t.Context())
+	s.startChildEventWatches(ctx)
+	t.Cleanup(func() {
+		cancel()
+		s.stopChildEventWatches()
+	})
+
+	s.enqueueChildSession("late-remote-child")
+	if err := s.childSessionWorker().Drain(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	subscribed := make(chan struct{})
+	remote := &fakePlatform{
+		id:       "r-late:opencode",
+		sessions: []db.Session{{ID: "late-remote-child", Status: db.StatusBusy}},
+		proxyEventsFn: func(ctx context.Context, _ string, _ io.Writer, _ func()) error {
+			close(subscribed)
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	}
+	reg.Register(remote)
+
+	select {
+	case <-subscribed:
+	case <-time.After(3 * time.Second):
+		t.Fatal("remote child was not subscribed after ownership appeared")
 	}
 }
 
@@ -546,6 +679,51 @@ func TestCheckAndInjectChildResults_ReapsUnresolvableChild(t *testing.T) {
 		if p.ID == "child-vanished" {
 			t.Fatalf("reaped child still pending: %+v", p)
 		}
+	}
+}
+
+func TestReapOrphanChildStopsRemoteWatch(t *testing.T) {
+	sdb := openWatcherTestStateDB(t)
+	insertWatcherChildSession(t, sdb, "remote-orphan", "parent-1", "running")
+	if err := sdb.UpdateChildSessionCreatedAt(t.Context(), "remote-orphan", time.Now().Add(-2*childOrphanGrace).UnixMilli()); err != nil {
+		t.Fatal(err)
+	}
+	cs, err := sdb.GetChildSession(t.Context(), "remote-orphan")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	subscribed := make(chan struct{})
+	stopped := make(chan struct{})
+	remote := &fakePlatform{
+		id:       "r-one:opencode",
+		sessions: []db.Session{{ID: cs.ID}},
+		proxyEventsFn: func(ctx context.Context, _ string, _ io.Writer, _ func()) error {
+			close(subscribed)
+			<-ctx.Done()
+			close(stopped)
+			return ctx.Err()
+		},
+	}
+	reg := platforms.NewRegistry()
+	reg.Register(remote)
+	s := New(nil, sdb, "127.0.0.1:0", reg, nil)
+	ctx, cancel := context.WithCancel(t.Context())
+	s.startChildEventWatches(ctx)
+	t.Cleanup(func() {
+		cancel()
+		s.stopChildEventWatches()
+	})
+	s.ensureRemoteChildWatch(*cs)
+	<-subscribed
+
+	for range childOrphanPollLimit {
+		s.reapOrphanChild(t.Context(), *cs, "gone")
+	}
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("remote watch was not stopped when child was reaped")
 	}
 }
 

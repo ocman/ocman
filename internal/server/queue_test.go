@@ -134,9 +134,10 @@ func TestSessionMessage_BusyQueuesThenFlushesOnIdle(t *testing.T) {
 	busy = false
 	mu.Unlock()
 
-	// onSessionIdle flushes in a goroutine; call Flush synchronously to
-	// avoid a race in the test (same code path, no goroutine).
-	srv.queueSvc().Flush(t.Context(), "fake", "s1")
+	srv.onSessionIdle("fake", "s1")
+	if err := srv.queueFlushWorker().Drain(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	mu.Lock()
 	if len(sent) != 1 || sent[0] != "one" {
 		mu.Unlock()
@@ -145,11 +146,58 @@ func TestSessionMessage_BusyQueuesThenFlushesOnIdle(t *testing.T) {
 	mu.Unlock()
 
 	// Next idle edge sends the second.
-	srv.queueSvc().Flush(t.Context(), "fake", "s1")
+	srv.onSessionIdle("fake", "s1")
+	if err := srv.queueFlushWorker().Drain(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	mu.Lock()
 	defer mu.Unlock()
 	if len(sent) != 2 || sent[1] != "two" {
 		t.Fatalf("after 2nd idle sent = %v, want [one two]", sent)
+	}
+}
+
+func TestQueueFlush_BlockedSessionDoesNotBlockIndependentSession(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	blocked := make(chan struct{})
+	started := make(chan struct{})
+	independent := make(chan struct{})
+	reg.Register(&fakePlatform{
+		id: "fake",
+		sessions: []db.Session{
+			mkSession("fake", "blocked", "blocked", 1),
+			mkSession("fake", "independent", "independent", 1),
+		},
+		sendMessageFn: func(req platforms.SendMessageRequest) error {
+			if req.SessionID == "blocked" {
+				close(started)
+				<-blocked
+			} else {
+				close(independent)
+			}
+			return nil
+		},
+		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+			return &platforms.SessionDetail{Session: &db.Session{ID: id, Status: db.StatusDone}}, nil
+		},
+	})
+	for _, id := range []string{"blocked", "independent"} {
+		if err := srv.queueSvc().Enqueue(t.Context(), "fake", true, platforms.SendMessageRequest{SessionID: id, Message: id}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	srv.onSessionIdle("fake", "blocked")
+	<-started
+	srv.onSessionIdle("fake", "independent")
+	select {
+	case <-independent:
+	case <-t.Context().Done():
+		t.Fatal("independent queue flush was blocked by another session")
+	}
+	close(blocked)
+	if err := srv.queueFlushWorker().Drain(t.Context()); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -426,7 +474,10 @@ func TestQueueMutations_ReachTheWireAsQueueUpdated(t *testing.T) {
 
 	// --- Drain: session goes idle, Flush sends+deletes 'one' → []. ---
 	busy = false
-	srv.queueSvc().Flush(t.Context(), "fake", "s1")
+	srv.onSessionIdle("fake", "s1")
+	if err := srv.queueFlushWorker().Drain(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	if got := drainQueueUpdated(t, sub.ch); len(got) != 0 {
 		t.Fatalf("after drain = %+v, want [] (empty list clears the UI)", got)
 	}
@@ -457,27 +508,32 @@ func TestSSEStream_DrainDeliversEmptyQueueOverTheWire(t *testing.T) {
 	postMessage(t, srv, "s1", `{"message":"only","queue":true}`)
 
 	// Open the real SSE stream.
-	rr := httptest.NewRecorder()
+	rr := &signalingRecorder{ResponseRecorder: httptest.NewRecorder(), ready: make(chan struct{}), event: make(chan struct{})}
 	req := httptest.NewRequest(http.MethodGet, "/api/events", nil)
 	ctx, cancel := context.WithCancel(req.Context())
 	req = req.WithContext(ctx)
 	done := make(chan struct{})
 	go func() { srv.handleGlobalEvents(rr, req); close(done) }()
 
-	deadline := time.Now().Add(time.Second)
-	for srv.broadcastHub.subscriberCount() == 0 {
-		if time.Now().After(deadline) {
-			cancel()
-			t.Fatal("handler never subscribed")
-		}
-		time.Sleep(time.Millisecond)
+	select {
+	case <-rr.ready:
+	case <-time.After(time.Second):
+		cancel()
+		t.Fatal("handler never subscribed")
 	}
 
 	// Drain on idle: send + delete + broadcast empty list.
 	busy = false
-	srv.queueSvc().Flush(t.Context(), "fake", "s1")
-
-	time.Sleep(30 * time.Millisecond)
+	srv.onSessionIdle("fake", "s1")
+	if err := srv.queueFlushWorker().Drain(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-rr.event:
+	case <-time.After(time.Second):
+		cancel()
+		t.Fatal("queue.updated was not written")
+	}
 	cancel()
 	<-done
 
@@ -493,6 +549,27 @@ func TestSSEStream_DrainDeliversEmptyQueueOverTheWire(t *testing.T) {
 	if strings.Contains(body, `"messages":null`) {
 		t.Fatalf("drain frame sent messages:null (client would ignore it):\n%s", body)
 	}
+}
+
+type signalingRecorder struct {
+	*httptest.ResponseRecorder
+	ready     chan struct{}
+	event     chan struct{}
+	readyOnce sync.Once
+	eventOnce sync.Once
+}
+
+func (r *signalingRecorder) Flush() {
+	r.ResponseRecorder.Flush()
+	r.readyOnce.Do(func() { close(r.ready) })
+}
+
+func (r *signalingRecorder) Write(p []byte) (int, error) {
+	n, err := r.ResponseRecorder.Write(p)
+	if strings.Contains(string(p), "event: ocman.queue.updated") {
+		r.eventOnce.Do(func() { close(r.event) })
+	}
+	return n, err
 }
 
 func TestSessionQueueMove_RejectsBadDirection(t *testing.T) {

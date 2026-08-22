@@ -11,13 +11,17 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/queuesvc"
+	"github.com/NoUseFreak/ocman/internal/worker"
 )
 
-// queueSweepInterval is how often the sweep drains standing backlogs that
-// never received a session.idle edge. Short enough to feel responsive for
-// stranded rows, long enough to be negligible load (one DISTINCT query +
-// a status check per session with a backlog).
-const queueSweepInterval = 15 * time.Second
+// queueSweepInterval is a recovery backstop for rows whose idle event was
+// missed, including rows left by a crash. Idle events enqueue a flush now.
+const queueSweepInterval = time.Minute
+
+type queueFlush struct {
+	platformID string
+	sessionID  string
+}
 
 // runQueueSweep periodically drains one message from every idle session
 // with a non-empty follow-up queue. It self-heals backlogs stranded by a
@@ -63,6 +67,17 @@ func (s *Server) queueSvc() *queuesvc.Service {
 		)
 	})
 	return s.queueSvcCached
+}
+
+func (s *Server) queueFlushWorker() *worker.Worker[queueFlush] {
+	s.queueWorkerOnce.Do(func() {
+		s.queueWorker = worker.NewKeyed(func(item queueFlush) {
+			runWithRecover("queue-flush", func() {
+				s.queueSvc().Flush(context.Background(), item.platformID, item.sessionID)
+			})
+		}, func(item queueFlush) string { return item.platformID + "\x00" + item.sessionID })
+	})
+	return s.queueWorker
 }
 
 // queueSender implements queuesvc.Sender by forwarding to sessionsvc's
@@ -137,19 +152,19 @@ func (s *Server) adapterForSession(ctx context.Context, platformID, sessionID st
 // before) and drains the session's follow-up queue. The flush is the
 // authoritative send gate for held messages (#58) — a Ctrl+Enter enqueue
 // never sends directly, so the idle edge is what delivers it. Runs in its
-// own goroutine so a slow platform send can't stall the SSE watcher.
+// serial worker so a slow platform send can't stall the SSE watcher and tests
+// can wait for all queued flushes with Drain.
 //
 // platformID names the instance the edge came from. It is required: a bare
 // session id is not an identity, and flushing on one let an idle edge from
 // this machine drain a remote session that happened to share the id.
 func (s *Server) onSessionIdle(platformID, sessionID string) {
 	s.broadcastSessionIdle(sessionID)
+	s.enqueueChildSession(sessionID)
 	if s.stateDB == nil || platformID == "" {
 		return
 	}
-	go runWithRecover("queue-flush", func() {
-		s.queueSvc().Flush(context.Background(), platformID, sessionID)
-	})
+	s.queueFlushWorker().Enqueue(queueFlush{platformID: platformID, sessionID: sessionID})
 	go runWithRecover("share-relay-publish", func() {
 		adapter, ok := s.adapterForSession(context.Background(), "", sessionID)
 		if !ok {

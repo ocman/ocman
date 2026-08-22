@@ -6,7 +6,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -67,7 +66,9 @@ func TestQueueIdentity_IdleEdgeAndBroadcastAreHostScoped(t *testing.T) {
 
 	// An idle edge from the local instance drains the local queue only.
 	srv.onSessionIdle("fake", "s1")
-	waitForSend(t, &mu, sent, "fake", 1)
+	if err := srv.queueFlushWorker().Drain(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -79,22 +80,5 @@ func TestQueueIdentity_IdleEdgeAndBroadcastAreHostScoped(t *testing.T) {
 	}
 	if msgs, err := srv.stateDB.ListQueuedMessages(t.Context(), "r-A:fake", "s1"); err != nil || len(msgs) != 1 {
 		t.Fatalf("remote queue = %+v (err %v), want its held message intact", msgs, err)
-	}
-}
-
-func waitForSend(t *testing.T, mu *sync.Mutex, sent map[string][]string, platform string, want int) {
-	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		mu.Lock()
-		n := len(sent[platform])
-		mu.Unlock()
-		if n >= want {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %d send(s) on %s", want, platform)
-		}
-		time.Sleep(time.Millisecond)
 	}
 }

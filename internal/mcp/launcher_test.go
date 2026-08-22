@@ -91,8 +91,9 @@ func noopEnsurer(_ context.Context, _ string) (string, error) {
 func TestLaunch_CreatesSessionAndSendsPrompt(t *testing.T) {
 	db := openTestStateDB(t)
 	platform := &fakePlatformAdapter{createSessionID: "child-abc"}
+	started := ""
 
-	launcher := NewSessionLauncher(db, platform, noopWorktreeCreator, noopEnsurer)
+	launcher := NewSessionLauncher(db, platform, noopWorktreeCreator, noopEnsurer).WithChildStarted(func(id string) { started = id })
 
 	childID, err := launcher.Launch(context.Background(), LaunchRequest{
 		ParentSessionID: "parent-1",
@@ -107,6 +108,9 @@ func TestLaunch_CreatesSessionAndSendsPrompt(t *testing.T) {
 	}
 	if childID != "child-abc" {
 		t.Errorf("expected childID=child-abc, got %q", childID)
+	}
+	if started != childID {
+		t.Errorf("started callback = %q, want %q", started, childID)
 	}
 
 	// Verify the prompt was sent.

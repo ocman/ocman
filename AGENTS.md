@@ -164,12 +164,12 @@ handlers don't bypass the `Host` seam). User-facing docs:
   `POST /api/session/{id}/message` selects the path; when it is false the
   handler calls `Server.sendNow` and never touches the queue. The flag is
   never derived from inferred status, which lags the SSE stream. Held
-  messages are drained only by flush (serialized per session), so there's
-  no check-then-act race. The idle-edge flush trusts the edge and does
+  messages are drained only by flush (serialized by a drainable worker), so
+  there's no check-then-act race. The idle-edge flush trusts the edge and does
   **not** re-check the (lagging) inferred status, so a genuine turn-end
-  never leaves the head stranded. A periodic `Sweep` (`runQueueSweep`,
-  15 s) is the backstop: it drains one message from each idle session with
-  a standing backlog, self-healing rows that never got an idle edge.
+  never leaves the head stranded. A periodic one-minute `Sweep`
+  (`runQueueSweep`) is only a recovery backstop: it drains one message from
+  each idle session with a standing backlog after a missed edge or crash.
   Internal deferrals (MCP child results, scheduled prompts) enqueue the
   same way. Wired in `internal/server/queue.go`.
 - `internal/db/` — read-only SQLite queries against OpenCode's
@@ -548,8 +548,11 @@ Implementation notes:
     --stat` shape, which excludes untracked files and would invite an
     agent to read the counts as git's own.
 - Child session records live in `state.db`'s `child_sessions` table
-  (migration v9); a background watcher polls every 5 s and returns the result
-  through the waiting `new_session` MCP call. Migration v34 persists delivery
+  (migration v9); local settled status events enqueue processing on a serial,
+  drainable worker and return the result through the waiting `new_session` MCP
+  call. An immediate startup sweep and one-minute recovery sweeps catch missed
+  events, remote children, and stale `*_sending` states from #457. Migration
+  v34 persists delivery
   state so `await_session_result` can reconnect after a request disconnect or
   ocman restart without re-prompting the child; disconnects also defer a queued
   reconnect reminder until the parent is idle. Both waits emit request-scoped

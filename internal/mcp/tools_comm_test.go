@@ -124,3 +124,21 @@ func TestSendMessageToChildDoesNotRestoreAfterSuccessfulSend(t *testing.T) {
 		t.Fatalf("RestoreChildFollowup called %d times after successful send", store.restoreCalls)
 	}
 }
+
+func TestSendMessageToChildRestartsCompletionTracking(t *testing.T) {
+	store := &followupStore{child: followupChild(), completeHit: true}
+	started := ""
+	tools := &commTools{
+		stateDB:  store,
+		platform: &followupClient{},
+		started:  func(id string) { started = id },
+	}
+
+	result, err := tools.handleSendMessageToChild(t.Context(), followupRequest())
+	if err != nil || result.IsError {
+		t.Fatalf("result = %+v, %v", result, err)
+	}
+	if started != "child-1" {
+		t.Fatalf("started callback = %q, want child-1", started)
+	}
+}

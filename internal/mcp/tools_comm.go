@@ -49,6 +49,7 @@ type commTools struct {
 	platform     platformAdapter
 	results      *ChildResultBroker
 	disconnected func(context.Context, string)
+	started      func(string)
 }
 
 // sendMessageToChildTool returns the tool definition for send_message_to_child.
@@ -182,6 +183,9 @@ func (t *commTools) handleSendMessageToChild(ctx context.Context, req mcplib.Cal
 			}
 			return mcplib.NewToolResultError("child follow-up delivery ownership was lost"), nil
 		}
+	}
+	if t.started != nil {
+		t.started(childID)
 	}
 
 	result := map[string]interface{}{

@@ -31,6 +31,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/telemetry"
 	"github.com/NoUseFreak/ocman/internal/term"
 	"github.com/NoUseFreak/ocman/internal/tmux"
+	"github.com/NoUseFreak/ocman/internal/worker"
 	"github.com/NoUseFreak/ocman/internal/workflows"
 )
 
@@ -135,9 +136,17 @@ type Server struct {
 	// queueSvcCached is the follow-up message queue service (#58), built
 	// lazily on first use. Guarded by
 	// queueSvcOnce. See queue.go.
-	queueSvcCached *queuesvc.Service
-	queueSvcOnce   sync.Once
-	childResults   *internalmcp.ChildResultBroker
+	queueSvcCached   *queuesvc.Service
+	queueSvcOnce     sync.Once
+	queueWorker      *worker.Worker[queueFlush]
+	queueWorkerOnce  sync.Once
+	childResults     *internalmcp.ChildResultBroker
+	childWorker      *worker.Worker[childWork]
+	childWorkerOnce  sync.Once
+	childWatchMu     sync.Mutex
+	childWatchCtx    context.Context
+	childWatchCancel context.CancelFunc
+	childWatches     map[string]*childEventWatch
 
 	// childUnresolved counts consecutive polls in which a child session
 	// (or its parent) could not be resolved on any platform, so the
@@ -453,6 +462,8 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	go s.runAutoArchiveLoop(ctx)
 	go s.runProjectsIndexLoop(ctx)
 	go s.runLLMMetricsLoop(ctx)
+	s.startChildEventWatches(ctx)
+	defer s.stopChildEventWatches()
 	go s.runChildSessionWatcher(ctx)
 	go s.runWorkflowEngine(ctx)
 	go s.runWorkflowTriggerEngine(ctx)

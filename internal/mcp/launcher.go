@@ -127,10 +127,16 @@ type SessionLauncher struct {
 	createWorktree worktreeSessionCreator
 	ensureOpencode projectOpencodeEnsurer
 	childResults   *ChildResultBroker
+	childStarted   func(string)
 }
 
 func (l *SessionLauncher) WithChildResults(results *ChildResultBroker) *SessionLauncher {
 	l.childResults = results
+	return l
+}
+
+func (l *SessionLauncher) WithChildStarted(started func(string)) *SessionLauncher {
+	l.childStarted = started
 	return l
 }
 
@@ -281,6 +287,8 @@ func (l *SessionLauncher) AttachChild(ctx context.Context, req LaunchRequest, ch
 			"childSessionID": childID,
 			"error":          err,
 		}).Warn("mcp: failed to persist child session record")
+	} else if l.childStarted != nil {
+		l.childStarted(childID)
 	}
 
 	return nil

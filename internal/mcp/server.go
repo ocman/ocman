@@ -62,6 +62,9 @@ type Deps struct {
 	// ChildDisconnected queues recovery guidance for the parent when a
 	// synchronous child-result request disconnects.
 	ChildDisconnected func(context.Context, string)
+	// ChildStarted starts or restores event-driven completion tracking after
+	// a child is created or receives a follow-up turn.
+	ChildStarted func(string)
 
 	// SignFile mints a browser-reachable URL for a file on disk, backing
 	// the embed_file tool. Optional: nil makes embed_file report that
@@ -87,7 +90,7 @@ func New(deps Deps) *Server {
 		adapter,
 		deps.CreateWorktreeSession,
 		deps.EnsureProjectOpencode,
-	).WithChildResults(deps.ChildResults)
+	).WithChildResults(deps.ChildResults).WithChildStarted(deps.ChildStarted)
 
 	// Build the mcp-go server.
 	s := mcpserver.NewMCPServer(
@@ -125,6 +128,7 @@ func New(deps Deps) *Server {
 		platform:     adapter,
 		results:      deps.ChildResults,
 		disconnected: deps.ChildDisconnected,
+		started:      deps.ChildStarted,
 	}
 	addCommTools(s, comm)
 
@@ -159,7 +163,7 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 		adapter,
 		deps.CreateWorktreeSession,
 		deps.EnsureProjectOpencode,
-	).WithChildResults(deps.ChildResults)
+	).WithChildResults(deps.ChildResults).WithChildStarted(deps.ChildStarted)
 
 	split := &splitTools{
 		composer:     composer,
@@ -185,6 +189,7 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 		platform:     adapter,
 		results:      deps.ChildResults,
 		disconnected: deps.ChildDisconnected,
+		started:      deps.ChildStarted,
 	}
 
 	tools := []mcpserver.ServerTool{

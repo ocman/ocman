@@ -4,20 +4,23 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/db"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/worker"
 )
 
 const (
-	// childSessionWatchInterval is how often the watcher polls for
-	// child session completion.
-	childSessionWatchInterval = 5 * time.Second
+	// childSessionWatchInterval is the recovery backstop for missed local
+	// events, remote children, and stale *_sending delivery claims (#457).
+	childSessionWatchInterval = time.Minute
 
 	// childOrphanPollLimit is how many consecutive polls may fail to
 	// resolve a child (or its parent) before the row is reaped. A remote
@@ -31,14 +34,22 @@ const (
 	childOrphanGrace = 2 * time.Minute
 )
 
+type childWork struct {
+	ctx context.Context
+	id  string
+}
+
+type childEventWatch struct {
+	cancel context.CancelFunc
+}
+
 // childSessionWatchTickFn is the per-tick body of runChildSessionWatcher,
 // lifted to a package-level variable so tests can inject a fake.
 var childSessionWatchTickFn = func(s *Server) { s.checkAndInjectChildResults(context.Background()) }
 
-// runChildSessionWatcher is a background goroutine that polls state.db
-// for child sessions in non-terminal states, checks their completion
-// status against OpenCode's DB, updates state.db, and injects result
-// messages into parent sessions when a child completes.
+// runChildSessionWatcher recovers work at startup and periodically catches
+// missed local events, remote children, and stale delivery claims. Local
+// settled status events normally enqueue child processing immediately.
 //
 // Wrapped in runWithRecover so a panic in one tick does not kill the loop.
 func (s *Server) runChildSessionWatcher(ctx context.Context) {
@@ -79,7 +90,35 @@ func (s *Server) checkAndInjectChildResults(ctx context.Context) {
 	}
 
 	for _, cs := range children {
-		s.processChildSession(ctx, cs)
+		s.childSessionWorker().Enqueue(childWork{ctx: ctx, id: cs.ID})
+	}
+	_ = s.childSessionWorker().Drain(ctx)
+}
+
+func (s *Server) childSessionWorker() *worker.Worker[childWork] {
+	s.childWorkerOnce.Do(func() {
+		s.childWorker = worker.New(func(work childWork) {
+			runWithRecover("child-session-worker", func() {
+				cs, err := s.stateDB.GetChildSession(work.ctx, work.id)
+				if err == nil && cs != nil {
+					s.processChildSession(work.ctx, *cs)
+				}
+			})
+		})
+	})
+	return s.childWorker
+}
+
+func (s *Server) enqueueChildSession(childID string) {
+	if s.stateDB != nil && childID != "" {
+		s.childSessionWorker().Enqueue(childWork{ctx: context.Background(), id: childID})
+	}
+}
+
+func (s *Server) onLocalSessionStatus(sessionID string, status db.SessionStatus) {
+	s.broadcastSessionStatus(sessionID, status)
+	if status != db.StatusBusy {
+		s.enqueueChildSession(sessionID)
 	}
 }
 
@@ -93,13 +132,17 @@ func (s *Server) processChildSession(ctx context.Context, cs state.ChildSession)
 		if cs.ResultDelivery == state.ChildResultWaitSending {
 			delivery = "waiting"
 		}
-		_, _ = s.stateDB.CompleteChildFollowup(ctx, cs.ID, cs.ResultDelivery, delivery)
+		if recovered, _ := s.stateDB.CompleteChildFollowup(ctx, cs.ID, cs.ResultDelivery, delivery); recovered {
+			s.enqueueChildSession(cs.ID)
+		}
 		return
 	}
 	if isTerminalStatus(cs.Status) {
+		s.stopRemoteChildWatch(cs.ID)
 		s.deliverChildResult(ctx, cs, cs.Status, cs.Summary)
 		return
 	}
+	s.ensureRemoteChildWatch(cs)
 	// Infer the current status via the platform adapter.
 	newStatus, summary := s.inferChildStatus(ctx, cs)
 	if newStatus == "" {
@@ -137,7 +180,120 @@ func (s *Server) processChildSession(ctx context.Context, cs state.ChildSession)
 
 	// Queue a result message for the parent session when terminal.
 	if isTerminalStatus(newStatus) {
+		s.stopRemoteChildWatch(cs.ID)
 		s.deliverChildResult(ctx, cs, newStatus, summary)
+	}
+}
+
+func (s *Server) startChildEventWatches(ctx context.Context) {
+	s.childWatchMu.Lock()
+	defer s.childWatchMu.Unlock()
+	if s.childWatchCancel != nil {
+		s.childWatchCancel()
+	}
+	s.childWatchCtx, s.childWatchCancel = context.WithCancel(ctx)
+	s.childWatches = make(map[string]*childEventWatch)
+}
+
+func (s *Server) stopChildEventWatches() {
+	s.childWatchMu.Lock()
+	if s.childWatchCancel != nil {
+		s.childWatchCancel()
+	}
+	s.childWatchCtx = nil
+	s.childWatchCancel = nil
+	s.childWatches = nil
+	s.childWatchMu.Unlock()
+}
+
+// ensureRemoteChildWatch subscribes to the owning remote's existing event
+// proxy. The normal delivery path still re-reads session detail; events are
+// only the prompt trigger, while the minute sweep remains recovery.
+func (s *Server) ensureRemoteChildWatch(cs state.ChildSession) {
+	p, ok := s.ownerOf(context.Background(), cs.Platform, cs.ID)
+	if ok && !isRemotePlatformID(string(p.ID())) {
+		return
+	}
+
+	s.childWatchMu.Lock()
+	if s.childWatchCtx == nil || s.childWatches[cs.ID] != nil {
+		s.childWatchMu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(s.childWatchCtx)
+	watch := &childEventWatch{cancel: cancel}
+	s.childWatches[cs.ID] = watch
+	s.childWatchMu.Unlock()
+
+	go s.watchRemoteChild(ctx, cs, p, !ok, watch)
+}
+
+func (s *Server) watchRemoteChild(ctx context.Context, cs state.ChildSession, p platforms.Platform, awaitingOwner bool, watch *childEventWatch) {
+	defer func() {
+		s.childWatchMu.Lock()
+		if s.childWatches[cs.ID] == watch {
+			delete(s.childWatches, cs.ID)
+		}
+		s.childWatchMu.Unlock()
+	}()
+	tee := &autoapprove.Tee{
+		W: io.Discard,
+		OnSessionIdle: func(sessionID string) {
+			if sessionID == cs.ID {
+				s.enqueueChildSession(cs.ID)
+			}
+		},
+		OnSessionStatus: func(sessionID, status string) {
+			if sessionID == cs.ID && status != "busy" && status != "retry" {
+				s.enqueueChildSession(cs.ID)
+			}
+		},
+	}
+	for {
+		if p == nil {
+			var ok bool
+			p, ok = s.ownerOf(ctx, cs.Platform, cs.ID)
+			if ok && !isRemotePlatformID(string(p.ID())) {
+				return
+			}
+			if !ok {
+				p = nil
+			}
+		}
+		if p != nil {
+			if awaitingOwner {
+				s.enqueueChildSession(cs.ID)
+				awaitingOwner = false
+			}
+			err := p.ProxyEvents(ctx, cs.ID, tee, func() {})
+			if ctx.Err() != nil {
+				return
+			}
+			if err != nil {
+				log.WithError(err).WithField("childSessionID", cs.ID).Debug("mcp-watcher: remote child event stream ended")
+			}
+			p = nil
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		timer := time.NewTimer(time.Second)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
+}
+
+func (s *Server) stopRemoteChildWatch(childID string) {
+	s.childWatchMu.Lock()
+	watch := s.childWatches[childID]
+	delete(s.childWatches, childID)
+	s.childWatchMu.Unlock()
+	if watch != nil {
+		watch.cancel()
 	}
 }
 
@@ -166,6 +322,7 @@ func (s *Server) reapOrphanChild(ctx context.Context, cs state.ChildSession, rea
 	}
 	cs.Status = "error"
 	cs.Summary = reason
+	s.stopRemoteChildWatch(cs.ID)
 	s.deliverChildResult(ctx, cs, "error", reason)
 }
 
