@@ -37,6 +37,8 @@ export interface PaletteCommandsOptions {
   tmux: TmuxHandle;
   setSelectedReasoning: (v: string) => void;
   setShowRenameModal: (v: boolean) => void;
+  openModelPicker: () => void;
+  openAgentPicker: () => void;
 }
 
 export function usePaletteCommands({
@@ -50,6 +52,8 @@ export function usePaletteCommands({
   tmux,
   setSelectedReasoning,
   setShowRenameModal,
+  openModelPicker,
+  openAgentPicker,
 }: PaletteCommandsOptions): void {
   const tmuxRef = useRef(tmux);
   useEffect(() => { tmuxRef.current = tmux; }, [tmux]);
@@ -65,20 +69,13 @@ export function usePaletteCommands({
     if (!paletteCommand || paletteCommand.kind !== 'scoped') return;
     useUiStore.getState().closePalette();
 
-    const el = document.querySelector('.oc-composer-input') as HTMLTextAreaElement | null;
-    if (!el) return;
-
     const cmd = paletteCommand;
 
     const t = tmuxRef.current;
     if (cmd.id === 'scoped.model') {
-      el.value = '/model ';
-      el.dispatchEvent(new CustomEvent('oc-model-picker-open', { detail: '' }));
-      el.focus();
+      openModelPicker();
     } else if (cmd.id === 'scoped.agent') {
-      el.value = '/agent ';
-      el.dispatchEvent(new CustomEvent('oc-agent-picker-open', { detail: '' }));
-      el.focus();
+      openAgentPicker();
     } else if (cmd.id === 'scoped.variant') {
       setSelectedReasoningRef.current('');
     } else if (cmd.id === 'scoped.permissions' && sessionRef.current && portAvailableRef.current && capsRef.current.permissionRules) {
@@ -103,5 +100,5 @@ export function usePaletteCommands({
       const modelID = slashIdx > 0 ? model.slice(slashIdx + 1) : model;
       api.compactSession(sessionRef.current!.id, providerID, modelID).catch((err) => remoteLog.error('Failed to compact session', err));
     }
-  }, [paletteCommand, sessionRef, archiveSessionRef, navigateRef, portAvailableRef, capsRef, selectedModelRef, activeModelRef]);
+  }, [paletteCommand, sessionRef, archiveSessionRef, navigateRef, portAvailableRef, capsRef, selectedModelRef, activeModelRef, openModelPicker, openAgentPicker]);
 }

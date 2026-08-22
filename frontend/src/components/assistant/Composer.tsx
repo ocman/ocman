@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo, memo, type ReactNode } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, useImperativeHandle, type ReactNode, type Ref } from 'react';
 import './Composer.css';
 import { useComposerDrafts } from './useComposerDrafts';
 import { isMacPlatform } from '../../lib/shortcuts';
@@ -15,7 +15,6 @@ import { useClickOutside } from '../../lib/useClickOutside';
 import { TargetSelector } from './ComposerSelectorRow';
 import { SlashCommandMenu } from './SlashCommandMenu';
 import { QueuedMessages } from './QueuedMessages';
-import { composerPropsEqual } from './composerMemo';
 import { useComposerAudio } from './useComposerAudio';
 import { routeComposerSubmit } from './composerSubmit';
 import { getContextWindow, formatTokenCount } from '../../lib/models/contextWindows';
@@ -27,6 +26,11 @@ import { ModelLabel } from '../ModelLogo';
 export interface AttachedImage {
   url: string;
   mime: string;
+}
+
+export interface ComposerHandle {
+  openModelPicker: (query?: string) => void;
+  openAgentPicker: (query?: string) => void;
 }
 
 interface AttachedFileRef {
@@ -42,6 +46,333 @@ function readFileAsDataURL(file: File): Promise<string> {
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+interface ComposerFooterProps {
+  directory?: string;
+  newConversation?: boolean;
+  worktreesSupported?: boolean;
+  sessionId?: string;
+  disabled?: boolean;
+  isRunning: boolean;
+  effectiveAgent: string;
+  agentsLoaded?: boolean;
+  agents?: AgentInfo[];
+  tokensPerSecond?: number;
+  onAbort?: () => void;
+  tokenStats?: {
+    input: number;
+    output: number;
+    reasoning: number;
+    cacheRead: number;
+    cacheWrite: number;
+    totalCost: number;
+  };
+  sessionTreeStats?: { input: number; output: number; totalCost: number; sessions: number };
+  contextTokens?: number;
+  effectiveModel: string;
+  visibleDurationMs: number;
+}
+
+function ComposerFooter({
+  directory,
+  newConversation,
+  worktreesSupported,
+  sessionId,
+  disabled,
+  isRunning,
+  effectiveAgent,
+  agentsLoaded,
+  agents,
+  tokensPerSecond,
+  onAbort,
+  tokenStats,
+  sessionTreeStats,
+  contextTokens,
+  effectiveModel,
+  visibleDurationMs,
+}: ComposerFooterProps) {
+  const [showTokenPopover, setShowTokenPopover] = useState(false);
+  const [estCost, setEstCost] = useState<{ cost: number; known: boolean } | null>(null);
+  const [estCostLoading, setEstCostLoading] = useState(false);
+  const tokenPopoverRef = useRef<HTMLDivElement>(null);
+  const openShortcuts = useUiStore((s) => s.openShortcuts);
+  const contextWindow = contextTokens ? getContextWindow(effectiveModel) : null;
+  const contextPercent = contextTokens && contextWindow
+    ? Math.min(100, (contextTokens / contextWindow) * 100)
+    : null;
+
+  useClickOutside(tokenPopoverRef, showTokenPopover, () => setShowTokenPopover(false));
+
+  useEffect(() => {
+    if (!showTokenPopover || !tokenStats || !effectiveModel) return;
+    let cancelled = false;
+    Promise.resolve().then(() => { if (!cancelled) setEstCostLoading(true); });
+    api.calcCost({
+      modelID: effectiveModel,
+      input: tokenStats.input,
+      output: tokenStats.output,
+      cacheRead: tokenStats.cacheRead,
+      cacheWrite: tokenStats.cacheWrite,
+    }).then((result) => {
+      if (!cancelled) {
+        setEstCost(result);
+        setEstCostLoading(false);
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        setEstCost(null);
+        setEstCostLoading(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [showTokenPopover, effectiveModel, tokenStats]);
+
+  return (
+    <div className="oc-composer-footer">
+      <span className="oc-composer-footer-left">
+        {directory && newConversation && (
+          <TargetSelector directory={directory} worktreesSupported={!!worktreesSupported} parentSessionId={sessionId} />
+        )}
+        {!disabled && isRunning && (
+          <>
+            <span
+              className="oc-bar-dots"
+              style={effectiveAgent && agentsLoaded
+                ? { '--oc-dot-color': agentColor(effectiveAgent, agents) } as Record<string, string>
+                : undefined}
+            >
+              <span className="oc-thinking-dot" /><span className="oc-thinking-dot" /><span className="oc-thinking-dot" /><span className="oc-thinking-dot" /><span className="oc-thinking-dot" />
+            </span>
+            {tokensPerSecond != null && tokensPerSecond > 0 && (
+              <span className="oc-tps-hint">{formatTokensPerSecond(tokensPerSecond)} tok/s</span>
+            )}
+            <button type="button" className="oc-stop-btn" onClick={onAbort} title="Stop generation (Esc)">
+              <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+                <rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor" />
+              </svg>
+            </button>
+            <span className="oc-stop-hint">Esc to interrupt</span>
+          </>
+        )}
+      </span>
+      <span className="oc-composer-footer-right">
+        {tokenStats && tokenStats.totalCost > 0 && (
+          <span className="oc-session-cost" title="Session cost reported by the platform">
+            {formatCurrency(tokenStats.totalCost)}
+          </span>
+        )}
+        {contextTokens != null && contextTokens > 0 && (
+          <span className="oc-context-usage-wrap" ref={tokenPopoverRef}>
+            <button
+              type="button"
+              className={`oc-context-usage${contextPercent != null && contextPercent > 80 ? ' oc-context-warn' : ''}`}
+              title="Click for token usage details"
+              onClick={() => setShowTokenPopover((value) => !value)}
+            >
+              {formatTokenCount(contextTokens)}{contextPercent != null && ` (${contextPercent.toFixed(0)}%)`}
+            </button>
+            {showTokenPopover && tokenStats && (
+              <div className="oc-token-popover">
+                <div className="oc-token-popover-title">Session token usage</div>
+                <div className="oc-token-popover-rows">
+                  <div className="oc-token-popover-row"><span className="oc-token-popover-label">Input</span><span className="oc-token-popover-value">{tokenStats.input.toLocaleString()}</span></div>
+                  <div className="oc-token-popover-row"><span className="oc-token-popover-label">Output</span><span className="oc-token-popover-value">{tokenStats.output.toLocaleString()}</span></div>
+                  {tokenStats.reasoning > 0 && <div className="oc-token-popover-row"><span className="oc-token-popover-label">Reasoning</span><span className="oc-token-popover-value">{tokenStats.reasoning.toLocaleString()}</span></div>}
+                  {(tokenStats.cacheRead > 0 || tokenStats.cacheWrite > 0) && <div className="oc-token-popover-row"><span className="oc-token-popover-label">Cache read</span><span className="oc-token-popover-value">{tokenStats.cacheRead.toLocaleString()}</span></div>}
+                  {tokenStats.cacheWrite > 0 && <div className="oc-token-popover-row"><span className="oc-token-popover-label">Cache write</span><span className="oc-token-popover-value">{tokenStats.cacheWrite.toLocaleString()}</span></div>}
+                  <div className="oc-token-popover-divider" />
+                  <div className="oc-token-popover-row">
+                    <span className="oc-token-popover-label">Context used</span>
+                    <span className="oc-token-popover-value">{contextTokens.toLocaleString()}{contextWindow ? ` / ${contextWindow.toLocaleString()}` : ''}{contextPercent != null ? ` (${contextPercent.toFixed(0)}%)` : ''}</span>
+                  </div>
+                  {tokenStats.totalCost > 0 && <div className="oc-token-popover-row"><span className="oc-token-popover-label">Reported cost</span><span className="oc-token-popover-value">${tokenStats.totalCost.toFixed(4)}</span></div>}
+                  <div className="oc-token-popover-divider" />
+                  <div className="oc-token-popover-row oc-token-popover-cost">
+                    <span className="oc-token-popover-label">Est. cost</span>
+                    <span className="oc-token-popover-value">{estCostLoading ? '…' : estCost ? (estCost.known ? `$${estCost.cost.toFixed(4)}` : 'unknown model') : 'n/a'}</span>
+                  </div>
+                  {sessionTreeStats && sessionTreeStats.sessions > 1 && (
+                    <>
+                      <div className="oc-token-popover-divider" />
+                      <div className="oc-token-popover-subtitle">Session + subagents ({sessionTreeStats.sessions})</div>
+                      <div className="oc-token-popover-row"><span className="oc-token-popover-label">Input</span><span className="oc-token-popover-value">{sessionTreeStats.input.toLocaleString()}</span></div>
+                      <div className="oc-token-popover-row"><span className="oc-token-popover-label">Output</span><span className="oc-token-popover-value">{sessionTreeStats.output.toLocaleString()}</span></div>
+                      <div className="oc-token-popover-row"><span className="oc-token-popover-label">Reported cost</span><span className="oc-token-popover-value">${sessionTreeStats.totalCost.toFixed(4)}</span></div>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </span>
+        )}
+        {visibleDurationMs > 0 && <span title="Total time spent answering">{formatDuration(visibleDurationMs)}</span>}
+        {!isRunning && <button type="button" className="oc-keybind-hint" onClick={openShortcuts}>{isMacPlatform() ? '⌥+?' : 'Alt+?'} for shortcuts</button>}
+      </span>
+    </div>
+  );
+}
+
+interface ComposerToolbarProps {
+  isBashMode: boolean;
+  uiDisabled: boolean;
+  disabled?: boolean;
+  disabledHint?: string;
+  effectiveAgent: string;
+  agentsLoaded?: boolean;
+  agents?: AgentInfo[];
+  openAgentPicker: () => void;
+  hasModels: boolean;
+  modelUnavailable: boolean;
+  openModelPicker: () => void;
+  modelButtonLabel: string;
+  effectiveModel: string;
+  hasReasoning: boolean;
+  openReasoningPicker: () => void;
+  selectedReasoning?: string;
+  permissionControl?: ReactNode;
+  onLaunchRequest?: () => void;
+  launching?: boolean;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
+  addFiles: (files: File[]) => void;
+  isDictationSupported: boolean;
+  micRef: React.RefObject<HTMLButtonElement | null>;
+  handleMicClick: () => void;
+  micError: string | null;
+  clearMicError: () => void;
+  isRunning: boolean;
+  onAbort?: () => void;
+  sending: boolean;
+  submit: (queue: boolean) => void;
+}
+
+function ComposerToolbar({
+  isBashMode,
+  uiDisabled,
+  disabled,
+  disabledHint,
+  effectiveAgent,
+  agentsLoaded,
+  agents,
+  openAgentPicker,
+  hasModels,
+  modelUnavailable,
+  openModelPicker,
+  modelButtonLabel,
+  effectiveModel,
+  hasReasoning,
+  openReasoningPicker,
+  selectedReasoning,
+  permissionControl,
+  onLaunchRequest,
+  launching,
+  fileInputRef,
+  addFiles,
+  isDictationSupported,
+  micRef,
+  handleMicClick,
+  micError,
+  clearMicError,
+  isRunning,
+  onAbort,
+  sending,
+  submit,
+}: ComposerToolbarProps) {
+  return (
+    <div className="oc-composer-bar">
+      <div className="oc-composer-bar-left">
+        {isBashMode ? (
+          <span className="oc-bar-shell">shell</span>
+        ) : (
+          <>
+            <button type="button" className="oc-bar-select" disabled={uiDisabled} onClick={openAgentPicker} title="Agent (click to change)">
+              {effectiveAgent && agentsLoaded && <span className="oc-agent-swatch" aria-hidden="true" style={{ background: agentColor(effectiveAgent, agents) }} />}
+              {effectiveAgent || 'Agent'}
+            </button>
+            {hasModels && (
+              <button
+                type="button"
+                className={`oc-bar-select${modelUnavailable ? ' oc-bar-select--warn' : ''}`}
+                disabled={uiDisabled}
+                onClick={openModelPicker}
+                title={modelUnavailable ? 'Model not available on this host — pick another' : 'Model (click to change)'}
+              >
+                {modelUnavailable && <i className="bi bi-exclamation-triangle-fill" aria-hidden="true" />}
+                {modelButtonLabel ? <ModelLabel model={effectiveModel}>{modelButtonLabel}</ModelLabel> : 'Model'}
+              </button>
+            )}
+            {hasReasoning && (
+              <button
+                type="button"
+                className="oc-bar-select oc-bar-reasoning"
+                disabled={uiDisabled}
+                onClick={openReasoningPicker}
+                title={`Reasoning level (${isMacPlatform() ? '⌥' : 'Alt'}+R to cycle)`}
+              >
+                {selectedReasoning || 'default'}
+              </button>
+            )}
+            {permissionControl}
+            {disabled && onLaunchRequest ? (
+              <button
+                type="button"
+                className="oc-bar-launch"
+                onClick={(event) => { event.stopPropagation(); onLaunchRequest(); }}
+                disabled={launching}
+                title={disabledHint || 'Launch the agent process'}
+              >
+                {launching ? 'Launching…' : 'Launch session'}
+              </button>
+            ) : disabled ? (
+              <span className="oc-bar-hint" title={disabledHint || undefined}>No live connection</span>
+            ) : null}
+          </>
+        )}
+      </div>
+      <div className="oc-composer-bar-right">
+        <button className="oc-bar-action" onClick={() => fileInputRef.current?.click()} disabled={uiDisabled} title="Attach file">+</button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          style={{ display: 'none' }}
+          onChange={(event) => {
+            addFiles(Array.from(event.target.files || []));
+            event.target.value = '';
+          }}
+        />
+        {isDictationSupported && (
+          <button ref={micRef} className="oc-bar-action" onClick={handleMicClick} disabled={disabled} title="Record voice message">
+            <i className="bi bi-mic-fill oc-mic-icon" aria-hidden="true" />
+          </button>
+        )}
+        {micError && (
+          <span className="oc-mic-error" role="alert">
+            {micError}
+            <button type="button" className="oc-mic-error-dismiss" onClick={clearMicError} aria-label="Dismiss">×</button>
+          </span>
+        )}
+        {isRunning ? (
+          <button type="button" className="oc-bar-send oc-bar-send-stop" onClick={onAbort} title="Stop generation (Esc)" aria-label="Stop generation">
+            <svg width="12" height="12" viewBox="0 0 10 10" aria-hidden="true"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor" /></svg>
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={`oc-bar-send${sending ? ' oc-bar-send-sending' : ''}`}
+            disabled={uiDisabled}
+            title={sending ? 'Sending message' : 'Send (Enter) · Queue for next idle (Ctrl+Enter)'}
+            aria-label={sending ? 'Sending message' : 'Send message'}
+            onClick={(event) => submit(event.ctrlKey || event.metaKey)}
+          >
+            {sending
+              ? <span className="oc-spinner oc-bar-send-spinner" aria-hidden="true" />
+              : <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M8 3L4 7M8 3l4 4" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>}
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function ComposerImpl({
@@ -84,6 +415,7 @@ function ComposerImpl({
   newConversation,
   worktreesSupported,
   permissionControl,
+  composerRef,
 }: {
   /**
    * Submit a prompt. `queue` is true when the user pressed
@@ -213,20 +545,13 @@ function ComposerImpl({
   /** Host capability: worktree creation available here (gates the option). */
   worktreesSupported?: boolean;
   permissionControl?: ReactNode;
+  composerRef?: Ref<ComposerHandle>;
 }) {
-  const [showTokenPopover, setShowTokenPopover] = useState(false);
-  const [estCost, setEstCost] = useState<{ cost: number; known: boolean } | null>(null);
-  const [estCostLoading, setEstCostLoading] = useState(false);
   const [displayDurationMs, setDisplayDurationMs] = useState(activeDurationMs ?? 0);
-  const tokenPopoverRef = useRef<HTMLDivElement>(null);
-  const openShortcuts = useUiStore((s) => s.openShortcuts);
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const onSendRef = useRef(onSend);
-  const isRunningRef = useRef(isRunning);
-  const disabledRef = useRef(disabled);
   const [images, setImages] = useState<AttachedImage[]>([]);
   const [files, setFiles] = useState<AttachedFileRef[]>([]);
   // Keep the draft locked until the send succeeds. Backend outages retry;
@@ -234,10 +559,7 @@ function ComposerImpl({
   const [sending, setSending] = useState(false);
   const sendingRef = useRef(false);
   const mountedRef = useRef(true);
-  const imagesRef = useRef<AttachedImage[]>([]);
-  const filesRef = useRef<AttachedFileRef[]>([]);
   const sessionIdRef = useRef(sessionId);
-  const onAbortRef = useRef(onAbort);
   const { clearDraftNow, scheduleDraftSave } = useComposerDrafts(inputRef, sessionId, sessionIdRef);
 
   useEffect(() => {
@@ -258,18 +580,7 @@ function ComposerImpl({
 
   const visibleDurationMs = isRunning ? displayDurationMs : (activeDurationMs ?? 0);
 
-  // Stable across the component's life (useComposerDrafts memoizes them), but
-  // held in refs so the long-lived keydown/input effect (deps: []) always
-  // calls the current instance without re-binding listeners.
-
-
-  useEffect(() => { imagesRef.current = images; }, [images]);
-  useEffect(() => { filesRef.current = files; }, [files]);
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
-  useEffect(() => { onSendRef.current = onSend; }, [onSend]);
-  useEffect(() => { onAbortRef.current = onAbort; }, [onAbort]);
-  useEffect(() => { isRunningRef.current = isRunning; }, [isRunning]);
-  useEffect(() => { disabledRef.current = disabled; }, [disabled]);
   useEffect(() => { sendingRef.current = sending; }, [sending]);
   useEffect(() => {
     mountedRef.current = true;
@@ -314,23 +625,11 @@ function ComposerImpl({
     }
   }, [disabled]);
 
-  const onCommandRef = useRef(onCommand);
-  useEffect(() => { onCommandRef.current = onCommand; }, [onCommand]);
-  const onShellRef = useRef(onShell);
-  useEffect(() => { onShellRef.current = onShell; }, [onShell]);
-  const shellExecRef = useRef(!!shellExec);
-  useEffect(() => { shellExecRef.current = !!shellExec; }, [shellExec]);
-  const agentOptionsRef = useRef<string[]>([]);
-  const effectiveAgentRef = useRef<string>('');
-  const onAgentChangeRef = useRef(onAgentChange);
-  useEffect(() => { onAgentChangeRef.current = onAgentChange; }, [onAgentChange]);
   const [slashCommands, setSlashCommands] = useState<SlashCommand[]>(BUILTIN_COMMANDS);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [slashFilter, setSlashFilter] = useState('');
   const [slashIndex, setSlashIndex] = useState(0);
   const [isBashMode, setIsBashMode] = useState(false);
-  const setIsBashModeRef = useRef(setIsBashMode);
-  useEffect(() => { setIsBashModeRef.current = setIsBashMode; }, []);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [modelPickerQuery, setModelPickerQuery] = useState('');
   const [agentPickerOpen, setAgentPickerOpen] = useState(false);
@@ -339,21 +638,7 @@ function ComposerImpl({
   const [skillPickerQuery, setSkillPickerQuery] = useState('');
   const [reasoningPickerOpen, setReasoningPickerOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  // Refs let the non-React keydown/submit handlers (which capture their
-  // initial closure) always see the latest lists + callbacks without having
-  // to re-bind every render.
-  const modelsRef = useRef<string[] | undefined>(models);
-  const onModelChangeRef = useRef(onModelChange);
-  const agentsRef = useRef<AgentInfo[] | undefined>(agents);
-  const onRefreshModelsRef = useRef(onRefreshModels);
-  useEffect(() => { modelsRef.current = models; }, [models]);
-  useEffect(() => { onModelChangeRef.current = onModelChange; }, [onModelChange]);
-  useEffect(() => { agentsRef.current = agents; }, [agents]);
-  useEffect(() => { onRefreshModelsRef.current = onRefreshModels; }, [onRefreshModels]);
   const slashMenuRef = useRef<HTMLDivElement>(null);
-  const showSlashMenuRef = useRef(false);
-  const slashIndexRef = useRef(0);
-  const filteredCommandsRef = useRef<SlashCommand[]>([]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -374,10 +659,13 @@ function ComposerImpl({
   }, [sessionId]);
 
   const hasModels = !!((models && models.length > 0) || (modelEntries && modelEntries.length > 0));
-  // Agent picker has something to show as long as we know *any* agent name —
-  // either from OpenCode's /agent catalog or the always-present KNOWN_AGENTS
-  // fallback in agentOptionsRef.
+  // Agent picker has something to show as long as the live catalog has an agent.
   const hasAgents = !!(agents && agents.length > 0);
+  const cyclableAgents = hasAgents
+    ? (agents || []).filter((a) => a.mode !== 'subagent' && !a.hidden).map((a) => a.name)
+    : KNOWN_AGENTS;
+  const agentOptions = Array.from(new Set([activeAgent, ...cyclableAgents].filter((a): a is string => !!a)));
+  const effectiveAgent = selectedAgent || activeAgent || '';
   const hasSkills = slashCommands.some(c => c.source === 'skill');
   // Variants == the reasoning options the effective model exposes, so the
   // /variants command is hidden when the model has none (OpenCode parity).
@@ -391,10 +679,6 @@ function ComposerImpl({
     return cmd.name.toLowerCase().startsWith(slashFilter.toLowerCase());
   });
 
-  useEffect(() => { showSlashMenuRef.current = showSlashMenu; }, [showSlashMenu]);
-  useEffect(() => { slashIndexRef.current = slashIndex; }, [slashIndex]);
-  useEffect(() => { filteredCommandsRef.current = filteredCommands; }, [filteredCommands]);
-
   useEffect(() => {
     if (!showSlashMenu || !slashMenuRef.current) return;
     const active = slashMenuRef.current.querySelector('.oc-slash-item.active');
@@ -405,7 +689,7 @@ function ComposerImpl({
   // Matches against the full `provider/model` string or the bare model name,
   // case-insensitively. Returns the resolved value if there's exactly one match.
   const resolveModelArg = useCallback((arg: string): string | null => {
-    const list = modelsRef.current || [];
+    const list = models || [];
     if (!arg) return null;
     const q = arg.toLowerCase();
     const exact = list.find((m) => m.toLowerCase() === q);
@@ -417,24 +701,24 @@ function ComposerImpl({
     });
     if (byModelName.length === 1) return byModelName[0];
     return null;
-  }, []);
+  }, [models]);
 
   // Open the /model palette. If `arg` uniquely identifies a model, apply it
   // directly instead of opening the modal. The arg is otherwise pre-filled
   // as the palette's initial query.
-  const openModelPicker = useCallback((arg: string) => {
+  const openModelPicker = useCallback((arg = '') => {
     const resolved = resolveModelArg(arg);
     if (resolved) {
-      onModelChangeRef.current?.(resolved);
+      onModelChange?.(resolved);
       return;
     }
     // Fire-and-forget: pull the latest provider catalog. The picker opens
     // with current data; the refresh flows in via a `modelEntries` prop
     // update on the next render.
-    onRefreshModelsRef.current?.();
+    onRefreshModels?.();
     setModelPickerQuery(arg);
     setModelPickerOpen(true);
-  }, [resolveModelArg]);
+  }, [resolveModelArg, onModelChange, onRefreshModels]);
 
   // Same shape as resolveModelArg: case-insensitive exact match against
   // known agent names, so `/agent plan` applies without opening the palette.
@@ -442,23 +726,28 @@ function ComposerImpl({
     if (!arg) return null;
     const q = arg.toLowerCase();
     const names = new Set<string>();
-    for (const a of agentsRef.current || []) names.add(a.name);
-    for (const n of agentOptionsRef.current || []) names.add(n);
+    for (const a of agents || []) names.add(a.name);
+    for (const n of agentOptions) names.add(n);
     for (const n of names) {
       if (n.toLowerCase() === q) return n;
     }
     return null;
-  }, []);
+  }, [agents, agentOptions]);
 
-  const openAgentPicker = useCallback((arg: string) => {
+  const openAgentPicker = useCallback((arg = '') => {
     const resolved = resolveAgentArg(arg);
     if (resolved) {
-      onAgentChangeRef.current?.(resolved);
+      onAgentChange?.(resolved);
       return;
     }
     setAgentPickerQuery(arg);
     setAgentPickerOpen(true);
-  }, [resolveAgentArg]);
+  }, [resolveAgentArg, onAgentChange]);
+
+  useImperativeHandle(composerRef, () => ({
+    openModelPicker,
+    openAgentPicker,
+  }), [openModelPicker, openAgentPicker]);
 
   const openSkillPicker = useCallback((arg: string) => {
     setSkillPickerQuery(arg);
@@ -570,12 +859,6 @@ function ComposerImpl({
     setFiles(prev => prev.filter((_, i) => i !== index));
   }, []);
 
-  useEffect(() => {
-    const el = inputRef.current;
-    if (!el) return;
-    el.disabled = !!disabled;
-  }, [disabled]);
-
   // ---------------------------------------------------------------------------
   // Audio recording — delegated to useComposerAudio hook
   // ---------------------------------------------------------------------------
@@ -589,315 +872,165 @@ function ComposerImpl({
     isDictationSupported,
   } = useComposerAudio({ whisperAvailable, disabled, inputRef });
 
-  useEffect(() => {
+  const closeSlashMenu = () => {
+    setShowSlashMenu(false);
+    setSlashFilter('');
+    setSlashIndex(0);
+  };
+
+  const clearAfterSubmit = () => {
+    if (inputRef.current) inputRef.current.value = '';
+    closeSlashMenu();
+    setIsBashMode(false);
+    setImages([]);
+    setFiles([]);
+    const sid = sessionIdRef.current;
+    if (sid) clearDraftNow(sid);
+  };
+
+  const runSend = async (text: string, imgs?: AttachedImage[], queue?: boolean) => {
     const el = inputRef.current;
     if (!el) return;
-
-    const runSend = async (text: string, imgs?: AttachedImage[], queue?: boolean) => {
-      // Captured before the disable blurs it. See the restore effect above.
-      const hadFocus = document.activeElement === el;
-      sendingRef.current = true;
-      setSending(true);
-      // #459: bounded retries with exponential backoff. After the budget
-      // is exhausted the composer unlocks with the draft intact (the
-      // input is only cleared on success), so the user can edit, copy,
-      // or retry deliberately instead of being locked out indefinitely.
-      let retries = 0;
-      const MAX_BACKEND_RETRIES = 5;
-      while (mountedRef.current) {
-        try {
-          await onSendRef.current?.(text, imgs, queue);
-          el.value = '';
-          el.dispatchEvent(new CustomEvent('oc-slash-update', { detail: { show: false, filter: '' } }));
-          el.dispatchEvent(new CustomEvent('oc-bash-mode', { detail: false }));
-          el.dispatchEvent(new CustomEvent('oc-clear-images'));
-          el.dispatchEvent(new CustomEvent('oc-clear-files'));
-          const sid = sessionIdRef.current;
-          if (sid) clearDraftNow(sid);
-          break;
-        } catch (err) {
-          if (!(err instanceof BackendUnavailableError)) break;
-          if (retries >= MAX_BACKEND_RETRIES) break;
-          retries += 1;
-          await new Promise(resolve => window.setTimeout(resolve, 1_000 * 2 ** (retries - 1)));
-        }
+    const hadFocus = document.activeElement === el;
+    sendingRef.current = true;
+    setSending(true);
+    let retries = 0;
+    const MAX_BACKEND_RETRIES = 5;
+    while (mountedRef.current) {
+      try {
+        await onSend?.(text, imgs, queue);
+        clearAfterSubmit();
+        break;
+      } catch (err) {
+        if (!(err instanceof BackendUnavailableError) || retries >= MAX_BACKEND_RETRIES) break;
+        retries += 1;
+        await new Promise(resolve => window.setTimeout(resolve, 1_000 * 2 ** (retries - 1)));
       }
-      if (mountedRef.current) {
-        sendingRef.current = false;
-        restoreFocusAfterSendRef.current = hadFocus;
-        setSending(false);
-      }
-    };
+    }
+    if (mountedRef.current) {
+      sendingRef.current = false;
+      restoreFocusAfterSendRef.current = hadFocus;
+      setSending(false);
+    }
+  };
 
-    const handleInputKeyDown = (e: KeyboardEvent) => {
-      if (disabledRef.current || sendingRef.current) return;
+  const openClientCommand = (command: string, args: string) => {
+    if (!['model', 'agent', 'agents', 'help', 'skills'].includes(command)) return false;
+    clearComposerInput();
+    setIsBashMode(false);
+    if (command === 'model') openModelPicker(args);
+    else if (command === 'agent' || command === 'agents') openAgentPicker(args);
+    else if (command === 'help') setHelpOpen(true);
+    else openSkillPicker(args);
+    return true;
+  };
 
-      if (showSlashMenuRef.current) {
-        // Once the user has typed a space after the command (e.g.
-        // `/agent plan`), the slash menu is irrelevant — the input is now
-        // an argument to the command, not a command filter. Let Enter fall
-        // through to the normal submit path so the args are parsed and
-        // dispatched properly. Arrow / Escape / Tab still apply when the
-        // caret is somewhere we can usefully navigate the menu.
-        const hasArg = el.value.includes(' ');
-        const cmds = filteredCommandsRef.current;
-        if (e.key === 'ArrowDown' && !hasArg) {
-          e.preventDefault();
-          const next = (slashIndexRef.current + 1) % Math.max(cmds.length, 1);
-          slashIndexRef.current = next;
-          el.dispatchEvent(new CustomEvent('oc-slash-nav', { detail: next }));
-          return;
-        }
-        if (e.key === 'ArrowUp' && !hasArg) {
-          e.preventDefault();
-          const next = (slashIndexRef.current - 1 + Math.max(cmds.length, 1)) % Math.max(cmds.length, 1);
-          slashIndexRef.current = next;
-          el.dispatchEvent(new CustomEvent('oc-slash-nav', { detail: next }));
-          return;
-        }
-        if (e.key === 'Escape') {
-          e.preventDefault();
-          el.dispatchEvent(new CustomEvent('oc-slash-close'));
-          return;
-        }
-        if ((e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) && !hasArg) {
-          if (cmds.length > 0) {
-            e.preventDefault();
-            const cmd = cmds[slashIndexRef.current];
-            if (cmd) {
-              el.dispatchEvent(new CustomEvent('oc-slash-select', { detail: cmd }));
-            }
-            return;
-          }
-        }
-      }
+  const submit = (queue: boolean) => {
+    const raw = inputRef.current?.value ?? '';
+    const route = routeComposerSubmit(raw, { shellExec: !!shellExec });
+    if (route.kind === 'noop' && images.length === 0 && files.length === 0) return;
 
-      if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        const opts = agentOptionsRef.current;
-        const onChange = onAgentChangeRef.current;
-        if (opts.length > 0 && onChange) {
-          e.preventDefault();
-          const current = effectiveAgentRef.current;
-          const idx = opts.indexOf(current);
-          const dir = e.shiftKey ? -1 : 1;
-          const nextIdx = idx === -1
-            ? (e.shiftKey ? opts.length - 1 : 0)
-            : (idx + dir + opts.length) % opts.length;
-          onChange(opts[nextIdx]);
-          return;
-        }
-      }
+    const fileReferenceText = files.length > 0
+      ? `Attached files saved on disk:\n${files.map(f => `- ${f.path} (${f.mime})`).join('\n')}`
+      : '';
+    const withFileReferences = (text: string) => [text, fileReferenceText].filter(Boolean).join('\n\n');
 
-      if (e.key === 'c' && e.ctrlKey && el.value.trim() && el.selectionStart === el.selectionEnd) {
+    if (route.kind === 'command' && onCommand) {
+      if (openClientCommand(route.command, route.args)) return;
+      onCommand(route.command, route.args);
+      clearAfterSubmit();
+    } else if (route.kind === 'shell' && onShell) {
+      onShell(route.command);
+      clearAfterSubmit();
+    } else {
+      const text = route.kind === 'send' ? route.text : route.kind === 'noop' ? '' : raw.trim();
+      void runSend(withFileReferences(text), images.length > 0 ? images : undefined, queue);
+    }
+  };
+
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (disabled || sendingRef.current) return;
+    const el = e.currentTarget;
+    const hasArg = el.value.includes(' ');
+
+    if (showSlashMenu && !hasArg && e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSlashIndex((slashIndex + 1) % Math.max(filteredCommands.length, 1));
+      return;
+    }
+    if (showSlashMenu && !hasArg && e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSlashIndex((slashIndex - 1 + Math.max(filteredCommands.length, 1)) % Math.max(filteredCommands.length, 1));
+      return;
+    }
+    if (showSlashMenu && e.key === 'Escape') {
+      e.preventDefault();
+      closeSlashMenu();
+      return;
+    }
+    if (showSlashMenu && !hasArg && (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey))) {
+      const cmd = filteredCommands[slashIndex];
+      if (cmd) {
         e.preventDefault();
-        setIsBashModeRef.current(false);
-        el.value = '';
-        el.dispatchEvent(new CustomEvent('oc-slash-update', { detail: { show: false, filter: '' } }));
-        el.dispatchEvent(new CustomEvent('oc-clear-images'));
-        el.dispatchEvent(new CustomEvent('oc-clear-files'));
-        const sid = sessionIdRef.current;
-        if (sid) clearDraftNow(sid);
-        return;
+        selectSlashCommand(cmd);
       }
+      return;
+    }
+    if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey && agentOptions.length > 0 && onAgentChange) {
+      e.preventDefault();
+      const index = agentOptions.indexOf(effectiveAgent);
+      const direction = e.shiftKey ? -1 : 1;
+      const nextIndex = index === -1
+        ? (e.shiftKey ? agentOptions.length - 1 : 0)
+        : (index + direction + agentOptions.length) % agentOptions.length;
+      onAgentChange(agentOptions[nextIndex]);
+      return;
+    }
+    if (e.key === 'c' && e.ctrlKey && el.value.trim() && el.selectionStart === el.selectionEnd) {
+      e.preventDefault();
+      clearAfterSubmit();
+      return;
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      submit(e.ctrlKey || e.metaKey);
+    }
+  };
 
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        const raw = el.value;
-        const imgs = imagesRef.current;
-        const fileRefs = filesRef.current;
-        // Ctrl/Cmd+Enter = queue for the next idle edge; plain Enter =
-        // send now (mid-turn sends interleave into the running turn).
-        // Only prompts can be queued — slash commands and `!` shell
-        // commands have their own dispatch paths.
-        const queue = e.ctrlKey || e.metaKey;
-        const route = routeComposerSubmit(raw, { shellExec: shellExecRef.current });
+  const handleInput = (e: React.FormEvent<HTMLTextAreaElement>) => {
+    const el = e.currentTarget;
+    const value = el.value;
+    setIsBashMode(value.startsWith('!') && !!shellExec);
+    const show = value.startsWith('/') && !value.includes(' ') && !value.includes('\n');
+    setShowSlashMenu(show);
+    setSlashFilter(show ? value.slice(1) : '');
+    if (!show) setSlashIndex(0);
+    const sid = sessionIdRef.current;
+    if (sid) scheduleDraftSave(sid, () => el.value);
+  };
 
-        // No text: only proceed if there are attachments to reference.
-        if (route.kind === 'noop' && imgs.length === 0 && fileRefs.length === 0) return;
-
-        const fileReferenceText = fileRefs.length > 0
-          ? `Attached files saved on disk:\n${fileRefs.map(f => `- ${f.path} (${f.mime})`).join('\n')}`
-          : '';
-        const withFileReferences = (text: string) => [text, fileReferenceText].filter(Boolean).join('\n\n');
-
-        if (route.kind === 'command' && onCommandRef.current) {
-          // Picker/dialog commands are client-only: don't dispatch them.
-          if (['model', 'agent', 'agents', 'help', 'skills'].includes(route.command)) {
-            el.value = '';
-            const sid = sessionIdRef.current;
-            if (sid) clearDraftNow(sid);
-            const evt = route.command === 'model'
-              ? 'oc-model-picker-open'
-              : route.command === 'agent' || route.command === 'agents'
-                ? 'oc-agent-picker-open'
-                : route.command === 'help'
-                  ? 'oc-help-open'
-                  : 'oc-skill-picker-open';
-            el.dispatchEvent(new CustomEvent(evt, { detail: route.args }));
-            return;
-          }
-          onCommandRef.current(route.command, route.args);
-        } else if (route.kind === 'shell' && onShellRef.current) {
-          onShellRef.current(route.command);
-        } else if (route.kind === 'send' || route.kind === 'noop') {
-          // `noop` only reaches here when attachments are present; send
-          // with empty text in that case.
-          const text = route.kind === 'send' ? route.text : '';
-          void runSend(withFileReferences(text), imgs.length > 0 ? imgs : undefined, queue);
-          return;
-        } else {
-          // route.kind === 'shell' but no onShell handler (capability
-          // mis-wiring). Fall back to a plain prompt rather than
-          // silently dropping the user's input.
-          void runSend(withFileReferences(raw.trim()), imgs.length > 0 ? imgs : undefined, queue);
-          return;
-        }
-
-        setIsBashModeRef.current(false);
-        el.value = '';
-        el.dispatchEvent(new CustomEvent('oc-slash-update', { detail: { show: false, filter: '' } }));
-        const sid = sessionIdRef.current;
-        if (sid) clearDraftNow(sid);
-        el.dispatchEvent(new CustomEvent('oc-clear-images'));
-        el.dispatchEvent(new CustomEvent('oc-clear-files'));
-      }
-    };
-
-    const handleInput = () => {
-      const val = el.value;
-      // Detect bash mode when input starts with !, but only when the
-      // active platform actually supports shell execution. On
-      // platforms without it `!` is just a literal
-      // character in the prompt and shouldn't get a special pill.
-      el.dispatchEvent(new CustomEvent('oc-bash-mode', { detail: val.startsWith('!') && shellExecRef.current }));
-      
-      // Only show the slash menu while the user is typing the command name
-      // itself. Once a space appears (or a newline), the caret has moved on
-      // to arguments (e.g. `/agent plan`) and the menu becomes noise.
-      if (val.startsWith('/') && !val.includes(' ') && !val.includes('\n')) {
-        const filter = val.slice(1);
-        el.dispatchEvent(new CustomEvent('oc-slash-update', { detail: { show: true, filter } }));
-      } else {
-        el.dispatchEvent(new CustomEvent('oc-slash-update', { detail: { show: false, filter: '' } }));
-      }
-      const sid = sessionIdRef.current;
-      if (sid) scheduleDraftSave(sid, () => el.value);
-    };
-
-    const handlePaste = (e: ClipboardEvent) => {
-      if (disabledRef.current) return;
-      const items = e.clipboardData?.items;
-      if (!items) return;
-      const imageFiles: File[] = [];
-      for (let i = 0; i < items.length; i++) {
-        if (items[i].type.startsWith('image/')) {
-          const file = items[i].getAsFile();
-          if (file) imageFiles.push(file);
-        }
-      }
-      if (imageFiles.length > 0) {
-        e.preventDefault();
-        el.dispatchEvent(new CustomEvent('oc-paste-images', { detail: imageFiles }));
-      }
-    };
-
-    el.addEventListener('keydown', handleInputKeyDown);
-    el.addEventListener('input', handleInput);
-    el.addEventListener('paste', handlePaste);
-
-    return () => {
-      el.removeEventListener('keydown', handleInputKeyDown);
-      el.removeEventListener('input', handleInput);
-      el.removeEventListener('paste', handlePaste);
-    };
-    // clearDraftNow / scheduleDraftSave are stable (memoized in
-    // useComposerDrafts), so listing them here does not re-bind listeners.
-  }, [clearDraftNow, scheduleDraftSave]);
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (disabled) return;
+    const imageFiles = Array.from(e.clipboardData.items)
+      .filter((item) => item.type.startsWith('image/'))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => !!file);
+    if (imageFiles.length === 0) return;
+    e.preventDefault();
+    void addImageFiles(imageFiles);
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
-      if (e.key === 'Escape' && isRunningRef.current && onAbortRef.current) {
+      if (e.key === 'Escape' && isRunning && onAbort) {
         e.preventDefault();
-        onAbortRef.current();
+        onAbort();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
-  useEffect(() => {
-    const el = inputRef.current;
-    if (!el) return;
-    const handleClearImages = () => setImages([]);
-    const handleClearFiles = () => setFiles([]);
-    const handlePasteImages = (e: Event) => {
-      const files = (e as CustomEvent).detail as File[];
-      addImageFiles(files);
-    };
-    const handleSlashUpdate = (e: Event) => {
-      const { show, filter } = (e as CustomEvent).detail as { show: boolean; filter: string };
-      setShowSlashMenu(show);
-      setSlashFilter(filter);
-      if (!show) setSlashIndex(0);
-    };
-    const handleSlashNav = (e: Event) => {
-      setSlashIndex((e as CustomEvent).detail as number);
-    };
-    const handleSlashClose = () => {
-      setShowSlashMenu(false);
-      setSlashFilter('');
-      setSlashIndex(0);
-    };
-    const handleSlashSelect = (e: Event) => {
-      selectSlashCommand((e as CustomEvent).detail as SlashCommand);
-    };
-    const handleModelPickerOpen = (e: Event) => {
-      el.value = '';
-      openModelPicker(((e as CustomEvent).detail as string) || '');
-    };
-    const handleAgentPickerOpen = (e: Event) => {
-      el.value = '';
-      openAgentPicker(((e as CustomEvent).detail as string) || '');
-    };
-    const handleHelpOpen = () => {
-      el.value = '';
-      setHelpOpen(true);
-    };
-    const handleSkillPickerOpen = (e: Event) => {
-      el.value = '';
-      openSkillPicker(((e as CustomEvent).detail as string) || '');
-    };
-    const handleBashMode = (e: Event) => {
-      setIsBashMode((e as CustomEvent).detail as boolean);
-    };
-    el.addEventListener('oc-clear-images', handleClearImages);
-    el.addEventListener('oc-clear-files', handleClearFiles);
-    el.addEventListener('oc-paste-images', handlePasteImages);
-    el.addEventListener('oc-slash-update', handleSlashUpdate);
-    el.addEventListener('oc-slash-nav', handleSlashNav);
-    el.addEventListener('oc-slash-close', handleSlashClose);
-    el.addEventListener('oc-slash-select', handleSlashSelect);
-    el.addEventListener('oc-model-picker-open', handleModelPickerOpen);
-    el.addEventListener('oc-agent-picker-open', handleAgentPickerOpen);
-    el.addEventListener('oc-help-open', handleHelpOpen);
-    el.addEventListener('oc-skill-picker-open', handleSkillPickerOpen);
-    el.addEventListener('oc-bash-mode', handleBashMode);
-    return () => {
-      el.removeEventListener('oc-clear-images', handleClearImages);
-      el.removeEventListener('oc-clear-files', handleClearFiles);
-      el.removeEventListener('oc-paste-images', handlePasteImages);
-      el.removeEventListener('oc-slash-update', handleSlashUpdate);
-      el.removeEventListener('oc-slash-nav', handleSlashNav);
-      el.removeEventListener('oc-slash-close', handleSlashClose);
-      el.removeEventListener('oc-slash-select', handleSlashSelect);
-      el.removeEventListener('oc-model-picker-open', handleModelPickerOpen);
-      el.removeEventListener('oc-agent-picker-open', handleAgentPickerOpen);
-      el.removeEventListener('oc-help-open', handleHelpOpen);
-      el.removeEventListener('oc-skill-picker-open', handleSkillPickerOpen);
-      el.removeEventListener('oc-bash-mode', handleBashMode);
-    };
-  }, [addImageFiles, selectSlashCommand, openModelPicker, openAgentPicker, openSkillPicker]);
+  }, [isRunning, onAbort]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -912,48 +1045,8 @@ function ComposerImpl({
     addImageFiles(files);
   }, [disabled, addImageFiles]);
 
-  useClickOutside(tokenPopoverRef, showTokenPopover, () => setShowTokenPopover(false));
-
   const effectiveModel = selectedModel || '';
 
-  // Fetch estimated cost from backend when the popover opens (or stats change
-  // while it's already open). The backend uses the pricing table loaded at
-  // startup to compute the cost from the token counts and selected model.
-  useEffect(() => {
-    if (!showTokenPopover || !tokenStats || !effectiveModel) return;
-    let cancelled = false;
-    // Schedule the loading flag in a microtask to avoid a synchronous setState
-    // inside the effect body (react-hooks/set-state-in-effect).
-    Promise.resolve().then(() => { if (!cancelled) setEstCostLoading(true); });
-    api.calcCost({
-      modelID: effectiveModel,
-      input: tokenStats.input,
-      output: tokenStats.output,
-      cacheRead: tokenStats.cacheRead,
-      cacheWrite: tokenStats.cacheWrite,
-    }).then((result) => {
-      if (!cancelled) {
-        setEstCost(result);
-        setEstCostLoading(false);
-      }
-    }).catch(() => {
-      if (!cancelled) {
-        setEstCost(null);
-        setEstCostLoading(false);
-      }
-    });
-    return () => { cancelled = true; };
-  }, [showTokenPopover, effectiveModel, tokenStats?.input, tokenStats?.output, tokenStats?.cacheRead, tokenStats?.cacheWrite, tokenStats]);
-
-  // TAB cycles primary agents. Prefer the live /agent catalog (primary,
-  // non-hidden); fall back to KNOWN_AGENTS before it loads.
-  const cyclableAgents = hasAgents
-    ? (agents || []).filter((a) => a.mode !== 'subagent' && !a.hidden).map((a) => a.name)
-    : KNOWN_AGENTS;
-  const agentOptions = Array.from(new Set([activeAgent, ...cyclableAgents].filter((a): a is string => !!a)));
-  const effectiveAgent = selectedAgent || activeAgent || '';
-  useEffect(() => { agentOptionsRef.current = agentOptions; }, [agentOptions]);
-  useEffect(() => { effectiveAgentRef.current = effectiveAgent; }, [effectiveAgent]);
   // Label shown on the composer's model button. Prefer the human-readable
   // `modelName` from the rich entries (e.g. "Claude Opus 4.7"), falling back
   // to the bare model id from the "provider/model" string.
@@ -979,40 +1072,31 @@ function ComposerImpl({
     return match?.reasoning ?? [];
   })();
   const hasReasoning = reasoningOptions.length > 0;
-  const onReasoningChangeRef = useRef(onReasoningChange);
-  useEffect(() => { onReasoningChangeRef.current = onReasoningChange; }, [onReasoningChange]);
-  const reasoningOptionsRef = useRef(reasoningOptions);
-  useEffect(() => { reasoningOptionsRef.current = reasoningOptions; }, [reasoningOptions]);
-
-  const handleMicClickRef = useRef(handleMicClick);
-  useEffect(() => { handleMicClickRef.current = handleMicClick; }, [handleMicClick]);
-
   const dictationShortcut = useMemo(() => ({
     id: 'composer.dictation',
     scope: 'composer' as const,
     keys: { code: 'KeyD', alt: true },
     description: 'Start dictation (voice input)',
-    enabled: () => !!(isDictationSupported && !isRecording && !disabledRef.current),
-    handler: () => { void handleMicClickRef.current(); },
-  }), [isDictationSupported, isRecording]);
+    enabled: () => !!(isDictationSupported && !isRecording && !disabled),
+    handler: () => { void handleMicClick(); },
+  }), [isDictationSupported, isRecording, disabled, handleMicClick]);
 
   const reasoningCycleShortcut = useMemo(() => ({
     id: 'composer.reasoning-cycle',
     scope: 'composer' as const,
     keys: { code: 'KeyR', alt: true },
     description: 'Cycle reasoning level',
-    enabled: () => !!(reasoningOptionsRef.current.length > 0 && !disabledRef.current),
+    enabled: () => !!(reasoningOptions.length > 0 && !disabled),
     handler: () => {
-      const opts = reasoningOptionsRef.current;
+      const opts = reasoningOptions;
       if (opts.length === 0) return;
-      const cb = onReasoningChangeRef.current;
-      if (!cb) return;
+      if (!onReasoningChange) return;
       const cycle = ['', ...opts];
       const cur = cycle.indexOf(selectedReasoning ?? '');
       const next = cycle[(cur + 1) % cycle.length];
-      cb(next);
+      onReasoningChange(next);
     },
-  }), [selectedReasoning]);
+  }), [reasoningOptions, disabled, onReasoningChange, selectedReasoning]);
 
   useShortcut(dictationShortcut);
   useShortcut(reasoningCycleShortcut);
@@ -1165,324 +1249,71 @@ function ComposerImpl({
           autoCorrect="off"
           autoCapitalize="off"
           spellCheck={false}
+          onKeyDown={handleInputKeyDown}
+          onInput={handleInput}
+          onPaste={handlePaste}
           data-1p-ignore
           data-lpignore="true"
           data-bwignore
           data-form-type="other"
         />
-        <div className="oc-composer-bar">
-          <div className="oc-composer-bar-left">
-            {isBashMode ? (
-              <span className="oc-bar-shell">shell</span>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className="oc-bar-select"
-                  disabled={uiDisabled}
-                  onClick={() => {
-                    if (uiDisabled) return;
-                    setAgentPickerQuery('');
-                    setAgentPickerOpen(true);
-                  }}
-                  title="Agent (click to change)"
-                >
-                  {effectiveAgent && agentsLoaded && (
-                    <span
-                      className="oc-agent-swatch"
-                      aria-hidden="true"
-                      style={{ background: agentColor(effectiveAgent, agents) }}
-                    />
-                  )}
-                  {effectiveAgent || 'Agent'}
-                </button>
-                {hasModels && (
-                  <button
-                    type="button"
-                    className={`oc-bar-select${modelUnavailable ? ' oc-bar-select--warn' : ''}`}
-                    disabled={uiDisabled}
-                    onClick={() => {
-                      if (uiDisabled) return;
-                      onRefreshModelsRef.current?.();
-                      setModelPickerQuery('');
-                      setModelPickerOpen(true);
-                    }}
-                    title={modelUnavailable ? 'Model not available on this host — pick another' : 'Model (click to change)'}
-                  >
-                    {modelUnavailable && (
-                      <i className="bi bi-exclamation-triangle-fill" aria-hidden="true" />
-                    )}
-                    {modelButtonLabel ? <ModelLabel model={effectiveModel}>{modelButtonLabel}</ModelLabel> : 'Model'}
-                  </button>
-                )}
-                {hasReasoning && (
-                  <button
-                    type="button"
-                    className="oc-bar-select oc-bar-reasoning"
-                    disabled={uiDisabled}
-                    onClick={() => {
-                      if (uiDisabled) return;
-                      setReasoningPickerOpen(true);
-                    }}
-                    title={`Reasoning level (${isMacPlatform() ? '⌥' : 'Alt'}+R to cycle)`}
-                  >
-                    {selectedReasoning || 'default'}
-                  </button>
-                )}
-                {permissionControl}
-                {disabled && onLaunchRequest ? (
-                  <button
-                    type="button"
-                    className="oc-bar-launch"
-                    onClick={(e) => { e.stopPropagation(); onLaunchRequest(); }}
-                    disabled={launching}
-                    title={disabledHint || 'Launch the agent process'}
-                  >
-                    {launching ? 'Launching…' : 'Launch session'}
-                  </button>
-                ) : disabled ? (
-                  <span className="oc-bar-hint" title={disabledHint || undefined}>
-                    No live connection
-                  </span>
-                ) : null}
-              </>
-            )}
-          </div>
-          <div className="oc-composer-bar-right">
-            <button
-              className="oc-bar-action"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uiDisabled}
-              title="Attach file"
-            >+</button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              style={{ display: 'none' }}
-              onChange={(e) => {
-                const files = Array.from(e.target.files || []);
-                addImageFiles(files);
-                e.target.value = '';
-              }}
-            />
-            {isDictationSupported && (
-              <button
-                ref={micRef}
-                className="oc-bar-action"
-                onClick={handleMicClick}
-                disabled={disabled}
-                title="Record voice message"
-              >
-                <i className="bi bi-mic-fill oc-mic-icon" aria-hidden="true" />
-              </button>
-            )}
-            {micError && (
-              <span className="oc-mic-error" role="alert">
-                {micError}
-                <button
-                  type="button"
-                  className="oc-mic-error-dismiss"
-                  onClick={() => setMicError(null)}
-                  aria-label="Dismiss"
-                >×</button>
-              </span>
-            )}
-            {isRunning ? (
-              <button
-                type="button"
-                className="oc-bar-send oc-bar-send-stop"
-                onClick={() => onAbort?.()}
-                title="Stop generation (Esc)"
-                aria-label="Stop generation"
-              >
-                <svg width="12" height="12" viewBox="0 0 10 10" aria-hidden="true">
-                  <rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor" />
-                </svg>
-              </button>
-            ) : (
-              <button
-                type="button"
-                className={`oc-bar-send${sending ? ' oc-bar-send-sending' : ''}`}
-                disabled={uiDisabled}
-                title={sending ? 'Sending message' : 'Send (Enter) · Queue for next idle (Ctrl+Enter)'}
-                aria-label={sending ? 'Sending message' : 'Send message'}
-                onClick={(e) => {
-                  // Reuse the textarea's existing Enter submit path so
-                  // button and keyboard stay behaviourally identical —
-                  // Ctrl/Cmd+click queues, exactly like Ctrl/Cmd+Enter.
-                  inputRef.current?.dispatchEvent(
-                    new KeyboardEvent('keydown', {
-                      key: 'Enter',
-                      ctrlKey: e.ctrlKey,
-                      metaKey: e.metaKey,
-                      bubbles: true,
-                    }),
-                  );
-                }}
-              >
-                {sending ? (
-                  <span className="oc-spinner oc-bar-send-spinner" aria-hidden="true" />
-                ) : (
-                  <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
-                    <path d="M8 13V3M8 3L4 7M8 3l4 4" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                )}
-              </button>
-            )}
-          </div>
-        </div>
+        <ComposerToolbar
+          isBashMode={isBashMode}
+          uiDisabled={uiDisabled}
+          disabled={disabled}
+          disabledHint={disabledHint}
+          effectiveAgent={effectiveAgent}
+          agentsLoaded={agentsLoaded}
+          agents={agents}
+          openAgentPicker={() => { if (!uiDisabled) openAgentPicker(); }}
+          hasModels={hasModels}
+          modelUnavailable={modelUnavailable}
+          openModelPicker={() => {
+            if (uiDisabled) return;
+            openModelPicker();
+          }}
+          modelButtonLabel={modelButtonLabel}
+          effectiveModel={effectiveModel}
+          hasReasoning={hasReasoning}
+          openReasoningPicker={() => { if (!uiDisabled) setReasoningPickerOpen(true); }}
+          selectedReasoning={selectedReasoning}
+          permissionControl={permissionControl}
+          onLaunchRequest={onLaunchRequest}
+          launching={launching}
+          fileInputRef={fileInputRef}
+          addFiles={(selectedFiles) => { void addImageFiles(selectedFiles); }}
+          isDictationSupported={isDictationSupported}
+          micRef={micRef}
+          handleMicClick={() => { void handleMicClick(); }}
+          micError={micError}
+          clearMicError={() => setMicError(null)}
+          isRunning={isRunning}
+          onAbort={onAbort}
+          sending={sending}
+          submit={submit}
+        />
       </div>
-      <div className="oc-composer-footer">
-        <span className="oc-composer-footer-left">
-          {directory && newConversation && (
-            <TargetSelector directory={directory} worktreesSupported={!!worktreesSupported} parentSessionId={sessionId} />
-          )}
-          {!disabled && isRunning && (
-            <>
-              <span
-                className="oc-bar-dots"
-                // Tint the progressing dots with the active agent's colour so
-                // the user can see at a glance which agent is generating.
-                // Same gating as the composer's left border: only apply once
-                // the /agent catalog has resolved, otherwise fall through to
-                // the CSS default (`--accent4`).
-                style={effectiveAgent && agentsLoaded
-                  // Cast because TS doesn't know about custom CSS properties
-                  // on inline styles. The shape is still a valid style object.
-                  ? { '--oc-dot-color': agentColor(effectiveAgent, agents) } as Record<string, string>
-                  : undefined}
-              >
-                <span className="oc-thinking-dot" /><span className="oc-thinking-dot" /><span className="oc-thinking-dot" /><span className="oc-thinking-dot" /><span className="oc-thinking-dot" />
-              </span>
-              {tokensPerSecond != null && tokensPerSecond > 0 && (
-                <span className="oc-tps-hint">{formatTokensPerSecond(tokensPerSecond)} tok/s</span>
-              )}
-              <button
-                type="button"
-                className="oc-stop-btn"
-                onClick={() => onAbort?.()}
-                title="Stop generation (Esc)"
-              >
-                <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-                  <rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor" />
-                </svg>
-              </button>
-              <span className="oc-stop-hint">Esc to interrupt</span>
-            </>
-          )}
-        </span>
-        <span className="oc-composer-footer-right">
-          {tokenStats && tokenStats.totalCost > 0 && (
-            <span
-              className="oc-session-cost"
-              title="Session cost reported by the platform"
-            >
-              {formatCurrency(tokenStats.totalCost)}
-            </span>
-          )}
-          {contextTokens != null && contextTokens > 0 && (() => {
-            const contextWindow = getContextWindow(effectiveModel);
-            const pct = contextWindow ? Math.min(100, (contextTokens / contextWindow) * 100) : null;
-            return (
-              <span className="oc-context-usage-wrap" ref={tokenPopoverRef}>
-                <button
-                  type="button"
-                  className={`oc-context-usage${pct != null && pct > 80 ? ' oc-context-warn' : ''}`}
-                  title="Click for token usage details"
-                  onClick={() => setShowTokenPopover(v => !v)}
-                >
-                  {formatTokenCount(contextTokens)}{pct != null && ` (${pct.toFixed(0)}%)`}
-                </button>
-                {showTokenPopover && tokenStats && (
-                  <div className="oc-token-popover">
-                    <div className="oc-token-popover-title">Session token usage</div>
-                    <div className="oc-token-popover-rows">
-                      <div className="oc-token-popover-row">
-                        <span className="oc-token-popover-label">Input</span>
-                        <span className="oc-token-popover-value">{tokenStats.input.toLocaleString()}</span>
-                      </div>
-                      <div className="oc-token-popover-row">
-                        <span className="oc-token-popover-label">Output</span>
-                        <span className="oc-token-popover-value">{tokenStats.output.toLocaleString()}</span>
-                      </div>
-                      {tokenStats.reasoning > 0 && (
-                        <div className="oc-token-popover-row">
-                          <span className="oc-token-popover-label">Reasoning</span>
-                          <span className="oc-token-popover-value">{tokenStats.reasoning.toLocaleString()}</span>
-                        </div>
-                      )}
-                      {(tokenStats.cacheRead > 0 || tokenStats.cacheWrite > 0) && (
-                        <div className="oc-token-popover-row">
-                          <span className="oc-token-popover-label">Cache read</span>
-                          <span className="oc-token-popover-value">{tokenStats.cacheRead.toLocaleString()}</span>
-                        </div>
-                      )}
-                      {tokenStats.cacheWrite > 0 && (
-                        <div className="oc-token-popover-row">
-                          <span className="oc-token-popover-label">Cache write</span>
-                          <span className="oc-token-popover-value">{tokenStats.cacheWrite.toLocaleString()}</span>
-                        </div>
-                      )}
-                      <div className="oc-token-popover-divider" />
-                      <div className="oc-token-popover-row">
-                        <span className="oc-token-popover-label">Context used</span>
-                        <span className="oc-token-popover-value">
-                          {contextTokens.toLocaleString()}
-                          {contextWindow ? ` / ${contextWindow.toLocaleString()}` : ''}
-                          {pct != null ? ` (${pct.toFixed(0)}%)` : ''}
-                        </span>
-                      </div>
-                      {tokenStats.totalCost > 0 && (
-                        <div className="oc-token-popover-row">
-                          <span className="oc-token-popover-label">Reported cost</span>
-                          <span className="oc-token-popover-value">${tokenStats.totalCost.toFixed(4)}</span>
-                        </div>
-                      )}
-                      <div className="oc-token-popover-divider" />
-                      <div className="oc-token-popover-row oc-token-popover-cost">
-                        <span className="oc-token-popover-label">Est. cost</span>
-                        <span className="oc-token-popover-value">
-                          {estCostLoading ? '…' : estCost ? (estCost.known ? `$${estCost.cost.toFixed(4)}` : 'unknown model') : 'n/a'}
-                        </span>
-                      </div>
-                      {sessionTreeStats && sessionTreeStats.sessions > 1 && (
-                        <>
-                          <div className="oc-token-popover-divider" />
-                          <div className="oc-token-popover-subtitle">
-                            Session + subagents ({sessionTreeStats.sessions})
-                          </div>
-                          <div className="oc-token-popover-row">
-                            <span className="oc-token-popover-label">Input</span>
-                            <span className="oc-token-popover-value">{sessionTreeStats.input.toLocaleString()}</span>
-                          </div>
-                          <div className="oc-token-popover-row">
-                            <span className="oc-token-popover-label">Output</span>
-                            <span className="oc-token-popover-value">{sessionTreeStats.output.toLocaleString()}</span>
-                          </div>
-                          <div className="oc-token-popover-row">
-                            <span className="oc-token-popover-label">Reported cost</span>
-                            <span className="oc-token-popover-value">${sessionTreeStats.totalCost.toFixed(4)}</span>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </span>
-            );
-          })()}
-          {visibleDurationMs > 0 && (
-            <span title="Total time spent answering">{formatDuration(visibleDurationMs)}</span>
-          )}
-          {!isRunning && (
-            <button type="button" className="oc-keybind-hint" onClick={openShortcuts}>{isMacPlatform() ? '⌥+?' : 'Alt+?'} for shortcuts</button>
-          )}
-        </span>
-      </div>
+      <ComposerFooter
+        directory={directory}
+        newConversation={newConversation}
+        worktreesSupported={worktreesSupported}
+        sessionId={sessionId}
+        disabled={disabled}
+        isRunning={isRunning}
+        effectiveAgent={effectiveAgent}
+        agentsLoaded={agentsLoaded}
+        agents={agents}
+        tokensPerSecond={tokensPerSecond}
+        onAbort={onAbort}
+        tokenStats={tokenStats}
+        sessionTreeStats={sessionTreeStats}
+        contextTokens={contextTokens}
+        effectiveModel={effectiveModel}
+        visibleDurationMs={visibleDurationMs}
+      />
     </div>
     </>
   );
 }
 
-export const Composer = memo(ComposerImpl, composerPropsEqual);
+export const Composer = ComposerImpl;

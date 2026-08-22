@@ -8,6 +8,24 @@ import { useSessionShortcuts } from './useSessionShortcuts';
 afterEach(() => useShortcutRegistry.setState({ shortcuts: new Map() }));
 
 describe('useSessionShortcuts', () => {
+  it('registers Alt+M to open the composer model picker directly', () => {
+    const openModelPicker = vi.fn();
+    renderHook(() => useSessionShortcuts({
+      session: null,
+      portAvailable: false,
+      matchingTmuxSession: undefined,
+      jumpToSession: vi.fn(),
+      handleTmuxShortcut: vi.fn(),
+      handleVSCodeShortcut: vi.fn(),
+      handleNewSession: vi.fn(),
+      openMessageJumpPicker: vi.fn(),
+      openModelPicker,
+    }));
+
+    useShortcutRegistry.getState().shortcuts.get('session.change-model')?.handler(new KeyboardEvent('keydown'));
+    expect(openModelPicker).toHaveBeenCalledOnce();
+  });
+
   it('registers Alt+G to open the user-message picker', () => {
     const openMessageJumpPicker = vi.fn();
     renderHook(() => useSessionShortcuts({
@@ -19,6 +37,7 @@ describe('useSessionShortcuts', () => {
       handleVSCodeShortcut: vi.fn(),
       handleNewSession: vi.fn(),
       openMessageJumpPicker,
+      openModelPicker: vi.fn(),
     }));
 
     const shortcut = useShortcutRegistry.getState().shortcuts.get('session.jump-to-message');

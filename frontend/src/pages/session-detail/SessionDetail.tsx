@@ -27,7 +27,7 @@ import { useHeaderInfo, usePageTitle } from '../../lib/headerContext';
 import { OcmanRuntimeProvider } from '../../components/OcmanRuntimeProvider';
 import { AssistantThread } from '../../components/AssistantThread';
 import { ShareLinkModal } from '../../components/ShareExportMenu';
-import { Composer } from '../../components/assistant/Composer';
+import { Composer, type ComposerHandle } from '../../components/assistant/Composer';
 import { QuestionPrompt } from '../../components/session/QuestionPrompt';
 import { PermissionPrompt } from '../../components/session/PermissionPrompt';
 import { RightPanel } from '../../components/RightPanel';
@@ -141,6 +141,9 @@ export interface SessionDetailProps {
 
 export function SessionDetail({ id }: SessionDetailProps) {
   const navigate = useStickyNavigate();
+  const composerRef = useRef<ComposerHandle>(null);
+  const openModelPicker = useCallback(() => composerRef.current?.openModelPicker(), []);
+  const openAgentPicker = useCallback(() => composerRef.current?.openAgentPicker(), []);
   const [searchParams] = useSearchParams();
   const debugMode = searchParams.has('debug');
   const [scrollToMessageBookmark, setScrollToMessageBookmark] = useState<{ sessionId: string; id: string; tick: number } | null>(null);
@@ -262,11 +265,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     });
   }, [session]);
 
-  const changeModelFromNotice = useCallback(() => {
-    const composer = document.querySelector('.oc-composer-input') as HTMLTextAreaElement | null;
-    composer?.dispatchEvent(new CustomEvent('oc-model-picker-open', { detail: '' }));
-    composer?.focus();
-  }, []);
+  const changeModelFromNotice = openModelPicker;
 
   const handleScrollToMessageBookmark = useCallback((bookmark: MessageBookmark) => {
     const updateScrollRequest = () => {
@@ -1022,6 +1021,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
     tmux,
     setSelectedReasoning,
     setShowRenameModal,
+    openModelPicker,
+    openAgentPicker,
   });
 
   useSessionShortcuts({
@@ -1032,6 +1033,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     handleTmuxShortcut,
     handleVSCodeShortcut,
     handleNewSession,
+    openModelPicker,
     openMessageJumpPicker: () => {
       setShowMessageJumpPicker(true);
       if (!session) return;
@@ -1456,6 +1458,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                         />
                       ) : caps.composer ? (
                         <Composer
+                          composerRef={composerRef}
                           onSend={handleSend}
                           onCommand={handleCommand}
                           onShell={handleShell}

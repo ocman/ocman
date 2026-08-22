@@ -22,6 +22,8 @@ export interface UseSessionShortcutsOptions {
   handleNewSession: (title?: string) => Promise<void>;
   /** Open the user-message jump picker. */
   openMessageJumpPicker: () => void;
+  /** Open the model picker owned by the composer. */
+  openModelPicker: () => void;
 }
 
 /**
@@ -48,6 +50,7 @@ export function useSessionShortcuts({
   handleVSCodeShortcut,
   handleNewSession,
   openMessageJumpPicker,
+  openModelPicker,
 }: UseSessionShortcutsOptions) {
   // Mirror the latest handler / state values into refs so shortcut
   // descriptors below can reference them without forcing a re-bind
@@ -56,6 +59,7 @@ export function useSessionShortcuts({
   const handleVSCodeShortcutRef = useSyncRef(handleVSCodeShortcut);
   const handleNewSessionRef = useSyncRef(handleNewSession);
   const openMessageJumpPickerRef = useSyncRef(openMessageJumpPicker);
+  const openModelPickerRef = useSyncRef(openModelPicker);
   const matchingTmuxSessionRef = useSyncRef(matchingTmuxSession);
   const sessionRef = useSyncRef(session);
   const portAvailableRef = useSyncRef(portAvailable);
@@ -114,23 +118,13 @@ export function useSessionShortcuts({
   useShortcut(openVscodeShortcut);
   useShortcut(newSessionShortcut);
 
-  // Alt+M — pop open the model-change palette via the composer's
-  // CustomEvent bridge. The event listener lives on the composer
-  // itself (see lib/composerSubmit + the assistant composer).
   const changeModelShortcut = useMemo(() => ({
     id: 'session.change-model',
     scope: 'session' as const,
     keys: { code: 'KeyM', alt: true },
     description: 'Change model via palette',
-    handler: () => {
-      const el = document.querySelector('.oc-composer-input') as HTMLTextAreaElement | null;
-      if (el) {
-        el.value = '/model ';
-        el.dispatchEvent(new CustomEvent('oc-model-picker-open', { detail: '' }));
-        el.focus();
-      }
-    },
-  }), []);
+    handler: () => openModelPickerRef.current(),
+  }), [openModelPickerRef]);
 
   useShortcut(changeModelShortcut);
 

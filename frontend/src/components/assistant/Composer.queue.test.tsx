@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
+import { createRef } from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { Composer } from './Composer';
+import { Composer, type ComposerHandle } from './Composer';
 import { BackendUnavailableError } from '../../lib/api';
 
 afterEach(() => vi.useRealTimers());
@@ -39,6 +40,52 @@ describe('Composer queue', () => {
 });
 
 describe('Composer input', () => {
+  it('updates slash and bash state without CustomEvents', () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const dispatch = vi.spyOn(HTMLTextAreaElement.prototype, 'dispatchEvent');
+    render(<Composer isRunning={false} shellExec />);
+    const input = screen.getByRole('textbox');
+
+    fireEvent.input(input, { target: { value: '/he' } });
+    expect(screen.getByText('/help')).toBeInTheDocument();
+
+    fireEvent.input(input, { target: { value: '!ls' } });
+    expect(screen.getByText('shell')).toBeInTheDocument();
+    expect(dispatch.mock.calls.some(([event]) => event instanceof CustomEvent)).toBe(false);
+  });
+
+  it('opens model and agent pickers through the typed composer handle', () => {
+    const composerRef = createRef<ComposerHandle>();
+    render(
+      <Composer
+        isRunning={false}
+        composerRef={composerRef}
+        models={['anthropic/claude']}
+        agents={[{ name: 'build', mode: 'primary' }]}
+      />,
+    );
+
+    act(() => composerRef.current?.openModelPicker('cla'));
+    expect(screen.getByRole('combobox')).toHaveValue('cla');
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+
+    act(() => composerRef.current?.openAgentPicker('bui'));
+    expect(screen.getByRole('combobox')).toHaveValue('bui');
+  });
+
+  it('adds pasted images directly without CustomEvents', async () => {
+    const dispatch = vi.spyOn(HTMLTextAreaElement.prototype, 'dispatchEvent');
+    const image = new File(['image'], 'image.png', { type: 'image/png' });
+    render(<Composer isRunning={false} />);
+
+    fireEvent.paste(screen.getByRole('textbox'), {
+      clipboardData: { items: [{ type: image.type, getAsFile: () => image }] },
+    });
+
+    expect(await screen.findByAltText('Attachment 1')).toBeInTheDocument();
+    expect(dispatch.mock.calls.some(([event]) => event instanceof CustomEvent)).toBe(false);
+  });
+
   it('does not rewrite its height while typing', () => {
     render(<Composer isRunning={false} />);
     const input = screen.getByRole('textbox');
