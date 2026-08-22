@@ -299,6 +299,7 @@ export interface PartData {
 
 export interface SessionDetail {
   session: Session & { contextTokenCount?: number };
+  sessionTree?: Session[];
   messages: Message[];
   parts: Part[];
   totalMessages?: number;

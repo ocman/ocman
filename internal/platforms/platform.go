@@ -39,6 +39,7 @@ type ID string
 // typed fields rather than extracting from a map.
 type SessionDetail struct {
 	Session           *db.Session      `json:"session"`
+	SessionTree       []db.Session     `json:"sessionTree"`
 	Messages          []db.Message     `json:"messages"`
 	Parts             []db.Part        `json:"parts"`
 	TotalMessages     int              `json:"totalMessages"`
@@ -75,11 +76,11 @@ type Capabilities struct {
 	// Move reports whether the adapter can relocate a session to
 	// another project directory (Platform.MoveSession). Surfaced as
 	// caps.move.
-	Move bool `json:"move"`
-	Events            bool `json:"events"`       // SSE stream of live session events
-	AgentCatalog      bool `json:"agentCatalog"` // adapter exposes a composer-agent catalog
-	ModelCatalog      bool `json:"modelCatalog"` // adapter exposes a per-session model catalog
-	SlashCommands     bool `json:"slashCommands"`
+	Move          bool `json:"move"`
+	Events        bool `json:"events"`       // SSE stream of live session events
+	AgentCatalog  bool `json:"agentCatalog"` // adapter exposes a composer-agent catalog
+	ModelCatalog  bool `json:"modelCatalog"` // adapter exposes a per-session model catalog
+	SlashCommands bool `json:"slashCommands"`
 	// ShellExec reports whether the adapter can run raw shell
 	// commands directly (bypassing the LLM) via Platform.RunShell.
 	// Surfaced as caps.shellExec on the wire; the composer uses it

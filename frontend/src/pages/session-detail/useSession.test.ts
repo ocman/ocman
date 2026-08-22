@@ -10,6 +10,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import type { SessionDetail } from '../../lib/api';
+import { aggregateSessionTreeStats } from '../../lib/sessionStatus';
 import { useSession } from './useSession';
 import { useApiStore } from '../../lib/apiStore';
 
@@ -151,6 +152,66 @@ describe('useSession — initial load', () => {
     });
     expect(fetchSession).toHaveBeenCalledWith(SID, expect.any(Number), 0, expect.anything(), undefined);
     expect(result.current.status).toBe('live');
+  });
+
+  it('preserves the session tree in the authoritative cache entry', async () => {
+    const child = { ...makeDetail().session, id: 'sess-child', parentId: SID };
+    const detail = makeDetail({ sessionTree: [makeDetail().session, child] });
+
+    const { result } = renderHook(() => useSession(SID, {
+      fetchSession: vi.fn().mockResolvedValue(detail),
+    }));
+
+    await waitFor(() => expect(result.current.session?.id).toBe(SID));
+    expect(useApiStore.getState().getCachedSession(SID)?.sessionTree).toEqual(detail.sessionTree);
+  });
+
+  it('retains a cached tree when navigation detail refetch fails', async () => {
+    const targetId = 'sess-child';
+    const parent = { ...makeDetail().session, title: 'Parent session' };
+    const target = {
+      ...makeDetail().session,
+      id: targetId,
+      parentId: SID,
+      totalInputTokens: 30,
+      totalOutputTokens: 40,
+      totalCost: 0.2,
+    };
+    const descendant = {
+      ...makeDetail().session,
+      id: 'sess-grandchild',
+      parentId: targetId,
+      totalInputTokens: 50,
+      totalOutputTokens: 60,
+      totalCost: 0.3,
+    };
+    const cachedTarget = makeDetail({
+      session: target,
+      sessionTree: [parent, target, descendant],
+    });
+    useApiStore.getState().setCachedSession(targetId, cachedTarget);
+    const fetchSession = vi.fn().mockImplementation((id: string) => (
+      id === SID ? Promise.resolve(makeDetail()) : Promise.reject(new Error('refetch failed'))
+    ));
+    const { result, rerender } = renderHook(
+      ({ id }) => useSession(id, { fetchSession }),
+      { initialProps: { id: SID } },
+    );
+    await waitFor(() => expect(result.current.session?.id).toBe(SID));
+
+    rerender({ id: targetId });
+    await waitFor(() => expect(result.current.loadError).toBe('refetch failed'));
+
+    expect(result.current.session?.id).toBe(targetId);
+    expect(result.current.sessionTree.find((session) => session.id === SID)?.title).toBe('Parent session');
+    expect(aggregateSessionTreeStats(target, result.current.sessionTree, {
+      input: target.totalInputTokens,
+      output: target.totalOutputTokens,
+      reasoning: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalCost: target.totalCost,
+    })).toEqual({ input: 80, output: 100, totalCost: 0.5, sessions: 2 });
   });
 
   it('hydrates fetched history so an unloaded message can be scrolled to', async () => {

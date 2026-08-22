@@ -1783,6 +1783,43 @@ func TestGetSessionParentIDs_ResolvesTopLevelAncestor(t *testing.T) {
 	}
 }
 
+func TestGetSessionTree_ReturnsDeepTreeWithoutUnrelatedSessions(t *testing.T) {
+	database := openTestDB(t)
+	defer database.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, database, "root", "Root", "/project", now, now)
+	insertSubagent(t, database, "child", "root", "Task (build subagent)", "/project", now, now)
+	insertSubagent(t, database, "grandchild", "child", "Task (explore subagent)", "/project", now, now)
+	insertSession(t, database, "unrelated", "Unrelated", "/project", now, now)
+	insertMessage(t, database, "child-message", "child", now, map[string]any{
+		"role":   "assistant",
+		"tokens": map[string]int{"input": 12, "output": 34},
+		"cost":   0.56,
+	})
+
+	got, err := database.GetSessionTree(t.Context(), "grandchild")
+	if err != nil {
+		t.Fatalf("GetSessionTree: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("tree = %+v, want root, child, grandchild", got)
+	}
+	byID := make(map[string]Session, len(got))
+	for _, session := range got {
+		byID[session.ID] = session
+	}
+	if _, ok := byID["unrelated"]; ok {
+		t.Fatal("unrelated session appeared in tree")
+	}
+	if byID["grandchild"].ParentID != "child" || byID["child"].ParentID != "root" {
+		t.Fatalf("deep parent links not preserved: %+v", byID)
+	}
+	if byID["child"].TotalInputTokens != 12 || byID["child"].TotalOutputTokens != 34 || byID["child"].TotalCost != 0.56 {
+		t.Fatalf("child token/cost stats = %+v", byID["child"])
+	}
+}
+
 // stubPricing is a CostCalculator that returns a fixed per-token cost.
 type stubPricing struct {
 	inputRate  float64

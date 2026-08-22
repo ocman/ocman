@@ -17,7 +17,7 @@ import { useStickyNavigate } from '../../lib/useStickyNavigate';
 import * as Toast from '@radix-ui/react-toast';
 import './SessionDetail.css';
 import { api, sessionExportMarkdownUrl } from '../../lib/api';
-import type { Session, SessionWarning } from '../../lib/api';
+import type { SessionWarning } from '../../lib/api';
 import { cleanTitle, shortPath } from '../../lib/format';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { canLaunchSession } from './launchGate';
@@ -379,32 +379,23 @@ export function SessionDetail({ id }: SessionDetailProps) {
     abortSignalRef: abortControllerRef,
     navigate,
   });
-  const [sessionIndex, setSessionIndex] = useState<{ rootId: string; sessions: Session[] } | null>(null);
-  useEffect(() => {
-    if (!session?.id) return;
-    let cancelled = false;
-    api.sessions({ limit: 10_000 }).then((sessions) => {
-      if (!cancelled) setSessionIndex({ rootId: session.id, sessions: sessions || [] });
-    }).catch((err) => remoteLog.warn('session usage index fetch failed', err));
-    return () => { cancelled = true; };
-  }, [session?.id]);
+  const sessionTree = view.sessionTree;
   const parentSession = session?.parentId
-    ? sessionIndex?.sessions.find((candidate) => candidate.id === session.parentId)
+    ? sessionTree.find((candidate) => candidate.id === session.parentId)
       ?? recentSessions.find((candidate) => candidate.id === session.parentId)
     : undefined;
   const promptSessionIds = useMemo(() => {
     const ids = new Set(id ? [id] : []);
-    const sessions = sessionIndex?.rootId === id ? (sessionIndex?.sessions ?? []) : [];
     for (let added = true; added;) {
       added = false;
-      for (const candidate of sessions) {
+      for (const candidate of sessionTree) {
         if (!candidate.parentId || !ids.has(candidate.parentId) || ids.has(candidate.id)) continue;
         ids.add(candidate.id);
         added = true;
       }
     }
     return [...ids];
-  }, [id, sessionIndex]);
+  }, [id, sessionTree]);
   const { infos: siblingGitInfos } = useGitInfo(
     recentSessions.map((s) => s.directory).filter(Boolean),
   );
@@ -733,10 +724,10 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const sessionTreeStats = useMemo(
     () => session ? aggregateSessionTreeStats(
       session,
-      [...(sessionIndex?.rootId === session.id ? sessionIndex.sessions : []), ...recentSessions],
+      [...sessionTree, ...recentSessions],
       tokenStats,
     ) : undefined,
-    [session, sessionIndex, recentSessions, tokenStats],
+    [session, sessionTree, recentSessions, tokenStats],
   );
 
   // Header info.

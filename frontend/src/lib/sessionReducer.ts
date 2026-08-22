@@ -65,6 +65,8 @@ export interface SessionView {
   /** Session metadata header (status, agent, timing, ...). `null`
    *  until the first `load` lands. */
   session: SessionMetadata | null;
+  /** Ancestors and descendants returned with the detail snapshot. */
+  sessionTree: NonNullable<SessionDetail['sessionTree']>;
   /** Chronological messages keyed by id. */
   messages: Message[];
   /** Flat parts list, in arrival order. The converter buckets by
@@ -196,6 +198,7 @@ export function initialSessionView(sessionId: string): SessionView {
   return {
     sessionId,
     session: null,
+    sessionTree: [],
     messages: [],
     parts: [],
     pendingPermission: null,
@@ -510,6 +513,7 @@ function reconcileLoad(state: SessionView, incoming: SessionView): SessionView {
     ...state,
     sessionId: incoming.sessionId,
     session: nextSession,
+    sessionTree: incoming.sessionTree,
     messages: mergedMessages,
     parts: mergedParts,
     pendingPermission: nextPendingPermission,

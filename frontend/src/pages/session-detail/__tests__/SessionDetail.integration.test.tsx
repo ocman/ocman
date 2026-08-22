@@ -756,30 +756,36 @@ describe('SessionDetail — sidebar polling', () => {
 });
 
 describe('SessionDetail — session tree usage', () => {
-  it('links a child session to its named parent above the conversation', async () => {
+  it('uses the detail tree for parent lookup without fetching the full session list', async () => {
     const parent = makeSession({ id: 'sess_parent', title: 'Parent planning session' });
     const child = makeSession({ id: 'sess_child', parentId: parent.id });
-    renderSessionPage({
+    const sessions = vi.fn().mockResolvedValue([parent, child]);
+    const handle = renderSessionPage({
       sessionId: child.id,
-      detail: makeSessionDetail(child),
+      detail: makeSessionDetail(child, { sessionTree: [parent, child] }),
       sessions: [parent, child],
-      apiOverrides: { sessions: vi.fn().mockResolvedValue([parent, child]) },
+      apiOverrides: { sessions },
     });
 
     const link = await screen.findByRole('link', { name: 'Parent planning session' });
     expect(link).toHaveAttribute('href', '/session/sess_parent');
     expect(link.closest('[role="note"]')).toHaveTextContent('Child session of');
+    expect(handle.api.sessions).not.toHaveBeenCalled();
   });
 
   it('shows totals for the current session and nested subagents', async () => {
     const root = makeSession({ id: 'sess_1', totalInputTokens: 10, totalOutputTokens: 20, totalCost: 0.1 });
     const child = makeSession({ id: 'sess_child', parentId: root.id, totalInputTokens: 30, totalOutputTokens: 40, totalCost: 0.2 });
     const grandchild = makeSession({ id: 'sess_grandchild', parentId: child.id, totalInputTokens: 50, totalOutputTokens: 60, totalCost: 0.3 });
-    renderSessionPage({
+    const sessions = vi.fn().mockResolvedValue([root, child, grandchild]);
+    const handle = renderSessionPage({
       sessionId: root.id,
-      detail: makeSessionDetail(root, { contextTokenCount: 100 }),
+      detail: makeSessionDetail(root, {
+        contextTokenCount: 100,
+        sessionTree: [root, child, grandchild],
+      }),
       sessions: [root],
-      apiOverrides: { sessions: vi.fn().mockResolvedValue([root, child, grandchild]) },
+      apiOverrides: { sessions },
     });
 
     await flushPromises(8);
@@ -789,6 +795,7 @@ describe('SessionDetail — session tree usage', () => {
     expect(title.parentElement).toHaveTextContent('Input90');
     expect(title.parentElement).toHaveTextContent('Output120');
     expect(title.parentElement).toHaveTextContent('Reported cost$0.6000');
+    expect(handle.api.sessions).not.toHaveBeenCalled();
   });
 });
 
@@ -824,7 +831,7 @@ describe('SessionDetail — permission prompt', () => {
     }, { timeout: 4000 });
   });
 
-  it('renders a pending permission from a running native subagent', async () => {
+  it('keeps deep descendant IDs as permission owners', async () => {
     const parent = makeSession({
       id: 'sess_parent',
       title: 'App Security Review',
@@ -833,9 +840,10 @@ describe('SessionDetail — permission prompt', () => {
     });
     const childId = 'sess_native_child';
     const child = makeSession({ id: childId, parentId: parent.id, directory: parent.directory });
-    const permission = { ...permPayload, sessionID: childId };
+    const grandchild = makeSession({ id: 'sess_mcp_grandchild', parentId: childId, directory: parent.directory });
+    const permission = { ...permPayload, sessionID: grandchild.id };
     const listPermissionsSpy = vi.fn().mockImplementation((sessionId: string) =>
-      Promise.resolve(sessionId === childId ? [permission] : []),
+      Promise.resolve(sessionId === grandchild.id ? [permission] : []),
     );
     const handle = renderSessionPage({
       sessionId: parent.id,
@@ -859,8 +867,9 @@ describe('SessionDetail — permission prompt', () => {
             },
           } as never,
         }],
+        sessionTree: [parent, child, grandchild],
       }),
-      sessions: [parent, child],
+      sessions: [parent],
       apiOverrides: { sessionTasks: vi.fn().mockResolvedValue({ tasks: {} }) },
       storeOverrides: { listPermissions: listPermissionsSpy },
     });
@@ -868,6 +877,7 @@ describe('SessionDetail — permission prompt', () => {
     await flushPromises(8);
     expect(listPermissionsSpy).toHaveBeenCalledWith(parent.id);
     await waitFor(() => expect(listPermissionsSpy).toHaveBeenCalledWith(childId));
+    await waitFor(() => expect(listPermissionsSpy).toHaveBeenCalledWith(grandchild.id));
     await waitFor(() => expect(handle.result.container.textContent).toContain('Run shell command'));
   });
 

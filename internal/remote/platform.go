@@ -164,6 +164,12 @@ func (p *remotePlatform) Session(ctx context.Context, id string, limit, offset i
 		detail.Session.RemoteName = p.nameFn()
 		detail.Session.LiveConnection = true
 	}
+	for i := range detail.SessionTree {
+		detail.SessionTree[i].Platform = string(p.ID())
+		detail.SessionTree[i].RemoteID = p.remoteID()
+		detail.SessionTree[i].RemoteName = p.nameFn()
+		detail.SessionTree[i].LiveConnection = true
+	}
 	return &detail, nil
 }
 

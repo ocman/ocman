@@ -349,6 +349,9 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 	livePhase.EndWithDesc("fetchSessionFromOpenCode (incl lsof + 2x HTTP)")
 	if ok {
 		a.applyMCPParentLink(ctx, detail.Session)
+		if err := a.attachSessionTree(ctx, id, detail); err != nil {
+			return nil, err
+		}
 		return detail, nil
 	}
 
@@ -388,7 +391,7 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 	defaults, _ := getSessionDefaultsCached(ctx, a.db, id, session.Directory)
 	fallbackPhase.EndWithDesc("live path miss; full DB read")
 
-	return &platforms.SessionDetail{
+	detail = &platforms.SessionDetail{
 		Session:           session,
 		Messages:          pagedMessages,
 		Parts:             filteredParts,
@@ -397,7 +400,68 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 		DefaultAgent:      defaults.Agent, // composer-agent (OpenCode role), unchanged name
 		DefaultModel:      defaults.Model,
 		Warnings:          sessionWarningsForDirectory(session.Directory),
-	}, nil
+	}
+	if err := a.attachSessionTree(ctx, id, detail); err != nil {
+		return nil, err
+	}
+	return detail, nil
+}
+
+func (a *Adapter) attachSessionTree(ctx context.Context, id string, detail *platforms.SessionDetail) error {
+	tree, err := a.db.GetSessionTree(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	links := map[state.Key]string{}
+	if a.childLinks != nil {
+		links, err = a.childLinks.ChildSessionParents(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	byID := make(map[string]db.Session, len(tree))
+	for _, session := range tree {
+		byID[session.ID] = session
+	}
+	for added := true; added; {
+		added = false
+		for child, parentID := range links {
+			if child.Platform != string(PlatformID) {
+				continue
+			}
+			_, childIncluded := byID[child.SessionID]
+			_, parentIncluded := byID[parentID]
+			if childIncluded == parentIncluded {
+				continue
+			}
+			connectedID := child.SessionID
+			if childIncluded {
+				connectedID = parentID
+			}
+			component, err := a.db.GetSessionTree(ctx, connectedID)
+			if err != nil {
+				return err
+			}
+			for _, session := range component {
+				if _, exists := byID[session.ID]; !exists {
+					byID[session.ID] = session
+					added = true
+				}
+			}
+		}
+	}
+
+	ports := discoverOpenCodePorts()
+	detail.SessionTree = make([]db.Session, 0, len(byID))
+	for _, session := range byID {
+		session.Platform = string(PlatformID)
+		applyMCPParentLink(&session, links)
+		session.Status = a.settleStatus(session.ID, session.Directory, session.Status, ports)
+		session.LiveConnection = directoryHasLivePort(ports, session.Directory)
+		detail.SessionTree = append(detail.SessionTree, session)
+	}
+	return nil
 }
 
 // applySessionDetailMetadataFromMessages fills in the status *inference*

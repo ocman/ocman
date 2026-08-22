@@ -88,6 +88,12 @@ func TestRemotePlatform_AllReadMethods(t *testing.T) {
 		t.Errorf("Session: %v", err)
 	} else if detail.Session == nil || !detail.Session.LiveConnection {
 		t.Errorf("Session LiveConnection = false, want true for connected remote")
+	} else {
+		for _, session := range detail.SessionTree {
+			if session.Platform != string(rp.ID()) || session.RemoteID != "rid" || session.RemoteName != "Box" {
+				t.Errorf("tree session metadata = %+v", session)
+			}
+		}
 	}
 	if rp.LiveStatus("s1") != nil {
 		t.Error("LiveStatus should be nil for a remote adapter")

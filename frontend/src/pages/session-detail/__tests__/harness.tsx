@@ -381,6 +381,7 @@ export function makeSessionDetail(
 ): SessionDetailPayload {
   return {
     session: sess,
+    sessionTree: [sess],
     messages: [],
     parts: [],
     totalMessages: 0,

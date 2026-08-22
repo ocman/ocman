@@ -105,6 +105,44 @@ func TestAdapter_Session_FallsBackToDBWhenNoLivePort(t *testing.T) {
 	}
 }
 
+func TestAdapter_SessionTreeCombinesNativeAndMCPDescendants(t *testing.T) {
+	root := "root"
+	mcpChild := "mcp-child"
+	database := newTestDBWithSessions(t, []testSession{
+		{id: root, directory: "/tmp/proj"},
+		{id: "native-child", directory: "/tmp/proj", parentID: &root},
+		{id: mcpChild, directory: "/tmp/worktree"},
+		{id: "native-grandchild", directory: "/tmp/worktree", parentID: &mcpChild},
+		{id: "unrelated", directory: "/tmp/proj"},
+	})
+	restore := setDiscoverPortsImplForTests(func() map[string]string { return nil })
+	resetPortCacheForTests()
+	t.Cleanup(func() { restore(); resetPortCacheForTests() })
+
+	a := New(database, nil)
+	a.childLinks = stubMCPParentLookup{parents: map[string]string{mcpChild: root}}
+	for _, openedID := range []string{root, "native-grandchild"} {
+		detail, err := a.Session(t.Context(), openedID, 30, 0)
+		if err != nil {
+			t.Fatalf("Session(%s): %v", openedID, err)
+		}
+
+		byID := make(map[string]db.Session, len(detail.SessionTree))
+		for _, session := range detail.SessionTree {
+			byID[session.ID] = session
+		}
+		if len(byID) != 4 {
+			t.Fatalf("Session(%s) tree = %v, want four related sessions", openedID, byID)
+		}
+		if _, ok := byID["unrelated"]; ok {
+			t.Fatalf("Session(%s) included unrelated session", openedID)
+		}
+		if byID[mcpChild].ParentID != root || byID["native-grandchild"].ParentID != mcpChild {
+			t.Fatalf("Session(%s) mixed parent links not preserved: %v", openedID, byID)
+		}
+	}
+}
+
 func TestApplySessionDetailMetadataFromMessages_CarriesErrorNoticeFields(t *testing.T) {
 	session := &db.Session{ID: "sess-1"}
 	messages := []db.Message{

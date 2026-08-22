@@ -46,7 +46,10 @@ func (f *fakePlatform) Sessions(_ context.Context, _ string, _ int64) ([]db.Sess
 	return f.sessions, nil
 }
 func (f *fakePlatform) Session(_ context.Context, id string, _, _ int) (*platforms.SessionDetail, error) {
-	return &platforms.SessionDetail{Session: &db.Session{ID: id, Platform: f.id}}, nil
+	return &platforms.SessionDetail{
+		Session:     &db.Session{ID: id, Platform: f.id},
+		SessionTree: []db.Session{{ID: id}, {ID: id + "-child", ParentID: id}},
+	}, nil
 }
 func (f *fakePlatform) Owns(_ context.Context, id string) bool {
 	for _, s := range f.sessions {

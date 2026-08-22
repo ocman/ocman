@@ -198,6 +198,7 @@ function viewFromDetail(id: string, detail: SessionDetail): SessionView {
       defaultModel: detail.defaultModel,
       warnings: detail.warnings ?? [],
     },
+    sessionTree: detail.sessionTree ?? [],
     messages,
     parts,
   };
@@ -237,6 +238,7 @@ export function useSession(
           defaultModel: cached.defaultModel,
           warnings: cached.warnings ?? [],
         },
+        sessionTree: cached.sessionTree ?? [],
         messages: cached.messages,
         parts: cached.parts,
       }
@@ -376,6 +378,7 @@ export function useSession(
       updateCachedSession(sessionId, (prev) => ({
         ...prev,
         session: sessionForCache,
+        sessionTree: view.sessionTree,
         messages: view.messages,
         parts: view.parts,
         totalMessages: Math.max(prev.totalMessages ?? 0, totalMessages),
@@ -387,7 +390,7 @@ export function useSession(
         mirrorWriteRef.current?.();
       }, CACHE_MIRROR_DEBOUNCE_MS);
     }
-  }, [sessionId, view.sessionId, view.session, view.messages, view.parts, totalMessages, updateCachedSession]);
+  }, [sessionId, view.sessionId, view.session, view.sessionTree, view.messages, view.parts, totalMessages, updateCachedSession]);
 
   // Flush the pending mirror on unmount and on session switch, so the
   // cache is current when the user navigates away mid-stream. Cleanup
@@ -446,6 +449,7 @@ export function useSession(
             defaultAgent: nextCached.defaultAgent,
             defaultModel: nextCached.defaultModel,
           },
+          sessionTree: nextCached.sessionTree ?? [],
           messages: nextCached.messages,
           parts: nextCached.parts,
           _deltaOwnedFields: seedDeltaOwnedFields(nextCached.parts),
@@ -509,6 +513,7 @@ export function useSession(
             ...detail.session,
             contextTokenCount: detail.session.contextTokenCount ?? detail.contextTokenCount,
           },
+          sessionTree: detail.sessionTree,
           messages: detail.messages,
           parts: detail.parts,
           totalMessages: detail.totalMessages || detail.session.messageCount || 0,

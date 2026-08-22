@@ -215,6 +215,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, map[string]interface{}{
 		"session":           detail.Session,
+		"sessionTree":       detail.SessionTree,
 		"messages":          detail.Messages,
 		"parts":             detail.Parts,
 		"totalMessages":     detail.TotalMessages,
