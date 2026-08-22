@@ -11,7 +11,10 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
-type fakeChildResultStore struct{ delivery string }
+type fakeChildResultStore struct {
+	delivery        string
+	lastContextLive bool
+}
 
 func (*fakeChildResultStore) GetChildSession(context.Context, string) (*state.ChildSession, error) {
 	return nil, nil
@@ -39,7 +42,8 @@ func TestRunChildResultProgress_EmitsPeriodically(t *testing.T) {
 	}
 	close(done)
 }
-func (f *fakeChildResultStore) CompareAndSetChildResultDelivery(_ context.Context, _ string, from, to string) (bool, error) {
+func (f *fakeChildResultStore) CompareAndSetChildResultDelivery(ctx context.Context, _ string, from, to string) (bool, error) {
+	f.lastContextLive = ctx.Err() == nil
 	if f.delivery != from {
 		return false, nil
 	}
@@ -115,10 +119,12 @@ func TestAwaitChildResult_MarksCancelledWaitDisconnected(t *testing.T) {
 	broker.Register("child-1")
 	store := &fakeChildResultStore{delivery: "waiting"}
 	notified := ""
+	recoveryContextLive := false
 	tools := &splitTools{
 		results: broker,
 		store:   store,
-		disconnected: func(_ context.Context, childID string) {
+		disconnected: func(ctx context.Context, childID string) {
+			recoveryContextLive = ctx.Err() == nil
 			notified = childID
 		},
 	}
@@ -131,8 +137,14 @@ func TestAwaitChildResult_MarksCancelledWaitDisconnected(t *testing.T) {
 	if store.delivery != "disconnected" {
 		t.Fatalf("delivery = %q, want disconnected", store.delivery)
 	}
+	if !store.lastContextLive {
+		t.Fatal("delivery recovery reused the canceled request context")
+	}
 	if notified != "child-1" {
 		t.Fatalf("disconnect notification child = %q, want child-1", notified)
+	}
+	if !recoveryContextLive {
+		t.Fatal("disconnect recovery reused the canceled request context")
 	}
 }
 

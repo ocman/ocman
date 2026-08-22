@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 )
@@ -71,8 +72,8 @@ func (d *DB) UpdateChildSession(ctx context.Context, id, status, summary string,
 
 // ReopenChildSession marks a completed child as awaiting its next turn after
 // its parent sends a follow-up.
-func (d *DB) ClaimChildFollowup(id, previousDelivery, sendingDelivery string) (bool, error) {
-	result, err := d.db.Exec(`
+func (d *DB) ClaimChildFollowup(ctx context.Context, id, previousDelivery, sendingDelivery string) (bool, error) {
+	result, err := d.db.ExecContext(ctx, `
 		UPDATE child_sessions
 		SET status = 'sending', result_delivery = ?
 		WHERE id = ? AND result_delivery = ?
@@ -84,8 +85,8 @@ func (d *DB) ClaimChildFollowup(id, previousDelivery, sendingDelivery string) (b
 	return changed == 1, err
 }
 
-func (d *DB) CompleteChildFollowup(id, sendingDelivery, delivery string) (bool, error) {
-	result, err := d.db.Exec(`
+func (d *DB) CompleteChildFollowup(ctx context.Context, id, sendingDelivery, delivery string) (bool, error) {
+	result, err := d.db.ExecContext(ctx, `
 		UPDATE child_sessions
 		SET status = CASE WHEN status = 'sending' THEN 'running' ELSE status END,
 		    summary = CASE WHEN status = 'sending' THEN NULL ELSE summary END,
@@ -100,16 +101,17 @@ func (d *DB) CompleteChildFollowup(id, sendingDelivery, delivery string) (bool, 
 	return changed == 1, err
 }
 
-func (d *DB) RestoreChildFollowup(id string, cs ChildSession, sendingDelivery string) error {
-	_, err := d.db.Exec(`
+func (d *DB) RestoreChildFollowup(ctx context.Context, id string, cs ChildSession, sendingDelivery string) (bool, error) {
+	result, err := d.db.ExecContext(ctx, `
 		UPDATE child_sessions
 		SET status = ?, result_delivery = ?
 		WHERE id = ? AND status = 'sending' AND result_delivery = ?
 	`, cs.Status, cs.ResultDelivery, id, sendingDelivery)
 	if err != nil {
-		return fmt.Errorf("restoring child follow-up: %w", err)
+		return false, fmt.Errorf("restoring child follow-up: %w", err)
 	}
-	return nil
+	changed, err := result.RowsAffected()
+	return changed == 1, err
 }
 
 // UpdateChildSessionCreatedAt backdates a child session's creation time.

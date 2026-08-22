@@ -18,7 +18,10 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
-const childResultProgressInterval = 10 * time.Second
+const (
+	childResultProgressInterval = 10 * time.Second
+	childResultRecoveryTimeout  = 5 * time.Second
+)
 
 // permissionInheriter is the slice of *state.DB the split tools need to
 // inherit the parent's always-allow permissions into a child (issue
@@ -262,12 +265,14 @@ func awaitChildResult(ctx context.Context, req mcplib.CallToolRequest, childID s
 	defer results.Unregister(childID)
 	childResult, err := results.WaitOwned(ctx, childID)
 	if err != nil {
+		recoveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), childResultRecoveryTimeout)
+		defer cancel()
 		claimed := true
 		if store != nil {
-			claimed, _ = store.CompareAndSetChildResultDelivery(ctx, childID, "waiting", "disconnected")
+			claimed, _ = store.CompareAndSetChildResultDelivery(recoveryCtx, childID, "waiting", "disconnected")
 		}
 		if claimed && disconnected != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
-			disconnected(ctx, childID)
+			disconnected(recoveryCtx, childID)
 		}
 		return err
 	}

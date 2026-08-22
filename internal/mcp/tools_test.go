@@ -1539,7 +1539,7 @@ func TestSendMessageToChild_WaitSurvivesConcurrentCancellation(t *testing.T) {
 	}
 	results := internalmcp.NewChildResultBroker()
 	platform := &fakePlatformForTools{sendMessageFn: func(_ platforms.SendMessageRequest) {
-		claimed, err := stateDB.CompleteChildFollowup("child-follow-up-cancel", state.ChildResultWaitSending, "waiting")
+		claimed, err := stateDB.CompleteChildFollowup(context.Background(), "child-follow-up-cancel", state.ChildResultWaitSending, "waiting")
 		if err != nil || !claimed {
 			t.Errorf("cancellation recovery = %v, %v", claimed, err)
 		}

@@ -971,6 +971,69 @@ func TestCompareAndSetChildResultDeliveryHasSingleWinner(t *testing.T) {
 	}
 }
 
+func TestClaimChildFollowupHitAndMiss(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	cs := makeChildSession("child-followup-claim", "parent-1")
+	cs.Status = "completed"
+	cs.ResultDelivery = "delivered"
+	if err := db.InsertChildSession(t.Context(), cs); err != nil {
+		t.Fatal(err)
+	}
+
+	hit, err := db.ClaimChildFollowup(t.Context(), cs.ID, "delivered", ChildResultAsyncSending)
+	if err != nil || !hit {
+		t.Fatalf("claim hit = %v, %v", hit, err)
+	}
+	hit, err = db.ClaimChildFollowup(t.Context(), cs.ID, "delivered", ChildResultAsyncSending)
+	if err != nil || hit {
+		t.Fatalf("claim miss = %v, %v", hit, err)
+	}
+}
+
+func TestCompleteChildFollowupHitAndMiss(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	cs := makeChildSession("child-followup-complete", "parent-1")
+	cs.Status = "sending"
+	cs.ResultDelivery = ChildResultAsyncSending
+	if err := db.InsertChildSession(t.Context(), cs); err != nil {
+		t.Fatal(err)
+	}
+
+	hit, err := db.CompleteChildFollowup(t.Context(), cs.ID, ChildResultAsyncSending, ChildResultAsyncPending)
+	if err != nil || !hit {
+		t.Fatalf("complete hit = %v, %v", hit, err)
+	}
+	hit, err = db.CompleteChildFollowup(t.Context(), cs.ID, ChildResultAsyncSending, ChildResultAsyncPending)
+	if err != nil || hit {
+		t.Fatalf("complete miss = %v, %v", hit, err)
+	}
+}
+
+func TestRestoreChildFollowupHitAndMiss(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	cs := makeChildSession("child-followup-restore", "parent-1")
+	cs.Status = "completed"
+	cs.ResultDelivery = "delivered"
+	if err := db.InsertChildSession(t.Context(), cs); err != nil {
+		t.Fatal(err)
+	}
+	if hit, err := db.ClaimChildFollowup(t.Context(), cs.ID, "delivered", ChildResultAsyncSending); err != nil || !hit {
+		t.Fatalf("claim = %v, %v", hit, err)
+	}
+
+	hit, err := db.RestoreChildFollowup(t.Context(), cs.ID, cs, ChildResultAsyncSending)
+	if err != nil || !hit {
+		t.Fatalf("restore hit = %v, %v", hit, err)
+	}
+	hit, err = db.RestoreChildFollowup(t.Context(), cs.ID, cs, ChildResultAsyncSending)
+	if err != nil || hit {
+		t.Fatalf("restore miss = %v, %v", hit, err)
+	}
+}
+
 func TestCancelChildSession(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()

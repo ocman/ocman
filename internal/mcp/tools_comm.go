@@ -35,7 +35,7 @@ type commChildSessionDB interface {
 	GetChildSession(context.Context, string) (*state.ChildSession, error)
 	ClaimChildFollowup(ctx context.Context, id, previousDelivery, sendingDelivery string) (bool, error)
 	CompleteChildFollowup(ctx context.Context, id, sendingDelivery, delivery string) (bool, error)
-	RestoreChildFollowup(ctx context.Context, id string, cs state.ChildSession, sendingDelivery string) error
+	RestoreChildFollowup(ctx context.Context, id string, cs state.ChildSession, sendingDelivery string) (bool, error)
 	CompareAndSetChildResultDelivery(context.Context, string, string, string) (bool, error)
 }
 
@@ -135,7 +135,7 @@ func (t *commTools) handleSendMessageToChild(ctx context.Context, req mcplib.Cal
 	if wait {
 		sendingDelivery = state.ChildResultWaitSending
 	}
-	claimed, err := t.stateDB.ClaimChildFollowup(childID, cs.ResultDelivery, sendingDelivery)
+	claimed, err := t.stateDB.ClaimChildFollowup(ctx, childID, cs.ResultDelivery, sendingDelivery)
 	if err != nil {
 		if reserved {
 			t.results.Unregister(childID)
@@ -150,9 +150,15 @@ func (t *commTools) handleSendMessageToChild(ctx context.Context, req mcplib.Cal
 	}
 	delivered := fmt.Sprintf("Message from parent session %s:\n\n%s", parentID, message)
 	if err := t.sendMessage(ctx, childID, delivered); err != nil {
-		_ = t.stateDB.RestoreChildFollowup(childID, *cs, sendingDelivery)
+		restored, restoreErr := t.stateDB.RestoreChildFollowup(context.WithoutCancel(ctx), childID, *cs, sendingDelivery)
 		if reserved {
 			t.results.Unregister(childID)
+		}
+		if restoreErr != nil {
+			return mcplib.NewToolResultError(fmt.Sprintf("sending message to child: %v; restore failed: %v", err, restoreErr)), nil
+		}
+		if !restored {
+			return mcplib.NewToolResultError(fmt.Sprintf("sending message to child: %v; restoring child follow-up: delivery ownership was lost", err)), nil
 		}
 		return mcplib.NewToolResultError(fmt.Sprintf("sending message to child: %v", err)), nil
 	}
@@ -160,7 +166,7 @@ func (t *commTools) handleSendMessageToChild(ctx context.Context, req mcplib.Cal
 	if wait {
 		delivery = "waiting"
 	}
-	claimed, err = t.stateDB.CompleteChildFollowup(childID, sendingDelivery, delivery)
+	claimed, err = t.stateDB.CompleteChildFollowup(ctx, childID, sendingDelivery, delivery)
 	if err != nil {
 		if reserved {
 			t.results.Unregister(childID)
