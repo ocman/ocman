@@ -465,60 +465,17 @@ func LaunchOpencode(directory string) (string, error) {
 	return name, err
 }
 
-// LaunchOpencodeWith is the shared core for both launcher
-// variants. When idempotent=true and the session already exists, it
-// short-circuits without creating a new window, and returns
-// launched=false. Otherwise it creates the session (or opens a new
-// window in an existing one) and runs `opencode --port 0` directly as
-// the pane's foreground command — bypassing the user's shell rc files
-// so interactive prompts in mise/starship/etc. can't race against
-// `send-keys`.
+// LaunchOpencodeWith launches opencode without seeding tmux environment
+// variables. The callback adapters preserve the non-env Runner seam used by
+// callers and tests while sharing the launch and session-matching logic.
 func LaunchOpencodeWith(r Runner, directory string, idempotent bool) (string, bool, error) {
-	sessionName := SessionNameForPath(directory)
-
-	// tmux treats `:` and whitespace specially in target identifiers
-	// (session:window[.pane]), so a directory like /home/u/my:project
-	// would derive a session name tmux silently mis-targets. Validate
-	// against the stricter component allowlist (no `:` permitted) so
-	// the derived name can never collide with the target separator.
-	if !ValidComponent.MatchString(sessionName) {
-		return "", false, fmt.Errorf("derived tmux session name %q contains invalid characters", sessionName)
+	r.NewSessionEnv = func(name, directory, command string, _ map[string]string) error {
+		return r.NewSession(name, directory, command)
 	}
-
-	// Match by resolved directory, not by name: tmux replaces dots with
-	// underscores in session names (e.g. "github.com" -> "github_com"),
-	// so a name-equality check against the dotted name we derive here
-	// never matches an existing session and we'd hit `new-session` ->
-	// "duplicate session" (exit 1). Comparing resolvedPath sidesteps the
-	// dot/underscore skew, and we reuse the *existing* tmux name as the
-	// window target so send/new-window can't mis-target.
-	sessionExists := false
-	wantPath := filepath.Clean(directory)
-	if existing, err := r.ListSessions(); err == nil {
-		for _, ts := range existing {
-			if filepath.Clean(ts.ResolvedPath) == wantPath {
-				sessionExists = true
-				sessionName = ts.Name
-				break
-			}
-		}
+	r.NewWindowEnv = func(name, directory, command string, _ map[string]string) error {
+		return r.NewWindow(name, directory, command)
 	}
-
-	if idempotent && sessionExists {
-		return sessionName, false, nil
-	}
-
-	if !sessionExists {
-		if err := r.NewSession(sessionName, directory, OpencodeCommand); err != nil {
-			return "", false, fmt.Errorf("tmux new-session: %w", err)
-		}
-	} else {
-		if err := r.NewWindow(sessionName, directory, OpencodeCommand); err != nil {
-			return "", false, fmt.Errorf("tmux new-window: %w", err)
-		}
-	}
-
-	return sessionName, true, nil
+	return LaunchOpencodeCmdEnvWith(r, directory, OpencodeCommand, idempotent, nil)
 }
 
 // LaunchOpencodeEnv finds or creates a tmux session named after directory
@@ -541,37 +498,7 @@ func LaunchOpencodeEnv(directory string, env map[string]string) (string, bool, e
 // with opencode as the pane's foreground command and env seeded via
 // tmux `-e`.
 func LaunchOpencodeEnvWith(r Runner, directory string, idempotent bool, env map[string]string) (string, bool, error) {
-	sessionName := SessionNameForPath(directory)
-	if !ValidComponent.MatchString(sessionName) {
-		return "", false, fmt.Errorf("derived tmux session name %q contains invalid characters", sessionName)
-	}
-
-	sessionExists := false
-	wantPath := filepath.Clean(directory)
-	if existing, err := r.ListSessions(); err == nil {
-		for _, ts := range existing {
-			if filepath.Clean(ts.ResolvedPath) == wantPath {
-				sessionExists = true
-				sessionName = ts.Name
-				break
-			}
-		}
-	}
-
-	if idempotent && sessionExists {
-		return sessionName, false, nil
-	}
-
-	if !sessionExists {
-		if err := r.NewSessionEnv(sessionName, directory, OpencodeCommand, env); err != nil {
-			return "", false, fmt.Errorf("tmux new-session: %w", err)
-		}
-	} else {
-		if err := r.NewWindowEnv(sessionName, directory, OpencodeCommand, env); err != nil {
-			return "", false, fmt.Errorf("tmux new-window: %w", err)
-		}
-	}
-	return sessionName, true, nil
+	return LaunchOpencodeCmdEnvWith(r, directory, OpencodeCommand, idempotent, env)
 }
 
 func RestartOpencode(directory string) (string, error) {
