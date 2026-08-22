@@ -18,62 +18,63 @@ func derefStr(s *string) string {
 	return *s
 }
 
-// sessionListQuery is THE session-list projection. Both the full list
-// scan (GetSessions) and the single-session recomputation
-// (GetSessionSummary) run this exact SQL and differ only in their WHERE
-// clause, so an incremental refresh cannot drift from a full scan: there
-// is one set of expressions, not two. Changing a column here changes
-// both reads at once.
-//
-// Callers append their own ` WHERE ...` / ` ORDER BY ...`.
-const sessionListQuery = `
+// sessionListSelection starts THE session-list query. Callers add their
+// predicate here so the aggregate and latest-message CTEs only process
+// messages belonging to selected sessions.
+const sessionListSelection = `
+		WITH selected_sessions AS (
+			SELECT * FROM session s`
+
+// sessionListProjection completes the shared session-list projection.
+// Both GetSessions and GetSessionSummary use these exact expressions, so
+// an incremental refresh cannot drift from a full scan.
+const sessionListProjection = `
+		),
+		message_aggregate AS (
+			SELECT
+				m.session_id,
+				SUM(CASE WHEN json_extract(m.data, '$.role') = 'user' THEN 1 ELSE 0 END) AS message_count,
+				SUM(CASE WHEN json_extract(m.data, '$.role') = 'assistant'
+					THEN COALESCE(json_extract(m.data, '$.tokens.input'), 0) ELSE 0 END) AS total_input_tokens,
+				SUM(CASE WHEN json_extract(m.data, '$.role') = 'assistant'
+					THEN COALESCE(json_extract(m.data, '$.tokens.output'), 0) ELSE 0 END) AS total_output_tokens,
+				SUM(CASE WHEN json_extract(m.data, '$.role') = 'assistant'
+					THEN COALESCE(json_extract(m.data, '$.cost'), 0) ELSE 0 END) AS total_cost
+			FROM message m
+			JOIN selected_sessions s ON s.id = m.session_id
+			GROUP BY m.session_id
+		),
+		ranked_messages AS (
+			SELECT
+				m.id, m.session_id, m.time_created, m.data,
+				ROW_NUMBER() OVER (
+					PARTITION BY m.session_id ORDER BY m.time_created DESC
+				) AS message_rank
+			FROM message m
+			JOIN selected_sessions s ON s.id = m.session_id
+		),
+		latest_message AS (
+			SELECT id, session_id, time_created, data
+			FROM ranked_messages
+			WHERE message_rank = 1
+		)
 		SELECT
 			s.id, s.project_id, s.parent_id, s.title, s.directory,
 			s.time_created, s.time_updated,
 			s.summary_additions, s.summary_deletions, s.summary_files,
 			s.share_url,
-			COALESCE((
-				SELECT count(*) FROM message
-				WHERE session_id = s.id AND json_extract(data, '$.role') = 'user'
-			), 0) AS message_count,
-			COALESCE((
-				SELECT SUM(COALESCE(json_extract(data, '$.tokens.input'), 0))
-				FROM message WHERE session_id = s.id AND json_extract(data, '$.role') = 'assistant'
-			), 0) AS total_input_tokens,
-			COALESCE((
-				SELECT SUM(COALESCE(json_extract(data, '$.tokens.output'), 0))
-				FROM message WHERE session_id = s.id AND json_extract(data, '$.role') = 'assistant'
-			), 0) AS total_output_tokens,
-			COALESCE((
-				SELECT SUM(COALESCE(json_extract(data, '$.cost'), 0))
-				FROM message WHERE session_id = s.id AND json_extract(data, '$.role') = 'assistant'
-			), 0) AS total_cost,
-			(
-				SELECT json_extract(data, '$.role') FROM message
-				WHERE session_id = s.id ORDER BY time_created DESC LIMIT 1
-			) AS last_role,
-			(
-				SELECT json_extract(data, '$.finish') FROM message
-				WHERE session_id = s.id ORDER BY time_created DESC LIMIT 1
-			) AS last_finish,
-			(
-				SELECT json_extract(data, '$.error') FROM message
-				WHERE session_id = s.id ORDER BY time_created DESC LIMIT 1
-			) AS last_error,
+			COALESCE(ma.message_count, 0) AS message_count,
+			COALESCE(ma.total_input_tokens, 0) AS total_input_tokens,
+			COALESCE(ma.total_output_tokens, 0) AS total_output_tokens,
+			COALESCE(ma.total_cost, 0) AS total_cost,
+			json_extract(lm.data, '$.role') AS last_role,
+			json_extract(lm.data, '$.finish') AS last_finish,
+			json_extract(lm.data, '$.error') AS last_error,
 			-- Error metadata for the notice normalizer. Carried on
 			-- Session as internal-only fields (json:"-").
-			(
-				SELECT json_extract(data, '$.error.name') FROM message
-				WHERE session_id = s.id ORDER BY time_created DESC LIMIT 1
-			) AS last_error_name,
-			(
-				SELECT COALESCE(json_extract(data, '$.error.data.message'), json_extract(data, '$.error.message')) FROM message
-				WHERE session_id = s.id ORDER BY time_created DESC LIMIT 1
-			) AS last_error_message,
-			(
-				SELECT time_created FROM message
-				WHERE session_id = s.id ORDER BY time_created DESC LIMIT 1
-			) AS last_error_at,
+			json_extract(lm.data, '$.error.name') AS last_error_name,
+			COALESCE(json_extract(lm.data, '$.error.data.message'), json_extract(lm.data, '$.error.message')) AS last_error_message,
+			lm.time_created AS last_error_at,
 			-- The last message is "synthesized terminal" when:
 			--   (a) it has at least one part,
 			--   (b) it has no 'step-start' part (so no LLM turn started), AND
@@ -83,27 +84,23 @@ const sessionListQuery = `
 			-- because no LLM turn ran. Without this signal, such
 			-- sessions appear permanently "busy". See InferSessionStatus
 			-- for how the flag is consumed.
-			COALESCE((
-				SELECT
-					CASE
-						WHEN EXISTS (SELECT 1 FROM part WHERE message_id = m.id)
-							AND NOT EXISTS (
-								SELECT 1 FROM part
-								WHERE message_id = m.id
-								  AND json_extract(data, '$.type') = 'step-start'
-							)
-							AND NOT EXISTS (
-								SELECT 1 FROM part
-								WHERE message_id = m.id
-								  AND json_extract(data, '$.state.status') = 'running'
-							)
-						THEN 1 ELSE 0
-					END
-				FROM message m
-				WHERE m.session_id = s.id
-				ORDER BY m.time_created DESC LIMIT 1
-			), 0) AS last_synth_terminal
-		FROM session s
+			CASE
+				WHEN EXISTS (SELECT 1 FROM part WHERE message_id = lm.id)
+					AND NOT EXISTS (
+						SELECT 1 FROM part
+						WHERE message_id = lm.id
+						  AND json_extract(data, '$.type') = 'step-start'
+					)
+					AND NOT EXISTS (
+						SELECT 1 FROM part
+						WHERE message_id = lm.id
+						  AND json_extract(data, '$.state.status') = 'running'
+					)
+				THEN 1 ELSE 0
+			END AS last_synth_terminal
+		FROM selected_sessions s
+		LEFT JOIN message_aggregate ma ON ma.session_id = s.id
+		LEFT JOIN latest_message lm ON lm.session_id = s.id
 	`
 
 // ErrSessionNotFound reports that a session has no row in the
@@ -177,7 +174,7 @@ func scanSessionRow(scan func(dest ...any) error) (s Session, keep bool, err err
 //
 // Returns ErrSessionNotFound when the session has no row in the list.
 func (d *DB) GetSessionSummary(ctx context.Context, sessionID string) (Session, error) {
-	row := d.db.QueryRowContext(ctx, sessionListQuery+` WHERE s.id = ?`, sessionID)
+	row := d.db.QueryRowContext(ctx, sessionListSelection+` WHERE s.id = ?`+sessionListProjection, sessionID)
 	s, keep, err := scanSessionRow(row.Scan)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -191,10 +188,11 @@ func (d *DB) GetSessionSummary(ctx context.Context, sessionID string) (Session, 
 	return s, nil
 }
 
-// GetSessions returns sessions, optionally filtered by directory and/or a minimum timestamp.
-// Uses SQL aggregation to avoid N+1 queries.
+// GetSessions returns sessions, optionally filtered by directory and/or a
+// minimum timestamp. Message totals and latest-message fields are computed
+// in shared CTEs rather than correlated once per session row.
 func (d *DB) GetSessions(ctx context.Context, directory string, since int64) ([]Session, error) {
-	query := sessionListQuery
+	query := sessionListSelection
 	var conditions []string
 	var args []interface{}
 	// Subagent sessions (non-NULL parent_id, conventionally titled
@@ -213,7 +211,7 @@ func (d *DB) GetSessions(ctx context.Context, directory string, since int64) ([]
 	if len(conditions) > 0 {
 		query += ` WHERE ` + strings.Join(conditions, ` AND `)
 	}
-	query += ` ORDER BY s.time_updated DESC`
+	query += sessionListProjection + ` ORDER BY s.time_updated DESC`
 
 	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
