@@ -17,3 +17,9 @@ it('lightens a monochrome fallback logo', () => {
 
   expect(document.querySelector('img')).toHaveClass('oc-model-logo--mono');
 });
+
+it('can force a colored logo to render monochrome', () => {
+  render(<ModelLabel model="anthropic/claude-opus-4" monochrome>Claude Opus 4</ModelLabel>);
+
+  expect(document.querySelector('img')).toHaveClass('oc-model-logo--mono');
+});

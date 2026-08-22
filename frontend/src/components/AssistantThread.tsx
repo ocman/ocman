@@ -251,7 +251,7 @@ const ModelChangeDivider: FC<{ model: string }> = ({ model }) => {
     <div className="oc-model-change" role="separator" data-testid="model-change-divider">
       <span className="oc-model-change-line" aria-hidden="true" />
       <span className="oc-model-change-chip" title={model}>
-        Model changed to <ModelLabel model={model}>{label}</ModelLabel>
+        Model changed to <ModelLabel model={model} monochrome>{label}</ModelLabel>
       </span>
       <span className="oc-model-change-line" aria-hidden="true" />
     </div>
@@ -329,7 +329,7 @@ function AssistantMeta() {
           <>
             <span className="oc-meta-sep">·</span>
             <span className="oc-meta-model" title={model}>
-              <ModelLabel model={model}>{modelLabel}</ModelLabel>
+              <ModelLabel model={model} monochrome>{modelLabel}</ModelLabel>
             </span>
           </>
         )}
@@ -433,7 +433,7 @@ function TurnSummaryBar({ messageId }: { messageId: string }) {
   if (model) {
     items.push(
       <span key="model" className="oc-turn-stat oc-turn-model" title={model}>
-        <ModelLabel model={model}>{modelLabel}</ModelLabel>
+        <ModelLabel model={model} monochrome>{modelLabel}</ModelLabel>
       </span>
     );
   }

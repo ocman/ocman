@@ -5,7 +5,7 @@
 }
 
 .oc-model-logo--mono {
-  filter: invert(88%);
+  filter: brightness(0) invert(88%);
 }
 
 .oc-model-label {
