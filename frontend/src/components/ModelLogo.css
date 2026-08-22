@@ -8,6 +8,10 @@
   filter: brightness(0) invert(88%);
 }
 
+.oc-model-logo--muted {
+  opacity: 0.45;
+}
+
 .oc-model-label {
   display: inline-flex;
   align-items: center;
