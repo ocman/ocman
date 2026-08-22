@@ -622,7 +622,7 @@ func TestRetryFromRejectsMismatchedTargets(t *testing.T) {
 	}
 
 	// A version row whose stored definition is corrupt fails to decode.
-	corrupt, err := h.db.InsertWorkflowVersion(state.WorkflowVersion{
+	corrupt, err := h.db.InsertWorkflowVersion(t.Context(), state.WorkflowVersion{
 		ID: "wfv_corrupt", WorkflowID: "release", Name: "Release",
 		MetadataVersion: "corrupt", DefinitionJSON: "{not json", Concurrency: 1,
 		CreatedAt: h.clock().UnixMilli(),
@@ -642,7 +642,7 @@ func TestRetryFromRejectsMismatchedTargets(t *testing.T) {
 func TestCorruptStoredDefinitionSurfacesEverywhere(t *testing.T) {
 	h := newHarness(t)
 	ctx := t.Context()
-	row, err := h.db.InsertWorkflowVersion(state.WorkflowVersion{
+	row, err := h.db.InsertWorkflowVersion(t.Context(), state.WorkflowVersion{
 		ID: "wfv_corrupt", WorkflowID: "broken", Name: "Broken",
 		MetadataVersion: "1", DefinitionJSON: "{not json", Concurrency: 1,
 		CreatedAt: h.clock().UnixMilli(),
@@ -700,9 +700,9 @@ func TestServiceSurfacesStoreFailures(t *testing.T) {
 		"Cancel":           func() error { _, err := svc.Cancel(ctx, "wfr_1"); return err },
 		"ResolveUnknown":   func() error { _, err := svc.ResolveUnknown(ctx, "wfr_1", 1, ResolutionSucceeded); return err },
 		"EvaluateTriggers": func() error { return svc.EvaluateTriggers(ctx) },
-		"triggerState":     func() error { _, err := svc.triggerState("wfv_1", "manual"); return err },
+		"triggerState":     func() error { _, err := svc.triggerState(ctx, "wfv_1", "manual"); return err },
 		"triggerStatuses": func() error {
-			_, err := svc.triggerStatuses("wfv_1", []Trigger{{ID: "manual", Type: TriggerManual}})
+			_, err := svc.triggerStatuses(ctx, "wfv_1", []Trigger{{ID: "manual", Type: TriggerManual}})
 			return err
 		},
 	}
@@ -806,18 +806,18 @@ type leaseFailingStore struct {
 	failWorkspace bool
 }
 
-func (s leaseFailingStore) ListWorkflowResourceLeases(runID string) ([]state.WorkflowResourceLease, error) {
+func (s leaseFailingStore) ListWorkflowResourceLeases(ctx context.Context, runID string) ([]state.WorkflowResourceLease, error) {
 	if s.failResources {
 		return nil, errors.New("resource lease read failed")
 	}
-	return s.Store.ListWorkflowResourceLeases(runID)
+	return s.Store.ListWorkflowResourceLeases(ctx, runID)
 }
 
-func (s leaseFailingStore) ListWorkflowWorkspaceLeases(runID string) ([]state.WorkflowWorkspaceLease, error) {
+func (s leaseFailingStore) ListWorkflowWorkspaceLeases(ctx context.Context, runID string) ([]state.WorkflowWorkspaceLease, error) {
 	if s.failWorkspace {
 		return nil, errors.New("workspace lease read failed")
 	}
-	return s.Store.ListWorkflowWorkspaceLeases(runID)
+	return s.Store.ListWorkflowWorkspaceLeases(ctx, runID)
 }
 
 // TestGetRunPropagatesLeaseReadFailures proves a run detail is never served
@@ -879,7 +879,7 @@ func TestDispatchRefreshesRunAfterAPolicyMove(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = h.db.ApproveWorkflowNode(run.ID, "gate", h.clock().UnixMilli()); err != nil {
+	if err = h.db.ApproveWorkflowNode(t.Context(), run.ID, "gate", h.clock().UnixMilli()); err != nil {
 		t.Fatal(err)
 	}
 	if err = h.svc.Tick(ctx); err != nil {

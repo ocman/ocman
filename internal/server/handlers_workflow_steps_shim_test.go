@@ -87,13 +87,13 @@ func TestHandleWorkflowStepReportsUnsupportedKind(t *testing.T) {
 // pinned version does not contain must fail loudly.
 func TestWorkflowStepNodeRejectsUnknownIDs(t *testing.T) {
 	srv, run := workflowStepRun(t, nil)
-	if _, err := srv.workflowStepNode("missing-run", "review"); err == nil {
+	if _, err := srv.workflowStepNode(t.Context(), "missing-run", "review"); err == nil {
 		t.Fatal("unknown run: want error")
 	}
-	if _, err := srv.workflowStepNode(run.ID, "nowhere"); err == nil {
+	if _, err := srv.workflowStepNode(t.Context(), run.ID, "nowhere"); err == nil {
 		t.Fatal("unknown node: want error")
 	}
-	node, err := srv.workflowStepNode(run.ID, "ship")
+	node, err := srv.workflowStepNode(t.Context(), run.ID, "ship")
 	if err != nil || node.ID != "ship" {
 		t.Fatalf("node = %+v err = %v", node, err)
 	}
@@ -114,7 +114,7 @@ func TestEvaluateWorkflowCondition(t *testing.T) {
 		"condition false": {`{"review":{"ok":false}}`, false},
 	} {
 		t.Run(name, func(t *testing.T) {
-			resp, err := srv.evaluateWorkflowCondition(run.ID, workflowStepRequest{
+			resp, err := srv.evaluateWorkflowCondition(t.Context(), run.ID, workflowStepRequest{
 				NodeID: "ship", From: "review", Upstream: json.RawMessage(tc.upstream),
 			})
 			if err != nil {
@@ -128,11 +128,11 @@ func TestEvaluateWorkflowCondition(t *testing.T) {
 
 	// An edge the author never gated must let the step through instead of
 	// skipping it.
-	resp, err := srv.evaluateWorkflowCondition(run.ID, workflowStepRequest{NodeID: "ship", From: "elsewhere"})
+	resp, err := srv.evaluateWorkflowCondition(t.Context(), run.ID, workflowStepRequest{NodeID: "ship", From: "elsewhere"})
 	if err != nil || !resp.OK {
 		t.Fatalf("ungated edge: resp = %+v err = %v", resp, err)
 	}
-	if _, err := srv.evaluateWorkflowCondition("missing-run", workflowStepRequest{NodeID: "ship"}); err == nil {
+	if _, err := srv.evaluateWorkflowCondition(t.Context(), "missing-run", workflowStepRequest{NodeID: "ship"}); err == nil {
 		t.Fatal("unknown run: want error")
 	}
 }
@@ -146,7 +146,7 @@ func TestEvaluateWorkflowConditionSurfacesExpressionErrors(t *testing.T) {
 		"nodes":[{"id":"review","name":"Review","type":"approval"},{"id":"ship","name":"Ship","type":"approval"}],
 		"dependencies":[{"from":"review","to":"ship","condition":"outcomes[\"absent\"].output.ok == true"}]}`
 	srv, run := workflowStepRun(t, &definition)
-	if _, err := srv.evaluateWorkflowCondition(run.ID, workflowStepRequest{
+	if _, err := srv.evaluateWorkflowCondition(t.Context(), run.ID, workflowStepRequest{
 		NodeID: "ship", From: "review", Upstream: json.RawMessage(`{"review":{"ok":true}}`),
 	}); err == nil {
 		t.Fatal("want evaluation error for an unknown outcome reference")

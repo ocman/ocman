@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"encoding/json"
 	"sort"
 
@@ -9,7 +10,7 @@ import (
 
 // GetModelUsage returns usage stats per model, optionally filtered by time
 // window (since) and directory prefix (dir; see directoryWhere).
-func (d *DB) GetModelUsage(since int64, dir string) ([]ModelUsage, error) {
+func (d *DB) GetModelUsage(ctx context.Context, since int64, dir string) ([]ModelUsage, error) {
 	dirFrag, dirArgs := directoryWhere(dir)
 	query := `SELECT m.data FROM message m`
 	if dirFrag != "" {
@@ -26,7 +27,7 @@ func (d *DB) GetModelUsage(since int64, dir string) ([]ModelUsage, error) {
 		query += "\n		  AND " + dirFrag
 		args = append(args, dirArgs...)
 	}
-	rows, err := d.db.Query(query, args...)
+	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +99,7 @@ type RecentModel struct {
 //
 // `sessionLimit` caps how many recent sessions to sample (typical: 50);
 // `maxResults` caps the final list size (typical: 5–10).
-func (d *DB) GetRecentModels(sessionLimit, maxResults int) ([]RecentModel, error) {
+func (d *DB) GetRecentModels(ctx context.Context, sessionLimit, maxResults int) ([]RecentModel, error) {
 	if sessionLimit <= 0 {
 		sessionLimit = 50
 	}
@@ -108,7 +109,7 @@ func (d *DB) GetRecentModels(sessionLimit, maxResults int) ([]RecentModel, error
 	// Per-model: max timestamp of an assistant message, scoped to the N most
 	// recently-updated sessions. Rely on SQL for the grouping/sort — way
 	// cheaper than decoding N JSON blobs in Go just to pluck out a string.
-	rows, err := d.db.Query(`
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT
 			COALESCE(
 				NULLIF(json_extract(m.data, '$.providerID'), ''),

@@ -1,6 +1,7 @@
 package opencode
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"sort"
@@ -60,7 +61,7 @@ func listed(s db.Session) bool {
 	return s.ParentID != "" || !strings.HasSuffix(s.Title, " subagent)")
 }
 
-func (f *fakeSessionStore) GetSessions(_ string, _ int64) ([]db.Session, error) {
+func (f *fakeSessionStore) GetSessions(context.Context, string, int64) ([]db.Session, error) {
 	f.fullScans.Add(1)
 	return f.listRows(), nil
 }
@@ -88,7 +89,7 @@ func (f *fakeSessionStore) listRows() []db.Session {
 	return out
 }
 
-func (f *fakeSessionStore) GetSessionSummary(sessionID string) (db.Session, error) {
+func (f *fakeSessionStore) GetSessionSummary(_ context.Context, sessionID string) (db.Session, error) {
 	f.summaryReads.Add(1)
 	f.readMu.Lock()
 	f.summaryIDs = append(f.summaryIDs, sessionID)
@@ -139,7 +140,7 @@ func dirtyIDs() []string {
 // warmSnapshot loads the store into the cache with one full scan.
 func warmSnapshot(t *testing.T, store *fakeSessionStore) {
 	t.Helper()
-	if _, err := getSessionsCached(store, "", 0); err != nil {
+	if _, err := getSessionsCached(t.Context(), store, "", 0); err != nil {
 		t.Fatalf("warm snapshot: %v", err)
 	}
 }
@@ -173,7 +174,7 @@ func TestRefreshSessionsIncremental_UpdatedSessionMatchesFullScan(t *testing.T) 
 	store.put(db.Session{ID: "s-old", Title: "Old (renamed)", Directory: "/a", TimeUpdated: 9000, TotalInputTokens: 42})
 	MarkSessionDirty("s-old")
 
-	if _, err := refreshSessionsIncremental(store); err != nil {
+	if _, err := refreshSessionsIncremental(t.Context(), store); err != nil {
 		t.Fatalf("incremental refresh: %v", err)
 	}
 
@@ -195,7 +196,7 @@ func TestRefreshSessionsIncremental_LeavesUnchangedSessionsAlone(t *testing.T) {
 	scansAfterWarm := store.fullScans.Load()
 
 	MarkSessionDirty("s-mid")
-	if _, err := refreshSessionsIncremental(store); err != nil {
+	if _, err := refreshSessionsIncremental(t.Context(), store); err != nil {
 		t.Fatalf("incremental refresh: %v", err)
 	}
 
@@ -219,7 +220,7 @@ func TestRefreshSessionsIncremental_DeletedSessionIsDropped(t *testing.T) {
 
 	store.remove("s-mid")
 	MarkSessionDirty("s-mid")
-	if _, err := refreshSessionsIncremental(store); err != nil {
+	if _, err := refreshSessionsIncremental(t.Context(), store); err != nil {
 		t.Fatalf("incremental refresh: %v", err)
 	}
 
@@ -251,7 +252,7 @@ func TestRefreshSessionsIncremental_ParentlessSubagentStaysFiltered(t *testing.T
 
 	store.put(db.Session{ID: "s-judge", Title: "Judge (auto-approve subagent)", Directory: "/a", TimeUpdated: 9999})
 	MarkSessionDirty("s-judge")
-	if _, err := refreshSessionsIncremental(store); err != nil {
+	if _, err := refreshSessionsIncremental(t.Context(), store); err != nil {
 		t.Fatalf("incremental refresh: %v", err)
 	}
 
@@ -271,7 +272,7 @@ func TestRefreshSessionsIncremental_NoDirtySessionsRunsNoQuery(t *testing.T) {
 	warmSnapshot(t, store)
 	expireSessionsCache()
 
-	if _, err := refreshSessionsIncremental(store); err != nil {
+	if _, err := refreshSessionsIncremental(t.Context(), store); err != nil {
 		t.Fatalf("incremental refresh: %v", err)
 	}
 
@@ -303,7 +304,7 @@ func TestRefreshSessionsIncremental_ReconcilesOnSchedule(t *testing.T) {
 	store.put(db.Session{ID: "s-silent", Title: "Silent", Directory: "/c", TimeUpdated: 4000})
 
 	// Not due yet: the snapshot stays as it was.
-	if _, err := refreshSessionsIncremental(store); err != nil {
+	if _, err := refreshSessionsIncremental(t.Context(), store); err != nil {
 		t.Fatalf("incremental refresh: %v", err)
 	}
 	if len(currentSnapshot()) != len(dirtyFixture) {
@@ -315,7 +316,7 @@ func TestRefreshSessionsIncremental_ReconcilesOnSchedule(t *testing.T) {
 	lastFullRefresh = time.Now().Add(-2 * sessionsReconcileInterval)
 	sessionsMu.Unlock()
 
-	if _, err := refreshSessionsIncremental(store); err != nil {
+	if _, err := refreshSessionsIncremental(t.Context(), store); err != nil {
 		t.Fatalf("reconciling refresh: %v", err)
 	}
 	want := mustFullScan(t, store)
@@ -339,7 +340,7 @@ func TestMarkSessionsDirty_ForcesFullReconciliation(t *testing.T) {
 	store.put(db.Session{ID: "s-unattributed", Title: "Unattributed", Directory: "/c", TimeUpdated: 4000})
 	MarkSessionsDirty()
 
-	if _, err := refreshSessionsIncremental(store); err != nil {
+	if _, err := refreshSessionsIncremental(t.Context(), store); err != nil {
 		t.Fatalf("incremental refresh: %v", err)
 	}
 	want := mustFullScan(t, store)
@@ -361,7 +362,7 @@ func TestRefreshSessionsIncremental_FailureKeepsSnapshotAndDirty(t *testing.T) {
 
 	store.failSummaries(errors.New("database is locked"))
 	MarkSessionDirty("s-mid")
-	if _, err := refreshSessionsIncremental(store); err == nil {
+	if _, err := refreshSessionsIncremental(t.Context(), store); err == nil {
 		t.Fatal("expected the per-session read failure to surface")
 	}
 
@@ -398,7 +399,7 @@ func TestRefreshSessionsIncremental_DoesNotSwallowInvalidation(t *testing.T) {
 	MarkSessionDirty("s-mid")
 	store.put(db.Session{ID: "s-mid", Title: "Mid (renamed)", Directory: "/b", TimeUpdated: 2500})
 
-	if _, err := refreshSessionsIncremental(store); err != nil {
+	if _, err := refreshSessionsIncremental(t.Context(), store); err != nil {
 		t.Fatalf("incremental refresh: %v", err)
 	}
 	if got := store.fullScans.Load(); got != 1 {
@@ -406,7 +407,7 @@ func TestRefreshSessionsIncremental_DoesNotSwallowInvalidation(t *testing.T) {
 	}
 
 	// The invalidation is still pending, so the next read fetches.
-	if _, err := getSessionsCached(store, "", 0); err != nil {
+	if _, err := getSessionsCached(t.Context(), store, "", 0); err != nil {
 		t.Fatalf("read after invalidation: %v", err)
 	}
 	if got := store.fullScans.Load(); got != 2 {
@@ -426,7 +427,7 @@ func TestGetSessionsCached_FreshDirtyReadRefreshesInBackground(t *testing.T) {
 	store.put(db.Session{ID: "s-mid", Title: "Mid (renamed)", Directory: "/b", TimeUpdated: 2500})
 	MarkSessionDirty("s-mid")
 
-	if _, err := getSessionsCached(store, "", 0); err != nil {
+	if _, err := getSessionsCached(t.Context(), store, "", 0); err != nil {
 		t.Fatalf("dirty read: %v", err)
 	}
 	drainSessionsRefresh()
@@ -437,5 +438,73 @@ func TestGetSessionsCached_FreshDirtyReadRefreshesInBackground(t *testing.T) {
 	}
 	if got := store.fullScans.Load(); got != 1 {
 		t.Errorf("full scans = %d, want 1", got)
+	}
+}
+
+type cancelableSerializedRefreshDB struct {
+	firstEntered chan struct{}
+	calls        atomic.Int64
+	active       atomic.Int64
+	maxActive    atomic.Int64
+}
+
+func (d *cancelableSerializedRefreshDB) GetSessions(ctx context.Context, _ string, _ int64) ([]db.Session, error) {
+	call := d.calls.Add(1)
+	active := d.active.Add(1)
+	defer d.active.Add(-1)
+	for max := d.maxActive.Load(); active > max && !d.maxActive.CompareAndSwap(max, active); max = d.maxActive.Load() {
+	}
+	if call == 1 {
+		close(d.firstEntered)
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	return []db.Session{{ID: "newer", TimeUpdated: 2}}, nil
+}
+
+func (*cancelableSerializedRefreshDB) GetSessionSummary(context.Context, string) (db.Session, error) {
+	return db.Session{}, db.ErrSessionNotFound
+}
+
+func TestRefreshSessionsForRequest_SerializesCanceledLeaderAndIncrementalFollower(t *testing.T) {
+	resetSessionsCache()
+	t.Cleanup(resetSessionsCache)
+
+	d := &cancelableSerializedRefreshDB{firstEntered: make(chan struct{})}
+	joined := make(chan struct{}, 3)
+	afterSessionsFlightJoin = func() { joined <- struct{}{} }
+	t.Cleanup(func() { afterSessionsFlightJoin = nil })
+	requestCtx, cancelRequest := context.WithCancel(t.Context())
+	requestDone := make(chan error, 1)
+	go func() {
+		_, err := refreshSessionsForRequest(requestCtx, d)
+		requestDone <- err
+	}()
+	<-d.firstEntered
+	<-joined
+
+	incrementalDone := make(chan error, 1)
+	go func() {
+		_, err := refreshSessionsIncremental(t.Context(), d)
+		incrementalDone <- err
+	}()
+	select {
+	case <-joined:
+	case <-time.After(time.Second):
+		t.Fatal("incremental refresh did not enter sessions flight")
+	}
+
+	cancelRequest()
+	if err := <-requestDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("request error = %v, want context.Canceled", err)
+	}
+	if err := <-incrementalDone; err != nil {
+		t.Fatalf("incremental refresh: %v", err)
+	}
+	if got := d.maxActive.Load(); got != 1 {
+		t.Fatalf("concurrent DB refreshes = %d, want 1", got)
+	}
+	if got := currentSnapshot(); !reflect.DeepEqual(got, []db.Session{{ID: "newer", TimeUpdated: 2}}) {
+		t.Fatalf("snapshot = %#v, want newer incremental result", got)
 	}
 }

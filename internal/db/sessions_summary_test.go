@@ -92,7 +92,7 @@ func TestGetSessionSummary_MatchesGetSessionsRow(t *testing.T) {
 	defer d.Close()
 	seedSummaryFixture(t, d)
 
-	full, err := d.GetSessions("", 0)
+	full, err := d.GetSessions(t.Context(), "", 0)
 	if err != nil {
 		t.Fatalf("GetSessions: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestGetSessionSummary_MatchesGetSessionsRow(t *testing.T) {
 	}
 
 	for _, want := range full {
-		got, err := d.GetSessionSummary(want.ID)
+		got, err := d.GetSessionSummary(t.Context(), want.ID)
 		if err != nil {
 			t.Fatalf("GetSessionSummary(%s): %v", want.ID, err)
 		}
@@ -119,7 +119,7 @@ func TestGetSessionSummary_MissingRowIsDistinguishable(t *testing.T) {
 	defer d.Close()
 	seedSummaryFixture(t, d)
 
-	_, err := d.GetSessionSummary("ses-does-not-exist")
+	_, err := d.GetSessionSummary(t.Context(), "ses-does-not-exist")
 	if !errors.Is(err, ErrSessionNotFound) {
 		t.Fatalf("GetSessionSummary(missing) error = %v, want ErrSessionNotFound", err)
 	}
@@ -134,7 +134,7 @@ func TestGetSessionSummary_ParentlessSubagentIsMissing(t *testing.T) {
 	defer d.Close()
 	seedSummaryFixture(t, d)
 
-	_, err := d.GetSessionSummary("ses-orphan")
+	_, err := d.GetSessionSummary(t.Context(), "ses-orphan")
 	if !errors.Is(err, ErrSessionNotFound) {
 		t.Fatalf("GetSessionSummary(parentless subagent) error = %v, want ErrSessionNotFound", err)
 	}

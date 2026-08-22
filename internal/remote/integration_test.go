@@ -89,7 +89,7 @@ func TestManager_ReconnectsAfterRemoteRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.AddRemote("grpc://"+addr, "tok", "Box"); err != nil {
+	if _, err := store.AddRemote(t.Context(), "grpc://"+addr, "tok", "Box"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -151,7 +151,7 @@ func TestManager_RetriesWhenOfflineAtStartup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	localID, err := store.AddRemote("grpc://"+addr, "tok", "Box")
+	localID, err := store.AddRemote(t.Context(), "grpc://"+addr, "tok", "Box")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ func TestManager_AuthFailedDoesNotRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Wrong token.
-	localID, err := store.AddRemote(addr, "wrong-token", "Box")
+	localID, err := store.AddRemote(t.Context(), addr, "wrong-token", "Box")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +315,7 @@ func TestManager_RegistersRemotePlatform(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.AddRemote(addr, "tok", "Workstation"); err != nil {
+	if _, err := store.AddRemote(t.Context(), addr, "tok", "Workstation"); err != nil {
 		t.Fatal(err)
 	}
 

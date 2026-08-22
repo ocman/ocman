@@ -68,7 +68,7 @@ func TestAgentCatalog_CancelledContextIsNotWarn(t *testing.T) {
 	if findLog(hook, logrus.WarnLevel, "agent catalog fetch failed") {
 		t.Error("cancelled context logged at WARN; want DEBUG")
 	}
-	if !findLog(hook, logrus.DebugLevel, "agent catalog fetch failed") {
+	if !findLog(hook, logrus.DebugLevel, "agent catalog unavailable") {
 		t.Errorf("expected DEBUG line for cancelled context; got %d entries", len(hook.AllEntries()))
 	}
 }

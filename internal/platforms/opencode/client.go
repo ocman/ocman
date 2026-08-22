@@ -197,7 +197,7 @@ func (a *Adapter) fetchSessionFromOpenCodeCtx(ctx context.Context, sessionID str
 		return nil, false
 	}
 	dbPhase := srvtiming.Begin(ctx, "db_get_session")
-	dbSession, err := a.db.GetSession(sessionID)
+	dbSession, err := a.db.GetSession(ctx, sessionID)
 	dbPhase.End()
 	if err != nil {
 		return nil, false
@@ -243,7 +243,7 @@ func (a *Adapter) fetchSessionFromOpenCodeCtx(ctx context.Context, sessionID str
 	convPhase.EndWithDesc("convertOpenCodeMessages + paginate")
 
 	defaultsPhase := srvtiming.Begin(ctx, "db_session_defaults")
-	defaults, err := getSessionDefaultsCached(a.db, sessionID, dbSession.Directory)
+	defaults, err := getSessionDefaultsCached(ctx, a.db, sessionID, dbSession.Directory)
 	defaultsPhase.End()
 	if err != nil {
 		log.WithFields(log.Fields{"sessionID": sessionID, "error": err}).

@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"encoding/json"
 	"sort"
 	"time"
@@ -12,7 +13,7 @@ import (
 // GetDailyActivity returns daily session/message counts for the last 365 days,
 // optionally filtered by a time window (since), model (modelFilter = "provider/model" or "model"),
 // and directory prefix (dir; see directoryWhere).
-func (d *DB) GetDailyActivity(since int64, modelFilter, dir string) ([]DailyActivity, error) {
+func (d *DB) GetDailyActivity(ctx context.Context, since int64, modelFilter, dir string) ([]DailyActivity, error) {
 	days := 365
 	cutoff := time.Now().AddDate(0, 0, -days).UnixMilli()
 	if since > cutoff {
@@ -42,7 +43,7 @@ func (d *DB) GetDailyActivity(since int64, modelFilter, dir string) ([]DailyActi
 			GROUP BY day
 			ORDER BY day
 		`
-		rows, err := d.db.Query(query, args...)
+		rows, err := d.db.QueryContext(ctx, query, args...)
 		if err != nil {
 			return nil, err
 		}
@@ -85,7 +86,7 @@ func (d *DB) GetDailyActivity(since int64, modelFilter, dir string) ([]DailyActi
 	query2 += groupBy + `
 		ORDER BY day
 	`
-	rows2, err := d.db.Query(query2, args2...)
+	rows2, err := d.db.QueryContext(ctx, query2, args2...)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +149,7 @@ func (d *DB) GetDailyActivity(since int64, modelFilter, dir string) ([]DailyActi
 		GROUP BY day
 		ORDER BY day
 	`
-	rows3, err := d.db.Query(query3, args3...)
+	rows3, err := d.db.QueryContext(ctx, query3, args3...)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +188,7 @@ func (d *DB) GetDailyActivity(since int64, modelFilter, dir string) ([]DailyActi
 // GetHourlyTokensByModel returns token counts per calendar hour, broken down by provider/model.
 // windowDays controls how many days back to look (default 7); modelFilter optionally restricts
 // to one model key ("provider/model"); dir optionally scopes to a project subtree (see directoryWhere).
-func (d *DB) GetHourlyTokensByModel(windowDays int, since int64, modelFilter, dir string) ([]HourlyTokensByModel, error) {
+func (d *DB) GetHourlyTokensByModel(ctx context.Context, windowDays int, since int64, modelFilter, dir string) ([]HourlyTokensByModel, error) {
 	if windowDays <= 0 {
 		windowDays = 7
 	}
@@ -214,7 +215,7 @@ func (d *DB) GetHourlyTokensByModel(windowDays int, since int64, modelFilter, di
 		query += "\n		  AND " + dirFrag
 		args = append(args, dirArgs...)
 	}
-	rows, err := d.db.Query(query, args...)
+	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -279,7 +280,7 @@ func (d *DB) GetHourlyTokensByModel(windowDays int, since int64, modelFilter, di
 
 // GetHourlyActivity returns session counts per hour of day, optionally scoped
 // to a directory subtree (dir; see directoryWhere).
-func (d *DB) GetHourlyActivity(since int64, dir string) ([]HourlyActivity, error) {
+func (d *DB) GetHourlyActivity(ctx context.Context, since int64, dir string) ([]HourlyActivity, error) {
 	dirFrag, dirArgs := directoryWhere(dir)
 	query := `
 		SELECT
@@ -296,7 +297,7 @@ func (d *DB) GetHourlyActivity(since int64, dir string) ([]HourlyActivity, error
 		GROUP BY hour
 		ORDER BY hour
 	`
-	rows, err := d.db.Query(query, args...)
+	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

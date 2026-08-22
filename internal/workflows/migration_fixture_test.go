@@ -14,7 +14,7 @@ import (
 // Bun or Git. It keeps the preset test about orchestration contracts.
 type fixtureExecutor struct{}
 
-func (fixtureExecutor) Execute(_ context.Context, req CommandRequest) CommandResult {
+func (fixtureExecutor) Execute(ctx context.Context, req CommandRequest) CommandResult {
 	output := `{"ok":true}`
 	if strings.Contains(strings.Join(req.Command, " "), "discover-migration-items") || strings.Contains(strings.Join(req.Command, " "), "partition-diagnostics") {
 		output = `[{"id":"one","path":"src/one.ts"},{"id":"two","path":"src/two.ts"}]`
@@ -28,7 +28,7 @@ type fixtureAgent struct {
 	prompts []string
 }
 
-func (a *fixtureAgent) Start(_ context.Context, req AgentRequest) (AgentSession, error) {
+func (a *fixtureAgent) Start(ctx context.Context, req AgentRequest) (AgentSession, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.next++
@@ -37,7 +37,7 @@ func (a *fixtureAgent) Start(_ context.Context, req AgentRequest) (AgentSession,
 	return AgentSession{ID: id, Platform: req.Platform, State: "busy"}, nil
 }
 
-func (a *fixtureAgent) Inspect(_ context.Context, _ AgentSession) (AgentResult, error) {
+func (a *fixtureAgent) Inspect(ctx context.Context, _ AgentSession) (AgentResult, error) {
 	return AgentResult{State: "done", FinalMessage: `{"summary":"done","diff":"","approved":true,"findings":[],"fixed":true}`}, nil
 }
 

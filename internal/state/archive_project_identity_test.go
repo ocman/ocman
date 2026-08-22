@@ -16,11 +16,11 @@ func TestArchiveProject_IsHostQualified(t *testing.T) {
 	defer db.Close()
 
 	const root = "/home/u/app"
-	if err := db.ArchiveProject("local", root); err != nil {
+	if err := db.ArchiveProject(t.Context(), "local", root); err != nil {
 		t.Fatalf("ArchiveProject local: %v", err)
 	}
 
-	archived, err := db.ArchivedProjects()
+	archived, err := db.ArchivedProjects(t.Context())
 	if err != nil {
 		t.Fatalf("ArchivedProjects: %v", err)
 	}
@@ -32,20 +32,20 @@ func TestArchiveProject_IsHostQualified(t *testing.T) {
 	}
 
 	// Archiving the remote's copy is a separate row, not an upsert.
-	if err := db.ArchiveProject("r-A", root); err != nil {
+	if err := db.ArchiveProject(t.Context(), "r-A", root); err != nil {
 		t.Fatalf("ArchiveProject remote: %v", err)
 	}
-	archived, _ = db.ArchivedProjects()
+	archived, _ = db.ArchivedProjects(t.Context())
 	if len(archived) != 2 {
 		t.Fatalf("archived = %v, want one row per host", archived)
 	}
 
 	// Unarchiving one host leaves the other archived, and records the
 	// unarchive intent against that host only.
-	if err := db.UnarchiveProject("local", root); err != nil {
+	if err := db.UnarchiveProject(t.Context(), "local", root); err != nil {
 		t.Fatalf("UnarchiveProject: %v", err)
 	}
-	archived, _ = db.ArchivedProjects()
+	archived, _ = db.ArchivedProjects(t.Context())
 	if len(archived) != 1 {
 		t.Fatalf("archived = %v, want only the remote still archived", archived)
 	}
@@ -53,7 +53,7 @@ func TestArchiveProject_IsHostQualified(t *testing.T) {
 		t.Fatalf("archived = %v, want the remote row", archived)
 	}
 
-	keep, err := db.ProjectsUnarchivedSince(0)
+	keep, err := db.ProjectsUnarchivedSince(t.Context(), 0)
 	if err != nil {
 		t.Fatalf("ProjectsUnarchivedSince: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestMigrateV42IsIdempotentThroughOpen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	if err := first.ArchiveProject("r-A", "/home/u/app"); err != nil {
+	if err := first.ArchiveProject(t.Context(), "r-A", "/home/u/app"); err != nil {
 		t.Fatalf("ArchiveProject: %v", err)
 	}
 	first.Close()
@@ -158,7 +158,7 @@ func TestMigrateV42IsIdempotentThroughOpen(t *testing.T) {
 		t.Fatalf("reopen: %v", err)
 	}
 	defer second.Close()
-	archived, err := second.ArchivedProjects()
+	archived, err := second.ArchivedProjects(t.Context())
 	if err != nil {
 		t.Fatalf("ArchivedProjects: %v", err)
 	}
@@ -203,14 +203,14 @@ func TestOpenRepairsStateDBStampedV42WithPreV42ArchiveTables(t *testing.T) {
 	}
 	defer stateDB.Close()
 
-	archived, err := stateDB.ArchivedProjects()
+	archived, err := stateDB.ArchivedProjects(t.Context())
 	if err != nil {
 		t.Fatalf("ArchivedProjects: %v", err)
 	}
 	if _, ok := archived[ProjectKey{RemoteID: LocalRemoteID, Root: "/home/u/app"}]; !ok {
 		t.Fatalf("archived = %v, want backfilled local project", archived)
 	}
-	keep, err := stateDB.ProjectsUnarchivedSince(0)
+	keep, err := stateDB.ProjectsUnarchivedSince(t.Context(), 0)
 	if err != nil {
 		t.Fatalf("ProjectsUnarchivedSince: %v", err)
 	}

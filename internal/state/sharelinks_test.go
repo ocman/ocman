@@ -11,7 +11,7 @@ func TestCreateAndGetShareLink(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 
-	link, err := db.CreateShareLink("opencode", "ses_123", 0)
+	link, err := db.CreateShareLink(t.Context(), "opencode", "ses_123", 0)
 	if err != nil {
 		t.Fatalf("CreateShareLink: %v", err)
 	}
@@ -28,7 +28,7 @@ func TestCreateAndGetShareLink(t *testing.T) {
 		t.Error("expected createdAt to be set")
 	}
 
-	got, ok, err := db.GetActiveShareLink(link.Token)
+	got, ok, err := db.GetActiveShareLink(t.Context(), link.Token)
 	if err != nil {
 		t.Fatalf("GetActiveShareLink: %v", err)
 	}
@@ -42,17 +42,17 @@ func TestCreateAndGetShareLink(t *testing.T) {
 
 func TestSetShareRelay(t *testing.T) {
 	db := openTestDB(t)
-	link, err := db.CreateShareLink("opencode", "ses_relay", 0)
+	link, err := db.CreateShareLink(t.Context(), "opencode", "ses_relay", 0)
 	if err != nil {
 		t.Fatalf("CreateShareLink: %v", err)
 	}
-	if err := db.SetShareRelay(link.Token, "https://share.example.com", "20260813-abc", "key", "delete"); err != nil {
+	if err := db.SetShareRelay(t.Context(), link.Token, "https://share.example.com", "20260813-abc", "key", "delete"); err != nil {
 		t.Fatalf("SetShareRelay: %v", err)
 	}
-	if err := db.SetShareRelaySeq(link.Token, 3); err != nil {
+	if err := db.SetShareRelaySeq(t.Context(), link.Token, 3); err != nil {
 		t.Fatalf("SetShareRelaySeq: %v", err)
 	}
-	got, ok, err := db.GetActiveShareLink(link.Token)
+	got, ok, err := db.GetActiveShareLink(t.Context(), link.Token)
 	if err != nil || !ok {
 		t.Fatalf("GetActiveShareLink: ok=%v err=%v", ok, err)
 	}
@@ -67,7 +67,7 @@ func TestShareTokensAreUnique(t *testing.T) {
 
 	seen := map[string]bool{}
 	for i := 0; i < 50; i++ {
-		l, err := db.CreateShareLink("opencode", "ses_x", 0)
+		l, err := db.CreateShareLink(t.Context(), "opencode", "ses_x", 0)
 		if err != nil {
 			t.Fatalf("CreateShareLink: %v", err)
 		}
@@ -82,7 +82,7 @@ func TestGetActiveShareLinkUnknownToken(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 
-	_, ok, err := db.GetActiveShareLink("does-not-exist")
+	_, ok, err := db.GetActiveShareLink(t.Context(), "does-not-exist")
 	if err != nil {
 		t.Fatalf("GetActiveShareLink: %v", err)
 	}
@@ -95,12 +95,12 @@ func TestRevokeShareLink(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 
-	link, err := db.CreateShareLink("opencode", "ses_abc", 0)
+	link, err := db.CreateShareLink(t.Context(), "opencode", "ses_abc", 0)
 	if err != nil {
 		t.Fatalf("CreateShareLink: %v", err)
 	}
 
-	revoked, err := db.RevokeShareLink("opencode", "ses_abc", link.Token)
+	revoked, err := db.RevokeShareLink(t.Context(), "opencode", "ses_abc", link.Token)
 	if err != nil {
 		t.Fatalf("RevokeShareLink: %v", err)
 	}
@@ -108,12 +108,12 @@ func TestRevokeShareLink(t *testing.T) {
 		t.Fatal("expected revoke to affect a row")
 	}
 
-	if _, ok, _ := db.GetActiveShareLink(link.Token); ok {
+	if _, ok, _ := db.GetActiveShareLink(t.Context(), link.Token); ok {
 		t.Fatal("expected revoked link to be inactive")
 	}
 
 	// Revoking again is a no-op.
-	revoked, err = db.RevokeShareLink("opencode", "ses_abc", link.Token)
+	revoked, err = db.RevokeShareLink(t.Context(), "opencode", "ses_abc", link.Token)
 	if err != nil {
 		t.Fatalf("RevokeShareLink (second): %v", err)
 	}
@@ -126,20 +126,20 @@ func TestRevokeShareLinkScopedToSession(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 
-	link, err := db.CreateShareLink("opencode", "ses_owner", 0)
+	link, err := db.CreateShareLink(t.Context(), "opencode", "ses_owner", 0)
 	if err != nil {
 		t.Fatalf("CreateShareLink: %v", err)
 	}
 
 	// Wrong session must not be able to revoke it.
-	revoked, err := db.RevokeShareLink("opencode", "ses_other", link.Token)
+	revoked, err := db.RevokeShareLink(t.Context(), "opencode", "ses_other", link.Token)
 	if err != nil {
 		t.Fatalf("RevokeShareLink: %v", err)
 	}
 	if revoked {
 		t.Fatal("expected revoke with mismatched session to affect no rows")
 	}
-	if _, ok, _ := db.GetActiveShareLink(link.Token); !ok {
+	if _, ok, _ := db.GetActiveShareLink(t.Context(), link.Token); !ok {
 		t.Fatal("link should still be active after a mismatched-session revoke attempt")
 	}
 }
@@ -148,11 +148,11 @@ func TestListActiveShareLinks(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 
-	l1, _ := db.CreateShareLink("opencode", "ses_list", 0)
-	l2, _ := db.CreateShareLink("opencode", "ses_list", 0)
-	_, _ = db.CreateShareLink("opencode", "ses_other", 0)
+	l1, _ := db.CreateShareLink(t.Context(), "opencode", "ses_list", 0)
+	l2, _ := db.CreateShareLink(t.Context(), "opencode", "ses_list", 0)
+	_, _ = db.CreateShareLink(t.Context(), "opencode", "ses_other", 0)
 
-	links, err := db.ListActiveShareLinks("opencode", "ses_list")
+	links, err := db.ListActiveShareLinks(t.Context(), "opencode", "ses_list")
 	if err != nil {
 		t.Fatalf("ListActiveShareLinks: %v", err)
 	}
@@ -161,10 +161,10 @@ func TestListActiveShareLinks(t *testing.T) {
 	}
 
 	// Revoke one; it should drop out of the active list.
-	if _, err := db.RevokeShareLink("opencode", "ses_list", l1.Token); err != nil {
+	if _, err := db.RevokeShareLink(t.Context(), "opencode", "ses_list", l1.Token); err != nil {
 		t.Fatalf("RevokeShareLink: %v", err)
 	}
-	links, _ = db.ListActiveShareLinks("opencode", "ses_list")
+	links, _ = db.ListActiveShareLinks(t.Context(), "opencode", "ses_list")
 	if len(links) != 1 {
 		t.Fatalf("expected 1 active link after revoke, got %d", len(links))
 	}
@@ -178,14 +178,14 @@ func TestExpiredShareLinkIsInactive(t *testing.T) {
 	defer db.Close()
 
 	past := time.Now().Add(-time.Hour).UnixMilli()
-	link, err := db.CreateShareLink("opencode", "ses_exp", past)
+	link, err := db.CreateShareLink(t.Context(), "opencode", "ses_exp", past)
 	if err != nil {
 		t.Fatalf("CreateShareLink: %v", err)
 	}
-	if _, ok, _ := db.GetActiveShareLink(link.Token); ok {
+	if _, ok, _ := db.GetActiveShareLink(t.Context(), link.Token); ok {
 		t.Fatal("expected expired link to be inactive")
 	}
-	links, _ := db.ListActiveShareLinks("opencode", "ses_exp")
+	links, _ := db.ListActiveShareLinks(t.Context(), "opencode", "ses_exp")
 	if len(links) != 0 {
 		t.Fatalf("expected expired link excluded from active list, got %d", len(links))
 	}
@@ -196,11 +196,11 @@ func TestFutureExpiryShareLinkIsActive(t *testing.T) {
 	defer db.Close()
 
 	future := time.Now().Add(time.Hour).UnixMilli()
-	link, err := db.CreateShareLink("opencode", "ses_future", future)
+	link, err := db.CreateShareLink(t.Context(), "opencode", "ses_future", future)
 	if err != nil {
 		t.Fatalf("CreateShareLink: %v", err)
 	}
-	got, ok, err := db.GetActiveShareLink(link.Token)
+	got, ok, err := db.GetActiveShareLink(t.Context(), link.Token)
 	if err != nil {
 		t.Fatalf("GetActiveShareLink: %v", err)
 	}

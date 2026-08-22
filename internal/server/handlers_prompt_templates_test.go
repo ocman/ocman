@@ -45,7 +45,7 @@ func TestHandleSetPromptTemplates_ReviewPersistsAndRenders(t *testing.T) {
 	}
 
 	// promptTemplateFor with action=review must return the persisted value.
-	got, err := srv.promptTemplateFor("pr", "review")
+	got, err := srv.promptTemplateFor(t.Context(), "pr", "review")
 	if err != nil {
 		t.Fatalf("promptTemplateFor: %v", err)
 	}
@@ -53,11 +53,11 @@ func TestHandleSetPromptTemplates_ReviewPersistsAndRenders(t *testing.T) {
 		t.Errorf("review template not persisted, got %q", got)
 	}
 	// action=handle still returns the PR (handle) template default.
-	if got, _ := srv.promptTemplateFor("pr", "handle"); got != DefaultPRPromptTemplate {
+	if got, _ := srv.promptTemplateFor(t.Context(), "pr", "handle"); got != DefaultPRPromptTemplate {
 		t.Errorf("handle action should use PR template, got %q", got)
 	}
 	// review action for an issue falls back to the issue template.
-	if got, _ := srv.promptTemplateFor("issue", "review"); got != DefaultIssuePromptTemplate {
+	if got, _ := srv.promptTemplateFor(t.Context(), "issue", "review"); got != DefaultIssuePromptTemplate {
 		t.Errorf("issue+review should use issue template, got %q", got)
 	}
 }

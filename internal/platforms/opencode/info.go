@@ -57,12 +57,12 @@ func (a *Adapter) SessionInfo(ctx context.Context, sessionID string) (*platforms
 	if a.db == nil {
 		return nil, platforms.ErrNotFound
 	}
-	dbSession, err := a.db.GetSession(sessionID)
+	dbSession, err := a.db.GetSession(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
 
-	defaults, _ := getSessionDefaultsCached(a.db, sessionID, dbSession.Directory)
+	defaults, _ := getSessionDefaultsCached(ctx, a.db, sessionID, dbSession.Directory)
 	modelRef := defaults.Model
 
 	port := resolveOpenCodePortForSessionCtx(ctx, sessionID, dbSession.Directory)
@@ -71,7 +71,7 @@ func (a *Adapter) SessionInfo(ctx context.Context, sessionID string) (*platforms
 		// read-only DB and return Supported=false so the frontend
 		// hides MCP/LSP/context-window while still rendering tokens
 		// and todos.
-		tier := alwaysOnTierFromDB(a.db, sessionID, a.pricing)
+		tier := alwaysOnTierFromDB(ctx, a.db, sessionID, a.pricing)
 		return &platforms.SessionInfo{
 			SessionID:  sessionID,
 			Supported:  false,
@@ -149,7 +149,7 @@ func (a *Adapter) SessionInfo(ctx context.Context, sessionID string) (*platforms
 	// transient OpenCode problems don't blank the panel.
 	tier := liveTier
 	if !liveOK {
-		tier = alwaysOnTierFromDB(a.db, sessionID, a.pricing)
+		tier = alwaysOnTierFromDB(ctx, a.db, sessionID, a.pricing)
 	}
 
 	info := buildSessionInfo(sessionID, tier.ctxTokens, tier.cost, tier.estCost, modelRef, mcp, lsp, provPtr)
@@ -232,9 +232,9 @@ func contextTokensFromMessages(messages []db.Message) int64 {
 // and runs computeAlwaysOnTier. DB errors are non-fatal (the panel
 // still renders, just with zero values for whatever failed) which
 // matches the prior best-effort behaviour.
-func alwaysOnTierFromDB(database *db.DB, sessionID string, pricing CostCalculator) alwaysOnTier {
-	messages, _ := database.GetSessionMessages(sessionID)
-	parts, _ := database.GetSessionParts(sessionID)
+func alwaysOnTierFromDB(ctx context.Context, database *db.DB, sessionID string, pricing CostCalculator) alwaysOnTier {
+	messages, _ := database.GetSessionMessages(ctx, sessionID)
+	parts, _ := database.GetSessionParts(ctx, sessionID)
 	return computeAlwaysOnTier(messages, parts, pricing)
 }
 

@@ -1134,7 +1134,7 @@ func TestInheritedSafeCommandVerdict(t *testing.T) {
 		"child":      "parent",
 	}
 	s := &Service{deps: Deps{
-		ParentSessionID: func(id string) (string, bool) {
+		ParentSessionID: func(_ context.Context, id string) (string, bool) {
 			p, ok := parents[id]
 			return p, ok
 		},
@@ -1144,41 +1144,41 @@ func TestInheritedSafeCommandVerdict(t *testing.T) {
 	s.recordSafeCommandVerdict("parent", hash, "Read-only test run.")
 
 	// Own-session hit → unprefixed.
-	if r, ok := s.lookupInheritedSafeCommandVerdict("parent", hash); !ok || r != "Read-only test run." {
+	if r, ok := s.lookupInheritedSafeCommandVerdict(t.Context(), "parent", hash); !ok || r != "Read-only test run." {
 		t.Errorf("own-session hit: got (%q,%v), want (%q,true)", r, ok, "Read-only test run.")
 	}
 
 	// Child inherits parent → prefixed.
 	want := "inherited from parent: Read-only test run."
-	if r, ok := s.lookupInheritedSafeCommandVerdict("child", hash); !ok || r != want {
+	if r, ok := s.lookupInheritedSafeCommandVerdict(t.Context(), "child", hash); !ok || r != want {
 		t.Errorf("child inherit: got (%q,%v), want (%q,true)", r, ok, want)
 	}
 
 	// Grandchild walks two hops → prefixed.
-	if r, ok := s.lookupInheritedSafeCommandVerdict("grandchild", hash); !ok || r != want {
+	if r, ok := s.lookupInheritedSafeCommandVerdict(t.Context(), "grandchild", hash); !ok || r != want {
 		t.Errorf("grandchild inherit: got (%q,%v), want (%q,true)", r, ok, want)
 	}
 
 	// Unrelated session with no parent link → miss.
-	if _, ok := s.lookupInheritedSafeCommandVerdict("orphan", hash); ok {
+	if _, ok := s.lookupInheritedSafeCommandVerdict(t.Context(), "orphan", hash); ok {
 		t.Errorf("orphan session should miss")
 	}
 
 	// No resolver wired → falls back to own-session only.
 	noResolver := &Service{}
 	noResolver.recordSafeCommandVerdict("solo", hash, "x")
-	if _, ok := noResolver.lookupInheritedSafeCommandVerdict("child", hash); ok {
+	if _, ok := noResolver.lookupInheritedSafeCommandVerdict(t.Context(), "child", hash); ok {
 		t.Errorf("no resolver: child must not inherit")
 	}
-	if _, ok := noResolver.lookupInheritedSafeCommandVerdict("solo", hash); !ok {
+	if _, ok := noResolver.lookupInheritedSafeCommandVerdict(t.Context(), "solo", hash); !ok {
 		t.Errorf("no resolver: own-session hit must still work")
 	}
 
 	// Cyclic parent link must not loop forever (maxParentWalk guard).
 	cyclic := &Service{deps: Deps{
-		ParentSessionID: func(id string) (string, bool) { return "a", true }, // a -> a is self; b -> a -> a...
+		ParentSessionID: func(_ context.Context, id string) (string, bool) { return "a", true }, // a -> a is self; b -> a -> a...
 	}}
-	if _, ok := cyclic.lookupInheritedSafeCommandVerdict("b", hash); ok {
+	if _, ok := cyclic.lookupInheritedSafeCommandVerdict(t.Context(), "b", hash); ok {
 		t.Errorf("cyclic chain should miss, not loop")
 	}
 }

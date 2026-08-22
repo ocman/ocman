@@ -26,16 +26,16 @@ type TmuxTargetKiller func(ctx context.Context, dir, target string) error
 // statusSessionReader is the subset of db.DB needed by the status tools
 // to inspect OpenCode sessions.
 type statusSessionReader interface {
-	GetSessions(directory string, since int64) ([]db.Session, error)
-	GetSession(id string) (*db.Session, error)
-	FindRunningToolSessionID(tool, directory string) (string, error)
+	GetSessions(context.Context, string, int64) ([]db.Session, error)
+	GetSession(context.Context, string) (*db.Session, error)
+	FindRunningToolSessionID(context.Context, string, string) (string, error)
 }
 
 // childSessionDB is the subset of state.DB needed by the status tools.
 type childSessionDB interface {
-	GetChildSession(id string) (*state.ChildSession, error)
-	ListChildSessionsByParent(parentSessionID string) ([]state.ChildSession, error)
-	CancelChildSession(id string, cancelledAt int64) error
+	GetChildSession(context.Context, string) (*state.ChildSession, error)
+	ListChildSessionsByParent(context.Context, string) ([]state.ChildSession, error)
+	CancelChildSession(context.Context, string, int64) error
 }
 
 // statusTools holds the dependencies for the status/management tool handlers.
@@ -105,7 +105,7 @@ func (t *statusTools) handleGetSessionStatus(ctx context.Context, req mcplib.Cal
 		return mcplib.NewToolResultError("child_session_id is required"), nil
 	}
 
-	cs, toolErr := lookupChildSession(t.stateDB, childID)
+	cs, toolErr := lookupChildSession(ctx, t.stateDB, childID)
 	if toolErr != nil {
 		return toolErr, nil
 	}
@@ -129,13 +129,13 @@ func (t *statusTools) handleGetSessionStatus(ctx context.Context, req mcplib.Cal
 }
 
 // handleListChildSessions handles the list_child_sessions tool call.
-func (t *statusTools) handleListChildSessions(_ context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+func (t *statusTools) handleListChildSessions(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	sessionID, err := req.RequireString("session_id")
 	if err != nil {
 		return mcplib.NewToolResultError("session_id is required"), nil
 	}
 
-	children, err := t.stateDB.ListChildSessionsByParent(sessionID)
+	children, err := t.stateDB.ListChildSessionsByParent(ctx, sessionID)
 	if err != nil {
 		return mcplib.NewToolResultError(fmt.Sprintf("listing child sessions: %v", err)), nil
 	}
@@ -165,13 +165,13 @@ func (t *statusTools) handleListChildSessions(_ context.Context, req mcplib.Call
 }
 
 // handleGetCurrentSessionID handles the get_current_session_id tool call.
-func (t *statusTools) handleGetCurrentSessionID(_ context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+func (t *statusTools) handleGetCurrentSessionID(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	if t.ocDB == nil {
 		return mcplib.NewToolResultError("OpenCode database is unavailable"), nil
 	}
 
 	directory := req.GetString("directory", "")
-	callerID, callerErr := t.ocDB.FindRunningToolSessionID("get_current_session_id", directory)
+	callerID, callerErr := t.ocDB.FindRunningToolSessionID(ctx, "get_current_session_id", directory)
 	if errors.Is(callerErr, db.ErrAmbiguousRunningTool) {
 		return mcplib.NewToolResultError("multiple sessions are requesting their ID; retry the call"), nil
 	}
@@ -179,14 +179,14 @@ func (t *statusTools) handleGetCurrentSessionID(_ context.Context, req mcplib.Ca
 		log.WithError(callerErr).Warn("failed to identify session invoking get_current_session_id")
 	}
 	if callerID != "" {
-		s, err := t.ocDB.GetSession(callerID)
+		s, err := t.ocDB.GetSession(ctx, callerID)
 		if err == nil {
 			return currentSessionResult(*s, "calling_session"), nil
 		}
 		log.WithError(err).Warn("failed to load session invoking get_current_session_id")
 	}
 
-	sessions, err := t.ocDB.GetSessions(directory, 0)
+	sessions, err := t.ocDB.GetSessions(ctx, directory, 0)
 	if err != nil {
 		return mcplib.NewToolResultError(fmt.Sprintf("looking up current session: %v", err)), nil
 	}
@@ -220,7 +220,7 @@ func (t *statusTools) handleCancelSession(ctx context.Context, req mcplib.CallTo
 		return mcplib.NewToolResultError("child_session_id is required"), nil
 	}
 
-	cs, toolErr := lookupChildSession(t.stateDB, childID)
+	cs, toolErr := lookupChildSession(ctx, t.stateDB, childID)
 	if toolErr != nil {
 		return toolErr, nil
 	}
@@ -266,7 +266,7 @@ func (t *statusTools) handleCancelSession(ctx context.Context, req mcplib.CallTo
 		}
 	}
 
-	if err := t.stateDB.CancelChildSession(childID, time.Now().UnixMilli()); err != nil {
+	if err := t.stateDB.CancelChildSession(ctx, childID, time.Now().UnixMilli()); err != nil {
 		return mcplib.NewToolResultError(fmt.Sprintf("cancelling child session: %v", err)), nil
 	}
 

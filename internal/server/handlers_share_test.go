@@ -102,7 +102,7 @@ func TestSharingSettingToggleAndGuard(t *testing.T) {
 	if postRR.Code != http.StatusOK {
 		t.Fatalf("post status = %d, want 200; body=%s", postRR.Code, postRR.Body)
 	}
-	if enabled, err := srv.sharingEnabled(); err != nil || enabled {
+	if enabled, err := srv.sharingEnabled(t.Context()); err != nil || enabled {
 		t.Fatalf("sharing should be disabled after POST (enabled=%v, err=%v)", enabled, err)
 	}
 
@@ -222,7 +222,7 @@ func TestSharingFailsClosedOnStateError(t *testing.T) {
 		t.Fatalf("close state db: %v", err)
 	}
 
-	if _, err := srv.sharingEnabled(); err == nil {
+	if _, err := srv.sharingEnabled(t.Context()); err == nil {
 		t.Fatal("sharingEnabled must report the read error, not assume enabled")
 	}
 
@@ -246,10 +246,10 @@ func TestAllSharesGlobalList(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	registerShareFake(reg, "ses_a")
 
-	if _, err := srv.stateDB.CreateShareLink("fake", "ses_a", 0); err != nil {
+	if _, err := srv.stateDB.CreateShareLink(t.Context(), "fake", "ses_a", 0); err != nil {
 		t.Fatalf("CreateShareLink: %v", err)
 	}
-	if _, err := srv.stateDB.CreateShareLink("fake", "ses_b", 0); err != nil {
+	if _, err := srv.stateDB.CreateShareLink(t.Context(), "fake", "ses_b", 0); err != nil {
 		t.Fatalf("CreateShareLink: %v", err)
 	}
 

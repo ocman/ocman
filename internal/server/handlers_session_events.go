@@ -114,7 +114,7 @@ func (s *Server) serveSessionEvents(w http.ResponseWriter, r *http.Request, sess
 		// race the user's answer. A "Allow always" reply is also
 		// captured into the parent's shadow allowlist (issue #101).
 		OnPermissionReplied: func(evtSessionID, permissionID, reply string) {
-			s.aaSvc().HandlePermissionReplied(evtSessionID, permissionID, reply)
+			s.aaSvc().HandlePermissionReplied(r.Context(), evtSessionID, permissionID, reply)
 		},
 	}
 

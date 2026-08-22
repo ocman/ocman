@@ -42,7 +42,7 @@ func TestAaSvcOpencodeAdapter(t *testing.T) {
 // doesn't inherit rather than erroring).
 func TestAaSvcParentSessionIDResolver(t *testing.T) {
 	// No state DB → always miss.
-	if _, ok := (&Server{}).aaSvc().ResolveParentSessionID("child"); ok {
+	if _, ok := (&Server{}).aaSvc().ResolveParentSessionID(t.Context(), "child"); ok {
 		t.Fatal("expected miss with no state DB")
 	}
 
@@ -50,10 +50,10 @@ func TestAaSvcParentSessionIDResolver(t *testing.T) {
 	insertWatcherChildSession(t, sdb, "child-1", "parent-1", "running")
 	srv := &Server{stateDB: sdb}
 
-	if parent, ok := srv.aaSvc().ResolveParentSessionID("child-1"); !ok || parent != "parent-1" {
-		t.Fatalf("ResolveParentSessionID(child-1) = (%q,%v); want (parent-1,true)", parent, ok)
+	if parent, ok := srv.aaSvc().ResolveParentSessionID(t.Context(), "child-1"); !ok || parent != "parent-1" {
+		t.Fatalf("ResolveParentSessionID(t.Context(), child-1) = (%q,%v); want (parent-1,true)", parent, ok)
 	}
-	if _, ok := srv.aaSvc().ResolveParentSessionID("unknown"); ok {
+	if _, ok := srv.aaSvc().ResolveParentSessionID(t.Context(), "unknown"); ok {
 		t.Fatal("expected miss for an untracked session")
 	}
 }

@@ -93,8 +93,8 @@ func main() {
 	// (piped). ForceColors keeps the color; FullTimestamp adds the date.
 	log.SetFormatter(&log.TextFormatter{ForceColors: true, FullTimestamp: true})
 	if err := opencodeskills.Install(map[string][]byte{
-		"ocman-sessions": sessionSplittingSkill,
-		"ocman-workflows":         workflowsSkill,
+		"ocman-sessions":  sessionSplittingSkill,
+		"ocman-workflows": workflowsSkill,
 	}); err != nil {
 		log.WithError(err).Warn("installing embedded ocman skills")
 	}
@@ -244,7 +244,7 @@ func main() {
 	// token (multi-remote support). Generated and persisted on first
 	// startup; reused thereafter. No networking is started here — the
 	// gRPC remote-listen server is opt-in via -remote-listen.
-	ident, err := stateDB.InstanceIdentity()
+	ident, err := stateDB.InstanceIdentity(ctx)
 	if err != nil {
 		log.Fatalf("Failed to ensure instance identity: %v", err)
 	}
@@ -269,7 +269,7 @@ func main() {
 			opencodeplatform.StartSessionsRefresher(ctx, database)
 		}
 	}
-	auth, err := buildAuth(stateDB, *authPassword, *authPasswordFile, *authSessionTTL, *addr, *authTrustLocalhost)
+	auth, err := buildAuth(ctx, stateDB, *authPassword, *authPasswordFile, *authSessionTTL, *addr, *authTrustLocalhost)
 	if err != nil {
 		log.Fatalf("Failed to configure auth: %v", err)
 	}
@@ -398,7 +398,7 @@ func resolveAuthPassword(flagValue, fileValue string) (string, error) {
 // buildAuth assembles the server-side auth subsystem from the
 // resolved config. Returns (nil, nil) when no password is configured
 // — the server then runs in its pre-auth, open-by-default mode.
-func buildAuth(stateDB *state.DB, flagValue, fileValue string, ttl time.Duration, addr string, trustLocalhostFlag bool) (*server.Auth, error) {
+func buildAuth(ctx context.Context, stateDB *state.DB, flagValue, fileValue string, ttl time.Duration, addr string, trustLocalhostFlag bool) (*server.Auth, error) {
 	password, err := resolveAuthPassword(flagValue, fileValue)
 	if err != nil {
 		return nil, err
@@ -422,7 +422,7 @@ func buildAuth(stateDB *state.DB, flagValue, fileValue string, ttl time.Duration
 	// Reuse the persisted HMAC key when present so cookies survive
 	// restarts. On a fresh install (or after an explicit rotation)
 	// generate and persist a new one.
-	key, err := stateDB.AuthSecret()
+	key, err := stateDB.AuthSecret(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("loading auth secret: %w", err)
 	}
@@ -431,7 +431,7 @@ func buildAuth(stateDB *state.DB, flagValue, fileValue string, ttl time.Duration
 		if err != nil {
 			return nil, err
 		}
-		if err := stateDB.SetAuthSecret(key); err != nil {
+		if err := stateDB.SetAuthSecret(ctx, key); err != nil {
 			return nil, fmt.Errorf("persisting auth secret: %w", err)
 		}
 	}

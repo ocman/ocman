@@ -77,7 +77,7 @@ func TestQueueIdentity_IdleEdgeAndBroadcastAreHostScoped(t *testing.T) {
 	if len(sent["r-A:fake"]) != 0 {
 		t.Fatalf("remote sends = %v, want none: the idle edge was not its edge", sent["r-A:fake"])
 	}
-	if msgs, err := srv.stateDB.ListQueuedMessages("r-A:fake", "s1"); err != nil || len(msgs) != 1 {
+	if msgs, err := srv.stateDB.ListQueuedMessages(t.Context(), "r-A:fake", "s1"); err != nil || len(msgs) != 1 {
 		t.Fatalf("remote queue = %+v (err %v), want its held message intact", msgs, err)
 	}
 }

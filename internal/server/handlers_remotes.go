@@ -33,8 +33,8 @@ func (s *Server) handleRemotes(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleRemotesList(w http.ResponseWriter, _ *http.Request) {
-	list, err := s.remotes.List()
+func (s *Server) handleRemotesList(w http.ResponseWriter, r *http.Request) {
+	list, err := s.remotes.List(r.Context())
 	if err != nil {
 		serverError(w, "listing remotes", err)
 		return
@@ -63,14 +63,14 @@ func (s *Server) handleRemotesAdd(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "address and token are required", http.StatusBadRequest)
 		return
 	}
-	id, err := s.remotes.Add(req.Address, req.Token, strings.TrimSpace(req.DisplayName))
+	id, err := s.remotes.Add(r.Context(), req.Address, req.Token, strings.TrimSpace(req.DisplayName))
 	if err != nil {
 		serverError(w, "adding remote", err)
 		return
 	}
 	// Return the freshly-created row's status. The dial happens in the
 	// background; the initial health is "connecting".
-	list, _ := s.remotes.List()
+	list, _ := s.remotes.List(r.Context())
 	for _, st := range list {
 		if st.LocalID == id {
 			writeJSON(w, st)
@@ -101,7 +101,7 @@ func (s *Server) handleRemoteByID(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		if err := s.remotes.Reconnect(localID); err != nil {
+		if err := s.remotes.Reconnect(r.Context(), localID); err != nil {
 			serverError(w, "reconnecting remote", err)
 			return
 		}
@@ -111,7 +111,7 @@ func (s *Server) handleRemoteByID(w http.ResponseWriter, r *http.Request) {
 		case http.MethodPut:
 			s.handleRemoteUpdate(w, r, localID)
 		case http.MethodDelete:
-			if err := s.remotes.Remove(localID); err != nil {
+			if err := s.remotes.Remove(r.Context(), localID); err != nil {
 				serverError(w, "removing remote", err)
 				return
 			}
@@ -148,7 +148,7 @@ func (s *Server) handleRemoteUpdate(w http.ResponseWriter, r *http.Request, loca
 			token = &t
 		}
 	}
-	if err := s.remotes.Update(localID, strings.TrimSpace(req.DisplayName), req.Address, req.Enabled, token); err != nil {
+	if err := s.remotes.Update(r.Context(), localID, strings.TrimSpace(req.DisplayName), req.Address, req.Enabled, token); err != nil {
 		serverError(w, "updating remote", err)
 		return
 	}

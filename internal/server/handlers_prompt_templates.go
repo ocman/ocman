@@ -84,20 +84,20 @@ func (s *Server) handlePromptTemplates(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleGetPromptTemplates(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleGetPromptTemplates(w http.ResponseWriter, r *http.Request) {
 	out := promptTemplatesResponse{
 		PR:     DefaultPRPromptTemplate,
 		Issue:  DefaultIssuePromptTemplate,
 		Review: DefaultReviewPromptTemplate,
 	}
 	if s.stateDB != nil {
-		if v, ok, err := s.stateDB.GetSetting(settingPRPromptTemplate); err == nil && ok {
+		if v, ok, err := s.stateDB.GetSetting(r.Context(), settingPRPromptTemplate); err == nil && ok {
 			out.PR = v
 		}
-		if v, ok, err := s.stateDB.GetSetting(settingIssuePromptTemplate); err == nil && ok {
+		if v, ok, err := s.stateDB.GetSetting(r.Context(), settingIssuePromptTemplate); err == nil && ok {
 			out.Issue = v
 		}
-		if v, ok, err := s.stateDB.GetSetting(settingReviewPromptTemplate); err == nil && ok {
+		if v, ok, err := s.stateDB.GetSetting(r.Context(), settingReviewPromptTemplate); err == nil && ok {
 			out.Review = v
 		}
 	}
@@ -121,19 +121,19 @@ func (s *Server) handleSetPromptTemplates(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if body.PR != nil {
-		if err := s.stateDB.SetSetting(settingPRPromptTemplate, *body.PR); err != nil {
+		if err := s.stateDB.SetSetting(r.Context(), settingPRPromptTemplate, *body.PR); err != nil {
 			serverError(w, "saving pr template", err)
 			return
 		}
 	}
 	if body.Issue != nil {
-		if err := s.stateDB.SetSetting(settingIssuePromptTemplate, *body.Issue); err != nil {
+		if err := s.stateDB.SetSetting(r.Context(), settingIssuePromptTemplate, *body.Issue); err != nil {
 			serverError(w, "saving issue template", err)
 			return
 		}
 	}
 	if body.Review != nil {
-		if err := s.stateDB.SetSetting(settingReviewPromptTemplate, *body.Review); err != nil {
+		if err := s.stateDB.SetSetting(r.Context(), settingReviewPromptTemplate, *body.Review); err != nil {
 			serverError(w, "saving review template", err)
 			return
 		}

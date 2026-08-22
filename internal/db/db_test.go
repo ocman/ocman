@@ -1,13 +1,47 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"runtime"
 	"testing"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
+
+func TestGetSessionsCancelledContext(t *testing.T) {
+	database := openTestDB(t)
+	defer database.Close()
+
+	database.db.SetMaxOpenConns(1)
+	conn, err := database.db.Conn(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	before := database.db.Stats().WaitCount
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() {
+		_, err := database.GetSessions(ctx, "", 0)
+		done <- err
+	}()
+	deadline := time.Now().Add(time.Second)
+	for database.db.Stats().WaitCount == before && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if database.db.Stats().WaitCount == before {
+		t.Fatal("GetSessions did not block waiting for the held connection")
+	}
+	cancel()
+	err = <-done
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("GetSessions error = %v, want context.Canceled", err)
+	}
+}
 
 // openTestDB creates an in-memory SQLite database with the OpenCode schema
 // and returns a *DB suitable for testing. The caller should defer db.Close().
@@ -242,7 +276,7 @@ func TestGetSessions_Empty(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	sessions, err := db.GetSessions("", 0)
+	sessions, err := db.GetSessions(t.Context(), "", 0)
 	if err != nil {
 		t.Fatalf("GetSessions: %v", err)
 	}
@@ -265,7 +299,7 @@ func TestGetSessions_ReturnsSessionsWithStatus(t *testing.T) {
 		"cost":   0.005,
 	})
 
-	sessions, err := db.GetSessions("", 0)
+	sessions, err := db.GetSessions(t.Context(), "", 0)
 	if err != nil {
 		t.Fatalf("GetSessions: %v", err)
 	}
@@ -298,7 +332,7 @@ func TestGetSessions_FilterByDirectory(t *testing.T) {
 	insertSession(t, db, "s1", "Session A", "/project/a", now, now)
 	insertSession(t, db, "s2", "Session B", "/project/b", now, now)
 
-	sessions, err := db.GetSessions("/project/a", 0)
+	sessions, err := db.GetSessions(t.Context(), "/project/a", 0)
 	if err != nil {
 		t.Fatalf("GetSessions: %v", err)
 	}
@@ -318,7 +352,7 @@ func TestGetSessions_FilterBySince(t *testing.T) {
 	insertSession(t, db, "s1", "Old Session", "/project", now-100000, now-100000)
 	insertSession(t, db, "s2", "New Session", "/project", now, now)
 
-	sessions, err := db.GetSessions("", now-50000)
+	sessions, err := db.GetSessions(t.Context(), "", now-50000)
 	if err != nil {
 		t.Fatalf("GetSessions: %v", err)
 	}
@@ -350,7 +384,7 @@ func TestGetSessions_IncludesActiveSubagents(t *testing.T) {
 	insertSubagent(t, db, "child-busy", "parent", "Task (build subagent)", "/project", now, now)
 	insertMessage(t, db, "m1", "child-busy", now, map[string]interface{}{"role": "assistant"})
 
-	raw, err := db.GetSessions("", 0)
+	raw, err := db.GetSessions(t.Context(), "", 0)
 	if err != nil {
 		t.Fatalf("GetSessions: %v", err)
 	}
@@ -391,7 +425,7 @@ func TestGetSessions_ExcludesAutoApproveJudge(t *testing.T) {
 	insertSession(t, db, "judge", "(auto-approve subagent)", "/project", now, now)
 	insertMessage(t, db, "m1", "judge", now, map[string]interface{}{"role": "assistant"})
 
-	sessions, err := db.GetSessions("", 0)
+	sessions, err := db.GetSessions(t.Context(), "", 0)
 	if err != nil {
 		t.Fatalf("GetSessions: %v", err)
 	}
@@ -419,7 +453,7 @@ func TestGetSessions_ExcludesParentlessNamedSubagent(t *testing.T) {
 	insertSession(t, db, "explore", "Find thing (@explore subagent)", "/project", now, now)
 	insertMessage(t, db, "m1", "explore", now, map[string]interface{}{"role": "assistant"})
 
-	sessions, err := db.GetSessions("", 0)
+	sessions, err := db.GetSessions(t.Context(), "", 0)
 	if err != nil {
 		t.Fatalf("GetSessions: %v", err)
 	}
@@ -441,7 +475,7 @@ func TestGetSessions_StatusBusy(t *testing.T) {
 	insertSession(t, db, "s1", "Busy Session", "/project", now, now)
 	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{"role": "assistant"})
 
-	sessions, err := db.GetSessions("", 0)
+	sessions, err := db.GetSessions(t.Context(), "", 0)
 	if err != nil {
 		t.Fatalf("GetSessions: %v", err)
 	}
@@ -464,7 +498,7 @@ func TestGetSessions_StatusError(t *testing.T) {
 		"finish": "error",
 	})
 
-	sessions, err := db.GetSessions("", 0)
+	sessions, err := db.GetSessions(t.Context(), "", 0)
 	if err != nil {
 		t.Fatalf("GetSessions: %v", err)
 	}
@@ -488,7 +522,7 @@ func TestGetSessions_CarriesTopLevelErrorMessage(t *testing.T) {
 		},
 	})
 
-	sessions, err := db.GetSessions("", 0)
+	sessions, err := db.GetSessions(t.Context(), "", 0)
 	if err != nil {
 		t.Fatalf("GetSessions: %v", err)
 	}
@@ -506,7 +540,7 @@ func TestGetSessions_StatusDone(t *testing.T) {
 	// Last message is from user → done
 	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{"role": "user"})
 
-	sessions, err := db.GetSessions("", 0)
+	sessions, err := db.GetSessions(t.Context(), "", 0)
 	if err != nil {
 		t.Fatalf("GetSessions: %v", err)
 	}
@@ -537,7 +571,7 @@ func TestGetSessions_StatusShellOnlySynthTerminal(t *testing.T) {
 		"state": map[string]interface{}{"status": "completed"},
 	})
 
-	sessions, err := db.GetSessions("", 0)
+	sessions, err := db.GetSessions(t.Context(), "", 0)
 	if err != nil {
 		t.Fatalf("GetSessions: %v", err)
 	}
@@ -559,7 +593,7 @@ func TestGetSessions_StatusLLMMidFlight(t *testing.T) {
 	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{"role": "assistant"})
 	insertPart(t, db, "p1", "m1", "s1", now, map[string]interface{}{"type": "step-start"})
 
-	sessions, err := db.GetSessions("", 0)
+	sessions, err := db.GetSessions(t.Context(), "", 0)
 	if err != nil {
 		t.Fatalf("GetSessions: %v", err)
 	}
@@ -587,7 +621,7 @@ func TestGetSessions_StatusLLMRunningTool(t *testing.T) {
 		"state": map[string]interface{}{"status": "running"},
 	})
 
-	sessions, err := db.GetSessions("", 0)
+	sessions, err := db.GetSessions(t.Context(), "", 0)
 	if err != nil {
 		t.Fatalf("GetSessions: %v", err)
 	}
@@ -608,7 +642,7 @@ func TestGetSessions_StatusEmptyPartsBusy(t *testing.T) {
 	insertSession(t, db, "s1", "Empty Parts", "/project", now, now)
 	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{"role": "assistant"})
 
-	sessions, err := db.GetSessions("", 0)
+	sessions, err := db.GetSessions(t.Context(), "", 0)
 	if err != nil {
 		t.Fatalf("GetSessions: %v", err)
 	}
@@ -626,7 +660,7 @@ func TestGetSession_Found(t *testing.T) {
 	now := time.Now().UnixMilli()
 	insertSession(t, db, "s1", "My Session", "/project", now-1000, now)
 
-	s, err := db.GetSession("s1")
+	s, err := db.GetSession(t.Context(), "s1")
 	if err != nil {
 		t.Fatalf("GetSession: %v", err)
 	}
@@ -645,7 +679,7 @@ func TestGetSession_NotFound(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	_, err := db.GetSession("nonexistent")
+	_, err := db.GetSession(t.Context(), "nonexistent")
 	if err == nil {
 		t.Fatal("expected error for non-existent session")
 	}
@@ -663,7 +697,7 @@ func TestGetSessionMessages(t *testing.T) {
 	insertMessage(t, db, "m2", "s1", now-1000, map[string]interface{}{"role": "assistant"})
 	insertMessage(t, db, "m3", "s2", now, map[string]interface{}{"role": "user"}) // different session
 
-	messages, err := db.GetSessionMessages("s1")
+	messages, err := db.GetSessionMessages(t.Context(), "s1")
 	if err != nil {
 		t.Fatalf("GetSessionMessages: %v", err)
 	}
@@ -688,7 +722,7 @@ func TestGetSessionParts(t *testing.T) {
 	insertPart(t, db, "p2", "m1", "s1", now+1, map[string]interface{}{"type": "text", "text": "world"})
 	insertPart(t, db, "p3", "m1", "s2", now+2, map[string]interface{}{"type": "text"}) // different session
 
-	parts, err := db.GetSessionParts("s1")
+	parts, err := db.GetSessionParts(t.Context(), "s1")
 	if err != nil {
 		t.Fatalf("GetSessionParts: %v", err)
 	}
@@ -781,7 +815,7 @@ func TestGetSessionsInactiveBefore(t *testing.T) {
 	insertSession(t, db, "s3", "Subagent (code subagent)", "/project", now-200000, now-200000)
 
 	cutoff := now - 100000
-	candidates, err := db.GetSessionsInactiveBefore(cutoff)
+	candidates, err := db.GetSessionsInactiveBefore(t.Context(), cutoff)
 	if err != nil {
 		t.Fatalf("GetSessionsInactiveBefore: %v", err)
 	}
@@ -800,7 +834,7 @@ func TestGetSessionDefaults_NoMessages(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	defaults, err := db.GetSessionDefaults("s1", "/project")
+	defaults, err := db.GetSessionDefaults(t.Context(), "s1", "/project")
 	if err != nil {
 		t.Fatalf("GetSessionDefaults: %v", err)
 	}
@@ -825,7 +859,7 @@ func TestGetSessionDefaults_WithMessages(t *testing.T) {
 		"modelID":    "claude-3-5-sonnet",
 	})
 
-	defaults, err := db.GetSessionDefaults("s1", "/project")
+	defaults, err := db.GetSessionDefaults(t.Context(), "s1", "/project")
 	if err != nil {
 		t.Fatalf("GetSessionDefaults: %v", err)
 	}
@@ -843,7 +877,7 @@ func TestGetContextTokenCount_NoMessages(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	count, err := db.GetContextTokenCount("nonexistent")
+	count, err := db.GetContextTokenCount(t.Context(), "nonexistent")
 	if err == nil {
 		t.Fatal("expected error for non-existent session")
 	}
@@ -868,7 +902,7 @@ func TestGetContextTokenCount_WithTokens(t *testing.T) {
 		},
 	})
 
-	count, err := db.GetContextTokenCount("s1")
+	count, err := db.GetContextTokenCount(t.Context(), "s1")
 	if err != nil {
 		t.Fatalf("GetContextTokenCount: %v", err)
 	}
@@ -894,7 +928,7 @@ func TestGetStats(t *testing.T) {
 		"cost":   0.01,
 	})
 
-	stats, err := db.GetStats()
+	stats, err := db.GetStats(t.Context())
 	if err != nil {
 		t.Fatalf("GetStats: %v", err)
 	}
@@ -936,9 +970,10 @@ func TestGetMetricsDashboard(t *testing.T) {
 		},
 	})
 
-	metrics, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+	metrics, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 	})
+
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard: %v", err)
 	}
@@ -1042,9 +1077,10 @@ func TestGetMetricsDashboardSessionAggregation(t *testing.T) {
 		"tokens":     map[string]interface{}{"input": 10, "output": 20},
 	})
 
-	metrics, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+	metrics, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 	})
+
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard: %v", err)
 	}
@@ -1082,9 +1118,10 @@ func TestGetMetricsDashboardSessionAggregation(t *testing.T) {
 	}
 
 	// Pagination: sessionLimit=1 returns just the most expensive.
-	paged, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+	paged, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		RequestLimit: 50, SessionLimit: 1, ProjectLimit: 50,
 	})
+
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard paged: %v", err)
 	}
@@ -1096,9 +1133,10 @@ func TestGetMetricsDashboardSessionAggregation(t *testing.T) {
 	}
 
 	// Offset skips the most expensive (s1) — what's left is s2.
-	offset, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+	offset, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		RequestLimit: 50, SessionLimit: 1, SessionOffset: 1, ProjectLimit: 50,
 	})
+
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard offset: %v", err)
 	}
@@ -1125,7 +1163,7 @@ func TestGetProjects(t *testing.T) {
 		"cost":   0.25,
 	})
 
-	projects, err := db.GetProjects()
+	projects, err := db.GetProjects(t.Context())
 	if err != nil {
 		t.Fatalf("GetProjects: %v", err)
 	}
@@ -1160,7 +1198,7 @@ func TestGetHourlyActivity(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	result, err := db.GetHourlyActivity(0, "")
+	result, err := db.GetHourlyActivity(t.Context(), 0, "")
 	if err != nil {
 		t.Fatalf("GetHourlyActivity: %v", err)
 	}
@@ -1193,7 +1231,7 @@ func TestGetModelUsage(t *testing.T) {
 		"tokens":     map[string]interface{}{"input": 200, "output": 100},
 	})
 
-	result, err := db.GetModelUsage(0, "")
+	result, err := db.GetModelUsage(t.Context(), 0, "")
 	if err != nil {
 		t.Fatalf("GetModelUsage: %v", err)
 	}
@@ -1243,7 +1281,7 @@ func TestGetModelUsage_CacheTokens(t *testing.T) {
 		},
 	})
 
-	result, err := db.GetModelUsage(0, "")
+	result, err := db.GetModelUsage(t.Context(), 0, "")
 	if err != nil {
 		t.Fatalf("GetModelUsage: %v", err)
 	}
@@ -1274,7 +1312,7 @@ func TestGetModelUsage_SortedOutput(t *testing.T) {
 		"tokens": map[string]interface{}{"input": 20, "output": 10},
 	})
 
-	result, err := db.GetModelUsage(0, "")
+	result, err := db.GetModelUsage(t.Context(), 0, "")
 	if err != nil {
 		t.Fatalf("GetModelUsage: %v", err)
 	}
@@ -1305,7 +1343,7 @@ func TestGetModelUsage_FallbackToNestedModel(t *testing.T) {
 		"tokens": map[string]interface{}{"input": 50, "output": 25},
 	})
 
-	result, err := db.GetModelUsage(0, "")
+	result, err := db.GetModelUsage(t.Context(), 0, "")
 	if err != nil {
 		t.Fatalf("GetModelUsage: %v", err)
 	}
@@ -1321,7 +1359,7 @@ func TestGetDailyActivity(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	result, err := db.GetDailyActivity(0, "", "")
+	result, err := db.GetDailyActivity(t.Context(), 0, "", "")
 	if err != nil {
 		t.Fatalf("GetDailyActivity: %v", err)
 	}
@@ -1354,7 +1392,7 @@ func TestGetDailyActivity_UserMessages(t *testing.T) {
 		"tokens": map[string]interface{}{"input": 10, "output": 5},
 	})
 
-	result, err := db.GetDailyActivity(0, "", "")
+	result, err := db.GetDailyActivity(t.Context(), 0, "", "")
 	if err != nil {
 		t.Fatalf("GetDailyActivity: %v", err)
 	}
@@ -1400,7 +1438,7 @@ func TestGetDailyActivity_ModelFilter(t *testing.T) {
 	today := time.Now().Format("2006-01-02")
 	messagesToday := func(t *testing.T, modelFilter string) int {
 		t.Helper()
-		result, err := db.GetDailyActivity(0, modelFilter, "")
+		result, err := db.GetDailyActivity(t.Context(), 0, modelFilter, "")
 		if err != nil {
 			t.Fatalf("GetDailyActivity(%q): %v", modelFilter, err)
 		}
@@ -1454,7 +1492,7 @@ func TestGetNewAssistantMessages(t *testing.T) {
 	})
 
 	// Query all messages since before the first one.
-	rows, hwm, err := db.GetNewAssistantMessages(now - 5000)
+	rows, hwm, err := db.GetNewAssistantMessages(t.Context(), now-5000)
 	if err != nil {
 		t.Fatalf("GetNewAssistantMessages: %v", err)
 	}
@@ -1490,7 +1528,7 @@ func TestGetNewAssistantMessages(t *testing.T) {
 	}
 
 	// Second query with the returned high-water mark should return nothing.
-	rows2, hwm2, err := db.GetNewAssistantMessages(hwm)
+	rows2, hwm2, err := db.GetNewAssistantMessages(t.Context(), hwm)
 	if err != nil {
 		t.Fatalf("GetNewAssistantMessages (second call): %v", err)
 	}
@@ -1506,7 +1544,7 @@ func TestGetNewAssistantMessages_Empty(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	rows, hwm, err := db.GetNewAssistantMessages(0)
+	rows, hwm, err := db.GetNewAssistantMessages(t.Context(), 0)
 	if err != nil {
 		t.Fatalf("GetNewAssistantMessages: %v", err)
 	}
@@ -1583,7 +1621,7 @@ func TestGetHourlyTokensByModel(t *testing.T) {
 		"tokens":     map[string]interface{}{"input": 200, "output": 100},
 	})
 
-	result, err := db.GetHourlyTokensByModel(7, 0, "", "")
+	result, err := db.GetHourlyTokensByModel(t.Context(), 7, 0, "", "")
 	if err != nil {
 		t.Fatalf("GetHourlyTokensByModel: %v", err)
 	}
@@ -1602,7 +1640,7 @@ func TestGetHourlyTokensByModel_Empty(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	result, err := db.GetHourlyTokensByModel(7, 0, "", "")
+	result, err := db.GetHourlyTokensByModel(t.Context(), 7, 0, "", "")
 	if err != nil {
 		t.Fatalf("GetHourlyTokensByModel: %v", err)
 	}
@@ -1629,7 +1667,7 @@ func TestGetSubagentSessionIDs_ReturnsChildren(t *testing.T) {
 	insertSession(t, db, "other", "Other parent", "/project", now, now)
 	insertSubagent(t, db, "child3", "other", "Task (build subagent)", "/project", now, now)
 
-	got, err := db.GetSubagentSessionIDs("parent")
+	got, err := db.GetSubagentSessionIDs(t.Context(), "parent")
 	if err != nil {
 		t.Fatalf("GetSubagentSessionIDs: %v", err)
 	}
@@ -1653,7 +1691,7 @@ func TestGetSubagentSessionIDs_NoChildren(t *testing.T) {
 	now := time.Now().UnixMilli()
 	insertSession(t, db, "lonely", "Lonely", "/project", now, now)
 
-	got, err := db.GetSubagentSessionIDs("lonely")
+	got, err := db.GetSubagentSessionIDs(t.Context(), "lonely")
 	if err != nil {
 		t.Fatalf("GetSubagentSessionIDs: %v", err)
 	}
@@ -1672,7 +1710,7 @@ func TestGetSubagentSessionIDs_EmptyParentID(t *testing.T) {
 	insertSession(t, db, "parent", "Parent", "/project", now, now)
 	insertSubagent(t, db, "child1", "parent", "Task (explore subagent)", "/project", now, now)
 
-	got, err := db.GetSubagentSessionIDs("")
+	got, err := db.GetSubagentSessionIDs(t.Context(), "")
 	if err != nil {
 		t.Fatalf("GetSubagentSessionIDs: %v", err)
 	}
@@ -1698,7 +1736,7 @@ func TestGetSessionParentIDs_ReturnsMap(t *testing.T) {
 	// Also seed an unrelated session that shouldn't appear in the result.
 	insertSession(t, db, "unrelated", "Unrelated", "/project", now, now)
 
-	got, err := db.GetSessionParentIDs([]string{"child1", "child2", "lonely", "missing"})
+	got, err := db.GetSessionParentIDs(t.Context(), []string{"child1", "child2", "lonely", "missing"})
 	if err != nil {
 		t.Fatalf("GetSessionParentIDs: %v", err)
 	}
@@ -1733,7 +1771,7 @@ func TestGetSessionParentIDs_ResolvesTopLevelAncestor(t *testing.T) {
 	insertSubagent(t, db, "mid", "top", "Task (build subagent)", "/project", now, now)
 	insertSubagent(t, db, "leaf", "mid", "Task (explore subagent)", "/project", now, now)
 
-	got, err := db.GetSessionParentIDs([]string{"leaf", "mid"})
+	got, err := db.GetSessionParentIDs(t.Context(), []string{"leaf", "mid"})
 	if err != nil {
 		t.Fatalf("GetSessionParentIDs: %v", err)
 	}
@@ -1796,10 +1834,11 @@ func TestGetMetricsDashboardCumulativeCalcCost(t *testing.T) {
 	//                                   m2 calc = 200*0.01 + 400*0.02 = 10.0
 	pricing := stubPricing{inputRate: 0.01, outputRate: 0.02}
 
-	metrics, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+	metrics, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 		Pricing: pricing,
 	})
+
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard: %v", err)
 	}
@@ -1872,10 +1911,11 @@ func TestGetMetricsDashboardEffectiveCost(t *testing.T) {
 	//   m2 calc = 200*0.01 + 400*0.02 = 10.0 (reported 0 → est wins)
 	pricing := stubPricing{inputRate: 0.01, outputRate: 0.02}
 
-	metrics, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+	metrics, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 		Pricing: pricing,
 	})
+
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard: %v", err)
 	}
@@ -1916,7 +1956,7 @@ func TestGetSessionParentIDs_Empty(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	got, err := db.GetSessionParentIDs(nil)
+	got, err := db.GetSessionParentIDs(t.Context(), nil)
 	if err != nil {
 		t.Fatalf("GetSessionParentIDs(nil): %v", err)
 	}
@@ -1931,7 +1971,7 @@ func TestMessageCountsSince_EmptyInput(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	got, err := db.MessageCountsSince(nil)
+	got, err := db.MessageCountsSince(t.Context(), nil)
 	if err != nil {
 		t.Fatalf("MessageCountsSince(nil): %v", err)
 	}
@@ -1984,7 +2024,7 @@ func TestMessageCountsSince_Basic(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := db.MessageCountsSince(tc.cutoffs)
+			got, err := db.MessageCountsSince(t.Context(), tc.cutoffs)
 			if err != nil {
 				t.Fatalf("MessageCountsSince: %v", err)
 			}
@@ -2009,7 +2049,7 @@ func TestMessageCountsSince_StrictlyGreater(t *testing.T) {
 	insertSession(t, db, "s1", "S1", "/d", 100, 100)
 	insertMessage(t, db, "m1", "s1", 100, nil)
 
-	got, err := db.MessageCountsSince(map[string]int64{"s1": 100})
+	got, err := db.MessageCountsSince(t.Context(), map[string]int64{"s1": 100})
 	if err != nil {
 		t.Fatalf("MessageCountsSince: %v", err)
 	}

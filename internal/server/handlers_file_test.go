@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -63,21 +65,21 @@ func TestFileToken_Rejects(t *testing.T) {
 
 func TestFileTokenSecret_StableAcrossCalls(t *testing.T) {
 	s := newFileTestServer(t)
-	a, err := s.fileTokenSecret()
+	a, err := s.fileTokenSecret(t.Context())
 	if err != nil {
 		t.Fatalf("fileTokenSecret: %v", err)
 	}
 	if len(a) < 16 {
 		t.Fatalf("key too short: %d bytes", len(a))
 	}
-	b, _ := s.fileTokenSecret()
+	b, _ := s.fileTokenSecret(t.Context())
 	if string(a) != string(b) {
 		t.Error("fileTokenSecret returned different keys across calls")
 	}
 	// A fresh Server over the same state DB must reuse the persisted key
 	// so links survive a restart.
 	s2 := &Server{stateDB: s.stateDB}
-	c, err := s2.fileTokenSecret()
+	c, err := s2.fileTokenSecret(t.Context())
 	if err != nil {
 		t.Fatalf("fileTokenSecret (restart): %v", err)
 	}
@@ -88,7 +90,7 @@ func TestFileTokenSecret_StableAcrossCalls(t *testing.T) {
 
 func TestFileURL_AbsoluteAndVerifiable(t *testing.T) {
 	s := newFileTestServer(t)
-	url, err := s.FileURL("/tmp/chart.png")
+	url, err := s.FileURL(t.Context(), "/tmp/chart.png")
 	if err != nil {
 		t.Fatalf("FileURL: %v", err)
 	}
@@ -96,15 +98,26 @@ func TestFileURL_AbsoluteAndVerifiable(t *testing.T) {
 	if !strings.HasPrefix(url, want) {
 		t.Fatalf("FileURL = %q, want prefix %q", url, want)
 	}
-	key, _ := s.fileTokenSecret()
+	key, _ := s.fileTokenSecret(t.Context())
 	if got, ok := verifyFileToken(key, strings.TrimPrefix(url, want)); !ok || got != "/tmp/chart.png" {
 		t.Errorf("token in URL did not verify: %q, %v", got, ok)
 	}
 
 	s.publicBaseURL = "https://ocman.example.com"
-	url, _ = s.FileURL("/tmp/chart.png")
+	url, _ = s.FileURL(t.Context(), "/tmp/chart.png")
 	if !strings.HasPrefix(url, "https://ocman.example.com/api/file/") {
 		t.Errorf("FileURL ignored publicBaseURL: %q", url)
+	}
+}
+
+func TestFileURLUsesCallerContext(t *testing.T) {
+	s := newFileTestServer(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	_, err := s.FileURL(ctx, "/tmp/chart.png")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("FileURL error = %v, want context.Canceled", err)
 	}
 }
 
@@ -119,7 +132,7 @@ func TestHandleFileProxy(t *testing.T) {
 	if err := os.WriteFile(zip, []byte("PK\x03\x04"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	key, _ := s.fileTokenSecret()
+	key, _ := s.fileTokenSecret(t.Context())
 
 	t.Run("serves an image inline", func(t *testing.T) {
 		rec := httptest.NewRecorder()
@@ -188,6 +201,20 @@ func TestHandleFileProxy(t *testing.T) {
 			t.Fatalf("status = %d, want 404", rec.Code)
 		}
 	})
+}
+
+func TestHandleFileProxyUsesRequestContext(t *testing.T) {
+	s := newFileTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, filePathPrefix+"invalid", nil)
+	ctx, cancel := context.WithCancel(req.Context())
+	cancel()
+	rec := httptest.NewRecorder()
+
+	s.handleFileProxy(rec, req.WithContext(ctx))
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
 }
 
 func TestFileDisposition(t *testing.T) {

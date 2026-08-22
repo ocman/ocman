@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -33,8 +34,8 @@ type PromptSchedule struct {
 	FinishedAt      int64  `json:"finishedAt,omitempty"`
 }
 
-func (d *DB) CreatePromptSchedule(schedule PromptSchedule) error {
-	_, err := d.db.Exec(`INSERT INTO prompt_schedule
+func (d *DB) CreatePromptSchedule(ctx context.Context, schedule PromptSchedule) error {
+	_, err := d.db.ExecContext(ctx, `INSERT INTO prompt_schedule
 		(id, directory, remote_id, prompt, run_at, state, timing_type, interval_minutes, cron, timezone, enabled, session_mode, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, schedule.ID, schedule.Directory, schedule.RemoteID, schedule.Prompt,
 		schedule.RunAt, schedule.State, schedule.TimingType, schedule.IntervalMinutes, schedule.Cron, schedule.Timezone,
@@ -59,8 +60,8 @@ func scanPromptSchedule(row promptScheduleScanner) (PromptSchedule, error) {
 	return s, err
 }
 
-func (d *DB) GetPromptSchedule(id string) (PromptSchedule, error) {
-	s, err := scanPromptSchedule(d.db.QueryRow(`SELECT `+promptScheduleColumns+` FROM prompt_schedule WHERE id = ?`, id))
+func (d *DB) GetPromptSchedule(ctx context.Context, id string) (PromptSchedule, error) {
+	s, err := scanPromptSchedule(d.db.QueryRowContext(ctx, `SELECT `+promptScheduleColumns+` FROM prompt_schedule WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return s, ErrPromptScheduleNotFound
 	}
@@ -70,8 +71,8 @@ func (d *DB) GetPromptSchedule(id string) (PromptSchedule, error) {
 	return s, nil
 }
 
-func (d *DB) ListPromptSchedules(directory, remoteID string) ([]PromptSchedule, error) {
-	rows, err := d.db.Query(`SELECT `+promptScheduleColumns+` FROM prompt_schedule WHERE directory = ? AND remote_id = ? ORDER BY created_at DESC, id`, directory, remoteID)
+func (d *DB) ListPromptSchedules(ctx context.Context, directory, remoteID string) ([]PromptSchedule, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT `+promptScheduleColumns+` FROM prompt_schedule WHERE directory = ? AND remote_id = ? ORDER BY created_at DESC, id`, directory, remoteID)
 	if err != nil {
 		return nil, fmt.Errorf("listing prompt schedules: %w", err)
 	}
@@ -87,8 +88,8 @@ func (d *DB) ListPromptSchedules(directory, remoteID string) ([]PromptSchedule, 
 	return out, rows.Err()
 }
 
-func (d *DB) ListRunningPromptSchedules() ([]PromptSchedule, error) {
-	rows, err := d.db.Query(`SELECT ` + promptScheduleColumns + ` FROM prompt_schedule WHERE state = 'running' ORDER BY id`)
+func (d *DB) ListRunningPromptSchedules(ctx context.Context) ([]PromptSchedule, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT `+promptScheduleColumns+` FROM prompt_schedule WHERE state = 'running' ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("listing running prompt schedules: %w", err)
 	}
@@ -104,7 +105,7 @@ func (d *DB) ListRunningPromptSchedules() ([]PromptSchedule, error) {
 	return out, rows.Err()
 }
 
-func (d *DB) ClaimPromptSchedule(id string, now int64, force bool) (PromptSchedule, bool, error) {
+func (d *DB) ClaimPromptSchedule(ctx context.Context, id string, now int64, force bool) (PromptSchedule, bool, error) {
 	query := `UPDATE prompt_schedule SET state = 'running', started_at = ?, updated_at = ?
 		WHERE id = ? AND state = 'scheduled'`
 	args := []any{now, now, id}
@@ -112,7 +113,7 @@ func (d *DB) ClaimPromptSchedule(id string, now int64, force bool) (PromptSchedu
 		query += ` AND run_at <= ?`
 		args = append(args, now)
 	}
-	result, err := d.db.Exec(query, args...)
+	result, err := d.db.ExecContext(ctx, query, args...)
 	if err != nil {
 		return PromptSchedule{}, false, fmt.Errorf("claiming prompt schedule: %w", err)
 	}
@@ -121,23 +122,23 @@ func (d *DB) ClaimPromptSchedule(id string, now int64, force bool) (PromptSchedu
 		return PromptSchedule{}, false, err
 	}
 	if changed == 0 {
-		s, getErr := d.GetPromptSchedule(id)
+		s, getErr := d.GetPromptSchedule(ctx, id)
 		return s, false, getErr
 	}
-	s, err := d.GetPromptSchedule(id)
+	s, err := d.GetPromptSchedule(ctx, id)
 	return s, err == nil, err
 }
 
 // ClaimNextDuePromptSchedule skips archived work without changing its due time,
 // so an overdue schedule becomes eligible immediately after unarchive.
-func (d *DB) ClaimNextDuePromptSchedule(now int64) (PromptSchedule, bool, error) {
-	tx, err := d.db.Begin()
+func (d *DB) ClaimNextDuePromptSchedule(ctx context.Context, now int64) (PromptSchedule, bool, error) {
+	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return PromptSchedule{}, false, fmt.Errorf("claiming due prompt schedule: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 	type candidate struct{ id, directory, remoteID, sessionMode, platform, sessionID string }
-	rows, err := tx.Query(`SELECT id, directory, remote_id, session_mode, platform, session_id FROM prompt_schedule WHERE state = 'scheduled' AND enabled = 1 AND run_at <= ? ORDER BY run_at, id`, now)
+	rows, err := tx.QueryContext(ctx, `SELECT id, directory, remote_id, session_mode, platform, session_id FROM prompt_schedule WHERE state = 'scheduled' AND enabled = 1 AND run_at <= ? ORDER BY run_at, id`, now)
 	if err != nil {
 		return PromptSchedule{}, false, err
 	}
@@ -162,7 +163,7 @@ func (d *DB) ClaimNextDuePromptSchedule(now int64) (PromptSchedule, bool, error)
 		var archived int
 		// The schedule's own host decides: an archived /repo on another
 		// machine says nothing about this one.
-		err = tx.QueryRow(
+		err = tx.QueryRowContext(ctx,
 			`SELECT EXISTS(SELECT 1 FROM archived_project WHERE remote_id = ? AND project_root = ?)`,
 			NormalizeRemoteID(candidate.remoteID), ProjectRootForDirectory(candidate.directory),
 		).Scan(&archived)
@@ -173,7 +174,7 @@ func (d *DB) ClaimNextDuePromptSchedule(now int64) (PromptSchedule, bool, error)
 			continue
 		}
 		if candidate.sessionMode == "reuse" && candidate.platform != "" && candidate.sessionID != "" {
-			err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM archived_session WHERE platform = ? AND session_id = ?)`, candidate.platform, candidate.sessionID).Scan(&archived)
+			err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM archived_session WHERE platform = ? AND session_id = ?)`, candidate.platform, candidate.sessionID).Scan(&archived)
 			if err != nil {
 				return PromptSchedule{}, false, err
 			}
@@ -187,7 +188,7 @@ func (d *DB) ClaimNextDuePromptSchedule(now int64) (PromptSchedule, bool, error)
 	if id == "" {
 		return PromptSchedule{}, false, nil
 	}
-	result, err := tx.Exec(`UPDATE prompt_schedule SET state = 'running', started_at = ?, updated_at = ? WHERE id = ? AND state = 'scheduled'`, now, now, id)
+	result, err := tx.ExecContext(ctx, `UPDATE prompt_schedule SET state = 'running', started_at = ?, updated_at = ? WHERE id = ? AND state = 'scheduled'`, now, now, id)
 	if err != nil {
 		return PromptSchedule{}, false, err
 	}
@@ -195,7 +196,7 @@ func (d *DB) ClaimNextDuePromptSchedule(now int64) (PromptSchedule, bool, error)
 	if err != nil || changed == 0 {
 		return PromptSchedule{}, false, err
 	}
-	s, err := scanPromptSchedule(tx.QueryRow(`SELECT `+promptScheduleColumns+` FROM prompt_schedule WHERE id = ?`, id))
+	s, err := scanPromptSchedule(tx.QueryRowContext(ctx, `SELECT `+promptScheduleColumns+` FROM prompt_schedule WHERE id = ?`, id))
 	if err != nil {
 		return PromptSchedule{}, false, err
 	}
@@ -205,8 +206,8 @@ func (d *DB) ClaimNextDuePromptSchedule(now int64) (PromptSchedule, bool, error)
 	return s, true, nil
 }
 
-func (d *DB) CancelPromptSchedule(id string, now int64) (PromptSchedule, bool, error) {
-	result, err := d.db.Exec(`UPDATE prompt_schedule SET state = 'canceled', finished_at = CASE WHEN state = 'running' THEN ? ELSE finished_at END, updated_at = ? WHERE id = ? AND state IN ('scheduled', 'running')`, now, now, id)
+func (d *DB) CancelPromptSchedule(ctx context.Context, id string, now int64) (PromptSchedule, bool, error) {
+	result, err := d.db.ExecContext(ctx, `UPDATE prompt_schedule SET state = 'canceled', finished_at = CASE WHEN state = 'running' THEN ? ELSE finished_at END, updated_at = ? WHERE id = ? AND state IN ('scheduled', 'running')`, now, now, id)
 	if err != nil {
 		return PromptSchedule{}, false, err
 	}
@@ -215,44 +216,44 @@ func (d *DB) CancelPromptSchedule(id string, now int64) (PromptSchedule, bool, e
 		return PromptSchedule{}, false, err
 	}
 	if changed == 0 {
-		s, getErr := d.GetPromptSchedule(id)
+		s, getErr := d.GetPromptSchedule(ctx, id)
 		return s, false, getErr
 	}
-	s, err := d.GetPromptSchedule(id)
+	s, err := d.GetPromptSchedule(ctx, id)
 	return s, err == nil, err
 }
 
-func (d *DB) LinkPromptScheduleSession(id, platform, sessionID string, now int64) error {
-	result, err := d.db.Exec(`UPDATE prompt_schedule SET platform = ?, session_id = ?, updated_at = ? WHERE id = ? AND state = 'running'`, platform, sessionID, now, id)
+func (d *DB) LinkPromptScheduleSession(ctx context.Context, id, platform, sessionID string, now int64) error {
+	result, err := d.db.ExecContext(ctx, `UPDATE prompt_schedule SET platform = ?, session_id = ?, updated_at = ? WHERE id = ? AND state = 'running'`, platform, sessionID, now, id)
 	return promptScheduleUpdate(result, err)
 }
 
-func (d *DB) FinishPromptSchedule(id, stateValue, errorText string, now int64) error {
-	result, err := d.db.Exec(`UPDATE prompt_schedule SET state = ?, error = ?, finished_at = ?, updated_at = ? WHERE id = ? AND state = 'running'`, stateValue, errorText, now, now, id)
+func (d *DB) FinishPromptSchedule(ctx context.Context, id, stateValue, errorText string, now int64) error {
+	result, err := d.db.ExecContext(ctx, `UPDATE prompt_schedule SET state = ?, error = ?, finished_at = ?, updated_at = ? WHERE id = ? AND state = 'running'`, stateValue, errorText, now, now, id)
 	return promptScheduleUpdate(result, err)
 }
 
-func (d *DB) CompletePromptSchedule(id string, nextRunAt, now int64) error {
-	result, err := d.db.Exec(`UPDATE prompt_schedule SET state = 'scheduled', run_at = ?, error = '', finished_at = ?, updated_at = ? WHERE id = ? AND state = 'running'`, nextRunAt, now, now, id)
+func (d *DB) CompletePromptSchedule(ctx context.Context, id string, nextRunAt, now int64) error {
+	result, err := d.db.ExecContext(ctx, `UPDATE prompt_schedule SET state = 'scheduled', run_at = ?, error = '', finished_at = ?, updated_at = ? WHERE id = ? AND state = 'running'`, nextRunAt, now, now, id)
 	return promptScheduleUpdate(result, err)
 }
 
-func (d *DB) ReschedulePromptSchedule(id string, nextRunAt int64, errorText string, now int64) error {
-	result, err := d.db.Exec(`UPDATE prompt_schedule SET state = 'scheduled', run_at = ?, error = ?, finished_at = ?, updated_at = ? WHERE id = ? AND state = 'running'`, nextRunAt, errorText, now, now, id)
+func (d *DB) ReschedulePromptSchedule(ctx context.Context, id string, nextRunAt int64, errorText string, now int64) error {
+	result, err := d.db.ExecContext(ctx, `UPDATE prompt_schedule SET state = 'scheduled', run_at = ?, error = ?, finished_at = ?, updated_at = ? WHERE id = ? AND state = 'running'`, nextRunAt, errorText, now, now, id)
 	return promptScheduleUpdate(result, err)
 }
 
-func (d *DB) SetPromptScheduleEnabled(id string, enabled bool, runAt, now int64) (PromptSchedule, error) {
+func (d *DB) SetPromptScheduleEnabled(ctx context.Context, id string, enabled bool, runAt, now int64) (PromptSchedule, error) {
 	var err error
 	if enabled {
-		_, err = d.db.Exec(`UPDATE prompt_schedule SET enabled = 1, run_at = ?, state = 'scheduled', error = '', updated_at = ? WHERE id = ? AND state != 'running'`, runAt, now, id)
+		_, err = d.db.ExecContext(ctx, `UPDATE prompt_schedule SET enabled = 1, run_at = ?, state = 'scheduled', error = '', updated_at = ? WHERE id = ? AND state != 'running'`, runAt, now, id)
 	} else {
-		_, err = d.db.Exec(`UPDATE prompt_schedule SET enabled = 0, run_at = ?, state = CASE WHEN state = 'running' THEN 'scheduled' ELSE state END, finished_at = CASE WHEN state = 'running' THEN ? ELSE finished_at END, updated_at = ? WHERE id = ?`, runAt, now, now, id)
+		_, err = d.db.ExecContext(ctx, `UPDATE prompt_schedule SET enabled = 0, run_at = ?, state = CASE WHEN state = 'running' THEN 'scheduled' ELSE state END, finished_at = CASE WHEN state = 'running' THEN ? ELSE finished_at END, updated_at = ? WHERE id = ?`, runAt, now, now, id)
 	}
 	if err != nil {
 		return PromptSchedule{}, err
 	}
-	return d.GetPromptSchedule(id)
+	return d.GetPromptSchedule(ctx, id)
 }
 
 func promptScheduleUpdate(result sql.Result, err error) error {
@@ -269,7 +270,7 @@ func promptScheduleUpdate(result sql.Result, err error) error {
 	return nil
 }
 
-func (d *DB) FailRunningPromptSchedules(now int64, errorText string) error {
-	_, err := d.db.Exec(`UPDATE prompt_schedule SET state = 'failed', error = ?, finished_at = ?, updated_at = ? WHERE state = 'running'`, errorText, now, now)
+func (d *DB) FailRunningPromptSchedules(ctx context.Context, now int64, errorText string) error {
+	_, err := d.db.ExecContext(ctx, `UPDATE prompt_schedule SET state = 'failed', error = ?, finished_at = ?, updated_at = ? WHERE state = 'running'`, errorText, now, now)
 	return err
 }

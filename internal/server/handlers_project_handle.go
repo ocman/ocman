@@ -256,7 +256,7 @@ var errPRNotFound = errors.New("pr not found")
 func (s *Server) renderHandlePrompt(
 	ctx context.Context, f forge.Forge, rem forge.Remote, req handleProjectRequest,
 ) (string, map[string]string, error) {
-	tmpl, err := s.promptTemplateFor(req.Type, req.Action)
+	tmpl, err := s.promptTemplateFor(ctx, req.Type, req.Action)
 	if err != nil {
 		return "", nil, err
 	}
@@ -314,7 +314,7 @@ func (s *Server) renderHandlePrompt(
 // action, falling back to the built-in defaults when state.db is
 // unavailable or empty. action=="review" (PR only) selects the review
 // template; anything else uses the type's handle template.
-func (s *Server) promptTemplateFor(itemType, action string) (string, error) {
+func (s *Server) promptTemplateFor(ctx context.Context, itemType, action string) (string, error) {
 	def := DefaultPRPromptTemplate
 	key := settingPRPromptTemplate
 	switch {
@@ -328,7 +328,7 @@ func (s *Server) promptTemplateFor(itemType, action string) (string, error) {
 	if s.stateDB == nil {
 		return def, nil
 	}
-	v, ok, err := s.stateDB.GetSetting(key)
+	v, ok, err := s.stateDB.GetSetting(ctx, key)
 	if err != nil {
 		return def, err
 	}

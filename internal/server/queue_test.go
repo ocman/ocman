@@ -87,7 +87,7 @@ func TestSessionMessage_BusySendsNowWithoutQueueFlag(t *testing.T) {
 	if len(sent) != 1 || sent[0] != "interleave me" {
 		t.Fatalf("sent = %v, want [interleave me] (mid-turn send is not held)", sent)
 	}
-	if n, err := srv.stateDB.CountQueuedMessages("fake", "s1"); err != nil || n != 0 {
+	if n, err := srv.stateDB.CountQueuedMessages(t.Context(), "fake", "s1"); err != nil || n != 0 {
 		t.Fatalf("queued = %d (err %v), want 0", n, err)
 	}
 }
@@ -406,7 +406,7 @@ func TestQueueMutations_ReachTheWireAsQueueUpdated(t *testing.T) {
 	}
 
 	// --- Move: bring 'two' to the front → [two one]. ---
-	list, _ := srv.queueSvc().List("fake", "s1")
+	list, _ := srv.queueSvc().List(t.Context(), "fake", "s1")
 	twoID := list[1].ID
 	moveReq := httptest.NewRequest(http.MethodPost,
 		"/api/session/s1/queue/"+twoID+"/move?platform=fake",
@@ -581,7 +581,7 @@ func TestSessionMessage_UnreachableRelaunchesOpencodeAndRetries(t *testing.T) {
 		t.Fatalf("attempts = %d, sent = %v; want retry to deliver [hello]", attempts, sent)
 	}
 	// Delivered: the queue must be empty.
-	if list, _ := srv.queueSvc().List("fake", "s1"); len(list) != 0 {
+	if list, _ := srv.queueSvc().List(t.Context(), "fake", "s1"); len(list) != 0 {
 		t.Fatalf("queue = %+v, want empty after delivered retry", list)
 	}
 }
@@ -662,7 +662,7 @@ func TestSessionMessage_RelaunchFails_DirectSendSurfacesError(t *testing.T) {
 	if attempts != 1 {
 		t.Fatalf("attempts = %d, want 1 (no retry when relaunch failed)", attempts)
 	}
-	if list, _ := srv.queueSvc().List("fake", "s1"); len(list) != 0 {
+	if list, _ := srv.queueSvc().List(t.Context(), "fake", "s1"); len(list) != 0 {
 		t.Fatalf("queue = %+v, want empty (a direct send is not parked)", list)
 	}
 }
@@ -704,7 +704,7 @@ func TestSessionMessage_RelaunchFails_MessageStaysQueued(t *testing.T) {
 		t.Fatalf("attempts = %d, want 1 (no retry when relaunch failed)", attempts)
 	}
 	mu.Unlock()
-	if list, _ := srv.queueSvc().List("fake", "s1"); len(list) != 1 || list[0].Text != "hello" {
+	if list, _ := srv.queueSvc().List(t.Context(), "fake", "s1"); len(list) != 1 || list[0].Text != "hello" {
 		t.Fatalf("queue = %+v, want [hello] retained for a later retry", list)
 	}
 }

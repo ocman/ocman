@@ -1,6 +1,7 @@
 package mcp_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -43,7 +44,7 @@ func TestEmbedFile_ImageRendersAsMarkdownEmbed(t *testing.T) {
 	if err := os.WriteFile(png, []byte("12345"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	srv := buildEmbedFileServer(t, func(p string) (string, error) {
+	srv := buildEmbedFileServer(t, func(_ context.Context, p string) (string, error) {
 		return "http://localhost:8228/api/file/tok-for-" + filepath.Base(p), nil
 	})
 
@@ -70,7 +71,7 @@ func TestEmbedFile_NonImageRendersAsLinkWithLabel(t *testing.T) {
 	if err := os.WriteFile(pdf, []byte("%PDF-1.4"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	srv := buildEmbedFileServer(t, func(string) (string, error) { return "http://x/api/file/t", nil })
+	srv := buildEmbedFileServer(t, func(context.Context, string) (string, error) { return "http://x/api/file/t", nil })
 
 	out := embedFileResult(t, srv, map[string]interface{}{"path": pdf, "label": "Q3 report"})
 
@@ -85,7 +86,7 @@ func TestEmbedFile_SVGEmbedsInline(t *testing.T) {
 	if err := os.WriteFile(svg, []byte("<svg/>"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	srv := buildEmbedFileServer(t, func(string) (string, error) { return "http://x/api/file/t", nil })
+	srv := buildEmbedFileServer(t, func(context.Context, string) (string, error) { return "http://x/api/file/t", nil })
 
 	out := embedFileResult(t, srv, map[string]interface{}{"path": svg})
 	if !strings.HasPrefix(out["markdown"].(string), "![") {
@@ -99,7 +100,7 @@ func TestEmbedFile_Errors(t *testing.T) {
 	if err := os.WriteFile(existing, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	okSigner := internalmcp.FileSigner(func(string) (string, error) { return "http://x/api/file/t", nil })
+	okSigner := internalmcp.FileSigner(func(context.Context, string) (string, error) { return "http://x/api/file/t", nil })
 
 	tests := []struct {
 		name string
@@ -111,7 +112,7 @@ func TestEmbedFile_Errors(t *testing.T) {
 		{"nonexistent file", okSigner, map[string]interface{}{"path": filepath.Join(dir, "nope.png")}},
 		{"directory", okSigner, map[string]interface{}{"path": dir}},
 		{"no signer", nil, map[string]interface{}{"path": existing}},
-		{"signer fails", func(string) (string, error) { return "", errors.New("boom") }, map[string]interface{}{"path": existing}},
+		{"signer fails", func(context.Context, string) (string, error) { return "", errors.New("boom") }, map[string]interface{}{"path": existing}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

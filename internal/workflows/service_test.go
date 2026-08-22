@@ -77,7 +77,7 @@ type fakeAgentExecutor struct {
 	keepResultOnReuse bool
 }
 
-func (f *fakeAgentExecutor) Start(_ context.Context, req AgentRequest) (AgentSession, error) {
+func (f *fakeAgentExecutor) Start(ctx context.Context, req AgentRequest) (AgentSession, error) {
 	f.starts = append(f.starts, req)
 	if f.startErr != nil {
 		return AgentSession{}, f.startErr
@@ -94,7 +94,7 @@ func (f *fakeAgentExecutor) Start(_ context.Context, req AgentRequest) (AgentSes
 	return AgentSession{ID: id, Platform: req.Platform, State: "busy"}, nil
 }
 
-func (f *fakeAgentExecutor) Inspect(_ context.Context, session AgentSession) (AgentResult, error) {
+func (f *fakeAgentExecutor) Inspect(ctx context.Context, session AgentSession) (AgentResult, error) {
 	if f.inspectErr != nil {
 		return AgentResult{}, f.inspectErr
 	}
@@ -104,7 +104,7 @@ func (f *fakeAgentExecutor) Inspect(_ context.Context, session AgentSession) (Ag
 	return AgentResult{State: "busy"}, nil
 }
 
-func (f *fakeAgentExecutor) Cancel(_ context.Context, session AgentSession) error {
+func (f *fakeAgentExecutor) Cancel(ctx context.Context, session AgentSession) error {
 	f.canceled = append(f.canceled, session)
 	return nil
 }
@@ -161,7 +161,7 @@ type workflowFakeStatus struct {
 	running map[string]bool
 }
 
-func (f *workflowFakeStatus) TurnRunning(_ context.Context, _, sessionID string) (bool, bool) {
+func (f *workflowFakeStatus) TurnRunning(ctx context.Context, _, sessionID string) (bool, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	running, ok := f.running[sessionID]
@@ -959,7 +959,7 @@ func TestCommandPermissionUsesLastMatchingRuleAndExplicitEnvironment(t *testing.
 
 type secretCapturingExecutor struct{ request CommandRequest }
 
-func (e *secretCapturingExecutor) Execute(_ context.Context, request CommandRequest) CommandResult {
+func (e *secretCapturingExecutor) Execute(ctx context.Context, request CommandRequest) CommandResult {
 	e.request = request
 	return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: `"s3cr3t"`, Stderr: "token=s3cr3t"}
 }
@@ -1179,15 +1179,15 @@ func TestTickRetriesInterruptedAgentLaunch(t *testing.T) {
 		State: StateActive, CreatedAt: h.clock().UnixMilli(), UpdatedAt: h.clock().UnixMilli(),
 		Nodes: []state.WorkflowNodeRun{{NodeID: "implement", Type: "agent", State: NodeReady}},
 	}
-	if err := h.db.InsertWorkflowRun(run); err != nil {
+	if err := h.db.InsertWorkflowRun(t.Context(), run); err != nil {
 		t.Fatal(err)
 	}
-	stored, err := h.db.GetWorkflowRun(run.ID)
+	stored, err := h.db.GetWorkflowRun(t.Context(), run.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	attemptID := stored.Nodes[0].Attempts[0].ID
-	if claimed, err := h.db.ClaimWorkflowAgentAttempt(run.ID, "implement", attemptID, "", "/repo", []state.WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 1}}, nil, h.clock().UnixMilli()); err != nil || !claimed {
+	if claimed, err := h.db.ClaimWorkflowAgentAttempt(t.Context(), run.ID, "implement", attemptID, "", "/repo", []state.WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 1}}, nil, h.clock().UnixMilli()); err != nil || !claimed {
 		t.Fatalf("claim interrupted agent: claimed=%v err=%v", claimed, err)
 	}
 	if err := h.svc.Tick(context.Background()); err != nil {
@@ -1202,7 +1202,7 @@ func TestTickRetriesInterruptedAgentLaunch(t *testing.T) {
 	}
 	// Restart reconciliation must release the interrupted attempt's lease;
 	// only the replacement attempt may hold run-concurrency.
-	leases, err := h.db.ListWorkflowResourceLeases(run.ID)
+	leases, err := h.db.ListWorkflowResourceLeases(t.Context(), run.ID)
 	if err != nil || len(leases) != 1 || leases[0].AttemptID != failed.Nodes[0].Attempts[1].ID {
 		t.Fatalf("interrupted attempt leaked resource leases: %+v (%v)", leases, err)
 	}
@@ -1414,18 +1414,18 @@ func TestResolveUnknownCanSettleSucceededOrFailed(t *testing.T) {
 				t.Fatal(err)
 			}
 			run := state.WorkflowRun{ID: "unknown-" + resolution, WorkflowID: version.WorkflowID, VersionID: version.ID, State: StateActive, CreatedAt: h.clock().UnixMilli(), UpdatedAt: h.clock().UnixMilli(), Nodes: []state.WorkflowNodeRun{{NodeID: "command", Type: "command", State: NodeReady}}}
-			if err := h.db.InsertWorkflowRun(run); err != nil {
+			if err := h.db.InsertWorkflowRun(t.Context(), run); err != nil {
 				t.Fatal(err)
 			}
-			stored, err := h.db.GetWorkflowRun(run.ID)
+			stored, err := h.db.GetWorkflowRun(t.Context(), run.ID)
 			if err != nil {
 				t.Fatal(err)
 			}
 			attemptID := stored.Nodes[0].Attempts[0].ID
-			if claimed, err := h.db.ClaimWorkflowAgentAttempt(run.ID, "command", attemptID, "", "", []state.WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 1}}, nil, h.clock().UnixMilli()); err != nil || !claimed {
+			if claimed, err := h.db.ClaimWorkflowAgentAttempt(t.Context(), run.ID, "command", attemptID, "", "", []state.WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 1}}, nil, h.clock().UnixMilli()); err != nil || !claimed {
 				t.Fatalf("claim attempt: claimed=%v err=%v", claimed, err)
 			}
-			if err := h.db.MarkWorkflowAttemptUnknown(run.ID, "command", attemptID, "interrupted", h.clock().UnixMilli()); err != nil {
+			if err := h.db.MarkWorkflowAttemptUnknown(t.Context(), run.ID, "command", attemptID, "interrupted", h.clock().UnixMilli()); err != nil {
 				t.Fatal(err)
 			}
 			resolved, err := h.svc.ResolveUnknown(t.Context(), run.ID, attemptID, resolution)
@@ -1450,18 +1450,18 @@ func TestResolveUnknownSuccessReadiesDependents(t *testing.T) {
 		t.Fatal(err)
 	}
 	run := state.WorkflowRun{ID: "unknown-upstream", WorkflowID: version.WorkflowID, VersionID: version.ID, State: StateActive, CreatedAt: h.clock().UnixMilli(), UpdatedAt: h.clock().UnixMilli(), Nodes: []state.WorkflowNodeRun{{NodeID: "review", Type: "approval", State: NodeReady}, {NodeID: "ship", Type: "approval", State: NodePending}}}
-	if err := h.db.InsertWorkflowRun(run); err != nil {
+	if err := h.db.InsertWorkflowRun(t.Context(), run); err != nil {
 		t.Fatal(err)
 	}
-	stored, err := h.db.GetWorkflowRun(run.ID)
+	stored, err := h.db.GetWorkflowRun(t.Context(), run.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	attemptID := stored.Nodes[0].Attempts[0].ID
-	if claimed, err := h.db.ClaimWorkflowAgentAttempt(run.ID, "review", attemptID, "", "", []state.WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 1}}, nil, h.clock().UnixMilli()); err != nil || !claimed {
+	if claimed, err := h.db.ClaimWorkflowAgentAttempt(t.Context(), run.ID, "review", attemptID, "", "", []state.WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 1}}, nil, h.clock().UnixMilli()); err != nil || !claimed {
 		t.Fatalf("claim attempt: claimed=%v err=%v", claimed, err)
 	}
-	if err := h.db.MarkWorkflowAttemptUnknown(run.ID, "review", attemptID, "interrupted", h.clock().UnixMilli()); err != nil {
+	if err := h.db.MarkWorkflowAttemptUnknown(t.Context(), run.ID, "review", attemptID, "interrupted", h.clock().UnixMilli()); err != nil {
 		t.Fatal(err)
 	}
 	resolved, err := h.svc.ResolveUnknown(t.Context(), run.ID, attemptID, ResolutionSucceeded)
@@ -1622,7 +1622,7 @@ type retryCommandExecutor struct {
 	calls []string
 }
 
-func (e *retryCommandExecutor) Execute(_ context.Context, request CommandRequest) CommandResult {
+func (e *retryCommandExecutor) Execute(ctx context.Context, request CommandRequest) CommandResult {
 	e.mu.Lock()
 	e.calls = append(e.calls, request.Command[0])
 	e.mu.Unlock()
@@ -1650,19 +1650,19 @@ func (e *retryCommandExecutor) snapshot() []string {
 	return append([]string(nil), e.calls...)
 }
 
-func (e *repeatExecutor) Execute(_ context.Context, _ CommandRequest) CommandResult {
+func (e *repeatExecutor) Execute(ctx context.Context, _ CommandRequest) CommandResult {
 	value := e.outputs[e.index]
 	e.index++
 	return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: value}
 }
 
-func (e *failingGateExecutor) Execute(_ context.Context, request CommandRequest) CommandResult {
+func (e *failingGateExecutor) Execute(ctx context.Context, request CommandRequest) CommandResult {
 	e.started <- request.Command[0]
 	<-e.release
 	return CommandResult{State: AttemptFailed, ExitCode: 1, Error: "failed"}
 }
 
-func (e *gatedExecutor) Execute(_ context.Context, request CommandRequest) CommandResult {
+func (e *gatedExecutor) Execute(ctx context.Context, request CommandRequest) CommandResult {
 	e.started <- request.Command[0]
 	<-e.release
 	exitCode := 0
@@ -2603,12 +2603,12 @@ type recordingRunner struct {
 	canceled  []string
 }
 
-func (r *recordingRunner) CancelRun(_ context.Context, runID string) error {
+func (r *recordingRunner) CancelRun(ctx context.Context, runID string) error {
 	r.canceled = append(r.canceled, runID)
 	return r.cancelErr
 }
 
-func (r *recordingRunner) StartRun(_ context.Context, runID string, _ Definition) (bool, error) {
+func (r *recordingRunner) StartRun(ctx context.Context, runID string, _ Definition) (bool, error) {
 	r.calls = append(r.calls, runID)
 	return r.handled, r.err
 }

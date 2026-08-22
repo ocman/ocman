@@ -1,14 +1,15 @@
 package state
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
 
 // PinSession marks a session as pinned. Idempotent: repeated calls
 // are no-ops (pinned_at is not updated).
-func (d *DB) PinSession(platform, sessionID string) error {
-	_, err := d.db.Exec(`
+func (d *DB) PinSession(ctx context.Context, platform, sessionID string) error {
+	_, err := d.db.ExecContext(ctx, `
 		INSERT INTO pinned_session (platform, session_id, pinned_at)
 		VALUES (?, ?, ?)
 		ON CONFLICT(platform, session_id) DO NOTHING
@@ -20,8 +21,8 @@ func (d *DB) PinSession(platform, sessionID string) error {
 }
 
 // UnpinSession removes a session's pinned marker.
-func (d *DB) UnpinSession(platform, sessionID string) error {
-	_, err := d.db.Exec(
+func (d *DB) UnpinSession(ctx context.Context, platform, sessionID string) error {
+	_, err := d.db.ExecContext(ctx,
 		`DELETE FROM pinned_session WHERE platform = ? AND session_id = ?`,
 		platform, sessionID,
 	)
@@ -33,8 +34,8 @@ func (d *DB) UnpinSession(platform, sessionID string) error {
 
 // PinnedSessions returns every pinned session's pinned_at timestamp,
 // keyed by (platform, session-id).
-func (d *DB) PinnedSessions() (map[Key]int64, error) {
-	rows, err := d.db.Query(`SELECT platform, session_id, pinned_at FROM pinned_session`)
+func (d *DB) PinnedSessions(ctx context.Context) (map[Key]int64, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT platform, session_id, pinned_at FROM pinned_session`)
 	if err != nil {
 		return nil, fmt.Errorf("listing pinned sessions: %w", err)
 	}

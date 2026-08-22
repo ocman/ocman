@@ -527,7 +527,7 @@ func TestHandleWorktreeCreateAndLaunch_InheritsParentPermissions(t *testing.T) {
 	var captured []platforms.SetPermissionRulesRequest
 	srv, repo := worktreeInheritTestServer(t, &captured)
 
-	if err := srv.stateDB.RecordApprovedPermission("opencode", "parent-wt", state.ApprovedPermission{
+	if err := srv.stateDB.RecordApprovedPermission(t.Context(), "opencode", "parent-wt", state.ApprovedPermission{
 		PermissionID:   "perm-1",
 		PermissionText: "bash",
 		Patterns:       []string{"git *"},
@@ -591,10 +591,10 @@ func TestHandleWorktreeCreateAndLaunch_InheritDisabled(t *testing.T) {
 	var captured []platforms.SetPermissionRulesRequest
 	srv, repo := worktreeInheritTestServer(t, &captured)
 
-	if err := srv.stateDB.SetWorktreeInheritPermissions(false); err != nil {
+	if err := srv.stateDB.SetWorktreeInheritPermissions(t.Context(), false); err != nil {
 		t.Fatalf("SetWorktreeInheritPermissions: %v", err)
 	}
-	if err := srv.stateDB.RecordApprovedPermission("opencode", "parent-wt", state.ApprovedPermission{
+	if err := srv.stateDB.RecordApprovedPermission(t.Context(), "opencode", "parent-wt", state.ApprovedPermission{
 		PermissionID: "perm-1", PermissionText: "bash", Patterns: []string{"git *"}, ApprovedAt: 1000,
 	}); err != nil {
 		t.Fatalf("RecordApprovedPermission: %v", err)

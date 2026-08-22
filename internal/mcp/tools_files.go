@@ -14,7 +14,7 @@ import (
 // FileSigner mints a browser-reachable URL for an absolute path. The
 // server package supplies it (Server.FileURL); the MCP package stays
 // unaware of tokens, keys and routes.
-type FileSigner func(absPath string) (string, error)
+type FileSigner func(context.Context, string) (string, error)
 
 // fileTools holds the dependencies for the asset-embedding tool.
 type fileTools struct {
@@ -48,7 +48,7 @@ func addFileTools(s *server.MCPServer, t *fileTools) {
 }
 
 // handleEmbedFile handles the embed_file tool call.
-func (t *fileTools) handleEmbedFile(_ context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+func (t *fileTools) handleEmbedFile(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	path, err := req.RequireString("path")
 	if err != nil {
 		return mcplib.NewToolResultError("path is required"), nil
@@ -69,7 +69,7 @@ func (t *fileTools) handleEmbedFile(_ context.Context, req mcplib.CallToolReques
 		return mcplib.NewToolResultError(fmt.Sprintf("%s is not a regular file", path)), nil
 	}
 
-	url, err := t.sign(path)
+	url, err := t.sign(ctx, path)
 	if err != nil {
 		return mcplib.NewToolResultError(fmt.Sprintf("building file URL: %v", err)), nil
 	}

@@ -112,7 +112,7 @@ func TestNamedPoolCapsConcurrentCommands(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 	// A durable held lease exists for the running node in the compiler pool.
-	leases, err := h.db.ListWorkflowResourceLeases(run.ID)
+	leases, err := h.db.ListWorkflowResourceLeases(t.Context(), run.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestNamedPoolCapsConcurrentCommands(t *testing.T) {
 	done := waitForRun(t, h.svc, run.ID, StateSuccessful)
 	assertRun(t, done, StateSuccessful, map[string]string{"one": NodeSuccessful, "two": NodeSuccessful})
 	// All capacity released after settle.
-	leases, err = h.db.ListWorkflowResourceLeases(run.ID)
+	leases, err = h.db.ListWorkflowResourceLeases(t.Context(), run.ID)
 	if err != nil || len(leases) != 0 {
 		t.Fatalf("expected no leases after completion, got %+v (%v)", leases, err)
 	}
@@ -182,7 +182,7 @@ func TestResourceReleaseOnFailure(t *testing.T) {
 	}
 	run := publishAndStart(t, h, def)
 	waitForRun(t, h.svc, run.ID, StateFailed)
-	leases, err := h.db.ListWorkflowResourceLeases(run.ID)
+	leases, err := h.db.ListWorkflowResourceLeases(t.Context(), run.ID)
 	if err != nil || len(leases) != 0 {
 		t.Fatalf("failure leaked leases: %+v (%v)", leases, err)
 	}
@@ -206,7 +206,7 @@ func TestResourceReleaseOnCancel(t *testing.T) {
 	if _, err := h.svc.Cancel(context.Background(), run.ID); err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
-	leases, err := h.db.ListWorkflowResourceLeases(run.ID)
+	leases, err := h.db.ListWorkflowResourceLeases(t.Context(), run.ID)
 	if err != nil || len(leases) != 0 {
 		t.Fatalf("cancel leaked leases: %+v (%v)", leases, err)
 	}
@@ -275,7 +275,7 @@ type fakeWorkflowUsage struct {
 	asked []state.Key
 }
 
-func (f *fakeWorkflowUsage) SessionUsage(_ context.Context, sessions []state.Key) (int64, float64, bool) {
+func (f *fakeWorkflowUsage) SessionUsage(ctx context.Context, sessions []state.Key) (int64, float64, bool) {
 	if !f.ok {
 		return 0, 0, false
 	}
@@ -312,7 +312,7 @@ func TestCostLimitStopsRun(t *testing.T) {
 	if failed.State != StateFailed {
 		t.Fatalf("cost limit did not stop run: %s", failed.State)
 	}
-	leases, err := h.db.ListWorkflowResourceLeases(run.ID)
+	leases, err := h.db.ListWorkflowResourceLeases(t.Context(), run.ID)
 	if err != nil || len(leases) != 0 {
 		t.Fatalf("budget stop leaked leases: %+v (%v)", leases, err)
 	}

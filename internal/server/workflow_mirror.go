@@ -100,7 +100,7 @@ func (s *Server) runWorkflowMirror(ctx context.Context) {
 }
 
 func (s *Server) mirrorActiveRuns(ctx context.Context) {
-	active, err := s.stateDB.ListActiveExternalWorkflowRuns()
+	active, err := s.stateDB.ListActiveExternalWorkflowRuns(ctx)
 	if err != nil {
 		log.WithError(err).Warn("workflow-mirror: list active runs")
 		return
@@ -121,7 +121,7 @@ func (s *Server) mirrorRun(ctx context.Context, run state.ExternalWorkflowRun) {
 		log.WithError(err).WithField("run", run.RunID).Debug("workflow-mirror: read external run")
 		return
 	}
-	changed, err := s.stateDB.MirrorWorkflowRun(run.RunID, mirrorSnapshot(detail), time.Now().UnixMilli())
+	changed, err := s.stateDB.MirrorWorkflowRun(ctx, run.RunID, mirrorSnapshot(detail), time.Now().UnixMilli())
 	if err != nil {
 		log.WithError(err).WithField("run", run.RunID).Warn("workflow-mirror: apply snapshot")
 		return
@@ -157,7 +157,7 @@ func (r daguRunner) StartRun(ctx context.Context, runID string, definition workf
 	if r.s.daguManager == nil || r.s.stateDB == nil {
 		return false, nil
 	}
-	compiled, err := r.s.daguManager.CompileRun(definition, runID)
+	compiled, err := r.s.daguManager.CompileRun(ctx, definition, runID)
 	if err != nil {
 		log.WithError(err).WithField("workflow", definition.ID).
 			Debug("workflow-runner: definition not expressible in Dagu, using the native dispatcher")
@@ -170,7 +170,7 @@ func (r daguRunner) StartRun(ctx context.Context, runID string, definition workf
 		// handoff turns out to have partly succeeded.
 		return false, fmt.Errorf("start run on Dagu: %w", err)
 	}
-	if err := r.s.stateDB.SetWorkflowRunExternal(runID, run.ID, runnerDagu, time.Now().UnixMilli()); err != nil {
+	if err := r.s.stateDB.SetWorkflowRunExternal(ctx, runID, run.ID, runnerDagu, time.Now().UnixMilli()); err != nil {
 		return false, fmt.Errorf("link run to Dagu execution: %w", err)
 	}
 	return true, nil
@@ -179,11 +179,11 @@ func (r daguRunner) StartRun(ctx context.Context, runID string, definition workf
 // workflowVersionDefinition resolves a pinned version id to its
 // immutable definition, which is how a map node's per-item child is
 // compiled.
-func (s *Server) workflowVersionDefinition(versionID string) (workflows.Definition, error) {
+func (s *Server) workflowVersionDefinition(ctx context.Context, versionID string) (workflows.Definition, error) {
 	if s.stateDB == nil {
 		return workflows.Definition{}, fmt.Errorf("state database is unavailable")
 	}
-	version, err := s.stateDB.GetWorkflowVersion(versionID)
+	version, err := s.stateDB.GetWorkflowVersion(ctx, versionID)
 	if err != nil || version == nil {
 		return workflows.Definition{}, fmt.Errorf("workflow version %q not found", versionID)
 	}
@@ -198,7 +198,7 @@ func (r daguRunner) CancelRun(ctx context.Context, runID string) error {
 	if r.s.daguManager == nil || r.s.stateDB == nil {
 		return nil
 	}
-	external, err := r.s.stateDB.GetWorkflowRunExternal(runID)
+	external, err := r.s.stateDB.GetWorkflowRunExternal(ctx, runID)
 	if err != nil {
 		return err
 	}

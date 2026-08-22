@@ -61,7 +61,7 @@ func TestManagedOpencode_RoundTrip(t *testing.T) {
 	const repo = "/src/github.com/example/repo"
 
 	// Absent initially.
-	if _, ok, err := d.GetManagedOpencode(repo); err != nil || ok {
+	if _, ok, err := d.GetManagedOpencode(t.Context(), repo); err != nil || ok {
 		t.Fatalf("initial Get: ok=%v err=%v; want ok=false, no error", ok, err)
 	}
 
@@ -73,11 +73,11 @@ func TestManagedOpencode_RoundTrip(t *testing.T) {
 		PID:        4242,
 		LaunchedAt: launched,
 	}
-	if err := d.UpsertManagedOpencode(repo, want, launched); err != nil {
+	if err := d.UpsertManagedOpencode(t.Context(), repo, want, launched); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
 
-	got, ok, err := d.GetManagedOpencode(repo)
+	got, ok, err := d.GetManagedOpencode(t.Context(), repo)
 	if err != nil || !ok {
 		t.Fatalf("Get after upsert: ok=%v err=%v", ok, err)
 	}
@@ -90,10 +90,10 @@ func TestManagedOpencode_RoundTrip(t *testing.T) {
 	// Upsert replaces the row for the same key.
 	relaunched := time.Unix(1700000100, 0)
 	want2 := ManagedInstance{Endpoint: "http://127.0.0.1:50000", Kind: "native-tmux", RuntimeID: "sess-2", PID: 99, LaunchedAt: relaunched}
-	if err := d.UpsertManagedOpencode(repo, want2, relaunched); err != nil {
+	if err := d.UpsertManagedOpencode(t.Context(), repo, want2, relaunched); err != nil {
 		t.Fatalf("re-upsert: %v", err)
 	}
-	got, _, err = d.GetManagedOpencode(repo)
+	got, _, err = d.GetManagedOpencode(t.Context(), repo)
 	if err != nil {
 		t.Fatalf("Get after re-upsert: %v", err)
 	}
@@ -102,13 +102,13 @@ func TestManagedOpencode_RoundTrip(t *testing.T) {
 	}
 
 	// Delete removes it; a second delete is a no-op.
-	if err := d.DeleteManagedOpencode(repo); err != nil {
+	if err := d.DeleteManagedOpencode(t.Context(), repo); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	if _, ok, err := d.GetManagedOpencode(repo); err != nil || ok {
+	if _, ok, err := d.GetManagedOpencode(t.Context(), repo); err != nil || ok {
 		t.Fatalf("Get after delete: ok=%v err=%v; want ok=false", ok, err)
 	}
-	if err := d.DeleteManagedOpencode(repo); err != nil {
+	if err := d.DeleteManagedOpencode(t.Context(), repo); err != nil {
 		t.Fatalf("second delete should be a no-op: %v", err)
 	}
 }

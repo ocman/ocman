@@ -87,7 +87,7 @@ func TestCreateShareHandlesConversationLargerThanChunkLimit(t *testing.T) {
 
 	// Read it back the way the viewer does and confirm the whole
 	// conversation reconstructs from the chunk log.
-	link, ok, err := srv.stateDB.GetActiveShareLink(view.Token)
+	link, ok, err := srv.stateDB.GetActiveShareLink(t.Context(), view.Token)
 	if err != nil || !ok {
 		t.Fatalf("GetActiveShareLink: ok=%v err=%v", ok, err)
 	}

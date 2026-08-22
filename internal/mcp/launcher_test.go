@@ -124,7 +124,7 @@ func TestLaunch_CreatesSessionAndSendsPrompt(t *testing.T) {
 	}
 
 	// Verify the child session was persisted.
-	cs, err := db.GetChildSession("child-abc")
+	cs, err := db.GetChildSession(t.Context(), "child-abc")
 	if err != nil {
 		t.Fatalf("GetChildSession: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestLaunch_ParentlessSessionDoesNotQueueAsyncFeedback(t *testing.T) {
 	if _, err := launcher.Launch(context.Background(), LaunchRequest{Platform: "opencode", Directory: "/repo"}); err != nil {
 		t.Fatal(err)
 	}
-	child, err := db.GetChildSession("standalone")
+	child, err := db.GetChildSession(t.Context(), "standalone")
 	if err != nil || child.ResultDelivery != "detached" {
 		t.Fatalf("parentless child = %+v, %v", child, err)
 	}
@@ -322,7 +322,7 @@ func TestLaunchWithWorktree_Success(t *testing.T) {
 	}
 
 	// Verify the child session was persisted with worktree fields.
-	cs, err := db.GetChildSession("child-wt-1")
+	cs, err := db.GetChildSession(t.Context(), "child-wt-1")
 	if err != nil {
 		t.Fatalf("GetChildSession: %v", err)
 	}

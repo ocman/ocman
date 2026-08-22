@@ -66,7 +66,7 @@ func TestFlushDrainsOnlyItsOwnPlatform(t *testing.T) {
 	if got := sender.messages(); len(got) != 1 || got[0] != localPlatform+" held" {
 		t.Fatalf("sent = %v, want only the local platform's message", got)
 	}
-	if q, _ := svc.List(remotePlatform, "s1"); len(q) != 1 {
+	if q, _ := svc.List(t.Context(), remotePlatform, "s1"); len(q) != 1 {
 		t.Fatalf("remote queue = %v, want its held message intact", q)
 	}
 
@@ -83,7 +83,7 @@ func TestRemoveAndNotifyArePerPlatform(t *testing.T) {
 	sender := &recSender{}
 	var notified []sessionKey
 	svc := New(store, sender, statusStub{running: true, ok: true},
-		func(platform, sessionID string) {
+		func(_ context.Context, platform, sessionID string) {
 			notified = append(notified, sessionKey{Platform: platform, SessionID: sessionID})
 		})
 
@@ -97,19 +97,19 @@ func TestRemoveAndNotifyArePerPlatform(t *testing.T) {
 		t.Fatalf("notified = %v, want one notification per platform", notified)
 	}
 
-	remoteQueue, _ := svc.List(remotePlatform, "s1")
+	remoteQueue, _ := svc.List(t.Context(), remotePlatform, "s1")
 	if len(remoteQueue) != 1 {
 		t.Fatalf("remote queue = %v, want one message", remoteQueue)
 	}
 	notified = nil
-	removed, err := svc.Remove("s1", remoteQueue[0].ID)
+	removed, err := svc.Remove(t.Context(), "s1", remoteQueue[0].ID)
 	if err != nil || !removed {
 		t.Fatalf("Remove: removed=%v err=%v", removed, err)
 	}
 	if len(notified) != 1 || notified[0].Platform != remotePlatform {
 		t.Fatalf("notified = %v, want the remote platform only", notified)
 	}
-	if q, _ := svc.List(localPlatform, "s1"); len(q) != 1 {
+	if q, _ := svc.List(t.Context(), localPlatform, "s1"); len(q) != 1 {
 		t.Fatalf("local queue = %v, want it untouched by the remote removal", q)
 	}
 }

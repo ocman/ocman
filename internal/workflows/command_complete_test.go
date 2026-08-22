@@ -19,18 +19,18 @@ type failingCompleteStore struct {
 	unknown   int
 }
 
-func (f *failingCompleteStore) CompleteWorkflowCommand(runID, nodeID string, result state.WorkflowCommandResult, now int64) error {
+func (f *failingCompleteStore) CompleteWorkflowCommand(ctx context.Context, runID, nodeID string, result state.WorkflowCommandResult, now int64) error {
 	f.calls++
 	if f.remaining > 0 {
 		f.remaining--
 		return errors.New("database is locked")
 	}
-	return f.Store.CompleteWorkflowCommand(runID, nodeID, result, now)
+	return f.Store.CompleteWorkflowCommand(ctx, runID, nodeID, result, now)
 }
 
-func (f *failingCompleteStore) MarkWorkflowAttemptUnknown(runID, nodeID string, attemptID int64, reason string, now int64) error {
+func (f *failingCompleteStore) MarkWorkflowAttemptUnknown(ctx context.Context, runID, nodeID string, attemptID int64, reason string, now int64) error {
 	f.unknown++
-	return f.Store.MarkWorkflowAttemptUnknown(runID, nodeID, attemptID, reason, now)
+	return f.Store.MarkWorkflowAttemptUnknown(ctx, runID, nodeID, attemptID, reason, now)
 }
 
 type okExecutor struct{}

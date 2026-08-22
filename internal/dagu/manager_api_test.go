@@ -237,7 +237,7 @@ func TestManagerCompileRunUsesResolverAndShim(t *testing.T) {
 	manager.shim = "/usr/local/bin/ocman"
 
 	resolved := 0
-	manager.SetVersionResolver(func(string) (workflows.Definition, error) {
+	manager.SetVersionResolver(func(context.Context, string) (workflows.Definition, error) {
 		resolved++
 		return workflows.Definition{
 			ID: "child", Name: "Child", Directory: "/repo",
@@ -258,7 +258,7 @@ func TestManagerCompileRunUsesResolverAndShim(t *testing.T) {
 		},
 		Dependencies: []workflows.Dependency{{From: "list", To: "each"}, {From: "each", To: "done"}},
 	}
-	compiled, err := manager.CompileRun(definition, "run-1")
+	compiled, err := manager.CompileRun(t.Context(), definition, "run-1")
 	if err != nil {
 		t.Fatal(err)
 	}

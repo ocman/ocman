@@ -16,30 +16,30 @@ import (
 // directory. Filters out prompts for other sessions — the frontend
 // only cares about those it could act on.
 func (a *Adapter) ListPermissions(ctx context.Context, sessionID string) ([]platforms.LivePrompt, error) {
-	return a.listObservedPrompts("permission", sessionID), nil
+	return a.listObservedPrompts(ctx, "permission", sessionID), nil
 }
 
 // ListQuestions returns pending question prompts for the session.
 func (a *Adapter) ListQuestions(ctx context.Context, sessionID string) ([]platforms.LivePrompt, error) {
 	if port, session, err := a.resolvePortCtx(ctx, sessionID); err == nil {
-		directories := append([]string{session.Directory}, a.descendantDirectories(sessionID)...)
-		for _, entry := range a.observedPromptEntries("question", sessionID) {
+		directories := append([]string{session.Directory}, a.descendantDirectories(ctx, sessionID)...)
+		for _, entry := range a.observedPromptEntries(ctx, "question", sessionID) {
 			directories = append(directories, entry.directory)
 		}
 		if ok := <-a.startPromptReconciliation(ctx, port, uniqueStrings(directories), []string{"question"}, false); !ok {
 			return nil, fmt.Errorf("refreshing pending questions: %w", platforms.ErrPlatformUnreachable)
 		}
 	}
-	return a.listObservedPrompts("question", sessionID), nil
+	return a.listObservedPrompts(ctx, "question", sessionID), nil
 }
 
-func (a *Adapter) descendantDirectories(sessionID string) []string {
+func (a *Adapter) descendantDirectories(ctx context.Context, sessionID string) []string {
 	if a.db == nil {
 		return nil
 	}
 	mcpChildren := make(map[string][]string)
 	if a.childLinks != nil {
-		if parents, err := a.childLinks.ChildSessionParents(); err == nil {
+		if parents, err := a.childLinks.ChildSessionParents(ctx); err == nil {
 			for key, parentID := range parents {
 				mcpChildren[parentID] = append(mcpChildren[parentID], key.SessionID)
 			}
@@ -50,7 +50,7 @@ func (a *Adapter) descendantDirectories(sessionID string) []string {
 	for len(queue) > 0 {
 		parentID := queue[0]
 		queue = queue[1:]
-		children, _ := a.db.GetSubagentSessionIDs(parentID)
+		children, _ := a.db.GetSubagentSessionIDs(ctx, parentID)
 		children = append(children, mcpChildren[parentID]...)
 		for _, childID := range children {
 			if !ids[childID] {
@@ -61,15 +61,15 @@ func (a *Adapter) descendantDirectories(sessionID string) []string {
 	}
 	var directories []string
 	for id := range ids {
-		if session, err := a.db.GetSession(id); err == nil {
+		if session, err := a.db.GetSession(ctx, id); err == nil {
 			directories = append(directories, session.Directory)
 		}
 	}
 	return uniqueStrings(directories)
 }
 
-func (a *Adapter) listObservedPrompts(kind, sessionID string) []platforms.LivePrompt {
-	entries := a.observedPromptEntries(kind, sessionID)
+func (a *Adapter) listObservedPrompts(ctx context.Context, kind, sessionID string) []platforms.LivePrompt {
+	entries := a.observedPromptEntries(ctx, kind, sessionID)
 	out := make([]platforms.LivePrompt, 0, len(entries))
 	for _, entry := range entries {
 		out = append(out, entry.prompt)
@@ -77,7 +77,7 @@ func (a *Adapter) listObservedPrompts(kind, sessionID string) []platforms.LivePr
 	return out
 }
 
-func (a *Adapter) observedPromptEntries(kind, sessionID string) []livePromptEntry {
+func (a *Adapter) observedPromptEntries(ctx context.Context, kind, sessionID string) []livePromptEntry {
 	entries := a.prompts.listEntries(kind)
 	ids := make([]string, 0, len(entries))
 	for _, entry := range entries {
@@ -86,11 +86,11 @@ func (a *Adapter) observedPromptEntries(kind, sessionID string) []livePromptEntr
 	}
 	parents := map[string]string{}
 	if a.db != nil {
-		parents, _ = a.db.GetSessionParentIDs(ids)
+		parents, _ = a.db.GetSessionParentIDs(ctx, ids)
 	}
 	mcpParents := map[state.Key]string{}
 	if a.childLinks != nil {
-		mcpParents, _ = a.childLinks.ChildSessionParents()
+		mcpParents, _ = a.childLinks.ChildSessionParents(ctx)
 	}
 
 	out := make([]livePromptEntry, 0, len(entries))

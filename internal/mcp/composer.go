@@ -58,8 +58,8 @@ func DefaultContextOptions() ContextOptions {
 // sessionReader is the subset of db.DB used by PromptComposer. Defined
 // as an interface so tests can inject a fake without a real SQLite DB.
 type sessionReader interface {
-	GetSession(sessionID string) (*db.Session, error)
-	GetSessionMessages(sessionID string) ([]db.Message, error)
+	GetSession(context.Context, string) (*db.Session, error)
+	GetSessionMessages(context.Context, string) ([]db.Message, error)
 }
 
 // GitContext is the git-derived prompt enrichment for one directory:
@@ -114,7 +114,7 @@ func (c *PromptComposer) Compose(ctx context.Context, sessionID, intent string, 
 	}
 
 	// Fetch session metadata (cwd, title) — always needed.
-	session, err := c.db.GetSession(sessionID)
+	session, err := c.db.GetSession(ctx, sessionID)
 	if err != nil {
 		// If we can't find the session at all, we can still compose a
 		// minimal prompt from the intent alone.
@@ -153,7 +153,7 @@ func (c *PromptComposer) Compose(ctx context.Context, sessionID, intent string, 
 	var recentMessages []db.Message
 	var relevantFiles []string
 	if opts.RecentMessages || opts.RelevantFiles {
-		msgs, err := c.db.GetSessionMessages(sessionID)
+		msgs, err := c.db.GetSessionMessages(ctx, sessionID)
 		if err == nil {
 			// Take the last N messages.
 			if len(msgs) > defaultRecentMessageCount {

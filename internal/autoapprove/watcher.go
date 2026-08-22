@@ -149,7 +149,7 @@ func newAutoApproveWatcher(svc *Service) *autoApproveWatcher {
 		w.onPermissionReplied = func(sessionID, permissionID, reply string) {
 			// Cancels any in-flight judge and captures "Allow always"
 			// replies into the parent's shadow allowlist (issue #101).
-			svc.HandlePermissionReplied(sessionID, permissionID, reply)
+			svc.HandlePermissionReplied(context.Background(), sessionID, permissionID, reply)
 			// Broadcast the resolution so cross-page prompt toasts clear
 			// instantly even when the user answered from the OpenCode TUI
 			// or another browser tab. The watcher is always connected, so

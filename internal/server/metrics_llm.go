@@ -139,7 +139,7 @@ func (s *Server) runLLMMetricsLoop(ctx context.Context) {
 
 	// Initialise high-water mark to the current max so we don't
 	// replay the entire history on startup.
-	hwm, err := s.db.GetMaxMessageTime()
+	hwm, err := s.db.GetMaxMessageTime(ctx)
 	if err != nil {
 		log.WithError(err).Warn("LLM metrics: failed to get initial high-water mark")
 		return
@@ -154,7 +154,7 @@ func (s *Server) runLLMMetricsLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			runWithRecover("llm-metrics", func() {
-				rows, newHWM, err := s.db.GetNewAssistantMessages(hwm)
+				rows, newHWM, err := s.db.GetNewAssistantMessages(ctx, hwm)
 				if err != nil {
 					log.WithError(err).Warn("LLM metrics: scan failed")
 					return

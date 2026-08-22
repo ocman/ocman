@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -175,8 +176,8 @@ func scanSessionRow(scan func(dest ...any) error) (s Session, keep bool, err err
 // session without rescanning the whole database.
 //
 // Returns ErrSessionNotFound when the session has no row in the list.
-func (d *DB) GetSessionSummary(sessionID string) (Session, error) {
-	row := d.db.QueryRow(sessionListQuery+` WHERE s.id = ?`, sessionID)
+func (d *DB) GetSessionSummary(ctx context.Context, sessionID string) (Session, error) {
+	row := d.db.QueryRowContext(ctx, sessionListQuery+` WHERE s.id = ?`, sessionID)
 	s, keep, err := scanSessionRow(row.Scan)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -192,7 +193,7 @@ func (d *DB) GetSessionSummary(sessionID string) (Session, error) {
 
 // GetSessions returns sessions, optionally filtered by directory and/or a minimum timestamp.
 // Uses SQL aggregation to avoid N+1 queries.
-func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
+func (d *DB) GetSessions(ctx context.Context, directory string, since int64) ([]Session, error) {
 	query := sessionListQuery
 	var conditions []string
 	var args []interface{}
@@ -214,7 +215,7 @@ func (d *DB) GetSessions(directory string, since int64) ([]Session, error) {
 	}
 	query += ` ORDER BY s.time_updated DESC`
 
-	rows, err := d.db.Query(query, args...)
+	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -262,9 +263,9 @@ func FilterInactiveChildren(sessions []Session) []Session {
 }
 
 // GetSession returns a single session by ID.
-func (d *DB) GetSession(sessionID string) (*Session, error) {
+func (d *DB) GetSession(ctx context.Context, sessionID string) (*Session, error) {
 	var s Session
-	err := d.db.QueryRow(`
+	err := d.db.QueryRowContext(ctx, `
 		SELECT
 			s.id, s.project_id, s.title, s.directory,
 			s.time_created, s.time_updated,
@@ -293,11 +294,11 @@ func (d *DB) GetSession(sessionID string) (*Session, error) {
 // Returns an empty slice (and nil error) when parentID is empty so callers
 // can blindly invoke this for any session without first checking whether
 // it might have children.
-func (d *DB) GetSubagentSessionIDs(parentID string) ([]string, error) {
+func (d *DB) GetSubagentSessionIDs(ctx context.Context, parentID string) ([]string, error) {
 	if parentID == "" {
 		return nil, nil
 	}
-	rows, err := d.db.Query(`SELECT id FROM session WHERE parent_id = ?`, parentID)
+	rows, err := d.db.QueryContext(ctx, `SELECT id FROM session WHERE parent_id = ?`, parentID)
 	if err != nil {
 		return nil, err
 	}
@@ -326,7 +327,7 @@ func (d *DB) GetSubagentSessionIDs(parentID string) ([]string, error) {
 //
 // Returns an empty map (and nil error) when childIDs is empty so callers
 // can hand it the result of a fan-out without first checking len().
-func (d *DB) GetSessionParentIDs(childIDs []string) (map[string]string, error) {
+func (d *DB) GetSessionParentIDs(ctx context.Context, childIDs []string) (map[string]string, error) {
 	out := make(map[string]string, len(childIDs))
 	if len(childIDs) == 0 {
 		return out, nil
@@ -345,7 +346,7 @@ func (d *DB) GetSessionParentIDs(childIDs []string) (map[string]string, error) {
 	//
 	// ponytail: bounded by real session nesting depth (a handful);
 	// SQLite's default recursion limit (1000) is the safety ceiling.
-	rows, err := d.db.Query(
+	rows, err := d.db.QueryContext(ctx,
 		`WITH RECURSIVE anc(start, id, parent_id) AS (
 			SELECT id, id, parent_id FROM session
 			WHERE parent_id IS NOT NULL AND id IN (`+placeholders+`)
@@ -373,8 +374,8 @@ func (d *DB) GetSessionParentIDs(childIDs []string) (map[string]string, error) {
 }
 
 // GetSessionsInactiveBefore returns non-subagent sessions last updated before the cutoff.
-func (d *DB) GetSessionsInactiveBefore(cutoff int64) ([]SessionArchiveCandidate, error) {
-	rows, err := d.db.Query(`
+func (d *DB) GetSessionsInactiveBefore(ctx context.Context, cutoff int64) ([]SessionArchiveCandidate, error) {
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT s.id, s.time_updated
 		FROM session s
 		WHERE s.title NOT LIKE '%(% subagent)'
@@ -412,7 +413,7 @@ func (d *DB) GetSessionsInactiveBefore(cutoff int64) ([]SessionArchiveCandidate,
 //
 // Empty input returns an empty map and no error without touching
 // the DB.
-func (d *DB) MessageCountsSince(cutoffs map[string]int64) (map[string]int, error) {
+func (d *DB) MessageCountsSince(ctx context.Context, cutoffs map[string]int64) (map[string]int, error) {
 	if len(cutoffs) == 0 {
 		return map[string]int{}, nil
 	}
@@ -441,7 +442,7 @@ func (d *DB) MessageCountsSince(cutoffs map[string]int64) (map[string]int, error
 		FROM cutoffs c
 	`)
 
-	rows, err := d.db.Query(sb.String(), args...)
+	rows, err := d.db.QueryContext(ctx, sb.String(), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -463,8 +464,8 @@ func (d *DB) MessageCountsSince(cutoffs map[string]int64) (map[string]int, error
 }
 
 // GetSessionMessages returns all messages for a session.
-func (d *DB) GetSessionMessages(sessionID string) ([]Message, error) {
-	rows, err := d.db.Query(`
+func (d *DB) GetSessionMessages(ctx context.Context, sessionID string) ([]Message, error) {
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT id, session_id, time_created, data
 		FROM message
 		WHERE session_id = ?
@@ -494,8 +495,8 @@ func (d *DB) GetSessionMessages(sessionID string) ([]Message, error) {
 }
 
 // GetSessionParts returns all parts for a session.
-func (d *DB) GetSessionParts(sessionID string) ([]Part, error) {
-	rows, err := d.db.Query(`
+func (d *DB) GetSessionParts(ctx context.Context, sessionID string) ([]Part, error) {
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT id, message_id, session_id, time_created, data
 		FROM part
 		WHERE session_id = ?
@@ -529,8 +530,8 @@ var ErrAmbiguousRunningTool = errors.New("multiple sessions are invoking the too
 
 // FindRunningToolSessionID returns the only session currently invoking a
 // tool. OpenCode writes the running tool part before making the MCP request.
-func (d *DB) FindRunningToolSessionID(tool, directory string) (string, error) {
-	rows, err := d.db.Query(`
+func (d *DB) FindRunningToolSessionID(ctx context.Context, tool, directory string) (string, error) {
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT DISTINCT p.session_id
 		FROM part p
 		JOIN session s ON s.id = p.session_id
@@ -626,15 +627,15 @@ func FilterPartsForMessages(parts []Part, messages []Message) []Part {
 // Measured speedup against a representative DB: 1162 ms → 8 ms
 // (~145×). See profiling notes in spec/perf-notes if you want the
 // before/after EXPLAIN QUERY PLAN output.
-func (d *DB) GetSessionDefaults(sessionID, directory string) (SessionDefaults, error) {
-	if defaults, ok, err := d.lookupSessionDefaults(sessionID, directory); err != nil {
+func (d *DB) GetSessionDefaults(ctx context.Context, sessionID, directory string) (SessionDefaults, error) {
+	if defaults, ok, err := d.lookupSessionDefaults(ctx, sessionID, directory); err != nil {
 		return SessionDefaults{}, err
 	} else if ok {
 		return defaults, nil
 	}
 	// Fall back to "most recent across all directories" when the
 	// directory has no qualifying sessions yet.
-	defaults, _, err := d.lookupSessionDefaults(sessionID, "")
+	defaults, _, err := d.lookupSessionDefaults(ctx, sessionID, "")
 	if err != nil {
 		return SessionDefaults{}, err
 	}
@@ -648,7 +649,7 @@ func (d *DB) GetSessionDefaults(sessionID, directory string) (SessionDefaults, e
 //
 // Returns (defaults, found, err): found=false means "no qualifying
 // row" (sql.ErrNoRows). All other errors propagate as err.
-func (d *DB) lookupSessionDefaults(sessionID, directory string) (SessionDefaults, bool, error) {
+func (d *DB) lookupSessionDefaults(ctx context.Context, sessionID, directory string) (SessionDefaults, bool, error) {
 	const candidatesLimit = 5
 
 	// The only difference between the directory-scoped and global
@@ -715,7 +716,7 @@ func (d *DB) lookupSessionDefaults(sessionID, directory string) (SessionDefaults
 	}
 
 	var defaults SessionDefaults
-	err := d.db.QueryRow(cte+sessionDefaultsTail, args...).
+	err := d.db.QueryRowContext(ctx, cte+sessionDefaultsTail, args...).
 		Scan(&defaults.Agent, &defaults.Model)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -729,9 +730,9 @@ func (d *DB) lookupSessionDefaults(sessionID, directory string) (SessionDefaults
 // GetContextTokenCount returns the token usage shown in OpenCode's prompt bar:
 // the last assistant message with output > 0, using
 // input + output + reasoning + cache.read + cache.write.
-func (d *DB) GetContextTokenCount(sessionID string) (int64, error) {
+func (d *DB) GetContextTokenCount(ctx context.Context, sessionID string) (int64, error) {
 	var count int64
-	err := d.db.QueryRow(`
+	err := d.db.QueryRowContext(ctx, `
 		SELECT COALESCE(
 		  json_extract(data, '$.tokens.input'),
 		  0

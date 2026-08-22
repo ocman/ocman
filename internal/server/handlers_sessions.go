@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -34,7 +35,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	// The pinned set is typically <10 entries; each miss is a single
 	// adapter lookup. Silently skip sessions that are deleted or
 	// inaccessible.
-	if pinned, err := s.stateDB.PinnedSessions(); err == nil && len(pinned) > 0 {
+	if pinned, err := s.stateDB.PinnedSessions(ctx); err == nil && len(pinned) > 0 {
 		have := make(map[state.Key]bool, len(all))
 		for _, sess := range all {
 			have[state.Key{Platform: sess.Platform, SessionID: sess.ID}] = true
@@ -59,7 +60,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	all = sortAndLimitSessions(all, limit)
 
 	statePhase := srvtiming.Begin(ctx, "state_overlay")
-	err := s.applySessionState(all)
+	err := s.applySessionState(ctx, all)
 	statePhase.EndWithDesc("applySessionState")
 	if err != nil {
 		serverError(w, "fetching session state", err)
@@ -123,7 +124,7 @@ func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
 
 	all = sortAndLimitSessions(all, limit)
 
-	if err := s.applyNotifySessionState(all); err != nil {
+	if err := s.applyNotifySessionState(ctx, all); err != nil {
 		serverError(w, "fetching session state for notify", err)
 		return
 	}
@@ -189,12 +190,12 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	// remote sessions (AD-14b): their archive state lives in the remote's
 	// state.db, not the hub's.
 	if s.stateDB != nil && detail.Session != nil && !isRemotePlatformID(string(adapter.ID())) {
-		if err := s.stateDB.UnarchiveSession(string(adapter.ID()), sessionID); err != nil {
+		if err := s.stateDB.UnarchiveSession(r.Context(), string(adapter.ID()), sessionID); err != nil {
 			log.Printf("unarchiving session on open: %v", err)
 		}
 		// Local-only path (remote sessions are skipped above), so the
 		// project being unarchived is the hub's own copy.
-		if err := s.stateDB.UnarchiveProject(state.LocalRemoteID, projectRootForDirectory(detail.Session.Directory)); err != nil {
+		if err := s.stateDB.UnarchiveProject(r.Context(), state.LocalRemoteID, projectRootForDirectory(detail.Session.Directory)); err != nil {
 			log.Printf("unarchiving project on open: %v", err)
 		}
 	}
@@ -209,7 +210,7 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	// Session RPC already returns detail enriched with its own notices.
 	// Injecting from the hub's DB here would read the wrong store.
 	if s.stateDB != nil && !isRemotePlatformID(string(adapter.ID())) {
-		injectApprovalNotices(string(adapter.ID()), sessionID, s.stateDB, &detail.Messages, &detail.Parts)
+		injectApprovalNotices(r.Context(), string(adapter.ID()), sessionID, s.stateDB, &detail.Messages, &detail.Parts)
 	}
 
 	writeJSON(w, map[string]interface{}{
@@ -228,10 +229,10 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 // keeping both slices sorted by timeCreated ascending. Existing notice
 // messages (identified by their "ocman-notice-" prefix) are skipped so
 // repeated calls are idempotent.
-func injectApprovalNotices(platform, sessionID string, stateDB interface {
-	ListApprovedPermissions(platform, sessionID string) ([]state.ApprovedPermission, error)
+func injectApprovalNotices(ctx context.Context, platform, sessionID string, stateDB interface {
+	ListApprovedPermissions(context.Context, string, string) ([]state.ApprovedPermission, error)
 }, msgs *[]db.Message, parts *[]db.Part) {
-	approved, err := stateDB.ListApprovedPermissions(platform, sessionID)
+	approved, err := stateDB.ListApprovedPermissions(ctx, platform, sessionID)
 	if err != nil || len(approved) == 0 {
 		return
 	}
@@ -406,7 +407,7 @@ func (s *Server) handleSessionTasks(w http.ResponseWriter, r *http.Request) {
 
 	children := []childData{}
 	if s.stateDB != nil {
-		if rows, err := s.stateDB.ListChildSessionsByParent(r.PathValue("id")); err == nil {
+		if rows, err := s.stateDB.ListChildSessionsByParent(r.Context(), r.PathValue("id")); err == nil {
 			children = make([]childData, 0, len(rows))
 			for _, child := range rows {
 				children = append(children, childData{

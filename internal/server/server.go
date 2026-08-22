@@ -301,8 +301,8 @@ func managedStoreOrNil(db *state.DB) hostlocal.ManagedStore {
 	return managedStore{db: db}
 }
 
-func (m managedStore) Upsert(repoRoot string, inst hostlocal.ManagedInstance) error {
-	return m.db.UpsertManagedOpencode(repoRoot, state.ManagedInstance{
+func (m managedStore) Upsert(ctx context.Context, repoRoot string, inst hostlocal.ManagedInstance) error {
+	return m.db.UpsertManagedOpencode(ctx, repoRoot, state.ManagedInstance{
 		Endpoint:   inst.Endpoint,
 		Kind:       inst.Kind,
 		RuntimeID:  inst.RuntimeID,
@@ -311,8 +311,8 @@ func (m managedStore) Upsert(repoRoot string, inst hostlocal.ManagedInstance) er
 	}, inst.LaunchedAt)
 }
 
-func (m managedStore) Get(repoRoot string) (hostlocal.ManagedInstance, bool, error) {
-	mi, ok, err := m.db.GetManagedOpencode(repoRoot)
+func (m managedStore) Get(ctx context.Context, repoRoot string) (hostlocal.ManagedInstance, bool, error) {
+	mi, ok, err := m.db.GetManagedOpencode(ctx, repoRoot)
 	if err != nil || !ok {
 		return hostlocal.ManagedInstance{}, ok, err
 	}
@@ -325,12 +325,12 @@ func (m managedStore) Get(repoRoot string) (hostlocal.ManagedInstance, bool, err
 	}, true, nil
 }
 
-func (m managedStore) Delete(repoRoot string) error {
-	return m.db.DeleteManagedOpencode(repoRoot)
+func (m managedStore) Delete(ctx context.Context, repoRoot string) error {
+	return m.db.DeleteManagedOpencode(ctx, repoRoot)
 }
 
-func (m managedStore) List() (map[string]hostlocal.ManagedInstance, error) {
-	instances, err := m.db.ManagedOpencodes()
+func (m managedStore) List(ctx context.Context) (map[string]hostlocal.ManagedInstance, error) {
+	instances, err := m.db.ManagedOpencodes(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -435,7 +435,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// Seed the cached judge delay so the first permission event has it
 	// available without a DB round-trip.
 	if s.stateDB != nil {
-		if d, err := s.stateDB.GetJudgeDelayMs(); err == nil {
+		if d, err := s.stateDB.GetJudgeDelayMs(ctx); err == nil {
 			s.aaSvc().SetJudgeDelayMs(d)
 		} else {
 			s.aaSvc().SetJudgeDelayMs(state.DefaultJudgeDelayMs)
@@ -445,7 +445,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	}
 
 	if s.promptScheduleSvc != nil {
-		if err := s.promptScheduleSvc.Recover(); err != nil {
+		if err := s.promptScheduleSvc.Recover(context.WithoutCancel(ctx)); err != nil {
 			return fmt.Errorf("recovering interrupted prompt schedules: %w", err)
 		}
 	}
@@ -598,7 +598,7 @@ func (s *Server) autoArchiveInactiveSessions() {
 	// inactivity cutoff. Without this the loop — which runs at boot and
 	// re-derives archive state purely from inactivity — silently re-hid
 	// anything unarchived just to look at it.
-	keep, err := s.stateDB.SessionsUnarchivedSince(cutoff)
+	keep, err := s.stateDB.SessionsUnarchivedSince(ctx, cutoff)
 	if err != nil {
 		span.RecordError(err)
 		log.WithError(err).Error("listing recently unarchived sessions")
@@ -620,7 +620,7 @@ func (s *Server) autoArchiveInactiveSessions() {
 			if keep[state.Key{Platform: string(adapter.ID()), SessionID: session.ID}] {
 				continue
 			}
-			if err := s.stateDB.ArchiveSession(string(adapter.ID()), session.ID, session.TimeUpdated); err != nil {
+			if err := s.stateDB.ArchiveSession(ctx, string(adapter.ID()), session.ID, session.TimeUpdated); err != nil {
 				span.RecordError(err)
 				log.WithFields(log.Fields{
 					"platform":  adapter.ID(),
@@ -669,7 +669,7 @@ func (s *Server) autoArchiveInactiveProjects() {
 		return
 	}
 
-	archived, err := s.stateDB.ArchivedProjects()
+	archived, err := s.stateDB.ArchivedProjects(ctx)
 	if err != nil {
 		span.RecordError(err)
 		log.WithError(err).Error("listing archived projects for auto-archive")
@@ -687,7 +687,7 @@ func (s *Server) autoArchiveInactiveProjects() {
 	}
 
 	// Same guard as sessions: don't undo a deliberate unarchive.
-	keep, err := s.stateDB.ProjectsUnarchivedSince(cutoff)
+	keep, err := s.stateDB.ProjectsUnarchivedSince(ctx, cutoff)
 	if err != nil {
 		span.RecordError(err)
 		log.WithError(err).Error("listing recently unarchived projects")
@@ -713,7 +713,7 @@ func (s *Server) autoArchiveInactiveProjects() {
 			log.WithFields(log.Fields{"projectRoot": root, "error": err}).
 				Warn("stopping opencode for auto-archived project")
 		}
-		if err := s.stateDB.ArchiveProject(state.LocalRemoteID, root); err != nil {
+		if err := s.stateDB.ArchiveProject(ctx, state.LocalRemoteID, root); err != nil {
 			span.RecordError(err)
 			log.WithFields(log.Fields{"projectRoot": root, "error": err}).
 				Error("auto-archiving inactive project")

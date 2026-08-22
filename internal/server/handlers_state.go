@@ -65,7 +65,7 @@ func (s *Server) handleSeenSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.stateDB.MarkSessionSeen(platform, req.SessionID, req.SessionTimeUpdated); err != nil {
+	if err := s.stateDB.MarkSessionSeen(r.Context(), platform, req.SessionID, req.SessionTimeUpdated); err != nil {
 		serverError(w, "updating seen session state", err)
 		return
 	}
@@ -116,9 +116,9 @@ func (s *Server) handleArchiveSession(w http.ResponseWriter, r *http.Request) {
 				ts = now
 			}
 		}
-		err = s.stateDB.ArchiveSession(platform, req.SessionID, ts)
+		err = s.stateDB.ArchiveSession(r.Context(), platform, req.SessionID, ts)
 	} else {
-		err = s.stateDB.UnarchiveSession(platform, req.SessionID)
+		err = s.stateDB.UnarchiveSession(r.Context(), platform, req.SessionID)
 	}
 	if err != nil {
 		serverError(w, "updating archived session state", err)
@@ -144,9 +144,9 @@ func (s *Server) handlePinSession(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	if req.Pinned {
-		err = s.stateDB.PinSession(platform, req.SessionID)
+		err = s.stateDB.PinSession(r.Context(), platform, req.SessionID)
 	} else {
-		err = s.stateDB.UnpinSession(platform, req.SessionID)
+		err = s.stateDB.UnpinSession(r.Context(), platform, req.SessionID)
 	}
 	if err != nil {
 		serverError(w, "updating pinned session state", err)
@@ -159,8 +159,8 @@ func (s *Server) handlePinSession(w http.ResponseWriter, r *http.Request) {
 // applySessionState overlays archive/seen/pin flags from state.db onto a
 // session slice. Auto-unarchives sessions that have been updated since they
 // were archived.
-func (s *Server) applySessionState(sessions []db.Session) error {
-	archived, err := s.stateDB.ArchivedSessions()
+func (s *Server) applySessionState(ctx context.Context, sessions []db.Session) error {
+	archived, err := s.stateDB.ArchivedSessions(ctx)
 	if err != nil {
 		return err
 	}
@@ -172,15 +172,15 @@ func (s *Server) applySessionState(sessions []db.Session) error {
 	// surface as "active". We only set the display flag here; the project
 	// marker is left for handleProjects to auto-unarchive against the full
 	// project view.
-	archivedProjects, err := s.stateDB.ArchivedProjects()
+	archivedProjects, err := s.stateDB.ArchivedProjects(ctx)
 	if err != nil {
 		return err
 	}
-	seen, err := s.stateDB.SeenSessions()
+	seen, err := s.stateDB.SeenSessions(ctx)
 	if err != nil {
 		return err
 	}
-	pinned, err := s.stateDB.PinnedSessions()
+	pinned, err := s.stateDB.PinnedSessions(ctx)
 	if err != nil {
 		return err
 	}
@@ -189,7 +189,7 @@ func (s *Server) applySessionState(sessions []db.Session) error {
 	// session.parent_id), so the only record of its parent lives in
 	// ocman's own child_sessions table. We overlay it here so the UI
 	// can nest the child under the session that spawned it.
-	childParents, err := s.stateDB.ChildSessionParents()
+	childParents, err := s.stateDB.ChildSessionParents(ctx)
 	if err != nil {
 		return err
 	}
@@ -249,7 +249,7 @@ func (s *Server) applySessionState(sessions []db.Session) error {
 		archivedAtUpdate, ok := archived[key]
 		if ok {
 			if sessions[i].TimeUpdated > archivedAtUpdate {
-				if err := s.stateDB.UnarchiveSession(key.Platform, key.SessionID); err != nil {
+				if err := s.stateDB.UnarchiveSession(ctx, key.Platform, key.SessionID); err != nil {
 					return err
 				}
 			} else {
@@ -276,7 +276,7 @@ func (s *Server) applySessionState(sessions []db.Session) error {
 	// UnreadCounter interface. Platforms that don't implement it
 	// leave UnreadCount at zero; the frontend still shows the
 	// "new" affordance via Seen==false.
-	if err := s.overlayUnreadCounts(sessions, unreadCutoffs); err != nil {
+	if err := s.overlayUnreadCounts(ctx, sessions, unreadCutoffs); err != nil {
 		return err
 	}
 
@@ -296,12 +296,12 @@ func (s *Server) applySessionState(sessions []db.Session) error {
 // the Archived flag, which notify neither reads nor returns — archived
 // sessions are still listed), and the per-session unread counts, which
 // cost a message aggregate scan per unseen session.
-func (s *Server) applyNotifySessionState(sessions []db.Session) error {
-	seen, err := s.stateDB.SeenSessions()
+func (s *Server) applyNotifySessionState(ctx context.Context, sessions []db.Session) error {
+	seen, err := s.stateDB.SeenSessions(ctx)
 	if err != nil {
 		return err
 	}
-	archived, err := s.stateDB.ArchivedSessions()
+	archived, err := s.stateDB.ArchivedSessions(ctx)
 	if err != nil {
 		return err
 	}
@@ -321,7 +321,7 @@ func (s *Server) applyNotifySessionState(sessions []db.Session) error {
 		// often than the dashboard, so this is a live path, not a
 		// theoretical one.
 		if archivedAtUpdate, ok := archived[key]; ok && sessions[i].TimeUpdated > archivedAtUpdate {
-			if err := s.stateDB.UnarchiveSession(key.Platform, key.SessionID); err != nil {
+			if err := s.stateDB.UnarchiveSession(ctx, key.Platform, key.SessionID); err != nil {
 				return err
 			}
 		}
@@ -335,7 +335,7 @@ func (s *Server) applyNotifySessionState(sessions []db.Session) error {
 // them onto the matching session entries. Errors from a single
 // platform are logged but not fatal — a missing unread count
 // degrades gracefully to zero.
-func (s *Server) overlayUnreadCounts(sessions []db.Session, cutoffsByPlatform map[string]map[string]int64) error {
+func (s *Server) overlayUnreadCounts(ctx context.Context, sessions []db.Session, cutoffsByPlatform map[string]map[string]int64) error {
 	if len(cutoffsByPlatform) == 0 {
 		return nil
 	}
@@ -352,7 +352,7 @@ func (s *Server) overlayUnreadCounts(sessions []db.Session, cutoffsByPlatform ma
 		if !ok {
 			continue
 		}
-		got, err := counter.UnreadCounts(context.Background(), cutoffs)
+		got, err := counter.UnreadCounts(ctx, cutoffs)
 		if err != nil {
 			log.WithFields(log.Fields{
 				"platform": platformID,

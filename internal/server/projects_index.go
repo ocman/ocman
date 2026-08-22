@@ -155,7 +155,7 @@ func (s *Server) refreshProjectsIndexOnce() error {
 	defer span.End()
 
 	start := time.Now()
-	projects, err := s.getProjects()
+	projects, err := s.getProjects(ctx)
 	dur := time.Since(start)
 	if projectsIndexRefreshDuration != nil {
 		projectsIndexRefreshDuration.Record(ctx, float64(dur.Microseconds())/1000.0)
@@ -177,11 +177,11 @@ func (s *Server) refreshProjectsIndexOnce() error {
 	return nil
 }
 
-func (s *Server) getProjects() ([]db.ProjectStats, error) {
+func (s *Server) getProjects(ctx context.Context) ([]db.ProjectStats, error) {
 	if fetch := s.projects.fetch; fetch != nil {
 		return fetch()
 	}
-	return s.db.GetProjects()
+	return s.db.GetProjects(ctx)
 }
 
 func (s *Server) projectsSnapshot() ([]db.ProjectStats, bool) {

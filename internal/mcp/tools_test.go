@@ -533,7 +533,7 @@ func TestCancelSession_AlreadyTerminal(t *testing.T) {
 		Status:          "completed",
 		CreatedAt:       1000,
 	}
-	if err := stateDB.InsertChildSession(cs); err != nil {
+	if err := stateDB.InsertChildSession(t.Context(), cs); err != nil {
 		t.Fatalf("InsertChildSession: %v", err)
 	}
 
@@ -564,7 +564,7 @@ func TestGetSessionStatus_ExistingSession(t *testing.T) {
 		Status:          "running",
 		CreatedAt:       2000,
 	}
-	if err := stateDB.InsertChildSession(cs); err != nil {
+	if err := stateDB.InsertChildSession(t.Context(), cs); err != nil {
 		t.Fatalf("InsertChildSession: %v", err)
 	}
 
@@ -599,7 +599,7 @@ func TestListChildSessions_WithChildren(t *testing.T) {
 			Status:          "starting",
 			CreatedAt:       int64(1000 + i),
 		}
-		if err := stateDB.InsertChildSession(cs); err != nil {
+		if err := stateDB.InsertChildSession(t.Context(), cs); err != nil {
 			t.Fatalf("InsertChildSession: %v", err)
 		}
 	}
@@ -621,7 +621,7 @@ func TestListChildSessions_WithChildren(t *testing.T) {
 
 func TestSendMessageToChild_DeliversToLinkedChild(t *testing.T) {
 	stateDB := openTestStateDB(t)
-	if err := stateDB.InsertChildSession(state.ChildSession{
+	if err := stateDB.InsertChildSession(t.Context(), state.ChildSession{
 		ID:              "child-comm-test",
 		Platform:        "opencode",
 		ParentSessionID: "parent-comm-test",
@@ -658,7 +658,7 @@ func TestSendMessageToChild_DeliversToLinkedChild(t *testing.T) {
 
 func TestSendMessageToChild_RejectsUnlinkedChild(t *testing.T) {
 	stateDB := openTestStateDB(t)
-	if err := stateDB.InsertChildSession(state.ChildSession{
+	if err := stateDB.InsertChildSession(t.Context(), state.ChildSession{
 		ID:              "child-other-parent",
 		Platform:        "opencode",
 		ParentSessionID: "actual-parent",
@@ -709,7 +709,7 @@ func TestNewSession_PassesModelAndUsesParentDir(t *testing.T) {
 		t.Fatalf("model not forwarded to child, got %q", platform.sentMessages[0].Model)
 	}
 
-	cs, err := stateDB.GetChildSession("child-ns")
+	cs, err := stateDB.GetChildSession(t.Context(), "child-ns")
 	if err != nil {
 		t.Fatalf("GetChildSession: %v", err)
 	}
@@ -720,7 +720,7 @@ func TestNewSession_PassesModelAndUsesParentDir(t *testing.T) {
 
 func TestNewSession_RejectsChildParent(t *testing.T) {
 	stateDB := openTestStateDB(t)
-	if err := stateDB.InsertChildSession(state.ChildSession{
+	if err := stateDB.InsertChildSession(t.Context(), state.ChildSession{
 		ID:              "existing-child",
 		Platform:        "opencode",
 		ParentSessionID: "root",
@@ -802,7 +802,7 @@ func TestNewSession_AsyncReturnsImmediatelyAndDetachesResult(t *testing.T) {
 	if result.IsError || !strings.Contains(resultText(result), `"child_session_id": "child-async"`) {
 		t.Fatalf("unexpected async result: %s", resultText(result))
 	}
-	child, err := stateDB.GetChildSession("child-async")
+	child, err := stateDB.GetChildSession(t.Context(), "child-async")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -816,7 +816,7 @@ func TestNewSession_AsyncReturnsImmediatelyAndDetachesResult(t *testing.T) {
 
 func TestAwaitSessionResult_ResumesDisconnectedChildWithoutSendingPrompt(t *testing.T) {
 	stateDB := openTestStateDB(t)
-	if err := stateDB.InsertChildSession(state.ChildSession{
+	if err := stateDB.InsertChildSession(t.Context(), state.ChildSession{
 		ID:              "child-resume",
 		Platform:        "opencode",
 		ParentSessionID: "parent-resume",
@@ -827,7 +827,7 @@ func TestAwaitSessionResult_ResumesDisconnectedChildWithoutSendingPrompt(t *test
 	}); err != nil {
 		t.Fatalf("InsertChildSession: %v", err)
 	}
-	if err := stateDB.UpdateChildSession("child-resume", "completed", "Original child result.", 2000); err != nil {
+	if err := stateDB.UpdateChildSession(t.Context(), "child-resume", "completed", "Original child result.", 2000); err != nil {
 		t.Fatalf("UpdateChildSession: %v", err)
 	}
 	platform := &fakePlatformForTools{}
@@ -850,7 +850,7 @@ func TestAwaitSessionResult_ResumesDisconnectedChildWithoutSendingPrompt(t *test
 
 func TestAwaitSessionResult_ReconnectsRunningChild(t *testing.T) {
 	stateDB := openTestStateDB(t)
-	if err := stateDB.InsertChildSession(state.ChildSession{
+	if err := stateDB.InsertChildSession(t.Context(), state.ChildSession{
 		ID:              "child-running",
 		Platform:        "opencode",
 		ParentSessionID: "parent-running",
@@ -919,7 +919,7 @@ func TestAwaitSessionResult_ReconnectsRunningChild(t *testing.T) {
 	if notification.Params.AdditionalFields["progressToken"] != "child-progress" {
 		t.Fatalf("progress token = %#v", notification.Params.AdditionalFields["progressToken"])
 	}
-	child, err := stateDB.GetChildSession("child-running")
+	child, err := stateDB.GetChildSession(t.Context(), "child-running")
 	if err != nil || child.ResultDelivery != "delivered" {
 		t.Fatalf("child delivery state = %+v, %v", child, err)
 	}
@@ -927,7 +927,7 @@ func TestAwaitSessionResult_ReconnectsRunningChild(t *testing.T) {
 
 func TestAwaitSessionResult_WaitsForDetachedAsyncChild(t *testing.T) {
 	stateDB := openTestStateDB(t)
-	if err := stateDB.InsertChildSession(state.ChildSession{
+	if err := stateDB.InsertChildSession(t.Context(), state.ChildSession{
 		ID: "child-async-wait", Platform: "opencode", ParentSessionID: "parent-async-wait",
 		Intent: "run checks", Status: "running", CreatedAt: 1000, ResultDelivery: "async_pending",
 	}); err != nil {
@@ -955,7 +955,7 @@ func TestAwaitSessionResult_WaitsForDetachedAsyncChild(t *testing.T) {
 
 func TestAwaitSessionResult_RejectsResultClaimedByAsyncDelivery(t *testing.T) {
 	stateDB := openTestStateDB(t)
-	if err := stateDB.InsertChildSession(state.ChildSession{
+	if err := stateDB.InsertChildSession(t.Context(), state.ChildSession{
 		ID: "child-auto-owned", Platform: "opencode", ParentSessionID: "parent-auto-owned",
 		Intent: "run checks", Status: "completed", CreatedAt: 1000, ResultDelivery: "async_queueing",
 	}); err != nil {
@@ -974,7 +974,7 @@ func TestAwaitSessionResult_RejectsResultClaimedByAsyncDelivery(t *testing.T) {
 func TestAwaitSessionResult_RejectsAmbiguousDisconnectedChildren(t *testing.T) {
 	stateDB := openTestStateDB(t)
 	for _, childID := range []string{"child-a", "child-b"} {
-		if err := stateDB.InsertChildSession(state.ChildSession{
+		if err := stateDB.InsertChildSession(t.Context(), state.ChildSession{
 			ID: childID, Platform: "opencode", ParentSessionID: "parent-many",
 			Intent: "task", Status: "running", CreatedAt: 1000, ResultDelivery: "disconnected",
 		}); err != nil {
@@ -1021,7 +1021,7 @@ func TestAwaitSessionResult_RejectsInvalidRecoveryTargets(t *testing.T) {
 				tt.child.Platform = "opencode"
 				tt.child.Intent = "task"
 				tt.child.CreatedAt = 1000
-				if err := stateDB.InsertChildSession(*tt.child); err != nil {
+				if err := stateDB.InsertChildSession(t.Context(), *tt.child); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -1229,7 +1229,7 @@ func TestNewSession_WorktreeCreatesWithModel(t *testing.T) {
 	if len(platform.sentMessages) != 1 || platform.sentMessages[0].Model != "openai/gpt-5" {
 		t.Fatalf("model not forwarded to worktree child: %+v", platform.sentMessages)
 	}
-	cs, err := stateDB.GetChildSession("child-wt-ns")
+	cs, err := stateDB.GetChildSession(t.Context(), "child-wt-ns")
 	if err != nil {
 		t.Fatalf("GetChildSession: %v", err)
 	}
@@ -1255,7 +1255,7 @@ func decodeInheritResult(t *testing.T, result *mcplib.CallToolResult) (inherited
 func TestNewSession_InheritsParentPermissions(t *testing.T) {
 	stateDB := openTestStateDB(t)
 	// Parent has an always-allow approval recorded (issue #101 step 1).
-	if err := stateDB.RecordApprovedPermission("opencode", "parent-inh", state.ApprovedPermission{
+	if err := stateDB.RecordApprovedPermission(t.Context(), "opencode", "parent-inh", state.ApprovedPermission{
 		PermissionID:   "perm-1",
 		PermissionText: "bash",
 		Patterns:       []string{"git *"},
@@ -1331,10 +1331,10 @@ func TestNewSession_InheritsParentLiveYoloRuleset(t *testing.T) {
 
 func TestNewSession_InheritDisabledSetting(t *testing.T) {
 	stateDB := openTestStateDB(t)
-	if err := stateDB.SetWorktreeInheritPermissions(false); err != nil {
+	if err := stateDB.SetWorktreeInheritPermissions(t.Context(), false); err != nil {
 		t.Fatalf("SetWorktreeInheritPermissions: %v", err)
 	}
-	if err := stateDB.RecordApprovedPermission("opencode", "parent-off", state.ApprovedPermission{
+	if err := stateDB.RecordApprovedPermission(t.Context(), "opencode", "parent-off", state.ApprovedPermission{
 		PermissionID: "perm-1", PermissionText: "bash", Patterns: []string{"git *"}, ApprovedAt: 1000,
 	}); err != nil {
 		t.Fatalf("RecordApprovedPermission: %v", err)
@@ -1363,7 +1363,7 @@ func TestNewSession_InheritDisabledSetting(t *testing.T) {
 
 func TestSendMessageToParent_DeliversToParent(t *testing.T) {
 	stateDB := openTestStateDB(t)
-	if err := stateDB.InsertChildSession(state.ChildSession{
+	if err := stateDB.InsertChildSession(t.Context(), state.ChildSession{
 		ID:              "child-to-parent-test",
 		Platform:        "opencode",
 		ParentSessionID: "parent-to-parent-test",
@@ -1404,7 +1404,7 @@ func TestSendMessageToParent_DeliversToParent(t *testing.T) {
 
 func TestSendMessageToChild_ReopensCompletedChild(t *testing.T) {
 	stateDB := openTestStateDB(t)
-	if err := stateDB.InsertChildSession(state.ChildSession{
+	if err := stateDB.InsertChildSession(t.Context(), state.ChildSession{
 		ID:              "child-reopen",
 		Platform:        "opencode",
 		ParentSessionID: "parent-reopen",
@@ -1415,7 +1415,7 @@ func TestSendMessageToChild_ReopensCompletedChild(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("InsertChildSession: %v", err)
 	}
-	if err := stateDB.UpdateChildSession("child-reopen", "completed", "first result", 2000); err != nil {
+	if err := stateDB.UpdateChildSession(t.Context(), "child-reopen", "completed", "first result", 2000); err != nil {
 		t.Fatalf("UpdateChildSession: %v", err)
 	}
 
@@ -1429,7 +1429,7 @@ func TestSendMessageToChild_ReopensCompletedChild(t *testing.T) {
 	if result.IsError {
 		t.Fatalf("unexpected error: %s", resultText(result))
 	}
-	child, err := stateDB.GetChildSession("child-reopen")
+	child, err := stateDB.GetChildSession(t.Context(), "child-reopen")
 	if err != nil {
 		t.Fatalf("GetChildSession: %v", err)
 	}
@@ -1440,13 +1440,13 @@ func TestSendMessageToChild_ReopensCompletedChild(t *testing.T) {
 
 func TestSendMessageToChild_RestoresCompletionWhenSendFails(t *testing.T) {
 	stateDB := openTestStateDB(t)
-	if err := stateDB.InsertChildSession(state.ChildSession{
+	if err := stateDB.InsertChildSession(t.Context(), state.ChildSession{
 		ID: "child-send-fails", Platform: "opencode", ParentSessionID: "parent-send-fails",
 		Intent: "inspect logs", Status: "running", CreatedAt: 1000, ResultDelivery: "delivered",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := stateDB.UpdateChildSession("child-send-fails", "completed", "first result", 2000); err != nil {
+	if err := stateDB.UpdateChildSession(t.Context(), "child-send-fails", "completed", "first result", 2000); err != nil {
 		t.Fatal(err)
 	}
 	platform := &fakePlatformForTools{sendMessageErr: errors.New("offline")}
@@ -1457,7 +1457,7 @@ func TestSendMessageToChild_RestoresCompletionWhenSendFails(t *testing.T) {
 	if !result.IsError {
 		t.Fatal("failed send unexpectedly succeeded")
 	}
-	child, err := stateDB.GetChildSession("child-send-fails")
+	child, err := stateDB.GetChildSession(t.Context(), "child-send-fails")
 	if err != nil || child.Status != "completed" || child.CompletedAt != 2000 || child.Summary != "first result" || child.ResultDelivery != "delivered" {
 		t.Fatalf("restored child = %+v, %v", child, err)
 	}
@@ -1465,7 +1465,7 @@ func TestSendMessageToChild_RestoresCompletionWhenSendFails(t *testing.T) {
 
 func TestSendMessageToChild_ConcurrentFollowupHasSingleWinner(t *testing.T) {
 	stateDB := openTestStateDB(t)
-	if err := stateDB.InsertChildSession(state.ChildSession{
+	if err := stateDB.InsertChildSession(t.Context(), state.ChildSession{
 		ID: "child-concurrent", Platform: "opencode", ParentSessionID: "parent-concurrent",
 		Intent: "inspect logs", Status: "completed", CreatedAt: 1000, ResultDelivery: "delivered",
 	}); err != nil {
@@ -1499,7 +1499,7 @@ func TestSendMessageToChild_ConcurrentFollowupHasSingleWinner(t *testing.T) {
 
 func TestSendMessageToChild_WaitsForNextResultWhenRequested(t *testing.T) {
 	stateDB := openTestStateDB(t)
-	if err := stateDB.InsertChildSession(state.ChildSession{
+	if err := stateDB.InsertChildSession(t.Context(), state.ChildSession{
 		ID: "child-follow-up-wait", Platform: "opencode", ParentSessionID: "parent-follow-up-wait",
 		Intent: "inspect logs", Status: "completed", CreatedAt: 1000, ResultDelivery: "delivered",
 	}); err != nil {
@@ -1523,7 +1523,7 @@ func TestSendMessageToChild_WaitsForNextResultWhenRequested(t *testing.T) {
 	if result.IsError || !strings.Contains(resultText(result), "Found the race.") {
 		t.Fatalf("unexpected follow-up result: %s", resultText(result))
 	}
-	child, err := stateDB.GetChildSession("child-follow-up-wait")
+	child, err := stateDB.GetChildSession(t.Context(), "child-follow-up-wait")
 	if err != nil || child.ResultDelivery != "delivered" {
 		t.Fatalf("child delivery state = %+v, %v", child, err)
 	}
@@ -1531,7 +1531,7 @@ func TestSendMessageToChild_WaitsForNextResultWhenRequested(t *testing.T) {
 
 func TestSendMessageToChild_WaitSurvivesConcurrentCancellation(t *testing.T) {
 	stateDB := openTestStateDB(t)
-	if err := stateDB.InsertChildSession(state.ChildSession{
+	if err := stateDB.InsertChildSession(t.Context(), state.ChildSession{
 		ID: "child-follow-up-cancel", Platform: "opencode", ParentSessionID: "parent-follow-up-cancel",
 		Intent: "inspect logs", Status: "completed", CreatedAt: 1000, ResultDelivery: "delivered",
 	}); err != nil {
@@ -1559,7 +1559,7 @@ func TestSendMessageToChild_RejectsPendingPreviousResult(t *testing.T) {
 	for _, delivery := range []string{"waiting", "disconnected", "async_pending", "async_queueing"} {
 		t.Run(delivery, func(t *testing.T) {
 			stateDB := openTestStateDB(t)
-			if err := stateDB.InsertChildSession(state.ChildSession{
+			if err := stateDB.InsertChildSession(t.Context(), state.ChildSession{
 				ID: "child-pending-follow-up", Platform: "opencode", ParentSessionID: "parent-pending-follow-up",
 				Intent: "inspect logs", Status: "completed", CreatedAt: 1000, ResultDelivery: delivery,
 			}); err != nil {

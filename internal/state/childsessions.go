@@ -31,11 +31,11 @@ type ChildSession struct {
 
 // InsertChildSession persists a new child session record. The initial
 // status is always "starting"; callers update it via UpdateChildSession.
-func (d *DB) InsertChildSession(cs ChildSession) error {
+func (d *DB) InsertChildSession(ctx context.Context, cs ChildSession) error {
 	if cs.ResultDelivery == "" {
 		cs.ResultDelivery = "detached"
 	}
-	_, err := d.db.Exec(`
+	_, err := d.db.ExecContext(ctx, `
 		INSERT INTO child_sessions
 			(id, platform, parent_session_id, intent, composed_prompt,
 			 worktree_path, branch, tmux_target, status, created_at, result_delivery)
@@ -55,8 +55,8 @@ func (d *DB) InsertChildSession(cs ChildSession) error {
 // (status, completed_at, summary). Only the fields that are non-zero
 // are updated; callers set CompletedAt and Summary when transitioning
 // to a terminal state.
-func (d *DB) UpdateChildSession(id, status, summary string, completedAt int64) error {
-	_, err := d.db.Exec(`
+func (d *DB) UpdateChildSession(ctx context.Context, id, status, summary string, completedAt int64) error {
+	_, err := d.db.ExecContext(ctx, `
 		UPDATE child_sessions
 		SET status       = ?,
 		    summary      = CASE WHEN ? != '' THEN ? ELSE summary END,
@@ -114,8 +114,8 @@ func (d *DB) RestoreChildFollowup(id string, cs ChildSession, sendingDelivery st
 
 // UpdateChildSessionCreatedAt backdates a child session's creation time.
 // Used to age a row past the watcher's orphan grace period.
-func (d *DB) UpdateChildSessionCreatedAt(id string, createdAt int64) error {
-	_, err := d.db.Exec(`UPDATE child_sessions SET created_at = ? WHERE id = ?`, createdAt, id)
+func (d *DB) UpdateChildSessionCreatedAt(ctx context.Context, id string, createdAt int64) error {
+	_, err := d.db.ExecContext(ctx, `UPDATE child_sessions SET created_at = ? WHERE id = ?`, createdAt, id)
 	if err != nil {
 		return fmt.Errorf("updating child session created_at: %w", err)
 	}
@@ -124,11 +124,11 @@ func (d *DB) UpdateChildSessionCreatedAt(id string, createdAt int64) error {
 
 // GetChildSession returns a single child session by ID, or an error
 // wrapping sql.ErrNoRows when not found.
-func (d *DB) GetChildSession(id string) (*ChildSession, error) {
+func (d *DB) GetChildSession(ctx context.Context, id string) (*ChildSession, error) {
 	var cs ChildSession
 	var worktreePath, branch, tmuxTarget, summary sql.NullString
 	var completedAt sql.NullInt64
-	err := d.db.QueryRow(`
+	err := d.db.QueryRowContext(ctx, `
 		SELECT id, platform, parent_session_id, intent, composed_prompt,
 		       worktree_path, branch, tmux_target, status,
 		       created_at, completed_at, summary, result_delivery
@@ -153,8 +153,8 @@ func (d *DB) GetChildSession(id string) (*ChildSession, error) {
 
 // ListChildSessionsByParent returns all child sessions for the given
 // parent session ID, ordered by created_at descending (newest first).
-func (d *DB) ListChildSessionsByParent(parentSessionID string) ([]ChildSession, error) {
-	rows, err := d.db.Query(`
+func (d *DB) ListChildSessionsByParent(ctx context.Context, parentSessionID string) ([]ChildSession, error) {
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT id, platform, parent_session_id, intent, composed_prompt,
 		       worktree_path, branch, tmux_target, status,
 		       created_at, completed_at, summary, result_delivery
@@ -171,8 +171,8 @@ func (d *DB) ListChildSessionsByParent(parentSessionID string) ([]ChildSession, 
 
 // ListPendingChildSessions returns active children plus new async terminal
 // results. Legacy "detached" rows are intentionally excluded.
-func (d *DB) ListPendingChildSessions() ([]ChildSession, error) {
-	rows, err := d.db.Query(`
+func (d *DB) ListPendingChildSessions(ctx context.Context) ([]ChildSession, error) {
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT id, platform, parent_session_id, intent, composed_prompt,
 		       worktree_path, branch, tmux_target, status,
 		       created_at, completed_at, summary, result_delivery
@@ -191,8 +191,8 @@ func (d *DB) ListPendingChildSessions() ([]ChildSession, error) {
 // CancelChildSession sets the status of a child session to "cancelled"
 // and records the completion time. Idempotent: cancelling an already-
 // terminal session is a no-op (returns nil).
-func (d *DB) CancelChildSession(id string, cancelledAt int64) error {
-	_, err := d.db.Exec(`
+func (d *DB) CancelChildSession(ctx context.Context, id string, cancelledAt int64) error {
+	_, err := d.db.ExecContext(ctx, `
 		UPDATE child_sessions
 		SET status       = 'cancelled',
 		    completed_at = ?
@@ -204,16 +204,16 @@ func (d *DB) CancelChildSession(id string, cancelledAt int64) error {
 	return nil
 }
 
-func (d *DB) SetChildResultDelivery(id, delivery string) error {
-	_, err := d.db.Exec(`UPDATE child_sessions SET result_delivery = ? WHERE id = ?`, delivery, id)
+func (d *DB) SetChildResultDelivery(ctx context.Context, id, delivery string) error {
+	_, err := d.db.ExecContext(ctx, `UPDATE child_sessions SET result_delivery = ? WHERE id = ?`, delivery, id)
 	if err != nil {
 		return fmt.Errorf("updating child result delivery: %w", err)
 	}
 	return nil
 }
 
-func (d *DB) CompareAndSetChildResultDelivery(id, from, to string) (bool, error) {
-	result, err := d.db.Exec(`UPDATE child_sessions SET result_delivery = ? WHERE id = ? AND result_delivery = ?`, to, id, from)
+func (d *DB) CompareAndSetChildResultDelivery(ctx context.Context, id, from, to string) (bool, error) {
+	result, err := d.db.ExecContext(ctx, `UPDATE child_sessions SET result_delivery = ? WHERE id = ? AND result_delivery = ?`, to, id, from)
 	if err != nil {
 		return false, fmt.Errorf("claiming child result delivery: %w", err)
 	}
@@ -221,8 +221,8 @@ func (d *DB) CompareAndSetChildResultDelivery(id, from, to string) (bool, error)
 	return changed == 1, err
 }
 
-func (d *DB) ListDisconnectedChildSessions(parentSessionID string) ([]ChildSession, error) {
-	rows, err := d.db.Query(`
+func (d *DB) ListDisconnectedChildSessions(ctx context.Context, parentSessionID string) ([]ChildSession, error) {
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT id, platform, parent_session_id, intent, composed_prompt,
 		       worktree_path, branch, tmux_target, status,
 		       created_at, completed_at, summary, result_delivery
@@ -243,8 +243,8 @@ func (d *DB) ListDisconnectedChildSessions(parentSessionID string) ([]ChildSessi
 // sessions so the UI can nest a split child under the session that
 // spawned it. Children whose parent session is not in the listing are
 // still returned; the frontend promotes such orphans to top level.
-func (d *DB) ChildSessionParents() (map[Key]string, error) {
-	rows, err := d.db.Query(`
+func (d *DB) ChildSessionParents(ctx context.Context) (map[Key]string, error) {
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT platform, id, parent_session_id
 		FROM child_sessions
 		WHERE parent_session_id IS NOT NULL AND parent_session_id != ''

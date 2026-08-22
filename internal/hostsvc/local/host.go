@@ -103,10 +103,10 @@ type ManagedInstance struct {
 // ManagedStore persists managed-instance records keyed by canonical repo
 // root. Backed by internal/state in production; a fake in tests.
 type ManagedStore interface {
-	Upsert(repoRoot string, inst ManagedInstance) error
-	Get(repoRoot string) (ManagedInstance, bool, error)
-	Delete(repoRoot string) error
-	List() (map[string]ManagedInstance, error)
+	Upsert(context.Context, string, ManagedInstance) error
+	Get(context.Context, string) (ManagedInstance, bool, error)
+	Delete(context.Context, string) error
+	List(context.Context) (map[string]ManagedInstance, error)
 }
 
 // Host is the local hostsvc.Host implementation.
@@ -366,14 +366,14 @@ func (h *Host) StopProjectOpencode(ctx context.Context, req hostsvc.EnsureProjec
 		return err
 	}
 	_, err, _ = h.sf.Do(repoRoot, func() (any, error) {
-		if inst := h.reuseCandidate(repoRoot); inst != nil {
+		if inst := h.reuseCandidate(ctx, repoRoot); inst != nil {
 			if err := h.runtime.Stop(ctx, inst); err != nil {
 				return nil, err
 			}
 		}
 		h.clearInstance(repoRoot)
 		if h.store != nil {
-			if err := h.store.Delete(repoRoot); err != nil {
+			if err := h.store.Delete(ctx, repoRoot); err != nil {
 				return nil, err
 			}
 		}
@@ -396,11 +396,11 @@ func (h *Host) RestartProjectOpencode(ctx context.Context, req hostsvc.EnsurePro
 	return h.sfDoDetached(ctx, repoRoot, h.restartLocked)
 }
 
-func (h *Host) ManagedOpencodes(context.Context) ([]hostsvc.ManagedOpencode, error) {
+func (h *Host) ManagedOpencodes(ctx context.Context) ([]hostsvc.ManagedOpencode, error) {
 	if h.store == nil {
 		return nil, nil
 	}
-	instances, err := h.store.List()
+	instances, err := h.store.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -419,7 +419,7 @@ func (h *Host) ensureLocked(ctx context.Context, repoRoot string) (*hostsvc.Ensu
 	// restart) a persisted store row. Either way it must Probe healthy
 	// before we trust it (AD-5). A dead persisted row is discarded so the
 	// launch path below relaunches.
-	if inst := h.reuseCandidate(repoRoot); inst != nil {
+	if inst := h.reuseCandidate(ctx, repoRoot); inst != nil {
 		probeErr := h.runtime.Probe(ctx, inst)
 		if probeErr == nil {
 			h.setInstance(repoRoot, inst)
@@ -443,7 +443,7 @@ func (h *Host) ensureLocked(ctx context.Context, repoRoot string) (*hostsvc.Ensu
 		// Dead -> drop the persisted row so a stale endpoint can't be
 		// reused after this relaunch.
 		if h.store != nil {
-			if err := h.store.Delete(repoRoot); err != nil {
+			if err := h.store.Delete(ctx, repoRoot); err != nil {
 				log.WithError(err).WithField("repoRoot", repoRoot).Warn("host: deleting stale managed opencode row")
 			}
 		}
@@ -477,7 +477,7 @@ func (h *Host) ensureLocked(ctx context.Context, repoRoot string) (*hostsvc.Ensu
 // (soft-fail), clears both the in-memory cache entry and the persisted
 // store row (soft-fail), then launches a fresh one via launchAndTrack.
 func (h *Host) restartLocked(ctx context.Context, repoRoot string) (*hostsvc.EnsureProjectOpencodeResult, error) {
-	if inst := h.reuseCandidate(repoRoot); inst != nil {
+	if inst := h.reuseCandidate(ctx, repoRoot); inst != nil {
 		// Soft-fail: we're relaunching regardless, so a Stop error must
 		// not block the restart.
 		if err := h.runtime.Stop(ctx, inst); err != nil {
@@ -488,7 +488,7 @@ func (h *Host) restartLocked(ctx context.Context, repoRoot string) (*hostsvc.Ens
 	h.clearInstance(repoRoot)
 	// Clear the persisted row too (soft-fail): the fresh launch re-upserts.
 	if h.store != nil {
-		if err := h.store.Delete(repoRoot); err != nil {
+		if err := h.store.Delete(ctx, repoRoot); err != nil {
 			log.WithError(err).WithField("repoRoot", repoRoot).Warn("host: deleting managed opencode row for restart")
 		}
 	}
@@ -532,7 +532,7 @@ func (h *Host) launchAndTrack(ctx context.Context, repoRoot string) (*hostsvc.En
 		}
 		h.clearInstance(repoRoot)
 		if h.store != nil {
-			if err := h.store.Delete(repoRoot); err != nil {
+			if err := h.store.Delete(context.WithoutCancel(ctx), repoRoot); err != nil {
 				log.WithError(err).WithField("repoRoot", repoRoot).Warn("host: deleting managed opencode row after failed launch")
 			}
 		}
@@ -550,7 +550,7 @@ func (h *Host) launchAndTrack(ctx context.Context, repoRoot string) (*hostsvc.En
 			PID:        inst.PID,
 			LaunchedAt: time.Now(),
 		}
-		if err := h.store.Upsert(repoRoot, mi); err != nil {
+		if err := h.store.Upsert(ctx, repoRoot, mi); err != nil {
 			log.WithError(err).WithField("repoRoot", repoRoot).Warn("host: persisting managed opencode row")
 		}
 	}
@@ -571,14 +571,14 @@ func (h *Host) currentInstance(repoRoot string) *ocruntime.Instance {
 // reuseCandidate returns the instance to re-probe for reuse: the hot
 // in-memory cache first, then (on a fresh Host after a restart) the
 // persisted store row. Returns nil when neither has an entry.
-func (h *Host) reuseCandidate(repoRoot string) *ocruntime.Instance {
+func (h *Host) reuseCandidate(ctx context.Context, repoRoot string) *ocruntime.Instance {
 	if inst := h.currentInstance(repoRoot); inst != nil {
 		return inst
 	}
 	if h.store == nil {
 		return nil
 	}
-	mi, ok, err := h.store.Get(repoRoot)
+	mi, ok, err := h.store.Get(ctx, repoRoot)
 	if err != nil {
 		log.WithError(err).WithField("repoRoot", repoRoot).Warn("host: reading persisted managed opencode row")
 		return nil

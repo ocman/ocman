@@ -20,8 +20,8 @@ type artifactCleanupBarrierStore struct {
 	release  chan struct{}
 }
 
-func (s *artifactCleanupBarrierStore) ExpiredWorkflowArtifactHashes(now int64) ([]string, error) {
-	hashes, err := s.Store.ExpiredWorkflowArtifactHashes(now)
+func (s *artifactCleanupBarrierStore) ExpiredWorkflowArtifactHashes(ctx context.Context, now int64) ([]string, error) {
+	hashes, err := s.Store.ExpiredWorkflowArtifactHashes(ctx, now)
 	close(s.selected)
 	<-s.release
 	return hashes, err
@@ -49,7 +49,7 @@ func (h *harness) storeTestArtifact(t *testing.T, payload string, retentionDays 
 	if _, err := h.svc.Approve(t.Context(), run.ID, "emit"); err != nil {
 		t.Fatal(err)
 	}
-	h.svc.storeArtifact(run.ID, "emit", 1, "historical", KindJSON, []byte(payload), retentionDays)
+	h.svc.storeArtifact(t.Context(), run.ID, "emit", 1, "historical", KindJSON, []byte(payload), retentionDays)
 	artifacts, err := h.svc.ListArtifacts(t.Context(), run.ID)
 	if err != nil || len(artifacts) != 1 {
 		t.Fatalf("stored artifacts = %+v (%v)", artifacts, err)
@@ -111,7 +111,7 @@ func TestArtifactCleanupDoesNotDeleteConcurrentFreshPayload(t *testing.T) {
 	<-barrier.selected
 	storeDone := make(chan struct{})
 	go func() {
-		h.svc.storeArtifact(runID, "emit", 2, "fresh", KindJSON, []byte(`{"same":true}`), 7)
+		h.svc.storeArtifact(t.Context(), runID, "emit", 2, "fresh", KindJSON, []byte(`{"same":true}`), 7)
 		close(storeDone)
 	}()
 	select {

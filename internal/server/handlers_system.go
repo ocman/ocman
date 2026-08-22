@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -23,7 +24,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	if !s.requireDB(w) {
 		return
 	}
-	stats, err := s.db.GetStats()
+	stats, err := s.db.GetStats(r.Context())
 	if err != nil {
 		serverError(w, "fetching stats", err)
 		return
@@ -50,7 +51,7 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	projectOffset := parseIntParam(r, "projectOffset", 0)
 	dir := normaliseDirParam(r.URL.Query().Get("dir"))
 
-	metrics, err := s.db.GetMetricsDashboard(db.MetricsDashboardOptions{
+	metrics, err := s.db.GetMetricsDashboard(r.Context(), db.MetricsDashboardOptions{
 		AgentFilter:   agent,
 		ModelFilter:   model,
 		Since:         since,
@@ -93,7 +94,7 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 	// honour the archived_project markers too (they otherwise re-appear on
 	// every refresh). Newer activity still auto-unarchives — most recent
 	// timestamp wins.
-	if err := s.applyProjectArchiveState(projects); err != nil {
+	if err := s.applyProjectArchiveState(r.Context(), projects); err != nil {
 		serverError(w, "applying project archive state", err)
 		return
 	}
@@ -152,8 +153,8 @@ func foldWorktreeProjects(projects []db.ProjectStats) []db.ProjectStats {
 // foldWorktreeProjects: the same path on two machines is two projects, so
 // one host's archive must not hide the other's and activity on one must not
 // unarchive the other.
-func (s *Server) applyProjectArchiveState(projects []db.ProjectStats) error {
-	archived, err := s.stateDB.ArchivedProjects()
+func (s *Server) applyProjectArchiveState(ctx context.Context, projects []db.ProjectStats) error {
+	archived, err := s.stateDB.ArchivedProjects(ctx)
 	if err != nil {
 		return err
 	}
@@ -174,7 +175,7 @@ func (s *Server) applyProjectArchiveState(projects []db.ProjectStats) error {
 	// time, persisting the change so it stays unarchived.
 	for key, archivedAt := range archived {
 		if newest[key] > archivedAt {
-			if err := s.stateDB.UnarchiveProject(key.RemoteID, key.Root); err != nil {
+			if err := s.stateDB.UnarchiveProject(ctx, key.RemoteID, key.Root); err != nil {
 				return err
 			}
 			delete(archived, key)
@@ -205,7 +206,7 @@ func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 	since := parseSinceParam(r)
 	model := strings.TrimSpace(r.URL.Query().Get("model"))
 	dir := normaliseDirParam(r.URL.Query().Get("dir"))
-	activity, err := s.db.GetDailyActivity(since, model, dir)
+	activity, err := s.db.GetDailyActivity(r.Context(), since, model, dir)
 	if err != nil {
 		serverError(w, "fetching activity", err)
 		return
@@ -219,7 +220,7 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 	}
 	since := parseSinceParam(r)
 	dir := normaliseDirParam(r.URL.Query().Get("dir"))
-	models, err := s.db.GetModelUsage(since, dir)
+	models, err := s.db.GetModelUsage(r.Context(), since, dir)
 	if err != nil {
 		serverError(w, "fetching model usage", err)
 		return
@@ -235,7 +236,7 @@ func (s *Server) handleHourlyTokens(w http.ResponseWriter, r *http.Request) {
 	model := strings.TrimSpace(r.URL.Query().Get("model"))
 	dir := normaliseDirParam(r.URL.Query().Get("dir"))
 	dayCount := parseIntParam(r, "days", 0)
-	data, err := s.db.GetHourlyTokensByModel(dayCount, since, model, dir)
+	data, err := s.db.GetHourlyTokensByModel(r.Context(), dayCount, since, model, dir)
 	if err != nil {
 		serverError(w, "fetching hourly tokens by model", err)
 		return
@@ -249,7 +250,7 @@ func (s *Server) handleHourly(w http.ResponseWriter, r *http.Request) {
 	}
 	since := parseSinceParam(r)
 	dir := normaliseDirParam(r.URL.Query().Get("dir"))
-	hourly, err := s.db.GetHourlyActivity(since, dir)
+	hourly, err := s.db.GetHourlyActivity(r.Context(), since, dir)
 	if err != nil {
 		serverError(w, "fetching hourly activity", err)
 		return

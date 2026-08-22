@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/base32"
@@ -58,9 +59,9 @@ func generateRemoteToken() (string, error) {
 // InstanceIdentity returns this ocman's persisted instance identity,
 // generating and storing one on first call. Idempotent: subsequent
 // calls return the same ID and token (FR-2, FR-4).
-func (d *DB) InstanceIdentity() (InstanceIdentity, error) {
+func (d *DB) InstanceIdentity(ctx context.Context) (InstanceIdentity, error) {
 	var ident InstanceIdentity
-	err := d.db.QueryRow(
+	err := d.db.QueryRowContext(ctx,
 		`SELECT instance_id, remote_token, created_at FROM instance_identity WHERE id = 1`,
 	).Scan(&ident.InstanceID, &ident.RemoteToken, &ident.CreatedAt)
 	if err == nil {
@@ -81,14 +82,14 @@ func (d *DB) InstanceIdentity() (InstanceIdentity, error) {
 	now := time.Now().UnixMilli()
 	// INSERT OR IGNORE so a concurrent caller that won the race keeps
 	// its value; we then re-read whatever is stored.
-	if _, err := d.db.Exec(
+	if _, err := d.db.ExecContext(ctx,
 		`INSERT OR IGNORE INTO instance_identity (id, instance_id, remote_token, created_at)
 		 VALUES (1, ?, ?, ?)`,
 		id, token, now,
 	); err != nil {
 		return InstanceIdentity{}, fmt.Errorf("writing instance identity: %w", err)
 	}
-	if err := d.db.QueryRow(
+	if err := d.db.QueryRowContext(ctx,
 		`SELECT instance_id, remote_token, created_at FROM instance_identity WHERE id = 1`,
 	).Scan(&ident.InstanceID, &ident.RemoteToken, &ident.CreatedAt); err != nil {
 		return InstanceIdentity{}, fmt.Errorf("re-reading instance identity: %w", err)

@@ -20,7 +20,7 @@ type fakeRecentModelsDB struct {
 	err   error
 }
 
-func (f *fakeRecentModelsDB) GetRecentModels(sessionLimit, maxResults int) ([]db.RecentModel, error) {
+func (f *fakeRecentModelsDB) GetRecentModels(context.Context, int, int) ([]db.RecentModel, error) {
 	f.calls.Add(1)
 	return f.out, f.err
 }
@@ -42,7 +42,7 @@ func TestGetRecentModelsCached_CachesAcrossCalls(t *testing.T) {
 	d := &fakeRecentModelsDB{out: want}
 
 	for i := 0; i < 5; i++ {
-		got, err := getRecentModelsCached(d)
+		got, err := getRecentModelsCached(t.Context(), d)
 		if err != nil {
 			t.Fatalf("call %d: unexpected error: %v", i, err)
 		}
@@ -67,7 +67,7 @@ func TestGetRecentModelsCached_ConcurrentRequestsCoalesce(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := getRecentModelsCached(d); err != nil {
+			if _, err := getRecentModelsCached(t.Context(), d); err != nil {
 				t.Errorf("getRecentModelsCached: %v", err)
 			}
 		}()
@@ -166,7 +166,7 @@ func TestGetRecentModelsCached_RechecksInsideFlight(t *testing.T) {
 	aDone := make(chan struct{})
 	go func() {
 		defer close(aDone)
-		if _, err := getRecentModelsCached(dGated); err != nil {
+		if _, err := getRecentModelsCached(t.Context(), dGated); err != nil {
 			t.Errorf("caller A: %v", err)
 		}
 	}()
@@ -179,7 +179,7 @@ func TestGetRecentModelsCached_RechecksInsideFlight(t *testing.T) {
 	cDone := make(chan struct{})
 	go func() {
 		defer close(cDone)
-		got, err := getRecentModelsCached(dGated)
+		got, err := getRecentModelsCached(t.Context(), dGated)
 		if err != nil {
 			t.Errorf("caller C: %v", err)
 		}
@@ -212,10 +212,46 @@ type blockingRecentModelsDB struct {
 	once    sync.Once
 }
 
-func (f *blockingRecentModelsDB) GetRecentModels(sessionLimit, maxResults int) ([]db.RecentModel, error) {
+type signalingContext struct {
+	context.Context
+	waiting chan struct{}
+	once    sync.Once
+}
+
+func (c *signalingContext) Done() <-chan struct{} {
+	c.once.Do(func() { close(c.waiting) })
+	return c.Context.Done()
+}
+
+func TestGetRecentModelsCached_CanceledLeaderDoesNotCancelFollower(t *testing.T) {
+	resetRecentModelsCache()
+	t.Cleanup(resetRecentModelsCache)
+	d := &blockingRecentModelsDB{fakeRecentModelsDB: &fakeRecentModelsDB{out: []db.RecentModel{{Model: "m"}}}, entered: make(chan struct{}), block: make(chan struct{})}
+	leaderCtx, cancel := context.WithCancel(t.Context())
+	leaderDone := make(chan error, 1)
+	go func() { _, err := getRecentModelsCached(leaderCtx, d); leaderDone <- err }()
+	<-d.entered
+	followerCtx := &signalingContext{Context: t.Context(), waiting: make(chan struct{})}
+	followerDone := make(chan error, 1)
+	go func() { _, err := getRecentModelsCached(followerCtx, d); followerDone <- err }()
+	<-followerCtx.waiting
+	cancel()
+	if err := <-leaderDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("leader error = %v, want context.Canceled", err)
+	}
+	close(d.block)
+	if err := <-followerDone; err != nil {
+		t.Fatalf("follower error = %v", err)
+	}
+	if got := d.calls.Load(); got != 1 {
+		t.Fatalf("DB calls = %d, want 1", got)
+	}
+}
+
+func (f *blockingRecentModelsDB) GetRecentModels(ctx context.Context, sessionLimit, maxResults int) ([]db.RecentModel, error) {
 	f.once.Do(func() { close(f.entered) })
 	<-f.block
-	return f.fakeRecentModelsDB.GetRecentModels(sessionLimit, maxResults)
+	return f.fakeRecentModelsDB.GetRecentModels(ctx, sessionLimit, maxResults)
 }
 
 func TestGetRecentModelsCached_DoesNotCacheErrors(t *testing.T) {
@@ -225,12 +261,12 @@ func TestGetRecentModelsCached_DoesNotCacheErrors(t *testing.T) {
 	wantErr := errors.New("db dead")
 	d := &fakeRecentModelsDB{err: wantErr}
 
-	if _, err := getRecentModelsCached(d); !errors.Is(err, wantErr) {
+	if _, err := getRecentModelsCached(t.Context(), d); !errors.Is(err, wantErr) {
 		t.Fatalf("expected wantErr, got %v", err)
 	}
 	// A transient error must not be cached: the next call must hit
 	// the underlying DB again.
-	if _, err := getRecentModelsCached(d); !errors.Is(err, wantErr) {
+	if _, err := getRecentModelsCached(t.Context(), d); !errors.Is(err, wantErr) {
 		t.Fatalf("second call: expected wantErr, got %v", err)
 	}
 	if c := d.calls.Load(); c != 2 {
@@ -243,7 +279,7 @@ func TestGetRecentModelsCached_ExpiresAfterTTL(t *testing.T) {
 	t.Cleanup(resetRecentModelsCache)
 
 	d := &fakeRecentModelsDB{out: []db.RecentModel{{Model: "m"}}}
-	if _, err := getRecentModelsCached(d); err != nil {
+	if _, err := getRecentModelsCached(t.Context(), d); err != nil {
 		t.Fatalf("first call: %v", err)
 	}
 
@@ -253,7 +289,7 @@ func TestGetRecentModelsCached_ExpiresAfterTTL(t *testing.T) {
 	recentModelsCached.expiresAt = time.Now().Add(-time.Second)
 	recentModelsMu.Unlock()
 
-	if _, err := getRecentModelsCached(d); err != nil {
+	if _, err := getRecentModelsCached(t.Context(), d); err != nil {
 		t.Fatalf("second call: %v", err)
 	}
 	if c := d.calls.Load(); c != 2 {
@@ -271,7 +307,7 @@ type fakeSessionDefaultsDB struct {
 	err   error
 }
 
-func (f *fakeSessionDefaultsDB) GetSessionDefaults(sessionID, directory string) (db.SessionDefaults, error) {
+func (f *fakeSessionDefaultsDB) GetSessionDefaults(_ context.Context, sessionID, directory string) (db.SessionDefaults, error) {
 	f.calls.Add(1)
 	return f.out, f.err
 }
@@ -290,7 +326,7 @@ func TestGetSessionDefaultsCached_CachesAcrossCalls(t *testing.T) {
 	d := &fakeSessionDefaultsDB{out: want}
 
 	for i := 0; i < 5; i++ {
-		got, err := getSessionDefaultsCached(d, "s1", "/repo")
+		got, err := getSessionDefaultsCached(t.Context(), d, "s1", "/repo")
 		if err != nil {
 			t.Fatalf("call %d: %v", i, err)
 		}
@@ -309,13 +345,13 @@ func TestGetSessionDefaultsCached_KeyDistinguishesDirectory(t *testing.T) {
 
 	d := &fakeSessionDefaultsDB{out: db.SessionDefaults{Model: "m"}}
 
-	if _, err := getSessionDefaultsCached(d, "s1", "/repo-a"); err != nil {
+	if _, err := getSessionDefaultsCached(t.Context(), d, "s1", "/repo-a"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := getSessionDefaultsCached(d, "s1", "/repo-b"); err != nil {
+	if _, err := getSessionDefaultsCached(t.Context(), d, "s1", "/repo-b"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := getSessionDefaultsCached(d, "s1", "/repo-a"); err != nil {
+	if _, err := getSessionDefaultsCached(t.Context(), d, "s1", "/repo-a"); err != nil {
 		t.Fatal(err)
 	}
 	// Two distinct directories => two DB hits; the third call hits
@@ -331,13 +367,13 @@ func TestGetSessionDefaultsCached_KeyDistinguishesSessionExclusion(t *testing.T)
 
 	d := &fakeSessionDefaultsDB{out: db.SessionDefaults{Model: "m"}}
 
-	if _, err := getSessionDefaultsCached(d, "s1", "/repo"); err != nil {
+	if _, err := getSessionDefaultsCached(t.Context(), d, "s1", "/repo"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := getSessionDefaultsCached(d, "s2", "/repo"); err != nil {
+	if _, err := getSessionDefaultsCached(t.Context(), d, "s2", "/repo"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := getSessionDefaultsCached(d, "s1", "/repo"); err != nil {
+	if _, err := getSessionDefaultsCached(t.Context(), d, "s1", "/repo"); err != nil {
 		t.Fatal(err)
 	}
 	// Different excludeSessionID => different cache slots, since
@@ -360,7 +396,7 @@ func TestGetSessionDefaultsCached_ConcurrentRequestsCoalesce(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := getSessionDefaultsCached(d, "s1", "/repo"); err != nil {
+			if _, err := getSessionDefaultsCached(t.Context(), d, "s1", "/repo"); err != nil {
 				t.Errorf("getSessionDefaultsCached: %v", err)
 			}
 		}()
@@ -379,10 +415,10 @@ func TestGetSessionDefaultsCached_DoesNotCacheErrors(t *testing.T) {
 	wantErr := errors.New("db dead")
 	d := &fakeSessionDefaultsDB{err: wantErr}
 
-	if _, err := getSessionDefaultsCached(d, "s1", "/repo"); !errors.Is(err, wantErr) {
+	if _, err := getSessionDefaultsCached(t.Context(), d, "s1", "/repo"); !errors.Is(err, wantErr) {
 		t.Fatalf("call 1: %v", err)
 	}
-	if _, err := getSessionDefaultsCached(d, "s1", "/repo"); !errors.Is(err, wantErr) {
+	if _, err := getSessionDefaultsCached(t.Context(), d, "s1", "/repo"); !errors.Is(err, wantErr) {
 		t.Fatalf("call 2: %v", err)
 	}
 	if c := d.calls.Load(); c != 2 {
@@ -402,10 +438,35 @@ type blockingSessionDefaultsDB struct {
 	once    sync.Once
 }
 
-func (f *blockingSessionDefaultsDB) GetSessionDefaults(sessionID, directory string) (db.SessionDefaults, error) {
+func TestGetSessionDefaultsCached_CanceledLeaderDoesNotCancelFollower(t *testing.T) {
+	resetSessionDefaultsCache()
+	t.Cleanup(resetSessionDefaultsCache)
+	d := &blockingSessionDefaultsDB{fakeSessionDefaultsDB: &fakeSessionDefaultsDB{out: db.SessionDefaults{Model: "m"}}, entered: make(chan struct{}), block: make(chan struct{})}
+	leaderCtx, cancel := context.WithCancel(t.Context())
+	leaderDone := make(chan error, 1)
+	go func() { _, err := getSessionDefaultsCached(leaderCtx, d, "s", "/repo"); leaderDone <- err }()
+	<-d.entered
+	followerCtx := &signalingContext{Context: t.Context(), waiting: make(chan struct{})}
+	followerDone := make(chan error, 1)
+	go func() { _, err := getSessionDefaultsCached(followerCtx, d, "s", "/repo"); followerDone <- err }()
+	<-followerCtx.waiting
+	cancel()
+	if err := <-leaderDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("leader error = %v, want context.Canceled", err)
+	}
+	close(d.block)
+	if err := <-followerDone; err != nil {
+		t.Fatalf("follower error = %v", err)
+	}
+	if got := d.calls.Load(); got != 1 {
+		t.Fatalf("DB calls = %d, want 1", got)
+	}
+}
+
+func (f *blockingSessionDefaultsDB) GetSessionDefaults(ctx context.Context, sessionID, directory string) (db.SessionDefaults, error) {
 	f.once.Do(func() { close(f.entered) })
 	<-f.block
-	return f.fakeSessionDefaultsDB.GetSessionDefaults(sessionID, directory)
+	return f.fakeSessionDefaultsDB.GetSessionDefaults(ctx, sessionID, directory)
 }
 
 func TestGetSessionDefaultsCached_RechecksInsideFlight(t *testing.T) {
@@ -425,7 +486,7 @@ func TestGetSessionDefaultsCached_RechecksInsideFlight(t *testing.T) {
 	aDone := make(chan struct{})
 	go func() {
 		defer close(aDone)
-		if _, err := getSessionDefaultsCached(dGated, "s1", "/repo"); err != nil {
+		if _, err := getSessionDefaultsCached(t.Context(), dGated, "s1", "/repo"); err != nil {
 			t.Errorf("caller A: %v", err)
 		}
 	}()
@@ -435,7 +496,7 @@ func TestGetSessionDefaultsCached_RechecksInsideFlight(t *testing.T) {
 	cDone := make(chan struct{})
 	go func() {
 		defer close(cDone)
-		got, err := getSessionDefaultsCached(dGated, "s1", "/repo")
+		got, err := getSessionDefaultsCached(t.Context(), dGated, "s1", "/repo")
 		if err != nil {
 			t.Errorf("caller C: %v", err)
 		}
@@ -460,7 +521,7 @@ func TestGetSessionDefaultsCached_ExpiresAfterTTL(t *testing.T) {
 	t.Cleanup(resetSessionDefaultsCache)
 
 	d := &fakeSessionDefaultsDB{out: db.SessionDefaults{Model: "m"}}
-	if _, err := getSessionDefaultsCached(d, "s1", "/repo"); err != nil {
+	if _, err := getSessionDefaultsCached(t.Context(), d, "s1", "/repo"); err != nil {
 		t.Fatalf("first call: %v", err)
 	}
 
@@ -472,7 +533,7 @@ func TestGetSessionDefaultsCached_ExpiresAfterTTL(t *testing.T) {
 	sessionDefaultsCached[key] = e
 	sessionDefaultsMu.Unlock()
 
-	if _, err := getSessionDefaultsCached(d, "s1", "/repo"); err != nil {
+	if _, err := getSessionDefaultsCached(t.Context(), d, "s1", "/repo"); err != nil {
 		t.Fatalf("second call: %v", err)
 	}
 	if c := d.calls.Load(); c != 2 {
@@ -494,7 +555,7 @@ type fakeGetSessionsDB struct {
 	err       error
 }
 
-func (f *fakeGetSessionsDB) GetSessions(directory string, since int64) ([]db.Session, error) {
+func (f *fakeGetSessionsDB) GetSessions(_ context.Context, directory string, since int64) ([]db.Session, error) {
 	f.calls.Add(1)
 	f.lastSince.Store(since)
 	return f.out, f.err
@@ -511,7 +572,7 @@ type controlledGetSessionsDB struct {
 	block <-chan struct{}
 }
 
-func (f *controlledGetSessionsDB) GetSessions(_ string, _ int64) ([]db.Session, error) {
+func (f *controlledGetSessionsDB) GetSessions(context.Context, string, int64) ([]db.Session, error) {
 	f.calls.Add(1)
 	f.mu.Lock()
 	out, err, block := f.out, f.err, f.block
@@ -535,7 +596,7 @@ func (f *controlledGetSessionsDB) set(out []db.Session, err error, block <-chan 
 // instead of silently returning an empty session.
 type noSummaryDB struct{}
 
-func (noSummaryDB) GetSessionSummary(sessionID string) (db.Session, error) {
+func (noSummaryDB) GetSessionSummary(_ context.Context, sessionID string) (db.Session, error) {
 	return db.Session{}, fmt.Errorf("unexpected per-session read for %s", sessionID)
 }
 
@@ -565,7 +626,7 @@ type sessionsResult struct {
 func readSessionsAsync(d dbGetSessions, directory string) <-chan sessionsResult {
 	done := make(chan sessionsResult, 1)
 	go func() {
-		sessions, err := getSessionsCached(d, directory, 0)
+		sessions, err := getSessionsCached(context.Background(), d, directory, 0)
 		done <- sessionsResult{sessions: sessions, err: err}
 	}()
 	return done
@@ -596,7 +657,7 @@ func TestGetSessionsCached_CachesAcrossCalls(t *testing.T) {
 	d := &fakeGetSessionsDB{out: want}
 
 	for i := 0; i < 5; i++ {
-		got, err := getSessionsCached(d, "", 0)
+		got, err := getSessionsCached(t.Context(), d, "", 0)
 		if err != nil {
 			t.Fatalf("call %d: %v", i, err)
 		}
@@ -618,11 +679,11 @@ func TestGetSessionsCached_GlobalSnapshotServesExactDirectory(t *testing.T) {
 		{ID: "b", Directory: "/b", TimeUpdated: 1500},
 		{ID: "a-old", Directory: "/a", TimeUpdated: 500},
 	}}
-	if _, err := getSessionsCached(d, "", 0); err != nil {
+	if _, err := getSessionsCached(t.Context(), d, "", 0); err != nil {
 		t.Fatalf("warm global snapshot: %v", err)
 	}
 
-	got, err := getSessionsCached(d, "/a", 1000)
+	got, err := getSessionsCached(t.Context(), d, "/a", 1000)
 	if err != nil {
 		t.Fatalf("directory read: %v", err)
 	}
@@ -639,11 +700,11 @@ func TestGetSessionsCached_AbsentDirectoryReturnsNonNilEmpty(t *testing.T) {
 	t.Cleanup(resetSessionsCache)
 
 	d := &fakeGetSessionsDB{out: []db.Session{{ID: "a", Directory: "/a"}}}
-	if _, err := getSessionsCached(d, "", 0); err != nil {
+	if _, err := getSessionsCached(t.Context(), d, "", 0); err != nil {
 		t.Fatalf("warm global snapshot: %v", err)
 	}
 
-	got, err := getSessionsCached(d, "/missing", 0)
+	got, err := getSessionsCached(t.Context(), d, "/missing", 0)
 	if err != nil {
 		t.Fatalf("absent directory: %v", err)
 	}
@@ -660,7 +721,7 @@ func TestGetSessionsCached_StaleReadReturnsWhileBackgroundRefreshRuns(t *testing
 	t.Cleanup(resetSessionsCache)
 
 	d := &controlledGetSessionsDB{started: make(chan struct{}, 1), out: []db.Session{{ID: "stale"}}}
-	if _, err := getSessionsCached(d, "", 0); err != nil {
+	if _, err := getSessionsCached(t.Context(), d, "", 0); err != nil {
 		t.Fatalf("warm: %v", err)
 	}
 	expireSessionsCache()
@@ -682,7 +743,7 @@ func TestGetSessionsCached_StaleReadReturnsWhileBackgroundRefreshRuns(t *testing
 	}
 	// The background refresh must replace the snapshot atomically.
 	drainSessionsRefresh()
-	got, err := getSessionsCached(d, "", 0)
+	got, err := getSessionsCached(t.Context(), d, "", 0)
 	if err != nil || len(got) != 1 || got[0].ID != "fresh" {
 		t.Fatalf("after refresh = %#v, %v; want the fresh snapshot", got, err)
 	}
@@ -693,7 +754,7 @@ func TestGetSessionsCached_ConcurrentStaleReadsStartOneRefresh(t *testing.T) {
 	t.Cleanup(resetSessionsCache)
 
 	d := &controlledGetSessionsDB{started: make(chan struct{}, 8), out: []db.Session{{ID: "stale"}}}
-	if _, err := getSessionsCached(d, "", 0); err != nil {
+	if _, err := getSessionsCached(t.Context(), d, "", 0); err != nil {
 		t.Fatalf("warm: %v", err)
 	}
 	expireSessionsCache()
@@ -735,7 +796,7 @@ func TestGetSessionsCached_FailedBackgroundRefreshRetainsStaleAndRetries(t *test
 	t.Cleanup(resetSessionsCache)
 
 	d := &controlledGetSessionsDB{started: make(chan struct{}, 8), out: []db.Session{{ID: "stale"}}}
-	if _, err := getSessionsCached(d, "", 0); err != nil {
+	if _, err := getSessionsCached(t.Context(), d, "", 0); err != nil {
 		t.Fatalf("warm: %v", err)
 	}
 	expireSessionsCache()
@@ -798,7 +859,7 @@ func TestInvalidateSessionsCache_ForcesSynchronousFreshRead(t *testing.T) {
 	t.Cleanup(resetSessionsCache)
 
 	d := &controlledGetSessionsDB{started: make(chan struct{}, 1), out: []db.Session{{ID: "old"}}}
-	if _, err := getSessionsCached(d, "", 0); err != nil {
+	if _, err := getSessionsCached(t.Context(), d, "", 0); err != nil {
 		t.Fatalf("warm: %v", err)
 	}
 
@@ -851,7 +912,7 @@ func TestInvalidateSessionsCache_ServesStaleWhenForcedFetchFails(t *testing.T) {
 	t.Cleanup(resetSessionsCache)
 
 	d := &controlledGetSessionsDB{started: make(chan struct{}, 1), out: []db.Session{{ID: "good"}}}
-	if _, err := getSessionsCached(d, "", 0); err != nil {
+	if _, err := getSessionsCached(t.Context(), d, "", 0); err != nil {
 		t.Fatalf("warm: %v", err)
 	}
 
@@ -859,7 +920,7 @@ func TestInvalidateSessionsCache_ServesStaleWhenForcedFetchFails(t *testing.T) {
 	clearInvalidationFloor()
 	InvalidateSessionsCache()
 
-	got, err := getSessionsCached(d, "", 0)
+	got, err := getSessionsCached(t.Context(), d, "", 0)
 	if err != nil {
 		t.Fatalf("expected the stale snapshot, got error: %v", err)
 	}
@@ -871,7 +932,7 @@ func TestInvalidateSessionsCache_ServesStaleWhenForcedFetchFails(t *testing.T) {
 	// the background.
 	before := d.calls.Load()
 	d.set([]db.Session{{ID: "fresh"}}, nil, nil)
-	got, err = getSessionsCached(d, "", 0)
+	got, err = getSessionsCached(t.Context(), d, "", 0)
 	if err != nil {
 		t.Fatalf("retry: %v", err)
 	}
@@ -914,11 +975,11 @@ func TestInvalidateSessionsCache_ForcesRefetch(t *testing.T) {
 
 	d := &fakeGetSessionsDB{out: []db.Session{{ID: "s1"}}}
 
-	if _, err := getSessionsCached(d, "", 0); err != nil {
+	if _, err := getSessionsCached(t.Context(), d, "", 0); err != nil {
 		t.Fatal(err)
 	}
 	// Second call within TTL would normally hit cache (no extra DB call).
-	if _, err := getSessionsCached(d, "", 0); err != nil {
+	if _, err := getSessionsCached(t.Context(), d, "", 0); err != nil {
 		t.Fatal(err)
 	}
 	if c := d.calls.Load(); c != 1 {
@@ -928,7 +989,7 @@ func TestInvalidateSessionsCache_ForcesRefetch(t *testing.T) {
 	InvalidateSessionsCache()
 
 	// After invalidation the next read must refetch.
-	if _, err := getSessionsCached(d, "", 0); err != nil {
+	if _, err := getSessionsCached(t.Context(), d, "", 0); err != nil {
 		t.Fatal(err)
 	}
 	drainSessionsRefresh()
@@ -943,22 +1004,22 @@ func TestGetSessionsCached_DirectoriesShareGlobalSnapshot(t *testing.T) {
 
 	d := &fakeGetSessionsDB{out: []db.Session{{ID: "s", TimeUpdated: 1000}}}
 
-	if _, err := getSessionsCached(d, "/a", 0); err != nil {
+	if _, err := getSessionsCached(t.Context(), d, "/a", 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := getSessionsCached(d, "/b", 0); err != nil {
+	if _, err := getSessionsCached(t.Context(), d, "/b", 0); err != nil {
 		t.Fatal(err)
 	}
 	// A different `since` value MUST NOT mint a new cache slot —
 	// otherwise a frontend poller using a rolling
 	// `Date.now() - LOOKBACK` would leak one map entry per poll.
-	if _, err := getSessionsCached(d, "/a", 100); err != nil {
+	if _, err := getSessionsCached(t.Context(), d, "/a", 100); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := getSessionsCached(d, "/a", 999); err != nil {
+	if _, err := getSessionsCached(t.Context(), d, "/a", 999); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := getSessionsCached(d, "/a", 0); err != nil {
+	if _, err := getSessionsCached(t.Context(), d, "/a", 0); err != nil {
 		t.Fatal(err)
 	}
 	// Every directory and since value filters the same global snapshot.
@@ -976,7 +1037,7 @@ func TestGetSessionsCached_AlwaysFetchesUnfiltered(t *testing.T) {
 	// Caller passes a non-zero `since`, but the cache must fetch
 	// the unfiltered superset so subsequent callers with smaller
 	// `since` values still see all rows.
-	if _, err := getSessionsCached(d, "/repo", 500); err != nil {
+	if _, err := getSessionsCached(t.Context(), d, "/repo", 500); err != nil {
 		t.Fatal(err)
 	}
 	if got := d.lastSince.Load(); got != 0 {
@@ -996,7 +1057,7 @@ func TestGetSessionsCached_PostFiltersBySince(t *testing.T) {
 	}}
 
 	// First call warms the cache (since=0 -> all three).
-	all, err := getSessionsCached(d, "/repo", 0)
+	all, err := getSessionsCached(t.Context(), d, "/repo", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1006,7 +1067,7 @@ func TestGetSessionsCached_PostFiltersBySince(t *testing.T) {
 
 	// Second call with since=1000 must filter to {new, mid} from
 	// the cached slice — and must NOT incur a second DB call.
-	got, err := getSessionsCached(d, "/repo", 1000)
+	got, err := getSessionsCached(t.Context(), d, "/repo", 1000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1018,36 +1079,12 @@ func TestGetSessionsCached_PostFiltersBySince(t *testing.T) {
 	}
 
 	// Third call with a since past every row returns empty.
-	got, err = getSessionsCached(d, "/repo", 9999)
+	got, err = getSessionsCached(t.Context(), d, "/repo", 9999)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 0 {
 		t.Fatalf("filter-all: expected empty, got %#v", got)
-	}
-}
-
-func TestGetSessionsCached_ConcurrentRequestsCoalesce(t *testing.T) {
-	resetSessionsCache()
-	t.Cleanup(resetSessionsCache)
-
-	d := &fakeGetSessionsDB{out: []db.Session{{ID: "s", Directory: "/repo"}}}
-
-	const N = 32
-	var wg sync.WaitGroup
-	for i := 0; i < N; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if _, err := getSessionsCached(d, "/repo", 0); err != nil {
-				t.Errorf("getSessionsCached: %v", err)
-			}
-		}()
-	}
-	wg.Wait()
-
-	if c := d.calls.Load(); c >= int64(N) {
-		t.Errorf("expected singleflight coalescing, got %d calls for %d concurrent requests", c, N)
 	}
 }
 
@@ -1058,10 +1095,10 @@ func TestGetSessionsCached_DoesNotCacheErrors(t *testing.T) {
 	wantErr := errors.New("db dead")
 	d := &fakeGetSessionsDB{err: wantErr}
 
-	if _, err := getSessionsCached(d, "/repo", 0); !errors.Is(err, wantErr) {
+	if _, err := getSessionsCached(t.Context(), d, "/repo", 0); !errors.Is(err, wantErr) {
 		t.Fatalf("call 1: %v", err)
 	}
-	if _, err := getSessionsCached(d, "/repo", 0); !errors.Is(err, wantErr) {
+	if _, err := getSessionsCached(t.Context(), d, "/repo", 0); !errors.Is(err, wantErr) {
 		t.Fatalf("call 2: %v", err)
 	}
 	if c := d.calls.Load(); c != 2 {
@@ -1069,66 +1106,67 @@ func TestGetSessionsCached_DoesNotCacheErrors(t *testing.T) {
 	}
 }
 
-// blockingGetSessionsDB is the sessions analogue of
-// blockingRecentModelsDB, used to drive refreshSessions'
-// re-check-inside-flight branch deterministically via installRecheckGate.
-type blockingGetSessionsDB struct {
-	*fakeGetSessionsDB
-	entered chan struct{}
-	block   chan struct{}
-	once    sync.Once
+type cancellableGetSessionsDB struct {
+	entered  chan struct{}
+	release  chan struct{}
+	canceled atomic.Int64
 }
 
-func (f *blockingGetSessionsDB) GetSessions(directory string, since int64) ([]db.Session, error) {
-	f.once.Do(func() { close(f.entered) })
-	<-f.block
-	return f.fakeGetSessionsDB.GetSessions(directory, since)
+func (d *cancellableGetSessionsDB) GetSessions(ctx context.Context, _ string, _ int64) ([]db.Session, error) {
+	d.entered <- struct{}{}
+	select {
+	case <-ctx.Done():
+		d.canceled.Add(1)
+		return nil, ctx.Err()
+	case <-d.release:
+		return []db.Session{{ID: "s"}}, nil
+	}
 }
 
-func TestRefreshSessions_RechecksInsideFlight(t *testing.T) {
+func (*cancellableGetSessionsDB) GetSessionSummary(context.Context, string) (db.Session, error) {
+	return db.Session{}, db.ErrSessionNotFound
+}
+
+func TestGetSessionsCached_SoleCallerCancelsQuery(t *testing.T) {
 	resetSessionsCache()
 	t.Cleanup(resetSessionsCache)
-	armGateForC, cParked, releaseC, reset := installRecheckGate(t)
-	defer reset()
-
-	blockA := make(chan struct{})
-	d := &fakeGetSessionsDB{out: []db.Session{{ID: "s", Directory: "/repo"}}}
-	dGated := &blockingGetSessionsDB{
-		fakeGetSessionsDB: d,
-		block:             blockA,
-		entered:           make(chan struct{}),
+	d := &cancellableGetSessionsDB{entered: make(chan struct{}, 2), release: make(chan struct{})}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { _, err := getSessionsCached(ctx, d, "", 0); done <- err }()
+	<-d.entered
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", err)
 	}
+	if got := d.canceled.Load(); got != 1 {
+		t.Fatalf("canceled queries = %d, want 1", got)
+	}
+}
 
-	aDone := make(chan struct{})
-	go func() {
-		defer close(aDone)
-		if _, err := getSessionsCached(dGated, "/repo", 0); err != nil {
-			t.Errorf("caller A: %v", err)
-		}
-	}()
-	<-dGated.entered
-	armGateForC()
-
-	cDone := make(chan struct{})
-	go func() {
-		defer close(cDone)
-		got, err := getSessionsCached(dGated, "/repo", 0)
-		if err != nil {
-			t.Errorf("caller C: %v", err)
-		}
-		if len(got) != 1 || got[0].ID != "s" {
-			t.Errorf("caller C: unexpected result %#v", got)
-		}
-	}()
-	<-cParked
-
-	close(blockA)
-	<-aDone
-	releaseC()
-	<-cDone
-
-	if c := d.calls.Load(); c != 1 {
-		t.Fatalf("expected exactly 1 DB call (C hits in-flight re-check), got %d", c)
+func TestGetSessionsCached_CanceledCallerDoesNotPoisonLiveCaller(t *testing.T) {
+	resetSessionsCache()
+	t.Cleanup(resetSessionsCache)
+	d := &cancellableGetSessionsDB{entered: make(chan struct{}, 2), release: make(chan struct{})}
+	joined := make(chan struct{}, 1)
+	afterSessionsFlightJoin = func() { joined <- struct{}{} }
+	t.Cleanup(func() { afterSessionsFlightJoin = nil })
+	canceledCtx, cancel := context.WithCancel(t.Context())
+	canceledDone := make(chan error, 1)
+	go func() { _, err := getSessionsCached(canceledCtx, d, "", 0); canceledDone <- err }()
+	<-d.entered
+	<-joined
+	liveDone := make(chan error, 1)
+	go func() { _, err := getSessionsCached(t.Context(), d, "", 0); liveDone <- err }()
+	<-joined
+	cancel()
+	if err := <-canceledDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled caller error = %v, want context.Canceled", err)
+	}
+	<-d.entered
+	close(d.release)
+	if err := <-liveDone; err != nil {
+		t.Fatalf("live caller error = %v", err)
 	}
 }
 
@@ -1142,7 +1180,7 @@ type failableGetSessionsDB struct {
 	err error
 }
 
-func (f *failableGetSessionsDB) GetSessions(_ string, _ int64) ([]db.Session, error) {
+func (f *failableGetSessionsDB) GetSessions(context.Context, string, int64) ([]db.Session, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.out, f.err
@@ -1165,7 +1203,7 @@ func TestGetSessionsCached_ServesStaleOnError(t *testing.T) {
 	d := &failableGetSessionsDB{out: []db.Session{{ID: "good", Directory: "/repo"}}}
 
 	// Warm the cache with a good value.
-	if _, err := getSessionsCached(d, "/repo", 0); err != nil {
+	if _, err := getSessionsCached(t.Context(), d, "/repo", 0); err != nil {
 		t.Fatalf("warm: %v", err)
 	}
 
@@ -1173,7 +1211,7 @@ func TestGetSessionsCached_ServesStaleOnError(t *testing.T) {
 	expireSessionsCache()
 	d.setErr(errors.New("database is locked"))
 
-	got, err := getSessionsCached(d, "/repo", 0)
+	got, err := getSessionsCached(t.Context(), d, "/repo", 0)
 	if err != nil {
 		t.Fatalf("expected stale value, got error: %v", err)
 	}
@@ -1182,7 +1220,7 @@ func TestGetSessionsCached_ServesStaleOnError(t *testing.T) {
 	}
 	// The failed background refresh must leave the stale value serving.
 	drainSessionsRefresh()
-	got, err = getSessionsCached(d, "/repo", 0)
+	got, err = getSessionsCached(t.Context(), d, "/repo", 0)
 	if err != nil {
 		t.Fatalf("after failed refresh, expected stale value, got error: %v", err)
 	}
@@ -1197,14 +1235,14 @@ func TestGetSessionsCached_ExpiresAfterTTL(t *testing.T) {
 	t.Cleanup(resetSessionsCache)
 
 	d := &fakeGetSessionsDB{out: []db.Session{{ID: "s"}}}
-	if _, err := getSessionsCached(d, "/repo", 0); err != nil {
+	if _, err := getSessionsCached(t.Context(), d, "/repo", 0); err != nil {
 		t.Fatalf("first call: %v", err)
 	}
 
 	// Force the snapshot to expire.
 	expireSessionsCache()
 
-	if _, err := getSessionsCached(d, "/repo", 0); err != nil {
+	if _, err := getSessionsCached(t.Context(), d, "/repo", 0); err != nil {
 		t.Fatalf("second call: %v", err)
 	}
 	drainSessionsRefresh()
@@ -1300,7 +1338,7 @@ func TestInvalidateSessionsCache_FloorsOnQueryCost(t *testing.T) {
 	t.Cleanup(resetSessionsCache)
 
 	d := &fakeGetSessionsDB{out: []db.Session{{ID: "s1"}}}
-	if _, err := getSessionsCached(d, "", 0); err != nil {
+	if _, err := getSessionsCached(t.Context(), d, "", 0); err != nil {
 		t.Fatalf("warm: %v", err)
 	}
 	if c := d.calls.Load(); c != 1 {
@@ -1315,7 +1353,7 @@ func TestInvalidateSessionsCache_FloorsOnQueryCost(t *testing.T) {
 
 	for i := 0; i < 5; i++ {
 		InvalidateSessionsCache()
-		if _, err := getSessionsCached(d, "", 0); err != nil {
+		if _, err := getSessionsCached(t.Context(), d, "", 0); err != nil {
 			t.Fatalf("read %d: %v", i, err)
 		}
 	}
@@ -1331,7 +1369,7 @@ func TestInvalidateSessionsCache_FloorsOnQueryCost(t *testing.T) {
 	sessionsMu.Unlock()
 
 	InvalidateSessionsCache()
-	if _, err := getSessionsCached(d, "", 0); err != nil {
+	if _, err := getSessionsCached(t.Context(), d, "", 0); err != nil {
 		t.Fatalf("post-floor read: %v", err)
 	}
 	drainSessionsRefresh()

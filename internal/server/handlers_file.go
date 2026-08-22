@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -64,11 +65,11 @@ func verifyFileToken(key []byte, token string) (string, bool) {
 
 // loadFileTokenSecret returns the persisted signing key, generating and
 // storing one on first use.
-func loadFileTokenSecret(sdb *state.DB) ([]byte, error) {
+func loadFileTokenSecret(ctx context.Context, sdb *state.DB) ([]byte, error) {
 	if sdb == nil {
 		return nil, errors.New("state database unavailable")
 	}
-	stored, ok, err := sdb.GetSetting(fileTokenSecretKey)
+	stored, ok, err := sdb.GetSetting(ctx, fileTokenSecretKey)
 	if err != nil {
 		return nil, err
 	}
@@ -82,16 +83,16 @@ func loadFileTokenSecret(sdb *state.DB) ([]byte, error) {
 	if _, err := rand.Read(key); err != nil {
 		return nil, fmt.Errorf("generating file token secret: %w", err)
 	}
-	if err := sdb.SetSetting(fileTokenSecretKey, base64.RawStdEncoding.EncodeToString(key)); err != nil {
+	if err := sdb.SetSetting(ctx, fileTokenSecretKey, base64.RawStdEncoding.EncodeToString(key)); err != nil {
 		return nil, err
 	}
 	return key, nil
 }
 
 // fileTokenSecret memoises loadFileTokenSecret for the process lifetime.
-func (s *Server) fileTokenSecret() ([]byte, error) {
+func (s *Server) fileTokenSecret(ctx context.Context) ([]byte, error) {
 	s.fileKeyOnce.Do(func() {
-		s.fileKey, s.fileKeyErr = loadFileTokenSecret(s.stateDB)
+		s.fileKey, s.fileKeyErr = loadFileTokenSecret(ctx, s.stateDB)
 	})
 	return s.fileKey, s.fileKeyErr
 }
@@ -99,8 +100,8 @@ func (s *Server) fileTokenSecret() ([]byte, error) {
 // FileURL returns an absolute, browser-reachable URL that serves the file at
 // absPath. Used by the MCP embed_file tool so an agent can hand the
 // user a viewable link to an asset it generated on disk.
-func (s *Server) FileURL(absPath string) (string, error) {
-	key, err := s.fileTokenSecret()
+func (s *Server) FileURL(ctx context.Context, absPath string) (string, error) {
+	key, err := s.fileTokenSecret(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -123,7 +124,7 @@ func (s *Server) FileURL(absPath string) (string, error) {
 // the authorisation — an unsigned or altered path is rejected — on top
 // of the normal dashboard auth guard.
 func (s *Server) handleFileProxy(w http.ResponseWriter, r *http.Request) {
-	key, err := s.fileTokenSecret()
+	key, err := s.fileTokenSecret(r.Context())
 	if err != nil {
 		serverError(w, "loading file token secret", err)
 		return

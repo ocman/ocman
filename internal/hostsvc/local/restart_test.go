@@ -143,7 +143,7 @@ func TestRestartProjectOpencode_ClearsStoreRow(t *testing.T) {
 	if _, err := h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: repo}); err != nil {
 		t.Fatalf("ensure: %v", err)
 	}
-	if row, ok, _ := store.Get(repoRoot); !ok || row.Endpoint != "http://127.0.0.1:8501" {
+	if row, ok, _ := store.Get(t.Context(), repoRoot); !ok || row.Endpoint != "http://127.0.0.1:8501" {
 		t.Fatalf("after ensure store row = %+v (ok=%v); want :8501", row, ok)
 	}
 
@@ -155,7 +155,7 @@ func TestRestartProjectOpencode_ClearsStoreRow(t *testing.T) {
 	if store.deletes != 1 {
 		t.Errorf("store deletes = %d; want 1 (old row cleared)", store.deletes)
 	}
-	row, ok, _ := store.Get(repoRoot)
+	row, ok, _ := store.Get(t.Context(), repoRoot)
 	if !ok {
 		t.Fatal("store should hold the fresh row after restart")
 	}

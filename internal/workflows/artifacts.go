@@ -153,7 +153,7 @@ func (s *Service) secretEnv(version Version, nodeEnv map[string]string) map[stri
 
 // storeArtifact writes one immutable artifact: payload to the content
 // store (deduplicated), metadata to state.db with a retention expiry.
-func (s *Service) storeArtifact(runID, nodeID string, attemptID int64, name, kind string, payload []byte, retentionDays int) {
+func (s *Service) storeArtifact(ctx context.Context, runID, nodeID string, attemptID int64, name, kind string, payload []byte, retentionDays int) {
 	s.artifactMu.Lock()
 	defer s.artifactMu.Unlock()
 
@@ -165,7 +165,7 @@ func (s *Service) storeArtifact(runID, nodeID string, attemptID int64, name, kin
 		}
 		hash = stored
 	}
-	_ = s.store.InsertWorkflowArtifact(state.WorkflowArtifact{
+	_ = s.store.InsertWorkflowArtifact(ctx, state.WorkflowArtifact{
 		ID:          newID("wfa"),
 		RunID:       runID,
 		NodeID:      nodeID,
@@ -181,8 +181,8 @@ func (s *Service) storeArtifact(runID, nodeID string, attemptID int64, name, kin
 
 // ListArtifacts returns historical/public artifact metadata. Internal map-item
 // payloads are deliberately omitted so they cannot look like node outputs.
-func (s *Service) ListArtifacts(_ context.Context, runID string) ([]Artifact, error) {
-	rows, err := s.store.ListWorkflowArtifacts(runID)
+func (s *Service) ListArtifacts(ctx context.Context, runID string) ([]Artifact, error) {
+	rows, err := s.store.ListWorkflowArtifacts(ctx, runID)
 	if err != nil {
 		return nil, err
 	}
@@ -220,12 +220,12 @@ func upstreamNodes(dependencies []Dependency, nodeID string) map[string]bool {
 // DownloadArtifact returns the metadata and payload bytes for an
 // artifact. Returns ErrPayloadMissing (wrapped) when retention cleanup
 // has dropped the payload (metadata is preserved).
-func (s *Service) DownloadArtifact(_ context.Context, runID, id string) (Artifact, []byte, error) {
-	return s.downloadArtifact(id, runID, false)
+func (s *Service) DownloadArtifact(ctx context.Context, runID, id string) (Artifact, []byte, error) {
+	return s.downloadArtifact(ctx, id, runID, false)
 }
 
-func (s *Service) downloadArtifact(id, runID string, internal bool) (Artifact, []byte, error) {
-	row, err := s.store.GetWorkflowArtifact(id)
+func (s *Service) downloadArtifact(ctx context.Context, id, runID string, internal bool) (Artifact, []byte, error) {
+	row, err := s.store.GetWorkflowArtifact(ctx, id)
 	if err != nil {
 		return Artifact{}, nil, err
 	}
@@ -251,11 +251,11 @@ func (s *Service) downloadArtifact(id, runID string, internal bool) (Artifact, [
 // those metadata rows payload_deleted. Metadata is always preserved so
 // old run outcomes remain auditable. Returns the number of payloads
 // removed.
-func (s *Service) CleanupExpiredPayloads(_ context.Context) (int, error) {
+func (s *Service) CleanupExpiredPayloads(ctx context.Context) (int, error) {
 	s.artifactMu.Lock()
 	defer s.artifactMu.Unlock()
 
-	hashes, err := s.store.ExpiredWorkflowArtifactHashes(s.now().UnixMilli())
+	hashes, err := s.store.ExpiredWorkflowArtifactHashes(ctx, s.now().UnixMilli())
 	if err != nil {
 		return 0, err
 	}
@@ -268,7 +268,7 @@ func (s *Service) CleanupExpiredPayloads(_ context.Context) (int, error) {
 				continue
 			}
 		}
-		if err := s.store.MarkWorkflowArtifactPayloadDeleted(hash); err != nil {
+		if err := s.store.MarkWorkflowArtifactPayloadDeleted(ctx, hash); err != nil {
 			errs = append(errs, err)
 			continue
 		}

@@ -39,7 +39,7 @@ type flakySessionReader struct {
 	err      error
 }
 
-func (f *flakySessionReader) GetSession(string) (*db.Session, error) {
+func (f *flakySessionReader) GetSession(context.Context, string) (*db.Session, error) {
 	f.calls++
 	if f.calls > f.okCalls {
 		return nil, f.err
@@ -47,7 +47,7 @@ func (f *flakySessionReader) GetSession(string) (*db.Session, error) {
 	return f.session, nil
 }
 
-func (f *flakySessionReader) GetSessionMessages(string) ([]db.Message, error) {
+func (f *flakySessionReader) GetSessionMessages(context.Context, string) ([]db.Message, error) {
 	return f.messages, nil
 }
 
@@ -59,9 +59,11 @@ type fakeInheriter struct {
 	listErr  error
 }
 
-func (f *fakeInheriter) GetWorktreeInheritPermissions() (bool, error) { return f.on, f.onErr }
+func (f *fakeInheriter) GetWorktreeInheritPermissions(context.Context) (bool, error) {
+	return f.on, f.onErr
+}
 
-func (f *fakeInheriter) ListApprovedPermissions(_, _ string) ([]state.ApprovedPermission, error) {
+func (f *fakeInheriter) ListApprovedPermissions(_ context.Context, _, _ string) ([]state.ApprovedPermission, error) {
 	return f.approved, f.listErr
 }
 
@@ -89,7 +91,7 @@ type scriptedCAS struct {
 	err     error
 }
 
-func (s *scriptedChildStore) GetChildSession(string) (*state.ChildSession, error) {
+func (s *scriptedChildStore) GetChildSession(context.Context, string) (*state.ChildSession, error) {
 	if len(s.get) == 0 {
 		return nil, sql.ErrNoRows
 	}
@@ -98,11 +100,11 @@ func (s *scriptedChildStore) GetChildSession(string) (*state.ChildSession, error
 	return s.get[i].child, s.get[i].err
 }
 
-func (s *scriptedChildStore) ListDisconnectedChildSessions(string) ([]state.ChildSession, error) {
+func (s *scriptedChildStore) ListDisconnectedChildSessions(context.Context, string) ([]state.ChildSession, error) {
 	return s.list, s.listErr
 }
 
-func (s *scriptedChildStore) CompareAndSetChildResultDelivery(id, from, to string) (bool, error) {
+func (s *scriptedChildStore) CompareAndSetChildResultDelivery(_ context.Context, id, from, to string) (bool, error) {
 	s.casCalls = append(s.casCalls, id+":"+from+"->"+to)
 	if len(s.cas) == 0 {
 		return true, nil
@@ -247,7 +249,7 @@ func TestInheritedRules(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tools := &splitTools{inherit: tt.inherit, launcher: tt.launcher, platform: "opencode"}
-			rules, count, note := tools.inheritedRules(tt.parentID)
+			rules, count, note := tools.inheritedRules(t.Context(), tt.parentID)
 			if note != tt.wantNote {
 				t.Fatalf("note = %q, want %q", note, tt.wantNote)
 			}
@@ -1044,7 +1046,7 @@ func TestParentModel_SkipsUnmarshalableLatestMessage(t *testing.T) {
 		{Data: json.RawMessage(`{"providerID":"openai","modelID":"gpt-5"}`)},
 		{Data: json.RawMessage(`not json`)},
 	}}}}
-	if got := tools.parentModel("p1"); got != "openai/gpt-5" {
+	if got := tools.parentModel(t.Context(), "p1"); got != "openai/gpt-5" {
 		t.Fatalf("parentModel = %q, want openai/gpt-5", got)
 	}
 }

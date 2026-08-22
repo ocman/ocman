@@ -237,7 +237,7 @@ func (a *Adapter) promptDirectories(port string, discovered []string) []string {
 	// reconnect for every discovered instance. Uncached it pinned a
 	// core and starved the 4-connection read pool, which is what made
 	// message sends and permission replies time out.
-	sessions, err := getSessionsCached(a.db, "", 0)
+	sessions, err := getSessionsCached(context.Background(), a.db, "", 0)
 	if err != nil {
 		return out
 	}

@@ -70,8 +70,8 @@ func (s *Server) registerStatsMetrics(meter metric.Meter) (metric.Registration, 
 	}
 
 	return meter.RegisterCallback(
-		func(_ context.Context, o metric.Observer) error {
-			stats, err := s.db.GetStats()
+		func(ctx context.Context, o metric.Observer) error {
+			stats, err := s.db.GetStats(ctx)
 			if err != nil {
 				log.WithError(err).Warn("stats metrics: failed to query stats")
 				return nil // don't fail the collection cycle

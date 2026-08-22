@@ -18,7 +18,7 @@ func openQueueTestDB(t *testing.T) *DB {
 func TestEnqueueAndHead_FIFOOrder(t *testing.T) {
 	db := openQueueTestDB(t)
 	for _, txt := range []string{"first", "second", "third"} {
-		if err := db.EnqueueMessage(QueuedMessage{
+		if err := db.EnqueueMessage(t.Context(), QueuedMessage{
 			ID: "id-" + txt, Platform: "opencode", SessionID: "s1",
 			Text: txt, CreatedAt: 1,
 		}); err != nil {
@@ -27,7 +27,7 @@ func TestEnqueueAndHead_FIFOOrder(t *testing.T) {
 	}
 
 	// Head is always the oldest (lowest position).
-	head, err := db.HeadQueuedMessage("opencode", "s1")
+	head, err := db.HeadQueuedMessage(t.Context(), "opencode", "s1")
 	if err != nil || head == nil {
 		t.Fatalf("HeadQueuedMessage: %v head=%v", err, head)
 	}
@@ -36,10 +36,10 @@ func TestEnqueueAndHead_FIFOOrder(t *testing.T) {
 	}
 
 	// Delete head → next oldest surfaces.
-	if _, err := db.DeleteQueuedMessage(head.ID); err != nil {
+	if _, err := db.DeleteQueuedMessage(t.Context(), head.ID); err != nil {
 		t.Fatalf("DeleteQueuedMessage: %v", err)
 	}
-	head, _ = db.HeadQueuedMessage("opencode", "s1")
+	head, _ = db.HeadQueuedMessage(t.Context(), "opencode", "s1")
 	if head == nil || head.Text != "second" {
 		t.Fatalf("head after delete = %v, want second", head)
 	}
@@ -50,28 +50,28 @@ func TestEnqueueAndHead_FIFOOrder(t *testing.T) {
 // could pop a remote session's head just because the bare ids collided.
 func TestDeliveryQueriesDoNotWildcardPlatform(t *testing.T) {
 	db := openQueueTestDB(t)
-	if err := db.EnqueueMessage(QueuedMessage{
+	if err := db.EnqueueMessage(t.Context(), QueuedMessage{
 		ID: "id-1", Platform: "r-box:opencode", SessionID: "s1", Text: "hi", CreatedAt: 1,
 	}); err != nil {
 		t.Fatalf("EnqueueMessage: %v", err)
 	}
 
-	head, err := db.HeadQueuedMessage("", "s1")
+	head, err := db.HeadQueuedMessage(t.Context(), "", "s1")
 	if err != nil {
 		t.Fatalf("HeadQueuedMessage: %v", err)
 	}
 	if head != nil {
 		t.Fatalf("head = %+v, want nil: an empty platform is not an identity", head)
 	}
-	if n, err := db.CountQueuedMessages("", "s1"); err != nil || n != 0 {
+	if n, err := db.CountQueuedMessages(t.Context(), "", "s1"); err != nil || n != 0 {
 		t.Fatalf("count = %d (err %v), want 0 for an empty platform", n, err)
 	}
-	if msgs, err := db.ListQueuedMessages("", "s1"); err != nil || len(msgs) != 0 {
+	if msgs, err := db.ListQueuedMessages(t.Context(), "", "s1"); err != nil || len(msgs) != 0 {
 		t.Fatalf("list = %+v (err %v), want none for an empty platform", msgs, err)
 	}
 
 	// Naming the owner resolves it.
-	head, err = db.HeadQueuedMessage("r-box:opencode", "s1")
+	head, err = db.HeadQueuedMessage(t.Context(), "r-box:opencode", "s1")
 	if err != nil || head == nil {
 		t.Fatalf("HeadQueuedMessage(owner): %v head=%v", err, head)
 	}
@@ -85,11 +85,11 @@ func TestDeliveryQueriesDoNotWildcardPlatform(t *testing.T) {
 // documented exception, and it is never used to drain.
 func TestListQueuedMessagesAnyPlatform(t *testing.T) {
 	db := openQueueTestDB(t)
-	_ = db.EnqueueMessage(QueuedMessage{ID: "a", Platform: "opencode", SessionID: "s1", Text: "a", CreatedAt: 1})
-	_ = db.EnqueueMessage(QueuedMessage{ID: "b", Platform: "r-box:opencode", SessionID: "s1", Text: "b", CreatedAt: 1})
-	_ = db.EnqueueMessage(QueuedMessage{ID: "c", Platform: "opencode", SessionID: "s2", Text: "c", CreatedAt: 1})
+	_ = db.EnqueueMessage(t.Context(), QueuedMessage{ID: "a", Platform: "opencode", SessionID: "s1", Text: "a", CreatedAt: 1})
+	_ = db.EnqueueMessage(t.Context(), QueuedMessage{ID: "b", Platform: "r-box:opencode", SessionID: "s1", Text: "b", CreatedAt: 1})
+	_ = db.EnqueueMessage(t.Context(), QueuedMessage{ID: "c", Platform: "opencode", SessionID: "s2", Text: "c", CreatedAt: 1})
 
-	got, err := db.ListQueuedMessagesAnyPlatform("s1")
+	got, err := db.ListQueuedMessagesAnyPlatform(t.Context(), "s1")
 	if err != nil {
 		t.Fatalf("ListQueuedMessagesAnyPlatform: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestListQueuedMessagesAnyPlatform(t *testing.T) {
 
 func TestHead_EmptyQueue(t *testing.T) {
 	db := openQueueTestDB(t)
-	head, err := db.HeadQueuedMessage("opencode", "nope")
+	head, err := db.HeadQueuedMessage(t.Context(), "opencode", "nope")
 	if err != nil {
 		t.Fatalf("HeadQueuedMessage: %v", err)
 	}
@@ -111,11 +111,11 @@ func TestHead_EmptyQueue(t *testing.T) {
 
 func TestListQueuedMessages_ScopedAndOrdered(t *testing.T) {
 	db := openQueueTestDB(t)
-	_ = db.EnqueueMessage(QueuedMessage{ID: "a", Platform: "opencode", SessionID: "s1", Text: "a", CreatedAt: 1})
-	_ = db.EnqueueMessage(QueuedMessage{ID: "b", Platform: "opencode", SessionID: "s1", Text: "b", CreatedAt: 1})
-	_ = db.EnqueueMessage(QueuedMessage{ID: "c", Platform: "opencode", SessionID: "s2", Text: "c", CreatedAt: 1})
+	_ = db.EnqueueMessage(t.Context(), QueuedMessage{ID: "a", Platform: "opencode", SessionID: "s1", Text: "a", CreatedAt: 1})
+	_ = db.EnqueueMessage(t.Context(), QueuedMessage{ID: "b", Platform: "opencode", SessionID: "s1", Text: "b", CreatedAt: 1})
+	_ = db.EnqueueMessage(t.Context(), QueuedMessage{ID: "c", Platform: "opencode", SessionID: "s2", Text: "c", CreatedAt: 1})
 
-	got, err := db.ListQueuedMessages("opencode", "s1")
+	got, err := db.ListQueuedMessages(t.Context(), "opencode", "s1")
 	if err != nil {
 		t.Fatalf("ListQueuedMessages: %v", err)
 	}
@@ -127,11 +127,11 @@ func TestListQueuedMessages_ScopedAndOrdered(t *testing.T) {
 func TestSessionsWithQueuedMessages_DistinctSessions(t *testing.T) {
 	db := openQueueTestDB(t)
 	// Two messages for s1, one for s2 → two distinct sessions.
-	_ = db.EnqueueMessage(QueuedMessage{ID: "a", Platform: "opencode", SessionID: "s1", Text: "a", CreatedAt: 1})
-	_ = db.EnqueueMessage(QueuedMessage{ID: "b", Platform: "opencode", SessionID: "s1", Text: "b", CreatedAt: 1})
-	_ = db.EnqueueMessage(QueuedMessage{ID: "c", Platform: "r-box:opencode", SessionID: "s2", Text: "c", CreatedAt: 1})
+	_ = db.EnqueueMessage(t.Context(), QueuedMessage{ID: "a", Platform: "opencode", SessionID: "s1", Text: "a", CreatedAt: 1})
+	_ = db.EnqueueMessage(t.Context(), QueuedMessage{ID: "b", Platform: "opencode", SessionID: "s1", Text: "b", CreatedAt: 1})
+	_ = db.EnqueueMessage(t.Context(), QueuedMessage{ID: "c", Platform: "r-box:opencode", SessionID: "s2", Text: "c", CreatedAt: 1})
 
-	got, err := db.SessionsWithQueuedMessages()
+	got, err := db.SessionsWithQueuedMessages(t.Context())
 	if err != nil {
 		t.Fatalf("SessionsWithQueuedMessages: %v", err)
 	}
@@ -154,13 +154,13 @@ func TestSessionsWithQueuedMessages_DistinctSessions(t *testing.T) {
 // resurrects itself and burns tokens on an abandoned turn.
 func TestSessionsWithQueuedMessages_SkipsArchived(t *testing.T) {
 	db := openQueueTestDB(t)
-	_ = db.EnqueueMessage(QueuedMessage{ID: "a", Platform: "opencode", SessionID: "live", Text: "a", CreatedAt: 1})
-	_ = db.EnqueueMessage(QueuedMessage{ID: "b", Platform: "opencode", SessionID: "gone", Text: "b", CreatedAt: 1})
-	if err := db.ArchiveSession("opencode", "gone", 100); err != nil {
+	_ = db.EnqueueMessage(t.Context(), QueuedMessage{ID: "a", Platform: "opencode", SessionID: "live", Text: "a", CreatedAt: 1})
+	_ = db.EnqueueMessage(t.Context(), QueuedMessage{ID: "b", Platform: "opencode", SessionID: "gone", Text: "b", CreatedAt: 1})
+	if err := db.ArchiveSession(t.Context(), "opencode", "gone", 100); err != nil {
 		t.Fatalf("ArchiveSession: %v", err)
 	}
 
-	got, err := db.SessionsWithQueuedMessages()
+	got, err := db.SessionsWithQueuedMessages(t.Context())
 	if err != nil {
 		t.Fatalf("SessionsWithQueuedMessages: %v", err)
 	}
@@ -169,10 +169,10 @@ func TestSessionsWithQueuedMessages_SkipsArchived(t *testing.T) {
 	}
 
 	// Unarchiving makes it eligible again.
-	if err := db.UnarchiveSession("opencode", "gone"); err != nil {
+	if err := db.UnarchiveSession(t.Context(), "opencode", "gone"); err != nil {
 		t.Fatalf("UnarchiveSession: %v", err)
 	}
-	if got, _ := db.SessionsWithQueuedMessages(); len(got) != 2 {
+	if got, _ := db.SessionsWithQueuedMessages(t.Context()); len(got) != 2 {
 		t.Fatalf("got %+v after unarchive, want both sessions", got)
 	}
 }
@@ -184,27 +184,27 @@ func TestSessionsWithQueuedMessages_SkipsArchived(t *testing.T) {
 func TestQueuedMessageBlocking(t *testing.T) {
 	db := openQueueTestDB(t)
 	for _, id := range []string{"stuck", "next"} {
-		if err := db.EnqueueMessage(QueuedMessage{ID: id, Platform: "opencode", SessionID: "s1", Text: id, CreatedAt: 1}); err != nil {
+		if err := db.EnqueueMessage(t.Context(), QueuedMessage{ID: id, Platform: "opencode", SessionID: "s1", Text: id, CreatedAt: 1}); err != nil {
 			t.Fatalf("EnqueueMessage %s: %v", id, err)
 		}
 	}
 
 	// Failures below the limit keep the message at the head for retry.
 	for i := 1; i < QueuedMessageAttemptLimit; i++ {
-		blocked, err := db.RecordQueuedMessageFailure("stuck", "boom")
+		blocked, err := db.RecordQueuedMessageFailure(t.Context(), "stuck", "boom")
 		if err != nil {
 			t.Fatalf("RecordQueuedMessageFailure: %v", err)
 		}
 		if blocked {
 			t.Fatalf("message blocked after %d attempts, want %d", i, QueuedMessageAttemptLimit)
 		}
-		head, _ := db.HeadQueuedMessage("opencode", "s1")
+		head, _ := db.HeadQueuedMessage(t.Context(), "opencode", "s1")
 		if head == nil || head.ID != "stuck" {
 			t.Fatalf("head = %v, want stuck while retrying", head)
 		}
 	}
 
-	blocked, err := db.RecordQueuedMessageFailure("stuck", "session deleted")
+	blocked, err := db.RecordQueuedMessageFailure(t.Context(), "stuck", "session deleted")
 	if err != nil {
 		t.Fatalf("RecordQueuedMessageFailure: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestQueuedMessageBlocking(t *testing.T) {
 	}
 
 	// The rest of the queue drains past it.
-	head, err := db.HeadQueuedMessage("opencode", "s1")
+	head, err := db.HeadQueuedMessage(t.Context(), "opencode", "s1")
 	if err != nil {
 		t.Fatalf("HeadQueuedMessage: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestQueuedMessageBlocking(t *testing.T) {
 	}
 
 	// The blocked row stays visible to the user, with its reason.
-	all, err := db.ListQueuedMessages("opencode", "s1")
+	all, err := db.ListQueuedMessages(t.Context(), "opencode", "s1")
 	if err != nil {
 		t.Fatalf("ListQueuedMessages: %v", err)
 	}
@@ -240,22 +240,22 @@ func TestQueuedMessageBlocking(t *testing.T) {
 	}
 
 	// A session whose whole queue is blocked is not swept.
-	if _, err := db.RecordQueuedMessageFailure("next", "boom"); err != nil {
+	if _, err := db.RecordQueuedMessageFailure(t.Context(), "next", "boom"); err != nil {
 		t.Fatal(err)
 	}
 	for i := 1; i < QueuedMessageAttemptLimit; i++ {
-		if _, err := db.RecordQueuedMessageFailure("next", "boom"); err != nil {
+		if _, err := db.RecordQueuedMessageFailure(t.Context(), "next", "boom"); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if got, _ := db.SessionsWithQueuedMessages(); len(got) != 0 {
+	if got, _ := db.SessionsWithQueuedMessages(t.Context()); len(got) != 0 {
 		t.Fatalf("got %+v, want no sweepable sessions when all rows are blocked", got)
 	}
 }
 
 func TestSessionsWithQueuedMessages_EmptyWhenNoQueue(t *testing.T) {
 	db := openQueueTestDB(t)
-	got, err := db.SessionsWithQueuedMessages()
+	got, err := db.SessionsWithQueuedMessages(t.Context())
 	if err != nil {
 		t.Fatalf("SessionsWithQueuedMessages: %v", err)
 	}
@@ -267,12 +267,12 @@ func TestSessionsWithQueuedMessages_EmptyWhenNoQueue(t *testing.T) {
 func TestMoveQueuedMessage_SwapsAndRespectsBoundary(t *testing.T) {
 	db := openQueueTestDB(t)
 	for _, id := range []string{"a", "b", "c"} {
-		if err := db.EnqueueMessage(QueuedMessage{ID: id, Platform: "opencode", SessionID: "s1", Text: id, CreatedAt: 1}); err != nil {
+		if err := db.EnqueueMessage(t.Context(), QueuedMessage{ID: id, Platform: "opencode", SessionID: "s1", Text: id, CreatedAt: 1}); err != nil {
 			t.Fatalf("EnqueueMessage %s: %v", id, err)
 		}
 	}
 	order := func() []string {
-		msgs, _ := db.ListQueuedMessages("opencode", "s1")
+		msgs, _ := db.ListQueuedMessages(t.Context(), "opencode", "s1")
 		ids := make([]string, len(msgs))
 		for i, m := range msgs {
 			ids[i] = m.ID
@@ -281,7 +281,7 @@ func TestMoveQueuedMessage_SwapsAndRespectsBoundary(t *testing.T) {
 	}
 
 	// Move 'b' up → [b a c].
-	moved, err := db.MoveQueuedMessage("b", -1)
+	moved, err := db.MoveQueuedMessage(t.Context(), "b", -1)
 	if err != nil || !moved {
 		t.Fatalf("Move b up = (%v,%v)", moved, err)
 	}
@@ -290,25 +290,25 @@ func TestMoveQueuedMessage_SwapsAndRespectsBoundary(t *testing.T) {
 	}
 
 	// Move head 'b' up again → boundary no-op.
-	moved, _ = db.MoveQueuedMessage("b", -1)
+	moved, _ = db.MoveQueuedMessage(t.Context(), "b", -1)
 	if moved {
 		t.Fatal("moving head up should be a no-op")
 	}
 
 	// Invalid direction is rejected.
-	if _, err := db.MoveQueuedMessage("a", 0); err == nil {
+	if _, err := db.MoveQueuedMessage(t.Context(), "a", 0); err == nil {
 		t.Fatal("direction 0 should error")
 	}
 }
 
 func TestGetQueuedMessageSession(t *testing.T) {
 	db := openQueueTestDB(t)
-	_ = db.EnqueueMessage(QueuedMessage{ID: "x", Platform: "opencode", SessionID: "s1", Text: "hi", CreatedAt: 1})
-	plat, sess, ok, err := db.GetQueuedMessageSession("x")
+	_ = db.EnqueueMessage(t.Context(), QueuedMessage{ID: "x", Platform: "opencode", SessionID: "s1", Text: "hi", CreatedAt: 1})
+	plat, sess, ok, err := db.GetQueuedMessageSession(t.Context(), "x")
 	if err != nil || !ok || plat != "opencode" || sess != "s1" {
 		t.Fatalf("Get = (%q,%q,%v,%v), want (opencode,s1,true,nil)", plat, sess, ok, err)
 	}
-	_, _, ok, _ = db.GetQueuedMessageSession("ghost")
+	_, _, ok, _ = db.GetQueuedMessageSession(t.Context(), "ghost")
 	if ok {
 		t.Fatal("ghost id reported ok")
 	}
@@ -316,7 +316,7 @@ func TestGetQueuedMessageSession(t *testing.T) {
 
 func TestDeleteQueuedMessage_ReportsMiss(t *testing.T) {
 	db := openQueueTestDB(t)
-	ok, err := db.DeleteQueuedMessage("ghost")
+	ok, err := db.DeleteQueuedMessage(t.Context(), "ghost")
 	if err != nil {
 		t.Fatalf("DeleteQueuedMessage: %v", err)
 	}
@@ -327,7 +327,7 @@ func TestDeleteQueuedMessage_ReportsMiss(t *testing.T) {
 
 func TestEnqueueClaimedChildResultIsAtomicAndNotReplayable(t *testing.T) {
 	db := openQueueTestDB(t)
-	if err := db.InsertChildSession(ChildSession{
+	if err := db.InsertChildSession(t.Context(), ChildSession{
 		ID: "child-1", Platform: "opencode", ParentSessionID: "parent-1",
 		Intent: "task", Status: "completed", CreatedAt: 1, ResultDelivery: "async_queueing",
 	}); err != nil {
@@ -335,49 +335,49 @@ func TestEnqueueClaimedChildResultIsAtomicAndNotReplayable(t *testing.T) {
 	}
 	msg := QueuedMessage{ID: "child-result:1", Platform: "opencode", SessionID: "parent-1", Text: "done", CreatedAt: 2}
 
-	queued, err := db.EnqueueClaimedChildResult("child-1", msg)
+	queued, err := db.EnqueueClaimedChildResult(t.Context(), "child-1", msg)
 	if err != nil || !queued {
 		t.Fatalf("first enqueue = %v, %v", queued, err)
 	}
-	child, _ := db.GetChildSession("child-1")
+	child, _ := db.GetChildSession(t.Context(), "child-1")
 	if child.ResultDelivery != "delivered" {
 		t.Fatalf("delivery = %q, want delivered", child.ResultDelivery)
 	}
-	if deleted, err := db.DeleteQueuedMessage(msg.ID); err != nil || !deleted {
+	if deleted, err := db.DeleteQueuedMessage(t.Context(), msg.ID); err != nil || !deleted {
 		t.Fatalf("draining queued result = %v, %v", deleted, err)
 	}
-	queued, err = db.EnqueueClaimedChildResult("child-1", msg)
+	queued, err = db.EnqueueClaimedChildResult(t.Context(), "child-1", msg)
 	if err != nil || queued {
 		t.Fatalf("replay after drain = %v, %v; want no-op", queued, err)
 	}
-	if messages, _ := db.ListQueuedMessages("opencode", "parent-1"); len(messages) != 0 {
+	if messages, _ := db.ListQueuedMessages(t.Context(), "opencode", "parent-1"); len(messages) != 0 {
 		t.Fatalf("replayed %d child results", len(messages))
 	}
 }
 
 func TestEnqueueClaimedChildResultRollsBackFailedQueueInsert(t *testing.T) {
 	db := openQueueTestDB(t)
-	if err := db.InsertChildSession(ChildSession{
+	if err := db.InsertChildSession(t.Context(), ChildSession{
 		ID: "child-1", Platform: "opencode", ParentSessionID: "parent-1",
 		Intent: "task", Status: "completed", CreatedAt: 1, ResultDelivery: "async_queueing",
 	}); err != nil {
 		t.Fatal(err)
 	}
 	msg := QueuedMessage{ID: "collision", Platform: "opencode", SessionID: "parent-1", Text: "done", CreatedAt: 2}
-	if err := db.EnqueueMessage(QueuedMessage{ID: msg.ID, Platform: "opencode", SessionID: "other", Text: "existing", CreatedAt: 1}); err != nil {
+	if err := db.EnqueueMessage(t.Context(), QueuedMessage{ID: msg.ID, Platform: "opencode", SessionID: "other", Text: "existing", CreatedAt: 1}); err != nil {
 		t.Fatal(err)
 	}
-	if queued, err := db.EnqueueClaimedChildResult("child-1", msg); err == nil || queued {
+	if queued, err := db.EnqueueClaimedChildResult(t.Context(), "child-1", msg); err == nil || queued {
 		t.Fatalf("colliding enqueue = %v, %v; want rollback", queued, err)
 	}
-	child, _ := db.GetChildSession("child-1")
+	child, _ := db.GetChildSession(t.Context(), "child-1")
 	if child.ResultDelivery != "async_queueing" {
 		t.Fatalf("delivery after rollback = %q", child.ResultDelivery)
 	}
-	if _, err := db.DeleteQueuedMessage(msg.ID); err != nil {
+	if _, err := db.DeleteQueuedMessage(t.Context(), msg.ID); err != nil {
 		t.Fatal(err)
 	}
-	if queued, err := db.EnqueueClaimedChildResult("child-1", msg); err != nil || !queued {
+	if queued, err := db.EnqueueClaimedChildResult(t.Context(), "child-1", msg); err != nil || !queued {
 		t.Fatalf("recovered enqueue = %v, %v", queued, err)
 	}
 }

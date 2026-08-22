@@ -25,7 +25,7 @@ func newScriptedAgent(outcome map[string]string) *scriptedAgent {
 	return &scriptedAgent{outcome: outcome, sessions: map[string]string{}}
 }
 
-func (a *scriptedAgent) Start(_ context.Context, req AgentRequest) (AgentSession, error) {
+func (a *scriptedAgent) Start(ctx context.Context, req AgentRequest) (AgentSession, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.counter++
@@ -39,7 +39,7 @@ func (a *scriptedAgent) Start(_ context.Context, req AgentRequest) (AgentSession
 	return AgentSession{ID: id, Platform: req.Platform, State: "busy"}, nil
 }
 
-func (a *scriptedAgent) Inspect(_ context.Context, session AgentSession) (AgentResult, error) {
+func (a *scriptedAgent) Inspect(ctx context.Context, session AgentSession) (AgentResult, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	key := a.sessions[session.ID]
@@ -345,7 +345,7 @@ func TestMapResumesAfterRestartMidFlight(t *testing.T) {
 	if err := h.svc.Tick(ctx); err != nil {
 		t.Fatal(err)
 	}
-	itemsMid, _ := h.db.ListWorkflowMapItems(run.ID, "fan")
+	itemsMid, _ := h.db.ListWorkflowMapItems(t.Context(), run.ID, "fan")
 	if len(itemsMid) != 3 {
 		t.Fatalf("map did not expand all items before restart: %d", len(itemsMid))
 	}
@@ -373,7 +373,7 @@ func TestMapResumesAfterRestartMidFlight(t *testing.T) {
 	if done.State != StateSuccessful {
 		t.Fatalf("run did not resume to success after mid-flight restart: %s", done.State)
 	}
-	after, _ := h.db.ListWorkflowMapItems(run.ID, "fan")
+	after, _ := h.db.ListWorkflowMapItems(t.Context(), run.ID, "fan")
 	if len(after) != 3 {
 		t.Fatalf("restart changed item count: %d", len(after))
 	}

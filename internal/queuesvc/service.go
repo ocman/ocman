@@ -33,17 +33,17 @@ import (
 
 // Store is the consumer-side subset of *state.DB the queue needs.
 type Store interface {
-	EnqueueMessage(m state.QueuedMessage) error
-	EnqueueClaimedChildResult(childID string, m state.QueuedMessage) (bool, error)
-	CountQueuedMessages(platform, sessionID string) (int, error)
-	HeadQueuedMessage(platform, sessionID string) (*state.QueuedMessage, error)
-	ListQueuedMessages(platform, sessionID string) ([]state.QueuedMessage, error)
-	ListQueuedMessagesAnyPlatform(sessionID string) ([]state.QueuedMessage, error)
-	DeleteQueuedMessage(id string) (bool, error)
-	MoveQueuedMessage(id string, direction int) (bool, error)
-	GetQueuedMessageSession(id string) (platform, sessionID string, ok bool, err error)
-	SessionsWithQueuedMessages() ([]state.QueuedSession, error)
-	RecordQueuedMessageFailure(id, reason string) (bool, error)
+	EnqueueMessage(ctx context.Context, m state.QueuedMessage) error
+	EnqueueClaimedChildResult(ctx context.Context, childID string, m state.QueuedMessage) (bool, error)
+	CountQueuedMessages(ctx context.Context, platform, sessionID string) (int, error)
+	HeadQueuedMessage(ctx context.Context, platform, sessionID string) (*state.QueuedMessage, error)
+	ListQueuedMessages(ctx context.Context, platform, sessionID string) ([]state.QueuedMessage, error)
+	ListQueuedMessagesAnyPlatform(ctx context.Context, sessionID string) ([]state.QueuedMessage, error)
+	DeleteQueuedMessage(ctx context.Context, id string) (bool, error)
+	MoveQueuedMessage(ctx context.Context, id string, direction int) (bool, error)
+	GetQueuedMessageSession(ctx context.Context, id string) (platform, sessionID string, ok bool, err error)
+	SessionsWithQueuedMessages(ctx context.Context) ([]state.QueuedSession, error)
+	RecordQueuedMessageFailure(ctx context.Context, id, reason string) (bool, error)
 }
 
 // Sender forwards a queued message to the owning platform. The server
@@ -74,7 +74,7 @@ type Service struct {
 	store  Store
 	sender Sender
 	status StatusInferer
-	notify func(platform, sessionID string) // optional; broadcast queue.updated
+	notify func(context.Context, string, string) // optional; broadcast queue.updated
 
 	// One lock per session serializes flush drains so an enqueue-driven
 	// flush and an idle-driven flush cannot pop the same head twice.
@@ -102,7 +102,7 @@ type drainGuard struct {
 }
 
 // New builds a queue service. notify may be nil.
-func New(store Store, sender Sender, status StatusInferer, notify func(platform, sessionID string)) *Service {
+func New(store Store, sender Sender, status StatusInferer, notify func(context.Context, string, string)) *Service {
 	return &Service{
 		store:       store,
 		sender:      sender,
@@ -183,11 +183,11 @@ func (s *Service) Enqueue(ctx context.Context, platformID string, forceQueue boo
 	lock.Lock()
 	defer lock.Unlock()
 
-	existing, err := s.store.CountQueuedMessages(platformID, req.SessionID)
+	existing, err := s.store.CountQueuedMessages(ctx, platformID, req.SessionID)
 	if err != nil {
 		return err
 	}
-	if err := s.store.EnqueueMessage(m); err != nil {
+	if err := s.store.EnqueueMessage(ctx, m); err != nil {
 		return err
 	}
 	// The caller asked to hold the message. Do NOT mark
@@ -199,10 +199,10 @@ func (s *Service) Enqueue(ctx context.Context, platformID string, forceQueue boo
 	// what keeps Sweep from sending into a still-running turn; the guard
 	// is only set once a message is actually sent (in drainHead).
 	if forceQueue {
-		s.fireNotify(key)
+		s.fireNotify(ctx, key)
 		return nil
 	}
-	s.fireNotify(key)
+	s.fireNotify(ctx, key)
 
 	// Idle send fast path — see doc comment.
 	if _, guarded := s.currentDrainGuard(key); existing == 0 && !guarded {
@@ -226,9 +226,9 @@ func (s *Service) EnqueueChildResult(ctx context.Context, childID, id, platformI
 	lock := s.lockFor(key)
 	lock.Lock()
 	defer lock.Unlock()
-	queued, err := s.store.EnqueueClaimedChildResult(childID, m)
+	queued, err := s.store.EnqueueClaimedChildResult(ctx, childID, m)
 	if err == nil && queued {
-		s.fireNotify(key)
+		s.fireNotify(ctx, key)
 	}
 	return queued, err
 }
@@ -288,7 +288,7 @@ func (s *Service) drainHead(ctx context.Context, key sessionKey, trustIdle bool)
 		}
 	}
 
-	head, err := s.store.HeadQueuedMessage(key.Platform, sessionID)
+	head, err := s.store.HeadQueuedMessage(ctx, key.Platform, sessionID)
 	if err != nil {
 		log.WithError(err).WithField("sessionID", sessionID).
 			Warn("queuesvc: reading queue head")
@@ -324,7 +324,7 @@ func (s *Service) drainHead(ctx context.Context, key sessionKey, trustIdle bool)
 		// message that can never send (deleted session, unregistered
 		// platform) would otherwise block every later message on this
 		// session forever, with only a log line to show for it.
-		blocked, recErr := s.store.RecordQueuedMessageFailure(head.ID, err.Error())
+		blocked, recErr := s.store.RecordQueuedMessageFailure(ctx, head.ID, err.Error())
 		if recErr != nil {
 			log.WithError(recErr).WithField("messageID", head.ID).
 				Warn("queuesvc: recording send failure")
@@ -333,13 +333,13 @@ func (s *Service) drainHead(ctx context.Context, key sessionKey, trustIdle bool)
 		if blocked {
 			entry.WithField("messageID", head.ID).
 				Error("queuesvc: queued message set aside after repeated send failures")
-			s.fireNotify(key)
+			s.fireNotify(ctx, key)
 		} else {
 			entry.Warn("queuesvc: sending queued message")
 		}
 		return
 	}
-	if _, err := s.store.DeleteQueuedMessage(head.ID); err != nil {
+	if _, err := s.store.DeleteQueuedMessage(ctx, head.ID); err != nil {
 		log.WithError(err).WithField("messageID", head.ID).
 			Warn("queuesvc: dequeuing sent message")
 		return
@@ -347,7 +347,7 @@ func (s *Service) drainHead(ctx context.Context, key sessionKey, trustIdle bool)
 	// This send started a turn; block the enqueue fast-path until a real
 	// session.idle edge confirms it finished.
 	s.markDrained(key, messageID, messageCreatedAt)
-	s.fireNotify(key)
+	s.fireNotify(ctx, key)
 }
 
 // Sweep drains one message from every session whose queue is non-empty
@@ -363,7 +363,7 @@ func (s *Service) drainHead(ctx context.Context, key sessionKey, trustIdle bool)
 // contract: draining the head starts a turn, and the next sweep (or idle
 // edge) drains the next.
 func (s *Service) Sweep(ctx context.Context) {
-	sessions, err := s.store.SessionsWithQueuedMessages()
+	sessions, err := s.store.SessionsWithQueuedMessages(ctx)
 	if err != nil {
 		log.WithError(err).Warn("queuesvc: sweep listing sessions")
 		return
@@ -401,8 +401,8 @@ func (s *Service) Sweep(ctx context.Context) {
 }
 
 // List returns a session's pending follow-up queue, oldest first.
-func (s *Service) List(platformID, sessionID string) ([]state.QueuedMessage, error) {
-	return s.store.ListQueuedMessages(platformID, sessionID)
+func (s *Service) List(ctx context.Context, platformID, sessionID string) ([]state.QueuedMessage, error) {
+	return s.store.ListQueuedMessages(ctx, platformID, sessionID)
 }
 
 // ListAnyPlatform is the one deliberate cross-platform read: the queue
@@ -410,29 +410,29 @@ func (s *Service) List(platformID, sessionID string) ([]state.QueuedMessage, err
 // client (or a deep link) can ask for a session's queue without naming its
 // owner. It is read-only and never feeds a drain — every mutating path
 // resolves the full (platform, sessionID) identity first.
-func (s *Service) ListAnyPlatform(sessionID string) ([]state.QueuedMessage, error) {
-	return s.store.ListQueuedMessagesAnyPlatform(sessionID)
+func (s *Service) ListAnyPlatform(ctx context.Context, sessionID string) ([]state.QueuedMessage, error) {
+	return s.store.ListQueuedMessagesAnyPlatform(ctx, sessionID)
 }
 
 // Remove deletes a queued message by id, but only if it belongs to the
 // given session (so one session can't mutate another's queue). Returns
 // whether a row was removed.
-func (s *Service) Remove(sessionID, id string) (bool, error) {
-	platform, owner, ok, err := s.store.GetQueuedMessageSession(id)
+func (s *Service) Remove(ctx context.Context, sessionID, id string) (bool, error) {
+	platform, owner, ok, err := s.store.GetQueuedMessageSession(ctx, id)
 	if err != nil {
 		return false, err
 	}
 	if !ok || owner != sessionID {
 		return false, nil
 	}
-	removed, err := s.store.DeleteQueuedMessage(id)
+	removed, err := s.store.DeleteQueuedMessage(ctx, id)
 	if err != nil {
 		return false, err
 	}
 	if removed {
 		// The row's own platform is authoritative: the caller only knows
 		// the bare session id, which several machines can share.
-		s.fireNotify(sessionKey{Platform: platform, SessionID: sessionID})
+		s.fireNotify(ctx, sessionKey{Platform: platform, SessionID: sessionID})
 	}
 	return removed, nil
 }
@@ -441,27 +441,27 @@ func (s *Service) Remove(sessionID, id string) (bool, error) {
 // the adjacent message in the given direction (-1 up, +1 down), only if
 // the message belongs to the given session. Returns whether a swap
 // happened (false at a boundary or on a mismatch).
-func (s *Service) Move(sessionID, id string, direction int) (bool, error) {
-	platform, owner, ok, err := s.store.GetQueuedMessageSession(id)
+func (s *Service) Move(ctx context.Context, sessionID, id string, direction int) (bool, error) {
+	platform, owner, ok, err := s.store.GetQueuedMessageSession(ctx, id)
 	if err != nil {
 		return false, err
 	}
 	if !ok || owner != sessionID {
 		return false, nil
 	}
-	moved, err := s.store.MoveQueuedMessage(id, direction)
+	moved, err := s.store.MoveQueuedMessage(ctx, id, direction)
 	if err != nil {
 		return false, err
 	}
 	if moved {
-		s.fireNotify(sessionKey{Platform: platform, SessionID: sessionID})
+		s.fireNotify(ctx, sessionKey{Platform: platform, SessionID: sessionID})
 	}
 	return moved, nil
 }
 
-func (s *Service) fireNotify(key sessionKey) {
+func (s *Service) fireNotify(ctx context.Context, key sessionKey) {
 	if s.notify != nil {
-		s.notify(key.Platform, key.SessionID)
+		s.notify(ctx, key.Platform, key.SessionID)
 	}
 }
 

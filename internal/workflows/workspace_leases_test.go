@@ -23,7 +23,7 @@ func newFakeWorkspaceProvider(base string) *fakeWorkspaceProvider {
 	return &fakeWorkspaceProvider{base: base, shards: map[int]string{}}
 }
 
-func (f *fakeWorkspaceProvider) EnsureShard(_ context.Context, _ string, _ string, shard int) (string, error) {
+func (f *fakeWorkspaceProvider) EnsureShard(ctx context.Context, _ string, _ string, shard int) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if dir, ok := f.shards[shard]; ok {
@@ -70,14 +70,14 @@ func TestExclusiveLeasePreventsSharing(t *testing.T) {
 		t.Fatalf("exclusive lease let %q share the only shard", second)
 	case <-time.After(100 * time.Millisecond):
 	}
-	leases, err := h.db.ListWorkflowWorkspaceLeases(run.ID)
+	leases, err := h.db.ListWorkflowWorkspaceLeases(t.Context(), run.ID)
 	if err != nil || len(leases) != 1 || leases[0].Mode != LeaseExclusive {
 		t.Fatalf("expected one exclusive lease, got %+v (%v)", leases, err)
 	}
 	close(executor.release)
 	done := waitForRun(t, h.svc, run.ID, StateSuccessful)
 	assertRun(t, done, StateSuccessful, map[string]string{"one": NodeSuccessful, "two": NodeSuccessful})
-	leases, err = h.db.ListWorkflowWorkspaceLeases(run.ID)
+	leases, err = h.db.ListWorkflowWorkspaceLeases(t.Context(), run.ID)
 	if err != nil || len(leases) != 0 {
 		t.Fatalf("leases not released after completion: %+v (%v)", leases, err)
 	}
@@ -105,7 +105,7 @@ func TestDisjointPathLeasesShareShard(t *testing.T) {
 	if first == second {
 		t.Fatalf("same node started twice: %q", first)
 	}
-	leases, err := h.db.ListWorkflowWorkspaceLeases(run.ID)
+	leases, err := h.db.ListWorkflowWorkspaceLeases(t.Context(), run.ID)
 	if err != nil || len(leases) != 2 {
 		t.Fatalf("expected two shared leases, got %+v (%v)", leases, err)
 	}
@@ -237,7 +237,7 @@ func TestShardExhaustionSerializes(t *testing.T) {
 		t.Fatalf("shard pool of 2 admitted a third exclusive mutator: %q", third)
 	case <-time.After(100 * time.Millisecond):
 	}
-	leases, err := h.db.ListWorkflowWorkspaceLeases(run.ID)
+	leases, err := h.db.ListWorkflowWorkspaceLeases(t.Context(), run.ID)
 	if err != nil || len(leases) != 2 {
 		t.Fatalf("expected exactly two held shard leases, got %+v (%v)", leases, err)
 	}
@@ -303,7 +303,7 @@ func TestLeaseSurvivesRestart(t *testing.T) {
 	}
 	run := publishAndStart(t, h, def)
 	<-executor.started
-	before, err := h.db.ListWorkflowWorkspaceLeases(run.ID)
+	before, err := h.db.ListWorkflowWorkspaceLeases(t.Context(), run.ID)
 	if err != nil || len(before) != 1 || before[0].Host != "local-host" {
 		t.Fatalf("lease not held with host identity: %+v (%v)", before, err)
 	}
@@ -334,7 +334,7 @@ func TestCancelReleasesLeaseAfterSettle(t *testing.T) {
 	}
 	run := publishAndStart(t, h, def)
 	<-executor.started
-	held, err := h.db.ListWorkflowWorkspaceLeases(run.ID)
+	held, err := h.db.ListWorkflowWorkspaceLeases(t.Context(), run.ID)
 	if err != nil || len(held) != 1 {
 		t.Fatalf("lease not held during run: %+v (%v)", held, err)
 	}
@@ -342,7 +342,7 @@ func TestCancelReleasesLeaseAfterSettle(t *testing.T) {
 	if _, err := h.svc.Cancel(context.Background(), run.ID); err != nil {
 		t.Fatalf("cancel: %v", err)
 	}
-	after, err := h.db.ListWorkflowWorkspaceLeases(run.ID)
+	after, err := h.db.ListWorkflowWorkspaceLeases(t.Context(), run.ID)
 	if err != nil || len(after) != 0 {
 		t.Fatalf("cancel leaked shard lease: %+v (%v)", after, err)
 	}

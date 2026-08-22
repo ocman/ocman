@@ -122,7 +122,7 @@ func (s *Service) backgroundAutoApprove(
 	// Check auto-approve state: per-session override, then server default.
 	enabled := s.deps.DefaultEnabled
 	if s.deps.Store != nil {
-		if perSession, exists, err := s.deps.Store.GetAutoApprove(string(platformID), sessionID); err == nil && exists {
+		if perSession, exists, err := s.deps.Store.GetAutoApprove(ctx, string(platformID), sessionID); err == nil && exists {
 			enabled = perSession
 		}
 	}
@@ -162,7 +162,7 @@ func (s *Service) backgroundAutoApprove(
 	// shape — no Edit permission can ever auto-approve from this
 	// cache, regardless of metadata content.
 	if hash := commandHash(metadata); hash != "" {
-		if cachedReason, ok := s.lookupInheritedSafeCommandVerdict(sessionID, hash); ok {
+		if cachedReason, ok := s.lookupInheritedSafeCommandVerdict(ctx, sessionID, hash); ok {
 			logger.WithField("hash", hash).Info("background auto-approve: safe-command cache hit, skipping judge")
 			finalReason := "cached: " + cachedReason
 			s.recordJudgedWithReasoning(sessionID, permissionID, verdictSafe, finalReason)
@@ -190,7 +190,7 @@ func (s *Service) backgroundAutoApprove(
 	// ensure the actual sleep matches the persisted value.
 	delayMs := s.judgeDelayMs.Load()
 	if s.deps.Store != nil {
-		if d, err := s.deps.Store.GetJudgeDelayMs(); err == nil {
+		if d, err := s.deps.Store.GetJudgeDelayMs(ctx); err == nil {
 			delayMs = d
 		}
 	}
@@ -199,7 +199,7 @@ func (s *Service) backgroundAutoApprove(
 	// setting takes effect without a restart. Empty/unset falls back
 	// to the judgeModel* constants seeded in newPermissionJudge.
 	if s.judge != nil && s.deps.Store != nil {
-		if provider, modelID, ok := loadJudgeModel(s.deps.Store); ok {
+		if provider, modelID, ok := loadJudgeModel(ctx, s.deps.Store); ok {
 			s.judge.setModel(provider, modelID)
 		}
 	}
@@ -226,7 +226,7 @@ func (s *Service) backgroundAutoApprove(
 	// use the same custom rules as the settings page.
 	var customSections []PromptSection
 	if s.deps.Store != nil {
-		if stored, err := s.deps.Store.GetPromptSections(); err == nil {
+		if stored, err := s.deps.Store.GetPromptSections(ctx); err == nil {
 			for _, ps := range stored {
 				customSections = append(customSections, PromptSection{
 					Title:   ps.Title,
@@ -402,6 +402,7 @@ func (s *Service) respondAndPersistSafeApproval(
 	// it empty.
 	if s.deps.Store != nil {
 		if err := s.deps.Store.RecordApprovedPermission(
+			respondCtx,
 			string(platformID),
 			sessionID,
 			state.ApprovedPermission{

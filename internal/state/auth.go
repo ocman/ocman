@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"time"
@@ -10,9 +11,9 @@ import (
 // cookies, or nil if none has been stored yet. The same key is
 // reused across restarts so logged-in clients stay logged in up
 // to the cookie TTL.
-func (d *DB) AuthSecret() ([]byte, error) {
+func (d *DB) AuthSecret(ctx context.Context) ([]byte, error) {
 	var key []byte
-	err := d.db.QueryRow(`SELECT hmac_key FROM auth_secret WHERE id = 1`).Scan(&key)
+	err := d.db.QueryRowContext(ctx, `SELECT hmac_key FROM auth_secret WHERE id = 1`).Scan(&key)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -25,8 +26,8 @@ func (d *DB) AuthSecret() ([]byte, error) {
 // SetAuthSecret overwrites the persisted HMAC key. Existing cookies
 // signed with the previous key become invalid, which is the intended
 // behaviour of a rotation.
-func (d *DB) SetAuthSecret(key []byte) error {
-	_, err := d.db.Exec(`
+func (d *DB) SetAuthSecret(ctx context.Context, key []byte) error {
+	_, err := d.db.ExecContext(ctx, `
 		INSERT INTO auth_secret (id, hmac_key, created_at)
 		VALUES (1, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET

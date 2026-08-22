@@ -790,13 +790,13 @@ func TestHandleArchiveSession_StaleClientTimestamp(t *testing.T) {
 	sessions := []db.Session{
 		{ID: "s1", Platform: "opencode", TimeUpdated: 2000},
 	}
-	if err := srv.applySessionState(sessions); err != nil {
+	if err := srv.applySessionState(t.Context(), sessions); err != nil {
 		t.Fatalf("applySessionState: %v", err)
 	}
 	if !sessions[0].Archived {
 		t.Error("s1 must stay archived despite a stale client timeUpdated")
 	}
-	archived, _ := srv.stateDB.ArchivedSessions()
+	archived, _ := srv.stateDB.ArchivedSessions(t.Context())
 	if _, ok := archived[state.Key{Platform: "opencode", SessionID: "s1"}]; !ok {
 		t.Error("archive record must not be deleted by the next sessions poll")
 	}
@@ -836,7 +836,7 @@ func TestHandleArchiveSession_RemoteClockSkew(t *testing.T) {
 	}
 
 	// Baseline must be the remote-clock value, verbatim.
-	archived, _ := srv.stateDB.ArchivedSessions()
+	archived, _ := srv.stateDB.ArchivedSessions(t.Context())
 	got := archived[state.Key{Platform: remotePlatform, SessionID: "s1"}]
 	if got != remoteTime {
 		t.Fatalf("stored archived_at = %d, want remote clock %d", got, remoteTime)
@@ -847,7 +847,7 @@ func TestHandleArchiveSession_RemoteClockSkew(t *testing.T) {
 	sessions := []db.Session{
 		{ID: "s1", Platform: remotePlatform, TimeUpdated: remoteTime},
 	}
-	if err := srv.applySessionState(sessions); err != nil {
+	if err := srv.applySessionState(t.Context(), sessions); err != nil {
 		t.Fatalf("applySessionState: %v", err)
 	}
 	if !sessions[0].Archived {
@@ -870,7 +870,7 @@ func TestHandleArchiveSession_RemoteClockSkew(t *testing.T) {
 	if rr2.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rr2.Code, rr2.Body.String())
 	}
-	archived2, _ := srv.stateDB.ArchivedSessions()
+	archived2, _ := srv.stateDB.ArchivedSessions(t.Context())
 	if got := archived2[state.Key{Platform: "r-def:opencode", SessionID: "s2"}]; got != 2000 {
 		t.Fatalf("stored archived_at = %d, want remote clock 2000 (not hub-clamped)", got)
 	}
@@ -911,7 +911,7 @@ func TestHandleArchiveSession_InvalidJSON(t *testing.T) {
 
 func TestApplySessionState_MarksSeen(t *testing.T) {
 	srv := testServer(t)
-	if err := srv.stateDB.MarkSessionSeen("opencode", "s1", 2000); err != nil {
+	if err := srv.stateDB.MarkSessionSeen(t.Context(), "opencode", "s1", 2000); err != nil {
 		t.Fatal(err)
 	}
 
@@ -919,7 +919,7 @@ func TestApplySessionState_MarksSeen(t *testing.T) {
 		{ID: "s1", Platform: "opencode", TimeUpdated: 2000},
 		{ID: "s2", Platform: "opencode", TimeUpdated: 3000},
 	}
-	if err := srv.applySessionState(sessions); err != nil {
+	if err := srv.applySessionState(t.Context(), sessions); err != nil {
 		t.Fatalf("applySessionState: %v", err)
 	}
 	if !sessions[0].Seen {
@@ -937,7 +937,7 @@ func TestApplySessionState_MarksSeen(t *testing.T) {
 // overwritten by the overlay.
 func TestApplySessionState_OverlaysMCPChildParent(t *testing.T) {
 	srv := testServer(t)
-	if err := srv.stateDB.InsertChildSession(state.ChildSession{
+	if err := srv.stateDB.InsertChildSession(t.Context(), state.ChildSession{
 		ID:              "child-mcp",
 		Platform:        "opencode",
 		ParentSessionID: "parent-mcp",
@@ -957,7 +957,7 @@ func TestApplySessionState_OverlaysMCPChildParent(t *testing.T) {
 		// child_sessions row ever pointed elsewhere.
 		{ID: "subagent", Platform: "opencode", ParentID: "platform-parent", TimeUpdated: 2000},
 	}
-	if err := srv.applySessionState(sessions); err != nil {
+	if err := srv.applySessionState(t.Context(), sessions); err != nil {
 		t.Fatalf("applySessionState: %v", err)
 	}
 	if sessions[1].ParentID != "parent-mcp" {
@@ -973,14 +973,14 @@ func TestApplySessionState_OverlaysMCPChildParent(t *testing.T) {
 
 func TestApplySessionState_MarksArchived(t *testing.T) {
 	srv := testServer(t)
-	if err := srv.stateDB.ArchiveSession("opencode", "s1", 2000); err != nil {
+	if err := srv.stateDB.ArchiveSession(t.Context(), "opencode", "s1", 2000); err != nil {
 		t.Fatal(err)
 	}
 
 	sessions := []db.Session{
 		{ID: "s1", Platform: "opencode", TimeUpdated: 2000},
 	}
-	if err := srv.applySessionState(sessions); err != nil {
+	if err := srv.applySessionState(t.Context(), sessions); err != nil {
 		t.Fatalf("applySessionState: %v", err)
 	}
 	if !sessions[0].Archived {
@@ -990,21 +990,21 @@ func TestApplySessionState_MarksArchived(t *testing.T) {
 
 func TestApplySessionState_AutoUnarchivesUpdatedSession(t *testing.T) {
 	srv := testServer(t)
-	if err := srv.stateDB.ArchiveSession("opencode", "s1", 1000); err != nil {
+	if err := srv.stateDB.ArchiveSession(t.Context(), "opencode", "s1", 1000); err != nil {
 		t.Fatal(err)
 	}
 
 	sessions := []db.Session{
 		{ID: "s1", Platform: "opencode", TimeUpdated: 2000},
 	}
-	if err := srv.applySessionState(sessions); err != nil {
+	if err := srv.applySessionState(t.Context(), sessions); err != nil {
 		t.Fatalf("applySessionState: %v", err)
 	}
 	if sessions[0].Archived {
 		t.Error("s1 should have been auto-unarchived (updated since archive)")
 	}
 
-	archived, _ := srv.stateDB.ArchivedSessions()
+	archived, _ := srv.stateDB.ArchivedSessions(t.Context())
 	if _, ok := archived[state.Key{Platform: "opencode", SessionID: "s1"}]; ok {
 		t.Error("s1 should no longer be in archived_session table")
 	}
@@ -1018,7 +1018,7 @@ func TestApplySessionState_AutoUnarchivesUpdatedSession(t *testing.T) {
 // projects).
 func TestApplySessionState_MarksArchivedByProject(t *testing.T) {
 	srv := testServer(t)
-	if err := srv.stateDB.ArchiveProject(state.LocalRemoteID, "/src/foo"); err != nil {
+	if err := srv.stateDB.ArchiveProject(t.Context(), state.LocalRemoteID, "/src/foo"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1026,7 +1026,7 @@ func TestApplySessionState_MarksArchivedByProject(t *testing.T) {
 		{ID: "s1", Platform: "opencode", Directory: "/src/foo", TimeUpdated: 1000},
 		{ID: "s2", Platform: "opencode", Directory: "/src/bar", TimeUpdated: 1000},
 	}
-	if err := srv.applySessionState(sessions); err != nil {
+	if err := srv.applySessionState(t.Context(), sessions); err != nil {
 		t.Fatalf("applySessionState: %v", err)
 	}
 	if !sessions[0].Archived {
@@ -1043,16 +1043,16 @@ func TestApplySessionState_MarksArchivedByProject(t *testing.T) {
 // will drop the project marker once it sees the newer activity).
 func TestApplySessionState_ProjectArchiveRespectsNewerActivity(t *testing.T) {
 	srv := testServer(t)
-	if err := srv.stateDB.ArchiveProject(state.LocalRemoteID, "/src/foo"); err != nil {
+	if err := srv.stateDB.ArchiveProject(t.Context(), state.LocalRemoteID, "/src/foo"); err != nil {
 		t.Fatal(err)
 	}
-	archivedProjects, _ := srv.stateDB.ArchivedProjects()
+	archivedProjects, _ := srv.stateDB.ArchivedProjects(t.Context())
 	archivedAt := archivedProjects[state.ProjectKey{RemoteID: state.LocalRemoteID, Root: "/src/foo"}]
 
 	sessions := []db.Session{
 		{ID: "s1", Platform: "opencode", Directory: "/src/foo", TimeUpdated: archivedAt + 1000},
 	}
-	if err := srv.applySessionState(sessions); err != nil {
+	if err := srv.applySessionState(t.Context(), sessions); err != nil {
 		t.Fatalf("applySessionState: %v", err)
 	}
 	if sessions[0].Archived {
@@ -1067,7 +1067,7 @@ func TestApplySessionState_ProjectArchiveRespectsNewerActivity(t *testing.T) {
 // "jump to first unread" marker).
 func TestApplySessionState_SeenTimeUpdated(t *testing.T) {
 	srv := testServer(t)
-	if err := srv.stateDB.MarkSessionSeen("opencode", "s1", 1500); err != nil {
+	if err := srv.stateDB.MarkSessionSeen(t.Context(), "opencode", "s1", 1500); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1075,7 +1075,7 @@ func TestApplySessionState_SeenTimeUpdated(t *testing.T) {
 		{ID: "s1", Platform: "opencode", TimeUpdated: 2500}, // updated since seen
 		{ID: "s2", Platform: "opencode", TimeUpdated: 3000}, // never seen
 	}
-	if err := srv.applySessionState(sessions); err != nil {
+	if err := srv.applySessionState(t.Context(), sessions); err != nil {
 		t.Fatalf("applySessionState: %v", err)
 	}
 	if sessions[0].SeenTimeUpdated != 1500 {
@@ -1114,10 +1114,10 @@ func TestApplySessionState_UnreadCount(t *testing.T) {
 
 	// s1: user saw up to time_updated=200 → 2 messages newer (m2, m3).
 	// s2: user saw up to time_updated=300 → fully seen, count omitted.
-	if err := srv.stateDB.MarkSessionSeen("opencode", "s1", 200); err != nil {
+	if err := srv.stateDB.MarkSessionSeen(t.Context(), "opencode", "s1", 200); err != nil {
 		t.Fatal(err)
 	}
-	if err := srv.stateDB.MarkSessionSeen("opencode", "s2", 300); err != nil {
+	if err := srv.stateDB.MarkSessionSeen(t.Context(), "opencode", "s2", 300); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1125,7 +1125,7 @@ func TestApplySessionState_UnreadCount(t *testing.T) {
 		{ID: "s1", Platform: "opencode", TimeUpdated: 400},
 		{ID: "s2", Platform: "opencode", TimeUpdated: 300},
 	}
-	if err := srv.applySessionState(sessions); err != nil {
+	if err := srv.applySessionState(t.Context(), sessions); err != nil {
 		t.Fatalf("applySessionState: %v", err)
 	}
 	if sessions[0].UnreadCount != 2 {
@@ -1160,7 +1160,7 @@ func TestApplySessionState_UnreadCount_NeverSeen(t *testing.T) {
 	sessions := []db.Session{
 		{ID: "s1", Platform: "opencode", TimeUpdated: 500},
 	}
-	if err := srv.applySessionState(sessions); err != nil {
+	if err := srv.applySessionState(t.Context(), sessions); err != nil {
 		t.Fatalf("applySessionState: %v", err)
 	}
 	if sessions[0].UnreadCount != 3 {
@@ -1177,7 +1177,7 @@ func TestApplySessionState_UnreadCount_NeverSeen(t *testing.T) {
 // multi-platform point of the state.db migration (AD-10).
 func TestApplySessionState_ScopesByPlatform(t *testing.T) {
 	srv := testServer(t)
-	if err := srv.stateDB.ArchiveSession("opencode", "shared-id", 1000); err != nil {
+	if err := srv.stateDB.ArchiveSession(t.Context(), "opencode", "shared-id", 1000); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1185,7 +1185,7 @@ func TestApplySessionState_ScopesByPlatform(t *testing.T) {
 		{ID: "shared-id", Platform: "opencode", TimeUpdated: 1000},
 		{ID: "shared-id", Platform: "other-platform", TimeUpdated: 1000},
 	}
-	if err := srv.applySessionState(sessions); err != nil {
+	if err := srv.applySessionState(t.Context(), sessions); err != nil {
 		t.Fatalf("applySessionState: %v", err)
 	}
 	if !sessions[0].Archived {
@@ -1209,7 +1209,7 @@ func TestHandlePinSession_Pin(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
 
-	pinned, _ := srv.stateDB.PinnedSessions()
+	pinned, _ := srv.stateDB.PinnedSessions(t.Context())
 	if _, ok := pinned[state.Key{Platform: "opencode", SessionID: "abc123"}]; !ok {
 		t.Error("session should be pinned after POST")
 	}
@@ -1217,7 +1217,7 @@ func TestHandlePinSession_Pin(t *testing.T) {
 
 func TestHandlePinSession_Unpin(t *testing.T) {
 	srv := testServer(t)
-	_ = srv.stateDB.PinSession("opencode", "abc123")
+	_ = srv.stateDB.PinSession(t.Context(), "opencode", "abc123")
 
 	body := strings.NewReader(`{"platform":"opencode","sessionId":"abc123","pinned":false}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/session/pin", body)
@@ -1228,7 +1228,7 @@ func TestHandlePinSession_Unpin(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
 	}
 
-	pinned, _ := srv.stateDB.PinnedSessions()
+	pinned, _ := srv.stateDB.PinnedSessions(t.Context())
 	if _, ok := pinned[state.Key{Platform: "opencode", SessionID: "abc123"}]; ok {
 		t.Error("session should be unpinned after POST")
 	}
@@ -1262,7 +1262,7 @@ func TestHandlePinSession_InvalidJSON(t *testing.T) {
 
 func TestApplySessionState_MarksPinned(t *testing.T) {
 	srv := testServer(t)
-	if err := srv.stateDB.PinSession("opencode", "s1"); err != nil {
+	if err := srv.stateDB.PinSession(t.Context(), "opencode", "s1"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1270,7 +1270,7 @@ func TestApplySessionState_MarksPinned(t *testing.T) {
 		{ID: "s1", Platform: "opencode", TimeUpdated: 2000},
 		{ID: "s2", Platform: "opencode", TimeUpdated: 3000},
 	}
-	if err := srv.applySessionState(sessions); err != nil {
+	if err := srv.applySessionState(t.Context(), sessions); err != nil {
 		t.Fatalf("applySessionState: %v", err)
 	}
 	if !sessions[0].Pinned {
@@ -1286,7 +1286,7 @@ func TestApplySessionState_MarksPinned(t *testing.T) {
 
 func TestApplySessionState_PinnedScopesByPlatform(t *testing.T) {
 	srv := testServer(t)
-	if err := srv.stateDB.PinSession("opencode", "shared-id"); err != nil {
+	if err := srv.stateDB.PinSession(t.Context(), "opencode", "shared-id"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1294,7 +1294,7 @@ func TestApplySessionState_PinnedScopesByPlatform(t *testing.T) {
 		{ID: "shared-id", Platform: "opencode", TimeUpdated: 1000},
 		{ID: "shared-id", Platform: "other-platform", TimeUpdated: 1000},
 	}
-	if err := srv.applySessionState(sessions); err != nil {
+	if err := srv.applySessionState(t.Context(), sessions); err != nil {
 		t.Fatalf("applySessionState: %v", err)
 	}
 	if !sessions[0].Pinned {
@@ -1348,7 +1348,7 @@ func TestAutoArchive_UsesRegistry(t *testing.T) {
 
 	srv.autoArchiveInactiveSessions()
 
-	archived, err := srv.stateDB.ArchivedSessions()
+	archived, err := srv.stateDB.ArchivedSessions(t.Context())
 	if err != nil {
 		t.Fatalf("ArchivedSessions: %v", err)
 	}
@@ -1380,7 +1380,7 @@ func TestAutoArchiveProjects(t *testing.T) {
 
 	srv.autoArchiveInactiveProjects()
 
-	archived, err := srv.stateDB.ArchivedProjects()
+	archived, err := srv.stateDB.ArchivedProjects(t.Context())
 	if err != nil {
 		t.Fatalf("ArchivedProjects: %v", err)
 	}
@@ -1410,10 +1410,10 @@ func TestAutoArchiveRespectsRecentUnarchive(t *testing.T) {
 	opencodeplatform.ResetCachesForTests()
 
 	// The user goes looking for the old work and unarchives it.
-	if err := srv.stateDB.UnarchiveSession("opencode", "old-session"); err != nil {
+	if err := srv.stateDB.UnarchiveSession(t.Context(), "opencode", "old-session"); err != nil {
 		t.Fatal(err)
 	}
-	if err := srv.stateDB.UnarchiveProject(state.LocalRemoteID, projectRootForDirectory("/tmp/stale")); err != nil {
+	if err := srv.stateDB.UnarchiveProject(t.Context(), state.LocalRemoteID, projectRootForDirectory("/tmp/stale")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1421,14 +1421,14 @@ func TestAutoArchiveRespectsRecentUnarchive(t *testing.T) {
 	srv.autoArchiveInactiveSessions()
 	srv.autoArchiveInactiveProjects()
 
-	archivedSessions, err := srv.stateDB.ArchivedSessions()
+	archivedSessions, err := srv.stateDB.ArchivedSessions(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := archivedSessions[state.Key{Platform: "opencode", SessionID: "old-session"}]; ok {
 		t.Error("session the user just unarchived was silently re-archived")
 	}
-	archivedProjects, err := srv.stateDB.ArchivedProjects()
+	archivedProjects, err := srv.stateDB.ArchivedProjects(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}

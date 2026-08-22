@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -46,14 +47,14 @@ const remoteSecretKey = "remote_token_secret"
 // This protects stored remote tokens against casual inspection and
 // accidental disclosure. It is NOT designed to withstand an attacker who
 // can read both the state DB and the app-local secret (NFR-4, OQ-10).
-func (d *DB) remoteCipher() (cipher.AEAD, error) {
-	keyMaterial, err := d.AuthSecret()
+func (d *DB) remoteCipher(ctx context.Context) (cipher.AEAD, error) {
+	keyMaterial, err := d.AuthSecret(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if len(keyMaterial) == 0 {
 		// No auth secret configured; fall back to a dedicated secret.
-		stored, ok, err := d.GetSetting(remoteSecretKey)
+		stored, ok, err := d.GetSetting(ctx, remoteSecretKey)
 		if err != nil {
 			return nil, err
 		}
@@ -67,7 +68,7 @@ func (d *DB) remoteCipher() (cipher.AEAD, error) {
 			if _, err := rand.Read(keyMaterial); err != nil {
 				return nil, fmt.Errorf("generating remote secret: %w", err)
 			}
-			if err := d.SetSetting(remoteSecretKey, base64.RawStdEncoding.EncodeToString(keyMaterial)); err != nil {
+			if err := d.SetSetting(ctx, remoteSecretKey, base64.RawStdEncoding.EncodeToString(keyMaterial)); err != nil {
 				return nil, err
 			}
 		}
@@ -82,8 +83,8 @@ func (d *DB) remoteCipher() (cipher.AEAD, error) {
 
 // encryptToken seals plaintext with AES-GCM. The nonce is prepended to
 // the ciphertext so decryptToken is self-contained.
-func (d *DB) encryptToken(plaintext string) ([]byte, error) {
-	aead, err := d.remoteCipher()
+func (d *DB) encryptToken(ctx context.Context, plaintext string) ([]byte, error) {
+	aead, err := d.remoteCipher(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -95,8 +96,8 @@ func (d *DB) encryptToken(plaintext string) ([]byte, error) {
 }
 
 // decryptToken opens a value produced by encryptToken.
-func (d *DB) decryptToken(sealed []byte) (string, error) {
-	aead, err := d.remoteCipher()
+func (d *DB) decryptToken(ctx context.Context, sealed []byte) (string, error) {
+	aead, err := d.remoteCipher(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -114,12 +115,12 @@ func (d *DB) decryptToken(sealed []byte) (string, error) {
 // AddRemote persists a new remote configuration and returns its
 // hub-local ID. The token is encrypted at rest. remote_id is left NULL
 // until a successful Hello (AD-10b).
-func (d *DB) AddRemote(address, token, displayName string) (int64, error) {
-	enc, err := d.encryptToken(token)
+func (d *DB) AddRemote(ctx context.Context, address, token, displayName string) (int64, error) {
+	enc, err := d.encryptToken(ctx, token)
 	if err != nil {
 		return 0, err
 	}
-	res, err := d.db.Exec(
+	res, err := d.db.ExecContext(ctx,
 		`INSERT INTO remote (display_name, address, token_encrypted, enabled, created_at)
 		 VALUES (?, ?, ?, 1, ?)`,
 		displayName, address, enc, time.Now().UnixMilli(),
@@ -143,8 +144,8 @@ func scanRemote(s interface{ Scan(...any) error }) (Remote, error) {
 }
 
 // ListRemotes returns every configured remote, ordered by creation time.
-func (d *DB) ListRemotes() ([]Remote, error) {
-	rows, err := d.db.Query(`SELECT ` + remoteSelectColumns + ` FROM remote ORDER BY created_at`)
+func (d *DB) ListRemotes(ctx context.Context) ([]Remote, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT `+remoteSelectColumns+` FROM remote ORDER BY created_at`)
 	if err != nil {
 		return nil, fmt.Errorf("listing remotes: %w", err)
 	}
@@ -161,8 +162,8 @@ func (d *DB) ListRemotes() ([]Remote, error) {
 }
 
 // GetRemote returns a single remote by hub-local ID.
-func (d *DB) GetRemote(localID int64) (Remote, error) {
-	row := d.db.QueryRow(`SELECT `+remoteSelectColumns+` FROM remote WHERE local_id = ?`, localID)
+func (d *DB) GetRemote(ctx context.Context, localID int64) (Remote, error) {
+	row := d.db.QueryRowContext(ctx, `SELECT `+remoteSelectColumns+` FROM remote WHERE local_id = ?`, localID)
 	r, err := scanRemote(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Remote{}, sql.ErrNoRows
@@ -175,33 +176,33 @@ func (d *DB) GetRemote(localID int64) (Remote, error) {
 
 // RemoteToken returns the decrypted access token for a remote, used when
 // dialing it. Never returned to the browser.
-func (d *DB) RemoteToken(localID int64) (string, error) {
+func (d *DB) RemoteToken(ctx context.Context, localID int64) (string, error) {
 	var sealed []byte
-	err := d.db.QueryRow(`SELECT token_encrypted FROM remote WHERE local_id = ?`, localID).Scan(&sealed)
+	err := d.db.QueryRowContext(ctx, `SELECT token_encrypted FROM remote WHERE local_id = ?`, localID).Scan(&sealed)
 	if err == sql.ErrNoRows {
 		return "", sql.ErrNoRows
 	}
 	if err != nil {
 		return "", fmt.Errorf("reading remote token: %w", err)
 	}
-	return d.decryptToken(sealed)
+	return d.decryptToken(ctx, sealed)
 }
 
 // UpdateRemoteConfig edits the operator-controlled fields of a remote.
 // A non-nil token replaces the stored token; nil leaves it unchanged.
-func (d *DB) UpdateRemoteConfig(localID int64, displayName, address string, enabled bool, token *string) error {
+func (d *DB) UpdateRemoteConfig(ctx context.Context, localID int64, displayName, address string, enabled bool, token *string) error {
 	if token != nil {
-		enc, err := d.encryptToken(*token)
+		enc, err := d.encryptToken(ctx, *token)
 		if err != nil {
 			return err
 		}
-		_, err = d.db.Exec(
+		_, err = d.db.ExecContext(ctx,
 			`UPDATE remote SET display_name = ?, address = ?, enabled = ?, token_encrypted = ? WHERE local_id = ?`,
 			displayName, address, boolToInt(enabled), enc, localID,
 		)
 		return err
 	}
-	_, err := d.db.Exec(
+	_, err := d.db.ExecContext(ctx,
 		`UPDATE remote SET display_name = ?, address = ?, enabled = ? WHERE local_id = ?`,
 		displayName, address, boolToInt(enabled), localID,
 	)
@@ -211,15 +212,15 @@ func (d *DB) UpdateRemoteConfig(localID int64, displayName, address string, enab
 // SetRemoteHealth records the latest connection outcome for a remote.
 // A learned remoteID (non-empty) is persisted; an empty remoteID leaves
 // the stored value untouched so a transient failure doesn't erase it.
-func (d *DB) SetRemoteHealth(localID int64, remoteID, health, hostname string, protocolVersion int, lastSeen int64) error {
+func (d *DB) SetRemoteHealth(ctx context.Context, localID int64, remoteID, health, hostname string, protocolVersion int, lastSeen int64) error {
 	if remoteID != "" {
-		_, err := d.db.Exec(
+		_, err := d.db.ExecContext(ctx,
 			`UPDATE remote SET remote_id = ?, last_health = ?, hostname = ?, protocol_version = ?, last_seen = ? WHERE local_id = ?`,
 			remoteID, health, hostname, protocolVersion, lastSeen, localID,
 		)
 		return err
 	}
-	_, err := d.db.Exec(
+	_, err := d.db.ExecContext(ctx,
 		`UPDATE remote SET last_health = ?, last_seen = ? WHERE local_id = ?`,
 		health, lastSeen, localID,
 	)
@@ -227,8 +228,8 @@ func (d *DB) SetRemoteHealth(localID int64, remoteID, health, hostname string, p
 }
 
 // DeleteRemote removes a remote configuration.
-func (d *DB) DeleteRemote(localID int64) error {
-	_, err := d.db.Exec(`DELETE FROM remote WHERE local_id = ?`, localID)
+func (d *DB) DeleteRemote(ctx context.Context, localID int64) error {
+	_, err := d.db.ExecContext(ctx, `DELETE FROM remote WHERE local_id = ?`, localID)
 	if err != nil {
 		return fmt.Errorf("deleting remote: %w", err)
 	}

@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -40,8 +41,8 @@ type ExternalWorkflowRun struct {
 }
 
 // SetWorkflowRunExternal records which external execution drives a run.
-func (d *DB) SetWorkflowRunExternal(runID, externalID, runner string, now int64) error {
-	if _, err := d.db.Exec(
+func (d *DB) SetWorkflowRunExternal(ctx context.Context, runID, externalID, runner string, now int64) error {
+	if _, err := d.db.ExecContext(ctx,
 		`UPDATE workflow_run SET external_run_id = ?, external_runner = ?, updated_at = ? WHERE id = ?`,
 		externalID, runner, now, runID); err != nil {
 		return fmt.Errorf("linking workflow run to external runner: %w", err)
@@ -52,8 +53,8 @@ func (d *DB) SetWorkflowRunExternal(runID, externalID, runner string, now int64)
 // ListActiveExternalWorkflowRuns returns the runs the mirror still has
 // to poll. Terminal runs are excluded: their rows are final, and a
 // restart must not resurrect them.
-func (d *DB) ListActiveExternalWorkflowRuns() ([]ExternalWorkflowRun, error) {
-	rows, err := d.db.Query(
+func (d *DB) ListActiveExternalWorkflowRuns(ctx context.Context) ([]ExternalWorkflowRun, error) {
+	rows, err := d.db.QueryContext(ctx,
 		`SELECT id, workflow_id, external_run_id, external_runner FROM workflow_run
 		 WHERE external_run_id != '' AND state IN ('active', 'paused') ORDER BY created_at`)
 	if err != nil {
@@ -75,8 +76,8 @@ func (d *DB) ListActiveExternalWorkflowRuns() ([]ExternalWorkflowRun, error) {
 // whether anything actually changed. Polling is frequent and mostly
 // idle, so an unchanged snapshot must not touch the database or wake
 // every SSE subscriber.
-func (d *DB) MirrorWorkflowRun(runID string, snapshot WorkflowMirrorSnapshot, now int64) (bool, error) {
-	tx, err := d.db.Begin()
+func (d *DB) MirrorWorkflowRun(ctx context.Context, runID string, snapshot WorkflowMirrorSnapshot, now int64) (bool, error) {
+	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, fmt.Errorf("beginning workflow mirror: %w", err)
 	}
@@ -84,14 +85,14 @@ func (d *DB) MirrorWorkflowRun(runID string, snapshot WorkflowMirrorSnapshot, no
 
 	changed := false
 	var current string
-	switch err := tx.QueryRow(`SELECT state FROM workflow_run WHERE id = ?`, runID).Scan(&current); {
+	switch err := tx.QueryRowContext(ctx, `SELECT state FROM workflow_run WHERE id = ?`, runID).Scan(&current); {
 	case errors.Is(err, sql.ErrNoRows):
 		return false, fmt.Errorf("mirroring unknown workflow run %q", runID)
 	case err != nil:
 		return false, fmt.Errorf("reading workflow run state: %w", err)
 	}
 	if snapshot.State != "" && snapshot.State != current {
-		if _, err := tx.Exec(
+		if _, err := tx.ExecContext(ctx,
 			`UPDATE workflow_run SET state = ?, updated_at = ?, completed_at = ? WHERE id = ?`,
 			snapshot.State, now, nullableInt(snapshot.CompletedAt), runID); err != nil {
 			return false, fmt.Errorf("mirroring workflow run state: %w", err)
@@ -99,7 +100,7 @@ func (d *DB) MirrorWorkflowRun(runID string, snapshot WorkflowMirrorSnapshot, no
 		changed = true
 	}
 	for _, node := range snapshot.Nodes {
-		nodeChanged, err := mirrorWorkflowNode(tx, runID, node)
+		nodeChanged, err := mirrorWorkflowNode(ctx, tx, runID, node)
 		if err != nil {
 			return false, err
 		}
@@ -114,9 +115,9 @@ func (d *DB) MirrorWorkflowRun(runID string, snapshot WorkflowMirrorSnapshot, no
 	return true, nil
 }
 
-func mirrorWorkflowNode(tx *sql.Tx, runID string, node WorkflowMirrorNode) (bool, error) {
+func mirrorWorkflowNode(ctx context.Context, tx *sql.Tx, runID string, node WorkflowMirrorNode) (bool, error) {
 	var currentState string
-	switch err := tx.QueryRow(
+	switch err := tx.QueryRowContext(ctx,
 		`SELECT state FROM workflow_node_run WHERE run_id = ? AND node_id = ?`,
 		runID, node.NodeID).Scan(&currentState); {
 	case errors.Is(err, sql.ErrNoRows):
@@ -129,7 +130,7 @@ func mirrorWorkflowNode(tx *sql.Tx, runID string, node WorkflowMirrorNode) (bool
 
 	var attemptState, stdout, stderr, attemptError string
 	var exitCode int
-	existing := tx.QueryRow(
+	existing := tx.QueryRowContext(ctx,
 		`SELECT state, COALESCE(stdout, ''), COALESCE(stderr, ''), COALESCE(exit_code, 0), COALESCE(error, '')
 		 FROM workflow_node_attempt WHERE run_id = ? AND node_id = ? AND seq = 1`, runID, node.NodeID)
 	hasAttempt := true
@@ -145,7 +146,7 @@ func mirrorWorkflowNode(tx *sql.Tx, runID string, node WorkflowMirrorNode) (bool
 	if unchanged {
 		return false, nil
 	}
-	if _, err := tx.Exec(
+	if _, err := tx.ExecContext(ctx,
 		`UPDATE workflow_node_run SET state = ?, completed_at = ? WHERE run_id = ? AND node_id = ?`,
 		node.State, nullableInt(node.CompletedAt), runID, node.NodeID); err != nil {
 		return false, fmt.Errorf("mirroring workflow node state: %w", err)
@@ -153,7 +154,7 @@ func mirrorWorkflowNode(tx *sql.Tx, runID string, node WorkflowMirrorNode) (bool
 	// ponytail: one attempt row per node, updated in place. Dagu's own
 	// per-step retries collapse into it; give each retryCount its own seq
 	// if per-attempt history for command steps is ever needed.
-	if _, err := tx.Exec(
+	if _, err := tx.ExecContext(ctx,
 		`INSERT INTO workflow_node_attempt (run_id, node_id, seq, state, started_at, completed_at, stdout, stderr, exit_code, error)
 		 VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT (run_id, node_id, seq) DO UPDATE SET
@@ -169,9 +170,9 @@ func mirrorWorkflowNode(tx *sql.Tx, runID string, node WorkflowMirrorNode) (bool
 
 // GetWorkflowRunExternal returns the external execution driving a run,
 // or an empty record when ocman's own dispatcher owns it.
-func (d *DB) GetWorkflowRunExternal(runID string) (ExternalWorkflowRun, error) {
+func (d *DB) GetWorkflowRunExternal(ctx context.Context, runID string) (ExternalWorkflowRun, error) {
 	run := ExternalWorkflowRun{RunID: runID}
-	err := d.db.QueryRow(
+	err := d.db.QueryRowContext(ctx,
 		`SELECT workflow_id, external_run_id, external_runner FROM workflow_run WHERE id = ?`,
 		runID).Scan(&run.WorkflowID, &run.ExternalID, &run.Runner)
 	if errors.Is(err, sql.ErrNoRows) {

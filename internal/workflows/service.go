@@ -408,56 +408,56 @@ type Attempt struct {
 }
 
 type Store interface {
-	InsertWorkflowVersion(state.WorkflowVersion) (state.WorkflowVersion, error)
-	GetWorkflowVersion(string) (*state.WorkflowVersion, error)
-	GetActiveWorkflowVersion(string) (*state.WorkflowVersion, error)
-	ListWorkflowVersions() ([]state.WorkflowVersion, error)
-	ActivateWorkflowVersion(string, int64) (*state.WorkflowVersion, error)
-	DeactivateWorkflowVersion(string, int64) (*state.WorkflowVersion, error)
-	ArchiveWorkflowVersion(string, int64) error
-	InsertWorkflowRun(state.WorkflowRun) error
-	GetWorkflowRun(string) (*state.WorkflowRun, error)
-	ListWorkflowRuns() ([]state.WorkflowRun, error)
-	ListCurrentWorkflowVersions() ([]state.WorkflowVersion, error)
-	ListQueuedWorkflowVersions() ([]state.WorkflowVersion, error)
-	GetWorkflowTriggerState(string, string) (state.WorkflowTriggerState, error)
-	UpsertWorkflowTriggerState(state.WorkflowTriggerState) error
-	CommitWorkflowTriggerFiring(*state.WorkflowRun, state.WorkflowTriggerFiring, state.WorkflowTriggerState) error
-	CountActiveWorkflowTriggerRuns(string, string) (int, error)
-	ActiveWorkflowTriggerRunID(string, string) (string, error)
-	CountQueuedWorkflowTriggerFirings(string, string) (int, error)
-	NextQueuedWorkflowTriggerFiring(string, string) (*state.WorkflowTriggerFiring, error)
-	InsertWorkflowRunFromQueued(state.WorkflowRun, int64, int64, state.WorkflowTriggerState) error
-	ApproveWorkflowNode(string, string, int64) error
-	StartWorkflowCommand(string, string, []state.WorkflowResourceRequest, *state.WorkflowWorkspaceRequest, int64) (bool, error)
-	CompleteWorkflowCommand(string, string, state.WorkflowCommandResult, int64) error
-	SetWorkflowRunState(string, string, string, int64) error
-	FailWorkflowRun(string, string, int64) error
-	ClaimWorkflowAgentAttempt(string, string, int64, string, string, []state.WorkflowResourceRequest, *state.WorkflowWorkspaceRequest, int64) (bool, error)
-	ListWorkflowResourceLeases(string) ([]state.WorkflowResourceLease, error)
-	ListWorkflowWorkspaceLeases(string) ([]state.WorkflowWorkspaceLease, error)
-	SetWorkflowWorkspaceShardPath(string, string, string) error
-	AttachWorkflowAgentSession(string, string, int64, string, string, string, int64) error
-	SetWorkflowAgentSessionState(string, string, int64, string, string, int64) error
-	CompleteWorkflowAgentNode(string, string, int64, state.WorkflowAgentResult, int64) error
-	ResolveWorkflowAttempt(string, int64, string, int64) error
-	ResolveWorkflowAttemptBy(string, int64, string, string, int64) error
-	MarkWorkflowAttemptUnknown(string, string, int64, string, int64) error
-	RetryWorkflowAttempt(string, string, int64, string, string, int64) error
-	InsertWorkflowArtifact(state.WorkflowArtifact) error
-	ListWorkflowArtifacts(string) ([]state.WorkflowArtifact, error)
-	GetWorkflowArtifact(string) (*state.WorkflowArtifact, error)
-	ExpiredWorkflowArtifactHashes(int64) ([]string, error)
-	MarkWorkflowArtifactPayloadDeleted(string) error
-	CreateWorkflowMapItem(state.WorkflowMapItem, state.WorkflowRun) (bool, error)
-	ListWorkflowMapItems(string, string) ([]state.WorkflowMapItem, error)
-	SetWorkflowMapItemState(string, string, string, string) error
-	ListWorkflowChildRuns(string) ([]state.WorkflowRun, error)
-	StartWorkflowNode(string, string, []state.WorkflowResourceRequest, int64) (bool, error)
-	SettleWorkflowNode(string, string, int64, bool, string, string, int64) error
-	SkipWorkflowNode(string, string, string, int64) error
-	RepeatWorkflowNode(string, string, int64, string, int64) error
-	ExhaustWorkflowRepeat(string, string, string, int64) error
+	InsertWorkflowVersion(context.Context, state.WorkflowVersion) (state.WorkflowVersion, error)
+	GetWorkflowVersion(context.Context, string) (*state.WorkflowVersion, error)
+	GetActiveWorkflowVersion(context.Context, string) (*state.WorkflowVersion, error)
+	ListWorkflowVersions(context.Context) ([]state.WorkflowVersion, error)
+	ActivateWorkflowVersion(context.Context, string, int64) (*state.WorkflowVersion, error)
+	DeactivateWorkflowVersion(context.Context, string, int64) (*state.WorkflowVersion, error)
+	ArchiveWorkflowVersion(context.Context, string, int64) error
+	InsertWorkflowRun(context.Context, state.WorkflowRun) error
+	GetWorkflowRun(context.Context, string) (*state.WorkflowRun, error)
+	ListWorkflowRuns(context.Context) ([]state.WorkflowRun, error)
+	ListCurrentWorkflowVersions(context.Context) ([]state.WorkflowVersion, error)
+	ListQueuedWorkflowVersions(context.Context) ([]state.WorkflowVersion, error)
+	GetWorkflowTriggerState(context.Context, string, string) (state.WorkflowTriggerState, error)
+	UpsertWorkflowTriggerState(context.Context, state.WorkflowTriggerState) error
+	CommitWorkflowTriggerFiring(context.Context, *state.WorkflowRun, state.WorkflowTriggerFiring, state.WorkflowTriggerState) error
+	CountActiveWorkflowTriggerRuns(context.Context, string, string) (int, error)
+	ActiveWorkflowTriggerRunID(context.Context, string, string) (string, error)
+	CountQueuedWorkflowTriggerFirings(context.Context, string, string) (int, error)
+	NextQueuedWorkflowTriggerFiring(context.Context, string, string) (*state.WorkflowTriggerFiring, error)
+	InsertWorkflowRunFromQueued(context.Context, state.WorkflowRun, int64, int64, state.WorkflowTriggerState) error
+	ApproveWorkflowNode(context.Context, string, string, int64) error
+	StartWorkflowCommand(context.Context, string, string, []state.WorkflowResourceRequest, *state.WorkflowWorkspaceRequest, int64) (bool, error)
+	CompleteWorkflowCommand(context.Context, string, string, state.WorkflowCommandResult, int64) error
+	SetWorkflowRunState(context.Context, string, string, string, int64) error
+	FailWorkflowRun(context.Context, string, string, int64) error
+	ClaimWorkflowAgentAttempt(context.Context, string, string, int64, string, string, []state.WorkflowResourceRequest, *state.WorkflowWorkspaceRequest, int64) (bool, error)
+	ListWorkflowResourceLeases(context.Context, string) ([]state.WorkflowResourceLease, error)
+	ListWorkflowWorkspaceLeases(context.Context, string) ([]state.WorkflowWorkspaceLease, error)
+	SetWorkflowWorkspaceShardPath(context.Context, string, string, string) error
+	AttachWorkflowAgentSession(context.Context, string, string, int64, string, string, string, int64) error
+	SetWorkflowAgentSessionState(context.Context, string, string, int64, string, string, int64) error
+	CompleteWorkflowAgentNode(context.Context, string, string, int64, state.WorkflowAgentResult, int64) error
+	ResolveWorkflowAttempt(context.Context, string, int64, string, int64) error
+	ResolveWorkflowAttemptBy(context.Context, string, int64, string, string, int64) error
+	MarkWorkflowAttemptUnknown(context.Context, string, string, int64, string, int64) error
+	RetryWorkflowAttempt(context.Context, string, string, int64, string, string, int64) error
+	InsertWorkflowArtifact(context.Context, state.WorkflowArtifact) error
+	ListWorkflowArtifacts(context.Context, string) ([]state.WorkflowArtifact, error)
+	GetWorkflowArtifact(context.Context, string) (*state.WorkflowArtifact, error)
+	ExpiredWorkflowArtifactHashes(context.Context, int64) ([]string, error)
+	MarkWorkflowArtifactPayloadDeleted(context.Context, string) error
+	CreateWorkflowMapItem(context.Context, state.WorkflowMapItem, state.WorkflowRun) (bool, error)
+	ListWorkflowMapItems(context.Context, string, string) ([]state.WorkflowMapItem, error)
+	SetWorkflowMapItemState(context.Context, string, string, string, string) error
+	ListWorkflowChildRuns(context.Context, string) ([]state.WorkflowRun, error)
+	StartWorkflowNode(context.Context, string, string, []state.WorkflowResourceRequest, int64) (bool, error)
+	SettleWorkflowNode(context.Context, string, string, int64, bool, string, string, int64) error
+	SkipWorkflowNode(context.Context, string, string, string, int64) error
+	RepeatWorkflowNode(context.Context, string, string, int64, string, int64) error
+	ExhaustWorkflowRepeat(context.Context, string, string, string, int64) error
 }
 
 // WorkspaceProvider creates (or reuses) the on-disk worktree shard for a
@@ -513,10 +513,10 @@ type Service struct {
 	//	             so content-addressed dedup cannot hand a fresh
 	//	             artifact a payload cleanup is about to remove.
 	//	mu         — guards the in-memory run bookkeeping maps below.
-	dispatchMu sync.Mutex
-	triggerMu  sync.Mutex
-	artifactMu sync.Mutex
-	mu         sync.Mutex
+	dispatchMu     sync.Mutex
+	triggerMu      sync.Mutex
+	artifactMu     sync.Mutex
+	mu             sync.Mutex
 	running        map[string]map[string]*activeCommand
 	stopping       map[string]bool
 	ownedRuns      map[string]bool
@@ -554,20 +554,20 @@ func NewService(deps Deps) *Service {
 		resolveSecret = os.Getenv
 	}
 	return &Service{
-		store:          deps.Store,
-		now:            now,
-		notify:         deps.Notify,
-		notifyTrigger:  deps.NotifyTrigger,
-		forge:          deps.Forge,
-		status:         deps.Status,
-		executor:       executor,
-		agent:          deps.Agent,
-		usage:          deps.Usage,
-		workspace:      deps.Workspace,
-		blobs:          deps.Blobs,
-		resolveSecret:  resolveSecret,
-		running:        make(map[string]map[string]*activeCommand),
-		stopping:       make(map[string]bool),
+		store:           deps.Store,
+		now:             now,
+		notify:          deps.Notify,
+		notifyTrigger:   deps.NotifyTrigger,
+		forge:           deps.Forge,
+		status:          deps.Status,
+		executor:        executor,
+		agent:           deps.Agent,
+		usage:           deps.Usage,
+		workspace:       deps.Workspace,
+		blobs:           deps.Blobs,
+		resolveSecret:   resolveSecret,
+		running:         make(map[string]map[string]*activeCommand),
+		stopping:        make(map[string]bool),
 		ownedRuns:       make(map[string]bool),
 		reconciledRuns:  make(map[string]bool),
 		inspectFailures: make(map[int64]int),
@@ -591,8 +591,8 @@ func (s *Service) clearInspectFailures(attemptID int64) {
 	s.mu.Unlock()
 }
 
-func (s *Service) ValidateJSON(_ context.Context, source []byte) (Definition, error) {
-	definition, _, err := s.prepareDefinition(source)
+func (s *Service) ValidateJSON(ctx context.Context, source []byte) (Definition, error) {
+	definition, _, err := s.prepareDefinition(ctx, source)
 	return definition, err
 }
 
@@ -600,7 +600,7 @@ func (s *Service) ValidateJSON(_ context.Context, source []byte) (Definition, er
 // resolves + pins + inlines its subworkflow references and validates the
 // resulting graph. The returned definition is the canonical, fully
 // inlined form persisted for a new version.
-func (s *Service) prepareDefinition(source []byte) (Definition, []byte, error) {
+func (s *Service) prepareDefinition(ctx context.Context, source []byte) (Definition, []byte, error) {
 	authored, _, _, err := decodeDefinition(source)
 	if err != nil {
 		return Definition{}, nil, err
@@ -608,7 +608,7 @@ func (s *Service) prepareDefinition(source []byte) (Definition, []byte, error) {
 	if err := validateAuthoredDefinition(authored); err != nil {
 		return Definition{}, nil, err
 	}
-	inlined, err := s.inlineSubworkflows(authored)
+	inlined, err := s.inlineSubworkflows(ctx, authored)
 	if err != nil {
 		return Definition{}, nil, err
 	}
@@ -622,8 +622,8 @@ func (s *Service) prepareDefinition(source []byte) (Definition, []byte, error) {
 	return inlined, canonical, nil
 }
 
-func (s *Service) PublishJSON(_ context.Context, source []byte) (Version, error) {
-	definition, canonical, err := s.prepareDefinition(source)
+func (s *Service) PublishJSON(ctx context.Context, source []byte) (Version, error) {
+	definition, canonical, err := s.prepareDefinition(ctx, source)
 	if err != nil {
 		return Version{}, err
 	}
@@ -639,7 +639,7 @@ func (s *Service) PublishJSON(_ context.Context, source []byte) (Version, error)
 		CreatedAt:       now,
 	}
 	row.Nodes, row.Dependencies = versionNodeRows(definition)
-	row, err = s.store.InsertWorkflowVersion(row)
+	row, err = s.store.InsertWorkflowVersion(ctx, row)
 	if err != nil {
 		return Version{}, err
 	}
@@ -650,8 +650,8 @@ func (s *Service) Publish(ctx context.Context, source []byte) (Version, error) {
 	return s.PublishJSON(ctx, source)
 }
 
-func (s *Service) Validate(_ context.Context, source []byte) (Validation, error) {
-	definition, canonical, err := s.prepareDefinition(source)
+func (s *Service) Validate(ctx context.Context, source []byte) (Validation, error) {
+	definition, canonical, err := s.prepareDefinition(ctx, source)
 	if err != nil {
 		return Validation{}, err
 	}
@@ -662,36 +662,36 @@ func (s *Service) Validate(_ context.Context, source []byte) (Validation, error)
 	return Validation{Definition: definition, CanonicalJSON: canonical, YAML: stableYAML}, nil
 }
 
-func (s *Service) Activate(_ context.Context, id string) (Version, error) {
-	row, err := s.store.ActivateWorkflowVersion(id, s.now().UnixMilli())
+func (s *Service) Activate(ctx context.Context, id string) (Version, error) {
+	row, err := s.store.ActivateWorkflowVersion(ctx, id, s.now().UnixMilli())
 	if err != nil {
 		return Version{}, err
 	}
 	return versionFromRow(*row)
 }
 
-func (s *Service) Deactivate(_ context.Context, id string) (Version, error) {
-	row, err := s.store.DeactivateWorkflowVersion(id, s.now().UnixMilli())
+func (s *Service) Deactivate(ctx context.Context, id string) (Version, error) {
+	row, err := s.store.DeactivateWorkflowVersion(ctx, id, s.now().UnixMilli())
 	if err != nil {
 		return Version{}, err
 	}
 	return versionFromRow(*row)
 }
 
-func (s *Service) Archive(_ context.Context, id string) error {
-	return s.store.ArchiveWorkflowVersion(id, s.now().UnixMilli())
+func (s *Service) Archive(ctx context.Context, id string) error {
+	return s.store.ArchiveWorkflowVersion(ctx, id, s.now().UnixMilli())
 }
 
 func (s *Service) StartActive(ctx context.Context, workflowID string) (RunDetail, error) {
-	version, err := s.store.GetActiveWorkflowVersion(workflowID)
+	version, err := s.store.GetActiveWorkflowVersion(ctx, workflowID)
 	if err != nil {
 		return RunDetail{}, err
 	}
 	return s.Start(ctx, version.ID)
 }
 
-func (s *Service) GetVersion(_ context.Context, id string) (Version, error) {
-	row, err := s.store.GetWorkflowVersion(id)
+func (s *Service) GetVersion(ctx context.Context, id string) (Version, error) {
+	row, err := s.store.GetWorkflowVersion(ctx, id)
 	if err != nil {
 		return Version{}, err
 	}
@@ -699,12 +699,12 @@ func (s *Service) GetVersion(_ context.Context, id string) (Version, error) {
 	if err != nil {
 		return Version{}, err
 	}
-	version.TriggerStates, err = s.triggerStatuses(id, version.Definition.Triggers)
+	version.TriggerStates, err = s.triggerStatuses(ctx, id, version.Definition.Triggers)
 	return version, err
 }
 
-func (s *Service) ListVersions(_ context.Context) ([]Version, error) {
-	rows, err := s.store.ListWorkflowVersions()
+func (s *Service) ListVersions(ctx context.Context) ([]Version, error) {
+	rows, err := s.store.ListWorkflowVersions(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -714,7 +714,7 @@ func (s *Service) ListVersions(_ context.Context) ([]Version, error) {
 		if err != nil {
 			return nil, err
 		}
-		version.TriggerStates, err = s.triggerStatuses(row.ID, version.Definition.Triggers)
+		version.TriggerStates, err = s.triggerStatuses(ctx, row.ID, version.Definition.Triggers)
 		if err != nil {
 			return nil, err
 		}
@@ -723,14 +723,14 @@ func (s *Service) ListVersions(_ context.Context) ([]Version, error) {
 	return out, nil
 }
 
-func (s *Service) triggerStatuses(versionID string, triggers []Trigger) ([]TriggerStatus, error) {
+func (s *Service) triggerStatuses(ctx context.Context, versionID string, triggers []Trigger) ([]TriggerStatus, error) {
 	out := make([]TriggerStatus, 0, len(triggers))
 	for _, trigger := range triggers {
-		row, err := s.triggerState(versionID, trigger.ID)
+		row, err := s.triggerState(ctx, versionID, trigger.ID)
 		if err != nil {
 			return nil, err
 		}
-		queued, err := s.store.CountQueuedWorkflowTriggerFirings(versionID, trigger.ID)
+		queued, err := s.store.CountQueuedWorkflowTriggerFirings(ctx, versionID, trigger.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -740,9 +740,9 @@ func (s *Service) triggerStatuses(versionID string, triggers []Trigger) ([]Trigg
 }
 
 func (s *Service) Start(ctx context.Context, versionID string) (RunDetail, error) {
-	version, err := s.store.GetWorkflowVersion(versionID)
+	version, err := s.store.GetWorkflowVersion(ctx, versionID)
 	if err != nil {
-		version, err = s.store.GetActiveWorkflowVersion(versionID)
+		version, err = s.store.GetActiveWorkflowVersion(ctx, versionID)
 		if err != nil {
 			return RunDetail{}, fmt.Errorf("workflow version or definition %q not found: %w", versionID, err)
 		}
@@ -780,9 +780,9 @@ func (s *Service) RetryFrom(ctx context.Context, sourceRunID, nodeID, targetVers
 	}
 	var targetRow *state.WorkflowVersion
 	if targetVersionID == "" {
-		targetRow, err = s.store.GetActiveWorkflowVersion(source.WorkflowID)
+		targetRow, err = s.store.GetActiveWorkflowVersion(ctx, source.WorkflowID)
 	} else {
-		targetRow, err = s.store.GetWorkflowVersion(targetVersionID)
+		targetRow, err = s.store.GetWorkflowVersion(ctx, targetVersionID)
 	}
 	if err != nil {
 		return RunDetail{}, err
@@ -821,7 +821,7 @@ func (s *Service) RetryFrom(ctx context.Context, sourceRunID, nodeID, targetVers
 		}
 		run.Nodes = append(run.Nodes, nodeRun)
 	}
-	if err := s.store.InsertWorkflowRun(run); err != nil {
+	if err := s.store.InsertWorkflowRun(ctx, run); err != nil {
 		return RunDetail{}, err
 	}
 	s.markOwned(run.ID)
@@ -964,7 +964,7 @@ func (s *Service) fireLocked(ctx context.Context, version state.WorkflowVersion,
 	if err != nil {
 		return RunDetail{}, err
 	}
-	activeRunID, err := s.store.ActiveWorkflowTriggerRunID(version.ID, trigger.ID)
+	activeRunID, err := s.store.ActiveWorkflowTriggerRunID(ctx, version.ID, trigger.ID)
 	if err != nil {
 		return RunDetail{}, err
 	}
@@ -978,7 +978,7 @@ func (s *Service) fireLocked(ctx context.Context, version state.WorkflowVersion,
 	var stateRow state.WorkflowTriggerState
 	if pendingState != nil {
 		stateRow = *pendingState
-	} else if stateRow, err = s.triggerState(version.ID, trigger.ID); err != nil {
+	} else if stateRow, err = s.triggerState(ctx, version.ID, trigger.ID); err != nil {
 		return RunDetail{}, err
 	}
 	stateRow.LastFiredAt, stateRow.LastDecision = firedAt, decision
@@ -987,7 +987,7 @@ func (s *Service) fireLocked(ctx context.Context, version state.WorkflowVersion,
 	}
 	firing := state.WorkflowTriggerFiring{VersionID: version.ID, TriggerID: trigger.ID, FiredAt: firedAt, Detail: detail, SnapshotJSON: string(snapshotJSON), Decision: decision}
 	if decision != DecisionStarted {
-		if err := s.store.CommitWorkflowTriggerFiring(nil, firing, stateRow); err != nil {
+		if err := s.store.CommitWorkflowTriggerFiring(ctx, nil, firing, stateRow); err != nil {
 			return RunDetail{}, err
 		}
 		s.triggerChanged()
@@ -997,7 +997,7 @@ func (s *Service) fireLocked(ctx context.Context, version state.WorkflowVersion,
 	run := s.newRun(version, snapshot)
 	firing.RunID, firing.StartedAt = run.ID, s.now().UnixMilli()
 	stateRow.LastRunID = run.ID
-	if err := s.store.CommitWorkflowTriggerFiring(&run, firing, stateRow); err != nil {
+	if err := s.store.CommitWorkflowTriggerFiring(ctx, &run, firing, stateRow); err != nil {
 		return RunDetail{}, err
 	}
 	s.markOwned(run.ID)
@@ -1036,8 +1036,8 @@ func (s *Service) startExternally(ctx context.Context, runID string, version sta
 	return s.externalRunner.StartRun(ctx, runID, parsed.Definition)
 }
 
-func (s *Service) ListRuns(_ context.Context) ([]Run, error) {
-	rows, err := s.store.ListWorkflowRuns()
+func (s *Service) ListRuns(ctx context.Context) ([]Run, error) {
+	rows, err := s.store.ListWorkflowRuns(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1053,8 +1053,8 @@ func (s *Service) ListRuns(_ context.Context) ([]Run, error) {
 	return out, nil
 }
 
-func (s *Service) GetTrigger(_ context.Context, versionID, triggerID string) (TriggerStatus, error) {
-	version, err := s.store.GetWorkflowVersion(versionID)
+func (s *Service) GetTrigger(ctx context.Context, versionID, triggerID string) (TriggerStatus, error) {
+	version, err := s.store.GetWorkflowVersion(ctx, versionID)
 	if err != nil {
 		return TriggerStatus{}, err
 	}
@@ -1073,11 +1073,11 @@ func (s *Service) GetTrigger(_ context.Context, versionID, triggerID string) (Tr
 	if !found {
 		return TriggerStatus{}, fmt.Errorf("workflow trigger %q not found", triggerID)
 	}
-	row, err := s.triggerState(versionID, triggerID)
+	row, err := s.triggerState(ctx, versionID, triggerID)
 	if err != nil {
 		return TriggerStatus{}, err
 	}
-	queued, err := s.store.CountQueuedWorkflowTriggerFirings(versionID, triggerID)
+	queued, err := s.store.CountQueuedWorkflowTriggerFirings(ctx, versionID, triggerID)
 	if err != nil {
 		return TriggerStatus{}, err
 	}
@@ -1088,12 +1088,12 @@ func (s *Service) EvaluateTriggers(ctx context.Context) error {
 	s.triggerMu.Lock()
 	defer s.triggerMu.Unlock()
 	var errs []error
-	queuedVersions, err := s.store.ListQueuedWorkflowVersions()
+	queuedVersions, err := s.store.ListQueuedWorkflowVersions(ctx)
 	if err != nil {
 		return err
 	}
 	for _, listed := range queuedVersions {
-		version, err := s.store.GetWorkflowVersion(listed.ID)
+		version, err := s.store.GetWorkflowVersion(ctx, listed.ID)
 		if err != nil {
 			return err
 		}
@@ -1107,12 +1107,12 @@ func (s *Service) EvaluateTriggers(ctx context.Context) error {
 			}
 		}
 	}
-	versions, err := s.store.ListCurrentWorkflowVersions()
+	versions, err := s.store.ListCurrentWorkflowVersions(ctx)
 	if err != nil {
 		return err
 	}
 	for _, listed := range versions {
-		version, err := s.store.GetWorkflowVersion(listed.ID)
+		version, err := s.store.GetWorkflowVersion(ctx, listed.ID)
 		if err != nil {
 			return err
 		}
@@ -1133,7 +1133,7 @@ func (s *Service) EvaluateTriggers(ctx context.Context) error {
 }
 
 func (s *Service) evaluateTrigger(ctx context.Context, version state.WorkflowVersion, trigger Trigger) error {
-	row, err := s.triggerState(version.ID, trigger.ID)
+	row, err := s.triggerState(ctx, version.ID, trigger.ID)
 	if err != nil {
 		return err
 	}
@@ -1162,7 +1162,7 @@ func (s *Service) evaluateTrigger(ctx context.Context, version state.WorkflowVer
 		row.LastRunning = running
 	}
 	if !fire {
-		if err := s.store.UpsertWorkflowTriggerState(row); err != nil {
+		if err := s.store.UpsertWorkflowTriggerState(ctx, row); err != nil {
 			return err
 		}
 		s.triggerChanged()
@@ -1173,11 +1173,11 @@ func (s *Service) evaluateTrigger(ctx context.Context, version state.WorkflowVer
 }
 
 func (s *Service) drainQueued(ctx context.Context, version state.WorkflowVersion, trigger Trigger) (bool, error) {
-	active, err := s.store.CountActiveWorkflowTriggerRuns(version.ID, trigger.ID)
+	active, err := s.store.CountActiveWorkflowTriggerRuns(ctx, version.ID, trigger.ID)
 	if err != nil || active > 0 {
 		return false, err
 	}
-	queued, err := s.store.NextQueuedWorkflowTriggerFiring(version.ID, trigger.ID)
+	queued, err := s.store.NextQueuedWorkflowTriggerFiring(ctx, version.ID, trigger.ID)
 	if err != nil || queued == nil {
 		return false, err
 	}
@@ -1185,13 +1185,13 @@ func (s *Service) drainQueued(ctx context.Context, version state.WorkflowVersion
 	if err := json.Unmarshal([]byte(queued.SnapshotJSON), &snapshot); err != nil {
 		return false, err
 	}
-	row, err := s.triggerState(version.ID, trigger.ID)
+	row, err := s.triggerState(ctx, version.ID, trigger.ID)
 	if err != nil {
 		return false, err
 	}
 	run := s.newRun(version, snapshot)
 	row.LastDecision, row.LastRunID = DecisionStarted, run.ID
-	if err := s.store.InsertWorkflowRunFromQueued(run, queued.ID, s.now().UnixMilli(), row); err != nil {
+	if err := s.store.InsertWorkflowRunFromQueued(ctx, run, queued.ID, s.now().UnixMilli(), row); err != nil {
 		return false, err
 	}
 	s.markOwned(run.ID)
@@ -1290,8 +1290,8 @@ func nextCheck(trigger Trigger, lastFired int64, now time.Time) int64 {
 	return 0
 }
 
-func (s *Service) triggerState(versionID, triggerID string) (state.WorkflowTriggerState, error) {
-	row, err := s.store.GetWorkflowTriggerState(versionID, triggerID)
+func (s *Service) triggerState(ctx context.Context, versionID, triggerID string) (state.WorkflowTriggerState, error) {
+	row, err := s.store.GetWorkflowTriggerState(ctx, versionID, triggerID)
 	if err == nil {
 		return row, nil
 	}
@@ -1302,7 +1302,7 @@ func (s *Service) triggerState(versionID, triggerID string) (state.WorkflowTrigg
 }
 
 func (s *Service) GetRun(ctx context.Context, id string) (RunDetail, error) {
-	run, err := s.store.GetWorkflowRun(id)
+	run, err := s.store.GetWorkflowRun(ctx, id)
 	if err != nil {
 		return RunDetail{}, err
 	}
@@ -1320,12 +1320,12 @@ func (s *Service) GetRun(ctx context.Context, id string) (RunDetail, error) {
 		node.Result = nodeResult(node)
 		detail.Nodes = append(detail.Nodes, node)
 	}
-	leases, err := s.store.ListWorkflowResourceLeases(id)
+	leases, err := s.store.ListWorkflowResourceLeases(ctx, id)
 	if err != nil {
 		return RunDetail{}, err
 	}
 	detail.Resources = resourceView(detail, leases)
-	workspace, err := s.store.ListWorkflowWorkspaceLeases(id)
+	workspace, err := s.store.ListWorkflowWorkspaceLeases(ctx, id)
 	if err != nil {
 		return RunDetail{}, err
 	}
@@ -1335,7 +1335,7 @@ func (s *Service) GetRun(ctx context.Context, id string) (RunDetail, error) {
 			Paths: lease.Paths, Commit: lease.CommitLease, Host: lease.Host, ShardPath: lease.ShardPath, AcquiredAt: lease.AcquiredAt,
 		})
 	}
-	children, err := s.mapItemRuns(detail)
+	children, err := s.mapItemRuns(ctx, detail)
 	if err != nil {
 		return RunDetail{}, err
 	}
@@ -1531,13 +1531,13 @@ func workflowResultTime(milliseconds int64) *string {
 // mapItemRuns collects every mapped item across the run's map nodes, in
 // input order, so the run UI can nest and link child runs under their
 // parent map node.
-func (s *Service) mapItemRuns(detail RunDetail) ([]MapItemRun, error) {
+func (s *Service) mapItemRuns(ctx context.Context, detail RunDetail) ([]MapItemRun, error) {
 	var out []MapItemRun
 	for _, node := range detail.Nodes {
 		if node.Type != "map" {
 			continue
 		}
-		items, err := s.store.ListWorkflowMapItems(detail.ID, node.NodeID)
+		items, err := s.store.ListWorkflowMapItems(ctx, detail.ID, node.NodeID)
 		if err != nil {
 			return nil, err
 		}
@@ -1589,7 +1589,7 @@ func resourceView(detail RunDetail, leases []state.WorkflowResourceLease) []Reso
 }
 
 func (s *Service) Approve(ctx context.Context, runID, nodeID string) (RunDetail, error) {
-	if err := s.store.ApproveWorkflowNode(runID, nodeID, s.now().UnixMilli()); err != nil {
+	if err := s.store.ApproveWorkflowNode(ctx, runID, nodeID, s.now().UnixMilli()); err != nil {
 		return RunDetail{}, err
 	}
 	s.changed(runID)
@@ -1607,7 +1607,7 @@ func (s *Service) Approve(ctx context.Context, runID, nodeID string) (RunDetail,
 func (s *Service) Pause(ctx context.Context, runID string) (RunDetail, error) {
 	s.dispatchMu.Lock()
 	defer s.dispatchMu.Unlock()
-	if err := s.store.SetWorkflowRunState(runID, StateActive, StatePaused, s.now().UnixMilli()); err != nil {
+	if err := s.store.SetWorkflowRunState(ctx, runID, StateActive, StatePaused, s.now().UnixMilli()); err != nil {
 		return RunDetail{}, err
 	}
 	s.changed(runID)
@@ -1615,7 +1615,7 @@ func (s *Service) Pause(ctx context.Context, runID string) (RunDetail, error) {
 }
 
 func (s *Service) Resume(ctx context.Context, runID string) (RunDetail, error) {
-	if err := s.store.SetWorkflowRunState(runID, StatePaused, StateActive, s.now().UnixMilli()); err != nil {
+	if err := s.store.SetWorkflowRunState(ctx, runID, StatePaused, StateActive, s.now().UnixMilli()); err != nil {
 		return RunDetail{}, err
 	}
 	s.changed(runID)
@@ -1626,7 +1626,7 @@ func (s *Service) ResolveUnknown(ctx context.Context, runID string, attemptID in
 	if resolution != ResolutionSucceeded && resolution != ResolutionFailed && resolution != ResolutionRetry {
 		return RunDetail{}, fmt.Errorf("resolution must be %q, %q, or %q", ResolutionSucceeded, ResolutionFailed, ResolutionRetry)
 	}
-	if err := s.store.ResolveWorkflowAttemptBy(runID, attemptID, resolution, "user", s.now().UnixMilli()); err != nil {
+	if err := s.store.ResolveWorkflowAttemptBy(ctx, runID, attemptID, resolution, "user", s.now().UnixMilli()); err != nil {
 		return RunDetail{}, fmt.Errorf("resolving unknown attempt: %w", err)
 	}
 	s.changed(runID)
@@ -1641,7 +1641,7 @@ func (s *Service) ResolveUnknown(ctx context.Context, runID string, attemptID in
 func (s *Service) Cancel(ctx context.Context, runID string) (RunDetail, error) {
 	s.dispatchMu.Lock()
 	defer s.dispatchMu.Unlock()
-	run, err := s.store.GetWorkflowRun(runID)
+	run, err := s.store.GetWorkflowRun(ctx, runID)
 	if err != nil {
 		return RunDetail{}, err
 	}
@@ -1678,13 +1678,13 @@ func (s *Service) Cancel(ctx context.Context, runID string) (RunDetail, error) {
 				if err != nil {
 					message = err.Error()
 				}
-				if stateErr := s.store.SetWorkflowAgentSessionState(runID, node.NodeID, attempt.ID, StateCanceled, message, s.now().UnixMilli()); stateErr != nil {
+				if stateErr := s.store.SetWorkflowAgentSessionState(ctx, runID, node.NodeID, attempt.ID, StateCanceled, message, s.now().UnixMilli()); stateErr != nil {
 					return RunDetail{}, stateErr
 				}
 			}
 		}
 	}
-	if err := s.store.SetWorkflowRunState(runID, run.State, StateCanceled, s.now().UnixMilli()); err != nil {
+	if err := s.store.SetWorkflowRunState(ctx, runID, run.State, StateCanceled, s.now().UnixMilli()); err != nil {
 		return RunDetail{}, err
 	}
 	s.mu.Lock()
@@ -1696,7 +1696,7 @@ func (s *Service) Cancel(ctx context.Context, runID string) (RunDetail, error) {
 	return s.GetRun(ctx, runID)
 }
 
-func (s *Service) dispatchReady(run RunDetail) {
+func (s *Service) dispatchReady(ctx context.Context, run RunDetail) {
 	if run.State != StateActive {
 		return
 	}
@@ -1724,7 +1724,7 @@ func (s *Service) dispatchReady(run RunDetail) {
 		// capacity before flipping the attempt to running; a full pool
 		// simply skips this node so a differently-provisioned ready
 		// sibling still gets a fair chance.
-		started, err := s.store.StartWorkflowCommand(run.ID, nodeRun.NodeID, resourceRequests(run.Version.Definition, nodeRun.NodeID), workspaceRequest(run.Version.Definition, nodeRun.NodeID), s.now().UnixMilli())
+		started, err := s.store.StartWorkflowCommand(ctx, run.ID, nodeRun.NodeID, resourceRequests(run.Version.Definition, nodeRun.NodeID), workspaceRequest(run.Version.Definition, nodeRun.NodeID), s.now().UnixMilli())
 		if err != nil || !started {
 			s.mu.Unlock()
 			continue
@@ -1742,14 +1742,14 @@ func (s *Service) executeCommand(ctx context.Context, active *activeCommand, ver
 	redactor := s.runRedactor(version)
 	run, err := s.GetRun(ctx, runID)
 	if err != nil {
-		s.finishCommandError(active, runID, node.ID, redactor, "interpolating workflow node results: "+err.Error())
+		s.finishCommandError(ctx, active, runID, node.ID, redactor, "interpolating workflow node results: "+err.Error())
 		return
 	}
 	command := make([]string, len(node.Command))
 	for index, value := range node.Command {
 		command[index], err = interpolateNodeResults(value, run, node.ID)
 		if err != nil {
-			s.finishCommandError(active, runID, node.ID, redactor, "interpolating workflow node results: "+err.Error())
+			s.finishCommandError(ctx, active, runID, node.ID, redactor, "interpolating workflow node results: "+err.Error())
 			return
 		}
 	}
@@ -1757,18 +1757,18 @@ func (s *Service) executeCommand(ctx context.Context, active *activeCommand, ver
 	for key, value := range node.Environment {
 		nodeEnv[key], err = interpolateNodeResults(value, run, node.ID)
 		if err != nil {
-			s.finishCommandError(active, runID, node.ID, redactor, "interpolating workflow node results: "+err.Error())
+			s.finishCommandError(ctx, active, runID, node.ID, redactor, "interpolating workflow node results: "+err.Error())
 			return
 		}
 	}
 	env := s.secretEnv(version, nodeEnv)
 	if err := validateRunDirectory(directory); err != nil {
-		s.finishCommandError(active, runID, node.ID, redactor, err.Error())
+		s.finishCommandError(ctx, active, runID, node.ID, redactor, err.Error())
 		return
 	}
 	// A shard path comes from the WorkspaceProvider, which owns creating it.
 	if shardDir, err := s.shardDirectory(ctx, version, runID, node.ID); err != nil {
-		s.finishCommandError(active, runID, node.ID, redactor, "provisioning workspace shard: "+err.Error())
+		s.finishCommandError(ctx, active, runID, node.ID, redactor, "provisioning workspace shard: "+err.Error())
 		return
 	} else if shardDir != "" {
 		directory = shardDir
@@ -1795,7 +1795,7 @@ func (s *Service) executeCommand(ctx context.Context, active *activeCommand, ver
 			result.Error = "canceled after sibling failure"
 		}
 	}
-	s.completeCommandAttempt(runID, node.ID, state.WorkflowCommandResult{
+	s.completeCommandAttempt(ctx, runID, node.ID, state.WorkflowCommandResult{
 		State: result.State, ExitCode: result.ExitCode, Stdout: result.Stdout, Stderr: result.Stderr, Error: result.Error,
 		OutputsJSON: "{}", StdoutTruncated: result.StdoutTruncated, StderrTruncated: result.StderrTruncated,
 	})
@@ -1833,10 +1833,10 @@ const (
 // Retry a few times, then fall back to marking the attempt unknown,
 // which releases its leases and pauses the run so a human is asked to
 // resolve it instead of the run hanging forever.
-func (s *Service) completeCommandAttempt(runID, nodeID string, result state.WorkflowCommandResult) {
+func (s *Service) completeCommandAttempt(ctx context.Context, runID, nodeID string, result state.WorkflowCommandResult) {
 	var err error
 	for attempt := range commandCompleteAttempts {
-		if err = s.store.CompleteWorkflowCommand(runID, nodeID, result, s.now().UnixMilli()); err == nil {
+		if err = s.store.CompleteWorkflowCommand(ctx, runID, nodeID, result, s.now().UnixMilli()); err == nil {
 			return
 		}
 		if attempt < commandCompleteAttempts-1 {
@@ -1845,14 +1845,14 @@ func (s *Service) completeCommandAttempt(runID, nodeID string, result state.Work
 	}
 	log.WithFields(log.Fields{"runID": runID, "nodeID": nodeID, "error": err}).
 		Error("workflow: recording command completion failed; marking the attempt unknown")
-	s.markCommandAttemptUnknown(runID, nodeID, err)
+	s.markCommandAttemptUnknown(ctx, runID, nodeID, err)
 }
 
 // markCommandAttemptUnknown is completeCommandAttempt's last resort.
 // Best-effort by construction: if this fails too there is nothing left
 // but the log line and recoverInterrupted on the next restart.
-func (s *Service) markCommandAttemptUnknown(runID, nodeID string, cause error) {
-	run, err := s.GetRun(context.Background(), runID)
+func (s *Service) markCommandAttemptUnknown(ctx context.Context, runID, nodeID string, cause error) {
+	run, err := s.GetRun(ctx, runID)
 	if err != nil {
 		log.WithFields(log.Fields{"runID": runID, "nodeID": nodeID, "error": err}).
 			Error("workflow: could not load the run to mark its command attempt unknown")
@@ -1864,7 +1864,7 @@ func (s *Service) markCommandAttemptUnknown(runID, nodeID string, cause error) {
 		}
 		attempt := node.Attempts[len(node.Attempts)-1]
 		reason := fmt.Sprintf("recording command completion failed: %v", cause)
-		if err := s.store.MarkWorkflowAttemptUnknown(runID, nodeID, attempt.ID, reason, s.now().UnixMilli()); err != nil {
+		if err := s.store.MarkWorkflowAttemptUnknown(ctx, runID, nodeID, attempt.ID, reason, s.now().UnixMilli()); err != nil {
 			log.WithFields(log.Fields{"runID": runID, "nodeID": nodeID, "error": err}).
 				Error("workflow: marking the command attempt unknown failed")
 		}
@@ -1881,7 +1881,7 @@ func (s *Service) shardDirectory(ctx context.Context, version Version, runID, no
 	if s.workspace == nil || version.Definition.Workspace == nil {
 		return "", nil
 	}
-	leases, err := s.store.ListWorkflowWorkspaceLeases(runID)
+	leases, err := s.store.ListWorkflowWorkspaceLeases(ctx, runID)
 	if err != nil {
 		return "", err
 	}
@@ -1900,7 +1900,7 @@ func (s *Service) shardDirectory(ctx context.Context, version Version, runID, no
 		if err != nil {
 			return "", err
 		}
-		if err := s.store.SetWorkflowWorkspaceShardPath(runID, nodeID, path); err != nil {
+		if err := s.store.SetWorkflowWorkspaceShardPath(ctx, runID, nodeID, path); err != nil {
 			return "", err
 		}
 		return path, nil
@@ -1911,8 +1911,8 @@ func (s *Service) shardDirectory(ctx context.Context, version Version, runID, no
 // finishCommandError settles a command attempt as errored (e.g. shard
 // provisioning failed) and releases its held capacity, mirroring the
 // bookkeeping executeCommand does on a normal completion.
-func (s *Service) finishCommandError(active *activeCommand, runID, nodeID string, red *redactor, message string) {
-	s.completeCommandAttempt(runID, nodeID, state.WorkflowCommandResult{
+func (s *Service) finishCommandError(ctx context.Context, active *activeCommand, runID, nodeID string, red *redactor, message string) {
+	s.completeCommandAttempt(ctx, runID, nodeID, state.WorkflowCommandResult{
 		State: AttemptErrored, ExitCode: -1, Error: red.redact(message), OutputsJSON: "{}",
 	})
 	s.mu.Lock()
@@ -1953,7 +1953,7 @@ func (s *Service) stopSiblingCommands(runID, nodeID string) bool {
 // permanently, since reconciledRuns is already set for the process
 // lifetime and runs are listed newest-first.
 func (s *Service) Tick(ctx context.Context) error {
-	runs, err := s.store.ListWorkflowRuns()
+	runs, err := s.store.ListWorkflowRuns(ctx)
 	if err != nil {
 		return err
 	}
@@ -2000,12 +2000,12 @@ func (s *Service) recoverInterrupted(ctx context.Context, runID string) (bool, e
 		attempt := node.Attempts[len(node.Attempts)-1]
 		switch {
 		case node.Type == "command" && attempt.State == AttemptRunning && !s.commandActive(runID, node.NodeID):
-			if err := s.store.MarkWorkflowAttemptUnknown(runID, node.NodeID, attempt.ID, "command interrupted by server restart", s.now().UnixMilli()); err != nil {
+			if err := s.store.MarkWorkflowAttemptUnknown(ctx, runID, node.NodeID, attempt.ID, "command interrupted by server restart", s.now().UnixMilli()); err != nil {
 				return false, err
 			}
 			s.changed(runID)
 		case node.Type == "agent" && attempt.State == AttemptStarting && attempt.SessionID == "":
-			if err := s.store.RetryWorkflowAttempt(runID, node.NodeID, attempt.ID, "agent launch interrupted by server restart", "recovery", s.now().UnixMilli()); err != nil {
+			if err := s.store.RetryWorkflowAttempt(ctx, runID, node.NodeID, attempt.ID, "agent launch interrupted by server restart", "recovery", s.now().UnixMilli()); err != nil {
 				return false, err
 			}
 			s.changed(runID)
@@ -2031,7 +2031,7 @@ func (s *Service) recoverInterrupted(ctx context.Context, runID string) (bool, e
 				s.clearInspectFailures(attempt.ID)
 				reason = fmt.Sprintf("agent session unreachable after restart: %s", probeErr)
 			}
-			if err := s.store.MarkWorkflowAttemptUnknown(runID, node.NodeID, attempt.ID, reason, s.now().UnixMilli()); err != nil {
+			if err := s.store.MarkWorkflowAttemptUnknown(ctx, runID, node.NodeID, attempt.ID, reason, s.now().UnixMilli()); err != nil {
 				return false, err
 			}
 			s.changed(runID)
@@ -2109,13 +2109,13 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 		}
 	}
 	if exceeded, reason := s.budgetExceeded(ctx, run); exceeded {
-		if err := s.store.FailWorkflowRun(runID, reason, s.now().UnixMilli()); err != nil {
+		if err := s.store.FailWorkflowRun(ctx, runID, reason, s.now().UnixMilli()); err != nil {
 			return err
 		}
 		s.changed(runID)
 		return nil
 	}
-	s.dispatchReady(run)
+	s.dispatchReady(ctx, run)
 	for {
 		mapMoved, err := s.driveMapNodes(ctx, runID)
 		if err != nil {
@@ -2143,7 +2143,7 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 				// Deterministic and permanent: the published version is
 				// immutable, so this cannot start succeeding. Settle the
 				// node instead of erroring on every tick forever.
-				if err := s.completeAgentFailure(runID, node.NodeID, attempt.ID, "error",
+				if err := s.completeAgentFailure(ctx, runID, node.NodeID, attempt.ID, "error",
 					fmt.Sprintf("workflow run %q cannot continue: agent node %q has no configuration in published version %q; cancel this run, publish a corrected workflow with agent.directory and agent.prompt, then start a new run", run.ID, node.NodeID, run.VersionID)); err != nil {
 					return err
 				}
@@ -2160,7 +2160,7 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 				// capacity. A failed claim (lost race or full pool) skips
 				// this node; other ready agents still get their turn and
 				// capacity is retried on the next dispatch/tick.
-				claimed, err := s.store.ClaimWorkflowAgentAttempt(runID, node.NodeID, attempt.ID, config.SessionAffinity, config.Directory, resourceRequests(run.Version.Definition, node.NodeID), workspaceRequest(run.Version.Definition, node.NodeID), s.now().UnixMilli())
+				claimed, err := s.store.ClaimWorkflowAgentAttempt(ctx, runID, node.NodeID, attempt.ID, config.SessionAffinity, config.Directory, resourceRequests(run.Version.Definition, node.NodeID), workspaceRequest(run.Version.Definition, node.NodeID), s.now().UnixMilli())
 				if err != nil {
 					return err
 				}
@@ -2169,7 +2169,7 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 				}
 				agentDir := config.Directory
 				if shardDir, shardErr := s.shardDirectory(ctx, run.Version, runID, node.NodeID); shardErr != nil {
-					if err := s.completeAgentFailure(runID, node.NodeID, attempt.ID, "error", "provisioning workspace shard: "+shardErr.Error()); err != nil {
+					if err := s.completeAgentFailure(ctx, runID, node.NodeID, attempt.ID, "error", "provisioning workspace shard: "+shardErr.Error()); err != nil {
 						return err
 					}
 					s.changed(runID)
@@ -2180,7 +2180,7 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 				}
 				segments, err := nodeResultSegments(config.Prompt, run, node.NodeID)
 				if err != nil {
-					if err := s.completeAgentFailure(runID, node.NodeID, attempt.ID, "error", "interpolating workflow node results: "+err.Error()); err != nil {
+					if err := s.completeAgentFailure(ctx, runID, node.NodeID, attempt.ID, "error", "interpolating workflow node results: "+err.Error()); err != nil {
 						return err
 					}
 					s.changed(runID)
@@ -2210,7 +2210,7 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 					// workspace errors — are settled above and never
 					// reach here); after that, fail as before.
 					if len(node.Attempts) < agentLaunchAttemptLimit {
-						if err := s.store.RetryWorkflowAttempt(runID, node.NodeID, attempt.ID, startErr.Error(), "launch-retry", s.now().UnixMilli()); err != nil {
+						if err := s.store.RetryWorkflowAttempt(ctx, runID, node.NodeID, attempt.ID, startErr.Error(), "launch-retry", s.now().UnixMilli()); err != nil {
 							return err
 						}
 						// Return rather than looping: retrying inside
@@ -2221,18 +2221,18 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 						s.changed(runID)
 						return nil
 					}
-					if err := s.completeAgentFailure(runID, node.NodeID, attempt.ID, "error", startErr.Error()); err != nil {
+					if err := s.completeAgentFailure(ctx, runID, node.NodeID, attempt.ID, "error", startErr.Error()); err != nil {
 						return err
 					}
 					s.changed(runID)
 					progressed = true
 					continue
 				}
-				if err := s.store.AttachWorkflowAgentSession(runID, node.NodeID, attempt.ID, session.Platform, session.ID, session.State, s.now().UnixMilli()); err != nil {
+				if err := s.store.AttachWorkflowAgentSession(ctx, runID, node.NodeID, attempt.ID, session.Platform, session.ID, session.State, s.now().UnixMilli()); err != nil {
 					return err
 				}
 				if session.Error != "" {
-					if err := s.completeAgentFailure(runID, node.NodeID, attempt.ID, session.State, session.Error); err != nil {
+					if err := s.completeAgentFailure(ctx, runID, node.NodeID, attempt.ID, session.State, session.Error); err != nil {
 						return err
 					}
 				} else {
@@ -2254,7 +2254,7 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 					continue
 				}
 				s.clearInspectFailures(attempt.ID)
-				if err := s.store.MarkWorkflowAttemptUnknown(runID, node.NodeID, attempt.ID,
+				if err := s.store.MarkWorkflowAttemptUnknown(ctx, runID, node.NodeID, attempt.ID,
 					fmt.Sprintf("agent session unreachable: %s", inspectErr), s.now().UnixMilli()); err != nil {
 					return err
 				}
@@ -2268,7 +2268,7 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 				if attempt.SessionState == AgentCorrecting {
 					sessionState = AgentCorrecting
 				}
-				if err := s.store.SetWorkflowAgentSessionState(runID, node.NodeID, attempt.ID, sessionState, "", s.now().UnixMilli()); err != nil {
+				if err := s.store.SetWorkflowAgentSessionState(ctx, runID, node.NodeID, attempt.ID, sessionState, "", s.now().UnixMilli()); err != nil {
 					return err
 				}
 				continue
@@ -2287,16 +2287,16 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 					correction := "Your previous response did not match the required output schema. Reply once with a matching JSON value." + jsonOutputInstruction(config.OutputSchema)
 					session, err := s.agent.Start(ctx, AgentRequest{Platform: attempt.Platform, Directory: attempt.Directory, Prompt: correction, Model: config.Model, Agent: config.Agent, Reasoning: config.Reasoning, SessionID: attempt.SessionID})
 					if err != nil {
-						if err := s.completeAgentFailure(runID, node.NodeID, attempt.ID, "error", err.Error()); err != nil {
+						if err := s.completeAgentFailure(ctx, runID, node.NodeID, attempt.ID, "error", err.Error()); err != nil {
 							return err
 						}
 					}
 					if err == nil && session.Error != "" {
-						if err := s.completeAgentFailure(runID, node.NodeID, attempt.ID, session.State, session.Error); err != nil {
+						if err := s.completeAgentFailure(ctx, runID, node.NodeID, attempt.ID, session.State, session.Error); err != nil {
 							return err
 						}
 					} else if err == nil {
-						if err := s.store.SetWorkflowAgentSessionState(runID, node.NodeID, attempt.ID, AgentCorrecting, "", s.now().UnixMilli()); err != nil {
+						if err := s.store.SetWorkflowAgentSessionState(ctx, runID, node.NodeID, attempt.ID, AgentCorrecting, "", s.now().UnixMilli()); err != nil {
 							return err
 						}
 					}
@@ -2307,7 +2307,7 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 				result.Error = "agent output must match outputSchema"
 			}
 			completion := state.WorkflowAgentResult{Successful: successful, SessionState: result.State, Output: result.FinalMessage, OutputsJSON: "{}", Error: result.Error}
-			if err := s.store.CompleteWorkflowAgentNode(runID, node.NodeID, attempt.ID, completion, s.now().UnixMilli()); err != nil {
+			if err := s.store.CompleteWorkflowAgentNode(ctx, runID, node.NodeID, attempt.ID, completion, s.now().UnixMilli()); err != nil {
 				return err
 			}
 			if completed, err := s.GetRun(ctx, runID); err == nil {
@@ -2327,9 +2327,9 @@ func (s *Service) dispatchLocked(ctx context.Context, runID string) error {
 	}
 }
 
-func (s *Service) completeAgentFailure(runID, nodeID string, attemptID int64, sessionState, message string) error {
+func (s *Service) completeAgentFailure(ctx context.Context, runID, nodeID string, attemptID int64, sessionState, message string) error {
 	result := state.WorkflowAgentResult{SessionState: sessionState, OutputsJSON: "{}", Error: message}
-	return s.store.CompleteWorkflowAgentNode(runID, nodeID, attemptID, result, s.now().UnixMilli())
+	return s.store.CompleteWorkflowAgentNode(ctx, runID, nodeID, attemptID, result, s.now().UnixMilli())
 }
 
 // applyPolicies evaluates conditions before a ready node is dispatched and
@@ -2343,7 +2343,7 @@ func (s *Service) applyPolicies(ctx context.Context, run RunDetail) (bool, error
 			}
 			s.stopSiblingCommands(run.ID, node.NodeID)
 			s.cancelChildRuns(ctx, run.ID)
-			if err := s.store.FailWorkflowRun(run.ID, "workflow stopped by fail-fast after "+node.NodeID+" failed", s.now().UnixMilli()); err != nil {
+			if err := s.store.FailWorkflowRun(ctx, run.ID, "workflow stopped by fail-fast after "+node.NodeID+" failed", s.now().UnixMilli()); err != nil {
 				return false, err
 			}
 			s.changed(run.ID)
@@ -2371,7 +2371,7 @@ func (s *Service) applyPolicies(ctx context.Context, run RunDetail) (bool, error
 					if evalErr != nil {
 						reason = "condition error: " + evalErr.Error()
 					}
-					if err := s.store.SkipWorkflowNode(run.ID, node.NodeID, reason, s.now().UnixMilli()); err != nil {
+					if err := s.store.SkipWorkflowNode(ctx, run.ID, node.NodeID, reason, s.now().UnixMilli()); err != nil {
 						return moved, err
 					}
 					moved = true
@@ -2388,7 +2388,7 @@ func (s *Service) applyPolicies(ctx context.Context, run RunDetail) (bool, error
 		}
 		ok, evalErr := evaluateCEL(config.Until, outcomes)
 		if evalErr != nil {
-			if err := s.store.ExhaustWorkflowRepeat(run.ID, node.NodeID, "repeat condition error: "+evalErr.Error(), s.now().UnixMilli()); err != nil {
+			if err := s.store.ExhaustWorkflowRepeat(ctx, run.ID, node.NodeID, "repeat condition error: "+evalErr.Error(), s.now().UnixMilli()); err != nil {
 				return moved, err
 			}
 			moved = true
@@ -2398,13 +2398,13 @@ func (s *Service) applyPolicies(ctx context.Context, run RunDetail) (bool, error
 			continue
 		}
 		if len(node.Attempts) >= config.MaxAttempts {
-			if err := s.store.ExhaustWorkflowRepeat(run.ID, node.NodeID, fmt.Sprintf("repeat exhausted after %d attempts", config.MaxAttempts), s.now().UnixMilli()); err != nil {
+			if err := s.store.ExhaustWorkflowRepeat(ctx, run.ID, node.NodeID, fmt.Sprintf("repeat exhausted after %d attempts", config.MaxAttempts), s.now().UnixMilli()); err != nil {
 				return moved, err
 			}
 			moved = true
 			continue
 		}
-		if err := s.store.RepeatWorkflowNode(run.ID, node.NodeID, node.Attempts[len(node.Attempts)-1].ID, "repeat condition evaluated false", s.now().UnixMilli()); err != nil {
+		if err := s.store.RepeatWorkflowNode(ctx, run.ID, node.NodeID, node.Attempts[len(node.Attempts)-1].ID, "repeat condition evaluated false", s.now().UnixMilli()); err != nil {
 			return moved, err
 		}
 		moved = true

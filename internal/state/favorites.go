@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
@@ -15,8 +16,8 @@ type ModelFavorite struct {
 
 // AddModelFavorite marks a (platform, provider, model) triple as a
 // favorite. Idempotent: repeated calls are no-ops.
-func (d *DB) AddModelFavorite(platform, provider, model string) error {
-	_, err := d.db.Exec(`
+func (d *DB) AddModelFavorite(ctx context.Context, platform, provider, model string) error {
+	_, err := d.db.ExecContext(ctx, `
 		INSERT INTO model_favorite (platform, provider_id, model_id, created_at)
 		VALUES (?, ?, ?, ?)
 		ON CONFLICT(platform, provider_id, model_id) DO NOTHING
@@ -29,8 +30,8 @@ func (d *DB) AddModelFavorite(platform, provider, model string) error {
 
 // RemoveModelFavorite unfavorites a (platform, provider, model)
 // triple. No error if the row doesn't exist.
-func (d *DB) RemoveModelFavorite(platform, provider, model string) error {
-	_, err := d.db.Exec(
+func (d *DB) RemoveModelFavorite(ctx context.Context, platform, provider, model string) error {
+	_, err := d.db.ExecContext(ctx,
 		`DELETE FROM model_favorite WHERE platform = ? AND provider_id = ? AND model_id = ?`,
 		platform, provider, model,
 	)
@@ -42,8 +43,8 @@ func (d *DB) RemoveModelFavorite(platform, provider, model string) error {
 
 // ModelFavorites returns every favorited model for the given platform,
 // ordered by creation time ascending (oldest favorite first).
-func (d *DB) ModelFavorites(platform string) ([]ModelFavorite, error) {
-	rows, err := d.db.Query(
+func (d *DB) ModelFavorites(ctx context.Context, platform string) ([]ModelFavorite, error) {
+	rows, err := d.db.QueryContext(ctx,
 		`SELECT platform, provider_id, model_id FROM model_favorite
 		 WHERE platform = ?
 		 ORDER BY created_at ASC`,

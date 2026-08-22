@@ -64,9 +64,9 @@ func (s *Server) handleProjectArchive(w http.ResponseWriter, r *http.Request) {
 		if err := host.StopProjectOpencode(r.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: root}); err != nil {
 			log.WithError(err).WithField("project", root).Warn("archive: stopping project opencode")
 		}
-		err = s.stateDB.ArchiveProject(remoteID, root)
+		err = s.stateDB.ArchiveProject(r.Context(), remoteID, root)
 	} else {
-		err = s.stateDB.UnarchiveProject(remoteID, root)
+		err = s.stateDB.UnarchiveProject(r.Context(), remoteID, root)
 	}
 	if err != nil {
 		serverError(w, "updating archived project state", err)

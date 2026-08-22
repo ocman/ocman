@@ -33,9 +33,9 @@ func (s *Server) handleSessionQueueList(w http.ResponseWriter, r *http.Request) 
 		var msgs []state.QueuedMessage
 		var err error
 		if platform := platformHint(r); platform != "" {
-			msgs, err = s.queueSvc().List(platform, sessionID)
+			msgs, err = s.queueSvc().List(r.Context(), platform, sessionID)
 		} else {
-			msgs, err = s.queueSvc().ListAnyPlatform(sessionID)
+			msgs, err = s.queueSvc().ListAnyPlatform(r.Context(), sessionID)
 		}
 		if err != nil {
 			log.WithError(err).WithField("session", sessionID).Error("listing message queue")
@@ -62,7 +62,7 @@ func (s *Server) handleSessionQueueDelete(w http.ResponseWriter, r *http.Request
 			http.Error(w, "invalid queued message ID", http.StatusBadRequest)
 			return
 		}
-		if _, err := s.queueSvc().Remove(sessionID, qmid); err != nil {
+		if _, err := s.queueSvc().Remove(r.Context(), sessionID, qmid); err != nil {
 			log.WithError(err).WithField("queued", qmid).Error("removing queued message")
 			http.Error(w, "failed to remove queued message", http.StatusInternalServerError)
 			return
@@ -91,7 +91,7 @@ func (s *Server) handleSessionQueueMove(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, "invalid queued message ID", http.StatusBadRequest)
 			return
 		}
-		moved, err := s.queueSvc().Move(sessionID, qmid, req.Direction)
+		moved, err := s.queueSvc().Move(r.Context(), sessionID, qmid, req.Direction)
 		if err != nil {
 			log.WithError(err).WithField("queued", qmid).Error("moving queued message")
 			http.Error(w, "failed to move queued message", http.StatusInternalServerError)

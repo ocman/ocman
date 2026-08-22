@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"encoding/json"
 	"maps"
 	"slices"
@@ -75,8 +76,8 @@ type MetricsDashboardOptions struct {
 // set — Series is zero-filled to opts.Days buckets so the frontend
 // chart library can render a "no data" placeholder without a nil
 // guard.
-func (d *DB) GetMetricsDashboard(opts MetricsDashboardOptions) (*MetricsDashboard, error) {
-	filtered, agentSet, modelSet, err := d.scanDashboardRows(opts)
+func (d *DB) GetMetricsDashboard(ctx context.Context, opts MetricsDashboardOptions) (*MetricsDashboard, error) {
+	filtered, agentSet, modelSet, err := d.scanDashboardRows(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -101,10 +102,10 @@ func (d *DB) GetMetricsDashboard(opts MetricsDashboardOptions) (*MetricsDashboar
 	dashboard.TotalRequests = len(filtered)
 	dashboard.Requests = paginateRequests(filtered, opts.RequestLimit, opts.RequestOffset)
 
-	if err := d.populateSessionLog(dashboard, filtered, opts.SessionLimit, opts.SessionOffset); err != nil {
+	if err := d.populateSessionLog(ctx, dashboard, filtered, opts.SessionLimit, opts.SessionOffset); err != nil {
 		return nil, err
 	}
-	if err := d.populateProjectLog(dashboard, filtered, opts.ProjectLimit, opts.ProjectOffset); err != nil {
+	if err := d.populateProjectLog(ctx, dashboard, filtered, opts.ProjectLimit, opts.ProjectOffset); err != nil {
 		return nil, err
 	}
 	return dashboard, nil
@@ -113,7 +114,7 @@ func (d *DB) GetMetricsDashboard(opts MetricsDashboardOptions) (*MetricsDashboar
 // scanDashboardRows queries assistant messages within the given options window
 // and returns the filtered request rows plus the pre-filter agent/model sets
 // (used to keep dropdowns populated even when a filter is active).
-func (d *DB) scanDashboardRows(opts MetricsDashboardOptions) (filtered []requestRow, agentSet, modelSet map[string]struct{}, err error) {
+func (d *DB) scanDashboardRows(ctx context.Context, opts MetricsDashboardOptions) (filtered []requestRow, agentSet, modelSet map[string]struct{}, err error) {
 	dirFrag, dirArgs := directoryWhere(opts.Dir)
 	query := `
 		SELECT m.id, m.session_id, m.time_created, m.data
@@ -135,7 +136,7 @@ func (d *DB) scanDashboardRows(opts MetricsDashboardOptions) (filtered []request
 	query += `
 		ORDER BY m.time_created ASC
 	`
-	rows, qErr := d.db.Query(query, args...)
+	rows, qErr := d.db.QueryContext(ctx, query, args...)
 	if qErr != nil {
 		return nil, nil, nil, qErr
 	}
@@ -222,13 +223,13 @@ func (d *DB) scanDashboardRows(opts MetricsDashboardOptions) (filtered []request
 
 // bucketAcc accumulates per-time-bucket metrics while building the series.
 type bucketAcc struct {
-	label             string
-	inputTokens       int64
-	cacheReadTokens   int64
-	cacheWriteTokens  int64
-	outputTokens      int64
-	totalOutputTokSec float64
-	totalDurationMs   float64
+	label              string
+	inputTokens        int64
+	cacheReadTokens    int64
+	cacheWriteTokens   int64
+	outputTokens       int64
+	totalOutputTokSec  float64
+	totalDurationMs    float64
 	totalCacheEff      float64
 	totalCost          float64
 	totalCalcCost      float64
@@ -371,17 +372,17 @@ func buildDashboardSeries(buckets map[string]*bucketAcc, bucketOrder []string, b
 				avgDur = b.totalDurationMs / float64(b.durationCount)
 			}
 			pt = MetricsPoint{
-				Label:              label,
+				Label:                   label,
 				AvgOutputTokensSec:      b.totalOutputTokSec / float64(n),
 				CumulativeCost:          cumCost,
 				CumulativeCalcCost:      cumCalcCost,
 				CumulativeEffectiveCost: cumEffectiveCost,
 				InputTokens:             b.inputTokens,
-				CacheReadTokens:    b.cacheReadTokens,
-				OutputTokens:       b.outputTokens,
-				AvgDurationMs:      avgDur,
-				AvgCacheEfficiency: b.totalCacheEff / float64(n),
-				Count:              b.count,
+				CacheReadTokens:         b.cacheReadTokens,
+				OutputTokens:            b.outputTokens,
+				AvgDurationMs:           avgDur,
+				AvgCacheEfficiency:      b.totalCacheEff / float64(n),
+				Count:                   b.count,
 			}
 		} else {
 			pt = MetricsPoint{Label: label, CumulativeCost: cumCost, CumulativeCalcCost: cumCalcCost, CumulativeEffectiveCost: cumEffectiveCost}
@@ -554,7 +555,7 @@ func costDescLess(costI, costJ float64, timeI, timeJ int64) bool {
 // populateSessionLog aggregates the already-filtered request rows by session id
 // and applies pagination. Session metadata (title, directory) is fetched from
 // the session table in a single query.
-func (d *DB) populateSessionLog(dashboard *MetricsDashboard, filtered []requestRow, sessionLimit, sessionOffset int) error {
+func (d *DB) populateSessionLog(ctx context.Context, dashboard *MetricsDashboard, filtered []requestRow, sessionLimit, sessionOffset int) error {
 	if len(filtered) == 0 {
 		return nil
 	}
@@ -616,7 +617,7 @@ func (d *DB) populateSessionLog(dashboard *MetricsDashboard, filtered []requestR
 	for id := range accs {
 		ids = append(ids, id)
 	}
-	titles, dirs, err := d.lookupSessionMetadata(ids)
+	titles, dirs, err := d.lookupSessionMetadata(ctx, ids)
 	if err != nil {
 		return err
 	}
@@ -650,7 +651,7 @@ func (d *DB) populateSessionLog(dashboard *MetricsDashboard, filtered []requestR
 // populateProjectLog aggregates the already-filtered request rows by project
 // directory and applies pagination. Directories are resolved from session
 // metadata in a single query. Sorted by most-recent activity first.
-func (d *DB) populateProjectLog(dashboard *MetricsDashboard, filtered []requestRow, projectLimit, projectOffset int) error {
+func (d *DB) populateProjectLog(ctx context.Context, dashboard *MetricsDashboard, filtered []requestRow, projectLimit, projectOffset int) error {
 	if len(filtered) == 0 {
 		return nil
 	}
@@ -664,7 +665,7 @@ func (d *DB) populateProjectLog(dashboard *MetricsDashboard, filtered []requestR
 			sessionIDs = append(sessionIDs, r.SessionID)
 		}
 	}
-	_, dirs, err := d.lookupSessionMetadata(sessionIDs)
+	_, dirs, err := d.lookupSessionMetadata(ctx, sessionIDs)
 	if err != nil {
 		return err
 	}
@@ -742,7 +743,7 @@ func (d *DB) populateProjectLog(dashboard *MetricsDashboard, filtered []requestR
 
 // lookupSessionMetadata returns title and directory maps keyed by session id.
 // Missing sessions simply have empty strings.
-func (d *DB) lookupSessionMetadata(ids []string) (titles, dirs map[string]string, err error) {
+func (d *DB) lookupSessionMetadata(ctx context.Context, ids []string) (titles, dirs map[string]string, err error) {
 	titles = make(map[string]string, len(ids))
 	dirs = make(map[string]string, len(ids))
 	if len(ids) == 0 {
@@ -757,7 +758,7 @@ func (d *DB) lookupSessionMetadata(ids []string) (titles, dirs map[string]string
 		args[i] = id
 	}
 	q := "SELECT id, title, directory FROM session WHERE id IN (" + strings.Join(placeholders, ",") + ")"
-	rows, err := d.db.Query(q, args...)
+	rows, err := d.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, nil, err
 	}

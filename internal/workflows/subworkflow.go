@@ -1,6 +1,7 @@
 package workflows
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -17,11 +18,11 @@ func subPrefix(parentNodeID, childNodeID string) string {
 // version's already-inlined definition. Because every stored version is
 // fully inlined at publish time, resolving one level here transitively
 // pins the whole nested tree to concrete revisions.
-func (s *Service) pinnedSubworkflow(ref SubworkflowRef) (Definition, string, error) {
+func (s *Service) pinnedSubworkflow(ctx context.Context, ref SubworkflowRef) (Definition, string, error) {
 	if ref.WorkflowID == "" {
 		return Definition{}, "", fmt.Errorf("subworkflow reference requires workflowId")
 	}
-	row, err := s.store.GetActiveWorkflowVersion(ref.WorkflowID)
+	row, err := s.store.GetActiveWorkflowVersion(ctx, ref.WorkflowID)
 	if err != nil {
 		return Definition{}, "", fmt.Errorf("subworkflow %q has no active version: %w", ref.WorkflowID, err)
 	}
@@ -46,8 +47,8 @@ func (s *Service) pinnedSubworkflow(ref SubworkflowRef) (Definition, string, err
 // compose without that constraint — which covers the map/join per-item
 // pipelines #317 targets. Add per-node directory override if a reusable
 // command subworkflow needs a different root than its parent.
-func (s *Service) inlineSubworkflows(definition Definition) (Definition, error) {
-	if err := s.checkSubworkflowRecursion(definition); err != nil {
+func (s *Service) inlineSubworkflows(ctx context.Context, definition Definition) (Definition, error) {
+	if err := s.checkSubworkflowRecursion(ctx, definition); err != nil {
 		return Definition{}, err
 	}
 	// Capture the authored reference graph before inlining removes the
@@ -59,7 +60,7 @@ func (s *Service) inlineSubworkflows(definition Definition) (Definition, error) 
 		if node.Type == "map" && node.Map != nil {
 			// Pin the per-item subworkflow to a concrete active version so
 			// a later edit cannot alter this parent version's mapped runs.
-			_, versionID, err := s.pinnedSubworkflow(node.Map.Subworkflow)
+			_, versionID, err := s.pinnedSubworkflow(ctx, node.Map.Subworkflow)
 			if err != nil {
 				return Definition{}, err
 			}
@@ -76,7 +77,7 @@ func (s *Service) inlineSubworkflows(definition Definition) (Definition, error) 
 		if node.Subworkflow == nil {
 			return Definition{}, fmt.Errorf("subworkflow node %q requires a subworkflow reference", node.ID)
 		}
-		sub, _, err := s.pinnedSubworkflow(*node.Subworkflow)
+		sub, _, err := s.pinnedSubworkflow(ctx, *node.Subworkflow)
 		if err != nil {
 			return Definition{}, err
 		}
@@ -167,11 +168,11 @@ func subRootsAndLeaves(sub Definition) (roots, leaves []string) {
 // publish time. Because a published version is acyclic, a cycle can only
 // be introduced by the new definition, so a DFS from the new definition's
 // direct references that returns to its own id is a recursion.
-func (s *Service) checkSubworkflowRecursion(definition Definition) error {
+func (s *Service) checkSubworkflowRecursion(ctx context.Context, definition Definition) error {
 	visiting := map[string]bool{definition.ID: true}
 	var walk func(workflowID string, path []string) error
 	walk = func(workflowID string, path []string) error {
-		refs, err := s.subworkflowRefs(workflowID)
+		refs, err := s.subworkflowRefs(ctx, workflowID)
 		if err != nil {
 			return err
 		}
@@ -219,8 +220,8 @@ func definitionRefs(definition Definition) []string {
 // workflow's active version. A stored subworkflow version is already
 // inlined, so its only remaining references are map-node per-item
 // subworkflows recorded in the definition JSON.
-func (s *Service) subworkflowRefs(workflowID string) ([]string, error) {
-	row, err := s.store.GetActiveWorkflowVersion(workflowID)
+func (s *Service) subworkflowRefs(ctx context.Context, workflowID string) ([]string, error) {
+	row, err := s.store.GetActiveWorkflowVersion(ctx, workflowID)
 	if err != nil {
 		return nil, fmt.Errorf("subworkflow %q has no active version: %w", workflowID, err)
 	}

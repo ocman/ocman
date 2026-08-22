@@ -704,7 +704,7 @@ func TestAuthSecret_RoundTrip(t *testing.T) {
 	defer sdb.Close()
 
 	// No secret initially.
-	got, err := sdb.AuthSecret()
+	got, err := sdb.AuthSecret(t.Context())
 	if err != nil {
 		t.Fatalf("initial read: %v", err)
 	}
@@ -714,10 +714,10 @@ func TestAuthSecret_RoundTrip(t *testing.T) {
 
 	// Store, read back.
 	key := []byte("super-secret-32-byte-hmac-key!!!")
-	if err := sdb.SetAuthSecret(key); err != nil {
+	if err := sdb.SetAuthSecret(t.Context(), key); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	got, err = sdb.AuthSecret()
+	got, err = sdb.AuthSecret(t.Context())
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -727,10 +727,10 @@ func TestAuthSecret_RoundTrip(t *testing.T) {
 
 	// Overwrite (rotation) replaces in place.
 	key2 := []byte("another-different-key-of-32-bytes")
-	if err := sdb.SetAuthSecret(key2); err != nil {
+	if err := sdb.SetAuthSecret(t.Context(), key2); err != nil {
 		t.Fatalf("rotate: %v", err)
 	}
-	got, err = sdb.AuthSecret()
+	got, err = sdb.AuthSecret(t.Context())
 	if err != nil {
 		t.Fatalf("read after rotate: %v", err)
 	}

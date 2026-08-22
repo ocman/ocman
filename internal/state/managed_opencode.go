@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"time"
@@ -19,8 +20,8 @@ type ManagedInstance struct {
 }
 
 // ManagedOpencodes returns every persisted managed instance keyed by repo root.
-func (d *DB) ManagedOpencodes() (map[string]ManagedInstance, error) {
-	rows, err := d.db.Query(`SELECT repo_root, endpoint, kind, runtime_id, pid, launched_at FROM managed_opencode`)
+func (d *DB) ManagedOpencodes(ctx context.Context) (map[string]ManagedInstance, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT repo_root, endpoint, kind, runtime_id, pid, launched_at FROM managed_opencode`)
 	if err != nil {
 		return nil, fmt.Errorf("listing managed opencode: %w", err)
 	}
@@ -42,8 +43,8 @@ func (d *DB) ManagedOpencodes() (map[string]ManagedInstance, error) {
 // UpsertManagedOpencode records (or replaces) the managed instance for a
 // project keyed by its canonical repo root. launchedAt is stored as a
 // Unix-second timestamp.
-func (d *DB) UpsertManagedOpencode(repoRoot string, inst ManagedInstance, launchedAt time.Time) error {
-	_, err := d.db.Exec(`
+func (d *DB) UpsertManagedOpencode(ctx context.Context, repoRoot string, inst ManagedInstance, launchedAt time.Time) error {
+	_, err := d.db.ExecContext(ctx, `
 		INSERT INTO managed_opencode (repo_root, endpoint, kind, runtime_id, pid, launched_at)
 		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(repo_root) DO UPDATE SET
@@ -61,10 +62,10 @@ func (d *DB) UpsertManagedOpencode(repoRoot string, inst ManagedInstance, launch
 
 // GetManagedOpencode returns the persisted managed instance for a repo
 // root. ok is false when no row exists.
-func (d *DB) GetManagedOpencode(repoRoot string) (ManagedInstance, bool, error) {
+func (d *DB) GetManagedOpencode(ctx context.Context, repoRoot string) (ManagedInstance, bool, error) {
 	var inst ManagedInstance
 	var launchedAt int64
-	err := d.db.QueryRow(`
+	err := d.db.QueryRowContext(ctx, `
 		SELECT endpoint, kind, runtime_id, pid, launched_at
 		FROM managed_opencode WHERE repo_root = ?
 	`, repoRoot).Scan(&inst.Endpoint, &inst.Kind, &inst.RuntimeID, &inst.PID, &launchedAt)
@@ -80,8 +81,8 @@ func (d *DB) GetManagedOpencode(repoRoot string) (ManagedInstance, bool, error) 
 
 // DeleteManagedOpencode removes the persisted row for a repo root.
 // Idempotent: deleting an absent row is a no-op.
-func (d *DB) DeleteManagedOpencode(repoRoot string) error {
-	_, err := d.db.Exec(`DELETE FROM managed_opencode WHERE repo_root = ?`, repoRoot)
+func (d *DB) DeleteManagedOpencode(ctx context.Context, repoRoot string) error {
+	_, err := d.db.ExecContext(ctx, `DELETE FROM managed_opencode WHERE repo_root = ?`, repoRoot)
 	if err != nil {
 		return fmt.Errorf("deleting managed opencode: %w", err)
 	}

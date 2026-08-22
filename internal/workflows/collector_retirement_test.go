@@ -41,7 +41,7 @@ func TestCollectorConfigurationIsRejected(t *testing.T) {
 
 type resultMapExecutor struct{}
 
-func (resultMapExecutor) Execute(_ context.Context, request CommandRequest) CommandResult {
+func (resultMapExecutor) Execute(ctx context.Context, request CommandRequest) CommandResult {
 	if request.Command[0] == "seed" {
 		return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: `[{"id":"a"}]`}
 	}
@@ -90,7 +90,7 @@ func TestMapConsumesDependencyNodeResult(t *testing.T) {
 	if err != nil || len(artifacts) != 0 {
 		t.Fatalf("internal map item leaked as public artifact: %+v (%v)", artifacts, err)
 	}
-	internal, err := h.db.ListWorkflowArtifacts(run.Children[0].ChildRunID)
+	internal, err := h.db.ListWorkflowArtifacts(t.Context(), run.Children[0].ChildRunID)
 	if err != nil || len(internal) != 1 {
 		t.Fatalf("internal map item missing: %+v (%v)", internal, err)
 	}

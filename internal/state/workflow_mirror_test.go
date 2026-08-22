@@ -5,7 +5,7 @@ import "testing"
 func mirrorFixture(t *testing.T) *DB {
 	t.Helper()
 	db := openTestStateDB(t)
-	version, err := db.InsertWorkflowVersion(WorkflowVersion{ID: "version-1", WorkflowID: "workflow-1",
+	version, err := db.InsertWorkflowVersion(t.Context(), WorkflowVersion{ID: "version-1", WorkflowID: "workflow-1",
 		Name: "Workflow", MetadataVersion: "1", DefinitionJSON: `{}`, Concurrency: 1, CreatedAt: 1,
 		Nodes: []WorkflowNode{
 			{ID: "build", Name: "Build", Type: "command", Position: 0},
@@ -20,7 +20,7 @@ func mirrorFixture(t *testing.T) *DB {
 			{NodeID: "build", State: "pending", Position: 0},
 			{NodeID: "ship", State: "pending", Position: 1},
 		}}
-	if err := db.InsertWorkflowRun(run); err != nil {
+	if err := db.InsertWorkflowRun(t.Context(), run); err != nil {
 		t.Fatal(err)
 	}
 	return db
@@ -28,7 +28,7 @@ func mirrorFixture(t *testing.T) *DB {
 
 func TestMirrorWorkflowRunProjectsStateAndOutput(t *testing.T) {
 	db := mirrorFixture(t)
-	changed, err := db.MirrorWorkflowRun("run-1", WorkflowMirrorSnapshot{
+	changed, err := db.MirrorWorkflowRun(t.Context(), "run-1", WorkflowMirrorSnapshot{
 		State:       "successful",
 		CompletedAt: 90,
 		Nodes: []WorkflowMirrorNode{
@@ -39,7 +39,7 @@ func TestMirrorWorkflowRunProjectsStateAndOutput(t *testing.T) {
 	if err != nil || !changed {
 		t.Fatalf("Mirror() = %v, %v", changed, err)
 	}
-	stored, err := db.GetWorkflowRun("run-1")
+	stored, err := db.GetWorkflowRun(t.Context(), "run-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,10 +70,10 @@ func TestMirrorWorkflowRunIsIdempotent(t *testing.T) {
 	snapshot := WorkflowMirrorSnapshot{State: "active", Nodes: []WorkflowMirrorNode{
 		{NodeID: "build", State: "running", StartedAt: 10},
 	}}
-	if changed, err := db.MirrorWorkflowRun("run-1", snapshot, 100); err != nil || !changed {
+	if changed, err := db.MirrorWorkflowRun(t.Context(), "run-1", snapshot, 100); err != nil || !changed {
 		t.Fatalf("first Mirror() = %v, %v", changed, err)
 	}
-	changed, err := db.MirrorWorkflowRun("run-1", snapshot, 200)
+	changed, err := db.MirrorWorkflowRun(t.Context(), "run-1", snapshot, 200)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestMirrorWorkflowRunIsIdempotent(t *testing.T) {
 // ignored rather than fail the whole snapshot.
 func TestMirrorWorkflowRunIgnoresUnknownNodes(t *testing.T) {
 	db := mirrorFixture(t)
-	changed, err := db.MirrorWorkflowRun("run-1", WorkflowMirrorSnapshot{
+	changed, err := db.MirrorWorkflowRun(t.Context(), "run-1", WorkflowMirrorSnapshot{
 		State: "active",
 		Nodes: []WorkflowMirrorNode{{NodeID: "not-a-node", State: "successful"}},
 	}, 100)
@@ -97,7 +97,7 @@ func TestMirrorWorkflowRunIgnoresUnknownNodes(t *testing.T) {
 
 func TestMirrorWorkflowRunRejectsUnknownRun(t *testing.T) {
 	db := mirrorFixture(t)
-	if _, err := db.MirrorWorkflowRun("ghost", WorkflowMirrorSnapshot{State: "active"}, 100); err == nil {
+	if _, err := db.MirrorWorkflowRun(t.Context(), "ghost", WorkflowMirrorSnapshot{State: "active"}, 100); err == nil {
 		t.Fatal("mirrored an unknown run")
 	}
 }
@@ -105,21 +105,21 @@ func TestMirrorWorkflowRunRejectsUnknownRun(t *testing.T) {
 func TestListActiveExternalWorkflowRunsSkipsSettledAndUnlinked(t *testing.T) {
 	db := mirrorFixture(t)
 	// Not yet linked to an external execution.
-	if runs, err := db.ListActiveExternalWorkflowRuns(); err != nil || len(runs) != 0 {
+	if runs, err := db.ListActiveExternalWorkflowRuns(t.Context()); err != nil || len(runs) != 0 {
 		t.Fatalf("runs = %#v, %v", runs, err)
 	}
-	if err := db.SetWorkflowRunExternal("run-1", "dagu-1", "dagu", 50); err != nil {
+	if err := db.SetWorkflowRunExternal(t.Context(), "run-1", "dagu-1", "dagu", 50); err != nil {
 		t.Fatal(err)
 	}
-	runs, err := db.ListActiveExternalWorkflowRuns()
+	runs, err := db.ListActiveExternalWorkflowRuns(t.Context())
 	if err != nil || len(runs) != 1 || runs[0].ExternalID != "dagu-1" || runs[0].Runner != "dagu" {
 		t.Fatalf("runs = %#v, %v", runs, err)
 	}
 	// A settled run's rows are final; a restart must not resurrect it.
-	if _, err := db.MirrorWorkflowRun("run-1", WorkflowMirrorSnapshot{State: "successful"}, 60); err != nil {
+	if _, err := db.MirrorWorkflowRun(t.Context(), "run-1", WorkflowMirrorSnapshot{State: "successful"}, 60); err != nil {
 		t.Fatal(err)
 	}
-	if runs, err := db.ListActiveExternalWorkflowRuns(); err != nil || len(runs) != 0 {
+	if runs, err := db.ListActiveExternalWorkflowRuns(t.Context()); err != nil || len(runs) != 0 {
 		t.Fatalf("settled run still polled: %#v, %v", runs, err)
 	}
 }

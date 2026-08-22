@@ -11,6 +11,7 @@
 package autoapprove
 
 import (
+	"context"
 	"errors"
 	"io"
 	"runtime/debug"
@@ -35,11 +36,11 @@ var errNoSessionDirResolver = errors.New("no session directory resolver")
 // allowed everywhere it is consulted (settings fall back to defaults
 // and approvals simply aren't persisted).
 type SettingsStore interface {
-	GetAutoApprove(platform, sessionID string) (enabled bool, exists bool, err error)
-	GetJudgeDelayMs() (int64, error)
-	GetPromptSections() ([]state.PromptSection, error)
-	GetSetting(key string) (value string, ok bool, err error)
-	RecordApprovedPermission(platform, sessionID string, p state.ApprovedPermission) error
+	GetAutoApprove(context.Context, string, string) (enabled bool, exists bool, err error)
+	GetJudgeDelayMs(context.Context) (int64, error)
+	GetPromptSections(context.Context) ([]state.PromptSection, error)
+	GetSetting(context.Context, string) (value string, ok bool, err error)
+	RecordApprovedPermission(context.Context, string, string, state.ApprovedPermission) error
 }
 
 // Deps bundles the service's external dependencies. Every func field
@@ -63,7 +64,7 @@ type Deps struct {
 	// inherits the parent's safe-command cache: a command the parent
 	// already had auto-approved is approved for the child without a
 	// fresh judge run or a user prompt. May be nil.
-	ParentSessionID func(childID string) (parentID string, ok bool)
+	ParentSessionID func(context.Context, string) (parentID string, ok bool)
 
 	// OpencodePlatform resolves the OpenCode platform adapter for the
 	// headless watcher. May be nil / return nil; Ensure fails safe.
@@ -76,10 +77,10 @@ type Deps struct {
 	// BroadcastSessionIdle carries the platform the edge came from: a
 	// session's identity is (platform, sessionID), and the consumer drains
 	// that session's message queue with it.
-	BroadcastSessionIdle func(platformID, sessionID string)
-	BroadcastSessionChanged     func(sessionID string)
-	BroadcastSessionStatus      func(sessionID string, status db.SessionStatus)
-	BroadcastGlobalEvent        func(event string, data []byte)
+	BroadcastSessionIdle    func(platformID, sessionID string)
+	BroadcastSessionChanged func(sessionID string)
+	BroadcastSessionStatus  func(sessionID string, status db.SessionStatus)
+	BroadcastGlobalEvent    func(event string, data []byte)
 
 	// DefaultEnabled is the server-wide auto-approve default applied
 	// when a session has no per-session override.
@@ -154,11 +155,11 @@ func (s *Service) ResolveSessionDir(sessionID string) (string, error) {
 // ok=false when the session is not a tracked child or no resolver is
 // wired. Kept exported so the server-side closure wiring can be tested
 // end-to-end (mirrors ResolveSessionDir).
-func (s *Service) ResolveParentSessionID(childID string) (string, bool) {
+func (s *Service) ResolveParentSessionID(ctx context.Context, childID string) (string, bool) {
 	if s == nil || s.deps.ParentSessionID == nil {
 		return "", false
 	}
-	return s.deps.ParentSessionID(childID)
+	return s.deps.ParentSessionID(ctx, childID)
 }
 
 // OpencodeAdapter returns the OpenCode platform adapter via the
@@ -191,11 +192,11 @@ func (s *Service) JudgeModel() (provider, modelID string) {
 // applies it to the judge, falling back to the built-in default when
 // the setting is unset or malformed. No-op when the service has no
 // judge.
-func (s *Service) ReloadJudgeModel() {
+func (s *Service) ReloadJudgeModel(ctx context.Context) {
 	if s == nil || s.judge == nil {
 		return
 	}
-	if provider, modelID, ok := loadJudgeModel(s.deps.Store); ok {
+	if provider, modelID, ok := loadJudgeModel(ctx, s.deps.Store); ok {
 		s.judge.setModel(provider, modelID)
 	} else {
 		s.judge.setModel(judgeModelProvider, judgeModelID)

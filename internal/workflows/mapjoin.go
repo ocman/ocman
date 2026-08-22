@@ -72,7 +72,7 @@ func (s *Service) driveMapNode(ctx context.Context, run RunDetail, node NodeRun,
 	attempt := node.Attempts[len(node.Attempts)-1]
 	// First entry: hold the parent run-concurrency slot and expand.
 	if node.State == NodeReady && attempt.State == AttemptWaiting {
-		started, err := s.store.StartWorkflowNode(run.ID, node.NodeID, resourceRequests(run.Version.Definition, node.NodeID), s.now().UnixMilli())
+		started, err := s.store.StartWorkflowNode(ctx, run.ID, node.NodeID, resourceRequests(run.Version.Definition, node.NodeID), s.now().UnixMilli())
 		if err != nil || !started {
 			return false, err
 		}
@@ -119,7 +119,7 @@ func (s *Service) expandMap(ctx context.Context, run RunDetail, node NodeRun, co
 	// Fast path: once every declared item exists (the common case on
 	// reconcile ticks and after a completed expansion), skip re-creating
 	// them. Duplicate-key validation already ran on first expansion.
-	existing, err := s.store.ListWorkflowMapItems(run.ID, node.NodeID)
+	existing, err := s.store.ListWorkflowMapItems(ctx, run.ID, node.NodeID)
 	if err != nil {
 		return err
 	}
@@ -127,7 +127,7 @@ func (s *Service) expandMap(ctx context.Context, run RunDetail, node NodeRun, co
 		return nil
 	}
 	seen := map[string]bool{}
-	pinned, err := s.store.GetWorkflowVersion(config.VersionID)
+	pinned, err := s.store.GetWorkflowVersion(ctx, config.VersionID)
 	if err != nil {
 		return fmt.Errorf("pinned per-item subworkflow unavailable: %w", err)
 	}
@@ -142,7 +142,7 @@ func (s *Service) expandMap(ctx context.Context, run RunDetail, node NodeRun, co
 		seen[key] = true
 		now := s.now().UnixMilli()
 		child := s.newChildRun(*pinned, run.ID, node.NodeID, key, index, now)
-		created, err := s.store.CreateWorkflowMapItem(state.WorkflowMapItem{
+		created, err := s.store.CreateWorkflowMapItem(ctx, state.WorkflowMapItem{
 			RunID: run.ID, MapNode: node.NodeID, ItemKey: key, ItemIndex: index,
 			ChildRunID: child.ID, State: NodeRunning, CreatedAt: now,
 		}, child)
@@ -153,7 +153,7 @@ func (s *Service) expandMap(ctx context.Context, run RunDetail, node NodeRun, co
 			// Seed the item payload as an artifact the per-item pipeline
 			// consumes; ${item.*} placeholders in agent prompts are
 			// substituted from it at launch time.
-			s.storeArtifact(child.ID, node.NodeID, 0, "item", KindJSON, raw, 0)
+			s.storeArtifact(ctx, child.ID, node.NodeID, 0, "item", KindJSON, raw, 0)
 		}
 	}
 	return nil
@@ -163,7 +163,7 @@ func (s *Service) expandMap(ctx context.Context, run RunDetail, node NodeRun, co
 // once all items are terminal, settles the map node. Fail-fast fails the
 // run on the first failed item.
 func (s *Service) reconcileMap(ctx context.Context, run RunDetail, node NodeRun, config *MapConfig, attempt Attempt) (bool, error) {
-	items, err := s.store.ListWorkflowMapItems(run.ID, node.NodeID)
+	items, err := s.store.ListWorkflowMapItems(ctx, run.ID, node.NodeID)
 	if err != nil {
 		return false, err
 	}
@@ -172,14 +172,14 @@ func (s *Service) reconcileMap(ctx context.Context, run RunDetail, node NodeRun,
 	for _, item := range items {
 		childState := item.State
 		if item.ChildRunID != "" {
-			child, err := s.store.GetWorkflowRun(item.ChildRunID)
+			child, err := s.store.GetWorkflowRun(ctx, item.ChildRunID)
 			if err == nil {
 				childState = child.State
 			}
 		}
 		terminal := childState == StateSuccessful || childState == StateFailed || childState == StateCanceled
 		if terminal && childState != item.State {
-			if err := s.store.SetWorkflowMapItemState(run.ID, node.NodeID, item.ItemKey, childState); err != nil {
+			if err := s.store.SetWorkflowMapItemState(ctx, run.ID, node.NodeID, item.ItemKey, childState); err != nil {
 				return false, err
 			}
 		}
@@ -216,7 +216,7 @@ func (s *Service) settleMapNode(ctx context.Context, run RunDetail, node NodeRun
 	if err != nil {
 		return err
 	}
-	return s.store.SettleWorkflowNode(run.ID, node.NodeID, attempt.ID, successful, string(payload), message, s.now().UnixMilli())
+	return s.store.SettleWorkflowNode(ctx, run.ID, node.NodeID, attempt.ID, successful, string(payload), message, s.now().UnixMilli())
 }
 
 // settleJoinNode aggregates the upstream map's per-item outcomes in input
@@ -234,7 +234,7 @@ func (s *Service) settleJoinNode(ctx context.Context, run RunDetail, node NodeRu
 		return false, nil
 	}
 	mapNode := mapNodeForJoin(run.Version.Definition.Nodes, node.NodeID)
-	items, err := s.store.ListWorkflowMapItems(run.ID, mapNode)
+	items, err := s.store.ListWorkflowMapItems(ctx, run.ID, mapNode)
 	if err != nil {
 		return false, err
 	}
@@ -255,7 +255,7 @@ func (s *Service) settleJoinNode(ctx context.Context, run RunDetail, node NodeRu
 	if err != nil {
 		return false, err
 	}
-	if err := s.store.SettleWorkflowNode(run.ID, node.NodeID, attempt.ID, success, string(payload), errMsg, s.now().UnixMilli()); err != nil {
+	if err := s.store.SettleWorkflowNode(ctx, run.ID, node.NodeID, attempt.ID, success, string(payload), errMsg, s.now().UnixMilli()); err != nil {
 		return false, err
 	}
 	s.changed(run.ID)
@@ -349,7 +349,7 @@ func (s *Service) newChildRun(version state.WorkflowVersion, parentRunID, mapNod
 // without re-entering the dispatch lock, so it is safe to call from within
 // a dispatch pass.
 func (s *Service) cancelChildRuns(ctx context.Context, parentRunID string) {
-	children, err := s.store.ListWorkflowChildRuns(parentRunID)
+	children, err := s.store.ListWorkflowChildRuns(ctx, parentRunID)
 	if err != nil {
 		return
 	}
@@ -357,7 +357,7 @@ func (s *Service) cancelChildRuns(ctx context.Context, parentRunID string) {
 		if child.State != StateActive && child.State != StatePaused {
 			continue
 		}
-		full, err := s.store.GetWorkflowRun(child.ID)
+		full, err := s.store.GetWorkflowRun(ctx, child.ID)
 		if err == nil && s.agent != nil {
 			for _, node := range full.Nodes {
 				for _, attempt := range node.Attempts {
@@ -367,7 +367,7 @@ func (s *Service) cancelChildRuns(ctx context.Context, parentRunID string) {
 				}
 			}
 		}
-		_ = s.store.SetWorkflowRunState(child.ID, child.State, StateCanceled, s.now().UnixMilli())
+		_ = s.store.SetWorkflowRunState(ctx, child.ID, child.State, StateCanceled, s.now().UnixMilli())
 		s.changed(child.ID)
 	}
 }
@@ -407,7 +407,7 @@ func (s *Service) itemPrompt(ctx context.Context, run RunDetail, prompt string) 
 	if run.ParentRunID == "" || !itemPlaceholder.MatchString(prompt) {
 		return prompt
 	}
-	artifacts, err := s.store.ListWorkflowArtifacts(run.ID)
+	artifacts, err := s.store.ListWorkflowArtifacts(ctx, run.ID)
 	if err != nil {
 		return prompt
 	}
@@ -415,7 +415,7 @@ func (s *Service) itemPrompt(ctx context.Context, run RunDetail, prompt string) 
 		if artifact.Name != "item" || artifact.AttemptID != 0 {
 			continue
 		}
-		_, payload, err := s.downloadArtifact(artifact.ID, run.ID, true)
+		_, payload, err := s.downloadArtifact(ctx, artifact.ID, run.ID, true)
 		if err != nil {
 			return prompt
 		}

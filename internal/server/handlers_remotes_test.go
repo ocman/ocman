@@ -97,7 +97,7 @@ func TestHandleRemotes_MethodAndValidationErrors(t *testing.T) {
 func TestHandleRemoteUpdate_Validation(t *testing.T) {
 	srv := testServer(t)
 	withManager(t, srv)
-	id, _ := srv.stateDB.AddRemote("a:1", "t", "N")
+	id, _ := srv.stateDB.AddRemote(t.Context(), "a:1", "t", "N")
 
 	// Missing address -> 400.
 	miss := httptest.NewRequest(http.MethodPut, "/api/remotes/"+strconv.FormatInt(id, 10),
@@ -119,7 +119,7 @@ func TestHandleRemoteUpdate_Validation(t *testing.T) {
 	if r2.Code != http.StatusOK {
 		t.Fatalf("update with token = %d body=%s", r2.Code, r2.Body.String())
 	}
-	if got, _ := srv.stateDB.RemoteToken(id); got != "newtok" {
+	if got, _ := srv.stateDB.RemoteToken(t.Context(), id); got != "newtok" {
 		t.Errorf("token not replaced: %q", got)
 	}
 }
@@ -187,7 +187,7 @@ func TestHandleRemotes_AddListUpdateDelete(t *testing.T) {
 		t.Fatalf("update status %d body=%s", urr.Code, urr.Body.String())
 	}
 
-	got, err := srv.stateDB.GetRemote(added.LocalID)
+	got, err := srv.stateDB.GetRemote(t.Context(), added.LocalID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +210,7 @@ func TestHandleRemotes_AddListUpdateDelete(t *testing.T) {
 	if drr.Code != http.StatusOK {
 		t.Fatalf("delete status %d", drr.Code)
 	}
-	list2, _ := srv.remotes.List()
+	list2, _ := srv.remotes.List(t.Context())
 	if len(list2) != 0 {
 		t.Fatalf("expected empty after delete, got %+v", list2)
 	}

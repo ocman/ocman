@@ -68,7 +68,7 @@ type stubParentLookup struct {
 	err     error
 }
 
-func (s stubParentLookup) GetSessionParentIDs(ids []string) (map[string]string, error) {
+func (s stubParentLookup) GetSessionParentIDs(_ context.Context, ids []string) (map[string]string, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -90,7 +90,7 @@ type stubMCPParentLookup struct {
 	err     error
 }
 
-func (s stubMCPParentLookup) ChildSessionParents() (map[state.Key]string, error) {
+func (s stubMCPParentLookup) ChildSessionParents(context.Context) (map[state.Key]string, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -167,7 +167,7 @@ func TestBubbleUpPromptsToParent(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			lookup := stubParentLookup{parents: tt.parents}
 			mcpLookup := stubMCPParentLookup{parents: tt.mcpParents}
-			got := bubbleUpPromptsToParent(tt.prompted, lookup, mcpLookup)
+			got := bubbleUpPromptsToParent(t.Context(), tt.prompted, lookup, mcpLookup)
 			if len(got) != len(tt.want) {
 				t.Fatalf("got %v, want %v", got, tt.want)
 			}
@@ -185,7 +185,7 @@ func TestBubbleUpPromptsToParent(t *testing.T) {
 // map untouched.
 func TestBubbleUpPromptsToParent_NilLookup(t *testing.T) {
 	prompted := map[string]bool{"s1": true}
-	got := bubbleUpPromptsToParent(prompted, nil, nil)
+	got := bubbleUpPromptsToParent(t.Context(), prompted, nil, nil)
 	if len(got) != 1 || !got["s1"] {
 		t.Errorf("nil lookup should pass through unchanged, got %v", got)
 	}
@@ -198,7 +198,7 @@ func TestBubbleUpPromptsToParent_NilLookup(t *testing.T) {
 func TestBubbleUpPromptsToParent_MCPOnly(t *testing.T) {
 	prompted := map[string]bool{"mcpchild": true}
 	mcpLookup := stubMCPParentLookup{parents: map[string]string{"mcpchild": "parent"}}
-	got := bubbleUpPromptsToParent(prompted, nil, mcpLookup)
+	got := bubbleUpPromptsToParent(t.Context(), prompted, nil, mcpLookup)
 	if len(got) != 2 || !got["mcpchild"] || !got["parent"] {
 		t.Errorf("MCP-only lookup should bubble to parent, got %v", got)
 	}
@@ -209,13 +209,17 @@ func TestBubbleUpPromptsToParent_MCPOnly(t *testing.T) {
 // stub state.DB otherwise.
 type favReaderOnly struct{}
 
-func (favReaderOnly) ModelFavorites(string) ([]state.ModelFavorite, error) { return nil, nil }
+func (favReaderOnly) ModelFavorites(context.Context, string) ([]state.ModelFavorite, error) {
+	return nil, nil
+}
 
 // favWithLinks implements both FavoritesReader and mcpParentLookup, like
 // the production *state.DB.
 type favWithLinks struct{ favReaderOnly }
 
-func (favWithLinks) ChildSessionParents() (map[state.Key]string, error) { return nil, nil }
+func (favWithLinks) ChildSessionParents(context.Context) (map[state.Key]string, error) {
+	return nil, nil
+}
 
 func TestChildLinksFrom(t *testing.T) {
 	if got := childLinksFrom(nil); got != nil {

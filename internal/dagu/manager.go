@@ -28,7 +28,7 @@ type Manager struct {
 	// resolveVersion resolves a map node's pinned subworkflow version.
 	// Nil rejects mapping workflows rather than starting a parent whose
 	// child DAGs cannot be produced.
-	resolveVersion func(string) (workflows.Definition, error)
+	resolveVersion func(context.Context, string) (workflows.Definition, error)
 	// ocmanEndpoint is handed to the Dagu process so the shim it spawns
 	// can call back into ocman.
 	ocmanEndpoint string
@@ -59,7 +59,7 @@ func (m *Manager) DAGsDir() string { return filepath.Join(m.home, "dags") }
 
 // SetVersionResolver supplies the lookup used to compile a map node's
 // pinned per-item subworkflow.
-func (m *Manager) SetVersionResolver(resolve func(string) (workflows.Definition, error)) {
+func (m *Manager) SetVersionResolver(resolve func(context.Context, string) (workflows.Definition, error)) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.resolveVersion = resolve
@@ -165,11 +165,15 @@ func (m *Manager) healthy(ctx context.Context) bool {
 // CompileRun renders a definition for this manager, using its version
 // resolver and shim. It is separate from starting so a caller can decide
 // whether the runner supports a definition before creating anything.
-func (m *Manager) CompileRun(definition workflows.Definition, runID string) (Compiled, error) {
+func (m *Manager) CompileRun(ctx context.Context, definition workflows.Definition, runID string) (Compiled, error) {
 	m.mu.Lock()
 	resolve := m.resolveVersion
 	m.mu.Unlock()
-	return Compile(definition, CompileOptions{RunID: runID, ResolveVersion: resolve, Shim: m.stepShim()})
+	var resolver func(string) (workflows.Definition, error)
+	if resolve != nil {
+		resolver = func(id string) (workflows.Definition, error) { return resolve(ctx, id) }
+	}
+	return Compile(definition, CompileOptions{RunID: runID, ResolveVersion: resolver, Shim: m.stepShim()})
 }
 
 // StartCompiled posts an already-compiled run under a caller-chosen id,

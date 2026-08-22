@@ -44,11 +44,11 @@ const JudgeModelSettingKey = "judge_model"
 // loadJudgeModel reads the persisted judge model setting and splits it
 // into provider + modelID on the first "/". ok is false when the
 // setting is unset or malformed (no "/"), so callers keep the default.
-func loadJudgeModel(db judgeModelStore) (provider, modelID string, ok bool) {
+func loadJudgeModel(ctx context.Context, db judgeModelStore) (provider, modelID string, ok bool) {
 	if db == nil {
 		return "", "", false
 	}
-	val, found, err := db.GetSetting(JudgeModelSettingKey)
+	val, found, err := db.GetSetting(ctx, JudgeModelSettingKey)
 	if err != nil || !found {
 		return "", "", false
 	}
@@ -62,7 +62,7 @@ func loadJudgeModel(db judgeModelStore) (provider, modelID string, ok bool) {
 // judgeModelStore is the slice of *state.DB that loadJudgeModel needs,
 // kept small so tests can fake it.
 type judgeModelStore interface {
-	GetSetting(key string) (string, bool, error)
+	GetSetting(context.Context, string) (string, bool, error)
 }
 
 // judgeAgent is the OpenCode agent used for the judge session.

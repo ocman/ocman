@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -9,12 +10,12 @@ import (
 
 // SetAutoApprove enables or disables the auto-approve judge for a
 // specific (platform, session) pair. Overwrites any existing row.
-func (d *DB) SetAutoApprove(platform, sessionID string, enabled bool) error {
+func (d *DB) SetAutoApprove(ctx context.Context, platform, sessionID string, enabled bool) error {
 	val := 0
 	if enabled {
 		val = 1
 	}
-	_, err := d.db.Exec(`
+	_, err := d.db.ExecContext(ctx, `
 		INSERT INTO session_auto_approve (platform, session_id, enabled, updated_at)
 		VALUES (?, ?, ?, ?)
 		ON CONFLICT(platform, session_id) DO UPDATE SET
@@ -30,9 +31,9 @@ func (d *DB) SetAutoApprove(platform, sessionID string, enabled bool) error {
 // GetAutoApprove returns whether the auto-approve judge is explicitly
 // enabled for the given session. The second return value is false when
 // no per-session override exists (caller should use the global default).
-func (d *DB) GetAutoApprove(platform, sessionID string) (enabled bool, exists bool, err error) {
+func (d *DB) GetAutoApprove(ctx context.Context, platform, sessionID string) (enabled bool, exists bool, err error) {
 	var val int
-	err = d.db.QueryRow(
+	err = d.db.QueryRowContext(ctx,
 		`SELECT enabled FROM session_auto_approve WHERE platform = ? AND session_id = ?`,
 		platform, sessionID,
 	).Scan(&val)
@@ -63,12 +64,12 @@ type ApprovedPermission struct {
 // RecordApprovedPermission persists one auto-approved permission for a
 // session. Idempotent: repeated calls with the same permission_id
 // silently overwrite the existing row.
-func (d *DB) RecordApprovedPermission(platform, sessionID string, p ApprovedPermission) error {
+func (d *DB) RecordApprovedPermission(ctx context.Context, platform, sessionID string, p ApprovedPermission) error {
 	patternsJSON, err := encodePatterns(p.Patterns)
 	if err != nil {
 		return fmt.Errorf("encoding patterns: %w", err)
 	}
-	_, err = d.db.Exec(`
+	_, err = d.db.ExecContext(ctx, `
 		INSERT INTO auto_approved_permission
 			(platform, session_id, permission_id, permission_text, patterns_json, judge_session_id, reasoning, approved_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -87,8 +88,8 @@ func (d *DB) RecordApprovedPermission(platform, sessionID string, p ApprovedPerm
 
 // ListApprovedPermissions returns all auto-approved permissions for a
 // session, ordered by approval time ascending.
-func (d *DB) ListApprovedPermissions(platform, sessionID string) ([]ApprovedPermission, error) {
-	rows, err := d.db.Query(`
+func (d *DB) ListApprovedPermissions(ctx context.Context, platform, sessionID string) ([]ApprovedPermission, error) {
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT permission_id, permission_text, patterns_json, judge_session_id, reasoning, approved_at
 		FROM auto_approved_permission
 		WHERE platform = ? AND session_id = ?
@@ -130,9 +131,9 @@ type PromptSection struct {
 
 // GetPromptSections returns the persisted judge prompt sections, or an
 // empty slice if none have been saved yet.
-func (d *DB) GetPromptSections() ([]PromptSection, error) {
+func (d *DB) GetPromptSections(ctx context.Context) ([]PromptSection, error) {
 	var sectionsJSON string
-	err := d.db.QueryRow(`SELECT sections_json FROM judge_prompt_sections WHERE id = 1`).Scan(&sectionsJSON)
+	err := d.db.QueryRowContext(ctx, `SELECT sections_json FROM judge_prompt_sections WHERE id = 1`).Scan(&sectionsJSON)
 	if err == sql.ErrNoRows {
 		return []PromptSection{}, nil
 	}
@@ -148,7 +149,7 @@ func (d *DB) GetPromptSections() ([]PromptSection, error) {
 
 // SetPromptSections persists the judge prompt sections, overwriting any
 // existing row. Pass an empty slice to clear all custom sections.
-func (d *DB) SetPromptSections(sections []PromptSection) error {
+func (d *DB) SetPromptSections(ctx context.Context, sections []PromptSection) error {
 	if sections == nil {
 		sections = []PromptSection{}
 	}
@@ -156,7 +157,7 @@ func (d *DB) SetPromptSections(sections []PromptSection) error {
 	if err != nil {
 		return fmt.Errorf("encoding prompt sections: %w", err)
 	}
-	_, err = d.db.Exec(`
+	_, err = d.db.ExecContext(ctx, `
 		INSERT INTO judge_prompt_sections (id, sections_json, updated_at)
 		VALUES (1, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
@@ -175,9 +176,9 @@ const DefaultJudgeDelayMs = 5000
 // GetJudgeDelayMs returns the configured delay (ms) the backend waits
 // after a permission.asked event before starting the LLM judge.
 // Returns defaultJudgeDelayMs when no row has been saved yet.
-func (d *DB) GetJudgeDelayMs() (int64, error) {
+func (d *DB) GetJudgeDelayMs(ctx context.Context) (int64, error) {
 	var ms int64
-	err := d.db.QueryRow(`SELECT delay_ms FROM judge_settings WHERE id = 1`).Scan(&ms)
+	err := d.db.QueryRowContext(ctx, `SELECT delay_ms FROM judge_settings WHERE id = 1`).Scan(&ms)
 	if err == sql.ErrNoRows {
 		return DefaultJudgeDelayMs, nil
 	}
@@ -189,11 +190,11 @@ func (d *DB) GetJudgeDelayMs() (int64, error) {
 
 // SetJudgeDelayMs persists the judge delay. A value of 0 means no delay
 // (judge fires immediately). Negative values are clamped to 0.
-func (d *DB) SetJudgeDelayMs(ms int64) error {
+func (d *DB) SetJudgeDelayMs(ctx context.Context, ms int64) error {
 	if ms < 0 {
 		ms = 0
 	}
-	_, err := d.db.Exec(`
+	_, err := d.db.ExecContext(ctx, `
 		INSERT INTO judge_settings (id, delay_ms) VALUES (1, ?)
 		ON CONFLICT(id) DO UPDATE SET delay_ms = excluded.delay_ms
 	`, ms)

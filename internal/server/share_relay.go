@@ -94,11 +94,11 @@ func (s *Server) createRelayShare(ctx context.Context, link state.ShareLink, ada
 		_ = client.Delete(ctx, allocation)
 		return link, err
 	}
-	if err := s.stateDB.SetShareRelay(link.Token, s.relayURL, allocation.ID, key.String(), allocation.DeleteToken); err != nil {
+	if err := s.stateDB.SetShareRelay(ctx, link.Token, s.relayURL, allocation.ID, key.String(), allocation.DeleteToken); err != nil {
 		_ = client.Delete(ctx, allocation)
 		return link, err
 	}
-	if err := s.stateDB.SetShareRelaySeq(link.Token, lastSeq); err != nil {
+	if err := s.stateDB.SetShareRelaySeq(ctx, link.Token, lastSeq); err != nil {
 		return link, err
 	}
 	link.RelayURL = s.relayURL
@@ -159,7 +159,7 @@ func shareTooLarge(message string) error {
 // immutable completed turn is stored once and no streaming part rewrites
 // or compaction are needed.
 func (s *Server) publishCompletedTurn(ctx context.Context, adapter platforms.Platform, sessionID string) error {
-	links, err := s.stateDB.ListActiveShareLinks(string(adapter.ID()), sessionID)
+	links, err := s.stateDB.ListActiveShareLinks(ctx, string(adapter.ID()), sessionID)
 	if err != nil {
 		return err
 	}
@@ -194,7 +194,7 @@ func (s *Server) publishCompletedTurn(ctx context.Context, adapter platforms.Pla
 			return err
 		}
 		if lastSeq > link.RelayLastSeq {
-			if err := s.stateDB.SetShareRelaySeq(link.Token, lastSeq); err != nil {
+			if err := s.stateDB.SetShareRelaySeq(ctx, link.Token, lastSeq); err != nil {
 				return err
 			}
 		}

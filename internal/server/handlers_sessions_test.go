@@ -60,17 +60,17 @@ func newSessionsTestServer(t *testing.T) (*Server, *platforms.Registry) {
 func applyStateSetup(t *testing.T, db *state.DB, setup stateSetup) {
 	t.Helper()
 	for _, r := range setup.archived {
-		if err := db.ArchiveSession(r.platform, r.id, r.at); err != nil {
+		if err := db.ArchiveSession(t.Context(), r.platform, r.id, r.at); err != nil {
 			t.Fatalf("ArchiveSession(%v): %v", r, err)
 		}
 	}
 	for _, r := range setup.seen {
-		if err := db.MarkSessionSeen(r.platform, r.id, r.at); err != nil {
+		if err := db.MarkSessionSeen(t.Context(), r.platform, r.id, r.at); err != nil {
 			t.Fatalf("MarkSessionSeen(%v): %v", r, err)
 		}
 	}
 	for _, r := range setup.pinned {
-		if err := db.PinSession(r.platform, r.id); err != nil {
+		if err := db.PinSession(t.Context(), r.platform, r.id); err != nil {
 			t.Fatalf("PinSession(%v): %v", r, err)
 		}
 	}
@@ -657,10 +657,10 @@ func TestHandleSession_UnarchivesOnOpen(t *testing.T) {
 	reg.Register(fp)
 
 	root := projectRootForDirectory(sess.Directory)
-	if err := srv.stateDB.ArchiveSession("opencode", "s1", 1000); err != nil {
+	if err := srv.stateDB.ArchiveSession(t.Context(), "opencode", "s1", 1000); err != nil {
 		t.Fatalf("ArchiveSession: %v", err)
 	}
-	if err := srv.stateDB.ArchiveProject(state.LocalRemoteID, root); err != nil {
+	if err := srv.stateDB.ArchiveProject(t.Context(), state.LocalRemoteID, root); err != nil {
 		t.Fatalf("ArchiveProject: %v", err)
 	}
 
@@ -671,11 +671,11 @@ func TestHandleSession_UnarchivesOnOpen(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rr.Code)
 	}
 
-	archived, _ := srv.stateDB.ArchivedSessions()
+	archived, _ := srv.stateDB.ArchivedSessions(t.Context())
 	if _, ok := archived[state.Key{Platform: "opencode", SessionID: "s1"}]; ok {
 		t.Error("session should be unarchived after open")
 	}
-	archivedProjects, _ := srv.stateDB.ArchivedProjects()
+	archivedProjects, _ := srv.stateDB.ArchivedProjects(t.Context())
 	if _, ok := archivedProjects[state.ProjectKey{RemoteID: state.LocalRemoteID, Root: root}]; ok {
 		t.Error("project should be unarchived after open")
 	}
@@ -750,7 +750,7 @@ func TestHandleSessionAutoApproveSet_EnablingTriggersJudgeForPending(t *testing.
 	}
 
 	// 1. The flag was persisted to state.db.
-	enabled, exists, err := srv.stateDB.GetAutoApprove("opencode", sessionID)
+	enabled, exists, err := srv.stateDB.GetAutoApprove(t.Context(), "opencode", sessionID)
 	if err != nil {
 		t.Fatalf("GetAutoApprove: %v", err)
 	}
@@ -835,14 +835,14 @@ func TestInjectApprovalNotices_SkipsUserAllowAlways(t *testing.T) {
 			ApprovedAt:     200,
 		},
 	} {
-		if err := srv.stateDB.RecordApprovedPermission("opencode", "ses-1", approval); err != nil {
+		if err := srv.stateDB.RecordApprovedPermission(t.Context(), "opencode", "ses-1", approval); err != nil {
 			t.Fatalf("RecordApprovedPermission: %v", err)
 		}
 	}
 
 	var messages []db.Message
 	var parts []db.Part
-	injectApprovalNotices("opencode", "ses-1", srv.stateDB, &messages, &parts)
+	injectApprovalNotices(t.Context(), "opencode", "ses-1", srv.stateDB, &messages, &parts)
 
 	if len(messages) != 1 || messages[0].ID != "ocman-notice-ai-approved" {
 		t.Fatalf("injected messages = %#v, want only AI approval", messages)
@@ -1056,7 +1056,7 @@ func newNotifyFixtureServer(t *testing.T) *Server {
 	reg.Register(&fakePlatform{id: "fake", sessions: fake})
 	reg.Register(&fakePlatform{id: "other", sessions: other})
 	applyStateSetup(t, srv.stateDB, notifyFixtureState)
-	if err := srv.stateDB.InsertChildSession(state.ChildSession{
+	if err := srv.stateDB.InsertChildSession(t.Context(), state.ChildSession{
 		ID: "child-of-mcp", ParentSessionID: "prompt-perm", Platform: "fake",
 	}); err != nil {
 		t.Fatalf("InsertChildSession: %v", err)
@@ -1073,7 +1073,7 @@ func notifyReference(t *testing.T, srv *Server, since int64, limit int) []notify
 	t.Helper()
 	all := srv.fanOutSessions(context.Background(), "", since, nil)
 	all = sortAndLimitSessions(all, limit)
-	if err := srv.applySessionState(all); err != nil {
+	if err := srv.applySessionState(t.Context(), all); err != nil {
 		t.Fatalf("applySessionState: %v", err)
 	}
 	out := make([]notifyEntry, 0, len(all))
@@ -1180,7 +1180,7 @@ func TestHandleSessionsNotify_AutoUnarchivesUpdatedSession(t *testing.T) {
 	srv := newNotifyFixtureServer(t)
 	getNotifyJSON(t, srv, "")
 
-	archived, err := srv.stateDB.ArchivedSessions()
+	archived, err := srv.stateDB.ArchivedSessions(t.Context())
 	if err != nil {
 		t.Fatalf("ArchivedSessions: %v", err)
 	}

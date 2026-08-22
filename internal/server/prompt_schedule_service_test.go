@@ -20,7 +20,7 @@ type fakeStore struct {
 
 func newFakeStore() *fakeStore { return &fakeStore{schedules: map[string]state.PromptSchedule{}} }
 
-func (f *fakeStore) CreatePromptSchedule(schedule state.PromptSchedule) error {
+func (f *fakeStore) CreatePromptSchedule(_ context.Context, schedule state.PromptSchedule) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.createErr != nil {
@@ -30,7 +30,7 @@ func (f *fakeStore) CreatePromptSchedule(schedule state.PromptSchedule) error {
 	return nil
 }
 
-func (f *fakeStore) ListPromptSchedules(directory, remoteID string) ([]state.PromptSchedule, error) {
+func (f *fakeStore) ListPromptSchedules(_ context.Context, directory, remoteID string) ([]state.PromptSchedule, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.listErr != nil {
@@ -45,7 +45,7 @@ func (f *fakeStore) ListPromptSchedules(directory, remoteID string) ([]state.Pro
 	return out, nil
 }
 
-func (f *fakeStore) ListRunningPromptSchedules() ([]state.PromptSchedule, error) {
+func (f *fakeStore) ListRunningPromptSchedules(context.Context) ([]state.PromptSchedule, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.recoverErr != nil {
@@ -60,7 +60,7 @@ func (f *fakeStore) ListRunningPromptSchedules() ([]state.PromptSchedule, error)
 	return out, nil
 }
 
-func (f *fakeStore) GetPromptSchedule(id string) (state.PromptSchedule, error) {
+func (f *fakeStore) GetPromptSchedule(_ context.Context, id string) (state.PromptSchedule, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	schedule, ok := f.schedules[id]
@@ -70,7 +70,7 @@ func (f *fakeStore) GetPromptSchedule(id string) (state.PromptSchedule, error) {
 	return schedule, nil
 }
 
-func (f *fakeStore) ClaimPromptSchedule(id string, now int64, force bool) (state.PromptSchedule, bool, error) {
+func (f *fakeStore) ClaimPromptSchedule(_ context.Context, id string, now int64, force bool) (state.PromptSchedule, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	schedule, ok := f.schedules[id]
@@ -82,7 +82,7 @@ func (f *fakeStore) ClaimPromptSchedule(id string, now int64, force bool) (state
 	return schedule, true, nil
 }
 
-func (f *fakeStore) ClaimNextDuePromptSchedule(now int64) (state.PromptSchedule, bool, error) {
+func (f *fakeStore) ClaimNextDuePromptSchedule(_ context.Context, now int64) (state.PromptSchedule, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for id, schedule := range f.schedules {
@@ -95,7 +95,7 @@ func (f *fakeStore) ClaimNextDuePromptSchedule(now int64) (state.PromptSchedule,
 	return state.PromptSchedule{}, false, nil
 }
 
-func (f *fakeStore) CancelPromptSchedule(id string, now int64) (state.PromptSchedule, bool, error) {
+func (f *fakeStore) CancelPromptSchedule(_ context.Context, id string, now int64) (state.PromptSchedule, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	schedule, ok := f.schedules[id]
@@ -110,7 +110,7 @@ func (f *fakeStore) CancelPromptSchedule(id string, now int64) (state.PromptSche
 	return schedule, true, nil
 }
 
-func (f *fakeStore) LinkPromptScheduleSession(id, platform, sessionID string, now int64) error {
+func (f *fakeStore) LinkPromptScheduleSession(_ context.Context, id, platform, sessionID string, now int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	schedule := f.schedules[id]
@@ -122,7 +122,7 @@ func (f *fakeStore) LinkPromptScheduleSession(id, platform, sessionID string, no
 	return nil
 }
 
-func (f *fakeStore) FinishPromptSchedule(id, stateValue, errorText string, now int64) error {
+func (f *fakeStore) FinishPromptSchedule(_ context.Context, id, stateValue, errorText string, now int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	schedule := f.schedules[id]
@@ -134,7 +134,7 @@ func (f *fakeStore) FinishPromptSchedule(id, stateValue, errorText string, now i
 	return nil
 }
 
-func (f *fakeStore) CompletePromptSchedule(id string, nextRunAt, now int64) error {
+func (f *fakeStore) CompletePromptSchedule(_ context.Context, id string, nextRunAt, now int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	schedule := f.schedules[id]
@@ -146,7 +146,7 @@ func (f *fakeStore) CompletePromptSchedule(id string, nextRunAt, now int64) erro
 	return nil
 }
 
-func (f *fakeStore) ReschedulePromptSchedule(id string, nextRunAt int64, errorText string, now int64) error {
+func (f *fakeStore) ReschedulePromptSchedule(_ context.Context, id string, nextRunAt int64, errorText string, now int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	schedule := f.schedules[id]
@@ -158,7 +158,7 @@ func (f *fakeStore) ReschedulePromptSchedule(id string, nextRunAt int64, errorTe
 	return nil
 }
 
-func (f *fakeStore) SetPromptScheduleEnabled(id string, enabled bool, runAt, now int64) (state.PromptSchedule, error) {
+func (f *fakeStore) SetPromptScheduleEnabled(_ context.Context, id string, enabled bool, runAt, now int64) (state.PromptSchedule, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	schedule, ok := f.schedules[id]
@@ -175,7 +175,7 @@ func (f *fakeStore) SetPromptScheduleEnabled(id string, enabled bool, runAt, now
 	return schedule, nil
 }
 
-func (f *fakeStore) FailRunningPromptSchedules(now int64, errorText string) error {
+func (f *fakeStore) FailRunningPromptSchedules(_ context.Context, now int64, errorText string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.recoverErr != nil {
@@ -427,7 +427,7 @@ func TestRecoverMarksInterruptedDispatchFailedWithoutReplaying(t *testing.T) {
 	store.schedules["interrupted"] = state.PromptSchedule{ID: "interrupted", State: StateRunning}
 	sessions := &fakeSessions{}
 	svc := testPromptScheduleService(store, sessions)
-	if err := svc.Recover(); err != nil {
+	if err := svc.Recover(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.Tick(context.Background()); err != nil {
@@ -450,7 +450,7 @@ func TestRecoverPreservesValidRecurringSchedules(t *testing.T) {
 		store.schedules[schedule.ID] = schedule
 	}
 
-	if err := testPromptScheduleService(store, &fakeSessions{}).Recover(); err != nil {
+	if err := testPromptScheduleService(store, &fakeSessions{}).Recover(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	if got := store.schedules["once"]; got.State != StateFailed || got.Error == "" {
@@ -469,7 +469,7 @@ func TestRecoverPreservesValidRecurringSchedules(t *testing.T) {
 func TestRecoverReturnsStoreError(t *testing.T) {
 	want := errors.New("locked")
 	svc := testPromptScheduleService(&fakeStore{schedules: map[string]state.PromptSchedule{}, recoverErr: want}, &fakeSessions{})
-	if err := svc.Recover(); !errors.Is(err, want) {
+	if err := svc.Recover(t.Context()); !errors.Is(err, want) {
 		t.Fatalf("Recover error = %v", err)
 	}
 }

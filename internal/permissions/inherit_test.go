@@ -1,6 +1,7 @@
 package permissions
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -13,7 +14,7 @@ type fakeLister struct {
 	err  error
 }
 
-func (f fakeLister) ListApprovedPermissions(string, string) ([]state.ApprovedPermission, error) {
+func (f fakeLister) ListApprovedPermissions(context.Context, string, string) ([]state.ApprovedPermission, error) {
 	return f.rows, f.err
 }
 
@@ -92,7 +93,7 @@ func TestBuildInheritedRules(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			rules, count, err := BuildInheritedRules(fakeLister{rows: tc.rows}, "opencode", "ses-parent")
+			rules, count, err := BuildInheritedRules(t.Context(), fakeLister{rows: tc.rows}, "opencode", "ses-parent")
 			if err != nil {
 				t.Fatalf("BuildInheritedRules: %v", err)
 			}
@@ -114,7 +115,7 @@ func TestBuildInheritedRules_Truncation(t *testing.T) {
 	}
 	rows = append(rows, ap("bash", pats...))
 
-	rules, count, err := BuildInheritedRules(fakeLister{rows: rows}, "opencode", "ses-parent")
+	rules, count, err := BuildInheritedRules(t.Context(), fakeLister{rows: rows}, "opencode", "ses-parent")
 	if err != nil {
 		t.Fatalf("BuildInheritedRules: %v", err)
 	}
@@ -124,16 +125,16 @@ func TestBuildInheritedRules_Truncation(t *testing.T) {
 }
 
 func TestBuildInheritedRules_NilListerAndEmptyParent(t *testing.T) {
-	if rules, count, err := BuildInheritedRules(nil, "opencode", "ses"); err != nil || rules != nil || count != 0 {
+	if rules, count, err := BuildInheritedRules(t.Context(), nil, "opencode", "ses"); err != nil || rules != nil || count != 0 {
 		t.Errorf("nil lister: got (%v,%d,%v), want (nil,0,nil)", rules, count, err)
 	}
-	if rules, count, err := BuildInheritedRules(fakeLister{}, "opencode", ""); err != nil || rules != nil || count != 0 {
+	if rules, count, err := BuildInheritedRules(t.Context(), fakeLister{}, "opencode", ""); err != nil || rules != nil || count != 0 {
 		t.Errorf("empty parent: got (%v,%d,%v), want (nil,0,nil)", rules, count, err)
 	}
 }
 
 func TestBuildInheritedRules_ListerError(t *testing.T) {
-	_, _, err := BuildInheritedRules(fakeLister{err: errors.New("boom")}, "opencode", "ses")
+	_, _, err := BuildInheritedRules(t.Context(), fakeLister{err: errors.New("boom")}, "opencode", "ses")
 	if err == nil {
 		t.Fatal("expected error from lister to propagate")
 	}
@@ -157,7 +158,7 @@ func TestBuildInheritedRulesWithLive_YoloParentWithNoApprovals(t *testing.T) {
 		{Permission: "bash", Pattern: "*", Action: "allow"},
 		{Permission: "webfetch", Pattern: "*", Action: "allow"},
 	}
-	rules, count, err := BuildInheritedRulesWithLive(
+	rules, count, err := BuildInheritedRulesWithLive(t.Context(),
 		fakeLister{}, // no approvals
 		fakeLiveReader{rules: live},
 		"opencode", "ses-parent",
@@ -173,7 +174,7 @@ func TestBuildInheritedRulesWithLive_YoloParentWithNoApprovals(t *testing.T) {
 // Live rules follow the approval-derived rules so a live rule wins on
 // conflict (OpenCode evaluates the last matching rule).
 func TestBuildInheritedRulesWithLive_MergeOrder(t *testing.T) {
-	rules, _, err := BuildInheritedRulesWithLive(
+	rules, _, err := BuildInheritedRulesWithLive(t.Context(),
 		fakeLister{rows: []state.ApprovedPermission{ap("bash", "git *")}},
 		fakeLiveReader{rules: []platforms.PermissionRule{
 			{Permission: "bash", Pattern: "*", Action: "allow"},
@@ -194,7 +195,7 @@ func TestBuildInheritedRulesWithLive_MergeOrder(t *testing.T) {
 
 // A live-reader error is soft: fall back to approval-only rules.
 func TestBuildInheritedRulesWithLive_LiveErrorFallsBack(t *testing.T) {
-	rules, count, err := BuildInheritedRulesWithLive(
+	rules, count, err := BuildInheritedRulesWithLive(t.Context(),
 		fakeLister{rows: []state.ApprovedPermission{ap("edit", "*.go")}},
 		fakeLiveReader{err: errors.New("boom")},
 		"opencode", "ses-parent",
@@ -210,7 +211,7 @@ func TestBuildInheritedRulesWithLive_LiveErrorFallsBack(t *testing.T) {
 
 // A nil live reader degrades to plain approval-only inheritance.
 func TestBuildInheritedRulesWithLive_NilReader(t *testing.T) {
-	rules, count, err := BuildInheritedRulesWithLive(
+	rules, count, err := BuildInheritedRulesWithLive(t.Context(),
 		fakeLister{rows: []state.ApprovedPermission{ap("edit", "*.go")}},
 		nil,
 		"opencode", "ses-parent",

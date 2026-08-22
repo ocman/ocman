@@ -293,7 +293,7 @@ func (s *Server) applyInheritedPermissions(r *http.Request, parentSessionID, chi
 	if s.stateDB == nil || parentSessionID == "" || childSessionID == "" {
 		return 0, ""
 	}
-	on, err := s.stateDB.GetWorktreeInheritPermissions()
+	on, err := s.stateDB.GetWorktreeInheritPermissions(r.Context())
 	if err != nil {
 		log.WithError(err).Warn("worktree: reading inherit-permissions setting")
 		return 0, "reading setting: " + err.Error()
@@ -312,7 +312,7 @@ func (s *Server) applyInheritedPermissions(r *http.Request, parentSessionID, chi
 	if adapter, ok := s.registry.Get(platforms.ID(platform)); ok {
 		reader = worktreeLiveRuleReader{adapter: adapter, ctx: r.Context()}
 	}
-	rules, count, err := permissions.BuildInheritedRulesWithLive(s.stateDB, reader, platform, parentSessionID)
+	rules, count, err := permissions.BuildInheritedRulesWithLive(r.Context(), s.stateDB, reader, platform, parentSessionID)
 	if err != nil {
 		log.WithError(err).Warn("worktree: building inherited permission rules")
 		return 0, "building rules: " + err.Error()

@@ -99,7 +99,7 @@ func (m *Manager) Start(ctx context.Context) {
 	if m.store == nil {
 		return
 	}
-	rows, err := m.store.ListRemotes()
+	rows, err := m.store.ListRemotes(ctx)
 	if err != nil {
 		log.WithError(err).Warn("remote: loading saved remotes")
 		return
@@ -108,7 +108,7 @@ func (m *Manager) Start(ctx context.Context) {
 		if !r.Enabled {
 			continue
 		}
-		m.dial(r)
+		m.dial(ctx, r)
 	}
 }
 
@@ -129,8 +129,8 @@ func (m *Manager) RunInventoryLoop(ctx context.Context, interval time.Duration) 
 
 // dial connects a single remote in the background and registers its
 // adapters on success.
-func (m *Manager) dial(r state.Remote) {
-	token, err := m.store.RemoteToken(r.LocalID)
+func (m *Manager) dial(ctx context.Context, r state.Remote) {
+	token, err := m.store.RemoteToken(ctx, r.LocalID)
 	if err != nil {
 		log.WithError(err).WithField("remote", r.LocalID).Warn("remote: reading token")
 		return
@@ -152,7 +152,7 @@ func (m *Manager) dial(r state.Remote) {
 	m.mu.Unlock()
 
 	m.connectors.Add(1)
-	ctx := m.baseCtx
+	ctx = m.baseCtx
 	m.lifecycleMu.Unlock()
 	go func() {
 		defer m.connectors.Done()
@@ -188,7 +188,7 @@ func (m *Manager) connectAndRegister(ctx context.Context, mr *managedRemote, loc
 		err := mr.conn.Connect(cctx)
 		cancel()
 		if err != nil {
-			m.persistHealth(localID, mr.conn)
+			m.persistHealth(ctx, localID, mr.conn)
 			// A bad token or incompatible version won't be fixed by
 			// retrying; stop and leave the health reason visible.
 			if h := mr.conn.Health(); h == HealthAuthFailed || h == HealthIncompatible {
@@ -235,11 +235,11 @@ func (m *Manager) connectAndRegister(ctx context.Context, mr *managedRemote, loc
 			// newer dial or a disconnect/removal owns this id now. Record
 			// the connect we did make, drop the transport we just brought
 			// up, and stop supervising.
-			m.persistHealth(localID, mr.conn)
+			m.persistHealth(ctx, localID, mr.conn)
 			mr.conn.Close()
 			return
 		}
-		m.persistHealth(localID, mr.conn)
+		m.persistHealth(ctx, localID, mr.conn)
 		m.refreshInventory(ctx, mr)
 
 		log.WithFields(log.Fields{
@@ -256,7 +256,7 @@ func (m *Manager) connectAndRegister(ctx context.Context, mr *managedRemote, loc
 		}
 		m.unregisterAdapters(mr)
 		mr.conn.markOffline()
-		m.persistHealth(localID, mr.conn)
+		m.persistHealth(ctx, localID, mr.conn)
 		log.WithField("remote", localID).Info("remote: disconnected, reconnecting")
 	}
 }
@@ -459,11 +459,12 @@ func (m *Manager) resolveDir(dir string) string {
 }
 
 // persistHealth writes the connection outcome back to state.db.
-func (m *Manager) persistHealth(localID int64, conn *RemoteConn) {
+func (m *Manager) persistHealth(ctx context.Context, localID int64, conn *RemoteConn) {
 	if m.store == nil {
 		return
 	}
 	_ = m.store.SetRemoteHealth(
+		context.WithoutCancel(ctx),
 		localID,
 		conn.RemoteID(),
 		string(conn.Health()),
@@ -554,11 +555,11 @@ type RemoteStatus struct {
 
 // List returns the status of every configured remote, merging persisted
 // rows with live health from the active connections.
-func (m *Manager) List() ([]RemoteStatus, error) {
+func (m *Manager) List(ctx context.Context) ([]RemoteStatus, error) {
 	if m.store == nil {
 		return nil, nil
 	}
-	rows, err := m.store.ListRemotes()
+	rows, err := m.store.ListRemotes(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -611,26 +612,26 @@ func (m *Manager) sessionCount(localID int64) int {
 
 // Add persists a new remote and dials it in the background. Returns the
 // new hub-local id.
-func (m *Manager) Add(address, token, displayName string) (int64, error) {
-	id, err := m.store.AddRemote(address, token, displayName)
+func (m *Manager) Add(ctx context.Context, address, token, displayName string) (int64, error) {
+	id, err := m.store.AddRemote(ctx, address, token, displayName)
 	if err != nil {
 		return 0, err
 	}
-	r, err := m.store.GetRemote(id)
+	r, err := m.store.GetRemote(ctx, id)
 	if err != nil {
 		return id, err
 	}
-	m.dial(r)
+	m.dial(ctx, r)
 	return id, nil
 }
 
 // Update edits a remote's config and reconnects with the new settings.
-func (m *Manager) Update(localID int64, displayName, address string, enabled bool, token *string) error {
-	if err := m.store.UpdateRemoteConfig(localID, displayName, address, enabled, token); err != nil {
+func (m *Manager) Update(ctx context.Context, localID int64, displayName, address string, enabled bool, token *string) error {
+	if err := m.store.UpdateRemoteConfig(ctx, localID, displayName, address, enabled, token); err != nil {
 		return err
 	}
 	m.updateName(localID, displayName)
-	return m.Reconnect(localID)
+	return m.Reconnect(ctx, localID)
 }
 
 // updateName refreshes the live display name on a managed remote.
@@ -644,8 +645,8 @@ func (m *Manager) updateName(localID int64, name string) {
 
 // Reconnect tears down and re-dials a remote (or disconnects it when
 // disabled).
-func (m *Manager) Reconnect(localID int64) error {
-	r, err := m.store.GetRemote(localID)
+func (m *Manager) Reconnect(ctx context.Context, localID int64) error {
+	r, err := m.store.GetRemote(ctx, localID)
 	if err != nil {
 		return err
 	}
@@ -653,14 +654,14 @@ func (m *Manager) Reconnect(localID int64) error {
 	if !r.Enabled {
 		return nil
 	}
-	m.dial(r)
+	m.dial(ctx, r)
 	return nil
 }
 
 // Remove disconnects and deletes a remote.
-func (m *Manager) Remove(localID int64) error {
+func (m *Manager) Remove(ctx context.Context, localID int64) error {
 	m.disconnect(localID)
-	return m.store.DeleteRemote(localID)
+	return m.store.DeleteRemote(ctx, localID)
 }
 
 // disconnect tears down a managed remote's connection and adapters.

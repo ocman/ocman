@@ -44,7 +44,7 @@ func TestHandleRevealRemoteToken_ReturnsPlaintext(t *testing.T) {
 	srv := testServer(t)
 
 	// Establish the stored identity so reveal returns the same token.
-	ident, err := srv.stateDB.InstanceIdentity()
+	ident, err := srv.stateDB.InstanceIdentity(t.Context())
 	if err != nil {
 		t.Fatalf("identity: %v", err)
 	}

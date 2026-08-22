@@ -53,7 +53,7 @@ func (s *Server) handleListFavorites(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := s.stateDB.ModelFavorites(platform)
+	rows, err := s.stateDB.ModelFavorites(r.Context(), platform)
 	if err != nil {
 		serverError(w, "listing model favorites", err)
 		return
@@ -73,7 +73,7 @@ func (s *Server) handleAddFavorite(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.stateDB.AddModelFavorite(req.Platform, req.Provider, req.Model); err != nil {
+	if err := s.stateDB.AddModelFavorite(r.Context(), req.Platform, req.Provider, req.Model); err != nil {
 		serverError(w, "adding model favorite", err)
 		return
 	}
@@ -86,7 +86,7 @@ func (s *Server) handleRemoveFavorite(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.stateDB.RemoveModelFavorite(req.Platform, req.Provider, req.Model); err != nil {
+	if err := s.stateDB.RemoveModelFavorite(r.Context(), req.Platform, req.Provider, req.Model); err != nil {
 		serverError(w, "removing model favorite", err)
 		return
 	}

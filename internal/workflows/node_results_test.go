@@ -57,7 +57,7 @@ func TestMapAndJoinPublishChildOutputs(t *testing.T) {
 	if joinOutput != wantJoin {
 		t.Fatalf("join output:\n got %s\nwant %s", joinOutput, wantJoin)
 	}
-	stored, err := h.db.GetWorkflowRun(run.ID)
+	stored, err := h.db.GetWorkflowRun(t.Context(), run.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestEmptyMapPublishesEmptyItems(t *testing.T) {
 
 type childCommandExecutor struct{ fail bool }
 
-func (e childCommandExecutor) Execute(_ context.Context, request CommandRequest) CommandResult {
+func (e childCommandExecutor) Execute(ctx context.Context, request CommandRequest) CommandResult {
 	if e.fail && request.Command[0] == "first" {
 		return CommandResult{State: AttemptFailed, ExitCode: 1, Error: "child failed"}
 	}
@@ -137,7 +137,7 @@ func (e childCommandExecutor) Execute(_ context.Context, request CommandRequest)
 
 type nestedMapExecutor struct{}
 
-func (nestedMapExecutor) Execute(_ context.Context, request CommandRequest) CommandResult {
+func (nestedMapExecutor) Execute(ctx context.Context, request CommandRequest) CommandResult {
 	if request.Command[0] == "nested-seed" {
 		return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: `[{"id":"nested"}]`}
 	}

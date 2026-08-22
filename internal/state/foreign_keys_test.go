@@ -97,7 +97,7 @@ func TestForeignKeysStayOffOnDirtyDatabase(t *testing.T) {
 		t.Errorf("foreign_keys = %d; enforcement must stay off when the database already violates it", on)
 	}
 	// And writes still work.
-	if err := reopened.ArchiveSession("opencode", "s1", 1); err != nil {
+	if err := reopened.ArchiveSession(t.Context(), "opencode", "s1", 1); err != nil {
 		t.Errorf("write failed on a database with pre-existing violations: %v", err)
 	}
 }
@@ -115,7 +115,7 @@ func TestForeignKeyCheckOnRealisticDatabase(t *testing.T) {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	version, err := db.InsertWorkflowVersion(WorkflowVersion{
+	version, err := db.InsertWorkflowVersion(t.Context(), WorkflowVersion{
 		ID: "version-1", WorkflowID: "workflow-1", Name: "Workflow", MetadataVersion: "1",
 		DefinitionJSON: `{"id":"workflow-1","name":"Workflow","version":"1","concurrency":1,` +
 			`"nodes":[{"id":"build","name":"Build","type":"command"},{"id":"review","name":"Review","type":"agent"}],` +
@@ -130,7 +130,7 @@ func TestForeignKeyCheckOnRealisticDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InsertWorkflowVersion: %v", err)
 	}
-	if err := db.InsertWorkflowRun(WorkflowRun{
+	if err := db.InsertWorkflowRun(t.Context(), WorkflowRun{
 		ID: "run-1", WorkflowID: version.WorkflowID, VersionID: version.ID, State: "active",
 		CreatedAt: 1, UpdatedAt: 1,
 		Nodes: []WorkflowNodeRun{
@@ -142,18 +142,18 @@ func TestForeignKeyCheckOnRealisticDatabase(t *testing.T) {
 	}
 
 	// Rows in the tables with no delete path anywhere in the package.
-	if err := db.InsertChildSession(ChildSession{
+	if err := db.InsertChildSession(t.Context(), ChildSession{
 		ID: "child-1", Platform: "opencode", ParentSessionID: "parent-1",
 		Intent: "test", Status: "running", CreatedAt: 1,
 	}); err != nil {
 		t.Fatalf("InsertChildSession: %v", err)
 	}
-	if err := db.EnqueueMessage(QueuedMessage{
+	if err := db.EnqueueMessage(t.Context(), QueuedMessage{
 		ID: "q1", Platform: "opencode", SessionID: "parent-1", Text: "hi", CreatedAt: 1,
 	}); err != nil {
 		t.Fatalf("EnqueueMessage: %v", err)
 	}
-	if err := db.ArchiveSession("opencode", "parent-1", 1); err != nil {
+	if err := db.ArchiveSession(t.Context(), "opencode", "parent-1", 1); err != nil {
 		t.Fatalf("ArchiveSession: %v", err)
 	}
 

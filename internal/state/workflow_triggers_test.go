@@ -4,7 +4,7 @@ import "testing"
 
 func TestWorkflowTriggerQueuePersistsAndStartsAtomically(t *testing.T) {
 	db := openTestStateDB(t)
-	version, err := db.InsertWorkflowVersion(WorkflowVersion{
+	version, err := db.InsertWorkflowVersion(t.Context(), WorkflowVersion{
 		ID: "version-1", WorkflowID: "workflow-1", Name: "Workflow", MetadataVersion: "1", DefinitionJSON: `{}`,
 		Concurrency: 1, CreatedAt: 1, Nodes: []WorkflowNode{{ID: "approve", Name: "Approve", Type: "approval"}},
 	})
@@ -14,47 +14,47 @@ func TestWorkflowTriggerQueuePersistsAndStartsAtomically(t *testing.T) {
 	running := true
 	triggerState := WorkflowTriggerState{VersionID: version.ID, TriggerID: "cron", DetectionJSON: `{"slot":1}`, LastDecision: "queued", LastCheckedAt: 2, NextCheckAt: 3, LastRunning: &running}
 	firing := WorkflowTriggerFiring{VersionID: version.ID, TriggerID: "cron", FiredAt: 2, Detail: "slot", SnapshotJSON: `{"id":"cron"}`, Decision: "queued"}
-	if err := db.CommitWorkflowTriggerFiring(nil, firing, triggerState); err != nil {
+	if err := db.CommitWorkflowTriggerFiring(t.Context(), nil, firing, triggerState); err != nil {
 		t.Fatal(err)
 	}
-	current, err := db.ListCurrentWorkflowVersions()
+	current, err := db.ListCurrentWorkflowVersions(t.Context())
 	if err != nil || len(current) != 1 || current[0].ID != version.ID {
 		t.Fatalf("current versions: %+v, %v", current, err)
 	}
-	queuedVersions, err := db.ListQueuedWorkflowVersions()
+	queuedVersions, err := db.ListQueuedWorkflowVersions(t.Context())
 	if err != nil || len(queuedVersions) != 1 || queuedVersions[0].ID != version.ID {
 		t.Fatalf("queued versions: %+v, %v", queuedVersions, err)
 	}
-	storedState, err := db.GetWorkflowTriggerState(version.ID, "cron")
+	storedState, err := db.GetWorkflowTriggerState(t.Context(), version.ID, "cron")
 	if err != nil || storedState.LastRunning == nil || !*storedState.LastRunning || storedState.NextCheckAt != 3 {
 		t.Fatalf("trigger state: %+v, %v", storedState, err)
 	}
-	queued, err := db.NextQueuedWorkflowTriggerFiring(version.ID, "cron")
+	queued, err := db.NextQueuedWorkflowTriggerFiring(t.Context(), version.ID, "cron")
 	if err != nil || queued == nil {
 		t.Fatalf("queued firing: %+v, %v", queued, err)
 	}
-	if count, err := db.CountQueuedWorkflowTriggerFirings(version.ID, "cron"); err != nil || count != 1 {
+	if count, err := db.CountQueuedWorkflowTriggerFirings(t.Context(), version.ID, "cron"); err != nil || count != 1 {
 		t.Fatalf("queued count: %d, %v", count, err)
 	}
 
 	run := WorkflowRun{ID: "run-1", WorkflowID: version.WorkflowID, VersionID: version.ID, State: "active", CreatedAt: 4, UpdatedAt: 4, TriggerSnapshotJSON: firing.SnapshotJSON, Nodes: []WorkflowNodeRun{{NodeID: "approve", State: "ready"}}}
 	triggerState.LastDecision, triggerState.LastRunID = "started", run.ID
-	if err := db.InsertWorkflowRunFromQueued(run, queued.ID, 4, triggerState); err != nil {
+	if err := db.InsertWorkflowRunFromQueued(t.Context(), run, queued.ID, 4, triggerState); err != nil {
 		t.Fatal(err)
 	}
-	if count, err := db.CountActiveWorkflowTriggerRuns(version.ID, "cron"); err != nil || count != 1 {
+	if count, err := db.CountActiveWorkflowTriggerRuns(t.Context(), version.ID, "cron"); err != nil || count != 1 {
 		t.Fatalf("active count: %d, %v", count, err)
 	}
-	if id, err := db.ActiveWorkflowTriggerRunID(version.ID, "cron"); err != nil || id != run.ID {
+	if id, err := db.ActiveWorkflowTriggerRunID(t.Context(), version.ID, "cron"); err != nil || id != run.ID {
 		t.Fatalf("active run: %q, %v", id, err)
 	}
 
 	duplicate := run
 	duplicate.ID = "rolled-back-run"
-	if err := db.InsertWorkflowRunFromQueued(duplicate, queued.ID, 5, triggerState); err == nil {
+	if err := db.InsertWorkflowRunFromQueued(t.Context(), duplicate, queued.ID, 5, triggerState); err == nil {
 		t.Fatal("started the same queued firing twice")
 	}
-	if _, err := db.GetWorkflowRun(duplicate.ID); err == nil {
+	if _, err := db.GetWorkflowRun(t.Context(), duplicate.ID); err == nil {
 		t.Fatal("queued firing race retained an orphan run")
 	}
 }
@@ -65,7 +65,7 @@ func TestWorkflowTriggerQueuePersistsAndStartsAtomically(t *testing.T) {
 // user-facing ListWorkflowVersions does.
 func TestArchivedWorkflowVersionsStopScheduling(t *testing.T) {
 	db := openTestStateDB(t)
-	version, err := db.InsertWorkflowVersion(WorkflowVersion{
+	version, err := db.InsertWorkflowVersion(t.Context(), WorkflowVersion{
 		ID: "version-1", WorkflowID: "workflow-1", Name: "Workflow", MetadataVersion: "1", DefinitionJSON: `{}`,
 		Concurrency: 1, CreatedAt: 1, Nodes: []WorkflowNode{{ID: "approve", Name: "Approve", Type: "approval"}},
 	})
@@ -74,33 +74,33 @@ func TestArchivedWorkflowVersionsStopScheduling(t *testing.T) {
 	}
 	firing := WorkflowTriggerFiring{VersionID: version.ID, TriggerID: "cron", FiredAt: 2, Detail: "slot", SnapshotJSON: `{"id":"cron"}`, Decision: "queued"}
 	triggerState := WorkflowTriggerState{VersionID: version.ID, TriggerID: "cron", DetectionJSON: `{"slot":1}`, LastDecision: "queued", LastCheckedAt: 2, NextCheckAt: 3}
-	if err := db.CommitWorkflowTriggerFiring(nil, firing, triggerState); err != nil {
+	if err := db.CommitWorkflowTriggerFiring(t.Context(), nil, firing, triggerState); err != nil {
 		t.Fatal(err)
 	}
 
 	// Sanity: schedulable before archiving.
-	if current, err := db.ListCurrentWorkflowVersions(); err != nil || len(current) != 1 {
+	if current, err := db.ListCurrentWorkflowVersions(t.Context()); err != nil || len(current) != 1 {
 		t.Fatalf("pre-archive current versions: %+v, %v", current, err)
 	}
-	if queued, err := db.ListQueuedWorkflowVersions(); err != nil || len(queued) != 1 {
+	if queued, err := db.ListQueuedWorkflowVersions(t.Context()); err != nil || len(queued) != 1 {
 		t.Fatalf("pre-archive queued versions: %+v, %v", queued, err)
 	}
 
-	if err := db.ArchiveWorkflowVersion(version.ID, 5); err != nil {
+	if err := db.ArchiveWorkflowVersion(t.Context(), version.ID, 5); err != nil {
 		t.Fatal(err)
 	}
 
-	if current, err := db.ListCurrentWorkflowVersions(); err != nil || len(current) != 0 {
+	if current, err := db.ListCurrentWorkflowVersions(t.Context()); err != nil || len(current) != 0 {
 		t.Fatalf("archived workflow still scheduled by ListCurrentWorkflowVersions: %+v, %v", current, err)
 	}
-	if queued, err := db.ListQueuedWorkflowVersions(); err != nil || len(queued) != 0 {
+	if queued, err := db.ListQueuedWorkflowVersions(t.Context()); err != nil || len(queued) != 0 {
 		t.Fatalf("archived workflow still scheduled by ListQueuedWorkflowVersions: %+v, %v", queued, err)
 	}
 }
 
 func TestWorkflowTriggerFiringRollsBackRunOnFailure(t *testing.T) {
 	db := openTestStateDB(t)
-	version, err := db.InsertWorkflowVersion(WorkflowVersion{ID: "version-1", WorkflowID: "workflow-1", Name: "Workflow", MetadataVersion: "1", DefinitionJSON: `{}`, Concurrency: 1, CreatedAt: 1})
+	version, err := db.InsertWorkflowVersion(t.Context(), WorkflowVersion{ID: "version-1", WorkflowID: "workflow-1", Name: "Workflow", MetadataVersion: "1", DefinitionJSON: `{}`, Concurrency: 1, CreatedAt: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,10 +109,10 @@ func TestWorkflowTriggerFiringRollsBackRunOnFailure(t *testing.T) {
 	if _, err := db.db.Exec(`CREATE TRIGGER fail_trigger_firing BEFORE INSERT ON workflow_trigger_firing WHEN NEW.trigger_id = 'fail' BEGIN SELECT RAISE(ABORT, 'forced firing failure'); END`); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.CommitWorkflowTriggerFiring(&run, firing, WorkflowTriggerState{VersionID: version.ID, TriggerID: "cron"}); err == nil {
+	if err := db.CommitWorkflowTriggerFiring(t.Context(), &run, firing, WorkflowTriggerState{VersionID: version.ID, TriggerID: "cron"}); err == nil {
 		t.Fatal("invalid firing committed")
 	}
-	if _, err := db.GetWorkflowRun(run.ID); err == nil {
+	if _, err := db.GetWorkflowRun(t.Context(), run.ID); err == nil {
 		t.Fatal("failed firing transaction retained its run")
 	}
 }
@@ -123,7 +123,7 @@ func TestWorkflowTriggerFiringRollsBackRunOnFailure(t *testing.T) {
 // the run view offers no start button once it is inactive.
 func TestDeactivatedWorkflowStopsScheduling(t *testing.T) {
 	db := openTestStateDB(t)
-	version, err := db.InsertWorkflowVersion(WorkflowVersion{ID: "v1", WorkflowID: "w1", Name: "W",
+	version, err := db.InsertWorkflowVersion(t.Context(), WorkflowVersion{ID: "v1", WorkflowID: "w1", Name: "W",
 		MetadataVersion: "1", DefinitionJSON: `{}`, Concurrency: 1, CreatedAt: 1})
 	if err != nil {
 		t.Fatal(err)
@@ -131,13 +131,13 @@ func TestDeactivatedWorkflowStopsScheduling(t *testing.T) {
 	if !version.Active {
 		t.Fatal("first published revision should be active")
 	}
-	if current, err := db.ListCurrentWorkflowVersions(); err != nil || len(current) != 1 {
+	if current, err := db.ListCurrentWorkflowVersions(t.Context()); err != nil || len(current) != 1 {
 		t.Fatalf("active workflow not schedulable: %#v, %v", current, err)
 	}
-	if _, err := db.DeactivateWorkflowVersion(version.ID, 2); err != nil {
+	if _, err := db.DeactivateWorkflowVersion(t.Context(), version.ID, 2); err != nil {
 		t.Fatal(err)
 	}
-	current, err := db.ListCurrentWorkflowVersions()
+	current, err := db.ListCurrentWorkflowVersions(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,20 +152,20 @@ func TestDeactivatedWorkflowStopsScheduling(t *testing.T) {
 // start button, which uses the active version.
 func TestSchedulingFollowsTheActiveRevisionNotTheNewest(t *testing.T) {
 	db := openTestStateDB(t)
-	first, err := db.InsertWorkflowVersion(WorkflowVersion{ID: "v1", WorkflowID: "w1", Name: "W",
+	first, err := db.InsertWorkflowVersion(t.Context(), WorkflowVersion{ID: "v1", WorkflowID: "w1", Name: "W",
 		MetadataVersion: "1", DefinitionJSON: `{"rev":1}`, Concurrency: 1, CreatedAt: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.InsertWorkflowVersion(WorkflowVersion{ID: "v2", WorkflowID: "w1", Name: "W",
+	if _, err := db.InsertWorkflowVersion(t.Context(), WorkflowVersion{ID: "v2", WorkflowID: "w1", Name: "W",
 		MetadataVersion: "1", DefinitionJSON: `{"rev":2}`, Concurrency: 1, CreatedAt: 2}); err != nil {
 		t.Fatal(err)
 	}
-	active, err := db.GetActiveWorkflowVersion("w1")
+	active, err := db.GetActiveWorkflowVersion(t.Context(), "w1")
 	if err != nil || active.ID != first.ID {
 		t.Fatalf("active version = %+v, %v; want %s", active, err, first.ID)
 	}
-	current, err := db.ListCurrentWorkflowVersions()
+	current, err := db.ListCurrentWorkflowVersions(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}

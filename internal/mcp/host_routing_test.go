@@ -88,7 +88,7 @@ func TestNewSession_WorktreeRoutesToOwningHost(t *testing.T) {
 	if ensureCalls != 0 {
 		t.Errorf("ensureProjectOpencode ran on this machine %d times", ensureCalls)
 	}
-	cs, err := stateDB.GetChildSession("child-on-owner")
+	cs, err := stateDB.GetChildSession(t.Context(), "child-on-owner")
 	if err != nil {
 		t.Fatalf("GetChildSession: %v", err)
 	}
@@ -322,7 +322,7 @@ func TestCancelSession_ReportsASkippedTmuxKill(t *testing.T) {
 // target, the only kind cancel_session has a target to kill.
 func seedCancellableChild(t *testing.T, stateDB *state.DB, id, worktree string) {
 	t.Helper()
-	if err := stateDB.InsertChildSession(state.ChildSession{
+	if err := stateDB.InsertChildSession(t.Context(), state.ChildSession{
 		ID:              id,
 		Platform:        "opencode",
 		ParentSessionID: "parent-remote",
@@ -338,7 +338,7 @@ func seedCancellableChild(t *testing.T, stateDB *state.DB, id, worktree string) 
 
 func assertChildCancelled(t *testing.T, stateDB *state.DB, id string) {
 	t.Helper()
-	cs, err := stateDB.GetChildSession(id)
+	cs, err := stateDB.GetChildSession(t.Context(), id)
 	if err != nil {
 		t.Fatalf("GetChildSession: %v", err)
 	}

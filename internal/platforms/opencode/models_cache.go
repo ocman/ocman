@@ -35,6 +35,10 @@ var (
 // hook suffices.
 var afterTopLevelMiss func()
 
+// afterSessionsFlightJoin is a test-only hook invoked after DoChan has
+// registered a caller as the leader or a follower.
+var afterSessionsFlightJoin func()
+
 func init() {
 	// Size gauges for the bare-map caches. Each closure takes its
 	// matching mutex under the read lock so a concurrent write to
@@ -108,14 +112,13 @@ var (
 // Defined as an interface so tests can stub the read without spinning
 // up a SQLite database.
 type dbRecentModels interface {
-	GetRecentModels(sessionLimit, maxResults int) ([]db.RecentModel, error)
+	GetRecentModels(context.Context, int, int) ([]db.RecentModel, error)
 }
 
 // getRecentModelsCached returns a (possibly cached) result of
 // d.GetRecentModels(50, 10). Concurrent callers on a cold cache are
 // coalesced via singleflight so only one DB scan runs.
-func getRecentModelsCached(d dbRecentModels) ([]db.RecentModel, error) {
-	ctx := context.Background()
+func getRecentModelsCached(ctx context.Context, d dbRecentModels) ([]db.RecentModel, error) {
 	recentModelsMu.RLock()
 	if !time.Now().After(recentModelsCached.expiresAt) {
 		out := recentModelsCached.models
@@ -129,7 +132,7 @@ func getRecentModelsCached(d dbRecentModels) ([]db.RecentModel, error) {
 		afterTopLevelMiss()
 	}
 
-	v, err, _ := recentModelsFlight.Do("recents", func() (interface{}, error) {
+	result := recentModelsFlight.DoChan("recents", func() (interface{}, error) {
 		// Re-check inside the flight slot; another caller may have
 		// just refilled the cache while we were queuing. Not
 		// counted as a hit — see the corresponding comment in
@@ -142,7 +145,7 @@ func getRecentModelsCached(d dbRecentModels) ([]db.RecentModel, error) {
 		}
 		recentModelsMu.RUnlock()
 
-		models, err := d.GetRecentModels(50, 10)
+		models, err := d.GetRecentModels(context.WithoutCancel(ctx), 50, 10)
 		if err != nil {
 			return nil, err
 		}
@@ -154,11 +157,16 @@ func getRecentModelsCached(d dbRecentModels) ([]db.RecentModel, error) {
 		recentModelsMu.Unlock()
 		return models, nil
 	})
-	if err != nil {
-		return nil, err
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case result := <-result:
+		if result.Err != nil {
+			return nil, result.Err
+		}
+		models, _ := result.Val.([]db.RecentModel)
+		return models, nil
 	}
-	models, _ := v.([]db.RecentModel)
-	return models, nil
 }
 
 // GetSessionDefaults is by far the most expensive read in the
@@ -200,15 +208,14 @@ var (
 // getSessionDefaultsCached. Defined as an interface so tests can
 // stub the read.
 type dbSessionDefaults interface {
-	GetSessionDefaults(sessionID, directory string) (db.SessionDefaults, error)
+	GetSessionDefaults(context.Context, string, string) (db.SessionDefaults, error)
 }
 
 // getSessionDefaultsCached returns a (possibly cached) result of
 // d.GetSessionDefaults. Cache misses on the same key are coalesced
 // via singleflight so a SessionDetail mount fan-out runs the
 // expensive join exactly once.
-func getSessionDefaultsCached(d dbSessionDefaults, excludeSessionID, directory string) (db.SessionDefaults, error) {
-	ctx := context.Background()
+func getSessionDefaultsCached(ctx context.Context, d dbSessionDefaults, excludeSessionID, directory string) (db.SessionDefaults, error) {
 	key := sessionDefaultsKey{excludeSessionID: excludeSessionID, directory: directory}
 
 	sessionDefaultsMu.RLock()
@@ -224,7 +231,7 @@ func getSessionDefaultsCached(d dbSessionDefaults, excludeSessionID, directory s
 	}
 
 	flightKey := excludeSessionID + "|" + directory
-	v, err, _ := sessionDefaultsFlight.Do(flightKey, func() (interface{}, error) {
+	result := sessionDefaultsFlight.DoChan(flightKey, func() (interface{}, error) {
 		// Re-check inside the flight slot. Not counted as a hit;
 		// see httpCache.getOrFetch for the rationale.
 		sessionDefaultsMu.RLock()
@@ -234,7 +241,7 @@ func getSessionDefaultsCached(d dbSessionDefaults, excludeSessionID, directory s
 		}
 		sessionDefaultsMu.RUnlock()
 
-		defaults, err := d.GetSessionDefaults(excludeSessionID, directory)
+		defaults, err := d.GetSessionDefaults(context.WithoutCancel(ctx), excludeSessionID, directory)
 		if err != nil {
 			return db.SessionDefaults{}, err
 		}
@@ -246,11 +253,16 @@ func getSessionDefaultsCached(d dbSessionDefaults, excludeSessionID, directory s
 		sessionDefaultsMu.Unlock()
 		return defaults, nil
 	})
-	if err != nil {
-		return db.SessionDefaults{}, err
+	select {
+	case <-ctx.Done():
+		return db.SessionDefaults{}, ctx.Err()
+	case result := <-result:
+		if result.Err != nil {
+			return db.SessionDefaults{}, result.Err
+		}
+		defaults, _ := result.Val.(db.SessionDefaults)
+		return defaults, nil
 	}
-	defaults, _ := v.(db.SessionDefaults)
-	return defaults, nil
 }
 
 // db.GetSessions runs seven correlated json_extract subqueries
@@ -453,7 +465,7 @@ func StartSessionsRefresher(ctx context.Context, d dbGetSessions) {
 		defer sessionsRefreshWG.Done()
 		// Warm immediately so the first request after startup hits cache.
 		// The snapshot is cold, so this pass is a full scan.
-		refreshSessionsIncremental(d)
+		refreshSessionsIncremental(ctx, d)
 		for {
 			// Never spend more than half our time refreshing. On a
 			// multi-GB OpenCode DB the query can take longer than
@@ -477,7 +489,7 @@ func StartSessionsRefresher(ctx context.Context, d dbGetSessions) {
 				// itself via the singleflight slot, so a tick that
 				// arrives while the previous fetch is still running
 				// coalesces instead of piling up.
-				refreshSessionsIncremental(d)
+				refreshSessionsIncremental(ctx, d)
 			}
 		}
 	}()
@@ -582,18 +594,17 @@ func ResetCachesForTests() {
 // identical to that session's row in a full scan and can be merged
 // into the snapshot without drift.
 type dbGetSessions interface {
-	GetSessions(directory string, since int64) ([]db.Session, error)
-	GetSessionSummary(sessionID string) (db.Session, error)
+	GetSessions(context.Context, string, int64) ([]db.Session, error)
+	GetSessionSummary(context.Context, string) (db.Session, error)
 }
 
 // getSessionsCached returns directory and since filtered rows from one
-// global d.GetSessions("", 0) snapshot. Concurrent refreshes share one
-// underlying query via singleflight.
+// global d.GetSessions("", 0) snapshot. Background refreshes coalesce,
+// while a blocking request owns its query so cancellation reaches SQLite.
 //
 // Which of the three snapshot states applies decides whether this
 // blocks; see the state table on sessionsSnapshot.
-func getSessionsCached(d dbGetSessions, directory string, since int64) ([]db.Session, error) {
-	ctx := context.Background()
+func getSessionsCached(ctx context.Context, d dbGetSessions, directory string, since int64) ([]db.Session, error) {
 
 	// Read the snapshot and its state, fresh or stale, in one lock.
 	sessionsMu.RLock()
@@ -622,14 +633,14 @@ func getSessionsCached(d dbGetSessions, directory string, since int64) ([]db.Ses
 		sessionsRefreshWG.Add(1)
 		go func() {
 			defer sessionsRefreshWG.Done()
-			_, _ = refreshSessions(d)
+			_, _ = refreshSessions(context.Background(), d)
 		}()
 		return filterSessions(snapshot, directory, since), nil
 	}
 
 	// Cold or explicitly invalidated: this read waits for fresh data,
 	// so a session created elsewhere shows up on the very next request.
-	sessions, err := refreshSessions(d)
+	sessions, err := refreshSessionsForRequest(ctx, d)
 	if err != nil {
 		// Stale-on-busy: the live OpenCode DB can stall a read on the
 		// WAL busy_timeout (multi-GB file, many concurrent writers).
@@ -644,6 +655,15 @@ func getSessionsCached(d dbGetSessions, directory string, since int64) ([]db.Ses
 	return filterSessions(sessions, directory, since), nil
 }
 
+func refreshSessionsForRequest(ctx context.Context, d dbGetSessions) ([]db.Session, error) {
+	if afterTopLevelMiss != nil {
+		afterTopLevelMiss()
+	}
+	return doSessionsFlight(ctx, true, func() ([]db.Session, error) {
+		return runFullSessionsRefresh(ctx, d)
+	})
+}
+
 // startBackgroundSessionsRefresh runs one refresh behind the caller.
 // Tracked on sessionsRefreshWG so tests can drain it; production never
 // waits. Concurrent starts coalesce in the singleflight slot.
@@ -651,7 +671,7 @@ func startBackgroundSessionsRefresh(d dbGetSessions) {
 	sessionsRefreshWG.Add(1)
 	go func() {
 		defer sessionsRefreshWG.Done()
-		_, _ = refreshSessionsIncremental(d)
+		_, _ = refreshSessionsIncremental(context.Background(), d)
 	}()
 }
 
@@ -661,11 +681,11 @@ func startBackgroundSessionsRefresh(d dbGetSessions) {
 // duplicated. The snapshot is only replaced on success, so a
 // slow/failed fetch leaves the previous good value in place for
 // getSessionsCached's stale-on-busy fallback.
-func refreshSessions(d dbGetSessions) ([]db.Session, error) {
+func refreshSessions(ctx context.Context, d dbGetSessions) ([]db.Session, error) {
 	if afterTopLevelMiss != nil {
 		afterTopLevelMiss()
 	}
-	v, err, _ := sessionsFlight.Do(sessionsFlightKey, func() (interface{}, error) {
+	return doSessionsFlight(ctx, false, func() ([]db.Session, error) {
 		// Re-check inside the flight slot: a concurrent caller may
 		// have just refreshed it.
 		sessionsMu.RLock()
@@ -676,13 +696,8 @@ func refreshSessions(d dbGetSessions) ([]db.Session, error) {
 		}
 		sessionsMu.RUnlock()
 
-		return runFullSessionsRefresh(d)
+		return runFullSessionsRefresh(context.WithoutCancel(ctx), d)
 	})
-	if err != nil {
-		return nil, err
-	}
-	sessions, _ := v.([]db.Session)
-	return sessions, nil
 }
 
 // refreshSessionsIncremental brings the snapshot up to date with the
@@ -694,11 +709,12 @@ func refreshSessions(d dbGetSessions) ([]db.Session, error) {
 //
 // It shares refreshSessions' singleflight slot, so an incremental pass
 // and a full one can never run against the snapshot at the same time.
-func refreshSessionsIncremental(d dbGetSessions) ([]db.Session, error) {
+func refreshSessionsIncremental(ctx context.Context, d dbGetSessions) ([]db.Session, error) {
 	if afterTopLevelMiss != nil {
 		afterTopLevelMiss()
 	}
-	v, err, _ := sessionsFlight.Do(sessionsFlightKey, func() (interface{}, error) {
+	return doSessionsFlight(ctx, false, func() ([]db.Session, error) {
+		ctx := context.WithoutCancel(ctx)
 		sessionsMu.Lock()
 		ids, fullDirty := takeDirty()
 		// An explicit invalidation is deliberately NOT a reason to
@@ -713,7 +729,7 @@ func refreshSessionsIncremental(d dbGetSessions) ([]db.Session, error) {
 		sessionsMu.Unlock()
 
 		if full {
-			sessions, err := runFullSessionsRefresh(d)
+			sessions, err := runFullSessionsRefresh(ctx, d)
 			if err != nil {
 				restoreDirty(ids, fullDirty)
 				return nil, err
@@ -737,7 +753,7 @@ func refreshSessionsIncremental(d dbGetSessions) ([]db.Session, error) {
 		refreshed := make(map[string]db.Session, len(ids))
 		missing := make(map[string]struct{}, len(ids))
 		for _, id := range ids {
-			s, err := d.GetSessionSummary(id)
+			s, err := d.GetSessionSummary(ctx, id)
 			switch {
 			case errors.Is(err, db.ErrSessionNotFound):
 				// Deleted, or no longer part of the list (a parentless
@@ -763,11 +779,42 @@ func refreshSessionsIncremental(d dbGetSessions) ([]db.Session, error) {
 		sessionsMu.Unlock()
 		return merged, nil
 	})
-	if err != nil {
-		return nil, err
+}
+
+func doSessionsFlight(ctx context.Context, waitForCanceledLeader bool, refresh func() ([]db.Session, error)) ([]db.Session, error) {
+	for {
+		leader := make(chan struct{})
+		result := sessionsFlight.DoChan(sessionsFlightKey, func() (interface{}, error) {
+			close(leader)
+			return refresh()
+		})
+		if afterSessionsFlightJoin != nil {
+			afterSessionsFlightJoin()
+		}
+		select {
+		case <-ctx.Done():
+			if waitForCanceledLeader {
+				select {
+				case <-leader:
+					<-result
+				default:
+				}
+			}
+			return nil, ctx.Err()
+		case result := <-result:
+			if errors.Is(result.Err, context.Canceled) && ctx.Err() == nil {
+				// The canceled leader has finished, so forgetting here cannot
+				// overlap it with this live caller's retry.
+				sessionsFlight.Forget(sessionsFlightKey)
+				continue
+			}
+			if result.Err != nil {
+				return nil, result.Err
+			}
+			sessions, _ := result.Val.([]db.Session)
+			return sessions, nil
+		}
 	}
-	sessions, _ := v.([]db.Session)
-	return sessions, nil
 }
 
 // extendSnapshotFreshness marks the snapshot current for another TTL
@@ -788,7 +835,7 @@ func extendSnapshotFreshness() {
 
 // runFullSessionsRefresh performs the reconciliation scan and replaces
 // the snapshot on success. Callers must be inside the singleflight slot.
-func runFullSessionsRefresh(d dbGetSessions) ([]db.Session, error) {
+func runFullSessionsRefresh(ctx context.Context, d dbGetSessions) ([]db.Session, error) {
 	// Claim the dirty set before the scan starts: everything marked so
 	// far is answered by this scan, and anything marked while it runs
 	// stays queued for the next pass.
@@ -797,7 +844,7 @@ func runFullSessionsRefresh(d dbGetSessions) ([]db.Session, error) {
 	sessionsMu.Unlock()
 
 	started := time.Now()
-	sessions, err := d.GetSessions("", 0)
+	sessions, err := d.GetSessions(ctx, "", 0)
 	if err != nil {
 		restoreDirty(claimed, claimedFull)
 		return nil, err

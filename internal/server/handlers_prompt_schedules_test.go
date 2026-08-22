@@ -81,7 +81,7 @@ func TestManagedPromptSessionsQueuesForBusyReusedSession(t *testing.T) {
 	if err := (managedPromptSessions{srv}).SendScheduledMessage(t.Context(), "opencode", platforms.SendMessageRequest{SessionID: "reused", Message: "again"}, true); err != nil {
 		t.Fatal(err)
 	}
-	queued, err := srv.queueSvc().List("opencode", "reused")
+	queued, err := srv.queueSvc().List(t.Context(), "opencode", "reused")
 	if err != nil || len(queued) != 1 || sent != 0 {
 		t.Fatalf("queued=%+v sent=%d err=%v", queued, sent, err)
 	}

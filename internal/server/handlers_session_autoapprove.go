@@ -16,7 +16,7 @@ import (
 // override when set, otherwise the server-wide default.
 func (s *Server) handleSessionAutoApproveGet(w http.ResponseWriter, r *http.Request) {
 	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
-		enabled, exists, err := s.stateDB.GetAutoApprove(string(adapter.ID()), sessionID)
+		enabled, exists, err := s.stateDB.GetAutoApprove(r.Context(), string(adapter.ID()), sessionID)
 		if err != nil {
 			serverError(w, "getting auto-approve state", err)
 			return
@@ -52,7 +52,7 @@ func (s *Server) handleSessionAutoApproveSet(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
-		if err := s.stateDB.SetAutoApprove(string(adapter.ID()), sessionID, req.Enabled); err != nil {
+		if err := s.stateDB.SetAutoApprove(r.Context(), string(adapter.ID()), sessionID, req.Enabled); err != nil {
 			serverError(w, "setting auto-approve state", err)
 			return
 		}
@@ -108,7 +108,7 @@ func (s *Server) resumeAutoApproveForPending(ctx context.Context, adapter platfo
 // approval notices into the conversation thread after a page refresh.
 func (s *Server) handleSessionApprovedPermissions(w http.ResponseWriter, r *http.Request) {
 	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
-		approved, err := s.stateDB.ListApprovedPermissions(string(adapter.ID()), sessionID)
+		approved, err := s.stateDB.ListApprovedPermissions(r.Context(), string(adapter.ID()), sessionID)
 		if err != nil {
 			serverError(w, "listing approved permissions", err)
 			return

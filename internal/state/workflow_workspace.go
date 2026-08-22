@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -56,13 +57,13 @@ type WorkflowWorkspaceRequest struct {
 //     scope overlaps; it may not share with an exclusive lease.
 //   - commit lease (coordinator): shard may hold path leases but not
 //     another commit lease or an exclusive lease (serialized commits).
-func acquireWorkflowWorkspaceLease(tx *sql.Tx, runID, nodeID string, attemptID int64, req WorkflowWorkspaceRequest, now int64) (int, bool, error) {
+func acquireWorkflowWorkspaceLease(ctx context.Context, tx *sql.Tx, runID, nodeID string, attemptID int64, req WorkflowWorkspaceRequest, now int64) (int, bool, error) {
 	if req.Shards <= 0 {
 		return 0, false, fmt.Errorf("workspace shard pool must be positive")
 	}
 	// Idempotent: reuse an existing lease for this node.
 	var existing int
-	err := tx.QueryRow(`SELECT shard FROM workflow_workspace_lease WHERE run_id = ? AND node_id = ?`, runID, nodeID).Scan(&existing)
+	err := tx.QueryRowContext(ctx, `SELECT shard FROM workflow_workspace_lease WHERE run_id = ? AND node_id = ?`, runID, nodeID).Scan(&existing)
 	if err == nil {
 		return existing, true, nil
 	}
@@ -70,7 +71,7 @@ func acquireWorkflowWorkspaceLease(tx *sql.Tx, runID, nodeID string, attemptID i
 		return 0, false, fmt.Errorf("reading existing workspace lease: %w", err)
 	}
 
-	occupants, err := shardOccupants(tx, runID)
+	occupants, err := shardOccupants(ctx, tx, runID)
 	if err != nil {
 		return 0, false, err
 	}
@@ -90,7 +91,7 @@ func acquireWorkflowWorkspaceLease(tx *sql.Tx, runID, nodeID string, attemptID i
 		if req.CommitLease {
 			commit = 1
 		}
-		if _, err := tx.Exec(`INSERT INTO workflow_workspace_lease (run_id, node_id, attempt_id, shard, mode, paths_json, commit_lease, host, shard_path, acquired_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', ?)`,
+		if _, err := tx.ExecContext(ctx, `INSERT INTO workflow_workspace_lease (run_id, node_id, attempt_id, shard, mode, paths_json, commit_lease, host, shard_path, acquired_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', ?)`,
 			runID, nodeID, attemptID, shard, mode, string(pathsJSON), commit, req.Host, now); err != nil {
 			return 0, false, fmt.Errorf("holding workspace lease: %w", err)
 		}
@@ -155,8 +156,8 @@ func isPathAncestor(ancestor, descendant string) bool {
 }
 
 // shardOccupants returns the current leases grouped by shard index.
-func shardOccupants(tx *sql.Tx, runID string) (map[int][]WorkflowWorkspaceLease, error) {
-	rows, err := tx.Query(`SELECT node_id, attempt_id, shard, mode, paths_json, commit_lease, host FROM workflow_workspace_lease WHERE run_id = ?`, runID)
+func shardOccupants(ctx context.Context, tx *sql.Tx, runID string) (map[int][]WorkflowWorkspaceLease, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT node_id, attempt_id, shard, mode, paths_json, commit_lease, host FROM workflow_workspace_lease WHERE run_id = ?`, runID)
 	if err != nil {
 		return nil, fmt.Errorf("listing shard occupants: %w", err)
 	}
@@ -179,8 +180,8 @@ func shardOccupants(tx *sql.Tx, runID string) (map[int][]WorkflowWorkspaceLease,
 }
 
 // releaseWorkflowWorkspaceLease drops a node's shard lease within tx.
-func releaseWorkflowWorkspaceLease(exec workflowRunExecer, runID, nodeID string) error {
-	if _, err := exec.Exec(`DELETE FROM workflow_workspace_lease WHERE run_id = ? AND node_id = ?`, runID, nodeID); err != nil {
+func releaseWorkflowWorkspaceLease(ctx context.Context, exec workflowRunExecer, runID, nodeID string) error {
+	if _, err := exec.ExecContext(ctx, `DELETE FROM workflow_workspace_lease WHERE run_id = ? AND node_id = ?`, runID, nodeID); err != nil {
 		return fmt.Errorf("releasing workspace lease: %w", err)
 	}
 	return nil
@@ -188,8 +189,8 @@ func releaseWorkflowWorkspaceLease(exec workflowRunExecer, runID, nodeID string)
 
 // SetWorkflowWorkspaceShardPath records the on-disk path of a shard once
 // the worktree is created, so the UI and later nodes can resolve it.
-func (d *DB) SetWorkflowWorkspaceShardPath(runID, nodeID, shardPath string) error {
-	_, err := d.db.Exec(`UPDATE workflow_workspace_lease SET shard_path = ? WHERE run_id = ? AND node_id = ?`, shardPath, runID, nodeID)
+func (d *DB) SetWorkflowWorkspaceShardPath(ctx context.Context, runID, nodeID, shardPath string) error {
+	_, err := d.db.ExecContext(ctx, `UPDATE workflow_workspace_lease SET shard_path = ? WHERE run_id = ? AND node_id = ?`, shardPath, runID, nodeID)
 	if err != nil {
 		return fmt.Errorf("recording shard path: %w", err)
 	}
@@ -198,8 +199,8 @@ func (d *DB) SetWorkflowWorkspaceShardPath(runID, nodeID, shardPath string) erro
 
 // ListWorkflowWorkspaceLeases returns workspace leases held for a run, for
 // UI and restart reconciliation.
-func (d *DB) ListWorkflowWorkspaceLeases(runID string) ([]WorkflowWorkspaceLease, error) {
-	rows, err := d.db.Query(`SELECT run_id, node_id, attempt_id, shard, mode, paths_json, commit_lease, host, shard_path, acquired_at FROM workflow_workspace_lease WHERE run_id = ? ORDER BY shard, node_id`, runID)
+func (d *DB) ListWorkflowWorkspaceLeases(ctx context.Context, runID string) ([]WorkflowWorkspaceLease, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT run_id, node_id, attempt_id, shard, mode, paths_json, commit_lease, host, shard_path, acquired_at FROM workflow_workspace_lease WHERE run_id = ? ORDER BY shard, node_id`, runID)
 	if err != nil {
 		return nil, fmt.Errorf("listing workspace leases: %w", err)
 	}

@@ -9,7 +9,7 @@ import (
 // node is ready and second pending, and returns the run's version ID.
 func seedTransitionRun(t *testing.T, db *DB, runID, gateType, shipType string) string {
 	t.Helper()
-	version, err := db.InsertWorkflowVersion(WorkflowVersion{
+	version, err := db.InsertWorkflowVersion(t.Context(), WorkflowVersion{
 		ID: "version-" + runID, WorkflowID: "workflow-" + runID, Name: "Workflow",
 		MetadataVersion: "1", DefinitionJSON: `{}`, Concurrency: 1, CreatedAt: 1,
 		Nodes: []WorkflowNode{
@@ -21,7 +21,7 @@ func seedTransitionRun(t *testing.T, db *DB, runID, gateType, shipType string) s
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.InsertWorkflowRun(WorkflowRun{
+	if err := db.InsertWorkflowRun(t.Context(), WorkflowRun{
 		ID: runID, WorkflowID: version.WorkflowID, VersionID: version.ID,
 		State: "active", CreatedAt: 1, UpdatedAt: 1,
 		Nodes: []WorkflowNodeRun{
@@ -37,7 +37,7 @@ func seedTransitionRun(t *testing.T, db *DB, runID, gateType, shipType string) s
 // nodeRun returns the named node of a run, failing if it's absent.
 func nodeRun(t *testing.T, db *DB, runID, nodeID string) WorkflowNodeRun {
 	t.Helper()
-	run, err := db.GetWorkflowRun(runID)
+	run, err := db.GetWorkflowRun(t.Context(), runID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestApproveWorkflowNodeReadiesDownstreamThenCompletes(t *testing.T) {
 	db := openTestStateDB(t)
 	seedTransitionRun(t, db, "run-1", "approval", "approval")
 
-	if err := db.ApproveWorkflowNode("run-1", "gate", 10); err != nil {
+	if err := db.ApproveWorkflowNode(t.Context(), "run-1", "gate", 10); err != nil {
 		t.Fatalf("approving gate: %v", err)
 	}
 
@@ -78,7 +78,7 @@ func TestApproveWorkflowNodeReadiesDownstreamThenCompletes(t *testing.T) {
 		t.Errorf("ship attempts = %+v, want one waiting", ship.Attempts)
 	}
 
-	run, err := db.GetWorkflowRun("run-1")
+	run, err := db.GetWorkflowRun(t.Context(), "run-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,10 +87,10 @@ func TestApproveWorkflowNodeReadiesDownstreamThenCompletes(t *testing.T) {
 	}
 
 	// Approving the last node settles the run.
-	if err := db.ApproveWorkflowNode("run-1", "ship", 20); err != nil {
+	if err := db.ApproveWorkflowNode(t.Context(), "run-1", "ship", 20); err != nil {
 		t.Fatalf("approving ship: %v", err)
 	}
-	run, err = db.GetWorkflowRun("run-1")
+	run, err = db.GetWorkflowRun(t.Context(), "run-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestApproveWorkflowNodeRejectsBadTransitions(t *testing.T) {
 			if tc.setup != nil {
 				tc.setup(t, db)
 			}
-			err := db.ApproveWorkflowNode("run-1", tc.nodeID, 10)
+			err := db.ApproveWorkflowNode(t.Context(), "run-1", tc.nodeID, 10)
 			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 				t.Fatalf("error = %v, want one containing %q", err, tc.wantErr)
 			}
@@ -162,7 +162,7 @@ func TestApproveWorkflowNodeRejectsBadTransitions(t *testing.T) {
 
 func TestApproveWorkflowNodeUnknownRun(t *testing.T) {
 	db := openTestStateDB(t)
-	err := db.ApproveWorkflowNode("nope", "gate", 10)
+	err := db.ApproveWorkflowNode(t.Context(), "nope", "gate", 10)
 	if err == nil || !strings.Contains(err.Error(), "getting workflow run") {
 		t.Fatalf("error = %v, want a missing-run error", err)
 	}
@@ -189,7 +189,7 @@ func TestMarkWorkflowAttemptUnknownPausesRun(t *testing.T) {
 	seedTransitionRun(t, db, "run-1", "command", "command")
 	attemptID := startGateAttempt(t, db)
 
-	if err := db.MarkWorkflowAttemptUnknown("run-1", "gate", attemptID, "restarted mid-flight", 30); err != nil {
+	if err := db.MarkWorkflowAttemptUnknown(t.Context(), "run-1", "gate", attemptID, "restarted mid-flight", 30); err != nil {
 		t.Fatalf("MarkWorkflowAttemptUnknown: %v", err)
 	}
 
@@ -205,7 +205,7 @@ func TestMarkWorkflowAttemptUnknownPausesRun(t *testing.T) {
 		t.Errorf("attempt = %+v, want unknown with the reason recorded at 30", attempt)
 	}
 
-	run, err := db.GetWorkflowRun("run-1")
+	run, err := db.GetWorkflowRun(t.Context(), "run-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ func TestRetryWorkflowAttemptCreatesFreshAttempt(t *testing.T) {
 	seedTransitionRun(t, db, "run-1", "command", "command")
 	attemptID := startGateAttempt(t, db)
 
-	if err := db.RetryWorkflowAttempt("run-1", "gate", attemptID, "launch interrupted", "operator", 40); err != nil {
+	if err := db.RetryWorkflowAttempt(t.Context(), "run-1", "gate", attemptID, "launch interrupted", "operator", 40); err != nil {
 		t.Fatalf("RetryWorkflowAttempt: %v", err)
 	}
 
@@ -248,7 +248,7 @@ func TestRetryWorkflowAttemptCreatesFreshAttempt(t *testing.T) {
 		t.Errorf("retry attempt = %+v, want waiting at seq %d", retry, failed.Seq+1)
 	}
 
-	run, err := db.GetWorkflowRun("run-1")
+	run, err := db.GetWorkflowRun(t.Context(), "run-1")
 	if err != nil {
 		t.Fatal(err)
 	}

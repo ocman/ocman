@@ -338,7 +338,7 @@ const maxParentWalk = 8
 // The returned reasoning is prefixed with "inherited from parent: " so
 // the origin is visible in the UI and DB audit row. Falls back to the
 // plain single-session behaviour when no resolver is wired.
-func (s *Service) lookupInheritedSafeCommandVerdict(sessionID, hash string) (string, bool) {
+func (s *Service) lookupInheritedSafeCommandVerdict(ctx context.Context, sessionID, hash string) (string, bool) {
 	if s == nil || hash == "" {
 		return "", false
 	}
@@ -348,7 +348,7 @@ func (s *Service) lookupInheritedSafeCommandVerdict(sessionID, hash string) (str
 	}
 	cur := sessionID
 	for i := 0; i < maxParentWalk; i++ {
-		parent, ok := s.ResolveParentSessionID(cur)
+		parent, ok := s.ResolveParentSessionID(ctx, cur)
 		if !ok || parent == "" || parent == cur {
 			return "", false
 		}

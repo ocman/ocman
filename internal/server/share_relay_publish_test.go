@@ -100,7 +100,7 @@ func createShareForTest(t *testing.T, srv *Server, sessionID string) (string, sh
 	if err := json.Unmarshal(rr.Body.Bytes(), &view); err != nil {
 		t.Fatalf("unmarshal share view: %v", err)
 	}
-	link, ok, err := srv.stateDB.GetActiveShareLink(view.Token)
+	link, ok, err := srv.stateDB.GetActiveShareLink(t.Context(), view.Token)
 	if err != nil || !ok {
 		t.Fatalf("GetActiveShareLink: ok=%v err=%v", ok, err)
 	}
@@ -114,7 +114,7 @@ func createShareForTest(t *testing.T, srv *Server, sessionID string) (string, sh
 // shareLinkFor returns the single active share link of a session.
 func shareLinkFor(t *testing.T, srv *Server, sessionID string) int64 {
 	t.Helper()
-	links, err := srv.stateDB.ListActiveShareLinks("fake", sessionID)
+	links, err := srv.stateDB.ListActiveShareLinks(t.Context(), "fake", sessionID)
 	if err != nil {
 		t.Fatalf("ListActiveShareLinks: %v", err)
 	}
@@ -278,7 +278,7 @@ func TestPublishCompletedTurnIgnoresSharesWithoutRelay(t *testing.T) {
 	}
 	reg.Register(fake)
 
-	if _, err := srv.stateDB.CreateShareLink("fake", "ses_norelay", 0); err != nil {
+	if _, err := srv.stateDB.CreateShareLink(t.Context(), "fake", "ses_norelay", 0); err != nil {
 		t.Fatalf("CreateShareLink: %v", err)
 	}
 

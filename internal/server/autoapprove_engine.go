@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
@@ -25,7 +26,7 @@ func (s *Server) aaSvc() *autoapprove.Service {
 				if s.db == nil {
 					return "", errors.New("no OpenCode DB")
 				}
-				sess, err := s.db.GetSession(sessionID)
+				sess, err := s.db.GetSession(context.Background(), sessionID)
 				if err != nil {
 					return "", err
 				}
@@ -34,11 +35,11 @@ func (s *Server) aaSvc() *autoapprove.Service {
 				}
 				return sess.Directory, nil
 			},
-			ParentSessionID: func(childID string) (string, bool) {
+			ParentSessionID: func(ctx context.Context, childID string) (string, bool) {
 				if s.stateDB == nil {
 					return "", false
 				}
-				cs, err := s.stateDB.GetChildSession(childID)
+				cs, err := s.stateDB.GetChildSession(ctx, childID)
 				if err != nil || cs == nil || cs.ParentSessionID == "" {
 					return "", false
 				}

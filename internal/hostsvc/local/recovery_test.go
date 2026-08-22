@@ -25,14 +25,14 @@ type fakeStore struct {
 
 func newFakeStore() *fakeStore { return &fakeStore{rows: map[string]ManagedInstance{}} }
 
-func (f *fakeStore) Upsert(repoRoot string, inst ManagedInstance) error {
+func (f *fakeStore) Upsert(_ context.Context, repoRoot string, inst ManagedInstance) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.rows[repoRoot] = inst
 	return nil
 }
 
-func (f *fakeStore) Get(repoRoot string) (ManagedInstance, bool, error) {
+func (f *fakeStore) Get(_ context.Context, repoRoot string) (ManagedInstance, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.getErr != nil {
@@ -42,7 +42,7 @@ func (f *fakeStore) Get(repoRoot string) (ManagedInstance, bool, error) {
 	return mi, ok, nil
 }
 
-func (f *fakeStore) Delete(repoRoot string) error {
+func (f *fakeStore) Delete(_ context.Context, repoRoot string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.rows, repoRoot)
@@ -50,7 +50,7 @@ func (f *fakeStore) Delete(repoRoot string) error {
 	return nil
 }
 
-func (f *fakeStore) List() (map[string]ManagedInstance, error) {
+func (f *fakeStore) List(context.Context) (map[string]ManagedInstance, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	out := make(map[string]ManagedInstance, len(f.rows))

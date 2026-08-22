@@ -34,18 +34,18 @@ var (
 )
 
 type Store interface {
-	CreatePromptSchedule(state.PromptSchedule) error
-	ListPromptSchedules(string, string) ([]state.PromptSchedule, error)
-	ListRunningPromptSchedules() ([]state.PromptSchedule, error)
-	GetPromptSchedule(string) (state.PromptSchedule, error)
-	ClaimPromptSchedule(string, int64, bool) (state.PromptSchedule, bool, error)
-	ClaimNextDuePromptSchedule(int64) (state.PromptSchedule, bool, error)
-	CancelPromptSchedule(string, int64) (state.PromptSchedule, bool, error)
-	LinkPromptScheduleSession(string, string, string, int64) error
-	FinishPromptSchedule(string, string, string, int64) error
-	CompletePromptSchedule(string, int64, int64) error
-	ReschedulePromptSchedule(string, int64, string, int64) error
-	SetPromptScheduleEnabled(string, bool, int64, int64) (state.PromptSchedule, error)
+	CreatePromptSchedule(context.Context, state.PromptSchedule) error
+	ListPromptSchedules(context.Context, string, string) ([]state.PromptSchedule, error)
+	ListRunningPromptSchedules(context.Context) ([]state.PromptSchedule, error)
+	GetPromptSchedule(context.Context, string) (state.PromptSchedule, error)
+	ClaimPromptSchedule(context.Context, string, int64, bool) (state.PromptSchedule, bool, error)
+	ClaimNextDuePromptSchedule(context.Context, int64) (state.PromptSchedule, bool, error)
+	CancelPromptSchedule(context.Context, string, int64) (state.PromptSchedule, bool, error)
+	LinkPromptScheduleSession(context.Context, string, string, string, int64) error
+	FinishPromptSchedule(context.Context, string, string, string, int64) error
+	CompletePromptSchedule(context.Context, string, int64, int64) error
+	ReschedulePromptSchedule(context.Context, string, int64, string, int64) error
+	SetPromptScheduleEnabled(context.Context, string, bool, int64, int64) (state.PromptSchedule, error)
 }
 
 type Sessions interface {
@@ -89,7 +89,7 @@ func scheduleID() string {
 	return "ps_" + hex.EncodeToString(raw[:])
 }
 
-func (s *promptScheduleService) Create(_ context.Context, req promptScheduleCreateRequest) (state.PromptSchedule, error) {
+func (s *promptScheduleService) Create(ctx context.Context, req promptScheduleCreateRequest) (state.PromptSchedule, error) {
 	now := s.now()
 	if req.Directory == "" || req.Prompt == "" {
 		return state.PromptSchedule{}, fmt.Errorf("directory and prompt are required: %w", ErrValidation)
@@ -118,7 +118,7 @@ func (s *promptScheduleService) Create(_ context.Context, req promptScheduleCrea
 	schedule := state.PromptSchedule{ID: s.newID(), Directory: req.Directory, RemoteID: req.RemoteID, Prompt: req.Prompt,
 		RunAt: runAt, TimingType: req.TimingType, IntervalMinutes: req.IntervalMinutes, Cron: req.Cron,
 		Timezone: req.Timezone, Enabled: enabled, SessionMode: req.SessionMode, State: StateScheduled, CreatedAt: nowMS, UpdatedAt: nowMS}
-	return schedule, s.store.CreatePromptSchedule(schedule)
+	return schedule, s.store.CreatePromptSchedule(ctx, schedule)
 }
 
 func nextScheduleRun(timing string, runAt, intervalMinutes int64, expression, timezone string, after time.Time) (int64, error) {
@@ -151,22 +151,22 @@ func nextScheduleRun(timing string, runAt, intervalMinutes int64, expression, ti
 	}
 }
 
-func (s *promptScheduleService) List(_ context.Context, directory, remoteID string) ([]state.PromptSchedule, error) {
+func (s *promptScheduleService) List(ctx context.Context, directory, remoteID string) ([]state.PromptSchedule, error) {
 	if directory == "" {
 		return nil, fmt.Errorf("directory is required: %w", ErrValidation)
 	}
 	if remoteID == "" {
 		remoteID = "local"
 	}
-	return s.store.ListPromptSchedules(directory, remoteID)
+	return s.store.ListPromptSchedules(ctx, directory, remoteID)
 }
 
-func (s *promptScheduleService) Get(_ context.Context, id string) (state.PromptSchedule, error) {
-	return s.store.GetPromptSchedule(id)
+func (s *promptScheduleService) Get(ctx context.Context, id string) (state.PromptSchedule, error) {
+	return s.store.GetPromptSchedule(ctx, id)
 }
 
-func (s *promptScheduleService) Cancel(_ context.Context, id string) (state.PromptSchedule, error) {
-	schedule, ok, err := s.store.CancelPromptSchedule(id, s.now().UnixMilli())
+func (s *promptScheduleService) Cancel(ctx context.Context, id string) (state.PromptSchedule, error) {
+	schedule, ok, err := s.store.CancelPromptSchedule(ctx, id, s.now().UnixMilli())
 	if err != nil {
 		return schedule, err
 	}
@@ -176,8 +176,8 @@ func (s *promptScheduleService) Cancel(_ context.Context, id string) (state.Prom
 	return schedule, nil
 }
 
-func (s *promptScheduleService) SetEnabled(_ context.Context, id string, enabled bool) (state.PromptSchedule, error) {
-	schedule, err := s.store.GetPromptSchedule(id)
+func (s *promptScheduleService) SetEnabled(ctx context.Context, id string, enabled bool) (state.PromptSchedule, error) {
+	schedule, err := s.store.GetPromptSchedule(ctx, id)
 	if err != nil {
 		return schedule, err
 	}
@@ -188,11 +188,11 @@ func (s *promptScheduleService) SetEnabled(_ context.Context, id string, enabled
 			return schedule, err
 		}
 	}
-	return s.store.SetPromptScheduleEnabled(id, enabled, runAt, s.now().UnixMilli())
+	return s.store.SetPromptScheduleEnabled(ctx, id, enabled, runAt, s.now().UnixMilli())
 }
 
 func (s *promptScheduleService) RunNow(ctx context.Context, id string) (state.PromptSchedule, error) {
-	schedule, ok, err := s.store.ClaimPromptSchedule(id, s.now().UnixMilli(), true)
+	schedule, ok, err := s.store.ClaimPromptSchedule(ctx, id, s.now().UnixMilli(), true)
 	if err != nil {
 		return schedule, err
 	}
@@ -202,12 +202,12 @@ func (s *promptScheduleService) RunNow(ctx context.Context, id string) (state.Pr
 	if err := s.dispatch(ctx, schedule); err != nil {
 		return state.PromptSchedule{}, err
 	}
-	return s.store.GetPromptSchedule(id)
+	return s.store.GetPromptSchedule(ctx, id)
 }
 
-func (s *promptScheduleService) Recover() error {
+func (s *promptScheduleService) Recover(ctx context.Context) error {
 	const interrupted = "dispatch interrupted by restart; not retried to prevent duplicate session creation"
-	schedules, err := s.store.ListRunningPromptSchedules()
+	schedules, err := s.store.ListRunningPromptSchedules(ctx)
 	if err != nil {
 		return err
 	}
@@ -215,22 +215,22 @@ func (s *promptScheduleService) Recover() error {
 	var recoveryErr error
 	for _, schedule := range schedules {
 		if schedule.TimingType == TimingOnce {
-			recoveryErr = errors.Join(recoveryErr, s.finishFailed(schedule.ID, errors.New(interrupted)))
+			recoveryErr = errors.Join(recoveryErr, s.finishFailed(ctx, schedule.ID, errors.New(interrupted)))
 			continue
 		}
 		next, err := nextScheduleRun(schedule.TimingType, schedule.RunAt, schedule.IntervalMinutes, schedule.Cron, schedule.Timezone, now)
 		if err != nil {
-			recoveryErr = errors.Join(recoveryErr, s.finishFailed(schedule.ID, err))
+			recoveryErr = errors.Join(recoveryErr, s.finishFailed(ctx, schedule.ID, err))
 			continue
 		}
-		recoveryErr = errors.Join(recoveryErr, s.store.ReschedulePromptSchedule(schedule.ID, next, interrupted, now.UnixMilli()))
+		recoveryErr = errors.Join(recoveryErr, s.store.ReschedulePromptSchedule(ctx, schedule.ID, next, interrupted, now.UnixMilli()))
 	}
 	return recoveryErr
 }
 
 func (s *promptScheduleService) Tick(ctx context.Context) error {
 	for {
-		schedule, ok, err := s.store.ClaimNextDuePromptSchedule(s.now().UnixMilli())
+		schedule, ok, err := s.store.ClaimNextDuePromptSchedule(ctx, s.now().UnixMilli())
 		if err != nil {
 			return err
 		}
@@ -249,46 +249,46 @@ func (s *promptScheduleService) dispatch(ctx context.Context, schedule state.Pro
 	if !reusing {
 		createdPlatform, resp, err := s.sessions.CreateScheduledSession(ctx, schedule.RemoteID, schedule.Directory)
 		if err != nil {
-			return s.finishDispatchError(schedule, err)
+			return s.finishDispatchError(ctx, schedule, err)
 		}
 		platformID, sessionID = createdPlatform, resp.ID
-		if err := s.store.LinkPromptScheduleSession(schedule.ID, platformID, sessionID, s.now().UnixMilli()); err != nil {
-			return s.finishDispatchError(schedule, fmt.Errorf("linking scheduled session: %w", err))
+		if err := s.store.LinkPromptScheduleSession(ctx, schedule.ID, platformID, sessionID, s.now().UnixMilli()); err != nil {
+			return s.finishDispatchError(ctx, schedule, fmt.Errorf("linking scheduled session: %w", err))
 		}
 	}
 	if err := s.sessions.SendScheduledMessage(ctx, platformID, platforms.SendMessageRequest{SessionID: sessionID, Message: schedule.Prompt}, reusing); err != nil {
-		return s.finishDispatchError(schedule, err)
+		return s.finishDispatchError(ctx, schedule, err)
 	}
 	if schedule.TimingType != TimingOnce {
 		next, err := nextScheduleRun(schedule.TimingType, schedule.RunAt, schedule.IntervalMinutes, schedule.Cron, schedule.Timezone, s.now())
 		if err != nil {
-			return s.finishFailed(schedule.ID, err)
+			return s.finishFailed(ctx, schedule.ID, err)
 		}
-		return s.store.CompletePromptSchedule(schedule.ID, next, s.now().UnixMilli())
+		return s.store.CompletePromptSchedule(ctx, schedule.ID, next, s.now().UnixMilli())
 	}
-	return s.store.FinishPromptSchedule(schedule.ID, StateCompleted, "", s.now().UnixMilli())
+	return s.store.FinishPromptSchedule(ctx, schedule.ID, StateCompleted, "", s.now().UnixMilli())
 }
 
-func (s *promptScheduleService) finishDispatchError(schedule state.PromptSchedule, cause error) error {
+func (s *promptScheduleService) finishDispatchError(ctx context.Context, schedule state.PromptSchedule, cause error) error {
 	if errors.Is(cause, context.Canceled) {
 		return cause
 	}
 	if schedule.TimingType == TimingOnce {
-		return s.finishFailed(schedule.ID, cause)
+		return s.finishFailed(ctx, schedule.ID, cause)
 	}
 	now := s.now()
 	next, err := nextScheduleRun(schedule.TimingType, schedule.RunAt, schedule.IntervalMinutes, schedule.Cron, schedule.Timezone, now)
 	if err != nil {
-		return s.finishFailed(schedule.ID, err)
+		return s.finishFailed(ctx, schedule.ID, err)
 	}
-	if err := s.store.ReschedulePromptSchedule(schedule.ID, next, cause.Error(), now.UnixMilli()); err != nil {
+	if err := s.store.ReschedulePromptSchedule(ctx, schedule.ID, next, cause.Error(), now.UnixMilli()); err != nil {
 		return fmt.Errorf("rescheduling after %w: %w", cause, err)
 	}
 	return nil
 }
 
-func (s *promptScheduleService) finishFailed(id string, cause error) error {
-	if err := s.store.FinishPromptSchedule(id, StateFailed, cause.Error(), s.now().UnixMilli()); err != nil {
+func (s *promptScheduleService) finishFailed(ctx context.Context, id string, cause error) error {
+	if err := s.store.FinishPromptSchedule(ctx, id, StateFailed, cause.Error(), s.now().UnixMilli()); err != nil {
 		return fmt.Errorf("recording schedule failure after %w: %w", cause, err)
 	}
 	return nil

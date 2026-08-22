@@ -17,8 +17,8 @@ import (
 type projectArchiveHost struct {
 	hostsvc.Host
 	remoteID string
-	stopped string
-	stopErr error
+	stopped  string
+	stopErr  error
 }
 
 func (h *projectArchiveHost) RemoteID() string {
@@ -169,7 +169,7 @@ func TestProjectArchive_OverlayAndAutoUnarchive(t *testing.T) {
 		t.Fatalf("expected project auto-unarchived after newer activity, got %+v", projects)
 	}
 	// The marker should be gone from state.db too.
-	archived, _ := srv.stateDB.ArchivedProjects()
+	archived, _ := srv.stateDB.ArchivedProjects(t.Context())
 	if len(archived) != 0 {
 		t.Errorf("expected archive marker deleted, got %v", archived)
 	}
@@ -222,7 +222,7 @@ func TestProjectArchive_SucceedsWhenStopFails(t *testing.T) {
 
 	postProjectArchive(t, srv, "/src/foo", true)
 
-	archived, _ := srv.stateDB.ArchivedProjects()
+	archived, _ := srv.stateDB.ArchivedProjects(t.Context())
 	if _, ok := archived[state.ProjectKey{RemoteID: state.LocalRemoteID, Root: "/src/foo"}]; !ok {
 		t.Fatalf("expected /src/foo archived despite stop error, got %v", archived)
 	}
@@ -264,7 +264,7 @@ func TestProjectArchive_AppliesToRemoteProjects(t *testing.T) {
 	if len(projects) != 1 || projects[0].Archived {
 		t.Fatalf("expected remote project auto-unarchived after newer activity, got %+v", projects)
 	}
-	if archived, _ := srv.stateDB.ArchivedProjects(); len(archived) != 0 {
+	if archived, _ := srv.stateDB.ArchivedProjects(t.Context()); len(archived) != 0 {
 		t.Errorf("expected archive marker deleted, got %v", archived)
 	}
 }

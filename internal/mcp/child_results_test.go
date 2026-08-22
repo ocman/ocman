@@ -13,8 +13,10 @@ import (
 
 type fakeChildResultStore struct{ delivery string }
 
-func (*fakeChildResultStore) GetChildSession(string) (*state.ChildSession, error) { return nil, nil }
-func (*fakeChildResultStore) ListDisconnectedChildSessions(string) ([]state.ChildSession, error) {
+func (*fakeChildResultStore) GetChildSession(context.Context, string) (*state.ChildSession, error) {
+	return nil, nil
+}
+func (*fakeChildResultStore) ListDisconnectedChildSessions(context.Context, string) ([]state.ChildSession, error) {
 	return nil, nil
 }
 
@@ -37,7 +39,7 @@ func TestRunChildResultProgress_EmitsPeriodically(t *testing.T) {
 	}
 	close(done)
 }
-func (f *fakeChildResultStore) CompareAndSetChildResultDelivery(_ string, from, to string) (bool, error) {
+func (f *fakeChildResultStore) CompareAndSetChildResultDelivery(_ context.Context, _ string, from, to string) (bool, error) {
 	if f.delivery != from {
 		return false, nil
 	}
@@ -51,10 +53,10 @@ type blockingChildResultStore struct {
 	resume        chan struct{}
 }
 
-func (f *blockingChildResultStore) CompareAndSetChildResultDelivery(id, from, to string) (bool, error) {
+func (f *blockingChildResultStore) CompareAndSetChildResultDelivery(_ context.Context, id, from, to string) (bool, error) {
 	close(f.transitioning)
 	<-f.resume
-	return f.fakeChildResultStore.CompareAndSetChildResultDelivery(id, from, to)
+	return f.fakeChildResultStore.CompareAndSetChildResultDelivery(context.Background(), id, from, to)
 }
 
 func TestChildResultBroker_CancelDetachesWaiter(t *testing.T) {
@@ -116,7 +118,7 @@ func TestAwaitChildResult_MarksCancelledWaitDisconnected(t *testing.T) {
 	tools := &splitTools{
 		results: broker,
 		store:   store,
-		disconnected: func(childID string) {
+		disconnected: func(_ context.Context, childID string) {
 			notified = childID
 		},
 	}

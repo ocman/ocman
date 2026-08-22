@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"net/http"
 
 	mcpserver "github.com/mark3labs/mcp-go/server"
@@ -60,7 +61,7 @@ type Deps struct {
 
 	// ChildDisconnected queues recovery guidance for the parent when a
 	// synchronous child-result request disconnects.
-	ChildDisconnected func(childID string)
+	ChildDisconnected func(context.Context, string)
 
 	// SignFile mints a browser-reachable URL for a file on disk, backing
 	// the embed_file tool. Optional: nil makes embed_file report that
@@ -228,10 +229,10 @@ func inheritProvider(db *state.DB) permissionInheriter {
 // produce a minimal prompt from the intent alone.
 type nullSessionReader struct{}
 
-func (n *nullSessionReader) GetSession(_ string) (*db.Session, error) {
+func (n *nullSessionReader) GetSession(context.Context, string) (*db.Session, error) {
 	return &db.Session{}, nil
 }
 
-func (n *nullSessionReader) GetSessionMessages(_ string) ([]db.Message, error) {
+func (n *nullSessionReader) GetSessionMessages(context.Context, string) ([]db.Message, error) {
 	return nil, nil
 }

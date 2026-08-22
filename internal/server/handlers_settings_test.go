@@ -36,7 +36,7 @@ func TestHandleGetJudgeModel(t *testing.T) {
 	}
 
 	// After a set, GET returns the stored value.
-	if err := sdb.SetSetting(autoapprove.JudgeModelSettingKey, "anthropic/claude-haiku-4-5"); err != nil {
+	if err := sdb.SetSetting(t.Context(), autoapprove.JudgeModelSettingKey, "anthropic/claude-haiku-4-5"); err != nil {
 		t.Fatalf("SetSetting: %v", err)
 	}
 	rec = httptest.NewRecorder()
@@ -64,7 +64,7 @@ func TestHandleSetJudgeModel(t *testing.T) {
 	if provider, modelID := srv.aaSvc().JudgeModel(); provider != "openrouter" || modelID != "anthropic/claude" {
 		t.Fatalf("judge not updated: provider=%q model=%q", provider, modelID)
 	}
-	if v, ok, _ := sdb.GetSetting(autoapprove.JudgeModelSettingKey); !ok || v != "openrouter/anthropic/claude" {
+	if v, ok, _ := sdb.GetSetting(t.Context(), autoapprove.JudgeModelSettingKey); !ok || v != "openrouter/anthropic/claude" {
 		t.Fatalf("setting not persisted: %q ok=%v", v, ok)
 	}
 

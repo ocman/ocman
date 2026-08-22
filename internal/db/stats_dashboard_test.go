@@ -24,23 +24,24 @@ func TestGetMetricsDashboard_DailyGranularity_30Day(t *testing.T) {
 
 	insertSession(t, db, "s1", "session", "/p", now, now)
 	insertMessage(t, db, "m1", "s1", now-dayMs, map[string]interface{}{
-		"role":    "assistant",
-		"finish":  "end_turn",
-		"cost":    0.10,
-		"time":    map[string]interface{}{"created": now - dayMs - 1000, "completed": now - dayMs},
-		"tokens":  map[string]interface{}{"input": 100, "output": 50},
+		"role":   "assistant",
+		"finish": "end_turn",
+		"cost":   0.10,
+		"time":   map[string]interface{}{"created": now - dayMs - 1000, "completed": now - dayMs},
+		"tokens": map[string]interface{}{"input": 100, "output": 50},
 	})
 	insertMessage(t, db, "m2", "s1", now-2*dayMs, map[string]interface{}{
-		"role":    "assistant",
-		"finish":  "end_turn",
-		"cost":    0.05,
-		"time":    map[string]interface{}{"created": now - 2*dayMs - 1000, "completed": now - 2*dayMs},
-		"tokens":  map[string]interface{}{"input": 50, "output": 25},
+		"role":   "assistant",
+		"finish": "end_turn",
+		"cost":   0.05,
+		"time":   map[string]interface{}{"created": now - 2*dayMs - 1000, "completed": now - 2*dayMs},
+		"tokens": map[string]interface{}{"input": 50, "output": 25},
 	})
 
-	dash, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		Days: 30, RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 	})
+
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard: %v", err)
 	}
@@ -75,9 +76,10 @@ func TestGetMetricsDashboard_HourlyGranularity_24h(t *testing.T) {
 		"tokens": map[string]interface{}{"input": 10, "output": 5},
 	})
 
-	dash, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		Days: 1, RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 	})
+
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard: %v", err)
 	}
@@ -100,9 +102,10 @@ func TestGetMetricsDashboard_EmptyDB_ZeroFilledBuckets(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	dash, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		Days: 30, RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 	})
+
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard: %v", err)
 	}
@@ -140,9 +143,10 @@ func TestGetMetricsDashboard_CumulativeCostMonotonic(t *testing.T) {
 		})
 	}
 
-	dash, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		Days: 30, RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 	})
+
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard: %v", err)
 	}
@@ -173,10 +177,11 @@ func TestGetMetricsDashboard_ProjectFilter_NarrowsResult(t *testing.T) {
 		"time": map[string]interface{}{"created": now - 500, "completed": now},
 	})
 
-	dash, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		Days: 30, RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 		Dir: "/proj/a",
 	})
+
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard: %v", err)
 	}
@@ -210,9 +215,10 @@ func TestGetMetricsDashboard_SessionLog_RespectsLimitAndCostSort(t *testing.T) {
 		})
 	}
 
-	dash, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		Days: 30, RequestLimit: 50, SessionLimit: 2, ProjectLimit: 50,
 	})
+
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard: %v", err)
 	}
@@ -261,9 +267,10 @@ func TestGetMetricsDashboard_SessionLog_TieBreaksByRecency(t *testing.T) {
 		})
 	}
 
-	dash, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 	})
+
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard: %v", err)
 	}
@@ -300,9 +307,10 @@ func TestGetMetricsDashboard_CostByModel_BasicSplit(t *testing.T) {
 		"time": map[string]interface{}{"created": now - 500, "completed": now},
 	})
 
-	dash, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		Days: 30, RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 	})
+
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard: %v", err)
 	}
@@ -351,9 +359,10 @@ func TestGetMetricsDashboard_CostByModel_UsesEstimatedCostWhenReportedCostIsZero
 		})
 	}
 
-	dash, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		Days: 30, Pricing: stubPricing{inputRate: 0.01, outputRate: 0.02},
 	})
+
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard: %v", err)
 	}
@@ -399,9 +408,10 @@ func TestGetMetricsDashboard_CostByModel_TopNAndOther(t *testing.T) {
 		})
 	}
 
-	dash, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		Days: 30, RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 	})
+
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard: %v", err)
 	}
@@ -435,9 +445,10 @@ func TestGetMetricsDashboard_CostByModel_EmptyDB(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()
 
-	dash, err := db.GetMetricsDashboard(MetricsDashboardOptions{
+	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
 		Days: 30, RequestLimit: 50, SessionLimit: 50, ProjectLimit: 50,
 	})
+
 	if err != nil {
 		t.Fatalf("GetMetricsDashboard: %v", err)
 	}

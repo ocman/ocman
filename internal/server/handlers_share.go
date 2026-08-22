@@ -28,11 +28,11 @@ const settingSharingEnabled = "sharing_enabled"
 // is returned, never swallowed: callers must fail closed, otherwise a
 // transient DB error silently re-enables minting public unauthenticated
 // links after an operator turned sharing off.
-func (s *Server) sharingEnabled() (bool, error) {
+func (s *Server) sharingEnabled(ctx context.Context) (bool, error) {
 	if s.stateDB == nil {
 		return true, nil
 	}
-	v, ok, err := s.stateDB.GetSetting(settingSharingEnabled)
+	v, ok, err := s.stateDB.GetSetting(ctx, settingSharingEnabled)
 	if err != nil {
 		return false, err
 	}
@@ -83,7 +83,7 @@ func (s *Server) handleSessionShares(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, []shareLinkView{})
 			return
 		}
-		links, err := s.stateDB.ListActiveShareLinks(string(adapter.ID()), sessionID)
+		links, err := s.stateDB.ListActiveShareLinks(r.Context(), string(adapter.ID()), sessionID)
 		if err != nil {
 			serverError(w, "listing share links", err)
 			return
@@ -100,7 +100,7 @@ func (s *Server) handleCreateSessionShare(w http.ResponseWriter, r *http.Request
 			http.Error(w, "state database not available", http.StatusServiceUnavailable)
 			return
 		}
-		enabled, err := s.sharingEnabled()
+		enabled, err := s.sharingEnabled(r.Context())
 		if err != nil {
 			log.WithError(err).Error("reading sharing setting")
 			http.Error(w, "sharing state unavailable", http.StatusServiceUnavailable)
@@ -116,7 +116,7 @@ func (s *Server) handleCreateSessionShare(w http.ResponseWriter, r *http.Request
 			return
 		}
 		// expiresAt 0 = no expiry (the only mode the current UI uses).
-		link, err := s.stateDB.CreateShareLink(string(adapter.ID()), sessionID, 0)
+		link, err := s.stateDB.CreateShareLink(r.Context(), string(adapter.ID()), sessionID, 0)
 		if err != nil {
 			serverError(w, "creating share link", err)
 			return
@@ -125,7 +125,7 @@ func (s *Server) handleCreateSessionShare(w http.ResponseWriter, r *http.Request
 		if err != nil {
 			// The local row is useless without its relay copy, so drop
 			// it rather than leaving a link that resolves to nothing.
-			if _, rerr := s.stateDB.RevokeShareLink(string(adapter.ID()), sessionID, link.Token); rerr != nil {
+			if _, rerr := s.stateDB.RevokeShareLink(r.Context(), string(adapter.ID()), sessionID, link.Token); rerr != nil {
 				log.WithError(rerr).Warn("rolling back share link after relay failure")
 			}
 			writeShareRelayError(w, s.relayURL, err)
@@ -149,8 +149,8 @@ func (s *Server) handleRevokeSessionShare(w http.ResponseWriter, r *http.Request
 			http.Error(w, "state database not available", http.StatusServiceUnavailable)
 			return
 		}
-		link, _, _ := s.stateDB.GetActiveShareLink(token)
-		revoked, err := s.stateDB.RevokeShareLink(string(adapter.ID()), sessionID, token)
+		link, _, _ := s.stateDB.GetActiveShareLink(r.Context(), token)
+		revoked, err := s.stateDB.RevokeShareLink(r.Context(), string(adapter.ID()), sessionID, token)
 		if err != nil {
 			serverError(w, "revoking share link", err)
 			return
@@ -209,7 +209,7 @@ func (s *Server) handleSharingSetting(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		enabled, err := s.sharingEnabled()
+		enabled, err := s.sharingEnabled(r.Context())
 		if err != nil {
 			log.WithError(err).Error("reading sharing setting")
 			http.Error(w, "sharing state unavailable", http.StatusServiceUnavailable)
@@ -227,7 +227,7 @@ func (s *Server) handleSharingSetting(w http.ResponseWriter, r *http.Request) {
 		if !body.Enabled {
 			val = "false"
 		}
-		if err := s.stateDB.SetSetting(settingSharingEnabled, val); err != nil {
+		if err := s.stateDB.SetSetting(r.Context(), settingSharingEnabled, val); err != nil {
 			serverError(w, "saving sharing setting", err)
 			return
 		}
@@ -245,7 +245,7 @@ func (s *Server) handleAllShares(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, []globalShareLinkView{})
 		return
 	}
-	links, err := s.stateDB.ListAllActiveShareLinks()
+	links, err := s.stateDB.ListAllActiveShareLinks(r.Context())
 	if err != nil {
 		serverError(w, "listing share links", err)
 		return

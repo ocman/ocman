@@ -6,6 +6,8 @@
 package permissions
 
 import (
+	"context"
+
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -53,7 +55,7 @@ var knownKeys = map[string]bool{
 
 // ApprovalLister is the slice of *state.DB the builder needs.
 type ApprovalLister interface {
-	ListApprovedPermissions(platform, sessionID string) ([]state.ApprovedPermission, error)
+	ListApprovedPermissions(context.Context, string, string) ([]state.ApprovedPermission, error)
 }
 
 // LiveRuleReader reads a session's current permission ruleset from the
@@ -76,8 +78,8 @@ type LiveRuleReader interface {
 // evaluates the last matching rule. A nil reader or a read error is soft:
 // the function falls back to approval-only rules (never fails the launch).
 // The returned count is len(merged).
-func BuildInheritedRulesWithLive(lister ApprovalLister, reader LiveRuleReader, platform, parentSessionID string) ([]platforms.PermissionRule, int, error) {
-	approved, _, err := BuildInheritedRules(lister, platform, parentSessionID)
+func BuildInheritedRulesWithLive(ctx context.Context, lister ApprovalLister, reader LiveRuleReader, platform, parentSessionID string) ([]platforms.PermissionRule, int, error) {
+	approved, _, err := BuildInheritedRules(ctx, lister, platform, parentSessionID)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -119,11 +121,11 @@ func BuildInheritedRulesWithLive(lister ApprovalLister, reader LiveRuleReader, p
 //   - Total allow rules are capped at maxInheritedPatterns.
 //
 // An empty parent (no approvals) returns (nil, 0, nil).
-func BuildInheritedRules(lister ApprovalLister, platform, parentSessionID string) ([]platforms.PermissionRule, int, error) {
+func BuildInheritedRules(ctx context.Context, lister ApprovalLister, platform, parentSessionID string) ([]platforms.PermissionRule, int, error) {
 	if lister == nil || parentSessionID == "" {
 		return nil, 0, nil
 	}
-	approvals, err := lister.ListApprovedPermissions(platform, parentSessionID)
+	approvals, err := lister.ListApprovedPermissions(ctx, platform, parentSessionID)
 	if err != nil {
 		return nil, 0, err
 	}

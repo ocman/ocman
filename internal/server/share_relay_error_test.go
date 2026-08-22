@@ -115,7 +115,7 @@ func TestCreateShareRollsBackOnRelayFailure(t *testing.T) {
 		t.Fatalf("status = %d, want 502", rr.Code)
 	}
 
-	links, err := srv.stateDB.ListActiveShareLinks("fake", "ses_rollback")
+	links, err := srv.stateDB.ListActiveShareLinks(t.Context(), "fake", "ses_rollback")
 	if err != nil {
 		t.Fatalf("ListActiveShareLinks: %v", err)
 	}

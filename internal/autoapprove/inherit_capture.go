@@ -1,6 +1,7 @@
 package autoapprove
 
 import (
+	"context"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -82,7 +83,7 @@ func (s *Service) takeAsked(sessionID, permissionID string) (askedPermission, bo
 // cache entry (the platform that saw the original permission.asked) so
 // the record lands under the right platform even when the caller only
 // knows the connection's platform.
-func (s *Service) HandlePermissionReplied(sessionID, permissionID, reply string) {
+func (s *Service) HandlePermissionReplied(ctx context.Context, sessionID, permissionID, reply string) {
 	if s == nil {
 		return
 	}
@@ -105,6 +106,7 @@ func (s *Service) HandlePermissionReplied(sessionID, permissionID, reply string)
 		return
 	}
 	if err := s.deps.Store.RecordApprovedPermission(
+		ctx,
 		ap.platformID,
 		sessionID,
 		state.ApprovedPermission{

@@ -23,7 +23,7 @@ type remoteAccessStatus struct {
 // handleRemoteAccess handles GET /api/settings/remote-access — this
 // instance's identity and gRPC-listen status. Auth-gated; no plaintext
 // token (AD-5).
-func (s *Server) handleRemoteAccess(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleRemoteAccess(w http.ResponseWriter, r *http.Request) {
 	status := remoteAccessStatus{
 		InstanceID: s.remoteAccess.instanceID,
 		Listening:  s.remoteAccess.listening,
@@ -37,7 +37,7 @@ func (s *Server) handleRemoteAccess(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 	if s.stateDB != nil {
-		if ident, err := s.stateDB.InstanceIdentity(); err == nil {
+		if ident, err := s.stateDB.InstanceIdentity(r.Context()); err == nil {
 			if status.InstanceID == "" {
 				status.InstanceID = ident.InstanceID
 			}
@@ -51,12 +51,12 @@ func (s *Server) handleRemoteAccess(w http.ResponseWriter, _ *http.Request) {
 // — the explicit, authenticated action that returns this instance's own
 // plaintext remote-access token for copy-to-clipboard. It never returns
 // tokens stored for attached remotes (AD-5, NFR-4).
-func (s *Server) handleRevealRemoteToken(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleRevealRemoteToken(w http.ResponseWriter, r *http.Request) {
 	if s.stateDB == nil {
 		http.Error(w, "state database not available", http.StatusServiceUnavailable)
 		return
 	}
-	ident, err := s.stateDB.InstanceIdentity()
+	ident, err := s.stateDB.InstanceIdentity(r.Context())
 	if err != nil {
 		serverError(w, "reading instance identity", err)
 		return
@@ -81,12 +81,12 @@ func (s *Server) handlePromptSections(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleGetPromptSections(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleGetPromptSections(w http.ResponseWriter, r *http.Request) {
 	if s.stateDB == nil {
 		writeJSON(w, []state.PromptSection{})
 		return
 	}
-	sections, err := s.stateDB.GetPromptSections()
+	sections, err := s.stateDB.GetPromptSections(r.Context())
 	if err != nil {
 		serverError(w, "reading prompt sections", err)
 		return
@@ -106,7 +106,7 @@ func (s *Server) handleSetPromptSections(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "state database not available", http.StatusServiceUnavailable)
 		return
 	}
-	if err := s.stateDB.SetPromptSections(sections); err != nil {
+	if err := s.stateDB.SetPromptSections(r.Context(), sections); err != nil {
 		serverError(w, "saving prompt sections", err)
 		return
 	}
@@ -131,10 +131,10 @@ func (s *Server) handleJudgeDelay(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleGetJudgeDelay(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleGetJudgeDelay(w http.ResponseWriter, r *http.Request) {
 	var ms int64 = state.DefaultJudgeDelayMs
 	if s.stateDB != nil {
-		if d, err := s.stateDB.GetJudgeDelayMs(); err == nil {
+		if d, err := s.stateDB.GetJudgeDelayMs(r.Context()); err == nil {
 			ms = d
 		}
 	}
@@ -152,7 +152,7 @@ func (s *Server) handleSetJudgeDelay(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "state database not available", http.StatusServiceUnavailable)
 		return
 	}
-	if err := s.stateDB.SetJudgeDelayMs(body.DelayMs); err != nil {
+	if err := s.stateDB.SetJudgeDelayMs(r.Context(), body.DelayMs); err != nil {
 		serverError(w, "saving judge delay", err)
 		return
 	}
@@ -183,10 +183,10 @@ func (s *Server) handleJudgeModel(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleGetJudgeModel(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) handleGetJudgeModel(w http.ResponseWriter, r *http.Request) {
 	var model string
 	if s.stateDB != nil {
-		if v, ok, err := s.stateDB.GetSetting(autoapprove.JudgeModelSettingKey); err == nil && ok {
+		if v, ok, err := s.stateDB.GetSetting(r.Context(), autoapprove.JudgeModelSettingKey); err == nil && ok {
 			model = v
 		}
 	}
@@ -204,12 +204,12 @@ func (s *Server) handleSetJudgeModel(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "state database not available", http.StatusServiceUnavailable)
 		return
 	}
-	if err := s.stateDB.SetSetting(autoapprove.JudgeModelSettingKey, body.Model); err != nil {
+	if err := s.stateDB.SetSetting(r.Context(), autoapprove.JudgeModelSettingKey, body.Model); err != nil {
 		serverError(w, "saving judge model", err)
 		return
 	}
 	// Apply immediately so the next judge run uses the new model.
-	s.aaSvc().ReloadJudgeModel()
+	s.aaSvc().ReloadJudgeModel(r.Context())
 	writeJSON(w, map[string]string{"model": body.Model})
 }
 
@@ -225,7 +225,7 @@ func (s *Server) handleWorktreeInheritPermissions(w http.ResponseWriter, r *http
 	}
 	switch r.Method {
 	case http.MethodGet:
-		on, err := s.stateDB.GetWorktreeInheritPermissions()
+		on, err := s.stateDB.GetWorktreeInheritPermissions(r.Context())
 		if err != nil {
 			serverError(w, "reading worktree inherit-permissions setting", err)
 			return
@@ -238,7 +238,7 @@ func (s *Server) handleWorktreeInheritPermissions(w http.ResponseWriter, r *http
 		if !readAndUnmarshal(w, r, maxRequestBody, &body) {
 			return
 		}
-		if err := s.stateDB.SetWorktreeInheritPermissions(body.Enabled); err != nil {
+		if err := s.stateDB.SetWorktreeInheritPermissions(r.Context(), body.Enabled); err != nil {
 			serverError(w, "saving worktree inherit-permissions setting", err)
 			return
 		}

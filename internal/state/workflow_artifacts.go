@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 )
@@ -27,12 +28,12 @@ type WorkflowArtifact struct {
 // InsertWorkflowArtifact persists one immutable artifact metadata row.
 // Artifacts are write-once; there is no update path (producer
 // immutability). ExpiresAt of 0 stores NULL (never expires).
-func (d *DB) InsertWorkflowArtifact(a WorkflowArtifact) error {
+func (d *DB) InsertWorkflowArtifact(ctx context.Context, a WorkflowArtifact) error {
 	var expires interface{}
 	if a.ExpiresAt > 0 {
 		expires = a.ExpiresAt
 	}
-	_, err := d.db.Exec(`
+	_, err := d.db.ExecContext(ctx, `
 		INSERT INTO workflow_artifact
 			(id, run_id, node_id, attempt_id, name, kind, content_hash, size_bytes, created_at, expires_at, payload_deleted)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
@@ -45,8 +46,8 @@ func (d *DB) InsertWorkflowArtifact(a WorkflowArtifact) error {
 
 // ListWorkflowArtifacts returns every artifact for a run, ordered by
 // node then creation time, so the UI can group them by producing node.
-func (d *DB) ListWorkflowArtifacts(runID string) ([]WorkflowArtifact, error) {
-	rows, err := d.db.Query(`
+func (d *DB) ListWorkflowArtifacts(ctx context.Context, runID string) ([]WorkflowArtifact, error) {
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT id, run_id, node_id, attempt_id, name, kind, content_hash, size_bytes,
 		       created_at, COALESCE(expires_at, 0), payload_deleted
 		FROM workflow_artifact WHERE run_id = ?
@@ -59,9 +60,9 @@ func (d *DB) ListWorkflowArtifacts(runID string) ([]WorkflowArtifact, error) {
 }
 
 // GetWorkflowArtifact returns one artifact metadata row by ID.
-func (d *DB) GetWorkflowArtifact(id string) (*WorkflowArtifact, error) {
+func (d *DB) GetWorkflowArtifact(ctx context.Context, id string) (*WorkflowArtifact, error) {
 	var a WorkflowArtifact
-	err := d.db.QueryRow(`
+	err := d.db.QueryRowContext(ctx, `
 		SELECT id, run_id, node_id, attempt_id, name, kind, content_hash, size_bytes,
 		       created_at, COALESCE(expires_at, 0), payload_deleted
 		FROM workflow_artifact WHERE id = ?`, id).Scan(
@@ -79,8 +80,8 @@ func (d *DB) GetWorkflowArtifact(id string) (*WorkflowArtifact, error) {
 // non-expired (or never-expiring) row is withheld, so shared payloads
 // survive until the last retention window closes. Never-expiring rows
 // (expires_at IS NULL) keep their payload indefinitely.
-func (d *DB) ExpiredWorkflowArtifactHashes(now int64) ([]string, error) {
-	rows, err := d.db.Query(`
+func (d *DB) ExpiredWorkflowArtifactHashes(ctx context.Context, now int64) ([]string, error) {
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT content_hash FROM workflow_artifact
 		WHERE payload_deleted = 0
 		GROUP BY content_hash
@@ -102,8 +103,8 @@ func (d *DB) ExpiredWorkflowArtifactHashes(now int64) ([]string, error) {
 
 // MarkWorkflowArtifactPayloadDeleted flips payload_deleted for every row
 // referencing a content hash. Called after the on-disk blob is removed.
-func (d *DB) MarkWorkflowArtifactPayloadDeleted(hash string) error {
-	_, err := d.db.Exec(`UPDATE workflow_artifact SET payload_deleted = 1 WHERE content_hash = ?`, hash)
+func (d *DB) MarkWorkflowArtifactPayloadDeleted(ctx context.Context, hash string) error {
+	_, err := d.db.ExecContext(ctx, `UPDATE workflow_artifact SET payload_deleted = 1 WHERE content_hash = ?`, hash)
 	if err != nil {
 		return fmt.Errorf("marking artifact payload deleted: %w", err)
 	}

@@ -31,7 +31,7 @@ const PlatformID platforms.ID = "opencode"
 // pass a stub and so the adapter doesn't force a writable *state.DB
 // on callers that only want the read side.
 type FavoritesReader interface {
-	ModelFavorites(platform string) ([]state.ModelFavorite, error)
+	ModelFavorites(context.Context, string) ([]state.ModelFavorite, error)
 }
 
 // CostCalculator computes API-equivalent cost from token counts and a
@@ -151,7 +151,7 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 		return nil, nil
 	}
 	dbPhase := srvtiming.Begin(ctx, "db_get_sessions")
-	sessions, err := getSessionsCached(a.db, dir, since)
+	sessions, err := getSessionsCached(ctx, a.db, dir, since)
 	dbPhase.End()
 	if err != nil {
 		return nil, err
@@ -164,7 +164,7 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 	sessions = append([]db.Session(nil), sessions...)
 	var childParents map[state.Key]string
 	if a.childLinks != nil {
-		childParents, _ = a.childLinks.ChildSessionParents()
+		childParents, _ = a.childLinks.ChildSessionParents(ctx)
 	}
 
 	// Discover live instances for connection flags. Pending prompts come
@@ -192,8 +192,8 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 	// subagent to its parent and apply the flag there. Parent prompts
 	// pass through unchanged (their id maps to themselves).
 	bubblePhase := srvtiming.Begin(ctx, "bubble_parents")
-	pendingPerms = bubbleUpPromptsToParent(pendingPerms, a.db, a.childLinks)
-	pendingQuestions = bubbleUpPromptsToParent(pendingQuestions, a.db, a.childLinks)
+	pendingPerms = bubbleUpPromptsToParent(ctx, pendingPerms, a.db, a.childLinks)
+	pendingQuestions = bubbleUpPromptsToParent(ctx, pendingQuestions, a.db, a.childLinks)
 	bubblePhase.End()
 
 	for i := range sessions {
@@ -239,7 +239,7 @@ func directoryHasLivePort(ports map[string]string, directory string) bool {
 // This is what makes a child's permission/question prompt visible on
 // the parent session row in the listing. OpenCode's parent_id wins when
 // both lookups know a child (they point at the same parent in practice).
-func bubbleUpPromptsToParent(prompted map[string]bool, dbConn parentLookup, mcpConn mcpParentLookup) map[string]bool {
+func bubbleUpPromptsToParent(ctx context.Context, prompted map[string]bool, dbConn parentLookup, mcpConn mcpParentLookup) map[string]bool {
 	if len(prompted) == 0 {
 		return prompted
 	}
@@ -250,13 +250,13 @@ func bubbleUpPromptsToParent(prompted map[string]bool, dbConn parentLookup, mcpC
 
 	parents := map[string]string{}
 	if dbConn != nil {
-		if p, err := dbConn.GetSessionParentIDs(ids); err == nil {
+		if p, err := dbConn.GetSessionParentIDs(ctx, ids); err == nil {
 			parents = p
 		}
 	}
 	// Fill any gaps with ocman's own MCP/worktree child links.
 	if mcpConn != nil {
-		if mcpParents, err := mcpConn.ChildSessionParents(); err == nil {
+		if mcpParents, err := mcpConn.ChildSessionParents(ctx); err == nil {
 			for _, id := range ids {
 				parent := parents[id]
 				if parent == "" {
@@ -293,7 +293,7 @@ func bubbleUpPromptsToParent(prompted map[string]bool, dbConn parentLookup, mcpC
 // needs. Defined as an interface so the helper can be unit-tested
 // without spinning up a SQLite database.
 type parentLookup interface {
-	GetSessionParentIDs(childIDs []string) (map[string]string, error)
+	GetSessionParentIDs(context.Context, []string) (map[string]string, error)
 }
 
 // mcpParentLookup is the subset of *state.DB that resolves ocman's own
@@ -301,8 +301,10 @@ type parentLookup interface {
 // bubble helper stays unit-testable and so a nil state.db (tests, or an
 // adapter constructed without one) degrades gracefully.
 type mcpParentLookup interface {
-	ChildSessionParents() (map[state.Key]string, error)
+	ChildSessionParents(context.Context) (map[state.Key]string, error)
 }
+
+var _ mcpParentLookup = (*state.DB)(nil)
 
 func applyMCPParentLink(session *db.Session, links map[state.Key]string) {
 	if session == nil || session.ParentID != "" {
@@ -311,11 +313,11 @@ func applyMCPParentLink(session *db.Session, links map[state.Key]string) {
 	session.ParentID = links[state.Key{Platform: string(PlatformID), SessionID: session.ID}]
 }
 
-func (a *Adapter) applyMCPParentLink(session *db.Session) {
+func (a *Adapter) applyMCPParentLink(ctx context.Context, session *db.Session) {
 	if a.childLinks == nil {
 		return
 	}
-	links, err := a.childLinks.ChildSessionParents()
+	links, err := a.childLinks.ChildSessionParents(ctx)
 	if err == nil {
 		applyMCPParentLink(session, links)
 	}
@@ -326,11 +328,11 @@ func (a *Adapter) applyMCPParentLink(session *db.Session) {
 // port discovery path, so it's cheap enough to call from the
 // registry's cold-cache fan-out without paying the multi-hundred-ms
 // round-trip that Session would.
-func (a *Adapter) Owns(_ context.Context, sessionID string) bool {
+func (a *Adapter) Owns(ctx context.Context, sessionID string) bool {
 	if a.db == nil || sessionID == "" {
 		return false
 	}
-	_, err := a.db.GetSession(sessionID)
+	_, err := a.db.GetSession(ctx, sessionID)
 	return err == nil
 }
 
@@ -346,7 +348,7 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 	detail, ok := a.fetchSessionFromOpenCodeCtx(ctx, id, limit, offset)
 	livePhase.EndWithDesc("fetchSessionFromOpenCode (incl lsof + 2x HTTP)")
 	if ok {
-		a.applyMCPParentLink(detail.Session)
+		a.applyMCPParentLink(ctx, detail.Session)
 		return detail, nil
 	}
 
@@ -354,7 +356,7 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 	// phase so the trace shows one bar that ends when the entire
 	// fallback finishes (success or any of the early-error returns).
 	fallbackPhase := srvtiming.Begin(ctx, "db_fallback")
-	session, err := a.db.GetSession(id)
+	session, err := a.db.GetSession(ctx, id)
 	if err != nil {
 		fallbackPhase.End()
 		if errors.Is(err, sql.ErrNoRows) {
@@ -363,16 +365,16 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 		return nil, err
 	}
 	session.Platform = string(PlatformID)
-	a.applyMCPParentLink(session)
+	a.applyMCPParentLink(ctx, session)
 
-	messages, err := a.db.GetSessionMessages(id)
+	messages, err := a.db.GetSessionMessages(ctx, id)
 	if err != nil {
 		fallbackPhase.End()
 		return nil, err
 	}
 	applySessionDetailMetadataFromMessages(session, messages)
 	session.Status = a.settleStatus(id, session.Directory, session.Status, discoverOpenCodePorts())
-	parts, err := a.db.GetSessionParts(id)
+	parts, err := a.db.GetSessionParts(ctx, id)
 	if err != nil {
 		fallbackPhase.End()
 		return nil, err
@@ -382,8 +384,8 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 	pagedMessages, _ := db.PaginateMessages(messages, limit, offset)
 	filteredParts := db.FilterPartsForMessages(parts, pagedMessages)
 
-	contextTokens, _ := a.db.GetContextTokenCount(id)
-	defaults, _ := getSessionDefaultsCached(a.db, id, session.Directory)
+	contextTokens, _ := a.db.GetContextTokenCount(ctx, id)
+	defaults, _ := getSessionDefaultsCached(ctx, a.db, id, session.Directory)
 	fallbackPhase.EndWithDesc("live path miss; full DB read")
 
 	return &platforms.SessionDetail{
@@ -440,11 +442,11 @@ func applySessionDetailMetadataFromMessages(session *db.Session, messages []db.M
 
 // SessionsInactiveBefore returns OpenCode sessions last updated before the
 // cutoff, for use by the auto-archive background job.
-func (a *Adapter) SessionsInactiveBefore(_ context.Context, cutoff int64) ([]db.SessionArchiveCandidate, error) {
+func (a *Adapter) SessionsInactiveBefore(ctx context.Context, cutoff int64) ([]db.SessionArchiveCandidate, error) {
 	if a.db == nil {
 		return nil, nil
 	}
-	return a.db.GetSessionsInactiveBefore(cutoff)
+	return a.db.GetSessionsInactiveBefore(ctx, cutoff)
 }
 
 // UnreadCounts implements platforms.UnreadCounter. For each
@@ -456,11 +458,11 @@ func (a *Adapter) SessionsInactiveBefore(_ context.Context, cutoff int64) ([]db.
 // (session_id, time_created, id), so this is a pure index-only
 // range scan. Called from applySessionState on every /api/sessions
 // poll; budget is sub-10ms even on large databases.
-func (a *Adapter) UnreadCounts(_ context.Context, cutoffs map[string]int64) (map[string]int, error) {
+func (a *Adapter) UnreadCounts(ctx context.Context, cutoffs map[string]int64) (map[string]int, error) {
 	if a.db == nil {
 		return nil, nil
 	}
-	return a.db.MessageCountsSince(cutoffs)
+	return a.db.MessageCountsSince(ctx, cutoffs)
 }
 
 // SessionChanges aggregates every file-touching tool call in a session
@@ -473,21 +475,21 @@ func (a *Adapter) UnreadCounts(_ context.Context, cutoffs map[string]int64) (map
 // landed alongside the optimization plan in docs/other/profiling.md (B5):
 // a single sample showed this endpoint at 1.87s with no obvious cost
 // driver, and we want a per-call breakdown rather than a guess.
-func (a *Adapter) SessionChanges(_ context.Context, sessionID string) (*platforms.SessionChanges, error) {
+func (a *Adapter) SessionChanges(ctx context.Context, sessionID string) (*platforms.SessionChanges, error) {
 	if a.db == nil {
 		return nil, platforms.ErrNotFound
 	}
 	defer timeIt("session_changes", logrus.Fields{"sessionID": sessionID})()
 
 	partsStart := time.Now()
-	parts, err := a.db.GetSessionParts(sessionID)
+	parts, err := a.db.GetSessionParts(ctx, sessionID)
 	partsDur := time.Since(partsStart)
 	if err != nil {
 		return nil, err
 	}
 
 	sessionStart := time.Now()
-	session, err := a.db.GetSession(sessionID)
+	session, err := a.db.GetSession(ctx, sessionID)
 	sessionDur := time.Since(sessionStart)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err

@@ -18,11 +18,11 @@ type fakeSessionReader struct {
 	msgsErr  error
 }
 
-func (f *fakeSessionReader) GetSession(string) (*db.Session, error) {
+func (f *fakeSessionReader) GetSession(context.Context, string) (*db.Session, error) {
 	return f.session, f.sessErr
 }
 
-func (f *fakeSessionReader) GetSessionMessages(string) ([]db.Message, error) {
+func (f *fakeSessionReader) GetSessionMessages(context.Context, string) ([]db.Message, error) {
 	return f.messages, f.msgsErr
 }
 
@@ -323,7 +323,7 @@ func TestParentModel(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.st.parentModel(tt.sid); got != tt.want {
+			if got := tt.st.parentModel(t.Context(), tt.sid); got != tt.want {
 				t.Fatalf("parentModel = %q, want %q", got, tt.want)
 			}
 		})

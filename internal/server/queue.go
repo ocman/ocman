@@ -57,7 +57,9 @@ func (s *Server) queueSvc() *queuesvc.Service {
 			s.stateDB,
 			&queueSender{s: s},
 			&workflowStatusInferer{s: s},
-			func(platform, sessionID string) { s.broadcastQueueUpdated(platform, sessionID) },
+			func(ctx context.Context, platform, sessionID string) {
+				s.broadcastQueueUpdated(ctx, platform, sessionID)
+			},
 		)
 	})
 	return s.queueSvcCached
@@ -164,7 +166,7 @@ func (s *Server) onSessionIdle(platformID, sessionID string) {
 // queue so clients apply it directly without a refetch. The messages key
 // is always present (an empty queue sends []), so the client can trust it
 // as authoritative rather than polling.
-func (s *Server) broadcastQueueUpdated(platform, sessionID string) {
+func (s *Server) broadcastQueueUpdated(ctx context.Context, platform, sessionID string) {
 	if sessionID == "" || platform == "" {
 		return
 	}
@@ -172,7 +174,7 @@ func (s *Server) broadcastQueueUpdated(platform, sessionID string) {
 	// has its own queue and its own broadcast. A read error just omits
 	// messages so the client falls back to a refetch.
 	var messages []queuedMessageView
-	if msgs, err := s.queueSvc().List(platform, sessionID); err == nil {
+	if msgs, err := s.queueSvc().List(ctx, platform, sessionID); err == nil {
 		messages = make([]queuedMessageView, 0, len(msgs))
 		for _, m := range msgs {
 			messages = append(messages, toQueuedMessageView(m))

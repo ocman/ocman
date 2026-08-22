@@ -17,7 +17,7 @@ type memStore struct {
 	seq  int64
 }
 
-func (m *memStore) EnqueueMessage(msg state.QueuedMessage) error {
+func (m *memStore) EnqueueMessage(_ context.Context, msg state.QueuedMessage) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.seq++
@@ -26,11 +26,11 @@ func (m *memStore) EnqueueMessage(msg state.QueuedMessage) error {
 	return nil
 }
 
-func (m *memStore) EnqueueClaimedChildResult(_ string, msg state.QueuedMessage) (bool, error) {
-	return true, m.EnqueueMessage(msg)
+func (m *memStore) EnqueueClaimedChildResult(_ context.Context, _ string, msg state.QueuedMessage) (bool, error) {
+	return true, m.EnqueueMessage(context.Background(), msg)
 }
 
-func (m *memStore) CountQueuedMessages(platform, sessionID string) (int, error) {
+func (m *memStore) CountQueuedMessages(_ context.Context, platform, sessionID string) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	n := 0
@@ -42,7 +42,7 @@ func (m *memStore) CountQueuedMessages(platform, sessionID string) (int, error) 
 	return n, nil
 }
 
-func (m *memStore) HeadQueuedMessage(platform, sessionID string) (*state.QueuedMessage, error) {
+func (m *memStore) HeadQueuedMessage(_ context.Context, platform, sessionID string) (*state.QueuedMessage, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := range m.msgs {
@@ -57,7 +57,7 @@ func (m *memStore) HeadQueuedMessage(platform, sessionID string) (*state.QueuedM
 	return nil, nil
 }
 
-func (m *memStore) RecordQueuedMessageFailure(id, reason string) (bool, error) {
+func (m *memStore) RecordQueuedMessageFailure(_ context.Context, id, reason string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := range m.msgs {
@@ -72,7 +72,7 @@ func (m *memStore) RecordQueuedMessageFailure(id, reason string) (bool, error) {
 	return false, nil
 }
 
-func (m *memStore) DeleteQueuedMessage(id string) (bool, error) {
+func (m *memStore) DeleteQueuedMessage(_ context.Context, id string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := range m.msgs {
@@ -84,7 +84,7 @@ func (m *memStore) DeleteQueuedMessage(id string) (bool, error) {
 	return false, nil
 }
 
-func (m *memStore) ListQueuedMessages(platform, sessionID string) ([]state.QueuedMessage, error) {
+func (m *memStore) ListQueuedMessages(_ context.Context, platform, sessionID string) ([]state.QueuedMessage, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []state.QueuedMessage
@@ -96,7 +96,7 @@ func (m *memStore) ListQueuedMessages(platform, sessionID string) ([]state.Queue
 	return out, nil
 }
 
-func (m *memStore) ListQueuedMessagesAnyPlatform(sessionID string) ([]state.QueuedMessage, error) {
+func (m *memStore) ListQueuedMessagesAnyPlatform(_ context.Context, sessionID string) ([]state.QueuedMessage, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []state.QueuedMessage
@@ -108,7 +108,7 @@ func (m *memStore) ListQueuedMessagesAnyPlatform(sessionID string) ([]state.Queu
 	return out, nil
 }
 
-func (m *memStore) SessionsWithQueuedMessages() ([]state.QueuedSession, error) {
+func (m *memStore) SessionsWithQueuedMessages(context.Context) ([]state.QueuedSession, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	seen := map[state.QueuedSession]bool{}
@@ -123,7 +123,7 @@ func (m *memStore) SessionsWithQueuedMessages() ([]state.QueuedSession, error) {
 	return out, nil
 }
 
-func (m *memStore) GetQueuedMessageSession(id string) (string, string, bool, error) {
+func (m *memStore) GetQueuedMessageSession(_ context.Context, id string) (string, string, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for _, msg := range m.msgs {
@@ -134,7 +134,7 @@ func (m *memStore) GetQueuedMessageSession(id string) (string, string, bool, err
 	return "", "", false, nil
 }
 
-func (m *memStore) MoveQueuedMessage(id string, direction int) (bool, error) {
+func (m *memStore) MoveQueuedMessage(_ context.Context, id string, direction int) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	idx := -1
@@ -298,7 +298,7 @@ func TestEnqueue_SecondDoesNotDrainFirstOnIdleBlip(t *testing.T) {
 	if got := sender.messages(); len(got) != 1 {
 		t.Fatalf("after backlog enqueues sent = %v, want still [one]", got)
 	}
-	q, _ := svc.List("opencode", "s1")
+	q, _ := svc.List(t.Context(), "opencode", "s1")
 	if len(q) != 2 || q[0].Text != "two" || q[1].Text != "three" {
 		t.Fatalf("queue = %v, want [two three] both retained", q)
 	}
@@ -398,7 +398,7 @@ func TestEnqueue_ForceQueueHoldsEvenWhenStatusReadsIdle(t *testing.T) {
 	if got := sender.messages(); len(got) != 0 {
 		t.Fatalf("sent = %v, want nothing (forceQueue holds)", got)
 	}
-	q, _ := svc.List("opencode", "s1")
+	q, _ := svc.List(t.Context(), "opencode", "s1")
 	if len(q) != 1 || q[0].Text != "held" {
 		t.Fatalf("queue = %v, want [held] retained", q)
 	}
@@ -540,8 +540,8 @@ func TestFlush_UnsendableHeadStopsBlockingQueue(t *testing.T) {
 	sender := &alwaysFailFirstSender{failFor: "poison"}
 	svc := New(store, sender, statusStub{running: false, ok: true}, nil)
 
-	_ = store.EnqueueMessage(state.QueuedMessage{ID: "p", Platform: "opencode", SessionID: "s1", Text: "poison"})
-	_ = store.EnqueueMessage(state.QueuedMessage{ID: "n", Platform: "opencode", SessionID: "s1", Text: "next"})
+	_ = store.EnqueueMessage(t.Context(), state.QueuedMessage{ID: "p", Platform: "opencode", SessionID: "s1", Text: "poison"})
+	_ = store.EnqueueMessage(t.Context(), state.QueuedMessage{ID: "n", Platform: "opencode", SessionID: "s1", Text: "next"})
 
 	for i := 0; i < state.QueuedMessageAttemptLimit; i++ {
 		svc.Flush(context.Background(), "opencode", "s1")
@@ -588,7 +588,7 @@ func TestFlush_UnknownStatusDoesNotSend(t *testing.T) {
 	sender := &recSender{}
 	svc := New(store, sender, statusStub{running: false, ok: false}, nil)
 
-	_ = store.EnqueueMessage(state.QueuedMessage{ID: "x", Platform: "opencode", SessionID: "s1", Text: "hi"})
+	_ = store.EnqueueMessage(t.Context(), state.QueuedMessage{ID: "x", Platform: "opencode", SessionID: "s1", Text: "hi"})
 	svc.Flush(context.Background(), "opencode", "s1")
 	// ok=false means "unknown" — the gate only blocks on known-running,
 	// so an unknown status flushes (session presumed idle). Assert the
@@ -603,11 +603,11 @@ func TestFlush_SendErrorLeavesHead(t *testing.T) {
 	sender := &recSender{failOnce: true}
 	svc := New(store, sender, statusStub{running: false, ok: true}, nil)
 
-	_ = store.EnqueueMessage(state.QueuedMessage{ID: "x", Platform: "opencode", SessionID: "s1", Text: "hi"})
+	_ = store.EnqueueMessage(t.Context(), state.QueuedMessage{ID: "x", Platform: "opencode", SessionID: "s1", Text: "hi"})
 	svc.Flush(context.Background(), "opencode", "s1")
 
 	// Send failed → message must remain at the head for retry.
-	head, _ := store.HeadQueuedMessage("opencode", "s1")
+	head, _ := store.HeadQueuedMessage(t.Context(), "opencode", "s1")
 	if head == nil || head.ID != "x" {
 		t.Fatalf("head = %v, want the failed message left for retry", head)
 	}
@@ -615,16 +615,16 @@ func TestFlush_SendErrorLeavesHead(t *testing.T) {
 
 func TestRemove_RejectsWrongSession(t *testing.T) {
 	store := &memStore{}
-	_ = store.EnqueueMessage(state.QueuedMessage{ID: "x", Platform: "opencode", SessionID: "s1", Text: "hi"})
+	_ = store.EnqueueMessage(t.Context(), state.QueuedMessage{ID: "x", Platform: "opencode", SessionID: "s1", Text: "hi"})
 	svc := New(store, &recSender{}, statusStub{ok: true}, nil)
 
 	// Deleting with a mismatched session id must not remove the row.
-	removed, err := svc.Remove("s2", "x")
+	removed, err := svc.Remove(t.Context(), "s2", "x")
 	if err != nil || removed {
 		t.Fatalf("Remove wrong session = (%v,%v), want (false,nil)", removed, err)
 	}
 	// Correct session removes it.
-	removed, err = svc.Remove("s1", "x")
+	removed, err = svc.Remove(t.Context(), "s1", "x")
 	if err != nil || !removed {
 		t.Fatalf("Remove right session = (%v,%v), want (true,nil)", removed, err)
 	}
@@ -632,23 +632,23 @@ func TestRemove_RejectsWrongSession(t *testing.T) {
 
 func TestMove_RejectsWrongSessionAndBoundary(t *testing.T) {
 	store := &memStore{}
-	_ = store.EnqueueMessage(state.QueuedMessage{ID: "a", Platform: "opencode", SessionID: "s1", Text: "a"})
-	_ = store.EnqueueMessage(state.QueuedMessage{ID: "b", Platform: "opencode", SessionID: "s1", Text: "b"})
+	_ = store.EnqueueMessage(t.Context(), state.QueuedMessage{ID: "a", Platform: "opencode", SessionID: "s1", Text: "a"})
+	_ = store.EnqueueMessage(t.Context(), state.QueuedMessage{ID: "b", Platform: "opencode", SessionID: "s1", Text: "b"})
 	svc := New(store, &recSender{}, statusStub{ok: true}, nil)
 
 	// Wrong session: no-op.
-	if moved, _ := svc.Move("s2", "a", 1); moved {
+	if moved, _ := svc.Move(t.Context(), "s2", "a", 1); moved {
 		t.Fatal("Move wrong session reported a swap")
 	}
 	// 'a' is first; moving up is a boundary no-op.
-	if moved, _ := svc.Move("s1", "a", -1); moved {
+	if moved, _ := svc.Move(t.Context(), "s1", "a", -1); moved {
 		t.Fatal("Move at boundary reported a swap")
 	}
 	// Moving 'a' down swaps with 'b'.
-	if moved, _ := svc.Move("s1", "a", 1); !moved {
+	if moved, _ := svc.Move(t.Context(), "s1", "a", 1); !moved {
 		t.Fatal("Move down did not swap")
 	}
-	got, _ := svc.List("opencode", "s1")
+	got, _ := svc.List(t.Context(), "opencode", "s1")
 	if len(got) != 2 || got[0].ID != "b" || got[1].ID != "a" {
 		t.Fatalf("order after move = %v, want [b a]", got)
 	}
@@ -657,7 +657,7 @@ func TestMove_RejectsWrongSessionAndBoundary(t *testing.T) {
 func TestEnqueue_FiresNotify(t *testing.T) {
 	var mu sync.Mutex
 	var notified []string
-	svc := New(&memStore{}, &recSender{}, statusStub{running: true, ok: true}, func(platform, sid string) {
+	svc := New(&memStore{}, &recSender{}, statusStub{running: true, ok: true}, func(_ context.Context, platform, sid string) {
 		mu.Lock()
 		notified = append(notified, platform+"/"+sid)
 		mu.Unlock()
@@ -676,8 +676,8 @@ type notifyRec struct {
 	sids []string
 }
 
-func (n *notifyRec) fn() func(string, string) {
-	return func(platform, sid string) {
+func (n *notifyRec) fn() func(context.Context, string, string) {
+	return func(_ context.Context, platform, sid string) {
 		n.mu.Lock()
 		n.sids = append(n.sids, platform+"/"+sid)
 		n.mu.Unlock()
@@ -755,18 +755,18 @@ func TestNotify_FiresForEveryQueueMutation(t *testing.T) {
 	t.Run("remove fires; rejected remove does not", func(t *testing.T) {
 		rec := &notifyRec{}
 		store := &memStore{}
-		_ = store.EnqueueMessage(state.QueuedMessage{ID: "x", Platform: "opencode", SessionID: "s1", Text: "hi"})
+		_ = store.EnqueueMessage(t.Context(), state.QueuedMessage{ID: "x", Platform: "opencode", SessionID: "s1", Text: "hi"})
 		svc := New(store, &recSender{}, statusStub{ok: true}, rec.fn())
 
 		// Wrong session: no removal, no notify.
-		if removed, _ := svc.Remove("s2", "x"); removed {
+		if removed, _ := svc.Remove(t.Context(), "s2", "x"); removed {
 			t.Fatal("remove wrong session reported removal")
 		}
 		if rec.count() != 0 {
 			t.Fatalf("rejected remove notify count = %d, want 0", rec.count())
 		}
 		// Right session: removed → notify.
-		if removed, _ := svc.Remove("s1", "x"); !removed {
+		if removed, _ := svc.Remove(t.Context(), "s1", "x"); !removed {
 			t.Fatal("remove right session did not remove")
 		}
 		if rec.count() != 1 {
@@ -777,23 +777,23 @@ func TestNotify_FiresForEveryQueueMutation(t *testing.T) {
 	t.Run("move fires; boundary/rejected move does not", func(t *testing.T) {
 		rec := &notifyRec{}
 		store := &memStore{}
-		_ = store.EnqueueMessage(state.QueuedMessage{ID: "a", Platform: "opencode", SessionID: "s1", Text: "a"})
-		_ = store.EnqueueMessage(state.QueuedMessage{ID: "b", Platform: "opencode", SessionID: "s1", Text: "b"})
+		_ = store.EnqueueMessage(t.Context(), state.QueuedMessage{ID: "a", Platform: "opencode", SessionID: "s1", Text: "a"})
+		_ = store.EnqueueMessage(t.Context(), state.QueuedMessage{ID: "b", Platform: "opencode", SessionID: "s1", Text: "b"})
 		svc := New(store, &recSender{}, statusStub{ok: true}, rec.fn())
 
 		// Boundary: 'a' is first, moving up is a no-op → no notify.
-		if moved, _ := svc.Move("s1", "a", -1); moved {
+		if moved, _ := svc.Move(t.Context(), "s1", "a", -1); moved {
 			t.Fatal("boundary move reported a swap")
 		}
 		// Wrong session → no notify.
-		if moved, _ := svc.Move("s2", "a", 1); moved {
+		if moved, _ := svc.Move(t.Context(), "s2", "a", 1); moved {
 			t.Fatal("wrong-session move reported a swap")
 		}
 		if rec.count() != 0 {
 			t.Fatalf("no-op move notify count = %d, want 0", rec.count())
 		}
 		// Real swap → notify.
-		if moved, _ := svc.Move("s1", "a", 1); !moved {
+		if moved, _ := svc.Move(t.Context(), "s1", "a", 1); !moved {
 			t.Fatal("valid move did not swap")
 		}
 		if rec.count() != 1 {
@@ -804,7 +804,7 @@ func TestNotify_FiresForEveryQueueMutation(t *testing.T) {
 	t.Run("failed send does not fire (message stays queued)", func(t *testing.T) {
 		rec := &notifyRec{}
 		store := &memStore{}
-		_ = store.EnqueueMessage(state.QueuedMessage{ID: "x", Platform: "opencode", SessionID: "s1", Text: "hi"})
+		_ = store.EnqueueMessage(t.Context(), state.QueuedMessage{ID: "x", Platform: "opencode", SessionID: "s1", Text: "hi"})
 		// Sender fails once → drainHead leaves the head, no delete, no notify.
 		svc := New(store, &recSender{failOnce: true}, statusStub{running: false, ok: true}, rec.fn())
 		svc.Flush(context.Background(), "opencode", "s1")

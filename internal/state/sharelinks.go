@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
@@ -59,7 +60,7 @@ func generateShareToken() (string, error) {
 // CreateShareLink mints a new active share link for the given
 // platform/session and returns it. expiresAt is a Unix-ms timestamp, or
 // 0 for no expiry.
-func (d *DB) CreateShareLink(platform, sessionID string, expiresAt int64) (ShareLink, error) {
+func (d *DB) CreateShareLink(ctx context.Context, platform, sessionID string, expiresAt int64) (ShareLink, error) {
 	token, err := generateShareToken()
 	if err != nil {
 		return ShareLink{}, err
@@ -75,7 +76,7 @@ func (d *DB) CreateShareLink(platform, sessionID string, expiresAt int64) (Share
 	if expiresAt > 0 {
 		expiresArg = expiresAt
 	}
-	_, err = d.db.Exec(`
+	_, err = d.db.ExecContext(ctx, `
 		INSERT INTO share_link (token, platform, session_id, created_at, expires_at, revoked_at)
 		VALUES (?, ?, ?, ?, ?, NULL)
 	`, link.Token, link.Platform, link.SessionID, link.CreatedAt, expiresArg)
@@ -90,8 +91,8 @@ func (d *DB) CreateShareLink(platform, sessionID string, expiresAt int64) (Share
 // return value is false when the token is unknown, revoked, or expired —
 // callers treat all three identically (404), so they need not be
 // distinguished.
-func (d *DB) GetActiveShareLink(token string) (ShareLink, bool, error) {
-	row := d.db.QueryRow(`
+func (d *DB) GetActiveShareLink(ctx context.Context, token string) (ShareLink, bool, error) {
+	row := d.db.QueryRowContext(ctx, `
 		SELECT `+shareLinkColumns+`
 		FROM share_link
 		WHERE token = ?
@@ -117,9 +118,9 @@ func (d *DB) GetActiveShareLink(token string) (ShareLink, bool, error) {
 
 // ListActiveShareLinks returns all non-revoked, non-expired share links
 // for a session, newest first.
-func (d *DB) ListActiveShareLinks(platform, sessionID string) ([]ShareLink, error) {
+func (d *DB) ListActiveShareLinks(ctx context.Context, platform, sessionID string) ([]ShareLink, error) {
 	now := time.Now().UnixMilli()
-	rows, err := d.db.Query(`
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT `+shareLinkColumns+`
 		FROM share_link
 		WHERE platform = ? AND session_id = ?
@@ -152,9 +153,9 @@ func (d *DB) ListActiveShareLinks(platform, sessionID string) ([]ShareLink, erro
 // ListAllActiveShareLinks returns every non-revoked, non-expired share
 // link across all sessions, newest first. Used by the global "shared
 // sessions" list in Settings.
-func (d *DB) ListAllActiveShareLinks() ([]ShareLink, error) {
+func (d *DB) ListAllActiveShareLinks(ctx context.Context) ([]ShareLink, error) {
 	now := time.Now().UnixMilli()
-	rows, err := d.db.Query(`
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT `+shareLinkColumns+`
 		FROM share_link
 		WHERE revoked_at IS NULL
@@ -184,8 +185,8 @@ func (d *DB) ListAllActiveShareLinks() ([]ShareLink, error) {
 }
 
 // SetShareRelay attaches the relay allocation to a local share link.
-func (d *DB) SetShareRelay(token, relayURL, relayID, relayKey, deleteToken string) error {
-	_, err := d.db.Exec(`UPDATE share_link SET relay_url=?, relay_id=?, relay_key=?, relay_delete_token=?, relay_last_seq=-1 WHERE token=? AND revoked_at IS NULL`, relayURL, relayID, relayKey, deleteToken, token)
+func (d *DB) SetShareRelay(ctx context.Context, token, relayURL, relayID, relayKey, deleteToken string) error {
+	_, err := d.db.ExecContext(ctx, `UPDATE share_link SET relay_url=?, relay_id=?, relay_key=?, relay_delete_token=?, relay_last_seq=-1 WHERE token=? AND revoked_at IS NULL`, relayURL, relayID, relayKey, deleteToken, token)
 	if err != nil {
 		return fmt.Errorf("setting share relay: %w", err)
 	}
@@ -193,8 +194,8 @@ func (d *DB) SetShareRelay(token, relayURL, relayID, relayKey, deleteToken strin
 }
 
 // SetShareRelaySeq records the highest chunk sequence successfully stored.
-func (d *DB) SetShareRelaySeq(token string, seq int64) error {
-	_, err := d.db.Exec(`UPDATE share_link SET relay_last_seq=? WHERE token=? AND revoked_at IS NULL`, seq, token)
+func (d *DB) SetShareRelaySeq(ctx context.Context, token string, seq int64) error {
+	_, err := d.db.ExecContext(ctx, `UPDATE share_link SET relay_last_seq=? WHERE token=? AND revoked_at IS NULL`, seq, token)
 	if err != nil {
 		return fmt.Errorf("setting share relay sequence: %w", err)
 	}
@@ -206,8 +207,8 @@ func (d *DB) SetShareRelaySeq(token string, seq int64) error {
 // the session it is acting on. Returns true when a row was revoked,
 // false when no matching active link existed (already revoked or
 // unknown token) — both are safe outcomes the handler reports as 404.
-func (d *DB) RevokeShareLink(platform, sessionID, token string) (bool, error) {
-	res, err := d.db.Exec(`
+func (d *DB) RevokeShareLink(ctx context.Context, platform, sessionID, token string) (bool, error) {
+	res, err := d.db.ExecContext(ctx, `
 		UPDATE share_link
 		SET revoked_at = ?
 		WHERE token = ? AND platform = ? AND session_id = ? AND revoked_at IS NULL

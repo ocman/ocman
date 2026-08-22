@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
@@ -8,8 +9,8 @@ import (
 // MarkSessionSeen records the latest session update the user has
 // viewed for the given platform/session. Per-platform: two platforms'
 // session "abc123" are tracked independently.
-func (d *DB) MarkSessionSeen(platform, sessionID string, sessionTimeUpdated int64) error {
-	_, err := d.db.Exec(`
+func (d *DB) MarkSessionSeen(ctx context.Context, platform, sessionID string, sessionTimeUpdated int64) error {
+	_, err := d.db.ExecContext(ctx, `
 		INSERT INTO seen_session (platform, session_id, session_time_updated, seen_at)
 		VALUES (?, ?, ?, ?)
 		ON CONFLICT(platform, session_id) DO UPDATE SET
@@ -28,8 +29,8 @@ func (d *DB) MarkSessionSeen(platform, sessionID string, sessionTimeUpdated int6
 // SeenSessions returns every seen session's time_updated, keyed by
 // (platform, session-id). Callers doing a per-platform lookup can
 // construct a Key directly.
-func (d *DB) SeenSessions() (map[Key]int64, error) {
-	rows, err := d.db.Query(`SELECT platform, session_id, session_time_updated FROM seen_session`)
+func (d *DB) SeenSessions(ctx context.Context) (map[Key]int64, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT platform, session_id, session_time_updated FROM seen_session`)
 	if err != nil {
 		return nil, fmt.Errorf("listing seen sessions: %w", err)
 	}

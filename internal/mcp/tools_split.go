@@ -24,8 +24,8 @@ const childResultProgressInterval = 10 * time.Second
 // inherit the parent's always-allow permissions into a child (issue
 // #101). Nil disables inheritance (no state DB).
 type permissionInheriter interface {
-	GetWorktreeInheritPermissions() (bool, error)
-	ListApprovedPermissions(platform, sessionID string) ([]state.ApprovedPermission, error)
+	GetWorktreeInheritPermissions(context.Context) (bool, error)
+	ListApprovedPermissions(context.Context, string, string) ([]state.ApprovedPermission, error)
 }
 
 // splitTools holds the dependencies for the new_session tool handler.
@@ -38,17 +38,17 @@ type splitTools struct {
 	inherit      permissionInheriter
 	results      *ChildResultBroker
 	store        childResultStore
-	disconnected func(childID string)
+	disconnected func(context.Context, string)
 }
 
 type childResultStore interface {
-	GetChildSession(id string) (*state.ChildSession, error)
-	ListDisconnectedChildSessions(parentSessionID string) ([]state.ChildSession, error)
-	CompareAndSetChildResultDelivery(id, from, to string) (bool, error)
+	GetChildSession(context.Context, string) (*state.ChildSession, error)
+	ListDisconnectedChildSessions(context.Context, string) ([]state.ChildSession, error)
+	CompareAndSetChildResultDelivery(context.Context, string, string, string) (bool, error)
 }
 
 type childResultDeliveryStore interface {
-	CompareAndSetChildResultDelivery(id, from, to string) (bool, error)
+	CompareAndSetChildResultDelivery(context.Context, string, string, string) (bool, error)
 }
 
 // inheritedRules builds the parent's always-allow ruleset for a child
@@ -56,11 +56,11 @@ type childResultDeliveryStore interface {
 // any error so the caller can proceed with the launch and surface the
 // note. When inheritance is off or yields nothing, returns
 // (nil, 0, "").
-func (t *splitTools) inheritedRules(parentSessionID string) (rules []platforms.PermissionRule, count int, errNote string) {
+func (t *splitTools) inheritedRules(ctx context.Context, parentSessionID string) (rules []platforms.PermissionRule, count int, errNote string) {
 	if t.inherit == nil || parentSessionID == "" {
 		return nil, 0, ""
 	}
-	on, err := t.inherit.GetWorktreeInheritPermissions()
+	on, err := t.inherit.GetWorktreeInheritPermissions(ctx)
 	if err != nil {
 		log.WithError(err).Warn("mcp: reading worktree inherit-permissions setting")
 		return nil, 0, "reading setting: " + err.Error()
@@ -72,7 +72,7 @@ func (t *splitTools) inheritedRules(parentSessionID string) (rules []platforms.P
 	if t.launcher != nil && t.launcher.platform != nil {
 		reader = liveRuleReaderFunc(t.launcher.platform.PermissionRules)
 	}
-	rules, count, err = permissions.BuildInheritedRulesWithLive(t.inherit, reader, t.platform, parentSessionID)
+	rules, count, err = permissions.BuildInheritedRulesWithLive(ctx, t.inherit, reader, t.platform, parentSessionID)
 	if err != nil {
 		log.WithError(err).Warn("mcp: building inherited permission rules")
 		return nil, 0, "building rules: " + err.Error()
@@ -183,7 +183,7 @@ func (t *splitTools) handleNewSession(ctx context.Context, req mcplib.CallToolRe
 		return mcplib.NewToolResultError("session_id is required"), nil
 	}
 	if t.store != nil {
-		if _, err := t.store.GetChildSession(sessionID); err == nil {
+		if _, err := t.store.GetChildSession(ctx, sessionID); err == nil {
 			return mcplib.NewToolResultError("new_session is limited to one generation"), nil
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			return mcplib.NewToolResultError(fmt.Sprintf("checking parent session: %v", err)), nil
@@ -198,7 +198,7 @@ func (t *splitTools) handleNewSession(ctx context.Context, req mcplib.CallToolRe
 	// one, so a child split keeps running on the same model instead of
 	// dropping to the platform default. An explicit model still wins.
 	if settings.Model == "" {
-		settings.Model = t.parentModel(sessionID)
+		settings.Model = t.parentModel(ctx, sessionID)
 	}
 
 	if req.GetBool("worktree", false) {
@@ -214,13 +214,13 @@ func (t *splitTools) handleNewSession(ctx context.Context, req mcplib.CallToolRe
 	}
 
 	// Look up the parent session's directory.
-	session, err := t.composer.db.GetSession(sessionID)
+	session, err := t.composer.db.GetSession(ctx, sessionID)
 	if err != nil {
 		return mcplib.NewToolResultError(fmt.Sprintf("session not found: %v", err)), nil
 	}
 
 	// Inherit the parent's always-allow permissions (issue #101).
-	inherited, inheritedCount, inheritErr := t.inheritedRules(sessionID)
+	inherited, inheritedCount, inheritErr := t.inheritedRules(ctx, sessionID)
 
 	// Launch the child session.
 	childID, err := t.launcher.Launch(ctx, LaunchRequest{
@@ -253,7 +253,7 @@ func (t *splitTools) handleNewSession(ctx context.Context, req mcplib.CallToolRe
 	return toolResultJSON(result), nil
 }
 
-func awaitChildResult(ctx context.Context, req mcplib.CallToolRequest, childID string, result map[string]interface{}, results *ChildResultBroker, store childResultDeliveryStore, disconnected func(string)) error {
+func awaitChildResult(ctx context.Context, req mcplib.CallToolRequest, childID string, result map[string]interface{}, results *ChildResultBroker, store childResultDeliveryStore, disconnected func(context.Context, string)) error {
 	if results == nil {
 		return nil
 	}
@@ -264,15 +264,15 @@ func awaitChildResult(ctx context.Context, req mcplib.CallToolRequest, childID s
 	if err != nil {
 		claimed := true
 		if store != nil {
-			claimed, _ = store.CompareAndSetChildResultDelivery(childID, "waiting", "disconnected")
+			claimed, _ = store.CompareAndSetChildResultDelivery(ctx, childID, "waiting", "disconnected")
 		}
 		if claimed && disconnected != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
-			disconnected(childID)
+			disconnected(ctx, childID)
 		}
 		return err
 	}
 	if store != nil {
-		claimed, err := store.CompareAndSetChildResultDelivery(childID, "waiting", "delivered")
+		claimed, err := store.CompareAndSetChildResultDelivery(ctx, childID, "waiting", "delivered")
 		if err != nil {
 			return err
 		}
@@ -344,7 +344,7 @@ func (t *splitTools) handleAwaitSessionResult(ctx context.Context, req mcplib.Ca
 	var child *state.ChildSession
 	childID := req.GetString("child_session_id", "")
 	if childID != "" {
-		child, err = t.store.GetChildSession(childID)
+		child, err = t.store.GetChildSession(ctx, childID)
 		if err != nil {
 			return mcplib.NewToolResultError(fmt.Sprintf("child session not found: %v", err)), nil
 		}
@@ -352,7 +352,7 @@ func (t *splitTools) handleAwaitSessionResult(ctx context.Context, req mcplib.Ca
 			return mcplib.NewToolResultError("child session does not belong to parent"), nil
 		}
 	} else {
-		children, listErr := t.store.ListDisconnectedChildSessions(parentID)
+		children, listErr := t.store.ListDisconnectedChildSessions(ctx, parentID)
 		if listErr != nil {
 			return mcplib.NewToolResultError(fmt.Sprintf("finding disconnected child: %v", listErr)), nil
 		}
@@ -381,7 +381,7 @@ func (t *splitTools) handleAwaitSessionResult(ctx context.Context, req mcplib.Ca
 	}
 	if isTerminalStatus(child.Status) {
 		if child.ResultDelivery == state.ChildResultAsyncPending {
-			claimed, claimErr := t.store.CompareAndSetChildResultDelivery(child.ID, state.ChildResultAsyncPending, "delivered")
+			claimed, claimErr := t.store.CompareAndSetChildResultDelivery(ctx, child.ID, state.ChildResultAsyncPending, "delivered")
 			if claimErr != nil {
 				return mcplib.NewToolResultError(fmt.Sprintf("claiming child result: %v", claimErr)), nil
 			}
@@ -394,7 +394,7 @@ func (t *splitTools) handleAwaitSessionResult(ctx context.Context, req mcplib.Ca
 		}
 		if child.ResultDelivery == "disconnected" {
 			var claimed bool
-			claimed, err = t.store.CompareAndSetChildResultDelivery(child.ID, "disconnected", "delivered")
+			claimed, err = t.store.CompareAndSetChildResultDelivery(ctx, child.ID, "disconnected", "delivered")
 			if err == nil && !claimed {
 				return mcplib.NewToolResultError("child session result was claimed by another delivery"), nil
 			}
@@ -411,7 +411,7 @@ func (t *splitTools) handleAwaitSessionResult(ctx context.Context, req mcplib.Ca
 	if !t.results.Register(child.ID) {
 		return mcplib.NewToolResultError("child session already has a result waiter"), nil
 	}
-	claimed, err := t.store.CompareAndSetChildResultDelivery(child.ID, child.ResultDelivery, "waiting")
+	claimed, err := t.store.CompareAndSetChildResultDelivery(ctx, child.ID, child.ResultDelivery, "waiting")
 	if err != nil {
 		t.results.Unregister(child.ID)
 		return mcplib.NewToolResultError(fmt.Sprintf("reconnecting child result: %v", err)), nil
@@ -420,13 +420,13 @@ func (t *splitTools) handleAwaitSessionResult(ctx context.Context, req mcplib.Ca
 		t.results.Unregister(child.ID)
 		return mcplib.NewToolResultError("child session result was claimed by another delivery"), nil
 	}
-	latest, err := t.store.GetChildSession(child.ID)
+	latest, err := t.store.GetChildSession(ctx, child.ID)
 	if err != nil {
 		t.results.Unregister(child.ID)
 		return mcplib.NewToolResultError(fmt.Sprintf("refreshing child session: %v", err)), nil
 	}
 	if isTerminalStatus(latest.Status) {
-		claimed, claimErr := t.store.CompareAndSetChildResultDelivery(child.ID, "waiting", "delivered")
+		claimed, claimErr := t.store.CompareAndSetChildResultDelivery(ctx, child.ID, "waiting", "delivered")
 		t.results.Unregister(child.ID)
 		if claimErr != nil {
 			return mcplib.NewToolResultError(fmt.Sprintf("marking child result delivered: %v", claimErr)), nil
@@ -469,7 +469,7 @@ func (t *splitTools) launchWorktree(ctx context.Context, req mcplib.CallToolRequ
 
 	// Look up the parent session's directory: it identifies the project
 	// and, through the router, the host that owns it.
-	session, err := t.composer.db.GetSession(sessionID)
+	session, err := t.composer.db.GetSession(ctx, sessionID)
 	if err != nil {
 		return mcplib.NewToolResultError(fmt.Sprintf("session not found: %v", err)), nil
 	}
@@ -478,7 +478,7 @@ func (t *splitTools) launchWorktree(ctx context.Context, req mcplib.CallToolRequ
 	// read of the parent, so it stays above the mutation: nothing here
 	// needs the worktree, and anything read after the create would be
 	// read while an orphan is already on disk.
-	inherited, inheritedCount, inheritErr := t.inheritedRules(sessionID)
+	inherited, inheritedCount, inheritErr := t.inheritedRules(ctx, sessionID)
 
 	// The owning host resolves the repo root, creates the worktree and
 	// opens the session on the project's opencode instance. An empty
@@ -573,11 +573,11 @@ func parseSessionSettings(req mcplib.CallToolRequest) sessionSettings {
 // first one that carries a model. Returns "" when the parent has no
 // model-bearing message or the lookup fails (soft: never blocks a
 // launch — the child just falls back to the platform default).
-func (t *splitTools) parentModel(sessionID string) string {
+func (t *splitTools) parentModel(ctx context.Context, sessionID string) string {
 	if t.composer == nil || t.composer.db == nil || sessionID == "" {
 		return ""
 	}
-	msgs, err := t.composer.db.GetSessionMessages(sessionID)
+	msgs, err := t.composer.db.GetSessionMessages(ctx, sessionID)
 	if err != nil {
 		return ""
 	}

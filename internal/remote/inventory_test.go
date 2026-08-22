@@ -56,7 +56,7 @@ func TestManager_AddUpdateReconnectRemoveLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	// Add dials in the background and registers the adapter on connect.
-	id, err := mgr.Add(addr, "tok", "Workstation")
+	id, err := mgr.Add(t.Context(), addr, "tok", "Workstation")
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestManager_AddUpdateReconnectRemoveLifecycle(t *testing.T) {
 	}
 
 	// List merges persisted config + live health + session count.
-	list, err := mgr.List()
+	list, err := mgr.List(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,25 +85,25 @@ func TestManager_AddUpdateReconnectRemoveLifecycle(t *testing.T) {
 	}
 
 	// Update reconnects with the new config.
-	if err := mgr.Update(id, "Renamed", addr, true, nil); err != nil {
+	if err := mgr.Update(t.Context(), id, "Renamed", addr, true, nil); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
 	waitForRegister(t, hubReg, "r-abc123:opencode")
 
 	// Reconnect is idempotent while enabled.
-	if err := mgr.Reconnect(id); err != nil {
+	if err := mgr.Reconnect(t.Context(), id); err != nil {
 		t.Fatalf("Reconnect: %v", err)
 	}
 	waitForRegister(t, hubReg, "r-abc123:opencode")
 
 	// Remove tears down the adapter and deletes the row.
-	if err := mgr.Remove(id); err != nil {
+	if err := mgr.Remove(t.Context(), id); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
 	if _, ok := hubReg.Get(platforms.ID("r-abc123:opencode")); ok {
 		t.Error("platform should be unregistered after Remove")
 	}
-	rest, _ := mgr.List()
+	rest, _ := mgr.List(t.Context())
 	if len(rest) != 0 {
 		t.Fatalf("expected empty after remove, got %+v", rest)
 	}
@@ -111,11 +111,11 @@ func TestManager_AddUpdateReconnectRemoveLifecycle(t *testing.T) {
 
 func TestManager_DisabledRemoteNotDialed(t *testing.T) {
 	store := newStateDB(t)
-	id, err := store.AddRemote("127.0.0.1:59998", "tok", "Off")
+	id, err := store.AddRemote(t.Context(), "127.0.0.1:59998", "tok", "Off")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.UpdateRemoteConfig(id, "Off", "127.0.0.1:59998", false, nil); err != nil {
+	if err := store.UpdateRemoteConfig(t.Context(), id, "Off", "127.0.0.1:59998", false, nil); err != nil {
 		t.Fatal(err)
 	}
 	mgr := NewManager(platforms.NewRegistry(), hostsvc.NewRouter(localStubHost{}), store, "opencode")
@@ -136,7 +136,7 @@ func TestManager_EnabledRemotesAndInventoryLoop(t *testing.T) {
 	mgr := NewManager(platforms.NewRegistry(), hostsvc.NewRouter(localStubHost{}), store, "opencode")
 	t.Cleanup(mgr.Stop)
 	ctx := context.Background()
-	if _, err := mgr.Add(addr, "tok", "Box"); err != nil {
+	if _, err := mgr.Add(t.Context(), addr, "tok", "Box"); err != nil {
 		t.Fatal(err)
 	}
 	waitForRegister(t, mgr.registry, "r-abc123:opencode")
@@ -174,7 +174,7 @@ func TestManager_RemoveEvictsInventory(t *testing.T) {
 	store := newStateDB(t)
 	mgr := NewManager(platforms.NewRegistry(), hostsvc.NewRouter(localStubHost{}), store, "opencode")
 	t.Cleanup(mgr.Stop)
-	id, err := mgr.Add(addr, "tok", "Box")
+	id, err := mgr.Add(t.Context(), addr, "tok", "Box")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestManager_RemoveEvictsInventory(t *testing.T) {
 		t.Fatalf("precondition: resolveDir = %q, want abc123", got)
 	}
 
-	if err := mgr.Remove(id); err != nil {
+	if err := mgr.Remove(t.Context(), id); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
 	if got := mgr.resolveDir("/home/u/app"); got != "" {
@@ -213,7 +213,7 @@ func TestManager_RefreshInventories(t *testing.T) {
 	mgr := NewManager(platforms.NewRegistry(), hostsvc.NewRouter(localStubHost{}), store, "opencode")
 	t.Cleanup(mgr.Stop)
 	ctx := context.Background()
-	if _, err := mgr.Add(addr, "tok", "W"); err != nil {
+	if _, err := mgr.Add(t.Context(), addr, "tok", "W"); err != nil {
 		t.Fatal(err)
 	}
 	waitForRegister(t, mgr.registry, "r-abc123:opencode")

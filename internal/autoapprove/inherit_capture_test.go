@@ -1,6 +1,7 @@
 package autoapprove
 
 import (
+	"context"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -20,11 +21,17 @@ type recordedApproval struct {
 	perm      state.ApprovedPermission
 }
 
-func (s *recordingStore) GetAutoApprove(string, string) (bool, bool, error) { return false, false, nil }
-func (s *recordingStore) GetJudgeDelayMs() (int64, error)                   { return 0, nil }
-func (s *recordingStore) GetPromptSections() ([]state.PromptSection, error) { return nil, nil }
-func (s *recordingStore) GetSetting(string) (string, bool, error)           { return "", false, nil }
-func (s *recordingStore) RecordApprovedPermission(platform, sessionID string, p state.ApprovedPermission) error {
+func (s *recordingStore) GetAutoApprove(context.Context, string, string) (bool, bool, error) {
+	return false, false, nil
+}
+func (s *recordingStore) GetJudgeDelayMs(context.Context) (int64, error) { return 0, nil }
+func (s *recordingStore) GetPromptSections(context.Context) ([]state.PromptSection, error) {
+	return nil, nil
+}
+func (s *recordingStore) GetSetting(context.Context, string) (string, bool, error) {
+	return "", false, nil
+}
+func (s *recordingStore) RecordApprovedPermission(_ context.Context, platform, sessionID string, p state.ApprovedPermission) error {
 	s.records = append(s.records, recordedApproval{platform, sessionID, p})
 	return nil
 }
@@ -65,7 +72,7 @@ func TestHandlePermissionReplied_CapturesAlways(t *testing.T) {
 			// Simulate the asked-side cache population that Ensure does.
 			s.rememberAsked(string(platforms.ID("opencode")), "ses-1", "perm-1", "bash", []string{"git *"})
 
-			s.HandlePermissionReplied("ses-1", "perm-1", tc.reply)
+			s.HandlePermissionReplied(t.Context(), "ses-1", "perm-1", tc.reply)
 
 			if len(store.records) != tc.wantRows {
 				t.Fatalf("recorded %d rows, want %d", len(store.records), tc.wantRows)
@@ -103,7 +110,7 @@ func TestHandlePermissionReplied_AlwaysWithoutAskedData(t *testing.T) {
 		autoApprove: make(map[string]*autoApproveStatus),
 		askedCache:  make(map[string]askedPermission),
 	}
-	s.HandlePermissionReplied("ses-1", "perm-unknown", "always")
+	s.HandlePermissionReplied(t.Context(), "ses-1", "perm-unknown", "always")
 	if len(store.records) != 0 {
 		t.Fatalf("recorded %d rows, want 0", len(store.records))
 	}
@@ -120,8 +127,8 @@ func TestHandlePermissionReplied_TakesAskedOnce(t *testing.T) {
 		askedCache:  make(map[string]askedPermission),
 	}
 	s.rememberAsked("opencode", "ses-1", "perm-1", "edit", []string{"*.go"})
-	s.HandlePermissionReplied("ses-1", "perm-1", "always")
-	s.HandlePermissionReplied("ses-1", "perm-1", "always")
+	s.HandlePermissionReplied(t.Context(), "ses-1", "perm-1", "always")
+	s.HandlePermissionReplied(t.Context(), "ses-1", "perm-1", "always")
 	if len(store.records) != 1 {
 		t.Fatalf("recorded %d rows, want 1 (asked entry must be consumed once)", len(store.records))
 	}

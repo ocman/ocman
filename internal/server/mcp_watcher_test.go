@@ -48,7 +48,7 @@ func insertWatcherChildSession(t *testing.T, sdb *state.DB, id, parentID, status
 		CreatedAt:       time.Now().UnixMilli(),
 		ResultDelivery:  state.ChildResultAsyncPending,
 	}
-	if err := sdb.InsertChildSession(cs); err != nil {
+	if err := sdb.InsertChildSession(t.Context(), cs); err != nil {
 		t.Fatalf("InsertChildSession %s: %v", id, err)
 	}
 }
@@ -154,7 +154,7 @@ func TestCheckAndInjectChildResults_NoChildren(t *testing.T) {
 	if *details != 0 || *sends != 0 {
 		t.Fatalf("watcher touched the platform with no pending children: %d details, %d sends", *details, *sends)
 	}
-	queued, err := sdb.ListQueuedMessages("opencode", "parent-1")
+	queued, err := sdb.ListQueuedMessages(t.Context(), "opencode", "parent-1")
 	if err != nil {
 		t.Fatalf("ListQueuedMessages: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestCheckAndInjectChildResults_UpdatesStatus(t *testing.T) {
 	s.checkAndInjectChildResults(context.Background())
 
 	// Verify the child session status was updated.
-	cs, err := sdb.GetChildSession("child-watch-1")
+	cs, err := sdb.GetChildSession(t.Context(), "child-watch-1")
 	if err != nil {
 		t.Fatalf("GetChildSession: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestCheckAndInjectChildResults_UpdatesStatus(t *testing.T) {
 	if len(sentMessages) != 0 {
 		t.Fatalf("expected no immediate messages, got %d", len(sentMessages))
 	}
-	queued, err := sdb.ListQueuedMessages("opencode", "parent-1")
+	queued, err := sdb.ListQueuedMessages(t.Context(), "opencode", "parent-1")
 	if err != nil || len(queued) != 1 {
 		t.Fatalf("queued messages = %+v, %v", queued, err)
 	}
@@ -232,7 +232,7 @@ func TestCheckAndInjectChildResults_UpdatesStatus(t *testing.T) {
 
 func TestCheckAndInjectChildResults_UsesPersistedPlatform(t *testing.T) {
 	sdb := openWatcherTestStateDB(t)
-	if err := sdb.InsertChildSession(state.ChildSession{
+	if err := sdb.InsertChildSession(t.Context(), state.ChildSession{
 		ID:              "shared-child",
 		Platform:        "right",
 		ParentSessionID: "shared-parent",
@@ -270,18 +270,18 @@ func TestCheckAndInjectChildResults_UsesPersistedPlatform(t *testing.T) {
 	s := New(nil, sdb, "127.0.0.1:0", reg, nil)
 	s.checkAndInjectChildResults(context.Background())
 
-	child, err := sdb.GetChildSession("shared-child")
+	child, err := sdb.GetChildSession(t.Context(), "shared-child")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if child.Status != "completed" || child.Summary != "right result" {
 		t.Fatalf("child result = status %q summary %q, want persisted platform result", child.Status, child.Summary)
 	}
-	queued, err := sdb.ListQueuedMessages("right", "shared-parent")
+	queued, err := sdb.ListQueuedMessages(t.Context(), "right", "shared-parent")
 	if err != nil || len(queued) != 1 {
 		t.Fatalf("right-platform queue = %+v, %v", queued, err)
 	}
-	wrongQueue, err := sdb.ListQueuedMessages("wrong", "shared-parent")
+	wrongQueue, err := sdb.ListQueuedMessages(t.Context(), "wrong", "shared-parent")
 	if err != nil || len(wrongQueue) != 0 {
 		t.Fatalf("wrong-platform queue = %+v, %v", wrongQueue, err)
 	}
@@ -295,7 +295,7 @@ func TestCheckAndInjectChildResults_UsesPersistedPlatform(t *testing.T) {
 // adapter, which cannot see it — the child would never settle.
 func TestCheckAndInjectChildResults_RemoteOwnedChild(t *testing.T) {
 	sdb := openWatcherTestStateDB(t)
-	if err := sdb.InsertChildSession(state.ChildSession{
+	if err := sdb.InsertChildSession(t.Context(), state.ChildSession{
 		ID:              "remote-child",
 		Platform:        "opencode", // the MCP server's platform, not the child's owner
 		ParentSessionID: "local-parent",
@@ -338,7 +338,7 @@ func TestCheckAndInjectChildResults_RemoteOwnedChild(t *testing.T) {
 	s := New(nil, sdb, "127.0.0.1:0", reg, nil)
 	s.checkAndInjectChildResults(context.Background())
 
-	child, err := sdb.GetChildSession("remote-child")
+	child, err := sdb.GetChildSession(t.Context(), "remote-child")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,7 +346,7 @@ func TestCheckAndInjectChildResults_RemoteOwnedChild(t *testing.T) {
 		t.Fatalf("remote-owned child = status %q summary %q, want it settled from its owning adapter", child.Status, child.Summary)
 	}
 	// The parent is local, so its result queues under the local platform.
-	queued, err := sdb.ListQueuedMessages("opencode", "local-parent")
+	queued, err := sdb.ListQueuedMessages(t.Context(), "opencode", "local-parent")
 	if err != nil || len(queued) != 1 {
 		t.Fatalf("parent queue = %+v, %v", queued, err)
 	}
@@ -382,7 +382,7 @@ func TestCheckAndInjectChildResults_ReturnsToWaitingMCPCall(t *testing.T) {
 	reg.Register(fp)
 	s := New(nil, sdb, "127.0.0.1:0", reg, nil)
 	s.childResults.Register("child-waiting")
-	if err := sdb.SetChildResultDelivery("child-waiting", "waiting"); err != nil {
+	if err := sdb.SetChildResultDelivery(t.Context(), "child-waiting", "waiting"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -400,7 +400,7 @@ func TestCheckAndInjectChildResults_ReturnsToWaitingMCPCall(t *testing.T) {
 func TestCheckAndInjectChildResults_PreservesDisconnectedResultAfterRestart(t *testing.T) {
 	sdb := openWatcherTestStateDB(t)
 	insertWatcherChildSession(t, sdb, "child-restart", "parent-1", "running")
-	if err := sdb.SetChildResultDelivery("child-restart", "waiting"); err != nil {
+	if err := sdb.SetChildResultDelivery(t.Context(), "child-restart", "waiting"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -431,7 +431,7 @@ func TestCheckAndInjectChildResults_PreservesDisconnectedResultAfterRestart(t *t
 
 	s.checkAndInjectChildResults(context.Background())
 
-	child, err := sdb.GetChildSession("child-restart")
+	child, err := sdb.GetChildSession(t.Context(), "child-restart")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -452,7 +452,7 @@ func TestCheckAndInjectChildResults_PreservesDisconnectedResultAfterRestart(t *t
 func TestCheckAndInjectChildResults_RemindsParentAfterRestartDisconnect(t *testing.T) {
 	sdb := openWatcherTestStateDB(t)
 	insertWatcherChildSession(t, sdb, "child-restart-remind", "parent-1", "running")
-	if err := sdb.SetChildResultDelivery("child-restart-remind", "waiting"); err != nil {
+	if err := sdb.SetChildResultDelivery(t.Context(), "child-restart-remind", "waiting"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -478,7 +478,7 @@ func TestCheckAndInjectChildResults_RemindsParentAfterRestartDisconnect(t *testi
 
 	s.checkAndInjectChildResults(context.Background())
 
-	queued, err := sdb.ListQueuedMessagesAnyPlatform("parent-1")
+	queued, err := sdb.ListQueuedMessagesAnyPlatform(t.Context(), "parent-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -498,7 +498,7 @@ func TestCheckAndInjectChildResults_ReapsUnresolvableChild(t *testing.T) {
 	sdb := openWatcherTestStateDB(t)
 	insertWatcherChildSession(t, sdb, "child-vanished", "parent-1", "running")
 	// Age it past the grace period so a just-created child is not reaped.
-	if err := sdb.UpdateChildSessionCreatedAt("child-vanished",
+	if err := sdb.UpdateChildSessionCreatedAt(t.Context(), "child-vanished",
 		time.Now().Add(-2*childOrphanGrace).UnixMilli()); err != nil {
 		t.Fatal(err)
 	}
@@ -520,7 +520,7 @@ func TestCheckAndInjectChildResults_ReapsUnresolvableChild(t *testing.T) {
 	// disconnected and come back.
 	for i := 1; i < childOrphanPollLimit; i++ {
 		s.checkAndInjectChildResults(context.Background())
-		child, err := sdb.GetChildSession("child-vanished")
+		child, err := sdb.GetChildSession(t.Context(), "child-vanished")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -530,7 +530,7 @@ func TestCheckAndInjectChildResults_ReapsUnresolvableChild(t *testing.T) {
 	}
 
 	s.checkAndInjectChildResults(context.Background())
-	child, err := sdb.GetChildSession("child-vanished")
+	child, err := sdb.GetChildSession(t.Context(), "child-vanished")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -538,7 +538,7 @@ func TestCheckAndInjectChildResults_ReapsUnresolvableChild(t *testing.T) {
 		t.Fatalf("child status = %q, want a terminal state", child.Status)
 	}
 	// Terminal + delivered means it stops coming back every tick.
-	pending, err := sdb.ListPendingChildSessions()
+	pending, err := sdb.ListPendingChildSessions(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -557,7 +557,7 @@ func TestCheckAndInjectChildResults_ReapsUnresolvableChild(t *testing.T) {
 func TestCheckAndInjectChildResults_SkipsArchivedParent(t *testing.T) {
 	sdb := openWatcherTestStateDB(t)
 	insertWatcherChildSession(t, sdb, "child-archived-parent", "parent-1", "running")
-	if err := sdb.ArchiveSession("opencode", "parent-1", time.Now().UnixMilli()); err != nil {
+	if err := sdb.ArchiveSession(t.Context(), "opencode", "parent-1", time.Now().UnixMilli()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -583,7 +583,7 @@ func TestCheckAndInjectChildResults_SkipsArchivedParent(t *testing.T) {
 
 	s.checkAndInjectChildResults(context.Background())
 
-	queued, err := sdb.ListQueuedMessagesAnyPlatform("parent-1")
+	queued, err := sdb.ListQueuedMessagesAnyPlatform(t.Context(), "parent-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -593,14 +593,14 @@ func TestCheckAndInjectChildResults_SkipsArchivedParent(t *testing.T) {
 
 	// The child must still settle: its outcome stays readable, and the
 	// row must not loop through the watcher forever.
-	child, err := sdb.GetChildSession("child-archived-parent")
+	child, err := sdb.GetChildSession(t.Context(), "child-archived-parent")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if child.Status != "completed" {
 		t.Errorf("child status = %q, want completed", child.Status)
 	}
-	pending, err := sdb.ListPendingChildSessions()
+	pending, err := sdb.ListPendingChildSessions(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -634,7 +634,7 @@ func TestCheckAndInjectChildResults_ReapsChildWithVanishedParent(t *testing.T) {
 		s.checkAndInjectChildResults(context.Background())
 	}
 
-	pending, err := sdb.ListPendingChildSessions()
+	pending, err := sdb.ListPendingChildSessions(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -648,12 +648,12 @@ func TestCheckAndInjectChildResults_ReapsChildWithVanishedParent(t *testing.T) {
 func TestCheckAndInjectChildResults_RecoversTerminalWaitingResultAfterRestart(t *testing.T) {
 	sdb := openWatcherTestStateDB(t)
 	insertWatcherChildSession(t, sdb, "child-terminal-wait", "parent-1", "completed")
-	if err := sdb.SetChildResultDelivery("child-terminal-wait", "waiting"); err != nil {
+	if err := sdb.SetChildResultDelivery(t.Context(), "child-terminal-wait", "waiting"); err != nil {
 		t.Fatal(err)
 	}
 	s := New(nil, sdb, "127.0.0.1:0", platforms.NewRegistry(), nil)
 	s.checkAndInjectChildResults(context.Background())
-	child, err := sdb.GetChildSession("child-terminal-wait")
+	child, err := sdb.GetChildSession(t.Context(), "child-terminal-wait")
 	if err != nil || child.ResultDelivery != "disconnected" {
 		t.Fatalf("recovered child = %+v, %v", child, err)
 	}
@@ -667,12 +667,12 @@ func TestCheckAndInjectChildResults_RecoversInterruptedFollowupSend(t *testing.T
 		t.Run(tt.sending, func(t *testing.T) {
 			sdb := openWatcherTestStateDB(t)
 			insertWatcherChildSession(t, sdb, "child-sending", "parent-1", "sending")
-			if err := sdb.SetChildResultDelivery("child-sending", tt.sending); err != nil {
+			if err := sdb.SetChildResultDelivery(t.Context(), "child-sending", tt.sending); err != nil {
 				t.Fatal(err)
 			}
 			s := New(nil, sdb, "127.0.0.1:0", platforms.NewRegistry(), nil)
 			s.checkAndInjectChildResults(context.Background())
-			child, err := sdb.GetChildSession("child-sending")
+			child, err := sdb.GetChildSession(t.Context(), "child-sending")
 			if err != nil || child.Status != "running" || child.ResultDelivery != tt.delivery {
 				t.Fatalf("recovered child = %+v, %v", child, err)
 			}
@@ -683,19 +683,19 @@ func TestCheckAndInjectChildResults_RecoversInterruptedFollowupSend(t *testing.T
 func TestCheckAndInjectChildResults_DoesNotRecoverLiveFollowupSend(t *testing.T) {
 	sdb := openWatcherTestStateDB(t)
 	insertWatcherChildSession(t, sdb, "child-live-send", "parent-1", "sending")
-	if err := sdb.SetChildResultDelivery("child-live-send", state.ChildResultAsyncSending); err != nil {
+	if err := sdb.SetChildResultDelivery(t.Context(), "child-live-send", state.ChildResultAsyncSending); err != nil {
 		t.Fatal(err)
 	}
 	s := New(nil, sdb, "127.0.0.1:0", platforms.NewRegistry(), nil)
 	s.childResults.Register("child-live-send")
 	s.checkAndInjectChildResults(context.Background())
-	child, err := sdb.GetChildSession("child-live-send")
+	child, err := sdb.GetChildSession(t.Context(), "child-live-send")
 	if err != nil || child.Status != "sending" || child.ResultDelivery != state.ChildResultAsyncSending {
 		t.Fatalf("live send changed = %+v, %v", child, err)
 	}
 	s.childResults.Unregister("child-live-send")
 	s.checkAndInjectChildResults(context.Background())
-	child, err = sdb.GetChildSession("child-live-send")
+	child, err = sdb.GetChildSession(t.Context(), "child-live-send")
 	if err != nil || child.Status != "running" || child.ResultDelivery != state.ChildResultAsyncPending {
 		t.Fatalf("restart recovery = %+v, %v", child, err)
 	}
@@ -704,7 +704,7 @@ func TestCheckAndInjectChildResults_DoesNotRecoverLiveFollowupSend(t *testing.T)
 func TestCheckAndInjectChildResults_DeliversCancellationDuringFollowupSend(t *testing.T) {
 	sdb := openWatcherTestStateDB(t)
 	insertWatcherChildSession(t, sdb, "child-cancel-send", "parent-1", "cancelled")
-	if err := sdb.SetChildResultDelivery("child-cancel-send", state.ChildResultWaitSending); err != nil {
+	if err := sdb.SetChildResultDelivery(t.Context(), "child-cancel-send", state.ChildResultWaitSending); err != nil {
 		t.Fatal(err)
 	}
 	s := New(nil, sdb, "127.0.0.1:0", platforms.NewRegistry(), nil)
@@ -720,10 +720,10 @@ func TestCheckAndInjectChildResults_DeliversCancellationDuringFollowupSend(t *te
 func TestCheckAndInjectChildResults_HoldsAsyncResultUntilParentIdle(t *testing.T) {
 	sdb := openWatcherTestStateDB(t)
 	insertWatcherChildSession(t, sdb, "child-async", "parent-1", "running")
-	if err := sdb.SetChildResultDelivery("child-async", "async_pending"); err != nil {
+	if err := sdb.SetChildResultDelivery(t.Context(), "child-async", "async_pending"); err != nil {
 		t.Fatal(err)
 	}
-	if err := sdb.UpdateChildSession("child-async", "completed", "Finished async work.", 2000); err != nil {
+	if err := sdb.UpdateChildSession(t.Context(), "child-async", "completed", "Finished async work.", 2000); err != nil {
 		t.Fatal(err)
 	}
 
@@ -743,11 +743,11 @@ func TestCheckAndInjectChildResults_HoldsAsyncResultUntilParentIdle(t *testing.T
 	if len(sentMessages) != 0 {
 		t.Fatalf("busy parent received %d async results", len(sentMessages))
 	}
-	queued, err := sdb.ListQueuedMessages("opencode", "parent-1")
+	queued, err := sdb.ListQueuedMessages(t.Context(), "opencode", "parent-1")
 	if err != nil || len(queued) != 1 || !strings.Contains(queued[0].Text, "Finished async work.") {
 		t.Fatalf("queued messages = %+v, %v", queued, err)
 	}
-	child, err := sdb.GetChildSession("child-async")
+	child, err := sdb.GetChildSession(t.Context(), "child-async")
 	if err != nil || child.ResultDelivery != "delivered" {
 		t.Fatalf("child delivery state = %+v, %v", child, err)
 	}
@@ -761,16 +761,16 @@ func TestCheckAndInjectChildResults_HoldsAsyncResultUntilParentIdle(t *testing.T
 func TestCheckAndInjectChildResults_RecoversQueueingClaimAfterRestart(t *testing.T) {
 	sdb := openWatcherTestStateDB(t)
 	insertWatcherChildSession(t, sdb, "child-recover-queue", "parent-1", "completed")
-	if err := sdb.SetChildResultDelivery("child-recover-queue", "async_pending"); err != nil {
+	if err := sdb.SetChildResultDelivery(t.Context(), "child-recover-queue", "async_pending"); err != nil {
 		t.Fatal(err)
 	}
-	if err := sdb.UpdateChildSession("child-recover-queue", "completed", "Recovered result.", 2000); err != nil {
+	if err := sdb.UpdateChildSession(t.Context(), "child-recover-queue", "completed", "Recovered result.", 2000); err != nil {
 		t.Fatal(err)
 	}
 
 	s := New(nil, sdb, "127.0.0.1:0", platforms.NewRegistry(), nil)
 	s.checkAndInjectChildResults(context.Background())
-	child, err := sdb.GetChildSession("child-recover-queue")
+	child, err := sdb.GetChildSession(t.Context(), "child-recover-queue")
 	if err != nil || child.ResultDelivery != "async_queueing" {
 		t.Fatalf("failed delivery claim = %+v, %v", child, err)
 	}
@@ -781,8 +781,8 @@ func TestCheckAndInjectChildResults_RecoversQueueingClaimAfterRestart(t *testing
 	s.registry = reg
 	s.checkAndInjectChildResults(context.Background())
 	s.checkAndInjectChildResults(context.Background())
-	child, err = sdb.GetChildSession("child-recover-queue")
-	queued, queueErr := sdb.ListQueuedMessages("opencode", "parent-1")
+	child, err = sdb.GetChildSession(t.Context(), "child-recover-queue")
+	queued, queueErr := sdb.ListQueuedMessages(t.Context(), "opencode", "parent-1")
 	if err != nil || queueErr != nil || child.ResultDelivery != "delivered" || len(queued) != 1 {
 		t.Fatalf("recovered child=%+v queued=%+v errors=%v/%v", child, queued, err, queueErr)
 	}
@@ -793,9 +793,9 @@ func TestDeferChildResultReconnect_QueuesAwaitReminder(t *testing.T) {
 	insertWatcherChildSession(t, sdb, "child-disconnected", "parent-1", "running")
 	s := New(nil, sdb, "127.0.0.1:0", platforms.NewRegistry(), nil)
 
-	s.deferChildResultReconnect("child-disconnected")
+	s.deferChildResultReconnect(t.Context(), "child-disconnected")
 
-	messages, err := sdb.ListQueuedMessages("opencode", "parent-1")
+	messages, err := sdb.ListQueuedMessages(t.Context(), "opencode", "parent-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -810,13 +810,13 @@ func TestDeferChildResultReconnect_QueuesAwaitReminder(t *testing.T) {
 }
 
 func TestDeferChildResultReconnect_MissingStateOrChildIsIgnored(t *testing.T) {
-	(&Server{}).deferChildResultReconnect("missing")
+	(&Server{}).deferChildResultReconnect(t.Context(), "missing")
 
 	sdb := openWatcherTestStateDB(t)
 	s := New(nil, sdb, "127.0.0.1:0", platforms.NewRegistry(), nil)
-	s.deferChildResultReconnect("missing")
+	s.deferChildResultReconnect(t.Context(), "missing")
 
-	messages, err := sdb.ListQueuedMessagesAnyPlatform("")
+	messages, err := sdb.ListQueuedMessagesAnyPlatform(t.Context(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -860,7 +860,7 @@ func TestCheckAndInjectChildResults_WaitsForAssistantAfterFollowUp(t *testing.T)
 
 	s.checkAndInjectChildResults(context.Background())
 
-	cs, err := sdb.GetChildSession("child-follow-up")
+	cs, err := sdb.GetChildSession(t.Context(), "child-follow-up")
 	if err != nil {
 		t.Fatalf("GetChildSession: %v", err)
 	}
@@ -971,7 +971,7 @@ func TestCheckAndInjectChildResults_UnknownStatusCloses(t *testing.T) {
 
 	s.checkAndInjectChildResults(context.Background())
 
-	cs, err := sdb.GetChildSession("child-stuck")
+	cs, err := sdb.GetChildSession(t.Context(), "child-stuck")
 	if err != nil {
 		t.Fatalf("GetChildSession: %v", err)
 	}
@@ -984,7 +984,7 @@ func TestCheckAndInjectChildResults_UnknownStatusCloses(t *testing.T) {
 	if len(sentMessages) != 0 {
 		t.Fatalf("expected held result, got %d immediate messages", len(sentMessages))
 	}
-	queued, err := sdb.ListQueuedMessages("opencode", "parent-1")
+	queued, err := sdb.ListQueuedMessages(t.Context(), "opencode", "parent-1")
 	if err != nil || len(queued) != 1 {
 		t.Fatalf("queued messages = %+v, %v", queued, err)
 	}
@@ -993,7 +993,7 @@ func TestCheckAndInjectChildResults_UnknownStatusCloses(t *testing.T) {
 func TestCheckAndInjectChildResults_AlreadyDeliveredTerminal(t *testing.T) {
 	sdb := openWatcherTestStateDB(t)
 	insertWatcherChildSession(t, sdb, "child-done", "parent-1", "completed")
-	if err := sdb.SetChildResultDelivery("child-done", "delivered"); err != nil {
+	if err := sdb.SetChildResultDelivery(t.Context(), "child-done", "delivered"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1005,12 +1005,12 @@ func TestCheckAndInjectChildResults_AlreadyDeliveredTerminal(t *testing.T) {
 func TestCheckAndInjectChildResults_LegacyDetachedTerminalIsIgnored(t *testing.T) {
 	sdb := openWatcherTestStateDB(t)
 	insertWatcherChildSession(t, sdb, "child-legacy", "parent-1", "completed")
-	if err := sdb.SetChildResultDelivery("child-legacy", "detached"); err != nil {
+	if err := sdb.SetChildResultDelivery(t.Context(), "child-legacy", "detached"); err != nil {
 		t.Fatal(err)
 	}
 	s := New(nil, sdb, "127.0.0.1:0", platforms.NewRegistry(), nil)
 	s.checkAndInjectChildResults(context.Background())
-	queued, err := sdb.ListQueuedMessagesAnyPlatform("parent-1")
+	queued, err := sdb.ListQueuedMessagesAnyPlatform(t.Context(), "parent-1")
 	if err != nil || len(queued) != 0 {
 		t.Fatalf("legacy result queue = %+v, %v", queued, err)
 	}
@@ -1019,7 +1019,7 @@ func TestCheckAndInjectChildResults_LegacyDetachedTerminalIsIgnored(t *testing.T
 func TestCheckAndInjectChildResults_ActiveLegacyDetachedStillDelivers(t *testing.T) {
 	sdb := openWatcherTestStateDB(t)
 	insertWatcherChildSession(t, sdb, "child-legacy-active", "parent-1", "running")
-	if err := sdb.SetChildResultDelivery("child-legacy-active", "detached"); err != nil {
+	if err := sdb.SetChildResultDelivery(t.Context(), "child-legacy-active", "detached"); err != nil {
 		t.Fatal(err)
 	}
 	fp := &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "child-legacy-active", Status: "done"}, {ID: "parent-1", Status: "busy"}}}
@@ -1036,7 +1036,7 @@ func TestCheckAndInjectChildResults_ActiveLegacyDetachedStillDelivers(t *testing
 	reg.Register(fp)
 	s := New(nil, sdb, "127.0.0.1:0", reg, nil)
 	s.checkAndInjectChildResults(context.Background())
-	queued, err := sdb.ListQueuedMessages("opencode", "parent-1")
+	queued, err := sdb.ListQueuedMessages(t.Context(), "opencode", "parent-1")
 	if err != nil || len(queued) != 1 {
 		t.Fatalf("legacy active queue = %+v, %v", queued, err)
 	}

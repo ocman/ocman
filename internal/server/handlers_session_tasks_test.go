@@ -41,7 +41,7 @@ func getSessionTasks(t *testing.T, s *Server, path string) sessionTasksResponse 
 
 func TestHandleSessionTasks_ReturnsMCPChildrenWithoutTaskIDs(t *testing.T) {
 	sdb := openWatcherTestStateDB(t)
-	if err := sdb.InsertChildSession(state.ChildSession{
+	if err := sdb.InsertChildSession(t.Context(), state.ChildSession{
 		ID:              "child-early-link",
 		Platform:        "opencode",
 		ParentSessionID: "parent-1",

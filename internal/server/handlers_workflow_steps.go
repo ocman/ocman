@@ -70,13 +70,13 @@ func (s *Server) handleWorkflowStep(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) executeWorkflowStep(ctx context.Context, runID string, body workflowStepRequest) (workflowStepResponse, error) {
-	node, err := s.workflowStepNode(runID, body.NodeID)
+	node, err := s.workflowStepNode(ctx, runID, body.NodeID)
 	if err != nil {
 		return workflowStepResponse{}, err
 	}
 	switch body.Kind {
 	case "condition":
-		return s.evaluateWorkflowCondition(runID, body)
+		return s.evaluateWorkflowCondition(ctx, runID, body)
 	case "approval":
 		return s.awaitWorkflowApproval(ctx, runID, body.NodeID)
 	case "agent":
@@ -89,12 +89,12 @@ func (s *Server) executeWorkflowStep(ctx context.Context, runID string, body wor
 // workflowStepNode resolves the authored node behind a step. The runner
 // only ever sends ids, so this is where a step is bound back to the
 // immutable version its run pinned.
-func (s *Server) workflowStepNode(runID, nodeID string) (workflows.Node, error) {
-	run, err := s.stateDB.GetWorkflowRun(runID)
+func (s *Server) workflowStepNode(ctx context.Context, runID, nodeID string) (workflows.Node, error) {
+	run, err := s.stateDB.GetWorkflowRun(ctx, runID)
 	if err != nil {
 		return workflows.Node{}, fmt.Errorf("unknown run %q", runID)
 	}
-	version, err := s.stateDB.GetWorkflowVersion(run.VersionID)
+	version, err := s.stateDB.GetWorkflowVersion(ctx, run.VersionID)
 	if err != nil || version == nil {
 		return workflows.Node{}, fmt.Errorf("unknown version for run %q", runID)
 	}
@@ -114,12 +114,12 @@ func (s *Server) workflowStepNode(runID, nodeID string) (workflows.Node, error) 
 // sandbox. A false condition is not an error: the runner turns a
 // non-zero exit into a skip, which is the same semantics the native
 // dispatcher applies.
-func (s *Server) evaluateWorkflowCondition(runID string, body workflowStepRequest) (workflowStepResponse, error) {
-	run, err := s.stateDB.GetWorkflowRun(runID)
+func (s *Server) evaluateWorkflowCondition(ctx context.Context, runID string, body workflowStepRequest) (workflowStepResponse, error) {
+	run, err := s.stateDB.GetWorkflowRun(ctx, runID)
 	if err != nil {
 		return workflowStepResponse{}, fmt.Errorf("unknown run %q", runID)
 	}
-	version, err := s.stateDB.GetWorkflowVersion(run.VersionID)
+	version, err := s.stateDB.GetWorkflowVersion(ctx, run.VersionID)
 	if err != nil || version == nil {
 		return workflowStepResponse{}, fmt.Errorf("unknown version for run %q", runID)
 	}
@@ -169,7 +169,7 @@ func (s *Server) awaitWorkflowApproval(ctx context.Context, runID, nodeID string
 	ticker := time.NewTicker(workflowStepPollInterval)
 	defer ticker.Stop()
 	for {
-		run, err := s.stateDB.GetWorkflowRun(runID)
+		run, err := s.stateDB.GetWorkflowRun(ctx, runID)
 		if err != nil {
 			return workflowStepResponse{}, err
 		}

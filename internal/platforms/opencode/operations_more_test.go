@@ -385,7 +385,7 @@ type stubFavorites struct {
 	err    error
 }
 
-func (s stubFavorites) ModelFavorites(string) ([]state.ModelFavorite, error) {
+func (s stubFavorites) ModelFavorites(context.Context, string) ([]state.ModelFavorite, error) {
 	return s.models, s.err
 }
 

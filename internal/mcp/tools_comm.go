@@ -32,15 +32,15 @@ func FormatUntrustedChildMessage(kind, childID, intent, status, content string) 
 
 // commChildSessionDB is the subset of state.DB needed by the communication tools.
 type commChildSessionDB interface {
-	GetChildSession(id string) (*state.ChildSession, error)
-	ClaimChildFollowup(id, previousDelivery, sendingDelivery string) (bool, error)
-	CompleteChildFollowup(id, sendingDelivery, delivery string) (bool, error)
-	RestoreChildFollowup(id string, cs state.ChildSession, sendingDelivery string) error
-	CompareAndSetChildResultDelivery(id, from, to string) (bool, error)
+	GetChildSession(context.Context, string) (*state.ChildSession, error)
+	ClaimChildFollowup(ctx context.Context, id, previousDelivery, sendingDelivery string) (bool, error)
+	CompleteChildFollowup(ctx context.Context, id, sendingDelivery, delivery string) (bool, error)
+	RestoreChildFollowup(ctx context.Context, id string, cs state.ChildSession, sendingDelivery string) error
+	CompareAndSetChildResultDelivery(context.Context, string, string, string) (bool, error)
 }
 
 type childSessionGetter interface {
-	GetChildSession(id string) (*state.ChildSession, error)
+	GetChildSession(context.Context, string) (*state.ChildSession, error)
 }
 
 // commTools holds dependencies for parent <-> child messaging.
@@ -48,7 +48,7 @@ type commTools struct {
 	stateDB      commChildSessionDB
 	platform     platformAdapter
 	results      *ChildResultBroker
-	disconnected func(childID string)
+	disconnected func(context.Context, string)
 }
 
 // sendMessageToChildTool returns the tool definition for send_message_to_child.
@@ -109,7 +109,7 @@ func (t *commTools) handleSendMessageToChild(ctx context.Context, req mcplib.Cal
 		return mcplib.NewToolResultError("message is required"), nil
 	}
 
-	cs, toolErr := lookupChildSession(t.stateDB, childID)
+	cs, toolErr := lookupChildSession(ctx, t.stateDB, childID)
 	if toolErr != nil {
 		return toolErr, nil
 	}
@@ -168,7 +168,7 @@ func (t *commTools) handleSendMessageToChild(ctx context.Context, req mcplib.Cal
 		return mcplib.NewToolResultError(fmt.Sprintf("reopening child session: %v", err)), nil
 	}
 	if !claimed {
-		latest, getErr := t.stateDB.GetChildSession(childID)
+		latest, getErr := t.stateDB.GetChildSession(ctx, childID)
 		alreadyRecovered := getErr == nil && ((wait && latest.ResultDelivery == "waiting") || (!wait && (latest.ResultDelivery == state.ChildResultAsyncPending || latest.ResultDelivery == state.ChildResultAsyncQueueing || latest.ResultDelivery == "delivered")))
 		if !alreadyRecovered {
 			if reserved {
@@ -206,7 +206,7 @@ func (t *commTools) handleSendMessageToParent(ctx context.Context, req mcplib.Ca
 		return mcplib.NewToolResultError("message is required"), nil
 	}
 
-	cs, toolErr := lookupChildSession(t.stateDB, childID)
+	cs, toolErr := lookupChildSession(ctx, t.stateDB, childID)
 	if toolErr != nil {
 		return toolErr, nil
 	}
@@ -232,8 +232,8 @@ func (t *commTools) handleSendMessageToParent(ctx context.Context, req mcplib.Ca
 // and generic lookup failures to MCP tool errors. The second return
 // value is non-nil on failure. Shared by the comm and status tools so
 // the error wording can't drift between handlers.
-func lookupChildSession(db childSessionGetter, childID string) (*state.ChildSession, *mcplib.CallToolResult) {
-	cs, err := db.GetChildSession(childID)
+func lookupChildSession(ctx context.Context, db childSessionGetter, childID string) (*state.ChildSession, *mcplib.CallToolResult) {
+	cs, err := db.GetChildSession(ctx, childID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, mcplib.NewToolResultError(fmt.Sprintf("child session not found: %s", childID))

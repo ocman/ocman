@@ -19,7 +19,7 @@ func openTestDB(t *testing.T) *DB {
 
 func TestAutoApprove_DefaultAbsent(t *testing.T) {
 	db := openTestDB(t)
-	enabled, exists, err := db.GetAutoApprove("opencode", "sess-1")
+	enabled, exists, err := db.GetAutoApprove(t.Context(), "opencode", "sess-1")
 	if err != nil {
 		t.Fatalf("GetAutoApprove: %v", err)
 	}
@@ -34,10 +34,10 @@ func TestAutoApprove_DefaultAbsent(t *testing.T) {
 func TestAutoApprove_SetAndGet(t *testing.T) {
 	db := openTestDB(t)
 
-	if err := db.SetAutoApprove("opencode", "sess-1", true); err != nil {
+	if err := db.SetAutoApprove(t.Context(), "opencode", "sess-1", true); err != nil {
 		t.Fatalf("SetAutoApprove(true): %v", err)
 	}
-	enabled, exists, err := db.GetAutoApprove("opencode", "sess-1")
+	enabled, exists, err := db.GetAutoApprove(t.Context(), "opencode", "sess-1")
 	if err != nil {
 		t.Fatalf("GetAutoApprove: %v", err)
 	}
@@ -52,11 +52,11 @@ func TestAutoApprove_SetAndGet(t *testing.T) {
 func TestAutoApprove_Disable(t *testing.T) {
 	db := openTestDB(t)
 
-	_ = db.SetAutoApprove("opencode", "sess-1", true)
-	if err := db.SetAutoApprove("opencode", "sess-1", false); err != nil {
+	_ = db.SetAutoApprove(t.Context(), "opencode", "sess-1", true)
+	if err := db.SetAutoApprove(t.Context(), "opencode", "sess-1", false); err != nil {
 		t.Fatalf("SetAutoApprove(false): %v", err)
 	}
-	enabled, exists, err := db.GetAutoApprove("opencode", "sess-1")
+	enabled, exists, err := db.GetAutoApprove(t.Context(), "opencode", "sess-1")
 	if err != nil {
 		t.Fatalf("GetAutoApprove: %v", err)
 	}
@@ -71,10 +71,10 @@ func TestAutoApprove_Disable(t *testing.T) {
 func TestAutoApprove_PlatformScoped(t *testing.T) {
 	db := openTestDB(t)
 
-	_ = db.SetAutoApprove("opencode", "sess-1", true)
+	_ = db.SetAutoApprove(t.Context(), "opencode", "sess-1", true)
 
 	// Different platform, same session ID — must be independent.
-	enabled, exists, err := db.GetAutoApprove("other-platform", "sess-1")
+	enabled, exists, err := db.GetAutoApprove(t.Context(), "other-platform", "sess-1")
 	if err != nil {
 		t.Fatalf("GetAutoApprove other-platform: %v", err)
 	}

@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -37,8 +38,8 @@ const QueuedMessageAttemptLimit = 5
 // EnqueueMessage appends a queued message to the tail of its session's
 // queue (position = current max + 1). The id is caller-supplied so the
 // service can broadcast/track it.
-func (d *DB) EnqueueMessage(m QueuedMessage) error {
-	_, err := d.db.Exec(`
+func (d *DB) EnqueueMessage(ctx context.Context, m QueuedMessage) error {
+	_, err := d.db.ExecContext(ctx, `
 		INSERT INTO queued_message
 			(id, platform, session_id, position, text, images_json,
 			 model, agent, reasoning, created_at)
@@ -60,14 +61,14 @@ func (d *DB) EnqueueMessage(m QueuedMessage) error {
 
 // EnqueueClaimedChildResult atomically queues a held child result and marks
 // its async delivery complete. A non-queueing child is an idempotent no-op.
-func (d *DB) EnqueueClaimedChildResult(childID string, m QueuedMessage) (bool, error) {
-	tx, err := d.db.Begin()
+func (d *DB) EnqueueClaimedChildResult(ctx context.Context, childID string, m QueuedMessage) (bool, error) {
+	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, fmt.Errorf("queueing child result begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	result, err := tx.Exec(`
+	result, err := tx.ExecContext(ctx, `
 		UPDATE child_sessions SET result_delivery = 'delivered'
 		WHERE id = ? AND result_delivery = ?
 	`, childID, ChildResultAsyncQueueing)
@@ -78,7 +79,7 @@ func (d *DB) EnqueueClaimedChildResult(childID string, m QueuedMessage) (bool, e
 	if err != nil || changed == 0 {
 		return false, err
 	}
-	if _, err := tx.Exec(`
+	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO queued_message
 			(id, platform, session_id, position, text, images_json,
 			 model, agent, reasoning, created_at)
@@ -105,9 +106,9 @@ func (d *DB) EnqueueClaimedChildResult(childID string, m QueuedMessage) (bool, e
 // A session's identity is (platform, sessionID) and the platform is matched
 // exactly: an empty platform matches nothing. It used to wildcard, which let
 // a session id shared by two machines pool into one queue.
-func (d *DB) CountQueuedMessages(platform, sessionID string) (int, error) {
+func (d *DB) CountQueuedMessages(ctx context.Context, platform, sessionID string) (int, error) {
 	var n int
-	err := d.db.QueryRow(`
+	err := d.db.QueryRowContext(ctx, `
 		SELECT COUNT(*) FROM queued_message
 		WHERE platform = ? AND session_id = ?
 	`, platform, sessionID).Scan(&n)
@@ -123,9 +124,9 @@ func (d *DB) CountQueuedMessages(platform, sessionID string) (int, error) {
 // lost its platform can no longer pop a same-id session's head on another
 // machine. Blocked rows are skipped so a dead-lettered message does not
 // stall everything queued behind it.
-func (d *DB) HeadQueuedMessage(platform, sessionID string) (*QueuedMessage, error) {
+func (d *DB) HeadQueuedMessage(ctx context.Context, platform, sessionID string) (*QueuedMessage, error) {
 	var m QueuedMessage
-	err := d.db.QueryRow(`
+	err := d.db.QueryRowContext(ctx, `
 		SELECT id, platform, session_id, position, text, images_json,
 		       model, agent, reasoning, created_at, attempts, last_error, blocked
 		FROM queued_message
@@ -164,8 +165,8 @@ type QueuedSession struct {
 // a turn they walked away from. The predicate lives in the query so it
 // cannot race the archive handler. Blocked rows are excluded too — a
 // session whose queue is entirely dead-lettered has nothing to drain.
-func (d *DB) SessionsWithQueuedMessages() ([]QueuedSession, error) {
-	rows, err := d.db.Query(`
+func (d *DB) SessionsWithQueuedMessages(ctx context.Context) ([]QueuedSession, error) {
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT DISTINCT q.platform, q.session_id
 		FROM queued_message q
 		WHERE q.blocked = 0
@@ -194,8 +195,8 @@ func (d *DB) SessionsWithQueuedMessages() ([]QueuedSession, error) {
 
 // ListQueuedMessages returns a session's queue ordered oldest-first. The
 // platform is matched exactly (see HeadQueuedMessage).
-func (d *DB) ListQueuedMessages(platform, sessionID string) ([]QueuedMessage, error) {
-	return d.queuedMessages(`
+func (d *DB) ListQueuedMessages(ctx context.Context, platform, sessionID string) ([]QueuedMessage, error) {
+	return d.queuedMessages(ctx, `
 		SELECT id, platform, session_id, position, text, images_json,
 		       model, agent, reasoning, created_at, attempts, last_error, blocked
 		FROM queued_message
@@ -211,8 +212,8 @@ func (d *DB) ListQueuedMessages(platform, sessionID string) ([]QueuedMessage, er
 // has only the bare session id. Nothing about delivery may use it: with two
 // machines sharing a session id it returns both queues, which is acceptable
 // for a display list and never for a drain.
-func (d *DB) ListQueuedMessagesAnyPlatform(sessionID string) ([]QueuedMessage, error) {
-	return d.queuedMessages(`
+func (d *DB) ListQueuedMessagesAnyPlatform(ctx context.Context, sessionID string) ([]QueuedMessage, error) {
+	return d.queuedMessages(ctx, `
 		SELECT id, platform, session_id, position, text, images_json,
 		       model, agent, reasoning, created_at, attempts, last_error, blocked
 		FROM queued_message
@@ -221,8 +222,8 @@ func (d *DB) ListQueuedMessagesAnyPlatform(sessionID string) ([]QueuedMessage, e
 	`, sessionID)
 }
 
-func (d *DB) queuedMessages(query string, args ...any) ([]QueuedMessage, error) {
-	rows, err := d.db.Query(query, args...)
+func (d *DB) queuedMessages(ctx context.Context, query string, args ...any) ([]QueuedMessage, error) {
+	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("listing queued messages: %w", err)
 	}
@@ -249,8 +250,8 @@ func (d *DB) queuedMessages(query string, args ...any) ([]QueuedMessage, error) 
 // message is blocked: it stays in the queue (visible, with the reason)
 // but is skipped by the drain, so the messages behind it are no longer
 // stuck behind something that will never send.
-func (d *DB) RecordQueuedMessageFailure(id, reason string) (blocked bool, err error) {
-	res, err := d.db.Exec(`
+func (d *DB) RecordQueuedMessageFailure(ctx context.Context, id, reason string) (blocked bool, err error) {
+	res, err := d.db.ExecContext(ctx, `
 		UPDATE queued_message
 		SET attempts = attempts + 1,
 		    last_error = ?,
@@ -263,7 +264,7 @@ func (d *DB) RecordQueuedMessageFailure(id, reason string) (blocked bool, err er
 	if n, _ := res.RowsAffected(); n == 0 {
 		return false, nil
 	}
-	err = d.db.QueryRow(`SELECT blocked FROM queued_message WHERE id = ?`, id).Scan(&blocked)
+	err = d.db.QueryRowContext(ctx, `SELECT blocked FROM queued_message WHERE id = ?`, id).Scan(&blocked)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -276,8 +277,8 @@ func (d *DB) RecordQueuedMessageFailure(id, reason string) (blocked bool, err er
 // ClearQueuedMessagesForSession drops a session's whole queue. Used when
 // the user archives a session: the follow-ups they queued are part of the
 // work being abandoned.
-func (d *DB) ClearQueuedMessagesForSession(platform, sessionID string) (int64, error) {
-	res, err := d.db.Exec(
+func (d *DB) ClearQueuedMessagesForSession(ctx context.Context, platform, sessionID string) (int64, error) {
+	res, err := d.db.ExecContext(ctx,
 		`DELETE FROM queued_message WHERE platform = ? AND session_id = ?`,
 		platform, sessionID,
 	)
@@ -290,8 +291,8 @@ func (d *DB) ClearQueuedMessagesForSession(platform, sessionID string) (int64, e
 
 // DeleteQueuedMessage removes a single queued message by id. Returns
 // whether a row was actually deleted.
-func (d *DB) DeleteQueuedMessage(id string) (bool, error) {
-	res, err := d.db.Exec(`DELETE FROM queued_message WHERE id = ?`, id)
+func (d *DB) DeleteQueuedMessage(ctx context.Context, id string) (bool, error) {
+	res, err := d.db.ExecContext(ctx, `DELETE FROM queued_message WHERE id = ?`, id)
 	if err != nil {
 		return false, fmt.Errorf("deleting queued message: %w", err)
 	}
@@ -304,11 +305,11 @@ func (d *DB) DeleteQueuedMessage(id string) (bool, error) {
 // later/down) within the same session. A no-op at a boundary (already
 // first/last) returns (false, nil). The swap is transactional so a
 // reorder never leaves two rows sharing a position.
-func (d *DB) MoveQueuedMessage(id string, direction int) (bool, error) {
+func (d *DB) MoveQueuedMessage(ctx context.Context, id string, direction int) (bool, error) {
 	if direction != -1 && direction != 1 {
 		return false, fmt.Errorf("invalid direction %d", direction)
 	}
-	tx, err := d.db.Begin()
+	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, fmt.Errorf("move queued message begin: %w", err)
 	}
@@ -316,7 +317,7 @@ func (d *DB) MoveQueuedMessage(id string, direction int) (bool, error) {
 
 	var platform, sessionID string
 	var pos int64
-	err = tx.QueryRow(`
+	err = tx.QueryRowContext(ctx, `
 		SELECT platform, session_id, position FROM queued_message WHERE id = ?
 	`, id).Scan(&platform, &sessionID, &pos)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -340,7 +341,7 @@ func (d *DB) MoveQueuedMessage(id string, direction int) (bool, error) {
 		     WHERE platform = ? AND session_id = ? AND position > ?
 		     ORDER BY position ASC LIMIT 1`
 	}
-	err = tx.QueryRow(q, platform, sessionID, pos).Scan(&neighborID, &neighborPos)
+	err = tx.QueryRowContext(ctx, q, platform, sessionID, pos).Scan(&neighborID, &neighborPos)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil // already at the boundary
 	}
@@ -348,10 +349,10 @@ func (d *DB) MoveQueuedMessage(id string, direction int) (bool, error) {
 		return false, fmt.Errorf("move: loading neighbor: %w", err)
 	}
 
-	if _, err := tx.Exec(`UPDATE queued_message SET position = ? WHERE id = ?`, neighborPos, id); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE queued_message SET position = ? WHERE id = ?`, neighborPos, id); err != nil {
 		return false, fmt.Errorf("move: updating message: %w", err)
 	}
-	if _, err := tx.Exec(`UPDATE queued_message SET position = ? WHERE id = ?`, pos, neighborID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE queued_message SET position = ? WHERE id = ?`, pos, neighborID); err != nil {
 		return false, fmt.Errorf("move: updating neighbor: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -364,8 +365,8 @@ func (d *DB) MoveQueuedMessage(id string, direction int) (bool, error) {
 // message belongs to, or ok=false when it doesn't exist. The handler
 // uses it to confirm a delete/move targets the session in the URL before
 // mutating (so one session can't reorder another's queue).
-func (d *DB) GetQueuedMessageSession(id string) (platform, sessionID string, ok bool, err error) {
-	err = d.db.QueryRow(`
+func (d *DB) GetQueuedMessageSession(ctx context.Context, id string) (platform, sessionID string, ok bool, err error) {
+	err = d.db.QueryRowContext(ctx, `
 		SELECT platform, session_id FROM queued_message WHERE id = ?
 	`, id).Scan(&platform, &sessionID)
 	if errors.Is(err, sql.ErrNoRows) {

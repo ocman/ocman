@@ -36,7 +36,7 @@ func TestManager_DoesNotRegisterAdaptersForAnUnmanagedRemote(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	localID, err := store.AddRemote(addr, "tok", "Box")
+	localID, err := store.AddRemote(t.Context(), addr, "tok", "Box")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestManager_DoesNotRegisterAdaptersForAnUnmanagedRemote(t *testing.T) {
 
 	// Meanwhile the user removes the remote: it is no longer managed, so
 	// nothing is left to tear the adapters down afterwards.
-	if err := mgr.Remove(localID); err != nil {
+	if err := mgr.Remove(t.Context(), localID); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
 	close(resume)
@@ -248,7 +248,7 @@ func TestSupersededSupervisorPersistsTheConnectItMade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	localID, err := store.AddRemote(addr, "tok", "Box")
+	localID, err := store.AddRemote(t.Context(), addr, "tok", "Box")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +275,7 @@ func TestSupersededSupervisorPersistsTheConnectItMade(t *testing.T) {
 	close(resume)
 	mgr.Stop()
 
-	r, err := store.GetRemote(localID)
+	r, err := store.GetRemote(t.Context(), localID)
 	if err != nil {
 		t.Fatalf("GetRemote: %v", err)
 	}

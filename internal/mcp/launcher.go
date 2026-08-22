@@ -53,7 +53,7 @@ type LaunchRequest struct {
 
 // childSessionStore is the subset of state.DB used by SessionLauncher.
 type childSessionStore interface {
-	InsertChildSession(cs state.ChildSession) error
+	InsertChildSession(context.Context, state.ChildSession) error
 }
 
 // SessionClient is the narrow session-mutation surface used by
@@ -274,7 +274,7 @@ func (l *SessionLauncher) AttachChild(ctx context.Context, req LaunchRequest, ch
 	} else {
 		cs.ResultDelivery = state.ChildResultAsyncPending
 	}
-	if err := l.stateDB.InsertChildSession(cs); err != nil {
+	if err := l.stateDB.InsertChildSession(ctx, cs); err != nil {
 		// Log but don't fail: the session is running; we just can't
 		// track it in state.db.
 		log.WithFields(log.Fields{

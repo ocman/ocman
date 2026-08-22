@@ -313,18 +313,18 @@ func TestWorkflowRESTResolvesUnknownAttempt(t *testing.T) {
 	}
 	now := time.Now().UnixMilli()
 	run := state.WorkflowRun{ID: "unknown-rest", WorkflowID: version.WorkflowID, VersionID: version.ID, State: workflows.StateActive, CreatedAt: now, UpdatedAt: now, Nodes: []state.WorkflowNodeRun{{NodeID: "review", Type: "approval", State: workflows.NodeReady}, {NodeID: "ship", Type: "approval", State: workflows.NodePending}}}
-	if err := srv.stateDB.InsertWorkflowRun(run); err != nil {
+	if err := srv.stateDB.InsertWorkflowRun(t.Context(), run); err != nil {
 		t.Fatal(err)
 	}
-	stored, err := srv.stateDB.GetWorkflowRun(run.ID)
+	stored, err := srv.stateDB.GetWorkflowRun(t.Context(), run.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	attemptID := stored.Nodes[0].Attempts[0].ID
-	if claimed, err := srv.stateDB.ClaimWorkflowAgentAttempt(run.ID, "review", attemptID, "", "", []state.WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 1}}, nil, now); err != nil || !claimed {
+	if claimed, err := srv.stateDB.ClaimWorkflowAgentAttempt(t.Context(), run.ID, "review", attemptID, "", "", []state.WorkflowResourceRequest{{Pool: "", Units: 1, Capacity: 1}}, nil, now); err != nil || !claimed {
 		t.Fatalf("claim: claimed=%v err=%v", claimed, err)
 	}
-	if err := srv.stateDB.MarkWorkflowAttemptUnknown(run.ID, "review", attemptID, "interrupted", now); err != nil {
+	if err := srv.stateDB.MarkWorkflowAttemptUnknown(t.Context(), run.ID, "review", attemptID, "interrupted", now); err != nil {
 		t.Fatal(err)
 	}
 
@@ -411,7 +411,7 @@ func TestWorkflowArtifactRESTListAndDownload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := srv.stateDB.InsertWorkflowArtifact(state.WorkflowArtifact{
+	if err := srv.stateDB.InsertWorkflowArtifact(t.Context(), state.WorkflowArtifact{
 		ID: "artifact-1", RunID: run.ID, NodeID: "emit", Name: "log", Kind: workflows.KindText,
 		ContentHash: hash, SizeBytes: int64(len(payload)), CreatedAt: time.Now().UnixMilli(),
 	}); err != nil {

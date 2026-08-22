@@ -43,7 +43,7 @@ func (a *Adapter) resolvePortCtx(ctx context.Context, sessionID string) (port st
 		return "", nil, platforms.ErrNotFound
 	}
 	dbPhase := srvtiming.Begin(ctx, "db_get_session")
-	s, err := a.db.GetSession(sessionID)
+	s, err := a.db.GetSession(ctx, sessionID)
 	dbPhase.End()
 	if err != nil {
 		return "", nil, platforms.ErrNotFound
@@ -186,7 +186,7 @@ func (a *Adapter) SessionModels(ctx context.Context, sessionID string) (*platfor
 		return nil, platforms.ErrNotFound
 	}
 	dbPhase := srvtiming.Begin(ctx, "db_get_session")
-	session, err := a.db.GetSession(sessionID)
+	session, err := a.db.GetSession(ctx, sessionID)
 	dbPhase.End()
 	if err != nil {
 		return nil, platforms.ErrNotFound
@@ -199,13 +199,13 @@ func (a *Adapter) SessionModels(ctx context.Context, sessionID string) (*platfor
 	// session-default lookup below stays uncached because it's
 	// per-session and already cheap.
 	recentsPhase := srvtiming.Begin(ctx, "db_recent_models")
-	recents, err := getRecentModelsCached(a.db)
+	recents, err := getRecentModelsCached(ctx, a.db)
 	recentsPhase.End()
 	if err != nil {
 		log.WithError(err).Warn("opencode: fetching recent models")
 	}
 	defaultsPhase := srvtiming.Begin(ctx, "db_session_defaults")
-	defaults, err := getSessionDefaultsCached(a.db, sessionID, session.Directory)
+	defaults, err := getSessionDefaultsCached(ctx, a.db, sessionID, session.Directory)
 	defaultsPhase.End()
 	if err != nil {
 		log.WithFields(log.Fields{"sessionID": sessionID, "error": err}).Warn("opencode: fetching session defaults")
@@ -215,7 +215,7 @@ func (a *Adapter) SessionModels(ctx context.Context, sessionID string) (*platfor
 	var favorites []state.ModelFavorite
 	if a.favorites != nil {
 		favPhase := srvtiming.Begin(ctx, "db_favorites")
-		favorites, err = a.favorites.ModelFavorites(string(PlatformID))
+		favorites, err = a.favorites.ModelFavorites(ctx, string(PlatformID))
 		favPhase.End()
 		if err != nil {
 			log.WithError(err).Warn("opencode: fetching model favorites")

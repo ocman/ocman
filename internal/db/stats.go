@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"strings"
@@ -69,24 +70,24 @@ func modelKey(provider, model string) string {
 }
 
 // GetStats returns aggregate statistics using SQL aggregation.
-func (d *DB) GetStats() (*Stats, error) {
+func (d *DB) GetStats(ctx context.Context) (*Stats, error) {
 	s := &Stats{}
 
-	err := d.db.QueryRow(`SELECT count(*) FROM session`).Scan(&s.TotalSessions)
+	err := d.db.QueryRowContext(ctx, `SELECT count(*) FROM session`).Scan(&s.TotalSessions)
 	if err != nil {
 		return nil, err
 	}
-	err = d.db.QueryRow(`SELECT count(*) FROM message WHERE json_extract(data, '$.role') = 'user'`).Scan(&s.TotalMessages)
+	err = d.db.QueryRowContext(ctx, `SELECT count(*) FROM message WHERE json_extract(data, '$.role') = 'user'`).Scan(&s.TotalMessages)
 	if err != nil {
 		return nil, err
 	}
-	err = d.db.QueryRow(`SELECT count(DISTINCT directory) FROM session`).Scan(&s.TotalProjects)
+	err = d.db.QueryRowContext(ctx, `SELECT count(DISTINCT directory) FROM session`).Scan(&s.TotalProjects)
 	if err != nil {
 		return nil, err
 	}
 
 	// Aggregate tokens and cost via SQL instead of deserializing every message in Go.
-	err = d.db.QueryRow(`
+	err = d.db.QueryRowContext(ctx, `
 		SELECT
 			COALESCE(SUM(COALESCE(json_extract(data, '$.tokens.input'), 0)), 0),
 			COALESCE(SUM(COALESCE(json_extract(data, '$.tokens.output'), 0)), 0),
@@ -107,8 +108,8 @@ func (d *DB) GetStats() (*Stats, error) {
 // so the figure matches the sessions list, which also hides them. Message,
 // token and cost totals intentionally still include subagent activity
 // because those represent real spend against the project.
-func (d *DB) GetProjects() ([]ProjectStats, error) {
-	rows, err := d.db.Query(`
+func (d *DB) GetProjects(ctx context.Context) ([]ProjectStats, error) {
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT
 			s.directory,
 			SUM(CASE WHEN s.title NOT LIKE '%(% subagent)' THEN 1 ELSE 0 END) AS session_count,
@@ -184,8 +185,8 @@ func (d *DB) GetProjects() ([]ProjectStats, error) {
 // This is the data source for the LLM metrics scanner: it runs every
 // collection interval, feeds each row into OTel counters/histograms,
 // and advances the high-water mark so the next call only sees new data.
-func (d *DB) GetNewAssistantMessages(since int64) ([]LLMMessageRow, int64, error) {
-	rows, err := d.db.Query(`
+func (d *DB) GetNewAssistantMessages(ctx context.Context, since int64) ([]LLMMessageRow, int64, error) {
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT m.time_created, m.session_id, m.data
 		FROM message m
 		WHERE json_extract(m.data, '$.role') = 'assistant'
@@ -252,8 +253,8 @@ func (d *DB) GetNewAssistantMessages(since int64) ([]LLMMessageRow, int64, error
 // or 0 if the table is empty. Used to initialise the LLM metrics scanner's
 // high-water mark so it only emits metrics for messages arriving after
 // ocman starts.
-func (d *DB) GetMaxMessageTime() (int64, error) {
+func (d *DB) GetMaxMessageTime(ctx context.Context) (int64, error) {
 	var maxTime int64
-	err := d.db.QueryRow(`SELECT COALESCE(MAX(time_created), 0) FROM message`).Scan(&maxTime)
+	err := d.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(time_created), 0) FROM message`).Scan(&maxTime)
 	return maxTime, err
 }
