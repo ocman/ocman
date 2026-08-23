@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+// @vitest-environment jsdom
+
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { act, renderHook } from '@testing-library/react';
 
 // Spy on the collaborators before importing the module under test so
 // the module captures the mocked references.
@@ -17,9 +20,65 @@ import {
   __handleSurfaceForTests,
   __handleSessionChangedForTests,
   __handleQueueUpdatedForTests,
+  __resetForTests,
   onSessionChanged,
   onQueueUpdated,
+  useGlobalEvents,
 } from './useGlobalEvents';
+
+class FakeEventSource {
+  static instances: FakeEventSource[] = [];
+
+  onopen: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  url: string;
+
+  constructor(url: string) {
+    this.url = url;
+    FakeEventSource.instances.push(this);
+  }
+
+  addEventListener() {}
+  close() {}
+  error() { this.onerror?.(); }
+}
+
+(globalThis as unknown as { EventSource: typeof FakeEventSource }).EventSource = FakeEventSource;
+
+describe('useGlobalEvents connection', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FakeEventSource.instances = [];
+    __resetForTests();
+  });
+
+  afterEach(() => {
+    __resetForTests();
+    vi.useRealTimers();
+  });
+
+  it('opens a fresh stream after a hard connection failure', async () => {
+    const { unmount } = renderHook(() => useGlobalEvents());
+    expect(FakeEventSource.instances).toHaveLength(1);
+
+    act(() => FakeEventSource.instances[0].error());
+    await act(() => vi.runOnlyPendingTimersAsync());
+
+    expect(FakeEventSource.instances).toHaveLength(2);
+    expect(FakeEventSource.instances[1].url).toBe('/api/events');
+    unmount();
+  });
+
+  it('cancels a pending reconnect when the last consumer unmounts', async () => {
+    const { unmount } = renderHook(() => useGlobalEvents());
+    act(() => FakeEventSource.instances[0].error());
+
+    unmount();
+    await act(() => vi.runOnlyPendingTimersAsync());
+
+    expect(FakeEventSource.instances).toHaveLength(1);
+  });
+});
 
 describe('useGlobalEvents resolved handler', () => {
   beforeEach(() => {

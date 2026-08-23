@@ -29,6 +29,9 @@ import type { QueuedMessage, Session } from './api';
 
 let source: EventSource | null = null;
 let refCount = 0;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+const reconnectDelayMs = 1_000;
 
 /** Payload shape carrying a session id (all broadcast events have one). */
 type SessionEventPayload = {
@@ -169,41 +172,52 @@ export function onSseConnect(cb: () => void): () => void {
 
 function open(): void {
   if (source) return;
-  source = new EventSource('/api/events');
-  source.onopen = () => {
-    // Fires on the first open and after every browser auto-reconnect.
+  const next = new EventSource('/api/events');
+  source = next;
+  next.onopen = () => {
+    // Reconcile consumers after the first open and every replacement stream.
     for (const cb of connectListeners) cb();
   };
-  source.addEventListener('ocman.permission.resolved', (e) => {
+  next.addEventListener('ocman.permission.resolved', (e) => {
     handleResolved((e as MessageEvent).data);
   });
-  source.addEventListener('ocman.question.resolved', (e) => {
+  next.addEventListener('ocman.question.resolved', (e) => {
     handleResolved((e as MessageEvent).data);
   });
-  source.addEventListener('ocman.permission.flagged', (e) => {
+  next.addEventListener('ocman.permission.flagged', (e) => {
     handleSurface((e as MessageEvent).data);
   });
-  source.addEventListener('ocman.session.idle', (e) => {
+  next.addEventListener('ocman.session.idle', (e) => {
     handleSurface((e as MessageEvent).data);
   });
-  source.addEventListener('ocman.session.changed', (e) => {
+  next.addEventListener('ocman.session.changed', (e) => {
     handleSessionChanged((e as MessageEvent).data);
   });
-	source.addEventListener('workflow.run.updated', (e) => {
+	next.addEventListener('workflow.run.updated', (e) => {
 		handleWorkflowRunUpdated((e as MessageEvent).data);
 	});
-	source.addEventListener('workflow.trigger.updated', () => {
+	next.addEventListener('workflow.trigger.updated', () => {
 		for (const cb of workflowTriggerUpdatedListeners) cb();
 	});
-  source.addEventListener('ocman.queue.updated', (e) => {
+  next.addEventListener('ocman.queue.updated', (e) => {
     handleQueueUpdated((e as MessageEvent).data);
   });
-  // EventSource auto-reconnects on transient errors; nothing to do here
-  // beyond letting it retry. A hard failure (non-200) stops it, in which
-  // case the notify poll remains the safety net.
+  next.onerror = () => {
+    if (source !== next) return;
+    next.close();
+    source = null;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      if (refCount > 0) open();
+    }, reconnectDelayMs);
+  };
 }
 
 function close(): void {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
   source?.close();
   source = null;
 }
