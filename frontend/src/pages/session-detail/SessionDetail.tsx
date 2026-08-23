@@ -157,6 +157,40 @@ export function SessionDetail({ id }: SessionDetailProps) {
     });
   }, [navigate]);
 
+  // Phone-only overlay panels (sessions drawer / details panel). On
+  // viewports <=768px the sidebar and right panel are hidden by
+  // default and open as full-screen overlays via header toggles; the
+  // classes this state drives are inert on wider viewports (see the
+  // @media block in SessionDetail.css).
+  const [mobilePanel, setMobilePanel] = useState<'sidebar' | 'details' | null>(null);
+  const toggleMobileSidebar = useCallback(() => {
+    setMobilePanel((p) => (p === 'sidebar' ? null : 'sidebar'));
+  }, []);
+  const toggleMobileDetails = useCallback(() => {
+    setMobilePanel((p) => {
+      if (p === 'details') return null;
+      // The right panel may be collapsed (no open panes) from a
+      // desktop session; a full-screen overlay with only the icon
+      // strip reads as broken, so seed one pane.
+      const ui = useUiStore.getState();
+      if (ui.changesSidebarOpenTabs.length === 0) ui.toggleChangesSidebarTab('info');
+      return 'details';
+    });
+  }, []);
+  useEffect(() => {
+    if (!mobilePanel) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobilePanel(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [mobilePanel]);
+  // Selecting a session from the drawer should reveal the conversation.
+  const navigateFromSidebar = useCallback((nextId: string) => {
+    setMobilePanel(null);
+    navigateToSession(nextId);
+  }, [navigateToSession]);
+
   // The new SSE pipeline. Owns the EventSource, the reducer, the
   // initial fetch + reload + loadMore, the cache mirror, and the
   // memory bound. Returns the rendered view plus a small set of
@@ -1244,7 +1278,32 @@ export function SessionDetail({ id }: SessionDetailProps) {
 
   return (
     <Toast.Provider swipeDirection="right">
-      <div className="session-layout" data-testid="session-layout">
+      <div
+        className={`session-layout${mobilePanel === 'sidebar' ? ' mobile-sidebar-open' : ''}${mobilePanel === 'details' ? ' mobile-details-open' : ''}`}
+        data-testid="session-layout"
+      >
+        <HeaderActionsPortal>
+          <button
+            type="button"
+            className="mobile-panel-toggle"
+            data-testid="mobile-sessions-toggle"
+            aria-label={mobilePanel === 'sidebar' ? 'Close session list' : 'Open session list'}
+            aria-expanded={mobilePanel === 'sidebar'}
+            onClick={toggleMobileSidebar}
+          >
+            <i className={`bi ${mobilePanel === 'sidebar' ? 'bi-x-lg' : 'bi-list-ul'}`} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="mobile-panel-toggle"
+            data-testid="mobile-details-toggle"
+            aria-label={mobilePanel === 'details' ? 'Close session details' : 'Open session details'}
+            aria-expanded={mobilePanel === 'details'}
+            onClick={toggleMobileDetails}
+          >
+            <i className={`bi ${mobilePanel === 'details' ? 'bi-x-lg' : 'bi-layout-sidebar-reverse'}`} aria-hidden="true" />
+          </button>
+        </HeaderActionsPortal>
         <SessionSidebar
           activeId={id}
           sidebarWidth={sidebarWidth}
@@ -1264,14 +1323,14 @@ export function SessionDetail({ id }: SessionDetailProps) {
           pickerPos={pickerPos}
           pickerRef={pickerRef}
           tmux={tmux}
-          onNavigateToSession={navigateToSession}
+          onNavigateToSession={navigateFromSidebar}
           onArchiveSession={handleArchiveSession}
           onPinSession={handlePinSession}
           onClientSelect={handleClientSelect}
           onNewSessionInDirectory={handleNewSessionInDirectory}
           onArchiveProject={handleArchiveProjectFromSidebar}
         />
-        <div className="session-main">
+        <div className="session-main" data-testid="session-main">
           {session && <HeaderActionsPortal>
             <details className="oc-project-menu header-actions-menu">
               <summary

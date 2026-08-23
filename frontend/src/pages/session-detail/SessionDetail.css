@@ -508,13 +508,69 @@ button.session-sidebar-group-header.collapsed::before {
   white-space: nowrap;
 }
 
-/* Responsive */
+/* Phone-only header toggles for the sessions drawer / details
+   overlay. Portalled into #header-actions-slot by SessionDetail;
+   inert (hidden) on wider viewports. */
+.mobile-panel-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 32px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+}
+.mobile-panel-toggle[aria-expanded='true'] {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* Responsive: phones (small tall screens). The conversation is the
+   only in-flow view; the session sidebar and right panel become
+   full-screen overlays under the 44px header, toggled from the
+   header buttons (Escape closes; selecting a session closes the
+   drawer). Tablet and desktop keep the three-column layout. */
 @media (max-width: 768px) {
-  .session-layout { flex-direction: column; }
-  .session-sidebar { width: 100% !important; height: 160px; border-right: none; border-bottom: 1px solid var(--border); }
-  /* No hover on touch: show the buttons instead of the time. */
+  .mobile-panel-toggle { display: inline-flex; }
+  .session-layout > .session-sidebar,
+  .session-layout > .oc-changes-sidebar { display: none; }
+  .session-layout.mobile-sidebar-open > .session-sidebar,
+  .session-layout.mobile-details-open > .oc-changes-sidebar {
+    display: flex;
+    position: fixed;
+    top: 44px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 200;
+    width: auto !important;
+    min-width: 0;
+    max-width: none;
+    height: auto;
+    background: var(--bg);
+    border-right: none;
+  }
+  /* No hover on touch: show the buttons instead of the time, and
+     give rows/actions finger-sized targets. The per-branch "new
+     session" button is hover-revealed on desktop, so force it
+     visible here. */
+  .session-sidebar-dir-header .session-sidebar-group-new { opacity: 1; }
+  .session-sidebar-dir-header .session-sidebar-dir-label { padding-right: 28px; }
   .session-sidebar-time { display: none; }
-  .session-sidebar-actions { display: flex; }
+  .session-sidebar-actions { display: flex; gap: 6px; }
+  .session-sidebar-item { padding-top: 12px; padding-bottom: 12px; max-height: none; }
+  .session-sidebar-pin-btn,
+  .session-sidebar-archive-btn {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+  }
+  .session-sidebar-group-new { width: 32px; }
+  .session-layout .oc-changes-strip { width: 48px; }
+  .session-layout .oc-changes-strip-icon { width: 44px; height: 44px; font-size: 18px; }
 }
 
 .oc-rename-backdrop {

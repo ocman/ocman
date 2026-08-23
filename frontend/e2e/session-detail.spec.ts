@@ -1565,3 +1565,68 @@ test('multiple user messages after shell commands do NOT cascade as queued', asy
 // "genuinely queued user message still shows the Queued badge" test was
 // deleted because it asserted removed behaviour; the sibling tests above
 // still assert the badge is ABSENT.
+
+// ---------------------------------------------------------------------------
+// Phone layout (small tall screens)
+// ---------------------------------------------------------------------------
+
+test.describe('phone viewport', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('conversation fills the screen; sidebar and details panel are hidden', async ({ mockedPage: page }) => {
+    await page.goto(SESSION_URL);
+    await expect(page.getByTestId('session-layout')).toBeVisible();
+    await expect(page.getByTestId('session-sidebar')).toBeHidden();
+    await expect(page.getByRole('complementary', { name: /Changes/ })).toBeHidden();
+
+    // Regression: .session-main used to compute to 0px high at phone
+    // widths, leaving the conversation invisible.
+    const main = await page.getByTestId('session-main').boundingBox();
+    expect(main).not.toBeNull();
+    expect(main!.height).toBeGreaterThan(400);
+    expect(main!.width).toBeGreaterThan(380);
+  });
+
+  test('sessions drawer opens, selects a session, and auto-closes', async ({ mockedPage: page }) => {
+    await page.goto(SESSION_URL);
+    await page.getByTestId('mobile-sessions-toggle').click();
+    await expect(page.getByTestId('session-sidebar')).toBeVisible();
+
+    await page.getByRole('button', { name: /Refactor auth module/ }).click();
+    await expect(page).toHaveURL(`/session/${MOCK_SESSION_2.id}`);
+    await expect(page.getByTestId('session-sidebar')).toBeHidden();
+  });
+
+  test('details overlay opens full-width and closes with Escape', async ({ mockedPage: page }) => {
+    await page.goto(SESSION_URL);
+    await page.getByTestId('mobile-details-toggle').click();
+
+    const panel = page.getByRole('complementary', { name: 'Changes' });
+    await expect(panel).toBeVisible();
+    const box = await panel.boundingBox();
+    expect(box!.width).toBeGreaterThan(380);
+
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('complementary', { name: /Changes/ })).toBeHidden();
+  });
+
+  test('toggle button closes its own panel again', async ({ mockedPage: page }) => {
+    await page.goto(SESSION_URL);
+    const toggle = page.getByTestId('mobile-sessions-toggle');
+    await toggle.click();
+    await expect(page.getByTestId('session-sidebar')).toBeVisible();
+    await toggle.click();
+    await expect(page.getByTestId('session-sidebar')).toBeHidden();
+  });
+});
+
+test.describe('tablet viewport', () => {
+  test.use({ viewport: { width: 820, height: 1180 } });
+
+  test('keeps the inline sidebar and hides the phone toggles', async ({ mockedPage: page }) => {
+    await page.goto(SESSION_URL);
+    await expect(page.getByTestId('session-sidebar')).toBeVisible();
+    await expect(page.getByTestId('mobile-sessions-toggle')).toBeHidden();
+    await expect(page.getByTestId('mobile-details-toggle')).toBeHidden();
+  });
+});
