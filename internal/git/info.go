@@ -83,15 +83,6 @@ func newCache(ttl time.Duration, fetch func(ctx context.Context, dir string) Inf
 
 var defaultCache = newCache(defaultTTL, fetchFromGit)
 
-// fetchSlots is a process-wide semaphore over git-status fetches.
-// The per-call worker cap in LookupMany is not enough on its own:
-// several HTTP handlers can each run their own LookupMany at the same
-// time (the sidebar mounts multiple useGitInfo hooks), and 3×8
-// concurrent `git status` forks were observed to stall unrelated
-// handlers — answering a permission prompt hung until git settled.
-// Cache hits never touch the semaphore, so a warm sidebar stays fast.
-var fetchSlots = make(chan struct{}, defaultLookupManyWorkers)
-
 func (c *cache) lookup(ctx context.Context, dir string) Info {
 	if dir == "" {
 		return Info{}
@@ -108,30 +99,15 @@ func (c *cache) lookup(ctx context.Context, dir string) Info {
 	// Run the (potentially slow) fetch outside the lock so concurrent
 	// lookups against different dirs don't serialise. A rare
 	// duplicate fetch for the same dir is cheap — the alternative
-	// (singleflight) adds complexity for little gain here.
-	//
-	// The fetch does take a process-wide slot, though: it forks a git
-	// child, and unbounded fork bursts pause the whole Go runtime
-	// (docs/other/profiling.md).
-	select {
-	case fetchSlots <- struct{}{}:
-	case <-ctx.Done():
-		return Info{}
-	}
-	// Release via defer so a panicking fetch can't leak the slot —
-	// net/http recovers handler panics, and a permanently lost slot
-	// would shrink the process-wide cap for the life of the process.
-	info := func() Info {
-		defer func() { <-fetchSlots }()
-		return c.fetch(ctx, dir)
-	}()
+	// (singleflight) adds complexity for little gain here. gitexec caps
+	// subprocess concurrency process-wide.
+	info := c.fetch(ctx, dir)
 
 	// A cancelled caller must never write to the cache: git fails
 	// instantly under a dead context, and caching that fabricated
 	// zero would mark the dir "not a repo" for a full TTL. This
-	// guard is needed even with the ctx.Done select case above —
-	// when a slot is free AND ctx is already cancelled, select picks
-	// a ready case at random and can still run the fetch.
+	// guard is needed because an injected fetch may still run with an
+	// already-cancelled context.
 	if ctx.Err() != nil {
 		return info
 	}

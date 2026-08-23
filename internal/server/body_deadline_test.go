@@ -16,6 +16,7 @@ import (
 // ReadTimeout would fail these tests instead of silently breaking SSE.
 func bodyDeadlineTestServer(t *testing.T) string {
 	t.Helper()
+	bodyTimeout := bodyReadTimeout
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/bounded", func(w http.ResponseWriter, r *http.Request) {
@@ -42,7 +43,7 @@ func bodyDeadlineTestServer(t *testing.T) string {
 		if !readAndUnmarshal(w, r, maxRequestBody, &dst) {
 			return
 		}
-		time.Sleep(4 * bodyReadTimeout)
+		time.Sleep(4 * bodyTimeout)
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
@@ -52,7 +53,7 @@ func bodyDeadlineTestServer(t *testing.T) string {
 		for i := 0; i < 3; i++ {
 			fmt.Fprintf(w, "data: tick%d\n\n", i)
 			_ = rc.Flush()
-			time.Sleep(bodyReadTimeout)
+			time.Sleep(bodyTimeout)
 		}
 	})
 

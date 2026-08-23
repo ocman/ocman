@@ -2,8 +2,6 @@ package git
 
 import (
 	"context"
-	"fmt"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -94,53 +92,6 @@ func TestLookupMany_RespectsWorkerCap(t *testing.T) {
 		t.Errorf("observed %d concurrent fetches, want ≤ %d", got, workers)
 	}
 	if got := atomic.LoadInt32(&maxObserved); got == 0 {
-		t.Error("never observed any concurrent fetch — test sleeps too short?")
-	}
-}
-
-// TestLookupMany_WorkerCapIsProcessWide reproduces the sidebar bug:
-// several frontend hooks fire /api/git/info at the same time, each
-// request runs its own LookupMany, and each call brought its own
-// 8-worker pool. The fork pressure from 3×8 concurrent `git status`
-// children stalled unrelated handlers (answering a permission prompt
-// hung until git settled). The cap must hold across concurrent calls,
-// not per call.
-func TestLookupMany_WorkerCapIsProcessWide(t *testing.T) {
-	const concurrentCalls = 3
-	var inFlight int32
-	var maxObserved int32
-
-	c := newCache(time.Minute, func(_ context.Context, _ string) Info {
-		current := atomic.AddInt32(&inFlight, 1)
-		for {
-			prev := atomic.LoadInt32(&maxObserved)
-			if current <= prev || atomic.CompareAndSwapInt32(&maxObserved, prev, current) {
-				break
-			}
-		}
-		time.Sleep(20 * time.Millisecond)
-		atomic.AddInt32(&inFlight, -1)
-		return Info{Branch: "main"}
-	})
-
-	var wg sync.WaitGroup
-	for call := 0; call < concurrentCalls; call++ {
-		wg.Add(1)
-		go func(call int) {
-			defer wg.Done()
-			dirs := make([]string, 12)
-			for i := range dirs {
-				dirs[i] = fmt.Sprintf("/call%d/repo%d", call, i)
-			}
-			_ = lookupManyVia(c, context.Background(), dirs, defaultLookupManyWorkers)
-		}(call)
-	}
-	wg.Wait()
-
-	if got := atomic.LoadInt32(&maxObserved); got > defaultLookupManyWorkers {
-		t.Errorf("observed %d concurrent fetches across calls, want ≤ %d", got, defaultLookupManyWorkers)
-	}
-	if atomic.LoadInt32(&maxObserved) == 0 {
 		t.Error("never observed any concurrent fetch — test sleeps too short?")
 	}
 }

@@ -23,6 +23,10 @@ import (
 	"strings"
 )
 
+const maxConcurrentProcesses = 8
+
+var processSlots = make(chan struct{}, maxConcurrentProcesses)
+
 // contextVars lists environment variables that override git's
 // repository location. They are stripped from every subprocess so a
 // caller running inside a git hook can't redirect our commands into the
@@ -64,13 +68,53 @@ func env() []string {
 	return append(CleanEnv(), "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")
 }
 
+// Cmd is a git subprocess whose execution shares the process-wide fork cap.
+type Cmd struct {
+	ctx context.Context
+	cmd *exec.Cmd
+}
+
 // Command constructs a `git <args...>` command with the hardened
 // environment. Callers supply the repository selector (typically
 // `-C <dir>`) and may invoke Output, CombinedOutput, or Run as needed.
-func Command(ctx context.Context, args ...string) *exec.Cmd {
+func Command(ctx context.Context, args ...string) *Cmd {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Env = env()
-	return cmd
+	return &Cmd{ctx: ctx, cmd: cmd}
+}
+
+func (c *Cmd) Output() ([]byte, error) {
+	return withSlot(c.ctx, c.cmd.Output)
+}
+
+func (c *Cmd) CombinedOutput() ([]byte, error) {
+	return withSlot(c.ctx, c.cmd.CombinedOutput)
+}
+
+func (c *Cmd) Run() error {
+	_, err := withSlot(c.ctx, func() (struct{}, error) {
+		return struct{}{}, c.cmd.Run()
+	})
+	return err
+}
+
+func withSlot[T any](ctx context.Context, run func() (T, error)) (T, error) {
+	if err := ctx.Err(); err != nil {
+		var zero T
+		return zero, err
+	}
+	select {
+	case processSlots <- struct{}{}:
+		defer func() { <-processSlots }()
+	case <-ctx.Done():
+		var zero T
+		return zero, ctx.Err()
+	}
+	if err := ctx.Err(); err != nil {
+		var zero T
+		return zero, err
+	}
+	return run()
 }
 
 // Output runs `git -C <dir> <args...>` and returns trimmed stdout.

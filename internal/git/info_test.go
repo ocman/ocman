@@ -146,60 +146,10 @@ func TestCache_EmptyDirShortCircuits(t *testing.T) {
 	}
 }
 
-// TestCache_CancelledContextWhileWaitingForSlot: a caller whose
-// request died while queued behind the process-wide fetch semaphore
-// must get a zero Info back without that zero being cached — caching
-// it would mark the dir "not a repo" for a full TTL.
-func TestCache_CancelledContextWhileWaitingForSlot(t *testing.T) {
-	var calls int64
-	c := newCache(time.Minute, func(_ context.Context, _ string) Info {
-		atomic.AddInt64(&calls, 1)
-		return Info{Branch: "main"}
-	})
-
-	// Saturate the semaphore so the lookup has to queue.
-	for i := 0; i < cap(fetchSlots); i++ {
-		fetchSlots <- struct{}{}
-	}
-	defer func() {
-		for i := 0; i < cap(fetchSlots); i++ {
-			<-fetchSlots
-		}
-	}()
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if got := c.lookup(ctx, "/tmp/z"); got.IsRepo() {
-		t.Errorf("cancelled lookup returned %+v, want zero Info", got)
-	}
-	if atomic.LoadInt64(&calls) != 0 {
-		t.Error("cancelled lookup must not invoke fetch")
-	}
-
-	// Nothing cached: a later healthy lookup fetches for real.
-	for i := 0; i < cap(fetchSlots); i++ {
-		<-fetchSlots
-	}
-	got := c.lookup(context.Background(), "/tmp/z")
-	for i := 0; i < cap(fetchSlots); i++ {
-		fetchSlots <- struct{}{}
-	}
-	if got.Branch != "main" {
-		t.Errorf("post-cancel lookup got %q, want main (zero Info must not be cached)", got.Branch)
-	}
-	if atomic.LoadInt64(&calls) != 1 {
-		t.Errorf("expected exactly 1 fetch after the cancelled attempt, got %d", atomic.LoadInt64(&calls))
-	}
-}
-
-// TestCache_CancelledContextDoesNotCacheZeroInfo covers the free-slot
-// half of the cancellation story. When ctx is already cancelled AND a
-// semaphore slot is free, select picks a ready case at random, so the
-// lookup can proceed into the fetch with a dead context. The real
-// fetchFromGit fails instantly on a cancelled ctx and returns a zero
-// Info — which must NOT be cached, or the dir reads "not a repo" for
-// a full TTL. The frontend aborts git-info requests routinely (every
-// dirs change / unmount), so this path is hot, not exotic.
+// TestCache_CancelledContextDoesNotCacheZeroInfo ensures a fetch that
+// observes cancellation cannot cache a fabricated "not a repo" result
+// for a full TTL. The frontend aborts git-info requests routinely on
+// directory changes and unmounts.
 func TestCache_CancelledContextDoesNotCacheZeroInfo(t *testing.T) {
 	var calls int64
 	// Mimic fetchFromGit: a cancelled ctx yields a zero Info.
@@ -213,9 +163,6 @@ func TestCache_CancelledContextDoesNotCacheZeroInfo(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	// The semaphore is free, so each iteration flips a coin between
-	// the ctx.Done case and the fetch case. Repeat enough times that
-	// unguarded code caches a fabricated zero with near-certainty.
 	for i := 0; i < 32; i++ {
 		if got := c.lookup(ctx, "/tmp/w"); got.IsRepo() {
 			t.Fatalf("cancelled lookup returned %+v, want zero Info", got)
@@ -228,38 +175,6 @@ func TestCache_CancelledContextDoesNotCacheZeroInfo(t *testing.T) {
 	}
 	if n := atomic.LoadInt64(&calls); n != 1 {
 		t.Errorf("expected exactly 1 real fetch, got %d", n)
-	}
-}
-
-// TestCache_PanickingFetchReleasesSlot: the process-wide semaphore
-// slot must be released even when the fetch panics — net/http
-// recovers handler panics, so a leaked slot would silently shrink the
-// fetch cap for the life of the process.
-func TestCache_PanickingFetchReleasesSlot(t *testing.T) {
-	c := newCache(time.Minute, func(context.Context, string) Info {
-		panic("fetch boom")
-	})
-
-	func() {
-		defer func() {
-			if recover() == nil {
-				t.Error("expected the fetch panic to propagate")
-			}
-		}()
-		c.lookup(context.Background(), "/tmp/panics")
-	}()
-
-	// Every slot must still be free: filling the semaphore to
-	// capacity must never block.
-	for i := 0; i < cap(fetchSlots); i++ {
-		select {
-		case fetchSlots <- struct{}{}:
-		default:
-			t.Fatalf("semaphore slot leaked by panicking fetch (only %d of %d free)", i, cap(fetchSlots))
-		}
-	}
-	for i := 0; i < cap(fetchSlots); i++ {
-		<-fetchSlots
 	}
 }
 
