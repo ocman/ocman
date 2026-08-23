@@ -30,8 +30,16 @@ import type { QueuedMessage, Session } from './api';
 let source: EventSource | null = null;
 let refCount = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let reconnectAttempt = 0;
 
-const reconnectDelayMs = 1_000;
+const reconnectBaseMs = 1_000;
+const reconnectMaxMs = 60_000;
+
+function nextReconnectDelay(): number {
+  const target = Math.min(reconnectMaxMs, reconnectBaseMs * 2 ** reconnectAttempt);
+  reconnectAttempt += 1;
+  return target / 2 + Math.random() * target / 2;
+}
 
 /** Payload shape carrying a session id (all broadcast events have one). */
 type SessionEventPayload = {
@@ -175,6 +183,7 @@ function open(): void {
   const next = new EventSource('/api/events');
   source = next;
   next.onopen = () => {
+    reconnectAttempt = 0;
     // Reconcile consumers after the first open and every replacement stream.
     for (const cb of connectListeners) cb();
   };
@@ -209,7 +218,7 @@ function open(): void {
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
       if (refCount > 0) open();
-    }, reconnectDelayMs);
+    }, nextReconnectDelay());
   };
 }
 
@@ -220,6 +229,7 @@ function close(): void {
   }
   source?.close();
   source = null;
+  reconnectAttempt = 0;
 }
 
 /**

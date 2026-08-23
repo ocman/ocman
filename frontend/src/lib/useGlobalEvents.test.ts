@@ -23,6 +23,7 @@ import {
   __resetForTests,
   onSessionChanged,
   onQueueUpdated,
+  onSseConnect,
   useGlobalEvents,
 } from './useGlobalEvents';
 
@@ -40,6 +41,7 @@ class FakeEventSource {
 
   addEventListener() {}
   close() {}
+  open() { this.onopen?.(); }
   error() { this.onerror?.(); }
 }
 
@@ -58,14 +60,38 @@ describe('useGlobalEvents connection', () => {
   });
 
   it('opens a fresh stream after a hard connection failure', async () => {
+    const reconcile = vi.fn();
+    const unsubscribe = onSseConnect(reconcile);
     const { unmount } = renderHook(() => useGlobalEvents());
     expect(FakeEventSource.instances).toHaveLength(1);
 
+    act(() => FakeEventSource.instances[0].open());
+    reconcile.mockClear();
     act(() => FakeEventSource.instances[0].error());
     await act(() => vi.runOnlyPendingTimersAsync());
 
     expect(FakeEventSource.instances).toHaveLength(2);
     expect(FakeEventSource.instances[1].url).toBe('/api/events');
+    act(() => FakeEventSource.instances[1].open());
+    expect(reconcile).toHaveBeenCalledOnce();
+    unsubscribe();
+    unmount();
+  });
+
+  it('backs off repeated failures while the backend remains unavailable', async () => {
+    const random = vi.spyOn(Math, 'random').mockReturnValue(1);
+    const { unmount } = renderHook(() => useGlobalEvents());
+
+    for (const delay of [1_000, 2_000, 4_000, 8_000, 16_000, 32_000, 60_000, 60_000]) {
+      const count = FakeEventSource.instances.length;
+      act(() => FakeEventSource.instances[count - 1].error());
+      await act(() => vi.advanceTimersByTimeAsync(delay - 1));
+      expect(FakeEventSource.instances).toHaveLength(count);
+      await act(() => vi.advanceTimersByTimeAsync(1));
+      expect(FakeEventSource.instances).toHaveLength(count + 1);
+    }
+
+    random.mockRestore();
     unmount();
   });
 
