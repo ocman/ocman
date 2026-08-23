@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useLayoutEffect, useMemo } from 'react';
 import './SessionChangesSidebar.css';
 import type { FileChange } from '../lib/api';
 import { usePlatformCapabilities } from '../lib/useCapabilities';
@@ -90,7 +90,7 @@ export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedd
   // Forward summary upward whenever the data changes. Only the three
   // numbers we surface — RightPanel is intentionally agnostic about
   // the data shape behind them.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!onSummaryChange) return;
     onSummaryChange({
       files: filesChanged,

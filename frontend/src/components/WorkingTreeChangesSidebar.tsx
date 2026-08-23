@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useState } from 'react';
 import type { WorkingTreeFile } from '../lib/api';
 import { useWorkingTreeDiff } from '../lib/useWorkingTreeDiff';
 import { useInfiniteRows } from '../lib/useInfiniteRows';
@@ -87,7 +87,7 @@ export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = fal
   // Surface counts to the parent for header rendering. Same contract
   // as SessionChangesSidebar, so RightPanel can treat both panes
   // uniformly.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!onSummaryChange) return;
     onSummaryChange({
       files: totals.files,

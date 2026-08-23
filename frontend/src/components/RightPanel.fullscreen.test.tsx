@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { useEffect } from 'react';
+import { useLayoutEffect } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, it, vi } from 'vitest';
@@ -17,7 +17,7 @@ vi.mock('./SessionChangesSidebar', () => ({
     onSummaryChange?: (summary: { files: number; additions: number; deletions: number }) => void;
     onFullscreen?: (open: () => void) => void;
   }) => {
-    useEffect(() => {
+    useLayoutEffect(() => {
       onSummaryChange?.({ files: fileCount, additions: 0, deletions: 0 });
       onFullscreen?.(openFullscreen);
     }, [sessionId, onSummaryChange, onFullscreen]);
@@ -44,7 +44,7 @@ beforeEach(() => {
   });
 });
 
-it('enables the embedded fullscreen button when files appear', async () => {
+it('tracks files appearing and disappearing in the embedded fullscreen button', async () => {
   const user = userEvent.setup();
   const { rerender } = render(
     <RightPanel
@@ -77,4 +77,19 @@ it('enables the embedded fullscreen button when files appear', async () => {
   await waitFor(() => expect(button).toBeEnabled());
   await user.click(button);
   expect(openFullscreen).toHaveBeenCalledOnce();
+
+  fileCount = 0;
+  rerender(
+    <RightPanel
+      sessionId="s3"
+      platformId="opencode"
+      directory="/repo"
+      messageBookmarkGroups={[]}
+      selectedMessageBookmarkKey={null}
+      onRemoveMessageBookmark={vi.fn()}
+      onScrollToMessageBookmark={vi.fn()}
+    />,
+  );
+
+  await waitFor(() => expect(button).toBeDisabled());
 });
