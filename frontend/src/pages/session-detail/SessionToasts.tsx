@@ -83,7 +83,7 @@ export const SessionToasts = memo(function SessionToasts({
         open={sendRetryDelaySeconds !== null}
         onOpenChange={(open) => { if (!open) setSendRetryDelaySeconds(null); }}
       >
-        <Toast.Description className="oc-toast-description">
+        <Toast.Description className="oc-toast-description" data-testid="send-retry-toast">
           Backend is not responding. Retrying in {sendRetryDelaySeconds}s…
         </Toast.Description>
       </Toast.Root>

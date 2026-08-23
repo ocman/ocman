@@ -191,9 +191,9 @@ test('backend failure keeps the composer locked and announces the retry', async 
   await composer.fill('Keep this message');
   await composer.press('Enter');
 
+  await expect(page.getByTestId('send-retry-toast')).toContainText('Retrying in 1s');
   await expect(composer).toBeDisabled();
   await expect(composer).toHaveValue('Keep this message');
-  await expect(page.getByRole('status').filter({ hasText: 'Retrying in 1s' })).toBeVisible();
   await expect(composer).toBeEnabled({ timeout: 3_000 });
   await expect(composer).toHaveValue('');
   expect(attempts).toBe(2);
