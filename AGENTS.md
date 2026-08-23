@@ -419,8 +419,9 @@ minimal and match the surrounding code.
     the background; a slow scan must not become endpoint latency. An
     upstream session creation refreshes that exact row before broadcasting
     `ocman.session.changed`, so externally-created sessions appear immediately
-    without a full scan. **Explicit invalidation** (`InvalidateSessionsCache`)
-    remains the synchronous fallback when that row refresh fails.
+    without a full scan when the snapshot is warm. **Explicit invalidation**
+    (`InvalidateSessionsCache`) remains the synchronous fallback when the
+    snapshot is cold or that row refresh fails.
   - The refresher recomputes **only sessions the event stream marked
     dirty**, via `db.GetSessionSummary`. That single-session read
     reuses the list query's projection and scan so it cannot drift;

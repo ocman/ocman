@@ -60,10 +60,10 @@ func newRecordingWatcher(t *testing.T) (*autoApproveWatcher, *dirtyRecorder) {
 func TestHandleSessionChangedMarksEveryUpdateDirty(t *testing.T) {
 	w, rec := newRecordingWatcher(t)
 
-	w.handleSessionChanged("")
-	w.handleSessionChanged("ses-1")
-	w.handleSessionChanged("ses-1")
-	w.handleSessionChanged("ses-2")
+	w.handleSessionChanged(t.Context(), "")
+	w.handleSessionChanged(t.Context(), "ses-1")
+	w.handleSessionChanged(t.Context(), "ses-1")
+	w.handleSessionChanged(t.Context(), "ses-2")
 
 	want := []string{"ses-1", "ses-1", "ses-2"}
 	if got := rec.sortedIDs(); len(got) != len(want) {
@@ -92,9 +92,9 @@ func TestHandleSessionChangedBroadcastUnchanged(t *testing.T) {
 	w.markSessionDirty = rec.markSession
 	w.markSessionsDirty = rec.markAll
 
-	w.handleSessionChanged("ses-1")
-	w.handleSessionChanged("ses-1")
-	w.handleSessionChanged("ses-2")
+	w.handleSessionChanged(t.Context(), "ses-1")
+	w.handleSessionChanged(t.Context(), "ses-1")
+	w.handleSessionChanged(t.Context(), "ses-2")
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -122,7 +122,7 @@ func TestHandleSessionChangedBroadcastsAfterRefresh(t *testing.T) {
 
 	w := newAutoApproveWatcher(svc)
 	w.markSessionDirty = func(string) {}
-	w.handleSessionChanged("ses-new")
+	w.handleSessionChanged(t.Context(), "ses-new")
 	<-refreshStarted
 
 	select {
@@ -144,8 +144,10 @@ func TestHandleSessionChangedBroadcastsAfterRefresh(t *testing.T) {
 
 func TestHandleSessionChangedStillBroadcastsWhenRefreshFails(t *testing.T) {
 	broadcast := make(chan string, 1)
+	refreshCalls := make(chan struct{}, 2)
 	svc := &Service{}
 	svc.deps.RefreshSession = func(context.Context, string) error {
+		refreshCalls <- struct{}{}
 		return errors.New("refresh failed")
 	}
 	svc.deps.BroadcastSessionChanged = func(sessionID string) {
@@ -154,7 +156,7 @@ func TestHandleSessionChangedStillBroadcastsWhenRefreshFails(t *testing.T) {
 
 	w := newAutoApproveWatcher(svc)
 	w.markSessionDirty = func(string) {}
-	w.handleSessionChanged("ses-new")
+	w.handleSessionChanged(t.Context(), "ses-new")
 
 	select {
 	case id := <-broadcast:
@@ -163,6 +165,64 @@ func TestHandleSessionChangedStillBroadcastsWhenRefreshFails(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for fallback broadcast")
+	}
+	<-refreshCalls
+
+	w.handleSessionChanged(t.Context(), "ses-new")
+	select {
+	case <-refreshCalls:
+	case <-time.After(time.Second):
+		t.Fatal("failed refresh permanently suppressed the same session")
+	}
+	select {
+	case <-broadcast:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for retry fallback broadcast")
+	}
+}
+
+func TestHandleSessionChangedDoesNotBroadcastAfterCancellation(t *testing.T) {
+	refreshStarted := make(chan struct{})
+	releaseRefresh := make(chan struct{})
+	refreshDone := make(chan struct{})
+	broadcast := make(chan string, 1)
+	svc := &Service{}
+	svc.deps.RefreshSession = func(context.Context, string) error {
+		close(refreshStarted)
+		<-releaseRefresh
+		close(refreshDone)
+		return nil
+	}
+	svc.deps.BroadcastSessionChanged = func(sessionID string) {
+		broadcast <- sessionID
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	w := newAutoApproveWatcher(svc)
+	w.markSessionDirty = func(string) {}
+	w.handleSessionChanged(ctx, "ses-new")
+	<-refreshStarted
+	cancel()
+	close(releaseRefresh)
+	<-refreshDone
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		w.seenMu.Lock()
+		_, seen := w.seenSessions["ses-new"]
+		w.seenMu.Unlock()
+		if !seen {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("canceled refresh permanently suppressed the same session")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	select {
+	case id := <-broadcast:
+		t.Fatalf("broadcast %q arrived after watcher cancellation", id)
+	default:
 	}
 }
 

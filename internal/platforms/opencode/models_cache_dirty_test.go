@@ -263,7 +263,54 @@ func TestRefreshSessionNowRetriesAfterJoiningOlderRefresh(t *testing.T) {
 	}
 }
 
+func TestRefreshSessionNowRefreshesExistingRowAfterJoiningOlderRefresh(t *testing.T) {
+	resetSessionsCache()
+	t.Cleanup(resetSessionsCache)
+
+	store := newFakeSessionStore(db.Session{ID: "s-existing", Title: "Old", TimeUpdated: 1000})
+	warmSnapshot(t, store)
+	store.put(db.Session{ID: "s-existing", Title: "New", TimeUpdated: 2000})
+
+	leaderStarted := make(chan struct{})
+	releaseLeader := make(chan struct{})
+	leaderResult := sessionsFlight.DoChan(sessionsFlightKey, func() (interface{}, error) {
+		close(leaderStarted)
+		<-releaseLeader
+		return currentSnapshot(), nil
+	})
+	<-leaderStarted
+
+	joined := make(chan struct{}, 2)
+	afterSessionsFlightJoin = func() { joined <- struct{}{} }
+	t.Cleanup(func() { afterSessionsFlightJoin = nil })
+	done := make(chan error, 1)
+	go func() { done <- refreshSessionNow(t.Context(), store, "s-existing") }()
+	<-joined
+	close(releaseLeader)
+	<-leaderResult
+
+	if err := <-done; err != nil {
+		t.Fatalf("refresh existing session: %v", err)
+	}
+	if got := currentSnapshot(); len(got) != 1 || got[0].Title != "New" {
+		t.Fatalf("snapshot = %#v, want refreshed existing row", got)
+	}
+}
+
 func TestRefreshSessionNowHandlesMissingAndFailedRows(t *testing.T) {
+	t.Run("cold snapshot", func(t *testing.T) {
+		resetSessionsCache()
+		t.Cleanup(resetSessionsCache)
+		store := newFakeSessionStore(dirtyFixture...)
+
+		if err := refreshSessionNow(t.Context(), store, "s-new"); err == nil {
+			t.Fatal("refresh cold snapshot succeeded, want fallback error")
+		}
+		if got := store.fullScans.Load(); got != 0 {
+			t.Fatalf("full scans = %d, want targeted refresh to leave cold fallback to caller", got)
+		}
+	})
+
 	t.Run("missing", func(t *testing.T) {
 		resetSessionsCache()
 		t.Cleanup(resetSessionsCache)
@@ -272,6 +319,9 @@ func TestRefreshSessionNowHandlesMissingAndFailedRows(t *testing.T) {
 
 		if err := refreshSessionNow(t.Context(), store, "missing"); !errors.Is(err, db.ErrSessionNotFound) {
 			t.Fatalf("refresh missing session error = %v, want %v", err, db.ErrSessionNotFound)
+		}
+		if got := dirtyIDs(); !reflect.DeepEqual(got, []string{"missing"}) {
+			t.Fatalf("dirty sessions = %v, want missing row queued for retry", got)
 		}
 	})
 
@@ -285,6 +335,9 @@ func TestRefreshSessionNowHandlesMissingAndFailedRows(t *testing.T) {
 
 		if err := refreshSessionNow(t.Context(), store, "s-new"); !errors.Is(err, want) {
 			t.Fatalf("refresh error = %v, want %v", err, want)
+		}
+		if got := dirtyIDs(); !reflect.DeepEqual(got, []string{"s-new"}) {
+			t.Fatalf("dirty sessions = %v, want failed row queued for retry", got)
 		}
 	})
 }

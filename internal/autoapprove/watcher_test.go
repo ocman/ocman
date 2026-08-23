@@ -204,6 +204,51 @@ func TestAutoApproveWatcherUpdatesPromptRegistryFromWrappedEvents(t *testing.T) 
 	}
 }
 
+func TestStreamOnceCancelsSessionRefreshWhenConnectionCloses(t *testing.T) {
+	server := newFakeOpenCodeEventServer([]string{
+		"data: " + `{"type":"session.created","properties":{"sessionID":"ses-new"}}` + "\n\n",
+	})
+	defer server.close()
+
+	refreshStarted := make(chan struct{})
+	releaseRefresh := make(chan struct{})
+	broadcast := make(chan string, 1)
+	svc := NewService(Deps{
+		RefreshSession: func(context.Context, string) error {
+			close(refreshStarted)
+			<-releaseRefresh
+			return nil
+		},
+		BroadcastSessionChanged: func(sessionID string) { broadcast <- sessionID },
+	})
+	w := newAutoApproveWatcher(svc)
+
+	if err := w.streamOnce(t.Context(), server.port()); err != nil {
+		t.Fatalf("streamOnce: %v", err)
+	}
+	<-refreshStarted
+	close(releaseRefresh)
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		w.seenMu.Lock()
+		_, seen := w.seenSessions["ses-new"]
+		w.seenMu.Unlock()
+		if !seen {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("closed stream did not release the pending session refresh")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	select {
+	case id := <-broadcast:
+		t.Fatalf("closed stream broadcast session %q", id)
+	default:
+	}
+}
+
 func TestAutoApproveWatcherBroadcastsRejectedPermission(t *testing.T) {
 	var got string
 	svc := NewService(Deps{BroadcastPermissionResolved: func(_, _, reason string) { got = reason }})
@@ -686,14 +731,14 @@ func TestHandleSessionChangedDedup(t *testing.T) {
 		return len(w.seenSessions)
 	}
 
-	w.handleSessionChanged("")
+	w.handleSessionChanged(t.Context(), "")
 	if seen() != 0 {
 		t.Fatalf("empty session ID was recorded; seen=%d", seen())
 	}
 
-	w.handleSessionChanged("ses-1")
-	w.handleSessionChanged("ses-1") // duplicate: must be a no-op
-	w.handleSessionChanged("ses-2")
+	w.handleSessionChanged(t.Context(), "ses-1")
+	w.handleSessionChanged(t.Context(), "ses-1") // duplicate: must be a no-op
+	w.handleSessionChanged(t.Context(), "ses-2")
 	if got := seen(); got != 2 {
 		t.Fatalf("seen sessions = %d, want 2 (ses-1 deduped)", got)
 	}

@@ -329,7 +329,7 @@ func (w *autoApproveWatcher) handleSessionDataChanged(sessionID string) {
 // which makes a freshly-created session appear without waiting out the list
 // poll. Per-turn and per-token updates of a known session would otherwise
 // broadcast on every keystroke.
-func (w *autoApproveWatcher) handleSessionChanged(sessionID string) {
+func (w *autoApproveWatcher) handleSessionChanged(ctx context.Context, sessionID string) {
 	if sessionID == "" {
 		return
 	}
@@ -347,7 +347,14 @@ func (w *autoApproveWatcher) handleSessionChanged(sessionID string) {
 	// telling clients to fetch, otherwise they can receive the old snapshot.
 	if w.svc != nil && w.svc.deps.RefreshSession != nil {
 		go func() {
-			if err := w.svc.deps.RefreshSession(context.Background(), sessionID); err != nil {
+			err := w.svc.deps.RefreshSession(ctx, sessionID)
+			if ctx.Err() != nil {
+				w.forgetSession(sessionID)
+				return
+			}
+			if err != nil {
+				log.WithError(err).WithField("session_id", sessionID).Warn("failed to refresh new session")
+				w.forgetSession(sessionID)
 				opencode.InvalidateSessionsCache()
 			}
 			if w.svc.deps.BroadcastSessionChanged != nil {
@@ -360,6 +367,12 @@ func (w *autoApproveWatcher) handleSessionChanged(sessionID string) {
 	if w.svc != nil && w.svc.deps.BroadcastSessionChanged != nil {
 		w.svc.deps.BroadcastSessionChanged(sessionID)
 	}
+}
+
+func (w *autoApproveWatcher) forgetSession(sessionID string) {
+	w.seenMu.Lock()
+	delete(w.seenSessions, sessionID)
+	w.seenMu.Unlock()
 }
 
 // streamOnce opens one /global/event SSE connection and feeds bytes into a
@@ -501,7 +514,9 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 				w.svc.deps.BroadcastSessionIdle(string(opencode.PlatformID), sessionID)
 			}
 		},
-		OnSessionChanged:     w.handleSessionChanged,
+		OnSessionChanged: func(sessionID string) {
+			w.handleSessionChanged(streamCtx, sessionID)
+		},
 		OnSessionDataChanged: w.handleSessionDataChanged,
 	}
 

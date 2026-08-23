@@ -701,8 +701,9 @@ func startBackgroundSessionsRefresh(d dbGetSessions) {
 	}()
 }
 
-// RefreshSession makes one session visible in the shared list snapshot before
-// returning. It avoids the full aggregate scan used by explicit invalidation.
+// RefreshSession makes one session visible in a warm shared list snapshot
+// before returning. A cold snapshot returns an error so the caller can fall
+// back to full invalidation without bypassing the normal scan budget.
 func RefreshSession(ctx context.Context, d *db.DB, sessionID string) error {
 	return refreshSessionNow(ctx, d, sessionID)
 }
@@ -710,25 +711,45 @@ func RefreshSession(ctx context.Context, d *db.DB, sessionID string) error {
 func refreshSessionNow(ctx context.Context, d dbGetSessions, sessionID string) error {
 	MarkSessionDirty(sessionID)
 	for {
-		if _, err := refreshSessionsIncremental(ctx, d); err != nil {
+		attempted := make(chan struct{})
+		_, err := doSessionsFlight(ctx, false, func() ([]db.Session, error) {
+			close(attempted)
+			sessionsMu.Lock()
+			if !sessionsHave {
+				sessionsMu.Unlock()
+				return nil, errors.New("sessions snapshot is not ready")
+			}
+			delete(sessionsDirty, sessionID)
+			snapshot := sessionsSnapshot
+			sessionsMu.Unlock()
+
+			session, err := d.GetSessionSummary(ctx, sessionID)
+			if err != nil {
+				MarkSessionDirty(sessionID)
+				return nil, err
+			}
+
+			merged := mergeSessionRows(snapshot, map[string]db.Session{sessionID: session}, nil)
+			sessionsMu.Lock()
+			sessionsSnapshot = merged
+			extendSnapshotFreshness()
+			sessionsMu.Unlock()
+			return merged, nil
+		})
+		var ownAttempt bool
+		select {
+		case <-attempted:
+			ownAttempt = true
+		default:
+		}
+		if err != nil {
+			if !ownAttempt && ctx.Err() == nil {
+				continue
+			}
 			return err
 		}
-
-		sessionsMu.RLock()
-		_, stillDirty := sessionsDirty[sessionID]
-		visible := false
-		for _, session := range sessionsSnapshot {
-			if session.ID == sessionID {
-				visible = true
-				break
-			}
-		}
-		sessionsMu.RUnlock()
-		if visible {
+		if ownAttempt {
 			return nil
-		}
-		if !stillDirty {
-			return db.ErrSessionNotFound
 		}
 	}
 }
