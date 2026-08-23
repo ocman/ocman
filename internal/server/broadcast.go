@@ -254,7 +254,7 @@ func (s *Server) broadcastSessionIdle(sessionID string) {
 }
 
 // broadcastSessionChanged broadcasts that a session was created or
-// changed upstream (OpenCode session.updated), so the session list
+// changed upstream, so the session list
 // refreshes immediately instead of waiting for the next poll. This is
 // what makes a freshly-created session appear near-instantly.
 func (s *Server) broadcastSessionChanged(sessionID string) {

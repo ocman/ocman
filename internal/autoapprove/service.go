@@ -81,6 +81,9 @@ type Deps struct {
 	BroadcastSessionChanged func(sessionID string)
 	BroadcastSessionStatus  func(sessionID string, status db.SessionStatus)
 	BroadcastGlobalEvent    func(event string, data []byte)
+	// RefreshSession updates the list snapshot before a first-sighting
+	// broadcast. Nil keeps the full-invalidation fallback.
+	RefreshSession func(context.Context, string) error
 
 	// DefaultEnabled is the server-wide auto-approve default applied
 	// when a session has no per-session override.

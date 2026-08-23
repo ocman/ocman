@@ -62,6 +62,11 @@ func (s *Server) aaSvc() *autoapprove.Service {
 			BroadcastGlobalEvent:        s.broadcastGlobalEvent,
 			DefaultEnabled:              s.autoApproveDefault,
 		}
+		if s.db != nil {
+			deps.RefreshSession = func(ctx context.Context, sessionID string) error {
+				return opencode.RefreshSession(ctx, s.db, sessionID)
+			}
+		}
 		// Only wire the store when a state DB exists — a nil *state.DB
 		// inside a non-nil interface would defeat the service's nil
 		// checks.

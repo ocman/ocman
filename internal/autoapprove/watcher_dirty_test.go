@@ -1,9 +1,12 @@
 package autoapprove
 
 import (
+	"context"
+	"errors"
 	"sort"
 	"sync"
 	"testing"
+	"time"
 )
 
 // dirtyRecorder captures what the watcher marked dirty, replacing the
@@ -100,6 +103,66 @@ func TestHandleSessionChangedBroadcastUnchanged(t *testing.T) {
 	}
 	if got := len(rec.sortedIDs()); got != 3 {
 		t.Errorf("dirty marks = %d, want 3 (marking is independent of the broadcast dedup)", got)
+	}
+}
+
+func TestHandleSessionChangedBroadcastsAfterRefresh(t *testing.T) {
+	refreshStarted := make(chan struct{})
+	releaseRefresh := make(chan struct{})
+	broadcast := make(chan string, 1)
+	svc := &Service{}
+	svc.deps.RefreshSession = func(_ context.Context, sessionID string) error {
+		close(refreshStarted)
+		<-releaseRefresh
+		return nil
+	}
+	svc.deps.BroadcastSessionChanged = func(sessionID string) {
+		broadcast <- sessionID
+	}
+
+	w := newAutoApproveWatcher(svc)
+	w.markSessionDirty = func(string) {}
+	w.handleSessionChanged("ses-new")
+	<-refreshStarted
+
+	select {
+	case id := <-broadcast:
+		t.Fatalf("broadcast %q arrived before refresh completed", id)
+	default:
+	}
+	close(releaseRefresh)
+
+	select {
+	case id := <-broadcast:
+		if id != "ses-new" {
+			t.Fatalf("broadcast session = %q, want ses-new", id)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for post-refresh broadcast")
+	}
+}
+
+func TestHandleSessionChangedStillBroadcastsWhenRefreshFails(t *testing.T) {
+	broadcast := make(chan string, 1)
+	svc := &Service{}
+	svc.deps.RefreshSession = func(context.Context, string) error {
+		return errors.New("refresh failed")
+	}
+	svc.deps.BroadcastSessionChanged = func(sessionID string) {
+		broadcast <- sessionID
+	}
+
+	w := newAutoApproveWatcher(svc)
+	w.markSessionDirty = func(string) {}
+	w.handleSessionChanged("ses-new")
+
+	select {
+	case id := <-broadcast:
+		if id != "ses-new" {
+			t.Fatalf("broadcast session = %q, want ses-new", id)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for fallback broadcast")
 	}
 }
 

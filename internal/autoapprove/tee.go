@@ -87,8 +87,8 @@ type Tee struct {
 	// terminal state a settled session is in. Optional — nil means turn
 	// state isn't observed on this tee.
 	OnSessionStatus func(sessionID, statusType string)
-	// onSessionChanged fires when the upstream emits session.updated
-	// (session created or mutated). Used to push new-session detection
+	// onSessionChanged fires when the upstream emits session.created or
+	// session.updated. Used to push new-session detection
 	// instead of waiting for the next list poll. Optional — nil means
 	// session changes aren't observed. NOTE: session.updated fires
 	// frequently (per turn / token); the consumer is expected to
@@ -265,7 +265,7 @@ func (t *Tee) dispatchEventInDirectory(eventType, dataJSON, directory string) {
 		t.dispatchSessionIdle(dataJSON)
 	case "session.status":
 		t.dispatchSessionStatus(dataJSON)
-	case "session.updated":
+	case "session.created", "session.updated":
 		t.dispatchSessionChanged(dataJSON)
 	case "message.updated", "message.removed",
 		"message.part.updated", "message.part.removed", "message.part.delta":
@@ -563,33 +563,17 @@ func sessionStatusType(raw json.RawMessage) string {
 	return ""
 }
 
-// dispatchSessionChanged extracts the session ID from a session.updated
-// event and fires onSessionChanged. OpenCode's session.updated payload
-// is {type, properties:{sessionID, info}}; we accept both casings and
-// the flat shape as a fallback.
+// dispatchSessionChanged extracts the session ID from a session creation or
+// update event and fires onSessionChanged.
 func (t *Tee) dispatchSessionChanged(dataJSON string) {
 	if t.OnSessionChanged == nil {
 		return
 	}
-	type changedProps struct {
-		SessionID  string `json:"sessionID"`
-		SessionID2 string `json:"sessionId"`
-	}
-	var envelope struct {
-		Properties *changedProps `json:"properties"`
-	}
-	if err := json.Unmarshal([]byte(dataJSON), &envelope); err != nil {
-		return
-	}
-	var props changedProps
-	if envelope.Properties != nil {
-		props = *envelope.Properties
-	} else {
-		if err := json.Unmarshal([]byte(dataJSON), &props); err != nil {
-			return
-		}
-	}
+	props := parseSessionRef(dataJSON)
 	sessionID := firstNonEmpty(props.SessionID, props.SessionID2)
+	if sessionID == "" && props.Info != nil {
+		sessionID = firstNonEmpty(props.Info.SessionID, props.Info.ID)
+	}
 	if sessionID == "" {
 		return
 	}

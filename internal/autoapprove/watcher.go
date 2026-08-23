@@ -317,7 +317,7 @@ func (w *autoApproveWatcher) handleSessionDataChanged(sessionID string) {
 	w.markSessionDirtyIfKnown(sessionID)
 }
 
-// handleSessionChanged reacts to an upstream session.updated event.
+// handleSessionChanged reacts to an upstream session creation or update.
 //
 // Every update marks the session's row dirty, because every update can
 // change what the list shows for it (title, directory, timestamps,
@@ -325,11 +325,10 @@ func (w *autoApproveWatcher) handleSessionDataChanged(sessionID string) {
 // schedules recomputes one session, not the database.
 //
 // The broadcast, by contrast, still dedupes on the session ID: only the
-// first sighting busts the sessions cache and broadcasts
-// session.changed, which is what makes a freshly-created session appear
-// without waiting out the list-poll / refresher latency. Per-turn and
-// per-token updates of a known session would otherwise broadcast on
-// every keystroke.
+// first sighting refreshes the exact session and broadcasts session.changed,
+// which makes a freshly-created session appear without waiting out the list
+// poll. Per-turn and per-token updates of a known session would otherwise
+// broadcast on every keystroke.
 func (w *autoApproveWatcher) handleSessionChanged(sessionID string) {
 	if sessionID == "" {
 		return
@@ -344,7 +343,19 @@ func (w *autoApproveWatcher) handleSessionChanged(sessionID string) {
 	w.seenSessions[sessionID] = struct{}{}
 	w.seenMu.Unlock()
 
-	// First time we've seen this session: surface it now.
+	// First time we've seen this session: refresh its exact row before
+	// telling clients to fetch, otherwise they can receive the old snapshot.
+	if w.svc != nil && w.svc.deps.RefreshSession != nil {
+		go func() {
+			if err := w.svc.deps.RefreshSession(context.Background(), sessionID); err != nil {
+				opencode.InvalidateSessionsCache()
+			}
+			if w.svc.deps.BroadcastSessionChanged != nil {
+				w.svc.deps.BroadcastSessionChanged(sessionID)
+			}
+		}()
+		return
+	}
 	opencode.InvalidateSessionsCache()
 	if w.svc != nil && w.svc.deps.BroadcastSessionChanged != nil {
 		w.svc.deps.BroadcastSessionChanged(sessionID)

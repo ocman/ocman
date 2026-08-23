@@ -110,9 +110,8 @@ func TestSsePermissionTeeQuestionAndIdle(t *testing.T) {
 	}
 }
 
-// TestSsePermissionTeeSessionChanged verifies the tee parses
-// session.updated events and fires onSessionChanged with the payload's
-// sessionID (both casings, enveloped and flat).
+// TestSsePermissionTeeSessionChanged verifies the tee parses session creation
+// and update events and fires onSessionChanged with the payload's session ID.
 func TestSsePermissionTeeSessionChanged(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -123,6 +122,11 @@ func TestSsePermissionTeeSessionChanged(t *testing.T) {
 			name:        "envelope sessionID",
 			sseData:     "data: " + `{"type":"session.updated","properties":{"sessionID":"ses-1","info":{"id":"ses-1"}}}` + "\n\n",
 			wantSession: "ses-1",
+		},
+		{
+			name:        "created session",
+			sseData:     "data: " + `{"type":"session.created","properties":{"info":{"id":"ses-new","parentID":"ses-parent"}}}` + "\n\n",
+			wantSession: "ses-new",
 		},
 		{
 			name:        "envelope sessionId lowercase",

@@ -208,6 +208,87 @@ func TestRefreshSessionsIncremental_LeavesUnchangedSessionsAlone(t *testing.T) {
 	}
 }
 
+func TestRefreshSessionNowMakesNewRowVisibleWithoutFullScan(t *testing.T) {
+	resetSessionsCache()
+	t.Cleanup(resetSessionsCache)
+
+	store := newFakeSessionStore(dirtyFixture...)
+	warmSnapshot(t, store)
+	scansAfterWarm := store.fullScans.Load()
+	store.put(db.Session{ID: "s-child", ParentID: "s-new", Title: "Child", Directory: "/a", TimeUpdated: 4000})
+
+	if err := refreshSessionNow(t.Context(), store, "s-child"); err != nil {
+		t.Fatalf("refresh new session: %v", err)
+	}
+
+	if got := store.fullScans.Load(); got != scansAfterWarm {
+		t.Fatalf("full scans = %d, want %d", got, scansAfterWarm)
+	}
+	if got := currentSnapshot(); len(got) == 0 || got[0].ID != "s-child" {
+		t.Fatalf("snapshot = %#v, want new child first", got)
+	}
+}
+
+func TestRefreshSessionNowRetriesAfterJoiningOlderRefresh(t *testing.T) {
+	resetSessionsCache()
+	t.Cleanup(resetSessionsCache)
+
+	store := newFakeSessionStore(dirtyFixture...)
+	warmSnapshot(t, store)
+	store.put(db.Session{ID: "s-child", ParentID: "s-new", Title: "Child", Directory: "/a", TimeUpdated: 4000})
+
+	leaderStarted := make(chan struct{})
+	releaseLeader := make(chan struct{})
+	leaderResult := sessionsFlight.DoChan(sessionsFlightKey, func() (interface{}, error) {
+		close(leaderStarted)
+		<-releaseLeader
+		return currentSnapshot(), nil
+	})
+	<-leaderStarted
+
+	joined := make(chan struct{}, 2)
+	afterSessionsFlightJoin = func() { joined <- struct{}{} }
+	t.Cleanup(func() { afterSessionsFlightJoin = nil })
+	done := make(chan error, 1)
+	go func() { done <- refreshSessionNow(t.Context(), store, "s-child") }()
+	<-joined
+	close(releaseLeader)
+	<-leaderResult
+
+	if err := <-done; err != nil {
+		t.Fatalf("refresh new session: %v", err)
+	}
+	if got := currentSnapshot(); len(got) == 0 || got[0].ID != "s-child" {
+		t.Fatalf("snapshot = %#v, want new child first", got)
+	}
+}
+
+func TestRefreshSessionNowHandlesMissingAndFailedRows(t *testing.T) {
+	t.Run("missing", func(t *testing.T) {
+		resetSessionsCache()
+		t.Cleanup(resetSessionsCache)
+		store := newFakeSessionStore(dirtyFixture...)
+		warmSnapshot(t, store)
+
+		if err := refreshSessionNow(t.Context(), store, "missing"); !errors.Is(err, db.ErrSessionNotFound) {
+			t.Fatalf("refresh missing session error = %v, want %v", err, db.ErrSessionNotFound)
+		}
+	})
+
+	t.Run("failed", func(t *testing.T) {
+		resetSessionsCache()
+		t.Cleanup(resetSessionsCache)
+		store := newFakeSessionStore(dirtyFixture...)
+		warmSnapshot(t, store)
+		want := errors.New("summary failed")
+		store.failSummaries(want)
+
+		if err := refreshSessionNow(t.Context(), store, "s-new"); !errors.Is(err, want) {
+			t.Fatalf("refresh error = %v, want %v", err, want)
+		}
+	})
+}
+
 // TestRefreshSessionsIncremental_DeletedSessionIsDropped covers the
 // case the single-session read reports as missing: the row leaves the
 // snapshot rather than lingering with stale values.

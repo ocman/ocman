@@ -417,10 +417,10 @@ minimal and match the surrounding code.
     so read-time overlays can never mutate the snapshot.
   - A **TTL-expired** snapshot is served immediately and revalidated in
     the background; a slow scan must not become endpoint latency. An
-    **explicitly invalidated** snapshot (`InvalidateSessionsCache`)
-    still forces a synchronous fetch, which is what makes a session
-    created elsewhere appear immediately — don't collapse those two
-    states back together.
+    upstream session creation refreshes that exact row before broadcasting
+    `ocman.session.changed`, so externally-created sessions appear immediately
+    without a full scan. **Explicit invalidation** (`InvalidateSessionsCache`)
+    remains the synchronous fallback when that row refresh fails.
   - The refresher recomputes **only sessions the event stream marked
     dirty**, via `db.GetSessionSummary`. That single-session read
     reuses the list query's projection and scan so it cannot drift;

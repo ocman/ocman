@@ -550,8 +550,8 @@ func invalidationFloor() time.Time {
 // so the next getSessionsCached read fetches fresh data. It does NOT
 // delete the entries: the last good value is retained for the
 // stale-on-busy fallback if the fresh fetch stalls on the live DB.
-// Called when an upstream session.updated event arrives so a new
-// session surfaces without waiting out sessionsTTL / the refresher.
+// Used as the fallback when an exact session refresh fails, so the next
+// request reconciles the full snapshot instead of waiting out sessionsTTL.
 //
 // The new expiry is floored at invalidationFloor rather than set to the
 // zero time. Every first-seen session ID invalidates, and with several
@@ -699,6 +699,38 @@ func startBackgroundSessionsRefresh(d dbGetSessions) {
 		defer sessionsRefreshWG.Done()
 		_, _ = refreshSessionsIncremental(context.Background(), d)
 	}()
+}
+
+// RefreshSession makes one session visible in the shared list snapshot before
+// returning. It avoids the full aggregate scan used by explicit invalidation.
+func RefreshSession(ctx context.Context, d *db.DB, sessionID string) error {
+	return refreshSessionNow(ctx, d, sessionID)
+}
+
+func refreshSessionNow(ctx context.Context, d dbGetSessions, sessionID string) error {
+	MarkSessionDirty(sessionID)
+	for {
+		if _, err := refreshSessionsIncremental(ctx, d); err != nil {
+			return err
+		}
+
+		sessionsMu.RLock()
+		_, stillDirty := sessionsDirty[sessionID]
+		visible := false
+		for _, session := range sessionsSnapshot {
+			if session.ID == sessionID {
+				visible = true
+				break
+			}
+		}
+		sessionsMu.RUnlock()
+		if visible {
+			return nil
+		}
+		if !stillDirty {
+			return db.ErrSessionNotFound
+		}
+	}
 }
 
 // refreshSessions runs the global unfiltered GetSessions query and
