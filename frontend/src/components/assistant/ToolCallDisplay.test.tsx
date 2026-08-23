@@ -133,38 +133,7 @@ describe('ToolCallDisplay bash output', () => {
   });
 });
 
-describe('ToolCallDisplay auto-approved notice', () => {
-  it('renders permission, patterns and reasoning each on their own line', () => {
-    const { container, getByTestId } = renderTool({
-      toolName: 'ocman:auto-approved',
-      argsText: JSON.stringify({
-        permission: 'external_directory',
-        patterns: ['/tmp/foo', '/tmp/bar'],
-        reasoning: 'Reads a temp file, no write access.',
-      }),
-    });
-    expect(container.querySelector('.oc-auto-approved-action')!.textContent).toBe(
-      'external_directory',
-    );
-    expect(container.querySelector('.oc-auto-approved-patterns')!.textContent).toBe(
-      '/tmp/foo, /tmp/bar',
-    );
-    expect(getByTestId('auto-approved-reasoning').textContent).toBe(
-      'Reads a temp file, no write access.',
-    );
-  });
-
-  it('omits absent fields', () => {
-    const { container, queryByTestId } = renderTool({
-      toolName: 'ocman:auto-approved',
-      argsText: JSON.stringify({ permission: 'external_directory' }),
-    });
-    expect(container.querySelector('.oc-auto-approved-patterns')).toBeNull();
-    expect(queryByTestId('auto-approved-reasoning')).toBeNull();
-  });
-});
-
-describe('ToolCallDisplay AI approval footnote', () => {
+describe('ToolCallDisplay permission approval footnote', () => {
   const approvedBash = (approval: Record<string, unknown>) => ({
     argsText: `completed\nrm -rf /tmp/foo\n@approved:${JSON.stringify(approval)}`,
     result: 'gone',
@@ -172,7 +141,7 @@ describe('ToolCallDisplay AI approval footnote', () => {
 
   it('renders the footnote collapsed and keeps the marker out of the command', () => {
     const { container, queryByTestId } = renderTool(
-      approvedBash({ permission: 'bash', patterns: ['rm -rf /tmp/foo'], reasoning: 'Temp dir only.' }),
+      approvedBash({ permission: 'bash', patterns: ['rm -rf /tmp/foo'], reasoning: 'Temp dir only.', approvedBy: 'ai' }),
     );
 
     expect(screen.getByTestId('shell-output-block').textContent).toBe('$ rm -rf /tmp/foo\ngone');
@@ -187,14 +156,26 @@ describe('ToolCallDisplay AI approval footnote', () => {
 
   it('reveals permission, patterns and reasoning on click', () => {
     const { getByTestId } = renderTool(
-      approvedBash({ permission: 'bash', patterns: ['rm -rf /tmp/foo'], reasoning: 'Temp dir only.' }),
+      approvedBash({ permission: 'bash', patterns: ['rm -rf /tmp/foo'], reasoning: 'Temp dir only.', approvedBy: 'ai' }),
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Approved by AI' }));
     const detail = getByTestId('ai-approval-detail');
+    expect(detail.getAttribute('role')).toBe('dialog');
     expect(detail.textContent).toContain('bash');
     expect(detail.textContent).toContain('rm -rf /tmp/foo');
     expect(detail.textContent).toContain('Temp dir only.');
+    const popoverRule = assistantThreadCss.match(/\.oc-ai-approval-detail\s*\{[^}]*\}/)?.[0] || '';
+    expect(popoverRule).toContain('position: absolute');
+  });
+
+  it('mentions a user approval without an expandable reason', () => {
+    const { container } = renderTool(
+      approvedBash({ permission: 'bash', patterns: ['pnpm test'], approvedBy: 'user' }),
+    );
+
+    expect(container.querySelector('.oc-ai-approval-footnote')!.textContent).toBe('Approved by user');
+    expect(screen.queryByRole('button', { name: 'Approved by user' })).toBeNull();
   });
 
   it('renders no footnote when the tool carries no approval marker', () => {

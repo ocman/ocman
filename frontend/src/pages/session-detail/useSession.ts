@@ -710,6 +710,7 @@ export function useSession(
         'ocman.permission.checking',
         'ocman.permission.flagged',
         'ocman.permission.auto-approved',
+        'ocman.permission.approved',
       ].forEach((name) => {
         evtSource?.addEventListener(name, handleNamedEvent(name));
       });

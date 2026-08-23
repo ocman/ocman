@@ -1001,6 +1001,26 @@ describe('reduceSessionView — judge reasoning surfacing', () => {
     const noticePart = after.parts.find((p) => p.id === 'ocman-notice-perm-1-part');
     expect(noticePart).toBeDefined();
     expect(decode(noticePart!).reasoning).toBe('Read-only system file.');
+    expect(decode(noticePart!).approvedBy).toBe('ai');
+  });
+
+  it('injects a user-approved notice part for manual replies', () => {
+    const before = makeView();
+    const after = reduceSessionView(before, {
+      type: 'sse',
+      event: sseEvent('ocman.permission.approved', {
+        permissionId: 'perm-user',
+        sessionID: SID,
+        permission: 'bash',
+        patterns: ['pnpm test'],
+        approvedBy: 'user',
+        approvedAt: 1234,
+      }),
+    });
+
+    const noticePart = after.parts.find((p) => p.id === 'ocman-notice-perm-user-part');
+    expect(noticePart).toBeDefined();
+    expect(decode(noticePart!).approvedBy).toBe('user');
   });
 
   it('includes reasoning when addNotice carries it', () => {

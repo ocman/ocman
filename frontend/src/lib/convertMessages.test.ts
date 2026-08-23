@@ -114,6 +114,7 @@ describe('notice messages', () => {
 describe('AI approval footnotes', () => {
   const approval: PartData = {
     type: 'auto-approved',
+    approvedBy: 'ai',
     permission: 'bash',
     patterns: ['rm -rf /tmp/foo'],
     reasoning: 'Temp dir only.',
@@ -151,8 +152,31 @@ describe('AI approval footnotes', () => {
       permission: 'bash',
       patterns: ['rm -rf /tmp/foo'],
       reasoning: 'Temp dir only.',
+      approvedBy: 'ai',
     })}`);
     expect(calls[2].argsText).not.toContain('@approved:');
+  });
+
+  it('attaches a user approval without rendering a standalone notice', () => {
+    const messages: Message[] = [
+      makeMessage('a1', { role: 'assistant' }, 100),
+      { id: 'ocman-notice-p1', sessionId: 's', timeCreated: 200, data: { role: 'notice' } },
+    ];
+    const parts = [
+      toolPart('a1', 't1', 'pnpm test', 150),
+      makePart('ocman-notice-p1', {
+        type: 'auto-approved',
+        permission: 'bash',
+        patterns: ['pnpm test'],
+        approvedBy: 'user',
+      }, 'n1-part', 200),
+    ];
+
+    const out = createConvertMessages()(messages, parts);
+
+    expect(out).toHaveLength(1);
+    const call = asContentArray(out[0].content)[0];
+    expect(call.type === 'tool-call' && call.argsText).toContain('"approvedBy":"user"');
   });
 
   it('matches live SSE tool parts, which carry time.start but no timeCreated', () => {
@@ -181,7 +205,7 @@ describe('AI approval footnotes', () => {
     expect(call.type === 'tool-call' && call.argsText).toContain('@approved:');
   });
 
-  it('keeps the standalone notice when no tool part precedes the approval', () => {
+  it('drops the standalone notice when no tool part precedes the approval', () => {
     const messages: Message[] = [
       { id: 'ocman-notice-p1', sessionId: 's', timeCreated: 50, data: { role: 'notice' } },
       makeMessage('a1', { role: 'assistant' }, 100),
@@ -193,9 +217,8 @@ describe('AI approval footnotes', () => {
 
     const out = createConvertMessages()(messages, parts);
 
-    expect(out).toHaveLength(2);
-    const notice = asContentArray(out[0].content)[0];
-    expect(notice.type === 'tool-call' && notice.toolName).toBe('ocman:auto-approved');
+    expect(out).toHaveLength(1);
+    expect(out[0].id).toBe('a1');
   });
 
   it('invalidates the per-message cache when an approval arrives later', () => {

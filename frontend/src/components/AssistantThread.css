@@ -1316,58 +1316,10 @@
   max-height: none;
 }
 
-/* Auto-approved notice — inline in the conversation thread.
- * Collapsed to a single summary line by default; click to expand
- * the command patterns + judge reasoning. */
-.oc-auto-approved-notice {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 2px 0;
-  padding: 3px 0;
-  font-family: 'SF Mono', Consolas, monospace;
-  font-size: 12px;
-  color: var(--text-dim);
-}
-
-.oc-auto-approved-summary {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.oc-auto-approved-icon {
-  color: var(--green);
-  font-size: 11px;
-  flex-shrink: 0;
-}
-
-.oc-auto-approved-label {
-  color: var(--green);
-  font-weight: 600;
-  flex-shrink: 0;
-}
-
-.oc-auto-approved-action {
-  color: var(--text);
-}
-
-.oc-auto-approved-patterns {
-  color: var(--overlay0);
-  font-size: 11px;
-}
-
-/* Judge's conclusion, on its own line. Italicized so it reads as
- * commentary, dimmed so it sits behind the action text. Wraps freely. */
-.oc-auto-approved-reasoning {
-  color: var(--overlay1);
-  font-style: italic;
-  font-size: 11px;
-}
-
-/* AI approval as a footnote under the tool's box — same treatment as
+/* Permission approval as a footnote under the tool's box — same treatment as
  * .oc-shell-attribution, tucked up against the block above. */
 .oc-ai-approval-footnote {
+  position: relative;
   margin-top: -3px;
   margin-bottom: 4px;
   font-family: var(--font-conversation-mono);
@@ -1390,12 +1342,18 @@
 }
 
 .oc-ai-approval-detail {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 100;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin-top: 3px;
-  padding-left: 8px;
-  border-left: 1px solid var(--surface1);
+  width: min(420px, calc(100vw - 32px));
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  background: var(--surface0);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
 }
 
 .oc-ai-approval-permission {
@@ -1410,4 +1368,12 @@
 .oc-ai-approval-reasoning {
   color: var(--overlay1);
   font-style: italic;
+}
+
+@media print {
+  .oc-ai-approval-detail {
+    position: static;
+    width: auto;
+    box-shadow: none;
+  }
 }

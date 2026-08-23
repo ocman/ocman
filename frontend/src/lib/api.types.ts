@@ -276,6 +276,8 @@ export interface PartData {
    *  notice. Optional — may be empty for legacy approvals or when the
    *  model omitted the field. */
   reasoning?: string;
+  /** Who approved the permission represented by a synthetic notice. */
+  approvedBy?: 'user' | 'ai';
   // File part fields (for type === 'file')
   mime?: string;
   url?: string;

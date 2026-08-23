@@ -671,6 +671,7 @@ function reduceSseEvent(state: SessionView, event: SseEvent): SessionView {
     case 'ocman.permission.flagged':
       return reducePermissionFlagged(state, props);
     case 'ocman.permission.auto-approved':
+    case 'ocman.permission.approved':
       return reducePermissionAutoApproved(state, props);
     case 'question.asked':
       return reduceQuestionAsked(state, event);
@@ -1000,6 +1001,7 @@ function reducePermissionAutoApproved(state: SessionView, props: Record<string, 
     ? (props.patterns as unknown[]).filter((p): p is string => typeof p === 'string')
     : [];
   const reasoning = typeof props.reasoning === 'string' ? props.reasoning : '';
+  const approvedBy = props.approvedBy === 'user' ? 'user' : 'ai';
   const approvedAt = typeof props.approvedAt === 'number' ? props.approvedAt : Date.now();
 
   if (!permId || !permission) return state;
@@ -1027,6 +1029,7 @@ function reducePermissionAutoApproved(state: SessionView, props: Record<string, 
         permission,
         patterns,
         reasoning,
+        approvedBy,
       }),
     };
     messages = upsertMessage(messages, noticeMsg);

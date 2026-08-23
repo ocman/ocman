@@ -140,6 +140,9 @@ func BuildInheritedRules(ctx context.Context, lister ApprovalLister, platform, p
 	seen := map[string]bool{} // "key\x00pattern" -> true
 
 	for _, ap := range approvals {
+		if ap.Reasoning == state.UserApprovalReasonPrefix+"once" {
+			continue
+		}
 		key := permissionKey(ap.PermissionText)
 		if !knownKeys[key] {
 			log.WithField("permissionText", ap.PermissionText).

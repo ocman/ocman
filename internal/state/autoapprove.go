@@ -5,8 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
+
+const UserApprovalReasonPrefix = "user clicked Allow "
 
 // SetAutoApprove enables or disables the auto-approve judge for a
 // specific (platform, session) pair. Overwrites any existing row.
@@ -59,6 +62,10 @@ type ApprovedPermission struct {
 	JudgeSessionID string
 	Reasoning      string
 	ApprovedAt     int64
+}
+
+func (p ApprovedPermission) UserApproved() bool {
+	return strings.HasPrefix(p.Reasoning, UserApprovalReasonPrefix)
 }
 
 // RecordApprovedPermission persists one auto-approved permission for a

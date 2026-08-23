@@ -1,6 +1,6 @@
 // Per-tool-call rendering: the ToolCallDisplay dispatcher plus its
 // private renderers (inline diffs, patches, ANSI shell output,
-// answered questions, auto-approved notices). Extracted from
+// answered questions). Extracted from
 // AssistantThread.tsx so thread mechanics and tool renderers grow
 // independently.
 import React, { useState, useEffect, Suspense } from 'react';
@@ -267,36 +267,6 @@ function ansiClassNames(seg: AnsiSegment): string {
   return classes.join(' ');
 }
 
-function AutoApprovedNotice({
-  permission,
-  patterns,
-  reasoning,
-}: {
-  permission: string;
-  patterns: string[];
-  /** Judge's one-line conclusion shown on the notice. Empty for legacy
-   *  approvals or when the model omitted the field. */
-  reasoning?: string;
-}) {
-  return (
-    <div className="oc-auto-approved-notice">
-      <div className="oc-auto-approved-summary">
-        <span className="oc-auto-approved-icon" aria-hidden="true">&#10003;</span>
-        <span className="oc-auto-approved-label">Auto-approved by AI</span>
-      </div>
-      {permission && <div className="oc-auto-approved-action">{permission}</div>}
-      {patterns.length > 0 && (
-        <div className="oc-auto-approved-patterns">{patterns.join(', ')}</div>
-      )}
-      {reasoning && (
-        <div className="oc-auto-approved-reasoning" data-testid="auto-approved-reasoning">
-          {reasoning}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function taskActivity(
   liveTools: { toolName: string; summary?: string }[],
   parts: import('../../lib/api').Part[],
@@ -320,28 +290,37 @@ function taskActivity(
 }
 
 /**
- * AI auto-approval shown as a footnote under the tool call it
- * unblocked. Collapsed to a single muted line; clicking reveals the
- * judge's reasoning and the resources it covered.
+ * Permission approval shown under the tool call it unblocked. AI
+ * approvals reveal the judge's reasoning when clicked.
  */
-function AiApprovalFootnote({ approvals }: { approvals: ToolApproval[] }) {
+function ApprovalFootnote({ approvals }: { approvals: ToolApproval[] }) {
   const [openState, setOpen] = useState(false);
   const isPrinting = useIsPrinting();
   const printCollapse = usePrintCollapse();
   const open = openState || (isPrinting && !printCollapse);
+  const aiApprovals = approvals.filter((approval) => approval.approvedBy === 'ai');
+  const userApproved = approvals.some((approval) => approval.approvedBy === 'user');
   return (
     <div className="oc-ai-approval-footnote">
-      <button
-        type="button"
-        className="oc-ai-approval-toggle"
-        aria-expanded={open}
-        onClick={() => setOpen(!openState)}
-      >
-        Approved by AI
-      </button>
-      {open && (
-        <div className="oc-ai-approval-detail" data-testid="ai-approval-detail">
-          {approvals.map((approval, i) => (
+      {userApproved && <div>Approved by user</div>}
+      {aiApprovals.length > 0 && (
+        <button
+          type="button"
+          className="oc-ai-approval-toggle"
+          aria-expanded={open}
+          onClick={() => setOpen(!openState)}
+        >
+          Approved by AI
+        </button>
+      )}
+      {open && aiApprovals.length > 0 && (
+        <div
+          className="oc-ai-approval-detail"
+          data-testid="ai-approval-detail"
+          role="dialog"
+          aria-label="AI approval reason"
+        >
+          {aiApprovals.map((approval, i) => (
             <div className="oc-ai-approval-entry" key={i}>
               {approval.permission && (
                 <div className="oc-ai-approval-permission">{approval.permission}</div>
@@ -361,7 +340,7 @@ function AiApprovalFootnote({ approvals }: { approvals: ToolApproval[] }) {
 }
 
 /**
- * Tool-call renderer. Splits the AI-approval markers off argsText and
+ * Tool-call renderer. Splits permission-approval markers off argsText and
  * renders them as a footnote below whatever the tool itself renders.
  */
 export const ToolCallDisplay: FC<ToolCallMessagePartProps> = (props) => {
@@ -370,7 +349,7 @@ export const ToolCallDisplay: FC<ToolCallMessagePartProps> = (props) => {
   return (
     <>
       <ToolCallBody {...props} argsText={strippedArgs} />
-      <AiApprovalFootnote approvals={approvals} />
+      <ApprovalFootnote approvals={approvals} />
     </>
   );
 };
@@ -393,30 +372,6 @@ const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArg
   const forcePrintExpand = isPrinting && !printCollapse;
   const expanded = expandedState || forcePrintExpand;
   const taskExpanded = taskExpandedState || forcePrintExpand;
-
-  // Auto-approved notice — rendered inline before any timing/tool logic.
-  if (toolName === 'ocman:auto-approved') {
-    let permission = '';
-    let patterns: string[] = [];
-    let reasoning = '';
-    try {
-      const parsed = JSON.parse(rawArgsText || '{}') as {
-        permission?: string;
-        patterns?: string[];
-        reasoning?: string;
-      };
-      permission = parsed.permission || '';
-      patterns = parsed.patterns || [];
-      reasoning = parsed.reasoning || '';
-    } catch { /* ignore */ }
-    return (
-      <AutoApprovedNotice
-        permission={permission}
-        patterns={patterns}
-        reasoning={reasoning}
-      />
-    );
-  }
 
   // Extract timing data from the @time: line, if present.
   const timeInfo = parseToolTime(rawArgsText || '');

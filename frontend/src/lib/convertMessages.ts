@@ -348,11 +348,11 @@ export function createConvertMessages(): ConvertMessagesFn {
       state.lastPartsByMsg = partsByMsg;
     }
 
-    // AI auto-approvals render as a footnote on the tool call they
+    // Permission approvals render as a footnote on the tool call they
     // unblocked instead of a standalone block. A permission is always
     // asked *while* a tool runs, so the approved tool is the most
-    // recently created tool part at approval time. An approval that
-    // matches no tool part keeps its standalone notice.
+    // recently created tool part at approval time. Standalone approval
+    // notices are hidden because the command is the useful context.
     const approvalsByPartId: Record<string, ToolApproval[]> = {};
     const inlinedNotices = new Set<string>();
     const notices = messages.filter((m) => m.data?.role === 'notice');
@@ -363,6 +363,7 @@ export function createConvertMessages(): ConvertMessagesFn {
       for (const notice of notices) {
         for (const pd of (partsByMsg[notice.id] || EMPTY_PARTS).map(parsePart)) {
           if (pd.type !== 'auto-approved') continue;
+          inlinedNotices.add(notice.id);
           const target = lastToolPartBefore(toolParts, notice.timeCreated);
           if (!target) continue;
           const list = approvalsByPartId[target.id] || (approvalsByPartId[target.id] = []);
@@ -370,8 +371,8 @@ export function createConvertMessages(): ConvertMessagesFn {
             permission: pd.permission || '',
             patterns: pd.patterns || [],
             reasoning: pd.reasoning || '',
+            approvedBy: pd.approvedBy === 'user' ? 'user' : 'ai',
           });
-          inlinedNotices.add(notice.id);
         }
       }
     }

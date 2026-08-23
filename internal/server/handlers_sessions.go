@@ -245,11 +245,6 @@ func injectApprovalNotices(ctx context.Context, platform, sessionID string, stat
 	}
 
 	for _, p := range approved {
-		// "Allow always" records are retained for child-session inheritance,
-		// not conversation notices; a person, not the AI, made that approval.
-		if p.Reasoning == "user clicked Allow always" {
-			continue
-		}
 		// Stable key uses the OpenCode permission ID, which is guaranteed
 		// to be unique per approval. Legacy rows (written before the
 		// judge session was deleted post-verdict) populated this with the
@@ -270,11 +265,18 @@ func injectApprovalNotices(ctx context.Context, platform, sessionID string, stat
 		if patterns == nil {
 			patterns = []string{}
 		}
+		approvedBy := "ai"
+		reasoning := p.Reasoning
+		if p.UserApproved() {
+			approvedBy = "user"
+			reasoning = ""
+		}
 		partData, _ := json.Marshal(map[string]interface{}{
 			"type":       "auto-approved",
 			"permission": p.PermissionText,
 			"patterns":   patterns,
-			"reasoning":  p.Reasoning,
+			"reasoning":  reasoning,
+			"approvedBy": approvedBy,
 		})
 		ts := p.ApprovedAt
 

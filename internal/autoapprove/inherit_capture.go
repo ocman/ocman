@@ -2,6 +2,7 @@ package autoapprove
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -10,8 +11,8 @@ import (
 )
 
 // askedPermission is the slice of a permission.asked event retained
-// until the matching permission.replied arrives, so a user-clicked
-// "Allow always" reply can be persisted with the original permission
+// until the matching permission.replied arrives, so a user approval
+// can be persisted with the original permission
 // text and patterns (the replied event carries neither). See issue #101.
 type askedPermission struct {
 	platformID string
@@ -31,7 +32,7 @@ type askedPermission struct {
 const askedCacheMax = 2048
 
 // rememberAsked stores the asked-side data for (sessionID, permissionID)
-// so a later "always" reply can be recorded with the right patterns.
+// so a later approval can be recorded with the right patterns.
 // No-op on nil receiver. Bounded by askedCacheMax.
 func (s *Service) rememberAsked(platformID, sessionID, permissionID, permission string, patterns []string) {
 	if s == nil || permissionID == "" {
@@ -73,11 +74,9 @@ func (s *Service) takeAsked(sessionID, permissionID string) (askedPermission, bo
 }
 
 // HandlePermissionReplied is the single handler for a permission.replied
-// event. It always cancels any in-flight judge for the permission (the
-// user answered, so our verdict is moot). When the reply is "always" it
-// additionally persists an ApprovedPermission row so the parent's
-// accumulated always-allow patterns can be inherited by worktree
-// children (issue #101). "once" and "reject" persist nothing.
+// event. It always cancels any in-flight judge for the permission. User
+// approvals are persisted for command footnotes; only "always" is later
+// inherited by worktree children.
 //
 // platformID scopes the persisted row; it is taken from the asked-side
 // cache entry (the platform that saw the original permission.asked) so
@@ -87,10 +86,10 @@ func (s *Service) HandlePermissionReplied(ctx context.Context, sessionID, permis
 	if s == nil {
 		return
 	}
-	s.Cancel(sessionID, permissionID)
-
+	status, judged := s.lookupAutoApproveStatus(sessionID, permissionID)
 	ap, ok := s.takeAsked(sessionID, permissionID)
-	if reply != "always" {
+	s.Cancel(sessionID, permissionID)
+	if (reply != "once" && reply != "always") || (judged && status.verdict == verdictSafe) {
 		return
 	}
 	if !ok {
@@ -99,28 +98,44 @@ func (s *Service) HandlePermissionReplied(ctx context.Context, sessionID, permis
 		log.WithFields(log.Fields{
 			"sessionID":    sessionID,
 			"permissionID": permissionID,
-		}).Debug("autoapprove: 'always' reply with no cached asked data; skipping capture")
+		}).Debug("autoapprove: user approval with no cached asked data; skipping capture")
 		return
 	}
-	if s.deps.Store == nil {
-		return
+	approvedAt := time.Now().UnixMilli()
+	if s.deps.Store != nil {
+		if err := s.deps.Store.RecordApprovedPermission(
+			ctx,
+			ap.platformID,
+			sessionID,
+			state.ApprovedPermission{
+				PermissionID:   permissionID,
+				PermissionText: ap.permission,
+				Patterns:       ap.patterns,
+				JudgeSessionID: "",
+				Reasoning:      state.UserApprovalReasonPrefix + reply,
+				ApprovedAt:     approvedAt,
+			},
+		); err != nil {
+			log.WithError(err).WithFields(log.Fields{
+				"sessionID":    sessionID,
+				"permissionID": permissionID,
+			}).Warn("autoapprove: failed to persist user approval")
+		}
 	}
-	if err := s.deps.Store.RecordApprovedPermission(
-		ctx,
-		ap.platformID,
-		sessionID,
-		state.ApprovedPermission{
-			PermissionID:   permissionID,
-			PermissionText: ap.permission,
-			Patterns:       ap.patterns,
-			JudgeSessionID: "",
-			Reasoning:      "user clicked Allow always",
-			ApprovedAt:     time.Now().UnixMilli(),
-		},
-	); err != nil {
-		log.WithError(err).WithFields(log.Fields{
-			"sessionID":    sessionID,
-			"permissionID": permissionID,
-		}).Warn("autoapprove: failed to persist user 'Allow always' approval")
+
+	patterns := ap.patterns
+	if patterns == nil {
+		patterns = []string{}
+	}
+	payload, err := json.Marshal(map[string]interface{}{
+		"permissionId": permissionID,
+		"sessionID":    sessionID,
+		"permission":   ap.permission,
+		"patterns":     patterns,
+		"approvedBy":   "user",
+		"approvedAt":   approvedAt,
+	})
+	if err == nil {
+		s.emitSessionSseEvent(sessionID, "ocman.permission.approved", payload)
 	}
 }

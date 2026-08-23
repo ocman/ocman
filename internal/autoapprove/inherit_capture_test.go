@@ -1,7 +1,9 @@
 package autoapprove
 
 import (
+	"bytes"
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -37,9 +39,8 @@ func (s *recordingStore) RecordApprovedPermission(_ context.Context, platform, s
 }
 
 // TestHandlePermissionReplied_CapturesAlways proves that an
-// asked -> replied("always") flow persists exactly one approval row
-// with the original permission text/patterns, while "once" and
-// "reject" persist nothing. Regression test for issue #101 step 1.
+// asked -> replied flow persists user approvals with the original
+// permission text/patterns, while rejects persist nothing.
 func TestHandlePermissionReplied_CapturesAlways(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -57,7 +58,14 @@ func TestHandlePermissionReplied_CapturesAlways(t *testing.T) {
 			wantPats:   []string{"git *"},
 			wantReason: "user clicked Allow always",
 		},
-		{name: "once writes no row", reply: "once", wantRows: 0},
+		{
+			name:       "once writes exactly one row",
+			reply:      "once",
+			wantRows:   1,
+			wantPerm:   "bash",
+			wantPats:   []string{"git *"},
+			wantReason: "user clicked Allow once",
+		},
 		{name: "reject writes no row", reply: "reject", wantRows: 0},
 	}
 	for _, tc := range tests {
@@ -131,5 +139,25 @@ func TestHandlePermissionReplied_TakesAskedOnce(t *testing.T) {
 	s.HandlePermissionReplied(t.Context(), "ses-1", "perm-1", "always")
 	if len(store.records) != 1 {
 		t.Fatalf("recorded %d rows, want 1 (asked entry must be consumed once)", len(store.records))
+	}
+}
+
+func TestHandlePermissionReplied_EmitsUserApproval(t *testing.T) {
+	store := &recordingStore{}
+	s := &Service{
+		deps:        Deps{Store: store},
+		autoApprove: make(map[string]*autoApproveStatus),
+		askedCache:  make(map[string]askedPermission),
+		sseSessions: make(map[string]*Sink),
+	}
+	buf := &bytes.Buffer{}
+	s.RegisterSink("ses-1", buf, nil)
+	s.rememberAsked("opencode", "ses-1", "perm-1", "bash", []string{"pnpm test"})
+
+	s.HandlePermissionReplied(t.Context(), "ses-1", "perm-1", "once")
+
+	got := buf.String()
+	if !strings.Contains(got, "event: ocman.permission.approved") || !strings.Contains(got, `"approvedBy":"user"`) {
+		t.Fatalf("user approval event = %q", got)
 	}
 }

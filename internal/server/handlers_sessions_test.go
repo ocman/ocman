@@ -817,7 +817,7 @@ func TestHandleSessionAutoApproveSet_DisablingDoesNotResume(t *testing.T) {
 	}
 }
 
-func TestInjectApprovalNotices_SkipsUserAllowAlways(t *testing.T) {
+func TestInjectApprovalNotices_IncludesApprovalActor(t *testing.T) {
 	srv, _ := newSessionsTestServer(t)
 	for _, approval := range []state.ApprovedPermission{
 		{
@@ -844,11 +844,18 @@ func TestInjectApprovalNotices_SkipsUserAllowAlways(t *testing.T) {
 	var parts []db.Part
 	injectApprovalNotices(t.Context(), "opencode", "ses-1", srv.stateDB, &messages, &parts)
 
-	if len(messages) != 1 || messages[0].ID != "ocman-notice-ai-approved" {
-		t.Fatalf("injected messages = %#v, want only AI approval", messages)
+	if len(messages) != 2 || messages[0].ID != "ocman-notice-user-approved" || messages[1].ID != "ocman-notice-ai-approved" {
+		t.Fatalf("injected messages = %#v, want user and AI approvals", messages)
 	}
-	if len(parts) != 1 || parts[0].MessageID != "ocman-notice-ai-approved" {
-		t.Fatalf("injected parts = %#v, want only AI approval", parts)
+	if len(parts) != 2 || parts[0].MessageID != "ocman-notice-user-approved" || parts[1].MessageID != "ocman-notice-ai-approved" {
+		t.Fatalf("injected parts = %#v, want user and AI approvals", parts)
+	}
+	var userPart map[string]any
+	if err := json.Unmarshal(parts[0].Data, &userPart); err != nil {
+		t.Fatalf("decode user approval: %v", err)
+	}
+	if userPart["approvedBy"] != "user" || userPart["reasoning"] != "" {
+		t.Fatalf("user approval part = %#v, want user actor without AI reasoning", userPart)
 	}
 }
 

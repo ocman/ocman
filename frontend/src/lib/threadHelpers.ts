@@ -661,7 +661,7 @@ export function parseQuestions(argsText: string): QuestionData[] | null {
   return null;
 }
 
-/** One AI auto-approval attached to the tool call it unblocked. */
+/** One permission approval attached to the tool call it unblocked. */
 export interface ToolApproval {
   /** OpenCode permission type, e.g. `bash` / `edit` / `external_directory`. */
   permission: string;
@@ -669,6 +669,7 @@ export interface ToolApproval {
   patterns: string[];
   /** Judge's one-line conclusion. Empty for legacy approvals. */
   reasoning: string;
+  approvedBy: 'user' | 'ai';
 }
 
 /**
@@ -701,6 +702,7 @@ export function parseToolApprovals(argsText: string): {
         permission: parsed.permission || '',
         patterns: parsed.patterns || [],
         reasoning: parsed.reasoning || '',
+        approvedBy: parsed.approvedBy === 'user' ? 'user' : 'ai',
       });
     } catch { /* keep the tool renderable on a malformed marker */ }
     return false;

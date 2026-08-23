@@ -89,6 +89,17 @@ func TestBuildInheritedRules(t *testing.T) {
 			},
 			count: 1,
 		},
+		{
+			name: "user allow once is not inherited",
+			rows: []state.ApprovedPermission{
+				{PermissionText: "bash", Patterns: []string{"rm *"}, Reasoning: "user clicked Allow once"},
+				{PermissionText: "bash", Patterns: []string{"git *"}, Reasoning: "user clicked Allow always"},
+			},
+			want: []platforms.PermissionRule{
+				{Permission: "bash", Pattern: "git *", Action: "allow"},
+			},
+			count: 1,
+		},
 	}
 
 	for _, tc := range tests {
