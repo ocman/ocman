@@ -181,4 +181,23 @@ describe('useSessionActions — handleSend queue behaviour (#58)', () => {
     expect(options.pending.fail).not.toHaveBeenCalled();
     expect(options.setFailedSends).not.toHaveBeenCalled();
   });
+
+  it('propagates queue failures so the composer keeps the message', async () => {
+    const failure = new Error('failed to queue');
+    sendMessage.mockRejectedValueOnce(failure);
+    const { result } = renderHook(() => useSessionActions(makeOptions({ current: true })));
+
+    await expect(act(async () => result.current.handleSend('keep queued', undefined, true))).rejects.toBe(failure);
+  });
+
+  it('records and propagates immediate failures so the composer does not clear', async () => {
+    const failure = new Error('send rejected');
+    sendMessage.mockRejectedValueOnce(failure);
+    const options = makeOptions({ current: false });
+    const { result } = renderHook(() => useSessionActions(options));
+
+    await expect(act(async () => result.current.handleSend('keep this'))).rejects.toBe(failure);
+    expect(options.pending.fail).toHaveBeenCalledWith('send rejected');
+    expect(options.setFailedSends).toHaveBeenCalled();
+  });
 });

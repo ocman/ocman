@@ -3,7 +3,7 @@
  *
  * All responses are mocked at the HTTP layer. The LLM response is
  * simulated by:
- *  1. The POST /api/session/:id/message returning 200 immediately.
+ *  1. The POST /api/session/:id/message returning 204 immediately.
  *  2. An SSE stream delivering a synthetic `message.created` event with
  *     a canned assistant reply, then a `session.idle` event.
  *
@@ -112,7 +112,7 @@ test('typing and pressing Enter sends POST /api/session/:id/message', async ({ m
   // Stub the message POST so waitForRequest succeeds even without a backend
   await page.route(
     new RegExp(`/api/session/${MOCK_SESSION.id}/message`),
-    (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }),
+    (route) => route.fulfill({ status: 204 }),
   );
 
   // Click to focus, fill text, then press Enter
@@ -141,7 +141,7 @@ test('the composer keeps focus after sending with Enter', async ({ mockedPage: p
 
   await page.route(
     new RegExp(`/api/session/${MOCK_SESSION.id}/message`),
-    (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }),
+    (route) => route.fulfill({ status: 204 }),
   );
 
   const composer = page.locator('.oc-composer-input');
@@ -161,7 +161,7 @@ test('unconfirmed user message does not appear in the thread', async ({ mockedPa
     new RegExp(`/api/session/${MOCK_SESSION.id}/message`),
     async (route) => {
       await new Promise((r) => setTimeout(r, 500));
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+      await route.fulfill({ status: 204 });
     },
   );
 
@@ -174,6 +174,29 @@ test('unconfirmed user message does not appear in the thread', async ({ mockedPa
   ]);
 
   await expect(page.getByText('My unconfirmed message', { exact: true })).toHaveCount(0);
+});
+
+test('backend failure keeps the composer locked and announces the retry', async ({ mockedPage: page }) => {
+  let attempts = 0;
+  await page.route(
+    new RegExp(`/api/session/${MOCK_SESSION.id}/message`),
+    (route) => {
+      attempts += 1;
+      return route.fulfill(attempts === 1 ? { status: 502 } : { status: 204 });
+    },
+  );
+  await goToLiveSession(page);
+
+  const composer = page.getByRole('textbox');
+  await composer.fill('Keep this message');
+  await composer.press('Enter');
+
+  await expect(composer).toBeDisabled();
+  await expect(composer).toHaveValue('Keep this message');
+  await expect(page.getByRole('status').filter({ hasText: 'Retrying in 1s' })).toBeVisible();
+  await expect(composer).toBeEnabled({ timeout: 3_000 });
+  await expect(composer).toHaveValue('');
+  expect(attempts).toBe(2);
 });
 
 test('mocked assistant reply appears in thread via SSE (on page load)', async ({ mockedPage: page }) => {
@@ -220,7 +243,7 @@ test('stop button is visible while agent is running (SSE busy)', async ({ mocked
 
   await page.route(
     new RegExp(`/api/session/${MOCK_SESSION.id}/message`),
-    (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }),
+    (route) => route.fulfill({ status: 204 }),
   );
 
   await goToLiveSession(page);
@@ -241,7 +264,7 @@ test('clicking stop button calls POST /api/session/:id/abort', async ({ mockedPa
 
   await page.route(
     new RegExp(`/api/session/${MOCK_SESSION.id}/message`),
-    (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }),
+    (route) => route.fulfill({ status: 204 }),
   );
   await page.route(
     new RegExp(`/api/session/${MOCK_SESSION.id}/abort`),
@@ -274,7 +297,7 @@ test('Shift+Enter inserts a newline instead of sending', async ({ mockedPage: pa
     new RegExp(`/api/session/${MOCK_SESSION.id}/message`),
     (route) => {
       messageSent = true;
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) });
+      return route.fulfill({ status: 204 });
     },
   );
 
@@ -391,9 +414,7 @@ test('failed-send Retry replays the original prompt', async ({ mockedPage: page 
         });
       }
       return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ ok: true }),
+        status: 204,
       });
     },
   );

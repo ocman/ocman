@@ -248,7 +248,7 @@ export function useSessionActions({
         setFailedSends((prev) => prev.filter((e) => e.id !== entryId));
         removeFailedSend(session.id, entryId);
         setShowDisconnectedToast(true);
-        return;
+        throw e;
       }
       pending.fail(msg || 'Unknown error');
       const failed: FailedSend = {
@@ -267,6 +267,7 @@ export function useSessionActions({
         return [...prev, failed];
       });
       recordFailedSend(session.id, failed);
+      throw e;
     }
   }, [pendingPermission, pendingQuestion, portAvailable, sendMessage, session, setFailedSends, pending, setShowDisconnectedToast]);
 
@@ -295,7 +296,7 @@ export function useSessionActions({
         true, // queue: hold for the next idle edge
       ).catch((e) => {
         remoteLog.error('Failed to queue message', e);
-        if (e instanceof BackendUnavailableError) throw e;
+        throw e;
       });
       return;
     }
@@ -343,7 +344,7 @@ export function useSessionActions({
       entry.model,
       entry.agent,
       entry.reasoning,
-    );
+    ).catch(() => undefined);
   }, [failedSends, performSend, routeSessionId, session, pending]);
 
   // Drop a failed send (without retrying). Removes the persisted

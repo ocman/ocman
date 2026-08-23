@@ -475,6 +475,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const [showCreateSessionErrorToast, setShowCreateSessionErrorToast] = useState(false);
   const [showDisconnectedToast, setShowDisconnectedToast] = useState(false);
   const [copyToastMessage, setCopyToastMessage] = useState<string | null>(null);
+  const [sendRetryDelaySeconds, setSendRetryDelaySeconds] = useState<number | null>(null);
   const [threadBoundaryResetNonce, setThreadBoundaryResetNonce] = useState(0);
   const [failedSends, setFailedSends] = useState<FailedSend[]>([]);
 
@@ -1460,6 +1461,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                         <Composer
                           composerRef={composerRef}
                           onSend={handleSend}
+                          onRetryChange={setSendRetryDelaySeconds}
                           onCommand={handleCommand}
                           onShell={handleShell}
                           shellExec={caps.shellExec}
@@ -1665,6 +1667,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
           setShowDisconnectedToast={setShowDisconnectedToast}
           copyToastMessage={copyToastMessage}
           setCopyToastMessage={setCopyToastMessage}
+          sendRetryDelaySeconds={sendRetryDelaySeconds}
+          setSendRetryDelaySeconds={setSendRetryDelaySeconds}
           tmuxAvailable={tmux.available}
           liveConnectionHint={!!caps.liveConnectionHint}
           hasDirectory={!!session?.directory}

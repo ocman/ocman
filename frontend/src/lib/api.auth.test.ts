@@ -110,12 +110,24 @@ describe('api.sendMessage', () => {
     const captured: string[] = [];
     stubFetch((url) => {
       captured.push(url);
-      return new Response('', { status: 200 });
+      return new Response(null, { status: 204 });
     });
 
     await api.sendMessage('s1', 'hello', undefined, undefined, undefined, undefined, 'r-box:opencode');
 
     expect(captured).toEqual(['/api/session/s1/message?platform=r-box%3Aopencode']);
+  });
+
+  it('rejects an unexpected success response so the composer keeps its draft', async () => {
+    stubFetch(() => new Response('{"ok":true}', { status: 200 }));
+
+    await expect(api.sendMessage('s1', 'hello')).rejects.toBeInstanceOf(BackendUnavailableError);
+  });
+
+  it('classifies a transient server failure as retryable', async () => {
+    stubFetch(() => new Response('bad gateway', { status: 502 }));
+
+    await expect(api.sendMessage('s1', 'hello')).rejects.toBeInstanceOf(BackendUnavailableError);
   });
 });
 

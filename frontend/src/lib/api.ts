@@ -581,6 +581,10 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message, images, model, agent, reasoning, queue }),
     });
+    if (resp.status === 204) return;
+    if (resp.ok || [500, 502, 503, 504].includes(resp.status)) {
+      throw new BackendUnavailableError();
+    }
     if (!resp.ok) {
       await raiseForUnauthorized(resp);
       const body = (await resp.text()).trim();

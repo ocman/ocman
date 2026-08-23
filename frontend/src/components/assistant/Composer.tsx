@@ -378,6 +378,7 @@ function ComposerToolbar({
 
 function ComposerImpl({
   onSend,
+  onRetryChange,
   onCommand,
   onShell,
   shellExec,
@@ -424,6 +425,7 @@ function ComposerImpl({
    * instead of sending it into the running turn.
    */
   onSend?: (text: string, images?: AttachedImage[], queue?: boolean) => void | Promise<void>;
+  onRetryChange?: (delaySeconds: number | null) => void;
   onCommand?: (command: string, args: string) => void;
   /**
    * Called when the user submits a `!`-prefixed shell command on a
@@ -896,6 +898,7 @@ function ComposerImpl({
     const hadFocus = document.activeElement === el;
     sendingRef.current = true;
     setSending(true);
+    onRetryChange?.(null);
     let retries = 0;
     const MAX_BACKEND_RETRIES = 5;
     while (mountedRef.current) {
@@ -906,10 +909,13 @@ function ComposerImpl({
       } catch (err) {
         if (!(err instanceof BackendUnavailableError) || retries >= MAX_BACKEND_RETRIES) break;
         retries += 1;
-        await new Promise(resolve => window.setTimeout(resolve, 1_000 * 2 ** (retries - 1)));
+        const delaySeconds = 2 ** (retries - 1);
+        onRetryChange?.(delaySeconds);
+        await new Promise(resolve => window.setTimeout(resolve, 1_000 * delaySeconds));
       }
     }
     if (mountedRef.current) {
+      onRetryChange?.(null);
       sendingRef.current = false;
       restoreFocusAfterSendRef.current = hadFocus;
       setSending(false);

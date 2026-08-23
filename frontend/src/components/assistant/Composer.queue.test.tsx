@@ -225,10 +225,11 @@ describe('Composer input', () => {
 
   it('keeps the draft locked and retries while the backend is unavailable', async () => {
     vi.useFakeTimers();
+    const onRetryChange = vi.fn();
     const onSend = vi.fn()
       .mockRejectedValueOnce(new BackendUnavailableError())
       .mockResolvedValueOnce(undefined);
-    render(<Composer isRunning={false} onSend={onSend} />);
+    render(<Composer isRunning={false} onSend={onSend} onRetryChange={onRetryChange} />);
     const input = screen.getByRole('textbox');
 
     fireEvent.input(input, { target: { value: 'keep this message' } });
@@ -238,9 +239,11 @@ describe('Composer input', () => {
     expect(input).toHaveValue('keep this message');
     expect(input).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Sending message' })).toBeDisabled();
+    expect(onRetryChange).toHaveBeenCalledWith(1);
 
     await act(async () => { vi.advanceTimersByTime(1_000); });
     expect(onSend).toHaveBeenCalledTimes(2);
+    expect(onRetryChange).toHaveBeenLastCalledWith(null);
     expect(input).toHaveValue('');
     expect(input).not.toBeDisabled();
   });

@@ -128,7 +128,7 @@ test('stop button disappears after session.idle SSE event', async ({ mockedPage:
 
   await page.route(
     new RegExp(`/api/session/${MOCK_SESSION.id}/message`),
-    (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true }) }),
+    (route) => route.fulfill({ status: 204 }),
   );
 
   await setupLivePage(page);

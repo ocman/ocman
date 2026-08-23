@@ -12,6 +12,8 @@ export interface SessionToastsProps {
   setShowDisconnectedToast: (v: boolean) => void;
   copyToastMessage: string | null;
   setCopyToastMessage: (v: string | null) => void;
+  sendRetryDelaySeconds: number | null;
+  setSendRetryDelaySeconds: (v: number | null) => void;
   tmuxAvailable: boolean;
   liveConnectionHint: boolean;
   hasDirectory: boolean;
@@ -38,6 +40,8 @@ export const SessionToasts = memo(function SessionToasts({
   setShowDisconnectedToast,
   copyToastMessage,
   setCopyToastMessage,
+  sendRetryDelaySeconds,
+  setSendRetryDelaySeconds,
   tmuxAvailable,
   liveConnectionHint,
   hasDirectory,
@@ -71,6 +75,16 @@ export const SessionToasts = memo(function SessionToasts({
       >
         <Toast.Description className="oc-toast-description">
           {copyToastMessage}
+        </Toast.Description>
+      </Toast.Root>
+      <Toast.Root
+        key={sendRetryDelaySeconds ?? 'send-retry-hidden'}
+        className="oc-toast-root error"
+        open={sendRetryDelaySeconds !== null}
+        onOpenChange={(open) => { if (!open) setSendRetryDelaySeconds(null); }}
+      >
+        <Toast.Description className="oc-toast-description">
+          Backend is not responding. Retrying in {sendRetryDelaySeconds}s…
         </Toast.Description>
       </Toast.Root>
       <Toast.Root
