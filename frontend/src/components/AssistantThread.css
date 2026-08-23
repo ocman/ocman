@@ -19,7 +19,7 @@
      remounted on every id change (OcmanRuntimeProvider has key={session.id}),
      so this plays naturally on navigation. Opacity-only to avoid layout
      shifts inside the scroll container. */
-  animation: oc-thread-enter 300ms ease-out both;
+  animation: oc-thread-enter 300ms ease-out;
 }
 
 @keyframes oc-thread-enter {
@@ -1114,7 +1114,7 @@
 .oc-viewport-footer {
   position: sticky;
   bottom: 0;
-  z-index: 50;
+  z-index: 52;
   margin-top: auto;
 }
 

@@ -1493,6 +1493,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                           sessionId={session?.id}
                           tokensPerSecond={liveTokensPerSecond ?? undefined}
                           tokenStats={tokenStats}
+                          estimatedCost={sessionTree.find((item) => item.id === session?.id && item.platform === session?.platform)?.totalEstCost ?? session?.totalEstCost}
                           sessionTreeStats={sessionTreeStats}
                           selectedReasoning={selectedReasoning}
                           onReasoningChange={setSelectedReasoning}

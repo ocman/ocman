@@ -801,14 +801,28 @@ describe('SessionDetail — session tree usage', () => {
   });
 
   it('shows estimated cost without requiring context usage', async () => {
-    const session = { ...makeSession({ id: 'sess_1', totalInputTokens: 10, totalOutputTokens: 20 }), totalEffectiveCost: 0.42 };
-    renderSessionPage({
+    const session = makeSession({ id: 'sess_1', totalInputTokens: 10, totalOutputTokens: 20 });
+    const treeSession = {
+      ...session,
+      totalEstCost: 0.426,
+      totalEffectiveCost: 0.426,
+    };
+    const calcCost = vi.fn().mockResolvedValue({ cost: 9.99, known: true });
+    const handle = renderSessionPage({
       sessionId: session.id,
-      detail: makeSessionDetail(session, { sessionTree: [session], contextTokenCount: 0 }),
-      sessions: [session],
+      detail: makeSessionDetail(session, { sessionTree: [treeSession], contextTokenCount: 0 }),
+      sessions: [treeSession],
+      apiOverrides: { calcCost },
     });
 
-    expect(await screen.findByTitle('Session cost (reported, estimated when unavailable)')).toHaveTextContent('$0.42');
+    const cost = await screen.findByTitle('Click for cost and token usage details');
+    expect(cost.tagName).toBe('BUTTON');
+    expect(cost).toHaveTextContent('$0.43');
+
+    fireEvent.click(cost);
+    const estimate = await screen.findByText('Est. cost');
+    expect(estimate.parentElement).toHaveTextContent('Est. cost$0.4260');
+    expect(handle.api.calcCost).not.toHaveBeenCalled();
   });
 });
 

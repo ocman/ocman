@@ -68,6 +68,7 @@ interface ComposerFooterProps {
     cacheWrite: number;
     totalCost: number;
   };
+  estimatedCost?: number;
   sessionTreeStats?: { input: number; output: number; totalCost: number; totalEstCost: number; totalEffectiveCost: number; sessions: number };
   contextTokens?: number;
   effectiveModel: string;
@@ -87,14 +88,13 @@ function ComposerFooter({
   tokensPerSecond,
   onAbort,
   tokenStats,
+  estimatedCost,
   sessionTreeStats,
   contextTokens,
   effectiveModel,
   visibleDurationMs,
 }: ComposerFooterProps) {
   const [showTokenPopover, setShowTokenPopover] = useState(false);
-  const [estCost, setEstCost] = useState<{ cost: number; known: boolean } | null>(null);
-  const [estCostLoading, setEstCostLoading] = useState(false);
   const tokenPopoverRef = useRef<HTMLDivElement>(null);
   const openShortcuts = useUiStore((s) => s.openShortcuts);
   const contextWindow = contextTokens ? getContextWindow(effectiveModel) : null;
@@ -103,30 +103,6 @@ function ComposerFooter({
     : null;
 
   useClickOutside(tokenPopoverRef, showTokenPopover, () => setShowTokenPopover(false));
-
-  useEffect(() => {
-    if (!showTokenPopover || !tokenStats || !effectiveModel) return;
-    let cancelled = false;
-    Promise.resolve().then(() => { if (!cancelled) setEstCostLoading(true); });
-    api.calcCost({
-      modelID: effectiveModel,
-      input: tokenStats.input,
-      output: tokenStats.output,
-      cacheRead: tokenStats.cacheRead,
-      cacheWrite: tokenStats.cacheWrite,
-    }).then((result) => {
-      if (!cancelled) {
-        setEstCost(result);
-        setEstCostLoading(false);
-      }
-    }).catch(() => {
-      if (!cancelled) {
-        setEstCost(null);
-        setEstCostLoading(false);
-      }
-    });
-    return () => { cancelled = true; };
-  }, [showTokenPopover, effectiveModel, tokenStats]);
 
   const effectiveCost = sessionTreeStats?.totalEffectiveCost ?? tokenStats?.totalCost ?? 0;
 
@@ -160,21 +136,21 @@ function ComposerFooter({
       </span>
       <span className="oc-composer-footer-right">
         {tokenStats && (
-          <span className="oc-session-cost" title="Session cost (reported, estimated when unavailable)">
-            {formatCurrency(effectiveCost)}
-          </span>
-        )}
-        {contextTokens != null && contextTokens > 0 && (
           <span className="oc-context-usage-wrap" ref={tokenPopoverRef}>
-            <button
-              type="button"
-              className={`oc-context-usage${contextPercent != null && contextPercent > 80 ? ' oc-context-warn' : ''}`}
-              title="Click for token usage details"
-              onClick={() => setShowTokenPopover((value) => !value)}
-            >
-              {formatTokenCount(contextTokens)}{contextPercent != null && ` (${contextPercent.toFixed(0)}%)`}
+            <button type="button" className="oc-session-cost" title="Click for cost and token usage details" onClick={() => setShowTokenPopover((value) => !value)}>
+              {formatCurrency(effectiveCost, 2)}
             </button>
-            {showTokenPopover && tokenStats && (
+            {contextTokens != null && contextTokens > 0 && (
+              <button
+                type="button"
+                className={`oc-context-usage${contextPercent != null && contextPercent > 80 ? ' oc-context-warn' : ''}`}
+                title="Click for token usage details"
+                onClick={() => setShowTokenPopover((value) => !value)}
+              >
+                {formatTokenCount(contextTokens)}{contextPercent != null && ` (${contextPercent.toFixed(0)}%)`}
+              </button>
+            )}
+            {showTokenPopover && (
               <div className="oc-token-popover">
                 <div className="oc-token-popover-title">Session token usage</div>
                 <div className="oc-token-popover-rows">
@@ -183,16 +159,20 @@ function ComposerFooter({
                   {tokenStats.reasoning > 0 && <div className="oc-token-popover-row"><span className="oc-token-popover-label">Reasoning</span><span className="oc-token-popover-value">{tokenStats.reasoning.toLocaleString()}</span></div>}
                   {(tokenStats.cacheRead > 0 || tokenStats.cacheWrite > 0) && <div className="oc-token-popover-row"><span className="oc-token-popover-label">Cache read</span><span className="oc-token-popover-value">{tokenStats.cacheRead.toLocaleString()}</span></div>}
                   {tokenStats.cacheWrite > 0 && <div className="oc-token-popover-row"><span className="oc-token-popover-label">Cache write</span><span className="oc-token-popover-value">{tokenStats.cacheWrite.toLocaleString()}</span></div>}
-                  <div className="oc-token-popover-divider" />
-                  <div className="oc-token-popover-row">
-                    <span className="oc-token-popover-label">Context used</span>
-                    <span className="oc-token-popover-value">{contextTokens.toLocaleString()}{contextWindow ? ` / ${contextWindow.toLocaleString()}` : ''}{contextPercent != null ? ` (${contextPercent.toFixed(0)}%)` : ''}</span>
-                  </div>
+                  {contextTokens != null && contextTokens > 0 && (
+                    <>
+                      <div className="oc-token-popover-divider" />
+                      <div className="oc-token-popover-row">
+                        <span className="oc-token-popover-label">Context used</span>
+                        <span className="oc-token-popover-value">{contextTokens.toLocaleString()}{contextWindow ? ` / ${contextWindow.toLocaleString()}` : ''}{contextPercent != null ? ` (${contextPercent.toFixed(0)}%)` : ''}</span>
+                      </div>
+                    </>
+                  )}
                   {tokenStats.totalCost > 0 && <div className="oc-token-popover-row"><span className="oc-token-popover-label">Reported cost</span><span className="oc-token-popover-value">${tokenStats.totalCost.toFixed(4)}</span></div>}
                   <div className="oc-token-popover-divider" />
                   <div className="oc-token-popover-row oc-token-popover-cost">
                     <span className="oc-token-popover-label">Est. cost</span>
-                    <span className="oc-token-popover-value">{estCostLoading ? '…' : estCost ? (estCost.known ? `$${estCost.cost.toFixed(4)}` : 'unknown model') : 'n/a'}</span>
+                    <span className="oc-token-popover-value">{estimatedCost != null ? `$${estimatedCost.toFixed(4)}` : 'n/a'}</span>
                   </div>
                   {sessionTreeStats && sessionTreeStats.sessions > 1 && (
                     <>
@@ -410,6 +390,7 @@ function ComposerImpl({
   sessionId,
   tokensPerSecond,
   tokenStats,
+  estimatedCost,
   sessionTreeStats,
   selectedReasoning,
   onReasoningChange,
@@ -518,6 +499,7 @@ function ComposerImpl({
     totalCost: number;
     contextWindow?: number;
   };
+  estimatedCost?: number;
   sessionTreeStats?: {
     input: number;
     output: number;
@@ -1318,6 +1300,7 @@ function ComposerImpl({
         tokensPerSecond={tokensPerSecond}
         onAbort={onAbort}
         tokenStats={tokenStats}
+        estimatedCost={estimatedCost}
         sessionTreeStats={sessionTreeStats}
         contextTokens={contextTokens}
         effectiveModel={effectiveModel}
