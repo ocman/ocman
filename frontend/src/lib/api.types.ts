@@ -48,6 +48,15 @@ export interface NotifyEntry {
   directory?: string;
 }
 
+export interface ClientActivity {
+  clientId: string;
+  visible: boolean;
+  focused: boolean;
+  recentlyInteracted: boolean;
+  scopes: string[];
+  ttlMs: number;
+}
+
 export interface PromptSchedule {
   id: string;
   directory: string;

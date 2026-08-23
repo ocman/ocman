@@ -262,12 +262,6 @@ func main() {
 	registry := platforms.NewRegistry()
 	if enabledPlatforms[string(opencodeplatform.PlatformID)] {
 		registry.Register(opencodeplatform.NewWithPricingAndAuth(database, stateDB, pricing.Load(), opencodeAuth))
-		// Keep the unfiltered sessions cache warm so /api/sessions and
-		// notify polls read from memory instead of blocking ~5s on the
-		// GetSessions query (which has heavy per-session subqueries).
-		if database != nil {
-			opencodeplatform.StartSessionsRefresher(ctx, database)
-		}
 	}
 	auth, err := buildAuth(ctx, stateDB, *authPassword, *authPasswordFile, *authSessionTTL, *addr, *authTrustLocalhost)
 	if err != nil {
@@ -314,7 +308,7 @@ func main() {
 		defer mgr.Stop()
 		// Periodically refresh per-remote project inventories so the
 		// machine picker matches against fresh data (AD-8).
-		go mgr.RunInventoryLoop(ctx, 5*time.Minute)
+		go mgr.RunInventoryLoop(ctx, 5*time.Minute, srv.HasDemand)
 
 		if err := srv.Start(ctx); err != nil {
 			log.Fatalf("Server error: %v", err)

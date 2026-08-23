@@ -5,6 +5,7 @@ import { record as recordPerf, templatePath } from './perfRing';
 // from `./api.types` directly.
 export type {
   NotifyEntry,
+  ClientActivity,
   Session,
   SessionStatus,
   GitInfo,
@@ -96,6 +97,7 @@ import type {
   DirectorySearchResponse,
   ModelUsage,
   NotifyEntry,
+  ClientActivity,
   Project,
   Session,
   SessionChanges,
@@ -375,6 +377,8 @@ function queryString(params?: Record<string, string | number | undefined | null>
 }
 
 export const api = {
+  clientActivity: (activity: ClientActivity) =>
+    postJSON<void, ClientActivity>('/api/client-activity', activity, { parseJSON: false }),
   stats: (signal?: AbortSignal) => fetchJSON<Stats>('/api/stats', signal),
   metrics: (params?: { agent?: string; model?: string; days?: number; limit?: number; offset?: number; sessionLimit?: number; sessionOffset?: number; projectLimit?: number; projectOffset?: number; dir?: string }, signal?: AbortSignal) =>
     fetchJSON<MetricsDashboard>(`/api/metrics${queryString(params)}`, signal),

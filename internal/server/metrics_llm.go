@@ -153,18 +153,29 @@ func (s *Server) runLLMMetricsLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			runWithRecover("llm-metrics", func() {
-				rows, newHWM, err := s.db.GetNewAssistantMessages(ctx, hwm)
-				if err != nil {
-					log.WithError(err).Warn("LLM metrics: scan failed")
-					return
-				}
-				pt := pricing.Load()
-				for _, row := range rows {
-					m.record(ctx, row, pt)
-				}
-				hwm = newHWM
-			})
+			runWithRecover("llm-metrics", func() { s.runLLMMetricsTick(ctx, m, &hwm) })
 		}
 	}
+}
+
+func (s *Server) runLLMMetricsTick(ctx context.Context, m *llmMetrics, hwm *int64) {
+	if !s.HasDemand("metrics") {
+		return
+	}
+	getMessages := s.getNewAssistantMessages
+	if getMessages == nil {
+		getMessages = s.db.GetNewAssistantMessages
+	}
+	rows, newHWM, err := getMessages(ctx, *hwm)
+	if err != nil {
+		log.WithError(err).Warn("LLM metrics: scan failed")
+		return
+	}
+	if m != nil {
+		pt := pricing.Load()
+		for _, row := range rows {
+			m.record(ctx, row, pt)
+		}
+	}
+	*hwm = newHWM
 }

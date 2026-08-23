@@ -1,7 +1,10 @@
 package server
 
 import (
+	"context"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 )
@@ -23,6 +26,64 @@ func TestRefreshProjectsIndex_SetsLoadedFlag(t *testing.T) {
 	_, loaded = srv.projectsSnapshot()
 	if !loaded {
 		t.Error("expected loaded=true after successful refresh")
+	}
+}
+
+func TestProjectsBackgroundRefreshRequiresDemand(t *testing.T) {
+	srv := New(nil, nil, "", nil, nil)
+	var calls atomic.Int32
+	srv.projects.fetch = func() ([]db.ProjectStats, error) {
+		calls.Add(1)
+		return nil, nil
+	}
+
+	srv.runProjectsIndexTick()
+	srv.refreshProjectsIndexAsync()
+	time.Sleep(20 * time.Millisecond)
+	if got := calls.Load(); got != 0 {
+		t.Fatalf("background refreshes without demand = %d, want 0", got)
+	}
+
+	if err := srv.refreshProjectsIndex(); err != nil {
+		t.Fatal(err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("direct refresh calls = %d, want 1", got)
+	}
+
+	if err := srv.activity.Update(clientActivityLease{ClientID: "client", Visible: true, Scopes: []string{"projects"}, TTLMS: 45_000}); err != nil {
+		t.Fatal(err)
+	}
+	srv.runProjectsIndexTick()
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("background refreshes with demand = %d, want 2", got)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	srv.runProjectsIndexLoop(ctx)
+}
+
+func TestHostProjectsRefreshesSkippedAsyncWork(t *testing.T) {
+	srv := New(nil, nil, "", nil, nil)
+	calls := 0
+	srv.projects.fetch = func() ([]db.ProjectStats, error) {
+		calls++
+		return []db.ProjectStats{{Directory: "/repo"}}, nil
+	}
+	srv.projects.loaded = true
+
+	srv.refreshProjectsIndexAsync()
+	if calls != 0 {
+		t.Fatalf("headless async refresh calls = %d, want 0", calls)
+	}
+
+	projects, err := srv.hostProjects(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || len(projects) != 1 || projects[0].Directory != "/repo" {
+		t.Fatalf("request refresh = calls %d, projects %#v", calls, projects)
 	}
 }
 

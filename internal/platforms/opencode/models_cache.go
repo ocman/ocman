@@ -309,6 +309,8 @@ const sessionsTTL = 15 * time.Second
 // quickly a change is picked up in between.
 const sessionsReconcileInterval = 5 * time.Minute
 
+const sessionsDemandRetry = 4 * time.Second
+
 // sessionsFlightKey is the single singleflight slot for the snapshot
 // refresh. One constant key is correct because there is exactly one
 // snapshot; see the one-database note on sessionsSnapshot.
@@ -447,9 +449,10 @@ func restoreDirty(ids []string, full bool) {
 	sessionsMu.Unlock()
 }
 
-// StartSessionsRefresher warms the unfiltered sessions cache at startup,
-// refreshes it when events mark work dirty, and performs the five-minute
-// full reconciliation. It shares the request path's singleflight slot.
+// StartSessionsRefresher warms the unfiltered sessions cache when sessions
+// are in demand, refreshes it when events mark work dirty, and performs the
+// five-minute full reconciliation while demand remains. It shares the
+// request path's singleflight slot. A nil demand callback always runs.
 //
 // A pass is incremental: it recomputes the sessions the event stream
 // marked dirty and merges them. It escalates to a full scan when there
@@ -457,26 +460,38 @@ func restoreDirty(ids []string, full bool) {
 // the periodic reconciliation is due, so an idle machine does no work
 // between reconciliations and a missed event is still corrected within
 // sessionsReconcileInterval.
-func StartSessionsRefresher(ctx context.Context, d dbGetSessions) {
+func StartSessionsRefresher(ctx context.Context, d dbGetSessions, hasDemand func(string) bool) {
 	sessionsRefreshWG.Add(1)
 	go func() {
 		defer sessionsRefreshWG.Done()
-		// Warm immediately so the first request after startup hits cache.
-		// The snapshot is cold, so this pass is a full scan.
-		refreshSessionsIncremental(ctx, d)
-		timer := time.NewTimer(nextSessionsReconcileDelay())
+		delay := sessionsDemandRetry
+		if hasDemand == nil || hasDemand("sessions") {
+			// Warm immediately so the first request after startup hits cache.
+			// The snapshot is cold, so this pass is a full scan.
+			refreshSessionsIncremental(ctx, d)
+			delay = nextSessionsReconcileDelay()
+		}
+		timer := time.NewTimer(delay)
 		defer timer.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-sessionsRefreshWake:
+				if hasDemand != nil && !hasDemand("sessions") {
+					resetTimer(timer, sessionsDemandRetry)
+					continue
+				}
 				if !waitForSessionsRefreshBudget(ctx) {
 					return
 				}
 				refreshSessionsIncremental(ctx, d)
 				resetTimer(timer, nextSessionsReconcileDelay())
 			case <-timer.C:
+				if hasDemand != nil && !hasDemand("sessions") {
+					resetTimer(timer, sessionsDemandRetry)
+					continue
+				}
 				refreshSessionsIncremental(ctx, d)
 				resetTimer(timer, nextSessionsReconcileDelay())
 			}

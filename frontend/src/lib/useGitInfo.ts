@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { fetchJSON } from './api';
 import type { GitInfo } from './api';
+import { acquireActivityScope } from './activityScopes';
 
 /**
  * useGitInfo subscribes to git-status info for a set of directories
@@ -128,6 +129,7 @@ export function useGitInfo(dirs: string[] | undefined): UseGitInfoResult {
     if (queryParam === null) return;
 
     const dirList = decodeURIComponent(queryParam).split(',');
+    const releaseScopes = dirList.map((dir) => acquireActivityScope(`git-status:${dir}`));
 
     const runFetch = () => {
       if (typeof document !== 'undefined' && document.hidden) {
@@ -169,6 +171,7 @@ export function useGitInfo(dirs: string[] | undefined): UseGitInfoResult {
     }
 
     return () => {
+      releaseScopes.forEach((release) => release());
       clearInterval(id);
       abortRef.current?.abort();
       if (typeof document !== 'undefined') {

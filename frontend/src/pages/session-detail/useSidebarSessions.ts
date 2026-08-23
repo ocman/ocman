@@ -8,6 +8,7 @@ import { computeSidebarHash, filterInactiveChildren, mergeSidebarSessions, pickN
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { remoteLog } from '../../lib/remoteLog';
 import { onSessionChanged, onSseConnect } from '../../lib/useGlobalEvents';
+import { useActivityScope } from '../../lib/activityScopes';
 
 const RECENT_SESSIONS_LIMIT = 15;
 /**
@@ -86,6 +87,7 @@ export function useSidebarSessions({
   abortSignalRef,
   navigate,
 }: UseSidebarSessionsOptions): UseSidebarSessionsResult {
+  useActivityScope('sessions');
   const getSessions = useApiStore((s) => s.getSessions);
   const getSession = useApiStore((s) => s.getSession);
   const archiveSession = useApiStore((s) => s.archiveSession);

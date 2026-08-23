@@ -198,6 +198,7 @@ export function useSubagentTracking(
     const controller = new AbortController();
     const taskIdList = runningTaskIds.map(({ taskId }) => taskId);
     const poll = async () => {
+      if (document.hidden) return;
       try {
         const resp = await api.sessionTasks(sessionId, taskIdList, controller.signal);
         if (controller.signal.aborted) return;

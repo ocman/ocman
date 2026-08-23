@@ -101,6 +101,7 @@ type Server struct {
 	// in-app prompt toasts can clear instantly rather than waiting for
 	// the next /api/sessions/notify poll.
 	broadcastHub *broadcastHub
+	activity     *clientActivityPolicy
 
 	// remoteAccess describes this instance's own remote-access surface
 	// (instance ID, whether the gRPC server is listening, its address,
@@ -162,6 +163,8 @@ type Server struct {
 	runtime      ocruntime.Runtime
 	openCodeAuth ocapi.Auth
 	daguManager  *dagu.Manager
+
+	getNewAssistantMessages func(context.Context, int64) ([]db.LLMMessageRow, int64, error)
 }
 
 // remoteAccessInfo holds this instance's own remote-access surface for
@@ -194,6 +197,7 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		integrations: newForgeClients(),
 		startTime:    time.Now(),
 		broadcastHub: newBroadcastHub(),
+		activity:     newClientActivityPolicy(time.Now),
 		childResults: internalmcp.NewChildResultBroker(),
 
 		runtime: ocruntime.NewNativeRuntime(),
@@ -250,6 +254,12 @@ func (r registryRef) PlatformForSession(ctx context.Context, sessionID string) (
 // refreshProjectsIndex is singleflighted per owner and each request that
 // lands mid-scan is represented by the one dirty follow-up (FR-8).
 func (s *Server) refreshProjectsIndexAsync() {
+	if !s.HasDemand("projects") {
+		s.projects.mu.Lock()
+		s.projects.dirty = true
+		s.projects.mu.Unlock()
+		return
+	}
 	go runWithRecover("projects-index-async", func() {
 		if err := s.refreshProjectsIndex(); err != nil {
 			log.WithError(err).Warn("refreshing projects index after session creation")
@@ -417,6 +427,11 @@ func (s *Server) HostRouter() *hostsvc.Router { return s.router() }
 // before Start. Nil for single-host installs.
 func (s *Server) SetRemoteManager(m *remote.Manager) { s.remotes = m }
 
+// HasDemand reports whether a visible client currently leases scope.
+func (s *Server) HasDemand(scope string) bool {
+	return s.activity == nil || s.activity.HasDemand(scope)
+}
+
 // Start starts the HTTP server. It blocks until the context is cancelled,
 // then gracefully shuts down the server.
 func (s *Server) Start(ctx context.Context) error {
@@ -441,6 +456,11 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// or handler can reach it. router() assigns lazily, and the loops
 	// started below race that assignment otherwise.
 	s.router()
+	if s.db != nil {
+		if _, ok := s.registry.Get(opencode.PlatformID); ok {
+			opencode.StartSessionsRefresher(ctx, s.db, s.HasDemand)
+		}
+	}
 	// Seed the cached judge delay so the first permission event has it
 	// available without a DB round-trip.
 	if s.stateDB != nil {

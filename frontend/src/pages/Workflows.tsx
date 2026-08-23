@@ -17,6 +17,7 @@ import { WorkflowBuilder, WorkflowRunGraph } from './WorkflowBuilder';
 import { Button, SearchField, SelectField } from '../components/Control';
 import { Modal } from '../components/Modal';
 import { DaguStatus } from '../components/DaguStatus';
+import { useActivityScope } from '../lib/activityScopes';
 import './Workflows.css';
 
 const EXAMPLE = `id: release
@@ -39,6 +40,7 @@ dependencies:
 `;
 
 export function Workflows() {
+  useActivityScope('workflows');
   usePageTitle('Workflows');
   const enabled = useWorkflows();
   const [searchParams, setSearchParams] = useSearchParams();

@@ -96,4 +96,27 @@ describe('useSubagentTracking', () => {
     expect(request).toHaveBeenCalledTimes(2);
     expect(result.current.childSessions[0]?.id).toBe('child-1');
   });
+
+  it('does not poll running tasks while hidden', async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    const request = vi.spyOn(api, 'sessionTasks').mockResolvedValue({ tasks: {} });
+    const part = {
+      id: 'tool-1',
+      messageId: 'message-1',
+      sessionId: 'parent-1',
+      timeCreated: 1000,
+      data: {
+        type: 'tool',
+        tool: 'task',
+        state: { status: 'running', metadata: { taskId: 'ses_child' } },
+      },
+    } as Part;
+
+    renderHook(() => useSubagentTracking([part], 'parent-1'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    expect(request).not.toHaveBeenCalled();
+
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+  });
 });

@@ -3,6 +3,7 @@ package remote
 import (
 	"context"
 	"database/sql"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -148,17 +149,51 @@ func TestManager_EnabledRemotesAndInventoryLoop(t *testing.T) {
 	if enabled[0].RemoteName != "Box" {
 		t.Errorf("RemoteName = %q, want Box", enabled[0].RemoteName)
 	}
+	deadline := time.Now().Add(time.Second)
+	for mgr.resolveDir("/home/u/app") != "abc123" && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if got := mgr.resolveDir("/home/u/app"); got != "abc123" {
+		t.Fatalf("connect-time inventory was not refreshed: owner = %q", got)
+	}
 
 	// RunInventoryLoop ticks at least once then exits on ctx cancel.
 	loopCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
-	go func() { mgr.RunInventoryLoop(loopCtx, 10*time.Millisecond); close(done) }()
+	go func() { mgr.RunInventoryLoop(loopCtx, 10*time.Millisecond, nil); close(done) }()
 	time.Sleep(40 * time.Millisecond)
 	cancel()
 	select {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("RunInventoryLoop did not exit on cancel")
+	}
+}
+
+func TestManager_InventoryLoopRequiresProjectsDemand(t *testing.T) {
+	mgr := newInvManager(t)
+	var calls atomic.Int32
+	mgr.refreshInventories = func(context.Context) { calls.Add(1) }
+	ctx, cancel := context.WithCancel(context.Background())
+	demand := atomic.Bool{}
+	go mgr.RunInventoryLoop(ctx, time.Millisecond, func(scope string) bool {
+		return scope == "projects" && demand.Load()
+	})
+	time.Sleep(10 * time.Millisecond)
+	if got := calls.Load(); got != 0 {
+		t.Fatalf("periodic refreshes without demand = %d, want 0", got)
+	}
+	demand.Store(true)
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+	if got := calls.Load(); got == 0 {
+		t.Fatal("periodic refresh did not run with projects demand")
+	}
+
+	before := calls.Load()
+	mgr.RefreshInventories(context.Background())
+	if got := calls.Load(); got != before {
+		t.Fatalf("explicit refresh used periodic test callback: got %d, want %d", got, before)
 	}
 }
 

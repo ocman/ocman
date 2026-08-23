@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 
 	"go.opentelemetry.io/otel/sdk/metric"
@@ -93,6 +94,28 @@ func TestLLMMetrics_Record(t *testing.T) {
 		if totalCount != 1 {
 			t.Errorf("duration histogram count = %d, want 1", totalCount)
 		}
+	}
+}
+
+func TestLLMMetricsTickRequiresDemand(t *testing.T) {
+	srv := New(nil, nil, "", nil, nil)
+	var calls atomic.Int32
+	srv.getNewAssistantMessages = func(context.Context, int64) ([]db.LLMMessageRow, int64, error) {
+		calls.Add(1)
+		return nil, 2, nil
+	}
+	hwm := int64(1)
+	srv.runLLMMetricsTick(context.Background(), nil, &hwm)
+	if got := calls.Load(); got != 0 || hwm != 1 {
+		t.Fatalf("tick without demand: calls=%d hwm=%d, want 0 and 1", got, hwm)
+	}
+
+	if err := srv.activity.Update(clientActivityLease{ClientID: "client", Visible: true, Scopes: []string{"metrics"}, TTLMS: 45_000}); err != nil {
+		t.Fatal(err)
+	}
+	srv.runLLMMetricsTick(context.Background(), nil, &hwm)
+	if got := calls.Load(); got != 1 || hwm != 2 {
+		t.Fatalf("tick with demand: calls=%d hwm=%d, want 1 and 2", got, hwm)
 	}
 }
 

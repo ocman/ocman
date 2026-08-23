@@ -92,7 +92,10 @@ func (s *Server) hostTmuxSessions() ([]hostsvc.TmuxSession, error) {
 // projects index, refreshing it lazily if it hasn't loaded yet.
 func (s *Server) hostProjects(_ context.Context) ([]db.ProjectStats, error) {
 	projects, loaded := s.projectsSnapshot()
-	if !loaded {
+	s.projects.mu.RLock()
+	dirty := s.projects.dirty
+	s.projects.mu.RUnlock()
+	if !loaded || dirty {
 		if err := s.refreshProjectsIndex(); err != nil {
 			return nil, err
 		}

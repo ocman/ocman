@@ -38,6 +38,7 @@ import { usePerformanceCleanup } from './lib/usePerformanceCleanup';
 import { useMemoryMonitor } from './lib/useMemoryMonitor';
 import { useLongTaskMonitor } from './lib/useLongTaskMonitor';
 import { installDevHandle as installPerfDevHandle } from './lib/perfRing';
+import { ClientActivityReporter } from './lib/ClientActivityReporter';
 
 // Top-level boundary keyed on the current pathname so navigating away from
 // a crashed route auto-recovers without forcing the user to reload. Inner
@@ -441,6 +442,7 @@ function AuthenticatedApp() {
   return (
     <AuthGate>
       <HeaderProvider>
+        <ClientActivityReporter />
         <FaviconNotify />
         <BellNotify />
         <NotificationNotify />

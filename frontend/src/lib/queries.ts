@@ -13,6 +13,7 @@
  */
 import { useQuery, type QueryClient } from '@tanstack/react-query';
 import { api } from './api';
+import { useActivityScope } from './activityScopes';
 import type {
   Session,
   Project,
@@ -57,6 +58,7 @@ export function useSessions(
   params?: SessionsParams,
   options?: { refetchInterval?: number; enabled?: boolean },
 ) {
+  useActivityScope(options?.enabled === false ? undefined : 'sessions');
   // Build a stable query key from the params. `sinceHours` is a stable
   // number (e.g. 12, 168) rather than a moving timestamp.
   const key = params?.dir
@@ -105,6 +107,7 @@ export function insertProvisionalSession(qc: QueryClient, session: Session): voi
 // ---------------------------------------------------------------------------
 
 export function useProjects(options?: { enabled?: boolean }) {
+  useActivityScope(options?.enabled === false ? undefined : 'projects');
   return useQuery<Project[]>({
     queryKey: ['projects'],
     queryFn: ({ signal }) => api.projects(signal),
@@ -121,6 +124,7 @@ export function useActivity(
   params?: { days?: number; model?: string; dir?: string },
   options?: { enabled?: boolean },
 ) {
+  useActivityScope(options?.enabled === false ? undefined : 'metrics');
   return useQuery<ActivityDay[]>({
     queryKey: ['activity', params],
     queryFn: ({ signal }) => api.activity(params, signal),
@@ -132,6 +136,7 @@ export function useModels(
   params?: { days?: number; dir?: string },
   options?: { enabled?: boolean },
 ) {
+  useActivityScope(options?.enabled === false ? undefined : 'metrics');
   return useQuery<ModelUsage[]>({
     queryKey: ['models', params],
     queryFn: ({ signal }) => api.models(params, signal),
@@ -143,6 +148,7 @@ export function useHourly(
   params?: { days?: number; dir?: string },
   options?: { enabled?: boolean },
 ) {
+  useActivityScope(options?.enabled === false ? undefined : 'metrics');
   return useQuery<HourlyData[]>({
     queryKey: ['hourly', params],
     queryFn: ({ signal }) => api.hourly(params, signal),
@@ -154,6 +160,7 @@ export function useHourlyTokens(
   params?: { days?: number; model?: string; dir?: string },
   options?: { enabled?: boolean },
 ) {
+  useActivityScope(options?.enabled === false ? undefined : 'metrics');
   return useQuery<HourlyTokensByModel[]>({
     queryKey: ['hourlyTokens', params],
     queryFn: ({ signal }) => api.hourlyTokens(params, signal),
@@ -182,6 +189,7 @@ export function useMetrics(
   params?: MetricsParams,
   options?: { enabled?: boolean },
 ) {
+  useActivityScope(options?.enabled === false ? undefined : 'metrics');
   return useQuery<MetricsDashboard>({
     queryKey: ['metrics', params],
     queryFn: ({ signal }) => api.metrics(params, signal),

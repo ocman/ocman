@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { create } from 'zustand';
 import { api, type NotifyEntry } from './api';
+import { acquireActivityScope } from './activityScopes';
 
 /**
  * Shared notify-data store that coalesces the four independent
@@ -39,6 +40,7 @@ type NotifyDataState = {
 
 let intervalId: ReturnType<typeof setInterval> | null = null;
 let abortController: AbortController | null = null;
+let releaseActivityScope: (() => void) | null = null;
 
 async function fetchNotify(set: (partial: Partial<NotifyDataState>) => void) {
   // Abort any in-flight request so we never have two concurrent fetches.
@@ -95,6 +97,7 @@ export const useNotifyStore = create<NotifyDataState>((set) => ({
     const next = useNotifyStore.getState().refCount + 1;
     set({ refCount: next });
     if (next === 1) {
+      releaseActivityScope = acquireActivityScope('sessions');
       // First consumer — start polling and listen for visibility.
       if (!document.hidden) {
         startPolling(set);
@@ -108,6 +111,8 @@ export const useNotifyStore = create<NotifyDataState>((set) => ({
     const next = Math.max(0, useNotifyStore.getState().refCount - 1);
     set({ refCount: next });
     if (next === 0) {
+      releaseActivityScope?.();
+      releaseActivityScope = null;
       // Last consumer gone — stop everything.
       stopPolling();
       if (visibilityHandler) {
@@ -149,6 +154,8 @@ export function recheckNotifyData() {
  * Reset internal state for tests. Not part of the public API.
  */
 export function __resetForTests() {
+  releaseActivityScope?.();
+  releaseActivityScope = null;
   stopPolling();
   if (visibilityHandler) {
     document.removeEventListener('visibilitychange', visibilityHandler);

@@ -207,6 +207,9 @@ func TestHandleProjects_UsesInMemoryIndexUntilRefresh(t *testing.T) {
 func TestHandleCreateSession_RefreshesProjectsIndex(t *testing.T) {
 	srv, rawDB := testServerWithRawDB(t)
 	defer rawDB.Close()
+	if err := srv.activity.Update(clientActivityLease{ClientID: "client", Visible: true, Scopes: []string{"projects"}, TTLMS: 45_000}); err != nil {
+		t.Fatal(err)
+	}
 	sub, unsubscribe := srv.broadcastHub.subscribe()
 	defer unsubscribe()
 

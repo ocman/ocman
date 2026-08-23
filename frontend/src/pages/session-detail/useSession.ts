@@ -32,6 +32,7 @@ import {
 import { computeReconnectDelay } from './sseBackoff';
 import { truncateSseData } from '../../lib/sseHelpers';
 import { remoteLog } from '../../lib/remoteLog';
+import { useActivityScope } from '../../lib/activityScopes';
 
 /** Live-pipeline status surfaced to the page. */
 export type UseSessionStatus = 'loading' | 'live' | 'reconnecting' | 'error';
@@ -214,6 +215,7 @@ export function useSession(
   sessionId: string | undefined,
   options: UseSessionOptions = {},
 ): UseSessionResult {
+  useActivityScope(sessionId && sessionId !== 'new' ? `session:${sessionId}` : undefined);
   const fetchSession = options.fetchSession ?? defaultFetchSession;
   const reconnectDelay = options.reconnectDelay ?? computeReconnectDelay;
   const pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;

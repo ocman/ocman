@@ -588,16 +588,18 @@ func TestServer_RunAutoApproveWatcher_RespectsContext(t *testing.T) {
 	}
 }
 
-// TestAutoApproveWatcher_RoutesToEnsureAutoApprove is an integration-
-// style sanity check: when constructed with a real Service, the
+// TestAutoApproveWatcher_RoutesToEnsureAutoApproveWithNoClients is an
+// integration-style sanity check: with no browser clients or SSE sinks,
+// constructing the watcher with a real Service still routes the permission
+// to the judge path. The
 // watcher's default onPermission resolves the OpenCode adapter via
 // deps.OpencodePlatform and calls svc.Ensure (which short-circuits
 // in this test because we pre-seed the autoApprove cache, proving the
 // call went through the expected path).
-func TestAutoApproveWatcher_RoutesToEnsureAutoApprove(t *testing.T) {
+func TestAutoApproveWatcher_RoutesToEnsureAutoApproveWithNoClients(t *testing.T) {
 	fake := newFakeOpenCodeEventServer(nil)
 	fake.setEvents([]string{
-		permissionAskedEvent("ses-A", "perm-route", "Bash command", "ls"),
+		permissionAskedEvent("ses-A", "perm-route", "Bash command", "rm -rf /"),
 	}, true)
 	defer fake.close()
 
@@ -608,6 +610,7 @@ func TestAutoApproveWatcher_RoutesToEnsureAutoApprove(t *testing.T) {
 		autoApprove: make(map[string]*autoApproveStatus),
 		deps: Deps{
 			OpencodePlatform: func() platforms.Platform { return fp },
+			DefaultEnabled:   true,
 		},
 	}
 
@@ -661,6 +664,17 @@ func TestAutoApproveWatcher_RoutesToEnsureAutoApprove(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("default onPermission did not fire within 2s")
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if verdict, ok := srv.lookupJudged("ses-A", "perm-route"); ok && verdict == verdictUnsafe {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("headless permission did not reach the auto-approve engine")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

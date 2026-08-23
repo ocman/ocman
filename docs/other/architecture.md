@@ -256,6 +256,10 @@ flowchart TD
     Comp --> Stores
     Stores --> API[lib/ API client]
     Stores --> SSE[SSE subscription]
+    Pages --> Scopes[Ref-counted activity scopes]
+    Comp --> Scopes
+    Scopes --> Reporter[Client activity lease reporter]
+    Reporter --> API
     API -->|/api| Hub[ocman backend]
     SSE -->|events| Hub
     Comp --> Caps[useCapabilities<br/>capability gating]
@@ -269,6 +273,11 @@ flowchart TD
   change. Its run graph labels ordered phases, stable map items, attempts,
   Node Results, historical artifacts, resource pools and workspace ownership
   without inferring platform identity.
+- **Activity leases.** Mounted data subscriptions ref-count their scopes. One
+  authenticated reporter renews the visible tab's lease, allowing the backend
+  to skip view-serving session, project, remote-inventory and metrics refreshes
+  when every tab is hidden or gone. Headless workflows, schedules and
+  auto-approve do not consult these leases.
 - **Beads status.** The right panel queries the repository owner's
   `hostsvc.Host` through `/api/project/beads-status`; remote owners proxy the
   same operation over gRPC. Ticket data stays in the repository and is polled

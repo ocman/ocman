@@ -33,7 +33,7 @@ type projectsIndexState struct {
 	fetch func() ([]db.ProjectStats, error)
 }
 
-// projectsIndexTickFn is the per-tick body of runProjectsIndexLoop,
+// projectsIndexTickFn is the refresh body of runProjectsIndexLoop,
 // lifted to a package-level variable so tests can inject a panicking
 // implementation (FR-11) and assert the loop survives.
 var projectsIndexTickFn = func(s *Server) {
@@ -42,12 +42,18 @@ var projectsIndexTickFn = func(s *Server) {
 	}
 }
 
+func (s *Server) runProjectsIndexTick() {
+	if s.HasDemand("projects") {
+		projectsIndexTickFn(s)
+	}
+}
+
 func (s *Server) runProjectsIndexLoop(ctx context.Context) {
 	if s.db == nil {
 		return
 	}
 
-	runWithRecover("projects-index", func() { projectsIndexTickFn(s) })
+	runWithRecover("projects-index", s.runProjectsIndexTick)
 
 	ticker := time.NewTicker(projectsScanInterval)
 	defer ticker.Stop()
@@ -57,7 +63,7 @@ func (s *Server) runProjectsIndexLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			runWithRecover("projects-index", func() { projectsIndexTickFn(s) })
+			runWithRecover("projects-index", s.runProjectsIndexTick)
 		}
 	}
 }

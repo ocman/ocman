@@ -1274,7 +1274,7 @@ func TestStartSessionsRefresher_WarmsCacheOnStart(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	StartSessionsRefresher(ctx, d)
+	StartSessionsRefresher(ctx, d, nil)
 
 	// The refresher fires one query immediately so the first request
 	// after startup is already a cache hit.
@@ -1295,7 +1295,7 @@ func TestStartSessionsRefresher_StopsOnContextCancel(t *testing.T) {
 	d := &fakeGetSessionsDB{out: []db.Session{{ID: "s1"}}}
 	ctx, cancel := context.WithCancel(context.Background())
 
-	StartSessionsRefresher(ctx, d)
+	StartSessionsRefresher(ctx, d, nil)
 	waitFor(t, time.Second, func() bool { return d.calls.Load() >= 1 })
 
 	// Cancel and confirm the goroutine stops issuing queries.
@@ -1315,7 +1315,7 @@ func TestStartSessionsRefresher_RefreshesDirtySessionOnEvent(t *testing.T) {
 
 	store := newFakeSessionStore(dirtyFixture...)
 	ctx, cancel := context.WithCancel(context.Background())
-	StartSessionsRefresher(ctx, store)
+	StartSessionsRefresher(ctx, store, nil)
 	waitFor(t, time.Second, func() bool { return store.fullScans.Load() == 1 })
 
 	store.put(db.Session{ID: "s-mid", Title: "updated", TimeUpdated: 5000})
@@ -1323,6 +1323,46 @@ func TestStartSessionsRefresher_RefreshesDirtySessionOnEvent(t *testing.T) {
 	waitFor(t, time.Second, func() bool { return store.summaryReads.Load() == 1 })
 	cancel()
 	drainSessionsRefresh()
+}
+
+func TestStartSessionsRefresher_GatesStartupAndPreservesDirtyEvents(t *testing.T) {
+	resetSessionsCache()
+	t.Cleanup(resetSessionsCache)
+
+	store := newFakeSessionStore(dirtyFixture...)
+	var demand atomic.Bool
+	checked := make(chan bool, 3)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	StartSessionsRefresher(ctx, store, func(scope string) bool {
+		active := scope == "sessions" && demand.Load()
+		checked <- active
+		return active
+	})
+	if <-checked {
+		t.Fatal("startup unexpectedly had demand")
+	}
+
+	MarkSessionDirty("s-mid")
+	if <-checked {
+		t.Fatal("dirty event unexpectedly had demand")
+	}
+	if got := store.fullScans.Load() + store.summaryReads.Load(); got != 0 {
+		t.Fatalf("refreshes without sessions demand = %d, want 0", got)
+	}
+
+	demand.Store(true)
+	MarkSessionDirty("s-new")
+	waitFor(t, time.Second, func() bool { return store.fullScans.Load() == 1 })
+	cancel()
+	drainSessionsRefresh()
+
+	sessionsMu.RLock()
+	_, midStillDirty := sessionsDirty["s-mid"]
+	sessionsMu.RUnlock()
+	if midStillDirty {
+		t.Fatal("dirty event received without demand was not processed later")
+	}
 }
 
 // TestInvalidateSessionsCache_FloorsOnQueryCost pins that invalidation

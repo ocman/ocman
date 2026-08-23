@@ -51,6 +51,7 @@ type Manager struct {
 	// disconnect-during-registration interleaving; nil in production. Set
 	// before Start.
 	beforeAdapterRegister func()
+	refreshInventories    func(context.Context)
 }
 
 // managedRemote bundles a RemoteConn with its registered adapters and the
@@ -112,9 +113,10 @@ func (m *Manager) Start(ctx context.Context) {
 	}
 }
 
-// RunInventoryLoop periodically refreshes every connected remote's
-// project inventory until ctx is cancelled (AD-8). Call once after Start.
-func (m *Manager) RunInventoryLoop(ctx context.Context, interval time.Duration) {
+// RunInventoryLoop periodically refreshes every connected remote's project
+// inventory while projects are in demand (AD-8). A nil demand callback always
+// runs. Connect-time and explicit refreshes do not pass through this loop.
+func (m *Manager) RunInventoryLoop(ctx context.Context, interval time.Duration, hasDemand func(string) bool) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -122,7 +124,14 @@ func (m *Manager) RunInventoryLoop(ctx context.Context, interval time.Duration) 
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			m.RefreshInventories(ctx)
+			if hasDemand != nil && !hasDemand("projects") {
+				continue
+			}
+			if m.refreshInventories != nil {
+				m.refreshInventories(ctx)
+			} else {
+				m.RefreshInventories(ctx)
+			}
 		}
 	}
 }
