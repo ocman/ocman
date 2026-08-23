@@ -759,7 +759,7 @@ function PaneHeader({
         )}
       </span>
       <span className="oc-right-panel-pane-actions">
-        {hasFullscreen && <FullscreenButton onClick={onFullscreenClick} />}
+        {hasFullscreen && <FullscreenButton onClick={onFullscreenClick} disabled={summary.files === 0} />}
         {hasRefresh && (
           <ChangesRefreshButton onClick={onRefreshClick} loading={loading} />
         )}

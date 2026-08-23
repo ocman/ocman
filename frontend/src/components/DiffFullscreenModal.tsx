@@ -62,8 +62,9 @@ export function DiffFullscreenModal({ title, files, onClose }: DiffFullscreenMod
       </header>
       <div className="oc-diff-fs-cols">
         <ul className="oc-diff-fs-files" aria-label="Changed files">
-          {files.map((f) => (
-            <li key={f.key}>
+          {files.map((f) => {
+            const displayPath = splitDisplayPath(f.label ?? f.path);
+            return <li key={f.key}>
               <button
                 type="button"
                 className={`oc-diff-fs-file${f.key === current?.key ? ' selected' : ''}`}
@@ -79,15 +80,15 @@ export function DiffFullscreenModal({ title, files, onClose }: DiffFullscreenMod
                     {f.statusLabel ?? f.status.charAt(0).toUpperCase()}
                   </span>
                 )}
-                <span className="oc-diff-fs-file-name">{basename(f.label ?? f.path)}</span>
-                <span className="oc-diff-fs-file-dir">{dirname(f.label ?? f.path)}</span>
+                <span className="oc-diff-fs-file-name">{displayPath.name}</span>
+                <span className="oc-diff-fs-file-dir">{displayPath.dir}</span>
                 <span className="oc-diff-fs-file-counts">
                   {f.additions > 0 && <span className="oc-changes-add">+{f.additions}</span>}
                   {f.deletions > 0 && <span className="oc-changes-del">-{f.deletions}</span>}
                 </span>
               </button>
-            </li>
-          ))}
+            </li>;
+          })}
         </ul>
         <div className="oc-diff-fs-diff">
           {current ? (
@@ -112,6 +113,14 @@ function basename(path: string): string {
 function dirname(path: string): string {
   const i = path.lastIndexOf('/');
   return i === -1 ? '' : path.slice(0, i);
+}
+
+function splitDisplayPath(label: string): { name: string; dir: string } {
+  const paths = label.split(' → ');
+  return {
+    name: paths.map(basename).join(' → '),
+    dir: [...new Set(paths.map(dirname))].join(' → '),
+  };
 }
 
 // FullscreenButton is the header icon button that opens the modal.

@@ -30,6 +30,18 @@ describe('DiffFullscreenModal', () => {
     expect(screen.getByText('src/deep')).toBeInTheDocument();
   });
 
+  it('splits both sides of a renamed path', () => {
+    const renamed = [{
+      ...files[0],
+      path: 'src/b.ts',
+      label: 'src/a.ts → src/b.ts',
+    }];
+    render(<DiffFullscreenModal title="Working tree" files={renamed} onClose={vi.fn()} />);
+
+    expect(screen.getByText('a.ts → b.ts')).toBeInTheDocument();
+    expect(screen.getByText('src')).toBeInTheDocument();
+  });
+
   it('renders an empty state with no files', () => {
     render(<DiffFullscreenModal title="Session changes" files={[]} onClose={vi.fn()} />);
     expect(screen.getByText('No changes to show.')).toBeInTheDocument();
