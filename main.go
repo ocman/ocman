@@ -308,7 +308,7 @@ func main() {
 		defer mgr.Stop()
 		// Periodically refresh per-remote project inventories so the
 		// machine picker matches against fresh data (AD-8).
-		go mgr.RunInventoryLoop(ctx, 5*time.Minute, srv.HasDemand)
+		go mgr.RunInventoryLoop(ctx, 5*time.Minute)
 
 		if err := srv.Start(ctx); err != nil {
 			log.Fatalf("Server error: %v", err)

@@ -114,9 +114,9 @@ func (m *Manager) Start(ctx context.Context) {
 }
 
 // RunInventoryLoop periodically refreshes every connected remote's project
-// inventory while projects are in demand (AD-8). A nil demand callback always
-// runs. Connect-time and explicit refreshes do not pass through this loop.
-func (m *Manager) RunInventoryLoop(ctx context.Context, interval time.Duration, hasDemand func(string) bool) {
+// inventory until ctx is cancelled (AD-8). The inventory backs directory
+// ownership routing, so it remains active without a browser client.
+func (m *Manager) RunInventoryLoop(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
@@ -124,9 +124,6 @@ func (m *Manager) RunInventoryLoop(ctx context.Context, interval time.Duration, 
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if hasDemand != nil && !hasDemand("projects") {
-				continue
-			}
 			if m.refreshInventories != nil {
 				m.refreshInventories(ctx)
 			} else {

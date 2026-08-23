@@ -275,7 +275,7 @@ flowchart TD
   without inferring platform identity.
 - **Activity leases.** Mounted data subscriptions ref-count their scopes. One
   authenticated reporter renews the visible tab's lease, allowing the backend
-  to skip view-serving session, project, remote-inventory and metrics refreshes
+  to skip view-serving session, project and metrics refreshes
   when every tab is hidden or gone. Headless workflows, schedules and
   auto-approve do not consult these leases.
 - **Beads status.** The right panel queries the repository owner's

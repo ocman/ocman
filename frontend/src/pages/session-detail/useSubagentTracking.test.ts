@@ -119,4 +119,66 @@ describe('useSubagentTracking', () => {
 
     Object.defineProperty(document, 'hidden', { configurable: true, value: false });
   });
+
+  it('pauses child-link retries while hidden and resumes when visible', async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    const request = vi.spyOn(api, 'sessionTasks').mockResolvedValue({ tasks: {}, children: [] });
+    const part = {
+      id: 'tool-1',
+      messageId: 'message-1',
+      sessionId: 'parent-1',
+      timeCreated: 1000,
+      data: { type: 'tool', tool: 'new_session', state: { status: 'running', input: { intent: 'Explain' } } },
+    } as Part;
+
+    renderHook(() => useSubagentTracking([part], 'parent-1'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(request).not.toHaveBeenCalled();
+
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    document.dispatchEvent(new Event('visibilitychange'));
+    await act(async () => { await Promise.resolve(); });
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not fork child-link polls on repeated visibility events', async () => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
+    const request = vi.spyOn(api, 'sessionTasks').mockImplementation(() => new Promise(() => {}));
+    const part = {
+      id: 'tool-1',
+      messageId: 'message-1',
+      sessionId: 'parent-1',
+      timeCreated: 1000,
+      data: { type: 'tool', tool: 'new_session', state: { status: 'running', input: { intent: 'Explain' } } },
+    } as Part;
+
+    renderHook(() => useSubagentTracking([part], 'parent-1'));
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    document.dispatchEvent(new Event('visibilitychange'));
+    document.dispatchEvent(new Event('visibilitychange'));
+    await act(async () => { await Promise.resolve(); });
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not overlap slow running-task polls', async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    const request = vi.spyOn(api, 'sessionTasks').mockImplementation(() => new Promise(() => {}));
+    const part = {
+      id: 'tool-1',
+      messageId: 'message-1',
+      sessionId: 'parent-1',
+      timeCreated: 1000,
+      data: {
+        type: 'tool',
+        tool: 'task',
+        state: { status: 'running', metadata: { taskId: 'ses_child' } },
+      },
+    } as Part;
+
+    renderHook(() => useSubagentTracking([part], 'parent-1'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    expect(request).toHaveBeenCalledTimes(1);
+  });
 });

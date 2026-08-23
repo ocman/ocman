@@ -45,7 +45,11 @@ var projectsIndexTickFn = func(s *Server) {
 func (s *Server) runProjectsIndexTick() {
 	if s.HasDemand("projects") {
 		projectsIndexTickFn(s)
+		return
 	}
+	s.projects.mu.Lock()
+	s.projects.dirty = true
+	s.projects.mu.Unlock()
 }
 
 func (s *Server) runProjectsIndexLoop(ctx context.Context) {
@@ -191,9 +195,14 @@ func (s *Server) getProjects(ctx context.Context) ([]db.ProjectStats, error) {
 }
 
 func (s *Server) projectsSnapshot() ([]db.ProjectStats, bool) {
+	projects, loaded, _ := s.projectsSnapshotState()
+	return projects, loaded
+}
+
+func (s *Server) projectsSnapshotState() ([]db.ProjectStats, bool, bool) {
 	s.projects.mu.RLock()
 	defer s.projects.mu.RUnlock()
-	return cloneProjectStats(s.projects.data), s.projects.loaded
+	return cloneProjectStats(s.projects.data), s.projects.loaded, s.projects.dirty
 }
 
 func cloneProjectStats(projects []db.ProjectStats) []db.ProjectStats {

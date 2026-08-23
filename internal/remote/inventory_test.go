@@ -160,7 +160,7 @@ func TestManager_EnabledRemotesAndInventoryLoop(t *testing.T) {
 	// RunInventoryLoop ticks at least once then exits on ctx cancel.
 	loopCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
-	go func() { mgr.RunInventoryLoop(loopCtx, 10*time.Millisecond, nil); close(done) }()
+	go func() { mgr.RunInventoryLoop(loopCtx, 10*time.Millisecond); close(done) }()
 	time.Sleep(40 * time.Millisecond)
 	cancel()
 	select {
@@ -170,24 +170,16 @@ func TestManager_EnabledRemotesAndInventoryLoop(t *testing.T) {
 	}
 }
 
-func TestManager_InventoryLoopRequiresProjectsDemand(t *testing.T) {
+func TestManager_InventoryLoopKeepsRoutingInventoryFreshWithoutProjectsDemand(t *testing.T) {
 	mgr := newInvManager(t)
 	var calls atomic.Int32
 	mgr.refreshInventories = func(context.Context) { calls.Add(1) }
 	ctx, cancel := context.WithCancel(context.Background())
-	demand := atomic.Bool{}
-	go mgr.RunInventoryLoop(ctx, time.Millisecond, func(scope string) bool {
-		return scope == "projects" && demand.Load()
-	})
-	time.Sleep(10 * time.Millisecond)
-	if got := calls.Load(); got != 0 {
-		t.Fatalf("periodic refreshes without demand = %d, want 0", got)
-	}
-	demand.Store(true)
+	go mgr.RunInventoryLoop(ctx, time.Millisecond)
 	time.Sleep(10 * time.Millisecond)
 	cancel()
 	if got := calls.Load(); got == 0 {
-		t.Fatal("periodic refresh did not run with projects demand")
+		t.Fatal("routing inventory stopped without projects demand")
 	}
 
 	before := calls.Load()

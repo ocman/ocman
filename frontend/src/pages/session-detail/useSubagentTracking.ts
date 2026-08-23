@@ -158,7 +158,17 @@ export function useSubagentTracking(
     if (!sessionId || runningNewSessions.length === 0) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let inFlight = false;
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = undefined;
+        void poll();
+      }, 250);
+    };
     const poll = async () => {
+      if (document.hidden || inFlight) return;
+      inFlight = true;
       try {
         const response = await api.sessionTasks(sessionId, [], controller.signal);
         if (controller.signal.aborted) return;
@@ -175,15 +185,27 @@ export function useSubagentTracking(
           unmatched.splice(index, 1);
           return true;
         });
-        if (!allLinked) timer = setTimeout(poll, 250);
+        if (!allLinked) schedule();
       } catch {
-        if (!controller.signal.aborted) timer = setTimeout(poll, 250);
+        if (!controller.signal.aborted) schedule();
+      } finally {
+        inFlight = false;
       }
     };
     poll();
+    const onVisibility = () => {
+      if (document.hidden) return;
+      if (timer) {
+        clearTimeout(timer);
+        timer = undefined;
+      }
+      void poll();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       controller.abort();
       if (timer) clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
     // The part IDs make this effect restart when the running calls change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -197,8 +219,10 @@ export function useSubagentTracking(
     if (!sessionId || runningTaskIds.length === 0) return;
     const controller = new AbortController();
     const taskIdList = runningTaskIds.map(({ taskId }) => taskId);
+    let inFlight = false;
     const poll = async () => {
-      if (document.hidden) return;
+      if (document.hidden || inFlight) return;
+      inFlight = true;
       try {
         const resp = await api.sessionTasks(sessionId, taskIdList, controller.signal);
         if (controller.signal.aborted) return;
@@ -215,6 +239,8 @@ export function useSubagentTracking(
         }
       } catch {
         /* ignore poll errors — next tick retries */
+      } finally {
+        inFlight = false;
       }
     };
     poll();

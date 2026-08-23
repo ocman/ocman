@@ -87,6 +87,26 @@ func TestHostProjectsRefreshesSkippedAsyncWork(t *testing.T) {
 	}
 }
 
+func TestHostProjectsRefreshesAfterSkippedTick(t *testing.T) {
+	srv := New(nil, nil, "", nil, nil)
+	calls := 0
+	srv.projects.fetch = func() ([]db.ProjectStats, error) {
+		calls++
+		return []db.ProjectStats{{Directory: "/fresh"}}, nil
+	}
+	srv.projects.loaded = true
+	srv.projects.data = []db.ProjectStats{{Directory: "/stale"}}
+
+	srv.runProjectsIndexTick()
+	projects, err := srv.hostProjects(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || len(projects) != 1 || projects[0].Directory != "/fresh" {
+		t.Fatalf("request refresh = calls %d, projects %#v", calls, projects)
+	}
+}
+
 // TestRefreshProjectsIndex_NilDB is a no-op guard: when the server has
 // no database, refreshProjectsIndex must return nil without panicking.
 func TestRefreshProjectsIndex_NilDB(t *testing.T) {

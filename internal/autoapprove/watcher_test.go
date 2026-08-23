@@ -591,50 +591,49 @@ func TestServer_RunAutoApproveWatcher_RespectsContext(t *testing.T) {
 // TestAutoApproveWatcher_RoutesToEnsureAutoApproveWithNoClients is an
 // integration-style sanity check: with no browser clients or SSE sinks,
 // constructing the watcher with a real Service still routes the permission
-// to the judge path. The
-// watcher's default onPermission resolves the OpenCode adapter via
-// deps.OpencodePlatform and calls svc.Ensure (which short-circuits
-// in this test because we pre-seed the autoApprove cache, proving the
-// call went through the expected path).
+// to the judge path. The fake judge reports when port discovery starts, which
+// occurs inside JudgeWithCallback rather than in the watcher or denylist path.
 func TestAutoApproveWatcher_RoutesToEnsureAutoApproveWithNoClients(t *testing.T) {
 	fake := newFakeOpenCodeEventServer(nil)
 	fake.setEvents([]string{
-		permissionAskedEvent("ses-A", "perm-route", "Bash command", "rm -rf /"),
+		permissionAskedEvent("ses-A", "perm-route", "Bash command", "ls"),
 	}, true)
 	defer fake.close()
 
 	// Provide a fake adapter with the OpenCode platform ID so the
 	// watcher's default onPermission can resolve it.
 	fp := &fakePlatform{id: "opencode"}
+	judgeStarted := make(chan struct{}, 1)
+	judgeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/session" {
+			judgeStarted <- struct{}{}
+			http.Error(w, "stop after observing judge startup", http.StatusInternalServerError)
+			return
+		}
+		if r.Method == http.MethodGet {
+			_, _ = w.Write([]byte("[]"))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer judgeServer.Close()
+	judgeURL, err := url.Parse(judgeServer.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
 	srv := &Service{
 		autoApprove: make(map[string]*autoApproveStatus),
 		deps: Deps{
 			OpencodePlatform: func() platforms.Platform { return fp },
 			DefaultEnabled:   true,
+			SessionDir:       func(string) (string, error) { return "/repo/a", nil },
+		},
+		judge: &PermissionJudge{
+			openCodePort: func(string) string { return judgeURL.Port() },
+			httpClient:   judgeServer.Client(),
 		},
 	}
 
-	// Pre-seed the cache so Ensure short-circuits and we
-	// don't accidentally spawn a real judge goroutine. We then watch
-	// for the short-circuit to happen by polling lookupJudged — once
-	// the watcher has driven its way through Ensure for
-	// our permissionID, we're done.
-	//
-	// Tactic: install a sentinel verdict for a DIFFERENT permission
-	// first, leaving perm-route un-cached. The watcher's call should
-	// land on perm-route, Ensure will try to claim, and
-	// (since the adapter is a fake that does nothing) the goroutine
-	// returns quickly. We assert that Ensure was reached
-	// by observing the in-flight slot transition from empty -> claimed
-	// -> released.
-	//
-	// To avoid timing flakiness, we instead intercept via the seam:
-	// override w.onPermission to call svc.Ensure and then
-	// signal a channel. Same as the first test, but we want to assert
-	// it ran against the real wiring (newAutoApproveWatcher(srv) with
-	// no override) — so check that w.onPermission is non-nil by
-	// default and that calling w.onPermission with our adapter
-	// resolves correctly.
 	w := newAutoApproveWatcher(srv)
 	if w.onPermission == nil {
 		t.Fatal("newAutoApproveWatcher(srv) left onPermission nil; want a default")
@@ -666,15 +665,10 @@ func TestAutoApproveWatcher_RoutesToEnsureAutoApproveWithNoClients(t *testing.T)
 		t.Fatal("default onPermission did not fire within 2s")
 	}
 
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		if verdict, ok := srv.lookupJudged("ses-A", "perm-route"); ok && verdict == verdictUnsafe {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("headless permission did not reach the auto-approve engine")
-		}
-		time.Sleep(10 * time.Millisecond)
+	select {
+	case <-judgeStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("headless permission did not start the judge")
 	}
 }
 
