@@ -210,10 +210,11 @@ func newTestDBWithSession(t *testing.T, sessionID, directory string) *db.DB {
 }
 
 type testSession struct {
-	id        string
-	directory string
-	parentID  *string
-	busy      bool
+	id          string
+	directory   string
+	parentID    *string
+	busy        bool
+	messageData string
 }
 
 func newTestDBWithSessions(t *testing.T, sessions []testSession) *db.DB {
@@ -264,7 +265,15 @@ func newTestDBWithSessions(t *testing.T, sessions []testSession) *db.DB {
 			setup.Close()
 			t.Fatalf("seed session: %v", err)
 		}
-		if session.busy {
+		if session.messageData != "" {
+			if _, err := setup.Exec(
+				`INSERT INTO message (id, session_id, time_created, data) VALUES (?, ?, ?, ?)`,
+				"msg-"+session.id, session.id, 1000, session.messageData,
+			); err != nil {
+				setup.Close()
+				t.Fatalf("seed message: %v", err)
+			}
+		} else if session.busy {
 			if _, err := setup.Exec(
 				`INSERT INTO message (id, session_id, time_created, data) VALUES (?, ?, ?, '{"role":"assistant"}')`,
 				"msg-"+session.id, session.id, 1000,

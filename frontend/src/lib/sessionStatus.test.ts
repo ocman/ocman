@@ -252,9 +252,9 @@ describe('mergeTokenStats', () => {
 
 describe('aggregateSessionTreeStats', () => {
   it('sums the current session and all descendants', () => {
-    const root = makeSession({ id: 'root', totalInputTokens: 10, totalOutputTokens: 20, totalCost: 0.1 });
-    const child = makeSession({ id: 'child', parentId: 'root', totalInputTokens: 30, totalOutputTokens: 40, totalCost: 0.2 });
-    const grandchild = makeSession({ id: 'grandchild', parentId: 'child', totalInputTokens: 50, totalOutputTokens: 60, totalCost: 0.3 });
+    const root = { ...makeSession({ id: 'root', totalInputTokens: 10, totalOutputTokens: 20, totalCost: 0.1 }), totalEstCost: 0.15 };
+    const child = { ...makeSession({ id: 'child', parentId: 'root', totalInputTokens: 30, totalOutputTokens: 40, totalCost: 0.2 }), totalEstCost: 0.25 };
+    const grandchild = { ...makeSession({ id: 'grandchild', parentId: 'child', totalInputTokens: 50, totalOutputTokens: 60, totalCost: 0.3 }), totalEstCost: 0.35 };
     const unrelated = makeSession({ id: 'other', parentId: 'root', platform: 'remote', totalInputTokens: 1_000 });
 
     const totals = aggregateSessionTreeStats(root, [grandchild, unrelated, child, root], {
@@ -267,6 +267,7 @@ describe('aggregateSessionTreeStats', () => {
     });
     expect(totals).toMatchObject({ input: 95, output: 125, sessions: 3 });
     expect(totals.totalCost).toBeCloseTo(0.65);
+    expect(totals.totalEstCost).toBeCloseTo(0.75);
   });
 });
 

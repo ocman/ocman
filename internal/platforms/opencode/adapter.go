@@ -455,6 +455,13 @@ func (a *Adapter) attachSessionTree(ctx context.Context, id string, detail *plat
 	ports := discoverOpenCodePorts()
 	detail.SessionTree = make([]db.Session, 0, len(byID))
 	for _, session := range byID {
+		if a.pricing != nil {
+			messages, err := a.db.GetSessionMessages(ctx, session.ID)
+			if err != nil {
+				return err
+			}
+			_, session.TotalEstCost = costsFromMessages(messages, a.pricing)
+		}
 		session.Platform = string(PlatformID)
 		applyMCPParentLink(&session, links)
 		session.Status = a.settleStatus(session.ID, session.Directory, session.Status, ports)

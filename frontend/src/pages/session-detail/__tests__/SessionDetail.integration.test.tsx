@@ -774,9 +774,9 @@ describe('SessionDetail — session tree usage', () => {
   });
 
   it('shows totals for the current session and nested subagents', async () => {
-    const root = makeSession({ id: 'sess_1', totalInputTokens: 10, totalOutputTokens: 20, totalCost: 0.1 });
-    const child = makeSession({ id: 'sess_child', parentId: root.id, totalInputTokens: 30, totalOutputTokens: 40, totalCost: 0.2 });
-    const grandchild = makeSession({ id: 'sess_grandchild', parentId: child.id, totalInputTokens: 50, totalOutputTokens: 60, totalCost: 0.3 });
+    const root = { ...makeSession({ id: 'sess_1', totalInputTokens: 10, totalOutputTokens: 20, totalCost: 0.1 }), totalEstCost: 0.15 };
+    const child = { ...makeSession({ id: 'sess_child', parentId: root.id, totalInputTokens: 30, totalOutputTokens: 40, totalCost: 0.2 }), totalEstCost: 0.25 };
+    const grandchild = { ...makeSession({ id: 'sess_grandchild', parentId: child.id, totalInputTokens: 50, totalOutputTokens: 60, totalCost: 0.3 }), totalEstCost: 0.35 };
     const sessions = vi.fn().mockResolvedValue([root, child, grandchild]);
     const handle = renderSessionPage({
       sessionId: root.id,
@@ -795,6 +795,7 @@ describe('SessionDetail — session tree usage', () => {
     expect(title.parentElement).toHaveTextContent('Input90');
     expect(title.parentElement).toHaveTextContent('Output120');
     expect(title.parentElement).toHaveTextContent('Reported cost$0.6000');
+    expect(title.parentElement).toHaveTextContent('Est. cost$0.7500');
     expect(handle.api.sessions).not.toHaveBeenCalled();
   });
 });

@@ -111,7 +111,7 @@ func TestAdapter_SessionTreeCombinesNativeAndMCPDescendants(t *testing.T) {
 	database := newTestDBWithSessions(t, []testSession{
 		{id: root, directory: "/tmp/proj"},
 		{id: "native-child", directory: "/tmp/proj", parentID: &root},
-		{id: mcpChild, directory: "/tmp/worktree"},
+		{id: mcpChild, directory: "/tmp/worktree", messageData: `{"role":"assistant","providerID":"test","modelID":"model","tokens":{"input":2,"output":3}}`},
 		{id: "native-grandchild", directory: "/tmp/worktree", parentID: &mcpChild},
 		{id: "unrelated", directory: "/tmp/proj"},
 	})
@@ -119,7 +119,7 @@ func TestAdapter_SessionTreeCombinesNativeAndMCPDescendants(t *testing.T) {
 	resetPortCacheForTests()
 	t.Cleanup(func() { restore(); resetPortCacheForTests() })
 
-	a := New(database, nil)
+	a := NewWithPricing(database, nil, fakePricing{in: 0.01, out: 0.02})
 	a.childLinks = stubMCPParentLookup{parents: map[string]string{mcpChild: root}}
 	for _, openedID := range []string{root, "native-grandchild"} {
 		detail, err := a.Session(t.Context(), openedID, 30, 0)
@@ -139,6 +139,9 @@ func TestAdapter_SessionTreeCombinesNativeAndMCPDescendants(t *testing.T) {
 		}
 		if byID[mcpChild].ParentID != root || byID["native-grandchild"].ParentID != mcpChild {
 			t.Fatalf("Session(%s) mixed parent links not preserved: %v", openedID, byID)
+		}
+		if !approxEqual(byID[mcpChild].TotalEstCost, 0.08) {
+			t.Fatalf("Session(%s) child estimated cost = %v, want 0.08", openedID, byID[mcpChild].TotalEstCost)
 		}
 	}
 }

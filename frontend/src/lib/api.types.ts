@@ -124,6 +124,7 @@ export interface Session {
   totalInputTokens: number;
   totalOutputTokens: number;
   totalCost: number;
+  totalEstCost?: number;
   status: SessionStatus;
 	/**
 	 * True when the owning adapter has a live channel to this session's

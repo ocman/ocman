@@ -68,7 +68,7 @@ interface ComposerFooterProps {
     cacheWrite: number;
     totalCost: number;
   };
-  sessionTreeStats?: { input: number; output: number; totalCost: number; sessions: number };
+  sessionTreeStats?: { input: number; output: number; totalCost: number; totalEstCost: number; sessions: number };
   contextTokens?: number;
   effectiveModel: string;
   visibleDurationMs: number;
@@ -199,6 +199,7 @@ function ComposerFooter({
                       <div className="oc-token-popover-row"><span className="oc-token-popover-label">Input</span><span className="oc-token-popover-value">{sessionTreeStats.input.toLocaleString()}</span></div>
                       <div className="oc-token-popover-row"><span className="oc-token-popover-label">Output</span><span className="oc-token-popover-value">{sessionTreeStats.output.toLocaleString()}</span></div>
                       <div className="oc-token-popover-row"><span className="oc-token-popover-label">Reported cost</span><span className="oc-token-popover-value">${sessionTreeStats.totalCost.toFixed(4)}</span></div>
+                      <div className="oc-token-popover-row"><span className="oc-token-popover-label">Est. cost</span><span className="oc-token-popover-value">${sessionTreeStats.totalEstCost.toFixed(4)}</span></div>
                     </>
                   )}
                 </div>
@@ -516,6 +517,7 @@ function ComposerImpl({
     input: number;
     output: number;
     totalCost: number;
+    totalEstCost: number;
     sessions: number;
   };
   selectedReasoning?: string;

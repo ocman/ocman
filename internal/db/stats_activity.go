@@ -61,10 +61,9 @@ func (d *DB) GetDailyActivity(ctx context.Context, since int64, modelFilter, dir
 		}
 	}
 
-	// Count assistant messages per day, excluding messages from subagent
-	// sessions. Only the model-filtered path needs the message JSON: without
-	// a filter we let SQLite do the counting rather than shipping every
-	// assistant message's blob over just to increment a counter.
+	// Count every assistant turn, including subagents because their model usage
+	// and spend are part of the project's activity. Only the model-filtered path
+	// needs the message JSON: without a filter we let SQLite do the counting.
 	selectExpr, groupBy := "count(*) as messages", "\n		GROUP BY day"
 	if modelFilter != "" {
 		selectExpr, groupBy = "m.data", ""
@@ -76,8 +75,7 @@ func (d *DB) GetDailyActivity(ctx context.Context, since int64, modelFilter, dir
 		FROM message m
 		JOIN session s ON s.id = m.session_id
 		WHERE json_extract(m.data, '$.role') = 'assistant'
-		  AND m.time_created >= ?
-		  AND s.title NOT LIKE '%(% subagent)'`
+		  AND m.time_created >= ?`
 	args2 := []interface{}{cutoff}
 	if dirFrag != "" {
 		query2 += "\n		  AND " + dirFrag

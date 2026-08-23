@@ -1417,6 +1417,35 @@ func TestGetDailyActivity_UserMessages(t *testing.T) {
 	}
 }
 
+func TestGetDailyActivity_IncludesSubagentAssistantMessages(t *testing.T) {
+	database := openTestDB(t)
+	defer database.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, database, "parent", "Parent", "/project", now, now)
+	insertSubagent(t, database, "child", "parent", "Task (explore subagent)", "/project", now, now)
+	insertMessage(t, database, "u1", "child", now, map[string]interface{}{"role": "user"})
+	insertMessage(t, database, "a1", "child", now, map[string]interface{}{"role": "assistant"})
+
+	result, err := database.GetDailyActivity(t.Context(), 0, "", "")
+	if err != nil {
+		t.Fatalf("GetDailyActivity: %v", err)
+	}
+	today := time.Now().Format("2006-01-02")
+	for _, day := range result {
+		if day.Date == today {
+			if day.Messages != 1 {
+				t.Errorf("Messages = %d, want 1 subagent assistant turn", day.Messages)
+			}
+			if day.UserMessages != 0 {
+				t.Errorf("UserMessages = %d, want 0 internal subagent prompts", day.UserMessages)
+			}
+			return
+		}
+	}
+	t.Fatal("today's entry not found in result")
+}
+
 // TestGetDailyActivity_ModelFilter pins the two assistant-message counting
 // paths against each other: unfiltered counts in SQL, filtered decodes each
 // message's JSON. Both must agree on the same fixture, and the filter must

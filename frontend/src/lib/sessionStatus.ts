@@ -34,6 +34,7 @@ export interface SessionTreeStats {
   input: number;
   output: number;
   totalCost: number;
+  totalEstCost: number;
   sessions: number;
 }
 
@@ -183,7 +184,14 @@ export function aggregateSessionTreeStats(
     children.set(session.parentId, siblings);
   }
 
-  const totals = { input: rootStats.input, output: rootStats.output, totalCost: rootStats.totalCost, sessions: 1 };
+  const treeRoot = sessions.find((session) => session.id === root.id && session.platform === root.platform);
+  const totals = {
+    input: rootStats.input,
+    output: rootStats.output,
+    totalCost: rootStats.totalCost,
+    totalEstCost: treeRoot?.totalEstCost || 0,
+    sessions: 1,
+  };
   const seen = new Set([root.id]);
   const pending = [...(children.get(root.id) || [])];
   while (pending.length > 0) {
@@ -193,6 +201,7 @@ export function aggregateSessionTreeStats(
     totals.input += session.totalInputTokens || 0;
     totals.output += session.totalOutputTokens || 0;
     totals.totalCost += session.totalCost || 0;
+    totals.totalEstCost += session.totalEstCost || 0;
     totals.sessions += 1;
     pending.push(...(children.get(session.id) || []));
   }

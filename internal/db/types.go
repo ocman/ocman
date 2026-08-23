@@ -168,6 +168,7 @@ type Session struct {
 	TotalInputTokens  int64   `json:"totalInputTokens"`
 	TotalOutputTokens int64   `json:"totalOutputTokens"`
 	TotalCost         float64 `json:"totalCost"`
+	TotalEstCost      float64 `json:"totalEstCost"`
 	// Status is the reported lifecycle state. Always produced by
 	// SettleSessionStatus — never assigned from raw inference alone.
 	Status SessionStatus `json:"status"`
