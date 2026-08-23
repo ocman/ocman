@@ -27,14 +27,24 @@ func TestCommandCapsConcurrentGitProcesses(t *testing.T) {
 	t.Setenv("GITEXEC_RELEASE", release)
 
 	var wg sync.WaitGroup
-	for range limit + 1 {
+	for i := range limit + 1 {
 		wg.Add(1)
-		go func() {
+		go func(method int) {
 			defer wg.Done()
-			if err := Command(context.Background(), "status").Run(); err != nil {
+			cmd := Command(context.Background(), "status")
+			var err error
+			switch method % 3 {
+			case 0:
+				err = cmd.Run()
+			case 1:
+				_, err = cmd.Output()
+			case 2:
+				_, err = cmd.CombinedOutput()
+			}
+			if err != nil {
 				t.Errorf("git: %v", err)
 			}
-		}()
+		}(i)
 	}
 
 	deadline := time.Now().Add(10 * time.Second)
@@ -95,21 +105,15 @@ func TestWithSlotHonorsCancellationWhileWaiting(t *testing.T) {
 		}
 	})
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
 	ran := false
-	result := make(chan error, 1)
-	go func() {
-		_, err := withSlot(ctx, func() (struct{}, error) {
-			ran = true
-			return struct{}{}, nil
-		})
-		result <- err
-	}()
-	time.Sleep(20 * time.Millisecond)
-	cancel()
-	err := <-result
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("error = %v, want context.Canceled", err)
+	_, err := withSlot(ctx, func() (struct{}, error) {
+		ran = true
+		return struct{}{}, nil
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("error = %v, want context.DeadlineExceeded", err)
 	}
 	if ran {
 		t.Fatal("command ran despite cancellation while waiting for a slot")

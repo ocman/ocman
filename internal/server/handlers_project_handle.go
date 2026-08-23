@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -16,6 +17,8 @@ import (
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
+
+const prHeadFetchTimeout = 30 * time.Second
 
 // handleProjectRequest is the JSON request body for POST /api/project/handle.
 type handleProjectRequest struct {
@@ -180,7 +183,7 @@ func (s *Server) handleProjectHandleWorktree(
 				return
 			}
 			// Fetch the PR head into ocman/pr-<n> and attach.
-			fetched, ferr := f.FetchPRHead(r.Context(), repoRoot, req.Remote, req.Number)
+			fetched, ferr := fetchPRHead(r.Context(), f, repoRoot, req.Remote, req.Number)
 			if ferr != nil {
 				log.WithError(ferr).Warn("handle worktree: fetch pr head")
 				http.Error(w, "failed to fetch PR head: "+ferr.Error(), http.StatusBadGateway)
@@ -223,6 +226,12 @@ func (s *Server) handleProjectHandleWorktree(
 		"worktreePath":   wtResult.WorktreePath,
 		"branch":         wtResult.Branch,
 	})
+}
+
+func fetchPRHead(ctx context.Context, f forge.Forge, repoRoot, remote string, number int) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, prHeadFetchTimeout)
+	defer cancel()
+	return f.FetchPRHead(ctx, repoRoot, remote, number)
 }
 
 // fetchSinglePR re-queries the forge for one PR by number. Uses the

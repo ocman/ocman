@@ -1,6 +1,6 @@
 // Package gitexec centralises construction of `git` subprocesses with a
 // hardened environment. Every git invocation in ocman must go through
-// this package so that two safety properties hold uniformly:
+// this package so that three safety properties hold uniformly:
 //
 //  1. Git context variables (GIT_DIR, GIT_INDEX_FILE, …) are stripped.
 //     Without this, ocman commands run from inside a git hook (e.g.
@@ -10,6 +10,9 @@
 //  2. GIT_TERMINAL_PROMPT=0 and GIT_OPTIONAL_LOCKS=0 are set, so git
 //     never blocks on a credential prompt and never takes optional
 //     index locks while we only read repository state.
+//
+//  3. At most eight git subprocesses run at once, preventing concurrent
+//     project polling from starving latency-sensitive request handling.
 //
 // Callers pass the repository selector (`-C <dir>`) themselves, matching
 // git's own CLI shape; Output is a convenience for the common

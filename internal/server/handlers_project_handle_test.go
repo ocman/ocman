@@ -2,14 +2,41 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/NoUseFreak/ocman/internal/forge"
 	"github.com/NoUseFreak/ocman/internal/forge/github"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
+
+type deadlineForge struct {
+	forge.Forge
+	deadline time.Time
+	has      bool
+}
+
+func (f *deadlineForge) FetchPRHead(ctx context.Context, _, _ string, _ int) (string, error) {
+	f.deadline, f.has = ctx.Deadline()
+	return "ocman/pr-1", nil
+}
+
+func TestFetchPRHeadHasDeadline(t *testing.T) {
+	f := &deadlineForge{}
+	if _, err := fetchPRHead(context.Background(), f, "/repo", "origin", 1); err != nil {
+		t.Fatal(err)
+	}
+	if !f.has {
+		t.Fatal("FetchPRHead context has no deadline")
+	}
+	if remaining := time.Until(f.deadline); remaining <= 0 || remaining > prHeadFetchTimeout {
+		t.Fatalf("deadline remaining = %v, want within (0, %v]", remaining, prHeadFetchTimeout)
+	}
+}
 
 // TestHandleProjectHandle_SessionMode verifies the happy path:
 //
