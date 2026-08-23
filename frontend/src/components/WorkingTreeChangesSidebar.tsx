@@ -248,6 +248,7 @@ function toFullscreenFiles(files: WorkingTreeFile[]): FullscreenDiffFile[] {
   return files.map((f) => ({
     key: f.path,
     path: f.path,
+    oldPath: f.oldPath && f.status === 'renamed' ? f.oldPath : undefined,
     label: f.oldPath && f.status === 'renamed' ? `${f.oldPath} → ${f.path}` : f.path,
     status: f.status,
     statusLabel: STATUS_LABELS[f.status],

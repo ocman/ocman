@@ -34,11 +34,24 @@ describe('DiffFullscreenModal', () => {
     const renamed = [{
       ...files[0],
       path: 'src/b.ts',
+      oldPath: 'src/a.ts',
       label: 'src/a.ts → src/b.ts',
     }];
     render(<DiffFullscreenModal title="Working tree" files={renamed} onClose={vi.fn()} />);
 
     expect(screen.getByText('a.ts → b.ts')).toBeInTheDocument();
+    expect(screen.getByText('src')).toBeInTheDocument();
+  });
+
+  it('does not treat an arrow in a filename as a rename', () => {
+    const arrowFile = [{
+      ...files[0],
+      path: 'src/a → b.ts',
+      label: 'src/a → b.ts',
+    }];
+    render(<DiffFullscreenModal title="Working tree" files={arrowFile} onClose={vi.fn()} />);
+
+    expect(screen.getByText('a → b.ts')).toBeInTheDocument();
     expect(screen.getByText('src')).toBeInTheDocument();
   });
 

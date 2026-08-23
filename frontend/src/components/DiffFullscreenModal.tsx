@@ -9,6 +9,9 @@ import { Modal } from './Modal';
 export interface FullscreenDiffFile {
   key: string;
   path: string;
+  // Structured source path for renames. Keeping this separate avoids
+  // parsing the human-readable arrow label back into paths.
+  oldPath?: string;
   // Optional display label (e.g. "old → new" for renames). Defaults
   // to `path`.
   label?: string;
@@ -63,7 +66,10 @@ export function DiffFullscreenModal({ title, files, onClose }: DiffFullscreenMod
       <div className="oc-diff-fs-cols">
         <ul className="oc-diff-fs-files" aria-label="Changed files">
           {files.map((f) => {
-            const displayPath = splitDisplayPath(f.label ?? f.path);
+            const displayPath = splitDisplayPath(
+              f.oldPath ? f.path : (f.label ?? f.path),
+              f.oldPath,
+            );
             return <li key={f.key}>
               <button
                 type="button"
@@ -115,8 +121,8 @@ function dirname(path: string): string {
   return i === -1 ? '' : path.slice(0, i);
 }
 
-function splitDisplayPath(label: string): { name: string; dir: string } {
-  const paths = label.split(' → ');
+function splitDisplayPath(path: string, oldPath?: string): { name: string; dir: string } {
+  const paths = oldPath ? [oldPath, path] : [path];
   return {
     name: paths.map(basename).join(' → '),
     dir: [...new Set(paths.map(dirname))].join(' → '),
