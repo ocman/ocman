@@ -460,7 +460,7 @@ func (a *Adapter) attachSessionTree(ctx context.Context, id string, detail *plat
 			if err != nil {
 				return err
 			}
-			_, session.TotalEstCost = costsFromMessages(messages, a.pricing)
+			_, session.TotalEstCost, session.TotalEffectiveCost = costsFromMessages(messages, a.pricing)
 		}
 		session.Platform = string(PlatformID)
 		applyMCPParentLink(&session, links)

@@ -68,7 +68,7 @@ interface ComposerFooterProps {
     cacheWrite: number;
     totalCost: number;
   };
-  sessionTreeStats?: { input: number; output: number; totalCost: number; totalEstCost: number; sessions: number };
+  sessionTreeStats?: { input: number; output: number; totalCost: number; totalEstCost: number; totalEffectiveCost: number; sessions: number };
   contextTokens?: number;
   effectiveModel: string;
   visibleDurationMs: number;
@@ -128,6 +128,8 @@ function ComposerFooter({
     return () => { cancelled = true; };
   }, [showTokenPopover, effectiveModel, tokenStats]);
 
+  const effectiveCost = sessionTreeStats?.totalEffectiveCost ?? tokenStats?.totalCost ?? 0;
+
   return (
     <div className="oc-composer-footer">
       <span className="oc-composer-footer-left">
@@ -157,9 +159,9 @@ function ComposerFooter({
         )}
       </span>
       <span className="oc-composer-footer-right">
-        {tokenStats && tokenStats.totalCost > 0 && (
-          <span className="oc-session-cost" title="Session cost reported by the platform">
-            {formatCurrency(tokenStats.totalCost)}
+        {tokenStats && (
+          <span className="oc-session-cost" title="Session cost (reported, estimated when unavailable)">
+            {formatCurrency(effectiveCost)}
           </span>
         )}
         {contextTokens != null && contextTokens > 0 && (
@@ -200,6 +202,7 @@ function ComposerFooter({
                       <div className="oc-token-popover-row"><span className="oc-token-popover-label">Output</span><span className="oc-token-popover-value">{sessionTreeStats.output.toLocaleString()}</span></div>
                       <div className="oc-token-popover-row"><span className="oc-token-popover-label">Reported cost</span><span className="oc-token-popover-value">${sessionTreeStats.totalCost.toFixed(4)}</span></div>
                       <div className="oc-token-popover-row"><span className="oc-token-popover-label">Est. cost</span><span className="oc-token-popover-value">${sessionTreeStats.totalEstCost.toFixed(4)}</span></div>
+                      <div className="oc-token-popover-row"><span className="oc-token-popover-label">Cost</span><span className="oc-token-popover-value">${sessionTreeStats.totalEffectiveCost.toFixed(4)}</span></div>
                     </>
                   )}
                 </div>
@@ -520,6 +523,7 @@ function ComposerImpl({
     output: number;
     totalCost: number;
     totalEstCost: number;
+    totalEffectiveCost: number;
     sessions: number;
   };
   selectedReasoning?: string;

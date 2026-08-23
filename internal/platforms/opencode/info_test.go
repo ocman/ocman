@@ -304,7 +304,7 @@ func TestCostsFromMessages(t *testing.T) {
 			makeMsg(t, map[string]any{"role": "assistant", "cost": 0.05}),
 			makeMsg(t, map[string]any{"role": "user", "cost": 99.99}), // ignored
 		}
-		cost, est := costsFromMessages(msgs, nil)
+		cost, est, _ := costsFromMessages(msgs, nil)
 		if !approxEqual(cost, 0.35) {
 			t.Errorf("cost=%v want=0.35", cost)
 		}
@@ -329,7 +329,7 @@ func TestCostsFromMessages(t *testing.T) {
 		}
 		// est: 100*0.001 + 50*0.002 = 0.10 + 0.10 = 0.20
 		fp := fakePricing{in: 0.001, out: 0.002}
-		cost, est := costsFromMessages(msgs, fp)
+		cost, est, _ := costsFromMessages(msgs, fp)
 		if !approxEqual(cost, 0.42) {
 			t.Errorf("cost=%v want=0.42", cost)
 		}
@@ -355,12 +355,32 @@ func TestCostsFromMessages(t *testing.T) {
 		}
 		// 1000*0.001 + 500*0.002 + 100*0.0005 + 50*0.0010
 		fp := fakePricing{in: 0.001, out: 0.002, cacheR: 0.0005, cacheW: 0.0010}
-		cost, est := costsFromMessages(msgs, fp)
+		cost, est, effective := costsFromMessages(msgs, fp)
 		if cost != 0 {
 			t.Errorf("cost=%v want=0", cost)
 		}
 		if !approxEqual(est, 2.10) {
 			t.Errorf("est=%v want=2.10", est)
+		}
+		if !approxEqual(effective, 2.10) {
+			t.Errorf("effective=%v want=2.10", effective)
+		}
+	})
+
+	t.Run("uses reported cost per message and estimates only zero-cost messages", func(t *testing.T) {
+		msgs := []db.Message{
+			makeMsg(t, map[string]any{
+				"role": "assistant", "cost": 0.42, "modelID": "model",
+				"tokens": map[string]any{"input": 100, "output": 50},
+			}),
+			makeMsg(t, map[string]any{
+				"role": "assistant", "cost": 0, "modelID": "model",
+				"tokens": map[string]any{"input": 20, "output": 10},
+			}),
+		}
+		cost, est, effective := costsFromMessages(msgs, fakePricing{in: 0.001, out: 0.002})
+		if !approxEqual(cost, 0.42) || !approxEqual(est, 0.24) || !approxEqual(effective, 0.46) {
+			t.Errorf("got=(%v,%v,%v) want=(0.42,0.24,0.46)", cost, est, effective)
 		}
 	})
 
@@ -374,7 +394,7 @@ func TestCostsFromMessages(t *testing.T) {
 				"tokens": map[string]any{"input": 100, "output": 50},
 			}),
 		}
-		cost, est := costsFromMessages(msgs, nil)
+		cost, est, _ := costsFromMessages(msgs, nil)
 		if cost != 0 || est != 0 {
 			t.Errorf("got=(%v,%v) want=(0,0)", cost, est)
 		}
@@ -391,7 +411,7 @@ func TestCostsFromMessages(t *testing.T) {
 			}),
 		}
 		fp := fakePricing{in: 0.001, out: 0.002}
-		cost, est := costsFromMessages(msgs, fp)
+		cost, est, _ := costsFromMessages(msgs, fp)
 		if !approxEqual(cost, 0.10) {
 			t.Errorf("cost=%v want=0.10", cost)
 		}
@@ -406,7 +426,7 @@ func TestCostsFromMessages(t *testing.T) {
 			makeMsg(t, map[string]any{"role": "user", "cost": 99.99}),
 			makeMsg(t, map[string]any{"role": "assistant", "cost": 0.10}),
 		}
-		cost, est := costsFromMessages(msgs, nil)
+		cost, est, _ := costsFromMessages(msgs, nil)
 		if !approxEqual(cost, 0.10) {
 			t.Errorf("cost=%v want=0.10", cost)
 		}

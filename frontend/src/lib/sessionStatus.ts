@@ -35,6 +35,7 @@ export interface SessionTreeStats {
   output: number;
   totalCost: number;
   totalEstCost: number;
+  totalEffectiveCost: number;
   sessions: number;
 }
 
@@ -190,6 +191,7 @@ export function aggregateSessionTreeStats(
     output: rootStats.output,
     totalCost: rootStats.totalCost,
     totalEstCost: treeRoot?.totalEstCost || 0,
+    totalEffectiveCost: treeRoot?.totalEffectiveCost || rootStats.totalCost,
     sessions: 1,
   };
   const seen = new Set([root.id]);
@@ -202,6 +204,7 @@ export function aggregateSessionTreeStats(
     totals.output += session.totalOutputTokens || 0;
     totals.totalCost += session.totalCost || 0;
     totals.totalEstCost += session.totalEstCost || 0;
+    totals.totalEffectiveCost += session.totalEffectiveCost || session.totalCost || 0;
     totals.sessions += 1;
     pending.push(...(children.get(session.id) || []));
   }

@@ -211,7 +211,7 @@ describe('useSession — initial load', () => {
       cacheRead: 0,
       cacheWrite: 0,
       totalCost: target.totalCost,
-    })).toEqual({ input: 80, output: 100, totalCost: 0.5, totalEstCost: 0, sessions: 2 });
+    })).toEqual({ input: 80, output: 100, totalCost: 0.5, totalEstCost: 0, totalEffectiveCost: 0.5, sessions: 2 });
   });
 
   it('hydrates fetched history so an unloaded message can be scrolled to', async () => {

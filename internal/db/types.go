@@ -164,11 +164,12 @@ type Session struct {
 	// across assistant messages. Excludes idle gaps between turns
 	// (user think time, permission prompts answered between turns).
 	// Zero when the platform doesn't expose per-turn timestamps.
-	ActiveDurationMs  int64   `json:"activeDurationMs"`
-	TotalInputTokens  int64   `json:"totalInputTokens"`
-	TotalOutputTokens int64   `json:"totalOutputTokens"`
-	TotalCost         float64 `json:"totalCost"`
-	TotalEstCost      float64 `json:"totalEstCost"`
+	ActiveDurationMs   int64   `json:"activeDurationMs"`
+	TotalInputTokens   int64   `json:"totalInputTokens"`
+	TotalOutputTokens  int64   `json:"totalOutputTokens"`
+	TotalCost          float64 `json:"totalCost"`
+	TotalEstCost       float64 `json:"totalEstCost"`
+	TotalEffectiveCost float64 `json:"totalEffectiveCost"`
 	// Status is the reported lifecycle state. Always produced by
 	// SettleSessionStatus — never assigned from raw inference alone.
 	Status SessionStatus `json:"status"`

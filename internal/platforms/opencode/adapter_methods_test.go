@@ -143,6 +143,9 @@ func TestAdapter_SessionTreeCombinesNativeAndMCPDescendants(t *testing.T) {
 		if !approxEqual(byID[mcpChild].TotalEstCost, 0.08) {
 			t.Fatalf("Session(%s) child estimated cost = %v, want 0.08", openedID, byID[mcpChild].TotalEstCost)
 		}
+		if !approxEqual(byID[mcpChild].TotalEffectiveCost, 0.08) {
+			t.Fatalf("Session(%s) child effective cost = %v, want 0.08", openedID, byID[mcpChild].TotalEffectiveCost)
+		}
 	}
 }
 

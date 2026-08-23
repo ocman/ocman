@@ -178,7 +178,7 @@ type alwaysOnTier struct {
 // varies is where messages/parts come from. Keeps the per-source
 // branches at the call site free of aggregation logic.
 func computeAlwaysOnTier(messages []db.Message, parts []db.Part, pricing CostCalculator) alwaysOnTier {
-	cost, estCost := costsFromMessages(messages, pricing)
+	cost, estCost, _ := costsFromMessages(messages, pricing)
 	return alwaysOnTier{
 		tokens:    tokenTotalsFromMessages(messages),
 		messages:  messageCountsFromMessages(messages),
@@ -298,8 +298,8 @@ func tokenTotalsFromMessages(messages []db.Message) platforms.TokenTotals {
 	return totals
 }
 
-// costsFromMessages walks every assistant message and returns two
-// independent cost numbers, surfaced as separate rows in the panel:
+// costsFromMessages walks every assistant message and returns reported,
+// estimated, and effective cost totals:
 //
 //   - Cost: sum of the upstream `data.cost` field across assistant
 //     messages. This is what the platform itself recorded — the
@@ -314,6 +314,10 @@ func tokenTotalsFromMessages(messages []db.Message) platforms.TokenTotals {
 //     mean an unrecognised model name) and as the only meaningful
 //     number for subscription-plan sessions.
 //
+//   - EffectiveCost: per message, uses Cost when non-zero and EstCost
+//     otherwise. This preserves reported billing in mixed sessions while
+//     filling gaps from subscription-plan turns.
+//
 // Splitting the two lets the UI render both "Cost" and "Est" as
 // adjacent rows, so the user can spot a $0 / non-zero pair (the
 // hallmark of a subscription-plan session) at a glance instead of
@@ -323,7 +327,7 @@ func tokenTotalsFromMessages(messages []db.Message) platforms.TokenTotals {
 // the message's `providerID/modelID` if both are present, falling
 // back to just modelID — same convention internal/db/sessions.go
 // uses elsewhere.
-func costsFromMessages(messages []db.Message, pricing CostCalculator) (cost, estCost float64) {
+func costsFromMessages(messages []db.Message, pricing CostCalculator) (cost, estCost, effectiveCost float64) {
 	for _, m := range messages {
 		if len(m.Data) == 0 {
 			continue
@@ -354,6 +358,7 @@ func costsFromMessages(messages []db.Message, pricing CostCalculator) (cost, est
 		// pricing table. Skip messages with no model or no tokens —
 		// CalcCost would just return 0.
 		if pricing == nil || probe.Tokens == nil {
+			effectiveCost += probe.Cost
 			continue
 		}
 		modelRef := probe.ModelID
@@ -361,6 +366,7 @@ func costsFromMessages(messages []db.Message, pricing CostCalculator) (cost, est
 			modelRef = probe.ProviderID + "/" + probe.ModelID
 		}
 		if modelRef == "" {
+			effectiveCost += probe.Cost
 			continue
 		}
 		var cacheRead, cacheWrite int64
@@ -368,13 +374,19 @@ func costsFromMessages(messages []db.Message, pricing CostCalculator) (cost, est
 			cacheRead = probe.Tokens.Cache.Read
 			cacheWrite = probe.Tokens.Cache.Write
 		}
-		estCost += pricing.CalcCost(
+		estimated := pricing.CalcCost(
 			modelRef,
 			probe.Tokens.Input, probe.Tokens.Output,
 			cacheRead, cacheWrite,
 		)
+		estCost += estimated
+		if probe.Cost > 0 {
+			effectiveCost += probe.Cost
+		} else {
+			effectiveCost += estimated
+		}
 	}
-	return cost, estCost
+	return cost, estCost, effectiveCost
 }
 
 // messageCountsFromMessages counts user vs assistant turns in the
