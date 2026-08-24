@@ -26,7 +26,7 @@ import {
   BAR_OPTIONS_TOKS,
   BAR_OPTIONS_DURATION,
   BAR_OPTIONS_STACKED,
-  LINE_OPTIONS_COST_BY_MODEL,
+  BAR_OPTIONS_COST_BY_MODEL,
   LINE_OPTIONS_CACHE,
   DOUGHNUT_OPTIONS,
   CHART_COLORS,
@@ -53,26 +53,23 @@ function hexToRgba(hex: string, alpha: number): string {
 }
 
 /**
- * Build the Chart.js datasets for the stacked cumulative cost chart.
- * Falls back to a single "Cost" line when the backend reports no
+ * Build the Chart.js datasets for the stacked daily cost chart.
+ * Falls back to a single empty "Cost" series when the backend reports no
  * per-model breakdown (empty database, or a window where every row
  * has zero cost — the legacy chart's behaviour).
  */
 function buildCostByModelDatasets(metrics: MetricsDashboard) {
   const cbm = metrics.costByModel;
-  const series = metrics.series ?? [];
   const models = cbm?.models ?? [];
   const cbmSeries = cbm?.series ?? [];
   if (models.length === 0) {
     return [
       {
         label: 'Cost',
-        data: series.map((p) => p.cumulativeEffectiveCost),
+        data: cbmSeries.map(() => 0),
         borderColor: '#a6e3a1',
         backgroundColor: 'rgba(166, 227, 161, 0.18)',
-        fill: 'origin' as const,
-        tension: 0.2,
-        pointRadius: 0,
+        stack: 'cost',
       },
     ];
   }
@@ -82,10 +79,8 @@ function buildCostByModelDatasets(metrics: MetricsDashboard) {
       label: renderModel(model),
       data: cbmSeries.map((pt) => pt.costs?.[idx] ?? 0),
       borderColor: colour,
-      backgroundColor: hexToRgba(colour, 0.15),
-      fill: true,
-      tension: 0.2,
-      pointRadius: 0,
+      backgroundColor: hexToRgba(colour, 0.72),
+      stack: 'cost',
       borderWidth: 1,
     };
   });
@@ -118,11 +113,11 @@ export function StatsSummaryCharts({ metrics }: { metrics: MetricsDashboard }) {
           }} options={BAR_OPTIONS_TOKS} />
         </ChartCard>
 
-        <ChartCard title="Cumulative Cost by Model (USD)">
-          <Line data={{
-            labels: metricLabels,
+        <ChartCard title="Estimated Cost per Day by Model (USD)">
+          <Bar data={{
+            labels: metrics.costByModel?.series?.map((point) => point.label) ?? [],
             datasets: buildCostByModelDatasets(metrics),
-          }} options={LINE_OPTIONS_COST_BY_MODEL} />
+          }} options={BAR_OPTIONS_COST_BY_MODEL} />
         </ChartCard>
 
         <ChartCard title="Token Usage per Bucket">

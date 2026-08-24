@@ -81,11 +81,9 @@ export const LINE_OPTIONS_COST = {
 } as const;
 
 /**
- * Overlapping-area cumulative cost chart split by model. Each model's
- * area is drawn independently (not stacked) so its cumulative total
- * reads directly off the y-axis. Tooltip shows per-model currency.
+ * Stacked cost-per-bucket chart split by model.
  */
-export const LINE_OPTIONS_COST_BY_MODEL = {
+export const BAR_OPTIONS_COST_BY_MODEL = {
   responsive: true,
   maintainAspectRatio: false,
   animation: false as const,
@@ -100,8 +98,9 @@ export const LINE_OPTIONS_COST_BY_MODEL = {
     },
   },
   scales: {
-    x: { grid: { display: false }, ticks: CHART_X_TICKS },
+    x: { stacked: true, grid: { display: false }, ticks: CHART_X_TICKS },
     y: {
+      stacked: true,
       beginAtZero: true,
       ticks: { callback: (v: string | number) => formatCurrency(Number(v), 2) },
     },

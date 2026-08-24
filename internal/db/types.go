@@ -445,18 +445,18 @@ type MetricsDashboard struct {
 	TotalProjects   int                `json:"totalProjects"`
 }
 
-// MetricsCostByModel holds the cumulative cost series broken down by
+// MetricsCostByModel holds the per-bucket cost series broken down by
 // model. Models is the ordered list of series keys (highest-total cost
 // first; an "Other" bucket trails when there are more than
-// CostByModelTopN distinct models). Series has the same length as
-// MetricsDashboard.Series and each ModelCostPoint.Costs is parallel to
-// Models. Values are cumulative platform-reported cost in USD.
+// CostByModelTopN distinct models). Series is grouped by day and each
+// ModelCostPoint.Costs is parallel to Models. Values use platform-reported
+// cost when available and otherwise the token-based estimate.
 type MetricsCostByModel struct {
 	Models []string         `json:"models"`
 	Series []ModelCostPoint `json:"series"`
 }
 
-// ModelCostPoint is one bucket of the per-model cumulative cost series.
+// ModelCostPoint is one bucket of the per-model cost series.
 type ModelCostPoint struct {
 	Label string    `json:"label"`
 	Costs []float64 `json:"costs"`

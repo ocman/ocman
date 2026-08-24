@@ -342,6 +342,49 @@ func TestGetMetricsDashboard_CostByModel_BasicSplit(t *testing.T) {
 	}
 }
 
+func TestBuildCostByModelSeries_ReportsEachBucketCost(t *testing.T) {
+	buckets := map[string]*bucketAcc{
+		"2026-08-23": {costByModel: map[string]float64{"openai/gpt-5": 1.25}},
+		"2026-08-24": {costByModel: map[string]float64{"openai/gpt-5": 0.50}},
+	}
+	series := buildCostByModelSeries(buckets, []MetricsPoint{
+		{Label: "2026-08-23"},
+		{Label: "2026-08-24"},
+	})
+
+	if got := series.Series[0].Costs[0]; got != 1.25 {
+		t.Errorf("first bucket cost = %v, want 1.25", got)
+	}
+	if got := series.Series[1].Costs[0]; got != 0.50 {
+		t.Errorf("second bucket cost = %v, want 0.50", got)
+	}
+}
+
+func TestBuildCostByModelSeries_GroupsHourlyBucketsByDay(t *testing.T) {
+	buckets := map[string]*bucketAcc{
+		"2026-08-24 09": {costByModel: map[string]float64{"openai/gpt-5": 1.25}},
+		"2026-08-24 10": {costByModel: map[string]float64{"openai/gpt-5": 0.50}},
+	}
+	series := buildCostByModelSeries(buckets, []MetricsPoint{
+		{Label: "2026-08-24 09"},
+		{Label: "2026-08-24 10"},
+	})
+
+	if len(series.Series) != 1 {
+		t.Fatalf("daily series length = %d, want 1", len(series.Series))
+	}
+	if got := series.Series[0].Costs[0]; got != 1.75 {
+		t.Errorf("daily cost = %v, want 1.75", got)
+	}
+	empty := buildCostByModelSeries(map[string]*bucketAcc{}, []MetricsPoint{
+		{Label: "2026-08-24 09"},
+		{Label: "2026-08-24 10"},
+	})
+	if len(empty.Series) != 1 {
+		t.Errorf("empty daily series length = %d, want 1", len(empty.Series))
+	}
+}
+
 func TestGetMetricsDashboard_CostByModel_UsesEstimatedCostWhenReportedCostIsZero(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()

@@ -6,6 +6,7 @@ import {
   BAR_OPTIONS_TOKS,
   BAR_OPTIONS_DURATION,
   BAR_OPTIONS_STACKED,
+  BAR_OPTIONS_COST_BY_MODEL,
   BAR_OPTIONS_HOURLY_TOKENS,
   LINE_OPTIONS_COST,
   LINE_OPTIONS_CACHE,
@@ -24,6 +25,7 @@ describe('chartConfig', () => {
   it('uses the shared x-tick configuration on time-series charts', () => {
     expect(BAR_OPTIONS_TOKS.scales.x.ticks).toBe(CHART_X_TICKS);
     expect(BAR_OPTIONS_DURATION.scales.x.ticks).toBe(CHART_X_TICKS);
+    expect(BAR_OPTIONS_COST_BY_MODEL.scales.x.ticks).toBe(CHART_X_TICKS);
     expect(LINE_OPTIONS_COST.scales.x.ticks).toBe(CHART_X_TICKS);
     expect(LINE_OPTIONS_CACHE.scales.x.ticks).toBe(CHART_X_TICKS);
   });
@@ -49,6 +51,8 @@ describe('chartConfig', () => {
   it('uses stacked y-axes on the stacked bar charts', () => {
     expect(BAR_OPTIONS_STACKED.scales.x.stacked).toBe(true);
     expect(BAR_OPTIONS_STACKED.scales.y.stacked).toBe(true);
+    expect(BAR_OPTIONS_COST_BY_MODEL.scales.x.stacked).toBe(true);
+    expect(BAR_OPTIONS_COST_BY_MODEL.scales.y.stacked).toBe(true);
     expect(BAR_OPTIONS_HOURLY_TOKENS.scales.x.stacked).toBe(true);
     expect(BAR_OPTIONS_HOURLY_TOKENS.scales.y.stacked).toBe(true);
   });
@@ -58,6 +62,7 @@ describe('chartConfig', () => {
       BAR_OPTIONS_TOKS,
       BAR_OPTIONS_DURATION,
       BAR_OPTIONS_STACKED,
+      BAR_OPTIONS_COST_BY_MODEL,
       BAR_OPTIONS_HOURLY_TOKENS,
       LINE_OPTIONS_COST,
       LINE_OPTIONS_CACHE,

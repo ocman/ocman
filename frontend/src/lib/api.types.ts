@@ -707,12 +707,11 @@ export interface MetricsDashboard {
 }
 
 /**
- * Per-model cumulative cost series used by the stacked cost-by-model
+ * Per-model daily cost used by the stacked cost-by-model
  * chart on the Stats tab. `models` is the ordered legend (top N by
  * total spend, with an "Other" bucket trailing when there are more
- * distinct models than the chart can show). `series` mirrors
- * `MetricsDashboard.series` bucket-for-bucket; each `costs` array is
- * parallel to `models`.
+ * distinct models than the chart can show). Each `costs` array is parallel
+ * to `models`.
  */
 export interface MetricsCostByModel {
   models: string[];

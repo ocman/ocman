@@ -15,7 +15,7 @@ import { MemoryRouter } from 'react-router-dom';
 import type { MetricsDashboard } from '../../lib/api';
 
 vi.mock('react-chartjs-2', () => ({
-  Bar: () => <div data-testid="chart-bar" />,
+  Bar: ({ data }: { data: unknown }) => <div data-testid="chart-bar" data-chart={JSON.stringify(data)} />,
   Line: () => <div data-testid="chart-line" />,
   Doughnut: () => <div data-testid="chart-doughnut" />,
 }));
@@ -69,7 +69,10 @@ function makeMetrics(): MetricsDashboard {
         avgCacheEfficiency: 0.35,
       } as MetricsDashboard['series'][number],
     ],
-    costByModel: { models: [], series: [] } as unknown as MetricsDashboard['costByModel'],
+    costByModel: {
+      models: ['anthropic/claude'],
+      series: [{ label: '2026-08-24', costs: [0.75] }],
+    },
     stopReasons: [{ reason: 'end_turn', count: 40 }],
     requests: [
       {
@@ -149,6 +152,17 @@ function renderStats(over: Partial<ReturnType<typeof useMetrics>> = {}) {
 }
 
 describe('StatsTab effective-cost UI', () => {
+  it('shows estimated cost per day grouped by model as a bar chart', () => {
+    renderStats();
+    expect(screen.getByText('Estimated Cost per Day by Model (USD)')).toBeInTheDocument();
+    expect(screen.getAllByTestId('chart-bar')).toHaveLength(4);
+    expect(screen.getAllByTestId('chart-line')).toHaveLength(1);
+    const costChart = screen.getAllByTestId('chart-bar')
+      .map((chart) => JSON.parse(chart.getAttribute('data-chart') ?? '{}'))
+      .find((data) => data.labels?.[0] === '2026-08-24');
+    expect(costChart.datasets[0].data).toEqual([0.75]);
+  });
+
   it('shows the effective Total Cost headline and the Reported / Est. detail card', () => {
     renderStats();
     // Headline card uses totalEffectiveCost ($1.23) with the new subtitle.
