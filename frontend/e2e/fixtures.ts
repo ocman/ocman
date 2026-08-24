@@ -183,6 +183,8 @@ async function installDefaultRoutes(page: Page) {
           totalEffectiveCost: 1.23,
         },
         series: [],
+        costByModel: { models: [], series: [] },
+        dailyEstimatedCostByModel: { models: [], series: [] },
         stopReasons: [{ reason: 'end_turn', count: 40 }, { reason: 'error', count: 2 }],
         requests: [],
         totalRequests: 0,
