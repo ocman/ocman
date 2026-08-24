@@ -68,6 +68,11 @@ export const MOCK_PROJECT = {
 // ---------------------------------------------------------------------------
 
 async function installDefaultRoutes(page: Page) {
+  // Keep unmocked API calls out of Vite's absent-backend proxy. Specific routes below take priority.
+  await page.route('/api/**', (route: Route) =>
+    route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not mocked' }) }),
+  );
+
   // Auth: no auth required (open access)
   await page.route('/api/auth/me', (route: Route) =>
     route.fulfill({
