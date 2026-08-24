@@ -670,6 +670,10 @@ export interface ToolApproval {
   /** Judge's one-line conclusion. Empty for legacy approvals. */
   reasoning: string;
   approvedBy: 'user' | 'ai';
+  reply?: 'once' | 'always';
+  metadata?: Record<string, unknown>;
+  askedAt?: number;
+  approvedAt?: number;
 }
 
 /**
@@ -703,6 +707,12 @@ export function parseToolApprovals(argsText: string): {
         patterns: parsed.patterns || [],
         reasoning: parsed.reasoning || '',
         approvedBy: parsed.approvedBy === 'user' ? 'user' : 'ai',
+        reply: parsed.reply === 'always' ? 'always' : parsed.reply === 'once' ? 'once' : undefined,
+        metadata: parsed.metadata && typeof parsed.metadata === 'object' && !Array.isArray(parsed.metadata)
+          ? parsed.metadata
+          : undefined,
+        askedAt: typeof parsed.askedAt === 'number' ? parsed.askedAt : undefined,
+        approvedAt: typeof parsed.approvedAt === 'number' ? parsed.approvedAt : undefined,
       });
     } catch { /* keep the tool renderable on a malformed marker */ }
     return false;

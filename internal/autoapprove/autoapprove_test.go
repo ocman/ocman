@@ -292,7 +292,7 @@ func TestEnsureAutoApproveReplaysStateOnShortCircuit(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			buf := &bytes.Buffer{}
 			s := &Service{
-				sseSessions: make(map[string]*Sink),
+				sseSessions: make(map[string]map[*Sink]struct{}),
 				autoApprove: make(map[string]*autoApproveStatus),
 				deps:        Deps{DefaultEnabled: true},
 			}
@@ -340,7 +340,7 @@ func TestEnsureAutoApproveReplaysStateOnShortCircuit(t *testing.T) {
 // replays the cached pending state to the now-connected sink.
 func TestEnsureAutoApprove_BugRepro_FrontendConnectsAfterWatcherClaimed(t *testing.T) {
 	s := &Service{
-		sseSessions: make(map[string]*Sink),
+		sseSessions: make(map[string]map[*Sink]struct{}),
 		autoApprove: make(map[string]*autoApproveStatus),
 		deps:        Deps{DefaultEnabled: true},
 	}
@@ -385,7 +385,7 @@ func TestEnsureAutoApprove_BugRepro_FrontendConnectsAfterWatcherClaimed(t *testi
 // judge or burn extra tokens.
 func TestEnsureAutoApproveDoesNotStartSecondJudgeOnReplay(t *testing.T) {
 	s := &Service{
-		sseSessions: make(map[string]*Sink),
+		sseSessions: make(map[string]map[*Sink]struct{}),
 		autoApprove: make(map[string]*autoApproveStatus),
 		deps:        Deps{DefaultEnabled: true},
 	}
@@ -408,47 +408,35 @@ func TestEnsureAutoApproveDoesNotStartSecondJudgeOnReplay(t *testing.T) {
 	}
 }
 
-// TestSseSinkRegistry verifies register / lookup / unregister semantics,
-// including that unregister only removes the matching sink (a newer
-// connection's registration must survive an older tear-down) and that
-// writes against a closed sink are dropped instead of panicking.
+// TestSseSinkRegistry verifies fanout and independent unregister safety.
 func TestSseSinkRegistry(t *testing.T) {
-	s := &Service{sseSessions: make(map[string]*Sink)}
+	s := &Service{sseSessions: make(map[string]map[*Sink]struct{})}
 
 	w1 := &bytes.Buffer{}
 	w2 := &bytes.Buffer{}
 
-	if got := s.lookupSink("ses-1"); got != nil {
-		t.Fatalf("lookup before register should return nil")
+	if got := s.lookupSinks("ses-1"); len(got) != 0 {
+		t.Fatalf("lookup before register = %d sinks, want 0", len(got))
 	}
 
 	sink1 := s.RegisterSink("ses-1", w1, nil)
-	if got := s.lookupSink("ses-1"); got != sink1 {
-		t.Errorf("after register, lookup should return sink1")
-	}
-
-	// Re-register: newer sink wins, previous one is closed.
 	sink2 := s.RegisterSink("ses-1", w2, nil)
-	if got := s.lookupSink("ses-1"); got != sink2 {
-		t.Errorf("re-register should overwrite previous sink")
-	}
-	// Writes against the displaced sink should be no-ops.
-	w1.Reset()
-	sink1.write("ocman.permission.pending", []byte(`{}`))
-	if w1.Len() != 0 {
-		t.Errorf("displaced sink should not accept writes; got %q", w1.String())
+	s.emitSessionSseEvent("ses-1", "ocman.permission.pending", []byte(`{}`))
+	if !strings.Contains(w1.String(), "event: ocman.permission.pending") || !strings.Contains(w2.String(), "event: ocman.permission.pending") {
+		t.Fatalf("event was not fanned out: sink1=%q sink2=%q", w1.String(), w2.String())
 	}
 
-	// Older sink1 unregistering must not clear the entry for sink2.
 	s.UnregisterSink("ses-1", sink1)
-	if got := s.lookupSink("ses-1"); got != sink2 {
-		t.Errorf("unregister with stale sink should NOT clear newer registration")
+	w1.Reset()
+	w2.Reset()
+	s.emitSessionSseEvent("ses-1", "ocman.permission.checking", []byte(`{}`))
+	if w1.Len() != 0 || !strings.Contains(w2.String(), "event: ocman.permission.checking") {
+		t.Fatalf("unregister affected wrong sink: sink1=%q sink2=%q", w1.String(), w2.String())
 	}
 
-	// Correct unregister clears and closes.
 	s.UnregisterSink("ses-1", sink2)
-	if got := s.lookupSink("ses-1"); got != nil {
-		t.Errorf("unregister with matching sink should clear entry")
+	if got := s.lookupSinks("ses-1"); len(got) != 0 {
+		t.Errorf("lookup after unregister = %d sinks, want 0", len(got))
 	}
 	// Subsequent writes against the closed sink must be no-ops.
 	w2.Reset()
@@ -491,7 +479,7 @@ func TestSseSinkWriteAfterClose(t *testing.T) {
 func TestEmitPermissionPending(t *testing.T) {
 	buf := &bytes.Buffer{}
 	s := &Service{
-		sseSessions: make(map[string]*Sink),
+		sseSessions: make(map[string]map[*Sink]struct{}),
 	}
 	s.RegisterSink("ses-1", buf, nil)
 
@@ -523,7 +511,7 @@ func TestEmitPermissionPending(t *testing.T) {
 	}
 
 	// No sink registered → no-op (must not panic).
-	s2 := &Service{sseSessions: make(map[string]*Sink)}
+	s2 := &Service{sseSessions: make(map[string]map[*Sink]struct{})}
 	s2.emitPermissionPending("missing", "perm-1", wantJudgeStartsAt)
 }
 
@@ -1216,10 +1204,11 @@ func TestBackgroundAutoApprove_SafeCommandCacheHit(t *testing.T) {
 	}
 
 	buf := &bytes.Buffer{}
+	store := &recordingStore{}
 	s := &Service{
-		sseSessions:      make(map[string]*Sink),
+		sseSessions:      make(map[string]map[*Sink]struct{}),
 		autoApprove:      make(map[string]*autoApproveStatus),
-		deps:             Deps{DefaultEnabled: true},
+		deps:             Deps{DefaultEnabled: true, Store: store},
 		safeCommandCache: make(map[string]map[string]string),
 		// judge=nil: any attempt to consult the LLM panics, proving
 		// the cache short-circuit fired.
@@ -1248,9 +1237,7 @@ func TestBackgroundAutoApprove_SafeCommandCacheHit(t *testing.T) {
 		fp,
 		sessionID,
 		permissionID,
-		permission,
-		nil,
-		map[string]any{"command": command},
+		askedPermission{platformID: "opencode", permission: permission, metadata: map[string]any{"command": command}, askedAt: 123},
 	)
 
 	// 1+3. RespondPermission must have been called with Reply="once".
@@ -1289,6 +1276,14 @@ func TestBackgroundAutoApprove_SafeCommandCacheHit(t *testing.T) {
 	if !strings.Contains(got, "event: ocman.permission.auto-approved") {
 		t.Errorf("expected ocman.permission.auto-approved on the sink, got:\n%s", got)
 	}
+	for _, fragment := range []string{`"approvedBy":"ai"`, `"reply":"once"`, `"metadata":{"command":"pnpm test"}`, `"askedAt":123`, `"approvedAt":`} {
+		if !strings.Contains(got, fragment) {
+			t.Errorf("AI approval event missing %s:\n%s", fragment, got)
+		}
+	}
+	if len(store.records) != 1 || store.records[0].perm.ApprovedBy != "ai" || store.records[0].perm.Reply != "once" || store.records[0].perm.AskedAt != 123 || store.records[0].perm.Metadata["command"] != command {
+		t.Fatalf("AI approval row = %#v", store.records)
+	}
 }
 
 // TestBackgroundAutoApprove_SafeCommandCacheMiss_DifferentSession is
@@ -1316,7 +1311,7 @@ func TestBackgroundAutoApprove_SafeCommandCacheMiss_DifferentSession(t *testing.
 	}
 
 	s := &Service{
-		sseSessions:      make(map[string]*Sink),
+		sseSessions:      make(map[string]map[*Sink]struct{}),
 		autoApprove:      make(map[string]*autoApproveStatus),
 		deps:             Deps{DefaultEnabled: true},
 		safeCommandCache: make(map[string]map[string]string),
@@ -1335,9 +1330,7 @@ func TestBackgroundAutoApprove_SafeCommandCacheMiss_DifferentSession(t *testing.
 		fp,
 		"ses-B",
 		"perm-B",
-		"Bash command",
-		nil,
-		map[string]any{"command": command},
+		askedPermission{platformID: "opencode", permission: "Bash command", metadata: map[string]any{"command": command}, askedAt: 123},
 	)
 
 	if respondCalls != 0 {

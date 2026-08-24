@@ -49,6 +49,11 @@ and the project relaunches. `RestartProjectOpencode` (same owner
 routing, works local + remote over the gRPC seam) stops the tracked
 instance and relaunches under the same `singleflight` key.
 
+Permission approval provenance is durable: AI and user approvals, including
+one-time user approvals, are recorded for command footnotes with the original
+permission metadata. Only user `always` decisions and judge-safe approvals feed
+child permission inheritance; user `once` decisions remain audit-only.
+
 When `EnsureProjectOpencode` launches the instance it seeds the pane with
 a scoped `external_directory` `OPENCODE_PERMISSION` rule for the
 project's `.worktrees/<repo>` root so worktree paths are pre-approved.

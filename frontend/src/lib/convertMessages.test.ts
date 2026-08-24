@@ -157,6 +157,194 @@ describe('AI approval footnotes', () => {
     expect(calls[2].argsText).not.toContain('@approved:');
   });
 
+  it('uses askedAt and command metadata so a later Bash does not steal the approval', () => {
+    const messages: Message[] = [
+      makeMessage('a1', { role: 'assistant' }, 100),
+      { id: 'ocman-notice-p1', sessionId: 's', timeCreated: 400, data: { role: 'notice' } },
+    ];
+    const parts = [
+      toolPart('a1', 't1', 'rm -rf /tmp/foo', 150),
+      toolPart('a1', 't2', 'echo unrelated', 300),
+      makePart('ocman-notice-p1', {
+        ...approval,
+        metadata: { command: 'rm -rf /tmp/foo' },
+        askedAt: 200,
+        approvedAt: 400,
+        reply: 'once',
+      }, 'n1-part', 400),
+    ];
+
+    const calls = asContentArray(createConvertMessages()(messages, parts)[0].content)
+      .filter((item) => item.type === 'tool-call');
+
+    expect(calls[0].argsText).toContain('@approved:');
+    expect(calls[1].argsText).not.toContain('@approved:');
+  });
+
+  it.each([
+    ['edit', { filePath: '/repo/a.ts', oldString: 'a', newString: 'b' }, { path: '/repo/a.ts' }],
+    ['read', { filePath: '/repo/a.ts' }, { path: '/repo/a.ts' }],
+    ['webfetch', { url: 'https://example.com/docs' }, { url: 'https://example.com/docs' }],
+  ])('attaches a metadata-rich %s approval to its matching tool', (tool, input, metadata) => {
+    const messages: Message[] = [
+      makeMessage('a1', { role: 'assistant' }, 100),
+      { id: 'ocman-notice-p1', sessionId: 's', timeCreated: 350, data: { role: 'notice' } },
+    ];
+    const parts = [
+      makePart('a1', { type: 'tool', tool, state: { status: 'completed', input } }, 'target', 150),
+      toolPart('a1', 'later', 'echo unrelated', 250),
+      makePart('ocman-notice-p1', {
+        type: 'auto-approved',
+        permission: tool,
+        patterns: [],
+        reasoning: 'Matched input.',
+        approvedBy: 'ai',
+        metadata,
+        askedAt: 300,
+        approvedAt: 350,
+        reply: 'always',
+      }, 'notice-part', 350),
+    ];
+
+    const calls = asContentArray(createConvertMessages()(messages, parts)[0].content)
+      .filter((item) => item.type === 'tool-call');
+
+    expect(calls[0].argsText).toContain('@approved:');
+    expect(calls[1].argsText).not.toContain('@approved:');
+  });
+
+  it('keeps a metadata-rich approval standalone when no tool input matches', () => {
+    const messages: Message[] = [
+      makeMessage('a1', { role: 'assistant' }, 100),
+      { id: 'ocman-notice-p1', sessionId: 's', timeCreated: 250, data: { role: 'notice' } },
+    ];
+    const parts = [
+      toolPart('a1', 't1', 'echo unrelated', 150),
+      makePart('ocman-notice-p1', { ...approval, metadata: { command: 'pnpm test' }, askedAt: 200 }, 'n1-part', 250),
+    ];
+
+    const out = createConvertMessages()(messages, parts);
+
+    expect(out.map((message) => message.id)).toEqual(['a1', 'ocman-notice-p1']);
+    expect(asContentArray(out[1].content)[0]).toMatchObject({
+      type: 'tool-call',
+      toolName: 'ocman:auto-approved',
+    });
+  });
+
+  it('uses the legacy fallback for migrated empty metadata', () => {
+    const messages: Message[] = [
+      makeMessage('a1', { role: 'assistant' }, 100),
+      { id: 'ocman-notice-p1', sessionId: 's', timeCreated: 250, data: { role: 'notice' } },
+    ];
+    const parts = [
+      toolPart('a1', 't1', 'echo unrelated', 150),
+      makePart('ocman-notice-p1', { ...approval, metadata: {}, askedAt: 200 }, 'n1-part', 250),
+    ];
+
+    const out = createConvertMessages()(messages, parts);
+    const call = asContentArray(out[0].content)[0];
+
+    expect(out.map((message) => message.id)).not.toContain('ocman-notice-p1');
+    expect(call.type === 'tool-call' && call.argsText).toContain('@approved:');
+  });
+
+  it('requires a compatible tool name when read and edit share a path', () => {
+    const messages: Message[] = [
+      makeMessage('a1', { role: 'assistant' }, 100),
+      { id: 'ocman-notice-p1', sessionId: 's', timeCreated: 350, data: { role: 'notice' } },
+    ];
+    const parts = [
+      makePart('a1', {
+        type: 'tool',
+        tool: 'edit',
+        state: { status: 'completed', input: { filePath: '/repo/a.ts', oldString: 'a', newString: 'b' } },
+      }, 'edit-part', 150),
+      makePart('a1', {
+        type: 'tool',
+        tool: 'read',
+        state: { status: 'completed', input: { filePath: '/repo/a.ts' } },
+      }, 'read-part', 250),
+      makePart('ocman-notice-p1', {
+        type: 'auto-approved',
+        permission: 'edit',
+        patterns: [],
+        approvedBy: 'user',
+        metadata: { path: '/repo/a.ts' },
+        askedAt: 300,
+      }, 'notice-part', 350),
+    ];
+
+    const calls = asContentArray(createConvertMessages()(messages, parts)[0].content)
+      .filter((item) => item.type === 'tool-call');
+
+    expect(calls[0].toolName).toBe('edit');
+    expect(calls[0].argsText).toContain('@approved:');
+    expect(calls[1].toolName).toBe('__read__');
+    expect(calls[1].argsText).not.toContain('@approved:');
+  });
+
+  it('keeps an edit approval standalone when only a read matches its path', () => {
+    const messages: Message[] = [
+      makeMessage('a1', { role: 'assistant' }, 100),
+      { id: 'ocman-notice-p1', sessionId: 's', timeCreated: 350, data: { role: 'notice' } },
+    ];
+    const parts = [
+      makePart('a1', {
+        type: 'tool',
+        tool: 'edit',
+        state: { status: 'completed', input: { filePath: '/repo/other.ts', oldString: 'a', newString: 'b' } },
+      }, 'edit-part', 150),
+      makePart('a1', {
+        type: 'tool',
+        tool: 'read',
+        state: { status: 'completed', input: { filePath: '/repo/a.ts' } },
+      }, 'read-part', 250),
+      makePart('ocman-notice-p1', {
+        type: 'auto-approved',
+        permission: 'edit',
+        patterns: [],
+        approvedBy: 'user',
+        metadata: { path: '/repo/a.ts' },
+        askedAt: 300,
+      }, 'notice-part', 350),
+    ];
+
+    const out = createConvertMessages()(messages, parts);
+    const calls = asContentArray(out[0].content).filter((item) => item.type === 'tool-call');
+
+    expect(out.map((message) => message.id)).toContain('ocman-notice-p1');
+    expect(calls.every((call) => !call.argsText.includes('@approved:'))).toBe(true);
+  });
+
+  it('matches cross-cutting external_directory metadata across tool names', () => {
+    const messages: Message[] = [
+      makeMessage('a1', { role: 'assistant' }, 100),
+      { id: 'ocman-notice-p1', sessionId: 's', timeCreated: 250, data: { role: 'notice' } },
+    ];
+    const parts = [
+      makePart('a1', {
+        type: 'tool',
+        tool: 'bash',
+        state: { status: 'completed', input: { command: 'cat /outside/a.ts', path: '/outside/a.ts' } },
+      }, 'bash-part', 150),
+      makePart('ocman-notice-p1', {
+        type: 'auto-approved',
+        permission: 'external_directory',
+        patterns: [],
+        approvedBy: 'user',
+        metadata: { path: '/outside/a.ts' },
+        askedAt: 200,
+      }, 'notice-part', 250),
+    ];
+
+    const out = createConvertMessages()(messages, parts);
+    const call = asContentArray(out[0].content)[0];
+
+    expect(out).toHaveLength(1);
+    expect(call.type === 'tool-call' && call.argsText).toContain('@approved:');
+  });
+
   it('attaches a user approval without rendering a standalone notice', () => {
     const messages: Message[] = [
       makeMessage('a1', { role: 'assistant' }, 100),
@@ -205,7 +393,7 @@ describe('AI approval footnotes', () => {
     expect(call.type === 'tool-call' && call.argsText).toContain('@approved:');
   });
 
-  it('drops the standalone notice when no tool part precedes the approval', () => {
+  it('keeps the standalone notice when no tool part precedes the approval', () => {
     const messages: Message[] = [
       { id: 'ocman-notice-p1', sessionId: 's', timeCreated: 50, data: { role: 'notice' } },
       makeMessage('a1', { role: 'assistant' }, 100),
@@ -217,8 +405,8 @@ describe('AI approval footnotes', () => {
 
     const out = createConvertMessages()(messages, parts);
 
-    expect(out).toHaveLength(1);
-    expect(out[0].id).toBe('a1');
+    expect(out).toHaveLength(2);
+    expect(out[0].id).toBe('ocman-notice-p1');
   });
 
   it('invalidates the per-message cache when an approval arrives later', () => {

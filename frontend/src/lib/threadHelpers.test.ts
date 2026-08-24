@@ -17,7 +17,29 @@ import {
   summarizePatch,
   parseQuestionAnswers,
   parseQuestions,
+  encodeToolApproval,
+  parseToolApprovals,
 } from './threadHelpers';
+
+describe('tool approval metadata', () => {
+  it('round-trips the complete audit payload', () => {
+    const approval = {
+      permission: 'edit',
+      patterns: ['/repo/a.ts'],
+      reasoning: 'Scoped edit.',
+      approvedBy: 'user' as const,
+      reply: 'always' as const,
+      metadata: { filePath: '/repo/a.ts' },
+      askedAt: 1200,
+      approvedAt: 1300,
+    };
+
+    expect(parseToolApprovals(`completed${encodeToolApproval(approval)}`)).toEqual({
+      approvals: [approval],
+      strippedArgs: 'completed',
+    });
+  });
+});
 
 describe('escapeHtml', () => {
   it('escapes the five HTML-significant characters', () => {

@@ -235,19 +235,66 @@ function partStartedAt(p: Part): number {
   return p.timeCreated || parsePart(p).time?.start || 0;
 }
 
-/**
- * The last tool part started at or before `ts`, from a list already
- * sorted ascending by start time. That is the tool a permission asked
- * at `ts` belongs to, since OpenCode creates the tool part before it
- * asks. Returns undefined when nothing was running yet.
- */
-function lastToolPartBefore(sortedToolParts: Part[], ts: number): Part | undefined {
-  let target: Part | undefined;
-  for (const p of sortedToolParts) {
-    if (partStartedAt(p) > ts) break;
-    target = p;
+/** Permissions whose metadata only applies to the same named tool. */
+const TOOL_SPECIFIC_PERMISSIONS = new Set([
+  'bash', 'edit', 'write', 'read', 'webfetch', 'glob', 'grep', 'skill', 'task',
+]);
+
+function toolSpecificPermission(permission: string): string | undefined {
+  const normalizedPermission = permission.toLowerCase().replace(/^mcp_/, '');
+  return [...TOOL_SPECIFIC_PERMISSIONS].find((tool) =>
+    normalizedPermission === tool || normalizedPermission.startsWith(`${tool} `),
+  );
+}
+
+function metadataLeaves(value: unknown, key = ''): Array<{ key: string; value: unknown }> {
+  if (Array.isArray(value)) return value.flatMap((item) => metadataLeaves(item, key));
+  if (value && typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>)
+      .flatMap(([childKey, child]) => metadataLeaves(child, childKey));
   }
-  return target;
+  return value === undefined || value === null ? [] : [{ key, value }];
+}
+
+function canonicalMetadataKey(key: string): string {
+  const normalized = key.toLowerCase().replaceAll('_', '');
+  return normalized === 'file' || normalized === 'filepath' || normalized === 'path'
+    ? 'path'
+    : normalized;
+}
+
+function metadataMatchesInput(metadata: Record<string, unknown>, input: unknown): boolean {
+  const expected = metadataLeaves(metadata);
+  if (expected.length === 0) return false;
+  const actual = metadataLeaves(input);
+  return expected.every((leaf) => actual.some((candidate) =>
+    canonicalMetadataKey(candidate.key) === canonicalMetadataKey(leaf.key)
+    && candidate.value === leaf.value,
+  ));
+}
+
+function matchingToolPart(sortedToolParts: Part[], approval: PartData, noticeTime: number): Part | undefined {
+  const askedAt = approval.askedAt || noticeTime;
+  const candidates = sortedToolParts.filter((part) => partStartedAt(part) <= askedAt);
+  const metadata = approval.metadata;
+  if (metadata === undefined || Object.keys(metadata).length === 0) return candidates.at(-1);
+
+  const permissionTool = toolSpecificPermission(approval.permission || '');
+
+  const matching = candidates.filter((part) => {
+    const data = parsePart(part);
+    const input = data.state?.input;
+    const tool = (data.tool || '').toLowerCase().replace(/^mcp_/, '');
+    if (permissionTool && tool !== permissionTool) return false;
+    if (permissionTool === 'bash') {
+      const command = metadataLeaves(metadata).find((leaf) => canonicalMetadataKey(leaf.key) === 'command')?.value;
+      return typeof command === 'string'
+        && typeof input?.command === 'string'
+        && input.command === command;
+    }
+    return metadataMatchesInput(metadata, input);
+  });
+  return matching.at(-1);
 }
 
 /** Build (or rebuild) the `messageId → parts[]` index. */
@@ -348,11 +395,9 @@ export function createConvertMessages(): ConvertMessagesFn {
       state.lastPartsByMsg = partsByMsg;
     }
 
-    // Permission approvals render as a footnote on the tool call they
-    // unblocked instead of a standalone block. A permission is always
-    // asked *while* a tool runs, so the approved tool is the most
-    // recently created tool part at approval time. Standalone approval
-    // notices are hidden because the command is the useful context.
+    // Permission approvals render on the tool call they unblocked. New
+    // payloads match metadata against tool input; legacy payloads fall back
+    // to the latest tool that started before the notice.
     const approvalsByPartId: Record<string, ToolApproval[]> = {};
     const inlinedNotices = new Set<string>();
     const notices = messages.filter((m) => m.data?.role === 'notice');
@@ -363,15 +408,19 @@ export function createConvertMessages(): ConvertMessagesFn {
       for (const notice of notices) {
         for (const pd of (partsByMsg[notice.id] || EMPTY_PARTS).map(parsePart)) {
           if (pd.type !== 'auto-approved') continue;
-          inlinedNotices.add(notice.id);
-          const target = lastToolPartBefore(toolParts, notice.timeCreated);
+          const target = matchingToolPart(toolParts, pd, notice.timeCreated);
           if (!target) continue;
+          inlinedNotices.add(notice.id);
           const list = approvalsByPartId[target.id] || (approvalsByPartId[target.id] = []);
           list.push({
             permission: pd.permission || '',
             patterns: pd.patterns || [],
             reasoning: pd.reasoning || '',
             approvedBy: pd.approvedBy === 'user' ? 'user' : 'ai',
+            reply: pd.reply,
+            metadata: pd.metadata,
+            askedAt: pd.askedAt,
+            approvedAt: pd.approvedAt,
           });
         }
       }
@@ -446,6 +495,11 @@ export function createConvertMessages(): ConvertMessagesFn {
               permission: pd.permission,
               patterns: pd.patterns,
               reasoning: pd.reasoning ?? '',
+              approvedBy: pd.approvedBy === 'user' ? 'user' : 'ai',
+              reply: pd.reply,
+              metadata: pd.metadata,
+              askedAt: pd.askedAt,
+              approvedAt: pd.approvedAt,
             }),
             result: undefined,
           });
@@ -500,7 +554,7 @@ export function createConvertMessages(): ConvertMessagesFn {
     // participate in the cache key or the footnote never shows up.
     const approvalSig = hasApprovals
       ? msgPartsRaw
-        .map((p) => (approvalsByPartId[p.id] ? `${p.id}:${approvalsByPartId[p.id].length}` : ''))
+        .map((p) => (approvalsByPartId[p.id] ? `${p.id}:${JSON.stringify(approvalsByPartId[p.id])}` : ''))
         .filter(Boolean)
         .join(',')
       : '';

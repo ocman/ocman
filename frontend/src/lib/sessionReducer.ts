@@ -138,6 +138,10 @@ export interface AutoApprovedNoticePayload {
   /** Judge's one-line conclusion. Optional — empty for legacy
    *  pre-v11 rows or when the model omitted the field. */
   reasoning?: string;
+  approvedBy?: 'user' | 'ai';
+  reply?: 'once' | 'always';
+  metadata?: Record<string, unknown>;
+  askedAt?: number;
   /** Unix-ms timestamp of when the permission was approved.
    *  When present, used as the notice message's timeCreated so it
    *  sorts into the correct chronological position. */
@@ -626,6 +630,11 @@ export function reduceSessionView(state: SessionView, action: SessionAction): Se
           permission: action.notice.permission,
           patterns: action.notice.patterns,
           reasoning: action.notice.reasoning ?? '',
+          approvedBy: action.notice.approvedBy ?? 'ai',
+          reply: action.notice.reply,
+          metadata: action.notice.metadata,
+          askedAt: action.notice.askedAt,
+          approvedAt: ts,
         }),
       };
       // Insert the notice into the sorted message list so it appears
@@ -1002,6 +1011,11 @@ function reducePermissionAutoApproved(state: SessionView, props: Record<string, 
     : [];
   const reasoning = typeof props.reasoning === 'string' ? props.reasoning : '';
   const approvedBy = props.approvedBy === 'user' ? 'user' : 'ai';
+  const reply = props.reply === 'always' ? 'always' : props.reply === 'once' ? 'once' : undefined;
+  const metadata = props.metadata && typeof props.metadata === 'object' && !Array.isArray(props.metadata)
+    ? props.metadata as Record<string, unknown>
+    : undefined;
+  const askedAt = typeof props.askedAt === 'number' ? props.askedAt : undefined;
   const approvedAt = typeof props.approvedAt === 'number' ? props.approvedAt : Date.now();
 
   if (!permId || !permission) return state;
@@ -1030,6 +1044,10 @@ function reducePermissionAutoApproved(state: SessionView, props: Record<string, 
         patterns,
         reasoning,
         approvedBy,
+        reply,
+        metadata,
+        askedAt,
+        approvedAt,
       }),
     };
     messages = upsertMessage(messages, noticeMsg);

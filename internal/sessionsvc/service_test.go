@@ -16,7 +16,8 @@ type fakePlatform struct {
 	id        platforms.ID
 	available bool
 
-	sendErr error
+	sendErr       error
+	permissionErr error
 
 	sent        []platforms.SendMessageRequest
 	commands    []platforms.ExecuteCommandRequest
@@ -67,7 +68,7 @@ func (f *fakePlatform) SetPermissionRules(_ context.Context, req platforms.SetPe
 }
 func (f *fakePlatform) RespondPermission(_ context.Context, req platforms.RespondPermissionRequest) error {
 	f.permissions = append(f.permissions, req)
-	return nil
+	return f.permissionErr
 }
 func (f *fakePlatform) RespondQuestion(_ context.Context, req platforms.RespondQuestionRequest) error {
 	f.answers = append(f.answers, req)
@@ -384,6 +385,39 @@ func TestRespondPermissionFiresHookBeforeAdapter(t *testing.T) {
 	})
 	if len(hooked) != 1 {
 		t.Fatal("hook fired for an unresolvable session")
+	}
+}
+
+func TestRespondPermissionFiresSuccessHookOnlyAfterSuccess(t *testing.T) {
+	p := &fakePlatform{id: "opencode", available: true}
+	var got platforms.RespondPermissionRequest
+	var gotPlatform platforms.ID
+	var hookCalls int
+	svc, _ := newService(p, Hooks{
+		PermissionReplySucceeded: func(ctx context.Context, platform platforms.ID, req platforms.RespondPermissionRequest) {
+			hookCalls++
+			gotPlatform, got = platform, req
+			if ctx.Err() != nil {
+				t.Errorf("success hook context already canceled: %v", ctx.Err())
+			}
+		},
+	})
+	req := platforms.RespondPermissionRequest{SessionID: "s1", PermissionID: "p1", Reply: "always"}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := svc.RespondPermission(ctx, "opencode", req); err != nil {
+		t.Fatal(err)
+	}
+	if hookCalls != 1 || gotPlatform != "opencode" || got != req {
+		t.Fatalf("success hook = calls %d platform %q req %#v", hookCalls, gotPlatform, got)
+	}
+
+	p.permissionErr = errors.New("send failed")
+	if err := svc.RespondPermission(context.Background(), "opencode", req); err == nil {
+		t.Fatal("expected adapter error")
+	}
+	if hookCalls != 1 {
+		t.Fatalf("success hook fired after adapter failure: %d", hookCalls)
 	}
 }
 

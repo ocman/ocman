@@ -215,6 +215,9 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		PermissionReplied: func(sessionID, permissionID string) {
 			s.aaSvc().Cancel(sessionID, permissionID)
 		},
+		PermissionReplySucceeded: func(ctx context.Context, _ platforms.ID, req platforms.RespondPermissionRequest) {
+			s.aaSvc().HandleDirectPermissionReply(ctx, req.SessionID, req.PermissionID, req.Reply)
+		},
 		SessionCreated: func(info sessionsvc.CreatedSession) {
 			s.broadcastSessionCreated(info)
 			s.refreshProjectsIndexAsync()

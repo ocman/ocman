@@ -1319,7 +1319,6 @@
 /* Permission approval as a footnote under the tool's box — same treatment as
  * .oc-shell-attribution, tucked up against the block above. */
 .oc-ai-approval-footnote {
-  position: relative;
   margin-top: -3px;
   margin-bottom: 4px;
   font-family: var(--font-conversation-mono);
@@ -1342,14 +1341,11 @@
 }
 
 .oc-ai-approval-detail {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 100;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  width: min(420px, calc(100vw - 32px));
+  max-width: 420px;
+  margin-top: 4px;
   padding: 10px 12px;
   border: 1px solid var(--border);
   background: var(--surface0);
@@ -1370,10 +1366,4 @@
   font-style: italic;
 }
 
-@media print {
-  .oc-ai-approval-detail {
-    position: static;
-    width: auto;
-    box-shadow: none;
-  }
-}
+@media print { .oc-ai-approval-detail { max-width: none; box-shadow: none; } }

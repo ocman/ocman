@@ -47,6 +47,14 @@ type autoApproveStatus struct {
 	// the UI on the ocman.permission.flagged event so the user sees
 	// *why* the judge made its call.
 	reasoning string
+
+	// aiResponseInFlight distinguishes a safe verdict from an AI reply
+	// currently being sent. An observed reply during this window is held
+	// until the adapter call says whether it was ours.
+	aiResponseInFlight   bool
+	aiResponseSucceeded  bool
+	pendingObservedReply string
+	userCaptureStarted   bool
 }
 
 // autoApproveKey is the registry key for a single permission record.
@@ -389,7 +397,9 @@ func (s *Service) recordSafeCommandVerdict(sessionID, hash, reasoning string) {
 // guarded by its own mutex, so even a write that races with
 // UnregisterSink cannot dereference a recycled http.ResponseWriter.
 func (s *Service) emitSessionSseEvent(sessionID, eventType string, payload []byte) {
-	s.lookupSink(sessionID).write(eventType, payload)
+	for _, sink := range s.lookupSinks(sessionID) {
+		sink.write(eventType, payload)
+	}
 }
 
 // emitPermissionPending writes the ocman.permission.pending SSE event

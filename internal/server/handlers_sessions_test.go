@@ -19,6 +19,8 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/remote"
+	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -825,6 +827,10 @@ func TestInjectApprovalNotices_IncludesApprovalActor(t *testing.T) {
 			PermissionText: "external_directory",
 			Patterns:       []string{"/worktrees/*"},
 			Reasoning:      "user clicked Allow always",
+			ApprovedBy:     "user",
+			Reply:          "always",
+			Metadata:       map[string]any{"path": "/worktrees/foo"},
+			AskedAt:        90,
 			ApprovedAt:     100,
 		},
 		{
@@ -854,8 +860,77 @@ func TestInjectApprovalNotices_IncludesApprovalActor(t *testing.T) {
 	if err := json.Unmarshal(parts[0].Data, &userPart); err != nil {
 		t.Fatalf("decode user approval: %v", err)
 	}
-	if userPart["approvedBy"] != "user" || userPart["reasoning"] != "" {
+	if userPart["approvedBy"] != "user" || userPart["reasoning"] != "" || userPart["reply"] != "always" || userPart["askedAt"] != float64(90) {
 		t.Fatalf("user approval part = %#v, want user actor without AI reasoning", userPart)
+	}
+	metadata, _ := userPart["metadata"].(map[string]any)
+	if metadata["path"] != "/worktrees/foo" {
+		t.Fatalf("user approval metadata = %#v", metadata)
+	}
+}
+
+func TestRemoteSessionInjectsOwnerApprovalNotices(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	reg.Register(&fakePlatform{
+		id: "opencode",
+		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+			return &platforms.SessionDetail{Session: &db.Session{ID: id, Platform: "opencode"}}, nil
+		},
+	})
+	if err := srv.stateDB.RecordApprovedPermission(t.Context(), "opencode", "ses-1", state.ApprovedPermission{
+		PermissionID:   "perm-1",
+		PermissionText: "bash",
+		Patterns:       []string{"git status"},
+		Reasoning:      "Read-only command.",
+		ApprovedAt:     100,
+	}); err != nil {
+		t.Fatalf("RecordApprovedPermission: %v", err)
+	}
+
+	owner := remote.NewServer(reg, nil, "owner", "test").UseSessionEnricher(srv.EnrichRemoteSessionDetail)
+	resp, err := owner.Session(t.Context(), &pb.SessionReq{Platform: "opencode", SessionId: "ses-1"})
+	if err != nil {
+		t.Fatalf("Session RPC: %v", err)
+	}
+	var detail platforms.SessionDetail
+	if err := json.Unmarshal(resp.Payload, &detail); err != nil {
+		t.Fatalf("decode Session RPC: %v", err)
+	}
+	if len(detail.Messages) != 1 || detail.Messages[0].ID != "ocman-notice-perm-1" {
+		t.Fatalf("remote Session messages = %#v, want persisted owner notice", detail.Messages)
+	}
+}
+
+func TestHandleSessionApprovedPermissionsExcludesUserOnce(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	fp := &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "ses-1", Platform: "opencode"}}}
+	reg.Register(fp)
+	reg.RememberSessions("opencode", fp.sessions)
+	for _, approval := range []state.ApprovedPermission{
+		{PermissionID: "user-once", PermissionText: "bash", ApprovedBy: "user", Reply: "once", ApprovedAt: 1},
+		{PermissionID: "user-always", PermissionText: "bash", ApprovedBy: "user", Reply: "always", ApprovedAt: 2},
+		{PermissionID: "ai-once", PermissionText: "bash", ApprovedBy: "ai", Reply: "once", ApprovedAt: 3},
+	} {
+		if err := srv.stateDB.RecordApprovedPermission(t.Context(), "opencode", "ses-1", approval); err != nil {
+			t.Fatalf("RecordApprovedPermission: %v", err)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/session/ses-1/approved-permissions", nil)
+	rr := httptest.NewRecorder()
+	srv.handleSessionApprovedPermissions(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d; body=%s", rr.Code, rr.Body)
+	}
+	var got []struct {
+		PermissionID string `json:"permissionId"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(got) != 2 || got[0].PermissionID != "user-always" || got[1].PermissionID != "ai-once" {
+		t.Fatalf("approved permissions = %#v", got)
 	}
 }
 

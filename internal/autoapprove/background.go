@@ -40,10 +40,9 @@ func (s *Service) Ensure(
 	patterns []string,
 	metadata map[string]any,
 ) {
-	// Remember the asked-side permission text + patterns so a later
-	// user-clicked "Allow always" reply can be persisted with them
-	// (the permission.replied event carries neither). Issue #101.
-	s.rememberAsked(string(platformID), sessionID, permissionID, permission, patterns)
+	// Keep the first complete asked snapshot for durable attribution and
+	// tool-call correlation; permission.replied carries only IDs and reply.
+	asked := s.rememberAsked(string(platformID), sessionID, permissionID, permission, patterns, metadata)
 
 	// Read the configured delay once so both the cache anchor and the
 	// goroutine's sleep use the same value. The goroutine re-reads it
@@ -74,9 +73,7 @@ func (s *Service) Ensure(
 			adapter,
 			sessionID,
 			permissionID,
-			permission,
-			patterns,
-			metadata,
+			asked,
 		)
 	}()
 }
@@ -111,10 +108,9 @@ func (s *Service) backgroundAutoApprove(
 	adapter platforms.Platform,
 	sessionID string,
 	permissionID string,
-	permission string,
-	patterns []string,
-	metadata map[string]any,
+	asked askedPermission,
 ) {
+	permission, patterns, metadata := asked.permission, asked.patterns, asked.metadata
 	logger := log.WithFields(log.Fields{
 		"sessionID":    sessionID,
 		"permissionID": permissionID,
@@ -168,8 +164,7 @@ func (s *Service) backgroundAutoApprove(
 			s.recordJudgedWithReasoning(sessionID, permissionID, verdictSafe, finalReason)
 			s.respondAndPersistSafeApproval(
 				platformID, adapter,
-				sessionID, permissionID, permission,
-				patterns, finalReason,
+				sessionID, permissionID, asked, finalReason,
 				logger,
 			)
 			return
@@ -351,8 +346,7 @@ func (s *Service) backgroundAutoApprove(
 
 	s.respondAndPersistSafeApproval(
 		platformID, adapter,
-		sessionID, permissionID, permission,
-		patterns, result.Reasoning,
+		sessionID, permissionID, asked, result.Reasoning,
 		logger,
 	)
 }
@@ -375,21 +369,25 @@ func (s *Service) backgroundAutoApprove(
 func (s *Service) respondAndPersistSafeApproval(
 	platformID platforms.ID,
 	adapter platforms.Platform,
-	sessionID, permissionID, permission string,
-	patterns []string,
+	sessionID, permissionID string,
+	asked askedPermission,
 	reasoning string,
 	logger *log.Entry,
 ) {
+	permission, patterns := asked.permission, asked.patterns
 	respondCtx, respondCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer respondCancel()
+	s.beginAIResponse(sessionID, permissionID)
 	if err := adapter.RespondPermission(respondCtx, platforms.RespondPermissionRequest{
 		SessionID:    sessionID,
 		PermissionID: permissionID,
 		Reply:        "once",
 	}); err != nil {
+		s.finishAIResponse(sessionID, permissionID, false)
 		logger.WithError(err).Warn("background auto-approve: failed to respond to permission")
 		return
 	}
+	s.finishAIResponse(sessionID, permissionID, true)
 
 	approvedAt := time.Now().UnixMilli()
 
@@ -411,6 +409,10 @@ func (s *Service) respondAndPersistSafeApproval(
 				Patterns:       patterns,
 				JudgeSessionID: "",
 				Reasoning:      reasoning,
+				ApprovedBy:     "ai",
+				Reply:          "once",
+				Metadata:       asked.metadata,
+				AskedAt:        asked.askedAt,
 				ApprovedAt:     approvedAt,
 			},
 		); err != nil {
@@ -431,6 +433,10 @@ func (s *Service) respondAndPersistSafeApproval(
 		"permission":   permission,
 		"patterns":     patterns,
 		"reasoning":    reasoning,
+		"approvedBy":   "ai",
+		"reply":        "once",
+		"metadata":     asked.metadata,
+		"askedAt":      asked.askedAt,
 		"approvedAt":   approvedAt,
 	})
 	if err == nil {

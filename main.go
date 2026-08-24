@@ -457,7 +457,9 @@ func startRemoteServer(ctx context.Context, srv *server.Server, ident state.Inst
 		return false, "", false
 	}
 	rsrv := remote.NewServer(srv.Registry(), srv.RemoteServerHost(), ident.InstanceID, version).
-		UseSessions(srv.SessionService())
+		UseSessions(srv.SessionService()).
+		UseSessionEnricher(srv.EnrichRemoteSessionDetail).
+		UseEventProxy(srv.ProxyRemoteSessionEvents)
 	ln, err := remote.NewListener(remote.ListenConfig{
 		Addr:           listenAddr,
 		Token:          ident.RemoteToken,

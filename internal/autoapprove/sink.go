@@ -22,16 +22,11 @@ func WriteSSEEvent(w io.Writer, flush func(), eventType string, data []byte) {
 // (REST permission listing, prompt resurrection) can push synthetic
 // ocman.permission.* events into the same connection.
 
-// RegisterSink creates and records an Sink for sessionID. The
+// RegisterSink creates and records a Sink for sessionID. The
 // returned pointer must be passed to UnregisterSink when the
 // connection terminates so the sink is closed (any in-flight or
 // future writes turn into no-ops, preventing panics on a recycled
 // http.ResponseWriter).
-//
-// If a sink was already registered for the same sessionID (rare —
-// second tab on the same session) the previous one is closed; the
-// older client will simply stop receiving ocman.* events but its
-// proxied OpenCode events continue unaffected.
 func (s *Service) RegisterSink(sessionID string, w io.Writer, flush func()) *Sink {
 	if s == nil {
 		return nil
@@ -39,41 +34,45 @@ func (s *Service) RegisterSink(sessionID string, w io.Writer, flush func()) *Sin
 	sink := &Sink{w: w, flush: flush}
 	s.sseSessionsMu.Lock()
 	if s.sseSessions == nil {
-		s.sseSessions = make(map[string]*Sink)
+		s.sseSessions = make(map[string]map[*Sink]struct{})
 	}
-	prev := s.sseSessions[sessionID]
-	s.sseSessions[sessionID] = sink
+	if s.sseSessions[sessionID] == nil {
+		s.sseSessions[sessionID] = make(map[*Sink]struct{})
+	}
+	s.sseSessions[sessionID][sink] = struct{}{}
 	s.sseSessionsMu.Unlock()
-	if prev != nil {
-		prev.close()
-	}
 	return sink
 }
 
 // UnregisterSink closes the sink (so any in-flight or future writes
-// become no-ops) and removes it from the registry, but only if it
-// still matches the one being closed. This avoids clobbering a newer
-// tab's registration when an old SSE connection finally tears down.
+// become no-ops) and removes only it from the registry.
 func (s *Service) UnregisterSink(sessionID string, sink *Sink) {
 	if s == nil || sink == nil {
 		return
 	}
 	s.sseSessionsMu.Lock()
-	if cur, ok := s.sseSessions[sessionID]; ok && cur == sink {
+	if sinks := s.sseSessions[sessionID]; sinks != nil {
+		delete(sinks, sink)
+	}
+	if len(s.sseSessions[sessionID]) == 0 {
 		delete(s.sseSessions, sessionID)
 	}
 	s.sseSessionsMu.Unlock()
 	sink.close()
 }
 
-// lookupSink returns the registered sink for sessionID, or nil if
-// none. The returned pointer is stable — closing it is safe even after
-// the registry entry has been removed or replaced.
-func (s *Service) lookupSink(sessionID string) *Sink {
+// lookupSinks returns a snapshot of the registered sinks for sessionID.
+// Each pointer remains safe to write after concurrent unregister because
+// Sink.close and Sink.write use the same lock.
+func (s *Service) lookupSinks(sessionID string) []*Sink {
 	if s == nil {
 		return nil
 	}
 	s.sseSessionsMu.Lock()
 	defer s.sseSessionsMu.Unlock()
-	return s.sseSessions[sessionID]
+	sinks := make([]*Sink, 0, len(s.sseSessions[sessionID]))
+	for sink := range s.sseSessions[sessionID] {
+		sinks = append(sinks, sink)
+	}
+	return sinks
 }

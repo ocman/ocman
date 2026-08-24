@@ -1,10 +1,12 @@
 package remote
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"net"
+	"sync"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -22,6 +24,20 @@ import (
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 )
+
+func TestSSEFrameWriterRejectsOversizedFrame(t *testing.T) {
+	var dst bytes.Buffer
+	w := &sseFrameWriter{dst: &dst}
+
+	n, err := w.Write(bytes.Repeat([]byte{'x'}, maxSSEFrameBytes+1))
+
+	if err == nil || n != 0 {
+		t.Fatalf("Write = (%d, %v), want (0, error)", n, err)
+	}
+	if dst.Len() != 0 || len(w.pending) != 0 {
+		t.Fatalf("oversized frame was retained or forwarded")
+	}
+}
 
 // --- fakes ---
 
@@ -264,6 +280,31 @@ func TestServer_HelloAndSessionsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestServer_SessionAppliesOwnerEnrichment(t *testing.T) {
+	reg := platforms.NewRegistry()
+	reg.Register(&fakePlatform{id: "opencode"})
+	srv := NewServer(reg, localStubHost{}, "i", "v").UseSessionEnricher(
+		func(_ context.Context, platform, sessionID string, detail *platforms.SessionDetail) {
+			if platform != "opencode" || sessionID != "s1" {
+				t.Errorf("enricher called with platform=%q session=%q", platform, sessionID)
+			}
+			detail.Messages = append(detail.Messages, db.Message{ID: "ocman-notice-perm-1"})
+		},
+	)
+
+	resp, err := srv.Session(t.Context(), &pb.SessionReq{Platform: "opencode", SessionId: "s1"})
+	if err != nil {
+		t.Fatalf("Session: %v", err)
+	}
+	var detail platforms.SessionDetail
+	if err := unmarshalJSON(resp.Payload, &detail); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(detail.Messages) != 1 || detail.Messages[0].ID != "ocman-notice-perm-1" {
+		t.Fatalf("approval notice missing from remote Session: %+v", detail.Messages)
+	}
+}
+
 func TestServer_CreateSessionMapsUnreachableToUnavailable(t *testing.T) {
 	reg := platforms.NewRegistry()
 	reg.Register(&fakePlatform{id: "opencode", createErr: platforms.ErrPlatformUnreachable})
@@ -380,6 +421,86 @@ func TestServer_StreamEventsRoundTrip(t *testing.T) {
 	}
 	if len(chunks) != 2 || chunks[0] != "event: a\n\n" || chunks[1] != "event: b\n\n" {
 		t.Fatalf("event stream mismatch: %v", chunks)
+	}
+}
+
+func TestServer_StreamEventsForwardsConcurrentSyntheticEvents(t *testing.T) {
+	reg := platforms.NewRegistry()
+	reg.Register(&fakePlatform{id: "opencode"})
+	srv := NewServer(reg, localStubHost{}, "i", "v").UseEventProxy(
+		func(_ context.Context, platform, sessionID string, _ platforms.Platform, _ io.Writer, synthetic io.Writer, _ func()) error {
+			if platform != "opencode" || sessionID != "s1" {
+				t.Errorf("event proxy called with platform=%q session=%q", platform, sessionID)
+			}
+			const writers = 16
+			var wg sync.WaitGroup
+			for range writers {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					_, _ = synthetic.Write([]byte("event: ocman.permission.approved\ndata: {}\n\n"))
+				}()
+			}
+			wg.Wait()
+			return nil
+		},
+	)
+	conn := startTestServer(t, "tok", srv)
+	stream, err := pb.NewOcmanClient(conn).StreamEvents(t.Context(), &pb.SessionRef{Platform: "opencode", SessionId: "s1"})
+	if err != nil {
+		t.Fatalf("StreamEvents: %v", err)
+	}
+	count := 0
+	for {
+		chunk, err := stream.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("recv: %v", err)
+		}
+		if string(chunk.Data) != "event: ocman.permission.approved\ndata: {}\n\n" {
+			t.Fatalf("corrupt synthetic event: %q", chunk.Data)
+		}
+		count++
+	}
+	if count != 16 {
+		t.Fatalf("synthetic event count = %d, want 16", count)
+	}
+}
+
+func TestServer_StreamEventsDoesNotInterleaveSyntheticEventIntoSplitRawFrame(t *testing.T) {
+	reg := platforms.NewRegistry()
+	reg.Register(&fakePlatform{id: "opencode"})
+	srv := NewServer(reg, localStubHost{}, "i", "v").UseEventProxy(
+		func(_ context.Context, _, _ string, _ platforms.Platform, raw, synthetic io.Writer, _ func()) error {
+			_, _ = io.WriteString(raw, "event: raw\r\ndata: first")
+			_, _ = io.WriteString(synthetic, "event: synthetic\ndata: second\n\n")
+			_, _ = io.WriteString(raw, "-last\r\n\r\n")
+			return nil
+		},
+	)
+	conn := startTestServer(t, "tok", srv)
+	stream, err := pb.NewOcmanClient(conn).StreamEvents(t.Context(), &pb.SessionRef{Platform: "opencode", SessionId: "s1"})
+	if err != nil {
+		t.Fatalf("StreamEvents: %v", err)
+	}
+
+	want := []string{
+		"event: synthetic\ndata: second\n\n",
+		"event: raw\r\ndata: first-last\r\n\r\n",
+	}
+	for i, expected := range want {
+		chunk, err := stream.Recv()
+		if err != nil {
+			t.Fatalf("recv chunk %d: %v", i, err)
+		}
+		if got := string(chunk.Data); got != expected {
+			t.Fatalf("chunk %d = %q, want %q", i, got, expected)
+		}
+	}
+	if _, err := stream.Recv(); !errors.Is(err, io.EOF) {
+		t.Fatalf("expected EOF, got %v", err)
 	}
 }
 

@@ -694,6 +694,69 @@ func TestMigrate_V11_PreservesExistingRows(t *testing.T) {
 	}
 }
 
+func TestMigrateV45BackfillsApprovalProvenance(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateToV7(tx); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateToV11(tx); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range []struct {
+		id, reasoning string
+	}{
+		{"user-once", "user clicked Allow once"},
+		{"user-always", "user clicked Allow always"},
+		{"ai", "safe command"},
+		{"spoof", "user clicked Allow always because it is safe"},
+	} {
+		if _, err := tx.Exec(`INSERT INTO auto_approved_permission
+			(platform, session_id, permission_id, permission_text, patterns_json, judge_session_id, approved_at, reasoning)
+			VALUES ('opencode', 's1', ?, 'bash', '[]', '', 123, ?)`, row.id, row.reasoning); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := migrateToV45(tx); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	want := map[string][2]string{
+		"user-once":   {"user", "once"},
+		"user-always": {"user", "always"},
+		"ai":          {"ai", "once"},
+		"spoof":       {"ai", "once"},
+	}
+	rows, err := db.Query(`SELECT permission_id, approved_by, reply, metadata_json, asked_at, approved_at FROM auto_approved_permission`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, actor, reply, metadata string
+		var askedAt, approvedAt int64
+		if err := rows.Scan(&id, &actor, &reply, &metadata, &askedAt, &approvedAt); err != nil {
+			t.Fatal(err)
+		}
+		if got := [2]string{actor, reply}; got != want[id] {
+			t.Errorf("%s provenance = %v, want %v", id, got, want[id])
+		}
+		if metadata != "{}" || askedAt != approvedAt || askedAt != 123 {
+			t.Errorf("%s legacy fields = metadata %q asked %d approved %d", id, metadata, askedAt, approvedAt)
+		}
+	}
+}
+
 func TestAuthSecret_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := dir + "/state.db"

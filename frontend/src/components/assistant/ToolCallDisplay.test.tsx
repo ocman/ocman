@@ -154,19 +154,37 @@ describe('ToolCallDisplay permission approval footnote', () => {
     expect(box.compareDocumentPosition(footnote) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('reveals permission, patterns and reasoning on click', () => {
+  it('reveals a non-modal region and closes it with Escape without moving focus', async () => {
+    const user = userEvent.setup();
     const { getByTestId } = renderTool(
       approvedBash({ permission: 'bash', patterns: ['rm -rf /tmp/foo'], reasoning: 'Temp dir only.', approvedBy: 'ai' }),
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Approved by AI' }));
+    const trigger = screen.getByRole('button', { name: 'Approved by AI' });
+    await user.click(trigger);
     const detail = getByTestId('ai-approval-detail');
-    expect(detail.getAttribute('role')).toBe('dialog');
+    expect(detail.getAttribute('role')).toBe('region');
+    expect(trigger).toHaveAttribute('aria-controls', detail.id);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
     expect(detail.textContent).toContain('bash');
     expect(detail.textContent).toContain('rm -rf /tmp/foo');
     expect(detail.textContent).toContain('Temp dir only.');
     const popoverRule = assistantThreadCss.match(/\.oc-ai-approval-detail\s*\{[^}]*\}/)?.[0] || '';
-    expect(popoverRule).toContain('position: absolute');
+    expect(popoverRule).not.toContain('position: absolute');
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByTestId('ai-approval-detail')).toBeNull();
+    expect(trigger).toHaveFocus();
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('renders an unmatched approval as a generic audit notice', () => {
+    renderTool({
+      toolName: 'ocman:auto-approved',
+      argsText: JSON.stringify({ permission: 'edit', patterns: ['/repo/a.ts'], approvedBy: 'user' }),
+    });
+
+    expect(screen.getByText('Permission approved by user')).toBeInTheDocument();
   });
 
   it('mentions a user approval without an expandable reason', () => {

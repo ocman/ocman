@@ -62,14 +62,17 @@ flowchart LR
 - **opencode.db.** Foreign data, opened read-only. Ocman never writes to it.
 - **state.db.** Ocman's own state: archive flags, child sessions, immutable
   workflow versions and runs, workflow artifact metadata, workflow resource
-  and workspace leases, settings, and remote tokens.
+  and workspace leases, permission approval provenance, settings, and remote
+  tokens.
 - **workflow-artifacts/.** A content-addressed store under the ocman data
   dir, next to state.db, holding large, deduplicated, immutable artifact
   payloads outside SQLite. Metadata rows in state.db reference payloads by
   content hash and expire them on a retention policy while keeping the audit
   metadata.
 - **Remote ocman instances.** The hub dials remotes over gRPC and re-exposes
-  their sessions and hosts transparently.
+  their sessions and hosts transparently. The owning remote enriches session
+  detail with its persisted approvals and tees synthetic approval events into
+  the gRPC event stream before the hub forwards them to the browser.
 - **Dagu.** A separately installed 2.x CLI, and the workflow runner. On the
   first workflow action the owning ocman host starts one private
   loopback-only Dagu server under `~/.local/share/ocman/dagu`. Ocman owns
@@ -207,6 +210,7 @@ sequenceDiagram
     participant B as Browser
     participant S as server handlers
     participant R as Registry/Router
+    participant O as Remote owner
     participant A as opencode adapter
     participant D as opencode.db / OC HTTP
     participant E as SSE broadcast
@@ -218,6 +222,10 @@ sequenceDiagram
     A->>D: SQL json_extract
     A->>A: overlay pending prompt registry
     D-->>B: JSON (status settled at query time)
+    R->>O: gRPC Session / StreamEvents (remote only)
+    O->>A: Session / ProxyEvents
+    O->>O: inject persisted approvals,<br/>tee synthetic approval events
+    O-->>S: enriched JSON / framed SSE
      Note over S,E: background: workflow + prompt-schedule ticks,<br/>child-session watcher, remote gRPC streams
      E-->>B: SSE (session.updated, workflow.run.updated)
 ```

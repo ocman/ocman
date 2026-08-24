@@ -7,7 +7,6 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 // --- Auto-approve endpoints ---
@@ -123,7 +122,7 @@ func (s *Server) handleSessionApprovedPermissions(w http.ResponseWriter, r *http
 		}
 		out := make([]entry, 0, len(approved))
 		for _, p := range approved {
-			if p.Reasoning == state.UserApprovalReasonPrefix+"once" {
+			if p.UserApproved() && p.Reply != "always" {
 				continue
 			}
 			patterns := p.Patterns

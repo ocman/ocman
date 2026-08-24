@@ -170,26 +170,15 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		writePlatformError(w, "fetching session", err)
 		return
 	}
-	// `nil` slices would marshal as `null`; the frontend expects
-	// `[]` for empty messages/parts so the useState reducers can
-	// diff cheaply.
-	if detail.Messages == nil {
-		detail.Messages = []db.Message{}
-	}
-	if detail.Parts == nil {
-		detail.Parts = []db.Part{}
-	}
-	// Enrich the session with a normalized notice (e.g. rate-limit).
-	if detail.Session != nil {
-		detail.Session.Notice = deriveSessionNotice(*detail.Session)
-	}
+	remote := isRemotePlatformID(string(adapter.ID()))
+	s.enrichSessionDetail(r.Context(), string(adapter.ID()), sessionID, detail, !remote)
 
 	// Opening a session unarchives it (and its project) so the sidebar
 	// shows the project + session tile again and navigation stays
 	// consistent. The user can re-archive from the sidebar. Skipped for
 	// remote sessions (AD-14b): their archive state lives in the remote's
 	// state.db, not the hub's.
-	if s.stateDB != nil && detail.Session != nil && !isRemotePlatformID(string(adapter.ID())) {
+	if s.stateDB != nil && detail.Session != nil && !remote {
 		if err := s.stateDB.UnarchiveSession(r.Context(), string(adapter.ID()), sessionID); err != nil {
 			log.Printf("unarchiving session on open: %v", err)
 		}
@@ -198,19 +187,6 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		if err := s.stateDB.UnarchiveProject(r.Context(), state.LocalRemoteID, projectRootForDirectory(detail.Session.Directory)); err != nil {
 			log.Printf("unarchiving project on open: %v", err)
 		}
-	}
-
-	// Inject persisted auto-approve notice messages/parts so they
-	// arrive pre-sorted with the real messages. The frontend never
-	// needs a separate fetch or client-side injection; the notices
-	// land in chronological order alongside the real conversation.
-	//
-	// Skipped for remote sessions (AD-14b): their approval decisions and
-	// notice records live in the REMOTE's state.db, and the remote's
-	// Session RPC already returns detail enriched with its own notices.
-	// Injecting from the hub's DB here would read the wrong store.
-	if s.stateDB != nil && !isRemotePlatformID(string(adapter.ID())) {
-		injectApprovalNotices(r.Context(), string(adapter.ID()), sessionID, s.stateDB, &detail.Messages, &detail.Parts)
 	}
 
 	writeJSON(w, map[string]interface{}{
@@ -223,6 +199,30 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 		"defaultAgent":      detail.DefaultAgent,
 		"defaultModel":      detail.DefaultModel,
 	})
+}
+
+func (s *Server) enrichSessionDetail(ctx context.Context, platform, sessionID string, detail *platforms.SessionDetail, approvals bool) {
+	// `nil` slices would marshal as `null`; the frontend expects `[]`.
+	if detail.Messages == nil {
+		detail.Messages = []db.Message{}
+	}
+	if detail.Parts == nil {
+		detail.Parts = []db.Part{}
+	}
+	if detail.Session != nil {
+		detail.Session.Notice = deriveSessionNotice(*detail.Session)
+	}
+	if approvals && s.stateDB != nil {
+		// Remote details are enriched on their owner before crossing gRPC;
+		// the hub must not read its own state DB for a remote session.
+		injectApprovalNotices(ctx, platform, sessionID, s.stateDB, &detail.Messages, &detail.Parts)
+	}
+}
+
+// EnrichRemoteSessionDetail applies state owned by this instance before a
+// Session RPC returns the detail to its hub.
+func (s *Server) EnrichRemoteSessionDetail(ctx context.Context, platform, sessionID string, detail *platforms.SessionDetail) {
+	s.enrichSessionDetail(ctx, platform, sessionID, detail, true)
 }
 
 // injectApprovalNotices fetches persisted auto-approve records from
@@ -265,10 +265,8 @@ func injectApprovalNotices(ctx context.Context, platform, sessionID string, stat
 		if patterns == nil {
 			patterns = []string{}
 		}
-		approvedBy := "ai"
 		reasoning := p.Reasoning
 		if p.UserApproved() {
-			approvedBy = "user"
 			reasoning = ""
 		}
 		partData, _ := json.Marshal(map[string]interface{}{
@@ -276,7 +274,11 @@ func injectApprovalNotices(ctx context.Context, platform, sessionID string, stat
 			"permission": p.PermissionText,
 			"patterns":   patterns,
 			"reasoning":  reasoning,
-			"approvedBy": approvedBy,
+			"approvedBy": p.ApprovedBy,
+			"reply":      p.Reply,
+			"metadata":   p.Metadata,
+			"askedAt":    p.AskedAt,
+			"approvedAt": p.ApprovedAt,
 		})
 		ts := p.ApprovedAt
 

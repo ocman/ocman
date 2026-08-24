@@ -278,6 +278,11 @@ export interface PartData {
   reasoning?: string;
   /** Who approved the permission represented by a synthetic notice. */
   approvedBy?: 'user' | 'ai';
+  /** Reply scope and audit data for synthetic approval notices. */
+  reply?: 'once' | 'always';
+  metadata?: Record<string, unknown>;
+  askedAt?: number;
+  approvedAt?: number;
   // File part fields (for type === 'file')
   mime?: string;
   url?: string;

@@ -12,12 +12,13 @@ import (
 
 // askedPermission is the slice of a permission.asked event retained
 // until the matching permission.replied arrives, so a user approval
-// can be persisted with the original permission
-// text and patterns (the replied event carries neither). See issue #101.
+// can be persisted with the original asked snapshot. See issue #101.
 type askedPermission struct {
 	platformID string
 	permission string
 	patterns   []string
+	metadata   map[string]any
+	askedAt    int64
 }
 
 // askedCacheMax bounds the in-memory asked cache. A permission that is
@@ -31,12 +32,14 @@ type askedPermission struct {
 // buffer of keys if a pathological session ever fills this.
 const askedCacheMax = 2048
 
+const approvalPersistenceTimeout = 5 * time.Second
+
 // rememberAsked stores the asked-side data for (sessionID, permissionID)
-// so a later approval can be recorded with the right patterns.
+// so a later approval can be recorded with the first observed snapshot.
 // No-op on nil receiver. Bounded by askedCacheMax.
-func (s *Service) rememberAsked(platformID, sessionID, permissionID, permission string, patterns []string) {
+func (s *Service) rememberAsked(platformID, sessionID, permissionID, permission string, patterns []string, metadata map[string]any) askedPermission {
 	if s == nil || permissionID == "" {
-		return
+		return askedPermission{}
 	}
 	key := autoApproveKey(sessionID, permissionID)
 	s.askedCacheMu.Lock()
@@ -44,17 +47,24 @@ func (s *Service) rememberAsked(platformID, sessionID, permissionID, permission 
 	if s.askedCache == nil {
 		s.askedCache = make(map[string]askedPermission)
 	}
-	if _, exists := s.askedCache[key]; !exists && len(s.askedCache) >= askedCacheMax {
+	if existing, exists := s.askedCache[key]; exists {
+		return existing
+	}
+	if len(s.askedCache) >= askedCacheMax {
 		for k := range s.askedCache {
 			delete(s.askedCache, k)
 			break
 		}
 	}
-	s.askedCache[key] = askedPermission{
+	ap := askedPermission{
 		platformID: platformID,
 		permission: permission,
-		patterns:   patterns,
+		patterns:   append([]string(nil), patterns...),
+		metadata:   cloneMetadata(metadata),
+		askedAt:    time.Now().UnixMilli(),
 	}
+	s.askedCache[key] = ap
+	return ap
 }
 
 // takeAsked returns and removes the asked-side data for
@@ -86,10 +96,72 @@ func (s *Service) HandlePermissionReplied(ctx context.Context, sessionID, permis
 	if s == nil {
 		return
 	}
-	status, judged := s.lookupAutoApproveStatus(sessionID, permissionID)
-	ap, ok := s.takeAsked(sessionID, permissionID)
 	s.Cancel(sessionID, permissionID)
-	if (reply != "once" && reply != "always") || (judged && status.verdict == verdictSafe) {
+
+	s.autoApproveMu.Lock()
+	status := s.autoApprove[autoApproveKey(sessionID, permissionID)]
+	if status != nil && status.aiResponseInFlight {
+		status.pendingObservedReply = reply
+		s.autoApproveMu.Unlock()
+		return
+	}
+	if status != nil && status.aiResponseSucceeded {
+		s.autoApproveMu.Unlock()
+		return
+	}
+	s.autoApproveMu.Unlock()
+	s.scheduleUserReplyCapture(ctx, sessionID, permissionID, reply)
+}
+
+// HandleDirectPermissionReply records a reply that an ocman request already
+// delivered successfully. Unlike an observed event, it cannot be the AI
+// response and is always eligible for user attribution.
+func (s *Service) HandleDirectPermissionReply(ctx context.Context, sessionID, permissionID, reply string) {
+	if s == nil {
+		return
+	}
+	s.Cancel(sessionID, permissionID)
+	if !s.claimUserReplyCapture(sessionID, permissionID) {
+		return
+	}
+	persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), approvalPersistenceTimeout)
+	defer cancel()
+	s.captureUserReply(persistCtx, sessionID, permissionID, reply)
+}
+
+func (s *Service) scheduleUserReplyCapture(ctx context.Context, sessionID, permissionID, reply string) {
+	if !s.claimUserReplyCapture(sessionID, permissionID) {
+		return
+	}
+	go func() {
+		persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), approvalPersistenceTimeout)
+		defer cancel()
+		s.captureUserReply(persistCtx, sessionID, permissionID, reply)
+	}()
+}
+
+func (s *Service) claimUserReplyCapture(sessionID, permissionID string) bool {
+	key := autoApproveKey(sessionID, permissionID)
+	s.autoApproveMu.Lock()
+	defer s.autoApproveMu.Unlock()
+	if s.autoApprove == nil {
+		s.autoApprove = make(map[string]*autoApproveStatus)
+	}
+	status := s.autoApprove[key]
+	if status == nil {
+		status = &autoApproveStatus{}
+		s.autoApprove[key] = status
+	}
+	if status.userCaptureStarted {
+		return false
+	}
+	status.userCaptureStarted = true
+	return true
+}
+
+func (s *Service) captureUserReply(ctx context.Context, sessionID, permissionID, reply string) {
+	ap, ok := s.takeAsked(sessionID, permissionID)
+	if reply != "once" && reply != "always" {
 		return
 	}
 	if !ok {
@@ -112,7 +184,11 @@ func (s *Service) HandlePermissionReplied(ctx context.Context, sessionID, permis
 				PermissionText: ap.permission,
 				Patterns:       ap.patterns,
 				JudgeSessionID: "",
-				Reasoning:      state.UserApprovalReasonPrefix + reply,
+				Reasoning:      "",
+				ApprovedBy:     "user",
+				Reply:          reply,
+				Metadata:       ap.metadata,
+				AskedAt:        ap.askedAt,
 				ApprovedAt:     approvedAt,
 			},
 		); err != nil {
@@ -133,9 +209,66 @@ func (s *Service) HandlePermissionReplied(ctx context.Context, sessionID, permis
 		"permission":   ap.permission,
 		"patterns":     patterns,
 		"approvedBy":   "user",
+		"reply":        reply,
+		"metadata":     ap.metadata,
+		"askedAt":      ap.askedAt,
 		"approvedAt":   approvedAt,
 	})
 	if err == nil {
 		s.emitSessionSseEvent(sessionID, "ocman.permission.approved", payload)
 	}
+}
+
+func (s *Service) beginAIResponse(sessionID, permissionID string) {
+	key := autoApproveKey(sessionID, permissionID)
+	s.autoApproveMu.Lock()
+	if s.autoApprove == nil {
+		s.autoApprove = make(map[string]*autoApproveStatus)
+	}
+	status := s.autoApprove[key]
+	if status == nil {
+		status = &autoApproveStatus{}
+		s.autoApprove[key] = status
+	}
+	status.aiResponseInFlight = true
+	status.aiResponseSucceeded = false
+	s.autoApproveMu.Unlock()
+}
+
+func (s *Service) finishAIResponse(sessionID, permissionID string, succeeded bool) {
+	key := autoApproveKey(sessionID, permissionID)
+	s.autoApproveMu.Lock()
+	status := s.autoApprove[key]
+	if status == nil {
+		s.autoApproveMu.Unlock()
+		return
+	}
+	status.aiResponseInFlight = false
+	status.aiResponseSucceeded = succeeded
+	reply := status.pendingObservedReply
+	status.pendingObservedReply = ""
+	s.autoApproveMu.Unlock()
+	if !succeeded && reply != "" {
+		// The reply could be from another client, or our request could have
+		// succeeded before its transport failed. Do not guess its provenance.
+		log.WithFields(log.Fields{
+			"sessionID":    sessionID,
+			"permissionID": permissionID,
+		}).Warn("autoapprove: reply source ambiguous after AI response failure; skipping approval audit")
+	}
+}
+
+func cloneMetadata(metadata map[string]any) map[string]any {
+	if metadata == nil {
+		return map[string]any{}
+	}
+	b, err := json.Marshal(metadata)
+	if err != nil {
+		return map[string]any{}
+	}
+	var cloned map[string]any
+	if json.Unmarshal(b, &cloned) != nil {
+		return map[string]any{}
+	}
+	return cloned
 }

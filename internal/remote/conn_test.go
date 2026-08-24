@@ -45,7 +45,9 @@ func TestProtocolCompatible(t *testing.T) {
 	if !protocolCompatible(ProtocolVersion) {
 		t.Error("current protocol version should be compatible")
 	}
-	if protocolCompatible(ProtocolVersion + 1) {
-		t.Error("a different version must be incompatible (v1 exact match)")
+	for _, version := range []int32{ProtocolVersion - 1, ProtocolVersion + 1} {
+		if protocolCompatible(version) {
+			t.Errorf("protocol version %d must be incompatible (exact match)", version)
+		}
 	}
 }

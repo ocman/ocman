@@ -5,11 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 )
-
-const UserApprovalReasonPrefix = "user clicked Allow "
 
 // SetAutoApprove enables or disables the auto-approve judge for a
 // specific (platform, session) pair. Overwrites any existing row.
@@ -49,44 +46,69 @@ func (d *DB) GetAutoApprove(ctx context.Context, platform, sessionID string) (en
 	return val != 0, true, nil
 }
 
-// ApprovedPermission holds the data for one auto-approved permission,
-// used to re-inject the notice into the conversation thread on reload.
+// ApprovedPermission holds one approved permission for audit, inheritance,
+// and conversation footnotes.
 //
-// Reasoning is the LLM judge's one-line conclusion (the "reasoning"
-// field of the JSON it emits). Empty when the judge response could
-// not be parsed or pre-dates schema v11.
+// Reasoning is the LLM judge's one-line conclusion. It is never used to
+// determine provenance and remains empty for user approvals.
 type ApprovedPermission struct {
 	PermissionID   string
 	PermissionText string
 	Patterns       []string
 	JudgeSessionID string
 	Reasoning      string
+	ApprovedBy     string
+	Reply          string
+	Metadata       map[string]any
+	AskedAt        int64
 	ApprovedAt     int64
 }
 
 func (p ApprovedPermission) UserApproved() bool {
-	return strings.HasPrefix(p.Reasoning, UserApprovalReasonPrefix)
+	return p.ApprovedBy == "user"
 }
 
 // RecordApprovedPermission persists one auto-approved permission for a
 // session. Idempotent: repeated calls with the same permission_id
 // silently overwrite the existing row.
 func (d *DB) RecordApprovedPermission(ctx context.Context, platform, sessionID string, p ApprovedPermission) error {
+	if p.ApprovedBy == "" {
+		p.ApprovedBy = "ai"
+	}
+	if p.Reply == "" {
+		p.Reply = "once"
+	}
+	if p.ApprovedBy != "user" && p.ApprovedBy != "ai" {
+		return fmt.Errorf("recording approved permission: invalid approved_by %q", p.ApprovedBy)
+	}
+	if p.Reply != "once" && p.Reply != "always" {
+		return fmt.Errorf("recording approved permission: invalid reply %q", p.Reply)
+	}
 	patternsJSON, err := encodePatterns(p.Patterns)
 	if err != nil {
 		return fmt.Errorf("encoding patterns: %w", err)
 	}
+	metadataJSON, err := encodeMetadata(p.Metadata)
+	if err != nil {
+		return fmt.Errorf("encoding metadata: %w", err)
+	}
 	_, err = d.db.ExecContext(ctx, `
 		INSERT INTO auto_approved_permission
-			(platform, session_id, permission_id, permission_text, patterns_json, judge_session_id, reasoning, approved_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			(platform, session_id, permission_id, permission_text, patterns_json, judge_session_id, reasoning,
+			 approved_by, reply, metadata_json, asked_at, approved_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(platform, session_id, permission_id) DO UPDATE SET
 			permission_text  = excluded.permission_text,
 			patterns_json    = excluded.patterns_json,
 			judge_session_id = excluded.judge_session_id,
 			reasoning        = excluded.reasoning,
+			approved_by      = excluded.approved_by,
+			reply            = excluded.reply,
+			metadata_json    = excluded.metadata_json,
+			asked_at         = excluded.asked_at,
 			approved_at      = excluded.approved_at
-	`, platform, sessionID, p.PermissionID, p.PermissionText, patternsJSON, p.JudgeSessionID, p.Reasoning, p.ApprovedAt)
+	`, platform, sessionID, p.PermissionID, p.PermissionText, patternsJSON, p.JudgeSessionID, p.Reasoning,
+		p.ApprovedBy, p.Reply, metadataJSON, p.AskedAt, p.ApprovedAt)
 	if err != nil {
 		return fmt.Errorf("recording approved permission: %w", err)
 	}
@@ -97,7 +119,8 @@ func (d *DB) RecordApprovedPermission(ctx context.Context, platform, sessionID s
 // session, ordered by approval time ascending.
 func (d *DB) ListApprovedPermissions(ctx context.Context, platform, sessionID string) ([]ApprovedPermission, error) {
 	rows, err := d.db.QueryContext(ctx, `
-		SELECT permission_id, permission_text, patterns_json, judge_session_id, reasoning, approved_at
+		SELECT permission_id, permission_text, patterns_json, judge_session_id, reasoning,
+		       approved_by, reply, metadata_json, asked_at, approved_at
 		FROM auto_approved_permission
 		WHERE platform = ? AND session_id = ?
 		ORDER BY approved_at ASC
@@ -110,13 +133,17 @@ func (d *DB) ListApprovedPermissions(ctx context.Context, platform, sessionID st
 	var out []ApprovedPermission
 	for rows.Next() {
 		var p ApprovedPermission
-		var patternsJSON string
-		if err := rows.Scan(&p.PermissionID, &p.PermissionText, &patternsJSON, &p.JudgeSessionID, &p.Reasoning, &p.ApprovedAt); err != nil {
+		var patternsJSON, metadataJSON string
+		if err := rows.Scan(&p.PermissionID, &p.PermissionText, &patternsJSON, &p.JudgeSessionID, &p.Reasoning,
+			&p.ApprovedBy, &p.Reply, &metadataJSON, &p.AskedAt, &p.ApprovedAt); err != nil {
 			return nil, fmt.Errorf("scanning approved permission: %w", err)
 		}
 		p.Patterns, err = decodePatterns(patternsJSON)
 		if err != nil {
 			p.Patterns = nil
+		}
+		if err := json.Unmarshal([]byte(metadataJSON), &p.Metadata); err != nil {
+			p.Metadata = map[string]any{}
 		}
 		out = append(out, p)
 	}
@@ -230,4 +257,12 @@ func decodePatterns(s string) ([]string, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+func encodeMetadata(metadata map[string]any) (string, error) {
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	b, err := json.Marshal(metadata)
+	return string(b), err
 }

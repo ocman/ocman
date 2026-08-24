@@ -73,62 +73,17 @@ func (s *Server) serveSessionEvents(w http.ResponseWriter, r *http.Request, sess
 		flush = lw.Flush
 	}
 
-	// Register this writer so non-SSE code paths (REST permission
-	// listing, prompt resurrection on session re-open) can push
-	// synthetic ocman.permission.* events into the same connection.
-	// Both the tee's onPermission callback and handleSessionPermissions
-	// flow through ensureAutoApprove → emitPermissionPending → this sink.
-	// The deferred unregister both removes the registry entry and marks
-	// the sink closed, so any in-flight backgroundAutoApprove emit
-	// turns into a no-op rather than panicking on a recycled writer.
-	sink := s.aaSvc().RegisterSink(sessionID, lw, flush)
-	defer s.aaSvc().UnregisterSink(sessionID, sink)
-
-	// Tee the SSE stream so permission.asked events trigger server-side
-	// auto-approve. This is one of two entry points into the
-	// auto-approve pipeline; the other is runAutoApproveWatcher, which
-	// keeps the pipeline running headlessly when no browser tab is
-	// open. Both flow through ensureAutoApprove, which deduplicates
-	// against in-flight goroutines so only one judge ever runs per
-	// permission.
-	//
-	// OpenCode's /event stream is directory-scoped — every event for
-	// sessions in the selected directory flows through this connection.
-	// The callback's `evtSessionID` argument carries the *event's*
-	// session ID (extracted from the payload) so the auto-approve
-	// pipeline routes the verdict, the persistence, and the
-	// ocman.permission.* SSE event back to the correct session.
-	// Using the connection's `sessionID` for routing was a bug — it
-	// attributed every other session's auto-approved notice to
-	// whichever session the user was currently viewing.
-	tee := &autoapprove.Tee{
-		W:     lw,
-		Flush: flush,
-		OnPermission: func(evtSessionID, permissionID, permission string, patterns []string, metadata map[string]any) {
-			s.aaSvc().Ensure(adapter.ID(), adapter, evtSessionID, permissionID, permission, patterns, metadata)
-		},
-		// permission.replied fires when the user (or any non-ocman
-		// client, e.g. the OpenCode TUI) answers the prompt. Cancel
-		// any in-flight judge so we stop polling immediately and the
-		// verdict — if it arrives later — is discarded before it can
-		// race the user's answer. A "Allow always" reply is also
-		// captured into the parent's shadow allowlist (issue #101).
-		OnPermissionReplied: func(evtSessionID, permissionID, reply string) {
-			s.aaSvc().HandlePermissionReplied(r.Context(), evtSessionID, permissionID, reply)
-		},
-	}
-
 	// For remote sessions, auto-approve is the owner's responsibility
 	// (AD-14): the remote runs the judge with its own settings and emits
 	// ocman.permission.* events into the stream, which the gRPC tunnel
 	// forwards verbatim. The hub must NOT tee a remote stream into its
 	// own judge, so we write events straight through.
-	var dst io.Writer = tee
+	var err error
 	if isRemotePlatformID(string(adapter.ID())) {
-		dst = lw
+		err = adapter.ProxyEvents(ctx, sessionID, lw, flush)
+	} else {
+		err = s.proxyOwnerSessionEvents(ctx, sessionID, adapter, lw, lw, flush)
 	}
-
-	err := adapter.ProxyEvents(ctx, sessionID, dst, flush)
 	if err == nil {
 		span.SetStatus(codes.Ok, "stream ended")
 		return
@@ -167,6 +122,29 @@ func (s *Server) serveSessionEvents(w http.ResponseWriter, r *http.Request, sess
 	span.SetStatus(codes.Error, err.Error())
 	log.WithFields(log.Fields{"sessionID": sessionID, "error": err}).
 		Warn("SSE proxy stream ended with error")
+}
+
+// ProxyRemoteSessionEvents runs the owner-side autoapprove tee and synthetic
+// event sink before bytes enter the gRPC tunnel. The hub forwards them only.
+func (s *Server) ProxyRemoteSessionEvents(ctx context.Context, _ string, sessionID string, adapter platforms.Platform, rawWriter, syntheticWriter io.Writer, flush func()) error {
+	return s.proxyOwnerSessionEvents(ctx, sessionID, adapter, rawWriter, syntheticWriter, flush)
+}
+
+func (s *Server) proxyOwnerSessionEvents(ctx context.Context, sessionID string, adapter platforms.Platform, rawWriter, syntheticWriter io.Writer, flush func()) error {
+	sink := s.aaSvc().RegisterSink(sessionID, syntheticWriter, flush)
+	defer s.aaSvc().UnregisterSink(sessionID, sink)
+
+	tee := &autoapprove.Tee{
+		W:     rawWriter,
+		Flush: flush,
+		OnPermission: func(evtSessionID, permissionID, permission string, patterns []string, metadata map[string]any) {
+			s.aaSvc().Ensure(adapter.ID(), adapter, evtSessionID, permissionID, permission, patterns, metadata)
+		},
+		OnPermissionReplied: func(evtSessionID, permissionID, reply string) {
+			s.aaSvc().HandlePermissionReplied(ctx, evtSessionID, permissionID, reply)
+		},
+	}
+	return adapter.ProxyEvents(ctx, sessionID, tee, flush)
 }
 
 // lazyHeaderWriter delays the implicit 200 OK status write until the

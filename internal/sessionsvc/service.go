@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/srvtiming"
@@ -32,6 +33,10 @@ type Hooks struct {
 	// this to cancelAutoApprove: the user has decided, so the AI
 	// judge's verdict must not race their answer.
 	PermissionReplied func(sessionID, permissionID string)
+	// PermissionReplySucceeded fires only after the adapter accepted the
+	// complete reply. Its bounded detached context preserves audit capture
+	// when the initiating request is canceled immediately after success.
+	PermissionReplySucceeded func(context.Context, platforms.ID, platforms.RespondPermissionRequest)
 	// SessionCreated fires after a session is successfully created or
 	// moved. Info carries what the service knows without extra I/O so
 	// the server can broadcast a provisional list row the frontend can
@@ -296,7 +301,15 @@ func (s *Service) RespondPermission(ctx context.Context, platformID string, req 
 	if s.hooks.PermissionReplied != nil {
 		s.hooks.PermissionReplied(req.SessionID, req.PermissionID)
 	}
-	return p.RespondPermission(ctx, req)
+	if err := p.RespondPermission(ctx, req); err != nil {
+		return err
+	}
+	if s.hooks.PermissionReplySucceeded != nil {
+		hookCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		s.hooks.PermissionReplySucceeded(hookCtx, p.ID(), req)
+	}
+	return nil
 }
 
 // RespondQuestion answers a pending question.

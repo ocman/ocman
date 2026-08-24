@@ -162,7 +162,9 @@ import (
 //	43 - add relay-side identity and writer state to each share link.
 //	44 - repair databases marked v42 by a conflicting pre-merge migration,
 //	     whose archive tables lack remote_id.
-const latestSchemaVersion = 44
+//	45 - add explicit approval provenance, reply scope, permission metadata,
+//	     and first-observed timestamp to auto_approved_permission.
+const latestSchemaVersion = 45
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -355,6 +357,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV43(tx)
 	case 44:
 		return migrateToV44(tx)
+	case 45:
+		return migrateToV45(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -1389,6 +1393,7 @@ func migrateToV40(tx *sql.Tx) error {
 	}
 	return nil
 }
+
 // migrateToV42 host-qualifies project archive state. A project's identity is
 // (remote_id, project_root): with multi-remote, the same absolute path exists
 // on several machines, so keying archive state on the path alone archived
@@ -1429,6 +1434,7 @@ func migrateToV42(tx *sql.Tx) error {
 	}
 	return nil
 }
+
 // migrateToV43 adds the relay-side identity and writer state to each
 // share link. The relay key and delete token are local secrets: the
 // relay itself stores only ciphertext and a hash of the delete token.
@@ -1466,4 +1472,42 @@ func migrateToV44(tx *sql.Tx) error {
 		return fmt.Errorf("archive tables disagree on remote_id schema")
 	}
 	return migrateToV42(tx)
+}
+
+func migrateToV45(tx *sql.Tx) error {
+	added := map[string]bool{}
+	for _, column := range []struct{ name, definition string }{
+		{"approved_by", "TEXT NOT NULL DEFAULT 'ai'"},
+		{"reply", "TEXT NOT NULL DEFAULT 'once'"},
+		{"metadata_json", "TEXT NOT NULL DEFAULT '{}'"},
+		{"asked_at", "INTEGER NOT NULL DEFAULT 0"},
+	} {
+		present, err := tableHasColumn(tx, "auto_approved_permission", column.name)
+		if err != nil {
+			return err
+		}
+		if present {
+			continue
+		}
+		if err := addColumnIfMissing(tx, "auto_approved_permission", column.name, column.definition); err != nil {
+			return err
+		}
+		added[column.name] = true
+	}
+	updates := map[string]string{
+		"approved_by": `UPDATE auto_approved_permission SET approved_by = CASE
+			WHEN reasoning IN ('user clicked Allow once', 'user clicked Allow always') THEN 'user' ELSE 'ai' END`,
+		"reply": `UPDATE auto_approved_permission SET reply = CASE
+			WHEN reasoning = 'user clicked Allow always' THEN 'always' ELSE 'once' END`,
+		"metadata_json": `UPDATE auto_approved_permission SET metadata_json = '{}'`,
+		"asked_at":      `UPDATE auto_approved_permission SET asked_at = approved_at`,
+	}
+	for column, statement := range updates {
+		if added[column] {
+			if _, err := tx.Exec(statement); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

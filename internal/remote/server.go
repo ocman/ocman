@@ -1,9 +1,13 @@
 package remote
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"os"
+	"sync"
 
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc/codes"
@@ -24,12 +28,14 @@ import (
 type Server struct {
 	pb.UnimplementedOcmanServer
 
-	registry   *platforms.Registry
-	sessions   *sessionsvc.Service
-	host       hostsvc.Host
-	instanceID string
-	version    string
-	origins    *originCache
+	registry      *platforms.Registry
+	sessions      *sessionsvc.Service
+	host          hostsvc.Host
+	instanceID    string
+	version       string
+	origins       *originCache
+	enrichSession func(context.Context, string, string, *platforms.SessionDetail)
+	proxyEvents   func(context.Context, string, string, platforms.Platform, io.Writer, io.Writer, func()) error
 }
 
 // NewServer builds the remote-side gRPC service over the given local
@@ -51,6 +57,20 @@ func NewServer(registry *platforms.Registry, host hostsvc.Host, instanceID, vers
 // projects-index refresh) also fire for gRPC-executed mutations.
 func (s *Server) UseSessions(svc *sessionsvc.Service) *Server {
 	s.sessions = svc
+	return s
+}
+
+// UseSessionEnricher installs owner-local SessionDetail enrichment before
+// the detail is marshalled for the hub.
+func (s *Server) UseSessionEnricher(fn func(context.Context, string, string, *platforms.SessionDetail)) *Server {
+	s.enrichSession = fn
+	return s
+}
+
+// UseEventProxy installs the owner-local event pipeline used to tee raw
+// platform events and emit synthetic events into the same stream.
+func (s *Server) UseEventProxy(fn func(context.Context, string, string, platforms.Platform, io.Writer, io.Writer, func()) error) *Server {
+	s.proxyEvents = fn
 	return s
 }
 
@@ -123,7 +143,11 @@ func (s *Server) Session(ctx context.Context, req *pb.SessionReq) (*pb.JsonResp,
 	if err != nil {
 		return nil, err
 	}
-	return jsonResp(p.Session(ctx, req.SessionId, int(req.Limit), int(req.Offset)))
+	detail, err := p.Session(ctx, req.SessionId, int(req.Limit), int(req.Offset))
+	if err == nil && detail != nil && s.enrichSession != nil {
+		s.enrichSession(ctx, req.Platform, req.SessionId, detail)
+	}
+	return jsonResp(detail, err)
 }
 
 func (s *Server) SessionsInactiveBefore(ctx context.Context, req *pb.CutoffReq) (*pb.JsonResp, error) {
@@ -337,7 +361,11 @@ func (s *Server) StreamEvents(req *pb.SessionRef, stream pb.Ocman_StreamEventsSe
 		return err
 	}
 	w := &eventStreamWriter{stream: stream}
-	return p.ProxyEvents(stream.Context(), req.SessionId, w, func() {})
+	raw := &sseFrameWriter{dst: w}
+	if s.proxyEvents != nil {
+		return s.proxyEvents(stream.Context(), req.Platform, req.SessionId, p, raw, w, func() {})
+	}
+	return p.ProxyEvents(stream.Context(), req.SessionId, raw, func() {})
 }
 
 // eventStreamWriter adapts a gRPC server-stream to the io.Writer+flush
@@ -345,9 +373,12 @@ func (s *Server) StreamEvents(req *pb.SessionRef, stream pb.Ocman_StreamEventsSe
 // EventChunk message tunneled to the hub (AD-14).
 type eventStreamWriter struct {
 	stream pb.Ocman_StreamEventsServer
+	mu     sync.Mutex
 }
 
 func (w *eventStreamWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	// Copy because the underlying SSE buffer may be reused after Write
 	// returns; the gRPC send is asynchronous w.r.t. the caller's buffer.
 	chunk := make([]byte, len(p))
@@ -356,6 +387,52 @@ func (w *eventStreamWriter) Write(p []byte) (int, error) {
 		return 0, err
 	}
 	return len(p), nil
+}
+
+// sseFrameWriter holds partial upstream writes until a complete SSE frame is
+// available. Synthetic events bypass it and share dst's serialization lock.
+type sseFrameWriter struct {
+	dst     io.Writer
+	mu      sync.Mutex
+	pending []byte
+}
+
+const maxSSEFrameBytes = 4 << 20
+
+func (w *sseFrameWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.pending = append(w.pending, p...)
+	if len(w.pending) > maxSSEFrameBytes && sseFrameEnd(w.pending) < 0 {
+		w.pending = nil
+		return 0, fmt.Errorf("remote: SSE frame exceeds %d bytes", maxSSEFrameBytes)
+	}
+	for {
+		end := sseFrameEnd(w.pending)
+		if end < 0 {
+			return len(p), nil
+		}
+		if _, err := w.dst.Write(w.pending[:end]); err != nil {
+			return len(p), err
+		}
+		w.pending = w.pending[end:]
+		if len(w.pending) == 0 {
+			w.pending = nil
+		}
+	}
+}
+
+func sseFrameEnd(p []byte) int {
+	lf := bytes.Index(p, []byte("\n\n"))
+	crlf := bytes.Index(p, []byte("\n\r\n"))
+	if lf >= 0 && (crlf < 0 || lf < crlf) {
+		return lf + 2
+	}
+	if crlf >= 0 {
+		return crlf + 3
+	}
+	return -1
 }
 
 // --- Host services ---

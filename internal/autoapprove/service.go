@@ -105,9 +105,9 @@ type Service struct {
 	// and SSE tee goroutines, hence atomic.
 	judgeDelayMs atomic.Int64
 
-	// sseSessions maps sessionID -> the live SSE writer for any
-	// currently-connected client. See RegisterSink.
-	sseSessions   map[string]*Sink
+	// sseSessions maps sessionID -> every live SSE writer for connected
+	// clients. See RegisterSink.
+	sseSessions   map[string]map[*Sink]struct{}
 	sseSessionsMu sync.Mutex
 
 	// autoApprove tracks the per-permission state of the pipeline.
@@ -120,10 +120,10 @@ type Service struct {
 	safeCommandCache   map[string]map[string]string
 	safeCommandCacheMu sync.Mutex
 
-	// askedCache remembers the permission text + patterns from a
+	// askedCache remembers the immutable permission snapshot from a
 	// permission.asked event, keyed by "sessionID|permissionID", so a
-	// later permission.replied("always") can be persisted with the
-	// original patterns (the replied event carries neither). Bounded
+	// later permission.replied can be persisted with the original text,
+	// patterns, metadata, and first-observed timestamp. Bounded
 	// (see askedCacheMax) and evicted on reply. See HandlePermissionReplied.
 	askedCache   map[string]askedPermission
 	askedCacheMu sync.Mutex
@@ -135,7 +135,7 @@ func NewService(deps Deps) *Service {
 	return &Service{
 		deps:             deps,
 		judge:            newPermissionJudge(deps.OpenCodeAuth),
-		sseSessions:      make(map[string]*Sink),
+		sseSessions:      make(map[string]map[*Sink]struct{}),
 		autoApprove:      make(map[string]*autoApproveStatus),
 		safeCommandCache: make(map[string]map[string]string),
 		askedCache:       make(map[string]askedPermission),

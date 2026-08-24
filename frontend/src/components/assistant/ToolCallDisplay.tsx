@@ -3,7 +3,7 @@
 // answered questions). Extracted from
 // AssistantThread.tsx so thread mechanics and tool renderers grow
 // independently.
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, useId, useRef, Suspense } from 'react';
 import { Link } from 'react-router-dom';
 import { MultiFileDiff, PatchDiff } from '@pierre/diffs/react';
 import { DIFF_OPTIONS } from '../diffOptions';
@@ -295,6 +295,8 @@ function taskActivity(
  */
 function ApprovalFootnote({ approvals }: { approvals: ToolApproval[] }) {
   const [openState, setOpen] = useState(false);
+  const detailId = useId();
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const isPrinting = useIsPrinting();
   const printCollapse = usePrintCollapse();
   const open = openState || (isPrinting && !printCollapse);
@@ -305,10 +307,18 @@ function ApprovalFootnote({ approvals }: { approvals: ToolApproval[] }) {
       {userApproved && <div>Approved by user</div>}
       {aiApprovals.length > 0 && (
         <button
+          ref={triggerRef}
           type="button"
           className="oc-ai-approval-toggle"
           aria-expanded={open}
+          aria-controls={detailId}
           onClick={() => setOpen(!openState)}
+          onKeyDown={(event) => {
+            if (event.key !== 'Escape' || !openState) return;
+            event.preventDefault();
+            setOpen(false);
+            triggerRef.current?.focus();
+          }}
         >
           Approved by AI
         </button>
@@ -317,7 +327,8 @@ function ApprovalFootnote({ approvals }: { approvals: ToolApproval[] }) {
         <div
           className="oc-ai-approval-detail"
           data-testid="ai-approval-detail"
-          role="dialog"
+          id={detailId}
+          role="region"
           aria-label="AI approval reason"
         >
           {aiApprovals.map((approval, i) => (
@@ -380,6 +391,19 @@ const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArg
   const argsLines = argsTextNoDesc.split('\n');
   const userExecutedTool = argsLines.includes('@user-executed-tool');
   const argsText = argsLines.filter((line) => line !== '@user-executed-tool').join('\n');
+
+  if (toolName === 'ocman:auto-approved') {
+    let approval: Partial<ToolApproval> = {};
+    try { approval = JSON.parse(argsText) as Partial<ToolApproval>; } catch { /* legacy notice */ }
+    const approvedBy = approval.approvedBy === 'user' ? 'user' : 'AI';
+    return (
+      <div className="oc-read-line oc-approval-notice">
+        <span className="oc-read-arrow" aria-hidden="true">{`\u2713`}</span>
+        <span>{`Permission approved by ${approvedBy}`}</span>
+        {approval.permission && <span>{approval.permission}</span>}
+      </div>
+    );
+  }
 
   // File reads/greps and Skill loads render as a muted inline line
   // with an arrow icon. Skill is here (rather than in its own branch)

@@ -1023,6 +1023,38 @@ describe('reduceSessionView — judge reasoning surfacing', () => {
     expect(decode(noticePart!).approvedBy).toBe('user');
   });
 
+  it('preserves the complete approval audit payload', () => {
+    const before = makeView();
+    const after = reduceSessionView(before, {
+      type: 'sse',
+      event: sseEvent('ocman.permission.approved', {
+        permissionId: 'perm-audit',
+        sessionID: SID,
+        permission: 'edit',
+        patterns: ['/repo/a.ts'],
+        reasoning: 'Scoped edit.',
+        approvedBy: 'user',
+        reply: 'always',
+        metadata: { filePath: '/repo/a.ts' },
+        askedAt: 1200,
+        approvedAt: 1300,
+      }),
+    });
+
+    const noticePart = after.parts.find((part) => part.id === 'ocman-notice-perm-audit-part');
+    expect(decode(noticePart!)).toMatchObject({
+      type: 'auto-approved',
+      permission: 'edit',
+      patterns: ['/repo/a.ts'],
+      reasoning: 'Scoped edit.',
+      approvedBy: 'user',
+      reply: 'always',
+      metadata: { filePath: '/repo/a.ts' },
+      askedAt: 1200,
+      approvedAt: 1300,
+    });
+  });
+
   it('includes reasoning when addNotice carries it', () => {
     const before = makeView();
     const after = reduceSessionView(before, {

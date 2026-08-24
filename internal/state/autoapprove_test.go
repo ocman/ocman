@@ -3,6 +3,7 @@ package state
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -83,6 +84,52 @@ func TestAutoApprove_PlatformScoped(t *testing.T) {
 	}
 	if enabled {
 		t.Error("expected enabled=false for other-platform")
+	}
+}
+
+func TestApprovedPermissionRoundTrip(t *testing.T) {
+	db := openTestDB(t)
+	want := ApprovedPermission{
+		PermissionID: "p1", PermissionText: "bash", Patterns: []string{"git *"},
+		ApprovedBy: "ai", Reply: "once", Metadata: map[string]any{"command": "git status", "timeout": float64(10)},
+		AskedAt: 100, Reasoning: "safe", ApprovedAt: 200,
+	}
+	if err := db.RecordApprovedPermission(t.Context(), "opencode", "s1", want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.ListApprovedPermissions(t.Context(), "opencode", "s1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || !reflect.DeepEqual(got[0], want) {
+		t.Fatalf("round trip = %#v, want %#v", got, want)
+	}
+}
+
+func TestApprovedPermissionActorIsNotDerivedFromReasoning(t *testing.T) {
+	db := openTestDB(t)
+	p := ApprovedPermission{PermissionID: "p1", PermissionText: "bash", Reasoning: "user clicked Allow always"}
+	if err := db.RecordApprovedPermission(t.Context(), "opencode", "s1", p); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := db.ListApprovedPermissions(t.Context(), "opencode", "s1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].ApprovedBy != "ai" || rows[0].Reply != "once" || rows[0].UserApproved() {
+		t.Fatal("AI approval was spoofed as user approval through reasoning")
+	}
+}
+
+func TestRecordApprovedPermissionRejectsInvalidProvenance(t *testing.T) {
+	db := openTestDB(t)
+	for _, p := range []ApprovedPermission{
+		{ApprovedBy: "admin", Reply: "once"},
+		{ApprovedBy: "user", Reply: "sometimes"},
+	} {
+		if err := db.RecordApprovedPermission(t.Context(), "opencode", "s1", p); err == nil {
+			t.Fatalf("accepted invalid provenance: %#v", p)
+		}
 	}
 }
 
