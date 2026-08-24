@@ -82,6 +82,9 @@ async function installDefaultRoutes(page: Page) {
   await page.route('/api/mcp/config', (route: Route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ configured: true }) }),
   );
+  await page.route('/api/client-activity', (route: Route) =>
+    route.fulfill({ status: 204, body: '' }),
+  );
 
   // Sessions list
   await page.route('/api/sessions*', (route: Route) =>
