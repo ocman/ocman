@@ -57,6 +57,12 @@ describe('chartConfig', () => {
     expect(BAR_OPTIONS_HOURLY_TOKENS.scales.y.stacked).toBe(true);
   });
 
+  it('hides zero-cost model entries from daily cost tooltips', () => {
+    const filter = BAR_OPTIONS_COST_BY_MODEL.plugins.tooltip.filter;
+    expect(filter({ parsed: { y: 0 } })).toBe(false);
+    expect(filter({ parsed: { y: 0.01 } })).toBe(true);
+  });
+
   it('disables animation on every chart preset (deterministic rendering)', () => {
     for (const opts of [
       BAR_OPTIONS_TOKS,

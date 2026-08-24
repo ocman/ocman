@@ -15,7 +15,7 @@ import { MemoryRouter } from 'react-router-dom';
 import type { MetricsDashboard } from '../../lib/api';
 
 vi.mock('react-chartjs-2', () => ({
-  Bar: ({ data }: { data: unknown }) => <div data-testid="chart-bar" data-chart={JSON.stringify(data)} />,
+  Bar: ({ data, options }: { data: unknown; options: unknown }) => <div data-testid="chart-bar" data-chart={JSON.stringify(data)} data-options={JSON.stringify(options)} />,
   Line: () => <div data-testid="chart-line" />,
   Doughnut: () => <div data-testid="chart-doughnut" />,
 }));
@@ -71,7 +71,14 @@ function makeMetrics(): MetricsDashboard {
     ],
     costByModel: {
       models: ['anthropic/claude'],
-      series: [{ label: '2026-08-24', costs: [0.75] }],
+      series: [{ label: '2026-08-24', costs: [1.23] }],
+    },
+    dailyEstimatedCostByModel: {
+      models: ['anthropic/claude', 'openai/gpt-5'],
+      series: [
+        { label: '2026-08-23', costs: [0.75, 0] },
+        { label: '2026-08-24', costs: [0, 0.25] },
+      ],
     },
     stopReasons: [{ reason: 'end_turn', count: 40 }],
     requests: [
@@ -158,9 +165,15 @@ describe('StatsTab effective-cost UI', () => {
     expect(screen.getAllByTestId('chart-bar')).toHaveLength(4);
     expect(screen.getAllByTestId('chart-line')).toHaveLength(1);
     const costChart = screen.getAllByTestId('chart-bar')
-      .map((chart) => JSON.parse(chart.getAttribute('data-chart') ?? '{}'))
-      .find((data) => data.labels?.[0] === '2026-08-24');
-    expect(costChart.datasets[0].data).toEqual([0.75]);
+      .find((chart) => JSON.parse(chart.getAttribute('data-chart') ?? '{}').labels?.[0] === '2026-08-23');
+    const data = JSON.parse(costChart?.getAttribute('data-chart') ?? '{}');
+    const options = JSON.parse(costChart?.getAttribute('data-options') ?? '{}');
+    expect(data.datasets.map((dataset: { data: number[] }) => dataset.data)).toEqual([
+      [0.75, 0],
+      [0, 0.25],
+    ]);
+    expect(options.scales.x.stacked).toBe(true);
+    expect(options.scales.y.stacked).toBe(true);
   });
 
   it('shows the effective Total Cost headline and the Reported / Est. detail card', () => {

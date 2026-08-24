@@ -59,7 +59,7 @@ function hexToRgba(hex: string, alpha: number): string {
  * has zero cost — the legacy chart's behaviour).
  */
 function buildCostByModelDatasets(metrics: MetricsDashboard) {
-  const cbm = metrics.costByModel;
+  const cbm = metrics.dailyEstimatedCostByModel;
   const models = cbm?.models ?? [];
   const cbmSeries = cbm?.series ?? [];
   if (models.length === 0) {
@@ -115,7 +115,7 @@ export function StatsSummaryCharts({ metrics }: { metrics: MetricsDashboard }) {
 
         <ChartCard title="Estimated Cost per Day by Model (USD)">
           <Bar data={{
-            labels: metrics.costByModel?.series?.map((point) => point.label) ?? [],
+            labels: metrics.dailyEstimatedCostByModel.series.map((point) => point.label),
             datasets: buildCostByModelDatasets(metrics),
           }} options={BAR_OPTIONS_COST_BY_MODEL} />
         </ChartCard>

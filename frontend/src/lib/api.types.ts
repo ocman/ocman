@@ -697,6 +697,7 @@ export interface MetricsDashboard {
   summary: MetricsSummary;
   series: MetricsPoint[];
   costByModel: MetricsCostByModel;
+  dailyEstimatedCostByModel: MetricsCostByModel;
   stopReasons: StopReasonCount[];
   requests: RequestMetricsRow[];
   totalRequests: number;
@@ -707,11 +708,11 @@ export interface MetricsDashboard {
 }
 
 /**
- * Per-model daily cost used by the stacked cost-by-model
- * chart on the Stats tab. `models` is the ordered legend (top N by
+ * Per-model cost series. `models` is the ordered legend (top N by
  * total spend, with an "Other" bucket trailing when there are more
  * distinct models than the chart can show). Each `costs` array is parallel
- * to `models`.
+ * to `models`; the MetricsDashboard field defines its granularity and cost
+ * semantics.
  */
 export interface MetricsCostByModel {
   models: string[];

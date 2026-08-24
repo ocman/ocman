@@ -342,7 +342,7 @@ func TestGetMetricsDashboard_CostByModel_BasicSplit(t *testing.T) {
 	}
 }
 
-func TestBuildCostByModelSeries_ReportsEachBucketCost(t *testing.T) {
+func TestBuildCostByModelSeries_RemainsCumulative(t *testing.T) {
 	buckets := map[string]*bucketAcc{
 		"2026-08-23": {costByModel: map[string]float64{"openai/gpt-5": 1.25}},
 		"2026-08-24": {costByModel: map[string]float64{"openai/gpt-5": 0.50}},
@@ -355,28 +355,80 @@ func TestBuildCostByModelSeries_ReportsEachBucketCost(t *testing.T) {
 	if got := series.Series[0].Costs[0]; got != 1.25 {
 		t.Errorf("first bucket cost = %v, want 1.25", got)
 	}
-	if got := series.Series[1].Costs[0]; got != 0.50 {
-		t.Errorf("second bucket cost = %v, want 0.50", got)
+	if got := series.Series[1].Costs[0]; got != 1.75 {
+		t.Errorf("second cumulative cost = %v, want 1.75", got)
 	}
 }
 
-func TestBuildCostByModelSeries_GroupsHourlyBucketsByDay(t *testing.T) {
-	buckets := map[string]*bucketAcc{
-		"2026-08-24 09": {costByModel: map[string]float64{"openai/gpt-5": 1.25}},
-		"2026-08-24 10": {costByModel: map[string]float64{"openai/gpt-5": 0.50}},
-	}
-	series := buildCostByModelSeries(buckets, []MetricsPoint{
-		{Label: "2026-08-24 09"},
-		{Label: "2026-08-24 10"},
+func TestGetMetricsDashboard_DailyEstimatedCostByModel(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now()
+	dayOne := now.Add(-25 * time.Hour)
+	dayTwo := now.Add(-time.Hour)
+	insertSession(t, db, "s1", "session", "/p", dayOne.UnixMilli(), dayTwo.UnixMilli())
+	insertMessage(t, db, "day-one", "s1", dayOne.UnixMilli(), map[string]interface{}{
+		"role": "assistant", "finish": "end_turn", "cost": 99.0,
+		"providerID": "openai", "modelID": "gpt-5",
+		"tokens": map[string]interface{}{"input": 100, "output": 0},
+	})
+	insertMessage(t, db, "day-two-a", "s1", dayTwo.UnixMilli(), map[string]interface{}{
+		"role": "assistant", "finish": "end_turn", "cost": 99.0,
+		"providerID": "openai", "modelID": "gpt-5",
+		"tokens": map[string]interface{}{"input": 200, "output": 0},
+	})
+	insertMessage(t, db, "day-two-b", "s1", dayTwo.Add(time.Minute).UnixMilli(), map[string]interface{}{
+		"role": "assistant", "finish": "end_turn", "cost": 99.0,
+		"providerID": "anthropic", "modelID": "claude",
+		"tokens": map[string]interface{}{"input": 300, "output": 0},
 	})
 
-	if len(series.Series) != 1 {
-		t.Fatalf("daily series length = %d, want 1", len(series.Series))
+	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+		Days: 7, Since: now.Add(-48 * time.Hour).UnixMilli(),
+		Pricing: stubPricing{inputRate: 0.01},
+	})
+	if err != nil {
+		t.Fatalf("GetMetricsDashboard: %v", err)
 	}
-	if got := series.Series[0].Costs[0]; got != 1.75 {
-		t.Errorf("daily cost = %v, want 1.75", got)
+	series := dash.DailyEstimatedCostByModel
+	modelIndex := map[string]int{}
+	for i, model := range series.Models {
+		modelIndex[model] = i
 	}
-	empty := buildCostByModelSeries(map[string]*bucketAcc{}, []MetricsPoint{
+	gptIndex, ok := modelIndex["openai/gpt-5"]
+	if !ok {
+		t.Fatalf("daily estimate models = %v, missing openai/gpt-5", series.Models)
+	}
+	claudeIndex, ok := modelIndex["anthropic/claude"]
+	if !ok {
+		t.Fatalf("daily estimate models = %v, missing anthropic/claude", series.Models)
+	}
+	points := map[string]ModelCostPoint{}
+	for _, point := range series.Series {
+		points[point.Label] = point
+	}
+	firstLabel := dayOne.Local().Format("2006-01-02")
+	first, ok := points[firstLabel]
+	if !ok {
+		t.Fatalf("daily estimate points missing %s", firstLabel)
+	}
+	secondLabel := dayTwo.Local().Format("2006-01-02")
+	second, ok := points[secondLabel]
+	if !ok {
+		t.Fatalf("daily estimate points missing %s", secondLabel)
+	}
+	if got := first.Costs[gptIndex]; got != 1 {
+		t.Errorf("first-day GPT estimate = %v, want 1", got)
+	}
+	if got := second.Costs[gptIndex]; got != 2 {
+		t.Errorf("second-day GPT estimate = %v, want 2", got)
+	}
+	if got := second.Costs[claudeIndex]; got != 3 {
+		t.Errorf("second-day Claude estimate = %v, want 3", got)
+	}
+
+	empty := buildDailyEstimatedCostByModelSeries(map[string]*bucketAcc{}, []MetricsPoint{
 		{Label: "2026-08-24 09"},
 		{Label: "2026-08-24 10"},
 	})

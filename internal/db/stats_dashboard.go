@@ -223,24 +223,21 @@ func (d *DB) scanDashboardRows(ctx context.Context, opts MetricsDashboardOptions
 
 // bucketAcc accumulates per-time-bucket metrics while building the series.
 type bucketAcc struct {
-	label              string
-	inputTokens        int64
-	cacheReadTokens    int64
-	cacheWriteTokens   int64
-	outputTokens       int64
-	totalOutputTokSec  float64
-	totalDurationMs    float64
-	totalCacheEff      float64
-	totalCost          float64
-	totalCalcCost      float64
-	totalEffectiveCost float64
-	// costByModel sums the effective cost in this bucket
-	// partitioned by model key ("provider/model" or "" when missing).
-	// Used by buildCostByModelSeries to assemble the cost-by-model
-	// per-bucket series.
-	costByModel   map[string]float64
-	durationCount int
-	count         int
+	label                string
+	inputTokens          int64
+	cacheReadTokens      int64
+	cacheWriteTokens     int64
+	outputTokens         int64
+	totalOutputTokSec    float64
+	totalDurationMs      float64
+	totalCacheEff        float64
+	totalCost            float64
+	totalCalcCost        float64
+	totalEffectiveCost   float64
+	costByModel          map[string]float64
+	estimatedCostByModel map[string]float64
+	durationCount        int
+	count                int
 }
 
 // costByModelTopN is the maximum number of distinct models surfaced in
@@ -288,7 +285,11 @@ func (d *DB) aggregateSummaryAndBuckets(dashboard *MetricsDashboard, filtered []
 		label := time.UnixMilli(entry.TimeCreated).Local().Format(bucketFmt)
 		b, ok := buckets[label]
 		if !ok {
-			b = &bucketAcc{label: label, costByModel: make(map[string]float64)}
+			b = &bucketAcc{
+				label:                label,
+				costByModel:          make(map[string]float64),
+				estimatedCostByModel: make(map[string]float64),
+			}
 			buckets[label] = b
 			bucketOrder = append(bucketOrder, label)
 		}
@@ -310,6 +311,7 @@ func (d *DB) aggregateSummaryAndBuckets(dashboard *MetricsDashboard, filtered []
 		b.totalCalcCost += entry.CalcCost
 		b.totalEffectiveCost += entry.EffectiveCost
 		b.costByModel[entry.Model] += entry.EffectiveCost
+		b.estimatedCostByModel[entry.Model] += entry.CalcCost
 		b.count++
 	}
 
@@ -323,6 +325,7 @@ func (d *DB) aggregateSummaryAndBuckets(dashboard *MetricsDashboard, filtered []
 
 	dashboard.Series = buildDashboardSeries(buckets, bucketOrder, bucketFmt, days, since)
 	dashboard.CostByModel = buildCostByModelSeries(buckets, dashboard.Series)
+	dashboard.DailyEstimatedCostByModel = buildDailyEstimatedCostByModelSeries(buckets, dashboard.Series)
 	return stopCounts
 }
 
@@ -392,18 +395,28 @@ func buildDashboardSeries(buckets map[string]*bucketAcc, bucketOrder []string, b
 	return series
 }
 
-// buildCostByModelSeries derives the per-model cost for each time bucket.
-// Models are ranked by total
-// (whole-window) effective cost; the top costByModelTopN are
-// kept individually and the remainder folded into a single "Other"
-// bucket. Empty model keys (rows without a resolved model) are also
-// rolled into "Other" rather than rendering an unlabelled stack.
-//
-// Hourly dashboard buckets are folded into days for this graph.
+// buildCostByModelSeries preserves the cumulative effective-cost API used by
+// existing clients.
 func buildCostByModelSeries(buckets map[string]*bucketAcc, mainSeries []MetricsPoint) MetricsCostByModel {
+	return buildModelCostSeries(buckets, mainSeries, func(b *bucketAcc) map[string]float64 {
+		return b.costByModel
+	}, false)
+}
+
+// buildDailyEstimatedCostByModelSeries groups token-price estimates by local
+// calendar day for the Stats chart.
+func buildDailyEstimatedCostByModelSeries(buckets map[string]*bucketAcc, mainSeries []MetricsPoint) MetricsCostByModel {
+	return buildModelCostSeries(buckets, mainSeries, func(b *bucketAcc) map[string]float64 {
+		return b.estimatedCostByModel
+	}, true)
+}
+
+// buildModelCostSeries ranks models by whole-window cost and folds models below
+// the top-N cutoff into Other.
+func buildModelCostSeries(buckets map[string]*bucketAcc, mainSeries []MetricsPoint, costsFor func(*bucketAcc) map[string]float64, daily bool) MetricsCostByModel {
 	totals := make(map[string]float64)
 	for _, b := range buckets {
-		for model, cost := range b.costByModel {
+		for model, cost := range costsFor(b) {
 			key := model
 			if key == "" {
 				key = costByModelOtherKey
@@ -412,7 +425,7 @@ func buildCostByModelSeries(buckets map[string]*bucketAcc, mainSeries []MetricsP
 		}
 	}
 	if len(totals) == 0 {
-		return MetricsCostByModel{Models: []string{}, Series: emptyModelCostSeries(mainSeries)}
+		return MetricsCostByModel{Models: []string{}, Series: emptyModelCostSeries(mainSeries, daily)}
 	}
 
 	// Stable ranking: cost desc, then name asc.
@@ -468,17 +481,21 @@ func buildCostByModelSeries(buckets map[string]*bucketAcc, mainSeries []MetricsP
 		Models: models,
 		Series: make([]ModelCostPoint, 0, len(mainSeries)),
 	}
+	cumulative := make([]float64, len(models))
 	for _, pt := range mainSeries {
 		label := pt.Label
-		if len(label) > len("2006-01-02") {
+		if daily && len(label) > len("2006-01-02") {
 			label = label[:len("2006-01-02")]
 		}
-		if len(out.Series) == 0 || out.Series[len(out.Series)-1].Label != label {
+		if daily && (len(out.Series) == 0 || out.Series[len(out.Series)-1].Label != label) {
 			out.Series = append(out.Series, ModelCostPoint{Label: label, Costs: make([]float64, len(models))})
 		}
-		costs := out.Series[len(out.Series)-1].Costs
+		costs := cumulative
+		if daily {
+			costs = out.Series[len(out.Series)-1].Costs
+		}
 		if b, ok := buckets[pt.Label]; ok {
-			for model, cost := range b.costByModel {
+			for model, cost := range costsFor(b) {
 				key := model
 				if key == "" {
 					key = costByModelOtherKey
@@ -491,21 +508,23 @@ func buildCostByModelSeries(buckets map[string]*bucketAcc, mainSeries []MetricsP
 				}
 			}
 		}
+		if !daily {
+			out.Series = append(out.Series, ModelCostPoint{Label: label, Costs: append([]float64(nil), costs...)})
+		}
 	}
 	return out
 }
 
-// emptyModelCostSeries returns a CostByModel payload with no model
-// columns but a label-aligned (all-zero-width) bucket list. Lets the
-// frontend treat the field as always-present.
-func emptyModelCostSeries(mainSeries []MetricsPoint) []ModelCostPoint {
+// emptyModelCostSeries returns a CostByModel payload with no model columns,
+// preserving source labels or folding them by day as requested.
+func emptyModelCostSeries(mainSeries []MetricsPoint, daily bool) []ModelCostPoint {
 	out := make([]ModelCostPoint, 0, len(mainSeries))
 	for _, pt := range mainSeries {
 		label := pt.Label
-		if len(label) > len("2006-01-02") {
+		if daily && len(label) > len("2006-01-02") {
 			label = label[:len("2006-01-02")]
 		}
-		if len(out) == 0 || out[len(out)-1].Label != label {
+		if !daily || len(out) == 0 || out[len(out)-1].Label != label {
 			out = append(out, ModelCostPoint{Label: label, Costs: []float64{}})
 		}
 	}

@@ -431,26 +431,29 @@ type ProjectLogEntry struct {
 
 // MetricsDashboard holds the full metrics dashboard payload.
 type MetricsDashboard struct {
-	AvailableAgents []string           `json:"availableAgents"`
-	AvailableModels []string           `json:"availableModels"`
-	Summary         MetricsSummary     `json:"summary"`
-	Series          []MetricsPoint     `json:"series"`
-	CostByModel     MetricsCostByModel `json:"costByModel"`
-	StopReasons     []StopReasonCount  `json:"stopReasons"`
-	Requests        []RequestLogEntry  `json:"requests"`
-	TotalRequests   int                `json:"totalRequests"`
-	Sessions        []SessionLogEntry  `json:"sessions"`
-	TotalSessions   int                `json:"totalSessions"`
-	Projects        []ProjectLogEntry  `json:"projects"`
-	TotalProjects   int                `json:"totalProjects"`
+	AvailableAgents []string       `json:"availableAgents"`
+	AvailableModels []string       `json:"availableModels"`
+	Summary         MetricsSummary `json:"summary"`
+	Series          []MetricsPoint `json:"series"`
+	// CostByModel is the cumulative effective cost aligned with Series.
+	CostByModel MetricsCostByModel `json:"costByModel"`
+	// DailyEstimatedCostByModel is token-price estimated cost grouped by day.
+	DailyEstimatedCostByModel MetricsCostByModel `json:"dailyEstimatedCostByModel"`
+	StopReasons               []StopReasonCount  `json:"stopReasons"`
+	Requests                  []RequestLogEntry  `json:"requests"`
+	TotalRequests             int                `json:"totalRequests"`
+	Sessions                  []SessionLogEntry  `json:"sessions"`
+	TotalSessions             int                `json:"totalSessions"`
+	Projects                  []ProjectLogEntry  `json:"projects"`
+	TotalProjects             int                `json:"totalProjects"`
 }
 
-// MetricsCostByModel holds the per-bucket cost series broken down by
+// MetricsCostByModel holds a cost series broken down by
 // model. Models is the ordered list of series keys (highest-total cost
 // first; an "Other" bucket trails when there are more than
-// CostByModelTopN distinct models). Series is grouped by day and each
-// ModelCostPoint.Costs is parallel to Models. Values use platform-reported
-// cost when available and otherwise the token-based estimate.
+// CostByModelTopN distinct models). Each ModelCostPoint.Costs is parallel
+// to Models; the containing MetricsDashboard field defines the granularity
+// and cost semantics.
 type MetricsCostByModel struct {
 	Models []string         `json:"models"`
 	Series []ModelCostPoint `json:"series"`
