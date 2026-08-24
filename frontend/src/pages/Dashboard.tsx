@@ -1,11 +1,10 @@
 import { useCallback, useMemo } from 'react';
 import './Dashboard.css';
-import { NavLink, Outlet, useSearchParams, useLocation } from 'react-router-dom';
+import { Outlet, useSearchParams, useLocation } from 'react-router-dom';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend, PointElement, LineElement } from 'chart.js';
 import type { Project, Session } from '../lib/api';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useUiStore } from '../lib/uiStore';
-import { useWorkflows } from '../lib/useCapabilities';
 import { useSessions as useTQSessions, useProjects as useTQProjects } from '../lib/queries';
 import { DashboardContext, type DashboardCtx } from './dashboard/context';
 
@@ -30,8 +29,6 @@ const EMPTY_PROJECTS: Project[] = [];
 export function DashboardLayout() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const workflowsAllowed = useWorkflows();
-
   const isOnDashboard = location.pathname === '/sessions' || location.pathname === '/projects' || location.pathname === '/stats' || location.pathname === '/usage' || location.pathname === '/workflows' || location.pathname === '/settings';
 
   const dashboardTimeRangeDefault = useUiStore((s) => s.dashboardTimeRangeDefault);
@@ -126,19 +123,10 @@ export function DashboardLayout() {
 
   return (
     <DashboardContext.Provider value={ctx}>
-      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
-        <div className="nav-tabs">
-          <NavLink to="/sessions" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Sessions</NavLink>
-          <NavLink to="/projects" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Projects</NavLink>
-          {workflowsAllowed && <NavLink to="/workflows" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Workflows</NavLink>}
-          <NavLink to="/stats" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Stats</NavLink>
-          <NavLink to="/usage" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Usage</NavLink>
-          <NavLink to="/settings" className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}>Settings</NavLink>
-        </div>
+      <div className={`dashboard-content${location.pathname === '/workflows' ? ' dashboard-content-flush' : ''}`}>
         {/* Per-tab boundary so a crash inside Stats / Usage / etc.
-            (chart.js render error, malformed metrics payload) doesn't
-            blank the tab bar above. resetKey on pathname auto-clears
-            when the user switches to a different tab. */}
+            (chart.js render error, malformed metrics payload) stays local.
+            resetKey on pathname auto-clears when the user switches tabs. */}
         <ErrorBoundary name={`dashboard:${location.pathname}`} resetKey={location.pathname}>
           <Outlet />
         </ErrorBoundary>

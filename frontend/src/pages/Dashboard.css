@@ -1,4 +1,7 @@
 /* Cards */
+.dashboard-content { flex: 1; min-height: 0; overflow-y: auto; padding-top: 24px; }
+.dashboard-content-flush { padding-top: 0; }
+
 .stat-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 0; padding: 20px; }
 .stat-card .label { font-size: 13px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
 .stat-card .value { font-size: 28px; font-weight: 600; }
@@ -93,7 +96,7 @@
   .oc-dashboard-primary-action { align-self: flex-start; }
 }
 
-/* Nav tabs */
+/* Internal tabs */
 .nav-tabs {
   display: flex;
   gap: 0;

@@ -449,11 +449,10 @@ test('session title appears in header breadcrumb', async ({ mockedPage: page }) 
   await expect(page.getByRole('banner')).toContainText(MOCK_SESSION.title, { timeout: 5_000 });
 });
 
-test('header logo links to / and redirects to the latest session', async ({ mockedPage: page }) => {
+test('sidebar logo collapses the main navigation', async ({ mockedPage: page }) => {
   await page.goto(SESSION_URL);
-  await page.getByRole('link', { name: 'ocman home' }).click();
-  // The logo links to `/`, which redirects to the most recent session.
-  await expect(page).toHaveURL(`/session/${MOCK_SESSION.id}`);
+  await page.getByRole('button', { name: 'Collapse navigation' }).click();
+  await expect(page.getByRole('button', { name: 'Expand navigation' })).toBeVisible();
 });
 
 // ---------------------------------------------------------------------------
@@ -580,28 +579,11 @@ test('navigating to another session during an active tool phase shows the target
   await expect(page.getByText('Synthetic active tool call')).toHaveCount(0, { timeout: 2_000 });
 });
 
-test('clicking the header logo while the current session is streaming redirects immediately', async ({ mockedPage: page }) => {
+test('using main navigation while the current session is streaming redirects immediately', async ({ mockedPage: page }) => {
   await setupStreamingSessionPage(page);
 
-  // The header logo links to `/`, which redirects to the most recent
-  // session. Make the newest session a different, no-latency one so the
-  // redirect target is not the streaming session we're leaving.
-  await page.route('/api/sessions*', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify([MOCK_SESSION_2, MOCK_SESSION]),
-    }),
-  );
-
-  await page.getByRole('link', { name: 'ocman home' }).click();
-
-  // Same regression as above, but through the header logo. The `/`
-  // redirect resolves via an async useSessions({ limit: 1 }) fetch, so
-  // it takes one extra hop compared to a direct session link — give it
-  // generous headroom so it doesn't flake under CI load while SSE deltas
-  // keep flowing on the session we're leaving.
-  await expect(page).toHaveURL(`/session/${MOCK_SESSION_2.id}`, { timeout: 10_000 });
+  await page.getByRole('link', { name: 'Sessions' }).click();
+  await expect(page).toHaveURL('/sessions', { timeout: 2_000 });
 });
 
 // ---------------------------------------------------------------------------

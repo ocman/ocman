@@ -102,6 +102,7 @@ body {
 @supports (height: 100dvh) {
   body { height: 100dvh; }
   #root { height: 100dvh; }
+  .app-shell { height: 100dvh; }
   .container { height: 100dvh; }
 }
 
@@ -110,8 +111,16 @@ body {
   overflow: hidden;
 }
 
-.container {
+.app-shell {
   height: 100dvh;
+  display: flex;
+  overflow: hidden;
+}
+
+.container {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
   padding: 0;
   display: flex;
   flex-direction: column;
@@ -279,35 +288,69 @@ tr.no-port { opacity: 0.4; }
 
 /* Header */
 header { display: flex; align-items: center; justify-content: space-between; padding: 8px 24px; border-bottom: 1px solid var(--border); flex-shrink: 0; gap: 16px; height: var(--header-height); }
-header h1 { font-size: 18px; font-weight: 600; color: var(--text-dim); white-space: nowrap; min-width: 0; }
+header h1 { display: flex; align-items: center; gap: 0.4em; font-size: 18px; font-weight: 600; color: var(--text-dim); white-space: nowrap; min-width: 0; }
 header h1 > a { color: var(--text); font-weight: 600; }
 header h1 span { color: inherit; font-weight: 400; }
-/* Ellipsis lives on the breadcrumb span (last child), not the whole h1,
- * so the logo-nav popover can overflow below the header without being
- * clipped. */
 header h1 > span:last-child { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 
-/* Logo hover menu: quick nav to the dashboard tabs. Opens on
- * :hover/:focus-within; the .closed class (set on item click) force-hides
- * it. The popover sits flush against the logo (top: 100%, no margin) so
- * the cursor can travel from logo to links without the menu closing. */
-.logo-nav { position: relative; display: inline-flex; align-items: center; }
-.logo-nav-popover {
-  position: absolute; top: 100%; left: 0; z-index: 50;
-  display: none; flex-direction: column; min-width: 160px;
-  background: var(--bg-card); border: 1px solid var(--border);
-  border-radius: 0; box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
-  background-clip: padding-box; overflow: hidden;
+.main-nav {
+  width: 188px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: var(--mantle);
+  border-right: 1px solid var(--border);
+  transition: width 0.16s ease;
 }
-.logo-nav:hover .logo-nav-popover,
-.logo-nav:focus-within .logo-nav-popover { display: flex; }
-.logo-nav.closed .logo-nav-popover { display: none; }
-.logo-nav-popover a {
-  padding: 8px 16px; border-radius: 0; font-size: 13px; font-weight: 400;
-  color: var(--text); text-decoration: none; white-space: nowrap;
-  transition: background 0.1s;
+.main-nav.collapsed { width: 52px; }
+.main-nav-logo {
+  width: 100%;
+  height: var(--header-height);
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow: hidden;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
 }
-.logo-nav-popover a:hover { background: var(--bg-hover); text-decoration: none; }
+.main-nav-logo:hover { background: var(--bg-hover); }
+.main-nav-logo img { display: block; flex-shrink: 0; }
+.main-nav-brand,
+.main-nav nav a span {
+  opacity: 1;
+  transition: opacity 0.1s ease;
+}
+.main-nav.collapsed .main-nav-brand,
+.main-nav.collapsed nav a span { opacity: 0; }
+.main-nav nav { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 2px; padding: 10px 7px; }
+.main-nav nav a:last-child { margin-top: auto; }
+.main-nav nav a {
+  height: 34px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  overflow: hidden;
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-size: 13px;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.main-nav nav a i { width: 16px; flex-shrink: 0; font-size: 15px; text-align: center; }
+.main-nav nav a:hover { color: var(--text); background: var(--bg-hover); }
+.main-nav nav a.active { color: var(--text); background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.main-nav-backdrop,
+.mobile-nav-toggle { display: none; }
 
 /* Wails desktop: compact native-feeling titlebar.
  * - Reduced padding so the bar sits closer to system titlebar height (~38px).
@@ -315,8 +358,9 @@ header h1 > span:last-child { overflow: hidden; text-overflow: ellipsis; min-wid
  * - padding-left clears the macOS inset traffic-light buttons (~72px + gap). */
 .wails-app header {
   --wails-draggable: drag;
-  padding: 12px 16px 12px 96px;
+  padding: 12px 16px;
 }
+.wails-app .main-nav-logo { padding-top: 38px; height: calc(var(--header-height) + 38px); }
 .wails-app header h1 {
   font-size: 16px;
   font-weight: 500;
@@ -543,6 +587,35 @@ header h1 > span:last-child { overflow: hidden; text-overflow: ellipsis; min-wid
 @media (max-width: 768px) {
   .container { padding: 0; }
   header { align-items: flex-start; padding: 16px 12px; }
+  .mobile-nav-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+  .main-nav,
+  .main-nav.collapsed {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 70;
+    width: 220px;
+    transform: translateX(-100%);
+    transition: transform 0.16s ease;
+  }
+  .main-nav.mobile-open { transform: translateX(0); }
+  .main-nav.collapsed .main-nav-brand,
+  .main-nav.collapsed nav a span { opacity: 1; }
+  .main-nav-backdrop.visible {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: block;
+    border: 0;
+    background: rgba(0, 0, 0, 0.5);
+  }
 }
 
 /* Print stylesheet for the authenticated session view.
@@ -563,6 +636,8 @@ header h1 > span:last-child { overflow: hidden; text-overflow: ellipsis; min-wid
      third flex child of .session-layout — target it via the element so
      we don't accidentally hide embedded changes sidebars elsewhere. */
   header,
+  .main-nav,
+  .main-nav-backdrop,
   .session-sidebar,
   .session-layout > aside,
   .oc-changes-sidebar,
@@ -578,6 +653,7 @@ header h1 > span:last-child { overflow: hidden; text-overflow: ellipsis; min-wid
   html,
   body,
   #root,
+  .app-shell,
   .container,
   .content,
   .session-layout,

@@ -389,6 +389,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const collapsedProjects = useUiStore((state) => state.collapsedProjects);
   const projectOrder = useUiStore((state) => state.projectOrder);
   const setProjectOrder = useUiStore((state) => state.setProjectOrder);
+  const recordOpenedSession = useUiStore((state) => state.recordOpenedSession);
   // All known projects — the sidebar "projects" view lists every
   // unarchived project, even ones with no session in the recent window.
   const projectsQuery = useProjects();
@@ -737,6 +738,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const sessionSeenUpdated = session?.timeUpdated || 0;
   useEffect(() => {
     if (!sessionSeenId || !sessionSeenPlatform) return;
+    recordOpenedSession(sessionSeenId);
     patchSession({ seen: true, archived: false });
     patchRecentSession(sessionSeenId, { seen: true, archived: false });
     void markSessionSeen(sessionSeenPlatform, sessionSeenId, sessionSeenUpdated)
@@ -744,7 +746,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
         recheckFaviconNotify();
       })
       .catch((err) => remoteLog.error('Failed to mark session seen', err));
-  }, [markSessionSeen, sessionSeenId, sessionSeenPlatform, sessionSeenUpdated, patchRecentSession, patchSession]);
+  }, [markSessionSeen, sessionSeenId, sessionSeenPlatform, sessionSeenUpdated, patchRecentSession, patchSession, recordOpenedSession]);
 
   // Restore pending question from sessionStorage when navigating
   // back to a page whose parts still show a pending question tool.

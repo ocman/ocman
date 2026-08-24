@@ -1,8 +1,8 @@
 /**
- * e2e: Dashboard (Sessions / Projects / Stats / Usage / Settings tabs)
+ * e2e: Dashboard (Sessions / Projects / Stats / Usage / Settings views)
  *
  * Covers:
- *  - All five tab links are visible and navigable
+ *  - All five sidebar links are visible and navigable
  *  - Sessions tab renders the session table with mock data
  *  - Time-range filter buttons are rendered and change the active state
  *  - Projects tab renders a project row with mock data
@@ -15,24 +15,37 @@
  *  - "No active sessions found" empty state when sessions list is empty
  */
 
-import { test, expect, MOCK_SESSION, MOCK_PROJECT } from './fixtures';
+import { test, expect, MOCK_SESSION, MOCK_SESSION_2, MOCK_PROJECT } from './fixtures';
 
 // ---------------------------------------------------------------------------
-// Navigation & tab bar
+// Navigation
 // ---------------------------------------------------------------------------
 
-test('all five dashboard tabs are visible', async ({ mockedPage: page }) => {
+test('all dashboard destinations are visible with Settings at the bottom', async ({ mockedPage: page }) => {
   await page.goto('/sessions');
-  for (const label of ['Sessions', 'Projects', 'Stats', 'Usage', 'Settings']) {
-    await expect(page.locator('.nav-tab', { hasText: label })).toBeVisible();
+  const nav = page.getByRole('navigation', { name: 'Main navigation' });
+  await expect(page.getByRole('banner').getByRole('heading', { name: 'Sessions' })).toBeVisible();
+  for (const label of ['Home', 'Sessions', 'Projects', 'Stats', 'Usage', 'Settings']) {
+    await expect(nav.getByRole('link', { name: label })).toBeVisible();
   }
+
+  const navBox = await nav.boundingBox();
+  const settingsBox = await nav.getByRole('link', { name: 'Settings' }).boundingBox();
+  expect(navBox).not.toBeNull();
+  expect(settingsBox).not.toBeNull();
+  expect(navBox!.y + navBox!.height - settingsBox!.y - settingsBox!.height).toBeLessThanOrEqual(12);
 });
 
-test('clicking Settings tab navigates to /settings', async ({ mockedPage: page }) => {
+test('dashboard content has space below the header', async ({ mockedPage: page }) => {
   await page.goto('/sessions');
-  await page.locator('.nav-tab', { hasText: 'Settings' }).click();
+  await expect(page.locator('.dashboard-content')).toHaveCSS('padding-top', '24px');
+});
+
+test('clicking Settings navigates to /settings', async ({ mockedPage: page }) => {
+  await page.goto('/sessions');
+  await page.getByRole('navigation', { name: 'Main navigation' }).getByRole('link', { name: 'Settings' }).click();
   await expect(page).toHaveURL('/settings');
-  await expect(page.locator('.nav-tab', { hasText: 'Settings' })).toHaveClass(/active/);
+  await expect(page.getByRole('link', { name: 'Settings', current: 'page' })).toBeVisible();
 });
 
 test('settings tab shows bell sound toggle', async ({ mockedPage: page }) => {
@@ -61,37 +74,63 @@ test('settings sidebar switches the visible group', async ({ mockedPage: page })
   await expect(page.locator('.settings-row-label', { hasText: 'Bell sound' })).toBeHidden();
 });
 
-test('Sessions tab is active by default', async ({ mockedPage: page }) => {
+test('Sessions navigation is active by default', async ({ mockedPage: page }) => {
   await page.goto('/sessions');
-  const sessionsTab = page.locator('.nav-tab', { hasText: 'Sessions' });
-  await expect(sessionsTab).toHaveClass(/active/);
+  await expect(page.getByRole('link', { name: 'Sessions', current: 'page' })).toBeVisible();
 });
 
-test('clicking Projects tab navigates to /projects', async ({ mockedPage: page }) => {
+test('clicking Projects navigates to /projects', async ({ mockedPage: page }) => {
   await page.goto('/sessions');
-  await page.locator('.nav-tab', { hasText: 'Projects' }).click();
+  await page.getByRole('link', { name: 'Projects' }).click();
   await expect(page).toHaveURL('/projects');
-  const projectsTab = page.locator('.nav-tab', { hasText: 'Projects' });
-  await expect(projectsTab).toHaveClass(/active/);
+  await expect(page.getByRole('link', { name: 'Projects', current: 'page' })).toBeVisible();
 });
 
-test('clicking Stats tab navigates to /stats', async ({ mockedPage: page }) => {
+test('clicking Stats navigates to /stats', async ({ mockedPage: page }) => {
   await page.goto('/sessions');
-  await page.locator('.nav-tab', { hasText: 'Stats' }).click();
+  await page.getByRole('link', { name: 'Stats' }).click();
   await expect(page).toHaveURL('/stats');
 });
 
-test('clicking Usage tab navigates to /usage', async ({ mockedPage: page }) => {
+test('clicking Usage navigates to /usage', async ({ mockedPage: page }) => {
   await page.goto('/sessions');
-  await page.locator('.nav-tab', { hasText: 'Usage' }).click();
+  await page.getByRole('link', { name: 'Usage' }).click();
   await expect(page).toHaveURL('/usage');
 });
 
-test('header logo link goes to / and redirects to the latest session', async ({ mockedPage: page }) => {
+test('logo collapses and expands the sidebar', async ({ mockedPage: page }) => {
   await page.goto('/stats');
-  await page.click('h1 a');
-  // `/` redirects to the most recent session (MOCK_SESSION is newest).
-  await expect(page).toHaveURL(`/session/${MOCK_SESSION.id}`);
+  await page.getByRole('button', { name: 'Collapse navigation' }).click();
+  await expect(page.getByRole('button', { name: 'Expand navigation' })).toBeVisible();
+  await page.getByRole('button', { name: 'Expand navigation' }).click();
+  await expect(page.getByRole('button', { name: 'Collapse navigation' })).toBeVisible();
+});
+
+test('Home returns to the last opened active session', async ({ mockedPage: page }) => {
+  await page.goto(`/session/${MOCK_SESSION_2.id}`);
+  await expect(page.getByTestId('session-layout')).toBeVisible();
+
+  const nav = page.getByRole('navigation', { name: 'Main navigation' });
+  await nav.getByRole('link', { name: 'Sessions' }).click();
+  await expect(page).toHaveURL('/sessions');
+  await nav.getByRole('link', { name: 'Home' }).click();
+
+  await expect(page).toHaveURL(`/session/${MOCK_SESSION_2.id}`);
+});
+
+test.describe('phone navigation', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('opens from the header and closes after navigation', async ({ mockedPage: page }) => {
+    await page.goto('/sessions');
+    await page.getByRole('button', { name: 'Open navigation' }).click();
+    await expect(page.getByRole('button', { name: 'Close navigation' }).first()).toBeVisible();
+
+    await page.getByRole('link', { name: 'Projects' }).click();
+
+    await expect(page).toHaveURL('/projects');
+    await expect(page.getByRole('button', { name: 'Open navigation' })).toBeVisible();
+  });
 });
 
 // ---------------------------------------------------------------------------

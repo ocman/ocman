@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { BrowserRouter, Routes, Route, Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { DashboardLayout, SessionsTab, ProjectsTab, StatsTab, UsageTab, SettingsTab } from './pages/Dashboard';
@@ -39,6 +39,7 @@ import { useMemoryMonitor } from './lib/useMemoryMonitor';
 import { useLongTaskMonitor } from './lib/useLongTaskMonitor';
 import { installDevHandle as installPerfDevHandle } from './lib/perfRing';
 import { ClientActivityReporter } from './lib/ClientActivityReporter';
+import { routeTitle } from './lib/routeTitle';
 
 // Top-level boundary keyed on the current pathname so navigating away from
 // a crashed route auto-recovers without forcing the user to reload. Inner
@@ -54,67 +55,99 @@ function RoutesBoundary({ children }: { children: ReactNode }) {
   );
 }
 
-// LogoNav: the header logo with a hover/focus quick-nav menu to the
-// dashboard tabs. Pure CSS drives open-on-hover; a tiny `closed` state
-// force-hides the menu after clicking an item (CSS :hover alone can't
-// close while the cursor is still over the menu). Moving the mouse away
-// resets it so hover works again next time.
-export function LogoNav({ workflowsAllowed = false }: { workflowsAllowed?: boolean }) {
-  const [closed, setClosed] = useState(false);
+const MAIN_NAV_ITEMS = [
+  { to: '/', label: 'Home', icon: 'bi-house', activeOnSession: true },
+  { to: '/sessions', label: 'Sessions', icon: 'bi-collection' },
+  { to: '/projects', label: 'Projects', icon: 'bi-folder' },
+  { to: '/workflows', label: 'Workflows', icon: 'bi-diagram-3', workflowsOnly: true },
+  { to: '/stats', label: 'Stats', icon: 'bi-bar-chart' },
+  { to: '/usage', label: 'Usage', icon: 'bi-activity' },
+  { to: '/settings', label: 'Settings', icon: 'bi-gear' },
+];
+
+export function MainNav({
+  workflowsAllowed = false,
+  mobileOpen = false,
+  onMobileClose,
+}: {
+  workflowsAllowed?: boolean;
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
+}) {
+  const location = useLocation();
+  const collapsed = useUiStore((s) => s.mainNavCollapsed);
+  const toggleCollapsed = useUiStore((s) => s.toggleMainNav);
+  const toggleLabel = mobileOpen
+    ? 'Close navigation'
+    : collapsed ? 'Expand navigation' : 'Collapse navigation';
+
   return (
-    <span
-      className={`logo-nav${closed ? ' closed' : ''}`}
-      onMouseLeave={() => setClosed(false)}
-    >
-      <Link
-        to="/"
-        aria-label="ocman home"
-        style={{ color: 'inherit', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
-      >
-        <img src="/favicon.svg" alt="ocman" width={20} height={20} style={{ display: 'block' }} />
-      </Link>
-      <div className="logo-nav-popover" role="menu" onClick={() => setClosed(true)}>
-        <Link to="/sessions" role="menuitem">Sessions</Link>
-        <Link to="/projects" role="menuitem">Projects</Link>
-        {workflowsAllowed && <Link to="/workflows" role="menuitem">Workflows</Link>}
-        <Link to="/stats" role="menuitem">Stats</Link>
-        <Link to="/usage" role="menuitem">Usage</Link>
-        <Link to="/settings" role="menuitem">Settings</Link>
-      </div>
-    </span>
+    <>
+      <aside className={`main-nav${collapsed ? ' collapsed' : ''}${mobileOpen ? ' mobile-open' : ''}`}>
+        <button
+          type="button"
+          className="main-nav-logo"
+          aria-label={toggleLabel}
+          aria-expanded={mobileOpen || !collapsed}
+          aria-controls="main-navigation"
+          onClick={mobileOpen ? onMobileClose : toggleCollapsed}
+        >
+          <img src="/favicon.svg" alt="" width={22} height={22} />
+          <span className="main-nav-brand">ocman</span>
+        </button>
+        <nav id="main-navigation" aria-label="Main navigation">
+          {MAIN_NAV_ITEMS.map((item) => (
+            (!item.workflowsOnly || workflowsAllowed) && (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                aria-label={item.label}
+                title={collapsed ? item.label : undefined}
+                className={({ isActive }) =>
+                  isActive || (item.activeOnSession && location.pathname.startsWith('/session/'))
+                    ? 'active'
+                    : undefined
+                }
+                onClick={onMobileClose}
+              >
+                <i className={`bi ${item.icon}`} aria-hidden="true" />
+                <span>{item.label}</span>
+              </NavLink>
+            )
+          ))}
+        </nav>
+      </aside>
+      <button
+        type="button"
+        className={`main-nav-backdrop${mobileOpen ? ' visible' : ''}`}
+        aria-label="Close navigation"
+        onClick={onMobileClose}
+      />
+    </>
   );
 }
 
-function Header() {
+function Header({ onOpenNav }: { onOpenNav: () => void }) {
   const location = useLocation();
   const path = location.pathname;
-  const workflowsAllowed = useWorkflows();
   const { info } = useHeaderInfo();
   const routeSessionId = path.startsWith('/session/')
     ? decodeURIComponent(path.slice('/session/'.length).split('/')[0])
     : undefined;
   const sessionInfo = routeSessionId && info.sessionId === routeSessionId ? info : {};
 
-  let breadcrumb: React.ReactNode = '';
-  if (routeSessionId) {
+  let breadcrumb: React.ReactNode = routeTitle(path, sessionInfo.sessionTitle);
+  if (routeSessionId && sessionInfo.sessionTitle) {
     breadcrumb = (
       <>
-        {sessionInfo.sessionTitle && (
+        {sessionInfo.sessionPlatform && (
           <>
-            {sessionInfo.sessionPlatform && (
-              <>
-                <PlatformBadge platform={sessionInfo.sessionPlatform} />{' '}
-              </>
-            )}
-            {sessionInfo.sessionTitle}
+            <PlatformBadge platform={sessionInfo.sessionPlatform} />{' '}
           </>
         )}
+        {sessionInfo.sessionTitle}
       </>
     );
-  } else if (path.startsWith('/project/')) {
-    const dir = decodeURIComponent(path.slice('/project/'.length).split('/')[0]);
-    const name = dir.split('/').pop();
-    breadcrumb = <>{name}</>;
   }
 
   // Right-hand side of the header: the project path for the current
@@ -124,8 +157,15 @@ function Header() {
   // the header because it anchors the page at a glance.
   return (
     <header>
-      <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.4em' }}>
-        <LogoNav workflowsAllowed={workflowsAllowed} />
+      <h1>
+        <button
+          type="button"
+          className="mobile-nav-toggle"
+          aria-label="Open navigation"
+          onClick={onOpenNav}
+        >
+          <img src="/favicon.svg" alt="" width={20} height={20} />
+        </button>
         <span>{breadcrumb}</span>
       </h1>
       <div className="header-right">
@@ -442,29 +482,47 @@ function AuthenticatedApp() {
   return (
     <AuthGate>
       <HeaderProvider>
-        <ClientActivityReporter />
-        <FaviconNotify />
-        <BellNotify />
-        <NotificationNotify />
-        <PromptToastNotify />
-        <McpConfigPrompt />
-        <LaunchProgressOverlay />
-        <ServiceWorkerNavListener />
-        <PerformanceCleanup />
-        <MemoryMonitor />
-        <LongTaskMonitor />
-        <PerfDevHandle />
-        <GlobalHotkeys />
+        <AuthenticatedShell />
+      </HeaderProvider>
+    </AuthGate>
+  );
+}
+
+function AuthenticatedShell() {
+  const workflowsAllowed = useWorkflows();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  return (
+    <>
+      <ClientActivityReporter />
+      <FaviconNotify />
+      <BellNotify />
+      <NotificationNotify />
+      <PromptToastNotify />
+      <McpConfigPrompt />
+      <LaunchProgressOverlay />
+      <ServiceWorkerNavListener />
+      <PerformanceCleanup />
+      <MemoryMonitor />
+      <LongTaskMonitor />
+      <PerfDevHandle />
+      <GlobalHotkeys />
+      <div className="app-shell">
+        <MainNav
+          workflowsAllowed={workflowsAllowed}
+          mobileOpen={mobileNavOpen}
+          onMobileClose={() => setMobileNavOpen(false)}
+        />
         <div className="container">
-          <Header />
+          <Header onOpenNav={() => setMobileNavOpen(true)} />
           <div className="content">
             <RoutesBoundary>
               <AppRoutes />
             </RoutesBoundary>
           </div>
         </div>
-      </HeaderProvider>
-    </AuthGate>
+      </div>
+    </>
   );
 }
 
@@ -489,7 +547,8 @@ export function AppRoutes() {
 }
 
 export function RootRedirect() {
-  const sessionsQ = useSessions({ limit: 1 });
+  const sessionsQ = useSessions();
+  const lastOpenedSessionId = useUiStore((s) => s.lastOpenedSessionId);
   if (sessionsQ.isLoading) return null;
   // A failed query is not "no sessions". Redirecting to /session/new on
   // failure hides a backend outage behind the onboarding screen and
@@ -508,6 +567,12 @@ export function RootRedirect() {
   // Only `isError` is failure: a settled query with an undefined payload
   // is still a success, and treating it as an outage would put an error
   // banner over a working backend.
-  const latest = (sessionsQ.data ?? [])[0];
-  return <Navigate to={latest ? `/session/${latest.id}` : '/session/new'} replace />;
+  const active = (sessionsQ.data ?? []).filter((session) => !session.archived);
+  const lastOpened = active.find((session) => session.id === lastOpenedSessionId);
+  const latest = active.reduce<(typeof active)[number] | undefined>(
+    (best, session) => !best || session.timeUpdated > best.timeUpdated ? session : best,
+    undefined,
+  );
+  const target = lastOpened || latest;
+  return <Navigate to={target ? `/session/${target.id}` : '/session/new'} replace />;
 }

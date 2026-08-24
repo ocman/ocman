@@ -45,6 +45,11 @@ export type ChangesSidebarTab = 'info' | 'session' | 'working-tree' | 'bookmarks
 export type ChangesSidebarTabSizes = Partial<Record<ChangesSidebarTab, number>>;
 
 type UiStore = {
+  mainNavCollapsed: boolean;
+  toggleMainNav: () => void;
+  lastOpenedSessionId: string | undefined;
+  recordOpenedSession: (sessionId: string) => void;
+
   shortcutsOpen: boolean;
   openShortcuts: () => void;
   closeShortcuts: () => void;
@@ -224,6 +229,11 @@ function clampChangesWidth(width: number): number {
 export const useUiStore = create<UiStore>()(
   persist(
     (set) => ({
+      mainNavCollapsed: false,
+      toggleMainNav: () => set((s) => ({ mainNavCollapsed: !s.mainNavCollapsed })),
+      lastOpenedSessionId: undefined,
+      recordOpenedSession: (sessionId) => set({ lastOpenedSessionId: sessionId }),
+
       shortcutsOpen: false,
       openShortcuts: () => set({ shortcutsOpen: true }),
       closeShortcuts: () => set({ shortcutsOpen: false }),
@@ -398,6 +408,8 @@ export const useUiStore = create<UiStore>()(
       },
       // Only persist layout preferences; transient UI state (shortcutsOpen) stays in memory.
       partialize: (s) => ({
+        mainNavCollapsed: s.mainNavCollapsed,
+        lastOpenedSessionId: s.lastOpenedSessionId,
         sidebarWidth: s.sidebarWidth,
         bellEnabled: s.bellEnabled,
         showToolDetails: s.showToolDetails,

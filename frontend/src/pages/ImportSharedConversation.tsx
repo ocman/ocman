@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, type Project, type SharedConversation } from '../lib/api';
 import { mergeRelayChunks, parseRelayShareURL, readRelayShare } from '../lib/relayShare';
 import { saveDraft } from '../lib/composerDraft';
+import { usePageTitle } from '../lib/headerContext';
 
 function transcript(conversation: SharedConversation): string {
   const partsByMessage = new Map<string, string[]>();
@@ -23,6 +24,7 @@ function transcript(conversation: SharedConversation): string {
 }
 
 export function ImportSharedConversation() {
+  usePageTitle('Fork shared conversation');
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const shareURL = params.get('url') ?? '';

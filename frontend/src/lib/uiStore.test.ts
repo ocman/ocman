@@ -16,6 +16,14 @@ import {
 // are module-level singletons, so test isolation is our responsibility.
 const initial = useUiStore.getState();
 
+describe('uiStore session history', () => {
+  it('records the last opened session', () => {
+    initial.recordOpenedSession('session-2');
+
+    expect(useUiStore.getState().lastOpenedSessionId).toBe('session-2');
+  });
+});
+
 describe('uiStore sidebar width clamping', () => {
   beforeEach(() => {
     useUiStore.setState({
