@@ -1,4 +1,7 @@
 :root {
+  /* Layout */
+  --header-height: 44px; /* keep in sync with the header rule below; phone overlays anchor to it */
+
   /* Catppuccin Mocha */
   --bg: #1e1e2e;
   --bg-card: #313244;
@@ -275,7 +278,7 @@ tr.no-port { opacity: 0.4; }
 .oc-error-banner button:hover { background: rgba(243, 139, 168, 0.15); }
 
 /* Header */
-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 24px; border-bottom: 1px solid var(--border); flex-shrink: 0; gap: 16px; height: 44px; }
+header { display: flex; align-items: center; justify-content: space-between; padding: 8px 24px; border-bottom: 1px solid var(--border); flex-shrink: 0; gap: 16px; height: var(--header-height); }
 header h1 { font-size: 18px; font-weight: 600; color: var(--text-dim); white-space: nowrap; min-width: 0; }
 header h1 > a { color: var(--text); font-weight: 600; }
 header h1 span { color: inherit; font-weight: 400; }

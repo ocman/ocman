@@ -1581,10 +1581,11 @@ test.describe('phone viewport', () => {
 
     // Regression: .session-main used to compute to 0px high at phone
     // widths, leaving the conversation invisible.
+    const viewport = page.viewportSize()!;
     const main = await page.getByTestId('session-main').boundingBox();
     expect(main).not.toBeNull();
-    expect(main!.height).toBeGreaterThan(400);
-    expect(main!.width).toBeGreaterThan(380);
+    expect(main!.height).toBeGreaterThan(viewport.height / 2);
+    expect(main!.width).toBeGreaterThanOrEqual(viewport.width);
   });
 
   test('sessions drawer opens, selects a session, and auto-closes', async ({ mockedPage: page }) => {
@@ -1604,7 +1605,7 @@ test.describe('phone viewport', () => {
     const panel = page.getByRole('complementary', { name: 'Changes' });
     await expect(panel).toBeVisible();
     const box = await panel.boundingBox();
-    expect(box!.width).toBeGreaterThan(380);
+    expect(box!.width).toBeGreaterThanOrEqual(page.viewportSize()!.width);
 
     await page.keyboard.press('Escape');
     await expect(page.getByRole('complementary', { name: /Changes/ })).toBeHidden();

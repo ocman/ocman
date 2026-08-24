@@ -530,9 +530,9 @@ button.session-sidebar-group-header.collapsed::before {
 
 /* Responsive: phones (small tall screens). The conversation is the
    only in-flow view; the session sidebar and right panel become
-   full-screen overlays under the 44px header, toggled from the
-   header buttons (Escape closes; selecting a session closes the
-   drawer). Tablet and desktop keep the three-column layout. */
+   full-screen overlays under the header, toggled from the header
+   buttons (Escape closes; selecting a session closes the drawer).
+   Tablet and desktop keep the three-column layout. */
 @media (max-width: 768px) {
   .mobile-panel-toggle { display: inline-flex; }
   .session-layout > .session-sidebar,
@@ -541,7 +541,7 @@ button.session-sidebar-group-header.collapsed::before {
   .session-layout.mobile-details-open > .oc-changes-sidebar {
     display: flex;
     position: fixed;
-    top: 44px;
+    top: var(--header-height);
     left: 0;
     right: 0;
     bottom: 0;

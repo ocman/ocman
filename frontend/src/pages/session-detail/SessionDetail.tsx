@@ -167,16 +167,21 @@ export function SessionDetail({ id }: SessionDetailProps) {
     setMobilePanel((p) => (p === 'sidebar' ? null : 'sidebar'));
   }, []);
   const toggleMobileDetails = useCallback(() => {
-    setMobilePanel((p) => {
-      if (p === 'details') return null;
+    // Seeding happens OUTSIDE the setState updater: updaters must be
+    // pure (StrictMode double-invokes them), so the store mutation
+    // can't live inside one.
+    const opening = mobilePanel !== 'details';
+    if (opening) {
       // The right panel may be collapsed (no open panes) from a
       // desktop session; a full-screen overlay with only the icon
-      // strip reads as broken, so seed one pane.
+      // strip reads as broken, so seed one pane. Deliberately
+      // persisted: the desktop later reopens with that pane, which
+      // beats snapshot/restore bookkeeping for a rare case.
       const ui = useUiStore.getState();
       if (ui.changesSidebarOpenTabs.length === 0) ui.toggleChangesSidebarTab('info');
-      return 'details';
-    });
-  }, []);
+    }
+    setMobilePanel(opening ? 'details' : null);
+  }, [mobilePanel]);
   useEffect(() => {
     if (!mobilePanel) return;
     const onKey = (e: KeyboardEvent) => {
@@ -186,10 +191,17 @@ export function SessionDetail({ id }: SessionDetailProps) {
     return () => window.removeEventListener('keydown', onKey);
   }, [mobilePanel]);
   // Selecting a session from the drawer should reveal the conversation.
+  // The drawer click path closes synchronously here (no flicker frame);
+  // the id-keyed effect below covers every other navigation source
+  // (command palette, auto-redirect, closed-session reopen).
   const navigateFromSidebar = useCallback((nextId: string) => {
     setMobilePanel(null);
     navigateToSession(nextId);
   }, [navigateToSession]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- closing a phone overlay in response to an external route change; no render loop (id only changes via navigation).
+    setMobilePanel(null);
+  }, [id]);
 
   // The new SSE pipeline. Owns the EventSource, the reducer, the
   // initial fetch + reload + loadMore, the cache mirror, and the

@@ -87,6 +87,28 @@ describe('SessionDetail — phone overlay panels', () => {
     expect(useUiStore.getState().changesSidebarOpenTabs).toEqual(['session']);
   });
 
+  it('closes an open overlay on an external route change (palette, redirect)', async () => {
+    const other = makeSession({ id: 'sess_2', title: 'Other session' });
+    const active = makeSession({ id: 'sess_1' });
+    const handle = renderSessionPage({
+      sessionId: 'sess_1',
+      detail: makeSessionDetail(active),
+      sessions: [active, other],
+    });
+    await flushPromises();
+
+    fireEvent.click(screen.getByTestId('mobile-details-toggle'));
+    expect(screen.getByTestId('session-layout').className).toContain('mobile-details-open');
+
+    // Navigate WITHOUT going through the drawer — e.g. the command
+    // palette or the closed-session-reopen shortcut.
+    handle.navigate('/session/sess_2');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('session-layout').className).not.toContain('mobile-details-open');
+    });
+  });
+
   it('selecting a session from the drawer closes it', async () => {
     const other = makeSession({ id: 'sess_2', title: 'Other session' });
     const active = makeSession({ id: 'sess_1' });
