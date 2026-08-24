@@ -785,7 +785,7 @@ export function useSession(
     if (!sessionId || loadMoreInFlightRef.current) return;
     loadMoreInFlightRef.current = true;
     setLoadingMore(true);
-    const offset = viewRef.current.messages.length;
+    const offset = platformMessageCount(viewRef.current.messages);
     // No abort of a previous controller here: the in-flight guard above
     // means there is nothing to abort, and the cleanup already nulls the
     // ref when it abandons a page.
@@ -858,6 +858,10 @@ export function useSession(
     patchSession,
     dispatch,
   };
+}
+
+export function platformMessageCount(messages: Message[]): number {
+  return messages.reduce((count, message) => count + (message.data?.role === 'notice' ? 0 : 1), 0);
 }
 
 /**

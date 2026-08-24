@@ -282,11 +282,13 @@ vi.mock('../../../components/AssistantThread', () => ({
   AssistantThread: ({
     composer,
     footer,
+    hasMore,
     scrollToMessageId,
     scrollToMessageTick,
   }: {
     composer?: React.ReactNode;
     footer?: React.ReactNode;
+    hasMore?: boolean;
     scrollToMessageId?: string | null;
     scrollToMessageTick?: number;
   }) => {
@@ -297,6 +299,7 @@ vi.mock('../../../components/AssistantThread', () => ({
 
     return (
       <div data-testid="assistant-thread">
+        <div data-testid="assistant-thread-has-more">{String(hasMore)}</div>
         <div data-testid="assistant-thread-scroll-target">{scrollToMessageId || ''}</div>
         <div data-testid="assistant-thread-scroll-tick">{scrollToMessageTick || 0}</div>
         <div data-testid="assistant-thread-composer">{composer}</div>

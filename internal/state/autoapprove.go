@@ -46,6 +46,20 @@ func (d *DB) GetAutoApprove(ctx context.Context, platform, sessionID string) (en
 	return val != 0, true, nil
 }
 
+type ApprovalActor string
+
+const (
+	ApprovalActorAI   ApprovalActor = "ai"
+	ApprovalActorUser ApprovalActor = "user"
+)
+
+type ApprovalReply string
+
+const (
+	ApprovalReplyOnce   ApprovalReply = "once"
+	ApprovalReplyAlways ApprovalReply = "always"
+)
+
 // ApprovedPermission holds one approved permission for audit, inheritance,
 // and conversation footnotes.
 //
@@ -57,15 +71,15 @@ type ApprovedPermission struct {
 	Patterns       []string
 	JudgeSessionID string
 	Reasoning      string
-	ApprovedBy     string
-	Reply          string
+	ApprovedBy     ApprovalActor
+	Reply          ApprovalReply
 	Metadata       map[string]any
 	AskedAt        int64
 	ApprovedAt     int64
 }
 
 func (p ApprovedPermission) UserApproved() bool {
-	return p.ApprovedBy == "user"
+	return p.ApprovedBy == ApprovalActorUser
 }
 
 // RecordApprovedPermission persists one auto-approved permission for a
@@ -73,15 +87,15 @@ func (p ApprovedPermission) UserApproved() bool {
 // silently overwrite the existing row.
 func (d *DB) RecordApprovedPermission(ctx context.Context, platform, sessionID string, p ApprovedPermission) error {
 	if p.ApprovedBy == "" {
-		p.ApprovedBy = "ai"
+		p.ApprovedBy = ApprovalActorAI
 	}
 	if p.Reply == "" {
-		p.Reply = "once"
+		p.Reply = ApprovalReplyOnce
 	}
-	if p.ApprovedBy != "user" && p.ApprovedBy != "ai" {
+	if p.ApprovedBy != ApprovalActorUser && p.ApprovedBy != ApprovalActorAI {
 		return fmt.Errorf("recording approved permission: invalid approved_by %q", p.ApprovedBy)
 	}
-	if p.Reply != "once" && p.Reply != "always" {
+	if p.Reply != ApprovalReplyOnce && p.Reply != ApprovalReplyAlways {
 		return fmt.Errorf("recording approved permission: invalid reply %q", p.Reply)
 	}
 	patternsJSON, err := encodePatterns(p.Patterns)

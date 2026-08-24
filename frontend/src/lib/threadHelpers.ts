@@ -677,50 +677,6 @@ export interface ToolApproval {
 }
 
 /**
- * Marker line prefix used to smuggle approvals through the stringly-typed
- * `argsText` channel, same trick as `@time:` / `@user-executed-tool`.
- */
-export const APPROVAL_META = '@approved:';
-
-/** Encode one approval as an `argsText` marker line (leading newline). */
-export function encodeToolApproval(approval: ToolApproval): string {
-  return `\n${APPROVAL_META}${JSON.stringify(approval)}`;
-}
-
-/**
- * Pull every `@approved:` marker line out of argsText. Returns the
- * decoded approvals plus argsText with those lines removed so the
- * downstream renderers never see them.
- */
-export function parseToolApprovals(argsText: string): {
-  approvals: ToolApproval[];
-  strippedArgs: string;
-} {
-  if (!argsText.includes(APPROVAL_META)) return { approvals: [], strippedArgs: argsText };
-  const approvals: ToolApproval[] = [];
-  const kept = argsText.split('\n').filter((line) => {
-    if (!line.startsWith(APPROVAL_META)) return true;
-    try {
-      const parsed = JSON.parse(line.slice(APPROVAL_META.length)) as Partial<ToolApproval>;
-      approvals.push({
-        permission: parsed.permission || '',
-        patterns: parsed.patterns || [],
-        reasoning: parsed.reasoning || '',
-        approvedBy: parsed.approvedBy === 'user' ? 'user' : 'ai',
-        reply: parsed.reply === 'always' ? 'always' : parsed.reply === 'once' ? 'once' : undefined,
-        metadata: parsed.metadata && typeof parsed.metadata === 'object' && !Array.isArray(parsed.metadata)
-          ? parsed.metadata
-          : undefined,
-        askedAt: typeof parsed.askedAt === 'number' ? parsed.askedAt : undefined,
-        approvedAt: typeof parsed.approvedAt === 'number' ? parsed.approvedAt : undefined,
-      });
-    } catch { /* keep the tool renderable on a malformed marker */ }
-    return false;
-  });
-  return { approvals, strippedArgs: kept.join('\n') };
-}
-
-/**
  * Marker line prefix carrying a shell tool's human description, so the
  * command itself stays byte-for-byte intact in argsText. Without it a
  * multi-line command (heredoc, quoted block) has its first line

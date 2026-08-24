@@ -387,7 +387,10 @@ func (s *Service) respondAndPersistSafeApproval(
 		logger.WithError(err).Warn("background auto-approve: failed to respond to permission")
 		return
 	}
-	s.finishAIResponse(sessionID, permissionID, true)
+	if !s.finishAIResponse(sessionID, permissionID, true) {
+		logger.Info("background auto-approve: user response won permission race")
+		return
+	}
 
 	approvedAt := time.Now().UnixMilli()
 
@@ -409,8 +412,8 @@ func (s *Service) respondAndPersistSafeApproval(
 				Patterns:       patterns,
 				JudgeSessionID: "",
 				Reasoning:      reasoning,
-				ApprovedBy:     "ai",
-				Reply:          "once",
+				ApprovedBy:     state.ApprovalActorAI,
+				Reply:          state.ApprovalReplyOnce,
 				Metadata:       asked.metadata,
 				AskedAt:        asked.askedAt,
 				ApprovedAt:     approvedAt,

@@ -170,3 +170,28 @@ func TestProxyRemoteSessionEventsEmitsManualApproval(t *testing.T) {
 		t.Fatalf("raw OpenCode event missing from owner stream: %q", raw.String())
 	}
 }
+
+func TestProxyRemoteSessionEventsResurrectsPendingPermission(t *testing.T) {
+	srv, _ := newSessionsTestServer(t)
+	fp := &fakePlatform{
+		id: "opencode",
+		listPermissionsFn: func(sessionID string) ([]platforms.LivePrompt, error) {
+			if sessionID != "ses-1" {
+				t.Fatalf("ListPermissions session = %q", sessionID)
+			}
+			return []platforms.LivePrompt{{
+				"id": "perm-1", "sessionID": "child-1", "permission": "bash",
+				"patterns": []any{"git status"}, "metadata": map[string]any{"command": "git status"},
+			}}, nil
+		},
+		proxyEventsFn: func(_ context.Context, _ string, _ io.Writer, _ func()) error { return nil },
+	}
+	var raw, synthetic bytes.Buffer
+
+	if err := srv.ProxyRemoteSessionEvents(t.Context(), "opencode", "ses-1", fp, &raw, &synthetic, nil); err != nil {
+		t.Fatalf("ProxyRemoteSessionEvents: %v", err)
+	}
+	if !strings.Contains(synthetic.String(), "event: ocman.permission.pending") {
+		t.Fatalf("pending permission state was not replayed: %q", synthetic.String())
+	}
+}

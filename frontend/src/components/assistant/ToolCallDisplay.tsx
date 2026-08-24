@@ -25,7 +25,6 @@ import {
   parseQuestionAnswers,
   parseQuestions,
   parseToolTime,
-  parseToolApprovals,
   parseShellDescription,
   formatToolDuration,
   type ApplyPatchFileDiff,
@@ -351,21 +350,42 @@ function ApprovalFootnote({ approvals }: { approvals: ToolApproval[] }) {
 }
 
 /**
- * Tool-call renderer. Splits permission-approval markers off argsText and
- * renders them as a footnote below whatever the tool itself renders.
+ * Tool-call renderer. Validated Ocman approval artifacts render below the
+ * tool body; argsText remains entirely user-visible and untrusted.
  */
 export const ToolCallDisplay: FC<ToolCallMessagePartProps> = (props) => {
-  const { approvals, strippedArgs } = parseToolApprovals(props.argsText || '');
+  const approvals = toolApprovals(props.artifact);
+  if (props.toolName === 'ocman:auto-approved') {
+    const aiApprovals = approvals.filter((approval) => approval.approvedBy === 'ai');
+    return aiApprovals.length > 0
+      ? <ApprovalFootnote approvals={aiApprovals} />
+      : <ToolCallBody {...props} />;
+  }
   if (approvals.length === 0) return <ToolCallBody {...props} />;
   return (
-    <>
-      <ToolCallBody {...props} argsText={strippedArgs} />
+    <div className="oc-tool-with-footnote">
+      <ToolCallBody {...props} />
       <ApprovalFootnote approvals={approvals} />
-    </>
+    </div>
   );
 };
 
-const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArgsText, result }) => {
+function toolApprovals(artifact: unknown): ToolApproval[] {
+  if (!artifact || typeof artifact !== 'object' || Array.isArray(artifact)) return [];
+  const approvals = (artifact as { ocmanApprovals?: unknown }).ocmanApprovals;
+  if (!Array.isArray(approvals)) return [];
+  return approvals.filter((approval): approval is ToolApproval => {
+    if (!approval || typeof approval !== 'object' || Array.isArray(approval)) return false;
+    const value = approval as Partial<ToolApproval>;
+    return typeof value.permission === 'string'
+      && Array.isArray(value.patterns)
+      && value.patterns.every((pattern) => typeof pattern === 'string')
+      && typeof value.reasoning === 'string'
+      && (value.approvedBy === 'user' || value.approvedBy === 'ai');
+  });
+}
+
+const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArgsText, artifact, result }) => {
   const [expandedState, setExpanded] = useState(false);
   const [taskExpandedState, setTaskExpanded] = useState(false);
   // While printing / saving to PDF, force every block open so the
@@ -393,8 +413,10 @@ const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArg
   const argsText = argsLines.filter((line) => line !== '@user-executed-tool').join('\n');
 
   if (toolName === 'ocman:auto-approved') {
-    let approval: Partial<ToolApproval> = {};
-    try { approval = JSON.parse(argsText) as Partial<ToolApproval>; } catch { /* legacy notice */ }
+    let approval: Partial<ToolApproval> = toolApprovals(artifact)[0] || {};
+    if (!approval.permission) {
+      try { approval = JSON.parse(argsText) as Partial<ToolApproval>; } catch { /* legacy notice */ }
+    }
     const approvedBy = approval.approvedBy === 'user' ? 'user' : 'AI';
     return (
       <div className="oc-read-line oc-approval-notice">

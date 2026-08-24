@@ -430,6 +430,11 @@
   display: none;
 }
 
+.oc-hide-tool-details .oc-tool-with-footnote:has(> .oc-tool),
+.oc-hide-tool-details .oc-tool-with-footnote:has(> .oc-tool-compact) {
+  display: none;
+}
+
 /* Shared by the non-interactive header (task list / subagent task) and
    the <button> toggle on collapsible cards. The button resets keep the
    two visually identical. */

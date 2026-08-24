@@ -140,7 +140,7 @@ func BuildInheritedRules(ctx context.Context, lister ApprovalLister, platform, p
 	seen := map[string]bool{} // "key\x00pattern" -> true
 
 	for _, ap := range approvals {
-		if ap.ApprovedBy == "user" && ap.Reply != "always" {
+		if ap.ApprovedBy == state.ApprovalActorUser && ap.Reply != state.ApprovalReplyAlways {
 			continue
 		}
 		key := permissionKey(ap.PermissionText)

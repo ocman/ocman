@@ -89,7 +89,7 @@ import { MessageJumpPicker } from './MessageJumpPicker';
 import { MovePathDialog, MovePicker } from './MovePicker';
 import { useSessionActions } from './useSessionActions';
 import { useMessageQueue } from '../../lib/useMessageQueue';
-import { useSession } from './useSession';
+import { platformMessageCount, useSession } from './useSession';
 import { usePendingSend } from './usePendingSend';
 import { useAutoApprove } from '../../lib/useAutoApprove';
 import { ThreadSkeleton } from '../../components/Skeleton';
@@ -1052,7 +1052,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     },
   });
 
-  const hasMore = messages.length < totalMessages;
+  const hasMore = platformMessageCount(messages) < totalMessages;
   const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
   const composerModels = useMemo(
     () => Array.from(new Set([activeModel, session?.defaultModel, ...modelOptions].filter((model): model is string => !!model))),

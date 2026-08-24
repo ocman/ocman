@@ -41,6 +41,21 @@ describe('SessionDetail — initial mount', () => {
     expect(screen.getByTestId('session-layout')).toBeInTheDocument();
   });
 
+  it('excludes synthetic notices when deciding whether older messages remain', async () => {
+    const session = makeSession({ id: 'sess_notices' });
+    const detail = makeSessionDetail(session, {
+      messages: [
+        { id: 'msg1', sessionId: session.id, timeCreated: 1, data: { role: 'user' } },
+        { id: 'notice1', sessionId: session.id, timeCreated: 2, data: { role: 'notice' } },
+      ],
+      totalMessages: 2,
+    });
+
+    renderSessionPage({ sessionId: session.id, detail, sessions: [session] });
+
+    expect(await screen.findByTestId('assistant-thread-has-more')).toHaveTextContent('true');
+  });
+
   it('does not trigger maximum update depth on mount', async () => {
     // Regression guard: React throws "Maximum update depth exceeded"
     // when a component calls setState > 50 times in a single commit.

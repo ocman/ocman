@@ -564,6 +564,10 @@ describe('useSession — loadMore', () => {
     return { id, sessionId, timeCreated: 1_000, data: { role: 'user' as const } };
   }
 
+  function notice(id: string, sessionId: string) {
+    return { id, sessionId, timeCreated: 1_000, data: { role: 'notice' as const } };
+  }
+
   it('prepends an older page to the current session', async () => {
     const head = makeDetail({ messages: [msg('m2', SID)], totalMessages: 2 });
     const older = makeDetail({ messages: [msg('m1', SID)], totalMessages: 2 });
@@ -576,6 +580,19 @@ describe('useSession — loadMore', () => {
     await act(async () => { await result.current.loadMore(); });
 
     expect(result.current.messages.map((m) => m.id)).toEqual(['m1', 'm2']);
+  });
+
+  it('excludes synthetic notices from the pagination offset', async () => {
+    const head = makeDetail({ messages: [msg('m2', SID), notice('n1', SID)], totalMessages: 2 });
+    const fetchSession = vi.fn()
+      .mockResolvedValueOnce(head)
+      .mockResolvedValueOnce(makeDetail({ messages: [msg('m1', SID)], totalMessages: 2 }));
+    const { result } = renderHook(() => useSession(SID, { fetchSession }));
+    await waitFor(() => expect(result.current.messages).toHaveLength(2));
+
+    await act(async () => { await result.current.loadMore(); });
+
+    expect(fetchSession).toHaveBeenLastCalledWith(SID, 30, 1, expect.any(AbortSignal), undefined);
   });
 
   // A pagination response that lands after the user navigated away

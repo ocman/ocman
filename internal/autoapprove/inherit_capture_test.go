@@ -21,9 +21,11 @@ import (
 // capture tests. All other SettingsStore methods return zero values so
 // the pipeline treats settings as absent.
 type recordingStore struct {
-	mu      sync.Mutex
-	records []recordedApproval
-	called  chan error
+	mu       sync.Mutex
+	records  []recordedApproval
+	called   chan error
+	fail     int
+	attempts int
 }
 
 type recordedApproval struct {
@@ -44,6 +46,12 @@ func (s *recordingStore) GetSetting(context.Context, string) (string, bool, erro
 }
 func (s *recordingStore) RecordApprovedPermission(ctx context.Context, platform, sessionID string, p state.ApprovedPermission) error {
 	s.mu.Lock()
+	s.attempts++
+	if s.fail > 0 {
+		s.fail--
+		s.mu.Unlock()
+		return errors.New("temporary store failure")
+	}
 	s.records = append(s.records, recordedApproval{platform, sessionID, p})
 	s.mu.Unlock()
 	if s.called != nil {
@@ -56,6 +64,12 @@ func (s *recordingStore) snapshot() []recordedApproval {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]recordedApproval(nil), s.records...)
+}
+
+func (s *recordingStore) attemptCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.attempts
 }
 
 func waitForRecords(t *testing.T, store *recordingStore, want int) []recordedApproval {
@@ -81,7 +95,7 @@ func TestHandlePermissionReplied_CapturesAlways(t *testing.T) {
 		wantRows  int
 		wantPerm  string
 		wantPats  []string
-		wantReply string
+		wantReply state.ApprovalReply
 	}{
 		{
 			name:      "always writes exactly one row",
@@ -249,14 +263,58 @@ func TestAIResponseEventIsNotCapturedAsUser(t *testing.T) {
 	}
 }
 
-func TestFailedAIResponseDoesNotGuessObservedReplySource(t *testing.T) {
+func TestObservedAlwaysDuringAIResponseIsCapturedAsUser(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		adapterErr error
+	}{
+		{name: "AI request succeeds"},
+		{name: "AI request loses race", adapterErr: errors.New("already answered")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &recordingStore{}
+			s := &Service{deps: Deps{Store: store}, autoApprove: make(map[string]*autoApproveStatus), askedCache: make(map[string]askedPermission)}
+			asked := s.rememberAsked("opencode", "s1", "p1", "bash", nil, nil)
+			s.recordJudged("s1", "p1", verdictSafe)
+			adapter := &fakePlatform{respondPermissionFn: func(platforms.RespondPermissionRequest) error {
+				s.HandlePermissionReplied(t.Context(), "s1", "p1", "always")
+				return tc.adapterErr
+			}}
+
+			s.respondAndPersistSafeApproval("opencode", adapter, "s1", "p1", asked, "safe", log.NewEntry(log.StandardLogger()))
+			records := waitForRecords(t, store, 1)
+			if records[0].perm.ApprovedBy != "user" || records[0].perm.Reply != "always" {
+				t.Fatalf("approval = (%q, %q), want (user, always)", records[0].perm.ApprovedBy, records[0].perm.Reply)
+			}
+		})
+	}
+}
+
+func TestObservedRejectDuringAIResponsePreventsAIAudit(t *testing.T) {
 	store := &recordingStore{}
 	s := &Service{deps: Deps{Store: store}, autoApprove: make(map[string]*autoApproveStatus), askedCache: make(map[string]askedPermission)}
 	asked := s.rememberAsked("opencode", "s1", "p1", "bash", nil, nil)
 	s.recordJudged("s1", "p1", verdictSafe)
 	adapter := &fakePlatform{respondPermissionFn: func(platforms.RespondPermissionRequest) error {
-		s.HandlePermissionReplied(t.Context(), "s1", "p1", "always")
-		return errors.New("already answered")
+		s.HandlePermissionReplied(t.Context(), "s1", "p1", "reject")
+		return nil
+	}}
+
+	s.respondAndPersistSafeApproval("opencode", adapter, "s1", "p1", asked, "safe", log.NewEntry(log.StandardLogger()))
+	time.Sleep(20 * time.Millisecond)
+	if len(store.snapshot()) != 0 {
+		t.Fatalf("recorded rejected permission as %#v", store.snapshot())
+	}
+}
+
+func TestFailedAIOnceResponseDoesNotGuessObservedReplySource(t *testing.T) {
+	store := &recordingStore{}
+	s := &Service{deps: Deps{Store: store}, autoApprove: make(map[string]*autoApproveStatus), askedCache: make(map[string]askedPermission)}
+	asked := s.rememberAsked("opencode", "s1", "p1", "bash", nil, nil)
+	s.recordJudged("s1", "p1", verdictSafe)
+	adapter := &fakePlatform{respondPermissionFn: func(platforms.RespondPermissionRequest) error {
+		s.HandlePermissionReplied(t.Context(), "s1", "p1", "once")
+		return errors.New("transport failed")
 	}}
 
 	s.respondAndPersistSafeApproval("opencode", adapter, "s1", "p1", asked, "safe", log.NewEntry(log.StandardLogger()))
@@ -294,5 +352,47 @@ func TestUserReplyPersistenceDetachesCanceledContext(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("persistence was not called")
+	}
+}
+
+func TestUserReplyPersistenceRetriesTransientFailure(t *testing.T) {
+	store := &recordingStore{fail: 1}
+	s := &Service{deps: Deps{Store: store}, autoApprove: make(map[string]*autoApproveStatus), askedCache: make(map[string]askedPermission)}
+	s.rememberAsked("opencode", "s1", "p1", "bash", nil, nil)
+
+	s.HandleDirectPermissionReply(t.Context(), "s1", "p1", "always")
+
+	records := waitForRecords(t, store, 1)
+	if store.attemptCount() != 2 {
+		t.Fatalf("persistence attempts = %d, want 2", store.attemptCount())
+	}
+	if records[0].perm.ApprovedBy != "user" || records[0].perm.Reply != "always" {
+		t.Fatalf("approval = %#v", records[0].perm)
+	}
+}
+
+func TestUserReplyPersistenceCanRetryAfterRepeatedFailure(t *testing.T) {
+	store := &recordingStore{fail: 2}
+	s := &Service{deps: Deps{Store: store}, autoApprove: make(map[string]*autoApproveStatus), askedCache: make(map[string]askedPermission)}
+	s.rememberAsked("opencode", "s1", "p1", "bash", nil, nil)
+
+	s.HandleDirectPermissionReply(t.Context(), "s1", "p1", "always")
+	s.HandleDirectPermissionReply(t.Context(), "s1", "p1", "always")
+
+	records := waitForRecords(t, store, 1)
+	if store.attemptCount() != 3 || records[0].perm.ApprovedBy != "user" {
+		t.Fatalf("attempts = %d, records = %#v", store.attemptCount(), records)
+	}
+}
+
+func TestManualReplyCaptureDoesNotRetainIdleStatus(t *testing.T) {
+	store := &recordingStore{}
+	s := &Service{deps: Deps{Store: store}, autoApprove: make(map[string]*autoApproveStatus), askedCache: make(map[string]askedPermission)}
+	s.rememberAsked("opencode", "s1", "p1", "bash", nil, nil)
+
+	s.HandleDirectPermissionReply(t.Context(), "s1", "p1", "once")
+
+	if len(s.autoApprove) != 0 {
+		t.Fatalf("idle auto-approve statuses = %#v, want none", s.autoApprove)
 	}
 }

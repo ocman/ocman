@@ -4,7 +4,7 @@ import type { FailedSend } from './failedSends';
 import { extractTaskId } from './taskId';
 import { messageModelRef } from './turnStats';
 import { formatSeconds } from './format';
-import { encodeToolApproval, SHELL_DESC_META, type ToolApproval } from './threadHelpers';
+import { SHELL_DESC_META, type ToolApproval } from './threadHelpers';
 
 /**
  * Returns true when the MIME type denotes an image (`image/...`).
@@ -242,9 +242,10 @@ const TOOL_SPECIFIC_PERMISSIONS = new Set([
 
 function toolSpecificPermission(permission: string): string | undefined {
   const normalizedPermission = permission.toLowerCase().replace(/^mcp_/, '');
-  return [...TOOL_SPECIFIC_PERMISSIONS].find((tool) =>
-    normalizedPermission === tool || normalizedPermission.startsWith(`${tool} `),
-  );
+  for (const tool of TOOL_SPECIFIC_PERMISSIONS) {
+    if (normalizedPermission === tool || normalizedPermission.startsWith(`${tool} `)) return tool;
+  }
+  return undefined;
 }
 
 function metadataLeaves(value: unknown, key = ''): Array<{ key: string; value: unknown }> {
@@ -275,26 +276,26 @@ function metadataMatchesInput(metadata: Record<string, unknown>, input: unknown)
 
 function matchingToolPart(sortedToolParts: Part[], approval: PartData, noticeTime: number): Part | undefined {
   const askedAt = approval.askedAt || noticeTime;
-  const candidates = sortedToolParts.filter((part) => partStartedAt(part) <= askedAt);
   const metadata = approval.metadata;
-  if (metadata === undefined || Object.keys(metadata).length === 0) return candidates.at(-1);
-
   const permissionTool = toolSpecificPermission(approval.permission || '');
-
-  const matching = candidates.filter((part) => {
+  for (let i = sortedToolParts.length - 1; i >= 0; i--) {
+    const part = sortedToolParts[i];
+    if (partStartedAt(part) > askedAt) continue;
+    if (!metadata || Object.keys(metadata).length === 0) return part;
     const data = parsePart(part);
     const input = data.state?.input;
     const tool = (data.tool || '').toLowerCase().replace(/^mcp_/, '');
-    if (permissionTool && tool !== permissionTool) return false;
+    if (permissionTool && tool !== permissionTool) continue;
     if (permissionTool === 'bash') {
       const command = metadataLeaves(metadata).find((leaf) => canonicalMetadataKey(leaf.key) === 'command')?.value;
-      return typeof command === 'string'
+      if (typeof command === 'string'
         && typeof input?.command === 'string'
-        && input.command === command;
+        && input.command === command) return part;
+      continue;
     }
-    return metadataMatchesInput(metadata, input);
-  });
-  return matching.at(-1);
+    if (metadataMatchesInput(metadata, input)) return part;
+  }
+  return undefined;
 }
 
 /** Build (or rebuild) the `messageId → parts[]` index. */
@@ -491,16 +492,17 @@ export function createConvertMessages(): ConvertMessagesFn {
             type: 'tool-call' as const,
             toolCallId: m.id,
             toolName: 'ocman:auto-approved',
-            argsText: JSON.stringify({
-              permission: pd.permission,
-              patterns: pd.patterns,
+            argsText: '',
+            artifact: { ocmanApprovals: [{
+              permission: pd.permission || '',
+              patterns: pd.patterns || [],
               reasoning: pd.reasoning ?? '',
               approvedBy: pd.approvedBy === 'user' ? 'user' : 'ai',
               reply: pd.reply,
               metadata: pd.metadata,
               askedAt: pd.askedAt,
               approvedAt: pd.approvedAt,
-            }),
+            }] },
             result: undefined,
           });
         }
@@ -591,6 +593,7 @@ export function createConvertMessages(): ConvertMessagesFn {
       toolCallId: string;
       toolName: string;
       argsText: string;
+      artifact?: { ocmanApprovals: ToolApproval[] };
       result?: string;
     }> = [];
 
@@ -992,13 +995,12 @@ export function createConvertMessages(): ConvertMessagesFn {
         }
       }
 
-      // Footnote any AI approval that unblocked this part onto the
+      // Footnote any approval that unblocked this part onto the
       // tool call(s) it produced.
       const approvals = approvalsByPartId[msgPartsRaw[partIdx]?.id || ''];
       if (approvals) {
-        const markers = approvals.map(encodeToolApproval).join('');
         for (let i = toolCallsBefore; i < toolCalls.length; i++) {
-          toolCalls[i].argsText += markers;
+          toolCalls[i].artifact = { ocmanApprovals: approvals };
         }
       }
     });

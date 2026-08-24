@@ -30,7 +30,7 @@ function makePart(messageId: string, data: PartData, id = '', timeCreated = 0): 
 type ContentItem =
   | { type: 'text'; text: string }
   | { type: 'image'; image: string }
-  | { type: 'tool-call'; toolCallId: string; toolName: string; argsText: string; result?: string };
+  | { type: 'tool-call'; toolCallId: string; toolName: string; argsText: string; artifact?: { ocmanApprovals: Array<Record<string, unknown>> }; result?: string };
 
 function asContentArray(content: ThreadMessageLike['content']): ContentItem[] {
   return content as ContentItem[];
@@ -147,14 +147,14 @@ describe('AI approval footnotes', () => {
     expect(out).toHaveLength(1);
     const calls = asContentArray(out[0].content).filter((c) => c.type === 'tool-call');
     expect(calls).toHaveLength(3);
-    expect(calls[0].argsText).not.toContain('@approved:');
-    expect(calls[1].argsText).toContain(`@approved:${JSON.stringify({
+    expect(calls[0].artifact).toBeUndefined();
+    expect(calls[1].artifact?.ocmanApprovals).toEqual([{
       permission: 'bash',
       patterns: ['rm -rf /tmp/foo'],
       reasoning: 'Temp dir only.',
       approvedBy: 'ai',
-    })}`);
-    expect(calls[2].argsText).not.toContain('@approved:');
+    }]);
+    expect(calls[2].artifact).toBeUndefined();
   });
 
   it('uses askedAt and command metadata so a later Bash does not steal the approval', () => {
@@ -177,8 +177,8 @@ describe('AI approval footnotes', () => {
     const calls = asContentArray(createConvertMessages()(messages, parts)[0].content)
       .filter((item) => item.type === 'tool-call');
 
-    expect(calls[0].argsText).toContain('@approved:');
-    expect(calls[1].argsText).not.toContain('@approved:');
+    expect(calls[0].artifact?.ocmanApprovals).toHaveLength(1);
+    expect(calls[1].artifact).toBeUndefined();
   });
 
   it.each([
@@ -209,8 +209,8 @@ describe('AI approval footnotes', () => {
     const calls = asContentArray(createConvertMessages()(messages, parts)[0].content)
       .filter((item) => item.type === 'tool-call');
 
-    expect(calls[0].argsText).toContain('@approved:');
-    expect(calls[1].argsText).not.toContain('@approved:');
+    expect(calls[0].artifact?.ocmanApprovals).toHaveLength(1);
+    expect(calls[1].artifact).toBeUndefined();
   });
 
   it('keeps a metadata-rich approval standalone when no tool input matches', () => {
@@ -229,6 +229,12 @@ describe('AI approval footnotes', () => {
     expect(asContentArray(out[1].content)[0]).toMatchObject({
       type: 'tool-call',
       toolName: 'ocman:auto-approved',
+      artifact: { ocmanApprovals: [{
+        permission: 'bash',
+        patterns: ['rm -rf /tmp/foo'],
+        reasoning: 'Temp dir only.',
+        approvedBy: 'ai',
+      }] },
     });
   });
 
@@ -246,7 +252,7 @@ describe('AI approval footnotes', () => {
     const call = asContentArray(out[0].content)[0];
 
     expect(out.map((message) => message.id)).not.toContain('ocman-notice-p1');
-    expect(call.type === 'tool-call' && call.argsText).toContain('@approved:');
+    expect(call.type === 'tool-call' && call.artifact?.ocmanApprovals).toHaveLength(1);
   });
 
   it('requires a compatible tool name when read and edit share a path', () => {
@@ -279,9 +285,9 @@ describe('AI approval footnotes', () => {
       .filter((item) => item.type === 'tool-call');
 
     expect(calls[0].toolName).toBe('edit');
-    expect(calls[0].argsText).toContain('@approved:');
+    expect(calls[0].artifact?.ocmanApprovals).toHaveLength(1);
     expect(calls[1].toolName).toBe('__read__');
-    expect(calls[1].argsText).not.toContain('@approved:');
+    expect(calls[1].artifact).toBeUndefined();
   });
 
   it('keeps an edit approval standalone when only a read matches its path', () => {
@@ -314,7 +320,7 @@ describe('AI approval footnotes', () => {
     const calls = asContentArray(out[0].content).filter((item) => item.type === 'tool-call');
 
     expect(out.map((message) => message.id)).toContain('ocman-notice-p1');
-    expect(calls.every((call) => !call.argsText.includes('@approved:'))).toBe(true);
+    expect(calls.every((call) => call.artifact === undefined)).toBe(true);
   });
 
   it('matches cross-cutting external_directory metadata across tool names', () => {
@@ -342,7 +348,7 @@ describe('AI approval footnotes', () => {
     const call = asContentArray(out[0].content)[0];
 
     expect(out).toHaveLength(1);
-    expect(call.type === 'tool-call' && call.argsText).toContain('@approved:');
+    expect(call.type === 'tool-call' && call.artifact?.ocmanApprovals).toHaveLength(1);
   });
 
   it('attaches a user approval without rendering a standalone notice', () => {
@@ -364,7 +370,7 @@ describe('AI approval footnotes', () => {
 
     expect(out).toHaveLength(1);
     const call = asContentArray(out[0].content)[0];
-    expect(call.type === 'tool-call' && call.argsText).toContain('"approvedBy":"user"');
+    expect(call.type === 'tool-call' && call.artifact?.ocmanApprovals[0]).toMatchObject({ approvedBy: 'user' });
   });
 
   it('matches live SSE tool parts, which carry time.start but no timeCreated', () => {
@@ -390,7 +396,7 @@ describe('AI approval footnotes', () => {
 
     expect(out).toHaveLength(1);
     const call = asContentArray(out[0].content)[0];
-    expect(call.type === 'tool-call' && call.argsText).toContain('@approved:');
+    expect(call.type === 'tool-call' && call.artifact?.ocmanApprovals).toHaveLength(1);
   });
 
   it('keeps the standalone notice when no tool part precedes the approval', () => {
@@ -415,12 +421,12 @@ describe('AI approval footnotes', () => {
     const tool = toolPart('a1', 't1', 'rm -rf /tmp/foo', 150);
 
     const before = asContentArray(convert([assistant], [tool])[0].content)[0];
-    expect(before.type === 'tool-call' && before.argsText).not.toContain('@approved:');
+    expect(before.type === 'tool-call' && before.artifact).toBeUndefined();
 
     const notice: Message = { id: 'ocman-notice-p1', sessionId: 's', timeCreated: 200, data: { role: 'notice' } };
     const after = convert([assistant, notice], [tool, makePart('ocman-notice-p1', approval, 'n1-part', 200)]);
     const call = asContentArray(after[0].content)[0];
-    expect(call.type === 'tool-call' && call.argsText).toContain('@approved:');
+    expect(call.type === 'tool-call' && call.artifact?.ocmanApprovals).toHaveLength(1);
   });
 });
 

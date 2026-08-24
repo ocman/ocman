@@ -68,19 +68,23 @@ func (s *Server) handleSessionPermissions(w http.ResponseWriter, r *http.Request
 		// ensureAutoApprove deduplicates against the SSE tee so we
 		// don't double-judge a permission that arrives via both paths.
 		if !isRemotePlatformID(string(adapter.ID())) {
-			for _, entry := range entries {
-				permissionID, _ := entry["id"].(string)
-				permission, _ := entry["permission"].(string)
-				if permissionID == "" || permission == "" {
-					continue
-				}
-				patterns := extractPermissionPatterns(entry)
-				metadata := extractPermissionMetadata(entry)
-				s.aaSvc().Ensure(adapter.ID(), adapter, promptSessionID(entry, sessionID), permissionID, permission, patterns, metadata)
-			}
+			s.ensurePendingPermissions(adapter, sessionID, entries)
 		}
 		writeJSON(w, entries)
 	})
+}
+
+func (s *Server) ensurePendingPermissions(adapter platforms.Platform, sessionID string, entries []platforms.LivePrompt) {
+	for _, entry := range entries {
+		permissionID, _ := entry["id"].(string)
+		permission, _ := entry["permission"].(string)
+		if permissionID == "" || permission == "" {
+			continue
+		}
+		patterns := extractPermissionPatterns(entry)
+		metadata := extractPermissionMetadata(entry)
+		s.aaSvc().Ensure(adapter.ID(), adapter, promptSessionID(entry, sessionID), permissionID, permission, patterns, metadata)
+	}
 }
 
 func promptSessionID(entry platforms.LivePrompt, fallback string) string {

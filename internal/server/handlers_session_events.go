@@ -131,16 +131,44 @@ func (s *Server) ProxyRemoteSessionEvents(ctx context.Context, _ string, session
 }
 
 func (s *Server) proxyOwnerSessionEvents(ctx context.Context, sessionID string, adapter platforms.Platform, rawWriter, syntheticWriter io.Writer, flush func()) error {
-	sink := s.aaSvc().RegisterSink(sessionID, syntheticWriter, flush)
-	defer s.aaSvc().UnregisterSink(sessionID, sink)
+	var sinkMu sync.Mutex
+	sinks := make(map[string]*autoapprove.Sink)
+	registerSink := func(id string) {
+		if id == "" {
+			return
+		}
+		sinkMu.Lock()
+		defer sinkMu.Unlock()
+		if sinks[id] == nil {
+			sinks[id] = s.aaSvc().RegisterSink(id, syntheticWriter, flush)
+		}
+	}
+	registerSink(sessionID)
+	defer func() {
+		sinkMu.Lock()
+		defer sinkMu.Unlock()
+		for id, sink := range sinks {
+			s.aaSvc().UnregisterSink(id, sink)
+		}
+	}()
+	if entries, err := adapter.ListPermissions(ctx, sessionID); err != nil {
+		log.WithError(err).WithField("sessionID", sessionID).Debug("SSE proxy: listing pending permissions for replay")
+	} else {
+		for _, entry := range entries {
+			registerSink(promptSessionID(entry, sessionID))
+		}
+		s.ensurePendingPermissions(adapter, sessionID, entries)
+	}
 
 	tee := &autoapprove.Tee{
 		W:     rawWriter,
 		Flush: flush,
 		OnPermission: func(evtSessionID, permissionID, permission string, patterns []string, metadata map[string]any) {
+			registerSink(evtSessionID)
 			s.aaSvc().Ensure(adapter.ID(), adapter, evtSessionID, permissionID, permission, patterns, metadata)
 		},
 		OnPermissionReplied: func(evtSessionID, permissionID, reply string) {
+			registerSink(evtSessionID)
 			s.aaSvc().HandlePermissionReplied(ctx, evtSessionID, permissionID, reply)
 		},
 	}
