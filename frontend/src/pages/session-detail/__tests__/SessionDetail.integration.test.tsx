@@ -780,18 +780,46 @@ describe('SessionDetail — session tree usage', () => {
       activeDurationMs: 125_000,
       totalInputTokens: 10,
     });
+    const child = makeSession({
+      id: 'sess_child',
+      parentId: session.id,
+      durationMs: 3_600_000,
+      activeDurationMs: 1_800_000,
+    });
     renderSessionPage({
       sessionId: session.id,
-      detail: makeSessionDetail(session),
-      sessions: [session],
+      detail: makeSessionDetail(session, { sessionTree: [session, child] }),
+      sessions: [session, child],
     });
 
-    fireEvent.click(await screen.findByTitle('Click for cost and token usage details'));
+    fireEvent.click(await screen.findByRole('button', { name: '$0.00' }));
 
-    const timing = await screen.findByText('Timing');
-    expect(timing.parentElement).toHaveTextContent(`Started${formatDate(startedAt)}`);
-    expect(timing.parentElement).toHaveTextContent('Total time1h 1m');
-    expect(timing.parentElement).toHaveTextContent('Agent time2m 5s');
+    expect((await screen.findByText('Started')).parentElement).toHaveTextContent(formatDate(startedAt));
+    expect(screen.getByText('Total time').parentElement).toHaveTextContent('1h 1m');
+    expect(screen.getByText('Agent time').parentElement).toHaveTextContent('2m 5s');
+  });
+
+  it('ticks agent time in the usage popover while the session is running', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    try {
+      const session = makeSession({
+        status: 'busy',
+        activeDurationMs: 125_000,
+        totalInputTokens: 10,
+      });
+      renderSessionPage({ sessionId: session.id, detail: makeSessionDetail(session) });
+      await act(async () => { await flushPromises(8); });
+
+      fireEvent.click(screen.getByRole('button', { name: '$0.00' }));
+      expect(screen.getByText('Agent time').parentElement).toHaveTextContent('2m 5s');
+
+      act(() => vi.advanceTimersByTime(1_000));
+
+      expect(screen.getByText('Agent time').parentElement).toHaveTextContent('2m 6s');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('uses the detail tree for parent lookup without fetching the full session list', async () => {
