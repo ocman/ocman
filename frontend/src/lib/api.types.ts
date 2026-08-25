@@ -101,10 +101,9 @@ export interface Session {
   platform: string;
   projectId: string;
   /**
-   * Session this one descends from, when any. Populated from either
-   * OpenCode's `session.parent_id` (subagent sessions) or ocman's
-   * `child_sessions.parent_session_id` (sessions spawned via the MCP
-   * split tools). Empty/undefined for top-level sessions. Drives the
+   * Session this one descends from, when any. Populated from OpenCode's
+   * `session.parent_id` for subagent sessions. Empty/undefined for
+   * top-level sessions. Drives the
    * parent/child nesting in the session lists (see `nestSessions`).
    */
   parentId?: string;
@@ -387,13 +386,6 @@ export interface SharedConversation {
 export interface TaskSessionData {
   messages: Message[];
   parts: Part[];
-}
-
-export interface ChildSessionReference {
-  id: string;
-  intent: string;
-  status: string;
-  createdAt: number;
 }
 
 // One file-touching tool call inside a session. Returned as part of

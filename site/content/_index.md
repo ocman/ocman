@@ -46,7 +46,7 @@ layout: hextra-home
   >}}
   {{< hextra/feature-card
     title="MCP server"
-    subtitle="Let your agent split work into parallel child sessions and coordinate the results."
+    subtitle="Workflow control tools and embedded file display for agents."
     link="docs/features/mcp"
   >}}
   {{< hextra/feature-card

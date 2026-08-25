@@ -36,24 +36,9 @@ func TestAaSvcOpencodeAdapter(t *testing.T) {
 	}
 }
 
-// TestAaSvcParentSessionIDResolver covers the ParentSessionID closure
-// wired in aaSvc(): a tracked child resolves to its parent; an unknown
-// session and a server with no state DB both miss (so the child simply
-// doesn't inherit rather than erroring).
-func TestAaSvcParentSessionIDResolver(t *testing.T) {
-	// No state DB → always miss.
+// TestAaSvcParentSessionIDResolver covers the no-database fallback.
+func TestAaSvcParentSessionIDResolver_NoDB(t *testing.T) {
 	if _, ok := (&Server{}).aaSvc().ResolveParentSessionID(t.Context(), "child"); ok {
-		t.Fatal("expected miss with no state DB")
-	}
-
-	sdb := openWatcherTestStateDB(t)
-	insertWatcherChildSession(t, sdb, "child-1", "parent-1", "running")
-	srv := &Server{stateDB: sdb}
-
-	if parent, ok := srv.aaSvc().ResolveParentSessionID(t.Context(), "child-1"); !ok || parent != "parent-1" {
-		t.Fatalf("ResolveParentSessionID(t.Context(), child-1) = (%q,%v); want (parent-1,true)", parent, ok)
-	}
-	if _, ok := srv.aaSvc().ResolveParentSessionID(t.Context(), "unknown"); ok {
-		t.Fatal("expected miss for an untracked session")
+		t.Fatal("expected miss with no OpenCode DB")
 	}
 }

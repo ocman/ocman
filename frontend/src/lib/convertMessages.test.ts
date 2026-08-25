@@ -662,7 +662,7 @@ describe('convertMessages', () => {
     const out = convertMessages(
       [m],
       [makePart('m', { type: 'reasoning', text: 'thinking…', time: { start: 1000 } })],
-      undefined, undefined, undefined, undefined, true, undefined, 8800,
+      undefined, undefined, undefined, undefined, true, 8800,
     );
     expect(out[0].content).toBe('> **Thinking:** thinking… · 7.8s');
   });
@@ -849,70 +849,6 @@ describe('convertMessages', () => {
     expect(parsedResult.taskId).toBe('ses_abc');
     expect(parsedResult.taskOutput).toContain('Found 5 files');
     expect(parsedResult.subSession).toBeUndefined();
-  });
-
-  it.each(['new_session', 'mcp_new_session', 'ocman_new_session'])('renders %s child sessions as task cards', (tool) => {
-    const m = makeMessage('m', { role: 'assistant' });
-    const out = convertMessages([m], [
-      makePart('m', {
-        type: 'tool',
-        tool,
-        state: {
-          status: 'completed',
-          input: { intent: 'Audit auth and APIs' },
-          output: JSON.stringify({ child_session_id: 'ses_child', status: 'completed', summary: '**Found** two issues.' }),
-        },
-      } as PartData),
-    ]);
-    const items = asContentArray(out[0].content);
-    const tc = items.find((i) => i.type === 'tool-call') as { toolName: string; argsText: string; result?: string };
-
-    expect(tc.toolName).toBe('__task__');
-    expect(tc.argsText).toBe('completed\nAudit auth and APIs');
-    expect(JSON.parse(tc.result as string)).toMatchObject({
-      taskId: 'ses_child',
-      taskOutput: '**Found** two issues.',
-    });
-  });
-
-  it('links a running new_session card before its terminal output arrives', () => {
-    const m = makeMessage('m', { role: 'assistant' });
-    const out = convertMessages(
-      [m],
-      [makePart('m', {
-        type: 'tool',
-        tool: 'new_session',
-        state: { status: 'running', input: { intent: 'Explain the recent work' } },
-      } as PartData)],
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      true,
-      [{ id: 'ses_child', intent: 'Explain the recent work', status: 'running', createdAt: 1100 }],
-    );
-    const items = asContentArray(out[0].content);
-    const tc = items.find((i) => i.type === 'tool-call') as { result?: string };
-
-    expect(JSON.parse(tc.result as string)).toMatchObject({ taskId: 'ses_child' });
-  });
-
-  it('assigns same-intent running new_session calls to distinct children', () => {
-    const m = makeMessage('m', { role: 'assistant' });
-    const out = convertMessages(
-      [m],
-      [
-        makePart('m', { type: 'tool', tool: 'new_session', state: { status: 'running', input: { intent: 'Review' } } } as PartData, 'p1', 1000),
-        makePart('m', { type: 'tool', tool: 'new_session', state: { status: 'running', input: { intent: 'Review' } } } as PartData, 'p2', 2000),
-      ],
-      undefined, undefined, undefined, undefined, true,
-      [
-        { id: 'child-1', intent: 'Review', status: 'running', createdAt: 1100 },
-        { id: 'child-2', intent: 'Review', status: 'running', createdAt: 2100 },
-      ],
-    );
-    const calls = asContentArray(out[0].content).filter((item) => item.type === 'tool-call') as Array<{ result?: string }>;
-    expect(calls.map((call) => JSON.parse(call.result as string).taskId)).toEqual(['child-1', 'child-2']);
   });
 
   it('renders question calls as __question__ tool-calls', () => {

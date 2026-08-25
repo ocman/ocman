@@ -342,7 +342,7 @@ func injectApprovalNotices(ctx context.Context, platform, sessionID string, stat
 //   - ids: comma-separated list of task session IDs.
 //   - limit: max messages per sub-session (default 10, max 30).
 //
-// Response: { "tasks": {...}, "children": [{ "id", "intent", "status", "createdAt" }] }
+// Response: { "tasks": {...} }
 func (s *Server) handleSessionTasks(w http.ResponseWriter, r *http.Request) {
 	idsParam := r.URL.Query().Get("ids")
 	var ids []string
@@ -365,12 +365,6 @@ func (s *Server) handleSessionTasks(w http.ResponseWriter, r *http.Request) {
 	type taskData struct {
 		Messages json.RawMessage `json:"messages"`
 		Parts    json.RawMessage `json:"parts"`
-	}
-	type childData struct {
-		ID        string `json:"id"`
-		Intent    string `json:"intent"`
-		Status    string `json:"status"`
-		CreatedAt int64  `json:"createdAt"`
 	}
 	result := make(map[string]taskData, len(ids))
 	for _, taskID := range ids {
@@ -410,16 +404,5 @@ func (s *Server) handleSessionTasks(w http.ResponseWriter, r *http.Request) {
 		result[taskID] = taskData{Messages: msgsJSON, Parts: ptsJSON}
 	}
 
-	children := []childData{}
-	if s.stateDB != nil {
-		if rows, err := s.stateDB.ListChildSessionsByParent(r.Context(), r.PathValue("id")); err == nil {
-			children = make([]childData, 0, len(rows))
-			for _, child := range rows {
-				children = append(children, childData{
-					ID: child.ID, Intent: child.Intent, Status: child.Status, CreatedAt: child.CreatedAt,
-				})
-			}
-		}
-	}
-	writeJSON(w, map[string]interface{}{"tasks": result, "children": children})
+	writeJSON(w, map[string]interface{}{"tasks": result})
 }

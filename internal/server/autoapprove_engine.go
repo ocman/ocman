@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
+	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 )
@@ -36,14 +37,14 @@ func (s *Server) aaSvc() *autoapprove.Service {
 				return sess.Directory, nil
 			},
 			ParentSessionID: func(ctx context.Context, childID string) (string, bool) {
-				if s.stateDB == nil {
+				if s.db == nil {
 					return "", false
 				}
-				cs, err := s.stateDB.GetChildSession(ctx, childID)
-				if err != nil || cs == nil || cs.ParentSessionID == "" {
+				session, err := s.db.GetSession(ctx, childID)
+				if err != nil || session == nil || session.ParentID == "" {
 					return "", false
 				}
-				return cs.ParentSessionID, true
+				return session.ParentID, true
 			},
 			OpencodePlatform: func() platforms.Platform {
 				if s.registry == nil {
@@ -76,4 +77,8 @@ func (s *Server) aaSvc() *autoapprove.Service {
 		s.aaSvcCached = autoapprove.NewService(deps)
 	})
 	return s.aaSvcCached
+}
+
+func (s *Server) onLocalSessionStatus(sessionID string, status db.SessionStatus) {
+	s.broadcastSessionStatus(sessionID, status)
 }

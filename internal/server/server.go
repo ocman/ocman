@@ -19,7 +19,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
-	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -137,24 +136,10 @@ type Server struct {
 	// queueSvcCached is the follow-up message queue service (#58), built
 	// lazily on first use. Guarded by
 	// queueSvcOnce. See queue.go.
-	queueSvcCached   *queuesvc.Service
-	queueSvcOnce     sync.Once
-	queueWorker      *worker.Worker[queueFlush]
-	queueWorkerOnce  sync.Once
-	childResults     *internalmcp.ChildResultBroker
-	childWorker      *worker.Worker[childWork]
-	childWorkerOnce  sync.Once
-	childWatchMu     sync.Mutex
-	childWatchCtx    context.Context
-	childWatchCancel context.CancelFunc
-	childWatches     map[string]*childEventWatch
-
-	// childUnresolved counts consecutive polls in which a child session
-	// (or its parent) could not be resolved on any platform, so the
-	// watcher can reap a genuinely deleted one without reaping a remote
-	// that is merely reconnecting. See mcp_watcher.go.
-	childUnresolvedMu sync.Mutex
-	childUnresolved   map[string]int
+	queueSvcCached  *queuesvc.Service
+	queueSvcOnce    sync.Once
+	queueWorker     *worker.Worker[queueFlush]
+	queueWorkerOnce sync.Once
 
 	// runtime is the local Host's ocruntime.Runtime, injected into
 	// newLocalHost. Defaults to the native tmux runtime; tests override it
@@ -198,7 +183,6 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		startTime:    time.Now(),
 		broadcastHub: newBroadcastHub(),
 		activity:     newClientActivityPolicy(time.Now),
-		childResults: internalmcp.NewChildResultBroker(),
 
 		runtime: ocruntime.NewNativeRuntime(),
 	}
@@ -485,9 +469,6 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	go s.runAutoArchiveLoop(ctx)
 	go s.runProjectsIndexLoop(ctx)
 	go s.runLLMMetricsLoop(ctx)
-	s.startChildEventWatches(ctx)
-	defer s.stopChildEventWatches()
-	go s.runChildSessionWatcher(ctx)
 	go s.runWorkflowEngine(ctx)
 	go s.runWorkflowTriggerEngine(ctx)
 	go s.runWorkflowMirror(ctx)

@@ -42,7 +42,7 @@ func TestFetchPRHeadHasDeadline(t *testing.T) {
 //
 //   - Frontend POSTs {dir, remote, type:"issue", number, mode:"session"}.
 //   - Backend resolves the upstream, fetches the issue, renders the
-//     template, calls SessionLauncher.Launch, returns the child ID.
+//     template, creates a session, and returns its ID.
 //
 // fakePlatform's createSessionFn / sendMessageFn capture the call so
 // the test can verify the prompt was rendered against the issue body.

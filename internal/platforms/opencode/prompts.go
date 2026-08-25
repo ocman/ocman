@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 // Pending-prompt listing: permission and question prompts fetched
@@ -37,21 +36,12 @@ func (a *Adapter) descendantDirectories(ctx context.Context, sessionID string) [
 	if a.db == nil {
 		return nil
 	}
-	mcpChildren := make(map[string][]string)
-	if a.childLinks != nil {
-		if parents, err := a.childLinks.ChildSessionParents(ctx); err == nil {
-			for key, parentID := range parents {
-				mcpChildren[parentID] = append(mcpChildren[parentID], key.SessionID)
-			}
-		}
-	}
 	ids := make(map[string]bool)
 	queue := []string{sessionID}
 	for len(queue) > 0 {
 		parentID := queue[0]
 		queue = queue[1:]
 		children, _ := a.db.GetSubagentSessionIDs(ctx, parentID)
-		children = append(children, mcpChildren[parentID]...)
 		for _, childID := range children {
 			if !ids[childID] {
 				ids[childID] = true
@@ -88,17 +78,12 @@ func (a *Adapter) observedPromptEntries(ctx context.Context, kind, sessionID str
 	if a.db != nil {
 		parents, _ = a.db.GetSessionParentIDs(ctx, ids)
 	}
-	mcpParents := map[state.Key]string{}
-	if a.childLinks != nil {
-		mcpParents, _ = a.childLinks.ChildSessionParents(ctx)
-	}
-
 	out := make([]livePromptEntry, 0, len(entries))
 	for _, entry := range entries {
 		prompt := entry.prompt
 		promptSessionID := promptString(prompt, "sessionID")
 		nativeAncestor := parents[promptSessionID]
-		if promptSessionID == sessionID || nativeAncestor == sessionID || mcpDescendsFrom(mcpParents, promptSessionID, sessionID) || mcpDescendsFrom(mcpParents, nativeAncestor, sessionID) {
+		if promptSessionID == sessionID || nativeAncestor == sessionID {
 			out = append(out, entry)
 		}
 	}
@@ -115,17 +100,4 @@ func uniqueStrings(values []string) []string {
 		}
 	}
 	return out
-}
-
-func mcpDescendsFrom(parents map[state.Key]string, childID, ancestorID string) bool {
-	seen := make(map[string]bool)
-	for childID != "" && !seen[childID] {
-		seen[childID] = true
-		parentID := parents[state.Key{Platform: string(PlatformID), SessionID: childID}]
-		if parentID == ancestorID {
-			return true
-		}
-		childID = parentID
-	}
-	return false
 }

@@ -10,19 +10,9 @@ import (
 // Install extracts skills to XDG data then links them into OpenCode's global
 // skill directory. Existing user-owned paths are left untouched.
 func Install(skills map[string][]byte) error {
-	dataHome := os.Getenv("XDG_DATA_HOME")
-	configHome := os.Getenv("XDG_CONFIG_HOME")
-	if dataHome == "" || configHome == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return err
-		}
-		if dataHome == "" {
-			dataHome = filepath.Join(home, ".local", "share")
-		}
-		if configHome == "" {
-			configHome = filepath.Join(home, ".config")
-		}
+	dataHome, configHome, err := homes()
+	if err != nil {
+		return err
 	}
 	for name, content := range skills {
 		target := filepath.Join(dataHome, "ocman", "opencode", "skills", name, "SKILL.md")
@@ -53,4 +43,40 @@ func Install(skills map[string][]byte) error {
 		}
 	}
 	return nil
+}
+
+// Remove deletes a retired skill only when its discovery path is still the
+// symlink created by Install. User-owned paths are left untouched.
+func Remove(name string) error {
+	dataHome, configHome, err := homes()
+	if err != nil {
+		return err
+	}
+	targetDir := filepath.Join(dataHome, "ocman", "opencode", "skills", name)
+	link := filepath.Join(configHome, "opencode", "skills", name)
+	if destination, err := os.Readlink(link); err == nil && destination == targetDir {
+		if err := os.Remove(link); err != nil {
+			return err
+		}
+	}
+	return os.RemoveAll(targetDir)
+}
+
+func homes() (string, string, error) {
+	dataHome := os.Getenv("XDG_DATA_HOME")
+	configHome := os.Getenv("XDG_CONFIG_HOME")
+	if dataHome != "" && configHome != "" {
+		return dataHome, configHome, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", "", err
+	}
+	if dataHome == "" {
+		dataHome = filepath.Join(home, ".local", "share")
+	}
+	if configHome == "" {
+		configHome = filepath.Join(home, ".config")
+	}
+	return dataHome, configHome, nil
 }

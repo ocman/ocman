@@ -26,10 +26,6 @@ func (m *memStore) EnqueueMessage(_ context.Context, msg state.QueuedMessage) er
 	return nil
 }
 
-func (m *memStore) EnqueueClaimedChildResult(_ context.Context, _ string, msg state.QueuedMessage) (bool, error) {
-	return true, m.EnqueueMessage(context.Background(), msg)
-}
-
 func (m *memStore) CountQueuedMessages(_ context.Context, platform, sessionID string) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -153,21 +149,6 @@ func (m *memStore) MoveQueuedMessage(_ context.Context, id string, direction int
 	}
 	m.msgs[idx], m.msgs[swap] = m.msgs[swap], m.msgs[idx]
 	return true, nil
-}
-
-func TestEnqueueChildResultIsHeld(t *testing.T) {
-	store := &memStore{}
-	sender := &recSender{}
-	svc := New(store, sender, statusStub{running: false, ok: true}, nil)
-	req := platforms.SendMessageRequest{SessionID: "parent", Message: "child result"}
-
-	queued, err := svc.EnqueueChildResult(context.Background(), "child-1", "child-result:1", "opencode", req)
-	if err != nil || !queued {
-		t.Fatal(err)
-	}
-	if len(store.msgs) != 1 || len(sender.sent) != 0 {
-		t.Fatalf("queued=%d sent=%d, want one held message", len(store.msgs), len(sender.sent))
-	}
 }
 
 // recSender records sent messages and can be told to fail once.

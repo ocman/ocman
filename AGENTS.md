@@ -61,21 +61,21 @@ project's `.worktrees/<repo>` root so worktree paths are pre-approved.
 the /wt launch was not seeded with that rule; the runtime autoapprove
 pipeline covers the gap for those pre-existing instances.
 
-A worktree/child session launched from a parent also **inherits the
-parent's accumulated "Allow always" permissions AND its live permission
-posture** at split time (#101): ocman records every user-clicked "Allow
-always" reply (plus judge-safe approvals) in `auto_approved_permission`,
-and `permissions.BuildInheritedRulesWithLive` replays them into the
-child's per-session ruleset via `LaunchRequest.PermissionRules` /
+A worktree session launched from a parent also **inherits the parent's
+accumulated "Allow always" permissions AND its live permission posture**
+at split time (#101): ocman records every user-clicked "Allow always"
+reply (plus judge-safe approvals) in `auto_approved_permission`, and
+`permissions.BuildInheritedRulesWithLive` replays them into the child's
+per-session ruleset via `LaunchRequest.PermissionRules` /
 `SetPermissionRules`. Crucially it *also* reads the parent's current
 ruleset (`Platform.PermissionRules`) and merges it last (so a live rule
-wins on conflict) — this is what propagates a **YOLO / custom
-permission mode**, which is written straight to the session ruleset and
-never recorded as an approval. Without this a YOLO parent's children
-would launch under default permissions and get stuck on prompts.
-Controlled by the default-on `worktree.inherit_permissions` setting
-(GET/POST `/api/settings/worktree-inherit-permissions`); snapshot at
-split time, soft-fail (never blocks a launch).
+wins on conflict) — this is what propagates a **YOLO / custom permission
+mode**, which is written straight to the session ruleset and never
+recorded as an approval. Without this a YOLO parent's children would
+launch under default permissions and get stuck on prompts. Controlled by
+the default-on `worktree.inherit_permissions` setting (GET/POST
+`/api/settings/worktree-inherit-permissions`); snapshot at split time,
+soft-fail (never blocks a launch).
 
 Pending permission/question prompts from **subagent sessions** — even
 deeply nested ones, and ones launched *outside* ocman's control (native
@@ -89,10 +89,9 @@ surfaces on the row the user is watching.
 Ocman also embeds an **MCP (Model Context Protocol) server** on its own
 loopback-only listener, `http://127.0.0.1:8227/mcp` (`-mcp-addr`), plus
 the same endpoint on the web UI's port (`:8229`, or `:8228` via the Vite
-dev proxy). This lets AI coding agents (and users via the agent) split
-work from an active session into new parallel sessions or isolated git
-worktrees. See the **MCP server** section below for setup and available
-tools.
+dev proxy). This exposes workflow control tools and `embed_file` for
+displaying generated assets in the UI. See the **MCP server** section
+below for setup and available tools.
 
 Ocman also surfaces **PRs and Issues** from the active project's
 upstream forge (GitHub or Forgejo) in a sidebar pane next to Session
@@ -183,10 +182,9 @@ handlers don't bypass the `Host` seam). User-facing docs:
   (`~/.local/share/ocman/state.db`) for ocman's own state (archived
   / seen sessions). Primary key is `(platform, session_id)` so it
   can scope state per platform.
-- `internal/mcp/` — MCP server implementation. `PromptComposer`
-  enriches caller-provided intent with session context; `SessionLauncher`
-  creates child sessions via the Platform interface; tool handlers
-  implement the MCP tools. Mounted at `/mcp` by the server package.
+- `internal/mcp/` — MCP server implementation. Tool handlers implement
+  workflow control and `embed_file`. Mounted at `/mcp` by the server
+  package.
 - `internal/server/` — HTTP server, API handlers, static file serving
   with SPA fallback, OpenCode port discovery via `lsof`.
 - `internal/tmux/` — tmux process control: session/window listing,
@@ -229,7 +227,7 @@ handlers don't bypass the `Host` seam). User-facing docs:
   node runs/attempts) on top of `internal/state`. See
   `docs/features/workflows.md`.
 - `internal/permissions/` — builds the inherited permission ruleset for
-  a worktree/child session (#101).
+  a worktree session (#101).
 - `internal/pricing/` — LiteLLM model-pricing fetch/cache + cost
   calculation for the usage metrics views.
 - `internal/ocapi/` — host-local auth shared by every ocman client that
@@ -504,10 +502,9 @@ minimal and match the surrounding code.
 ## MCP server
 
 Ocman embeds a localhost-only MCP server (`internal/mcp/`, mounted at
-`/mcp` by the server package) exposing session-split + parent/child
-message tools plus the workflow control tools. The authoritative tool
-list is the table in [`docs/features/mcp.md`](docs/features/mcp.md#tools) — don't
-duplicate it here.
+`/mcp` by the server package) exposing workflow control tools and
+`embed_file`. The authoritative tool list is the table in
+[`docs/features/mcp.md`](docs/features/mcp.md#tools) — don't duplicate it here.
 
 Implementation notes:
 
@@ -524,62 +521,9 @@ Implementation notes:
   exists because native MCP clients can't send an auth cookie; binding it
   separately keeps it unreachable through a reverse proxy pointed at
   `-addr`. Non-loopback `-mcp-addr` values are refused (fails closed).
-- `PromptComposer` enriches caller intent with parent-session context
-  (last 10 messages, git branch, uncommitted-change summary);
-  `SessionLauncher` creates the child via the `Platform` interface.
-- Host operations obey AD-16: `internal/mcp` imports neither `git` nor
-  `tmux`. The server injects owner-routed adapters over
-  `hostsvc.Router.ForDir` — `WorktreeSessionCreator`
-  (`Host.CreateWorktreeSession`, so a worktree split runs on the machine
-  that owns the project), `GitContextReader` (`GitInfo` plus — only when
-  the caller actually wants it — `GitDiff`, for the branch/changes prompt
-  sections; omitted when the owner can't answer) and `TmuxTargetKiller`.
-  `check-host-helpers.sh` covers `internal/mcp` alongside
-  `internal/server`, and flags raw `gitexec.Output`/`gitexec.Command`
-  calls as well as `git.*`/`tmux.*`/`term.*`. Killing a legacy child's
-  tmux target has no `Host` method, so it **fails closed** for a
-  remote-owned session rather than killing a same-named pane on the hub.
-  Three user-visible consequences:
-  - A worktree session created through MCP (or `/project/.../worktrees`)
-    is **titled after its branch** — the owning host passes
-    `Title: req.Branch` to `CreateSession`. Previously these were
-    untitled.
-  - `cancel_session` no longer claims unqualified success when the tmux
-    kill was refused or skipped: the result carries `tmuxKill` /
-    `tmuxTarget` and sets `"success": false`, because the record is
-    terminal afterwards and a retry would silently report success.
-  - The `## Uncommitted Changes` prompt section is ocman's own per-file
-    summary (`path +N -M`, untracked files marked, `(truncated: ...)`
-    when the host hit its size cap) — deliberately **not** `git diff
-    --stat` shape, which excludes untracked files and would invite an
-    agent to read the counts as git's own.
-- Child session records live in `state.db`'s `child_sessions` table
-  (migration v9); local settled status events enqueue processing on a serial,
-  drainable worker and return the result through the waiting `new_session` MCP
-  call. An immediate startup sweep and one-minute recovery sweeps catch missed
-  events, remote children, and stale `*_sending` states from #457. Migration
-  v34 persists delivery
-  state so `await_session_result` can reconnect after a request disconnect or
-  ocman restart without re-prompting the child; disconnects also defer a queued
-  reconnect reminder until the parent is idle. Both waits emit request-scoped
-  MCP progress immediately and every 10 s to reset OpenCode's request timeout.
-- `new_session` waits by default, or returns the child ID immediately with
-  `wait=false` and queues its final response to the parent. `send_message_to_child`
-  returns immediately by default and supports `wait=true` for inline follow-up
-  results. Both paths reuse the persisted delivery state and child watcher.
-  New async turns use persisted `*_sending`/`async_pending`/`async_queueing` states; legacy migration-v34
-  `detached` rows are never replayed. Queue insertion and the final `delivered`
-  transition are atomic, and feedback remains held for a real idle edge/sweep.
-- `new_session` seeds the child with the parent's accumulated
-  "Allow always" permissions when `worktree.inherit_permissions` is on
-  (#101), and reports `permissionsInherited` / `permissionsInheritedCount`
-  (and `permissionsInheritError` on a soft failure) in its result.
-- Agent splitting *policy* lives in
-  `.opencode/skills/ocman-sessions/SKILL.md` so MCP tool
-  descriptions stay short and action-focused.
 
-User-facing setup, the full tool table, and the splitting workflow are
-documented in `docs/features/mcp.md`.
+User-facing setup and the full tool table are documented in
+`docs/features/mcp.md`.
 
 ## Architecture doc
 

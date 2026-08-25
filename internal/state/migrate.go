@@ -164,7 +164,8 @@ import (
 //	     whose archive tables lack remote_id.
 //	45 - add explicit approval provenance, reply scope, permission metadata,
 //	     and first-observed timestamp to auto_approved_permission.
-const latestSchemaVersion = 45
+//	46 - drop retired MCP child-session persistence.
+const latestSchemaVersion = 46
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -359,6 +360,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV44(tx)
 	case 45:
 		return migrateToV45(tx)
+	case 46:
+		return migrateToV46(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -1510,4 +1513,9 @@ func migrateToV45(tx *sql.Tx) error {
 		}
 	}
 	return nil
+}
+
+func migrateToV46(tx *sql.Tx) error {
+	_, err := tx.Exec(`DROP TABLE IF EXISTS child_sessions`)
+	return err
 }

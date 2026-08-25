@@ -8,7 +8,6 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 type sessionTasksResponse struct {
@@ -16,12 +15,7 @@ type sessionTasksResponse struct {
 		Messages json.RawMessage `json:"messages"`
 		Parts    json.RawMessage `json:"parts"`
 	} `json:"tasks"`
-	Children []struct {
-		ID        string `json:"id"`
-		Intent    string `json:"intent"`
-		Status    string `json:"status"`
-		CreatedAt int64  `json:"createdAt"`
-	} `json:"children"`
+	Children json.RawMessage `json:"children"`
 }
 
 func getSessionTasks(t *testing.T, s *Server, path string) sessionTasksResponse {
@@ -37,25 +31,6 @@ func getSessionTasks(t *testing.T, s *Server, path string) sessionTasksResponse 
 		t.Fatal(err)
 	}
 	return body
-}
-
-func TestHandleSessionTasks_ReturnsMCPChildrenWithoutTaskIDs(t *testing.T) {
-	sdb := openWatcherTestStateDB(t)
-	if err := sdb.InsertChildSession(t.Context(), state.ChildSession{
-		ID:              "child-early-link",
-		Platform:        "opencode",
-		ParentSessionID: "parent-1",
-		Intent:          "Explain the recent work",
-		Status:          "running",
-		CreatedAt:       1234,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	s := New(nil, sdb, "127.0.0.1:0", nil, nil)
-	body := getSessionTasks(t, s, "/api/session/parent-1/tasks")
-	if len(body.Children) != 1 || body.Children[0].ID != "child-early-link" || body.Children[0].Intent != "Explain the recent work" {
-		t.Fatalf("children = %+v", body.Children)
-	}
 }
 
 func TestHandleSessionTasks_ReturnsTaskDataWithoutStateDB(t *testing.T) {
@@ -77,21 +52,7 @@ func TestHandleSessionTasks_ReturnsTaskDataWithoutStateDB(t *testing.T) {
 	if string(task.Messages) != "[]" || string(task.Parts) != "[]" {
 		t.Fatalf("task = %+v", task)
 	}
-	if len(body.Children) != 0 {
-		t.Fatalf("children = %+v", body.Children)
-	}
-}
-
-func TestHandleSessionTasks_IgnoresChildLookupFailure(t *testing.T) {
-	sdb := openWatcherTestStateDB(t)
-	if err := sdb.Close(); err != nil {
-		t.Fatal(err)
-	}
-	s := New(nil, sdb, "127.0.0.1:0", nil, nil)
-
-	body := getSessionTasks(t, s, "/api/session/parent-1/tasks")
-
-	if len(body.Children) != 0 {
-		t.Fatalf("children = %+v", body.Children)
+	if body.Children != nil {
+		t.Fatalf("response includes retired children field: %s", body.Children)
 	}
 }

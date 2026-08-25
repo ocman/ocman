@@ -78,27 +78,6 @@ func TestListPermissionsIncludesDescendantAcrossDirectories(t *testing.T) {
 	}
 }
 
-func TestListPermissionsIncludesNativeGrandchildBelowMCPChild(t *testing.T) {
-	parentID, mcpChildID, grandchildID := "ses-root", "ses-mcp-child", "ses-native-grandchild"
-	database := newTestDBWithSessions(t, []testSession{
-		{id: parentID, directory: "/repo/main"},
-		{id: mcpChildID, directory: "/repo/worktree"},
-		{id: grandchildID, directory: "/repo/worktree", parentID: &mcpChildID},
-	})
-	a := New(database, nil)
-	a.childLinks = stubMCPParentLookup{parents: map[string]string{mcpChildID: parentID}}
-	a.ObservePromptAsked("", "/repo/worktree", "permission", platforms.LivePrompt{
-		"id": "perm-grandchild", "sessionID": grandchildID, "permission": "Bash",
-	})
-	prompts, err := a.ListPermissions(context.Background(), parentID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(prompts) != 1 || prompts[0]["id"] != "perm-grandchild" {
-		t.Fatalf("permissions=%#v, want mixed-ancestry grandchild", prompts)
-	}
-}
-
 func TestPromptReconciliationHydratesAndReplacesDirectorySnapshot(t *testing.T) {
 	const dir = "/repo/worktree with space"
 	var mu sync.Mutex

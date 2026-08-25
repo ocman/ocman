@@ -36,29 +36,3 @@ export function isSessionRelevant(
   if (eventSessionId === pageSessionId) return true;
   return subagentIds.has(eventSessionId);
 }
-
-/**
- * Collect the IDs of every session in `sessions` whose `parentID`
- * matches `pageSessionId`. These are ocman's own MCP/worktree children:
- * the backend overlays the state.db child_sessions link onto each
- * session's `parentID`, but — unlike OpenCode Task subagents — nothing
- * in the parent's message parts references them, so they never appear
- * in the Task-derived subagent set. Merging this set into the prompt
- * relevance check makes an MCP child's permission/question prompt
- * surface on the parent page (regression from #268, where worktree
- * sessions moved onto the shared project instance and lost their
- * OpenCode parent_id).
- *
- * Pure so it can be unit-tested without React.
- */
-export function mcpChildIdsOf(
-  pageSessionId: string | undefined | null,
-  sessions: ReadonlyArray<{ id: string; parentID?: string }>,
-): Set<string> {
-  const out = new Set<string>();
-  if (!pageSessionId) return out;
-  for (const s of sessions) {
-    if (s.parentID && s.parentID === pageSessionId) out.add(s.id);
-  }
-  return out;
-}

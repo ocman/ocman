@@ -22,7 +22,7 @@ func decodeModel(t *testing.T, body []byte) string {
 }
 
 func TestHandleGetJudgeModel(t *testing.T) {
-	sdb := openWatcherTestStateDB(t)
+	sdb := openTestStateDB(t)
 	srv := &Server{stateDB: sdb}
 
 	// Unset → empty string.
@@ -47,7 +47,7 @@ func TestHandleGetJudgeModel(t *testing.T) {
 }
 
 func TestHandleSetJudgeModel(t *testing.T) {
-	sdb := openWatcherTestStateDB(t)
+	sdb := openTestStateDB(t)
 	srv := &Server{stateDB: sdb}
 
 	// Valid value is persisted and applied to the running judge.
@@ -83,7 +83,7 @@ func TestHandleSetJudgeModel(t *testing.T) {
 }
 
 func TestHandleSetJudgeModelInvalidJSON(t *testing.T) {
-	srv := &Server{stateDB: openWatcherTestStateDB(t)}
+	srv := &Server{stateDB: openTestStateDB(t)}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/settings/judge-model", strings.NewReader(`{bad`))
 	srv.handleJudgeModel(rec, req)
@@ -104,7 +104,7 @@ func TestHandleSetJudgeModelNoStateDB(t *testing.T) {
 }
 
 func TestHandleJudgeModelMethodNotAllowed(t *testing.T) {
-	srv := &Server{stateDB: openWatcherTestStateDB(t)}
+	srv := &Server{stateDB: openTestStateDB(t)}
 	rec := httptest.NewRecorder()
 	srv.handleJudgeModel(rec, httptest.NewRequest(http.MethodDelete, "/api/settings/judge-model", nil))
 	if rec.Code != http.StatusMethodNotAllowed {
@@ -124,7 +124,7 @@ func decodeEnabled(t *testing.T, body []byte) bool {
 }
 
 func TestHandleWorktreeInheritPermissions(t *testing.T) {
-	srv := &Server{stateDB: openWatcherTestStateDB(t)}
+	srv := &Server{stateDB: openTestStateDB(t)}
 
 	// Default (unset) → enabled true.
 	rec := httptest.NewRecorder()
@@ -148,7 +148,7 @@ func TestHandleWorktreeInheritPermissions(t *testing.T) {
 }
 
 func TestHandleWorktreeInheritPermissionsMethodNotAllowed(t *testing.T) {
-	srv := &Server{stateDB: openWatcherTestStateDB(t)}
+	srv := &Server{stateDB: openTestStateDB(t)}
 	rec := httptest.NewRecorder()
 	srv.handleWorktreeInheritPermissions(rec, httptest.NewRequest(http.MethodDelete, "/api/settings/worktree-inherit-permissions", nil))
 	if rec.Code != http.StatusMethodNotAllowed {

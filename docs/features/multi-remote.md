@@ -170,5 +170,3 @@ and ocman persists them in `state.db`.
   machine's settings, not the hub's.
 - Stale sessions from an offline remote are kept in memory only. After a hub
   restart an offline remote shows no sessions until it reconnects.
-- MCP session-splitting stays per-host. The hub does not split work onto
-  remotes.

@@ -339,7 +339,7 @@ func agentStepServer(t *testing.T, status db.SessionStatus, message string, send
 	}
 	registry := platforms.NewRegistry()
 	registry.Register(p)
-	srv := New(nil, openWatcherTestStateDB(t), "", registry, nil)
+	srv := New(nil, openTestStateDB(t), "", registry, nil)
 	node := workflows.Node{ID: "agent", Type: "agent", Agent: &workflows.AgentConfig{
 		Platform: "fake", Directory: dir, Prompt: "ship ${nodes.build.output.tag}",
 	}}

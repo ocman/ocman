@@ -95,15 +95,12 @@ See [Configuration](docs/configuration/_index.md) for the full flag and environm
 ## Optional agent integration
 
 You don't need any of this to use ocman as a dashboard. It also embeds an
-optional, localhost-only MCP server so an AI agent can split work into child
-OpenCode sessions or isolated git worktrees and coordinate between them
-(`new_session`, `await_session_result`, `get_session_status`, `list_child_sessions`,
-`cancel_session`, and parent/child message tools).
+optional, localhost-only MCP server exposing workflow control tools and
+`embed_file` for displaying generated assets in the UI.
 
 Point your OpenCode config at `http://localhost:8229/mcp` (or
 `http://localhost:8228/mcp` via the `make dev` proxy). See the
-[MCP integration guide](docs/features/mcp.md) for setup, the full tool list, and the
-optional session-splitting skill.
+[MCP integration guide](docs/features/mcp.md) for setup and the full tool list.
 
 ## Managing sessions across machines
 

@@ -2,15 +2,11 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"os/exec"
-	"strings"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/tmux"
 	"github.com/NoUseFreak/ocman/internal/whisper"
 )
@@ -128,8 +124,7 @@ func lookPathOK(bin string) bool {
 // ensureProjectOpencodePort guarantees the project's single opencode
 // instance is running for dir and returns its port, routed through the
 // owning host (ForDir) so a remote's project never launches on the hub
-// (#268 multi-remote requirement, same as CreateWorktreeSession). It is
-// the mcp.ProjectOpencodeEnsurer the SessionLauncher uses.
+// (#268 multi-remote requirement, same as CreateWorktreeSession).
 //
 // dir is folded to the project root first (#532): a parent session
 // living in a managed worktree must reuse the main checkout's single
@@ -141,98 +136,4 @@ func (s *Server) ensureProjectOpencodePort(ctx context.Context, dir string) (str
 		return "", err
 	}
 	return res.Port(), nil
-}
-
-// hostWorktreeSession creates a worktree and its session on the host that
-// owns the project directory. It is the mcp.WorktreeSessionCreator the
-// SessionLauncher uses, so an MCP split for a remote-owned project
-// creates the worktree on that machine instead of on the hub (AD-16).
-func (s *Server) hostWorktreeSession(ctx context.Context, req internalmcp.WorktreeSessionRequest) (*internalmcp.WorktreeSessionResult, error) {
-	res, err := s.router().ForDir(req.ParentDir).CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{
-		ProjectDir: req.ParentDir,
-		Branch:     req.Branch,
-		NewBranch:  req.NewBranch,
-		BaseRef:    req.BaseRef,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &internalmcp.WorktreeSessionResult{
-		SessionID:    res.SessionID,
-		WorktreePath: res.WorktreePath,
-		Branch:       res.Branch,
-	}, nil
-}
-
-// hostGitContext reads the branch and, when wantChanges, the
-// uncommitted-changes summary for dir from the host that owns it, for MCP
-// prompt enrichment. Both halves are soft: a host that can't answer just
-// yields less context, never an error — but it is always *that* host,
-// never the hub's copy of the path.
-//
-// wantChanges is not a nicety: GitDiff carries every patch body plus the
-// contents of untracked files (up to 2 MB), marshalled over gRPC for a
-// remote owner. Fetching that to derive a summary the caller then
-// discards is the whole cost of the call for none of the value.
-func (s *Server) hostGitContext(ctx context.Context, dir string, wantChanges bool) (internalmcp.GitContext, error) {
-	host := s.router().ForDir(dir)
-	var out internalmcp.GitContext
-	if info, err := host.GitInfo(ctx, []string{dir}); err == nil {
-		out.Branch = info[dir].Branch
-	}
-	if !wantChanges {
-		return out, nil
-	}
-	if diff, err := host.GitDiff(ctx, dir, hostsvc.GitDiffOptions{}); err == nil && diff != nil {
-		out.Changes = formatChangeSummary(diff)
-	}
-	return out, nil
-}
-
-// formatChangeSummary renders a per-file summary of the host's structured
-// diff. Deliberately *not* `git diff --stat` shape: this counts untracked
-// files too (--stat does not), so borrowing --stat's layout would invite
-// an agent to read it as the real thing. Truncation is labelled because
-// the host drops files past a size cap, which makes the counts a floor
-// rather than a fact.
-func formatChangeSummary(diff *git.Diff) string {
-	if len(diff.Files) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	var additions, deletions int
-	for _, f := range diff.Files {
-		fmt.Fprintf(&b, "%s +%d -%d", f.Path, f.Additions, f.Deletions)
-		if f.Status == "untracked" {
-			b.WriteString(" (untracked)")
-		}
-		b.WriteString("\n")
-		additions += f.Additions
-		deletions += f.Deletions
-	}
-	fmt.Fprintf(&b, "%d file(s) changed, +%d -%d", len(diff.Files), additions, deletions)
-	if diff.Truncated {
-		b.WriteString(" (truncated: more files changed than are listed)")
-	}
-	return b.String()
-}
-
-// killHostTmuxTarget kills a legacy child session's tmux target on the
-// host that owns its worktree. hostsvc.Host has no kill-target method, so
-// a remote owner fails closed with a clear error instead of killing a
-// same-named pane on the hub; cancel_session still marks the child
-// cancelled but reports the refusal (tmuxKill/success) rather than
-// claiming the pane is gone.
-//
-// No seam method exists because nothing writes TmuxTarget any more: it is
-// a pre-#268 column, and pre-#268 ocman was single-machine, so a row that
-// carries one is by construction hub-owned. A remote-owned legacy row
-// would need the same worktree path to exist in a remote's inventory. If
-// that ever shows up, the fix is a Host.KillTmuxTarget across the gRPC
-// seam, not widening this.
-func (s *Server) killHostTmuxTarget(_ context.Context, dir, target string) error {
-	if host := s.router().ForDir(dir); host.RemoteID() != "" && host.RemoteID() != "local" {
-		return fmt.Errorf("killing a tmux target is not supported for remote-owned sessions (owner %s)", host.RemoteID())
-	}
-	return tmux.KillTarget(target) // ocman:allow-host-helper
 }

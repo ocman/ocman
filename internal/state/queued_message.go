@@ -59,45 +59,6 @@ func (d *DB) EnqueueMessage(ctx context.Context, m QueuedMessage) error {
 	return nil
 }
 
-// EnqueueClaimedChildResult atomically queues a held child result and marks
-// its async delivery complete. A non-queueing child is an idempotent no-op.
-func (d *DB) EnqueueClaimedChildResult(ctx context.Context, childID string, m QueuedMessage) (bool, error) {
-	tx, err := d.db.BeginTx(ctx, nil)
-	if err != nil {
-		return false, fmt.Errorf("queueing child result begin: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	result, err := tx.ExecContext(ctx, `
-		UPDATE child_sessions SET result_delivery = 'delivered'
-		WHERE id = ? AND result_delivery = ?
-	`, childID, ChildResultAsyncQueueing)
-	if err != nil {
-		return false, fmt.Errorf("marking child result delivered: %w", err)
-	}
-	changed, err := result.RowsAffected()
-	if err != nil || changed == 0 {
-		return false, err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO queued_message
-			(id, platform, session_id, position, text, images_json,
-			 model, agent, reasoning, created_at)
-		VALUES (
-			?, ?, ?,
-			COALESCE((SELECT MAX(position) FROM queued_message
-			          WHERE platform = ? AND session_id = ?), 0) + 1,
-			?, ?, ?, ?, ?, ?)
-	`, m.ID, m.Platform, m.SessionID, m.Platform, m.SessionID,
-		m.Text, m.ImagesJSON, m.Model, m.Agent, m.Reasoning, m.CreatedAt); err != nil {
-		return false, fmt.Errorf("enqueuing child result: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return false, fmt.Errorf("queueing child result commit: %w", err)
-	}
-	return true, nil
-}
-
 // CountQueuedMessages returns how many messages are queued for a session.
 // Used by the enqueue path to decide whether a just-added message is the
 // only one (so it may fast-path flush) vs. joining an existing backlog

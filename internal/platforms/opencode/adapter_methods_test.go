@@ -105,14 +105,11 @@ func TestAdapter_Session_FallsBackToDBWhenNoLivePort(t *testing.T) {
 	}
 }
 
-func TestAdapter_SessionTreeCombinesNativeAndMCPDescendants(t *testing.T) {
+func TestAdapter_SessionTreeIncludesNativeDescendants(t *testing.T) {
 	root := "root"
-	mcpChild := "mcp-child"
 	database := newTestDBWithSessions(t, []testSession{
 		{id: root, directory: "/tmp/proj"},
 		{id: "native-child", directory: "/tmp/proj", parentID: &root},
-		{id: mcpChild, directory: "/tmp/worktree", messageData: `{"role":"assistant","providerID":"test","modelID":"model","tokens":{"input":2,"output":3}}`},
-		{id: "native-grandchild", directory: "/tmp/worktree", parentID: &mcpChild},
 		{id: "unrelated", directory: "/tmp/proj"},
 	})
 	restore := setDiscoverPortsImplForTests(func() map[string]string { return nil })
@@ -120,8 +117,7 @@ func TestAdapter_SessionTreeCombinesNativeAndMCPDescendants(t *testing.T) {
 	t.Cleanup(func() { restore(); resetPortCacheForTests() })
 
 	a := NewWithPricing(database, nil, fakePricing{in: 0.01, out: 0.02})
-	a.childLinks = stubMCPParentLookup{parents: map[string]string{mcpChild: root}}
-	for _, openedID := range []string{root, "native-grandchild"} {
+	for _, openedID := range []string{root, "native-child"} {
 		detail, err := a.Session(t.Context(), openedID, 30, 0)
 		if err != nil {
 			t.Fatalf("Session(%s): %v", openedID, err)
@@ -131,20 +127,14 @@ func TestAdapter_SessionTreeCombinesNativeAndMCPDescendants(t *testing.T) {
 		for _, session := range detail.SessionTree {
 			byID[session.ID] = session
 		}
-		if len(byID) != 4 {
-			t.Fatalf("Session(%s) tree = %v, want four related sessions", openedID, byID)
+		if len(byID) != 2 {
+			t.Fatalf("Session(%s) tree = %v, want two related sessions", openedID, byID)
 		}
 		if _, ok := byID["unrelated"]; ok {
 			t.Fatalf("Session(%s) included unrelated session", openedID)
 		}
-		if byID[mcpChild].ParentID != root || byID["native-grandchild"].ParentID != mcpChild {
-			t.Fatalf("Session(%s) mixed parent links not preserved: %v", openedID, byID)
-		}
-		if !approxEqual(byID[mcpChild].TotalEstCost, 0.08) {
-			t.Fatalf("Session(%s) child estimated cost = %v, want 0.08", openedID, byID[mcpChild].TotalEstCost)
-		}
-		if !approxEqual(byID[mcpChild].TotalEffectiveCost, 0.08) {
-			t.Fatalf("Session(%s) child effective cost = %v, want 0.08", openedID, byID[mcpChild].TotalEffectiveCost)
+		if byID["native-child"].ParentID != root {
+			t.Fatalf("Session(%s) native parent link not preserved: %v", openedID, byID)
 		}
 	}
 }

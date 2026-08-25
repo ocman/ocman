@@ -8,10 +8,9 @@ for the current project, fetched live from the project's upstream forge
 description, and a link to the upstream, and launched as a "handle this
 PR/Issue" prompt in a new OpenCode session or git worktree.
 
-The feature reuses ocman's existing session-launch primitives
-(`split_to_session`, `split_to_worktree` via the MCP server / direct API)
-and the worktree flow (`spec/worktree-sessions/`). It does **not** attempt
-to be a full forge client — read + launch only, no write actions in v1.
+The feature reuses ocman's existing session-launch primitives via
+`sessionsvc` and the worktree flow. It does **not** attempt to be a full
+forge client — read + launch only, no write actions in v1.
 
 ## Goals
 
@@ -356,9 +355,8 @@ PR/Issue payloads are persisted.
 - **`tea` config file**: source of Forgejo URLs and tokens
   (`~/.config/tea/config.yml`).
 - **Existing ocman primitives**:
-  - Session launch path (currently exposed via MCP `split_to_session` /
-    `split_to_worktree` — backend implementation reused directly).
-  - Worktree creation flow (`spec/worktree-sessions/`).
+  - Session launch path via `sessionsvc`.
+  - Worktree creation flow.
   - Project resolution from the active session's directory.
   - `/api/capabilities` for upstream-detection exposure to the frontend.
 

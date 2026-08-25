@@ -184,16 +184,6 @@ func (s *Server) applySessionState(ctx context.Context, sessions []db.Session) e
 	if err != nil {
 		return err
 	}
-	// Parent links for sessions spawned via the MCP split tools. A
-	// split child is a full top-level OpenCode session (no
-	// session.parent_id), so the only record of its parent lives in
-	// ocman's own child_sessions table. We overlay it here so the UI
-	// can nest the child under the session that spawned it.
-	childParents, err := s.stateDB.ChildSessionParents(ctx)
-	if err != nil {
-		return err
-	}
-
 	// Build the per-platform "I want unread counts for these sessions
 	// at this cutoff" maps. Skip sessions that are fully seen
 	// (Seen==true) — their count would be zero by definition.
@@ -223,15 +213,6 @@ func (s *Server) applySessionState(ctx context.Context, sessions []db.Session) e
 		if pinnedAt, ok := pinned[key]; ok {
 			sessions[i].Pinned = true
 			sessions[i].PinnedAt = pinnedAt
-		}
-
-		// Overlay the MCP-split parent link, but never override a
-		// parent already set by the platform (OpenCode subagent
-		// sessions carry their own session.parent_id).
-		if sessions[i].ParentID == "" {
-			if parentID, ok := childParents[key]; ok {
-				sessions[i].ParentID = parentID
-			}
 		}
 
 		// Queue unread-count lookup for unseen sessions. The
@@ -291,7 +272,7 @@ func (s *Server) applySessionState(ctx context.Context, sessions []db.Session) e
 // a session touched since it was archived.
 //
 // Everything else applySessionState derives is dropped on the floor by
-// the notify projection: pin state, the MCP parent link, the
+// the notify projection: pin state, the
 // archived-project fallback and host-identity stamping (both only feed
 // the Archived flag, which notify neither reads nor returns — archived
 // sessions are still listed), and the per-session unread counts, which

@@ -50,12 +50,7 @@ type Adapter struct {
 	favorites FavoritesReader
 	pricing   CostCalculator
 	auth      ocapi.Auth
-	// childLinks reads ocman's own MCP/worktree child->parent links
-	// from state.db so pending prompts from those children bubble to
-	// their parent (OpenCode never records a parent_id for them). Nil
-	// when the favorites reader isn't a full state.db (tests).
-	childLinks mcpParentLookup
-	prompts    *livePromptRegistry
+	prompts   *livePromptRegistry
 	// turns is the live view of which sessions are running a turn, fed
 	// from each instance's /session/status snapshot and session.status
 	// events. See live_status.go.
@@ -89,18 +84,7 @@ func NewWithPricingAndAuth(database *db.DB, favorites FavoritesReader, pricing C
 
 func newAdapter(database *db.DB, favorites FavoritesReader, pricing CostCalculator, auth ocapi.Auth) *Adapter {
 	configureHTTPAuth(auth)
-	return &Adapter{db: database, favorites: favorites, pricing: pricing, auth: auth, childLinks: childLinksFrom(favorites), prompts: newLivePromptRegistry(), turns: newLiveStatusRegistry()}
-}
-
-// childLinksFrom returns favorites as an mcpParentLookup when it also
-// exposes ocman's child_sessions links (the production *state.DB does).
-// Returns nil for a bare favorites stub so the bubble helper skips the
-// MCP fallback cleanly.
-func childLinksFrom(favorites FavoritesReader) mcpParentLookup {
-	if l, ok := favorites.(mcpParentLookup); ok {
-		return l
-	}
-	return nil
+	return &Adapter{db: database, favorites: favorites, pricing: pricing, auth: auth, prompts: newLivePromptRegistry(), turns: newLiveStatusRegistry()}
 }
 
 // ID returns the OpenCode platform identifier.
@@ -162,11 +146,6 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 	// value type with no pointer-shared mutable state we'd care
 	// about here.
 	sessions = append([]db.Session(nil), sessions...)
-	var childParents map[state.Key]string
-	if a.childLinks != nil {
-		childParents, _ = a.childLinks.ChildSessionParents(ctx)
-	}
-
 	// Discover live instances for connection flags. Pending prompts come
 	// from the global event watcher, so session listing never fans out to
 	// every instance's /permission and /question endpoints.
@@ -176,9 +155,6 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 
 	// Settle every status against the live turn signal before anything
 	// else reads it, then drop the children that turn out to be idle.
-	// Both steps precede applyMCPParentLink below: the child filter keys
-	// off OpenCode's own parent_id, and ocman's MCP/worktree children are
-	// top-level sessions that must never be hidden.
 	for i := range sessions {
 		sessions[i].Status = a.settleStatus(sessions[i].ID, sessions[i].Directory, sessions[i].Status, ports)
 	}
@@ -192,13 +168,12 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 	// subagent to its parent and apply the flag there. Parent prompts
 	// pass through unchanged (their id maps to themselves).
 	bubblePhase := srvtiming.Begin(ctx, "bubble_parents")
-	pendingPerms = bubbleUpPromptsToParent(ctx, pendingPerms, a.db, a.childLinks)
-	pendingQuestions = bubbleUpPromptsToParent(ctx, pendingQuestions, a.db, a.childLinks)
+	pendingPerms = bubbleUpPromptsToParent(ctx, pendingPerms, a.db)
+	pendingQuestions = bubbleUpPromptsToParent(ctx, pendingQuestions, a.db)
 	bubblePhase.End()
 
 	for i := range sessions {
 		sessions[i].Platform = string(PlatformID)
-		applyMCPParentLink(&sessions[i], childParents)
 		if directoryHasLivePort(ports, sessions[i].Directory) {
 			sessions[i].LiveConnection = true
 		}
@@ -226,20 +201,9 @@ func directoryHasLivePort(ports map[string]string, directory string) bool {
 // bubbleUpPromptsToParent adds the parent session ID for every prompted
 // child while retaining the child ID. A nil/empty input passes through.
 //
-// Two kinds of child are resolved:
-//   - OpenCode Task subagents, via OpenCode's own session.parent_id
-//     (read from the read-only OpenCode DB through `dbConn`).
-//   - ocman MCP/worktree children, via ocman's own child_sessions
-//     links (read from state.db through `mcpConn`). These have NO
-//     OpenCode parent_id — since #268 they run on the shared project
-//     instance in a worktree directory — so without this fallback their
-//     pending-prompt flag maps to a session ID the directory-scoped
-//     listing never contains and is silently dropped.
-//
 // This is what makes a child's permission/question prompt visible on
-// the parent session row in the listing. OpenCode's parent_id wins when
-// both lookups know a child (they point at the same parent in practice).
-func bubbleUpPromptsToParent(ctx context.Context, prompted map[string]bool, dbConn parentLookup, mcpConn mcpParentLookup) map[string]bool {
+// the parent session row in the listing.
+func bubbleUpPromptsToParent(ctx context.Context, prompted map[string]bool, dbConn parentLookup) map[string]bool {
 	if len(prompted) == 0 {
 		return prompted
 	}
@@ -254,28 +218,6 @@ func bubbleUpPromptsToParent(ctx context.Context, prompted map[string]bool, dbCo
 			parents = p
 		}
 	}
-	// Fill any gaps with ocman's own MCP/worktree child links.
-	if mcpConn != nil {
-		if mcpParents, err := mcpConn.ChildSessionParents(ctx); err == nil {
-			for _, id := range ids {
-				parent := parents[id]
-				if parent == "" {
-					parent = mcpParents[state.Key{Platform: string(PlatformID), SessionID: id}]
-				}
-				for parent != "" {
-					next := mcpParents[state.Key{Platform: string(PlatformID), SessionID: parent}]
-					if next == "" {
-						break
-					}
-					parent = next
-				}
-				if parent != "" {
-					parents[id] = parent
-				}
-			}
-		}
-	}
-
 	if len(parents) == 0 {
 		return prompted
 	}
@@ -294,33 +236,6 @@ func bubbleUpPromptsToParent(ctx context.Context, prompted map[string]bool, dbCo
 // without spinning up a SQLite database.
 type parentLookup interface {
 	GetSessionParentIDs(context.Context, []string) (map[string]string, error)
-}
-
-// mcpParentLookup is the subset of *state.DB that resolves ocman's own
-// MCP/worktree child->parent links. Defined as an interface so the
-// bubble helper stays unit-testable and so a nil state.db (tests, or an
-// adapter constructed without one) degrades gracefully.
-type mcpParentLookup interface {
-	ChildSessionParents(context.Context) (map[state.Key]string, error)
-}
-
-var _ mcpParentLookup = (*state.DB)(nil)
-
-func applyMCPParentLink(session *db.Session, links map[state.Key]string) {
-	if session == nil || session.ParentID != "" {
-		return
-	}
-	session.ParentID = links[state.Key{Platform: string(PlatformID), SessionID: session.ID}]
-}
-
-func (a *Adapter) applyMCPParentLink(ctx context.Context, session *db.Session) {
-	if a.childLinks == nil {
-		return
-	}
-	links, err := a.childLinks.ChildSessionParents(ctx)
-	if err == nil {
-		applyMCPParentLink(session, links)
-	}
 }
 
 // Owns reports whether this OpenCode session ID exists in the local
@@ -348,7 +263,6 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 	detail, ok := a.fetchSessionFromOpenCodeCtx(ctx, id, limit, offset)
 	livePhase.EndWithDesc("fetchSessionFromOpenCode (incl lsof + 2x HTTP)")
 	if ok {
-		a.applyMCPParentLink(ctx, detail.Session)
 		if err := a.attachSessionTree(ctx, id, detail); err != nil {
 			return nil, err
 		}
@@ -368,7 +282,6 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 		return nil, err
 	}
 	session.Platform = string(PlatformID)
-	a.applyMCPParentLink(ctx, session)
 
 	messages, err := a.db.GetSessionMessages(ctx, id)
 	if err != nil {
@@ -413,43 +326,9 @@ func (a *Adapter) attachSessionTree(ctx context.Context, id string, detail *plat
 		return err
 	}
 
-	links := map[state.Key]string{}
-	if a.childLinks != nil {
-		links, err = a.childLinks.ChildSessionParents(ctx)
-		if err != nil {
-			return err
-		}
-	}
 	byID := make(map[string]db.Session, len(tree))
 	for _, session := range tree {
 		byID[session.ID] = session
-	}
-	for added := true; added; {
-		added = false
-		for child, parentID := range links {
-			if child.Platform != string(PlatformID) {
-				continue
-			}
-			_, childIncluded := byID[child.SessionID]
-			_, parentIncluded := byID[parentID]
-			if childIncluded == parentIncluded {
-				continue
-			}
-			connectedID := child.SessionID
-			if childIncluded {
-				connectedID = parentID
-			}
-			component, err := a.db.GetSessionTree(ctx, connectedID)
-			if err != nil {
-				return err
-			}
-			for _, session := range component {
-				if _, exists := byID[session.ID]; !exists {
-					byID[session.ID] = session
-					added = true
-				}
-			}
-		}
 	}
 
 	ports := discoverOpenCodePorts()
@@ -463,7 +342,6 @@ func (a *Adapter) attachSessionTree(ctx context.Context, id string, detail *plat
 			_, session.TotalEstCost, session.TotalEffectiveCost = costsFromMessages(messages, a.pricing)
 		}
 		session.Platform = string(PlatformID)
-		applyMCPParentLink(&session, links)
 		session.Status = a.settleStatus(session.ID, session.Directory, session.Status, ports)
 		session.LiveConnection = directoryHasLivePort(ports, session.Directory)
 		detail.SessionTree = append(detail.SessionTree, session)

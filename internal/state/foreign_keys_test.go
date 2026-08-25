@@ -141,13 +141,6 @@ func TestForeignKeyCheckOnRealisticDatabase(t *testing.T) {
 		t.Fatalf("InsertWorkflowRun: %v", err)
 	}
 
-	// Rows in the tables with no delete path anywhere in the package.
-	if err := db.InsertChildSession(t.Context(), ChildSession{
-		ID: "child-1", Platform: "opencode", ParentSessionID: "parent-1",
-		Intent: "test", Status: "running", CreatedAt: 1,
-	}); err != nil {
-		t.Fatalf("InsertChildSession: %v", err)
-	}
 	if err := db.EnqueueMessage(t.Context(), QueuedMessage{
 		ID: "q1", Platform: "opencode", SessionID: "parent-1", Text: "hi", CreatedAt: 1,
 	}); err != nil {

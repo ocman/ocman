@@ -34,7 +34,7 @@ const workflowRequest = `{
 
 func newWorkflowTestServer(t *testing.T) *Server {
 	t.Helper()
-	return New(nil, openWatcherTestStateDB(t), "", nil, nil)
+	return New(nil, openTestStateDB(t), "", nil, nil)
 }
 
 func TestWorkflowRESTApprovalToAgentSession(t *testing.T) {
@@ -64,7 +64,7 @@ func TestWorkflowRESTApprovalToAgentSession(t *testing.T) {
 	}
 	registry := platforms.NewRegistry()
 	registry.Register(p)
-	srv := New(nil, openWatcherTestStateDB(t), "", registry, nil)
+	srv := New(nil, openTestStateDB(t), "", registry, nil)
 	definition := `{"id":"agent-transport","name":"Agent transport","version":"1","concurrency":1,"triggers":[{"id":"manual","type":"manual"}],"nodes":[{"id":"approve","name":"Approve","type":"approval"},{"id":"agent","name":"Agent","type":"agent","agent":{"platform":"fake","directory":` + fmt.Sprintf("%q", dir) + `,"prompt":"do work"}}],"dependencies":[{"from":"approve","to":"agent"}]}`
 	version, err := srv.workflowSvc().PublishJSON(t.Context(), []byte(definition))
 	if err != nil {
@@ -344,7 +344,7 @@ func TestWorkflowRESTResolvesUnknownAttempt(t *testing.T) {
 
 func TestWorkflowMCPAndRESTShareServiceContract(t *testing.T) {
 	srv := newWorkflowTestServer(t)
-	tools := internalmcp.ServerTools(internalmcp.Deps{StateDB: srv.stateDB, WorkflowService: srv.workflowSvc()})
+	tools := internalmcp.ServerTools(internalmcp.Deps{WorkflowService: srv.workflowSvc()})
 	mcpServer, err := mcptest.NewServer(t, tools...)
 	if err != nil {
 		t.Fatal(err)

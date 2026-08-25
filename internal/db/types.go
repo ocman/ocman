@@ -142,12 +142,9 @@ type Session struct {
 	ID        string `json:"id"`
 	Platform  string `json:"platform"` // owning adapter ID, e.g. "opencode", "claude-code"
 	ProjectID string `json:"projectId"`
-	// ParentID is the session this one descends from, when any. Two
-	// independent sources can populate it: OpenCode's own
-	// `session.parent_id` (subagent sessions), and ocman's
-	// state.db `child_sessions.parent_session_id` (sessions spawned
-	// via the MCP split tools). Empty for top-level sessions. The
-	// frontend uses it to render the list as a parent/child tree.
+	// ParentID is the session this one descends from, when any. OpenCode
+	// populates it from session.parent_id for subagent sessions. Empty for
+	// top-level sessions. The frontend uses it to render the session tree.
 	ParentID         string  `json:"parentId,omitempty"`
 	Title            string  `json:"title"`
 	Directory        string  `json:"directory"`

@@ -3,9 +3,6 @@ package opencode
 import (
 	"context"
 	"testing"
-
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 func TestAdapter_ID(t *testing.T) {
@@ -81,36 +78,15 @@ func (s stubParentLookup) GetSessionParentIDs(_ context.Context, ids []string) (
 	return out, nil
 }
 
-// stubMCPParentLookup is an mcpParentLookup backed by a static
-// childID->parentID map. It exercises the MCP-child fallback path in
-// bubbleUpPromptsToParent (children ocman spawned via MCP/worktree that
-// OpenCode's own session.parent_id never records).
-type stubMCPParentLookup struct {
-	parents map[string]string // childID -> parentID
-	err     error
-}
-
-func (s stubMCPParentLookup) ChildSessionParents(context.Context) (map[state.Key]string, error) {
-	if s.err != nil {
-		return nil, s.err
-	}
-	out := make(map[state.Key]string, len(s.parents))
-	for child, parent := range s.parents {
-		out[state.Key{Platform: string(PlatformID), SessionID: child}] = parent
-	}
-	return out, nil
-}
-
 // TestBubbleUpPromptsToParent verifies the per-session bubble-up: a
 // subagent's prompted ID is retained while the parent's ID is added so
 // both visible session rows can show the pending prompt.
 func TestBubbleUpPromptsToParent(t *testing.T) {
 	tests := []struct {
-		name       string
-		prompted   map[string]bool
-		parents    map[string]string // OpenCode session.parent_id
-		mcpParents map[string]string // ocman state.db child_sessions links
-		want       map[string]bool
+		name     string
+		prompted map[string]bool
+		parents  map[string]string // OpenCode session.parent_id
+		want     map[string]bool
 	}{
 		{
 			name:     "empty input passes through",
@@ -135,39 +111,11 @@ func TestBubbleUpPromptsToParent(t *testing.T) {
 			parents:  map[string]string{"child": "parent"},
 			want:     map[string]bool{"parent": true, "child": true},
 		},
-		{
-			// Regression (#268): an MCP/worktree child has NO
-			// OpenCode parent_id, only an ocman child_sessions link.
-			// Its pending-prompt flag must still bubble to the parent.
-			name:       "MCP child with no OpenCode parent maps via state.db link",
-			prompted:   map[string]bool{"mcpchild": true},
-			parents:    map[string]string{},
-			mcpParents: map[string]string{"mcpchild": "parent"},
-			want:       map[string]bool{"mcpchild": true, "parent": true},
-		},
-		{
-			// OpenCode's own parent_id wins when both are present, so
-			// a Task subagent that also happens to have a state.db row
-			// resolves consistently (they point at the same parent).
-			name:       "OpenCode parent_id takes precedence over MCP link",
-			prompted:   map[string]bool{"child": true},
-			parents:    map[string]string{"child": "parent"},
-			mcpParents: map[string]string{"child": "parent"},
-			want:       map[string]bool{"child": true, "parent": true},
-		},
-		{
-			name:       "native grandchild beneath MCP child reaches root",
-			prompted:   map[string]bool{"grandchild": true},
-			parents:    map[string]string{"grandchild": "mcpchild"},
-			mcpParents: map[string]string{"mcpchild": "parent"},
-			want:       map[string]bool{"grandchild": true, "parent": true},
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			lookup := stubParentLookup{parents: tt.parents}
-			mcpLookup := stubMCPParentLookup{parents: tt.mcpParents}
-			got := bubbleUpPromptsToParent(t.Context(), tt.prompted, lookup, mcpLookup)
+			got := bubbleUpPromptsToParent(t.Context(), tt.prompted, lookup)
 			if len(got) != len(tt.want) {
 				t.Fatalf("got %v, want %v", got, tt.want)
 			}
@@ -185,70 +133,9 @@ func TestBubbleUpPromptsToParent(t *testing.T) {
 // map untouched.
 func TestBubbleUpPromptsToParent_NilLookup(t *testing.T) {
 	prompted := map[string]bool{"s1": true}
-	got := bubbleUpPromptsToParent(t.Context(), prompted, nil, nil)
+	got := bubbleUpPromptsToParent(t.Context(), prompted, nil)
 	if len(got) != 1 || !got["s1"] {
 		t.Errorf("nil lookup should pass through unchanged, got %v", got)
-	}
-}
-
-// TestBubbleUpPromptsToParent_MCPOnly verifies the MCP fallback works
-// even when the OpenCode parent lookup is nil (e.g. an adapter with no
-// read-only OpenCode DB but a live state.db): the child_sessions link
-// alone must bubble the flag.
-func TestBubbleUpPromptsToParent_MCPOnly(t *testing.T) {
-	prompted := map[string]bool{"mcpchild": true}
-	mcpLookup := stubMCPParentLookup{parents: map[string]string{"mcpchild": "parent"}}
-	got := bubbleUpPromptsToParent(t.Context(), prompted, nil, mcpLookup)
-	if len(got) != 2 || !got["mcpchild"] || !got["parent"] {
-		t.Errorf("MCP-only lookup should bubble to parent, got %v", got)
-	}
-}
-
-// favReaderOnly implements FavoritesReader but NOT mcpParentLookup, so
-// childLinksFrom must return nil for it (bare stub, e.g. tests) and the
-// stub state.DB otherwise.
-type favReaderOnly struct{}
-
-func (favReaderOnly) ModelFavorites(context.Context, string) ([]state.ModelFavorite, error) {
-	return nil, nil
-}
-
-// favWithLinks implements both FavoritesReader and mcpParentLookup, like
-// the production *state.DB.
-type favWithLinks struct{ favReaderOnly }
-
-func (favWithLinks) ChildSessionParents(context.Context) (map[state.Key]string, error) {
-	return nil, nil
-}
-
-func TestChildLinksFrom(t *testing.T) {
-	if got := childLinksFrom(nil); got != nil {
-		t.Errorf("nil favorites should yield nil childLinks, got %v", got)
-	}
-	if got := childLinksFrom(favReaderOnly{}); got != nil {
-		t.Errorf("favorites without ChildSessionParents should yield nil, got %v", got)
-	}
-	if got := childLinksFrom(favWithLinks{}); got == nil {
-		t.Errorf("favorites implementing mcpParentLookup should be returned")
-	}
-}
-
-func TestApplyMCPParentLink(t *testing.T) {
-	links := map[state.Key]string{
-		{Platform: string(PlatformID), SessionID: "mcp-child"}:    "mcp-parent",
-		{Platform: string(PlatformID), SessionID: "native-child"}: "wrong-parent",
-	}
-
-	mcpChild := db.Session{ID: "mcp-child"}
-	applyMCPParentLink(&mcpChild, links)
-	if mcpChild.ParentID != "mcp-parent" {
-		t.Errorf("MCP child ParentID = %q, want mcp-parent", mcpChild.ParentID)
-	}
-
-	nativeChild := db.Session{ID: "native-child", ParentID: "native-parent"}
-	applyMCPParentLink(&nativeChild, links)
-	if nativeChild.ParentID != "native-parent" {
-		t.Errorf("native ParentID = %q, want native-parent", nativeChild.ParentID)
 	}
 }
 

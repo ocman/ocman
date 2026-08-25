@@ -23,8 +23,6 @@ const workflowDefinition = `{
 func buildWorkflowMCPServer(t *testing.T, stateDB *state.DB) *mcptest.Server {
 	t.Helper()
 	tools := internalmcp.ServerTools(internalmcp.Deps{
-		StateDB:         stateDB,
-		PlatformID:      "opencode",
 		WorkflowService: workflows.NewService(workflows.Deps{Store: stateDB}),
 	})
 	srv, err := mcptest.NewServer(t, tools...)
@@ -33,6 +31,28 @@ func buildWorkflowMCPServer(t *testing.T, stateDB *state.DB) *mcptest.Server {
 	}
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+func TestToolSetOmitsSessionManagement(t *testing.T) {
+	retired := map[string]bool{
+		"new_session": true, "await_session_result": true,
+		"get_session_status": true, "get_current_session_id": true,
+		"list_child_sessions": true, "cancel_session": true,
+		"send_message_to_child": true, "send_message_to_parent": true,
+	}
+	want := map[string]bool{"embed_file": true, "validate_workflow": true}
+	stateDB := openTestStateDB(t)
+	for _, tool := range internalmcp.ServerTools(internalmcp.Deps{
+		WorkflowService: workflows.NewService(workflows.Deps{Store: stateDB}),
+	}) {
+		if retired[tool.Tool.Name] {
+			t.Errorf("retired session tool %q is still registered", tool.Tool.Name)
+		}
+		delete(want, tool.Tool.Name)
+	}
+	for name := range want {
+		t.Errorf("retained MCP tool %q is not registered", name)
+	}
 }
 
 func resultObject(t *testing.T, srv *mcptest.Server, name string, args map[string]interface{}) map[string]interface{} {

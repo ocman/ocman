@@ -80,18 +80,7 @@ func (s *Server) mcpHandler() http.Handler {
 // It is only registered when the OpenCode platform adapter is present.
 func (s *Server) buildMCPHandler() http.Handler {
 	deps := internalmcp.Deps{
-		OcDB:                  s.db,
-		StateDB:               s.stateDB,
-		Platform:              s.sessions.Client("opencode"),
-		PlatformID:            "opencode",
-		EnsureProjectOpencode: internalmcp.ProjectOpencodeEnsurer(s.ensureProjectOpencodePort),
-		CreateWorktreeSession: internalmcp.WorktreeSessionCreator(s.hostWorktreeSession),
-		GitContext:            internalmcp.GitContextReader(s.hostGitContext),
-		KillTmuxTarget:        internalmcp.TmuxTargetKiller(s.killHostTmuxTarget),
-		ChildResults:          s.childResults,
-		ChildDisconnected:     s.deferChildResultReconnect,
-		ChildStarted:          s.enqueueChildSession,
-		SignFile:              s.FileURL,
+		SignFile: s.FileURL,
 	}
 	if s.stateDB != nil {
 		deps.WorkflowService = s.workflowSvc()

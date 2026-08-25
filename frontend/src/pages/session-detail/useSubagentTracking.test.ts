@@ -5,7 +5,7 @@
 // during long subagent runs.
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { useSubagentTracking } from './useSubagentTracking';
 import { api, type Part } from '../../lib/api';
 
@@ -54,7 +54,7 @@ describe('useSubagentTracking', () => {
     expect(result.current.subagentTokens.has(`m${N - 1}`)).toBe(true);
   });
 
-  it('loads child session references while new_session is running', async () => {
+  it('does not treat retired new_session calls as native tasks', async () => {
     const part = {
       id: 'tool-1',
       messageId: 'message-1',
@@ -62,39 +62,12 @@ describe('useSubagentTracking', () => {
       timeCreated: 1000,
       data: { type: 'tool', tool: 'new_session', state: { status: 'running', input: { intent: 'Explain' } } },
     } as Part;
-    vi.spyOn(api, 'sessionTasks').mockResolvedValue({
-      tasks: {},
-      children: [{ id: 'child-1', intent: 'Explain', status: 'running', createdAt: 1100 }],
-    });
+    const request = vi.spyOn(api, 'sessionTasks').mockResolvedValue({ tasks: {} });
 
-    const { result } = renderHook(() => useSubagentTracking([part], 'parent-1'));
+    renderHook(() => useSubagentTracking([part], 'parent-1'));
 
-    await waitFor(() => expect(result.current.childSessions[0]?.id).toBe('child-1'));
-  });
-
-  it('retries quickly when the child record races the first lookup', async () => {
-    vi.useFakeTimers();
-    const part = {
-      id: 'tool-1',
-      messageId: 'message-1',
-      sessionId: 'parent-1',
-      timeCreated: 1000,
-      data: { type: 'tool', tool: 'new_session', state: { status: 'running', input: { intent: 'Explain' } } },
-    } as Part;
-    const request = vi.spyOn(api, 'sessionTasks')
-      .mockResolvedValueOnce({ tasks: {}, children: [] })
-      .mockResolvedValue({
-        tasks: {},
-        children: [{ id: 'child-1', intent: 'Explain', status: 'running', createdAt: 1100 }],
-      });
-
-    const { result } = renderHook(() => useSubagentTracking([part], 'parent-1'));
     await act(async () => { await Promise.resolve(); });
-    expect(request).toHaveBeenCalledTimes(1);
-
-    await act(async () => { await vi.advanceTimersByTimeAsync(250); });
-    expect(request).toHaveBeenCalledTimes(2);
-    expect(result.current.childSessions[0]?.id).toBe('child-1');
+    expect(request).not.toHaveBeenCalled();
   });
 
   it('does not poll running tasks while hidden', async () => {
@@ -118,47 +91,6 @@ describe('useSubagentTracking', () => {
     expect(request).not.toHaveBeenCalled();
 
     Object.defineProperty(document, 'hidden', { configurable: true, value: false });
-  });
-
-  it('pauses child-link retries while hidden and resumes when visible', async () => {
-    vi.useFakeTimers();
-    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
-    const request = vi.spyOn(api, 'sessionTasks').mockResolvedValue({ tasks: {}, children: [] });
-    const part = {
-      id: 'tool-1',
-      messageId: 'message-1',
-      sessionId: 'parent-1',
-      timeCreated: 1000,
-      data: { type: 'tool', tool: 'new_session', state: { status: 'running', input: { intent: 'Explain' } } },
-    } as Part;
-
-    renderHook(() => useSubagentTracking([part], 'parent-1'));
-    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
-    expect(request).not.toHaveBeenCalled();
-
-    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
-    document.dispatchEvent(new Event('visibilitychange'));
-    await act(async () => { await Promise.resolve(); });
-    expect(request).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not fork child-link polls on repeated visibility events', async () => {
-    Object.defineProperty(document, 'hidden', { configurable: true, value: true });
-    const request = vi.spyOn(api, 'sessionTasks').mockImplementation(() => new Promise(() => {}));
-    const part = {
-      id: 'tool-1',
-      messageId: 'message-1',
-      sessionId: 'parent-1',
-      timeCreated: 1000,
-      data: { type: 'tool', tool: 'new_session', state: { status: 'running', input: { intent: 'Explain' } } },
-    } as Part;
-
-    renderHook(() => useSubagentTracking([part], 'parent-1'));
-    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
-    document.dispatchEvent(new Event('visibilitychange'));
-    document.dispatchEvent(new Event('visibilitychange'));
-    await act(async () => { await Promise.resolve(); });
-    expect(request).toHaveBeenCalledTimes(1);
   });
 
   it('does not overlap slow running-task polls', async () => {

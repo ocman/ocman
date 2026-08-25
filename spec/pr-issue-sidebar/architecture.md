@@ -13,9 +13,9 @@ heavily on primitives already present in ocman:
    ocman's existing **env → CLI** order.
 2. A **set of per-project HTTP handlers** under `internal/server`
    that detect upstreams, list PRs/issues, and trigger a launch.
-   Launches reuse the existing `mcp.SessionLauncher` and
-   `worktree.Create` paths — the new endpoints are *thin
-   orchestrators*, not parallel implementations.
+   Launches reuse the existing `sessionsvc` and `worktree.Create`
+   paths — the new endpoints are *thin orchestrators*, not parallel
+   implementations.
 3. A **new pane in the existing `RightPanel`** on the frontend, made
    discoverable by a new entry in `ChangesSidebarTab` and gated by a
    per-project upstream-detection query.
@@ -57,7 +57,7 @@ graph TD
         FRG["forgejo client (new)"]
         GHC["github client (existing)"]
         WT["worktree (existing)"]
-        SL["mcp.SessionLauncher (existing)"]
+        SS["sessionsvc (existing)"]
         ST["state.db setting table (new)"]
     end
 
@@ -82,7 +82,7 @@ graph TD
     GHC --> GH
     FRG --> FJ
 
-    H -->|launch session| SL
+    H -->|launch session| SS
     H -->|create worktree| WT
     H <-->|templates| ST
 ```
@@ -193,34 +193,25 @@ graph TD
   - New GET/POST handler `/api/settings/prompt-templates` with
     sensible defaults baked into the Go binary.
 
-### AD-5: Launch reuses `mcp.SessionLauncher` directly; no MCP roundtrip
+### AD-5: Launch reuses `sessionsvc` directly
 
 - **Status**: Decided
-- **Context**: The MCP `split_to_session` and `split_to_worktree`
-  tools already do what FR-9 needs. We could invoke them via the
-  MCP server, or call the underlying `SessionLauncher` from the
-  new HTTP handler.
+- **Context**: Session creation needs to go through the shared
+  session mutation service to ensure consistent validation and
+  side effects.
 - **Options**:
-  1. **Call `SessionLauncher.Launch` / `LaunchWithWorktree`
-     directly from the new HTTP handler.** Skip MCP transport.
-  2. Have the frontend call the MCP server endpoint at `/mcp`.
+  1. **Call `sessionsvc` directly from the new HTTP handler.**
+  2. Duplicate session creation logic in the handler.
 - **Decision**: Option 1.
-- **Rationale**: The MCP server is for *agent* callers (model in
-  the loop, tool descriptions, JSON-schema validation). When the
-  user clicks a button in our own UI we already know what we want
-  to do — there's no benefit to going through the MCP plumbing,
-  and the MCP layer would require us to re-derive a session ID
-  from the project context.
+- **Rationale**: The session service is the single mutation path
+  for all session creation (REST, workflows, scheduled prompts).
+  Reusing it keeps validation, permission inheritance, and
+  side-effect hooks consistent.
 - **Consequences**:
-  - The new handler imports `internal/mcp` and reuses the
-    `SessionLauncher` instance constructed at startup.
-  - Child sessions still land in `state.db`'s `child_sessions`
-    table (migration v9), so the existing watcher and
-    `list_child_sessions` tool see them too.
-  - The launch handler must compose a prompt itself (we don't go
-    through `PromptComposer` because it's geared to the
-    "parent session has recent messages" use case; the PR/Issue
-    prompt is its own template render).
+  - The new handler imports `internal/sessionsvc` and delegates
+    session creation to it.
+  - The launch handler composes the prompt from the PR/Issue
+    template and passes it to the session service.
 
 ### AD-6: Cross-fork worktrees use a deterministic local ref `ocman/pr-<n>`
 
@@ -344,8 +335,8 @@ graph TD
         ST["state.DB (extend: setting table v12)"]
     end
 
-    subgraph mcp["internal/mcp"]
-        SL["SessionLauncher (existing)"]
+    subgraph sessionsvc["internal/sessionsvc"]
+        SS["sessionsvc (existing)"]
     end
 
     subgraph worktree["internal/worktree"]
@@ -356,7 +347,7 @@ graph TD
     UPH --> I
     LH --> I
     LH --> TPL
-    LH --> SL
+    LH --> SS
     LH --> WT
     LH --> FH
     GHA --> GHC
@@ -527,8 +518,8 @@ graph TD
   }
   ```
   - For `mode: "session"`: resolves the project's session
-    directory, renders the template, calls
-    `SessionLauncher.Launch`.
+    directory, renders the template, calls `sessionsvc` to
+    create the session.
   - For `mode: "worktree"`:
     - PR with same-repo head: passes the PR branch with
       `NewBranch=false` to `LaunchWithWorktree`.
@@ -837,7 +828,7 @@ sequenceDiagram
     participant H as POST /api/project/handle
     participant F as forge.FetchPRHead
     participant W as worktree.Create
-    participant SL as mcp.SessionLauncher
+    participant SS as sessionsvc
     participant OC as opencode
 
     User->>FE: Selects "Handle in new worktree"
@@ -850,11 +841,11 @@ sequenceDiagram
     F-->>H: branch=ocman/pr-42
     H->>W: Create(branch=ocman/pr-42, NewBranch=false)
     W-->>H: {path, ...}
-    H->>SL: LaunchWithWorktree(prompt=renderedTemplate)
-    SL->>OC: start in worktree path (tmux)
-    OC-->>SL: session ID
-    SL-->>H: childSessionID
-    H-->>FE: {childSessionId, worktreePath, branch, tmuxTarget}
+    H->>SS: CreateSession(prompt=renderedTemplate)
+    SS->>OC: start in worktree path
+    OC-->>SS: session ID
+    SS-->>H: sessionID
+    H-->>FE: {sessionId, worktreePath, branch, tmuxTarget}
 ```
 
 ### Handle an issue in the current session directory (default)
@@ -864,17 +855,17 @@ sequenceDiagram
     actor User
     participant FE as LaunchSplitButton
     participant H as POST /api/project/handle
-    participant SL as mcp.SessionLauncher
+    participant SS as sessionsvc
     participant OC as opencode
 
     User->>FE: Clicks "Handle in new session" (default action)
     FE->>H: {type: issue, number: 7, mode: session}
     H->>H: Render issue_prompt_template
-    H->>SL: Launch(dir=projectDir, prompt=...)
-    SL->>OC: CreateSession + SendMessage
-    OC-->>SL: childSessionID
-    SL-->>H: childSessionID
-    H-->>FE: {childSessionId, mode: session}
+    H->>SS: CreateSession(dir=projectDir, prompt=...)
+    SS->>OC: CreateSession + SendMessage
+    OC-->>SS: sessionID
+    SS-->>H: sessionID
+    H-->>FE: {sessionId, mode: session}
 ```
 
 ## File Structure
@@ -999,7 +990,7 @@ the next begins.
     with `react-markdown` + `remark-gfm`. Verify CSS scoping
     (e.g. PR body code blocks shouldn't blow up the pane width).
 11. **Launch path — session mode**: `POST /api/project/handle`
-    with `mode: "session"` calling `SessionLauncher.Launch`.
+    with `mode: "session"` calling `sessionsvc.CreateSession`.
     Frontend split-button default action.
 12. **Launch path — worktree mode, same-repo PRs and issues**:
     plumbs through `worktree.Create` + `LaunchWithWorktree`.
@@ -1037,8 +1028,8 @@ the next begins.
 - **OQ-A**: ~~Should the launch handler stream tmux launch progress
   to the frontend (similar to the worktree-launch SSE)?~~
   **Resolved:** v1 treats the launch synchronously and returns once
-  the child session is created. If tmux launch latency becomes
-  annoying, a future iteration can adopt SSE.
+  the session is created. If tmux launch latency becomes annoying, a
+  future iteration can adopt SSE.
 - **OQ-B**: ~~When a project has both a GitHub origin and a Forgejo
   mirror with the same number, the UI shows two `#123`s in the same
   tab.~~ **Resolved:** acceptable for v1 — the host group header

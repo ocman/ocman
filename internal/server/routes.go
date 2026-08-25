@@ -107,9 +107,8 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// sessions and settles run state.
 	mux.HandleFunc("/api/workflow-steps", s.requireLocalhost(requirePOST(s.handleWorkflowStep)))
 
-	// MCP server — localhost-only, enabled by default. Exposes the
-	// session-split tools (new_session, etc.)
-	// to AI coding agents via the Model Context Protocol.
+	// MCP server — localhost-only, enabled by default. Exposes workflow
+	// controls and file embedding to AI coding agents.
 	// Password auth applies here like everywhere else. Clients that
 	// can't send a cookie use the dedicated loopback listener instead
 	// (-mcp-addr, see startMCPListener).

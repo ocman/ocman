@@ -21,7 +21,7 @@ func TestWorkflowAgentStartKeepsCreatedSessionWhenPromptFails(t *testing.T) {
 	}
 	registry := platforms.NewRegistry()
 	registry.Register(p)
-	srv := New(nil, openWatcherTestStateDB(t), "", registry, nil)
+	srv := New(nil, openTestStateDB(t), "", registry, nil)
 	session, err := (&workflowAgentExecutor{s: srv}).Start(t.Context(), workflows.AgentRequest{Platform: "fake", Directory: t.TempDir(), Prompt: "work"})
 	if err != nil {
 		t.Fatal(err)
@@ -43,7 +43,7 @@ func TestWorkflowAgentStartSendsCorrectionToExistingSession(t *testing.T) {
 	}
 	registry := platforms.NewRegistry()
 	registry.Register(p)
-	srv := New(nil, openWatcherTestStateDB(t), "", registry, nil)
+	srv := New(nil, openTestStateDB(t), "", registry, nil)
 	session, err := (&workflowAgentExecutor{s: srv}).Start(t.Context(), workflows.AgentRequest{Platform: "fake", Directory: t.TempDir(), Prompt: correction, SessionID: "session-1"})
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +66,7 @@ func TestWorkflowAgentInspectReturnsFinalMessage(t *testing.T) {
 	}
 	registry := platforms.NewRegistry()
 	registry.Register(p)
-	srv := New(nil, openWatcherTestStateDB(t), "", registry, nil)
+	srv := New(nil, openTestStateDB(t), "", registry, nil)
 	result, err := (&workflowAgentExecutor{s: srv}).Inspect(t.Context(), workflows.AgentSession{ID: "session-1", Platform: "fake"})
 	if err != nil {
 		t.Fatal(err)
@@ -95,7 +95,7 @@ func TestWorkflowAgentInspectWaitsForCorrectionResponse(t *testing.T) {
 	}
 	registry := platforms.NewRegistry()
 	registry.Register(p)
-	srv := New(nil, openWatcherTestStateDB(t), "", registry, nil)
+	srv := New(nil, openTestStateDB(t), "", registry, nil)
 	result, err := (&workflowAgentExecutor{s: srv}).Inspect(t.Context(), workflows.AgentSession{ID: "session-1", Platform: "fake", State: workflows.AgentCorrecting})
 	if err != nil {
 		t.Fatal(err)
@@ -122,7 +122,7 @@ func TestWorkflowAgentCancelUsesSessionService(t *testing.T) {
 	}}
 	registry := platforms.NewRegistry()
 	registry.Register(p)
-	srv := New(nil, openWatcherTestStateDB(t), "", registry, nil)
+	srv := New(nil, openTestStateDB(t), "", registry, nil)
 	if err := (&workflowAgentExecutor{s: srv}).Cancel(t.Context(), workflows.AgentSession{ID: "session-1", Platform: "fake"}); err != nil {
 		t.Fatal(err)
 	}

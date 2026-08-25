@@ -1093,7 +1093,7 @@ func notifyFixtureSessions() []db.Session {
 		mk("fake", "archived-stale", "archived, untouched", "/repo/i", 10_000, db.StatusWaiting),
 		mk("fake", "archived-updated", "archived, touched since", "/repo/j", 10_000, db.StatusError),
 		mk("fake", "pinned-waiting", "pinned", "/repo/k", 10_000, db.StatusWaiting),
-		mk("fake", "child-of-mcp", "mcp child", "/repo/l", 10_000, db.StatusWaiting),
+		mk("fake", "extra-waiting", "extra waiting", "/repo/l", 10_000, db.StatusWaiting),
 		// Empty title + directory exercise the projection's omitempty.
 		mk("fake", "bare", "", "", 10_000, db.StatusWaiting),
 		// A second platform proves the merge/sort/limit ordering is
@@ -1121,8 +1121,7 @@ var notifyFixtureState = stateSetup{
 }
 
 // newNotifyFixtureServer builds a server seeded with the shared notify
-// fixture: two adapters, the state.db rows above, and one MCP child
-// parent link (another applySessionState input notify must not need).
+// fixture: two adapters and the state.db rows above.
 func newNotifyFixtureServer(t *testing.T) *Server {
 	t.Helper()
 	srv, reg := newSessionsTestServer(t)
@@ -1138,11 +1137,6 @@ func newNotifyFixtureServer(t *testing.T) *Server {
 	reg.Register(&fakePlatform{id: "fake", sessions: fake})
 	reg.Register(&fakePlatform{id: "other", sessions: other})
 	applyStateSetup(t, srv.stateDB, notifyFixtureState)
-	if err := srv.stateDB.InsertChildSession(t.Context(), state.ChildSession{
-		ID: "child-of-mcp", ParentSessionID: "prompt-perm", Platform: "fake",
-	}); err != nil {
-		t.Fatalf("InsertChildSession: %v", err)
-	}
 	return srv
 }
 
@@ -1193,7 +1187,7 @@ func getNotifyJSON(t *testing.T, srv *Server, query string) string {
 // TestHandleSessionsNotify_MatchesFullStateOverlay is the behaviour
 // -equivalence gate: the notify-scoped overlay must produce byte
 // -identical JSON to the full applySessionState overlay across seen,
-// archived, pinned, MCP-parent, prompt, status, and multi-adapter
+// archived, pinned, prompt, status, and multi-adapter
 // fixtures — for several since/limit combinations.
 func TestHandleSessionsNotify_MatchesFullStateOverlay(t *testing.T) {
 	for _, tc := range []struct {

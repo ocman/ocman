@@ -500,12 +500,19 @@ func TestMigrate_V34AddsChildResultDeliveryState(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer sqlDB.Close()
-	if err := migrate(sqlDB); err != nil {
+	tx, err := sqlDB.Begin()
+	if err != nil {
 		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	for version := 1; version <= 34; version++ {
+		if err := applyMigration(tx, version); err != nil {
+			t.Fatalf("migrate to v%d: %v", version, err)
+		}
 	}
 
 	var count int
-	if err := sqlDB.QueryRow(`SELECT count(*) FROM pragma_table_info('child_sessions') WHERE name = 'result_delivery'`).Scan(&count); err != nil {
+	if err := tx.QueryRow(`SELECT count(*) FROM pragma_table_info('child_sessions') WHERE name = 'result_delivery'`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	if count != 1 {
@@ -754,6 +761,24 @@ func TestMigrateV45BackfillsApprovalProvenance(t *testing.T) {
 		if metadata != "{}" || askedAt != approvedAt || askedAt != 123 {
 			t.Errorf("%s legacy fields = metadata %q asked %d approved %d", id, metadata, askedAt, approvedAt)
 		}
+	}
+}
+
+func TestLatestSchemaOmitsRetiredChildSessions(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := OpenFromSQL(db); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='child_sessions'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatal("latest schema still contains retired child_sessions table")
 	}
 }
 

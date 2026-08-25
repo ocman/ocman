@@ -34,7 +34,6 @@ import (
 // Store is the consumer-side subset of *state.DB the queue needs.
 type Store interface {
 	EnqueueMessage(ctx context.Context, m state.QueuedMessage) error
-	EnqueueClaimedChildResult(ctx context.Context, childID string, m state.QueuedMessage) (bool, error)
 	CountQueuedMessages(ctx context.Context, platform, sessionID string) (int, error)
 	HeadQueuedMessage(ctx context.Context, platform, sessionID string) (*state.QueuedMessage, error)
 	ListQueuedMessages(ctx context.Context, platform, sessionID string) ([]state.QueuedMessage, error)
@@ -209,28 +208,6 @@ func (s *Service) Enqueue(ctx context.Context, platformID string, forceQueue boo
 		s.drainHead(ctx, key, false)
 	}
 	return nil
-}
-
-// EnqueueChildResult atomically persists a held queue row and completes the
-// watcher's delivery claim. It never fast-path drains the row.
-func (s *Service) EnqueueChildResult(ctx context.Context, childID, id, platformID string, req platforms.SendMessageRequest) (bool, error) {
-	if req.Message == "" && len(req.Images) == 0 {
-		return false, ErrEmptyMessage
-	}
-	m := state.QueuedMessage{
-		ID: id, Platform: platformID, SessionID: req.SessionID, Text: req.Message,
-		ImagesJSON: encodeImages(req.Images), Model: req.Model, Agent: req.Agent,
-		Reasoning: req.Reasoning, CreatedAt: nowMillis(),
-	}
-	key := sessionKey{Platform: platformID, SessionID: req.SessionID}
-	lock := s.lockFor(key)
-	lock.Lock()
-	defer lock.Unlock()
-	queued, err := s.store.EnqueueClaimedChildResult(ctx, childID, m)
-	if err == nil && queued {
-		s.fireNotify(ctx, key)
-	}
-	return queued, err
 }
 
 // Flush sends the single oldest queued message for a session, provided

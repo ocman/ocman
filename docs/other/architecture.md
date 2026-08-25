@@ -60,9 +60,9 @@ flowchart LR
   remotes directly. `:8228` is the production `-addr` default; in dev the
   Vite server on :8228 proxies `/api` to the air backend on :8229.
 - **opencode.db.** Foreign data, opened read-only. Ocman never writes to it.
-- **state.db.** Ocman's own state: archive flags, child sessions, immutable
-  workflow versions and runs, workflow artifact metadata, workflow resource
-  and workspace leases, permission approval provenance, settings, and remote
+- **state.db.** Ocman's own state: archive flags, immutable workflow
+  versions and runs, workflow artifact metadata, workflow resource and
+  workspace leases, permission approval provenance, settings, and remote
   tokens.
 - **workflow-artifacts/.** A content-addressed store under the ocman data
   dir, next to state.db, holding large, deduplicated, immutable artifact
@@ -185,15 +185,13 @@ flowchart TD
   the transaction-safe copy idempotent. The legacy tables survive only as
   non-destructive upgrade input and historical data; no API, MCP, UI or
   runtime scheduler reads them.
-- **internal/mcp.** Prompt composer, session launcher and tool handlers. All
-  side effects go through the same `Platform` interface the HTTP layer uses,
-  and every host operation (worktree creation, git prompt context, tmux kill)
-  goes through owner-routed adapters the server injects over
-  `hostsvc.Router.ForDir`. The package imports neither `git` nor `tmux`.
+- **internal/mcp.** MCP tool handlers for workflow control and `embed_file`.
+  Workflow operations go through `workflows.Service`; file embedding uses
+  signed tokens persisted in `state.db`.
 - **internal/opencodeskills.** Extracts binary-embedded ocman skills into
   XDG data and installs only ocman-owned symlinks for OpenCode discovery.
 - **internal/state.** The only writable store: migrations, settings,
-  workflows, prompt schedules, child sessions.
+  workflows, prompt schedules.
 - **forge and integrations.** Forge-agnostic types in `forge`, per-forge HTTP
   clients in `integrations/{github,forgejo}`.
 
@@ -224,10 +222,10 @@ sequenceDiagram
     D-->>B: JSON (status settled at query time)
     R->>O: gRPC Session / StreamEvents (remote only)
     O->>A: Session / ProxyEvents
-    O->>O: inject persisted approvals,<br/>tee synthetic approval events
-    O-->>S: enriched JSON / framed SSE
-     Note over S,E: background: workflow + prompt-schedule ticks,<br/>child-session watcher, remote gRPC streams
-     E-->>B: SSE (session.updated, workflow.run.updated)
+     O->>O: inject persisted approvals,<br/>tee synthetic approval events
+     O-->>S: enriched JSON / framed SSE
+      Note over S,E: background: workflow + prompt-schedule ticks,<br/>remote gRPC streams
+      E-->>B: SSE (session.updated, workflow.run.updated)
 ```
 
 The key property: ocman never persists session status. The live turn signal

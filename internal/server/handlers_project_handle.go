@@ -14,7 +14,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/forge"
 	"github.com/NoUseFreak/ocman/internal/git"
-	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -33,9 +33,7 @@ type handleProjectRequest struct {
 }
 
 // handleProjectHandle launches a new OpenCode session (or worktree-
-// scoped session) to "handle" a PR or Issue. Reuses the existing
-// mcp.SessionLauncher so child sessions land in state.db's
-// child_sessions table the same way MCP-triggered launches do.
+// scoped session) to "handle" a PR or Issue.
 //
 // POST /api/project/handle
 // Localhost-only (it spawns tmux/opencode).
@@ -91,18 +89,20 @@ func (s *Server) handleProjectHandle(w http.ResponseWriter, r *http.Request) {
 		prompt = fallbackPrompt(req, rem, vars)
 	}
 
-	// Build the launcher lazily — same deps as the MCP server uses.
-	launcher := s.newSessionLauncher()
-	if launcher == nil {
+	if s.registry == nil {
+		http.Error(w, "OpenCode platform not registered", http.StatusServiceUnavailable)
+		return
+	}
+	if _, ok := s.registry.Get(platforms.ID("opencode")); !ok {
 		http.Error(w, "OpenCode platform not registered", http.StatusServiceUnavailable)
 		return
 	}
 
 	switch req.Mode {
 	case "session":
-		s.handleProjectHandleSession(w, r, launcher, req, prompt)
+		s.handleProjectHandleSession(w, r, req, prompt)
 	case "worktree":
-		s.handleProjectHandleWorktree(w, r, launcher, req, rem, f, repoRoot, prompt, vars)
+		s.handleProjectHandleWorktree(w, r, req, rem, f, repoRoot, prompt, vars)
 	default:
 		http.Error(w, "mode must be 'session' or 'worktree'", http.StatusBadRequest)
 	}
@@ -112,25 +112,21 @@ func (s *Server) handleProjectHandle(w http.ResponseWriter, r *http.Request) {
 // new OpenCode session in the project directory, no branch checkout.
 func (s *Server) handleProjectHandleSession(
 	w http.ResponseWriter, r *http.Request,
-	launcher *internalmcp.SessionLauncher,
 	req handleProjectRequest, prompt string,
 ) {
-	childID, err := launcher.Launch(r.Context(), internalmcp.LaunchRequest{
-		// ParentSessionID intentionally empty: the launch was
-		// initiated from the UI, not from a parent session. The
-		// child_sessions schema allows an empty parent.
-		Platform:       "opencode",
-		Directory:      req.Dir,
-		Intent:         req.intentOrDefault(),
-		ComposedPrompt: prompt,
-	})
+	port, _ := s.ensureProjectOpencodePort(r.Context(), req.Dir)
+	client := s.sessions.Client("opencode")
+	created, err := client.CreateSession(r.Context(), platforms.CreateSessionRequest{Directory: req.Dir, Port: port})
 	if err != nil {
 		log.WithError(err).Warn("handle session: launch")
-		http.Error(w, "launching child session: "+err.Error(), http.StatusBadGateway)
+		http.Error(w, "launching session: "+err.Error(), http.StatusBadGateway)
 		return
 	}
+	if err := client.SendMessage(r.Context(), platforms.SendMessageRequest{SessionID: created.ID, Message: prompt}); err != nil {
+		log.WithError(err).WithField("session", created.ID).Warn("handle session: send prompt")
+	}
 	writeJSON(w, map[string]interface{}{
-		"childSessionId": childID,
+		"childSessionId": created.ID,
 		"mode":           "session",
 	})
 }
@@ -139,7 +135,6 @@ func (s *Server) handleProjectHandleSession(
 // Branches by item type and cross-fork status.
 func (s *Server) handleProjectHandleWorktree(
 	w http.ResponseWriter, r *http.Request,
-	launcher *internalmcp.SessionLauncher,
 	req handleProjectRequest, rem forge.Remote, f forge.Forge,
 	repoRoot, prompt string, vars map[string]string,
 ) {
@@ -201,27 +196,22 @@ func (s *Server) handleProjectHandleWorktree(
 		return
 	}
 
-	childID, wtResult, err := launcher.LaunchWithWorktree(
-		r.Context(),
-		internalmcp.LaunchRequest{
-			Platform:       "opencode",
-			Intent:         req.intentOrDefault(),
-			ComposedPrompt: prompt,
-		},
-		internalmcp.WorktreeSessionRequest{
-			ParentDir: repoRoot,
-			Branch:    branch,
-			NewBranch: newBranch,
-			BaseRef:   baseRef,
-		},
-	)
+	wtResult, err := s.router().ForDir(repoRoot).CreateWorktreeSession(r.Context(), hostsvc.WorktreeSessionRequest{
+		ProjectDir: repoRoot,
+		Branch:     branch,
+		NewBranch:  newBranch,
+		BaseRef:    baseRef,
+	})
 	if err != nil {
 		log.WithError(err).Warn("handle worktree: launch")
 		http.Error(w, "launching worktree session: "+err.Error(), http.StatusBadGateway)
 		return
 	}
+	if err := s.sessions.Client("opencode").SendMessage(r.Context(), platforms.SendMessageRequest{SessionID: wtResult.SessionID, Message: prompt}); err != nil {
+		log.WithError(err).WithField("session", wtResult.SessionID).Warn("handle worktree: send prompt")
+	}
 	writeJSON(w, map[string]interface{}{
-		"childSessionId": childID,
+		"childSessionId": wtResult.SessionID,
 		"mode":           "worktree",
 		"worktreePath":   wtResult.WorktreePath,
 		"branch":         wtResult.Branch,
@@ -404,24 +394,6 @@ func slugifyIssueTitle(title string) string {
 	return strings.Trim(b.String(), "-")
 }
 
-// newSessionLauncher constructs a fresh SessionLauncher from the
-// server's existing dependencies. Returns nil when the OpenCode
-// platform isn't registered.
-func (s *Server) newSessionLauncher() *internalmcp.SessionLauncher {
-	if s.registry == nil {
-		return nil
-	}
-	if _, ok := s.registry.Get(platforms.ID("opencode")); !ok {
-		return nil
-	}
-	return internalmcp.NewSessionLauncher(
-		s.stateDB,
-		s.sessions.Client("opencode"),
-		internalmcp.WorktreeSessionCreator(s.hostWorktreeSession),
-		internalmcp.ProjectOpencodeEnsurer(s.ensureProjectOpencodePort),
-	)
-}
-
 // --- request validation helpers ---
 
 func (r handleProjectRequest) validate() error {
@@ -454,15 +426,4 @@ func (r handleProjectRequest) validate() error {
 		return errors.New("action must be 'handle' or 'review'")
 	}
 	return nil
-}
-
-func (r handleProjectRequest) intentOrDefault() string {
-	if r.Intent != "" {
-		return r.Intent
-	}
-	verb := "handle"
-	if r.Action == "review" {
-		verb = "review"
-	}
-	return fmt.Sprintf("%s %s #%d", verb, r.Type, r.Number)
 }

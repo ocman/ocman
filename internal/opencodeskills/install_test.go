@@ -26,3 +26,33 @@ func TestInstall(t *testing.T) {
 		t.Fatalf("link = %q, %v", destination, err)
 	}
 }
+
+func TestRemoveRetiredSkillOnlyRemovesOcmanOwnedPath(t *testing.T) {
+	dataHome, configHome := t.TempDir(), t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dataHome)
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	if err := Install(map[string][]byte{"retired": []byte("skill")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := Remove("retired"); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(configHome, "opencode", "skills", "retired")
+	if _, err := os.Lstat(link); !os.IsNotExist(err) {
+		t.Fatalf("owned link still exists: %v", err)
+	}
+	targetDir := filepath.Join(dataHome, "ocman", "opencode", "skills", "retired")
+	if _, err := os.Stat(targetDir); !os.IsNotExist(err) {
+		t.Fatalf("owned data still exists: %v", err)
+	}
+
+	if err := os.MkdirAll(link, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := Remove("retired"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(link); err != nil {
+		t.Fatalf("user-owned skill removed: %v", err)
+	}
+}
