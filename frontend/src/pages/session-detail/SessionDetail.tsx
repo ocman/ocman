@@ -1563,6 +1563,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
                           agentsLoaded={agentsLoaded}
                           contextTokens={session?.contextTokenCount || undefined}
                           activeDurationMs={session?.activeDurationMs}
+                          timeCreated={session?.timeCreated}
+                          durationMs={session?.durationMs}
                           sessionId={session?.id}
                           tokensPerSecond={liveTokensPerSecond ?? undefined}
                           tokenStats={tokenStats}

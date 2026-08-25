@@ -16,6 +16,7 @@ import {
 } from './harness';
 import { recordFailedSend, clearFailedSends } from '../../../lib/failedSends';
 import { useApiStore } from '../../../lib/apiStore';
+import { formatDate } from '../../../lib/format';
 
 beforeEach(() => {
   // jsdom does not implement scrollIntoView or scrollTo; the
@@ -771,6 +772,28 @@ describe('SessionDetail — sidebar polling', () => {
 });
 
 describe('SessionDetail — session tree usage', () => {
+  it('shows current-session timing details in the usage popover', async () => {
+    const startedAt = Date.UTC(2026, 0, 2, 3, 4);
+    const session = makeSession({
+      timeCreated: startedAt,
+      durationMs: 3_661_000,
+      activeDurationMs: 125_000,
+      totalInputTokens: 10,
+    });
+    renderSessionPage({
+      sessionId: session.id,
+      detail: makeSessionDetail(session),
+      sessions: [session],
+    });
+
+    fireEvent.click(await screen.findByTitle('Click for cost and token usage details'));
+
+    const timing = await screen.findByText('Timing');
+    expect(timing.parentElement).toHaveTextContent(`Started${formatDate(startedAt)}`);
+    expect(timing.parentElement).toHaveTextContent('Total time1h 1m');
+    expect(timing.parentElement).toHaveTextContent('Agent time2m 5s');
+  });
+
   it('uses the detail tree for parent lookup without fetching the full session list', async () => {
     const parent = makeSession({ id: 'sess_parent', title: 'Parent planning session' });
     const child = makeSession({ id: 'sess_child', parentId: parent.id });

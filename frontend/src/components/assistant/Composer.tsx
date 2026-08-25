@@ -18,7 +18,7 @@ import { QueuedMessages } from './QueuedMessages';
 import { useComposerAudio } from './useComposerAudio';
 import { routeComposerSubmit } from './composerSubmit';
 import { getContextWindow, formatTokenCount } from '../../lib/models/contextWindows';
-import { formatCurrency, formatDuration, formatTokensPerSecond } from '../../lib/format';
+import { formatCurrency, formatDate, formatDuration, formatTokensPerSecond } from '../../lib/format';
 import { BUILTIN_COMMANDS, KNOWN_AGENTS, modelHasVariants } from '../../lib/commands/builtinCommands';
 import { remoteLog } from '../../lib/remoteLog';
 import { ModelLabel } from '../ModelLogo';
@@ -72,6 +72,8 @@ interface ComposerFooterProps {
   sessionTreeStats?: { input: number; output: number; totalCost: number; totalEstCost: number; totalEffectiveCost: number; sessions: number };
   contextTokens?: number;
   effectiveModel: string;
+  timeCreated?: number;
+  durationMs?: number;
   visibleDurationMs: number;
 }
 
@@ -92,6 +94,8 @@ function ComposerFooter({
   sessionTreeStats,
   contextTokens,
   effectiveModel,
+  timeCreated,
+  durationMs,
   visibleDurationMs,
 }: ComposerFooterProps) {
   const [showTokenPopover, setShowTokenPopover] = useState(false);
@@ -174,6 +178,15 @@ function ComposerFooter({
                     <span className="oc-token-popover-label">Est. cost</span>
                     <span className="oc-token-popover-value">{estimatedCost != null ? `$${estimatedCost.toFixed(4)}` : 'n/a'}</span>
                   </div>
+                  {timeCreated != null && (
+                    <>
+                      <div className="oc-token-popover-divider" />
+                      <div className="oc-token-popover-subtitle">Timing</div>
+                      <div className="oc-token-popover-row"><span className="oc-token-popover-label">Started</span><span className="oc-token-popover-value">{formatDate(timeCreated)}</span></div>
+                      <div className="oc-token-popover-row"><span className="oc-token-popover-label">Total time</span><span className="oc-token-popover-value">{formatDuration(durationMs ?? 0)}</span></div>
+                      <div className="oc-token-popover-row"><span className="oc-token-popover-label">Agent time</span><span className="oc-token-popover-value">{formatDuration(visibleDurationMs)}</span></div>
+                    </>
+                  )}
                   {sessionTreeStats && sessionTreeStats.sessions > 1 && (
                     <>
                       <div className="oc-token-popover-divider" />
@@ -387,6 +400,8 @@ function ComposerImpl({
   agentsLoaded,
   contextTokens,
   activeDurationMs,
+  timeCreated,
+  durationMs,
   sessionId,
   tokensPerSecond,
   tokenStats,
@@ -488,6 +503,8 @@ function ComposerImpl({
   agentsLoaded?: boolean;
   contextTokens?: number;
   activeDurationMs?: number;
+  timeCreated?: number;
+  durationMs?: number;
   sessionId?: string;
   tokensPerSecond?: number;
   tokenStats?: {
@@ -1304,6 +1321,8 @@ function ComposerImpl({
         sessionTreeStats={sessionTreeStats}
         contextTokens={contextTokens}
         effectiveModel={effectiveModel}
+        timeCreated={timeCreated}
+        durationMs={durationMs}
         visibleDurationMs={visibleDurationMs}
       />
     </div>
