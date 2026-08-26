@@ -859,7 +859,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
       );
       if (res.id) {
         const sessionDirectory = res.directory ?? directory;
-        seedNewSession(res.id, sessionDirectory, targetPlatform ?? '', title);
+        seedNewSession(res.id, sessionDirectory, targetPlatform ?? '', title, remoteId);
         navigateToSession(res.id);
       }
     } catch (e) {

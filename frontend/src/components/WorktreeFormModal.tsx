@@ -222,7 +222,7 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, close }:
     setStage('idle');
     close();
     if (resp.sessionId) {
-      seedNewSession(resp.sessionId, resp.worktreePath, '', branch.trim());
+      seedNewSession(resp.sessionId, resp.worktreePath, '', branch.trim(), 'local');
       navigate(`/session/${resp.sessionId}`);
     } else {
       navigate(`/project/${encodeURIComponent(resp.worktreePath)}`);

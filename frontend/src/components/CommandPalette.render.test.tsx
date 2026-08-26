@@ -53,7 +53,7 @@ vi.mock('../lib/useCapabilities', () => ({
 }));
 
 vi.mock('../lib/machinePicker', () => ({
-  resolveTargetForDir: vi.fn(async () => ''),
+  resolveTargetForDir: vi.fn(async () => ({ platform: '', remoteId: 'local' })),
 }));
 
 import { CommandPalette } from './CommandPalette';
@@ -209,7 +209,7 @@ describe('CommandPalette project mode', () => {
     await waitFor(() => {
       expect(mocks.apiState.createSession).toHaveBeenCalledWith('/Users/peter', 'opencode', undefined);
     });
-    expect(mocks.apiState.seedNewSession).toHaveBeenCalledWith('new-session', '/Users/peter', 'opencode');
+    expect(mocks.apiState.seedNewSession).toHaveBeenCalledWith('new-session', '/Users/peter', 'opencode', undefined, 'local');
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['projects'] });
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['sessions'] });
   });
@@ -283,7 +283,22 @@ describe('CommandPalette project mode', () => {
     await waitFor(() => {
       expect(mocks.apiState.createSession).toHaveBeenCalledWith('/Users/peter/workspace/ocman', undefined, undefined);
     });
-    expect(mocks.apiState.seedNewSession).toHaveBeenCalledWith('new-session', '/Users/peter/workspace/ocman', '');
+    expect(mocks.apiState.seedNewSession).toHaveBeenCalledWith('new-session', '/Users/peter/workspace/ocman', '', undefined, 'local');
+  });
+
+  it('seeds a new session with the selected project owner', async () => {
+    mocks.uiState.paletteMode = 'project-session';
+    mocks.apiState.getProjects.mockResolvedValue([{
+      directory: '/remote/repo', remoteId: 'box', platform: 'r-box:opencode',
+      sessionCount: 1, messageCount: 1, totalTokensIn: 1, totalTokensOut: 1, lastUsed: 1,
+    }]);
+
+    renderPalette();
+    fireEvent.click(await screen.findByText('remote/repo'));
+
+    await waitFor(() => expect(mocks.apiState.seedNewSession).toHaveBeenCalledWith(
+      'new-session', '/remote/repo', 'r-box:opencode', undefined, 'box',
+    ));
   });
 
   it('shows "Create new project" at the end of the known-project picker, even when search matches nothing', async () => {

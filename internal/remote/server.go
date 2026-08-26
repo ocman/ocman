@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sync"
 
 	log "github.com/sirupsen/logrus"
@@ -443,6 +444,11 @@ func (s *Server) GitInfo(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, er
 	if err := unmarshalJSON(req.Payload, &dirs); err != nil {
 		return nil, err
 	}
+	for _, dir := range dirs {
+		if err := requireAbsoluteHostPath(dir, "git info directory"); err != nil {
+			return nil, err
+		}
+	}
 	return jsonResp(s.host.GitInfo(ctx, dirs))
 }
 
@@ -488,6 +494,9 @@ func (s *Server) ProjectUpstreams(ctx context.Context, req *pb.JsonReq) (*pb.Jso
 	if err := unmarshalJSON(req.Payload, &args); err != nil {
 		return nil, err
 	}
+	if err := requireAbsoluteHostPath(args.Dir, "project directory"); err != nil {
+		return nil, err
+	}
 	upstreams, err := s.host.ProjectUpstreams(ctx, args.Dir)
 	if errors.Is(err, git.ErrNotARepo) {
 		return nil, status.Error(codes.NotFound, err.Error())
@@ -500,8 +509,18 @@ func (s *Server) FetchPRHead(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp
 	if err := unmarshalJSON(req.Payload, &args); err != nil {
 		return nil, err
 	}
+	if err := requireAbsoluteHostPath(args.RepoRoot, "repository root"); err != nil {
+		return nil, err
+	}
 	branch, err := s.host.FetchPRHead(ctx, args)
 	return jsonResp(map[string]string{"branch": branch}, err)
+}
+
+func requireAbsoluteHostPath(path, label string) error {
+	if !filepath.IsAbs(path) {
+		return status.Errorf(codes.InvalidArgument, "%s must be absolute", label)
+	}
+	return nil
 }
 
 func (s *Server) ListWorktrees(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {

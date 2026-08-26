@@ -25,6 +25,7 @@ import type { Message, Part } from '../../lib/api';
 interface ActionSession {
   id: string;
   platform: string;
+  remoteId?: string;
   directory: string;
   title?: string;
   status?: string;
@@ -605,6 +606,7 @@ export function useSessionActions({
             directory: session.directory,
             fallbackDirectory: projectRootForDirectory(session.directory),
             platform: session.platform,
+            remoteId: session.remoteId,
             title: clearTitle,
           },
         );
@@ -620,7 +622,7 @@ export function useSessionActions({
         remoteLog.error('Failed to archive session', e);
       }
       if (newId) {
-        seedNewSession(newId, newDirectory, session.platform, clearTitle);
+        seedNewSession(newId, newDirectory, session.platform, clearTitle, session.remoteId);
         navigateToSession(newId);
       }
       return;

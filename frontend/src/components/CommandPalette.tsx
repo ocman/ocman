@@ -541,7 +541,7 @@ export function CommandPalette() {
         .then((res) => {
           if (res.id) {
             const sessionDir = res.directory ?? projectDir;
-            seedNewSession(res.id, sessionDir, chosenPlatform);
+            seedNewSession(res.id, sessionDir, chosenPlatform, undefined, selectedTarget.remoteId);
             void queryClient.invalidateQueries({ queryKey: ['projects'] });
             void queryClient.invalidateQueries({ queryKey: ['sessions'] });
             navigate(`/session/${res.id}`);

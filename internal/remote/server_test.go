@@ -39,6 +39,34 @@ func TestSSEFrameWriterRejectsOversizedFrame(t *testing.T) {
 	}
 }
 
+func TestForgeHostRPCsRejectRelativePaths(t *testing.T) {
+	srv := &Server{host: localStubHost{}}
+	tests := []struct {
+		name string
+		call func() error
+	}{
+		{"git info", func() error {
+			_, err := srv.GitInfo(context.Background(), &pb.JsonReq{Payload: []byte(`["/repo","relative"]`)})
+			return err
+		}},
+		{"project upstreams", func() error {
+			_, err := srv.ProjectUpstreams(context.Background(), &pb.JsonReq{Payload: []byte(`{"dir":"relative"}`)})
+			return err
+		}},
+		{"fetch PR head", func() error {
+			_, err := srv.FetchPRHead(context.Background(), &pb.JsonReq{Payload: []byte(`{"repoRoot":"relative","remote":"origin","number":1}`)})
+			return err
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if code := status.Code(tt.call()); code != codes.InvalidArgument {
+				t.Fatalf("status = %s, want %s", code, codes.InvalidArgument)
+			}
+		})
+	}
+}
+
 // --- fakes ---
 
 type fakePlatform struct {
