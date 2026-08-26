@@ -110,7 +110,8 @@ flowchart TD
   remotes register as compound-ID platforms so handlers can't tell local from
   remote.
 - **hostsvc.Router.** The directory-scoped seam (git, worktrees, tmux, Beads,
-  projects). It resolves the owning host and delegates, the same transparency
+  projects and forge-repository detection/fetch). It resolves the owning host
+  and delegates, the same transparency
   trick as the registry. Worktree sessions run in-app on the project's single
   opencode instance, one per project, ensured through
   `EnsureProjectOpencode`, with a per-session working directory. There is no
@@ -189,10 +190,12 @@ flowchart TD
   signed tokens persisted in `state.db`.
 - **internal/opencodeskills.** Extracts binary-embedded ocman skills into
   XDG data and installs only ocman-owned symlinks for OpenCode discovery.
+  Retirement unlinks only the exact verified symlink and preserves extracted data.
 - **internal/state.** The only writable store: migrations, settings,
   workflows, prompt schedules.
 - **forge and integrations.** Forge-agnostic types in `forge`, per-forge HTTP
-  clients in `integrations/{github,forgejo}`.
+  clients in `integrations/{github,forgejo}`. PR/Issue handlers obtain repository
+  identity from the owner Host, then use the hub clients for metadata.
 
 ## 3. Session and event data flow
 

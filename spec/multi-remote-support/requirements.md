@@ -386,7 +386,7 @@ originate at the hub and stream remote-ward.
   - Operator is responsible for network reachability and (optionally) TLS or
     a trusted overlay.
 - **Scope:**
-  - Only the core new-session action is remote-aware in v1.
+  - Core session creation and the PR/Issue backend API are remote-aware.
 
 ## Assumptions
 
@@ -418,8 +418,8 @@ originate at the hub and stream remote-ward.
 - SSH tunnel management; Tailscale/VPN auto-configuration (operator's
   responsibility).
 - Hub-side MCP aggregation or splitting work onto remotes; MCP stays per-host.
-- Remote-aware PR/Issue sidebar and Worktrees-view entry points (only the
-  core new-session action is remote-aware in v1).
+- PR/Issue frontend owner selection and Worktrees-view entry points. The
+  PR/Issue backend accepts strict `remoteId` routing already.
 - Cross-host file transfer or cloning a never-seen repository onto a remote.
 - Aggregated cross-host metrics/cost roll-ups on the dashboard (local-only in
   v1; tracked as a follow-up ticket — see Open Questions).

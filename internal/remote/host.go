@@ -105,6 +105,39 @@ func (h *remoteHost) GitCheckout(ctx context.Context, dir, branch string) error 
 	return err
 }
 
+func (h *remoteHost) ProjectUpstreams(ctx context.Context, dir string) (*hostsvc.ProjectUpstreams, error) {
+	client := h.conn.Client()
+	if client == nil {
+		return nil, ErrRemoteOffline
+	}
+	b, _ := marshalJSON(map[string]string{"dir": dir})
+	resp, err := client.ProjectUpstreams(ctx, &pb.JsonReq{Payload: b})
+	if err != nil {
+		return nil, err
+	}
+	var out hostsvc.ProjectUpstreams
+	return &out, unmarshalJSON(resp.Payload, &out)
+}
+
+func (h *remoteHost) FetchPRHead(ctx context.Context, req hostsvc.FetchPRHeadRequest) (string, error) {
+	client := h.conn.Client()
+	if client == nil {
+		return "", ErrRemoteOffline
+	}
+	b, err := marshalJSON(req)
+	if err != nil {
+		return "", err
+	}
+	resp, err := client.FetchPRHead(ctx, &pb.JsonReq{Payload: b})
+	if err != nil {
+		return "", err
+	}
+	var out struct {
+		Branch string `json:"branch"`
+	}
+	return out.Branch, unmarshalJSON(resp.Payload, &out)
+}
+
 func (h *remoteHost) ListWorktrees(ctx context.Context, dir string) ([]git.Worktree, error) {
 	client := h.conn.Client()
 	if client == nil {

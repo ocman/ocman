@@ -19,6 +19,7 @@ interface ExpandableRowProps {
   url: string;
   host: string;
   directory: string;
+  remoteId?: string;
   remote: string;
   crossFork: boolean;
   className?: string;
@@ -43,6 +44,7 @@ export function ExpandableRow({
   url,
   host,
   directory,
+  remoteId = 'local',
   remote,
   crossFork,
   className = '',
@@ -97,6 +99,7 @@ export function ExpandableRow({
           {detailAfterBody}
           <LaunchSplitButton
             directory={directory}
+            remoteId={remoteId}
             remote={remote}
             type={type}
             number={number}

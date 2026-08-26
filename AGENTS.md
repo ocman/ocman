@@ -110,6 +110,12 @@ user-customizable template under Settings → "PR & Issue templates",
 persisted in the `setting` table of `state.db` (migration v12). See
 `spec/pr-issue-sidebar/` for the full spec.
 
+PR/Issue backend operations are owner-routed. Every project forge endpoint
+accepts `remoteId` (`local` by default); explicit remotes fail closed when
+disconnected. Repository detection and cross-fork fetches run through the
+owner's `hostsvc.Host`, while the hub uses its forge clients for PR/Issue
+metadata and launches sessions on the owner's compound platform.
+
 Ocman also supports **multi-remote**: one "hub" ocman attaches to other
 ocman instances over a long-lived gRPC channel and manages every
 machine's sessions from one unified, host-agnostic UI. A remote opts in
@@ -125,7 +131,7 @@ this transparent: session-scoped work goes through `platforms.Platform` +
 new `hostsvc.Host` + `hostsvc.Router` (`LookupRemote`/`ForDir`) — handlers
 resolve an owner and delegate, so the HTTP layer is unchanged. An
 explicitly client-supplied `remoteId` is always resolved through
-`Server.resolveOwner`, which fails closed with 409 when that remote is not
+`Server.resolveOwner`, which fails closed with 503 when that remote is not
 registered; only *inferred* ownership (`ForDir`) may degrade to the hub.
 An instance ID must be unique across connected remotes: the compound
 platform id and the router key are both derived from it, so a second

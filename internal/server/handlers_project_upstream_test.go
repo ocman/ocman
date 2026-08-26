@@ -12,6 +12,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/forge"
 	"github.com/NoUseFreak/ocman/internal/forge/github"
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 )
 
 // initGitHubRepo creates a local git repo whose origin remote points
@@ -83,6 +84,28 @@ func TestHandleProjectUpstreams_DetectsGitHubRemote(t *testing.T) {
 	u := resp.Upstreams[0]
 	if u.Name != "origin" || u.Type != forge.RemoteTypeGitHub || u.Repo != "alice/myproj" {
 		t.Errorf("unexpected upstream: %+v", u)
+	}
+}
+
+func TestHandleProjectUpstreams_UsesExplicitRemoteOwnerForRemoteOnlyPath(t *testing.T) {
+	srv := testServer(t)
+	host := &projectHandleRemoteHost{upstreams: githubProjectUpstreams("/remote/only/repo")}
+	srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
+	srv.hostRouter.RegisterRemote("rem1", host)
+
+	rr := httptest.NewRecorder()
+	srv.handleProjectUpstreams(rr, httptest.NewRequest(http.MethodGet, "/api/project/upstreams?dir=/remote/only/repo&remoteId=rem1", nil))
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"repo":"alice/myproj"`) {
+		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestHandleProjectUpstreams_RejectsUnknownExplicitOwner(t *testing.T) {
+	srv := testServer(t)
+	rr := httptest.NewRecorder()
+	srv.handleProjectUpstreams(rr, httptest.NewRequest(http.MethodGet, "/api/project/upstreams?dir=/remote/only/repo&remoteId=gone", nil))
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
 	}
 }
 

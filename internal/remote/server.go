@@ -480,6 +480,25 @@ func (s *Server) GitCheckout(ctx context.Context, req *pb.JsonReq) (*pb.Empty, e
 	return &pb.Empty{}, s.host.GitCheckout(ctx, args.Dir, args.Branch)
 }
 
+func (s *Server) ProjectUpstreams(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
+	var args struct {
+		Dir string `json:"dir"`
+	}
+	if err := unmarshalJSON(req.Payload, &args); err != nil {
+		return nil, err
+	}
+	return jsonResp(s.host.ProjectUpstreams(ctx, args.Dir))
+}
+
+func (s *Server) FetchPRHead(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
+	var args hostsvc.FetchPRHeadRequest
+	if err := unmarshalJSON(req.Payload, &args); err != nil {
+		return nil, err
+	}
+	branch, err := s.host.FetchPRHead(ctx, args)
+	return jsonResp(map[string]string{"branch": branch}, err)
+}
+
 func (s *Server) ListWorktrees(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
 	var args struct {
 		Dir string `json:"dir"`

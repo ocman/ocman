@@ -457,13 +457,11 @@ graph TD
   - `HostCaps` flags (`gitDiff`, `worktrees`, `tmux`, `projects`,
     `whisper`) feed `/api/capabilities`; the frontend gates host UI on
     them (R-B).
-  - **Scope discipline for v1**: the *seam and router* are introduced now
-    and the git/worktree/tmux/projects handlers are migrated onto them
-    (this is the refactor that prevents future friction). Only the
-    **new-session worktree-on-owner** path (FR-10/FR-13) is wired
-    end-to-end over gRPC in v1; the worktree-*view* and PR-sidebar entry
-    points stay local-only (out of scope) but now sit on the seam, so
-    making them remote-aware later is a wiring change, not a redesign.
+  - PR/Issue backend requests carry `remoteId` and resolve it strictly.
+    Upstream detection and cross-fork fetches execute through the owner's
+    `Host` over JSON gRPC; the hub consumes the returned normalized remotes
+    with its forge clients and launches on the compound platform. Frontend
+    owner selection remains a separate slice.
 
 ### AD-16b: Host operations use host-qualified directory references when owner is known
 

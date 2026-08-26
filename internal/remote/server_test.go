@@ -173,6 +173,12 @@ func (localStubHost) GitBranches(context.Context, string) ([]string, error) {
 	return []string{"main"}, nil
 }
 func (localStubHost) GitCheckout(context.Context, string, string) error { return nil }
+func (localStubHost) ProjectUpstreams(context.Context, string) (*hostsvc.ProjectUpstreams, error) {
+	return &hostsvc.ProjectUpstreams{}, nil
+}
+func (localStubHost) FetchPRHead(context.Context, hostsvc.FetchPRHeadRequest) (string, error) {
+	return "", nil
+}
 func (localStubHost) ListWorktrees(context.Context, string) ([]git.Worktree, error) {
 	return nil, nil
 }

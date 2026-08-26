@@ -27,7 +27,7 @@ func TestInstall(t *testing.T) {
 	}
 }
 
-func TestRemoveRetiredSkillOnlyRemovesOcmanOwnedPath(t *testing.T) {
+func TestRemoveRetiredSkillOnlyUnlinksOcmanOwnedPath(t *testing.T) {
 	dataHome, configHome := t.TempDir(), t.TempDir()
 	t.Setenv("XDG_DATA_HOME", dataHome)
 	t.Setenv("XDG_CONFIG_HOME", configHome)
@@ -42,8 +42,8 @@ func TestRemoveRetiredSkillOnlyRemovesOcmanOwnedPath(t *testing.T) {
 		t.Fatalf("owned link still exists: %v", err)
 	}
 	targetDir := filepath.Join(dataHome, "ocman", "opencode", "skills", "retired")
-	if _, err := os.Stat(targetDir); !os.IsNotExist(err) {
-		t.Fatalf("owned data still exists: %v", err)
+	if content, err := os.ReadFile(filepath.Join(targetDir, "SKILL.md")); err != nil || string(content) != "skill" {
+		t.Fatalf("extracted data = %q, %v", content, err)
 	}
 
 	if err := os.MkdirAll(link, 0o755); err != nil {

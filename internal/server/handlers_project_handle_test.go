@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -15,15 +16,13 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
-type deadlineForge struct {
-	forge.Forge
-	deadline time.Time
-	has      bool
-}
-
 type projectHandleRemoteHost struct {
 	hostsvc.Host
-	worktree *hostsvc.WorktreeSessionResult
+	worktree    *hostsvc.WorktreeSessionResult
+	upstreams   *hostsvc.ProjectUpstreams
+	fetch       hostsvc.FetchPRHeadRequest
+	deadline    time.Time
+	hasDeadline bool
 }
 
 func (h *projectHandleRemoteHost) RemoteID() string { return "rem1" }
@@ -36,22 +35,14 @@ func (h *projectHandleRemoteHost) CreateWorktreeSession(context.Context, hostsvc
 	return h.worktree, nil
 }
 
-func (f *deadlineForge) FetchPRHead(ctx context.Context, _, _ string, _ int) (string, error) {
-	f.deadline, f.has = ctx.Deadline()
-	return "ocman/pr-1", nil
+func (h *projectHandleRemoteHost) ProjectUpstreams(context.Context, string) (*hostsvc.ProjectUpstreams, error) {
+	return h.upstreams, nil
 }
 
-func TestFetchPRHeadHasDeadline(t *testing.T) {
-	f := &deadlineForge{}
-	if _, err := fetchPRHead(context.Background(), f, "/repo", "origin", 1); err != nil {
-		t.Fatal(err)
-	}
-	if !f.has {
-		t.Fatal("FetchPRHead context has no deadline")
-	}
-	if remaining := time.Until(f.deadline); remaining <= 0 || remaining > prHeadFetchTimeout {
-		t.Fatalf("deadline remaining = %v, want within (0, %v]", remaining, prHeadFetchTimeout)
-	}
+func (h *projectHandleRemoteHost) FetchPRHead(ctx context.Context, req hostsvc.FetchPRHeadRequest) (string, error) {
+	h.fetch = req
+	h.deadline, h.hasDeadline = ctx.Deadline()
+	return "ocman/pr-42", nil
 }
 
 // TestHandleProjectHandle_SessionMode verifies the happy path:
@@ -120,18 +111,11 @@ func TestHandleProjectHandle_SessionMode(t *testing.T) {
 
 func TestHandleProjectHandle_SessionModeUsesOwningRemotePlatform(t *testing.T) {
 	srv := testServer(t)
-	dir := initGitHubRepo(t)
+	dir := "/remote/only/repo"
 	gh, ghc := fakeGitHubServer(t)
 	defer gh.Close()
 	srv.integrations.GitHub = ghc
 
-	srv.registry.Register(&fakePlatform{
-		id: "opencode",
-		createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
-			t.Fatal("local platform must not create a remote-owned session")
-			return nil, nil
-		},
-	})
 	var created platforms.CreateSessionRequest
 	var sent platforms.SendMessageRequest
 	srv.registry.Register(&fakePlatform{
@@ -142,12 +126,11 @@ func TestHandleProjectHandle_SessionModeUsesOwningRemotePlatform(t *testing.T) {
 		},
 		sendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return nil },
 	})
-	host := &projectHandleRemoteHost{}
+	host := &projectHandleRemoteHost{upstreams: githubProjectUpstreams(dir)}
 	srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
 	srv.hostRouter.RegisterRemote("rem1", host)
-	srv.hostRouter.SetDirResolver(func(string) string { return "rem1" })
 
-	body := `{"dir":"` + dir + `","remote":"origin","type":"issue","number":7,"mode":"session"}`
+	body := `{"dir":"` + dir + `","remote":"origin","remoteId":"rem1","type":"issue","number":7,"mode":"session"}`
 	rr := httptest.NewRecorder()
 	srv.handleProjectHandle(rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
 
@@ -160,6 +143,72 @@ func TestHandleProjectHandle_SessionModeUsesOwningRemotePlatform(t *testing.T) {
 	if sent.SessionID != "remote-session" || sent.Message == "" {
 		t.Fatalf("remote send = %+v", sent)
 	}
+	var response struct {
+		Platform string `json:"platform"`
+		RemoteID string `json:"remoteId"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Platform != "r-rem1:opencode" || response.RemoteID != "rem1" {
+		t.Fatalf("response = %+v", response)
+	}
+}
+
+func TestHandleProjectHandle_SendFailureReturnsBadGateway(t *testing.T) {
+	srv := testServer(t)
+	dir := initGitHubRepo(t)
+	gh, ghc := fakeGitHubServer(t)
+	defer gh.Close()
+	srv.integrations.GitHub = ghc
+	srv.registry.Register(&fakePlatform{
+		id: "opencode",
+		createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+			return &platforms.CreateSessionResponse{ID: "child"}, nil
+		},
+		sendMessageFn: func(platforms.SendMessageRequest) error { return errors.New("send failed") },
+	})
+
+	body := `{"dir":"` + dir + `","remote":"origin","type":"issue","number":7,"mode":"session"}`
+	rr := httptest.NewRecorder()
+	srv.handleProjectHandle(rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
+	if rr.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestHandleProjectHandle_CrossForkFetchRunsOnOwner(t *testing.T) {
+	srv := testServer(t)
+	dir := "/remote/only/repo"
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`[{"number":42,"title":"Forked PR","state":"open","user":{"login":"carol"},"head":{"ref":"wip","repo":{"full_name":"carol/fork"}},"base":{"repo":{"full_name":"alice/myproj"}}}]`))
+	}))
+	defer gh.Close()
+	srv.integrations.GitHub = newGitHubTestClient(gh)
+	srv.registry.Register(&fakePlatform{id: "r-rem1:opencode", sendMessageFn: func(platforms.SendMessageRequest) error { return nil }})
+	host := &projectHandleRemoteHost{
+		upstreams: githubProjectUpstreams(dir),
+		worktree:  &hostsvc.WorktreeSessionResult{SessionID: "child", WorktreePath: "/remote/wt", Branch: "ocman/pr-42"},
+	}
+	srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
+	srv.hostRouter.RegisterRemote("rem1", host)
+
+	body := `{"dir":"` + dir + `","remote":"origin","remoteId":"rem1","type":"pr","number":42,"mode":"worktree","fetchHead":true}`
+	rr := httptest.NewRecorder()
+	srv.handleProjectHandle(rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+	}
+	if host.fetch != (hostsvc.FetchPRHeadRequest{RepoRoot: dir, Remote: "origin", Number: 42}) {
+		t.Fatalf("owner fetch = %+v", host.fetch)
+	}
+	if !host.hasDeadline || time.Until(host.deadline) <= 0 || time.Until(host.deadline) > prHeadFetchTimeout {
+		t.Fatalf("owner fetch deadline = %v", host.deadline)
+	}
+}
+
+func githubProjectUpstreams(root string) *hostsvc.ProjectUpstreams {
+	return &hostsvc.ProjectUpstreams{RepoRoot: root, Remotes: []forge.Remote{{Name: "origin", Type: forge.RemoteTypeGitHub, Host: "github.com", Repo: "alice/myproj"}}}
 }
 
 func TestHandleProjectHandle_WorktreeModeUsesOwningRemotePlatform(t *testing.T) {
@@ -176,12 +225,11 @@ func TestHandleProjectHandle_WorktreeModeUsesOwningRemotePlatform(t *testing.T) 
 	})
 	host := &projectHandleRemoteHost{worktree: &hostsvc.WorktreeSessionResult{
 		SessionID: "remote-worktree-session", WorktreePath: "/remote/worktree", Branch: "issue/7-bug-report",
-	}}
+	}, upstreams: githubProjectUpstreams(dir)}
 	srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
 	srv.hostRouter.RegisterRemote("rem1", host)
-	srv.hostRouter.SetDirResolver(func(string) string { return "rem1" })
 
-	body := `{"dir":"` + dir + `","remote":"origin","type":"issue","number":7,"mode":"worktree"}`
+	body := `{"dir":"` + dir + `","remote":"origin","remoteId":"rem1","type":"issue","number":7,"mode":"worktree"}`
 	rr := httptest.NewRecorder()
 	srv.handleProjectHandle(rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
 

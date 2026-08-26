@@ -22,6 +22,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/dagu"
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/forge"
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 )
@@ -88,6 +89,19 @@ type TermConn interface {
 // GitDiffOptions controls a GitDiff call.
 type GitDiffOptions struct {
 	Force bool
+}
+
+// ProjectUpstreams is owner-local repository identity and forge remote data.
+type ProjectUpstreams struct {
+	RepoRoot string         `json:"repoRoot"`
+	Remotes  []forge.Remote `json:"remotes"`
+}
+
+// FetchPRHeadRequest identifies a cross-fork PR head to fetch on the owner.
+type FetchPRHeadRequest struct {
+	RepoRoot string `json:"repoRoot"`
+	Remote   string `json:"remote"`
+	Number   int    `json:"number"`
 }
 
 // WorktreeSessionRequest captures a create-worktree-and-launch action.
@@ -230,6 +244,13 @@ type Host interface {
 	// GitCheckout switches the working tree in dir to branch. Returns
 	// git.ErrDirtyCheckout when git refuses due to local changes.
 	GitCheckout(ctx context.Context, dir, branch string) error
+
+	// ProjectUpstreams resolves the repository root and detects supported
+	// forge remotes using the owning machine's git and forge configuration.
+	ProjectUpstreams(ctx context.Context, dir string) (*ProjectUpstreams, error)
+
+	// FetchPRHead fetches a cross-fork PR head into the owner's repository.
+	FetchPRHead(ctx context.Context, req FetchPRHeadRequest) (string, error)
 
 	// ListWorktrees returns parsed `git worktree list` for the repo
 	// containing dir.

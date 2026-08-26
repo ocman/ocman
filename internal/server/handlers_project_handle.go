@@ -25,6 +25,7 @@ const prHeadFetchTimeout = 30 * time.Second
 type handleProjectRequest struct {
 	Dir       string `json:"dir"`
 	Remote    string `json:"remote"`
+	RemoteID  string `json:"remoteId,omitempty"`
 	Type      string `json:"type"`             // "pr" | "issue"
 	Number    int    `json:"number"`           // PR or Issue number
 	Mode      string `json:"mode"`             // "session" | "worktree"
@@ -36,7 +37,7 @@ type handleProjectRequest struct {
 // handleProjectHandle launches a new OpenCode session (or worktree-
 // scoped session) to "handle" a PR or Issue.
 //
-// POST /api/project/handle
+// POST /api/project/handle (body includes remoteId, default "local")
 // Localhost-only (it spawns tmux/opencode).
 //
 // Branching:
@@ -57,8 +58,12 @@ func (s *Server) handleProjectHandle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	host, ok := s.resolveOwner(w, req.Dir, projectRemoteID(req.RemoteID))
+	if !ok {
+		return
+	}
 	// Resolve project remotes once so we can look up the target.
-	repoRoot, remotes, err := s.detectUpstreams(r.Context(), req.Dir)
+	repoRoot, remotes, err := s.detectUpstreams(r.Context(), host, req.Dir)
 	if err != nil {
 		if errors.Is(err, git.ErrNotARepo) {
 			http.Error(w, "dir is not a git repository", http.StatusNotFound)
@@ -90,20 +95,21 @@ func (s *Server) handleProjectHandle(w http.ResponseWriter, r *http.Request) {
 		prompt = fallbackPrompt(req, rem, vars)
 	}
 
+	platform := opencodePlatformForHost(host)
 	if s.registry == nil {
 		http.Error(w, "OpenCode platform not registered", http.StatusServiceUnavailable)
 		return
 	}
-	if _, ok := s.registry.Get(platforms.ID("opencode")); !ok {
+	if _, ok := s.registry.Get(platforms.ID(platform)); !ok {
 		http.Error(w, "OpenCode platform not registered", http.StatusServiceUnavailable)
 		return
 	}
 
 	switch req.Mode {
 	case "session":
-		s.handleProjectHandleSession(w, r, req, prompt)
+		s.handleProjectHandleSession(w, r, req, host, platform, prompt)
 	case "worktree":
-		s.handleProjectHandleWorktree(w, r, req, rem, f, repoRoot, prompt, vars)
+		s.handleProjectHandleWorktree(w, r, req, host, platform, rem, f, repoRoot, prompt, vars)
 	default:
 		http.Error(w, "mode must be 'session' or 'worktree'", http.StatusBadRequest)
 	}
@@ -113,14 +119,13 @@ func (s *Server) handleProjectHandle(w http.ResponseWriter, r *http.Request) {
 // new OpenCode session in the project directory, no branch checkout.
 func (s *Server) handleProjectHandleSession(
 	w http.ResponseWriter, r *http.Request,
-	req handleProjectRequest, prompt string,
+	req handleProjectRequest, host hostsvc.Host, platform, prompt string,
 ) {
-	host := s.router().ForDir(req.Dir)
 	port := ""
 	if ensured, err := host.EnsureProjectOpencode(r.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: projectRootForDirectory(req.Dir)}); err == nil && ensured != nil {
 		port = ensured.Port()
 	}
-	client := s.sessions.Client(opencodePlatformForHost(host))
+	client := s.sessions.Client(platform)
 	created, err := client.CreateSession(r.Context(), platforms.CreateSessionRequest{Directory: req.Dir, Port: port})
 	if err != nil {
 		log.WithError(err).Warn("handle session: launch")
@@ -129,10 +134,14 @@ func (s *Server) handleProjectHandleSession(
 	}
 	if err := client.SendMessage(r.Context(), platforms.SendMessageRequest{SessionID: created.ID, Message: prompt}); err != nil {
 		log.WithError(err).WithField("session", created.ID).Warn("handle session: send prompt")
+		http.Error(w, "sending initial prompt: "+err.Error(), http.StatusBadGateway)
+		return
 	}
 	writeJSON(w, map[string]interface{}{
 		"childSessionId": created.ID,
 		"mode":           "session",
+		"platform":       platform,
+		"remoteId":       host.RemoteID(),
 	})
 }
 
@@ -140,7 +149,7 @@ func (s *Server) handleProjectHandleSession(
 // Branches by item type and cross-fork status.
 func (s *Server) handleProjectHandleWorktree(
 	w http.ResponseWriter, r *http.Request,
-	req handleProjectRequest, rem forge.Remote, f forge.Forge,
+	req handleProjectRequest, host hostsvc.Host, platform string, rem forge.Remote, f forge.Forge,
 	repoRoot, prompt string, vars map[string]string,
 ) {
 	var branch string
@@ -183,7 +192,9 @@ func (s *Server) handleProjectHandleWorktree(
 				return
 			}
 			// Fetch the PR head into ocman/pr-<n> and attach.
-			fetched, ferr := fetchPRHead(r.Context(), f, repoRoot, req.Remote, req.Number)
+			ctx, cancel := context.WithTimeout(r.Context(), prHeadFetchTimeout)
+			fetched, ferr := host.FetchPRHead(ctx, hostsvc.FetchPRHeadRequest{RepoRoot: repoRoot, Remote: req.Remote, Number: req.Number})
+			cancel()
 			if ferr != nil {
 				log.WithError(ferr).Warn("handle worktree: fetch pr head")
 				http.Error(w, "failed to fetch PR head: "+ferr.Error(), http.StatusBadGateway)
@@ -201,7 +212,6 @@ func (s *Server) handleProjectHandleWorktree(
 		return
 	}
 
-	host := s.router().ForDir(repoRoot)
 	wtResult, err := host.CreateWorktreeSession(r.Context(), hostsvc.WorktreeSessionRequest{
 		ProjectDir: repoRoot,
 		Branch:     branch,
@@ -213,14 +223,18 @@ func (s *Server) handleProjectHandleWorktree(
 		http.Error(w, "launching worktree session: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	if err := s.sessions.Client(opencodePlatformForHost(host)).SendMessage(r.Context(), platforms.SendMessageRequest{SessionID: wtResult.SessionID, Message: prompt}); err != nil {
+	if err := s.sessions.Client(platform).SendMessage(r.Context(), platforms.SendMessageRequest{SessionID: wtResult.SessionID, Message: prompt}); err != nil {
 		log.WithError(err).WithField("session", wtResult.SessionID).Warn("handle worktree: send prompt")
+		http.Error(w, "sending initial prompt: "+err.Error(), http.StatusBadGateway)
+		return
 	}
 	writeJSON(w, map[string]interface{}{
 		"childSessionId": wtResult.SessionID,
 		"mode":           "worktree",
 		"worktreePath":   wtResult.WorktreePath,
 		"branch":         wtResult.Branch,
+		"platform":       platform,
+		"remoteId":       host.RemoteID(),
 	})
 }
 
@@ -229,12 +243,6 @@ func opencodePlatformForHost(host hostsvc.Host) string {
 		return remote.CompoundPlatformID(remoteID, "opencode")
 	}
 	return "opencode"
-}
-
-func fetchPRHead(ctx context.Context, f forge.Forge, repoRoot, remote string, number int) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, prHeadFetchTimeout)
-	defer cancel()
-	return f.FetchPRHead(ctx, repoRoot, remote, number)
 }
 
 // fetchSinglePR re-queries the forge for one PR by number. Uses the

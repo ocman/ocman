@@ -498,9 +498,11 @@ graph TD
 
   | Method + Path | Purpose |
   |---|---|
-  | `GET /api/project/upstreams?dir=<abs>` | FR-1: list detected remotes |
-  | `GET /api/project/prs?dir=<abs>&remote=<name>&state=<open\|closed\|all>&mine=<bool>&page=<n>` | FR-3/5/8: list PRs for one remote |
-  | `GET /api/project/issues?dir=<abs>&remote=<name>&state=...&mine=...&page=...` | FR-3/5/8: list issues |
+  | `GET /api/project/upstreams?dir=<abs>&remoteId=<owner>` | FR-1: list owner-detected remotes |
+  | `GET /api/project/prs?dir=<abs>&remote=<name>&remoteId=<owner>&state=<open\|closed\|all>&mine=<bool>&page=<n>` | FR-3/5/8: list PRs for one remote |
+  | `GET /api/project/issues?dir=<abs>&remote=<name>&remoteId=<owner>&state=...&mine=...&page=...` | FR-3/5/8: list issues |
+  | `GET /api/project/pr-checks?...&remoteId=<owner>` | list PR checks after owner detection |
+  | `GET /api/project/forge-user?...&remoteId=<owner>` | current forge user after owner detection |
   | `POST /api/project/handle` | FR-9/9a: launch a session or worktree |
   | `GET /api/settings/prompt-templates` | FR-10: read templates |
   | `POST /api/settings/prompt-templates` | FR-10: update templates |
@@ -510,6 +512,7 @@ graph TD
   {
     "dir": "/abs/project/dir",
     "remote": "origin",
+    "remoteId": "local",
     "type": "pr" | "issue",
     "number": 123,
     "mode": "session" | "worktree",
@@ -517,14 +520,19 @@ graph TD
     "intent": "optional override"      // empty = render template only
   }
   ```
-  - For `mode: "session"`: resolves the project's session
-    directory, renders the template, calls `sessionsvc` to
-    create the session.
+
+  `remoteId` defaults to `local`; a named disconnected owner fails closed.
+  Detection and filesystem git operations run on that owner. Forge metadata
+  is fetched by the hub. Successful launches return `platform` and
+  `remoteId`; an initial prompt-send failure returns HTTP 502.
+
+  - For `mode: "session"`: renders the template and creates the session on
+    the owner's compound platform.
 	- For `mode: "worktree"`:
 	  - PR with same-repo head: passes the PR branch with
 	    `NewBranch=false` to `hostsvc.Host.CreateWorktreeSession`.
-    - PR with cross-fork head AND `fetchHead=true`: calls
-      `forge.FetchPRHead` first, then passes the resulting
+    - PR with cross-fork head AND `fetchHead=true`: calls the owner's
+      `hostsvc.Host.FetchPRHead` first, then passes the resulting
       `ocman/pr-<n>` branch with `NewBranch=false`.
     - PR with cross-fork head AND `fetchHead=false`: returns 409
       with `{"requires_fetch": true}` so the frontend shows the

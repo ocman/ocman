@@ -286,6 +286,8 @@ func (s *Server) newLocalHost() hostsvc.Host {
 		},
 		TmuxSessions:     s.hostTmuxSessions,
 		Projects:         s.hostProjects,
+		ProjectUpstreams: s.hostProjectUpstreams,
+		FetchPRHead:      s.hostFetchPRHead,
 		Caps:             s.hostCaps,
 		TermWindows:      term.Windows,
 		TermCreateWindow: term.CreateWindow,

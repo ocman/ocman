@@ -15,6 +15,7 @@ let beadsResult: {
   refetch: ReturnType<typeof vi.fn>;
 };
 let beadsArgs: Parameters<typeof import('../lib/useBeadsStatus').useBeadsStatus>;
+let upstreamArgs: Parameters<typeof import('../lib/useUpstreams').useUpstreams>;
 
 vi.mock('../lib/useBeadsStatus', () => ({
   useBeadsStatus: (...args: typeof beadsArgs) => {
@@ -23,7 +24,10 @@ vi.mock('../lib/useBeadsStatus', () => ({
   },
 }));
 vi.mock('../lib/useUpstreams', () => ({
-  useUpstreams: () => ({ upstreams: [] }),
+  useUpstreams: (...args: typeof upstreamArgs) => {
+    upstreamArgs = args;
+    return { upstreams: [] };
+  },
 }));
 
 const props = {
@@ -78,6 +82,7 @@ it('passes the remote owner to the resource', () => {
   render(<RightPanel {...props} session={{ remoteId: 'abc' } as Session} />);
 
   expect(beadsArgs).toEqual(['/repo', 'abc', true]);
+  expect(upstreamArgs).toEqual(['/repo', 'abc']);
   expect(screen.queryByRole('tab', { name: 'Beads' })).not.toBeInTheDocument();
 });
 

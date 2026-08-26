@@ -34,10 +34,14 @@ func (h stubHost) GitInfo(context.Context, []string) (map[string]git.Info, error
 func (h stubHost) GitDiff(context.Context, string, GitDiffOptions) (*git.Diff, error) {
 	return nil, nil
 }
-func (h stubHost) GitBranches(context.Context, string) ([]string, error)          { return nil, nil }
-func (h stubHost) GitCheckout(context.Context, string, string) error              { return nil }
-func (h stubHost) ListWorktrees(context.Context, string) ([]git.Worktree, error)  { return nil, nil }
-func (h stubHost) WorktreeDefaultBaseRef(context.Context, string) (string, error) { return "", nil }
+func (h stubHost) GitBranches(context.Context, string) ([]string, error) { return nil, nil }
+func (h stubHost) GitCheckout(context.Context, string, string) error     { return nil }
+func (h stubHost) ProjectUpstreams(context.Context, string) (*ProjectUpstreams, error) {
+	return nil, nil
+}
+func (h stubHost) FetchPRHead(context.Context, FetchPRHeadRequest) (string, error) { return "", nil }
+func (h stubHost) ListWorktrees(context.Context, string) ([]git.Worktree, error)   { return nil, nil }
+func (h stubHost) WorktreeDefaultBaseRef(context.Context, string) (string, error)  { return "", nil }
 func (h stubHost) CreateWorktreeSession(context.Context, WorktreeSessionRequest) (*WorktreeSessionResult, error) {
 	return nil, nil
 }

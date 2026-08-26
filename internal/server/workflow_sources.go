@@ -102,7 +102,7 @@ func (u *workflowUsage) SessionUsage(ctx context.Context, sessions []state.Key) 
 type workflowForge struct{ s *Server }
 
 func (f *workflowForge) PollPR(ctx context.Context, directory string, prNumber int) (workflows.PRState, error) {
-	_, remotes, err := f.s.detectUpstreams(ctx, directory)
+	_, remotes, err := f.s.detectUpstreams(ctx, f.s.router().ForDir(directory), directory)
 	if err != nil {
 		return workflows.PRState{}, err
 	}

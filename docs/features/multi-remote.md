@@ -164,8 +164,8 @@ and ocman persists them in `state.db`.
 
 ## Limitations (v1)
 
-- Only the core new-session action is machine-aware. The Worktrees view and
-  the PR/Issue sidebar's launch actions remain local-only.
+- The PR/Issue backend APIs are machine-aware through an explicit `remoteId`;
+  the sidebar frontend does not send it yet.
 - Auto-approve for a remote session runs on the owning remote, with that
   machine's settings, not the hub's.
 - Stale sessions from an offline remote are kept in memory only. After a hub

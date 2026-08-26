@@ -45,8 +45,8 @@ func Install(skills map[string][]byte) error {
 	return nil
 }
 
-// Remove deletes a retired skill only when its discovery path is still the
-// symlink created by Install. User-owned paths are left untouched.
+// Remove unlinks a retired skill only when its discovery path is still the
+// exact symlink created by Install. Extracted data and user paths are preserved.
 func Remove(name string) error {
 	dataHome, configHome, err := homes()
 	if err != nil {
@@ -58,10 +58,7 @@ func Remove(name string) error {
 	if err != nil || destination != targetDir {
 		return nil
 	}
-	if err := os.Remove(link); err != nil {
-		return err
-	}
-	return os.RemoveAll(targetDir)
+	return os.Remove(link)
 }
 
 func homes() (string, string, error) {

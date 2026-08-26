@@ -2,10 +2,13 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os/exec"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/forge"
+	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/tmux"
 	"github.com/NoUseFreak/ocman/internal/whisper"
@@ -95,6 +98,37 @@ func (s *Server) hostProjects(_ context.Context) ([]db.ProjectStats, error) {
 		projects, _ = s.projectsSnapshot()
 	}
 	return projects, nil
+}
+
+func (s *Server) hostProjectUpstreams(ctx context.Context, dir string) (*hostsvc.ProjectUpstreams, error) {
+	repoRoot, err := git.ResolveRepoRoot(ctx, dir) // ocman:allow-host-helper
+	if err != nil {
+		return nil, err
+	}
+	var hosts forge.ForgejoHostMap
+	if s.integrations != nil && s.integrations.Forgejo != nil {
+		hosts = s.integrations.Forgejo
+	}
+	remotes, err := forge.Detect(ctx, repoRoot, hosts)
+	return &hostsvc.ProjectUpstreams{RepoRoot: repoRoot, Remotes: remotes}, err
+}
+
+func (s *Server) hostFetchPRHead(ctx context.Context, req hostsvc.FetchPRHeadRequest) (string, error) {
+	upstreams, err := s.hostProjectUpstreams(ctx, req.RepoRoot)
+	if err != nil {
+		return "", err
+	}
+	rem, ok := findRemote(upstreams.Remotes, req.Remote)
+	if !ok {
+		return "", errors.New("remote not found among project upstreams")
+	}
+	f, ok := s.resolveForge(rem)
+	if !ok {
+		return "", errors.New("no forge client configured for " + rem.Host)
+	}
+	ctx, cancel := context.WithTimeout(ctx, prHeadFetchTimeout)
+	defer cancel()
+	return f.FetchPRHead(ctx, upstreams.RepoRoot, req.Remote, req.Number)
 }
 
 // hostCaps reports which host operations are available on this machine.

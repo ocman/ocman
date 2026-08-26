@@ -12,6 +12,7 @@ import { UpstreamApiError } from '../../lib/upstreamApi';
 
 interface UpstreamPaneProps {
   directory: string | undefined;
+  remoteId: string;
   upstreams: Upstream[];
   embedded?: boolean;
   // RightPanel API parity. PaneSummary isn't meaningful for the
@@ -42,6 +43,7 @@ type Tab = 'prs' | 'issues';
  */
 export function UpstreamPane({
   directory,
+  remoteId,
   upstreams,
   onRefresh,
   onLoadingChange,
@@ -100,6 +102,7 @@ export function UpstreamPane({
           key="prs"
           kind="prs"
           directory={directory}
+          remoteId={remoteId}
           upstreams={upstreams}
           state={prState}
           onStateChange={setPRState}
@@ -113,6 +116,7 @@ export function UpstreamPane({
           key="issues"
           kind="issues"
           directory={directory}
+          remoteId={remoteId}
           upstreams={upstreams}
           state={issueState}
           onStateChange={setIssueState}
@@ -129,6 +133,7 @@ export function UpstreamPane({
 interface UpstreamTabContentProps {
   kind: Tab;
   directory: string | undefined;
+  remoteId: string;
   upstreams: Upstream[];
   state: StateFilter;
   onStateChange: (s: StateFilter) => void;
@@ -141,6 +146,7 @@ interface UpstreamTabContentProps {
 function UpstreamTabContent({
   kind,
   directory,
+  remoteId,
   upstreams,
   state,
   onStateChange,
@@ -188,10 +194,11 @@ function UpstreamTabContent({
       />
       {upstreams.map((u) => (
         <UpstreamRemoteGroup
-          key={`${u.host}/${u.remote}`}
+          key={`${remoteId}/${u.host}/${u.remote}`}
           kind={kind}
           upstream={u}
           directory={directory!}
+          remoteId={remoteId}
           state={state}
           mine={mine}
           registerRefresh={(fn) => {
@@ -250,6 +257,7 @@ interface UpstreamRemoteGroupProps {
   kind: Tab;
   upstream: Upstream;
   directory: string;
+  remoteId: string;
   state: StateFilter;
   mine: boolean;
   registerRefresh: (fn: () => void) => () => void;
@@ -261,6 +269,7 @@ function UpstreamRemoteGroup({
   kind,
   upstream,
   directory,
+  remoteId,
   state,
   mine,
   registerRefresh,
@@ -270,7 +279,7 @@ function UpstreamRemoteGroup({
   // Resolve the "mine" identity for this remote's host. null means
   // the forge has no credential — disable the mine toggle visually
   // and don't send the filter parameter.
-  const myLogin = useForgeUser(directory, upstream.remote);
+  const myLogin = useForgeUser(directory, upstream.remote, remoteId);
   const mineFilter = mine && myLogin ? myLogin : undefined;
 
   // Working-tree branch for the project, used to highlight PRs whose
@@ -285,6 +294,7 @@ function UpstreamRemoteGroup({
   const list = useUpstreamList<PR | Issue>({
     kind,
     dir: directory,
+    remoteId,
     remote: upstream.remote,
     state,
     mine: mineFilter,
@@ -342,9 +352,10 @@ function UpstreamRemoteGroup({
           if (kind === 'prs') {
             return (
               <PRRow
-                key={item.number}
+                key={`${remoteId}/${item.number}`}
                 pr={item as PR}
                 directory={directory}
+                remoteId={remoteId}
                 remote={upstream.remote}
                 currentBranch={currentBranch}
               />
@@ -352,9 +363,10 @@ function UpstreamRemoteGroup({
           }
           return (
             <IssueRow
-              key={item.number}
+              key={`${remoteId}/${item.number}`}
               issue={item as Issue}
               directory={directory}
+              remoteId={remoteId}
               remote={upstream.remote}
             />
           );

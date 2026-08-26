@@ -63,7 +63,9 @@ type Deps struct {
 	// TmuxSessions lists the host's tmux sessions.
 	TmuxSessions func() ([]hostsvc.TmuxSession, error)
 	// Projects returns the host's known projects.
-	Projects func(ctx context.Context) ([]db.ProjectStats, error)
+	Projects         func(ctx context.Context) ([]db.ProjectStats, error)
+	ProjectUpstreams func(ctx context.Context, dir string) (*hostsvc.ProjectUpstreams, error)
+	FetchPRHead      func(ctx context.Context, req hostsvc.FetchPRHeadRequest) (string, error)
 	// Caps reports which host operations are available right now
 	// (tmux/git/opencode on PATH, whisper installed, etc.).
 	Caps func() hostsvc.HostCaps
@@ -203,6 +205,14 @@ func (h *Host) GitBranches(ctx context.Context, dir string) ([]string, error) {
 
 func (h *Host) GitCheckout(ctx context.Context, dir, branch string) error {
 	return git.Checkout(ctx, dir, branch)
+}
+
+func (h *Host) ProjectUpstreams(ctx context.Context, dir string) (*hostsvc.ProjectUpstreams, error) {
+	return h.deps.ProjectUpstreams(ctx, dir)
+}
+
+func (h *Host) FetchPRHead(ctx context.Context, req hostsvc.FetchPRHeadRequest) (string, error) {
+	return h.deps.FetchPRHead(ctx, req)
 }
 
 func (h *Host) ListWorktrees(ctx context.Context, dir string) ([]git.Worktree, error) {

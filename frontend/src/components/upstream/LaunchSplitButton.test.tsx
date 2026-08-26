@@ -15,11 +15,14 @@ describe('LaunchSplitButton', () => {
     vi.spyOn(api, 'postHandle').mockResolvedValue({
       childSessionId: 'child-1',
       mode: 'session',
+      platform: 'r-box:opencode',
+      remoteId: 'box',
     });
 
     render(
       <LaunchSplitButton
         directory="/repo"
+        remoteId="box"
         remote="origin"
         type="pr"
         number={42}
@@ -36,12 +39,16 @@ describe('LaunchSplitButton', () => {
     const recent = useApiStore.getState().recentSessions;
     expect(recent[0]?.id).toBe('child-1');
     expect(recent[0]?.title).toBe('pr #42');
+    expect(recent[0]?.platform).toBe('r-box:opencode');
+    expect(api.postHandle).toHaveBeenCalledWith(expect.objectContaining({ remoteId: 'box' }));
   });
 
   it('does not seed a session for worktree mode', async () => {
     vi.spyOn(api, 'postHandle').mockResolvedValue({
       childSessionId: 'child-2',
       mode: 'worktree',
+      platform: 'opencode',
+      remoteId: 'local',
     });
 
     render(
@@ -67,6 +74,8 @@ describe('LaunchSplitButton', () => {
     const spy = vi.spyOn(api, 'postHandle').mockResolvedValue({
       childSessionId: 'child-3',
       mode: 'worktree',
+      platform: 'opencode',
+      remoteId: 'local',
     });
 
     render(

@@ -25,20 +25,21 @@ export interface UseUpstreamListResult<T extends UpstreamListItem> {
 
 /**
  * useUpstreamList fetches one page of PRs or Issues for a single
- * remote. Re-fetches when any of (dir, remote, state, mine, page)
+ * remote. Re-fetches when any of (dir, remoteId, remote, state, mine, page)
  * change, and exposes a manual `refresh()` callback for the toolbar
  * refresh button.
  */
 export function useUpstreamList<T extends UpstreamListItem>(opts: {
   kind: 'prs' | 'issues';
   dir: string;
+  remoteId?: string;
   remote: string;
   state: StateFilter;
   mine: string | undefined;
   /** When false (e.g. tab not yet opened), no fetch is issued. */
   enabled: boolean;
 }): UseUpstreamListResult<T> {
-  const { kind, dir, remote, state, mine, enabled } = opts;
+  const { kind, dir, remoteId = 'local', remote, state, mine, enabled } = opts;
   const [page, setPage] = useState(1);
   const [items, setItems] = useState<T[]>([]);
   const [loading, setLoading] = useState(false);
@@ -58,7 +59,7 @@ export function useUpstreamList<T extends UpstreamListItem>(opts: {
   useEffect(() => {
     const reset = () => setPage(1);
     reset();
-  }, [state, mine, dir, remote, kind]);
+  }, [state, mine, dir, remoteId, remote, kind]);
 
   useEffect(() => {
     if (!enabled || !dir || !remote) {
@@ -74,7 +75,7 @@ export function useUpstreamList<T extends UpstreamListItem>(opts: {
       setLoading(true);
       setError(null);
 
-      const params = { dir, remote, state, mine, page, signal: ctrl.signal };
+      const params = { dir, remoteId, remote, state, mine, page, signal: ctrl.signal };
       const fetcher =
         kind === 'prs'
           ? fetchPRs(params).then((r) => ({
@@ -113,7 +114,7 @@ export function useUpstreamList<T extends UpstreamListItem>(opts: {
     return () => {
       abortRef.current?.abort();
     };
-  }, [enabled, dir, remote, state, mine, page, kind, refreshCounter]);
+  }, [enabled, dir, remoteId, remote, state, mine, page, kind, refreshCounter]);
 
   const refresh = useCallback(() => {
     setRefreshCounter((n) => n + 1);

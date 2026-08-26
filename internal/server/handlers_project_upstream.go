@@ -12,32 +12,17 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/forge"
 	"github.com/NoUseFreak/ocman/internal/git"
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 )
 
-// detectUpstreams classifies the git remotes of the project at
-// projectDir, returning a list of supported forges. Composes
-// git.ResolveRepoRoot (so callers can pass any directory inside
-// the repo) with forge.Detect (which expects the repo root).
-//
-// Hoisted out of the handler so the launch path (POST /api/project/
-// handle) can reuse the exact same resolution.
-func (s *Server) detectUpstreams(ctx context.Context, projectDir string) (string, []forge.Remote, error) {
-	// PR/Issue sidebar forge detection is local-only and out of v1
-	// remote scope (see requirements "Out of Scope"); this repo-root
-	// resolution feeds forge.Detect, not a routed host operation.
-	repoRoot, err := git.ResolveRepoRoot(ctx, projectDir) // ocman:allow-host-helper
+// detectUpstreams asks the resolved owner to inspect its repository and
+// returns only normalized repository/forge data to the hub.
+func (s *Server) detectUpstreams(ctx context.Context, host hostsvc.Host, projectDir string) (string, []forge.Remote, error) {
+	upstreams, err := host.ProjectUpstreams(ctx, projectDir)
 	if err != nil {
 		return "", nil, err
 	}
-	var hosts forge.ForgejoHostMap
-	if s.integrations != nil && s.integrations.Forgejo != nil {
-		hosts = s.integrations.Forgejo
-	}
-	remotes, err := forge.Detect(ctx, repoRoot, hosts)
-	if err != nil {
-		return repoRoot, nil, err
-	}
-	return repoRoot, remotes, nil
+	return upstreams.RepoRoot, upstreams.Remotes, nil
 }
 
 // resolveForge returns the Forge implementation that handles the given
@@ -81,7 +66,7 @@ func findRemote(remotes []forge.Remote, name string) (forge.Remote, bool) {
 // handleProjectUpstreams responds with the supported upstreams for
 // the project containing dir.
 //
-// GET /api/project/upstreams?dir=<abs>
+// GET /api/project/upstreams?dir=<abs>&remoteId=<owner>
 //
 // Response 200: { "upstreams": [{remote, host, type, repo}, ...] }
 // Response 404: dir is not in a git repo.
@@ -92,7 +77,11 @@ func (s *Server) handleProjectUpstreams(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	_, remotes, err := s.detectUpstreams(r.Context(), dir)
+	host, ok := s.resolveOwner(w, dir, projectRemoteID(r.URL.Query().Get("remoteId")))
+	if !ok {
+		return
+	}
+	_, remotes, err := s.detectUpstreams(r.Context(), host, dir)
 	if err != nil {
 		if errors.Is(err, git.ErrNotARepo) {
 			http.Error(w, "directory is not a git repository", http.StatusNotFound)
@@ -111,7 +100,7 @@ func (s *Server) handleProjectUpstreams(w http.ResponseWriter, r *http.Request) 
 }
 
 // handleProjectPRs lists PRs for one remote of the current project.
-// GET /api/project/prs?dir=<abs>&remote=<name>&state=<open|closed|all>&mine=<login>&page=<n>
+// GET /api/project/prs?dir=<abs>&remote=<name>&remoteId=<owner>&state=<open|closed|all>&mine=<login>&page=<n>
 //
 // Mine is a *login* (not a boolean): the frontend resolves the
 // "current user" per host via /api/project/forge-user and passes the
@@ -151,7 +140,7 @@ func (s *Server) handleProjectPRs(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleProjectIssues lists issues for one remote of the current project.
-// GET /api/project/issues?dir=<abs>&remote=<name>&state=<open|closed|all>&mine=<login>&page=<n>
+// GET /api/project/issues?dir=<abs>&remote=<name>&remoteId=<owner>&state=<open|closed|all>&mine=<login>&page=<n>
 func (s *Server) handleProjectIssues(w http.ResponseWriter, r *http.Request) {
 	dir, rem, opts, ok := s.parseProjectListParams(w, r)
 	if !ok {
@@ -196,7 +185,7 @@ func writeForgeListResponse[T any](w http.ResponseWriter, key string, items []T,
 // given remote's host, so the frontend can pass it back as the `mine`
 // filter without storing forge tokens client-side.
 //
-// GET /api/project/forge-user?dir=<abs>&remote=<name>
+// GET /api/project/forge-user?dir=<abs>&remote=<name>&remoteId=<owner>
 //
 // 200: { "login": "alice", "host": "github.com" }
 // 401: caller is unauthenticated against this forge.
@@ -208,7 +197,11 @@ func (s *Server) handleProjectForgeUser(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	_, remotes, err := s.detectUpstreams(r.Context(), dir)
+	host, ok := s.resolveOwner(w, dir, projectRemoteID(r.URL.Query().Get("remoteId")))
+	if !ok {
+		return
+	}
+	_, remotes, err := s.detectUpstreams(r.Context(), host, dir)
 	if err != nil {
 		http.Error(w, "failed to detect upstreams", http.StatusBadGateway)
 		return
@@ -240,7 +233,7 @@ func (s *Server) handleProjectForgeUser(w http.ResponseWriter, r *http.Request) 
 // PR's head commit. Fetched lazily by the sidebar when a PR row is
 // expanded/hovered, so the list endpoint stays cheap.
 //
-// GET /api/project/pr-checks?dir=<abs>&remote=<name>&sha=<headSha>
+// GET /api/project/pr-checks?dir=<abs>&remote=<name>&remoteId=<owner>&sha=<headSha>
 //
 // 200: { "state": "success|pending|failure|unknown", "checks": [...] }
 func (s *Server) handleProjectPRChecks(w http.ResponseWriter, r *http.Request) {
@@ -252,7 +245,11 @@ func (s *Server) handleProjectPRChecks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, remotes, err := s.detectUpstreams(r.Context(), dir)
+	host, ok := s.resolveOwner(w, dir, projectRemoteID(r.URL.Query().Get("remoteId")))
+	if !ok {
+		return
+	}
+	_, remotes, err := s.detectUpstreams(r.Context(), host, dir)
 	if err != nil {
 		if errors.Is(err, git.ErrNotARepo) {
 			http.Error(w, "directory is not a git repository", http.StatusNotFound)
@@ -311,7 +308,11 @@ func (s *Server) parseProjectListParams(w http.ResponseWriter, r *http.Request) 
 		return "", forge.Remote{}, forge.ListOptions{}, false
 	}
 
-	_, remotes, err := s.detectUpstreams(r.Context(), dir)
+	host, ok := s.resolveOwner(w, dir, projectRemoteID(r.URL.Query().Get("remoteId")))
+	if !ok {
+		return "", forge.Remote{}, forge.ListOptions{}, false
+	}
+	_, remotes, err := s.detectUpstreams(r.Context(), host, dir)
 	if err != nil {
 		if errors.Is(err, git.ErrNotARepo) {
 			http.Error(w, "directory is not a git repository", http.StatusNotFound)
@@ -341,6 +342,13 @@ func effectivePerPage(opts forge.ListOptions) int {
 	}
 	// Matches the per-page default in both adapters.
 	return 30
+}
+
+func projectRemoteID(remoteID string) string {
+	if remoteID == "" {
+		return "local"
+	}
+	return remoteID
 }
 
 // filterForUser keeps items whose author, assignees, or any of the

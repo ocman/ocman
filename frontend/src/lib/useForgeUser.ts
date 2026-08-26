@@ -11,13 +11,17 @@ import { useAsyncResource } from './useAsyncResource';
  * endpoints. A null result hides / disables the mine toggle for the
  * affected remote.
  */
-export function useForgeUser(dir: string | undefined, remote: string | undefined): string | null {
+export function useForgeUser(
+  dir: string | undefined,
+  remote: string | undefined,
+  remoteId = 'local',
+): string | null {
   // Errors (e.g. 401 unauthenticated) resolve to null — the resource's
   // initial value — which is exactly the "no login" signal callers want.
   const { data } = useAsyncResource<string | null>({
     fetcher: (signal) =>
-      fetchForgeUser({ dir: dir!, remote: remote!, signal }).then((u) => u?.login ?? null),
-    deps: [dir, remote],
+      fetchForgeUser({ dir: dir!, remoteId, remote: remote!, signal }).then((u) => u?.login ?? null),
+    deps: [dir, remote, remoteId],
     initial: null,
     enabled: !!dir && !!remote,
   });

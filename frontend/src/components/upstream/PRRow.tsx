@@ -6,6 +6,7 @@ import { ExpandableRow } from './ExpandableRow';
 interface PRRowProps {
   pr: PR;
   directory: string;
+  remoteId?: string;
   remote: string;
   /**
    * The branch currently checked out in the project's working tree.
@@ -26,8 +27,8 @@ interface PRRowProps {
  * doesn't enforce single-expansion in v1 (matches the "best-effort"
  * note in FR-7; can be tightened later).
  */
-export function PRRow({ pr, directory, remote, currentBranch }: PRRowProps) {
-  const checks = usePRChecks(pr, directory, remote);
+export function PRRow({ pr, directory, remoteId = 'local', remote, currentBranch }: PRRowProps) {
+  const checks = usePRChecks(pr, directory, remoteId, remote);
 
   // Cross-fork PRs share their head branch name with the user's
   // local tree by coincidence at best (different repo entirely), so
@@ -56,6 +57,7 @@ export function PRRow({ pr, directory, remote, currentBranch }: PRRowProps) {
       url={pr.url}
       host={pr.host}
       directory={directory}
+      remoteId={remoteId}
       remote={remote}
       crossFork={pr.crossFork}
       className={isCurrentBranch ? 'current-branch' : undefined}
@@ -96,7 +98,7 @@ interface ChecksState {
  * once per row, and is aborted on unmount. Until it resolves the
  * state is "unknown" (neutral dot).
  */
-function usePRChecks(pr: PR, directory: string, remote: string): ChecksState {
+function usePRChecks(pr: PR, directory: string, remoteId: string, remote: string): ChecksState {
   const [data, setData] = useState<PRChecks | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -110,7 +112,7 @@ function usePRChecks(pr: PR, directory: string, remote: string): ChecksState {
     setLoading(true);
     const ctrl = new AbortController();
     abortRef.current = ctrl;
-    fetchPRChecks({ dir: directory, remote, sha: pr.headSha, signal: ctrl.signal })
+    fetchPRChecks({ dir: directory, remoteId, remote, sha: pr.headSha, signal: ctrl.signal })
       .then((res) => setData(res))
       .catch((err) => {
         if (ctrl.signal.aborted) return;
@@ -123,7 +125,7 @@ function usePRChecks(pr: PR, directory: string, remote: string): ChecksState {
       .finally(() => {
         if (!ctrl.signal.aborted) setLoading(false);
       });
-  }, [pr.headSha, directory, remote]);
+  }, [pr.headSha, directory, remoteId, remote]);
 
   return {
     state: data?.state ?? 'unknown',

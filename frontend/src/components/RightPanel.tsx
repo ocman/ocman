@@ -162,7 +162,8 @@ export function RightPanel({
   // GitHub/Forgejo remote on this project"), keeping the feature
   // discoverable without cluttering projects that genuinely have
   // no upstream.
-  const upstreamsResult = useUpstreams(directory);
+  const remoteId = session?.remoteId || 'local';
+  const upstreamsResult = useUpstreams(directory, remoteId);
   const beadsResult = useBeadsStatus(
     directory,
     session ? session.remoteId || 'local' : undefined,
@@ -575,6 +576,7 @@ function Pane({
           {tab === 'upstream' && (
             <UpstreamPane
               directory={directory}
+              remoteId={session?.remoteId || 'local'}
               upstreams={upstreams}
               embedded
               onSummaryChange={handleSummary}

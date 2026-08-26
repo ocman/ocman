@@ -22,6 +22,18 @@ describe('upstreamApi', () => {
   });
 
   describe('fetchUpstreams', () => {
+    it('includes explicit project ownership and defaults it to local', async () => {
+      fetchSpy
+        .mockResolvedValueOnce(new Response(JSON.stringify({ upstreams: [] }), { status: 200 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ upstreams: [] }), { status: 200 }));
+
+      await fetchUpstreams('/abs/dir', 'remote-1');
+      await fetchUpstreams('/abs/dir');
+
+      expect(String(fetchSpy.mock.calls[0][0])).toContain('remoteId=remote-1');
+      expect(String(fetchSpy.mock.calls[1][0])).toContain('remoteId=local');
+    });
+
     it('returns the upstreams array on 200', async () => {
       fetchSpy.mockResolvedValue(
         new Response(
@@ -124,6 +136,33 @@ describe('upstreamApi', () => {
       expect(got.childSessionId).toBe('abc');
       const [, init] = fetchSpy.mock.calls[0];
       expect((init as RequestInit).method).toBe('POST');
+    });
+
+    it('posts project ownership in the request body', async () => {
+      fetchSpy.mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            childSessionId: 'abc',
+            mode: 'session',
+            platform: 'r-remote-1:opencode',
+            remoteId: 'remote-1',
+          }),
+          { status: 200 },
+        ),
+      );
+
+      const got = await postHandle({
+        dir: '/x',
+        remoteId: 'remote-1',
+        remote: 'origin',
+        type: 'pr',
+        number: 1,
+        mode: 'session',
+      });
+
+      const [, init] = fetchSpy.mock.calls[0];
+      expect(JSON.parse(String((init as RequestInit).body))).toMatchObject({ remoteId: 'remote-1' });
+      expect(got).toMatchObject({ platform: 'r-remote-1:opencode', remoteId: 'remote-1' });
     });
 
     it('surfaces the requires_fetch envelope on 409', async () => {
@@ -236,6 +275,23 @@ describe('upstreamApi', () => {
       fetchSpy.mockResolvedValue(new Response('boom', { status: 500 }));
       await expect(fetchForgeUser({ dir: '/x', remote: 'origin' })).rejects.toThrow(/500/);
     });
+  });
+
+  it('includes ownership on every project-directory upstream request', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ login: 'alice', host: 'example.com' }), { status: 200 }));
+
+    await fetchPRs({ dir: '/x', remoteId: 'remote-1', remote: 'origin', state: 'open', mine: undefined, page: 1 });
+    await fetchIssues({ dir: '/x', remoteId: 'remote-1', remote: 'origin', state: 'open', mine: undefined, page: 1 });
+    await fetchPRChecks({ dir: '/x', remoteId: 'remote-1', remote: 'origin', sha: 'abc' });
+    await fetchForgeUser({ dir: '/x', remoteId: 'remote-1', remote: 'origin' });
+
+    for (const [url] of fetchSpy.mock.calls) {
+      expect(String(url)).toContain('remoteId=remote-1');
+    }
   });
 
   // Regression: these helpers used raw fetch(), so only fetchJSON /
