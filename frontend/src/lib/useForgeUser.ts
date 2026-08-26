@@ -26,23 +26,28 @@ export function useForgeUser(
   const key = `${remoteId}\0${dir}\0${remote}`;
   // Errors (e.g. 401 unauthenticated) resolve to null — the resource's
   // initial value — which is exactly the "no login" signal callers want.
-  const { data, loading, ready } = useAsyncResource<string | null>({
+  const { data, loading, ready } = useAsyncResource<{ key: string; login: string | null }>({
     fetcher: (signal) => {
       const cached = forgeUsers.get(key);
-      if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.login);
+      if (cached && cached.expiresAt > Date.now()) return Promise.resolve({ key, login: cached.login });
       return fetchForgeUser({ dir: dir!, remoteId, remote: remote!, signal }).then((user) => {
         const login = user?.login ?? null;
         if (login) {
           if (forgeUsers.size >= maxForgeUsers) forgeUsers.delete(forgeUsers.keys().next().value!);
           forgeUsers.set(key, { login, expiresAt: Date.now() + 60_000 });
         }
-        return login;
+        return { key, login };
       });
     },
     deps: [dir, remote, remoteId],
-    initial: null,
+    initial: { key, login: null },
     enabled: !!dir && !!remote,
   });
 
-  return { login: data, loading, ready };
+  const current = data.key === key;
+  return {
+    login: current ? data.login : null,
+    loading: !!dir && !!remote && (!current || loading || !ready),
+    ready: current && ready,
+  };
 }

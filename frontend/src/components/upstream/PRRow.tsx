@@ -98,9 +98,11 @@ interface ChecksState {
  * state is "unknown" (neutral dot).
  */
 function usePRChecks(pr: PR, directory: string, remoteId: string, remote: string): ChecksState {
+  const requestKey = `${remoteId}\0${directory}\0${remote}\0${pr.headSha ?? ''}`;
   const [data, setData] = useState<PRChecks | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [activeKey, setActiveKey] = useState(requestKey);
   // Guards against duplicate fetches: hover + click can both fire.
   const startedRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -109,13 +111,14 @@ function usePRChecks(pr: PR, directory: string, remoteId: string, remote: string
     const reset = () => {
       abortRef.current?.abort();
       startedRef.current = false;
+      setActiveKey(requestKey);
       setData(null);
       setLoading(false);
       setError(false);
     };
     reset();
     return () => abortRef.current?.abort();
-  }, [pr.headSha, directory, remoteId, remote]);
+  }, [pr.headSha, directory, remoteId, remote, requestKey]);
 
   const load = useCallback(() => {
     if (startedRef.current || !pr.headSha) return;
@@ -140,12 +143,13 @@ function usePRChecks(pr: PR, directory: string, remoteId: string, remote: string
       });
   }, [pr.headSha, directory, remoteId, remote]);
 
+  const current = activeKey === requestKey;
   return {
-    state: data?.state ?? 'unknown',
-    checks: data?.checks ?? [],
-    loading,
-    loaded: data !== null,
-    error,
+    state: current ? data?.state ?? 'unknown' : 'unknown',
+    checks: current ? data?.checks ?? [] : [],
+    loading: current && loading,
+    loaded: current && data !== null,
+    error: current && error,
     load,
   };
 }

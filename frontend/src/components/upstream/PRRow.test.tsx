@@ -152,6 +152,7 @@ describe('PRRow CI build-status indicator', () => {
 
     rerender(<PRRow pr={makePR({ headSha: 'new' })} directory="/repo" remoteId="local" remote="origin" />);
     expect(oldSignal?.aborted).toBe(true);
+    expect(screen.getByTestId('pr-row-42-ci').className).toContain('oc-upstream-ci-dot-unknown');
     fireEvent.click(screen.getByRole('button', { expanded: true }));
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
     expect(spy.mock.calls[1][0].sha).toBe('new');

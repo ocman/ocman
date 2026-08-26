@@ -36,3 +36,24 @@ it('rechecks forge identity after the cache expires', async () => {
   await waitFor(() => expect(second.result.current.login).toBe('bob'));
   expect(fetcher).toHaveBeenCalledTimes(2);
 });
+
+it('does not expose the previous owner identity while loading', async () => {
+  const snapshots: Array<{ owner: string; login: string | null }> = [];
+  vi.spyOn(api, 'fetchForgeUser')
+    .mockResolvedValueOnce({ login: 'alice', host: 'github.com' })
+    .mockReturnValueOnce(new Promise(() => {}));
+
+  const { result, rerender } = renderHook(
+    ({ owner }) => {
+      const value = useForgeUser('/repo', 'origin', owner);
+      snapshots.push({ owner, login: value.login });
+      return value;
+    },
+    { initialProps: { owner: 'old-owner' } },
+  );
+  await waitFor(() => expect(result.current.login).toBe('alice'));
+
+  rerender({ owner: 'new-owner' });
+  expect(result.current.login).toBeNull();
+  expect(snapshots).not.toContainEqual({ owner: 'new-owner', login: 'alice' });
+});

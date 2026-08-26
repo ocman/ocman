@@ -343,7 +343,7 @@ func TestHandleProjectHandle_LooksUpSelectedPRDirectly(t *testing.T) {
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"number": 101, "title": "Later PR", "state": "open", "user": map[string]string{"login": "alice"},
+			"number": 101, "title": "Later PR", "body": "PR body details", "state": "open", "user": map[string]string{"login": "alice"},
 			"head": map[string]any{"ref": "later", "repo": map[string]string{"full_name": "alice/myproj"}},
 			"base": map[string]any{"repo": map[string]string{"full_name": "alice/myproj"}},
 		})
@@ -361,7 +361,7 @@ func TestHandleProjectHandle_LooksUpSelectedPRDirectly(t *testing.T) {
 	body := `{"dir":"` + dir + `","remoteId":"local","remote":"origin","type":"pr","number":101,"mode":"session"}`
 	rr := httptest.NewRecorder()
 	srv.handleProjectHandle(rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
-	if rr.Code != http.StatusOK || !strings.Contains(prompt, "Later PR") {
+	if rr.Code != http.StatusOK || !strings.Contains(prompt, "Later PR") || !strings.Contains(prompt, "PR body details") || !strings.Contains(prompt, "untrusted forge content") {
 		t.Fatalf("status = %d, prompt = %q, body = %s", rr.Code, prompt, rr.Body.String())
 	}
 }

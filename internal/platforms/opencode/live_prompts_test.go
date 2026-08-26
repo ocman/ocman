@@ -57,24 +57,35 @@ func TestAdapterLivePromptsBackSessionFlagsAndListingWithoutFanout(t *testing.T)
 	}
 }
 
-func TestListPermissionsIncludesDescendantAcrossDirectories(t *testing.T) {
+func TestPermissionPromptBubblesFromGrandchildAcrossDirectories(t *testing.T) {
 	parentID := "ses-parent"
 	childID := "ses-child"
+	grandchildID := "ses-grandchild"
 	database := newTestDBWithSessions(t, []testSession{
 		{id: parentID, directory: "/repo/main"},
 		{id: childID, directory: "/repo/worktree", parentID: &parentID},
+		{id: grandchildID, directory: "/repo/nested", parentID: &childID},
 	})
 	a := New(database, nil)
-	a.ObservePromptAsked("", "/repo/worktree", "permission", platforms.LivePrompt{
-		"id": "perm-child", "sessionID": childID, "permission": "Bash",
+	a.ObservePromptAsked("", "/repo/nested", "permission", platforms.LivePrompt{
+		"id": "perm-grandchild", "sessionID": grandchildID, "permission": "Bash",
 	})
 
 	prompts, err := a.ListPermissions(context.Background(), parentID)
 	if err != nil {
 		t.Fatalf("ListPermissions: %v", err)
 	}
-	if len(prompts) != 1 || prompts[0]["id"] != "perm-child" {
-		t.Fatalf("permissions = %#v, want descendant perm-child", prompts)
+	if len(prompts) != 1 || prompts[0]["id"] != "perm-grandchild" {
+		t.Fatalf("permissions = %#v, want descendant perm-grandchild", prompts)
+	}
+
+	InvalidateSessionsCache()
+	sessions, err := a.Sessions(context.Background(), "/repo/main", 0)
+	if err != nil {
+		t.Fatalf("Sessions: %v", err)
+	}
+	if len(sessions) != 1 || !sessions[0].PendingPermission {
+		t.Fatalf("top-level session pending permission = %+v, want true", sessions)
 	}
 }
 

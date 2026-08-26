@@ -112,10 +112,12 @@ export function useGitInfo(dirs: string[] | undefined, remoteId: string): UseGit
   // skipping useMemo here is fine and avoids the array-identity
   // trap.
   const queryParam = buildDirsQueryParam(dirs);
+  const requestKey = `${remoteId}\0${queryParam ?? ''}`;
 
   const [infos, setInfos] = useState<Record<string, GitInfo>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeKey, setActiveKey] = useState(requestKey);
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -132,6 +134,7 @@ export function useGitInfo(dirs: string[] | undefined, remoteId: string): UseGit
     const dirList = decodeURIComponent(queryParam).split(',');
     const releaseScopes = dirList.map((dir) => acquireActivityScope(`git-status:${dir}`));
     const reset = () => {
+      setActiveKey(requestKey);
       setInfos({});
       setError(null);
     };
@@ -184,7 +187,9 @@ export function useGitInfo(dirs: string[] | undefined, remoteId: string): UseGit
         document.removeEventListener('visibilitychange', onVisibility);
       }
     };
-  }, [queryParam, remoteId]);
+  }, [queryParam, remoteId, requestKey]);
 
+  if (queryParam === null) return { infos: {}, loading: false, error: null };
+  if (activeKey !== requestKey) return { infos: {}, loading: true, error: null };
   return { infos, loading, error };
 }
