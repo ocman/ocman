@@ -1,6 +1,7 @@
 package remote
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"reflect"
@@ -12,6 +13,17 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 )
+
+func TestProjectUpstreamsRPCDoesNotSerializeRemoteURLs(t *testing.T) {
+	srv := NewServer(platforms.NewRegistry(), &forgeRoundTripHost{}, "rid", "v")
+	resp, err := srv.ProjectUpstreams(context.Background(), &pb.JsonReq{Payload: []byte(`{"dir":"/owner/repo"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(resp.Payload, []byte("secret")) || bytes.Contains(resp.Payload, []byte(`"url"`)) {
+		t.Fatalf("ProjectUpstreams serialized a remote URL: %s", resp.Payload)
+	}
+}
 
 type forgeRoundTripHost struct {
 	localStubHost

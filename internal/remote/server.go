@@ -501,6 +501,11 @@ func (s *Server) ProjectUpstreams(ctx context.Context, req *pb.JsonReq) (*pb.Jso
 	if errors.Is(err, git.ErrNotARepo) {
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
+	if err == nil && upstreams != nil {
+		for i := range upstreams.Remotes {
+			upstreams.Remotes[i].URL = ""
+		}
+	}
 	return jsonResp(upstreams, err)
 }
 
