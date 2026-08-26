@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -15,13 +16,60 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 )
 
+const (
+	projectUpstreamsTTL = 10 * time.Second
+	projectUpstreamsMax = 128
+)
+
+type projectUpstreamsCacheEntry struct {
+	value     *hostsvc.ProjectUpstreams
+	expiresAt time.Time
+}
+
 // detectUpstreams asks the resolved owner to inspect its repository and
 // returns only normalized repository/forge data to the hub.
 func (s *Server) detectUpstreams(ctx context.Context, host hostsvc.Host, projectDir string) (string, []forge.Remote, error) {
-	upstreams, err := host.ProjectUpstreams(ctx, projectDir)
+	key := host.RemoteID() + "\x00" + projectDir
+	now := time.Now()
+	if s.upstreamNow != nil {
+		now = s.upstreamNow()
+	}
+	s.projectUpstreamsMu.Lock()
+	cached, ok := s.projectUpstreams[key]
+	s.projectUpstreamsMu.Unlock()
+	if ok && now.Before(cached.expiresAt) {
+		return cached.value.RepoRoot, cached.value.Remotes, nil
+	}
+
+	value, err, _ := s.projectUpstreamsGroup.Do(key, func() (any, error) {
+		s.projectUpstreamsMu.Lock()
+		cached, ok := s.projectUpstreams[key]
+		s.projectUpstreamsMu.Unlock()
+		if ok && now.Before(cached.expiresAt) {
+			return cached.value, nil
+		}
+		upstreams, err := host.ProjectUpstreams(ctx, projectDir)
+		if err != nil {
+			return nil, err
+		}
+		s.projectUpstreamsMu.Lock()
+		if s.projectUpstreams == nil {
+			s.projectUpstreams = make(map[string]projectUpstreamsCacheEntry)
+		}
+		for len(s.projectUpstreams) >= projectUpstreamsMax {
+			for oldKey := range s.projectUpstreams {
+				delete(s.projectUpstreams, oldKey)
+				break
+			}
+		}
+		s.projectUpstreams[key] = projectUpstreamsCacheEntry{value: upstreams, expiresAt: now.Add(projectUpstreamsTTL)}
+		s.projectUpstreamsMu.Unlock()
+		return upstreams, nil
+	})
 	if err != nil {
 		return "", nil, err
 	}
+	upstreams := value.(*hostsvc.ProjectUpstreams)
 	return upstreams.RepoRoot, upstreams.Remotes, nil
 }
 

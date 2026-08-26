@@ -13,6 +13,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/dagu"
@@ -150,6 +151,11 @@ type Server struct {
 	daguManager  *dagu.Manager
 
 	getNewAssistantMessages func(context.Context, int64) ([]db.LLMMessageRow, int64, error)
+
+	projectUpstreamsMu    sync.Mutex
+	projectUpstreams      map[string]projectUpstreamsCacheEntry
+	projectUpstreamsGroup singleflight.Group
+	upstreamNow           func() time.Time
 }
 
 // remoteAccessInfo holds this instance's own remote-access surface for

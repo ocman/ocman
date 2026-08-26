@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,9 +10,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/forge"
 	"github.com/NoUseFreak/ocman/internal/forge/github"
+	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 )
 
@@ -105,6 +108,46 @@ func TestHandleProjectUpstreams_RejectsUnknownExplicitOwner(t *testing.T) {
 	rr := httptest.NewRecorder()
 	srv.handleProjectUpstreams(rr, httptest.NewRequest(http.MethodGet, "/api/project/upstreams?dir=/remote/only/repo&remoteId=gone", nil))
 	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestDetectUpstreams_CachesByOwnerAndDirectory(t *testing.T) {
+	now := time.Unix(100, 0)
+	srv := testServer(t)
+	srv.upstreamNow = func() time.Time { return now }
+	a := &projectHandleRemoteHost{upstreams: githubProjectUpstreams("/repo"), remoteID: "rem1"}
+	b := &projectHandleRemoteHost{upstreams: githubProjectUpstreams("/repo"), remoteID: "rem2"}
+
+	for range 2 {
+		if _, _, err := srv.detectUpstreams(context.Background(), a, "/repo"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := srv.detectUpstreams(context.Background(), b, "/repo"); err != nil {
+		t.Fatal(err)
+	}
+	if a.upstreamCalls != 1 || b.upstreamCalls != 1 {
+		t.Fatalf("calls before expiry = %d, %d; want 1, 1", a.upstreamCalls, b.upstreamCalls)
+	}
+
+	now = now.Add(projectUpstreamsTTL + time.Millisecond)
+	if _, _, err := srv.detectUpstreams(context.Background(), a, "/repo"); err != nil {
+		t.Fatal(err)
+	}
+	if a.upstreamCalls != 2 {
+		t.Fatalf("calls after expiry = %d, want 2", a.upstreamCalls)
+	}
+}
+
+func TestHandleProjectUpstreams_RemoteNotARepoReturns404(t *testing.T) {
+	srv := testServer(t)
+	host := &projectHandleRemoteHost{upstreamErr: git.ErrNotARepo}
+	srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
+	srv.hostRouter.RegisterRemote("rem1", host)
+	rr := httptest.NewRecorder()
+	srv.handleProjectUpstreams(rr, httptest.NewRequest(http.MethodGet, "/api/project/upstreams?dir=/remote/nope&remoteId=rem1", nil))
+	if rr.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
 	}
 }

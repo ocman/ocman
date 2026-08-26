@@ -50,6 +50,8 @@ export function UpstreamPane({
   onSummaryChange,
 }: UpstreamPaneProps) {
   const [tab, setTab] = useState<Tab>('prs');
+  const { infos: gitInfos } = useGitInfo(directory ? [directory] : [], remoteId);
+  const currentBranch = directory ? gitInfos[directory]?.branch : undefined;
 
   // Independent filter state per tab.
   const [prState, setPRState] = useState<StateFilter>('open');
@@ -110,6 +112,7 @@ export function UpstreamPane({
           onMineChange={setPRMine}
           onRefresh={onRefresh}
           onLoadingChange={onLoadingChange}
+          currentBranch={currentBranch}
         />
       ) : (
         <UpstreamTabContent
@@ -124,6 +127,7 @@ export function UpstreamPane({
           onMineChange={setIssueMine}
           onRefresh={onRefresh}
           onLoadingChange={onLoadingChange}
+          currentBranch={currentBranch}
         />
       )}
     </div>
@@ -141,6 +145,7 @@ interface UpstreamTabContentProps {
   onMineChange: (m: boolean) => void;
   onRefresh?: (refresh: () => void) => void;
   onLoadingChange?: (loading: boolean) => void;
+  currentBranch?: string;
 }
 
 function UpstreamTabContent({
@@ -154,6 +159,7 @@ function UpstreamTabContent({
   onMineChange,
   onRefresh,
   onLoadingChange,
+  currentBranch,
 }: UpstreamTabContentProps) {
   // Always render the filter strip + per-remote groups. Each group
   // owns its own fetch hook (via UpstreamRemoteGroup below) so a
@@ -210,6 +216,7 @@ function UpstreamTabContent({
           }}
           onLoadingChange={handleGroupLoading}
           showHeader={showGroupHeader}
+          currentBranch={currentBranch}
         />
       ))}
     </div>
@@ -263,6 +270,7 @@ interface UpstreamRemoteGroupProps {
   registerRefresh: (fn: () => void) => () => void;
   onLoadingChange: (loading: boolean) => void;
   showHeader: boolean;
+  currentBranch?: string;
 }
 
 function UpstreamRemoteGroup({
@@ -275,21 +283,13 @@ function UpstreamRemoteGroup({
   registerRefresh,
   onLoadingChange,
   showHeader,
+  currentBranch,
 }: UpstreamRemoteGroupProps) {
   // Resolve the "mine" identity for this remote's host. null means
   // the forge has no credential — disable the mine toggle visually
   // and don't send the filter parameter.
   const myLogin = useForgeUser(directory, upstream.remote, remoteId);
   const mineFilter = mine && myLogin ? myLogin : undefined;
-
-  // Working-tree branch for the project, used to highlight PRs whose
-  // source branch matches what the user has checked out locally.
-  // useGitInfo polls every 30s; only relevant for PRs, but cheap
-  // enough to fetch unconditionally (the result is shared via the
-  // backend cache).
-  const gitInfoDirs = useMemo(() => [directory], [directory]);
-  const { infos: gitInfos } = useGitInfo(gitInfoDirs);
-  const currentBranch = gitInfos[directory]?.branch;
 
   const list = useUpstreamList<PR | Issue>({
     kind,

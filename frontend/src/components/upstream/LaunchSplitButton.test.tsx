@@ -40,6 +40,7 @@ describe('LaunchSplitButton', () => {
     expect(recent[0]?.id).toBe('child-1');
     expect(recent[0]?.title).toBe('pr #42');
     expect(recent[0]?.platform).toBe('r-box:opencode');
+    expect(recent[0]?.remoteId).toBe('box');
     expect(api.postHandle).toHaveBeenCalledWith(expect.objectContaining({ remoteId: 'box' }));
   });
 

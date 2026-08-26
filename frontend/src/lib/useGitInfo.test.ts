@@ -60,13 +60,14 @@ describe('fetchGitInfoOnce', () => {
       }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
     );
 
-    const got = await fetchGitInfoOnce(['/a', '/b']);
+    const got = await fetchGitInfoOnce(['/a', '/b'], 'box');
 
     expect(got['/a'].branch).toBe('main');
     expect(got['/b'].dirty).toBe(true);
     expect(fetchSpy).toHaveBeenCalledOnce();
     const url = (fetchSpy.mock.calls[0][0] as Request).url ?? fetchSpy.mock.calls[0][0];
     expect(String(url)).toContain('/api/git/info?dirs=');
+    expect(String(url)).toContain('remoteId=box');
   });
 
   it('throws on a non-2xx response so callers can surface the error', async () => {
@@ -82,7 +83,7 @@ describe('fetchGitInfoOnce', () => {
       return Promise.reject(reason ?? new DOMException('aborted', 'AbortError'));
     });
 
-    const got = await fetchGitInfoOnce(['/a'], ac.signal);
+    const got = await fetchGitInfoOnce(['/a'], 'local', ac.signal);
     expect(got).toEqual({});
   });
 });

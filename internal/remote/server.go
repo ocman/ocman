@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
@@ -487,7 +488,11 @@ func (s *Server) ProjectUpstreams(ctx context.Context, req *pb.JsonReq) (*pb.Jso
 	if err := unmarshalJSON(req.Payload, &args); err != nil {
 		return nil, err
 	}
-	return jsonResp(s.host.ProjectUpstreams(ctx, args.Dir))
+	upstreams, err := s.host.ProjectUpstreams(ctx, args.Dir)
+	if errors.Is(err, git.ErrNotARepo) {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+	return jsonResp(upstreams, err)
 }
 
 func (s *Server) FetchPRHead(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {

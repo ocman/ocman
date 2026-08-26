@@ -89,7 +89,7 @@ func (s *Server) handleProjectHandle(w http.ResponseWriter, r *http.Request) {
 	// type; if we can't fetch the item we still launch with a
 	// minimal prompt (intent + url) rather than failing — the user
 	// can always recover manually inside the agent.
-	prompt, vars, err := s.renderHandlePrompt(r.Context(), f, rem, req)
+	prompt, vars, promptPR, err := s.renderHandlePrompt(r.Context(), f, rem, req)
 	if err != nil {
 		log.WithError(err).Warn("handle: render prompt; falling back to minimal")
 		prompt = fallbackPrompt(req, rem, vars)
@@ -109,7 +109,7 @@ func (s *Server) handleProjectHandle(w http.ResponseWriter, r *http.Request) {
 	case "session":
 		s.handleProjectHandleSession(w, r, req, host, platform, prompt)
 	case "worktree":
-		s.handleProjectHandleWorktree(w, r, req, host, platform, rem, f, repoRoot, prompt, vars)
+		s.handleProjectHandleWorktree(w, r, req, host, platform, rem, f, repoRoot, prompt, vars, promptPR)
 	default:
 		http.Error(w, "mode must be 'session' or 'worktree'", http.StatusBadRequest)
 	}
@@ -150,7 +150,7 @@ func (s *Server) handleProjectHandleSession(
 func (s *Server) handleProjectHandleWorktree(
 	w http.ResponseWriter, r *http.Request,
 	req handleProjectRequest, host hostsvc.Host, platform string, rem forge.Remote, f forge.Forge,
-	repoRoot, prompt string, vars map[string]string,
+	repoRoot, prompt string, vars map[string]string, promptPR *forge.PR,
 ) {
 	var branch string
 	var newBranch bool
@@ -171,13 +171,16 @@ func (s *Server) handleProjectHandleWorktree(
 		// branch + crossFork flags in our normalized shape; refetch
 		// the single PR here so we don't depend on the frontend
 		// having sent stale info.
-		pr, perr := s.fetchSinglePR(r.Context(), f, rem.Repo, req.Number)
-		if perr != nil {
-			log.WithError(perr).Warn("handle worktree: fetch pr metadata")
-			http.Error(w, "failed to read PR metadata: "+perr.Error(), http.StatusBadGateway)
-			return
+		if promptPR == nil {
+			pr, perr := s.fetchSinglePR(r.Context(), f, rem.Repo, req.Number)
+			if perr != nil {
+				log.WithError(perr).Warn("handle worktree: fetch pr metadata")
+				http.Error(w, "failed to read PR metadata: "+perr.Error(), http.StatusBadGateway)
+				return
+			}
+			promptPR = &pr
 		}
-		if pr.CrossFork {
+		if promptPR.CrossFork {
 			if !req.FetchHead {
 				// Tell the frontend to confirm + retry.
 				w.Header().Set("Content-Type", "application/json")
@@ -203,7 +206,7 @@ func (s *Server) handleProjectHandleWorktree(
 			branch = fetched
 			newBranch = false
 		} else {
-			branch = pr.Branch
+			branch = promptPR.Branch
 			newBranch = false
 		}
 
@@ -275,10 +278,10 @@ var errPRNotFound = errors.New("pr not found")
 // map so callers can reuse them (e.g. branch slug for issues).
 func (s *Server) renderHandlePrompt(
 	ctx context.Context, f forge.Forge, rem forge.Remote, req handleProjectRequest,
-) (string, map[string]string, error) {
+) (string, map[string]string, *forge.PR, error) {
 	tmpl, err := s.promptTemplateFor(ctx, req.Type, req.Action)
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 
 	vars := map[string]string{
@@ -291,13 +294,14 @@ func (s *Server) renderHandlePrompt(
 	case "pr":
 		pr, perr := s.fetchSinglePR(ctx, f, rem.Repo, req.Number)
 		if perr != nil {
-			return "", vars, perr
+			return "", vars, nil, perr
 		}
 		vars["title"] = pr.Title
 		vars["body"] = pr.Body
 		vars["url"] = pr.URL
 		vars["author"] = pr.Author
 		vars["branch"] = pr.Branch
+		return forge.RenderPrompt(tmpl, vars), vars, &pr, nil
 	case "issue":
 		// No single-issue fetch helper — list and find. Mirrors
 		// fetchSinglePR's two-pass approach.
@@ -305,7 +309,7 @@ func (s *Server) renderHandlePrompt(
 		for _, state := range []string{"open", "all"} {
 			issues, _, ierr := f.ListIssues(ctx, rem.Repo, forge.ListOptions{State: state, PerPage: 100})
 			if ierr != nil {
-				return "", vars, ierr
+				return "", vars, nil, ierr
 			}
 			for i := range issues {
 				if issues[i].Number == req.Number {
@@ -318,7 +322,7 @@ func (s *Server) renderHandlePrompt(
 			}
 		}
 		if found == nil {
-			return "", vars, errPRNotFound
+			return "", vars, nil, errPRNotFound
 		}
 		vars["title"] = found.Title
 		vars["body"] = found.Body
@@ -327,7 +331,7 @@ func (s *Server) renderHandlePrompt(
 		// branch is intentionally absent for issues — template
 		// placeholders for unknown keys stay literal per FR-10.
 	}
-	return forge.RenderPrompt(tmpl, vars), vars, nil
+	return forge.RenderPrompt(tmpl, vars), vars, nil, nil
 }
 
 // promptTemplateFor returns the template for the given item type and

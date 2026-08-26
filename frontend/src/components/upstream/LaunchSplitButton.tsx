@@ -65,7 +65,7 @@ export function LaunchSplitButton({
       // next 3 s poll. For worktree mode the new tmux session is attachable
       // via the existing UI flow.
       if (mode === 'session' && res.childSessionId) {
-        seedNewSession(res.childSessionId, directory, res.platform, `${type} #${number}`);
+        seedNewSession(res.childSessionId, directory, res.platform, `${type} #${number}`, res.remoteId);
       }
       // Brief "Launched" confirmation so the user knows the request landed.
       setLaunched(true);

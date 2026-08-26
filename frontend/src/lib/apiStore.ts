@@ -99,7 +99,7 @@ type ApiStore = {
    * first getSession fetch completes.  The real payload will overwrite
    * this stub as soon as the fetch resolves.
    */
-  seedNewSession: (id: string, directory: string, platform: string, title?: string) => void;
+  seedNewSession: (id: string, directory: string, platform: string, title?: string, remoteId?: string) => void;
   runRequest: <T>(key: string, task: () => Promise<T>) => Promise<T>;
   getProjects: (signal?: AbortSignal) => Promise<Project[]>;
   browseDirectories: (directory?: string, signal?: AbortSignal) => Promise<DirectoryBrowseResponse>;
@@ -220,7 +220,7 @@ export const useApiStore = create<ApiStore>((set, get) => ({
       return { sessionCache: nextCache, sessionCacheOrder: nextOrder };
     });
   },
-  seedNewSession: (id, directory, platform, title) => {
+  seedNewSession: (id, directory, platform, title, remoteId) => {
     const now = Date.now();
     const stub: SessionDetail = {
       session: {
@@ -229,6 +229,7 @@ export const useApiStore = create<ApiStore>((set, get) => ({
         projectId: '',
         title: title ?? '',
         directory,
+        remoteId,
         timeCreated: now,
         timeUpdated: now,
         summaryAdditions: null,

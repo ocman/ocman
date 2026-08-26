@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,7 +12,19 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/git"
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 )
+
+type gitInfoOwner struct {
+	hostsvc.Host
+	calls int
+}
+
+func (h *gitInfoOwner) RemoteID() string { return "rem1" }
+func (h *gitInfoOwner) GitInfo(context.Context, []string) (map[string]git.Info, error) {
+	h.calls++
+	return map[string]git.Info{}, nil
+}
 
 // gitInitForServerTest is a copy of the helper in the git package's
 // test, scoped to this package so we don't depend on internal test
@@ -190,6 +203,28 @@ func TestHandleGitInfo_NonRepoDirs(t *testing.T) {
 	}
 	if info, ok := got[dir]; ok && info.IsRepo() {
 		t.Errorf("non-repo dir reported as repo: %+v", info)
+	}
+}
+
+func TestHandleGitInfo_UsesExplicitRemoteOwner(t *testing.T) {
+	srv := testServer(t)
+	host := &gitInfoOwner{}
+	srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
+	srv.hostRouter.RegisterRemote("rem1", host)
+
+	rr := httptest.NewRecorder()
+	srv.handleGitInfo(rr, httptest.NewRequest(http.MethodGet, "/api/git/info?dirs=/remote/repo&remoteId=rem1", nil))
+	if rr.Code != http.StatusOK || host.calls != 1 {
+		t.Fatalf("status = %d, owner calls = %d", rr.Code, host.calls)
+	}
+}
+
+func TestHandleGitInfo_RejectsUnknownExplicitOwner(t *testing.T) {
+	srv := testServer(t)
+	rr := httptest.NewRecorder()
+	srv.handleGitInfo(rr, httptest.NewRequest(http.MethodGet, "/api/git/info?dirs=/remote/repo&remoteId=gone", nil))
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
 	}
 }
 

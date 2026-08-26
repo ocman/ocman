@@ -18,14 +18,22 @@ import (
 
 type projectHandleRemoteHost struct {
 	hostsvc.Host
-	worktree    *hostsvc.WorktreeSessionResult
-	upstreams   *hostsvc.ProjectUpstreams
-	fetch       hostsvc.FetchPRHeadRequest
-	deadline    time.Time
-	hasDeadline bool
+	worktree      *hostsvc.WorktreeSessionResult
+	upstreams     *hostsvc.ProjectUpstreams
+	fetch         hostsvc.FetchPRHeadRequest
+	deadline      time.Time
+	hasDeadline   bool
+	upstreamErr   error
+	upstreamCalls int
+	remoteID      string
 }
 
-func (h *projectHandleRemoteHost) RemoteID() string { return "rem1" }
+func (h *projectHandleRemoteHost) RemoteID() string {
+	if h.remoteID != "" {
+		return h.remoteID
+	}
+	return "rem1"
+}
 
 func (h *projectHandleRemoteHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
 	return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:4321"}, nil
@@ -36,7 +44,34 @@ func (h *projectHandleRemoteHost) CreateWorktreeSession(context.Context, hostsvc
 }
 
 func (h *projectHandleRemoteHost) ProjectUpstreams(context.Context, string) (*hostsvc.ProjectUpstreams, error) {
-	return h.upstreams, nil
+	h.upstreamCalls++
+	return h.upstreams, h.upstreamErr
+}
+
+func TestHandleProjectHandle_WorktreePRFetchesMetadataOnce(t *testing.T) {
+	srv := testServer(t)
+	dir := "/remote/only/repo"
+	requests := 0
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		_, _ = w.Write([]byte(`[{"number":42,"title":"Patch","state":"open","user":{"login":"alice"},"head":{"ref":"patch","repo":{"full_name":"alice/myproj"}},"base":{"repo":{"full_name":"alice/myproj"}}}]`))
+	}))
+	defer gh.Close()
+	srv.integrations.GitHub = newGitHubTestClient(gh)
+	srv.registry.Register(&fakePlatform{id: "r-rem1:opencode", sendMessageFn: func(platforms.SendMessageRequest) error { return nil }})
+	host := &projectHandleRemoteHost{upstreams: githubProjectUpstreams(dir), worktree: &hostsvc.WorktreeSessionResult{SessionID: "child", Branch: "patch"}}
+	srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
+	srv.hostRouter.RegisterRemote("rem1", host)
+
+	body := `{"dir":"` + dir + `","remote":"origin","remoteId":"rem1","type":"pr","number":42,"mode":"worktree"}`
+	rr := httptest.NewRecorder()
+	srv.handleProjectHandle(rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
+	}
+	if requests != 1 {
+		t.Fatalf("PR metadata requests = %d, want 1", requests)
+	}
 }
 
 func (h *projectHandleRemoteHost) FetchPRHead(ctx context.Context, req hostsvc.FetchPRHeadRequest) (string, error) {

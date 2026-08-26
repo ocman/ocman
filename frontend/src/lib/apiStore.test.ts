@@ -188,11 +188,12 @@ describe('seedNewSession', () => {
     const existing = makeSessionDetail('existing').session;
     useApiStore.setState({ recentSessions: [existing] });
 
-    useApiStore.getState().seedNewSession('new-1', '/repo', 'opencode', 'pr #7');
+    useApiStore.getState().seedNewSession('new-1', '/repo', 'opencode', 'pr #7', 'box');
 
     const recent = useApiStore.getState().recentSessions;
     expect(recent[0].id).toBe('new-1');
     expect(recent[0].title).toBe('pr #7');
+    expect(recent[0].remoteId).toBe('box');
     expect(recent.map((s) => s.id)).toEqual(['new-1', 'existing']);
     // Hash is recomputed so the next poll's dedup check stays accurate.
     expect(useApiStore.getState().recentSessionsHash).not.toBe('');

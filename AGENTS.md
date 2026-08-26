@@ -115,6 +115,9 @@ accepts `remoteId` (`local` by default); explicit remotes fail closed when
 disconnected. Repository detection and cross-fork fetches run through the
 owner's `hostsvc.Host`, while the hub uses its forge clients for PR/Issue
 metadata and launches sessions on the owner's compound platform.
+The frontend carries that owner through upstream lists, checks, forge-user
+identity, git branch highlighting, and optimistic session seeding. Successful
+forge-user identities survive PR/Issue tab remounts; failures remain retryable.
 
 Ocman also supports **multi-remote**: one "hub" ocman attaches to other
 ocman instances over a long-lived gRPC channel and manages every
@@ -162,8 +165,8 @@ handlers don't bypass the `Host` seam). User-facing docs:
 - `internal/platforms/opencode/` — OpenCode adapter wrapping the DB
   + HTTP proxy client.
 - `internal/sessionsvc/` — session mutation service (validation,
-  adapter selection, side-effect hooks). REST handlers, MCP tools,
-  and the remote gRPC server all delegate session mutations to it
+  adapter selection, side-effect hooks). REST handlers and the remote
+  gRPC server delegate session mutations to it
   (one shared mutation path).
 - `internal/queuesvc/` — follow-up message queue (#58). Queueing is an
   **explicit user gesture**: plain **Enter** in the composer sends
@@ -180,8 +183,7 @@ handlers don't bypass the `Host` seam). User-facing docs:
   never leaves the head stranded. A periodic one-minute `Sweep`
   (`runQueueSweep`) is only a recovery backstop: it drains one message from
   each idle session with a standing backlog after a missed edge or crash.
-  Internal deferrals (MCP child results, scheduled prompts) enqueue the
-  same way. Wired in `internal/server/queue.go`.
+  Scheduled prompts enqueue the same way. Wired in `internal/server/queue.go`.
 - `internal/db/` — read-only SQLite queries against OpenCode's
   `session`, `message`, `part` tables; uses `json_extract` heavily.
 - `internal/state/` — writable SQLite database

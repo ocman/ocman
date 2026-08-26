@@ -69,6 +69,7 @@ export function buildDirsQueryParam(dirs: string[] | undefined): string | null {
  */
 export async function fetchGitInfoOnce(
   dirs: string[],
+  remoteId = 'local',
   signal?: AbortSignal,
 ): Promise<Record<string, GitInfo>> {
   const param = buildDirsQueryParam(dirs);
@@ -77,7 +78,7 @@ export async function fetchGitInfoOnce(
   // fetchJSON (not raw fetch) so a 401 raises AuthError and reaches the
   // lockscreen hook instead of surfacing as a generic pane error.
   try {
-    return await fetchJSON<Record<string, GitInfo>>(`/api/git/info?dirs=${param}`, signal);
+    return await fetchJSON<Record<string, GitInfo>>(`/api/git/info?dirs=${param}&remoteId=${encodeURIComponent(remoteId)}`, signal);
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') return {};
     if (signal?.aborted) return {};
@@ -105,7 +106,7 @@ export function _resetForTests(): void { /* intentionally empty */ }
  * never observed completing. Keying on the string fixes it because
  * `buildDirsQueryParam` is deterministic on the input contents.
  */
-export function useGitInfo(dirs: string[] | undefined): UseGitInfoResult {
+export function useGitInfo(dirs: string[] | undefined, remoteId = 'local'): UseGitInfoResult {
   // Compute the canonical query param fresh on every render. It's
   // O(n) in the dir count, which is small (a sidebar's worth), so
   // skipping useMemo here is fine and avoids the array-identity
@@ -142,7 +143,7 @@ export function useGitInfo(dirs: string[] | undefined): UseGitInfoResult {
       const controller = new AbortController();
       abortRef.current = controller;
       setLoading(true);
-      fetchGitInfoOnce(dirList, controller.signal)
+      fetchGitInfoOnce(dirList, remoteId, controller.signal)
         .then((res) => {
           if (controller.signal.aborted) return;
           setInfos(res);
@@ -178,7 +179,7 @@ export function useGitInfo(dirs: string[] | undefined): UseGitInfoResult {
         document.removeEventListener('visibilitychange', onVisibility);
       }
     };
-  }, [queryParam]);
+  }, [queryParam, remoteId]);
 
   return { infos, loading, error };
 }

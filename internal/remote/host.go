@@ -2,6 +2,10 @@ package remote
 
 import (
 	"context"
+	"errors"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/NoUseFreak/ocman/internal/dagu"
 	"github.com/NoUseFreak/ocman/internal/db"
@@ -113,6 +117,9 @@ func (h *remoteHost) ProjectUpstreams(ctx context.Context, dir string) (*hostsvc
 	b, _ := marshalJSON(map[string]string{"dir": dir})
 	resp, err := client.ProjectUpstreams(ctx, &pb.JsonReq{Payload: b})
 	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return nil, errors.Join(git.ErrNotARepo, err)
+		}
 		return nil, err
 	}
 	var out hostsvc.ProjectUpstreams

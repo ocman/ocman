@@ -105,6 +105,9 @@ list with its host badge.
   which machines already have that project checked out. On exactly one
   machine it starts there automatically; on several it asks you to pick; on
   none it asks which machine to start on.
+- **PRs and issues.** The project sidebar sends the owning `remoteId` for
+  upstream detection, lists, checks, identity lookups, branch highlighting,
+  and session/worktree launches. Repository work runs on the owner.
 
 ## Managing remotes
 
@@ -164,8 +167,6 @@ and ocman persists them in `state.db`.
 
 ## Limitations (v1)
 
-- The PR/Issue backend APIs are machine-aware through an explicit `remoteId`;
-  the sidebar frontend does not send it yet.
 - Auto-approve for a remote session runs on the owning remote, with that
   machine's settings, not the hub's.
 - Stale sessions from an offline remote are kept in memory only. After a hub

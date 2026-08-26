@@ -7,9 +7,8 @@ heavily on primitives already present in ocman:
 
 1. A new **`internal/forge`** package that abstracts a forge
    (GitHub or Forgejo) behind a single `Forge` interface, with
-   per-host clients built on top of the existing
-   `internal/integrations/github` package and a new
-   `internal/integrations/forgejo` sibling. Token discovery follows
+   per-host clients in `internal/forge/github` and
+   `internal/forge/forgejo`. Token discovery follows
    ocman's existing **env → CLI** order.
 2. A **set of per-project HTTP handlers** under `internal/server`
    that detect upstreams, list PRs/issues, and trigger a launch.
@@ -23,12 +22,12 @@ heavily on primitives already present in ocman:
 Design philosophy:
 
 - **Reuse what already exists.** ocman already has a GitHub client
-  with `gh`/env token discovery, an `integrations.Registry`, a
-  worktree creator, a tmux launcher, an MCP session launcher, and
+  with `gh`/env token discovery, forge clients, and owner-routed
+  session/worktree launch services, plus
   a `react-markdown` renderer. The feature must compose these,
   not duplicate them.
 - **Stateless on the ocman side.** PR/Issue payloads never touch
-  `state.db`. The only persisted bits are the two prompt templates,
+  `state.db`. The only persisted bits are the PR, issue, and review prompt templates,
   stored in a small new `setting` key/value table.
 - **Per-remote isolation.** Each remote (and each forge) is a
   failure domain of its own. One broken host never blocks the rest
@@ -94,7 +93,7 @@ graph TD
 - **Status**: Decided
 - **Context**: The sidebar must support GitHub and Forgejo, and may
   grow to others (GitLab, Bitbucket). The current
-  `internal/integrations/github` is a concrete client. We need a
+  `internal/forge/github` is a concrete client. We need a
   way to add Forgejo without duplicating handler logic or scattering
   if/else on host type.
 - **Options**:
@@ -118,11 +117,8 @@ graph TD
 - **Consequences**:
   - New `internal/forge` package owns the interface + shared
     types (`Remote`, `PR`, `Issue`, `CurrentUser`, errors).
-  - `internal/integrations/github` keeps its existing surface
-    (preview endpoints still work); a small `forge.Adapter` wraps
-    it for the new code paths.
-  - New `internal/integrations/forgejo` is built fresh, mirroring
-    the `github` package's shape.
+  - `internal/forge/github` and `internal/forge/forgejo` implement
+    `Forge` directly.
   - Tests are table-driven against the interface; per-forge tests
     only cover the parsing differences.
 
@@ -317,12 +313,10 @@ graph TD
         TPL["template.go (placeholder renderer)"]
     end
 
-    subgraph integrations["internal/integrations"]
-        GHC["github.Client (existing)"]
-        FJC["forgejo.Client (new)"]
-        GHA["github.Adapter (new, implements Forge)"]
-        FJA["forgejo.Adapter (new, implements Forge)"]
-        TEA["forgejo.teaConfig (new)"]
+    subgraph clients["internal/forge clients"]
+        GHC["github.Client"]
+        FJC["forgejo.Client"]
+        TEA["forgejo tea config"]
     end
 
     subgraph server["internal/server"]
@@ -339,9 +333,9 @@ graph TD
         SS["sessionsvc (existing)"]
     end
 
-    subgraph worktree["internal/worktree"]
-        WT["worktree.Create (existing)"]
-        FH["fetchPRHead (new helper)"]
+    subgraph hostsvc["internal/hostsvc"]
+        WT["CreateWorktreeSession"]
+        FH["FetchPRHead"]
     end
 
     UPH --> I
@@ -350,11 +344,9 @@ graph TD
     LH --> SS
     LH --> WT
     LH --> FH
-    GHA --> GHC
-    FJA --> FJC
     FJC --> TEA
-    GHA -.->|implements| I
-    FJA -.->|implements| I
+    GHC -.->|implements| I
+    FJC -.->|implements| I
     D --> TEA
     SH --> ST
 ```
@@ -434,10 +426,10 @@ graph TD
 - **Dependencies**: only stdlib + the `Forge` adapters supplied
   by the caller. No HTTP code lives here.
 
-### `internal/integrations/forgejo` (new package)
+### `internal/forge/forgejo`
 
 - **Responsibility**: Forgejo REST client + `tea` config parser.
-  Mirrors the shape of `internal/integrations/github`.
+  Mirrors the shape of `internal/forge/github`.
 - **Key surface**:
   ```go
   type Client struct {
@@ -456,7 +448,7 @@ graph TD
 - **Token order**: `FORGEJO_TOKEN` env → `GITEA_TOKEN` env → token
   from `tea` config for the matching host.
 
-### `internal/integrations/github` (existing, extended)
+### `internal/forge/github`
 
 - **Responsibility**: Adds the list/current-user methods needed
   by the `Forge` interface.
@@ -472,15 +464,15 @@ graph TD
 - **No new token discovery code**: the existing `discoverToken()`
   already satisfies FR-11 for GitHub.
 
-### `internal/integrations` Registry (existing, extended)
+### Server forge clients
 
-- **Responsibility**: Holds one `*github.Client` (existing) plus a
-  newly-built `ForgejoRegistry` that maps host → `*forgejo.Client`.
+- **Responsibility**: `server.forgeClients` holds one `*github.Client` plus a
+  Forgejo host map.
 - **Surface** after the extension:
   ```go
-  type Registry struct {
+  type forgeClients struct {
       GitHub          *github.Client
-      Forgejo         *forgejo.Registry // new: host -> client
+      Forgejo         forge.ForgejoHostMap
   }
   ```
 - **Construction**: at server startup; the `forgejo.Registry`
@@ -499,7 +491,7 @@ graph TD
   | Method + Path | Purpose |
   |---|---|
   | `GET /api/project/upstreams?dir=<abs>&remoteId=<owner>` | FR-1: list owner-detected remotes |
-  | `GET /api/project/prs?dir=<abs>&remote=<name>&remoteId=<owner>&state=<open\|closed\|all>&mine=<bool>&page=<n>` | FR-3/5/8: list PRs for one remote |
+  | `GET /api/project/prs?dir=<abs>&remote=<name>&remoteId=<owner>&state=<open\|closed\|all>&mine=<login>&page=<n>` | FR-3/5/8: list PRs for one remote |
   | `GET /api/project/issues?dir=<abs>&remote=<name>&remoteId=<owner>&state=...&mine=...&page=...` | FR-3/5/8: list issues |
   | `GET /api/project/pr-checks?...&remoteId=<owner>` | list PR checks after owner detection |
   | `GET /api/project/forge-user?...&remoteId=<owner>` | current forge user after owner detection |
@@ -524,7 +516,10 @@ graph TD
   `remoteId` defaults to `local`; a named disconnected owner fails closed.
   Detection and filesystem git operations run on that owner. Forge metadata
   is fetched by the hub. Successful launches return `platform` and
-  `remoteId`; an initial prompt-send failure returns HTTP 502.
+  `remoteId`, which the frontend stores on the optimistic session row; an
+  initial prompt-send failure returns HTTP 502. Upstream detection is cached
+  briefly per owner and directory, and the frontend shares one owner-scoped
+  git-info poll across all remote groups.
 
   - For `mode: "session"`: renders the template and creates the session on
     the owner's compound platform.
@@ -535,7 +530,7 @@ graph TD
       `hostsvc.Host.FetchPRHead` first, then passes the resulting
       `ocman/pr-<n>` branch with `NewBranch=false`.
     - PR with cross-fork head AND `fetchHead=false`: returns 409
-      with `{"requires_fetch": true}` so the frontend shows the
+      with `{"error":{"code":"requires_fetch"}}` so the frontend shows the
       confirm prompt.
     - Issue: uses `ResolveBaseRef` and creates a new branch like
       `issue/<n>-<slug-of-title>` via `NewBranch=true`.
@@ -970,11 +965,11 @@ the next begins.
 2. **`internal/forge` package skeleton**: `Forge` interface, shared
    types, `template.go` with table-driven tests. No HTTP, no
    detection yet.
-3. **GitHub adapter**: extend `internal/integrations/github` with
-   `ListPRs` / `ListIssues` / `CurrentUser` / `FetchPRHead` and a
-   `forge.Forge` adapter. Unit-test against `httptest.Server`.
-4. **Forgejo client + adapter**: new
-   `internal/integrations/forgejo` package, including the `tea`
+3. **GitHub client**: add `internal/forge/github` with
+   `ListPRs` / `ListIssues` / `CurrentUser` / `FetchPRHead`.
+   Unit-test against `httptest.Server`.
+4. **Forgejo client**: add the
+   `internal/forge/forgejo` package, including the `tea`
    config parser. Same shape as the GitHub adapter, including the
    `httptest.Server` tests.
 5. **Detection (`internal/forge/detect.go`)**: pure function over
