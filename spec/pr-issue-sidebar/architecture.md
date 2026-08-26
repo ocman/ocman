@@ -520,9 +520,9 @@ graph TD
   - For `mode: "session"`: resolves the project's session
     directory, renders the template, calls `sessionsvc` to
     create the session.
-  - For `mode: "worktree"`:
-    - PR with same-repo head: passes the PR branch with
-      `NewBranch=false` to `LaunchWithWorktree`.
+	- For `mode: "worktree"`:
+	  - PR with same-repo head: passes the PR branch with
+	    `NewBranch=false` to `hostsvc.Host.CreateWorktreeSession`.
     - PR with cross-fork head AND `fetchHead=true`: calls
       `forge.FetchPRHead` first, then passes the resulting
       `ocman/pr-<n>` branch with `NewBranch=false`.
@@ -827,7 +827,7 @@ sequenceDiagram
     participant FE as LaunchSplitButton
     participant H as POST /api/project/handle
     participant F as forge.FetchPRHead
-    participant W as worktree.Create
+    participant Host as hostsvc.Host
     participant SS as sessionsvc
     participant OC as opencode
 
@@ -839,13 +839,13 @@ sequenceDiagram
     FE->>H: {..., fetchHead: true}
     H->>F: FetchPRHead(repo, origin, 42)
     F-->>H: branch=ocman/pr-42
-    H->>W: Create(branch=ocman/pr-42, NewBranch=false)
-    W-->>H: {path, ...}
-    H->>SS: CreateSession(prompt=renderedTemplate)
-    SS->>OC: start in worktree path
-    OC-->>SS: session ID
-    SS-->>H: sessionID
-    H-->>FE: {sessionId, worktreePath, branch, tmuxTarget}
+    H->>Host: CreateWorktreeSession(branch=ocman/pr-42, NewBranch=false)
+    Host->>OC: create worktree-scoped session
+    OC-->>Host: session ID
+    Host-->>H: {sessionID, worktreePath, branch}
+    H->>SS: SendMessage(sessionID, renderedTemplate)
+    SS->>OC: send prompt
+    H-->>FE: {childSessionId, worktreePath, branch}
 ```
 
 ### Handle an issue in the current session directory (default)
@@ -861,11 +861,12 @@ sequenceDiagram
     User->>FE: Clicks "Handle in new session" (default action)
     FE->>H: {type: issue, number: 7, mode: session}
     H->>H: Render issue_prompt_template
-    H->>SS: CreateSession(dir=projectDir, prompt=...)
-    SS->>OC: CreateSession + SendMessage
+    H->>SS: CreateSession(dir=projectDir)
+    SS->>OC: create session
     OC-->>SS: sessionID
-    SS-->>H: sessionID
-    H-->>FE: {sessionId, mode: session}
+    H->>SS: SendMessage(sessionID, prompt)
+    SS->>OC: send prompt
+    H-->>FE: {childSessionId, mode: session}
 ```
 
 ## File Structure
@@ -993,7 +994,7 @@ the next begins.
     with `mode: "session"` calling `sessionsvc.CreateSession`.
     Frontend split-button default action.
 12. **Launch path — worktree mode, same-repo PRs and issues**:
-    plumbs through `worktree.Create` + `LaunchWithWorktree`.
+	plumbs through `hostsvc.Host.CreateWorktreeSession`.
     Worktree path for issues uses `issue/<n>-<slug>`.
 13. **Cross-fork PR fetch (FR-9a)**: `forge.FetchPRHead`, the
     `409 requires_fetch` response, the frontend confirmation

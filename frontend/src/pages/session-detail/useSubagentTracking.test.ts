@@ -55,17 +55,13 @@ describe('useSubagentTracking', () => {
   });
 
   it('does not treat retired new_session calls as native tasks', async () => {
-    const part = {
-      id: 'tool-1',
-      messageId: 'message-1',
-      sessionId: 'parent-1',
-      timeCreated: 1000,
-      data: { type: 'tool', tool: 'new_session', state: { status: 'running', input: { intent: 'Explain' } } },
-    } as Part;
     const request = vi.spyOn(api, 'sessionTasks').mockResolvedValue({ tasks: {} });
+    const part = {
+      id: 'tool-1', messageId: 'message-1', sessionId: 'parent-1', timeCreated: 1000,
+      data: { type: 'tool', tool: 'new_session', state: { status: 'running' } },
+    } as Part;
 
     renderHook(() => useSubagentTracking([part], 'parent-1'));
-
     await act(async () => { await Promise.resolve(); });
     expect(request).not.toHaveBeenCalled();
   });

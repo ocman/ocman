@@ -93,8 +93,7 @@ flowchart TD
     Workflows --> Registry
     Workflows --> Router
     Server --> MCP[internal/mcp<br/>MCP tools]
-    MCP --> Registry
-    MCP --> Router
+    MCP --> Workflows
     Registry --> OC[platforms/opencode<br/>adapter]
     Registry --> RP[remote.Platform<br/>gRPC-backed]
     OC --> DB[internal/db<br/>read-only queries]

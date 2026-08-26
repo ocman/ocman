@@ -56,3 +56,34 @@ func TestRemoveRetiredSkillOnlyRemovesOcmanOwnedPath(t *testing.T) {
 		t.Fatalf("user-owned skill removed: %v", err)
 	}
 }
+
+func TestRemoveRetiredSkillPreservesForeignSymlinkAndData(t *testing.T) {
+	dataHome, configHome := t.TempDir(), t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dataHome)
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	targetDir := filepath.Join(dataHome, "ocman", "opencode", "skills", "retired")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	foreign := filepath.Join(t.TempDir(), "foreign")
+	if err := os.MkdirAll(foreign, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(configHome, "opencode", "skills", "retired")
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(foreign, link); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Remove("retired"); err != nil {
+		t.Fatal(err)
+	}
+	if destination, err := os.Readlink(link); err != nil || destination != foreign {
+		t.Fatalf("foreign link = %q, %v", destination, err)
+	}
+	if _, err := os.Stat(targetDir); err != nil {
+		t.Fatalf("unverified data removed: %v", err)
+	}
+}

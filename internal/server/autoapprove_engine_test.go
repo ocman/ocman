@@ -42,3 +42,14 @@ func TestAaSvcParentSessionIDResolver_NoDB(t *testing.T) {
 		t.Fatal("expected miss with no OpenCode DB")
 	}
 }
+
+func TestAaSvcParentSessionIDResolver_UsesNativeParent(t *testing.T) {
+	srv, rawDB := testServerWithRawDB(t)
+	if _, err := rawDB.Exec(`INSERT INTO session (id, parent_id) VALUES ('child', 'parent')`); err != nil {
+		t.Fatal(err)
+	}
+	parent, ok := srv.aaSvc().ResolveParentSessionID(t.Context(), "child")
+	if !ok || parent != "parent" {
+		t.Fatalf("parent = %q, %v; want parent, true", parent, ok)
+	}
+}

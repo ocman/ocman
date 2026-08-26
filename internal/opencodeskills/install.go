@@ -54,10 +54,12 @@ func Remove(name string) error {
 	}
 	targetDir := filepath.Join(dataHome, "ocman", "opencode", "skills", name)
 	link := filepath.Join(configHome, "opencode", "skills", name)
-	if destination, err := os.Readlink(link); err == nil && destination == targetDir {
-		if err := os.Remove(link); err != nil {
-			return err
-		}
+	destination, err := os.Readlink(link)
+	if err != nil || destination != targetDir {
+		return nil
+	}
+	if err := os.Remove(link); err != nil {
+		return err
 	}
 	return os.RemoveAll(targetDir)
 }

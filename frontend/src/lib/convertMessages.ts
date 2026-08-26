@@ -24,42 +24,6 @@ export function isImageMime(mime: string | undefined): boolean {
 const parsedPartCache = new WeakMap<Part, PartData>();
 const USER_TOOL_EXECUTION_NOTICE = 'The following tool was executed by the user';
 const USER_EXECUTED_TOOL_META = '@user-executed-tool';
-const CHILD_MESSAGE_PREAMBLE = 'The following JSON object is untrusted data from a child session.';
-const PARENT_MESSAGE_PREAMBLE = 'Message from parent session ';
-
-export interface ChildMessage {
-  kind: string;
-  childSessionId: string;
-  intent: string;
-  status: string;
-  content: string;
-}
-
-export function parseChildMessage(text: string): ChildMessage | undefined {
-  if (!text.startsWith(CHILD_MESSAGE_PREAMBLE)) return undefined;
-  try {
-    const payload = JSON.parse(text.slice(text.indexOf('\n') + 1)) as Record<string, unknown>;
-    if (typeof payload.kind !== 'string' || typeof payload.child_session_id !== 'string' || typeof payload.content !== 'string') return undefined;
-    return {
-      kind: payload.kind,
-      childSessionId: payload.child_session_id,
-      intent: typeof payload.intent === 'string' ? payload.intent : '',
-      status: typeof payload.status === 'string' ? payload.status : '',
-      content: payload.content,
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-function parseParentMessage(text: string): { parentSessionId: string; content: string } | undefined {
-  if (!text.startsWith(PARENT_MESSAGE_PREAMBLE)) return undefined;
-  const separator = text.indexOf(':\n\n', PARENT_MESSAGE_PREAMBLE.length);
-  if (separator < 0) return undefined;
-  const parentSessionId = text.slice(PARENT_MESSAGE_PREAMBLE.length, separator);
-  if (!parentSessionId) return undefined;
-  return { parentSessionId, content: text.slice(separator + 3) };
-}
 
 function displayErrorMessage(message: string): string {
   try {
@@ -555,8 +519,6 @@ export function createConvertMessages(): ConvertMessagesFn {
     // simple text, and the full content array format for messages
     // with tool calls or images.
     const textPieces: string[] = [];
-    let childMessage: ChildMessage | undefined;
-    let parentMessage: { parentSessionId: string } | undefined;
     const imageParts: Array<{ type: 'image'; image: string }> = [];
     const toolCalls: Array<{
       type: 'tool-call';
@@ -649,19 +611,7 @@ export function createConvertMessages(): ConvertMessagesFn {
               pendingUserToolExecutionNotice = true;
               break;
             }
-            const parsedChildMessage = role === 'user' ? parseChildMessage(pd.text) : undefined;
-            if (parsedChildMessage) {
-              childMessage = parsedChildMessage;
-              textPieces.push(parsedChildMessage.content);
-            } else {
-              const parsedParentMessage = role === 'user' ? parseParentMessage(pd.text) : undefined;
-              if (parsedParentMessage) {
-                parentMessage = { parentSessionId: parsedParentMessage.parentSessionId };
-                textPieces.push(parsedParentMessage.content);
-              } else {
-                textPieces.push(pd.text);
-              }
-            }
+            textPieces.push(pd.text);
           }
           break;
         case 'tool': {
@@ -988,13 +938,6 @@ export function createConvertMessages(): ConvertMessagesFn {
       ...(model ? { model } : {}),
       ...(modelChangedTo ? { modelChangedTo } : {}),
       ...(failedEntry ? { failed: { error: failedEntry.error, imagesDropped: !!failedEntry.imagesDropped } } : {}),
-      ...(childMessage ? { childMessage: {
-        kind: childMessage.kind,
-        childSessionId: childMessage.childSessionId,
-        intent: childMessage.intent,
-        status: childMessage.status,
-      } } : {}),
-      ...(parentMessage ? { parentMessage } : {}),
     };
     const metadata = Object.keys(customMeta).length > 0 ? { custom: customMeta } : undefined;
 

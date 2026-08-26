@@ -300,13 +300,13 @@ func (d *DB) GetSession(ctx context.Context, sessionID string) (*Session, error)
 	var s Session
 	err := d.db.QueryRowContext(ctx, `
 		SELECT
-			s.id, s.project_id, s.title, s.directory,
+			s.id, s.project_id, COALESCE(s.parent_id, ''), s.title, s.directory,
 			s.time_created, s.time_updated,
 			s.summary_additions, s.summary_deletions, s.summary_files,
 			s.share_url
 		FROM session s WHERE s.id = ?
 	`, sessionID).Scan(
-		&s.ID, &s.ProjectID, &s.Title, &s.Directory,
+		&s.ID, &s.ProjectID, &s.ParentID, &s.Title, &s.Directory,
 		&s.TimeCreated, &s.TimeUpdated,
 		&s.SummaryAdditions, &s.SummaryDeletions, &s.SummaryFiles,
 		&s.ShareURL,

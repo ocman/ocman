@@ -11,6 +11,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/forge"
 	"github.com/NoUseFreak/ocman/internal/forge/github"
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -18,6 +19,21 @@ type deadlineForge struct {
 	forge.Forge
 	deadline time.Time
 	has      bool
+}
+
+type projectHandleRemoteHost struct {
+	hostsvc.Host
+	worktree *hostsvc.WorktreeSessionResult
+}
+
+func (h *projectHandleRemoteHost) RemoteID() string { return "rem1" }
+
+func (h *projectHandleRemoteHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:4321"}, nil
+}
+
+func (h *projectHandleRemoteHost) CreateWorktreeSession(context.Context, hostsvc.WorktreeSessionRequest) (*hostsvc.WorktreeSessionResult, error) {
+	return h.worktree, nil
 }
 
 func (f *deadlineForge) FetchPRHead(ctx context.Context, _, _ string, _ int) (string, error) {
@@ -99,6 +115,91 @@ func TestHandleProjectHandle_SessionMode(t *testing.T) {
 	expectedTitle := "Bug report"
 	if !bytes.Contains([]byte(capturedPrompt), []byte(expectedTitle)) {
 		t.Errorf("expected prompt to contain %q, got: %s", expectedTitle, capturedPrompt)
+	}
+}
+
+func TestHandleProjectHandle_SessionModeUsesOwningRemotePlatform(t *testing.T) {
+	srv := testServer(t)
+	dir := initGitHubRepo(t)
+	gh, ghc := fakeGitHubServer(t)
+	defer gh.Close()
+	srv.integrations.GitHub = ghc
+
+	srv.registry.Register(&fakePlatform{
+		id: "opencode",
+		createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+			t.Fatal("local platform must not create a remote-owned session")
+			return nil, nil
+		},
+	})
+	var created platforms.CreateSessionRequest
+	var sent platforms.SendMessageRequest
+	srv.registry.Register(&fakePlatform{
+		id: "r-rem1:opencode",
+		createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+			created = req
+			return &platforms.CreateSessionResponse{ID: "remote-session"}, nil
+		},
+		sendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return nil },
+	})
+	host := &projectHandleRemoteHost{}
+	srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
+	srv.hostRouter.RegisterRemote("rem1", host)
+	srv.hostRouter.SetDirResolver(func(string) string { return "rem1" })
+
+	body := `{"dir":"` + dir + `","remote":"origin","type":"issue","number":7,"mode":"session"}`
+	rr := httptest.NewRecorder()
+	srv.handleProjectHandle(rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
+	}
+	if created.Directory != dir || created.Port != "4321" {
+		t.Fatalf("remote create = %+v", created)
+	}
+	if sent.SessionID != "remote-session" || sent.Message == "" {
+		t.Fatalf("remote send = %+v", sent)
+	}
+}
+
+func TestHandleProjectHandle_WorktreeModeUsesOwningRemotePlatform(t *testing.T) {
+	srv := testServer(t)
+	dir := initGitHubRepo(t)
+	gh, ghc := fakeGitHubServer(t)
+	defer gh.Close()
+	srv.integrations.GitHub = ghc
+
+	var sent platforms.SendMessageRequest
+	srv.registry.Register(&fakePlatform{
+		id:            "r-rem1:opencode",
+		sendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return nil },
+	})
+	host := &projectHandleRemoteHost{worktree: &hostsvc.WorktreeSessionResult{
+		SessionID: "remote-worktree-session", WorktreePath: "/remote/worktree", Branch: "issue/7-bug-report",
+	}}
+	srv.hostRouter = hostsvc.NewRouter(&ownerSpy{})
+	srv.hostRouter.RegisterRemote("rem1", host)
+	srv.hostRouter.SetDirResolver(func(string) string { return "rem1" })
+
+	body := `{"dir":"` + dir + `","remote":"origin","type":"issue","number":7,"mode":"worktree"}`
+	rr := httptest.NewRecorder()
+	srv.handleProjectHandle(rr, httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body)))
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
+	}
+	if sent.SessionID != "remote-worktree-session" || sent.Message == "" {
+		t.Fatalf("remote send = %+v", sent)
+	}
+	var response struct {
+		SessionID    string `json:"childSessionId"`
+		WorktreePath string `json:"worktreePath"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.SessionID != "remote-worktree-session" || response.WorktreePath != "/remote/worktree" {
+		t.Fatalf("response = %+v", response)
 	}
 }
 

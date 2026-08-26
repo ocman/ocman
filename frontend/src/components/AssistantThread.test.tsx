@@ -186,35 +186,3 @@ describe('AssistantThread message metadata', () => {
     expect(screen.getAllByText('Prompt cache rebuilt')).toHaveLength(1);
   });
 });
-
-describe('AssistantThread agent updates', () => {
-  it('labels child-to-parent messages separately from user messages', () => {
-    threadState.renderUser = true;
-    message.metadata.custom = {
-      childMessage: {
-        kind: 'direct_message',
-        childSessionId: 'child-1',
-        intent: 'Inspect the failing test',
-        status: 'running',
-      },
-    };
-
-    const { getByText, getByTestId } = render(<AssistantThread />);
-
-    expect(getByText('Agent update')).toBeInTheDocument();
-    expect(getByText('Inspect the failing test')).toBeInTheDocument();
-    expect(getByTestId('agent-update-message')).toBeInTheDocument();
-  });
-
-  it('labels parent-to-child messages separately from user messages', () => {
-    threadState.renderUser = true;
-    message.metadata.custom = {
-      parentMessage: { parentSessionId: 'parent-1' },
-    };
-
-    const { getByText, getByTestId } = render(<AssistantThread />);
-
-    expect(getByText('Parent update')).toBeInTheDocument();
-    expect(getByTestId('agent-update-message')).toHaveAttribute('class', expect.stringContaining('oc-msg-agent-update'));
-  });
-});

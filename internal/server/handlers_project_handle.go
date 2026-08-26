@@ -16,6 +16,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/remote"
 )
 
 const prHeadFetchTimeout = 30 * time.Second
@@ -114,8 +115,12 @@ func (s *Server) handleProjectHandleSession(
 	w http.ResponseWriter, r *http.Request,
 	req handleProjectRequest, prompt string,
 ) {
-	port, _ := s.ensureProjectOpencodePort(r.Context(), req.Dir)
-	client := s.sessions.Client("opencode")
+	host := s.router().ForDir(req.Dir)
+	port := ""
+	if ensured, err := host.EnsureProjectOpencode(r.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: projectRootForDirectory(req.Dir)}); err == nil && ensured != nil {
+		port = ensured.Port()
+	}
+	client := s.sessions.Client(opencodePlatformForHost(host))
 	created, err := client.CreateSession(r.Context(), platforms.CreateSessionRequest{Directory: req.Dir, Port: port})
 	if err != nil {
 		log.WithError(err).Warn("handle session: launch")
@@ -196,7 +201,8 @@ func (s *Server) handleProjectHandleWorktree(
 		return
 	}
 
-	wtResult, err := s.router().ForDir(repoRoot).CreateWorktreeSession(r.Context(), hostsvc.WorktreeSessionRequest{
+	host := s.router().ForDir(repoRoot)
+	wtResult, err := host.CreateWorktreeSession(r.Context(), hostsvc.WorktreeSessionRequest{
 		ProjectDir: repoRoot,
 		Branch:     branch,
 		NewBranch:  newBranch,
@@ -207,7 +213,7 @@ func (s *Server) handleProjectHandleWorktree(
 		http.Error(w, "launching worktree session: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	if err := s.sessions.Client("opencode").SendMessage(r.Context(), platforms.SendMessageRequest{SessionID: wtResult.SessionID, Message: prompt}); err != nil {
+	if err := s.sessions.Client(opencodePlatformForHost(host)).SendMessage(r.Context(), platforms.SendMessageRequest{SessionID: wtResult.SessionID, Message: prompt}); err != nil {
 		log.WithError(err).WithField("session", wtResult.SessionID).Warn("handle worktree: send prompt")
 	}
 	writeJSON(w, map[string]interface{}{
@@ -216,6 +222,13 @@ func (s *Server) handleProjectHandleWorktree(
 		"worktreePath":   wtResult.WorktreePath,
 		"branch":         wtResult.Branch,
 	})
+}
+
+func opencodePlatformForHost(host hostsvc.Host) string {
+	if remoteID := host.RemoteID(); remoteID != "" && remoteID != "local" {
+		return remote.CompoundPlatformID(remoteID, "opencode")
+	}
+	return "opencode"
 }
 
 func fetchPRHead(ctx context.Context, f forge.Forge, repoRoot, remote string, number int) (string, error) {

@@ -3,7 +3,7 @@ import { isSessionRelevant } from './promptRouting';
 
 describe('isSessionRelevant', () => {
   const PAGE = 'parent';
-  const SUBS = new Set(['child1', 'child2']);
+  const SUBS = new Set(['subagent1', 'subagent2']);
 
   it('treats undefined session ID as parent-scoped (relevant)', () => {
     expect(isSessionRelevant(undefined, PAGE, SUBS)).toBe(true);
@@ -16,8 +16,8 @@ describe('isSessionRelevant', () => {
   });
 
   it('matches a known subagent', () => {
-    expect(isSessionRelevant('child1', PAGE, SUBS)).toBe(true);
-    expect(isSessionRelevant('child2', PAGE, SUBS)).toBe(true);
+    expect(isSessionRelevant('subagent1', PAGE, SUBS)).toBe(true);
+    expect(isSessionRelevant('subagent2', PAGE, SUBS)).toBe(true);
   });
 
   it('rejects an unrelated session', () => {
@@ -25,6 +25,6 @@ describe('isSessionRelevant', () => {
   });
 
   it('rejects a subagent not (yet) known to the page', () => {
-    expect(isSessionRelevant('child3', PAGE, SUBS)).toBe(false);
+    expect(isSessionRelevant('subagent3', PAGE, SUBS)).toBe(false);
   });
 });

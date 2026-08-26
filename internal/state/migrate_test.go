@@ -782,6 +782,54 @@ func TestLatestSchemaOmitsRetiredChildSessions(t *testing.T) {
 	}
 }
 
+func TestMigrateV46DropsChildSessionsAndPreservesState(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := ensureSchemaVersionTable(db); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for version := 1; version <= 45; version++ {
+		if err := applyMigration(tx, version); err != nil {
+			t.Fatalf("migrate to v%d: %v", version, err)
+		}
+		if _, err := tx.Exec(`INSERT INTO schema_version (version, applied_at) VALUES (?, 1)`, version); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := tx.Exec(`INSERT INTO child_sessions (id, platform, parent_session_id, intent, created_at) VALUES ('child', 'opencode', 'parent', 'work', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`INSERT INTO setting (key, value, updated_at) VALUES ('keep', 'value', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	version, err := currentSchemaVersion(db)
+	if err != nil || version != 46 {
+		t.Fatalf("schema version = %d, %v", version, err)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='child_sessions'`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("child_sessions count = %d, %v", count, err)
+	}
+	var value string
+	if err := db.QueryRow(`SELECT value FROM setting WHERE key='keep'`).Scan(&value); err != nil || value != "value" {
+		t.Fatalf("preserved setting = %q, %v", value, err)
+	}
+}
+
 func TestAuthSecret_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := dir + "/state.db"

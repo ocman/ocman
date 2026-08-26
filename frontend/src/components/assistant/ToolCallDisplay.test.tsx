@@ -328,7 +328,7 @@ describe('ToolCallDisplay subagent task', () => {
     parts: [{ id: 'sub-p1', messageId: 'sub-m1', sessionId: 'ses_sub', data: { type: 'text', text } }],
   });
 
-  it('navigates to the child session without reloading the document', () => {
+  it('navigates to the subagent session without reloading the document', () => {
     const Location = () => <span data-testid="location">{useLocation().pathname}</span>;
     render(
       <MemoryRouter>
