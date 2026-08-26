@@ -162,7 +162,7 @@ func TestHandleGitInfo_HappyPath(t *testing.T) {
 	gitInitForServerTest(t, a)
 	gitInitForServerTest(t, b)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/git/info?dirs="+a+","+b, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/git/info?dirs="+a+","+b+"&remoteId=local", nil)
 	rr := httptest.NewRecorder()
 	srv.handleGitInfo(rr, req)
 	if rr.Code != http.StatusOK {
@@ -191,7 +191,7 @@ func TestHandleGitInfo_NonRepoDirs(t *testing.T) {
 	srv := testServer(t)
 	dir := t.TempDir() // no git init
 
-	req := httptest.NewRequest(http.MethodGet, "/api/git/info?dirs="+dir, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/git/info?dirs="+dir+"&remoteId=local", nil)
 	rr := httptest.NewRecorder()
 	srv.handleGitInfo(rr, req)
 	if rr.Code != http.StatusOK {
@@ -203,6 +203,15 @@ func TestHandleGitInfo_NonRepoDirs(t *testing.T) {
 	}
 	if info, ok := got[dir]; ok && info.IsRepo() {
 		t.Errorf("non-repo dir reported as repo: %+v", info)
+	}
+}
+
+func TestHandleGitInfo_RequiresExplicitOwner(t *testing.T) {
+	srv := testServer(t)
+	rr := httptest.NewRecorder()
+	srv.handleGitInfo(rr, httptest.NewRequest(http.MethodGet, "/api/git/info?dirs=/remote/repo", nil))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body.String())
 	}
 }
 

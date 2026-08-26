@@ -7,6 +7,7 @@ import { useUpstreamList } from './useUpstreamList';
 beforeEach(() => vi.restoreAllMocks());
 
 it('clears rows when the project changes', async () => {
+  const snapshots: Array<{ dir: string; titles: string[] }> = [];
   vi.spyOn(api, 'fetchPRs')
     .mockResolvedValueOnce({
       prs: [{ number: 7, title: 'old project' } as api.PR],
@@ -16,9 +17,13 @@ it('clears rows when the project changes', async () => {
     .mockReturnValueOnce(new Promise(() => {}));
 
   const { result, rerender } = renderHook(
-    ({ dir }) => useUpstreamList<api.PR>({
-      kind: 'prs', dir, remoteId: 'local', remote: 'origin', state: 'open', mine: undefined, enabled: true,
-    }),
+    ({ dir }) => {
+      const value = useUpstreamList<api.PR>({
+        kind: 'prs', dir, remoteId: 'local', remote: 'origin', state: 'open', mine: undefined, enabled: true,
+      });
+      snapshots.push({ dir, titles: value.items.map((item) => item.title) });
+      return value;
+    },
     { initialProps: { dir: '/old' } },
   );
   await waitFor(() => expect(result.current.items).toHaveLength(1));
@@ -29,6 +34,7 @@ it('clears rows when the project changes', async () => {
   expect(result.current.items).toEqual([]);
   expect(result.current.pagination).toEqual({ page: 1, hasMore: false });
   expect(result.current.rateLimit).toEqual({ limited: false });
+  expect(snapshots).not.toContainEqual({ dir: '/new', titles: ['old project'] });
 });
 
 it('clears pagination and rate limits while refreshing', async () => {

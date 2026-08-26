@@ -1516,13 +1516,24 @@ func migrateToV45(tx *sql.Tx) error {
 }
 
 func migrateToV46(tx *sql.Tx) error {
-	_, err := tx.Exec(`
-		DROP TABLE IF EXISTS child_sessions;
-		DELETE FROM queued_message
-		WHERE id LIKE 'child-result:%'
-		   OR (text LIKE 'The result wait for child session %'
-		       AND text LIKE '%await_session_result%'
-		       AND text LIKE '%Do not call new_session again.%');
-	`)
+	var childSessionsExists int
+	if err := tx.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='child_sessions'`).Scan(&childSessionsExists); err != nil {
+		return err
+	}
+	if childSessionsExists > 0 {
+		if _, err := tx.Exec(`
+			DELETE FROM queued_message
+			WHERE EXISTS (
+			SELECT 1 FROM child_sessions
+			WHERE child_sessions.platform = queued_message.platform
+			  AND child_sessions.parent_session_id = queued_message.session_id
+			  AND queued_message.text = 'The result wait for child session "' || child_sessions.id || '" disconnected. Resume the existing child without sending a new prompt by calling await_session_result with session_id "' || child_sessions.parent_session_id || '" and child_session_id "' || child_sessions.id || '". Do not call new_session again.'
+			);
+			DROP TABLE child_sessions;
+		`); err != nil {
+			return err
+		}
+	}
+	_, err := tx.Exec(`DELETE FROM queued_message WHERE id LIKE 'child-result:%'`)
 	return err
 }

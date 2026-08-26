@@ -234,6 +234,9 @@ func TestHandleProjectHandle_SessionMode(t *testing.T) {
 	if !bytes.Contains([]byte(capturedPrompt), []byte(expectedTitle)) {
 		t.Errorf("expected prompt to contain %q, got: %s", expectedTitle, capturedPrompt)
 	}
+	if !strings.Contains(capturedPrompt, "broken") {
+		t.Errorf("expected prompt to retain the issue body, got: %s", capturedPrompt)
+	}
 	if !strings.Contains(capturedPrompt, "untrusted forge content") {
 		t.Errorf("expected prompt to mark forge content untrusted, got: %s", capturedPrompt)
 	}

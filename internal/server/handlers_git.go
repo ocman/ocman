@@ -64,7 +64,11 @@ func (s *Server) handleGitInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	host, ok := s.resolveOwner(w, dirs[0], strings.TrimSpace(r.URL.Query().Get("remoteId")))
+	remoteID, ok := requireProjectRemoteID(w, r.URL.Query().Get("remoteId"))
+	if !ok {
+		return
+	}
+	host, ok := s.resolveOwner(w, dirs[0], remoteID)
 	if !ok {
 		return
 	}

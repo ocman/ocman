@@ -106,7 +106,7 @@ export function _resetForTests(): void { /* intentionally empty */ }
  * never observed completing. Keying on the string fixes it because
  * `buildDirsQueryParam` is deterministic on the input contents.
  */
-export function useGitInfo(dirs: string[] | undefined, remoteId = 'local'): UseGitInfoResult {
+export function useGitInfo(dirs: string[] | undefined, remoteId: string): UseGitInfoResult {
   // Compute the canonical query param fresh on every render. It's
   // O(n) in the dir count, which is small (a sidebar's worth), so
   // skipping useMemo here is fine and avoids the array-identity

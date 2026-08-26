@@ -49,6 +49,8 @@ export function useUpstreamList<T extends UpstreamListItem>(opts: {
   // refreshCounter increments to force a re-run of the effect even
   // when none of the dependencies changed (manual refresh button).
   const [refreshCounter, setRefreshCounter] = useState(0);
+  const requestKey = JSON.stringify([kind, dir, remoteId, remote, state, mine, page, refreshCounter, enabled]);
+  const [activeKey, setActiveKey] = useState(requestKey);
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -64,6 +66,7 @@ export function useUpstreamList<T extends UpstreamListItem>(opts: {
   useEffect(() => {
     if (!enabled || !dir || !remote) {
       const reset = () => {
+        setActiveKey(requestKey);
         setItems([]);
         setLoading(false);
         setError(null);
@@ -80,6 +83,7 @@ export function useUpstreamList<T extends UpstreamListItem>(opts: {
       abortRef.current?.abort();
       const ctrl = new AbortController();
       abortRef.current = ctrl;
+      setActiveKey(requestKey);
       setItems([]);
       setLoading(true);
       setError(null);
@@ -131,5 +135,11 @@ export function useUpstreamList<T extends UpstreamListItem>(opts: {
     setRefreshCounter((n) => n + 1);
   }, []);
 
+  if (activeKey !== requestKey) {
+    return {
+      items: [], loading: enabled && !!dir && !!remote, error: null,
+      pagination: { page: 1, hasMore: false }, rateLimit: { limited: false }, refresh, setPage, page,
+    };
+  }
   return { items, loading, error, pagination, rateLimit, refresh, setPage, page };
 }

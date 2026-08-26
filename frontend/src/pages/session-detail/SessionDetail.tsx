@@ -441,8 +441,15 @@ export function SessionDetail({ id }: SessionDetailProps) {
     }
     return [...ids];
   }, [id, sessionTree]);
+  const gitInfoRemoteId = session?.remoteId
+    ?? recentSessions.find((candidate) => candidate.id === id)?.remoteId
+    ?? 'local';
   const { infos: siblingGitInfos } = useGitInfo(
-    recentSessions.map((s) => s.directory).filter(Boolean),
+    recentSessions
+      .filter((candidate) => (candidate.remoteId || 'local') === gitInfoRemoteId)
+      .map((candidate) => candidate.directory)
+      .filter(Boolean),
+    gitInfoRemoteId,
   );
   const {
     bookmarkedMessageIds,

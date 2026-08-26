@@ -5,6 +5,8 @@ import { MemoryRouter } from 'react-router-dom';
 import { SessionInfoSidebar } from './SessionInfoSidebar';
 import type { Session } from '../lib/api';
 
+const useGitInfo = vi.hoisted(() => vi.fn(() => ({ infos: {}, loading: false, error: null })));
+
 vi.mock('../lib/useCapabilities', () => ({
   usePlatformCapabilities: () => ({ sessionInfo: false }),
 }));
@@ -12,7 +14,7 @@ vi.mock('../lib/useSessionInfo', () => ({
   useSessionInfo: () => ({ data: null, loading: false, error: null, refresh: vi.fn() }),
 }));
 vi.mock('../lib/useGitInfo', () => ({
-  useGitInfo: () => ({ infos: {}, loading: false, error: null }),
+  useGitInfo,
 }));
 
 function makeSession(overrides: Partial<Session> = {}): Session {
@@ -36,6 +38,11 @@ function renderSidebar(session: Session) {
 }
 
 describe('SessionInfoSidebar parent link', () => {
+  it('loads git information from the session owner', () => {
+    renderSidebar(makeSession({ directory: '/remote/repo', remoteId: 'box' }));
+    expect(useGitInfo).toHaveBeenCalledWith(['/remote/repo'], 'box');
+  });
+
   it('links to the parent session when parentId is set', () => {
     renderSidebar(makeSession({ parentId: 'parent 1' }));
     const link = screen.getByRole('link', { name: 'View parent session' });

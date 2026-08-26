@@ -100,7 +100,7 @@ export function SessionInfoSidebar({
   // fine — the hook's effect dep is the param string, not the
   // array identity.
   const dir = session?.directory;
-  const { infos: gitInfos } = useGitInfo(dir ? [dir] : []);
+  const { infos: gitInfos } = useGitInfo(dir ? [dir] : [], session?.remoteId || 'local');
   const gitInfo = dir ? gitInfos[dir] : undefined;
 
   const ctx = data?.context;
