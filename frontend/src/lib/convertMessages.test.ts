@@ -351,7 +351,14 @@ describe('AI approval footnotes', () => {
     expect(call.type === 'tool-call' && call.artifact?.ocmanApprovals).toHaveLength(1);
   });
 
-  it('ignores external_directory metadata that is not part of the tool input', () => {
+  it.each([
+    ['read', { filePath: '/outside/a.ts' }, { filePath: '/outside/a.ts', parentDir: '/outside' }],
+    ['bash', { command: 'cat /outside/a.ts' }, {
+      command: 'cat /outside/a.ts',
+      directories: ['/outside'],
+      patterns: ['/outside/*'],
+    }],
+  ])('ignores external_directory metadata that is not part of the %s input', (tool, input, metadata) => {
     const messages: Message[] = [
       makeMessage('a1', { role: 'assistant' }, 100),
       { id: 'ocman-notice-p1', sessionId: 's', timeCreated: 250, data: { role: 'notice' } },
@@ -359,15 +366,15 @@ describe('AI approval footnotes', () => {
     const parts = [
       makePart('a1', {
         type: 'tool',
-        tool: 'read',
-        state: { status: 'completed', input: { filePath: '/outside/a.ts' } },
-      }, 'read-part', 150),
+        tool,
+        state: { status: 'completed', input },
+      }, 'tool-part', 150),
       makePart('ocman-notice-p1', {
         type: 'auto-approved',
         permission: 'external_directory',
         patterns: ['/outside/*'],
         approvedBy: 'ai',
-        metadata: { filePath: '/outside/a.ts', parentDir: '/outside' },
+        metadata,
         askedAt: 200,
       }, 'notice-part', 250),
     ];
