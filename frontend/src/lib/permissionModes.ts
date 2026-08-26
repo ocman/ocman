@@ -45,13 +45,7 @@ export const PERMISSION_MODES: PermissionMode[] = [
     label: 'YOLO',
     description: 'Allow everything without asking',
     dangerous: true,
-    // ponytail: explicit permission list, not "*" — OpenCode's wildcard
-    // semantics across permission *names* are unverified.
-    rules: [
-      { permission: 'edit', pattern: '*', action: 'allow' },
-      { permission: 'bash', pattern: '*', action: 'allow' },
-      { permission: 'webfetch', pattern: '*', action: 'allow' },
-    ],
+    rules: [{ permission: '*', pattern: '*', action: 'allow' }],
   },
 ];
 

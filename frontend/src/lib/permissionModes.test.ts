@@ -34,4 +34,9 @@ describe('classifyPermissionMode', () => {
     const dangerous = PERMISSION_MODES.filter((m) => m.dangerous).map((m) => m.id);
     expect(dangerous).toEqual(['yolo']);
   });
+
+  it('allows every permission in yolo mode', () => {
+    const yolo = PERMISSION_MODES.find((m) => m.id === 'yolo')!;
+    expect(yolo.rules).toEqual([{ permission: '*', pattern: '*', action: 'allow' }]);
+  });
 });
