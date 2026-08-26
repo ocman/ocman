@@ -231,7 +231,10 @@ function metadataMatchesInput(metadata: Record<string, unknown>, input: unknown)
   const expected = metadataLeaves(metadata);
   if (expected.length === 0) return false;
   const actual = metadataLeaves(input);
-  return expected.every((leaf) => actual.some((candidate) =>
+  const comparable = expected.filter((leaf) => actual.some((candidate) =>
+    canonicalMetadataKey(candidate.key) === canonicalMetadataKey(leaf.key),
+  ));
+  return comparable.length > 0 && comparable.every((leaf) => actual.some((candidate) =>
     canonicalMetadataKey(candidate.key) === canonicalMetadataKey(leaf.key)
     && candidate.value === leaf.value,
   ));

@@ -351,6 +351,34 @@ describe('AI approval footnotes', () => {
     expect(call.type === 'tool-call' && call.artifact?.ocmanApprovals).toHaveLength(1);
   });
 
+  it('ignores external_directory metadata that is not part of the tool input', () => {
+    const messages: Message[] = [
+      makeMessage('a1', { role: 'assistant' }, 100),
+      { id: 'ocman-notice-p1', sessionId: 's', timeCreated: 250, data: { role: 'notice' } },
+    ];
+    const parts = [
+      makePart('a1', {
+        type: 'tool',
+        tool: 'read',
+        state: { status: 'completed', input: { filePath: '/outside/a.ts' } },
+      }, 'read-part', 150),
+      makePart('ocman-notice-p1', {
+        type: 'auto-approved',
+        permission: 'external_directory',
+        patterns: ['/outside/*'],
+        approvedBy: 'ai',
+        metadata: { filePath: '/outside/a.ts', parentDir: '/outside' },
+        askedAt: 200,
+      }, 'notice-part', 250),
+    ];
+
+    const out = createConvertMessages()(messages, parts);
+    const call = asContentArray(out[0].content)[0];
+
+    expect(out).toHaveLength(1);
+    expect(call.type === 'tool-call' && call.artifact?.ocmanApprovals).toHaveLength(1);
+  });
+
   it('attaches a user approval without rendering a standalone notice', () => {
     const messages: Message[] = [
       makeMessage('a1', { role: 'assistant' }, 100),
