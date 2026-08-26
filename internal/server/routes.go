@@ -80,10 +80,10 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// PR/Issue sidebar endpoints — see spec/pr-issue-sidebar/. Read-only
 	// proxies to GitHub / Forgejo, scoped to the project at ?dir=<abs>.
 	mux.HandleFunc("/api/project/upstreams", s.get(s.handleProjectUpstreams))
-	mux.HandleFunc("/api/project/prs", s.get(s.handleProjectPRs))
-	mux.HandleFunc("/api/project/issues", s.get(s.handleProjectIssues))
-	mux.HandleFunc("/api/project/pr-checks", s.get(s.handleProjectPRChecks))
-	mux.HandleFunc("/api/project/forge-user", s.get(s.handleProjectForgeUser))
+	mux.HandleFunc("/api/project/prs", requireGET(s.requireLocalhost(s.handleProjectPRs)))
+	mux.HandleFunc("/api/project/issues", requireGET(s.requireLocalhost(s.handleProjectIssues)))
+	mux.HandleFunc("/api/project/pr-checks", requireGET(s.requireLocalhost(s.handleProjectPRChecks)))
+	mux.HandleFunc("/api/project/forge-user", requireGET(s.requireLocalhost(s.handleProjectForgeUser)))
 	mux.HandleFunc("/api/project/beads-status", s.get(s.handleProjectBeadsStatus))
 	// Project archive state (own state.db; no launch), same auth posture
 	// as the per-session archive endpoint.

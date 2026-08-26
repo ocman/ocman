@@ -116,6 +116,17 @@ func TestListPRs_ParsesAndMapsFields(t *testing.T) {
 	}
 }
 
+func TestLookupIssueRejectsPullRequest(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"number":7,"title":"PR","pull_request":{"url":"https://api.example/pr/7"}}`))
+	}))
+	defer srv.Close()
+	c := NewForTest(srv.URL, "token", srv.Client())
+	if _, err := c.LookupIssue(context.Background(), "alice/repo", 7); err == nil {
+		t.Fatal("LookupIssue accepted a pull request")
+	}
+}
+
 func TestListPRs_StateMergedDetection(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`[

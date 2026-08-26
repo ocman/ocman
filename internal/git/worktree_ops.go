@@ -205,12 +205,12 @@ func CreateWorktree(ctx context.Context, req CreateWorktreeRequest) (*CreateWork
 
 	args := []string{"-C", req.RepoRoot, "worktree", "add"}
 	if newBranch {
-		args = append(args, "-b", req.Branch, target)
+		args = append(args, "-b", req.Branch, "--", target)
 		if req.BaseRef != "" {
 			args = append(args, req.BaseRef)
 		}
 	} else {
-		args = append(args, target, req.Branch)
+		args = append(args, "--", target, req.Branch)
 	}
 
 	delay := addRetryDelay

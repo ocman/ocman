@@ -71,6 +71,8 @@ export function useAsyncResource<T>(opts: UseAsyncResourceOptions<T>): UseAsyncR
   useEffect(() => {
     const reset = () => {
       setData(initialRef.current);
+      setLoading(false);
+      setError(null);
       setReady(false);
     };
     if (!enabled) {
@@ -81,6 +83,8 @@ export function useAsyncResource<T>(opts: UseAsyncResourceOptions<T>): UseAsyncR
       abortRef.current?.abort();
       const ctrl = new AbortController();
       abortRef.current = ctrl;
+      setData(initialRef.current);
+      setReady(false);
       setLoading(true);
       setError(null);
       fetcherRef.current(ctrl.signal)

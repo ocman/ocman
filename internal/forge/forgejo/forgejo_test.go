@@ -108,6 +108,39 @@ func TestListPRs_ParsesAndMapsFields(t *testing.T) {
 	}
 }
 
+func TestLookupPRAndIssue(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/repos/alice/myproj/pulls/7":
+			_, _ = w.Write([]byte(`{"number":7,"title":"Patch","state":"open","user":{"login":"alice"},"head":{"ref":"patch","repo":{"full_name":"alice/myproj"}},"base":{"repo":{"full_name":"alice/myproj"}}}`))
+		case "/api/v1/repos/alice/myproj/issues/3":
+			_, _ = w.Write([]byte(`{"number":3,"title":"Bug","state":"open","user":{"login":"alice"}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	c := newTestClient(t, srv, "tok")
+	pr, err := c.LookupPR(context.Background(), "alice/myproj", 7)
+	if err != nil || pr.Number != 7 || pr.Branch != "patch" {
+		t.Fatalf("LookupPR() = %+v, %v", pr, err)
+	}
+	issue, err := c.LookupIssue(context.Background(), "alice/myproj", 3)
+	if err != nil || issue.Number != 3 || issue.Title != "Bug" {
+		t.Fatalf("LookupIssue() = %+v, %v", issue, err)
+	}
+}
+
+func TestLookupIssueRejectsPullRequest(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"number":3,"title":"PR","pull_request":{"url":"https://example/pr/3"}}`))
+	}))
+	defer srv.Close()
+	if _, err := newTestClient(t, srv, "tok").LookupIssue(context.Background(), "alice/myproj", 3); err == nil {
+		t.Fatal("LookupIssue accepted a pull request")
+	}
+}
+
 func TestListPRs_MergedStateMapping(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`[

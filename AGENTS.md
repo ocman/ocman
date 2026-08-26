@@ -95,9 +95,9 @@ below for setup and available tools.
 
 Ocman also surfaces **PRs and Issues** from the active project's
 upstream forge (GitHub or Forgejo) in a sidebar pane next to Session
-Info / Session Changes / Working Tree. The pane only appears when at
-least one supported remote is detected (a `github.com` remote or a
-Forgejo host present in `~/.config/tea/config.yml`). Auth uses env-var
+Info / Session Changes / Working Tree. The pane remains available and
+shows an empty state when no supported remote is detected. Forgejo
+classification uses the hub's configured hosts. Auth uses env-var
 tokens (`GITHUB_TOKEN`, `FORGEJO_TOKEN` / `GITEA_TOKEN`) with a fallback
 to the `gh auth token` / `tea login` configuration. Clicking a row
 expands it to show the body (markdown-rendered) and a split-button:
@@ -111,7 +111,7 @@ persisted in the `setting` table of `state.db` (migration v12). See
 `spec/pr-issue-sidebar/` for the full spec.
 
 PR/Issue backend operations are owner-routed. Every project forge endpoint
-accepts `remoteId` (`local` by default); explicit remotes fail closed when
+requires `remoteId` (`local` for the hub); named remotes fail closed when
 disconnected. Repository detection and cross-fork fetches run through the
 owner's `hostsvc.Host`, while the hub uses its forge clients for PR/Issue
 metadata and launches sessions on the owner's compound platform.

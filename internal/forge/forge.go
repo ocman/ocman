@@ -206,9 +206,11 @@ type Forge interface {
 	// ListPRs returns one page of pull/merge requests for the
 	// repo (owner/name).
 	ListPRs(ctx context.Context, repo string, opts ListOptions) ([]PR, RateLimit, error)
+	LookupPR(ctx context.Context, repo string, number int) (PR, error)
 
 	// ListIssues returns one page of issues for the repo.
 	ListIssues(ctx context.Context, repo string, opts ListOptions) ([]Issue, RateLimit, error)
+	LookupIssue(ctx context.Context, repo string, number int) (Issue, error)
 
 	// CurrentUser returns the authenticated user's login. Returns
 	// ErrUnauthenticated when no credential is configured.
@@ -221,13 +223,6 @@ type Forge interface {
 	// configured CI returns CIStateUnknown and no checks (not an
 	// error).
 	Checks(ctx context.Context, repo, sha string) (CIStatus, RateLimit, error)
-
-	// FetchPRHead fetches the PR head ref into a deterministic
-	// local branch ("ocman/pr-<n>") on the given repoRoot, using
-	// the configured remoteName. Idempotent: re-running on the
-	// same PR updates the local branch in place. Returns the
-	// local branch name on success.
-	FetchPRHead(ctx context.Context, repoRoot, remoteName string, prNumber int) (branch string, err error)
 }
 
 // ErrUnauthenticated is returned by CurrentUser (and may be returned
@@ -238,5 +233,5 @@ var ErrUnauthenticated = errors.New("forge: not authenticated")
 // ErrRateLimited is returned when the forge responded with 429.
 // Adapters set the RateLimit.Limited flag in their list-call return
 // values; this error is reserved for methods that don't return a
-// RateLimit (e.g. CurrentUser, FetchPRHead).
+// RateLimit (e.g. CurrentUser).
 var ErrRateLimited = errors.New("forge: rate limited")

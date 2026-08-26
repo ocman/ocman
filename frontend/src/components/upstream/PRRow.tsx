@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CIState, Check, PR, PRChecks } from '../../lib/upstreamApi';
 import { fetchPRChecks } from '../../lib/upstreamApi';
 import { ExpandableRow } from './ExpandableRow';
@@ -6,7 +6,7 @@ import { ExpandableRow } from './ExpandableRow';
 interface PRRowProps {
   pr: PR;
   directory: string;
-  remoteId?: string;
+  remoteId: string;
   remote: string;
   /**
    * The branch currently checked out in the project's working tree.
@@ -27,7 +27,7 @@ interface PRRowProps {
  * doesn't enforce single-expansion in v1 (matches the "best-effort"
  * note in FR-7; can be tightened later).
  */
-export function PRRow({ pr, directory, remoteId = 'local', remote, currentBranch }: PRRowProps) {
+export function PRRow({ pr, directory, remoteId, remote, currentBranch }: PRRowProps) {
   const checks = usePRChecks(pr, directory, remoteId, remote);
 
   // Cross-fork PRs share their head branch name with the user's
@@ -61,7 +61,6 @@ export function PRRow({ pr, directory, remoteId = 'local', remote, currentBranch
       remote={remote}
       crossFork={pr.crossFork}
       className={isCurrentBranch ? 'current-branch' : undefined}
-      onMouseEnter={canFetchCI ? checks.load : undefined}
       onToggle={canFetchCI ? checks.load : undefined}
       summaryPrefix={<CIDot state={canFetchCI ? checks.state : 'unknown'} prNumber={pr.number} />}
       summarySuffix={isCurrentBranch ? (
@@ -106,6 +105,18 @@ function usePRChecks(pr: PR, directory: string, remoteId: string, remote: string
   const startedRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
 
+  useEffect(() => {
+    const reset = () => {
+      abortRef.current?.abort();
+      startedRef.current = false;
+      setData(null);
+      setLoading(false);
+      setError(false);
+    };
+    reset();
+    return () => abortRef.current?.abort();
+  }, [pr.headSha, directory, remoteId, remote]);
+
   const load = useCallback(() => {
     if (startedRef.current || !pr.headSha) return;
     startedRef.current = true;
@@ -113,7 +124,9 @@ function usePRChecks(pr: PR, directory: string, remoteId: string, remote: string
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     fetchPRChecks({ dir: directory, remoteId, remote, sha: pr.headSha, signal: ctrl.signal })
-      .then((res) => setData(res))
+      .then((res) => {
+        if (!ctrl.signal.aborted) setData(res);
+      })
       .catch((err) => {
         if (ctrl.signal.aborted) return;
         // Failed fetch shouldn't break the row; allow a retry by

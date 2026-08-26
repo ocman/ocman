@@ -19,13 +19,34 @@ func TestClassifyRemotes_HTTPSGitHub(t *testing.T) {
 	got := classifyRemotes(in, fakeHostMap{})
 	want := []Remote{{
 		Name: "origin",
-		URL:  "https://github.com/alice/myproj.git",
 		Host: "github.com",
 		Type: RemoteTypeGitHub,
 		Repo: "alice/myproj",
 	}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("\n got: %+v\nwant: %+v", got, want)
+	}
+}
+
+func TestClassifyRemotes_DoesNotExposeCredentials(t *testing.T) {
+	got := classifyRemotes([]rawRemote{{
+		Name: "origin", URL: "https://user:secret@github.com/alice/myproj.git",
+	}}, fakeHostMap{})
+	if len(got) != 1 || got[0].URL != "" {
+		t.Fatalf("remote = %+v, want no raw URL", got)
+	}
+}
+
+func TestClassifyRemotes_RejectsUnsafeRepositoryPaths(t *testing.T) {
+	for _, remoteURL := range []string{
+		"https://github.com/../user/issues.git",
+		"https://github.com/owner/repo/extra.git",
+		"https://github.com/owner/%2e%2e.git",
+		"x:y@github.com",
+	} {
+		if got := classifyRemotes([]rawRemote{{Name: "origin", URL: remoteURL}}, fakeHostMap{}); len(got) != 0 {
+			t.Fatalf("classifyRemotes(%q) = %+v, want no remote", remoteURL, got)
+		}
 	}
 }
 

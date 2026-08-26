@@ -369,6 +369,9 @@ func (s *Service) Create(ctx context.Context, platformID string, req platforms.C
 	if err != nil {
 		return nil, err
 	}
+	if resp == nil || strings.TrimSpace(resp.ID) == "" {
+		return nil, fmt.Errorf("platform %s returned no session", adapter.ID())
+	}
 	if s.hooks.SessionCreated != nil {
 		s.hooks.SessionCreated(CreatedSession{
 			ID:        resp.ID,

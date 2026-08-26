@@ -4,7 +4,7 @@ import { useApiStore } from '../../lib/apiStore';
 
 interface LaunchSplitButtonProps {
   directory: string;
-  remoteId?: string;
+  remoteId: string;
   remote: string;
   type: 'pr' | 'issue';
   number: number;
@@ -27,7 +27,7 @@ type Action = 'handle' | 'review';
  */
 export function LaunchSplitButton({
   directory,
-  remoteId = 'local',
+  remoteId,
   remote,
   type,
   number,
@@ -62,11 +62,11 @@ export function LaunchSplitButton({
       });
       // For session mode the user stays put; seed the new session into the
       // sidebar list so it shows up immediately instead of waiting for the
-      // next 3 s poll. For worktree mode the new tmux session is attachable
-      // via the existing UI flow.
+      // next 3 s poll. Worktree launches appear through the existing session UI.
       if (mode === 'session' && res.childSessionId) {
         seedNewSession(res.childSessionId, directory, res.platform, `${type} #${number}`, res.remoteId);
       }
+      if (res.promptError) setError(res.promptError);
       // Brief "Launched" confirmation so the user knows the request landed.
       setLaunched(true);
       window.setTimeout(() => setLaunched(false), 2000);

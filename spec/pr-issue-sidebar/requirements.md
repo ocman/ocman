@@ -24,8 +24,8 @@ forge client — read + launch only, no write actions in v1.
   graceful detection per project (and per remote).
 - Reuse the existing CLI tooling (`gh`, `tea`) for auth so the user doesn't
   re-enter tokens that already work elsewhere.
-- Make the sidebar fully optional and self-hiding: if no supported upstream
-  is detected for the current project, it doesn't appear at all.
+- Keep the sidebar discoverable; projects without a supported upstream show
+  an explanatory empty state.
 
 ## Target Users
 
@@ -46,26 +46,22 @@ wants to spin up parallel agent sessions to handle them.
     equivalent).
   - A remote is classified as **GitHub** if its host is `github.com` (HTTPS
     or SSH form).
-  - A remote is classified as **Forgejo** if its host matches a login
-    configured in `tea`'s `~/.config/tea/config.yml`.
+  - A remote is classified as **Forgejo** if its host matches a forge client
+    configured on the hub (including `tea` discovery).
   - Remotes that don't match either are ignored.
-  - Detection is exposed via a dedicated endpoint:
-    `GET /api/project/<dir>/upstreams` returning
+  - Detection is exposed via `GET /api/project/upstreams?dir=<absolute>&remoteId=<owner>` returning
     `{ upstreams: [{ remote, host, type, repo }] }` where `type` is
     `"github" | "forgejo"` and `repo` is `"owner/name"`.
-  - The detection result is cached for the lifetime of the project view
-    (re-runs only on project switch or manual refresh).
-  - If the endpoint returns an empty list, the sidebar pane is hidden
-    entirely (FR-2).
+  - Detection is cached briefly per owner and directory to collapse repeated requests.
+  - If the endpoint returns an empty list, the pane shows an explanatory empty state (FR-2).
 
 ### FR-2: Conditional sidebar visibility
 
-- **Description**: The PR/Issue sidebar is only rendered when at least one
-  supported upstream is detected for the current project.
+- **Description**: The PR/Issue sidebar remains discoverable for every project
+  and renders forge content when supported upstreams are detected.
 - **Acceptance Criteria**:
-  - The sidebar mounts when ≥1 GitHub or Forgejo remote is detected.
-  - The sidebar is absent (not just empty / collapsed) when no supported
-    remote is detected — no DOM, no API calls.
+  - The sidebar mounts when the pane is selected.
+  - With no supported remote it renders an empty state and does not poll git info.
   - Visibility updates reactively when the active project changes.
 
 ### FR-3: Two tabs — PRs and Issues
@@ -121,21 +117,20 @@ wants to spin up parallel agent sessions to handle them.
   - No automatic polling or interval-based refresh.
   - No write to `state.db` for PR/Issue data (the feature is stateless on
     the ocman side).
-  - Switching tabs back to one already loaded shows the previously fetched
-    data without re-fetching.
+  - Switching tabs may re-fetch; successful forge identities are reused from a bounded cache.
 
 ### FR-7: Inline detail expansion
 
 - **Description**: Clicking a row expands it inline within the sidebar to
-  show additional detail. Clicking again (or another row) collapses it.
+  show additional detail. Clicking it again collapses it.
 - **Acceptance Criteria**:
-  - At most one row is expanded per tab at a time.
+  - Rows expand independently.
   - Expanded content shows:
     - Title (full, wrapped if long).
     - Description / body, rendered as markdown.
     - A link to the item on the upstream forge (opens in a new tab).
     - The launch control (FR-9).
-  - Comments, review threads, diffs, and CI status are **out of scope**
+  - Comments, review threads, and diffs are **out of scope**
     for v1 (see "Out of Scope").
 
 ### FR-8: Pagination
@@ -416,7 +411,6 @@ The following are explicitly **not** part of v1:
 - Merging or closing PRs / issues.
 - Editing labels, assignees, milestones, or any other PR/Issue metadata.
 - Notifications when new PRs/issues arrive (toast, badge, sound, etc.).
-- Showing CI / check status on rows or in the detail view.
 - Showing diffs or file changes in the detail view.
 - Showing comments or review threads in the detail view.
 - Background polling or auto-refresh.
@@ -432,8 +426,8 @@ The following are explicitly **not** part of v1:
   with one or two clicks.
 - The user does not need to configure any tokens in ocman if `gh` /
   `tea` are already logged in.
-- Projects with no supported upstream show no sidebar (no clutter, no
-  errors).
+- Projects with no supported upstream show a clear empty state without
+  errors.
 - Failures degrade gracefully and per-remote — one broken remote never
   blocks the other tab or the rest of the UI.
 - `make test` and `make lint` pass; e2e tests use stable locators.
@@ -448,9 +442,9 @@ The following need clarification before or during implementation:
 - **OQ-2**: ~~Is the sidebar a right-hand sidebar, a panel inside the
   existing project view, or a dedicated column?~~ **Resolved:** add a
   new pane to the existing `RightPanel` (`frontend/src/components/RightPanel.tsx`)
-  alongside `info` / `session` / `working-tree`. The pane is listed in
-  `ALL_TABS` only when an upstream is detected (FR-2). The pane's content
-  is the two-tab PR/Issue UI from FR-3.
+  alongside `info` / `session` / `working-tree`. The pane remains listed and
+  shows an empty state when no upstream is detected (FR-2). Its content is the
+  two-tab PR/Issue UI from FR-3.
 - **OQ-3**: ~~Should "open" PRs include draft PRs in the default filter?~~
   **Resolved:** yes — drafts are included in the `open` filter; the
   `draft` status is surfaced visually on the row (per FR-4).
@@ -462,7 +456,7 @@ The following need clarification before or during implementation:
   when neither header is present (FR-12).
 - **OQ-6**: ~~Expose upstream detection via `/api/capabilities` or a
   dedicated endpoint?~~ **Resolved:** dedicated per-project endpoint
-  `GET /api/project/<dir>/upstreams` (see FR-1).
+  `GET /api/project/upstreams?dir=<absolute>&remoteId=<owner>` (see FR-1).
 - **OQ-7**: ~~Token precedence between CLI and env var?~~ **Resolved:**
   env var wins, CLI is the fallback (FR-11). Matches the convention used
   by most CLI tools.

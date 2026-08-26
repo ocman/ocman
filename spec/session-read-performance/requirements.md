@@ -47,8 +47,6 @@ load without changing anything a user can observe.
 - Changes to OpenCode's database schema, HTTP API, or event wire format.
 - Changes to ocman's public REST or SSE wire formats.
 - Changes to Beads availability/status polling.
-- Changes to MCP request polling, child-session result polling, progress
-  messages, timeouts, or delivery semantics.
 - Reworking per-session conversation SSE, message pagination, subagent preview
   polling, workflow polling, or relay polling unless required to emit a missing
   session-list invalidation.

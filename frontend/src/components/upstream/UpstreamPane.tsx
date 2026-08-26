@@ -50,7 +50,7 @@ export function UpstreamPane({
   onSummaryChange,
 }: UpstreamPaneProps) {
   const [tab, setTab] = useState<Tab>('prs');
-  const { infos: gitInfos } = useGitInfo(directory ? [directory] : [], remoteId);
+  const { infos: gitInfos } = useGitInfo(directory && upstreams.length > 0 ? [directory] : [], remoteId);
   const currentBranch = directory ? gitInfos[directory]?.branch : undefined;
 
   // Independent filter state per tab.
@@ -200,7 +200,7 @@ function UpstreamTabContent({
       />
       {upstreams.map((u) => (
         <UpstreamRemoteGroup
-          key={`${remoteId}/${u.host}/${u.remote}`}
+          key={`${remoteId}/${directory}/${u.host}/${u.remote}`}
           kind={kind}
           upstream={u}
           directory={directory!}
@@ -288,7 +288,7 @@ function UpstreamRemoteGroup({
   // Resolve the "mine" identity for this remote's host. null means
   // the forge has no credential — disable the mine toggle visually
   // and don't send the filter parameter.
-  const myLogin = useForgeUser(directory, upstream.remote, remoteId);
+  const myLogin = useForgeUser(mine ? directory : undefined, mine ? upstream.remote : undefined, remoteId);
   const mineFilter = mine && myLogin ? myLogin : undefined;
 
   const list = useUpstreamList<PR | Issue>({
@@ -298,7 +298,7 @@ function UpstreamRemoteGroup({
     remote: upstream.remote,
     state,
     mine: mineFilter,
-    enabled: true,
+    enabled: !mine || !!myLogin,
   });
 
   // Push our refresh callback up; unregister on unmount.
@@ -309,11 +309,9 @@ function UpstreamRemoteGroup({
 
   // Mirror loading flag up.
   useEffect(() => {
-    onLoadingChange(list.loading);
-    // Decrement on unmount-while-loading.
-    return () => {
-      if (list.loading) onLoadingChange(false);
-    };
+    if (!list.loading) return;
+    onLoadingChange(true);
+    return () => onLoadingChange(false);
   }, [list.loading, onLoadingChange]);
 
   return (
@@ -344,7 +342,9 @@ function UpstreamRemoteGroup({
           onRetry={list.refresh}
         />
       ) : null}
-      {!list.error && list.items.length === 0 && !list.loading ? (
+      {mine && !myLogin ? (
+        <div className="oc-upstream-empty">Mine requires forge authentication.</div>
+      ) : !list.error && list.items.length === 0 && !list.loading ? (
         <div className="oc-upstream-empty">No {kind === 'prs' ? 'pull requests' : 'issues'}.</div>
       ) : null}
       <ul className="oc-upstream-list" data-testid={`upstream-${kind}-list`}>

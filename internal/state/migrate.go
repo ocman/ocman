@@ -1516,6 +1516,13 @@ func migrateToV45(tx *sql.Tx) error {
 }
 
 func migrateToV46(tx *sql.Tx) error {
-	_, err := tx.Exec(`DROP TABLE IF EXISTS child_sessions`)
+	_, err := tx.Exec(`
+		DROP TABLE IF EXISTS child_sessions;
+		DELETE FROM queued_message
+		WHERE id LIKE 'child-result:%'
+		   OR (text LIKE 'The result wait for child session %'
+		       AND text LIKE '%await_session_result%'
+		       AND text LIKE '%Do not call new_session again.%');
+	`)
 	return err
 }

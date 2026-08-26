@@ -55,6 +55,7 @@ describe('LaunchSplitButton', () => {
     render(
       <LaunchSplitButton
         directory="/repo"
+        remoteId="local"
         remote="origin"
         type="pr"
         number={7}
@@ -82,6 +83,7 @@ describe('LaunchSplitButton', () => {
     render(
       <LaunchSplitButton
         directory="/repo"
+        remoteId="local"
         remote="origin"
         type="pr"
         number={11}
@@ -103,6 +105,7 @@ describe('LaunchSplitButton', () => {
     render(
       <LaunchSplitButton
         directory="/repo"
+        remoteId="local"
         remote="origin"
         type="issue"
         number={5}
@@ -121,6 +124,7 @@ describe('LaunchSplitButton', () => {
     render(
       <LaunchSplitButton
         directory="/repo"
+        remoteId="local"
         remote="origin"
         type="issue"
         number={9}
@@ -133,5 +137,20 @@ describe('LaunchSplitButton', () => {
     await waitFor(() => {
       expect(screen.getByRole('alert')).toHaveTextContent('boom');
     });
+  });
+
+  it('surfaces a warning when the session was created without its prompt', async () => {
+    vi.spyOn(api, 'postHandle').mockResolvedValue({
+      childSessionId: 'child-4', mode: 'session', platform: 'opencode', remoteId: 'local',
+      promptError: 'initial prompt was not sent',
+    });
+    render(
+      <LaunchSplitButton directory="/repo" remoteId="local" remote="origin" type="issue" number={9} crossFork={false} />,
+    );
+
+    fireEvent.click(screen.getByTestId('launch-default'));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('initial prompt was not sent'));
+    expect(useApiStore.getState().recentSessions[0]?.id).toBe('child-4');
   });
 });

@@ -25,7 +25,7 @@ import (
 // local adapter from the base platform id (or the local Host) and call
 // the matching method, marshalling rich results as JSON (AD-3, AD-11).
 // Session mutations delegate to the shared sessionsvc.Service so they
-// take the same validated code path as the REST handlers and MCP tools.
+// take the same validated code path as the REST handlers.
 type Server struct {
 	pb.UnimplementedOcmanServer
 

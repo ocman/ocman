@@ -1,11 +1,17 @@
 package mcp_test
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
+	mcpclient "github.com/mark3labs/mcp-go/client"
+	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/mcptest"
 
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
@@ -52,6 +58,48 @@ func TestToolSetOmitsSessionManagement(t *testing.T) {
 	}
 	for name := range want {
 		t.Errorf("retained MCP tool %q is not registered", name)
+	}
+}
+
+func TestPublicHTTPToolRegistryIsExact(t *testing.T) {
+	stateDB := openTestStateDB(t)
+	httpServer := httptest.NewServer(internalmcp.New(internalmcp.Deps{
+		WorkflowService: workflows.NewService(workflows.Deps{Store: stateDB}),
+	}).Handler())
+	defer httpServer.Close()
+
+	client, err := mcpclient.NewStreamableHttpClient(httpServer.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	ctx := context.Background()
+	if err := client.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Initialize(ctx, mcplib.InitializeRequest{Params: mcplib.InitializeParams{
+		ProtocolVersion: mcplib.LATEST_PROTOCOL_VERSION,
+		ClientInfo:      mcplib.Implementation{Name: "ocman-test", Version: "1"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	listed, err := client.ListTools(ctx, mcplib.ListToolsRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make([]string, 0, len(listed.Tools))
+	for _, tool := range listed.Tools {
+		got = append(got, tool.Name)
+	}
+	slices.Sort(got)
+	want := []string{
+		"approve_workflow_node", "cancel_workflow_run", "embed_file", "get_workflow_schema",
+		"inspect_workflow_run", "list_workflow_runs", "list_workflows", "pause_workflow_run",
+		"publish_workflow", "resolve_unknown_attempt", "resume_workflow_run", "retry_workflow_from_node",
+		"start_workflow", "validate_workflow",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("tools = %v, want %v", got, want)
 	}
 }
 
@@ -124,6 +172,104 @@ func TestWorkflowToolsLifecycle(t *testing.T) {
 	canceled := resultObject(t, srv, "cancel_workflow_run", map[string]interface{}{"run_id": runID})
 	if canceled["state"] != workflows.StateCanceled {
 		t.Fatalf("cancel state: %#v", canceled)
+	}
+}
+
+func TestWorkflowToolsRejectMissingArguments(t *testing.T) {
+	srv := buildWorkflowMCPServer(t, openTestStateDB(t))
+	tests := []struct {
+		name string
+		args map[string]interface{}
+	}{
+		{"validate_workflow", nil},
+		{"publish_workflow", nil},
+		{"start_workflow", nil},
+		{"inspect_workflow_run", nil},
+		{"pause_workflow_run", nil},
+		{"resume_workflow_run", nil},
+		{"cancel_workflow_run", nil},
+		{"approve_workflow_node", map[string]interface{}{"run_id": "run"}},
+		{"resolve_unknown_attempt", map[string]interface{}{"run_id": "run", "attempt_id": 0, "resolution": "successful"}},
+		{"resolve_unknown_attempt", map[string]interface{}{"run_id": "run", "attempt_id": 1}},
+		{"retry_workflow_from_node", map[string]interface{}{"run_id": "run"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if result := callTool(t, srv, tt.name, tt.args); !result.IsError {
+				t.Fatalf("result = %+v, want tool error", result)
+			}
+		})
+	}
+}
+
+type failingWorkflowService struct{ err error }
+
+func (f failingWorkflowService) ValidateJSON(context.Context, []byte) (workflows.Definition, error) {
+	return workflows.Definition{}, f.err
+}
+func (f failingWorkflowService) PublishJSON(context.Context, []byte) (workflows.Version, error) {
+	return workflows.Version{}, f.err
+}
+func (f failingWorkflowService) ListVersions(context.Context) ([]workflows.Version, error) {
+	return nil, f.err
+}
+func (f failingWorkflowService) Start(context.Context, string) (workflows.RunDetail, error) {
+	return workflows.RunDetail{}, f.err
+}
+func (f failingWorkflowService) ListRuns(context.Context) ([]workflows.Run, error) {
+	return nil, f.err
+}
+func (f failingWorkflowService) GetRun(context.Context, string) (workflows.RunDetail, error) {
+	return workflows.RunDetail{}, f.err
+}
+func (f failingWorkflowService) Pause(context.Context, string) (workflows.RunDetail, error) {
+	return workflows.RunDetail{}, f.err
+}
+func (f failingWorkflowService) Resume(context.Context, string) (workflows.RunDetail, error) {
+	return workflows.RunDetail{}, f.err
+}
+func (f failingWorkflowService) Cancel(context.Context, string) (workflows.RunDetail, error) {
+	return workflows.RunDetail{}, f.err
+}
+func (f failingWorkflowService) Approve(context.Context, string, string) (workflows.RunDetail, error) {
+	return workflows.RunDetail{}, f.err
+}
+func (f failingWorkflowService) ResolveUnknown(context.Context, string, int64, string) (workflows.RunDetail, error) {
+	return workflows.RunDetail{}, f.err
+}
+func (f failingWorkflowService) RetryFrom(context.Context, string, string, string) (workflows.RunDetail, error) {
+	return workflows.RunDetail{}, f.err
+}
+
+func TestWorkflowToolsSurfaceServiceErrors(t *testing.T) {
+	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{
+		WorkflowService: failingWorkflowService{err: errors.New("store unavailable")},
+	})...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(srv.Close)
+	tests := []struct {
+		name string
+		args map[string]interface{}
+	}{
+		{"validate_workflow", map[string]interface{}{"definition": `{}`}},
+		{"publish_workflow", map[string]interface{}{"definition": `{}`}},
+		{"list_workflows", nil},
+		{"start_workflow", map[string]interface{}{"version_id": "v1"}},
+		{"list_workflow_runs", nil},
+		{"inspect_workflow_run", map[string]interface{}{"run_id": "run"}},
+		{"pause_workflow_run", map[string]interface{}{"run_id": "run"}},
+		{"resume_workflow_run", map[string]interface{}{"run_id": "run"}},
+		{"cancel_workflow_run", map[string]interface{}{"run_id": "run"}},
+		{"approve_workflow_node", map[string]interface{}{"run_id": "run", "node_id": "node"}},
+		{"resolve_unknown_attempt", map[string]interface{}{"run_id": "run", "attempt_id": 1, "resolution": "successful"}},
+		{"retry_workflow_from_node", map[string]interface{}{"run_id": "run", "node_id": "node"}},
+	}
+	for _, tt := range tests {
+		if result := callTool(t, srv, tt.name, tt.args); !result.IsError || !strings.Contains(resultText(result), "store unavailable") {
+			t.Fatalf("%s result = %+v", tt.name, result)
+		}
 	}
 }
 

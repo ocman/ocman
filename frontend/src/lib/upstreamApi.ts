@@ -106,7 +106,7 @@ export interface ErrorEnvelope {
 // HandleRequest is the body of POST /api/project/handle.
 export interface HandleRequest {
   dir: string;
-  remoteId?: string;
+  remoteId: string;
   remote: string;
   type: 'pr' | 'issue';
   number: number;
@@ -123,7 +123,7 @@ export interface HandleResponse {
   remoteId: string;
   worktreePath?: string;
   branch?: string;
-  tmuxTarget?: string;
+  promptError?: string;
 }
 
 // Settings (prompt templates).
@@ -136,7 +136,7 @@ export interface PromptTemplates {
 // fetchUpstreams returns the supported forge remotes for the project
 // containing dir. Returns [] when the directory has no recognised
 // upstream — the caller hides the pane in that case.
-export async function fetchUpstreams(dir: string, remoteId = 'local', signal?: AbortSignal): Promise<Upstream[]> {
+export async function fetchUpstreams(dir: string, remoteId: string, signal?: AbortSignal): Promise<Upstream[]> {
   const url = `/api/project/upstreams?dir=${encodeURIComponent(dir)}&remoteId=${encodeURIComponent(remoteId)}`;
   const resp = await fetch(url, { signal });
   if (!resp.ok) {
@@ -151,7 +151,7 @@ export async function fetchUpstreams(dir: string, remoteId = 'local', signal?: A
 
 export async function fetchPRs(opts: {
   dir: string;
-  remoteId?: string;
+  remoteId: string;
   remote: string;
   state: StateFilter;
   mine: string | undefined;
@@ -160,7 +160,7 @@ export async function fetchPRs(opts: {
 }): Promise<ListPRsResponse> {
   const q = new URLSearchParams({
     dir: opts.dir,
-    remoteId: opts.remoteId ?? 'local',
+    remoteId: opts.remoteId,
     remote: opts.remote,
     state: opts.state,
     page: String(opts.page),
@@ -177,7 +177,7 @@ export async function fetchPRs(opts: {
 
 export async function fetchIssues(opts: {
   dir: string;
-  remoteId?: string;
+  remoteId: string;
   remote: string;
   state: StateFilter;
   mine: string | undefined;
@@ -186,7 +186,7 @@ export async function fetchIssues(opts: {
 }): Promise<ListIssuesResponse> {
   const q = new URLSearchParams({
     dir: opts.dir,
-    remoteId: opts.remoteId ?? 'local',
+    remoteId: opts.remoteId,
     remote: opts.remote,
     state: opts.state,
     page: String(opts.page),
@@ -205,14 +205,14 @@ export async function fetchIssues(opts: {
 // commit. Fetched lazily (on expand/hover) so the list stays cheap.
 export async function fetchPRChecks(opts: {
   dir: string;
-  remoteId?: string;
+  remoteId: string;
   remote: string;
   sha: string;
   signal?: AbortSignal;
 }): Promise<PRChecks> {
   const q = new URLSearchParams({
     dir: opts.dir,
-    remoteId: opts.remoteId ?? 'local',
+    remoteId: opts.remoteId,
     remote: opts.remote,
     sha: opts.sha,
   });
@@ -227,11 +227,11 @@ export async function fetchPRChecks(opts: {
 
 export async function fetchForgeUser(opts: {
   dir: string;
-  remoteId?: string;
+  remoteId: string;
   remote: string;
   signal?: AbortSignal;
 }): Promise<{ login: string; host: string } | null> {
-  const q = new URLSearchParams({ dir: opts.dir, remoteId: opts.remoteId ?? 'local', remote: opts.remote });
+  const q = new URLSearchParams({ dir: opts.dir, remoteId: opts.remoteId, remote: opts.remote });
   const resp = await fetch(`/api/project/forge-user?${q.toString()}`, { signal: opts.signal });
   if (resp.status === 401) {
     // A forge-level 401 always carries an error envelope; a bare 401 is
@@ -247,7 +247,7 @@ export async function postHandle(req: HandleRequest): Promise<HandleResponse> {
   const resp = await fetch('/api/project/handle', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...req, remoteId: req.remoteId ?? 'local' }),
+    body: JSON.stringify(req),
   });
   if (!resp.ok) {
     const env = await safeError(resp);

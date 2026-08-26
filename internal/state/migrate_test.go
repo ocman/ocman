@@ -809,6 +809,12 @@ func TestMigrateV46DropsChildSessionsAndPreservesState(t *testing.T) {
 	if _, err := tx.Exec(`INSERT INTO setting (key, value, updated_at) VALUES ('keep', 'value', 1)`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := tx.Exec(`INSERT INTO queued_message (id, platform, session_id, position, text, created_at) VALUES
+		('retired', 'opencode', 'parent', 1, 'The result wait for child session "child" disconnected. Resume the existing child without sending a new prompt by calling await_session_result with session_id "parent" and child_session_id "child". Do not call new_session again.', 1),
+		('child-result:child', 'opencode', 'parent', 2, 'retired child result', 1),
+		('keep-message', 'opencode', 'parent', 3, 'user queued message', 1)`); err != nil {
+		t.Fatal(err)
+	}
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
@@ -827,6 +833,15 @@ func TestMigrateV46DropsChildSessionsAndPreservesState(t *testing.T) {
 	var value string
 	if err := db.QueryRow(`SELECT value FROM setting WHERE key='keep'`).Scan(&value); err != nil || value != "value" {
 		t.Fatalf("preserved setting = %q, %v", value, err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM queued_message WHERE id = 'retired'`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("retired reconnect messages = %d, %v", count, err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM queued_message WHERE id = 'child-result:child'`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("retired child results = %d, %v", count, err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM queued_message WHERE id = 'keep-message'`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("preserved queued messages = %d, %v", count, err)
 	}
 }
 

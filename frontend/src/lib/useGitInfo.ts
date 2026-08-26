@@ -131,6 +131,11 @@ export function useGitInfo(dirs: string[] | undefined, remoteId = 'local'): UseG
 
     const dirList = decodeURIComponent(queryParam).split(',');
     const releaseScopes = dirList.map((dir) => acquireActivityScope(`git-status:${dir}`));
+    const reset = () => {
+      setInfos({});
+      setError(null);
+    };
+    reset();
 
     const runFetch = () => {
       if (typeof document !== 'undefined' && document.hidden) {

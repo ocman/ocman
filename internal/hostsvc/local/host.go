@@ -240,8 +240,7 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 	if err != nil {
 		return nil, err
 	}
-	// A caller that can't resolve a base ref itself (the MCP split path,
-	// which must not run git off-host) leaves it empty; resolve the
+	// A caller that must not run git off-host leaves the base ref empty; resolve the
 	// repo's default here rather than silently branching off whatever
 	// HEAD the main checkout happens to be on.
 	baseRef := req.BaseRef

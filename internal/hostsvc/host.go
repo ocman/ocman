@@ -245,8 +245,9 @@ type Host interface {
 	// git.ErrDirtyCheckout when git refuses due to local changes.
 	GitCheckout(ctx context.Context, dir, branch string) error
 
-	// ProjectUpstreams resolves the repository root and detects supported
-	// forge remotes using the owning machine's git and forge configuration.
+	// ProjectUpstreams resolves the repository root and parses forge remote
+	// candidates using the owning machine's git configuration. The hub decides
+	// which hosts it supports.
 	ProjectUpstreams(ctx context.Context, dir string) (*ProjectUpstreams, error)
 
 	// FetchPRHead fetches a cross-fork PR head into the owner's repository.

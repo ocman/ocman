@@ -19,7 +19,7 @@ interface ExpandableRowProps {
   url: string;
   host: string;
   directory: string;
-  remoteId?: string;
+  remoteId: string;
   remote: string;
   crossFork: boolean;
   className?: string;
@@ -44,7 +44,7 @@ export function ExpandableRow({
   url,
   host,
   directory,
-  remoteId = 'local',
+  remoteId,
   remote,
   crossFork,
   className = '',

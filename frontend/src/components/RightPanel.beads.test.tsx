@@ -82,7 +82,7 @@ it('passes the remote owner to the resource', () => {
   render(<RightPanel {...props} session={{ remoteId: 'abc' } as Session} />);
 
   expect(beadsArgs).toEqual(['/repo', 'abc', true]);
-  expect(upstreamArgs).toEqual(['/repo', 'abc']);
+  expect(upstreamArgs).toEqual([undefined, 'abc']);
   expect(screen.queryByRole('tab', { name: 'Beads' })).not.toBeInTheDocument();
 });
 

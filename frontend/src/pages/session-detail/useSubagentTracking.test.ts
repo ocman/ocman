@@ -109,4 +109,40 @@ describe('useSubagentTracking', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
     expect(request).toHaveBeenCalledTimes(1);
   });
+
+  it('restarts polling when a running task is replaced', async () => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    const request = vi.spyOn(api, 'sessionTasks').mockResolvedValue({ tasks: {} });
+    const part = (taskId: string) => ({
+      id: `tool-${taskId}`, messageId: 'message-1', sessionId: 'parent-1', timeCreated: 1000,
+      data: { type: 'tool', tool: 'task', state: { status: 'running', metadata: { taskId } } },
+    }) as Part;
+    const { rerender } = renderHook(
+      ({ taskId }) => useSubagentTracking([part(taskId)], 'parent-1'),
+      { initialProps: { taskId: 'first' } },
+    );
+    await act(async () => { await Promise.resolve(); });
+
+    rerender({ taskId: 'second' });
+    await act(async () => { await Promise.resolve(); });
+
+    expect(request.mock.calls.at(-1)?.[1]).toEqual(['second']);
+  });
+
+  it('clears task state when the session changes', async () => {
+    const { result, rerender } = renderHook(
+      ({ sessionId }) => useSubagentTracking([], sessionId),
+      { initialProps: { sessionId: 'first' } },
+    );
+    act(() => {
+      result.current.setSubagentTokens(new Map([['message', { output: 1, created: 1 }]]));
+      result.current.setTaskLiveOutput({ task: { messages: [], parts: [] } });
+    });
+
+    rerender({ sessionId: 'second' });
+    await act(async () => { await Promise.resolve(); });
+
+    expect(result.current.subagentTokens.size).toBe(0);
+    expect(result.current.taskLiveOutput).toEqual({});
+  });
 });

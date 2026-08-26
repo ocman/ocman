@@ -193,8 +193,8 @@ flowchart TD
   Retirement unlinks only the exact verified symlink and preserves extracted data.
 - **internal/state.** The only writable store: migrations, settings,
   workflows, prompt schedules.
-- **forge and integrations.** Forge-agnostic types in `forge`, per-forge HTTP
-  clients in `integrations/{github,forgejo}`. PR/Issue handlers obtain repository
+- **forge and integrations.** Forge-agnostic types in `internal/forge`, per-forge
+  HTTP clients in `internal/forge/{github,forgejo}`. PR/Issue handlers obtain repository
   identity from the owner Host, then use the hub clients for metadata.
 
 ## 3. Session and event data flow

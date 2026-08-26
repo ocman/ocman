@@ -66,8 +66,7 @@ func (s *Server) handleMCPConfigInstall(w http.ResponseWriter, _ *http.Request) 
 }
 
 // mcpHandler returns the shared MCP handler. Both the main mux and the
-// dedicated loopback listener serve the same instance, so MCP session
-// state doesn't depend on which port a client happened to use.
+// dedicated loopback listener serve the same stateless workflow/file tool set.
 func (s *Server) mcpHandler() http.Handler {
 	s.mcpHandlerOnce.Do(func() { s.mcpHandlerCached = s.buildMCPHandler() })
 	return s.mcpHandlerCached
@@ -121,7 +120,7 @@ func (s *Server) WithMCPAddr(addr string) *Server {
 // so this endpoint has to accept the loopback peer as its credential.
 // On the main port that would be unsafe — a reverse proxy fronting
 // ocman makes every forwarded request look loopback, which would expose
-// session-spawning tools to the internet. A separate loopback-bound
+// privileged workflow and file tools to the internet. A separate loopback-bound
 // listener is unreachable through that proxy by construction.
 //
 // Any problem (non-loopback address, port in use) is logged and the

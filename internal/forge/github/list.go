@@ -82,6 +82,22 @@ func (c *Client) ListPRs(ctx context.Context, repo string, opts forge.ListOption
 	return out, rl, nil
 }
 
+func (c *Client) LookupPR(ctx context.Context, repo string, number int) (forge.PR, error) {
+	path := fmt.Sprintf("/repos/%s/pulls/%d", repo, number)
+	body, _, status, err := c.fetch(ctx, path)
+	if err != nil {
+		return forge.PR{}, err
+	}
+	if status != http.StatusOK {
+		return forge.PR{}, fmt.Errorf("github api %s: status %d", path, status)
+	}
+	var raw ghPR
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return forge.PR{}, fmt.Errorf("decoding pull: %w", err)
+	}
+	return raw.toForge(repo), nil
+}
+
 // ListIssues returns one page of issues for owner/name. GitHub's
 // /issues endpoint returns both issues and PRs; the PR rows are
 // filtered out here (they have a non-null pull_request field).
@@ -136,6 +152,25 @@ func (c *Client) ListIssues(ctx context.Context, repo string, opts forge.ListOpt
 		out = append(out, r.toForge(repo))
 	}
 	return out, rl, nil
+}
+
+func (c *Client) LookupIssue(ctx context.Context, repo string, number int) (forge.Issue, error) {
+	path := fmt.Sprintf("/repos/%s/issues/%d", repo, number)
+	body, _, status, err := c.fetch(ctx, path)
+	if err != nil {
+		return forge.Issue{}, err
+	}
+	if status != http.StatusOK {
+		return forge.Issue{}, fmt.Errorf("github api %s: status %d", path, status)
+	}
+	var raw ghIssue
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return forge.Issue{}, fmt.Errorf("decoding issue: %w", err)
+	}
+	if raw.PullRequest != nil {
+		return forge.Issue{}, fmt.Errorf("github issue %d is a pull request", number)
+	}
+	return raw.toForge(repo), nil
 }
 
 // CurrentUser returns the authenticated user for the configured token.
@@ -196,7 +231,7 @@ type ghPR struct {
 	Number             int       `json:"number"`
 	Title              string    `json:"title"`
 	Body               string    `json:"body"`
-	State              string    `json:"state"`     // "open" | "closed"
+	State              string    `json:"state"` // "open" | "closed"
 	Draft              bool      `json:"draft"`
 	MergedAt           *string   `json:"merged_at"` // non-nil => merged
 	UpdatedAt          time.Time `json:"updated_at"`
@@ -254,8 +289,8 @@ func (r ghPR) toForge(repo string) forge.PR {
 	pr := forge.PR{
 		Number:    r.Number,
 		Title:     r.Title,
-		Body:     r.Body,
-		Author:   r.User.Login,
+		Body:      r.Body,
+		Author:    r.User.Login,
 		Status:    status,
 		UpdatedAt: r.UpdatedAt,
 		Branch:    r.Head.Ref,
@@ -281,8 +316,8 @@ func (r ghIssue) toForge(repo string) forge.Issue {
 	is := forge.Issue{
 		Number:    r.Number,
 		Title:     r.Title,
-		Body:     r.Body,
-		Author:   r.User.Login,
+		Body:      r.Body,
+		Author:    r.User.Login,
 		Status:    r.State,
 		UpdatedAt: r.UpdatedAt,
 		URL:       r.HTMLURL,

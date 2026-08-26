@@ -13,7 +13,6 @@ import (
 	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
-	"golang.org/x/sync/singleflight"
 
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/dagu"
@@ -152,10 +151,11 @@ type Server struct {
 
 	getNewAssistantMessages func(context.Context, int64) ([]db.LLMMessageRow, int64, error)
 
-	projectUpstreamsMu    sync.Mutex
-	projectUpstreams      map[string]projectUpstreamsCacheEntry
-	projectUpstreamsGroup singleflight.Group
-	upstreamNow           func() time.Time
+	projectUpstreamsMu      sync.Mutex
+	projectUpstreams        map[string]projectUpstreamsCacheEntry
+	projectUpstreamsPending map[string]*projectUpstreamsPending
+	projectUpstreamsSlots   chan struct{}
+	upstreamNow             func() time.Time
 }
 
 // remoteAccessInfo holds this instance's own remote-access surface for
@@ -285,7 +285,7 @@ func (s *Server) newLocalHost() hostsvc.Host {
 		DiscoverPort: opencode.DiscoverOpenCodePortFresh,
 		ManagedStore: managedStoreOrNil(s.stateDB),
 		// CreateSession routes worktree-session creation through the shared
-		// session-mutation service (same validated path + hooks as REST/MCP).
+		// session-mutation service (same validated path + hooks as REST/gRPC).
 		// Resolved lazily: s.sessions is assigned after newLocalHost runs.
 		CreateSession: func(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			return s.sessions.Client("opencode").CreateSession(ctx, req)

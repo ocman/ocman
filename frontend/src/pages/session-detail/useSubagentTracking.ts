@@ -77,6 +77,16 @@ export function useSubagentTracking(
 ): UseSubagentTrackingResult {
   const [subagentTokens, setSubagentTokensRaw] = useState<SubagentTokenMap>(new Map());
   const [taskLiveOutput, setTaskLiveOutput] = useState<Record<string, TaskSessionData>>({});
+  const fetchedCompletedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const reset = () => {
+      setSubagentTokensRaw(new Map());
+      setTaskLiveOutput({});
+      fetchedCompletedRef.current.clear();
+    };
+    reset();
+  }, [sessionId]);
 
   // Wrap the setter in a stable identity that always trims trailing
   // entries past the cap. Stability matters because the new
@@ -138,10 +148,10 @@ export function useSubagentTracking(
     return running;
   }, [parts]);
 
-  // Poll the running tasks for their sub-session data. Effect
-  // re-fires whenever the *count* of running tasks changes — using
-  // the contents would re-create the interval on every status flip,
-  // which costs an extra request without any payoff.
+  const runningTaskKey = runningTaskIds.map(({ taskId }) => taskId).join('\0');
+
+  // Poll the running tasks for their sub-session data. Restart when the
+  // identity set changes so a same-size replacement never polls stale IDs.
   useEffect(() => {
     if (!sessionId || runningTaskIds.length === 0) return;
     const controller = new AbortController();
@@ -176,10 +186,8 @@ export function useSubagentTracking(
       controller.abort();
       clearInterval(interval);
     };
-    // Only the count matters: contents flipping from running to done
-    // is itself signalled by the next memo recomputation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runningTaskIds.length, sessionId]);
+  }, [runningTaskKey, sessionId]);
 
   // Fetch sub-session data for completed tasks that we don't have
   // data for yet. This covers the case where the user navigates
@@ -203,10 +211,7 @@ export function useSubagentTracking(
     }
     return ids;
   }, [parts]);
-
-  // Ref to track which completed task ids we've already fetched so
-  // we don't re-fetch on every render.
-  const fetchedCompletedRef = useRef<Set<string>>(new Set());
+  const completedTaskKey = completedTaskIds.join('\0');
 
   useEffect(() => {
     if (!sessionId || completedTaskIds.length === 0) return;
@@ -238,7 +243,7 @@ export function useSubagentTracking(
     })();
     return () => { controller.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [completedTaskIds.length, sessionId]);
+  }, [completedTaskKey, sessionId]);
 
   return {
     subagentSessionIds,

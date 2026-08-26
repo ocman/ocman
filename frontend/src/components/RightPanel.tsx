@@ -163,7 +163,7 @@ export function RightPanel({
   // discoverable without cluttering projects that genuinely have
   // no upstream.
   const remoteId = session?.remoteId || 'local';
-  const upstreamsResult = useUpstreams(directory, remoteId);
+  const upstreamsResult = useUpstreams(openTabs.includes('upstream') ? directory : undefined, remoteId);
   const beadsResult = useBeadsStatus(
     directory,
     session ? session.remoteId || 'local' : undefined,
@@ -312,6 +312,9 @@ export function RightPanel({
             onRemoveMessageBookmark={onRemoveMessageBookmark}
             onScrollToMessageBookmark={onScrollToMessageBookmark}
             upstreams={upstreamsResult.upstreams}
+            upstreamLoading={upstreamsResult.loading}
+            upstreamError={upstreamsResult.error}
+            refreshUpstreams={upstreamsResult.refresh}
             beadsResult={beadsResult}
             // First pane has no top divider; subsequent panes do
             // and their header doubles as a resize handle for the
@@ -438,6 +441,9 @@ interface PaneProps {
   // consumes this; the other panes ignore it. Resolved at RightPanel
   // level so we don't re-detect per pane.
   upstreams: import('../lib/upstreamApi').Upstream[];
+  upstreamLoading: boolean;
+  upstreamError: string | null;
+  refreshUpstreams: () => void;
   beadsResult: ReturnType<typeof useBeadsStatus>;
   divider: boolean;
   size: number;
@@ -461,6 +467,9 @@ function Pane({
   onRemoveMessageBookmark,
   onScrollToMessageBookmark,
   upstreams,
+  upstreamLoading,
+  upstreamError,
+  refreshUpstreams,
   beadsResult,
   divider,
   size,
@@ -573,7 +582,13 @@ function Pane({
               onScrollToMessage={onScrollToMessageBookmark}
             />
           )}
-          {tab === 'upstream' && (
+          {tab === 'upstream' && upstreamLoading && <div role="status">Detecting upstreams…</div>}
+          {tab === 'upstream' && upstreamError && (
+            <div role="alert">
+              {upstreamError} <button type="button" onClick={refreshUpstreams}>Retry</button>
+            </div>
+          )}
+          {tab === 'upstream' && !upstreamLoading && !upstreamError && (
             <UpstreamPane
               directory={directory}
               remoteId={session?.remoteId || 'local'}

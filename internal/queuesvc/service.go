@@ -150,8 +150,8 @@ var ErrEmptyMessage = errors.New("message or images required")
 // Enqueue appends a message to the session's queue.
 //
 // forceQueue is the caller's authoritative "hold this" signal — the
-// user's Ctrl/Cmd+Enter gesture, or an internal deferral (child results,
-// scheduled prompts). When true, the message is HELD: it is never drained
+// user's Ctrl/Cmd+Enter gesture, or an internal scheduled-prompt deferral.
+// When true, the message is HELD: it is never drained
 // here and waits for the next session.idle edge. It is deliberately NOT
 // derived from inferred status, which reads the lagging DB and can wrongly
 // report idle mid-turn (#58).

@@ -22,4 +22,31 @@ describe('useUpstreams', () => {
     await waitFor(() => expect(fetchUpstreams).toHaveBeenCalledTimes(2));
     expect(fetchUpstreams.mock.calls.map((call) => call[1])).toEqual(['machine-a', 'machine-b']);
   });
+
+  it('clears upstreams while a different project loads', async () => {
+    vi.spyOn(api, 'fetchUpstreams')
+      .mockResolvedValueOnce([{ remote: 'origin', host: 'github.com', type: 'github', repo: 'old/repo' }])
+      .mockReturnValueOnce(new Promise(() => {}));
+    const { result, rerender } = renderHook(
+      ({ directory }) => useUpstreams(directory, 'local'),
+      { initialProps: { directory: '/old' } },
+    );
+    await waitFor(() => expect(result.current.upstreams).toHaveLength(1));
+
+    rerender({ directory: '/new' });
+    await waitFor(() => expect(result.current.upstreams).toEqual([]));
+  });
+
+  it('clears loading when disabled during a request', async () => {
+    vi.spyOn(api, 'fetchUpstreams').mockReturnValue(new Promise(() => {}));
+    const { result, rerender } = renderHook(
+      ({ directory }) => useUpstreams(directory, 'local'),
+      { initialProps: { directory: '/repo' as string | undefined } },
+    );
+    await waitFor(() => expect(result.current.loading).toBe(true));
+
+    rerender({ directory: undefined });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.error).toBeNull();
+  });
 });

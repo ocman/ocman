@@ -16,8 +16,8 @@ heavily on primitives already present in ocman:
    paths — the new endpoints are *thin orchestrators*, not parallel
    implementations.
 3. A **new pane in the existing `RightPanel`** on the frontend, made
-   discoverable by a new entry in `ChangesSidebarTab` and gated by a
-   per-project upstream-detection query.
+   discoverable by a new entry in `ChangesSidebarTab`; unsupported projects
+   render an explanatory empty state.
 
 Design philosophy:
 
@@ -32,9 +32,9 @@ Design philosophy:
 - **Per-remote isolation.** Each remote (and each forge) is a
   failure domain of its own. One broken host never blocks the rest
   of the UI.
-- **Capability-shaped detection, not platform branching.** The
-  sidebar pane appears when a per-project `upstreams` query returns
-  a non-empty list. The frontend never inspects `session.platform`.
+- **Capability-shaped detection, not platform branching.** A per-project
+  `upstreams` query determines the pane's content. The frontend never inspects
+  `session.platform`.
 
 ## Context Diagram
 
@@ -57,6 +57,7 @@ graph TD
         GHC["github client (existing)"]
         WT["worktree (existing)"]
         SS["sessionsvc (existing)"]
+        HS["owner-resolved hostsvc.Host"]
         ST["state.db setting table (new)"]
     end
 
@@ -65,7 +66,7 @@ graph TD
         FJ["Forgejo REST API"]
         Tea["~/.config/tea/config.yml"]
         GhCLI["gh CLI"]
-        Git["local git repo"]
+        Git["owner git repo"]
     end
 
     PRT -->|GET upstreams / prs| H
@@ -73,10 +74,11 @@ graph TD
     UP -->|POST handle| H
 
     H --> FR
+    H --> HS
     FR --> GHC
     FR --> FRG
-    FR -.->|read remotes| Git
-    FR -.->|read host map| Tea
+    HS -.->|read remotes| Git
+    FRG -.->|read host map| Tea
     GHC --> GhCLI
     GHC --> GH
     FRG --> FJ
@@ -241,7 +243,7 @@ graph TD
   - The handler returns `cross_fork: true` in the PR row so the
     frontend knows whether to show the confirmation.
 
-### AD-7: A new `'upstream'` pane is added to `RightPanel`, gated by detection
+### AD-7: A new always-discoverable `'upstream'` pane is added to `RightPanel`
 
 - **Status**: Decided (resolves OQ-2 in requirements)
 - **Context**: Requirements pinned the placement to the existing
@@ -249,9 +251,9 @@ graph TD
   We need to integrate without disrupting the existing pane
   resizing / persistence behavior.
 - **Options**:
-  1. **Extend `ChangesSidebarTab` with a new `'upstream'` value,
-     add a render branch in `Pane`, conditionally include the new
-     tab in `ALL_TABS` based on a hook (`useUpstreams`).**
+  1. **Extend `ChangesSidebarTab` with a new `'upstream'` value and
+     add a render branch in `Pane`; use `useUpstreams` to populate it
+     or show an empty state.**
   2. Build a separate sibling panel that lives next to
      `RightPanel`.
 - **Decision**: Option 1.
@@ -261,13 +263,10 @@ graph TD
   refresh button, and error boundaries for free.
 - **Consequences**:
   - `ChangesSidebarTab` in `uiStore.ts` gains `'upstream'`.
-  - `ALL_TABS` becomes a *derived* array: hooks consume
-    `useUpstreams(directory)` and prepend `'upstream'` to the
-    static list when the project has at least one supported
-    remote.
-  - The icon strip on the right also derives from the same
-    list, so the icon only appears when the pane is available
-    (no dimmed/unclickable affordance).
+  - `ALL_TABS` includes `'upstream'`; `useUpstreams(directory, remoteId)`
+    determines whether the pane renders remote groups or an empty state.
+  - The icon remains available so unsupported projects explain why no
+    forge content is shown.
   - `TAB_LABELS` and `TAB_ICONS` records gain entries for
     `'upstream'`.
 
@@ -393,14 +392,11 @@ graph TD
 
   type Forge interface {
       ListPRs(ctx context.Context, repo string, opts ListOptions) ([]PR, RateLimit, error)
+      LookupPR(ctx context.Context, repo string, number int) (PR, error)
       ListIssues(ctx context.Context, repo string, opts ListOptions) ([]Issue, RateLimit, error)
+      LookupIssue(ctx context.Context, repo string, number int) (Issue, error)
       CurrentUser(ctx context.Context) (CurrentUser, error)
       Authenticated() bool
-      // FetchPRHead fetches the PR head ref into a deterministic
-      // local branch (`ocman/pr-<n>`) on the given repo root.
-      // The branch is created idempotently. Returns the local
-      // branch name.
-      FetchPRHead(ctx context.Context, repoRoot string, remoteName string, prNumber int) (branch string, err error)
   }
 
   // RateLimit captures Retry-After / X-RateLimit-Reset for FR-12.
@@ -413,9 +409,9 @@ graph TD
   ```go
   func Detect(ctx context.Context, repoRoot string, hosts ForgejoHostMap) ([]Remote, error)
   ```
-  Runs `git -C <repoRoot> remote -v`, parses host from each URL,
-  classifies as `github` (host == `github.com`) or `forgejo`
-  (host found in `hosts` map). Unsupported remotes are dropped.
+  The owning host runs `git -C <repoRoot> remote -v` and returns parsed
+  candidates without raw URLs. The hub classifies `github.com` and Forgejo
+  hosts from its own configured clients; unsupported remotes are dropped.
 - **Template (`template.go`)**:
   ```go
   func RenderPrompt(template string, vars map[string]string) string
@@ -443,8 +439,7 @@ graph TD
   type Login struct { Host, URL, Token string }
   func TeaLogins() ([]Login, error)  // parses ~/.config/tea/config.yml
   ```
-- **Methods**: `ListPRs`, `ListIssues`, `CurrentUser`, `GetPR`,
-  `FetchPRHead` (shells out to `git fetch`).
+- **Methods**: `ListPRs`, `LookupPR`, `ListIssues`, `LookupIssue`, `CurrentUser`.
 - **Token order**: `FORGEJO_TOKEN` env → `GITEA_TOKEN` env → token
   from `tea` config for the matching host.
 
@@ -459,7 +454,6 @@ graph TD
   func (c *Client) ListPRs(ctx, repo, opts) ([]forge.PR, forge.RateLimit, error)
   func (c *Client) ListIssues(ctx, repo, opts) ([]forge.Issue, forge.RateLimit, error)
   func (c *Client) CurrentUser(ctx) (forge.CurrentUser, error)
-  func (c *Client) FetchPRHead(ctx, repoRoot, remoteName, n int) (string, error)
   ```
 - **No new token discovery code**: the existing `discoverToken()`
   already satisfies FR-11 for GitHub.
@@ -513,11 +507,12 @@ graph TD
   }
   ```
 
-  `remoteId` defaults to `local`; a named disconnected owner fails closed.
+  `remoteId` is required (`local` names the hub); a disconnected owner fails closed.
   Detection and filesystem git operations run on that owner. Forge metadata
   is fetched by the hub. Successful launches return `platform` and
-  `remoteId`, which the frontend stores on the optimistic session row; an
-  initial prompt-send failure returns HTTP 502. Upstream detection is cached
+  `remoteId`, which the frontend stores on the optimistic session row. If the
+  initial prompt fails, the created session is returned with `promptError` so
+  retrying cannot create a duplicate. Upstream detection is cached
   briefly per owner and directory, and the frontend shares one owner-scoped
   git-info poll across all remote groups.
 
@@ -536,7 +531,8 @@ graph TD
       `issue/<n>-<slug-of-title>` via `NewBranch=true`.
 
 - **Security posture**:
-  - All five GET endpoints use `s.get(...)` (auth-required).
+  - Upstream detection uses `s.get(...)`; the four token-backed forge GET
+    endpoints use `requireGET + requireLocalhost`.
   - `POST /api/project/handle` is `requirePOST + requireLocalhost`
     — same as `/api/worktree/create-and-launch` because it spawns
     tmux/opencode.
@@ -573,20 +569,12 @@ graph TD
     on first load (matches `info` / `working-tree` defaults).
   - `frontend/src/components/RightPanel.tsx`:
     - Add `'upstream'` to a *base* `ALL_TABS` constant.
-    - Replace the existing `ALL_TABS` array with a runtime
-      `availableTabs` derived from `useUpstreams(directory)`:
-      ```ts
-      const upstreams = useUpstreams(directory); // [] when unavailable
-      const availableTabs = useMemo(() =>
-          ALL_TABS.filter(t => t !== 'upstream' || upstreams.length > 0),
-          [upstreams.length]);
-      ```
-    - Pass `availableTabs` everywhere the file currently uses
-      `ALL_TABS`.
+    - Keep the upstream tab available; an empty result renders an explanatory
+      no-supported-upstream state.
     - Add a render branch in `Pane`:
       ```tsx
       {tab === 'upstream' && (
-        <UpstreamPane directory={directory} upstreams={upstreams} embedded ... />
+        <UpstreamPane directory={directory} remoteId={remoteId} upstreams={upstreams} embedded ... />
       )}
       ```
   - `TAB_LABELS['upstream'] = 'PRs & Issues'`; `TAB_ICONS['upstream']
@@ -611,15 +599,13 @@ graph TD
 
 #### New hooks (`frontend/src/lib/`)
 
-- `useUpstreams(directory)` — calls `/api/project/upstreams`;
-  returns `[]` until detection completes (so `availableTabs`
-  starts without `'upstream'` and updates as soon as the server
-  responds).
-- `usePrs(directory, remote, state, mine, page)` — calls
+- `useUpstreams(directory, remoteId)` — calls `/api/project/upstreams`;
+  returns `[]` until owner-routed detection completes.
+- `usePrs(directory, remoteId, remote, state, mine, page)` — calls
   `/api/project/prs`; one hook instance per remote.
-- `useIssues(directory, remote, state, mine, page)` — symmetric.
-- `useCurrentForgeUser(host)` — resolves the "mine" identity for a
-  host so the row-render layer can highlight ownership.
+- `useIssues(directory, remoteId, remote, state, mine, page)` — symmetric.
+- `useForgeUser(directory, remote, remoteId)` — resolves and caches the
+  owner-scoped "mine" identity when that filter is enabled.
 
 #### Settings UI
 
@@ -706,7 +692,7 @@ classDiagram
 
 ### Request / response shapes
 
-`GET /api/project/upstreams?dir=/abs/path`:
+`GET /api/project/upstreams?dir=/abs/path&remoteId=local`:
 ```json
 {
   "upstreams": [
@@ -716,7 +702,7 @@ classDiagram
 }
 ```
 
-`GET /api/project/prs?dir=...&remote=origin&state=open&mine=false&page=1`:
+`GET /api/project/prs?dir=...&remoteId=local&remote=origin&state=open&page=1`:
 ```json
 {
   "prs": [
@@ -796,25 +782,28 @@ sequenceDiagram
     actor User
     participant FE as Frontend RightPanel
     participant H as ocman backend
+    participant Host as owner hostsvc.Host
     participant F as forge package
     participant GH as github.com
     participant FJ as forgejo host
 
     User->>FE: Opens project
-    FE->>H: GET /api/project/upstreams?dir=...
-    H->>F: Detect(repoRoot)
+    FE->>H: GET /api/project/upstreams?dir=...&remoteId=owner
+    H->>Host: ProjectUpstreams(dir)
+    Host-->>H: parsed remote candidates
+    H->>F: classify with hub forge config
     F-->>H: [origin(github), internal(forgejo)]
     H-->>FE: {upstreams: [...]}
-    Note over FE: availableTabs now includes 'upstream'
+    Note over FE: Pane renders remotes or an empty state
 
     User->>FE: Clicks "PRs & Issues" icon
     par origin
-        FE->>H: GET /api/project/prs?remote=origin
+        FE->>H: GET /api/project/prs?dir=...&remoteId=owner&remote=origin
         H->>GH: GET /repos/alice/myproj/pulls
         GH-->>H: [...]
         H-->>FE: {prs: [...]}
     and internal
-        FE->>H: GET /api/project/prs?remote=internal
+        FE->>H: GET /api/project/prs?dir=...&remoteId=owner&remote=internal
         H->>FJ: GET /api/v1/repos/infra/myproj/pulls
         FJ-->>H: [...]
         H-->>FE: {prs: [...]}
@@ -829,7 +818,6 @@ sequenceDiagram
     actor User
     participant FE as LaunchSplitButton
     participant H as POST /api/project/handle
-    participant F as forge.FetchPRHead
     participant Host as hostsvc.Host
     participant SS as sessionsvc
     participant OC as opencode
@@ -840,8 +828,8 @@ sequenceDiagram
     FE-->>User: Confirm "Fetch pull/42/head?"
     User->>FE: Confirm
     FE->>H: {..., fetchHead: true}
-    H->>F: FetchPRHead(repo, origin, 42)
-    F-->>H: branch=ocman/pr-42
+    H->>Host: FetchPRHead(repo, origin, 42)
+    Host-->>H: branch=ocman/pr-42
     H->>Host: CreateWorktreeSession(branch=ocman/pr-42, NewBranch=false)
     Host->>OC: create worktree-scoped session
     OC-->>Host: session ID
@@ -895,7 +883,7 @@ internal/
       tea_config_test.go
     github/
       adapter.go          # new — wraps existing Client into a forge.Forge
-      list.go             # new — ListPRs / ListIssues / CurrentUser
+      list.go             # List/Lookup PRs and Issues / CurrentUser
       list_test.go
     integrations.go       # extended: adds Forgejo *forgejo.Registry
 
@@ -966,7 +954,7 @@ the next begins.
    types, `template.go` with table-driven tests. No HTTP, no
    detection yet.
 3. **GitHub client**: add `internal/forge/github` with
-   `ListPRs` / `ListIssues` / `CurrentUser` / `FetchPRHead`.
+   `ListPRs` / `LookupPR` / `ListIssues` / `LookupIssue` / `CurrentUser`.
    Unit-test against `httptest.Server`.
 4. **Forgejo client**: add the
    `internal/forge/forgejo` package, including the `tea`
@@ -999,7 +987,7 @@ the next begins.
 12. **Launch path — worktree mode, same-repo PRs and issues**:
 	plumbs through `hostsvc.Host.CreateWorktreeSession`.
     Worktree path for issues uses `issue/<n>-<slug>`.
-13. **Cross-fork PR fetch (FR-9a)**: `forge.FetchPRHead`, the
+13. **Cross-fork PR fetch (FR-9a)**: owner-routed `hostsvc.Host.FetchPRHead`, the
     `409 requires_fetch` response, the frontend confirmation
     dialog, then a second POST with `fetchHead=true`.
 14. **Error & rate-limit polish**: parse `Retry-After` and

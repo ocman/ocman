@@ -109,7 +109,6 @@ func classifyRemotes(raw []rawRemote, hosts ForgejoHostMap) []Remote {
 		seen[r.Name] = true
 		out = append(out, Remote{
 			Name: r.Name,
-			URL:  r.URL,
 			Host: host,
 			Type: t,
 			Repo: repo,
@@ -137,10 +136,15 @@ func parseRemoteURL(raw string) (host, repo string, ok bool) {
 	// SCP-style: "git@host:owner/repo[.git]"
 	if !strings.Contains(raw, "://") && strings.Contains(raw, "@") && strings.Contains(raw, ":") {
 		atIdx := strings.Index(raw, "@")
-		colonIdx := strings.Index(raw[atIdx:], ":") + atIdx
+		colonOffset := strings.Index(raw[atIdx+1:], ":")
+		if colonOffset < 0 {
+			return "", "", false
+		}
+		colonIdx := atIdx + 1 + colonOffset
 		host = raw[atIdx+1 : colonIdx]
 		path := raw[colonIdx+1:]
-		return host, trimRepo(path), host != "" && path != ""
+		repo = trimRepo(path)
+		return host, repo, host != "" && repo != ""
 	}
 
 	// URL-style.
@@ -154,12 +158,33 @@ func parseRemoteURL(raw string) (host, repo string, ok bool) {
 	default:
 		return "", "", false
 	}
-	return u.Host, trimRepo(u.Path), true
+	repo = trimRepo(u.Path)
+	return u.Host, repo, repo != ""
 }
 
 // trimRepo turns "/owner/repo.git" into "owner/repo".
 func trimRepo(path string) string {
 	path = strings.TrimPrefix(path, "/")
 	path = strings.TrimSuffix(path, ".git")
+	parts := strings.Split(path, "/")
+	if len(parts) != 2 || !validRepoPart(parts[0]) || !validRepoPart(parts[1]) {
+		return ""
+	}
 	return path
+}
+
+func validRepoPart(part string) bool {
+	if part == "" || part == "." || part == ".." {
+		return false
+	}
+	for _, r := range part {
+		if !validRepoRune(r) {
+			return false
+		}
+	}
+	return true
+}
+
+func validRepoRune(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || strings.ContainsRune("._-", r)
 }

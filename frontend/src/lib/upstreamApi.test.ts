@@ -22,16 +22,12 @@ describe('upstreamApi', () => {
   });
 
   describe('fetchUpstreams', () => {
-    it('includes explicit project ownership and defaults it to local', async () => {
-      fetchSpy
-        .mockResolvedValueOnce(new Response(JSON.stringify({ upstreams: [] }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ upstreams: [] }), { status: 200 }));
+    it('includes explicit project ownership', async () => {
+      fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ upstreams: [] }), { status: 200 }));
 
       await fetchUpstreams('/abs/dir', 'remote-1');
-      await fetchUpstreams('/abs/dir');
 
       expect(String(fetchSpy.mock.calls[0][0])).toContain('remoteId=remote-1');
-      expect(String(fetchSpy.mock.calls[1][0])).toContain('remoteId=local');
     });
 
     it('returns the upstreams array on 200', async () => {
@@ -43,20 +39,20 @@ describe('upstreamApi', () => {
           { status: 200 },
         ),
       );
-      const got = await fetchUpstreams('/abs/dir');
+      const got = await fetchUpstreams('/abs/dir', 'local');
       expect(got).toHaveLength(1);
       expect(got[0].remote).toBe('origin');
     });
 
     it('treats 404 (not a git repo) as empty', async () => {
       fetchSpy.mockResolvedValue(new Response('not a repo', { status: 404 }));
-      const got = await fetchUpstreams('/abs/dir');
+      const got = await fetchUpstreams('/abs/dir', 'local');
       expect(got).toEqual([]);
     });
 
     it('throws on other non-2xx', async () => {
       fetchSpy.mockResolvedValue(new Response('boom', { status: 500 }));
-      await expect(fetchUpstreams('/abs/dir')).rejects.toThrow(/500/);
+      await expect(fetchUpstreams('/abs/dir', 'local')).rejects.toThrow(/500/);
     });
   });
 
@@ -86,7 +82,7 @@ describe('upstreamApi', () => {
       };
       fetchSpy.mockResolvedValue(new Response(JSON.stringify(body), { status: 200 }));
 
-      const got = await fetchPRs({ dir: '/x', remote: 'origin', state: 'open', mine: undefined, page: 1 });
+      const got = await fetchPRs({ dir: '/x', remoteId: 'local', remote: 'origin', state: 'open', mine: undefined, page: 1 });
       expect(got.prs).toHaveLength(1);
       const calledUrl = String(fetchSpy.mock.calls[0][0]);
       expect(calledUrl).toContain('/api/project/prs');
@@ -101,7 +97,7 @@ describe('upstreamApi', () => {
       fetchSpy.mockResolvedValue(
         new Response(JSON.stringify({ prs: [], pagination: { page: 1, hasMore: false }, rateLimit: { limited: false } }), { status: 200 }),
       );
-      await fetchPRs({ dir: '/x', remote: 'origin', state: 'open', mine: 'alice', page: 1 });
+      await fetchPRs({ dir: '/x', remoteId: 'local', remote: 'origin', state: 'open', mine: 'alice', page: 1 });
       const calledUrl = String(fetchSpy.mock.calls[0][0]);
       expect(calledUrl).toContain('mine=alice');
     });
@@ -113,7 +109,7 @@ describe('upstreamApi', () => {
           { status: 429 },
         ),
       );
-      const err = await fetchPRs({ dir: '/x', remote: 'origin', state: 'open', mine: undefined, page: 1 })
+      const err = await fetchPRs({ dir: '/x', remoteId: 'local', remote: 'origin', state: 'open', mine: undefined, page: 1 })
         .then(() => null, (e) => e);
       expect(err).toBeInstanceOf(UpstreamApiError);
       expect((err as UpstreamApiError).envelope?.error.code).toBe('rate_limited');
@@ -128,6 +124,7 @@ describe('upstreamApi', () => {
       );
       const got = await postHandle({
         dir: '/x',
+        remoteId: 'local',
         remote: 'origin',
         type: 'pr',
         number: 1,
@@ -176,6 +173,7 @@ describe('upstreamApi', () => {
       );
       const err = await postHandle({
         dir: '/x',
+        remoteId: 'local',
         remote: 'origin',
         type: 'pr',
         number: 7,
@@ -194,6 +192,7 @@ describe('upstreamApi', () => {
       );
       const got = await fetchIssues({
         dir: '/x',
+        remoteId: 'local',
         remote: 'origin',
         state: 'open',
         mine: 'alice',
@@ -211,7 +210,7 @@ describe('upstreamApi', () => {
         new Response(JSON.stringify({ error: { code: 'x', message: 'no' } }), { status: 500 }),
       );
       await expect(
-        fetchIssues({ dir: '/x', remote: 'origin', state: 'open', mine: undefined, page: 1 }),
+        fetchIssues({ dir: '/x', remoteId: 'local', remote: 'origin', state: 'open', mine: undefined, page: 1 }),
       ).rejects.toBeInstanceOf(UpstreamApiError);
     });
   });
@@ -224,7 +223,7 @@ describe('upstreamApi', () => {
           { status: 200 },
         ),
       );
-      const got = await fetchPRChecks({ dir: '/x', remote: 'origin', sha: 'abc123' });
+      const got = await fetchPRChecks({ dir: '/x', remoteId: 'local', remote: 'origin', sha: 'abc123' });
       expect(got.state).toBe('success');
       expect(got.checks).toHaveLength(1);
       const [url] = fetchSpy.mock.calls[0];
@@ -239,7 +238,7 @@ describe('upstreamApi', () => {
         }),
       );
       await expect(
-        fetchPRChecks({ dir: '/x', remote: 'origin', sha: 'abc123' }),
+        fetchPRChecks({ dir: '/x', remoteId: 'local', remote: 'origin', sha: 'abc123' }),
       ).rejects.toBeInstanceOf(UpstreamApiError);
     });
   });
@@ -249,7 +248,7 @@ describe('upstreamApi', () => {
       fetchSpy.mockResolvedValue(
         new Response(JSON.stringify({ login: 'alice', host: 'github.com' }), { status: 200 }),
       );
-      const got = await fetchForgeUser({ dir: '/x', remote: 'origin' });
+      const got = await fetchForgeUser({ dir: '/x', remoteId: 'local', remote: 'origin' });
       expect(got).toEqual({ login: 'alice', host: 'github.com' });
     });
 
@@ -259,7 +258,7 @@ describe('upstreamApi', () => {
       fetchSpy.mockResolvedValue(
         new Response(JSON.stringify({ error: { code: 'auth_required', message: 'not authenticated' } }), { status: 401 }),
       );
-      const got = await fetchForgeUser({ dir: '/x', remote: 'origin' });
+      const got = await fetchForgeUser({ dir: '/x', remoteId: 'local', remote: 'origin' });
       expect(got).toBeNull();
     });
 
@@ -268,12 +267,12 @@ describe('upstreamApi', () => {
     // the "mine" filter.
     it('raises AuthError on a bare 401 (expired ocman session)', async () => {
       fetchSpy.mockResolvedValue(new Response('unauthorized', { status: 401 }));
-      await expect(fetchForgeUser({ dir: '/x', remote: 'origin' })).rejects.toThrow(AuthError);
+      await expect(fetchForgeUser({ dir: '/x', remoteId: 'local', remote: 'origin' })).rejects.toThrow(AuthError);
     });
 
     it('throws on other non-2xx', async () => {
       fetchSpy.mockResolvedValue(new Response('boom', { status: 500 }));
-      await expect(fetchForgeUser({ dir: '/x', remote: 'origin' })).rejects.toThrow(/500/);
+      await expect(fetchForgeUser({ dir: '/x', remoteId: 'local', remote: 'origin' })).rejects.toThrow(/500/);
     });
   });
 
@@ -311,33 +310,33 @@ describe('upstreamApi', () => {
 
     it('fetchUpstreams reports the auth error', async () => {
       fetchSpy.mockResolvedValue(bare401());
-      await expect(fetchUpstreams('/x')).rejects.toThrow(AuthError);
+      await expect(fetchUpstreams('/x', 'local')).rejects.toThrow(AuthError);
       expect(seen).toHaveLength(1);
     });
 
     it('fetchPRs reports the auth error', async () => {
       fetchSpy.mockResolvedValue(bare401());
-      await expect(fetchPRs({ dir: '/x', remote: 'origin', state: 'open', mine: undefined, page: 1 }))
+      await expect(fetchPRs({ dir: '/x', remoteId: 'local', remote: 'origin', state: 'open', mine: undefined, page: 1 }))
         .rejects.toThrow(AuthError);
       expect(seen).toHaveLength(1);
     });
 
     it('fetchIssues reports the auth error', async () => {
       fetchSpy.mockResolvedValue(bare401());
-      await expect(fetchIssues({ dir: '/x', remote: 'origin', state: 'open', mine: undefined, page: 1 }))
+      await expect(fetchIssues({ dir: '/x', remoteId: 'local', remote: 'origin', state: 'open', mine: undefined, page: 1 }))
         .rejects.toThrow(AuthError);
       expect(seen).toHaveLength(1);
     });
 
     it('fetchPRChecks reports the auth error', async () => {
       fetchSpy.mockResolvedValue(bare401());
-      await expect(fetchPRChecks({ dir: '/x', remote: 'origin', sha: 'abc' })).rejects.toThrow(AuthError);
+      await expect(fetchPRChecks({ dir: '/x', remoteId: 'local', remote: 'origin', sha: 'abc' })).rejects.toThrow(AuthError);
       expect(seen).toHaveLength(1);
     });
 
     it('postHandle reports the auth error', async () => {
       fetchSpy.mockResolvedValue(bare401());
-      await expect(postHandle({ dir: '/x', remote: 'origin', type: 'pr', number: 1, mode: 'session' }))
+      await expect(postHandle({ dir: '/x', remoteId: 'local', remote: 'origin', type: 'pr', number: 1, mode: 'session' }))
         .rejects.toThrow(AuthError);
       expect(seen).toHaveLength(1);
     });
@@ -347,7 +346,7 @@ describe('upstreamApi', () => {
       fetchSpy.mockResolvedValue(
         new Response(JSON.stringify({ error: { code: 'auth_required', message: 'no token' } }), { status: 401 }),
       );
-      await expect(fetchPRs({ dir: '/x', remote: 'origin', state: 'open', mine: undefined, page: 1 }))
+      await expect(fetchPRs({ dir: '/x', remoteId: 'local', remote: 'origin', state: 'open', mine: undefined, page: 1 }))
         .rejects.toThrow(UpstreamApiError);
       expect(seen).toHaveLength(0);
     });

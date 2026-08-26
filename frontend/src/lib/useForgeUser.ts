@@ -1,7 +1,8 @@
 import { fetchForgeUser } from './upstreamApi';
 import { useAsyncResource } from './useAsyncResource';
 
-const forgeUsers = new Map<string, Promise<string | null>>();
+const forgeUsers = new Map<string, string>();
+const maxForgeUsers = 32;
 
 export function _resetForgeUserCacheForTests(): void {
   forgeUsers.clear();
@@ -20,28 +21,25 @@ export function _resetForgeUserCacheForTests(): void {
 export function useForgeUser(
   dir: string | undefined,
   remote: string | undefined,
-  remoteId = 'local',
+  remoteId: string,
 ): string | null {
   const key = `${remoteId}\0${dir}\0${remote}`;
   // Errors (e.g. 401 unauthenticated) resolve to null — the resource's
   // initial value — which is exactly the "no login" signal callers want.
   const { data } = useAsyncResource<string | null>({
-    fetcher: () => {
-      let request = forgeUsers.get(key);
-      if (!request) {
-        request = fetchForgeUser({ dir: dir!, remoteId, remote: remote! })
-          .then((u) => {
-            const login = u?.login ?? null;
-            if (login === null) forgeUsers.delete(key);
-            return login;
-          })
-          .catch((err) => {
-            forgeUsers.delete(key);
-            throw err;
-          });
-        forgeUsers.set(key, request);
-      }
-      return request;
+    fetcher: (signal) => {
+      const cached = forgeUsers.get(key);
+      if (cached) return Promise.resolve(cached);
+      return fetchForgeUser({ dir: dir!, remoteId, remote: remote!, signal }).then((u) => {
+        const login = u?.login ?? null;
+        if (login !== null) {
+          if (forgeUsers.size >= maxForgeUsers) {
+            forgeUsers.delete(forgeUsers.keys().next().value!);
+          }
+          forgeUsers.set(key, login);
+        }
+        return login;
+      });
     },
     deps: [dir, remote, remoteId],
     initial: null,

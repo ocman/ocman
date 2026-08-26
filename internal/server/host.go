@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"os/exec"
 
@@ -105,30 +104,18 @@ func (s *Server) hostProjectUpstreams(ctx context.Context, dir string) (*hostsvc
 	if err != nil {
 		return nil, err
 	}
-	var hosts forge.ForgejoHostMap
-	if s.integrations != nil && s.integrations.Forgejo != nil {
-		hosts = s.integrations.Forgejo
-	}
-	remotes, err := forge.Detect(ctx, repoRoot, hosts)
+	remotes, err := forge.Detect(ctx, repoRoot, anyForgejoHost{})
 	return &hostsvc.ProjectUpstreams{RepoRoot: repoRoot, Remotes: remotes}, err
 }
 
+type anyForgejoHost struct{}
+
+func (anyForgejoHost) Knows(string) bool { return true }
+
 func (s *Server) hostFetchPRHead(ctx context.Context, req hostsvc.FetchPRHeadRequest) (string, error) {
-	upstreams, err := s.hostProjectUpstreams(ctx, req.RepoRoot)
-	if err != nil {
-		return "", err
-	}
-	rem, ok := findRemote(upstreams.Remotes, req.Remote)
-	if !ok {
-		return "", errors.New("remote not found among project upstreams")
-	}
-	f, ok := s.resolveForge(rem)
-	if !ok {
-		return "", errors.New("no forge client configured for " + rem.Host)
-	}
 	ctx, cancel := context.WithTimeout(ctx, prHeadFetchTimeout)
 	defer cancel()
-	return f.FetchPRHead(ctx, upstreams.RepoRoot, req.Remote, req.Number)
+	return git.FetchPRHead(ctx, req.RepoRoot, req.Remote, req.Number)
 }
 
 // hostCaps reports which host operations are available on this machine.

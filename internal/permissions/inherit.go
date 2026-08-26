@@ -1,8 +1,8 @@
 // Package permissions builds an inherited permission ruleset for a
-// worktree/child session from a parent session's accumulated
+// worktree session from a parent session's accumulated
 // always-allow approvals (issue #101). It is a thin, dependency-light
 // helper — no I/O of its own beyond the injected lister — so both the
-// MCP split path and the /wt HTTP handler can reuse it.
+// worktree launch paths can reuse it.
 package permissions
 
 import (

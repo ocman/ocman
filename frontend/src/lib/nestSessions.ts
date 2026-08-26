@@ -2,7 +2,7 @@
  * Parent/child nesting for session lists.
  *
  * A session may descend from another via `parentId` (an OpenCode
- * subagent, or a session spawned through the MCP split tools). The
+ * native Task subagent). The
  * lists render this as a tree: each parent is immediately followed by
  * its children, indented by `depth`.
  *

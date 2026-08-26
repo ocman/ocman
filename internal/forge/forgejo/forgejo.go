@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/forge"
-	"github.com/NoUseFreak/ocman/internal/gitexec"
 	"github.com/NoUseFreak/ocman/internal/forge/forgehttp"
 )
 
@@ -131,6 +130,22 @@ func (c *Client) ListPRs(ctx context.Context, repo string, opts forge.ListOption
 	return out, rl, nil
 }
 
+func (c *Client) LookupPR(ctx context.Context, repo string, number int) (forge.PR, error) {
+	path := fmt.Sprintf("/api/v1/repos/%s/pulls/%d", repo, number)
+	body, _, status, err := c.fetch(ctx, path)
+	if err != nil {
+		return forge.PR{}, err
+	}
+	if status != http.StatusOK {
+		return forge.PR{}, fmt.Errorf("forgejo %s: status %d", path, status)
+	}
+	var raw fjPR
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return forge.PR{}, fmt.Errorf("decoding pull: %w", err)
+	}
+	return raw.toForge(c.host, repo), nil
+}
+
 // ListIssues returns one page of issues for owner/name. Uses
 // type=issues to ask Forgejo to scope the result; rows with
 // pull_request set are also skipped defensively.
@@ -181,6 +196,25 @@ func (c *Client) ListIssues(ctx context.Context, repo string, opts forge.ListOpt
 	return out, rl, nil
 }
 
+func (c *Client) LookupIssue(ctx context.Context, repo string, number int) (forge.Issue, error) {
+	path := fmt.Sprintf("/api/v1/repos/%s/issues/%d", repo, number)
+	body, _, status, err := c.fetch(ctx, path)
+	if err != nil {
+		return forge.Issue{}, err
+	}
+	if status != http.StatusOK {
+		return forge.Issue{}, fmt.Errorf("forgejo %s: status %d", path, status)
+	}
+	var raw fjIssue
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return forge.Issue{}, fmt.Errorf("decoding issue: %w", err)
+	}
+	if raw.PullRequest != nil {
+		return forge.Issue{}, fmt.Errorf("forgejo issue %d is a pull request", number)
+	}
+	return raw.toForge(c.host, repo), nil
+}
+
 // CurrentUser returns the authenticated user. Returns
 // forge.ErrUnauthenticated when the client has no token.
 // Implements forge.Forge.CurrentUser.
@@ -205,27 +239,6 @@ func (c *Client) CurrentUser(ctx context.Context) (forge.CurrentUser, error) {
 		return forge.CurrentUser{}, fmt.Errorf("decoding /user: %w", err)
 	}
 	return forge.CurrentUser{Host: c.host, Login: raw.Login}, nil
-}
-
-// FetchPRHead fetches the PR head ref into a deterministic local
-// branch "ocman/pr-<n>". Forgejo's PR refs follow the same
-// refs/pull/<n>/head convention as GitHub, so the implementation
-// is identical.
-//
-// Implements forge.Forge.FetchPRHead.
-func (c *Client) FetchPRHead(ctx context.Context, repoRoot, remoteName string, prNumber int) (string, error) {
-	if repoRoot == "" || remoteName == "" || prNumber <= 0 {
-		return "", fmt.Errorf("forgejo: FetchPRHead requires repoRoot, remoteName, prNumber > 0")
-	}
-	branch := fmt.Sprintf("ocman/pr-%d", prNumber)
-	refspec := fmt.Sprintf("+refs/pull/%d/head:refs/heads/%s", prNumber, branch)
-	cmd := gitexec.Command(ctx, "-C", repoRoot, "fetch", remoteName, refspec)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("git fetch %s %s: %w: %s",
-			remoteName, refspec, err, strings.TrimSpace(string(out)))
-	}
-	return branch, nil
 }
 
 // fetch issues a GET against c.baseURL + path. Identical to the

@@ -18,6 +18,8 @@ type fakePlatform struct {
 
 	sendErr       error
 	permissionErr error
+	createResp    *platforms.CreateSessionResponse
+	createNil     bool
 
 	sent        []platforms.SendMessageRequest
 	commands    []platforms.ExecuteCommandRequest
@@ -80,6 +82,12 @@ func (f *fakePlatform) RejectQuestion(_ context.Context, req platforms.RejectQue
 }
 func (f *fakePlatform) CreateSession(_ context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 	f.creates = append(f.creates, req)
+	if f.createNil {
+		return nil, nil
+	}
+	if f.createResp != nil {
+		return f.createResp, nil
+	}
 	return &platforms.CreateSessionResponse{ID: "new-session"}, nil
 }
 func (f *fakePlatform) ForkSession(_ context.Context, req platforms.ForkSessionRequest) (*platforms.CreateSessionResponse, error) {
@@ -475,6 +483,18 @@ func TestCreateFiresSessionCreatedHook(t *testing.T) {
 	}
 	if created[0].Directory != "/tmp" || created[0].Title != "hi" || created[0].Platform != "opencode" {
 		t.Fatalf("expected provisional fields on hook, got %+v", created[0])
+	}
+}
+
+func TestCreateRejectsInvalidAdapterResponse(t *testing.T) {
+	for _, p := range []*fakePlatform{
+		{id: "opencode", available: true, createNil: true},
+		{id: "opencode", available: true, createResp: &platforms.CreateSessionResponse{}},
+	} {
+		svc, _ := newService(p, Hooks{})
+		if _, err := svc.Create(context.Background(), "opencode", platforms.CreateSessionRequest{Directory: "/tmp"}); err == nil {
+			t.Fatal("Create accepted an invalid adapter response")
+		}
 	}
 }
 

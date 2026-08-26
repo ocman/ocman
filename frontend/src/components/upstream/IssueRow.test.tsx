@@ -25,7 +25,7 @@ afterEach(() => cleanup());
 
 describe('IssueRow', () => {
   it('renders the number, title, and status', () => {
-    render(<IssueRow issue={makeIssue()} directory="/repo" remote="origin" />);
+    render(<IssueRow issue={makeIssue()} directory="/repo" remoteId="local" remote="origin" />);
     expect(screen.getByTestId('issue-row-7')).toBeInTheDocument();
     expect(screen.getByText('#7')).toBeInTheDocument();
     expect(screen.getByText('Something is broken')).toBeInTheDocument();
@@ -33,7 +33,7 @@ describe('IssueRow', () => {
   });
 
   it('is collapsed by default and expands on summary click', () => {
-    render(<IssueRow issue={makeIssue()} directory="/repo" remote="origin" />);
+    render(<IssueRow issue={makeIssue()} directory="/repo" remoteId="local" remote="origin" />);
     expect(screen.queryByTestId('issue-detail-7')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { expanded: false }));
@@ -43,20 +43,20 @@ describe('IssueRow', () => {
 
   it('renders the body as markdown when present', () => {
     render(
-      <IssueRow issue={makeIssue({ body: 'Steps to **reproduce**' })} directory="/repo" remote="origin" />,
+      <IssueRow issue={makeIssue({ body: 'Steps to **reproduce**' })} directory="/repo" remoteId="local" remote="origin" />,
     );
     fireEvent.click(screen.getByRole('button', { expanded: false }));
     expect(screen.getByText('reproduce')).toBeInTheDocument();
   });
 
   it('shows "No description." when the body is empty', () => {
-    render(<IssueRow issue={makeIssue({ body: '' })} directory="/repo" remote="origin" />);
+    render(<IssueRow issue={makeIssue({ body: '' })} directory="/repo" remoteId="local" remote="origin" />);
     fireEvent.click(screen.getByRole('button', { expanded: false }));
     expect(screen.getByText('No description.')).toBeInTheDocument();
   });
 
   it('exposes an open-in-browser link that targets the issue URL on the forge host', () => {
-    render(<IssueRow issue={makeIssue()} directory="/repo" remote="origin" />);
+    render(<IssueRow issue={makeIssue()} directory="/repo" remoteId="local" remote="origin" />);
     const open = screen.getByTestId('issue-row-7-open');
     expect(open).toHaveAttribute('href', 'https://example.com/issues/7');
     expect(open).toHaveAttribute('target', '_blank');

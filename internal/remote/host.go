@@ -123,7 +123,13 @@ func (h *remoteHost) ProjectUpstreams(ctx context.Context, dir string) (*hostsvc
 		return nil, err
 	}
 	var out hostsvc.ProjectUpstreams
-	return &out, unmarshalJSON(resp.Payload, &out)
+	if err := unmarshalJSON(resp.Payload, &out); err != nil {
+		return nil, err
+	}
+	for i := range out.Remotes {
+		out.Remotes[i].URL = ""
+	}
+	return &out, nil
 }
 
 func (h *remoteHost) FetchPRHead(ctx context.Context, req hostsvc.FetchPRHeadRequest) (string, error) {
@@ -142,7 +148,10 @@ func (h *remoteHost) FetchPRHead(ctx context.Context, req hostsvc.FetchPRHeadReq
 	var out struct {
 		Branch string `json:"branch"`
 	}
-	return out.Branch, unmarshalJSON(resp.Payload, &out)
+	if err := unmarshalJSON(resp.Payload, &out); err != nil {
+		return "", err
+	}
+	return out.Branch, nil
 }
 
 func (h *remoteHost) ListWorktrees(ctx context.Context, dir string) ([]git.Worktree, error) {

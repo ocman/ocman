@@ -32,14 +32,14 @@ export interface UseUpstreamListResult<T extends UpstreamListItem> {
 export function useUpstreamList<T extends UpstreamListItem>(opts: {
   kind: 'prs' | 'issues';
   dir: string;
-  remoteId?: string;
+  remoteId: string;
   remote: string;
   state: StateFilter;
   mine: string | undefined;
   /** When false (e.g. tab not yet opened), no fetch is issued. */
   enabled: boolean;
 }): UseUpstreamListResult<T> {
-  const { kind, dir, remoteId = 'local', remote, state, mine, enabled } = opts;
+  const { kind, dir, remoteId, remote, state, mine, enabled } = opts;
   const [page, setPage] = useState(1);
   const [items, setItems] = useState<T[]>([]);
   const [loading, setLoading] = useState(false);
@@ -63,6 +63,8 @@ export function useUpstreamList<T extends UpstreamListItem>(opts: {
 
   useEffect(() => {
     if (!enabled || !dir || !remote) {
+      const reset = () => setItems([]);
+      reset();
       return;
     }
     // Defer the synchronous setStates into a helper so the lint
@@ -72,6 +74,7 @@ export function useUpstreamList<T extends UpstreamListItem>(opts: {
       abortRef.current?.abort();
       const ctrl = new AbortController();
       abortRef.current = ctrl;
+      setItems([]);
       setLoading(true);
       setError(null);
 

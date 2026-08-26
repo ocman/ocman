@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -17,13 +18,24 @@ import (
 )
 
 const (
-	projectUpstreamsTTL = 10 * time.Second
-	projectUpstreamsMax = 128
+	projectUpstreamsTTL        = 10 * time.Second
+	projectUpstreamsTimeout    = 10 * time.Second
+	projectUpstreamsMax        = 128
+	projectUpstreamsConcurrent = 8
 )
 
 type projectUpstreamsCacheEntry struct {
 	value     *hostsvc.ProjectUpstreams
 	expiresAt time.Time
+}
+
+type projectUpstreamsPending struct {
+	done    chan struct{}
+	ctx     context.Context
+	cancel  context.CancelFunc
+	waiters int
+	value   *hostsvc.ProjectUpstreams
+	err     error
 }
 
 // detectUpstreams asks the resolved owner to inspect its repository and
@@ -36,23 +48,68 @@ func (s *Server) detectUpstreams(ctx context.Context, host hostsvc.Host, project
 	}
 	s.projectUpstreamsMu.Lock()
 	cached, ok := s.projectUpstreams[key]
-	s.projectUpstreamsMu.Unlock()
 	if ok && now.Before(cached.expiresAt) {
+		s.projectUpstreamsMu.Unlock()
 		return cached.value.RepoRoot, cached.value.Remotes, nil
 	}
-
-	value, err, _ := s.projectUpstreamsGroup.Do(key, func() (any, error) {
-		s.projectUpstreamsMu.Lock()
-		cached, ok := s.projectUpstreams[key]
+	if pending := s.projectUpstreamsPending[key]; pending != nil {
+		pending.waiters++
 		s.projectUpstreamsMu.Unlock()
-		if ok && now.Before(cached.expiresAt) {
-			return cached.value, nil
+		return s.waitProjectUpstreams(ctx, key, pending)
+	}
+	if err := ctx.Err(); err != nil {
+		s.projectUpstreamsMu.Unlock()
+		return "", nil, err
+	}
+	if s.projectUpstreamsSlots == nil {
+		s.projectUpstreamsSlots = make(chan struct{}, projectUpstreamsConcurrent)
+	}
+	slots := s.projectUpstreamsSlots
+	if s.projectUpstreamsPending == nil {
+		s.projectUpstreamsPending = make(map[string]*projectUpstreamsPending)
+	}
+	if len(s.projectUpstreamsPending) >= projectUpstreamsMax {
+		s.projectUpstreamsMu.Unlock()
+		return "", nil, errors.New("too many upstream detections in progress")
+	}
+	pendingCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), projectUpstreamsTimeout)
+	pending := &projectUpstreamsPending{done: make(chan struct{}), ctx: pendingCtx, cancel: cancel, waiters: 1}
+	s.projectUpstreamsPending[key] = pending
+	s.projectUpstreamsMu.Unlock()
+	go s.loadProjectUpstreams(key, projectDir, host, slots, pending)
+	return s.waitProjectUpstreams(ctx, key, pending)
+}
+
+func (s *Server) loadProjectUpstreams(key, projectDir string, host hostsvc.Host, slots chan struct{}, pending *projectUpstreamsPending) {
+	select {
+	case slots <- struct{}{}:
+		defer func() { <-slots }()
+	case <-pending.ctx.Done():
+		s.finishProjectUpstreams(key, pending, nil, pending.ctx.Err())
+		return
+	}
+	upstreams, err := host.ProjectUpstreams(pending.ctx, projectDir)
+	if err == nil && upstreams == nil {
+		err = errors.New("owner returned no upstream result")
+	}
+	if err == nil && !filepath.IsAbs(upstreams.RepoRoot) {
+		err = errors.New("owner returned invalid repository root")
+	}
+	if err == nil {
+		upstreams.Remotes = s.classifyProjectRemotes(upstreams.Remotes)
+	}
+	s.finishProjectUpstreams(key, pending, upstreams, err)
+}
+
+func (s *Server) finishProjectUpstreams(key string, pending *projectUpstreamsPending, upstreams *hostsvc.ProjectUpstreams, err error) {
+	s.projectUpstreamsMu.Lock()
+	defer s.projectUpstreamsMu.Unlock()
+	current := s.projectUpstreamsPending[key] == pending
+	if err == nil && current {
+		expiresAt := time.Now()
+		if s.upstreamNow != nil {
+			expiresAt = s.upstreamNow()
 		}
-		upstreams, err := host.ProjectUpstreams(ctx, projectDir)
-		if err != nil {
-			return nil, err
-		}
-		s.projectUpstreamsMu.Lock()
 		if s.projectUpstreams == nil {
 			s.projectUpstreams = make(map[string]projectUpstreamsCacheEntry)
 		}
@@ -62,15 +119,80 @@ func (s *Server) detectUpstreams(ctx context.Context, host hostsvc.Host, project
 				break
 			}
 		}
-		s.projectUpstreams[key] = projectUpstreamsCacheEntry{value: upstreams, expiresAt: now.Add(projectUpstreamsTTL)}
-		s.projectUpstreamsMu.Unlock()
-		return upstreams, nil
-	})
-	if err != nil {
-		return "", nil, err
+		s.projectUpstreams[key] = projectUpstreamsCacheEntry{value: upstreams, expiresAt: expiresAt.Add(projectUpstreamsTTL)}
 	}
-	upstreams := value.(*hostsvc.ProjectUpstreams)
-	return upstreams.RepoRoot, upstreams.Remotes, nil
+	pending.value, pending.err = upstreams, err
+	pending.cancel()
+	if current {
+		delete(s.projectUpstreamsPending, key)
+	}
+	close(pending.done)
+}
+
+func (s *Server) waitProjectUpstreams(ctx context.Context, key string, pending *projectUpstreamsPending) (string, []forge.Remote, error) {
+	defer func() {
+		s.projectUpstreamsMu.Lock()
+		pending.waiters--
+		if pending.waiters == 0 && s.projectUpstreamsPending[key] == pending {
+			delete(s.projectUpstreamsPending, key)
+			pending.cancel()
+		}
+		s.projectUpstreamsMu.Unlock()
+	}()
+	select {
+	case <-ctx.Done():
+		return "", nil, ctx.Err()
+	case <-pending.done:
+		if pending.err != nil {
+			return "", nil, pending.err
+		}
+		return pending.value.RepoRoot, pending.value.Remotes, nil
+	}
+}
+
+func (s *Server) classifyProjectRemotes(remotes []forge.Remote) []forge.Remote {
+	out := make([]forge.Remote, 0, len(remotes))
+	for _, rem := range remotes {
+		rem.URL = ""
+		if !validProjectRemote(rem) {
+			continue
+		}
+		switch {
+		case rem.Host == "github.com":
+			rem.Type = forge.RemoteTypeGitHub
+		case s.integrations != nil && s.integrations.Forgejo != nil && s.integrations.Forgejo.Knows(rem.Host):
+			rem.Type = forge.RemoteTypeForgejo
+		default:
+			continue
+		}
+		out = append(out, rem)
+	}
+	return out
+}
+
+func validProjectRemote(rem forge.Remote) bool {
+	if strings.TrimSpace(rem.Name) == "" || strings.TrimSpace(rem.Host) == "" || strings.ContainsAny(rem.Host, "/\\?#@") {
+		return false
+	}
+	parts := strings.Split(rem.Repo, "/")
+	if len(parts) != 2 {
+		return false
+	}
+	for _, part := range parts {
+		if part == "" || part == "." || part == ".." {
+			return false
+		}
+		for _, r := range part {
+			if !validProjectRepoRune(r) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func validProjectRepoRune(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || strings.ContainsRune("._-", r)
 }
 
 // resolveForge returns the Forge implementation that handles the given
@@ -124,8 +246,12 @@ func (s *Server) handleProjectUpstreams(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+	remoteID, ok := requireProjectRemoteID(w, r.URL.Query().Get("remoteId"))
+	if !ok {
+		return
+	}
 
-	host, ok := s.resolveOwner(w, dir, projectRemoteID(r.URL.Query().Get("remoteId")))
+	host, ok := s.resolveOwner(w, dir, remoteID)
 	if !ok {
 		return
 	}
@@ -174,6 +300,7 @@ func (s *Server) handleProjectPRs(w http.ResponseWriter, r *http.Request) {
 		writeProjectListError(w, http.StatusBadGateway, "upstream_status", err.Error())
 		return
 	}
+	hasMore := !rl.Limited && len(prs) >= effectivePerPage(opts)
 
 	// Apply mine filtering when the caller asked for it. Some forges
 	// support server-side filtering via creator/assignee params, but
@@ -184,7 +311,7 @@ func (s *Server) handleProjectPRs(w http.ResponseWriter, r *http.Request) {
 		prs = filterPRsForUser(prs, opts.Mine)
 	}
 
-	writeForgeListResponse(w, "prs", prs, rl, opts)
+	writeForgeListResponse(w, "prs", prs, rl, opts, hasMore)
 }
 
 // handleProjectIssues lists issues for one remote of the current project.
@@ -208,20 +335,20 @@ func (s *Server) handleProjectIssues(w http.ResponseWriter, r *http.Request) {
 		writeProjectListError(w, http.StatusBadGateway, "upstream_status", err.Error())
 		return
 	}
+	hasMore := !rl.Limited && len(issues) >= effectivePerPage(opts)
 
 	if opts.Mine != "" {
 		issues = filterIssuesForUser(issues, opts.Mine)
 	}
 
-	writeForgeListResponse(w, "issues", issues, rl, opts)
+	writeForgeListResponse(w, "issues", issues, rl, opts, hasMore)
 }
 
 // writeForgeListResponse writes the shared { <key>, pagination,
 // rateLimit } envelope for the PR/Issue list endpoints. hasMore is
 // false when rate-limited (the page is incomplete) and otherwise uses
 // the "full page implies more" heuristic.
-func writeForgeListResponse[T any](w http.ResponseWriter, key string, items []T, rl forge.RateLimit, opts forge.ListOptions) {
-	hasMore := !rl.Limited && len(items) >= effectivePerPage(opts)
+func writeForgeListResponse[T any](w http.ResponseWriter, key string, items []T, rl forge.RateLimit, opts forge.ListOptions, hasMore bool) {
 	writeJSON(w, map[string]interface{}{
 		key:          items,
 		"pagination": map[string]interface{}{"page": opts.Page, "hasMore": hasMore},
@@ -238,14 +365,20 @@ func writeForgeListResponse[T any](w http.ResponseWriter, key string, items []T,
 // 200: { "login": "alice", "host": "github.com" }
 // 401: caller is unauthenticated against this forge.
 func (s *Server) handleProjectForgeUser(w http.ResponseWriter, r *http.Request) {
-	dir := normaliseDirParam(r.URL.Query().Get("dir"))
-	remoteName := strings.TrimSpace(r.URL.Query().Get("remote"))
-	if dir == "" || remoteName == "" {
-		http.Error(w, "dir and remote are required", http.StatusBadRequest)
+	dir, ok := parseAbsDir(w, r)
+	if !ok {
 		return
 	}
-
-	host, ok := s.resolveOwner(w, dir, projectRemoteID(r.URL.Query().Get("remoteId")))
+	remoteName := strings.TrimSpace(r.URL.Query().Get("remote"))
+	if remoteName == "" {
+		http.Error(w, "remote is required", http.StatusBadRequest)
+		return
+	}
+	remoteID, ok := requireProjectRemoteID(w, r.URL.Query().Get("remoteId"))
+	if !ok {
+		return
+	}
+	host, ok := s.resolveOwner(w, dir, remoteID)
 	if !ok {
 		return
 	}
@@ -285,15 +418,25 @@ func (s *Server) handleProjectForgeUser(w http.ResponseWriter, r *http.Request) 
 //
 // 200: { "state": "success|pending|failure|unknown", "checks": [...] }
 func (s *Server) handleProjectPRChecks(w http.ResponseWriter, r *http.Request) {
-	dir := normaliseDirParam(r.URL.Query().Get("dir"))
-	remoteName := strings.TrimSpace(r.URL.Query().Get("remote"))
-	sha := strings.TrimSpace(r.URL.Query().Get("sha"))
-	if dir == "" || remoteName == "" || sha == "" {
-		http.Error(w, "dir, remote and sha query parameters are required", http.StatusBadRequest)
+	dir, ok := parseAbsDir(w, r)
+	if !ok {
 		return
 	}
-
-	host, ok := s.resolveOwner(w, dir, projectRemoteID(r.URL.Query().Get("remoteId")))
+	remoteName := strings.TrimSpace(r.URL.Query().Get("remote"))
+	sha := strings.TrimSpace(r.URL.Query().Get("sha"))
+	if remoteName == "" || sha == "" {
+		http.Error(w, "remote and sha query parameters are required", http.StatusBadRequest)
+		return
+	}
+	if !validCommitSHA(sha) {
+		http.Error(w, "sha must be a hexadecimal commit ID", http.StatusBadRequest)
+		return
+	}
+	remoteID, ok := requireProjectRemoteID(w, r.URL.Query().Get("remoteId"))
+	if !ok {
+		return
+	}
+	host, ok := s.resolveOwner(w, dir, remoteID)
 	if !ok {
 		return
 	}
@@ -333,19 +476,38 @@ func (s *Server) handleProjectPRChecks(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func validCommitSHA(sha string) bool {
+	if len(sha) < 3 || len(sha) > 64 {
+		return false
+	}
+	for _, r := range sha {
+		if !validHexRune(r) {
+			return false
+		}
+	}
+	return true
+}
+
+func validHexRune(r rune) bool {
+	return (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
+}
+
 // parseProjectListParams decodes the shared query parameters of the
 // PR/Issue list endpoints: dir, remote, state, mine, page. Validates
 // each, writes the appropriate error response on failure, and resolves
 // the remote into a forge.Remote so the caller can dispatch to the
 // right Forge implementation.
 func (s *Server) parseProjectListParams(w http.ResponseWriter, r *http.Request) (string, forge.Remote, forge.ListOptions, bool) {
-	dir := normaliseDirParam(r.URL.Query().Get("dir"))
+	dir, ok := parseAbsDir(w, r)
+	if !ok {
+		return "", forge.Remote{}, forge.ListOptions{}, false
+	}
 	remoteName := strings.TrimSpace(r.URL.Query().Get("remote"))
 	state := strings.TrimSpace(r.URL.Query().Get("state"))
 	mine := strings.TrimSpace(r.URL.Query().Get("mine"))
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	if dir == "" || remoteName == "" {
-		http.Error(w, "dir and remote query parameters are required", http.StatusBadRequest)
+	if remoteName == "" {
+		http.Error(w, "remote query parameter is required", http.StatusBadRequest)
 		return "", forge.Remote{}, forge.ListOptions{}, false
 	}
 	switch state {
@@ -356,7 +518,11 @@ func (s *Server) parseProjectListParams(w http.ResponseWriter, r *http.Request) 
 		return "", forge.Remote{}, forge.ListOptions{}, false
 	}
 
-	host, ok := s.resolveOwner(w, dir, projectRemoteID(r.URL.Query().Get("remoteId")))
+	remoteID, ok := requireProjectRemoteID(w, r.URL.Query().Get("remoteId"))
+	if !ok {
+		return "", forge.Remote{}, forge.ListOptions{}, false
+	}
+	host, ok := s.resolveOwner(w, dir, remoteID)
 	if !ok {
 		return "", forge.Remote{}, forge.ListOptions{}, false
 	}
@@ -392,11 +558,13 @@ func effectivePerPage(opts forge.ListOptions) int {
 	return 30
 }
 
-func projectRemoteID(remoteID string) string {
+func requireProjectRemoteID(w http.ResponseWriter, raw string) (string, bool) {
+	remoteID := strings.TrimSpace(raw)
 	if remoteID == "" {
-		return "local"
+		http.Error(w, "remoteId is required", http.StatusBadRequest)
+		return "", false
 	}
-	return remoteID
+	return remoteID, true
 }
 
 // filterForUser keeps items whose author, assignees, or any of the

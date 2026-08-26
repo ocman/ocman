@@ -22,7 +22,7 @@ type forgeRoundTripHost struct {
 
 func (h *forgeRoundTripHost) ProjectUpstreams(_ context.Context, dir string) (*hostsvc.ProjectUpstreams, error) {
 	h.projectDir = dir
-	return &hostsvc.ProjectUpstreams{RepoRoot: "/owner/repo", Remotes: []forge.Remote{{Name: "origin", Type: forge.RemoteTypeGitHub, Host: "github.com", Repo: "owner/repo"}}}, h.upstreamErr
+	return &hostsvc.ProjectUpstreams{RepoRoot: "/owner/repo", Remotes: []forge.Remote{{Name: "origin", URL: "https://user:secret@github.com/owner/repo.git", Type: forge.RemoteTypeGitHub, Host: "github.com", Repo: "owner/repo"}}}, h.upstreamErr
 }
 
 func TestRemoteHostProjectUpstreamsPreservesNotARepo(t *testing.T) {

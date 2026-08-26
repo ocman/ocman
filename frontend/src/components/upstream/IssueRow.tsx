@@ -4,11 +4,11 @@ import { ExpandableRow } from './ExpandableRow';
 interface IssueRowProps {
   issue: Issue;
   directory: string;
-  remoteId?: string;
+  remoteId: string;
   remote: string;
 }
 
-export function IssueRow({ issue, directory, remoteId = 'local', remote }: IssueRowProps) {
+export function IssueRow({ issue, directory, remoteId, remote }: IssueRowProps) {
   return (
     <ExpandableRow
       type="issue"
