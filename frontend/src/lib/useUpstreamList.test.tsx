@@ -22,7 +22,31 @@ it('clears rows when the project changes', async () => {
     { initialProps: { dir: '/old' } },
   );
   await waitFor(() => expect(result.current.items).toHaveLength(1));
+  expect(result.current.pagination).toEqual({ page: 1, hasMore: false });
 
   rerender({ dir: '/new' });
-  await waitFor(() => expect(result.current.items).toEqual([]));
+  await waitFor(() => expect(result.current.loading).toBe(true));
+  expect(result.current.items).toEqual([]);
+  expect(result.current.pagination).toEqual({ page: 1, hasMore: false });
+  expect(result.current.rateLimit).toEqual({ limited: false });
+});
+
+it('clears pagination and rate limits while refreshing', async () => {
+  vi.spyOn(api, 'fetchPRs')
+    .mockResolvedValueOnce({
+      prs: [{ number: 7, title: 'old page' } as api.PR],
+      pagination: { page: 1, hasMore: true },
+      rateLimit: { limited: true, resetAt: '2026-08-26T12:00:00Z' },
+    })
+    .mockReturnValueOnce(new Promise(() => {}));
+
+  const { result } = renderHook(() => useUpstreamList<api.PR>({
+    kind: 'prs', dir: '/repo', remoteId: 'local', remote: 'origin', state: 'open', mine: undefined, enabled: true,
+  }));
+  await waitFor(() => expect(result.current.rateLimit.limited).toBe(true));
+
+  result.current.refresh();
+  await waitFor(() => expect(result.current.loading).toBe(true));
+  expect(result.current.pagination).toEqual({ page: 1, hasMore: false });
+  expect(result.current.rateLimit).toEqual({ limited: false });
 });

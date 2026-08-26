@@ -1,7 +1,7 @@
 import { fetchForgeUser } from './upstreamApi';
 import { useAsyncResource } from './useAsyncResource';
 
-const forgeUsers = new Map<string, string>();
+const forgeUsers = new Map<string, { login: string; expiresAt: number }>();
 const maxForgeUsers = 32;
 
 export function _resetForgeUserCacheForTests(): void {
@@ -29,14 +29,12 @@ export function useForgeUser(
   const { data, loading, ready } = useAsyncResource<string | null>({
     fetcher: (signal) => {
       const cached = forgeUsers.get(key);
-      if (cached) return Promise.resolve(cached);
-      return fetchForgeUser({ dir: dir!, remoteId, remote: remote!, signal }).then((u) => {
-        const login = u?.login ?? null;
-        if (login !== null) {
-          if (forgeUsers.size >= maxForgeUsers) {
-            forgeUsers.delete(forgeUsers.keys().next().value!);
-          }
-          forgeUsers.set(key, login);
+      if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.login);
+      return fetchForgeUser({ dir: dir!, remoteId, remote: remote!, signal }).then((user) => {
+        const login = user?.login ?? null;
+        if (login) {
+          if (forgeUsers.size >= maxForgeUsers) forgeUsers.delete(forgeUsers.keys().next().value!);
+          forgeUsers.set(key, { login, expiresAt: Date.now() + 60_000 });
         }
         return login;
       });

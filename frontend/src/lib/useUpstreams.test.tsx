@@ -24,17 +24,24 @@ describe('useUpstreams', () => {
   });
 
   it('clears upstreams while a different project loads', async () => {
+    const snapshots: Array<{ directory: string; repos: string[] }> = [];
     vi.spyOn(api, 'fetchUpstreams')
       .mockResolvedValueOnce([{ remote: 'origin', host: 'github.com', type: 'github', repo: 'old/repo' }])
       .mockReturnValueOnce(new Promise(() => {}));
     const { result, rerender } = renderHook(
-      ({ directory }) => useUpstreams(directory, 'local'),
+      ({ directory }) => {
+        const value = useUpstreams(directory, 'local');
+        snapshots.push({ directory, repos: value.upstreams.map((upstream) => upstream.repo) });
+        return value;
+      },
       { initialProps: { directory: '/old' } },
     );
     await waitFor(() => expect(result.current.upstreams).toHaveLength(1));
 
     rerender({ directory: '/new' });
-    await waitFor(() => expect(result.current.upstreams).toEqual([]));
+    expect(result.current.upstreams).toEqual([]);
+    expect(result.current.loading).toBe(true);
+    expect(snapshots).not.toContainEqual({ directory: '/new', repos: ['old/repo'] });
   });
 
   it('clears loading when disabled during a request', async () => {

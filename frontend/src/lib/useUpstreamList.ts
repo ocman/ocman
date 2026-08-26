@@ -83,6 +83,8 @@ export function useUpstreamList<T extends UpstreamListItem>(opts: {
       setItems([]);
       setLoading(true);
       setError(null);
+      setPagination({ page: 1, hasMore: false });
+      setRateLimit({ limited: false });
 
       const params = { dir, remoteId, remote, state, mine, page, signal: ctrl.signal };
       const fetcher =

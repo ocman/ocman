@@ -110,6 +110,31 @@ func TestProjectRoutes_ListAndLaunchThroughPublicMux(t *testing.T) {
 	}
 }
 
+func TestProjectForgeRoutesRejectNonLocalPeersThroughPublicMux(t *testing.T) {
+	srv := testServer(t)
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{
+		"/api/project/prs",
+		"/api/project/issues",
+		"/api/project/pr-checks",
+		"/api/project/forge-user",
+	} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.RemoteAddr = "192.0.2.1:1234"
+			rr := httptest.NewRecorder()
+			mux.ServeHTTP(rr, req)
+			if rr.Code != http.StatusForbidden {
+				t.Fatalf("status = %d, want %d", rr.Code, http.StatusForbidden)
+			}
+		})
+	}
+}
+
 func TestHandleProjectHandle_WorktreePRFetchesMetadataOnce(t *testing.T) {
 	srv := testServer(t)
 	dir := "/remote/only/repo"

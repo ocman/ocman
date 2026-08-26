@@ -25,15 +25,23 @@ export function useUpstreams(directory: string | undefined, remoteId: string): U
   // Memoise on the trimmed string so callers can pass props directly.
   const dir = useMemo(() => (directory ?? '').trim(), [directory]);
   const [refreshCounter, setRefreshCounter] = useState(0);
+  const requestKey = `${remoteId}\0${dir}\0${refreshCounter}`;
 
-  const { data, loading, error, ready } = useAsyncResource<Upstream[]>({
-    fetcher: (signal) => fetchUpstreams(dir, remoteId, signal),
+  const { data, loading, error, ready } = useAsyncResource<{ key: string; upstreams: Upstream[] }>({
+    fetcher: (signal) => fetchUpstreams(dir, remoteId, signal).then((upstreams) => ({ key: requestKey, upstreams })),
     deps: [dir, remoteId, refreshCounter],
-    initial: EMPTY,
+    initial: { key: requestKey, upstreams: EMPTY },
     enabled: !!dir,
     errorMessage: (err) => (err instanceof Error ? err.message : 'failed to detect upstreams'),
   });
 
   const refresh = useCallback(() => setRefreshCounter((n) => n + 1), []);
-  return { upstreams: data, loading, error, ready, refresh };
+  const current = data.key === requestKey;
+  return {
+    upstreams: current ? data.upstreams : EMPTY,
+    loading: !!dir && (!current || loading || !ready),
+    error: current ? error : null,
+    ready: current && ready,
+    refresh,
+  };
 }
