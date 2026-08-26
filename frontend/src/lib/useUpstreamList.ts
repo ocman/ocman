@@ -63,7 +63,13 @@ export function useUpstreamList<T extends UpstreamListItem>(opts: {
 
   useEffect(() => {
     if (!enabled || !dir || !remote) {
-      const reset = () => setItems([]);
+      const reset = () => {
+        setItems([]);
+        setLoading(false);
+        setError(null);
+        setPagination({ page: 1, hasMore: false });
+        setRateLimit({ limited: false });
+      };
       reset();
       return;
     }

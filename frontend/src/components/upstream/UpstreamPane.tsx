@@ -288,8 +288,8 @@ function UpstreamRemoteGroup({
   // Resolve the "mine" identity for this remote's host. null means
   // the forge has no credential — disable the mine toggle visually
   // and don't send the filter parameter.
-  const myLogin = useForgeUser(mine ? directory : undefined, mine ? upstream.remote : undefined, remoteId);
-  const mineFilter = mine && myLogin ? myLogin : undefined;
+  const identity = useForgeUser(mine ? directory : undefined, mine ? upstream.remote : undefined, remoteId);
+  const mineFilter = mine && identity.login ? identity.login : undefined;
 
   const list = useUpstreamList<PR | Issue>({
     kind,
@@ -298,7 +298,7 @@ function UpstreamRemoteGroup({
     remote: upstream.remote,
     state,
     mine: mineFilter,
-    enabled: !mine || !!myLogin,
+    enabled: !mine || (identity.ready && !!identity.login),
   });
 
   // Push our refresh callback up; unregister on unmount.
@@ -342,7 +342,9 @@ function UpstreamRemoteGroup({
           onRetry={list.refresh}
         />
       ) : null}
-      {mine && !myLogin ? (
+      {mine && identity.loading ? (
+        <div className="oc-upstream-empty">Resolving forge identity…</div>
+      ) : mine && identity.ready && !identity.login ? (
         <div className="oc-upstream-empty">Mine requires forge authentication.</div>
       ) : !list.error && list.items.length === 0 && !list.loading ? (
         <div className="oc-upstream-empty">No {kind === 'prs' ? 'pull requests' : 'issues'}.</div>

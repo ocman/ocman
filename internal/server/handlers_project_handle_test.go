@@ -71,6 +71,45 @@ func TestHandleProjectHandleRequiresExplicitOwnerAndAbsoluteDir(t *testing.T) {
 	}
 }
 
+func TestProjectRoutes_ListAndLaunchThroughPublicMux(t *testing.T) {
+	srv := testServer(t)
+	dir := initGitHubRepo(t)
+	gh, ghc := fakeGitHubServer(t)
+	defer gh.Close()
+	srv.integrations.GitHub = ghc
+	var sent platforms.SendMessageRequest
+	srv.registry.Register(&fakePlatform{
+		id: "opencode",
+		createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+			return &platforms.CreateSessionResponse{ID: "child"}, nil
+		},
+		sendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return nil },
+	})
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/project/issues?dir="+dir+"&remoteId=local&remote=origin", nil)
+	listReq.RemoteAddr, listReq.Host = "127.0.0.1:1234", "localhost"
+	listReq.Header.Set("Origin", "http://localhost")
+	listRR := httptest.NewRecorder()
+	mux.ServeHTTP(listRR, listReq)
+	if listRR.Code != http.StatusOK || !strings.Contains(listRR.Body.String(), `"number":7`) {
+		t.Fatalf("list status = %d, body = %s", listRR.Code, listRR.Body.String())
+	}
+
+	body := `{"dir":"` + dir + `","remoteId":"local","remote":"origin","type":"issue","number":7,"mode":"session"}`
+	launchReq := httptest.NewRequest(http.MethodPost, "/api/project/handle", bytes.NewBufferString(body))
+	launchReq.RemoteAddr, launchReq.Host = "127.0.0.1:1234", "localhost"
+	launchReq.Header.Set("Origin", "http://localhost")
+	launchRR := httptest.NewRecorder()
+	mux.ServeHTTP(launchRR, launchReq)
+	if launchRR.Code != http.StatusOK || sent.SessionID != "child" {
+		t.Fatalf("launch status = %d, sent = %+v, body = %s", launchRR.Code, sent, launchRR.Body.String())
+	}
+}
+
 func TestHandleProjectHandle_WorktreePRFetchesMetadataOnce(t *testing.T) {
 	srv := testServer(t)
 	dir := "/remote/only/repo"
