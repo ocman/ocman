@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import * as api from './upstreamApi';
 import { useUpstreamList } from './useUpstreamList';
@@ -55,4 +55,65 @@ it('clears pagination and rate limits while refreshing', async () => {
   await waitFor(() => expect(result.current.loading).toBe(true));
   expect(result.current.pagination).toEqual({ page: 1, hasMore: false });
   expect(result.current.rateLimit).toEqual({ limited: false });
+});
+
+it('does not expose rows from another owner or query', async () => {
+  const base = {
+    kind: 'prs' as const, dir: '/repo', remoteId: 'old-owner', remote: 'origin',
+    state: 'open' as api.StateFilter, mine: undefined as string | undefined, enabled: true,
+  };
+  const changes = [
+    { remoteId: 'new-owner' },
+    { remote: 'mirror' },
+    { state: 'closed' as api.StateFilter },
+    { mine: 'alice' },
+  ];
+
+  for (const change of changes) {
+    vi.restoreAllMocks();
+    vi.spyOn(api, 'fetchPRs')
+      .mockResolvedValueOnce({
+        prs: [{ number: 7, title: 'old query' } as api.PR],
+        pagination: { page: 1, hasMore: false }, rateLimit: { limited: false },
+      })
+      .mockReturnValueOnce(new Promise(() => {}));
+    const snapshots: Array<{ key: string; titles: string[] }> = [];
+    const hook = renderHook(
+      ({ opts }) => {
+        const value = useUpstreamList<api.PR>(opts);
+        snapshots.push({ key: JSON.stringify(opts), titles: value.items.map((item) => item.title) });
+        return value;
+      },
+      { initialProps: { opts: base } },
+    );
+    await waitFor(() => expect(hook.result.current.items).toHaveLength(1));
+
+    const next = { ...base, ...change };
+    hook.rerender({ opts: next });
+    expect(hook.result.current.items).toEqual([]);
+    expect(snapshots).not.toContainEqual({ key: JSON.stringify(next), titles: ['old query'] });
+    hook.unmount();
+  }
+});
+
+it('does not expose rows from the previous page', async () => {
+  vi.spyOn(api, 'fetchPRs')
+    .mockResolvedValueOnce({
+      prs: [{ number: 7, title: 'page one' } as api.PR],
+      pagination: { page: 1, hasMore: true }, rateLimit: { limited: false },
+    })
+    .mockReturnValueOnce(new Promise(() => {}));
+  const snapshots: Array<{ page: number; titles: string[] }> = [];
+  const { result } = renderHook(() => {
+    const value = useUpstreamList<api.PR>({
+      kind: 'prs', dir: '/repo', remoteId: 'local', remote: 'origin', state: 'open', mine: undefined, enabled: true,
+    });
+    snapshots.push({ page: value.page, titles: value.items.map((item) => item.title) });
+    return value;
+  });
+  await waitFor(() => expect(result.current.items).toHaveLength(1));
+
+  act(() => result.current.setPage(2));
+  expect(result.current.items).toEqual([]);
+  expect(snapshots).not.toContainEqual({ page: 2, titles: ['page one'] });
 });

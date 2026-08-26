@@ -158,6 +158,20 @@ describe('PRRow CI build-status indicator', () => {
     expect(spy.mock.calls[1][0].sha).toBe('new');
   });
 
+  it('clears a loaded CI result when the head SHA changes', async () => {
+    vi.spyOn(api, 'fetchPRChecks').mockResolvedValue({
+      state: 'success', checks: [{ name: 'build', state: 'success' }],
+    });
+    const { rerender } = render(
+      <PRRow pr={makePR({ headSha: 'old' })} directory="/repo" remoteId="local" remote="origin" />,
+    );
+    fireEvent.click(screen.getByRole('button', { expanded: false }));
+    await waitFor(() => expect(screen.getByTestId('pr-row-42-ci').className).toContain('oc-upstream-ci-dot-success'));
+
+    rerender(<PRRow pr={makePR({ headSha: 'new' })} directory="/repo" remoteId="local" remote="origin" />);
+    expect(screen.getByTestId('pr-row-42-ci').className).toContain('oc-upstream-ci-dot-unknown');
+  });
+
   it('lazily fetches checks on expansion and colors the dot', async () => {
     const spy = vi.spyOn(api, 'fetchPRChecks').mockResolvedValue({
       state: 'success',

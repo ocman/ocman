@@ -23,6 +23,26 @@ describe('useUpstreams', () => {
     expect(fetchUpstreams.mock.calls.map((call) => call[1])).toEqual(['machine-a', 'machine-b']);
   });
 
+  it('does not expose the previous owner upstreams while loading', async () => {
+    const snapshots: Array<{ owner: string; repos: string[] }> = [];
+    vi.spyOn(api, 'fetchUpstreams')
+      .mockResolvedValueOnce([{ remote: 'origin', host: 'github.com', type: 'github', repo: 'old/repo' }])
+      .mockReturnValueOnce(new Promise(() => {}));
+    const { result, rerender } = renderHook(
+      ({ owner }) => {
+        const value = useUpstreams('/repo', owner);
+        snapshots.push({ owner, repos: value.upstreams.map((upstream) => upstream.repo) });
+        return value;
+      },
+      { initialProps: { owner: 'old-owner' } },
+    );
+    await waitFor(() => expect(result.current.upstreams).toHaveLength(1));
+
+    rerender({ owner: 'new-owner' });
+    expect(result.current.upstreams).toEqual([]);
+    expect(snapshots).not.toContainEqual({ owner: 'new-owner', repos: ['old/repo'] });
+  });
+
   it('clears upstreams while a different project loads', async () => {
     const snapshots: Array<{ directory: string; repos: string[] }> = [];
     vi.spyOn(api, 'fetchUpstreams')

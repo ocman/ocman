@@ -812,8 +812,11 @@ func TestMigrateV46DropsChildSessionsAndPreservesState(t *testing.T) {
 	if _, err := tx.Exec(`INSERT INTO queued_message (id, platform, session_id, position, text, created_at) VALUES
 		('retired', 'opencode', 'parent', 1, 'The result wait for child session "child" disconnected. Resume the existing child without sending a new prompt by calling await_session_result with session_id "parent" and child_session_id "child". Do not call new_session again.', 1),
 		('child-result:child', 'opencode', 'parent', 2, 'retired child result', 1),
-		('keep-message', 'opencode', 'parent', 3, 'user queued message', 1),
-		('keep-collision', 'opencode', 'parent', 4, 'The result wait for child session notes mention await_session_result. Do not call new_session again.', 1)`); err != nil {
+		('child-result:orphan', 'opencode', 'parent', 3, 'orphaned retired child result', 1),
+		('child-result:another-orphan', 'opencode', 'parent', 4, 'another orphaned result', 1),
+		('child-resultish:keep', 'opencode', 'parent', 5, 'user queue id outside the reserved namespace', 1),
+		('keep-message', 'opencode', 'parent', 6, 'user queued message', 1),
+		('keep-collision', 'opencode', 'parent', 7, 'The result wait for child session notes mention await_session_result. Do not call new_session again.', 1)`); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -840,6 +843,12 @@ func TestMigrateV46DropsChildSessionsAndPreservesState(t *testing.T) {
 	}
 	if err := db.QueryRow(`SELECT count(*) FROM queued_message WHERE id = 'child-result:child'`).Scan(&count); err != nil || count != 0 {
 		t.Fatalf("retired child results = %d, %v", count, err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM queued_message WHERE id LIKE 'child-result:%'`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("orphaned child results = %d, %v", count, err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM queued_message WHERE id = 'child-resultish:keep'`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("near-prefix queue rows = %d, %v", count, err)
 	}
 	if err := db.QueryRow(`SELECT count(*) FROM queued_message WHERE id = 'keep-message'`).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("preserved queued messages = %d, %v", count, err)
