@@ -110,11 +110,19 @@ func TestProjectRoutes_ListAndLaunchThroughPublicMux(t *testing.T) {
 	}
 }
 
-func TestProjectForgeRoutesRejectNonLocalPeersThroughPublicMux(t *testing.T) {
+func TestProjectForgeRouteSecuritySplitThroughPublicMux(t *testing.T) {
 	srv := testServer(t)
+	dir := initGitHubRepo(t)
 	mux, err := srv.routes()
 	if err != nil {
 		t.Fatal(err)
+	}
+	upstreamsReq := httptest.NewRequest(http.MethodGet, "/api/project/upstreams?dir="+dir+"&remoteId=local", nil)
+	upstreamsReq.RemoteAddr = "192.0.2.1:1234"
+	upstreamsRR := httptest.NewRecorder()
+	mux.ServeHTTP(upstreamsRR, upstreamsReq)
+	if upstreamsRR.Code != http.StatusOK {
+		t.Fatalf("upstreams status = %d, body = %s", upstreamsRR.Code, upstreamsRR.Body.String())
 	}
 
 	for _, path := range []string{

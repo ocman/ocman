@@ -745,9 +745,11 @@ Error envelope (used by all endpoints):
 {
   "childSessionId": "...uuid...",
   "mode": "session" | "worktree",
+  "platform": "opencode" | "r-<remoteId>:opencode",
+  "remoteId": "local" | "<owner-id>",
   "worktreePath": "/.../.worktrees/myproj/pr-42",   // worktree mode only
   "branch": "tighten-slug",                          // worktree mode only
-  "tmuxTarget": "...:..."                            // worktree mode only
+  "promptError": "initial prompt was not sent"       // only when prompt delivery failed
 }
 ```
 
