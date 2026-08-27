@@ -118,6 +118,9 @@ export interface WorkEpic {
   initialProject: string;
   formulaId: string;
   formulaVersion: number;
+  formulaRevision: number;
+  formulaHash: string;
+  formulaOrigin: 'built-in' | 'custom';
   instantiationId: string;
   planning: {
     workId: string;
@@ -132,6 +135,45 @@ export interface CreateWorkEpicRequest {
   goal: string;
   initialProject: string;
   acknowledgeLocalExecution: true;
+  formulaId?: string;
+  formulaRevision?: number;
+}
+
+export interface FormulaSummary {
+  id: string;
+  name: string;
+  origin: 'built-in' | 'custom';
+  currentRevision: number;
+  contentHash: string;
+  archived: boolean;
+  revisions: Array<{ revision: number; contentHash: string }>;
+}
+
+export interface FormulaDraft {
+  sourceId: string;
+  sourceRevision: number;
+  origin: 'built-in' | 'custom';
+  definitionYaml: string;
+}
+
+export interface FormulaValidation {
+  valid: boolean;
+  schema: number;
+  contentHash?: string;
+  errors: string[];
+}
+
+export interface FormulaPreview {
+  name: string;
+  formulaHash: string;
+  nodes: Array<{ key: string; kind: string; title: string; profile?: string; project?: string }>;
+  edges: Array<{ from: string; to: string; type: string }>;
+}
+
+export interface FormulaRevision extends FormulaSummary {
+  revision: number;
+  schemaVersion: number;
+  definitionYaml: string;
 }
 
 export interface Session {

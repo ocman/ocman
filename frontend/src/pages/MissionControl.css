@@ -33,7 +33,10 @@
 .factory-create-form fieldset { display: grid; gap: 12px; max-width: 640px; margin: 0; padding: 0; border: 0; }
 .factory-create-form label:not(.factory-acknowledgement) { display: grid; gap: 5px; font-size: 13px; font-weight: 600; }
 .factory-create-form input:not([type="checkbox"]),
-.factory-create-form textarea { box-sizing: border-box; width: 100%; border: 1px solid var(--border); background: var(--bg); color: var(--text); padding: 9px; font: inherit; }
+.factory-create-form textarea,
+.factory-create-form select,
+.factory-formula-editor input,
+.factory-formula-editor textarea { box-sizing: border-box; width: 100%; border: 1px solid var(--border); background: var(--bg); color: var(--text); padding: 9px; font: inherit; }
 .factory-create-form textarea { min-height: 90px; resize: vertical; }
 .factory-create-form input[readonly] { color: var(--text-dim); }
 .factory-acknowledgement { display: flex; align-items: flex-start; gap: 8px; }
@@ -44,9 +47,20 @@
 .factory-epic-list dl div { min-width: 0; }
 .factory-epic-list dt { color: var(--text-dim); font-size: 12px; }
 .factory-epic-list dd { overflow-wrap: anywhere; margin: 2px 0 0; }
+.factory-formula-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.factory-formula-list li { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--border); padding-top: 8px; }
+.factory-formula-list li span { flex: 1; }
+.factory-formula-editor { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+.factory-formula-editor label { display: grid; gap: 5px; font-size: 13px; font-weight: 600; }
+.factory-formula-editor label:has(textarea), .factory-formula-actions, .factory-formula-preview, .factory-formula-editor [role] { grid-column: 1 / -1; }
+.factory-formula-editor textarea { min-height: 360px; resize: vertical; font-family: var(--font-mono, monospace); }
+.factory-formula-actions { display: flex; gap: 8px; }
+.factory-formula-preview ol { margin-bottom: 0; }
 
 @media (max-width: 700px) {
   .factory-heading { display: grid; }
   .factory-health { min-width: 0; }
   .factory-epic-list dl { grid-template-columns: 1fr; }
+  .factory-formula-editor { grid-template-columns: 1fr; }
+  .factory-formula-list li { align-items: flex-start; flex-wrap: wrap; }
 }

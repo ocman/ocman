@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 const (
@@ -69,15 +71,24 @@ type localExecutionAckStore interface {
 	UpsertFactoryLocalExecutionAck(context.Context, string, string, string, string, string, time.Time) error
 }
 
+type formulaStore interface {
+	ListFactoryFormulas(context.Context) ([]state.FactoryFormula, error)
+	GetFactoryFormulaRevision(context.Context, string, int) (state.FactoryFormula, state.FactoryFormulaRevision, error)
+	SaveFactoryFormulaRevision(context.Context, string, string, string, string, string, int, time.Time) (state.FactoryFormulaRevision, error)
+	ArchiveFactoryFormula(context.Context, string, time.Time) (bool, error)
+	DeleteFactoryFormula(context.Context, string) (bool, error)
+}
+
 type Service struct {
-	dir     string
-	runner  runner
-	mu      sync.RWMutex
-	pourMu  sync.Mutex
-	owned   bool
-	lockErr error
-	release func() error
-	acks    localExecutionAckStore
+	dir      string
+	runner   runner
+	mu       sync.RWMutex
+	pourMu   sync.Mutex
+	owned    bool
+	lockErr  error
+	release  func() error
+	acks     localExecutionAckStore
+	formulas formulaStore
 }
 
 func New(dir string, ackStore localExecutionAckStore) *Service {
@@ -91,7 +102,8 @@ func newWithRunner(dir string, r runner, ackStore localExecutionAckStore) *Servi
 	if absolute, err := filepath.Abs(dir); err == nil {
 		dir = absolute
 	}
-	return &Service{dir: dir, runner: r, acks: ackStore}
+	formulas, _ := ackStore.(formulaStore)
+	return &Service{dir: dir, runner: r, acks: ackStore, formulas: formulas}
 }
 
 func (s *Service) Start(ctx context.Context) error {

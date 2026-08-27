@@ -4,12 +4,19 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { api, type WorkEpic } from './api';
-import { useCreateWorkEpic, useWorkEpic, useWorkEpics } from './queries';
+import { useCreateWorkEpic, useFactoryFormulaActions, useFactoryFormulas, useWorkEpic, useWorkEpics } from './queries';
 
 vi.mock('./api', () => ({ api: {
   createFactoryEpic: vi.fn(),
   factoryEpic: vi.fn(),
   factoryEpics: vi.fn(),
+  factoryFormulas: vi.fn(),
+  copyFactoryFormula: vi.fn(),
+  validateFactoryFormula: vi.fn(),
+  previewFactoryFormula: vi.fn(),
+  saveFactoryFormula: vi.fn(),
+  archiveFactoryFormula: vi.fn(),
+  deleteFactoryFormula: vi.fn(),
 } }));
 
 function setup() {
@@ -40,10 +47,37 @@ describe('Factory queries', () => {
   });
 });
 
+it('loads Formulas and delegates editor actions with library refreshes', async () => {
+  vi.mocked(api.factoryFormulas).mockResolvedValue([]);
+  vi.mocked(api.copyFactoryFormula).mockResolvedValue({ definitionYaml: 'schema: 1' } as never);
+  vi.mocked(api.validateFactoryFormula).mockResolvedValue({ valid: true, errors: [] } as never);
+  vi.mocked(api.previewFactoryFormula).mockResolvedValue({ nodes: [], edges: [] } as never);
+  vi.mocked(api.saveFactoryFormula).mockResolvedValue({ id: 'custom/team', revision: 1 } as never);
+  vi.mocked(api.archiveFactoryFormula).mockResolvedValue(undefined);
+  vi.mocked(api.deleteFactoryFormula).mockResolvedValue(undefined);
+  const { client, wrapper } = setup();
+  const invalidate = vi.spyOn(client, 'invalidateQueries');
+  const list = renderHook(() => useFactoryFormulas(), { wrapper });
+  const actions = renderHook(() => useFactoryFormulaActions(), { wrapper });
+  await waitFor(() => expect(list.result.current.isSuccess).toBe(true));
+
+  await act(() => actions.result.current.copy.mutateAsync({ id: 'ocman/default', revision: 1 }));
+  await act(() => actions.result.current.validate.mutateAsync('schema: 1'));
+  await act(() => actions.result.current.preview.mutateAsync({ definitionYaml: 'schema: 1', parameters: { goal: 'Ship' } }));
+  await act(() => actions.result.current.save.mutateAsync({ id: 'custom/team', name: 'Team', definitionYaml: 'schema: 1' }));
+  await act(() => actions.result.current.archive.mutateAsync('custom/team'));
+  await act(() => actions.result.current.remove.mutateAsync('custom/team'));
+
+  expect(api.factoryFormulas).toHaveBeenCalledWith(expect.any(AbortSignal));
+  expect(api.copyFactoryFormula).toHaveBeenCalledWith('ocman/default', 1);
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: ['factory-formulas'] });
+});
+
 it('adds a created epic and invalidates Factory status and epics', async () => {
   const epic = {
     id: 'epic-1', status: 'open', goal: 'Ship it', initialProject: '/repo',
     formulaId: 'ocman/default', formulaVersion: 1, instantiationId: 'request-1',
+    formulaRevision: 1, formulaHash: 'hash', formulaOrigin: 'built-in',
     planning: { workId: 'work-1', workStatus: 'open', approvalGateId: 'gate-1', approvalStatus: 'pending' },
   } satisfies WorkEpic;
   vi.mocked(api.createFactoryEpic).mockResolvedValue(epic);

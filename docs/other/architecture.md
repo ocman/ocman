@@ -110,9 +110,10 @@ flowchart TD
   readiness probe pins Beads to `>=1.1.0,<1.2.0` and JSON envelope contract 1,
   while an advisory process lock gives exactly one local ocman instance
   dispatch ownership. The owner initializes the dedicated store idempotently
-  on first start. The owner can atomically instantiate the immutable default
-  Formula into a Work Epic, Planning Work and Plan approval Gate; local
-  execution acknowledgements are stored separately in `state.db`. Other
+  on first start. The owner can validate and preview typed Formula v1 YAML,
+  persist immutable Custom Formula revisions, and atomically instantiate a
+  pinned Built-in or Custom revision into a Work Epic and its safety Gates.
+  Local execution acknowledgements are stored separately in `state.db`. Other
   instances expose the same authenticated reads without mutation authority;
   Workflows state and services are not involved.
 - **Factory persistence.** Beads owns the Work Epic graph, child Work Items,
@@ -120,6 +121,9 @@ flowchart TD
   and external evidence: immutable Formula revisions, attempts, workspaces,
   deliveries, provider observations, profile validations, authority
   exceptions, local-execution acknowledgements, audit records and mappings.
+  Formula revisions retain their validated YAML and SHA-256 identity; Beads
+  nodes copy the exact Formula ID, revision, hash and origin so later library
+  edits cannot alter an existing epic. Referenced revisions cannot be deleted.
   These `factory_*` tables do not reference or alter Workflows tables.
 - **platforms.Registry.** The session-scoped seam. One adapter per platform;
   remotes register as compound-ID platforms so handlers can't tell local from
@@ -307,7 +311,8 @@ flowchart TD
   same operation over gRPC. Ticket data stays in the repository and is polled
   only while the available pane is open.
 - **Mission Control.** The top-level `/factory` page polls the authenticated
-  `/api/factory/status` and `/api/factory/epics` endpoints through TanStack
-  Query. The dispatch owner can acknowledge local execution and create a Work
-  Epic from the built-in Formula; all clients can inspect its initial Planning
-  Work and Plan approval Gate independently of Workflows.
+  Factory endpoints through TanStack Query. The dispatch owner can copy the
+  immutable Built-in Formula, edit Formula v1 YAML in browser state, validate
+  and preview it, save immutable Custom revisions, and select an exact revision
+  at Work Epic intake. Invalid editor text is never persisted. All clients can
+  inspect initial Factory work independently of Workflows.

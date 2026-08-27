@@ -170,7 +170,8 @@ import (
 //	48 - repair early v47 development databases that created the permission
 //	     lifecycle table before its project_root column was added.
 //	49 - create the independent Software Factory persistence boundary.
-const latestSchemaVersion = 49
+//	50 - add archive state for the Factory Formula library.
+const latestSchemaVersion = 50
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -373,6 +374,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV48(tx)
 	case 49:
 		return migrateToV49(tx)
+	case 50:
+		return migrateToV50(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -1784,4 +1787,8 @@ func migrateToV49(tx *sql.Tx) error {
 		);
 	`)
 	return err
+}
+
+func migrateToV50(tx *sql.Tx) error {
+	return addColumnIfMissing(tx, "factory_formula", "archived_at", "INTEGER NOT NULL DEFAULT 0")
 }

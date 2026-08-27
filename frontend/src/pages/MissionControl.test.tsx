@@ -2,13 +2,15 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useCreateWorkEpic, useFactoryStatus, useWorkEpics } from '../lib/queries';
+import { useCreateWorkEpic, useFactoryFormulaActions, useFactoryFormulas, useFactoryStatus, useWorkEpics } from '../lib/queries';
 import { MissionControl } from './MissionControl';
 
 vi.mock('../lib/queries', () => ({
   useFactoryStatus: vi.fn(),
   useWorkEpics: vi.fn(),
   useCreateWorkEpic: vi.fn(),
+  useFactoryFormulas: vi.fn(),
+  useFactoryFormulaActions: vi.fn(),
 }));
 
 const healthy = {
@@ -27,6 +29,11 @@ describe('MissionControl', () => {
     vi.resetAllMocks();
     vi.mocked(useWorkEpics).mockReturnValue({ data: [] } as never);
     vi.mocked(useCreateWorkEpic).mockReturnValue({ mutateAsync, isPending: false } as never);
+    vi.mocked(useFactoryFormulas).mockReturnValue({ data: [{ id: 'ocman/default', name: 'Shipped delivery', origin: 'built-in', currentRevision: 2, contentHash: 'abc', archived: false, revisions: [{ revision: 2, contentHash: 'abc' }] }] } as never);
+    vi.mocked(useFactoryFormulaActions).mockReturnValue({
+      copy: { mutateAsync: vi.fn() }, validate: { mutateAsync: vi.fn() }, preview: { mutateAsync: vi.fn() },
+      save: { mutateAsync: vi.fn() }, archive: { mutateAsync: vi.fn() }, remove: { mutateAsync: vi.fn() },
+    } as never);
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -78,8 +85,7 @@ describe('MissionControl', () => {
     vi.mocked(useFactoryStatus).mockReturnValue({ data: healthy } as never);
     render(<MissionControl />);
 
-    expect(screen.getByLabelText('Shipped Formula')).toHaveValue('ocman/default v1');
-    expect(screen.getByLabelText('Shipped Formula')).toHaveAttribute('readonly');
+    expect(screen.getByLabelText('Formula')).toHaveValue('ocman/default@2');
     await userEvent.type(screen.getByLabelText('Goal'), 'Ship the factory');
     await userEvent.type(screen.getByLabelText('Initial project'), '/repos/ocman');
     await userEvent.click(screen.getByRole('checkbox', { name: /executes locally without isolation/i }));
@@ -90,8 +96,71 @@ describe('MissionControl', () => {
       goal: 'Ship the factory',
       initialProject: '/repos/ocman',
       acknowledgeLocalExecution: true,
+      formulaId: 'ocman/default',
+      formulaRevision: 2,
     });
     expect(crypto.randomUUID).toHaveBeenCalledOnce();
+  });
+
+  it('keeps invalid editor YAML local and only enables save after validation', async () => {
+    const copy = vi.fn().mockResolvedValue({ definitionYaml: 'schema: 1\nname: Shipped delivery\n' });
+    const validate = vi.fn().mockResolvedValue({ valid: false, errors: ['Plan approval is required'] });
+    const save = vi.fn();
+    vi.mocked(useFactoryFormulaActions).mockReturnValue({
+      copy: { mutateAsync: copy }, validate: { mutateAsync: validate }, preview: { mutateAsync: vi.fn() },
+      save: { mutateAsync: save }, archive: { mutateAsync: vi.fn() }, remove: { mutateAsync: vi.fn() },
+    } as never);
+    vi.mocked(useFactoryStatus).mockReturnValue({ data: healthy } as never);
+    render(<MissionControl />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    const editor = screen.getByLabelText('Formula v1 YAML');
+    await userEvent.clear(editor);
+    await userEvent.type(editor, 'invalid: true');
+    expect(screen.getByRole('button', { name: 'Save revision' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Validate' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Plan approval is required');
+    expect(validate).toHaveBeenCalledWith('invalid: true');
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('shows preview nodes and graph edges', async () => {
+    vi.mocked(useFactoryFormulaActions).mockReturnValue({
+      copy: { mutateAsync: vi.fn().mockResolvedValue({ definitionYaml: 'schema: 1\nname: Shipped delivery\n' }) },
+      validate: { mutateAsync: vi.fn() },
+      preview: { mutateAsync: vi.fn(), data: {
+        name: 'Shipped delivery', formulaHash: 'hash',
+        nodes: [{ key: 'planning', kind: 'agent-work', title: 'Plan: Example goal' }],
+        edges: [{ from: 'approval', to: 'planning', type: 'blocks' }],
+      } },
+      save: { mutateAsync: vi.fn() }, archive: { mutateAsync: vi.fn() }, remove: { mutateAsync: vi.fn() },
+    } as never);
+    vi.mocked(useFactoryStatus).mockReturnValue({ data: healthy } as never);
+    render(<MissionControl />);
+    await userEvent.click(screen.getByRole('button', { name: 'Copy' }));
+
+    const preview = await screen.findByLabelText('Formula preview');
+    expect(within(preview).getByText('Plan: Example goal · agent-work')).toBeInTheDocument();
+    expect(within(preview).getByText('approval blocks planning')).toBeInTheDocument();
+  });
+
+  it('selects an exact custom Formula revision for intake', async () => {
+    mutateAsync.mockResolvedValue({ id: 'epic-1' });
+    vi.stubGlobal('crypto', { randomUUID: vi.fn(() => 'request-1') });
+    vi.mocked(useFactoryFormulas).mockReturnValue({ data: [
+      { id: 'ocman/default', name: 'Shipped delivery', origin: 'built-in', currentRevision: 2, contentHash: 'a', archived: false, revisions: [{ revision: 2, contentHash: 'a' }] },
+      { id: 'custom/team', name: 'Team delivery', origin: 'custom', currentRevision: 3, contentHash: 'b', archived: false, revisions: [{ revision: 1, contentHash: 'old' }, { revision: 3, contentHash: 'b' }] },
+    ] } as never);
+    vi.mocked(useFactoryStatus).mockReturnValue({ data: healthy } as never);
+    render(<MissionControl />);
+
+    await userEvent.selectOptions(screen.getByLabelText('Formula'), 'custom/team@3');
+    await userEvent.type(screen.getByLabelText('Goal'), 'Ship it');
+    await userEvent.type(screen.getByLabelText('Initial project'), '/repo');
+    await userEvent.click(screen.getByRole('checkbox'));
+    await userEvent.click(screen.getByRole('button', { name: 'Create Work Epic' }));
+
+    expect(mutateAsync).toHaveBeenCalledWith(expect.objectContaining({ formulaId: 'custom/team', formulaRevision: 3 }));
   });
 
   it('reuses an instantiation ID after failure and replaces it when inputs change', async () => {

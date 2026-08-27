@@ -16,7 +16,7 @@ import (
 
 const (
 	DefaultFormulaID       = "ocman/default"
-	DefaultFormulaVersion  = 1
+	DefaultFormulaVersion  = 2
 	planningProfile        = "factory-plan/v1"
 	localHostID            = "local"
 	planningProfileID      = "factory-plan"
@@ -59,6 +59,8 @@ type CreateWorkEpicRequest struct {
 	Goal                      string `json:"goal"`
 	InitialProject            string `json:"initialProject"`
 	AcknowledgeLocalExecution bool   `json:"acknowledgeLocalExecution"`
+	FormulaID                 string `json:"formulaId,omitempty"`
+	FormulaRevision           int    `json:"formulaRevision,omitempty"`
 }
 
 type PlanningState struct {
@@ -75,6 +77,9 @@ type WorkEpic struct {
 	InitialProject  string        `json:"initialProject"`
 	FormulaID       string        `json:"formulaId"`
 	FormulaVersion  int           `json:"formulaVersion"`
+	FormulaRevision int           `json:"formulaRevision"`
+	FormulaHash     string        `json:"formulaHash"`
+	FormulaOrigin   FormulaOrigin `json:"formulaOrigin"`
 	InstantiationID string        `json:"instantiationId"`
 	Planning        PlanningState `json:"planning"`
 }
@@ -117,6 +122,21 @@ func (s *Service) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRequest)
 		return WorkEpic{}, errors.New("initial project must be an existing local directory")
 	}
 	req.InitialProject = filepath.Clean(project)
+	if req.FormulaID == "" {
+		req.FormulaID = DefaultFormulaID
+	}
+	selected, err := s.GetFormulaRevision(ctx, req.FormulaID, req.FormulaRevision)
+	if err != nil {
+		return WorkEpic{}, err
+	}
+	if selected.Archived {
+		return WorkEpic{}, errors.New("archived Formula cannot instantiate new Work Epics")
+	}
+	req.FormulaRevision = selected.Revision
+	definition, err := definitionForRevision(selected)
+	if err != nil {
+		return WorkEpic{}, err
+	}
 	s.mu.RLock()
 	owned := s.owned
 	s.mu.RUnlock()
@@ -142,7 +162,7 @@ func (s *Service) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRequest)
 	if err != nil {
 		return WorkEpic{}, err
 	}
-	if epic, err := matchInstantiation(epics, req); epic != nil || err != nil {
+	if epic, err := matchInstantiation(epics, req, selected.ContentHash); epic != nil || err != nil {
 		if epic == nil {
 			return WorkEpic{}, err
 		}
@@ -158,7 +178,8 @@ func (s *Service) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRequest)
 	}
 	planPath := file.Name()
 	defer func() { _ = os.Remove(planPath) }()
-	encodeErr := json.NewEncoder(file).Encode(defaultGraph(req))
+	provenance := formulaProvenance(req, selected)
+	encodeErr := json.NewEncoder(file).Encode(graphForFormula(definition, req, provenance))
 	closeErr := file.Close()
 	if encodeErr != nil {
 		return WorkEpic{}, fmt.Errorf("%w: materialize formula: %w", ErrFactoryUnavailable, encodeErr)
@@ -172,7 +193,7 @@ func (s *Service) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRequest)
 	if runErr == nil && parseErr == nil {
 		return WorkEpic{
 			ID: ids["epic"], Status: "open", Goal: req.Goal, InitialProject: req.InitialProject,
-			FormulaID: DefaultFormulaID, FormulaVersion: DefaultFormulaVersion, InstantiationID: req.InstantiationID,
+			FormulaID: selected.ID, FormulaVersion: selected.Revision, FormulaRevision: selected.Revision, FormulaHash: selected.ContentHash, FormulaOrigin: selected.Origin, InstantiationID: req.InstantiationID,
 			Planning: PlanningState{WorkID: ids["planning"], WorkStatus: "open", ApprovalGateID: ids["approval"], ApprovalStatus: "open"},
 		}, nil
 	}
@@ -182,7 +203,7 @@ func (s *Service) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRequest)
 	epics, reconcileErr := listWorkEpics(reconcileCtx, path, beadsDir, s.runner)
 	cancelReconcile()
 	if reconcileErr == nil {
-		if epic, matchErr := matchInstantiation(epics, req); epic != nil || matchErr != nil {
+		if epic, matchErr := matchInstantiation(epics, req, selected.ContentHash); epic != nil || matchErr != nil {
 			if epic != nil {
 				return *epic, matchErr
 			}
@@ -193,6 +214,21 @@ func (s *Service) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRequest)
 		return WorkEpic{}, fmt.Errorf("%w: pour default formula: %w", ErrBeadsFailure, runErr)
 	}
 	return WorkEpic{}, fmt.Errorf("%w: pour default formula: %w", ErrBeadsFailure, parseErr)
+}
+
+func formulaProvenance(req CreateWorkEpicRequest, selected FormulaRevision) func(string) map[string]string {
+	return func(kind string) map[string]string {
+		return map[string]string{
+			"ocman.contract":         "1",
+			"ocman.kind":             kind,
+			"ocman.formula_id":       selected.ID,
+			"ocman.formula_revision": strconv.Itoa(selected.Revision),
+			"ocman.formula_version":  strconv.Itoa(selected.Revision),
+			"ocman.formula_hash":     selected.ContentHash,
+			"ocman.formula_origin":   string(selected.Origin),
+			"ocman.instantiation_id": req.InstantiationID,
+		}
+	}
 }
 
 func (s *Service) ListWorkEpics(ctx context.Context) ([]WorkEpic, error) {
@@ -244,35 +280,6 @@ func validateCreateWorkEpic(req CreateWorkEpicRequest) error {
 	return nil
 }
 
-func defaultGraph(req CreateWorkEpicRequest) graphPlan {
-	provenance := func(kind string) map[string]string {
-		return map[string]string{
-			"ocman.contract":         "1",
-			"ocman.kind":             kind,
-			"ocman.formula_id":       DefaultFormulaID,
-			"ocman.formula_version":  strconv.Itoa(DefaultFormulaVersion),
-			"ocman.formula_origin":   "built-in",
-			"ocman.instantiation_id": req.InstantiationID,
-		}
-	}
-	epic := provenance("work-epic")
-	epic["ocman.goal"] = req.Goal
-	epic["ocman.initial_project"] = req.InitialProject
-	planning := provenance("agent-work")
-	planning["ocman.permission_profile"] = planningProfile
-	approval := provenance("gate")
-	approval["ocman.gate_type"] = "plan-approval"
-	return graphPlan{
-		CommitMessage: "ocman factory: instantiate " + req.InstantiationID,
-		Nodes: []graphNode{
-			{Key: "epic", Title: req.Goal, Type: "epic", Metadata: epic, MetadataRefs: map[string]string{"ocman.planning_work_id": "planning", "ocman.plan_approval_gate_id": "approval"}},
-			{Key: "planning", Title: "Plan: " + req.Goal, Type: "task", Description: "Plan delivery for " + req.InitialProject, ParentKey: "epic", Metadata: planning, MetadataRefs: map[string]string{"ocman.work_epic_id": "epic"}},
-			{Key: "approval", Title: "Plan approval", Type: "gate", ParentKey: "epic", Metadata: approval, MetadataRefs: map[string]string{"ocman.work_epic_id": "epic"}},
-		},
-		Edges: []graphEdge{{FromKey: "approval", ToKey: "planning", Type: "blocks"}},
-	}
-}
-
 func parseGraphResult(data []byte) (map[string]string, error) {
 	var out struct {
 		SchemaVersion int `json:"schema_version"`
@@ -312,8 +319,11 @@ func listWorkEpics(ctx context.Context, path, beadsDir string, r runner) ([]Work
 	var epics []WorkEpic
 	for _, issue := range *envelope.Data {
 		meta := issue.Metadata
-		if issue.IssueType != "epic" || meta["ocman.kind"] != "work-epic" || meta["ocman.formula_id"] != DefaultFormulaID ||
-			meta["ocman.formula_version"] != strconv.Itoa(DefaultFormulaVersion) || meta["ocman.formula_origin"] != "built-in" {
+		revision, err := strconv.Atoi(firstNonEmpty(meta["ocman.formula_revision"], meta["ocman.formula_version"]))
+		origin := FormulaOrigin(meta["ocman.formula_origin"])
+		if issue.IssueType != "epic" || meta["ocman.kind"] != "work-epic" || revision < 1 ||
+			(origin != FormulaOriginBuiltIn && origin != FormulaOriginCustom) || err != nil ||
+			(origin == FormulaOriginCustom && !sha256Pattern.MatchString(meta["ocman.formula_hash"])) {
 			continue
 		}
 		planning := byID[meta["ocman.planning_work_id"]]
@@ -325,7 +335,7 @@ func listWorkEpics(ctx context.Context, path, beadsDir string, r runner) ([]Work
 		}
 		epics = append(epics, WorkEpic{
 			ID: issue.ID, Status: issue.Status, Goal: meta["ocman.goal"], InitialProject: meta["ocman.initial_project"],
-			FormulaID: DefaultFormulaID, FormulaVersion: DefaultFormulaVersion, InstantiationID: meta["ocman.instantiation_id"],
+			FormulaID: meta["ocman.formula_id"], FormulaVersion: revision, FormulaRevision: revision, FormulaHash: meta["ocman.formula_hash"], FormulaOrigin: origin, InstantiationID: meta["ocman.instantiation_id"],
 			Planning: PlanningState{WorkID: planning.ID, WorkStatus: planning.Status, ApprovalGateID: approval.ID, ApprovalStatus: approval.Status},
 		})
 	}
@@ -333,19 +343,33 @@ func listWorkEpics(ctx context.Context, path, beadsDir string, r runner) ([]Work
 	return epics, nil
 }
 
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 func sameProvenance(child, epic map[string]string, kind string) bool {
 	return child["ocman.contract"] == "1" && child["ocman.kind"] == kind &&
 		child["ocman.formula_id"] == epic["ocman.formula_id"] &&
-		child["ocman.formula_version"] == epic["ocman.formula_version"] &&
+		firstNonEmpty(child["ocman.formula_revision"], child["ocman.formula_version"]) == firstNonEmpty(epic["ocman.formula_revision"], epic["ocman.formula_version"]) &&
+		child["ocman.formula_hash"] == epic["ocman.formula_hash"] &&
 		child["ocman.formula_origin"] == epic["ocman.formula_origin"] &&
 		child["ocman.instantiation_id"] == epic["ocman.instantiation_id"]
 }
 
-func matchInstantiation(epics []WorkEpic, req CreateWorkEpicRequest) (*WorkEpic, error) {
+func matchInstantiation(epics []WorkEpic, req CreateWorkEpicRequest, formulaHash string) (*WorkEpic, error) {
 	var found *WorkEpic
 	for i := range epics {
-		if epics[i].InstantiationID != req.InstantiationID || epics[i].FormulaID != DefaultFormulaID || epics[i].FormulaVersion != DefaultFormulaVersion {
+		if epics[i].InstantiationID != req.InstantiationID {
 			continue
+		}
+		legacyBuiltIn := req.FormulaID == DefaultFormulaID && epics[i].FormulaHash == ""
+		if epics[i].FormulaID != req.FormulaID || epics[i].FormulaRevision != req.FormulaRevision || (epics[i].FormulaHash != formulaHash && !legacyBuiltIn) {
+			return nil, fmt.Errorf("%w: instantiation ID %q belongs to different Formula provenance", ErrInstantiationConflict, req.InstantiationID)
 		}
 		if found != nil {
 			return nil, fmt.Errorf("%w: multiple work epics have instantiation ID %q", ErrInstantiationConflict, req.InstantiationID)

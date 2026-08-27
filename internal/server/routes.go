@@ -99,6 +99,12 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/factory/status", s.get(s.handleFactoryStatus))
 	mux.HandleFunc("/api/factory/epics", s.requireAuth(s.handleFactoryEpics))
 	mux.HandleFunc("/api/factory/epics/", s.get(s.handleFactoryEpic))
+	mux.HandleFunc("/api/factory/formulas", s.requireAuth(s.handleFactoryFormulas))
+	mux.HandleFunc("/api/factory/formulas/copy", s.requireAuth(s.handleFactoryFormulaCopy))
+	mux.HandleFunc("/api/factory/formulas/validate", s.requireAuth(s.handleFactoryFormulaValidate))
+	mux.HandleFunc("/api/factory/formulas/preview", s.requireAuth(s.handleFactoryFormulaPreview))
+	mux.HandleFunc("/api/factory/formulas/archive", s.requireAuth(s.requireLocalhost(s.handleFactoryFormulaArchive)))
+	mux.HandleFunc("/api/factory/formulas/delete", s.requireAuth(s.requireLocalhost(s.handleFactoryFormulaDelete)))
 
 	workflowHandler := s.requireLocalhost(s.handleWorkflows)
 	mux.HandleFunc("/api/workflows", workflowHandler)

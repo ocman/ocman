@@ -168,6 +168,13 @@ type factoryService interface {
 	CreateWorkEpic(context.Context, factory.CreateWorkEpicRequest) (factory.WorkEpic, error)
 	ListWorkEpics(context.Context) ([]factory.WorkEpic, error)
 	GetWorkEpic(context.Context, string) (factory.WorkEpic, error)
+	ListFormulas(context.Context) ([]factory.FormulaSummary, error)
+	CopyFormula(context.Context, string, int) (factory.FormulaDraft, error)
+	ValidateFormula(string) factory.FormulaValidation
+	PreviewFormula(string, map[string]string) (factory.FormulaPreview, error)
+	SaveFormula(context.Context, factory.SaveFormulaRequest) (factory.FormulaRevision, error)
+	ArchiveFormula(context.Context, string) error
+	DeleteFormula(context.Context, string) error
 }
 
 // remoteAccessInfo holds this instance's own remote-access surface for

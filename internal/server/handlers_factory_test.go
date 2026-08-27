@@ -13,13 +13,34 @@ import (
 )
 
 type fakeFactoryService struct {
-	status    factory.Status
-	epics     []factory.WorkEpic
-	createReq factory.CreateWorkEpicRequest
-	createErr error
-	listErr   error
-	getErr    error
+	status       factory.Status
+	epics        []factory.WorkEpic
+	createReq    factory.CreateWorkEpicRequest
+	createErr    error
+	listErr      error
+	getErr       error
+	formulaErr   error
+	savedFormula factory.SaveFormulaRequest
 }
+
+func (f *fakeFactoryService) ListFormulas(context.Context) ([]factory.FormulaSummary, error) {
+	return []factory.FormulaSummary{{ID: factory.DefaultFormulaID, Name: "Shipped delivery", Origin: factory.FormulaOriginBuiltIn, CurrentRevision: 1}}, nil
+}
+func (f *fakeFactoryService) CopyFormula(context.Context, string, int) (factory.FormulaDraft, error) {
+	return factory.FormulaDraft{DefinitionYAML: "schema: 1\n"}, nil
+}
+func (f *fakeFactoryService) ValidateFormula(string) factory.FormulaValidation {
+	return factory.FormulaValidation{Valid: true, Schema: 1, Errors: []string{}}
+}
+func (f *fakeFactoryService) PreviewFormula(string, map[string]string) (factory.FormulaPreview, error) {
+	return factory.FormulaPreview{Name: "Preview"}, nil
+}
+func (f *fakeFactoryService) SaveFormula(_ context.Context, req factory.SaveFormulaRequest) (factory.FormulaRevision, error) {
+	f.savedFormula = req
+	return factory.FormulaRevision{FormulaSummary: factory.FormulaSummary{ID: req.ID, Name: req.Name}, Revision: 1}, f.formulaErr
+}
+func (f *fakeFactoryService) ArchiveFormula(context.Context, string) error { return nil }
+func (f *fakeFactoryService) DeleteFormula(context.Context, string) error  { return f.formulaErr }
 
 func (f *fakeFactoryService) Start(context.Context) error           { return nil }
 func (f *fakeFactoryService) Close()                                {}
@@ -219,5 +240,52 @@ func TestFactoryEpicErrorMapping(t *testing.T) {
 				t.Fatalf("status = %d, want %d", rec.Code, tt.want)
 			}
 		})
+	}
+}
+
+func TestFactoryFormulaRoutesExposeDraftValidationPreviewAndProtectedPersistence(t *testing.T) {
+	svc := &fakeFactoryService{}
+	srv := New(nil, nil, "", nil, nil)
+	srv.factory = svc
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, body := range map[string]string{
+		"/api/factory/formulas/copy":     `{"id":"ocman/default","revision":1}`,
+		"/api/factory/formulas/validate": `{"definitionYaml":"schema: 1"}`,
+		"/api/factory/formulas/preview":  `{"definitionYaml":"schema: 1","parameters":{"goal":"Ship","initial_project":"/repo"}}`,
+	} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, strings.NewReader(body)))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("POST %s = %d: %s", path, rec.Code, rec.Body.String())
+		}
+	}
+
+	saveBody := `{"id":"custom/team","name":"Team","definitionYaml":"schema: 1"}`
+	remote := httptest.NewRequest(http.MethodPost, "/api/factory/formulas", strings.NewReader(saveBody))
+	remote.RemoteAddr = "10.0.0.5:1234"
+	remoteRec := httptest.NewRecorder()
+	mux.ServeHTTP(remoteRec, remote)
+	if remoteRec.Code != http.StatusForbidden {
+		t.Fatalf("remote save = %d, want 403", remoteRec.Code)
+	}
+
+	local := httptest.NewRequest(http.MethodPost, "/api/factory/formulas", strings.NewReader(saveBody))
+	local.RemoteAddr = "127.0.0.1:1234"
+	localRec := httptest.NewRecorder()
+	mux.ServeHTTP(localRec, local)
+	if localRec.Code != http.StatusCreated || svc.savedFormula.ID != "custom/team" {
+		t.Fatalf("local save = %d, %#v: %s", localRec.Code, svc.savedFormula, localRec.Body.String())
+	}
+
+	svc.formulaErr = factory.ErrFormulaReferenced
+	deleteReq := httptest.NewRequest(http.MethodPost, "/api/factory/formulas/delete", strings.NewReader(`{"id":"custom/team"}`))
+	deleteReq.RemoteAddr = "127.0.0.1:1234"
+	deleteRec := httptest.NewRecorder()
+	mux.ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusConflict {
+		t.Fatalf("referenced delete = %d, want 409", deleteRec.Code)
 	}
 }
