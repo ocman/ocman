@@ -167,7 +167,9 @@ import (
 //	46 - drop retired MCP child-session persistence.
 //	47 - add privacy-minimal permission lifecycle timing and outcomes for
 //	     aggregate approval statistics.
-const latestSchemaVersion = 47
+//	48 - repair early v47 development databases that created the permission
+//	     lifecycle table before its project_root column was added.
+const latestSchemaVersion = 48
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -366,6 +368,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV46(tx)
 	case 47:
 		return migrateToV47(tx)
+	case 48:
+		return migrateToV48(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -1561,6 +1565,50 @@ func migrateToV47(tx *sql.Tx) error {
 			PRIMARY KEY (platform, session_id, permission_id)
 		);
 		CREATE INDEX IF NOT EXISTS permission_lifecycle_dashboard_idx
+			ON permission_lifecycle (project_root, requested_at);
+	`)
+	return err
+}
+
+func migrateToV48(tx *sql.Tx) error {
+	if err := addColumnIfMissing(tx, "permission_lifecycle", "project_root", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	rows, err := tx.Query(`
+		SELECT platform, session_id, permission_id, directory
+		FROM permission_lifecycle
+		WHERE project_root = ''
+	`)
+	if err != nil {
+		return err
+	}
+	type permissionProject struct {
+		platform, sessionID, permissionID, directory string
+	}
+	var permissions []permissionProject
+	for rows.Next() {
+		var permission permissionProject
+		if err := rows.Scan(&permission.platform, &permission.sessionID, &permission.permissionID, &permission.directory); err != nil {
+			rows.Close()
+			return err
+		}
+		permissions = append(permissions, permission)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, permission := range permissions {
+		if _, err := tx.Exec(`
+			UPDATE permission_lifecycle
+			SET project_root = ?
+			WHERE platform = ? AND session_id = ? AND permission_id = ?
+		`, ProjectRootForDirectory(permission.directory), permission.platform, permission.sessionID, permission.permissionID); err != nil {
+			return err
+		}
+	}
+	_, err = tx.Exec(`
+		DROP INDEX IF EXISTS permission_lifecycle_dashboard_idx;
+		CREATE INDEX permission_lifecycle_dashboard_idx
 			ON permission_lifecycle (project_root, requested_at);
 	`)
 	return err

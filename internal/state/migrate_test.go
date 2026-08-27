@@ -858,6 +858,56 @@ func TestMigrateV46DropsChildSessionsAndPreservesState(t *testing.T) {
 	}
 }
 
+func TestMigrateRepairsEarlyV47PermissionLifecycle(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`
+		CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL);
+		INSERT INTO schema_version (version, applied_at) VALUES (47, 0);
+		CREATE TABLE permission_lifecycle (
+			platform TEXT NOT NULL,
+			session_id TEXT NOT NULL,
+			permission_id TEXT NOT NULL,
+			directory TEXT NOT NULL,
+			requested_at INTEGER NOT NULL,
+			judge_started_at INTEGER NOT NULL DEFAULT 0,
+			judge_completed_at INTEGER NOT NULL DEFAULT 0,
+			resolved_at INTEGER NOT NULL DEFAULT 0,
+			evaluation_method TEXT NOT NULL DEFAULT '',
+			evaluation_result TEXT NOT NULL DEFAULT '',
+			resolution TEXT NOT NULL DEFAULT '',
+			manually_preempted INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (platform, session_id, permission_id)
+		);
+		INSERT INTO permission_lifecycle
+			(platform, session_id, permission_id, directory, requested_at)
+		VALUES ('opencode', 'session', 'permission', '/src/.worktrees/repo/task', 1);
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	var root string
+	if err := db.QueryRow(`SELECT project_root FROM permission_lifecycle`).Scan(&root); err != nil {
+		t.Fatal(err)
+	}
+	if root != "/src/repo" {
+		t.Fatalf("project_root = %q, want /src/repo", root)
+	}
+	stats, err := (&DB{db: db}).PermissionApprovalStats(t.Context(), 0, "/src/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.EligibleRequests != 1 {
+		t.Fatalf("eligible requests = %d, want 1", stats.EligibleRequests)
+	}
+}
+
 func TestAuthSecret_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := dir + "/state.db"
