@@ -146,7 +146,7 @@ export interface FormulaSummary {
   currentRevision: number;
   contentHash: string;
   archived: boolean;
-  revisions: Array<{ revision: number; contentHash: string }>;
+  revisions: Array<{ revision: number; contentHash: string; instantiable: boolean }>;
 }
 
 export interface FormulaDraft {

@@ -300,25 +300,16 @@ func parseGraphResult(data []byte, planningKey, approvalKey string) (map[string]
 }
 
 func listWorkEpics(ctx context.Context, path, beadsDir string, r runner) ([]WorkEpic, error) {
-	out, err := run(ctx, r, path, parentDir(beadsDir), []string{
-		"--readonly", "list", "--all", "--include-gates", "--limit", "0", "--metadata-field", "ocman.contract=1", "--json",
-	}, beadsCommandEnv(beadsDir))
+	issues, err := listFactoryIssues(ctx, path, beadsDir, r)
 	if err != nil {
-		return nil, fmt.Errorf("%w: list Factory work: %w", ErrBeadsFailure, err)
+		return nil, err
 	}
-	var envelope struct {
-		SchemaVersion int           `json:"schema_version"`
-		Data          *[]beadsIssue `json:"data"`
-	}
-	if !decodeOne(out, &envelope) || envelope.SchemaVersion != 1 || envelope.Data == nil {
-		return nil, fmt.Errorf("%w: Beads returned an unsupported Factory list response", ErrBeadsFailure)
-	}
-	byID := make(map[string]beadsIssue, len(*envelope.Data))
-	for _, issue := range *envelope.Data {
+	byID := make(map[string]beadsIssue, len(issues))
+	for _, issue := range issues {
 		byID[issue.ID] = issue
 	}
 	var epics []WorkEpic
-	for _, issue := range *envelope.Data {
+	for _, issue := range issues {
 		meta := issue.Metadata
 		revision, err := strconv.Atoi(firstNonEmpty(meta["ocman.formula_revision"], meta["ocman.formula_version"]))
 		origin := FormulaOrigin(meta["ocman.formula_origin"])
@@ -342,6 +333,23 @@ func listWorkEpics(ctx context.Context, path, beadsDir string, r runner) ([]Work
 	}
 	sort.Slice(epics, func(i, j int) bool { return epics[i].ID < epics[j].ID })
 	return epics, nil
+}
+
+func listFactoryIssues(ctx context.Context, path, beadsDir string, r runner) ([]beadsIssue, error) {
+	out, err := run(ctx, r, path, parentDir(beadsDir), []string{
+		"--readonly", "list", "--all", "--include-gates", "--limit", "0", "--metadata-field", "ocman.contract=1", "--json",
+	}, beadsCommandEnv(beadsDir))
+	if err != nil {
+		return nil, fmt.Errorf("%w: list Factory work: %w", ErrBeadsFailure, err)
+	}
+	var envelope struct {
+		SchemaVersion int           `json:"schema_version"`
+		Data          *[]beadsIssue `json:"data"`
+	}
+	if !decodeOne(out, &envelope) || envelope.SchemaVersion != 1 || envelope.Data == nil {
+		return nil, fmt.Errorf("%w: Beads returned an unsupported Factory list response", ErrBeadsFailure)
+	}
+	return *envelope.Data, nil
 }
 
 func firstNonEmpty(values ...string) string {

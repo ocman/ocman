@@ -104,6 +104,7 @@ func TestFormulaPolicyRejectsRemovedSafetyConstraintsAndUnknownParameters(t *tes
 	}{
 		{"unknown field", draft.DefinitionYAML + "future: true\n", "field future not found"},
 		{"unknown parameter", strings.Replace(draft.DefinitionYAML, "initial_project:\n    type: local-project", "initial_project:\n    type: local-project\n  shell:\n    type: string", 1), "parameter shell"},
+		{"reserved epic key", strings.NewReplacer("key: planning", "key: epic", "to: planning", "to: epic").Replace(draft.DefinitionYAML), "reserved"},
 		{"plan approval", strings.Replace(draft.DefinitionYAML, "kind: plan-approval", "kind: question", 1), "Plan approval"},
 		{"delivery", strings.Replace(draft.DefinitionYAML, "kind: delivery", "kind: agent-work", 1), "Delivery"},
 		{"provider check", strings.Replace(draft.DefinitionYAML, "kind: provider-check", "kind: question", 1), "exact provider check"},
@@ -130,16 +131,13 @@ func TestFormulaPolicyRejectsRemovedSafetyConstraintsAndUnknownParameters(t *tes
 func TestBuiltInFormulaRetainsEveryRevision(t *testing.T) {
 	project := t.TempDir()
 	project, _ = filepath.EvalSymlinks(project)
-	runner := &fakeRunner{runs: []fakeRun{
-		{out: versionEnvelope}, {out: listEnvelope(`[]`)},
-		{out: `{"schema_version":1,"data":{"ids":{"epic":"fac-1","planning":"fac-1.1","approval":"fac-1.2"}}}`},
-	}}
+	runner := &fakeRunner{}
 	svc, _ := formulaTestService(t, runner)
 	library, err := svc.ListFormulas(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := library[0].Revisions; len(got) != DefaultFormulaVersion || got[0].Revision != 1 || got[1].Revision != 2 || got[0].ContentHash == got[1].ContentHash {
+	if got := library[0].Revisions; len(got) != DefaultFormulaVersion || got[0].Revision != 1 || got[0].Instantiable || got[1].Revision != 2 || !got[1].Instantiable || got[0].ContentHash == got[1].ContentHash {
 		t.Fatalf("built-in revisions = %#v", got)
 	}
 	revision, err := svc.GetFormulaRevision(context.Background(), DefaultFormulaID, 1)
@@ -150,12 +148,15 @@ func TestBuiltInFormulaRetainsEveryRevision(t *testing.T) {
 	if err != nil || draft.SourceRevision != 1 || draft.DefinitionYAML != revision.DefinitionYAML {
 		t.Fatalf("built-in revision 1 draft = %#v, %v", draft, err)
 	}
-	epic, err := svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{
+	_, err = svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{
 		InstantiationID: "legacy", Goal: "Repeat legacy", InitialProject: project,
 		FormulaID: DefaultFormulaID, FormulaRevision: 1, AcknowledgeLocalExecution: true,
 	})
-	if err != nil || epic.FormulaRevision != 1 || epic.FormulaHash != revision.ContentHash {
-		t.Fatalf("built-in revision 1 epic = %#v, %v", epic, err)
+	if !errors.Is(err, ErrInvalidFormula) {
+		t.Fatalf("CreateWorkEpic revision 1 error = %v, want invalid Formula", err)
+	}
+	if len(runner.seen) != 0 {
+		t.Fatalf("unsafe built-in reached Beads: %#v", runner.seen)
 	}
 }
 
@@ -347,6 +348,27 @@ func TestArchivedAndDeletedFormulaPreservesReferencedRevision(t *testing.T) {
 	}
 	if got, err := svc.GetWorkEpic(context.Background(), "fac-2"); err != nil || got.FormulaHash != revision.ContentHash {
 		t.Fatalf("pinned epic = %#v, %v", got, err)
+	}
+}
+
+func TestDeleteFormulaPreservesRevisionWhenReferencedEpicGraphIsDamaged(t *testing.T) {
+	runner := &fakeRunner{}
+	svc, _ := formulaTestService(t, runner)
+	draft, _ := svc.CopyFormula(context.Background(), DefaultFormulaID, DefaultFormulaVersion)
+	customYAML := strings.Replace(draft.DefinitionYAML, "name: Shipped delivery", "name: Team delivery", 1)
+	if _, err := svc.SaveFormula(context.Background(), SaveFormulaRequest{ID: "custom/team", Name: "Team delivery", DefinitionYAML: customYAML}); err != nil {
+		t.Fatal(err)
+	}
+	runner.runs = []fakeRun{
+		{out: versionEnvelope},
+		{out: listEnvelope(`[{"id":"fac-damaged","status":"open","issue_type":"epic","metadata":{"ocman.contract":"1","ocman.kind":"work-epic","ocman.formula_id":"custom/team","ocman.formula_revision":"1","ocman.formula_origin":"custom","ocman.planning_work_id":"missing","ocman.plan_approval_gate_id":"missing"}}]`)},
+	}
+
+	if err := svc.DeleteFormula(context.Background(), "custom/team"); !errors.Is(err, ErrFormulaReferenced) {
+		t.Fatalf("DeleteFormula error = %v, want referenced", err)
+	}
+	if _, err := svc.GetFormulaRevision(context.Background(), "custom/team", 1); err != nil {
+		t.Fatalf("referenced revision was deleted: %v", err)
 	}
 }
 

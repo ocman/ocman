@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -117,8 +118,9 @@ type FormulaSummary struct {
 }
 
 type FormulaRevisionRef struct {
-	Revision    int    `json:"revision"`
-	ContentHash string `json:"contentHash"`
+	Revision     int    `json:"revision"`
+	ContentHash  string `json:"contentHash"`
+	Instantiable bool   `json:"instantiable"`
 }
 
 type FormulaRevision struct {
@@ -274,6 +276,10 @@ func validateFormulaPolicy(definition formulaDefinition) []string {
 	mergeProjects := make(map[string]int)
 	mergeKeys := make(map[string]string)
 	for _, node := range definition.Nodes {
+		if node.Key == "epic" {
+			problems = append(problems, "node key epic is reserved for the Work Epic")
+			continue
+		}
 		if !stableID.MatchString(node.Key) || keys[node.Key].Key != "" {
 			problems = append(problems, "node keys must be unique stable identifiers")
 			continue
@@ -491,7 +497,7 @@ func (s *Service) ListFormulas(ctx context.Context) ([]FormulaSummary, error) {
 			if err != nil {
 				return nil, fmt.Errorf("read Formula %s revision %d: %w", row.ID, number, err)
 			}
-			summary.Revisions = append(summary.Revisions, FormulaRevisionRef{Revision: number, ContentHash: saved.ContentHash})
+			summary.Revisions = append(summary.Revisions, FormulaRevisionRef{Revision: number, ContentHash: saved.ContentHash, Instantiable: true})
 		}
 		result = append(result, summary)
 	}
@@ -527,7 +533,8 @@ func (s *Service) GetFormulaRevision(ctx context.Context, id string, revision in
 func builtInFormulaSummary() FormulaSummary {
 	revisions := make([]FormulaRevisionRef, 0, DefaultFormulaVersion)
 	for revision := 1; revision < len(builtInFormulaRevisions); revision++ {
-		revisions = append(revisions, FormulaRevisionRef{Revision: revision, ContentHash: formulaHash(builtInFormulaRevisions[revision])})
+		definition, _, validation := parseFormula(builtInFormulaRevisions[revision])
+		revisions = append(revisions, FormulaRevisionRef{Revision: revision, ContentHash: formulaHash(builtInFormulaRevisions[revision]), Instantiable: validation.Valid && len(validateFormulaPolicy(definition)) == 0})
 	}
 	return FormulaSummary{ID: DefaultFormulaID, Name: "Shipped delivery", Origin: FormulaOriginBuiltIn, CurrentRevision: DefaultFormulaVersion, ContentHash: revisions[len(revisions)-1].ContentHash, Revisions: revisions}
 }
@@ -565,12 +572,17 @@ func (s *Service) DeleteFormula(ctx context.Context, id string) error {
 	}
 	s.pourMu.Lock()
 	defer s.pourMu.Unlock()
-	epics, err := s.ListWorkEpics(ctx)
+	beadsDir := filepath.Join(s.dir, "beads")
+	path, _, failure := compatibleBeads(ctx, beadsDir, s.runner)
+	if failure.Reason != "" {
+		return beadsError(failure)
+	}
+	issues, err := listFactoryIssues(ctx, path, beadsDir, s.runner)
 	if err != nil {
 		return err
 	}
-	for _, epic := range epics {
-		if epic.FormulaID == id {
+	for _, issue := range issues {
+		if issue.IssueType == "epic" && issue.Metadata["ocman.contract"] == "1" && issue.Metadata["ocman.kind"] == "work-epic" && issue.Metadata["ocman.formula_origin"] == string(FormulaOriginCustom) && issue.Metadata["ocman.formula_id"] == id {
 			return ErrFormulaReferenced
 		}
 	}
@@ -595,7 +607,7 @@ func (s *Service) mutationOwned() bool {
 
 func definitionForRevision(revision FormulaRevision) (formulaDefinition, error) {
 	definition, _, validation := parseFormula(revision.DefinitionYAML)
-	if !validation.Valid || definition.Schema != 1 || (revision.Origin != FormulaOriginBuiltIn && len(validateFormulaPolicy(definition)) != 0) {
+	if !validation.Valid || len(validateFormulaPolicy(definition)) != 0 {
 		return formulaDefinition{}, ErrInvalidFormula
 	}
 	return definition, nil

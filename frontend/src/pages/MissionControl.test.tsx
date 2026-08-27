@@ -29,7 +29,7 @@ describe('MissionControl', () => {
     vi.resetAllMocks();
     vi.mocked(useWorkEpics).mockReturnValue({ data: [] } as never);
     vi.mocked(useCreateWorkEpic).mockReturnValue({ mutateAsync, isPending: false } as never);
-    vi.mocked(useFactoryFormulas).mockReturnValue({ data: [{ id: 'ocman/default', name: 'Shipped delivery', origin: 'built-in', currentRevision: 2, contentHash: 'abc', archived: false, revisions: [{ revision: 2, contentHash: 'abc' }] }] } as never);
+    vi.mocked(useFactoryFormulas).mockReturnValue({ data: [{ id: 'ocman/default', name: 'Shipped delivery', origin: 'built-in', currentRevision: 2, contentHash: 'abc', archived: false, revisions: [{ revision: 2, contentHash: 'abc', instantiable: true }] }] } as never);
     vi.mocked(useFactoryFormulaActions).mockReturnValue({
       copy: { mutateAsync: vi.fn() }, validate: { mutateAsync: vi.fn() }, preview: { mutateAsync: vi.fn() },
       save: { mutateAsync: vi.fn() }, archive: { mutateAsync: vi.fn() }, remove: { mutateAsync: vi.fn() },
@@ -132,7 +132,7 @@ describe('MissionControl', () => {
     } as never);
     vi.mocked(useFactoryFormulas).mockReturnValue({ data: [{
       id: 'custom/team', name: 'Team delivery', origin: 'custom', currentRevision: 3,
-      contentHash: 'new', archived: false, revisions: [{ revision: 1, contentHash: 'old' }, { revision: 3, contentHash: 'new' }],
+      contentHash: 'new', archived: false, revisions: [{ revision: 1, contentHash: 'old', instantiable: true }, { revision: 3, contentHash: 'new', instantiable: true }],
     }] } as never);
     vi.mocked(useFactoryStatus).mockReturnValue({ data: healthy } as never);
     render(<MissionControl />);
@@ -142,6 +142,31 @@ describe('MissionControl', () => {
 
     expect(copy).toHaveBeenCalledWith({ id: 'custom/team', revision: 1 });
     expect(await screen.findByLabelText('Formula v1 YAML')).toHaveValue('schema: 1\nname: Team delivery copy\ntitle: Historical\n');
+  });
+
+  it('keeps unsafe built-in history inspectable but excludes it from intake', async () => {
+    const copy = vi.fn().mockResolvedValue({ definitionYaml: 'schema: 1\nname: Shipped delivery\n' });
+    vi.mocked(useFactoryFormulaActions).mockReturnValue({
+      copy: { mutateAsync: copy }, validate: { mutateAsync: vi.fn() }, preview: { mutateAsync: vi.fn() },
+      save: { mutateAsync: vi.fn() }, archive: { mutateAsync: vi.fn() }, remove: { mutateAsync: vi.fn() },
+    } as never);
+    vi.mocked(useFactoryFormulas).mockReturnValue({ data: [{
+      id: 'ocman/default', name: 'Shipped delivery', origin: 'built-in', currentRevision: 2,
+      contentHash: 'safe', archived: false, revisions: [
+        { revision: 1, contentHash: 'legacy', instantiable: false },
+        { revision: 2, contentHash: 'safe', instantiable: true },
+      ],
+    }] } as never);
+    vi.mocked(useFactoryStatus).mockReturnValue({ data: healthy } as never);
+    render(<MissionControl />);
+
+    const intake = screen.getByRole('combobox', { name: 'Formula' });
+    expect(within(intake).queryByRole('option', { name: /r1/ })).not.toBeInTheDocument();
+    expect(within(intake).getByRole('option', { name: /r2/ })).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Revision for Shipped delivery' }), '1');
+    await userEvent.click(screen.getByRole('button', { name: 'Copy Shipped delivery revision' }));
+    expect(copy).toHaveBeenCalledWith({ id: 'ocman/default', revision: 1 });
   });
 
   it('shows preview nodes and graph edges', async () => {
@@ -168,8 +193,8 @@ describe('MissionControl', () => {
     mutateAsync.mockResolvedValue({ id: 'epic-1' });
     vi.stubGlobal('crypto', { randomUUID: vi.fn(() => 'request-1') });
     vi.mocked(useFactoryFormulas).mockReturnValue({ data: [
-      { id: 'ocman/default', name: 'Shipped delivery', origin: 'built-in', currentRevision: 2, contentHash: 'a', archived: false, revisions: [{ revision: 2, contentHash: 'a' }] },
-      { id: 'custom/team', name: 'Team delivery', origin: 'custom', currentRevision: 3, contentHash: 'b', archived: false, revisions: [{ revision: 1, contentHash: 'old' }, { revision: 3, contentHash: 'b' }] },
+      { id: 'ocman/default', name: 'Shipped delivery', origin: 'built-in', currentRevision: 2, contentHash: 'a', archived: false, revisions: [{ revision: 2, contentHash: 'a', instantiable: true }] },
+      { id: 'custom/team', name: 'Team delivery', origin: 'custom', currentRevision: 3, contentHash: 'b', archived: false, revisions: [{ revision: 1, contentHash: 'old', instantiable: true }, { revision: 3, contentHash: 'b', instantiable: true }] },
     ] } as never);
     vi.mocked(useFactoryStatus).mockReturnValue({ data: healthy } as never);
     render(<MissionControl />);

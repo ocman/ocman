@@ -49,7 +49,7 @@ function CreateWorkEpic() {
             Formula
             <select name="formula" disabled={formulas.isLoading}>
               {(formulas.data ?? []).filter((formula) => !formula.archived).flatMap((formula) => (
-                (formula.revisions.length ? formula.revisions : [{ revision: formula.currentRevision }]).map((revision) => (
+                (formula.revisions.length ? formula.revisions : [{ revision: formula.currentRevision, instantiable: true }]).filter((revision) => revision.instantiable).map((revision) => (
                   <option key={`${formula.id}@${revision.revision}`} value={`${formula.id}@${revision.revision}`}>
                     {formula.name} ({formula.id} r{revision.revision})
                   </option>
