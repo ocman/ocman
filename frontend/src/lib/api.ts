@@ -86,6 +86,8 @@ export type {
   DaguStatus,
   FactoryStatus,
   FactoryReason,
+  WorkEpic,
+  CreateWorkEpicRequest,
 } from './api.types';
 
 // Type imports used by the api object below.
@@ -141,6 +143,8 @@ import type {
 	PromptSchedule,
 	DaguStatus,
 	FactoryStatus,
+	WorkEpic,
+	CreateWorkEpicRequest,
 } from './api.types';
 
 /**
@@ -391,6 +395,11 @@ export const api = {
     fetchJSON<PermissionStats>(`/api/permission-stats${queryString(params)}`, signal),
   projects: (signal?: AbortSignal) => fetchJSON<Project[]>('/api/projects', signal),
   factoryStatus: (signal?: AbortSignal) => fetchJSON<FactoryStatus>('/api/factory/status', signal),
+  factoryEpics: (signal?: AbortSignal) => fetchJSON<WorkEpic[]>('/api/factory/epics', signal),
+  factoryEpic: (id: string, signal?: AbortSignal) =>
+    fetchJSON<WorkEpic>(`/api/factory/epics/${encodeURIComponent(id)}`, signal),
+  createFactoryEpic: (request: CreateWorkEpicRequest) =>
+    postJSON<WorkEpic, CreateWorkEpicRequest>('/api/factory/epics', request),
   browseDirectories: (dir?: string, signal?: AbortSignal) =>
     fetchJSON<DirectoryBrowseResponse>(`/api/filesystem/directories${queryString({ dir })}`, signal),
   searchDirectories: (root: string | undefined, query: string, limit?: number, signal?: AbortSignal) => {

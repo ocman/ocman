@@ -111,6 +111,29 @@ export interface FactoryStatus {
   message?: string;
 }
 
+export interface WorkEpic {
+  id: string;
+  status: string;
+  goal: string;
+  initialProject: string;
+  formulaId: string;
+  formulaVersion: number;
+  instantiationId: string;
+  planning: {
+    workId: string;
+    workStatus: string;
+    approvalGateId: string;
+    approvalStatus: string;
+  };
+}
+
+export interface CreateWorkEpicRequest {
+  instantiationId: string;
+  goal: string;
+  initialProject: string;
+  acknowledgeLocalExecution: true;
+}
+
 export interface Session {
   id: string;
 	/**

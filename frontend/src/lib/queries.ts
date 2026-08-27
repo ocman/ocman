@@ -11,7 +11,7 @@
  *
  * See spec/ui-responsiveness Wave 3 (P4, P5).
  */
-import { useQuery, type QueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { api } from './api';
 import { useActivityScope } from './activityScopes';
 import type {
@@ -24,6 +24,8 @@ import type {
   HourlyData,
   HourlyTokensByModel,
   FactoryStatus,
+  WorkEpic,
+  CreateWorkEpicRequest,
 } from './api';
 
 export function useFactoryStatus() {
@@ -31,6 +33,40 @@ export function useFactoryStatus() {
     queryKey: ['factory-status'],
     queryFn: ({ signal }) => api.factoryStatus(signal),
     refetchInterval: 10_000,
+  });
+}
+
+export function useWorkEpics(enabled = true) {
+  return useQuery<WorkEpic[]>({
+    queryKey: ['factory-epics'],
+    queryFn: ({ signal }) => api.factoryEpics(signal),
+    enabled,
+    refetchInterval: 10_000,
+  });
+}
+
+export function useWorkEpic(id: string) {
+  return useQuery<WorkEpic>({
+    queryKey: ['factory-epics', id],
+    queryFn: ({ signal }) => api.factoryEpic(id, signal),
+    enabled: Boolean(id),
+  });
+}
+
+export function useCreateWorkEpic() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: CreateWorkEpicRequest) => api.createFactoryEpic(request),
+    onSuccess: async (epic) => {
+      queryClient.setQueryData<WorkEpic[]>(['factory-epics'], (epics = []) => [
+        epic,
+        ...epics.filter((item) => item.id !== epic.id),
+      ]);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['factory-status'] }),
+        queryClient.invalidateQueries({ queryKey: ['factory-epics'] }),
+      ]);
+    },
   });
 }
 

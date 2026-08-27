@@ -3,18 +3,51 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/factory"
 )
 
-type fakeFactoryService struct{ status factory.Status }
+type fakeFactoryService struct {
+	status    factory.Status
+	epics     []factory.WorkEpic
+	createReq factory.CreateWorkEpicRequest
+	createErr error
+	listErr   error
+	getErr    error
+}
 
-func (f fakeFactoryService) Start(context.Context) error           { return nil }
-func (f fakeFactoryService) Close()                                {}
-func (f fakeFactoryService) Status(context.Context) factory.Status { return f.status }
+func (f *fakeFactoryService) Start(context.Context) error           { return nil }
+func (f *fakeFactoryService) Close()                                {}
+func (f *fakeFactoryService) Status(context.Context) factory.Status { return f.status }
+func (f *fakeFactoryService) CreateWorkEpic(_ context.Context, req factory.CreateWorkEpicRequest) (factory.WorkEpic, error) {
+	f.createReq = req
+	if !req.AcknowledgeLocalExecution && f.createErr == nil {
+		return factory.WorkEpic{}, errors.New("local non-isolated execution must be acknowledged")
+	}
+	if f.createErr != nil {
+		return factory.WorkEpic{}, f.createErr
+	}
+	return f.epics[0], nil
+}
+func (f *fakeFactoryService) ListWorkEpics(context.Context) ([]factory.WorkEpic, error) {
+	return f.epics, f.listErr
+}
+func (f *fakeFactoryService) GetWorkEpic(_ context.Context, id string) (factory.WorkEpic, error) {
+	if f.getErr != nil {
+		return factory.WorkEpic{}, f.getErr
+	}
+	for _, epic := range f.epics {
+		if epic.ID == id {
+			return epic, nil
+		}
+	}
+	return factory.WorkEpic{}, factory.ErrWorkEpicNotFound
+}
 
 func TestFactoryStatusRouteIsAuthenticatedAndReadOnly(t *testing.T) {
 	auth := newTestAuth(t, "hunter2")
@@ -23,7 +56,7 @@ func TestFactoryStatusRouteIsAuthenticatedAndReadOnly(t *testing.T) {
 		Beads: factory.BeadsHealth{Usable: true, Version: "1.1.0", ContractVersion: 1},
 	}
 	srv := New(nil, nil, "", nil, auth)
-	srv.factory = fakeFactoryService{status: want}
+	srv.factory = &fakeFactoryService{status: want}
 	mux, err := srv.routes()
 	if err != nil {
 		t.Fatal(err)
@@ -62,5 +95,129 @@ func TestFactoryStatusRouteIsAuthenticatedAndReadOnly(t *testing.T) {
 	mux.ServeHTTP(rr, request)
 	if rr.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST status = %d, want 405", rr.Code)
+	}
+}
+
+func TestFactoryEpicRoutesAuthMethodsAndLocalhostProtection(t *testing.T) {
+	auth := newTestAuth(t, "hunter2")
+	srv := New(nil, nil, "", nil, auth)
+	svc := &fakeFactoryService{epics: []factory.WorkEpic{{ID: "fac-1", Goal: "Ship it"}}}
+	srv.factory = svc
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/api/factory/epics", nil)
+	request.RemoteAddr = "10.0.0.5:1234"
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, request)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous list = %d, want 401", rr.Code)
+	}
+
+	cookieWriter := httptest.NewRecorder()
+	auth.issueCookie(cookieWriter, httptest.NewRequest(http.MethodGet, "/", nil))
+	cookie := cookieWriter.Result().Cookies()[0]
+	for _, tt := range []struct {
+		name, method, path, remote, origin string
+		want                               int
+	}{
+		{name: "remote create", method: http.MethodPost, path: "/api/factory/epics", remote: "10.0.0.5:1234", want: http.StatusForbidden},
+		{name: "foreign origin", method: http.MethodPost, path: "/api/factory/epics", remote: "127.0.0.1:1234", origin: "https://evil.example", want: http.StatusForbidden},
+		{name: "unsupported collection method", method: http.MethodPut, path: "/api/factory/epics", remote: "127.0.0.1:1234", want: http.StatusMethodNotAllowed},
+		{name: "detail is read only", method: http.MethodPost, path: "/api/factory/epics/fac-1", remote: "127.0.0.1:1234", want: http.StatusMethodNotAllowed},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(`{}`))
+			req.RemoteAddr = tt.remote
+			req.AddCookie(cookie)
+			if tt.origin != "" {
+				req.Header.Set("Origin", tt.origin)
+			}
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+			if rec.Code != tt.want {
+				t.Fatalf("status = %d, want %d: %s", rec.Code, tt.want, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestFactoryEpicCreateListAndGet(t *testing.T) {
+	epic := factory.WorkEpic{ID: "fac-1", Goal: "Ship it", InitialProject: "/repo", InstantiationID: "request-1"}
+	svc := &fakeFactoryService{epics: []factory.WorkEpic{epic}}
+	srv := New(nil, nil, "", nil, nil)
+	srv.factory = svc
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	create := httptest.NewRequest(http.MethodPost, "/api/factory/epics", strings.NewReader(`{"instantiationId":"request-1","goal":"Ship it","initialProject":"/repo","acknowledgeLocalExecution":true}`))
+	create.RemoteAddr = "127.0.0.1:1234"
+	created := httptest.NewRecorder()
+	mux.ServeHTTP(created, create)
+	if created.Code != http.StatusCreated || svc.createReq != (factory.CreateWorkEpicRequest{InstantiationID: "request-1", Goal: "Ship it", InitialProject: "/repo", AcknowledgeLocalExecution: true}) {
+		t.Fatalf("create = %d, req %#v: %s", created.Code, svc.createReq, created.Body.String())
+	}
+
+	for _, path := range []string{"/api/factory/epics", "/api/factory/epics/fac-1"} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"id":"fac-1"`) {
+			t.Fatalf("GET %s = %d: %s", path, rec.Code, rec.Body.String())
+		}
+	}
+
+	for name, body := range map[string]string{
+		"false acknowledgement": `{"instantiationId":"request-1","goal":"Ship it","initialProject":"/repo","acknowledgeLocalExecution":false}`,
+		"extra field":           `{"acknowledgeLocalExecution":true,"extra":true}`,
+		"multiple values":       `{} {}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/factory/epics", strings.NewReader(body))
+			req.RemoteAddr = "127.0.0.1:1234"
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestFactoryEpicErrorMapping(t *testing.T) {
+	for _, tt := range []struct {
+		name, method string
+		err          error
+		want         int
+	}{
+		{name: "missing", method: http.MethodGet, err: factory.ErrWorkEpicNotFound, want: http.StatusNotFound},
+		{name: "conflict", method: http.MethodPost, err: factory.ErrInstantiationConflict, want: http.StatusConflict},
+		{name: "unavailable", method: http.MethodPost, err: factory.ErrFactoryUnavailable, want: http.StatusServiceUnavailable},
+		{name: "beads failure", method: http.MethodPost, err: factory.ErrBeadsFailure, want: http.StatusBadGateway},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := New(nil, nil, "", nil, nil)
+			srv.factory = &fakeFactoryService{createErr: tt.err, getErr: tt.err}
+			mux, err := srv.routes()
+			if err != nil {
+				t.Fatal(err)
+			}
+			rec := httptest.NewRecorder()
+			path := "/api/factory/epics/fac-1"
+			body := strings.NewReader("")
+			if tt.method == http.MethodPost {
+				path = "/api/factory/epics"
+				body = strings.NewReader(`{"instantiationId":"request-1","goal":"Ship it","initialProject":"/repo","acknowledgeLocalExecution":true}`)
+			}
+			req := httptest.NewRequest(tt.method, path, body)
+			req.RemoteAddr = "127.0.0.1:1234"
+			mux.ServeHTTP(rec, req)
+			if rec.Code != tt.want {
+				t.Fatalf("status = %d, want %d", rec.Code, tt.want)
+			}
+		})
 	}
 }

@@ -169,7 +169,8 @@ import (
 //	     aggregate approval statistics.
 //	48 - repair early v47 development databases that created the permission
 //	     lifecycle table before its project_root column was added.
-const latestSchemaVersion = 48
+//	49 - create the independent Software Factory persistence boundary.
+const latestSchemaVersion = 49
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -370,6 +371,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV47(tx)
 	case 48:
 		return migrateToV48(tx)
+	case 49:
+		return migrateToV49(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -1610,6 +1613,175 @@ func migrateToV48(tx *sql.Tx) error {
 		DROP INDEX IF EXISTS permission_lifecycle_dashboard_idx;
 		CREATE INDEX permission_lifecycle_dashboard_idx
 			ON permission_lifecycle (project_root, requested_at);
+	`)
+	return err
+}
+
+func migrateToV49(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS factory_formula (
+			id               TEXT    PRIMARY KEY,
+			name             TEXT    NOT NULL,
+			source           TEXT    NOT NULL CHECK (source IN ('built_in', 'custom')),
+			current_revision INTEGER NOT NULL CHECK (current_revision > 0),
+			created_at       INTEGER NOT NULL,
+			updated_at       INTEGER NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS factory_formula_revision (
+			formula_id      TEXT    NOT NULL REFERENCES factory_formula(id),
+			revision        INTEGER NOT NULL CHECK (revision > 0),
+			schema_version  INTEGER NOT NULL CHECK (schema_version > 0),
+			definition_yaml TEXT    NOT NULL,
+			content_hash    TEXT    NOT NULL,
+			validation_json TEXT    NOT NULL,
+			created_at      INTEGER NOT NULL,
+			PRIMARY KEY (formula_id, revision),
+			UNIQUE (formula_id, content_hash)
+		);
+
+		CREATE TABLE IF NOT EXISTS factory_attempt (
+			id                   TEXT    PRIMARY KEY,
+			epic_id              TEXT    NOT NULL,
+			work_item_id         TEXT    NOT NULL,
+			sequence             INTEGER NOT NULL CHECK (sequence > 0),
+			phase                TEXT    NOT NULL CHECK (phase IN ('prepared', 'active', 'stopping', 'terminal')),
+			terminal_outcome     TEXT    NOT NULL DEFAULT '' CHECK (terminal_outcome IN ('', 'succeeded', 'skipped', 'cancelled', 'acknowledged_partial', 'failed', 'interrupted', 'ambiguous')),
+			session_platform     TEXT    NOT NULL DEFAULT '',
+			session_id           TEXT    NOT NULL DEFAULT '',
+			retry_of_attempt_id  TEXT    REFERENCES factory_attempt(id),
+			retry_at             INTEGER NOT NULL DEFAULT 0 CHECK (retry_at >= 0),
+			frozen_policy_json   TEXT    NOT NULL,
+			result_json          TEXT    NOT NULL DEFAULT '',
+			failure_type         TEXT    NOT NULL DEFAULT '',
+			failure_message      TEXT    NOT NULL DEFAULT '',
+			created_at           INTEGER NOT NULL,
+			updated_at           INTEGER NOT NULL,
+			started_at           INTEGER NOT NULL DEFAULT 0,
+			finished_at          INTEGER NOT NULL DEFAULT 0,
+			UNIQUE (work_item_id, sequence),
+			CHECK ((session_platform = '') = (session_id = '')),
+			CHECK ((phase = 'terminal') = (terminal_outcome != ''))
+		);
+		CREATE INDEX IF NOT EXISTS factory_attempt_epic_idx ON factory_attempt (epic_id, phase);
+		CREATE INDEX IF NOT EXISTS factory_attempt_retry_idx ON factory_attempt (phase, retry_at);
+
+		CREATE TABLE IF NOT EXISTS factory_workspace (
+			id             TEXT PRIMARY KEY,
+			epic_id        TEXT NOT NULL,
+			project_id     TEXT NOT NULL,
+			host_id        TEXT NOT NULL,
+			repo_root      TEXT NOT NULL,
+			worktree_path  TEXT NOT NULL,
+			remote_name    TEXT NOT NULL,
+			base_branch    TEXT NOT NULL,
+			base_sha       TEXT NOT NULL,
+			branch         TEXT NOT NULL,
+			handoff_sha    TEXT NOT NULL DEFAULT '',
+			state          TEXT NOT NULL CHECK (state IN ('active', 'blocked', 'completed')),
+			created_at     INTEGER NOT NULL,
+			updated_at     INTEGER NOT NULL,
+			UNIQUE (epic_id, project_id),
+			UNIQUE (host_id, worktree_path)
+		);
+
+		CREATE TABLE IF NOT EXISTS factory_delivery (
+			id             TEXT    PRIMARY KEY,
+			epic_id        TEXT    NOT NULL,
+			project_id     TEXT    NOT NULL,
+			workspace_id   TEXT    NOT NULL REFERENCES factory_workspace(id),
+			revision       INTEGER NOT NULL CHECK (revision > 0),
+			remote_name    TEXT    NOT NULL,
+			base_branch    TEXT    NOT NULL,
+			branch         TEXT    NOT NULL,
+			head_sha       TEXT    NOT NULL,
+			provider       TEXT    NOT NULL DEFAULT '',
+			provider_repo  TEXT    NOT NULL DEFAULT '',
+			pr_number      INTEGER CHECK (pr_number > 0),
+			state          TEXT    NOT NULL CHECK (state IN ('prepared', 'published', 'open', 'closed', 'merged', 'failed')),
+			created_at     INTEGER NOT NULL,
+			updated_at     INTEGER NOT NULL,
+			UNIQUE (epic_id, project_id),
+			UNIQUE (provider, provider_repo, pr_number)
+		);
+
+		CREATE TABLE IF NOT EXISTS factory_provider_observation (
+			id                INTEGER PRIMARY KEY AUTOINCREMENT,
+			delivery_id       TEXT    NOT NULL REFERENCES factory_delivery(id),
+			delivery_revision INTEGER NOT NULL CHECK (delivery_revision > 0),
+			kind              TEXT    NOT NULL CHECK (kind IN ('remote_ref', 'pull_request', 'checks', 'merge')),
+			state             TEXT    NOT NULL,
+			revision_sha      TEXT    NOT NULL,
+			payload_json      TEXT    NOT NULL,
+			observed_at       INTEGER NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS factory_provider_observation_delivery_idx
+			ON factory_provider_observation (delivery_id, delivery_revision, observed_at);
+
+		CREATE TABLE IF NOT EXISTS factory_profile_validation (
+			id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+			epic_id              TEXT    NOT NULL,
+			work_item_id         TEXT    NOT NULL DEFAULT '',
+			attempt_id           TEXT    REFERENCES factory_attempt(id),
+			target_host_id       TEXT    NOT NULL,
+			target_repo_root     TEXT    NOT NULL,
+			profile_id           TEXT    NOT NULL,
+			profile_version      TEXT    NOT NULL,
+			profile_hash         TEXT    NOT NULL,
+			valid                INTEGER NOT NULL CHECK (valid IN (0, 1)),
+			evidence_json        TEXT    NOT NULL,
+			validated_at         INTEGER NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS factory_profile_validation_scope_idx
+			ON factory_profile_validation (epic_id, work_item_id, validated_at);
+
+		CREATE TABLE IF NOT EXISTS factory_authority_exception (
+			id                  TEXT PRIMARY KEY,
+			attempt_id          TEXT NOT NULL REFERENCES factory_attempt(id),
+			request_fingerprint TEXT NOT NULL,
+			target              TEXT NOT NULL,
+			state               TEXT NOT NULL CHECK (state IN ('pending', 'granted', 'rejected', 'consumed', 'expired')),
+			decided_by          TEXT NOT NULL DEFAULT '',
+			reason              TEXT NOT NULL DEFAULT '',
+			created_at          INTEGER NOT NULL,
+			expires_at          INTEGER NOT NULL DEFAULT 0,
+			consumed_at         INTEGER NOT NULL DEFAULT 0,
+			UNIQUE (attempt_id, request_fingerprint, target)
+		);
+
+		CREATE TABLE IF NOT EXISTS factory_local_execution_ack (
+			host_id          TEXT NOT NULL,
+			repo_root        TEXT NOT NULL,
+			profile_id       TEXT NOT NULL,
+			profile_version  TEXT NOT NULL,
+			acknowledged_by  TEXT NOT NULL,
+			acknowledged_at  INTEGER NOT NULL,
+			PRIMARY KEY (host_id, repo_root, profile_id, profile_version)
+		);
+
+		CREATE TABLE IF NOT EXISTS factory_audit_record (
+			id            INTEGER PRIMARY KEY AUTOINCREMENT,
+			epic_id       TEXT    NOT NULL,
+			work_item_id  TEXT    NOT NULL DEFAULT '',
+			attempt_id    TEXT    REFERENCES factory_attempt(id),
+			actor         TEXT    NOT NULL,
+			action        TEXT    NOT NULL,
+			details_json  TEXT    NOT NULL,
+			created_at    INTEGER NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS factory_audit_record_epic_idx
+			ON factory_audit_record (epic_id, created_at);
+
+		CREATE TABLE IF NOT EXISTS factory_external_mapping (
+			system         TEXT    NOT NULL,
+			external_kind  TEXT    NOT NULL,
+			external_id    TEXT    NOT NULL,
+			entity_kind    TEXT    NOT NULL,
+			entity_id      TEXT    NOT NULL,
+			metadata_json  TEXT    NOT NULL,
+			created_at     INTEGER NOT NULL,
+			PRIMARY KEY (system, external_kind, external_id),
+			UNIQUE (system, external_kind, entity_kind, entity_id)
+		);
 	`)
 	return err
 }

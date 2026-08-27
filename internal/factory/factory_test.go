@@ -2,20 +2,40 @@ package factory
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
 )
+
+type fakeAckStore struct {
+	runner *fakeRunner
+	calls  [][]any
+	err    error
+}
+
+func (s *fakeAckStore) UpsertFactoryLocalExecutionAck(_ context.Context, host, repo, profile, version, actor string, at time.Time) error {
+	if s.runner != nil && len(s.calls) == 0 && len(s.runner.seen) != 0 {
+		return errors.New("acknowledgement happened after Beads access")
+	}
+	s.calls = append(s.calls, []any{host, repo, profile, version, actor, at})
+	return s.err
+}
 
 type fakeRunner struct {
 	pathErr error
 	runs    []fakeRun
 	seen    [][]string
 	envs    [][]string
+	plans   [][]byte
+	onRun   func(context.Context, []string)
 }
 
 type fakeRun struct {
@@ -25,11 +45,41 @@ type fakeRun struct {
 
 func (f *fakeRunner) LookPath(string) (string, error) { return "/usr/bin/bd", f.pathErr }
 
-func (f *fakeRunner) Run(_ context.Context, _ string, _ string, args, env []string) ([]byte, []byte, error) {
+func (f *fakeRunner) Run(ctx context.Context, _ string, _ string, args, env []string) ([]byte, []byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
 	f.seen = append(f.seen, append([]string(nil), args...))
 	f.envs = append(f.envs, append([]string(nil), env...))
+	if f.onRun != nil {
+		f.onRun(ctx, args)
+	}
+	if len(args) >= 3 && args[0] == "create" && args[1] == "--graph" {
+		plan, _ := os.ReadFile(args[2])
+		f.plans = append(f.plans, plan)
+	}
 	run := f.runs[len(f.seen)-1]
 	return []byte(run.out), nil, run.err
+}
+
+const versionEnvelope = `{"schema_version":1,"data":{"version":"1.1.0"}}`
+
+func versionResult(version string) string {
+	return `{"schema_version":1,"data":{"version":` + strconv.Quote(version) + `,"future":"ignored"}}`
+}
+
+func listEnvelope(issues string) string {
+	return `{"schema_version":1,"data":` + issues + `}`
+}
+
+const pouredIssues = `[
+  {"id":"fac-1","title":"Ship search","status":"open","issue_type":"epic","metadata":{"ocman.contract":"1","ocman.kind":"work-epic","ocman.formula_id":"ocman/default","ocman.formula_version":"1","ocman.formula_origin":"built-in","ocman.instantiation_id":"intake-42","ocman.goal":"Ship search","ocman.initial_project":"/repo","ocman.planning_work_id":"fac-1.1","ocman.plan_approval_gate_id":"fac-1.2"}},
+  {"id":"fac-1.1","title":"Plan: Ship search","status":"in_progress","issue_type":"task","metadata":{"ocman.contract":"1","ocman.kind":"agent-work","ocman.formula_id":"ocman/default","ocman.formula_version":"1","ocman.formula_origin":"built-in","ocman.instantiation_id":"intake-42","ocman.work_epic_id":"fac-1","ocman.permission_profile":"factory-plan/v1"}},
+  {"id":"fac-1.2","title":"Plan approval","status":"open","issue_type":"gate","metadata":{"ocman.contract":"1","ocman.kind":"gate","ocman.formula_id":"ocman/default","ocman.formula_version":"1","ocman.formula_origin":"built-in","ocman.instantiation_id":"intake-42","ocman.work_epic_id":"fac-1","ocman.gate_type":"plan-approval"}}
+]`
+
+func pouredIssuesAt(project string) string {
+	return strings.ReplaceAll(pouredIssues, `"/repo"`, strconv.Quote(project))
 }
 
 func TestProbeBeadsCompatibility(t *testing.T) {
@@ -41,25 +91,25 @@ func TestProbeBeadsCompatibility(t *testing.T) {
 		{
 			name: "supported contract tolerates unknown fields",
 			runner: &fakeRunner{runs: []fakeRun{
-				{out: `{"version":"1.1.7","future":"ignored"}`},
+				{out: versionResult("1.1.7")},
 				{out: `{"schema_version":1,"data":{"summary":{"total_issues":0},"future":true}}`},
 			}},
 			want: BeadsHealth{Usable: true, Version: "1.1.7", ContractVersion: 1},
 		},
 		{
 			name:   "old version",
-			runner: &fakeRunner{runs: []fakeRun{{out: `{"version":"1.0.9"}`}}},
+			runner: &fakeRunner{runs: []fakeRun{{out: versionResult("1.0.9")}}},
 			want:   BeadsHealth{Reason: "beads_version_unsupported", Message: "Beads 1.0.9 is unsupported; install version >=1.1.0 and <1.2.0."},
 		},
 		{
 			name:   "new version",
-			runner: &fakeRunner{runs: []fakeRun{{out: `{"version":"1.2.0"}`}}},
+			runner: &fakeRunner{runs: []fakeRun{{out: versionResult("1.2.0")}}},
 			want:   BeadsHealth{Reason: "beads_version_unsupported", Message: "Beads 1.2.0 is unsupported; install version >=1.1.0 and <1.2.0."},
 		},
 		{
 			name: "future contract",
 			runner: &fakeRunner{runs: []fakeRun{
-				{out: `{"version":"1.1.0"}`},
+				{out: versionEnvelope},
 				{out: `{"schema_version":2,"data":{"summary":{"total_issues":0}}}`},
 			}},
 			want: BeadsHealth{Version: "1.1.0", Reason: "beads_contract_unsupported", Message: "Beads JSON contract 2 is unsupported; ocman requires contract 1."},
@@ -67,7 +117,7 @@ func TestProbeBeadsCompatibility(t *testing.T) {
 		{
 			name: "malformed contract",
 			runner: &fakeRunner{runs: []fakeRun{
-				{out: `{"version":"1.1.0"}`},
+				{out: versionEnvelope},
 				{out: `{"schema_version":1,"data":null}`},
 			}},
 			want: BeadsHealth{Version: "1.1.0", Reason: "beads_contract_unsupported", Message: "Beads returned an unsupported JSON contract; ocman requires contract 1."},
@@ -84,13 +134,13 @@ func TestProbeBeadsCompatibility(t *testing.T) {
 		},
 		{
 			name:   "invalid version output",
-			runner: &fakeRunner{runs: []fakeRun{{out: `{"version":"1.1"}`}}},
+			runner: &fakeRunner{runs: []fakeRun{{out: versionResult("1.1")}}},
 			want:   BeadsHealth{Reason: "beads_version_invalid", Message: "Beads returned an invalid version; ocman requires version >=1.1.0 and <1.2.0."},
 		},
 		{
 			name: "store failure",
 			runner: &fakeRunner{runs: []fakeRun{
-				{out: `{"version":"1.1.0"}`},
+				{out: versionEnvelope},
 				{err: errors.New("unavailable")},
 			}},
 			want: BeadsHealth{Version: "1.1.0", Reason: "beads_store_unavailable", Message: "Factory Beads store is unavailable; verify its data directory and run bd status."},
@@ -110,7 +160,7 @@ func TestProbeBeadsCompatibility(t *testing.T) {
 func TestProbeBeadsUsesPinnedReadOnlyContract(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "beads")
 	runner := &fakeRunner{runs: []fakeRun{
-		{out: `{"version":"1.1.0"}`},
+		{out: versionEnvelope},
 		{out: `{"schema_version":1,"data":{"summary":{"total_issues":0}}}`},
 	}}
 
@@ -122,7 +172,7 @@ func TestProbeBeadsUsesPinnedReadOnlyContract(t *testing.T) {
 	if !reflect.DeepEqual(runner.seen, wantCommands) {
 		t.Fatalf("commands = %v, want %v", runner.seen, wantCommands)
 	}
-	wantEnv := []string{"BD_JSON_ENVELOPE=1", "BEADS_DIR=" + dir, "BEADS_DB=", "BD_DB="}
+	wantEnv := []string{"BD_JSON_ENVELOPE=1", "BEADS_DIR=" + dir, "BEADS_DB=", "BD_DB=", "BD_NON_INTERACTIVE=1", "BEADS_ACTOR=ocman-factory"}
 	if !reflect.DeepEqual(runner.envs[1], wantEnv) {
 		t.Fatalf("status env = %v, want %v", runner.envs[1], wantEnv)
 	}
@@ -131,12 +181,12 @@ func TestProbeBeadsUsesPinnedReadOnlyContract(t *testing.T) {
 func TestOnlyOneServiceOwnsDispatch(t *testing.T) {
 	dir := t.TempDir()
 	beads := &fakeRunner{runs: []fakeRun{
-		{out: `{"version":"1.1.0"}`}, {},
-		{out: `{"version":"1.1.0"}`}, {out: `{"schema_version":1,"data":{"summary":{"total_issues":0}}}`},
-		{out: `{"version":"1.1.0"}`}, {out: `{"schema_version":1,"data":{"summary":{"total_issues":0}}}`},
+		{out: versionEnvelope}, {},
+		{out: versionEnvelope}, {out: `{"schema_version":1,"data":{"summary":{"total_issues":0}}}`}, {out: listEnvelope(`[]`)},
+		{out: versionEnvelope}, {out: `{"schema_version":1,"data":{"summary":{"total_issues":0}}}`}, {out: listEnvelope(`[]`)},
 	}}
-	first := newWithRunner(dir, beads)
-	second := newWithRunner(dir, beads)
+	first := newWithRunner(dir, beads, nil)
+	second := newWithRunner(dir, beads, nil)
 	if err := first.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +203,7 @@ func TestOnlyOneServiceOwnsDispatch(t *testing.T) {
 		t.Fatalf("second status = %#v", got)
 	}
 	first.Close()
-	third := newWithRunner(dir, &fakeRunner{runs: []fakeRun{{out: `{"version":"1.1.0"}`}, {}}})
+	third := newWithRunner(dir, &fakeRunner{runs: []fakeRun{{out: versionEnvelope}, {}}}, nil)
 	if err := third.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -166,12 +216,13 @@ func TestOnlyOneServiceOwnsDispatch(t *testing.T) {
 func TestServiceInitializesFactoryStoreBeforeReportingStatus(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "factory")
 	runner := &fakeRunner{runs: []fakeRun{
-		{out: `{"version":"1.1.0"}`},
+		{out: versionEnvelope},
 		{},
-		{out: `{"version":"1.1.0"}`},
+		{out: versionEnvelope},
 		{out: `{"schema_version":1,"data":{"summary":{"total_issues":0}}}`},
+		{out: listEnvelope(`[]`)},
 	}}
-	svc := newWithRunner(dir, runner)
+	svc := newWithRunner(dir, runner, nil)
 	if err := svc.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -195,9 +246,9 @@ func TestServiceReportsLockAndStoreFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := newWithRunner(blocked, &fakeRunner{runs: []fakeRun{
-		{out: `{"version":"1.1.0"}`},
+		{out: versionEnvelope},
 		{out: `{"schema_version":1,"data":{"summary":{"total_issues":0}}}`},
-	}})
+	}}, nil)
 	if err := svc.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -212,11 +263,11 @@ func TestServiceMapsBeadsFailuresToHealth(t *testing.T) {
 		runs []fakeRun
 		want Health
 	}{
-		{name: "unsupported is unavailable", runs: []fakeRun{{out: `{"version":"1.2.0"}`}, {out: `{"version":"1.2.0"}`}}, want: HealthUnavailable},
-		{name: "store outage is degraded", runs: []fakeRun{{out: `{"version":"1.1.0"}`}, {}, {out: `{"version":"1.1.0"}`}, {err: errors.New("down")}}, want: HealthDegraded},
+		{name: "unsupported is unavailable", runs: []fakeRun{{out: versionResult("1.2.0")}, {out: versionResult("1.2.0")}}, want: HealthUnavailable},
+		{name: "store outage is degraded", runs: []fakeRun{{out: versionEnvelope}, {}, {out: versionEnvelope}, {err: errors.New("down")}}, want: HealthDegraded},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := newWithRunner(t.TempDir(), &fakeRunner{runs: tt.runs})
+			svc := newWithRunner(t.TempDir(), &fakeRunner{runs: tt.runs}, nil)
 			if err := svc.Start(context.Background()); err != nil {
 				t.Fatal(err)
 			}
@@ -245,5 +296,275 @@ func TestExecRunnerHonorsCancellation(t *testing.T) {
 	_, _, err = (execRunner{}).Run(ctx, printf, t.TempDir(), []string{"x"}, nil)
 	if err == nil {
 		t.Fatal("cancelled command unexpectedly succeeded")
+	}
+}
+
+func TestCreateWorkEpicValidatesBeforeBeads(t *testing.T) {
+	runner := &fakeRunner{}
+	svc := newWithRunner(t.TempDir(), runner, nil)
+	validProject := t.TempDir()
+	for _, tt := range []struct {
+		name string
+		req  CreateWorkEpicRequest
+	}{
+		{name: "acknowledgement", req: CreateWorkEpicRequest{InstantiationID: "intake-1", Goal: "Ship it", InitialProject: validProject}},
+		{name: "goal", req: CreateWorkEpicRequest{InstantiationID: "intake-1", InitialProject: validProject, AcknowledgeLocalExecution: true}},
+		{name: "instantiation ID", req: CreateWorkEpicRequest{Goal: "Ship it", InitialProject: validProject, AcknowledgeLocalExecution: true}},
+		{name: "stable instantiation ID", req: CreateWorkEpicRequest{InstantiationID: "not stable!", Goal: "Ship it", InitialProject: validProject, AcknowledgeLocalExecution: true}},
+		{name: "absolute local project", req: CreateWorkEpicRequest{InstantiationID: "intake-1", Goal: "Ship it", InitialProject: "relative", AcknowledgeLocalExecution: true}},
+		{name: "existing local project", req: CreateWorkEpicRequest{InstantiationID: "intake-1", Goal: "Ship it", InitialProject: filepath.Join(validProject, "missing"), AcknowledgeLocalExecution: true}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := svc.CreateWorkEpic(context.Background(), tt.req); err == nil {
+				t.Fatal("CreateWorkEpic unexpectedly succeeded")
+			}
+		})
+	}
+	if len(runner.seen) != 0 {
+		t.Fatalf("validation invoked Beads: %v", runner.seen)
+	}
+}
+
+func TestCreateWorkEpicStopsWhenAcknowledgementCannotBePersisted(t *testing.T) {
+	runner := &fakeRunner{}
+	store := &fakeAckStore{runner: runner, err: errors.New("disk full")}
+	svc := newWithRunner(t.TempDir(), runner, store)
+	svc.owned = true
+	_, err := svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{
+		InstantiationID: "intake-1", Goal: "Ship it", InitialProject: t.TempDir(), AcknowledgeLocalExecution: true,
+	})
+	if !errors.Is(err, ErrFactoryUnavailable) {
+		t.Fatalf("CreateWorkEpic error = %v, want factory unavailable", err)
+	}
+	if len(runner.seen) != 0 {
+		t.Fatalf("failed acknowledgement invoked Beads: %v", runner.seen)
+	}
+}
+
+func TestReadOnlyServiceCannotCreateWorkEpic(t *testing.T) {
+	project := t.TempDir()
+	runner := &fakeRunner{pathErr: errors.New("Beads must not be called")}
+	store := &fakeAckStore{runner: runner}
+	svc := newWithRunner(t.TempDir(), runner, store)
+
+	_, err := svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{
+		InstantiationID: "intake-1", Goal: "Ship it", InitialProject: project, AcknowledgeLocalExecution: true,
+	})
+	if !errors.Is(err, ErrFactoryUnavailable) {
+		t.Fatalf("CreateWorkEpic error = %v, want factory unavailable", err)
+	}
+	if len(store.calls) != 0 || len(runner.seen) != 0 {
+		t.Fatalf("read-only create wrote state: acknowledgements=%d Beads=%v", len(store.calls), runner.seen)
+	}
+}
+
+func TestDefaultFormulaIsImmutable(t *testing.T) {
+	formula := DefaultFormula()
+	formula.ID = "changed"
+	formula.Parameters[0].Name = "changed"
+
+	got := DefaultFormula()
+	if got.ID != DefaultFormulaID || got.Version != DefaultFormulaVersion || got.Parameters[0] != (FormulaParameter{Name: "goal", Type: "string"}) {
+		t.Fatalf("DefaultFormula = %#v", got)
+	}
+}
+
+func TestCreateWorkEpicPoursDefaultFormulaGraph(t *testing.T) {
+	project := t.TempDir()
+	project, _ = filepath.EvalSymlinks(project)
+	runner := &fakeRunner{runs: []fakeRun{
+		{out: versionEnvelope},
+		{out: listEnvelope(`[]`)},
+		{out: `{"schema_version":1,"data":{"ids":{"epic":"fac-1","planning":"fac-1.1","approval":"fac-1.2"}}}`},
+	}}
+	acks := &fakeAckStore{runner: runner}
+	svc := newWithRunner(t.TempDir(), runner, acks)
+	svc.owned = true
+
+	got, err := svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{
+		InstantiationID:           "intake-42",
+		Goal:                      "Ship search",
+		InitialProject:            project,
+		AcknowledgeLocalExecution: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != "fac-1" || got.Planning.WorkID != "fac-1.1" || got.Planning.ApprovalGateID != "fac-1.2" {
+		t.Fatalf("epic = %#v", got)
+	}
+	if len(acks.calls) != 1 || !reflect.DeepEqual(acks.calls[0][:5], []any{"local", project, "factory-plan", "v1", "operator"}) {
+		t.Fatalf("acknowledgement = %#v", acks.calls)
+	}
+	if len(runner.plans) != 1 {
+		t.Fatalf("plans = %d", len(runner.plans))
+	}
+	if strings.Contains(string(runner.plans[0]), "acknowledg") || strings.Contains(string(runner.plans[0]), `"operator"`) {
+		t.Fatalf("acknowledgement leaked into Beads graph: %s", runner.plans[0])
+	}
+	var plan struct {
+		Nodes []struct {
+			Key          string            `json:"key"`
+			Title        string            `json:"title"`
+			Type         string            `json:"type"`
+			ParentKey    string            `json:"parent_key"`
+			Metadata     map[string]string `json:"metadata"`
+			MetadataRefs map[string]string `json:"metadata_refs"`
+		} `json:"nodes"`
+		Edges []struct {
+			From string `json:"from_key"`
+			To   string `json:"to_key"`
+			Type string `json:"type"`
+		} `json:"edges"`
+	}
+	if err := json.Unmarshal(runner.plans[0], &plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Nodes) != 3 || len(plan.Edges) != 1 {
+		t.Fatalf("graph = %#v", plan)
+	}
+	wantKinds := []string{"work-epic", "agent-work", "gate"}
+	for i, node := range plan.Nodes {
+		if node.Metadata["ocman.contract"] != "1" || node.Metadata["ocman.kind"] != wantKinds[i] ||
+			node.Metadata["ocman.formula_id"] != DefaultFormulaID || node.Metadata["ocman.formula_version"] != "1" ||
+			node.Metadata["ocman.formula_origin"] != "built-in" || node.Metadata["ocman.instantiation_id"] != "intake-42" {
+			t.Fatalf("node %q provenance = %#v", node.Key, node.Metadata)
+		}
+	}
+	if plan.Nodes[1].ParentKey != "epic" || plan.Nodes[1].Metadata["ocman.permission_profile"] != "factory-plan/v1" ||
+		plan.Nodes[2].ParentKey != "epic" || plan.Nodes[2].Title != "Plan approval" ||
+		plan.Edges[0].From != "approval" || plan.Edges[0].To != "planning" || plan.Edges[0].Type != "blocks" {
+		t.Fatalf("graph relationships = %#v", plan)
+	}
+	wantCommands := [][]string{
+		{"version", "--json"},
+		{"--readonly", "list", "--all", "--include-gates", "--limit", "0", "--metadata-field", "ocman.contract=1", "--json"},
+	}
+	if !reflect.DeepEqual(runner.seen[:2], wantCommands) || len(runner.seen[2]) != 4 || runner.seen[2][0] != "create" || runner.seen[2][1] != "--graph" || runner.seen[2][3] != "--json" || !filepath.IsAbs(runner.seen[2][2]) {
+		t.Fatalf("commands = %v", runner.seen)
+	}
+	for _, env := range runner.envs {
+		if !slices.Contains(env, "BD_JSON_ENVELOPE=1") || !slices.Contains(env, "BEADS_ACTOR=ocman-factory") ||
+			!slices.Contains(env, "BEADS_DB=") || !slices.Contains(env, "BD_DB=") {
+			t.Fatalf("unsafe env = %v", env)
+		}
+	}
+}
+
+func TestCreateWorkEpicReconcilesAmbiguousPour(t *testing.T) {
+	project := t.TempDir()
+	project, _ = filepath.EvalSymlinks(project)
+	runner := &fakeRunner{runs: []fakeRun{
+		{out: versionEnvelope},
+		{out: listEnvelope(`[]`)},
+		{err: errors.New("connection lost after commit")},
+		{out: listEnvelope(pouredIssuesAt(project))},
+	}}
+	svc := newWithRunner(t.TempDir(), runner, &fakeAckStore{runner: runner})
+	svc.owned = true
+
+	got, err := svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{InstantiationID: "intake-42", Goal: "Ship search", InitialProject: project, AcknowledgeLocalExecution: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != "fac-1" || got.Planning.WorkStatus != "in_progress" || got.Planning.ApprovalStatus != "open" {
+		t.Fatalf("reconciled epic = %#v", got)
+	}
+}
+
+func TestCreateWorkEpicReconcilesAfterRequestCancellation(t *testing.T) {
+	project := t.TempDir()
+	project, _ = filepath.EvalSymlinks(project)
+	ctx, cancel := context.WithCancel(context.Background())
+	runner := &fakeRunner{runs: []fakeRun{
+		{out: versionEnvelope},
+		{out: listEnvelope(`[]`)},
+		{err: errors.New("connection lost after commit")},
+		{out: listEnvelope(pouredIssuesAt(project))},
+	}}
+	createSeen, reconciliationBounded := false, false
+	runner.onRun = func(runCtx context.Context, args []string) {
+		if len(args) != 0 && args[0] == "create" {
+			createSeen = true
+			cancel()
+			return
+		}
+		if createSeen {
+			deadline, ok := runCtx.Deadline()
+			if !ok || time.Until(deadline) > beadsTimeout {
+				t.Fatalf("reconciliation context deadline = %v, %v", deadline, ok)
+			}
+			reconciliationBounded = true
+		}
+	}
+	svc := newWithRunner(t.TempDir(), runner, &fakeAckStore{runner: runner})
+	svc.owned = true
+
+	got, err := svc.CreateWorkEpic(ctx, CreateWorkEpicRequest{InstantiationID: "intake-42", Goal: "Ship search", InitialProject: project, AcknowledgeLocalExecution: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != "fac-1" || len(runner.seen) != 4 || !reconciliationBounded {
+		t.Fatalf("reconciled epic = %#v; commands = %v", got, runner.seen)
+	}
+}
+
+func TestCreateWorkEpicDoesNotDuplicateInstantiation(t *testing.T) {
+	project := t.TempDir()
+	project, _ = filepath.EvalSymlinks(project)
+	runner := &fakeRunner{runs: []fakeRun{
+		{out: versionEnvelope}, {out: listEnvelope(`[]`)},
+		{out: `{"schema_version":1,"data":{"ids":{"epic":"fac-1","planning":"fac-1.1","approval":"fac-1.2"}}}`},
+		{out: versionEnvelope}, {out: listEnvelope(pouredIssuesAt(project))},
+	}}
+	svc := newWithRunner(t.TempDir(), runner, &fakeAckStore{runner: runner})
+	svc.owned = true
+	req := CreateWorkEpicRequest{InstantiationID: "intake-42", Goal: "Ship search", InitialProject: project, AcknowledgeLocalExecution: true}
+	if _, err := svc.CreateWorkEpic(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := svc.CreateWorkEpic(context.Background(), req); err != nil || got.ID != "fac-1" {
+		t.Fatalf("second create = %#v, %v", got, err)
+	}
+	creates := 0
+	for _, args := range runner.seen {
+		if len(args) > 0 && args[0] == "create" {
+			creates++
+		}
+	}
+	if creates != 1 {
+		t.Fatalf("create calls = %d; commands = %v", creates, runner.seen)
+	}
+}
+
+func TestCreateWorkEpicRejectsInstantiationInputMismatch(t *testing.T) {
+	_, err := matchInstantiation([]WorkEpic{{
+		InstantiationID: "intake-42", FormulaID: DefaultFormulaID, FormulaVersion: DefaultFormulaVersion,
+		Goal: "Original", InitialProject: "/repo",
+	}}, CreateWorkEpicRequest{InstantiationID: "intake-42", Goal: "Changed", InitialProject: "/repo"})
+	if !errors.Is(err, ErrInstantiationConflict) {
+		t.Fatalf("matchInstantiation error = %v, want conflict", err)
+	}
+}
+
+func TestServiceListsGetsAndCountsWorkEpics(t *testing.T) {
+	runner := &fakeRunner{runs: []fakeRun{
+		{out: versionEnvelope}, {out: listEnvelope(pouredIssues)},
+		{out: versionEnvelope}, {out: listEnvelope(pouredIssues)},
+		{out: versionEnvelope}, {out: `{"schema_version":1,"data":{"summary":{"total_issues":3}}}`}, {out: listEnvelope(pouredIssues)},
+	}}
+	svc := newWithRunner(t.TempDir(), runner, nil)
+
+	epics, err := svc.ListWorkEpics(context.Background())
+	if err != nil || len(epics) != 1 || epics[0].Goal != "Ship search" || epics[0].InitialProject != "/repo" {
+		t.Fatalf("ListWorkEpics = %#v, %v", epics, err)
+	}
+	epic, err := svc.GetWorkEpic(context.Background(), "fac-1")
+	if err != nil || epic.Planning.WorkID != "fac-1.1" || epic.Planning.ApprovalGateID != "fac-1.2" {
+		t.Fatalf("GetWorkEpic = %#v, %v", epic, err)
+	}
+	status := svc.Status(context.Background())
+	if status.Health != HealthHealthy || status.WorkEpicCount != 1 {
+		t.Fatalf("Status = %#v", status)
 	}
 }

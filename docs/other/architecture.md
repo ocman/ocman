@@ -91,6 +91,7 @@ flowchart TD
     Server --> Router[hostsvc.Router<br/>host/dir seam]
     Server --> Workflows[automation services<br/>workflows + prompt schedules]
     Server --> Factory[internal/factory<br/>readiness, dispatch lock + Beads store]
+    Factory --> State
     Workflows --> Registry
     Workflows --> Router
     Server --> MCP[internal/mcp<br/>MCP tools]
@@ -109,8 +110,17 @@ flowchart TD
   readiness probe pins Beads to `>=1.1.0,<1.2.0` and JSON envelope contract 1,
   while an advisory process lock gives exactly one local ocman instance
   dispatch ownership. The owner initializes the dedicated store idempotently
-  on first start. Other instances expose the same authenticated status
-  read-only; Workflows state and services are not involved.
+  on first start. The owner can atomically instantiate the immutable default
+  Formula into a Work Epic, Planning Work and Plan approval Gate; local
+  execution acknowledgements are stored separately in `state.db`. Other
+  instances expose the same authenticated reads without mutation authority;
+  Workflows state and services are not involved.
+- **Factory persistence.** Beads owns the Work Epic graph, child Work Items,
+  dependencies, Gates and Formula provenance. `state.db` owns only execution
+  and external evidence: immutable Formula revisions, attempts, workspaces,
+  deliveries, provider observations, profile validations, authority
+  exceptions, local-execution acknowledgements, audit records and mappings.
+  These `factory_*` tables do not reference or alter Workflows tables.
 - **platforms.Registry.** The session-scoped seam. One adapter per platform;
   remotes register as compound-ID platforms so handlers can't tell local from
   remote.
@@ -297,6 +307,7 @@ flowchart TD
   same operation over gRPC. Ticket data stays in the repository and is polled
   only while the available pane is open.
 - **Mission Control.** The top-level `/factory` page polls the authenticated
-  `/api/factory/status` endpoint through TanStack Query and renders Factory
-  compatibility, dispatch ownership, degraded/unavailable diagnostics and an
-  empty Work Epic shell independently of Workflows.
+  `/api/factory/status` and `/api/factory/epics` endpoints through TanStack
+  Query. The dispatch owner can acknowledge local execution and create a Work
+  Epic from the built-in Formula; all clients can inspect its initial Planning
+  Work and Plan approval Gate independently of Workflows.

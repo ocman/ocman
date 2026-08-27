@@ -65,25 +65,33 @@ type runner interface {
 	Run(context.Context, string, string, []string, []string) ([]byte, []byte, error)
 }
 
+type localExecutionAckStore interface {
+	UpsertFactoryLocalExecutionAck(context.Context, string, string, string, string, string, time.Time) error
+}
+
 type Service struct {
 	dir     string
 	runner  runner
 	mu      sync.RWMutex
+	pourMu  sync.Mutex
 	owned   bool
 	lockErr error
 	release func() error
+	acks    localExecutionAckStore
 }
 
-func New(dir string) *Service { return newWithRunner(dir, nil) }
+func New(dir string, ackStore localExecutionAckStore) *Service {
+	return newWithRunner(dir, nil, ackStore)
+}
 
-func newWithRunner(dir string, r runner) *Service {
+func newWithRunner(dir string, r runner, ackStore localExecutionAckStore) *Service {
 	if r == nil {
 		r = execRunner{}
 	}
 	if absolute, err := filepath.Abs(dir); err == nil {
 		dir = absolute
 	}
-	return &Service{dir: dir, runner: r}
+	return &Service{dir: dir, runner: r, acks: ackStore}
 }
 
 func (s *Service) Start(ctx context.Context) error {
@@ -137,6 +145,23 @@ func (s *Service) Status(ctx context.Context) Status {
 	}
 	status.Health = HealthHealthy
 	status.Idle = true
+	path, err := s.runner.LookPath("bd")
+	if err != nil {
+		status.Health = HealthDegraded
+		status.Idle = false
+		status.Reason = ReasonBeadsCommandFailed
+		status.Message = "Factory work could not be listed; verify the Beads installation."
+		return status
+	}
+	epics, err := listWorkEpics(ctx, path, filepath.Join(s.dir, "beads"), s.runner)
+	if err != nil {
+		status.Health = HealthDegraded
+		status.Idle = false
+		status.Reason = ReasonBeadsCommandFailed
+		status.Message = "Factory work could not be listed; verify the Beads store."
+		return status
+	}
+	status.WorkEpicCount = len(epics)
 	return status
 }
 
@@ -149,9 +174,7 @@ func probeBeads(parent context.Context, dir string, r runner) BeadsHealth {
 		return failure
 	}
 
-	statusOut, err := run(parent, r, path, parentDir(dir), []string{"--readonly", "status", "--no-activity", "--json"}, []string{
-		"BD_JSON_ENVELOPE=1", "BEADS_DIR=" + dir, "BEADS_DB=", "BD_DB=",
-	})
+	statusOut, err := run(parent, r, path, parentDir(dir), []string{"--readonly", "status", "--no-activity", "--json"}, beadsCommandEnv(dir))
 	if err != nil {
 		return BeadsHealth{Version: version, Reason: ReasonBeadsStoreUnavailable, Message: "Factory Beads store is unavailable; verify its data directory and run bd status."}
 	}
@@ -172,9 +195,7 @@ func initializeBeads(parent context.Context, dir string, r runner) {
 	}
 	_, _ = run(parent, r, path, parentDir(dir), []string{
 		"init", "--quiet", "--stealth", "--skip-agents", "--skip-hooks", "--non-interactive", "--init-if-missing",
-	}, []string{
-		"BD_JSON_ENVELOPE=0", "BEADS_DIR=" + dir, "BEADS_DB=", "BD_DB=", "BD_NON_INTERACTIVE=1", "BEADS_ACTOR=ocman-factory",
-	})
+	}, beadsCommandEnv(dir))
 }
 
 func compatibleBeads(parent context.Context, dir string, r runner) (string, string, BeadsHealth) {
@@ -182,7 +203,7 @@ func compatibleBeads(parent context.Context, dir string, r runner) (string, stri
 	if err != nil {
 		return "", "", BeadsHealth{Reason: ReasonBeadsNotFound, Message: "Beads is not installed; install bd version >=1.1.0 and <1.2.0."}
 	}
-	versionOut, err := run(parent, r, path, parentDir(dir), []string{"version", "--json"}, []string{"BD_JSON_ENVELOPE=0"})
+	versionOut, err := run(parent, r, path, parentDir(dir), []string{"version", "--json"}, beadsCommandEnv(dir))
 	if err != nil {
 		return "", "", BeadsHealth{Reason: ReasonBeadsCommandFailed, Message: "Beads version check failed; verify that bd can run as the ocman user."}
 	}
@@ -206,12 +227,15 @@ func parentDir(path string) string {
 
 func parseVersion(data []byte) (string, bool) {
 	var out struct {
-		Version string `json:"version"`
+		SchemaVersion int `json:"schema_version"`
+		Data          *struct {
+			Version string `json:"version"`
+		} `json:"data"`
 	}
-	if !decodeOne(data, &out) {
+	if !decodeOne(data, &out) || out.SchemaVersion != 1 || out.Data == nil {
 		return "", false
 	}
-	parts := strings.Split(out.Version, ".")
+	parts := strings.Split(out.Data.Version, ".")
 	if len(parts) != 3 {
 		return "", false
 	}
@@ -221,7 +245,13 @@ func parseVersion(data []byte) (string, bool) {
 			return "", false
 		}
 	}
-	return out.Version, true
+	return out.Data.Version, true
+}
+
+func beadsCommandEnv(dir string) []string {
+	return []string{
+		"BD_JSON_ENVELOPE=1", "BEADS_DIR=" + dir, "BEADS_DB=", "BD_DB=", "BD_NON_INTERACTIVE=1", "BEADS_ACTOR=ocman-factory",
+	}
 }
 
 func parseContract(data []byte) (int, bool) {

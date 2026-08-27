@@ -165,6 +165,9 @@ type factoryService interface {
 	Start(context.Context) error
 	Close()
 	Status(context.Context) factory.Status
+	CreateWorkEpic(context.Context, factory.CreateWorkEpicRequest) (factory.WorkEpic, error)
+	ListWorkEpics(context.Context) ([]factory.WorkEpic, error)
+	GetWorkEpic(context.Context, string) (factory.WorkEpic, error)
 }
 
 // remoteAccessInfo holds this instance's own remote-access surface for
@@ -188,6 +191,10 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 	if registry == nil {
 		registry = platforms.NewRegistry()
 	}
+	factorySvc := factory.New(filepath.Join(state.DefaultDataDir(), "factory"), nil)
+	if stateDB != nil {
+		factorySvc = factory.New(filepath.Join(state.DefaultDataDir(), "factory"), stateDB)
+	}
 	s := &Server{
 		db:           database,
 		stateDB:      stateDB,
@@ -200,7 +207,7 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		activity:     newClientActivityPolicy(time.Now),
 
 		runtime: ocruntime.NewNativeRuntime(),
-		factory: factory.New(filepath.Join(state.DefaultDataDir(), "factory")),
+		factory: factorySvc,
 	}
 	// The host router is built lazily (see router()) so tests can override
 	// s.runtime after New before the local Host is constructed.
