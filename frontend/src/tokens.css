@@ -589,7 +589,17 @@ header h1 span { color: inherit; font-weight: 400; }
 /* Responsive */
 @media (max-width: 768px) {
   .container { padding: 0; }
-  header { padding: 10px 12px; }
+  header { padding: 0 12px; }
+  header h1 {
+    flex: 1;
+    overflow: hidden;
+  }
+  .header-navigation-slot { flex-shrink: 0; }
+  .header-right {
+    max-width: none;
+    flex-shrink: 0;
+  }
+  .header-project { display: none; }
   .mobile-nav-toggle {
     display: inline-flex;
     align-items: center;
@@ -601,7 +611,6 @@ header h1 span { color: inherit; font-weight: 400; }
   }
   .header-navigation-slot:not(:empty) + .mobile-nav-toggle,
   .header-mobile-title-slot:not(:empty) ~ .header-breadcrumb { display: none; }
-  .header-right:has(.mobile-sessions-done) .header-project { display: none; }
   .main-nav,
   .main-nav.collapsed {
     position: fixed;

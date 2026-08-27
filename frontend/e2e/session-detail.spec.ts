@@ -1570,6 +1570,18 @@ test.describe('phone viewport', () => {
     expect(main!.width).toBeGreaterThanOrEqual(viewport.width);
   });
 
+  test('phone header keeps navigation, title, and actions separate', async ({ mockedPage: page }) => {
+    await page.goto(SESSION_URL);
+
+    await expect(page.getByRole('heading', { level: 1 }).getByText(MOCK_SESSION.title)).toBeVisible();
+    await expect(page.locator('.header-project')).toBeHidden();
+    const heading = await page.getByRole('heading', { level: 1 }).boundingBox();
+    const actions = await page.locator('.header-right').boundingBox();
+    expect(heading).not.toBeNull();
+    expect(actions).not.toBeNull();
+    expect(heading!.x + heading!.width).toBeLessThanOrEqual(actions!.x);
+  });
+
   test('sessions drawer opens, selects a session, and auto-closes', async ({ mockedPage: page }) => {
     await page.goto(SESSION_URL);
     await page.getByRole('button', { name: 'Open session list' }).click();

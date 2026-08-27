@@ -41,6 +41,8 @@
   letter-spacing: inherit;
   cursor: text;
 }
+.session-sidebar-search-icon,
+.session-sidebar-heading-mobile { display: none; }
 .session-sidebar-search {
   min-width: 0;
   height: 24px;
@@ -530,6 +532,7 @@ button.session-sidebar-group-header.collapsed::before {
   font: inherit;
 }
 .mobile-sessions-back {
+  width: auto;
   gap: 2px;
   padding: 0 8px 0 0;
 }
@@ -556,6 +559,32 @@ button.session-sidebar-group-header.collapsed::before {
     height: 44px;
   }
   .mobile-panel-toggle { width: 44px; }
+  .session-sidebar-header {
+    gap: 8px;
+    padding: 8px 12px;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .session-sidebar-heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 44px;
+    flex: 1;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--mantle);
+    text-align: left;
+  }
+  .session-sidebar-heading-desktop { display: none; }
+  .session-sidebar-search-icon,
+  .session-sidebar-heading-mobile { display: inline; }
+  .session-sidebar-search { height: 44px; }
+  .session-sidebar-new {
+    width: 44px;
+    height: 44px;
+  }
   .session-layout > .session-sidebar,
   .session-layout > .oc-changes-sidebar { display: none; }
   .session-layout.mobile-sidebar-open > .session-sidebar,

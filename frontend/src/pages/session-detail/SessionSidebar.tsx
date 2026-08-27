@@ -501,7 +501,11 @@ export function SessionSidebar({
             data-testid="sidebar-heading"
             aria-label="Search sessions"
             onClick={() => setSearching(true)}
-          >Sessions</button>
+          >
+            <i className="bi bi-search session-sidebar-search-icon" aria-hidden="true" />
+            <span className="session-sidebar-heading-desktop">Sessions</span>
+            <span className="session-sidebar-heading-mobile">Search sessions</span>
+          </button>
         )}
         <div className="session-sidebar-header-actions" ref={filterRef}>
           <button
