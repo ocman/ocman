@@ -1593,6 +1593,15 @@ test.describe('phone viewport', () => {
     await expect(page.getByTestId('session-sidebar')).toBeHidden();
   });
 
+  test('main navigation remains usable over the sessions drawer', async ({ mockedPage: page }) => {
+    await page.goto(SESSION_URL);
+    await page.getByRole('button', { name: 'Open session list' }).click();
+    await page.getByRole('button', { name: 'Open navigation' }).click();
+
+    await page.getByRole('link', { name: 'Projects' }).click();
+    await expect(page).toHaveURL('/projects');
+  });
+
   test('details overlay opens full-width and closes with Escape', async ({ mockedPage: page }) => {
     await page.goto(SESSION_URL);
     await page.getByTestId('mobile-details-toggle').click();
