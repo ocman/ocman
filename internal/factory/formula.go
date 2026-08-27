@@ -125,6 +125,14 @@ func (s *Service) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRequest)
 	if req.FormulaID == "" {
 		req.FormulaID = DefaultFormulaID
 	}
+	s.mu.RLock()
+	owned := s.owned
+	s.mu.RUnlock()
+	if !owned {
+		return WorkEpic{}, fmt.Errorf("%w: this process does not own Factory mutations", ErrFactoryUnavailable)
+	}
+	s.pourMu.Lock()
+	defer s.pourMu.Unlock()
 	selected, err := s.GetFormulaRevision(ctx, req.FormulaID, req.FormulaRevision)
 	if err != nil {
 		return WorkEpic{}, err
@@ -137,21 +145,12 @@ func (s *Service) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRequest)
 	if err != nil {
 		return WorkEpic{}, err
 	}
-	s.mu.RLock()
-	owned := s.owned
-	s.mu.RUnlock()
-	if !owned {
-		return WorkEpic{}, fmt.Errorf("%w: this process does not own Factory mutations", ErrFactoryUnavailable)
-	}
 	if s.acks == nil {
 		return WorkEpic{}, fmt.Errorf("%w: acknowledgement store is unavailable", ErrFactoryUnavailable)
 	}
 	if err := s.acks.UpsertFactoryLocalExecutionAck(ctx, localHostID, req.InitialProject, planningProfileID, planningProfileVersion, operatorActor, time.Now()); err != nil {
 		return WorkEpic{}, fmt.Errorf("%w: record local execution acknowledgement: %w", ErrFactoryUnavailable, err)
 	}
-
-	s.pourMu.Lock()
-	defer s.pourMu.Unlock()
 
 	beadsDir := filepath.Join(s.dir, "beads")
 	path, _, failure := compatibleBeads(ctx, beadsDir, s.runner)
@@ -189,12 +188,14 @@ func (s *Service) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRequest)
 	}
 
 	out, runErr := run(ctx, s.runner, path, s.dir, []string{"create", "--graph", planPath, "--json"}, beadsCommandEnv(beadsDir))
-	ids, parseErr := parseGraphResult(out)
+	planningKey := nodeKeyForKind(definition, "agent-work")
+	approvalKey := nodeKeyForKind(definition, "plan-approval")
+	ids, parseErr := parseGraphResult(out, planningKey, approvalKey)
 	if runErr == nil && parseErr == nil {
 		return WorkEpic{
 			ID: ids["epic"], Status: "open", Goal: req.Goal, InitialProject: req.InitialProject,
 			FormulaID: selected.ID, FormulaVersion: selected.Revision, FormulaRevision: selected.Revision, FormulaHash: selected.ContentHash, FormulaOrigin: selected.Origin, InstantiationID: req.InstantiationID,
-			Planning: PlanningState{WorkID: ids["planning"], WorkStatus: "open", ApprovalGateID: ids["approval"], ApprovalStatus: "open"},
+			Planning: PlanningState{WorkID: ids[planningKey], WorkStatus: "open", ApprovalGateID: ids[approvalKey], ApprovalStatus: "open"},
 		}, nil
 	}
 
@@ -280,7 +281,7 @@ func validateCreateWorkEpic(req CreateWorkEpicRequest) error {
 	return nil
 }
 
-func parseGraphResult(data []byte) (map[string]string, error) {
+func parseGraphResult(data []byte, planningKey, approvalKey string) (map[string]string, error) {
 	var out struct {
 		SchemaVersion int `json:"schema_version"`
 		Data          struct {
@@ -290,7 +291,7 @@ func parseGraphResult(data []byte) (map[string]string, error) {
 	if !decodeOne(data, &out) || out.SchemaVersion != 1 {
 		return nil, errors.New("unsupported Beads graph response")
 	}
-	for _, key := range []string{"epic", "planning", "approval"} {
+	for _, key := range []string{"epic", planningKey, approvalKey} {
 		if out.Data.IDs[key] == "" {
 			return nil, fmt.Errorf("beads graph response is missing %s", key)
 		}

@@ -3,10 +3,13 @@ package factory
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/state"
 	_ "modernc.org/sqlite"
@@ -106,6 +109,11 @@ func TestFormulaPolicyRejectsRemovedSafetyConstraintsAndUnknownParameters(t *tes
 		{"provider check", strings.Replace(draft.DefinitionYAML, "kind: provider-check", "kind: question", 1), "exact provider check"},
 		{"human merge", strings.Replace(draft.DefinitionYAML, "kind: human-merge", "kind: question", 1), "human merge"},
 		{"profile", strings.Replace(draft.DefinitionYAML, "factory-plan/v1", "factory-admin/v1", 1), "profile"},
+		{"missing project parameter", strings.Replace(draft.DefinitionYAML, "project_parameter: initial_project", "project_parameter: missing", 1), "local-project parameter"},
+		{"non-project parameter", strings.Replace(draft.DefinitionYAML, "project_parameter: initial_project", "project_parameter: goal", 1), "local-project parameter"},
+		{"duplicate delivery", strings.Replace(draft.DefinitionYAML, "  - key: provider-check", "  - key: delivery-copy\n    kind: delivery\n    title: Copy\n    profile: factory-deliver/v1\n    project_parameter: initial_project\n  - key: provider-check", 1), "one Delivery per project"},
+		{"duplicate provider check", strings.Replace(draft.DefinitionYAML, "  - key: human-merge", "  - key: provider-check-copy\n    kind: provider-check\n    title: Copy\n    project_parameter: initial_project\n    exact_revision: true\n  - key: human-merge", 1), "one exact provider check per project"},
+		{"duplicate human merge", strings.Replace(draft.DefinitionYAML, "edges:", "  - key: human-merge-copy\n    kind: human-merge\n    title: Copy\n    project_parameter: initial_project\nedges:", 1), "one human merge per project"},
 		{"gating edge", strings.Replace(draft.DefinitionYAML, "  - from: human-merge\n    to: provider-check\n    type: blocks\n", "", 1), "gating chain"},
 		{"cycle", draft.DefinitionYAML + "  - from: planning\n    to: approval\n", "acyclic"},
 	}
@@ -116,6 +124,170 @@ func TestFormulaPolicyRejectsRemovedSafetyConstraintsAndUnknownParameters(t *tes
 				t.Fatalf("ValidateFormula = %#v, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestBuiltInFormulaRetainsEveryRevision(t *testing.T) {
+	project := t.TempDir()
+	project, _ = filepath.EvalSymlinks(project)
+	runner := &fakeRunner{runs: []fakeRun{
+		{out: versionEnvelope}, {out: listEnvelope(`[]`)},
+		{out: `{"schema_version":1,"data":{"ids":{"epic":"fac-1","planning":"fac-1.1","approval":"fac-1.2"}}}`},
+	}}
+	svc, _ := formulaTestService(t, runner)
+	library, err := svc.ListFormulas(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := library[0].Revisions; len(got) != DefaultFormulaVersion || got[0].Revision != 1 || got[1].Revision != 2 || got[0].ContentHash == got[1].ContentHash {
+		t.Fatalf("built-in revisions = %#v", got)
+	}
+	revision, err := svc.GetFormulaRevision(context.Background(), DefaultFormulaID, 1)
+	if err != nil || revision.Revision != 1 || revision.ContentHash != formulaHash(revision.DefinitionYAML) || strings.Contains(revision.DefinitionYAML, "kind: delivery") {
+		t.Fatalf("built-in revision 1 = %#v, %v", revision, err)
+	}
+	draft, err := svc.CopyFormula(context.Background(), DefaultFormulaID, 1)
+	if err != nil || draft.SourceRevision != 1 || draft.DefinitionYAML != revision.DefinitionYAML {
+		t.Fatalf("built-in revision 1 draft = %#v, %v", draft, err)
+	}
+	epic, err := svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{
+		InstantiationID: "legacy", Goal: "Repeat legacy", InitialProject: project,
+		FormulaID: DefaultFormulaID, FormulaRevision: 1, AcknowledgeLocalExecution: true,
+	})
+	if err != nil || epic.FormulaRevision != 1 || epic.FormulaHash != revision.ContentHash {
+		t.Fatalf("built-in revision 1 epic = %#v, %v", epic, err)
+	}
+}
+
+func TestCreateWorkEpicSupportsRenamedPlanningNodes(t *testing.T) {
+	project := t.TempDir()
+	project, _ = filepath.EvalSymlinks(project)
+	runner := &fakeRunner{runs: []fakeRun{
+		{out: versionEnvelope}, {out: listEnvelope(`[]`)},
+		{out: `{"schema_version":1,"data":{"ids":{"epic":"fac-3","design":"fac-3.1","signoff":"fac-3.2","delivery":"fac-3.3","provider-check":"fac-3.4","human-merge":"fac-3.5"}}}`},
+		{out: listEnvelope(`[]`)},
+	}}
+	svc, _ := formulaTestService(t, runner)
+	draft, _ := svc.CopyFormula(context.Background(), DefaultFormulaID, DefaultFormulaVersion)
+	definition := strings.NewReplacer(
+		"name: Shipped delivery", "name: Renamed delivery",
+		"key: planning", "key: design",
+		"key: approval", "key: signoff",
+		"from: approval", "from: signoff",
+		"to: planning", "to: design",
+	).Replace(draft.DefinitionYAML)
+	if _, err := svc.SaveFormula(context.Background(), SaveFormulaRequest{ID: "custom/renamed", Name: "Renamed delivery", DefinitionYAML: definition}); err != nil {
+		t.Fatal(err)
+	}
+	epic, err := svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{
+		InstantiationID: "renamed", Goal: "Ship renamed", InitialProject: project,
+		FormulaID: "custom/renamed", FormulaRevision: 1, AcknowledgeLocalExecution: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if epic.Planning.WorkID != "fac-3.1" || epic.Planning.ApprovalGateID != "fac-3.2" {
+		t.Fatalf("planning state = %#v", epic.Planning)
+	}
+	var plan graphPlan
+	if err := json.Unmarshal(runner.plans[0], &plan); err != nil {
+		t.Fatal(err)
+	}
+	if refs := plan.Nodes[0].MetadataRefs; refs["ocman.planning_work_id"] != "design" || refs["ocman.plan_approval_gate_id"] != "signoff" {
+		t.Fatalf("epic refs = %#v", refs)
+	}
+}
+
+type blockingFormulaStore struct {
+	formulaStore
+	selected chan struct{}
+	release  chan struct{}
+	once     sync.Once
+}
+
+func (s *blockingFormulaStore) GetFactoryFormulaRevision(ctx context.Context, id string, revision int) (state.FactoryFormula, state.FactoryFormulaRevision, error) {
+	formula, saved, err := s.formulaStore.GetFactoryFormulaRevision(ctx, id, revision)
+	if id == "custom/team" {
+		s.once.Do(func() {
+			close(s.selected)
+			<-s.release
+		})
+	}
+	return formula, saved, err
+}
+
+type serializedFormulaRunner struct {
+	mu      sync.Mutex
+	created bool
+	issues  string
+}
+
+func (r *serializedFormulaRunner) LookPath(string) (string, error) { return "/usr/bin/bd", nil }
+
+func (r *serializedFormulaRunner) Run(_ context.Context, _ string, _ string, args, _ []string) ([]byte, []byte, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(args) == 2 && args[0] == "version" {
+		return []byte(versionEnvelope), nil, nil
+	}
+	if len(args) >= 2 && args[0] == "--readonly" && args[1] == "list" {
+		if r.created {
+			return []byte(listEnvelope(r.issues)), nil, nil
+		}
+		return []byte(listEnvelope(`[]`)), nil, nil
+	}
+	if len(args) >= 2 && args[0] == "create" && args[1] == "--graph" {
+		r.created = true
+		return []byte(`{"schema_version":1,"data":{"ids":{"epic":"fac-2","planning":"fac-2.1","approval":"fac-2.2","delivery":"fac-2.3","provider-check":"fac-2.4","human-merge":"fac-2.5"}}}`), nil, nil
+	}
+	return nil, nil, errors.New("unexpected Beads command")
+}
+
+func TestDeleteWaitsForExactRevisionPour(t *testing.T) {
+	project := t.TempDir()
+	project, _ = filepath.EvalSymlinks(project)
+	runner := &serializedFormulaRunner{}
+	svc, _ := formulaTestService(t, nil)
+	svc.runner = runner
+	draft, _ := svc.CopyFormula(context.Background(), DefaultFormulaID, DefaultFormulaVersion)
+	customYAML := strings.Replace(draft.DefinitionYAML, "name: Shipped delivery", "name: Team delivery", 1)
+	revision, err := svc.SaveFormula(context.Background(), SaveFormulaRequest{ID: "custom/team", Name: "Team delivery", DefinitionYAML: customYAML})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.issues = customPouredIssues(project, revision.ContentHash)
+	store := &blockingFormulaStore{formulaStore: svc.formulas, selected: make(chan struct{}), release: make(chan struct{})}
+	svc.formulas = store
+	t.Cleanup(func() { store.once.Do(func() { close(store.release) }) })
+
+	created := make(chan error, 1)
+	go func() {
+		_, err := svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{
+			InstantiationID: "custom-intake", Goal: "Ship custom", InitialProject: project,
+			FormulaID: "custom/team", FormulaRevision: 1, AcknowledgeLocalExecution: true,
+		})
+		created <- err
+	}()
+	<-store.selected
+	deleted := make(chan error, 1)
+	go func() { deleted <- svc.DeleteFormula(context.Background(), "custom/team") }()
+	select {
+	case err := <-deleted:
+		close(store.release)
+		if createErr := <-created; createErr != nil {
+			t.Fatal(createErr)
+		}
+		if !errors.Is(err, ErrFormulaReferenced) {
+			t.Fatalf("DeleteFormula completed during pour with %v", err)
+		}
+	case <-time.After(50 * time.Millisecond):
+		close(store.release)
+		if createErr := <-created; createErr != nil {
+			t.Fatal(createErr)
+		}
+		if err := <-deleted; !errors.Is(err, ErrFormulaReferenced) {
+			t.Fatalf("DeleteFormula error = %v, want referenced", err)
+		}
 	}
 }
 

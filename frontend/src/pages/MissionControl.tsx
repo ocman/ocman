@@ -95,6 +95,7 @@ function FormulaLibrary() {
   const [previewProject, setPreviewProject] = useState('/example/project');
   const [validation, setValidation] = useState<{ valid: boolean; errors: string[] }>();
   const [editing, setEditing] = useState(false);
+  const [selectedRevisions, setSelectedRevisions] = useState<Record<string, number>>({});
   const actionError = [actions.copy, actions.validate, actions.preview, actions.save, actions.archive, actions.remove]
     .find((action) => action.isError)?.error;
 
@@ -122,7 +123,13 @@ function FormulaLibrary() {
         {(formulas.data ?? []).map((formula) => (
           <li key={formula.id}>
             <span><strong>{formula.name}</strong> {formula.revisions.map((revision) => `r${revision.revision}`).join(', ')} · {formula.origin}{formula.archived ? ' · archived' : ''}</span>
-            <Button type="button" variant="muted" onClick={() => void copy(formula.id, formula.currentRevision, formula.name)}>Copy</Button>
+            <label>
+              Revision for {formula.name}
+              <select value={selectedRevisions[formula.id] ?? formula.currentRevision} onChange={(event) => setSelectedRevisions({ ...selectedRevisions, [formula.id]: Number(event.target.value) })}>
+                {formula.revisions.map((revision) => <option key={revision.revision} value={revision.revision}>r{revision.revision}</option>)}
+              </select>
+            </label>
+            <Button type="button" variant="muted" aria-label={`Copy ${formula.name} revision`} onClick={() => void copy(formula.id, selectedRevisions[formula.id] ?? formula.currentRevision, formula.name)}>Copy</Button>
             {formula.origin === 'custom' && !formula.archived && <Button type="button" variant="muted" onClick={() => void actions.archive.mutateAsync(formula.id)}>Archive</Button>}
             {formula.origin === 'custom' && <Button type="button" variant="muted" onClick={() => void actions.remove.mutateAsync(formula.id)}>Delete</Button>}
           </li>

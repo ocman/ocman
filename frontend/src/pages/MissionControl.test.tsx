@@ -113,7 +113,7 @@ describe('MissionControl', () => {
     vi.mocked(useFactoryStatus).mockReturnValue({ data: healthy } as never);
     render(<MissionControl />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Copy Shipped delivery revision' }));
     const editor = screen.getByLabelText('Formula v1 YAML');
     await userEvent.clear(editor);
     await userEvent.type(editor, 'invalid: true');
@@ -122,6 +122,26 @@ describe('MissionControl', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Plan approval is required');
     expect(validate).toHaveBeenCalledWith('invalid: true');
     expect(save).not.toHaveBeenCalled();
+  });
+
+  it('inspects and copies an exact historical Formula revision', async () => {
+    const copy = vi.fn().mockResolvedValue({ definitionYaml: 'schema: 1\nname: Team delivery\ntitle: Historical\n' });
+    vi.mocked(useFactoryFormulaActions).mockReturnValue({
+      copy: { mutateAsync: copy }, validate: { mutateAsync: vi.fn() }, preview: { mutateAsync: vi.fn() },
+      save: { mutateAsync: vi.fn() }, archive: { mutateAsync: vi.fn() }, remove: { mutateAsync: vi.fn() },
+    } as never);
+    vi.mocked(useFactoryFormulas).mockReturnValue({ data: [{
+      id: 'custom/team', name: 'Team delivery', origin: 'custom', currentRevision: 3,
+      contentHash: 'new', archived: false, revisions: [{ revision: 1, contentHash: 'old' }, { revision: 3, contentHash: 'new' }],
+    }] } as never);
+    vi.mocked(useFactoryStatus).mockReturnValue({ data: healthy } as never);
+    render(<MissionControl />);
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Revision for Team delivery' }), '1');
+    await userEvent.click(screen.getByRole('button', { name: 'Copy Team delivery revision' }));
+
+    expect(copy).toHaveBeenCalledWith({ id: 'custom/team', revision: 1 });
+    expect(await screen.findByLabelText('Formula v1 YAML')).toHaveValue('schema: 1\nname: Team delivery copy\ntitle: Historical\n');
   });
 
   it('shows preview nodes and graph edges', async () => {
@@ -137,7 +157,7 @@ describe('MissionControl', () => {
     } as never);
     vi.mocked(useFactoryStatus).mockReturnValue({ data: healthy } as never);
     render(<MissionControl />);
-    await userEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Copy Shipped delivery revision' }));
 
     const preview = await screen.findByLabelText('Formula preview');
     expect(within(preview).getByText('Plan: Example goal · agent-work')).toBeInTheDocument();

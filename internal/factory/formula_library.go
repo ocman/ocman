@@ -35,6 +35,29 @@ var (
 	sha256Pattern              = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
+const builtInFormulaV1YAML = `schema: 1
+name: Shipped delivery
+parameters:
+  goal:
+    type: string
+  initial_project:
+    type: local-project
+nodes:
+  - key: planning
+    kind: agent-work
+    title: "Plan: ${goal}"
+    description: "Plan delivery for ${initial_project}"
+    profile: factory-plan/v1
+    project_parameter: initial_project
+  - key: approval
+    kind: plan-approval
+    title: Plan approval
+edges:
+  - from: approval
+    to: planning
+    type: blocks
+`
+
 const defaultFormulaYAML = `schema: 1
 name: Shipped delivery
 parameters:
@@ -80,6 +103,8 @@ edges:
     to: provider-check
     type: blocks
 `
+
+var builtInFormulaRevisions = [DefaultFormulaVersion + 1]string{"", builtInFormulaV1YAML, defaultFormulaYAML}
 
 type FormulaSummary struct {
 	ID              string               `json:"id"`
@@ -174,10 +199,11 @@ type formulaEdge struct {
 
 func (s *Service) CopyFormula(ctx context.Context, id string, revision int) (FormulaDraft, error) {
 	if id == DefaultFormulaID {
-		if revision != 0 && revision != DefaultFormulaVersion {
-			return FormulaDraft{}, ErrFormulaNotFound
+		saved, err := s.GetFormulaRevision(ctx, id, revision)
+		if err != nil {
+			return FormulaDraft{}, err
 		}
-		return FormulaDraft{SourceID: id, SourceRevision: DefaultFormulaVersion, Origin: FormulaOriginBuiltIn, DefinitionYAML: defaultFormulaYAML}, nil
+		return FormulaDraft{SourceID: id, SourceRevision: saved.Revision, Origin: FormulaOriginBuiltIn, DefinitionYAML: saved.DefinitionYAML}, nil
 	}
 	saved, err := s.GetFormulaRevision(ctx, id, revision)
 	if err != nil {
@@ -241,11 +267,11 @@ func validateFormulaPolicy(definition formulaDefinition) []string {
 	}
 	kindCount := make(map[string]int)
 	kindKeys := make(map[string]string)
-	deliveryProjects := make(map[string]bool)
+	deliveryProjects := make(map[string]int)
 	deliveryKeys := make(map[string]string)
-	checkProjects := make(map[string]bool)
+	checkProjects := make(map[string]int)
 	checkKeys := make(map[string]string)
-	mergeProjects := make(map[string]bool)
+	mergeProjects := make(map[string]int)
 	mergeKeys := make(map[string]string)
 	for _, node := range definition.Nodes {
 		if !stableID.MatchString(node.Key) || keys[node.Key].Key != "" {
@@ -255,6 +281,9 @@ func validateFormulaPolicy(definition formulaDefinition) []string {
 		keys[node.Key] = node
 		kindCount[node.Kind]++
 		kindKeys[node.Kind] = node.Key
+		if node.ProjectParameter != "" && definition.Parameters[node.ProjectParameter].Type != "local-project" {
+			problems = append(problems, "node "+node.Key+" must reference an existing local-project parameter")
+		}
 		for _, match := range placeholderPattern.FindAllStringSubmatch(node.Title+"\n"+node.Description, -1) {
 			if _, ok := wantParameters[match[1]]; !ok {
 				problems = append(problems, "template parameter "+match[1]+" is not schema-approved")
@@ -273,19 +302,19 @@ func validateFormulaPolicy(definition formulaDefinition) []string {
 			if node.Profile != "factory-deliver/v1" || node.ProjectParameter == "" {
 				problems = append(problems, "Delivery must keep immutable profile factory-deliver/v1 and a project")
 			}
-			deliveryProjects[node.ProjectParameter] = true
+			deliveryProjects[node.ProjectParameter]++
 			deliveryKeys[node.ProjectParameter] = node.Key
 		case "provider-check":
 			if !node.ExactRevision || node.ProjectParameter == "" {
 				problems = append(problems, "each project requires an exact provider check")
 			}
-			checkProjects[node.ProjectParameter] = node.ExactRevision
+			checkProjects[node.ProjectParameter]++
 			checkKeys[node.ProjectParameter] = node.Key
 		case "human-merge":
 			if node.ProjectParameter == "" {
 				problems = append(problems, "each project requires human merge")
 			}
-			mergeProjects[node.ProjectParameter] = true
+			mergeProjects[node.ProjectParameter]++
 			mergeKeys[node.ProjectParameter] = node.Key
 		default:
 			problems = append(problems, "node "+node.Key+" has unsupported kind "+node.Kind)
@@ -294,15 +323,18 @@ func validateFormulaPolicy(definition formulaDefinition) []string {
 	if kindCount["agent-work"] != 1 || kindCount["plan-approval"] != 1 {
 		problems = append(problems, "Formula requires one Planning Work and one Plan approval")
 	}
-	if len(deliveryProjects) == 0 {
-		problems = append(problems, "Formula requires one Delivery per project")
-	}
-	for project := range deliveryProjects {
-		if !checkProjects[project] {
-			problems = append(problems, "project "+project+" requires an exact provider check")
+	for project, parameter := range definition.Parameters {
+		if parameter.Type != "local-project" {
+			continue
 		}
-		if !mergeProjects[project] {
-			problems = append(problems, "project "+project+" requires human merge")
+		if deliveryProjects[project] != 1 {
+			problems = append(problems, "project "+project+" requires one Delivery per project")
+		}
+		if checkProjects[project] != 1 {
+			problems = append(problems, "project "+project+" requires one exact provider check per project")
+		}
+		if mergeProjects[project] != 1 {
+			problems = append(problems, "project "+project+" requires one human merge per project")
 		}
 	}
 	edges := make(map[string]bool, len(definition.Edges))
@@ -312,7 +344,10 @@ func validateFormulaPolicy(definition formulaDefinition) []string {
 	if !edges[kindKeys["plan-approval"]+"\x00"+kindKeys["agent-work"]] {
 		problems = append(problems, "Formula must keep the Plan approval gating chain")
 	}
-	for project := range deliveryProjects {
+	for project, count := range deliveryProjects {
+		if count != 1 || checkProjects[project] != 1 || mergeProjects[project] != 1 {
+			continue
+		}
 		if !edges[deliveryKeys[project]+"\x00"+kindKeys["agent-work"]] ||
 			!edges[checkKeys[project]+"\x00"+deliveryKeys[project]] ||
 			!edges[mergeKeys[project]+"\x00"+checkKeys[project]] {
@@ -433,8 +468,7 @@ func (s *Service) SaveFormula(ctx context.Context, req SaveFormulaRequest) (Form
 }
 
 func (s *Service) ListFormulas(ctx context.Context) ([]FormulaSummary, error) {
-	builtInHash := formulaHash(defaultFormulaYAML)
-	builtIn := FormulaSummary{ID: DefaultFormulaID, Name: "Shipped delivery", Origin: FormulaOriginBuiltIn, CurrentRevision: DefaultFormulaVersion, ContentHash: builtInHash, Revisions: []FormulaRevisionRef{{Revision: DefaultFormulaVersion, ContentHash: builtInHash}}}
+	builtIn := builtInFormulaSummary()
 	if s.formulas == nil {
 		return []FormulaSummary{builtIn}, nil
 	}
@@ -466,11 +500,16 @@ func (s *Service) ListFormulas(ctx context.Context) ([]FormulaSummary, error) {
 
 func (s *Service) GetFormulaRevision(ctx context.Context, id string, revision int) (FormulaRevision, error) {
 	if id == DefaultFormulaID {
-		if revision != 0 && revision != DefaultFormulaVersion {
+		if revision == 0 {
+			revision = DefaultFormulaVersion
+		}
+		if revision < 1 || revision >= len(builtInFormulaRevisions) {
 			return FormulaRevision{}, ErrFormulaNotFound
 		}
-		hash := formulaHash(defaultFormulaYAML)
-		return FormulaRevision{FormulaSummary: FormulaSummary{ID: id, Name: "Shipped delivery", Origin: FormulaOriginBuiltIn, CurrentRevision: DefaultFormulaVersion, ContentHash: hash, Revisions: []FormulaRevisionRef{{Revision: DefaultFormulaVersion, ContentHash: hash}}}, Revision: DefaultFormulaVersion, SchemaVersion: 1, DefinitionYAML: defaultFormulaYAML}, nil
+		definitionYAML := builtInFormulaRevisions[revision]
+		summary := builtInFormulaSummary()
+		summary.ContentHash = formulaHash(definitionYAML)
+		return FormulaRevision{FormulaSummary: summary, Revision: revision, SchemaVersion: 1, DefinitionYAML: definitionYAML}, nil
 	}
 	if s.formulas == nil {
 		return FormulaRevision{}, ErrFormulaNotFound
@@ -483,6 +522,14 @@ func (s *Service) GetFormulaRevision(ctx context.Context, id string, revision in
 		return FormulaRevision{}, fmt.Errorf("get Formula revision: %w", err)
 	}
 	return formulaRevisionFromState(formula, saved), nil
+}
+
+func builtInFormulaSummary() FormulaSummary {
+	revisions := make([]FormulaRevisionRef, 0, DefaultFormulaVersion)
+	for revision := 1; revision < len(builtInFormulaRevisions); revision++ {
+		revisions = append(revisions, FormulaRevisionRef{Revision: revision, ContentHash: formulaHash(builtInFormulaRevisions[revision])})
+	}
+	return FormulaSummary{ID: DefaultFormulaID, Name: "Shipped delivery", Origin: FormulaOriginBuiltIn, CurrentRevision: DefaultFormulaVersion, ContentHash: revisions[len(revisions)-1].ContentHash, Revisions: revisions}
 }
 
 func formulaRevisionFromState(formula state.FactoryFormula, revision state.FactoryFormulaRevision) FormulaRevision {
@@ -516,6 +563,8 @@ func (s *Service) DeleteFormula(ctx context.Context, id string) error {
 	if !s.mutationOwned() {
 		return fmt.Errorf("%w: this process does not own Factory mutations", ErrFactoryUnavailable)
 	}
+	s.pourMu.Lock()
+	defer s.pourMu.Unlock()
 	epics, err := s.ListWorkEpics(ctx)
 	if err != nil {
 		return err
@@ -546,7 +595,7 @@ func (s *Service) mutationOwned() bool {
 
 func definitionForRevision(revision FormulaRevision) (formulaDefinition, error) {
 	definition, _, validation := parseFormula(revision.DefinitionYAML)
-	if !validation.Valid || len(validateFormulaPolicy(definition)) != 0 {
+	if !validation.Valid || definition.Schema != 1 || (revision.Origin != FormulaOriginBuiltIn && len(validateFormulaPolicy(definition)) != 0) {
 		return formulaDefinition{}, ErrInvalidFormula
 	}
 	return definition, nil
@@ -556,7 +605,7 @@ func graphForFormula(definition formulaDefinition, req CreateWorkEpicRequest, pr
 	parameters := map[string]string{"goal": req.Goal, "initial_project": req.InitialProject}
 	epic := provenance("work-epic")
 	epic["ocman.goal"], epic["ocman.initial_project"] = req.Goal, req.InitialProject
-	epicRefs := map[string]string{"ocman.planning_work_id": "planning", "ocman.plan_approval_gate_id": "approval"}
+	epicRefs := map[string]string{"ocman.planning_work_id": nodeKeyForKind(definition, "agent-work"), "ocman.plan_approval_gate_id": nodeKeyForKind(definition, "plan-approval")}
 	plan := graphPlan{CommitMessage: "ocman factory: instantiate " + req.InstantiationID, Nodes: []graphNode{{Key: "epic", Title: req.Goal, Type: "epic", Metadata: epic, MetadataRefs: epicRefs}}}
 	for _, node := range definition.Nodes {
 		provenanceKind := node.Kind
@@ -587,4 +636,13 @@ func graphForFormula(definition formulaDefinition, req CreateWorkEpicRequest, pr
 		plan.Edges = append(plan.Edges, graphEdge{FromKey: edge.From, ToKey: edge.To, Type: edge.Type})
 	}
 	return plan
+}
+
+func nodeKeyForKind(definition formulaDefinition, kind string) string {
+	for _, node := range definition.Nodes {
+		if node.Kind == kind {
+			return node.Key
+		}
+	}
+	return ""
 }
