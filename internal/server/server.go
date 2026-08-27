@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -147,10 +148,11 @@ type Server struct {
 	// newLocalHost. Defaults to the native tmux runtime; tests override it
 	// (before the host router is built) with a fake so session-mode
 	// handlers don't spawn (and leak) real tmux sessions in temp dirs.
-	runtime      ocruntime.Runtime
-	openCodeAuth ocapi.Auth
-	daguManager  *dagu.Manager
-	factory      factoryService
+	runtime       ocruntime.Runtime
+	openCodeAuth  ocapi.Auth
+	daguManager   *dagu.Manager
+	factory       factoryService
+	factoryIntake factoryIntakeService
 
 	getNewAssistantMessages func(context.Context, int64) ([]db.LLMMessageRow, int64, error)
 
@@ -168,6 +170,26 @@ type factoryService interface {
 	CreateWorkEpic(context.Context, factory.CreateWorkEpicRequest) (factory.WorkEpic, error)
 	ListWorkEpics(context.Context) ([]factory.WorkEpic, error)
 	GetWorkEpic(context.Context, string) (factory.WorkEpic, error)
+}
+
+type factoryIntakeService interface {
+	PrepareWork(context.Context, factory.PrepareWorkRequest) (factory.PreparedWork, error)
+	AcknowledgeLocalExecution(context.Context, string) error
+	CreatePreparedWorkEpic(context.Context, factory.PreparedWork) (factory.WorkEpic, error)
+}
+
+type factoryProjectResolver struct{ server *Server }
+
+func (r factoryProjectResolver) ResolveLocalProject(ctx context.Context, path string) (string, error) {
+	owner := r.server.router().ForDir(path)
+	if owner.RemoteID() != "local" {
+		return "", errors.New("factory only supports local projects")
+	}
+	project, err := owner.ProjectUpstreams(ctx, path)
+	if err != nil {
+		return "", err
+	}
+	return project.RepoRoot, nil
 }
 
 // remoteAccessInfo holds this instance's own remote-access surface for
@@ -191,10 +213,6 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 	if registry == nil {
 		registry = platforms.NewRegistry()
 	}
-	factorySvc := factory.New(filepath.Join(state.DefaultDataDir(), "factory"), nil)
-	if stateDB != nil {
-		factorySvc = factory.New(filepath.Join(state.DefaultDataDir(), "factory"), stateDB)
-	}
 	s := &Server{
 		db:           database,
 		stateDB:      stateDB,
@@ -207,8 +225,13 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		activity:     newClientActivityPolicy(time.Now),
 
 		runtime: ocruntime.NewNativeRuntime(),
-		factory: factorySvc,
 	}
+	factorySvc := factory.New(filepath.Join(state.DefaultDataDir(), "factory"), nil, factoryProjectResolver{server: s})
+	if stateDB != nil {
+		factorySvc = factory.New(filepath.Join(state.DefaultDataDir(), "factory"), stateDB, factoryProjectResolver{server: s})
+	}
+	s.factory = factorySvc
+	s.factoryIntake = factorySvc
 	// The host router is built lazily (see router()) so tests can override
 	// s.runtime after New before the local Host is constructed.
 	// registryRef (not the registry itself) so the service follows a

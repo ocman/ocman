@@ -117,6 +117,14 @@ func TestFactoryLocalExecutionAckIsDurableAndIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
+	acknowledged, err := db.HasFactoryLocalExecutionAck(context.Background(), "local", "/repo", "factory-plan", "v1")
+	if err != nil || !acknowledged {
+		t.Fatalf("HasFactoryLocalExecutionAck = %v, %v", acknowledged, err)
+	}
+	acknowledged, err = db.HasFactoryLocalExecutionAck(context.Background(), "local", "/repo", "factory-plan", "v2")
+	if err != nil || acknowledged {
+		t.Fatalf("HasFactoryLocalExecutionAck for new profile = %v, %v", acknowledged, err)
+	}
 	var count int
 	var actor string
 	var acknowledgedAt int64

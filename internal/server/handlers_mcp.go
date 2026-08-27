@@ -79,7 +79,8 @@ func (s *Server) mcpHandler() http.Handler {
 // It is only registered when the OpenCode platform adapter is present.
 func (s *Server) buildMCPHandler() http.Handler {
 	deps := internalmcp.Deps{
-		SignFile: s.FileURL,
+		SignFile:       s.FileURL,
+		FactoryService: s.factoryIntake,
 	}
 	if s.stateDB != nil {
 		deps.WorkflowService = s.workflowSvc()

@@ -92,10 +92,12 @@ flowchart TD
     Server --> Workflows[automation services<br/>workflows + prompt schedules]
     Server --> Factory[internal/factory<br/>readiness, dispatch lock + Beads store]
     Factory --> State
+    Factory --> Router
     Workflows --> Registry
     Workflows --> Router
     Server --> MCP[internal/mcp<br/>MCP tools]
     MCP --> Workflows
+    MCP --> Factory
     Registry --> OC[platforms/opencode + internal/db<br/>adapter and read-only queries]
     Registry --> RP[remote.Platform<br/>gRPC-backed]
     Router --> Local[hostsvc/local<br/>git, tmux, worktree, Beads, runtimes]
@@ -112,7 +114,10 @@ flowchart TD
   dispatch ownership. The owner initializes the dedicated store idempotently
   on first start. The owner can atomically instantiate the immutable default
   Formula into a Work Epic, Planning Work and Plan approval Gate; local
-  execution acknowledgements are stored separately in `state.db`. Other
+  execution acknowledgements are stored separately in `state.db`. Its intake
+  service also prepares confirmed conversation briefs, validates local Git
+  targets and creates idempotent Work Epics through an implementation-neutral
+  MCP contract. Other
   instances expose the same authenticated reads without mutation authority;
   Workflows state and services are not involved.
 - **Factory persistence.** Beads owns the Work Epic graph, child Work Items,

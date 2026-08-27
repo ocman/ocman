@@ -57,6 +57,7 @@ func DefaultFormula() Formula {
 type CreateWorkEpicRequest struct {
 	InstantiationID           string `json:"instantiationId"`
 	Goal                      string `json:"goal"`
+	Brief                     string `json:"brief,omitempty"`
 	InitialProject            string `json:"initialProject"`
 	AcknowledgeLocalExecution bool   `json:"acknowledgeLocalExecution"`
 }
@@ -72,6 +73,7 @@ type WorkEpic struct {
 	ID              string        `json:"id"`
 	Status          string        `json:"status"`
 	Goal            string        `json:"goal"`
+	Brief           string        `json:"brief,omitempty"`
 	InitialProject  string        `json:"initialProject"`
 	FormulaID       string        `json:"formulaId"`
 	FormulaVersion  int           `json:"formulaVersion"`
@@ -102,10 +104,11 @@ type graphEdge struct {
 }
 
 type beadsIssue struct {
-	ID        string            `json:"id"`
-	Status    string            `json:"status"`
-	IssueType string            `json:"issue_type"`
-	Metadata  map[string]string `json:"metadata"`
+	ID          string            `json:"id"`
+	Status      string            `json:"status"`
+	IssueType   string            `json:"issue_type"`
+	Description string            `json:"description"`
+	Metadata    map[string]string `json:"metadata"`
 }
 
 func (s *Service) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRequest) (WorkEpic, error) {
@@ -129,7 +132,10 @@ func (s *Service) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRequest)
 	if err := s.acks.UpsertFactoryLocalExecutionAck(ctx, localHostID, req.InitialProject, planningProfileID, planningProfileVersion, operatorActor, time.Now()); err != nil {
 		return WorkEpic{}, fmt.Errorf("%w: record local execution acknowledgement: %w", ErrFactoryUnavailable, err)
 	}
+	return s.createWorkEpic(ctx, req)
+}
 
+func (s *Service) createWorkEpic(ctx context.Context, req CreateWorkEpicRequest) (WorkEpic, error) {
 	s.pourMu.Lock()
 	defer s.pourMu.Unlock()
 
@@ -171,7 +177,7 @@ func (s *Service) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRequest)
 	ids, parseErr := parseGraphResult(out)
 	if runErr == nil && parseErr == nil {
 		return WorkEpic{
-			ID: ids["epic"], Status: "open", Goal: req.Goal, InitialProject: req.InitialProject,
+			ID: ids["epic"], Status: "open", Goal: req.Goal, Brief: req.Brief, InitialProject: req.InitialProject,
 			FormulaID: DefaultFormulaID, FormulaVersion: DefaultFormulaVersion, InstantiationID: req.InstantiationID,
 			Planning: PlanningState{WorkID: ids["planning"], WorkStatus: "open", ApprovalGateID: ids["approval"], ApprovalStatus: "open"},
 		}, nil
@@ -245,6 +251,10 @@ func validateCreateWorkEpic(req CreateWorkEpicRequest) error {
 }
 
 func defaultGraph(req CreateWorkEpicRequest) graphPlan {
+	planningDescription := req.Brief
+	if planningDescription == "" {
+		planningDescription = "Plan delivery for " + req.InitialProject
+	}
 	provenance := func(kind string) map[string]string {
 		return map[string]string{
 			"ocman.contract":         "1",
@@ -265,8 +275,8 @@ func defaultGraph(req CreateWorkEpicRequest) graphPlan {
 	return graphPlan{
 		CommitMessage: "ocman factory: instantiate " + req.InstantiationID,
 		Nodes: []graphNode{
-			{Key: "epic", Title: req.Goal, Type: "epic", Metadata: epic, MetadataRefs: map[string]string{"ocman.planning_work_id": "planning", "ocman.plan_approval_gate_id": "approval"}},
-			{Key: "planning", Title: "Plan: " + req.Goal, Type: "task", Description: "Plan delivery for " + req.InitialProject, ParentKey: "epic", Metadata: planning, MetadataRefs: map[string]string{"ocman.work_epic_id": "epic"}},
+			{Key: "epic", Title: req.Goal, Type: "epic", Description: req.Brief, Metadata: epic, MetadataRefs: map[string]string{"ocman.planning_work_id": "planning", "ocman.plan_approval_gate_id": "approval"}},
+			{Key: "planning", Title: "Plan: " + req.Goal, Type: "task", Description: planningDescription, ParentKey: "epic", Metadata: planning, MetadataRefs: map[string]string{"ocman.work_epic_id": "epic"}},
 			{Key: "approval", Title: "Plan approval", Type: "gate", ParentKey: "epic", Metadata: approval, MetadataRefs: map[string]string{"ocman.work_epic_id": "epic"}},
 		},
 		Edges: []graphEdge{{FromKey: "approval", ToKey: "planning", Type: "blocks"}},
@@ -324,7 +334,7 @@ func listWorkEpics(ctx context.Context, path, beadsDir string, r runner) ([]Work
 			continue
 		}
 		epics = append(epics, WorkEpic{
-			ID: issue.ID, Status: issue.Status, Goal: meta["ocman.goal"], InitialProject: meta["ocman.initial_project"],
+			ID: issue.ID, Status: issue.Status, Goal: meta["ocman.goal"], Brief: issue.Description, InitialProject: meta["ocman.initial_project"],
 			FormulaID: DefaultFormulaID, FormulaVersion: DefaultFormulaVersion, InstantiationID: meta["ocman.instantiation_id"],
 			Planning: PlanningState{WorkID: planning.ID, WorkStatus: planning.Status, ApprovalGateID: approval.ID, ApprovalStatus: approval.Status},
 		})
@@ -352,7 +362,7 @@ func matchInstantiation(epics []WorkEpic, req CreateWorkEpicRequest) (*WorkEpic,
 		}
 		found = &epics[i]
 	}
-	if found != nil && (found.Goal != req.Goal || found.InitialProject != req.InitialProject) {
+	if found != nil && (found.Goal != req.Goal || found.Brief != req.Brief || found.InitialProject != req.InitialProject) {
 		return nil, fmt.Errorf("%w: instantiation ID %q already belongs to different inputs", ErrInstantiationConflict, req.InstantiationID)
 	}
 	return found, nil

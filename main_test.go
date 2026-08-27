@@ -52,6 +52,27 @@ func TestResolveAuthPassword_Precedence(t *testing.T) {
 	}
 }
 
+func TestEmbeddedFactorySkillUsesOnlyFactoryContract(t *testing.T) {
+	skills := embeddedSkills()
+	source := string(skills["ocman-factory"])
+	for _, required := range []string{
+		"explicit", "prepare_factory_work", "acknowledge_factory_execution",
+		"create_factory_work_epic", "confirmation", "stop",
+	} {
+		if !strings.Contains(strings.ToLower(source), strings.ToLower(required)) {
+			t.Errorf("Factory skill is missing %q", required)
+		}
+	}
+	for _, hidden := range []string{"beads", "sqlite"} {
+		if strings.Contains(strings.ToLower(source), hidden) {
+			t.Errorf("Factory skill exposes implementation term %q", hidden)
+		}
+	}
+	if len(skills) != 2 || len(skills["ocman-workflows"]) == 0 {
+		t.Fatalf("embedded skills = %#v", skills)
+	}
+}
+
 func TestResolveOpenCodePassword(t *testing.T) {
 	dir := t.TempDir()
 	passwordFile := filepath.Join(dir, "opencode-password")

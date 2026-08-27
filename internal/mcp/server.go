@@ -9,6 +9,10 @@ import (
 // Deps holds the dependencies injected into the MCP server by the
 // ocman server package. All fields are required unless noted.
 type Deps struct {
+	// FactoryService drives implementation-neutral Factory intake tools.
+	// Optional: nil disables Factory tools.
+	FactoryService factoryService
+
 	// WorkflowService drives workflow authoring and run-control tools.
 	// Optional: nil disables workflow tools.
 	WorkflowService workflowService
@@ -35,6 +39,7 @@ func New(deps Deps) *Server {
 
 	addFileTools(s, &fileTools{sign: deps.SignFile})
 
+	addFactoryTools(s, &factoryTools{svc: deps.FactoryService})
 	addWorkflowTools(s, &workflowTools{svc: deps.WorkflowService})
 
 	httpHandler := mcpserver.NewStreamableHTTPServer(s,
@@ -57,6 +62,7 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 	tools := []mcpserver.ServerTool{
 		{Tool: embedFileTool(), Handler: (&fileTools{sign: deps.SignFile}).handleEmbedFile},
 	}
+	tools = append(tools, factoryServerTools(&factoryTools{svc: deps.FactoryService})...)
 	tools = append(tools, workflowServerTools(&workflowTools{svc: deps.WorkflowService})...)
 	return tools
 }

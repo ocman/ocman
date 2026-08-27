@@ -38,6 +38,13 @@ var version = "dev"
 //go:embed .opencode/skills/ocman-workflows/SKILL.md
 var workflowsSkill []byte
 
+//go:embed .opencode/skills/ocman-factory/SKILL.md
+var factorySkill []byte
+
+func embeddedSkills() map[string][]byte {
+	return map[string][]byte{"ocman-factory": factorySkill, "ocman-workflows": workflowsSkill}
+}
+
 // authPasswordEnv is the environment variable consulted for the auth
 // password when neither -auth-password-file nor -auth-password is set.
 // Env wins because it's the most common deployment channel (launchd,
@@ -92,7 +99,7 @@ func main() {
 	if err := opencodeskills.Remove("ocman-sessions"); err != nil {
 		log.WithError(err).Warn("removing retired ocman session skill")
 	}
-	if err := opencodeskills.Install(map[string][]byte{"ocman-workflows": workflowsSkill}); err != nil {
+	if err := opencodeskills.Install(embeddedSkills()); err != nil {
 		log.WithError(err).Warn("installing embedded ocman skills")
 	}
 

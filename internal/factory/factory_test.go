@@ -19,6 +19,23 @@ type fakeAckStore struct {
 	runner *fakeRunner
 	calls  [][]any
 	err    error
+	has    bool
+	hasErr error
+	checks [][]string
+}
+
+type fakeProjectResolver struct {
+	root string
+	err  error
+}
+
+func (r fakeProjectResolver) ResolveLocalProject(context.Context, string) (string, error) {
+	return r.root, r.err
+}
+
+func (s *fakeAckStore) HasFactoryLocalExecutionAck(_ context.Context, host, repo, profile, version string) (bool, error) {
+	s.checks = append(s.checks, []string{host, repo, profile, version})
+	return s.has, s.hasErr
 }
 
 func (s *fakeAckStore) UpsertFactoryLocalExecutionAck(_ context.Context, host, repo, profile, version, actor string, at time.Time) error {
@@ -72,6 +89,15 @@ func listEnvelope(issues string) string {
 	return `{"schema_version":1,"data":` + issues + `}`
 }
 
+func initTestRepo(t *testing.T) string {
+	t.Helper()
+	repo, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return repo
+}
+
 const pouredIssues = `[
   {"id":"fac-1","title":"Ship search","status":"open","issue_type":"epic","metadata":{"ocman.contract":"1","ocman.kind":"work-epic","ocman.formula_id":"ocman/default","ocman.formula_version":"1","ocman.formula_origin":"built-in","ocman.instantiation_id":"intake-42","ocman.goal":"Ship search","ocman.initial_project":"/repo","ocman.planning_work_id":"fac-1.1","ocman.plan_approval_gate_id":"fac-1.2"}},
   {"id":"fac-1.1","title":"Plan: Ship search","status":"in_progress","issue_type":"task","metadata":{"ocman.contract":"1","ocman.kind":"agent-work","ocman.formula_id":"ocman/default","ocman.formula_version":"1","ocman.formula_origin":"built-in","ocman.instantiation_id":"intake-42","ocman.work_epic_id":"fac-1","ocman.permission_profile":"factory-plan/v1"}},
@@ -80,6 +106,12 @@ const pouredIssues = `[
 
 func pouredIssuesAt(project string) string {
 	return strings.ReplaceAll(pouredIssues, `"/repo"`, strconv.Quote(project))
+}
+
+func pouredPreparedIssues(project, key, brief string) string {
+	issues := strings.ReplaceAll(pouredIssuesAt(project), "intake-42", key)
+	issues = strings.Replace(issues, `"title":"Ship search",`, `"title":"Ship search","description":`+strconv.Quote(brief)+`,`, 1)
+	return strings.Replace(issues, `"title":"Plan: Ship search",`, `"title":"Plan: Ship search","description":`+strconv.Quote(brief)+`,`, 1)
 }
 
 func TestProbeBeadsCompatibility(t *testing.T) {
@@ -325,6 +357,145 @@ func TestCreateWorkEpicValidatesBeforeBeads(t *testing.T) {
 	}
 }
 
+func TestPrepareWorkCanonicalizesGitRepoAndScopesAcknowledgement(t *testing.T) {
+	repo := initTestRepo(t)
+	subdir := filepath.Join(repo, "nested")
+	if err := os.Mkdir(subdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	store := &fakeAckStore{}
+	svc := newWithRunner(t.TempDir(), &fakeRunner{}, store)
+	svc.projects = fakeProjectResolver{root: repo}
+	svc.owned = true
+	req := PrepareWorkRequest{Goal: "Ship search", Brief: "## Constraints\n\n- Keep the API stable.", ProjectPath: subdir}
+
+	prepared, err := svc.PrepareWork(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical, _ := filepath.EvalSymlinks(repo)
+	if prepared.ProjectPath != canonical || !prepared.AcknowledgementRequired || prepared.Formula.ID != DefaultFormulaID || prepared.Formula.Version != DefaultFormulaVersion || prepared.PreparationKey == "" {
+		t.Fatalf("prepared work = %#v", prepared)
+	}
+	store.has = true
+	again, err := svc.PrepareWork(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.PreparationKey != prepared.PreparationKey || again.AcknowledgementRequired {
+		t.Fatalf("second preparation = %#v", again)
+	}
+	wantCheck := []string{"local", canonical, "factory-plan", "v1"}
+	if len(store.checks) != 2 || !reflect.DeepEqual(store.checks[0], wantCheck) {
+		t.Fatalf("acknowledgement checks = %#v", store.checks)
+	}
+}
+
+func TestAcknowledgeLocalExecutionUsesCanonicalProjectAndCurrentProfile(t *testing.T) {
+	repo := initTestRepo(t)
+	store := &fakeAckStore{}
+	svc := newWithRunner(t.TempDir(), &fakeRunner{}, store)
+	svc.projects = fakeProjectResolver{root: repo}
+	svc.owned = true
+
+	if err := svc.AcknowledgeLocalExecution(context.Background(), repo); err != nil {
+		t.Fatal(err)
+	}
+	canonical, _ := filepath.EvalSymlinks(repo)
+	if len(store.calls) != 1 || !reflect.DeepEqual(store.calls[0][:5], []any{"local", canonical, "factory-plan", "v1", "operator"}) {
+		t.Fatalf("acknowledgement = %#v", store.calls)
+	}
+}
+
+func TestCreatePreparedWorkEpicRequiresAckAndPersistsConfirmedBrief(t *testing.T) {
+	repo := initTestRepo(t)
+	runner := &fakeRunner{runs: []fakeRun{
+		{out: versionEnvelope},
+		{out: listEnvelope(`[]`)},
+		{out: `{"schema_version":1,"data":{"ids":{"epic":"fac-1","planning":"fac-1.1","approval":"fac-1.2"}}}`},
+	}}
+	store := &fakeAckStore{}
+	svc := newWithRunner(t.TempDir(), runner, store)
+	svc.projects = fakeProjectResolver{root: repo}
+	svc.owned = true
+	prepared, err := svc.PrepareWork(context.Background(), PrepareWorkRequest{
+		Goal: "Ship search", Brief: "## Constraints\n\n- Keep the API stable.", ProjectPath: repo,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := svc.CreatePreparedWorkEpic(context.Background(), prepared); !errors.Is(err, ErrAcknowledgementRequired) {
+		t.Fatalf("CreatePreparedWorkEpic error = %v, want acknowledgement required", err)
+	}
+	if len(runner.seen) != 0 {
+		t.Fatalf("unacknowledged create accessed Factory storage: %v", runner.seen)
+	}
+	store.has = true
+	epic, err := svc.CreatePreparedWorkEpic(context.Background(), prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if epic.Brief != prepared.Brief || epic.InstantiationID != prepared.PreparationKey {
+		t.Fatalf("epic = %#v", epic)
+	}
+	var graph struct {
+		Nodes []struct {
+			Key         string `json:"key"`
+			Description string `json:"description"`
+		} `json:"nodes"`
+	}
+	if err := json.Unmarshal(runner.plans[0], &graph); err != nil {
+		t.Fatal(err)
+	}
+	if len(graph.Nodes) != 3 || graph.Nodes[0].Description != prepared.Brief || graph.Nodes[1].Description != prepared.Brief {
+		t.Fatalf("graph brief = %#v", graph.Nodes)
+	}
+
+	stale := prepared
+	stale.Brief += "\n- Changed after confirmation."
+	if _, err := svc.CreatePreparedWorkEpic(context.Background(), stale); !errors.Is(err, ErrPreparationStale) {
+		t.Fatalf("stale CreatePreparedWorkEpic error = %v", err)
+	}
+}
+
+func TestCreatePreparedWorkEpicRetryReturnsOriginalEpic(t *testing.T) {
+	repo := initTestRepo(t)
+	store := &fakeAckStore{has: true}
+	runner := &fakeRunner{}
+	svc := newWithRunner(t.TempDir(), runner, store)
+	svc.projects = fakeProjectResolver{root: repo}
+	svc.owned = true
+	prepared, err := svc.PrepareWork(context.Background(), PrepareWorkRequest{
+		Goal: "Ship search", Brief: "Confirmed brief", ProjectPath: repo,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.runs = []fakeRun{
+		{out: versionEnvelope}, {out: listEnvelope(`[]`)},
+		{out: `{"schema_version":1,"data":{"ids":{"epic":"fac-1","planning":"fac-1.1","approval":"fac-1.2"}}}`},
+		{out: versionEnvelope}, {out: listEnvelope(pouredPreparedIssues(prepared.ProjectPath, prepared.PreparationKey, prepared.Brief))},
+	}
+
+	if _, err := svc.CreatePreparedWorkEpic(context.Background(), prepared); err != nil {
+		t.Fatal(err)
+	}
+	got, err := svc.CreatePreparedWorkEpic(context.Background(), prepared)
+	if err != nil || got.ID != "fac-1" || got.Brief != prepared.Brief {
+		t.Fatalf("retry = %#v, %v", got, err)
+	}
+	creates := 0
+	for _, args := range runner.seen {
+		if len(args) > 0 && args[0] == "create" {
+			creates++
+		}
+	}
+	if creates != 1 {
+		t.Fatalf("create calls = %d", creates)
+	}
+}
+
 func TestCreateWorkEpicStopsWhenAcknowledgementCannotBePersisted(t *testing.T) {
 	runner := &fakeRunner{}
 	store := &fakeAckStore{runner: runner, err: errors.New("disk full")}
@@ -407,6 +578,7 @@ func TestCreateWorkEpicPoursDefaultFormulaGraph(t *testing.T) {
 			Key          string            `json:"key"`
 			Title        string            `json:"title"`
 			Type         string            `json:"type"`
+			Description  string            `json:"description"`
 			ParentKey    string            `json:"parent_key"`
 			Metadata     map[string]string `json:"metadata"`
 			MetadataRefs map[string]string `json:"metadata_refs"`
@@ -432,6 +604,7 @@ func TestCreateWorkEpicPoursDefaultFormulaGraph(t *testing.T) {
 		}
 	}
 	if plan.Nodes[1].ParentKey != "epic" || plan.Nodes[1].Metadata["ocman.permission_profile"] != "factory-plan/v1" ||
+		plan.Nodes[1].Description != "Plan delivery for "+project ||
 		plan.Nodes[2].ParentKey != "epic" || plan.Nodes[2].Title != "Plan approval" ||
 		plan.Edges[0].From != "approval" || plan.Edges[0].To != "planning" || plan.Edges[0].Type != "blocks" {
 		t.Fatalf("graph relationships = %#v", plan)

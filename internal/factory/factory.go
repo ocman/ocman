@@ -66,22 +66,30 @@ type runner interface {
 }
 
 type localExecutionAckStore interface {
+	HasFactoryLocalExecutionAck(context.Context, string, string, string, string) (bool, error)
 	UpsertFactoryLocalExecutionAck(context.Context, string, string, string, string, string, time.Time) error
 }
 
-type Service struct {
-	dir     string
-	runner  runner
-	mu      sync.RWMutex
-	pourMu  sync.Mutex
-	owned   bool
-	lockErr error
-	release func() error
-	acks    localExecutionAckStore
+type projectResolver interface {
+	ResolveLocalProject(context.Context, string) (string, error)
 }
 
-func New(dir string, ackStore localExecutionAckStore) *Service {
-	return newWithRunner(dir, nil, ackStore)
+type Service struct {
+	dir      string
+	runner   runner
+	mu       sync.RWMutex
+	pourMu   sync.Mutex
+	owned    bool
+	lockErr  error
+	release  func() error
+	acks     localExecutionAckStore
+	projects projectResolver
+}
+
+func New(dir string, ackStore localExecutionAckStore, projects projectResolver) *Service {
+	service := newWithRunner(dir, nil, ackStore)
+	service.projects = projects
+	return service
 }
 
 func newWithRunner(dir string, r runner, ackStore localExecutionAckStore) *Service {

@@ -3,11 +3,13 @@ title: MCP server
 weight: 3
 ---
 
-Ocman embeds an optional MCP (Model Context Protocol) server exposing workflow
-control tools and `embed_file` for displaying generated assets in the UI.
+Ocman embeds an optional MCP (Model Context Protocol) server exposing Factory
+intake, workflow control tools, and `embed_file` for displaying generated
+assets in the UI.
 
 Ocman works fine as a plain dashboard without this. Install it only if you
-want workflow control from an agent or embedded file display.
+want conversational Factory handoff, workflow control from an agent, or
+embedded file display.
 
 ## Endpoint
 
@@ -72,6 +74,9 @@ production binary. Change it if you moved the listener with `-mcp-addr`.
 | Tool | Description |
 |------|-------------|
 | `embed_file` | Make a file on disk viewable to the user in the ocman UI. Takes an absolute `path` (plus an optional `label`) and returns a signed URL and a markdown snippet the agent pastes into its reply. Images and SVGs render inline in the conversation; PDFs and other types open or download in the browser. See [Embedding generated assets](#embedding-generated-assets). |
+| `prepare_factory_work` | Validate and prepare an explicit conversation handoff without creating work. Returns the canonical project, Built-in Formula ID and version, acknowledgement requirement, and stable preparation key. |
+| `acknowledge_factory_execution` | Record explicit consent for local, non-isolated Factory execution for the prepared project and current permission profile. |
+| `create_factory_work_epic` | Create the exact confirmed Work Epic idempotently from unchanged prepared inputs. Returns its planning state and Mission Control path. |
 | `get_workflow_schema` | Get the workflow definition schema and a minimal valid JSON example. |
 | `validate_workflow` / `publish_workflow` / `list_workflows` | Validate, publish immutable versions, and list workflows. |
 | `start_workflow` / `list_workflow_runs` / `inspect_workflow_run` | Start a pinned or active version and inspect compact run state. |
@@ -84,6 +89,19 @@ production binary. Change it if you moved the listener with `-mcp-addr`.
 The workflow tools let an agent author, validate, publish and start DAG
 workflows, inspect run state, and control scheduling. See
 [Workflows](workflows.md) for the full feature guide.
+
+## Factory handoff
+
+Ocman installs the `ocman-factory` skill globally for OpenCode. When a user
+explicitly asks to send the current conversation to Factory, the skill prepares
+a short goal and Markdown brief, shows the complete proposal for confirmation,
+records local-execution acknowledgement when required, and creates one Work
+Epic. The brief is the handoff boundary: transcripts and conversation IDs are
+not retained. After creation, planning belongs to Factory and the originating
+conversation stops.
+
+Factory tool errors intentionally contain only domain-level guidance. Open
+Mission Control at `/factory` for detailed operational diagnostics.
 
 ## Embedding generated assets
 
@@ -109,20 +127,19 @@ MCP callers are local and already run as your user, so the tool does not
 restrict which paths may be embedded. An agent that can call it can read
 those files directly anyway.
 
-## Workflow skill (optional)
+## Installed skills
 
-Workflow authoring and control guidance lives in:
+Factory handoff and workflow control guidance live in:
 
 ```text
 .opencode/skills/ocman-workflows/SKILL.md
+.opencode/skills/ocman-factory/SKILL.md
 ```
 
 For source-controlled examples, immutable-version semantics, migration safety,
 and troubleshooting, see [Workflows](workflows.md). Publish a workflow before
 starting it; pass a returned `version_id` to start exactly that revision.
 
-When working inside this repository, OpenCode loads the skill from the
-project config automatically (after a restart). To use the same guidance
-in another project, copy that folder into the target project's
-`.opencode/skills/` directory, or add this repository's
-`.opencode/skills` path to that project's OpenCode `skills.paths` config.
+At startup, ocman extracts and links both skills into OpenCode's global skill
+directory. Restart OpenCode after installing or upgrading ocman so every
+conversation can discover them.

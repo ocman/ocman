@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/factory"
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 )
 
 type fakeFactoryService struct {
@@ -19,6 +20,17 @@ type fakeFactoryService struct {
 	createErr error
 	listErr   error
 	getErr    error
+}
+
+type factoryProjectHost struct {
+	hostsvc.Host
+	id   string
+	root string
+}
+
+func (h factoryProjectHost) RemoteID() string { return h.id }
+func (h factoryProjectHost) ProjectUpstreams(context.Context, string) (*hostsvc.ProjectUpstreams, error) {
+	return &hostsvc.ProjectUpstreams{RepoRoot: h.root}, nil
 }
 
 func (f *fakeFactoryService) Start(context.Context) error           { return nil }
@@ -47,6 +59,24 @@ func (f *fakeFactoryService) GetWorkEpic(_ context.Context, id string) (factory.
 		}
 	}
 	return factory.WorkEpic{}, factory.ErrWorkEpicNotFound
+}
+
+func TestFactoryProjectResolverAcceptsOnlyLocalOwner(t *testing.T) {
+	local := factoryProjectHost{id: "local", root: "/local/repo"}
+	remote := factoryProjectHost{id: "remote-1", root: "/remote/repo"}
+	router := hostsvc.NewRouter(local)
+	router.RegisterRemote("remote-1", remote)
+	srv := &Server{hostRouter: router}
+	resolver := factoryProjectResolver{server: srv}
+
+	root, err := resolver.ResolveLocalProject(context.Background(), "/local/repo/subdir")
+	if err != nil || root != "/local/repo" {
+		t.Fatalf("local project = %q, %v", root, err)
+	}
+	router.SetDirResolver(func(string) string { return "remote-1" })
+	if _, err := resolver.ResolveLocalProject(context.Background(), "/remote/repo"); err == nil {
+		t.Fatal("remote Factory project unexpectedly accepted")
+	}
 }
 
 func TestFactoryStatusRouteIsAuthenticatedAndReadOnly(t *testing.T) {
