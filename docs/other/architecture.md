@@ -92,6 +92,8 @@ flowchart TD
     Server --> Workflows[automation services<br/>workflows + prompt schedules]
     Server --> Factory[internal/factory<br/>readiness, dispatch lock + Beads store]
     Factory --> State
+	Factory --> Registry
+	Factory --> Router
     Workflows --> Registry
     Workflows --> Router
     Server --> MCP[internal/mcp<br/>MCP tools]
@@ -111,8 +113,12 @@ flowchart TD
   while an advisory process lock gives exactly one local ocman instance
   dispatch ownership. The owner initializes the dedicated store idempotently
   on first start. The owner can atomically instantiate the immutable default
-  Formula into a Work Epic, Planning Work and Plan approval Gate; local
-  execution acknowledgements are stored separately in `state.db`. Other
+  Formula into a Work Epic, Planning Work and Plan approval Gate. It owns the
+  revision-checked draft and exact-revision approval lifecycle. A narrow
+  Planning Session launcher resolves the hub-local host and session seams,
+  ensures the repository runtime, and installs the read-only
+  `factory-plan/v1` rules before exposing the session; local execution
+  acknowledgements and session mappings are stored separately in `state.db`. Other
   instances expose the same authenticated reads without mutation authority;
   Workflows state and services are not involved.
 - **Factory persistence.** Beads owns the Work Epic graph, child Work Items,
@@ -309,5 +315,8 @@ flowchart TD
 - **Mission Control.** The top-level `/factory` page polls the authenticated
   `/api/factory/status` and `/api/factory/epics` endpoints through TanStack
   Query. The dispatch owner can acknowledge local execution and create a Work
-  Epic from the built-in Formula; all clients can inspect its initial Planning
-  Work and Plan approval Gate independently of Workflows.
+  Epic from the built-in Formula; all clients can inspect its repository-scoped
+  Planning Sessions, draft revision/hash, whole-graph validation and immutable
+  approval. Localhost-protected nested epic routes perform CAS graph updates,
+  add Planning Work, complete Planning Work and approve/revise/reject/cancel the
+  exact Plan independently of Workflows.

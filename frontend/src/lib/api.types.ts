@@ -125,6 +125,60 @@ export interface WorkEpic {
     approvalGateId: string;
     approvalStatus: string;
   };
+	plan: FactoryPlan;
+}
+
+export interface FactoryPlan {
+	revision: number;
+	hash: string;
+	state: 'draft' | 'approved' | 'rejected' | 'cancelled';
+	graph: FactoryPlanGraph;
+	planning: FactoryPlanningWork[];
+	approval?: {
+		revision: number;
+		hash: string;
+		actor: string;
+		approvedAt: string;
+		formulaId: string;
+		formulaVersion: number;
+		formulaOrigin: string;
+		instantiationId: string;
+		graph: FactoryPlanGraph;
+	};
+	validation: string[];
+}
+
+export interface FactoryPlanGraph {
+	intent: string;
+	targets: Array<{
+		id: string;
+		hostId: string;
+		repository: string;
+		deliveryBase: { remote: string; baseBranch: string; baseSha: string };
+	}>;
+	items: Array<{ id: string; kind: 'agent-work' | 'system-work' | 'gate' | 'delivery'; title: string; targetId?: string; profile?: string; gateType?: 'provider-check' | 'human-merge' }>;
+	dependencies: Array<{ from: string; to: string }>;
+}
+
+export interface FactoryPlanningWork {
+	id: string;
+	targetId: string;
+	repository: string;
+	status: string;
+	session: { platform: string; id: string };
+}
+
+export interface FactoryPlanMutationResult {
+	stale: boolean;
+	plan: FactoryPlan;
+}
+
+export interface FactoryPlanDecisionRequest {
+	expectedRevision: number;
+	expectedHash: string;
+	actor: string;
+	reason?: string;
+	acknowledgeLocalExecution?: boolean;
 }
 
 export interface CreateWorkEpicRequest {

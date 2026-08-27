@@ -168,6 +168,14 @@ type factoryService interface {
 	CreateWorkEpic(context.Context, factory.CreateWorkEpicRequest) (factory.WorkEpic, error)
 	ListWorkEpics(context.Context) ([]factory.WorkEpic, error)
 	GetWorkEpic(context.Context, string) (factory.WorkEpic, error)
+	GetPlan(context.Context, string) (factory.Plan, error)
+	MutatePlan(context.Context, string, factory.MutatePlanRequest) (factory.PlanMutationResult, error)
+	AddPlanningWork(context.Context, string, factory.AddPlanningWorkRequest) (factory.PlanMutationResult, error)
+	CompletePlanningWork(context.Context, string, string, factory.CompletePlanningWorkRequest) (factory.Plan, error)
+	ApprovePlan(context.Context, string, factory.PlanDecisionRequest) (factory.Plan, error)
+	RevisePlan(context.Context, string, factory.PlanDecisionRequest) (factory.Plan, error)
+	RejectPlan(context.Context, string, factory.PlanDecisionRequest) (factory.Plan, error)
+	CancelPlan(context.Context, string, factory.PlanDecisionRequest) (factory.Plan, error)
 }
 
 // remoteAccessInfo holds this instance's own remote-access surface for
@@ -191,10 +199,6 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 	if registry == nil {
 		registry = platforms.NewRegistry()
 	}
-	factorySvc := factory.New(filepath.Join(state.DefaultDataDir(), "factory"), nil)
-	if stateDB != nil {
-		factorySvc = factory.New(filepath.Join(state.DefaultDataDir(), "factory"), stateDB)
-	}
 	s := &Server{
 		db:           database,
 		stateDB:      stateDB,
@@ -207,7 +211,6 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		activity:     newClientActivityPolicy(time.Now),
 
 		runtime: ocruntime.NewNativeRuntime(),
-		factory: factorySvc,
 	}
 	// The host router is built lazily (see router()) so tests can override
 	// s.runtime after New before the local Host is constructed.
@@ -230,6 +233,11 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 			s.refreshProjectsIndexAsync()
 		},
 	})
+	if stateDB != nil {
+		s.factory = factory.New(filepath.Join(state.DefaultDataDir(), "factory"), stateDB, factoryPlanningLauncher{server: s})
+	} else {
+		s.factory = factory.New(filepath.Join(state.DefaultDataDir(), "factory"), nil, factoryPlanningLauncher{server: s})
+	}
 	if stateDB != nil {
 		s.promptScheduleSvc = newPromptScheduleService(stateDB, managedPromptSessions{s}, nil, nil)
 	}

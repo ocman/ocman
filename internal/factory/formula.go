@@ -77,6 +77,8 @@ type WorkEpic struct {
 	FormulaVersion  int           `json:"formulaVersion"`
 	InstantiationID string        `json:"instantiationId"`
 	Planning        PlanningState `json:"planning"`
+	Plan            Plan          `json:"plan"`
+	metadata        map[string]string
 }
 
 type graphPlan struct {
@@ -146,6 +148,16 @@ func (s *Service) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRequest)
 		if epic == nil {
 			return WorkEpic{}, err
 		}
+		if s.store != nil && s.planning != nil {
+			if epic.metadata[planMetadataKey] == "" {
+				if persistErr := s.persistPlan(ctx, epic); persistErr != nil {
+					return WorkEpic{}, persistErr
+				}
+			}
+			if ensureErr := s.ensureAllPlanningSessions(ctx, epic); ensureErr != nil {
+				return WorkEpic{}, ensureErr
+			}
+		}
 		return *epic, err
 	}
 
@@ -170,20 +182,43 @@ func (s *Service) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRequest)
 	out, runErr := run(ctx, s.runner, path, s.dir, []string{"create", "--graph", planPath, "--json"}, beadsCommandEnv(beadsDir))
 	ids, parseErr := parseGraphResult(out)
 	if runErr == nil && parseErr == nil {
-		return WorkEpic{
+		epic := WorkEpic{
 			ID: ids["epic"], Status: "open", Goal: req.Goal, InitialProject: req.InitialProject,
 			FormulaID: DefaultFormulaID, FormulaVersion: DefaultFormulaVersion, InstantiationID: req.InstantiationID,
 			Planning: PlanningState{WorkID: ids["planning"], WorkStatus: "open", ApprovalGateID: ids["approval"], ApprovalStatus: "open"},
-		}, nil
+			metadata: defaultGraph(req).Nodes[0].Metadata,
+		}
+		epic.metadata["ocman.planning_work_id"] = ids["planning"]
+		epic.metadata["ocman.plan_approval_gate_id"] = ids["approval"]
+		epic.Plan = newInitialPlan(epic)
+		if s.store != nil && s.planning != nil {
+			if err := s.persistPlan(ctx, &epic); err != nil {
+				return WorkEpic{}, err
+			}
+			if err := s.ensureAllPlanningSessions(ctx, &epic); err != nil {
+				return WorkEpic{}, err
+			}
+		}
+		return epic, nil
 	}
 
 	// A timeout, process failure, or malformed response may still follow a committed transaction.
 	reconcileCtx, cancelReconcile := context.WithTimeout(context.WithoutCancel(ctx), beadsTimeout)
+	defer cancelReconcile()
 	epics, reconcileErr := listWorkEpics(reconcileCtx, path, beadsDir, s.runner)
-	cancelReconcile()
 	if reconcileErr == nil {
 		if epic, matchErr := matchInstantiation(epics, req); epic != nil || matchErr != nil {
 			if epic != nil {
+				if s.store != nil && s.planning != nil {
+					if epic.metadata[planMetadataKey] == "" {
+						if persistErr := s.persistPlan(reconcileCtx, epic); persistErr != nil {
+							return WorkEpic{}, persistErr
+						}
+					}
+					if ensureErr := s.ensureAllPlanningSessions(reconcileCtx, epic); ensureErr != nil {
+						return WorkEpic{}, ensureErr
+					}
+				}
 				return *epic, matchErr
 			}
 			return WorkEpic{}, matchErr
@@ -201,7 +236,14 @@ func (s *Service) ListWorkEpics(ctx context.Context) ([]WorkEpic, error) {
 	if failure.Reason != "" {
 		return nil, beadsError(failure)
 	}
-	return listWorkEpics(ctx, path, beadsDir, s.runner)
+	epics, err := listWorkEpics(ctx, path, beadsDir, s.runner)
+	if err != nil {
+		return nil, err
+	}
+	for i := range epics {
+		s.decoratePlanningSessions(ctx, &epics[i])
+	}
+	return epics, nil
 }
 
 func beadsError(failure BeadsHealth) error {
@@ -326,8 +368,29 @@ func listWorkEpics(ctx context.Context, path, beadsDir string, r runner) ([]Work
 		epics = append(epics, WorkEpic{
 			ID: issue.ID, Status: issue.Status, Goal: meta["ocman.goal"], InitialProject: meta["ocman.initial_project"],
 			FormulaID: DefaultFormulaID, FormulaVersion: DefaultFormulaVersion, InstantiationID: meta["ocman.instantiation_id"],
-			Planning: PlanningState{WorkID: planning.ID, WorkStatus: planning.Status, ApprovalGateID: approval.ID, ApprovalStatus: approval.Status},
+			Planning: PlanningState{WorkID: planning.ID, WorkStatus: planning.Status, ApprovalGateID: approval.ID, ApprovalStatus: approval.Status}, metadata: meta,
 		})
+		epic := &epics[len(epics)-1]
+		if encoded := meta[planMetadataKey]; encoded != "" {
+			if err := json.Unmarshal([]byte(encoded), &epic.Plan); err != nil {
+				epics = epics[:len(epics)-1]
+				continue
+			}
+		} else {
+			epic.Plan = newInitialPlan(*epic)
+		}
+		for i := range epic.Plan.Planning {
+			if issue, ok := byID[epic.Plan.Planning[i].ID]; ok {
+				epic.Plan.Planning[i].Status = issue.Status
+				epic.Plan.Planning[i].Outcome = issue.Metadata["ocman.terminal_outcome"]
+				epic.Plan.Planning[i].metadata = issue.Metadata
+			}
+		}
+		if err := validateDraft(epic.Plan.Draft, epic.Plan.Planning); err != nil {
+			epic.Plan.Validation = []string{err.Error()}
+		} else {
+			epic.Plan.Validation = validateComplete(epic.Plan)
+		}
 	}
 	sort.Slice(epics, func(i, j int) bool { return epics[i].ID < epics[j].ID })
 	return epics, nil

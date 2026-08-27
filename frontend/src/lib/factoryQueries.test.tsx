@@ -4,12 +4,15 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { api, type WorkEpic } from './api';
-import { useCreateWorkEpic, useWorkEpic, useWorkEpics } from './queries';
+import { useAddFactoryPlanningWork, useCreateWorkEpic, useDecideFactoryPlan, useMutateFactoryPlan, useWorkEpic, useWorkEpics } from './queries';
 
 vi.mock('./api', () => ({ api: {
   createFactoryEpic: vi.fn(),
   factoryEpic: vi.fn(),
   factoryEpics: vi.fn(),
+  mutateFactoryPlan: vi.fn(),
+  addFactoryPlanningWork: vi.fn(),
+  decideFactoryPlan: vi.fn(),
 } }));
 
 function setup() {
@@ -45,6 +48,7 @@ it('adds a created epic and invalidates Factory status and epics', async () => {
     id: 'epic-1', status: 'open', goal: 'Ship it', initialProject: '/repo',
     formulaId: 'ocman/default', formulaVersion: 1, instantiationId: 'request-1',
     planning: { workId: 'work-1', workStatus: 'open', approvalGateId: 'gate-1', approvalStatus: 'pending' },
+		plan: { revision: 1, hash: 'hash-1', state: 'draft', graph: { intent: 'Ship it', targets: [], items: [], dependencies: [] }, planning: [], validation: ['incomplete'] },
   } satisfies WorkEpic;
   vi.mocked(api.createFactoryEpic).mockResolvedValue(epic);
   const { client, wrapper } = setup();
@@ -59,4 +63,31 @@ it('adds a created epic and invalidates Factory status and epics', async () => {
   expect(client.getQueryData<WorkEpic[]>(['factory-epics'])).toEqual([epic]);
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ['factory-status'] });
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ['factory-epics'] });
+});
+
+it('reconciles plan mutation results into list and detail caches', async () => {
+  const graph = { intent: 'Ship', targets: [], items: [], dependencies: [] };
+  const plan = { revision: 2, hash: 'hash-2', state: 'draft' as const, graph, planning: [], validation: [] };
+  const epic = {
+    id: 'epic-1', status: 'open', goal: 'Ship', initialProject: '/repo', formulaId: 'ocman/default',
+    formulaVersion: 1, instantiationId: 'request-1',
+    planning: { workId: 'work-1', workStatus: 'open', approvalGateId: 'gate-1', approvalStatus: 'open' },
+    plan: { ...plan, revision: 1 },
+  } satisfies WorkEpic;
+  vi.mocked(api.mutateFactoryPlan).mockResolvedValue({ stale: true, plan });
+  vi.mocked(api.addFactoryPlanningWork).mockResolvedValue({ stale: false, plan: { ...plan, revision: 3 } });
+  vi.mocked(api.decideFactoryPlan).mockResolvedValue({ ...plan, state: 'approved' });
+  const { client, wrapper } = setup();
+  client.setQueryData<WorkEpic[]>(['factory-epics'], [epic]);
+  client.setQueryData<WorkEpic>(['factory-epics', 'epic-1'], epic);
+  const mutate = renderHook(() => useMutateFactoryPlan('epic-1'), { wrapper });
+  const add = renderHook(() => useAddFactoryPlanningWork('epic-1'), { wrapper });
+  const decide = renderHook(() => useDecideFactoryPlan('epic-1'), { wrapper });
+
+  await act(() => mutate.result.current.mutateAsync({ expectedRevision: 1, graph }));
+  expect(client.getQueryData<WorkEpic>(['factory-epics', 'epic-1'])?.plan.revision).toBe(2);
+  await act(() => add.result.current.mutateAsync({ expectedRevision: 2, target: { id: 'api', hostId: 'local', repository: '/repo', deliveryBase: { remote: 'origin', baseBranch: 'main', baseSha: 'abc' } } }));
+  expect(client.getQueryData<WorkEpic[]>(['factory-epics'])?.[0].plan.revision).toBe(3);
+  await act(() => decide.result.current.mutateAsync({ action: 'approve', request: { expectedRevision: 3, expectedHash: 'hash-2', actor: 'operator' } }));
+  expect(client.getQueryData<WorkEpic>(['factory-epics', 'epic-1'])?.plan.state).toBe('approved');
 });

@@ -69,19 +69,32 @@ type localExecutionAckStore interface {
 	UpsertFactoryLocalExecutionAck(context.Context, string, string, string, string, string, time.Time) error
 }
 
-type Service struct {
-	dir     string
-	runner  runner
-	mu      sync.RWMutex
-	pourMu  sync.Mutex
-	owned   bool
-	lockErr error
-	release func() error
-	acks    localExecutionAckStore
+type factoryStore interface {
+	localExecutionAckStore
+	GetFactoryPlanningSession(context.Context, string) (PlanningSession, bool, error)
+	PutFactoryPlanningSession(context.Context, string, string, PlanningSession) error
+	AppendFactoryAudit(context.Context, FactoryAuditRecord) error
 }
 
-func New(dir string, ackStore localExecutionAckStore) *Service {
-	return newWithRunner(dir, nil, ackStore)
+type Service struct {
+	dir      string
+	runner   runner
+	mu       sync.RWMutex
+	pourMu   sync.Mutex
+	owned    bool
+	lockErr  error
+	release  func() error
+	acks     localExecutionAckStore
+	store    factoryStore
+	planning PlanningLauncher
+}
+
+func New(dir string, ackStore localExecutionAckStore, planning ...PlanningLauncher) *Service {
+	svc := newWithRunner(dir, nil, ackStore)
+	if len(planning) != 0 {
+		svc.planning = planning[0]
+	}
+	return svc
 }
 
 func newWithRunner(dir string, r runner, ackStore localExecutionAckStore) *Service {
@@ -91,7 +104,9 @@ func newWithRunner(dir string, r runner, ackStore localExecutionAckStore) *Servi
 	if absolute, err := filepath.Abs(dir); err == nil {
 		dir = absolute
 	}
-	return &Service{dir: dir, runner: r, acks: ackStore}
+	svc := &Service{dir: dir, runner: r, acks: ackStore}
+	svc.store, _ = ackStore.(factoryStore)
+	return svc
 }
 
 func (s *Service) Start(ctx context.Context) error {
@@ -108,6 +123,9 @@ func (s *Service) Start(ctx context.Context) error {
 	s.release, s.owned, s.lockErr = release, owned, err
 	if owned {
 		initializeBeads(ctx, filepath.Join(s.dir, "beads"), s.runner)
+		if s.store != nil && s.planning != nil {
+			_ = s.recoverPlanningSessions(ctx)
+		}
 	}
 	return nil
 }

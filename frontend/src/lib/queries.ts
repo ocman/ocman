@@ -26,6 +26,9 @@ import type {
   FactoryStatus,
   WorkEpic,
   CreateWorkEpicRequest,
+	FactoryPlan,
+	FactoryPlanGraph,
+	FactoryPlanDecisionRequest,
 } from './api';
 
 export function useFactoryStatus() {
@@ -68,6 +71,35 @@ export function useCreateWorkEpic() {
       ]);
     },
   });
+}
+
+function setEpicPlan(queryClient: QueryClient, id: string, plan: FactoryPlan) {
+	queryClient.setQueryData<WorkEpic[]>(['factory-epics'], (epics = []) => epics.map((epic) => epic.id === id ? { ...epic, plan } : epic));
+	queryClient.setQueryData<WorkEpic>(['factory-epics', id], (epic) => epic ? { ...epic, plan } : epic);
+}
+
+export function useMutateFactoryPlan(id: string) {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: ({ expectedRevision, graph }: { expectedRevision: number; graph: FactoryPlanGraph }) => api.mutateFactoryPlan(id, expectedRevision, graph),
+		onSuccess: (result) => setEpicPlan(queryClient, id, result.plan),
+	});
+}
+
+export function useAddFactoryPlanningWork(id: string) {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: ({ expectedRevision, target }: { expectedRevision: number; target: FactoryPlanGraph['targets'][number] }) => api.addFactoryPlanningWork(id, expectedRevision, target),
+		onSuccess: (result) => setEpicPlan(queryClient, id, result.plan),
+	});
+}
+
+export function useDecideFactoryPlan(id: string) {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: ({ action, request }: { action: 'approve' | 'revise' | 'reject' | 'cancel'; request: FactoryPlanDecisionRequest }) => api.decideFactoryPlan(id, action, request),
+		onSuccess: (plan) => setEpicPlan(queryClient, id, plan),
+	});
 }
 
 // ---------------------------------------------------------------------------
