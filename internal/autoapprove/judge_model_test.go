@@ -33,6 +33,9 @@ func (s *contextSettingStore) GetSetting(ctx context.Context, _ string) (string,
 func (s *contextSettingStore) RecordApprovedPermission(context.Context, string, string, state.ApprovedPermission) error {
 	return nil
 }
+func (*contextSettingStore) UpsertPermissionLifecycle(context.Context, state.PermissionLifecycle) error {
+	return nil
+}
 
 func (f fakeSettingStore) GetSetting(context.Context, string) (string, bool, error) {
 	return f.val, f.ok, f.err

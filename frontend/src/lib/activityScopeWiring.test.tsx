@@ -10,6 +10,7 @@ import {
   useHourlyTokens,
   useMetrics,
   useModels,
+  usePermissionStats,
   useProjects,
   useSessions,
 } from './queries';
@@ -22,6 +23,7 @@ vi.mock('./api', () => ({
     sessions: vi.fn(() => new Promise(() => {})),
     projects: vi.fn(() => new Promise(() => {})),
     metrics: vi.fn(() => new Promise(() => {})),
+    permissionStats: vi.fn(() => new Promise(() => {})),
     activity: vi.fn(() => new Promise(() => {})),
     models: vi.fn(() => new Promise(() => {})),
     hourly: vi.fn(() => new Promise(() => {})),
@@ -64,6 +66,17 @@ describe('activity scope wiring', () => {
     }, { wrapper });
 
     expect(activityScopeSnapshot()).toEqual(['metrics', 'projects', 'sessions']);
+    unmount();
+    expect(activityScopeSnapshot()).toEqual([]);
+  });
+
+  it('tracks permission stats as metrics demand and releases it on unmount', () => {
+    const { unmount } = renderHook(() => {
+      usePermissionStats();
+      usePermissionStats(undefined, { enabled: false });
+    }, { wrapper });
+
+    expect(activityScopeSnapshot()).toEqual(['metrics']);
     unmount();
     expect(activityScopeSnapshot()).toEqual([]);
   });

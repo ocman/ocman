@@ -59,6 +59,9 @@ func (s *recordingStore) RecordApprovedPermission(ctx context.Context, platform,
 	}
 	return nil
 }
+func (*recordingStore) UpsertPermissionLifecycle(context.Context, state.PermissionLifecycle) error {
+	return nil
+}
 
 func (s *recordingStore) snapshot() []recordedApproval {
 	s.mu.Lock()

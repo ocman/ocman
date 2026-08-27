@@ -19,6 +19,7 @@ import type {
   Project,
   ActivityDay,
   MetricsDashboard,
+  PermissionStats,
   ModelUsage,
   HourlyData,
   HourlyTokensByModel,
@@ -193,6 +194,18 @@ export function useMetrics(
   return useQuery<MetricsDashboard>({
     queryKey: ['metrics', params],
     queryFn: ({ signal }) => api.metrics(params, signal),
+    enabled: options?.enabled,
+  });
+}
+
+export function usePermissionStats(
+  params?: { days?: number; dir?: string },
+  options?: { enabled?: boolean },
+) {
+  useActivityScope(options?.enabled === false ? undefined : 'metrics');
+  return useQuery<PermissionStats>({
+    queryKey: ['permissionStats', params],
+    queryFn: ({ signal }) => api.permissionStats(params, signal),
     enabled: options?.enabled,
   });
 }

@@ -42,7 +42,7 @@ func (s *Service) Ensure(
 ) {
 	// Keep the first complete asked snapshot for durable attribution and
 	// tool-call correlation; permission.replied carries only IDs and reply.
-	asked := s.rememberAsked(string(platformID), sessionID, permissionID, permission, patterns, metadata)
+	asked := s.rememberAskedForEnsure(string(platformID), sessionID, permissionID, permission, patterns, metadata)
 
 	// Read the configured delay once so both the cache anchor and the
 	// goroutine's sleep use the same value. The goroutine re-reads it
@@ -115,12 +115,20 @@ func (s *Service) backgroundAutoApprove(
 		"sessionID":    sessionID,
 		"permissionID": permissionID,
 	})
-	// Check auto-approve state: per-session override, then server default.
-	enabled := s.deps.DefaultEnabled
-	if s.deps.Store != nil {
-		if perSession, exists, err := s.deps.Store.GetAutoApprove(ctx, string(platformID), sessionID); err == nil && exists {
-			enabled = perSession
+	enabled := asked.lifecycleEnabled
+	directory := asked.directory
+	directoryErr := asked.directoryErr
+	if !asked.lifecycleObserved {
+		enabled = s.deps.DefaultEnabled
+		if s.deps.Store != nil {
+			if perSession, exists, err := s.deps.Store.GetAutoApprove(ctx, string(platformID), sessionID); err == nil && exists {
+				enabled = perSession
+			}
 		}
+		if enabled {
+			directory, directoryErr = s.ResolveSessionDir(sessionID)
+		}
+		asked = s.observeAskedLifecycle(sessionID, permissionID, asked, enabled, directory, directoryErr)
 	}
 	logger.WithFields(log.Fields{
 		"enabled":            enabled,
@@ -130,6 +138,8 @@ func (s *Service) backgroundAutoApprove(
 		logger.Info("background auto-approve: disabled, skipping")
 		return
 	}
+	s.persistLifecycle(asked, sessionID, permissionID, state.PermissionLifecycle{})
+	s.persistRecordedManualLifecycle(asked, sessionID, permissionID)
 
 	// Hard denylist. Checked before the safe-command cache and before
 	// the judge, because both are reachable by untrusted input: the
@@ -138,6 +148,7 @@ func (s *Service) backgroundAutoApprove(
 	// child session without re-judging. No verdict, cache entry, or
 	// inherited approval may auto-approve a denylisted action.
 	if reason := deniedReason(permission, patterns, metadata); reason != "" {
+		s.setLifecycleMethod(asked, sessionID, permissionID, state.PermissionEvaluationDenylist, state.PermissionEvaluationDenylisted)
 		logger.WithField("reason", reason).
 			Warn("background auto-approve: refusing, command is on the hard denylist")
 		s.recordJudgedWithReasoning(sessionID, permissionID, verdictUnsafe, "blocked by ocman's hard denylist: "+reason)
@@ -159,6 +170,7 @@ func (s *Service) backgroundAutoApprove(
 	// cache, regardless of metadata content.
 	if hash := commandHash(metadata); hash != "" {
 		if cachedReason, ok := s.lookupInheritedSafeCommandVerdict(ctx, sessionID, hash); ok {
+			s.setLifecycleMethod(asked, sessionID, permissionID, state.PermissionEvaluationCache, state.PermissionEvaluationCacheSafe)
 			logger.WithField("hash", hash).Info("background auto-approve: safe-command cache hit, skipping judge")
 			finalReason := "cached: " + cachedReason
 			s.recordJudgedWithReasoning(sessionID, permissionID, verdictSafe, finalReason)
@@ -172,11 +184,12 @@ func (s *Service) backgroundAutoApprove(
 	}
 
 	// Resolve directory for port discovery.
-	directory, err := s.ResolveSessionDir(sessionID)
-	if err != nil {
-		logger.WithError(err).Warn("background auto-approve: could not resolve session directory")
+	if directoryErr != nil {
+		s.setLifecycleMethod(asked, sessionID, permissionID, state.PermissionEvaluationJudge, state.PermissionEvaluationError)
+		logger.WithError(directoryErr).Warn("background auto-approve: could not resolve session directory")
 		return
 	}
+	s.setLifecycleMethod(asked, sessionID, permissionID, state.PermissionEvaluationJudge, "")
 
 	// Read the configured delay. Default to 0 on any error so the judge
 	// still fires rather than blocking indefinitely.
@@ -284,7 +297,12 @@ func (s *Service) backgroundAutoApprove(
 		}
 		s.emitSessionSseEvent(sessionID, "ocman.permission.checking", checkingPayload)
 	}
+	s.persistLifecycle(asked, sessionID, permissionID, state.PermissionLifecycle{
+		JudgeStartedAt:   time.Now().UnixMilli(),
+		EvaluationMethod: state.PermissionEvaluationJudge,
+	})
 	result := s.judge.JudgeWithCallback(ctx, directory, permission, patterns, metadata, customSections, emitChecking)
+	s.completeJudgeLifecycle(asked, sessionID, permissionID, result)
 
 	// If the user replied to the permission (via ocman API or directly
 	// in the OpenCode TUI) while the judge was running, the cancel
@@ -393,6 +411,10 @@ func (s *Service) respondAndPersistSafeApproval(
 	}
 
 	approvedAt := time.Now().UnixMilli()
+	s.persistLifecycle(asked, sessionID, permissionID, state.PermissionLifecycle{
+		ResolvedAt: approvedAt,
+		Resolution: state.PermissionResolutionAutoApproved,
+	})
 
 	// Persist the approval so the UI notice survives a page refresh.
 	// JudgeSessionID is intentionally written as the empty string: the

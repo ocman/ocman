@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 
 	log "github.com/sirupsen/logrus"
+
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 // --- Auto-approve per-permission state tracking ---
@@ -54,7 +56,12 @@ type autoApproveStatus struct {
 	aiResponseInFlight   bool
 	aiResponseSucceeded  bool
 	pendingObservedReply string
+	pendingObservedAt    int64
 	userCaptureStarted   bool
+	evaluationMethod     state.PermissionEvaluationMethod
+	judgeCompletedAt     int64
+	manualResolvedAt     int64
+	manualResolution     state.PermissionResolution
 }
 
 // autoApproveKey is the registry key for a single permission record.

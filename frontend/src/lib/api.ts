@@ -35,6 +35,9 @@ export type {
   SessionLogEntry,
   ProjectLogEntry,
   MetricsDashboard,
+  PermissionEvaluationResult,
+  PermissionStats,
+  PermissionStatsDay,
   MetricsCostByModel,
   ModelCostPoint,
   Project,
@@ -91,6 +94,7 @@ import type {
   McpConfigStatus,
   McpConfigInstallResult,
   MetricsDashboard,
+  PermissionStats,
   DirectoryBrowseResponse,
   DirectorySearchResponse,
   ModelUsage,
@@ -380,6 +384,8 @@ export const api = {
   stats: (signal?: AbortSignal) => fetchJSON<Stats>('/api/stats', signal),
   metrics: (params?: { agent?: string; model?: string; days?: number; limit?: number; offset?: number; sessionLimit?: number; sessionOffset?: number; projectLimit?: number; projectOffset?: number; dir?: string }, signal?: AbortSignal) =>
     fetchJSON<MetricsDashboard>(`/api/metrics${queryString(params)}`, signal),
+  permissionStats: (params?: { days?: number; dir?: string }, signal?: AbortSignal) =>
+    fetchJSON<PermissionStats>(`/api/permission-stats${queryString(params)}`, signal),
   projects: (signal?: AbortSignal) => fetchJSON<Project[]>('/api/projects', signal),
   browseDirectories: (dir?: string, signal?: AbortSignal) =>
     fetchJSON<DirectoryBrowseResponse>(`/api/filesystem/directories${queryString({ dir })}`, signal),

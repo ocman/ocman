@@ -521,6 +521,7 @@ func TestParseJudgeResponse(t *testing.T) {
 		input         string
 		wantVerdict   judgeVerdict
 		wantReasoning string
+		wantValid     bool
 	}{
 		// JSON happy path — verdict + reasoning both extracted.
 		{
@@ -528,67 +529,77 @@ func TestParseJudgeResponse(t *testing.T) {
 			`{"verdict":"safe","reasoning":"Read-only operation.","risk_factors":[]}`,
 			verdictSafe,
 			"Read-only operation.",
+			true,
 		},
 		{
 			"json unsafe",
 			`{"verdict":"unsafe","reasoning":"Writes to .env file.","risk_factors":[".env"]}`,
 			verdictUnsafe,
 			"Writes to .env file.",
+			true,
 		},
 		{
 			"json uppercase verdict",
 			`{"verdict":"SAFE","reasoning":"OK"}`,
 			verdictSafe,
 			"OK",
+			true,
 		},
 		{
 			"json with leading text",
 			"Here is the result:\n" + `{"verdict":"safe","reasoning":"Fine.","risk_factors":[]}`,
 			verdictSafe,
 			"Fine.",
+			true,
 		},
 		{
 			"json in markdown fences",
 			"```json\n{\"verdict\":\"unsafe\",\"reasoning\":\"Dangerous.\"}\n```",
 			verdictUnsafe,
 			"Dangerous.",
+			true,
 		},
 		{
 			"json verdict only (no reasoning field)",
 			`{"verdict":"safe"}`,
 			verdictSafe,
 			"",
+			true,
 		},
 		{
 			"reasoning whitespace is trimmed",
 			`{"verdict":"safe","reasoning":"  spaced out.  "}`,
 			verdictSafe,
 			"spaced out.",
+			true,
 		},
 		// Anything that isn't a parseable JSON verdict fails closed.
 		// There is no keyword-scan fallback: a prose reply that merely
 		// contains "safe" must not auto-approve.
-		{"bare SAFE", "SAFE", verdictUnsafe, ""},
-		{"bare UNSAFE", "UNSAFE", verdictUnsafe, ""},
-		{"lowercase safe prose", "safe", verdictUnsafe, ""},
-		{"lowercase unsafe prose", "unsafe", verdictUnsafe, ""},
-		{"SAFE with leading whitespace", "  SAFE  ", verdictUnsafe, ""},
-		{"explanation with UNSAFE", "This is UNSAFE because it modifies files.", verdictUnsafe, ""},
-		{"explanation with SAFE", "The action is SAFE — it only reads files.", verdictUnsafe, ""},
-		{"refusal containing safely", "I can't verify this safely without more context.", verdictUnsafe, ""},
-		{"hedged refusal", "It's probably safe but I'd rather not say.", verdictUnsafe, ""},
-		{"empty string defaults unsafe", "", verdictUnsafe, ""},
-		{"unrelated text defaults unsafe", "I cannot determine this.", verdictUnsafe, ""},
+		{"bare SAFE", "SAFE", verdictUnsafe, "", false},
+		{"bare UNSAFE", "UNSAFE", verdictUnsafe, "", false},
+		{"lowercase safe prose", "safe", verdictUnsafe, "", false},
+		{"lowercase unsafe prose", "unsafe", verdictUnsafe, "", false},
+		{"SAFE with leading whitespace", "  SAFE  ", verdictUnsafe, "", false},
+		{"explanation with UNSAFE", "This is UNSAFE because it modifies files.", verdictUnsafe, "", false},
+		{"explanation with SAFE", "The action is SAFE — it only reads files.", verdictUnsafe, "", false},
+		{"refusal containing safely", "I can't verify this safely without more context.", verdictUnsafe, "", false},
+		{"hedged refusal", "It's probably safe but I'd rather not say.", verdictUnsafe, "", false},
+		{"empty string defaults unsafe", "", verdictUnsafe, "", false},
+		{"unrelated text defaults unsafe", "I cannot determine this.", verdictUnsafe, "", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotVerdict, gotReasoning := parseJudgeResponse(tt.input)
+			gotVerdict, gotReasoning, gotValid := parseJudgeResponse(tt.input)
 			if gotVerdict != tt.wantVerdict {
 				t.Errorf("parseJudgeResponse(%q) verdict = %q, want %q", tt.input, gotVerdict, tt.wantVerdict)
 			}
 			if gotReasoning != tt.wantReasoning {
 				t.Errorf("parseJudgeResponse(%q) reasoning = %q, want %q", tt.input, gotReasoning, tt.wantReasoning)
+			}
+			if gotValid != tt.wantValid {
+				t.Errorf("parseJudgeResponse(%q) valid = %v, want %v", tt.input, gotValid, tt.wantValid)
 			}
 		})
 	}

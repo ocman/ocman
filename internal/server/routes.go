@@ -24,6 +24,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// hooks) use the localhost guard, which also validates browser origin.
 	mux.HandleFunc("/api/stats", s.get(s.handleStats))
 	mux.HandleFunc("/api/metrics", s.get(s.handleMetrics))
+	mux.HandleFunc("/api/permission-stats", s.get(s.handlePermissionStats))
 	mux.HandleFunc("/api/projects", s.get(s.handleProjects))
 	mux.HandleFunc("/api/filesystem/directories", requireGET(s.requireLocalhost(s.handleFilesystemDirectories)))
 	mux.HandleFunc("/api/filesystem/directory-search", requireGET(s.requireLocalhost(s.handleFilesystemDirectorySearch)))

@@ -292,6 +292,9 @@ func newPermissionJudge(auth ocapi.Auth) *PermissionJudge {
 // JudgeResult holds the outcome of a single judgment run.
 type JudgeResult struct {
 	Verdict judgeVerdict
+	// EvaluationFailed distinguishes transport and unparseable failures from a genuine
+	// unsafe model verdict. Both still fail closed for approval behavior.
+	EvaluationFailed bool
 	// SessionID is the transient OpenCode session that hosted the judge
 	// conversation. It is deleted by JudgeWithCallback once the verdict
 	// has been extracted, so this field is only meaningful inside the
@@ -330,7 +333,7 @@ type JudgeResult struct {
 // immediately so they can show a link. onSessionCreated may be nil.
 func (j *PermissionJudge) JudgeWithCallback(ctx context.Context, directory, permission string, patterns []string, metadata map[string]any, customSections []PromptSection, onSessionCreated func(judgeSessionID string)) JudgeResult {
 	if j == nil || j.openCodePort == nil {
-		return JudgeResult{Verdict: verdictUnsafe}
+		return JudgeResult{Verdict: verdictUnsafe, EvaluationFailed: true}
 	}
 	ctx, cancel := context.WithTimeout(ctx, judgeTimeout)
 	defer cancel()
@@ -339,7 +342,7 @@ func (j *PermissionJudge) JudgeWithCallback(ctx context.Context, directory, perm
 	if port == "" {
 		log.WithField("directory", directory).
 			Warn("auto-approve judge: no running OpenCode instance found, falling through to human")
-		return JudgeResult{Verdict: verdictUnsafe}
+		return JudgeResult{Verdict: verdictUnsafe, EvaluationFailed: true}
 	}
 
 	// Title matches the subagent pattern so the default session-list
@@ -347,7 +350,7 @@ func (j *PermissionJudge) JudgeWithCallback(ctx context.Context, directory, perm
 	sessionID, err := j.createSession(ctx, port, directory, "(auto-approve subagent)")
 	if err != nil {
 		log.WithError(err).Warn("auto-approve judge: failed to create judge session")
-		return JudgeResult{Verdict: verdictUnsafe}
+		return JudgeResult{Verdict: verdictUnsafe, EvaluationFailed: true}
 	}
 
 	// Always clean up the transient judge session before returning, so
@@ -378,21 +381,21 @@ func (j *PermissionJudge) JudgeWithCallback(ctx context.Context, directory, perm
 	// Send the judge prompt.
 	if err := j.sendPrompt(ctx, port, sessionID, permission, patterns, metadata, customSections); err != nil {
 		log.WithError(err).Warn("auto-approve judge: failed to send prompt")
-		return JudgeResult{Verdict: verdictUnsafe}
+		return JudgeResult{Verdict: verdictUnsafe, EvaluationFailed: true}
 	}
 
 	// Stream events until the assistant message finishes, collect text.
 	text, err := j.collectResponse(ctx, port, sessionID)
 	if err != nil {
 		log.WithError(err).Warn("auto-approve judge: failed to collect response")
-		return JudgeResult{Verdict: verdictUnsafe}
+		return JudgeResult{Verdict: verdictUnsafe, EvaluationFailed: true}
 	}
 
-	verdict, reasoning := parseJudgeResponse(text)
+	verdict, reasoning, valid := parseJudgeResponse(text)
 	// SessionID intentionally left empty: the session is being deleted
 	// by the deferred cleanup above, so no caller should ever see the
 	// post-verdict ID and try to link to it.
-	return JudgeResult{Verdict: verdict, Reasoning: reasoning}
+	return JudgeResult{Verdict: verdict, Reasoning: reasoning, EvaluationFailed: !valid}
 }
 
 // createSession creates a new OpenCode session in the given directory,
@@ -642,7 +645,7 @@ func extractTextFromParts(msg map[string]interface{}) string {
 // is deliberately no keyword-scan fallback: prose such as "I can't
 // verify this safely" contains "safe" and not "unsafe", so scanning
 // would fail open on exactly the replies the model is least sure about.
-func parseJudgeResponse(text string) (judgeVerdict, string) {
+func parseJudgeResponse(text string) (judgeVerdict, string, bool) {
 	trimmed := strings.TrimSpace(text)
 
 	// Try JSON parse — expected happy path.
@@ -667,13 +670,13 @@ func parseJudgeResponse(text string) (judgeVerdict, string) {
 			reasoning := strings.TrimSpace(obj.Reasoning)
 			switch strings.ToLower(strings.TrimSpace(obj.Verdict)) {
 			case "safe":
-				return verdictSafe, reasoning
+				return verdictSafe, reasoning, true
 			case "unsafe":
-				return verdictUnsafe, reasoning
+				return verdictUnsafe, reasoning, true
 			}
 		}
 	}
 
 	log.WithField("response", text).Warn("auto-approve judge: could not parse verdict, defaulting to unsafe")
-	return verdictUnsafe, ""
+	return verdictUnsafe, "", false
 }

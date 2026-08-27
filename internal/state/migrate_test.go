@@ -827,7 +827,7 @@ func TestMigrateV46DropsChildSessionsAndPreservesState(t *testing.T) {
 		t.Fatal(err)
 	}
 	version, err := currentSchemaVersion(db)
-	if err != nil || version != 46 {
+	if err != nil || version != latestSchemaVersion {
 		t.Fatalf("schema version = %d, %v", version, err)
 	}
 	var count int

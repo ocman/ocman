@@ -3,12 +3,13 @@ import { renderModel } from '../../lib/format';
 import { usePageTitle } from '../../lib/headerContext';
 import { ProjectScopePicker } from '../../components/ProjectScopePicker';
 import { SearchSelect } from '../../components/SearchSelect';
-import { useMetrics } from '../../lib/queries';
+import { useMetrics, usePermissionStats } from '../../lib/queries';
 import { useDashboard } from './context';
 import { MetricsPagination } from './shared';
 import { SessionLogTable, ProjectLogTable, RequestLogTable, StatsSummaryCharts, LogRange } from './StatsLogTables';
 import { METRICS_RANGE_OPTIONS } from './constants';
 import { ModelLogo } from '../../components/ModelLogo';
+import { PermissionStatsSection } from './PermissionStatsSection';
 
 export function StatsTab() {
   usePageTitle('Stats');
@@ -58,10 +59,15 @@ export function StatsTab() {
     projectOffset: projectLogPage * PROJECT_LOG_PAGE_SIZE,
     dir: dirScope || undefined,
   });
+  const permissionStatsQ = usePermissionStats({
+    days: metricsDays,
+    dir: dirScope || undefined,
+  });
 
   const metrics = metricsQ.data ?? null;
   const metricsLoading = metricsQ.isLoading;
   const metricsError = metricsQ.error instanceof Error ? metricsQ.error.message : null;
+  const permissionStatsError = permissionStatsQ.error instanceof Error ? permissionStatsQ.error.message : null;
   const agentOptions = [{ value: '', label: 'All agents' }, ...(metrics?.availableAgents ?? []).map((agent) => ({ value: agent, label: agent }))];
   const modelOptions = [{ value: '', label: 'All models' }, ...(metrics?.availableModels ?? []).map((model) => ({ value: model, label: renderModel(model), icon: <ModelLogo model={model} /> }))];
 
@@ -89,16 +95,24 @@ export function StatsTab() {
         </div>
       )}
 
-      {metricsLoading && !metrics ? (
+      {permissionStatsError && (
+        <div className="oc-error-banner">
+          Permission stats: {permissionStatsError}
+        </div>
+      )}
+
+      {metricsLoading && !metrics && (
         <div className="oc-list-loading">
           <div className="oc-spinner" />
           Loading metrics...
         </div>
-      ) : metrics && (
-        <>
-          <StatsSummaryCharts metrics={metrics} />
+      )}
 
-          <div className="chart-card">
+      {metrics && <StatsSummaryCharts metrics={metrics} />}
+      {permissionStatsQ.data && <PermissionStatsSection stats={permissionStatsQ.data} />}
+
+      {metrics && (
+        <div className="chart-card">
             <div className="metrics-log-header">
               <div className="nav-tabs metrics-log-tabs">
                 <button
@@ -156,8 +170,7 @@ export function StatsTab() {
                 />
               </>
             )}
-          </div>
-        </>
+        </div>
       )}
     </div>
   );

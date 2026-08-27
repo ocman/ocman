@@ -72,6 +72,19 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, metrics)
 }
 
+func (s *Server) handlePermissionStats(w http.ResponseWriter, r *http.Request) {
+	dir := normaliseDirParam(r.URL.Query().Get("dir"))
+	if dir != "" {
+		dir = projectRootForDirectory(dir)
+	}
+	stats, err := s.stateDB.PermissionApprovalStats(r.Context(), parseSinceParam(r), dir)
+	if err != nil {
+		serverError(w, "fetching permission approval stats", err)
+		return
+	}
+	writeJSON(w, stats)
+}
+
 func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 	if !s.requireDB(w) {
 		return

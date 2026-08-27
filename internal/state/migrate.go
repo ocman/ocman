@@ -165,7 +165,9 @@ import (
 //	45 - add explicit approval provenance, reply scope, permission metadata,
 //	     and first-observed timestamp to auto_approved_permission.
 //	46 - drop retired MCP child-session persistence.
-const latestSchemaVersion = 46
+//	47 - add privacy-minimal permission lifecycle timing and outcomes for
+//	     aggregate approval statistics.
+const latestSchemaVersion = 47
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -362,6 +364,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV45(tx)
 	case 46:
 		return migrateToV46(tx)
+	case 47:
+		return migrateToV47(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -1535,5 +1539,29 @@ func migrateToV46(tx *sql.Tx) error {
 		}
 	}
 	_, err := tx.Exec(`DELETE FROM queued_message WHERE id LIKE 'child-result:%'`)
+	return err
+}
+
+func migrateToV47(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS permission_lifecycle (
+			platform            TEXT    NOT NULL,
+			session_id          TEXT    NOT NULL,
+			permission_id       TEXT    NOT NULL,
+			directory           TEXT    NOT NULL,
+			project_root        TEXT    NOT NULL,
+			requested_at        INTEGER NOT NULL,
+			judge_started_at    INTEGER NOT NULL DEFAULT 0,
+			judge_completed_at  INTEGER NOT NULL DEFAULT 0,
+			resolved_at         INTEGER NOT NULL DEFAULT 0,
+			evaluation_method   TEXT    NOT NULL DEFAULT '' CHECK (evaluation_method IN ('', 'judge', 'cache', 'denylist')),
+			evaluation_result   TEXT    NOT NULL DEFAULT '' CHECK (evaluation_result IN ('', 'safe', 'unsafe', 'cache-safe', 'denylisted', 'error')),
+			resolution          TEXT    NOT NULL DEFAULT '' CHECK (resolution IN ('', 'auto-approved', 'user-once', 'user-always', 'user-rejected', 'cancelled')),
+			manually_preempted  INTEGER NOT NULL DEFAULT 0 CHECK (manually_preempted IN (0, 1)),
+			PRIMARY KEY (platform, session_id, permission_id)
+		);
+		CREATE INDEX IF NOT EXISTS permission_lifecycle_dashboard_idx
+			ON permission_lifecycle (project_root, requested_at);
+	`)
 	return err
 }

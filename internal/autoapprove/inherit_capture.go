@@ -14,11 +14,15 @@ import (
 // until the matching permission.replied arrives, so a user approval
 // can be persisted with the original asked snapshot. See issue #101.
 type askedPermission struct {
-	platformID string
-	permission string
-	patterns   []string
-	metadata   map[string]any
-	askedAt    int64
+	platformID        string
+	permission        string
+	patterns          []string
+	metadata          map[string]any
+	askedAt           int64
+	lifecycleEnabled  bool
+	lifecycleObserved bool
+	directory         string
+	directoryErr      error
 }
 
 // askedCacheMax bounds the in-memory asked cache. A permission that is
@@ -38,6 +42,30 @@ const approvalPersistenceTimeout = 5 * time.Second
 // so a later approval can be recorded with the first observed snapshot.
 // No-op on nil receiver. Bounded by askedCacheMax.
 func (s *Service) rememberAsked(platformID, sessionID, permissionID, permission string, patterns []string, metadata map[string]any) askedPermission {
+	return s.rememberAskedWithLifecycle(platformID, sessionID, permissionID, permission, patterns, metadata, false, "", nil)
+}
+
+func (s *Service) rememberAskedForEnsure(platformID, sessionID, permissionID, permission string, patterns []string, metadata map[string]any) askedPermission {
+	ap := s.rememberAsked(platformID, sessionID, permissionID, permission, patterns, metadata)
+	ap.lifecycleObserved = false
+	return ap
+}
+
+func (s *Service) observeAskedLifecycle(sessionID, permissionID string, ap askedPermission, enabled bool, directory string, directoryErr error) askedPermission {
+	ap.lifecycleEnabled = enabled
+	ap.lifecycleObserved = true
+	ap.directory = directory
+	ap.directoryErr = directoryErr
+	key := autoApproveKey(sessionID, permissionID)
+	s.askedCacheMu.Lock()
+	if _, ok := s.askedCache[key]; ok {
+		s.askedCache[key] = ap
+	}
+	s.askedCacheMu.Unlock()
+	return ap
+}
+
+func (s *Service) rememberAskedWithLifecycle(platformID, sessionID, permissionID, permission string, patterns []string, metadata map[string]any, lifecycleEnabled bool, directory string, directoryErr error) askedPermission {
 	if s == nil || permissionID == "" {
 		return askedPermission{}
 	}
@@ -57,11 +85,15 @@ func (s *Service) rememberAsked(platformID, sessionID, permissionID, permission 
 		}
 	}
 	ap := askedPermission{
-		platformID: platformID,
-		permission: permission,
-		patterns:   append([]string(nil), patterns...),
-		metadata:   cloneMetadata(metadata),
-		askedAt:    time.Now().UnixMilli(),
+		platformID:        platformID,
+		permission:        permission,
+		patterns:          append([]string(nil), patterns...),
+		metadata:          cloneMetadata(metadata),
+		askedAt:           time.Now().UnixMilli(),
+		lifecycleEnabled:  lifecycleEnabled,
+		lifecycleObserved: true,
+		directory:         directory,
+		directoryErr:      directoryErr,
 	}
 	s.askedCache[key] = ap
 	return ap
@@ -100,12 +132,14 @@ func (s *Service) HandlePermissionReplied(ctx context.Context, sessionID, permis
 	if s == nil {
 		return
 	}
+	repliedAt := time.Now().UnixMilli()
 	s.Cancel(sessionID, permissionID)
 
 	s.autoApproveMu.Lock()
 	status := s.autoApprove[autoApproveKey(sessionID, permissionID)]
 	if status != nil && status.aiResponseInFlight {
 		status.pendingObservedReply = reply
+		status.pendingObservedAt = repliedAt
 		s.autoApproveMu.Unlock()
 		return
 	}
@@ -114,6 +148,7 @@ func (s *Service) HandlePermissionReplied(ctx context.Context, sessionID, permis
 		return
 	}
 	s.autoApproveMu.Unlock()
+	s.recordUserLifecycle(sessionID, permissionID, reply, repliedAt)
 	s.scheduleUserReplyCapture(ctx, sessionID, permissionID, reply)
 }
 
@@ -124,6 +159,7 @@ func (s *Service) HandleDirectPermissionReply(ctx context.Context, sessionID, pe
 	if s == nil {
 		return
 	}
+	s.recordUserLifecycle(sessionID, permissionID, reply, time.Now().UnixMilli())
 	s.Cancel(sessionID, permissionID)
 	if !s.claimUserReplyCapture(sessionID, permissionID) {
 		return
@@ -263,11 +299,14 @@ func (s *Service) finishAIResponse(sessionID, permissionID string, succeeded boo
 	}
 	status.aiResponseInFlight = false
 	reply := status.pendingObservedReply
+	repliedAt := status.pendingObservedAt
 	userWon := reply != "" && reply != "once"
 	status.aiResponseSucceeded = succeeded && !userWon
 	status.pendingObservedReply = ""
+	status.pendingObservedAt = 0
 	s.autoApproveMu.Unlock()
 	if userWon {
+		s.recordUserLifecycle(sessionID, permissionID, reply, repliedAt)
 		s.scheduleUserReplyCapture(context.Background(), sessionID, permissionID, reply)
 		return false
 	}

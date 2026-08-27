@@ -12,7 +12,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import type { MetricsDashboard } from '../../lib/api';
+import type { MetricsDashboard, PermissionStats } from '../../lib/api';
 
 vi.mock('react-chartjs-2', () => ({
   Bar: ({ data, options }: { data: unknown; options: unknown }) => <div data-testid="chart-bar" data-chart={JSON.stringify(data)} data-options={JSON.stringify(options)} />,
@@ -25,12 +25,14 @@ vi.mock('../../components/ProjectScopePicker', () => ({
 }));
 
 vi.mock('./context', () => ({
-  useDashboard: () => ({ projects: [], dirScope: '', setDirScope: vi.fn() }),
+  useDashboard: () => ({ projects: [], dirScope: '/home/u/proj', setDirScope: vi.fn() }),
 }));
 
 const useMetrics = vi.fn();
+const usePermissionStats = vi.fn();
 vi.mock('../../lib/queries', () => ({
   useMetrics: (...args: unknown[]) => useMetrics(...args),
+  usePermissionStats: (...args: unknown[]) => usePermissionStats(...args),
 }));
 
 // Imported after the mocks so StatsTab binds to them.
@@ -149,8 +151,37 @@ function makeMetrics(): MetricsDashboard {
   };
 }
 
-function renderStats(over: Partial<ReturnType<typeof useMetrics>> = {}) {
+function makePermissionStats(): PermissionStats {
+  return {
+    eligibleRequests: 12,
+    autoApprovedCount: 9,
+    autoApprovedRate: 0.75,
+    judgmentRequests: 10,
+    manualPreemptions: 2,
+    manualPreemptionRate: 0.2,
+    medianJudgmentDurationMs: 1_250,
+    medianManualResponseDurationMs: 65_000,
+    daily: [
+      {
+        date: '2026-08-23',
+        evaluationResults: { safe: 4, unsafe: 2, 'cache-safe': 1, denylisted: 3, error: 1 },
+        manualPreemptions: 1,
+      },
+      {
+        date: '2026-08-24',
+        evaluationResults: { safe: 5, unsafe: 1 },
+        manualPreemptions: 1,
+      },
+    ],
+  };
+}
+
+function renderStats(
+  over: Partial<ReturnType<typeof useMetrics>> = {},
+  permissionOver: Partial<ReturnType<typeof usePermissionStats>> = {},
+) {
   useMetrics.mockReturnValue({ data: makeMetrics(), isLoading: false, error: null, ...over });
+  usePermissionStats.mockReturnValue({ data: makePermissionStats(), isLoading: false, error: null, ...permissionOver });
   return render(
     <MemoryRouter>
       <StatsTab />
@@ -159,10 +190,74 @@ function renderStats(over: Partial<ReturnType<typeof useMetrics>> = {}) {
 }
 
 describe('StatsTab effective-cost UI', () => {
+  it('queries permission stats with only the shared range and directory filters', () => {
+    renderStats();
+    expect(usePermissionStats).toHaveBeenLastCalledWith({ days: 30, dir: '/home/u/proj' });
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Agent' }));
+    fireEvent.click(screen.getByRole('option', { name: 'build' }));
+    fireEvent.click(screen.getByRole('combobox', { name: 'Last' }));
+    fireEvent.click(screen.getByRole('option', { name: '7 days' }));
+
+    expect(usePermissionStats).toHaveBeenLastCalledWith({ days: 7, dir: '/home/u/proj' });
+  });
+
+  it('shows six permission approval cards and the daily stacked breakdown', () => {
+    renderStats();
+
+    const expectedCards = [
+      ['Eligible requests', '12'],
+      ['Auto-approved rate', '75%'],
+      ['Manual preemptions', '2'],
+      ['Preemption rate', '20%'],
+      ['Median judgment time', '1.3s'],
+      ['Median manual response time', '1m 5s'],
+    ];
+    for (const [label, value] of expectedCards) {
+      expect(within(screen.getByText(label).closest('.stat-card') as HTMLElement).getByText(value)).toBeInTheDocument();
+    }
+
+    const permissionChart = screen.getAllByTestId('chart-bar')
+      .find((chart) => JSON.parse(chart.getAttribute('data-chart') ?? '{}').datasets?.[0]?.label === 'Safe');
+    const data = JSON.parse(permissionChart?.getAttribute('data-chart') ?? '{}');
+    const options = JSON.parse(permissionChart?.getAttribute('data-options') ?? '{}');
+    expect(data.labels).toEqual(['2026-08-23', '2026-08-24']);
+    expect(data.datasets.map((dataset: { label: string; data: number[] }) => [dataset.label, dataset.data])).toEqual([
+      ['Safe', [4, 5]],
+      ['Unsafe', [2, 1]],
+      ['Cache-safe', [1, 0]],
+      ['Denylisted', [3, 0]],
+      ['Error', [1, 0]],
+      ['Manual preemptions', [1, 1]],
+    ]);
+    expect(data.datasets.at(-1).stack).toBe('preemptions');
+    expect(options.scales.x.stacked).toBe(true);
+    expect(options.scales.y.stacked).toBe(true);
+  });
+
+  it('omits loading permission stats without blocking normal metrics', () => {
+    renderStats({}, { data: undefined, isLoading: true });
+    expect(screen.getByText('Total Cost')).toBeInTheDocument();
+    expect(screen.queryByText('Eligible requests')).not.toBeInTheDocument();
+  });
+
+  it('shows a permission-stats error without hiding normal metrics', () => {
+    renderStats({}, { data: undefined, error: new Error('permission stats unavailable') });
+    expect(screen.getByText('Total Cost')).toBeInTheDocument();
+    expect(screen.getByText('Permission stats: permission stats unavailable')).toBeInTheDocument();
+  });
+
+  it('shows permission stats when metrics fail without data', () => {
+    renderStats({ data: undefined, error: new Error('metrics unavailable') });
+    expect(screen.getByText('metrics unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Eligible requests')).toBeInTheDocument();
+    expect(screen.getByText('Permission approvals per day')).toBeInTheDocument();
+  });
+
   it('shows estimated cost per day grouped by model as a bar chart', () => {
     renderStats();
     expect(screen.getByText('Estimated Cost per Day by Model (USD)')).toBeInTheDocument();
-    expect(screen.getAllByTestId('chart-bar')).toHaveLength(4);
+    expect(screen.getAllByTestId('chart-bar')).toHaveLength(5);
     expect(screen.getAllByTestId('chart-line')).toHaveLength(1);
     const costChart = screen.getAllByTestId('chart-bar')
       .find((chart) => JSON.parse(chart.getAttribute('data-chart') ?? '{}').labels?.[0] === '2026-08-23');

@@ -41,6 +41,7 @@ type SettingsStore interface {
 	GetPromptSections(context.Context) ([]state.PromptSection, error)
 	GetSetting(context.Context, string) (value string, ok bool, err error)
 	RecordApprovedPermission(context.Context, string, string, state.ApprovedPermission) error
+	UpsertPermissionLifecycle(context.Context, state.PermissionLifecycle) error
 }
 
 // Deps bundles the service's external dependencies. Every func field

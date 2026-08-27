@@ -706,6 +706,26 @@ export interface MetricsDashboard {
   totalProjects: number;
 }
 
+export type PermissionEvaluationResult = 'safe' | 'unsafe' | 'cache-safe' | 'denylisted' | 'error';
+
+export interface PermissionStatsDay {
+  date: string;
+  evaluationResults: Partial<Record<PermissionEvaluationResult, number>>;
+  manualPreemptions: number;
+}
+
+export interface PermissionStats {
+  eligibleRequests: number;
+  autoApprovedCount: number;
+  autoApprovedRate: number;
+  judgmentRequests: number;
+  manualPreemptions: number;
+  manualPreemptionRate: number;
+  medianJudgmentDurationMs: number;
+  medianManualResponseDurationMs: number;
+  daily: PermissionStatsDay[];
+}
+
 /**
  * Per-model cost series. `models` is the ordered legend (top N by
  * total spend, with an "Other" bucket trailing when there are more
