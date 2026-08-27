@@ -3,6 +3,7 @@ const TITLES: Record<string, string> = {
   '/sessions': 'Sessions',
   '/projects': 'Projects',
   '/workflows': 'Workflows',
+  '/factory': 'Mission Control',
   '/stats': 'Stats',
   '/usage': 'Usage',
   '/settings': 'Settings',

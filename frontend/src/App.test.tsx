@@ -16,6 +16,7 @@ describe('routeTitle', () => {
   it.each([
     ['/sessions', 'Sessions'],
     ['/settings', 'Settings'],
+    ['/factory', 'Mission Control'],
     ['/session/new', 'New session'],
     ['/session/ses-1', 'Session'],
     ['/session/ses-1', 'Loaded title', 'Loaded title'],
@@ -43,6 +44,7 @@ describe('MainNav', () => {
     expect(screen.getByRole('link', { name: 'Home' })).not.toHaveClass('active');
     expect(screen.getByRole('link', { name: 'Projects' })).toHaveClass('active');
     expect(screen.getByRole('link', { name: 'Workflows' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Factory' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Sessions' }).querySelector('i')).toHaveClass('bi-collection');
 
     const toggle = screen.getByRole('button', { name: 'Collapse navigation' });

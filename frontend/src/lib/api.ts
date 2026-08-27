@@ -83,7 +83,9 @@ export type {
 	WorkflowArtifact,
 	WorkflowMapItemRun,
 	PromptSchedule,
-	DaguStatus,
+  DaguStatus,
+  FactoryStatus,
+  FactoryReason,
 } from './api.types';
 
 // Type imports used by the api object below.
@@ -138,6 +140,7 @@ import type {
 	WorkflowArtifact,
 	PromptSchedule,
 	DaguStatus,
+	FactoryStatus,
 } from './api.types';
 
 /**
@@ -387,6 +390,7 @@ export const api = {
   permissionStats: (params?: { days?: number; dir?: string }, signal?: AbortSignal) =>
     fetchJSON<PermissionStats>(`/api/permission-stats${queryString(params)}`, signal),
   projects: (signal?: AbortSignal) => fetchJSON<Project[]>('/api/projects', signal),
+  factoryStatus: (signal?: AbortSignal) => fetchJSON<FactoryStatus>('/api/factory/status', signal),
   browseDirectories: (dir?: string, signal?: AbortSignal) =>
     fetchJSON<DirectoryBrowseResponse>(`/api/filesystem/directories${queryString({ dir })}`, signal),
   searchDirectories: (root: string | undefined, query: string, limit?: number, signal?: AbortSignal) => {

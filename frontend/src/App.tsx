@@ -7,6 +7,7 @@ import { DashboardLayout, SessionsTab, ProjectsTab, StatsTab, UsageTab, Settings
 import { ProjectDetail } from './pages/ProjectDetail';
 import { WorktreesView } from './pages/WorktreesView';
 import { Workflows } from './pages/Workflows';
+import { MissionControl } from './pages/MissionControl';
 import { SessionDetail } from './pages/session-detail';
 import { SharedConversationView } from './pages/SharedConversationView';
 import { ImportSharedConversation } from './pages/ImportSharedConversation';
@@ -59,6 +60,7 @@ const MAIN_NAV_ITEMS = [
   { to: '/', label: 'Home', icon: 'bi-house', activeOnSession: true },
   { to: '/sessions', label: 'Sessions', icon: 'bi-collection' },
   { to: '/projects', label: 'Projects', icon: 'bi-folder' },
+  { to: '/factory', label: 'Factory', icon: 'bi-buildings' },
   { to: '/workflows', label: 'Workflows', icon: 'bi-diagram-3', workflowsOnly: true },
   { to: '/stats', label: 'Stats', icon: 'bi-bar-chart' },
   { to: '/usage', label: 'Usage', icon: 'bi-activity' },
@@ -541,6 +543,7 @@ export function AppRoutes() {
         <Route path="/settings" element={<SettingsTab />} />
       </Route>
       <Route path="/project/:dir/worktrees" element={<WorktreesView />} />
+      <Route path="/factory" element={<MissionControl />} />
       <Route path="/project/:dir" element={<ProjectDetail />} />
       <Route path="/session/:id" element={<SessionDetail />} />
       <Route path="/import-share" element={<ImportSharedConversation />} />

@@ -85,6 +85,32 @@ export interface DaguStatus {
   installCommand: string;
 }
 
+export type FactoryReason =
+  | 'beads_not_found'
+  | 'beads_version_invalid'
+  | 'beads_version_unsupported'
+  | 'beads_contract_unsupported'
+  | 'beads_store_unavailable'
+  | 'beads_command_failed'
+  | 'dispatch_lock_failed';
+
+export interface FactoryStatus {
+  health: 'healthy' | 'unavailable' | 'degraded';
+  idle: boolean;
+  dispatchOwner: boolean;
+  readOnly: boolean;
+  workEpicCount: number;
+  beads: {
+    usable: boolean;
+    version?: string;
+    contractVersion?: number;
+    reason?: FactoryReason;
+    message?: string;
+  };
+  reason?: FactoryReason;
+  message?: string;
+}
+
 export interface Session {
   id: string;
 	/**

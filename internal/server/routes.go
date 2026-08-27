@@ -96,6 +96,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/prompt-schedules", promptScheduleHandler)
 	mux.HandleFunc("/api/prompt-schedules/", promptScheduleHandler)
 	mux.HandleFunc("/api/dagu/status", s.get(s.handleDaguStatus))
+	mux.HandleFunc("/api/factory/status", s.get(s.handleFactoryStatus))
 
 	workflowHandler := s.requireLocalhost(s.handleWorkflows)
 	mux.HandleFunc("/api/workflows", workflowHandler)

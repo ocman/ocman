@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/dagu"
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/factory"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
 	"github.com/NoUseFreak/ocman/internal/ocapi"
@@ -148,6 +150,7 @@ type Server struct {
 	runtime      ocruntime.Runtime
 	openCodeAuth ocapi.Auth
 	daguManager  *dagu.Manager
+	factory      factoryService
 
 	getNewAssistantMessages func(context.Context, int64) ([]db.LLMMessageRow, int64, error)
 
@@ -156,6 +159,12 @@ type Server struct {
 	projectUpstreamsPending map[string]*projectUpstreamsPending
 	projectUpstreamsSlots   chan struct{}
 	upstreamNow             func() time.Time
+}
+
+type factoryService interface {
+	Start(context.Context) error
+	Close()
+	Status(context.Context) factory.Status
 }
 
 // remoteAccessInfo holds this instance's own remote-access surface for
@@ -191,6 +200,7 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		activity:     newClientActivityPolicy(time.Now),
 
 		runtime: ocruntime.NewNativeRuntime(),
+		factory: factory.New(filepath.Join(state.DefaultDataDir(), "factory")),
 	}
 	// The host router is built lazily (see router()) so tests can override
 	// s.runtime after New before the local Host is constructed.
@@ -447,6 +457,10 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 			_ = s.daguManager.Close()
 		}
 	}()
+	if err := s.factory.Start(ctx); err != nil {
+		return fmt.Errorf("starting Factory: %w", err)
+	}
+	defer s.factory.Close()
 	// Build the host router on this goroutine, before any background loop
 	// or handler can reach it. router() assigns lazily, and the loops
 	// started below race that assignment otherwise.

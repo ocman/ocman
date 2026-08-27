@@ -90,15 +90,14 @@ flowchart TD
     Server[internal/server<br/>HTTP, SSE, handlers] --> Registry[platforms.Registry<br/>session seam]
     Server --> Router[hostsvc.Router<br/>host/dir seam]
     Server --> Workflows[automation services<br/>workflows + prompt schedules]
+    Server --> Factory[internal/factory<br/>readiness, dispatch lock + Beads store]
     Workflows --> Registry
     Workflows --> Router
     Server --> MCP[internal/mcp<br/>MCP tools]
     MCP --> Workflows
-    Registry --> OC[platforms/opencode<br/>adapter]
+    Registry --> OC[platforms/opencode + internal/db<br/>adapter and read-only queries]
     Registry --> RP[remote.Platform<br/>gRPC-backed]
-    OC --> DB[internal/db<br/>read-only queries]
-    Router --> Local[hostsvc/local<br/>git, tmux, worktree, Beads]
-    Local --> HostTools[host integrations<br/>ocruntime + Dagu manager]
+    Router --> Local[hostsvc/local<br/>git, tmux, worktree, Beads, runtimes]
     Server --> State[internal/state<br/>state.db]
     Server --> Forge[forge + integrations<br/>GitHub/Forgejo clients]
 ```
@@ -106,6 +105,12 @@ flowchart TD
 - **internal/server.** The HTTP mux, SSE broadcast and fanout, around 60
   handler files, plus tmux, terminal, whisper, auto-approve and workflow
   ticks.
+- **internal/factory.** The independent Software Factory boundary. Its
+  readiness probe pins Beads to `>=1.1.0,<1.2.0` and JSON envelope contract 1,
+  while an advisory process lock gives exactly one local ocman instance
+  dispatch ownership. The owner initializes the dedicated store idempotently
+  on first start. Other instances expose the same authenticated status
+  read-only; Workflows state and services are not involved.
 - **platforms.Registry.** The session-scoped seam. One adapter per platform;
   remotes register as compound-ID platforms so handlers can't tell local from
   remote.
@@ -191,8 +196,9 @@ flowchart TD
 - **internal/opencodeskills.** Extracts binary-embedded ocman skills into
   XDG data and installs only ocman-owned symlinks for OpenCode discovery.
   Retirement unlinks only the exact verified symlink and preserves extracted data.
-- **internal/state.** The only writable store: migrations, settings,
-  workflows, prompt schedules.
+- **internal/state.** Ocman's writable SQLite store: migrations, settings,
+  workflows and prompt schedules. The independent Factory work graph lives in
+  its dedicated Beads store.
 - **forge and integrations.** Forge-agnostic types in `internal/forge`, per-forge
   HTTP clients in `internal/forge/{github,forgejo}`. PR/Issue handlers obtain repository
   identity from the owner Host, then use the hub clients for metadata.
@@ -260,7 +266,7 @@ the UI shows.
 ```mermaid
 flowchart TD
     Pages[pages/<br/>routes] --> Comp[components/<br/>~80 components]
-     Pages --> Stores[Client state<br/>sessions, workflows]
+    Pages --> Stores[Client state<br/>TanStack Query + Zustand]
     Comp --> Stores
     Stores --> API[lib/ API client]
     Stores --> SSE[SSE subscription]
@@ -290,3 +296,7 @@ flowchart TD
   `hostsvc.Host` through `/api/project/beads-status`; remote owners proxy the
   same operation over gRPC. Ticket data stays in the repository and is polled
   only while the available pane is open.
+- **Mission Control.** The top-level `/factory` page polls the authenticated
+  `/api/factory/status` endpoint through TanStack Query and renders Factory
+  compatibility, dispatch ownership, degraded/unavailable diagnostics and an
+  empty Work Epic shell independently of Workflows.

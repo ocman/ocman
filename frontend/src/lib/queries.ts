@@ -23,7 +23,16 @@ import type {
   ModelUsage,
   HourlyData,
   HourlyTokensByModel,
+  FactoryStatus,
 } from './api';
+
+export function useFactoryStatus() {
+  return useQuery<FactoryStatus>({
+    queryKey: ['factory-status'],
+    queryFn: ({ signal }) => api.factoryStatus(signal),
+    refetchInterval: 10_000,
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Sessions list
