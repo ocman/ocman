@@ -182,6 +182,12 @@ func TestFactoryPlanningSessionAndAuditAreDurable(t *testing.T) {
 	if err := db.PutFactoryPlanningSession(ctx, "epic-1", "work-1", factory.PlanningSession{Platform: "agent", ID: "session-2"}); err == nil {
 		t.Fatal("Planning Session mapping was overwritten")
 	}
+	if err := db.DeleteFactoryPlanningSession(ctx, "work-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := db.GetFactoryPlanningSession(ctx, "work-1"); err != nil || ok {
+		t.Fatalf("deleted Planning Session still present: ok=%v err=%v", ok, err)
+	}
 	if err := db.AppendFactoryAudit(ctx, factory.FactoryAuditRecord{EpicID: "epic-1", WorkID: "work-1", Actor: "dries", Action: "plan.approved", Details: map[string]int{"revision": 2}, At: time.Unix(10, 0)}); err != nil {
 		t.Fatal(err)
 	}
@@ -191,5 +197,16 @@ func TestFactoryPlanningSessionAndAuditAreDurable(t *testing.T) {
 	}
 	if action != "plan.approved" || details != `{"revision":2}` {
 		t.Fatalf("audit = %q, %s", action, details)
+	}
+	record := factory.FactoryAuditRecord{EpicID: "epic-1", Actor: "dries", Action: "plan.cancelled", Details: map[string]string{"reason": "duplicate"}, At: time.Unix(20, 0)}
+	if err := db.AppendFactoryAuditOnce(ctx, record); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AppendFactoryAuditOnce(ctx, record); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := raw.QueryRow(`SELECT count(*) FROM factory_audit_record WHERE action = 'plan.cancelled'`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("deduplicated audit count = %d, err=%v", count, err)
 	}
 }

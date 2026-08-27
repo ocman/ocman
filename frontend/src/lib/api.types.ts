@@ -126,9 +126,11 @@ export interface WorkEpic {
     approvalStatus: string;
   };
 	plan: FactoryPlan;
+	planError?: string;
 }
 
 export interface FactoryPlan {
+	schemaVersion?: number;
 	revision: number;
 	hash: string;
 	state: 'draft' | 'approved' | 'rejected' | 'cancelled';
@@ -143,8 +145,10 @@ export interface FactoryPlan {
 		formulaVersion: number;
 		formulaOrigin: string;
 		instantiationId: string;
+		reason?: string;
 		graph: FactoryPlanGraph;
 	};
+	lastDecision?: { action: string; fromRevision: number; revision: number; hash: string; actor: string; reason?: string };
 	validation: string[];
 }
 
@@ -165,6 +169,9 @@ export interface FactoryPlanningWork {
 	targetId: string;
 	repository: string;
 	status: string;
+	outcome?: string;
+	completedRevision?: number;
+	completedHash?: string;
 	session: { platform: string; id: string };
 }
 

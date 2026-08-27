@@ -87,6 +87,10 @@ func (s *Server) handleFactoryPlanMutation(w http.ResponseWriter, r *http.Reques
 			writeFactoryError(w, err)
 			return
 		}
+		if result.Stale {
+			writeFactoryPlanConflict(w, result.Plan)
+			return
+		}
 		writeJSON(w, result)
 		return
 	}
@@ -100,11 +104,11 @@ func (s *Server) handleFactoryPlanMutation(w http.ResponseWriter, r *http.Reques
 			writeFactoryError(w, err)
 			return
 		}
-		status := http.StatusCreated
 		if result.Stale {
-			status = http.StatusOK
+			writeFactoryPlanConflict(w, result.Plan)
+			return
 		}
-		writeJSONStatus(w, status, result)
+		writeJSONStatus(w, http.StatusCreated, result)
 		return
 	}
 	if len(parts) == 4 && parts[1] == "planning" && parts[3] == "complete" {
@@ -187,6 +191,11 @@ func (s *Server) handleFactoryEpicCreate(w http.ResponseWriter, r *http.Request)
 }
 
 func writeFactoryError(w http.ResponseWriter, err error) {
+	var conflict *factory.PlanConflictError
+	if errors.As(err, &conflict) {
+		writeFactoryPlanConflict(w, conflict.Current)
+		return
+	}
 	switch {
 	case errors.Is(err, factory.ErrWorkEpicNotFound):
 		http.Error(w, err.Error(), http.StatusNotFound)
@@ -201,4 +210,11 @@ func writeFactoryError(w http.ResponseWriter, err error) {
 	default:
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
+}
+
+func writeFactoryPlanConflict(w http.ResponseWriter, plan factory.Plan) {
+	writeJSONStatus(w, http.StatusConflict, struct {
+		Error   string       `json:"error"`
+		Current factory.Plan `json:"current"`
+	}{Error: (&factory.PlanConflictError{Current: plan}).Error(), Current: plan})
 }

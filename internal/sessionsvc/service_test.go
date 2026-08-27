@@ -18,6 +18,7 @@ type fakePlatform struct {
 
 	sendErr       error
 	permissionErr error
+	ruleErr       error
 	createResp    *platforms.CreateSessionResponse
 	createNil     bool
 
@@ -66,7 +67,33 @@ func (f *fakePlatform) Compact(_ context.Context, req platforms.CompactRequest) 
 }
 func (f *fakePlatform) SetPermissionRules(_ context.Context, req platforms.SetPermissionRulesRequest) error {
 	f.rules = append(f.rules, req)
-	return nil
+	return f.ruleErr
+}
+
+func TestCreateConfiguredDoesNotPublishOrLeakSessionWhenRulesFail(t *testing.T) {
+	platform := &fakePlatform{id: "opencode", available: true, ruleErr: errors.New("rules failed")}
+	registry := &fakeRegistry{byID: map[platforms.ID]platforms.Platform{"opencode": platform}}
+	published := 0
+	svc := New(registry, Hooks{SessionCreated: func(CreatedSession) { published++ }})
+
+	_, err := svc.CreateConfigured(context.Background(), "opencode", platforms.CreateSessionRequest{Directory: "/repo"}, []platforms.PermissionRule{{Permission: "read", Pattern: "*", Action: "allow"}})
+	if err == nil || published != 0 || len(platform.aborts) != 1 || platform.aborts[0].SessionID != "new-session" {
+		t.Fatalf("CreateConfigured error = %v, published = %d, aborts = %#v", err, published, platform.aborts)
+	}
+}
+
+func TestCreateConfiguredPublishesAfterRules(t *testing.T) {
+	platform := &fakePlatform{id: "opencode", available: true}
+	registry := &fakeRegistry{byID: map[platforms.ID]platforms.Platform{"opencode": platform}}
+	publishedAfterRules := false
+	svc := New(registry, Hooks{SessionCreated: func(CreatedSession) { publishedAfterRules = len(platform.rules) == 1 }})
+
+	if _, err := svc.CreateConfigured(context.Background(), "opencode", platforms.CreateSessionRequest{Directory: "/repo"}, []platforms.PermissionRule{{Permission: "read", Action: "allow"}}); err != nil {
+		t.Fatal(err)
+	}
+	if !publishedAfterRules || len(platform.aborts) != 0 {
+		t.Fatalf("publishedAfterRules = %v, aborts = %#v", publishedAfterRules, platform.aborts)
+	}
 }
 func (f *fakePlatform) RespondPermission(_ context.Context, req platforms.RespondPermissionRequest) error {
 	f.permissions = append(f.permissions, req)

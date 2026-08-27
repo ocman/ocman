@@ -414,6 +414,8 @@ export const api = {
 		postJSON<FactoryPlanMutationResult, { expectedRevision: number; target: FactoryPlanGraph['targets'][number]; acknowledgeLocalExecution: true }>(`/api/factory/epics/${encodeURIComponent(id)}/planning`, { expectedRevision, target, acknowledgeLocalExecution: true }),
 	decideFactoryPlan: (id: string, action: 'approve' | 'revise' | 'reject' | 'cancel', request: FactoryPlanDecisionRequest) =>
 		postJSON<FactoryPlan, FactoryPlanDecisionRequest>(`/api/factory/epics/${encodeURIComponent(id)}/plan/${action}`, request),
+	completeFactoryPlanningWork: (id: string, workID: string, expectedRevision: number, expectedHash: string) =>
+		postJSON<FactoryPlan, { expectedRevision: number; expectedHash: string }>(`/api/factory/epics/${encodeURIComponent(id)}/planning/${encodeURIComponent(workID)}/complete`, { expectedRevision, expectedHash }),
   browseDirectories: (dir?: string, signal?: AbortSignal) =>
     fetchJSON<DirectoryBrowseResponse>(`/api/filesystem/directories${queryString({ dir })}`, signal),
   searchDirectories: (root: string | undefined, query: string, limit?: number, signal?: AbortSignal) => {

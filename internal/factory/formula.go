@@ -78,6 +78,7 @@ type WorkEpic struct {
 	InstantiationID string        `json:"instantiationId"`
 	Planning        PlanningState `json:"planning"`
 	Plan            Plan          `json:"plan"`
+	PlanError       string        `json:"planError,omitempty"`
 	metadata        map[string]string
 }
 
@@ -372,17 +373,33 @@ func listWorkEpics(ctx context.Context, path, beadsDir string, r runner) ([]Work
 		})
 		epic := &epics[len(epics)-1]
 		if encoded := meta[planMetadataKey]; encoded != "" {
-			if err := json.Unmarshal([]byte(encoded), &epic.Plan); err != nil {
-				epics = epics[:len(epics)-1]
-				continue
+			var header struct {
+				SchemaVersion int `json:"schemaVersion"`
+			}
+			if err := json.Unmarshal([]byte(encoded), &header); err != nil {
+				epic.PlanError = "Plan metadata is malformed: " + err.Error()
+			} else if header.SchemaVersion > planSchemaVersion {
+				epic.PlanError = fmt.Sprintf("Plan schema %d is unsupported; ocman supports schema %d", header.SchemaVersion, planSchemaVersion)
+			} else if err := json.Unmarshal([]byte(encoded), &epic.Plan); err != nil {
+				epic.PlanError = "Plan metadata is invalid: " + err.Error()
+			} else if epic.Plan.SchemaVersion == 0 {
+				epic.Plan.SchemaVersion = planSchemaVersion
+			}
+			if epic.PlanError == "" && (epic.Plan.Revision <= 0 || epic.Plan.Hash == "" || !validPlanState(epic.Plan.State)) {
+				epic.PlanError = "Plan metadata is missing a valid revision, hash, or state"
 			}
 		} else {
 			epic.Plan = newInitialPlan(*epic)
+		}
+		if epic.PlanError != "" {
+			continue
 		}
 		for i := range epic.Plan.Planning {
 			if issue, ok := byID[epic.Plan.Planning[i].ID]; ok {
 				epic.Plan.Planning[i].Status = issue.Status
 				epic.Plan.Planning[i].Outcome = issue.Metadata["ocman.terminal_outcome"]
+				epic.Plan.Planning[i].CompletedRevision, _ = strconv.Atoi(issue.Metadata["ocman.plan_revision"])
+				epic.Plan.Planning[i].CompletedHash = issue.Metadata["ocman.plan_hash"]
 				epic.Plan.Planning[i].metadata = issue.Metadata
 			}
 		}
@@ -394,6 +411,15 @@ func listWorkEpics(ctx context.Context, path, beadsDir string, r runner) ([]Work
 	}
 	sort.Slice(epics, func(i, j int) bool { return epics[i].ID < epics[j].ID })
 	return epics, nil
+}
+
+func validPlanState(state PlanState) bool {
+	switch state {
+	case PlanDraft, PlanApproved, PlanRejected, PlanCancelled:
+		return true
+	default:
+		return false
+	}
 }
 
 func sameProvenance(child, epic map[string]string, kind string) bool {

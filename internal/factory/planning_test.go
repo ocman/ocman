@@ -4,15 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 )
 
 type fakePlanningLauncher struct {
 	calls  []PlanningSessionRequest
 	stops  []PlanningSession
+	probes []PlanningSession
+	dead   map[string]bool
 	result PlanningSession
 	err    error
 }
@@ -27,10 +32,28 @@ func (f *fakePlanningLauncher) StopPlanningSession(_ context.Context, session Pl
 	return f.err
 }
 
+func (f *fakePlanningLauncher) ProbePlanningSession(_ context.Context, session PlanningSession) (bool, error) {
+	f.probes = append(f.probes, session)
+	return !f.dead[session.ID], f.err
+}
+
 type fakeFactoryStore struct {
 	fakeAckStore
-	sessions map[string]PlanningSession
-	audits   []FactoryAuditRecord
+	sessions    map[string]PlanningSession
+	audits      []FactoryAuditRecord
+	putErr      error
+	auditErr    error
+	auditFailAt int
+	auditCalls  int
+}
+
+func (s *fakeFactoryStore) AppendFactoryAuditOnce(ctx context.Context, record FactoryAuditRecord) error {
+	for _, existing := range s.audits {
+		if existing.EpicID == record.EpicID && existing.Action == record.Action && reflect.DeepEqual(existing.Details, record.Details) {
+			return nil
+		}
+	}
+	return s.AppendFactoryAudit(ctx, record)
 }
 
 func (s *fakeFactoryStore) GetFactoryPlanningSession(_ context.Context, workID string) (PlanningSession, bool, error) {
@@ -39,6 +62,9 @@ func (s *fakeFactoryStore) GetFactoryPlanningSession(_ context.Context, workID s
 }
 
 func (s *fakeFactoryStore) PutFactoryPlanningSession(_ context.Context, epicID, workID string, session PlanningSession) error {
+	if s.putErr != nil {
+		return s.putErr
+	}
 	if s.sessions == nil {
 		s.sessions = map[string]PlanningSession{}
 	}
@@ -46,7 +72,37 @@ func (s *fakeFactoryStore) PutFactoryPlanningSession(_ context.Context, epicID, 
 	return nil
 }
 
+func (s *fakeFactoryStore) DeleteFactoryPlanningSession(_ context.Context, workID string) error {
+	delete(s.sessions, workID)
+	return nil
+}
+
+func TestCreateWorkEpicStopsSessionWhenMappingFails(t *testing.T) {
+	project, _ := filepath.EvalSymlinks(t.TempDir())
+	runner := &fakeRunner{runs: []fakeRun{
+		{out: versionEnvelope}, {out: listEnvelope(`[]`)},
+		{out: `{"schema_version":1,"data":{"ids":{"epic":"fac-1","planning":"fac-1.1","approval":"fac-1.2"}}}`},
+		{out: `{"schema_version":1,"data":{}}`},
+	}}
+	store := &fakeFactoryStore{putErr: errors.New("mapping failed")}
+	launcher := &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "session-1"}}
+	svc := newWithRunner(t.TempDir(), runner, store)
+	svc.planning, svc.owned = launcher, true
+
+	_, err := svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{InstantiationID: "request-1", Goal: "Ship", InitialProject: project, AcknowledgeLocalExecution: true})
+	if err == nil || len(launcher.stops) != 1 || launcher.stops[0].ID != "session-1" || len(store.sessions) != 0 {
+		t.Fatalf("CreateWorkEpic error = %v, stopped = %#v, mappings = %#v", err, launcher.stops, store.sessions)
+	}
+}
+
 func (s *fakeFactoryStore) AppendFactoryAudit(_ context.Context, record FactoryAuditRecord) error {
+	s.auditCalls++
+	if s.auditErr != nil {
+		return s.auditErr
+	}
+	if s.auditFailAt == s.auditCalls {
+		return errors.New("audit unavailable")
+	}
 	s.audits = append(s.audits, record)
 	return nil
 }
@@ -111,6 +167,48 @@ func TestServiceRestartRecoversUnmappedPlanningSession(t *testing.T) {
 	t.Cleanup(svc.Close)
 	if len(launcher.calls) != 1 || store.sessions["fac-1.1"].ID != "recovered-session" {
 		t.Fatalf("restart launches = %#v, sessions = %#v", launcher.calls, store.sessions)
+	}
+}
+
+func TestServiceRecoveryFailureDegradesHealthAndDisablesMutations(t *testing.T) {
+	plan := Plan{Revision: 1, State: PlanDraft, Draft: PlanGraph{Intent: "Ship", Targets: []PlanTarget{{ID: "app", HostID: localHostID, Repository: "/repo"}}}, Planning: []PlanningWork{{ID: "fac-1.1", TargetID: "app", Repository: "/repo", Status: "open"}}}
+	plan.Hash = hashPlanGraph(plan.Draft)
+	runner := &fakeRunner{runs: []fakeRun{
+		{out: versionEnvelope}, {},
+		{out: versionEnvelope}, {out: listEnvelope(issuesWithPlan(t, plan))},
+		{out: versionEnvelope}, {out: `{"schema_version":1,"data":{"summary":{"total_issues":1}}}`},
+		{out: versionEnvelope}, {out: listEnvelope(issuesWithPlan(t, plan))},
+	}}
+	svc := newWithRunner(t.TempDir(), runner, &fakeFactoryStore{})
+	svc.planning = &fakePlanningLauncher{err: errors.New("launch failed")}
+	if err := svc.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(svc.Close)
+
+	status := svc.Status(context.Background())
+	if status.Health != HealthDegraded || status.Reason != Reason("recovery_failed") || !status.ReadOnly {
+		t.Fatalf("status = %#v", status)
+	}
+	_, err := svc.MutatePlan(context.Background(), "fac-1", MutatePlanRequest{ExpectedRevision: 1, Graph: plan.Draft})
+	if !errors.Is(err, ErrFactoryUnavailable) {
+		t.Fatalf("MutatePlan error = %v, want ErrFactoryUnavailable", err)
+	}
+}
+
+func TestServiceRestartReconcilesApprovedGateAndAudit(t *testing.T) {
+	approval := &PlanApproval{Revision: 2, Hash: "hash-2", Actor: "dries", Reason: "reviewed"}
+	plan := Plan{SchemaVersion: planSchemaVersion, Revision: 2, Hash: "hash-2", State: PlanApproved, Approval: approval}
+	runner := &fakeRunner{runs: []fakeRun{{out: versionEnvelope}, {}, {out: versionEnvelope}, {out: listEnvelope(issuesWithPlan(t, plan))}, {}}}
+	store := &fakeFactoryStore{}
+	svc := newWithRunner(t.TempDir(), runner, store)
+	svc.planning = &fakePlanningLauncher{}
+	if err := svc.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(svc.Close)
+	if len(store.audits) != 1 || store.audits[0].Action != "plan.approved" || !strings.Contains(fmt.Sprint(runner.seen[4]), "reviewed") {
+		t.Fatalf("commands = %#v, audits = %#v", runner.seen, store.audits)
 	}
 }
 
@@ -226,10 +324,48 @@ func issuesWithPlan(t *testing.T, plan Plan) string {
 	outcomeMetadata := ""
 	if planningOutcome != "" {
 		outcomeMetadata = `,"ocman.terminal_outcome":` + strconv.Quote(planningOutcome)
+		if len(plan.Planning) != 0 && plan.Planning[0].CompletedRevision != 0 {
+			outcomeMetadata += `,"ocman.plan_revision":` + strconv.Quote(strconv.Itoa(plan.Planning[0].CompletedRevision)) + `,"ocman.plan_hash":` + strconv.Quote(plan.Planning[0].CompletedHash)
+		}
 	}
 	return `[{"id":"fac-1","status":"open","issue_type":"epic","metadata":` + string(epicMetadata) + `},` +
 		`{"id":"fac-1.1","status":` + strconv.Quote(planningStatus) + `,"issue_type":"task","metadata":{"ocman.contract":"1","ocman.kind":"agent-work","ocman.formula_id":"ocman/default","ocman.formula_version":"1","ocman.formula_origin":"built-in","ocman.instantiation_id":"intake-1","ocman.work_epic_id":"fac-1","ocman.permission_profile":"factory-plan/v1"` + outcomeMetadata + `}},` +
 		`{"id":"fac-1.2","status":"open","issue_type":"gate","metadata":{"ocman.contract":"1","ocman.kind":"gate","ocman.formula_id":"ocman/default","ocman.formula_version":"1","ocman.formula_origin":"built-in","ocman.instantiation_id":"intake-1","ocman.work_epic_id":"fac-1","ocman.gate_type":"plan-approval"}}]`
+}
+
+func issuesWithPlanMetadata(t *testing.T, metadata string) string {
+	t.Helper()
+	var issues []map[string]any
+	if err := json.Unmarshal([]byte(issuesWithPlan(t, Plan{Revision: 1, State: PlanDraft})), &issues); err != nil {
+		t.Fatal(err)
+	}
+	issues[0]["metadata"].(map[string]any)[planMetadataKey] = metadata
+	encoded, err := json.Marshal(issues)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(encoded)
+}
+
+func TestListWorkEpicsQuarantinesIncompatiblePlanMetadata(t *testing.T) {
+	for _, tt := range []struct{ name, metadata string }{
+		{name: "malformed", metadata: "{"},
+		{name: "invalid", metadata: `{}`},
+		{name: "future schema", metadata: `{"schemaVersion":2,"revision":1}`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeRunner{runs: []fakeRun{{out: versionEnvelope}, {out: listEnvelope(issuesWithPlanMetadata(t, tt.metadata))}}}
+			svc := newWithRunner(t.TempDir(), runner, &fakeFactoryStore{})
+
+			epics, err := svc.ListWorkEpics(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(epics) != 1 || epics[0].PlanError == "" {
+				t.Fatalf("epics = %#v", epics)
+			}
+		})
+	}
 }
 
 func TestPlanningLaunchFailureDoesNotCreateSessionMapping(t *testing.T) {
@@ -239,6 +375,21 @@ func TestPlanningLaunchFailureDoesNotCreateSessionMapping(t *testing.T) {
 	_, err := svc.ensurePlanningSession(context.Background(), WorkEpic{ID: "fac-1", Goal: "Ship"}, PlanningWork{ID: "work-1", Repository: "/repo"})
 	if err == nil || len(store.sessions) != 0 {
 		t.Fatalf("ensurePlanningSession error = %v, sessions = %#v", err, store.sessions)
+	}
+}
+
+func TestPlanningRecoveryReplacesDeadPersistedSession(t *testing.T) {
+	store := &fakeFactoryStore{sessions: map[string]PlanningSession{"work-1": {Platform: "agent", ID: "dead-session"}}}
+	launcher := &fakePlanningLauncher{dead: map[string]bool{"dead-session": true}, result: PlanningSession{Platform: "agent", ID: "replacement"}}
+	svc := newWithRunner(t.TempDir(), &fakeRunner{}, store)
+	svc.planning = launcher
+
+	got, err := svc.ensurePlanningSession(context.Background(), WorkEpic{ID: "fac-1", Goal: "Ship"}, PlanningWork{ID: "work-1", Repository: "/repo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != "replacement" || len(launcher.probes) != 1 || len(launcher.calls) != 1 || store.sessions["work-1"].ID != "replacement" {
+		t.Fatalf("session = %#v, probes = %#v, launches = %#v, mappings = %#v", got, launcher.probes, launcher.calls, store.sessions)
 	}
 }
 
@@ -293,9 +444,10 @@ func TestApprovePlanRequiresSuccessfulPlanningAndExactValidGraph(t *testing.T) {
 			},
 			Dependencies: []PlanDependency{{From: "deliver", To: "build"}, {From: "checks", To: "deliver"}, {From: "merge", To: "checks"}},
 		},
-		Planning: []PlanningWork{{ID: "fac-1.1", TargetID: "app", Repository: repository, Status: "closed", Outcome: "succeeded"}},
+		Planning: []PlanningWork{{ID: "fac-1.1", TargetID: "app", Repository: repository, Status: "closed", Outcome: "succeeded", CompletedRevision: 4}},
 	}
 	valid.Hash = hashPlanGraph(valid.Draft)
+	valid.Planning[0].CompletedHash = valid.Hash
 
 	for _, tt := range []struct {
 		name   string
@@ -338,10 +490,152 @@ func TestApprovePlanRequiresSuccessfulPlanningAndExactValidGraph(t *testing.T) {
 			if approved.State != PlanApproved || approved.Approval == nil || approved.Approval.Hash != valid.Hash || approved.Approval.Graph.Intent != "Ship" {
 				t.Fatalf("approved = %#v", approved)
 			}
-			if len(store.audits) != 1 || store.audits[0].Action != "plan.approved" {
+			if len(store.audits) != 2 || store.audits[0].Action != "plan.approval.requested" || store.audits[1].Action != "plan.approved" {
 				t.Fatalf("audit = %#v", store.audits)
 			}
 		})
+	}
+}
+
+func TestApprovePlanJournalsDecisionBeforeMutatingBeads(t *testing.T) {
+	repository, _ := filepath.EvalSymlinks(t.TempDir())
+	plan := Plan{
+		Revision: 2, State: PlanDraft,
+		Draft: PlanGraph{
+			Intent: "Ship", Targets: []PlanTarget{{ID: "app", HostID: localHostID, Repository: repository, DeliveryBase: DeliveryBase{Remote: "origin", BaseBranch: "main", BaseSHA: "abc"}}},
+			Items:        []PlanItem{{ID: "deliver", Kind: "delivery", Title: "Deliver", TargetID: "app", Profile: "factory-deliver/v1"}, {ID: "checks", Kind: "gate", Title: "Checks", TargetID: "app", GateType: "provider-check"}, {ID: "merge", Kind: "gate", Title: "Merge", TargetID: "app", GateType: "human-merge"}},
+			Dependencies: []PlanDependency{{From: "checks", To: "deliver"}, {From: "merge", To: "checks"}},
+		},
+		Planning: []PlanningWork{{ID: "fac-1.1", TargetID: "app", Repository: repository, Status: "closed", Outcome: "succeeded", CompletedRevision: 2}},
+	}
+	plan.Hash = hashPlanGraph(plan.Draft)
+	plan.Planning[0].CompletedHash = plan.Hash
+	runner := &fakeRunner{runs: []fakeRun{{out: versionEnvelope}, {out: listEnvelope(issuesWithPlan(t, plan))}, {}, {}}}
+	store := &fakeFactoryStore{auditErr: errors.New("audit unavailable")}
+	svc := newWithRunner(t.TempDir(), runner, store)
+	svc.owned = true
+
+	_, err := svc.ApprovePlan(context.Background(), "fac-1", PlanDecisionRequest{ExpectedRevision: 2, ExpectedHash: plan.Hash, Reason: "ready", AcknowledgeLocalExecution: true})
+	if err == nil || len(runner.seen) != 2 {
+		t.Fatalf("ApprovePlan error = %v, Beads commands = %#v", err, runner.seen)
+	}
+}
+
+func TestApprovePlanRetryReconcilesGateAndAudit(t *testing.T) {
+	repository, _ := filepath.EvalSymlinks(t.TempDir())
+	plan := Plan{
+		Revision: 2, State: PlanDraft,
+		Draft: PlanGraph{
+			Intent: "Ship", Targets: []PlanTarget{{ID: "app", HostID: localHostID, Repository: repository, DeliveryBase: DeliveryBase{Remote: "origin", BaseBranch: "main", BaseSHA: "abc"}}},
+			Items:        []PlanItem{{ID: "deliver", Kind: "delivery", Title: "Deliver", TargetID: "app", Profile: "factory-deliver/v1"}, {ID: "checks", Kind: "gate", Title: "Checks", TargetID: "app", GateType: "provider-check"}, {ID: "merge", Kind: "gate", Title: "Merge", TargetID: "app", GateType: "human-merge"}},
+			Dependencies: []PlanDependency{{From: "checks", To: "deliver"}, {From: "merge", To: "checks"}},
+		},
+		Planning: []PlanningWork{{ID: "fac-1.1", TargetID: "app", Repository: repository, Status: "closed", Outcome: "succeeded", CompletedRevision: 2}},
+	}
+	plan.Hash = hashPlanGraph(plan.Draft)
+	plan.Planning[0].CompletedHash = plan.Hash
+	var persisted Plan
+	first := &fakeRunner{runs: []fakeRun{{out: versionEnvelope}, {out: listEnvelope(issuesWithPlan(t, plan))}, {}, {err: errors.New("Gate close failed")}}}
+	first.onRun = func(_ context.Context, args []string) {
+		if len(args) < 4 || args[0] != "update" || !strings.HasPrefix(args[3], "@") {
+			return
+		}
+		encoded, err := os.ReadFile(strings.TrimPrefix(args[3], "@"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var metadata map[string]string
+		if err := json.Unmarshal(encoded, &metadata); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal([]byte(metadata[planMetadataKey]), &persisted); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store := &fakeFactoryStore{}
+	svc := newWithRunner(t.TempDir(), first, store)
+	svc.owned = true
+	req := PlanDecisionRequest{ExpectedRevision: 2, ExpectedHash: plan.Hash, Actor: "dries", Reason: "reviewed", AcknowledgeLocalExecution: true}
+	if _, err := svc.ApprovePlan(context.Background(), "fac-1", req); err == nil {
+		t.Fatal("ApprovePlan succeeded despite Gate close failure")
+	}
+
+	second := &fakeRunner{runs: []fakeRun{{out: versionEnvelope}, {out: listEnvelope(issuesWithPlan(t, persisted))}, {}}}
+	svc.runner = second
+	got, err := svc.ApprovePlan(context.Background(), "fac-1", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != PlanApproved || len(store.audits) != 2 || store.audits[0].Action != "plan.approval.requested" || store.audits[1].Action != "plan.approved" {
+		t.Fatalf("plan = %#v, audits = %#v", got, store.audits)
+	}
+	if !strings.Contains(strings.Join(second.seen[2], " "), "reviewed") {
+		t.Fatalf("Gate close command omitted reason: %#v", second.seen[2])
+	}
+}
+
+func TestApprovePlanRetryAfterFinalAuditFailure(t *testing.T) {
+	approval := &PlanApproval{Revision: 2, Hash: "hash-2", Actor: "dries", Reason: "reviewed"}
+	plan := Plan{SchemaVersion: planSchemaVersion, Revision: 2, Hash: "hash-2", State: PlanApproved, Approval: approval}
+	store := &fakeFactoryStore{auditFailAt: 1}
+	runner := &fakeRunner{runs: []fakeRun{{out: versionEnvelope}, {out: listEnvelope(issuesWithPlan(t, plan))}, {}}}
+	svc := newWithRunner(t.TempDir(), runner, store)
+	svc.owned = true
+	req := PlanDecisionRequest{ExpectedRevision: 2, ExpectedHash: "hash-2"}
+	if _, err := svc.ApprovePlan(context.Background(), "fac-1", req); err == nil {
+		t.Fatal("ApprovePlan succeeded despite final audit failure")
+	}
+	svc.runner = &fakeRunner{runs: []fakeRun{{out: versionEnvelope}, {out: listEnvelope(issuesWithPlan(t, plan))}, {}}}
+	if _, err := svc.ApprovePlan(context.Background(), "fac-1", req); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.audits) != 1 || store.audits[0].Action != "plan.approved" {
+		t.Fatalf("audits = %#v", store.audits)
+	}
+}
+
+func TestApprovePlanIdempotentRetryDoesNotDuplicateAudit(t *testing.T) {
+	// The recovery test above leaves the Plan in the exact persisted approved
+	// shape a client retry observes after a successful response is lost.
+	approval := &PlanApproval{Revision: 2, Hash: "hash-2", Actor: "dries", Reason: "reviewed"}
+	plan := Plan{SchemaVersion: planSchemaVersion, Revision: 2, Hash: "hash-2", State: PlanApproved, Approval: approval}
+	store := &fakeFactoryStore{audits: []FactoryAuditRecord{{EpicID: "fac-1", Actor: "dries", Action: "plan.approved", Details: approval}}}
+	runner := &fakeRunner{runs: []fakeRun{{out: versionEnvelope}, {out: listEnvelope(issuesWithPlan(t, plan))}, {}}}
+	svc := newWithRunner(t.TempDir(), runner, store)
+	svc.owned = true
+
+	if _, err := svc.ApprovePlan(context.Background(), "fac-1", PlanDecisionRequest{ExpectedRevision: 2, ExpectedHash: "hash-2"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.audits) != 1 {
+		t.Fatalf("audits = %#v", store.audits)
+	}
+}
+
+func TestApprovePlanRejectsPlanningSuccessFromAnotherRevision(t *testing.T) {
+	repository, _ := filepath.EvalSymlinks(t.TempDir())
+	plan := Plan{
+		Revision: 4, State: PlanDraft,
+		Draft: PlanGraph{
+			Intent:  "Ship",
+			Targets: []PlanTarget{{ID: "app", HostID: localHostID, Repository: repository, DeliveryBase: DeliveryBase{Remote: "origin", BaseBranch: "main", BaseSHA: "abc123"}}},
+			Items: []PlanItem{
+				{ID: "deliver", Kind: "delivery", Title: "Deliver", TargetID: "app", Profile: "factory-deliver/v1"},
+				{ID: "checks", Kind: "gate", Title: "Checks", TargetID: "app", GateType: "provider-check"},
+				{ID: "merge", Kind: "gate", Title: "Merge", TargetID: "app", GateType: "human-merge"},
+			},
+			Dependencies: []PlanDependency{{From: "checks", To: "deliver"}, {From: "merge", To: "checks"}},
+		},
+		Planning: []PlanningWork{{ID: "fac-1.1", TargetID: "app", Repository: repository, Status: "closed", Outcome: "succeeded", CompletedRevision: 3, CompletedHash: "old-hash"}},
+	}
+	plan.Hash = hashPlanGraph(plan.Draft)
+	runner := &fakeRunner{runs: []fakeRun{{out: versionEnvelope}, {out: listEnvelope(issuesWithPlan(t, plan))}}}
+	svc := newWithRunner(t.TempDir(), runner, &fakeFactoryStore{})
+	svc.owned = true
+
+	_, err := svc.ApprovePlan(context.Background(), "fac-1", PlanDecisionRequest{ExpectedRevision: 4, ExpectedHash: plan.Hash, AcknowledgeLocalExecution: true})
+	if !errors.Is(err, ErrPlanNotApprovable) {
+		t.Fatalf("ApprovePlan error = %v, want ErrPlanNotApprovable", err)
 	}
 }
 
@@ -398,14 +692,51 @@ func TestPlanDecisionsPreserveAuditAndCancellationStopsPlanning(t *testing.T) {
 				t.Fatal(err)
 			}
 			wantAction := map[string]string{"revise": "plan.revised", "reject": "plan.rejected", "cancel": "plan.cancelled"}[action]
-			if len(store.audits) != 1 || store.audits[0].Action != wantAction {
+			if len(store.audits) != 2 || store.audits[1].Action != wantAction {
 				t.Fatalf("audit = %#v", store.audits)
+			}
+			decision, ok := store.audits[1].Details.(*PlanDecision)
+			if !ok || decision.Reason != "change requested" {
+				t.Fatalf("decision audit = %#v", store.audits[1])
+			}
+			if !strings.Contains(fmt.Sprint(runner.seen[2:]), "change requested") {
+				t.Fatalf("decision transition omitted reason: %#v", runner.seen)
 			}
 			if action == "revise" && (got.State != PlanDraft || got.Revision != 3 || got.Approval != nil) {
 				t.Fatalf("revised plan = %#v", got)
 			}
 			if action == "cancel" && (got.State != PlanCancelled || len(launcher.stops) != 1) {
 				t.Fatalf("cancelled plan = %#v, stops=%#v", got, launcher.stops)
+			}
+		})
+	}
+}
+
+func TestPlanDecisionJournalsBeforeBeadsMutation(t *testing.T) {
+	for _, action := range []string{"revise", "reject", "cancel"} {
+		t.Run(action, func(t *testing.T) {
+			state := PlanDraft
+			if action == "revise" {
+				state = PlanApproved
+			}
+			plan := Plan{Revision: 2, State: state, Draft: PlanGraph{Intent: "Ship"}}
+			plan.Hash = hashPlanGraph(plan.Draft)
+			runner := &fakeRunner{runs: []fakeRun{{out: versionEnvelope}, {out: listEnvelope(issuesWithPlan(t, plan))}, {}, {}, {}}}
+			store := &fakeFactoryStore{auditErr: errors.New("audit unavailable")}
+			svc := newWithRunner(t.TempDir(), runner, store)
+			svc.owned = true
+			req := PlanDecisionRequest{ExpectedRevision: 2, ExpectedHash: plan.Hash, Reason: "not ready"}
+			var err error
+			switch action {
+			case "revise":
+				_, err = svc.RevisePlan(context.Background(), "fac-1", req)
+			case "reject":
+				_, err = svc.RejectPlan(context.Background(), "fac-1", req)
+			case "cancel":
+				_, err = svc.CancelPlan(context.Background(), "fac-1", req)
+			}
+			if err == nil || len(runner.seen) != 2 {
+				t.Fatalf("%s error = %v, Beads commands = %#v", action, err, runner.seen)
 			}
 		})
 	}

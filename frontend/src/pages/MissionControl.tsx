@@ -1,6 +1,6 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { Button } from '../components/Control';
-import { useAddFactoryPlanningWork, useCreateWorkEpic, useDecideFactoryPlan, useFactoryStatus, useMutateFactoryPlan, useWorkEpics } from '../lib/queries';
+import { useAddFactoryPlanningWork, useCompleteFactoryPlanningWork, useCreateWorkEpic, useDecideFactoryPlan, useFactoryStatus, useMutateFactoryPlan, useWorkEpics } from '../lib/queries';
 import type { FactoryPlan, FactoryPlanGraph } from '../lib/api';
 import './MissionControl.css';
 
@@ -105,7 +105,7 @@ function WorkEpics() {
                   <div><dt>Planning Work status</dt><dd>{epic.planning.workStatus}</dd></div>
                   <div><dt>Plan approval Gate status</dt><dd>{epic.planning.approvalStatus}</dd></div>
                 </dl>
-				{epic.plan && <PlanPanel key={`${epic.id}-${epic.plan.revision}`} epicID={epic.id} plan={epic.plan} />}
+				{epic.planError ? <div role="alert">{epic.planError}</div> : epic.plan && <PlanPanel key={`${epic.id}-${epic.plan.revision}`} epicID={epic.id} plan={epic.plan} />}
               </article>
             </li>
           ))}
@@ -118,11 +118,12 @@ function WorkEpics() {
 function PlanPanel({ epicID, plan }: { epicID: string; plan: FactoryPlan }) {
 	const mutate = useMutateFactoryPlan(epicID);
 	const addPlanning = useAddFactoryPlanningWork(epicID);
+	const completePlanning = useCompleteFactoryPlanningWork(epicID);
 	const decide = useDecideFactoryPlan(epicID);
 	const [graphText, setGraphText] = useState(() => JSON.stringify(plan.graph, null, 2));
 	const [graphError, setGraphError] = useState('');
 	const [approvalAcknowledged, setApprovalAcknowledged] = useState(false);
-	const busy = mutate.isPending || addPlanning.isPending || decide.isPending;
+	const busy = mutate.isPending || addPlanning.isPending || completePlanning.isPending || decide.isPending;
 
 	async function saveGraph() {
 		try {
@@ -156,7 +157,11 @@ function PlanPanel({ epicID, plan }: { epicID: string; plan: FactoryPlan }) {
 		<section className="factory-plan" aria-label={`Plan for ${epicID}`}>
 			<p><strong>Plan {plan.state}</strong> · revision {plan.revision} · <code>{plan.hash.slice(0, 12)}</code></p>
 			<ul aria-label="Planning Sessions">
-				{plan.planning.map((work) => <li key={work.id}>{work.repository}: {work.status}{work.session.id ? ` · session ${work.session.id}` : ''}</li>)}
+				{plan.planning.map((work) => <li key={work.id}>
+					{work.repository}: {work.status}{' '}
+					{work.session.id && <a href={`/session/${encodeURIComponent(work.session.id)}?platform=${encodeURIComponent(work.session.platform)}`}>Open Planning Session</a>}{' '}
+					{plan.state === 'draft' && (work.status !== 'closed' || work.completedRevision !== plan.revision || work.completedHash !== plan.hash) && <Button type="button" disabled={busy} onClick={() => void completePlanning.mutateAsync({ workID: work.id, expectedRevision: plan.revision, expectedHash: plan.hash })}>Mark Planning Work complete</Button>}
+				</li>)}
 			</ul>
 			{plan.validation.length > 0 && <ul className="factory-plan-validation" aria-label="Plan validation">{plan.validation.map((problem) => <li key={problem}>{problem}</li>)}</ul>}
 			{plan.state === 'draft' && (
@@ -181,7 +186,7 @@ function PlanPanel({ epicID, plan }: { epicID: string; plan: FactoryPlan }) {
 				{plan.state === 'draft' && <Button type="button" disabled={busy} onClick={() => decision('reject')}>Reject Plan</Button>}
 				{plan.state !== 'cancelled' && <Button type="button" disabled={busy} onClick={() => decision('cancel')}>Cancel Plan</Button>}
 			</div>
-			{(graphError || mutate.isError || addPlanning.isError || decide.isError) && <div role="alert">{graphError || 'Plan mutation failed; refresh to reconcile the current revision.'}</div>}
+			{(graphError || mutate.isError || addPlanning.isError || completePlanning.isError || decide.isError) && <div role="alert">{graphError || 'Plan mutation failed; refresh to reconcile the current revision.'}</div>}
 		</section>
 	);
 }

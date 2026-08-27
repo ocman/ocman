@@ -102,6 +102,14 @@ export function useDecideFactoryPlan(id: string) {
 	});
 }
 
+export function useCompleteFactoryPlanningWork(id: string) {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: ({ workID, expectedRevision, expectedHash }: { workID: string; expectedRevision: number; expectedHash: string }) => api.completeFactoryPlanningWork(id, workID, expectedRevision, expectedHash),
+		onSuccess: (plan) => setEpicPlan(queryClient, id, plan),
+	});
+}
+
 // ---------------------------------------------------------------------------
 // Sessions list
 // ---------------------------------------------------------------------------

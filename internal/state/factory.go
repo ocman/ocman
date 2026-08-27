@@ -78,6 +78,18 @@ func (d *DB) PutFactoryPlanningSession(ctx context.Context, epicID, workID strin
 	return nil
 }
 
+// DeleteFactoryPlanningSession clears a dead Planning Session binding.
+func (d *DB) DeleteFactoryPlanningSession(ctx context.Context, workID string) error {
+	_, err := d.db.ExecContext(ctx, `
+		DELETE FROM factory_external_mapping
+		WHERE system = 'session' AND external_kind = 'planning' AND entity_kind = 'planning_work' AND entity_id = ?
+	`, workID)
+	if err != nil {
+		return fmt.Errorf("deleting Factory Planning Session: %w", err)
+	}
+	return nil
+}
+
 // AppendFactoryAudit records an immutable Factory decision or graph transition.
 func (d *DB) AppendFactoryAudit(ctx context.Context, record factory.FactoryAuditRecord) error {
 	details, err := json.Marshal(record.Details)
@@ -90,6 +102,26 @@ func (d *DB) AppendFactoryAudit(ctx context.Context, record factory.FactoryAudit
 	`, record.EpicID, record.WorkID, record.Actor, record.Action, string(details), record.At.UnixMilli())
 	if err != nil {
 		return fmt.Errorf("appending Factory audit: %w", err)
+	}
+	return nil
+}
+
+// AppendFactoryAuditOnce records a transition once across retries and recovery.
+func (d *DB) AppendFactoryAuditOnce(ctx context.Context, record factory.FactoryAuditRecord) error {
+	details, err := json.Marshal(record.Details)
+	if err != nil {
+		return fmt.Errorf("encoding Factory audit: %w", err)
+	}
+	_, err = d.db.ExecContext(ctx, `
+		INSERT INTO factory_audit_record (epic_id, work_item_id, actor, action, details_json, created_at)
+		SELECT ?, ?, ?, ?, ?, ?
+		WHERE NOT EXISTS (
+			SELECT 1 FROM factory_audit_record
+			WHERE epic_id = ? AND work_item_id = ? AND actor = ? AND action = ? AND details_json = ?
+		)
+	`, record.EpicID, record.WorkID, record.Actor, record.Action, string(details), record.At.UnixMilli(), record.EpicID, record.WorkID, record.Actor, record.Action, string(details))
+	if err != nil {
+		return fmt.Errorf("appending Factory audit once: %w", err)
 	}
 	return nil
 }

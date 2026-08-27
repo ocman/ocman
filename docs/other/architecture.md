@@ -114,11 +114,17 @@ flowchart TD
   dispatch ownership. The owner initializes the dedicated store idempotently
   on first start. The owner can atomically instantiate the immutable default
   Formula into a Work Epic, Planning Work and Plan approval Gate. It owns the
-  revision-checked draft and exact-revision approval lifecycle. A narrow
+  revision-checked draft and exact-revision approval lifecycle. Planning
+  success is bound to that same revision and hash, so a graph edit cannot
+  reuse stale completion evidence. Decision intents are durably journaled
+  before Beads changes and startup recovery reconciles interrupted Gate,
+  audit and Planning Session transitions; failed recovery leaves the owner
+  degraded and read-only. A narrow
   Planning Session launcher resolves the hub-local host and session seams,
   ensures the repository runtime, and installs the read-only
-  `factory-plan/v1` rules before exposing the session; local execution
-  acknowledgements and session mappings are stored separately in `state.db`. Other
+  `factory-plan/v1` rules before exposing the session, aborts failed setup,
+  and probes persisted mappings before reuse; local execution acknowledgements
+  and session mappings are stored separately in `state.db`. Other
   instances expose the same authenticated reads without mutation authority;
   Workflows state and services are not involved.
 - **Factory persistence.** Beads owns the Work Epic graph, child Work Items,

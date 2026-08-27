@@ -337,7 +337,35 @@ func TestFactoryPlanStaleMutationReturnsCurrentGraph(t *testing.T) {
 	req.RemoteAddr = "127.0.0.1:1234"
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"revision":5`) || !strings.Contains(rec.Body.String(), `"stale":true`) {
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"revision":5`) || !strings.Contains(rec.Body.String(), `"current"`) {
 		t.Fatalf("stale mutation = %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestFactoryPlanCASConflictsReturnCurrentPlan(t *testing.T) {
+	current := factory.Plan{Revision: 5, Hash: "current", State: factory.PlanDraft, Draft: factory.PlanGraph{Intent: "current graph"}}
+	svc := &fakeFactoryService{createErr: &factory.PlanConflictError{Current: current}}
+	srv := New(nil, nil, "", nil, nil)
+	srv.factory = svc
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct{ path, body string }{
+		{path: "/api/factory/epics/fac-1/plan/mutate", body: `{"expectedRevision":4,"graph":{"intent":"stale"}}`},
+		{path: "/api/factory/epics/fac-1/planning", body: `{"expectedRevision":4,"target":{"id":"api"}}`},
+		{path: "/api/factory/epics/fac-1/planning/fac-1.1/complete", body: `{"expectedRevision":4,"expectedHash":"stale"}`},
+		{path: "/api/factory/epics/fac-1/plan/approve", body: `{"expectedRevision":4,"expectedHash":"stale"}`},
+		{path: "/api/factory/epics/fac-1/plan/revise", body: `{"expectedRevision":4,"expectedHash":"stale"}`},
+		{path: "/api/factory/epics/fac-1/plan/reject", body: `{"expectedRevision":4,"expectedHash":"stale"}`},
+		{path: "/api/factory/epics/fac-1/plan/cancel", body: `{"expectedRevision":4,"expectedHash":"stale"}`},
+	} {
+		req := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(tt.body))
+		req.RemoteAddr = "127.0.0.1:1234"
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"revision":5`) || !strings.Contains(rec.Body.String(), `"intent":"current graph"`) {
+			t.Fatalf("POST %s = %d: %s", tt.path, rec.Code, rec.Body.String())
+		}
 	}
 }

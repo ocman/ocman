@@ -4,7 +4,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { api, type WorkEpic } from './api';
-import { useAddFactoryPlanningWork, useCreateWorkEpic, useDecideFactoryPlan, useMutateFactoryPlan, useWorkEpic, useWorkEpics } from './queries';
+import { useAddFactoryPlanningWork, useCompleteFactoryPlanningWork, useCreateWorkEpic, useDecideFactoryPlan, useMutateFactoryPlan, useWorkEpic, useWorkEpics } from './queries';
 
 vi.mock('./api', () => ({ api: {
   createFactoryEpic: vi.fn(),
@@ -13,6 +13,7 @@ vi.mock('./api', () => ({ api: {
   mutateFactoryPlan: vi.fn(),
   addFactoryPlanningWork: vi.fn(),
   decideFactoryPlan: vi.fn(),
+  completeFactoryPlanningWork: vi.fn(),
 } }));
 
 function setup() {
@@ -77,12 +78,14 @@ it('reconciles plan mutation results into list and detail caches', async () => {
   vi.mocked(api.mutateFactoryPlan).mockResolvedValue({ stale: true, plan });
   vi.mocked(api.addFactoryPlanningWork).mockResolvedValue({ stale: false, plan: { ...plan, revision: 3 } });
   vi.mocked(api.decideFactoryPlan).mockResolvedValue({ ...plan, state: 'approved' });
+  vi.mocked(api.completeFactoryPlanningWork).mockResolvedValue({ ...plan, validation: ['complete'] });
   const { client, wrapper } = setup();
   client.setQueryData<WorkEpic[]>(['factory-epics'], [epic]);
   client.setQueryData<WorkEpic>(['factory-epics', 'epic-1'], epic);
   const mutate = renderHook(() => useMutateFactoryPlan('epic-1'), { wrapper });
   const add = renderHook(() => useAddFactoryPlanningWork('epic-1'), { wrapper });
   const decide = renderHook(() => useDecideFactoryPlan('epic-1'), { wrapper });
+  const complete = renderHook(() => useCompleteFactoryPlanningWork('epic-1'), { wrapper });
 
   await act(() => mutate.result.current.mutateAsync({ expectedRevision: 1, graph }));
   expect(client.getQueryData<WorkEpic>(['factory-epics', 'epic-1'])?.plan.revision).toBe(2);
@@ -90,4 +93,6 @@ it('reconciles plan mutation results into list and detail caches', async () => {
   expect(client.getQueryData<WorkEpic[]>(['factory-epics'])?.[0].plan.revision).toBe(3);
   await act(() => decide.result.current.mutateAsync({ action: 'approve', request: { expectedRevision: 3, expectedHash: 'hash-2', actor: 'operator' } }));
   expect(client.getQueryData<WorkEpic>(['factory-epics', 'epic-1'])?.plan.state).toBe('approved');
+  await act(() => complete.result.current.mutateAsync({ workID: 'work-1', expectedRevision: 3, expectedHash: 'hash-2' }));
+  expect(client.getQueryData<WorkEpic>(['factory-epics', 'epic-1'])?.plan.validation).toEqual(['complete']);
 });

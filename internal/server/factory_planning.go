@@ -35,10 +35,6 @@ func (l factoryPlanningLauncher) LaunchPlanningSession(ctx context.Context, req 
 	if ensured == nil {
 		return factory.PlanningSession{}, errors.New("ensure planning runtime returned no instance")
 	}
-	created, err := l.server.sessions.Create(ctx, platformID, platforms.CreateSessionRequest{Directory: req.Repository, Title: req.Title, Port: ensured.Port()})
-	if err != nil {
-		return factory.PlanningSession{}, err
-	}
 	rules := []platforms.PermissionRule{
 		{Permission: "read", Pattern: "*", Action: "allow"},
 		{Permission: "glob", Pattern: "*", Action: "allow"},
@@ -50,12 +46,21 @@ func (l factoryPlanningLauncher) LaunchPlanningSession(ctx context.Context, req 
 		{Permission: "task", Pattern: "*", Action: "deny"},
 		{Permission: "webfetch", Pattern: "*", Action: "deny"},
 	}
-	if err := l.server.sessions.SetPermissionRules(ctx, platformID, platforms.SetPermissionRulesRequest{SessionID: created.ID, Rules: rules}); err != nil {
-		return factory.PlanningSession{}, fmt.Errorf("apply planning permissions: %w", err)
+	created, err := l.server.sessions.CreateConfigured(ctx, platformID, platforms.CreateSessionRequest{Directory: req.Repository, Title: req.Title, Port: ensured.Port()}, rules)
+	if err != nil {
+		return factory.PlanningSession{}, fmt.Errorf("create bounded Planning Session: %w", err)
 	}
 	return factory.PlanningSession{Platform: platformID, ID: created.ID}, nil
 }
 
 func (l factoryPlanningLauncher) StopPlanningSession(ctx context.Context, session factory.PlanningSession) error {
 	return l.server.sessions.Abort(ctx, session.Platform, platforms.AbortRequest{SessionID: session.ID})
+}
+
+func (l factoryPlanningLauncher) ProbePlanningSession(ctx context.Context, session factory.PlanningSession) (bool, error) {
+	platform, ok := l.server.registry.Get(platforms.ID(session.Platform))
+	if !ok {
+		return false, fmt.Errorf("planning platform %q is unavailable", session.Platform)
+	}
+	return platform.Owns(ctx, session.ID), nil
 }
