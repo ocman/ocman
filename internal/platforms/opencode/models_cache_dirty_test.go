@@ -577,12 +577,13 @@ func TestGetSessionsCached_FreshDirtyReadRefreshesInBackground(t *testing.T) {
 
 type cancelableSerializedRefreshDB struct {
 	firstEntered chan struct{}
+	release      chan struct{}
 	calls        atomic.Int64
 	active       atomic.Int64
 	maxActive    atomic.Int64
 }
 
-func (d *cancelableSerializedRefreshDB) GetSessions(ctx context.Context, _ string, _ int64) ([]db.Session, error) {
+func (d *cancelableSerializedRefreshDB) GetSessions(_ context.Context, _ string, _ int64) ([]db.Session, error) {
 	call := d.calls.Add(1)
 	active := d.active.Add(1)
 	defer d.active.Add(-1)
@@ -590,8 +591,8 @@ func (d *cancelableSerializedRefreshDB) GetSessions(ctx context.Context, _ strin
 	}
 	if call == 1 {
 		close(d.firstEntered)
-		<-ctx.Done()
-		return nil, ctx.Err()
+		<-d.release
+		return []db.Session{{ID: "warmed", TimeUpdated: 1}}, nil
 	}
 	return []db.Session{{ID: "newer", TimeUpdated: 2}}, nil
 }
@@ -600,11 +601,11 @@ func (*cancelableSerializedRefreshDB) GetSessionSummary(context.Context, string)
 	return db.Session{}, db.ErrSessionNotFound
 }
 
-func TestRefreshSessionsForRequest_SerializesCanceledLeaderAndIncrementalFollower(t *testing.T) {
+func TestRefreshSessionsForRequest_CanceledRequestLeavesIncrementalFollowerRunning(t *testing.T) {
 	resetSessionsCache()
 	t.Cleanup(resetSessionsCache)
 
-	d := &cancelableSerializedRefreshDB{firstEntered: make(chan struct{})}
+	d := &cancelableSerializedRefreshDB{firstEntered: make(chan struct{}), release: make(chan struct{})}
 	joined := make(chan struct{}, 3)
 	afterSessionsFlightJoin = func() { joined <- struct{}{} }
 	t.Cleanup(func() { afterSessionsFlightJoin = nil })
@@ -632,13 +633,17 @@ func TestRefreshSessionsForRequest_SerializesCanceledLeaderAndIncrementalFollowe
 	if err := <-requestDone; !errors.Is(err, context.Canceled) {
 		t.Fatalf("request error = %v, want context.Canceled", err)
 	}
+	close(d.release)
 	if err := <-incrementalDone; err != nil {
 		t.Fatalf("incremental refresh: %v", err)
 	}
 	if got := d.maxActive.Load(); got != 1 {
 		t.Fatalf("concurrent DB refreshes = %d, want 1", got)
 	}
-	if got := currentSnapshot(); !reflect.DeepEqual(got, []db.Session{{ID: "newer", TimeUpdated: 2}}) {
-		t.Fatalf("snapshot = %#v, want newer incremental result", got)
+	if got := d.calls.Load(); got != 1 {
+		t.Fatalf("DB refreshes = %d, want 1", got)
+	}
+	if got := currentSnapshot(); !reflect.DeepEqual(got, []db.Session{{ID: "warmed", TimeUpdated: 1}}) {
+		t.Fatalf("snapshot = %#v, want completed shared refresh", got)
 	}
 }

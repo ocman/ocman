@@ -626,8 +626,9 @@ type dbGetSessions interface {
 }
 
 // getSessionsCached returns directory and since filtered rows from one
-// global d.GetSessions("", 0) snapshot. Background refreshes coalesce,
-// while a blocking request owns its query so cancellation reaches SQLite.
+// global d.GetSessions("", 0) snapshot. Refreshes coalesce and outlive an
+// individual request so a short-lived poll cannot repeatedly cancel the
+// shared cold-cache scan before it completes.
 //
 // Which of the three snapshot states applies decides whether this
 // blocks; see the state table on sessionsSnapshot.
@@ -685,8 +686,8 @@ func refreshSessionsForRequest(ctx context.Context, d dbGetSessions) ([]db.Sessi
 	if afterTopLevelMiss != nil {
 		afterTopLevelMiss()
 	}
-	return doSessionsFlight(ctx, true, func() ([]db.Session, error) {
-		return runFullSessionsRefresh(ctx, d)
+	return doSessionsFlight(ctx, func() ([]db.Session, error) {
+		return runFullSessionsRefresh(context.WithoutCancel(ctx), d)
 	})
 }
 
@@ -712,7 +713,7 @@ func refreshSessionNow(ctx context.Context, d dbGetSessions, sessionID string) e
 	MarkSessionDirty(sessionID)
 	for {
 		attempted := make(chan struct{})
-		_, err := doSessionsFlight(ctx, false, func() ([]db.Session, error) {
+		_, err := doSessionsFlight(ctx, func() ([]db.Session, error) {
 			close(attempted)
 			sessionsMu.Lock()
 			if !sessionsHave {
@@ -764,7 +765,7 @@ func refreshSessions(ctx context.Context, d dbGetSessions) ([]db.Session, error)
 	if afterTopLevelMiss != nil {
 		afterTopLevelMiss()
 	}
-	return doSessionsFlight(ctx, false, func() ([]db.Session, error) {
+	return doSessionsFlight(ctx, func() ([]db.Session, error) {
 		// Re-check inside the flight slot: a concurrent caller may
 		// have just refreshed it.
 		sessionsMu.RLock()
@@ -792,7 +793,7 @@ func refreshSessionsIncremental(ctx context.Context, d dbGetSessions) ([]db.Sess
 	if afterTopLevelMiss != nil {
 		afterTopLevelMiss()
 	}
-	return doSessionsFlight(ctx, false, func() ([]db.Session, error) {
+	return doSessionsFlight(ctx, func() ([]db.Session, error) {
 		ctx := context.WithoutCancel(ctx)
 		sessionsMu.Lock()
 		ids, fullDirty := takeDirty()
@@ -860,11 +861,9 @@ func refreshSessionsIncremental(ctx context.Context, d dbGetSessions) ([]db.Sess
 	})
 }
 
-func doSessionsFlight(ctx context.Context, waitForCanceledLeader bool, refresh func() ([]db.Session, error)) ([]db.Session, error) {
+func doSessionsFlight(ctx context.Context, refresh func() ([]db.Session, error)) ([]db.Session, error) {
 	for {
-		leader := make(chan struct{})
 		result := sessionsFlight.DoChan(sessionsFlightKey, func() (interface{}, error) {
-			close(leader)
 			return refresh()
 		})
 		if afterSessionsFlightJoin != nil {
@@ -872,17 +871,10 @@ func doSessionsFlight(ctx context.Context, waitForCanceledLeader bool, refresh f
 		}
 		select {
 		case <-ctx.Done():
-			if waitForCanceledLeader {
-				select {
-				case <-leader:
-					<-result
-				default:
-				}
-			}
 			return nil, ctx.Err()
 		case result := <-result:
 			if errors.Is(result.Err, context.Canceled) && ctx.Err() == nil {
-				// The canceled leader has finished, so forgetting here cannot
+				// The canceled refresh has finished, so forgetting here cannot
 				// overlap it with this live caller's retry.
 				sessionsFlight.Forget(sessionsFlightKey)
 				continue
