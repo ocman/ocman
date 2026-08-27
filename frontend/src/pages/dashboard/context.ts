@@ -26,8 +26,8 @@ export interface DashboardCtx {
   setShowArchived: (v: boolean) => void;
   /**
    * Active project-prefix scope, persisted in the URL as `?dir=`. Empty
-   * string means "all projects". Shared across the Stats / Usage /
-   * Projects tabs so a chosen scope survives tab switches.
+   * string means "all projects". Shared across Analytics and Projects so a
+   * chosen scope survives tab switches.
    * See spec/stats-project-filter/architecture.md (AD-3, AD-5).
    */
   dirScope: string;

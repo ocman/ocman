@@ -11,6 +11,7 @@ import { DashboardContext, type DashboardCtx } from './dashboard/context';
 // Re-export tab components so App.tsx can import from a single place.
 export { StatsTab } from './dashboard/StatsTab';
 export { UsageTab } from './dashboard/UsageTab';
+export { AnalyticsTab, LegacyAnalyticsRedirect } from './dashboard/AnalyticsTab';
 export { SessionsTab } from './dashboard/SessionsTab';
 export { ProjectsTab } from './dashboard/ProjectsTab';
 export { SettingsTab } from './dashboard/SettingsTab';
@@ -29,7 +30,7 @@ const EMPTY_PROJECTS: Project[] = [];
 export function DashboardLayout() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const isOnDashboard = location.pathname === '/sessions' || location.pathname === '/projects' || location.pathname === '/stats' || location.pathname === '/usage' || location.pathname === '/workflows' || location.pathname === '/settings';
+  const isOnDashboard = location.pathname === '/sessions' || location.pathname === '/projects' || location.pathname.startsWith('/analytics') || location.pathname === '/workflows' || location.pathname === '/settings';
 
   const dashboardTimeRangeDefault = useUiStore((s) => s.dashboardTimeRangeDefault);
   const tParam = searchParams.get('t');
@@ -50,7 +51,7 @@ export function DashboardLayout() {
   }, [setSearchParams]);
 
   // setDirScope writes the chosen scope to the URL so it survives refresh
-  // and is preserved when the user switches between the Stats/Usage/Projects
+  // and is preserved when the user switches between Analytics and Projects
   // tabs. Empty value clears the param entirely so the URL stays clean
   // ('?t=24' rather than '?t=24&dir=').
   const setDirScope = useCallback((v: string) => {

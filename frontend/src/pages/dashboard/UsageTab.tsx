@@ -9,7 +9,6 @@ import {
   BAR_OPTIONS_TOKENS_BY_MODEL,
   CHART_COLORS,
 } from '../../lib/chartConfig';
-import { usePageTitle } from '../../lib/headerContext';
 import { ProjectScopePicker } from '../../components/ProjectScopePicker';
 import { SearchSelect } from '../../components/SearchSelect';
 import { useActivity, useModels, useHourly, useHourlyTokens } from '../../lib/queries';
@@ -25,7 +24,6 @@ const USAGE_RANGE_OPTIONS = [
 ];
 
 export function UsageTab() {
-  usePageTitle('Usage');
   const { projects, dirScope, setDirScope } = useDashboard();
   const [selectedModel, setSelectedModel] = useState('');
   const [usageDays, setUsageDays] = useState(30);

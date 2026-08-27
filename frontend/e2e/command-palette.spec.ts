@@ -7,12 +7,12 @@
  *  - Alt+Space keyboard shortcut opens the palette
  *  - ESC closes the palette
  *  - Clicking the backdrop closes the palette
- *  - Default state shows nav items (Sessions, Projects, Stats, Usage)
+ *  - Default state shows nav items (Sessions, Projects, Analytics)
  *  - Typing ">" prefix shows command items only
  *  - Typing a session title filters to matching sessions
  *  - Keyboard ArrowDown/Up moves selection
  *  - Enter on a nav item navigates to that route
- *  - Typing "stat" shows a Stats nav match
+ *  - Typing "stat" keeps the old Stats command alias
  *
  * Note on Alt+Space: react-hotkeys-hook requires a focused element in the
  * document to fire. The test ensures the body is focused before pressing
@@ -108,16 +108,10 @@ test('default palette shows Projects nav item', async ({ mockedPage: page }) => 
   await expect(page.locator('.oc-cmd-item', { hasText: 'Projects' })).toBeVisible();
 });
 
-test('default palette shows Stats nav item', async ({ mockedPage: page }) => {
+test('default palette shows Analytics nav item', async ({ mockedPage: page }) => {
   await page.goto('/sessions');
   await openPaletteStore(page);
-  await expect(page.locator('.oc-cmd-item', { hasText: 'Stats' })).toBeVisible();
-});
-
-test('default palette shows Usage nav item', async ({ mockedPage: page }) => {
-  await page.goto('/sessions');
-  await openPaletteStore(page);
-  await expect(page.locator('.oc-cmd-item', { hasText: 'Usage' })).toBeVisible();
+  await expect(page.getByRole('option', { name: /analytics Go to Analytics$/i })).toBeVisible();
 });
 
 test('default palette shows wt command when worktree sessions are available', async ({ mockedPage: page }) => {
@@ -130,12 +124,11 @@ test('default palette shows wt command when worktree sessions are available', as
 // Filtering
 // ---------------------------------------------------------------------------
 
-test('typing "stat" filters results to Stats-related items', async ({ mockedPage: page }) => {
+test('typing "stat" filters results to the Stats command alias', async ({ mockedPage: page }) => {
   await page.goto('/sessions');
   await openPaletteStore(page);
   await page.fill('.oc-cmd-input', 'stat');
-  // Results should include "Stats"
-  await expect(page.locator('.oc-cmd-item', { hasText: 'Stats' })).toBeVisible();
+  await expect(page.getByRole('option', { name: /stats/i })).toBeVisible();
 });
 
 test('selecting wt opens the worktree form modal', async ({ mockedPage: page }) => {
@@ -209,16 +202,13 @@ test('ArrowUp stays at first item when already at top', async ({ mockedPage: pag
 // Activation via Enter
 // ---------------------------------------------------------------------------
 
-test('pressing Enter on a nav item navigates to that route', async ({ mockedPage: page }) => {
+test('pressing Enter on a legacy command navigates to its Analytics section', async ({ mockedPage: page }) => {
   await page.goto('/sessions');
   await openPaletteStore(page);
-  // Type "usage" to filter to the Usage nav item
   await page.fill('.oc-cmd-input', 'usage');
-  await expect(page.locator('.oc-cmd-item', { hasText: 'Usage' })).toBeVisible();
-  // Press Enter to activate
+  await expect(page.getByRole('option', { name: /usage/i })).toBeVisible();
   await page.keyboard.press('Enter');
-  // Should navigate to /usage
-  await expect(page).toHaveURL('/usage');
+  await expect(page).toHaveURL('/analytics/overview');
   // Palette should be closed
   await expect(page.locator('.oc-cmd-backdrop')).toHaveCount(0);
 });

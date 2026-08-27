@@ -57,15 +57,15 @@ const CLOSED_PROJECT_BROWSER: ProjectBrowserState = {
 const NAV_ITEMS: NavItem[] = [
   { kind: 'nav', id: 'nav.sessions', label: 'Sessions', path: '/' },
   { kind: 'nav', id: 'nav.projects', label: 'Projects', path: '/projects' },
-  { kind: 'nav', id: 'nav.stats', label: 'Stats', path: '/stats' },
-  { kind: 'nav', id: 'nav.usage', label: 'Usage', path: '/usage' },
+  { kind: 'nav', id: 'nav.analytics', label: 'Analytics', path: '/analytics/overview' },
 ];
 
 const STATIC_COMMANDS: CommandItem[] = [
   { kind: 'command', id: 'cmd.sessions', label: 'sessions', description: 'Go to Sessions tab' },
   { kind: 'command', id: 'cmd.projects', label: 'projects', description: 'Go to Projects tab' },
-  { kind: 'command', id: 'cmd.stats', label: 'stats', description: 'Go to Stats tab' },
-  { kind: 'command', id: 'cmd.usage', label: 'usage', description: 'Go to Usage tab' },
+  { kind: 'command', id: 'cmd.analytics', label: 'analytics', description: 'Go to Analytics' },
+  { kind: 'command', id: 'cmd.stats', label: 'stats', description: 'Go to Analytics performance' },
+  { kind: 'command', id: 'cmd.usage', label: 'usage', description: 'Go to Analytics overview' },
   { kind: 'command', id: 'cmd.shortcuts', label: 'shortcuts', description: 'Open keyboard shortcuts' },
 ];
 
@@ -591,10 +591,12 @@ export function CommandPalette() {
         navigate('/sessions');
       } else if (item.id === 'cmd.projects') {
         navigate('/projects');
+      } else if (item.id === 'cmd.analytics') {
+        navigate('/analytics/overview');
       } else if (item.id === 'cmd.stats') {
-        navigate('/stats');
+        navigate('/analytics/performance');
       } else if (item.id === 'cmd.usage') {
-        navigate('/usage');
+        navigate('/analytics/overview');
       }
     }
   }

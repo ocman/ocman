@@ -3,13 +3,12 @@ const TITLES: Record<string, string> = {
   '/sessions': 'Sessions',
   '/projects': 'Projects',
   '/workflows': 'Workflows',
-  '/stats': 'Stats',
-  '/usage': 'Usage',
   '/settings': 'Settings',
   '/import-share': 'Fork shared conversation',
 };
 
 export function routeTitle(path: string, sessionTitle?: string): string {
+  if (path === '/analytics' || path.startsWith('/analytics/')) return 'Analytics';
   if (path.startsWith('/session/')) {
     const id = decodeURIComponent(path.slice('/session/'.length).split('/')[0]);
     return sessionTitle || (id === 'new' ? 'New session' : 'Session');

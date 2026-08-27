@@ -106,6 +106,7 @@
   scrollbar-width: none;
 }
 .nav-tabs::-webkit-scrollbar { display: none; }
+.analytics-tabs { margin-inline: 12px; }
 .nav-tab {
   position: relative;
   padding: 10px 20px;
