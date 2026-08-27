@@ -158,6 +158,7 @@ function Header({ onOpenNav }: { onOpenNav: () => void }) {
   return (
     <header>
       <h1>
+        <span id="header-navigation-slot" className="header-navigation-slot" />
         <button
           type="button"
           className="mobile-nav-toggle"
@@ -166,7 +167,8 @@ function Header({ onOpenNav }: { onOpenNav: () => void }) {
         >
           <img src="/favicon.svg" alt="" width={20} height={20} />
         </button>
-        <span>{breadcrumb}</span>
+        <span id="header-mobile-title-slot" className="header-mobile-title-slot" />
+        <span className="header-breadcrumb">{breadcrumb}</span>
       </h1>
       <div className="header-right">
         {routeSessionId && sessionInfo.sessionProject && (

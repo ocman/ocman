@@ -508,9 +508,9 @@ button.session-sidebar-group-header.collapsed::before {
   white-space: nowrap;
 }
 
-/* Phone-only header toggles for the sessions drawer / details
-   overlay. Portalled into #header-actions-slot by SessionDetail;
-   inert (hidden) on wider viewports. */
+/* Phone-only controls for the sessions drawer / details overlay. */
+.mobile-sessions-back,
+.mobile-sessions-done,
 .mobile-panel-toggle {
   display: none;
   align-items: center;
@@ -523,6 +523,21 @@ button.session-sidebar-group-header.collapsed::before {
   cursor: pointer;
   font-size: 14px;
 }
+.mobile-sessions-back,
+.mobile-sessions-done {
+  border: 0;
+  color: var(--accent);
+  font: inherit;
+}
+.mobile-sessions-back {
+  gap: 2px;
+  padding: 0 8px 0 0;
+}
+.mobile-sessions-back i { font-size: 12px; }
+.mobile-sessions-done {
+  width: auto;
+  padding: 0 6px;
+}
 .mobile-panel-toggle[aria-expanded='true'] {
   color: var(--text);
   background: color-mix(in srgb, var(--accent) 14%, transparent);
@@ -534,7 +549,13 @@ button.session-sidebar-group-header.collapsed::before {
    buttons (Escape closes; selecting a session closes the drawer).
    Tablet and desktop keep the three-column layout. */
 @media (max-width: 768px) {
-  .mobile-panel-toggle { display: inline-flex; }
+  .mobile-sessions-back,
+  .mobile-sessions-done,
+  .mobile-panel-toggle {
+    display: inline-flex;
+    height: 44px;
+  }
+  .mobile-panel-toggle { width: 44px; }
   .session-layout > .session-sidebar,
   .session-layout > .oc-changes-sidebar { display: none; }
   .session-layout.mobile-sidebar-open > .session-sidebar,

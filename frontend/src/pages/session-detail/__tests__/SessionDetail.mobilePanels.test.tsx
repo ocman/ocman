@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 //
 // Phone overlay panels (#mobile layout): the sessions drawer and the
-// details overlay are toggled from header buttons portalled into
-// #header-actions-slot. The buttons only *display* on <=768px via
+// details overlay are toggled from controls portalled into the header.
+// The controls only *display* on <=768px via
 // CSS, but their behaviour (state, Escape, auto-close on selection,
 // seeding a pane into a collapsed right panel) is viewport-independent
 // and testable in jsdom.
@@ -13,6 +13,8 @@ import { flushPromises, makeSession, makeSessionDetail, renderSessionPage } from
 import { useUiStore } from '../../../lib/uiStore';
 
 let slot: HTMLDivElement;
+let navigationSlot: HTMLSpanElement;
+let titleSlot: HTMLSpanElement;
 
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn() as unknown as typeof Element.prototype.scrollIntoView;
@@ -21,11 +23,19 @@ beforeEach(() => {
   // <Header> in App.tsx; the harness renders SessionDetail alone.
   slot = document.createElement('div');
   slot.id = 'header-actions-slot';
+  navigationSlot = document.createElement('span');
+  navigationSlot.id = 'header-navigation-slot';
+  titleSlot = document.createElement('span');
+  titleSlot.id = 'header-mobile-title-slot';
   document.body.appendChild(slot);
+  document.body.appendChild(navigationSlot);
+  document.body.appendChild(titleSlot);
 });
 
 afterEach(() => {
   slot.remove();
+  navigationSlot.remove();
+  titleSlot.remove();
   vi.restoreAllMocks();
 });
 
@@ -38,10 +48,13 @@ describe('SessionDetail — phone overlay panels', () => {
     const toggle = screen.getByTestId('mobile-sessions-toggle');
     expect(layout.className).not.toContain('mobile-sidebar-open');
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(toggle).toHaveTextContent('Sessions');
 
     fireEvent.click(toggle);
     expect(screen.getByTestId('session-layout').className).toContain('mobile-sidebar-open');
     expect(screen.getByTestId('mobile-sessions-toggle')).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId('mobile-sessions-toggle')).toHaveTextContent('Done');
+    expect(titleSlot).toHaveTextContent('Sessions');
 
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.getByTestId('session-layout').className).not.toContain('mobile-sidebar-open');
@@ -61,11 +74,12 @@ describe('SessionDetail — phone overlay panels', () => {
     renderSessionPage({ sessionId: 'sess_1' });
     await flushPromises();
 
-    fireEvent.click(screen.getByTestId('mobile-sessions-toggle'));
     fireEvent.click(screen.getByTestId('mobile-details-toggle'));
+    fireEvent.click(screen.getByTestId('mobile-sessions-toggle'));
     const layout = screen.getByTestId('session-layout');
-    expect(layout.className).not.toContain('mobile-sidebar-open');
-    expect(layout.className).toContain('mobile-details-open');
+    expect(layout.className).toContain('mobile-sidebar-open');
+    expect(layout.className).not.toContain('mobile-details-open');
+    expect(screen.queryByTestId('mobile-details-toggle')).not.toBeInTheDocument();
   });
 
   it('opening details with a collapsed right panel seeds the info pane', async () => {

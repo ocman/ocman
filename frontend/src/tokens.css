@@ -291,7 +291,10 @@ header { display: flex; align-items: center; justify-content: space-between; pad
 header h1 { display: flex; align-items: center; gap: 0.4em; font-size: 18px; font-weight: 600; color: var(--text-dim); white-space: nowrap; min-width: 0; }
 header h1 > a { color: var(--text); font-weight: 600; }
 header h1 span { color: inherit; font-weight: 400; }
-header h1 > span:last-child { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.header-breadcrumb { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.header-navigation-slot:empty,
+.header-mobile-title-slot:empty { display: none; }
+.header-mobile-title-slot { color: var(--text); }
 
 .main-nav {
   width: 188px;
@@ -586,7 +589,7 @@ header h1 > span:last-child { overflow: hidden; text-overflow: ellipsis; min-wid
 /* Responsive */
 @media (max-width: 768px) {
   .container { padding: 0; }
-  header { align-items: flex-start; padding: 16px 12px; }
+  header { padding: 10px 12px; }
   .mobile-nav-toggle {
     display: inline-flex;
     align-items: center;
@@ -596,6 +599,9 @@ header h1 > span:last-child { overflow: hidden; text-overflow: ellipsis; min-wid
     background: transparent;
     cursor: pointer;
   }
+  .header-navigation-slot:not(:empty) + .mobile-nav-toggle,
+  .header-mobile-title-slot:not(:empty) ~ .header-breadcrumb { display: none; }
+  .header-right:has(.mobile-sessions-done) .header-project { display: none; }
   .main-nav,
   .main-nav.collapsed {
     position: fixed;

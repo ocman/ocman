@@ -1572,8 +1572,9 @@ test.describe('phone viewport', () => {
 
   test('sessions drawer opens, selects a session, and auto-closes', async ({ mockedPage: page }) => {
     await page.goto(SESSION_URL);
-    await page.getByTestId('mobile-sessions-toggle').click();
+    await page.getByRole('button', { name: 'Open session list' }).click();
     await expect(page.getByTestId('session-sidebar')).toBeVisible();
+    await expect(page.getByRole('heading').getByText('Sessions')).toBeVisible();
 
     await page.getByRole('button', { name: /Refactor auth module/ }).click();
     await expect(page).toHaveURL(`/session/${MOCK_SESSION_2.id}`);
@@ -1596,9 +1597,11 @@ test.describe('phone viewport', () => {
   test('toggle button closes its own panel again', async ({ mockedPage: page }) => {
     await page.goto(SESSION_URL);
     const toggle = page.getByTestId('mobile-sessions-toggle');
+    await expect(toggle).toHaveText('Sessions');
     await toggle.click();
     await expect(page.getByTestId('session-sidebar')).toBeVisible();
-    await toggle.click();
+    await expect(page.getByTestId('mobile-sessions-toggle')).toHaveText('Done');
+    await page.getByTestId('mobile-sessions-toggle').click();
     await expect(page.getByTestId('session-sidebar')).toBeHidden();
   });
 });

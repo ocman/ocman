@@ -94,25 +94,19 @@ import { usePendingSend } from './usePendingSend';
 import { useAutoApprove } from '../../lib/useAutoApprove';
 import { ThreadSkeleton } from '../../components/Skeleton';
 
-/**
- * Portal helper: mounts its children into the `#header-actions-slot`
- * div rendered by the top-level `<Header>` (see App.tsx). The slot
- * lives under the project name in the page header; rendering here
- * keeps the action strip (tmux / launch / VS Code / new session)
- * stacked under the project label instead of floating over the
- * conversation thread.
- *
- * Subscribes to the external DOM (the slot element lives outside
- * this component's subtree). `useLayoutEffect` runs after `<Header>`
- * has committed its DOM but before paint, so the buttons appear on
- * the first frame without flicker.
- */
-function HeaderActionsPortal({ children }: { children: React.ReactNode }) {
+/** Mounts session controls into a slot owned by the top-level header. */
+function HeaderPortal({
+  children,
+  slot = 'header-actions-slot',
+}: {
+  children: React.ReactNode;
+  slot?: string;
+}) {
   const [target, setTarget] = useState<HTMLElement | null>(null);
   useLayoutEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing with an external DOM node owned by <Header />; documented as a legitimate use of setState-in-effect.
-    setTarget(document.getElementById('header-actions-slot'));
-  }, []);
+    setTarget(document.getElementById(slot));
+  }, [slot]);
   if (!target) return null;
   return createPortal(children, target);
 }
@@ -1302,28 +1296,50 @@ export function SessionDetail({ id }: SessionDetailProps) {
         className={`session-layout${mobilePanel === 'sidebar' ? ' mobile-sidebar-open' : ''}${mobilePanel === 'details' ? ' mobile-details-open' : ''}`}
         data-testid="session-layout"
       >
-        <HeaderActionsPortal>
-          <button
-            type="button"
-            className="mobile-panel-toggle"
-            data-testid="mobile-sessions-toggle"
-            aria-label={mobilePanel === 'sidebar' ? 'Close session list' : 'Open session list'}
-            aria-expanded={mobilePanel === 'sidebar'}
-            onClick={toggleMobileSidebar}
-          >
-            <i className={`bi ${mobilePanel === 'sidebar' ? 'bi-x-lg' : 'bi-list-ul'}`} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className="mobile-panel-toggle"
-            data-testid="mobile-details-toggle"
-            aria-label={mobilePanel === 'details' ? 'Close session details' : 'Open session details'}
-            aria-expanded={mobilePanel === 'details'}
-            onClick={toggleMobileDetails}
-          >
-            <i className={`bi ${mobilePanel === 'details' ? 'bi-x-lg' : 'bi-layout-sidebar-reverse'}`} aria-hidden="true" />
-          </button>
-        </HeaderActionsPortal>
+        <HeaderPortal slot="header-navigation-slot">
+          {mobilePanel !== 'sidebar' && (
+            <button
+              type="button"
+              className="mobile-sessions-back"
+              data-testid="mobile-sessions-toggle"
+              aria-label="Open session list"
+              aria-expanded="false"
+              onClick={toggleMobileSidebar}
+            >
+              <i className="bi bi-chevron-left" aria-hidden="true" />
+              <span>Sessions</span>
+            </button>
+          )}
+        </HeaderPortal>
+        <HeaderPortal slot="header-mobile-title-slot">
+          {mobilePanel === 'sidebar' && <span>Sessions</span>}
+        </HeaderPortal>
+        <HeaderPortal>
+          {mobilePanel === 'sidebar' && (
+            <button
+              type="button"
+              className="mobile-sessions-done"
+              data-testid="mobile-sessions-toggle"
+              aria-label="Close session list"
+              aria-expanded="true"
+              onClick={toggleMobileSidebar}
+            >
+              Done
+            </button>
+          )}
+          {mobilePanel !== 'sidebar' && (
+            <button
+              type="button"
+              className="mobile-panel-toggle"
+              data-testid="mobile-details-toggle"
+              aria-label={mobilePanel === 'details' ? 'Close session details' : 'Open session details'}
+              aria-expanded={mobilePanel === 'details'}
+              onClick={toggleMobileDetails}
+            >
+              <i className={`bi ${mobilePanel === 'details' ? 'bi-x-lg' : 'bi-layout-sidebar-reverse'}`} aria-hidden="true" />
+            </button>
+          )}
+        </HeaderPortal>
         <SessionSidebar
           activeId={id}
           sidebarWidth={sidebarWidth}
@@ -1351,7 +1367,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
           onArchiveProject={handleArchiveProjectFromSidebar}
         />
         <div className="session-main" data-testid="session-main">
-          {session && <HeaderActionsPortal>
+          {session && mobilePanel !== 'sidebar' && <HeaderPortal>
             <details className="oc-project-menu header-actions-menu">
               <summary
                 className="oc-project-menu-trigger"
@@ -1440,7 +1456,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                 >Open in VS Code</button>
               </div>
             </details>
-          </HeaderActionsPortal>}
+          </HeaderPortal>}
           {session && showShareModal && (
             <ShareLinkModal sessionId={session.id} onClose={() => setShowShareModal(false)} />
           )}
