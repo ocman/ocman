@@ -73,6 +73,12 @@ test('settings sidebar switches the visible group', async ({ mockedPage: page })
   await expect(page.locator('.settings-row-label', { hasText: 'Bell sound' })).toBeHidden();
 });
 
+test('settings sidebar uses a stable sticky offset', async ({ mockedPage: page }) => {
+  await page.goto('/settings');
+  const nav = page.getByRole('navigation', { name: 'Settings groups' });
+  await expect(nav).toHaveCSS('top', '0px');
+});
+
 test('Sessions navigation is active by default', async ({ mockedPage: page }) => {
   await page.goto('/sessions');
   await expect(page.getByRole('link', { name: 'Sessions', current: 'page' })).toBeVisible();

@@ -240,7 +240,7 @@
   flex-shrink: 0;
   width: 180px;
   position: sticky;
-  top: 16px;
+  top: 0;
   align-self: flex-start;
 }
 .settings-nav-item {
