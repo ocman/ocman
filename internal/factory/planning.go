@@ -219,11 +219,6 @@ func (s *Service) MutatePlan(ctx context.Context, epicID string, req MutatePlanR
 	if err != nil {
 		return PlanMutationResult{}, err
 	}
-	if s.planning != nil {
-		if err := s.ensureAllPlanningSessions(ctx, &epic); err != nil {
-			return PlanMutationResult{}, err
-		}
-	}
 	if operation := epic.Plan.LastOperation; operation != nil && operation.Action == "plan.mutated" && operation.FromRevision == req.ExpectedRevision && operation.Graph != nil && hashPlanGraph(*operation.Graph) == hashPlanGraph(req.Graph) {
 		if err := s.auditOnce(ctx, epic.ID, "", operation.Actor, operation.Action, operation); err != nil {
 			return PlanMutationResult{}, err
@@ -238,6 +233,11 @@ func (s *Service) MutatePlan(ctx context.Context, epicID string, req MutatePlanR
 	}
 	if err := validateDraft(req.Graph, epic.Plan.Planning); err != nil {
 		return PlanMutationResult{}, err
+	}
+	if s.planning != nil {
+		if err := s.ensureAllPlanningSessions(ctx, &epic); err != nil {
+			return PlanMutationResult{}, err
+		}
 	}
 	operation := &PlanOperation{Action: "plan.mutated", FromRevision: epic.Plan.Revision, FromHash: epic.Plan.Hash, Actor: "planner", Graph: &req.Graph}
 	if err := s.beginPlanOperation(ctx, &epic, "plan.mutation.requested", operation); err != nil {

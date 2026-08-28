@@ -401,7 +401,7 @@ func TestPrepareWorkCanonicalizesGitRepoAndScopesAcknowledgement(t *testing.T) {
 
 func TestAcknowledgeLocalExecutionUsesCanonicalProjectAndCurrentProfile(t *testing.T) {
 	repo := initTestRepo(t)
-	store := &fakeAckStore{}
+	store := &fakeFactoryStore{}
 	svc := newWithRunner(t.TempDir(), &fakeRunner{}, store)
 	svc.projects = fakeProjectResolver{root: repo}
 	svc.owned = true
@@ -412,6 +412,20 @@ func TestAcknowledgeLocalExecutionUsesCanonicalProjectAndCurrentProfile(t *testi
 	canonical, _ := filepath.EvalSymlinks(repo)
 	if len(store.calls) != 1 || !reflect.DeepEqual(store.calls[0][:5], []any{"local", canonical, "factory-plan", "v1", "operator"}) {
 		t.Fatalf("acknowledgement = %#v", store.calls)
+	}
+}
+
+func TestAcknowledgeLocalExecutionFailsClosedWhileStartupRecoveryIsDegraded(t *testing.T) {
+	repo := initTestRepo(t)
+	store := &fakeFactoryStore{}
+	svc := newWithRunner(t.TempDir(), &fakeRunner{pathErr: errors.New("Beads unavailable")}, store)
+	svc.projects = fakeProjectResolver{root: repo}
+	svc.owned = true
+	svc.recoveryErr = errors.New("startup recovery failed")
+
+	err := svc.AcknowledgeLocalExecution(context.Background(), repo)
+	if !errors.Is(err, ErrFactoryUnavailable) || len(store.calls) != 0 {
+		t.Fatalf("AcknowledgeLocalExecution error = %v, writes = %#v", err, store.calls)
 	}
 }
 

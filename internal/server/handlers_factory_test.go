@@ -387,7 +387,7 @@ func TestFactoryPlanStaleMutationReturnsCurrentGraph(t *testing.T) {
 	req.RemoteAddr = "127.0.0.1:1234"
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"revision":5`) || !strings.Contains(rec.Body.String(), `"current"`) {
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"stale":true`) || !strings.Contains(rec.Body.String(), `"plan":{"schemaVersion"`) || !strings.Contains(rec.Body.String(), `"revision":5`) {
 		t.Fatalf("stale mutation = %d: %s", rec.Code, rec.Body.String())
 	}
 }
@@ -414,7 +414,7 @@ func TestFactoryPlanCASConflictsReturnCurrentPlan(t *testing.T) {
 		req.RemoteAddr = "127.0.0.1:1234"
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
-		if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"revision":5`) || !strings.Contains(rec.Body.String(), `"intent":"current graph"`) {
+		if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"stale":true`) || !strings.Contains(rec.Body.String(), `"plan":{"schemaVersion"`) || !strings.Contains(rec.Body.String(), `"revision":5`) || !strings.Contains(rec.Body.String(), `"intent":"current graph"`) {
 			t.Fatalf("POST %s = %d: %s", tt.path, rec.Code, rec.Body.String())
 		}
 	}

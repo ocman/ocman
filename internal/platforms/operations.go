@@ -94,6 +94,18 @@ type AbortRequest struct {
 	SessionID string
 }
 
+// DisposeSessionRequest permanently removes a session that must not remain usable.
+// Port may be supplied by the creator before the session is visible in storage.
+type DisposeSessionRequest struct {
+	SessionID string
+	Port      string
+}
+
+// SessionDisposer is implemented by platforms that can permanently remove sessions.
+type SessionDisposer interface {
+	DisposeSession(context.Context, DisposeSessionRequest) error
+}
+
 // RevertSessionRequest restores the working tree and transcript to before a message.
 type RevertSessionRequest struct {
 	SessionID string

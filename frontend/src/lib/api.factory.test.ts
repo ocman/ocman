@@ -4,6 +4,18 @@ import { api } from './api';
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Factory API', () => {
+	it('returns the authoritative Plan from a rejected CAS mutation', async () => {
+		const plan = { revision: 5, hash: 'hash-5', state: 'draft', graph: { intent: 'Current', targets: [], items: [], dependencies: [] }, planning: [], validation: [] };
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ stale: true, plan }), { status: 409, headers: { 'Content-Type': 'application/json' } })));
+
+		await expect(api.mutateFactoryPlan('epic-1', 4, plan.graph)).resolves.toEqual({ stale: true, plan });
+	});
+
+	it('preserves non-CAS mutation errors', async () => {
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('invalid Plan', { status: 400 })));
+		await expect(api.mutateFactoryPlan('epic-1', 4, { intent: 'Invalid', targets: [], items: [], dependencies: [] })).rejects.toThrow('invalid Plan');
+	});
+
   it('lists, gets, creates, and revision-checks Work Epics', async () => {
     const epic = {
       id: 'epic-1', status: 'open', goal: 'Ship it', initialProject: '/repo',

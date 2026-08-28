@@ -68,8 +68,16 @@ type fakePlatform struct {
 	forkSessionFn func(req platforms.ForkSessionRequest) (*platforms.CreateSessionResponse, error)
 	moveSessionFn func(req platforms.MoveSessionRequest) error
 	abortFn       func(req platforms.AbortRequest) error
+	disposeFn     func(req platforms.DisposeSessionRequest) error
 	revertFn      func(req platforms.RevertSessionRequest) error
 	unrevertFn    func(req platforms.UnrevertSessionRequest) error
+}
+
+func (f *fakePlatform) DisposeSession(_ context.Context, req platforms.DisposeSessionRequest) error {
+	if f.disposeFn != nil {
+		return f.disposeFn(req)
+	}
+	return nil
 }
 
 func (f *fakePlatform) ID() platforms.ID {

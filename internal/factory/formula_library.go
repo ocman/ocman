@@ -439,11 +439,13 @@ func (s *Service) SaveFormula(ctx context.Context, req SaveFormulaRequest) (Form
 	if req.ID == DefaultFormulaID {
 		return FormulaRevision{}, ErrBuiltInFormulaImmutable
 	}
+	s.pourMu.Lock()
+	defer s.pourMu.Unlock()
+	if err := s.requireMutationStore(ctx); err != nil {
+		return FormulaRevision{}, err
+	}
 	if s.formulas == nil {
 		return FormulaRevision{}, fmt.Errorf("%w: formula store is unavailable", ErrFactoryUnavailable)
-	}
-	if !s.mutationOwned() {
-		return FormulaRevision{}, fmt.Errorf("%w: this process does not own Factory mutations", ErrFactoryUnavailable)
 	}
 	if !formulaIDPattern.MatchString(req.ID) || strings.TrimSpace(req.Name) == "" {
 		return FormulaRevision{}, fmt.Errorf("%w: stable ID and name are required", ErrInvalidFormula)
@@ -546,11 +548,13 @@ func (s *Service) ArchiveFormula(ctx context.Context, id string) error {
 	if id == DefaultFormulaID {
 		return ErrBuiltInFormulaImmutable
 	}
+	s.pourMu.Lock()
+	defer s.pourMu.Unlock()
+	if err := s.requireMutationStore(ctx); err != nil {
+		return err
+	}
 	if s.formulas == nil {
 		return ErrFormulaNotFound
-	}
-	if !s.mutationOwned() {
-		return fmt.Errorf("%w: this process does not own Factory mutations", ErrFactoryUnavailable)
 	}
 	changed, err := s.formulas.ArchiveFactoryFormula(ctx, id, time.Now())
 	if err != nil {
@@ -566,11 +570,11 @@ func (s *Service) DeleteFormula(ctx context.Context, id string) error {
 	if id == DefaultFormulaID {
 		return ErrBuiltInFormulaImmutable
 	}
-	if !s.mutationOwned() {
-		return fmt.Errorf("%w: this process does not own Factory mutations", ErrFactoryUnavailable)
-	}
 	s.pourMu.Lock()
 	defer s.pourMu.Unlock()
+	if err := s.requireMutationStore(ctx); err != nil {
+		return err
+	}
 	beadsDir := filepath.Join(s.dir, "beads")
 	path, _, failure := compatibleBeads(ctx, beadsDir, s.runner)
 	if failure.Reason != "" {
@@ -596,12 +600,6 @@ func (s *Service) DeleteFormula(ctx context.Context, id string) error {
 		return ErrFormulaNotFound
 	}
 	return nil
-}
-
-func (s *Service) mutationOwned() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.owned
 }
 
 func definitionForRevision(revision FormulaRevision) (formulaDefinition, error) {

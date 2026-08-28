@@ -309,6 +309,55 @@ func TestReadOnlyServiceCannotPersistFormula(t *testing.T) {
 	}
 }
 
+func TestSavingIdenticalArchivedFormulaUnarchivesIt(t *testing.T) {
+	svc, _ := formulaTestService(t, &fakeRunner{})
+	draft, _ := svc.CopyFormula(context.Background(), DefaultFormulaID, DefaultFormulaVersion)
+	if _, err := svc.SaveFormula(context.Background(), SaveFormulaRequest{ID: "custom/team", Name: "Shipped delivery", DefinitionYAML: draft.DefinitionYAML}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ArchiveFormula(context.Background(), "custom/team"); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := svc.SaveFormula(context.Background(), SaveFormulaRequest{ID: "custom/team", Name: "Shipped delivery", DefinitionYAML: draft.DefinitionYAML})
+	if err != nil || saved.Archived {
+		t.Fatalf("SaveFormula = %#v, %v", saved, err)
+	}
+	formulas, err := svc.ListFormulas(context.Background())
+	if err != nil || len(formulas) != 2 || formulas[1].Archived {
+		t.Fatalf("Formulas = %#v, %v", formulas, err)
+	}
+}
+
+func TestFormulaMutationsFailClosedWhileStartupRecoveryIsDegraded(t *testing.T) {
+	for _, action := range []string{"save", "archive", "delete"} {
+		t.Run(action, func(t *testing.T) {
+			svc, _ := formulaTestService(t, &fakeRunner{})
+			draft, _ := svc.CopyFormula(context.Background(), DefaultFormulaID, DefaultFormulaVersion)
+			if _, err := svc.SaveFormula(context.Background(), SaveFormulaRequest{ID: "custom/team", Name: "Shipped delivery", DefinitionYAML: draft.DefinitionYAML}); err != nil {
+				t.Fatal(err)
+			}
+			svc.recoveryErr = errors.New("startup recovery failed")
+			svc.runner = &fakeRunner{pathErr: errors.New("Beads unavailable")}
+			var err error
+			switch action {
+			case "save":
+				_, err = svc.SaveFormula(context.Background(), SaveFormulaRequest{ID: "custom/other", Name: "Shipped delivery", DefinitionYAML: draft.DefinitionYAML})
+			case "archive":
+				err = svc.ArchiveFormula(context.Background(), "custom/team")
+			case "delete":
+				err = svc.DeleteFormula(context.Background(), "custom/team")
+			}
+			if !errors.Is(err, ErrFactoryUnavailable) {
+				t.Fatalf("%s error = %v, want unavailable", action, err)
+			}
+			formulas, listErr := svc.ListFormulas(context.Background())
+			if listErr != nil || len(formulas) != 2 || formulas[1].ID != "custom/team" || formulas[1].Archived {
+				t.Fatalf("%s changed Formulas: %#v, %v", action, formulas, listErr)
+			}
+		})
+	}
+}
+
 func TestArchivedAndDeletedFormulaPreservesReferencedRevision(t *testing.T) {
 	project := t.TempDir()
 	project, _ = filepath.EvalSymlinks(project)

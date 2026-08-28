@@ -172,6 +172,19 @@ func (s *Service) Abort(ctx context.Context, platformID string, req platforms.Ab
 	return p.Abort(ctx, req)
 }
 
+// Dispose permanently removes a session so it can no longer be discovered or used.
+func (s *Service) Dispose(ctx context.Context, platformID string, req platforms.DisposeSessionRequest) error {
+	p, err := s.resolve(ctx, req.SessionID, platformID)
+	if err != nil {
+		return err
+	}
+	disposer, ok := p.(platforms.SessionDisposer)
+	if !ok {
+		return platforms.ErrUnsupported
+	}
+	return disposer.DisposeSession(ctx, req)
+}
+
 // Revert restores the session and working tree to before a message.
 func (s *Service) Revert(ctx context.Context, platformID string, req platforms.RevertSessionRequest) error {
 	if req.SessionID == "" || req.MessageID == "" {
@@ -383,6 +396,14 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 	if adapter == nil {
 		return nil, ErrNoPlatformAvailable
 	}
+	var disposer platforms.SessionDisposer
+	if rules != nil {
+		var ok bool
+		disposer, ok = adapter.(platforms.SessionDisposer)
+		if !ok {
+			return nil, platforms.ErrUnsupported
+		}
+	}
 	createPhase := srvtiming.Begin(ctx, "create_session")
 	resp, err := adapter.CreateSession(ctx, req)
 	createPhase.EndWithDesc("adapter.CreateSession")
@@ -396,7 +417,7 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 		if err := adapter.SetPermissionRules(ctx, platforms.SetPermissionRulesRequest{SessionID: resp.ID, Rules: rules}); err != nil {
 			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			defer cancel()
-			cleanupErr := adapter.Abort(cleanupCtx, platforms.AbortRequest{SessionID: resp.ID})
+			cleanupErr := disposer.DisposeSession(cleanupCtx, platforms.DisposeSessionRequest{SessionID: resp.ID, Port: req.Port})
 			return nil, errors.Join(err, cleanupErr)
 		}
 	}

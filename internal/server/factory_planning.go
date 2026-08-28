@@ -54,7 +54,7 @@ func (l factoryPlanningLauncher) LaunchPlanningSession(ctx context.Context, req 
 }
 
 func (l factoryPlanningLauncher) StopPlanningSession(ctx context.Context, session factory.PlanningSession) error {
-	return l.server.sessions.Abort(ctx, session.Platform, platforms.AbortRequest{SessionID: session.ID})
+	return l.server.sessions.Dispose(ctx, session.Platform, platforms.DisposeSessionRequest{SessionID: session.ID})
 }
 
 func (l factoryPlanningLauncher) ProbePlanningSession(ctx context.Context, session factory.PlanningSession) (bool, error) {

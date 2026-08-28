@@ -20,15 +20,20 @@ type fakePlanningLauncher struct {
 	dead   map[string]bool
 	result PlanningSession
 	err    error
+	alive  map[string]bool
 }
 
 func (f *fakePlanningLauncher) LaunchPlanningSession(_ context.Context, req PlanningSessionRequest) (PlanningSession, error) {
 	f.calls = append(f.calls, req)
+	if f.alive != nil && f.result.ID != "" {
+		f.alive[f.result.ID] = true
+	}
 	return f.result, f.err
 }
 
 func (f *fakePlanningLauncher) StopPlanningSession(_ context.Context, session PlanningSession) error {
 	f.stops = append(f.stops, session)
+	delete(f.alive, session.ID)
 	return f.err
 }
 
@@ -85,13 +90,13 @@ func TestCreateWorkEpicStopsSessionWhenMappingFails(t *testing.T) {
 		{out: `{"schema_version":1,"data":{}}`},
 	}}
 	store := &fakeFactoryStore{putErr: errors.New("mapping failed")}
-	launcher := &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "session-1"}}
+	launcher := &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "session-1"}, alive: map[string]bool{}}
 	svc := newWithRunner(t.TempDir(), runner, store)
 	svc.planning, svc.owned = launcher, true
 
 	_, err := svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{InstantiationID: "request-1", Goal: "Ship", InitialProject: project, AcknowledgeLocalExecution: true})
-	if err == nil || len(launcher.stops) != 1 || launcher.stops[0].ID != "session-1" || len(store.sessions) != 0 {
-		t.Fatalf("CreateWorkEpic error = %v, stopped = %#v, mappings = %#v", err, launcher.stops, store.sessions)
+	if err == nil || launcher.alive["session-1"] || len(store.sessions) != 0 {
+		t.Fatalf("CreateWorkEpic error = %v, session alive = %v, mappings = %#v", err, launcher.alive["session-1"], store.sessions)
 	}
 }
 
@@ -262,6 +267,24 @@ func TestMutatePlanRejectsStaleRevisionWithoutOverwrite(t *testing.T) {
 	}
 	if len(runner.seen) != 2 {
 		t.Fatalf("stale mutation wrote Beads: %v", runner.seen)
+	}
+}
+
+func TestMutatePlanReturnsCurrentPlanWithoutPlanningSessionEffectsWhenStale(t *testing.T) {
+	current := Plan{SchemaVersion: planSchemaVersion, Revision: 3, State: PlanDraft, Draft: PlanGraph{Intent: "Current"}, Planning: []PlanningWork{{ID: "fac-1.1", TargetID: "app", Repository: "/repo", Status: "open"}}}
+	current.Hash = hashPlanGraph(current.Draft)
+	store := &fakeFactoryStore{}
+	launcher := &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "unexpected-session"}}
+	runner := &fakeRunner{runs: []fakeRun{{out: versionEnvelope}, {out: listEnvelope(issuesWithPlan(t, current))}}}
+	svc := newWithRunner(t.TempDir(), runner, store)
+	svc.planning, svc.owned = launcher, true
+
+	result, err := svc.MutatePlan(context.Background(), "fac-1", MutatePlanRequest{ExpectedRevision: 2, Graph: PlanGraph{Intent: "Stale"}})
+	if err != nil || !result.Stale || result.Plan.Revision != 3 {
+		t.Fatalf("MutatePlan result = %#v, error = %v", result, err)
+	}
+	if len(store.sessions) != 0 || len(launcher.calls) != 0 || len(launcher.probes) != 0 || len(runner.seen) != 2 {
+		t.Fatalf("stale request had effects: sessions = %#v, launches = %#v, probes = %#v, commands = %#v", store.sessions, launcher.calls, launcher.probes, runner.seen)
 	}
 }
 

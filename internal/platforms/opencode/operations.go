@@ -437,6 +437,26 @@ func (a *Adapter) Abort(ctx context.Context, req platforms.AbortRequest) error {
 	return postJSON(ctx, port, fmt.Sprintf("/session/%s/abort", req.SessionID), []byte("{}"))
 }
 
+// DisposeSession permanently removes a session and its history.
+func (a *Adapter) DisposeSession(ctx context.Context, req platforms.DisposeSessionRequest) error {
+	port := req.Port
+	if port == "" {
+		var err error
+		port, _, err = a.resolvePort(req.SessionID)
+		if err != nil {
+			return err
+		}
+	}
+	path := fmt.Sprintf("/session/%s", req.SessionID)
+	if err := sendJSON(ctx, http.MethodDelete, port, path, nil); err != nil {
+		return err
+	}
+	forgetSessionPort(req.SessionID, port)
+	sessionCache.invalidate(port, path)
+	sessionCache.invalidate(port, path+"/message")
+	return nil
+}
+
 // Revert restores the session and working tree to before MessageID.
 func (a *Adapter) Revert(ctx context.Context, req platforms.RevertSessionRequest) error {
 	port, _, err := a.resolvePort(req.SessionID)

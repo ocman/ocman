@@ -218,9 +218,9 @@ func writeFactoryError(w http.ResponseWriter, err error) {
 }
 func writeFactoryPlanConflict(w http.ResponseWriter, plan factory.Plan) {
 	writeJSONStatus(w, http.StatusConflict, struct {
-		Error   string       `json:"error"`
-		Current factory.Plan `json:"current"`
-	}{Error: (&factory.PlanConflictError{Current: plan}).Error(), Current: plan})
+		Stale bool         `json:"stale"`
+		Plan  factory.Plan `json:"plan"`
+	}{Stale: true, Plan: plan})
 }
 
 func (s *Server) handleFactoryFormulas(w http.ResponseWriter, r *http.Request) {

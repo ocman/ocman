@@ -353,11 +353,12 @@ export async function fetchJSON<T>(url: string, signal?: AbortSignal): Promise<T
  *   no JSON body; the Content-Type header is then dropped too.
  * - `parseJSON`: set false when the server returns 204 No Content
  *   (login returns a body, but logout doesn't).
+ * - `acceptStatus`: parse this non-2xx response as the endpoint's typed body.
  */
 export async function postJSON<TResp, TReq = unknown>(
   url: string,
   body: TReq,
-  opts?: { signal?: AbortSignal; parseJSON?: boolean; method?: 'POST' | 'PATCH' | 'PUT' | 'DELETE' },
+  opts?: { signal?: AbortSignal; parseJSON?: boolean; method?: 'POST' | 'PATCH' | 'PUT' | 'DELETE'; acceptStatus?: number },
 ): Promise<TResp> {
   const method = opts?.method ?? 'POST';
   const startedAt = performance.now();
@@ -371,7 +372,7 @@ export async function postJSON<TResp, TReq = unknown>(
       signal: opts?.signal,
     });
     status = resp.status;
-    if (!resp.ok) await throwForStatus(resp);
+    if (!resp.ok && resp.status !== opts?.acceptStatus) await throwForStatus(resp);
     if (opts?.parseJSON === false || resp.status === 204) {
       return undefined as unknown as TResp;
     }
@@ -419,9 +420,9 @@ export const api = {
   createFactoryEpic: (request: CreateWorkEpicRequest) =>
     postJSON<WorkEpic, CreateWorkEpicRequest>('/api/factory/epics', request),
 	mutateFactoryPlan: (id: string, expectedRevision: number, graph: FactoryPlanGraph) =>
-		postJSON<FactoryPlanMutationResult, { expectedRevision: number; graph: FactoryPlanGraph }>(`/api/factory/epics/${encodeURIComponent(id)}/plan/mutate`, { expectedRevision, graph }),
+		postJSON<FactoryPlanMutationResult, { expectedRevision: number; graph: FactoryPlanGraph }>(`/api/factory/epics/${encodeURIComponent(id)}/plan/mutate`, { expectedRevision, graph }, { acceptStatus: 409 }),
 	addFactoryPlanningWork: (id: string, expectedRevision: number, target: FactoryPlanGraph['targets'][number]) =>
-		postJSON<FactoryPlanMutationResult, { expectedRevision: number; target: FactoryPlanGraph['targets'][number]; acknowledgeLocalExecution: true }>(`/api/factory/epics/${encodeURIComponent(id)}/planning`, { expectedRevision, target, acknowledgeLocalExecution: true }),
+		postJSON<FactoryPlanMutationResult, { expectedRevision: number; target: FactoryPlanGraph['targets'][number]; acknowledgeLocalExecution: true }>(`/api/factory/epics/${encodeURIComponent(id)}/planning`, { expectedRevision, target, acknowledgeLocalExecution: true }, { acceptStatus: 409 }),
 	decideFactoryPlan: (id: string, action: 'approve' | 'revise' | 'reject' | 'cancel', request: FactoryPlanDecisionRequest) =>
 		postJSON<FactoryPlan, FactoryPlanDecisionRequest>(`/api/factory/epics/${encodeURIComponent(id)}/plan/${action}`, request),
 	completeFactoryPlanningWork: (id: string, workID: string, expectedRevision: number, expectedHash: string) =>

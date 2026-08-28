@@ -209,6 +209,22 @@ function WorkEpics() {
   );
 }
 
+function ApprovedPlanRecord({ approval }: { approval: FactoryPlan['approval'] }) {
+	if (!approval) return null;
+	return <section aria-label="Approved Plan record">
+		<h5>Approved Plan record</h5>
+		<dl>
+			<div><dt>Exact revision</dt><dd>revision {approval.revision}</dd></div>
+			<div><dt>Exact hash</dt><dd><code>{approval.hash}</code></dd></div>
+			<div><dt>Formula</dt><dd>{approval.formulaId} r{approval.formulaVersion} · {approval.formulaOrigin} · <code>{approval.formulaHash}</code> · instantiation {approval.instantiationId}</dd></div>
+			<div><dt>Actor</dt><dd>{approval.actor}</dd></div>
+			<div><dt>Approved at</dt><dd>{approval.approvedAt}</dd></div>
+			<div><dt>Reason</dt><dd>{approval.reason || 'No reason recorded'}</dd></div>
+		</dl>
+		<pre>{JSON.stringify(approval.graph, null, 2)}</pre>
+	</section>;
+}
+
 function PlanPanel({ epicID, plan }: { epicID: string; plan: FactoryPlan }) {
 	const mutate = useMutateFactoryPlan(epicID);
 	const addPlanning = useAddFactoryPlanningWork(epicID);
@@ -217,6 +233,7 @@ function PlanPanel({ epicID, plan }: { epicID: string; plan: FactoryPlan }) {
 	const [graphText, setGraphText] = useState(() => JSON.stringify(plan.graph, null, 2));
 	const [graphError, setGraphError] = useState('');
 	const [approvalAcknowledged, setApprovalAcknowledged] = useState(false);
+	const [decisionReason, setDecisionReason] = useState('');
 	const busy = mutate.isPending || addPlanning.isPending || completePlanning.isPending || decide.isPending;
 
 	async function saveGraph() {
@@ -244,12 +261,13 @@ function PlanPanel({ epicID, plan }: { epicID: string; plan: FactoryPlan }) {
 	}
 
 	function decision(action: 'approve' | 'revise' | 'reject' | 'cancel') {
-		void decide.mutateAsync({ action, request: { expectedRevision: plan.revision, expectedHash: plan.hash, actor: 'operator', acknowledgeLocalExecution: action === 'approve' && approvalAcknowledged } });
+		void decide.mutateAsync({ action, request: { expectedRevision: plan.revision, expectedHash: plan.hash, actor: 'operator', reason: decisionReason.trim(), acknowledgeLocalExecution: action === 'approve' && approvalAcknowledged } });
 	}
 
 	return (
 		<section className="factory-plan" aria-label={`Plan for ${epicID}`}>
 			<p><strong>Plan {plan.state}</strong> · revision {plan.revision} · <code>{plan.hash.slice(0, 12)}</code></p>
+			<ApprovedPlanRecord approval={plan.approval} />
 			<ul aria-label="Planning Sessions">
 				{plan.planning.map((work) => <li key={work.id}>
 					{work.repository}: {work.status}{' '}
@@ -274,6 +292,7 @@ function PlanPanel({ epicID, plan }: { epicID: string; plan: FactoryPlan }) {
 				</>
 			)}
 			<div className="factory-plan-actions">
+				<label>Reason for Plan decision<input value={decisionReason} onChange={(event) => setDecisionReason(event.target.value)} /></label>
 				{plan.state === 'draft' && plan.validation.length === 0 && <label><input type="checkbox" checked={approvalAcknowledged} onChange={(event) => setApprovalAcknowledged(event.target.checked)} /> I understand approved work executes locally without isolation under the displayed profiles.</label>}
 				{plan.state === 'draft' && <Button type="button" variant="accent" disabled={busy || plan.validation.length > 0 || !approvalAcknowledged} onClick={() => decision('approve')}>Approve exact revision</Button>}
 				{plan.state === 'approved' && <Button type="button" disabled={busy} onClick={() => decision('revise')}>Revise Plan</Button>}

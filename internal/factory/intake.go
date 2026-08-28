@@ -70,8 +70,10 @@ func (s *Service) AcknowledgeLocalExecution(ctx context.Context, projectPath str
 	if err != nil {
 		return err
 	}
-	if !s.ownsMutations() {
-		return fmt.Errorf("%w: this process does not own Factory mutations", ErrFactoryUnavailable)
+	s.pourMu.Lock()
+	defer s.pourMu.Unlock()
+	if err := s.requireMutationStore(ctx); err != nil {
+		return err
 	}
 	if s.acks == nil {
 		return fmt.Errorf("%w: acknowledgement store is unavailable", ErrFactoryUnavailable)

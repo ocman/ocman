@@ -37,6 +37,7 @@ type fakePlatform struct {
 	moves       []platforms.MoveSessionRequest
 	reverts     []platforms.RevertSessionRequest
 	unreverts   []platforms.UnrevertSessionRequest
+	owned       map[string]bool
 }
 
 func (f *fakePlatform) ID() platforms.ID                 { return f.id }
@@ -61,6 +62,10 @@ func (f *fakePlatform) Abort(_ context.Context, req platforms.AbortRequest) erro
 	f.aborts = append(f.aborts, req)
 	return nil
 }
+func (f *fakePlatform) DisposeSession(_ context.Context, req platforms.DisposeSessionRequest) error {
+	delete(f.owned, req.SessionID)
+	return nil
+}
 func (f *fakePlatform) Compact(_ context.Context, req platforms.CompactRequest) error {
 	f.compacts = append(f.compacts, req)
 	return nil
@@ -71,14 +76,14 @@ func (f *fakePlatform) SetPermissionRules(_ context.Context, req platforms.SetPe
 }
 
 func TestCreateConfiguredDoesNotPublishOrLeakSessionWhenRulesFail(t *testing.T) {
-	platform := &fakePlatform{id: "opencode", available: true, ruleErr: errors.New("rules failed")}
+	platform := &fakePlatform{id: "opencode", available: true, ruleErr: errors.New("rules failed"), owned: map[string]bool{"new-session": true}}
 	registry := &fakeRegistry{byID: map[platforms.ID]platforms.Platform{"opencode": platform}}
 	published := 0
 	svc := New(registry, Hooks{SessionCreated: func(CreatedSession) { published++ }})
 
 	_, err := svc.CreateConfigured(context.Background(), "opencode", platforms.CreateSessionRequest{Directory: "/repo"}, []platforms.PermissionRule{{Permission: "read", Pattern: "*", Action: "allow"}})
-	if err == nil || published != 0 || len(platform.aborts) != 1 || platform.aborts[0].SessionID != "new-session" {
-		t.Fatalf("CreateConfigured error = %v, published = %d, aborts = %#v", err, published, platform.aborts)
+	if err == nil || published != 0 || platform.owned["new-session"] {
+		t.Fatalf("CreateConfigured error = %v, published = %d, session remains discoverable = %v", err, published, platform.owned["new-session"])
 	}
 }
 

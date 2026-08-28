@@ -91,7 +91,9 @@ flowchart TD
     Server --> Router[hostsvc.Router<br/>host/dir seam]
     Server --> Workflows[automation services<br/>workflows + prompt schedules]
     Server --> Factory[internal/factory<br/>readiness, dispatch lock + Beads store]
+    Factory --> FactoryModel[internal/factory/model<br/>shared persistence records]
     Factory --> State
+    State --> FactoryModel
     Factory --> Registry
     Factory --> Router
     Workflows --> Registry
@@ -128,7 +130,7 @@ flowchart TD
   owner degraded and read-only. A narrow
   Planning Session launcher resolves the hub-local host and session seams,
   ensures the repository runtime, and installs the read-only
-  `factory-plan/v1` rules before exposing the session, aborts failed setup,
+  `factory-plan/v1` rules before exposing the session, deletes failed setup,
   and probes persisted mappings before reuse; local execution acknowledgements
   and session mappings are stored separately in `state.db`. Other
   instances expose the same authenticated reads without mutation authority;
@@ -142,6 +144,9 @@ flowchart TD
   nodes copy the exact Formula ID, revision, hash and origin so later library
   edits cannot alter an existing epic. Referenced revisions cannot be deleted.
   These `factory_*` tables do not reference or alter Workflows tables.
+- **internal/factory/model.** Dependency-neutral persistence records shared by
+  `internal/factory` and `internal/state`. Factory owns their meaning; state
+  only stores them, which avoids making Factory depend on its SQLite adapter.
 - **platforms.Registry.** The session-scoped seam. One adapter per platform;
   remotes register as compound-ID platforms so handlers can't tell local from
   remote.

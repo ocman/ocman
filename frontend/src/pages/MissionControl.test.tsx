@@ -293,9 +293,60 @@ describe('MissionControl', () => {
 
 		expect(screen.getByText(/revision 4/)).toHaveTextContent('1234567890ab');
 		expect(screen.getByRole('list', { name: 'Planning Sessions' })).toHaveTextContent('/repo: closed Open Planning Session');
+		await userEvent.type(screen.getByRole('textbox', { name: 'Reason for Plan decision' }), 'Ready to ship');
 		await userEvent.click(screen.getByRole('checkbox', { name: /approved work executes locally/i }));
 		await userEvent.click(screen.getByRole('button', { name: 'Approve exact revision' }));
-		expect(decidePlan).toHaveBeenCalledWith({ action: 'approve', request: { expectedRevision: 4, expectedHash: '1234567890abcdef', actor: 'operator', acknowledgeLocalExecution: true } });
+		expect(decidePlan).toHaveBeenCalledWith({ action: 'approve', request: { expectedRevision: 4, expectedHash: '1234567890abcdef', actor: 'operator', reason: 'Ready to ship', acknowledgeLocalExecution: true } });
+	});
+
+	it.each([
+		['reject', 'Reject Plan'],
+		['cancel', 'Cancel Plan'],
+	] as const)('sends the accessible reason for %s decisions', async (action, button) => {
+		const decidePlan = vi.fn().mockResolvedValue({});
+		vi.mocked(useFactoryStatus).mockReturnValue({ data: healthy } as never);
+		vi.mocked(useDecideFactoryPlan).mockReturnValue({ mutateAsync: decidePlan, isPending: false } as never);
+		vi.mocked(useWorkEpics).mockReturnValue({ data: [{
+			id: 'epic-1', status: 'open', goal: 'Ship', initialProject: '/repo', formulaId: 'ocman/default', formulaVersion: 2, instantiationId: 'request-1',
+			planning: { workId: 'work-1', workStatus: 'open', approvalGateId: 'gate-1', approvalStatus: 'open' },
+			plan: { revision: 4, hash: 'hash-4', state: 'draft', validation: ['incomplete'], planning: [], graph: { intent: 'Ship', targets: [], items: [], dependencies: [] } },
+		}] } as never);
+		render(<MissionControl />);
+
+		await userEvent.type(screen.getByRole('textbox', { name: 'Reason for Plan decision' }), 'Needs changes');
+		await userEvent.click(screen.getByRole('button', { name: button }));
+		expect(decidePlan).toHaveBeenCalledWith({ action, request: { expectedRevision: 4, expectedHash: 'hash-4', actor: 'operator', reason: 'Needs changes', acknowledgeLocalExecution: false } });
+	});
+
+	it('shows the immutable approved Plan record and sends decision reasons', async () => {
+		const decidePlan = vi.fn().mockResolvedValue({});
+		vi.mocked(useFactoryStatus).mockReturnValue({ data: healthy } as never);
+		vi.mocked(useDecideFactoryPlan).mockReturnValue({ mutateAsync: decidePlan, isPending: false } as never);
+		vi.mocked(useWorkEpics).mockReturnValue({ data: [{
+			id: 'epic-1', status: 'open', goal: 'Ship', initialProject: '/repo', formulaId: 'custom/team', formulaVersion: 3, instantiationId: 'request-1',
+			planning: { workId: 'work-1', workStatus: 'closed', approvalGateId: 'gate-1', approvalStatus: 'closed' },
+			plan: {
+				revision: 7, hash: 'abcdef1234567890', state: 'approved', validation: [], planning: [],
+				graph: { intent: 'Current draft', targets: [], items: [], dependencies: [] },
+				approval: { revision: 7, hash: 'abcdef1234567890', actor: 'dries', approvedAt: '2026-08-28T10:30:00Z', formulaId: 'custom/team', formulaVersion: 3, formulaHash: 'formula-hash', formulaOrigin: 'custom', instantiationId: 'request-1', reason: 'Reviewed dependencies', graph: { intent: 'Frozen approved intent', targets: [], items: [], dependencies: [] } },
+			},
+		}] } as never);
+		render(<MissionControl />);
+
+		const record = screen.getByRole('region', { name: 'Approved Plan record' });
+		expect(record).toHaveTextContent('revision 7');
+		expect(record).toHaveTextContent('abcdef1234567890');
+		expect(record).toHaveTextContent('custom/team r3');
+		expect(record).toHaveTextContent('formula-hash');
+		expect(record).toHaveTextContent('request-1');
+		expect(record).toHaveTextContent('dries');
+		expect(record).toHaveTextContent('2026-08-28T10:30:00Z');
+		expect(record).toHaveTextContent('Reviewed dependencies');
+		expect(record).toHaveTextContent('Frozen approved intent');
+
+		await userEvent.type(screen.getByRole('textbox', { name: 'Reason for Plan decision' }), 'Requirements changed');
+		await userEvent.click(screen.getByRole('button', { name: 'Revise Plan' }));
+		expect(decidePlan).toHaveBeenCalledWith({ action: 'revise', request: { expectedRevision: 7, expectedHash: 'abcdef1234567890', actor: 'operator', reason: 'Requirements changed', acknowledgeLocalExecution: false } });
 	});
 
 	it('edits the whole draft and adds repository-scoped Planning Work', async () => {

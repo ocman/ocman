@@ -198,6 +198,12 @@ func (d *DB) SaveFactoryFormulaRevision(ctx context.Context, id, name, definitio
 		err = tx.QueryRowContext(ctx, `SELECT formula_id, revision, schema_version, definition_yaml, content_hash, validation_json, created_at FROM factory_formula_revision WHERE formula_id = ? AND content_hash = ?`, id, contentHash).
 			Scan(&existing.FormulaID, &existing.Revision, &existing.SchemaVersion, &existing.DefinitionYAML, &existing.ContentHash, &existing.ValidationJSON, &existing.CreatedAt)
 		if err == nil {
+			if _, err := tx.ExecContext(ctx, `UPDATE factory_formula SET name = ?, archived_at = 0, updated_at = ? WHERE id = ?`, name, at.UnixMilli(), id); err != nil {
+				return model.FormulaRevision{}, err
+			}
+			if err := tx.Commit(); err != nil {
+				return model.FormulaRevision{}, err
+			}
 			return existing, nil
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
