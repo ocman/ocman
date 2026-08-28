@@ -39,8 +39,8 @@ func (okExecutor) Execute(context.Context, CommandRequest) CommandResult {
 	return CommandResult{State: AttemptSuccessful, ExitCode: 0, Stdout: `{"ok":true}`}
 }
 
-// runOneCommandNode publishes and drives a single-command workflow to a
-// terminal node state, returning the run detail.
+// runOneCommandNode publishes and drives a single-command workflow until the
+// run settles, returning the run detail.
 func runOneCommandNode(t *testing.T, h *harness) RunDetail {
 	t.Helper()
 	directory := t.TempDir()
@@ -64,12 +64,12 @@ func runOneCommandNode(t *testing.T, h *harness) RunDetail {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if detail.Nodes[0].State != NodeReady && detail.Nodes[0].State != NodePending {
+		if detail.State != StateActive {
 			return detail
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatal("command node never reached a terminal state")
+	t.Fatal("command workflow never left the active state")
 	return RunDetail{}
 }
 
