@@ -260,11 +260,22 @@ func (s *Service) Move(ctx context.Context, platformID string, req platforms.Mov
 // SetPermissionRules replaces a session's permission rules. Rules are
 // normalized in place: an empty pattern defaults to "*".
 func (s *Service) SetPermissionRules(ctx context.Context, platformID string, req platforms.SetPermissionRulesRequest) error {
-	if len(req.Rules) > 100 {
+	if err := normalizePermissionRules(req.Rules); err != nil {
+		return err
+	}
+	p, err := s.resolve(ctx, req.SessionID, platformID)
+	if err != nil {
+		return err
+	}
+	return p.SetPermissionRules(ctx, req)
+}
+
+func normalizePermissionRules(rules []platforms.PermissionRule) error {
+	if len(rules) > 100 {
 		return validation("too many rules")
 	}
-	for i := range req.Rules {
-		rule := &req.Rules[i]
+	for i := range rules {
+		rule := &rules[i]
 		if rule.Permission == "" {
 			return validation("rule permission is required")
 		}
@@ -277,11 +288,7 @@ func (s *Service) SetPermissionRules(ctx context.Context, platformID string, req
 			return validation("invalid rule action: expected allow, deny, or ask")
 		}
 	}
-	p, err := s.resolve(ctx, req.SessionID, platformID)
-	if err != nil {
-		return err
-	}
-	return p.SetPermissionRules(ctx, req)
+	return nil
 }
 
 // RespondPermission replies to a pending permission prompt.
@@ -339,6 +346,19 @@ func (s *Service) RejectQuestion(ctx context.Context, platformID string, req pla
 // Create creates a new session. When platformID is empty the adapter is
 // chosen automatically iff exactly one platform is available.
 func (s *Service) Create(ctx context.Context, platformID string, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+	return s.create(ctx, platformID, req, nil)
+}
+
+// CreateConfigured creates a session, applies its permission rules, and only
+// then publishes it through SessionCreated.
+func (s *Service) CreateConfigured(ctx context.Context, platformID string, req platforms.CreateSessionRequest, rules []platforms.PermissionRule) (*platforms.CreateSessionResponse, error) {
+	if err := normalizePermissionRules(rules); err != nil {
+		return nil, err
+	}
+	return s.create(ctx, platformID, req, rules)
+}
+
+func (s *Service) create(ctx context.Context, platformID string, req platforms.CreateSessionRequest, rules []platforms.PermissionRule) (*platforms.CreateSessionResponse, error) {
 	if req.Directory == "" {
 		return nil, validation("directory is required")
 	}
@@ -371,6 +391,14 @@ func (s *Service) Create(ctx context.Context, platformID string, req platforms.C
 	}
 	if resp == nil || strings.TrimSpace(resp.ID) == "" {
 		return nil, fmt.Errorf("platform %s returned no session", adapter.ID())
+	}
+	if rules != nil {
+		if err := adapter.SetPermissionRules(ctx, platforms.SetPermissionRulesRequest{SessionID: resp.ID, Rules: rules}); err != nil {
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			defer cancel()
+			cleanupErr := adapter.Abort(cleanupCtx, platforms.AbortRequest{SessionID: resp.ID})
+			return nil, errors.Join(err, cleanupErr)
+		}
 	}
 	if s.hooks.SessionCreated != nil {
 		s.hooks.SessionCreated(CreatedSession{

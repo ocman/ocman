@@ -44,9 +44,18 @@
 .factory-epic-list dl div { min-width: 0; }
 .factory-epic-list dt { color: var(--text-dim); font-size: 12px; }
 .factory-epic-list dd { overflow-wrap: anywhere; margin: 2px 0 0; }
+.factory-plan { display: grid; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.factory-plan p, .factory-plan ul { margin: 0; }
+.factory-plan > label { display: grid; gap: 5px; }
+.factory-plan textarea { min-height: 180px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.factory-plan-validation { color: var(--yellow); }
+.factory-plan-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.factory-target-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.factory-target-form label, .factory-target-form button { grid-column: 1 / -1; }
 
 @media (max-width: 700px) {
   .factory-heading { display: grid; }
   .factory-health { min-width: 0; }
   .factory-epic-list dl { grid-template-columns: 1fr; }
+	.factory-target-form { grid-template-columns: 1fr; }
 }

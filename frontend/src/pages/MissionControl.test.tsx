@@ -1,14 +1,18 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useCreateWorkEpic, useFactoryStatus, useWorkEpics } from '../lib/queries';
+import { useAddFactoryPlanningWork, useCompleteFactoryPlanningWork, useCreateWorkEpic, useDecideFactoryPlan, useFactoryStatus, useMutateFactoryPlan, useWorkEpics } from '../lib/queries';
 import { MissionControl } from './MissionControl';
 
 vi.mock('../lib/queries', () => ({
   useFactoryStatus: vi.fn(),
   useWorkEpics: vi.fn(),
   useCreateWorkEpic: vi.fn(),
+	useMutateFactoryPlan: vi.fn(),
+	useAddFactoryPlanningWork: vi.fn(),
+	useCompleteFactoryPlanningWork: vi.fn(),
+	useDecideFactoryPlan: vi.fn(),
 }));
 
 const healthy = {
@@ -27,6 +31,10 @@ describe('MissionControl', () => {
     vi.resetAllMocks();
     vi.mocked(useWorkEpics).mockReturnValue({ data: [] } as never);
     vi.mocked(useCreateWorkEpic).mockReturnValue({ mutateAsync, isPending: false } as never);
+		vi.mocked(useMutateFactoryPlan).mockReturnValue({ mutateAsync: vi.fn(), isPending: false } as never);
+		vi.mocked(useAddFactoryPlanningWork).mockReturnValue({ mutateAsync: vi.fn(), isPending: false } as never);
+		vi.mocked(useCompleteFactoryPlanningWork).mockReturnValue({ mutateAsync: vi.fn(), isPending: false } as never);
+		vi.mocked(useDecideFactoryPlan).mockReturnValue({ mutateAsync: vi.fn(), isPending: false } as never);
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -153,6 +161,87 @@ describe('MissionControl', () => {
     expect(within(article).getByText('Planning Work status').nextSibling).toHaveTextContent('open');
     expect(within(article).getByText('Plan approval Gate status').nextSibling).toHaveTextContent('pending');
   });
+
+	it('shows exact Plan evidence and only enables approval after validation passes', async () => {
+		const decidePlan = vi.fn().mockResolvedValue({});
+		vi.mocked(useFactoryStatus).mockReturnValue({ data: healthy } as never);
+		vi.mocked(useDecideFactoryPlan).mockReturnValue({ mutateAsync: decidePlan, isPending: false } as never);
+		vi.mocked(useWorkEpics).mockReturnValue({ data: [{
+			id: 'epic-1', status: 'open', goal: 'Ship it', initialProject: '/repo', formulaId: 'ocman/default', formulaVersion: 1, instantiationId: 'request-1',
+			planning: { workId: 'work-1', workStatus: 'closed', approvalGateId: 'gate-1', approvalStatus: 'open' },
+			plan: {
+				revision: 4, hash: '1234567890abcdef', state: 'draft', validation: [],
+				graph: { intent: 'Ship it', targets: [], items: [], dependencies: [] },
+				planning: [{ id: 'work-1', targetId: 'app', repository: '/repo', status: 'closed', session: { platform: 'agent', id: 'session-1' } }],
+			},
+		}] } as never);
+		render(<MissionControl />);
+
+		expect(screen.getByText(/revision 4/)).toHaveTextContent('1234567890ab');
+		expect(screen.getByRole('list', { name: 'Planning Sessions' })).toHaveTextContent('/repo: closed Open Planning Session');
+		await userEvent.click(screen.getByRole('checkbox', { name: /approved work executes locally/i }));
+		await userEvent.click(screen.getByRole('button', { name: 'Approve exact revision' }));
+		expect(decidePlan).toHaveBeenCalledWith({ action: 'approve', request: { expectedRevision: 4, expectedHash: '1234567890abcdef', actor: 'operator', acknowledgeLocalExecution: true } });
+	});
+
+	it('edits the whole draft and adds repository-scoped Planning Work', async () => {
+		const mutatePlan = vi.fn().mockResolvedValue({});
+		const addPlanning = vi.fn().mockResolvedValue({});
+		vi.mocked(useFactoryStatus).mockReturnValue({ data: healthy } as never);
+		vi.mocked(useMutateFactoryPlan).mockReturnValue({ mutateAsync: mutatePlan, isPending: false } as never);
+		vi.mocked(useAddFactoryPlanningWork).mockReturnValue({ mutateAsync: addPlanning, isPending: false } as never);
+		vi.mocked(useWorkEpics).mockReturnValue({ data: [{
+			id: 'epic-1', status: 'open', goal: 'Ship', initialProject: '/repo', formulaId: 'ocman/default', formulaVersion: 1, instantiationId: 'request-1',
+			planning: { workId: 'work-1', workStatus: 'open', approvalGateId: 'gate-1', approvalStatus: 'open' },
+			plan: { revision: 2, hash: 'hash-2', state: 'draft', graph: { intent: 'Ship', targets: [], items: [], dependencies: [] }, planning: [], validation: ['incomplete'] },
+		}] } as never);
+		render(<MissionControl />);
+
+		const graph = screen.getByLabelText('Draft graph for epic-1');
+		fireEvent.change(graph, { target: { value: JSON.stringify({ intent: 'Changed', targets: [], items: [], dependencies: [] }) } });
+		await userEvent.click(screen.getByRole('button', { name: 'Save graph' }));
+		expect(mutatePlan).toHaveBeenCalledWith({ expectedRevision: 2, graph: { intent: 'Changed', targets: [], items: [], dependencies: [] } });
+
+		await userEvent.type(screen.getByLabelText('Target ID'), 'api');
+		await userEvent.type(screen.getByLabelText('Target repository'), '/repo/api');
+		await userEvent.type(screen.getByLabelText('Delivery remote'), 'origin');
+		await userEvent.type(screen.getByLabelText('Delivery base branch'), 'main');
+		await userEvent.type(screen.getByLabelText('Delivery base SHA'), 'abc123');
+		await userEvent.click(screen.getByRole('checkbox', { name: /Planning Work executes locally/i }));
+		await userEvent.click(screen.getByRole('button', { name: 'Add Planning Work' }));
+		expect(addPlanning).toHaveBeenCalledWith({ expectedRevision: 2, target: { id: 'api', hostId: 'local', repository: '/repo/api', deliveryBase: { remote: 'origin', baseBranch: 'main', baseSha: 'abc123' } } });
+		expect(screen.getByRole('button', { name: 'Approve exact revision' })).toBeDisabled();
+	});
+
+	it('opens and completes Planning Work against the displayed revision', async () => {
+		const complete = vi.fn().mockResolvedValue({});
+		vi.mocked(useFactoryStatus).mockReturnValue({ data: healthy } as never);
+		vi.mocked(useCompleteFactoryPlanningWork).mockReturnValue({ mutateAsync: complete, isPending: false } as never);
+		vi.mocked(useWorkEpics).mockReturnValue({ data: [{
+			id: 'epic-1', status: 'open', goal: 'Ship', initialProject: '/repo', formulaId: 'ocman/default', formulaVersion: 1, instantiationId: 'request-1',
+			planning: { workId: 'work-1', workStatus: 'open', approvalGateId: 'gate-1', approvalStatus: 'open' },
+			plan: { revision: 7, hash: 'hash-7', state: 'draft', graph: { intent: 'Ship', targets: [], items: [], dependencies: [] }, planning: [{ id: 'work-1', targetId: 'app', repository: '/repo', status: 'closed', completedRevision: 6, completedHash: 'hash-6', session: { platform: 'opencode', id: 'session-1' } }], validation: ['stale completion'] },
+		}] } as never);
+		render(<MissionControl />);
+
+		expect(screen.getByRole('link', { name: 'Open Planning Session' })).toHaveAttribute('href', '/session/session-1?platform=opencode');
+		await userEvent.click(screen.getByRole('button', { name: 'Mark Planning Work complete' }));
+		expect(complete).toHaveBeenCalledWith({ workID: 'work-1', expectedRevision: 7, expectedHash: 'hash-7' });
+	});
+
+	it('keeps an epic visible when its Plan metadata is quarantined', () => {
+		vi.mocked(useFactoryStatus).mockReturnValue({ data: healthy } as never);
+		vi.mocked(useWorkEpics).mockReturnValue({ data: [{
+			id: 'epic-1', status: 'open', goal: 'Ship', initialProject: '/repo', formulaId: 'ocman/default', formulaVersion: 1, instantiationId: 'request-1',
+			planning: { workId: 'work-1', workStatus: 'open', approvalGateId: 'gate-1', approvalStatus: 'open' },
+			plan: { revision: 0, hash: '', state: 'draft', graph: { intent: '', targets: [], items: [], dependencies: [] }, planning: [], validation: [] },
+			planError: 'Plan schema 2 is unsupported',
+		}] } as never);
+		render(<MissionControl />);
+		expect(screen.getByRole('heading', { name: 'Ship' })).toBeInTheDocument();
+		expect(screen.getByRole('alert')).toHaveTextContent('Plan schema 2 is unsupported');
+		expect(screen.queryByRole('region', { name: 'Plan for epic-1' })).not.toBeInTheDocument();
+	});
 
   it('keeps stale epics visible with a retry action', async () => {
     const refetch = vi.fn();

@@ -20,6 +20,9 @@ type fakeFactoryService struct {
 	createErr error
 	listErr   error
 	getErr    error
+	plan      factory.Plan
+	mutation  factory.PlanMutationResult
+	decision  factory.PlanDecisionRequest
 }
 
 type factoryProjectHost struct {
@@ -59,6 +62,35 @@ func (f *fakeFactoryService) GetWorkEpic(_ context.Context, id string) (factory.
 		}
 	}
 	return factory.WorkEpic{}, factory.ErrWorkEpicNotFound
+}
+func (f *fakeFactoryService) GetPlan(context.Context, string) (factory.Plan, error) {
+	return f.plan, f.getErr
+}
+func (f *fakeFactoryService) MutatePlan(_ context.Context, _ string, req factory.MutatePlanRequest) (factory.PlanMutationResult, error) {
+	f.mutation.Plan.Draft = req.Graph
+	return f.mutation, f.createErr
+}
+func (f *fakeFactoryService) AddPlanningWork(context.Context, string, factory.AddPlanningWorkRequest) (factory.PlanMutationResult, error) {
+	return f.mutation, f.createErr
+}
+func (f *fakeFactoryService) CompletePlanningWork(context.Context, string, string, factory.CompletePlanningWorkRequest) (factory.Plan, error) {
+	return f.plan, f.createErr
+}
+func (f *fakeFactoryService) ApprovePlan(_ context.Context, _ string, req factory.PlanDecisionRequest) (factory.Plan, error) {
+	f.decision = req
+	return f.plan, f.createErr
+}
+func (f *fakeFactoryService) RevisePlan(_ context.Context, _ string, req factory.PlanDecisionRequest) (factory.Plan, error) {
+	f.decision = req
+	return f.plan, f.createErr
+}
+func (f *fakeFactoryService) RejectPlan(_ context.Context, _ string, req factory.PlanDecisionRequest) (factory.Plan, error) {
+	f.decision = req
+	return f.plan, f.createErr
+}
+func (f *fakeFactoryService) CancelPlan(_ context.Context, _ string, req factory.PlanDecisionRequest) (factory.Plan, error) {
+	f.decision = req
+	return f.plan, f.createErr
 }
 
 func TestFactoryProjectResolverAcceptsOnlyLocalOwner(t *testing.T) {
@@ -249,5 +281,121 @@ func TestFactoryEpicErrorMapping(t *testing.T) {
 				t.Fatalf("status = %d, want %d", rec.Code, tt.want)
 			}
 		})
+	}
+}
+
+func TestFactoryPlanRoutesExposeReadsAndProtectedMutations(t *testing.T) {
+	svc := &fakeFactoryService{plan: factory.Plan{Revision: 2, Hash: "hash-2", State: factory.PlanDraft}, mutation: factory.PlanMutationResult{Plan: factory.Plan{Revision: 3}}}
+	srv := New(nil, nil, "", nil, nil)
+	srv.factory = svc
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	read := httptest.NewRecorder()
+	mux.ServeHTTP(read, httptest.NewRequest(http.MethodGet, "/api/factory/epics/fac-1/plan", nil))
+	if read.Code != http.StatusOK || !strings.Contains(read.Body.String(), `"revision":2`) {
+		t.Fatalf("GET plan = %d: %s", read.Code, read.Body.String())
+	}
+
+	remote := httptest.NewRequest(http.MethodPost, "/api/factory/epics/fac-1/plan/approve", strings.NewReader(`{"expectedRevision":2,"expectedHash":"hash-2","actor":"dries"}`))
+	remote.RemoteAddr = "10.0.0.5:1234"
+	blocked := httptest.NewRecorder()
+	mux.ServeHTTP(blocked, remote)
+	if blocked.Code != http.StatusForbidden {
+		t.Fatalf("remote approval = %d, want 403", blocked.Code)
+	}
+
+	local := httptest.NewRequest(http.MethodPost, "/api/factory/epics/fac-1/plan/approve", strings.NewReader(`{"expectedRevision":2,"expectedHash":"hash-2","actor":"dries"}`))
+	local.RemoteAddr = "127.0.0.1:1234"
+	approved := httptest.NewRecorder()
+	mux.ServeHTTP(approved, local)
+	if approved.Code != http.StatusOK || svc.decision.ExpectedRevision != 2 || svc.decision.ExpectedHash != "hash-2" {
+		t.Fatalf("approval = %d, req=%#v: %s", approved.Code, svc.decision, approved.Body.String())
+	}
+}
+
+func TestFactoryPlanMutationRoutes(t *testing.T) {
+	svc := &fakeFactoryService{
+		plan:     factory.Plan{Revision: 3, Hash: "hash-3", State: factory.PlanDraft},
+		mutation: factory.PlanMutationResult{Plan: factory.Plan{Revision: 3}},
+	}
+	srv := New(nil, nil, "", nil, nil)
+	srv.factory = svc
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tt := range []struct {
+		name, path, body string
+		want             int
+	}{
+		{name: "add planning", path: "/api/factory/epics/fac-1/planning", body: `{"expectedRevision":2,"target":{"id":"api","hostId":"local","repository":"/repo","deliveryBase":{}},"acknowledgeLocalExecution":true}`, want: http.StatusCreated},
+		{name: "complete planning", path: "/api/factory/epics/fac-1/planning/fac-1.1/complete", body: `{"expectedRevision":2,"expectedHash":"hash-2"}`, want: http.StatusOK},
+		{name: "revise", path: "/api/factory/epics/fac-1/plan/revise", body: `{"expectedRevision":2,"expectedHash":"hash-2"}`, want: http.StatusOK},
+		{name: "reject", path: "/api/factory/epics/fac-1/plan/reject", body: `{"expectedRevision":2,"expectedHash":"hash-2"}`, want: http.StatusOK},
+		{name: "cancel", path: "/api/factory/epics/fac-1/plan/cancel", body: `{"expectedRevision":2,"expectedHash":"hash-2"}`, want: http.StatusOK},
+		{name: "unknown decision", path: "/api/factory/epics/fac-1/plan/nope", body: `{}`, want: http.StatusNotFound},
+		{name: "unknown mutation", path: "/api/factory/epics/fac-1/nope", body: `{}`, want: http.StatusNotFound},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(tt.body))
+			req.RemoteAddr = "127.0.0.1:1234"
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+			if rec.Code != tt.want {
+				t.Fatalf("status = %d, want %d: %s", rec.Code, tt.want, rec.Body.String())
+			}
+		})
+	}
+	if svc.decision.Actor != "operator" {
+		t.Fatalf("decision actor = %q, want operator", svc.decision.Actor)
+	}
+}
+
+func TestFactoryPlanStaleMutationReturnsCurrentGraph(t *testing.T) {
+	svc := &fakeFactoryService{mutation: factory.PlanMutationResult{Stale: true, Plan: factory.Plan{Revision: 5, Hash: "current"}}}
+	srv := New(nil, nil, "", nil, nil)
+	srv.factory = svc
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/factory/epics/fac-1/plan/mutate", strings.NewReader(`{"expectedRevision":4,"graph":{"intent":"stale","targets":[],"items":[],"dependencies":[]}}`))
+	req.RemoteAddr = "127.0.0.1:1234"
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"revision":5`) || !strings.Contains(rec.Body.String(), `"current"`) {
+		t.Fatalf("stale mutation = %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestFactoryPlanCASConflictsReturnCurrentPlan(t *testing.T) {
+	current := factory.Plan{Revision: 5, Hash: "current", State: factory.PlanDraft, Draft: factory.PlanGraph{Intent: "current graph"}}
+	svc := &fakeFactoryService{createErr: &factory.PlanConflictError{Current: current}}
+	srv := New(nil, nil, "", nil, nil)
+	srv.factory = svc
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct{ path, body string }{
+		{path: "/api/factory/epics/fac-1/plan/mutate", body: `{"expectedRevision":4,"graph":{"intent":"stale"}}`},
+		{path: "/api/factory/epics/fac-1/planning", body: `{"expectedRevision":4,"target":{"id":"api"}}`},
+		{path: "/api/factory/epics/fac-1/planning/fac-1.1/complete", body: `{"expectedRevision":4,"expectedHash":"stale"}`},
+		{path: "/api/factory/epics/fac-1/plan/approve", body: `{"expectedRevision":4,"expectedHash":"stale"}`},
+		{path: "/api/factory/epics/fac-1/plan/revise", body: `{"expectedRevision":4,"expectedHash":"stale"}`},
+		{path: "/api/factory/epics/fac-1/plan/reject", body: `{"expectedRevision":4,"expectedHash":"stale"}`},
+		{path: "/api/factory/epics/fac-1/plan/cancel", body: `{"expectedRevision":4,"expectedHash":"stale"}`},
+	} {
+		req := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(tt.body))
+		req.RemoteAddr = "127.0.0.1:1234"
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"revision":5`) || !strings.Contains(rec.Body.String(), `"intent":"current graph"`) {
+			t.Fatalf("POST %s = %d: %s", tt.path, rec.Code, rec.Body.String())
+		}
 	}
 }

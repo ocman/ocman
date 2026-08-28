@@ -39,6 +39,7 @@ const (
 	ReasonBeadsStoreUnavailable    Reason = "beads_store_unavailable"
 	ReasonBeadsCommandFailed       Reason = "beads_command_failed"
 	ReasonDispatchLockFailed       Reason = "dispatch_lock_failed"
+	ReasonRecoveryFailed           Reason = "recovery_failed"
 )
 
 type BeadsHealth struct {
@@ -74,22 +75,34 @@ type projectResolver interface {
 	ResolveLocalProject(context.Context, string) (string, error)
 }
 
-type Service struct {
-	dir      string
-	runner   runner
-	mu       sync.RWMutex
-	pourMu   sync.Mutex
-	owned    bool
-	lockErr  error
-	release  func() error
-	acks     localExecutionAckStore
-	projects projectResolver
+type factoryStore interface {
+	localExecutionAckStore
+	GetFactoryPlanningSession(context.Context, string) (PlanningSession, bool, error)
+	PutFactoryPlanningSession(context.Context, string, string, PlanningSession) error
+	DeleteFactoryPlanningSession(context.Context, string) error
+	AppendFactoryAuditOnce(context.Context, FactoryAuditRecord) error
 }
 
-func New(dir string, ackStore localExecutionAckStore, projects projectResolver) *Service {
-	service := newWithRunner(dir, nil, ackStore)
-	service.projects = projects
-	return service
+type Service struct {
+	dir         string
+	runner      runner
+	mu          sync.RWMutex
+	pourMu      sync.Mutex
+	owned       bool
+	lockErr     error
+	recoveryErr error
+	release     func() error
+	acks        localExecutionAckStore
+	store       factoryStore
+	projects    projectResolver
+	planning    PlanningLauncher
+}
+
+func New(dir string, ackStore localExecutionAckStore, projects projectResolver, planning PlanningLauncher) *Service {
+	svc := newWithRunner(dir, nil, ackStore)
+	svc.projects = projects
+	svc.planning = planning
+	return svc
 }
 
 func newWithRunner(dir string, r runner, ackStore localExecutionAckStore) *Service {
@@ -99,7 +112,9 @@ func newWithRunner(dir string, r runner, ackStore localExecutionAckStore) *Servi
 	if absolute, err := filepath.Abs(dir); err == nil {
 		dir = absolute
 	}
-	return &Service{dir: dir, runner: r, acks: ackStore}
+	svc := &Service{dir: dir, runner: r, acks: ackStore}
+	svc.store, _ = ackStore.(factoryStore)
+	return svc
 }
 
 func (s *Service) Start(ctx context.Context) error {
@@ -116,6 +131,9 @@ func (s *Service) Start(ctx context.Context) error {
 	s.release, s.owned, s.lockErr = release, owned, err
 	if owned {
 		initializeBeads(ctx, filepath.Join(s.dir, "beads"), s.runner)
+		if s.store != nil && s.planning != nil {
+			s.recoveryErr = s.recoverPlanningSessions(ctx)
+		}
 	}
 	return nil
 }
@@ -128,15 +146,23 @@ func (s *Service) Close() {
 	}
 	s.release = nil
 	s.owned = false
+	s.recoveryErr = nil
 }
 
 func (s *Service) Status(ctx context.Context) Status {
 	s.mu.RLock()
-	owned, lockErr := s.owned, s.lockErr
+	owned, lockErr, recoveryErr := s.owned, s.lockErr, s.recoveryErr
 	s.mu.RUnlock()
 
 	beads := probeBeads(ctx, filepath.Join(s.dir, "beads"), s.runner)
 	status := Status{DispatchOwner: owned, ReadOnly: !owned, Beads: beads}
+	if recoveryErr != nil {
+		status.Health = HealthDegraded
+		status.ReadOnly = true
+		status.Reason = ReasonRecoveryFailed
+		status.Message = "Factory startup recovery failed; mutations remain disabled until recovery succeeds: " + recoveryErr.Error()
+		return status
+	}
 	if lockErr != nil {
 		status.Health = HealthDegraded
 		status.Reason = ReasonDispatchLockFailed

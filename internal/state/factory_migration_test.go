@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/factory"
 	_ "modernc.org/sqlite"
 )
 
@@ -164,5 +165,56 @@ func TestFactoryMigrationNormalReopenIsIdempotent(t *testing.T) {
 	var applied int
 	if err := db.db.QueryRow(`SELECT count(*) FROM schema_version WHERE version = 49`).Scan(&applied); err != nil || applied != 1 {
 		t.Fatalf("v49 application count = %d, %v", applied, err)
+	}
+}
+
+func TestFactoryPlanningSessionAndAuditAreDurable(t *testing.T) {
+	raw, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := OpenFromSQL(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	ctx := context.Background()
+	session := factory.PlanningSession{Platform: "agent", ID: "session-1"}
+	if err := db.PutFactoryPlanningSession(ctx, "epic-1", "work-1", session); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := db.GetFactoryPlanningSession(ctx, "work-1")
+	if err != nil || !ok || got != session {
+		t.Fatalf("planning session = %#v, %v, %v", got, ok, err)
+	}
+	if err := db.PutFactoryPlanningSession(ctx, "epic-1", "work-1", factory.PlanningSession{Platform: "agent", ID: "session-2"}); err == nil {
+		t.Fatal("Planning Session mapping was overwritten")
+	}
+	if err := db.DeleteFactoryPlanningSession(ctx, "work-1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := db.GetFactoryPlanningSession(ctx, "work-1"); err != nil || ok {
+		t.Fatalf("deleted Planning Session still present: ok=%v err=%v", ok, err)
+	}
+	if err := db.AppendFactoryAudit(ctx, factory.FactoryAuditRecord{EpicID: "epic-1", WorkID: "work-1", Actor: "dries", Action: "plan.approved", Details: map[string]int{"revision": 2}, At: time.Unix(10, 0)}); err != nil {
+		t.Fatal(err)
+	}
+	var action, details string
+	if err := raw.QueryRow(`SELECT action, details_json FROM factory_audit_record WHERE epic_id = 'epic-1'`).Scan(&action, &details); err != nil {
+		t.Fatal(err)
+	}
+	if action != "plan.approved" || details != `{"revision":2}` {
+		t.Fatalf("audit = %q, %s", action, details)
+	}
+	record := factory.FactoryAuditRecord{EpicID: "epic-1", Actor: "dries", Action: "plan.cancelled", Details: map[string]string{"reason": "duplicate"}, At: time.Unix(20, 0)}
+	if err := db.AppendFactoryAuditOnce(ctx, record); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AppendFactoryAuditOnce(ctx, record); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := raw.QueryRow(`SELECT count(*) FROM factory_audit_record WHERE action = 'plan.cancelled'`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("deduplicated audit count = %d, err=%v", count, err)
 	}
 }

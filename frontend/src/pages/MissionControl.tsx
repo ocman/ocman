@@ -1,6 +1,7 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { Button } from '../components/Control';
-import { useCreateWorkEpic, useFactoryStatus, useWorkEpics } from '../lib/queries';
+import { useAddFactoryPlanningWork, useCompleteFactoryPlanningWork, useCreateWorkEpic, useDecideFactoryPlan, useFactoryStatus, useMutateFactoryPlan, useWorkEpics } from '../lib/queries';
+import type { FactoryPlan, FactoryPlanGraph } from '../lib/api';
 import './MissionControl.css';
 
 function CreateWorkEpic() {
@@ -104,6 +105,7 @@ function WorkEpics() {
                   <div><dt>Planning Work status</dt><dd>{epic.planning.workStatus}</dd></div>
                   <div><dt>Plan approval Gate status</dt><dd>{epic.planning.approvalStatus}</dd></div>
                 </dl>
+				{epic.planError ? <div role="alert">{epic.planError}</div> : epic.plan && <PlanPanel key={`${epic.id}-${epic.plan.revision}`} epicID={epic.id} plan={epic.plan} />}
               </article>
             </li>
           ))}
@@ -111,6 +113,82 @@ function WorkEpics() {
       )}
     </section>
   );
+}
+
+function PlanPanel({ epicID, plan }: { epicID: string; plan: FactoryPlan }) {
+	const mutate = useMutateFactoryPlan(epicID);
+	const addPlanning = useAddFactoryPlanningWork(epicID);
+	const completePlanning = useCompleteFactoryPlanningWork(epicID);
+	const decide = useDecideFactoryPlan(epicID);
+	const [graphText, setGraphText] = useState(() => JSON.stringify(plan.graph, null, 2));
+	const [graphError, setGraphError] = useState('');
+	const [approvalAcknowledged, setApprovalAcknowledged] = useState(false);
+	const busy = mutate.isPending || addPlanning.isPending || completePlanning.isPending || decide.isPending;
+
+	async function saveGraph() {
+		try {
+			const graph = JSON.parse(graphText) as FactoryPlanGraph;
+			setGraphError('');
+			await mutate.mutateAsync({ expectedRevision: plan.revision, graph });
+		} catch (error) {
+			setGraphError(error instanceof Error ? error.message : 'Invalid Plan graph.');
+		}
+	}
+
+	async function addRepository(event: FormEvent<HTMLFormElement>) {
+		event.preventDefault();
+		const form = new FormData(event.currentTarget);
+		await addPlanning.mutateAsync({
+			expectedRevision: plan.revision,
+			target: {
+				id: String(form.get('targetId') ?? '').trim(),
+				hostId: 'local',
+				repository: String(form.get('repository') ?? '').trim(),
+				deliveryBase: { remote: String(form.get('remote') ?? '').trim(), baseBranch: String(form.get('baseBranch') ?? '').trim(), baseSha: String(form.get('baseSha') ?? '').trim() },
+			},
+		});
+	}
+
+	function decision(action: 'approve' | 'revise' | 'reject' | 'cancel') {
+		void decide.mutateAsync({ action, request: { expectedRevision: plan.revision, expectedHash: plan.hash, actor: 'operator', acknowledgeLocalExecution: action === 'approve' && approvalAcknowledged } });
+	}
+
+	return (
+		<section className="factory-plan" aria-label={`Plan for ${epicID}`}>
+			<p><strong>Plan {plan.state}</strong> · revision {plan.revision} · <code>{plan.hash.slice(0, 12)}</code></p>
+			<ul aria-label="Planning Sessions">
+				{plan.planning.map((work) => <li key={work.id}>
+					{work.repository}: {work.status}{' '}
+					{work.session.id && <a href={`/session/${encodeURIComponent(work.session.id)}?platform=${encodeURIComponent(work.session.platform)}`}>Open Planning Session</a>}{' '}
+					{plan.state === 'draft' && (work.status !== 'closed' || work.completedRevision !== plan.revision || work.completedHash !== plan.hash) && <Button type="button" disabled={busy} onClick={() => void completePlanning.mutateAsync({ workID: work.id, expectedRevision: plan.revision, expectedHash: plan.hash })}>Mark Planning Work complete</Button>}
+				</li>)}
+			</ul>
+			{plan.validation.length > 0 && <ul className="factory-plan-validation" aria-label="Plan validation">{plan.validation.map((problem) => <li key={problem}>{problem}</li>)}</ul>}
+			{plan.state === 'draft' && (
+				<>
+					<label>Draft graph<textarea aria-label={`Draft graph for ${epicID}`} value={graphText} onChange={(event) => setGraphText(event.target.value)} /></label>
+					<Button type="button" disabled={busy} onClick={() => void saveGraph()}>Save graph</Button>
+					<form className="factory-target-form" aria-label={`Add Planning Work to ${epicID}`} onSubmit={(event) => void addRepository(event)}>
+						<input name="targetId" aria-label="Target ID" placeholder="api" required />
+						<input name="repository" aria-label="Target repository" placeholder="/absolute/repository" required />
+						<input name="remote" aria-label="Delivery remote" placeholder="origin" required />
+						<input name="baseBranch" aria-label="Delivery base branch" placeholder="main" required />
+						<input name="baseSha" aria-label="Delivery base SHA" required />
+						<label><input type="checkbox" required /> I understand this Planning Work executes locally without isolation.</label>
+						<Button type="submit" disabled={busy}>Add Planning Work</Button>
+					</form>
+				</>
+			)}
+			<div className="factory-plan-actions">
+				{plan.state === 'draft' && plan.validation.length === 0 && <label><input type="checkbox" checked={approvalAcknowledged} onChange={(event) => setApprovalAcknowledged(event.target.checked)} /> I understand approved work executes locally without isolation under the displayed profiles.</label>}
+				{plan.state === 'draft' && <Button type="button" variant="accent" disabled={busy || plan.validation.length > 0 || !approvalAcknowledged} onClick={() => decision('approve')}>Approve exact revision</Button>}
+				{plan.state === 'approved' && <Button type="button" disabled={busy} onClick={() => decision('revise')}>Revise Plan</Button>}
+				{plan.state === 'draft' && <Button type="button" disabled={busy} onClick={() => decision('reject')}>Reject Plan</Button>}
+				{plan.state !== 'cancelled' && <Button type="button" disabled={busy} onClick={() => decision('cancel')}>Cancel Plan</Button>}
+			</div>
+			{(graphError || mutate.isError || addPlanning.isError || completePlanning.isError || decide.isError) && <div role="alert">{graphError || 'Plan mutation failed; refresh to reconcile the current revision.'}</div>}
+		</section>
+	);
 }
 
 export function MissionControl() {

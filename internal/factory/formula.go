@@ -79,6 +79,9 @@ type WorkEpic struct {
 	FormulaVersion  int           `json:"formulaVersion"`
 	InstantiationID string        `json:"instantiationId"`
 	Planning        PlanningState `json:"planning"`
+	Plan            Plan          `json:"plan"`
+	PlanError       string        `json:"planError,omitempty"`
+	metadata        map[string]string
 }
 
 type graphPlan struct {
@@ -120,25 +123,31 @@ func (s *Service) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRequest)
 		return WorkEpic{}, errors.New("initial project must be an existing local directory")
 	}
 	req.InitialProject = filepath.Clean(project)
-	s.mu.RLock()
-	owned := s.owned
-	s.mu.RUnlock()
-	if !owned {
-		return WorkEpic{}, fmt.Errorf("%w: this process does not own Factory mutations", ErrFactoryUnavailable)
+	return s.createWorkEpicWithAck(ctx, req, true)
+}
+
+func (s *Service) createWorkEpic(ctx context.Context, req CreateWorkEpicRequest) (WorkEpic, error) {
+	return s.createWorkEpicWithAck(ctx, req, false)
+}
+
+func (s *Service) createWorkEpicWithAck(ctx context.Context, req CreateWorkEpicRequest, recordAck bool) (WorkEpic, error) {
+	s.pourMu.Lock()
+	defer s.pourMu.Unlock()
+	if s.store == nil && s.planning == nil {
+		if !s.ownsMutations() {
+			return WorkEpic{}, fmt.Errorf("%w: this process does not own Factory mutations", ErrFactoryUnavailable)
+		}
+	} else if err := s.requireMutationStore(ctx); err != nil {
+		return WorkEpic{}, err
 	}
 	if s.acks == nil {
 		return WorkEpic{}, fmt.Errorf("%w: acknowledgement store is unavailable", ErrFactoryUnavailable)
 	}
-	if err := s.acks.UpsertFactoryLocalExecutionAck(ctx, localHostID, req.InitialProject, planningProfileID, planningProfileVersion, operatorActor, time.Now()); err != nil {
-		return WorkEpic{}, fmt.Errorf("%w: record local execution acknowledgement: %w", ErrFactoryUnavailable, err)
+	if recordAck {
+		if err := s.acks.UpsertFactoryLocalExecutionAck(ctx, localHostID, req.InitialProject, planningProfileID, planningProfileVersion, operatorActor, time.Now()); err != nil {
+			return WorkEpic{}, fmt.Errorf("%w: record local execution acknowledgement: %w", ErrFactoryUnavailable, err)
+		}
 	}
-	return s.createWorkEpic(ctx, req)
-}
-
-func (s *Service) createWorkEpic(ctx context.Context, req CreateWorkEpicRequest) (WorkEpic, error) {
-	s.pourMu.Lock()
-	defer s.pourMu.Unlock()
-
 	beadsDir := filepath.Join(s.dir, "beads")
 	path, _, failure := compatibleBeads(ctx, beadsDir, s.runner)
 	if failure.Reason != "" {
@@ -151,6 +160,16 @@ func (s *Service) createWorkEpic(ctx context.Context, req CreateWorkEpicRequest)
 	if epic, err := matchInstantiation(epics, req); epic != nil || err != nil {
 		if epic == nil {
 			return WorkEpic{}, err
+		}
+		if s.store != nil && s.planning != nil {
+			if epic.metadata[planMetadataKey] == "" {
+				if persistErr := s.persistPlan(ctx, epic); persistErr != nil {
+					return WorkEpic{}, persistErr
+				}
+			}
+			if ensureErr := s.ensureAllPlanningSessions(ctx, epic); ensureErr != nil {
+				return WorkEpic{}, ensureErr
+			}
 		}
 		return *epic, err
 	}
@@ -176,20 +195,43 @@ func (s *Service) createWorkEpic(ctx context.Context, req CreateWorkEpicRequest)
 	out, runErr := run(ctx, s.runner, path, s.dir, []string{"create", "--graph", planPath, "--json"}, beadsCommandEnv(beadsDir))
 	ids, parseErr := parseGraphResult(out)
 	if runErr == nil && parseErr == nil {
-		return WorkEpic{
+		epic := WorkEpic{
 			ID: ids["epic"], Status: "open", Goal: req.Goal, Brief: req.Brief, InitialProject: req.InitialProject,
 			FormulaID: DefaultFormulaID, FormulaVersion: DefaultFormulaVersion, InstantiationID: req.InstantiationID,
 			Planning: PlanningState{WorkID: ids["planning"], WorkStatus: "open", ApprovalGateID: ids["approval"], ApprovalStatus: "open"},
-		}, nil
+			metadata: defaultGraph(req).Nodes[0].Metadata,
+		}
+		epic.metadata["ocman.planning_work_id"] = ids["planning"]
+		epic.metadata["ocman.plan_approval_gate_id"] = ids["approval"]
+		epic.Plan = newInitialPlan(epic)
+		if s.store != nil && s.planning != nil {
+			if err := s.persistPlan(ctx, &epic); err != nil {
+				return WorkEpic{}, err
+			}
+			if err := s.ensureAllPlanningSessions(ctx, &epic); err != nil {
+				return WorkEpic{}, err
+			}
+		}
+		return epic, nil
 	}
 
 	// A timeout, process failure, or malformed response may still follow a committed transaction.
 	reconcileCtx, cancelReconcile := context.WithTimeout(context.WithoutCancel(ctx), beadsTimeout)
+	defer cancelReconcile()
 	epics, reconcileErr := listWorkEpics(reconcileCtx, path, beadsDir, s.runner)
-	cancelReconcile()
 	if reconcileErr == nil {
 		if epic, matchErr := matchInstantiation(epics, req); epic != nil || matchErr != nil {
 			if epic != nil {
+				if s.store != nil && s.planning != nil {
+					if epic.metadata[planMetadataKey] == "" {
+						if persistErr := s.persistPlan(reconcileCtx, epic); persistErr != nil {
+							return WorkEpic{}, persistErr
+						}
+					}
+					if ensureErr := s.ensureAllPlanningSessions(reconcileCtx, epic); ensureErr != nil {
+						return WorkEpic{}, ensureErr
+					}
+				}
 				return *epic, matchErr
 			}
 			return WorkEpic{}, matchErr
@@ -207,7 +249,14 @@ func (s *Service) ListWorkEpics(ctx context.Context) ([]WorkEpic, error) {
 	if failure.Reason != "" {
 		return nil, beadsError(failure)
 	}
-	return listWorkEpics(ctx, path, beadsDir, s.runner)
+	epics, err := listWorkEpics(ctx, path, beadsDir, s.runner)
+	if err != nil {
+		return nil, err
+	}
+	for i := range epics {
+		s.decoratePlanningSessions(ctx, &epics[i])
+	}
+	return epics, nil
 }
 
 func beadsError(failure BeadsHealth) error {
@@ -302,25 +351,16 @@ func parseGraphResult(data []byte) (map[string]string, error) {
 }
 
 func listWorkEpics(ctx context.Context, path, beadsDir string, r runner) ([]WorkEpic, error) {
-	out, err := run(ctx, r, path, parentDir(beadsDir), []string{
-		"--readonly", "list", "--all", "--include-gates", "--limit", "0", "--metadata-field", "ocman.contract=1", "--json",
-	}, beadsCommandEnv(beadsDir))
+	issues, err := listFactoryIssues(ctx, path, beadsDir, r)
 	if err != nil {
-		return nil, fmt.Errorf("%w: list Factory work: %w", ErrBeadsFailure, err)
+		return nil, err
 	}
-	var envelope struct {
-		SchemaVersion int           `json:"schema_version"`
-		Data          *[]beadsIssue `json:"data"`
-	}
-	if !decodeOne(out, &envelope) || envelope.SchemaVersion != 1 || envelope.Data == nil {
-		return nil, fmt.Errorf("%w: Beads returned an unsupported Factory list response", ErrBeadsFailure)
-	}
-	byID := make(map[string]beadsIssue, len(*envelope.Data))
-	for _, issue := range *envelope.Data {
+	byID := make(map[string]beadsIssue, len(issues))
+	for _, issue := range issues {
 		byID[issue.ID] = issue
 	}
 	var epics []WorkEpic
-	for _, issue := range *envelope.Data {
+	for _, issue := range issues {
 		meta := issue.Metadata
 		if issue.IssueType != "epic" || meta["ocman.kind"] != "work-epic" || meta["ocman.formula_id"] != DefaultFormulaID ||
 			meta["ocman.formula_version"] != strconv.Itoa(DefaultFormulaVersion) || meta["ocman.formula_origin"] != "built-in" {
@@ -336,11 +376,74 @@ func listWorkEpics(ctx context.Context, path, beadsDir string, r runner) ([]Work
 		epics = append(epics, WorkEpic{
 			ID: issue.ID, Status: issue.Status, Goal: meta["ocman.goal"], Brief: issue.Description, InitialProject: meta["ocman.initial_project"],
 			FormulaID: DefaultFormulaID, FormulaVersion: DefaultFormulaVersion, InstantiationID: meta["ocman.instantiation_id"],
-			Planning: PlanningState{WorkID: planning.ID, WorkStatus: planning.Status, ApprovalGateID: approval.ID, ApprovalStatus: approval.Status},
+			Planning: PlanningState{WorkID: planning.ID, WorkStatus: planning.Status, ApprovalGateID: approval.ID, ApprovalStatus: approval.Status}, metadata: meta,
 		})
+		epic := &epics[len(epics)-1]
+		if encoded := meta[planMetadataKey]; encoded != "" {
+			var header struct {
+				SchemaVersion int `json:"schemaVersion"`
+			}
+			if err := json.Unmarshal([]byte(encoded), &header); err != nil {
+				epic.PlanError = "Plan metadata is malformed: " + err.Error()
+			} else if header.SchemaVersion > planSchemaVersion {
+				epic.PlanError = fmt.Sprintf("Plan schema %d is unsupported; ocman supports schema %d", header.SchemaVersion, planSchemaVersion)
+			} else if err := json.Unmarshal([]byte(encoded), &epic.Plan); err != nil {
+				epic.PlanError = "Plan metadata is invalid: " + err.Error()
+			} else if epic.Plan.SchemaVersion == 0 {
+				epic.Plan.SchemaVersion = planSchemaVersion
+			}
+			if epic.PlanError == "" && (epic.Plan.Revision <= 0 || epic.Plan.Hash == "" || !validPlanState(epic.Plan.State)) {
+				epic.PlanError = "Plan metadata is missing a valid revision, hash, or state"
+			}
+		} else {
+			epic.Plan = newInitialPlan(*epic)
+		}
+		if epic.PlanError != "" {
+			continue
+		}
+		for i := range epic.Plan.Planning {
+			if issue, ok := byID[epic.Plan.Planning[i].ID]; ok {
+				epic.Plan.Planning[i].Status = issue.Status
+				epic.Plan.Planning[i].Outcome = issue.Metadata["ocman.terminal_outcome"]
+				epic.Plan.Planning[i].CompletedRevision, _ = strconv.Atoi(issue.Metadata["ocman.plan_revision"])
+				epic.Plan.Planning[i].CompletedHash = issue.Metadata["ocman.plan_hash"]
+				epic.Plan.Planning[i].metadata = issue.Metadata
+			}
+		}
+		if err := validateDraft(epic.Plan.Draft, epic.Plan.Planning); err != nil {
+			epic.Plan.Validation = []string{err.Error()}
+		} else {
+			epic.Plan.Validation = validateComplete(epic.Plan)
+		}
 	}
 	sort.Slice(epics, func(i, j int) bool { return epics[i].ID < epics[j].ID })
 	return epics, nil
+}
+
+func listFactoryIssues(ctx context.Context, path, beadsDir string, r runner) ([]beadsIssue, error) {
+	out, err := run(ctx, r, path, parentDir(beadsDir), []string{
+		"--readonly", "list", "--all", "--include-gates", "--limit", "0", "--metadata-field", "ocman.contract=1", "--json",
+	}, beadsCommandEnv(beadsDir))
+	if err != nil {
+		return nil, fmt.Errorf("%w: list Factory work: %w", ErrBeadsFailure, err)
+	}
+	var envelope struct {
+		SchemaVersion int           `json:"schema_version"`
+		Data          *[]beadsIssue `json:"data"`
+	}
+	if !decodeOne(out, &envelope) || envelope.SchemaVersion != 1 || envelope.Data == nil {
+		return nil, fmt.Errorf("%w: Beads returned an unsupported Factory list response", ErrBeadsFailure)
+	}
+	return *envelope.Data, nil
+}
+
+func validPlanState(state PlanState) bool {
+	switch state {
+	case PlanDraft, PlanApproved, PlanRejected, PlanCancelled:
+		return true
+	default:
+		return false
+	}
 }
 
 func sameProvenance(child, epic map[string]string, kind string) bool {

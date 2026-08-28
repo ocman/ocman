@@ -98,7 +98,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/dagu/status", s.get(s.handleDaguStatus))
 	mux.HandleFunc("/api/factory/status", s.get(s.handleFactoryStatus))
 	mux.HandleFunc("/api/factory/epics", s.requireAuth(s.handleFactoryEpics))
-	mux.HandleFunc("/api/factory/epics/", s.get(s.handleFactoryEpic))
+	mux.HandleFunc("/api/factory/epics/", s.requireAuth(s.handleFactoryEpic))
 
 	workflowHandler := s.requireLocalhost(s.handleWorkflows)
 	mux.HandleFunc("/api/workflows", workflowHandler)

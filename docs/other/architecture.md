@@ -92,6 +92,7 @@ flowchart TD
     Server --> Workflows[automation services<br/>workflows + prompt schedules]
     Server --> Factory[internal/factory<br/>readiness, dispatch lock + Beads store]
     Factory --> State
+    Factory --> Registry
     Factory --> Router
     Workflows --> Registry
     Workflows --> Router
@@ -114,10 +115,22 @@ flowchart TD
   dispatch ownership. The owner initializes the dedicated store idempotently
   on first start. The owner can atomically instantiate the immutable default
   Formula into a Work Epic, Planning Work and Plan approval Gate; local
-  execution acknowledgements are stored separately in `state.db`. Its intake
-  service also prepares confirmed conversation briefs, validates local Git
-  targets and creates idempotent Work Epics through an implementation-neutral
-  MCP contract. Other
+  Formula into a Work Epic, Planning Work and Plan approval Gate. Its intake
+  service prepares confirmed conversation briefs, validates local Git targets
+  and creates idempotent Work Epics through an implementation-neutral MCP
+  contract. It owns the
+  revision-checked draft and exact-revision approval lifecycle. Planning
+  success is bound to that same revision and hash, so a graph edit cannot
+  reuse stale completion evidence. Every Plan transition intent is durably
+  journaled before Beads changes; pending/last operation markers in Plan
+  metadata let startup recovery reconcile interrupted graph, Planning Work,
+  Gate, audit and Planning Session transitions. Failed recovery leaves the
+  owner degraded and read-only. A narrow
+  Planning Session launcher resolves the hub-local host and session seams,
+  ensures the repository runtime, and installs the read-only
+  `factory-plan/v1` rules before exposing the session, aborts failed setup,
+  and probes persisted mappings before reuse; local execution acknowledgements
+  and session mappings are stored separately in `state.db`. Other
   instances expose the same authenticated reads without mutation authority;
   Workflows state and services are not involved.
 - **Factory persistence.** Beads owns the Work Epic graph, child Work Items,
@@ -314,5 +327,8 @@ flowchart TD
 - **Mission Control.** The top-level `/factory` page polls the authenticated
   `/api/factory/status` and `/api/factory/epics` endpoints through TanStack
   Query. The dispatch owner can acknowledge local execution and create a Work
-  Epic from the built-in Formula; all clients can inspect its initial Planning
-  Work and Plan approval Gate independently of Workflows.
+  Epic from the built-in Formula; all clients can inspect its repository-scoped
+  Planning Sessions, draft revision/hash, whole-graph validation and immutable
+  approval. Localhost-protected nested epic routes perform CAS graph updates,
+  add Planning Work, complete Planning Work and approve/revise/reject/cancel the
+  exact Plan independently of Workflows.

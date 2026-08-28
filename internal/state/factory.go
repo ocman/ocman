@@ -3,9 +3,12 @@ package state
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/factory"
 )
 
 // HasFactoryLocalExecutionAck reports whether the operator has acknowledged
@@ -37,6 +40,104 @@ func (d *DB) UpsertFactoryLocalExecutionAck(ctx context.Context, hostID, repoRoo
 	`, hostID, repoRoot, profileID, profileVersion, actor, at.UnixMilli())
 	if err != nil {
 		return fmt.Errorf("upserting Factory local execution acknowledgement: %w", err)
+	}
+	return nil
+}
+
+// GetFactoryPlanningSession returns the durable session bound to one Planning Work item.
+func (d *DB) GetFactoryPlanningSession(ctx context.Context, workID string) (factory.PlanningSession, bool, error) {
+	var session factory.PlanningSession
+	var metadata string
+	err := d.db.QueryRowContext(ctx, `
+		SELECT external_id, metadata_json
+		FROM factory_external_mapping
+		WHERE system = 'session' AND external_kind = 'planning' AND entity_kind = 'planning_work' AND entity_id = ?
+	`, workID).Scan(&session.ID, &metadata)
+	if err == sql.ErrNoRows {
+		return factory.PlanningSession{}, false, nil
+	}
+	if err != nil {
+		return factory.PlanningSession{}, false, fmt.Errorf("getting Factory Planning Session: %w", err)
+	}
+	var stored struct {
+		Platform string `json:"platform"`
+	}
+	if err := json.Unmarshal([]byte(metadata), &stored); err != nil || stored.Platform == "" {
+		return factory.PlanningSession{}, false, errors.New("getting Factory Planning Session: invalid metadata")
+	}
+	session.Platform = stored.Platform
+	return session, true, nil
+}
+
+// PutFactoryPlanningSession binds one Planning Work item to exactly one session.
+func (d *DB) PutFactoryPlanningSession(ctx context.Context, epicID, workID string, session factory.PlanningSession) error {
+	metadata, err := json.Marshal(map[string]string{"epicId": epicID, "platform": session.Platform})
+	if err != nil {
+		return err
+	}
+	_, err = d.db.ExecContext(ctx, `
+		INSERT INTO factory_external_mapping
+			(system, external_kind, external_id, entity_kind, entity_id, metadata_json, created_at)
+		VALUES ('session', 'planning', ?, 'planning_work', ?, ?, ?)
+		ON CONFLICT(system, external_kind, entity_kind, entity_id) DO NOTHING
+	`, session.ID, workID, string(metadata), time.Now().UnixMilli())
+	if err != nil {
+		return fmt.Errorf("putting Factory Planning Session: %w", err)
+	}
+	stored, ok, err := d.GetFactoryPlanningSession(ctx, workID)
+	if err != nil {
+		return err
+	}
+	if !ok || stored != session {
+		return errors.New("putting Factory Planning Session: Planning Work is already bound to another session")
+	}
+	return nil
+}
+
+// DeleteFactoryPlanningSession clears a dead Planning Session binding.
+func (d *DB) DeleteFactoryPlanningSession(ctx context.Context, workID string) error {
+	_, err := d.db.ExecContext(ctx, `
+		DELETE FROM factory_external_mapping
+		WHERE system = 'session' AND external_kind = 'planning' AND entity_kind = 'planning_work' AND entity_id = ?
+	`, workID)
+	if err != nil {
+		return fmt.Errorf("deleting Factory Planning Session: %w", err)
+	}
+	return nil
+}
+
+// AppendFactoryAudit records an immutable Factory decision or graph transition.
+func (d *DB) AppendFactoryAudit(ctx context.Context, record factory.FactoryAuditRecord) error {
+	details, err := json.Marshal(record.Details)
+	if err != nil {
+		return fmt.Errorf("encoding Factory audit: %w", err)
+	}
+	_, err = d.db.ExecContext(ctx, `
+		INSERT INTO factory_audit_record (epic_id, work_item_id, actor, action, details_json, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, record.EpicID, record.WorkID, record.Actor, record.Action, string(details), record.At.UnixMilli())
+	if err != nil {
+		return fmt.Errorf("appending Factory audit: %w", err)
+	}
+	return nil
+}
+
+// AppendFactoryAuditOnce records a transition once across retries and recovery.
+func (d *DB) AppendFactoryAuditOnce(ctx context.Context, record factory.FactoryAuditRecord) error {
+	details, err := json.Marshal(record.Details)
+	if err != nil {
+		return fmt.Errorf("encoding Factory audit: %w", err)
+	}
+	_, err = d.db.ExecContext(ctx, `
+		INSERT INTO factory_audit_record (epic_id, work_item_id, actor, action, details_json, created_at)
+		SELECT ?, ?, ?, ?, ?, ?
+		WHERE NOT EXISTS (
+			SELECT 1 FROM factory_audit_record
+			WHERE epic_id = ? AND work_item_id = ? AND actor = ? AND action = ? AND details_json = ?
+		)
+	`, record.EpicID, record.WorkID, record.Actor, record.Action, string(details), record.At.UnixMilli(), record.EpicID, record.WorkID, record.Actor, record.Action, string(details))
+	if err != nil {
+		return fmt.Errorf("appending Factory audit once: %w", err)
 	}
 	return nil
 }

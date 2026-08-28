@@ -88,6 +88,10 @@ export type {
   FactoryReason,
   WorkEpic,
   CreateWorkEpicRequest,
+	FactoryPlan,
+	FactoryPlanGraph,
+	FactoryPlanMutationResult,
+	FactoryPlanDecisionRequest,
 } from './api.types';
 
 // Type imports used by the api object below.
@@ -145,6 +149,10 @@ import type {
 	FactoryStatus,
 	WorkEpic,
 	CreateWorkEpicRequest,
+	FactoryPlan,
+	FactoryPlanGraph,
+	FactoryPlanMutationResult,
+	FactoryPlanDecisionRequest,
 } from './api.types';
 
 /**
@@ -400,6 +408,14 @@ export const api = {
     fetchJSON<WorkEpic>(`/api/factory/epics/${encodeURIComponent(id)}`, signal),
   createFactoryEpic: (request: CreateWorkEpicRequest) =>
     postJSON<WorkEpic, CreateWorkEpicRequest>('/api/factory/epics', request),
+	mutateFactoryPlan: (id: string, expectedRevision: number, graph: FactoryPlanGraph) =>
+		postJSON<FactoryPlanMutationResult, { expectedRevision: number; graph: FactoryPlanGraph }>(`/api/factory/epics/${encodeURIComponent(id)}/plan/mutate`, { expectedRevision, graph }),
+	addFactoryPlanningWork: (id: string, expectedRevision: number, target: FactoryPlanGraph['targets'][number]) =>
+		postJSON<FactoryPlanMutationResult, { expectedRevision: number; target: FactoryPlanGraph['targets'][number]; acknowledgeLocalExecution: true }>(`/api/factory/epics/${encodeURIComponent(id)}/planning`, { expectedRevision, target, acknowledgeLocalExecution: true }),
+	decideFactoryPlan: (id: string, action: 'approve' | 'revise' | 'reject' | 'cancel', request: FactoryPlanDecisionRequest) =>
+		postJSON<FactoryPlan, FactoryPlanDecisionRequest>(`/api/factory/epics/${encodeURIComponent(id)}/plan/${action}`, request),
+	completeFactoryPlanningWork: (id: string, workID: string, expectedRevision: number, expectedHash: string) =>
+		postJSON<FactoryPlan, { expectedRevision: number; expectedHash: string }>(`/api/factory/epics/${encodeURIComponent(id)}/planning/${encodeURIComponent(workID)}/complete`, { expectedRevision, expectedHash }),
   browseDirectories: (dir?: string, signal?: AbortSignal) =>
     fetchJSON<DirectoryBrowseResponse>(`/api/filesystem/directories${queryString({ dir })}`, signal),
   searchDirectories: (root: string | undefined, query: string, limit?: number, signal?: AbortSignal) => {

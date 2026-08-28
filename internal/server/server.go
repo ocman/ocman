@@ -170,6 +170,14 @@ type factoryService interface {
 	CreateWorkEpic(context.Context, factory.CreateWorkEpicRequest) (factory.WorkEpic, error)
 	ListWorkEpics(context.Context) ([]factory.WorkEpic, error)
 	GetWorkEpic(context.Context, string) (factory.WorkEpic, error)
+	GetPlan(context.Context, string) (factory.Plan, error)
+	MutatePlan(context.Context, string, factory.MutatePlanRequest) (factory.PlanMutationResult, error)
+	AddPlanningWork(context.Context, string, factory.AddPlanningWorkRequest) (factory.PlanMutationResult, error)
+	CompletePlanningWork(context.Context, string, string, factory.CompletePlanningWorkRequest) (factory.Plan, error)
+	ApprovePlan(context.Context, string, factory.PlanDecisionRequest) (factory.Plan, error)
+	RevisePlan(context.Context, string, factory.PlanDecisionRequest) (factory.Plan, error)
+	RejectPlan(context.Context, string, factory.PlanDecisionRequest) (factory.Plan, error)
+	CancelPlan(context.Context, string, factory.PlanDecisionRequest) (factory.Plan, error)
 }
 
 type factoryIntakeService interface {
@@ -226,12 +234,6 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 
 		runtime: ocruntime.NewNativeRuntime(),
 	}
-	factorySvc := factory.New(filepath.Join(state.DefaultDataDir(), "factory"), nil, factoryProjectResolver{server: s})
-	if stateDB != nil {
-		factorySvc = factory.New(filepath.Join(state.DefaultDataDir(), "factory"), stateDB, factoryProjectResolver{server: s})
-	}
-	s.factory = factorySvc
-	s.factoryIntake = factorySvc
 	// The host router is built lazily (see router()) so tests can override
 	// s.runtime after New before the local Host is constructed.
 	// registryRef (not the registry itself) so the service follows a
@@ -253,6 +255,9 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 			s.refreshProjectsIndexAsync()
 		},
 	})
+	factorySvc := factory.New(filepath.Join(state.DefaultDataDir(), "factory"), stateDB, factoryProjectResolver{server: s}, factoryPlanningLauncher{server: s})
+	s.factory = factorySvc
+	s.factoryIntake = factorySvc
 	if stateDB != nil {
 		s.promptScheduleSvc = newPromptScheduleService(stateDB, managedPromptSessions{s}, nil, nil)
 	}
