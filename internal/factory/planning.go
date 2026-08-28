@@ -266,15 +266,7 @@ func (s *Service) AddPlanningWork(ctx context.Context, epicID string, req AddPla
 	if err != nil {
 		return PlanMutationResult{}, err
 	}
-	if s.planning != nil {
-		if err := s.ensureAllPlanningSessions(ctx, &epic); err != nil {
-			return PlanMutationResult{}, err
-		}
-	}
 	if operation := epic.Plan.LastOperation; operation != nil && operation.Action == "planning.added" && operation.FromRevision == req.ExpectedRevision && samePlanningTargetIdentity(operation.Target, req.Target) {
-		if err := s.ensureAllPlanningSessions(ctx, &epic); err != nil {
-			return PlanMutationResult{}, err
-		}
 		if err := s.auditOnce(ctx, epic.ID, operation.WorkID, operation.Actor, operation.Action, operation); err != nil {
 			return PlanMutationResult{}, err
 		}
@@ -300,6 +292,11 @@ func (s *Service) AddPlanningWork(ctx context.Context, epicID string, req AddPla
 	for _, target := range epic.Plan.Draft.Targets {
 		if target.ID == req.Target.ID || target.Repository == req.Target.Repository {
 			return PlanMutationResult{}, errors.New("planning work target already exists")
+		}
+	}
+	if s.planning != nil {
+		if err := s.ensureAllPlanningSessions(ctx, &epic); err != nil {
+			return PlanMutationResult{}, err
 		}
 	}
 	if err := s.acks.UpsertFactoryLocalExecutionAck(ctx, localHostID, req.Target.Repository, planningProfileID, planningProfileVersion, operatorActor, time.Now()); err != nil {

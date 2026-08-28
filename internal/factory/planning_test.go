@@ -514,12 +514,13 @@ func TestAddPlanningWorkAddsTargetAndLaunchesOnlyInThatRepository(t *testing.T) 
 }
 
 func TestAddPlanningWorkReturnsCurrentPlanBeforeRepositoryValidationWhenStale(t *testing.T) {
-	current := Plan{SchemaVersion: planSchemaVersion, Revision: 3, State: PlanDraft, Draft: PlanGraph{Intent: "Current"}}
+	current := Plan{SchemaVersion: planSchemaVersion, Revision: 3, State: PlanDraft, Draft: PlanGraph{Intent: "Current"}, Planning: []PlanningWork{{ID: "fac-1.1", TargetID: "app", Repository: "/repo", Status: "open"}}}
 	current.Hash = hashPlanGraph(current.Draft)
 	store := &fakeFactoryStore{}
+	launcher := &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "unexpected-session"}}
 	runner := &fakeRunner{runs: []fakeRun{{out: versionEnvelope}, {out: listEnvelope(issuesWithPlan(t, current))}}}
 	svc := newWithRunner(t.TempDir(), runner, store)
-	svc.owned = true
+	svc.planning, svc.owned = launcher, true
 
 	result, err := svc.AddPlanningWork(context.Background(), "fac-1", AddPlanningWorkRequest{
 		ExpectedRevision:          2,
@@ -529,8 +530,8 @@ func TestAddPlanningWorkReturnsCurrentPlanBeforeRepositoryValidationWhenStale(t 
 	if err != nil || !result.Stale || result.Plan.Revision != 3 || result.Plan.Draft.Intent != "Current" {
 		t.Fatalf("AddPlanningWork result = %#v, error = %v", result, err)
 	}
-	if len(store.calls) != 0 || len(store.audits) != 0 || len(runner.seen) != 2 {
-		t.Fatalf("stale request mutated state: acknowledgements = %#v, audits = %#v, commands = %#v", store.calls, store.audits, runner.seen)
+	if len(store.calls) != 0 || len(store.audits) != 0 || len(store.sessions) != 0 || len(launcher.calls) != 0 || len(launcher.probes) != 0 || len(runner.seen) != 2 {
+		t.Fatalf("stale request mutated state: acknowledgements = %#v, audits = %#v, sessions = %#v, launches = %#v, probes = %#v, commands = %#v", store.calls, store.audits, store.sessions, launcher.calls, launcher.probes, runner.seen)
 	}
 }
 
@@ -548,8 +549,8 @@ func TestAddPlanningWorkRetryConvergesAfterRepositoryDisappears(t *testing.T) {
 	if err := os.Remove(repository); err != nil {
 		t.Fatal(err)
 	}
-	store := &fakeFactoryStore{sessions: map[string]PlanningSession{"fac-1.3": {Platform: "agent", ID: "session-1"}}}
-	launcher := &fakePlanningLauncher{}
+	store := &fakeFactoryStore{}
+	launcher := &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "unexpected-session"}}
 	runner := &fakeRunner{runs: []fakeRun{{out: versionEnvelope}, {out: listEnvelope(issuesWithPlan(t, current))}}}
 	svc := newWithRunner(t.TempDir(), runner, store)
 	svc.planning, svc.owned = launcher, true
@@ -558,8 +559,8 @@ func TestAddPlanningWorkRetryConvergesAfterRepositoryDisappears(t *testing.T) {
 	if err != nil || result.Stale || result.Plan.Revision != 3 {
 		t.Fatalf("AddPlanningWork retry result = %#v, error = %v", result, err)
 	}
-	if len(store.calls) != 0 || len(store.audits) != 1 || store.audits[0].Action != "planning.added" || len(runner.seen) != 2 {
-		t.Fatalf("retry did not converge: acknowledgements = %#v, audits = %#v, commands = %#v", store.calls, store.audits, runner.seen)
+	if len(store.calls) != 0 || len(store.audits) != 1 || store.audits[0].Action != "planning.added" || len(store.sessions) != 0 || len(launcher.calls) != 0 || len(launcher.probes) != 0 || len(runner.seen) != 2 {
+		t.Fatalf("retry did not converge cleanly: acknowledgements = %#v, audits = %#v, sessions = %#v, launches = %#v, probes = %#v, commands = %#v", store.calls, store.audits, store.sessions, launcher.calls, launcher.probes, runner.seen)
 	}
 }
 
