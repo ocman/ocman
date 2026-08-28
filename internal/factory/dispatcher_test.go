@@ -917,6 +917,178 @@ func TestReconciliationFailsClosedOnInconsistentAttemptEvidence(t *testing.T) {
 			t.Fatalf("error = %v", err)
 		}
 	})
+
+	tests := []struct {
+		name    string
+		outcome model.FactoryAttemptOutcome
+		failure model.FactoryAttemptFailure
+		issue   func(model.FactoryAttempt) beadsIssue
+		want    string
+	}{
+		{
+			name: "successful attempt lacks closure evidence", outcome: model.FactoryAttemptSucceeded,
+			issue: func(model.FactoryAttempt) beadsIssue {
+				return beadsIssue{ID: "work-1", Status: "closed", Metadata: map[string]string{}}
+			},
+			want: "incomplete closure evidence",
+		},
+		{
+			name: "failed claim still owns work", outcome: model.FactoryAttemptFailed,
+			failure: model.FactoryAttemptFailure{Type: "claim_failed", Message: "claim failed"},
+			issue: func(attempt model.FactoryAttempt) beadsIssue {
+				return beadsIssue{ID: "work-1", Status: "in_progress", Metadata: map[string]string{"ocman.attempt_id": attempt.ID}}
+			},
+			want: "unexpectedly owns Work Item",
+		},
+		{
+			name: "failed attempt lacks claim evidence", outcome: model.FactoryAttemptFailed,
+			failure: model.FactoryAttemptFailure{Type: "execution_failed", Message: "failed"},
+			issue: func(model.FactoryAttempt) beadsIssue {
+				return beadsIssue{ID: "work-1", Status: "in_progress", Metadata: map[string]string{}}
+			},
+			want: "incomplete claim evidence",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := openDispatcherState(t)
+			attempt, err := db.CreatePreparedFactoryAttempt(context.Background(), "epic-1", "work-1", model.FactoryAttemptPolicy{Repository: "/repo"}, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if changed, err := db.ActivateFactoryAttempt(context.Background(), attempt.ID, model.PlanningSession{}, time.Now()); err != nil || !changed {
+				t.Fatalf("activate = %t, %v", changed, err)
+			}
+			if tt.outcome == model.FactoryAttemptSucceeded {
+				_, err = db.CompleteFactoryAttempt(context.Background(), attempt.ID, model.FactoryAttemptResult{SchemaVersion: 1, Summary: "done"}, time.Now())
+			} else {
+				_, err = db.FailFactoryAttempt(context.Background(), attempt.ID, tt.failure, time.Now())
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			attempt, _, err = db.GetFactoryAttempt(context.Background(), attempt.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			svc := newWithRunner(t.TempDir(), newDispatcherRunner(tt.issue(attempt)), db)
+			err = svc.reconcileAttempts(context.Background(), "/usr/bin/bd", filepath.Join(svc.dir, "beads"))
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+
+	t.Run("attempt references missing Work Item", func(t *testing.T) {
+		db := openDispatcherState(t)
+		attempt, err := db.CreatePreparedFactoryAttempt(context.Background(), "epic-1", "missing", model.FactoryAttemptPolicy{}, time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		svc := newWithRunner(t.TempDir(), newDispatcherRunner(), db)
+		err = svc.reconcileAttempts(context.Background(), "/usr/bin/bd", filepath.Join(svc.dir, "beads"))
+		if err == nil || !strings.Contains(err.Error(), attempt.ID+" references missing Work Item") {
+			t.Fatalf("error = %v", err)
+		}
+	})
+}
+
+func TestReconciliationRestoresTerminalEvidence(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		outcome model.FactoryAttemptOutcome
+		failure model.FactoryAttemptFailure
+	}{
+		{name: "success", outcome: model.FactoryAttemptSucceeded},
+		{name: "failure", outcome: model.FactoryAttemptFailed, failure: model.FactoryAttemptFailure{Type: "execution_failed", Message: "failed"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			db := openDispatcherState(t)
+			store := &recordingAttemptStore{DB: db}
+			workID := "work-" + tt.name
+			attempt, err := db.CreatePreparedFactoryAttempt(context.Background(), "epic-1", workID, model.FactoryAttemptPolicy{}, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if changed, err := db.ActivateFactoryAttempt(context.Background(), attempt.ID, model.PlanningSession{}, time.Now()); err != nil || !changed {
+				t.Fatalf("activate = %t, %v", changed, err)
+			}
+			if tt.outcome == model.FactoryAttemptSucceeded {
+				_, err = db.CompleteFactoryAttempt(context.Background(), attempt.ID, model.FactoryAttemptResult{SchemaVersion: 1, Summary: "done"}, time.Now())
+			} else {
+				_, err = db.FailFactoryAttempt(context.Background(), attempt.ID, tt.failure, time.Now())
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			issue := beadsIssue{ID: workID, Status: "in_progress", Metadata: map[string]string{"ocman.attempt_id": attempt.ID}}
+			runner := newDispatcherRunner(issue)
+			svc := newWithRunner(t.TempDir(), runner, store)
+			if err := svc.reconcileAttempts(context.Background(), "/usr/bin/bd", filepath.Join(svc.dir, "beads")); err != nil {
+				t.Fatal(err)
+			}
+			got := runner.snapshot(workID)
+			if tt.outcome == model.FactoryAttemptSucceeded && (got.Status != "closed" || got.Metadata["ocman.terminal_outcome"] != "succeeded") {
+				t.Fatalf("successful evidence = %#v", got)
+			}
+			if tt.outcome == model.FactoryAttemptFailed && (got.Metadata["ocman.terminal_outcome"] != "failed" || got.Metadata["ocman.failure_type"] != tt.failure.Type) {
+				t.Fatalf("failed evidence = %#v", got)
+			}
+		})
+	}
+}
+
+func TestReconciliationPropagatesEvidenceWriteFailures(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		failure model.FactoryAttemptFailure
+		prepare func(*dispatcherRunner)
+	}{
+		{
+			name:    "failed evidence",
+			failure: model.FactoryAttemptFailure{Type: "execution_failed", Message: "failed"},
+			prepare: func(r *dispatcherRunner) {
+				r.onTerminalWrite = func(string, string) error { return errors.New("write failed") }
+			},
+		},
+		{
+			name: "successful evidence",
+			prepare: func(r *dispatcherRunner) {
+				r.onTerminalWrite = func(string, string) error { return errors.New("write failed") }
+			},
+		},
+		{
+			name:    "successful close",
+			prepare: func(r *dispatcherRunner) { r.onClose = func(string) error { return errors.New("close failed") } },
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			db := openDispatcherState(t)
+			attempt, err := db.CreatePreparedFactoryAttempt(context.Background(), "epic-1", "work-1", model.FactoryAttemptPolicy{}, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if changed, err := db.ActivateFactoryAttempt(context.Background(), attempt.ID, model.PlanningSession{}, time.Now()); err != nil || !changed {
+				t.Fatalf("activate = %t, %v", changed, err)
+			}
+			if tt.failure.Type != "" {
+				_, err = db.FailFactoryAttempt(context.Background(), attempt.ID, tt.failure, time.Now())
+			} else {
+				_, err = db.CompleteFactoryAttempt(context.Background(), attempt.ID, model.FactoryAttemptResult{SchemaVersion: 1, Summary: "done"}, time.Now())
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			issue := beadsIssue{ID: "work-1", Status: "in_progress", Metadata: map[string]string{"ocman.attempt_id": attempt.ID}}
+			runner := newDispatcherRunner(issue)
+			tt.prepare(runner)
+			svc := newWithRunner(t.TempDir(), runner, db)
+			err = svc.reconcileAttempts(context.Background(), "/usr/bin/bd", filepath.Join(svc.dir, "beads"))
+			if !errors.Is(err, ErrBeadsFailure) {
+				t.Fatalf("error = %v, want Beads failure", err)
+			}
+		})
+	}
 }
 
 func TestConcurrentRunDispatcherClaimsOnce(t *testing.T) {

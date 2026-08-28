@@ -184,4 +184,108 @@ func TestFactoryAttemptRejectsInvalidAndCorruptEvidence(t *testing.T) {
 	if _, _, err := db.GetFactoryAttempt(ctx, second.ID); err == nil || !strings.Contains(err.Error(), "decoding result") {
 		t.Fatalf("corrupt result error = %v", err)
 	}
+
+	badAudit := model.AuditRecord{Details: make(chan int)}
+	if err := db.AppendFactoryAudit(ctx, badAudit); err == nil || !strings.Contains(err.Error(), "encoding Factory audit") {
+		t.Fatalf("invalid audit error = %v", err)
+	}
+	if err := db.AppendFactoryAuditOnce(ctx, badAudit); err == nil || !strings.Contains(err.Error(), "encoding Factory audit") {
+		t.Fatalf("invalid audit-once error = %v", err)
+	}
+}
+
+func TestFactoryStateReportsClosedDatabaseErrors(t *testing.T) {
+	db := openTestStateDB(t)
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	at := time.Now()
+	tests := []struct {
+		name string
+		call func() error
+	}{
+		{"create attempt", func() error {
+			_, err := db.CreatePreparedFactoryAttempt(ctx, "epic", "work", model.FactoryAttemptPolicy{}, at)
+			return err
+		}},
+		{"list attempts", func() error { _, err := db.ListFactoryAttempts(ctx, ""); return err }},
+		{"activate attempt", func() error {
+			_, err := db.ActivateFactoryAttempt(ctx, "attempt", model.PlanningSession{}, at)
+			return err
+		}},
+		{"complete attempt", func() error {
+			_, err := db.CompleteFactoryAttempt(ctx, "attempt", model.FactoryAttemptResult{}, at)
+			return err
+		}},
+		{"fail attempt", func() error {
+			_, err := db.FailFactoryAttempt(ctx, "attempt", model.FactoryAttemptFailure{Type: "failed"}, at)
+			return err
+		}},
+		{"check acknowledgement", func() error {
+			_, err := db.HasFactoryLocalExecutionAck(ctx, "host", "repo", "profile", "v1")
+			return err
+		}},
+		{"upsert acknowledgement", func() error {
+			return db.UpsertFactoryLocalExecutionAck(ctx, "host", "repo", "profile", "v1", "actor", at)
+		}},
+		{"get planning session", func() error { _, _, err := db.GetFactoryPlanningSession(ctx, "work"); return err }},
+		{"put planning session", func() error { return db.PutFactoryPlanningSession(ctx, "epic", "work", model.PlanningSession{}) }},
+		{"delete planning session", func() error { return db.DeleteFactoryPlanningSession(ctx, "work") }},
+		{"put planning cleanup", func() error { return db.PutFactoryPlanningSessionCleanup(ctx, "epic", "work", model.PlanningSession{}) }},
+		{"list planning cleanups", func() error { _, err := db.ListFactoryPlanningSessionCleanups(ctx); return err }},
+		{"delete planning cleanup", func() error { return db.DeleteFactoryPlanningSessionCleanup(ctx, "work") }},
+		{"append audit", func() error { return db.AppendFactoryAudit(ctx, model.AuditRecord{}) }},
+		{"append audit once", func() error { return db.AppendFactoryAuditOnce(ctx, model.AuditRecord{}) }},
+		{"list formulas", func() error { _, err := db.ListFactoryFormulas(ctx); return err }},
+		{"get formula", func() error { _, _, err := db.GetFactoryFormulaRevision(ctx, "formula", 0); return err }},
+		{"save formula", func() error {
+			_, err := db.SaveFactoryFormulaRevision(ctx, "formula", "Formula", "yaml", "hash", "{}", 1, at)
+			return err
+		}},
+		{"archive formula", func() error { _, err := db.ArchiveFactoryFormula(ctx, "formula", at); return err }},
+		{"delete formula", func() error { _, err := db.DeleteFactoryFormula(ctx, "formula"); return err }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.call(); err == nil {
+				t.Fatal("operation unexpectedly succeeded")
+			}
+		})
+	}
+}
+
+func TestFactoryFormulaStateReconcilesRevisions(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	ctx := context.Background()
+	first, err := db.SaveFactoryFormulaRevision(ctx, "custom/test", "Test", "first", "hash-1", "{}", 1, time.UnixMilli(1000))
+	if err != nil || first.Revision != 1 {
+		t.Fatalf("first revision = %#v, %v", first, err)
+	}
+	same, err := db.SaveFactoryFormulaRevision(ctx, "custom/test", "Renamed", "first", "hash-1", "{}", 1, time.UnixMilli(2000))
+	if err != nil || same != first {
+		t.Fatalf("reconciled revision = %#v, %v", same, err)
+	}
+	second, err := db.SaveFactoryFormulaRevision(ctx, "custom/test", "Renamed", "second", "hash-2", "{}", 1, time.UnixMilli(3000))
+	if err != nil || second.Revision != 2 {
+		t.Fatalf("second revision = %#v, %v", second, err)
+	}
+	formulas, err := db.ListFactoryFormulas(ctx)
+	if err != nil || len(formulas) != 1 || formulas[0].Name != "Renamed" || formulas[0].CurrentRevision != 2 {
+		t.Fatalf("formulas = %#v, %v", formulas, err)
+	}
+	formula, current, err := db.GetFactoryFormulaRevision(ctx, "custom/test", 0)
+	if err != nil || formula.ID != "custom/test" || current != second {
+		t.Fatalf("current formula = %#v, revision = %#v, %v", formula, current, err)
+	}
+	if changed, err := db.ArchiveFactoryFormula(ctx, "custom/test", time.UnixMilli(4000)); err != nil || !changed {
+		t.Fatalf("archive = %t, %v", changed, err)
+	}
+	if changed, err := db.DeleteFactoryFormula(ctx, "custom/test"); err != nil || !changed {
+		t.Fatalf("delete = %t, %v", changed, err)
+	}
+	if formulas, err := db.ListFactoryFormulas(ctx); err != nil || len(formulas) != 0 {
+		t.Fatalf("formulas after delete = %#v, %v", formulas, err)
+	}
 }
