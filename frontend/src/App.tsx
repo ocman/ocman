@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useHotkeys } from 'react-hotkeys-hook';
-import { DashboardLayout, SessionsTab, ProjectsTab, StatsTab, UsageTab, SettingsTab } from './pages/Dashboard';
+import { AnalyticsTab, DashboardLayout, LegacyAnalyticsRedirect, SessionsTab, ProjectsTab, SettingsTab } from './pages/Dashboard';
 import { ProjectDetail } from './pages/ProjectDetail';
 import { WorktreesView } from './pages/WorktreesView';
 import { Workflows } from './pages/Workflows';
@@ -62,8 +62,7 @@ const MAIN_NAV_ITEMS = [
   { to: '/projects', label: 'Projects', icon: 'bi-folder' },
   { to: '/factory', label: 'Factory', icon: 'bi-buildings' },
   { to: '/workflows', label: 'Workflows', icon: 'bi-diagram-3', workflowsOnly: true },
-  { to: '/stats', label: 'Stats', icon: 'bi-bar-chart' },
-  { to: '/usage', label: 'Usage', icon: 'bi-activity' },
+  { to: '/analytics', label: 'Analytics', icon: 'bi-bar-chart' },
   { to: '/settings', label: 'Settings', icon: 'bi-gear' },
 ];
 
@@ -537,8 +536,9 @@ export function AppRoutes() {
         <Route path="/" element={<RootRedirect />} />
         <Route path="/sessions" element={<SessionsTab />} />
         <Route path="/projects" element={<ProjectsTab />} />
-        <Route path="/stats" element={<StatsTab />} />
-        <Route path="/usage" element={<UsageTab />} />
+        <Route path="/analytics/:section?" element={<AnalyticsTab />} />
+        <Route path="/stats" element={<LegacyAnalyticsRedirect section="performance" />} />
+        <Route path="/usage" element={<LegacyAnalyticsRedirect section="overview" />} />
         <Route path="/workflows" element={<Workflows />} />
         <Route path="/settings" element={<SettingsTab />} />
       </Route>

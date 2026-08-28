@@ -15,6 +15,8 @@ vi.mock('./lib/queries', () => ({
 describe('routeTitle', () => {
   it.each([
     ['/sessions', 'Sessions'],
+    ['/analytics/overview', 'Analytics'],
+    ['/analytics/performance', 'Analytics'],
     ['/settings', 'Settings'],
     ['/factory', 'Mission Control'],
     ['/session/new', 'New session'],
@@ -43,6 +45,9 @@ describe('MainNav', () => {
     expect(screen.getByRole('navigation', { name: 'Main navigation' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Home' })).not.toHaveClass('active');
     expect(screen.getByRole('link', { name: 'Projects' })).toHaveClass('active');
+    expect(screen.getByRole('link', { name: 'Analytics' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Stats' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Usage' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Workflows' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Factory' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Sessions' }).querySelector('i')).toHaveClass('bi-collection');

@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
 import { renderModel } from '../../lib/format';
-import { usePageTitle } from '../../lib/headerContext';
 import { ProjectScopePicker } from '../../components/ProjectScopePicker';
 import { SearchSelect } from '../../components/SearchSelect';
 import { useMetrics, usePermissionStats } from '../../lib/queries';
@@ -11,8 +10,7 @@ import { METRICS_RANGE_OPTIONS } from './constants';
 import { ModelLogo } from '../../components/ModelLogo';
 import { PermissionStatsSection } from './PermissionStatsSection';
 
-export function StatsTab() {
-  usePageTitle('Stats');
+export function StatsTab({ view = 'all' }: { view?: 'all' | 'performance' | 'logs' }) {
   const { projects, dirScope, setDirScope } = useDashboard();
 
   const [selectedAgent, setSelectedAgentRaw] = useState('');
@@ -62,7 +60,7 @@ export function StatsTab() {
   const permissionStatsQ = usePermissionStats({
     days: metricsDays,
     dir: dirScope || undefined,
-  });
+  }, { enabled: view !== 'logs' });
 
   const metrics = metricsQ.data ?? null;
   const metricsLoading = metricsQ.isLoading;
@@ -95,7 +93,7 @@ export function StatsTab() {
         </div>
       )}
 
-      {permissionStatsError && (
+      {view !== 'logs' && permissionStatsError && (
         <div className="oc-error-banner">
           Permission stats: {permissionStatsError}
         </div>
@@ -108,10 +106,10 @@ export function StatsTab() {
         </div>
       )}
 
-      {metrics && <StatsSummaryCharts metrics={metrics} />}
-      {permissionStatsQ.data && <PermissionStatsSection stats={permissionStatsQ.data} />}
+      {view !== 'logs' && metrics && <StatsSummaryCharts metrics={metrics} />}
+      {view !== 'logs' && permissionStatsQ.data && <PermissionStatsSection stats={permissionStatsQ.data} />}
 
-      {metrics && (
+      {view !== 'performance' && metrics && (
         <div className="chart-card">
             <div className="metrics-log-header">
               <div className="nav-tabs metrics-log-tabs">

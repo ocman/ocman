@@ -1,13 +1,12 @@
 /**
- * e2e: Dashboard (Sessions / Projects / Stats / Usage / Settings views)
+ * e2e: Dashboard (Sessions / Projects / Analytics / Settings views)
  *
  * Covers:
- *  - All five sidebar links are visible and navigable
+ *  - All sidebar links are visible and navigable
  *  - Sessions tab renders the session table with mock data
  *  - Time-range filter buttons are rendered and change the active state
  *  - Projects tab renders a project row with mock data
- *  - Stats tab renders the metrics summary cards
- *  - Usage tab renders the filter controls
+ *  - Analytics renders metrics, logs, and usage filters
  *  - Settings tab renders the bell sound toggle
  *  - Clicking a session row navigates to the session detail page
  *  - Clicking a project row navigates to the project detail page
@@ -25,7 +24,7 @@ test('all dashboard destinations are visible with Settings at the bottom', async
   await page.goto('/sessions');
   const nav = page.getByRole('navigation', { name: 'Main navigation' });
   await expect(page.getByRole('banner').getByRole('heading', { name: 'Sessions' })).toBeVisible();
-  for (const label of ['Home', 'Sessions', 'Projects', 'Stats', 'Usage', 'Settings']) {
+  for (const label of ['Home', 'Sessions', 'Projects', 'Analytics', 'Settings']) {
     await expect(nav.getByRole('link', { name: label })).toBeVisible();
   }
 
@@ -86,16 +85,11 @@ test('clicking Projects navigates to /projects', async ({ mockedPage: page }) =>
   await expect(page.getByRole('link', { name: 'Projects', current: 'page' })).toBeVisible();
 });
 
-test('clicking Stats navigates to /stats', async ({ mockedPage: page }) => {
+test('clicking Analytics opens its overview', async ({ mockedPage: page }) => {
   await page.goto('/sessions');
-  await page.getByRole('link', { name: 'Stats' }).click();
-  await expect(page).toHaveURL('/stats');
-});
-
-test('clicking Usage navigates to /usage', async ({ mockedPage: page }) => {
-  await page.goto('/sessions');
-  await page.getByRole('link', { name: 'Usage' }).click();
-  await expect(page).toHaveURL('/usage');
+  await page.getByRole('link', { name: 'Analytics' }).click();
+  await expect(page).toHaveURL('/analytics/overview');
+  await expect(page.getByRole('link', { name: 'Analytics', current: 'page' })).toBeVisible();
 });
 
 test('logo collapses and expands the sidebar', async ({ mockedPage: page }) => {
@@ -277,60 +271,60 @@ test('projects tab shows empty state when no projects have sessions', async ({
 });
 
 // ---------------------------------------------------------------------------
-// Stats tab
+// Analytics performance and logs
 // ---------------------------------------------------------------------------
 
-test('stats tab renders metrics summary cards', async ({ mockedPage: page }) => {
-  await page.goto('/stats');
+test('performance renders metrics summary cards', async ({ mockedPage: page }) => {
+  await page.goto('/analytics/performance');
   // The MetricCard labels
   for (const label of ['Requests', 'Total Tokens', 'Total Cost']) {
     await expect(page.locator('.label', { hasText: label })).toBeVisible();
   }
 });
 
-test('stats tab shows agent and model filter dropdowns', async ({ mockedPage: page }) => {
-  await page.goto('/stats');
+test('performance shows agent and model filter dropdowns', async ({ mockedPage: page }) => {
+  await page.goto('/analytics/performance');
   await expect(page.getByRole('combobox', { name: 'Agent' })).toBeVisible();
   await expect(page.getByRole('combobox', { name: 'Model' })).toBeVisible();
 });
 
-test('stats tab shows session log sub-tab', async ({ mockedPage: page }) => {
-  await page.goto('/stats');
-  await expect(page.locator('button.nav-tab', { hasText: 'Session Log' })).toBeVisible();
+test('logs shows session log sub-tab', async ({ mockedPage: page }) => {
+  await page.goto('/analytics/logs');
+  await expect(page.getByRole('button', { name: 'Session Log' })).toBeVisible();
 });
 
-test('stats tab shows request log sub-tab', async ({ mockedPage: page }) => {
-  await page.goto('/stats');
-  await expect(page.locator('button.nav-tab', { hasText: 'Request Log' })).toBeVisible();
+test('logs shows request log sub-tab', async ({ mockedPage: page }) => {
+  await page.goto('/analytics/logs');
+  await expect(page.getByRole('button', { name: 'Request Log' })).toBeVisible();
 });
 
-test('stats tab project log sub-tab switches view', async ({ mockedPage: page }) => {
-  await page.goto('/stats');
-  const projectLogTab = page.locator('button.nav-tab', { hasText: 'Project Log' });
+test('logs project log sub-tab switches view', async ({ mockedPage: page }) => {
+  await page.goto('/analytics/logs');
+  const projectLogTab = page.getByRole('button', { name: 'Project Log' });
   await projectLogTab.click();
   await expect(projectLogTab).toHaveClass(/active/);
 });
 
 // ---------------------------------------------------------------------------
-// Usage tab
+// Analytics overview
 // ---------------------------------------------------------------------------
 
-test('usage tab renders project-scope, model, and date-range filters', async ({ mockedPage: page }) => {
-  await page.goto('/usage');
+test('overview renders project-scope, model, and date-range filters', async ({ mockedPage: page }) => {
+  await page.goto('/analytics/overview');
   // Three SearchSelect controls: Project scope, Model, and Last N days
   const selects = page.locator('.metrics-filter .oc-search-select');
   await expect(selects).toHaveCount(3);
 });
 
-test('usage tab shows "All models" option in model filter', async ({ mockedPage: page }) => {
-  await page.goto('/usage');
+test('overview shows "All models" option in model filter', async ({ mockedPage: page }) => {
+  await page.goto('/analytics/overview');
   // Open the Model filter and assert the "All models" option is listed.
   await page.getByRole('combobox', { name: 'Model' }).click();
   await expect(page.getByRole('option', { name: 'All models' })).toBeVisible();
 });
 
-test('usage tab can change date range', async ({ mockedPage: page }) => {
-  await page.goto('/usage');
+test('overview can change date range', async ({ mockedPage: page }) => {
+  await page.goto('/analytics/overview');
   const rangeSelect = page.getByRole('combobox', { name: 'Last' });
   await rangeSelect.click();
   await page.getByRole('option', { name: '7 days' }).click();

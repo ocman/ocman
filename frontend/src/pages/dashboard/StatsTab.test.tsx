@@ -179,12 +179,13 @@ function makePermissionStats(): PermissionStats {
 function renderStats(
   over: Partial<ReturnType<typeof useMetrics>> = {},
   permissionOver: Partial<ReturnType<typeof usePermissionStats>> = {},
+  view: 'all' | 'performance' | 'logs' = 'all',
 ) {
   useMetrics.mockReturnValue({ data: makeMetrics(), isLoading: false, error: null, ...over });
   usePermissionStats.mockReturnValue({ data: makePermissionStats(), isLoading: false, error: null, ...permissionOver });
   return render(
     <MemoryRouter>
-      <StatsTab />
+      <StatsTab view={view} />
     </MemoryRouter>,
   );
 }
@@ -192,14 +193,29 @@ function renderStats(
 describe('StatsTab effective-cost UI', () => {
   it('queries permission stats with only the shared range and directory filters', () => {
     renderStats();
-    expect(usePermissionStats).toHaveBeenLastCalledWith({ days: 30, dir: '/home/u/proj' });
+    expect(usePermissionStats).toHaveBeenLastCalledWith({ days: 30, dir: '/home/u/proj' }, { enabled: true });
 
     fireEvent.click(screen.getByRole('combobox', { name: 'Agent' }));
     fireEvent.click(screen.getByRole('option', { name: 'build' }));
     fireEvent.click(screen.getByRole('combobox', { name: 'Last' }));
     fireEvent.click(screen.getByRole('option', { name: '7 days' }));
 
-    expect(usePermissionStats).toHaveBeenLastCalledWith({ days: 7, dir: '/home/u/proj' });
+    expect(usePermissionStats).toHaveBeenLastCalledWith({ days: 7, dir: '/home/u/proj' }, { enabled: true });
+  });
+
+  it('separates performance charts from logs', () => {
+    const { rerender } = renderStats({}, {}, 'performance');
+    expect(screen.getByText('Total Cost')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Project Log' })).not.toBeInTheDocument();
+
+    rerender(
+      <MemoryRouter>
+        <StatsTab view="logs" />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('button', { name: 'Project Log' })).toBeInTheDocument();
+    expect(screen.queryByText('Total Cost')).not.toBeInTheDocument();
+    expect(usePermissionStats).toHaveBeenLastCalledWith({ days: 30, dir: '/home/u/proj' }, { enabled: false });
   });
 
   it('shows six permission approval cards and the daily stacked breakdown', () => {

@@ -1127,7 +1127,7 @@ func (*cancellableGetSessionsDB) GetSessionSummary(context.Context, string) (db.
 	return db.Session{}, db.ErrSessionNotFound
 }
 
-func TestGetSessionsCached_SoleCallerCancelsQuery(t *testing.T) {
+func TestGetSessionsCached_CanceledCallerLeavesCacheRefreshRunning(t *testing.T) {
 	resetSessionsCache()
 	t.Cleanup(resetSessionsCache)
 	d := &cancellableGetSessionsDB{entered: make(chan struct{}, 2), release: make(chan struct{})}
@@ -1139,8 +1139,17 @@ func TestGetSessionsCached_SoleCallerCancelsQuery(t *testing.T) {
 	if err := <-done; !errors.Is(err, context.Canceled) {
 		t.Fatalf("error = %v, want context.Canceled", err)
 	}
-	if got := d.canceled.Load(); got != 1 {
-		t.Fatalf("canceled queries = %d, want 1", got)
+	close(d.release)
+	if _, err := getSessionsCached(t.Context(), d, "", 0); err != nil {
+		t.Fatalf("cache read after canceled caller: %v", err)
+	}
+	if got := d.canceled.Load(); got != 0 {
+		t.Fatalf("canceled queries = %d, want 0", got)
+	}
+	select {
+	case <-d.entered:
+		t.Fatal("cache read started a second query")
+	default:
 	}
 }
 
@@ -1163,10 +1172,17 @@ func TestGetSessionsCached_CanceledCallerDoesNotPoisonLiveCaller(t *testing.T) {
 	if err := <-canceledDone; !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled caller error = %v, want context.Canceled", err)
 	}
-	<-d.entered
 	close(d.release)
 	if err := <-liveDone; err != nil {
 		t.Fatalf("live caller error = %v", err)
+	}
+	if got := d.canceled.Load(); got != 0 {
+		t.Fatalf("canceled queries = %d, want 0", got)
+	}
+	select {
+	case <-d.entered:
+		t.Fatal("live caller started a second query")
+	default:
 	}
 }
 
