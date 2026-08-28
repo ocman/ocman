@@ -336,7 +336,7 @@ func TestFormulaMutationsFailClosedWhileStartupRecoveryIsDegraded(t *testing.T) 
 			if _, err := svc.SaveFormula(context.Background(), SaveFormulaRequest{ID: "custom/team", Name: "Shipped delivery", DefinitionYAML: draft.DefinitionYAML}); err != nil {
 				t.Fatal(err)
 			}
-			svc.recoveryErr = errors.New("startup recovery failed")
+			svc.setRecoveryErr(errors.New("startup recovery failed"))
 			svc.runner = &fakeRunner{pathErr: errors.New("Beads unavailable")}
 			var err error
 			switch action {

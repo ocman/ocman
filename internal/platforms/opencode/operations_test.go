@@ -524,6 +524,13 @@ func TestDisposeSessionTreatsNotFoundAsSuccess(t *testing.T) {
 	}
 }
 
+func TestDisposeSessionPreservesCleanupWhenSessionDatabaseLookupFails(t *testing.T) {
+	err := New(nil, nil).DisposeSession(context.Background(), platforms.DisposeSessionRequest{SessionID: "unknown"})
+	if !errors.Is(err, platforms.ErrNotFound) {
+		t.Fatalf("DisposeSession database lookup = %v, want ErrNotFound", err)
+	}
+}
+
 // TestCreateSession_CachedPortSkipsFreshScan proves the happy-path
 // optimization: when a running opencode is already in the port cache,
 // CreateSession must not trigger another (expensive) lsof scan.

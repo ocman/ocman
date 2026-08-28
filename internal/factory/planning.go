@@ -409,9 +409,7 @@ func (s *Service) applyPlanningAddition(ctx context.Context, epic *WorkEpic, ope
 }
 
 func (s *Service) recoveryFailure(err error) error {
-	s.mu.Lock()
-	s.recoveryErr = err
-	s.mu.Unlock()
+	s.setRecoveryErr(err)
 	return err
 }
 
@@ -908,15 +906,15 @@ func (s *Service) requireMutationStore(ctx context.Context) error {
 		return fmt.Errorf("%w: Factory audit store is unavailable", ErrFactoryUnavailable)
 	}
 	if err := s.cleanupPlanningSessions(ctx); err != nil {
-		s.recoveryErr = err
+		s.setRecoveryErr(err)
 		return fmt.Errorf("%w: Factory cleanup has not succeeded: %w", ErrFactoryUnavailable, err)
 	}
-	if s.recoveryErr != nil {
+	if s.getRecoveryErr() != nil {
 		if err := s.recoverPlanningSessions(ctx); err != nil {
-			s.recoveryErr = err
+			s.setRecoveryErr(err)
 			return fmt.Errorf("%w: Factory recovery has not succeeded: %w", ErrFactoryUnavailable, err)
 		}
-		s.recoveryErr = nil
+		s.setRecoveryErr(nil)
 	}
 	return nil
 }
@@ -1207,7 +1205,7 @@ func (s *Service) ensurePlanningSession(ctx context.Context, epic WorkEpic, work
 		if session.ID != "" && session.Platform != "" {
 			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), beadsTimeout)
 			defer cancel()
-			cleanupErr := s.store.PutFactoryPlanningSessionCleanup(cleanupCtx, epic.ID, work.ID, session)
+			cleanupErr := s.recordPlanningSessionCleanup(cleanupCtx, epic.ID, work.ID, session, err)
 			return PlanningSession{}, errors.Join(fmt.Errorf("launch Planning Session: %w", err), cleanupErr)
 		}
 		return PlanningSession{}, fmt.Errorf("launch Planning Session: %w", err)
@@ -1221,12 +1219,20 @@ func (s *Service) ensurePlanningSession(ctx context.Context, epic WorkEpic, work
 		stopErr := s.planning.StopPlanningSession(cleanupCtx, session)
 		var cleanupErr error
 		if stopErr != nil {
-			cleanupErr = s.store.PutFactoryPlanningSessionCleanup(cleanupCtx, epic.ID, work.ID, session)
+			cleanupErr = s.recordPlanningSessionCleanup(cleanupCtx, epic.ID, work.ID, session, stopErr)
 		}
 		clearErr := s.store.DeleteFactoryPlanningSession(cleanupCtx, work.ID)
 		return PlanningSession{}, errors.Join(fmt.Errorf("persist Planning Session: %w", err), stopErr, cleanupErr, clearErr)
 	}
 	return session, nil
+}
+
+func (s *Service) recordPlanningSessionCleanup(ctx context.Context, epicID, workID string, session PlanningSession, cause error) error {
+	if err := s.store.PutFactoryPlanningSessionCleanup(ctx, epicID, workID, session); err != nil {
+		return err
+	}
+	s.setRecoveryErr(cause)
+	return nil
 }
 
 func (s *Service) auditOnce(ctx context.Context, epicID, workID, actor, action string, details any) error {

@@ -186,9 +186,6 @@ func (s *Service) Abort(ctx context.Context, platformID string, req platforms.Ab
 func (s *Service) Dispose(ctx context.Context, platformID string, req platforms.DisposeSessionRequest) error {
 	p, err := s.resolve(ctx, req.SessionID, platformID)
 	if err != nil {
-		if errors.Is(err, platforms.ErrNotFound) {
-			return nil
-		}
 		return err
 	}
 	disposer, ok := p.(platforms.SessionDisposer)
@@ -197,7 +194,7 @@ func (s *Service) Dispose(ctx context.Context, platformID string, req platforms.
 	}
 	err = disposer.DisposeSession(ctx, req)
 	var upstream *platforms.UpstreamError
-	if errors.Is(err, platforms.ErrNotFound) || errors.As(err, &upstream) && upstream.Status == 404 {
+	if errors.As(err, &upstream) && upstream.Status == 404 {
 		return nil
 	}
 	return err

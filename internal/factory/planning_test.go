@@ -107,7 +107,7 @@ func (s *fakeFactoryStore) DeleteFactoryPlanningSessionCleanup(_ context.Context
 	return nil
 }
 
-func TestCreateWorkEpicStopsSessionWhenMappingFails(t *testing.T) {
+func TestCreateWorkEpicRecordsCleanupAndDegradesWhenMappingAndDisposalFail(t *testing.T) {
 	project, _ := filepath.EvalSymlinks(t.TempDir())
 	runner := &fakeRunner{runs: []fakeRun{
 		{out: versionEnvelope}, {out: listEnvelope(`[]`)},
@@ -115,27 +115,57 @@ func TestCreateWorkEpicStopsSessionWhenMappingFails(t *testing.T) {
 		{out: `{"schema_version":1,"data":{}}`},
 	}}
 	store := &fakeFactoryStore{putErr: errors.New("mapping failed")}
-	launcher := &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "session-1"}, alive: map[string]bool{}}
+	launcher := &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "session-1"}, stopErr: errors.New("dispose failed"), alive: map[string]bool{}}
 	svc := newWithRunner(t.TempDir(), runner, store)
 	svc.planning, svc.owned = launcher, true
 
 	_, err := svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{InstantiationID: "request-1", Goal: "Ship", InitialProject: project, AcknowledgeLocalExecution: true})
-	if err == nil || launcher.alive["session-1"] || len(store.sessions) != 0 {
-		t.Fatalf("CreateWorkEpic error = %v, session alive = %v, mappings = %#v", err, launcher.alive["session-1"], store.sessions)
+	status := svc.Status(context.Background())
+	if err == nil || !launcher.alive["session-1"] || store.cleanups["fac-1.1"] != launcher.result || status.Health != HealthDegraded || status.Reason != ReasonRecoveryFailed || !status.ReadOnly {
+		t.Fatalf("CreateWorkEpic error = %v, session alive = %v, cleanups = %#v, status = %#v", err, launcher.alive["session-1"], store.cleanups, status)
 	}
 }
 
 func TestPlanningLaunchFailurePersistsCleanupIntent(t *testing.T) {
 	store := &fakeFactoryStore{}
-	launcher := &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "restricted-session"}, err: errors.New("permission setup and disposal failed")}
+	launcher := &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "restricted-session"}, err: errors.New("permission setup and disposal failed"), stopErr: errors.New("still unavailable")}
 	svc := newWithRunner(t.TempDir(), &fakeRunner{}, store)
-	svc.planning = launcher
+	svc.planning, svc.owned = launcher, true
+	project := t.TempDir()
+	svc.projects = fakeProjectResolver{root: project}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err := svc.ensurePlanningSession(ctx, WorkEpic{ID: "fac-1", Goal: "Ship"}, PlanningWork{ID: "fac-1.1", Repository: "/repo"})
-	if err == nil || store.cleanups["fac-1.1"] != launcher.result {
-		t.Fatalf("ensurePlanningSession error = %v, cleanups = %#v", err, store.cleanups)
+	status := svc.Status(context.Background())
+	if err == nil || store.cleanups["fac-1.1"] != launcher.result || status.Health != HealthDegraded || status.Reason != ReasonRecoveryFailed || !status.ReadOnly {
+		t.Fatalf("ensurePlanningSession error = %v, cleanups = %#v, status = %#v", err, store.cleanups, status)
+	}
+
+	mutations := []struct {
+		name string
+		call func() error
+	}{
+		{"create", func() error {
+			_, err := svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{InstantiationID: "request-2", Goal: "Ship", InitialProject: project, AcknowledgeLocalExecution: true})
+			return err
+		}},
+		{"formula", func() error {
+			_, err := svc.SaveFormula(context.Background(), SaveFormulaRequest{ID: "custom/team", Name: "Team", DefinitionYAML: "invalid"})
+			return err
+		}},
+		{"plan", func() error {
+			_, err := svc.MutatePlan(context.Background(), "fac-1", MutatePlanRequest{})
+			return err
+		}},
+		{"intake", func() error { return svc.AcknowledgeLocalExecution(context.Background(), project) }},
+	}
+	for _, mutation := range mutations {
+		t.Run(mutation.name, func(t *testing.T) {
+			if err := mutation.call(); !errors.Is(err, ErrFactoryUnavailable) {
+				t.Fatalf("mutation error = %v, want ErrFactoryUnavailable", err)
+			}
+		})
 	}
 }
 

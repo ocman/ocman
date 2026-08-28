@@ -103,6 +103,7 @@ type Service struct {
 	dir         string
 	runner      runner
 	mu          sync.RWMutex
+	recoveryMu  sync.RWMutex
 	pourMu      sync.Mutex
 	owned       bool
 	lockErr     error
@@ -150,7 +151,7 @@ func (s *Service) Start(ctx context.Context) error {
 	if owned {
 		initializeBeads(ctx, filepath.Join(s.dir, "beads"), s.runner)
 		if s.store != nil && s.planning != nil {
-			s.recoveryErr = s.recoverPlanningSessions(ctx)
+			s.setRecoveryErr(s.recoverPlanningSessions(ctx))
 		}
 	}
 	return nil
@@ -164,13 +165,14 @@ func (s *Service) Close() {
 	}
 	s.release = nil
 	s.owned = false
-	s.recoveryErr = nil
+	s.setRecoveryErr(nil)
 }
 
 func (s *Service) Status(ctx context.Context) Status {
 	s.mu.RLock()
-	owned, lockErr, recoveryErr := s.owned, s.lockErr, s.recoveryErr
+	owned, lockErr := s.owned, s.lockErr
 	s.mu.RUnlock()
+	recoveryErr := s.getRecoveryErr()
 
 	beads := probeBeads(ctx, filepath.Join(s.dir, "beads"), s.runner)
 	status := Status{DispatchOwner: owned, ReadOnly: !owned, Beads: beads}
@@ -215,6 +217,18 @@ func (s *Service) Status(ctx context.Context) Status {
 	}
 	status.WorkEpicCount = len(epics)
 	return status
+}
+
+func (s *Service) setRecoveryErr(err error) {
+	s.recoveryMu.Lock()
+	s.recoveryErr = err
+	s.recoveryMu.Unlock()
+}
+
+func (s *Service) getRecoveryErr() error {
+	s.recoveryMu.RLock()
+	defer s.recoveryMu.RUnlock()
+	return s.recoveryErr
 }
 
 func probeBeads(parent context.Context, dir string, r runner) BeadsHealth {

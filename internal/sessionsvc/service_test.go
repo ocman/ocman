@@ -102,10 +102,18 @@ func TestCreateConfiguredReturnsCleanupIntentWhenRulesAndDisposalFail(t *testing
 	}
 }
 
-func TestDisposeTreatsMissingProviderAsAlreadyDisposed(t *testing.T) {
+func TestDisposePreservesCleanupWhenProviderCannotBeResolved(t *testing.T) {
 	svc := New(&fakeRegistry{byID: map[platforms.ID]platforms.Platform{}}, Hooks{})
-	if err := svc.Dispose(context.Background(), "missing", platforms.DisposeSessionRequest{SessionID: "gone"}); err != nil {
-		t.Fatalf("Dispose missing provider: %v", err)
+	if err := svc.Dispose(context.Background(), "missing", platforms.DisposeSessionRequest{SessionID: "gone"}); !errors.Is(err, platforms.ErrNotFound) {
+		t.Fatalf("Dispose missing provider = %v, want ErrNotFound", err)
+	}
+}
+
+func TestDisposePreservesCleanupOnGenericSessionLookupFailure(t *testing.T) {
+	platform := &fakePlatform{id: "opencode", disposeErr: platforms.ErrNotFound}
+	svc := New(&fakeRegistry{byID: map[platforms.ID]platforms.Platform{"opencode": platform}}, Hooks{})
+	if err := svc.Dispose(context.Background(), "opencode", platforms.DisposeSessionRequest{SessionID: "unknown"}); !errors.Is(err, platforms.ErrNotFound) {
+		t.Fatalf("Dispose lookup failure = %v, want ErrNotFound", err)
 	}
 }
 

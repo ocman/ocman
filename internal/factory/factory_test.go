@@ -421,7 +421,7 @@ func TestAcknowledgeLocalExecutionFailsClosedWhileStartupRecoveryIsDegraded(t *t
 	svc := newWithRunner(t.TempDir(), &fakeRunner{pathErr: errors.New("Beads unavailable")}, store)
 	svc.projects = fakeProjectResolver{root: repo}
 	svc.owned = true
-	svc.recoveryErr = errors.New("startup recovery failed")
+	svc.setRecoveryErr(errors.New("startup recovery failed"))
 
 	err := svc.AcknowledgeLocalExecution(context.Background(), repo)
 	if !errors.Is(err, ErrFactoryUnavailable) || len(store.calls) != 0 {
@@ -557,7 +557,7 @@ func TestRecoveryFailurePreventsCreatingWorkEpic(t *testing.T) {
 	store := &fakeFactoryStore{}
 	svc := newWithRunner(t.TempDir(), runner, store)
 	svc.owned = true
-	svc.recoveryErr = errors.New("recovery failed")
+	svc.setRecoveryErr(errors.New("recovery failed"))
 
 	_, err := svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{
 		InstantiationID: "intake-1", Goal: "Ship it", InitialProject: project, AcknowledgeLocalExecution: true,
