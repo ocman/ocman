@@ -92,7 +92,8 @@ export type FactoryReason =
   | 'beads_contract_unsupported'
   | 'beads_store_unavailable'
   | 'beads_command_failed'
-  | 'dispatch_lock_failed';
+  | 'dispatch_lock_failed'
+  | 'recovery_failed';
 
 export interface FactoryStatus {
   health: 'healthy' | 'unavailable' | 'degraded';
@@ -115,9 +116,13 @@ export interface WorkEpic {
   id: string;
   status: string;
   goal: string;
+  brief?: string;
   initialProject: string;
   formulaId: string;
   formulaVersion: number;
+  formulaRevision: number;
+  formulaHash: string;
+  formulaOrigin: 'built-in' | 'custom';
   instantiationId: string;
   planning: {
     workId: string;
@@ -143,6 +148,7 @@ export interface FactoryPlan {
 		approvedAt: string;
 		formulaId: string;
 		formulaVersion: number;
+		formulaHash: string;
 		formulaOrigin: string;
 		instantiationId: string;
 		reason?: string;
@@ -193,6 +199,45 @@ export interface CreateWorkEpicRequest {
   goal: string;
   initialProject: string;
   acknowledgeLocalExecution: true;
+  formulaId?: string;
+  formulaRevision?: number;
+}
+
+export interface FormulaSummary {
+  id: string;
+  name: string;
+  origin: 'built-in' | 'custom';
+  currentRevision: number;
+  contentHash: string;
+  archived: boolean;
+  revisions: Array<{ revision: number; contentHash: string; instantiable: boolean }>;
+}
+
+export interface FormulaDraft {
+  sourceId: string;
+  sourceRevision: number;
+  origin: 'built-in' | 'custom';
+  definitionYaml: string;
+}
+
+export interface FormulaValidation {
+  valid: boolean;
+  schema: number;
+  contentHash?: string;
+  errors: string[];
+}
+
+export interface FormulaPreview {
+  name: string;
+  formulaHash: string;
+  nodes: Array<{ key: string; kind: string; title: string; profile?: string; project?: string }>;
+  edges: Array<{ from: string; to: string; type: string }>;
+}
+
+export interface FormulaRevision extends FormulaSummary {
+  revision: number;
+  schemaVersion: number;
+  definitionYaml: string;
 }
 
 export interface Session {

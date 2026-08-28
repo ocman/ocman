@@ -178,6 +178,13 @@ type factoryService interface {
 	RevisePlan(context.Context, string, factory.PlanDecisionRequest) (factory.Plan, error)
 	RejectPlan(context.Context, string, factory.PlanDecisionRequest) (factory.Plan, error)
 	CancelPlan(context.Context, string, factory.PlanDecisionRequest) (factory.Plan, error)
+	ListFormulas(context.Context) ([]factory.FormulaSummary, error)
+	CopyFormula(context.Context, string, int) (factory.FormulaDraft, error)
+	ValidateFormula(string) factory.FormulaValidation
+	PreviewFormula(string, map[string]string) (factory.FormulaPreview, error)
+	SaveFormula(context.Context, factory.SaveFormulaRequest) (factory.FormulaRevision, error)
+	ArchiveFormula(context.Context, string) error
+	DeleteFormula(context.Context, string) error
 }
 
 type factoryIntakeService interface {

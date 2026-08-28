@@ -92,6 +92,11 @@ export type {
 	FactoryPlanGraph,
 	FactoryPlanMutationResult,
 	FactoryPlanDecisionRequest,
+  FormulaSummary,
+  FormulaDraft,
+  FormulaValidation,
+  FormulaPreview,
+  FormulaRevision,
 } from './api.types';
 
 // Type imports used by the api object below.
@@ -153,6 +158,11 @@ import type {
 	FactoryPlanGraph,
 	FactoryPlanMutationResult,
 	FactoryPlanDecisionRequest,
+	FormulaSummary,
+	FormulaDraft,
+	FormulaValidation,
+	FormulaPreview,
+	FormulaRevision,
 } from './api.types';
 
 /**
@@ -416,6 +426,19 @@ export const api = {
 		postJSON<FactoryPlan, FactoryPlanDecisionRequest>(`/api/factory/epics/${encodeURIComponent(id)}/plan/${action}`, request),
 	completeFactoryPlanningWork: (id: string, workID: string, expectedRevision: number, expectedHash: string) =>
 		postJSON<FactoryPlan, { expectedRevision: number; expectedHash: string }>(`/api/factory/epics/${encodeURIComponent(id)}/planning/${encodeURIComponent(workID)}/complete`, { expectedRevision, expectedHash }),
+  factoryFormulas: (signal?: AbortSignal) => fetchJSON<FormulaSummary[]>('/api/factory/formulas', signal),
+  copyFactoryFormula: (id: string, revision: number) =>
+    postJSON<FormulaDraft, { id: string; revision: number }>('/api/factory/formulas/copy', { id, revision }),
+  validateFactoryFormula: (definitionYaml: string) =>
+    postJSON<FormulaValidation, { definitionYaml: string }>('/api/factory/formulas/validate', { definitionYaml }),
+  previewFactoryFormula: (definitionYaml: string, parameters: Record<string, string>) =>
+    postJSON<FormulaPreview, { definitionYaml: string; parameters: Record<string, string> }>('/api/factory/formulas/preview', { definitionYaml, parameters }),
+  saveFactoryFormula: (request: { id: string; name: string; definitionYaml: string }) =>
+    postJSON<FormulaRevision, typeof request>('/api/factory/formulas', request),
+  archiveFactoryFormula: (id: string) =>
+    postJSON<void, { id: string }>('/api/factory/formulas/archive', { id }, { parseJSON: false }),
+  deleteFactoryFormula: (id: string) =>
+    postJSON<void, { id: string }>('/api/factory/formulas/delete', { id }, { parseJSON: false }),
   browseDirectories: (dir?: string, signal?: AbortSignal) =>
     fetchJSON<DirectoryBrowseResponse>(`/api/filesystem/directories${queryString({ dir })}`, signal),
   searchDirectories: (root: string | undefined, query: string, limit?: number, signal?: AbortSignal) => {

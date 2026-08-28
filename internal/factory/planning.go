@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/factory/model"
 )
 
 const (
@@ -96,10 +98,7 @@ type PlanDependency struct {
 	To   string `json:"to"`
 }
 
-type PlanningSession struct {
-	Platform string `json:"platform"`
-	ID       string `json:"id"`
-}
+type PlanningSession = model.PlanningSession
 
 type PlanningWork struct {
 	ID                string          `json:"id"`
@@ -120,6 +119,7 @@ type PlanApproval struct {
 	ApprovedAt      time.Time `json:"approvedAt"`
 	FormulaID       string    `json:"formulaId"`
 	FormulaVersion  int       `json:"formulaVersion"`
+	FormulaHash     string    `json:"formulaHash"`
 	FormulaOrigin   string    `json:"formulaOrigin"`
 	InstantiationID string    `json:"instantiationId"`
 	Reason          string    `json:"reason,omitempty"`
@@ -139,14 +139,7 @@ type PlanningLauncher interface {
 	StopPlanningSession(context.Context, PlanningSession) error
 }
 
-type FactoryAuditRecord struct {
-	EpicID  string
-	WorkID  string
-	Actor   string
-	Action  string
-	Details any
-	At      time.Time
-}
+type FactoryAuditRecord = model.AuditRecord
 
 type MutatePlanRequest struct {
 	ExpectedRevision int       `json:"expectedRevision"`
@@ -331,7 +324,9 @@ func (s *Service) createPlanningWork(ctx context.Context, epic WorkEpic, target 
 		"ocman.kind":               "agent-work",
 		"ocman.formula_id":         epic.FormulaID,
 		"ocman.formula_version":    fmt.Sprint(epic.FormulaVersion),
-		"ocman.formula_origin":     "built-in",
+		"ocman.formula_revision":   fmt.Sprint(epic.FormulaRevision),
+		"ocman.formula_hash":       epic.FormulaHash,
+		"ocman.formula_origin":     string(epic.FormulaOrigin),
 		"ocman.instantiation_id":   epic.InstantiationID,
 		"ocman.work_epic_id":       epic.ID,
 		"ocman.permission_profile": planningProfile,
@@ -477,7 +472,7 @@ func (s *Service) ApprovePlan(ctx context.Context, epicID string, req PlanDecisi
 	epic.Plan.State = PlanApproved
 	epic.Plan.Approval = &PlanApproval{
 		Revision: epic.Plan.Revision, Hash: epic.Plan.Hash, Actor: reqActor(req.Actor), ApprovedAt: time.Now().UTC(),
-		FormulaID: epic.FormulaID, FormulaVersion: epic.FormulaVersion, FormulaOrigin: "built-in", InstantiationID: epic.InstantiationID, Reason: strings.TrimSpace(req.Reason), Graph: frozen,
+		FormulaID: epic.FormulaID, FormulaVersion: epic.FormulaVersion, FormulaHash: epic.FormulaHash, FormulaOrigin: string(epic.FormulaOrigin), InstantiationID: epic.InstantiationID, Reason: strings.TrimSpace(req.Reason), Graph: frozen,
 	}
 	if err := s.persistPlan(ctx, &epic); err != nil {
 		return Plan{}, err

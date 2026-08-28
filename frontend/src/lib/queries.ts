@@ -29,6 +29,7 @@ import type {
 	FactoryPlan,
 	FactoryPlanGraph,
 	FactoryPlanDecisionRequest,
+  FormulaSummary,
 } from './api';
 
 export function useFactoryStatus() {
@@ -37,6 +38,27 @@ export function useFactoryStatus() {
     queryFn: ({ signal }) => api.factoryStatus(signal),
     refetchInterval: 10_000,
   });
+}
+
+export function useFactoryFormulas(enabled = true) {
+  return useQuery<FormulaSummary[]>({
+    queryKey: ['factory-formulas'],
+    queryFn: ({ signal }) => api.factoryFormulas(signal),
+    enabled,
+  });
+}
+
+export function useFactoryFormulaActions() {
+  const queryClient = useQueryClient();
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['factory-formulas'] });
+  return {
+    copy: useMutation({ mutationFn: ({ id, revision }: { id: string; revision: number }) => api.copyFactoryFormula(id, revision) }),
+    validate: useMutation({ mutationFn: (definitionYaml: string) => api.validateFactoryFormula(definitionYaml) }),
+    preview: useMutation({ mutationFn: ({ definitionYaml, parameters }: { definitionYaml: string; parameters: Record<string, string> }) => api.previewFactoryFormula(definitionYaml, parameters) }),
+    save: useMutation({ mutationFn: api.saveFactoryFormula, onSuccess: refresh }),
+    archive: useMutation({ mutationFn: api.archiveFactoryFormula, onSuccess: refresh }),
+    remove: useMutation({ mutationFn: api.deleteFactoryFormula, onSuccess: refresh }),
+  };
 }
 
 export function useWorkEpics(enabled = true) {

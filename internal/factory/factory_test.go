@@ -112,9 +112,14 @@ func pouredIssuesAt(project string) string {
 }
 
 func pouredPreparedIssues(project, key, brief string) string {
-	issues := strings.ReplaceAll(pouredIssuesAt(project), "intake-42", key)
+	issues := strings.ReplaceAll(currentPouredIssuesAt(project), "intake-42", key)
 	issues = strings.Replace(issues, `"title":"Ship search",`, `"title":"Ship search","description":`+strconv.Quote(brief)+`,`, 1)
 	return strings.Replace(issues, `"title":"Plan: Ship search",`, `"title":"Plan: Ship search","description":`+strconv.Quote(brief)+`,`, 1)
+}
+
+func currentPouredIssuesAt(project string) string {
+	issues := strings.ReplaceAll(pouredIssuesAt(project), `"ocman.formula_version":"1"`, `"ocman.formula_revision":"2","ocman.formula_version":"2","ocman.formula_hash":"`+formulaHash(defaultFormulaYAML)+`"`)
+	return issues
 }
 
 func TestProbeBeadsCompatibility(t *testing.T) {
@@ -451,7 +456,7 @@ func TestCreatePreparedWorkEpicRequiresAckAndPersistsConfirmedBrief(t *testing.T
 	if err := json.Unmarshal(runner.plans[0], &graph); err != nil {
 		t.Fatal(err)
 	}
-	if len(graph.Nodes) != 3 || graph.Nodes[0].Description != prepared.Brief || graph.Nodes[1].Description != prepared.Brief {
+	if len(graph.Nodes) != 6 || graph.Nodes[0].Description != prepared.Brief || graph.Nodes[1].Description != prepared.Brief {
 		t.Fatalf("graph brief = %#v", graph.Nodes)
 	}
 
@@ -611,13 +616,13 @@ func TestCreateWorkEpicPoursDefaultFormulaGraph(t *testing.T) {
 	if err := json.Unmarshal(runner.plans[0], &plan); err != nil {
 		t.Fatal(err)
 	}
-	if len(plan.Nodes) != 3 || len(plan.Edges) != 1 {
+	if len(plan.Nodes) != 6 || len(plan.Edges) != 4 {
 		t.Fatalf("graph = %#v", plan)
 	}
-	wantKinds := []string{"work-epic", "agent-work", "gate"}
+	wantKinds := []string{"work-epic", "agent-work", "gate", "delivery", "gate", "gate"}
 	for i, node := range plan.Nodes {
 		if node.Metadata["ocman.contract"] != "1" || node.Metadata["ocman.kind"] != wantKinds[i] ||
-			node.Metadata["ocman.formula_id"] != DefaultFormulaID || node.Metadata["ocman.formula_version"] != "1" ||
+			node.Metadata["ocman.formula_id"] != DefaultFormulaID || node.Metadata["ocman.formula_version"] != strconv.Itoa(DefaultFormulaVersion) ||
 			node.Metadata["ocman.formula_origin"] != "built-in" || node.Metadata["ocman.instantiation_id"] != "intake-42" {
 			t.Fatalf("node %q provenance = %#v", node.Key, node.Metadata)
 		}
@@ -650,7 +655,7 @@ func TestCreateWorkEpicReconcilesAmbiguousPour(t *testing.T) {
 		{out: versionEnvelope},
 		{out: listEnvelope(`[]`)},
 		{err: errors.New("connection lost after commit")},
-		{out: listEnvelope(pouredIssuesAt(project))},
+		{out: listEnvelope(currentPouredIssuesAt(project))},
 	}}
 	svc := newWithRunner(t.TempDir(), runner, &fakeFactoryStore{fakeAckStore: fakeAckStore{runner: runner}})
 	svc.owned = true
@@ -672,7 +677,7 @@ func TestCreateWorkEpicReconcilesAfterRequestCancellation(t *testing.T) {
 		{out: versionEnvelope},
 		{out: listEnvelope(`[]`)},
 		{err: errors.New("connection lost after commit")},
-		{out: listEnvelope(pouredIssuesAt(project))},
+		{out: listEnvelope(currentPouredIssuesAt(project))},
 	}}
 	createSeen, reconciliationBounded := false, false
 	runner.onRun = func(runCtx context.Context, args []string) {
@@ -707,7 +712,7 @@ func TestCreateWorkEpicDoesNotDuplicateInstantiation(t *testing.T) {
 	runner := &fakeRunner{runs: []fakeRun{
 		{out: versionEnvelope}, {out: listEnvelope(`[]`)},
 		{out: `{"schema_version":1,"data":{"ids":{"epic":"fac-1","planning":"fac-1.1","approval":"fac-1.2"}}}`},
-		{out: versionEnvelope}, {out: listEnvelope(pouredIssuesAt(project))},
+		{out: versionEnvelope}, {out: listEnvelope(currentPouredIssuesAt(project))},
 	}}
 	svc := newWithRunner(t.TempDir(), runner, &fakeFactoryStore{fakeAckStore: fakeAckStore{runner: runner}})
 	svc.owned = true
@@ -732,10 +737,20 @@ func TestCreateWorkEpicDoesNotDuplicateInstantiation(t *testing.T) {
 func TestCreateWorkEpicRejectsInstantiationInputMismatch(t *testing.T) {
 	_, err := matchInstantiation([]WorkEpic{{
 		InstantiationID: "intake-42", FormulaID: DefaultFormulaID, FormulaVersion: DefaultFormulaVersion,
-		Goal: "Original", InitialProject: "/repo",
-	}}, CreateWorkEpicRequest{InstantiationID: "intake-42", Goal: "Changed", InitialProject: "/repo"})
+		FormulaRevision: DefaultFormulaVersion,
+		Goal:            "Original", InitialProject: "/repo",
+	}}, CreateWorkEpicRequest{InstantiationID: "intake-42", Goal: "Changed", InitialProject: "/repo", FormulaID: DefaultFormulaID, FormulaRevision: DefaultFormulaVersion}, "")
 	if !errors.Is(err, ErrInstantiationConflict) {
 		t.Fatalf("matchInstantiation error = %v, want conflict", err)
+	}
+}
+
+func TestCreateWorkEpicRejectsInstantiationFormulaMismatch(t *testing.T) {
+	_, err := matchInstantiation([]WorkEpic{{
+		InstantiationID: "intake-42", FormulaID: "custom/other", FormulaRevision: 1, FormulaHash: strings.Repeat("a", 64),
+	}}, CreateWorkEpicRequest{InstantiationID: "intake-42", FormulaID: "custom/team", FormulaRevision: 1}, strings.Repeat("b", 64))
+	if !errors.Is(err, ErrInstantiationConflict) {
+		t.Fatalf("matchInstantiation error = %v, want provenance conflict", err)
 	}
 }
 

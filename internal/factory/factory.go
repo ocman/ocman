@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/factory/model"
 )
 
 const (
@@ -75,6 +77,17 @@ type projectResolver interface {
 	ResolveLocalProject(context.Context, string) (string, error)
 }
 
+type formulaStore interface {
+	ListFactoryFormulas(context.Context) ([]FactoryFormula, error)
+	GetFactoryFormulaRevision(context.Context, string, int) (FactoryFormula, FactoryFormulaRevision, error)
+	SaveFactoryFormulaRevision(context.Context, string, string, string, string, string, int, time.Time) (FactoryFormulaRevision, error)
+	ArchiveFactoryFormula(context.Context, string, time.Time) (bool, error)
+	DeleteFactoryFormula(context.Context, string) (bool, error)
+}
+
+type FactoryFormula = model.Formula
+type FactoryFormulaRevision = model.FormulaRevision
+
 type factoryStore interface {
 	localExecutionAckStore
 	GetFactoryPlanningSession(context.Context, string) (PlanningSession, bool, error)
@@ -94,6 +107,7 @@ type Service struct {
 	release     func() error
 	acks        localExecutionAckStore
 	store       factoryStore
+	formulas    formulaStore
 	projects    projectResolver
 	planning    PlanningLauncher
 }
@@ -114,6 +128,7 @@ func newWithRunner(dir string, r runner, ackStore localExecutionAckStore) *Servi
 	}
 	svc := &Service{dir: dir, runner: r, acks: ackStore}
 	svc.store, _ = ackStore.(factoryStore)
+	svc.formulas, _ = ackStore.(formulaStore)
 	return svc
 }
 
