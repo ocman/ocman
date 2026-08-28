@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -136,7 +137,8 @@ func TestFactoryStatusRouteIsAuthenticatedAndReadOnly(t *testing.T) {
 	auth := newTestAuth(t, "hunter2")
 	want := factory.Status{
 		Health: factory.HealthHealthy, Idle: true, ReadOnly: true,
-		Beads: factory.BeadsHealth{Usable: true, Version: "1.1.0", ContractVersion: 1},
+		Dispatch: []factory.DispatchItem{{ID: "work-1", EpicID: "fac-1", Title: "Build", Repository: "/repo", State: factory.DispatchCompleted, AttemptID: "attempt-1", Outcome: "succeeded"}},
+		Beads:    factory.BeadsHealth{Usable: true, Version: "1.1.0", ContractVersion: 1},
 	}
 	srv := New(nil, nil, "", nil, auth)
 	srv.factory = &fakeFactoryService{status: want}
@@ -167,7 +169,7 @@ func TestFactoryStatusRouteIsAuthenticatedAndReadOnly(t *testing.T) {
 	if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
 		t.Fatal(err)
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("status = %#v, want %#v", got, want)
 	}
 

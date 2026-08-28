@@ -53,14 +53,15 @@ type BeadsHealth struct {
 }
 
 type Status struct {
-	Health        Health      `json:"health"`
-	Idle          bool        `json:"idle"`
-	DispatchOwner bool        `json:"dispatchOwner"`
-	ReadOnly      bool        `json:"readOnly"`
-	WorkEpicCount int         `json:"workEpicCount"`
-	Beads         BeadsHealth `json:"beads"`
-	Reason        Reason      `json:"reason,omitempty"`
-	Message       string      `json:"message,omitempty"`
+	Health        Health         `json:"health"`
+	Idle          bool           `json:"idle"`
+	DispatchOwner bool           `json:"dispatchOwner"`
+	ReadOnly      bool           `json:"readOnly"`
+	WorkEpicCount int            `json:"workEpicCount"`
+	Dispatch      []DispatchItem `json:"dispatch"`
+	Beads         BeadsHealth    `json:"beads"`
+	Reason        Reason         `json:"reason,omitempty"`
+	Message       string         `json:"message,omitempty"`
 }
 
 type runner interface {
@@ -99,6 +100,15 @@ type factoryStore interface {
 	AppendFactoryAuditOnce(context.Context, FactoryAuditRecord) error
 }
 
+type attemptStore interface {
+	CreatePreparedFactoryAttempt(context.Context, string, string, model.FactoryAttemptPolicy, time.Time) (model.FactoryAttempt, error)
+	ListFactoryAttempts(context.Context, string) ([]model.FactoryAttempt, error)
+	ActivateFactoryAttempt(context.Context, string, model.PlanningSession, time.Time) (bool, error)
+	CompleteFactoryAttempt(context.Context, string, model.FactoryAttemptResult, time.Time) (bool, error)
+	FailFactoryAttempt(context.Context, string, model.FactoryAttemptFailure, time.Time) (bool, error)
+	AppendFactoryAuditOnce(context.Context, model.AuditRecord) error
+}
+
 type Service struct {
 	dir             string
 	runner          runner
@@ -112,9 +122,13 @@ type Service struct {
 	release         func() error
 	acks            localExecutionAckStore
 	store           factoryStore
+	attempts        attemptStore
 	formulas        formulaStore
 	projects        projectResolver
 	planning        PlanningLauncher
+	executor        FactoryExecutor
+	dispatchMu      sync.Mutex
+	activeRepos     map[string]bool
 }
 
 func New(dir string, ackStore localExecutionAckStore, projects projectResolver, planning PlanningLauncher) *Service {
@@ -133,7 +147,9 @@ func newWithRunner(dir string, r runner, ackStore localExecutionAckStore) *Servi
 	}
 	svc := &Service{dir: dir, runner: r, acks: ackStore}
 	svc.store, _ = ackStore.(factoryStore)
+	svc.attempts, _ = ackStore.(attemptStore)
 	svc.formulas, _ = ackStore.(formulaStore)
+	svc.executor = stubFactoryExecutor{}
 	return svc
 }
 
@@ -151,9 +167,14 @@ func (s *Service) Start(ctx context.Context) error {
 	s.release, s.owned, s.lockErr = release, owned, err
 	if owned {
 		initializeBeads(ctx, filepath.Join(s.dir, "beads"), s.runner)
+		var recoveryErr error
 		if s.store != nil && s.planning != nil {
-			s.setRecoveryErr(s.recoverPlanningSessions(ctx))
+			recoveryErr = s.recoverPlanningSessions(ctx)
 		}
+		if recoveryErr == nil && s.attempts != nil {
+			recoveryErr = s.runDispatcher(ctx)
+		}
+		s.setRecoveryErr(recoveryErr)
 	}
 	return nil
 }
@@ -176,7 +197,7 @@ func (s *Service) Status(ctx context.Context) Status {
 	recoveryErr := s.getRecoveryErr()
 
 	beads := probeBeads(ctx, filepath.Join(s.dir, "beads"), s.runner)
-	status := Status{DispatchOwner: owned, ReadOnly: !owned, Beads: beads}
+	status := Status{DispatchOwner: owned, ReadOnly: !owned, Dispatch: []DispatchItem{}, Beads: beads}
 	if recoveryErr != nil {
 		status.Health = HealthDegraded
 		status.ReadOnly = true
@@ -217,6 +238,23 @@ func (s *Service) Status(ctx context.Context) Status {
 		return status
 	}
 	status.WorkEpicCount = len(epics)
+	if s.attempts != nil {
+		dispatch, err := s.dispatchStatus(ctx, path, filepath.Join(s.dir, "beads"))
+		if err != nil {
+			status.Health = HealthDegraded
+			status.Idle = false
+			status.Reason = ReasonBeadsCommandFailed
+			status.Message = "Factory dispatch state could not be listed."
+			return status
+		}
+		status.Dispatch = dispatch
+		for _, item := range dispatch {
+			if item.State == DispatchRunning {
+				status.Idle = false
+				break
+			}
+		}
+	}
 	return status
 }
 

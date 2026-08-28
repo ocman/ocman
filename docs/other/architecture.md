@@ -127,8 +127,12 @@ flowchart TD
   journaled before Beads changes; pending/last operation markers in Plan
   metadata let startup recovery reconcile interrupted graph, Planning Work,
   Gate, audit and Planning Session transitions. Failed recovery leaves the
-  owner degraded and read-only. A narrow
-  Planning Session launcher resolves the hub-local host and session seams,
+  owner degraded and read-only. Approved Plan items are materialized into the
+  Beads graph before deterministic dispatch. The dispatcher reserves its
+  global/repository slot before persisting an attempt and atomically claiming
+  the Work Item; structured terminal evidence reaches `state.db` before Beads
+  metadata and closure, so startup can converge either interrupted half. A
+  narrow Planning Session launcher resolves the hub-local host and session seams,
   ensures the repository runtime, and installs the read-only
   `factory-plan/v1` rules before exposing the session, deletes failed setup,
   and probes persisted mappings before reuse; local execution acknowledgements

@@ -95,12 +95,34 @@ export type FactoryReason =
   | 'dispatch_lock_failed'
   | 'recovery_failed';
 
+export type FactoryDispatchState = 'ready' | 'running' | 'completed';
+
+export type FactoryAttemptOutcome =
+  | 'succeeded'
+  | 'skipped'
+  | 'cancelled'
+  | 'acknowledged_partial'
+  | 'failed'
+  | 'interrupted'
+  | 'ambiguous';
+
+export interface FactoryDispatchItem {
+  id: string;
+  epicId: string;
+  title: string;
+  repository: string;
+  state: FactoryDispatchState;
+  attemptId?: string;
+  outcome?: FactoryAttemptOutcome;
+}
+
 export interface FactoryStatus {
   health: 'healthy' | 'unavailable' | 'degraded';
   idle: boolean;
   dispatchOwner: boolean;
   readOnly: boolean;
   workEpicCount: number;
+  dispatch: FactoryDispatchItem[];
   beads: {
     usable: boolean;
     version?: string;

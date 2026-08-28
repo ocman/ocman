@@ -433,6 +433,11 @@ func (s *Service) ApprovePlan(ctx context.Context, epicID string, req PlanDecisi
 		if err := s.auditOnce(ctx, epic.ID, "", epic.Plan.Approval.Actor, "plan.approved", epic.Plan.Approval); err != nil {
 			return Plan{}, err
 		}
+		if s.attempts != nil {
+			if err := s.runDispatcher(ctx); err != nil {
+				return Plan{}, s.recoveryFailure(err)
+			}
+		}
 		return epic.Plan, nil
 	}
 	if epic.Plan.State != PlanDraft || hashPlanGraph(epic.Plan.Draft) != epic.Plan.Hash {
@@ -480,6 +485,11 @@ func (s *Service) ApprovePlan(ctx context.Context, epicID string, req PlanDecisi
 	}
 	if err := s.auditOnce(ctx, epic.ID, "", reqActor(req.Actor), "plan.approved", epic.Plan.Approval); err != nil {
 		return Plan{}, err
+	}
+	if s.attempts != nil {
+		if err := s.runDispatcher(ctx); err != nil {
+			return Plan{}, s.recoveryFailure(err)
+		}
 	}
 	return epic.Plan, nil
 }
@@ -913,6 +923,12 @@ func (s *Service) requireMutationStore(ctx context.Context) error {
 		if err := s.recoverPlanningSessions(ctx); err != nil {
 			s.setRecoveryErr(err)
 			return fmt.Errorf("%w: Factory recovery has not succeeded: %w", ErrFactoryUnavailable, err)
+		}
+		if s.attempts != nil {
+			if err := s.runDispatcher(ctx); err != nil {
+				s.setRecoveryErr(err)
+				return fmt.Errorf("%w: Factory recovery has not succeeded: %w", ErrFactoryUnavailable, err)
+			}
 		}
 		s.setRecoveryErr(nil)
 	}

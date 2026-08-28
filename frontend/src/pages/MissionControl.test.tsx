@@ -23,6 +23,7 @@ const healthy = {
   dispatchOwner: true,
   readOnly: false,
   workEpicCount: 0,
+  dispatch: [],
   beads: { usable: true, version: '1.1.0', contractVersion: 1 },
 };
 
@@ -73,9 +74,39 @@ describe('MissionControl', () => {
     expect(screen.getByRole('heading', { name: 'Mission Control' })).toBeInTheDocument();
     expect(screen.getByText('Healthy · idle')).toBeInTheDocument();
     expect(screen.getByText('This process owns dispatch.')).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Ready 0' })).getByText('No ready work.')).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Running 0' })).getByText('No running work.')).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Completed 0' })).getByText('No completed work.')).toBeInTheDocument();
     expect(screen.getByText('No Work Epics yet')).toBeInTheDocument();
     expect(screen.getByRole('form')).toBeInTheDocument();
     expect(screen.queryByText(/Workflows/)).not.toBeInTheDocument();
+  });
+
+  it('shows running work and a completed outcome in the dispatch board', () => {
+    vi.mocked(useFactoryStatus).mockReturnValue({
+      data: {
+        ...healthy,
+        idle: false,
+        dispatch: [
+          { id: 'work-ready', epicId: 'epic-1', title: 'Review API', repository: '/repos/api', state: 'ready' },
+          { id: 'work-running', epicId: 'epic-1', title: 'Implement API', repository: '/repos/api', state: 'running', attemptId: 'attempt-2' },
+          { id: 'work-completed', epicId: 'epic-1', title: 'Update UI', repository: '/repos/web', state: 'completed', attemptId: 'attempt-1', outcome: 'succeeded' },
+        ],
+      },
+    } as never);
+    render(<MissionControl />);
+
+    const ready = within(screen.getByRole('region', { name: 'Ready 1' }));
+    expect(ready.getByRole('article', { name: 'Review API' })).toHaveTextContent('/repos/api');
+
+    const running = within(screen.getByRole('region', { name: 'Running 1' }));
+    expect(running.getByRole('list', { name: 'Running dispatch items' })).toBeInTheDocument();
+    expect(running.getByRole('article', { name: 'Implement API' })).toHaveTextContent('/repos/api');
+    expect(running.getByText('Attempt').nextSibling).toHaveTextContent('attempt-2');
+
+    const completed = within(screen.getByRole('region', { name: 'Completed 1' }));
+    expect(completed.getByRole('article', { name: 'Update UI' })).toHaveTextContent('/repos/web');
+    expect(completed.getByText('Outcome').nextSibling).toHaveTextContent('succeeded');
   });
 
   it('shows a healthy non-owner as read-only', () => {
@@ -85,6 +116,15 @@ describe('MissionControl', () => {
     render(<MissionControl />);
     expect(screen.getByText('Another local process owns dispatch; this process is read-only.')).toBeInTheDocument();
     expect(screen.queryByRole('form')).not.toBeInTheDocument();
+  });
+
+  it('keeps degraded responses without dispatch data renderable', () => {
+    vi.mocked(useFactoryStatus).mockReturnValue({
+      data: { ...healthy, health: 'degraded', dispatch: undefined, reason: 'recovery_failed', message: 'Recovery failed.' },
+    } as never);
+    render(<MissionControl />);
+    expect(screen.getByRole('alert')).toHaveTextContent('degraded');
+    expect(within(screen.getByRole('region', { name: 'Ready 0' })).getByText('No ready work.')).toBeInTheDocument();
   });
 
   it('creates from the shipped Formula with one UUID and local execution acknowledgement', async () => {

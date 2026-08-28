@@ -29,6 +29,22 @@
 .factory-health strong { text-transform: capitalize; }
 .factory-health span, .factory-panel small { color: var(--text-dim); }
 .factory-panel h3, .factory-panel p { margin: 0 0 8px; }
+.factory-dispatch { margin-top: 16px; }
+.factory-dispatch h4 { margin: 0 0 10px; }
+.factory-dispatch-board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.factory-dispatch-column { min-width: 0; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); padding: 10px; }
+.factory-dispatch-column-running { border-color: var(--yellow); }
+.factory-dispatch-column-completed { border-color: var(--green); }
+.factory-dispatch-column h5 { display: flex; justify-content: space-between; margin: 0 0 8px; }
+.factory-dispatch-column h5 span { color: var(--text-dim); font-weight: 400; }
+.factory-dispatch-column ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.factory-dispatch-column article { display: grid; gap: 5px; border-top: 1px solid var(--border); padding-top: 8px; }
+.factory-dispatch-column article > span, .factory-dispatch-empty { color: var(--text-dim); overflow-wrap: anywhere; }
+.factory-dispatch-column dl { display: grid; gap: 3px; margin: 0; font-size: 12px; }
+.factory-dispatch-column dl div { display: flex; gap: 5px; min-width: 0; }
+.factory-dispatch-column dt { color: var(--text-dim); }
+.factory-dispatch-column dd { overflow-wrap: anywhere; margin: 0; }
+.factory-dispatch-empty { font-size: 13px; }
 
 .factory-create-form fieldset { display: grid; gap: 12px; max-width: 640px; margin: 0; padding: 0; border: 0; }
 .factory-create-form label:not(.factory-acknowledgement) { display: grid; gap: 5px; font-size: 13px; font-weight: 600; }
@@ -68,6 +84,7 @@
 @media (max-width: 700px) {
   .factory-heading { display: grid; }
   .factory-health { min-width: 0; }
+  .factory-dispatch-board { grid-template-columns: 1fr; }
   .factory-epic-list dl { grid-template-columns: 1fr; }
 	.factory-target-form { grid-template-columns: 1fr; }
   .factory-formula-editor { grid-template-columns: 1fr; }

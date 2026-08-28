@@ -2,6 +2,7 @@ import { useRef, useState, type FormEvent } from 'react';
 import { Button } from '../components/Control';
 import { useAddFactoryPlanningWork, useCompleteFactoryPlanningWork, useCreateWorkEpic, useDecideFactoryPlan, useFactoryFormulaActions, useFactoryFormulas, useFactoryStatus, useMutateFactoryPlan, useWorkEpics } from '../lib/queries';
 import type { FactoryPlan, FactoryPlanGraph } from '../lib/api';
+import type { FactoryDispatchItem, FactoryDispatchState } from '../lib/api.types';
 import './MissionControl.css';
 
 function CreateWorkEpic() {
@@ -209,6 +210,49 @@ function WorkEpics() {
   );
 }
 
+const dispatchColumns: Array<{ state: FactoryDispatchState; label: string }> = [
+  { state: 'ready', label: 'Ready' },
+  { state: 'running', label: 'Running' },
+  { state: 'completed', label: 'Completed' },
+];
+
+function DispatchBoard({ items = [] }: { items?: FactoryDispatchItem[] }) {
+  return (
+    <section className="factory-dispatch" aria-labelledby="factory-dispatch-board-heading">
+      <h4 id="factory-dispatch-board-heading">Dispatch board</h4>
+      <div className="factory-dispatch-board">
+        {dispatchColumns.map(({ state, label }) => {
+          const columnItems = items.filter((item) => item.state === state);
+          return (
+            <section key={state} className={`factory-dispatch-column factory-dispatch-column-${state}`} aria-labelledby={`factory-dispatch-${state}`}>
+              <h5 id={`factory-dispatch-${state}`}>{label} <span>{columnItems.length}</span></h5>
+              {columnItems.length === 0 ? (
+                <p className="factory-dispatch-empty">No {state} work.</p>
+              ) : (
+                <ul aria-label={`${label} dispatch items`}>
+                  {columnItems.map((item) => (
+                    <li key={item.id}>
+                      <article aria-label={item.title}>
+                        <strong>{item.title}</strong>
+                        <span>{item.repository}</span>
+                        <dl>
+                          <div><dt>Epic</dt><dd>{item.epicId}</dd></div>
+                          {item.attemptId && <div><dt>Attempt</dt><dd>{item.attemptId}</dd></div>}
+                          {item.outcome && <div><dt>Outcome</dt><dd>{item.outcome}</dd></div>}
+                        </dl>
+                      </article>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function ApprovedPlanRecord({ approval }: { approval: FactoryPlan['approval'] }) {
 	if (!approval) return null;
 	return <section aria-label="Approved Plan record">
@@ -352,6 +396,7 @@ export function MissionControl() {
         {factory.beads.version && (
           <small>Beads {factory.beads.version} · JSON contract {factory.beads.contractVersion}</small>
         )}
+        <DispatchBoard items={factory.dispatch} />
       </section>
 
       {healthy && factory.dispatchOwner && <CreateWorkEpic />}

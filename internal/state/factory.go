@@ -2,7 +2,9 @@ package state
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +12,159 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/factory/model"
 )
+
+const factoryAttemptColumns = `id, epic_id, work_item_id, sequence, phase, terminal_outcome,
+	session_platform, session_id, retry_of_attempt_id, retry_at, frozen_policy_json,
+	result_json, failure_type, failure_message, created_at, updated_at, started_at, finished_at`
+
+// CreatePreparedFactoryAttempt durably allocates the next sequence for a Work Item.
+func (d *DB) CreatePreparedFactoryAttempt(ctx context.Context, epicID, workID string, policy model.FactoryAttemptPolicy, at time.Time) (model.FactoryAttempt, error) {
+	policyJSON, err := json.Marshal(policy)
+	if err != nil {
+		return model.FactoryAttempt{}, fmt.Errorf("encoding Factory attempt policy: %w", err)
+	}
+	var random [16]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return model.FactoryAttempt{}, fmt.Errorf("generating Factory attempt ID: %w", err)
+	}
+	id := "fa_" + hex.EncodeToString(random[:])
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.FactoryAttempt{}, fmt.Errorf("beginning Factory attempt creation: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var sequence int
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(sequence), 0) + 1 FROM factory_attempt WHERE work_item_id = ?`, workID).Scan(&sequence); err != nil {
+		return model.FactoryAttempt{}, fmt.Errorf("allocating Factory attempt sequence: %w", err)
+	}
+	now := at.UnixMilli()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_attempt
+		(id, epic_id, work_item_id, sequence, phase, frozen_policy_json, created_at, updated_at)
+		VALUES (?, ?, ?, ?, 'prepared', ?, ?, ?)`, id, epicID, workID, sequence, string(policyJSON), now, now); err != nil {
+		return model.FactoryAttempt{}, fmt.Errorf("creating prepared Factory attempt: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return model.FactoryAttempt{}, fmt.Errorf("committing prepared Factory attempt: %w", err)
+	}
+	return model.FactoryAttempt{
+		ID: id, EpicID: epicID, WorkID: workID, Sequence: sequence,
+		Phase: model.FactoryAttemptPrepared, FrozenPolicy: policy,
+		CreatedAt: now, UpdatedAt: now,
+	}, nil
+}
+
+// GetFactoryAttempt returns one durable attempt by ID.
+func (d *DB) GetFactoryAttempt(ctx context.Context, id string) (model.FactoryAttempt, bool, error) {
+	attempt, err := scanFactoryAttempt(d.db.QueryRowContext(ctx, `SELECT `+factoryAttemptColumns+` FROM factory_attempt WHERE id = ?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.FactoryAttempt{}, false, nil
+	}
+	if err != nil {
+		return model.FactoryAttempt{}, false, fmt.Errorf("getting Factory attempt: %w", err)
+	}
+	return attempt, true, nil
+}
+
+// ListFactoryAttempts returns attempts in durable creation order. An empty epic ID lists all epics.
+func (d *DB) ListFactoryAttempts(ctx context.Context, epicID string) ([]model.FactoryAttempt, error) {
+	query := `SELECT ` + factoryAttemptColumns + ` FROM factory_attempt`
+	var args []any
+	if epicID != "" {
+		query += ` WHERE epic_id = ?`
+		args = append(args, epicID)
+	}
+	rows, err := d.db.QueryContext(ctx, query+` ORDER BY created_at, id`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("listing Factory attempts: %w", err)
+	}
+	defer rows.Close()
+	var attempts []model.FactoryAttempt
+	for rows.Next() {
+		attempt, err := scanFactoryAttempt(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scanning Factory attempt: %w", err)
+		}
+		attempts = append(attempts, attempt)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("listing Factory attempts: %w", err)
+	}
+	return attempts, nil
+}
+
+// ActivateFactoryAttempt conditionally advances a prepared attempt.
+func (d *DB) ActivateFactoryAttempt(ctx context.Context, id string, session model.PlanningSession, at time.Time) (bool, error) {
+	if (session.Platform == "") != (session.ID == "") {
+		return false, errors.New("activating Factory attempt: session platform and ID must both be set")
+	}
+	result, err := d.db.ExecContext(ctx, `UPDATE factory_attempt
+		SET phase = 'active', session_platform = ?, session_id = ?, started_at = ?, updated_at = ?
+		WHERE id = ? AND phase = 'prepared'`, session.Platform, session.ID, at.UnixMilli(), at.UnixMilli(), id)
+	return factoryAttemptChanged(result, err, "activating Factory attempt")
+}
+
+// CompleteFactoryAttempt conditionally records immutable successful evidence.
+func (d *DB) CompleteFactoryAttempt(ctx context.Context, id string, result model.FactoryAttemptResult, at time.Time) (bool, error) {
+	resultJSON, err := json.Marshal(result)
+	if err != nil {
+		return false, fmt.Errorf("encoding Factory attempt result: %w", err)
+	}
+	updated, err := d.db.ExecContext(ctx, `UPDATE factory_attempt
+		SET phase = 'terminal', terminal_outcome = 'succeeded', result_json = ?, finished_at = ?, updated_at = ?
+		WHERE id = ? AND phase = 'active'`, string(resultJSON), at.UnixMilli(), at.UnixMilli(), id)
+	return factoryAttemptChanged(updated, err, "completing Factory attempt")
+}
+
+// FailFactoryAttempt conditionally terminates preparation or execution.
+func (d *DB) FailFactoryAttempt(ctx context.Context, id string, failure model.FactoryAttemptFailure, at time.Time) (bool, error) {
+	if failure.Type == "" {
+		return false, errors.New("failing Factory attempt: failure type is required")
+	}
+	result, err := d.db.ExecContext(ctx, `UPDATE factory_attempt
+		SET phase = 'terminal', terminal_outcome = 'failed', failure_type = ?, failure_message = ?, finished_at = ?, updated_at = ?
+		WHERE id = ? AND phase IN ('prepared', 'active', 'stopping')`, failure.Type, failure.Message, at.UnixMilli(), at.UnixMilli(), id)
+	return factoryAttemptChanged(result, err, "failing Factory attempt")
+}
+
+type factoryAttemptScanner interface {
+	Scan(...any) error
+}
+
+func scanFactoryAttempt(scanner factoryAttemptScanner) (model.FactoryAttempt, error) {
+	var attempt model.FactoryAttempt
+	var retryOf sql.NullString
+	var policyJSON, resultJSON string
+	if err := scanner.Scan(
+		&attempt.ID, &attempt.EpicID, &attempt.WorkID, &attempt.Sequence, &attempt.Phase, &attempt.Outcome,
+		&attempt.Session.Platform, &attempt.Session.ID, &retryOf, &attempt.RetryAt, &policyJSON,
+		&resultJSON, &attempt.Failure.Type, &attempt.Failure.Message, &attempt.CreatedAt, &attempt.UpdatedAt,
+		&attempt.StartedAt, &attempt.FinishedAt,
+	); err != nil {
+		return model.FactoryAttempt{}, err
+	}
+	attempt.RetryOfAttemptID = retryOf.String
+	if err := json.Unmarshal([]byte(policyJSON), &attempt.FrozenPolicy); err != nil {
+		return model.FactoryAttempt{}, fmt.Errorf("decoding frozen policy: %w", err)
+	}
+	if resultJSON != "" {
+		attempt.Result = &model.FactoryAttemptResult{}
+		if err := json.Unmarshal([]byte(resultJSON), attempt.Result); err != nil {
+			return model.FactoryAttempt{}, fmt.Errorf("decoding result: %w", err)
+		}
+	}
+	return attempt, nil
+}
+
+func factoryAttemptChanged(result sql.Result, err error, action string) (bool, error) {
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", action, err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", action, err)
+	}
+	return changed != 0, nil
+}
 
 // HasFactoryLocalExecutionAck reports whether the operator has acknowledged
 // one host, repository, and permission profile tuple.
@@ -177,10 +332,14 @@ func (d *DB) AppendFactoryAudit(ctx context.Context, record model.AuditRecord) e
 	if err != nil {
 		return fmt.Errorf("encoding Factory audit: %w", err)
 	}
+	var attemptID any
+	if record.AttemptID != "" {
+		attemptID = record.AttemptID
+	}
 	_, err = d.db.ExecContext(ctx, `
-		INSERT INTO factory_audit_record (epic_id, work_item_id, actor, action, details_json, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, record.EpicID, record.WorkID, record.Actor, record.Action, string(details), record.At.UnixMilli())
+		INSERT INTO factory_audit_record (epic_id, work_item_id, attempt_id, actor, action, details_json, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, record.EpicID, record.WorkID, attemptID, record.Actor, record.Action, string(details), record.At.UnixMilli())
 	if err != nil {
 		return fmt.Errorf("appending Factory audit: %w", err)
 	}
@@ -193,14 +352,18 @@ func (d *DB) AppendFactoryAuditOnce(ctx context.Context, record model.AuditRecor
 	if err != nil {
 		return fmt.Errorf("encoding Factory audit: %w", err)
 	}
+	var attemptID any
+	if record.AttemptID != "" {
+		attemptID = record.AttemptID
+	}
 	_, err = d.db.ExecContext(ctx, `
-		INSERT INTO factory_audit_record (epic_id, work_item_id, actor, action, details_json, created_at)
-		SELECT ?, ?, ?, ?, ?, ?
+		INSERT INTO factory_audit_record (epic_id, work_item_id, attempt_id, actor, action, details_json, created_at)
+		SELECT ?, ?, ?, ?, ?, ?, ?
 		WHERE NOT EXISTS (
 			SELECT 1 FROM factory_audit_record
-			WHERE epic_id = ? AND work_item_id = ? AND actor = ? AND action = ? AND details_json = ?
+			WHERE epic_id = ? AND work_item_id = ? AND attempt_id IS ? AND actor = ? AND action = ? AND details_json = ?
 		)
-	`, record.EpicID, record.WorkID, record.Actor, record.Action, string(details), record.At.UnixMilli(), record.EpicID, record.WorkID, record.Actor, record.Action, string(details))
+	`, record.EpicID, record.WorkID, attemptID, record.Actor, record.Action, string(details), record.At.UnixMilli(), record.EpicID, record.WorkID, attemptID, record.Actor, record.Action, string(details))
 	if err != nil {
 		return fmt.Errorf("appending Factory audit once: %w", err)
 	}

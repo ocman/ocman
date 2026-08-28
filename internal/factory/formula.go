@@ -112,11 +112,20 @@ type graphEdge struct {
 }
 
 type beadsIssue struct {
-	ID          string            `json:"id"`
-	Status      string            `json:"status"`
-	IssueType   string            `json:"issue_type"`
-	Description string            `json:"description"`
-	Metadata    map[string]string `json:"metadata"`
+	ID           string            `json:"id"`
+	Title        string            `json:"title"`
+	Status       string            `json:"status"`
+	Priority     int               `json:"priority"`
+	IssueType    string            `json:"issue_type"`
+	Description  string            `json:"description"`
+	Assignee     string            `json:"assignee"`
+	CreatedAt    time.Time         `json:"created_at"`
+	Metadata     map[string]string `json:"metadata"`
+	Dependencies []struct {
+		IssueID     string `json:"issue_id"`
+		DependsOnID string `json:"depends_on_id"`
+		Type        string `json:"type"`
+	} `json:"dependencies"`
 }
 
 func (s *Service) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRequest) (WorkEpic, error) {
