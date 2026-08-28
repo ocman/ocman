@@ -58,6 +58,9 @@ func (f *fakeRunner) Run(ctx context.Context, _ string, _ string, args, env []st
 		plan, _ := os.ReadFile(args[2])
 		f.plans = append(f.plans, plan)
 	}
+	if len(f.seen) > len(f.runs) {
+		return nil, nil, nil
+	}
 	run := f.runs[len(f.seen)-1]
 	return []byte(run.out), nil, run.err
 }
@@ -358,6 +361,22 @@ func TestReadOnlyServiceCannotCreateWorkEpic(t *testing.T) {
 	}
 }
 
+func TestRecoveryFailurePreventsCreatingWorkEpic(t *testing.T) {
+	project, _ := filepath.EvalSymlinks(t.TempDir())
+	runner := &fakeRunner{runs: []fakeRun{{err: errors.New("still unavailable")}}}
+	store := &fakeFactoryStore{}
+	svc := newWithRunner(t.TempDir(), runner, store)
+	svc.owned = true
+	svc.recoveryErr = errors.New("recovery failed")
+
+	_, err := svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{
+		InstantiationID: "intake-1", Goal: "Ship it", InitialProject: project, AcknowledgeLocalExecution: true,
+	})
+	if !errors.Is(err, ErrFactoryUnavailable) || len(store.calls) != 0 || len(runner.seen) != 1 || runner.seen[0][0] != "version" {
+		t.Fatalf("CreateWorkEpic error = %v, acknowledgements = %#v, commands = %#v", err, store.calls, runner.seen)
+	}
+}
+
 func TestDefaultFormulaIsImmutable(t *testing.T) {
 	formula := DefaultFormula()
 	formula.ID = "changed"
@@ -377,8 +396,8 @@ func TestCreateWorkEpicPoursDefaultFormulaGraph(t *testing.T) {
 		{out: listEnvelope(`[]`)},
 		{out: `{"schema_version":1,"data":{"ids":{"epic":"fac-1","planning":"fac-1.1","approval":"fac-1.2"}}}`},
 	}}
-	acks := &fakeAckStore{runner: runner}
-	svc := newWithRunner(t.TempDir(), runner, acks)
+	store := &fakeFactoryStore{fakeAckStore: fakeAckStore{runner: runner}}
+	svc := newWithRunner(t.TempDir(), runner, store)
 	svc.owned = true
 
 	got, err := svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{
@@ -393,8 +412,8 @@ func TestCreateWorkEpicPoursDefaultFormulaGraph(t *testing.T) {
 	if got.ID != "fac-1" || got.Planning.WorkID != "fac-1.1" || got.Planning.ApprovalGateID != "fac-1.2" {
 		t.Fatalf("epic = %#v", got)
 	}
-	if len(acks.calls) != 1 || !reflect.DeepEqual(acks.calls[0][:5], []any{"local", project, "factory-plan", "v1", "operator"}) {
-		t.Fatalf("acknowledgement = %#v", acks.calls)
+	if len(store.calls) != 1 || !reflect.DeepEqual(store.calls[0][:5], []any{"local", project, "factory-plan", "v1", "operator"}) {
+		t.Fatalf("acknowledgement = %#v", store.calls)
 	}
 	if len(runner.plans) != 1 {
 		t.Fatalf("plans = %d", len(runner.plans))
@@ -460,7 +479,7 @@ func TestCreateWorkEpicReconcilesAmbiguousPour(t *testing.T) {
 		{err: errors.New("connection lost after commit")},
 		{out: listEnvelope(pouredIssuesAt(project))},
 	}}
-	svc := newWithRunner(t.TempDir(), runner, &fakeAckStore{runner: runner})
+	svc := newWithRunner(t.TempDir(), runner, &fakeFactoryStore{fakeAckStore: fakeAckStore{runner: runner}})
 	svc.owned = true
 
 	got, err := svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{InstantiationID: "intake-42", Goal: "Ship search", InitialProject: project, AcknowledgeLocalExecution: true})
@@ -497,7 +516,7 @@ func TestCreateWorkEpicReconcilesAfterRequestCancellation(t *testing.T) {
 			reconciliationBounded = true
 		}
 	}
-	svc := newWithRunner(t.TempDir(), runner, &fakeAckStore{runner: runner})
+	svc := newWithRunner(t.TempDir(), runner, &fakeFactoryStore{fakeAckStore: fakeAckStore{runner: runner}})
 	svc.owned = true
 
 	got, err := svc.CreateWorkEpic(ctx, CreateWorkEpicRequest{InstantiationID: "intake-42", Goal: "Ship search", InitialProject: project, AcknowledgeLocalExecution: true})
@@ -517,7 +536,7 @@ func TestCreateWorkEpicDoesNotDuplicateInstantiation(t *testing.T) {
 		{out: `{"schema_version":1,"data":{"ids":{"epic":"fac-1","planning":"fac-1.1","approval":"fac-1.2"}}}`},
 		{out: versionEnvelope}, {out: listEnvelope(pouredIssuesAt(project))},
 	}}
-	svc := newWithRunner(t.TempDir(), runner, &fakeAckStore{runner: runner})
+	svc := newWithRunner(t.TempDir(), runner, &fakeFactoryStore{fakeAckStore: fakeAckStore{runner: runner}})
 	svc.owned = true
 	req := CreateWorkEpicRequest{InstantiationID: "intake-42", Goal: "Ship search", InitialProject: project, AcknowledgeLocalExecution: true}
 	if _, err := svc.CreateWorkEpic(context.Background(), req); err != nil {

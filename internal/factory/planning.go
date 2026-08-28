@@ -30,15 +30,27 @@ const (
 )
 
 type Plan struct {
-	SchemaVersion int            `json:"schemaVersion"`
-	Revision      int            `json:"revision"`
-	Hash          string         `json:"hash"`
-	State         PlanState      `json:"state"`
-	Draft         PlanGraph      `json:"graph"`
-	Planning      []PlanningWork `json:"planning"`
-	Approval      *PlanApproval  `json:"approval,omitempty"`
-	LastDecision  *PlanDecision  `json:"lastDecision,omitempty"`
-	Validation    []string       `json:"validation"`
+	SchemaVersion    int            `json:"schemaVersion"`
+	Revision         int            `json:"revision"`
+	Hash             string         `json:"hash"`
+	State            PlanState      `json:"state"`
+	Draft            PlanGraph      `json:"graph"`
+	Planning         []PlanningWork `json:"planning"`
+	Approval         *PlanApproval  `json:"approval,omitempty"`
+	LastDecision     *PlanDecision  `json:"lastDecision,omitempty"`
+	PendingOperation *PlanOperation `json:"pendingOperation,omitempty"`
+	LastOperation    *PlanOperation `json:"lastOperation,omitempty"`
+	Validation       []string       `json:"validation"`
+}
+
+type PlanOperation struct {
+	Action       string      `json:"action"`
+	FromRevision int         `json:"fromRevision"`
+	FromHash     string      `json:"fromHash"`
+	Actor        string      `json:"actor"`
+	Graph        *PlanGraph  `json:"graph,omitempty"`
+	Target       *PlanTarget `json:"target,omitempty"`
+	WorkID       string      `json:"workId,omitempty"`
 }
 
 type PlanDecision struct {
@@ -219,6 +231,12 @@ func (s *Service) MutatePlan(ctx context.Context, epicID string, req MutatePlanR
 			return PlanMutationResult{}, err
 		}
 	}
+	if operation := epic.Plan.LastOperation; operation != nil && operation.Action == "plan.mutated" && operation.FromRevision == req.ExpectedRevision && operation.Graph != nil && hashPlanGraph(*operation.Graph) == hashPlanGraph(req.Graph) {
+		if err := s.auditOnce(ctx, epic.ID, "", operation.Actor, operation.Action, operation); err != nil {
+			return PlanMutationResult{}, err
+		}
+		return PlanMutationResult{Plan: epic.Plan}, nil
+	}
 	if req.ExpectedRevision != epic.Plan.Revision {
 		return PlanMutationResult{Stale: true, Plan: epic.Plan}, nil
 	}
@@ -228,18 +246,12 @@ func (s *Service) MutatePlan(ctx context.Context, epicID string, req MutatePlanR
 	if err := validateDraft(req.Graph, epic.Plan.Planning); err != nil {
 		return PlanMutationResult{}, err
 	}
-	previous := epic.Plan
-	epic.Plan.Revision++
-	epic.Plan.State = PlanDraft
-	epic.Plan.Draft = req.Graph
-	epic.Plan.Hash = hashPlanGraph(req.Graph)
-	epic.Plan.Approval = nil
-	epic.Plan.Validation = validateComplete(epic.Plan)
-	if err := s.persistPlan(ctx, &epic); err != nil {
+	operation := &PlanOperation{Action: "plan.mutated", FromRevision: epic.Plan.Revision, FromHash: epic.Plan.Hash, Actor: "planner", Graph: &req.Graph}
+	if err := s.beginPlanOperation(ctx, &epic, "plan.mutation.requested", operation); err != nil {
 		return PlanMutationResult{}, err
 	}
-	if err := s.audit(ctx, epic.ID, "", reqActor("planner"), "plan.mutated", map[string]any{"before": previous, "after": epic.Plan}); err != nil {
-		return PlanMutationResult{}, err
+	if err := s.applyPlanMutation(ctx, &epic, operation); err != nil {
+		return PlanMutationResult{}, s.recoveryFailure(err)
 	}
 	return PlanMutationResult{Plan: epic.Plan}, nil
 }
@@ -259,12 +271,6 @@ func (s *Service) AddPlanningWork(ctx context.Context, epicID string, req AddPla
 			return PlanMutationResult{}, err
 		}
 	}
-	if req.ExpectedRevision != epic.Plan.Revision {
-		return PlanMutationResult{Stale: true, Plan: epic.Plan}, nil
-	}
-	if epic.Plan.State != PlanDraft {
-		return PlanMutationResult{}, fmt.Errorf("%w: Plan must be revised before adding Planning Work", ErrPlanNotApprovable)
-	}
 	if !stableID.MatchString(req.Target.ID) || req.Target.HostID != localHostID {
 		return PlanMutationResult{}, errors.New("planning work requires a local target")
 	}
@@ -276,6 +282,21 @@ func (s *Service) AddPlanningWork(ctx context.Context, epicID string, req AddPla
 		return PlanMutationResult{}, errors.New("planning work repository must be an existing local directory")
 	}
 	req.Target.Repository = filepath.Clean(repository)
+	if operation := epic.Plan.LastOperation; operation != nil && operation.Action == "planning.added" && operation.FromRevision == req.ExpectedRevision && operation.Target != nil && *operation.Target == req.Target {
+		if err := s.ensureAllPlanningSessions(ctx, &epic); err != nil {
+			return PlanMutationResult{}, err
+		}
+		if err := s.auditOnce(ctx, epic.ID, operation.WorkID, operation.Actor, operation.Action, operation); err != nil {
+			return PlanMutationResult{}, err
+		}
+		return PlanMutationResult{Plan: epic.Plan}, nil
+	}
+	if req.ExpectedRevision != epic.Plan.Revision {
+		return PlanMutationResult{Stale: true, Plan: epic.Plan}, nil
+	}
+	if epic.Plan.State != PlanDraft {
+		return PlanMutationResult{}, fmt.Errorf("%w: Plan must be revised before adding Planning Work", ErrPlanNotApprovable)
+	}
 	for _, target := range epic.Plan.Draft.Targets {
 		if target.ID == req.Target.ID || target.Repository == req.Target.Repository {
 			return PlanMutationResult{}, errors.New("planning work target already exists")
@@ -284,27 +305,17 @@ func (s *Service) AddPlanningWork(ctx context.Context, epicID string, req AddPla
 	if err := s.acks.UpsertFactoryLocalExecutionAck(ctx, localHostID, req.Target.Repository, planningProfileID, planningProfileVersion, operatorActor, time.Now()); err != nil {
 		return PlanMutationResult{}, fmt.Errorf("%w: record local execution acknowledgement: %w", ErrFactoryUnavailable, err)
 	}
+	operation := &PlanOperation{Action: "planning.added", FromRevision: epic.Plan.Revision, FromHash: epic.Plan.Hash, Actor: operatorActor, Target: &req.Target}
+	if err := s.beginPlanOperation(ctx, &epic, "planning.addition.requested", operation); err != nil {
+		return PlanMutationResult{}, err
+	}
 	workID, err := s.createPlanningWork(ctx, epic, req.Target)
 	if err != nil {
-		return PlanMutationResult{}, err
+		return PlanMutationResult{}, s.recoveryFailure(err)
 	}
-	epic.Plan.Revision++
-	epic.Plan.State = PlanDraft
-	epic.Plan.Approval = nil
-	epic.Plan.Draft.Targets = append(epic.Plan.Draft.Targets, req.Target)
-	epic.Plan.Planning = append(epic.Plan.Planning, PlanningWork{ID: workID, TargetID: req.Target.ID, Repository: req.Target.Repository, Status: "open"})
-	epic.Plan.Hash = hashPlanGraph(epic.Plan.Draft)
-	epic.Plan.Validation = validateComplete(epic.Plan)
-	if err := s.persistPlan(ctx, &epic); err != nil {
-		return PlanMutationResult{}, err
-	}
-	session, err := s.ensurePlanningSession(ctx, epic, epic.Plan.Planning[len(epic.Plan.Planning)-1])
-	if err != nil {
-		return PlanMutationResult{}, err
-	}
-	epic.Plan.Planning[len(epic.Plan.Planning)-1].Session = session
-	if err := s.audit(ctx, epic.ID, workID, operatorActor, "planning.added", map[string]any{"revision": epic.Plan.Revision, "target": req.Target, "session": session}); err != nil {
-		return PlanMutationResult{}, err
+	operation.WorkID = workID
+	if err := s.applyPlanningAddition(ctx, &epic, operation); err != nil {
+		return PlanMutationResult{}, s.recoveryFailure(err)
 	}
 	return PlanMutationResult{Plan: epic.Plan}, nil
 }
@@ -346,6 +357,62 @@ func (s *Service) createPlanningWork(ctx context.Context, epic WorkEpic, target 
 		return "", fmt.Errorf("%w: unsupported Planning Work response", ErrBeadsFailure)
 	}
 	return envelope.Data.ID, nil
+}
+
+func (s *Service) beginPlanOperation(ctx context.Context, epic *WorkEpic, requestedAction string, operation *PlanOperation) error {
+	if err := s.auditOnce(ctx, epic.ID, operation.WorkID, operation.Actor, requestedAction, operation); err != nil {
+		return err
+	}
+	epic.Plan.PendingOperation = operation
+	return s.persistPlan(ctx, epic)
+}
+
+func (s *Service) finishPlanOperation(ctx context.Context, epic *WorkEpic, operation *PlanOperation) error {
+	epic.Plan.PendingOperation = nil
+	epic.Plan.LastOperation = operation
+	if err := s.persistPlan(ctx, epic); err != nil {
+		return err
+	}
+	return s.auditOnce(ctx, epic.ID, operation.WorkID, operation.Actor, operation.Action, operation)
+}
+
+func (s *Service) applyPlanMutation(ctx context.Context, epic *WorkEpic, operation *PlanOperation) error {
+	if operation.Graph == nil || epic.Plan.Revision != operation.FromRevision || epic.Plan.Hash != operation.FromHash {
+		return errors.New("pending Plan mutation no longer matches its source revision")
+	}
+	epic.Plan.Revision++
+	epic.Plan.State = PlanDraft
+	epic.Plan.Draft = *operation.Graph
+	epic.Plan.Hash = hashPlanGraph(epic.Plan.Draft)
+	epic.Plan.Approval = nil
+	epic.Plan.Validation = validateComplete(epic.Plan)
+	return s.finishPlanOperation(ctx, epic, operation)
+}
+
+func (s *Service) applyPlanningAddition(ctx context.Context, epic *WorkEpic, operation *PlanOperation) error {
+	if operation.Target == nil || operation.WorkID == "" || epic.Plan.Revision != operation.FromRevision || epic.Plan.Hash != operation.FromHash {
+		return errors.New("pending Planning Work addition no longer matches its source revision")
+	}
+	epic.Plan.Revision++
+	epic.Plan.State = PlanDraft
+	epic.Plan.Approval = nil
+	epic.Plan.Draft.Targets = append(epic.Plan.Draft.Targets, *operation.Target)
+	epic.Plan.Planning = append(epic.Plan.Planning, PlanningWork{ID: operation.WorkID, TargetID: operation.Target.ID, Repository: operation.Target.Repository, Status: "open"})
+	epic.Plan.Hash = hashPlanGraph(epic.Plan.Draft)
+	epic.Plan.Validation = validateComplete(epic.Plan)
+	session, err := s.ensurePlanningSession(ctx, *epic, epic.Plan.Planning[len(epic.Plan.Planning)-1])
+	if err != nil {
+		return err
+	}
+	epic.Plan.Planning[len(epic.Plan.Planning)-1].Session = session
+	return s.finishPlanOperation(ctx, epic, operation)
+}
+
+func (s *Service) recoveryFailure(err error) error {
+	s.mu.Lock()
+	s.recoveryErr = err
+	s.mu.Unlock()
+	return err
 }
 
 func (s *Service) ApprovePlan(ctx context.Context, epicID string, req PlanDecisionRequest) (Plan, error) {
@@ -437,42 +504,59 @@ func (s *Service) CompletePlanningWork(ctx context.Context, epicID, workID strin
 	if err != nil {
 		return Plan{}, err
 	}
+	if operation := epic.Plan.LastOperation; operation != nil && operation.Action == "planning.succeeded" && operation.WorkID == workID && operation.FromRevision == req.ExpectedRevision && operation.FromHash == req.ExpectedHash {
+		if err := s.auditOnce(ctx, epic.ID, workID, operation.Actor, operation.Action, operation); err != nil {
+			return Plan{}, err
+		}
+		return epic.Plan, nil
+	}
 	if req.ExpectedRevision != epic.Plan.Revision || req.ExpectedHash != epic.Plan.Hash {
 		return Plan{}, &PlanConflictError{Current: epic.Plan}
 	}
 	if epic.Plan.State != PlanDraft {
 		return Plan{}, fmt.Errorf("%w: Planning Work can only complete on a draft Plan", ErrPlanNotApprovable)
 	}
+	operation := &PlanOperation{Action: "planning.succeeded", FromRevision: epic.Plan.Revision, FromHash: epic.Plan.Hash, Actor: reqActor(req.Actor), WorkID: workID}
+	if err := s.beginPlanOperation(ctx, &epic, "planning.completion.requested", operation); err != nil {
+		return Plan{}, err
+	}
+	if err := s.applyPlanningCompletion(ctx, &epic, operation); err != nil {
+		return Plan{}, s.recoveryFailure(err)
+	}
+	return epic.Plan, nil
+}
+
+func (s *Service) applyPlanningCompletion(ctx context.Context, epic *WorkEpic, operation *PlanOperation) error {
 	found := false
 	for i := range epic.Plan.Planning {
-		if epic.Plan.Planning[i].ID == workID {
+		if epic.Plan.Planning[i].ID == operation.WorkID {
 			epic.Plan.Planning[i].Status = "closed"
 			epic.Plan.Planning[i].Outcome = "succeeded"
-			epic.Plan.Planning[i].CompletedRevision = epic.Plan.Revision
-			epic.Plan.Planning[i].CompletedHash = epic.Plan.Hash
+			epic.Plan.Planning[i].CompletedRevision = operation.FromRevision
+			epic.Plan.Planning[i].CompletedHash = operation.FromHash
 			found = true
 			if epic.Plan.Planning[i].metadata == nil {
-				return Plan{}, errors.New("planning work metadata is unavailable")
+				return errors.New("planning work metadata is unavailable")
 			}
 			epic.Plan.Planning[i].metadata["ocman.terminal_outcome"] = "succeeded"
-			epic.Plan.Planning[i].metadata["ocman.plan_revision"] = strconv.Itoa(epic.Plan.Revision)
-			epic.Plan.Planning[i].metadata["ocman.plan_hash"] = epic.Plan.Hash
-			if err := s.persistIssueMetadata(ctx, workID, epic.Plan.Planning[i].metadata); err != nil {
-				return Plan{}, err
+			epic.Plan.Planning[i].metadata["ocman.plan_revision"] = strconv.Itoa(operation.FromRevision)
+			epic.Plan.Planning[i].metadata["ocman.plan_hash"] = operation.FromHash
+			if err := s.persistIssueMetadata(ctx, operation.WorkID, epic.Plan.Planning[i].metadata); err != nil {
+				return err
 			}
 		}
 	}
 	if !found {
-		return Plan{}, errors.New("planning work does not belong to this Work Epic")
+		return errors.New("planning work does not belong to this Work Epic")
 	}
-	if err := s.runIssueCommand(ctx, "close", workID, "--reason", "Planning Work succeeded", "--json"); err != nil {
-		return Plan{}, err
+	if err := s.runIssueCommand(ctx, "close", operation.WorkID, "--reason", "Planning Work succeeded", "--json"); err != nil {
+		return err
 	}
 	epic.Plan.Validation = validateComplete(epic.Plan)
-	if err := s.audit(ctx, epic.ID, workID, reqActor(req.Actor), "planning.succeeded", map[string]any{"revision": epic.Plan.Revision, "hash": epic.Plan.Hash}); err != nil {
-		return Plan{}, err
+	if err := s.finishPlanOperation(ctx, epic, operation); err != nil {
+		return err
 	}
-	return epic.Plan, nil
+	return nil
 }
 
 func (s *Service) RevisePlan(ctx context.Context, epicID string, req PlanDecisionRequest) (Plan, error) {
@@ -498,8 +582,19 @@ func (s *Service) decidePlan(ctx context.Context, epicID string, req PlanDecisio
 		return Plan{}, err
 	}
 	if epic.Plan.LastDecision != nil && epic.Plan.LastDecision.Action == action && epic.Plan.LastDecision.FromRevision == req.ExpectedRevision && epic.Plan.LastDecision.Hash == req.ExpectedHash {
-		if err := s.runIssueCommand(ctx, decisionCommand(state, reopen), epic.Planning.ApprovalGateID, "--reason", decisionReason(state, req.Reason), "--json"); err != nil {
+		reason := decisionReason(state, epic.Plan.LastDecision.Reason)
+		if state == PlanCancelled {
+			if err := s.stopPlanningSessions(ctx, epic); err != nil {
+				return Plan{}, err
+			}
+		}
+		if err := s.runIssueCommand(ctx, decisionCommand(state, reopen), epic.Planning.ApprovalGateID, "--reason", reason, "--json"); err != nil {
 			return Plan{}, err
+		}
+		if state == PlanCancelled {
+			if err := s.runIssueCommand(ctx, "close", epic.ID, "--force", "--reason", reason, "--json"); err != nil {
+				return Plan{}, err
+			}
 		}
 		if err := s.auditOnce(ctx, epic.ID, "", epic.Plan.LastDecision.Actor, action, epic.Plan.LastDecision); err != nil {
 			return Plan{}, err
@@ -522,13 +617,9 @@ func (s *Service) decidePlan(ctx context.Context, epicID string, req PlanDecisio
 	if err := s.auditOnce(ctx, epic.ID, "", decision.Actor, decisionRequestAction(action), decision); err != nil {
 		return Plan{}, err
 	}
-	if state == PlanCancelled && s.planning != nil {
-		for _, work := range epic.Plan.Planning {
-			if work.Status != "closed" && work.Session.ID != "" {
-				if err := s.planning.StopPlanningSession(ctx, work.Session); err != nil {
-					return Plan{}, fmt.Errorf("stop Planning Session: %w", err)
-				}
-			}
+	if state == PlanCancelled {
+		if err := s.stopPlanningSessions(ctx, epic); err != nil {
+			return Plan{}, err
 		}
 	}
 	epic.Plan.State = state
@@ -570,6 +661,20 @@ func decisionCommand(_ PlanState, reopen bool) string {
 		return "reopen"
 	}
 	return "close"
+}
+
+func (s *Service) stopPlanningSessions(ctx context.Context, epic WorkEpic) error {
+	if s.planning == nil {
+		return nil
+	}
+	for _, work := range epic.Plan.Planning {
+		if work.Status != "closed" && work.Session.ID != "" {
+			if err := s.planning.StopPlanningSession(ctx, work.Session); err != nil {
+				return fmt.Errorf("stop Planning Session: %w", err)
+			}
+		}
+	}
+	return nil
 }
 
 func decisionReason(state PlanState, reason string) string {
@@ -917,6 +1022,22 @@ func (s *Service) recoverPlanningSessions(ctx context.Context) error {
 		return err
 	}
 	for i := range epics {
+		s.decoratePlanningSessions(ctx, &epics[i])
+		if operation := epics[i].Plan.PendingOperation; operation != nil {
+			if err := s.reconcilePendingPlanOperation(ctx, &epics[i], operation); err != nil {
+				return err
+			}
+		}
+		if operation := epics[i].Plan.LastOperation; operation != nil {
+			if operation.Action == "planning.added" {
+				if err := s.ensureAllPlanningSessions(ctx, &epics[i]); err != nil {
+					return err
+				}
+			}
+			if err := s.auditOnce(ctx, epics[i].ID, operation.WorkID, operation.Actor, operation.Action, operation); err != nil {
+				return err
+			}
+		}
 		if epics[i].Plan.State == PlanApproved && epics[i].Plan.Approval != nil {
 			approval := epics[i].Plan.Approval
 			if err := s.runIssueCommand(ctx, "close", epics[i].Planning.ApprovalGateID, "--reason", approvalReason(approval.Revision, approval.Hash, approval.Reason), "--json"); err != nil {
@@ -936,6 +1057,11 @@ func (s *Service) recoverPlanningSessions(ctx context.Context) error {
 					}
 				}
 			case PlanRejected, PlanCancelled:
+				if epics[i].Plan.State == PlanCancelled {
+					if err := s.stopPlanningSessions(ctx, epics[i]); err != nil {
+						return err
+					}
+				}
 				if err := s.runIssueCommand(ctx, "close", epics[i].Planning.ApprovalGateID, "--reason", decisionReason(epics[i].Plan.State, decision.Reason), "--json"); err != nil {
 					return err
 				}
@@ -962,6 +1088,58 @@ func (s *Service) recoverPlanningSessions(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (s *Service) reconcilePendingPlanOperation(ctx context.Context, epic *WorkEpic, operation *PlanOperation) error {
+	switch operation.Action {
+	case "plan.mutated":
+		return s.applyPlanMutation(ctx, epic, operation)
+	case "planning.added":
+		if operation.WorkID == "" {
+			workID, err := s.findPlanningWork(ctx, epic.ID, operation.Target)
+			if err != nil {
+				return err
+			}
+			if workID == "" {
+				workID, err = s.createPlanningWork(ctx, *epic, *operation.Target)
+				if err != nil {
+					return err
+				}
+			}
+			operation.WorkID = workID
+		}
+		return s.applyPlanningAddition(ctx, epic, operation)
+	case "planning.succeeded":
+		return s.applyPlanningCompletion(ctx, epic, operation)
+	default:
+		return fmt.Errorf("unsupported pending Plan operation %q", operation.Action)
+	}
+}
+
+func (s *Service) findPlanningWork(ctx context.Context, epicID string, target *PlanTarget) (string, error) {
+	if target == nil {
+		return "", errors.New("pending Planning Work target is unavailable")
+	}
+	beadsDir := filepath.Join(s.dir, "beads")
+	path, _, failure := compatibleBeads(ctx, beadsDir, s.runner)
+	if failure.Reason != "" {
+		return "", beadsError(failure)
+	}
+	issues, err := listFactoryIssues(ctx, path, beadsDir, s.runner)
+	if err != nil {
+		return "", err
+	}
+	var found string
+	for _, issue := range issues {
+		if issue.Metadata["ocman.kind"] != "agent-work" || issue.Metadata["ocman.work_epic_id"] != epicID || issue.Metadata["ocman.planning_target"] != target.ID || issue.Metadata["ocman.target_repository"] != target.Repository {
+			continue
+		}
+		if found != "" {
+			return "", errors.New("multiple Planning Work items match the pending addition")
+		}
+		found = issue.ID
+	}
+	return found, nil
 }
 
 func (s *Service) ensurePlanningSession(ctx context.Context, epic WorkEpic, work PlanningWork) (PlanningSession, error) {
@@ -997,10 +1175,6 @@ func (s *Service) ensurePlanningSession(ctx context.Context, epic WorkEpic, work
 		return PlanningSession{}, errors.Join(fmt.Errorf("persist Planning Session: %w", err), stopErr, clearErr)
 	}
 	return session, nil
-}
-
-func (s *Service) audit(ctx context.Context, epicID, workID, actor, action string, details any) error {
-	return s.store.AppendFactoryAudit(ctx, FactoryAuditRecord{EpicID: epicID, WorkID: workID, Actor: actor, Action: action, Details: details, At: time.Now().UTC()})
 }
 
 func (s *Service) auditOnce(ctx context.Context, epicID, workID, actor, action string, details any) error {

@@ -116,10 +116,11 @@ flowchart TD
   Formula into a Work Epic, Planning Work and Plan approval Gate. It owns the
   revision-checked draft and exact-revision approval lifecycle. Planning
   success is bound to that same revision and hash, so a graph edit cannot
-  reuse stale completion evidence. Decision intents are durably journaled
-  before Beads changes and startup recovery reconciles interrupted Gate,
-  audit and Planning Session transitions; failed recovery leaves the owner
-  degraded and read-only. A narrow
+  reuse stale completion evidence. Every Plan transition intent is durably
+  journaled before Beads changes; pending/last operation markers in Plan
+  metadata let startup recovery reconcile interrupted graph, Planning Work,
+  Gate, audit and Planning Session transitions. Failed recovery leaves the
+  owner degraded and read-only. A narrow
   Planning Session launcher resolves the hub-local host and session seams,
   ensures the repository runtime, and installs the read-only
   `factory-plan/v1` rules before exposing the session, aborts failed setup,
