@@ -19,6 +19,7 @@ type fakePlatform struct {
 	sendErr       error
 	permissionErr error
 	ruleErr       error
+	disposeErr    error
 	createResp    *platforms.CreateSessionResponse
 	createNil     bool
 
@@ -63,6 +64,9 @@ func (f *fakePlatform) Abort(_ context.Context, req platforms.AbortRequest) erro
 	return nil
 }
 func (f *fakePlatform) DisposeSession(_ context.Context, req platforms.DisposeSessionRequest) error {
+	if f.disposeErr != nil {
+		return f.disposeErr
+	}
 	delete(f.owned, req.SessionID)
 	return nil
 }
@@ -84,6 +88,24 @@ func TestCreateConfiguredDoesNotPublishOrLeakSessionWhenRulesFail(t *testing.T) 
 	_, err := svc.CreateConfigured(context.Background(), "opencode", platforms.CreateSessionRequest{Directory: "/repo"}, []platforms.PermissionRule{{Permission: "read", Pattern: "*", Action: "allow"}})
 	if err == nil || published != 0 || platform.owned["new-session"] {
 		t.Fatalf("CreateConfigured error = %v, published = %d, session remains discoverable = %v", err, published, platform.owned["new-session"])
+	}
+}
+
+func TestCreateConfiguredReturnsCleanupIntentWhenRulesAndDisposalFail(t *testing.T) {
+	platform := &fakePlatform{id: "opencode", available: true, ruleErr: errors.New("rules failed"), disposeErr: errors.New("dispose failed"), owned: map[string]bool{"new-session": true}}
+	svc := New(&fakeRegistry{byID: map[platforms.ID]platforms.Platform{"opencode": platform}}, Hooks{})
+
+	_, err := svc.CreateConfigured(context.Background(), "opencode", platforms.CreateSessionRequest{Directory: "/repo"}, []platforms.PermissionRule{{Permission: "read", Action: "allow"}})
+	var cleanup *ConfiguredSessionCleanupError
+	if !errors.As(err, &cleanup) || cleanup.SessionID != "new-session" || !platform.owned["new-session"] {
+		t.Fatalf("CreateConfigured error = %v, cleanup = %#v, session remains = %v", err, cleanup, platform.owned["new-session"])
+	}
+}
+
+func TestDisposeTreatsMissingProviderAsAlreadyDisposed(t *testing.T) {
+	svc := New(&fakeRegistry{byID: map[platforms.ID]platforms.Platform{}}, Hooks{})
+	if err := svc.Dispose(context.Background(), "missing", platforms.DisposeSessionRequest{SessionID: "gone"}); err != nil {
+		t.Fatalf("Dispose missing provider: %v", err)
 	}
 }
 

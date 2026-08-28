@@ -111,8 +111,8 @@ it('reconciles plan mutation results into list and detail caches', async () => {
   } satisfies WorkEpic;
   vi.mocked(api.mutateFactoryPlan).mockResolvedValue({ stale: true, plan });
   vi.mocked(api.addFactoryPlanningWork).mockResolvedValue({ stale: false, plan: { ...plan, revision: 3 } });
-  vi.mocked(api.decideFactoryPlan).mockResolvedValue({ ...plan, state: 'approved' });
-  vi.mocked(api.completeFactoryPlanningWork).mockResolvedValue({ ...plan, validation: ['complete'] });
+	vi.mocked(api.decideFactoryPlan).mockResolvedValue({ stale: false, plan: { ...plan, state: 'approved' } });
+	vi.mocked(api.completeFactoryPlanningWork).mockResolvedValue({ stale: false, plan: { ...plan, validation: ['complete'] } });
   const { client, wrapper } = setup();
   client.setQueryData<WorkEpic[]>(['factory-epics'], [epic]);
   client.setQueryData<WorkEpic>(['factory-epics', 'epic-1'], epic);

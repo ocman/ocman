@@ -424,9 +424,11 @@ export const api = {
 	addFactoryPlanningWork: (id: string, expectedRevision: number, target: FactoryPlanGraph['targets'][number]) =>
 		postJSON<FactoryPlanMutationResult, { expectedRevision: number; target: FactoryPlanGraph['targets'][number]; acknowledgeLocalExecution: true }>(`/api/factory/epics/${encodeURIComponent(id)}/planning`, { expectedRevision, target, acknowledgeLocalExecution: true }, { acceptStatus: 409 }),
 	decideFactoryPlan: (id: string, action: 'approve' | 'revise' | 'reject' | 'cancel', request: FactoryPlanDecisionRequest) =>
-		postJSON<FactoryPlan, FactoryPlanDecisionRequest>(`/api/factory/epics/${encodeURIComponent(id)}/plan/${action}`, request),
+		postJSON<FactoryPlan | FactoryPlanMutationResult, FactoryPlanDecisionRequest>(`/api/factory/epics/${encodeURIComponent(id)}/plan/${action}`, request, { acceptStatus: 409 })
+			.then((result) => 'plan' in result ? result : { stale: false, plan: result }),
 	completeFactoryPlanningWork: (id: string, workID: string, expectedRevision: number, expectedHash: string) =>
-		postJSON<FactoryPlan, { expectedRevision: number; expectedHash: string }>(`/api/factory/epics/${encodeURIComponent(id)}/planning/${encodeURIComponent(workID)}/complete`, { expectedRevision, expectedHash }),
+		postJSON<FactoryPlan | FactoryPlanMutationResult, { expectedRevision: number; expectedHash: string }>(`/api/factory/epics/${encodeURIComponent(id)}/planning/${encodeURIComponent(workID)}/complete`, { expectedRevision, expectedHash }, { acceptStatus: 409 })
+			.then((result) => 'plan' in result ? result : { stale: false, plan: result }),
   factoryFormulas: (signal?: AbortSignal) => fetchJSON<FormulaSummary[]>('/api/factory/formulas', signal),
   copyFactoryFormula: (id: string, revision: number) =>
     postJSON<FormulaDraft, { id: string; revision: number }>('/api/factory/formulas/copy', { id, revision }),

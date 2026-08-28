@@ -509,6 +509,21 @@ func TestDisposeSessionDeletesItFromOpenCode(t *testing.T) {
 	}
 }
 
+func TestDisposeSessionTreatsNotFoundAsSuccess(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	defer srv.Close()
+	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	rememberSessionPort("gone", port)
+	defer resetSessionPortAffinityForTests()
+
+	if err := New(nil, nil).DisposeSession(context.Background(), platforms.DisposeSessionRequest{SessionID: "gone", Port: port}); err != nil {
+		t.Fatalf("DisposeSession missing session: %v", err)
+	}
+	if preferredSessionPort("gone") != "" {
+		t.Fatal("missing session retained its pinned port")
+	}
+}
+
 // TestCreateSession_CachedPortSkipsFreshScan proves the happy-path
 // optimization: when a running opencode is already in the port cache,
 // CreateSession must not trigger another (expensive) lsof scan.

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -54,5 +55,25 @@ func TestFactoryPlanningLauncherUsesLocalHostAndAppliesBoundedRules(t *testing.T
 	}
 	if rules.SessionID != "session-1" || !reflect.DeepEqual(rules.Rules, wantRules) {
 		t.Fatalf("permission rules = %#v", rules)
+	}
+}
+
+func TestFactoryPlanningLauncherReturnsRestrictedSessionWhenCleanupFails(t *testing.T) {
+	platform := &fakePlatform{id: "local-agent", caps: platforms.Capabilities{PermissionRules: true}}
+	platform.createSessionFn = func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+		return &platforms.CreateSessionResponse{ID: "restricted-session"}, nil
+	}
+	platform.setPermissionRulesFn = func(platforms.SetPermissionRulesRequest) error { return errors.New("rules failed") }
+	platform.disposeFn = func(platforms.DisposeSessionRequest) error { return errors.New("dispose failed") }
+	registry := platforms.NewRegistry()
+	registry.Register(platform)
+	srv := New(nil, nil, "", registry, nil)
+	srv.hostRouter = hostsvc.NewRouter(&promptEnsureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+		return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:5599", RepoRoot: req.ProjectDir}, nil
+	}})
+
+	got, err := (factoryPlanningLauncher{server: srv}).LaunchPlanningSession(context.Background(), factory.PlanningSessionRequest{Repository: "/repo", Title: "Plan: Ship"})
+	if err == nil || got != (factory.PlanningSession{Platform: "local-agent", ID: "restricted-session"}) {
+		t.Fatalf("LaunchPlanningSession = %#v, %v", got, err)
 	}
 }

@@ -93,6 +93,9 @@ type factoryStore interface {
 	GetFactoryPlanningSession(context.Context, string) (PlanningSession, bool, error)
 	PutFactoryPlanningSession(context.Context, string, string, PlanningSession) error
 	DeleteFactoryPlanningSession(context.Context, string) error
+	PutFactoryPlanningSessionCleanup(context.Context, string, string, PlanningSession) error
+	ListFactoryPlanningSessionCleanups(context.Context) (map[string]PlanningSession, error)
+	DeleteFactoryPlanningSessionCleanup(context.Context, string) error
 	AppendFactoryAuditOnce(context.Context, FactoryAuditRecord) error
 }
 

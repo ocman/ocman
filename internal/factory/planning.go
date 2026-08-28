@@ -664,14 +664,25 @@ func decisionCommand(_ PlanState, reopen bool) string {
 }
 
 func (s *Service) stopPlanningSessions(ctx context.Context, epic WorkEpic) error {
-	if s.planning == nil {
+	if s.store == nil {
 		return nil
 	}
 	for _, work := range epic.Plan.Planning {
-		if work.Status != "closed" && work.Session.ID != "" {
-			if err := s.planning.StopPlanningSession(ctx, work.Session); err != nil {
-				return fmt.Errorf("stop Planning Session: %w", err)
-			}
+		session, ok, err := s.store.GetFactoryPlanningSession(ctx, work.ID)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			continue
+		}
+		if s.planning == nil {
+			return fmt.Errorf("%w: planning session service is unavailable", ErrFactoryUnavailable)
+		}
+		if err := s.planning.StopPlanningSession(ctx, session); err != nil {
+			return fmt.Errorf("dispose Planning Session: %w", err)
+		}
+		if err := s.store.DeleteFactoryPlanningSession(ctx, work.ID); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -896,6 +907,10 @@ func (s *Service) requireMutationStore(ctx context.Context) error {
 	if s.store == nil {
 		return fmt.Errorf("%w: Factory audit store is unavailable", ErrFactoryUnavailable)
 	}
+	if err := s.cleanupPlanningSessions(ctx); err != nil {
+		s.recoveryErr = err
+		return fmt.Errorf("%w: Factory cleanup has not succeeded: %w", ErrFactoryUnavailable, err)
+	}
 	if s.recoveryErr != nil {
 		if err := s.recoverPlanningSessions(ctx); err != nil {
 			s.recoveryErr = err
@@ -1012,6 +1027,9 @@ func (s *Service) ensureAllPlanningSessions(ctx context.Context, epic *WorkEpic)
 }
 
 func (s *Service) recoverPlanningSessions(ctx context.Context) error {
+	if err := s.cleanupPlanningSessions(ctx); err != nil {
+		return err
+	}
 	beadsDir := filepath.Join(s.dir, "beads")
 	path, _, failure := compatibleBeads(ctx, beadsDir, s.runner)
 	if failure.Reason != "" {
@@ -1090,6 +1108,30 @@ func (s *Service) recoverPlanningSessions(ctx context.Context) error {
 	return nil
 }
 
+func (s *Service) cleanupPlanningSessions(ctx context.Context) error {
+	cleanups, err := s.store.ListFactoryPlanningSessionCleanups(ctx)
+	if err != nil {
+		return err
+	}
+	workIDs := make([]string, 0, len(cleanups))
+	for workID := range cleanups {
+		workIDs = append(workIDs, workID)
+	}
+	sort.Strings(workIDs)
+	for _, workID := range workIDs {
+		if s.planning == nil {
+			return fmt.Errorf("%w: planning session service is unavailable", ErrFactoryUnavailable)
+		}
+		if err := s.planning.StopPlanningSession(ctx, cleanups[workID]); err != nil {
+			return fmt.Errorf("dispose restricted Planning Session: %w", err)
+		}
+		if err := s.store.DeleteFactoryPlanningSessionCleanup(ctx, workID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Service) reconcilePendingPlanOperation(ctx context.Context, epic *WorkEpic, operation *PlanOperation) error {
 	switch operation.Action {
 	case "plan.mutated":
@@ -1162,6 +1204,12 @@ func (s *Service) ensurePlanningSession(ctx context.Context, epic WorkEpic, work
 	}
 	session, err := s.planning.LaunchPlanningSession(ctx, PlanningSessionRequest{EpicID: epic.ID, WorkID: work.ID, Repository: work.Repository, Title: "Plan: " + epic.Goal})
 	if err != nil {
+		if session.ID != "" && session.Platform != "" {
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), beadsTimeout)
+			defer cancel()
+			cleanupErr := s.store.PutFactoryPlanningSessionCleanup(cleanupCtx, epic.ID, work.ID, session)
+			return PlanningSession{}, errors.Join(fmt.Errorf("launch Planning Session: %w", err), cleanupErr)
+		}
 		return PlanningSession{}, fmt.Errorf("launch Planning Session: %w", err)
 	}
 	if session.ID == "" || session.Platform == "" {
@@ -1171,8 +1219,12 @@ func (s *Service) ensurePlanningSession(ctx context.Context, epic WorkEpic, work
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), beadsTimeout)
 		defer cancel()
 		stopErr := s.planning.StopPlanningSession(cleanupCtx, session)
+		var cleanupErr error
+		if stopErr != nil {
+			cleanupErr = s.store.PutFactoryPlanningSessionCleanup(cleanupCtx, epic.ID, work.ID, session)
+		}
 		clearErr := s.store.DeleteFactoryPlanningSession(cleanupCtx, work.ID)
-		return PlanningSession{}, errors.Join(fmt.Errorf("persist Planning Session: %w", err), stopErr, clearErr)
+		return PlanningSession{}, errors.Join(fmt.Errorf("persist Planning Session: %w", err), stopErr, cleanupErr, clearErr)
 	}
 	return session, nil
 }

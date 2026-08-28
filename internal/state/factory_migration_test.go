@@ -196,6 +196,19 @@ func TestFactoryPlanningSessionAndAuditAreDurable(t *testing.T) {
 	if _, ok, err := db.GetFactoryPlanningSession(ctx, "work-1"); err != nil || ok {
 		t.Fatalf("deleted Planning Session still present: ok=%v err=%v", ok, err)
 	}
+	if err := db.PutFactoryPlanningSessionCleanup(ctx, "epic-1", "work-1", session); err != nil {
+		t.Fatal(err)
+	}
+	cleanups, err := db.ListFactoryPlanningSessionCleanups(ctx)
+	if err != nil || cleanups["work-1"] != session {
+		t.Fatalf("planning cleanup = %#v, %v", cleanups, err)
+	}
+	if err := db.DeleteFactoryPlanningSessionCleanup(ctx, "work-1"); err != nil {
+		t.Fatal(err)
+	}
+	if cleanups, err := db.ListFactoryPlanningSessionCleanups(ctx); err != nil || len(cleanups) != 0 {
+		t.Fatalf("deleted planning cleanup = %#v, %v", cleanups, err)
+	}
 	if err := db.AppendFactoryAudit(ctx, factory.FactoryAuditRecord{EpicID: "epic-1", WorkID: "work-1", Actor: "dries", Action: "plan.approved", Details: map[string]int{"revision": 2}, At: time.Unix(10, 0)}); err != nil {
 		t.Fatal(err)
 	}

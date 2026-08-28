@@ -106,6 +106,71 @@ func (d *DB) DeleteFactoryPlanningSession(ctx context.Context, workID string) er
 	return nil
 }
 
+// PutFactoryPlanningSessionCleanup records a session that must be disposed
+// before Factory can admit another mutation.
+func (d *DB) PutFactoryPlanningSessionCleanup(ctx context.Context, epicID, workID string, session model.PlanningSession) error {
+	metadata, err := json.Marshal(map[string]string{"epicId": epicID, "platform": session.Platform})
+	if err != nil {
+		return err
+	}
+	_, err = d.db.ExecContext(ctx, `
+		INSERT INTO factory_external_mapping
+			(system, external_kind, external_id, entity_kind, entity_id, metadata_json, created_at)
+		VALUES ('session', 'planning_cleanup', ?, 'planning_work', ?, ?, ?)
+		ON CONFLICT(system, external_kind, entity_kind, entity_id) DO UPDATE SET
+			external_id = excluded.external_id, metadata_json = excluded.metadata_json
+	`, session.ID, workID, string(metadata), time.Now().UnixMilli())
+	if err != nil {
+		return fmt.Errorf("putting Factory Planning Session cleanup: %w", err)
+	}
+	return nil
+}
+
+// ListFactoryPlanningSessionCleanups returns every pending restricted-session cleanup.
+func (d *DB) ListFactoryPlanningSessionCleanups(ctx context.Context) (map[string]model.PlanningSession, error) {
+	rows, err := d.db.QueryContext(ctx, `
+		SELECT entity_id, external_id, metadata_json
+		FROM factory_external_mapping
+		WHERE system = 'session' AND external_kind = 'planning_cleanup' AND entity_kind = 'planning_work'
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("listing Factory Planning Session cleanups: %w", err)
+	}
+	defer rows.Close()
+	cleanups := map[string]model.PlanningSession{}
+	for rows.Next() {
+		var workID, metadata string
+		var session model.PlanningSession
+		if err := rows.Scan(&workID, &session.ID, &metadata); err != nil {
+			return nil, fmt.Errorf("listing Factory Planning Session cleanups: %w", err)
+		}
+		var stored struct {
+			Platform string `json:"platform"`
+		}
+		if err := json.Unmarshal([]byte(metadata), &stored); err != nil || stored.Platform == "" {
+			return nil, errors.New("listing Factory Planning Session cleanups: invalid metadata")
+		}
+		session.Platform = stored.Platform
+		cleanups[workID] = session
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("listing Factory Planning Session cleanups: %w", err)
+	}
+	return cleanups, nil
+}
+
+// DeleteFactoryPlanningSessionCleanup clears a completed cleanup intent.
+func (d *DB) DeleteFactoryPlanningSessionCleanup(ctx context.Context, workID string) error {
+	_, err := d.db.ExecContext(ctx, `
+		DELETE FROM factory_external_mapping
+		WHERE system = 'session' AND external_kind = 'planning_cleanup' AND entity_kind = 'planning_work' AND entity_id = ?
+	`, workID)
+	if err != nil {
+		return fmt.Errorf("deleting Factory Planning Session cleanup: %w", err)
+	}
+	return nil
+}
+
 // AppendFactoryAudit records an immutable Factory decision or graph transition.
 func (d *DB) AppendFactoryAudit(ctx context.Context, record model.AuditRecord) error {
 	details, err := json.Marshal(record.Details)

@@ -14,13 +14,14 @@ import (
 )
 
 type fakePlanningLauncher struct {
-	calls  []PlanningSessionRequest
-	stops  []PlanningSession
-	probes []PlanningSession
-	dead   map[string]bool
-	result PlanningSession
-	err    error
-	alive  map[string]bool
+	calls   []PlanningSessionRequest
+	stops   []PlanningSession
+	probes  []PlanningSession
+	dead    map[string]bool
+	result  PlanningSession
+	err     error
+	stopErr error
+	alive   map[string]bool
 }
 
 func (f *fakePlanningLauncher) LaunchPlanningSession(_ context.Context, req PlanningSessionRequest) (PlanningSession, error) {
@@ -33,8 +34,11 @@ func (f *fakePlanningLauncher) LaunchPlanningSession(_ context.Context, req Plan
 
 func (f *fakePlanningLauncher) StopPlanningSession(_ context.Context, session PlanningSession) error {
 	f.stops = append(f.stops, session)
+	if f.stopErr != nil {
+		return f.stopErr
+	}
 	delete(f.alive, session.ID)
-	return f.err
+	return nil
 }
 
 func (f *fakePlanningLauncher) ProbePlanningSession(_ context.Context, session PlanningSession) (bool, error) {
@@ -45,6 +49,7 @@ func (f *fakePlanningLauncher) ProbePlanningSession(_ context.Context, session P
 type fakeFactoryStore struct {
 	fakeAckStore
 	sessions    map[string]PlanningSession
+	cleanups    map[string]PlanningSession
 	audits      []FactoryAuditRecord
 	putErr      error
 	auditErr    error
@@ -82,6 +87,26 @@ func (s *fakeFactoryStore) DeleteFactoryPlanningSession(_ context.Context, workI
 	return nil
 }
 
+func (s *fakeFactoryStore) PutFactoryPlanningSessionCleanup(ctx context.Context, _, workID string, session PlanningSession) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if s.cleanups == nil {
+		s.cleanups = map[string]PlanningSession{}
+	}
+	s.cleanups[workID] = session
+	return nil
+}
+
+func (s *fakeFactoryStore) ListFactoryPlanningSessionCleanups(context.Context) (map[string]PlanningSession, error) {
+	return s.cleanups, nil
+}
+
+func (s *fakeFactoryStore) DeleteFactoryPlanningSessionCleanup(_ context.Context, workID string) error {
+	delete(s.cleanups, workID)
+	return nil
+}
+
 func TestCreateWorkEpicStopsSessionWhenMappingFails(t *testing.T) {
 	project, _ := filepath.EvalSymlinks(t.TempDir())
 	runner := &fakeRunner{runs: []fakeRun{
@@ -97,6 +122,20 @@ func TestCreateWorkEpicStopsSessionWhenMappingFails(t *testing.T) {
 	_, err := svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{InstantiationID: "request-1", Goal: "Ship", InitialProject: project, AcknowledgeLocalExecution: true})
 	if err == nil || launcher.alive["session-1"] || len(store.sessions) != 0 {
 		t.Fatalf("CreateWorkEpic error = %v, session alive = %v, mappings = %#v", err, launcher.alive["session-1"], store.sessions)
+	}
+}
+
+func TestPlanningLaunchFailurePersistsCleanupIntent(t *testing.T) {
+	store := &fakeFactoryStore{}
+	launcher := &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "restricted-session"}, err: errors.New("permission setup and disposal failed")}
+	svc := newWithRunner(t.TempDir(), &fakeRunner{}, store)
+	svc.planning = launcher
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := svc.ensurePlanningSession(ctx, WorkEpic{ID: "fac-1", Goal: "Ship"}, PlanningWork{ID: "fac-1.1", Repository: "/repo"})
+	if err == nil || store.cleanups["fac-1.1"] != launcher.result {
+		t.Fatalf("ensurePlanningSession error = %v, cleanups = %#v", err, store.cleanups)
 	}
 }
 
@@ -971,6 +1010,77 @@ func TestPlanDecisionsPreserveAuditAndCancellationStopsPlanning(t *testing.T) {
 	}
 }
 
+func TestCancelPlanDisposesEveryMappedPlanningSession(t *testing.T) {
+	plan := Plan{Revision: 2, State: PlanDraft, Draft: PlanGraph{Intent: "Ship"}, Planning: []PlanningWork{{ID: "fac-1.1", Status: "closed"}, {ID: "fac-1.2", Status: "in_progress"}}}
+	plan.Hash = hashPlanGraph(plan.Draft)
+	runner := &fakeRunner{runs: []fakeRun{{out: versionEnvelope}, {out: listEnvelope(issuesWithPlan(t, plan))}, {}, {}, {}}}
+	store := &fakeFactoryStore{sessions: map[string]PlanningSession{
+		"fac-1.1": {Platform: "agent", ID: "closed-session"},
+		"fac-1.2": {Platform: "agent", ID: "active-session"},
+	}}
+	launcher := &fakePlanningLauncher{}
+	svc := newWithRunner(t.TempDir(), runner, store)
+	svc.planning, svc.owned = launcher, true
+
+	if _, err := svc.CancelPlan(context.Background(), "fac-1", PlanDecisionRequest{ExpectedRevision: 2, ExpectedHash: plan.Hash}); err != nil {
+		t.Fatal(err)
+	}
+	if len(launcher.stops) != 2 || len(store.sessions) != 0 {
+		t.Fatalf("disposed = %#v, mappings = %#v", launcher.stops, store.sessions)
+	}
+}
+
+func TestStartupRecoveryRetriesCleanupBeforeMutations(t *testing.T) {
+	plan := Plan{Revision: 1, State: PlanDraft, Draft: PlanGraph{Intent: "Ship"}}
+	plan.Hash = hashPlanGraph(plan.Draft)
+	runner := &fakeRunner{runs: []fakeRun{
+		{out: versionEnvelope}, {},
+		{out: versionEnvelope}, {out: listEnvelope(issuesWithPlan(t, plan))},
+		{out: versionEnvelope}, {out: listEnvelope(issuesWithPlan(t, plan))},
+	}}
+	store := &fakeFactoryStore{cleanups: map[string]PlanningSession{"fac-1.1": {Platform: "agent", ID: "restricted-session"}}}
+	launcher := &fakePlanningLauncher{stopErr: errors.New("provider unavailable")}
+	svc := newWithRunner(t.TempDir(), runner, store)
+	svc.planning = launcher
+	if err := svc.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(svc.Close)
+	if svc.Status(context.Background()).Health != HealthDegraded {
+		t.Fatal("Factory admitted work after cleanup failed")
+	}
+
+	launcher.stopErr = nil
+	if err := svc.requireMutationStore(context.Background()); err != nil {
+		t.Fatalf("recovery retry: %v", err)
+	}
+	if len(store.cleanups) != 0 || len(launcher.stops) != 2 {
+		t.Fatalf("cleanups = %#v, disposal attempts = %#v", store.cleanups, launcher.stops)
+	}
+}
+
+func TestStartupRecoveryDisposesCancelledPlanningMapping(t *testing.T) {
+	decision := &PlanDecision{Action: "plan.cancelled", FromRevision: 2, Revision: 2, Hash: "hash-2", Actor: "operator"}
+	plan := Plan{Revision: 2, State: PlanCancelled, Draft: PlanGraph{Intent: "Ship"}, Planning: []PlanningWork{{ID: "fac-1.1", Status: "closed"}}, LastDecision: decision}
+	plan.Hash = hashPlanGraph(plan.Draft)
+	runner := &fakeRunner{runs: []fakeRun{
+		{out: versionEnvelope}, {},
+		{out: versionEnvelope}, {out: listEnvelope(issuesWithPlan(t, plan))}, {}, {},
+	}}
+	store := &fakeFactoryStore{sessions: map[string]PlanningSession{"fac-1.1": {Platform: "agent", ID: "completed-session"}}}
+	launcher := &fakePlanningLauncher{}
+	svc := newWithRunner(t.TempDir(), runner, store)
+	svc.planning = launcher
+
+	if err := svc.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(svc.Close)
+	if len(launcher.stops) != 1 || len(store.sessions) != 0 {
+		t.Fatalf("startup disposals = %#v, mappings = %#v", launcher.stops, store.sessions)
+	}
+}
+
 func TestPlanDecisionJournalsBeforeBeadsMutation(t *testing.T) {
 	for _, action := range []string{"revise", "reject", "cancel"} {
 		t.Run(action, func(t *testing.T) {
@@ -1021,7 +1131,7 @@ func TestCancelPlanRetryReconcilesEpicClose(t *testing.T) {
 	if _, err := svc.CancelPlan(context.Background(), "fac-1", req); err != nil {
 		t.Fatal(err)
 	}
-	if len(retry.seen) != 4 || retry.seen[2][0] != "close" || retry.seen[2][1] != "fac-1.2" || retry.seen[3][0] != "close" || retry.seen[3][1] != "fac-1" || len(launcher.stops) != 2 {
+	if len(retry.seen) != 4 || retry.seen[2][0] != "close" || retry.seen[2][1] != "fac-1.2" || retry.seen[3][0] != "close" || retry.seen[3][1] != "fac-1" || len(launcher.stops) != 1 || len(store.sessions) != 0 {
 		t.Fatalf("retry commands = %#v, stops = %#v", retry.seen, launcher.stops)
 	}
 }

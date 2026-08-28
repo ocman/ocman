@@ -449,7 +449,10 @@ func (a *Adapter) DisposeSession(ctx context.Context, req platforms.DisposeSessi
 	}
 	path := fmt.Sprintf("/session/%s", req.SessionID)
 	if err := sendJSON(ctx, http.MethodDelete, port, path, nil); err != nil {
-		return err
+		var upstream *platforms.UpstreamError
+		if !errors.As(err, &upstream) || upstream.Status != http.StatusNotFound {
+			return err
+		}
 	}
 	forgetSessionPort(req.SessionID, port)
 	sessionCache.invalidate(port, path)

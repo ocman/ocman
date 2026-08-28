@@ -11,6 +11,19 @@ describe('Factory API', () => {
 		await expect(api.mutateFactoryPlan('epic-1', 4, plan.graph)).resolves.toEqual({ stale: true, plan });
 	});
 
+	it.each([
+		['complete', () => api.completeFactoryPlanningWork('epic-1', 'work-1', 4, 'hash-4')],
+		['approve', () => api.decideFactoryPlan('epic-1', 'approve', { expectedRevision: 4, expectedHash: 'hash-4', actor: 'operator' })],
+		['revise', () => api.decideFactoryPlan('epic-1', 'revise', { expectedRevision: 4, expectedHash: 'hash-4', actor: 'operator' })],
+		['reject', () => api.decideFactoryPlan('epic-1', 'reject', { expectedRevision: 4, expectedHash: 'hash-4', actor: 'operator' })],
+		['cancel', () => api.decideFactoryPlan('epic-1', 'cancel', { expectedRevision: 4, expectedHash: 'hash-4', actor: 'operator' })],
+	])('returns the authoritative Plan from a rejected %s CAS request', async (_name, request) => {
+		const plan = { revision: 5, hash: 'hash-5', state: 'draft', graph: { intent: 'Current', targets: [], items: [], dependencies: [] }, planning: [], validation: [] };
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ stale: true, plan }), { status: 409, headers: { 'Content-Type': 'application/json' } })));
+
+		await expect(request()).resolves.toEqual({ stale: true, plan });
+	});
+
 	it('preserves non-CAS mutation errors', async () => {
 		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('invalid Plan', { status: 400 })));
 		await expect(api.mutateFactoryPlan('epic-1', 4, { intent: 'Invalid', targets: [], items: [], dependencies: [] })).rejects.toThrow('invalid Plan');
@@ -38,8 +51,8 @@ describe('Factory API', () => {
       instantiationId: 'request-1', goal: 'Ship it', initialProject: '/repo', acknowledgeLocalExecution: true,
     })).resolves.toEqual(epic);
 	await expect(api.mutateFactoryPlan('epic-1', 2, epic.plan.graph)).resolves.toEqual({ stale: false, plan: epic.plan });
-	await expect(api.decideFactoryPlan('epic-1', 'approve', { expectedRevision: 2, expectedHash: 'hash-2', actor: 'operator' })).resolves.toMatchObject({ state: 'approved' });
-	await expect(api.completeFactoryPlanningWork('epic-1', 'work/1', 2, 'hash-2')).resolves.toEqual(epic.plan);
+	await expect(api.decideFactoryPlan('epic-1', 'approve', { expectedRevision: 2, expectedHash: 'hash-2', actor: 'operator' })).resolves.toMatchObject({ stale: false, plan: { state: 'approved' } });
+	await expect(api.completeFactoryPlanningWork('epic-1', 'work/1', 2, 'hash-2')).resolves.toEqual({ stale: false, plan: epic.plan });
 
     expect(fetchMock.mock.calls[1][0]).toBe('/api/factory/epics/epic%2F1');
     expect(fetchMock.mock.calls[2][0]).toBe('/api/factory/epics');

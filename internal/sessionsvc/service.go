@@ -96,6 +96,16 @@ func validation(msg string) error { return &ValidationError{msg: msg} }
 // platform is available. HTTP maps it to 503.
 var ErrNoPlatformAvailable = errors.New("no platform available to create a session")
 
+// ConfiguredSessionCleanupError preserves the session identity when permission
+// installation and immediate disposal both fail.
+type ConfiguredSessionCleanupError struct {
+	SessionID string
+	Err       error
+}
+
+func (e *ConfiguredSessionCleanupError) Error() string { return e.Err.Error() }
+func (e *ConfiguredSessionCleanupError) Unwrap() error { return e.Err }
+
 // resolve returns the adapter for a session. A non-empty platformID is
 // honoured first (AD-2b: two hosts may share a session_id, so remote
 // sessions must be addressed by their compound platform key); otherwise
@@ -176,13 +186,21 @@ func (s *Service) Abort(ctx context.Context, platformID string, req platforms.Ab
 func (s *Service) Dispose(ctx context.Context, platformID string, req platforms.DisposeSessionRequest) error {
 	p, err := s.resolve(ctx, req.SessionID, platformID)
 	if err != nil {
+		if errors.Is(err, platforms.ErrNotFound) {
+			return nil
+		}
 		return err
 	}
 	disposer, ok := p.(platforms.SessionDisposer)
 	if !ok {
 		return platforms.ErrUnsupported
 	}
-	return disposer.DisposeSession(ctx, req)
+	err = disposer.DisposeSession(ctx, req)
+	var upstream *platforms.UpstreamError
+	if errors.Is(err, platforms.ErrNotFound) || errors.As(err, &upstream) && upstream.Status == 404 {
+		return nil
+	}
+	return err
 }
 
 // Revert restores the session and working tree to before a message.
@@ -418,7 +436,10 @@ func (s *Service) create(ctx context.Context, platformID string, req platforms.C
 			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			defer cancel()
 			cleanupErr := disposer.DisposeSession(cleanupCtx, platforms.DisposeSessionRequest{SessionID: resp.ID, Port: req.Port})
-			return nil, errors.Join(err, cleanupErr)
+			if cleanupErr != nil {
+				return nil, &ConfiguredSessionCleanupError{SessionID: resp.ID, Err: errors.Join(err, cleanupErr)}
+			}
+			return nil, err
 		}
 	}
 	if s.hooks.SessionCreated != nil {

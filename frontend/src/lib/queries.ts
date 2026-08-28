@@ -120,7 +120,7 @@ export function useDecideFactoryPlan(id: string) {
 	const queryClient = useQueryClient();
 	return useMutation({
 		mutationFn: ({ action, request }: { action: 'approve' | 'revise' | 'reject' | 'cancel'; request: FactoryPlanDecisionRequest }) => api.decideFactoryPlan(id, action, request),
-		onSuccess: (plan) => setEpicPlan(queryClient, id, plan),
+		onSuccess: (result) => setEpicPlan(queryClient, id, result.plan),
 	});
 }
 
@@ -128,7 +128,7 @@ export function useCompleteFactoryPlanningWork(id: string) {
 	const queryClient = useQueryClient();
 	return useMutation({
 		mutationFn: ({ workID, expectedRevision, expectedHash }: { workID: string; expectedRevision: number; expectedHash: string }) => api.completeFactoryPlanningWork(id, workID, expectedRevision, expectedHash),
-		onSuccess: (plan) => setEpicPlan(queryClient, id, plan),
+		onSuccess: (result) => setEpicPlan(queryClient, id, result.plan),
 	});
 }
 

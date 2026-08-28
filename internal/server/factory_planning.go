@@ -9,6 +9,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/remote"
+	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 )
 
 type factoryPlanningLauncher struct{ server *Server }
@@ -48,6 +49,10 @@ func (l factoryPlanningLauncher) LaunchPlanningSession(ctx context.Context, req 
 	}
 	created, err := l.server.sessions.CreateConfigured(ctx, platformID, platforms.CreateSessionRequest{Directory: req.Repository, Title: req.Title, Port: ensured.Port()}, rules)
 	if err != nil {
+		var cleanup *sessionsvc.ConfiguredSessionCleanupError
+		if errors.As(err, &cleanup) {
+			return factory.PlanningSession{Platform: platformID, ID: cleanup.SessionID}, fmt.Errorf("create bounded Planning Session: %w", err)
+		}
 		return factory.PlanningSession{}, fmt.Errorf("create bounded Planning Session: %w", err)
 	}
 	return factory.PlanningSession{Platform: platformID, ID: created.ID}, nil
