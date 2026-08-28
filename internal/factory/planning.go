@@ -1107,9 +1107,12 @@ func (s *Service) recoverPlanningSessions(ctx context.Context) error {
 }
 
 func (s *Service) cleanupPlanningSessions(ctx context.Context) error {
-	cleanups, err := s.store.ListFactoryPlanningSessionCleanups(ctx)
-	if err != nil {
-		return err
+	cleanups := s.pendingPlanningSessionCleanups()
+	persisted, listErr := s.store.ListFactoryPlanningSessionCleanups(ctx)
+	for workID, session := range persisted {
+		if _, pending := cleanups[workID]; !pending {
+			cleanups[workID] = session
+		}
 	}
 	workIDs := make([]string, 0, len(cleanups))
 	for workID := range cleanups {
@@ -1121,13 +1124,14 @@ func (s *Service) cleanupPlanningSessions(ctx context.Context) error {
 			return fmt.Errorf("%w: planning session service is unavailable", ErrFactoryUnavailable)
 		}
 		if err := s.planning.StopPlanningSession(ctx, cleanups[workID]); err != nil {
-			return fmt.Errorf("dispose restricted Planning Session: %w", err)
+			return errors.Join(listErr, fmt.Errorf("dispose restricted Planning Session: %w", err))
 		}
+		s.clearPendingPlanningSessionCleanup(workID, cleanups[workID])
 		if err := s.store.DeleteFactoryPlanningSessionCleanup(ctx, workID); err != nil {
-			return err
+			return errors.Join(listErr, err)
 		}
 	}
-	return nil
+	return listErr
 }
 
 func (s *Service) reconcilePendingPlanOperation(ctx context.Context, epic *WorkEpic, operation *PlanOperation) error {
@@ -1205,7 +1209,7 @@ func (s *Service) ensurePlanningSession(ctx context.Context, epic WorkEpic, work
 		if session.ID != "" && session.Platform != "" {
 			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), beadsTimeout)
 			defer cancel()
-			cleanupErr := s.recordPlanningSessionCleanup(cleanupCtx, epic.ID, work.ID, session, err)
+			cleanupErr := s.recordPlanningSessionCleanupFailure(cleanupCtx, epic.ID, work.ID, session, err)
 			return PlanningSession{}, errors.Join(fmt.Errorf("launch Planning Session: %w", err), cleanupErr)
 		}
 		return PlanningSession{}, fmt.Errorf("launch Planning Session: %w", err)
@@ -1219,7 +1223,7 @@ func (s *Service) ensurePlanningSession(ctx context.Context, epic WorkEpic, work
 		stopErr := s.planning.StopPlanningSession(cleanupCtx, session)
 		var cleanupErr error
 		if stopErr != nil {
-			cleanupErr = s.recordPlanningSessionCleanup(cleanupCtx, epic.ID, work.ID, session, stopErr)
+			cleanupErr = s.recordPlanningSessionCleanupFailure(cleanupCtx, epic.ID, work.ID, session, stopErr)
 		}
 		clearErr := s.store.DeleteFactoryPlanningSession(cleanupCtx, work.ID)
 		return PlanningSession{}, errors.Join(fmt.Errorf("persist Planning Session: %w", err), stopErr, cleanupErr, clearErr)
@@ -1227,11 +1231,12 @@ func (s *Service) ensurePlanningSession(ctx context.Context, epic WorkEpic, work
 	return session, nil
 }
 
-func (s *Service) recordPlanningSessionCleanup(ctx context.Context, epicID, workID string, session PlanningSession, cause error) error {
+func (s *Service) recordPlanningSessionCleanupFailure(ctx context.Context, epicID, workID string, session PlanningSession, cause error) error {
+	s.retainPlanningSessionCleanupFailure(workID, session, cause)
 	if err := s.store.PutFactoryPlanningSessionCleanup(ctx, epicID, workID, session); err != nil {
+		s.setRecoveryErr(errors.Join(cause, fmt.Errorf("persist Planning Session cleanup intent: %w", err)))
 		return err
 	}
-	s.setRecoveryErr(cause)
 	return nil
 }
 

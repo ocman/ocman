@@ -100,20 +100,21 @@ type factoryStore interface {
 }
 
 type Service struct {
-	dir         string
-	runner      runner
-	mu          sync.RWMutex
-	recoveryMu  sync.RWMutex
-	pourMu      sync.Mutex
-	owned       bool
-	lockErr     error
-	recoveryErr error
-	release     func() error
-	acks        localExecutionAckStore
-	store       factoryStore
-	formulas    formulaStore
-	projects    projectResolver
-	planning    PlanningLauncher
+	dir             string
+	runner          runner
+	mu              sync.RWMutex
+	recoveryMu      sync.RWMutex
+	pourMu          sync.Mutex
+	owned           bool
+	lockErr         error
+	recoveryErr     error
+	pendingCleanups map[string]PlanningSession
+	release         func() error
+	acks            localExecutionAckStore
+	store           factoryStore
+	formulas        formulaStore
+	projects        projectResolver
+	planning        PlanningLauncher
 }
 
 func New(dir string, ackStore localExecutionAckStore, projects projectResolver, planning PlanningLauncher) *Service {
@@ -229,6 +230,34 @@ func (s *Service) getRecoveryErr() error {
 	s.recoveryMu.RLock()
 	defer s.recoveryMu.RUnlock()
 	return s.recoveryErr
+}
+
+func (s *Service) retainPlanningSessionCleanupFailure(workID string, session PlanningSession, cause error) {
+	s.recoveryMu.Lock()
+	defer s.recoveryMu.Unlock()
+	if s.pendingCleanups == nil {
+		s.pendingCleanups = make(map[string]PlanningSession)
+	}
+	s.pendingCleanups[workID] = session
+	s.recoveryErr = cause
+}
+
+func (s *Service) pendingPlanningSessionCleanups() map[string]PlanningSession {
+	s.recoveryMu.RLock()
+	defer s.recoveryMu.RUnlock()
+	cleanups := make(map[string]PlanningSession, len(s.pendingCleanups))
+	for workID, session := range s.pendingCleanups {
+		cleanups[workID] = session
+	}
+	return cleanups
+}
+
+func (s *Service) clearPendingPlanningSessionCleanup(workID string, session PlanningSession) {
+	s.recoveryMu.Lock()
+	defer s.recoveryMu.Unlock()
+	if s.pendingCleanups[workID] == session {
+		delete(s.pendingCleanups, workID)
+	}
 }
 
 func probeBeads(parent context.Context, dir string, r runner) BeadsHealth {

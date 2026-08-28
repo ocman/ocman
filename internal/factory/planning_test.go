@@ -48,13 +48,14 @@ func (f *fakePlanningLauncher) ProbePlanningSession(_ context.Context, session P
 
 type fakeFactoryStore struct {
 	fakeAckStore
-	sessions    map[string]PlanningSession
-	cleanups    map[string]PlanningSession
-	audits      []FactoryAuditRecord
-	putErr      error
-	auditErr    error
-	auditFailAt int
-	auditCalls  int
+	sessions      map[string]PlanningSession
+	cleanups      map[string]PlanningSession
+	audits        []FactoryAuditRecord
+	putErr        error
+	cleanupPutErr error
+	auditErr      error
+	auditFailAt   int
+	auditCalls    int
 }
 
 func (s *fakeFactoryStore) AppendFactoryAuditOnce(ctx context.Context, record FactoryAuditRecord) error {
@@ -91,6 +92,9 @@ func (s *fakeFactoryStore) PutFactoryPlanningSessionCleanup(ctx context.Context,
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if s.cleanupPutErr != nil {
+		return s.cleanupPutErr
+	}
 	if s.cleanups == nil {
 		s.cleanups = map[string]PlanningSession{}
 	}
@@ -123,6 +127,30 @@ func TestCreateWorkEpicRecordsCleanupAndDegradesWhenMappingAndDisposalFail(t *te
 	status := svc.Status(context.Background())
 	if err == nil || !launcher.alive["session-1"] || store.cleanups["fac-1.1"] != launcher.result || status.Health != HealthDegraded || status.Reason != ReasonRecoveryFailed || !status.ReadOnly {
 		t.Fatalf("CreateWorkEpic error = %v, session alive = %v, cleanups = %#v, status = %#v", err, launcher.alive["session-1"], store.cleanups, status)
+	}
+}
+
+func TestCreateWorkEpicRetainsCleanupWhenCleanupIntentWriteFails(t *testing.T) {
+	project, _ := filepath.EvalSymlinks(t.TempDir())
+	runner := &fakeRunner{runs: []fakeRun{
+		{out: versionEnvelope}, {out: listEnvelope(`[]`)},
+		{out: `{"schema_version":1,"data":{"ids":{"epic":"fac-1","planning":"fac-1.1","approval":"fac-1.2"}}}`},
+		{out: `{"schema_version":1,"data":{}}`},
+	}}
+	store := &fakeFactoryStore{putErr: errors.New("mapping failed"), cleanupPutErr: errors.New("cleanup intent unavailable")}
+	launcher := &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "session-1"}, stopErr: errors.New("dispose failed"), alive: map[string]bool{}}
+	svc := newWithRunner(t.TempDir(), runner, store)
+	svc.planning, svc.projects, svc.owned = launcher, fakeProjectResolver{root: project}, true
+
+	_, err := svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{InstantiationID: "request-1", Goal: "Ship", InitialProject: project, AcknowledgeLocalExecution: true})
+	status := svc.Status(context.Background())
+	if err == nil || !launcher.alive["session-1"] || status.Health != HealthDegraded || status.Reason != ReasonRecoveryFailed || !status.ReadOnly || !strings.Contains(status.Message, "cleanup intent unavailable") {
+		t.Fatalf("CreateWorkEpic error = %v, session alive = %v, status = %#v", err, launcher.alive["session-1"], status)
+	}
+
+	err = svc.AcknowledgeLocalExecution(context.Background(), project)
+	if !errors.Is(err, ErrFactoryUnavailable) || len(launcher.stops) != 2 || launcher.stops[1] != launcher.result {
+		t.Fatalf("AcknowledgeLocalExecution error = %v, disposal attempts = %#v", err, launcher.stops)
 	}
 }
 
