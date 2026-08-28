@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -110,6 +111,174 @@ func TestBeadsStatusBuildsParentTreeWithDefaultList(t *testing.T) {
 	}
 	if runner.dirs[1] != "/repo" || !reflect.DeepEqual(runner.envs[1], []string{"BD_JSON_ENVELOPE=1", "BEADS_DIR=", "BEADS_DB=", "BD_DB="}) {
 		t.Fatalf("where dir=%q env=%v", runner.dirs[1], runner.envs[1])
+	}
+}
+
+func TestBeadsStatusReusesRecentResult(t *testing.T) {
+	runs := supportedBeadsRuns(
+		beadsRun{out: `{"schema_version":1,"data":{"path":"/repo/.beads"}}`},
+		beadsRun{out: `[{"id":"bd-1","title":"One","status":"open","priority":1}]`},
+	)
+	runner := &fakeBeadsRunner{runs: append(runs, runs...)}
+	h := New(Deps{})
+	h.beadsRunner = runner
+
+	first, err := h.BeadsStatus(context.Background(), "/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := h.BeadsStatus(context.Background(), "/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(second, first) {
+		t.Fatalf("second result = %#v, want %#v", second, first)
+	}
+	if len(runner.seen) != 3 {
+		t.Fatalf("commands = %d, want 3", len(runner.seen))
+	}
+}
+
+type concurrentBeadsRunner struct {
+	calls         atomic.Int32
+	versionCalls  atomic.Int32
+	firstStarted  chan struct{}
+	secondStarted chan struct{}
+	release       chan struct{}
+}
+
+func (r *concurrentBeadsRunner) LookPath(string) (string, error) { return "/usr/bin/bd", nil }
+
+func (r *concurrentBeadsRunner) Run(_ context.Context, _ string, _ string, args, _ []string) ([]byte, []byte, error) {
+	r.calls.Add(1)
+	if args[0] == "version" {
+		switch r.versionCalls.Add(1) {
+		case 1:
+			close(r.firstStarted)
+			<-r.release
+		case 2:
+			close(r.secondStarted)
+		}
+		return []byte(`{"version":"1.1.0"}`), nil, nil
+	}
+	if args[0] == "--readonly" {
+		return []byte(`{"schema_version":1,"data":{"path":"/repo/.beads"}}`), nil, nil
+	}
+	return []byte(`[{"id":"bd-1","title":"One","status":"open","priority":1}]`), nil, nil
+}
+
+func TestBeadsStatusCoalescesConcurrentReads(t *testing.T) {
+	runner := &concurrentBeadsRunner{
+		firstStarted:  make(chan struct{}),
+		secondStarted: make(chan struct{}),
+		release:       make(chan struct{}),
+	}
+	h := New(Deps{})
+	h.beadsRunner = runner
+	done := make(chan error, 2)
+	go func() {
+		_, err := h.BeadsStatus(context.Background(), "/repo")
+		done <- err
+	}()
+	<-runner.firstStarted
+	go func() {
+		_, err := h.BeadsStatus(context.Background(), "/repo")
+		done <- err
+	}()
+	select {
+	case <-runner.secondStarted:
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(runner.release)
+	for range 2 {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := runner.calls.Load(); got != 3 {
+		t.Fatalf("commands = %d, want 3", got)
+	}
+}
+
+func TestBeadsStatusCanceledLeaderDoesNotCancelFollower(t *testing.T) {
+	runner := &concurrentBeadsRunner{
+		firstStarted:  make(chan struct{}),
+		secondStarted: make(chan struct{}),
+		release:       make(chan struct{}),
+	}
+	h := New(Deps{})
+	h.beadsRunner = runner
+	leaderCtx, cancelLeader := context.WithCancel(context.Background())
+	leaderDone := make(chan error, 1)
+	go func() {
+		_, err := h.BeadsStatus(leaderCtx, "/repo")
+		leaderDone <- err
+	}()
+	<-runner.firstStarted
+	followerStarted := make(chan struct{})
+	followerDone := make(chan error, 1)
+	go func() {
+		close(followerStarted)
+		_, err := h.BeadsStatus(context.Background(), "/repo")
+		followerDone <- err
+	}()
+	<-followerStarted
+	cancelLeader()
+	select {
+	case err := <-leaderDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("leader err = %v, want context canceled", err)
+		}
+	case <-time.After(100 * time.Millisecond):
+		close(runner.release)
+		t.Fatal("canceled leader kept waiting for shared refresh")
+	}
+	close(runner.release)
+	if err := <-followerDone; err != nil {
+		t.Fatalf("follower err = %v", err)
+	}
+	if got := runner.calls.Load(); got != 3 {
+		t.Fatalf("commands = %d, want 3", got)
+	}
+}
+
+func TestBeadsStatusCanceledFollowerDoesNotWait(t *testing.T) {
+	runner := &concurrentBeadsRunner{
+		firstStarted:  make(chan struct{}),
+		secondStarted: make(chan struct{}),
+		release:       make(chan struct{}),
+	}
+	h := New(Deps{})
+	h.beadsRunner = runner
+	leaderDone := make(chan error, 1)
+	go func() {
+		_, err := h.BeadsStatus(context.Background(), "/repo")
+		leaderDone <- err
+	}()
+	<-runner.firstStarted
+	followerCtx, cancelFollower := context.WithCancel(context.Background())
+	cancelFollower()
+	followerDone := make(chan error, 1)
+	go func() {
+		_, err := h.BeadsStatus(followerCtx, "/repo")
+		followerDone <- err
+	}()
+
+	select {
+	case err := <-followerDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("follower err = %v, want context canceled", err)
+		}
+	case <-time.After(100 * time.Millisecond):
+		close(runner.release)
+		t.Fatal("canceled follower kept waiting for shared refresh")
+	}
+	close(runner.release)
+	if err := <-leaderDone; err != nil {
+		t.Fatalf("leader err = %v", err)
+	}
+	if got := runner.calls.Load(); got != 3 {
+		t.Fatalf("commands = %d, want 3", got)
 	}
 }
 

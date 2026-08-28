@@ -117,6 +117,9 @@ type Host struct {
 	runtime     ocruntime.Runtime
 	store       ManagedStore
 	beadsRunner beadsRunner
+	beadsMu     sync.Mutex
+	beadsCache  map[string]beadsCacheEntry
+	beadsSF     singleflight.Group
 
 	// sf collapses concurrent EnsureProjectOpencode calls for the same
 	// repo root into a single launch (AD-9). ensure keys on repoRoot.
@@ -150,6 +153,7 @@ func New(deps Deps) *Host {
 		runtime:          rt,
 		store:            deps.ManagedStore,
 		beadsRunner:      execBeadsRunner{},
+		beadsCache:       make(map[string]beadsCacheEntry),
 		instances:        map[string]*ocruntime.Instance{},
 		portWaitTimeout:  15 * time.Second,
 		portWaitInterval: 200 * time.Millisecond,

@@ -20,9 +20,15 @@ import (
 
 const (
 	beadsTimeout   = 5 * time.Second
+	beadsCacheTTL  = 10 * time.Second
 	beadsStdoutCap = 1 << 20
 	beadsStderrCap = 8 << 10
 )
+
+type beadsCacheEntry struct {
+	status    hostsvc.BeadsStatus
+	expiresAt time.Time
+}
 
 type beadsRunner interface {
 	LookPath(string) (string, error)
@@ -68,6 +74,51 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 }
 
 func (h *Host) BeadsStatus(ctx context.Context, dir string) (hostsvc.BeadsStatus, error) {
+	if cached, ok := h.cachedBeadsStatus(dir); ok {
+		return cached, nil
+	}
+	result := h.beadsSF.DoChan(dir, func() (any, error) {
+		if cached, ok := h.cachedBeadsStatus(dir); ok {
+			return cached, nil
+		}
+		status, err := h.readBeadsStatus(context.WithoutCancel(ctx), dir)
+		if err != nil {
+			return status, err
+		}
+		now := time.Now()
+		h.beadsMu.Lock()
+		for key, cached := range h.beadsCache {
+			if !now.Before(cached.expiresAt) {
+				delete(h.beadsCache, key)
+			}
+		}
+		h.beadsCache[dir] = beadsCacheEntry{status: status, expiresAt: now.Add(beadsCacheTTL)}
+		h.beadsMu.Unlock()
+		return status, nil
+	})
+	select {
+	case value := <-result:
+		if value.Err != nil {
+			return hostsvc.BeadsStatus{}, value.Err
+		}
+		return value.Val.(hostsvc.BeadsStatus), nil
+	case <-ctx.Done():
+		return hostsvc.BeadsStatus{}, ctx.Err()
+	}
+}
+
+func (h *Host) cachedBeadsStatus(dir string) (hostsvc.BeadsStatus, bool) {
+	h.beadsMu.Lock()
+	defer h.beadsMu.Unlock()
+	cached, ok := h.beadsCache[dir]
+	if !ok || !time.Now().Before(cached.expiresAt) {
+		delete(h.beadsCache, dir)
+		return hostsvc.BeadsStatus{}, false
+	}
+	return cached.status, true
+}
+
+func (h *Host) readBeadsStatus(ctx context.Context, dir string) (hostsvc.BeadsStatus, error) {
 	path, err := h.beadsRunner.LookPath("bd")
 	if err != nil {
 		return hostsvc.BeadsStatus{}, nil
