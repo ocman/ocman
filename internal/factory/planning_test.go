@@ -513,6 +513,56 @@ func TestAddPlanningWorkAddsTargetAndLaunchesOnlyInThatRepository(t *testing.T) 
 	}
 }
 
+func TestAddPlanningWorkReturnsCurrentPlanBeforeRepositoryValidationWhenStale(t *testing.T) {
+	current := Plan{SchemaVersion: planSchemaVersion, Revision: 3, State: PlanDraft, Draft: PlanGraph{Intent: "Current"}}
+	current.Hash = hashPlanGraph(current.Draft)
+	store := &fakeFactoryStore{}
+	runner := &fakeRunner{runs: []fakeRun{{out: versionEnvelope}, {out: listEnvelope(issuesWithPlan(t, current))}}}
+	svc := newWithRunner(t.TempDir(), runner, store)
+	svc.owned = true
+
+	result, err := svc.AddPlanningWork(context.Background(), "fac-1", AddPlanningWorkRequest{
+		ExpectedRevision:          2,
+		Target:                    PlanTarget{ID: "api", HostID: localHostID, Repository: filepath.Join(t.TempDir(), "missing")},
+		AcknowledgeLocalExecution: true,
+	})
+	if err != nil || !result.Stale || result.Plan.Revision != 3 || result.Plan.Draft.Intent != "Current" {
+		t.Fatalf("AddPlanningWork result = %#v, error = %v", result, err)
+	}
+	if len(store.calls) != 0 || len(store.audits) != 0 || len(runner.seen) != 2 {
+		t.Fatalf("stale request mutated state: acknowledgements = %#v, audits = %#v, commands = %#v", store.calls, store.audits, runner.seen)
+	}
+}
+
+func TestAddPlanningWorkRetryConvergesAfterRepositoryDisappears(t *testing.T) {
+	repository, _ := filepath.EvalSymlinks(t.TempDir())
+	target := PlanTarget{ID: "api", HostID: localHostID, Repository: repository}
+	operation := &PlanOperation{Action: "planning.added", FromRevision: 2, FromHash: "hash-2", Actor: operatorActor, Target: &target, WorkID: "fac-1.3"}
+	current := Plan{
+		SchemaVersion: planSchemaVersion, Revision: 3, State: PlanDraft,
+		Draft:         PlanGraph{Intent: "Current", Targets: []PlanTarget{target}},
+		Planning:      []PlanningWork{{ID: "fac-1.3", TargetID: target.ID, Repository: repository, Status: "open"}},
+		LastOperation: operation,
+	}
+	current.Hash = hashPlanGraph(current.Draft)
+	if err := os.Remove(repository); err != nil {
+		t.Fatal(err)
+	}
+	store := &fakeFactoryStore{sessions: map[string]PlanningSession{"fac-1.3": {Platform: "agent", ID: "session-1"}}}
+	launcher := &fakePlanningLauncher{}
+	runner := &fakeRunner{runs: []fakeRun{{out: versionEnvelope}, {out: listEnvelope(issuesWithPlan(t, current))}}}
+	svc := newWithRunner(t.TempDir(), runner, store)
+	svc.planning, svc.owned = launcher, true
+
+	result, err := svc.AddPlanningWork(context.Background(), "fac-1", AddPlanningWorkRequest{ExpectedRevision: 2, Target: target, AcknowledgeLocalExecution: true})
+	if err != nil || result.Stale || result.Plan.Revision != 3 {
+		t.Fatalf("AddPlanningWork retry result = %#v, error = %v", result, err)
+	}
+	if len(store.calls) != 0 || len(store.audits) != 1 || store.audits[0].Action != "planning.added" || len(runner.seen) != 2 {
+		t.Fatalf("retry did not converge: acknowledgements = %#v, audits = %#v, commands = %#v", store.calls, store.audits, runner.seen)
+	}
+}
+
 func TestAddPlanningWorkRecoversFinalAuditAfterSideEffects(t *testing.T) {
 	repository, _ := filepath.EvalSymlinks(t.TempDir())
 	current := Plan{SchemaVersion: planSchemaVersion, Revision: 2, State: PlanDraft, Draft: PlanGraph{Intent: "Ship", Targets: []PlanTarget{{ID: "app", HostID: localHostID, Repository: "/repo"}}}, Planning: []PlanningWork{{ID: "fac-1.1", TargetID: "app", Repository: "/repo", Status: "closed"}}}

@@ -271,18 +271,7 @@ func (s *Service) AddPlanningWork(ctx context.Context, epicID string, req AddPla
 			return PlanMutationResult{}, err
 		}
 	}
-	if !stableID.MatchString(req.Target.ID) || req.Target.HostID != localHostID {
-		return PlanMutationResult{}, errors.New("planning work requires a local target")
-	}
-	if !req.AcknowledgeLocalExecution {
-		return PlanMutationResult{}, errors.New("local non-isolated execution must be acknowledged")
-	}
-	repository, err := filepath.EvalSymlinks(req.Target.Repository)
-	if err != nil {
-		return PlanMutationResult{}, errors.New("planning work repository must be an existing local directory")
-	}
-	req.Target.Repository = filepath.Clean(repository)
-	if operation := epic.Plan.LastOperation; operation != nil && operation.Action == "planning.added" && operation.FromRevision == req.ExpectedRevision && operation.Target != nil && *operation.Target == req.Target {
+	if operation := epic.Plan.LastOperation; operation != nil && operation.Action == "planning.added" && operation.FromRevision == req.ExpectedRevision && samePlanningTargetIdentity(operation.Target, req.Target) {
 		if err := s.ensureAllPlanningSessions(ctx, &epic); err != nil {
 			return PlanMutationResult{}, err
 		}
@@ -294,6 +283,17 @@ func (s *Service) AddPlanningWork(ctx context.Context, epicID string, req AddPla
 	if req.ExpectedRevision != epic.Plan.Revision {
 		return PlanMutationResult{Stale: true, Plan: epic.Plan}, nil
 	}
+	if !stableID.MatchString(req.Target.ID) || req.Target.HostID != localHostID {
+		return PlanMutationResult{}, errors.New("planning work requires a local target")
+	}
+	if !req.AcknowledgeLocalExecution {
+		return PlanMutationResult{}, errors.New("local non-isolated execution must be acknowledged")
+	}
+	repository, err := filepath.EvalSymlinks(req.Target.Repository)
+	if err != nil {
+		return PlanMutationResult{}, errors.New("planning work repository must be an existing local directory")
+	}
+	req.Target.Repository = filepath.Clean(repository)
 	if epic.Plan.State != PlanDraft {
 		return PlanMutationResult{}, fmt.Errorf("%w: Plan must be revised before adding Planning Work", ErrPlanNotApprovable)
 	}
@@ -318,6 +318,14 @@ func (s *Service) AddPlanningWork(ctx context.Context, epicID string, req AddPla
 		return PlanMutationResult{}, s.recoveryFailure(err)
 	}
 	return PlanMutationResult{Plan: epic.Plan}, nil
+}
+
+func samePlanningTargetIdentity(stored *PlanTarget, requested PlanTarget) bool {
+	if stored == nil {
+		return false
+	}
+	requested.Repository = filepath.Clean(requested.Repository)
+	return *stored == requested
 }
 
 func (s *Service) createPlanningWork(ctx context.Context, epic WorkEpic, target PlanTarget) (string, error) {
