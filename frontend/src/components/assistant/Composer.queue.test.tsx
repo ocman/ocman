@@ -5,7 +5,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Composer, type ComposerHandle } from './Composer';
 import { BackendUnavailableError } from '../../lib/api';
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 describe('Composer queue', () => {
   it('renders queued shell commands in the follow-up queue', () => {
@@ -40,6 +43,25 @@ describe('Composer queue', () => {
 });
 
 describe('Composer input', () => {
+  it.each([
+    ['touch-only', true, false, false],
+    ['fine-pointer', false, true, true],
+    ['hybrid', true, true, true],
+    ['unknown pointer', undefined, undefined, true],
+  ])('%s device focus after switching sessions: %s', async (_device, coarse, fine, expectedFocus) => {
+    if (coarse !== undefined) {
+      vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+        matches: query === '(any-pointer: coarse)' ? coarse : fine,
+      })));
+    }
+    const { rerender } = render(<Composer key="session-a" sessionId="session-a" isRunning={false} />);
+
+    rerender(<Composer key="session-b" sessionId="session-b" isRunning={false} />);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1)); });
+
+    expect(document.activeElement === screen.getByRole('textbox')).toBe(expectedFocus);
+  });
+
   it('updates slash and bash state without CustomEvents', () => {
     Element.prototype.scrollIntoView = vi.fn();
     const dispatch = vi.spyOn(HTMLTextAreaElement.prototype, 'dispatchEvent');

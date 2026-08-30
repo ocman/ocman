@@ -46,7 +46,6 @@ export function useComposerDrafts(
     if (!el || !sessionId) return;
     const draft = getDraft(sessionId);
     el.value = draft;
-    el.focus();
   }, [sessionId, inputRef]);
 
   // Flush the current text to storage on unmount.

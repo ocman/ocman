@@ -622,6 +622,9 @@ function ComposerImpl({
 
   // Auto-focus the composer input when the component becomes visible.
   useEffect(() => {
+    const touchOnly = window.matchMedia?.('(any-pointer: coarse)').matches
+      && !window.matchMedia?.('(any-pointer: fine)').matches;
+    if (touchOnly) return;
     if (!disabled && inputRef.current) {
       const timer = setTimeout(() => {
         if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
