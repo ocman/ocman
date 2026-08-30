@@ -108,12 +108,23 @@ export function SessionsSection() {
   // is loaded/saved directly via the API rather than through uiStore.
   const [inheritPerms, setInheritPerms] = useState(true);
   const inheritPermsSave = useSettingSave();
+  const [autoArchive, setAutoArchive] = useState({ enabled: true, ttlDays: 7 });
+  const [autoArchiveLoaded, setAutoArchiveLoaded] = useState(false);
+  const autoArchiveToggleSave = useSettingSave();
+  const autoArchiveTTLSave = useSettingSave();
   useEffect(() => {
     const ctrl = new AbortController();
     api
       .getWorktreeInheritPermissions(ctrl.signal)
       .then(({ enabled }) => setInheritPerms(enabled))
       .catch(() => { /* best-effort; keep default on */ });
+    api
+      .getAutoArchiveSettings(ctrl.signal)
+      .then(setAutoArchive)
+      .catch(() => { /* best-effort; keep defaults */ })
+      .finally(() => {
+        if (!ctrl.signal.aborted) setAutoArchiveLoaded(true);
+      });
     return () => ctrl.abort();
   }, []);
 
@@ -124,6 +135,19 @@ export function SessionsSection() {
     } catch (err) {
       setInheritPerms(!want); // revert
       throw err; // let SettingToggle surface the failure indicator
+    }
+  };
+
+  const autoArchiveSaving = autoArchiveToggleSave.state === 'saving' || autoArchiveTTLSave.state === 'saving';
+
+  const saveAutoArchive = async (next: { enabled: boolean; ttlDays: number }) => {
+    const previous = autoArchive;
+    setAutoArchive(next);
+    try {
+      await api.setAutoArchiveSettings(next);
+    } catch (err) {
+      setAutoArchive(previous);
+      throw err;
     }
   };
 
@@ -182,6 +206,32 @@ export function SessionsSection() {
           onSave={(next) => handleInheritToggle(next)}
         />
       </SettingRow>
+      <SettingRow
+        label="Automatically archive inactive sessions and projects"
+        desc="Hide inactive sessions and projects after the configured number of days. Archived items remain available and can be restored."
+      >
+        <SettingToggle
+          ariaLabel="Automatically archive inactive sessions and projects"
+          checked={autoArchive.enabled}
+          disabled={!autoArchiveLoaded || autoArchiveSaving}
+          save={autoArchiveToggleSave}
+          onSave={(enabled) => saveAutoArchive({ ...autoArchive, enabled })}
+        />
+      </SettingRow>
+      {autoArchiveLoaded && autoArchive.enabled && (
+        <SettingRow label="Archive after">
+          <SettingNumber
+            ariaLabel="Archive inactive sessions and projects after days"
+            unit="days"
+            min={1}
+            max={3650}
+            value={autoArchive.ttlDays}
+            disabled={autoArchiveSaving}
+            save={autoArchiveTTLSave}
+            onSave={(ttlDays) => saveAutoArchive({ ...autoArchive, ttlDays })}
+          />
+        </SettingRow>
+      )}
     </>
   );
 }

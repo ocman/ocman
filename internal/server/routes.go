@@ -160,6 +160,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// Toggle for worktree sessions inheriting the parent's always-allow
 	// permissions at split time (issue #101; on by default).
 	mux.HandleFunc("/api/settings/worktree-inherit-permissions", s.requireAuth(s.handleWorktreeInheritPermissions))
+	mux.HandleFunc("/api/settings/auto-archive", s.requireAuth(s.handleAutoArchiveSettings))
 	// Global list of active share links, for inspect/revoke in Settings.
 	mux.HandleFunc("/api/shares", s.requireAuth(s.get(s.handleAllShares)))
 	// Remote-access surface for multi-remote support: this instance's

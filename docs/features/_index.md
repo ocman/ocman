@@ -9,7 +9,8 @@ sidebar:
 
 **Session browser.** List, search, archive and replay every session. Sessions
 are grouped by project with status indicators and a `+` button to start new
-ones. Sessions with no activity for three days are archived automatically.
+ones. Sessions and projects with no activity for seven days are archived by
+default. The delay and auto-archive toggle are available in Settings.
 
 **Status you can trust.** A session's status comes from the agent's own turn
 lifecycle rather than a guess about stored messages: **busy** while a turn

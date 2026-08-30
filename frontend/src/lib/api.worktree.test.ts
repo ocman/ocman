@@ -185,4 +185,25 @@ describe('api worktree-inherit-permissions setting (#101)', () => {
     expect(capturedInit?.method).toBe('POST');
     expect(JSON.parse(capturedInit?.body as string)).toEqual({ enabled: true });
   });
+
+  it('gets auto-archive settings', async () => {
+    let capturedURL = '';
+    stubFetch((url) => {
+      capturedURL = url;
+      return new Response(JSON.stringify({ enabled: true, ttlDays: 14 }), { status: 200 });
+    });
+    await expect(api.getAutoArchiveSettings()).resolves.toEqual({ enabled: true, ttlDays: 14 });
+    expect(capturedURL).toBe('/api/settings/auto-archive');
+  });
+
+  it('sets auto-archive settings', async () => {
+    let capturedInit: RequestInit | undefined;
+    stubFetch((_url, init) => {
+      capturedInit = init;
+      return new Response(JSON.stringify({ enabled: false, ttlDays: 30 }), { status: 200 });
+    });
+    await api.setAutoArchiveSettings({ enabled: false, ttlDays: 30 });
+    expect(capturedInit?.method).toBe('POST');
+    expect(JSON.parse(capturedInit?.body as string)).toEqual({ enabled: false, ttlDays: 30 });
+  });
 });

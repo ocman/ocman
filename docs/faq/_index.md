@@ -48,8 +48,9 @@ uses `lsof`, so Windows is not supported.
 
 ## Do sessions pile up forever?
 
-No. Sessions with no activity for three days are archived automatically, and
-you can archive or unarchive anything by hand.
+By default, sessions and projects with no activity for seven days are archived
+automatically. You can change the delay or disable auto-archive in Settings,
+and archive or unarchive anything by hand.
 
 ## Does the agent integration send my code anywhere?
 

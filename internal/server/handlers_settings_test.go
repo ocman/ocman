@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -153,5 +154,75 @@ func TestHandleWorktreeInheritPermissionsMethodNotAllowed(t *testing.T) {
 	srv.handleWorktreeInheritPermissions(rec, httptest.NewRequest(http.MethodDelete, "/api/settings/worktree-inherit-permissions", nil))
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("DELETE status = %d, want 405", rec.Code)
+	}
+}
+
+func decodeAutoArchiveSettings(t *testing.T, body []byte) autoArchiveSettingsView {
+	t.Helper()
+	var settings autoArchiveSettingsView
+	if err := json.Unmarshal(body, &settings); err != nil {
+		t.Fatalf("decoding response %q: %v", body, err)
+	}
+	return settings
+}
+
+func TestHandleAutoArchiveSettings(t *testing.T) {
+	srv := &Server{stateDB: openTestStateDB(t)}
+
+	rec := httptest.NewRecorder()
+	srv.handleAutoArchiveSettings(rec, httptest.NewRequest(http.MethodGet, "/api/settings/auto-archive", nil))
+	if got := decodeAutoArchiveSettings(t, rec.Body.Bytes()); rec.Code != http.StatusOK || !got.Enabled || got.TTLDays != 7 {
+		t.Fatalf("GET default: status=%d settings=%+v, want 200/enabled/7 days", rec.Code, got)
+	}
+
+	rec = httptest.NewRecorder()
+	srv.handleAutoArchiveSettings(rec, httptest.NewRequest(http.MethodPost,
+		"/api/settings/auto-archive", strings.NewReader(`{"enabled":false,"ttlDays":30}`)))
+	if got := decodeAutoArchiveSettings(t, rec.Body.Bytes()); rec.Code != http.StatusOK || got.Enabled || got.TTLDays != 30 {
+		t.Fatalf("POST: status=%d settings=%+v, want 200/disabled/30 days", rec.Code, got)
+	}
+
+	rec = httptest.NewRecorder()
+	srv.handleAutoArchiveSettings(rec, httptest.NewRequest(http.MethodGet, "/api/settings/auto-archive", nil))
+	if got := decodeAutoArchiveSettings(t, rec.Body.Bytes()); got.Enabled || got.TTLDays != 30 {
+		t.Fatalf("GET saved settings = %+v, want disabled/30 days", got)
+	}
+}
+
+func TestHandleAutoArchiveSettingsRejectsInvalidTTL(t *testing.T) {
+	srv := &Server{stateDB: openTestStateDB(t)}
+	for _, ttl := range []int{0, 3651} {
+		rec := httptest.NewRecorder()
+		srv.handleAutoArchiveSettings(rec, httptest.NewRequest(http.MethodPost,
+			"/api/settings/auto-archive", strings.NewReader(fmt.Sprintf(`{"enabled":true,"ttlDays":%d}`, ttl))))
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("ttlDays=%d status=%d, want 400", ttl, rec.Code)
+		}
+	}
+}
+
+func TestHandleAutoArchiveSettingsRejectsInvalidRequest(t *testing.T) {
+	srv := &Server{stateDB: openTestStateDB(t)}
+
+	rec := httptest.NewRecorder()
+	srv.handleAutoArchiveSettings(rec, httptest.NewRequest(http.MethodPost,
+		"/api/settings/auto-archive", strings.NewReader(`{bad`)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid JSON status=%d, want 400", rec.Code)
+	}
+
+	rec = httptest.NewRecorder()
+	srv.handleAutoArchiveSettings(rec, httptest.NewRequest(http.MethodDelete, "/api/settings/auto-archive", nil))
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("DELETE status=%d, want 405", rec.Code)
+	}
+}
+
+func TestHandleAutoArchiveSettingsUnavailable(t *testing.T) {
+	srv := &Server{}
+	rec := httptest.NewRecorder()
+	srv.handleAutoArchiveSettings(rec, httptest.NewRequest(http.MethodGet, "/api/settings/auto-archive", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("GET status=%d, want 503", rec.Code)
 	}
 }

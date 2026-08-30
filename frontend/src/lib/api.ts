@@ -496,6 +496,10 @@ export const api = {
     fetchJSON<{ enabled: boolean }>(`/api/settings/worktree-inherit-permissions`, signal),
   setWorktreeInheritPermissions: (enabled: boolean) =>
     postJSON<{ enabled: boolean }>(`/api/settings/worktree-inherit-permissions`, { enabled }),
+  getAutoArchiveSettings: (signal?: AbortSignal) =>
+    fetchJSON<{ enabled: boolean; ttlDays: number }>(`/api/settings/auto-archive`, signal),
+  setAutoArchiveSettings: (settings: { enabled: boolean; ttlDays: number }) =>
+    postJSON<{ enabled: boolean; ttlDays: number }>(`/api/settings/auto-archive`, settings),
   // Every active share link across all sessions.
   listAllShares: (signal?: AbortSignal) =>
     fetchJSON<GlobalShareLink[]>(`/api/shares`, signal),

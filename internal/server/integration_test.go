@@ -1322,21 +1322,85 @@ func TestAutoArchive_UsesRegistry(t *testing.T) {
 	}
 }
 
-// TestAutoArchiveProjects archives projects whose newest session is older
-// than the 7-day window and leaves recently-active projects untouched.
+func TestAutoArchiveUsesConfiguredTTL(t *testing.T) {
+	srv, rawDB := testServerWithRawDB(t)
+	defer rawDB.Close()
+
+	fourDaysAgo := time.Now().Add(-4 * 24 * time.Hour).UnixMilli()
+	if _, err := rawDB.Exec(
+		`INSERT INTO session (id, title, directory, time_created, time_updated)
+		 VALUES ('custom-ttl-session', 'old enough', '/tmp', ?, ?)`,
+		fourDaysAgo, fourDaysAgo,
+	); err != nil {
+		t.Fatalf("seeding session: %v", err)
+	}
+	if err := srv.setAutoArchiveSettings(t.Context(), autoArchiveSettingsView{Enabled: true, TTLDays: 3}); err != nil {
+		t.Fatal(err)
+	}
+
+	srv.autoArchiveInactiveSessions()
+
+	archived, err := srv.stateDB.ArchivedSessions(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := archived[state.Key{Platform: "opencode", SessionID: "custom-ttl-session"}]; !ok {
+		t.Errorf("session older than configured TTL was not archived: %+v", archived)
+	}
+}
+
+func TestAutoArchiveCanBeDisabled(t *testing.T) {
+	srv, rawDB := testServerWithRawDB(t)
+	defer rawDB.Close()
+
+	if _, err := rawDB.Exec(
+		`INSERT INTO session (id, title, directory, time_created, time_updated)
+		 VALUES ('disabled-session', 'ancient', '/tmp/disabled', 1000, 1000)`,
+	); err != nil {
+		t.Fatalf("seeding session: %v", err)
+	}
+	if err := srv.setAutoArchiveSettings(t.Context(), autoArchiveSettingsView{Enabled: false, TTLDays: 7}); err != nil {
+		t.Fatal(err)
+	}
+	opencodeplatform.ResetCachesForTests()
+
+	srv.autoArchiveInactiveSessions()
+	srv.autoArchiveInactiveProjects()
+
+	archivedSessions, err := srv.stateDB.ArchivedSessions(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := archivedSessions[state.Key{Platform: "opencode", SessionID: "disabled-session"}]; ok {
+		t.Error("session was archived while auto-archive was disabled")
+	}
+	archivedProjects, err := srv.stateDB.ArchivedProjects(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := archivedProjects[localProjectKey("/tmp/disabled")]; ok {
+		t.Error("project was archived while auto-archive was disabled")
+	}
+}
+
+// TestAutoArchiveProjects applies the configured TTL to project activity.
 func TestAutoArchiveProjects(t *testing.T) {
 	srv, rawDB := testServerWithRawDB(t)
 	defer rawDB.Close()
 
-	fresh := time.Now().UnixMilli()
+	fourDaysAgo := time.Now().Add(-4 * 24 * time.Hour).UnixMilli()
+	twoDaysAgo := time.Now().Add(-2 * 24 * time.Hour).UnixMilli()
 	_, err := rawDB.Exec(
 		`INSERT INTO session (id, title, directory, time_created, time_updated) VALUES
-		 ('old-session', 'ancient', '/tmp/stale', 1000, 1000),
+		 ('old-session', 'ancient', '/tmp/stale', ?, ?),
 		 ('new-session', 'recent', '/tmp/active', ?, ?)`,
-		fresh, fresh,
+		fourDaysAgo, fourDaysAgo, twoDaysAgo, twoDaysAgo,
 	)
 	if err != nil {
 		t.Fatalf("seeding sessions: %v", err)
+	}
+	if err := srv.setAutoArchiveSettings(t.Context(), autoArchiveSettingsView{Enabled: true, TTLDays: 3}); err != nil {
+		t.Fatal(err)
 	}
 	opencodeplatform.ResetCachesForTests()
 

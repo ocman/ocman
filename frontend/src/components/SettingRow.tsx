@@ -90,6 +90,7 @@ export function SettingNumber({
   parse,
   onSave,
   ariaLabel,
+  disabled,
 }: {
   value: number;
   unit: string;
@@ -100,6 +101,7 @@ export function SettingNumber({
   parse?: (raw: number) => number;
   onSave: (next: number) => void | Promise<unknown>;
   ariaLabel?: string;
+  disabled?: boolean;
 }) {
   return (
     <div className="settings-delay-input">
@@ -109,6 +111,7 @@ export function SettingNumber({
         max={max}
         step={step}
         aria-label={ariaLabel}
+        disabled={disabled}
         value={value}
         onChange={(e) => {
           const raw = Number(e.target.value) || 0;

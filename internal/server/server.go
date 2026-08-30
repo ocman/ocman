@@ -38,10 +38,8 @@ import (
 )
 
 const (
-	autoArchiveAfter        = 7 * 24 * time.Hour
-	autoArchiveProjectAfter = 7 * 24 * time.Hour
-	autoArchiveInterval     = 24 * time.Hour
-	projectsScanInterval    = 5 * time.Minute
+	autoArchiveInterval  = 24 * time.Hour
+	projectsScanInterval = 5 * time.Minute
 )
 
 // Server serves the web UI and API.
@@ -660,12 +658,21 @@ func (s *Server) runAutoArchiveLoop(ctx context.Context) {
 }
 
 func (s *Server) autoArchiveInactiveSessions() {
-	cutoff := time.Now().Add(-autoArchiveAfter).UnixMilli()
 	// Each tick is its own root span so the trace tree corresponds
 	// to one independent auto-archive pass. Background work doesn't
 	// belong under any HTTP request.
 	ctx, span := telemetry.Tracer().Start(context.Background(), "ocman.auto_archive.tick")
 	defer span.End()
+	settings, err := s.getAutoArchiveSettings(ctx)
+	if err != nil {
+		span.RecordError(err)
+		log.WithError(err).Error("reading auto-archive settings")
+		return
+	}
+	if !settings.Enabled {
+		return
+	}
+	cutoff := time.Now().Add(-time.Duration(settings.TTLDays) * 24 * time.Hour).UnixMilli()
 
 	if autoArchiveRuns != nil {
 		autoArchiveRuns.Add(ctx, 1)
@@ -729,7 +736,7 @@ func (s *Server) autoArchiveInactiveSessions() {
 }
 
 // autoArchiveInactiveProjects archives local projects whose most recent
-// session activity is older than autoArchiveProjectAfter. Archive state
+// session activity is older than the configured auto-archive TTL. Archive state
 // is keyed by folded project root; already-archived roots are skipped.
 // A project auto-unarchives later (in applyProjectArchiveState) once it
 // sees fresh activity, so this is safe to re-run.
@@ -737,9 +744,18 @@ func (s *Server) autoArchiveInactiveProjects() {
 	if s.stateDB == nil || s.db == nil {
 		return
 	}
-	cutoff := time.Now().Add(-autoArchiveProjectAfter).UnixMilli()
 	ctx, span := telemetry.Tracer().Start(context.Background(), "ocman.auto_archive_projects.tick")
 	defer span.End()
+	settings, err := s.getAutoArchiveSettings(ctx)
+	if err != nil {
+		span.RecordError(err)
+		log.WithError(err).Error("reading auto-archive settings")
+		return
+	}
+	if !settings.Enabled {
+		return
+	}
+	cutoff := time.Now().Add(-time.Duration(settings.TTLDays) * 24 * time.Hour).UnixMilli()
 
 	projects, err := s.router().Local().Projects(ctx)
 	if err != nil {
