@@ -249,6 +249,9 @@ func (a *Adapter) fetchSessionFromOpenCodeCtx(ctx context.Context, sessionID str
 		log.WithFields(log.Fields{"sessionID": sessionID, "error": err}).
 			Warn("opencode: fetching session defaults for live path")
 	}
+	if stats.currentModel != "" {
+		defaults.Model = stats.currentModel
+	}
 
 	inferredStatus := db.StatusDone
 	lastErrorName := ""

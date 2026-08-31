@@ -167,9 +167,13 @@ func TestFetchSessionFromOpenCodeCtx_PaginationCutoff(t *testing.T) {
 
 	fake := newOpencodeFake(t)
 	fake.SetSession(sid, []byte(`{"id":"sess-1","time":{"created":1000,"updated":1500}}`))
-	for i := 0; i < 5; i++ {
+	fake.AddMessage(sid, []byte(`{
+		"info":{"id":"u","sessionID":"sess-1","role":"user","providerID":"anthropic","modelID":"claude-opus-4","time":{"created":1100}},
+		"parts":[]
+	}`))
+	for range 4 {
 		fake.AddMessage(sid, []byte(`{
-			"info":{"id":"m","sessionID":"sess-1","role":"user","time":{"created":1100}},
+			"info":{"id":"a","sessionID":"sess-1","role":"assistant","providerID":"anthropic","modelID":"claude-opus-4","time":{"created":1200}},
 			"parts":[]
 		}`))
 	}
@@ -186,6 +190,9 @@ func TestFetchSessionFromOpenCodeCtx_PaginationCutoff(t *testing.T) {
 	}
 	if len(detail.Messages) != 2 {
 		t.Errorf("paged Messages len = %d, want 2", len(detail.Messages))
+	}
+	if detail.DefaultModel != "anthropic/claude-opus-4" {
+		t.Errorf("default model = %q, want model from user message outside page", detail.DefaultModel)
 	}
 }
 

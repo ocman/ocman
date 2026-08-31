@@ -314,6 +314,18 @@ func TestComputeMessageStats_Aggregation(t *testing.T) {
 	}
 }
 
+func TestComputeMessageStats_CurrentModel(t *testing.T) {
+	messages := []map[string]interface{}{
+		{"data": map[string]interface{}{"role": "user", "providerID": "anthropic", "modelID": "claude-opus-4"}},
+		{"data": map[string]interface{}{"role": "user", "model": map[string]interface{}{"providerID": "openai", "modelID": "gpt-5"}}},
+		{"data": map[string]interface{}{"role": "assistant", "providerID": "google", "modelID": "gemini"}},
+	}
+
+	if got := computeMessageStats(messages).currentModel; got != "openai/gpt-5" {
+		t.Errorf("current model = %q, want latest user-selected model", got)
+	}
+}
+
 // TestComputeMessageStats_ActiveDuration verifies that activeDurationMs sums
 // (time.completed - time.created) across assistant messages only, excluding
 // idle gaps between turns (user think time / permission waits between

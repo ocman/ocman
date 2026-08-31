@@ -138,6 +138,7 @@ type messageStats struct {
 	durationMs        int64
 	activeDurationMs  int64
 	contextTokenCount float64
+	currentModel      string
 }
 
 func computeMessageStats(messages []map[string]interface{}) messageStats {
@@ -148,6 +149,19 @@ func computeMessageStats(messages []map[string]interface{}) messageStats {
 		info, _ := m["data"].(map[string]interface{})
 		if info == nil {
 			continue
+		}
+		if role, _ := info["role"].(string); role == "user" {
+			providerID, _ := info["providerID"].(string)
+			modelID, _ := info["modelID"].(string)
+			if modelID == "" {
+				if model, ok := info["model"].(map[string]interface{}); ok {
+					providerID, _ = model["providerID"].(string)
+					modelID, _ = model["modelID"].(string)
+				}
+			}
+			if model := formatConversationModel(providerID, modelID); model != "" {
+				stats.currentModel = model
+			}
 		}
 		if t, ok := m["timeCreated"].(int64); ok {
 			ft := float64(t)

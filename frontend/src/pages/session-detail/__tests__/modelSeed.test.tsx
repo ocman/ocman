@@ -18,6 +18,7 @@ import {
   makeSessionDetail,
   flushPromises,
 } from './harness';
+import { saveProjectModel } from '../../../lib/projectModel';
 
 const MODEL_A = 'anthropic/claude-opus-4';
 const MODEL_B = 'openai/gpt-5';
@@ -38,6 +39,38 @@ async function typeAndSend(container: HTMLElement, text: string) {
 }
 
 describe('SessionDetail — composer model on session switch', () => {
+  it('keeps the conversation model when the initial page starts mid-turn', async () => {
+    const directory = '/tmp/long-turn-project';
+    saveProjectModel(directory, MODEL_B);
+    const session = makeSession({ id: 'sess_long', directory });
+    const detail = makeSessionDetail(session, {
+      defaultModel: MODEL_A,
+      totalMessages: 31,
+      messages: Array.from({ length: 30 }, (_, index) => ({
+        id: `assistant_${index}`,
+        sessionId: session.id,
+        timeCreated: index + 2,
+        data: {
+          role: 'assistant' as const,
+          providerID: 'anthropic',
+          modelID: 'claude-opus-4',
+          finish: 'tool-calls',
+        },
+      })),
+    });
+
+    const handle = renderSessionPage({ sessionId: session.id, detail });
+    await flushPromises();
+    await waitFor(() => expect(handle.sse()).toBeDefined());
+    act(() => { handle.sse()!.open(); });
+
+    await typeAndSend(handle.result.container, 'continue');
+
+    await waitFor(() => expect(handle.store.sendMessage).toHaveBeenCalled());
+    const call = handle.store.sendMessage.mock.calls[0] as unknown[];
+    expect(call[3]).toBe(MODEL_A);
+  });
+
   it('sends with the newly-opened session\'s model, not the previous one', async () => {
     const detailA = makeSessionDetail(
       makeSession({ id: 'sess_a', directory: '/tmp/proj-a' }),

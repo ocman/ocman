@@ -807,7 +807,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const activeModel = useMemo(
     () =>
       latestTurnModel(messages, turnStatsMap) ||
-      getProjectModel(session?.directory || '') ||
+      (messages.length === 0 ? getProjectModel(session?.directory || '') : '') ||
       session?.defaultModel ||
       '',
     [messages, turnStatsMap, session?.directory, session?.defaultModel],

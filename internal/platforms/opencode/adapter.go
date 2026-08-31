@@ -302,6 +302,9 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 
 	contextTokens, _ := a.db.GetContextTokenCount(ctx, id)
 	defaults, _ := getSessionDefaultsCached(ctx, a.db, id, session.Directory)
+	if model := currentConversationModel(messages); model != "" {
+		defaults.Model = model
+	}
 	fallbackPhase.EndWithDesc("live path miss; full DB read")
 
 	detail = &platforms.SessionDetail{
@@ -318,6 +321,34 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 		return nil, err
 	}
 	return detail, nil
+}
+
+func currentConversationModel(messages []db.Message) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		var data db.MessageData
+		if err := json.Unmarshal(messages[i].Data, &data); err != nil || data.Role != "user" {
+			continue
+		}
+		providerID, modelID := data.ProviderID, data.ModelID
+		if modelID == "" && data.Model != nil {
+			providerID, modelID = data.Model.ProviderID, data.Model.ModelID
+		}
+		if modelID == "" {
+			continue
+		}
+		return formatConversationModel(providerID, modelID)
+	}
+	return ""
+}
+
+func formatConversationModel(providerID, modelID string) string {
+	if modelID == "" {
+		return ""
+	}
+	if providerID != "" {
+		return providerID + "/" + modelID
+	}
+	return modelID
 }
 
 func (a *Adapter) attachSessionTree(ctx context.Context, id string, detail *platforms.SessionDetail) error {

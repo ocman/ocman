@@ -215,6 +215,7 @@ type testSession struct {
 	parentID    *string
 	busy        bool
 	messageData string
+	messages    []string
 }
 
 func newTestDBWithSessions(t *testing.T, sessions []testSession) *db.DB {
@@ -272,6 +273,16 @@ func newTestDBWithSessions(t *testing.T, sessions []testSession) *db.DB {
 			); err != nil {
 				setup.Close()
 				t.Fatalf("seed message: %v", err)
+			}
+		} else if len(session.messages) > 0 {
+			for i, data := range session.messages {
+				if _, err := setup.Exec(
+					`INSERT INTO message (id, session_id, time_created, data) VALUES (?, ?, ?, ?)`,
+					fmt.Sprintf("msg-%s-%d", session.id, i), session.id, 1000+i, data,
+				); err != nil {
+					setup.Close()
+					t.Fatalf("seed messages: %v", err)
+				}
 			}
 		} else if session.busy {
 			if _, err := setup.Exec(

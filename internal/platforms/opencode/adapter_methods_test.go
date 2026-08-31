@@ -105,6 +105,41 @@ func TestAdapter_Session_FallsBackToDBWhenNoLivePort(t *testing.T) {
 	}
 }
 
+func TestAdapter_Session_UsesCurrentConversationModel(t *testing.T) {
+	const sid = "sess-current"
+	messages := []string{
+		`{"role":"user","providerID":"openai","modelID":"gpt-5"}`,
+		`{"role":"assistant","providerID":"openai","modelID":"gpt-5"}`,
+		`{"role":"user","model":{"providerID":"anthropic","modelID":"claude-opus-4"}}`,
+	}
+	for range 31 {
+		messages = append(messages, `{"role":"assistant","providerID":"anthropic","modelID":"claude-opus-4"}`)
+	}
+	database := newTestDBWithSessions(t, []testSession{
+		{id: sid, directory: "/tmp/proj", messages: messages},
+		{id: "sess-default", directory: "/tmp/proj", messageData: `{"role":"assistant","providerID":"openai","modelID":"gpt-5"}`},
+	})
+	restore := setDiscoverPortsImplForTests(func() map[string]string { return nil })
+	resetPortCacheForTests()
+	resetSessionDefaultsCache()
+	t.Cleanup(func() {
+		restore()
+		resetPortCacheForTests()
+		resetSessionDefaultsCache()
+	})
+
+	detail, err := New(database, nil).Session(t.Context(), sid, 30, 0)
+	if err != nil {
+		t.Fatalf("Session: %v", err)
+	}
+	if detail.DefaultModel != "anthropic/claude-opus-4" {
+		t.Errorf("default model = %q, want current conversation model", detail.DefaultModel)
+	}
+	if len(detail.Messages) != 30 {
+		t.Errorf("paged messages = %d, want 30-message tail", len(detail.Messages))
+	}
+}
+
 func TestAdapter_SessionTreeIncludesNativeDescendants(t *testing.T) {
 	root := "root"
 	database := newTestDBWithSessions(t, []testSession{
