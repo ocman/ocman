@@ -217,6 +217,51 @@ func TestPromptResponsesUseSessionDirectoryAndInvalidateRegistry(t *testing.T) {
 	}
 }
 
+func TestV2PermissionResponseUsesSessionScopedEndpoint(t *testing.T) {
+	const (
+		dir = "/repo/v2"
+		sid = "ses-v2"
+	)
+	var path, body string
+	var pending atomic.Bool
+	pending.Store(true)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost {
+			path = r.URL.Path
+			payload, _ := io.ReadAll(r.Body)
+			body = string(payload)
+			if path == "/api/session/ses-v2/permission/perm-v2/reply" {
+				pending.Store(false)
+			}
+			return
+		}
+		if r.URL.Path == "/permission" && pending.Load() {
+			_, _ = w.Write([]byte(`[{"id":"perm-v2","sessionID":"ses-v2","action":"bash","resources":["git status"]}]`))
+			return
+		}
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+	withTestPort(t, dir, strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
+
+	a := New(newTestDBWithSession(t, sid, dir), nil)
+	a.ObservePromptAsked("", dir, "permission", platforms.LivePrompt{
+		"id": "perm-v2", "sessionID": sid, "action": "bash", "resources": []string{"git status"},
+	})
+	if err := a.RespondPermission(context.Background(), platforms.RespondPermissionRequest{SessionID: sid, PermissionID: "perm-v2", Reply: "always"}); err != nil {
+		t.Fatalf("RespondPermission: %v", err)
+	}
+	if path != "/api/session/ses-v2/permission/perm-v2/reply" || body != `{"reply":"always"}` {
+		t.Fatalf("permission response = %s %s", path, body)
+	}
+	<-a.StartPromptReconciliation(context.Background(), strings.TrimPrefix(server.URL, "http://127.0.0.1:"), []string{dir})
+	prompts, _ := a.ListPermissions(context.Background(), sid)
+	if len(prompts) != 0 {
+		t.Fatalf("permissions after reply = %#v, prompt came back", prompts)
+	}
+}
+
 func TestProxyEventsUsesActualSessionDirectory(t *testing.T) {
 	const (
 		dir = "/repo/events with space"

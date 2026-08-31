@@ -379,10 +379,27 @@ func (a *Adapter) RespondPermission(ctx context.Context, req platforms.RespondPe
 	if err != nil {
 		return err
 	}
-	if err := postJSONForDirectory(ctx, port, fmt.Sprintf("/permission/%s/reply", req.PermissionID), session.Directory, payload); err != nil {
+	directory := session.Directory
+	promptSessionID := req.SessionID
+	path := fmt.Sprintf("/permission/%s/reply", req.PermissionID)
+	v2 := false
+	if entry, ok := a.prompts.find("permission", req.PermissionID); ok {
+		directory = entry.directory
+		promptSessionID = promptString(entry.prompt, "sessionID")
+		_, v2 = entry.prompt["action"]
+		if v2 {
+			path = fmt.Sprintf("/api/session/%s/permission/%s/reply", promptSessionID, req.PermissionID)
+		}
+	}
+	if v2 {
+		err = postJSON(ctx, port, path, payload)
+	} else {
+		err = postJSONForDirectory(ctx, port, path, directory, payload)
+	}
+	if err != nil {
 		return err
 	}
-	a.ObservePromptResolved(session.Directory, "permission", req.SessionID, req.PermissionID)
+	a.ObservePromptResolved(directory, "permission", promptSessionID, req.PermissionID)
 	return nil
 }
 
