@@ -182,6 +182,59 @@ describe('useMessageQueue', () => {
     expect(result.current.queue).toHaveLength(0);
   });
 
+  it('keeps the newest result when queue reloads overlap', async () => {
+    vi.mocked(api.queuedMessages).mockResolvedValue([mkMsg('a', 'one')]);
+    const { result } = renderHook(() => useMessageQueue('s1', 'opencode'));
+    await waitFor(() => expect(result.current.queue).toHaveLength(1));
+
+    let resolveOld!: (v: QueuedMessage[]) => void;
+    let resolveNew!: (v: QueuedMessage[]) => void;
+    vi.mocked(api.queuedMessages)
+      .mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }))
+      .mockReturnValueOnce(new Promise((resolve) => { resolveNew = resolve; }));
+    act(() => { result.current.refresh(); result.current.refresh(); });
+
+    await act(async () => { resolveOld([mkMsg('b', 'old')]); await Promise.resolve(); });
+    expect(result.current.queue.map((m) => m.id)).toEqual(['a']);
+
+    await act(async () => { resolveNew([mkMsg('c', 'new')]); await Promise.resolve(); });
+    expect(result.current.queue.map((m) => m.id)).toEqual(['c']);
+  });
+
+  it('ignores a refresh requested by the previous session', async () => {
+    vi.mocked(api.queuedMessages).mockResolvedValue([]);
+    const { result, rerender } = renderHook(
+      ({ id }: { id: string }) => useMessageQueue(id, 'opencode'),
+      { initialProps: { id: 's1' } },
+    );
+    await waitFor(() => expect(api.queuedMessages).toHaveBeenCalledWith('s1', 'opencode'));
+    const oldRefresh = result.current.refresh;
+
+    rerender({ id: 's2' });
+    await waitFor(() => expect(api.queuedMessages).toHaveBeenCalledWith('s2', 'opencode'));
+    const calls = vi.mocked(api.queuedMessages).mock.calls.length;
+    act(() => { oldRefresh('s1'); });
+
+    expect(api.queuedMessages).toHaveBeenCalledTimes(calls);
+  });
+
+  it('ignores a refresh requested by the previous platform', async () => {
+    vi.mocked(api.queuedMessages).mockResolvedValue([]);
+    const { result, rerender } = renderHook(
+      ({ platform }: { platform: string }) => useMessageQueue('s1', platform),
+      { initialProps: { platform: 'opencode' } },
+    );
+    await waitFor(() => expect(api.queuedMessages).toHaveBeenCalledWith('s1', 'opencode'));
+    const oldRefresh = result.current.refresh;
+
+    rerender({ platform: 'remote:opencode' });
+    await waitFor(() => expect(api.queuedMessages).toHaveBeenCalledWith('s1', 'remote:opencode'));
+    const calls = vi.mocked(api.queuedMessages).mock.calls.length;
+    act(() => { oldRefresh('s1', 'opencode'); });
+
+    expect(api.queuedMessages).toHaveBeenCalledTimes(calls);
+  });
+
   it('is inert without a session id', async () => {
     const { result } = renderHook(() => useMessageQueue(undefined));
     await waitFor(() => expect(result.current.queue).toHaveLength(0));

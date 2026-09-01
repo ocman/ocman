@@ -900,7 +900,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // Follow-up message queue (#58): prompts submitted while the agent is
   // mid-turn queue server-side and drain one per turn. Shared across
   // clients via the ocman.queue.updated broadcast (reliable full-state).
-  const { queue: queuedMessages, remove: removeQueuedMessage, move: moveQueuedMessage } =
+  const { queue: queuedMessages, refresh: refreshMessageQueue, remove: removeQueuedMessage, move: moveQueuedMessage } =
     useMessageQueue(session?.id, session?.platform);
 
   const {
@@ -950,6 +950,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     reloadCapabilities,
     setCopyToastMessage,
     refreshThread: reload,
+    refreshMessageQueue,
   });
 
   const handleMoveDestination = useCallback((directory: string) => {

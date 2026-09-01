@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { api, type QueuedMessage } from './api';
 import { onQueueUpdated, onSseConnect } from './useGlobalEvents';
 import { remoteLog } from './remoteLog';
@@ -22,8 +22,8 @@ import { remoteLog } from './remoteLog';
  */
 export function useMessageQueue(sessionId?: string, platform?: string) {
   const [queue, setQueue] = useState<QueuedMessage[]>([]);
-  // Bumped on every applied update (broadcast or load). A load captures it
-  // at issue time and discards its result if anything newer landed since.
+  // Bumped when a load starts and when an update is applied. A load discards
+  // its result if a newer request or broadcast landed since.
   const seqRef = useRef(0);
 
   const applyLatest = useCallback((messages: QueuedMessage[]) => {
@@ -36,7 +36,7 @@ export function useMessageQueue(sessionId?: string, platform?: string) {
 
   const load = useCallback(() => {
     if (!sessionId) return;
-    const issuedAt = seqRef.current;
+    const issuedAt = ++seqRef.current;
     api.queuedMessages(sessionId, platform)
       .then((messages) => {
         if (seqRef.current !== issuedAt) return; // a newer update won
@@ -51,6 +51,12 @@ export function useMessageQueue(sessionId?: string, platform?: string) {
   // loads). Clearing unconditionally would wipe a just-applied enqueue
   // broadcast, making a new message vanish until a manual refresh.
   const loadedSessionRef = useRef<string | undefined>(undefined);
+  const currentSessionRef = useRef(sessionId);
+  const currentPlatformRef = useRef(platform);
+  useLayoutEffect(() => {
+    currentSessionRef.current = sessionId;
+    currentPlatformRef.current = platform;
+  }, [sessionId, platform]);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,8 +89,12 @@ export function useMessageQueue(sessionId?: string, platform?: string) {
     return () => { cancelled = true; unsubQueue(); unsubConnect(); };
   }, [sessionId, platform, applyLatest, load]);
 
-  const refresh = useCallback(() => {
-    if (!sessionId) return;
+  const refresh = useCallback((expectedSessionId?: string, expectedPlatform?: string) => {
+    if (
+      !sessionId
+      || (expectedSessionId && expectedSessionId !== currentSessionRef.current)
+      || (expectedPlatform && expectedPlatform !== currentPlatformRef.current)
+    ) return;
     load();
   }, [sessionId, load]);
 
@@ -105,5 +115,5 @@ export function useMessageQueue(sessionId?: string, platform?: string) {
     // The broadcast supplies the authoritative new order.
   }, [sessionId, platform, refresh]);
 
-  return { queue, remove, move };
+  return { queue, refresh, remove, move };
 }

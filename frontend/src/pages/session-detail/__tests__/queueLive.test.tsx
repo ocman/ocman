@@ -5,7 +5,7 @@
 // page refresh.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { act, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, waitFor, within } from '@testing-library/react';
 import {
   renderSessionPage,
   makeSessionDetail,
@@ -25,6 +25,30 @@ beforeEach(() => __resetForTests());
 afterEach(() => __resetForTests());
 
 describe('queued-message list live updates (#58)', () => {
+  it('shows a Cmd+Enter submission without waiting for an SSE echo', async () => {
+    const detail = makeSessionDetail(makeSession({ id: SID, status: 'busy' }));
+    const queuedMessages = vi.fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([q('a', 'follow up')]);
+    const handle = renderSessionPage({
+      sessionId: SID,
+      detail,
+      apiOverrides: { queuedMessages },
+    });
+    await flushPromises();
+
+    const input = await waitFor(() => within(handle.result.container).getByRole('textbox'));
+    fireEvent.input(input, { target: { value: 'follow up' } });
+    fireEvent.keyDown(input, { key: 'Enter', metaKey: true });
+
+    await waitFor(() => {
+      expect(within(handle.result.container).getByText('follow up')).toBeTruthy();
+    });
+    expect(handle.store.sendMessage).toHaveBeenCalledWith(
+      SID, 'follow up', undefined, expect.anything(), expect.anything(), undefined, 'opencode', true,
+    );
+  });
+
   it('reflects enqueue and drain from the broadcast without a refresh', async () => {
     const detail = makeSessionDetail(makeSession({ id: SID }));
     // Start with one queued message.

@@ -97,6 +97,7 @@ export interface UseSessionActionsOptions {
   /** Transient feedback toast for the `/copy` command. */
   setCopyToastMessage: Dispatch<SetStateAction<string | null>>;
   refreshThread?: () => Promise<void>;
+  refreshMessageQueue?: (sessionId: string, platform: string) => void;
 }
 
 export interface UseSessionActionsResult {
@@ -183,6 +184,7 @@ export function useSessionActions({
   reloadCapabilities,
   setCopyToastMessage,
   refreshThread,
+  refreshMessageQueue,
 }: UseSessionActionsOptions): UseSessionActionsResult {
   const [awaitingAssistantResponse, setAwaitingAssistantResponse] = useState(false);
   // Shell command waiting for the current turn to finish, tagged with the
@@ -299,6 +301,7 @@ export function useSessionActions({
         remoteLog.error('Failed to queue message', e);
         throw e;
       });
+      refreshMessageQueue?.(session.id, session.platform);
       return;
     }
     // Send now (plain Enter), mid-turn included: begin a pending send —
@@ -318,7 +321,7 @@ export function useSessionActions({
       selectedAgent || activeAgent || undefined,
       selectedReasoning || undefined,
     );
-  }, [activeAgent, pendingPermission, pendingQuestion, performSend, portAvailable, routeSessionId, selectedAgent, selectedModel, selectedReasoning, sendMessage, session, pending]);
+  }, [activeAgent, pendingPermission, pendingQuestion, performSend, portAvailable, refreshMessageQueue, routeSessionId, selectedAgent, selectedModel, selectedReasoning, sendMessage, session, pending]);
 
   // Replay a previously failed send. Reuses the entry's text /
   // images / id so the bubble stays in place — the failed banner
