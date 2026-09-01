@@ -92,6 +92,7 @@
   background: linear-gradient(to bottom, transparent, var(--bg) 20px);
 }
 .oc-composer {
+  position: relative;
   background: var(--bg-card);
   border: 1px solid var(--border);
   /* Muted default — when no agent is known yet, the composer reads as neutral.
@@ -120,7 +121,10 @@
   max-height: 200px;
 }
 .oc-composer-input::placeholder { color: var(--overlay0); }
-.oc-composer-disabled .oc-composer { opacity: 0.5; border-left-color: var(--text-dim); }
+.oc-composer-disabled .oc-composer { border-left-color: var(--text-dim); }
+.oc-composer-disabled .oc-composer-input,
+.oc-composer-disabled .oc-composer-bar-left > :not(.oc-bar-launch),
+.oc-composer-disabled .oc-composer-bar-right { opacity: 0.5; }
 .oc-composer-disabled .oc-composer-input { cursor: not-allowed; }
 
 .oc-composer-footer {
@@ -489,13 +493,19 @@
 .oc-keybind-hint:hover { color: var(--text); }
 .oc-bar-hint { color: var(--overlay0); }
 .oc-bar-launch {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 1;
+  transform: translate(-50%, -50%);
   color: var(--base);
   background: var(--green);
   border: none;
   border-radius: 5px;
-  padding: 2px 10px;
-  font-size: 11px;
-  font-weight: 600;
+  padding: 8px 16px;
+  box-shadow: 0 0 0 3px var(--bg-card), 0 6px 18px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+  font-weight: 700;
   cursor: pointer;
 }
 .oc-bar-launch:hover:not(:disabled) { filter: brightness(1.1); }
