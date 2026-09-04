@@ -98,6 +98,8 @@ import (
 //	24 - agent workflow attempts. Adds linked session state and reconciles
 //	      databases already migrated to either branch's competing v23.
 //	25 - workflow triggers. Adds durable detection/queue state and immutable
+//	65 - authority escalation gates. Stores one durable, one-time decision
+//	per out-of-profile Factory permission request.
 //	      trigger snapshots on workflow runs.
 //	26 - workflow artifacts. Adds the `workflow_artifact` metadata table
 //	      (immutable typed artifacts keyed to a producing attempt, with a
@@ -171,7 +173,30 @@ import (
 //	     lifecycle table before its project_root column was added.
 //	49 - create the independent Software Factory persistence boundary.
 //	50 - add archive state for the Factory Formula library.
-const latestSchemaVersion = 50
+//	51 - add the native Factory project, Epic, Formula identity, and Issue graph.
+//	52 - persist immutable native Factory proposal revisions.
+//	53 - persist native Factory implementation capacity policy defaults and
+//	     canonical-project overrides.
+//	54 - persist TOML-only native Factory Formula revisions separately from the
+//	     retired YAML Formula library.
+//	55 - persist nested Mol Formula pins and required hierarchy relationships.
+//	56 - permit distinct Formula identities with identical compiled hashes.
+//	57 - repair development databases that recorded the former v56 migration.
+//	58 - remove premature Factory closure enforcement pending lifecycle support.
+//	59 - persist native Factory Plan approval gates.
+//	60 - persist materialization transactions and their provenance.
+//	61 - persist Issue outcomes, retries, and failure-triggered dependencies.
+//	62 - retain formally removed materialized work with its approving Plan.
+//	63 - reset the native graph with human-addressable hierarchy IDs.
+//	64 - persist implementation recovery gates.
+//	65 - persist one-time implementation authority escalation gates.
+//	66 - archive the retired YAML Factory Formula library. Native Factory
+//	     Formulas are TOML-backed in factory_native_formula_revision.
+//	67 - repair databases stamped by the earlier v66 migration.
+//	68 - close Plan work and hand-built materializations already
+//	     approved before the Factory lifecycle learned to close them.
+//	69 - add append-only comments to native Factory Issues.
+const latestSchemaVersion = 69
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -376,9 +401,70 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV49(tx)
 	case 50:
 		return migrateToV50(tx)
+	case 51:
+		return migrateToV51(tx)
+	case 52:
+		return migrateToV52(tx)
+	case 53:
+		return migrateToV53(tx)
+	case 54:
+		return migrateToV54(tx)
+	case 55:
+		return migrateToV55(tx)
+	case 56:
+		return migrateToV56(tx)
+	case 57:
+		return migrateToV57(tx)
+	case 58:
+		return migrateToV58(tx)
+	case 59:
+		return migrateToV59(tx)
+	case 60:
+		return migrateToV60(tx)
+	case 61:
+		return migrateToV61(tx)
+	case 62:
+		return migrateToV62(tx)
+	case 63:
+		return migrateToV63(tx)
+	case 64:
+		return migrateToV64(tx)
+	case 65:
+		return migrateToV65(tx)
+	case 66:
+		return migrateToV66(tx)
+	case 67:
+		return migrateToV67(tx)
+	case 68:
+		return migrateToV68(tx)
+	case 69:
+		return migrateToV69(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
+}
+
+func migrateToV54(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS factory_native_formula (
+			id               TEXT PRIMARY KEY,
+			name             TEXT NOT NULL,
+			current_revision INTEGER NOT NULL CHECK (current_revision > 0),
+			created_at       INTEGER NOT NULL,
+			updated_at       INTEGER NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS factory_native_formula_revision (
+			formula_id    TEXT NOT NULL REFERENCES factory_native_formula(id),
+			revision      INTEGER NOT NULL CHECK (revision > 0),
+			source_toml   TEXT NOT NULL,
+			compiled_json TEXT NOT NULL,
+			content_hash  TEXT NOT NULL,
+			created_at    INTEGER NOT NULL,
+			PRIMARY KEY (formula_id, revision),
+			UNIQUE (formula_id, content_hash)
+		);
+	`)
+	return err
 }
 
 // migrateToV1 creates the original single-platform tables. Only runs
@@ -1791,4 +1877,519 @@ func migrateToV49(tx *sql.Tx) error {
 
 func migrateToV50(tx *sql.Tx) error {
 	return addColumnIfMissing(tx, "factory_formula", "archived_at", "INTEGER NOT NULL DEFAULT 0")
+}
+
+func migrateToV51(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS factory_project (
+			path TEXT PRIMARY KEY,
+			created_at INTEGER NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS factory_epic (
+			id TEXT PRIMARY KEY,
+			project_path TEXT NOT NULL REFERENCES factory_project(path),
+			status TEXT NOT NULL,
+			goal TEXT NOT NULL,
+			brief TEXT NOT NULL DEFAULT '',
+			instantiation_id TEXT NOT NULL DEFAULT '',
+			formula_id TEXT NOT NULL DEFAULT '',
+			formula_version INTEGER NOT NULL DEFAULT 0,
+			formula_hash TEXT NOT NULL DEFAULT '',
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS factory_formula_identity (
+			formula_id TEXT NOT NULL,
+			version INTEGER NOT NULL,
+			source_toml TEXT NOT NULL,
+			content_hash TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			PRIMARY KEY (formula_id, version),
+			UNIQUE (content_hash)
+		);
+		CREATE TABLE IF NOT EXISTS factory_issue (
+			id TEXT PRIMARY KEY,
+			epic_id TEXT NOT NULL REFERENCES factory_epic(id),
+			kind TEXT NOT NULL,
+			title TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL,
+			created_at INTEGER NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS factory_issue_hierarchy (
+			parent_issue_id TEXT NOT NULL REFERENCES factory_issue(id),
+			child_issue_id TEXT NOT NULL REFERENCES factory_issue(id),
+			PRIMARY KEY (parent_issue_id, child_issue_id),
+			UNIQUE (child_issue_id)
+		);
+		CREATE TABLE IF NOT EXISTS factory_issue_dependency (
+			issue_id TEXT NOT NULL REFERENCES factory_issue(id),
+			depends_on_issue_id TEXT NOT NULL REFERENCES factory_issue(id),
+			type TEXT NOT NULL CHECK (type = 'blocks'),
+			PRIMARY KEY (issue_id, depends_on_issue_id, type)
+		);
+		CREATE INDEX IF NOT EXISTS factory_issue_epic_idx ON factory_issue (epic_id, created_at);
+		CREATE UNIQUE INDEX IF NOT EXISTS factory_epic_instantiation_idx ON factory_epic (instantiation_id) WHERE instantiation_id <> '';
+	`)
+	return err
+}
+
+func migrateToV52(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS factory_proposal_revision (
+			epic_id            TEXT NOT NULL REFERENCES factory_epic(id),
+			mol_id             TEXT NOT NULL REFERENCES factory_issue(id),
+			project_path       TEXT NOT NULL REFERENCES factory_project(path),
+			revision           INTEGER NOT NULL,
+			manifest_json      TEXT NOT NULL,
+			rationale_markdown TEXT NOT NULL DEFAULT '',
+			content_hash       TEXT NOT NULL,
+			created_at         INTEGER NOT NULL,
+			PRIMARY KEY (epic_id, revision)
+		);
+	`)
+	return err
+}
+
+func migrateToV53(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS factory_capacity_policy (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			global_capacity INTEGER NOT NULL CHECK (global_capacity > 0),
+			project_capacity INTEGER NOT NULL CHECK (project_capacity > 0)
+		);
+		CREATE TABLE IF NOT EXISTS factory_project_capacity_override (
+			project_path TEXT PRIMARY KEY,
+			capacity INTEGER NOT NULL CHECK (capacity > 0)
+		);
+	`)
+	return err
+}
+
+func migrateToV55(tx *sql.Tx) error {
+	if err := addColumnIfMissing(tx, "factory_issue_hierarchy", "requirement", "TEXT NOT NULL DEFAULT 'required'"); err != nil {
+		return err
+	}
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS factory_mol_formula (
+			mol_id TEXT PRIMARY KEY REFERENCES factory_issue(id),
+			formula_id TEXT NOT NULL,
+			formula_version INTEGER NOT NULL,
+			formula_hash TEXT NOT NULL,
+			bindings_json TEXT NOT NULL DEFAULT '{}'
+		);
+	`)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`INSERT INTO factory_mol_formula (mol_id, formula_id, formula_version, formula_hash)
+		SELECT e.id, e.formula_id, e.formula_version, e.formula_hash FROM factory_epic e
+		JOIN factory_issue i ON i.id = e.id AND i.kind = 'mol'
+		ON CONFLICT(mol_id) DO NOTHING`); err != nil {
+		return err
+	}
+	return addColumnIfMissing(tx, "factory_mol_formula", "bindings_json", "TEXT NOT NULL DEFAULT '{}'")
+}
+
+func migrateToV56(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE factory_formula_identity_rebuilt (
+			formula_id TEXT NOT NULL,
+			version INTEGER NOT NULL,
+			source_toml TEXT NOT NULL,
+			content_hash TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			PRIMARY KEY (formula_id, version)
+		);
+		INSERT INTO factory_formula_identity_rebuilt SELECT formula_id, version, source_toml, content_hash, created_at FROM factory_formula_identity;
+		DROP TABLE factory_formula_identity;
+		ALTER TABLE factory_formula_identity_rebuilt RENAME TO factory_formula_identity;
+	`)
+	return err
+}
+
+func migrateToV57(tx *sql.Tx) error {
+	// Preserve the rebuild for databases that recorded the former v56 trigger migration.
+	_, err := tx.Exec(`
+		CREATE TABLE factory_formula_identity_rebuilt (
+			formula_id TEXT NOT NULL,
+			version INTEGER NOT NULL,
+			source_toml TEXT NOT NULL,
+			content_hash TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			PRIMARY KEY (formula_id, version)
+		);
+		INSERT INTO factory_formula_identity_rebuilt SELECT formula_id, version, source_toml, content_hash, created_at FROM factory_formula_identity;
+		DROP TABLE factory_formula_identity;
+		ALTER TABLE factory_formula_identity_rebuilt RENAME TO factory_formula_identity;
+	`)
+	return err
+}
+
+func migrateToV58(tx *sql.Tx) error {
+	_, err := tx.Exec(`DROP TRIGGER IF EXISTS factory_issue_required_children_closed`)
+	return err
+}
+
+func migrateToV59(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS factory_plan_gate (
+			epic_id TEXT PRIMARY KEY REFERENCES factory_epic(id),
+			issue_id TEXT NOT NULL REFERENCES factory_issue(id),
+			proposal_revision INTEGER NOT NULL,
+			proposal_hash TEXT NOT NULL,
+			outcome TEXT NOT NULL DEFAULT '',
+			resolution TEXT NOT NULL DEFAULT 'open',
+			feedback TEXT NOT NULL DEFAULT '',
+			review_issue_ids_json TEXT NOT NULL DEFAULT '[]',
+			updated_at INTEGER NOT NULL
+		);
+	`)
+	return err
+}
+
+func migrateToV60(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS factory_materialization (
+			id TEXT PRIMARY KEY,
+			epic_id TEXT NOT NULL REFERENCES factory_epic(id),
+			issue_id TEXT NOT NULL UNIQUE REFERENCES factory_issue(id),
+			proposal_revision INTEGER NOT NULL,
+			proposal_hash TEXT NOT NULL,
+			manifest_key TEXT NOT NULL,
+			profile TEXT NOT NULL,
+			implementation_issue_id TEXT NOT NULL UNIQUE REFERENCES factory_issue(id),
+			created_at INTEGER NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS factory_materialization_provenance (
+			entity_kind TEXT NOT NULL,
+			entity_id TEXT NOT NULL,
+			plan_id TEXT NOT NULL REFERENCES factory_epic(id),
+			plan_revision INTEGER NOT NULL,
+			materialization_id TEXT NOT NULL REFERENCES factory_materialization(id),
+			manifest_key TEXT NOT NULL,
+			PRIMARY KEY (entity_kind, entity_id, materialization_id)
+		);
+	`)
+	return err
+}
+
+func migrateToV61(tx *sql.Tx) error {
+	for _, column := range []struct{ name, definition string }{
+		{"outcome", "TEXT NOT NULL DEFAULT ''"},
+		{"outcome_reason", "TEXT NOT NULL DEFAULT ''"},
+		{"retry_at", "INTEGER NOT NULL DEFAULT 0"},
+		{"retry_attempts", "INTEGER NOT NULL DEFAULT 0"},
+	} {
+		if err := addColumnIfMissing(tx, "factory_issue", column.name, column.definition); err != nil {
+			return err
+		}
+	}
+	_, err := tx.Exec(`
+		CREATE TABLE factory_issue_dependency_rebuilt (
+			issue_id TEXT NOT NULL REFERENCES factory_issue(id),
+			depends_on_issue_id TEXT NOT NULL REFERENCES factory_issue(id),
+			type TEXT NOT NULL CHECK (type IN ('blocks', 'on_failure')),
+			PRIMARY KEY (issue_id, depends_on_issue_id, type)
+		);
+		INSERT INTO factory_issue_dependency_rebuilt SELECT issue_id, depends_on_issue_id, type FROM factory_issue_dependency;
+		DROP TABLE factory_issue_dependency;
+		ALTER TABLE factory_issue_dependency_rebuilt RENAME TO factory_issue_dependency;
+	`)
+	return err
+}
+
+func migrateToV62(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE factory_materialization_rebuilt (
+			id TEXT PRIMARY KEY,
+			epic_id TEXT NOT NULL REFERENCES factory_epic(id),
+			issue_id TEXT NOT NULL REFERENCES factory_issue(id),
+			proposal_revision INTEGER NOT NULL,
+			proposal_hash TEXT NOT NULL,
+			manifest_key TEXT NOT NULL,
+			profile TEXT NOT NULL,
+			implementation_issue_id TEXT NOT NULL UNIQUE REFERENCES factory_issue(id),
+			created_at INTEGER NOT NULL,
+			UNIQUE (issue_id, proposal_revision, proposal_hash)
+		);
+		INSERT INTO factory_materialization_rebuilt SELECT id, epic_id, issue_id, proposal_revision, proposal_hash, manifest_key, profile, implementation_issue_id, created_at FROM factory_materialization;
+		DROP TABLE factory_materialization;
+		ALTER TABLE factory_materialization_rebuilt RENAME TO factory_materialization;
+		CREATE TABLE IF NOT EXISTS factory_removed_issue (
+			issue_id TEXT PRIMARY KEY REFERENCES factory_issue(id),
+			plan_id TEXT NOT NULL REFERENCES factory_epic(id),
+			plan_revision INTEGER NOT NULL,
+			removed_at INTEGER NOT NULL
+		);
+	`)
+	return err
+}
+
+func migrateToV63(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		DROP TABLE IF EXISTS factory_materialization_provenance;
+		DROP TABLE IF EXISTS factory_removed_issue;
+		DROP TABLE IF EXISTS factory_materialization;
+		DROP TABLE IF EXISTS factory_plan_gate;
+		DROP TABLE IF EXISTS factory_proposal_revision;
+		DROP TABLE IF EXISTS factory_mol_formula;
+		DROP TABLE IF EXISTS factory_issue_dependency;
+		DROP TABLE IF EXISTS factory_issue_hierarchy;
+		DROP TABLE IF EXISTS factory_issue_child_sequence;
+		DROP TABLE IF EXISTS factory_issue;
+		DROP TABLE IF EXISTS factory_formula_identity;
+		DROP TABLE IF EXISTS factory_epic;
+		DROP TABLE IF EXISTS factory_project;
+
+		CREATE TABLE factory_project (
+			path TEXT PRIMARY KEY,
+			created_at INTEGER NOT NULL
+		);
+		CREATE TABLE factory_epic (
+			id TEXT PRIMARY KEY,
+			project_path TEXT NOT NULL REFERENCES factory_project(path),
+			status TEXT NOT NULL,
+			goal TEXT NOT NULL,
+			brief TEXT NOT NULL DEFAULT '',
+			instantiation_id TEXT NOT NULL DEFAULT '',
+			formula_id TEXT NOT NULL DEFAULT '',
+			formula_version INTEGER NOT NULL DEFAULT 0,
+			formula_hash TEXT NOT NULL DEFAULT '',
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL
+		);
+		CREATE UNIQUE INDEX factory_epic_instantiation_idx ON factory_epic (instantiation_id) WHERE instantiation_id <> '';
+		CREATE TABLE factory_formula_identity (
+			formula_id TEXT NOT NULL,
+			version INTEGER NOT NULL,
+			source_toml TEXT NOT NULL,
+			content_hash TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			PRIMARY KEY (formula_id, version)
+		);
+		CREATE TABLE factory_issue (
+			id TEXT PRIMARY KEY,
+			epic_id TEXT NOT NULL REFERENCES factory_epic(id),
+			kind TEXT NOT NULL,
+			title TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL,
+			outcome TEXT NOT NULL DEFAULT '',
+			outcome_reason TEXT NOT NULL DEFAULT '',
+			retry_at INTEGER NOT NULL DEFAULT 0,
+			retry_attempts INTEGER NOT NULL DEFAULT 0,
+			created_at INTEGER NOT NULL
+		);
+		CREATE INDEX factory_issue_epic_idx ON factory_issue (epic_id, created_at);
+		CREATE TABLE factory_issue_child_sequence (
+			parent_issue_id TEXT PRIMARY KEY,
+			next_index INTEGER NOT NULL CHECK (next_index > 1)
+		);
+		CREATE TABLE factory_issue_hierarchy (
+			parent_issue_id TEXT NOT NULL REFERENCES factory_issue(id),
+			child_issue_id TEXT NOT NULL REFERENCES factory_issue(id),
+			child_index INTEGER NOT NULL CHECK (child_index > 0),
+			requirement TEXT NOT NULL DEFAULT 'required',
+			PRIMARY KEY (parent_issue_id, child_issue_id),
+			UNIQUE (child_issue_id),
+			UNIQUE (parent_issue_id, child_index)
+		);
+		CREATE TRIGGER factory_issue_child_index_immutable
+			BEFORE UPDATE OF child_index ON factory_issue_hierarchy
+			BEGIN SELECT RAISE(ABORT, 'factory child index is immutable'); END;
+		CREATE TABLE factory_issue_dependency (
+			issue_id TEXT NOT NULL REFERENCES factory_issue(id),
+			depends_on_issue_id TEXT NOT NULL REFERENCES factory_issue(id),
+			type TEXT NOT NULL CHECK (type IN ('blocks', 'on_failure')),
+			PRIMARY KEY (issue_id, depends_on_issue_id, type)
+		);
+		CREATE TABLE factory_mol_formula (
+			mol_id TEXT PRIMARY KEY REFERENCES factory_issue(id),
+			formula_id TEXT NOT NULL,
+			formula_version INTEGER NOT NULL,
+			formula_hash TEXT NOT NULL,
+			bindings_json TEXT NOT NULL DEFAULT '{}'
+		);
+		CREATE TABLE factory_proposal_revision (
+			epic_id TEXT NOT NULL REFERENCES factory_epic(id),
+			mol_id TEXT NOT NULL REFERENCES factory_issue(id),
+			project_path TEXT NOT NULL REFERENCES factory_project(path),
+			revision INTEGER NOT NULL,
+			manifest_json TEXT NOT NULL,
+			rationale_markdown TEXT NOT NULL DEFAULT '',
+			content_hash TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			PRIMARY KEY (epic_id, revision)
+		);
+		CREATE TABLE factory_plan_gate (
+			epic_id TEXT PRIMARY KEY REFERENCES factory_epic(id),
+			issue_id TEXT NOT NULL REFERENCES factory_issue(id),
+			proposal_revision INTEGER NOT NULL,
+			proposal_hash TEXT NOT NULL,
+			outcome TEXT NOT NULL DEFAULT '',
+			resolution TEXT NOT NULL DEFAULT 'open',
+			feedback TEXT NOT NULL DEFAULT '',
+			review_issue_ids_json TEXT NOT NULL DEFAULT '[]',
+			updated_at INTEGER NOT NULL
+		);
+		CREATE TABLE factory_materialization (
+			id TEXT PRIMARY KEY,
+			epic_id TEXT NOT NULL REFERENCES factory_epic(id),
+			issue_id TEXT NOT NULL REFERENCES factory_issue(id),
+			proposal_revision INTEGER NOT NULL,
+			proposal_hash TEXT NOT NULL,
+			manifest_key TEXT NOT NULL,
+			profile TEXT NOT NULL,
+			implementation_issue_id TEXT NOT NULL UNIQUE REFERENCES factory_issue(id),
+			created_at INTEGER NOT NULL,
+			UNIQUE (issue_id, proposal_revision, proposal_hash)
+		);
+		CREATE TABLE factory_materialization_provenance (
+			entity_kind TEXT NOT NULL,
+			entity_id TEXT NOT NULL,
+			plan_id TEXT NOT NULL REFERENCES factory_epic(id),
+			plan_revision INTEGER NOT NULL,
+			materialization_id TEXT NOT NULL REFERENCES factory_materialization(id),
+			manifest_key TEXT NOT NULL,
+			PRIMARY KEY (entity_kind, entity_id, materialization_id)
+		);
+		CREATE TABLE factory_removed_issue (
+			issue_id TEXT PRIMARY KEY REFERENCES factory_issue(id),
+			plan_id TEXT NOT NULL REFERENCES factory_epic(id),
+			plan_revision INTEGER NOT NULL,
+			removed_at INTEGER NOT NULL
+		);
+	`)
+	return err
+}
+
+func migrateToV64(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS factory_recovery_gate (
+			issue_id TEXT PRIMARY KEY REFERENCES factory_issue(id),
+			epic_id TEXT NOT NULL REFERENCES factory_epic(id),
+			attempt_id TEXT NOT NULL UNIQUE REFERENCES factory_attempt(id),
+			work_item_id TEXT NOT NULL REFERENCES factory_issue(id),
+			question TEXT NOT NULL,
+			reason TEXT NOT NULL,
+			choices_json TEXT NOT NULL DEFAULT '[]',
+			response TEXT NOT NULL DEFAULT '',
+			resolution TEXT NOT NULL DEFAULT 'open',
+			created_at INTEGER NOT NULL,
+			resolved_at INTEGER NOT NULL DEFAULT 0
+		);
+		CREATE INDEX IF NOT EXISTS factory_recovery_gate_open_idx ON factory_recovery_gate (attempt_id, resolution);
+	`)
+	return err
+}
+
+func migrateToV65(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS factory_authority_escalation_gate (
+			issue_id TEXT PRIMARY KEY REFERENCES factory_issue(id),
+			epic_id TEXT NOT NULL REFERENCES factory_epic(id),
+			attempt_id TEXT NOT NULL REFERENCES factory_attempt(id),
+			work_item_id TEXT NOT NULL REFERENCES factory_issue(id),
+			request_id TEXT NOT NULL,
+			permission TEXT NOT NULL,
+			target TEXT NOT NULL,
+			resolution TEXT NOT NULL DEFAULT 'open',
+			created_at INTEGER NOT NULL,
+			resolved_at INTEGER NOT NULL DEFAULT 0,
+			UNIQUE (attempt_id, request_id)
+		);
+		CREATE INDEX IF NOT EXISTS factory_authority_escalation_gate_open_idx ON factory_authority_escalation_gate (attempt_id, resolution);
+	`)
+	return err
+}
+
+func migrateToV66(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS legacy_factory_formula (
+			id TEXT PRIMARY KEY, name TEXT NOT NULL, source TEXT NOT NULL,
+			current_revision INTEGER NOT NULL, created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL, archived_at INTEGER NOT NULL DEFAULT 0
+		);
+		CREATE TABLE IF NOT EXISTS legacy_factory_formula_revision (
+			formula_id TEXT NOT NULL, revision INTEGER NOT NULL,
+			schema_version INTEGER NOT NULL, definition_yaml TEXT NOT NULL,
+			content_hash TEXT NOT NULL, validation_json TEXT NOT NULL,
+			created_at INTEGER NOT NULL, PRIMARY KEY (formula_id, revision)
+		);
+		INSERT INTO legacy_factory_formula
+			SELECT f.* FROM factory_formula f
+			WHERE NOT EXISTS (SELECT 1 FROM legacy_factory_formula l WHERE l.id = f.id);
+		INSERT INTO legacy_factory_formula_revision
+			SELECT r.* FROM factory_formula_revision r
+			WHERE NOT EXISTS (SELECT 1 FROM legacy_factory_formula_revision l WHERE l.formula_id = r.formula_id AND l.revision = r.revision);
+		DROP TABLE factory_formula_revision;
+		DROP TABLE factory_formula;
+	`)
+	return err
+}
+
+func migrateToV67(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS legacy_factory_formula (
+			id TEXT PRIMARY KEY, name TEXT NOT NULL, source TEXT NOT NULL,
+			current_revision INTEGER NOT NULL, created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL, archived_at INTEGER NOT NULL DEFAULT 0
+		);
+		CREATE TABLE IF NOT EXISTS legacy_factory_formula_revision (
+			formula_id TEXT NOT NULL, revision INTEGER NOT NULL,
+			schema_version INTEGER NOT NULL, definition_yaml TEXT NOT NULL,
+			content_hash TEXT NOT NULL, validation_json TEXT NOT NULL,
+			created_at INTEGER NOT NULL, PRIMARY KEY (formula_id, revision)
+		);
+	`)
+	return err
+}
+
+// migrateToV68 is a data repair: epics approved before approval closed the
+// Plan (and before mutate_graph satisfied the materialization) were stuck
+// with required work nothing could ever close.
+func migrateToV68(tx *sql.Tx) error {
+	now := time.Now().UnixMilli()
+	for _, stmt := range []struct {
+		sql  string
+		args []any
+	}{
+		{`UPDATE factory_issue SET status = 'closed', outcome = 'succeeded', outcome_reason = ''
+			WHERE kind = 'plan' AND status IN ('open', 'in_progress')
+			AND epic_id IN (SELECT epic_id FROM factory_plan_gate WHERE resolution = 'approved')`, nil},
+		{`UPDATE factory_attempt SET phase = 'terminal', terminal_outcome = 'succeeded', finished_at = ?, updated_at = ?
+			WHERE phase IN ('prepared', 'active', 'stopping') AND json_extract(frozen_policy_json, '$.profile') = 'factory-plan/v1'
+			AND epic_id IN (SELECT epic_id FROM factory_plan_gate WHERE resolution = 'approved')`, []any{now, now}},
+		{`UPDATE factory_issue SET status = 'closed', outcome = 'succeeded', outcome_reason = 'Work graph built by hand'
+			WHERE kind = 'materialization' AND status = 'open'
+			AND EXISTS (SELECT 1 FROM factory_plan_gate g WHERE g.epic_id = factory_issue.epic_id AND g.resolution = 'approved')
+			AND EXISTS (SELECT 1 FROM factory_issue w WHERE w.epic_id = factory_issue.epic_id AND w.kind IN ('task', 'implementation')
+				AND NOT EXISTS (SELECT 1 FROM factory_removed_issue r WHERE r.issue_id = w.id)
+				AND NOT EXISTS (WITH RECURSIVE lineage(id) AS (SELECT w.id UNION ALL SELECT h.parent_issue_id FROM factory_issue_hierarchy h JOIN lineage ON h.child_issue_id = lineage.id)
+					SELECT 1 FROM lineage JOIN factory_materialization m ON m.implementation_issue_id = lineage.id))`, nil},
+	} {
+		if _, err := tx.Exec(stmt.sql, stmt.args...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func migrateToV69(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS factory_issue_comment (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			issue_id TEXT NOT NULL REFERENCES factory_issue(id),
+			actor TEXT NOT NULL,
+			body TEXT NOT NULL CHECK (trim(body) <> '' AND length(body) <= 16000),
+			created_at INTEGER NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS factory_issue_comment_issue_idx ON factory_issue_comment (issue_id, created_at, id);
+		CREATE TRIGGER IF NOT EXISTS factory_issue_comment_no_update BEFORE UPDATE ON factory_issue_comment
+		BEGIN SELECT RAISE(ABORT, 'Factory Issue comments are append-only'); END;
+		CREATE TRIGGER IF NOT EXISTS factory_issue_comment_no_delete BEFORE DELETE ON factory_issue_comment
+		BEGIN SELECT RAISE(ABORT, 'Factory Issue comments are append-only'); END;
+	`)
+	return err
 }

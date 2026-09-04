@@ -41,6 +41,94 @@ func TestMigrateV36PreservesWorkflowRetrySources(t *testing.T) {
 	}
 }
 
+func TestMigrateV57RepairsFormerFactoryClosureMigration(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	setup, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for version := 1; version <= 55; version++ {
+		if err := applyMigration(setup, version); err != nil {
+			t.Fatalf("apply v%d: %v", version, err)
+		}
+	}
+	if err := setup.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO factory_formula_identity VALUES
+		('custom/one', 1, 'one', 'hash-one', 1),
+		('custom/two', 1, 'two', 'hash-two', 2);
+		CREATE TRIGGER factory_issue_required_children_closed BEFORE UPDATE OF status ON factory_issue BEGIN SELECT 1; END`); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateToV57(tx); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateToV58(tx); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type = 'trigger' AND name = 'factory_issue_required_children_closed'`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("closure trigger count = %d, %v", count, err)
+	}
+	if _, err := db.Exec(`INSERT INTO factory_formula_identity VALUES ('custom/three', 1, 'three', 'hash-one', 3)`); err != nil {
+		t.Fatalf("insert identity with shared hash: %v", err)
+	}
+}
+
+func TestMigrateV57RebuildsFactoryFormulaIdentities(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	setup, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for version := 1; version <= 55; version++ {
+		if err := applyMigration(setup, version); err != nil {
+			t.Fatalf("apply v%d: %v", version, err)
+		}
+	}
+	if err := setup.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO factory_formula_identity VALUES
+		('custom/one', 1, 'one', 'hash-one', 1),
+		('custom/two', 1, 'two', 'hash-two', 2);`); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateToV57(tx); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO factory_formula_identity VALUES ('custom/three', 1, 'three', 'hash-one', 3)`); err != nil {
+		t.Fatalf("insert identity with shared hash: %v", err)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT count(*) FROM factory_formula_identity`).Scan(&count); err != nil || count != 3 {
+		t.Fatalf("formula identities = %d, %v", count, err)
+	}
+}
+
 func TestMigrateV25BackfillsManualWorkflowTrigger(t *testing.T) {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
