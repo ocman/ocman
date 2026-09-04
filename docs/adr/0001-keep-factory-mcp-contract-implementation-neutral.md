@@ -1,3 +1,3 @@
 # Keep the Factory MCP contract implementation-neutral
 
-Factory MCP tools and the globally installed Factory skill expose only Work Epics, Planning Work, Formulas, acknowledgements, and Factory availability. Operational details remain available to users in Mission Control and logs, but are excluded from model-facing schemas, results, and errors so conversations cannot couple handoff behavior to Factory's replaceable storage implementation; the trade-off is that agents must direct users to Mission Control for detailed diagnostics.
+The single Factory MCP tool and globally installed Factory skill expose native Epics, Mols, Issues, Plans, Formulas, and domain-level errors. Operational details are excluded from model-facing schemas and results so agents do not couple to storage, filesystem, or process internals; agents use the tool's `help` action for its current contract.

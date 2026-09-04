@@ -74,9 +74,7 @@ production binary. Change it if you moved the listener with `-mcp-addr`.
 | Tool | Description |
 |------|-------------|
 | `embed_file` | Make a file on disk viewable to the user in the ocman UI. Takes an absolute `path` (plus an optional `label`) and returns a signed URL and a markdown snippet the agent pastes into its reply. Images and SVGs render inline in the conversation; PDFs and other types open or download in the browser. See [Embedding generated assets](#embedding-generated-assets). |
-| `prepare_factory_work` | Validate and prepare an explicit conversation handoff without creating work. Returns the canonical project, Built-in Formula ID and version, acknowledgement requirement, and stable preparation key. |
-| `acknowledge_factory_execution` | Record explicit consent for local, non-isolated Factory execution for the prepared project and current permission profile. |
-| `create_factory_work_epic` | Create the exact confirmed Work Epic idempotently from unchanged prepared inputs. Returns its planning state and Mission Control path. |
+| `factory` | Native Factory control surface. Use `action: "help"` for actions, validation, examples, output schemas, and domain errors. Formula actions accept TOML only. Implementation Issues run sequentially in one shared Epic worktree; `complete_attempt` requires a clean, pushed handoff and the one pull request whose head matches that branch. |
 | `get_workflow_schema` | Get the workflow definition schema and a minimal valid JSON example. |
 | `validate_workflow` / `publish_workflow` / `list_workflows` | Validate, publish immutable versions, and list workflows. |
 | `start_workflow` / `list_workflow_runs` / `inspect_workflow_run` | Start a pinned or active version and inspect compact run state. |
@@ -90,18 +88,33 @@ The workflow tools let an agent author, validate, publish and start DAG
 workflows, inspect run state, and control scheduling. See
 [Workflows](workflows.md) for the full feature guide.
 
-## Factory handoff
+## Factory
 
-Ocman installs the `ocman-factory` skill globally for OpenCode. When a user
-explicitly asks to send the current conversation to Factory, the skill prepares
-a short goal and Markdown brief, shows the complete proposal for confirmation,
-records local-execution acknowledgement when required, and creates one Work
-Epic. The brief is the handoff boundary: transcripts and conversation IDs are
-not retained. After creation, planning belongs to Factory and the originating
-conversation stops.
+Ocman installs the `ocman-factory` skill globally for OpenCode. It teaches the
+single action-based `factory` tool and directs agents to `action: "help"`
+before using detailed actions.
 
 Factory tool errors intentionally contain only domain-level guidance. Open
-Mission Control at `/factory` for detailed operational diagnostics.
+Factory at `/factory` to inspect the native Issue graph.
+
+Agents can list and append persistent Issue comments with `issue_comments`
+and `add_issue_comment`. Comments are append-only and remain separate from the
+linked session conversation.
+
+Agent MCP sessions cannot perform operator decisions, create executable graph
+issues, or change Factory configuration. Non-executable graph edits remain
+available through `mutate_graph`; `create` Epics, `save_formula`,
+`set_capacity_policy`, Plan decisions, recovery decisions, authority
+decisions, and `reopen_issue` (returning failed work to the queue) are
+refused; they stay in the Factory action inbox. `submit_proposal` additionally requires the active
+Planning Attempt's `attempt_id` and `attempt_token`.
+
+> **Upgrade warning:** the native Factory cutover does not migrate legacy
+> Factory runs. Retired YAML Formula tables are kept under `legacy_factory_*`
+> names for manual recovery when the v66 migration completed successfully; an
+> installation already stamped with the defective v66 migration may have empty
+> repair tables because dropped data cannot be reconstructed. The native
+> Factory does not read these tables.
 
 ## Embedding generated assets
 

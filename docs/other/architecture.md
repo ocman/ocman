@@ -90,7 +90,7 @@ flowchart TD
     Server[internal/server<br/>HTTP, SSE, handlers] --> Registry[platforms.Registry<br/>session seam]
     Server --> Router[hostsvc.Router<br/>host/dir seam]
     Server --> Workflows[automation services<br/>workflows + prompt schedules]
-    Server --> Factory[internal/factory<br/>readiness, dispatch lock + Beads store]
+    Server --> Factory[internal/factory<br/>native Issue graph + dispatch]
     Factory --> FactoryModel[internal/factory/model<br/>shared persistence records]
     Factory --> State
     State --> FactoryModel
@@ -112,42 +112,15 @@ flowchart TD
   handler files, plus tmux, terminal, whisper, auto-approve and workflow
   ticks.
 - **internal/factory.** The independent Software Factory boundary. Its
-  readiness probe pins Beads to `>=1.1.0,<1.2.0` and JSON envelope contract 1,
-  while an advisory process lock gives exactly one local ocman instance
-  dispatch ownership. The owner initializes the dedicated store idempotently
-  on first start. The owner can validate and preview typed Formula v1 YAML,
-  persist immutable Custom Formula revisions, and atomically instantiate a
-  pinned Built-in or Custom revision into a Work Epic and its safety Gates. Its intake
-  service prepares confirmed conversation briefs, validates local Git targets
-  and creates idempotent Work Epics through an implementation-neutral MCP
-  contract. It owns the
-  revision-checked draft and exact-revision approval lifecycle. Planning
-  success is bound to that same revision and hash, so a graph edit cannot
-  reuse stale completion evidence. Every Plan transition intent is durably
-  journaled before Beads changes; pending/last operation markers in Plan
-  metadata let startup recovery reconcile interrupted graph, Planning Work,
-  Gate, audit and Planning Session transitions. Failed recovery leaves the
-  owner degraded and read-only. Approved Plan items are materialized into the
-  Beads graph before deterministic dispatch. The dispatcher reserves its
-  global/repository slot before persisting an attempt and atomically claiming
-  the Work Item; structured terminal evidence reaches `state.db` before Beads
-  metadata and closure, so startup can converge either interrupted half. A
-  narrow Planning Session launcher resolves the hub-local host and session seams,
-  ensures the repository runtime, and installs the read-only
-  `factory-plan/v1` rules before exposing the session, deletes failed setup,
-  and probes persisted mappings before reuse; local execution acknowledgements
-  and session mappings are stored separately in `state.db`. Other
-  instances expose the same authenticated reads without mutation authority;
-  Workflows state and services are not involved.
-- **Factory persistence.** Beads owns the Work Epic graph, child Work Items,
-  dependencies, Gates and Formula provenance. `state.db` owns only execution
-  and external evidence: immutable Formula revisions, attempts, workspaces,
-  deliveries, provider observations, profile validations, authority
-  exceptions, local-execution acknowledgements, audit records and mappings.
-  Formula revisions retain their validated YAML and SHA-256 identity; Beads
-  nodes copy the exact Formula ID, revision, hash and origin so later library
-  edits cannot alter an existing epic. Referenced revisions cannot be deleted.
-  These `factory_*` tables do not reference or alter Workflows tables.
+   stores Epics, Mols, typed Issues, dependencies, attempts, Formula revisions,
+   Plan revisions, approvals, and materialization provenance in `state.db`.
+   TOML Formulas compile to canonical JSON. A Plan session is read-only at the
+   project root; approval of an exact revision enables user-requested atomic
+   materialization of the one Implementation Issue, which alone launches a
+   configured worktree session. The browser uses REST while agents use the one action-based
+   `factory` MCP tool. Workflows state and services are not involved.
+- **Factory persistence.** Native `factory_*` tables own the graph and its
+   provenance in `state.db`; they do not reference or alter Workflows tables.
 - **internal/factory/model.** Dependency-neutral persistence records shared by
   `internal/factory` and `internal/state`. Factory owns their meaning; state
   only stores them, which avoids making Factory depend on its SQLite adapter.
@@ -237,8 +210,7 @@ flowchart TD
   XDG data and installs only ocman-owned symlinks for OpenCode discovery.
   Retirement unlinks only the exact verified symlink and preserves extracted data.
 - **internal/state.** Ocman's writable SQLite store: migrations, settings,
-  workflows and prompt schedules. The independent Factory work graph lives in
-  its dedicated Beads store.
+   workflows, prompt schedules, and the independent native Factory Issue graph.
 - **forge and integrations.** Forge-agnostic types in `internal/forge`, per-forge
   HTTP clients in `internal/forge/{github,forgejo}`. PR/Issue handlers obtain repository
   identity from the owner Host, then use the hub clients for metadata.
@@ -336,12 +308,8 @@ flowchart TD
   `hostsvc.Host` through `/api/project/beads-status`; remote owners proxy the
   same operation over gRPC. Ticket data stays in the repository and is polled
   only while the available pane is open.
-- **Mission Control.** The top-level `/factory` page polls the authenticated
-  Factory endpoints through TanStack Query. The dispatch owner can copy the
-  immutable Built-in Formula, edit Formula v1 YAML in browser state, validate
-  and preview it, save immutable Custom revisions, and select an exact revision
-  at Work Epic intake. Invalid editor text is never persisted. All clients can inspect repository-scoped
-  Planning Sessions, draft revision/hash, whole-graph validation and immutable
-  approval. Localhost-protected nested epic routes perform CAS graph updates,
-  add Planning Work, complete Planning Work and approve/revise/reject/cancel the
-  exact Plan independently of Workflows.
+- **Factory.** `/factory` presents actionable approval Gates, Epics, Issues,
+   Queue, and Configuration through TanStack Query. Browser mutations create
+   native Epics, pour Mols, decide exact Plan revisions, and explicitly close
+   completed containers. The dispatcher records attempts before launching the
+   read-only planning or configured implementation session.
