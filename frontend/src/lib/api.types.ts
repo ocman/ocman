@@ -85,56 +85,7 @@ export interface DaguStatus {
   installCommand: string;
 }
 
-export type FactoryReason =
-  | 'beads_not_found'
-  | 'beads_version_invalid'
-  | 'beads_version_unsupported'
-  | 'beads_contract_unsupported'
-  | 'beads_store_unavailable'
-  | 'beads_command_failed'
-  | 'dispatch_lock_failed'
-  | 'recovery_failed';
-
-export type FactoryDispatchState = 'ready' | 'running' | 'completed';
-
-export type FactoryAttemptOutcome =
-  | 'succeeded'
-  | 'skipped'
-  | 'cancelled'
-  | 'acknowledged_partial'
-  | 'failed'
-  | 'interrupted'
-  | 'ambiguous';
-
-export interface FactoryDispatchItem {
-  id: string;
-  epicId: string;
-  title: string;
-  repository: string;
-  state: FactoryDispatchState;
-  attemptId?: string;
-  outcome?: FactoryAttemptOutcome;
-}
-
-export interface FactoryStatus {
-  health: 'healthy' | 'unavailable' | 'degraded';
-  idle: boolean;
-  dispatchOwner: boolean;
-  readOnly: boolean;
-  workEpicCount: number;
-  dispatch: FactoryDispatchItem[];
-  beads: {
-    usable: boolean;
-    version?: string;
-    contractVersion?: number;
-    reason?: FactoryReason;
-    message?: string;
-  };
-  reason?: FactoryReason;
-  message?: string;
-}
-
-export interface WorkEpic {
+export interface FactoryEpic {
   id: string;
   status: string;
   goal: string;
@@ -145,122 +96,166 @@ export interface WorkEpic {
   formulaRevision: number;
   formulaHash: string;
   formulaOrigin: 'built-in' | 'custom';
-  instantiationId: string;
-  planning: {
-    workId: string;
-    workStatus: string;
-    approvalGateId: string;
-    approvalStatus: string;
-  };
-	plan: FactoryPlan;
-	planError?: string;
+	instantiationId: string;
+	attempts?: FactoryAttempt[];
+	proposal?: FactoryProposal;
+	planGate?: FactoryPlanGate;
+  progress: { requiredTotal: number; requiredSucceeded: number; optionalOpen: number; closureBlockers?: string[]; stuck?: boolean };
 }
 
-export interface FactoryPlan {
-	schemaVersion?: number;
-	revision: number;
-	hash: string;
-	state: 'draft' | 'approved' | 'rejected' | 'cancelled';
-	graph: FactoryPlanGraph;
-	planning: FactoryPlanningWork[];
-	approval?: {
-		revision: number;
-		hash: string;
-		actor: string;
-		approvedAt: string;
-		formulaId: string;
-		formulaVersion: number;
-		formulaHash: string;
-		formulaOrigin: string;
-		instantiationId: string;
-		reason?: string;
-		graph: FactoryPlanGraph;
-	};
-	lastDecision?: { action: string; fromRevision: number; revision: number; hash: string; actor: string; reason?: string };
-	validation: string[];
-}
-
-export interface FactoryPlanGraph {
-	intent: string;
-	targets: Array<{
-		id: string;
-		hostId: string;
-		repository: string;
-		deliveryBase: { remote: string; baseBranch: string; baseSha: string };
-	}>;
-	items: Array<{ id: string; kind: 'agent-work' | 'system-work' | 'gate' | 'delivery'; title: string; targetId?: string; profile?: string; gateType?: 'provider-check' | 'human-merge' }>;
-	dependencies: Array<{ from: string; to: string }>;
-}
-
-export interface FactoryPlanningWork {
+export interface FactoryAttempt {
 	id: string;
-	targetId: string;
-	repository: string;
-	status: string;
-	outcome?: string;
-	completedRevision?: number;
-	completedHash?: string;
+	workId: string;
+	phase: string;
 	session: { platform: string; id: string };
 }
 
-export interface FactoryPlanMutationResult {
-	stale: boolean;
-	plan: FactoryPlan;
+export interface FactoryProposal {
+	manifest: { epicId: string; molId: string; project: string; nodes: { key: string; type: string; requirement: string }[] };
+	revision: number;
+	contentHash: string;
+	rationaleMarkdown?: string;
 }
 
-export interface FactoryPlanDecisionRequest {
+export interface FactoryPlanGate {
+	issueId: string;
+	proposalRevision: number;
+	proposalHash: string;
+	outcome?: string;
+	resolution: string;
+	feedback?: string;
+	reviewIssueIds?: string[];
+}
+
+export interface FactoryPlanGateDecisionRequest {
 	expectedRevision: number;
 	expectedHash: string;
-	actor: string;
-	reason?: string;
-	acknowledgeLocalExecution?: boolean;
+	feedback?: string;
 }
 
 export interface CreateWorkEpicRequest {
   instantiationId: string;
   goal: string;
+  brief?: string;
   initialProject: string;
-  acknowledgeLocalExecution: true;
   formulaId?: string;
   formulaRevision?: number;
+  acknowledgeLocalExecution: boolean;
 }
 
-export interface FormulaSummary {
+export interface FactoryIssue {
   id: string;
+  epicId: string;
+  parentId?: string;
+  requirement?: string;
+  formulaId?: string;
+  formulaVersion?: number;
+  formulaHash?: string;
+  bindings?: Record<string, string>;
+  kind: string;
+  title: string;
+  status: string;
+	outcome?: string;
+	outcomeReason?: string;
+	conclusion?: string;
+	prUrl?: string;
+	dispatchState?: string;
+	blockers?: { id: string; epicId?: string; reason: string; outcome: string }[];
+	retryAt?: number;
+	retryAttempts?: number;
+  description?: string;
+	planRevision?: number;
+	manifestKey?: string;
+	removedAt?: number;
+	attemptId?: string;
+	session?: { platform: string; id: string };
+	recovery?: FactoryRecoveryGate;
+	authority?: FactoryAuthorityEscalationGate;
+}
+
+export interface FactoryIssueComment {
+	id: number;
+	issueId: string;
+	actor: string;
+	body: string;
+	createdAt: number;
+}
+
+export interface FactoryRecoveryGate {
+	issueId: string;
+	epicId: string;
+	attemptId: string;
+	workId: string;
+	question: string;
+	reason: string;
+	choices: string[];
+	response?: string;
+	resolution: string;
+}
+
+export interface FactoryAuthorityEscalationGate {
+	issueId: string;
+	epicId: string;
+	attemptId: string;
+	workId: string;
+	requestId: string;
+	permission: string;
+	target: string;
+	resolution: string;
+}
+
+export interface FactoryGraphMutation {
+  action: 'create' | 'edit' | 'reparent' | 'link' | 'unlink' | 'delete';
+  issueId?: string;
+  parentId?: string;
+  dependsOnId?: string;
+  dependencyType?: 'blocks' | 'on_failure';
+  kind?: string;
+  title?: string;
+  description?: string;
+  requirement?: string;
+}
+
+export interface FactoryQueueItem {
+  id: string;
+  epicId: string;
+  title: string;
+  repository: string;
+  state: string;
+  attemptId?: string;
+  session?: { platform: string; id: string };
+  outcome?: string;
+	outcomeReason?: string;
+   blockers?: { id: string; epicId?: string; reason: string; outcome: string }[];
+  retryAt?: number;
+  retryAttempts?: number;
+}
+
+export interface FactoryCapacityPolicy {
+  globalCapacity: number;
+  projectCapacity: number;
+  projectOverrides: Record<string, number>;
+}
+
+export interface FactoryFormula {
+  id: string;
+  version: number;
   name: string;
-  origin: 'built-in' | 'custom';
-  currentRevision: number;
-  contentHash: string;
-  archived: boolean;
-  revisions: Array<{ revision: number; contentHash: string; instantiable: boolean }>;
-}
-
-export interface FormulaDraft {
-  sourceId: string;
-  sourceRevision: number;
-  origin: 'built-in' | 'custom';
-  definitionYaml: string;
-}
-
-export interface FormulaValidation {
+  source: string;
+  hash: string;
+	/** Source provenance; `hash` always identifies the compiled interchange JSON. */
+  sourceHash: string;
+  compiled?: unknown;
+  inputs: string[];
+  nodes: { key: string; kind: string }[];
+  edges: { from: string; to: string; type?: string }[];
+  composition?: { key: string; formula: string; revision: number; bindings: Record<string, string> }[];
   valid: boolean;
-  schema: number;
-  contentHash?: string;
-  errors: string[];
+  errors?: string[];
 }
 
-export interface FormulaPreview {
-  name: string;
-  formulaHash: string;
-  nodes: Array<{ key: string; kind: string; title: string; profile?: string; project?: string }>;
-  edges: Array<{ from: string; to: string; type: string }>;
-}
-
-export interface FormulaRevision extends FormulaSummary {
-  revision: number;
-  schemaVersion: number;
-  definitionYaml: string;
-}
+export interface FactoryFormulaSaveRequest { id: string; source: string; }
+export interface FactoryFormulaValidationRequest { id?: string; source: string; }
 
 export interface Session {
   id: string;

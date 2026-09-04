@@ -7,7 +7,8 @@ import { AnalyticsTab, DashboardLayout, LegacyAnalyticsRedirect, SessionsTab, Pr
 import { ProjectDetail } from './pages/ProjectDetail';
 import { WorktreesView } from './pages/WorktreesView';
 import { Workflows } from './pages/Workflows';
-import { MissionControl } from './pages/MissionControl';
+import { FactoryConfiguration, FactoryEpicDetail, FactoryEpics, FactoryHowTo, FactoryOverview, FactoryQueue } from './pages/Factory';
+import { FactoryIssues } from './pages/FactoryIssues';
 import { SessionDetail } from './pages/session-detail';
 import { SharedConversationView } from './pages/SharedConversationView';
 import { ImportSharedConversation } from './pages/ImportSharedConversation';
@@ -60,7 +61,7 @@ const MAIN_NAV_ITEMS = [
   { to: '/', label: 'Home', icon: 'bi-house', activeOnSession: true },
   { to: '/sessions', label: 'Sessions', icon: 'bi-collection' },
   { to: '/projects', label: 'Projects', icon: 'bi-folder' },
-  { to: '/factory', label: 'Factory', icon: 'bi-buildings' },
+  { to: '/factory/overview', label: 'Factory', icon: 'bi-buildings' },
   { to: '/workflows', label: 'Workflows', icon: 'bi-diagram-3', workflowsOnly: true },
   { to: '/analytics', label: 'Analytics', icon: 'bi-bar-chart' },
   { to: '/settings', label: 'Settings', icon: 'bi-gear' },
@@ -543,7 +544,14 @@ export function AppRoutes() {
         <Route path="/settings" element={<SettingsTab />} />
       </Route>
       <Route path="/project/:dir/worktrees" element={<WorktreesView />} />
-      <Route path="/factory" element={<MissionControl />} />
+      <Route path="/factory" element={<Navigate to="/factory/overview" replace />} />
+      <Route path="/factory/overview" element={<FactoryOverview />} />
+	  <Route path="/factory/how-to" element={<FactoryHowTo />} />
+      <Route path="/factory/epics" element={<FactoryEpics />} />
+      <Route path="/factory/epics/:id" element={<FactoryEpicDetail />} />
+       <Route path="/factory/issues/:issueId?" element={<FactoryIssues />} />
+		<Route path="/factory/queue" element={<FactoryQueue />} />
+	  <Route path="/factory/configuration" element={<FactoryConfiguration />} />
       <Route path="/project/:dir" element={<ProjectDetail />} />
       <Route path="/session/:id" element={<SessionDetail />} />
       <Route path="/import-share" element={<ImportSharedConversation />} />
@@ -555,9 +563,6 @@ export function RootRedirect() {
   const sessionsQ = useSessions();
   const lastOpenedSessionId = useUiStore((s) => s.lastOpenedSessionId);
   if (sessionsQ.isLoading) return null;
-  // A failed query is not "no sessions". Redirecting to /session/new on
-  // failure hides a backend outage behind the onboarding screen and
-  // navigates the user away from whatever they had open.
   if (sessionsQ.isError) {
     const message = sessionsQ.error instanceof Error
       ? sessionsQ.error.message
@@ -569,9 +574,6 @@ export function RootRedirect() {
       </div>
     );
   }
-  // Only `isError` is failure: a settled query with an undefined payload
-  // is still a success, and treating it as an outage would put an error
-  // banner over a working backend.
   const active = (sessionsQ.data ?? []).filter((session) => !session.archived);
   const lastOpened = active.find((session) => session.id === lastOpenedSessionId);
   const latest = active.reduce<(typeof active)[number] | undefined>(

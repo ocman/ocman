@@ -84,19 +84,22 @@ export type {
 	WorkflowMapItemRun,
 	PromptSchedule,
   DaguStatus,
-  FactoryStatus,
-  FactoryReason,
-  WorkEpic,
+  FactoryEpic,
+  FactoryAttempt,
   CreateWorkEpicRequest,
-	FactoryPlan,
-	FactoryPlanGraph,
-	FactoryPlanMutationResult,
-	FactoryPlanDecisionRequest,
-  FormulaSummary,
-  FormulaDraft,
-  FormulaValidation,
-  FormulaPreview,
-  FormulaRevision,
+	FactoryIssue,
+	FactoryIssueComment,
+	FactoryQueueItem,
+    FactoryProposal,
+	FactoryFormula,
+	FactoryFormulaSaveRequest,
+	FactoryFormulaValidationRequest,
+	FactoryCapacityPolicy,
+	FactoryPlanGate,
+	FactoryPlanGateDecisionRequest,
+	FactoryGraphMutation,
+	FactoryRecoveryGate,
+	FactoryAuthorityEscalationGate,
 } from './api.types';
 
 // Type imports used by the api object below.
@@ -151,18 +154,21 @@ import type {
 	WorkflowArtifact,
 	PromptSchedule,
 	DaguStatus,
-	FactoryStatus,
-	WorkEpic,
-	CreateWorkEpicRequest,
-	FactoryPlan,
-	FactoryPlanGraph,
-	FactoryPlanMutationResult,
-	FactoryPlanDecisionRequest,
-	FormulaSummary,
-	FormulaDraft,
-	FormulaValidation,
-	FormulaPreview,
-	FormulaRevision,
+  FactoryEpic,
+  CreateWorkEpicRequest,
+	FactoryIssue,
+	FactoryIssueComment,
+	FactoryQueueItem,
+    FactoryProposal,
+	FactoryFormula,
+	FactoryFormulaSaveRequest,
+	FactoryFormulaValidationRequest,
+	FactoryCapacityPolicy,
+	FactoryPlanGate,
+	FactoryPlanGateDecisionRequest,
+	FactoryGraphMutation,
+	FactoryRecoveryGate,
+	FactoryAuthorityEscalationGate,
 } from './api.types';
 
 /**
@@ -413,35 +419,46 @@ export const api = {
   permissionStats: (params?: { days?: number; dir?: string }, signal?: AbortSignal) =>
     fetchJSON<PermissionStats>(`/api/permission-stats${queryString(params)}`, signal),
   projects: (signal?: AbortSignal) => fetchJSON<Project[]>('/api/projects', signal),
-  factoryStatus: (signal?: AbortSignal) => fetchJSON<FactoryStatus>('/api/factory/status', signal),
-  factoryEpics: (signal?: AbortSignal) => fetchJSON<WorkEpic[]>('/api/factory/epics', signal),
-  factoryEpic: (id: string, signal?: AbortSignal) =>
-    fetchJSON<WorkEpic>(`/api/factory/epics/${encodeURIComponent(id)}`, signal),
-  createFactoryEpic: (request: CreateWorkEpicRequest) =>
-    postJSON<WorkEpic, CreateWorkEpicRequest>('/api/factory/epics', request),
-	mutateFactoryPlan: (id: string, expectedRevision: number, graph: FactoryPlanGraph) =>
-		postJSON<FactoryPlanMutationResult, { expectedRevision: number; graph: FactoryPlanGraph }>(`/api/factory/epics/${encodeURIComponent(id)}/plan/mutate`, { expectedRevision, graph }, { acceptStatus: 409 }),
-	addFactoryPlanningWork: (id: string, expectedRevision: number, target: FactoryPlanGraph['targets'][number]) =>
-		postJSON<FactoryPlanMutationResult, { expectedRevision: number; target: FactoryPlanGraph['targets'][number]; acknowledgeLocalExecution: true }>(`/api/factory/epics/${encodeURIComponent(id)}/planning`, { expectedRevision, target, acknowledgeLocalExecution: true }, { acceptStatus: 409 }),
-	decideFactoryPlan: (id: string, action: 'approve' | 'revise' | 'reject' | 'cancel', request: FactoryPlanDecisionRequest) =>
-		postJSON<FactoryPlan | FactoryPlanMutationResult, FactoryPlanDecisionRequest>(`/api/factory/epics/${encodeURIComponent(id)}/plan/${action}`, request, { acceptStatus: 409 })
-			.then((result) => 'plan' in result ? result : { stale: false, plan: result }),
-	completeFactoryPlanningWork: (id: string, workID: string, expectedRevision: number, expectedHash: string) =>
-		postJSON<FactoryPlan | FactoryPlanMutationResult, { expectedRevision: number; expectedHash: string }>(`/api/factory/epics/${encodeURIComponent(id)}/planning/${encodeURIComponent(workID)}/complete`, { expectedRevision, expectedHash }, { acceptStatus: 409 })
-			.then((result) => 'plan' in result ? result : { stale: false, plan: result }),
-  factoryFormulas: (signal?: AbortSignal) => fetchJSON<FormulaSummary[]>('/api/factory/formulas', signal),
-  copyFactoryFormula: (id: string, revision: number) =>
-    postJSON<FormulaDraft, { id: string; revision: number }>('/api/factory/formulas/copy', { id, revision }),
-  validateFactoryFormula: (definitionYaml: string) =>
-    postJSON<FormulaValidation, { definitionYaml: string }>('/api/factory/formulas/validate', { definitionYaml }),
-  previewFactoryFormula: (definitionYaml: string, parameters: Record<string, string>) =>
-    postJSON<FormulaPreview, { definitionYaml: string; parameters: Record<string, string> }>('/api/factory/formulas/preview', { definitionYaml, parameters }),
-  saveFactoryFormula: (request: { id: string; name: string; definitionYaml: string }) =>
-    postJSON<FormulaRevision, typeof request>('/api/factory/formulas', request),
-  archiveFactoryFormula: (id: string) =>
-    postJSON<void, { id: string }>('/api/factory/formulas/archive', { id }, { parseJSON: false }),
-  deleteFactoryFormula: (id: string) =>
-    postJSON<void, { id: string }>('/api/factory/formulas/delete', { id }, { parseJSON: false }),
+   factoryEpics: (signal?: AbortSignal) => fetchJSON<FactoryEpic[]>('/api/factory/epics', signal),
+   factoryEpic: (id: string, signal?: AbortSignal) =>
+     fetchJSON<FactoryEpic>(`/api/factory/epics/${encodeURIComponent(id)}`, signal),
+   createFactoryEpic: (request: CreateWorkEpicRequest) =>
+     postJSON<FactoryEpic, CreateWorkEpicRequest>('/api/factory/epics', request),
+    pourFactoryEpic: (id: string) =>
+      postJSON<FactoryIssue[], undefined>(`/api/factory/epics/${encodeURIComponent(id)}/pour`, undefined),
+		factoryClaimPlan: (id: string, issueID: string) =>
+			postJSON<unknown, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/plans/${encodeURIComponent(issueID)}`, undefined),
+		factoryMaterialize: (id: string, issueID: string) =>
+			postJSON<unknown, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/materializations/${encodeURIComponent(issueID)}`, undefined),
+		reopenFactoryIssue: (id: string, issueID: string) =>
+			postJSON<unknown, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/issues/${encodeURIComponent(issueID)}/reopen`, undefined),
+		factoryIssues: (id: string, signal?: AbortSignal) =>
+		 fetchJSON<FactoryIssue[]>(`/api/factory/epics/${encodeURIComponent(id)}/issues`, signal),
+		factoryIssueComments: (epicID: string, issueID: string, signal?: AbortSignal) =>
+			fetchJSON<FactoryIssueComment[]>(`/api/factory/epics/${encodeURIComponent(epicID)}/issues/${encodeURIComponent(issueID)}/comments`, signal),
+		addFactoryIssueComment: (epicID: string, issueID: string, body: string) =>
+			postJSON<FactoryIssueComment, { body: string }>(`/api/factory/epics/${encodeURIComponent(epicID)}/issues/${encodeURIComponent(issueID)}/comments`, { body }),
+     factoryRemovedIssues: (id: string, signal?: AbortSignal) =>
+       fetchJSON<FactoryIssue[]>(`/api/factory/epics/${encodeURIComponent(id)}/removed-issues`, signal),
+    mutateFactoryGraph: (id: string, mutation: FactoryGraphMutation) =>
+      postJSON<void, FactoryGraphMutation>(`/api/factory/epics/${encodeURIComponent(id)}/mutations`, mutation, { parseJSON: false }),
+    factoryQueue: (signal?: AbortSignal) => fetchJSON<FactoryQueueItem[]>('/api/factory/queue', signal),
+		resolveFactoryRecoveryGate: (id: string, action: 'resume' | 'retry' | 'cancel', response: string) => postJSON<FactoryRecoveryGate, { response: string }>(`/api/factory/recovery-gates/${encodeURIComponent(id)}/${action}`, { response }),
+		resolveFactoryAuthorityGate: (id: string, action: 'approve' | 'reject') => postJSON<FactoryAuthorityEscalationGate, Record<string, never>>(`/api/factory/authority-gates/${encodeURIComponent(id)}/${action}`, {}),
+   factoryProposals: (id: string, signal?: AbortSignal) =>
+      fetchJSON<FactoryProposal[]>(`/api/factory/epics/${encodeURIComponent(id)}/proposals`, signal),
+	 factoryPlanGate: (id: string, action: 'approve' | 'revise' | 'reject', request: FactoryPlanGateDecisionRequest) =>
+		postJSON<FactoryPlanGate, FactoryPlanGateDecisionRequest>(`/api/factory/epics/${encodeURIComponent(id)}/plan-gate/${action}`, request),
+	 factoryCloseMol: (id: string, molID: string) => postJSON<void, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/mols/${encodeURIComponent(molID)}/close`, undefined, { parseJSON: false }),
+	 factoryCloseEpic: (id: string) => postJSON<void, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/close`, undefined, { parseJSON: false }),
+		factoryFormula: (id: string, version: number, signal?: AbortSignal) =>
+		fetchJSON<FactoryFormula>(`/api/factory/formulas/${encodeURIComponent(id)}/${version}`, signal),
+	 factoryFormulas: (signal?: AbortSignal) => fetchJSON<FactoryFormula[]>('/api/factory/formulas', signal),
+	 validateFactoryFormula: (request: FactoryFormulaValidationRequest) => postJSON<FactoryFormula, FactoryFormulaValidationRequest>('/api/factory/formulas/validate', request),
+	 previewFactoryFormula: (request: FactoryFormulaValidationRequest) => postJSON<FactoryFormula, FactoryFormulaValidationRequest>('/api/factory/formulas/preview', request),
+	 saveFactoryFormula: (request: FactoryFormulaSaveRequest) => postJSON<FactoryFormula, FactoryFormulaSaveRequest>('/api/factory/formulas', request),
+	 factoryCapacityPolicy: (signal?: AbortSignal) => fetchJSON<FactoryCapacityPolicy>('/api/factory/configuration', signal),
+	 setFactoryCapacityPolicy: (policy: FactoryCapacityPolicy) => postJSON<FactoryCapacityPolicy, FactoryCapacityPolicy>('/api/factory/configuration', policy),
   browseDirectories: (dir?: string, signal?: AbortSignal) =>
     fetchJSON<DirectoryBrowseResponse>(`/api/filesystem/directories${queryString({ dir })}`, signal),
   searchDirectories: (root: string | undefined, query: string, limit?: number, signal?: AbortSignal) => {

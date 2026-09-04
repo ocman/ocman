@@ -57,6 +57,7 @@ export function Modal({
     for (let node: HTMLElement | null = backdrop; node && node !== document.body; node = node.parentElement) {
       for (const sibling of Array.from(node.parentElement?.children ?? [])) {
         if (sibling === node || !(sibling instanceof HTMLElement)) continue;
+        if (sibling.matches('.oc-prompt-toast-viewport') || sibling.querySelector('.oc-prompt-toast-viewport')) continue;
         if (sibling.hasAttribute('inert')) continue;
         sibling.setAttribute('inert', '');
         inerted.push(sibling);

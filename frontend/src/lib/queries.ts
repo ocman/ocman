@@ -11,7 +11,7 @@
  *
  * See spec/ui-responsiveness Wave 3 (P4, P5).
  */
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, useQueries, type QueryClient } from '@tanstack/react-query';
 import { api } from './api';
 import { useActivityScope } from './activityScopes';
 import type {
@@ -23,46 +23,20 @@ import type {
   ModelUsage,
   HourlyData,
   HourlyTokensByModel,
-  FactoryStatus,
-  WorkEpic,
+  FactoryEpic,
   CreateWorkEpicRequest,
-	FactoryPlan,
-	FactoryPlanGraph,
-	FactoryPlanDecisionRequest,
-  FormulaSummary,
+	 FactoryIssue,
+	FactoryIssueComment,
+	FactoryQueueItem,
+   FactoryProposal,
+	FactoryFormula,
+	FactoryCapacityPolicy,
+	FactoryPlanGateDecisionRequest,
+	FactoryGraphMutation,
 } from './api';
 
-export function useFactoryStatus() {
-  return useQuery<FactoryStatus>({
-    queryKey: ['factory-status'],
-    queryFn: ({ signal }) => api.factoryStatus(signal),
-    refetchInterval: 10_000,
-  });
-}
-
-export function useFactoryFormulas(enabled = true) {
-  return useQuery<FormulaSummary[]>({
-    queryKey: ['factory-formulas'],
-    queryFn: ({ signal }) => api.factoryFormulas(signal),
-    enabled,
-  });
-}
-
-export function useFactoryFormulaActions() {
-  const queryClient = useQueryClient();
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ['factory-formulas'] });
-  return {
-    copy: useMutation({ mutationFn: ({ id, revision }: { id: string; revision: number }) => api.copyFactoryFormula(id, revision) }),
-    validate: useMutation({ mutationFn: (definitionYaml: string) => api.validateFactoryFormula(definitionYaml) }),
-    preview: useMutation({ mutationFn: ({ definitionYaml, parameters }: { definitionYaml: string; parameters: Record<string, string> }) => api.previewFactoryFormula(definitionYaml, parameters) }),
-    save: useMutation({ mutationFn: api.saveFactoryFormula, onSuccess: refresh }),
-    archive: useMutation({ mutationFn: api.archiveFactoryFormula, onSuccess: refresh }),
-    remove: useMutation({ mutationFn: api.deleteFactoryFormula, onSuccess: refresh }),
-  };
-}
-
 export function useWorkEpics(enabled = true) {
-  return useQuery<WorkEpic[]>({
+  return useQuery<FactoryEpic[]>({
     queryKey: ['factory-epics'],
     queryFn: ({ signal }) => api.factoryEpics(signal),
     enabled,
@@ -71,11 +45,120 @@ export function useWorkEpics(enabled = true) {
 }
 
 export function useWorkEpic(id: string) {
-  return useQuery<WorkEpic>({
+  return useQuery<FactoryEpic>({
     queryKey: ['factory-epics', id],
     queryFn: ({ signal }) => api.factoryEpic(id, signal),
     enabled: Boolean(id),
+		refetchInterval: 10_000,
   });
+}
+
+export function useFactoryIssues(id: string) {
+  return useQuery<FactoryIssue[]>({
+    queryKey: ['factory-epics', id, 'issues'],
+    queryFn: ({ signal }) => api.factoryIssues(id, signal),
+    enabled: Boolean(id),
+		refetchInterval: 10_000,
+  });
+}
+
+export function useFactoryIssueComments(epicID: string, issueID: string) {
+	return useQuery<FactoryIssueComment[]>({
+		queryKey: ['factory-issue-comments', epicID, issueID],
+		queryFn: ({ signal }) => api.factoryIssueComments(epicID, issueID, signal),
+		enabled: Boolean(epicID && issueID),
+		refetchInterval: 10_000,
+	});
+}
+
+export function useAddFactoryIssueComment(epicID: string, issueID: string) {
+	const client = useQueryClient();
+	return useMutation({
+		mutationFn: (body: string) => api.addFactoryIssueComment(epicID, issueID, body),
+		onSuccess: (comment) => client.setQueryData<FactoryIssueComment[]>(['factory-issue-comments', epicID, issueID], (comments = []) => [...comments, comment]),
+	});
+}
+
+export function useFactoryRemovedIssues(id: string) {
+  return useQuery<FactoryIssue[]>({
+    queryKey: ['factory-epics', id, 'removed-issues'],
+    queryFn: ({ signal }) => api.factoryRemovedIssues(id, signal),
+    enabled: Boolean(id),
+  });
+}
+
+export function useFactoryGraphIssues(epics: FactoryEpic[] | undefined) {
+  return useQueries({ queries: (epics ?? []).map((epic) => ({ queryKey: ['factory-epics', epic.id, 'issues'], queryFn: ({ signal }: { signal: AbortSignal }) => api.factoryIssues(epic.id, signal), refetchInterval: 10_000 })) });
+}
+
+export function useMutateFactoryGraph(id: string) {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: (mutation: FactoryGraphMutation) => api.mutateFactoryGraph(id, mutation), onSuccess: () => client.invalidateQueries({ queryKey: ['factory-epics'] }) });
+}
+
+export function useFactoryQueue() {
+  return useQuery<FactoryQueueItem[]>({
+    queryKey: ['factory-queue'],
+    queryFn: ({ signal }) => api.factoryQueue(signal),
+    refetchInterval: 10_000,
+  });
+}
+
+export function useResolveFactoryRecoveryGate() {
+	const client = useQueryClient();
+	return useMutation({
+		mutationFn: ({ id, action, response }: { id: string; action: 'resume' | 'retry' | 'cancel'; response: string }) => api.resolveFactoryRecoveryGate(id, action, response),
+		onSuccess: () => Promise.all([client.invalidateQueries({ queryKey: ['factory-epics'] }), client.invalidateQueries({ queryKey: ['factory-queue'] })]),
+	});
+}
+
+export function useResolveFactoryAuthorityGate() {
+	const client = useQueryClient();
+	return useMutation({ mutationFn: ({ id, action }: { id: string; action: 'approve' | 'reject' }) => api.resolveFactoryAuthorityGate(id, action), onSuccess: () => invalidateFactoryState(client) });
+}
+
+export function useFactoryProposals(id: string) {
+  return useQuery<FactoryProposal[]>({
+    queryKey: ['factory-epics', id, 'proposals'],
+    queryFn: ({ signal }) => api.factoryProposals(id, signal),
+    enabled: Boolean(id),
+		refetchInterval: 10_000,
+  });
+}
+
+export function useDecideFactoryPlanGate(id: string) {
+	const client = useQueryClient();
+	return useMutation({ mutationFn: ({ action, ...request }: FactoryPlanGateDecisionRequest & { action: 'approve' | 'revise' | 'reject' }) => api.factoryPlanGate(id, action, request), onSuccess: () => invalidateFactoryState(client) });
+}
+export function useCloseFactoryMol(id: string) {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: (molID: string) => api.factoryCloseMol(id, molID), onSuccess: () => client.invalidateQueries({ queryKey: ['factory-epics', id] }) });
+}
+export function useCloseFactoryEpic(id: string) {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: () => api.factoryCloseEpic(id), onSuccess: () => client.invalidateQueries({ queryKey: ['factory-epics', id] }) });
+}
+
+export function useFactoryFormula(id: string, version: number) {
+	return useQuery<FactoryFormula>({
+		queryKey: ['factory-formulas', id, version],
+		queryFn: ({ signal }) => api.factoryFormula(id, version, signal),
+		enabled: Boolean(id) && version > 0,
+	});
+}
+
+export function useFactoryFormulas() { return useQuery<FactoryFormula[]>({ queryKey: ['factory-formulas'], queryFn: ({ signal }) => api.factoryFormulas(signal) }); }
+export function useValidateFactoryFormula() { return useMutation({ mutationFn: api.validateFactoryFormula }); }
+export function usePreviewFactoryFormula() { return useMutation({ mutationFn: api.previewFactoryFormula }); }
+export function useSaveFactoryFormula() { const client = useQueryClient(); return useMutation({ mutationFn: api.saveFactoryFormula, onSuccess: () => client.invalidateQueries({ queryKey: ['factory-formulas'] }) }); }
+
+export function useFactoryCapacityPolicy() {
+	return useQuery<FactoryCapacityPolicy>({ queryKey: ['factory-capacity-policy'], queryFn: ({ signal }) => api.factoryCapacityPolicy(signal) });
+}
+
+export function useSetFactoryCapacityPolicy() {
+	const queryClient = useQueryClient();
+	return useMutation({ mutationFn: (policy: FactoryCapacityPolicy) => api.setFactoryCapacityPolicy(policy), onSuccess: (policy) => queryClient.setQueryData(['factory-capacity-policy'], policy) });
 }
 
 export function useCreateWorkEpic() {
@@ -83,53 +166,46 @@ export function useCreateWorkEpic() {
   return useMutation({
     mutationFn: (request: CreateWorkEpicRequest) => api.createFactoryEpic(request),
     onSuccess: async (epic) => {
-      queryClient.setQueryData<WorkEpic[]>(['factory-epics'], (epics = []) => [
+       queryClient.setQueryData<FactoryEpic[]>(['factory-epics'], (epics = []) => [
         epic,
         ...epics.filter((item) => item.id !== epic.id),
       ]);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['factory-status'] }),
-        queryClient.invalidateQueries({ queryKey: ['factory-epics'] }),
-      ]);
+       await queryClient.invalidateQueries({ queryKey: ['factory-epics'] });
     },
   });
 }
 
-function setEpicPlan(queryClient: QueryClient, id: string, plan: FactoryPlan) {
-	queryClient.setQueryData<WorkEpic[]>(['factory-epics'], (epics = []) => epics.map((epic) => epic.id === id ? { ...epic, plan } : epic));
-	queryClient.setQueryData<WorkEpic>(['factory-epics', id], (epic) => epic ? { ...epic, plan } : epic);
+export function usePourFactoryEpic(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.pourFactoryEpic(id),
+		onSuccess: async (issues) => {
+			queryClient.setQueryData(['factory-epics', id, 'issues'], issues);
+			await invalidateFactoryState(queryClient);
+		},
+  });
 }
 
-export function useMutateFactoryPlan(id: string) {
-	const queryClient = useQueryClient();
-	return useMutation({
-		mutationFn: ({ expectedRevision, graph }: { expectedRevision: number; graph: FactoryPlanGraph }) => api.mutateFactoryPlan(id, expectedRevision, graph),
-		onSuccess: (result) => setEpicPlan(queryClient, id, result.plan),
-	});
+function invalidateFactoryState(client: QueryClient) {
+	return Promise.all([
+		client.invalidateQueries({ queryKey: ['factory-epics'] }),
+		client.invalidateQueries({ queryKey: ['factory-queue'] }),
+	]);
 }
 
-export function useAddFactoryPlanningWork(id: string) {
-	const queryClient = useQueryClient();
-	return useMutation({
-		mutationFn: ({ expectedRevision, target }: { expectedRevision: number; target: FactoryPlanGraph['targets'][number] }) => api.addFactoryPlanningWork(id, expectedRevision, target),
-		onSuccess: (result) => setEpicPlan(queryClient, id, result.plan),
-	});
+export function useClaimFactoryPlan(id: string) {
+	const client = useQueryClient();
+	return useMutation({ mutationFn: (issueID: string) => api.factoryClaimPlan(id, issueID), onSuccess: () => client.invalidateQueries({ queryKey: ['factory-epics'] }) });
 }
 
-export function useDecideFactoryPlan(id: string) {
-	const queryClient = useQueryClient();
-	return useMutation({
-		mutationFn: ({ action, request }: { action: 'approve' | 'revise' | 'reject' | 'cancel'; request: FactoryPlanDecisionRequest }) => api.decideFactoryPlan(id, action, request),
-		onSuccess: (result) => setEpicPlan(queryClient, id, result.plan),
-	});
+export function useMaterializeFactoryPlan() {
+	const client = useQueryClient();
+	return useMutation({ mutationFn: ({ epicId, issueId }: { epicId: string; issueId: string }) => api.factoryMaterialize(epicId, issueId), onSuccess: () => invalidateFactoryState(client) });
 }
 
-export function useCompleteFactoryPlanningWork(id: string) {
-	const queryClient = useQueryClient();
-	return useMutation({
-		mutationFn: ({ workID, expectedRevision, expectedHash }: { workID: string; expectedRevision: number; expectedHash: string }) => api.completeFactoryPlanningWork(id, workID, expectedRevision, expectedHash),
-		onSuccess: (result) => setEpicPlan(queryClient, id, result.plan),
-	});
+export function useReopenFactoryIssue() {
+	const client = useQueryClient();
+	return useMutation({ mutationFn: ({ epicId, issueId }: { epicId: string; issueId: string }) => api.reopenFactoryIssue(epicId, issueId), onSuccess: () => invalidateFactoryState(client) });
 }
 
 // ---------------------------------------------------------------------------

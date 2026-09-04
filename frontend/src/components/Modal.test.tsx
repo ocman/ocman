@@ -54,6 +54,15 @@ function Harness({ children }: { children?: React.ReactNode }) {
 }
 
 describe('Modal focus management', () => {
+  it('keeps notifications interactive above the modal', async () => {
+    const user = userEvent.setup();
+    render(<><div><div className="oc-prompt-toast-viewport"><button type="button">Dismiss notification</button></div></div><Harness /></>);
+
+    await user.click(screen.getByRole('button', { name: 'Open' }));
+
+    expect(screen.getByRole('button', { name: 'Dismiss notification' }).closest('[inert]')).toBeNull();
+  });
+
   it('focuses its content, keeps Tab inside and restores focus on close', async () => {
     const user = userEvent.setup();
     render(
