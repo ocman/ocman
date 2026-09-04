@@ -6,6 +6,8 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/NoUseFreak/ocman/internal/factory"
@@ -15,146 +17,495 @@ func (s *Server) handleFactoryStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.factory.Status(r.Context()))
 }
 
-func (s *Server) handleFactoryEpics(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleFactoryQueue(w http.ResponseWriter, r *http.Request) {
+	queueService, ok := s.factory.(interface {
+		Queue(context.Context) ([]factory.DispatchItem, error)
+	})
+	if !ok {
+		writeFactoryError(w, factory.ErrFactoryUnavailable)
+		return
+	}
+	queue, err := queueService.Queue(r.Context())
+	if err != nil {
+		writeFactoryError(w, err)
+		return
+	}
+	if queue == nil {
+		queue = []factory.DispatchItem{}
+	}
+	writeJSON(w, queue)
+}
+
+func (s *Server) handleFactoryRecoveryGate(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.EscapedPath(), "/api/factory/recovery-gates/"), "/"), "/")
+	if len(parts) != 2 || parts[0] == "" || (parts[1] != "resume" && parts[1] != "retry" && parts[1] != "cancel") {
+		http.Error(w, "invalid recovery gate action", http.StatusBadRequest)
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Response string `json:"response"`
+		}
+		if !decodeFactoryRequest(w, r, &request) {
+			return
+		}
+		gateID, err := url.PathUnescape(parts[0])
+		if err != nil {
+			http.Error(w, "invalid recovery gate ID", http.StatusBadRequest)
+			return
+		}
+		gate, err := s.factory.ResolveRecoveryGate(r.Context(), gateID, parts[1], request.Response)
+		if err != nil {
+			writeFactoryError(w, err)
+			return
+		}
+		writeJSON(w, gate)
+	})(w, r)
+}
+
+func (s *Server) handleFactoryAuthorityGate(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.EscapedPath(), "/api/factory/authority-gates/"), "/"), "/")
+	if len(parts) != 2 || parts[0] == "" || (parts[1] != "approve" && parts[1] != "reject") {
+		http.Error(w, "invalid authority gate action", http.StatusBadRequest)
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+		gateID, err := url.PathUnescape(parts[0])
+		if err != nil {
+			http.Error(w, "invalid authority gate ID", http.StatusBadRequest)
+			return
+		}
+		gate, err := s.factory.ResolveAuthorityEscalationGate(r.Context(), gateID, parts[1])
+		if err != nil {
+			writeFactoryError(w, err)
+			return
+		}
+		writeJSON(w, gate)
+	})(w, r)
+}
+
+func (s *Server) handleFactoryConfiguration(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		requireGET(s.handleFactoryEpicList)(w, r)
+		policy, err := s.factory.GetCapacityPolicy(r.Context())
+		if err != nil {
+			writeFactoryError(w, err)
+			return
+		}
+		writeJSON(w, policy)
 	case http.MethodPost:
-		requirePOST(s.requireLocalhost(s.handleFactoryEpicCreate))(w, r)
+		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+			var policy factory.CapacityPolicy
+			if !decodeFactoryRequest(w, r, &policy) {
+				return
+			}
+			policy, err := s.factory.SetCapacityPolicy(r.Context(), policy)
+			if err != nil {
+				writeFactoryError(w, err)
+				return
+			}
+			writeJSON(w, policy)
+		})(w, r)
 	default:
 		w.Header().Set("Allow", "GET, POST")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-func (s *Server) handleFactoryEpicList(w http.ResponseWriter, r *http.Request) {
-	epics, err := s.factory.ListWorkEpics(r.Context())
-	if err != nil {
-		writeFactoryError(w, err)
-		return
+func (s *Server) handleFactoryEpics(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		epics, err := s.factory.ListWorkEpics(r.Context())
+		if err != nil {
+			writeFactoryError(w, err)
+			return
+		}
+		if epics == nil {
+			epics = []factory.WorkEpic{}
+		}
+		writeJSON(w, epics)
+	case http.MethodPost:
+		s.requireLocalhost(s.handleFactoryEpicCreate)(w, r)
+	default:
+		w.Header().Set("Allow", "GET, POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
-	if epics == nil {
-		epics = []factory.WorkEpic{}
-	}
-	writeJSON(w, epics)
 }
 
 func (s *Server) handleFactoryEpic(w http.ResponseWriter, r *http.Request) {
-	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/factory/epics/"), "/"), "/")
+	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.EscapedPath(), "/api/factory/epics/"), "/"), "/")
+	for i, part := range parts {
+		decoded, err := url.PathUnescape(part)
+		if err != nil {
+			http.Error(w, "invalid Factory path", http.StatusBadRequest)
+			return
+		}
+		parts[i] = decoded
+	}
 	if len(parts) == 0 || parts[0] == "" {
 		http.Error(w, "invalid epic ID", http.StatusBadRequest)
 		return
 	}
-	if len(parts) == 1 {
-		requireGET(func(w http.ResponseWriter, r *http.Request) { s.handleFactoryEpicGet(w, r, parts[0]) })(w, r)
-		return
-	}
-	if len(parts) == 2 && parts[1] == "plan" {
-		requireGET(func(w http.ResponseWriter, r *http.Request) { s.handleFactoryPlanGet(w, r, parts[0]) })(w, r)
-		return
-	}
-	mutation := s.requireLocalhost(requirePOST(func(w http.ResponseWriter, r *http.Request) {
-		s.handleFactoryPlanMutation(w, r, parts)
-	}))
-	mutation(w, r)
-}
-
-func (s *Server) handleFactoryEpicGet(w http.ResponseWriter, r *http.Request, id string) {
-	epic, err := s.factory.GetWorkEpic(r.Context(), id)
-	if err != nil {
-		writeFactoryError(w, err)
-		return
-	}
-	writeJSON(w, epic)
-}
-
-func (s *Server) handleFactoryPlanGet(w http.ResponseWriter, r *http.Request, id string) {
-	plan, err := s.factory.GetPlan(r.Context(), id)
-	if err != nil {
-		writeFactoryError(w, err)
-		return
-	}
-	writeJSON(w, plan)
-}
-
-func (s *Server) handleFactoryPlanMutation(w http.ResponseWriter, r *http.Request, parts []string) {
-	if len(parts) == 3 && parts[1] == "plan" && parts[2] == "mutate" {
-		var req factory.MutatePlanRequest
-		if !decodeFactoryRequest(w, r, &req) {
-			return
-		}
-		result, err := s.factory.MutatePlan(r.Context(), parts[0], req)
+	if len(parts) == 1 && r.Method == http.MethodGet {
+		epic, err := s.factory.GetWorkEpic(r.Context(), parts[0])
 		if err != nil {
 			writeFactoryError(w, err)
 			return
 		}
-		if result.Stale {
-			writeFactoryPlanConflict(w, result.Plan)
-			return
-		}
-		writeJSON(w, result)
+		writeJSON(w, epic)
 		return
 	}
-	if len(parts) == 2 && parts[1] == "planning" {
-		var req factory.AddPlanningWorkRequest
-		if !decodeFactoryRequest(w, r, &req) {
-			return
-		}
-		result, err := s.factory.AddPlanningWork(r.Context(), parts[0], req)
+	if len(parts) == 2 && parts[1] == "issues" && r.Method == http.MethodGet {
+		issues, err := s.factory.ListIssues(r.Context(), parts[0])
 		if err != nil {
 			writeFactoryError(w, err)
 			return
 		}
-		if result.Stale {
-			writeFactoryPlanConflict(w, result.Plan)
-			return
+		if issues == nil {
+			issues = []factory.Issue{}
 		}
-		writeJSONStatus(w, http.StatusCreated, result)
+		writeJSON(w, issues)
 		return
 	}
-	if len(parts) == 4 && parts[1] == "planning" && parts[3] == "complete" {
-		var req factory.CompletePlanningWorkRequest
-		if !decodeFactoryRequest(w, r, &req) {
-			return
-		}
-		req.Actor = "operator"
-		plan, err := s.factory.CompletePlanningWork(r.Context(), parts[0], parts[2], req)
-		if err != nil {
-			writeFactoryError(w, err)
-			return
-		}
-		writeJSON(w, plan)
-		return
-	}
-	if len(parts) == 3 && parts[1] == "plan" {
-		var req factory.PlanDecisionRequest
-		if !decodeFactoryRequest(w, r, &req) {
-			return
-		}
-		req.Actor = "operator"
-		var plan factory.Plan
-		var err error
-		switch parts[2] {
-		case "approve":
-			plan, err = s.factory.ApprovePlan(r.Context(), parts[0], req)
-		case "revise":
-			plan, err = s.factory.RevisePlan(r.Context(), parts[0], req)
-		case "reject":
-			plan, err = s.factory.RejectPlan(r.Context(), parts[0], req)
-		case "cancel":
-			plan, err = s.factory.CancelPlan(r.Context(), parts[0], req)
+	if len(parts) == 4 && parts[1] == "issues" && parts[3] == "comments" {
+		switch r.Method {
+		case http.MethodGet:
+			comments, err := s.factory.ListIssueComments(r.Context(), parts[0], parts[2])
+			if err != nil {
+				writeFactoryError(w, err)
+				return
+			}
+			if comments == nil {
+				comments = []factory.IssueComment{}
+			}
+			writeJSON(w, comments)
+		case http.MethodPost:
+			s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+				var request struct {
+					Body string `json:"body"`
+				}
+				if !decodeFactoryRequest(w, r, &request) {
+					return
+				}
+				comment, err := s.factory.AddIssueComment(r.Context(), parts[0], parts[2], "user", request.Body)
+				if err != nil {
+					writeFactoryError(w, err)
+					return
+				}
+				writeJSONStatus(w, http.StatusCreated, comment)
+			})(w, r)
 		default:
-			http.NotFound(w, r)
+			w.Header().Set("Allow", "GET, POST")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+		return
+	}
+	if len(parts) == 2 && parts[1] == "removed-issues" && r.Method == http.MethodGet {
+		removed, ok := s.factory.(interface {
+			ListRemovedIssues(context.Context, string) ([]factory.Issue, error)
+		})
+		if !ok {
+			writeFactoryError(w, factory.ErrFactoryUnavailable)
 			return
 		}
+		issues, err := removed.ListRemovedIssues(r.Context(), parts[0])
 		if err != nil {
 			writeFactoryError(w, err)
 			return
 		}
-		writeJSON(w, plan)
+		if issues == nil {
+			issues = []factory.Issue{}
+		}
+		writeJSON(w, issues)
 		return
 	}
-	http.NotFound(w, r)
+	if len(parts) == 2 && parts[1] == "mutations" && r.Method == http.MethodPost {
+		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+			mutator, ok := s.factory.(interface {
+				MutateGraph(context.Context, factory.GraphMutation) error
+			})
+			if !ok {
+				writeFactoryError(w, factory.ErrFactoryUnavailable)
+				return
+			}
+			var mutation factory.GraphMutation
+			if !decodeFactoryRequest(w, r, &mutation) {
+				return
+			}
+			mutation.EpicID = parts[0]
+			mutation.Actor = "user"
+			if err := mutator.MutateGraph(r.Context(), mutation); err != nil {
+				writeFactoryError(w, err)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		})(w, r)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "pour" && r.Method == http.MethodPost {
+		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+			issues, err := s.factory.Pour(r.Context(), parts[0])
+			if err != nil {
+				writeFactoryError(w, err)
+				return
+			}
+			writeJSONStatus(w, http.StatusCreated, issues)
+		})(w, r)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "close" && r.Method == http.MethodPost {
+		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+			closer, ok := s.factory.(interface {
+				CloseEpic(context.Context, string) error
+			})
+			if !ok {
+				writeFactoryError(w, factory.ErrFactoryUnavailable)
+				return
+			}
+			if err := closer.CloseEpic(r.Context(), parts[0]); err != nil {
+				writeFactoryError(w, err)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		})(w, r)
+		return
+	}
+	if len(parts) == 4 && parts[1] == "mols" && parts[3] == "close" && r.Method == http.MethodPost {
+		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+			closer, ok := s.factory.(interface {
+				CloseMol(context.Context, string, string) error
+			})
+			if !ok {
+				writeFactoryError(w, factory.ErrFactoryUnavailable)
+				return
+			}
+			if err := closer.CloseMol(r.Context(), parts[0], parts[2]); err != nil {
+				writeFactoryError(w, err)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		})(w, r)
+		return
+	}
+	if len(parts) == 4 && parts[1] == "issues" && parts[3] == "reopen" && r.Method == http.MethodPost {
+		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+			reopener, ok := s.factory.(interface {
+				ReopenIssue(context.Context, string, string) error
+			})
+			if !ok {
+				writeFactoryError(w, factory.ErrFactoryUnavailable)
+				return
+			}
+			if err := reopener.ReopenIssue(r.Context(), parts[0], parts[2]); err != nil {
+				writeFactoryError(w, err)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		})(w, r)
+		return
+	}
+	if len(parts) == 3 && parts[1] == "plans" && r.Method == http.MethodPost {
+		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+			claimed, err := s.factory.ClaimPlan(r.Context(), parts[0], parts[2])
+			if err != nil {
+				writeFactoryError(w, err)
+				return
+			}
+			writeJSONStatus(w, http.StatusCreated, claimed)
+		})(w, r)
+		return
+	}
+	if len(parts) == 3 && parts[1] == "materializations" && r.Method == http.MethodPost {
+		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+			materialization, err := s.factory.Materialize(r.Context(), parts[0], parts[2])
+			if err != nil {
+				writeFactoryError(w, err)
+				return
+			}
+			writeJSONStatus(w, http.StatusCreated, materialization)
+		})(w, r)
+		return
+	}
+	if len(parts) == 3 && parts[1] == "plan-gate" && r.Method == http.MethodPost {
+		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+			if parts[2] != "approve" && parts[2] != "revise" && parts[2] != "reject" {
+				http.Error(w, "invalid Plan gate action", http.StatusBadRequest)
+				return
+			}
+			var req factory.PlanGateDecisionRequest
+			if !decodeFactoryRequest(w, r, &req) {
+				return
+			}
+			gate, err := s.factory.DecidePlanGate(r.Context(), parts[0], parts[2], req)
+			if err != nil {
+				writeFactoryError(w, err)
+				return
+			}
+			writeJSON(w, gate)
+		})(w, r)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "proposals" && r.Method == http.MethodGet {
+		proposals, err := s.factory.ListProposals(r.Context(), parts[0])
+		if err != nil {
+			writeFactoryError(w, err)
+			return
+		}
+		if proposals == nil {
+			proposals = []factory.ProposalRevision{}
+		}
+		writeJSON(w, proposals)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "proposals" && r.Method == http.MethodPost {
+		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+			var req factory.SubmitProposalRequest
+			if !decodeFactoryRequest(w, r, &req) {
+				return
+			}
+			if req.AttemptID == "" || req.AttemptToken == "" {
+				http.Error(w, "attemptId and attemptToken are required", http.StatusBadRequest)
+				return
+			}
+			req.EpicID = parts[0]
+			proposal, err := s.factory.SubmitProposal(r.Context(), req)
+			if err != nil {
+				writeFactoryError(w, err)
+				return
+			}
+			writeJSONStatus(w, http.StatusCreated, proposal)
+		})(w, r)
+		return
+	}
+	if len(parts) == 3 && parts[1] == "proposals" && r.Method == http.MethodGet {
+		revision, err := strconv.Atoi(parts[2])
+		if err != nil || revision < 1 {
+			http.Error(w, "invalid proposal revision", http.StatusBadRequest)
+			return
+		}
+		proposal, err := s.factory.GetProposal(r.Context(), parts[0], revision)
+		if err != nil {
+			writeFactoryError(w, err)
+			return
+		}
+		writeJSON(w, proposal)
+		return
+	}
+	w.Header().Set("Allow", "GET, POST")
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+}
+
+func (s *Server) handleFactoryEpicCreate(w http.ResponseWriter, r *http.Request) {
+	var req factory.CreateWorkEpicRequest
+	if !decodeFactoryRequest(w, r, &req) {
+		return
+	}
+	epic, err := s.factory.CreateWorkEpic(r.Context(), req)
+	if err != nil {
+		writeFactoryError(w, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusCreated, epic)
+}
+
+func (s *Server) handleFactoryFormulas(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/factory/formulas")
+	if path == "" || path == "/" {
+		switch r.Method {
+		case http.MethodGet:
+			formulas, err := s.factory.ListFormulas(r.Context())
+			if err != nil {
+				writeFactoryError(w, err)
+				return
+			}
+			if formulas == nil {
+				formulas = []factory.NativeFormulaView{}
+			}
+			writeJSON(w, formulas)
+		case http.MethodPost:
+			s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+				var req factory.FormulaSaveRequest
+				if !decodeFactoryRequest(w, r, &req) {
+					return
+				}
+				formula, err := s.factory.SaveFormula(r.Context(), req)
+				if err != nil {
+					writeFactoryError(w, err)
+					return
+				}
+				writeJSONStatus(w, http.StatusCreated, formula)
+			})(w, r)
+		default:
+			w.Header().Set("Allow", "GET, POST")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+		return
+	}
+	if path == "/validate" || path == "/preview" {
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", http.MethodPost)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+			var req struct {
+				Source string `json:"source"`
+				ID     string `json:"id"`
+			}
+			if !decodeFactoryRequest(w, r, &req) {
+				return
+			}
+			var formula factory.NativeFormulaView
+			var err error
+			if path == "/validate" {
+				formula, err = s.factory.ValidateFormula(r.Context(), req.Source, req.ID)
+			} else {
+				formula, err = s.factory.PreviewFormula(r.Context(), req.Source, req.ID)
+			}
+			if err != nil {
+				writeFactoryError(w, err)
+				return
+			}
+			writeJSON(w, formula)
+		})(w, r)
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	parts := strings.Split(strings.TrimPrefix(r.URL.EscapedPath(), "/api/factory/formulas/"), "/")
+	if len(parts) != 2 || parts[0] == "" {
+		http.Error(w, "invalid Formula reference", http.StatusBadRequest)
+		return
+	}
+	id, err := url.PathUnescape(parts[0])
+	if err != nil {
+		http.Error(w, "invalid Formula reference", http.StatusBadRequest)
+		return
+	}
+	version, err := strconv.Atoi(parts[1])
+	if err != nil || version < 1 {
+		http.Error(w, "invalid Formula revision", http.StatusBadRequest)
+		return
+	}
+	formula, err := s.factory.GetFormula(r.Context(), id, version)
+	if err != nil {
+		writeFactoryError(w, err)
+		return
+	}
+	writeJSON(w, formula)
 }
 
 func decodeFactoryRequest(w http.ResponseWriter, r *http.Request, value any) bool {
@@ -171,157 +522,42 @@ func decodeFactoryRequest(w http.ResponseWriter, r *http.Request, value any) boo
 	return true
 }
 
-func (s *Server) handleFactoryEpicCreate(w http.ResponseWriter, r *http.Request) {
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxRequestBody))
-	decoder.DisallowUnknownFields()
-	var req factory.CreateWorkEpicRequest
-	if err := decoder.Decode(&req); err != nil {
-		http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		http.Error(w, "invalid request: body must contain one JSON object", http.StatusBadRequest)
-		return
-	}
-	epic, err := s.factory.CreateWorkEpic(r.Context(), req)
-	if err != nil {
-		writeFactoryError(w, err)
-		return
-	}
-	writeJSONStatus(w, http.StatusCreated, epic)
-}
-
 func writeFactoryError(w http.ResponseWriter, err error) {
-	var conflict *factory.PlanConflictError
-	if errors.As(err, &conflict) {
-		writeFactoryPlanConflict(w, conflict.Current)
+	if errors.Is(err, factory.ErrFormulaCorrupt) {
+		serverError(w, "reading Factory Formula", err)
 		return
 	}
-	switch {
-	case errors.Is(err, factory.ErrWorkEpicNotFound):
-		http.Error(w, err.Error(), http.StatusNotFound)
-	case errors.Is(err, factory.ErrInstantiationConflict):
-		http.Error(w, err.Error(), http.StatusConflict)
-	case errors.Is(err, factory.ErrPlanNotApprovable):
-		http.Error(w, err.Error(), http.StatusConflict)
-	case errors.Is(err, factory.ErrFactoryUnavailable):
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
-	case errors.Is(err, factory.ErrBeadsFailure):
-		http.Error(w, err.Error(), http.StatusBadGateway)
-	case errors.Is(err, factory.ErrFormulaNotFound):
-		http.Error(w, err.Error(), http.StatusNotFound)
-	case errors.Is(err, factory.ErrFormulaReferenced), errors.Is(err, factory.ErrBuiltInFormulaImmutable):
-		http.Error(w, err.Error(), http.StatusConflict)
-	default:
+	if errors.Is(err, factory.ErrFactoryUnavailable) {
+		http.Error(w, "factory is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if errors.Is(err, factory.ErrFormulaNotFound) {
+		http.Error(w, "factory Formula not found", http.StatusNotFound)
+		return
+	}
+	if errors.Is(err, factory.ErrWorkEpicNotFound) {
+		http.Error(w, "factory epic not found", http.StatusNotFound)
+		return
+	}
+	if errors.Is(err, factory.ErrInstantiationConflict) {
+		http.Error(w, "factory instantiation conflict", http.StatusConflict)
+		return
+	}
+	if errors.Is(err, factory.ErrActionNotPermitted) {
+		http.Error(w, "factory action is not permitted", http.StatusForbidden)
+		return
+	}
+	if errors.Is(err, factory.ErrProjectNotLocalGit) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
-}
-func writeFactoryPlanConflict(w http.ResponseWriter, plan factory.Plan) {
-	writeJSONStatus(w, http.StatusConflict, struct {
-		Stale bool         `json:"stale"`
-		Plan  factory.Plan `json:"plan"`
-	}{Stale: true, Plan: plan})
-}
-
-func (s *Server) handleFactoryFormulas(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		formulas, err := s.factory.ListFormulas(r.Context())
-		if err != nil {
-			writeFactoryError(w, err)
-			return
-		}
-		if formulas == nil {
-			formulas = []factory.FormulaSummary{}
-		}
-		writeJSON(w, formulas)
-	case http.MethodPost:
-		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
-			var req factory.SaveFormulaRequest
-			if !decodeFactoryRequest(w, r, &req) {
-				return
-			}
-			revision, err := s.factory.SaveFormula(r.Context(), req)
-			if err != nil {
-				writeFactoryError(w, err)
-				return
-			}
-			writeJSONStatus(w, http.StatusCreated, revision)
-		})(w, r)
-	default:
-		w.Header().Set("Allow", "GET, POST")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if errors.Is(err, factory.ErrInvalidRequest) || errors.Is(err, factory.ErrAcknowledgementRequired) {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
-}
-
-func (s *Server) handleFactoryFormulaCopy(w http.ResponseWriter, r *http.Request) {
-	requirePOST(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			ID       string `json:"id"`
-			Revision int    `json:"revision"`
-		}
-		if !decodeFactoryRequest(w, r, &req) {
-			return
-		}
-		draft, err := s.factory.CopyFormula(r.Context(), req.ID, req.Revision)
-		if err != nil {
-			writeFactoryError(w, err)
-			return
-		}
-		writeJSON(w, draft)
-	})(w, r)
-}
-
-func (s *Server) handleFactoryFormulaValidate(w http.ResponseWriter, r *http.Request) {
-	requirePOST(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			DefinitionYAML string `json:"definitionYaml"`
-		}
-		if !decodeFactoryRequest(w, r, &req) {
-			return
-		}
-		writeJSON(w, s.factory.ValidateFormula(req.DefinitionYAML))
-	})(w, r)
-}
-
-func (s *Server) handleFactoryFormulaPreview(w http.ResponseWriter, r *http.Request) {
-	requirePOST(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			DefinitionYAML string            `json:"definitionYaml"`
-			Parameters     map[string]string `json:"parameters"`
-		}
-		if !decodeFactoryRequest(w, r, &req) {
-			return
-		}
-		preview, err := s.factory.PreviewFormula(req.DefinitionYAML, req.Parameters)
-		if err != nil {
-			writeFactoryError(w, err)
-			return
-		}
-		writeJSON(w, preview)
-	})(w, r)
-}
-
-func (s *Server) handleFactoryFormulaArchive(w http.ResponseWriter, r *http.Request) {
-	s.handleFactoryFormulaIDAction(w, r, s.factory.ArchiveFormula)
-}
-
-func (s *Server) handleFactoryFormulaDelete(w http.ResponseWriter, r *http.Request) {
-	s.handleFactoryFormulaIDAction(w, r, s.factory.DeleteFormula)
-}
-
-func (s *Server) handleFactoryFormulaIDAction(w http.ResponseWriter, r *http.Request, action func(context.Context, string) error) {
-	requirePOST(func(w http.ResponseWriter, r *http.Request) {
-		var req struct {
-			ID string `json:"id"`
-		}
-		if !decodeFactoryRequest(w, r, &req) {
-			return
-		}
-		if err := action(r.Context(), req.ID); err != nil {
-			writeFactoryError(w, err)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	})(w, r)
+	if errors.Is(err, factory.ErrInvalidFormula) {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	serverError(w, "handling Factory request", err)
 }

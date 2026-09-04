@@ -52,18 +52,17 @@ func TestResolveAuthPassword_Precedence(t *testing.T) {
 	}
 }
 
-func TestEmbeddedFactorySkillUsesOnlyFactoryContract(t *testing.T) {
+func TestEmbeddedFactorySkillUsesOnlyFactoryActionContract(t *testing.T) {
 	skills := embeddedSkills()
 	source := string(skills["ocman-factory"])
 	for _, required := range []string{
-		"explicit", "prepare_factory_work", "acknowledge_factory_execution",
-		"create_factory_work_epic", "confirmation", "stop",
+		"factory", `"action":"help"`, "schemas", "examples",
 	} {
 		if !strings.Contains(strings.ToLower(source), strings.ToLower(required)) {
 			t.Errorf("Factory skill is missing %q", required)
 		}
 	}
-	for _, hidden := range []string{"beads", "sqlite"} {
+	for _, hidden := range []string{"beads", "sqlite", "prepare_factory_work", "create_factory_work_epic"} {
 		if strings.Contains(strings.ToLower(source), hidden) {
 			t.Errorf("Factory skill exposes implementation term %q", hidden)
 		}

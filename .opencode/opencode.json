@@ -3,7 +3,7 @@
   "mcp": {
     "ocman": {
       "type": "remote",
-      "url": "http://localhost:8228/mcp",
+      "url": "http://127.0.0.1:8227/mcp",
       "enabled": true
     }
   }

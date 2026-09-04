@@ -11,6 +11,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/factory"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/opencodeconfig"
 )
@@ -65,8 +66,9 @@ func (s *Server) handleMCPConfigInstall(w http.ResponseWriter, _ *http.Request) 
 	})
 }
 
-// mcpHandler returns the shared MCP handler. Both the main mux and the
-// dedicated loopback listener serve the same stateless workflow/file tool set.
+// mcpHandler returns the MCP handler shared by both mounts. Only agents
+// speak MCP (the browser uses REST), so user-only Factory actions are
+// refused here as well as on the dedicated listener.
 func (s *Server) mcpHandler() http.Handler {
 	s.mcpHandlerOnce.Do(func() { s.mcpHandlerCached = s.buildMCPHandler() })
 	return s.mcpHandlerCached
@@ -78,9 +80,42 @@ func (s *Server) mcpHandler() http.Handler {
 // The handler is localhost-only (enforced by the caller in StartOnListener).
 // It is only registered when the OpenCode platform adapter is present.
 func (s *Server) buildMCPHandler() http.Handler {
+	return s.buildMCPHandlerFor(factoryMCPService{s.factory})
+}
+
+// factoryMCPService keeps operator decisions behind the browser while allowing
+// agents to maintain Factory Issues that have not started or closed.
+type factoryMCPService struct{ factoryService }
+
+func (factoryMCPService) CreateWorkEpic(context.Context, factory.CreateWorkEpicRequest) (factory.WorkEpic, error) {
+	return factory.WorkEpic{}, factory.ErrActionNotPermitted
+}
+func (s factoryMCPService) MutateGraph(ctx context.Context, mutation factory.GraphMutation) error {
+	if mutation.Action == "create" && (mutation.Kind == "implementation" || mutation.Kind == "task") {
+		return factory.ErrActionNotPermitted
+	}
+	return s.factoryService.MutateGraph(ctx, mutation)
+}
+func (factoryMCPService) SaveFormula(context.Context, factory.FormulaSaveRequest) (factory.NativeFormulaView, error) {
+	return factory.NativeFormulaView{}, factory.ErrActionNotPermitted
+}
+func (factoryMCPService) SetCapacityPolicy(context.Context, factory.CapacityPolicy) (factory.CapacityPolicy, error) {
+	return factory.CapacityPolicy{}, factory.ErrActionNotPermitted
+}
+func (factoryMCPService) DecidePlanGate(context.Context, string, string, factory.PlanGateDecisionRequest) (factory.PlanGate, error) {
+	return factory.PlanGate{}, factory.ErrActionNotPermitted
+}
+func (factoryMCPService) ResolveRecoveryGate(context.Context, string, string, string) (factory.RecoveryGate, error) {
+	return factory.RecoveryGate{}, factory.ErrActionNotPermitted
+}
+func (factoryMCPService) ResolveAuthorityEscalationGate(context.Context, string, string) (factory.AuthorityEscalationGate, error) {
+	return factory.AuthorityEscalationGate{}, factory.ErrActionNotPermitted
+}
+
+func (s *Server) buildMCPHandlerFor(factoryService factoryService) http.Handler {
 	deps := internalmcp.Deps{
 		SignFile:       s.FileURL,
-		FactoryService: s.factoryIntake,
+		FactoryService: factoryService,
 	}
 	if s.stateDB != nil {
 		deps.WorkflowService = s.workflowSvc()
@@ -135,15 +170,18 @@ func (s *Server) startMCPListener() func() {
 	host, _, err := net.SplitHostPort(s.mcpAddr)
 	if err != nil {
 		log.WithError(err).WithField("addr", s.mcpAddr).Warn("mcp: invalid -mcp-addr, dedicated MCP listener disabled")
+		s.mcpAddr = ""
 		return noop
 	}
 	if !isLoopbackHostname(strings.Trim(host, "[]")) {
 		log.WithField("addr", s.mcpAddr).Warn("mcp: -mcp-addr must be a loopback address (the endpoint is unauthenticated); dedicated MCP listener disabled")
+		s.mcpAddr = ""
 		return noop
 	}
 	ln, err := net.Listen("tcp", s.mcpAddr)
 	if err != nil {
 		log.WithError(err).WithField("addr", s.mcpAddr).Warn("mcp: cannot bind -mcp-addr, dedicated MCP listener disabled")
+		s.mcpAddr = ""
 		return noop
 	}
 
@@ -154,6 +192,8 @@ func (s *Server) startMCPListener() func() {
 	mux := http.NewServeMux()
 	// requireLoopbackPeer is belt-and-braces: the listener is already
 	// loopback-bound, but it also rejects cross-origin browser requests.
+	// OpenCode sessions use this endpoint. Operator decisions remain user-only;
+	// mutable Factory Issues can be maintained from any agent session.
 	h := s.requireLoopbackPeer(s.mcpHandler().ServeHTTP)
 	mux.HandleFunc("/mcp", h)
 	mux.HandleFunc("/mcp/", h)

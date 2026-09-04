@@ -440,6 +440,35 @@ func (s *Server) handleSessionPermission(w http.ResponseWriter, r *http.Request)
 			http.Error(w, "invalid permission ID", http.StatusBadRequest)
 			return
 		}
+		factorySession := false
+		if req.Reply != "reject" {
+			var err error
+			factorySession, err = s.factory.IsImplementationSession(r.Context(), sessionID)
+			if err != nil {
+				writeFactoryError(w, err)
+				return
+			}
+		}
+		if factorySession {
+			adapter, ok := s.registry.PlatformForSession(r.Context(), sessionID)
+			if ok {
+				if prompts, err := adapter.ListPermissions(r.Context(), sessionID); err == nil {
+					for _, prompt := range prompts {
+						if id, _ := prompt["id"].(string); id == permissionID {
+							gate, handled, err := s.factory.EscalatePermission(r.Context(), sessionID, permissionID, stringValue(prompt["permission"]), strings.Join(extractPermissionPatterns(prompt), ","))
+							if err != nil {
+								writeFactoryError(w, err)
+								return
+							}
+							if handled {
+								writeJSON(w, gate)
+								return
+							}
+						}
+					}
+				}
+			}
+		}
 		// The session service cancels any in-flight auto-approve judge
 		// (via the PermissionReplied hook) before forwarding the reply.
 		if err := s.sessions.RespondPermission(r.Context(), platformHint(r), platforms.RespondPermissionRequest{
@@ -453,6 +482,8 @@ func (s *Server) handleSessionPermission(w http.ResponseWriter, r *http.Request)
 		w.WriteHeader(http.StatusNoContent)
 	})
 }
+
+func stringValue(value any) string { result, _ := value.(string); return result }
 
 // handleSessionQuestion dispatches POST /api/session/{id}/questions/{qid}
 // and POST /api/session/{id}/questions/{qid}/reject.
