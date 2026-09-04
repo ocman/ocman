@@ -79,3 +79,21 @@ func ResolveRepoRoot(ctx context.Context, dir string) (string, error) {
 	}
 	return strings.TrimSpace(string(out)), nil
 }
+
+// ResolveMainRepoRoot returns the primary worktree root for the repository
+// containing dir. Linked worktrees share this root.
+func ResolveMainRepoRoot(ctx context.Context, dir string) (string, error) {
+	root, err := ResolveRepoRoot(ctx, dir)
+	if err != nil {
+		return "", err
+	}
+	commonDir, err := gitexec.Command(ctx, "-C", root, "rev-parse", "--git-common-dir").Output()
+	if err != nil {
+		return "", fmt.Errorf("git common dir: %w", err)
+	}
+	common := strings.TrimSpace(string(commonDir))
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(root, common)
+	}
+	return filepath.EvalSymlinks(filepath.Clean(filepath.Dir(common)))
+}

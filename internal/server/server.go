@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -146,11 +145,10 @@ type Server struct {
 	// newLocalHost. Defaults to the native tmux runtime; tests override it
 	// (before the host router is built) with a fake so session-mode
 	// handlers don't spawn (and leak) real tmux sessions in temp dirs.
-	runtime       ocruntime.Runtime
-	openCodeAuth  ocapi.Auth
-	daguManager   *dagu.Manager
-	factory       factoryService
-	factoryIntake factoryIntakeService
+	runtime      ocruntime.Runtime
+	openCodeAuth ocapi.Auth
+	daguManager  *dagu.Manager
+	factory      factoryService
 
 	getNewAssistantMessages func(context.Context, int64) ([]db.LLMMessageRow, int64, error)
 
@@ -168,27 +166,30 @@ type factoryService interface {
 	CreateWorkEpic(context.Context, factory.CreateWorkEpicRequest) (factory.WorkEpic, error)
 	ListWorkEpics(context.Context) ([]factory.WorkEpic, error)
 	GetWorkEpic(context.Context, string) (factory.WorkEpic, error)
-	GetPlan(context.Context, string) (factory.Plan, error)
-	MutatePlan(context.Context, string, factory.MutatePlanRequest) (factory.PlanMutationResult, error)
-	AddPlanningWork(context.Context, string, factory.AddPlanningWorkRequest) (factory.PlanMutationResult, error)
-	CompletePlanningWork(context.Context, string, string, factory.CompletePlanningWorkRequest) (factory.Plan, error)
-	ApprovePlan(context.Context, string, factory.PlanDecisionRequest) (factory.Plan, error)
-	RevisePlan(context.Context, string, factory.PlanDecisionRequest) (factory.Plan, error)
-	RejectPlan(context.Context, string, factory.PlanDecisionRequest) (factory.Plan, error)
-	CancelPlan(context.Context, string, factory.PlanDecisionRequest) (factory.Plan, error)
-	ListFormulas(context.Context) ([]factory.FormulaSummary, error)
-	CopyFormula(context.Context, string, int) (factory.FormulaDraft, error)
-	ValidateFormula(string) factory.FormulaValidation
-	PreviewFormula(string, map[string]string) (factory.FormulaPreview, error)
-	SaveFormula(context.Context, factory.SaveFormulaRequest) (factory.FormulaRevision, error)
-	ArchiveFormula(context.Context, string) error
-	DeleteFormula(context.Context, string) error
-}
-
-type factoryIntakeService interface {
-	PrepareWork(context.Context, factory.PrepareWorkRequest) (factory.PreparedWork, error)
-	AcknowledgeLocalExecution(context.Context, string) error
-	CreatePreparedWorkEpic(context.Context, factory.PreparedWork) (factory.WorkEpic, error)
+	Pour(context.Context, string) ([]factory.Issue, error)
+	ListIssues(context.Context, string) ([]factory.Issue, error)
+	ListIssueComments(context.Context, string, string) ([]factory.IssueComment, error)
+	AddIssueComment(context.Context, string, string, string, string) (factory.IssueComment, error)
+	ClaimPlan(context.Context, string, string) (factory.ClaimedPlan, error)
+	Materialize(context.Context, string, string) (factory.Materialization, error)
+	SubmitProposal(context.Context, factory.SubmitProposalRequest) (factory.ProposalRevision, error)
+	GetProposal(context.Context, string, int) (factory.ProposalRevision, error)
+	ListProposals(context.Context, string) ([]factory.ProposalRevision, error)
+	DecidePlanGate(context.Context, string, string, factory.PlanGateDecisionRequest) (factory.PlanGate, error)
+	GetFormula(context.Context, string, int) (factory.NativeFormulaView, error)
+	ListFormulas(context.Context) ([]factory.NativeFormulaView, error)
+	ValidateFormula(context.Context, string, string) (factory.NativeFormulaView, error)
+	PreviewFormula(context.Context, string, string) (factory.NativeFormulaView, error)
+	SaveFormula(context.Context, factory.FormulaSaveRequest) (factory.NativeFormulaView, error)
+	GetCapacityPolicy(context.Context) (factory.CapacityPolicy, error)
+	SetCapacityPolicy(context.Context, factory.CapacityPolicy) (factory.CapacityPolicy, error)
+	MutateGraph(context.Context, factory.GraphMutation) error
+	CreateRecoveryGate(context.Context, string, string, string, string, []string) (factory.RecoveryGate, error)
+	ResolveRecoveryGate(context.Context, string, string, string) (factory.RecoveryGate, error)
+	IsImplementationSession(context.Context, string) (bool, error)
+	EscalatePermission(context.Context, string, string, string, string) (factory.AuthorityEscalationGate, bool, error)
+	ResolveAuthorityEscalationGate(context.Context, string, string) (factory.AuthorityEscalationGate, error)
+	CompleteAttempt(context.Context, string, string, string, string) error
 }
 
 type factoryProjectResolver struct{ server *Server }
@@ -260,9 +261,8 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 			s.refreshProjectsIndexAsync()
 		},
 	})
-	factorySvc := factory.New(filepath.Join(state.DefaultDataDir(), "factory"), stateDB, factoryProjectResolver{server: s}, factoryPlanningLauncher{server: s})
+	factorySvc := factory.NewNativeWithExecution(stateDB, factoryProjectResolver{server: s}, factoryPlanningLauncher{server: s}, factoryImplementationLauncher{server: s})
 	s.factory = factorySvc
-	s.factoryIntake = factorySvc
 	if stateDB != nil {
 		s.promptScheduleSvc = newPromptScheduleService(stateDB, managedPromptSessions{s}, nil, nil)
 	}
@@ -339,6 +339,9 @@ func (s *Server) newLocalHost() hostsvc.Host {
 		// Resolved lazily: s.sessions is assigned after newLocalHost runs.
 		CreateSession: func(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			return s.sessions.Client("opencode").CreateSession(ctx, req)
+		},
+		CreateConfiguredSession: func(ctx context.Context, req platforms.CreateSessionRequest, rules []platforms.PermissionRule) (*platforms.CreateSessionResponse, error) {
+			return s.sessions.CreateConfigured(ctx, "opencode", req, rules)
 		},
 		TmuxSessions:     s.hostTmuxSessions,
 		Projects:         s.hostProjects,
@@ -497,10 +500,6 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 			_ = s.daguManager.Close()
 		}
 	}()
-	if err := s.factory.Start(ctx); err != nil {
-		return fmt.Errorf("starting Factory: %w", err)
-	}
-	defer s.factory.Close()
 	// Build the host router on this goroutine, before any background loop
 	// or handler can reach it. router() assigns lazily, and the loops
 	// started below race that assignment otherwise.
@@ -577,7 +576,13 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// The MCP endpoint also gets its own loopback-only listener so local
 	// MCP clients work without a cookie, without exposing the tools
 	// through a reverse proxy on the main port.
-	defer s.startMCPListener()()
+	stopMCP := s.startMCPListener()
+	if err := s.factory.Start(ctx); err != nil {
+		stopMCP()
+		return fmt.Errorf("starting Factory: %w", err)
+	}
+	defer s.factory.Close()
+	defer stopMCP()
 
 	// Sweep orphaned ephemeral terminal-viewer sessions left by an
 	// earlier process (e.g. after an air rebuild / crash). They can
@@ -607,7 +612,6 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 		}
 		close(errCh)
 	}()
-
 	// Wait for context cancellation (signal) or server error.
 	select {
 	case err := <-errCh:

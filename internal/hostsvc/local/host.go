@@ -44,7 +44,8 @@ type Deps struct {
 	// (rather than importing the adapter) so CreateWorktreeSession can
 	// create the in-app worktree session on the project's single
 	// opencode instance via the shared session-mutation code path.
-	CreateSession func(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error)
+	CreateSession           func(ctx context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error)
+	CreateConfiguredSession func(context.Context, platforms.CreateSessionRequest, []platforms.PermissionRule) (*platforms.CreateSessionResponse, error)
 	// Runtime hosts the project's managed OpenCode instance
 	// (launch/probe/stop). Nil defaults to the native tmux runtime, which
 	// reproduces ocman's historical behaviour (one opencode per project
@@ -86,6 +87,11 @@ type Deps struct {
 // through the host seam.
 type DaguService interface {
 	Status(ctx context.Context) dagu.Result
+}
+
+// ValidateFactoryHandoff checks the live worktree without the GitInfo cache.
+func (h *Host) ValidateFactoryHandoff(ctx context.Context, repoRoot, branch string) (string, error) {
+	return git.ValidateFactoryHandoff(ctx, repoRoot, branch)
 }
 
 // ManagedInstance is the host's view of a persisted managed instance.
@@ -272,11 +278,23 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 	if h.deps.CreateSession == nil {
 		return nil, fmt.Errorf("CreateWorktreeSession: CreateSession dep not wired")
 	}
-	created, err := h.deps.CreateSession(ctx, platforms.CreateSessionRequest{
+	request := platforms.CreateSessionRequest{
 		Directory: res.Path,
 		Port:      ensured.Port(),
-		Title:     req.Branch,
-	})
+		Title:     req.Title,
+	}
+	if request.Title == "" {
+		request.Title = req.Branch
+	}
+	var created *platforms.CreateSessionResponse
+	if req.PermissionRules != nil {
+		if h.deps.CreateConfiguredSession == nil {
+			return nil, fmt.Errorf("CreateWorktreeSession: CreateConfiguredSession dep not wired")
+		}
+		created, err = h.deps.CreateConfiguredSession(ctx, request, req.PermissionRules)
+	} else {
+		created, err = h.deps.CreateSession(ctx, request)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("creating worktree session: %w", err)
 	}

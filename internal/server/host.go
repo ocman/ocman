@@ -100,7 +100,7 @@ func (s *Server) hostProjects(_ context.Context) ([]db.ProjectStats, error) {
 }
 
 func (s *Server) hostProjectUpstreams(ctx context.Context, dir string) (*hostsvc.ProjectUpstreams, error) {
-	repoRoot, err := git.ResolveRepoRoot(ctx, dir) // ocman:allow-host-helper
+	repoRoot, err := git.ResolveMainRepoRoot(ctx, dir) // ocman:allow-host-helper
 	if err != nil {
 		return nil, err
 	}

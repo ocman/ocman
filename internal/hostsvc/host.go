@@ -25,6 +25,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/forge"
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
 // HostCaps reports which directory-scoped capabilities a host supports.
@@ -106,10 +107,12 @@ type FetchPRHeadRequest struct {
 
 // WorktreeSessionRequest captures a create-worktree-and-launch action.
 type WorktreeSessionRequest struct {
-	ProjectDir string
-	Branch     string
-	NewBranch  bool
-	BaseRef    string
+	ProjectDir      string
+	Branch          string
+	Title           string
+	NewBranch       bool
+	BaseRef         string
+	PermissionRules []platforms.PermissionRule
 }
 
 // WorktreeSessionResult is the outcome of CreateWorktreeSession: the
