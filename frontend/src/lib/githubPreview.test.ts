@@ -112,7 +112,7 @@ describe('extractForgejoUrls', () => {
   it('extracts and dedupes previewable URLs', () => {
     const text =
       'see https://code.example.com/a/b/pulls/1 and https://code.example.com/a/b/pulls/1 ' +
-      'plus https://code.example.com/a/b/issues/2.';
+      'and https://code.example.com/a/b/pulls/1/files plus https://code.example.com/a/b/issues/2.';
     expect(extractForgejoUrls(text, hosts)).toEqual([
       'https://code.example.com/a/b/pulls/1',
       'https://code.example.com/a/b/issues/2',

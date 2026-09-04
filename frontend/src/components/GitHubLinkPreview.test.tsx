@@ -104,3 +104,20 @@ it('issues one backend request per refresh cycle for N cards of the same URL', a
   expect(previewCalls()).toBe(4);
   expect(screen.getAllByText('#1 Shared PR')).toHaveLength(3);
 });
+
+it('renders one card for URLs that identify the same resource', async () => {
+  vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
+  vi.resetModules();
+  vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+    if (url.startsWith('/api/integrations/status')) {
+      return Promise.resolve(jsonResponse({ forgejo: { available: false, hosts: [] } }));
+    }
+    return Promise.resolve(jsonResponse({ title: 'Shared PR', state: 'open' }));
+  }));
+
+  const { LinkPreviewStrip } = await import('./GitHubLinkPreview');
+  render(<LinkPreviewStrip text={'https://github.com/o/r/pull/7 https://github.com/o/r/pull/7/files'} />);
+  await flush();
+
+  expect(screen.getAllByTestId('gh-preview-card')).toHaveLength(1);
+});

@@ -77,8 +77,10 @@ export function extractGitHubUrls(text: string): string[] {
   const out: string[] = [];
   for (const raw of text.matchAll(GITHUB_URL_SCAN_RE)) {
     const url = raw[0].replace(/[.,;:!?]+$/, ''); // strip trailing punctuation
-    if (!seen.has(url) && parseGitHubUrl(url)) {
-      seen.add(url);
+    const ref = parseGitHubUrl(url);
+    const key = ref && previewKey(url, ref);
+    if (key && !seen.has(key)) {
+      seen.add(key);
       out.push(url);
     }
   }
@@ -379,8 +381,10 @@ export function extractForgejoUrls(text: string, hosts: string[]): string[] {
   const out: string[] = [];
   for (const raw of text.matchAll(scan)) {
     const url = raw[0].replace(/[.,;:!?]+$/, '');
-    if (!seen.has(url) && parseForgejoUrl(url, hosts)) {
-      seen.add(url);
+    const ref = parseForgejoUrl(url, hosts);
+    const key = ref && previewKey(url, ref);
+    if (key && !seen.has(key)) {
+      seen.add(key);
       out.push(url);
     }
   }
