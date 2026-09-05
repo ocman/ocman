@@ -884,3 +884,7 @@ button.session-sidebar-group-header.collapsed::before {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+.factory-plan-approval { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; padding: 10px 12px; border: 1px solid var(--accent); background: var(--bg-card); }
+.factory-plan-approval span:first-child { flex: 1; }
+.factory-plan-approval [role="alert"] { color: var(--danger); }

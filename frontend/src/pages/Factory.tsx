@@ -243,7 +243,7 @@ function PlanningItem({ issue, epic }: { issue: FactoryIssue; epic: string }) {
 		<td><strong>{epic}</strong></td>
 		<td className="factory-table-id">{issue.id}<span>{issue.title}</span></td>
 		<td>Ready for planning</td>
-		<td><Button type="button" variant="accent" disabled={claim.isPending} onClick={() => claim.mutate(issue.id, { onSuccess: ({ session }) => navigate(`/session/${encodeURIComponent(session.id)}`) })}>Claim plan</Button>{claim.isError && <p role="alert">{claim.error instanceof Error ? claim.error.message : 'Could not claim planning work.'}</p>}</td>
+		<td><Button type="button" variant="accent" disabled={claim.isPending} onClick={() => claim.mutate(issue.id, { onSuccess: ({ session }) => navigate(`/session/${encodeURIComponent(session.id)}?factoryEpic=${encodeURIComponent(issue.epicId)}`) })}>Claim plan</Button>{claim.isError && <p role="alert">{claim.error instanceof Error ? claim.error.message : 'Could not claim planning work.'}</p>}</td>
 	</tr>;
 }
 
@@ -312,7 +312,7 @@ export function FactoryOverview() {
 		{queue.isError && <QueryError error={queue.error} retry={() => void queue.refetch()} />}
 		{!queue.isLoading && !queue.isError && !running.length && !planning.length && <p className="oc-empty">No agents are working right now.</p>}
 		{(!!running.length || !!planning.length) && <div className="factory-table-wrap"><table className="factory-table" aria-label="Live work"><thead><tr><th>Epic</th><th>Issue ID</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-			{planning.map(({ epic, attempt }) => <tr key={attempt.id}><td><strong>Planning: {epic.goal}</strong></td><td className="factory-table-id">{attempt.workId}<span>Planning</span></td><td>{liveStatus(attempt.session.id) ?? attempt.phase}</td><td>{attempt.session.id && <Link to={`/session/${encodeURIComponent(attempt.session.id)}`} aria-label={`Open session ${attempt.session.id}`}>Open session</Link>}</td></tr>)}
+			{planning.map(({ epic, attempt }) => <tr key={attempt.id}><td><strong>Planning: {epic.goal}</strong></td><td className="factory-table-id">{attempt.workId}<span>Planning</span></td><td>{liveStatus(attempt.session.id) ?? attempt.phase}</td><td>{attempt.session.id && <Link to={`/session/${encodeURIComponent(attempt.session.id)}?factoryEpic=${encodeURIComponent(epic.id)}`} aria-label={`Open session ${attempt.session.id}`}>Open session</Link>}</td></tr>)}
 			{running.map((item) => <tr key={item.id}><td><strong>{epicGoal(item.epicId)}</strong></td><td className="factory-table-id">{item.id}<span>{item.title}</span></td><td>{liveStatus(item.session?.id) ?? item.state}</td><td>{item.session?.id && <Link to={`/session/${encodeURIComponent(item.session.id)}`} aria-label={`Open session ${item.session.id}`}>Open session</Link>}</td></tr>)}
 		</tbody></table></div>}
 	</FactoryPage>;
@@ -360,7 +360,7 @@ export function FactoryEpicDetail() {
     <h2>{epic.data.goal}</h2>
     <dl className="factory-epic-details"><div><dt>Status</dt><dd data-testid="epic-status">{epic.data.status}</dd></div><div><dt>Project</dt><dd>{epic.data.initialProject}</dd></div></dl>
     <section aria-label="Closure progress"><p>Required work: {progress.requiredSucceeded}/{progress.requiredTotal} complete. Optional work open: {progress.optionalOpen}.</p>{!!progress.closureBlockers?.length && <p>Closure blocked by: {progress.closureBlockers.join(', ')}</p>}<Button type="button" onClick={() => rootMolID && closeMol.mutate(rootMolID)} disabled={closeMol.isPending || !rootMolID}>Close Mol</Button><Button type="button" onClick={() => closeEpic.mutate()} disabled={closeEpic.isPending}>Close epic</Button>{(closeMol.isError || closeEpic.isError) && <p role="alert">{closureError instanceof Error ? closureError.message : 'Could not close container.'}</p>}</section>
-    <PlanningAttempts attempts={epic.data.attempts ?? []} />
+    <PlanningAttempts epicID={id} attempts={epic.data.attempts ?? []} />
     {proposals.isError && <QueryError error={proposals.error} retry={() => void proposals.refetch()} />}
     {proposalHistory.map((proposal) => <section key={proposal.revision}><p>Proposal revision: {proposal.revision}</p><p>Content hash: {proposal.contentHash}</p><pre>{JSON.stringify(proposal.manifest, null, 2)}</pre>{proposal.rationaleMarkdown && <MarkdownContent text={proposal.rationaleMarkdown} />}</section>)}
 		{epic.data.planGate?.resolution === 'open' && <section aria-label="Plan approval gate"><h3>Plan approval</h3><p>Revision {epic.data.planGate.proposalRevision}: {epic.data.planGate.proposalHash}</p><label>Feedback<textarea value={feedback} onChange={(event) => setFeedback(event.target.value)} /></label>{(['approve', 'revise', 'reject'] as const).map((action) => <Button key={action} type="button" disabled={decideGate.isPending} onClick={() => decideGate.mutate({ action, expectedRevision: epic.data!.planGate!.proposalRevision, expectedHash: epic.data!.planGate!.proposalHash, feedback }, { onSuccess: () => setGateStatus(action === 'approve' ? 'Plan approved.' : action === 'revise' ? 'Revision requested.' : 'Plan rejected.') })}>{action === 'approve' ? 'Approve plan' : action === 'revise' ? 'Request revision' : 'Reject plan'}</Button>)}{decideGate.isError && <p role="alert">{decideGate.error instanceof Error ? decideGate.error.message : 'Could not decide Plan gate.'}</p>}</section>}
@@ -375,12 +375,12 @@ export function FactoryEpicDetail() {
   </FactoryPage>;
 }
 
-function PlanningAttempts({ attempts }: { attempts: FactoryAttempt[] }) {
+function PlanningAttempts({ epicID, attempts }: { epicID: string; attempts: FactoryAttempt[] }) {
 	if (!attempts.length) return null;
 	// ponytail: attempts arrive in creation order, so index+1 is the human-facing attempt number.
 	const current = attempts.find((attempt) => attempt.phase === 'active') ?? attempts[attempts.length - 1];
 	const earlier = attempts.filter((attempt) => attempt !== current);
-	const row = (attempt: FactoryAttempt) => <>Attempt {attempts.indexOf(attempt) + 1} · {attempt.phase === 'active' ? 'Running' : 'Finished'}{attempt.session.id && <> · <Link to={`/session/${encodeURIComponent(attempt.session.id)}`}>Open session</Link></>}</>;
+	const row = (attempt: FactoryAttempt) => <>Attempt {attempts.indexOf(attempt) + 1} · {attempt.phase === 'active' ? 'Running' : 'Finished'}{attempt.session.id && <> · <Link to={`/session/${encodeURIComponent(attempt.session.id)}?factoryEpic=${encodeURIComponent(epicID)}`}>Open session</Link></>}</>;
 	return <section aria-label="Planning"><h3>Planning</h3><p>{row(current)}</p>{!!earlier.length && <details><summary>{earlier.length} earlier attempt{earlier.length === 1 ? '' : 's'}</summary><ol>{earlier.map((attempt) => <li key={attempt.id}>{row(attempt)}</li>)}</ol></details>}</section>;
 }
 

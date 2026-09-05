@@ -3,10 +3,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api, type FactoryClaimedPlan } from '../lib/api';
 import { FactoryConfiguration, FactoryEpicDetail, FactoryEpics, FactoryOverview, FactoryQueue } from './Factory';
+import { FactoryPlanApproval } from '../components/FactoryPlanApproval';
 
 vi.mock('../lib/api', () => ({ api: {
     factoryEpics: vi.fn(),
@@ -42,6 +43,11 @@ vi.mock('../lib/api', () => ({ api: {
 function renderFactory(children: ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={client}>{children}</QueryClientProvider>);
+}
+
+function LocationMarker() {
+	const location = useLocation();
+	return <p>{location.pathname}{location.search}</p>;
 }
 
 async function fillEpicForm(user: ReturnType<typeof userEvent.setup>) {
@@ -220,13 +226,67 @@ describe('Factory interactions', () => {
     ] as never);
     const session = { platform: 'opencode', id: 'planning-session' };
     vi.mocked(api.factoryClaimPlan).mockResolvedValue({ attempt: { id: 'attempt-1', workId: 'epic-1.1', phase: 'active', session }, session } satisfies FactoryClaimedPlan);
-    renderFactory(<MemoryRouter><Routes><Route path="/" element={<FactoryOverview />} /><Route path="/session/:id" element={<p>Planning session</p>} /></Routes></MemoryRouter>);
+    renderFactory(<MemoryRouter><Routes><Route path="/" element={<FactoryOverview />} /><Route path="/session/:id" element={<LocationMarker />} /></Routes></MemoryRouter>);
 
     const inbox = await screen.findByRole('table', { name: 'Action inbox' });
     await user.click(within(inbox).getByRole('button', { name: 'Claim plan' }));
 
     await waitFor(() => expect(api.factoryClaimPlan).toHaveBeenCalledWith('epic-1', 'epic-1.1'));
-    expect(await screen.findByText('Planning session')).toBeInTheDocument();
+    expect(await screen.findByText('/session/planning-session?factoryEpic=epic-1')).toBeInTheDocument();
+  });
+
+  it('approves a Plan without leaving its planning session', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.factoryEpic).mockResolvedValue({ id: 'epic-1', goal: 'Routines', status: 'open', initialProject: '/repo', attempts: [{ id: 'attempt-1', workId: 'epic-1.1', phase: 'active', session: { platform: 'opencode', id: 'planning-session' } }], planGate: { issueId: 'epic-1.2', proposalRevision: 2, proposalHash: 'hash-2', resolution: 'open' } } as never);
+    vi.mocked(api.factoryIssues).mockResolvedValue([{ id: 'epic-1.3', epicId: 'epic-1', kind: 'materialization', title: 'Materialize', status: 'open' }] as never);
+    vi.mocked(api.factoryPlanGate).mockResolvedValue({ resolution: 'approved' } as never);
+    renderFactory(<MemoryRouter><FactoryPlanApproval epicID="epic-1" platformID="opencode" sessionID="planning-session" /></MemoryRouter>);
+
+    expect(await screen.findByText('Approval materializes the Plan and starts implementation.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Approve and start implementation' }));
+
+    await waitFor(() => expect(api.factoryPlanGate).toHaveBeenCalledWith('epic-1', 'approve', { expectedRevision: 2, expectedHash: 'hash-2', feedback: undefined }));
+    await waitFor(() => expect(api.factoryMaterialize).toHaveBeenCalledWith('epic-1', 'epic-1.3'));
+  });
+
+  it('does not show Plan approval in an unrelated session', async () => {
+    vi.mocked(api.factoryEpic).mockResolvedValue({ id: 'epic-1', goal: 'Routines', status: 'open', initialProject: '/repo', attempts: [{ id: 'attempt-1', workId: 'epic-1.1', phase: 'active', session: { platform: 'opencode', id: 'planning-session' } }], planGate: { issueId: 'epic-1.2', proposalRevision: 2, proposalHash: 'hash-2', resolution: 'open' } } as never);
+    vi.mocked(api.factoryIssues).mockResolvedValue([]);
+    renderFactory(<MemoryRouter><FactoryPlanApproval epicID="epic-1" platformID="remote-agent" sessionID="planning-session" /></MemoryRouter>);
+
+    await waitFor(() => expect(api.factoryEpic).toHaveBeenCalledWith('epic-1', expect.any(AbortSignal)));
+    expect(screen.queryByRole('button', { name: 'Approve and start implementation' })).not.toBeInTheDocument();
+  });
+
+  it('shows a retry when Plan approval cannot load', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.factoryEpic).mockRejectedValue(new Error('unavailable'));
+    vi.mocked(api.factoryIssues).mockResolvedValue([]);
+    renderFactory(<MemoryRouter><FactoryPlanApproval epicID="epic-1" platformID="opencode" sessionID="planning-session" /></MemoryRouter>);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Could not load plan approval.');
+    await user.click(within(alert).getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(api.factoryEpic).toHaveBeenCalledTimes(2));
+  });
+
+  it('keeps inline Plan approval retryable when materialization fails', async () => {
+    const user = userEvent.setup();
+    const session = { platform: 'opencode', id: 'planning-session' };
+    vi.mocked(api.factoryEpic)
+      .mockResolvedValueOnce({ id: 'epic-1', goal: 'Routines', status: 'open', initialProject: '/repo', attempts: [{ id: 'attempt-1', workId: 'epic-1.1', phase: 'active', session }], planGate: { issueId: 'epic-1.2', proposalRevision: 2, proposalHash: 'hash-2', resolution: 'open' } } as never)
+      .mockResolvedValue({ id: 'epic-1', goal: 'Routines', status: 'open', initialProject: '/repo', attempts: [{ id: 'attempt-1', workId: 'epic-1.1', phase: 'terminal', session }], planGate: { issueId: 'epic-1.2', proposalRevision: 2, proposalHash: 'hash-2', resolution: 'approved' } } as never);
+    vi.mocked(api.factoryIssues).mockResolvedValue([{ id: 'epic-1.3', epicId: 'epic-1', kind: 'materialization', title: 'Materialize', status: 'open' }] as never);
+    vi.mocked(api.factoryPlanGate).mockResolvedValue({ resolution: 'approved' } as never);
+    vi.mocked(api.factoryMaterialize).mockRejectedValue(new Error('Could not materialize plan'));
+    renderFactory(<MemoryRouter><FactoryPlanApproval epicID="epic-1" platformID="opencode" sessionID="planning-session" /></MemoryRouter>);
+
+    await user.click(await screen.findByRole('button', { name: 'Approve and start implementation' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not materialize plan');
+    await user.click(screen.getByRole('button', { name: 'Start implementation' }));
+    await waitFor(() => expect(api.factoryMaterialize).toHaveBeenCalledTimes(2));
+    expect(api.factoryPlanGate).toHaveBeenCalledTimes(1);
   });
 
   it('refreshes planning work after a failed claim', async () => {
@@ -409,7 +469,7 @@ describe('Factory interactions', () => {
     expect(planning).not.toHaveTextContent('attempt-1');
     expect(planning).not.toHaveTextContent('session-1');
     expect(planning).toHaveTextContent('Attempt 2 · Running');
-    expect(within(planning).getAllByRole('link', { name: 'Open session' })[0]).toHaveAttribute('href', '/session/session-1');
+    expect(within(planning).getAllByRole('link', { name: 'Open session' })[0]).toHaveAttribute('href', '/session/session-1?factoryEpic=epic-1');
     expect(planning).toHaveTextContent('1 earlier attempt');
     expect(planning).toHaveTextContent('Attempt 1 · Finished');
   });

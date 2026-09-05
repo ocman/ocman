@@ -37,6 +37,7 @@ import { RateLimitBanner } from '../../components/RateLimitBanner';
 import { PermissionModeLock } from '../../components/PermissionModeLock';
 import { SessionWarningBanner } from '../../components/SessionWarningBanner';
 import { McpAuthBanner } from '../../components/McpAuthBanner';
+import { FactoryPlanApproval } from '../../components/FactoryPlanApproval';
 import { useUiStore } from '../../lib/uiStore';
 import { useTmux } from '../../lib/useTmux';
 import { useApiStore } from '../../lib/apiStore';
@@ -140,6 +141,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const openAgentPicker = useCallback(() => composerRef.current?.openAgentPicker(), []);
   const [searchParams] = useSearchParams();
   const debugMode = searchParams.has('debug');
+  const factoryEpicID = searchParams.get('factoryEpic') ?? '';
   const [scrollToMessageBookmark, setScrollToMessageBookmark] = useState<{ sessionId: string; id: string; tick: number } | null>(null);
   // Route changes must win over in-flight streaming work. flushSync
   // forces React Router's location update to commit immediately so
@@ -1514,6 +1516,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                   scrollToMessageTick={scrollToMessageBookmark?.sessionId === session.id ? scrollToMessageBookmark.tick : 0}
                   composer={(
                     <ErrorBoundary name="session:composer" inline resetKey={session.id}>
+                      <FactoryPlanApproval epicID={factoryEpicID} platformID={session.platform} sessionID={session.id} />
                       {firstUnreadMessageId && unreadMessageCount > 0 && (
                         <button
                           type="button"

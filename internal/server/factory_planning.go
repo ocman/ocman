@@ -191,7 +191,7 @@ func planningGetJSON(ctx context.Context, client *http.Client, url string, targe
 }
 
 func (l factoryPlanningLauncher) PromptPlanningSession(ctx context.Context, session factory.PlanningSession, req factory.PlanningSessionRequest) error {
-	prompt := fmt.Sprintf("Plan Factory Work Epic %s (planning work %s). Inspect the repository without modifying it, then use the factory MCP action submit_proposal with epic_id %s, attempt_id %s, and attempt_token %s.", req.EpicID, req.WorkID, req.EpicID, req.AttemptID, req.AgentToken)
+	prompt := fmt.Sprintf("Plan Factory Work Epic %s (planning work %s). Inspect the repository without modifying it, then use the factory MCP action submit_proposal with epic_id %s, attempt_id %s, and attempt_token %s. After submitting, recap the proposal as one executable implementation Issue broken into multiple focused internal steps, and include a Mermaid flowchart of those steps. Tell the user that Approve and start implementation materializes the Plan and begins implementation. End your final response with [Review and approve the plan](/factory/epics/%s)", req.EpicID, req.WorkID, req.EpicID, req.AttemptID, req.AgentToken, req.EpicID)
 	return l.server.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt})
 }
 
