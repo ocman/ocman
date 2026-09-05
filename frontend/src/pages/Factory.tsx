@@ -189,13 +189,14 @@ function CreateEpic({ onCreated }: { onCreated?: () => void }) {
 function RecoveryGateItem({ issue, epic }: { issue: FactoryIssue; epic: string }) {
 	const resolve = useResolveFactoryRecoveryGate();
 	const gate = issue.recovery!;
-	const [response, setResponse] = useState(gate.choices?.[0] ?? '');
-	const act = (action: 'resume' | 'retry' | 'cancel') => resolve.mutate({ id: gate.issueId, action, response });
+	const pending = gate.resolution === 'resume_pending';
+	const [response, setResponse] = useState(gate.response ?? gate.choices?.[0] ?? '');
+	const act = (action: 'resume' | 'retry' | 'cancel') => resolve.mutate({ id: gate.issueId, action, response: action === 'resume' ? response : '' });
 	return <tr>
 		<td><strong>{epic}</strong></td>
 		<td className="factory-table-id">{issue.id}<span>{issue.title}</span></td>
 		<td><strong>{gate.question || issue.title}</strong>{gate.reason && <span>{gate.reason}</span>}</td>
-		<td><div className="factory-inbox-control">{gate.choices?.length ? <label>Response<select aria-label={`Recovery response for ${issue.id}`} value={response} onChange={(event) => setResponse(event.target.value)}>{gate.choices.map((choice) => <option key={choice} value={choice}>{choice}</option>)}</select></label> : <label>Response<input aria-label={`Recovery response for ${issue.id}`} value={response} onChange={(event) => setResponse(event.target.value)} /></label>}<div className="factory-inbox-actions"><Button type="button" variant="accent" disabled={resolve.isPending} onClick={() => act('resume')}>Resume</Button><Button type="button" disabled={resolve.isPending} onClick={() => act('retry')}>Retry</Button><Button type="button" disabled={resolve.isPending} onClick={() => act('cancel')}>Cancel work</Button></div>{resolve.isError && <p role="alert">{resolve.error instanceof Error ? resolve.error.message : 'Could not resolve recovery gate.'}</p>}</div></td>
+		<td><div className="factory-inbox-control">{gate.choices?.length ? <label>Response<select aria-label={`Recovery response for ${issue.id}`} value={response} disabled={pending} onChange={(event) => setResponse(event.target.value)}>{gate.choices.map((choice) => <option key={choice} value={choice}>{choice}</option>)}</select></label> : <label>Response<input aria-label={`Recovery response for ${issue.id}`} value={response} disabled={pending} onChange={(event) => setResponse(event.target.value)} /></label>}<div className="factory-inbox-actions">{pending ? <Button type="button" variant="accent" disabled={resolve.isPending} onClick={() => act('resume')}>Retry resume</Button> : <><Button type="button" variant="accent" disabled={resolve.isPending} onClick={() => act('resume')}>Resume</Button><Button type="button" disabled={resolve.isPending} onClick={() => act('retry')}>Retry</Button><Button type="button" disabled={resolve.isPending} onClick={() => act('cancel')}>Cancel work</Button></>}</div>{resolve.isError && <p role="alert">{resolve.error instanceof Error ? resolve.error.message : 'Could not resolve recovery gate.'}</p>}</div></td>
 	</tr>;
 }
 
@@ -259,7 +260,7 @@ export function FactoryOverview() {
 	const issues = issueQueries.flatMap((result) => result.data ?? []);
 	const issuesLoading = issueQueries.some((result) => result.isLoading);
 	const issueError = issueQueries.find((result) => result.isError);
-	const recoveryGates = issues.filter((issue) => issue.recovery?.resolution === 'open');
+	const recoveryGates = issues.filter((issue) => issue.recovery && issue.recovery.resolution !== 'resume' && issue.recovery.resolution !== 'retry' && issue.recovery.resolution !== 'cancel');
 	const authorityGates = issues.filter((issue) => issue.authority && issue.authority.resolution !== 'approve' && issue.authority.resolution !== 'reject');
 	const openEpics = new Set(epics.data?.filter((epic) => epic.status === 'open').map((epic) => epic.id));
 	const failedWork = issues.filter((issue) => openEpics.has(issue.epicId) && (issue.kind === 'task' || issue.kind === 'implementation') && issue.status === 'closed' && (issue.outcome === 'failed' || issue.outcome === 'cancelled'));
@@ -272,7 +273,7 @@ export function FactoryOverview() {
 	// ponytail: answering live prompts stays on the session page.
 	const prompts = [...new Map([...running.map((item) => ({ session: sessionByID.get(item.session?.id ?? ''), epic: epicGoal(item.epicId), issueID: item.id, issueTitle: item.title })), ...planning.map(({ epic, attempt }) => ({ session: sessionByID.get(attempt.session.id), epic: epic.goal, issueID: attempt.workId, issueTitle: 'Planning' }))].filter((item): item is { session: Session; epic: string; issueID: string; issueTitle: string } => Boolean(item.session?.pendingPermission || item.session?.pendingQuestion)).map((item) => [item.session.id, item])).values()];
 	const inboxCount = planGates.length + recoveryGates.length + authorityGates.length + prompts.length + failedWork.length + materializations.length + stuck.length;
-	const liveStatus = (sessionID?: string) => { const session = sessionID ? sessionByID.get(sessionID) : undefined; return session ? <StatusBadge status={session.status} pending={session.pendingPermission || session.pendingQuestion} /> : null; };
+	const liveStatus = (sessionID?: string) => { const session = sessionID ? sessionByID.get(sessionID) : undefined; return session && session.status !== 'done' ? <StatusBadge status={session.status} pending={session.pendingPermission || session.pendingQuestion} /> : null; };
 	return <FactoryPage>
 		<h2>Action inbox</h2>
 		{epics.isLoading && <p role="status">Loading epics…</p>}

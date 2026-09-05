@@ -615,6 +615,7 @@ type nativeAttemptCompletionStore interface {
 type nativeRecoveryStore interface {
 	CreateFactoryRecoveryGate(context.Context, string, string, string, []string, time.Time) (model.RecoveryGate, error)
 	ResolveFactoryRecoveryGate(context.Context, string, string, string, time.Time) (model.RecoveryGate, model.FactoryAttempt, error)
+	CompleteFactoryRecoveryGate(context.Context, string, time.Time) (model.RecoveryGate, error)
 	IsFactoryAttemptRecoveryPaused(context.Context, string) (bool, error)
 	GetFactoryRecoveryGate(context.Context, string) (model.RecoveryGate, bool, error)
 }
@@ -666,6 +667,7 @@ type NativeService struct {
 	implementationMu  sync.Mutex
 	planningMu        sync.Mutex
 	materializationMu sync.Mutex
+	recoveryMu        sync.Mutex
 	authorityMu       sync.Mutex
 	startOnce         sync.Once
 	closeOnce         sync.Once
@@ -683,6 +685,7 @@ type ImplementationSessionRequest struct {
 type ImplementationLauncher interface {
 	LaunchImplementationSession(context.Context, ImplementationSessionRequest) (PlanningSession, error)
 	PromptImplementationSession(context.Context, PlanningSession, ImplementationSessionRequest) error
+	ResumeImplementationSession(context.Context, PlanningSession, string, string) error
 	ProbeImplementationSession(context.Context, PlanningSession) (bool, error)
 	StopImplementationSession(context.Context, PlanningSession) error
 	ImplementationPermissionPending(context.Context, PlanningSession, string) (bool, error)
@@ -1364,6 +1367,8 @@ func (s *NativeService) CreateRecoveryGate(ctx context.Context, attemptID, agent
 }
 
 func (s *NativeService) ResolveRecoveryGate(ctx context.Context, gateID, action, response string) (RecoveryGate, error) {
+	s.recoveryMu.Lock()
+	defer s.recoveryMu.Unlock()
 	store, ok := s.store.(nativeRecoveryStore)
 	if !ok {
 		return RecoveryGate{}, ErrFactoryUnavailable
@@ -1371,9 +1376,32 @@ func (s *NativeService) ResolveRecoveryGate(ctx context.Context, gateID, action,
 	if action != "resume" && action != "retry" && action != "cancel" {
 		return RecoveryGate{}, errors.New("invalid recovery gate action")
 	}
-	gate, attempt, err := store.ResolveFactoryRecoveryGate(ctx, gateID, action, strings.TrimSpace(response), time.Now())
+	response = strings.TrimSpace(response)
+	gate, found, err := store.GetFactoryRecoveryGate(ctx, gateID)
+	if err != nil || !found {
+		return RecoveryGate{}, errors.New("factory recovery gate is unavailable")
+	}
+	pending := action == "resume" && gate.Resolution == "resume_pending"
+	if gate.Resolution != "open" && !pending {
+		return RecoveryGate{}, errors.New("factory recovery gate is unavailable")
+	}
+	if pending && response != gate.Response {
+		return RecoveryGate{}, errors.New("factory recovery response does not match the pending decision")
+	}
+	gate, attempt, err := store.ResolveFactoryRecoveryGate(ctx, gateID, action, response, time.Now())
 	if err != nil {
 		return RecoveryGate{}, err
+	}
+	if action == "resume" {
+		if s.implementation == nil {
+			return RecoveryGate{}, errors.New("implementation launcher is unavailable")
+		}
+		deliveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		if err := s.implementation.ResumeImplementationSession(deliveryCtx, attempt.Session, gate.IssueID, gate.Response); err != nil {
+			return RecoveryGate{}, fmt.Errorf("deliver Factory recovery response: %w", err)
+		}
+		return store.CompleteFactoryRecoveryGate(deliveryCtx, gateID, time.Now())
 	}
 	if (action == "retry" || action == "cancel") && s.implementation != nil && attempt.Session.ID != "" {
 		_ = s.implementation.StopImplementationSession(context.WithoutCancel(ctx), attempt.Session)

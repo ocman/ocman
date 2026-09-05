@@ -420,8 +420,17 @@ func TestFactoryRecoveryGateAuditsEveryResolution(t *testing.T) {
 				t.Fatal(err)
 			}
 			resolved, attempt, err := db.ResolveFactoryRecoveryGate(t.Context(), gate.IssueID, action, "A", time.UnixMilli(20))
-			if err != nil || resolved.Resolution != action || attempt.ID != "attempt" {
+			wantResolution := action
+			if action == "resume" {
+				wantResolution = "resume_pending"
+			}
+			if err != nil || resolved.Resolution != wantResolution || attempt.ID != "attempt" {
 				t.Fatalf("ResolveFactoryRecoveryGate = %#v, %#v, %v", resolved, attempt, err)
+			}
+			if action == "resume" {
+				if _, err := db.CompleteFactoryRecoveryGate(t.Context(), gate.IssueID, time.UnixMilli(21)); err != nil {
+					t.Fatal(err)
+				}
 			}
 			var requested, resolvedCount int
 			if err := db.db.QueryRow(`SELECT count(*) FROM factory_audit_record WHERE action = 'recovery.requested'`).Scan(&requested); err != nil {

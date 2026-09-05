@@ -108,7 +108,7 @@ export function useResolveFactoryRecoveryGate() {
 	const client = useQueryClient();
 	return useMutation({
 		mutationFn: ({ id, action, response }: { id: string; action: 'resume' | 'retry' | 'cancel'; response: string }) => api.resolveFactoryRecoveryGate(id, action, response),
-		onSuccess: () => Promise.all([client.invalidateQueries({ queryKey: ['factory-epics'] }), client.invalidateQueries({ queryKey: ['factory-queue'] })]),
+		onSettled: () => invalidateFactoryState(client),
 	});
 }
 

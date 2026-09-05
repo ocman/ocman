@@ -13,22 +13,25 @@ import (
 )
 
 type fakeImplementationLauncher struct {
-	calls      []ImplementationSessionRequest
-	err        error
-	probeErr   error
-	result     PlanningSession
-	stops      []PlanningSession
-	replies    []string
-	replyErr   error
-	answered   bool
-	prompts    []ImplementationSessionRequest
-	promptErr  error
-	onPrompt   func(ImplementationSessionRequest)
-	launched   chan struct{}
-	dead       bool
-	handoffErr error
-	handoffs   int
-	store      *state.DB
+	calls       []ImplementationSessionRequest
+	err         error
+	probeErr    error
+	result      PlanningSession
+	stops       []PlanningSession
+	replies     []string
+	replyErr    error
+	recoveries  []string
+	recoveryErr error
+	onRecovery  func()
+	answered    bool
+	prompts     []ImplementationSessionRequest
+	promptErr   error
+	onPrompt    func(ImplementationSessionRequest)
+	launched    chan struct{}
+	dead        bool
+	handoffErr  error
+	handoffs    int
+	store       *state.DB
 }
 
 func (f *fakeImplementationLauncher) ValidateImplementationHandoff(context.Context, string, string, string, model.FactoryAttemptPolicy) error {
@@ -90,6 +93,13 @@ func (f *fakeImplementationLauncher) RespondImplementationPermission(_ context.C
 }
 func (f *fakeImplementationLauncher) ImplementationPermissionPending(context.Context, PlanningSession, string) (bool, error) {
 	return !f.answered, nil
+}
+func (f *fakeImplementationLauncher) ResumeImplementationSession(_ context.Context, session PlanningSession, gateID, response string) error {
+	f.recoveries = append(f.recoveries, session.ID+":"+gateID+":"+response)
+	if f.onRecovery != nil {
+		f.onRecovery()
+	}
+	return f.recoveryErr
 }
 
 type flakyAuthorityStore struct {
@@ -649,6 +659,90 @@ func TestNativeRecoveryGateReleasesCapacityAndSurvivesRestart(t *testing.T) {
 	if _, err := svc.ResolveRecoveryGate(context.Background(), gate.IssueID, "resume", "Use A"); err == nil {
 		t.Fatal("resumed despite occupied capacity")
 	}
+}
+
+func TestNativeRecoveryResumeDeliversBeforeClosingGate(t *testing.T) {
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.SetFactoryCapacityPolicy(t.Context(), model.FactoryCapacityPolicy{GlobalCapacity: 1, ProjectCapacity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	launcher := &fakeImplementationLauncher{store: db}
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
+	epic := createPouredWorkEpic(t, svc, "Resume")
+	if err := svc.MutateGraph(t.Context(), GraphMutation{Action: "create", EpicID: epic.ID, ParentID: pouredIssueID(t, svc, epic.ID, "mol"), Kind: "task", Title: "Implement"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Dispatch(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	attempts, err := db.ListFactoryAttempts(t.Context(), epic.ID)
+	if err != nil || len(attempts) != 1 {
+		t.Fatalf("attempts = %#v, %v", attempts, err)
+	}
+	gate, err := svc.CreateRecoveryGate(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "Which API?", "Unsafe to guess", []string{"Use A"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	persistedBeforeDelivery := false
+	launcher.onRecovery = func() {
+		pending, found, err := db.GetFactoryRecoveryGate(t.Context(), gate.IssueID)
+		persistedBeforeDelivery = err == nil && found && pending.Resolution == "resume_pending" && pending.Response == "Use A"
+	}
+	launcher.recoveryErr = errors.New("session delivery failed")
+	if _, err := svc.ResolveRecoveryGate(t.Context(), gate.IssueID, "resume", "Use A"); err == nil {
+		t.Fatal("failed recovery delivery returned success")
+	}
+	pending, found, err := db.GetFactoryRecoveryGate(t.Context(), gate.IssueID)
+	if err != nil || !found || pending.Resolution != "resume_pending" || pending.Response != "Use A" {
+		t.Fatalf("pending recovery = %#v, %v, %v", pending, found, err)
+	}
+	if !persistedBeforeDelivery {
+		t.Fatal("recovery response was not persisted before delivery")
+	}
+	if paused, err := db.IsFactoryAttemptRecoveryPaused(t.Context(), attempts[0].ID); err != nil || !paused {
+		t.Fatalf("pending recovery paused = %v, %v", paused, err)
+	}
+	issues, err := svc.ListIssues(t.Context(), epic.ID)
+	if err != nil || !hasRecoveryGate(issues, gate.IssueID, "resume_pending") {
+		t.Fatalf("actionable recovery issues = %#v, %v", issues, err)
+	}
+	if _, err := svc.ResolveRecoveryGate(t.Context(), gate.IssueID, "retry", "Use A"); err == nil {
+		t.Fatal("changed a pending resume to retry")
+	}
+	second := createPouredWorkEpic(t, svc, "Waiting")
+	if err := svc.MutateGraph(t.Context(), GraphMutation{Action: "create", EpicID: second.ID, ParentID: pouredIssueID(t, svc, second.ID, "mol"), Kind: "task", Title: "Wait"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Dispatch(t.Context()); err != nil || len(launcher.calls) != 1 {
+		t.Fatalf("pending resume released capacity: calls=%d, err=%v", len(launcher.calls), err)
+	}
+
+	launcher.recoveryErr = nil
+	resolved, err := svc.ResolveRecoveryGate(t.Context(), gate.IssueID, "resume", "Use A")
+	if err != nil || resolved.Resolution != "resume" {
+		t.Fatalf("ResolveRecoveryGate retry = %#v, %v", resolved, err)
+	}
+	if len(launcher.recoveries) != 2 || launcher.recoveries[1] != "implementation-1:"+gate.IssueID+":Use A" {
+		t.Fatalf("recovery deliveries = %#v", launcher.recoveries)
+	}
+	issues, err = svc.ListIssues(t.Context(), epic.ID)
+	if err != nil || !hasRecoveryGate(issues, gate.IssueID, "resume") {
+		t.Fatalf("resolved recovery issues = %#v, %v", issues, err)
+	}
+}
+
+func hasRecoveryGate(issues []Issue, id, resolution string) bool {
+	for _, issue := range issues {
+		if issue.ID == id && issue.Recovery != nil && issue.Recovery.Resolution == resolution {
+			return true
+		}
+	}
+	return false
 }
 
 func TestNativeRecoveryGateRetryAndCancel(t *testing.T) {

@@ -125,8 +125,11 @@ func TestFactoryAttemptRecoveryAndAuthorityGates(t *testing.T) {
 	if gate, err := db.CompleteFactoryAuthorityEscalationGate(ctx, authority.IssueID, "approve", at); err != nil || gate.Resolution != "approve" {
 		t.Fatalf("authority delivery = %#v, %v", gate, err)
 	}
-	if gate, _, err := db.ResolveFactoryRecoveryGate(ctx, recovery.IssueID, "resume", "continue", at); err != nil || gate.Resolution != "resume" {
+	if gate, _, err := db.ResolveFactoryRecoveryGate(ctx, recovery.IssueID, "resume", "continue", at); err != nil || gate.Resolution != "resume_pending" {
 		t.Fatalf("recovery resolution = %#v, %v", gate, err)
+	}
+	if gate, err := db.CompleteFactoryRecoveryGate(ctx, recovery.IssueID, at); err != nil || gate.Resolution != "resume" {
+		t.Fatalf("recovery delivery = %#v, %v", gate, err)
 	}
 	if paused, err := db.IsFactoryAttemptRecoveryPaused(ctx, attempt.ID); err != nil || paused {
 		t.Fatalf("resolved recovery paused = %v, %v", paused, err)

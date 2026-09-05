@@ -157,7 +157,7 @@ func (d *DB) ActivateFactoryAttempt(ctx context.Context, id string, session mode
 func (d *DB) StopFactoryAttempt(ctx context.Context, id string, at time.Time) (bool, error) {
 	result, err := d.db.ExecContext(ctx, `UPDATE factory_attempt SET phase = 'stopping', updated_at = ?
 		WHERE id = ? AND phase = 'active' AND json_extract(frozen_policy_json, '$.profile') = 'factory-implement/v1'
-		AND NOT EXISTS (SELECT 1 FROM factory_recovery_gate WHERE attempt_id = ? AND resolution = 'open')
+		AND NOT EXISTS (SELECT 1 FROM factory_recovery_gate WHERE attempt_id = ? AND resolution NOT IN ('resume', 'retry', 'cancel'))
 		AND NOT EXISTS (SELECT 1 FROM factory_authority_escalation_gate WHERE attempt_id = ? AND resolution NOT IN ('approve', 'reject'))`, at.UnixMilli(), id, id, id)
 	if err != nil {
 		return false, fmt.Errorf("stopping Factory attempt: %w", err)
@@ -245,7 +245,7 @@ func (d *DB) CompleteFactoryImplementationAttempt(ctx context.Context, id, agent
 		SET phase = 'terminal', terminal_outcome = 'succeeded', result_json = ?, finished_at = ?, updated_at = ?
 		WHERE id = ? AND phase = 'stopping' AND json_extract(frozen_policy_json, '$.profile') = 'factory-implement/v1'
 		AND EXISTS (SELECT 1 FROM factory_external_mapping WHERE system = 'factory' AND external_kind = 'attempt_token' AND external_id = ? AND entity_kind = 'attempt' AND entity_id = factory_attempt.id)
-		AND NOT EXISTS (SELECT 1 FROM factory_recovery_gate WHERE attempt_id = ? AND resolution = 'open')
+		AND NOT EXISTS (SELECT 1 FROM factory_recovery_gate WHERE attempt_id = ? AND resolution NOT IN ('resume', 'retry', 'cancel'))
 		AND NOT EXISTS (SELECT 1 FROM factory_authority_escalation_gate WHERE attempt_id = ? AND resolution NOT IN ('approve', 'reject'))`, string(resultJSON), at.UnixMilli(), at.UnixMilli(), id, agentToken, id, id)
 	changed, err := factoryAttemptChanged(updated, err, "completing Factory implementation attempt")
 	if err != nil || !changed {
@@ -403,7 +403,7 @@ func (d *DB) CreateFactoryRecoveryGate(ctx context.Context, attemptID, question,
 
 func (d *DB) IsFactoryAttemptRecoveryPaused(ctx context.Context, attemptID string) (bool, error) {
 	var found int
-	err := d.db.QueryRowContext(ctx, `SELECT 1 WHERE EXISTS (SELECT 1 FROM factory_recovery_gate WHERE attempt_id = ? AND resolution = 'open') OR EXISTS (SELECT 1 FROM factory_authority_escalation_gate WHERE attempt_id = ? AND resolution NOT IN ('approve', 'reject'))`, attemptID, attemptID).Scan(&found)
+	err := d.db.QueryRowContext(ctx, `SELECT 1 WHERE EXISTS (SELECT 1 FROM factory_recovery_gate WHERE attempt_id = ? AND resolution NOT IN ('resume', 'retry', 'cancel')) OR EXISTS (SELECT 1 FROM factory_authority_escalation_gate WHERE attempt_id = ? AND resolution NOT IN ('approve', 'reject'))`, attemptID, attemptID).Scan(&found)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -569,7 +569,8 @@ func (d *DB) ResolveFactoryRecoveryGate(ctx context.Context, gateID, action, res
 	if err != nil {
 		return model.RecoveryGate{}, model.FactoryAttempt{}, fmt.Errorf("reading Factory recovery gate: %w", err)
 	}
-	if gate.Resolution != "open" {
+	pending := action == "resume" && gate.Resolution == "resume_pending" && gate.Response == response
+	if gate.Resolution != "open" && !pending {
 		return model.RecoveryGate{}, model.FactoryAttempt{}, errors.New("factory recovery gate is unavailable")
 	}
 	attempt, err := scanFactoryAttempt(tx.QueryRowContext(ctx, `SELECT `+factoryAttemptColumns+` FROM factory_attempt WHERE id = ? AND phase = 'active'`, gate.AttemptID))
@@ -603,16 +604,24 @@ func (d *DB) ResolveFactoryRecoveryGate(ctx context.Context, gateID, action, res
 	default:
 		return model.RecoveryGate{}, model.FactoryAttempt{}, errors.New("invalid recovery gate action")
 	}
+	if pending {
+		return gate, attempt, nil
+	}
 	gate.Resolution, gate.Response = action, response
+	if action == "resume" {
+		gate.Resolution = "resume_pending"
+	}
 	gateOutcome := "succeeded"
 	if action == "cancel" {
 		gateOutcome = "cancelled"
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE factory_recovery_gate SET response = ?, resolution = ?, resolved_at = ? WHERE issue_id = ?`, response, action, now, gateID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE factory_recovery_gate SET response = ?, resolution = ?, resolved_at = ? WHERE issue_id = ?`, response, gate.Resolution, now, gateID); err != nil {
 		return model.RecoveryGate{}, model.FactoryAttempt{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'closed', outcome = ?, outcome_reason = ? WHERE id = ?`, gateOutcome, action, gateID); err != nil {
-		return model.RecoveryGate{}, model.FactoryAttempt{}, err
+	if action != "resume" {
+		if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'closed', outcome = ?, outcome_reason = ? WHERE id = ?`, gateOutcome, action, gateID); err != nil {
+			return model.RecoveryGate{}, model.FactoryAttempt{}, err
+		}
 	}
 	details, _ := json.Marshal(map[string]string{"response": response})
 	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_audit_record (epic_id, work_item_id, attempt_id, actor, action, details_json, created_at) VALUES (?, ?, ?, 'user', ?, ?, ?)`, gate.EpicID, gate.WorkID, gate.AttemptID, "recovery."+action, string(details), now); err != nil {
@@ -622,6 +631,29 @@ func (d *DB) ResolveFactoryRecoveryGate(ctx context.Context, gateID, action, res
 		return model.RecoveryGate{}, model.FactoryAttempt{}, err
 	}
 	return gate, attempt, nil
+}
+
+func (d *DB) CompleteFactoryRecoveryGate(ctx context.Context, gateID string, at time.Time) (model.RecoveryGate, error) {
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.RecoveryGate{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	result, err := tx.ExecContext(ctx, `UPDATE factory_recovery_gate SET resolution = 'resume', resolved_at = ? WHERE issue_id = ? AND resolution = 'resume_pending'`, at.UnixMilli(), gateID)
+	changed, err := factoryAttemptChanged(result, err, "completing recovery response delivery")
+	if err != nil {
+		return model.RecoveryGate{}, err
+	}
+	if !changed {
+		return model.RecoveryGate{}, errors.New("factory recovery gate is unavailable")
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'closed', outcome = 'succeeded', outcome_reason = 'resume' WHERE id = ?`, gateID); err != nil {
+		return model.RecoveryGate{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.RecoveryGate{}, err
+	}
+	return d.getFactoryRecoveryGate(ctx, gateID)
 }
 
 func (d *DB) getFactoryRecoveryGate(ctx context.Context, gateID string) (model.RecoveryGate, error) {

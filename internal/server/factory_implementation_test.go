@@ -173,9 +173,14 @@ func TestFactoryImplementationLauncherProbe(t *testing.T) {
 func TestFactorySessionLaunchersDelegateSessionControls(t *testing.T) {
 	var disposed platforms.DisposeSessionRequest
 	var replied platforms.RespondPermissionRequest
+	var sent platforms.SendMessageRequest
+	sends := 0
+	detail := &platforms.SessionDetail{}
 	platform := &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "session"}}}
 	platform.disposeFn = func(request platforms.DisposeSessionRequest) error { disposed = request; return nil }
 	platform.respondPermissionFn = func(request platforms.RespondPermissionRequest) error { replied = request; return nil }
+	platform.sendMessageFn = func(request platforms.SendMessageRequest) error { sent = request; sends++; return nil }
+	platform.sessionDetailFn = func(string) (*platforms.SessionDetail, error) { return detail, nil }
 	platform.listPermissionsFn = func(string) ([]platforms.LivePrompt, error) {
 		return []platforms.LivePrompt{{"id": "permission"}}, nil
 	}
@@ -189,6 +194,13 @@ func TestFactorySessionLaunchersDelegateSessionControls(t *testing.T) {
 	}
 	if err := (factoryImplementationLauncher{server: srv}).RespondImplementationPermission(context.Background(), session, "permission", "always"); err != nil || replied.SessionID != "session" || replied.PermissionID != "permission" || replied.Reply != "always" {
 		t.Fatalf("RespondImplementationPermission = %v, %#v", err, replied)
+	}
+	if err := (factoryImplementationLauncher{server: srv}).ResumeImplementationSession(context.Background(), session, "gate-1", "Use A"); err != nil || sent.SessionID != "session" || !strings.Contains(sent.Message, "gate-1") || !strings.Contains(sent.Message, "Use A") {
+		t.Fatalf("ResumeImplementationSession = %v, %#v", err, sent)
+	}
+	detail.Parts = []db.Part{{Data: []byte(`{"type":"text","text":"Factory recovery response for gate gate-1:"}`)}}
+	if err := (factoryImplementationLauncher{server: srv}).ResumeImplementationSession(context.Background(), session, "gate-1", "Use A"); err != nil || sends != 1 {
+		t.Fatalf("idempotent ResumeImplementationSession = %v, sends %d", err, sends)
 	}
 	if pending, err := (factoryImplementationLauncher{server: srv}).ImplementationPermissionPending(context.Background(), session, "permission"); err != nil || !pending {
 		t.Fatalf("ImplementationPermissionPending = %v, %v", pending, err)

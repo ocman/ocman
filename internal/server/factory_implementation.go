@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -114,6 +115,28 @@ Task:
 Work only on this Issue in the assigned worktree. Inspect the existing code, make the smallest correct change, and run the relevant checks. All implementation Issues in this Work Epic use the shared branch %s and run sequentially.
 
 Before completion, leave the shared worktree on a clean commit, push the branch, and create or reuse its single pull request. Then use the factory MCP action complete_attempt with attempt_id %s, attempt_token %s, pr_url set to that pull request, and a concise summary. If you cannot safely continue, use request_recovery with the same attempt ID and token instead of guessing.`, req.WorkID, req.EpicID, req.Title, req.Description, req.Branch, req.AttemptID, req.AgentToken)
+	return l.server.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt})
+}
+
+func (l factoryImplementationLauncher) ResumeImplementationSession(ctx context.Context, session factory.PlanningSession, gateID, response string) error {
+	platform, ok := l.server.registry.Get(platforms.ID(session.Platform))
+	if !ok {
+		return errors.New("implementation platform is unavailable")
+	}
+	marker := "Factory recovery response for gate " + gateID + ":"
+	detail, err := platform.Session(ctx, session.ID, 20, 0)
+	if err != nil {
+		return fmt.Errorf("check Factory recovery delivery: %w", err)
+	}
+	if detail == nil {
+		return errors.New("check Factory recovery delivery: session is unavailable")
+	}
+	for _, part := range detail.Parts {
+		if bytes.Contains(part.Data, []byte(marker)) {
+			return nil
+		}
+	}
+	prompt := fmt.Sprintf("%s\n\n%s\n\nContinue the existing Factory Issue using this response.", marker, response)
 	return l.server.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt})
 }
 

@@ -158,6 +158,7 @@ describe('Factory interactions', () => {
     ] as never);
     vi.mocked(api.factoryIssues).mockImplementation((id) => Promise.resolve(id === 'epic-1' ? [
       { id: 'epic-1.5', epicId: 'epic-1', kind: 'gate', title: 'Recovery', status: 'open', recovery: { issueId: 'epic-1.5', epicId: 'epic-1', attemptId: 'a1', workId: 'epic-1.4', question: 'Tests fail. Continue?', reason: 'vitest exited 1', choices: ['Skip tests', 'Fix tests'], resolution: 'open' } },
+			{ id: 'epic-1.9', epicId: 'epic-1', kind: 'gate', title: 'Pending recovery', status: 'open', recovery: { issueId: 'epic-1.9', epicId: 'epic-1', attemptId: 'a2', workId: 'epic-1.4', question: 'Delivery failed', reason: 'session unavailable', choices: ['Use A'], response: 'Use A', resolution: 'resume_pending' } },
       { id: 'epic-1.6', epicId: 'epic-1', kind: 'gate', title: 'Authority', status: 'open', authority: { issueId: 'epic-1.6', epicId: 'epic-1', attemptId: 'a1', workId: 'epic-1.4', requestId: 'req', permission: 'bash', target: 'rm -rf dist', resolution: 'open' } },
 	  { id: 'epic-1.8', epicId: 'epic-1', kind: 'gate', title: 'Pending authority', status: 'open', authority: { issueId: 'epic-1.8', epicId: 'epic-1', attemptId: 'a2', workId: 'epic-1.4', requestId: 'req-2', permission: 'external_directory', target: '/outside', resolution: 'approve_pending' } },
       { id: 'epic-1.7', epicId: 'epic-1', kind: 'gate', title: 'Resolved', status: 'closed', recovery: { issueId: 'epic-1.7', resolution: 'resume', choices: [] } },
@@ -175,16 +176,36 @@ describe('Factory interactions', () => {
     expect(within(inbox).getByText('Allow bash on rm -rf dist?')).toBeInTheDocument();
 		expect(within(inbox).getByText('Allow external_directory on /outside?')).toBeInTheDocument();
 		expect(within(inbox).getByRole('button', { name: 'Retry approve' })).toBeInTheDocument();
+		expect(within(inbox).getByRole('button', { name: 'Retry resume' })).toBeInTheDocument();
     expect(within(inbox).queryByText('Resolved')).not.toBeInTheDocument();
     expect(within(inbox).getByText('Agent is waiting for you: Plan docs')).toBeInTheDocument();
     expect(within(inbox).getByRole('link', { name: 'Answer in session' })).toHaveAttribute('href', '/session/plan-session');
 
     await user.selectOptions(screen.getByLabelText('Recovery response for epic-1.5'), 'Fix tests');
-    await user.click(within(inbox).getByRole('button', { name: 'Retry' }));
-    await waitFor(() => expect(api.resolveFactoryRecoveryGate).toHaveBeenCalledWith('epic-1.5', 'retry', 'Fix tests'));
+		await user.click(within(inbox).getByRole('button', { name: 'Resume' }));
+		await waitFor(() => expect(api.resolveFactoryRecoveryGate).toHaveBeenCalledWith('epic-1.5', 'resume', 'Fix tests'));
     await user.click(within(inbox).getByRole('button', { name: 'Reject' }));
     await waitFor(() => expect(api.resolveFactoryAuthorityGate).toHaveBeenCalledWith('epic-1.6', 'reject'));
   });
+
+	it('keeps a failed recovery delivery actionable and removes it after success', async () => {
+		const user = userEvent.setup();
+		let resolution = 'open';
+		vi.mocked(api.factoryEpics).mockResolvedValue([{ id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo' }] as never);
+		vi.mocked(api.factoryIssues).mockImplementation(() => Promise.resolve(resolution === 'resume' ? [] : [{ id: 'epic-1.5', epicId: 'epic-1', kind: 'gate', title: 'Recovery', status: 'open', recovery: { issueId: 'epic-1.5', epicId: 'epic-1', attemptId: 'a1', workId: 'epic-1.4', question: 'Which API?', reason: 'Unsafe to guess', choices: ['Use A'], response: resolution === 'resume_pending' ? 'Use A' : undefined, resolution } }]) as never);
+		vi.mocked(api.resolveFactoryRecoveryGate)
+			.mockImplementationOnce(async () => { resolution = 'resume_pending'; throw new Error('deliver Factory recovery response: session unavailable'); })
+			.mockImplementationOnce(async () => { resolution = 'resume'; return { resolution } as never; });
+		renderFactory(<MemoryRouter><FactoryOverview /></MemoryRouter>);
+
+		await user.click(await screen.findByRole('button', { name: 'Resume' }));
+		expect(await screen.findByRole('alert')).toHaveTextContent('session unavailable');
+		const retry = await screen.findByRole('button', { name: 'Retry resume' });
+		expect(screen.getByText('Which API?')).toBeInTheDocument();
+
+		await user.click(retry);
+		await waitFor(() => expect(screen.queryByText('Which API?')).not.toBeInTheDocument());
+	});
 
   it('surfaces exhausted work, unmaterialized plans, and stuck epics with an unblocking action', async () => {
     const user = userEvent.setup();
@@ -229,9 +250,13 @@ describe('Factory interactions', () => {
     vi.mocked(api.factoryIssues).mockResolvedValue([]);
     vi.mocked(api.factoryQueue).mockResolvedValue([
       { id: 'epic-1.4', epicId: 'epic-1', title: 'Implement controls', repository: '/repo', state: 'running', attemptId: 'a1', session: { platform: 'opencode', id: 'impl-session' } },
+      { id: 'epic-1.6', epicId: 'epic-1', title: 'Finish handoff', repository: '/repo', state: 'running', attemptId: 'a2', session: { platform: 'opencode', id: 'settled-session' } },
       { id: 'epic-1.5', epicId: 'epic-1', title: 'Next up', repository: '/repo', state: 'ready' },
     ] as never);
-    vi.mocked(api.sessions).mockResolvedValue([{ id: 'impl-session', title: 'Implement', status: 'busy', pendingQuestion: false, pendingPermission: false }] as never);
+    vi.mocked(api.sessions).mockResolvedValue([
+      { id: 'impl-session', title: 'Implement', status: 'busy', pendingQuestion: false, pendingPermission: false },
+      { id: 'settled-session', title: 'Settled turn', status: 'done', pendingQuestion: false, pendingPermission: false },
+    ] as never);
     renderFactory(<MemoryRouter><FactoryOverview /></MemoryRouter>);
 
 		const live = await screen.findByRole('table', { name: 'Live work' });
@@ -241,8 +266,10 @@ describe('Factory interactions', () => {
 		expect(within(live).getByRole('cell', { name: /epic-1\.4.*Implement controls/ })).toBeInTheDocument();
     expect(within(live).getByText('Implement controls')).toBeInTheDocument();
     expect(within(live).queryByText('Next up')).not.toBeInTheDocument();
-    expect(within(live).getAllByRole('link', { name: /Open session/ })).toHaveLength(2);
+    expect(within(live).getAllByRole('link', { name: /Open session/ })).toHaveLength(3);
     expect(await within(live).findByText('Busy')).toBeInTheDocument();
+    expect(within(live).getByRole('cell', { name: /epic-1\.6.*Finish handoff/ }).parentElement).toHaveTextContent('running');
+    expect(within(live).queryByText('Done')).not.toBeInTheDocument();
     expect(screen.getByText('Nothing needs your attention.')).toBeInTheDocument();
   });
 
