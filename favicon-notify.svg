@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1e1e2e"/>
+      <stop offset="100%" stop-color="#313244"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="4" y1="4" x2="44" y2="44" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#89b4fa"/>
+      <stop offset="33%" stop-color="#cba6f7"/>
+      <stop offset="66%" stop-color="#f38ba8"/>
+      <stop offset="100%" stop-color="#fab387"/>
+    </linearGradient>
+    <linearGradient id="txt" x1="10" y1="14" x2="38" y2="38" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#89dceb"/>
+      <stop offset="50%" stop-color="#89b4fa"/>
+      <stop offset="100%" stop-color="#cba6f7"/>
+    </linearGradient>
+  </defs>
+  <!-- Rounded square background -->
+  <rect width="48" height="48" rx="10" fill="url(#bg)"/>
+  <!-- Colorful border ring -->
+  <rect x="2" y="2" width="44" height="44" rx="8" fill="none" stroke="url(#ring)" stroke-width="2.5"/>
+  <!-- Terminal prompt caret -->
+  <path d="M11 17 L19 24 L11 31" fill="none" stroke="#a6e3a1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Cursor line -->
+  <line x1="22" y1="31" x2="37" y2="31" stroke="url(#txt)" stroke-width="3" stroke-linecap="round"/>
+  <!-- Notification dot (top-right) -->
+  <circle cx="38" cy="10" r="8" fill="#1e1e2e"/>
+  <circle cx="38" cy="10" r="6" fill="#fab387"/>
+</svg>

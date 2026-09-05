@@ -1,0 +1,1351 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>ocman – Other</title><link>https://ocman.stenic.io/docs/other/</link><description>Recent content in Other on ocman</description><generator>Hugo -- gohugo.io</generator><language>en</language><atom:link href="https://ocman.stenic.io/docs/other/index.xml" rel="self" type="application/rss+xml"/><item><title>Architecture</title><link>https://ocman.stenic.io/docs/other/architecture/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://ocman.stenic.io/docs/other/architecture/</guid><description>
+&lt;h2&gt;Introduction&lt;span class="hx:absolute hx:-mt-20" id="introduction"&gt;&lt;/span&gt;
+&lt;a href="#introduction" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Ocman is a single Go binary that serves a React SPA and acts as a control
+plane for coding-agent sessions. Four diagrams follow: the system context
+(what ocman talks to), the backend composition (the Go packages), the
+session/event data flow, and the frontend composition. Each diagram is capped
+at roughly 10 blocks, and the detail lives in the text below it.&lt;/p&gt;
+&lt;h3&gt;Cross-machine conversation sharing&lt;span class="hx:absolute hx:-mt-20" id="cross-machine-conversation-sharing"&gt;&lt;/span&gt;
+&lt;a href="#cross-machine-conversation-sharing" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;p&gt;Ocman can publish a shared conversation through the standalone &lt;code&gt;ocman-relay&lt;/code&gt;
+binary. The relay stores only AES-256-GCM ciphertext through the &lt;code&gt;share.Store&lt;/code&gt;
+abstraction (disk today; object storage can implement the same
+&lt;code&gt;Put&lt;/code&gt;/&lt;code&gt;Get&lt;/code&gt;/&lt;code&gt;List&lt;/code&gt;/&lt;code&gt;DeletePrefix&lt;/code&gt; contract). The per-share key stays in the URL
+fragment, so it never reaches the relay.&lt;/p&gt;
+&lt;div role="img" aria-label="Diagram"&gt;
+&lt;pre class="mermaid hx:mt-6"&gt;
+flowchart LR
+Owner[Owner ocman] --&amp;gt;|sealed completed turns| Relay[ocman-relay]
+Relay --&amp;gt; Store[(share.Store)]
+Viewer[Browser viewer] --&amp;gt;|ciphertext poll| Relay
+Viewer --&amp;gt;|WebCrypto decrypt| Thread[Shared conversation]
+Thread --&amp;gt;|explicit local fork| Local[Recipient ocman]
+&lt;/pre&gt;
+&lt;/div&gt;&lt;ul&gt;
+&lt;li&gt;Chunk zero is a complete snapshot; later chunks contain the latest
+completed turn and the viewer merges them as id-keyed upserts.&lt;/li&gt;
+&lt;li&gt;The owner allocates sequence numbers. Nonces derive from those sequence
+numbers, and the share id plus sequence is authenticated as GCM AAD.&lt;/li&gt;
+&lt;li&gt;Revocation deletes the relay prefix. The relay stores only a hash of its
+append/delete token and needs no database.&lt;/li&gt;
+&lt;li&gt;Forking fetches and decrypts in the recipient&amp;rsquo;s authenticated local ocman
+UI, lets the recipient choose a local project, and parks the transcript as
+an unsent composer draft. Imported text never runs automatically.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;1. System context&lt;span class="hx:absolute hx:-mt-20" id="1-system-context"&gt;&lt;/span&gt;
+&lt;a href="#1-system-context" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Everything external that the ocman process touches.&lt;/p&gt;
+&lt;div role="img" aria-label="Diagram"&gt;
+&lt;pre class="mermaid hx:mt-6"&gt;
+flowchart LR
+Browser[Browser SPA&amp;lt;br/&amp;gt;REST + SSE] --&amp;gt; Ocman[ocman&amp;lt;br/&amp;gt;Go binary :8228]
+Agent[AI agents&amp;lt;br/&amp;gt;MCP clients] --&amp;gt;|/mcp| Ocman
+Ocman --&amp;gt;|read-only SQLite| OCDB[(opencode.db)]
+Ocman --&amp;gt;|read/write SQLite| StateDB[(state.db)]
+Ocman --&amp;gt;|artifact payloads| Blobs[(workflow-artifacts)]
+Ocman --&amp;gt;|Authenticated HTTP/SSE proxy| OCInst[Running OpenCode&amp;lt;br/&amp;gt;instances]
+Ocman --&amp;gt;|exec + loopback REST| Shell[git / tmux / lsof / bd / Dagu&amp;lt;br/&amp;gt;host tools]
+Ocman --&amp;gt;|REST| Forges[GitHub / Forgejo]
+Ocman &amp;lt;--&amp;gt;|gRPC + token| Remotes[Remote ocman&amp;lt;br/&amp;gt;instances]
+Ocman -.-&amp;gt;|OTLP, optional| Otel[Telemetry collector]
+&lt;/pre&gt;
+&lt;/div&gt;&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Browser SPA.&lt;/strong&gt; The only UI. It talks REST/SSE to the hub, never to
+remotes directly. &lt;code&gt;:8228&lt;/code&gt; is the production &lt;code&gt;-addr&lt;/code&gt; default; in dev the
+Vite server on :8228 proxies &lt;code&gt;/api&lt;/code&gt; to the air backend on :8229.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;opencode.db.&lt;/strong&gt; Foreign data, opened read-only. Ocman never writes to it.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;state.db.&lt;/strong&gt; Ocman&amp;rsquo;s own state: archive flags, immutable workflow
+versions and runs, workflow artifact metadata, workflow resource and
+workspace leases, permission approval provenance, settings, and remote
+tokens.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;workflow-artifacts/.&lt;/strong&gt; A content-addressed store under the ocman data
+dir, next to state.db, holding large, deduplicated, immutable artifact
+payloads outside SQLite. Metadata rows in state.db reference payloads by
+content hash and expire them on a retention policy while keeping the audit
+metadata.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Remote ocman instances.&lt;/strong&gt; The hub dials remotes over gRPC and re-exposes
+their sessions and hosts transparently. The owning remote enriches session
+detail with its persisted approvals and tees synthetic approval events into
+the gRPC event stream before the hub forwards them to the browser.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Dagu.&lt;/strong&gt; A separately installed 2.x CLI, and the workflow runner. On the
+first workflow action the owning ocman host starts one private
+loopback-only Dagu server under &lt;code&gt;~/.local/share/ocman/dagu&lt;/code&gt;. Ocman owns
+authoring, versioning, triggering and history; Dagu only executes the
+graph. Ocman compiles a pinned version to an inline spec, posts it under
+ocman&amp;rsquo;s own run id, and polls run state back. Compiled specs carry no
+schedule and no auto-retry, and the process receives no LLM credentials.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;2. Backend composition&lt;span class="hx:absolute hx:-mt-20" id="2-backend-composition"&gt;&lt;/span&gt;
+&lt;a href="#2-backend-composition" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;The Go package graph, collapsed to the seams that matter.&lt;/p&gt;
+&lt;div role="img" aria-label="Diagram"&gt;
+&lt;pre class="mermaid hx:mt-6"&gt;
+flowchart TD
+Server[internal/server&amp;lt;br/&amp;gt;HTTP, SSE, handlers] --&amp;gt; Registry[platforms.Registry&amp;lt;br/&amp;gt;session seam]
+Server --&amp;gt; Router[hostsvc.Router&amp;lt;br/&amp;gt;host/dir seam]
+Server --&amp;gt; Workflows[automation services&amp;lt;br/&amp;gt;workflows + prompt schedules]
+Server --&amp;gt; Factory[internal/factory&amp;lt;br/&amp;gt;native Issue graph + dispatch]
+Factory --&amp;gt; FactoryModel[internal/factory/model&amp;lt;br/&amp;gt;shared persistence records]
+Factory --&amp;gt; State
+State --&amp;gt; FactoryModel
+Factory --&amp;gt; Registry
+Factory --&amp;gt; Router
+Workflows --&amp;gt; Registry
+Workflows --&amp;gt; Router
+Server --&amp;gt; MCP[internal/mcp&amp;lt;br/&amp;gt;MCP tools]
+MCP --&amp;gt; Workflows
+MCP --&amp;gt; Factory
+Registry --&amp;gt; OC[platforms/opencode + internal/db&amp;lt;br/&amp;gt;adapter and read-only queries]
+Registry --&amp;gt; RP[remote.Platform&amp;lt;br/&amp;gt;gRPC-backed]
+Router --&amp;gt; Local[hostsvc/local&amp;lt;br/&amp;gt;git, tmux, worktree, Beads, runtimes]
+Server --&amp;gt; State[internal/state&amp;lt;br/&amp;gt;state.db]
+Server --&amp;gt; Forge[forge + integrations&amp;lt;br/&amp;gt;GitHub/Forgejo clients]
+&lt;/pre&gt;
+&lt;/div&gt;&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;internal/server.&lt;/strong&gt; The HTTP mux, SSE broadcast and fanout, around 60
+handler files, plus tmux, terminal, whisper, auto-approve and workflow
+ticks.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;internal/factory.&lt;/strong&gt; The independent Software Factory boundary. Its
+stores Epics, Mols, typed Issues, dependencies, attempts, Formula revisions,
+Plan revisions, approvals, and materialization provenance in &lt;code&gt;state.db&lt;/code&gt;.
+TOML Formulas compile to canonical JSON. A Plan session is read-only at the
+project root; approval of an exact revision enables user-requested atomic
+materialization of the one Implementation Issue, which alone launches a
+configured worktree session. The browser uses REST while agents use the one action-based
+&lt;code&gt;factory&lt;/code&gt; MCP tool. Workflows state and services are not involved.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Factory persistence.&lt;/strong&gt; Native &lt;code&gt;factory_*&lt;/code&gt; tables own the graph and its
+provenance in &lt;code&gt;state.db&lt;/code&gt;; they do not reference or alter Workflows tables.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;internal/factory/model.&lt;/strong&gt; Dependency-neutral persistence records shared by
+&lt;code&gt;internal/factory&lt;/code&gt; and &lt;code&gt;internal/state&lt;/code&gt;. Factory owns their meaning; state
+only stores them, which avoids making Factory depend on its SQLite adapter.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;platforms.Registry.&lt;/strong&gt; The session-scoped seam. One adapter per platform;
+remotes register as compound-ID platforms so handlers can&amp;rsquo;t tell local from
+remote.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;hostsvc.Router.&lt;/strong&gt; The directory-scoped seam (git, worktrees, tmux, Beads,
+projects and forge-repository detection/fetch). It resolves the owning host
+and delegates, the same transparency
+trick as the registry. Worktree sessions run in-app on the project&amp;rsquo;s single
+opencode instance, one per project, ensured through
+&lt;code&gt;EnsureProjectOpencode&lt;/code&gt;, with a per-session working directory. There is no
+opencode or tmux process per worktree. &lt;code&gt;EnsureProjectOpencodeResult&lt;/code&gt; is
+runtime-neutral: callers use the full &lt;code&gt;Endpoint&lt;/code&gt; URL (or its &lt;code&gt;Port()&lt;/code&gt;) plus
+an opaque &lt;code&gt;ocruntime.Instance&lt;/code&gt;. The owning host may use discovery once to
+adopt a healthy instance that started before its managed registry entry
+existed. &lt;code&gt;RestartProjectOpencode&lt;/code&gt; stops and relaunches the tracked
+instance.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;internal/ocruntime.&lt;/strong&gt; The runtime abstraction behind the managed launch
+path. A &lt;code&gt;Runtime&lt;/code&gt; interface (&lt;code&gt;Launch&lt;/code&gt;/&lt;code&gt;Probe&lt;/code&gt;/&lt;code&gt;Stop&lt;/code&gt;) hides how a project&amp;rsquo;s
+opencode is hosted; the native-tmux implementation runs &lt;code&gt;opencode --port N&lt;/code&gt;
+on an ocman-allocated loopback port and probes authenticated
+&lt;code&gt;GET {endpoint}/config&lt;/code&gt; for health. It is where the container runtime (epic
+#375) plugs in as a second implementation.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;internal/dagu.&lt;/strong&gt; Detects the executable, supervises one lazy private Dagu
+server, and compiles a workflow version to a Dagu spec. The compiler covers
+command, agent, approval, map and join nodes plus conditional edges; a map
+fans out through &lt;code&gt;dag.run&lt;/code&gt; over a pinned child DAG written to the Dagu DAGs
+directory. &lt;code&gt;hostsvc.Host&lt;/code&gt; and the remote gRPC seam keep launch,
+observation, logs and cancellation on the owning machine.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;internal/workflowstep.&lt;/strong&gt; &lt;code&gt;ocman workflow-step&lt;/code&gt;, the command Dagu runs for
+node types it cannot express. Agent, approval and conditional steps call
+back into ocman over loopback; a join applies its policy locally. The real
+node configuration stays in ocman, so prompts and credentials never reach a
+spec or a Dagu step log.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;platforms/opencode.&lt;/strong&gt; Wraps the read-only DB queries (&lt;code&gt;internal/db&lt;/code&gt;) plus
+an HTTP client that attaches to live instances, with &lt;code&gt;lsof&lt;/code&gt;-based discovery
+for instances started outside ocman. One process-wide &lt;code&gt;/global/event&lt;/code&gt; stream
+per instance keeps pending permission and question state in memory across
+all session directories.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;workflows.Service.&lt;/strong&gt; The shared validation, durable trigger and
+run-lifecycle seam for immutable workflow versions. Durable manual,
+interval, cron, PR and completion triggers create version-pinned runs
+(overlap skip, queue or parallel), and a 5 s server tick evaluates triggers
+through narrow forge and session-status adapters. It schedules approval,
+permission-scoped command and agent nodes from persisted dependency state.
+The command executor owns directory and environment policy, bounded logs,
+JSON stdout validation, and process-tree cancellation. Agent attempts
+create, send and abort through the session service and poll
+platform-neutral session status. Agents with an &lt;code&gt;outputSchema&lt;/code&gt; receive that
+JSON Schema in their prompt and have their final value validated by
+&lt;code&gt;jsonschema&lt;/code&gt;; agents without one only need to complete successfully. REST,
+MCP and SSE never implement independent transitions. Every node exposes one
+canonical Node Result, and dependency-scoped interpolation passes its JSON
+output to commands, environments, prompts, maps and CEL policies. The
+auxiliary content-addressed &lt;code&gt;BlobStore&lt;/code&gt; remains for internal map-item
+payloads and historical artifact downloads, not as a second node-output
+channel. Referenced secrets resolve from host env at execution time and are
+redacted from logs and artifact payloads; a background sweep drops payloads
+past their retention window (30-day default, per-workflow override) but
+keeps the metadata. A run may own a bounded pool of worktree shards,
+created host-locally through the git worktree service. Mutating nodes
+acquire a durable workspace lease in the same transaction as pool capacity,
+exclusive by default, or path-scoped so disjoint declared scopes share a
+shard while overlapping (ancestor or exact) scopes cannot. Path-leased
+nodes are denied repository-wide git mutation (stash, reset, checkout,
+commit, push and so on) so a commit coordinator owns serialized per-shard
+git state. Leases carry an optional owning-host identity, release only
+after the attempt settles, and are visible in the run UI.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;The server prompt-schedule service.&lt;/strong&gt; The native prompt scheduler. It
+calculates one-time, interval and five-field cron occurrences with
+&lt;code&gt;robfig/cron&lt;/code&gt;, then atomically claims due &lt;code&gt;state.db&lt;/code&gt; rows before sending the
+stored prompt through &lt;code&gt;sessionsvc&lt;/code&gt;. Each occurrence either creates a fresh
+OpenCode session or queues into the schedule-owned session. On restart,
+persisted &lt;code&gt;running&lt;/code&gt; claims become failed rather than being replayed, which
+prevents a duplicate external dispatch when completion is unknown.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Legacy loop migration (#325).&lt;/strong&gt; Migration v28 copies persisted legacy
+loops into ordinary one-node workflow definitions and turns each iteration
+into a historical workflow run plus node attempt. &lt;code&gt;loop_workflow_map&lt;/code&gt; makes
+the transaction-safe copy idempotent. The legacy tables survive only as
+non-destructive upgrade input and historical data; no API, MCP, UI or
+runtime scheduler reads them.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;internal/mcp.&lt;/strong&gt; MCP tool handlers for workflow control and &lt;code&gt;embed_file&lt;/code&gt;.
+Workflow operations go through &lt;code&gt;workflows.Service&lt;/code&gt;; file embedding uses
+signed tokens persisted in &lt;code&gt;state.db&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;internal/opencodeskills.&lt;/strong&gt; Extracts binary-embedded ocman skills into
+XDG data and installs only ocman-owned symlinks for OpenCode discovery.
+Retirement unlinks only the exact verified symlink and preserves extracted data.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;internal/state.&lt;/strong&gt; Ocman&amp;rsquo;s writable SQLite store: migrations, settings,
+workflows, prompt schedules, and the independent native Factory Issue graph.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;forge and integrations.&lt;/strong&gt; Forge-agnostic types in &lt;code&gt;internal/forge&lt;/code&gt;, per-forge
+HTTP clients in &lt;code&gt;internal/forge/{github,forgejo}&lt;/code&gt;. PR/Issue handlers obtain repository
+identity from the owner Host, then use the hub clients for metadata.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;3. Session and event data flow&lt;span class="hx:absolute hx:-mt-20" id="3-session-and-event-data-flow"&gt;&lt;/span&gt;
+&lt;a href="#3-session-and-event-data-flow" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;How a session read and a live update travel through the system. Workflow runs
+use the same SSE channel: discovery publishes a JSON Node Result, map creates
+pinned child runs from it, item phases fan out to independent reviews, then
+fix, validation and the serialized commit coordinator settle before the run
+view refetches phases, Node Results, historical artifacts, pools and leases.&lt;/p&gt;
+&lt;div role="img" aria-label="Diagram"&gt;
+&lt;pre class="mermaid hx:mt-6"&gt;
+sequenceDiagram
+participant B as Browser
+participant S as server handlers
+participant R as Registry/Router
+participant O as Remote owner
+participant A as opencode adapter
+participant D as opencode.db / OC HTTP
+participant E as SSE broadcast
+B-&amp;gt;&amp;gt;S: GET /api/sessions
+S-&amp;gt;&amp;gt;R: resolve platform/host
+R-&amp;gt;&amp;gt;A: ListSessions()
+D--&amp;gt;&amp;gt;A: background /global/event prompt updates
+A-&amp;gt;&amp;gt;D: SQL json_extract
+A-&amp;gt;&amp;gt;A: overlay pending prompt registry
+D--&amp;gt;&amp;gt;B: JSON (status settled at query time)
+R-&amp;gt;&amp;gt;O: gRPC Session / StreamEvents (remote only)
+O-&amp;gt;&amp;gt;A: Session / ProxyEvents
+O-&amp;gt;&amp;gt;O: inject persisted approvals,&amp;lt;br/&amp;gt;tee synthetic approval events
+O--&amp;gt;&amp;gt;S: enriched JSON / framed SSE
+Note over S,E: background: workflow + prompt-schedule ticks,&amp;lt;br/&amp;gt;remote gRPC streams
+E--&amp;gt;&amp;gt;B: SSE (session.updated, workflow.run.updated)
+&lt;/pre&gt;
+&lt;/div&gt;&lt;p&gt;The key property: ocman never persists session status. The live turn signal
+from the running OpenCode instance decides whether a session is busy; the
+last stored message row only settles which terminal state a finished session
+is in. Nothing is written back, so there is no sync problem with OpenCode&amp;rsquo;s
+DB.&lt;/p&gt;
+&lt;p&gt;Workflow state takes the opposite path because ocman owns it. Publish,
+trigger and manual start, approval, command completion, agent supervision,
+pause and cancel all delegate to &lt;code&gt;workflows.Service&lt;/code&gt;, which commits trigger,
+version, run, node and attempt state plus canonical JSON Node Results to
+&lt;code&gt;state.db&lt;/code&gt; before broadcasting a run ID. A newly created run is offered to the
+&lt;code&gt;workflows.ExternalRunner&lt;/code&gt; seam first: Dagu takes every definition the
+compiler can express, and the native dispatcher keeps the rest. Runs Dagu
+executes reach the UI through a one-way mirror that polls Dagu and projects
+run, node and attempt rows back onto &lt;code&gt;state.db&lt;/code&gt;, so the API and run view are
+identical either way. The browser then refetches the authoritative trigger
+state and run graph, including linked agent sessions and map/join aggregate
+outputs.&lt;/p&gt;
+&lt;p&gt;One-time prompt schedules are ocman-owned too. The project page creates and
+lists them over REST. The scheduler first commits a durable &lt;code&gt;running&lt;/code&gt; claim,
+then creates and prompts a session through the shared session mutation
+service. The same row stores completion and error state plus the session link
+the UI shows.&lt;/p&gt;
+&lt;h2&gt;4. Frontend composition&lt;span class="hx:absolute hx:-mt-20" id="4-frontend-composition"&gt;&lt;/span&gt;
+&lt;a href="#4-frontend-composition" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;div role="img" aria-label="Diagram"&gt;
+&lt;pre class="mermaid hx:mt-6"&gt;
+flowchart TD
+Pages[pages/&amp;lt;br/&amp;gt;routes] --&amp;gt; Comp[components/&amp;lt;br/&amp;gt;~80 components]
+Pages --&amp;gt; Stores[Client state&amp;lt;br/&amp;gt;TanStack Query + Zustand]
+Comp --&amp;gt; Stores
+Stores --&amp;gt; API[lib/ API client]
+Stores --&amp;gt; SSE[SSE subscription]
+Pages --&amp;gt; Scopes[Ref-counted activity scopes]
+Comp --&amp;gt; Scopes
+Scopes --&amp;gt; Reporter[Client activity lease reporter]
+Reporter --&amp;gt; API
+API --&amp;gt;|/api| Hub[ocman backend]
+SSE --&amp;gt;|events| Hub
+Comp --&amp;gt; Caps[useCapabilities&amp;lt;br/&amp;gt;capability gating]
+&lt;/pre&gt;
+&lt;/div&gt;&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Capability gating.&lt;/strong&gt; The UI never branches on platform identity. Features
+toggle via &lt;code&gt;/api/capabilities&lt;/code&gt;, enforced by a lint script.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Client state.&lt;/strong&gt; Shared Zustand stores hold broad session and workflow
+state. The bounded workflow page keeps its selected run locally and
+reconciles it from REST whenever the shared SSE stream reports a run
+change. Its run graph labels ordered phases, stable map items, attempts,
+Node Results, historical artifacts, resource pools and workspace ownership
+without inferring platform identity.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Activity leases.&lt;/strong&gt; Mounted data subscriptions ref-count their scopes. One
+authenticated reporter renews the visible tab&amp;rsquo;s lease, allowing the backend
+to skip view-serving session, project and metrics refreshes
+when every tab is hidden or gone. Headless workflows, schedules and
+auto-approve do not consult these leases.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Beads status.&lt;/strong&gt; The right panel queries the repository owner&amp;rsquo;s
+&lt;code&gt;hostsvc.Host&lt;/code&gt; through &lt;code&gt;/api/project/beads-status&lt;/code&gt;; remote owners proxy the
+same operation over gRPC. Ticket data stays in the repository and is polled
+only while the available pane is open.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Factory.&lt;/strong&gt; &lt;code&gt;/factory&lt;/code&gt; presents actionable approval Gates, Epics, Issues,
+Queue, and Configuration through TanStack Query. Browser mutations create
+native Epics, pour Mols, decide exact Plan revisions, and explicitly close
+completed containers. The dispatcher records attempts before launching the
+read-only planning or configured implementation session.&lt;/li&gt;
+&lt;/ul&gt;</description></item><item><title>Contributing</title><link>https://ocman.stenic.io/docs/other/contributing/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://ocman.stenic.io/docs/other/contributing/</guid><description>
+&lt;h2&gt;Architecture&lt;span class="hx:absolute hx:-mt-20" id="architecture"&gt;&lt;/span&gt;
+&lt;a href="#architecture" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;div role="img" aria-label="Diagram"&gt;
+&lt;pre class="mermaid hx:mt-6"&gt;
+graph TD
+subgraph Browser
+SPA[React SPA]
+end
+subgraph ocman Server
+HTTP[HTTP Server]
+Static[Embedded Static Assets]
+Registry[Platform Registry]
+Archive[Auto-Archive Goroutine]
+end
+subgraph Adapters
+OCAd[OpenCode adapter]
+end
+subgraph Storage
+OC_DB[(OpenCode DB&amp;lt;br/&amp;gt;read-only)]
+State_DB[(ocman state.db&amp;lt;br/&amp;gt;read-write)]
+end
+subgraph External
+OC[Running OpenCode instances]
+end
+SPA --&amp;gt;|/api/*| HTTP
+SPA --&amp;gt;|static files| Static
+HTTP --&amp;gt; Registry
+Registry --&amp;gt; OCAd
+OCAd --&amp;gt; OC_DB
+OCAd --&amp;gt;|lsof + HTTP| OC
+HTTP --&amp;gt;|archived/seen| State_DB
+Archive --&amp;gt; State_DB
+&lt;/pre&gt;
+&lt;/div&gt;&lt;h2&gt;Project structure&lt;span class="hx:absolute hx:-mt-20" id="project-structure"&gt;&lt;/span&gt;
+&lt;a href="#project-structure" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;pre&gt;&lt;code&gt;main.go entrypoint (-addr, -db, -platforms, -auth-* flags)
+frontend/ React &amp;#43; TypeScript &amp;#43; Vite SPA
+e2e/ Playwright end-to-end suite
+internal/platforms/ Platform interface, Registry, common types/errors
+internal/platforms/opencode/ OpenCode adapter (DB &amp;#43; HTTP proxy)
+internal/db/ SQLite queries against OpenCode&amp;#39;s DB
+internal/state/ ocman&amp;#39;s own writable state DB (archived/seen,
+auth secret, favorites, cached projects)
+internal/server/ HTTP server, API handlers, static file serving,
+OpenCode port discovery, auth
+internal/webui/static/ Vite build output (embedded into Go binary)
+internal/tmux/ tmux process control &amp;#43; opencode launchers
+internal/term/ in-app browser terminals (tmux windows &amp;#43; PTY bridge)
+internal/whisper/ voice transcription via local whisper-cpp
+internal/autoapprove/ LLM-judged permission auto-approve pipeline
+spec/ Requirements &amp;#43; architecture notes per feature&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;h2&gt;Development&lt;span class="hx:absolute hx:-mt-20" id="development"&gt;&lt;/span&gt;
+&lt;a href="#development" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;h3&gt;Requirements&lt;span class="hx:absolute hx:-mt-20" id="requirements"&gt;&lt;/span&gt;
+&lt;a href="#requirements" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;ul&gt;
+&lt;li&gt;Go 1.24+&lt;/li&gt;
+&lt;li&gt;Node.js 22+ (provided by &lt;code&gt;mise&lt;/code&gt;)&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://pnpm.io/" target="_blank" rel="noopener"&gt;pnpm&lt;/a&gt;
+(provided by &lt;code&gt;mise&lt;/code&gt;; pinned via &lt;code&gt;packageManager&lt;/code&gt; in &lt;code&gt;frontend/package.json&lt;/code&gt;)&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://mise.jdx.dev/" target="_blank" rel="noopener"&gt;mise&lt;/a&gt;
+, which provides &lt;code&gt;air&lt;/code&gt;, &lt;code&gt;node&lt;/code&gt;, and &lt;code&gt;pnpm&lt;/code&gt; (&lt;code&gt;mise install&lt;/code&gt;)&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;tmux&lt;/code&gt; on &lt;code&gt;PATH&lt;/code&gt; for the in-UI launcher&lt;/li&gt;
+&lt;/ul&gt;
+&lt;blockquote&gt;
+&lt;p&gt;All Node-side commands use &lt;code&gt;pnpm&lt;/code&gt;. &lt;code&gt;npm&lt;/code&gt; is no longer supported: running
+&lt;code&gt;npm install&lt;/code&gt; will not produce the expected &lt;code&gt;pnpm-lock.yaml&lt;/code&gt;, and CI
+rejects it.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h3&gt;Quick command reference&lt;span class="hx:absolute hx:-mt-20" id="quick-command-reference"&gt;&lt;/span&gt;
+&lt;a href="#quick-command-reference" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;table&gt;
+&lt;thead&gt;
+&lt;tr&gt;
+&lt;th&gt;Command&lt;/th&gt;
+&lt;th&gt;Port&lt;/th&gt;
+&lt;th&gt;Live Reload&lt;/th&gt;
+&lt;th&gt;Use Case&lt;/th&gt;
+&lt;/tr&gt;
+&lt;/thead&gt;
+&lt;tbody&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;make dev&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;8228&lt;/td&gt;
+&lt;td&gt;Yes (HMR)&lt;/td&gt;
+&lt;td&gt;Regular development&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;make dev-prod-watch&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;8228&lt;/td&gt;
+&lt;td&gt;Manual refresh&lt;/td&gt;
+&lt;td&gt;Memory profiling, production testing&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;make dev-prod&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;8228&lt;/td&gt;
+&lt;td&gt;No&lt;/td&gt;
+&lt;td&gt;One-time production test&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;h3&gt;All commands&lt;span class="hx:absolute hx:-mt-20" id="all-commands"&gt;&lt;/span&gt;
+&lt;a href="#all-commands" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;table&gt;
+&lt;thead&gt;
+&lt;tr&gt;
+&lt;th&gt;Command&lt;/th&gt;
+&lt;th&gt;Description&lt;/th&gt;
+&lt;/tr&gt;
+&lt;/thead&gt;
+&lt;tbody&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;make dev&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;Backend (air) + frontend (vite dev) with HMR on :8228&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;make dev-prod&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;Backend (air) + frontend (vite preview of production build) on :8228&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;make dev-prod-watch&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;Backend (air) + frontend (vite preview, auto-rebuilds on changes) on :8228&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;make dev-backend&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;Go backend only (air, port 8229)&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;make dev-frontend&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;Vite dev server only (port 8228)&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;make test&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;go test ./...&lt;/code&gt;, &lt;code&gt;vitest run&lt;/code&gt;, and the Playwright e2e suite&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;make lint&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;go vet&lt;/code&gt;, &lt;code&gt;tsc -b&lt;/code&gt;, &lt;code&gt;eslint&lt;/code&gt;, and the platform-branching check&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;make build&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;Production build (frontend then Go binary)&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;make clean&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;Remove binary, tmp/, and static/assets/&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;h3&gt;Build pipeline&lt;span class="hx:absolute hx:-mt-20" id="build-pipeline"&gt;&lt;/span&gt;
+&lt;a href="#build-pipeline" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;ol&gt;
+&lt;li&gt;&lt;code&gt;cd frontend &amp;amp;&amp;amp; pnpm install --frozen-lockfile &amp;amp;&amp;amp; pnpm build&lt;/code&gt; builds the frontend into &lt;code&gt;internal/webui/static/&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;go build -o ocman .&lt;/code&gt; embeds &lt;code&gt;internal/webui/static/&lt;/code&gt; via &lt;code&gt;//go:embed&lt;/code&gt;.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;Order matters: build the frontend before &lt;code&gt;go build&lt;/code&gt;.&lt;/p&gt;
+&lt;h3&gt;Development workflows&lt;span class="hx:absolute hx:-mt-20" id="development-workflows"&gt;&lt;/span&gt;
+&lt;a href="#development-workflows" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;p&gt;Regular frontend development:&lt;/p&gt;
+&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;div class="highlight"&gt;&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;make dev
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# → Instant HMR updates; best for UI iteration&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;p&gt;Memory profiling or production testing:&lt;/p&gt;
+&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;div class="highlight"&gt;&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-bash" data-lang="bash"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;make dev-prod-watch
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# → Edit code → auto-rebuild → manually refresh browser&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;blockquote&gt;
+&lt;p&gt;Vite&amp;rsquo;s preview mode has no HMR. The watcher rebuilds automatically but you refresh the
+browser yourself. That&amp;rsquo;s deliberate: production builds are for testing, not rapid
+iteration.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h2&gt;Tests&lt;span class="hx:absolute hx:-mt-20" id="tests"&gt;&lt;/span&gt;
+&lt;a href="#tests" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Three suites: Go tests (unit and integration), frontend tests in vitest, and a Playwright
+end-to-end suite covering auth, the dashboard, composer, SSE streaming, and prompts. CI runs
+all three on every PR, and &lt;code&gt;make test&lt;/code&gt; runs them locally. Coverage is ratcheted, so new code
+ships with tests.&lt;/p&gt;
+&lt;h2&gt;Platform-agnostic frontend&lt;span class="hx:absolute hx:-mt-20" id="platform-agnostic-frontend"&gt;&lt;/span&gt;
+&lt;a href="#platform-agnostic-frontend" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;The frontend must not branch on &lt;code&gt;session.platform === 'opencode'&lt;/code&gt; (or similar string comparisons).
+UI capability gating goes through &lt;code&gt;/api/capabilities&lt;/code&gt; and &lt;code&gt;useCapabilities()&lt;/code&gt; instead.
+&lt;code&gt;scripts/check-platform-branching.sh&lt;/code&gt; enforces this, and &lt;code&gt;make lint&lt;/code&gt; runs it. If you hit a false
+positive, the pragma &lt;code&gt;// ocman:allow-platform-branch&lt;/code&gt; suppresses the check on the next line. Use
+it sparingly, for generic helpers that genuinely need the platform identity.&lt;/p&gt;</description></item><item><title>Profiling</title><link>https://ocman.stenic.io/docs/other/profiling/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://ocman.stenic.io/docs/other/profiling/</guid><description>
+&lt;p&gt;Where ocman&amp;rsquo;s performance work stands. This records the suspects we found
+during recon, the instrumentation we added to measure them, and the fixes that
+&lt;em&gt;should&lt;/em&gt; follow once we have data, in priority order.&lt;/p&gt;
+&lt;p&gt;The starting symptom: the frontend occasionally feels stuck, and it wasn&amp;rsquo;t
+clear whether slow API calls or the UI itself caused it.&lt;/p&gt;
+&lt;h2&gt;Phase 1: reconnaissance findings (OpenCode-only)&lt;span class="hx:absolute hx:-mt-20" id="phase-1-reconnaissance-findings-opencode-only"&gt;&lt;/span&gt;
+&lt;a href="#phase-1-reconnaissance-findings-opencode-only" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;ocman&amp;rsquo;s default deployment runs only the OpenCode adapter
+(&lt;code&gt;-platforms opencode&lt;/code&gt;). Findings below assume that configuration.&lt;/p&gt;
+&lt;h3&gt;Polling map (steady state, idle session)&lt;span class="hx:absolute hx:-mt-20" id="polling-map-steady-state-idle-session"&gt;&lt;/span&gt;
+&lt;a href="#polling-map-steady-state-idle-session" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;p&gt;When a user is on the &lt;code&gt;SessionDetail&lt;/code&gt; page, these all run
+simultaneously:&lt;/p&gt;
+&lt;table&gt;
+&lt;thead&gt;
+&lt;tr&gt;
+&lt;th&gt;#&lt;/th&gt;
+&lt;th&gt;Source&lt;/th&gt;
+&lt;th&gt;Cadence&lt;/th&gt;
+&lt;th&gt;Notes&lt;/th&gt;
+&lt;/tr&gt;
+&lt;/thead&gt;
+&lt;tbody&gt;
+&lt;tr&gt;
+&lt;td&gt;1&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;App.tsx&lt;/code&gt; → &lt;code&gt;useFaviconNotify&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;10 s&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;GET /api/sessions/notify&lt;/code&gt;&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;2&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;App.tsx&lt;/code&gt; → &lt;code&gt;useBellNotify&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;10 s&lt;/td&gt;
+&lt;td&gt;Independent poller hitting the same endpoint&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;3&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;App.tsx&lt;/code&gt; → &lt;code&gt;BackendStats&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;5 s&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;GET /api/system/stats&lt;/code&gt;&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;4&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;App.tsx&lt;/code&gt; → &lt;code&gt;useMemoryMonitor&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;30 s&lt;/td&gt;
+&lt;td&gt;Local-only, fine&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;5&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;App.tsx&lt;/code&gt; → &lt;code&gt;usePerformanceCleanup&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;60 s (dev)&lt;/td&gt;
+&lt;td&gt;Local-only, fine&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;6&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;SessionDetail&lt;/code&gt; line ~1078&lt;/td&gt;
+&lt;td&gt;5 s&lt;/td&gt;
+&lt;td&gt;Sidebar &lt;code&gt;recentSessions&lt;/code&gt; refresh&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;7&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;SessionDetail&lt;/code&gt; line ~1752&lt;/td&gt;
+&lt;td&gt;10 s&lt;/td&gt;
+&lt;td&gt;Fallback &lt;code&gt;GET /api/session/{id}&lt;/code&gt; when SSE drops&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;8&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;SessionDetail&lt;/code&gt; line ~2416&lt;/td&gt;
+&lt;td&gt;2 s&lt;/td&gt;
+&lt;td&gt;While a Task tool is running&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;9&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;SessionDetail&lt;/code&gt; line ~2523&lt;/td&gt;
+&lt;td&gt;1 s&lt;/td&gt;
+&lt;td&gt;Recompute live tokens/sec&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;10&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;SessionDetail&lt;/code&gt; line ~579&lt;/td&gt;
+&lt;td&gt;&lt;strong&gt;0 ms&lt;/strong&gt; (≈250 Hz)&lt;/td&gt;
+&lt;td&gt;Polls Zustand for the palette command&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;11&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;SessionDetail&lt;/code&gt; SSE&lt;/td&gt;
+&lt;td&gt;streaming&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;GET /api/session/{id}/events&lt;/code&gt;&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;On the dashboard:&lt;/p&gt;
+&lt;table&gt;
+&lt;thead&gt;
+&lt;tr&gt;
+&lt;th&gt;#&lt;/th&gt;
+&lt;th&gt;Source&lt;/th&gt;
+&lt;th&gt;Cadence&lt;/th&gt;
+&lt;th&gt;Notes&lt;/th&gt;
+&lt;/tr&gt;
+&lt;/thead&gt;
+&lt;tbody&gt;
+&lt;tr&gt;
+&lt;td&gt;12&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;Dashboard.tsx&lt;/code&gt; line 132&lt;/td&gt;
+&lt;td&gt;5 s&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;GET /api/sessions&lt;/code&gt; (full fan-out + git status, all the time)&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;/td&gt;
+&lt;td&gt;+ 1-5 above&lt;/td&gt;
+&lt;td&gt;&lt;/td&gt;
+&lt;td&gt;&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;h3&gt;Top suspects&lt;span class="hx:absolute hx:-mt-20" id="top-suspects"&gt;&lt;/span&gt;
+&lt;a href="#top-suspects" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;p&gt;The list is ordered by likelihood × impact for an OpenCode-only
+deployment. The numeric IDs (S1, S2, …) are referenced from the
+Phase 3 task list further down.&lt;/p&gt;
+&lt;h4&gt;S1: &lt;code&gt;setInterval(..., 0)&lt;/code&gt; in &lt;code&gt;SessionDetail.tsx:579&lt;/code&gt;&lt;span class="hx:absolute hx:-mt-20" id="s1-setinterval-0-in-sessiondetailtsx579"&gt;&lt;/span&gt;
+&lt;a href="#s1-setinterval-0-in-sessiondetailtsx579" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h4&gt;&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;div class="highlight"&gt;&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-ts" data-lang="ts"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nx"&gt;useEffect&lt;/span&gt;&lt;span class="p"&gt;(()&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="kr"&gt;const&lt;/span&gt; &lt;span class="nx"&gt;interval&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nx"&gt;setInterval&lt;/span&gt;&lt;span class="p"&gt;(()&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="kr"&gt;const&lt;/span&gt; &lt;span class="nx"&gt;cmd&lt;/span&gt; &lt;span class="o"&gt;=&lt;/span&gt; &lt;span class="nx"&gt;useUiStore&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;getState&lt;/span&gt;&lt;span class="p"&gt;().&lt;/span&gt;&lt;span class="nx"&gt;paletteCommand&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="k"&gt;if&lt;/span&gt; &lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="o"&gt;!&lt;/span&gt;&lt;span class="nx"&gt;cmd&lt;/span&gt; &lt;span class="o"&gt;||&lt;/span&gt; &lt;span class="nx"&gt;cmd&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;kind&lt;/span&gt; &lt;span class="o"&gt;!==&lt;/span&gt; &lt;span class="s1"&gt;&amp;#39;scoped&amp;#39;&lt;/span&gt;&lt;span class="p"&gt;)&lt;/span&gt; &lt;span class="k"&gt;return&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="p"&gt;...&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="p"&gt;},&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="k"&gt;return&lt;/span&gt; &lt;span class="p"&gt;()&lt;/span&gt; &lt;span class="o"&gt;=&amp;gt;&lt;/span&gt; &lt;span class="nx"&gt;clearInterval&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nx"&gt;interval&lt;/span&gt;&lt;span class="p"&gt;);&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="p"&gt;},&lt;/span&gt; &lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="nx"&gt;tmux&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nx"&gt;archiveSession&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nx"&gt;createSession&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt; &lt;span class="nx"&gt;navigate&lt;/span&gt;&lt;span class="p"&gt;]);&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;p&gt;&lt;code&gt;setInterval(0)&lt;/code&gt; clamps to ≈4 ms per the HTML spec, so this fires
+~250 times per second forever, just to read a Zustand store. The
+dependency array also includes &lt;code&gt;tmux&lt;/code&gt; (which probably changes on
+parent re-renders), so the interval is also re-created frequently.&lt;/p&gt;
+&lt;p&gt;This is the strongest candidate for the &amp;ldquo;stuck&amp;rdquo; feeling. It can
+saturate the event loop on a busy machine and fight against React
+scheduling. Suggested fix: convert to a &lt;code&gt;useUiStore.subscribe&lt;/code&gt;
+selector or a normal &lt;code&gt;useEffect&lt;/code&gt; keyed on &lt;code&gt;paletteCommand&lt;/code&gt;.&lt;/p&gt;
+&lt;h4&gt;S2: &lt;code&gt;/api/sessions&lt;/code&gt; cost on a 5 s loop&lt;span class="hx:absolute hx:-mt-20" id="s2-apisessions-cost-on-a-5-s-loop"&gt;&lt;/span&gt;
+&lt;a href="#s2-apisessions-cost-on-a-5-s-loop" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h4&gt;&lt;p&gt;Per request, &lt;code&gt;handleSessions&lt;/code&gt; does:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;code&gt;db.GetSessions&lt;/code&gt;: one SQLite query, indexed reads, fast.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;discoverOpenCodePorts&lt;/code&gt;: runs &lt;code&gt;lsof&lt;/code&gt; on macOS/Linux. &lt;strong&gt;3 s TTL
+cache&lt;/strong&gt;, so the dashboard&amp;rsquo;s 5 s poll cadence means roughly every
+&lt;em&gt;other&lt;/em&gt; request shells out. macOS &lt;code&gt;lsof&lt;/code&gt; invocations are
+non-trivial (~30-150 ms) and fork a process.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;collectPendingPromptsByDir(ports)&lt;/code&gt;: HTTP probes to every running
+OpenCode instance.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;applyGitInfo&lt;/code&gt;: up to 8 parallel &lt;code&gt;git status&lt;/code&gt; per unique dir,
+30 s TTL. With many sessions across many repos, every 30 s = burst
+of fork/exec.&lt;/li&gt;
+&lt;li&gt;SQLite reads in &lt;code&gt;applySessionState&lt;/code&gt; (archived/seen).&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;The dominant cost on the steady-state path is &lt;strong&gt;lsof + per-port HTTP
+probes + git&lt;/strong&gt;, none of which are about the database. Worth
+verifying with the timing middleware before optimising.&lt;/p&gt;
+&lt;h4&gt;S3: &lt;code&gt;SessionDetail.tsx&lt;/code&gt; size and render fan-out&lt;span class="hx:absolute hx:-mt-20" id="s3-sessiondetailtsx-size-and-render-fan-out"&gt;&lt;/span&gt;
+&lt;a href="#s3-sessiondetailtsx-size-and-render-fan-out" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h4&gt;&lt;p&gt;3102 lines, many &lt;code&gt;useEffect&lt;/code&gt; chains, no obvious virtualization on
+&lt;code&gt;parts&lt;/code&gt;. SSE event firehose during a busy turn could be triggering
+large re-renders. &lt;code&gt;useInfiniteRows.ts&lt;/code&gt; exists but I haven&amp;rsquo;t traced
+where it&amp;rsquo;s wired.&lt;/p&gt;
+&lt;h4&gt;S4: duplicate &lt;code&gt;/api/sessions/notify&lt;/code&gt; pollers (favicon + bell)&lt;span class="hx:absolute hx:-mt-20" id="s4-duplicate-apisessionsnotify-pollers-favicon--bell"&gt;&lt;/span&gt;
+&lt;a href="#s4-duplicate-apisessionsnotify-pollers-favicon--bell" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h4&gt;&lt;p&gt;&lt;code&gt;useFaviconNotify&lt;/code&gt; and &lt;code&gt;useBellNotify&lt;/code&gt; independently call
+&lt;code&gt;api.sessionsNotify&lt;/code&gt; every 10 s with identical params. Free
+request-coalescing if combined into one shared store subscription.&lt;/p&gt;
+&lt;h4&gt;S5: dashboard polls while hidden&lt;span class="hx:absolute hx:-mt-20" id="s5-dashboard-polls-while-hidden"&gt;&lt;/span&gt;
+&lt;a href="#s5-dashboard-polls-while-hidden" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h4&gt;&lt;p&gt;&lt;code&gt;SessionDetail&lt;/code&gt;&amp;rsquo;s sidebar refresh pauses on &lt;code&gt;document.hidden&lt;/code&gt;, but
+&lt;code&gt;Dashboard.tsx:130-134&lt;/code&gt; keeps polling regardless. Background tabs
+keep flogging the backend.&lt;/p&gt;
+&lt;h3&gt;Things that are already good&lt;span class="hx:absolute hx:-mt-20" id="things-that-are-already-good"&gt;&lt;/span&gt;
+&lt;a href="#things-that-are-already-good" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;apiStore&lt;/code&gt; request-status tracking is well-structured (single
+source of truth).&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;internal/git&lt;/code&gt; (status lookup) has a per-dir 30 s cache, an 8-worker bound, a 2 s
+timeout, and dedups by dir within a request.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;SessionDetail&lt;/code&gt;&amp;rsquo;s sidebar refresh pauses on &lt;code&gt;document.hidden&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;SSE path exists; the 10 s fallback only fires when SSE is broken.&lt;/li&gt;
+&lt;li&gt;Session-detail cache in &lt;code&gt;apiStore&lt;/code&gt; (3-entry LRU) makes back-nav
+instant.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;useMemoryMonitor&lt;/code&gt; + &lt;code&gt;usePerformanceCleanup&lt;/code&gt; already exist, and
+their comments document past memory-pressure history.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Phase 2: instrumentation (landed)&lt;span class="hx:absolute hx:-mt-20" id="phase-2-instrumentation-landed"&gt;&lt;/span&gt;
+&lt;a href="#phase-2-instrumentation-landed" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Three independent, low-risk additions, each on its own commit:&lt;/p&gt;
+&lt;table&gt;
+&lt;thead&gt;
+&lt;tr&gt;
+&lt;th&gt;Commit&lt;/th&gt;
+&lt;th&gt;Subject&lt;/th&gt;
+&lt;/tr&gt;
+&lt;/thead&gt;
+&lt;tbody&gt;
+&lt;tr&gt;
+&lt;td&gt;dc57a65&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;feat: Log per-request HTTP timing as structured logrus events&lt;/code&gt;&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;7bca3ae&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;feat: Track main-thread long tasks and surface in footer stats&lt;/code&gt;&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;93db4f6&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;feat: Buffer recent API call timings under window.__ocmanPerf&lt;/code&gt;&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;h3&gt;What landed&lt;span class="hx:absolute hx:-mt-20" id="what-landed"&gt;&lt;/span&gt;
+&lt;a href="#what-landed" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;p&gt;&lt;strong&gt;A. Backend request-timing middleware&lt;/strong&gt;
+(&lt;code&gt;internal/server/middleware.go&lt;/code&gt;)&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Wraps the mux. Logs &lt;code&gt;method&lt;/code&gt;, &lt;code&gt;path&lt;/code&gt;, &lt;code&gt;status&lt;/code&gt;, &lt;code&gt;duration_ms&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;INFO when &lt;code&gt;duration ≥ 250 ms&lt;/code&gt;, DEBUG otherwise.&lt;/li&gt;
+&lt;li&gt;Skips SSE (&lt;code&gt;/api/session/{id}/events&lt;/code&gt;) and the recursive
+&lt;code&gt;/api/debug/log&lt;/code&gt; sink.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;B. Frontend long-task observer&lt;/strong&gt;
+(&lt;code&gt;frontend/src/lib/useLongTaskMonitor.ts&lt;/code&gt;)&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;PerformanceObserver({ entryTypes: ['longtask'] })&lt;/code&gt;, counts
+main-thread blocks &amp;gt; 50 ms.&lt;/li&gt;
+&lt;li&gt;Footer shows &lt;code&gt;lt: N / Xms&lt;/code&gt;; amber at &lt;code&gt;maxMs ≥ 100 ms&lt;/code&gt;, red at
+&lt;code&gt;maxMs ≥ 250 ms&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;Safari (no longtask support) is a clean no-op.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;C. Frontend fetch timing ring buffer&lt;/strong&gt;
+(&lt;code&gt;frontend/src/lib/perfRing.ts&lt;/code&gt; + &lt;code&gt;api.ts&lt;/code&gt; wrap)&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Last 100 calls kept in memory with normalized URL templates
+(so all &lt;code&gt;/api/session/abc.../info&lt;/code&gt; aggregate as
+&lt;code&gt;/api/session/:id/info&lt;/code&gt;).&lt;/li&gt;
+&lt;li&gt;Devtools handles:
+&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;div class="highlight"&gt;&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-js" data-lang="js"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nx"&gt;__ocmanPerf&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;summary&lt;/span&gt;&lt;span class="p"&gt;()&lt;/span&gt; &lt;span class="c1"&gt;// pathTemplate × percentiles
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nx"&gt;__ocmanPerf&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;entries&lt;/span&gt;&lt;span class="p"&gt;()&lt;/span&gt; &lt;span class="c1"&gt;// chronological list
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nx"&gt;__ocmanPerf&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;clear&lt;/span&gt;&lt;span class="p"&gt;()&lt;/span&gt; &lt;span class="c1"&gt;// reset before reproducing a stall
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nx"&gt;console&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;table&lt;/span&gt;&lt;span class="p"&gt;(&lt;/span&gt;&lt;span class="nx"&gt;__ocmanPerf&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="nx"&gt;summary&lt;/span&gt;&lt;span class="p"&gt;())&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3&gt;How to use it&lt;span class="hx:absolute hx:-mt-20" id="how-to-use-it"&gt;&lt;/span&gt;
+&lt;a href="#how-to-use-it" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;p&gt;When the UI next feels stuck:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;Watch the footer.&lt;/strong&gt; A red &lt;code&gt;lt: N / Xms&lt;/code&gt; value confirms the
+problem is main-thread blocking, not API latency. Strong signal
+for S1 / S3.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Open devtools and run&lt;/strong&gt;
+&lt;code&gt;console.table(__ocmanPerf.summary())&lt;/code&gt;. The summary is sorted by
+max latency descending. Look for endpoints with high &lt;code&gt;p95Ms&lt;/code&gt; or
+&lt;code&gt;maxMs&lt;/code&gt;. &lt;code&gt;/api/sessions&lt;/code&gt; consistently &amp;gt; 200 ms ⇒ S2 confirmed.
+Everything &amp;lt; 50 ms ⇒ the frontend is the problem.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Tail server logs&lt;/strong&gt; (e.g. &lt;code&gt;tmp/air.log&lt;/code&gt;) for
+&lt;code&gt;level=info msg=&amp;quot;http request&amp;quot;&lt;/code&gt; lines. The &lt;code&gt;duration_ms&lt;/code&gt; field
+tells you what the &lt;em&gt;server&lt;/em&gt; was doing during a perceived stall.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h3&gt;What&amp;rsquo;s intentionally not measured&lt;span class="hx:absolute hx:-mt-20" id="whats-intentionally-not-measured"&gt;&lt;/span&gt;
+&lt;a href="#whats-intentionally-not-measured" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;ul&gt;
+&lt;li&gt;Inline &lt;code&gt;fetch()&lt;/code&gt; calls in &lt;code&gt;api.ts&lt;/code&gt; aren&amp;rsquo;t instrumented
+(createSession, sendMessage, archiveSession, transcribe, etc.).
+Those are user-initiated POSTs; &lt;code&gt;perfRing&lt;/code&gt; focuses on the
+polling-driven GETs that we suspect drive the stuckness.&lt;/li&gt;
+&lt;li&gt;No persistence. Closing the tab loses the ring.&lt;/li&gt;
+&lt;li&gt;No alerting; the footer color tiers are the only UI signal.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Phase 2.5: measurement results&lt;span class="hx:absolute hx:-mt-20" id="phase-25-measurement-results"&gt;&lt;/span&gt;
+&lt;a href="#phase-25-measurement-results" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;A representative &lt;code&gt;__ocmanPerf.summary()&lt;/code&gt; snapshot, taken after ≈3
+minutes of &amp;ldquo;sit on dashboard, click a session, look at it&amp;rdquo;:&lt;/p&gt;
+&lt;table&gt;
+&lt;thead&gt;
+&lt;tr&gt;
+&lt;th&gt;pathTemplate&lt;/th&gt;
+&lt;th&gt;count&lt;/th&gt;
+&lt;th&gt;avgMs&lt;/th&gt;
+&lt;th&gt;p50Ms&lt;/th&gt;
+&lt;th&gt;p95Ms&lt;/th&gt;
+&lt;th&gt;maxMs&lt;/th&gt;
+&lt;th&gt;err&lt;/th&gt;
+&lt;/tr&gt;
+&lt;/thead&gt;
+&lt;tbody&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;/api/session/:id/models&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;3&lt;/td&gt;
+&lt;td&gt;2287&lt;/td&gt;
+&lt;td&gt;2948&lt;/td&gt;
+&lt;td&gt;2948&lt;/td&gt;
+&lt;td&gt;2948&lt;/td&gt;
+&lt;td&gt;0&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;/api/session/:id/info&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;1&lt;/td&gt;
+&lt;td&gt;1876&lt;/td&gt;
+&lt;td&gt;1876&lt;/td&gt;
+&lt;td&gt;1876&lt;/td&gt;
+&lt;td&gt;1876&lt;/td&gt;
+&lt;td&gt;0&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;/api/git/diff&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;1&lt;/td&gt;
+&lt;td&gt;1875&lt;/td&gt;
+&lt;td&gt;1875&lt;/td&gt;
+&lt;td&gt;1875&lt;/td&gt;
+&lt;td&gt;1875&lt;/td&gt;
+&lt;td&gt;0&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;/api/session/:id/changes&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;1&lt;/td&gt;
+&lt;td&gt;1872&lt;/td&gt;
+&lt;td&gt;1872&lt;/td&gt;
+&lt;td&gt;1872&lt;/td&gt;
+&lt;td&gt;1872&lt;/td&gt;
+&lt;td&gt;0&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;/api/sessions/notify&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;21&lt;/td&gt;
+&lt;td&gt;293&lt;/td&gt;
+&lt;td&gt;266&lt;/td&gt;
+&lt;td&gt;310&lt;/td&gt;
+&lt;td&gt;1854&lt;/td&gt;
+&lt;td&gt;0&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;/api/session/:id/commands&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;2&lt;/td&gt;
+&lt;td&gt;1341&lt;/td&gt;
+&lt;td&gt;1345&lt;/td&gt;
+&lt;td&gt;1345&lt;/td&gt;
+&lt;td&gt;1345&lt;/td&gt;
+&lt;td&gt;0&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;/api/session/:id&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;3&lt;/td&gt;
+&lt;td&gt;842&lt;/td&gt;
+&lt;td&gt;1157&lt;/td&gt;
+&lt;td&gt;1345&lt;/td&gt;
+&lt;td&gt;1345&lt;/td&gt;
+&lt;td&gt;1&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;/api/sessions&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;37&lt;/td&gt;
+&lt;td&gt;198&lt;/td&gt;
+&lt;td&gt;128&lt;/td&gt;
+&lt;td&gt;522&lt;/td&gt;
+&lt;td&gt;1340&lt;/td&gt;
+&lt;td&gt;0&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;/api/session/:id/agents&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;1&lt;/td&gt;
+&lt;td&gt;965&lt;/td&gt;
+&lt;td&gt;965&lt;/td&gt;
+&lt;td&gt;965&lt;/td&gt;
+&lt;td&gt;965&lt;/td&gt;
+&lt;td&gt;0&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;/api/session/:id/permissions&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;1&lt;/td&gt;
+&lt;td&gt;758&lt;/td&gt;
+&lt;td&gt;758&lt;/td&gt;
+&lt;td&gt;758&lt;/td&gt;
+&lt;td&gt;758&lt;/td&gt;
+&lt;td&gt;0&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;/api/session/:id/questions&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;1&lt;/td&gt;
+&lt;td&gt;758&lt;/td&gt;
+&lt;td&gt;758&lt;/td&gt;
+&lt;td&gt;758&lt;/td&gt;
+&lt;td&gt;758&lt;/td&gt;
+&lt;td&gt;0&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;/api/tmux/sessions&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;4&lt;/td&gt;
+&lt;td&gt;30&lt;/td&gt;
+&lt;td&gt;45&lt;/td&gt;
+&lt;td&gt;47&lt;/td&gt;
+&lt;td&gt;47&lt;/td&gt;
+&lt;td&gt;0&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;/api/system/stats&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;20&lt;/td&gt;
+&lt;td&gt;11&lt;/td&gt;
+&lt;td&gt;8&lt;/td&gt;
+&lt;td&gt;38&lt;/td&gt;
+&lt;td&gt;38&lt;/td&gt;
+&lt;td&gt;0&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;/api/whisper/status&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;2&lt;/td&gt;
+&lt;td&gt;35&lt;/td&gt;
+&lt;td&gt;36&lt;/td&gt;
+&lt;td&gt;36&lt;/td&gt;
+&lt;td&gt;36&lt;/td&gt;
+&lt;td&gt;0&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;/api/projects&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;2&lt;/td&gt;
+&lt;td&gt;11&lt;/td&gt;
+&lt;td&gt;12&lt;/td&gt;
+&lt;td&gt;12&lt;/td&gt;
+&lt;td&gt;12&lt;/td&gt;
+&lt;td&gt;0&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;The frontend &lt;code&gt;lt:&lt;/code&gt; counter did &lt;em&gt;not&lt;/em&gt; turn red during this session.&lt;/p&gt;
+&lt;h3&gt;What the data overturned&lt;span class="hx:absolute hx:-mt-20" id="what-the-data-overturned"&gt;&lt;/span&gt;
+&lt;a href="#what-the-data-overturned" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;S1 was wrong.&lt;/strong&gt; Long-task counter stayed quiet, so the
+&lt;code&gt;setInterval(0)&lt;/code&gt; palette poller is not the cause of perceived
+stalls. Still worth fixing for cleanliness, but it&amp;rsquo;s not the
+bottleneck.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;The bottleneck is the OpenCode HTTP proxy.&lt;/strong&gt; Every per-session
+call that fans out to the running OpenCode instance lands in the
+750 ms to 2.95 s range. &lt;code&gt;/api/system/stats&lt;/code&gt; (38 ms) and
+&lt;code&gt;/api/projects&lt;/code&gt; (12 ms) confirm the Go process is fine when it
+doesn&amp;rsquo;t talk upstream.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;/api/sessions&lt;/code&gt; p95 522 ms / max 1340 ms is real&lt;/strong&gt; and matches S2:
+the lsof + per-port pending-prompts fan-out path. Average is fine
+because the 3 s lsof cache hides most calls; the tail is ugly
+because cache expiry forces a synchronous fan-out.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;/api/session/:id/changes&lt;/code&gt; at 1.87 s is a mystery.&lt;/strong&gt; That handler
+is a pure DB walk over parts; no HTTP. Either contention with a
+sibling endpoint, or a missing index, or just a single noisy sample
+(count = 1).&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3&gt;Code-side findings (independent of timing)&lt;span class="hx:absolute hx:-mt-20" id="code-side-findings-independent-of-timing"&gt;&lt;/span&gt;
+&lt;a href="#code-side-findings-independent-of-timing" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;p&gt;These came out of reading the proxy code paths after seeing the
+numbers. Each one is referenced from a B-task below.&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;Catalog endpoints (&lt;code&gt;/agent&lt;/code&gt;, &lt;code&gt;/command&lt;/code&gt;, &lt;code&gt;/provider&lt;/code&gt;) are
+uncached.&lt;/strong&gt; Configuration data that changes rarely is re-fetched
+on every call. &lt;strong&gt;B1.&lt;/strong&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;SessionInfo&lt;/code&gt; makes 4 upstream HTTP calls per request:&lt;/strong&gt;
+&lt;code&gt;/mcp&lt;/code&gt;, &lt;code&gt;/lsp&lt;/code&gt;, &lt;code&gt;/provider&lt;/code&gt; in parallel, then &lt;code&gt;/session/{id}/message&lt;/code&gt;
+sequentially after the parallel block. The 4th can join the wait
+group. &lt;strong&gt;B2.&lt;/strong&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Lsof discovery has TTL but no singleflight.&lt;/strong&gt; A cold mount fires
+5+ endpoints simultaneously; the first does lsof while the others
+block on the mutex. &lt;code&gt;golang.org/x/sync/singleflight&lt;/code&gt; would coalesce
+them. &lt;strong&gt;B3.&lt;/strong&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;/api/session/:id&lt;/code&gt; proxies to OpenCode by default.&lt;/strong&gt; The DB has
+the same data and SSE pushes the live deltas. The live HTTP path
+exists for token/cost freshness during an active turn, but it
+costs 1.34 s p95 on every session refresh. &lt;strong&gt;B4.&lt;/strong&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;/api/sessions&lt;/code&gt; re-queries &lt;code&gt;/permission&lt;/code&gt; and &lt;code&gt;/question&lt;/code&gt; per
+running OpenCode every 5 s.&lt;/strong&gt; No cache, even though the SSE stream
+already pushes these for the connected session. &lt;strong&gt;B6.&lt;/strong&gt;&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;/api/session/:id/changes&lt;/code&gt; cost is unexplained.&lt;/strong&gt; Single sample,
+pure DB walk. Needs a server-side timing split before we know
+whether to fix anything. &lt;strong&gt;B5.&lt;/strong&gt;&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h2&gt;Phase 2.6: diagnostic patterns (lessons learned)&lt;span class="hx:absolute hx:-mt-20" id="phase-26-diagnostic-patterns-lessons-learned"&gt;&lt;/span&gt;
+&lt;a href="#phase-26-diagnostic-patterns-lessons-learned" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;These are heuristics for diagnosing future regressions. They came
+out of chasing the wrong thing once and not wanting to do it again.&lt;/p&gt;
+&lt;h3&gt;&lt;code&gt;/api/system/stats&lt;/code&gt; is the canary&lt;span class="hx:absolute hx:-mt-20" id="apisystemstats-is-the-canary"&gt;&lt;/span&gt;
+&lt;a href="#apisystemstats-is-the-canary" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;p&gt;&lt;code&gt;/api/system/stats&lt;/code&gt; does pure local work. It reads
+&lt;code&gt;runtime.MemStats&lt;/code&gt; and a few uptime values. There is no path in
+that handler that can take more than single-digit milliseconds
+under any realistic load.&lt;/p&gt;
+&lt;p&gt;If &lt;code&gt;__ocmanPerf.summary()&lt;/code&gt; shows &lt;code&gt;/api/system/stats&lt;/code&gt; slow
+&lt;strong&gt;alongside&lt;/strong&gt; other endpoints, the &lt;strong&gt;Go process itself is being
+blocked&lt;/strong&gt;. Causes that fit this pattern:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Upstream OpenCode is hung, and ocman has many goroutines piled up
+waiting on it (network resource pressure, GC roots).&lt;/li&gt;
+&lt;li&gt;A goroutine is spinning at 100% CPU, starving the scheduler.&lt;/li&gt;
+&lt;li&gt;The OS is paging hard (memory pressure), so even pure-Go work
+takes seconds.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;strong&gt;Do not start optimising ocman code based on this signal.&lt;/strong&gt; Check
+upstream and the system first:&lt;/p&gt;
+&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;div class="highlight"&gt;&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-sh" data-lang="sh"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Is OpenCode itself slow? (Replace 4096 with your actual port.)&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nb"&gt;time&lt;/span&gt; curl -s http://127.0.0.1:4096/permission &amp;gt; /dev/null
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# How many running OpenCode instances?&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;lsof -iTCP -sTCP:LISTEN -P -n &lt;span class="p"&gt;|&lt;/span&gt; grep opencode
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# Is one ocman goroutine pegging a CPU?&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;ps -o pid,pcpu,pmem,etime,command -p &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="k"&gt;$(&lt;/span&gt;pgrep -f &lt;span class="s1"&gt;&amp;#39;tmp/ocman&amp;#39;&lt;/span&gt; &lt;span class="p"&gt;|&lt;/span&gt; head -1&lt;span class="k"&gt;)&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;p&gt;If &lt;code&gt;/api/system/stats&lt;/code&gt; is fast (single-digit ms) but other
+endpoints are slow, &lt;em&gt;that&amp;rsquo;s&lt;/em&gt; when ocman code is at fault and
+optimisation work makes sense.&lt;/p&gt;
+&lt;h3&gt;Idle vs. active comparison&lt;span class="hx:absolute hx:-mt-20" id="idle-vs-active-comparison"&gt;&lt;/span&gt;
+&lt;a href="#idle-vs-active-comparison" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;p&gt;The most reliable comparison is &lt;strong&gt;two &lt;code&gt;__ocmanPerf&lt;/code&gt; snapshots from
+the same dashboard layout&lt;/strong&gt;: one with the tab idle for ≥ 30 seconds,
+one after a few minutes of normal use. The idle snapshot isolates
+ocman&amp;rsquo;s polling cost; the active snapshot adds the per-session
+catalog and proxy paths. Comparing them tells you which side
+regressions live on.&lt;/p&gt;
+&lt;h2&gt;Phase 3: backend optimization plan&lt;span class="hx:absolute hx:-mt-20" id="phase-3-backend-optimization-plan"&gt;&lt;/span&gt;
+&lt;a href="#phase-3-backend-optimization-plan" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Tasks are keyed &lt;code&gt;B1&lt;/code&gt;…&lt;code&gt;B7&lt;/code&gt;. Each is independent; any subset can be
+shipped. The order below is impact-first within reasonable risk.
+&lt;strong&gt;Re-run &lt;code&gt;__ocmanPerf.summary()&lt;/code&gt; after each landed task&lt;/strong&gt; to confirm
+the next one is still worth doing.&lt;/p&gt;
+&lt;h3&gt;Status&lt;span class="hx:absolute hx:-mt-20" id="status"&gt;&lt;/span&gt;
+&lt;a href="#status" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;table&gt;
+&lt;thead&gt;
+&lt;tr&gt;
+&lt;th&gt;Task&lt;/th&gt;
+&lt;th&gt;Status&lt;/th&gt;
+&lt;th&gt;Commit&lt;/th&gt;
+&lt;/tr&gt;
+&lt;/thead&gt;
+&lt;tbody&gt;
+&lt;tr&gt;
+&lt;td&gt;B5&lt;/td&gt;
+&lt;td&gt;landed&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;feat: Log per-operation timing for SessionChanges DB calls&lt;/code&gt;&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;B1&lt;/td&gt;
+&lt;td&gt;landed&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;feat: Cache OpenCode catalog endpoints with 30s TTL and singleflight&lt;/code&gt;&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;B3&lt;/td&gt;
+&lt;td&gt;landed&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;feat: Singleflight OpenCode port discovery to coalesce concurrent lsof&lt;/code&gt;&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;B2&lt;/td&gt;
+&lt;td&gt;landed&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;perf: Run liveTokensAndCost in the SessionInfo parallel fan-out&lt;/code&gt;&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;B6&lt;/td&gt;
+&lt;td&gt;landed (+timeout)&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;fix: Cap pending-prompt fetch at 500ms…&lt;/code&gt; + &lt;code&gt;perf: Cache pending-prompt fetches per port with 3s TTL&lt;/code&gt;&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;B4&lt;/td&gt;
+&lt;td&gt;deferred&lt;/td&gt;
+&lt;td&gt;Needs DB-vs-live freshness verification (see open questions)&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;B7&lt;/td&gt;
+&lt;td&gt;deferred&lt;/td&gt;
+&lt;td&gt;Only if measurements still show unexplained Go-side latency&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;The B6 work landed in two commits because the canary pattern above
+turned up something else: a hung OpenCode instance was dragging every
+dashboard request past 10 s through the shared 10 s HTTP timeout. The
+fix is a tight 500 ms per-call timeout &lt;em&gt;plus&lt;/em&gt; the planned 3 s TTL
+cache. Together, one slow instance no longer blocks the dashboard
+fan-out, and the cache window amortises the steady-state poll cost.&lt;/p&gt;
+&lt;h3&gt;B5: instrument &lt;code&gt;/api/session/:id/changes&lt;/code&gt; (do first, lowest risk)&lt;span class="hx:absolute hx:-mt-20" id="b5-instrument-apisessionidchanges-do-first-lowest-risk"&gt;&lt;/span&gt;
+&lt;a href="#b5-instrument-apisessionidchanges-do-first-lowest-risk" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;p&gt;The 1.87 s sample is unexplained. Before touching anything, split
+that endpoint&amp;rsquo;s timing into &amp;ldquo;DB&amp;rdquo; vs &amp;ldquo;everything else&amp;rdquo; so we know
+whether it&amp;rsquo;s a real bottleneck or a single noisy sample.&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;File: &lt;code&gt;internal/server/handlers.go&lt;/code&gt; (handler) and a thin
+&lt;code&gt;time.Since&lt;/code&gt; wrapper around the DB call inside the OpenCode
+adapter&amp;rsquo;s &lt;code&gt;SessionChanges&lt;/code&gt; method.&lt;/li&gt;
+&lt;li&gt;Acceptance: log line includes &lt;code&gt;db_ms&lt;/code&gt;, &lt;code&gt;total_ms&lt;/code&gt; for that
+endpoint at INFO level when total exceeds the slow threshold.&lt;/li&gt;
+&lt;li&gt;Risk: zero (instrumentation only).&lt;/li&gt;
+&lt;li&gt;Effort: 30 min.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3&gt;B1: cache &lt;code&gt;/agent&lt;/code&gt;, &lt;code&gt;/command&lt;/code&gt;, &lt;code&gt;/provider&lt;/code&gt; per (port, endpoint)&lt;span class="hx:absolute hx:-mt-20" id="b1-cache-agent-command-provider-per-port-endpoint"&gt;&lt;/span&gt;
+&lt;a href="#b1-cache-agent-command-provider-per-port-endpoint" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;p&gt;These are configuration data; OpenCode itself rebuilds them rarely.
+A 30-second TTL cache eliminates the bulk of the per-session-page
+load cost.&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;File: &lt;code&gt;internal/platforms/opencode/client.go&lt;/code&gt;, where a
+&lt;code&gt;getJSONCached(port, path, ttl)&lt;/code&gt; helper goes.&lt;/li&gt;
+&lt;li&gt;Wire into &lt;code&gt;AgentCatalog&lt;/code&gt;, &lt;code&gt;SlashCommands&lt;/code&gt;, and &lt;code&gt;fetchOpenCodeProviders&lt;/code&gt;.
+The latter is shared by &lt;code&gt;SessionModels&lt;/code&gt; and &lt;code&gt;SessionInfo&lt;/code&gt;, so
+both endpoints benefit.&lt;/li&gt;
+&lt;li&gt;TTL: start at 30 s; expose as a constant for easy tuning.&lt;/li&gt;
+&lt;li&gt;Acceptance: re-running the same &lt;code&gt;__ocmanPerf&lt;/code&gt; flow shows
+&lt;code&gt;/api/session/:id/{models,agents,commands}&lt;/code&gt; p95 &amp;lt; 100 ms after
+the first cache miss.&lt;/li&gt;
+&lt;li&gt;Risk: low. Stale config for ≤ TTL. Worst case: user changes
+agents.json and waits 30 s to see it.&lt;/li&gt;
+&lt;li&gt;Effort: 2-3 hours including TTL/race tests.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3&gt;B3: singleflight the lsof port discovery&lt;span class="hx:absolute hx:-mt-20" id="b3-singleflight-the-lsof-port-discovery"&gt;&lt;/span&gt;
+&lt;a href="#b3-singleflight-the-lsof-port-discovery" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;p&gt;When five endpoints fire on a SessionDetail mount, only the first
+should pay for lsof. Today they all serialize on a &lt;code&gt;sync.Mutex&lt;/code&gt; and
+take turns observing the same answer.&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;File: &lt;code&gt;internal/platforms/opencode/client.go&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;Add &lt;code&gt;golang.org/x/sync/singleflight.Group&lt;/code&gt; around the uncached
+path. Keep the TTL cache as the fast path.&lt;/li&gt;
+&lt;li&gt;Acceptance: a synthetic test that fires N concurrent
+&lt;code&gt;discoverOpenCodePorts&lt;/code&gt; from a cold cache observes exactly one
+uncached call.&lt;/li&gt;
+&lt;li&gt;Risk: low. Standard library pattern.&lt;/li&gt;
+&lt;li&gt;Effort: 1 h including the test.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3&gt;B2: fold &lt;code&gt;liveTokensAndCost&lt;/code&gt; into the SessionInfo parallel fan-out&lt;span class="hx:absolute hx:-mt-20" id="b2-fold-livetokensandcost-into-the-sessioninfo-parallel-fan-out"&gt;&lt;/span&gt;
+&lt;a href="#b2-fold-livetokensandcost-into-the-sessioninfo-parallel-fan-out" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;p&gt;&lt;code&gt;SessionInfo&lt;/code&gt; currently runs three calls in parallel, then a fourth
+sequentially. Move all four into the same wait group.&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;File: &lt;code&gt;internal/platforms/opencode/info.go&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;Acceptance: &lt;code&gt;/api/session/:id/info&lt;/code&gt; p95 drops to roughly
+&lt;code&gt;max(individual upstream call)&lt;/code&gt; instead of
+&lt;code&gt;sum(parallel block) + liveTokensAndCost&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;Risk: trivial. The four calls are independent; nothing in
+&lt;code&gt;liveTokensAndCost&lt;/code&gt; depends on &lt;code&gt;mcp&lt;/code&gt; / &lt;code&gt;lsp&lt;/code&gt; / &lt;code&gt;provider&lt;/code&gt; results.&lt;/li&gt;
+&lt;li&gt;Effort: 30 min.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3&gt;B4: stop preferring live over DB for &lt;code&gt;/api/session/:id&lt;/code&gt; (proposal, needs verification)&lt;span class="hx:absolute hx:-mt-20" id="b4-stop-preferring-live-over-db-for-apisessionid-proposal-needs-verification"&gt;&lt;/span&gt;
+&lt;a href="#b4-stop-preferring-live-over-db-for-apisessionid-proposal-needs-verification" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;p&gt;&lt;code&gt;fetchSessionFromOpenCode&lt;/code&gt; proxies two upstream calls (&lt;code&gt;/session/{id}&lt;/code&gt;
+and &lt;code&gt;/session/{id}/message&lt;/code&gt;) on every refresh, even though the DB
+has the same data and SSE delivers the live deltas. Cost: 1.34 s
+p95 per refresh.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Open question before implementing:&lt;/strong&gt; how stale is the DB during
+an active turn? OpenCode&amp;rsquo;s persistence cadence is one INSERT per
+streamed delta, so it should be ≤ 1 s behind. Need to confirm by
+diffing the DB rollup against &lt;code&gt;liveTokensAndCost&lt;/code&gt; while a session
+is generating.&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Files: &lt;code&gt;internal/platforms/opencode/operations.go&lt;/code&gt;, possibly a
+query-flag plumbed through &lt;code&gt;platforms.Platform.Session&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;Acceptance: &lt;code&gt;/api/session/:id&lt;/code&gt; p95 &amp;lt; 100 ms in normal use; explicit
+refresh button still hits the live path; tokens/cost in the
+Composer don&amp;rsquo;t visibly lag during a turn (manual verification).&lt;/li&gt;
+&lt;li&gt;Risk: medium. The reason live-by-default exists is composer
+freshness; we&amp;rsquo;d need to confirm SSE-driven updates fully replace
+it.&lt;/li&gt;
+&lt;li&gt;Effort: 2-3 h, mostly verification.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3&gt;B6: cache pending prompts per port&lt;span class="hx:absolute hx:-mt-20" id="b6-cache-pending-prompts-per-port"&gt;&lt;/span&gt;
+&lt;a href="#b6-cache-pending-prompts-per-port" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;p&gt;&lt;code&gt;/api/sessions&lt;/code&gt; and &lt;code&gt;/api/sessions/notify&lt;/code&gt; both fan out to every
+running OpenCode for &lt;code&gt;/permission&lt;/code&gt; and &lt;code&gt;/question&lt;/code&gt; on every call.
+A 3-second TTL (matching the lsof cache) eliminates ~60-80% of
+those calls.&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;File: &lt;code&gt;internal/platforms/opencode/client.go&lt;/code&gt;
+(&lt;code&gt;fetchPendingPrompts&lt;/code&gt;).&lt;/li&gt;
+&lt;li&gt;Acceptance: &lt;code&gt;/api/sessions&lt;/code&gt; p95 drops below 200 ms; max latency
+no longer spikes at TTL boundaries the way it does today.&lt;/li&gt;
+&lt;li&gt;Risk: low. Stale prompt state for ≤ 3 s; the SSE stream still
+pushes real-time updates to any connected SessionDetail.&lt;/li&gt;
+&lt;li&gt;Effort: 1 h.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3&gt;B7: add backend pprof endpoint (only if needed after B1-B6)&lt;span class="hx:absolute hx:-mt-20" id="b7-add-backend-pprof-endpoint-only-if-needed-after-b1-b6"&gt;&lt;/span&gt;
+&lt;a href="#b7-add-backend-pprof-endpoint-only-if-needed-after-b1-b6" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;p&gt;If post-B1 measurements still show unexplained Go-side latency, add
+&lt;code&gt;net/http/pprof&lt;/code&gt; behind a build flag or a dev-only env var so we can
+profile lock contention, GC, or syscalls.&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;File: &lt;code&gt;internal/server/server.go&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;Risk: zero (gated, off by default in production).&lt;/li&gt;
+&lt;li&gt;Effort: 15 min.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Frontend cleanup (lower priority)&lt;span class="hx:absolute hx:-mt-20" id="frontend-cleanup-lower-priority"&gt;&lt;/span&gt;
+&lt;a href="#frontend-cleanup-lower-priority" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;The original Phase 1 frontend suspects (S1, S4, S5) are not the
+cause of perceived stalls per the measurement, but they&amp;rsquo;re still
+worth fixing for cleanliness and to reduce backend load. Suggested
+order if/when we come back to them:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;F1 (= old S5).&lt;/strong&gt; Pause Dashboard polling on &lt;code&gt;document.hidden&lt;/code&gt;.
+30 min, very low risk. Reduces idle traffic on background tabs.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;F2 (= old S4).&lt;/strong&gt; Coalesce favicon + bell pollers into one
+shared &lt;code&gt;/api/sessions/notify&lt;/code&gt; poll. 2 h, low risk. Halves the
+dashboard-adjacent backend pressure.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;F3 (= old S1).&lt;/strong&gt; Replace the &lt;code&gt;setInterval(0)&lt;/code&gt; palette
+dispatcher with &lt;code&gt;useUiStore.subscribe&lt;/code&gt;. 1-2 h, low risk.
+Cleanliness fix; not on the perf hot path.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;These are deliberately not in the B-numbered list because the
+backend wins are larger and unblock more user pain.&lt;/p&gt;
+&lt;h2&gt;Open questions / things to revisit&lt;span class="hx:absolute hx:-mt-20" id="open-questions--things-to-revisit"&gt;&lt;/span&gt;
+&lt;a href="#open-questions--things-to-revisit" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Does B4 actually break composer freshness?&lt;/strong&gt; Needs a controlled
+test: open a session, send a prompt, watch the cost number.
+Verify that the DB-only path stays within ≤1 s of the live path.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;What&amp;rsquo;s the actual story on &lt;code&gt;/api/session/:id/changes&lt;/code&gt;?&lt;/strong&gt; B5&amp;rsquo;s
+instrumentation now logs &lt;code&gt;parts_ms&lt;/code&gt; and &lt;code&gt;session_ms&lt;/code&gt; separately
+whenever the operation exceeds 200 ms. Next time the endpoint
+shows up slow in &lt;code&gt;__ocmanPerf&lt;/code&gt;, grep the server log for
+&lt;code&gt;op=session_changes&lt;/code&gt; and look at the field breakdown. That
+tells us whether it&amp;rsquo;s the parts query, the session metadata
+fetch, or the in-memory aggregation.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Connection reuse to OpenCode:&lt;/strong&gt; the upstream &lt;code&gt;http.Client&lt;/code&gt; has
+no custom transport. Default &lt;code&gt;http.DefaultTransport&lt;/code&gt; should reuse
+loopback connections, but the latencies were too high for warm
+reuse during the original measurements. After B1/B2/B3/B6 most
+per-call latency is now upstream-bounded, so this is less
+pressing. Revisit only if measurements show OpenCode itself
+responding instantly while ocman still reports proxy latency.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Reference: relevant files&lt;span class="hx:absolute hx:-mt-20" id="reference-relevant-files"&gt;&lt;/span&gt;
+&lt;a href="#reference-relevant-files" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;h3&gt;Backend&lt;span class="hx:absolute hx:-mt-20" id="backend"&gt;&lt;/span&gt;
+&lt;a href="#backend" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;internal/server/server.go&lt;/code&gt;: mux assembly, middleware wiring.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;internal/server/middleware.go&lt;/code&gt;: request-timing logger.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;internal/server/handlers.go&lt;/code&gt;: &lt;code&gt;/api/sessions&lt;/code&gt;, &lt;code&gt;/api/sessions/notify&lt;/code&gt;,
+&lt;code&gt;applyGitInfo&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;internal/platforms/opencode/adapter.go&lt;/code&gt;: Sessions(), port discovery.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;internal/platforms/opencode/client.go&lt;/code&gt;: upstream HTTP helpers
+(&lt;code&gt;getJSON&lt;/code&gt;, lsof discovery, prompt fetch). Where B1/B3/B6 land.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;internal/platforms/opencode/operations.go&lt;/code&gt;: per-session catalog
+methods (&lt;code&gt;AgentCatalog&lt;/code&gt;, &lt;code&gt;SlashCommands&lt;/code&gt;, &lt;code&gt;SessionModels&lt;/code&gt;,
+&lt;code&gt;Session&lt;/code&gt;). Where B4 lands.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;internal/platforms/opencode/info.go&lt;/code&gt;: &lt;code&gt;SessionInfo&lt;/code&gt; parallel
+fan-out. Where B2 lands.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;internal/git/info.go&lt;/code&gt;: git status cache (30 s TTL).&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3&gt;Frontend&lt;span class="hx:absolute hx:-mt-20" id="frontend"&gt;&lt;/span&gt;
+&lt;a href="#frontend" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;frontend/src/App.tsx&lt;/code&gt;: top-level pollers and dev handles.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;frontend/src/pages/Dashboard.tsx&lt;/code&gt;: 5 s &lt;code&gt;/api/sessions&lt;/code&gt; poller.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;frontend/src/pages/SessionDetail.tsx&lt;/code&gt;: the polling jungle.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;frontend/src/lib/api.ts&lt;/code&gt;: &lt;code&gt;fetchJSON&lt;/code&gt; / &lt;code&gt;postJSON&lt;/code&gt; (instrumented).&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;frontend/src/lib/perfRing.ts&lt;/code&gt;: perf ring buffer.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;frontend/src/lib/useLongTaskMonitor.ts&lt;/code&gt;: long-task observer.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;frontend/src/components/BackendStats.tsx&lt;/code&gt;: footer display.&lt;/li&gt;
+&lt;/ul&gt;</description></item><item><title>Releases</title><link>https://ocman.stenic.io/docs/other/releases/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://ocman.stenic.io/docs/other/releases/</guid><description>
+&lt;p&gt;Release tags are created automatically from Conventional Commit messages on &lt;code&gt;main&lt;/code&gt;.&lt;/p&gt;
+&lt;h2&gt;Files&lt;span class="hx:absolute hx:-mt-20" id="files"&gt;&lt;/span&gt;
+&lt;a href="#files" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;.github/workflows/semantic-tag.yml&lt;/code&gt; inspects commits on &lt;code&gt;main&lt;/code&gt;, computes the next semver version, and creates a &lt;code&gt;v*&lt;/code&gt; tag through the Forgejo API.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;.github/workflows/release.yml&lt;/code&gt; runs when a &lt;code&gt;v*&lt;/code&gt; tag is pushed, builds platform archives, creates the Forgejo release entry, and uploads the assets.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;One-time setup&lt;span class="hx:absolute hx:-mt-20" id="one-time-setup"&gt;&lt;/span&gt;
+&lt;a href="#one-time-setup" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;ol&gt;
+&lt;li&gt;Create a Forgejo access token for a user or bot that can create tags in this repository.&lt;/li&gt;
+&lt;li&gt;Add that token to repository secrets as &lt;code&gt;RELEASE_TOKEN&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;Make sure the token can trigger follow-up workflows when it creates a tag.&lt;/li&gt;
+&lt;li&gt;Push the workflow files to &lt;code&gt;main&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;Trigger the &lt;code&gt;Semantic Tag&lt;/code&gt; workflow with &lt;code&gt;workflow_dispatch&lt;/code&gt; if you want to verify the setup immediately.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h2&gt;Commit format&lt;span class="hx:absolute hx:-mt-20" id="commit-format"&gt;&lt;/span&gt;
+&lt;a href="#commit-format" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Use Conventional Commits for changes that should drive versioning.&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;fix: correct tmux session lookup&lt;/code&gt; -&amp;gt; patch release&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;feat: add project detail page&lt;/code&gt; -&amp;gt; minor release&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;feat!: change session API shape&lt;/code&gt; -&amp;gt; major release&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Breaking changes can also be written with a footer:&lt;/p&gt;
+&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;div class="highlight"&gt;&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-text" data-lang="text"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;feat: change session payload
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;BREAKING CHANGE: session responses now omit archived messages by default&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;p&gt;The semantic tag workflow currently treats these commit types as releasable:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;feat&lt;/code&gt; -&amp;gt; minor&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;fix&lt;/code&gt;, &lt;code&gt;perf&lt;/code&gt;, &lt;code&gt;refactor&lt;/code&gt; -&amp;gt; patch&lt;/li&gt;
+&lt;li&gt;breaking change marker or &lt;code&gt;!&lt;/code&gt; -&amp;gt; major&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;If no releasable Conventional Commits are present since the latest &lt;code&gt;v*&lt;/code&gt; tag, no new tag is created.&lt;/p&gt;
+&lt;h2&gt;Normal release flow&lt;span class="hx:absolute hx:-mt-20" id="normal-release-flow"&gt;&lt;/span&gt;
+&lt;a href="#normal-release-flow" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;ol&gt;
+&lt;li&gt;Merge or push Conventional Commit changes onto &lt;code&gt;main&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;The &lt;code&gt;Semantic Tag&lt;/code&gt; workflow runs.&lt;/li&gt;
+&lt;li&gt;It finds the latest &lt;code&gt;v*&lt;/code&gt; tag and evaluates commits since that tag.&lt;/li&gt;
+&lt;li&gt;It calculates the next semantic version.&lt;/li&gt;
+&lt;li&gt;It creates the new &lt;code&gt;v*&lt;/code&gt; tag through the Forgejo API.&lt;/li&gt;
+&lt;li&gt;The existing &lt;code&gt;Release&lt;/code&gt; workflow sees the new tag, builds the platform archives, creates the release entry, and uploads the assets.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h2&gt;Direct pushes to main&lt;span class="hx:absolute hx:-mt-20" id="direct-pushes-to-main"&gt;&lt;/span&gt;
+&lt;a href="#direct-pushes-to-main" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Direct pushes to &lt;code&gt;main&lt;/code&gt; are the normal case for this setup.&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;You push commits directly to &lt;code&gt;main&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;The &lt;code&gt;Semantic Tag&lt;/code&gt; workflow runs on that push.&lt;/li&gt;
+&lt;li&gt;If the new commits include releasable Conventional Commits, it creates the next tag immediately.&lt;/li&gt;
+&lt;li&gt;That tag triggers the packaging and release workflow.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;There is no release PR in this flow.&lt;/p&gt;
+&lt;h2&gt;First release&lt;span class="hx:absolute hx:-mt-20" id="first-release"&gt;&lt;/span&gt;
+&lt;a href="#first-release" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;If the repository has no &lt;code&gt;v*&lt;/code&gt; tags yet, the semantic tag workflow starts from &lt;code&gt;0.0.0&lt;/code&gt;.&lt;/p&gt;
+&lt;p&gt;Examples:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;first releasable &lt;code&gt;fix:&lt;/code&gt; commit -&amp;gt; &lt;code&gt;v0.0.1&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;first releasable &lt;code&gt;feat:&lt;/code&gt; commit -&amp;gt; &lt;code&gt;v0.1.0&lt;/code&gt;&lt;/li&gt;
+&lt;li&gt;first breaking change -&amp;gt; &lt;code&gt;v1.0.0&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Why a dedicated token is required&lt;span class="hx:absolute hx:-mt-20" id="why-a-dedicated-token-is-required"&gt;&lt;/span&gt;
+&lt;a href="#why-a-dedicated-token-is-required" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;The semantic tag workflow uses &lt;code&gt;RELEASE_TOKEN&lt;/code&gt; instead of the default automation token so the tag it creates can trigger the separate tag-based release workflow.&lt;/p&gt;
+&lt;p&gt;If your Forgejo instance suppresses follow-up workflow triggers from automation-created refs, the default automation token will create the tag without starting &lt;code&gt;.github/workflows/release.yml&lt;/code&gt;.&lt;/p&gt;
+&lt;h2&gt;Troubleshooting&lt;span class="hx:absolute hx:-mt-20" id="troubleshooting"&gt;&lt;/span&gt;
+&lt;a href="#troubleshooting" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;If no tag is created:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;Confirm the workflow ran on &lt;code&gt;main&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;Confirm &lt;code&gt;RELEASE_TOKEN&lt;/code&gt; exists and has repository write access.&lt;/li&gt;
+&lt;li&gt;Confirm at least one commit since the latest &lt;code&gt;v*&lt;/code&gt; tag follows the releasable Conventional Commit patterns.&lt;/li&gt;
+&lt;li&gt;Check the workflow log for &lt;code&gt;No releasable conventional commits found&lt;/code&gt;.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;If the tag is created but no release assets appear:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;Confirm the new &lt;code&gt;v*&lt;/code&gt; tag exists in Forgejo.&lt;/li&gt;
+&lt;li&gt;Confirm &lt;code&gt;.github/workflows/release.yml&lt;/code&gt; ran for that tag.&lt;/li&gt;
+&lt;li&gt;Confirm the token used to create the tag is allowed to trigger follow-up workflows on your Forgejo instance.&lt;/li&gt;
+&lt;/ol&gt;</description></item></channel></rss>
