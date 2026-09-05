@@ -57,26 +57,51 @@ export interface ClientActivity {
   ttlMs: number;
 }
 
-export interface PromptSchedule {
+export type RoutineScheduleKind = 'none' | 'timeout' | 'once' | 'cron';
+
+export interface Routine {
   id: string;
+  name: string;
+  prompt: string;
   directory: string;
   remoteId: string;
-  prompt: string;
-  state: 'scheduled' | 'running' | 'completed' | 'failed' | 'canceled';
-  platform?: string;
-  sessionId?: string;
-  error?: string;
-  runAt: number;
-  timingType: 'once' | 'interval' | 'cron';
-  intervalMinutes?: number;
-  cron?: string;
-  timezone: string;
+  scheduleKind: RoutineScheduleKind;
+  scheduleConfigJSON: string;
+  nextDueAt: number;
   enabled: boolean;
-  sessionMode: 'fresh' | 'reuse';
+  deleted: boolean;
+  deleteAfterSuccess: boolean;
   createdAt: number;
   updatedAt: number;
+  deletedAt?: number;
+}
+
+export interface RoutineRun {
+  id: string;
+  routineId: string;
+  routineName: string;
+  prompt: string;
+  directory: string;
+  remoteId: string;
+  trigger: 'manual' | 'schedule';
+  platform?: string;
+  sessionId?: string;
+  state: 'running' | 'success' | 'failure';
+  error?: string;
+  occurrenceAt: number;
+  createdAt: number;
   startedAt?: number;
   finishedAt?: number;
+}
+
+export interface RoutineInput {
+  name: string;
+  prompt: string;
+  directory: string;
+  remoteId: string;
+  schedule: { kind: RoutineScheduleKind; timeoutMs?: number; at?: number; cron?: string; timezone?: string };
+  enabled: boolean;
+  deleteAfterSuccess: boolean;
 }
 
 export interface DaguStatus {

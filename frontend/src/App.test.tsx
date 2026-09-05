@@ -19,6 +19,8 @@ describe('routeTitle', () => {
     ['/analytics/overview', 'Analytics'],
     ['/analytics/performance', 'Analytics'],
     ['/settings', 'Settings'],
+    ['/routines', 'Routines'],
+    ['/workflows', 'ocman'],
     ['/factory/epics', 'Factory'],
     ['/factory/issues', 'Factory'],
     ['/factory/epics/ship-a1b2', 'Factory'],
@@ -41,7 +43,7 @@ describe('MainNav', () => {
 
     render(
       <MemoryRouter initialEntries={['/projects']}>
-        <MainNav workflowsAllowed />
+        <MainNav />
       </MemoryRouter>,
     );
 
@@ -51,7 +53,7 @@ describe('MainNav', () => {
     expect(screen.getByRole('link', { name: 'Analytics' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Stats' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Usage' })).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Workflows' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Routines' })).toHaveAttribute('href', '/routines');
     expect(screen.getByRole('link', { name: 'Factory' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Sessions' }).querySelector('i')).toHaveClass('bi-collection');
 

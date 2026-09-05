@@ -30,7 +30,7 @@ const EMPTY_PROJECTS: Project[] = [];
 export function DashboardLayout() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const isOnDashboard = location.pathname === '/sessions' || location.pathname === '/projects' || location.pathname.startsWith('/analytics') || location.pathname === '/workflows' || location.pathname === '/settings';
+  const isOnDashboard = location.pathname === '/sessions' || location.pathname === '/projects' || location.pathname.startsWith('/analytics') || location.pathname === '/routines' || location.pathname === '/settings';
 
   const dashboardTimeRangeDefault = useUiStore((s) => s.dashboardTimeRangeDefault);
   const tParam = searchParams.get('t');
@@ -124,7 +124,7 @@ export function DashboardLayout() {
 
   return (
     <DashboardContext.Provider value={ctx}>
-      <div className={`dashboard-content${location.pathname === '/workflows' ? ' dashboard-content-flush' : ''}`}>
+      <div className={`dashboard-content${location.pathname === '/routines' ? ' dashboard-content-flush' : ''}`}>
         {/* Per-tab boundary so a crash inside Stats / Usage / etc.
             (chart.js render error, malformed metrics payload) stays local.
             resetKey on pathname auto-clears when the user switches tabs. */}

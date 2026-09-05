@@ -76,6 +76,20 @@ describe('Composer input', () => {
     expect(dispatch.mock.calls.some(([event]) => event instanceof CustomEvent)).toBe(false);
   });
 
+  it('prefills a routine prompt without sending it', async () => {
+    const onSend = vi.fn();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify([
+      { id: 'routine-1', name: 'Review', prompt: 'Review this diff' },
+    ]), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+    render(<Composer isRunning={false} onSend={onSend} />);
+    const input = screen.getByRole('textbox');
+    fireEvent.input(input, { target: { value: '/routines' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.click(await screen.findByText('Review'));
+    expect(input).toHaveValue('Review this diff');
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
   it('opens model and agent pickers through the typed composer handle', () => {
     const composerRef = createRef<ComposerHandle>();
     render(

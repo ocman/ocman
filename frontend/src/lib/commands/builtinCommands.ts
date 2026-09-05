@@ -43,6 +43,7 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   { name: 'move', description: 'Move this session to another project directory (opens a picker)' },
   { name: 'new', description: 'Start a new session in the same project directory (optionally add a title)' },
   { name: 'rename', description: 'Rename this session' },
+  { name: 'routines', description: 'Insert a saved routine prompt (opens a picker)' },
   { name: 'redo', description: 'Restore messages and file changes reverted by /undo' },
   { name: 'restart-opencode', description: 'Restart managed OpenCode after sessions are idle; add all and/or now' },
   { name: 'share', description: 'Copy this ocman session URL to the clipboard (reachable only by clients that can access this ocman instance)' },

@@ -6,7 +6,7 @@ import { useHotkeys } from 'react-hotkeys-hook';
 import { AnalyticsTab, DashboardLayout, LegacyAnalyticsRedirect, SessionsTab, ProjectsTab, SettingsTab } from './pages/Dashboard';
 import { ProjectDetail } from './pages/ProjectDetail';
 import { WorktreesView } from './pages/WorktreesView';
-import { Workflows } from './pages/Workflows';
+import { Routines } from './pages/Routines';
 import { FactoryConfiguration, FactoryEpicDetail, FactoryEpics, FactoryHowTo, FactoryOverview, FactoryQueue } from './pages/Factory';
 import { FactoryIssues } from './pages/FactoryIssues';
 import { SessionDetail } from './pages/session-detail';
@@ -21,7 +21,6 @@ import { WorktreeFormModal } from './components/WorktreeFormModal';
 import { MachinePickerModal } from './components/MachinePickerModal';
 import { PlatformBadge } from './components/PlatformBadge';
 import { HostBadge } from './components/HostBadge';
-import { useWorkflows } from './lib/useCapabilities';
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useFaviconNotify } from './lib/useFaviconNotify';
@@ -62,17 +61,15 @@ const MAIN_NAV_ITEMS = [
   { to: '/sessions', label: 'Sessions', icon: 'bi-collection' },
   { to: '/projects', label: 'Projects', icon: 'bi-folder' },
   { to: '/factory/overview', label: 'Factory', icon: 'bi-buildings' },
-  { to: '/workflows', label: 'Workflows', icon: 'bi-diagram-3', workflowsOnly: true },
+  { to: '/routines', label: 'Routines', icon: 'bi-clock-history' },
   { to: '/analytics', label: 'Analytics', icon: 'bi-bar-chart' },
   { to: '/settings', label: 'Settings', icon: 'bi-gear' },
 ];
 
 export function MainNav({
-  workflowsAllowed = false,
   mobileOpen = false,
   onMobileClose,
 }: {
-  workflowsAllowed?: boolean;
   mobileOpen?: boolean;
   onMobileClose?: () => void;
 }) {
@@ -99,8 +96,7 @@ export function MainNav({
         </button>
         <nav id="main-navigation" aria-label="Main navigation">
           {MAIN_NAV_ITEMS.map((item) => (
-            (!item.workflowsOnly || workflowsAllowed) && (
-              <NavLink
+            <NavLink
                 key={item.to}
                 to={item.to}
                 aria-label={item.label}
@@ -115,7 +111,6 @@ export function MainNav({
                 <i className={`bi ${item.icon}`} aria-hidden="true" />
                 <span>{item.label}</span>
               </NavLink>
-            )
           ))}
         </nav>
       </aside>
@@ -493,7 +488,6 @@ function AuthenticatedApp() {
 }
 
 function AuthenticatedShell() {
-  const workflowsAllowed = useWorkflows();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   return (
@@ -513,7 +507,6 @@ function AuthenticatedShell() {
       <GlobalHotkeys />
       <div className="app-shell">
         <MainNav
-          workflowsAllowed={workflowsAllowed}
           mobileOpen={mobileNavOpen}
           onMobileClose={() => setMobileNavOpen(false)}
         />
@@ -540,7 +533,7 @@ export function AppRoutes() {
         <Route path="/analytics/:section?" element={<AnalyticsTab />} />
         <Route path="/stats" element={<LegacyAnalyticsRedirect section="performance" />} />
         <Route path="/usage" element={<LegacyAnalyticsRedirect section="overview" />} />
-        <Route path="/workflows" element={<Workflows />} />
+        <Route path="/routines" element={<Routines />} />
         <Route path="/settings" element={<SettingsTab />} />
       </Route>
       <Route path="/project/:dir/worktrees" element={<WorktreesView />} />

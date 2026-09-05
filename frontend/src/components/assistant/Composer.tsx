@@ -9,6 +9,7 @@ import { agentColor } from '../../lib/agentColor';
 import { ModelPicker } from './ModelPicker';
 import { AgentPicker } from './AgentPicker';
 import { SkillPicker } from './SkillPicker';
+import { RoutinePicker } from './RoutinePicker';
 import { ReasoningPicker } from './ReasoningPicker';
 import { HelpDialog } from './HelpDialog';
 import { useClickOutside } from '../../lib/useClickOutside';
@@ -646,6 +647,8 @@ function ComposerImpl({
   const [agentPickerQuery, setAgentPickerQuery] = useState('');
   const [skillPickerOpen, setSkillPickerOpen] = useState(false);
   const [skillPickerQuery, setSkillPickerQuery] = useState('');
+  const [routinePickerOpen, setRoutinePickerOpen] = useState(false);
+  const [routinePickerQuery, setRoutinePickerQuery] = useState('');
   const [reasoningPickerOpen, setReasoningPickerOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const slashMenuRef = useRef<HTMLDivElement>(null);
@@ -777,6 +780,21 @@ function ComposerImpl({
     if (sid) scheduleDraftSave(sid, () => el.value);
   }, [scheduleDraftSave]);
 
+  const openRoutinePicker = useCallback((arg: string) => {
+    setRoutinePickerQuery(arg);
+    setRoutinePickerOpen(true);
+  }, []);
+
+  const insertRoutine = useCallback((routine: { prompt: string }) => {
+    setRoutinePickerOpen(false);
+    const el = inputRef.current;
+    if (!el) return;
+    el.value = routine.prompt;
+    el.focus();
+    const sid = sessionIdRef.current;
+    if (sid) scheduleDraftSave(sid, () => el.value);
+  }, [scheduleDraftSave]);
+
   const clearComposerInput = useCallback(() => {
     const el = inputRef.current;
     if (!el) return;
@@ -814,6 +832,11 @@ function ComposerImpl({
       openSkillPicker('');
       return;
     }
+    if (cmd.name === 'routines') {
+      clearComposerInput();
+      openRoutinePicker('');
+      return;
+    }
     // /variants reuses the reasoning picker: it tunes the current model's
     // reasoning variant. Hidden from the menu when the model has none.
     if (cmd.name === 'variants') {
@@ -826,7 +849,7 @@ function ComposerImpl({
     setShowSlashMenu(false);
     setSlashFilter('');
     setSlashIndex(0);
-  }, [clearComposerInput, openModelPicker, openAgentPicker, openSkillPicker]);
+  }, [clearComposerInput, openModelPicker, openAgentPicker, openSkillPicker, openRoutinePicker]);
 
   const addImageFiles = useCallback(async (files: File[]) => {
     const imageFiles = files.filter(f => f.type.startsWith('image/'));
@@ -929,13 +952,14 @@ function ComposerImpl({
   };
 
   const openClientCommand = (command: string, args: string) => {
-    if (!['model', 'agent', 'agents', 'help', 'skills'].includes(command)) return false;
+    if (!['model', 'agent', 'agents', 'help', 'skills', 'routines'].includes(command)) return false;
     clearComposerInput();
     setIsBashMode(false);
     if (command === 'model') openModelPicker(args);
     else if (command === 'agent' || command === 'agents') openAgentPicker(args);
     else if (command === 'help') setHelpOpen(true);
-    else openSkillPicker(args);
+    else if (command === 'skills') openSkillPicker(args);
+    else openRoutinePicker(args);
     return true;
   };
 
@@ -1175,6 +1199,14 @@ function ComposerImpl({
           initialQuery={skillPickerQuery}
           onSelect={insertSkill}
           onClose={() => { setSkillPickerOpen(false); inputRef.current?.focus(); }}
+        />
+      )}
+      {routinePickerOpen && (
+        <RoutinePicker
+          open={routinePickerOpen}
+          initialQuery={routinePickerQuery}
+          onSelect={insertRoutine}
+          onClose={() => { setRoutinePickerOpen(false); inputRef.current?.focus(); }}
         />
       )}
       {reasoningPickerOpen && (

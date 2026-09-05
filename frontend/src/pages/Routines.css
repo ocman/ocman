@@ -1,0 +1,28 @@
+.routine-page { flex: 1; overflow: auto; padding: 24px; color: var(--text); background: var(--bg); }
+.routine-header, .routine-form, .routine-list { width: min(900px, 100%); margin: 0 auto 18px; }
+.routine-header { display: flex; align-items: end; justify-content: space-between; gap: 18px; padding: 18px; border: 1px solid var(--border); background: var(--bg-secondary); }
+.routine-header h1, .routine-form h2, .routine-list h2 { margin: 3px 0; }
+.routine-header p, .routine-list header p { margin: 0; color: var(--text-muted); }
+.routine-kicker { color: var(--text-muted); font: 11px var(--font-mono); letter-spacing: .12em; text-transform: uppercase; }
+.routine-form { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 18px; box-sizing: border-box; border: 1px solid var(--border); background: var(--bg-secondary); }
+.routine-form h2, .routine-form label:nth-of-type(2), .routine-actions { grid-column: 1 / -1; }
+.routine-form label { display: grid; gap: 6px; font-size: 12px; font-weight: 600; }
+.routine-form input, .routine-form select, .routine-form textarea { min-width: 0; padding: 8px; border: 1px solid var(--border); color: var(--text); background: var(--bg); }
+.routine-form textarea { min-height: 100px; resize: vertical; }
+.routine-form .routine-check { display: flex; align-items: center; }
+.routine-list { display: grid; gap: 12px; }
+.routine-list article { padding: 16px; border: 1px solid var(--border); background: var(--bg-secondary); }
+.routine-list article > header { display: flex; justify-content: space-between; gap: 12px; }
+.routine-prompt { margin: 12px 0; white-space: pre-wrap; }
+.routine-list dl { display: flex; flex-wrap: wrap; gap: 18px; margin: 0 0 12px; }
+.routine-list dl div { display: grid; gap: 2px; }
+.routine-list dt { color: var(--text-muted); font-size: 11px; }
+.routine-list dd { margin: 0; font: 12px var(--font-mono); }
+.routine-state { align-self: start; padding: 3px 7px; border: 1px solid var(--border); font: 11px var(--font-mono); }
+.routine-state.success { color: var(--success); }.routine-state.failure { color: var(--danger); }.routine-state.running { color: var(--yellow); }
+.routine-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.routine-delete, .routine-error { color: var(--danger); }
+.routine-history { display: grid; gap: 6px; padding: 8px 0 0; list-style: none; font-size: 12px; }
+.routine-history li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding-top: 6px; border-top: 1px solid var(--border); }
+.routine-empty { width: min(900px, 100%); margin: 40px auto; color: var(--text-muted); text-align: center; }
+@media (max-width: 640px) { .routine-page { padding: 12px; }.routine-header { align-items: stretch; flex-direction: column; }.routine-form { grid-template-columns: 1fr; }.routine-form > * { grid-column: 1 !important; } }

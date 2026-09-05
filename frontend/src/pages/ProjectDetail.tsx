@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { usePageTitle } from '../lib/headerContext';
 import { SessionTable } from '../components/SessionTable';
-import { PromptSchedules } from '../components/PromptSchedules';
 import { useTmux } from '../lib/useTmux';
 import { useOpencodeLaunch } from '../lib/useCapabilities';
 import { useClickOutside } from '../lib/useClickOutside';
@@ -217,7 +216,6 @@ export function ProjectDetail() {
           onClick={() => setExcludeArchived(!excludeArchived)}
         >Exclude archived</button>
       </div>
-      {directory && launchAllowed && <PromptSchedules directory={directory} />}
       <SessionTable sessions={sessions} showProject={false} loading={!sessionsLoaded} includeArchived={!excludeArchived} />
     </div>
   );

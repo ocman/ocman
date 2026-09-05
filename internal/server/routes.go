@@ -92,9 +92,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// Launch endpoint: spawns tmux/opencode, so localhost-only like
 	// the worktree create-and-launch endpoint.
 	mux.HandleFunc("/api/project/handle", requirePOST(s.requireLocalhost(s.handleProjectHandle)))
-	promptScheduleHandler := s.requireLocalhost(s.handlePromptSchedules)
-	mux.HandleFunc("/api/prompt-schedules", promptScheduleHandler)
-	mux.HandleFunc("/api/prompt-schedules/", promptScheduleHandler)
 	routineHandler := s.requireLocalhost(s.handleRoutines)
 	mux.HandleFunc("/api/routines", routineHandler)
 	mux.HandleFunc("/api/routines/", routineHandler)
@@ -188,6 +185,10 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	}
 	fileServer := http.FileServer(http.FS(staticContent))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			http.NotFound(w, r)
+			return
+		}
 		// Try to serve the file directly
 		path := r.URL.Path
 		if path == "/" {

@@ -130,6 +130,21 @@ func TestPromptScheduleHTTPLifecycle(t *testing.T) {
 	}
 }
 
+func TestPromptScheduleRoutesRetired(t *testing.T) {
+	srv := testServer(t)
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/api/prompt-schedules", "/api/prompt-schedules/old"} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("GET %s = %d, want 404", path, rec.Code)
+		}
+	}
+}
+
 func TestPromptScheduleHTTPCancelAndValidation(t *testing.T) {
 	srv := testServer(t)
 	srv.promptScheduleSvc = newPromptScheduleService(srv.stateDB, &fakeSessions{}, func() time.Time { return time.UnixMilli(1000) }, func() string { return "ps_cancel" })

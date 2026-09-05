@@ -20,6 +20,7 @@ describe('BUILTIN_COMMANDS', () => {
       'move',
       'new',
       'rename',
+      'routines',
       'redo',
       'restart-opencode',
       'share',
