@@ -242,7 +242,7 @@ describe('Factory interactions', () => {
     vi.mocked(api.factoryPlanGate).mockResolvedValue({ resolution: 'approved' } as never);
     renderFactory(<MemoryRouter><FactoryPlanApproval epicID="epic-1" platformID="opencode" sessionID="planning-session" /></MemoryRouter>);
 
-    expect(await screen.findByText('Approval materializes the Plan and starts implementation.')).toBeInTheDocument();
+    expect(await screen.findByText('Approval materializes the proposed Issues and starts implementation.')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Approve and start implementation' }));
 
     await waitFor(() => expect(api.factoryPlanGate).toHaveBeenCalledWith('epic-1', 'approve', { expectedRevision: 2, expectedHash: 'hash-2', feedback: undefined }));

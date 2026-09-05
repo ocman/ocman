@@ -511,13 +511,15 @@ type AuthorityEscalationGate = model.AuthorityEscalationGate
 type IssueComment = model.NativeIssueComment
 
 type ManifestNode struct {
-	Key         string `json:"key"`
-	Type        string `json:"type"`
-	Requirement string `json:"requirement"`
-	Pinned      bool   `json:"pinned,omitempty"`
+	Key         string   `json:"key"`
+	Type        string   `json:"type"`
+	Requirement string   `json:"requirement"`
+	Title       string   `json:"title,omitempty"`
+	Description string   `json:"description,omitempty"`
+	DependsOn   []string `json:"dependsOn,omitempty"`
+	Pinned      bool     `json:"pinned,omitempty"`
 }
 
-// ProposalManifest is deliberately limited to the tracer's one implementation node.
 type ProposalManifest struct {
 	EpicID  string         `json:"epicId"`
 	MolID   string         `json:"molId"`
@@ -569,12 +571,13 @@ type ClaimedPlan struct {
 }
 
 type Materialization struct {
-	ID               string `json:"id"`
-	IssueID          string `json:"issueId"`
-	ProposalRevision int    `json:"proposalRevision"`
-	ProposalHash     string `json:"proposalHash"`
-	ManifestKey      string `json:"manifestKey"`
-	ImplementationID string `json:"implementationId"`
+	ID               string                          `json:"id"`
+	IssueID          string                          `json:"issueId"`
+	ProposalRevision int                             `json:"proposalRevision"`
+	ProposalHash     string                          `json:"proposalHash"`
+	ManifestKey      string                          `json:"manifestKey"`
+	ImplementationID string                          `json:"implementationId"`
+	Issues           []model.NativeMaterializedIssue `json:"issues"`
 }
 
 // GraphMutation is a user-authorized structural change to open Factory work.
@@ -1317,7 +1320,7 @@ func (s *NativeService) Materialize(ctx context.Context, epicID, issueID string)
 	if err == nil {
 		_ = s.Dispatch(ctx)
 	}
-	return Materialization{ID: materialization.ID, IssueID: materialization.IssueID, ProposalRevision: materialization.ProposalRevision, ProposalHash: materialization.ProposalHash, ManifestKey: materialization.ManifestKey, ImplementationID: materialization.ImplementationID}, err
+	return Materialization{ID: materialization.ID, IssueID: materialization.IssueID, ProposalRevision: materialization.ProposalRevision, ProposalHash: materialization.ProposalHash, ManifestKey: materialization.ManifestKey, ImplementationID: materialization.ImplementationID, Issues: materialization.Issues}, err
 }
 
 func (s *NativeService) DeferIssue(ctx context.Context, epicID, issueID, reason string) error {
@@ -1863,24 +1866,56 @@ func validateProposalManifest(manifest ProposalManifest, epic model.NativeEpic, 
 	if manifest.EpicID != epic.ID || manifest.MolID != rootMolID || manifest.Project != epic.InitialProject {
 		return errors.New("proposal manifest scope does not match Epic")
 	}
-	keys, implementations := map[string]bool{}, 0
+	keys, required := map[string]ManifestNode{}, 0
 	for _, node := range manifest.Nodes {
-		if !model.ValidNativeFormulaKey(node.Key) || keys[node.Key] {
+		if _, exists := keys[node.Key]; !model.ValidNativeFormulaKey(node.Key) || exists {
 			return errors.New("proposal manifest keys must be unique and stable")
 		}
-		keys[node.Key] = true
+		keys[node.Key] = node
 		if node.Requirement != "required" && node.Requirement != "optional" && node.Requirement != "reference" {
 			return errors.New("proposal manifest requirement class is invalid")
 		}
 		if node.Pinned && node.Requirement != "reference" {
 			return errors.New("only reference proposal nodes may be pinned")
 		}
-		if node.Type == "implementation" && node.Requirement == "required" {
-			implementations++
+		if node.Type != "implementation" {
+			return errors.New("proposal manifest node type is invalid")
+		}
+		if node.Requirement == "required" {
+			required++
 		}
 	}
-	if implementations != 1 {
-		return errors.New("proposal manifest requires exactly one required implementation node")
+	if required == 0 {
+		return errors.New("proposal manifest requires at least one required implementation node")
+	}
+	visiting, visited := map[string]bool{}, map[string]bool{}
+	var visit func(string) error
+	visit = func(key string) error {
+		if visiting[key] {
+			return errors.New("proposal manifest dependencies must be acyclic")
+		}
+		if visited[key] {
+			return nil
+		}
+		visiting[key] = true
+		dependencies := map[string]bool{}
+		for _, dependency := range keys[key].DependsOn {
+			dependencyNode, exists := keys[dependency]
+			if !exists || dependencyNode.Requirement == "reference" || dependencies[dependency] {
+				return errors.New("proposal manifest dependency is invalid")
+			}
+			dependencies[dependency] = true
+			if err := visit(dependency); err != nil {
+				return err
+			}
+		}
+		visiting[key], visited[key] = false, true
+		return nil
+	}
+	for key := range keys {
+		if err := visit(key); err != nil {
+			return err
+		}
 	}
 	return nil
 }

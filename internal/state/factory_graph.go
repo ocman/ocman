@@ -454,7 +454,7 @@ func (d *DB) ListFactoryIssues(ctx context.Context, epicID string) ([]model.Nati
 	if _, err := d.GetFactoryEpic(ctx, epicID); err != nil {
 		return nil, err
 	}
-	rows, err := d.db.QueryContext(ctx, `SELECT i.id, i.epic_id, COALESCE(h.parent_issue_id, ''), COALESCE(h.requirement, ''), i.kind, i.title, i.status, i.description, COALESCE(f.formula_id, ''), COALESCE(f.formula_version, 0), COALESCE(f.formula_hash, ''), COALESCE(f.bindings_json, '{}'), COALESCE(m.proposal_revision, 0), COALESCE(m.manifest_key, ''), i.outcome, i.outcome_reason, COALESCE(g.resolution, ''), i.retry_at, i.retry_attempts, i.created_at FROM factory_issue i LEFT JOIN factory_issue_hierarchy h ON h.child_issue_id = i.id LEFT JOIN factory_mol_formula f ON f.mol_id = i.id LEFT JOIN factory_materialization m ON m.implementation_issue_id = i.id LEFT JOIN factory_plan_gate g ON g.issue_id = i.id LEFT JOIN factory_removed_issue r ON r.issue_id = i.id WHERE i.epic_id = ? AND r.issue_id IS NULL ORDER BY CASE i.kind WHEN 'mol' THEN 0 WHEN 'plan' THEN 1 WHEN 'gate' THEN 2 ELSE 3 END`, epicID)
+	rows, err := d.db.QueryContext(ctx, `SELECT i.id, i.epic_id, COALESCE(h.parent_issue_id, ''), COALESCE(h.requirement, ''), i.kind, i.title, i.status, i.description, COALESCE(f.formula_id, ''), COALESCE(f.formula_version, 0), COALESCE(f.formula_hash, ''), COALESCE(f.bindings_json, '{}'), COALESCE(m.proposal_revision, 0), COALESCE(p.manifest_key, ''), i.outcome, i.outcome_reason, COALESCE(g.resolution, ''), i.retry_at, i.retry_attempts, i.created_at FROM factory_issue i LEFT JOIN factory_issue_hierarchy h ON h.child_issue_id = i.id LEFT JOIN factory_mol_formula f ON f.mol_id = i.id LEFT JOIN factory_materialization_provenance p ON p.entity_kind = 'issue' AND p.entity_id = i.id LEFT JOIN factory_materialization m ON m.id = p.materialization_id LEFT JOIN factory_plan_gate g ON g.issue_id = i.id LEFT JOIN factory_removed_issue r ON r.issue_id = i.id WHERE i.epic_id = ? AND r.issue_id IS NULL ORDER BY CASE i.kind WHEN 'mol' THEN 0 WHEN 'plan' THEN 1 WHEN 'gate' THEN 2 ELSE 3 END`, epicID)
 	if err != nil {
 		return nil, fmt.Errorf("listing Factory issues: %w", err)
 	}
@@ -730,7 +730,7 @@ func closeHandBuiltMaterializationTx(ctx context.Context, tx *sql.Tx, epicID str
 		AND EXISTS (SELECT 1 FROM factory_issue w WHERE w.epic_id = factory_issue.epic_id AND w.kind IN ('task', 'implementation')
 			AND NOT EXISTS (SELECT 1 FROM factory_removed_issue r WHERE r.issue_id = w.id)
 			AND NOT EXISTS (WITH RECURSIVE lineage(id) AS (SELECT w.id UNION ALL SELECT h.parent_issue_id FROM factory_issue_hierarchy h JOIN lineage ON h.child_issue_id = lineage.id)
-				SELECT 1 FROM lineage JOIN factory_materialization m ON m.implementation_issue_id = lineage.id))`, epicID)
+				SELECT 1 FROM lineage JOIN factory_materialization_provenance p ON p.entity_kind = 'issue' AND p.entity_id = lineage.id))`, epicID)
 	if err != nil {
 		return fmt.Errorf("closing hand-built Factory materialization: %w", err)
 	}
@@ -1178,6 +1178,21 @@ func (d *DB) MaterializeFactoryPlan(ctx context.Context, epicID, issueID, profil
 		if existing.EpicID != epicID || profile != "factory-materialize/v1" {
 			return model.NativeMaterialization{}, errors.New("factory materialization conflicts with recorded transaction")
 		}
+		rows, err := tx.QueryContext(ctx, `SELECT manifest_key, entity_id FROM factory_materialization_provenance WHERE materialization_id = ? AND entity_kind = 'issue' ORDER BY rowid`, existing.ID)
+		if err != nil {
+			return model.NativeMaterialization{}, err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var item model.NativeMaterializedIssue
+			if err := rows.Scan(&item.ManifestKey, &item.IssueID); err != nil {
+				return model.NativeMaterialization{}, err
+			}
+			existing.Issues = append(existing.Issues, item)
+		}
+		if err := rows.Err(); err != nil {
+			return model.NativeMaterialization{}, err
+		}
 		return existing, tx.Commit()
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -1204,29 +1219,46 @@ func (d *DB) MaterializeFactoryPlan(ctx context.Context, epicID, issueID, profil
 		MolID   string `json:"molId"`
 		Project string `json:"project"`
 		Nodes   []struct {
-			Key         string `json:"key"`
-			Type        string `json:"type"`
-			Requirement string `json:"requirement"`
-			Pinned      bool   `json:"pinned"`
+			Key         string   `json:"key"`
+			Type        string   `json:"type"`
+			Requirement string   `json:"requirement"`
+			Title       string   `json:"title"`
+			Description string   `json:"description"`
+			DependsOn   []string `json:"dependsOn"`
+			Pinned      bool     `json:"pinned"`
 		} `json:"nodes"`
 	}
 	if err := json.Unmarshal([]byte(proposal.ManifestJSON), &manifest); err != nil || manifest.EpicID != epicID || manifest.MolID != proposal.MolID || manifest.Project != proposal.Project {
 		return model.NativeMaterialization{}, errors.New("factory approved Plan manifest is invalid")
 	}
-	implementationKey := ""
+	executable := make([]int, 0, len(manifest.Nodes))
+	keys := make(map[string]int, len(manifest.Nodes))
+	required := 0
 	for _, node := range manifest.Nodes {
-		if node.Pinned && node.Requirement != "reference" {
+		if !model.ValidNativeFormulaKey(node.Key) {
 			return model.NativeMaterialization{}, errors.New("factory approved Plan manifest is invalid")
 		}
-		if node.Type == "implementation" && node.Requirement == "required" {
-			if implementationKey != "" || !model.ValidNativeFormulaKey(node.Key) {
-				return model.NativeMaterialization{}, errors.New("factory approved Plan manifest is invalid")
-			}
-			implementationKey = node.Key
+		if _, exists := keys[node.Key]; exists || node.Type != "implementation" || (node.Requirement != "required" && node.Requirement != "optional" && node.Requirement != "reference") || (node.Pinned && node.Requirement != "reference") {
+			return model.NativeMaterialization{}, errors.New("factory approved Plan manifest is invalid")
+		}
+		keys[node.Key] = len(keys)
+		if node.Requirement != "reference" {
+			executable = append(executable, len(keys)-1)
+		}
+		if node.Requirement == "required" {
+			required++
 		}
 	}
-	if implementationKey == "" {
+	if required == 0 {
 		return model.NativeMaterialization{}, errors.New("factory approved Plan manifest is invalid")
+	}
+	for _, index := range executable {
+		for _, dependency := range manifest.Nodes[index].DependsOn {
+			dependencyIndex, ok := keys[dependency]
+			if !ok || manifest.Nodes[dependencyIndex].Requirement == "reference" {
+				return model.NativeMaterialization{}, errors.New("factory approved Plan manifest is invalid")
+			}
+		}
 	}
 	var goal string
 	if err := tx.QueryRowContext(ctx, `SELECT goal FROM factory_epic WHERE id = ?`, epicID).Scan(&goal); err != nil {
@@ -1237,12 +1269,16 @@ func (d *DB) MaterializeFactoryPlan(ctx context.Context, epicID, issueID, profil
 		return model.NativeMaterialization{}, err
 	}
 	now := at.UnixMilli()
-	implementationID, err := factoryChildID(ctx, tx, proposal.MolID)
-	if err != nil {
-		return model.NativeMaterialization{}, err
+	implementationIDs := make(map[string]string, len(executable))
+	for _, index := range executable {
+		implementationID, err := factoryChildID(ctx, tx, proposal.MolID)
+		if err != nil {
+			return model.NativeMaterialization{}, err
+		}
+		implementationIDs[manifest.Nodes[index].Key] = implementationID
 	}
 	var active int
-	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM factory_materialization m JOIN factory_issue i ON i.id = m.implementation_issue_id WHERE m.epic_id = ? AND m.implementation_issue_id <> ? AND i.status = 'in_progress' AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = i.id)`, epicID, implementationID).Scan(&active); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM factory_materialization m JOIN factory_materialization_provenance p ON p.materialization_id = m.id AND p.entity_kind = 'issue' JOIN factory_issue i ON i.id = p.entity_id WHERE m.epic_id = ? AND i.status = 'in_progress' AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = i.id)`, epicID).Scan(&active); err != nil {
 		return model.NativeMaterialization{}, err
 	}
 	if active != 0 {
@@ -1251,33 +1287,63 @@ func (d *DB) MaterializeFactoryPlan(ctx context.Context, epicID, issueID, profil
 	// Superseded implementations take their descendants with them; an orphan
 	// whose parent is removed would break the requirement walk in listings.
 	if _, err := tx.ExecContext(ctx, `WITH RECURSIVE superseded(id) AS (
-			SELECT m.implementation_issue_id FROM factory_materialization m WHERE m.epic_id = ? AND m.implementation_issue_id <> ?
+			SELECT p.entity_id FROM factory_materialization m JOIN factory_materialization_provenance p ON p.materialization_id = m.id AND p.entity_kind = 'issue' WHERE m.epic_id = ?
 			UNION ALL SELECT h.child_issue_id FROM factory_issue_hierarchy h JOIN superseded s ON h.parent_issue_id = s.id)
 		INSERT INTO factory_removed_issue (issue_id, plan_id, plan_revision, removed_at)
 		SELECT id, ?, ?, ? FROM superseded WHERE true
-		ON CONFLICT(issue_id) DO NOTHING`, epicID, implementationID, epicID, proposal.Revision, now); err != nil {
+		ON CONFLICT(issue_id) DO NOTHING`, epicID, epicID, proposal.Revision, now); err != nil {
 		return model.NativeMaterialization{}, fmt.Errorf("removing superseded Factory implementation: %w", err)
 	}
-	result := model.NativeMaterialization{ID: id, EpicID: epicID, IssueID: issueID, ProposalRevision: proposal.Revision, ProposalHash: proposal.ContentHash, ManifestKey: implementationKey, ImplementationID: implementationID}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue (id, epic_id, kind, title, description, status, created_at) VALUES (?, ?, 'implementation', ?, ?, 'open', ?)`, implementationID, epicID, "Implementation: "+goal, proposal.RationaleMarkdown, now); err != nil {
-		return model.NativeMaterialization{}, fmt.Errorf("creating Factory implementation: %w", err)
+	primary := manifest.Nodes[executable[0]]
+	primaryID := implementationIDs[primary.Key]
+	result := model.NativeMaterialization{ID: id, EpicID: epicID, IssueID: issueID, ProposalRevision: proposal.Revision, ProposalHash: proposal.ContentHash, ManifestKey: primary.Key, ImplementationID: primaryID}
+	for _, index := range executable {
+		node := manifest.Nodes[index]
+		implementationID := implementationIDs[node.Key]
+		title, description := strings.TrimSpace(node.Title), strings.TrimSpace(node.Description)
+		if title == "" {
+			title = "Implementation: " + goal
+		}
+		if description == "" {
+			description = proposal.RationaleMarkdown
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue (id, epic_id, kind, title, description, status, created_at) VALUES (?, ?, 'implementation', ?, ?, 'open', ?)`, implementationID, epicID, title, description, now); err != nil {
+			return model.NativeMaterialization{}, fmt.Errorf("creating Factory implementation: %w", err)
+		}
+		implementationIndex, err := factoryChildIndex(implementationID)
+		if err != nil {
+			return model.NativeMaterialization{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue_hierarchy (parent_issue_id, child_issue_id, child_index, requirement) VALUES (?, ?, ?, ?)`, proposal.MolID, implementationID, implementationIndex, node.Requirement); err != nil {
+			return model.NativeMaterialization{}, fmt.Errorf("adding Factory implementation closure: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue_dependency (issue_id, depends_on_issue_id, type) VALUES (?, ?, 'blocks')`, implementationID, issueID); err != nil {
+			return model.NativeMaterialization{}, fmt.Errorf("adding Factory implementation dependency: %w", err)
+		}
+		result.Issues = append(result.Issues, model.NativeMaterializedIssue{ManifestKey: node.Key, IssueID: implementationID})
 	}
-	implementationIndex, err := factoryChildIndex(implementationID)
-	if err != nil {
-		return model.NativeMaterialization{}, err
+	for _, index := range executable {
+		node := manifest.Nodes[index]
+		for _, dependency := range node.DependsOn {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue_dependency (issue_id, depends_on_issue_id, type) VALUES (?, ?, 'blocks')`, implementationIDs[node.Key], implementationIDs[dependency]); err != nil {
+				return model.NativeMaterialization{}, fmt.Errorf("adding Factory implementation dependency: %w", err)
+			}
+		}
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue_hierarchy (parent_issue_id, child_issue_id, child_index, requirement) VALUES (?, ?, ?, 'required')`, proposal.MolID, implementationID, implementationIndex); err != nil {
-		return model.NativeMaterialization{}, fmt.Errorf("adding Factory implementation closure: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue_dependency (issue_id, depends_on_issue_id, type) VALUES (?, ?, 'blocks')`, implementationID, issueID); err != nil {
-		return model.NativeMaterialization{}, fmt.Errorf("adding Factory implementation dependency: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_materialization (id, epic_id, issue_id, proposal_revision, proposal_hash, manifest_key, profile, implementation_issue_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, epicID, issueID, proposal.Revision, proposal.ContentHash, implementationKey, profile, implementationID, now); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_materialization (id, epic_id, issue_id, proposal_revision, proposal_hash, manifest_key, profile, implementation_issue_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, epicID, issueID, proposal.Revision, proposal.ContentHash, primary.Key, profile, primaryID, now); err != nil {
 		return model.NativeMaterialization{}, fmt.Errorf("recording Factory materialization: %w", err)
 	}
-	for _, entity := range []struct{ kind, id string }{{"issue", implementationID}, {"hierarchy", proposal.MolID + "\x00" + implementationID}, {"dependency", implementationID + "\x00" + issueID}} {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO factory_materialization_provenance (entity_kind, entity_id, plan_id, plan_revision, materialization_id, manifest_key) VALUES (?, ?, ?, ?, ?, ?)`, entity.kind, entity.id, epicID, proposal.Revision, id, implementationKey); err != nil {
-			return model.NativeMaterialization{}, fmt.Errorf("recording Factory materialization provenance: %w", err)
+	for _, index := range executable {
+		node := manifest.Nodes[index]
+		implementationID := implementationIDs[node.Key]
+		entities := []struct{ kind, id string }{{"issue", implementationID}, {"hierarchy", proposal.MolID + "\x00" + implementationID}, {"dependency", implementationID + "\x00" + issueID}}
+		for _, dependency := range node.DependsOn {
+			entities = append(entities, struct{ kind, id string }{"dependency", implementationID + "\x00" + implementationIDs[dependency]})
+		}
+		for _, entity := range entities {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO factory_materialization_provenance (entity_kind, entity_id, plan_id, plan_revision, materialization_id, manifest_key) VALUES (?, ?, ?, ?, ?, ?)`, entity.kind, entity.id, epicID, proposal.Revision, id, node.Key); err != nil {
+				return model.NativeMaterialization{}, fmt.Errorf("recording Factory materialization provenance: %w", err)
+			}
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'closed', outcome = 'succeeded' WHERE id = ? AND status = 'open'`, issueID); err != nil {

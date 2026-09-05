@@ -355,6 +355,37 @@ func TestNativeProposalIsImmutableAndScoped(t *testing.T) {
 	}
 }
 
+func TestNativeProposalAcceptsMultipleImplementationIssuesAndRejectsDependencyCycles(t *testing.T) {
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{})
+	epic := createPouredWorkEpic(t, svc, "Ship")
+	manifest := ProposalManifest{
+		EpicID:  epic.ID,
+		MolID:   pouredIssueID(t, svc, epic.ID, "mol"),
+		Project: "/repo",
+		Nodes: []ManifestNode{
+			{Key: "backend", Type: "implementation", Requirement: "required", Title: "Build backend", Description: "Add the API."},
+			{Key: "frontend", Type: "implementation", Requirement: "required", Title: "Build frontend", Description: "Add the UI.", DependsOn: []string{"backend"}},
+		},
+	}
+	if _, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest}); err != nil {
+		t.Fatalf("multi-Issue proposal rejected: %v", err)
+	}
+	manifest.Nodes[1].DependsOn = []string{"backend", "backend"}
+	if _, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest}); err == nil {
+		t.Fatal("duplicate dependency was accepted")
+	}
+	manifest.Nodes[1].DependsOn = []string{"backend"}
+	manifest.Nodes[0].DependsOn = []string{"frontend"}
+	if _, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest}); err == nil {
+		t.Fatal("cyclic proposal was accepted")
+	}
+}
+
 // A Planning Session proves it owns an Epic with the attempt token minted at
 // claim time; a token from another Epic (or a forged one) cannot reset that
 // Epic's approval by submitting a proposal for it.
@@ -584,7 +615,7 @@ func TestNativeMaterializationCreatesApprovedImplementationAtomically(t *testing
 		t.Fatalf("Materialize = %#v, %v; launches = %#v", first, err, launcher.calls)
 	}
 	second, err := svc.Materialize(context.Background(), epic.ID, pouredIssueID(t, svc, epic.ID, "materialization"))
-	if err != nil || second != first {
+	if err != nil || !reflect.DeepEqual(second, first) {
 		t.Fatalf("repeated Materialize = %#v, %v; want %#v", second, err, first)
 	}
 	issues, err := svc.ListIssues(context.Background(), epic.ID)

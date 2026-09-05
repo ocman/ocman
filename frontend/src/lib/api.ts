@@ -82,6 +82,7 @@ export type {
   FactoryEpic,
   FactoryAttempt,
   FactoryClaimedPlan,
+  FactoryMaterialization,
   CreateWorkEpicRequest,
 	FactoryIssue,
 	FactoryIssueComment,
@@ -148,6 +149,7 @@ import type {
 	RoutineInput,
   FactoryEpic,
   FactoryClaimedPlan,
+  FactoryMaterialization,
   CreateWorkEpicRequest,
 	FactoryIssue,
 	FactoryIssueComment,
@@ -422,7 +424,7 @@ export const api = {
 		factoryClaimPlan: (id: string, issueID: string) =>
 			postJSON<FactoryClaimedPlan, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/plans/${encodeURIComponent(issueID)}`, undefined),
 		factoryMaterialize: (id: string, issueID: string) =>
-			postJSON<unknown, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/materializations/${encodeURIComponent(issueID)}`, undefined),
+			postJSON<FactoryMaterialization, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/materializations/${encodeURIComponent(issueID)}`, undefined),
 		reopenFactoryIssue: (id: string, issueID: string) =>
 			postJSON<unknown, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/issues/${encodeURIComponent(issueID)}/reopen`, undefined),
 		factoryIssues: (id: string, signal?: AbortSignal) =>

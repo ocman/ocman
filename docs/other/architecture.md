@@ -101,8 +101,8 @@ flowchart TD
    Plan revisions, approvals, and materialization provenance in `state.db`.
    TOML Formulas compile to canonical JSON. A Plan session is read-only at the
    project root; approval of an exact revision enables user-requested atomic
-   materialization of the one Implementation Issue, which alone launches a
-   configured worktree session. The browser uses REST while agents use the one action-based
+   materialization of the proposed Implementation Issues and dependencies. Ready Issues
+   launch configured worktree sessions. The browser uses REST while agents use the one action-based
    `factory` MCP tool. Routines are not involved.
 - **Factory persistence.** Native `factory_*` tables own the graph and its
    provenance in `state.db`; they do not reference or alter routine tables.

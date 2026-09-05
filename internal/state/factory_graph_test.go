@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -621,7 +622,7 @@ func TestFactoryMaterializationIsAtomicAndIdempotent(t *testing.T) {
 		t.Fatalf("materialize = %#v, %v", first, err)
 	}
 	second, err := db.MaterializeFactoryPlan(ctx, first.EpicID, first.IssueID, "factory-materialize/v1", time.Now())
-	if err != nil || second != first {
+	if err != nil || !reflect.DeepEqual(second, first) {
 		t.Fatalf("repeated materialize = %#v, %v", second, err)
 	}
 	if _, err := db.db.Exec(`UPDATE factory_plan_gate SET resolution = 'open' WHERE epic_id = ?`, first.EpicID); err != nil {
@@ -652,6 +653,110 @@ func TestFactoryMaterializationIsAtomicAndIdempotent(t *testing.T) {
 	}
 	if err := db.db.QueryRow(`SELECT count(*) FROM factory_issue WHERE epic_id = ? AND kind = 'implementation'`, failedEpic.ID).Scan(&implementations); err != nil || transactions != 0 || implementations != 0 || failed.ID != "" {
 		t.Fatalf("partial materialization: transactions=%d implementations=%d result=%#v err=%v", transactions, implementations, failed, err)
+	}
+}
+
+func TestFactoryMaterializesMultipleImplementationIssuesWithDependencies(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	ctx := context.Background()
+	epic, err := db.CreateFactoryEpic(ctx, "Ship", "Brief", "/repo", "multi", nativeTracerFormula(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	molID := factoryIssueID(t, db, epic.ID, "mol")
+	manifest, err := json.Marshal(map[string]any{
+		"epicId":  epic.ID,
+		"molId":   molID,
+		"project": "/repo",
+		"nodes": []map[string]any{
+			{"key": "backend", "type": "implementation", "requirement": "required", "title": "Build backend", "description": "Add the API."},
+			{"key": "frontend", "type": "implementation", "requirement": "required", "title": "Build frontend", "description": "Add the UI.", "dependsOn": []string{"backend"}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	proposal, err := db.SaveFactoryProposalRevision(ctx, model.NativeProposalRevision{EpicID: epic.ID, MolID: molID, Project: "/repo", ManifestJSON: string(manifest), ContentHash: "multi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.DecideFactoryPlanGate(ctx, epic.ID, "approve", proposal.Revision, proposal.ContentHash, ""); err != nil {
+		t.Fatal(err)
+	}
+	result, err := db.MaterializeFactoryPlan(ctx, epic.ID, factoryIssueID(t, db, epic.ID, "materialization"), "factory-materialize/v1", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Issues) != 2 || result.Issues[0].ManifestKey != "backend" || result.Issues[1].ManifestKey != "frontend" {
+		t.Fatalf("materialization = %#v", result)
+	}
+	repeated, err := db.MaterializeFactoryPlan(ctx, epic.ID, result.IssueID, "factory-materialize/v1", time.Now())
+	if err != nil || !reflect.DeepEqual(repeated, result) {
+		t.Fatalf("repeated materialization = %#v, %v; want %#v", repeated, err, result)
+	}
+	issues := mustListFactoryIssues(t, db, epic.ID)
+	byKey := map[string]model.NativeIssue{}
+	for _, issue := range issues {
+		if issue.ManifestKey != "" {
+			byKey[issue.ManifestKey] = issue
+		}
+	}
+	if byKey["backend"].Title != "Build backend" || byKey["backend"].Description != "Add the API." || byKey["frontend"].Title != "Build frontend" {
+		t.Fatalf("materialized issues = %#v", byKey)
+	}
+	if byKey["backend"].DispatchState != "ready" || byKey["frontend"].DispatchState != "waiting" || len(byKey["frontend"].Blockers) != 1 || byKey["frontend"].Blockers[0].ID != byKey["backend"].ID {
+		t.Fatalf("materialized dispatch graph = %#v", byKey)
+	}
+	revised, err := db.SaveFactoryProposalRevision(ctx, model.NativeProposalRevision{EpicID: epic.ID, MolID: molID, Project: "/repo", ManifestJSON: string(manifest), ContentHash: "multi-revised"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.DecideFactoryPlanGate(ctx, epic.ID, "approve", revised.Revision, revised.ContentHash, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.MutateFactoryGraph(ctx, model.GraphMutation{Action: "create", EpicID: epic.ID, ParentID: byKey["frontend"].ID, Kind: "task", Title: "Follow-up"}); err != nil {
+		t.Fatal(err)
+	}
+	var materializationStatus string
+	if err := db.db.QueryRow(`SELECT status FROM factory_issue WHERE id = ?`, result.IssueID).Scan(&materializationStatus); err != nil || materializationStatus != "open" {
+		t.Fatalf("secondary materialized root closed revised materialization: %q, %v", materializationStatus, err)
+	}
+
+	failedEpic, err := db.CreateFactoryEpic(ctx, "Fail", "Brief", "/repo", "multi-failure", nativeTracerFormula(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	failedMolID := factoryIssueID(t, db, failedEpic.ID, "mol")
+	failedManifest, _ := json.Marshal(map[string]any{
+		"epicId": failedEpic.ID, "molId": failedMolID, "project": "/repo",
+		"nodes": []map[string]any{
+			{"key": "backend", "type": "implementation", "requirement": "required", "title": "Build backend"},
+			{"key": "frontend", "type": "implementation", "requirement": "required", "title": "Build frontend", "dependsOn": []string{"backend"}},
+		},
+	})
+	failedProposal, err := db.SaveFactoryProposalRevision(ctx, model.NativeProposalRevision{EpicID: failedEpic.ID, MolID: failedMolID, Project: "/repo", ManifestJSON: string(failedManifest), ContentHash: "multi-failure"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.DecideFactoryPlanGate(ctx, failedEpic.ID, "approve", failedProposal.Revision, failedProposal.ContentHash, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.db.Exec(`CREATE TRIGGER fail_second_implementation BEFORE INSERT ON factory_issue WHEN NEW.title = 'Build frontend' BEGIN SELECT RAISE(ABORT, 'injected failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.MaterializeFactoryPlan(ctx, failedEpic.ID, factoryIssueID(t, db, failedEpic.ID, "materialization"), "factory-materialize/v1", time.Now()); err == nil {
+		t.Fatal("later materialization failure succeeded")
+	}
+	for table, query := range map[string]string{
+		"implementation":  `SELECT count(*) FROM factory_issue WHERE epic_id = ? AND kind = 'implementation'`,
+		"materialization": `SELECT count(*) FROM factory_materialization WHERE epic_id = ?`,
+		"provenance":      `SELECT count(*) FROM factory_materialization_provenance WHERE plan_id = ?`,
+	} {
+		var count int
+		if err := db.db.QueryRow(query, failedEpic.ID).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("partial %s count = %d, %v", table, count, err)
+		}
 	}
 }
 

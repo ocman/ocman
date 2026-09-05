@@ -136,10 +136,20 @@ export interface FactoryClaimedPlan {
 }
 
 export interface FactoryProposal {
-	manifest: { epicId: string; molId: string; project: string; nodes: { key: string; type: string; requirement: string }[] };
+	manifest: { epicId: string; molId: string; project: string; nodes: { key: string; type: string; requirement: string; title?: string; description?: string; dependsOn?: string[] }[] };
 	revision: number;
 	contentHash: string;
 	rationaleMarkdown?: string;
+}
+
+export interface FactoryMaterialization {
+	id: string;
+	issueId: string;
+	proposalRevision: number;
+	proposalHash: string;
+	manifestKey: string;
+	implementationId: string;
+	issues: { manifestKey: string; issueId: string }[];
 }
 
 export interface FactoryPlanGate {

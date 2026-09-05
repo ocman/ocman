@@ -21,7 +21,7 @@ export function FactoryPlanApproval({ epicID, platformID, sessionID }: { epicID:
 	};
 	const error = decide.error ?? materialize.error;
 	return <aside className="factory-plan-approval" aria-label="Plan approval">
-		<span><strong>{gate.resolution === 'open' ? 'Plan ready for approval.' : 'Plan approved.'}</strong> Approval materializes the Plan and starts implementation.</span>
+		<span><strong>{gate.resolution === 'open' ? 'Plan ready for approval.' : 'Plan approved.'}</strong> Approval materializes the proposed Issues and starts implementation.</span>
 		<Button type="button" variant="accent" disabled={decide.isPending || materialize.isPending} onClick={() => void approve()}>{decide.isPending || materialize.isPending ? 'Starting…' : gate.resolution === 'open' ? 'Approve and start implementation' : 'Start implementation'}</Button>
 		{error && <span role="alert">{error instanceof Error ? error.message : 'Could not start implementation.'}</span>}
 	</aside>;

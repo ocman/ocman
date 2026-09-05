@@ -105,6 +105,12 @@ type NativeMaterialization struct {
 	ProposalHash     string
 	ManifestKey      string
 	ImplementationID string
+	Issues           []NativeMaterializedIssue
+}
+
+type NativeMaterializedIssue struct {
+	ManifestKey string `json:"manifestKey"`
+	IssueID     string `json:"issueId"`
 }
 
 type FactoryCapacityPolicy struct {
