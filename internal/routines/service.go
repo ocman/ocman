@@ -31,7 +31,10 @@ const (
 	RunFailure = "failure"
 )
 
-var ErrValidation = errors.New("invalid routine")
+var (
+	ErrValidation   = errors.New("invalid routine")
+	ErrNameConflict = errors.New("routine name already exists")
+)
 
 type Schedule struct {
 	Kind     string
@@ -94,7 +97,7 @@ func (s *Service) Create(ctx context.Context, input Input) (state.Routine, error
 	routine.ID = s.newID("routine-")
 	routine.CreatedAt, routine.UpdatedAt = now.UnixMilli(), now.UnixMilli()
 	if err := s.store.CreateRoutine(ctx, routine); err != nil {
-		return state.Routine{}, err
+		return state.Routine{}, normalizeWriteError(err)
 	}
 	return routine, nil
 }
@@ -111,7 +114,7 @@ func (s *Service) Update(ctx context.Context, id string, input Input) (state.Rou
 	}
 	routine.ID, routine.CreatedAt, routine.UpdatedAt = id, existing.CreatedAt, now.UnixMilli()
 	if err := s.store.UpdateRoutine(ctx, routine); err != nil {
-		return state.Routine{}, err
+		return state.Routine{}, normalizeWriteError(err)
 	}
 	return s.store.GetRoutine(ctx, id)
 }
@@ -126,6 +129,20 @@ func (s *Service) List(ctx context.Context, includeDeleted bool) ([]state.Routin
 
 func (s *Service) Delete(ctx context.Context, id string) error {
 	return s.store.SoftDeleteRoutine(ctx, id, s.now().UnixMilli())
+}
+
+func (s *Service) History(ctx context.Context, id string) ([]state.RoutineRun, error) {
+	if _, err := s.store.GetRoutine(ctx, id); err != nil {
+		return nil, err
+	}
+	return s.store.ListRoutineRuns(ctx, id)
+}
+
+func normalizeWriteError(err error) error {
+	if strings.Contains(err.Error(), "UNIQUE constraint failed: routine.name") {
+		return fmt.Errorf("%w: %v", ErrNameConflict, err)
+	}
+	return err
 }
 
 func buildRoutine(input Input, now time.Time) (state.Routine, error) {

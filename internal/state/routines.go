@@ -13,38 +13,38 @@ var (
 )
 
 type Routine struct {
-	ID                 string
-	Name               string
-	Prompt             string
-	Directory          string
-	RemoteID           string
-	ScheduleKind       string
-	ScheduleConfigJSON string
-	NextDueAt          int64
-	Enabled            bool
-	Deleted            bool
-	DeleteAfterSuccess bool
-	CreatedAt          int64
-	UpdatedAt          int64
-	DeletedAt          int64
+	ID                 string `json:"id"`
+	Name               string `json:"name"`
+	Prompt             string `json:"prompt"`
+	Directory          string `json:"directory"`
+	RemoteID           string `json:"remoteId"`
+	ScheduleKind       string `json:"scheduleKind"`
+	ScheduleConfigJSON string `json:"scheduleConfigJSON"`
+	NextDueAt          int64  `json:"nextDueAt"`
+	Enabled            bool   `json:"enabled"`
+	Deleted            bool   `json:"deleted"`
+	DeleteAfterSuccess bool   `json:"deleteAfterSuccess"`
+	CreatedAt          int64  `json:"createdAt"`
+	UpdatedAt          int64  `json:"updatedAt"`
+	DeletedAt          int64  `json:"deletedAt,omitempty"`
 }
 
 type RoutineRun struct {
-	ID           string
-	RoutineID    string
-	RoutineName  string
-	Prompt       string
-	Directory    string
-	RemoteID     string
-	Trigger      string
-	Platform     string
-	SessionID    string
-	State        string
-	Error        string
-	OccurrenceAt int64
-	CreatedAt    int64
-	StartedAt    int64
-	FinishedAt   int64
+	ID           string `json:"id"`
+	RoutineID    string `json:"routineId"`
+	RoutineName  string `json:"routineName"`
+	Prompt       string `json:"prompt"`
+	Directory    string `json:"directory"`
+	RemoteID     string `json:"remoteId"`
+	Trigger      string `json:"trigger"`
+	Platform     string `json:"platform,omitempty"`
+	SessionID    string `json:"sessionId,omitempty"`
+	State        string `json:"state"`
+	Error        string `json:"error,omitempty"`
+	OccurrenceAt int64  `json:"occurrenceAt"`
+	CreatedAt    int64  `json:"createdAt"`
+	StartedAt    int64  `json:"startedAt,omitempty"`
+	FinishedAt   int64  `json:"finishedAt,omitempty"`
 }
 
 const routineColumns = `id, name, prompt, directory, remote_id, schedule_kind, schedule_config_json,
