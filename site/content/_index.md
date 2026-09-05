@@ -46,13 +46,13 @@ layout: hextra-home
   >}}
   {{< hextra/feature-card
     title="MCP server"
-    subtitle="Workflow control tools and embedded file display for agents."
+    subtitle="Factory tools and embedded file display for agents."
     link="docs/features/mcp"
   >}}
   {{< hextra/feature-card
-    title="Workflows"
-    subtitle="DAG workflows for migration campaigns: agent, command, approval, map and join nodes."
-    link="docs/features/workflows"
+    title="Routines"
+    subtitle="Save a project prompt, run it now or schedule it in a fresh OpenCode session."
+    link="docs/features/routines"
   >}}
   {{< hextra/feature-card
     title="Diffs & changes"

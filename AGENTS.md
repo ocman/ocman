@@ -89,9 +89,18 @@ surfaces on the row the user is watching.
 Ocman also embeds an **MCP (Model Context Protocol) server** on its own
 loopback-only listener, `http://127.0.0.1:8227/mcp` (`-mcp-addr`), plus
 the same endpoint on the web UI's port (`:8229`, or `:8228` via the Vite
-dev proxy). This exposes workflow control tools and `embed_file` for
-displaying generated assets in the UI. See the **MCP server** section
+dev proxy). This exposes the action-based `factory` tool and `embed_file`
+for displaying generated assets in the UI. See the **MCP server** section
 below for setup and available tools.
+
+**Routines** save one prompt for a project and run it manually or on a timeout,
+one-time, or five-field cron schedule. Every occurrence creates a fresh managed
+OpenCode session and remains running until that session settles. `done` is a
+successful run; `error` and `interrupted` are failures. Definitions and run
+history live in `state.db`; successful runs may soft-delete their routine.
+The `/routines` composer command only inserts a saved prompt for review and
+does not start a routine run. Webhook triggers are deferred. See
+`docs/features/routines.md`.
 
 Ocman also surfaces **PRs and Issues** from the active project's
 upstream forge (GitHub or Forgejo) in a sidebar pane next to Session
@@ -183,15 +192,15 @@ handlers don't bypass the `Host` seam). User-facing docs:
   never leaves the head stranded. A periodic one-minute `Sweep`
   (`runQueueSweep`) is only a recovery backstop: it drains one message from
   each idle session with a standing backlog after a missed edge or crash.
-  Scheduled prompts enqueue the same way. Wired in `internal/server/queue.go`.
+  Wired in `internal/server/queue.go`.
 - `internal/db/` — read-only SQLite queries against OpenCode's
   `session`, `message`, `part` tables; uses `json_extract` heavily.
 - `internal/state/` — writable SQLite database
   (`~/.local/share/ocman/state.db`) for ocman's own state (archived
   / seen sessions). Primary key is `(platform, session_id)` so it
   can scope state per platform.
-- `internal/mcp/` — MCP server implementation. Tool handlers implement
-  workflow control and `embed_file`. Mounted at `/mcp` by the server
+- `internal/mcp/` — MCP server implementation. Tool handlers implement the
+  action-based Factory tool and `embed_file`. Mounted at `/mcp` by the server
   package.
 - `internal/server/` — HTTP server, API handlers, static file serving
   with SPA fallback, OpenCode port discovery via `lsof`.
@@ -231,9 +240,10 @@ handlers don't bypass the `Host` seam). User-facing docs:
   status, worktrees, diffs).
 - `internal/forge/` — GitHub/Forgejo PR + issue clients behind one
   interface; feeds the PRs & Issues sidebar.
-- `internal/workflows/` — DAG workflow engine (definitions, scheduling,
-  node runs/attempts) on top of `internal/state`. See
-  `docs/features/workflows.md`.
+- `internal/routines/` — validation, scheduling, fresh-session dispatch, and
+  session-settled run completion for saved prompts. Definitions and immutable
+  run snapshots are stored by `internal/state`. See
+  `docs/features/routines.md`.
 - `internal/permissions/` — builds the inherited permission ruleset for
   a worktree session (#101).
 - `internal/pricing/` — LiteLLM model-pricing fetch/cache + cost
@@ -510,8 +520,8 @@ minimal and match the surrounding code.
 ## MCP server
 
 Ocman embeds a localhost-only MCP server (`internal/mcp/`, mounted at
-`/mcp` by the server package) exposing workflow control tools and
-`embed_file`. The authoritative tool list is the table in
+`/mcp` by the server package) exposing the `factory` and `embed_file` tools.
+The authoritative tool list is the table in
 [`docs/features/mcp.md`](docs/features/mcp.md#tools) — don't duplicate it here.
 
 Implementation notes:

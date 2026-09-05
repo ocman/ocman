@@ -61,9 +61,8 @@ comes from a template you control in **Settings**.
 
 {{< cards >}}
   {{< card link="multi-remote" title="Multi-remote" subtitle="Attach other ocman instances and manage every machine from one dashboard." >}}
-  {{< card link="mcp" title="MCP server" subtitle="Workflow control tools and embedded file display for agents." >}}
-  {{< card link="workflows" title="Workflows" subtitle="DAG workflows for migration campaigns: agent, command, approval, map, join." >}}
-  {{< card link="scheduled-prompts" title="Scheduled prompts" subtitle="Run a stored project prompt later in a fresh session." >}}
+  {{< card link="mcp" title="MCP server" subtitle="Factory tools and embedded file display for agents." >}}
+  {{< card link="routines" title="Routines" subtitle="Save a project prompt, run it now, or schedule it in a fresh session." >}}
 {{< /cards >}}
 
 ## Also included

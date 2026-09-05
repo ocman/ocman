@@ -17,7 +17,7 @@ Supports [OpenCode](https://github.com/anomalyco/opencode).
 - **Command palette.** One ⌘K palette for jumping between sessions, settings, and actions, with in-app notifications.
 - **Slash commands.** `/new [title]` creates a session, `/clear` archives the current one and starts fresh. Renaming a session is keyboard-driven too.
 - **Tmux integration.** Launch or auto-launch an OpenCode instance inside tmux from the UI.
-- **Scheduled prompts.** Run one stored project prompt later in a fresh OpenCode session. Status survives a restart and links back to the session it created.
+- **Routines.** Save a project prompt, run it now, or schedule it in a fresh OpenCode session. History records errors and links to created sessions. See [Routines](docs/features/routines.md).
 - **Multi-remote.** Attach other ocman instances over the network and manage every machine's sessions from one dashboard. Every session carries a host badge, and new-session creation knows which machine has the project. See [Multi-remote](docs/features/multi-remote.md).
 - **Diff and changes view.** Syntax-highlighted diffs inline in the thread, plus a *Changes* sidebar that combines session edits with the working-tree `git` diff.
 - **Stats dashboard.** Per-project metrics, wall-clock totals, token and pricing graphs, system stats.
@@ -95,8 +95,8 @@ See [Configuration](docs/configuration/_index.md) for the full flag and environm
 ## Optional agent integration
 
 You don't need any of this to use ocman as a dashboard. It also embeds an
-optional, localhost-only MCP server exposing workflow control tools and
-`embed_file` for displaying generated assets in the UI.
+optional, localhost-only MCP server exposing Factory tools and `embed_file`
+for displaying generated assets in the UI.
 
 Point your OpenCode config at `http://localhost:8229/mcp` (or
 `http://localhost:8228/mcp` via the `make dev` proxy). See the
@@ -132,8 +132,7 @@ and on the rendered site (`make docs`).
 - Features: [overview](docs/features/_index.md) ·
   [multi-remote](docs/features/multi-remote.md) ·
   [MCP integration](docs/features/mcp.md) ·
-  [workflows](docs/features/workflows.md) ·
-  [scheduled prompts](docs/features/scheduled-prompts.md)
+  [routines](docs/features/routines.md)
 - Configuration: [flags, env vars, authentication](docs/configuration/_index.md)
 - FAQ: [short answers](docs/faq/_index.md)
 - Other: [architecture](docs/other/architecture.md) ·

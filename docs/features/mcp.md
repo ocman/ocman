@@ -4,12 +4,10 @@ weight: 3
 ---
 
 Ocman embeds an optional MCP (Model Context Protocol) server exposing Factory
-intake, workflow control tools, and `embed_file` for displaying generated
-assets in the UI.
+tools and `embed_file` for displaying generated assets in the UI.
 
 Ocman works fine as a plain dashboard without this. Install it only if you
-want conversational Factory handoff, workflow control from an agent, or
-embedded file display.
+want conversational Factory handoff or embedded file display.
 
 ## Endpoint
 
@@ -73,20 +71,8 @@ production binary. Change it if you moved the listener with `-mcp-addr`.
 
 | Tool | Description |
 |------|-------------|
-| `embed_file` | Make a file on disk viewable to the user in the ocman UI. Takes an absolute `path` (plus an optional `label`) and returns a signed URL and a markdown snippet the agent pastes into its reply. Images and SVGs render inline in the conversation; PDFs and other types open or download in the browser. See [Embedding generated assets](#embedding-generated-assets). |
 | `factory` | Native Factory control surface. Use `action: "help"` for actions, validation, examples, output schemas, and domain errors. Formula actions accept TOML only. Implementation Issues run sequentially in one shared Epic worktree; `complete_attempt` requires a clean, pushed handoff and the one pull request whose head matches that branch. |
-| `get_workflow_schema` | Get the workflow definition schema and a minimal valid JSON example. |
-| `validate_workflow` / `publish_workflow` / `list_workflows` | Validate, publish immutable versions, and list workflows. |
-| `start_workflow` / `list_workflow_runs` / `inspect_workflow_run` | Start a pinned or active version and inspect compact run state. |
-| `pause_workflow_run` / `resume_workflow_run` / `cancel_workflow_run` | Control workflow run scheduling and cancellation. |
-| `approve_workflow_node` / `resolve_unknown_attempt` | Approve waiting nodes or resolve externally verified unknown attempts. |
-| `retry_workflow_from_node` | Derive a run that reuses successful work before a node and re-runs from that node onward. |
-
-## Workflow control
-
-The workflow tools let an agent author, validate, publish and start DAG
-workflows, inspect run state, and control scheduling. See
-[Workflows](workflows.md) for the full feature guide.
+| `embed_file` | Make a file on disk viewable to the user in the ocman UI. Takes an absolute `path` (plus an optional `label`) and returns a signed URL and a markdown snippet the agent pastes into its reply. Images and SVGs render inline in the conversation; PDFs and other types open or download in the browser. See [Embedding generated assets](#embedding-generated-assets). |
 
 ## Factory
 
@@ -140,19 +126,14 @@ MCP callers are local and already run as your user, so the tool does not
 restrict which paths may be embedded. An agent that can call it can read
 those files directly anyway.
 
-## Installed skills
+## Installed skill
 
-Factory handoff and workflow control guidance live in:
+Factory handoff guidance lives in:
 
 ```text
-.opencode/skills/ocman-workflows/SKILL.md
 .opencode/skills/ocman-factory/SKILL.md
 ```
 
-For source-controlled examples, immutable-version semantics, migration safety,
-and troubleshooting, see [Workflows](workflows.md). Publish a workflow before
-starting it; pass a returned `version_id` to start exactly that revision.
-
-At startup, ocman extracts and links both skills into OpenCode's global skill
+At startup, ocman extracts and links the skill into OpenCode's global skill
 directory. Restart OpenCode after installing or upgrading ocman so every
-conversation can discover them.
+conversation can discover it.

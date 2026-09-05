@@ -48,9 +48,8 @@ flowchart LR
     Agent[AI agents<br/>MCP clients] -->|/mcp| Ocman
     Ocman -->|read-only SQLite| OCDB[(opencode.db)]
     Ocman -->|read/write SQLite| StateDB[(state.db)]
-    Ocman -->|artifact payloads| Blobs[(workflow-artifacts)]
     Ocman -->|Authenticated HTTP/SSE proxy| OCInst[Running OpenCode<br/>instances]
-    Ocman -->|exec + loopback REST| Shell[git / tmux / lsof / bd / Dagu<br/>host tools]
+    Ocman -->|exec| Shell[git / tmux / lsof / bd<br/>host tools]
     Ocman -->|REST| Forges[GitHub / Forgejo]
     Ocman <-->|gRPC + token| Remotes[Remote ocman<br/>instances]
     Ocman -.->|OTLP, optional| Otel[Telemetry collector]
@@ -60,26 +59,13 @@ flowchart LR
   remotes directly. `:8228` is the production `-addr` default; in dev the
   Vite server on :8228 proxies `/api` to the air backend on :8229.
 - **opencode.db.** Foreign data, opened read-only. Ocman never writes to it.
-- **state.db.** Ocman's own state: archive flags, immutable workflow
-  versions and runs, workflow artifact metadata, workflow resource and
-  workspace leases, permission approval provenance, settings, and remote
-  tokens.
-- **workflow-artifacts/.** A content-addressed store under the ocman data
-  dir, next to state.db, holding large, deduplicated, immutable artifact
-  payloads outside SQLite. Metadata rows in state.db reference payloads by
-  content hash and expire them on a retention policy while keeping the audit
-  metadata.
+- **state.db.** Ocman's own state: archive flags, routines and run history,
+  permission approval provenance, settings, Factory records, and remote
+  tokens. Legacy `workflow_*` rows remain inert for manual recovery.
 - **Remote ocman instances.** The hub dials remotes over gRPC and re-exposes
   their sessions and hosts transparently. The owning remote enriches session
   detail with its persisted approvals and tees synthetic approval events into
   the gRPC event stream before the hub forwards them to the browser.
-- **Dagu.** A separately installed 2.x CLI, and the workflow runner. On the
-  first workflow action the owning ocman host starts one private
-  loopback-only Dagu server under `~/.local/share/ocman/dagu`. Ocman owns
-  authoring, versioning, triggering and history; Dagu only executes the
-  graph. Ocman compiles a pinned version to an inline spec, posts it under
-  ocman's own run id, and polls run state back. Compiled specs carry no
-  schedule and no auto-retry, and the process receives no LLM credentials.
 
 ## 2. Backend composition
 
@@ -89,17 +75,17 @@ The Go package graph, collapsed to the seams that matter.
 flowchart TD
     Server[internal/server<br/>HTTP, SSE, handlers] --> Registry[platforms.Registry<br/>session seam]
     Server --> Router[hostsvc.Router<br/>host/dir seam]
-    Server --> Workflows[automation services<br/>workflows + prompt schedules]
+    Server --> Routines[internal/routines<br/>saved prompts + schedules]
     Server --> Factory[internal/factory<br/>native Issue graph + dispatch]
     Factory --> FactoryModel[internal/factory/model<br/>shared persistence records]
     Factory --> State
     State --> FactoryModel
     Factory --> Registry
     Factory --> Router
-    Workflows --> Registry
-    Workflows --> Router
+    Routines --> Registry
+    Routines --> Router
+    Routines --> State
     Server --> MCP[internal/mcp<br/>MCP tools]
-    MCP --> Workflows
     MCP --> Factory
     Registry --> OC[platforms/opencode + internal/db<br/>adapter and read-only queries]
     Registry --> RP[remote.Platform<br/>gRPC-backed]
@@ -109,18 +95,17 @@ flowchart TD
 ```
 
 - **internal/server.** The HTTP mux, SSE broadcast and fanout, around 60
-  handler files, plus tmux, terminal, whisper, auto-approve and workflow
-  ticks.
-- **internal/factory.** The independent Software Factory boundary. Its
-   stores Epics, Mols, typed Issues, dependencies, attempts, Formula revisions,
+  handler files, plus tmux, terminal, whisper, auto-approve and routine ticks.
+- **internal/factory.** The independent Software Factory boundary. It stores
+   Epics, Mols, typed Issues, dependencies, attempts, Formula revisions,
    Plan revisions, approvals, and materialization provenance in `state.db`.
    TOML Formulas compile to canonical JSON. A Plan session is read-only at the
    project root; approval of an exact revision enables user-requested atomic
    materialization of the one Implementation Issue, which alone launches a
    configured worktree session. The browser uses REST while agents use the one action-based
-   `factory` MCP tool. Workflows state and services are not involved.
+   `factory` MCP tool. Routines are not involved.
 - **Factory persistence.** Native `factory_*` tables own the graph and its
-   provenance in `state.db`; they do not reference or alter Workflows tables.
+   provenance in `state.db`; they do not reference or alter routine tables.
 - **internal/factory/model.** Dependency-neutral persistence records shared by
   `internal/factory` and `internal/state`. Factory owns their meaning; state
   only stores them, which avoids making Factory depend on its SQLite adapter.
@@ -145,88 +130,44 @@ flowchart TD
   on an ocman-allocated loopback port and probes authenticated
   `GET {endpoint}/config` for health. It is where the container runtime (epic
   #375) plugs in as a second implementation.
-- **internal/dagu.** Detects the executable, supervises one lazy private Dagu
-  server, and compiles a workflow version to a Dagu spec. The compiler covers
-  command, agent, approval, map and join nodes plus conditional edges; a map
-  fans out through `dag.run` over a pinned child DAG written to the Dagu DAGs
-  directory. `hostsvc.Host` and the remote gRPC seam keep launch,
-  observation, logs and cancellation on the owning machine.
-- **internal/workflowstep.** `ocman workflow-step`, the command Dagu runs for
-  node types it cannot express. Agent, approval and conditional steps call
-  back into ocman over loopback; a join applies its policy locally. The real
-  node configuration stays in ocman, so prompts and credentials never reach a
-  spec or a Dagu step log.
 - **platforms/opencode.** Wraps the read-only DB queries (`internal/db`) plus
   an HTTP client that attaches to live instances, with `lsof`-based discovery
   for instances started outside ocman. One process-wide `/global/event` stream
   per instance keeps pending permission and question state in memory across
   all session directories.
-- **workflows.Service.** The shared validation, durable trigger and
-  run-lifecycle seam for immutable workflow versions. Durable manual,
-  interval, cron, PR and completion triggers create version-pinned runs
-  (overlap skip, queue or parallel), and a 5 s server tick evaluates triggers
-  through narrow forge and session-status adapters. It schedules approval,
-  permission-scoped command and agent nodes from persisted dependency state.
-  The command executor owns directory and environment policy, bounded logs,
-  JSON stdout validation, and process-tree cancellation. Agent attempts
-  create, send and abort through the session service and poll
-  platform-neutral session status. Agents with an `outputSchema` receive that
-  JSON Schema in their prompt and have their final value validated by
-  `jsonschema`; agents without one only need to complete successfully. REST,
-  MCP and SSE never implement independent transitions. Every node exposes one
-  canonical Node Result, and dependency-scoped interpolation passes its JSON
-  output to commands, environments, prompts, maps and CEL policies. The
-  auxiliary content-addressed `BlobStore` remains for internal map-item
-  payloads and historical artifact downloads, not as a second node-output
-  channel. Referenced secrets resolve from host env at execution time and are
-  redacted from logs and artifact payloads; a background sweep drops payloads
-  past their retention window (30-day default, per-workflow override) but
-  keeps the metadata. A run may own a bounded pool of worktree shards,
-  created host-locally through the git worktree service. Mutating nodes
-  acquire a durable workspace lease in the same transaction as pool capacity,
-  exclusive by default, or path-scoped so disjoint declared scopes share a
-  shard while overlapping (ancestor or exact) scopes cannot. Path-leased
-  nodes are denied repository-wide git mutation (stash, reset, checkout,
-  commit, push and so on) so a commit coordinator owns serialized per-shard
-  git state. Leases carry an optional owning-host identity, release only
-  after the attempt settles, and are visible in the run UI.
-- **The server prompt-schedule service.** The native prompt scheduler. It
-  calculates one-time, interval and five-field cron occurrences with
-  `robfig/cron`, then atomically claims due `state.db` rows before sending the
-  stored prompt through `sessionsvc`. Each occurrence either creates a fresh
-  OpenCode session or queues into the schedule-owned session. On restart,
-  persisted `running` claims become failed rather than being replayed, which
-  prevents a duplicate external dispatch when completion is unknown.
-- **Legacy loop migration (#325).** Migration v28 copies persisted legacy
-  loops into ordinary one-node workflow definitions and turns each iteration
-  into a historical workflow run plus node attempt. `loop_workflow_map` makes
-  the transaction-safe copy idempotent. The legacy tables survive only as
-  non-destructive upgrade input and historical data; no API, MCP, UI or
-  runtime scheduler reads them.
-- **internal/mcp.** MCP tool handlers for workflow control and `embed_file`.
-  Workflow operations go through `workflows.Service`; file embedding uses
-  signed tokens persisted in `state.db`.
+- **internal/routines.** Validates and stores manual, timeout, one-time and
+  cron routines. Manual and scheduled dispatch share the durable occurrence
+  claim, launch a fresh managed session through `hostsvc.Router` and
+  `sessionsvc`, and leave the run active until platform-neutral session status
+  reports success or failure. Startup resumes observation of linked runs.
+  Timeout schedules become an absolute due time when saved. Cron schedules
+  use a five-field expression and IANA timezone. Webhooks are deferred.
+- **Legacy Workflow storage.** The `workflow_*` tables remain in `state.db` as
+  inert historical data. No API, MCP tool, UI, or scheduler reads them. A DAG
+  cannot be converted losslessly to one routine prompt, so recovery is a
+  manual read-only SQLite export.
+- **internal/mcp.** MCP handlers expose the action-based `factory` tool and
+  `embed_file`. File embedding uses signed tokens persisted in `state.db`.
 - **internal/opencodeskills.** Extracts binary-embedded ocman skills into
   XDG data and installs only ocman-owned symlinks for OpenCode discovery.
   Retirement unlinks only the exact verified symlink and preserves extracted data.
 - **internal/state.** Ocman's writable SQLite store: migrations, settings,
-   workflows, prompt schedules, and the independent native Factory Issue graph.
+  routines and their immutable run snapshots, legacy inert Workflow rows,
+  and the independent native Factory Issue graph.
 - **forge and integrations.** Forge-agnostic types in `internal/forge`, per-forge
   HTTP clients in `internal/forge/{github,forgejo}`. PR/Issue handlers obtain repository
   identity from the owner Host, then use the hub clients for metadata.
 
 ## 3. Session and event data flow
 
-How a session read and a live update travel through the system. Workflow runs
-use the same SSE channel: discovery publishes a JSON Node Result, map creates
-pinned child runs from it, item phases fan out to independent reviews, then
-fix, validation and the serialized commit coordinator settle before the run
-view refetches phases, Node Results, historical artifacts, pools and leases.
+How session reads, live updates, and routine dispatch travel through the
+system.
 
 ```mermaid
 sequenceDiagram
     participant B as Browser
     participant S as server handlers
+    participant Q as routines.Service
     participant R as Registry/Router
     participant O as Remote owner
     participant A as opencode adapter
@@ -244,8 +185,11 @@ sequenceDiagram
     O->>A: Session / ProxyEvents
      O->>O: inject persisted approvals,<br/>tee synthetic approval events
      O-->>S: enriched JSON / framed SSE
-      Note over S,E: background: workflow + prompt-schedule ticks,<br/>remote gRPC streams
-      E-->>B: SSE (session.updated, workflow.run.updated)
+    Note over S,Q: every 5 s: claim due routines
+    Q->>R: ensure project instance and create fresh session
+    R->>A: create session and send saved prompt
+    Note over Q,A: poll linked session until it settles
+    E-->>B: SSE (session.updated)
 ```
 
 The key property: ocman never persists session status. The live turn signal
@@ -254,24 +198,12 @@ last stored message row only settles which terminal state a finished session
 is in. Nothing is written back, so there is no sync problem with OpenCode's
 DB.
 
-Workflow state takes the opposite path because ocman owns it. Publish,
-trigger and manual start, approval, command completion, agent supervision,
-pause and cancel all delegate to `workflows.Service`, which commits trigger,
-version, run, node and attempt state plus canonical JSON Node Results to
-`state.db` before broadcasting a run ID. A newly created run is offered to the
-`workflows.ExternalRunner` seam first: Dagu takes every definition the
-compiler can express, and the native dispatcher keeps the rest. Runs Dagu
-executes reach the UI through a one-way mirror that polls Dagu and projects
-run, node and attempt rows back onto `state.db`, so the API and run view are
-identical either way. The browser then refetches the authoritative trigger
-state and run graph, including linked agent sessions and map/join aggregate
-outputs.
-
-One-time prompt schedules are ocman-owned too. The project page creates and
-lists them over REST. The scheduler first commits a durable `running` claim,
-then creates and prompts a session through the shared session mutation
-service. The same row stores completion and error state plus the session link
-the UI shows.
+Ocman owns routine state. The Routines page creates, edits, soft-deletes, and
+starts routines over REST. Manual and scheduled paths first claim an immutable
+run snapshot in `state.db`, then create and prompt a fresh session through the
+shared session service. The run stays active until that session settles. The
+same row stores success or failure, any error, and the session link shown in
+history.
 
 ## 4. Frontend composition
 
@@ -293,17 +225,14 @@ flowchart TD
 
 - **Capability gating.** The UI never branches on platform identity. Features
   toggle via `/api/capabilities`, enforced by a lint script.
-- **Client state.** Shared Zustand stores hold broad session and workflow
-  state. The bounded workflow page keeps its selected run locally and
-  reconciles it from REST whenever the shared SSE stream reports a run
-  change. Its run graph labels ordered phases, stable map items, attempts,
-  Node Results, historical artifacts, resource pools and workspace ownership
-  without inferring platform identity.
+- **Client state.** Shared Zustand stores hold broad session state. The
+  Routines page loads definitions and history over REST and keeps its form and
+  selected edits locally.
 - **Activity leases.** Mounted data subscriptions ref-count their scopes. One
   authenticated reporter renews the visible tab's lease, allowing the backend
   to skip view-serving session, project and metrics refreshes
-  when every tab is hidden or gone. Headless workflows, schedules and
-  auto-approve do not consult these leases.
+  when every tab is hidden or gone. Scheduled routines and auto-approve do not
+  consult these leases.
 - **Beads status.** The right panel queries the repository owner's
   `hostsvc.Host` through `/api/project/beads-status`; remote owners proxy the
   same operation over gRPC. Ticket data stays in the repository and is polled

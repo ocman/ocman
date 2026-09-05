@@ -23,7 +23,7 @@ import (
 // rather than New). Handlers must resolve host operations through this.
 func (s *Server) router() *hostsvc.Router {
 	// Once, not a bare nil check: StartOnListener launches background
-	// loops (auto-archive, prompt schedules, ...) that reach router()
+	// loops (auto-archive, routines, ...) that reach router()
 	// concurrently with the first HTTP handlers, and an unguarded lazy
 	// assignment races them. The nil check stays *inside* the Once so a
 	// test that installs its own router before first use still wins.

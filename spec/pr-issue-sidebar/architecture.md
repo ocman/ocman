@@ -202,7 +202,7 @@ graph TD
   2. Duplicate session creation logic in the handler.
 - **Decision**: Option 1.
 - **Rationale**: The session service is the single mutation path
-  for all session creation (REST, workflows, scheduled prompts).
+  for all session creation (REST, Factory, routines).
   Reusing it keeps validation, permission inheritance, and
   side-effect hooks consistent.
 - **Consequences**:
