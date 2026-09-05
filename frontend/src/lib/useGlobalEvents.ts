@@ -91,28 +91,6 @@ function handleSurface(raw: string): void {
   recheckNotifyData();
 }
 
-const workflowRunUpdatedListeners = new Set<(runId: string) => void>();
-const workflowTriggerUpdatedListeners = new Set<() => void>();
-
-export function onWorkflowRunUpdated(cb: (runId: string) => void): () => void {
-	workflowRunUpdatedListeners.add(cb);
-	return () => workflowRunUpdatedListeners.delete(cb);
-}
-
-export function onWorkflowTriggerUpdated(cb: () => void): () => void {
-	workflowTriggerUpdatedListeners.add(cb);
-	return () => workflowTriggerUpdatedListeners.delete(cb);
-}
-
-function handleWorkflowRunUpdated(raw: string): void {
-	try {
-		const runId = (JSON.parse(raw) as { runId?: string }).runId;
-		if (runId) for (const cb of workflowRunUpdatedListeners) cb(runId);
-	} catch {
-		// Ignore malformed events; the next mutation or reconnect refetches.
-	}
-}
-
 // sessionChangedListeners: subscribers (e.g. the App-level query client)
 // react to a session.changed broadcast by refreshing the session list,
 // so a newly-created session appears immediately instead of on the next
@@ -202,12 +180,6 @@ function open(): void {
   next.addEventListener('ocman.session.changed', (e) => {
     handleSessionChanged((e as MessageEvent).data);
   });
-	next.addEventListener('workflow.run.updated', (e) => {
-		handleWorkflowRunUpdated((e as MessageEvent).data);
-	});
-	next.addEventListener('workflow.trigger.updated', () => {
-		for (const cb of workflowTriggerUpdatedListeners) cb();
-	});
   next.addEventListener('ocman.queue.updated', (e) => {
     handleQueueUpdated((e as MessageEvent).data);
   });

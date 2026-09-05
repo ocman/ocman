@@ -196,8 +196,6 @@ describe('raw-response endpoints raise AuthError on 401', () => {
     ['term.createWindow', () => api.term.createWindow('/dir')],
     ['term.killWindow', () => api.term.killWindow('/dir', 'w1')],
     ['transcribe', () => api.transcribe(new Blob(['x'], { type: 'audio/webm' }))],
-    ['workflows.validate', () => api.workflows.validate('name: x')],
-    ['workflows.publish', () => api.workflows.publish('name: x')],
   ];
 
   for (const [name, call] of cases) {

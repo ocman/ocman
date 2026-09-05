@@ -72,7 +72,7 @@ func TestLocalHost_ReadFileStaysInsideDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := h.ReadFile(t.Context(), dir, "escape"); err == nil {
-		t.Fatal("ReadFile followed a symlink outside the workflow directory")
+		t.Fatal("ReadFile followed a symlink outside the requested directory")
 	}
 }
 

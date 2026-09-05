@@ -113,14 +113,10 @@ func (factoryMCPService) ResolveAuthorityEscalationGate(context.Context, string,
 }
 
 func (s *Server) buildMCPHandlerFor(factoryService factoryService) http.Handler {
-	deps := internalmcp.Deps{
+	return internalmcp.New(internalmcp.Deps{
 		SignFile:       s.FileURL,
 		FactoryService: factoryService,
-	}
-	if s.stateDB != nil {
-		deps.WorkflowService = s.workflowSvc()
-	}
-	return internalmcp.New(deps).Handler()
+	}).Handler()
 }
 
 // mcpServerURL returns the absolute URL of the MCP server endpoint.
@@ -156,7 +152,7 @@ func (s *Server) WithMCPAddr(addr string) *Server {
 // so this endpoint has to accept the loopback peer as its credential.
 // On the main port that would be unsafe — a reverse proxy fronting
 // ocman makes every forwarded request look loopback, which would expose
-// privileged workflow and file tools to the internet. A separate loopback-bound
+// privileged Factory and file tools to the internet. A separate loopback-bound
 // listener is unreachable through that proxy by construction.
 //
 // Any problem (non-loopback address, port in use) is logged and the

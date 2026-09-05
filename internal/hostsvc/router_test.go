@@ -4,10 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/dagu"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/git"
-	"github.com/NoUseFreak/ocman/internal/workflows"
 )
 
 // stubHost is a minimal Host that records its identity for routing tests.
@@ -18,16 +16,6 @@ func (h stubHost) Capabilities() HostCaps { return HostCaps{} }
 func (h stubHost) BeadsStatus(context.Context, string) (BeadsStatus, error) {
 	return BeadsStatus{}, nil
 }
-func (h stubHost) DaguStatus(context.Context) dagu.Result {
-	return dagu.Result{Status: dagu.Unavailable}
-}
-func (h stubHost) StartDaguWorkflow(context.Context, workflows.Definition) (dagu.Run, error) {
-	return dagu.Run{}, nil
-}
-func (h stubHost) GetDaguRun(context.Context, string, string) (dagu.Run, error) {
-	return dagu.Run{}, nil
-}
-func (h stubHost) CancelDaguRun(context.Context, string, string) error { return nil }
 func (h stubHost) GitInfo(context.Context, []string) (map[string]git.Info, error) {
 	return nil, nil
 }

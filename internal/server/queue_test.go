@@ -201,7 +201,7 @@ func TestQueueFlush_BlockedSessionDoesNotBlockIndependentSession(t *testing.T) {
 	}
 }
 
-func TestWorkflowStatusInferer_LatestMessageState(t *testing.T) {
+func TestSessionStatusReaderLatestMessageState(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	status := db.StatusWaiting
 	messages := []db.Message{{ID: "assistant-1", TimeCreated: 200, Data: json.RawMessage(`{"role":"assistant","finish":"stop"}`)}}
@@ -215,7 +215,7 @@ func TestWorkflowStatusInferer_LatestMessageState(t *testing.T) {
 			}, nil
 		},
 	})
-	inferer := &workflowStatusInferer{s: srv}
+	inferer := &sessionStatusReader{s: srv}
 
 	if id, createdAt, running, completed, ok := inferer.LatestMessageState(t.Context(), "fake", "s1"); id != "assistant-1" || createdAt != 200 || running || !ok || !completed {
 		t.Fatalf("latest state = (%q, %d, %v, %v, %v), want (assistant-1, 200, false, true, true)", id, createdAt, running, completed, ok)
@@ -237,8 +237,8 @@ func TestWorkflowStatusInferer_LatestMessageState(t *testing.T) {
 	if id, createdAt, running, completed, ok := inferer.LatestMessageState(t.Context(), "fake", "s1"); id != "" || createdAt != 0 || running || !completed || !ok {
 		t.Fatalf("empty session = (%q, %d, %v, %v, %v), want resolved idle baseline", id, createdAt, running, completed, ok)
 	}
-	// No platform named: the caller (a hand-written workflow trigger) falls
-	// back to the reverse lookup, which cannot resolve an unknown session.
+	// No platform named falls back to reverse lookup, which cannot resolve
+	// an unknown session.
 	if _, _, _, _, ok := inferer.LatestMessageState(t.Context(), "", "missing"); ok {
 		t.Fatal("missing session unexpectedly resolved")
 	}

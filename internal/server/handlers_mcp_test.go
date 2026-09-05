@@ -15,7 +15,7 @@ import (
 // clients: it must serve them even when password auth is configured,
 // because a native MCP client has no way to send an auth cookie.
 func TestMCPListenerServesLocalClientWithPasswordAuth(t *testing.T) {
-	srv := newWorkflowTestServer(t)
+	srv := testServer(t)
 	srv.auth = newTestAuth(t, "hunter2")
 	srv.mcpAddr = "127.0.0.1:0"
 	defer srv.startMCPListener()()
@@ -46,7 +46,7 @@ func TestMCPListenerServesLocalClientWithPasswordAuth(t *testing.T) {
 // the machine. Failing closed leaves /mcp on the main port under auth.
 func TestMCPListenerRefusesNonLoopback(t *testing.T) {
 	for _, addr := range []string{"0.0.0.0:0", "192.0.2.1:8227", "not-an-addr"} {
-		srv := newWorkflowTestServer(t)
+		srv := testServer(t)
 		srv.mcpAddr = addr
 		stop := srv.startMCPListener()
 		stop()
@@ -57,7 +57,7 @@ func TestMCPListenerRefusesNonLoopback(t *testing.T) {
 }
 
 func TestMCPListenerDisabledWhenAddrEmpty(t *testing.T) {
-	srv := newWorkflowTestServer(t)
+	srv := testServer(t)
 	srv.startMCPListener()()
 	if srv.mcpAddr != "" {
 		t.Fatalf("mcpAddr changed to %q", srv.mcpAddr)

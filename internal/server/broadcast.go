@@ -51,7 +51,6 @@ type broadcastEvent struct {
 // under bursts (#490).
 var coalescingEvents = map[string]bool{
 	"ocman.queue.updated":   true,
-	"workflow.run.updated":  true,
 	"ocman.session.idle":    true,
 	"ocman.session.changed": true,
 }
@@ -313,20 +312,6 @@ func (s *Server) broadcastSessionCreated(info sessionsvc.CreatedSession) {
 		return
 	}
 	s.broadcastGlobalEvent("ocman.session.changed", payload)
-}
-
-func (s *Server) broadcastWorkflowRunUpdated(runID string) {
-	if runID == "" {
-		return
-	}
-	payload, err := json.Marshal(map[string]string{"runId": runID})
-	if err == nil {
-		s.broadcastGlobalEvent("workflow.run.updated", payload)
-	}
-}
-
-func (s *Server) broadcastWorkflowTriggerUpdated() {
-	s.broadcastGlobalEvent("workflow.trigger.updated", []byte(`{}`))
 }
 
 // globalEventsKeepaliveInterval is how often we send an SSE comment to

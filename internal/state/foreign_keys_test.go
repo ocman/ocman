@@ -41,7 +41,7 @@ func checkForeignKeys(t *testing.T, db *sql.DB) []fkViolation {
 // TestForeignKeysEnabledOnCleanDatabase pins that a database satisfying
 // its declared constraints gets enforcement turned on. SQLite defaults
 // foreign_keys OFF and nothing set it, so every REFERENCES clause in the
-// workflow tables was decorative.
+// historical tables was decorative.
 func TestForeignKeysEnabledOnCleanDatabase(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.db")
 	db, err := Open(path)
@@ -102,11 +102,8 @@ func TestForeignKeysStayOffOnDirtyDatabase(t *testing.T) {
 	}
 }
 
-// TestForeignKeyCheckOnRealisticDatabase is the diagnostic the FK
-// investigation asked for: build a database that exercises the workflow
-// tables the way the app does, then assert the declared constraints are
-// actually satisfied. If this ever reports violations, the pragma must
-// stay off until the offending write path is fixed.
+// TestForeignKeyCheckOnRealisticDatabase asserts normal writes satisfy all
+// declared constraints, including those on inert historical tables.
 func TestForeignKeyCheckOnRealisticDatabase(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state.db")
 	db, err := Open(path)
@@ -114,32 +111,6 @@ func TestForeignKeyCheckOnRealisticDatabase(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-
-	version, err := db.InsertWorkflowVersion(t.Context(), WorkflowVersion{
-		ID: "version-1", WorkflowID: "workflow-1", Name: "Workflow", MetadataVersion: "1",
-		DefinitionJSON: `{"id":"workflow-1","name":"Workflow","version":"1","concurrency":1,` +
-			`"nodes":[{"id":"build","name":"Build","type":"command"},{"id":"review","name":"Review","type":"agent"}],` +
-			`"dependencies":[{"from":"build","to":"review"}]}`,
-		Concurrency: 1, CreatedAt: 1,
-		Nodes: []WorkflowNode{
-			{ID: "build", Name: "Build", Type: "command"},
-			{ID: "review", Name: "Review", Type: "agent", Position: 1},
-		},
-		Dependencies: []WorkflowDependency{{From: "build", To: "review"}},
-	})
-	if err != nil {
-		t.Fatalf("InsertWorkflowVersion: %v", err)
-	}
-	if err := db.InsertWorkflowRun(t.Context(), WorkflowRun{
-		ID: "run-1", WorkflowID: version.WorkflowID, VersionID: version.ID, State: "active",
-		CreatedAt: 1, UpdatedAt: 1,
-		Nodes: []WorkflowNodeRun{
-			{NodeID: "build", Type: "command", State: "ready"},
-			{NodeID: "review", Type: "agent", State: "pending"},
-		},
-	}); err != nil {
-		t.Fatalf("InsertWorkflowRun: %v", err)
-	}
 
 	if err := db.EnqueueMessage(t.Context(), QueuedMessage{
 		ID: "q1", Platform: "opencode", SessionID: "parent-1", Text: "hi", CreatedAt: 1,

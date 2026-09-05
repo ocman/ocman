@@ -23,7 +23,6 @@ import (
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/singleflight"
 
-	"github.com/NoUseFreak/ocman/internal/dagu"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
@@ -36,7 +35,6 @@ import (
 // (tmux, projects, whisper availability). They are injected so this
 // package does not import server.
 type Deps struct {
-	Dagu DaguService
 	// LaunchTmux runs `opencode --port 0` in a tmux session for the
 	// directory, returning the session name.
 	LaunchTmux func(directory string) (string, error)
@@ -80,13 +78,6 @@ type Deps struct {
 	// TermAttach attaches a local PTY to the selected window and bridges
 	// it to conn until either side closes.
 	TermAttach func(ctx context.Context, req hostsvc.TermAttachRequest, conn hostsvc.TermConn) error
-}
-
-// DaguService reports whether the workflow runner is usable on this
-// host. Runs are started and observed by the workflow service, not
-// through the host seam.
-type DaguService interface {
-	Status(ctx context.Context) dagu.Result
 }
 
 // ValidateFactoryHandoff checks the live worktree without the GitInfo cache.
@@ -192,13 +183,6 @@ func (h *Host) Capabilities() hostsvc.HostCaps {
 		return h.deps.Caps()
 	}
 	return hostsvc.HostCaps{}
-}
-
-func (h *Host) DaguStatus(ctx context.Context) dagu.Result {
-	if h.deps.Dagu != nil {
-		return h.deps.Dagu.Status(ctx)
-	}
-	return dagu.Detect(ctx)
 }
 
 func (h *Host) GitInfo(ctx context.Context, dirs []string) (map[string]git.Info, error) {

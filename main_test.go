@@ -67,7 +67,7 @@ func TestEmbeddedFactorySkillUsesOnlyFactoryActionContract(t *testing.T) {
 			t.Errorf("Factory skill exposes implementation term %q", hidden)
 		}
 	}
-	if len(skills) != 2 || len(skills["ocman-workflows"]) == 0 {
+	if len(skills) != 1 {
 		t.Fatalf("embedded skills = %#v", skills)
 	}
 }

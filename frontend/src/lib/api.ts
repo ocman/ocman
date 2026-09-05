@@ -75,18 +75,10 @@ export type {
   SharedConversation,
   SharingSettings,
   RelaySource,
-	WorkflowVersion,
-	WorkflowDefinition,
-	WorkflowValidation,
-	WorkflowRun,
-	WorkflowRunDetail,
-	WorkflowArtifact,
-	WorkflowMapItemRun,
 	Routine,
 	RoutineRun,
 	RoutineInput,
 	RoutineScheduleKind,
-  DaguStatus,
   FactoryEpic,
   FactoryAttempt,
   CreateWorkEpicRequest,
@@ -150,15 +142,9 @@ import type {
   RemoteStatus,
   RemoteAccessStatus,
   ResolveTargetsResponse,
-	WorkflowVersion,
-	WorkflowValidation,
-	WorkflowRun,
-	WorkflowRunDetail,
-	WorkflowArtifact,
 	Routine,
 	RoutineRun,
 	RoutineInput,
-	DaguStatus,
   FactoryEpic,
   CreateWorkEpicRequest,
 	FactoryIssue,
@@ -879,30 +865,6 @@ export const api = {
 		run: (id: string) => postJSON<RoutineRun, undefined>(`/api/routines/${encodeURIComponent(id)}/run`, undefined),
 		history: (id: string, signal?: AbortSignal) => fetchJSON<RoutineRun[]>(`/api/routines/${encodeURIComponent(id)}/history`, signal),
 	},
-	dagu: {
-		status: (remoteId = 'local', signal?: AbortSignal) => fetchJSON<DaguStatus>(`/api/dagu/status?remoteId=${encodeURIComponent(remoteId)}`, signal),
-	},
-	workflows: {
-		versions: (signal?: AbortSignal) => fetchJSON<WorkflowVersion[]>('/api/workflows', signal),
-		validate: (source: string) => postWorkflowSource<WorkflowValidation>('/api/workflows/validate', source),
-		publish: async (source: string): Promise<WorkflowVersion> => {
-			return postWorkflowSource<WorkflowVersion>('/api/workflows', source);
-		},
-		activate: (versionId: string) => postJSON<WorkflowVersion>(`/api/workflows/${encodeURIComponent(versionId)}/activate`, {}),
-		deactivate: (versionId: string) => postJSON<WorkflowVersion>(`/api/workflows/${encodeURIComponent(versionId)}/deactivate`, {}),
-		archive: (versionId: string) => postJSON<void>(`/api/workflows/${encodeURIComponent(versionId)}`, undefined, { method: 'DELETE' }),
-		startActive: (workflowId: string) => postJSON<WorkflowRunDetail>(`/api/workflows/${encodeURIComponent(workflowId)}/start`, {}),
-		start: (versionId: string) => postJSON<WorkflowRunDetail>(`/api/workflows/${encodeURIComponent(versionId)}/runs`, {}),
-		runs: (signal?: AbortSignal) => fetchJSON<WorkflowRun[]>('/api/workflow-runs', signal),
-		run: (runId: string, signal?: AbortSignal) => fetchJSON<WorkflowRunDetail>(`/api/workflow-runs/${encodeURIComponent(runId)}`, signal),
-		approve: (runId: string, nodeId: string) => postJSON<WorkflowRunDetail>(`/api/workflow-runs/${encodeURIComponent(runId)}/approve/${encodeURIComponent(nodeId)}`, {}),
-		pause: (runId: string) => postJSON<WorkflowRunDetail>(`/api/workflow-runs/${encodeURIComponent(runId)}/pause`, {}),
-		cancel: (runId: string) => postJSON<WorkflowRunDetail>(`/api/workflow-runs/${encodeURIComponent(runId)}/cancel`, {}),
-		resolveUnknown: (runId: string, attemptId: number, resolution: 'successful' | 'failed' | 'retry') => postJSON<WorkflowRunDetail>(`/api/workflow-runs/${encodeURIComponent(runId)}/resolve-unknown/${attemptId}`, { resolution }),
-		retryFrom: (runId: string, nodeId: string, versionId?: string) => postJSON<WorkflowRunDetail>(`/api/workflow-runs/${encodeURIComponent(runId)}/retry-from/${encodeURIComponent(nodeId)}`, { versionId: versionId ?? '' }),
-		artifacts: (runId: string, signal?: AbortSignal) => fetchJSON<WorkflowArtifact[]>(`/api/workflow-runs/${encodeURIComponent(runId)}/artifacts`, signal),
-		artifactDownloadUrl: (runId: string, artifactId: string) => `/api/workflow-runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(artifactId)}/download`,
-	},
   compactSession: (sessionId: string, providerID: string, modelID: string) =>
     postJSON<void>(
       `/api/session/${encodeURIComponent(sessionId)}/compact`,
@@ -1071,10 +1033,3 @@ export const api = {
   setJudgeModel: (model: string): Promise<void> =>
     postJSON<void>('/api/settings/judge-model', { model }, { parseJSON: false }),
 };
-
-async function postWorkflowSource<T>(url: string, source: string): Promise<T> {
-	const response = await apiFetch(url, { method: 'POST', headers: { 'Content-Type': 'application/yaml' }, body: source });
-	await raiseForUnauthorized(response);
-	if (!response.ok) throw new Error(await response.text());
-	return response.json();
-}

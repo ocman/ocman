@@ -28,21 +28,17 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
 	"github.com/NoUseFreak/ocman/internal/toolpath"
-	"github.com/NoUseFreak/ocman/internal/workflowstep"
 )
 
 // version is overridden at build time via -ldflags='-X main.version=...'.
 // It's surfaced as service.version on every OTel resource.
 var version = "dev"
 
-//go:embed .opencode/skills/ocman-workflows/SKILL.md
-var workflowsSkill []byte
-
 //go:embed .opencode/skills/ocman-factory/SKILL.md
 var factorySkill []byte
 
 func embeddedSkills() map[string][]byte {
-	return map[string][]byte{"ocman-factory": factorySkill, "ocman-workflows": workflowsSkill}
+	return map[string][]byte{"ocman-factory": factorySkill}
 }
 
 // authPasswordEnv is the environment variable consulted for the auth
@@ -84,20 +80,15 @@ func main() {
 		os.Exit(0)
 	}
 
-	// `ocman workflow-step ...` is how the external workflow runner
-	// executes agent, approval, join, and conditional nodes. It runs as a
-	// short-lived child process of the runner, not as the server, so it
-	// short-circuits before any server setup.
-	if len(os.Args) > 1 && os.Args[1] == "workflow-step" {
-		os.Exit(workflowstep.Run(os.Args[2:], os.Stdout, os.Stderr))
-	}
-
 	// Colored text logs. logrus already defaults to text, but disables
 	// color when stdout isn't a TTY — which it isn't under `make dev`/air
 	// (piped). ForceColors keeps the color; FullTimestamp adds the date.
 	log.SetFormatter(&log.TextFormatter{ForceColors: true, FullTimestamp: true})
 	if err := opencodeskills.Remove("ocman-sessions"); err != nil {
 		log.WithError(err).Warn("removing retired ocman session skill")
+	}
+	if err := opencodeskills.Remove("ocman-workflows"); err != nil {
+		log.WithError(err).Warn("removing retired ocman workflows skill")
 	}
 	if err := opencodeskills.Install(embeddedSkills()); err != nil {
 		log.WithError(err).Warn("installing embedded ocman skills")

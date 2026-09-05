@@ -8,6 +8,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/queuesvc"
@@ -60,7 +61,7 @@ func (s *Server) queueSvc() *queuesvc.Service {
 		s.queueSvcCached = queuesvc.New(
 			s.stateDB,
 			&queueSender{s: s},
-			&workflowStatusInferer{s: s},
+			&sessionStatusReader{s: s},
 			func(ctx context.Context, platform, sessionID string) {
 				s.broadcastQueueUpdated(ctx, platform, sessionID)
 			},
@@ -84,6 +85,50 @@ func (s *Server) queueFlushWorker() *worker.Worker[queueFlush] {
 // direct-send path. The composer's own "send now" path calls sendNow
 // directly rather than through the queue, so there is no recursion.
 type queueSender struct{ s *Server }
+
+type sessionStatusReader struct{ s *Server }
+
+func (i *sessionStatusReader) sessionDetail(ctx context.Context, platform, sessionID string) (*platforms.SessionDetail, bool) {
+	var p platforms.Platform
+	var found bool
+	if platform != "" {
+		p, found = i.s.registry.Get(platforms.ID(platform))
+	} else {
+		p, found = i.s.registry.PlatformForSession(ctx, sessionID)
+	}
+	if !found {
+		return nil, false
+	}
+	detail, err := p.Session(ctx, sessionID, 1, 0)
+	return detail, err == nil && detail != nil && detail.Session != nil
+}
+
+func (i *sessionStatusReader) TurnRunning(ctx context.Context, platform, sessionID string) (bool, bool) {
+	detail, ok := i.sessionDetail(ctx, platform, sessionID)
+	if !ok {
+		return false, false
+	}
+	return detail.Session.Status == db.StatusBusy, true
+}
+
+func (i *sessionStatusReader) LatestMessageState(ctx context.Context, platform, sessionID string) (string, int64, bool, bool, bool) {
+	detail, ok := i.sessionDetail(ctx, platform, sessionID)
+	if !ok {
+		return "", 0, false, false, false
+	}
+	if len(detail.Messages) == 0 {
+		return "", 0, false, true, true
+	}
+	message := detail.Messages[0]
+	var data struct {
+		Role string `json:"role"`
+	}
+	if json.Unmarshal(message.Data, &data) != nil {
+		return "", 0, false, false, false
+	}
+	running := detail.Session.Status == db.StatusBusy
+	return message.ID, message.TimeCreated, running, data.Role == "assistant" && !running, true
+}
 
 func (q *queueSender) SendNow(ctx context.Context, platformID string, req platforms.SendMessageRequest) error {
 	return q.s.sendNow(ctx, platformID, req)

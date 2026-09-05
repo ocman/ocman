@@ -53,7 +53,7 @@ func (s *Server) handleRoutines(w http.ResponseWriter, r *http.Request) {
 		s.handleRoutineCollection(w, r)
 		return
 	}
-	id, action, extra := cutWorkflowPath(rest)
+	id, action, extra := cutRoutinePath(rest)
 	if id == "" || extra != "" {
 		http.NotFound(w, r)
 		return
@@ -90,6 +90,18 @@ func (s *Server) handleRoutines(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+func cutRoutinePath(path string) (first, second, rest string) {
+	parts := strings.SplitN(path, "/", 3)
+	first = parts[0]
+	if len(parts) > 1 {
+		second = parts[1]
+	}
+	if len(parts) > 2 {
+		rest = parts[2]
+	}
+	return
 }
 
 func (s *Server) handleRoutineCollection(w http.ResponseWriter, r *http.Request) {

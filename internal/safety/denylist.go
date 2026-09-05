@@ -1,13 +1,8 @@
-// Package safety holds the hard command denylist shared by the
-// auto-approve judge and the workflow command executor.
+// Package safety holds the auto-approve judge's hard command denylist.
 //
-// Both of those gates are otherwise controlled by untrusted input: the
-// judge's only gate is an LLM verdict on a prompt that interpolates the
-// agent's own command text, and a workflow command node is gated only
-// by permission rules that come from the agent-published workflow
-// definition itself (an agent can publish `bash *: allow`). This
-// denylist is evaluated first in both paths and cannot be overridden by
-// a rule, a verdict, or a cached approval.
+// The judge's verdict operates on a prompt that interpolates the agent's
+// own command text. This denylist is evaluated first and cannot be
+// overridden by a verdict or cached approval.
 //
 // It is deliberately small and obvious. It is a backstop against the
 // catastrophic and irreversible, not a sandbox: anything not listed

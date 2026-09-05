@@ -13,10 +13,6 @@ type Deps struct {
 	// Optional: nil disables Factory tools.
 	FactoryService factoryService
 
-	// WorkflowService drives workflow authoring and run-control tools.
-	// Optional: nil disables workflow tools.
-	WorkflowService workflowService
-
 	// SignFile mints a browser-reachable URL for a file on disk, backing
 	// the embed_file tool. Optional: nil makes embed_file report that
 	// file embedding is unavailable.
@@ -40,7 +36,6 @@ func New(deps Deps) *Server {
 	addFileTools(s, &fileTools{sign: deps.SignFile})
 
 	addFactoryTools(s, &factoryTools{svc: deps.FactoryService})
-	addWorkflowTools(s, &workflowTools{svc: deps.WorkflowService})
 
 	httpHandler := mcpserver.NewStreamableHTTPServer(s,
 		mcpserver.WithStateLess(true),
@@ -63,6 +58,5 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 		{Tool: embedFileTool(), Handler: (&fileTools{sign: deps.SignFile}).handleEmbedFile},
 	}
 	tools = append(tools, factoryServerTools(&factoryTools{svc: deps.FactoryService})...)
-	tools = append(tools, workflowServerTools(&workflowTools{svc: deps.WorkflowService})...)
 	return tools
 }

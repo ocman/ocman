@@ -601,6 +601,5 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 			"enabled": true,
 			"url":     s.mcpServerURL(),
 		},
-		"workflows": map[string]bool{"enabled": s.stateDB != nil},
 	})
 }

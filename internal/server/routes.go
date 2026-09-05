@@ -95,7 +95,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	routineHandler := s.requireLocalhost(s.handleRoutines)
 	mux.HandleFunc("/api/routines", routineHandler)
 	mux.HandleFunc("/api/routines/", routineHandler)
-	mux.HandleFunc("/api/dagu/status", s.get(s.handleDaguStatus))
 	mux.HandleFunc("/api/factory/status", s.get(s.handleFactoryStatus))
 	mux.HandleFunc("/api/factory/queue", s.get(s.handleFactoryQueue))
 	mux.HandleFunc("/api/factory/recovery-gates/", s.requireAuth(s.handleFactoryRecoveryGate))
@@ -106,19 +105,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/factory/formulas", s.requireAuth(s.handleFactoryFormulas))
 	mux.HandleFunc("/api/factory/formulas/", s.requireAuth(s.handleFactoryFormulas))
 
-	workflowHandler := s.requireLocalhost(s.handleWorkflows)
-	mux.HandleFunc("/api/workflows", workflowHandler)
-	mux.HandleFunc("/api/workflows/", workflowHandler)
-	workflowRunHandler := s.requireLocalhost(s.handleWorkflowRuns)
-	mux.HandleFunc("/api/workflow-runs", workflowRunHandler)
-	mux.HandleFunc("/api/workflow-runs/", workflowRunHandler)
-	// Backs `ocman workflow-step`, which the external runner executes for
-	// node types it cannot run itself. Localhost-only: it drives agent
-	// sessions and settles run state.
-	mux.HandleFunc("/api/workflow-steps", s.requireLocalhost(requirePOST(s.handleWorkflowStep)))
-
-	// MCP server — localhost-only, enabled by default. Exposes workflow
-	// controls and file embedding to AI coding agents.
+	// MCP server — localhost-only, enabled by default.
 	// Password auth applies here like everywhere else. Clients that
 	// can't send a cookie use the dedicated loopback listener instead
 	// (-mcp-addr, see startMCPListener).

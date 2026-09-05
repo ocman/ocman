@@ -207,8 +207,3 @@ export function useMultiHost(): boolean {
   const all = useCapabilities();
   return (all?.hosts?.length ?? 0) > 1;
 }
-
-export function useWorkflows(): boolean {
-  const all = useCapabilities();
-  return all?.workflows?.enabled === true;
-}

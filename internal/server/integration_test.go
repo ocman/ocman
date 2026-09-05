@@ -293,11 +293,11 @@ func TestHandleCreateSession_RefreshesProjectsIndex(t *testing.T) {
 func TestHandleCreateSession_RemoteEnsuresBeforeCreate(t *testing.T) {
 	srv := testServer(t)
 	var ensured string
-	srv.hostRouter = hostsvc.NewRouter(&promptEnsureHost{ensure: func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	srv.hostRouter = hostsvc.NewRouter(&ensureHost{ensure: func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
 		t.Fatal("local host must not be ensured for a remote session")
 		return nil, nil
 	}})
-	srv.hostRouter.RegisterRemote("rem1", &promptEnsureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	srv.hostRouter.RegisterRemote("rem1", &ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
 		ensured = req.ProjectDir
 		return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:7788", RepoRoot: req.ProjectDir}, nil
 	}})
@@ -334,7 +334,7 @@ func TestHandleCreateSession_RemoteEnsuresBeforeCreate(t *testing.T) {
 func TestHandleCreateSession_LocalEnsuresBeforeCreate(t *testing.T) {
 	srv := testServer(t)
 	var ensured string
-	srv.hostRouter = hostsvc.NewRouter(&promptEnsureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	srv.hostRouter = hostsvc.NewRouter(&ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
 		ensured = req.ProjectDir
 		return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:6611", RepoRoot: req.ProjectDir}, nil
 	}})
@@ -372,13 +372,13 @@ func TestHandleCreateSession_LocalEnsuresBeforeCreate(t *testing.T) {
 func TestHandleCreateSession_LocalEnsurePinnedToHub(t *testing.T) {
 	srv := testServer(t)
 	var ensured string
-	srv.hostRouter = hostsvc.NewRouter(&promptEnsureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	srv.hostRouter = hostsvc.NewRouter(&ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
 		ensured = req.ProjectDir
 		return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:6613", RepoRoot: req.ProjectDir}, nil
 	}})
 	// A remote whose inventory claims the same absolute path. ForDir would
 	// resolve the directory to it; the handler must not.
-	srv.hostRouter.RegisterRemote("rem1", &promptEnsureHost{ensure: func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	srv.hostRouter.RegisterRemote("rem1", &ensureHost{ensure: func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
 		t.Error("remote host must not be ensured for a local-platform session")
 		return nil, errors.New("wrong host")
 	}})
@@ -415,7 +415,7 @@ func TestHandleCreateSession_LocalEnsurePinnedToHub(t *testing.T) {
 func TestHandleCreateSession_EnsuresProjectRootNotWorktree(t *testing.T) {
 	srv := testServer(t)
 	var ensured string
-	srv.hostRouter = hostsvc.NewRouter(&promptEnsureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	srv.hostRouter = hostsvc.NewRouter(&ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
 		ensured = req.ProjectDir
 		return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:6612", RepoRoot: req.ProjectDir}, nil
 	}})
@@ -451,7 +451,7 @@ func TestHandleCreateSession_EnsuresProjectRootNotWorktree(t *testing.T) {
 // instance discovery finds, exactly as before.
 func TestHandleCreateSession_LocalEnsureFailureFallsBackToDiscovery(t *testing.T) {
 	srv := testServer(t)
-	srv.hostRouter = hostsvc.NewRouter(&promptEnsureHost{ensure: func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	srv.hostRouter = hostsvc.NewRouter(&ensureHost{ensure: func(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
 		return nil, errors.New("not a git repository")
 	}})
 

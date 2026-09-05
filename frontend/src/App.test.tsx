@@ -20,7 +20,6 @@ describe('routeTitle', () => {
     ['/analytics/performance', 'Analytics'],
     ['/settings', 'Settings'],
     ['/routines', 'Routines'],
-    ['/workflows', 'ocman'],
     ['/factory/epics', 'Factory'],
     ['/factory/issues', 'Factory'],
     ['/factory/epics/ship-a1b2', 'Factory'],

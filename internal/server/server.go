@@ -16,7 +16,6 @@ import (
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
-	"github.com/NoUseFreak/ocman/internal/dagu"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/factory"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
@@ -34,7 +33,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/term"
 	"github.com/NoUseFreak/ocman/internal/tmux"
 	"github.com/NoUseFreak/ocman/internal/worker"
-	"github.com/NoUseFreak/ocman/internal/workflows"
 )
 
 const (
@@ -126,14 +124,7 @@ type Server struct {
 	// rows without a full remote.Manager.
 	remoteProjectsFn func() []db.ProjectStats
 
-	workflowSvcCached *workflows.Service
-	workflowSvcOnce   sync.Once
-	// workflowBlobDir overrides the content-addressed artifact payload
-	// directory. Empty = <ocman data dir>/workflow-artifacts. Tests set
-	// it to a temp dir.
-	workflowBlobDir   string
-	promptScheduleSvc *promptScheduleService
-	routineSvc        *routines.Service
+	routineSvc *routines.Service
 
 	// queueSvcCached is the follow-up message queue service (#58), built
 	// lazily on first use. Guarded by
@@ -149,7 +140,6 @@ type Server struct {
 	// handlers don't spawn (and leak) real tmux sessions in temp dirs.
 	runtime      ocruntime.Runtime
 	openCodeAuth ocapi.Auth
-	daguManager  *dagu.Manager
 	factory      factoryService
 
 	getNewAssistantMessages func(context.Context, int64) ([]db.LLMMessageRow, int64, error)
@@ -265,9 +255,6 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 	})
 	factorySvc := factory.NewNativeWithExecution(stateDB, factoryProjectResolver{server: s}, factoryPlanningLauncher{server: s}, factoryImplementationLauncher{server: s})
 	s.factory = factorySvc
-	if stateDB != nil {
-		s.promptScheduleSvc = newPromptScheduleService(stateDB, managedPromptSessions{s}, nil, nil)
-	}
 	return s
 }
 
@@ -322,16 +309,7 @@ func (s *Server) SessionService() *sessionsvc.Service { return s.sessions }
 // dependency-injected local Host (which owns the the git package call
 // sites directly). See internal/hostsvc/local.
 func (s *Server) newLocalHost() hostsvc.Host {
-	if s.daguManager == nil {
-		s.daguManager = dagu.NewManager(state.DefaultDataDir()+"/dagu", nil, nil)
-		// The runner spawns `ocman workflow-step`, which calls back here
-		// for agent, approval, and conditional nodes. Without this the
-		// shim falls back to the default port and cannot reach an ocman
-		// bound anywhere else.
-		s.daguManager.SetOcmanEndpoint(loopbackEndpoint(s.addr))
-	}
 	return hostlocal.New(hostlocal.Deps{
-		Dagu:         s.daguManager,
 		LaunchTmux:   tmux.LaunchOpencode,
 		Runtime:      s.runtime,
 		DiscoverPort: opencode.DiscoverOpenCodePortFresh,
@@ -497,11 +475,6 @@ func (s *Server) Start(ctx context.Context) error {
 // This variant is used by the GUI mode, which picks the port before handing
 // the listener here so Wails can point its proxy at the correct address.
 func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
-	defer func() {
-		if s.daguManager != nil {
-			_ = s.daguManager.Close()
-		}
-	}()
 	// Build the host router on this goroutine, before any background loop
 	// or handler can reach it. router() assigns lazily, and the loops
 	// started below race that assignment otherwise.
@@ -528,11 +501,6 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 		s.aaSvc().SetJudgeDelayMs(state.DefaultJudgeDelayMs)
 	}
 
-	if s.promptScheduleSvc != nil {
-		if err := s.promptScheduleSvc.Recover(context.WithoutCancel(ctx)); err != nil {
-			return fmt.Errorf("recovering interrupted prompt schedules: %w", err)
-		}
-	}
 	if s.routineSvc != nil {
 		if err := s.routineSvc.Recover(context.WithoutCancel(ctx)); err != nil {
 			return fmt.Errorf("recovering routines: %w", err)
@@ -542,11 +510,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	go s.runAutoArchiveLoop(ctx)
 	go s.runProjectsIndexLoop(ctx)
 	go s.runLLMMetricsLoop(ctx)
-	go s.runWorkflowEngine(ctx)
-	go s.runWorkflowTriggerEngine(ctx)
-	go s.runWorkflowMirror(ctx)
 	go s.runQueueSweep(ctx)
-	go s.runPromptSchedules(ctx)
 	go s.runRoutines(ctx)
 	// Headless auto-approve: subscribe directly to each OpenCode
 	// instance's /event SSE stream so permission.asked events drive

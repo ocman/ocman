@@ -86,15 +86,15 @@ func TestClientActivityPolicyClampsTTL(t *testing.T) {
 	}
 
 	now = time.Unix(200, 0)
-	if err := p.Update(clientActivityLease{ClientID: "long", Visible: true, Scopes: []string{"workflows"}, TTLMS: int64(^uint64(0) >> 1)}); err != nil {
+	if err := p.Update(clientActivityLease{ClientID: "long", Visible: true, Scopes: []string{"sessions"}, TTLMS: int64(^uint64(0) >> 1)}); err != nil {
 		t.Fatal(err)
 	}
 	now = now.Add(minClientActivityTTL + time.Millisecond)
-	if !p.HasDemand("workflows") {
+	if !p.HasDemand("sessions") {
 		t.Fatal("overflowing TTL should be clamped to the maximum, not the minimum")
 	}
 	now = time.Unix(200, 0).Add(maxClientActivityTTL + time.Millisecond)
-	if p.HasDemand("workflows") {
+	if p.HasDemand("sessions") {
 		t.Fatal("TTL should be clamped to the maximum")
 	}
 }

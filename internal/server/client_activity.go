@@ -116,7 +116,7 @@ func validClientActivityID(id string) bool {
 
 func validClientActivityScope(scope string) bool {
 	switch scope {
-	case "sessions", "projects", "metrics", "workflows":
+	case "sessions", "projects", "metrics":
 		return true
 	}
 	if len(scope) > 1024 {

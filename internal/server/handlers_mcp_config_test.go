@@ -134,7 +134,7 @@ func TestHandleMCPConfigInstallRefusesJSONC(t *testing.T) {
 // The install route mutates a file in the user's home, so it must reject
 // non-loopback and cross-origin callers.
 func TestMCPConfigInstallRouteIsLocalhostOnly(t *testing.T) {
-	srv := newWorkflowTestServer(t)
+	srv := testServer(t)
 	mux, err := srv.routes()
 	if err != nil {
 		t.Fatal(err)

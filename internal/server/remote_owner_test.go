@@ -10,7 +10,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/dagu"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
@@ -63,11 +62,6 @@ func (h *ownerSpy) TermAttach(context.Context, hostsvc.TermAttachRequest, hostsv
 func (h *ownerSpy) BeadsStatus(context.Context, string) (hostsvc.BeadsStatus, error) {
 	h.hit()
 	return hostsvc.BeadsStatus{}, nil
-}
-
-func (h *ownerSpy) DaguStatus(context.Context) dagu.Result {
-	h.hit()
-	return dagu.Result{}
 }
 
 // newOwnerTestServer builds the minimal Server these owner-routing tests
@@ -140,12 +134,6 @@ func TestHandlersFailClosedOnUnknownRemote(t *testing.T) {
 			name: "beads status",
 			invoke: func(s *Server, w http.ResponseWriter) {
 				s.handleProjectBeadsStatus(w, httptest.NewRequest(http.MethodGet, "/api/project/beads-status?dir="+dir+"&remoteId=gone", nil))
-			},
-		},
-		{
-			name: "dagu status",
-			invoke: func(s *Server, w http.ResponseWriter) {
-				s.handleDaguStatus(w, httptest.NewRequest(http.MethodGet, "/api/dagu/status?remoteId=gone", nil))
 			},
 		},
 		{
@@ -274,13 +262,6 @@ func TestHandlersAcceptLocalOwner(t *testing.T) {
 			wantHostCall: true,
 			invoke: func(s *Server, w http.ResponseWriter, rid string) {
 				s.handleProjectBeadsStatus(w, httptest.NewRequest(http.MethodGet, "/api/project/beads-status?dir="+dir+"&remoteId="+rid, nil))
-			},
-		},
-		{
-			name:         "dagu status",
-			wantHostCall: true,
-			invoke: func(s *Server, w http.ResponseWriter, rid string) {
-				s.handleDaguStatus(w, httptest.NewRequest(http.MethodGet, "/api/dagu/status?remoteId="+rid, nil))
 			},
 		},
 		{

@@ -20,7 +20,6 @@ import (
 	"context"
 	"net/url"
 
-	"github.com/NoUseFreak/ocman/internal/dagu"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/forge"
 	"github.com/NoUseFreak/ocman/internal/git"
@@ -229,10 +228,6 @@ type Host interface {
 	// BeadsStatus returns the read-only Beads ticket tree for dir. An
 	// unavailable installation or workspace is represented by Available=false.
 	BeadsStatus(ctx context.Context, dir string) (BeadsStatus, error)
-
-	// DaguStatus detects the separately installed Dagu CLI without
-	// starting a process or workflow.
-	DaguStatus(ctx context.Context) dagu.Result
 
 	// GitInfo returns per-directory git status for each dir.
 	GitInfo(ctx context.Context, dirs []string) (map[string]git.Info, error)
