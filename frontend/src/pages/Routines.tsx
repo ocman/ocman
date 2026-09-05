@@ -82,18 +82,28 @@ export function Routines() {
 
   useEffect(() => {
     let active = true;
-    Promise.all([api.routines.list(), api.projects()])
-      .then(async ([items, projectItems]) => {
+    let refreshing = false;
+    const refresh = async () => {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        const [items, projectItems] = await Promise.all([api.routines.list(), api.projects()]);
         const entries = await Promise.all(items.map(async (item) => [item.id, await api.routines.history(item.id)] as const));
         if (active) {
           setRoutines(items);
           setProjects(projectItems);
           setHistory(Object.fromEntries(entries));
         }
-      })
-      .catch((err: Error) => active && setError(err.message || 'Could not load routines.'))
-      .finally(() => active && setLoading(false));
-    return () => { active = false; };
+      } catch (err) {
+        if (active) setError(err instanceof Error ? err.message : 'Could not load routines.');
+      } finally {
+        refreshing = false;
+        if (active) setLoading(false);
+      }
+    };
+    void refresh();
+    const interval = window.setInterval(() => void refresh(), 5_000);
+    return () => { active = false; window.clearInterval(interval); };
   }, []);
 
   const openCreate = () => {
@@ -117,7 +127,8 @@ export function Routines() {
     try {
       const target = await resolveTargetForDir(form.directory);
       if (!target) return;
-      const input = inputFor(form, target.remoteId || 'local');
+      if (!target.remoteId) throw new Error('Could not resolve routine target.');
+      const input = inputFor(form, target.remoteId);
       if (editing) await api.routines.update(editing, input);
       else await api.routines.create(input);
       await load();

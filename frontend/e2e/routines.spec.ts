@@ -15,7 +15,7 @@ test('creates and runs a routine', async ({ mockedPage: page }) => {
   });
   await page.route('/api/routines/routine-1/history', (route) => route.fulfill({ json: runs }));
   await page.route('/api/routines/routine-1/run', (route) => {
-    const run = { id: 'run-1', routineId: 'routine-1', routineName: 'Release check', prompt: 'Check release health', directory: '/home/user/projects/myapp', remoteId: 'local', trigger: 'manual', platform: 'opencode', sessionId: 'routine-session', state: 'running', occurrenceAt: Date.now(), createdAt: Date.now() };
+    const run = { id: 'run-1', routineId: 'routine-1', routineUpdatedAt: Date.now(), routineName: 'Release check', prompt: 'Check release health', directory: '/home/user/projects/myapp', remoteId: 'local', trigger: 'manual', platform: 'opencode', sessionId: 'routine-session', state: 'running', occurrenceAt: Date.now(), createdAt: Date.now() };
     runs = [run];
     return route.fulfill({ json: run });
   });

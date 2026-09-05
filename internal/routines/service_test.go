@@ -254,6 +254,47 @@ func TestTerminalStatusesRecurrenceOneShotsAndAutoDelete(t *testing.T) {
 	}
 }
 
+func TestFinishingRunDoesNotOverwriteRoutineEditedAfterClaim(t *testing.T) {
+	h := newHarness(t)
+	input := validInput()
+	input.Schedule = Schedule{Kind: ScheduleCron, Cron: "*/5 * * * *", Timezone: "UTC"}
+	routine, err := h.svc.Create(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.RunNow(t.Context(), routine.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	h.now.Add(time.Minute.Milliseconds())
+	edited := validInput()
+	edited.Schedule = Schedule{Kind: ScheduleCron, Cron: "0 12 * * *", Timezone: "UTC"}
+	editedRoutine, err := h.svc.Update(t.Context(), routine.ID, edited)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.platform.setStatus(db.StatusDone)
+	h.now.Add(time.Minute.Milliseconds())
+	if err := h.svc.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := h.db.GetRoutine(t.Context(), routine.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runs, err := h.db.ListRoutineRuns(t.Context(), routine.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runs[0].State != RunSuccess {
+		t.Fatalf("run = %+v", runs[0])
+	}
+	if got.ScheduleConfigJSON != editedRoutine.ScheduleConfigJSON || got.NextDueAt != editedRoutine.NextDueAt || got.UpdatedAt != editedRoutine.UpdatedAt {
+		t.Fatalf("routine = %+v, want edited schedule %+v", got, editedRoutine)
+	}
+}
+
 func TestRecoveryKeepsBusyLinkedRunAndSettlesItLater(t *testing.T) {
 	h := newHarness(t)
 	routine, _ := h.svc.Create(t.Context(), validInput())
@@ -266,6 +307,14 @@ func TestRecoveryKeepsBusyLinkedRunAndSettlesItLater(t *testing.T) {
 	runs, _ := h.db.ListRoutineRuns(t.Context(), routine.ID)
 	if runs[0].State != RunRunning {
 		t.Fatalf("busy run = %+v", runs[0])
+	}
+	h.platform.setStatus(db.StatusWaiting)
+	if err := h.svc.Recover(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	runs, _ = h.db.ListRoutineRuns(t.Context(), routine.ID)
+	if runs[0].State != RunRunning {
+		t.Fatalf("waiting run = %+v", runs[0])
 	}
 	h.platform.setStatus(db.StatusDone)
 	if err := h.svc.Recover(t.Context()); err != nil {

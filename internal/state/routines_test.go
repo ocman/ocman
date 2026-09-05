@@ -80,7 +80,7 @@ func TestRoutineRunSnapshotsHistoryAndOrdering(t *testing.T) {
 		ID: "run-1", RoutineID: routine.ID, Trigger: "schedule", State: "dispatching",
 		OccurrenceAt: 100, CreatedAt: 10, StartedAt: 11,
 	})
-	if err != nil || !claimed || run.RoutineName != routine.Name || run.Prompt != routine.Prompt || run.Directory != routine.Directory || run.RemoteID != routine.RemoteID {
+	if err != nil || !claimed || run.RoutineUpdatedAt != routine.UpdatedAt || run.RoutineName != routine.Name || run.Prompt != routine.Prompt || run.Directory != routine.Directory || run.RemoteID != routine.RemoteID {
 		t.Fatalf("run = %+v, claimed=%v, err=%v", run, claimed, err)
 	}
 	routine.Name = "Renamed"

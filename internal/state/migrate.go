@@ -2421,6 +2421,7 @@ func migrateToV70(tx *sql.Tx) error {
 		CREATE TABLE IF NOT EXISTS routine_run (
 			id             TEXT PRIMARY KEY,
 			routine_id     TEXT NOT NULL REFERENCES routine(id),
+			routine_updated_at INTEGER NOT NULL,
 			routine_name   TEXT NOT NULL,
 			prompt         TEXT NOT NULL,
 			directory      TEXT NOT NULL,
@@ -2440,7 +2441,7 @@ func migrateToV70(tx *sql.Tx) error {
 		CREATE TRIGGER IF NOT EXISTS routine_no_delete BEFORE DELETE ON routine
 		BEGIN SELECT RAISE(ABORT, 'routines are soft-deleted'); END;
 		CREATE TRIGGER IF NOT EXISTS routine_run_snapshot_immutable BEFORE UPDATE OF
-			id, routine_id, routine_name, prompt, directory, remote_id, trigger, occurrence_at, created_at ON routine_run
+			id, routine_id, routine_updated_at, routine_name, prompt, directory, remote_id, trigger, occurrence_at, created_at ON routine_run
 		BEGIN SELECT RAISE(ABORT, 'routine run snapshots are immutable'); END;
 		CREATE TRIGGER IF NOT EXISTS routine_run_no_delete BEFORE DELETE ON routine_run
 		BEGIN SELECT RAISE(ABORT, 'routine runs are append-only'); END;

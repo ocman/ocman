@@ -42,8 +42,8 @@ func TestRemoteConnRequiresExplicitPlaintextOptIn(t *testing.T) {
 }
 
 func TestProtocolCompatible(t *testing.T) {
-	if ProtocolVersion != 5 {
-		t.Fatalf("ProtocolVersion = %d, want 5", ProtocolVersion)
+	if ProtocolVersion != 6 {
+		t.Fatalf("ProtocolVersion = %d, want 6", ProtocolVersion)
 	}
 	if !protocolCompatible(ProtocolVersion) {
 		t.Error("current protocol version should be compatible")

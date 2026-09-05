@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { api, type Routine } from '../lib/api';
@@ -22,13 +22,15 @@ describe('Routines', () => {
     vi.clearAllMocks();
     vi.mocked(api.projects).mockResolvedValue([{ directory: '/repo', archived: false } as never]);
     vi.mocked(api.routines.list).mockResolvedValue([routine]);
-    vi.mocked(api.routines.history).mockResolvedValue([{ id: 'run-1', routineId: routine.id, routineName: routine.name, prompt: routine.prompt, directory: '/repo', remoteId: 'local', trigger: 'manual', platform: 'opencode', sessionId: 'session-1', state: 'failure', error: 'agent stopped', occurrenceAt: 1_000, createdAt: 1_000 }]);
+    vi.mocked(api.routines.history).mockResolvedValue([{ id: 'run-1', routineId: routine.id, routineUpdatedAt: routine.updatedAt, routineName: routine.name, prompt: routine.prompt, directory: '/repo', remoteId: 'local', trigger: 'manual', platform: 'opencode', sessionId: 'session-1', state: 'failure', error: 'agent stopped', occurrenceAt: 1_000, createdAt: 1_000 }]);
     vi.mocked(resolveTargetForDir).mockResolvedValue({ platform: 'r-box:opencode', remoteId: 'box' });
     vi.mocked(api.routines.create).mockResolvedValue(routine);
     vi.mocked(api.routines.update).mockResolvedValue(routine);
     vi.mocked(api.routines.remove).mockResolvedValue(undefined);
     vi.mocked(api.routines.run).mockResolvedValue({} as never);
   });
+
+  afterEach(() => vi.useRealTimers());
 
   it('creates a targeted timeout routine and exposes every schedule form', async () => {
     const user = userEvent.setup();
@@ -86,5 +88,37 @@ describe('Routines', () => {
     render(<MemoryRouter><Routines /></MemoryRouter>);
     await user.click(await screen.findByRole('button', { name: 'Run now' }));
     expect(await screen.findByText('run failed')).toBeInTheDocument();
+  });
+
+  it('rejects target fallback but preserves an explicit local target', async () => {
+    const user = userEvent.setup();
+    vi.mocked(resolveTargetForDir).mockResolvedValue({ platform: '' });
+    render(<MemoryRouter><Routines /></MemoryRouter>);
+    await screen.findByRole('heading', { name: routine.name });
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    expect(await screen.findByText('Could not resolve routine target.')).toBeInTheDocument();
+    expect(api.routines.update).not.toHaveBeenCalled();
+
+    vi.mocked(resolveTargetForDir).mockResolvedValue({ platform: 'opencode', remoteId: 'local' });
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(api.routines.update).toHaveBeenCalledWith(routine.id, expect.objectContaining({ remoteId: 'local' })));
+  });
+
+  it('refreshes routines and history every five seconds while mounted', async () => {
+    vi.useFakeTimers();
+    const { unmount } = render(<MemoryRouter><Routines /></MemoryRouter>);
+    await act(async () => {});
+    expect(api.routines.list).toHaveBeenCalledTimes(1);
+
+    vi.mocked(api.routines.history).mockResolvedValue([{ id: 'run-2', routineId: routine.id, routineUpdatedAt: routine.updatedAt, routineName: routine.name, prompt: routine.prompt, directory: '/repo', remoteId: 'local', trigger: 'schedule', state: 'success', occurrenceAt: 2_000, createdAt: 2_000 }]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+
+    expect(api.routines.list).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('success')).toBeInTheDocument();
+    unmount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(api.routines.list).toHaveBeenCalledTimes(2);
   });
 });

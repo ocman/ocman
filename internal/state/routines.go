@@ -30,21 +30,22 @@ type Routine struct {
 }
 
 type RoutineRun struct {
-	ID           string `json:"id"`
-	RoutineID    string `json:"routineId"`
-	RoutineName  string `json:"routineName"`
-	Prompt       string `json:"prompt"`
-	Directory    string `json:"directory"`
-	RemoteID     string `json:"remoteId"`
-	Trigger      string `json:"trigger"`
-	Platform     string `json:"platform,omitempty"`
-	SessionID    string `json:"sessionId,omitempty"`
-	State        string `json:"state"`
-	Error        string `json:"error,omitempty"`
-	OccurrenceAt int64  `json:"occurrenceAt"`
-	CreatedAt    int64  `json:"createdAt"`
-	StartedAt    int64  `json:"startedAt,omitempty"`
-	FinishedAt   int64  `json:"finishedAt,omitempty"`
+	ID               string `json:"id"`
+	RoutineID        string `json:"routineId"`
+	RoutineUpdatedAt int64  `json:"routineUpdatedAt"`
+	RoutineName      string `json:"routineName"`
+	Prompt           string `json:"prompt"`
+	Directory        string `json:"directory"`
+	RemoteID         string `json:"remoteId"`
+	Trigger          string `json:"trigger"`
+	Platform         string `json:"platform,omitempty"`
+	SessionID        string `json:"sessionId,omitempty"`
+	State            string `json:"state"`
+	Error            string `json:"error,omitempty"`
+	OccurrenceAt     int64  `json:"occurrenceAt"`
+	CreatedAt        int64  `json:"createdAt"`
+	StartedAt        int64  `json:"startedAt,omitempty"`
+	FinishedAt       int64  `json:"finishedAt,omitempty"`
 }
 
 const routineColumns = `id, name, prompt, directory, remote_id, schedule_kind, schedule_config_json,
@@ -135,12 +136,12 @@ func requireRoutineChange(result sql.Result) error {
 	return nil
 }
 
-const routineRunColumns = `id, routine_id, routine_name, prompt, directory, remote_id, trigger,
+const routineRunColumns = `id, routine_id, routine_updated_at, routine_name, prompt, directory, remote_id, trigger,
 	platform, session_id, state, error, occurrence_at, created_at, started_at, finished_at`
 
 func scanRoutineRun(row routineScanner) (RoutineRun, error) {
 	var run RoutineRun
-	err := row.Scan(&run.ID, &run.RoutineID, &run.RoutineName, &run.Prompt, &run.Directory, &run.RemoteID,
+	err := row.Scan(&run.ID, &run.RoutineID, &run.RoutineUpdatedAt, &run.RoutineName, &run.Prompt, &run.Directory, &run.RemoteID,
 		&run.Trigger, &run.Platform, &run.SessionID, &run.State, &run.Error, &run.OccurrenceAt,
 		&run.CreatedAt, &run.StartedAt, &run.FinishedAt)
 	return run, err
@@ -162,9 +163,9 @@ func (d *DB) ClaimRoutineRun(ctx context.Context, run RoutineRun) (RoutineRun, b
 	if err != nil {
 		return RoutineRun{}, false, fmt.Errorf("reading routine for claim: %w", err)
 	}
-	run.RoutineName, run.Prompt, run.Directory, run.RemoteID = routine.Name, routine.Prompt, routine.Directory, routine.RemoteID
-	result, err := tx.ExecContext(ctx, `INSERT INTO routine_run (`+routineRunColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT (routine_id, occurrence_at) DO NOTHING`, run.ID, run.RoutineID, run.RoutineName, run.Prompt,
+	run.RoutineUpdatedAt, run.RoutineName, run.Prompt, run.Directory, run.RemoteID = routine.UpdatedAt, routine.Name, routine.Prompt, routine.Directory, routine.RemoteID
+	result, err := tx.ExecContext(ctx, `INSERT INTO routine_run (`+routineRunColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (routine_id, occurrence_at) DO NOTHING`, run.ID, run.RoutineID, run.RoutineUpdatedAt, run.RoutineName, run.Prompt,
 		run.Directory, run.RemoteID, run.Trigger, run.Platform, run.SessionID, run.State, run.Error,
 		run.OccurrenceAt, run.CreatedAt, run.StartedAt, run.FinishedAt)
 	if err != nil {
@@ -290,7 +291,8 @@ func (d *DB) FinishRoutineRun(ctx context.Context, id, runState, errorText strin
 	}
 	defer func() { _ = tx.Rollback() }()
 	var routineID string
-	if err := tx.QueryRowContext(ctx, `SELECT routine_id FROM routine_run WHERE id = ? AND state = 'running'`, id).Scan(&routineID); errors.Is(err, sql.ErrNoRows) {
+	var routineUpdatedAt int64
+	if err := tx.QueryRowContext(ctx, `SELECT routine_id, routine_updated_at FROM routine_run WHERE id = ? AND state = 'running'`, id).Scan(&routineID, &routineUpdatedAt); errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	} else if err != nil {
 		return false, fmt.Errorf("reading routine run for finish: %w", err)
@@ -304,10 +306,10 @@ func (d *DB) FinishRoutineRun(ctx context.Context, id, runState, errorText strin
 			enabled = CASE WHEN delete_after_success = 1 THEN 0 ELSE ? END,
 			deleted = CASE WHEN delete_after_success = 1 THEN 1 ELSE deleted END,
 			deleted_at = CASE WHEN delete_after_success = 1 THEN ? ELSE deleted_at END,
-			updated_at = ? WHERE id = ? AND deleted = 0`, nextDueAt, enabled, finishedAt, finishedAt, routineID); err != nil {
+			updated_at = ? WHERE id = ? AND deleted = 0 AND updated_at = ?`, nextDueAt, enabled, finishedAt, finishedAt, routineID, routineUpdatedAt); err != nil {
 			return false, fmt.Errorf("advancing successful routine: %w", err)
 		}
-	} else if _, err := tx.ExecContext(ctx, `UPDATE routine SET next_due_at = ?, enabled = ?, updated_at = ? WHERE id = ? AND deleted = 0`, nextDueAt, enabled, finishedAt, routineID); err != nil {
+	} else if _, err := tx.ExecContext(ctx, `UPDATE routine SET next_due_at = ?, enabled = ?, updated_at = ? WHERE id = ? AND deleted = 0 AND updated_at = ?`, nextDueAt, enabled, finishedAt, routineID, routineUpdatedAt); err != nil {
 		return false, fmt.Errorf("advancing failed routine: %w", err)
 	}
 	if err := tx.Commit(); err != nil {

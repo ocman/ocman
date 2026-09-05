@@ -79,6 +79,7 @@ export interface Routine {
 export interface RoutineRun {
   id: string;
   routineId: string;
+  routineUpdatedAt: number;
   routineName: string;
   prompt: string;
   directory: string;
