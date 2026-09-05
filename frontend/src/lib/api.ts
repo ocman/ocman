@@ -81,6 +81,7 @@ export type {
 	RoutineScheduleKind,
   FactoryEpic,
   FactoryAttempt,
+  FactoryClaimedPlan,
   CreateWorkEpicRequest,
 	FactoryIssue,
 	FactoryIssueComment,
@@ -146,6 +147,7 @@ import type {
 	RoutineRun,
 	RoutineInput,
   FactoryEpic,
+  FactoryClaimedPlan,
   CreateWorkEpicRequest,
 	FactoryIssue,
 	FactoryIssueComment,
@@ -418,7 +420,7 @@ export const api = {
     pourFactoryEpic: (id: string) =>
       postJSON<FactoryIssue[], undefined>(`/api/factory/epics/${encodeURIComponent(id)}/pour`, undefined),
 		factoryClaimPlan: (id: string, issueID: string) =>
-			postJSON<unknown, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/plans/${encodeURIComponent(issueID)}`, undefined),
+			postJSON<FactoryClaimedPlan, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/plans/${encodeURIComponent(issueID)}`, undefined),
 		factoryMaterialize: (id: string, issueID: string) =>
 			postJSON<unknown, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/materializations/${encodeURIComponent(issueID)}`, undefined),
 		reopenFactoryIssue: (id: string, issueID: string) =>

@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { api } from '../lib/api';
+import { api, type FactoryClaimedPlan } from '../lib/api';
 import { FactoryConfiguration, FactoryEpicDetail, FactoryEpics, FactoryOverview, FactoryQueue } from './Factory';
 
 vi.mock('../lib/api', () => ({ api: {
@@ -218,12 +218,15 @@ describe('Factory interactions', () => {
     vi.mocked(api.factoryIssues).mockResolvedValue([
       { id: 'epic-1.1', epicId: 'epic-1', kind: 'plan', title: 'Plan: routines', status: 'open', dispatchState: 'ready' },
     ] as never);
-    renderFactory(<MemoryRouter><FactoryOverview /></MemoryRouter>);
+    const session = { platform: 'opencode', id: 'planning-session' };
+    vi.mocked(api.factoryClaimPlan).mockResolvedValue({ attempt: { id: 'attempt-1', workId: 'epic-1.1', phase: 'active', session }, session } satisfies FactoryClaimedPlan);
+    renderFactory(<MemoryRouter><Routes><Route path="/" element={<FactoryOverview />} /><Route path="/session/:id" element={<p>Planning session</p>} /></Routes></MemoryRouter>);
 
     const inbox = await screen.findByRole('table', { name: 'Action inbox' });
     await user.click(within(inbox).getByRole('button', { name: 'Claim plan' }));
 
     await waitFor(() => expect(api.factoryClaimPlan).toHaveBeenCalledWith('epic-1', 'epic-1.1'));
+    expect(await screen.findByText('Planning session')).toBeInTheDocument();
   });
 
   it('refreshes planning work after a failed claim', async () => {

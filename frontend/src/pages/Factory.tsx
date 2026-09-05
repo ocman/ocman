@@ -1,5 +1,5 @@
 import { useDeferredValue, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Link, NavLink, useParams } from 'react-router-dom';
+import { Link, NavLink, useNavigate, useParams } from 'react-router-dom';
 import { MarkdownContent } from '../components/assistant/MarkdownText';
 import { Button, SelectField } from '../components/Control';
 import { SearchSelect } from '../components/SearchSelect';
@@ -238,11 +238,12 @@ function MaterializationItem({ issue, epic }: { issue: FactoryIssue; epic: strin
 
 function PlanningItem({ issue, epic }: { issue: FactoryIssue; epic: string }) {
 	const claim = useClaimFactoryPlan(issue.epicId);
+	const navigate = useNavigate();
 	return <tr>
 		<td><strong>{epic}</strong></td>
 		<td className="factory-table-id">{issue.id}<span>{issue.title}</span></td>
 		<td>Ready for planning</td>
-		<td><Button type="button" variant="accent" disabled={claim.isPending} onClick={() => claim.mutate(issue.id)}>Claim plan</Button>{claim.isError && <p role="alert">{claim.error instanceof Error ? claim.error.message : 'Could not claim planning work.'}</p>}</td>
+		<td><Button type="button" variant="accent" disabled={claim.isPending} onClick={() => claim.mutate(issue.id, { onSuccess: ({ session }) => navigate(`/session/${encodeURIComponent(session.id)}`) })}>Claim plan</Button>{claim.isError && <p role="alert">{claim.error instanceof Error ? claim.error.message : 'Could not claim planning work.'}</p>}</td>
 	</tr>;
 }
 

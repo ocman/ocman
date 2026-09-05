@@ -130,6 +130,11 @@ export interface FactoryAttempt {
 	session: { platform: string; id: string };
 }
 
+export interface FactoryClaimedPlan {
+	attempt: FactoryAttempt;
+	session: { platform: string; id: string };
+}
+
 export interface FactoryProposal {
 	manifest: { epicId: string; molId: string; project: string; nodes: { key: string; type: string; requirement: string }[] };
 	revision: number;
