@@ -202,6 +202,18 @@ func TestFactorySessionLaunchersDelegateSessionControls(t *testing.T) {
 	if err := (factoryImplementationLauncher{server: srv}).ResumeImplementationSession(context.Background(), session, "gate-1", "Use A"); err != nil || sends != 1 {
 		t.Fatalf("idempotent ResumeImplementationSession = %v, sends %d", err, sends)
 	}
+	detail.Parts = nil
+	platform.sendMessageFn = func(request platforms.SendMessageRequest) error {
+		sends++
+		detail.Parts = []db.Part{{Data: []byte(request.Message)}}
+		return errors.New("response lost after acceptance")
+	}
+	if err := (factoryImplementationLauncher{server: srv}).ResumeImplementationSession(context.Background(), session, "gate-2", "Use B"); err == nil {
+		t.Fatal("ambiguous delivery returned success")
+	}
+	if err := (factoryImplementationLauncher{server: srv}).ResumeImplementationSession(context.Background(), session, "gate-2", "Use B"); err != nil || sends != 2 {
+		t.Fatalf("ambiguous delivery retry = %v, total sends %d", err, sends)
+	}
 	if pending, err := (factoryImplementationLauncher{server: srv}).ImplementationPermissionPending(context.Background(), session, "permission"); err != nil || !pending {
 		t.Fatalf("ImplementationPermissionPending = %v, %v", pending, err)
 	}
