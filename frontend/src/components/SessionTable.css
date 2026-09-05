@@ -229,6 +229,13 @@
   text-decoration: none;
   font: inherit;
 }
+.session-row-link:hover {
+  text-decoration: none;
+}
+
+tr:has(.session-row-link):hover {
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg));
+}
 
 /* Session title with ellipsis overflow */
 .session-title {
