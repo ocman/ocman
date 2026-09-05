@@ -196,7 +196,8 @@ import (
 //	68 - close Plan work and hand-built materializations already
 //	     approved before the Factory lifecycle learned to close them.
 //	69 - add append-only comments to native Factory Issues.
-const latestSchemaVersion = 69
+//	70 - add project-bound routines and append-only routine run history.
+const latestSchemaVersion = 70
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -439,6 +440,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV68(tx)
 	case 69:
 		return migrateToV69(tx)
+	case 70:
+		return migrateToV70(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -2390,6 +2393,57 @@ func migrateToV69(tx *sql.Tx) error {
 		BEGIN SELECT RAISE(ABORT, 'Factory Issue comments are append-only'); END;
 		CREATE TRIGGER IF NOT EXISTS factory_issue_comment_no_delete BEFORE DELETE ON factory_issue_comment
 		BEGIN SELECT RAISE(ABORT, 'Factory Issue comments are append-only'); END;
+	`)
+	return err
+}
+
+func migrateToV70(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS routine (
+			id                   TEXT PRIMARY KEY,
+			name                 TEXT NOT NULL COLLATE NOCASE CHECK (trim(name) <> ''),
+			prompt               TEXT NOT NULL,
+			directory            TEXT NOT NULL,
+			remote_id             TEXT NOT NULL,
+			schedule_kind         TEXT NOT NULL,
+			schedule_config_json  TEXT NOT NULL,
+			next_due_at           INTEGER NOT NULL DEFAULT 0,
+			enabled               INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+			deleted               INTEGER NOT NULL DEFAULT 0 CHECK (deleted IN (0, 1)),
+			delete_after_success  INTEGER NOT NULL DEFAULT 0 CHECK (delete_after_success IN (0, 1)),
+			created_at            INTEGER NOT NULL,
+			updated_at            INTEGER NOT NULL,
+			deleted_at            INTEGER NOT NULL DEFAULT 0,
+			CHECK ((deleted = 0 AND deleted_at = 0) OR (deleted = 1 AND deleted_at > 0))
+		);
+		CREATE UNIQUE INDEX IF NOT EXISTS routine_active_name_uq ON routine (name COLLATE NOCASE) WHERE deleted = 0;
+		CREATE INDEX IF NOT EXISTS routine_due_idx ON routine (next_due_at, id) WHERE enabled = 1 AND deleted = 0;
+		CREATE TABLE IF NOT EXISTS routine_run (
+			id             TEXT PRIMARY KEY,
+			routine_id     TEXT NOT NULL REFERENCES routine(id),
+			routine_name   TEXT NOT NULL,
+			prompt         TEXT NOT NULL,
+			directory      TEXT NOT NULL,
+			remote_id      TEXT NOT NULL,
+			trigger        TEXT NOT NULL,
+			platform       TEXT NOT NULL DEFAULT '',
+			session_id     TEXT NOT NULL DEFAULT '',
+			state          TEXT NOT NULL,
+			error          TEXT NOT NULL DEFAULT '',
+			occurrence_at  INTEGER NOT NULL CHECK (occurrence_at > 0),
+			created_at     INTEGER NOT NULL,
+			started_at     INTEGER NOT NULL DEFAULT 0,
+			finished_at    INTEGER NOT NULL DEFAULT 0,
+			UNIQUE (routine_id, occurrence_at)
+		);
+		CREATE INDEX IF NOT EXISTS routine_run_history_idx ON routine_run (routine_id, created_at DESC, id DESC);
+		CREATE TRIGGER IF NOT EXISTS routine_no_delete BEFORE DELETE ON routine
+		BEGIN SELECT RAISE(ABORT, 'routines are soft-deleted'); END;
+		CREATE TRIGGER IF NOT EXISTS routine_run_snapshot_immutable BEFORE UPDATE OF
+			id, routine_id, routine_name, prompt, directory, remote_id, trigger, occurrence_at, created_at ON routine_run
+		BEGIN SELECT RAISE(ABORT, 'routine run snapshots are immutable'); END;
+		CREATE TRIGGER IF NOT EXISTS routine_run_no_delete BEFORE DELETE ON routine_run
+		BEGIN SELECT RAISE(ABORT, 'routine runs are append-only'); END;
 	`)
 	return err
 }
