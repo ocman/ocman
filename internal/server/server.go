@@ -27,6 +27,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/queuesvc"
 	"github.com/NoUseFreak/ocman/internal/remote"
+	"github.com/NoUseFreak/ocman/internal/routines"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
@@ -132,6 +133,7 @@ type Server struct {
 	// it to a temp dir.
 	workflowBlobDir   string
 	promptScheduleSvc *promptScheduleService
+	routineSvc        *routines.Service
 
 	// queueSvcCached is the follow-up message queue service (#58), built
 	// lazily on first use. Guarded by
@@ -504,6 +506,11 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// or handler can reach it. router() assigns lazily, and the loops
 	// started below race that assignment otherwise.
 	s.router()
+	if s.stateDB != nil && s.routineSvc == nil {
+		s.routineSvc = routines.New(routines.Deps{
+			Store: s.stateDB, Router: s.router(), Sessions: s.sessions, Platforms: s.registry,
+		})
+	}
 	if s.db != nil {
 		if _, ok := s.registry.Get(opencode.PlatformID); ok {
 			opencode.StartSessionsRefresher(ctx, s.db, s.HasDemand)
@@ -526,6 +533,11 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 			return fmt.Errorf("recovering interrupted prompt schedules: %w", err)
 		}
 	}
+	if s.routineSvc != nil {
+		if err := s.routineSvc.Recover(context.WithoutCancel(ctx)); err != nil {
+			return fmt.Errorf("recovering routines: %w", err)
+		}
+	}
 
 	go s.runAutoArchiveLoop(ctx)
 	go s.runProjectsIndexLoop(ctx)
@@ -535,6 +547,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	go s.runWorkflowMirror(ctx)
 	go s.runQueueSweep(ctx)
 	go s.runPromptSchedules(ctx)
+	go s.runRoutines(ctx)
 	// Headless auto-approve: subscribe directly to each OpenCode
 	// instance's /event SSE stream so permission.asked events drive
 	// the judge even when no browser tab is open. Without this, the

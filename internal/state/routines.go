@@ -229,3 +229,89 @@ func (d *DB) UpdateRoutineRun(ctx context.Context, run RoutineRun) error {
 	}
 	return nil
 }
+
+func (d *DB) ListDueRoutines(ctx context.Context, now int64) ([]Routine, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT `+routineColumns+` FROM routine
+		WHERE enabled = 1 AND deleted = 0 AND next_due_at > 0 AND next_due_at <= ? ORDER BY next_due_at, id`, now)
+	if err != nil {
+		return nil, fmt.Errorf("listing due routines: %w", err)
+	}
+	defer rows.Close()
+	var routines []Routine
+	for rows.Next() {
+		routine, err := scanRoutine(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scanning due routine: %w", err)
+		}
+		routines = append(routines, routine)
+	}
+	return routines, rows.Err()
+}
+
+func (d *DB) ListRunningRoutineRuns(ctx context.Context) ([]RoutineRun, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT `+routineRunColumns+` FROM routine_run WHERE state = 'running' ORDER BY created_at, id`)
+	if err != nil {
+		return nil, fmt.Errorf("listing running routine runs: %w", err)
+	}
+	defer rows.Close()
+	var runs []RoutineRun
+	for rows.Next() {
+		run, err := scanRoutineRun(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scanning running routine run: %w", err)
+		}
+		runs = append(runs, run)
+	}
+	return runs, rows.Err()
+}
+
+func (d *DB) LinkRoutineRun(ctx context.Context, id, platform, sessionID string, startedAt int64) error {
+	result, err := d.db.ExecContext(ctx, `UPDATE routine_run SET platform = ?, session_id = ?, started_at = ? WHERE id = ? AND state = 'running'`,
+		platform, sessionID, startedAt, id)
+	if err != nil {
+		return fmt.Errorf("linking routine run: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed == 0 {
+		return ErrRoutineRunNotFound
+	}
+	return nil
+}
+
+// FinishRoutineRun settles a claimed occurrence and advances its routine in
+// one transaction. Successful delete-after-success routines are soft deleted.
+func (d *DB) FinishRoutineRun(ctx context.Context, id, runState, errorText string, finishedAt, nextDueAt int64, enabled bool) (bool, error) {
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("beginning routine run finish: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	var routineID string
+	if err := tx.QueryRowContext(ctx, `SELECT routine_id FROM routine_run WHERE id = ? AND state = 'running'`, id).Scan(&routineID); errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	} else if err != nil {
+		return false, fmt.Errorf("reading routine run for finish: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE routine_run SET state = ?, error = ?, finished_at = ? WHERE id = ? AND state = 'running'`, runState, errorText, finishedAt, id); err != nil {
+		return false, fmt.Errorf("finishing routine run: %w", err)
+	}
+	if runState == "success" {
+		if _, err := tx.ExecContext(ctx, `UPDATE routine SET
+			next_due_at = CASE WHEN delete_after_success = 1 THEN 0 ELSE ? END,
+			enabled = CASE WHEN delete_after_success = 1 THEN 0 ELSE ? END,
+			deleted = CASE WHEN delete_after_success = 1 THEN 1 ELSE deleted END,
+			deleted_at = CASE WHEN delete_after_success = 1 THEN ? ELSE deleted_at END,
+			updated_at = ? WHERE id = ? AND deleted = 0`, nextDueAt, enabled, finishedAt, finishedAt, routineID); err != nil {
+			return false, fmt.Errorf("advancing successful routine: %w", err)
+		}
+	} else if _, err := tx.ExecContext(ctx, `UPDATE routine SET next_due_at = ?, enabled = ?, updated_at = ? WHERE id = ? AND deleted = 0`, nextDueAt, enabled, finishedAt, routineID); err != nil {
+		return false, fmt.Errorf("advancing failed routine: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("committing routine run finish: %w", err)
+	}
+	return true, nil
+}
