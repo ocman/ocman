@@ -12,6 +12,10 @@ import { Modal } from '../components/Modal';
 import { IssueDrawer } from './FactoryIssues';
 import './Factory.css';
 
+function newInstantiationID() {
+  return crypto.randomUUID?.() ?? Array.from(crypto.getRandomValues(new Uint32Array(4)), (value) => value.toString(16).padStart(8, '0')).join('');
+}
+
 function QueryError({ error, retry }: { error: unknown; retry: () => void }) {
   return <div className="oc-error-banner" role="alert">
     {error instanceof Error ? error.message : 'Factory data is unavailable.'}
@@ -151,10 +155,10 @@ function CreateEpic({ onCreated }: { onCreated?: () => void }) {
 			return;
 		}
     const key = JSON.stringify([goal, brief, initialProject, selectedFormula]);
-    if (pendingInstantiation.current?.key !== key) {
-      pendingInstantiation.current = { key, id: crypto.randomUUID() };
-    }
     try {
+      if (pendingInstantiation.current?.key !== key) {
+        pendingInstantiation.current = { key, id: newInstantiationID() };
+      }
       await create.mutateAsync({
         instantiationId: pendingInstantiation.current.id,
         goal,

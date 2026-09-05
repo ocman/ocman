@@ -99,7 +99,10 @@ beforeEach(() => {
 	vi.mocked(api.factoryCapacityPolicy).mockResolvedValue({ globalCapacity: 10, projectCapacity: 4, projectOverrides: { '/repo': 2 } });
 });
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe('Factory interactions', () => {
   it('creates an epic and clears the form after success', async () => {
@@ -316,6 +319,18 @@ describe('Factory interactions', () => {
     expect(vi.mocked(api.createFactoryEpic).mock.calls[0][0].instantiationId).toBe('00000000-0000-0000-0000-000000000001');
     expect(vi.mocked(api.createFactoryEpic).mock.calls[1][0].instantiationId).toBe('00000000-0000-0000-0000-000000000001');
     expect(randomUUID).toHaveBeenCalledTimes(1);
+  });
+
+  it('creates an epic when randomUUID is unavailable on plain HTTP', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('crypto', { getRandomValues: crypto.getRandomValues.bind(crypto) });
+    vi.mocked(api.createFactoryEpic).mockResolvedValue({ id: 'epic-1' } as never);
+    renderFactory(<MemoryRouter><FactoryEpics /></MemoryRouter>);
+    await fillEpicForm(user);
+
+    await user.click(screen.getByRole('button', { name: 'Create epic' }));
+
+    await waitFor(() => expect(api.createFactoryEpic).toHaveBeenCalledWith(expect.objectContaining({ instantiationId: expect.any(String) })));
   });
 
   it('shows poured issues in a read-only status board and opens their details', async () => {

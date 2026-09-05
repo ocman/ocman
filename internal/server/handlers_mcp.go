@@ -84,12 +84,16 @@ func (s *Server) buildMCPHandler() http.Handler {
 }
 
 // factoryMCPService keeps operator decisions behind the browser while allowing
-// agents to maintain Factory Issues that have not started or closed.
+// agents to create Epics and maintain Factory Issues that have not started or closed.
 type factoryMCPService struct{ factoryService }
 
-func (factoryMCPService) CreateWorkEpic(context.Context, factory.CreateWorkEpicRequest) (factory.WorkEpic, error) {
-	return factory.WorkEpic{}, factory.ErrActionNotPermitted
+func (s factoryMCPService) CreateWorkEpic(ctx context.Context, req factory.CreateWorkEpicRequest) (factory.WorkEpic, error) {
+	if req.FormulaID != "" || req.FormulaRevision != 0 {
+		return factory.WorkEpic{}, factory.ErrActionNotPermitted
+	}
+	return s.factoryService.CreateWorkEpic(ctx, req)
 }
+
 func (s factoryMCPService) MutateGraph(ctx context.Context, mutation factory.GraphMutation) error {
 	if mutation.Action == "create" && (mutation.Kind == "implementation" || mutation.Kind == "task") {
 		return factory.ErrActionNotPermitted

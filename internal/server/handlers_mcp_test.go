@@ -112,6 +112,29 @@ func TestMainMuxMCPAllowsGraphEdits(t *testing.T) {
 	}
 }
 
+func TestMainMuxMCPAllowsEpicCreation(t *testing.T) {
+	svc := &fakeFactoryService{epics: []factory.WorkEpic{{ID: "epic"}}}
+	srv := New(nil, nil, "", nil, nil)
+	srv.factory = svc
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"factory","arguments":{"action":"create","goal":"Ship","initial_project":"/repo","acknowledge_local_execution":true}}}`
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:1"
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "factory action is not permitted") {
+		t.Fatalf("create epic: status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if svc.createReq.Goal != "Ship" || svc.createReq.InitialProject != "/repo" || !svc.createReq.AcknowledgeLocalExecution {
+		t.Fatalf("CreateWorkEpic request = %#v", svc.createReq)
+	}
+}
+
 func TestMainMuxMCPRejectsExecutableIssueCreation(t *testing.T) {
 	svc := &fakeFactoryService{}
 	srv := New(nil, nil, "", nil, nil)
@@ -144,8 +167,12 @@ func TestDedicatedMCPFactoryServiceRejectsUserOnlyActions(t *testing.T) {
 		name string
 		call func() error
 	}{
-		{"create Epic", func() error {
-			_, err := service.CreateWorkEpic(t.Context(), factory.CreateWorkEpicRequest{})
+		{"create Epic with custom Formula", func() error {
+			_, err := service.CreateWorkEpic(t.Context(), factory.CreateWorkEpicRequest{FormulaID: "custom/team", FormulaRevision: 1})
+			return err
+		}},
+		{"create Epic with Formula revision", func() error {
+			_, err := service.CreateWorkEpic(t.Context(), factory.CreateWorkEpicRequest{FormulaRevision: 1})
 			return err
 		}},
 		{"save Formula", func() error { _, err := service.SaveFormula(t.Context(), factory.FormulaSaveRequest{}); return err }},

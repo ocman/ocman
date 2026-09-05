@@ -89,7 +89,8 @@ linked session conversation.
 
 Agent MCP sessions cannot perform operator decisions, create executable graph
 issues, or change Factory configuration. Non-executable graph edits remain
-available through `mutate_graph`; `create` Epics, `save_formula`,
+available through `mutate_graph`; `create` can create Epics after explicitly
+acknowledging local execution and uses the built-in tracer Formula. `save_formula`,
 `set_capacity_policy`, Plan decisions, recovery decisions, authority
 decisions, and `reopen_issue` (returning failed work to the queue) are
 refused; they stay in the Factory action inbox. `submit_proposal` additionally requires the active
