@@ -2,29 +2,11 @@ package mcp_test
 
 import (
 	"context"
-	"database/sql"
 	"testing"
 
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/mcptest"
-	_ "modernc.org/sqlite"
-
-	"github.com/NoUseFreak/ocman/internal/state"
 )
-
-func openTestStateDB(t *testing.T) *state.DB {
-	t.Helper()
-	sqlDB, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatalf("opening test state db: %v", err)
-	}
-	t.Cleanup(func() { _ = sqlDB.Close() })
-	sdb, err := state.OpenFromSQL(sqlDB)
-	if err != nil {
-		t.Fatalf("initializing state schema: %v", err)
-	}
-	return sdb
-}
 
 func callTool(t *testing.T, srv *mcptest.Server, toolName string, args map[string]interface{}) *mcplib.CallToolResult {
 	t.Helper()

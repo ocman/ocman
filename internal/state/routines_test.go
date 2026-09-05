@@ -2,6 +2,7 @@ package state
 
 import (
 	"database/sql"
+	"errors"
 	"sync"
 	"testing"
 )
@@ -157,6 +158,166 @@ func TestRoutineRunCompetingClaims(t *testing.T) {
 	}
 	if claims != 1 {
 		t.Fatalf("successful claims = %d, want 1", claims)
+	}
+}
+
+func TestRoutineMissingRows(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+
+	if _, err := db.GetRoutine(t.Context(), "missing"); !errors.Is(err, ErrRoutineNotFound) {
+		t.Fatalf("GetRoutine error = %v", err)
+	}
+	if err := db.UpdateRoutine(t.Context(), testRoutine("missing", "Missing", 1)); !errors.Is(err, ErrRoutineNotFound) {
+		t.Fatalf("UpdateRoutine error = %v", err)
+	}
+	if err := db.SoftDeleteRoutine(t.Context(), "missing", 2); !errors.Is(err, ErrRoutineNotFound) {
+		t.Fatalf("SoftDeleteRoutine error = %v", err)
+	}
+	if _, _, err := db.ClaimRoutineRun(t.Context(), RoutineRun{ID: "run", RoutineID: "missing"}); !errors.Is(err, ErrRoutineNotFound) {
+		t.Fatalf("ClaimRoutineRun error = %v", err)
+	}
+	if _, err := db.GetRoutineRun(t.Context(), "missing"); !errors.Is(err, ErrRoutineRunNotFound) {
+		t.Fatalf("GetRoutineRun error = %v", err)
+	}
+	if err := db.UpdateRoutineRun(t.Context(), RoutineRun{ID: "missing"}); !errors.Is(err, ErrRoutineRunNotFound) {
+		t.Fatalf("UpdateRoutineRun error = %v", err)
+	}
+	if err := db.LinkRoutineRun(t.Context(), "missing", "opencode", "session", 3); !errors.Is(err, ErrRoutineRunNotFound) {
+		t.Fatalf("LinkRoutineRun error = %v", err)
+	}
+}
+
+func TestRoutineDueRunningLinkAndIdempotentFinish(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+
+	routine := testRoutine("routine", "Routine", 1)
+	if err := db.CreateRoutine(t.Context(), routine); err != nil {
+		t.Fatal(err)
+	}
+	if due, err := db.ListDueRoutines(t.Context(), 99); err != nil || len(due) != 0 {
+		t.Fatalf("due before deadline = %+v, %v", due, err)
+	}
+	if due, err := db.ListDueRoutines(t.Context(), 100); err != nil || len(due) != 1 || due[0].ID != routine.ID {
+		t.Fatalf("due at deadline = %+v, %v", due, err)
+	}
+
+	run, claimed, err := db.ClaimRoutineRun(t.Context(), RoutineRun{
+		ID: "run", RoutineID: routine.ID, Trigger: "schedule", State: "running", OccurrenceAt: 100, CreatedAt: 2,
+	})
+	if err != nil || !claimed {
+		t.Fatalf("claim = %+v, %v, %v", run, claimed, err)
+	}
+	if err := db.LinkRoutineRun(t.Context(), run.ID, "opencode", "session", 3); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := db.GetRoutineRun(t.Context(), run.ID); err != nil || got.Platform != "opencode" || got.SessionID != "session" || got.StartedAt != 3 {
+		t.Fatalf("linked run = %+v, %v", got, err)
+	}
+	if running, err := db.ListRunningRoutineRuns(t.Context()); err != nil || len(running) != 1 || running[0].ID != run.ID {
+		t.Fatalf("running = %+v, %v", running, err)
+	}
+
+	finished, err := db.FinishRoutineRun(t.Context(), run.ID, "failure", "interrupted", 4, 200, true)
+	if err != nil || !finished {
+		t.Fatalf("finish = %v, %v", finished, err)
+	}
+	finished, err = db.FinishRoutineRun(t.Context(), run.ID, "success", "", 5, 300, true)
+	if err != nil || finished {
+		t.Fatalf("second finish = %v, %v", finished, err)
+	}
+	got, err := db.GetRoutine(t.Context(), routine.ID)
+	if err != nil || got.NextDueAt != 200 || !got.Enabled || got.UpdatedAt != 4 {
+		t.Fatalf("routine after finish = %+v, %v", got, err)
+	}
+	if running, err := db.ListRunningRoutineRuns(t.Context()); err != nil || len(running) != 0 {
+		t.Fatalf("running after finish = %+v, %v", running, err)
+	}
+}
+
+func TestRoutineStoreErrorsAfterClose(t *testing.T) {
+	db := openTestStateDB(t)
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	routine := testRoutine("routine", "Routine", 1)
+	run := RoutineRun{ID: "run", RoutineID: routine.ID}
+	checks := []struct {
+		name string
+		call func() error
+	}{
+		{"create routine", func() error { return db.CreateRoutine(t.Context(), routine) }},
+		{"get routine", func() error { _, err := db.GetRoutine(t.Context(), routine.ID); return err }},
+		{"list routines", func() error { _, err := db.ListRoutines(t.Context(), false); return err }},
+		{"update routine", func() error { return db.UpdateRoutine(t.Context(), routine) }},
+		{"delete routine", func() error { return db.SoftDeleteRoutine(t.Context(), routine.ID, 2) }},
+		{"claim run", func() error { _, _, err := db.ClaimRoutineRun(t.Context(), run); return err }},
+		{"get run", func() error { _, err := db.GetRoutineRun(t.Context(), run.ID); return err }},
+		{"list runs", func() error { _, err := db.ListRoutineRuns(t.Context(), routine.ID); return err }},
+		{"update run", func() error { return db.UpdateRoutineRun(t.Context(), run) }},
+		{"list due", func() error { _, err := db.ListDueRoutines(t.Context(), 2); return err }},
+		{"list running", func() error { _, err := db.ListRunningRoutineRuns(t.Context()); return err }},
+		{"link run", func() error { return db.LinkRoutineRun(t.Context(), run.ID, "opencode", "session", 2) }},
+		{"finish run", func() error {
+			_, err := db.FinishRoutineRun(t.Context(), run.ID, "failure", "", 2, 0, false)
+			return err
+		}},
+	}
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			if err := check.call(); err == nil {
+				t.Fatal("operation succeeded on closed store")
+			}
+		})
+	}
+}
+
+func TestRoutineRunWriteFailuresRollback(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	routine := testRoutine("routine", "Routine", 1)
+	if err := db.CreateRoutine(t.Context(), routine); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := db.ClaimRoutineRun(t.Context(), RoutineRun{ID: "invalid", RoutineID: routine.ID, OccurrenceAt: 0}); err == nil {
+		t.Fatal("claimed an invalid occurrence")
+	}
+
+	claim := func(id string, occurrence int64) RoutineRun {
+		t.Helper()
+		run, claimed, err := db.ClaimRoutineRun(t.Context(), RoutineRun{
+			ID: id, RoutineID: routine.ID, Trigger: "schedule", State: "running", OccurrenceAt: occurrence, CreatedAt: occurrence,
+		})
+		if err != nil || !claimed {
+			t.Fatalf("claim %s = %+v, %v, %v", id, run, claimed, err)
+		}
+		return run
+	}
+	run := claim("run-update-fails", 1)
+	if _, err := db.db.Exec(`CREATE TRIGGER reject_run_finish BEFORE UPDATE ON routine_run BEGIN SELECT RAISE(ABORT, 'reject finish'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if finished, err := db.FinishRoutineRun(t.Context(), run.ID, "failure", "", 2, 0, false); err == nil || finished {
+		t.Fatalf("finish with rejected run update = %v, %v", finished, err)
+	}
+	if _, err := db.db.Exec(`DROP TRIGGER reject_run_finish`); err != nil {
+		t.Fatal(err)
+	}
+
+	run = claim("routine-update-fails", 2)
+	if _, err := db.db.Exec(`CREATE TRIGGER reject_routine_advance BEFORE UPDATE ON routine BEGIN SELECT RAISE(ABORT, 'reject advance'); END`); err != nil {
+		t.Fatal(err)
+	}
+	for _, runState := range []string{"success", "failure"} {
+		if finished, err := db.FinishRoutineRun(t.Context(), run.ID, runState, "", 3, 0, false); err == nil || finished {
+			t.Fatalf("%s with rejected routine update = %v, %v", runState, finished, err)
+		}
+	}
+	got, err := db.GetRoutineRun(t.Context(), run.ID)
+	if err != nil || got.State != "running" {
+		t.Fatalf("run after rollback = %+v, %v", got, err)
 	}
 }
 

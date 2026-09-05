@@ -140,7 +140,7 @@ func (s *Service) History(ctx context.Context, id string) ([]state.RoutineRun, e
 
 func normalizeWriteError(err error) error {
 	if strings.Contains(err.Error(), "UNIQUE constraint failed: routine.name") {
-		return fmt.Errorf("%w: %v", ErrNameConflict, err)
+		return fmt.Errorf("%w: %w", ErrNameConflict, err)
 	}
 	return err
 }

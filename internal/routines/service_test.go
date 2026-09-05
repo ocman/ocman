@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -34,12 +35,14 @@ func (h *testHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectO
 
 type testPlatform struct {
 	platforms.Platform
-	mu        sync.Mutex
-	status    db.SessionStatus
-	createErr error
-	sendErr   error
-	created   int
-	sent      []string
+	mu           sync.Mutex
+	status       db.SessionStatus
+	sessionErr   error
+	emptySession bool
+	createErr    error
+	sendErr      error
+	created      int
+	sent         []string
 }
 
 func (p *testPlatform) ID() platforms.ID                  { return "opencode" }
@@ -63,6 +66,12 @@ func (p *testPlatform) SendMessage(_ context.Context, req platforms.SendMessageR
 func (p *testPlatform) Session(context.Context, string, int, int) (*platforms.SessionDetail, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.sessionErr != nil {
+		return nil, p.sessionErr
+	}
+	if p.emptySession {
+		return &platforms.SessionDetail{}, nil
+	}
 	return &platforms.SessionDetail{Session: &db.Session{ID: "session-1", Status: p.status}}, nil
 }
 func (p *testPlatform) setStatus(status db.SessionStatus) {
@@ -165,6 +174,41 @@ func TestCRUD(t *testing.T) {
 	}
 }
 
+func TestDefaultsConflictsAndMissingOperations(t *testing.T) {
+	sdb, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sdb.Close()
+	svc := New(Deps{Store: sdb})
+
+	routine, err := svc.Create(t.Context(), validInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(routine.ID) != len("routine-")+16 || routine.RemoteID != "local" || routine.CreatedAt == 0 {
+		t.Fatalf("defaults = %+v", routine)
+	}
+	if got, err := svc.Get(t.Context(), routine.ID); err != nil || got.ID != routine.ID {
+		t.Fatalf("Get = %+v, %v", got, err)
+	}
+	if history, err := svc.History(t.Context(), routine.ID); err != nil || len(history) != 0 {
+		t.Fatalf("History = %+v, %v", history, err)
+	}
+	if _, err := svc.Create(t.Context(), validInput()); !errors.Is(err, ErrNameConflict) {
+		t.Fatalf("duplicate Create error = %v", err)
+	}
+	if _, err := svc.Update(t.Context(), "missing", validInput()); !errors.Is(err, state.ErrRoutineNotFound) {
+		t.Fatalf("missing Update error = %v", err)
+	}
+	if _, err := svc.Update(t.Context(), routine.ID, Input{}); !errors.Is(err, ErrValidation) {
+		t.Fatalf("invalid Update error = %v", err)
+	}
+	if _, err := svc.History(t.Context(), "missing"); !errors.Is(err, state.ErrRoutineNotFound) {
+		t.Fatalf("missing History error = %v", err)
+	}
+}
+
 func TestManualAndDueDispatchShareAtomicClaim(t *testing.T) {
 	h := newHarness(t)
 	input := validInput()
@@ -210,6 +254,102 @@ func TestDispatchFailuresPersist(t *testing.T) {
 				t.Fatalf("RunNow = %+v, %v", run, err)
 			}
 		})
+	}
+}
+
+func TestUnavailableTargetFailsRun(t *testing.T) {
+	h := newHarness(t)
+	input := validInput()
+	input.RemoteID = "missing"
+	routine, err := h.svc.Create(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.svc.RunNow(t.Context(), routine.ID)
+	if err != nil || run.State != RunFailure || !strings.Contains(run.Error, "unavailable") {
+		t.Fatalf("RunNow = %+v, %v", run, err)
+	}
+}
+
+func TestRecoverySkipsUnavailablePlatform(t *testing.T) {
+	h := newHarness(t)
+	routine, _ := h.svc.Create(t.Context(), validInput())
+	if _, err := h.svc.RunNow(t.Context(), routine.ID); err != nil {
+		t.Fatal(err)
+	}
+	h.svc.platforms = platforms.NewRegistry()
+	if err := h.svc.Recover(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	runs, err := h.db.ListRoutineRuns(t.Context(), routine.ID)
+	if err != nil || len(runs) != 1 || runs[0].State != RunRunning {
+		t.Fatalf("runs = %+v, %v", runs, err)
+	}
+}
+
+func TestRecoverySkipsUnavailableSession(t *testing.T) {
+	for _, setup := range []func(*testPlatform){
+		func(p *testPlatform) { p.sessionErr = errors.New("session unavailable") },
+		func(p *testPlatform) { p.emptySession = true },
+	} {
+		h := newHarness(t)
+		routine, _ := h.svc.Create(t.Context(), validInput())
+		if _, err := h.svc.RunNow(t.Context(), routine.ID); err != nil {
+			t.Fatal(err)
+		}
+		setup(h.platform)
+		if err := h.svc.Recover(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		runs, _ := h.db.ListRoutineRuns(t.Context(), routine.ID)
+		if runs[0].State != RunRunning {
+			t.Fatalf("run = %+v", runs[0])
+		}
+	}
+}
+
+func TestRecoveryFailsUnlinkedRun(t *testing.T) {
+	h := newHarness(t)
+	routine, _ := h.svc.Create(t.Context(), validInput())
+	run, claimed, err := h.db.ClaimRoutineRun(t.Context(), state.RoutineRun{
+		ID: "run-orphan", RoutineID: routine.ID, Trigger: "schedule", State: RunRunning, OccurrenceAt: 1, CreatedAt: 1,
+	})
+	if err != nil || !claimed {
+		t.Fatalf("claim = %+v, %v, %v", run, claimed, err)
+	}
+	if err := h.svc.Recover(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := h.db.GetRoutineRun(t.Context(), run.ID)
+	if err != nil || got.State != RunFailure || !strings.Contains(got.Error, "before session linkage") {
+		t.Fatalf("run = %+v, %v", got, err)
+	}
+}
+
+func TestMalformedCronSnapshotPreventsCompletion(t *testing.T) {
+	for _, config := range []string{"{", `{"cron":"bad cron value","timezone":"UTC"}`} {
+		h := newHarness(t)
+		input := validInput()
+		input.Schedule = Schedule{Kind: ScheduleCron, Cron: "*/5 * * * *", Timezone: "UTC"}
+		routine, err := h.svc.Create(t.Context(), input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.svc.RunNow(t.Context(), routine.ID); err != nil {
+			t.Fatal(err)
+		}
+		routine.ScheduleConfigJSON = config
+		if err := h.db.UpdateRoutine(t.Context(), routine); err != nil {
+			t.Fatal(err)
+		}
+		h.platform.setStatus(db.StatusDone)
+		if err := h.svc.Tick(t.Context()); err == nil {
+			t.Fatal("Tick completed a run with malformed cron configuration")
+		}
+		runs, _ := h.db.ListRoutineRuns(t.Context(), routine.ID)
+		if runs[0].State != RunRunning {
+			t.Fatalf("run = %+v", runs[0])
+		}
 	}
 }
 

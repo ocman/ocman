@@ -45,7 +45,7 @@ func routineHTTPServer(t *testing.T) (*Server, http.Handler, *atomic.Int32) {
 	srv.routineSvc = routines.New(routines.Deps{
 		Store: srv.stateDB, Router: router, Sessions: srv.sessions, Platforms: registry,
 		Now:   func() time.Time { return time.UnixMilli(1000) },
-		NewID: func(prefix string) string { return prefix + string(rune('0'+ids.Add(1))) },
+		NewID: func(prefix string) string { return prefix + string('0'+ids.Add(1)) },
 	})
 	mux, err := srv.routes()
 	if err != nil {
@@ -171,17 +171,40 @@ func TestRoutineHTTPMethodAndLocalhostGuards(t *testing.T) {
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("remote request: %d %s", rec.Code, rec.Body.String())
 	}
+
+	for _, path := range []string{"/api/routines/id/unknown", "/api/routines/id/history/extra"} {
+		if rec := doRoutineRequest(t, handler, http.MethodGet, path, ""); rec.Code != http.StatusNotFound {
+			t.Fatalf("%s: %d %s", path, rec.Code, rec.Body.String())
+		}
+	}
+	rec = httptest.NewRecorder()
+	(&Server{}).handleRoutines(rec, httptest.NewRequest(http.MethodGet, "/api/routines", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("missing service: %d %s", rec.Code, rec.Body.String())
+	}
 }
 
 func TestRoutineHTTPUnexpectedStoreError(t *testing.T) {
 	srv, handler, _ := routineHTTPServer(t)
+	created := doRoutineRequest(t, handler, http.MethodPost, "/api/routines", validRoutineBody)
+	var routine state.Routine
+	if created.Code != http.StatusCreated || json.Unmarshal(created.Body.Bytes(), &routine) != nil {
+		t.Fatalf("create: %d %s", created.Code, created.Body.String())
+	}
 	if err := srv.stateDB.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if rec := doRoutineRequest(t, handler, http.MethodGet, "/api/routines", ""); rec.Code != http.StatusInternalServerError {
-		t.Fatalf("closed store: %d %s", rec.Code, rec.Body.String())
-	}
-	if rec := doRoutineRequest(t, handler, http.MethodPost, "/api/routines", validRoutineBody); rec.Code != http.StatusInternalServerError {
-		t.Fatalf("create with closed store: %d %s", rec.Code, rec.Body.String())
+	for _, request := range []struct{ method, path, body string }{
+		{http.MethodGet, "/api/routines", ""},
+		{http.MethodPost, "/api/routines", validRoutineBody},
+		{http.MethodGet, "/api/routines/" + routine.ID, ""},
+		{http.MethodPut, "/api/routines/" + routine.ID, validRoutineBody},
+		{http.MethodDelete, "/api/routines/" + routine.ID, ""},
+		{http.MethodPost, "/api/routines/" + routine.ID + "/run", ""},
+		{http.MethodGet, "/api/routines/" + routine.ID + "/history", ""},
+	} {
+		if rec := doRoutineRequest(t, handler, request.method, request.path, request.body); rec.Code != http.StatusInternalServerError {
+			t.Fatalf("%s %s: %d %s", request.method, request.path, rec.Code, rec.Body.String())
+		}
 	}
 }

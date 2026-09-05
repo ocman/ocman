@@ -13,13 +13,6 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func nullableInt(value int64) any {
-	if value == 0 {
-		return nil
-	}
-	return value
-}
-
 // DB wraps the writable ocman state database. Methods are grouped by
 // concern in sibling files (seen.go, archive.go, autoapprove.go,
 // childsessions.go, favorites.go, pins.go, settings.go, auth.go,
@@ -232,14 +225,4 @@ func (d *DB) Close() error {
 type Key struct {
 	Platform  string
 	SessionID string
-}
-
-// nullableString converts an empty string to a nil interface (stored as
-// NULL in SQLite) and a non-empty string to itself. This keeps nullable
-// TEXT columns clean rather than storing empty strings.
-func nullableString(s string) interface{} {
-	if s == "" {
-		return nil
-	}
-	return s
 }
