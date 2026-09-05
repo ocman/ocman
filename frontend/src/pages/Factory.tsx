@@ -4,7 +4,7 @@ import { MarkdownContent } from '../components/assistant/MarkdownText';
 import { Button, SelectField } from '../components/Control';
 import { SearchSelect } from '../components/SearchSelect';
 import { StatusBadge } from '../components/StatusBadge';
-import { useCloseFactoryEpic, useCloseFactoryMol, useCreateWorkEpic, useDecideFactoryPlanGate, useFactoryCapacityPolicy, useFactoryFormula, useFactoryFormulas, useFactoryGraphIssues, useFactoryIssues, useFactoryProposals, useFactoryQueue, useFactoryRemovedIssues, useMaterializeFactoryPlan, useMutateFactoryGraph, usePourFactoryEpic, usePreviewFactoryFormula, useProjects, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryRecoveryGate, useSaveFactoryFormula, useSessions, useSetFactoryCapacityPolicy, useValidateFactoryFormula, useWorkEpic, useWorkEpics } from '../lib/queries';
+import { useClaimFactoryPlan, useCloseFactoryEpic, useCloseFactoryMol, useCreateWorkEpic, useDecideFactoryPlanGate, useFactoryCapacityPolicy, useFactoryFormula, useFactoryFormulas, useFactoryGraphIssues, useFactoryIssues, useFactoryProposals, useFactoryQueue, useFactoryRemovedIssues, useMaterializeFactoryPlan, useMutateFactoryGraph, usePourFactoryEpic, usePreviewFactoryFormula, useProjects, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryRecoveryGate, useSaveFactoryFormula, useSessions, useSetFactoryCapacityPolicy, useValidateFactoryFormula, useWorkEpic, useWorkEpics } from '../lib/queries';
 import type { FactoryAttempt, FactoryFormula, FactoryGraphMutation, FactoryIssue, FactoryQueueItem, Session } from '../lib/api';
 
 const TRACER_FORMULA_ID = 'ocman/tracer';
@@ -236,6 +236,16 @@ function MaterializationItem({ issue, epic }: { issue: FactoryIssue; epic: strin
 	</tr>;
 }
 
+function PlanningItem({ issue, epic }: { issue: FactoryIssue; epic: string }) {
+	const claim = useClaimFactoryPlan(issue.epicId);
+	return <tr>
+		<td><strong>{epic}</strong></td>
+		<td className="factory-table-id">{issue.id}<span>{issue.title}</span></td>
+		<td>Ready for planning</td>
+		<td><Button type="button" variant="accent" disabled={claim.isPending} onClick={() => claim.mutate(issue.id)}>Claim plan</Button>{claim.isError && <p role="alert">{claim.error instanceof Error ? claim.error.message : 'Could not claim planning work.'}</p>}</td>
+	</tr>;
+}
+
 export function FactoryEpics() {
   const epics = useWorkEpics();
   const [query, setQuery] = useState('');
@@ -267,16 +277,17 @@ export function FactoryOverview() {
 	const recoveryGates = issues.filter((issue) => issue.recovery && issue.recovery.resolution !== 'resume' && issue.recovery.resolution !== 'retry' && issue.recovery.resolution !== 'cancel');
 	const authorityGates = issues.filter((issue) => issue.authority && issue.authority.resolution !== 'approve' && issue.authority.resolution !== 'reject');
 	const openEpics = new Set(epics.data?.filter((epic) => epic.status === 'open').map((epic) => epic.id));
+	const running = queue.data?.filter((item) => item.state === 'running') ?? [];
+	const runningAttemptIDs = new Set(running.map((item) => item.attemptId));
+	const planning = epics.data?.flatMap((epic) => (epic.attempts ?? []).filter((attempt) => (attempt.phase === 'prepared' || attempt.phase === 'active' || attempt.phase === 'stopping') && !runningAttemptIDs.has(attempt.id)).map((attempt) => ({ epic, attempt }))) ?? [];
+	const readyPlans = issues.filter((issue) => openEpics.has(issue.epicId) && issue.kind === 'plan' && issue.dispatchState === 'ready' && !planning.some(({ attempt }) => attempt.workId === issue.id));
 	const failedWork = issues.filter((issue) => openEpics.has(issue.epicId) && (issue.kind === 'task' || issue.kind === 'implementation') && issue.status === 'closed' && (issue.outcome === 'failed' || issue.outcome === 'cancelled'));
 	const materializations = issues.filter((issue) => openEpics.has(issue.epicId) && issue.kind === 'materialization' && issue.dispatchState === 'ready');
 	// Stuck epics with an actionable row above are already covered; this catches the dead-ends nothing else surfaces.
 	const stuck = epics.data?.filter((epic) => epic.progress?.stuck && !failedWork.some((issue) => issue.epicId === epic.id) && !materializations.some((issue) => issue.epicId === epic.id)) ?? [];
-	const running = queue.data?.filter((item) => item.state === 'running') ?? [];
-	const runningAttemptIDs = new Set(running.map((item) => item.attemptId));
-	const planning = epics.data?.flatMap((epic) => (epic.attempts ?? []).filter((attempt) => (attempt.phase === 'prepared' || attempt.phase === 'active' || attempt.phase === 'stopping') && !runningAttemptIDs.has(attempt.id)).map((attempt) => ({ epic, attempt }))) ?? [];
 	// ponytail: answering live prompts stays on the session page.
 	const prompts = [...new Map([...running.map((item) => ({ session: sessionByID.get(item.session?.id ?? ''), epic: epicGoal(item.epicId), issueID: item.id, issueTitle: item.title })), ...planning.map(({ epic, attempt }) => ({ session: sessionByID.get(attempt.session.id), epic: epic.goal, issueID: attempt.workId, issueTitle: 'Planning' }))].filter((item): item is { session: Session; epic: string; issueID: string; issueTitle: string } => Boolean(item.session?.pendingPermission || item.session?.pendingQuestion)).map((item) => [item.session.id, item])).values()];
-	const inboxCount = planGates.length + recoveryGates.length + authorityGates.length + prompts.length + failedWork.length + materializations.length + stuck.length;
+	const inboxCount = readyPlans.length + planGates.length + recoveryGates.length + authorityGates.length + prompts.length + failedWork.length + materializations.length + stuck.length;
 	const liveStatus = (sessionID?: string) => { const session = sessionID ? sessionByID.get(sessionID) : undefined; return session && session.status !== 'done' ? <StatusBadge status={session.status} pending={session.pendingPermission || session.pendingQuestion} /> : null; };
 	return <FactoryPage>
 		<h2>Action inbox</h2>
@@ -286,6 +297,7 @@ export function FactoryOverview() {
 		{issueError && <QueryError error={issueError.error} retry={() => void issueError.refetch()} />}
 		{!epics.isLoading && !epics.isError && !issuesLoading && !issueError && !inboxCount && <p className="oc-empty">Nothing needs your attention.</p>}
 		{!!inboxCount && <div className="factory-table-wrap"><table className="factory-table factory-inbox" aria-label="Action inbox"><thead><tr><th>Epic</th><th>Issue ID</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+			{readyPlans.map((issue) => <PlanningItem key={issue.id} issue={issue} epic={epicGoal(issue.epicId)} />)}
 			{planGates.map((epic) => <tr key={epic.id}><td><strong>{epic.goal}</strong></td><td className="factory-table-id">{epic.planGate!.issueId}<span>Plan approval</span></td><td>Revision {epic.planGate!.proposalRevision}</td><td><Link to={`/factory/epics/${encodeURIComponent(epic.id)}`}>Review plan</Link></td></tr>)}
 			{recoveryGates.map((issue) => <RecoveryGateItem key={issue.id} issue={issue} epic={epicGoal(issue.epicId)} />)}
 			{authorityGates.map((issue) => <AuthorityGateItem key={issue.id} issue={issue} epic={epicGoal(issue.epicId)} />)}

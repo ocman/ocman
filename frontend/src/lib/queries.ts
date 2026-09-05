@@ -195,7 +195,7 @@ function invalidateFactoryState(client: QueryClient) {
 
 export function useClaimFactoryPlan(id: string) {
 	const client = useQueryClient();
-	return useMutation({ mutationFn: (issueID: string) => api.factoryClaimPlan(id, issueID), onSuccess: () => client.invalidateQueries({ queryKey: ['factory-epics'] }) });
+	return useMutation({ mutationFn: (issueID: string) => api.factoryClaimPlan(id, issueID), onSettled: () => client.invalidateQueries({ queryKey: ['factory-epics'] }) });
 }
 
 export function useMaterializeFactoryPlan() {

@@ -210,6 +210,39 @@ describe('Factory interactions', () => {
 		await waitFor(() => expect(screen.queryByText('Which API?')).not.toBeInTheDocument());
 	});
 
+  it('shows ready planning work in the action inbox', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.factoryEpics).mockResolvedValue([
+      { id: 'epic-1', goal: 'Routines', status: 'open', initialProject: '/repo' },
+    ] as never);
+    vi.mocked(api.factoryIssues).mockResolvedValue([
+      { id: 'epic-1.1', epicId: 'epic-1', kind: 'plan', title: 'Plan: routines', status: 'open', dispatchState: 'ready' },
+    ] as never);
+    renderFactory(<MemoryRouter><FactoryOverview /></MemoryRouter>);
+
+    const inbox = await screen.findByRole('table', { name: 'Action inbox' });
+    await user.click(within(inbox).getByRole('button', { name: 'Claim plan' }));
+
+    await waitFor(() => expect(api.factoryClaimPlan).toHaveBeenCalledWith('epic-1', 'epic-1.1'));
+  });
+
+  it('refreshes planning work after a failed claim', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.factoryEpics).mockResolvedValue([
+      { id: 'epic-1', goal: 'Routines', status: 'open', initialProject: '/repo' },
+    ] as never);
+    vi.mocked(api.factoryIssues).mockResolvedValue([
+      { id: 'epic-1.1', epicId: 'epic-1', kind: 'plan', title: 'Plan: routines', status: 'open', dispatchState: 'ready' },
+    ] as never);
+    vi.mocked(api.factoryClaimPlan).mockRejectedValue(new Error('Planning Session could not be launched'));
+    renderFactory(<MemoryRouter><FactoryOverview /></MemoryRouter>);
+
+    await user.click(await screen.findByRole('button', { name: 'Claim plan' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Planning Session could not be launched');
+    await waitFor(() => expect(api.factoryIssues).toHaveBeenCalledTimes(2));
+  });
+
   it('surfaces exhausted work, unmaterialized plans, and stuck epics with an unblocking action', async () => {
     const user = userEvent.setup();
     vi.mocked(api.factoryEpics).mockResolvedValue([
@@ -250,7 +283,7 @@ describe('Factory interactions', () => {
     vi.mocked(api.factoryEpics).mockResolvedValue([
       { id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo', attempts: [{ id: 'plan-attempt', workId: 'epic-1.1', phase: 'active', session: { platform: 'opencode', id: 'plan-session' } }, { id: 'old-attempt', workId: 'epic-1.1', phase: 'terminal', session: { platform: 'opencode', id: 'old-session' } }] },
     ] as never);
-    vi.mocked(api.factoryIssues).mockResolvedValue([]);
+    vi.mocked(api.factoryIssues).mockResolvedValue([{ id: 'epic-1.1', epicId: 'epic-1', kind: 'plan', title: 'Plan', status: 'open', dispatchState: 'ready' }] as never);
     vi.mocked(api.factoryQueue).mockResolvedValue([
       { id: 'epic-1.4', epicId: 'epic-1', title: 'Implement controls', repository: '/repo', state: 'running', attemptId: 'a1', session: { platform: 'opencode', id: 'impl-session' } },
       { id: 'epic-1.6', epicId: 'epic-1', title: 'Finish handoff', repository: '/repo', state: 'running', attemptId: 'a2', session: { platform: 'opencode', id: 'settled-session' } },
@@ -269,6 +302,7 @@ describe('Factory interactions', () => {
 		expect(within(live).getByRole('cell', { name: /epic-1\.4.*Implement controls/ })).toBeInTheDocument();
     expect(within(live).getByText('Implement controls')).toBeInTheDocument();
     expect(within(live).queryByText('Next up')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Claim plan' })).not.toBeInTheDocument();
     expect(within(live).getAllByRole('link', { name: /Open session/ })).toHaveLength(3);
     expect(await within(live).findByText('Busy')).toBeInTheDocument();
     expect(within(live).getByRole('cell', { name: /epic-1\.6.*Finish handoff/ }).parentElement).toHaveTextContent('running');
