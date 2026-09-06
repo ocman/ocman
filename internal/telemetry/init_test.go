@@ -2,6 +2,8 @@ package telemetry
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -35,6 +37,47 @@ func TestInitInvalidEndpoint(t *testing.T) {
 	_, err := Init(context.Background(), "tcp://nope", "test")
 	if err == nil {
 		t.Fatal("expected error for invalid scheme, got nil")
+	}
+}
+
+func TestInitHTTPExporterAndShutdown(t *testing.T) {
+	collector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer collector.Close()
+
+	shutdown, err := Init(t.Context(), collector.URL, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	if err := shutdown(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGRPCExportersConstructAndShutdown(t *testing.T) {
+	otlpTarget := target{protocol: protoGRPC, endpoint: "127.0.0.1:1", insecure: true}
+	traceExporter, err := newTraceExporter(t.Context(), otlpTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metricExporter, err := newMetricExporter(t.Context(), otlpTarget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := traceExporter.Shutdown(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := metricExporter.Shutdown(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := newTraceExporter(t.Context(), target{}); err == nil {
+		t.Fatal("trace exporter accepted an unknown protocol")
+	}
+	if _, err := newMetricExporter(t.Context(), target{}); err == nil {
+		t.Fatal("metric exporter accepted an unknown protocol")
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -1286,6 +1288,131 @@ func TestServerStart_ShutdownOnCancel(t *testing.T) {
 	err := <-errCh
 	if err != nil {
 		t.Fatalf("expected nil error on clean shutdown, got: %v", err)
+	}
+}
+
+func TestServerStart_WiresRoutinesAndRetiresOldSurfaces(t *testing.T) {
+	srv := testServer(t)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.StartOnListener(ctx, ln) }()
+
+	baseURL := "http://" + ln.Addr().String()
+	var resp *http.Response
+	for {
+		resp, err = http.Get(baseURL + "/api/routines")
+		if err == nil {
+			break
+		}
+		select {
+		case <-time.After(10 * time.Millisecond):
+		case <-t.Context().Done():
+			t.Fatal(err)
+		}
+	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		t.Fatalf("routine list status = %d, want 200", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	resp, err = http.Post(baseURL+"/api/routines", "application/json", strings.NewReader(validRoutineBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusCreated {
+		resp.Body.Close()
+		t.Fatalf("routine create status = %d, want 201", resp.StatusCode)
+	}
+	resp.Body.Close()
+
+	for _, path := range []string{
+		"/api/prompt-schedules",
+		"/api/dagu/status",
+		"/api/workflows",
+		"/api/workflow-runs",
+		"/api/workflow-steps",
+	} {
+		resp, err = http.Get(baseURL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.StatusCode != http.StatusNotFound {
+			resp.Body.Close()
+			t.Fatalf("retired route %s status = %d, want 404", path, resp.StatusCode)
+		}
+		resp.Body.Close()
+	}
+	for _, path := range []string{"/", "/robots.txt", "/routines"} {
+		resp, err = http.Get(baseURL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			t.Fatalf("web route %s status = %d, want 200", path, resp.StatusCode)
+		}
+		resp.Body.Close()
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("shutdown: %v", err)
+	}
+}
+
+func TestServerRetainedStartupWiring(t *testing.T) {
+	srv := testServer(t)
+	if srv.SessionService() == nil || srv.Registry() == nil || len((registryRef{srv}).Platforms()) != 1 {
+		t.Fatal("session platform wiring is incomplete")
+	}
+	if srv.WithAutoApproveDefault(true) != srv || !srv.autoApproveDefault {
+		t.Fatal("auto-approve startup option was not applied")
+	}
+	if srv.WithMCPAddr("127.0.0.1:0") != srv || srv.mcpAddr != "127.0.0.1:0" {
+		t.Fatal("MCP startup option was not applied")
+	}
+	if srv.RemoteServerHost() != srv.HostRouter().Local() {
+		t.Fatal("remote server and HTTP server use different local hosts")
+	}
+
+	store := managedStoreOrNil(srv.stateDB)
+	instance := hostlocal.ManagedInstance{Endpoint: "http://127.0.0.1:4321", Kind: "native", RuntimeID: "runtime", PID: 42, LaunchedAt: time.Unix(100, 0)}
+	if err := store.Upsert(t.Context(), "/repo", instance); err != nil {
+		t.Fatal(err)
+	}
+	instances, err := store.List(t.Context())
+	got := instances["/repo"]
+	if err != nil || got.Endpoint != instance.Endpoint || got.Kind != instance.Kind || got.RuntimeID != instance.RuntimeID || got.PID != instance.PID || !got.LaunchedAt.Equal(instance.LaunchedAt) {
+		t.Fatalf("managed instances = %+v, %v", instances, err)
+	}
+	if err := store.Delete(t.Context(), "/repo"); err != nil {
+		t.Fatal(err)
+	}
+	if instances, err = store.List(t.Context()); err != nil || len(instances) != 0 {
+		t.Fatalf("managed instances after delete = %+v, %v", instances, err)
+	}
+	if managedStoreOrNil(nil) != nil {
+		t.Fatal("nil state database produced a managed store")
+	}
+
+	local := &projectHandleRemoteHost{remoteID: "local", upstreams: &hostsvc.ProjectUpstreams{RepoRoot: "/repo"}}
+	resolverServer := &Server{hostRouter: hostsvc.NewRouter(local)}
+	root, err := (factoryProjectResolver{resolverServer}).ResolveLocalProject(t.Context(), "/repo/subdir")
+	if err != nil || root != "/repo" {
+		t.Fatalf("resolved root = %q, %v", root, err)
+	}
+	local.upstreamErr = errors.New("upstreams unavailable")
+	if _, err := (factoryProjectResolver{resolverServer}).ResolveLocalProject(t.Context(), "/repo"); err == nil {
+		t.Fatal("project resolution ignored the host error")
+	}
+	remote := &projectHandleRemoteHost{remoteID: "remote"}
+	if _, err := (factoryProjectResolver{&Server{hostRouter: hostsvc.NewRouter(remote)}}).ResolveLocalProject(t.Context(), "/repo"); err == nil {
+		t.Fatal("Factory accepted a remote project")
 	}
 }
 

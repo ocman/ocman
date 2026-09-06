@@ -115,6 +115,9 @@ func TestRoutineHTTPValidationConflictAndMissing(t *testing.T) {
 			t.Fatalf("bad body %q: %d %s", body, rec.Code, rec.Body.String())
 		}
 	}
+	if rec := doRoutineRequest(t, handler, http.MethodPut, "/api/routines/missing", `{`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad update body: %d %s", rec.Code, rec.Body.String())
+	}
 	overflow := `{"name":"bad timeout","prompt":"inspect","directory":"/repo","schedule":{"kind":"timeout","timeoutMs":-9223372036854775808}}`
 	if rec := doRoutineRequest(t, handler, http.MethodPost, "/api/routines", overflow); rec.Code != http.StatusBadRequest {
 		t.Fatalf("overflow: %d %s", rec.Code, rec.Body.String())

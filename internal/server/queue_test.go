@@ -216,11 +216,17 @@ func TestSessionStatusReaderLatestMessageState(t *testing.T) {
 		},
 	})
 	inferer := &sessionStatusReader{s: srv}
+	if running, ok := inferer.TurnRunning(t.Context(), "fake", "s1"); running || !ok {
+		t.Fatalf("waiting turn = (%v, %v), want (false, true)", running, ok)
+	}
 
 	if id, createdAt, running, completed, ok := inferer.LatestMessageState(t.Context(), "fake", "s1"); id != "assistant-1" || createdAt != 200 || running || !ok || !completed {
 		t.Fatalf("latest state = (%q, %d, %v, %v, %v), want (assistant-1, 200, false, true, true)", id, createdAt, running, completed, ok)
 	}
 	status = db.StatusBusy
+	if running, ok := inferer.TurnRunning(t.Context(), "fake", "s1"); !running || !ok {
+		t.Fatalf("busy turn = (%v, %v), want (true, true)", running, ok)
+	}
 	if _, _, running, completed, ok := inferer.LatestMessageState(t.Context(), "fake", "s1"); !ok || !running || completed {
 		t.Fatalf("busy completion = (%v, %v), want (false, true)", completed, ok)
 	}
@@ -246,6 +252,9 @@ func TestSessionStatusReaderLatestMessageState(t *testing.T) {
 	// resolving the id on some other machine.
 	if _, _, _, _, ok := inferer.LatestMessageState(t.Context(), "r-GONE:fake", "s1"); ok {
 		t.Fatal("unregistered platform unexpectedly resolved")
+	}
+	if running, ok := inferer.TurnRunning(t.Context(), "r-GONE:fake", "s1"); running || ok {
+		t.Fatalf("missing turn = (%v, %v), want (false, false)", running, ok)
 	}
 }
 

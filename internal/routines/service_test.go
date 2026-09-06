@@ -20,11 +20,17 @@ import (
 
 type testHost struct {
 	hostsvc.Host
-	err   error
-	calls atomic.Int32
+	remoteID string
+	err      error
+	calls    atomic.Int32
 }
 
-func (h *testHost) RemoteID() string { return "local" }
+func (h *testHost) RemoteID() string {
+	if h.remoteID != "" {
+		return h.remoteID
+	}
+	return "local"
+}
 func (h *testHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
 	h.calls.Add(1)
 	if h.err != nil {
@@ -36,16 +42,24 @@ func (h *testHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectO
 type testPlatform struct {
 	platforms.Platform
 	mu           sync.Mutex
+	id           platforms.ID
 	status       db.SessionStatus
 	sessionErr   error
 	emptySession bool
+	onSession    func()
+	onSend       func()
 	createErr    error
 	sendErr      error
 	created      int
 	sent         []string
 }
 
-func (p *testPlatform) ID() platforms.ID                  { return "opencode" }
+func (p *testPlatform) ID() platforms.ID {
+	if p.id != "" {
+		return p.id
+	}
+	return "opencode"
+}
 func (p *testPlatform) Available(context.Context) bool    { return true }
 func (p *testPlatform) Owns(context.Context, string) bool { return true }
 func (p *testPlatform) CreateSession(context.Context, platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
@@ -61,6 +75,9 @@ func (p *testPlatform) SendMessage(_ context.Context, req platforms.SendMessageR
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.sent = append(p.sent, req.Message)
+	if p.onSend != nil {
+		p.onSend()
+	}
 	return p.sendErr
 }
 func (p *testPlatform) Session(context.Context, string, int, int) (*platforms.SessionDetail, error) {
@@ -71,6 +88,9 @@ func (p *testPlatform) Session(context.Context, string, int, int) (*platforms.Se
 	}
 	if p.emptySession {
 		return &platforms.SessionDetail{}, nil
+	}
+	if p.onSession != nil {
+		p.onSession()
 	}
 	return &platforms.SessionDetail{Session: &db.Session{ID: "session-1", Status: p.status}}, nil
 }
@@ -129,6 +149,7 @@ func TestValidationAndTimeoutBecomesAbsolute(t *testing.T) {
 		{Name: "x", Prompt: "x", Directory: "/repo", Schedule: Schedule{Kind: ScheduleTimeout, Timeout: -time.Second}},
 		{Name: "x", Prompt: "x", Directory: "/repo", Schedule: Schedule{Kind: ScheduleOnce, At: time.UnixMilli(h.now.Load())}},
 		{Name: "x", Prompt: "x", Directory: "/repo", Schedule: Schedule{Kind: ScheduleCron, Cron: "bad", Timezone: "UTC"}},
+		{Name: "x", Prompt: "x", Directory: "/repo", Schedule: Schedule{Kind: ScheduleCron, Cron: "60 * * * *", Timezone: "UTC"}},
 		{Name: "x", Prompt: "x", Directory: "/repo", Schedule: Schedule{Kind: ScheduleCron, Cron: "0 9 * * *", Timezone: "Nowhere/Invalid"}},
 		{Name: "x", Prompt: "x", Directory: "/repo", Schedule: Schedule{Kind: "interval"}},
 	}
@@ -147,6 +168,12 @@ func TestValidationAndTimeoutBecomesAbsolute(t *testing.T) {
 	want := h.now.Load() + (5 * time.Minute).Milliseconds()
 	if routine.NextDueAt != want || routine.ScheduleConfigJSON != `{"dueAt":1893488700000}` {
 		t.Fatalf("routine = %+v, want due %d", routine, want)
+	}
+	input.Name = "Cron default timezone"
+	input.Schedule = Schedule{Kind: ScheduleCron, Cron: "0 9 * * *"}
+	routine, err = h.svc.Create(t.Context(), input)
+	if err != nil || !strings.Contains(routine.ScheduleConfigJSON, `"timezone":"UTC"`) {
+		t.Fatalf("cron routine = %+v, %v", routine, err)
 	}
 }
 
@@ -268,6 +295,45 @@ func TestUnavailableTargetFailsRun(t *testing.T) {
 	run, err := h.svc.RunNow(t.Context(), routine.ID)
 	if err != nil || run.State != RunFailure || !strings.Contains(run.Error, "unavailable") {
 		t.Fatalf("RunNow = %+v, %v", run, err)
+	}
+}
+
+func TestRemoteDispatchUsesCompoundPlatform(t *testing.T) {
+	h := newHarness(t)
+	remoteHost := &testHost{remoteID: "remote"}
+	remotePlatform := &testPlatform{id: "r-remote:opencode", status: db.StatusBusy}
+	h.svc.router.RegisterRemote("remote", remoteHost)
+	h.svc.platforms.Register(remotePlatform)
+	input := validInput()
+	input.RemoteID = "remote"
+	routine, err := h.svc.Create(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.svc.RunNow(t.Context(), routine.ID)
+	if err != nil || run.Platform != "r-remote:opencode" || run.SessionID != "session-1" {
+		t.Fatalf("RunNow = %+v, %v", run, err)
+	}
+}
+
+func TestStoreLossDuringDispatchIsReported(t *testing.T) {
+	h := newHarness(t)
+	h.platform.onSend = func() { _ = h.db.Close() }
+	routine, _ := h.svc.Create(t.Context(), validInput())
+	if _, err := h.svc.RunNow(t.Context(), routine.ID); err == nil || !strings.Contains(err.Error(), "recording routine failure") {
+		t.Fatalf("RunNow error = %v", err)
+	}
+}
+
+func TestStoreLossDuringTickIsReported(t *testing.T) {
+	h := newHarness(t)
+	routine, _ := h.svc.Create(t.Context(), validInput())
+	if _, err := h.svc.RunNow(t.Context(), routine.ID); err != nil {
+		t.Fatal(err)
+	}
+	h.platform.onSession = func() { _ = h.db.Close() }
+	if err := h.svc.Tick(t.Context()); err == nil {
+		t.Fatal("Tick succeeded after the store closed")
 	}
 }
 
