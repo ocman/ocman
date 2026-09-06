@@ -58,6 +58,7 @@ export interface ClientActivity {
 }
 
 export type RoutineScheduleKind = 'none' | 'timeout' | 'once' | 'cron';
+export type RoutineSessionMode = 'new' | 'reuse' | 'existing';
 
 export interface Routine {
   id: string;
@@ -65,6 +66,10 @@ export interface Routine {
   prompt: string;
   directory: string;
   remoteId: string;
+  agent: string;
+  model: string;
+  sessionMode: RoutineSessionMode;
+  sessionId: string;
   scheduleKind: RoutineScheduleKind;
   scheduleConfigJSON: string;
   nextDueAt: number;
@@ -74,6 +79,7 @@ export interface Routine {
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
+  expiredAt?: number;
 }
 
 export interface RoutineRun {
@@ -84,10 +90,14 @@ export interface RoutineRun {
   prompt: string;
   directory: string;
   remoteId: string;
+  agent: string;
+  model: string;
+  sessionMode: RoutineSessionMode;
+  targetSessionId: string;
   trigger: 'manual' | 'schedule';
   platform?: string;
   sessionId?: string;
-  state: 'running' | 'success' | 'failure';
+  state: 'running' | 'success' | 'failure' | 'interrupted';
   error?: string;
   occurrenceAt: number;
   createdAt: number;
@@ -100,6 +110,10 @@ export interface RoutineInput {
   prompt: string;
   directory: string;
   remoteId: string;
+  agent: string;
+  model: string;
+  sessionMode: RoutineSessionMode;
+  sessionId: string;
   schedule: { kind: RoutineScheduleKind; timeoutMs?: number; at?: number; cron?: string; timezone?: string };
   enabled: boolean;
   deleteAfterSuccess: boolean;

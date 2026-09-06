@@ -94,10 +94,12 @@ for displaying generated assets in the UI. See the **MCP server** section
 below for setup and available tools.
 
 **Routines** save one prompt for a project and run it manually or on a timeout,
-one-time, or five-field cron schedule. Every occurrence creates a fresh managed
-OpenCode session and remains running until that session settles. `done` is a
-successful run; `error` and `interrupted` are failures. Definitions and run
-history live in `state.db`; successful runs may soft-delete their routine.
+one-time, or five-field cron schedule. An occurrence can create a fresh managed
+OpenCode session, reuse the routine's first session, or continue a selected
+project session, and remains running until that session settles. `done` is a
+successful run; `error` is a failure, while a session lost across restart is
+`interrupted`. Missed timeout schedules expire on startup instead of running
+late. Definitions and run history live in `state.db`; successful runs may soft-delete their routine.
 The `/routines` composer command only inserts a saved prompt for review and
 does not start a routine run. Webhook triggers are deferred. See
 `docs/features/routines.md`.

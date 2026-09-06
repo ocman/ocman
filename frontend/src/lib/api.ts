@@ -79,6 +79,7 @@ export type {
 	RoutineRun,
 	RoutineInput,
 	RoutineScheduleKind,
+	RoutineSessionMode,
   FactoryEpic,
   FactoryAttempt,
   FactoryClaimedPlan,
@@ -579,8 +580,8 @@ export const api = {
     fetchJSON<ActivityDay[]>(`/api/activity${queryString(params)}`, signal),
   models: (params?: { days?: number; dir?: string }, signal?: AbortSignal) =>
     fetchJSON<ModelUsage[]>(`/api/models${queryString(params)}`, signal),
-  sessionModels: (sessionId: string) =>
-    fetchJSON<SessionModelsResponse>(`/api/session/${encodeURIComponent(sessionId)}/models`),
+  sessionModels: (sessionId: string, platform?: string) =>
+    fetchJSON<SessionModelsResponse>(`/api/session/${encodeURIComponent(sessionId)}/models${queryString({ platform })}`),
   // Favorites CRUD. Scoped per-platform because the same (provider,
   // model) pair can legitimately be a favorite under one platform but
   // not another — matches the DB's composite key.
@@ -891,8 +892,8 @@ export const api = {
     ),
   commands: (sessionId: string, signal?: AbortSignal) =>
     fetchJSON<SlashCommand[]>(`/api/session/${encodeURIComponent(sessionId)}/commands`, signal),
-  agents: (sessionId: string, signal?: AbortSignal) =>
-    fetchJSON<AgentInfo[]>(`/api/session/${encodeURIComponent(sessionId)}/agents`, signal),
+  agents: (sessionId: string, signal?: AbortSignal, platform?: string) =>
+    fetchJSON<AgentInfo[]>(`/api/session/${encodeURIComponent(sessionId)}/agents${queryString({ platform })}`, signal),
   executeCommand: (
     sessionId: string,
     command: string,

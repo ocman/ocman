@@ -16,6 +16,10 @@ type routineRequest struct {
 	Prompt             string                 `json:"prompt"`
 	Directory          string                 `json:"directory"`
 	RemoteID           string                 `json:"remoteId"`
+	Agent              string                 `json:"agent"`
+	Model              string                 `json:"model"`
+	SessionMode        string                 `json:"sessionMode"`
+	SessionID          string                 `json:"sessionId"`
 	Schedule           routineScheduleRequest `json:"schedule"`
 	Enabled            bool                   `json:"enabled"`
 	DeleteAfterSuccess bool                   `json:"deleteAfterSuccess"`
@@ -34,7 +38,7 @@ func (req routineRequest) input() (routines.Input, error) {
 		return routines.Input{}, routines.ErrValidation
 	}
 	return routines.Input{
-		Name: req.Name, Prompt: req.Prompt, Directory: req.Directory, RemoteID: req.RemoteID,
+		Name: req.Name, Prompt: req.Prompt, Directory: req.Directory, RemoteID: req.RemoteID, Agent: req.Agent, Model: req.Model, SessionMode: req.SessionMode, SessionID: req.SessionID,
 		Schedule: routines.Schedule{
 			Kind: req.Schedule.Kind, Timeout: time.Duration(req.Schedule.TimeoutMS) * time.Millisecond,
 			At: time.UnixMilli(req.Schedule.At), Cron: req.Schedule.Cron, Timezone: req.Schedule.Timezone,
@@ -183,6 +187,8 @@ func (s *Server) writeRoutineError(w http.ResponseWriter, operation string, err 
 	case errors.Is(err, state.ErrRoutineNotFound):
 		http.Error(w, err.Error(), http.StatusNotFound)
 	case errors.Is(err, routines.ErrNameConflict):
+		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, state.ErrRoutineRunActive):
 		http.Error(w, err.Error(), http.StatusConflict)
 	default:
 		serverError(w, operation, err)

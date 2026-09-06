@@ -3,6 +3,7 @@ package routines
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -51,7 +52,8 @@ type testPlatform struct {
 	createErr    error
 	sendErr      error
 	created      int
-	sent         []string
+	sent         []platforms.SendMessageRequest
+	directory    string
 }
 
 func (p *testPlatform) ID() platforms.ID {
@@ -69,18 +71,18 @@ func (p *testPlatform) CreateSession(context.Context, platforms.CreateSessionReq
 	if p.createErr != nil {
 		return nil, p.createErr
 	}
-	return &platforms.CreateSessionResponse{ID: "session-1"}, nil
+	return &platforms.CreateSessionResponse{ID: fmt.Sprintf("session-%d", p.created)}, nil
 }
 func (p *testPlatform) SendMessage(_ context.Context, req platforms.SendMessageRequest) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.sent = append(p.sent, req.Message)
+	p.sent = append(p.sent, req)
 	if p.onSend != nil {
 		p.onSend()
 	}
 	return p.sendErr
 }
-func (p *testPlatform) Session(context.Context, string, int, int) (*platforms.SessionDetail, error) {
+func (p *testPlatform) Session(_ context.Context, id string, _, _ int) (*platforms.SessionDetail, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.sessionErr != nil {
@@ -92,7 +94,7 @@ func (p *testPlatform) Session(context.Context, string, int, int) (*platforms.Se
 	if p.onSession != nil {
 		p.onSession()
 	}
-	return &platforms.SessionDetail{Session: &db.Session{ID: "session-1", Status: p.status}}, nil
+	return &platforms.SessionDetail{Session: &db.Session{ID: id, Directory: p.directory, Status: p.status}}, nil
 }
 func (p *testPlatform) setStatus(status db.SessionStatus) {
 	p.mu.Lock()
@@ -121,7 +123,7 @@ func newHarness(t *testing.T) *harness {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = sdb.Close() })
-	h := &harness{db: sdb, host: &testHost{}, platform: &testPlatform{status: db.StatusBusy}}
+	h := &harness{db: sdb, host: &testHost{}, platform: &testPlatform{status: db.StatusBusy, directory: "/repo"}}
 	h.now.Store(time.Date(2030, 1, 1, 9, 0, 0, 0, time.UTC).UnixMilli())
 	registry := platforms.NewRegistry()
 	registry.Register(h.platform)
@@ -152,6 +154,8 @@ func TestValidationAndTimeoutBecomesAbsolute(t *testing.T) {
 		{Name: "x", Prompt: "x", Directory: "/repo", Schedule: Schedule{Kind: ScheduleCron, Cron: "60 * * * *", Timezone: "UTC"}},
 		{Name: "x", Prompt: "x", Directory: "/repo", Schedule: Schedule{Kind: ScheduleCron, Cron: "0 9 * * *", Timezone: "Nowhere/Invalid"}},
 		{Name: "x", Prompt: "x", Directory: "/repo", Schedule: Schedule{Kind: "interval"}},
+		{Name: "x", Prompt: "x", Directory: "/repo", SessionMode: "other", Schedule: Schedule{Kind: ScheduleNone}},
+		{Name: "x", Prompt: "x", Directory: "/repo", SessionMode: SessionExisting, Schedule: Schedule{Kind: ScheduleNone}},
 	}
 	for i, input := range bad {
 		if _, err := h.svc.Create(t.Context(), input); !errors.Is(err, ErrValidation) {
@@ -213,7 +217,7 @@ func TestDefaultsConflictsAndMissingOperations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(routine.ID) != len("routine-")+16 || routine.RemoteID != "local" || routine.CreatedAt == 0 {
+	if len(routine.ID) != len("routine-")+16 || routine.RemoteID != "local" || routine.SessionMode != SessionNew || routine.CreatedAt == 0 {
 		t.Fatalf("defaults = %+v", routine)
 	}
 	if got, err := svc.Get(t.Context(), routine.ID); err != nil || got.ID != routine.ID {
@@ -239,6 +243,8 @@ func TestDefaultsConflictsAndMissingOperations(t *testing.T) {
 func TestManualAndDueDispatchShareAtomicClaim(t *testing.T) {
 	h := newHarness(t)
 	input := validInput()
+	input.Agent = " build "
+	input.Model = " openai/gpt-5.4 "
 	input.Schedule = Schedule{Kind: ScheduleOnce, At: time.UnixMilli(h.now.Load()).Add(time.Minute)}
 	routine, err := h.svc.Create(t.Context(), input)
 	if err != nil {
@@ -260,8 +266,11 @@ func TestManualAndDueDispatchShareAtomicClaim(t *testing.T) {
 	if created != 1 || sent != 1 || h.host.calls.Load() != 1 {
 		t.Fatalf("ensure=%d created=%d sent=%d", h.host.calls.Load(), created, sent)
 	}
+	if request := h.platform.sent[0]; request.Agent != "build" || request.Model != "openai/gpt-5.4" {
+		t.Fatalf("send request = %+v", request)
+	}
 	runs, err := h.db.ListRoutineRuns(t.Context(), routine.ID)
-	if err != nil || len(runs) != 1 || runs[0].State != RunRunning {
+	if err != nil || len(runs) != 1 || runs[0].State != RunRunning || runs[0].Agent != "build" || runs[0].Model != "openai/gpt-5.4" {
 		t.Fatalf("runs = %+v, %v", runs, err)
 	}
 }
@@ -301,7 +310,7 @@ func TestUnavailableTargetFailsRun(t *testing.T) {
 func TestRemoteDispatchUsesCompoundPlatform(t *testing.T) {
 	h := newHarness(t)
 	remoteHost := &testHost{remoteID: "remote"}
-	remotePlatform := &testPlatform{id: "r-remote:opencode", status: db.StatusBusy}
+	remotePlatform := &testPlatform{id: "r-remote:opencode", status: db.StatusBusy, directory: "/repo"}
 	h.svc.router.RegisterRemote("remote", remoteHost)
 	h.svc.platforms.Register(remotePlatform)
 	input := validInput()
@@ -316,11 +325,102 @@ func TestRemoteDispatchUsesCompoundPlatform(t *testing.T) {
 	}
 }
 
+func TestRoutineSessionModes(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		mode          string
+		sessionID     string
+		wantCreated   int
+		wantSessionID string
+	}{
+		{"new", SessionNew, "", 2, "session-2"},
+		{"reuse", SessionReuse, "", 1, "session-1"},
+		{"existing", SessionExisting, "chosen", 0, "chosen"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			input := validInput()
+			input.SessionMode, input.SessionID = tc.mode, tc.sessionID
+			routine, err := h.svc.Create(t.Context(), input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := h.svc.RunNow(t.Context(), routine.ID); err != nil {
+				t.Fatal(err)
+			}
+			if tc.mode != SessionNew {
+				h.platform.setStatus(db.StatusDone)
+				if err := h.svc.Tick(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+				h.platform.setStatus(db.StatusBusy)
+			}
+			h.now.Add(time.Second.Milliseconds())
+			run, err := h.svc.RunNow(t.Context(), routine.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			created, sent := h.platform.counts()
+			if created != tc.wantCreated || sent != 2 || run.SessionID != tc.wantSessionID {
+				t.Fatalf("created=%d sent=%d run=%+v", created, sent, run)
+			}
+			if tc.mode == SessionReuse {
+				got, _ := h.db.GetRoutine(t.Context(), routine.ID)
+				if got.SessionID != "session-1" {
+					t.Fatalf("reusable session = %q", got.SessionID)
+				}
+			}
+		})
+	}
+}
+
+func TestSharedSessionRoutineRejectsOverlappingRuns(t *testing.T) {
+	h := newHarness(t)
+	input := validInput()
+	input.SessionMode = SessionReuse
+	routine, err := h.svc.Create(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.RunNow(t.Context(), routine.ID); err != nil {
+		t.Fatal(err)
+	}
+	h.now.Add(time.Second.Milliseconds())
+	if _, err := h.svc.RunNow(t.Context(), routine.ID); !errors.Is(err, state.ErrRoutineRunActive) {
+		t.Fatalf("second run error = %v", err)
+	}
+}
+
+func TestExistingSessionMustBeAvailableInRoutineProject(t *testing.T) {
+	for _, tc := range []struct {
+		name, want string
+		setup      func(*testPlatform)
+	}{
+		{"wrong project", "does not belong", func(platform *testPlatform) { platform.directory = "/other" }},
+		{"unavailable", "unavailable", func(platform *testPlatform) { platform.emptySession = true }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			tc.setup(h.platform)
+			input := validInput()
+			input.SessionMode, input.SessionID = SessionExisting, "chosen"
+			routine, err := h.svc.Create(t.Context(), input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			run, err := h.svc.RunNow(t.Context(), routine.ID)
+			if err != nil || run.State != RunFailure || !strings.Contains(run.Error, tc.want) {
+				t.Fatalf("run = %+v, %v", run, err)
+			}
+		})
+	}
+}
+
 func TestStoreLossDuringDispatchIsReported(t *testing.T) {
 	h := newHarness(t)
 	h.platform.onSend = func() { _ = h.db.Close() }
 	routine, _ := h.svc.Create(t.Context(), validInput())
-	if _, err := h.svc.RunNow(t.Context(), routine.ID); err == nil || !strings.Contains(err.Error(), "recording routine failure") {
+	if _, err := h.svc.RunNow(t.Context(), routine.ID); err == nil || !strings.Contains(err.Error(), "database is closed") {
 		t.Fatalf("RunNow error = %v", err)
 	}
 }
@@ -337,7 +437,7 @@ func TestStoreLossDuringTickIsReported(t *testing.T) {
 	}
 }
 
-func TestRecoverySkipsUnavailablePlatform(t *testing.T) {
+func TestRecoveryWaitsForUnavailablePlatform(t *testing.T) {
 	h := newHarness(t)
 	routine, _ := h.svc.Create(t.Context(), validInput())
 	if _, err := h.svc.RunNow(t.Context(), routine.ID); err != nil {
@@ -353,7 +453,7 @@ func TestRecoverySkipsUnavailablePlatform(t *testing.T) {
 	}
 }
 
-func TestRecoverySkipsUnavailableSession(t *testing.T) {
+func TestRecoveryInterruptsUnavailableSession(t *testing.T) {
 	for _, setup := range []func(*testPlatform){
 		func(p *testPlatform) { p.sessionErr = errors.New("session unavailable") },
 		func(p *testPlatform) { p.emptySession = true },
@@ -368,9 +468,25 @@ func TestRecoverySkipsUnavailableSession(t *testing.T) {
 			t.Fatal(err)
 		}
 		runs, _ := h.db.ListRoutineRuns(t.Context(), routine.ID)
-		if runs[0].State != RunRunning {
+		if runs[0].State != RunInterrupted {
 			t.Fatalf("run = %+v", runs[0])
 		}
+	}
+}
+
+func TestTickInterruptsMissingSession(t *testing.T) {
+	h := newHarness(t)
+	routine, _ := h.svc.Create(t.Context(), validInput())
+	if _, err := h.svc.RunNow(t.Context(), routine.ID); err != nil {
+		t.Fatal(err)
+	}
+	h.platform.sessionErr = platforms.ErrNotFound
+	if err := h.svc.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	runs, _ := h.db.ListRoutineRuns(t.Context(), routine.ID)
+	if runs[0].State != RunInterrupted {
+		t.Fatalf("run = %+v", runs[0])
 	}
 }
 
@@ -387,8 +503,53 @@ func TestRecoveryFailsUnlinkedRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := h.db.GetRoutineRun(t.Context(), run.ID)
-	if err != nil || got.State != RunFailure || !strings.Contains(got.Error, "before session linkage") {
+	if err != nil || got.State != RunInterrupted || !strings.Contains(got.Error, "before session linkage") {
 		t.Fatalf("run = %+v, %v", got, err)
+	}
+}
+
+func TestRecoveryExpiresOverdueTimeoutWithoutDispatch(t *testing.T) {
+	h := newHarness(t)
+	input := validInput()
+	input.Schedule = Schedule{Kind: ScheduleTimeout, Timeout: time.Minute}
+	routine, err := h.svc.Create(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.now.Add(2 * time.Minute.Milliseconds())
+	if err := h.svc.Recover(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := h.db.GetRoutine(t.Context(), routine.ID)
+	if err != nil || got.Enabled || got.ExpiredAt != h.now.Load() {
+		t.Fatalf("routine = %+v, %v", got, err)
+	}
+	if err := h.svc.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if runs, err := h.db.ListRoutineRuns(t.Context(), routine.ID); err != nil || len(runs) != 0 {
+		t.Fatalf("runs = %+v, %v", runs, err)
+	}
+}
+
+func TestRecoveryDoesNotExpireDispatchedTimeout(t *testing.T) {
+	h := newHarness(t)
+	input := validInput()
+	input.Schedule = Schedule{Kind: ScheduleTimeout, Timeout: time.Minute}
+	routine, err := h.svc.Create(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.now.Add(time.Minute.Milliseconds())
+	if err := h.svc.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.svc.Recover(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	got, err := h.db.GetRoutine(t.Context(), routine.ID)
+	if err != nil || !got.Enabled || got.ExpiredAt != 0 {
+		t.Fatalf("routine = %+v, %v", got, err)
 	}
 }
 
@@ -430,7 +591,7 @@ func TestTerminalStatusesRecurrenceOneShotsAndAutoDelete(t *testing.T) {
 	}{
 		{"done cron", db.StatusDone, RunSuccess, Schedule{Kind: ScheduleCron, Cron: "*/5 * * * *", Timezone: "UTC"}, false, true},
 		{"error", db.StatusError, RunFailure, Schedule{Kind: ScheduleNone}, false, false},
-		{"interrupted", db.StatusInterrupted, RunFailure, Schedule{Kind: ScheduleNone}, false, false},
+		{"interrupted", db.StatusInterrupted, RunInterrupted, Schedule{Kind: ScheduleNone}, false, false},
 		{"once", db.StatusDone, RunSuccess, Schedule{Kind: ScheduleOnce, At: time.Date(2030, 1, 1, 9, 1, 0, 0, time.UTC)}, false, false},
 		{"timeout", db.StatusDone, RunSuccess, Schedule{Kind: ScheduleTimeout, Timeout: time.Minute}, false, false},
 		{"auto delete", db.StatusDone, RunSuccess, Schedule{Kind: ScheduleNone}, true, false},

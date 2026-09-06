@@ -197,7 +197,9 @@ import (
 //	     approved before the Factory lifecycle learned to close them.
 //	69 - add append-only comments to native Factory Issues.
 //	70 - add project-bound routines and append-only routine run history.
-const latestSchemaVersion = 70
+//	71 - persist the agent and model selected for routine runs.
+//	72 - add routine session creation, reuse, and existing-session modes.
+const latestSchemaVersion = 73
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -442,6 +444,12 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV69(tx)
 	case 70:
 		return migrateToV70(tx)
+	case 71:
+		return migrateToV71(tx)
+	case 72:
+		return migrateToV72(tx)
+	case 73:
+		return migrateToV73(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -2445,6 +2453,58 @@ func migrateToV70(tx *sql.Tx) error {
 		BEGIN SELECT RAISE(ABORT, 'routine run snapshots are immutable'); END;
 		CREATE TRIGGER IF NOT EXISTS routine_run_no_delete BEFORE DELETE ON routine_run
 		BEGIN SELECT RAISE(ABORT, 'routine runs are append-only'); END;
+	`)
+	return err
+}
+
+func migrateToV71(tx *sql.Tx) error {
+	for _, change := range []struct{ table, column string }{
+		{"routine", "agent"}, {"routine", "model"}, {"routine_run", "agent"}, {"routine_run", "model"},
+	} {
+		if err := addColumnIfMissing(tx, change.table, change.column, "TEXT NOT NULL DEFAULT ''"); err != nil {
+			return err
+		}
+	}
+	_, err := tx.Exec(`
+		DROP TRIGGER IF EXISTS routine_run_snapshot_immutable;
+		CREATE TRIGGER routine_run_snapshot_immutable BEFORE UPDATE OF
+			id, routine_id, routine_updated_at, routine_name, prompt, directory, remote_id, agent, model, trigger, occurrence_at, created_at ON routine_run
+		BEGIN SELECT RAISE(ABORT, 'routine run snapshots are immutable'); END;
+	`)
+	return err
+}
+
+func migrateToV72(tx *sql.Tx) error {
+	for _, change := range []struct{ table, column, definition string }{
+		{"routine", "session_mode", "TEXT NOT NULL DEFAULT 'new'"},
+		{"routine", "session_id", "TEXT NOT NULL DEFAULT ''"},
+		{"routine_run", "session_mode", "TEXT NOT NULL DEFAULT 'new'"},
+		{"routine_run", "target_session_id", "TEXT NOT NULL DEFAULT ''"},
+	} {
+		if err := addColumnIfMissing(tx, change.table, change.column, change.definition); err != nil {
+			return err
+		}
+	}
+	_, err := tx.Exec(`
+		CREATE UNIQUE INDEX IF NOT EXISTS routine_run_one_shared_active_uq ON routine_run (routine_id) WHERE state = 'running' AND session_mode <> 'new';
+		CREATE UNIQUE INDEX IF NOT EXISTS routine_run_one_active_target_uq ON routine_run (remote_id, target_session_id) WHERE state = 'running' AND session_mode <> 'new' AND target_session_id <> '';
+		DROP TRIGGER IF EXISTS routine_run_snapshot_immutable;
+		CREATE TRIGGER routine_run_snapshot_immutable BEFORE UPDATE OF
+			id, routine_id, routine_updated_at, routine_name, prompt, directory, remote_id, agent, model, session_mode, target_session_id, trigger, occurrence_at, created_at ON routine_run
+		BEGIN SELECT RAISE(ABORT, 'routine run snapshots are immutable'); END;
+	`)
+	return err
+}
+
+func migrateToV73(tx *sql.Tx) error {
+	if err := addColumnIfMissing(tx, "routine", "expired_at", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	_, err := tx.Exec(`
+		DROP INDEX IF EXISTS routine_run_one_active_target_uq;
+		CREATE UNIQUE INDEX routine_run_one_active_target_uq ON routine_run (
+			remote_id, COALESCE(NULLIF(target_session_id, ''), NULLIF(session_id, ''))
+		) WHERE state = 'running' AND session_mode <> 'new' AND (target_session_id <> '' OR session_id <> '');
 	`)
 	return err
 }

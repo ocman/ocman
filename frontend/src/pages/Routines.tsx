@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
+import { Button } from '../components/Control';
+import { Modal } from '../components/Modal';
 import { SearchSelect } from '../components/SearchSelect';
-import { api, type Project, type Routine, type RoutineInput, type RoutineRun, type RoutineScheduleKind } from '../lib/api';
-import { formatDateTimeShort } from '../lib/format';
+import { api, type Project, type Routine, type RoutineInput, type RoutineRun, type RoutineScheduleKind, type RoutineSessionMode, type Session } from '../lib/api';
+import { cleanTitle, formatDateTimeShort } from '../lib/format';
 import { usePageTitle } from '../lib/headerContext';
-import { resolveTargetForDir } from '../lib/machinePicker';
 import './Routines.css';
 
 const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -13,6 +14,11 @@ type FormState = {
   name: string;
   prompt: string;
   directory: string;
+  agent: string;
+  model: string;
+  sessionMode: RoutineSessionMode;
+  sessionId: string;
+  remoteId: string;
   kind: RoutineScheduleKind;
   timeoutMinutes: string;
   at: string;
@@ -23,7 +29,7 @@ type FormState = {
 };
 
 const emptyForm = (): FormState => ({
-  name: '', prompt: '', directory: '', kind: 'none', timeoutMinutes: '30', at: '', cron: '', timezone,
+  name: '', prompt: '', directory: '', agent: '', model: '', sessionMode: 'new', sessionId: '', remoteId: '', kind: 'none', timeoutMinutes: '30', at: '', cron: '', timezone,
   enabled: true, deleteAfterSuccess: false,
 });
 
@@ -33,6 +39,11 @@ function formFor(routine: Routine): FormState {
     name: routine.name,
     prompt: routine.prompt,
     directory: routine.directory,
+    agent: routine.agent,
+    model: routine.model,
+    sessionMode: routine.sessionMode,
+    sessionId: routine.sessionId,
+    remoteId: routine.remoteId,
     kind: routine.scheduleKind,
     timeoutMinutes: String(Math.max(1, Math.round((routine.nextDueAt - routine.updatedAt) / 60_000))),
     at: config.at ? new Date(config.at - new Date(config.at).getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : '',
@@ -49,6 +60,10 @@ function inputFor(form: FormState, remoteId: string): RoutineInput {
     prompt: form.prompt,
     directory: form.directory,
     remoteId,
+    agent: form.agent,
+    model: form.model,
+    sessionMode: form.sessionMode,
+    sessionId: form.sessionId,
     schedule: {
       kind: form.kind,
       ...(form.kind === 'timeout' ? { timeoutMs: Number(form.timeoutMinutes) * 60_000 } : {}),
@@ -60,10 +75,18 @@ function inputFor(form: FormState, remoteId: string): RoutineInput {
   };
 }
 
+function sessionKey(remoteId: string, sessionId: string) {
+  return `${encodeURIComponent(remoteId || 'local')}:${encodeURIComponent(sessionId)}`;
+}
+
 export function Routines() {
   usePageTitle('Routines');
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [catalog, setCatalog] = useState({ agents: [] as string[], models: [] as string[] });
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
   const [history, setHistory] = useState<Record<string, RoutineRun[]>>({});
   const [form, setForm] = useState<FormState>(emptyForm);
   const [editing, setEditing] = useState<string>();
@@ -106,6 +129,35 @@ export function Routines() {
     return () => { active = false; window.clearInterval(interval); };
   }, []);
 
+  useEffect(() => {
+    if (!showForm || !form.directory) {
+      setSessions([]);
+      return;
+    }
+    let active = true;
+    setSessionsLoading(true);
+    api.sessions({ dir: form.directory }).then(
+      (items) => { if (active) setSessions(items ?? []); },
+      (err) => { if (active) setError(err instanceof Error ? err.message : 'Could not load sessions.'); },
+    ).finally(() => { if (active) setSessionsLoading(false); });
+    return () => { active = false; };
+  }, [form.directory, showForm]);
+
+  useEffect(() => {
+    const source = sessions.find((session) => session.directory === form.directory && (session.remoteId || 'local') === (form.remoteId || 'local') && !session.parentId && !session.stale);
+    if (!showForm || !source) {
+      setCatalog({ agents: [], models: [] });
+      return;
+    }
+    let active = true;
+    setCatalogLoading(true);
+    Promise.all([api.agents(source.id, undefined, source.platform), api.sessionModels(source.id, source.platform)]).then(
+      ([agents, models]) => { if (active) setCatalog({ agents: agents.map((agent) => agent.name), models: models.models.filter((model) => model.isAvailable !== false).map((model) => `${model.provider}/${model.model}`) }); },
+      () => { if (active) setCatalog({ agents: [], models: [] }); },
+    ).finally(() => { if (active) setCatalogLoading(false); });
+    return () => { active = false; };
+  }, [form.directory, form.remoteId, sessions, showForm]);
+
   const openCreate = () => {
     setEditing(undefined);
     setForm(emptyForm());
@@ -125,10 +177,8 @@ export function Routines() {
     setBusy(true);
     setError('');
     try {
-      const target = await resolveTargetForDir(form.directory);
-      if (!target) return;
-      if (!target.remoteId) throw new Error('Could not resolve routine target.');
-      const input = inputFor(form, target.remoteId);
+      const remoteId = form.remoteId || 'local';
+      const input = inputFor(form, remoteId);
       if (editing) await api.routines.update(editing, input);
       else await api.routines.create(input);
       await load();
@@ -153,26 +203,61 @@ export function Routines() {
     }
   };
 
-  const projectOptions = Array.from(new Set(projects.filter((project) => !project.archived).map((project) => project.directory)))
-    .map((directory) => ({ value: directory, label: directory }));
+  const availableProjects = projects.filter((project) => !project.archived);
+  const projectOptions = Array.from(new Map(availableProjects.map((project) => {
+    const remoteId = project.remoteId || 'local';
+    return [sessionKey(remoteId, project.directory), { value: sessionKey(remoteId, project.directory), label: `${project.directory}${project.remoteName ? ` · ${project.remoteName}` : ''}` }];
+  })).values());
+  const selectedProjectKey = form.directory ? sessionKey(form.remoteId, form.directory) : '';
+  if (selectedProjectKey && !projectOptions.some((option) => option.value === selectedProjectKey)) {
+    projectOptions.unshift({ value: selectedProjectKey, label: form.directory });
+  }
+  const availableSessions = sessions.filter((session) => session.directory === form.directory && (session.remoteId || 'local') === (form.remoteId || 'local') && !session.parentId && !session.archived && !session.stale);
+  const sessionOptions = availableSessions.map((session) => ({
+    value: sessionKey(session.remoteId || 'local', session.id),
+    label: `${cleanTitle(session.title) || session.id}${session.remoteName ? ` · ${session.remoteName}` : ''}`,
+  }));
+  const selectedSessionKey = form.sessionId ? sessionKey(form.remoteId, form.sessionId) : '';
+  if (selectedSessionKey && !sessionOptions.some((option) => option.value === selectedSessionKey)) {
+    sessionOptions.unshift({ value: selectedSessionKey, label: form.sessionId });
+  }
+  const agentOptions = ['', ...new Set([...catalog.agents, form.agent].filter(Boolean))].map((agent) => ({ value: agent, label: agent || 'Default agent' }));
+  const modelOptions = ['', ...new Set([...catalog.models, form.model].filter(Boolean))].map((model) => ({ value: model, label: model || 'Default model' }));
+  const editingRuns = editing ? history[editing] ?? [] : [];
 
   return (
     <main className="routine-page">
       <header className="routine-header">
-        <div><span className="routine-kicker">Automation</span><h1>Routines</h1><p>Save a prompt, run it now, or schedule it for later.</p></div>
-        <button type="button" onClick={openCreate}>New routine</button>
+        <p>Save a prompt, run it now, or schedule it for later.</p>
+        <Button type="button" variant="accent" onClick={openCreate}><i className="bi bi-plus-lg" aria-hidden="true" />New routine</Button>
       </header>
 
-      {error && <p role="alert" className="routine-error">{error}</p>}
+      {error && !showForm && <p role="alert" className="routine-error">{error}</p>}
 
       {showForm && (
+        <Modal label={editing ? 'Edit routine' : 'New routine'} onClose={() => setShowForm(false)} canClose={!busy} backdropClassName="routine-drawer-backdrop" dialogClassName="routine-drawer" backdropTestId="routine-drawer-backdrop">
         <form className="routine-form" onSubmit={submit}>
-          <h2>{editing ? 'Edit routine' : 'New routine'}</h2>
+          <header><h2>{editing ? 'Edit routine' : 'New routine'}</h2><button type="button" disabled={busy} onClick={() => setShowForm(false)} aria-label="Close routine form" title="Close"><i className="bi bi-x-lg" aria-hidden="true" /></button></header>
+          {error && <p role="alert" className="routine-error">{error}</p>}
           <label>Name<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
           <label>Prompt<textarea required value={form.prompt} onChange={(event) => setForm({ ...form, prompt: event.target.value })} /></label>
           <label>Project
-            <SearchSelect value={form.directory} options={projectOptions} ariaLabel="Project" placeholder="Select a project" searchLabel="Search projects" onChange={(directory) => setForm({ ...form, directory })} />
+            <SearchSelect value={selectedProjectKey} options={projectOptions} ariaLabel="Project" placeholder="Select a project" searchLabel="Search projects" onChange={(key) => {
+              const project = availableProjects.find((item) => sessionKey(item.remoteId || 'local', item.directory) === key);
+              if (project) setForm({ ...form, directory: project.directory, remoteId: project.remoteId || 'local', sessionId: '', agent: '', model: '' });
+            }} />
           </label>
+          <label>Session<select aria-label="Session" value={form.sessionMode} onChange={(event) => setForm({ ...form, sessionMode: event.target.value as RoutineSessionMode, sessionId: '' })}>
+            <option value="new">New session</option><option value="reuse">Reuse session</option><option value="existing">Existing session</option>
+          </select><small>{form.sessionMode === 'new' ? 'Create a fresh session for every run.' : form.sessionMode === 'reuse' ? 'Create one on the first run, then keep using it.' : 'Continue a session from this project.'}</small></label>
+          {form.sessionMode === 'existing' && <label>Existing session
+            <SearchSelect value={selectedSessionKey} options={sessionOptions} ariaLabel="Existing session" placeholder={sessionsLoading ? 'Loading sessions...' : 'Select a session'} searchLabel="Search sessions" disabled={sessionsLoading || !form.directory} onChange={(key) => {
+              const session = availableSessions.find((item) => sessionKey(item.remoteId || 'local', item.id) === key);
+              if (session) setForm({ ...form, sessionId: session.id, remoteId: session.remoteId || 'local' });
+            }} />
+          </label>}
+          <label>Agent<SearchSelect value={form.agent} options={agentOptions} ariaLabel="Agent" placeholder="Default agent" searchLabel="Search agents" disabled={catalogLoading || !form.directory} onChange={(agent) => setForm({ ...form, agent })} /></label>
+          <label>Model<SearchSelect value={form.model} options={modelOptions} ariaLabel="Model" placeholder="Default model" searchLabel="Search models" disabled={catalogLoading || !form.directory} onChange={(model) => setForm({ ...form, model })} /></label>
           <label>Schedule<select value={form.kind} onChange={(event) => setForm({ ...form, kind: event.target.value as RoutineScheduleKind })}>
             <option value="none">None</option><option value="timeout">Timeout</option><option value="once">Once</option><option value="cron">Cron</option>
           </select></label>
@@ -181,25 +266,20 @@ export function Routines() {
           {form.kind === 'cron' && <><label>Cron expression<input required placeholder="0 9 * * *" value={form.cron} onChange={(event) => setForm({ ...form, cron: event.target.value })} /></label><label>Timezone<input required value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} /></label></>}
           <label className="routine-check"><input type="checkbox" checked={form.enabled} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} /> Enabled</label>
           <label className="routine-check"><input type="checkbox" checked={form.deleteAfterSuccess} onChange={(event) => setForm({ ...form, deleteAfterSuccess: event.target.checked })} /> Delete after a successful run</label>
-          <div className="routine-actions"><button disabled={busy || !form.directory} type="submit">{editing ? 'Save changes' : 'Create routine'}</button><button type="button" onClick={() => setShowForm(false)}>Cancel</button></div>
+          <div className="routine-actions"><Button disabled={busy || !form.directory || (form.sessionMode === 'existing' && !form.sessionId)} type="submit" variant="accent">{editing ? 'Save changes' : 'Create routine'}</Button><Button type="button" disabled={busy} onClick={() => setShowForm(false)}>Cancel</Button></div>
+          {editing && <section className="routine-detail-history" aria-labelledby="routine-history-heading"><h3 id="routine-history-heading">History</h3>{editingRuns.length === 0 ? <p className="oc-empty">No runs yet.</p> : <div className="routine-history-table-wrap"><table><thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Session</th></tr></thead><tbody>{editingRuns.map((run) => <tr key={run.id}><td>{formatDateTimeShort(run.startedAt || run.createdAt)}</td><td>{run.trigger}</td><td><span className={`routine-state ${run.state}`}>{run.state}</span>{run.error && <small className="routine-error">{run.error}</small>}</td><td>{run.sessionId ? <Link to={`/session/${encodeURIComponent(run.sessionId)}?platform=${encodeURIComponent(run.platform ?? '')}`}>Open</Link> : '-'}</td></tr>)}</tbody></table></div>}</section>}
         </form>
+        </Modal>
       )}
 
-      {loading ? <p role="status">Loading routines...</p> : routines.length === 0 ? <p className="routine-empty">No routines yet.</p> : (
-        <section className="routine-list" aria-label="Saved routines">
-          {routines.map((routine) => {
-            const runs = history[routine.id] ?? [];
-            const latest = runs[0];
-            return <article key={routine.id}>
-              <header><div><h2>{routine.name}</h2><p>{routine.directory}</p></div><span className={`routine-state ${latest?.state ?? ''}`}>{latest?.state ?? (routine.enabled ? 'ready' : 'disabled')}</span></header>
-              <p className="routine-prompt">{routine.prompt}</p>
-              <dl><div><dt>Schedule</dt><dd>{routine.scheduleKind}</dd></div><div><dt>Next run</dt><dd>{routine.nextDueAt ? formatDateTimeShort(routine.nextDueAt) : 'Not scheduled'}</dd></div></dl>
-              {latest?.error && <p role="alert" className="routine-error">{latest.error}</p>}
-              <div className="routine-actions"><button disabled={busy} type="button" onClick={() => void act(() => api.routines.run(routine.id))}>Run now</button><button disabled={busy} type="button" onClick={() => openEdit(routine)}>Edit</button><button disabled={busy} type="button" className="routine-delete" onClick={() => void act(() => api.routines.remove(routine.id))}>Delete</button></div>
-              {runs.length > 0 && <details><summary>History ({runs.length})</summary><ul className="routine-history">{runs.map((run) => <li key={run.id}><span>{formatDateTimeShort(run.createdAt)} · {run.trigger} · {run.state}</span>{run.sessionId && <Link to={`/session/${encodeURIComponent(run.sessionId)}?platform=${encodeURIComponent(run.platform ?? '')}`}>Open session</Link>}{run.error && <span className="routine-error">{run.error}</span>}</li>)}</ul></details>}
-            </article>;
-          })}
-        </section>
+      {loading ? <div className="oc-list-loading" role="status"><div className="oc-spinner" />Loading routines...</div> : routines.length === 0 ? <p className="oc-empty">No routines yet.</p> : (
+        <section className="routine-list" aria-label="Saved routines"><div className="routine-table-wrap"><table><thead><tr><th>Name</th><th>Project</th><th>Session</th><th>Schedule</th><th>Next run</th><th>Status</th><th>Actions</th></tr></thead><tbody>{routines.map((routine) => {
+          const latest = history[routine.id]?.[0];
+          const status = routine.expiredAt && routine.expiredAt > (latest?.createdAt ?? 0) ? 'expired' : latest?.state ?? (routine.enabled ? 'ready' : 'disabled');
+          return <tr key={routine.id} tabIndex={0} aria-label={`Edit ${routine.name}`} onClick={() => openEdit(routine)} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); openEdit(routine); } }}>
+            <td><strong>{routine.name}</strong><small>{routine.prompt}</small></td><td>{routine.directory}</td><td>{routine.sessionMode === 'new' ? 'New each run' : routine.sessionMode === 'reuse' ? 'Reuse' : 'Existing'}</td><td>{routine.scheduleKind}</td><td>{routine.nextDueAt ? formatDateTimeShort(routine.nextDueAt) : '-'}</td><td><span className={`routine-state ${status}`}>{status}</span></td><td><div className="routine-actions"><Button size="small" disabled={busy} type="button" variant="accent" onClick={(event) => { event.stopPropagation(); void act(() => api.routines.run(routine.id)); }}>Run</Button><Button size="small" disabled={busy} type="button" onClick={(event) => { event.stopPropagation(); openEdit(routine); }}>Edit</Button><Button size="small" disabled={busy} type="button" className="routine-delete" onClick={(event) => { event.stopPropagation(); void act(() => api.routines.remove(routine.id)); }}>Delete</Button></div></td>
+          </tr>;
+        })}</tbody></table></div></section>
       )}
     </main>
   );

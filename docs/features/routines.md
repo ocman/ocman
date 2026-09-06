@@ -4,17 +4,26 @@ weight: 4
 ---
 
 Routines save a prompt for a project. Run one by hand or give it a schedule.
-Every run starts a fresh OpenCode session in the selected project.
+Choose how each routine uses OpenCode sessions:
+
+- **New session** starts a fresh session for every run. This is the default.
+- **Reuse session** starts a session on the first run and continues it later.
+- **Existing session** continues a session you select from the project.
 
 ## Create and manage routines
 
 Open **Routines** from the main navigation, then select **New routine**. Enter
-a unique name, the prompt, the target project, and a schedule. You can also
-disable a routine without deleting it.
+a unique name, the prompt, the target project, session behavior, and a schedule.
+The searchable agent and model lists use values seen in that project. Select
+the default option to let OpenCode choose. You can also disable a routine
+without deleting it.
 
 Use **Edit** to change any of these fields. The change applies to future runs.
-Existing history keeps the name, prompt, project, and trigger recorded when
-each run started.
+Existing history keeps the name, prompt, project, session behavior, agent,
+model, and trigger recorded when each run started.
+
+Select a routine row to open its editable settings and run history in the side
+drawer.
 
 Use **Delete** to remove a routine from the UI and stop future scheduled runs.
 Deletion is soft: ocman retains the routine and its run history in `state.db`.
@@ -26,14 +35,13 @@ only after a run succeeds. A failed run leaves the routine available.
 
 The Routines page and the composer provide different actions:
 
-- **Run now** starts a fresh session immediately and sends the saved prompt.
+- **Run now** starts or selects a session according to the routine and sends the saved prompt.
   It records a manual run in the routine's history.
 - `/routines` in a session composer opens a picker and inserts the chosen
   prompt into the composer. It does not send the prompt, start a session, or
   create a history entry. Edit the text or send it like any other message.
 
-Scheduled runs also start fresh sessions. Routines never reuse a previous
-session.
+Scheduled runs use the same session behavior as manual runs.
 
 ## Schedule semantics
 
@@ -41,7 +49,8 @@ session.
 - **Timeout** accepts a delay from now. When you save the routine, ocman turns
   that relative delay into one absolute due time. Restarting ocman or editing
   the routine later does not restart the original countdown. Saving an edit
-  with a timeout calculates a new due time from that save.
+  with a timeout calculates a new due time from that save. A timeout missed
+  while ocman is offline expires at startup instead of running late.
 - **Once** runs at one absolute date and time. The selected local time is
   saved as an absolute instant.
 - **Cron** uses a standard five-field cron expression plus an IANA timezone,
@@ -56,13 +65,14 @@ are not supported.
 
 A run remains **running** while its session is active or waiting for the
 session to settle. Session **done** marks the run **success**. Session
-**error** or **interrupted** marks it **failure**. Dispatch errors, including
+**error** marks it **failure**. An interrupted or unavailable session marks
+the run **interrupted**. Dispatch errors, including
 an unavailable host or a session that could not be created or prompted, also
 produce a failed history entry.
 
-Expand **History** on a routine card to see when each run started, whether it
-was manual or scheduled, and its current result. Failed runs show their error.
-Runs with a linked session include **Open session**.
+Open a routine row to see when each run started, whether it was manual or
+scheduled, and its current result. Failed runs show their error. Runs with a
+linked session include an **Open** link.
 
 Run records preserve their routine snapshot and remain available after a
 restart. Ocman resumes observing linked running sessions after startup. If a

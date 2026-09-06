@@ -26,9 +26,14 @@ const (
 	ScheduleOnce    = "once"
 	ScheduleCron    = "cron"
 
-	RunRunning = "running"
-	RunSuccess = "success"
-	RunFailure = "failure"
+	RunRunning     = "running"
+	RunSuccess     = "success"
+	RunFailure     = "failure"
+	RunInterrupted = "interrupted"
+
+	SessionNew      = "new"
+	SessionReuse    = "reuse"
+	SessionExisting = "existing"
 )
 
 var (
@@ -49,6 +54,10 @@ type Input struct {
 	Prompt             string
 	Directory          string
 	RemoteID           string
+	Agent              string
+	Model              string
+	SessionMode        string
+	SessionID          string
 	Schedule           Schedule
 	Enabled            bool
 	DeleteAfterSuccess bool
@@ -155,12 +164,29 @@ func buildRoutine(input Input, now time.Time) (state.Routine, error) {
 	if remoteID == "" {
 		remoteID = "local"
 	}
+	sessionMode := strings.TrimSpace(input.SessionMode)
+	if sessionMode == "" {
+		sessionMode = SessionNew
+	}
+	sessionID := strings.TrimSpace(input.SessionID)
+	switch sessionMode {
+	case SessionNew, SessionReuse:
+		sessionID = ""
+	case SessionExisting:
+		if sessionID == "" {
+			return state.Routine{}, fmt.Errorf("an existing session is required: %w", ErrValidation)
+		}
+	default:
+		return state.Routine{}, fmt.Errorf("invalid session mode: %w", ErrValidation)
+	}
 	config, due, err := encodeSchedule(input.Schedule, now)
 	if err != nil {
 		return state.Routine{}, fmt.Errorf("invalid schedule: %w", ErrValidation)
 	}
 	return state.Routine{
 		Name: name, Prompt: input.Prompt, Directory: directory, RemoteID: remoteID,
+		Agent: strings.TrimSpace(input.Agent), Model: strings.TrimSpace(input.Model),
+		SessionMode: sessionMode, SessionID: sessionID,
 		ScheduleKind: input.Schedule.Kind, ScheduleConfigJSON: config, NextDueAt: due,
 		Enabled: input.Enabled, DeleteAfterSuccess: input.DeleteAfterSuccess,
 	}, nil
@@ -240,7 +266,7 @@ func (s *Service) Tick(ctx context.Context) error {
 }
 
 func (s *Service) Recover(ctx context.Context) error {
-	return s.settleRunning(ctx, true)
+	return errors.Join(s.settleRunning(ctx, true), s.store.ExpireOverdueTimeoutRoutines(ctx, s.now().UnixMilli()))
 }
 
 func (s *Service) claimAndDispatch(ctx context.Context, routine state.Routine, occurrence int64, trigger string) (state.RoutineRun, error) {
@@ -264,15 +290,32 @@ func (s *Service) claimAndDispatch(ctx context.Context, routine state.Routine, o
 	if host.RemoteID() != "" && host.RemoteID() != "local" {
 		platformID = remote.CompoundPlatformID(host.RemoteID(), platformID)
 	}
-	created, err := s.sessions.Create(ctx, platformID, platforms.CreateSessionRequest{Directory: run.Directory, Port: ensured.Port()})
-	if err != nil {
-		return s.failDispatch(ctx, run, err)
+	sessionID := run.TargetSessionID
+	created := false
+	if sessionID == "" {
+		result, err := s.sessions.Create(ctx, platformID, platforms.CreateSessionRequest{Directory: run.Directory, Port: ensured.Port()})
+		if err != nil {
+			return s.failDispatch(ctx, run, err)
+		}
+		sessionID, created = result.ID, true
+	} else {
+		platform, ok := s.platforms.Get(platforms.ID(platformID))
+		if !ok {
+			return s.failDispatch(ctx, run, fmt.Errorf("routine platform %q is unavailable", platformID))
+		}
+		detail, err := platform.Session(ctx, sessionID, 0, 0)
+		if err != nil || detail == nil || detail.Session == nil {
+			return s.failDispatch(ctx, run, fmt.Errorf("routine session %q is unavailable", sessionID))
+		}
+		if filepath.Clean(detail.Session.Directory) != filepath.Clean(run.Directory) {
+			return s.failDispatch(ctx, run, fmt.Errorf("routine session %q does not belong to %q", sessionID, run.Directory))
+		}
 	}
-	if err := s.sessions.SendMessage(ctx, platformID, platforms.SendMessageRequest{SessionID: created.ID, Message: run.Prompt}); err != nil {
-		return s.failDispatch(ctx, run, err)
-	}
-	if err := s.store.LinkRoutineRun(ctx, run.ID, platformID, created.ID, s.now().UnixMilli()); err != nil {
+	if err := s.store.LinkRoutineRun(ctx, run.ID, platformID, sessionID, s.now().UnixMilli(), created && run.SessionMode == SessionReuse); err != nil {
 		return s.failDispatch(ctx, run, fmt.Errorf("linking routine session: %w", err))
+	}
+	if err := s.sessions.SendMessage(ctx, platformID, platforms.SendMessageRequest{SessionID: sessionID, Message: run.Prompt, Agent: run.Agent, Model: run.Model}); err != nil {
+		return s.failDispatch(ctx, run, err)
 	}
 	return s.store.GetRoutineRun(ctx, run.ID)
 }
@@ -293,7 +336,7 @@ func (s *Service) settleRunning(ctx context.Context, recoverOrphans bool) error 
 	for _, run := range runs {
 		if run.Platform == "" || run.SessionID == "" {
 			if recoverOrphans {
-				result = errors.Join(result, s.finish(ctx, run, RunFailure, "dispatch interrupted before session linkage"))
+				result = errors.Join(result, s.finish(ctx, run, RunInterrupted, "dispatch interrupted before session linkage"))
 			}
 			continue
 		}
@@ -302,14 +345,23 @@ func (s *Service) settleRunning(ctx context.Context, recoverOrphans bool) error 
 			continue
 		}
 		detail, err := platform.Session(ctx, run.SessionID, 1, 0)
-		if err != nil || detail == nil || detail.Session == nil {
+		if err != nil {
+			if recoverOrphans || errors.Is(err, platforms.ErrNotFound) {
+				result = errors.Join(result, s.finish(ctx, run, RunInterrupted, "session is no longer available"))
+			}
+			continue
+		}
+		if detail == nil || detail.Session == nil {
+			result = errors.Join(result, s.finish(ctx, run, RunInterrupted, "session is no longer available"))
 			continue
 		}
 		switch detail.Session.Status {
 		case db.StatusDone:
 			result = errors.Join(result, s.finish(ctx, run, RunSuccess, ""))
-		case db.StatusError, db.StatusInterrupted:
+		case db.StatusError:
 			result = errors.Join(result, s.finish(ctx, run, RunFailure, detail.Session.Status.String()))
+		case db.StatusInterrupted:
+			result = errors.Join(result, s.finish(ctx, run, RunInterrupted, detail.Session.Status.String()))
 		}
 	}
 	return result

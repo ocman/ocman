@@ -10,7 +10,7 @@ import (
 func testRoutine(id, name string, createdAt int64) Routine {
 	return Routine{
 		ID: id, Name: name, Prompt: "run " + name, Directory: "/repo/" + id,
-		RemoteID: "local", ScheduleKind: "interval", ScheduleConfigJSON: `{"minutes":15}`,
+		RemoteID: "local", Agent: "build", Model: "openai/gpt-5.4", SessionMode: "new", ScheduleKind: "interval", ScheduleConfigJSON: `{"minutes":15}`,
 		NextDueAt: 100, Enabled: true, DeleteAfterSuccess: true,
 		CreatedAt: createdAt, UpdatedAt: createdAt,
 	}
@@ -37,6 +37,10 @@ func TestRoutineCRUDUniquenessOrderingAndSoftDelete(t *testing.T) {
 		t.Fatalf("routines = %+v, %v", listed, err)
 	}
 	first.Prompt = "updated prompt"
+	first.Agent = "plan"
+	first.Model = "anthropic/claude-sonnet-4"
+	first.SessionMode = "existing"
+	first.SessionID = "session-existing"
 	first.ScheduleKind = "cron"
 	first.ScheduleConfigJSON = `{"cron":"0 9 * * 1","timezone":"UTC"}`
 	first.NextDueAt = 200
@@ -48,7 +52,7 @@ func TestRoutineCRUDUniquenessOrderingAndSoftDelete(t *testing.T) {
 	}
 	got, err := db.GetRoutine(t.Context(), first.ID)
 	if err != nil || got.Name != first.Name || got.Prompt != first.Prompt || got.Directory != first.Directory || got.RemoteID != first.RemoteID ||
-		got.ScheduleKind != "cron" || got.ScheduleConfigJSON != first.ScheduleConfigJSON || got.NextDueAt != 200 || got.Enabled ||
+		got.Agent != first.Agent || got.Model != first.Model || got.SessionMode != first.SessionMode || got.SessionID != first.SessionID || got.ScheduleKind != "cron" || got.ScheduleConfigJSON != first.ScheduleConfigJSON || got.NextDueAt != 200 || got.Enabled ||
 		got.DeleteAfterSuccess || got.CreatedAt != 1 || got.UpdatedAt != 4 {
 		t.Fatalf("routine = %+v, %v", got, err)
 	}
@@ -81,13 +85,15 @@ func TestRoutineRunSnapshotsHistoryAndOrdering(t *testing.T) {
 		ID: "run-1", RoutineID: routine.ID, Trigger: "schedule", State: "dispatching",
 		OccurrenceAt: 100, CreatedAt: 10, StartedAt: 11,
 	})
-	if err != nil || !claimed || run.RoutineUpdatedAt != routine.UpdatedAt || run.RoutineName != routine.Name || run.Prompt != routine.Prompt || run.Directory != routine.Directory || run.RemoteID != routine.RemoteID {
+	if err != nil || !claimed || run.RoutineUpdatedAt != routine.UpdatedAt || run.RoutineName != routine.Name || run.Prompt != routine.Prompt || run.Directory != routine.Directory || run.RemoteID != routine.RemoteID || run.Agent != routine.Agent || run.Model != routine.Model || run.SessionMode != routine.SessionMode || run.TargetSessionID != routine.SessionID {
 		t.Fatalf("run = %+v, claimed=%v, err=%v", run, claimed, err)
 	}
 	routine.Name = "Renamed"
 	routine.Prompt = "new prompt"
 	routine.Directory = "/new"
 	routine.RemoteID = "remote"
+	routine.Agent = "plan"
+	routine.Model = "anthropic/claude-sonnet-4"
 	routine.UpdatedAt = 20
 	if err := db.UpdateRoutine(t.Context(), routine); err != nil {
 		t.Fatal(err)
@@ -105,6 +111,12 @@ func TestRoutineRunSnapshotsHistoryAndOrdering(t *testing.T) {
 	}
 	if _, err := db.db.Exec(`UPDATE routine_run SET prompt = 'changed' WHERE id = 'run-1'`); err == nil {
 		t.Fatal("changed a routine run snapshot")
+	}
+	if _, err := db.db.Exec(`UPDATE routine_run SET model = 'changed' WHERE id = 'run-1'`); err == nil {
+		t.Fatal("changed a routine run model snapshot")
+	}
+	if _, err := db.db.Exec(`UPDATE routine_run SET session_mode = 'reuse' WHERE id = 'run-1'`); err == nil {
+		t.Fatal("changed a routine run session snapshot")
 	}
 	if _, err := db.db.Exec(`DELETE FROM routine_run WHERE id = 'run-1'`); err == nil {
 		t.Fatal("deleted append-only routine history")
@@ -183,7 +195,7 @@ func TestRoutineMissingRows(t *testing.T) {
 	if err := db.UpdateRoutineRun(t.Context(), RoutineRun{ID: "missing"}); !errors.Is(err, ErrRoutineRunNotFound) {
 		t.Fatalf("UpdateRoutineRun error = %v", err)
 	}
-	if err := db.LinkRoutineRun(t.Context(), "missing", "opencode", "session", 3); !errors.Is(err, ErrRoutineRunNotFound) {
+	if err := db.LinkRoutineRun(t.Context(), "missing", "opencode", "session", 3, false); !errors.Is(err, ErrRoutineRunNotFound) {
 		t.Fatalf("LinkRoutineRun error = %v", err)
 	}
 }
@@ -209,7 +221,7 @@ func TestRoutineDueRunningLinkAndIdempotentFinish(t *testing.T) {
 	if err != nil || !claimed {
 		t.Fatalf("claim = %+v, %v, %v", run, claimed, err)
 	}
-	if err := db.LinkRoutineRun(t.Context(), run.ID, "opencode", "session", 3); err != nil {
+	if err := db.LinkRoutineRun(t.Context(), run.ID, "opencode", "session", 3, false); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := db.GetRoutineRun(t.Context(), run.ID); err != nil || got.Platform != "opencode" || got.SessionID != "session" || got.StartedAt != 3 {
@@ -259,7 +271,7 @@ func TestRoutineStoreErrorsAfterClose(t *testing.T) {
 		{"update run", func() error { return db.UpdateRoutineRun(t.Context(), run) }},
 		{"list due", func() error { _, err := db.ListDueRoutines(t.Context(), 2); return err }},
 		{"list running", func() error { _, err := db.ListRunningRoutineRuns(t.Context()); return err }},
-		{"link run", func() error { return db.LinkRoutineRun(t.Context(), run.ID, "opencode", "session", 2) }},
+		{"link run", func() error { return db.LinkRoutineRun(t.Context(), run.ID, "opencode", "session", 2, false) }},
 		{"finish run", func() error {
 			_, err := db.FinishRoutineRun(t.Context(), run.ID, "failure", "", 2, 0, false)
 			return err
@@ -359,5 +371,124 @@ func TestRoutineMigrationPreservesWorkflowHistory(t *testing.T) {
 		if err := raw.QueryRow(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&name); err != nil {
 			t.Fatalf("%s table: %v", table, err)
 		}
+	}
+}
+
+func TestRoutineAgentModelAndSessionMigration(t *testing.T) {
+	raw, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	if err := ensureSchemaVersionTable(raw); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := raw.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for version := 1; version <= 70; version++ {
+		if err := applyMigration(tx, version); err != nil {
+			t.Fatalf("migrate v%d: %v", version, err)
+		}
+		if _, err := tx.Exec(`INSERT INTO schema_version (version, applied_at) VALUES (?, 0)`, version); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := tx.Exec(`INSERT INTO routine (id, name, prompt, directory, remote_id, schedule_kind, schedule_config_json, enabled, created_at, updated_at) VALUES ('routine', 'Routine', 'prompt', '/repo', 'local', 'none', '{}', 1, 1, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`INSERT INTO routine_run (id, routine_id, routine_updated_at, routine_name, prompt, directory, remote_id, trigger, state, occurrence_at, created_at) VALUES ('run', 'routine', 1, 'Routine', 'prompt', '/repo', 'local', 'manual', 'running', 1, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Exec(`DROP TRIGGER routine_run_snapshot_immutable`); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(raw); err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range []string{"routine", "routine_run"} {
+		var agent, model string
+		if err := raw.QueryRow(`SELECT agent, model FROM `+table).Scan(&agent, &model); err != nil || agent != "" || model != "" {
+			t.Fatalf("%s defaults = agent %q model %q, %v", table, agent, model, err)
+		}
+	}
+	var mode, sessionID string
+	if err := raw.QueryRow(`SELECT session_mode, session_id FROM routine`).Scan(&mode, &sessionID); err != nil || mode != "new" || sessionID != "" {
+		t.Fatalf("routine session defaults = %q %q, %v", mode, sessionID, err)
+	}
+	var expiredAt int64
+	if err := raw.QueryRow(`SELECT expired_at FROM routine`).Scan(&expiredAt); err != nil || expiredAt != 0 {
+		t.Fatalf("routine expiration default = %d, %v", expiredAt, err)
+	}
+	if err := raw.QueryRow(`SELECT session_mode, target_session_id FROM routine_run`).Scan(&mode, &sessionID); err != nil || mode != "new" || sessionID != "" {
+		t.Fatalf("run session defaults = %q %q, %v", mode, sessionID, err)
+	}
+	if _, err := raw.Exec(`UPDATE routine_run SET agent = 'changed' WHERE id = 'run'`); err == nil {
+		t.Fatal("migrated run agent is mutable")
+	}
+}
+
+func TestLinkRoutineRunBindsFirstReusableSessionWithoutEditingRoutine(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	routine := testRoutine("routine", "Routine", 1)
+	routine.SessionMode = "reuse"
+	if err := db.CreateRoutine(t.Context(), routine); err != nil {
+		t.Fatal(err)
+	}
+	run, claimed, err := db.ClaimRoutineRun(t.Context(), RoutineRun{ID: "run", RoutineID: routine.ID, Trigger: "manual", State: "running", OccurrenceAt: 2, CreatedAt: 2})
+	if err != nil || !claimed {
+		t.Fatalf("claim = %+v, %v, %v", run, claimed, err)
+	}
+	if err := db.LinkRoutineRun(t.Context(), run.ID, "opencode", "session-1", 3, true); err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.GetRoutine(t.Context(), routine.ID)
+	if err != nil || got.SessionID != "session-1" || got.UpdatedAt != routine.UpdatedAt {
+		t.Fatalf("routine = %+v, %v", got, err)
+	}
+	got.SessionID = ""
+	got.Prompt = "edited after binding"
+	got.UpdatedAt++
+	if err := db.UpdateRoutine(t.Context(), got); err != nil {
+		t.Fatal(err)
+	}
+	if got, err = db.GetRoutine(t.Context(), routine.ID); err != nil || got.SessionID != "session-1" {
+		t.Fatalf("routine after edit = %+v, %v", got, err)
+	}
+}
+
+func TestRoutineRunAllowsOnlyOneActiveSharedSession(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	routine := testRoutine("routine", "Routine", 1)
+	routine.SessionMode = "reuse"
+	if err := db.CreateRoutine(t.Context(), routine); err != nil {
+		t.Fatal(err)
+	}
+	first, claimed, err := db.ClaimRoutineRun(t.Context(), RoutineRun{ID: "first", RoutineID: routine.ID, Trigger: "manual", State: "running", OccurrenceAt: 1, CreatedAt: 1})
+	if err != nil || !claimed {
+		t.Fatalf("first claim = %v, %v", claimed, err)
+	}
+	if _, claimed, err := db.ClaimRoutineRun(t.Context(), RoutineRun{ID: "second", RoutineID: routine.ID, Trigger: "manual", State: "running", OccurrenceAt: 2, CreatedAt: 2}); !errors.Is(err, ErrRoutineRunActive) || claimed {
+		t.Fatalf("second claim = %v, %v", claimed, err)
+	}
+	if due, err := db.ListDueRoutines(t.Context(), 100); err != nil || len(due) != 0 {
+		t.Fatalf("due with active shared run = %+v, %v", due, err)
+	}
+	existing := testRoutine("existing", "Existing", 1)
+	existing.SessionMode, existing.SessionID = "existing", "shared"
+	if err := db.CreateRoutine(t.Context(), existing); err != nil {
+		t.Fatal(err)
+	}
+	if _, claimed, err := db.ClaimRoutineRun(t.Context(), RoutineRun{ID: "existing-run", RoutineID: existing.ID, Trigger: "manual", State: "running", OccurrenceAt: 3, CreatedAt: 3}); err != nil || !claimed {
+		t.Fatalf("existing claim = %v, %v", claimed, err)
+	}
+	if err := db.LinkRoutineRun(t.Context(), first.ID, "opencode", "shared", 4, true); err == nil {
+		t.Fatal("linked a second active run to the shared session")
 	}
 }

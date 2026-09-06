@@ -42,9 +42,11 @@ func routineHTTPServer(t *testing.T) (*Server, http.Handler, *atomic.Int32) {
 	srv.sessions = sessionsvc.New(registry, sessionsvc.Hooks{})
 	srv.hostRouter = router
 	var ids atomic.Int32
+	var now atomic.Int64
+	now.Store(1000)
 	srv.routineSvc = routines.New(routines.Deps{
 		Store: srv.stateDB, Router: router, Sessions: srv.sessions, Platforms: registry,
-		Now:   func() time.Time { return time.UnixMilli(1000) },
+		Now:   func() time.Time { return time.UnixMilli(now.Add(1)) },
 		NewID: func(prefix string) string { return prefix + string('0'+ids.Add(1)) },
 	})
 	mux, err := srv.routes()
@@ -63,7 +65,7 @@ func doRoutineRequest(t *testing.T, handler http.Handler, method, path, body str
 	return rec
 }
 
-const validRoutineBody = `{"name":"Daily check","prompt":"inspect","directory":"/repo","schedule":{"kind":"none"},"enabled":true}`
+const validRoutineBody = `{"name":"Daily check","prompt":"inspect","directory":"/repo","agent":"build","model":"openai/gpt-5.4","sessionMode":"new","schedule":{"kind":"none"},"enabled":true}`
 
 func TestRoutineHTTPLifecycle(t *testing.T) {
 	_, handler, sent := routineHTTPServer(t)
@@ -76,7 +78,7 @@ func TestRoutineHTTPLifecycle(t *testing.T) {
 		t.Fatalf("create: %d %s", create.Code, create.Body.String())
 	}
 	var created state.Routine
-	if err := json.Unmarshal(create.Body.Bytes(), &created); err != nil || created.ID == "" || created.Name != "Daily check" {
+	if err := json.Unmarshal(create.Body.Bytes(), &created); err != nil || created.ID == "" || created.Name != "Daily check" || created.SessionMode != routines.SessionNew || !strings.Contains(create.Body.String(), `"agent":"build"`) || !strings.Contains(create.Body.String(), `"model":"openai/gpt-5.4"`) {
 		t.Fatalf("created=%+v err=%v", created, err)
 	}
 
@@ -110,7 +112,7 @@ func TestRoutineHTTPLifecycle(t *testing.T) {
 
 func TestRoutineHTTPValidationConflictAndMissing(t *testing.T) {
 	_, handler, _ := routineHTTPServer(t)
-	for _, body := range []string{`{`, `{"name":"","prompt":"inspect","directory":"/repo","schedule":{"kind":"none"}}`} {
+	for _, body := range []string{`{`, `{"name":"","prompt":"inspect","directory":"/repo","schedule":{"kind":"none"}}`, `{"name":"bad","prompt":"inspect","directory":"/repo","sessionMode":"existing","schedule":{"kind":"none"}}`, `{"name":"bad","prompt":"inspect","directory":"/repo","sessionMode":"invalid","schedule":{"kind":"none"}}`} {
 		if rec := doRoutineRequest(t, handler, http.MethodPost, "/api/routines", body); rec.Code != http.StatusBadRequest {
 			t.Fatalf("bad body %q: %d %s", body, rec.Code, rec.Body.String())
 		}
@@ -184,6 +186,23 @@ func TestRoutineHTTPMethodAndLocalhostGuards(t *testing.T) {
 	(&Server{}).handleRoutines(rec, httptest.NewRequest(http.MethodGet, "/api/routines", nil))
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("missing service: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRoutineHTTPRejectsOverlappingSharedSessionRuns(t *testing.T) {
+	_, handler, _ := routineHTTPServer(t)
+	body := strings.Replace(validRoutineBody, `"sessionMode":"new"`, `"sessionMode":"reuse"`, 1)
+	created := doRoutineRequest(t, handler, http.MethodPost, "/api/routines", body)
+	var routine state.Routine
+	if created.Code != http.StatusCreated || json.Unmarshal(created.Body.Bytes(), &routine) != nil {
+		t.Fatalf("create: %d %s", created.Code, created.Body.String())
+	}
+	path := "/api/routines/" + routine.ID + "/run"
+	if rec := doRoutineRequest(t, handler, http.MethodPost, path, ""); rec.Code != http.StatusOK {
+		t.Fatalf("first run: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := doRoutineRequest(t, handler, http.MethodPost, path, ""); rec.Code != http.StatusConflict {
+		t.Fatalf("overlapping run: %d %s", rec.Code, rec.Body.String())
 	}
 }
 
