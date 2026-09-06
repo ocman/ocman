@@ -6,7 +6,7 @@ import { useHourlyTokens, useMetrics, useModels } from '../../lib/queries';
 import { ModelLogo } from '../../components/ModelLogo';
 import { AnalyticsFilters } from './AnalyticsFilters';
 import { useDashboard } from './context';
-import { ChartCard, ChartSkeletons } from './shared';
+import { ChartCard, ChartSlot, ChartSkeletons } from './shared';
 import { buildCostByModelDatasets } from './metricsChartData';
 
 export function ModelsTab() {
@@ -20,28 +20,27 @@ export function ModelsTab() {
   const models = [...(modelsQ.data ?? [])].sort((a, b) => b.count - a.count);
   const selectedModels = model ? models.filter((item) => `${item.provider}/${item.model}` === model) : models;
   const top = selectedModels.slice(0, 8);
-  const errors = [modelsQ.error, hourlyQ.error, metricsQ.error].filter((error): error is Error => error instanceof Error);
+  const errors = queryErrors(modelsQ.error, hourlyQ.error, metricsQ.error);
   const modelOptions = [{ value: '', label: 'All models' }, ...models.map((item) => ({ value: `${item.provider}/${item.model}`, label: item.model, icon: <ModelLogo model={`${item.provider}/${item.model}`} /> }))];
 
   return (
     <div className="metrics-page">
       <AnalyticsFilters days={days} onDaysChange={setDays} model={model} onModelChange={setModel} modelOptions={modelOptions} />
       {errors.map((error) => <div key={error.message} className="oc-error-banner">{error.message}</div>)}
-      {modelsQ.isLoading || hourlyQ.isLoading || metricsQ.isLoading ? <ChartSkeletons cards={3} /> : (
-        <>
-          <div className="analytics-chart-pair">
-            <ChartCard title="Model Usage">
+      <div className="analytics-chart-pair">
+        <ChartSlot isLoading={modelsQ.isLoading} label="Loading model usage"><ChartCard title="Model Usage">
               <Doughnut data={{ labels: top.map((item) => item.model), datasets: [{ data: top.map((item) => item.count), backgroundColor: CHART_COLORS, borderWidth: 0 }] }} options={{ responsive: true, maintainAspectRatio: false, animation: false }} />
-            </ChartCard>
-            <ChartCard title="Tokens by Model">
+            </ChartCard></ChartSlot>
+        <ChartSlot isLoading={modelsQ.isLoading} label="Loading tokens by model"><ChartCard title="Tokens by Model">
               <Bar data={{ labels: top.map((item) => item.model), datasets: [
                 { label: 'Input', data: top.map((item) => item.tokensIn), backgroundColor: 'rgba(137, 180, 250, 0.6)' },
                 { label: 'Output', data: top.map((item) => item.tokensOut), backgroundColor: 'rgba(203, 166, 247, 0.6)' },
                 { label: 'Cache Read', data: top.map((item) => item.cacheRead ?? 0), backgroundColor: 'rgba(166, 227, 161, 0.6)' },
               ] }} options={BAR_OPTIONS_TOKENS_BY_MODEL} />
-            </ChartCard>
-          </div>
-          {metricsQ.data && <>
+            </ChartCard></ChartSlot>
+      </div>
+      {metricsQ.isLoading && !metricsQ.data && <ChartSkeletons labels={['Loading effective cost', 'Loading agent breakdown']} />}
+      {metricsQ.data && <>
             <div className="metrics-chart-grid"><ChartCard title="Effective Cost per Day by Model (USD)"><Bar data={{ labels: metricsQ.data.dailyEffectiveCostByModel.series.map((point) => point.label), datasets: buildCostByModelDatasets(metricsQ.data) }} options={BAR_OPTIONS_COST_BY_MODEL} /></ChartCard></div>
             <div className="chart-card">
               <h3>Agent breakdown</h3>
@@ -50,12 +49,15 @@ export function ModelsTab() {
                 {metricsQ.data.agents.length === 0 && <tr><td colSpan={5}>No agents matched the current filters</td></tr>}
               </tbody></table></div>
             </div>
-          </>}
-          {(hourlyQ.data?.length ?? 0) > 0 && <HourlyModelTokens data={hourlyQ.data ?? []} days={days || 7} />}
-        </>
-      )}
+      </>}
+      {hourlyQ.isLoading && !hourlyQ.data && <ChartSkeletons labels={['Loading hourly model tokens']} />}
+      {(hourlyQ.data?.length ?? 0) > 0 && <HourlyModelTokens data={hourlyQ.data ?? []} days={days || 7} />}
     </div>
   );
+}
+
+function queryErrors(...errors: unknown[]) {
+  return errors.filter((error): error is Error => error instanceof Error);
 }
 
 function HourlyModelTokens({ data, days }: { data: Array<{ datetime: string; provider: string; model: string; tokensIn: number; tokensOut: number }>; days: number }) {

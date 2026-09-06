@@ -13,7 +13,7 @@ export function PermissionsTab() {
     <div className="metrics-page">
       <AnalyticsFilters days={days} onDaysChange={setDays} />
       {statsQ.error instanceof Error && <div className="oc-error-banner">{statsQ.error.message}</div>}
-      {statsQ.isLoading && !statsQ.data && <ChartSkeletons />}
+      {statsQ.isLoading && !statsQ.data && <ChartSkeletons labels={['Loading permission approvals', 'Loading observed user wait']} />}
       {statsQ.data && <PermissionStatsSection stats={statsQ.data} />}
     </div>
   );

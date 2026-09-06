@@ -21,7 +21,7 @@ export function PerformanceTab() {
     <div className="metrics-page">
       <AnalyticsFilters days={days} onDaysChange={setDays} agent={agent} onAgentChange={setAgent} agentOptions={agentOptions} model={model} onModelChange={setModel} modelOptions={modelOptions} />
       {metricsQ.error instanceof Error && <div className="oc-error-banner">{metricsQ.error.message}</div>}
-      {metricsQ.isLoading && !metrics && <ChartSkeletons cards={5} />}
+      {metricsQ.isLoading && !metrics && <ChartSkeletons labels={['Loading throughput', 'Loading request latency', 'Loading error rate', 'Loading cache efficiency', 'Loading stop reasons']} />}
       {metrics && <><PerformanceSummaryCards metrics={metrics} /><PerformanceCharts metrics={metrics} /></>}
     </div>
   );

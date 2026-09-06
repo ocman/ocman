@@ -5,7 +5,7 @@ import { formatNumber } from '../../lib/format';
 import { useAnalyticsOverview, useMetrics } from '../../lib/queries';
 import { AnalyticsFilters } from './AnalyticsFilters';
 import { useDashboard } from './context';
-import { ChartCard, ChartSkeletons, MetricCard } from './shared';
+import { ChartCard, ChartSkeletons, MetricCard, MetricCardsSkeleton } from './shared';
 import { MetricsSummaryCards } from './StatsLogTables';
 
 export function OverviewTab() {
@@ -23,6 +23,7 @@ export function OverviewTab() {
       <section aria-labelledby="inventory-heading">
         <h2 id="inventory-heading" className="analytics-section-heading">All-time inventory</h2>
         {overviewQ.error instanceof Error && <div className="oc-error-banner">{overviewQ.error.message}</div>}
+        {overviewQ.isLoading && !overview && <MetricCardsSkeleton cards={7} label="Loading inventory" />}
         {overview && (
           <>
           <div className="analytics-scope-note">Inventory totals are scoped to this {overview.inventoryScope} ocman instance.</div>
@@ -42,7 +43,10 @@ export function OverviewTab() {
         <h2 id="activity-heading" className="analytics-section-heading">Request activity</h2>
         <AnalyticsFilters days={days} onDaysChange={setDays} />
         {metricsQ.error instanceof Error && <div className="oc-error-banner">{metricsQ.error.message}</div>}
-        {metricsQ.isLoading && !metrics && <ChartSkeletons cards={1} />}
+        {metricsQ.isLoading && !metrics && <>
+          <MetricCardsSkeleton cards={8} label="Loading request summary" />
+          <ChartSkeletons labels={['Loading token usage']} />
+        </>}
         {metrics && (
           <>
             <MetricsSummaryCards metrics={metrics} />

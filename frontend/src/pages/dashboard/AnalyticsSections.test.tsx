@@ -90,6 +90,14 @@ describe('analytics sections', () => {
     expect(screen.getByText('daily failed')).toBeInTheDocument();
   });
 
+  it('loads each activity graph independently', () => {
+    useActivity.mockReturnValueOnce({ data: undefined, isLoading: true, error: null }).mockReturnValueOnce(query([{ date: '2026-09-01', messages: 2, userMessages: 1, sessions: 1 }]));
+    renderTab(<ActivityTab />);
+    expect(screen.getByRole('status', { name: 'Loading activity heatmap' })).toBeInTheDocument();
+    expect(screen.getByText('Daily Messages')).toBeInTheDocument();
+    expect(screen.getByText('Sessions by Hour of Day')).toBeInTheDocument();
+  });
+
   it('owns model and cost filtering', () => {
     renderTab(<ModelsTab />);
     expect(screen.getByText('Effective Cost per Day by Model (USD)')).toBeInTheDocument();
@@ -141,8 +149,17 @@ describe('analytics sections', () => {
   it('uses chart skeletons while graph data loads', () => {
     useMetrics.mockReturnValue({ data: undefined, isLoading: true, error: null });
     renderTab(<PerformanceTab />);
-    expect(screen.getByRole('status', { name: 'Loading charts' })).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Loading request latency' })).toBeInTheDocument();
     expect(document.querySelector('.oc-spinner')).not.toBeInTheDocument();
+  });
+
+  it('keeps separate overview loaders in their eventual slots', () => {
+    useAnalyticsOverview.mockReturnValue({ data: undefined, isLoading: true, error: null });
+    useMetrics.mockReturnValue({ data: undefined, isLoading: true, error: null });
+    renderTab(<OverviewTab />);
+    expect(screen.getByRole('status', { name: 'Loading inventory' })).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Loading request summary' })).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Loading token usage' })).toBeInTheDocument();
   });
 
   it('queries permission data independently', () => {

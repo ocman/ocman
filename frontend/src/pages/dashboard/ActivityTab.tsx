@@ -5,7 +5,7 @@ import { BAR_OPTIONS_HOURLY, BAR_OPTIONS_SESSIONS } from '../../lib/chartConfig'
 import { useActivity, useHourly } from '../../lib/queries';
 import { AnalyticsFilters } from './AnalyticsFilters';
 import { useDashboard } from './context';
-import { ChartCard, ChartSkeletons } from './shared';
+import { ChartCard, ChartSlot, ChartSkeletons } from './shared';
 
 export function ActivityTab() {
   const { dirScope } = useDashboard();
@@ -14,27 +14,25 @@ export function ActivityTab() {
   const activityQ = useActivity({ days: 365, dir });
   const dailyQ = useActivity({ days: days || undefined, dir });
   const hourlyQ = useHourly({ days: days || undefined, dir });
-  const loading = activityQ.isLoading || dailyQ.isLoading || hourlyQ.isLoading;
   const errors = queryErrors(activityQ.error, dailyQ.error, hourlyQ.error);
 
   return (
     <div className="metrics-page">
       <AnalyticsFilters days={days} onDaysChange={setDays} />
       {errors.map((error) => <div key={error.message} className="oc-error-banner">{error.message}</div>)}
+      {activityQ.isLoading && !activityQ.data && <ChartSkeletons labels={['Loading activity heatmap']} />}
       {(activityQ.data?.length ?? 0) > 0 && <HeatmapChart activity={activityQ.data ?? []} />}
-      {loading ? <ChartSkeletons /> : (
-        <div className="analytics-chart-pair">
-          <ChartCard title="Daily Messages">
+      <div className="analytics-chart-pair">
+        <ChartSlot isLoading={dailyQ.isLoading} label="Loading daily messages"><ChartCard title="Daily Messages">
             <Bar data={{ labels: dailyQ.data?.map((day) => day.date.slice(5)) ?? [], datasets: [
               { label: 'User Prompts', data: dailyQ.data?.map((day) => day.userMessages) ?? [], backgroundColor: 'rgba(166, 227, 161, 0.6)', borderRadius: 2 },
               { label: 'Assistant Turns', data: dailyQ.data?.map((day) => day.messages) ?? [], backgroundColor: 'rgba(137, 180, 250, 0.6)', borderRadius: 2 },
             ] }} options={BAR_OPTIONS_SESSIONS} />
-          </ChartCard>
-          <ChartCard title="Sessions by Hour of Day">
+          </ChartCard></ChartSlot>
+        <ChartSlot isLoading={hourlyQ.isLoading} label="Loading sessions by hour"><ChartCard title="Sessions by Hour of Day">
             <Bar data={{ labels: hourlyQ.data?.map((hour) => `${hour.hour}:00`) ?? [], datasets: [{ label: 'Sessions', data: hourlyQ.data?.map((hour) => hour.sessions) ?? [], backgroundColor: 'rgba(166, 227, 161, 0.6)', borderRadius: 2 }] }} options={BAR_OPTIONS_HOURLY} />
-          </ChartCard>
-        </div>
-      )}
+          </ChartCard></ChartSlot>
+      </div>
     </div>
   );
 }

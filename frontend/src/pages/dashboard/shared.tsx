@@ -31,15 +31,34 @@ export function ChartCard({ title, children, style }: { title: string; children:
   );
 }
 
-export function ChartSkeletons({ cards = 2 }: { cards?: number }) {
+export function ChartSkeleton({ label }: { label: string }) {
   return (
-    <div className="metrics-chart-grid" role="status" aria-label="Loading charts">
-      {Array.from({ length: cards }, (_, index) => (
-        <div key={index} className="chart-card metrics-chart-card">
-          <Skeleton className="oc-skeleton-line-lg" style={{ width: `${35 + index * 8}%`, marginBottom: 20 }} />
-          <Skeleton style={{ width: '100%', height: 260 }} />
-        </div>
-      ))}
+    <div className="chart-card metrics-chart-card" role="status" aria-label={label}>
+      <Skeleton className="oc-skeleton-line-lg" style={{ width: '43%', marginBottom: 20 }} />
+      <Skeleton style={{ width: '100%', height: 260 }} />
+    </div>
+  );
+}
+
+export function ChartSlot({ isLoading, label, children }: { isLoading: boolean; label: string; children: ReactNode }) {
+  return isLoading ? <ChartSkeleton label={label} /> : children;
+}
+
+export function ChartSkeletons({ labels }: { labels: string[] }) {
+  return (
+    <div className="metrics-chart-grid">
+      {labels.map((label) => <ChartSkeleton key={label} label={label} />)}
+    </div>
+  );
+}
+
+export function MetricCardsSkeleton({ cards, label }: { cards: number; label: string }) {
+  return (
+    <div className="metrics-summary-grid" role="status" aria-label={label}>
+      {Array.from({ length: cards }, (_, index) => <div key={index} className="stat-card">
+        <Skeleton className="oc-skeleton-line" style={{ width: '55%', marginBottom: 12 }} />
+        <Skeleton className="oc-skeleton-line-lg" style={{ width: '38%' }} />
+      </div>)}
     </div>
   );
 }
