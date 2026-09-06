@@ -138,6 +138,13 @@ describe('analytics sections', () => {
     expect(screen.getByRole('combobox', { name: 'Model' })).toBeInTheDocument();
   });
 
+  it('uses chart skeletons while graph data loads', () => {
+    useMetrics.mockReturnValue({ data: undefined, isLoading: true, error: null });
+    renderTab(<PerformanceTab />);
+    expect(screen.getByRole('status', { name: 'Loading charts' })).toBeInTheDocument();
+    expect(document.querySelector('.oc-spinner')).not.toBeInTheDocument();
+  });
+
   it('queries permission data independently', () => {
     renderTab(<PermissionsTab />);
     expect(usePermissionStats).toHaveBeenCalledWith({ days: 30, dir: '/repo' });

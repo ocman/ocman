@@ -5,7 +5,7 @@ import { BAR_OPTIONS_HOURLY, BAR_OPTIONS_SESSIONS } from '../../lib/chartConfig'
 import { useActivity, useHourly } from '../../lib/queries';
 import { AnalyticsFilters } from './AnalyticsFilters';
 import { useDashboard } from './context';
-import { ChartCard } from './shared';
+import { ChartCard, ChartSkeletons } from './shared';
 
 export function ActivityTab() {
   const { dirScope } = useDashboard();
@@ -22,7 +22,7 @@ export function ActivityTab() {
       <AnalyticsFilters days={days} onDaysChange={setDays} />
       {errors.map((error) => <div key={error.message} className="oc-error-banner">{error.message}</div>)}
       {(activityQ.data?.length ?? 0) > 0 && <HeatmapChart activity={activityQ.data ?? []} />}
-      {loading ? <div className="oc-list-loading"><div className="oc-spinner" />Loading activity...</div> : (
+      {loading ? <ChartSkeletons /> : (
         <div className="analytics-chart-pair">
           <ChartCard title="Daily Messages">
             <Bar data={{ labels: dailyQ.data?.map((day) => day.date.slice(5)) ?? [], datasets: [

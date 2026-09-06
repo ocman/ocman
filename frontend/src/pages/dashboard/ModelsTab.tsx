@@ -6,7 +6,7 @@ import { useHourlyTokens, useMetrics, useModels } from '../../lib/queries';
 import { ModelLogo } from '../../components/ModelLogo';
 import { AnalyticsFilters } from './AnalyticsFilters';
 import { useDashboard } from './context';
-import { ChartCard } from './shared';
+import { ChartCard, ChartSkeletons } from './shared';
 import { buildCostByModelDatasets } from './metricsChartData';
 
 export function ModelsTab() {
@@ -27,7 +27,7 @@ export function ModelsTab() {
     <div className="metrics-page">
       <AnalyticsFilters days={days} onDaysChange={setDays} model={model} onModelChange={setModel} modelOptions={modelOptions} />
       {errors.map((error) => <div key={error.message} className="oc-error-banner">{error.message}</div>)}
-      {modelsQ.isLoading || hourlyQ.isLoading || metricsQ.isLoading ? <div className="oc-list-loading"><div className="oc-spinner" />Loading model analytics...</div> : (
+      {modelsQ.isLoading || hourlyQ.isLoading || metricsQ.isLoading ? <ChartSkeletons cards={3} /> : (
         <>
           <div className="analytics-chart-pair">
             <ChartCard title="Model Usage">

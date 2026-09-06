@@ -5,7 +5,7 @@ import { formatNumber } from '../../lib/format';
 import { useAnalyticsOverview, useMetrics } from '../../lib/queries';
 import { AnalyticsFilters } from './AnalyticsFilters';
 import { useDashboard } from './context';
-import { ChartCard, MetricCard } from './shared';
+import { ChartCard, ChartSkeletons, MetricCard } from './shared';
 import { MetricsSummaryCards } from './StatsLogTables';
 
 export function OverviewTab() {
@@ -42,7 +42,7 @@ export function OverviewTab() {
         <h2 id="activity-heading" className="analytics-section-heading">Request activity</h2>
         <AnalyticsFilters days={days} onDaysChange={setDays} />
         {metricsQ.error instanceof Error && <div className="oc-error-banner">{metricsQ.error.message}</div>}
-        {metricsQ.isLoading && !metrics && <div className="oc-list-loading"><div className="oc-spinner" />Loading overview...</div>}
+        {metricsQ.isLoading && !metrics && <ChartSkeletons cards={1} />}
         {metrics && (
           <>
             <MetricsSummaryCards metrics={metrics} />

@@ -3,6 +3,7 @@ import { usePermissionStats } from '../../lib/queries';
 import { AnalyticsFilters } from './AnalyticsFilters';
 import { useDashboard } from './context';
 import { PermissionStatsSection } from './PermissionStatsSection';
+import { ChartSkeletons } from './shared';
 
 export function PermissionsTab() {
   const { dirScope } = useDashboard();
@@ -12,7 +13,7 @@ export function PermissionsTab() {
     <div className="metrics-page">
       <AnalyticsFilters days={days} onDaysChange={setDays} />
       {statsQ.error instanceof Error && <div className="oc-error-banner">{statsQ.error.message}</div>}
-      {statsQ.isLoading && <div className="oc-list-loading"><div className="oc-spinner" />Loading permission analytics...</div>}
+      {statsQ.isLoading && !statsQ.data && <ChartSkeletons />}
       {statsQ.data && <PermissionStatsSection stats={statsQ.data} />}
     </div>
   );

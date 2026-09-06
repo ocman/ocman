@@ -2,6 +2,7 @@
  * Shared sub-components and constants used by multiple Dashboard tab components.
  */
 import type { CSSProperties, ReactNode } from 'react';
+import { Skeleton } from '../../components/Skeleton';
 
 // ---------------------------------------------------------------------------
 // MetricCard
@@ -26,6 +27,19 @@ export function ChartCard({ title, children, style }: { title: string; children:
     <div className="chart-card metrics-chart-card" style={style}>
       <h3>{title}</h3>
       <div className="metrics-chart-body">{children}</div>
+    </div>
+  );
+}
+
+export function ChartSkeletons({ cards = 2 }: { cards?: number }) {
+  return (
+    <div className="metrics-chart-grid" role="status" aria-label="Loading charts">
+      {Array.from({ length: cards }, (_, index) => (
+        <div key={index} className="chart-card metrics-chart-card">
+          <Skeleton className="oc-skeleton-line-lg" style={{ width: `${35 + index * 8}%`, marginBottom: 20 }} />
+          <Skeleton style={{ width: '100%', height: 260 }} />
+        </div>
+      ))}
     </div>
   );
 }
@@ -69,4 +83,3 @@ export function MetricsPagination({
     </div>
   );
 }
-
