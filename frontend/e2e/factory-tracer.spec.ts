@@ -42,7 +42,7 @@ test('Factory tracer approves one plan, materializes one worktree session, and c
   await page.getByRole('link', { name: epic.goal }).click();
   await page.getByRole('button', { name: 'Pour graph' }).click();
   await page.reload();
-  await expect(page.getByRole('link', { name: 'Open session' })).toHaveAttribute('href', '/session/plan-session');
+  await expect(page.getByRole('link', { name: 'Open session' })).toHaveAttribute('href', '/session/plan-session?factoryEpic=ship-a1b2');
   await page.getByRole('button', { name: 'Approve plan' }).click();
   await page.reload();
   await expect(page.getByTestId('issue-title-ship-a1b2.1.4')).toHaveText('Implementation');
