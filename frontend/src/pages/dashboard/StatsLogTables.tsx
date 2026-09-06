@@ -19,9 +19,9 @@ import {
   formatTokenCache,
   relativeTime,
   renderModel,
-  shortPath,
   shortSessionID,
 } from '../../lib/format';
+import { ProjectLabel } from '../../components/ProjectLabel';
 import {
   BAR_OPTIONS_TOKS,
   BAR_OPTIONS_DURATION,
@@ -275,7 +275,7 @@ export function SessionLogTable({
                     keyboard/AT path into the session. */}
                 <Link className="metrics-row-link" to={`/session/${encodeURIComponent(session.id)}`}>
                   <div>{cleanTitle(session.title) || <span style={dim}>untitled</span>}</div>
-                  {session.directory && <div className="metrics-session-project">{shortPath(session.directory)}</div>}
+                  {session.directory && <ProjectLabel className="metrics-session-project" path={session.directory} />}
                 </Link>
               </td>
               <td title={formatDateTimeShort(session.lastRequestTime)}>{relativeTime(session.lastRequestTime)}</td>
@@ -315,7 +315,7 @@ export function ProjectLogTable({
               <td>{pageOffset + idx + 1}</td>
               <td title={project.directory}>
                 <Link className="metrics-row-link" to={`/project/${encodeURIComponent(project.directory)}`}>
-                  <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{shortPath(project.directory)}</span>
+                  <ProjectLabel path={project.directory} style={{ color: 'var(--accent)', fontWeight: 500 }} />
                 </Link>
               </td>
               <td>{formatNumber(project.sessions)}</td>

@@ -24,6 +24,7 @@ import { projectRootForDirectory } from '../../lib/worktrees';
 import { isTerminalStatus } from '../../lib/sessionStatus';
 import { StatusBadge } from '../../components/StatusBadge';
 import { HostBadge } from '../../components/HostBadge';
+import { ProjectLabel } from '../../components/ProjectLabel';
 import { ShortPath, GitStatusLine } from '../../components/SessionTable';
 import { BackendStats } from '../../components/BackendStats';
 import { SidebarResizer } from '../../components/SidebarResizer';
@@ -417,7 +418,7 @@ export function SessionSidebar({
             title={group.directory || 'Unknown project'}
             onClick={() => toggleCollapsedProject(group.directory)}
           >
-            <span className="session-sidebar-group-label">{label}</span>
+            <ProjectLabel className="session-sidebar-group-label" path={group.directory} />
           </button>
           <HostBadge remoteName={hostRemoteName} remoteId={hostRemoteId} stale={remoteSession?.stale} />
           {group.directory && (

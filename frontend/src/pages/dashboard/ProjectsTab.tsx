@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { formatNumber, fuzzyMatch, relativeTime, shortPath } from '../../lib/format';
+import { formatNumber, fuzzyMatch, relativeTime } from '../../lib/format';
+import { ProjectLabel } from '../../components/ProjectLabel';
 import { usePageTitle } from '../../lib/headerContext';
 import { GettingStartedEmpty } from '../../components/GettingStartedEmpty';
 import { matchesScope } from '../../lib/projectTree';
@@ -107,12 +108,11 @@ export function ProjectsTab() {
           >
             <td>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{shortPath(p.directory)}</span>
+                <ProjectLabel path={p.directory} style={{ color: 'var(--accent)', fontWeight: 500 }} />
                 {p.remoteName ? (
                   <span className="oc-cmd-badge" title={`On remote ${p.remoteName}`}>{p.remoteName}</span>
                 ) : null}
               </div>
-              <div className="mono">{p.directory}</div>
             </td>
             <td>{p.sessionCount}</td>
             <td>{p.messageCount}</td>

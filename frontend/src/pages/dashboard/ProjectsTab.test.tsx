@@ -77,7 +77,7 @@ describe('ProjectsTab', () => {
 
   it('lists projects when the query succeeded with data', () => {
     renderTab({ projects: [makeProject({ directory: '/tmp/alpha' })] });
-    expect(screen.getByText('/tmp/alpha')).toBeInTheDocument();
+    expect(screen.getByText('tmp/alpha')).toHaveAttribute('title', '/tmp/alpha');
     expect(screen.queryByTestId('getting-started-empty')).not.toBeInTheDocument();
   });
 });

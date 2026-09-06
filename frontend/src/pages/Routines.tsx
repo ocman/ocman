@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '../components/Control';
 import { Modal } from '../components/Modal';
+import { ProjectLabel } from '../components/ProjectLabel';
 import { SearchSelect } from '../components/SearchSelect';
 import { api, type Project, type Routine, type RoutineInput, type RoutineRun, type RoutineScheduleKind, type RoutineSessionMode, type Session } from '../lib/api';
 import { cleanTitle, formatDateTimeShort } from '../lib/format';
@@ -90,6 +91,7 @@ export function Routines() {
   const [history, setHistory] = useState<Record<string, RoutineRun[]>>({});
   const [form, setForm] = useState<FormState>(emptyForm);
   const [editing, setEditing] = useState<string>();
+  const [historyRoutine, setHistoryRoutine] = useState<Routine>();
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -159,6 +161,7 @@ export function Routines() {
   }, [form.directory, form.remoteId, sessions, showForm]);
 
   const openCreate = () => {
+    setHistoryRoutine(undefined);
     setEditing(undefined);
     setForm(emptyForm());
     setShowForm(true);
@@ -166,6 +169,7 @@ export function Routines() {
   };
 
   const openEdit = (routine: Routine) => {
+    setHistoryRoutine(undefined);
     setEditing(routine.id);
     setForm(formFor(routine));
     setShowForm(true);
@@ -223,7 +227,7 @@ export function Routines() {
   }
   const agentOptions = ['', ...new Set([...catalog.agents, form.agent].filter(Boolean))].map((agent) => ({ value: agent, label: agent || 'Default agent' }));
   const modelOptions = ['', ...new Set([...catalog.models, form.model].filter(Boolean))].map((model) => ({ value: model, label: model || 'Default model' }));
-  const editingRuns = editing ? history[editing] ?? [] : [];
+  const selectedRuns = historyRoutine ? history[historyRoutine.id] ?? [] : [];
 
   return (
     <main className="routine-page">
@@ -267,8 +271,16 @@ export function Routines() {
           <label className="routine-check"><input type="checkbox" checked={form.enabled} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} /> Enabled</label>
           <label className="routine-check"><input type="checkbox" checked={form.deleteAfterSuccess} onChange={(event) => setForm({ ...form, deleteAfterSuccess: event.target.checked })} /> Delete after a successful run</label>
           <div className="routine-actions"><Button disabled={busy || !form.directory || (form.sessionMode === 'existing' && !form.sessionId)} type="submit" variant="accent">{editing ? 'Save changes' : 'Create routine'}</Button><Button type="button" disabled={busy} onClick={() => setShowForm(false)}>Cancel</Button></div>
-          {editing && <section className="routine-detail-history" aria-labelledby="routine-history-heading"><h3 id="routine-history-heading">History</h3>{editingRuns.length === 0 ? <p className="oc-empty">No runs yet.</p> : <div className="routine-history-table-wrap"><table><thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Session</th></tr></thead><tbody>{editingRuns.map((run) => <tr key={run.id}><td>{formatDateTimeShort(run.startedAt || run.createdAt)}</td><td>{run.trigger}</td><td><span className={`routine-state ${run.state}`}>{run.state}</span>{run.error && <small className="routine-error">{run.error}</small>}</td><td>{run.sessionId ? <Link to={`/session/${encodeURIComponent(run.sessionId)}?platform=${encodeURIComponent(run.platform ?? '')}`}>Open</Link> : '-'}</td></tr>)}</tbody></table></div>}</section>}
         </form>
+        </Modal>
+      )}
+
+      {historyRoutine && (
+        <Modal label={`${historyRoutine.name} history`} onClose={() => setHistoryRoutine(undefined)} backdropClassName="routine-drawer-backdrop" dialogClassName="routine-drawer" backdropTestId="routine-drawer-backdrop">
+          <div className="routine-form">
+            <header><h2>{historyRoutine.name}</h2><button type="button" onClick={() => setHistoryRoutine(undefined)} aria-label="Close routine history" title="Close"><i className="bi bi-x-lg" aria-hidden="true" /></button></header>
+            <section className="routine-detail-history" aria-labelledby="routine-history-heading"><h3 id="routine-history-heading">History</h3>{selectedRuns.length === 0 ? <p className="oc-empty">No runs yet.</p> : <div className="routine-history-table-wrap"><table><thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Session</th></tr></thead><tbody>{selectedRuns.map((run) => <tr key={run.id}><td>{formatDateTimeShort(run.startedAt || run.createdAt)}</td><td>{run.trigger}</td><td><span className={`routine-state ${run.state}`}>{run.state}</span>{run.error && <small className="routine-error">{run.error}</small>}</td><td>{run.sessionId ? <Link to={`/session/${encodeURIComponent(run.sessionId)}?platform=${encodeURIComponent(run.platform ?? '')}`}>Open</Link> : '-'}</td></tr>)}</tbody></table></div>}</section>
+          </div>
         </Modal>
       )}
 
@@ -276,8 +288,8 @@ export function Routines() {
         <section className="routine-list" aria-label="Saved routines"><div className="routine-table-wrap"><table><thead><tr><th>Name</th><th>Project</th><th>Session</th><th>Schedule</th><th>Next run</th><th>Status</th><th>Actions</th></tr></thead><tbody>{routines.map((routine) => {
           const latest = history[routine.id]?.[0];
           const status = routine.expiredAt && routine.expiredAt > (latest?.createdAt ?? 0) ? 'expired' : latest?.state ?? (routine.enabled ? 'ready' : 'disabled');
-          return <tr key={routine.id} tabIndex={0} aria-label={`Edit ${routine.name}`} onClick={() => openEdit(routine)} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); openEdit(routine); } }}>
-            <td><strong>{routine.name}</strong><small>{routine.prompt}</small></td><td>{routine.directory}</td><td>{routine.sessionMode === 'new' ? 'New each run' : routine.sessionMode === 'reuse' ? 'Reuse' : 'Existing'}</td><td>{routine.scheduleKind}</td><td>{routine.nextDueAt ? formatDateTimeShort(routine.nextDueAt) : '-'}</td><td><span className={`routine-state ${status}`}>{status}</span></td><td><div className="routine-actions"><Button size="small" disabled={busy} type="button" variant="accent" onClick={(event) => { event.stopPropagation(); void act(() => api.routines.run(routine.id)); }}>Run</Button><Button size="small" disabled={busy} type="button" onClick={(event) => { event.stopPropagation(); openEdit(routine); }}>Edit</Button><Button size="small" disabled={busy} type="button" className="routine-delete" onClick={(event) => { event.stopPropagation(); void act(() => api.routines.remove(routine.id)); }}>Delete</Button></div></td>
+          return <tr key={routine.id} tabIndex={0} aria-label={`View ${routine.name} history`} onClick={() => setHistoryRoutine(routine)} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setHistoryRoutine(routine); } }}>
+            <td><strong>{routine.name}</strong><small>{routine.prompt}</small></td><td><ProjectLabel path={routine.directory} /></td><td>{routine.sessionMode === 'new' ? 'New each run' : routine.sessionMode === 'reuse' ? 'Reuse' : 'Existing'}</td><td>{routine.scheduleKind}</td><td>{routine.nextDueAt ? formatDateTimeShort(routine.nextDueAt) : '-'}</td><td><span className={`routine-state ${status}`}>{status}</span></td><td><div className="routine-actions"><Button size="small" disabled={busy} type="button" variant="accent" onClick={(event) => { event.stopPropagation(); void act(() => api.routines.run(routine.id)); }}>Run</Button><Button size="small" disabled={busy} type="button" onClick={(event) => { event.stopPropagation(); openEdit(routine); }}>Edit</Button><Button size="small" disabled={busy} type="button" className="routine-delete" onClick={(event) => { event.stopPropagation(); if (window.confirm(`Delete "${routine.name}"?`)) void act(() => api.routines.remove(routine.id)); }}>Delete</Button></div></td>
           </tr>;
         })}</tbody></table></div></section>
       )}

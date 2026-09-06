@@ -9,6 +9,7 @@ import { PRRow } from './PRRow';
 import { IssueRow } from './IssueRow';
 import { RemoteErrorBanner } from './RemoteErrorBanner';
 import { UpstreamApiError } from '../../lib/upstreamApi';
+import { ProjectLabel } from '../ProjectLabel';
 
 interface UpstreamPaneProps {
   directory: string | undefined;
@@ -428,7 +429,7 @@ function NoUpstreamMessage({ directory }: { directory: string | undefined }) {
       </p>
       {directory ? (
         <p className="oc-upstream-no-upstream-hint">
-          Current project: <code>{directory}</code>
+          Current project: <code><ProjectLabel path={directory} /></code>
         </p>
       ) : null}
       <p className="oc-upstream-no-upstream-hint">

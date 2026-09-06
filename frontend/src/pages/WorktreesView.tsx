@@ -10,6 +10,7 @@ import { useUiStore } from '../lib/uiStore';
 import { useOpencodeLaunch } from '../lib/useCapabilities';
 import { sessionsForWorktree } from '../lib/worktrees';
 import { WorktreesTableSkeleton } from '../components/Skeleton';
+import { ProjectLabel } from '../components/ProjectLabel';
 import './Dashboard.css';
 import './WorktreesView.css';
 
@@ -110,7 +111,7 @@ export function WorktreesView() {
       <div className="oc-worktrees-header">
         <div>
           <h2 className="section-title">Worktrees</h2>
-          <div className="mono oc-worktrees-project">{projectDir}</div>
+          <ProjectLabel className="mono oc-worktrees-project" path={projectDir} />
         </div>
         <div className="oc-worktrees-actions">
           <Link className="oc-time-range-btn" to={`/project/${encodeURIComponent(projectDir)}`}>
@@ -163,8 +164,7 @@ export function WorktreesView() {
                   </td>
                   <td>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      <span style={{ color: 'var(--accent)', fontWeight: 500 }}>{shortPath(wt.path)}</span>
-                      <span className="mono">{wt.path}</span>
+                      <ProjectLabel path={wt.path} style={{ color: 'var(--accent)', fontWeight: 500 }} />
                     </div>
                   </td>
                   <td title={stats.sessions.map((s) => s.id).join(', ')}>

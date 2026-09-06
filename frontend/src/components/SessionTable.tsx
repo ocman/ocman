@@ -3,10 +3,11 @@ import './SessionTable.css';
 import { Link, useNavigate } from 'react-router-dom';
 import type { Session, GitInfo, Project } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
-import { cleanTitle, formatDuration, relativeTime, shortPath } from '../lib/format';
+import { cleanTitle, formatDuration, relativeTime } from '../lib/format';
 import { isTerminalStatus } from '../lib/sessionStatus';
 import { StatusBadge } from './StatusBadge';
 import { HostBadge } from './HostBadge';
+import { ProjectLabel } from './ProjectLabel';
 import { filterVisibleSessions } from '../lib/sessionVisibility';
 import { nestSessions } from '../lib/nestSessions';
 import { SessionTableSkeleton } from './Skeleton';
@@ -272,7 +273,6 @@ export function GroupedSessionTable({
     <>
       {groups.map(group => {
         const collapsed = collapsedProjects.has(group.directory);
-        const label = group.directory ? shortPath(group.directory) : '(unknown)';
         const agg = group.aggregate;
         const remoteSession = group.sessions.find(s => s.remoteId && s.remoteId !== 'local');
         const dotStatus: Session['status'] =
@@ -297,7 +297,7 @@ export function GroupedSessionTable({
                 </span>
                 <span className="oc-session-group-label">
                   <HostBadge remoteName={remoteSession?.remoteName} remoteId={remoteSession?.remoteId} stale={remoteSession?.stale} />
-                  {label}
+                  <ProjectLabel path={group.directory} />
                 </span>
                 <span className="oc-session-group-count">{group.sessions.length}</span>
               </button>

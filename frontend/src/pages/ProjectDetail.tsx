@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { usePageTitle } from '../lib/headerContext';
 import { SessionTable } from '../components/SessionTable';
+import { ProjectLabel } from '../components/ProjectLabel';
 import { useTmux } from '../lib/useTmux';
 import { useOpencodeLaunch } from '../lib/useCapabilities';
 import { useClickOutside } from '../lib/useClickOutside';
@@ -180,7 +181,7 @@ export function ProjectDetail() {
         />
       )}
       <h2 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{directory}</span>
+        <ProjectLabel path={directory} fallback="Project" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }} />
         {matchingTmuxSession && (
           <button
             type="button"

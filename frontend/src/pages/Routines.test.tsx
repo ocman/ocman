@@ -110,6 +110,15 @@ describe('Routines', () => {
     expect(await screen.findByText('expired')).toBeInTheDocument();
   });
 
+  it('shortens project paths in the table', async () => {
+    vi.mocked(api.routines.list).mockResolvedValue([{ ...routine, directory: '/Users/dries/src/ocman' }]);
+    render(<MemoryRouter><Routines /></MemoryRouter>);
+
+    const project = await screen.findByText('src/ocman');
+    expect(project).toHaveAttribute('title', '/Users/dries/src/ocman');
+    expect(screen.queryByText('/Users/dries/src/ocman')).not.toBeInTheDocument();
+  });
+
   it('clears project-specific agent and model selections when changing projects', async () => {
     vi.mocked(api.projects).mockResolvedValue([{ directory: '/repo', archived: false }, { directory: '/other', archived: false }] as never);
     const user = userEvent.setup();
@@ -121,7 +130,7 @@ describe('Routines', () => {
     expect(screen.getByRole('combobox', { name: 'Model' })).toHaveTextContent('Default model');
   });
 
-  it('edits, runs, deletes, and links routine history sessions', async () => {
+  it('opens history from the row and the form from Edit', async () => {
     const user = userEvent.setup();
     render(<MemoryRouter><Routines /></MemoryRouter>);
     const row = (await screen.findByText(routine.name)).closest('tr')!;
@@ -130,15 +139,31 @@ describe('Routines', () => {
     await user.keyboard('{Enter}');
     await waitFor(() => expect(api.routines.run).toHaveBeenCalledWith(routine.id));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await user.click(row);
+    expect(screen.getByRole('dialog', { name: 'Morning check history' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open' })).toHaveAttribute('href', '/session/session-1?platform=opencode');
+    expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Close routine history' }));
     await user.click(within(row).getByRole('button', { name: 'Edit' }));
     expect(screen.getByRole('combobox', { name: 'Agent' })).toHaveTextContent('plan');
     expect(screen.getByRole('combobox', { name: 'Model' })).toHaveTextContent('anthropic/claude-sonnet-4');
     expect(screen.getByLabelText('Cron expression')).toHaveValue('0 9 * * *');
-    expect(screen.getByRole('link', { name: 'Open' })).toHaveAttribute('href', '/session/session-1?platform=opencode');
+    expect(screen.queryByRole('heading', { name: 'History' })).not.toBeInTheDocument();
     await user.clear(screen.getByLabelText('Name'));
     await user.type(screen.getByLabelText('Name'), 'Renamed');
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
     await waitFor(() => expect(api.routines.update).toHaveBeenCalledWith(routine.id, expect.objectContaining({ name: 'Renamed' })));
+  });
+
+  it('confirms before deleting a routine', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+    const user = userEvent.setup();
+    render(<MemoryRouter><Routines /></MemoryRouter>);
+    const row = (await screen.findByText(routine.name)).closest('tr')!;
+
+    await user.click(within(row).getByRole('button', { name: 'Delete' }));
+    expect(confirm).toHaveBeenCalledWith('Delete "Morning check"?');
+    expect(api.routines.remove).not.toHaveBeenCalled();
     await user.click(within(row).getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(api.routines.remove).toHaveBeenCalledWith(routine.id));
   });
