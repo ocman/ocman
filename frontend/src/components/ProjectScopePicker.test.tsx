@@ -60,6 +60,7 @@ describe('ProjectScopePicker', () => {
     expect(screen.getAllByRole('option')).toHaveLength(4);
     await user.click(screen.getByRole('option', { name: /repo\/a/ }));
     expect(onChange).toHaveBeenCalledWith('/repo/a');
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
   });
 
   it('hides the visible caption by default and shows it with showLabel', () => {

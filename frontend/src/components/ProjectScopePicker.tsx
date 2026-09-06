@@ -60,7 +60,7 @@ export function ProjectScopePicker({
   const disabled = options.length === 0;
 
   return (
-    <label className="metrics-filter">
+    <div className="metrics-filter">
       {showLabel && <span>{label}</span>}
       <SearchSelect
         value={value}
@@ -77,6 +77,6 @@ export function ProjectScopePicker({
           })),
         ]}
       />
-    </label>
+    </div>
   );
 }

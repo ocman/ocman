@@ -344,3 +344,10 @@ test('overview can change date range', async ({ mockedPage: page }) => {
   await page.getByRole('option', { name: '7 days' }).click();
   await expect(rangeSelect).toHaveText('7 days');
 });
+
+test('project selector closes after choosing a scope', async ({ mockedPage: page }) => {
+  await page.goto('/analytics/overview');
+  await page.getByRole('combobox', { name: 'Project scope' }).click();
+  await page.getByRole('option', { name: /myapp/ }).click();
+  await expect(page.getByRole('listbox')).toBeHidden();
+});
