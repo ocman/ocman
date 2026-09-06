@@ -445,6 +445,36 @@ type MetricsDashboard struct {
 	TotalProjects             int                `json:"totalProjects"`
 }
 
+// MetricsPerformance is the chart and summary portion of MetricsDashboard.
+type MetricsPerformance struct {
+	AvailableAgents           []string           `json:"availableAgents"`
+	AvailableModels           []string           `json:"availableModels"`
+	Summary                   MetricsSummary     `json:"summary"`
+	Series                    []MetricsPoint     `json:"series"`
+	CostByModel               MetricsCostByModel `json:"costByModel"`
+	DailyEstimatedCostByModel MetricsCostByModel `json:"dailyEstimatedCostByModel"`
+	StopReasons               []StopReasonCount  `json:"stopReasons"`
+}
+
+type MetricsLogKind string
+
+const (
+	MetricsLogRequests MetricsLogKind = "request"
+	MetricsLogSessions MetricsLogKind = "session"
+	MetricsLogProjects MetricsLogKind = "project"
+)
+
+// MetricsLog contains one selected log grain. Unselected slices stay nil.
+type MetricsLog struct {
+	Kind            MetricsLogKind    `json:"kind"`
+	AvailableAgents []string          `json:"availableAgents"`
+	AvailableModels []string          `json:"availableModels"`
+	Total           int               `json:"total"`
+	Requests        []RequestLogEntry `json:"requests,omitempty"`
+	Sessions        []SessionLogEntry `json:"sessions,omitempty"`
+	Projects        []ProjectLogEntry `json:"projects,omitempty"`
+}
+
 // MetricsCostByModel holds a cost series broken down by
 // model. Models is the ordered list of series keys (highest-total cost
 // first; an "Other" bucket trails when there are more than

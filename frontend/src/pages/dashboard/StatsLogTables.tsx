@@ -1,13 +1,10 @@
 /**
- * The three log tables (session / project / request) rendered inside the
- * Stats tab's log card. Extracted from StatsTab so that component stays
- * within the size budget; the session and project tables share the same
- * 13-column layout via the MetricsRowCells helper.
+ * Shared analytics charts and the three log-table presentations.
  */
 import { Link, useNavigate } from 'react-router-dom';
 import { Bar, Doughnut, Line } from 'react-chartjs-2';
 import './StatsLogTables.css';
-import type { MetricsDashboard, ProjectLogEntry } from '../../lib/api';
+import type { MetricsPerformance, ProjectLogEntry, RequestMetricsRow, SessionLogEntry } from '../../lib/api';
 import {
   cleanTitle,
   formatCompactNumber,
@@ -29,82 +26,38 @@ import {
   BAR_OPTIONS_COST_BY_MODEL,
   LINE_OPTIONS_CACHE,
   DOUGHNUT_OPTIONS,
-  CHART_COLORS,
   STOP_REASON_COLORS,
 } from '../../lib/chartConfig';
 import { MetricCard, ChartCard } from './shared';
 import { ModelLabel } from '../../components/ModelLogo';
+import { buildCostByModelDatasets } from './metricsChartData';
 
 const dim = { color: 'var(--text-dim)' } as const;
 const dash = <span style={dim}>—</span>;
 
 /**
- * Convert a hex colour (e.g. "#89b4fa") to an rgba string with the
- * given alpha. Used to give each model stack a translucent fill while
- * keeping its border at full opacity.
- */
-function hexToRgba(hex: string, alpha: number): string {
-  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  if (!m) return hex;
-  const r = parseInt(m[1], 16);
-  const g = parseInt(m[2], 16);
-  const b = parseInt(m[3], 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
-
-/**
- * Build the Chart.js datasets for the stacked daily cost chart.
- * Falls back to a single empty "Cost" series when the backend reports no
- * per-model breakdown (empty database, or a window where every row
- * has zero cost — the legacy chart's behaviour).
- */
-function buildCostByModelDatasets(metrics: MetricsDashboard) {
-  const cbm = metrics.dailyEstimatedCostByModel;
-  const models = cbm?.models ?? [];
-  const cbmSeries = cbm?.series ?? [];
-  if (models.length === 0) {
-    return [
-      {
-        label: 'Cost',
-        data: cbmSeries.map(() => 0),
-        borderColor: '#a6e3a1',
-        backgroundColor: 'rgba(166, 227, 161, 0.18)',
-        stack: 'cost',
-      },
-    ];
-  }
-  return models.map((model, idx) => {
-    const colour = CHART_COLORS[idx % CHART_COLORS.length];
-    return {
-      label: renderModel(model),
-      data: cbmSeries.map((pt) => pt.costs?.[idx] ?? 0),
-      borderColor: colour,
-      backgroundColor: hexToRgba(colour, 0.72),
-      stack: 'cost',
-      borderWidth: 1,
-    };
-  });
-}
-
-/**
  * Summary metric cards + the six overview charts shown above the log
  * tables. Pure presentation of a resolved MetricsDashboard.
  */
-export function StatsSummaryCharts({ metrics }: { metrics: MetricsDashboard }) {
+export function MetricsSummaryCards({ metrics }: { metrics: MetricsPerformance }) {
+  return (
+    <div className="metrics-summary-grid">
+      <MetricCard label="Requests" value={formatNumber(metrics.summary.requests)} tone="blue" />
+      <MetricCard label="Total Tokens" value={formatCompactNumber(metrics.summary.totalTokens)} tone="blue" subvalue={`${formatCompactNumber(metrics.summary.inputTokens)} in / ${formatCompactNumber(metrics.summary.outputTokens)} out`} />
+      <MetricCard label="Avg Tok/s" value={metrics.summary.avgTokensPerSec.toFixed(1)} tone="orange" />
+      <MetricCard label="Avg Duration" value={formatSeconds(metrics.summary.avgDurationMs / 1000)} tone="blue" />
+      <MetricCard label="Total Wall Clock" value={formatSeconds(metrics.summary.totalDurationMs / 1000)} tone="blue" subvalue="sum of response times" />
+      <MetricCard label="Cache Hit Rate" value={formatPercent(metrics.summary.cacheHitRate)} tone="green" subvalue={formatTokenCache(metrics.summary.cacheReadTokens, metrics.summary.cacheWriteTokens)} />
+      <MetricCard label="Total Cost" value={formatCurrency(metrics.summary.totalEffectiveCost)} tone="green" subvalue="billed, est. when plan reports $0" />
+      <MetricCard label="Reported / Est." value={`${formatCurrency(metrics.summary.totalCost)} / ${formatCurrency(metrics.summary.totalCalcCost)}`} tone="orange" subvalue="platform-billed / token estimate" />
+    </div>
+  );
+}
+
+export function PerformanceCharts({ metrics }: { metrics: MetricsPerformance }) {
   const metricLabels = metrics.series.map((point) => point.label);
   return (
     <>
-      <div className="metrics-summary-grid">
-        <MetricCard label="Requests" value={formatNumber(metrics.summary.requests)} tone="blue" />
-        <MetricCard label="Total Tokens" value={formatCompactNumber(metrics.summary.totalTokens)} tone="blue" subvalue={`${formatCompactNumber(metrics.summary.inputTokens)} in / ${formatCompactNumber(metrics.summary.outputTokens)} out`} />
-        <MetricCard label="Avg Tok/s" value={metrics.summary.avgTokensPerSec.toFixed(1)} tone="orange" />
-        <MetricCard label="Avg Duration" value={formatSeconds(metrics.summary.avgDurationMs / 1000)} tone="blue" />
-        <MetricCard label="Total Wall Clock" value={formatSeconds(metrics.summary.totalDurationMs / 1000)} tone="blue" subvalue="sum of response times" />
-        <MetricCard label="Cache Hit Rate" value={formatPercent(metrics.summary.cacheHitRate)} tone="green" subvalue={formatTokenCache(metrics.summary.cacheReadTokens, metrics.summary.cacheWriteTokens)} />
-        <MetricCard label="Total Cost" value={formatCurrency(metrics.summary.totalEffectiveCost)} tone="green" subvalue="billed, est. when plan reports $0" />
-        <MetricCard label="Reported / Est." value={`${formatCurrency(metrics.summary.totalCost)} / ${formatCurrency(metrics.summary.totalCalcCost)}`} tone="orange" subvalue="platform-billed / token estimate" />
-      </div>
-
       <div className="metrics-chart-grid metrics-chart-grid-top">
         <ChartCard title="Avg Output Tokens/Second">
           <Bar data={{
@@ -246,10 +199,10 @@ function EmptyRow({ colSpan, label }: { colSpan: number; label: string }) {
 }
 
 export function SessionLogTable({
-  metrics,
+  sessions,
   pageOffset,
 }: {
-  metrics: MetricsDashboard;
+  sessions: SessionLogEntry[];
   pageOffset: number;
 }) {
   const navigate = useNavigate();
@@ -265,9 +218,9 @@ export function SessionLogTable({
           </tr>
         </thead>
         <tbody>
-          {metrics.sessions.length === 0 ? (
+          {sessions.length === 0 ? (
             <EmptyRow colSpan={13} label="No sessions matched the current filters" />
-          ) : metrics.sessions.map((session, idx) => (
+          ) : sessions.map((session, idx) => (
             <tr key={session.id} onClick={() => navigate(`/session/${encodeURIComponent(session.id)}`)}>
               <td>{pageOffset + idx + 1}</td>
               <td title={cleanTitle(session.title)}>
@@ -289,10 +242,10 @@ export function SessionLogTable({
 }
 
 export function ProjectLogTable({
-  metrics,
+  projects,
   pageOffset,
 }: {
-  metrics: MetricsDashboard;
+  projects: ProjectLogEntry[];
   pageOffset: number;
 }) {
   const navigate = useNavigate();
@@ -308,9 +261,9 @@ export function ProjectLogTable({
           </tr>
         </thead>
         <tbody>
-          {metrics.projects.length === 0 ? (
+          {projects.length === 0 ? (
             <EmptyRow colSpan={13} label="No projects matched the current filters" />
-          ) : metrics.projects.map((project: ProjectLogEntry, idx: number) => (
+          ) : projects.map((project: ProjectLogEntry, idx: number) => (
             <tr key={project.directory} onClick={() => navigate(`/project/${encodeURIComponent(project.directory)}`)}>
               <td>{pageOffset + idx + 1}</td>
               <td title={project.directory}>
@@ -329,10 +282,10 @@ export function ProjectLogTable({
 }
 
 export function RequestLogTable({
-  metrics,
+  requests,
   pageOffset,
 }: {
-  metrics: MetricsDashboard;
+  requests: RequestMetricsRow[];
   pageOffset: number;
 }) {
   const navigate = useNavigate();
@@ -356,9 +309,9 @@ export function RequestLogTable({
           </tr>
         </thead>
         <tbody>
-          {metrics.requests.length === 0 ? (
+          {requests.length === 0 ? (
             <EmptyRow colSpan={12} label="No requests matched the current filters" />
-          ) : metrics.requests.map((request, idx) => (
+          ) : requests.map((request, idx) => (
             <tr key={request.id} onClick={() => navigate(`/session/${encodeURIComponent(request.sessionId)}`)}>
               <td>{pageOffset + idx + 1}</td>
               <td>{formatDateTimeShort(request.timeCreated)}</td>

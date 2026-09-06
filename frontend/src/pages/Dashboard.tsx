@@ -9,8 +9,6 @@ import { useSessions as useTQSessions, useProjects as useTQProjects } from '../l
 import { DashboardContext, type DashboardCtx } from './dashboard/context';
 
 // Re-export tab components so App.tsx can import from a single place.
-export { StatsTab } from './dashboard/StatsTab';
-export { UsageTab } from './dashboard/UsageTab';
 export { AnalyticsTab, LegacyAnalyticsRedirect } from './dashboard/AnalyticsTab';
 export { SessionsTab } from './dashboard/SessionsTab';
 export { ProjectsTab } from './dashboard/ProjectsTab';

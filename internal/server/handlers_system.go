@@ -36,8 +36,45 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	if !s.requireDB(w) {
 		return
 	}
-	agent := strings.TrimSpace(r.URL.Query().Get("agent"))
-	model := strings.TrimSpace(r.URL.Query().Get("model"))
+	opts := metricsOptions(r)
+	metrics, err := s.db.GetMetricsDashboard(r.Context(), opts)
+	if err != nil {
+		serverError(w, "fetching metrics", err)
+		return
+	}
+	writeJSON(w, metrics)
+}
+
+func (s *Server) handleMetricsPerformance(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDB(w) {
+		return
+	}
+	metrics, err := s.db.GetMetricsPerformance(r.Context(), metricsOptions(r))
+	if err != nil {
+		serverError(w, "fetching performance metrics", err)
+		return
+	}
+	writeJSON(w, metrics)
+}
+
+func (s *Server) handleMetricLogs(w http.ResponseWriter, r *http.Request) {
+	if !s.requireDB(w) {
+		return
+	}
+	kind := db.MetricsLogKind(strings.TrimSpace(r.URL.Query().Get("kind")))
+	if kind != db.MetricsLogRequests && kind != db.MetricsLogSessions && kind != db.MetricsLogProjects {
+		http.Error(w, "kind must be request, session, or project", http.StatusBadRequest)
+		return
+	}
+	logs, err := s.db.GetMetricsLog(r.Context(), metricsOptions(r), kind)
+	if err != nil {
+		serverError(w, "fetching metric logs", err)
+		return
+	}
+	writeJSON(w, logs)
+}
+
+func metricsOptions(r *http.Request) db.MetricsDashboardOptions {
 	dayCount := parseIntParam(r, "days", 0)
 	var since int64
 	if dayCount > 0 {
@@ -51,9 +88,9 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	projectOffset := parseIntParam(r, "projectOffset", 0)
 	dir := normaliseDirParam(r.URL.Query().Get("dir"))
 
-	metrics, err := s.db.GetMetricsDashboard(r.Context(), db.MetricsDashboardOptions{
-		AgentFilter:   agent,
-		ModelFilter:   model,
+	return db.MetricsDashboardOptions{
+		AgentFilter:   strings.TrimSpace(r.URL.Query().Get("agent")),
+		ModelFilter:   strings.TrimSpace(r.URL.Query().Get("model")),
 		Since:         since,
 		Days:          dayCount,
 		RequestLimit:  limit,
@@ -64,12 +101,7 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		ProjectOffset: projectOffset,
 		Pricing:       pricing.Load(),
 		Dir:           dir,
-	})
-	if err != nil {
-		serverError(w, "fetching metrics", err)
-		return
 	}
-	writeJSON(w, metrics)
 }
 
 func (s *Server) handlePermissionStats(w http.ResponseWriter, r *http.Request) {

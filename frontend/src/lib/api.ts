@@ -35,6 +35,9 @@ export type {
   SessionLogEntry,
   ProjectLogEntry,
   MetricsDashboard,
+  MetricsPerformance,
+  MetricsLog,
+  MetricsLogKind,
   PermissionEvaluationResult,
   PermissionStats,
   PermissionStatsDay,
@@ -107,7 +110,9 @@ import type {
   FavoriteEntry,
   McpConfigStatus,
   McpConfigInstallResult,
-  MetricsDashboard,
+  MetricsPerformance,
+  MetricsLog,
+  MetricsLogKind,
   PermissionStats,
   DirectoryBrowseResponse,
   DirectorySearchResponse,
@@ -410,8 +415,10 @@ export const api = {
   clientActivity: (activity: ClientActivity) =>
     postJSON<void, ClientActivity>('/api/client-activity', activity, { parseJSON: false }),
   stats: (signal?: AbortSignal) => fetchJSON<Stats>('/api/stats', signal),
-  metrics: (params?: { agent?: string; model?: string; days?: number; limit?: number; offset?: number; sessionLimit?: number; sessionOffset?: number; projectLimit?: number; projectOffset?: number; dir?: string }, signal?: AbortSignal) =>
-    fetchJSON<MetricsDashboard>(`/api/metrics${queryString(params)}`, signal),
+  metrics: (params?: { agent?: string; model?: string; days?: number; dir?: string }, signal?: AbortSignal) =>
+    fetchJSON<MetricsPerformance>(`/api/metrics/performance${queryString(params)}`, signal),
+  metricLogs: (params: { kind: MetricsLogKind; agent?: string; model?: string; days?: number; limit?: number; offset?: number; sessionLimit?: number; sessionOffset?: number; projectLimit?: number; projectOffset?: number; dir?: string }, signal?: AbortSignal) =>
+    fetchJSON<MetricsLog>(`/api/metric-logs${queryString(params)}`, signal),
   permissionStats: (params?: { days?: number; dir?: string }, signal?: AbortSignal) =>
     fetchJSON<PermissionStats>(`/api/permission-stats${queryString(params)}`, signal),
   projects: (signal?: AbortSignal) => fetchJSON<Project[]>('/api/projects', signal),

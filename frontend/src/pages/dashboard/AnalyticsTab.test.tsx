@@ -3,13 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 
-vi.mock('./StatsTab', () => ({
-  StatsTab: ({ view }: { view?: string }) => <div>stats:{view}</div>,
-}));
-
-vi.mock('./UsageTab', () => ({
-  UsageTab: () => <div>usage overview</div>,
-}));
+vi.mock('./OverviewTab', () => ({ OverviewTab: () => <div>analytics:overview</div> }));
+vi.mock('./ActivityTab', () => ({ ActivityTab: () => <div>analytics:activity</div> }));
+vi.mock('./ModelsTab', () => ({ ModelsTab: () => <div>analytics:models</div> }));
+vi.mock('./PerformanceTab', () => ({ PerformanceTab: () => <div>analytics:performance</div> }));
+vi.mock('./PermissionsTab', () => ({ PermissionsTab: () => <div>analytics:permissions</div> }));
+vi.mock('./LogsTab', () => ({ LogsTab: () => <div>analytics:logs</div> }));
 
 vi.mock('../../lib/headerContext', () => ({
   usePageTitle: vi.fn(),
@@ -24,9 +23,12 @@ function LocationMarker() {
 
 describe('AnalyticsTab', () => {
   it.each([
-    ['/analytics/overview', 'usage overview'],
-    ['/analytics/performance', 'stats:performance'],
-    ['/analytics/logs', 'stats:logs'],
+    ['/analytics/overview', 'analytics:overview'],
+    ['/analytics/activity', 'analytics:activity'],
+    ['/analytics/models', 'analytics:models'],
+    ['/analytics/performance', 'analytics:performance'],
+    ['/analytics/permissions', 'analytics:permissions'],
+    ['/analytics/logs', 'analytics:logs'],
   ])('renders the selected section at %s', (path, content) => {
     render(
       <MemoryRouter initialEntries={[path]}>
@@ -66,7 +68,7 @@ describe('AnalyticsTab', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText('usage overview')).toBeInTheDocument();
+    expect(screen.getByText('analytics:overview')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Performance' }))
       .toHaveAttribute('href', '/analytics/performance?dir=%2Frepos&t=7');
   });

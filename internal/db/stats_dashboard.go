@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"maps"
 	"slices"
 	"sort"
@@ -87,17 +88,7 @@ func (d *DB) GetMetricsDashboard(ctx context.Context, opts MetricsDashboardOptio
 		AvailableModels: sortedKeys(modelSet),
 	}
 
-	stopCounts := d.aggregateSummaryAndBuckets(dashboard, filtered, opts.Days, opts.Since)
-
-	for reason, count := range stopCounts {
-		dashboard.StopReasons = append(dashboard.StopReasons, StopReasonCount{Reason: reason, Count: count})
-	}
-	sort.Slice(dashboard.StopReasons, func(i, j int) bool {
-		if dashboard.StopReasons[i].Count != dashboard.StopReasons[j].Count {
-			return dashboard.StopReasons[i].Count > dashboard.StopReasons[j].Count
-		}
-		return dashboard.StopReasons[i].Reason < dashboard.StopReasons[j].Reason
-	})
+	d.populatePerformance(dashboard, filtered, opts)
 
 	dashboard.TotalRequests = len(filtered)
 	dashboard.Requests = paginateRequests(filtered, opts.RequestLimit, opts.RequestOffset)
@@ -109,6 +100,73 @@ func (d *DB) GetMetricsDashboard(ctx context.Context, opts MetricsDashboardOptio
 		return nil, err
 	}
 	return dashboard, nil
+}
+
+// GetMetricsPerformance returns only the summary and chart data.
+func (d *DB) GetMetricsPerformance(ctx context.Context, opts MetricsDashboardOptions) (*MetricsPerformance, error) {
+	filtered, agentSet, modelSet, err := d.scanDashboardRows(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	dashboard := &MetricsDashboard{
+		AvailableAgents: sortedKeys(agentSet),
+		AvailableModels: sortedKeys(modelSet),
+	}
+	d.populatePerformance(dashboard, filtered, opts)
+	return &MetricsPerformance{
+		AvailableAgents:           dashboard.AvailableAgents,
+		AvailableModels:           dashboard.AvailableModels,
+		Summary:                   dashboard.Summary,
+		Series:                    dashboard.Series,
+		CostByModel:               dashboard.CostByModel,
+		DailyEstimatedCostByModel: dashboard.DailyEstimatedCostByModel,
+		StopReasons:               dashboard.StopReasons,
+	}, nil
+}
+
+func (d *DB) populatePerformance(dashboard *MetricsDashboard, filtered []requestRow, opts MetricsDashboardOptions) {
+	stopCounts := d.aggregateSummaryAndBuckets(dashboard, filtered, opts.Days, opts.Since)
+	for reason, count := range stopCounts {
+		dashboard.StopReasons = append(dashboard.StopReasons, StopReasonCount{Reason: reason, Count: count})
+	}
+	sort.Slice(dashboard.StopReasons, func(i, j int) bool {
+		if dashboard.StopReasons[i].Count != dashboard.StopReasons[j].Count {
+			return dashboard.StopReasons[i].Count > dashboard.StopReasons[j].Count
+		}
+		return dashboard.StopReasons[i].Reason < dashboard.StopReasons[j].Reason
+	})
+}
+
+// GetMetricsLog returns one paginated log grain without building chart data.
+func (d *DB) GetMetricsLog(ctx context.Context, opts MetricsDashboardOptions, kind MetricsLogKind) (*MetricsLog, error) {
+	filtered, agentSet, modelSet, err := d.scanDashboardRows(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	result := &MetricsLog{
+		Kind:            kind,
+		AvailableAgents: sortedKeys(agentSet),
+		AvailableModels: sortedKeys(modelSet),
+	}
+	dashboard := &MetricsDashboard{}
+	switch kind {
+	case MetricsLogRequests:
+		result.Total = len(filtered)
+		result.Requests = paginateRequests(filtered, opts.RequestLimit, opts.RequestOffset)
+	case MetricsLogSessions:
+		if err := d.populateSessionLog(ctx, dashboard, filtered, opts.SessionLimit, opts.SessionOffset); err != nil {
+			return nil, err
+		}
+		result.Total, result.Sessions = dashboard.TotalSessions, dashboard.Sessions
+	case MetricsLogProjects:
+		if err := d.populateProjectLog(ctx, dashboard, filtered, opts.ProjectLimit, opts.ProjectOffset); err != nil {
+			return nil, err
+		}
+		result.Total, result.Projects = dashboard.TotalProjects, dashboard.Projects
+	default:
+		return nil, fmt.Errorf("unknown metrics log kind %q", kind)
+	}
+	return result, nil
 }
 
 // scanDashboardRows queries assistant messages within the given options window

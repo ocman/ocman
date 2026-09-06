@@ -18,7 +18,9 @@ import type {
   Session,
   Project,
   ActivityDay,
-  MetricsDashboard,
+  MetricsPerformance,
+  MetricsLog,
+  MetricsLogKind,
   PermissionStats,
   ModelUsage,
   HourlyData,
@@ -360,12 +362,6 @@ type MetricsParams = {
   agent?: string;
   model?: string;
   days?: number;
-  limit?: number;
-  offset?: number;
-  sessionLimit?: number;
-  sessionOffset?: number;
-  projectLimit?: number;
-  projectOffset?: number;
   dir?: string;
 };
 
@@ -374,10 +370,28 @@ export function useMetrics(
   options?: { enabled?: boolean },
 ) {
   useActivityScope(options?.enabled === false ? undefined : 'metrics');
-  return useQuery<MetricsDashboard>({
+  return useQuery<MetricsPerformance>({
     queryKey: ['metrics', params],
     queryFn: ({ signal }) => api.metrics(params, signal),
     enabled: options?.enabled,
+  });
+}
+
+export function useMetricLogs(
+  params: MetricsParams & {
+    kind: MetricsLogKind;
+    limit?: number;
+    offset?: number;
+    sessionLimit?: number;
+    sessionOffset?: number;
+    projectLimit?: number;
+    projectOffset?: number;
+  },
+) {
+  useActivityScope('metrics');
+  return useQuery<MetricsLog>({
+    queryKey: ['metricLogs', params],
+    queryFn: ({ signal }) => api.metricLogs(params, signal),
   });
 }
 

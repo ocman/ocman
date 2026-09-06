@@ -1,11 +1,18 @@
 import { Navigate, NavLink, useLocation, useParams } from 'react-router-dom';
 import { usePageTitle } from '../../lib/headerContext';
-import { StatsTab } from './StatsTab';
-import { UsageTab } from './UsageTab';
+import { ActivityTab } from './ActivityTab';
+import { LogsTab } from './LogsTab';
+import { ModelsTab } from './ModelsTab';
+import { OverviewTab } from './OverviewTab';
+import { PerformanceTab } from './PerformanceTab';
+import { PermissionsTab } from './PermissionsTab';
 
 const sections = [
   ['overview', 'Overview'],
+  ['activity', 'Activity'],
+  ['models', 'Models & Cost'],
   ['performance', 'Performance'],
+  ['permissions', 'Permissions'],
   ['logs', 'Logs'],
 ] as const;
 
@@ -14,7 +21,7 @@ export function AnalyticsTab() {
   const { section } = useParams();
   const { search } = useLocation();
 
-  if (section !== 'overview' && section !== 'performance' && section !== 'logs') {
+  if (!sections.some(([id]) => id === section)) {
     return <Navigate to={`/analytics/overview${search}`} replace />;
   }
 
@@ -27,9 +34,12 @@ export function AnalyticsTab() {
           </NavLink>
         ))}
       </nav>
-      {section === 'overview'
-        ? <UsageTab />
-        : <StatsTab view={section} />}
+      {section === 'overview' && <OverviewTab />}
+      {section === 'activity' && <ActivityTab />}
+      {section === 'models' && <ModelsTab />}
+      {section === 'performance' && <PerformanceTab />}
+      {section === 'permissions' && <PermissionsTab />}
+      {section === 'logs' && <LogsTab />}
     </>
   );
 }

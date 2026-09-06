@@ -123,6 +123,55 @@ func TestHandleMetrics_DirFilter(t *testing.T) {
 	}
 }
 
+func TestHandleMetricLogs_SelectsKindAndDir(t *testing.T) {
+	srv := dirFilterFixture(t)
+	q := url.Values{"kind": {"request"}, "dir": {"/repo/foo"}}
+	rr := httptest.NewRecorder()
+	srv.handleMetricLogs(rr, httptest.NewRequest(http.MethodGet, "/api/metric-logs?"+q.Encode(), nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("metric logs: HTTP %d: %s", rr.Code, rr.Body.String())
+	}
+	var got struct {
+		Kind     string        `json:"kind"`
+		Total    int           `json:"total"`
+		Requests []interface{} `json:"requests"`
+		Sessions []interface{} `json:"sessions"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode metric logs: %v", err)
+	}
+	if got.Kind != "request" || got.Total != 2 || len(got.Requests) != 2 || got.Sessions != nil {
+		t.Fatalf("unexpected metric logs: %+v", got)
+	}
+
+	rr = httptest.NewRecorder()
+	srv.handleMetricLogs(rr, httptest.NewRequest(http.MethodGet, "/api/metric-logs?kind=unknown", nil))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("invalid kind returned HTTP %d, want 400", rr.Code)
+	}
+}
+
+func TestHandleMetricsPerformance_OmitsLogs(t *testing.T) {
+	srv := dirFilterFixture(t)
+	rr := httptest.NewRecorder()
+	srv.handleMetricsPerformance(rr, httptest.NewRequest(http.MethodGet, "/api/metrics/performance", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("performance metrics: HTTP %d: %s", rr.Code, rr.Body.String())
+	}
+	var got map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode performance metrics: %v", err)
+	}
+	if _, ok := got["summary"]; !ok {
+		t.Fatal("performance response has no summary")
+	}
+	for _, field := range []string{"requests", "sessions", "projects"} {
+		if _, ok := got[field]; ok {
+			t.Fatalf("performance response unexpectedly contains %q", field)
+		}
+	}
+}
+
 func TestHandleActivity_DirFilter(t *testing.T) {
 	srv := dirFilterFixture(t)
 

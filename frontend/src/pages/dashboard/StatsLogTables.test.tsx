@@ -86,7 +86,7 @@ function renderTable(node: React.ReactNode) {
 describe('Stats log table rows are keyboard reachable', () => {
   it('links the session row title to the session', async () => {
     const user = userEvent.setup();
-    renderTable(<SessionLogTable metrics={makeMetrics()} pageOffset={0} />);
+    renderTable(<SessionLogTable sessions={makeMetrics().sessions} pageOffset={0} />);
 
     const link = screen.getByRole('link', { name: /Example session/ });
     expect(link).toHaveAttribute('href', '/session/sess-1');
@@ -99,7 +99,7 @@ describe('Stats log table rows are keyboard reachable', () => {
 
   it('links the project row to the project', async () => {
     const user = userEvent.setup();
-    renderTable(<ProjectLogTable metrics={makeMetrics()} pageOffset={0} />);
+    renderTable(<ProjectLogTable projects={makeMetrics().projects} pageOffset={0} />);
 
     const link = screen.getByRole('link', { name: /proj/ });
     expect(link).toHaveAttribute('href', `/project/${encodeURIComponent('/home/u/proj')}`);
@@ -112,7 +112,7 @@ describe('Stats log table rows are keyboard reachable', () => {
 
   it('links the request row to its session', async () => {
     const user = userEvent.setup();
-    renderTable(<RequestLogTable metrics={makeMetrics()} pageOffset={0} />);
+    renderTable(<RequestLogTable requests={makeMetrics().requests} pageOffset={0} />);
 
     const link = screen.getByRole('link');
     expect(link).toHaveAttribute('href', '/session/sess-1');

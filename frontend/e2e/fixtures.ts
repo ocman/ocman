@@ -162,7 +162,7 @@ async function installDefaultRoutes(page: Page) {
   );
 
   // Metrics (Stats tab)
-  await page.route('/api/metrics*', (route: Route) =>
+  await page.route(/\/api\/metrics(?:\/performance)?(?:\?.*)?$/, (route: Route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -197,6 +197,14 @@ async function installDefaultRoutes(page: Page) {
       }),
     }),
   );
+  await page.route('/api/metric-logs*', (route: Route) => {
+    const kind = new URL(route.request().url()).searchParams.get('kind') ?? 'project';
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ kind, total: 0, availableAgents: [], availableModels: [], [`${kind}s`]: [] }),
+    });
+  });
 
   // Activity / usage endpoints
   await page.route('/api/activity*', (route: Route) =>

@@ -1,9 +1,45 @@
 package db
 
 import (
+	"reflect"
 	"testing"
 	"time"
 )
+
+func TestGetMetricsLog_ReturnsOnlySelectedGrain(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "session", "/p", now, now)
+	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{
+		"role": "assistant", "finish": "end_turn", "cost": 0.1,
+		"tokens": map[string]interface{}{"input": 10, "output": 5},
+	})
+
+	got, err := db.GetMetricsLog(t.Context(), MetricsDashboardOptions{RequestLimit: 20}, MetricsLogRequests)
+	if err != nil {
+		t.Fatalf("GetMetricsLog: %v", err)
+	}
+	if got.Kind != MetricsLogRequests || got.Total != 1 || len(got.Requests) != 1 {
+		t.Fatalf("unexpected request log: %+v", got)
+	}
+	if !reflect.ValueOf(got.Sessions).IsNil() || !reflect.ValueOf(got.Projects).IsNil() {
+		t.Fatalf("unselected logs must stay nil: %+v", got)
+	}
+
+	sessions, err := db.GetMetricsLog(t.Context(), MetricsDashboardOptions{SessionLimit: 20}, MetricsLogSessions)
+	if err != nil || sessions.Total != 1 || len(sessions.Sessions) != 1 || sessions.Requests != nil {
+		t.Fatalf("unexpected session log: result=%+v err=%v", sessions, err)
+	}
+	projects, err := db.GetMetricsLog(t.Context(), MetricsDashboardOptions{ProjectLimit: 20}, MetricsLogProjects)
+	if err != nil || projects.Total != 1 || len(projects.Projects) != 1 || projects.Requests != nil {
+		t.Fatalf("unexpected project log: result=%+v err=%v", projects, err)
+	}
+	if _, err := db.GetMetricsLog(t.Context(), MetricsDashboardOptions{}, "unknown"); err == nil {
+		t.Fatal("unknown log kind did not return an error")
+	}
+}
 
 // FR-10: dedicated regression tests for GetMetricsDashboard. The
 // existing TestGetMetricsDashboard{,SessionAggregation} cover happy

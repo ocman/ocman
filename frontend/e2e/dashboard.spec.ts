@@ -280,12 +280,10 @@ test('projects tab shows empty state when no projects have sessions', async ({
 // Analytics performance and logs
 // ---------------------------------------------------------------------------
 
-test('performance renders metrics summary cards', async ({ mockedPage: page }) => {
+test('performance renders focused performance charts', async ({ mockedPage: page }) => {
   await page.goto('/analytics/performance');
-  // The MetricCard labels
-  for (const label of ['Requests', 'Total Tokens', 'Total Cost']) {
-    await expect(page.locator('.label', { hasText: label })).toBeVisible();
-  }
+  await expect(page.getByText('Cache Efficiency')).toBeVisible();
+  await expect(page.getByText('Stop Reason Distribution')).toBeVisible();
 });
 
 test('performance shows agent and model filter dropdowns', async ({ mockedPage: page }) => {
@@ -315,16 +313,15 @@ test('logs project log sub-tab switches view', async ({ mockedPage: page }) => {
 // Analytics overview
 // ---------------------------------------------------------------------------
 
-test('overview renders project-scope, model, and date-range filters', async ({ mockedPage: page }) => {
+test('overview renders summary and scoped date filters', async ({ mockedPage: page }) => {
   await page.goto('/analytics/overview');
-  // Three SearchSelect controls: Project scope, Model, and Last N days
   const selects = page.locator('.metrics-filter .oc-search-select');
-  await expect(selects).toHaveCount(3);
+  await expect(selects).toHaveCount(2);
+  await expect(page.locator('.label', { hasText: 'Total Cost' })).toBeVisible();
 });
 
-test('overview shows "All models" option in model filter', async ({ mockedPage: page }) => {
-  await page.goto('/analytics/overview');
-  // Open the Model filter and assert the "All models" option is listed.
+test('models shows "All models" option in model filter', async ({ mockedPage: page }) => {
+  await page.goto('/analytics/models');
   await page.getByRole('combobox', { name: 'Model' }).click();
   await expect(page.getByRole('option', { name: 'All models' })).toBeVisible();
 });

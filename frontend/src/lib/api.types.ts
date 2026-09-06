@@ -927,6 +927,22 @@ export interface MetricsDashboard {
   totalProjects: number;
 }
 
+export type MetricsPerformance = Pick<MetricsDashboard,
+  'availableAgents' | 'availableModels' | 'summary' | 'series' |
+  'costByModel' | 'dailyEstimatedCostByModel' | 'stopReasons'>;
+
+export type MetricsLogKind = 'project' | 'session' | 'request';
+
+export interface MetricsLog {
+  kind: MetricsLogKind;
+  availableAgents: string[];
+  availableModels: string[];
+  total: number;
+  requests?: RequestMetricsRow[];
+  sessions?: SessionLogEntry[];
+  projects?: ProjectLogEntry[];
+}
+
 export type PermissionEvaluationResult = 'safe' | 'unsafe' | 'cache-safe' | 'denylisted' | 'error';
 
 export interface PermissionStatsDay {
