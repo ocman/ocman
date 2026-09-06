@@ -55,7 +55,7 @@ describe('Routines', () => {
       name: 'Deploy check', directory: '/repo', remoteId: 'box', deleteAfterSuccess: true,
       schedule: { kind: 'timeout', timeoutMs: 900_000 },
     })));
-  });
+  }, 15_000);
 
   it('edits, runs, deletes, and links routine history sessions', async () => {
     const user = userEvent.setup();

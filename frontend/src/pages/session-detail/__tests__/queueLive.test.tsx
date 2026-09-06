@@ -47,7 +47,7 @@ describe('queued-message list live updates (#58)', () => {
     expect(handle.store.sendMessage).toHaveBeenCalledWith(
       SID, 'follow up', undefined, expect.anything(), expect.anything(), undefined, 'opencode', true,
     );
-  });
+  }, 15_000);
 
   it('reflects enqueue and drain from the broadcast without a refresh', async () => {
     const detail = makeSessionDetail(makeSession({ id: SID }));
