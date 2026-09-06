@@ -3,7 +3,7 @@ import { CHART_COLORS } from '../../lib/chartConfig';
 import { renderModel } from '../../lib/format';
 
 export function buildCostByModelDatasets(metrics: MetricsPerformance) {
-  const { models, series } = metrics.dailyEstimatedCostByModel;
+  const { models, series } = metrics.dailyEffectiveCostByModel;
   if (models.length === 0) {
     return [{ label: 'Cost', data: series.map(() => 0), borderColor: '#a6e3a1', backgroundColor: 'rgba(166, 227, 161, 0.18)', stack: 'cost' }];
   }

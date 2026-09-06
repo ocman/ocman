@@ -4,7 +4,7 @@ import { useMetrics } from '../../lib/queries';
 import { ModelLogo } from '../../components/ModelLogo';
 import { AnalyticsFilters } from './AnalyticsFilters';
 import { useDashboard } from './context';
-import { PerformanceCharts } from './StatsLogTables';
+import { PerformanceCharts, PerformanceSummaryCards } from './StatsLogTables';
 
 export function PerformanceTab() {
   const { dirScope } = useDashboard();
@@ -21,7 +21,7 @@ export function PerformanceTab() {
       <AnalyticsFilters days={days} onDaysChange={setDays} agent={agent} onAgentChange={setAgent} agentOptions={agentOptions} model={model} onModelChange={setModel} modelOptions={modelOptions} />
       {metricsQ.error instanceof Error && <div className="oc-error-banner">{metricsQ.error.message}</div>}
       {metricsQ.isLoading && !metrics && <div className="oc-list-loading"><div className="oc-spinner" />Loading performance...</div>}
-      {metrics && <PerformanceCharts metrics={metrics} />}
+      {metrics && <><PerformanceSummaryCards metrics={metrics} /><PerformanceCharts metrics={metrics} /></>}
     </div>
   );
 }

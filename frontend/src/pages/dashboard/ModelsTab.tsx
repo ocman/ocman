@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Bar, Doughnut } from 'react-chartjs-2';
 import { BAR_OPTIONS_COST_BY_MODEL, BAR_OPTIONS_HOURLY_TOKENS, BAR_OPTIONS_TOKENS_BY_MODEL, CHART_COLORS } from '../../lib/chartConfig';
-import { formatCompactNumber } from '../../lib/format';
+import { formatCompactNumber, formatCurrency, formatNumber, formatPercent } from '../../lib/format';
 import { useHourlyTokens, useMetrics, useModels } from '../../lib/queries';
 import { ModelLogo } from '../../components/ModelLogo';
 import { AnalyticsFilters } from './AnalyticsFilters';
@@ -18,7 +18,8 @@ export function ModelsTab() {
   const hourlyQ = useHourlyTokens({ ...params, model: model || undefined });
   const metricsQ = useMetrics({ ...params, model: model || undefined });
   const models = [...(modelsQ.data ?? [])].sort((a, b) => b.count - a.count);
-  const top = models.slice(0, 8);
+  const selectedModels = model ? models.filter((item) => `${item.provider}/${item.model}` === model) : models;
+  const top = selectedModels.slice(0, 8);
   const errors = [modelsQ.error, hourlyQ.error, metricsQ.error].filter((error): error is Error => error instanceof Error);
   const modelOptions = [{ value: '', label: 'All models' }, ...models.map((item) => ({ value: `${item.provider}/${item.model}`, label: item.model, icon: <ModelLogo model={`${item.provider}/${item.model}`} /> }))];
 
@@ -40,7 +41,16 @@ export function ModelsTab() {
               ] }} options={BAR_OPTIONS_TOKENS_BY_MODEL} />
             </ChartCard>
           </div>
-          {metricsQ.data && <div className="metrics-chart-grid"><ChartCard title="Estimated Cost per Day by Model (USD)"><Bar data={{ labels: metricsQ.data.dailyEstimatedCostByModel.series.map((point) => point.label), datasets: buildCostByModelDatasets(metricsQ.data) }} options={BAR_OPTIONS_COST_BY_MODEL} /></ChartCard></div>}
+          {metricsQ.data && <>
+            <div className="metrics-chart-grid"><ChartCard title="Effective Cost per Day by Model (USD)"><Bar data={{ labels: metricsQ.data.dailyEffectiveCostByModel.series.map((point) => point.label), datasets: buildCostByModelDatasets(metricsQ.data) }} options={BAR_OPTIONS_COST_BY_MODEL} /></ChartCard></div>
+            <div className="chart-card">
+              <h3>Agent breakdown</h3>
+              <div className="metrics-table-wrap"><table><thead><tr><th>Agent</th><th>Requests</th><th>Errors</th><th>Tokens</th><th>Effective cost</th></tr></thead><tbody>
+                {metricsQ.data.agents.map((agent) => <tr key={agent.agent}><td>{agent.agent || 'Unknown'}</td><td>{formatNumber(agent.requests)}</td><td>{formatPercent(agent.errorRate)}</td><td>{formatCompactNumber(agent.totalTokens)}</td><td>{formatCurrency(agent.effectiveCost)}</td></tr>)}
+                {metricsQ.data.agents.length === 0 && <tr><td colSpan={5}>No agents matched the current filters</td></tr>}
+              </tbody></table></div>
+            </div>
+          </>}
           {(hourlyQ.data?.length ?? 0) > 0 && <HourlyModelTokens data={hourlyQ.data ?? []} days={days || 7} />}
         </>
       )}

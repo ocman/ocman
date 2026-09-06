@@ -284,6 +284,7 @@ test('performance renders focused performance charts', async ({ mockedPage: page
   await page.goto('/analytics/performance');
   await expect(page.getByText('Cache Efficiency')).toBeVisible();
   await expect(page.getByText('Stop Reason Distribution')).toBeVisible();
+  await expect(page.getByText('P95 latency')).toBeVisible();
 });
 
 test('performance shows agent and model filter dropdowns', async ({ mockedPage: page }) => {
@@ -318,6 +319,16 @@ test('overview renders summary and scoped date filters', async ({ mockedPage: pa
   const selects = page.locator('.metrics-filter .oc-search-select');
   await expect(selects).toHaveCount(2);
   await expect(page.locator('.label', { hasText: 'Total Cost' })).toBeVisible();
+  await expect(page.locator('.label', { hasText: 'Factory attempts' })).toBeVisible();
+});
+
+test('phone analytics uses a section selector', async ({ mockedPage: page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/analytics/overview');
+  const selector = page.getByRole('combobox', { name: 'Analytics section' });
+  await expect(selector).toBeVisible();
+  await selector.selectOption('permissions');
+  await expect(page).toHaveURL('/analytics/permissions');
 });
 
 test('models shows "All models" option in model filter', async ({ mockedPage: page }) => {

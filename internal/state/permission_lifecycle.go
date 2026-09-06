@@ -51,9 +51,12 @@ type PermissionLifecycle struct {
 }
 
 type PermissionApprovalDaily struct {
-	Date              string         `json:"date"`
-	EvaluationResults map[string]int `json:"evaluationResults"`
-	ManualPreemptions int            `json:"manualPreemptions"`
+	Date               string         `json:"date"`
+	EvaluationResults  map[string]int `json:"evaluationResults"`
+	ManualPreemptions  int            `json:"manualPreemptions"`
+	Requests           int            `json:"requests"`
+	UserDecisions      int            `json:"userDecisions"`
+	ObservedUserWaitMs int64          `json:"observedUserWaitMs"`
 }
 
 type PermissionApprovalStats struct {
@@ -65,6 +68,13 @@ type PermissionApprovalStats struct {
 	ManualPreemptionRate           float64                   `json:"manualPreemptionRate"`
 	MedianJudgmentDurationMs       int64                     `json:"medianJudgmentDurationMs"`
 	MedianManualResponseDurationMs int64                     `json:"medianManualResponseDurationMs"`
+	UserDecisionCount              int                       `json:"userDecisionCount"`
+	UserDecisionRate               float64                   `json:"userDecisionRate"`
+	AffectedSessions               int                       `json:"affectedSessions"`
+	UnresolvedEligibleRequests     int                       `json:"unresolvedEligibleRequests"`
+	ObservedUserWaitMs             int64                     `json:"observedUserWaitMs"`
+	P50UserWaitMs                  int64                     `json:"p50UserWaitMs"`
+	P95UserWaitMs                  int64                     `json:"p95UserWaitMs"`
 	Daily                          []PermissionApprovalDaily `json:"daily"`
 }
 
@@ -101,7 +111,7 @@ func (d *DB) UpsertPermissionLifecycle(ctx context.Context, lifecycle Permission
 // since in the exact directory. Dates are UTC and durations are milliseconds.
 func (d *DB) PermissionApprovalStats(ctx context.Context, since int64, directory string) (PermissionApprovalStats, error) {
 	rows, err := d.db.QueryContext(ctx, `
-		SELECT requested_at, judge_started_at, judge_completed_at, resolved_at,
+		SELECT session_id, requested_at, judge_started_at, judge_completed_at, resolved_at,
 		       evaluation_method, evaluation_result, resolution, manually_preempted
 		FROM permission_lifecycle
 		WHERE requested_at >= ? AND (? = '' OR project_root = ?)
@@ -113,12 +123,13 @@ func (d *DB) PermissionApprovalStats(ctx context.Context, since int64, directory
 	defer rows.Close()
 
 	stats := PermissionApprovalStats{Daily: []PermissionApprovalDaily{}}
-	var judgmentDurations, manualDurations []int64
+	var judgmentDurations, manualDurations, userWaits []int64
+	affectedSessions := make(map[string]struct{})
 	for rows.Next() {
 		var requestedAt, judgeStartedAt, judgeCompletedAt, resolvedAt int64
-		var method, result, resolution string
+		var sessionID, method, result, resolution string
 		var manuallyPreempted bool
-		if err := rows.Scan(&requestedAt, &judgeStartedAt, &judgeCompletedAt, &resolvedAt, &method, &result, &resolution, &manuallyPreempted); err != nil {
+		if err := rows.Scan(&sessionID, &requestedAt, &judgeStartedAt, &judgeCompletedAt, &resolvedAt, &method, &result, &resolution, &manuallyPreempted); err != nil {
 			return PermissionApprovalStats{}, fmt.Errorf("scanning permission approval stats: %w", err)
 		}
 		stats.EligibleRequests++
@@ -137,17 +148,37 @@ func (d *DB) PermissionApprovalStats(ctx context.Context, since int64, directory
 		if manuallyPreempted && resolvedAt >= requestedAt {
 			manualDurations = append(manualDurations, resolvedAt-requestedAt)
 		}
+		userDecision := resolution == string(PermissionResolutionUserOnce) ||
+			resolution == string(PermissionResolutionUserAlways) ||
+			resolution == string(PermissionResolutionUserRejected)
+		var userWait int64
+		if userDecision {
+			stats.UserDecisionCount++
+			affectedSessions[sessionID] = struct{}{}
+			if resolvedAt >= requestedAt {
+				userWait = resolvedAt - requestedAt
+				stats.ObservedUserWaitMs += userWait
+				userWaits = append(userWaits, userWait)
+			}
+		} else if resolution == "" {
+			stats.UnresolvedEligibleRequests++
+		}
 
 		date := time.UnixMilli(requestedAt).UTC().Format(time.DateOnly)
 		if len(stats.Daily) == 0 || stats.Daily[len(stats.Daily)-1].Date != date {
 			stats.Daily = append(stats.Daily, PermissionApprovalDaily{Date: date, EvaluationResults: map[string]int{}})
 		}
 		day := &stats.Daily[len(stats.Daily)-1]
+		day.Requests++
 		if result != "" {
 			day.EvaluationResults[result]++
 		}
 		if manuallyPreempted {
 			day.ManualPreemptions++
+		}
+		if userDecision {
+			day.UserDecisions++
+			day.ObservedUserWaitMs += userWait
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -155,13 +186,25 @@ func (d *DB) PermissionApprovalStats(ctx context.Context, since int64, directory
 	}
 	if stats.EligibleRequests > 0 {
 		stats.AutoApprovedRate = float64(stats.AutoApprovedCount) / float64(stats.EligibleRequests)
+		stats.UserDecisionRate = float64(stats.UserDecisionCount) / float64(stats.EligibleRequests)
 	}
 	if stats.JudgmentRequests > 0 {
 		stats.ManualPreemptionRate = float64(stats.ManualPreemptions) / float64(stats.JudgmentRequests)
 	}
 	stats.MedianJudgmentDurationMs = medianMilliseconds(judgmentDurations)
 	stats.MedianManualResponseDurationMs = medianMilliseconds(manualDurations)
+	stats.AffectedSessions = len(affectedSessions)
+	stats.P50UserWaitMs = percentileMilliseconds(userWaits, 50)
+	stats.P95UserWaitMs = percentileMilliseconds(userWaits, 95)
 	return stats, nil
+}
+
+func percentileMilliseconds(values []int64, percentile int) int64 {
+	if len(values) == 0 {
+		return 0
+	}
+	sort.Slice(values, func(i, j int) bool { return values[i] < values[j] })
+	return values[(len(values)*percentile+99)/100-1]
 }
 
 func medianMilliseconds(values []int64) int64 {

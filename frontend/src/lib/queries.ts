@@ -19,6 +19,7 @@ import type {
   Project,
   ActivityDay,
   MetricsPerformance,
+  AnalyticsOverview,
   MetricsLog,
   MetricsLogKind,
   PermissionStats,
@@ -374,6 +375,14 @@ export function useMetrics(
     queryKey: ['metrics', params],
     queryFn: ({ signal }) => api.metrics(params, signal),
     enabled: options?.enabled,
+  });
+}
+
+export function useAnalyticsOverview() {
+  useActivityScope('metrics');
+  return useQuery<AnalyticsOverview>({
+    queryKey: ['analyticsOverview'],
+    queryFn: ({ signal }) => api.analyticsOverview(signal),
   });
 }
 

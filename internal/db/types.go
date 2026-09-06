@@ -255,16 +255,17 @@ type Message struct {
 // different concept from Session.Platform, which identifies the coding
 // tool that produced the session.
 type MessageData struct {
-	Role       string     `json:"role"`
-	Agent      string     `json:"agent"` // composer-agent role (OpenCode: "build", "plan", subagent name)
-	Mode       string     `json:"mode"`
-	ModelID    string     `json:"modelID"`
-	ProviderID string     `json:"providerID"`
-	Cost       float64    `json:"cost"`
-	Tokens     *TokenInfo `json:"tokens"`
-	Time       *TimeInfo  `json:"time"`
-	Model      *ModelRef  `json:"model"`
-	Finish     string     `json:"finish"`
+	Role       string          `json:"role"`
+	Agent      string          `json:"agent"` // composer-agent role (OpenCode: "build", "plan", subagent name)
+	Mode       string          `json:"mode"`
+	ModelID    string          `json:"modelID"`
+	ProviderID string          `json:"providerID"`
+	Cost       float64         `json:"cost"`
+	Tokens     *TokenInfo      `json:"tokens"`
+	Time       *TimeInfo       `json:"time"`
+	Model      *ModelRef       `json:"model"`
+	Finish     string          `json:"finish"`
+	Error      json.RawMessage `json:"error"`
 }
 
 // TokenInfo holds token usage details for a message.
@@ -314,24 +315,31 @@ type Stats struct {
 
 // MetricsSummary holds the dashboard KPI cards for request analytics.
 type MetricsSummary struct {
-	Requests         int     `json:"requests"`
-	TotalTokens      int64   `json:"totalTokens"`
-	InputTokens      int64   `json:"inputTokens"`
-	OutputTokens     int64   `json:"outputTokens"`
-	CacheReadTokens  int64   `json:"cacheReadTokens"`
-	CacheWriteTokens int64   `json:"cacheWriteTokens"`
-	AvgTokensPerSec  float64 `json:"avgTokensPerSec"`
-	AvgDurationMs    float64 `json:"avgDurationMs"`
-	TotalDurationMs  int64   `json:"totalDurationMs"`
-	CacheHitRate     float64 `json:"cacheHitRate"`
-	TotalCost        float64 `json:"totalCost"`
-	TotalCalcCost    float64 `json:"totalCalcCost"`
+	Requests           int     `json:"requests"`
+	CompletedRequests  int     `json:"completedRequests"`
+	SuccessfulRequests int     `json:"successfulRequests"`
+	ErrorRequests      int     `json:"errorRequests"`
+	ErrorRate          float64 `json:"errorRate"`
+	TotalTokens        int64   `json:"totalTokens"`
+	InputTokens        int64   `json:"inputTokens"`
+	OutputTokens       int64   `json:"outputTokens"`
+	CacheReadTokens    int64   `json:"cacheReadTokens"`
+	CacheWriteTokens   int64   `json:"cacheWriteTokens"`
+	AvgTokensPerSec    float64 `json:"avgTokensPerSec"`
+	AvgDurationMs      float64 `json:"avgDurationMs"`
+	P50DurationMs      float64 `json:"p50DurationMs"`
+	P95DurationMs      float64 `json:"p95DurationMs"`
+	TotalDurationMs    int64   `json:"totalDurationMs"`
+	CacheHitRate       float64 `json:"cacheHitRate"`
+	TotalCost          float64 `json:"totalCost"`
+	TotalCalcCost      float64 `json:"totalCalcCost"`
 	// TotalEffectiveCost is the headline cost: per request it uses the
 	// platform-reported cost when that is non-zero, otherwise the
 	// token-derived estimate. This reconciles subscription-plan
 	// sessions (reported $0) with API-priced sessions so the summary
 	// matches what the per-row tables show.
-	TotalEffectiveCost float64 `json:"totalEffectiveCost"`
+	TotalEffectiveCost       float64 `json:"totalEffectiveCost"`
+	CostPerSuccessfulRequest float64 `json:"costPerSuccessfulRequest"`
 }
 
 // MetricsPoint holds chart data for a time bucket (hour or day).
@@ -346,8 +354,28 @@ type MetricsPoint struct {
 	CacheReadTokens         int64   `json:"cacheReadTokens"`
 	OutputTokens            int64   `json:"outputTokens"`
 	AvgDurationMs           float64 `json:"avgDurationMs"`
+	P50DurationMs           float64 `json:"p50DurationMs"`
+	P95DurationMs           float64 `json:"p95DurationMs"`
 	AvgCacheEfficiency      float64 `json:"avgCacheEfficiency"`
 	Count                   int     `json:"count"`
+	CompletedRequests       int     `json:"completedRequests"`
+	SuccessfulRequests      int     `json:"successfulRequests"`
+	ErrorRequests           int     `json:"errorRequests"`
+	ErrorRate               float64 `json:"errorRate"`
+}
+
+// AgentMetrics holds request metrics grouped by composer agent.
+type AgentMetrics struct {
+	Agent              string  `json:"agent"`
+	Requests           int     `json:"requests"`
+	SuccessfulRequests int     `json:"successfulRequests"`
+	ErrorRequests      int     `json:"errorRequests"`
+	ErrorRate          float64 `json:"errorRate"`
+	InputTokens        int64   `json:"inputTokens"`
+	OutputTokens       int64   `json:"outputTokens"`
+	TotalTokens        int64   `json:"totalTokens"`
+	TotalDurationMs    int64   `json:"totalDurationMs"`
+	EffectiveCost      float64 `json:"effectiveCost"`
 }
 
 // StopReasonCount holds the count for a stop reason.
@@ -436,6 +464,9 @@ type MetricsDashboard struct {
 	CostByModel MetricsCostByModel `json:"costByModel"`
 	// DailyEstimatedCostByModel is token-price estimated cost grouped by day.
 	DailyEstimatedCostByModel MetricsCostByModel `json:"dailyEstimatedCostByModel"`
+	// DailyEffectiveCostByModel is non-cumulative effective cost grouped by day.
+	DailyEffectiveCostByModel MetricsCostByModel `json:"dailyEffectiveCostByModel"`
+	Agents                    []AgentMetrics     `json:"agents"`
 	StopReasons               []StopReasonCount  `json:"stopReasons"`
 	Requests                  []RequestLogEntry  `json:"requests"`
 	TotalRequests             int                `json:"totalRequests"`
@@ -453,6 +484,8 @@ type MetricsPerformance struct {
 	Series                    []MetricsPoint     `json:"series"`
 	CostByModel               MetricsCostByModel `json:"costByModel"`
 	DailyEstimatedCostByModel MetricsCostByModel `json:"dailyEstimatedCostByModel"`
+	DailyEffectiveCostByModel MetricsCostByModel `json:"dailyEffectiveCostByModel"`
+	Agents                    []AgentMetrics     `json:"agents"`
 	StopReasons               []StopReasonCount  `json:"stopReasons"`
 }
 

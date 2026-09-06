@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 
 vi.mock('./OverviewTab', () => ({ OverviewTab: () => <div>analytics:overview</div> }));
@@ -71,5 +71,15 @@ describe('AnalyticsTab', () => {
     expect(screen.getByText('analytics:overview')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Performance' }))
       .toHaveAttribute('href', '/analytics/performance?dir=%2Frepos&t=7');
+  });
+
+  it('switches sections with the mobile selector', () => {
+    render(
+      <MemoryRouter initialEntries={['/analytics/overview?dir=%2Frepo']}>
+        <Routes><Route path="/analytics/:section" element={<><AnalyticsTab /><LocationMarker /></>} /></Routes>
+      </MemoryRouter>,
+    );
+    fireEvent.change(screen.getByRole('combobox', { name: 'Analytics section' }), { target: { value: 'permissions' } });
+    expect(screen.getByText('/analytics/permissions?dir=%2Frepo')).toBeInTheDocument();
   });
 });

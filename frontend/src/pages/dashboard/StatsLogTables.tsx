@@ -22,23 +22,17 @@ import { ProjectLabel } from '../../components/ProjectLabel';
 import {
   BAR_OPTIONS_TOKS,
   BAR_OPTIONS_DURATION,
-  BAR_OPTIONS_STACKED,
-  BAR_OPTIONS_COST_BY_MODEL,
   LINE_OPTIONS_CACHE,
   DOUGHNUT_OPTIONS,
   STOP_REASON_COLORS,
 } from '../../lib/chartConfig';
 import { MetricCard, ChartCard } from './shared';
 import { ModelLabel } from '../../components/ModelLogo';
-import { buildCostByModelDatasets } from './metricsChartData';
 
 const dim = { color: 'var(--text-dim)' } as const;
 const dash = <span style={dim}>—</span>;
 
-/**
- * Summary metric cards + the six overview charts shown above the log
- * tables. Pure presentation of a resolved MetricsDashboard.
- */
+/** Summary metric cards shown on the analytics overview. */
 export function MetricsSummaryCards({ metrics }: { metrics: MetricsPerformance }) {
   return (
     <div className="metrics-summary-grid">
@@ -50,6 +44,18 @@ export function MetricsSummaryCards({ metrics }: { metrics: MetricsPerformance }
       <MetricCard label="Cache Hit Rate" value={formatPercent(metrics.summary.cacheHitRate)} tone="green" subvalue={formatTokenCache(metrics.summary.cacheReadTokens, metrics.summary.cacheWriteTokens)} />
       <MetricCard label="Total Cost" value={formatCurrency(metrics.summary.totalEffectiveCost)} tone="green" subvalue="billed, est. when plan reports $0" />
       <MetricCard label="Reported / Est." value={`${formatCurrency(metrics.summary.totalCost)} / ${formatCurrency(metrics.summary.totalCalcCost)}`} tone="orange" subvalue="platform-billed / token estimate" />
+    </div>
+  );
+}
+
+export function PerformanceSummaryCards({ metrics }: { metrics: MetricsPerformance }) {
+  return (
+    <div className="metrics-summary-grid">
+      <MetricCard label="Completed requests" value={formatNumber(metrics.summary.completedRequests)} tone="blue" />
+      <MetricCard label="Error rate" value={formatPercent(metrics.summary.errorRate)} tone="orange" subvalue={`${formatNumber(metrics.summary.errorRequests)} errors`} />
+      <MetricCard label="P50 latency" value={formatSeconds(metrics.summary.p50DurationMs / 1000)} tone="purple" />
+      <MetricCard label="P95 latency" value={formatSeconds(metrics.summary.p95DurationMs / 1000)} tone="purple" />
+      <MetricCard label="Cost / successful request" value={formatCurrency(metrics.summary.costPerSuccessfulRequest)} tone="green" subvalue={`${formatNumber(metrics.summary.successfulRequests)} successful`} />
     </div>
   );
 }
@@ -66,29 +72,21 @@ export function PerformanceCharts({ metrics }: { metrics: MetricsPerformance }) 
           }} options={BAR_OPTIONS_TOKS} />
         </ChartCard>
 
-        <ChartCard title="Estimated Cost per Day by Model (USD)">
-          <Bar data={{
-            labels: metrics.dailyEstimatedCostByModel.series.map((point) => point.label),
-            datasets: buildCostByModelDatasets(metrics),
-          }} options={BAR_OPTIONS_COST_BY_MODEL} />
-        </ChartCard>
-
-        <ChartCard title="Token Usage per Bucket">
+        <ChartCard title="Request Latency (s)">
           <Bar data={{
             labels: metricLabels,
             datasets: [
-              { label: 'Input', data: metrics.series.map((point) => point.inputTokens), backgroundColor: 'rgba(137, 180, 250, 0.72)', stack: 'tokens' },
-              { label: 'Cache Read', data: metrics.series.map((point) => point.cacheReadTokens), backgroundColor: 'rgba(148, 226, 213, 0.72)', stack: 'tokens' },
-              { label: 'Output', data: metrics.series.map((point) => point.outputTokens), backgroundColor: 'rgba(166, 227, 161, 0.72)', stack: 'tokens' },
+              { label: 'P50', data: metrics.series.map((point) => point.p50DurationMs / 1000), backgroundColor: 'rgba(137, 180, 250, 0.65)', borderRadius: 2 },
+              { label: 'P95', data: metrics.series.map((point) => point.p95DurationMs / 1000), backgroundColor: 'rgba(203, 166, 247, 0.55)', borderRadius: 2 },
             ],
-          }} options={BAR_OPTIONS_STACKED} />
+          }} options={BAR_OPTIONS_DURATION} />
         </ChartCard>
 
-        <ChartCard title="Avg Request Duration (s)">
-          <Bar data={{
+        <ChartCard title="Error Rate">
+          <Line data={{
             labels: metricLabels,
-            datasets: [{ label: 'Duration', data: metrics.series.map((point) => point.avgDurationMs / 1000), backgroundColor: 'rgba(203, 166, 247, 0.45)', borderRadius: 2 }],
-          }} options={BAR_OPTIONS_DURATION} />
+            datasets: [{ label: 'Errors', data: metrics.series.map((point) => point.errorRate * 100), borderColor: '#f38ba8', backgroundColor: 'rgba(243, 139, 168, 0.15)', fill: true, tension: 0.25, pointRadius: 0 }],
+          }} options={LINE_OPTIONS_CACHE} />
         </ChartCard>
       </div>
 

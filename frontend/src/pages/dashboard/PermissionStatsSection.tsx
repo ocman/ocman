@@ -22,6 +22,11 @@ export function PermissionStatsSection({ stats }: { stats: PermissionStats }) {
         <MetricCard label="Preemption rate" value={formatPercent(stats.manualPreemptionRate)} tone="orange" />
         <MetricCard label="Median judgment time" value={formatSeconds(stats.medianJudgmentDurationMs / 1000)} tone="purple" />
         <MetricCard label="Median manual response time" value={formatSeconds(stats.medianManualResponseDurationMs / 1000)} tone="purple" />
+        <MetricCard label="User decision rate" value={formatPercent(stats.userDecisionRate)} tone="orange" subvalue={`${formatNumber(stats.userDecisionCount)} decisions`} />
+        <MetricCard label="Affected sessions" value={formatNumber(stats.affectedSessions)} tone="blue" />
+        <MetricCard label="Observed user wait" value={formatSeconds(stats.observedUserWaitMs / 1000)} tone="purple" subvalue="completed waits only" />
+        <MetricCard label="P95 user wait" value={formatSeconds(stats.p95UserWaitMs / 1000)} tone="purple" />
+        <MetricCard label="Unresolved requests" value={formatNumber(stats.unresolvedEligibleRequests)} tone="orange" subvalue="excluded from wait time" />
       </div>
       <div className="metrics-chart-grid">
         <ChartCard title="Permission approvals per day">
@@ -45,6 +50,9 @@ export function PermissionStatsSection({ stats }: { stats: PermissionStats }) {
             }}
             options={BAR_OPTIONS_STACKED}
           />
+        </ChartCard>
+        <ChartCard title="Observed user wait per day">
+          <Bar data={{ labels: stats.daily.map((day) => day.date), datasets: [{ label: 'Wait (minutes)', data: stats.daily.map((day) => day.observedUserWaitMs / 60_000), backgroundColor: CHART_COLORS[3] }] }} options={BAR_OPTIONS_STACKED} />
         </ChartCard>
       </div>
     </>

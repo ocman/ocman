@@ -11,11 +11,11 @@ export function ActivityTab() {
   const { dirScope } = useDashboard();
   const [days, setDays] = useState(30);
   const dir = dirScope || undefined;
-  const activityQ = useActivity({ dir });
+  const activityQ = useActivity({ days: 365, dir });
   const dailyQ = useActivity({ days: days || undefined, dir });
   const hourlyQ = useHourly({ days: days || undefined, dir });
   const loading = activityQ.isLoading || dailyQ.isLoading || hourlyQ.isLoading;
-  const errors = [activityQ.error, dailyQ.error, hourlyQ.error].filter((error): error is Error => error instanceof Error);
+  const errors = queryErrors(activityQ.error, dailyQ.error, hourlyQ.error);
 
   return (
     <div className="metrics-page">
@@ -39,11 +39,18 @@ export function ActivityTab() {
   );
 }
 
+function queryErrors(...errors: unknown[]) {
+  return errors.filter((error): error is Error => error instanceof Error);
+}
+
 const CELL = 13;
+const GAP = 2;
+const DOW_WIDTH = 36;
 
 function HeatmapChart({ activity }: { activity: ActivityDay[] }) {
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
   const maxMessages = Math.max(...activity.map((day) => day.messages), 1);
+  const totalMessages = activity.reduce((sum, day) => sum + day.messages, 0);
   const weeks: (ActivityDay | null)[][] = [];
   let week: (ActivityDay | null)[] = Array(new Date(`${activity[0].date}T00:00:00`).getDay()).fill(null);
   for (const day of activity) {
@@ -52,25 +59,38 @@ function HeatmapChart({ activity }: { activity: ActivityDay[] }) {
   }
   while (week.length > 0 && week.length < 7) week.push(null);
   if (week.length > 0) weeks.push(week);
+  const monthLabels: { week: number; label: string }[] = [];
+  let lastMonth = -1;
+  weeks.forEach((days, weekIndex) => {
+    const first = days.find(Boolean);
+    if (!first) return;
+    const month = new Date(`${first.date}T00:00:00`).getMonth();
+    if (month !== lastMonth) {
+      monthLabels.push({ week: weekIndex, label: new Date(`${first.date}T00:00:00`).toLocaleString('en-US', { month: 'short' }) });
+      lastMonth = month;
+    }
+  });
 
   return (
     <div className="chart-card heatmap-card">
       <div className="heatmap-title">Activity over the last 12 months</div>
-      <div className="heatmap-grid">
-        {weeks.map((days, weekIndex) => (
-          <div key={weekIndex} className="heatmap-week">
-            {days.map((day, dayIndex) => day ? (
-              <div
-                key={day.date}
-                className="heatmap-day"
-                data-level={day.messages === 0 ? 0 : Math.min(4, Math.ceil(day.messages / maxMessages * 4))}
-                style={{ width: CELL, height: CELL }}
-                onMouseEnter={(event) => setTooltip({ text: `${day.date}: ${day.messages} messages, ${day.sessions} sessions`, x: event.clientX + 12, y: event.clientY - 36 })}
-                onMouseLeave={() => setTooltip(null)}
-              />
-            ) : <div key={dayIndex} style={{ width: CELL, height: CELL }} />)}
+      <div className="heatmap-months" style={{ paddingLeft: DOW_WIDTH }}>
+        {monthLabels.map(({ week: weekIndex, label }) => <span key={weekIndex} className="heatmap-month-label" style={{ left: weekIndex * (CELL + GAP) }}>{label}</span>)}
+      </div>
+      <div style={{ display: 'flex' }}>
+        <div className="heatmap-dow" style={{ width: DOW_WIDTH }}>
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => <div key={day} className="heatmap-dow-label" style={{ height: CELL, marginBottom: index < 6 ? GAP : 0 }}>{index % 2 === 1 ? day : ''}</div>)}
+        </div>
+        <div className="heatmap-grid">
+          {weeks.map((days, weekIndex) => <div key={weekIndex} className="heatmap-week">
+            {days.map((day, dayIndex) => day ? <div key={day.date} className="heatmap-day" data-level={day.messages === 0 ? 0 : Math.min(4, Math.ceil(day.messages / maxMessages * 4))} style={{ width: CELL, height: CELL }} onMouseEnter={(event) => setTooltip({ text: `${day.date}: ${day.messages} messages, ${day.sessions} sessions`, x: event.clientX + 12, y: event.clientY - 36 })} onMouseLeave={() => setTooltip(null)} /> : <div key={dayIndex} style={{ width: CELL, height: CELL }} />)}
           </div>
-        ))}
+          )}
+        </div>
+      </div>
+      <div className="heatmap-footer">
+        <span className="heatmap-summary">{totalMessages.toLocaleString()} messages in the last 12 months</span>
+        <span className="heatmap-legend"><span className="heatmap-legend-label">Less</span>{[0, 1, 2, 3, 4].map((level) => <span key={level} className="heatmap-legend-cell heatmap-day" data-level={level} />)}<span className="heatmap-legend-label">More</span></span>
       </div>
       {tooltip && <div className="heatmap-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>{tooltip.text}</div>}
     </div>

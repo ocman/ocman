@@ -1,22 +1,42 @@
 import { useState } from 'react';
 import { Bar } from 'react-chartjs-2';
 import { BAR_OPTIONS_STACKED } from '../../lib/chartConfig';
-import { useMetrics } from '../../lib/queries';
+import { formatNumber } from '../../lib/format';
+import { useAnalyticsOverview, useMetrics } from '../../lib/queries';
 import { AnalyticsFilters } from './AnalyticsFilters';
 import { useDashboard } from './context';
-import { ChartCard } from './shared';
+import { ChartCard, MetricCard } from './shared';
 import { MetricsSummaryCards } from './StatsLogTables';
 
 export function OverviewTab() {
   const { dirScope } = useDashboard();
   const [days, setDays] = useState(30);
   const metricsQ = useMetrics({ days: days || undefined, dir: dirScope || undefined });
+  const overviewQ = useAnalyticsOverview();
   const metrics = metricsQ.data;
+  const overview = overviewQ.data;
+  const total = (counts: Record<string, number>) => Object.values(counts).reduce((sum, count) => sum + count, 0);
+  const breakdown = (counts: Record<string, number>) => Object.entries(counts).map(([status, count]) => `${status}: ${count}`).join(' / ');
 
   return (
     <div className="metrics-page">
       <AnalyticsFilters days={days} onDaysChange={setDays} />
       {metricsQ.error instanceof Error && <div className="oc-error-banner">{metricsQ.error.message}</div>}
+      {overviewQ.error instanceof Error && <div className="oc-error-banner">{overviewQ.error.message}</div>}
+      {overview && (
+        <>
+          <div className="analytics-scope-note">Inventory totals are scoped to this {overview.inventoryScope} ocman instance.</div>
+          <div className="metrics-summary-grid">
+            <MetricCard label="Sessions" value={formatNumber(overview.totalSessions)} tone="blue" />
+            <MetricCard label="Projects" value={formatNumber(overview.totalProjects)} tone="blue" />
+            <MetricCard label="Routines" value={formatNumber(overview.totalRoutines)} tone="green" />
+            <MetricCard label="Routine runs" value={formatNumber(total(overview.routineRunsByStatus))} tone="purple" subvalue={breakdown(overview.routineRunsByStatus)} />
+            <MetricCard label="Factory epics" value={formatNumber(total(overview.factoryEpicsByStatus))} tone="orange" subvalue={breakdown(overview.factoryEpicsByStatus)} />
+            <MetricCard label="Factory issues" value={formatNumber(total(overview.factoryIssuesByStatus))} tone="orange" subvalue={breakdown(overview.factoryIssuesByStatus)} />
+            <MetricCard label="Factory attempts" value={formatNumber(total(overview.factoryAttemptsByPhase))} tone="purple" subvalue={breakdown(overview.factoryAttemptsByTerminalOutcome)} />
+          </div>
+        </>
+      )}
       {metricsQ.isLoading && !metrics && <div className="oc-list-loading"><div className="oc-spinner" />Loading overview...</div>}
       {metrics && (
         <>

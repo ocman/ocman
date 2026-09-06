@@ -62,6 +62,7 @@
 .metrics-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
 .metrics-chart-grid { display: grid; gap: 16px; margin-bottom: 24px; }
 .analytics-chart-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px; }
+.analytics-scope-note { margin: -8px 0 12px; color: var(--text-dim); font-size: 12px; }
 .metrics-chart-grid-top { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .metrics-chart-grid-bottom { grid-template-columns: minmax(0, 1fr) 420px; }
 .metrics-chart-card { min-height: 340px; }
@@ -109,6 +110,7 @@
 }
 .nav-tabs::-webkit-scrollbar { display: none; }
 .analytics-tabs { margin-inline: 12px; }
+.analytics-section-select { display: none; }
 .nav-tab {
   position: relative;
   padding: 10px 20px;
@@ -130,6 +132,12 @@
 }
 .nav-tab:hover { color: var(--text); text-decoration: none; }
 .nav-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+@media (max-width: 640px) {
+  .analytics-tabs { display: none; }
+  .analytics-section-select { display: grid; gap: 4px; margin: 0 12px 20px; color: var(--text-dim); font-size: 12px; }
+  .analytics-section-select select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text); font: inherit; }
+}
 
 /* Time range selector */
 .oc-time-range {

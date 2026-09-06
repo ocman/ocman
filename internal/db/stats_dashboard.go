@@ -24,6 +24,8 @@ type CostCalculator interface {
 // type.
 type requestRow struct {
 	RequestLogEntry
+	completed bool
+	isError   bool
 }
 
 // MetricsDashboardOptions groups the inputs to GetMetricsDashboard
@@ -120,6 +122,8 @@ func (d *DB) GetMetricsPerformance(ctx context.Context, opts MetricsDashboardOpt
 		Series:                    dashboard.Series,
 		CostByModel:               dashboard.CostByModel,
 		DailyEstimatedCostByModel: dashboard.DailyEstimatedCostByModel,
+		DailyEffectiveCostByModel: dashboard.DailyEffectiveCostByModel,
+		Agents:                    dashboard.Agents,
 		StopReasons:               dashboard.StopReasons,
 	}, nil
 }
@@ -255,10 +259,13 @@ func (d *DB) scanDashboardRows(ctx context.Context, opts MetricsDashboardOptions
 		if md.Time != nil && md.Time.Completed > md.Time.Created {
 			entry.DurationMs = md.Time.Completed - md.Time.Created
 		}
+		finish := strings.TrimSpace(md.Finish)
+		entry.isError = finish == "error" || persistedError(md.Error)
+		entry.completed = finish != "" || entry.isError
 		if entry.DurationMs > 0 {
 			entry.TokensPerSecond = float64(entry.OutputTokens) / (float64(entry.DurationMs) / 1000)
 		}
-		entry.StopReason = strings.TrimSpace(md.Finish)
+		entry.StopReason = finish
 		if entry.StopReason == "" {
 			entry.StopReason = "none"
 		}
@@ -295,6 +302,10 @@ type bucketAcc struct {
 	costByModel          map[string]float64
 	estimatedCostByModel map[string]float64
 	durationCount        int
+	durations            []int64
+	completedRequests    int
+	successfulRequests   int
+	errorRequests        int
 	count                int
 }
 
@@ -321,6 +332,8 @@ func (d *DB) aggregateSummaryAndBuckets(dashboard *MetricsDashboard, filtered []
 	buckets := make(map[string]*bucketAcc)
 	stopCounts := make(map[string]int)
 	validDurationCount := 0
+	durations := make([]int64, 0, len(filtered))
+	agents := make(map[string]*AgentMetrics)
 
 	for _, entry := range filtered {
 		dashboard.Summary.Requests++
@@ -332,7 +345,16 @@ func (d *DB) aggregateSummaryAndBuckets(dashboard *MetricsDashboard, filtered []
 		dashboard.Summary.TotalCost += entry.Cost
 		dashboard.Summary.TotalCalcCost += entry.CalcCost
 		dashboard.Summary.TotalEffectiveCost += entry.EffectiveCost
+		if entry.completed {
+			dashboard.Summary.CompletedRequests++
+		}
+		if entry.isError {
+			dashboard.Summary.ErrorRequests++
+		} else if entry.completed {
+			dashboard.Summary.SuccessfulRequests++
+		}
 		if entry.DurationMs > 0 {
+			durations = append(durations, entry.DurationMs)
 			dashboard.Summary.AvgDurationMs += float64(entry.DurationMs)
 			dashboard.Summary.AvgTokensPerSec += entry.TokensPerSecond
 			dashboard.Summary.TotalDurationMs += entry.DurationMs
@@ -358,7 +380,16 @@ func (d *DB) aggregateSummaryAndBuckets(dashboard *MetricsDashboard, filtered []
 		b.totalOutputTokSec += entry.TokensPerSecond
 		if entry.DurationMs > 0 {
 			b.totalDurationMs += float64(entry.DurationMs)
+			b.durations = append(b.durations, entry.DurationMs)
 			b.durationCount++
+		}
+		if entry.completed {
+			b.completedRequests++
+		}
+		if entry.isError {
+			b.errorRequests++
+		} else if entry.completed {
+			b.successfulRequests++
 		}
 		cacheEff := 0.0
 		if tc := entry.CacheReadTokens + entry.CacheWriteTokens; tc > 0 {
@@ -371,6 +402,23 @@ func (d *DB) aggregateSummaryAndBuckets(dashboard *MetricsDashboard, filtered []
 		b.costByModel[entry.Model] += entry.EffectiveCost
 		b.estimatedCostByModel[entry.Model] += entry.CalcCost
 		b.count++
+
+		agent := agents[entry.Agent]
+		if agent == nil {
+			agent = &AgentMetrics{Agent: entry.Agent}
+			agents[entry.Agent] = agent
+		}
+		agent.Requests++
+		agent.InputTokens += entry.InputTokens
+		agent.OutputTokens += entry.OutputTokens
+		agent.TotalTokens += entry.InputTokens + entry.OutputTokens
+		agent.TotalDurationMs += entry.DurationMs
+		agent.EffectiveCost += entry.EffectiveCost
+		if entry.isError {
+			agent.ErrorRequests++
+		} else if entry.completed {
+			agent.SuccessfulRequests++
+		}
 	}
 
 	if validDurationCount > 0 {
@@ -380,10 +428,32 @@ func (d *DB) aggregateSummaryAndBuckets(dashboard *MetricsDashboard, filtered []
 	if tc := dashboard.Summary.CacheReadTokens + dashboard.Summary.CacheWriteTokens; tc > 0 {
 		dashboard.Summary.CacheHitRate = float64(dashboard.Summary.CacheReadTokens) / float64(tc)
 	}
+	dashboard.Summary.P50DurationMs = percentile(durations, 50)
+	dashboard.Summary.P95DurationMs = percentile(durations, 95)
+	if outcomes := dashboard.Summary.SuccessfulRequests + dashboard.Summary.ErrorRequests; outcomes > 0 {
+		dashboard.Summary.ErrorRate = float64(dashboard.Summary.ErrorRequests) / float64(outcomes)
+	}
+	if dashboard.Summary.SuccessfulRequests > 0 {
+		dashboard.Summary.CostPerSuccessfulRequest = dashboard.Summary.TotalEffectiveCost / float64(dashboard.Summary.SuccessfulRequests)
+	}
+	dashboard.Agents = make([]AgentMetrics, 0, len(agents))
+	for _, agent := range agents {
+		if outcomes := agent.SuccessfulRequests + agent.ErrorRequests; outcomes > 0 {
+			agent.ErrorRate = float64(agent.ErrorRequests) / float64(outcomes)
+		}
+		dashboard.Agents = append(dashboard.Agents, *agent)
+	}
+	sort.Slice(dashboard.Agents, func(i, j int) bool {
+		if dashboard.Agents[i].EffectiveCost != dashboard.Agents[j].EffectiveCost {
+			return dashboard.Agents[i].EffectiveCost > dashboard.Agents[j].EffectiveCost
+		}
+		return dashboard.Agents[i].Agent < dashboard.Agents[j].Agent
+	})
 
 	dashboard.Series = buildDashboardSeries(buckets, bucketOrder, bucketFmt, days, since)
 	dashboard.CostByModel = buildCostByModelSeries(buckets, dashboard.Series)
 	dashboard.DailyEstimatedCostByModel = buildDailyEstimatedCostByModelSeries(buckets, dashboard.Series)
+	dashboard.DailyEffectiveCostByModel = buildDailyEffectiveCostByModelSeries(buckets, dashboard.Series)
 	return stopCounts
 }
 
@@ -442,8 +512,16 @@ func buildDashboardSeries(buckets map[string]*bucketAcc, bucketOrder []string, b
 				CacheReadTokens:         b.cacheReadTokens,
 				OutputTokens:            b.outputTokens,
 				AvgDurationMs:           avgDur,
+				P50DurationMs:           percentile(b.durations, 50),
+				P95DurationMs:           percentile(b.durations, 95),
 				AvgCacheEfficiency:      b.totalCacheEff / float64(n),
 				Count:                   b.count,
+				CompletedRequests:       b.completedRequests,
+				SuccessfulRequests:      b.successfulRequests,
+				ErrorRequests:           b.errorRequests,
+			}
+			if outcomes := b.successfulRequests + b.errorRequests; outcomes > 0 {
+				pt.ErrorRate = float64(b.errorRequests) / float64(outcomes)
 			}
 		} else {
 			pt = MetricsPoint{Label: label, CumulativeCost: cumCost, CumulativeCalcCost: cumCalcCost, CumulativeEffectiveCost: cumEffectiveCost}
@@ -467,6 +545,27 @@ func buildDailyEstimatedCostByModelSeries(buckets map[string]*bucketAcc, mainSer
 	return buildModelCostSeries(buckets, mainSeries, func(b *bucketAcc) map[string]float64 {
 		return b.estimatedCostByModel
 	}, true)
+}
+
+func buildDailyEffectiveCostByModelSeries(buckets map[string]*bucketAcc, mainSeries []MetricsPoint) MetricsCostByModel {
+	return buildModelCostSeries(buckets, mainSeries, func(b *bucketAcc) map[string]float64 {
+		return b.costByModel
+	}, true)
+}
+
+func percentile(values []int64, percent int) float64 {
+	if len(values) == 0 {
+		return 0
+	}
+	ordered := append([]int64(nil), values...)
+	slices.Sort(ordered)
+	index := (len(ordered)*percent+99)/100 - 1
+	return float64(ordered[index])
+}
+
+func persistedError(raw json.RawMessage) bool {
+	trimmed := strings.TrimSpace(string(raw))
+	return trimmed != "" && trimmed != "null"
 }
 
 // buildModelCostSeries ranks models by whole-window cost and folds models below
@@ -691,7 +790,7 @@ func (d *DB) populateSessionLog(ctx context.Context, dashboard *MetricsDashboard
 		if entry.Model != "" {
 			acc.modelSet[entry.Model] = struct{}{}
 		}
-		if entry.StopReason == "error" {
+		if entry.isError {
 			acc.entry.ErrorCount++
 		}
 	}
@@ -797,7 +896,7 @@ func (d *DB) populateProjectLog(ctx context.Context, dashboard *MetricsDashboard
 		if r.Model != "" {
 			acc.modelSet[r.Model] = struct{}{}
 		}
-		if r.StopReason == "error" {
+		if r.isError {
 			acc.entry.ErrorCount++
 		}
 	}

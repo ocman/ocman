@@ -813,6 +813,10 @@ export interface Stats {
 
 export interface MetricsSummary {
   requests: number;
+  completedRequests: number;
+  successfulRequests: number;
+  errorRequests: number;
+  errorRate: number;
   totalTokens: number;
   inputTokens: number;
   outputTokens: number;
@@ -820,6 +824,8 @@ export interface MetricsSummary {
   cacheWriteTokens: number;
   avgTokensPerSec: number;
   avgDurationMs: number;
+  p50DurationMs: number;
+  p95DurationMs: number;
   totalDurationMs: number;
   cacheHitRate: number;
   totalCost: number;
@@ -831,6 +837,7 @@ export interface MetricsSummary {
    * the summary matches the per-row tables.
    */
   totalEffectiveCost: number;
+  costPerSuccessfulRequest: number;
 }
 
 export interface MetricsPoint {
@@ -843,8 +850,27 @@ export interface MetricsPoint {
   cacheReadTokens: number;
   outputTokens: number;
   avgDurationMs: number;
+  p50DurationMs: number;
+  p95DurationMs: number;
   avgCacheEfficiency: number;
   count: number;
+  completedRequests: number;
+  successfulRequests: number;
+  errorRequests: number;
+  errorRate: number;
+}
+
+export interface AgentMetrics {
+  agent: string;
+  requests: number;
+  successfulRequests: number;
+  errorRequests: number;
+  errorRate: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  totalDurationMs: number;
+  effectiveCost: number;
 }
 
 export interface StopReasonCount {
@@ -918,6 +944,8 @@ export interface MetricsDashboard {
   series: MetricsPoint[];
   costByModel: MetricsCostByModel;
   dailyEstimatedCostByModel: MetricsCostByModel;
+  dailyEffectiveCostByModel: MetricsCostByModel;
+  agents: AgentMetrics[];
   stopReasons: StopReasonCount[];
   requests: RequestMetricsRow[];
   totalRequests: number;
@@ -929,7 +957,19 @@ export interface MetricsDashboard {
 
 export type MetricsPerformance = Pick<MetricsDashboard,
   'availableAgents' | 'availableModels' | 'summary' | 'series' |
-  'costByModel' | 'dailyEstimatedCostByModel' | 'stopReasons'>;
+  'costByModel' | 'dailyEstimatedCostByModel' | 'dailyEffectiveCostByModel' | 'agents' | 'stopReasons'>;
+
+export interface AnalyticsOverview {
+  inventoryScope: string;
+  totalSessions: number;
+  totalProjects: number;
+  totalRoutines: number;
+  routineRunsByStatus: Record<string, number>;
+  factoryEpicsByStatus: Record<string, number>;
+  factoryIssuesByStatus: Record<string, number>;
+  factoryAttemptsByPhase: Record<string, number>;
+  factoryAttemptsByTerminalOutcome: Record<string, number>;
+}
 
 export type MetricsLogKind = 'project' | 'session' | 'request';
 
@@ -949,6 +989,9 @@ export interface PermissionStatsDay {
   date: string;
   evaluationResults: Partial<Record<PermissionEvaluationResult, number>>;
   manualPreemptions: number;
+  requests: number;
+  userDecisions: number;
+  observedUserWaitMs: number;
 }
 
 export interface PermissionStats {
@@ -960,6 +1003,13 @@ export interface PermissionStats {
   manualPreemptionRate: number;
   medianJudgmentDurationMs: number;
   medianManualResponseDurationMs: number;
+  userDecisionCount: number;
+  userDecisionRate: number;
+  affectedSessions: number;
+  unresolvedEligibleRequests: number;
+  observedUserWaitMs: number;
+  p50UserWaitMs: number;
+  p95UserWaitMs: number;
   daily: PermissionStatsDay[];
 }
 

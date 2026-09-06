@@ -169,11 +169,17 @@ async function installDefaultRoutes(page: Page) {
       body: JSON.stringify({
         summary: {
           requests: 42,
+          completedRequests: 42,
+          successfulRequests: 40,
+          errorRequests: 2,
+          errorRate: 2 / 42,
           totalTokens: 100_000,
           inputTokens: 70_000,
           outputTokens: 30_000,
           avgTokensPerSec: 150,
           avgDurationMs: 5_000,
+          p50DurationMs: 4_000,
+          p95DurationMs: 9_000,
           totalDurationMs: 210_000,
           cacheHitRate: 0.35,
           cacheReadTokens: 25_000,
@@ -181,10 +187,13 @@ async function installDefaultRoutes(page: Page) {
           totalCost: 1.23,
           totalCalcCost: 1.10,
           totalEffectiveCost: 1.23,
+          costPerSuccessfulRequest: 1.23 / 40,
         },
         series: [],
         costByModel: { models: [], series: [] },
         dailyEstimatedCostByModel: { models: [], series: [] },
+        dailyEffectiveCostByModel: { models: [], series: [] },
+        agents: [],
         stopReasons: [{ reason: 'end_turn', count: 40 }, { reason: 'error', count: 2 }],
         requests: [],
         totalRequests: 0,
@@ -196,6 +205,12 @@ async function installDefaultRoutes(page: Page) {
         availableModels: [],
       }),
     }),
+  );
+  await page.route('/api/analytics/overview', (route: Route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ inventoryScope: 'local', totalSessions: 12, totalProjects: 3, totalRoutines: 1, routineRunsByStatus: { done: 4 }, factoryEpicsByStatus: { active: 1 }, factoryIssuesByStatus: { done: 5 }, factoryAttemptsByPhase: { terminal: 6 }, factoryAttemptsByTerminalOutcome: { successful: 5 } }) }),
+  );
+  await page.route('/api/permission-stats*', (route: Route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ eligibleRequests: 2, autoApprovedCount: 1, autoApprovedRate: 0.5, judgmentRequests: 1, manualPreemptions: 0, manualPreemptionRate: 0, medianJudgmentDurationMs: 10, medianManualResponseDurationMs: 20, userDecisionCount: 1, userDecisionRate: 0.5, affectedSessions: 1, unresolvedEligibleRequests: 0, observedUserWaitMs: 5000, p50UserWaitMs: 5000, p95UserWaitMs: 5000, daily: [] }) }),
   );
   await page.route('/api/metric-logs*', (route: Route) => {
     const kind = new URL(route.request().url()).searchParams.get('kind') ?? 'project';

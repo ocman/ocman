@@ -76,6 +76,8 @@ func TestPermissionApprovalStatsLifecycleUpdatesAndFilters(t *testing.T) {
 		{Platform: "opencode", SessionID: "s3", PermissionID: "p3", Directory: "/repo", RequestedAt: day2 + 100, EvaluationMethod: "cache", EvaluationResult: "cache-safe", ResolvedAt: day2 + 200, Resolution: "auto-approved"},
 		{Platform: "opencode", SessionID: "s4", PermissionID: "p4", Directory: "/repo", RequestedAt: day2 + 300, EvaluationMethod: "denylist", EvaluationResult: "denylisted", ResolvedAt: day2 + 400, Resolution: "cancelled"},
 		{Platform: "opencode", SessionID: "s5", PermissionID: "p5", Directory: "/repo", RequestedAt: day2 + 500, JudgeStartedAt: day2 + 600, JudgeCompletedAt: day2 + 1_100, ResolvedAt: day2 + 1_600, EvaluationMethod: "judge", EvaluationResult: "unsafe", Resolution: "user-rejected"},
+		{Platform: "opencode", SessionID: "s5", PermissionID: "p8", Directory: "/repo", RequestedAt: day2 + 800, ResolvedAt: day2 + 2_800, Resolution: "user-always"},
+		{Platform: "opencode", SessionID: "s6", PermissionID: "p9", Directory: "/repo", RequestedAt: day2 + 900},
 		{Platform: "opencode", SessionID: "other", PermissionID: "p6", Directory: "/other", RequestedAt: day2, EvaluationMethod: "judge", EvaluationResult: "error"},
 		{Platform: "opencode", SessionID: "worktree", PermissionID: "p7", Directory: "/src/.worktrees/repo/task", RequestedAt: day2 + 700, EvaluationMethod: "judge", EvaluationResult: "safe", Resolution: "auto-approved"},
 	}
@@ -89,18 +91,24 @@ func TestPermissionApprovalStatsLifecycleUpdatesAndFilters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.EligibleRequests != 5 || stats.AutoApprovedCount != 2 || stats.JudgmentRequests != 3 || stats.ManualPreemptions != 1 {
+	if stats.EligibleRequests != 7 || stats.AutoApprovedCount != 2 || stats.JudgmentRequests != 3 || stats.ManualPreemptions != 1 {
 		t.Fatalf("counts = %+v", stats)
 	}
-	if math.Abs(stats.AutoApprovedRate-0.4) > 1e-9 || math.Abs(stats.ManualPreemptionRate-1.0/3.0) > 1e-9 {
+	if stats.UserDecisionCount != 3 || stats.AffectedSessions != 2 || stats.UnresolvedEligibleRequests != 1 {
+		t.Fatalf("interruption counts = %+v", stats)
+	}
+	if math.Abs(stats.AutoApprovedRate-2.0/7.0) > 1e-9 || math.Abs(stats.ManualPreemptionRate-1.0/3.0) > 1e-9 || math.Abs(stats.UserDecisionRate-3.0/7.0) > 1e-9 {
 		t.Fatalf("rates = auto %v, preemption %v", stats.AutoApprovedRate, stats.ManualPreemptionRate)
 	}
 	if stats.MedianJudgmentDurationMs != 400 || stats.MedianManualResponseDurationMs != 700 {
 		t.Fatalf("medians = judgment %d, manual %d", stats.MedianJudgmentDurationMs, stats.MedianManualResponseDurationMs)
 	}
+	if stats.ObservedUserWaitMs != 3_800 || stats.P50UserWaitMs != 1_100 || stats.P95UserWaitMs != 2_000 {
+		t.Fatalf("user wait = total %d, p50 %d, p95 %d", stats.ObservedUserWaitMs, stats.P50UserWaitMs, stats.P95UserWaitMs)
+	}
 	wantDaily := []PermissionApprovalDaily{
-		{Date: "2023-11-15", EvaluationResults: map[string]int{"safe": 1}, ManualPreemptions: 1},
-		{Date: "2023-11-16", EvaluationResults: map[string]int{"cache-safe": 1, "denylisted": 1, "unsafe": 1}, ManualPreemptions: 0},
+		{Date: "2023-11-15", EvaluationResults: map[string]int{"safe": 1}, ManualPreemptions: 1, Requests: 2, UserDecisions: 1, ObservedUserWaitMs: 700},
+		{Date: "2023-11-16", EvaluationResults: map[string]int{"cache-safe": 1, "denylisted": 1, "unsafe": 1}, ManualPreemptions: 0, Requests: 5, UserDecisions: 2, ObservedUserWaitMs: 3_100},
 	}
 	if !reflect.DeepEqual(stats.Daily, wantDaily) {
 		t.Fatalf("daily = %#v, want %#v", stats.Daily, wantDaily)
@@ -110,7 +118,7 @@ func TestPermissionApprovalStatsLifecycleUpdatesAndFilters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if day2Stats.EligibleRequests != 3 || len(day2Stats.Daily) != 1 || day2Stats.Daily[0].Date != "2023-11-16" {
+	if day2Stats.EligibleRequests != 5 || len(day2Stats.Daily) != 1 || day2Stats.Daily[0].Date != "2023-11-16" {
 		t.Fatalf("day-two filter = %+v", day2Stats)
 	}
 
@@ -118,8 +126,8 @@ func TestPermissionApprovalStatsLifecycleUpdatesAndFilters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if allStats.EligibleRequests != 7 {
-		t.Fatalf("all-project eligible requests = %d, want 7", allStats.EligibleRequests)
+	if allStats.EligibleRequests != 9 {
+		t.Fatalf("all-project eligible requests = %d, want 9", allStats.EligibleRequests)
 	}
 
 	projectStats, err := db.PermissionApprovalStats(ctx, day1, "/src/repo")

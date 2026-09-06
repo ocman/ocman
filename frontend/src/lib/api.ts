@@ -36,6 +36,8 @@ export type {
   ProjectLogEntry,
   MetricsDashboard,
   MetricsPerformance,
+  AgentMetrics,
+  AnalyticsOverview,
   MetricsLog,
   MetricsLogKind,
   PermissionEvaluationResult,
@@ -111,6 +113,7 @@ import type {
   McpConfigStatus,
   McpConfigInstallResult,
   MetricsPerformance,
+  AnalyticsOverview,
   MetricsLog,
   MetricsLogKind,
   PermissionStats,
@@ -417,6 +420,8 @@ export const api = {
   stats: (signal?: AbortSignal) => fetchJSON<Stats>('/api/stats', signal),
   metrics: (params?: { agent?: string; model?: string; days?: number; dir?: string }, signal?: AbortSignal) =>
     fetchJSON<MetricsPerformance>(`/api/metrics/performance${queryString(params)}`, signal),
+  analyticsOverview: (signal?: AbortSignal) =>
+    fetchJSON<AnalyticsOverview>('/api/analytics/overview', signal),
   metricLogs: (params: { kind: MetricsLogKind; agent?: string; model?: string; days?: number; limit?: number; offset?: number; sessionLimit?: number; sessionOffset?: number; projectLimit?: number; projectOffset?: number; dir?: string }, signal?: AbortSignal) =>
     fetchJSON<MetricsLog>(`/api/metric-logs${queryString(params)}`, signal),
   permissionStats: (params?: { days?: number; dir?: string }, signal?: AbortSignal) =>

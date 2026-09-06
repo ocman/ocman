@@ -156,6 +156,9 @@ func TestGetMetricsDashboard_EmptyDB_ZeroFilledBuckets(t *testing.T) {
 			t.Errorf("bucket %d cumulative cost = %v, want 0", i, p.CumulativeCost)
 		}
 	}
+	if dash.Agents == nil {
+		t.Error("Agents = nil, want empty slice")
+	}
 }
 
 // TestGetMetricsDashboard_CumulativeCostMonotonic asserts the
@@ -470,6 +473,96 @@ func TestGetMetricsDashboard_DailyEstimatedCostByModel(t *testing.T) {
 	})
 	if len(empty.Series) != 1 {
 		t.Errorf("empty daily series length = %d, want 1", len(empty.Series))
+	}
+}
+
+func TestGetMetricsDashboard_RequestOutcomesDurationsCostsAndAgents(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().Truncate(time.Hour)
+	insertSession(t, db, "s1", "session", "/p", now.UnixMilli(), now.UnixMilli())
+	requests := []struct {
+		id       string
+		agent    string
+		model    string
+		finish   string
+		error    interface{}
+		duration int64
+		cost     float64
+		input    int64
+		output   int64
+	}{
+		{id: "success-a", agent: "build", model: "expensive", finish: "end_turn", duration: 100, cost: 10, input: 10, output: 1},
+		{id: "finish-error", agent: "build", model: "expensive", finish: "error", duration: 200, cost: 4, input: 20, output: 2},
+		{id: "object-error", agent: "plan", model: "cheap", error: map[string]interface{}{"name": "APIError"}, input: 30, output: 3},
+		{id: "success-b", agent: "plan", model: "cheap", finish: "end_turn", duration: 400, input: 40, output: 4},
+		{id: "success-no-timing", agent: "plan", model: "cheap", finish: "end_turn", input: 50, output: 5},
+		{id: "unfinished", agent: "plan", model: "cheap", output: 6},
+	}
+	for i, request := range requests {
+		created := now.Add(time.Duration(i) * time.Minute).UnixMilli()
+		data := map[string]interface{}{
+			"role": "assistant", "agent": request.agent, "finish": request.finish,
+			"providerID": "provider", "modelID": request.model, "cost": request.cost,
+			"tokens": map[string]interface{}{"input": request.input, "output": request.output},
+		}
+		if request.duration > 0 {
+			data["time"] = map[string]interface{}{"created": created, "completed": created + request.duration}
+		}
+		if request.error != nil {
+			data["error"] = request.error
+		}
+		insertMessage(t, db, request.id, "s1", created, data)
+	}
+
+	metrics, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+		Pricing: stubPricing{inputRate: 0.1},
+	})
+	if err != nil {
+		t.Fatalf("GetMetricsDashboard: %v", err)
+	}
+
+	summary := metrics.Summary
+	if summary.CompletedRequests != 5 || summary.SuccessfulRequests != 3 || summary.ErrorRequests != 2 {
+		t.Errorf("summary outcomes = completed %d, successful %d, errors %d; want 5, 3, 2",
+			summary.CompletedRequests, summary.SuccessfulRequests, summary.ErrorRequests)
+	}
+	if summary.ErrorRate != 0.4 || summary.P50DurationMs != 200 || summary.P95DurationMs != 400 {
+		t.Errorf("summary rate/durations = %v/%v/%v; want 0.4/200/400", summary.ErrorRate, summary.P50DurationMs, summary.P95DurationMs)
+	}
+	if want := 26.0 / 3; floatNotClose(summary.CostPerSuccessfulRequest, want) {
+		t.Errorf("CostPerSuccessfulRequest = %v, want %v", summary.CostPerSuccessfulRequest, want)
+	}
+	if len(metrics.Series) != 1 {
+		t.Fatalf("Series len = %d, want 1", len(metrics.Series))
+	}
+	point := metrics.Series[0]
+	if point.CompletedRequests != 5 || point.SuccessfulRequests != 3 || point.ErrorRequests != 2 || point.ErrorRate != 0.4 {
+		t.Errorf("bucket outcomes = %+v", point)
+	}
+	if point.P50DurationMs != 200 || point.P95DurationMs != 400 {
+		t.Errorf("bucket durations = p50 %v, p95 %v; want 200, 400", point.P50DurationMs, point.P95DurationMs)
+	}
+
+	daily := metrics.DailyEffectiveCostByModel
+	if !reflect.DeepEqual(daily.Models, []string{"provider/expensive", "provider/cheap"}) {
+		t.Fatalf("daily effective models = %v", daily.Models)
+	}
+	if len(daily.Series) != 1 || !reflect.DeepEqual(daily.Series[0].Costs, []float64{14, 12}) {
+		t.Errorf("daily effective costs = %+v, want [14 12]", daily.Series)
+	}
+
+	if len(metrics.Agents) != 2 || metrics.Agents[0].Agent != "build" || metrics.Agents[1].Agent != "plan" {
+		t.Fatalf("agents = %+v, want build then plan by effective cost", metrics.Agents)
+	}
+	build := metrics.Agents[0]
+	if build.Requests != 2 || build.SuccessfulRequests != 1 || build.ErrorRequests != 1 || build.ErrorRate != 0.5 ||
+		build.InputTokens != 30 || build.OutputTokens != 3 || build.TotalTokens != 33 || build.TotalDurationMs != 300 || build.EffectiveCost != 14 {
+		t.Errorf("build aggregation = %+v", build)
+	}
+	if len(metrics.Sessions) != 1 || metrics.Sessions[0].ErrorCount != 2 || len(metrics.Projects) != 1 || metrics.Projects[0].ErrorCount != 2 {
+		t.Errorf("persisted errors missing from logs: sessions=%+v projects=%+v", metrics.Sessions, metrics.Projects)
 	}
 }
 
