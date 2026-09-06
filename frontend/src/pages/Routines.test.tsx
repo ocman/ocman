@@ -135,7 +135,11 @@ describe('Routines', () => {
     render(<MemoryRouter><Routines /></MemoryRouter>);
     const row = (await screen.findByText(routine.name)).closest('tr')!;
     expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeInTheDocument();
-    within(row).getByRole('button', { name: 'Run' }).focus();
+    const runButton = within(row).getByRole('button', { name: 'Run' });
+    expect(runButton.querySelector('i')).toHaveClass('bi-play-fill');
+    expect(within(row).getByRole('button', { name: 'Edit' }).querySelector('i')).toHaveClass('bi-pencil');
+    expect(within(row).getByRole('button', { name: 'Delete' }).querySelector('i')).toHaveClass('bi-trash');
+    runButton.focus();
     await user.keyboard('{Enter}');
     await waitFor(() => expect(api.routines.run).toHaveBeenCalledWith(routine.id));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();

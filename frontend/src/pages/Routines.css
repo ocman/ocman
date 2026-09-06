@@ -33,5 +33,8 @@
 .routine-state { align-self: start; padding: 3px 7px; border: 1px solid var(--border); font: 11px var(--font-mono); }
 .routine-state.success { color: var(--success); }.routine-state.failure, .routine-state.interrupted, .routine-state.expired { color: var(--danger); }.routine-state.running { color: var(--yellow); }
 .routine-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.routine-row-actions { flex-wrap: nowrap; gap: 0; border: 1px solid var(--border); }
+.routine-row-actions .oc-button { border: 0; }
+.routine-row-actions .oc-button + .oc-button { border-left: 1px solid var(--border); }
 .routine-delete, .routine-error { color: var(--danger); }
 @media (max-width: 640px) { .routine-page { padding: 12px; }.routine-header { align-items: stretch; flex-direction: column; }.routine-drawer { padding: 18px; } }
