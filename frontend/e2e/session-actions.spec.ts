@@ -251,8 +251,7 @@ test('archive button in session detail sidebar navigates away from archived sess
 
 test('project detail page renders directory path', async ({ mockedPage: page }) => {
   await page.goto(`/project/${encodeURIComponent(MOCK_PROJECT.directory)}`);
-  // The h2 should show the full directory
-  await expect(page.locator('h2.section-title')).toContainText(MOCK_PROJECT.directory, { timeout: 5_000 });
+  await expect(page.getByTitle(MOCK_PROJECT.directory)).toHaveText('projects/myapp', { timeout: 5_000 });
 });
 
 test('project detail page shows VS Code button', async ({ mockedPage: page }) => {

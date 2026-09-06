@@ -27,8 +27,10 @@ test('creates and runs a routine', async ({ mockedPage: page }) => {
   await page.getByRole('combobox', { name: 'Project' }).click();
   await page.getByRole('option', { name: '/home/user/projects/myapp' }).click();
   await page.getByRole('button', { name: 'Create routine' }).click();
-  await expect(page.getByRole('heading', { name: 'Release check' })).toBeVisible();
-  await page.getByRole('button', { name: 'Run now' }).click();
-  await page.getByText('History (1)').click();
-  await expect(page.getByRole('link', { name: 'Open session' })).toHaveAttribute('href', '/session/routine-session?platform=opencode');
+  const routine = page.getByRole('row', { name: 'View Release check history' });
+  await expect(routine).toBeVisible();
+  await routine.getByRole('button', { name: 'Run' }).click();
+  await routine.click();
+  await expect(page.getByRole('dialog', { name: 'Release check history' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open' })).toHaveAttribute('href', '/session/routine-session?platform=opencode');
 });
