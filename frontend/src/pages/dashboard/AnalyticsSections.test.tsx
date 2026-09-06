@@ -66,8 +66,12 @@ describe('analytics sections', () => {
 
   it('keeps overview limited to summary data', () => {
     renderTab(<OverviewTab />);
-    expect(screen.getByText('Total Cost')).toBeInTheDocument();
-    expect(screen.getByText('Factory attempts')).toBeInTheDocument();
+    const inventory = screen.getByRole('region', { name: 'All-time inventory' });
+    const activity = screen.getByRole('region', { name: 'Request activity' });
+    expect(within(inventory).getByText('Factory attempts')).toBeInTheDocument();
+    expect(within(inventory).queryByRole('combobox')).not.toBeInTheDocument();
+    expect(within(activity).getByText('Total Cost')).toBeInTheDocument();
+    expect(within(activity).getByRole('combobox', { name: 'Last' })).toBeInTheDocument();
     expect(useMetrics).toHaveBeenCalledWith({ days: 30, dir: '/repo' });
   });
 

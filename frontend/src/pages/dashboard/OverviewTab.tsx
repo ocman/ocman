@@ -20,11 +20,11 @@ export function OverviewTab() {
 
   return (
     <div className="metrics-page">
-      <AnalyticsFilters days={days} onDaysChange={setDays} />
-      {metricsQ.error instanceof Error && <div className="oc-error-banner">{metricsQ.error.message}</div>}
-      {overviewQ.error instanceof Error && <div className="oc-error-banner">{overviewQ.error.message}</div>}
-      {overview && (
-        <>
+      <section aria-labelledby="inventory-heading">
+        <h2 id="inventory-heading" className="analytics-section-heading">All-time inventory</h2>
+        {overviewQ.error instanceof Error && <div className="oc-error-banner">{overviewQ.error.message}</div>}
+        {overview && (
+          <>
           <div className="analytics-scope-note">Inventory totals are scoped to this {overview.inventoryScope} ocman instance.</div>
           <div className="metrics-summary-grid">
             <MetricCard label="Sessions" value={formatNumber(overview.totalSessions)} tone="blue" />
@@ -35,26 +35,32 @@ export function OverviewTab() {
             <MetricCard label="Factory issues" value={formatNumber(total(overview.factoryIssuesByStatus))} tone="orange" subvalue={breakdown(overview.factoryIssuesByStatus)} />
             <MetricCard label="Factory attempts" value={formatNumber(total(overview.factoryAttemptsByPhase))} tone="purple" subvalue={breakdown(overview.factoryAttemptsByTerminalOutcome)} />
           </div>
-        </>
-      )}
-      {metricsQ.isLoading && !metrics && <div className="oc-list-loading"><div className="oc-spinner" />Loading overview...</div>}
-      {metrics && (
-        <>
-          <MetricsSummaryCards metrics={metrics} />
-          <div className="metrics-chart-grid">
-            <ChartCard title="Token Usage">
-              <Bar data={{
-                labels: metrics.series.map((point) => point.label),
-                datasets: [
-                  { label: 'Input', data: metrics.series.map((point) => point.inputTokens), backgroundColor: 'rgba(137, 180, 250, 0.72)', stack: 'tokens' },
-                  { label: 'Cache Read', data: metrics.series.map((point) => point.cacheReadTokens), backgroundColor: 'rgba(148, 226, 213, 0.72)', stack: 'tokens' },
-                  { label: 'Output', data: metrics.series.map((point) => point.outputTokens), backgroundColor: 'rgba(166, 227, 161, 0.72)', stack: 'tokens' },
-                ],
-              }} options={BAR_OPTIONS_STACKED} />
-            </ChartCard>
-          </div>
-        </>
-      )}
+          </>
+        )}
+      </section>
+      <section aria-labelledby="activity-heading">
+        <h2 id="activity-heading" className="analytics-section-heading">Request activity</h2>
+        <AnalyticsFilters days={days} onDaysChange={setDays} />
+        {metricsQ.error instanceof Error && <div className="oc-error-banner">{metricsQ.error.message}</div>}
+        {metricsQ.isLoading && !metrics && <div className="oc-list-loading"><div className="oc-spinner" />Loading overview...</div>}
+        {metrics && (
+          <>
+            <MetricsSummaryCards metrics={metrics} />
+            <div className="metrics-chart-grid">
+              <ChartCard title="Token Usage">
+                <Bar data={{
+                  labels: metrics.series.map((point) => point.label),
+                  datasets: [
+                    { label: 'Input', data: metrics.series.map((point) => point.inputTokens), backgroundColor: 'rgba(137, 180, 250, 0.72)', stack: 'tokens' },
+                    { label: 'Cache Read', data: metrics.series.map((point) => point.cacheReadTokens), backgroundColor: 'rgba(148, 226, 213, 0.72)', stack: 'tokens' },
+                    { label: 'Output', data: metrics.series.map((point) => point.outputTokens), backgroundColor: 'rgba(166, 227, 161, 0.72)', stack: 'tokens' },
+                  ],
+                }} options={BAR_OPTIONS_STACKED} />
+              </ChartCard>
+            </div>
+          </>
+        )}
+      </section>
     </div>
   );
 }
