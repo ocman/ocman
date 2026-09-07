@@ -511,6 +511,7 @@ export interface PartData {
     status?: string;
     input?: Record<string, unknown>;
     output?: unknown;
+    error?: string;
     title?: string;
     metadata?: {
       description?: string;

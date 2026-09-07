@@ -1296,11 +1296,11 @@ func (s *NativeService) DecidePlanGate(ctx context.Context, epicID, action strin
 		return PlanGate{}, ErrFactoryUnavailable
 	}
 	if req.ExpectedRevision < 1 || strings.TrimSpace(req.ExpectedHash) == "" {
-		return PlanGate{}, errors.New("plan revision and hash are required")
+		return PlanGate{}, fmt.Errorf("%w: plan revision and hash are required", ErrInvalidRequest)
 	}
 	gate, err := store.DecideFactoryPlanGate(ctx, epicID, action, req.ExpectedRevision, req.ExpectedHash, strings.TrimSpace(req.Feedback))
 	if errors.Is(err, sql.ErrNoRows) {
-		return PlanGate{}, errors.New("factory Plan gate is unavailable")
+		return PlanGate{}, fmt.Errorf("%w: factory Plan gate is unavailable", ErrInvalidRequest)
 	}
 	return nativePlanGate(gate), err
 }
@@ -1356,15 +1356,18 @@ func (s *NativeService) CreateRecoveryGate(ctx context.Context, attemptID, agent
 		return RecoveryGate{}, ErrFactoryUnavailable
 	}
 	if strings.TrimSpace(attemptID) == "" || strings.TrimSpace(agentToken) == "" || strings.TrimSpace(question) == "" || strings.TrimSpace(reason) == "" {
-		return RecoveryGate{}, errors.New("attempt, token, question, and reason are required")
+		return RecoveryGate{}, fmt.Errorf("%w: attempt, token, question, and reason are required", ErrInvalidRequest)
 	}
 	tokens, ok := s.store.(nativeAttemptCompletionStore)
 	if !ok {
 		return RecoveryGate{}, ErrFactoryUnavailable
 	}
 	valid, err := tokens.ValidateFactoryAttemptToken(ctx, attemptID, agentToken)
-	if err != nil || !valid {
-		return RecoveryGate{}, errors.New("factory implementation attempt token is invalid")
+	if err != nil {
+		return RecoveryGate{}, err
+	}
+	if !valid {
+		return RecoveryGate{}, fmt.Errorf("%w: factory implementation attempt token is invalid", ErrInvalidRequest)
 	}
 	return store.CreateFactoryRecoveryGate(ctx, attemptID, strings.TrimSpace(question), strings.TrimSpace(reason), choices, time.Now())
 }
@@ -1377,19 +1380,22 @@ func (s *NativeService) ResolveRecoveryGate(ctx context.Context, gateID, action,
 		return RecoveryGate{}, ErrFactoryUnavailable
 	}
 	if action != "resume" && action != "retry" && action != "cancel" {
-		return RecoveryGate{}, errors.New("invalid recovery gate action")
+		return RecoveryGate{}, fmt.Errorf("%w: invalid recovery gate action", ErrInvalidRequest)
 	}
 	response = strings.TrimSpace(response)
 	gate, found, err := store.GetFactoryRecoveryGate(ctx, gateID)
-	if err != nil || !found {
-		return RecoveryGate{}, errors.New("factory recovery gate is unavailable")
+	if err != nil {
+		return RecoveryGate{}, err
+	}
+	if !found {
+		return RecoveryGate{}, fmt.Errorf("%w: factory recovery gate is unavailable", ErrInvalidRequest)
 	}
 	pending := action == "resume" && gate.Resolution == "resume_pending"
 	if gate.Resolution != "open" && !pending {
-		return RecoveryGate{}, errors.New("factory recovery gate is unavailable")
+		return RecoveryGate{}, fmt.Errorf("%w: factory recovery gate is unavailable", ErrInvalidRequest)
 	}
 	if pending && response != gate.Response {
-		return RecoveryGate{}, errors.New("factory recovery response does not match the pending decision")
+		return RecoveryGate{}, fmt.Errorf("%w: factory recovery response does not match the pending decision", ErrInvalidRequest)
 	}
 	gate, attempt, err := store.ResolveFactoryRecoveryGate(ctx, gateID, action, response, time.Now())
 	if err != nil {
@@ -1446,19 +1452,25 @@ func (s *NativeService) ResolveAuthorityEscalationGate(ctx context.Context, gate
 		return AuthorityEscalationGate{}, ErrFactoryUnavailable
 	}
 	if action != "approve" && action != "reject" {
-		return AuthorityEscalationGate{}, errors.New("invalid authority escalation action")
+		return AuthorityEscalationGate{}, fmt.Errorf("%w: invalid authority escalation action", ErrInvalidRequest)
 	}
 	if s.implementation == nil {
 		return AuthorityEscalationGate{}, errors.New("implementation launcher is unavailable")
 	}
 	gate, found, err := store.GetFactoryAuthorityEscalationGate(ctx, gateID)
 	pending := action + "_pending"
-	if err != nil || !found || (gate.Resolution != "open" && gate.Resolution != pending) {
-		return AuthorityEscalationGate{}, errors.New("authority escalation gate is unavailable")
+	if err != nil {
+		return AuthorityEscalationGate{}, err
+	}
+	if !found || (gate.Resolution != "open" && gate.Resolution != pending) {
+		return AuthorityEscalationGate{}, fmt.Errorf("%w: authority escalation gate is unavailable", ErrInvalidRequest)
 	}
 	attempt, found, err := store.GetFactoryAttempt(ctx, gate.AttemptID)
-	if err != nil || !found || attempt.Phase != model.FactoryAttemptActive {
-		return AuthorityEscalationGate{}, errors.New("authority escalation attempt is unavailable")
+	if err != nil {
+		return AuthorityEscalationGate{}, err
+	}
+	if !found || attempt.Phase != model.FactoryAttemptActive {
+		return AuthorityEscalationGate{}, fmt.Errorf("%w: authority escalation attempt is unavailable", ErrInvalidRequest)
 	}
 	reply := "reject"
 	if action == "approve" {
@@ -1663,11 +1675,14 @@ func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentTok
 	summary, prURL = strings.TrimSpace(summary), strings.TrimSpace(prURL)
 	parsedPR, parseErr := url.ParseRequestURI(prURL)
 	if attemptID == "" || agentToken == "" || summary == "" || parseErr != nil || (parsedPR.Scheme != "http" && parsedPR.Scheme != "https") || parsedPR.Host == "" {
-		return errors.New("attempt ID, token, summary, and pull request URL are required")
+		return fmt.Errorf("%w: attempt ID, token, summary, and pull request URL are required", ErrInvalidRequest)
 	}
 	valid, err := store.ValidateFactoryAttemptToken(ctx, attemptID, agentToken)
-	if err != nil || !valid {
-		return errors.New("factory implementation attempt is not active")
+	if err != nil {
+		return err
+	}
+	if !valid {
+		return fmt.Errorf("%w: factory implementation attempt is not active", ErrInvalidRequest)
 	}
 	attemptStore, ok := s.store.(interface {
 		GetFactoryAttempt(context.Context, string) (model.FactoryAttempt, bool, error)
@@ -1676,34 +1691,40 @@ func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentTok
 		return ErrFactoryUnavailable
 	}
 	attempt, found, err := attemptStore.GetFactoryAttempt(ctx, attemptID)
-	if err != nil || !found {
-		return errors.New("factory implementation attempt is not active")
+	if err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("%w: factory implementation attempt is not active", ErrInvalidRequest)
 	}
 	if attempt.Phase == model.FactoryAttemptTerminal && attempt.Outcome == model.FactoryAttemptSucceeded {
 		if attempt.Result != nil && attempt.Result.Summary == summary && attempt.Result.PRURL == prURL {
 			return nil
 		}
-		return errors.New("factory implementation attempt already completed with a different result")
+		return fmt.Errorf("%w: factory implementation attempt already completed with a different result", ErrInvalidRequest)
 	}
 	existingPR, err := store.FactoryEpicPRURL(ctx, attempt.EpicID)
 	if err != nil {
 		return err
 	}
 	if existingPR != "" && existingPR != prURL {
-		return errors.New("factory epic already uses a different pull request")
+		return fmt.Errorf("%w: factory epic already uses a different pull request", ErrInvalidRequest)
 	}
 	if err := s.implementation.ValidateImplementationHandoff(ctx, attempt.FrozenPolicy.Repository, "factory/"+attempt.EpicID, prURL, attempt.FrozenPolicy); err != nil {
-		return err
+		return factoryHandoffError(err)
 	}
 	stopping, err := store.StopFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, time.Now())
-	if err != nil || !stopping {
-		return errors.New("factory implementation attempt is not active")
+	if err != nil {
+		return err
+	}
+	if !stopping {
+		return fmt.Errorf("%w: factory implementation attempt is not active", ErrInvalidRequest)
 	}
 	if err := s.implementation.StopImplementationSession(context.WithoutCancel(ctx), attempt.Session); err != nil {
 		return fmt.Errorf("stop completed Factory session: %w", err)
 	}
 	if err := s.implementation.ValidateImplementationHandoff(context.WithoutCancel(ctx), attempt.FrozenPolicy.Repository, "factory/"+attempt.EpicID, prURL, attempt.FrozenPolicy); err != nil {
-		return err
+		return factoryHandoffError(err)
 	}
 	result := model.FactoryAttemptResult{SchemaVersion: 1, Summary: summary, PRURL: prURL}
 	changed, err := store.CompleteFactoryImplementationAttempt(context.WithoutCancel(ctx), attemptID, agentToken, result, time.Now())
@@ -1712,16 +1733,33 @@ func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentTok
 	}
 	if !changed {
 		completed, found, getErr := attemptStore.GetFactoryAttempt(context.WithoutCancel(ctx), attemptID)
-		if getErr == nil && found && completed.Phase == model.FactoryAttemptTerminal && completed.Outcome == model.FactoryAttemptSucceeded && completed.Result != nil && *completed.Result == result {
+		if getErr != nil {
+			return getErr
+		}
+		if found && completed.Phase == model.FactoryAttemptTerminal && completed.Outcome == model.FactoryAttemptSucceeded && completed.Result != nil && *completed.Result == result {
 			return nil
 		}
-		return errors.New("factory implementation attempt is not active")
+		return fmt.Errorf("%w: factory implementation attempt is not active", ErrInvalidRequest)
 	}
 	select {
 	case s.dispatchWake <- struct{}{}:
 	default:
 	}
 	return nil
+}
+
+func factoryHandoffError(err error) error {
+	switch err.Error() {
+	case "factory worktree has uncommitted changes",
+		"factory branch has not been pushed with an upstream",
+		"factory branch HEAD has not been pushed",
+		"factory shared branch worktree was not found",
+		"pull request URL has no numeric identifier",
+		"pull request does not publish the shared Factory branch HEAD":
+		return fmt.Errorf("%w: %s", ErrInvalidRequest, err)
+	default:
+		return err
+	}
 }
 
 func nativePlanGate(gate model.NativePlanGate) PlanGate {
@@ -1782,7 +1820,7 @@ func (s *NativeService) SubmitProposal(ctx context.Context, req SubmitProposalRe
 		return ProposalRevision{}, err
 	}
 	if (req.AttemptID == "") != (req.AttemptToken == "") {
-		return ProposalRevision{}, errors.New("attempt ID and token are required")
+		return ProposalRevision{}, fmt.Errorf("%w: attempt ID and token are required", ErrInvalidRequest)
 	}
 	issues, err := s.store.ListFactoryIssues(ctx, epic.ID)
 	if err != nil {
@@ -1796,7 +1834,7 @@ func (s *NativeService) SubmitProposal(ctx context.Context, req SubmitProposalRe
 		}
 	}
 	if err := validateProposalManifest(req.Manifest, epic, rootMolID); err != nil {
-		return ProposalRevision{}, err
+		return ProposalRevision{}, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
 	manifestJSON, err := json.Marshal(req.Manifest)
 	if err != nil {

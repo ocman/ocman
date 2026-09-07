@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -264,15 +265,19 @@ func TestNativeDispatchRunsReadyTask(t *testing.T) {
 	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", ""); err == nil {
 		t.Fatal("completed without pull request URL")
 	}
-	launcher.handoffErr = errors.New("Factory worktree has uncommitted changes")
-	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", "https://forge.example/pr/1"); err == nil {
-		t.Fatal("completed a dirty handoff")
+	launcher.handoffErr = errors.New("factory worktree has uncommitted changes")
+	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", "https://forge.example/pr/1"); !errors.Is(err, ErrInvalidRequest) || !strings.Contains(err.Error(), "uncommitted changes") {
+		t.Fatalf("dirty handoff error = %v", err)
+	}
+	launcher.handoffErr = errors.New("forge lookup failed")
+	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", "https://forge.example/pr/1"); err == nil || errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("operational handoff error = %v", err)
 	}
 	launcher.handoffErr = nil
 	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", "https://forge.example/pr/1"); err != nil {
 		t.Fatal(err)
 	}
-	if launcher.handoffs != 3 || len(launcher.stops) != 1 {
+	if launcher.handoffs != 4 || len(launcher.stops) != 1 {
 		t.Fatalf("handoffs/stops = %d/%d", launcher.handoffs, len(launcher.stops))
 	}
 	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", "https://forge.example/pr/1"); err != nil {

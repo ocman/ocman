@@ -789,6 +789,26 @@ describe('convertMessages', () => {
     ]);
   });
 
+  it('preserves failed MCP tool output for expanded details', () => {
+    const m = makeMessage('m', { role: 'assistant' });
+    const out = convertMessages([m], [
+      makePart('m', {
+        type: 'tool',
+        tool: 'ocman_factory',
+        state: {
+          status: 'error',
+          input: { action: 'complete_attempt' },
+          error: 'Tool execution failed: factory worktree has uncommitted changes',
+        },
+      } as PartData),
+    ]);
+    const tc = asContentArray(out[0].content).find((item) => item.type === 'tool-call');
+    expect(tc).toMatchObject({
+      toolName: 'ocman_factory',
+      result: 'Tool execution failed: factory worktree has uncommitted changes',
+    });
+  });
+
   it('renders skill calls as __skill__ tool-calls', () => {
     const m = makeMessage('m', { role: 'assistant' });
     const out = convertMessages([m], [

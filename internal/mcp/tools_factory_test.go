@@ -362,6 +362,26 @@ func TestFactoryToolFormulaValidationReturnsFeedback(t *testing.T) {
 	}
 }
 
+func TestFactoryToolReturnsActionableRequestErrors(t *testing.T) {
+	svc := &fakeFactoryService{err: fmt.Errorf("%w: factory worktree has uncommitted changes", factory.ErrInvalidRequest)}
+	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{FactoryService: svc})...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(srv.Close)
+
+	got := callTool(t, srv, "factory", map[string]any{"action": "complete_attempt", "attempt_id": "attempt-1", "attempt_token": "token", "summary": "Implemented.", "pr_url": "https://forge.example/pr/1"})
+	if !got.IsError || resultText(got) != "invalid factory request: factory worktree has uncommitted changes" {
+		t.Fatalf("actionable error result = %q", resultText(got))
+	}
+
+	svc.err = errors.New("database details")
+	got = callTool(t, srv, "factory", map[string]any{"action": "complete_attempt", "attempt_id": "attempt-1", "attempt_token": "token", "summary": "Implemented.", "pr_url": "https://forge.example/pr/1"})
+	if !got.IsError || resultText(got) != "factory request failed" {
+		t.Fatalf("internal error result = %q", resultText(got))
+	}
+}
+
 func TestFactoryToolCapacityPolicyActions(t *testing.T) {
 	svc := &fakeFactoryService{capacityPolicy: factory.CapacityPolicy{GlobalCapacity: 10, ProjectCapacity: 4, ProjectOverrides: map[string]int{}}}
 	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{FactoryService: svc})...)

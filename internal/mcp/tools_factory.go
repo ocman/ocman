@@ -465,5 +465,17 @@ func factoryToolError(err error) *mcplib.CallToolResult {
 	if errors.Is(err, factory.ErrInvalidFormula) {
 		return mcplib.NewToolResultError(err.Error())
 	}
+	if errors.Is(err, factory.ErrInvalidRequest) {
+		return mcplib.NewToolResultError(err.Error())
+	}
+	if errors.Is(err, factory.ErrProjectNotLocalGit) {
+		return mcplib.NewToolResultError(factory.ErrProjectNotLocalGit.Error())
+	}
+	if errors.Is(err, factory.ErrAcknowledgementRequired) {
+		return mcplib.NewToolResultError(factory.ErrAcknowledgementRequired.Error())
+	}
+	if errors.Is(err, factory.ErrFactoryUnavailable) {
+		return mcplib.NewToolResultError(factory.ErrFactoryUnavailable.Error())
+	}
 	return mcplib.NewToolResultError("factory request failed")
 }
