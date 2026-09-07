@@ -11,9 +11,12 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/factory"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/opencodeconfig"
+	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/routines"
 )
 
 // handleMCPConfigStatus reports whether OpenCode's global config
@@ -80,7 +83,7 @@ func (s *Server) mcpHandler() http.Handler {
 // The handler is localhost-only (enforced by the caller in StartOnListener).
 // It is only registered when the OpenCode platform adapter is present.
 func (s *Server) buildMCPHandler() http.Handler {
-	return s.buildMCPHandlerFor(factoryMCPService{s.factory})
+	return s.buildMCPHandlerFor(factoryMCPService{s.factory}, s.routineSvc, sessionMCPService{s})
 }
 
 // factoryMCPService keeps operator decisions behind the browser while allowing
@@ -116,11 +119,49 @@ func (factoryMCPService) ResolveAuthorityEscalationGate(context.Context, string,
 	return factory.AuthorityEscalationGate{}, factory.ErrActionNotPermitted
 }
 
-func (s *Server) buildMCPHandlerFor(factoryService factoryService) http.Handler {
+func (s *Server) buildMCPHandlerFor(factoryService factoryService, routineService *routines.Service, sessionService sessionMCPService) http.Handler {
 	return internalmcp.New(internalmcp.Deps{
 		SignFile:       s.FileURL,
 		FactoryService: factoryService,
+		RoutineService: routineService,
+		SessionService: sessionService,
 	}).Handler()
+}
+
+type sessionMCPService struct{ server *Server }
+
+func (s sessionMCPService) ListSessions(ctx context.Context, directory string) ([]db.Session, error) {
+	sessions := sortAndLimitSessions(s.server.fanOutSessions(ctx, directory, 0, s.server.registry.RememberSessions), 500)
+	if s.server.stateDB != nil {
+		if err := s.server.applySessionStateReadOnly(ctx, sessions); err != nil {
+			return nil, err
+		}
+	}
+	applySessionNotice(sessions)
+	return sessions, nil
+}
+
+func (s sessionMCPService) GetSession(ctx context.Context, platform, id string, messageLimit int) (*platforms.SessionDetail, error) {
+	adapter, ok := s.server.registry.Get(platforms.ID(platform))
+	if !ok {
+		return nil, platforms.ErrNotFound
+	}
+	detail, err := adapter.Session(ctx, id, messageLimit, 0)
+	if err != nil {
+		return nil, err
+	}
+	if detail == nil || detail.Session == nil {
+		return nil, platforms.ErrNotFound
+	}
+	if s.server.stateDB != nil {
+		sessions := []db.Session{*detail.Session}
+		if err := s.server.applySessionStateReadOnly(ctx, sessions); err != nil {
+			return nil, err
+		}
+		detail.Session = &sessions[0]
+	}
+	s.server.enrichSessionDetail(ctx, string(adapter.ID()), id, detail, !isRemotePlatformID(string(adapter.ID())))
+	return detail, nil
 }
 
 // mcpServerURL returns the absolute URL of the MCP server endpoint.

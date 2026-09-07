@@ -37,8 +37,14 @@ var version = "dev"
 //go:embed .opencode/skills/ocman-factory/SKILL.md
 var factorySkill []byte
 
+//go:embed .opencode/skills/ocman-routines/SKILL.md
+var routinesSkill []byte
+
+//go:embed .opencode/skills/ocman-sessions/SKILL.md
+var sessionsSkill []byte
+
 func embeddedSkills() map[string][]byte {
-	return map[string][]byte{"ocman-factory": factorySkill}
+	return map[string][]byte{"ocman-factory": factorySkill, "ocman-routines": routinesSkill, "ocman-sessions": sessionsSkill}
 }
 
 // authPasswordEnv is the environment variable consulted for the auth
@@ -84,8 +90,8 @@ func main() {
 	// color when stdout isn't a TTY — which it isn't under `make dev`/air
 	// (piped). ForceColors keeps the color; FullTimestamp adds the date.
 	log.SetFormatter(&log.TextFormatter{ForceColors: true, FullTimestamp: true})
-	if err := opencodeskills.Remove("ocman-sessions"); err != nil {
-		log.WithError(err).Warn("removing retired ocman session skill")
+	if err := opencodeskills.Remove("ocman-session-splitting"); err != nil {
+		log.WithError(err).Warn("removing retired ocman session-splitting skill")
 	}
 	if err := opencodeskills.Remove("ocman-workflows"); err != nil {
 		log.WithError(err).Warn("removing retired ocman workflows skill")

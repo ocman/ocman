@@ -12,6 +12,10 @@ type Deps struct {
 	// FactoryService drives implementation-neutral Factory intake tools.
 	// Optional: nil disables Factory tools.
 	FactoryService factoryService
+	// Optional: nil disables routine tools.
+	RoutineService routineService
+	// Optional: nil disables read-only session tools.
+	SessionService sessionService
 
 	// SignFile mints a browser-reachable URL for a file on disk, backing
 	// the embed_file tool. Optional: nil makes embed_file report that
@@ -36,6 +40,8 @@ func New(deps Deps) *Server {
 	addFileTools(s, &fileTools{sign: deps.SignFile})
 
 	addFactoryTools(s, &factoryTools{svc: deps.FactoryService})
+	addRoutineTools(s, &routineTools{svc: deps.RoutineService})
+	addSessionTools(s, &sessionTools{svc: deps.SessionService})
 
 	httpHandler := mcpserver.NewStreamableHTTPServer(s,
 		mcpserver.WithStateLess(true),
@@ -58,5 +64,7 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 		{Tool: embedFileTool(), Handler: (&fileTools{sign: deps.SignFile}).handleEmbedFile},
 	}
 	tools = append(tools, factoryServerTools(&factoryTools{svc: deps.FactoryService})...)
+	tools = append(tools, routineServerTools(&routineTools{svc: deps.RoutineService})...)
+	tools = append(tools, sessionServerTools(&sessionTools{svc: deps.SessionService})...)
 	return tools
 }

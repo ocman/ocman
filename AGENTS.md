@@ -89,8 +89,8 @@ surfaces on the row the user is watching.
 Ocman also embeds an **MCP (Model Context Protocol) server** on its own
 loopback-only listener, `http://127.0.0.1:8227/mcp` (`-mcp-addr`), plus
 the same endpoint on the web UI's port (`:8229`, or `:8228` via the Vite
-dev proxy). This exposes the action-based `factory` tool and `embed_file`
-for displaying generated assets in the UI. See the **MCP server** section
+dev proxy). This exposes action-based `factory`, `routines`, and read-only
+`sessions` tools plus `embed_file`. See the **MCP server** section
 below for setup and available tools.
 
 **Routines** save one prompt for a project and run it manually or on a timeout,
@@ -202,7 +202,7 @@ handlers don't bypass the `Host` seam). User-facing docs:
   / seen sessions). Primary key is `(platform, session_id)` so it
   can scope state per platform.
 - `internal/mcp/` — MCP server implementation. Tool handlers implement the
-  action-based Factory tool and `embed_file`. Mounted at `/mcp` by the server
+  action-based Factory, routine, read-only session, and file tools. Mounted at `/mcp` by the server
   package.
 - `internal/server/` — HTTP server, API handlers, static file serving
   with SPA fallback, OpenCode port discovery via `lsof`.
@@ -522,7 +522,8 @@ minimal and match the surrounding code.
 ## MCP server
 
 Ocman embeds a localhost-only MCP server (`internal/mcp/`, mounted at
-`/mcp` by the server package) exposing the `factory` and `embed_file` tools.
+`/mcp` by the server package) exposing `factory`, `routines`, read-only
+`sessions`, and `embed_file`.
 The authoritative tool list is the table in
 [`docs/features/mcp.md`](docs/features/mcp.md#tools) — don't duplicate it here.
 

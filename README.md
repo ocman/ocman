@@ -95,8 +95,8 @@ See [Configuration](docs/configuration/_index.md) for the full flag and environm
 ## Optional agent integration
 
 You don't need any of this to use ocman as a dashboard. It also embeds an
-optional, localhost-only MCP server exposing Factory tools and `embed_file`
-for displaying generated assets in the UI.
+optional, localhost-only MCP server exposing Factory, routine, read-only
+session, and file-embedding tools.
 
 Point your OpenCode config at `http://localhost:8229/mcp` (or
 `http://localhost:8228/mcp` via the `make dev` proxy). See the

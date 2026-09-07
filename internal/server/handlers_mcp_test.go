@@ -8,7 +8,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/factory"
+	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/routines"
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 // The dedicated MCP listener is the credential-free path for local MCP
@@ -61,6 +65,58 @@ func TestMCPListenerDisabledWhenAddrEmpty(t *testing.T) {
 	srv.startMCPListener()()
 	if srv.mcpAddr != "" {
 		t.Fatalf("mcpAddr changed to %q", srv.mcpAddr)
+	}
+}
+
+func TestMainMuxMCPListsRoutineAndSessionTools(t *testing.T) {
+	srv := testServer(t)
+	srv.routineSvc = routines.New(routines.Deps{Store: srv.stateDB})
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	req.RemoteAddr = "127.0.0.1:1"
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"name":"routines"`) || !strings.Contains(rec.Body.String(), `"name":"sessions"`) {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSessionMCPListDoesNotUnarchiveSessions(t *testing.T) {
+	srv := testServer(t)
+	srv.registry.Register(&fakePlatform{id: "mcp-test", sessions: []db.Session{{ID: "session-1", Platform: "mcp-test", Directory: "/repo", TimeUpdated: 200}}})
+	if err := srv.stateDB.ArchiveSession(t.Context(), "mcp-test", "session-1", 100); err != nil {
+		t.Fatal(err)
+	}
+
+	sessions, err := (sessionMCPService{srv}).ListSessions(t.Context(), "")
+	if err != nil || len(sessions) == 0 {
+		t.Fatalf("ListSessions = %#v, %v", sessions, err)
+	}
+	archived, err := srv.stateDB.ArchivedSessions(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := archived[state.Key{Platform: "mcp-test", SessionID: "session-1"}]; !ok {
+		t.Fatal("read-only MCP listing unarchived the session")
+	}
+}
+
+func TestSessionMCPGetEnrichesDetailWithoutMutatingState(t *testing.T) {
+	srv := testServer(t)
+	srv.registry.Register(&fakePlatform{id: "mcp-test", sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+		return &platforms.SessionDetail{Session: &db.Session{ID: id, Platform: "mcp-test", Directory: "/repo"}}, nil
+	}})
+	detail, err := (sessionMCPService{srv}).GetSession(t.Context(), "mcp-test", "session-1", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Messages == nil || detail.Parts == nil || detail.Session.RemoteID != "local" {
+		t.Fatalf("detail was not enriched: %#v", detail)
 	}
 }
 

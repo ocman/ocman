@@ -87,6 +87,8 @@ flowchart TD
     Routines --> State
     Server --> MCP[internal/mcp<br/>MCP tools]
     MCP --> Factory
+    MCP --> Routines
+    MCP --> Registry
     Registry --> OC[platforms/opencode + internal/db<br/>adapter and read-only queries]
     Registry --> RP[remote.Platform<br/>gRPC-backed]
     Router --> Local[hostsvc/local<br/>git, tmux, worktree, Beads, runtimes]
@@ -146,8 +148,9 @@ flowchart TD
   inert historical data. No API, MCP tool, UI, or scheduler reads them. A DAG
   cannot be converted losslessly to one routine prompt, so recovery is a
   manual read-only SQLite export.
-- **internal/mcp.** MCP handlers expose the action-based `factory` tool and
-  `embed_file`. File embedding uses signed tokens persisted in `state.db`.
+- **internal/mcp.** MCP handlers expose action-based `factory` and `routines`,
+  read-only session inspection, and `embed_file`. File embedding uses signed
+  tokens persisted in `state.db`.
 - **internal/opencodeskills.** Extracts binary-embedded ocman skills into
   XDG data and installs only ocman-owned symlinks for OpenCode discovery.
   Retirement unlinks only the exact verified symlink and preserves extracted data.

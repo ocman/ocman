@@ -61,7 +61,7 @@ comes from a template you control in **Settings**.
 
 {{< cards >}}
   {{< card link="multi-remote" title="Multi-remote" subtitle="Attach other ocman instances and manage every machine from one dashboard." >}}
-  {{< card link="mcp" title="MCP server" subtitle="Factory tools and embedded file display for agents." >}}
+  {{< card link="mcp" title="MCP server" subtitle="Factory, routine, session inspection, and file display tools." >}}
   {{< card link="routines" title="Routines" subtitle="Save a project prompt, run it now, or schedule it in a fresh session." >}}
 {{< /cards >}}
 

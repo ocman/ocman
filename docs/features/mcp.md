@@ -3,11 +3,12 @@ title: MCP server
 weight: 3
 ---
 
-Ocman embeds an optional MCP (Model Context Protocol) server exposing Factory
-tools and `embed_file` for displaying generated assets in the UI.
+Ocman embeds an optional MCP (Model Context Protocol) server exposing Factory,
+routine, read-only session, and file-embedding tools.
 
 Ocman works fine as a plain dashboard without this. Install it only if you
-want conversational Factory handoff or embedded file display.
+want conversational Factory handoff, routine management, session inspection,
+or embedded file display.
 
 ## Endpoint
 
@@ -72,6 +73,8 @@ production binary. Change it if you moved the listener with `-mcp-addr`.
 | Tool | Description |
 |------|-------------|
 | `factory` | Native Factory control surface. Use `action: "help"` for actions, validation, examples, output schemas, and domain errors. Formula actions accept TOML only. Implementation Issues run sequentially in one shared Epic worktree; `complete_attempt` requires a clean, pushed handoff and the one pull request whose head matches that branch. |
+| `routines` | Create, inspect, update, run, and soft-delete routines. Use `action: "help"` for current inputs, examples, output schemas, and domain errors. |
+| `sessions` | Read-only session listing, search, and detail inspection. Search matches recent session IDs, titles, directories, platforms, and host names. The tool cannot create, cancel, or message sessions. |
 | `embed_file` | Make a file on disk viewable to the user in the ocman UI. Takes an absolute `path` (plus an optional `label`) and returns a signed URL and a markdown snippet the agent pastes into its reply. Images and SVGs render inline in the conversation; PDFs and other types open or download in the browser. See [Embedding generated assets](#embedding-generated-assets). |
 
 ## Factory
@@ -103,6 +106,21 @@ Planning Attempt's `attempt_id` and `attempt_token`.
 > repair tables because dropped data cannot be reconstructed. The native
 > Factory does not read these tables.
 
+## Routines
+
+Ocman installs the `ocman-routines` skill globally for OpenCode. The
+action-based `routines` tool supports listing, reading, creating, replacing,
+running, soft-deleting, and viewing run history. Its `help` action is the
+authoritative contract for agents.
+
+## Sessions
+
+The `sessions` tool intentionally stops at inspection: `list`, `search`, and
+`get`. OpenCode's native Task tool owns subagent delegation. A configured
+subagent model overrides the caller's model; otherwise the subagent inherits
+the invoking primary agent's model. The installed `ocman-sessions` skill also
+documents one-off Task model selection.
+
 ## Embedding generated assets
 
 Agents routinely produce files a chat transcript cannot show: a rendered
@@ -129,10 +147,12 @@ those files directly anyway.
 
 ## Installed skill
 
-Factory handoff guidance lives in:
+MCP interaction guidance lives in:
 
 ```text
 .opencode/skills/ocman-factory/SKILL.md
+.opencode/skills/ocman-routines/SKILL.md
+.opencode/skills/ocman-sessions/SKILL.md
 ```
 
 At startup, ocman extracts and links the skill into OpenCode's global skill

@@ -52,7 +52,7 @@ func TestResolveAuthPassword_Precedence(t *testing.T) {
 	}
 }
 
-func TestEmbeddedFactorySkillUsesOnlyFactoryActionContract(t *testing.T) {
+func TestEmbeddedSkillsUseActionContracts(t *testing.T) {
 	skills := embeddedSkills()
 	source := string(skills["ocman-factory"])
 	for _, required := range []string{
@@ -67,7 +67,24 @@ func TestEmbeddedFactorySkillUsesOnlyFactoryActionContract(t *testing.T) {
 			t.Errorf("Factory skill exposes implementation term %q", hidden)
 		}
 	}
-	if len(skills) != 1 {
+	routinesSource := strings.ToLower(string(skills["ocman-routines"]))
+	for _, required := range []string{"routines", `"action":"help"`, "schemas", "examples"} {
+		if !strings.Contains(routinesSource, required) {
+			t.Errorf("Routines skill is missing %q", required)
+		}
+	}
+	sessionsSource := strings.ToLower(string(skills["ocman-sessions"]))
+	for _, required := range []string{"sessions", `"action":"help"`, "read-only", "task", "subagent_type", "provider/model-id", "inherits"} {
+		if !strings.Contains(sessionsSource, required) {
+			t.Errorf("Sessions skill is missing %q", required)
+		}
+	}
+	for _, retired := range []string{"new_session", "await_session_result", "send_message_to_child"} {
+		if strings.Contains(sessionsSource, retired) {
+			t.Errorf("Sessions skill exposes retired action %q", retired)
+		}
+	}
+	if len(skills) != 3 {
 		t.Fatalf("embedded skills = %#v", skills)
 	}
 }

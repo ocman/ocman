@@ -160,6 +160,14 @@ func (s *Server) handlePinSession(w http.ResponseWriter, r *http.Request) {
 // session slice. Auto-unarchives sessions that have been updated since they
 // were archived.
 func (s *Server) applySessionState(ctx context.Context, sessions []db.Session) error {
+	return s.applySessionStateWithWrites(ctx, sessions, true)
+}
+
+func (s *Server) applySessionStateReadOnly(ctx context.Context, sessions []db.Session) error {
+	return s.applySessionStateWithWrites(ctx, sessions, false)
+}
+
+func (s *Server) applySessionStateWithWrites(ctx context.Context, sessions []db.Session, write bool) error {
 	archived, err := s.stateDB.ArchivedSessions(ctx)
 	if err != nil {
 		return err
@@ -230,8 +238,10 @@ func (s *Server) applySessionState(ctx context.Context, sessions []db.Session) e
 		archivedAtUpdate, ok := archived[key]
 		if ok {
 			if sessions[i].TimeUpdated > archivedAtUpdate {
-				if err := s.stateDB.UnarchiveSession(ctx, key.Platform, key.SessionID); err != nil {
-					return err
+				if write {
+					if err := s.stateDB.UnarchiveSession(ctx, key.Platform, key.SessionID); err != nil {
+						return err
+					}
 				}
 			} else {
 				sessions[i].Archived = true
