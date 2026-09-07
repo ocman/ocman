@@ -68,7 +68,7 @@ func TestMCPListenerDisabledWhenAddrEmpty(t *testing.T) {
 	}
 }
 
-func TestMainMuxMCPListsRoutineAndSessionTools(t *testing.T) {
+func TestMainMuxMCPListsInboxRoutineAndSessionTools(t *testing.T) {
 	srv := testServer(t)
 	srv.routineSvc = routines.New(routines.Deps{Store: srv.stateDB})
 	mux, err := srv.routes()
@@ -81,8 +81,42 @@ func TestMainMuxMCPListsRoutineAndSessionTools(t *testing.T) {
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"name":"routines"`) || !strings.Contains(rec.Body.String(), `"name":"sessions"`) {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"name":"inbox"`) || !strings.Contains(rec.Body.String(), `"name":"routines"`) || !strings.Contains(rec.Body.String(), `"name":"sessions"`) {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestMainMuxMCPInboxSendAndRecall(t *testing.T) {
+	srv := testServer(t)
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(arguments string) string {
+		t.Helper()
+		body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"inbox","arguments":` + arguments + `}}`
+		req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+		req.RemoteAddr = "127.0.0.1:1"
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json, text/event-stream")
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+		return rec.Body.String()
+	}
+
+	sent := call(`{"action":"send","title":"Review","body":"Check this"}`)
+	items, err := srv.stateDB.ListInboxItems(t.Context())
+	if err != nil || len(items) != 1 || !strings.Contains(sent, items[0].ID) {
+		t.Fatalf("send response = %s, items = %#v, err = %v", sent, items, err)
+	}
+	call(`{"action":"recall","item_id":"` + items[0].ID + `"}`)
+	call(`{"action":"recall","item_id":"` + items[0].ID + `"}`)
+	call(`{"action":"recall","item_id":"unknown"}`)
+	if items, err := srv.stateDB.ListInboxItems(t.Context()); err != nil || len(items) != 0 {
+		t.Fatalf("items after recall = %#v, %v", items, err)
 	}
 }
 

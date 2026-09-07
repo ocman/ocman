@@ -4,11 +4,11 @@ weight: 3
 ---
 
 Ocman embeds an optional MCP (Model Context Protocol) server exposing Factory,
-routine, read-only session, and file-embedding tools.
+Inbox, routine, read-only session, and file-embedding tools.
 
 Ocman works fine as a plain dashboard without this. Install it only if you
-want conversational Factory handoff, routine management, session inspection,
-or embedded file display.
+want conversational Factory handoff, Inbox delivery, routine management,
+session inspection, or embedded file display.
 
 ## Endpoint
 
@@ -73,6 +73,7 @@ production binary. Change it if you moved the listener with `-mcp-addr`.
 | Tool | Description |
 |------|-------------|
 | `factory` | Native Factory control surface. Use `action: "help"` for actions, validation, examples, output schemas, and domain errors. Formula actions accept TOML only. Implementation Issues run sequentially in one shared Epic worktree; `complete_attempt` requires a clean, pushed handoff and the one pull request whose head matches that branch. |
+| `inbox` | Send owner-local Inbox items and recall them by opaque ID. Unknown and already recalled IDs are successful no-ops. Use `action: "help"` for schemas and examples. |
 | `routines` | Create, inspect, update, run, and soft-delete routines. Use `action: "help"` for current inputs, examples, output schemas, and domain errors. |
 | `sessions` | Read-only session listing, search, and detail inspection. Search matches recent session IDs, titles, directories, platforms, and host names. The tool cannot create, cancel, or message sessions. |
 | `embed_file` | Make a file on disk viewable to the user in the ocman UI. Takes an absolute `path` (plus an optional `label`) and returns a signed URL and a markdown snippet the agent pastes into its reply. Images and SVGs render inline in the conversation; PDFs and other types open or download in the browser. See [Embedding generated assets](#embedding-generated-assets). |

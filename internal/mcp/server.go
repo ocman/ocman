@@ -16,6 +16,8 @@ type Deps struct {
 	RoutineService routineService
 	// Optional: nil disables read-only session tools.
 	SessionService sessionService
+	// Optional: nil disables owner-local Inbox tools.
+	InboxStore inboxStore
 
 	// SignFile mints a browser-reachable URL for a file on disk, backing
 	// the embed_file tool. Optional: nil makes embed_file report that
@@ -40,6 +42,7 @@ func New(deps Deps) *Server {
 	addFileTools(s, &fileTools{sign: deps.SignFile})
 
 	addFactoryTools(s, &factoryTools{svc: deps.FactoryService})
+	addInboxTools(s, &inboxTools{store: deps.InboxStore})
 	addRoutineTools(s, &routineTools{svc: deps.RoutineService})
 	addSessionTools(s, &sessionTools{svc: deps.SessionService})
 
@@ -64,6 +67,7 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 		{Tool: embedFileTool(), Handler: (&fileTools{sign: deps.SignFile}).handleEmbedFile},
 	}
 	tools = append(tools, factoryServerTools(&factoryTools{svc: deps.FactoryService})...)
+	tools = append(tools, inboxServerTools(&inboxTools{store: deps.InboxStore})...)
 	tools = append(tools, routineServerTools(&routineTools{svc: deps.RoutineService})...)
 	tools = append(tools, sessionServerTools(&sessionTools{svc: deps.SessionService})...)
 	return tools

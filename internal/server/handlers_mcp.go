@@ -123,6 +123,7 @@ func (s *Server) buildMCPHandlerFor(factoryService factoryService, routineServic
 	return internalmcp.New(internalmcp.Deps{
 		SignFile:       s.FileURL,
 		FactoryService: factoryService,
+		InboxStore:     s.stateDB,
 		RoutineService: routineService,
 		SessionService: sessionService,
 	}).Handler()
