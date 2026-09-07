@@ -2532,6 +2532,10 @@ func migrateToV74(tx *sql.Tx) error {
 }
 
 func migrateToV75(tx *sql.Tx) error {
+	var exists int
+	if err := tx.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name='factory_recovery_gate'`).Scan(&exists); err != nil || exists == 0 {
+		return err
+	}
 	_, err := tx.Exec(`
 		CREATE TABLE factory_recovery_gate_v75 (
 			issue_id TEXT PRIMARY KEY REFERENCES factory_issue(id),
