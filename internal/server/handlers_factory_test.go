@@ -223,6 +223,7 @@ func TestWriteFactoryErrorSeparatesClientAndServerFailures(t *testing.T) {
 		{"permission", factory.ErrActionNotPermitted, http.StatusForbidden},
 		{"non-local project", factory.ErrProjectNotLocalGit, http.StatusBadRequest},
 		{"acknowledgement", factory.ErrAcknowledgementRequired, http.StatusBadRequest},
+		{"epic closure blocked", fmt.Errorf("%w: close the root Mol successfully before closing the Epic", model.ErrEpicClosureBlocked), http.StatusConflict},
 		{"store failure", errors.New("database unavailable"), http.StatusInternalServerError},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -230,6 +231,9 @@ func TestWriteFactoryErrorSeparatesClientAndServerFailures(t *testing.T) {
 			writeFactoryError(rec, tt.err)
 			if rec.Code != tt.want {
 				t.Fatalf("status = %d, want %d: %s", rec.Code, tt.want, rec.Body.String())
+			}
+			if tt.name == "epic closure blocked" && !strings.Contains(rec.Body.String(), "close the root Mol successfully before closing the Epic") {
+				t.Fatalf("body hides closure reason: %q", rec.Body.String())
 			}
 		})
 	}

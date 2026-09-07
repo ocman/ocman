@@ -50,7 +50,7 @@ func (l factoryImplementationLauncher) ValidateImplementationHandoff(ctx context
 	if err != nil {
 		return err
 	}
-	if pr.URL == prURL && pr.Branch == branch && pr.HeadSHA == head && !pr.CrossFork && (pr.Status == "open" || pr.Status == "draft") {
+	if pr.URL == prURL && pr.Branch == branch && pr.HeadSHA == head && !pr.CrossFork && (pr.Status == "open" || pr.Status == "draft" || pr.Status == "merged") {
 		return nil
 	}
 	return errors.New("pull request does not publish the shared Factory branch HEAD")

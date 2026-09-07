@@ -1756,7 +1756,7 @@ func factoryHandoffError(err error) error {
 		"factory shared branch worktree was not found",
 		"pull request URL has no numeric identifier",
 		"pull request does not publish the shared Factory branch HEAD":
-		return fmt.Errorf("%w: %s", ErrInvalidRequest, err)
+		return fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	default:
 		return err
 	}

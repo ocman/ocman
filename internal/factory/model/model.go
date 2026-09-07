@@ -14,6 +14,7 @@ var (
 	ErrNativeEpicNotFound          = errors.New("factory epic not found")
 	ErrNativeInstantiationConflict = errors.New("factory instantiation conflict")
 	ErrInvalidGraphMutation        = errors.New("invalid factory graph mutation")
+	ErrEpicClosureBlocked          = errors.New("factory Epic closure is blocked")
 )
 
 type NativeEpic struct {

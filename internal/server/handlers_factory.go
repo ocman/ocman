@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/NoUseFreak/ocman/internal/factory"
+	"github.com/NoUseFreak/ocman/internal/factory/model"
 )
 
 func (s *Server) handleFactoryStatus(w http.ResponseWriter, r *http.Request) {
@@ -557,6 +558,10 @@ func writeFactoryError(w http.ResponseWriter, err error) {
 	}
 	if errors.Is(err, factory.ErrInvalidFormula) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if errors.Is(err, model.ErrEpicClosureBlocked) {
+		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
 	serverError(w, "handling Factory request", err)

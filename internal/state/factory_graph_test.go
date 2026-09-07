@@ -1058,6 +1058,9 @@ func TestFactoryMolClosureGuardsRequiredWorkAndCancelsOpenOptionalWork(t *testin
 		t.Fatal(err)
 	}
 	rootID := factoryIssueID(t, db, epic.ID, "mol")
+	if err := db.CloseFactoryEpic(ctx, epic.ID); !errors.Is(err, model.ErrEpicClosureBlocked) {
+		t.Fatalf("CloseFactoryEpic before Mol closure = %v", err)
+	}
 	optionalID := factoryChildIssueID(t, db, rootID, 2)
 	if _, err := db.db.Exec(`UPDATE factory_issue_hierarchy SET requirement = 'optional' WHERE child_issue_id = ?`, optionalID); err != nil {
 		t.Fatal(err)

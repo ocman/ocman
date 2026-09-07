@@ -912,7 +912,7 @@ func (d *DB) CloseFactoryEpic(ctx context.Context, epicID string) error {
 	}
 	changed, err := result.RowsAffected()
 	if err != nil || changed != 1 {
-		return errors.New("factory Epic requires successful explicit Mol closure")
+		return fmt.Errorf("%w: close the root Mol successfully before closing the Epic", model.ErrEpicClosureBlocked)
 	}
 	return nil
 }

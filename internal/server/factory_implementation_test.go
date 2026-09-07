@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -99,8 +100,9 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 	})
 
 	t.Run("validates the PR branch and pushed HEAD", func(t *testing.T) {
+		state := "open"
 		api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = w.Write([]byte(`{"number":1,"state":"open","html_url":"https://github.com/acme/repo/pull/1","head":{"ref":"factory/epic-1","sha":"abc123","repo":{"full_name":"acme/repo"}},"base":{"repo":{"full_name":"acme/repo"}}}`))
+			_, _ = fmt.Fprintf(w, `{"number":1,"state":%q,"merged":%t,"html_url":"https://github.com/acme/repo/pull/1","head":{"ref":"factory/epic-1","sha":"abc123","repo":{"full_name":"acme/repo"}},"base":{"repo":{"full_name":"acme/repo"}}}`, state, state == "merged")
 		}))
 		defer api.Close()
 		host := &factoryImplementationHost{handoffHead: "abc123", upstreams: hostsvc.ProjectUpstreams{Remotes: []forge.Remote{{Type: forge.RemoteTypeGitHub, Repo: "acme/repo"}}}}
@@ -110,6 +112,14 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 		policy := model.FactoryAttemptPolicy{DeliveryRemoteType: string(forge.RemoteTypeGitHub), DeliveryRemoteRepo: "acme/repo"}
 		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", policy); err != nil {
 			t.Fatal(err)
+		}
+		state = "merged"
+		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", policy); err != nil {
+			t.Fatalf("merged PR: %v", err)
+		}
+		state = "closed"
+		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", policy); err == nil {
+			t.Fatal("accepted an unmerged closed PR")
 		}
 		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/other", "https://github.com/acme/repo/pull/1", policy); err == nil {
 			t.Fatal("accepted a PR for another branch")
