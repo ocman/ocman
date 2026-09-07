@@ -7,8 +7,8 @@ Release tags are created automatically from Conventional Commit messages on `mai
 
 ## Files
 
-- `.github/workflows/semantic-tag.yml` inspects commits on `main`, computes the next semver version, and creates a `v*` tag through the Forgejo API.
-- `.github/workflows/release.yml` runs when a `v*` tag is pushed, builds platform archives, creates the Forgejo release entry, and uploads the assets.
+- `.forgejo/workflows/ci.yml` inspects commits on `main`, computes the next semver version, and creates a `v*` tag through the Forgejo API after CI passes.
+- `.forgejo/workflows/release.yml` runs when a `v*` tag is pushed, builds platform archives, creates the Forgejo release entry, and uploads the assets.
 
 ## One-time setup
 
@@ -76,7 +76,7 @@ Examples:
 
 The semantic tag workflow uses `RELEASE_TOKEN` instead of the default automation token so the tag it creates can trigger the separate tag-based release workflow.
 
-If your Forgejo instance suppresses follow-up workflow triggers from automation-created refs, the default automation token will create the tag without starting `.github/workflows/release.yml`.
+If your Forgejo instance suppresses follow-up workflow triggers from automation-created refs, the default automation token will create the tag without starting `.forgejo/workflows/release.yml`.
 
 ## Troubleshooting
 
@@ -90,5 +90,5 @@ If no tag is created:
 If the tag is created but no release assets appear:
 
 1. Confirm the new `v*` tag exists in Forgejo.
-2. Confirm `.github/workflows/release.yml` ran for that tag.
+2. Confirm `.forgejo/workflows/release.yml` ran for that tag.
 3. Confirm the token used to create the tag is allowed to trigger follow-up workflows on your Forgejo instance.

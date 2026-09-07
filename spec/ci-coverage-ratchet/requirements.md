@@ -4,7 +4,7 @@ Tracks issue #100.
 
 ## Background
 
-CI (`.github/workflows/ci.yml`) runs the Go and frontend test suites
+CI (`.forgejo/workflows/ci.yml`) runs the Go and frontend test suites
 on every push to `main` and every PR, but nothing guards against a PR
 silently *lowering* overall test coverage. We want a "ratchet": a
 baseline that can only rise (or stay flat), so coverage trends up over

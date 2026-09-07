@@ -2,8 +2,8 @@
 
 ## Background
 
-The release pipeline (`.github/workflows/ci.yml` `tag` job +
-`.github/workflows/release.yml`) already derives a semver bump from the
+The release pipeline (`.forgejo/workflows/ci.yml` `tag` job +
+`.forgejo/workflows/release.yml`) already derives a semver bump from the
 conventional-commit subjects in `<latest-tag>..HEAD` and pushes a
 `vX.Y.Z` tag, which in turn triggers the release build. The release
 that ends up on Forgejo currently has its body hard-coded to

@@ -110,7 +110,7 @@ coverage: {
 ```
 (`@vitest/coverage-v8` is already a devDependency.)
 
-## CI wiring (`.github/workflows/ci.yml`)
+## CI wiring (`.forgejo/workflows/ci.yml`)
 
 ### Per-suite ratchets (run on PR and on main push)
 The frontend and backend jobs collect and check their own coverage. This

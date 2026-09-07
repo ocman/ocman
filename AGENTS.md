@@ -378,12 +378,11 @@ assets are embedded.
 
 ## Verification
 
-CI is defined in `.github/workflows/ci.yml`. **It runs on Forgejo
-Actions**, which reads `.github/workflows/` as a fallback — there is
-deliberately no `.forgejo/` or `.gitea/` directory, and the workflow is
-Forgejo-aware (see the pnpm-install comment near the top and the
-`FORGEJO_API_URL: ${{ github.api_url }}` env). Do not "fix" it by
-moving files out of `.github/`.
+CI is defined in `.forgejo/workflows/ci.yml` and runs only on Forgejo
+Actions. Keeping workflows under `.forgejo/workflows/` prevents the GitHub
+mirror from discovering and running them. The workflow remains Forgejo-aware
+(see the pnpm-install comment near the top and the
+`FORGEJO_API_URL: ${{ github.api_url }}` env).
 
 Jobs and the checks they run:
 

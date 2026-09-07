@@ -4,7 +4,7 @@
 
 `git-cliff` renders a Markdown changelog from the conventional commits
 in `<previous-tag>..HEAD`. The existing `tag` job in
-`.github/workflows/ci.yml` keeps its semver-bump logic but, after
+`.forgejo/workflows/ci.yml` keeps its semver-bump logic but, after
 deciding `next_tag`, also runs `git-cliff` and writes the rendered
 body into the **annotated tag's message**. That tag is then the
 single source of truth: when the tag push triggers the `release`
@@ -65,7 +65,7 @@ points:
 - `[git].conventional_commits = true`, `filter_commits = true`,
   `tag_pattern = "v[0-9]*"`.
 
-### `tag` job changes (`.github/workflows/ci.yml`)
+### `tag` job changes (`.forgejo/workflows/ci.yml`)
 
 Before the `git tag ... && git push` step:
 
@@ -95,7 +95,7 @@ Before the `git tag ... && git push` step:
 The bump decision (R9) still gates everything: if no releasable
 commits, the job exits before rendering, exactly as today.
 
-### `release` job changes (`.github/workflows/release.yml`)
+### `release` job changes (`.forgejo/workflows/release.yml`)
 
 1. Add an `actions/checkout@v4` step with `fetch-depth: 0` and
    `fetch-tags: true` so the workflow can read the annotated tag
@@ -165,10 +165,10 @@ The artefact `changelog.md` is plain UTF-8 Markdown, e.g.:
 3. Verify locally: `mise exec -- git-cliff --config cliff.toml
    --unreleased --tag v0.22.0` against current `main`. Adjust
    templates until the output is what we want.
-4. Edit `.github/workflows/ci.yml` `tag` job: add `git-cliff-action`
+4. Edit `.forgejo/workflows/ci.yml` `tag` job: add `git-cliff-action`
    step, render `changelog.md`, switch to annotated tag, upload
    artefact.
-5. Edit `.github/workflows/release.yml` `release` job: download
+5. Edit `.forgejo/workflows/release.yml` `release` job: download
    artefact, rebuild create-release payload from the file, extend
    the 409 branch to PATCH the body.
 6. Push a feature branch, watch a CI dry run (or trigger a tag
