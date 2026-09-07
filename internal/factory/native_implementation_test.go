@@ -560,7 +560,7 @@ func TestNativeImplementationDispatchStopsPartialLaunchAndRecoversDeadSession(t 
 		t.Fatalf("stopped sessions = %#v", launcher.stops)
 	}
 	queue, err := svc.Queue(context.Background())
-	if err != nil || len(queue) != 1 || queue[0].State != DispatchRetryWait || queue[0].RetryAttempts != 1 || queue[0].RetryAt == 0 {
+	if err != nil || len(queue) != 1 || queue[0].State != DispatchRetryWait || queue[0].RetryAttempts != 1 || queue[0].RetryAt == 0 || queue[0].OutcomeReason != "Implementation Session could not be launched: unavailable" {
 		t.Fatalf("queue after failed launch = %#v, %v", queue, err)
 	}
 

@@ -1554,7 +1554,7 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 			if session.ID != "" {
 				_ = s.implementation.StopImplementationSession(context.WithoutCancel(ctx), session)
 			}
-			_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "launch_failed", Message: "Implementation Session could not be launched"}, time.Now())
+			_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "launch_failed", Message: "Implementation Session could not be launched: " + launchErr.Error()}, time.Now())
 			continue
 		}
 		if session.ID == "" || session.Platform == "" {

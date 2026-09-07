@@ -32,6 +32,14 @@
 .factory-inbox select, .factory-inbox input { width: 100%; padding: 6px 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; }
 .factory-inbox-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .factory-inbox-control { display: grid; gap: 8px; min-width: 240px; }
+.factory-error-help-trigger { margin-top: 6px; padding: 0; border: 0; border-bottom: 1px dotted currentcolor; background: none; color: var(--accent); font: inherit; cursor: pointer; }
+.factory-error-help { width: min(380px, calc(100vw - 32px)); padding: 18px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text); box-shadow: 0 16px 48px rgb(0 0 0 / 35%); }
+.factory-error-help::backdrop { background: rgb(0 0 0 / 20%); }
+.factory-error-help strong { display: block; margin-bottom: 8px; }
+.factory-error-help p { margin: 0; color: var(--text-dim); line-height: 1.5; }
+@supports (position-area: bottom) {
+  .factory-error-help { inset: auto; margin: 8px; position-area: bottom; }
+}
 .factory-table-wrap { max-width: 100%; overflow-x: auto; border: 1px solid var(--border); }
 .factory-table { width: 100%; border-collapse: collapse; background: var(--bg-card); text-align: left; }
 .factory-table th, .factory-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }

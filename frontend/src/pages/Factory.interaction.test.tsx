@@ -326,7 +326,7 @@ describe('Factory interactions', () => {
     ] as never);
     vi.mocked(api.factoryIssues).mockImplementation((id) => Promise.resolve(({
       'epic-1': [
-        { id: 'epic-1.4', epicId: 'epic-1', kind: 'task', title: 'Remove dead helpers', status: 'closed', outcome: 'failed', outcomeReason: 'Implementation Session could not be launched', retryAttempts: 4, dispatchState: 'completed' },
+        { id: 'epic-1.4', epicId: 'epic-1', kind: 'task', title: 'Remove dead helpers', status: 'closed', outcome: 'failed', outcomeReason: 'Implementation Session could not be launched: no supported Factory delivery remote', retryAttempts: 4, dispatchState: 'completed' },
         { id: 'epic-1.5', epicId: 'epic-1', kind: 'task', title: 'Done', status: 'closed', outcome: 'succeeded', dispatchState: 'completed' },
       ],
       'epic-2': [{ id: 'epic-2.3', epicId: 'epic-2', kind: 'materialization', title: 'materialization: Refresh docs', status: 'open', dispatchState: 'ready' }],
@@ -337,7 +337,11 @@ describe('Factory interactions', () => {
 
     const inbox = await screen.findByRole('table', { name: 'Action inbox' });
     expect(within(inbox).getByText('Work failed after 4 attempts')).toBeInTheDocument();
-    expect(within(inbox).getByText('Implementation Session could not be launched')).toBeInTheDocument();
+    expect(within(inbox).getByText('Implementation Session could not be launched: no supported Factory delivery remote')).toBeInTheDocument();
+    const guidanceTrigger = within(inbox).getByRole('button', { name: 'How to resolve' });
+    const guidance = within(inbox).getByText(/Add a GitHub or Forgejo git remote/).closest('[popover]');
+    expect(guidanceTrigger).toHaveAttribute('popovertarget', guidance?.id);
+    expect(guidance).toHaveAttribute('popover', 'auto');
     expect(within(inbox).getByText('Plan approved, no work graph yet')).toBeInTheDocument();
     expect(within(inbox).getByText('Stuck: nothing can proceed')).toBeInTheDocument();
     expect(within(inbox).getByText('Closure blocked by: Dependent task')).toBeInTheDocument();

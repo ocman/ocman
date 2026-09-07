@@ -1,4 +1,4 @@
-import { useDeferredValue, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useDeferredValue, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, NavLink, useNavigate, useParams } from 'react-router-dom';
 import { MarkdownContent } from '../components/assistant/MarkdownText';
 import { Button, SelectField } from '../components/Control';
@@ -218,10 +218,14 @@ function AuthorityGateItem({ issue, epic }: { issue: FactoryIssue; epic: string 
 
 function FailedWorkItem({ issue, epic }: { issue: FactoryIssue; epic: string }) {
 	const reopen = useReopenFactoryIssue();
+	const helpID = useId();
+	const guidance = issue.outcomeReason?.includes('no supported Factory delivery remote')
+		? 'Add a GitHub or Forgejo git remote (preferably origin), authenticate ocman with GITHUB_TOKEN, FORGEJO_TOKEN/GITEA_TOKEN, or the gh/tea CLI, restart ocman if its environment changed, then reopen this work.'
+		: undefined;
 	return <tr>
 		<td><strong>{epic}</strong></td>
 		<td className="factory-table-id">{issue.id}<span>{issue.title}</span></td>
-		<td><strong>Work {issue.outcome}{issue.retryAttempts ? ` after ${issue.retryAttempts} attempts` : ''}</strong>{issue.outcomeReason && <span>{issue.outcomeReason}</span>}</td>
+		<td><strong>Work {issue.outcome}{issue.retryAttempts ? ` after ${issue.retryAttempts} attempts` : ''}</strong>{issue.outcomeReason && <span>{issue.outcomeReason}</span>}{guidance && <><button type="button" className="factory-error-help-trigger" popoverTarget={helpID}>How to resolve</button><div id={helpID} className="factory-error-help" popover="auto"><strong>Configure a delivery remote</strong><p>{guidance}</p></div></>}</td>
 		<td><div className="factory-inbox-actions"><Button type="button" variant="accent" disabled={reopen.isPending} onClick={() => reopen.mutate({ epicId: issue.epicId, issueId: issue.id })}>Reopen</Button></div>{reopen.isError && <p role="alert">{reopen.error instanceof Error ? reopen.error.message : 'Could not reopen work.'}</p>}</td>
 	</tr>;
 }

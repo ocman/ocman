@@ -385,7 +385,7 @@ func TestFactoryToolReturnsActionableRequestErrors(t *testing.T) {
 		t.Fatalf("internal error result = %q", resultText(got))
 	}
 	entry := hook.LastEntry()
-	if entry == nil || entry.Message != "Factory MCP request failed" || entry.Data[logrus.ErrorKey] != svc.err {
+	if entry == nil || entry.Message != "Factory MCP request failed" || fmt.Sprint(entry.Data[logrus.ErrorKey]) != svc.err.Error() {
 		t.Fatalf("error log = %#v", entry)
 	}
 }
