@@ -199,7 +199,9 @@ import (
 //	70 - add project-bound routines and append-only routine run history.
 //	71 - persist the agent and model selected for routine runs.
 //	72 - add routine session creation, reuse, and existing-session modes.
-const latestSchemaVersion = 73
+//	73 - expire missed one-time routine schedules and repair active target uniqueness.
+//	74 - add durable owner-local Inbox items.
+const latestSchemaVersion = 74
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -450,6 +452,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV72(tx)
 	case 73:
 		return migrateToV73(tx)
+	case 74:
+		return migrateToV74(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -2505,6 +2509,22 @@ func migrateToV73(tx *sql.Tx) error {
 		CREATE UNIQUE INDEX routine_run_one_active_target_uq ON routine_run (
 			remote_id, COALESCE(NULLIF(target_session_id, ''), NULLIF(session_id, ''))
 		) WHERE state = 'running' AND session_mode <> 'new' AND (target_session_id <> '' OR session_id <> '');
+	`)
+	return err
+}
+
+func migrateToV74(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS inbox_item (
+			id          TEXT PRIMARY KEY,
+			title       TEXT NOT NULL CHECK (title <> '' AND title = trim(title)),
+			body        TEXT NOT NULL CHECK (body <> '' AND body = trim(body)),
+			created_at  INTEGER NOT NULL,
+			read_at     INTEGER,
+			archived_at INTEGER
+		);
+		CREATE INDEX IF NOT EXISTS inbox_item_active_idx ON inbox_item (created_at DESC, id DESC) WHERE archived_at IS NULL;
+		CREATE INDEX IF NOT EXISTS inbox_item_unread_idx ON inbox_item (id) WHERE read_at IS NULL AND archived_at IS NULL;
 	`)
 	return err
 }

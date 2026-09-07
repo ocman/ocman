@@ -16,7 +16,7 @@ import (
 // DB wraps the writable ocman state database. Methods are grouped by
 // concern in sibling files (seen.go, archive.go, autoapprove.go,
 // childsessions.go, favorites.go, pins.go, settings.go, auth.go,
-// sharelinks.go, remote.go, identity.go); this file owns
+// sharelinks.go, remote.go, identity.go, inbox.go); this file owns
 // the connection lifecycle and shared helpers.
 type DB struct {
 	db *sql.DB
