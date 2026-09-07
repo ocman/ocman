@@ -760,6 +760,45 @@ func TestFactoryMaterializesMultipleImplementationIssuesWithDependencies(t *test
 	}
 }
 
+func TestFactoryMaterializesExplicitProposalEdges(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	ctx := context.Background()
+	epic, err := db.CreateFactoryEpic(ctx, "Ship", "Brief", "/repo", "explicit-edges", nativeTracerFormula(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	molID := factoryIssueID(t, db, epic.ID, "mol")
+	manifest, _ := json.Marshal(map[string]any{
+		"epicId": epic.ID, "molId": molID, "project": "/repo",
+		"nodes": []map[string]any{
+			{"key": "backend", "type": "implementation", "requirement": "required"},
+			{"key": "frontend", "type": "implementation", "requirement": "required"},
+		},
+		"edges": []map[string]string{{"from": "frontend", "to": "backend", "type": "on_failure"}},
+	})
+	proposal, err := db.SaveFactoryProposalRevision(ctx, model.NativeProposalRevision{EpicID: epic.ID, MolID: molID, Project: "/repo", ManifestJSON: string(manifest), ContentHash: "explicit-edges"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.DecideFactoryPlanGate(ctx, epic.ID, "approve", proposal.Revision, proposal.ContentHash, ""); err != nil {
+		t.Fatal(err)
+	}
+	result, err := db.MaterializeFactoryPlan(ctx, epic.ID, factoryIssueID(t, db, epic.ID, "materialization"), "factory-materialize/v1", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	byKey := map[string]string{}
+	for _, issue := range result.Issues {
+		byKey[issue.ManifestKey] = issue.IssueID
+	}
+	var edgeType string
+	err = db.db.QueryRow(`SELECT type FROM factory_issue_dependency WHERE issue_id = ? AND depends_on_issue_id = ?`, byKey["frontend"], byKey["backend"]).Scan(&edgeType)
+	if err != nil || edgeType != "on_failure" {
+		t.Fatalf("explicit edge = %q, %v", edgeType, err)
+	}
+}
+
 // Re-materializing an Epic supersedes its previous implementation. Work the
 // user had already hung under that implementation must go with it: an orphan
 // whose parent is removed would otherwise crash every issue listing.

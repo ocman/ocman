@@ -375,6 +375,24 @@ func TestNativeProposalAcceptsMultipleImplementationIssuesAndRejectsDependencyCy
 	if _, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest}); err != nil {
 		t.Fatalf("multi-Issue proposal rejected: %v", err)
 	}
+	manifest.Nodes[1].DependsOn = nil
+	manifest.Edges = []ManifestEdge{{From: "frontend", To: "backend", Type: "on_failure"}}
+	if _, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest}); err != nil {
+		t.Fatalf("explicit-edge proposal rejected: %v", err)
+	}
+	manifest.Edges = append(manifest.Edges, ManifestEdge{From: "frontend", To: "backend", Type: "blocks"})
+	if _, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest}); err == nil {
+		t.Fatal("duplicate explicit dependency was accepted")
+	}
+	manifest.Edges = []ManifestEdge{{From: "frontend", To: "missing", Type: "blocks"}}
+	if _, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest}); err == nil {
+		t.Fatal("missing explicit dependency was accepted")
+	}
+	manifest.Edges = []ManifestEdge{{From: "frontend", To: "backend", Type: "unknown"}}
+	if _, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest}); err == nil {
+		t.Fatal("unknown explicit dependency type was accepted")
+	}
+	manifest.Edges = nil
 	manifest.Nodes[1].DependsOn = []string{"backend", "backend"}
 	if _, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest}); err == nil {
 		t.Fatal("duplicate dependency was accepted")

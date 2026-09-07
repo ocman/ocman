@@ -520,11 +520,18 @@ type ManifestNode struct {
 	Pinned      bool     `json:"pinned,omitempty"`
 }
 
+type ManifestEdge struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+	Type string `json:"type"`
+}
+
 type ProposalManifest struct {
 	EpicID  string         `json:"epicId"`
 	MolID   string         `json:"molId"`
 	Project string         `json:"project"`
 	Nodes   []ManifestNode `json:"nodes"`
+	Edges   []ManifestEdge `json:"edges,omitempty"`
 }
 
 type SubmitProposalRequest struct {
@@ -1926,6 +1933,24 @@ func validateProposalManifest(manifest ProposalManifest, epic model.NativeEpic, 
 	if required == 0 {
 		return errors.New("proposal manifest requires at least one required implementation node")
 	}
+	edges := append([]ManifestEdge(nil), manifest.Edges...)
+	for _, node := range manifest.Nodes {
+		for _, dependency := range node.DependsOn {
+			edges = append(edges, ManifestEdge{From: node.Key, To: dependency, Type: "blocks"})
+		}
+	}
+	dependencies := make(map[string][]string, len(keys))
+	seenEdges := map[string]bool{}
+	for _, edge := range edges {
+		from, fromExists := keys[edge.From]
+		to, toExists := keys[edge.To]
+		pair := edge.From + "\x00" + edge.To
+		if !fromExists || !toExists || from.Requirement == "reference" || to.Requirement == "reference" || (edge.Type != "blocks" && edge.Type != "on_failure") || seenEdges[pair] {
+			return errors.New("proposal manifest dependency is invalid")
+		}
+		seenEdges[pair] = true
+		dependencies[edge.From] = append(dependencies[edge.From], edge.To)
+	}
 	visiting, visited := map[string]bool{}, map[string]bool{}
 	var visit func(string) error
 	visit = func(key string) error {
@@ -1936,13 +1961,7 @@ func validateProposalManifest(manifest ProposalManifest, epic model.NativeEpic, 
 			return nil
 		}
 		visiting[key] = true
-		dependencies := map[string]bool{}
-		for _, dependency := range keys[key].DependsOn {
-			dependencyNode, exists := keys[dependency]
-			if !exists || dependencyNode.Requirement == "reference" || dependencies[dependency] {
-				return errors.New("proposal manifest dependency is invalid")
-			}
-			dependencies[dependency] = true
+		for _, dependency := range dependencies[key] {
 			if err := visit(dependency); err != nil {
 				return err
 			}

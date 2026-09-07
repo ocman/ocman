@@ -145,7 +145,7 @@ func TestFactoryPlanningLauncherUsesLocalHostAndAppliesBoundedRules(t *testing.T
 	if sent.SessionID != "session-1" || !strings.Contains(sent.Message, "epic-1") || !strings.Contains(sent.Message, "work-1") || !strings.Contains(sent.Message, "submit_proposal") || !strings.Contains(sent.Message, "attempt_id fa_1") || !strings.Contains(sent.Message, "attempt_token fat_secret") {
 		t.Fatalf("prompt = %#v", sent)
 	}
-	if !strings.Contains(sent.Message, "multiple focused implementation Issues by default") || !strings.Contains(sent.Message, "explicit dependsOn keys") || !strings.Contains(sent.Message, "Mermaid flowchart") || !strings.Contains(sent.Message, "Approve and start implementation materializes the Plan and begins implementation") {
+	if !strings.Contains(sent.Message, "If the to-tickets skill is available") || !strings.Contains(sent.Message, "either way, split the plan into tracer-bullet vertical slices") || !strings.Contains(sent.Message, "Factory's proposal approval replaces") || !strings.Contains(sent.Message, "multiple focused implementation Issues by default") || !strings.Contains(sent.Message, "explicit edges") || !strings.Contains(sent.Message, "Mermaid flowchart") || !strings.Contains(sent.Message, "Approve and start implementation materializes the Plan and begins implementation") {
 		t.Fatalf("prompt does not explain inline plan review: %q", sent.Message)
 	}
 	if !strings.HasSuffix(sent.Message, "[Review and approve the plan](/factory/epics/epic-1)") {

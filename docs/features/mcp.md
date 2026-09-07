@@ -97,7 +97,9 @@ acknowledging local execution and uses the built-in tracer Formula. `save_formul
 `set_capacity_policy`, Plan decisions, recovery decisions, authority
 decisions, and `reopen_issue` (returning failed work to the queue) are
 refused; they stay in the Factory action inbox. `submit_proposal` additionally requires the active
-Planning Attempt's `attempt_id` and `attempt_token`.
+Planning Attempt's `attempt_id` and `attempt_token`. Its manifest accepts an
+issue graph with `nodes` and typed `edges` (`blocks` or `on_failure`); legacy
+per-node `dependsOn` remains accepted for stored and older proposals.
 
 > **Upgrade warning:** the native Factory cutover does not migrate legacy
 > Factory runs. Retired YAML Formula tables are kept under `legacy_factory_*`

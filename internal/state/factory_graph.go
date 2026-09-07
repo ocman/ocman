@@ -1227,6 +1227,11 @@ func (d *DB) MaterializeFactoryPlan(ctx context.Context, epicID, issueID, profil
 			DependsOn   []string `json:"dependsOn"`
 			Pinned      bool     `json:"pinned"`
 		} `json:"nodes"`
+		Edges []struct {
+			From string `json:"from"`
+			To   string `json:"to"`
+			Type string `json:"type"`
+		} `json:"edges"`
 	}
 	if err := json.Unmarshal([]byte(proposal.ManifestJSON), &manifest); err != nil || manifest.EpicID != epicID || manifest.MolID != proposal.MolID || manifest.Project != proposal.Project {
 		return model.NativeMaterialization{}, errors.New("factory approved Plan manifest is invalid")
@@ -1252,13 +1257,25 @@ func (d *DB) MaterializeFactoryPlan(ctx context.Context, epicID, issueID, profil
 	if required == 0 {
 		return model.NativeMaterialization{}, errors.New("factory approved Plan manifest is invalid")
 	}
+	edges := manifest.Edges
 	for _, index := range executable {
 		for _, dependency := range manifest.Nodes[index].DependsOn {
-			dependencyIndex, ok := keys[dependency]
-			if !ok || manifest.Nodes[dependencyIndex].Requirement == "reference" {
-				return model.NativeMaterialization{}, errors.New("factory approved Plan manifest is invalid")
-			}
+			edges = append(edges, struct {
+				From string `json:"from"`
+				To   string `json:"to"`
+				Type string `json:"type"`
+			}{From: manifest.Nodes[index].Key, To: dependency, Type: "blocks"})
 		}
+	}
+	seenEdges := map[string]bool{}
+	for _, edge := range edges {
+		from, fromOK := keys[edge.From]
+		to, toOK := keys[edge.To]
+		pair := edge.From + "\x00" + edge.To
+		if !fromOK || !toOK || manifest.Nodes[from].Requirement == "reference" || manifest.Nodes[to].Requirement == "reference" || (edge.Type != "blocks" && edge.Type != "on_failure") || seenEdges[pair] {
+			return model.NativeMaterialization{}, errors.New("factory approved Plan manifest is invalid")
+		}
+		seenEdges[pair] = true
 	}
 	var goal string
 	if err := tx.QueryRowContext(ctx, `SELECT goal FROM factory_epic WHERE id = ?`, epicID).Scan(&goal); err != nil {
@@ -1322,12 +1339,9 @@ func (d *DB) MaterializeFactoryPlan(ctx context.Context, epicID, issueID, profil
 		}
 		result.Issues = append(result.Issues, model.NativeMaterializedIssue{ManifestKey: node.Key, IssueID: implementationID})
 	}
-	for _, index := range executable {
-		node := manifest.Nodes[index]
-		for _, dependency := range node.DependsOn {
-			if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue_dependency (issue_id, depends_on_issue_id, type) VALUES (?, ?, 'blocks')`, implementationIDs[node.Key], implementationIDs[dependency]); err != nil {
-				return model.NativeMaterialization{}, fmt.Errorf("adding Factory implementation dependency: %w", err)
-			}
+	for _, edge := range edges {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue_dependency (issue_id, depends_on_issue_id, type) VALUES (?, ?, ?)`, implementationIDs[edge.From], implementationIDs[edge.To], edge.Type); err != nil {
+			return model.NativeMaterialization{}, fmt.Errorf("adding Factory implementation dependency: %w", err)
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_materialization (id, epic_id, issue_id, proposal_revision, proposal_hash, manifest_key, profile, implementation_issue_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, epicID, issueID, proposal.Revision, proposal.ContentHash, primary.Key, profile, primaryID, now); err != nil {
@@ -1337,8 +1351,10 @@ func (d *DB) MaterializeFactoryPlan(ctx context.Context, epicID, issueID, profil
 		node := manifest.Nodes[index]
 		implementationID := implementationIDs[node.Key]
 		entities := []struct{ kind, id string }{{"issue", implementationID}, {"hierarchy", proposal.MolID + "\x00" + implementationID}, {"dependency", implementationID + "\x00" + issueID}}
-		for _, dependency := range node.DependsOn {
-			entities = append(entities, struct{ kind, id string }{"dependency", implementationID + "\x00" + implementationIDs[dependency]})
+		for _, edge := range edges {
+			if edge.From == node.Key {
+				entities = append(entities, struct{ kind, id string }{"dependency", implementationID + "\x00" + implementationIDs[edge.To]})
+			}
 		}
 		for _, entity := range entities {
 			if _, err := tx.ExecContext(ctx, `INSERT INTO factory_materialization_provenance (entity_kind, entity_id, plan_id, plan_revision, materialization_id, manifest_key) VALUES (?, ?, ?, ?, ?, ?)`, entity.kind, entity.id, epicID, proposal.Revision, id, node.Key); err != nil {
