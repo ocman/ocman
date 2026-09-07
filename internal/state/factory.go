@@ -231,9 +231,9 @@ func (d *DB) CompleteFactoryImplementationAttempt(ctx context.Context, id, agent
 	defer func() { _ = tx.Rollback() }()
 	if result.PRURL != "" {
 		var existing string
-		err := tx.QueryRowContext(ctx, `SELECT json_extract(result_json, '$.prUrl') FROM factory_attempt
+		err := tx.QueryRowContext(ctx, `SELECT json_extract(CASE WHEN json_valid(result_json) THEN result_json ELSE '{}' END, '$.prUrl') FROM factory_attempt
 			WHERE epic_id = (SELECT epic_id FROM factory_attempt WHERE id = ?) AND terminal_outcome = 'succeeded'
-			AND json_extract(result_json, '$.prUrl') <> '' LIMIT 1`, id).Scan(&existing)
+			AND json_extract(CASE WHEN json_valid(result_json) THEN result_json ELSE '{}' END, '$.prUrl') <> '' LIMIT 1`, id).Scan(&existing)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return false, err
 		}
@@ -279,8 +279,9 @@ func (d *DB) CompleteFactoryImplementationAttempt(ctx context.Context, id, agent
 
 func (d *DB) FactoryEpicPRURL(ctx context.Context, epicID string) (string, error) {
 	var prURL string
-	err := d.db.QueryRowContext(ctx, `SELECT json_extract(result_json, '$.prUrl') FROM factory_attempt
-		WHERE epic_id = ? AND terminal_outcome = 'succeeded' AND json_extract(result_json, '$.prUrl') <> '' LIMIT 1`, epicID).Scan(&prURL)
+	err := d.db.QueryRowContext(ctx, `SELECT json_extract(CASE WHEN json_valid(result_json) THEN result_json ELSE '{}' END, '$.prUrl') FROM factory_attempt
+		WHERE epic_id = ? AND terminal_outcome = 'succeeded'
+		AND json_extract(CASE WHEN json_valid(result_json) THEN result_json ELSE '{}' END, '$.prUrl') <> '' LIMIT 1`, epicID).Scan(&prURL)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}

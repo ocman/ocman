@@ -12,6 +12,8 @@ import (
 	"github.com/NoUseFreak/ocman/internal/factory"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/mark3labs/mcp-go/mcptest"
+	"github.com/sirupsen/logrus"
+	logtest "github.com/sirupsen/logrus/hooks/test"
 )
 
 type fakeFactoryService struct {
@@ -363,6 +365,8 @@ func TestFactoryToolFormulaValidationReturnsFeedback(t *testing.T) {
 }
 
 func TestFactoryToolReturnsActionableRequestErrors(t *testing.T) {
+	hook := logtest.NewLocal(logrus.StandardLogger())
+	defer logrus.StandardLogger().ReplaceHooks(make(logrus.LevelHooks))
 	svc := &fakeFactoryService{err: fmt.Errorf("%w: factory worktree has uncommitted changes", factory.ErrInvalidRequest)}
 	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{FactoryService: svc})...)
 	if err != nil {
@@ -377,8 +381,12 @@ func TestFactoryToolReturnsActionableRequestErrors(t *testing.T) {
 
 	svc.err = errors.New("database details")
 	got = callTool(t, srv, "factory", map[string]any{"action": "complete_attempt", "attempt_id": "attempt-1", "attempt_token": "token", "summary": "Implemented.", "pr_url": "https://forge.example/pr/1"})
-	if !got.IsError || resultText(got) != "factory request failed" {
+	if !got.IsError || resultText(got) != "database details" {
 		t.Fatalf("internal error result = %q", resultText(got))
+	}
+	entry := hook.LastEntry()
+	if entry == nil || entry.Message != "Factory MCP request failed" || entry.Data[logrus.ErrorKey] != svc.err {
+		t.Fatalf("error log = %#v", entry)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/factory"
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	"github.com/sirupsen/logrus"
 )
 
 type factoryService interface {
@@ -450,6 +451,7 @@ func factoryProjectOverrides(req mcplib.CallToolRequest) (map[string]int, error)
 	return overrides, nil
 }
 func factoryToolError(err error) *mcplib.CallToolResult {
+	logrus.WithError(err).Error("Factory MCP request failed")
 	if errors.Is(err, factory.ErrActionNotPermitted) {
 		return mcplib.NewToolResultError("factory action is not permitted")
 	}
@@ -477,5 +479,5 @@ func factoryToolError(err error) *mcplib.CallToolResult {
 	if errors.Is(err, factory.ErrFactoryUnavailable) {
 		return mcplib.NewToolResultError(factory.ErrFactoryUnavailable.Error())
 	}
-	return mcplib.NewToolResultError("factory request failed")
+	return mcplib.NewToolResultError(err.Error())
 }

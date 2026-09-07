@@ -250,6 +250,16 @@ func TestClaimFactoryImplementation(t *testing.T) {
 	if changed, err := db.ActivateFactoryAttempt(ctx, attempt.ID, model.PlanningSession{Platform: "opencode", ID: "session"}, time.Now()); err != nil || !changed {
 		t.Fatalf("activate implementation = %v, %v", changed, err)
 	}
+	planning, err := db.CreatePreparedFactoryAttempt(ctx, epic.ID, factoryIssueID(t, db, epic.ID, "plan"), model.FactoryAttemptPolicy{Repository: "/repo", Profile: "factory-plan/v1"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.db.Exec(`UPDATE factory_attempt SET phase = 'terminal', terminal_outcome = 'succeeded' WHERE id = ?`, planning.ID); err != nil {
+		t.Fatal(err)
+	}
+	if prURL, err := db.FactoryEpicPRURL(ctx, epic.ID); err != nil || prURL != "" {
+		t.Fatalf("PR URL with resultless planning attempt = %q, %v", prURL, err)
+	}
 	if owned, err := db.IsFactoryImplementationSession(ctx, "session"); err != nil || !owned {
 		t.Fatalf("implementation session = %v, %v", owned, err)
 	}
