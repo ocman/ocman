@@ -201,7 +201,8 @@ import (
 //	72 - add routine session creation, reuse, and existing-session modes.
 //	73 - expire missed one-time routine schedules and repair active target uniqueness.
 //	74 - add durable owner-local Inbox items.
-const latestSchemaVersion = 74
+//	75 - allow multiple sequential recovery gates for one Factory attempt.
+const latestSchemaVersion = 75
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -454,6 +455,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV73(tx)
 	case 74:
 		return migrateToV74(tx)
+	case 75:
+		return migrateToV75(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -2512,7 +2515,6 @@ func migrateToV73(tx *sql.Tx) error {
 	`)
 	return err
 }
-
 func migrateToV74(tx *sql.Tx) error {
 	_, err := tx.Exec(`
 		CREATE TABLE IF NOT EXISTS inbox_item (
@@ -2525,6 +2527,29 @@ func migrateToV74(tx *sql.Tx) error {
 		);
 		CREATE INDEX IF NOT EXISTS inbox_item_active_idx ON inbox_item (created_at DESC, id DESC) WHERE archived_at IS NULL;
 		CREATE INDEX IF NOT EXISTS inbox_item_unread_idx ON inbox_item (id) WHERE read_at IS NULL AND archived_at IS NULL;
+	`)
+	return err
+}
+
+func migrateToV75(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE factory_recovery_gate_v75 (
+			issue_id TEXT PRIMARY KEY REFERENCES factory_issue(id),
+			epic_id TEXT NOT NULL REFERENCES factory_epic(id),
+			attempt_id TEXT NOT NULL REFERENCES factory_attempt(id),
+			work_item_id TEXT NOT NULL REFERENCES factory_issue(id),
+			question TEXT NOT NULL,
+			reason TEXT NOT NULL,
+			choices_json TEXT NOT NULL DEFAULT '[]',
+			response TEXT NOT NULL DEFAULT '',
+			resolution TEXT NOT NULL DEFAULT 'open',
+			created_at INTEGER NOT NULL,
+			resolved_at INTEGER NOT NULL DEFAULT 0
+		);
+		INSERT INTO factory_recovery_gate_v75 SELECT * FROM factory_recovery_gate;
+		DROP TABLE factory_recovery_gate;
+		ALTER TABLE factory_recovery_gate_v75 RENAME TO factory_recovery_gate;
+		CREATE INDEX factory_recovery_gate_open_idx ON factory_recovery_gate (attempt_id, resolution);
 	`)
 	return err
 }

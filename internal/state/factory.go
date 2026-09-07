@@ -351,12 +351,9 @@ func (d *DB) CreateFactoryRecoveryGate(ctx context.Context, attemptID, question,
 		return model.RecoveryGate{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	var existingID, resolution string
-	err = tx.QueryRowContext(ctx, `SELECT issue_id, resolution FROM factory_recovery_gate WHERE attempt_id = ?`, attemptID).Scan(&existingID, &resolution)
+	var existingID string
+	err = tx.QueryRowContext(ctx, `SELECT issue_id FROM factory_recovery_gate WHERE attempt_id = ? AND resolution NOT IN ('resume', 'retry', 'cancel')`, attemptID).Scan(&existingID)
 	if err == nil {
-		if resolution != "open" {
-			return model.RecoveryGate{}, errors.New("factory recovery gate is already resolved")
-		}
 		return loadFactoryRecoveryGate(ctx, tx, existingID)
 	}
 	if !errors.Is(err, sql.ErrNoRows) {

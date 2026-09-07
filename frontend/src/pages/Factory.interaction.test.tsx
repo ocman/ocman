@@ -216,22 +216,32 @@ describe('Factory interactions', () => {
 		await waitFor(() => expect(screen.queryByText('Which API?')).not.toBeInTheDocument());
 	});
 
-  it('shows ready planning work in the action inbox', async () => {
+  it('shows claim progress and opens the planning session when ready', async () => {
     const user = userEvent.setup();
+    let releaseClaim!: () => void;
+    let claimed = false;
+    const claimReady = new Promise<void>((resolve) => { releaseClaim = resolve; });
     vi.mocked(api.factoryEpics).mockResolvedValue([
       { id: 'epic-1', goal: 'Routines', status: 'open', initialProject: '/repo' },
     ] as never);
-    vi.mocked(api.factoryIssues).mockResolvedValue([
+    vi.mocked(api.factoryIssues).mockImplementation(() => Promise.resolve(claimed ? [] : [
       { id: 'epic-1.1', epicId: 'epic-1', kind: 'plan', title: 'Plan: routines', status: 'open', dispatchState: 'ready' },
-    ] as never);
+    ]) as never);
     const session = { platform: 'opencode', id: 'planning-session' };
-    vi.mocked(api.factoryClaimPlan).mockResolvedValue({ attempt: { id: 'attempt-1', workId: 'epic-1.1', phase: 'active', session }, session } satisfies FactoryClaimedPlan);
+    vi.mocked(api.factoryClaimPlan).mockImplementation(async () => {
+      await claimReady;
+      claimed = true;
+      return { attempt: { id: 'attempt-1', workId: 'epic-1.1', phase: 'active', session }, session } satisfies FactoryClaimedPlan;
+    });
     renderFactory(<MemoryRouter><Routes><Route path="/" element={<FactoryOverview />} /><Route path="/session/:id" element={<LocationMarker />} /></Routes></MemoryRouter>);
 
     const inbox = await screen.findByRole('table', { name: 'Action inbox' });
     await user.click(within(inbox).getByRole('button', { name: 'Claim plan' }));
 
     await waitFor(() => expect(api.factoryClaimPlan).toHaveBeenCalledWith('epic-1', 'epic-1.1'));
+    expect(within(inbox).getByRole('button', { name: 'Claiming plan…' })).toBeDisabled();
+    expect(screen.queryByText('/session/planning-session?factoryEpic=epic-1')).not.toBeInTheDocument();
+    releaseClaim();
     expect(await screen.findByText('/session/planning-session?factoryEpic=epic-1')).toBeInTheDocument();
   });
 

@@ -134,6 +134,10 @@ func TestFactoryAttemptRecoveryAndAuthorityGates(t *testing.T) {
 	if paused, err := db.IsFactoryAttemptRecoveryPaused(ctx, attempt.ID); err != nil || paused {
 		t.Fatalf("resolved recovery paused = %v, %v", paused, err)
 	}
+	secondRecovery, err := db.CreateFactoryRecoveryGate(ctx, attempt.ID, "Choose again", "still blocked", nil, at)
+	if err != nil || secondRecovery.IssueID == recovery.IssueID {
+		t.Fatalf("second recovery gate = %#v, %v", secondRecovery, err)
+	}
 	for _, tc := range []struct {
 		workID, session, recoveryAction, authorityAction string
 		index                                            int
