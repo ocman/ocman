@@ -321,6 +321,45 @@ func TestPromptReconciliationIncludesWorktreeSessionDirectories(t *testing.T) {
 	}
 }
 
+func TestPromptReconciliationReportsLiveWorktreePermissionWithStaleStoredStatus(t *testing.T) {
+	const (
+		root     = "/repo/project"
+		worktree = "/repo/.worktrees/project/feature"
+	)
+	ResetCachesForTests()
+	seen := make(map[string]bool)
+	var mu sync.Mutex
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen[r.URL.Query().Get("directory")] = true
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/permission" && r.URL.Query().Get("directory") == worktree {
+			_, _ = w.Write([]byte(`[{"id":"perm-worktree","sessionID":"ses-worktree","permission":"Bash"}]`))
+			return
+		}
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer server.Close()
+
+	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
+	a := New(newTestDBWithSessions(t, []testSession{{id: "ses-worktree", directory: worktree}}), nil)
+	a.ObserveSessionStatus(port, a.StatusPortGeneration(port), "ses-worktree", "busy")
+	var permissions []platforms.LivePrompt
+	<-a.StartPromptReconciliation(context.Background(), port, []string{root}, func(prompt platforms.LivePrompt) {
+		permissions = append(permissions, prompt)
+	})
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !seen[worktree] {
+		t.Fatalf("reconciled directories = %v, want live worktree despite stale stored status", seen)
+	}
+	if len(permissions) != 1 || permissions[0]["id"] != "perm-worktree" {
+		t.Fatalf("reported permissions = %#v, want perm-worktree", permissions)
+	}
+}
+
 func TestNewerPromptReconciliationWinsOlderSlowSnapshot(t *testing.T) {
 	const dir = "/repo/reconnect-race"
 	firstStarted := make(chan struct{})
