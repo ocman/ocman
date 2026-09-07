@@ -463,8 +463,8 @@ export function sseEvent(payload: { type: string; properties?: Record<string, un
 
 /**
  * Install an SSE stub for a specific session that delivers the provided
- * events immediately when the EventSource connects, then keeps the
- * connection open (sends no further data).
+ * events on the first EventSource connection. Playwright closes fulfilled
+ * responses, so reconnects receive no events instead of replaying them.
  *
  * Usage:
  *   await mockSse(page, 'sess-abc123', [
@@ -476,9 +476,12 @@ export async function mockSse(
   sessionId: string,
   events: string[],
 ): Promise<void> {
+  let delivered = false;
   await page.route(
     new RegExp(`/api/session/${sessionId}/events`),
     async (route) => {
+      const body = delivered ? '' : events.join('');
+      delivered = true;
       await route.fulfill({
         status: 200,
         contentType: 'text/event-stream',
@@ -486,7 +489,7 @@ export async function mockSse(
           'Cache-Control': 'no-cache',
           Connection: 'keep-alive',
         },
-        body: events.join(''),
+        body,
       });
     },
   );
