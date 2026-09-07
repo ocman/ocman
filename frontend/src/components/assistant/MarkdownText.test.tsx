@@ -90,6 +90,13 @@ describe('MarkdownText', () => {
     expect(renderDiagram).not.toHaveBeenCalled();
   });
 
+  it('opens internal links here and external links in a new window', () => {
+    render(<MarkdownText text="[Plan session](/session/plan-session) [Docs](https://example.com/docs)" />);
+
+    expect(screen.getByRole('link', { name: 'Plan session' })).not.toHaveAttribute('target');
+    expect(screen.getByRole('link', { name: 'Docs' })).toHaveAttribute('target', '_blank');
+  });
+
   it('shows the source when Mermaid cannot render it', async () => {
     renderDiagram.mockRejectedValueOnce(new Error('invalid diagram'));
     render(<MarkdownText text={'```mermaid\nnot a diagram\n```'} />);

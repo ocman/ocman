@@ -214,8 +214,9 @@ function CodeBlockPre(props: any) {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function MarkdownLink(props: any) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { node: _node, ...rest } = props;
-  return <a {...rest} target="_blank" rel="noopener noreferrer" />;
+  const { node: _node, href, ...rest } = props;
+  const internal = href?.startsWith('/') || href?.startsWith('#');
+  return <a {...rest} href={href} target={internal ? undefined : '_blank'} rel={internal ? undefined : 'noopener noreferrer'} />;
 }
 
 // Module-scoped to keep prop references stable across renders. Fresh
