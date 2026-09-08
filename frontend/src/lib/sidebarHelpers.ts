@@ -67,7 +67,7 @@ export async function resolveOpenSession(opts: {
   const { id, fetched, cached, fetchById, onError } = opts;
   const inList = id ? fetched.find((s) => s.id === id) : undefined;
   if (inList) return { session: inList, cache: cached };
-  if (!id) return { session: undefined, cache: cached };
+  if (!id || id === 'new') return { session: undefined, cache: cached };
   if (cached) return { session: cached, cache: cached };
   try {
     const session = await fetchById(id);

@@ -342,6 +342,18 @@ describe('resolveOpenSession', () => {
     expect(fetchById).not.toHaveBeenCalled();
   });
 
+  it('does not fetch the new-session sentinel', async () => {
+    const fetchById = vi.fn();
+    const res = await resolveOpenSession({
+      id: 'new',
+      fetched: [],
+      cached: null,
+      fetchById,
+    });
+    expect(res.session).toBeUndefined();
+    expect(fetchById).not.toHaveBeenCalled();
+  });
+
   it('is non-fatal when the fetch fails: no session, cache untouched, onError called', async () => {
     const err = new Error('network');
     const onError = vi.fn();
