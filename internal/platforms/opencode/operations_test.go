@@ -1128,3 +1128,38 @@ func TestSlashCommands_ParsesSource(t *testing.T) {
 		t.Errorf("codegraph:map source = %q, want mcp", bySource["codegraph:map"])
 	}
 }
+
+// A reply that OpenCode answers with 404 means the prompt is already
+// gone upstream (answered elsewhere, or the turn was aborted, which
+// drops pending permissions without a permission.replied event). The
+// registry must forget it, otherwise ocman keeps advertising a prompt
+// nobody can dismiss.
+func TestRespondPrompt_UpstreamNotFoundDropsRegistryEntry(t *testing.T) {
+	const sid, dir = "sess-stale-prompt", "/tmp/proj-stale-prompt"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"name":"PermissionNotFoundError","data":{"requestID":"x"}}`))
+	}))
+	defer srv.Close()
+	withTestPort(t, dir, strings.TrimPrefix(srv.URL, "http://127.0.0.1:"))
+	a := New(newTestDBWithSession(t, sid, dir), nil)
+
+	a.ObservePromptAsked("", dir, "permission", platforms.LivePrompt{"id": "per_1", "sessionID": sid})
+	a.ObservePromptAsked("", dir, "question", platforms.LivePrompt{"id": "que_1", "sessionID": sid})
+
+	err := a.RespondPermission(context.Background(), platforms.RespondPermissionRequest{SessionID: sid, PermissionID: "per_1", Reply: "once"})
+	if !errors.Is(err, platforms.ErrUpstreamRejected) {
+		t.Fatalf("RespondPermission err = %v, want upstream rejected", err)
+	}
+	if got, _ := a.ListPermissions(context.Background(), sid); len(got) != 0 {
+		t.Fatalf("permission still listed after upstream 404: %v", got)
+	}
+
+	err = a.RespondQuestion(context.Background(), platforms.RespondQuestionRequest{SessionID: sid, RequestID: "que_1"})
+	if !errors.Is(err, platforms.ErrUpstreamRejected) {
+		t.Fatalf("RespondQuestion err = %v, want upstream rejected", err)
+	}
+	if got, _ := a.ListQuestions(context.Background(), sid); len(got) != 0 {
+		t.Fatalf("question still listed after upstream 404: %v", got)
+	}
+}

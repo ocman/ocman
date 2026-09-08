@@ -396,11 +396,19 @@ func (a *Adapter) RespondPermission(ctx context.Context, req platforms.RespondPe
 	} else {
 		err = postJSONForDirectory(ctx, port, path, directory, payload)
 	}
-	if err != nil {
+	if err != nil && !isUpstreamNotFound(err) {
 		return err
 	}
+	// A 404 means OpenCode already dropped the prompt (answered elsewhere,
+	// or the turn was aborted — which fires no permission.replied). Forget
+	// it too, otherwise the UI keeps resurrecting a prompt nobody can answer.
 	a.ObservePromptResolved(directory, "permission", promptSessionID, req.PermissionID)
-	return nil
+	return err
+}
+
+func isUpstreamNotFound(err error) bool {
+	var upstream *platforms.UpstreamError
+	return errors.As(err, &upstream) && upstream.Status == http.StatusNotFound
 }
 
 // RespondQuestion replies to a pending question prompt.
@@ -419,11 +427,12 @@ func (a *Adapter) RespondQuestion(ctx context.Context, req platforms.RespondQues
 		directory = entry.directory
 		promptSessionID = promptString(entry.prompt, "sessionID")
 	}
-	if err := postJSONForDirectory(ctx, port, fmt.Sprintf("/question/%s/reply", req.RequestID), directory, payload); err != nil {
+	err = postJSONForDirectory(ctx, port, fmt.Sprintf("/question/%s/reply", req.RequestID), directory, payload)
+	if err != nil && !isUpstreamNotFound(err) {
 		return err
 	}
 	a.ObservePromptResolved(directory, "question", promptSessionID, req.RequestID)
-	return nil
+	return err
 }
 
 // RejectQuestion dismisses a pending question prompt.
@@ -438,11 +447,12 @@ func (a *Adapter) RejectQuestion(ctx context.Context, req platforms.RejectQuesti
 		directory = entry.directory
 		promptSessionID = promptString(entry.prompt, "sessionID")
 	}
-	if err := postJSONForDirectory(ctx, port, fmt.Sprintf("/question/%s/reject", req.RequestID), directory, []byte("{}")); err != nil {
+	err = postJSONForDirectory(ctx, port, fmt.Sprintf("/question/%s/reject", req.RequestID), directory, []byte("{}"))
+	if err != nil && !isUpstreamNotFound(err) {
 		return err
 	}
 	a.ObservePromptResolved(directory, "question", promptSessionID, req.RequestID)
-	return nil
+	return err
 }
 
 // Abort cancels the in-flight response for a session.
@@ -465,11 +475,8 @@ func (a *Adapter) DisposeSession(ctx context.Context, req platforms.DisposeSessi
 		}
 	}
 	path := fmt.Sprintf("/session/%s", req.SessionID)
-	if err := sendJSON(ctx, http.MethodDelete, port, path, nil); err != nil {
-		var upstream *platforms.UpstreamError
-		if !errors.As(err, &upstream) || upstream.Status != http.StatusNotFound {
-			return err
-		}
+	if err := sendJSON(ctx, http.MethodDelete, port, path, nil); err != nil && !isUpstreamNotFound(err) {
+		return err
 	}
 	forgetSessionPort(req.SessionID, port)
 	sessionCache.invalidate(port, path)
