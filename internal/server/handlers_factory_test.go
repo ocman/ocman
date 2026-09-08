@@ -50,6 +50,9 @@ type fakeFactoryService struct {
 	implementationSession bool
 	implementationChecks  int
 	escalationCalls       int
+	authorityGateID       string
+	authorityAction       string
+	authorityErr          error
 	err                   error
 }
 
@@ -70,7 +73,8 @@ func (f *fakeFactoryService) EscalatePermission(context.Context, string, string,
 	return factory.AuthorityEscalationGate{IssueID: "gate-1"}, f.implementationSession, f.err
 }
 func (f *fakeFactoryService) ResolveAuthorityEscalationGate(_ context.Context, id, action string) (factory.AuthorityEscalationGate, error) {
-	return factory.AuthorityEscalationGate{IssueID: id, Resolution: action}, f.err
+	f.authorityGateID, f.authorityAction = id, action
+	return factory.AuthorityEscalationGate{IssueID: id, Resolution: action}, f.authorityErr
 }
 
 func (f *fakeFactoryService) ListFormulas(context.Context) ([]factory.NativeFormulaView, error) {

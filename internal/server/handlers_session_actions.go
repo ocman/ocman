@@ -440,6 +440,10 @@ func (s *Server) handleSessionPermission(w http.ResponseWriter, r *http.Request)
 			http.Error(w, "invalid permission ID", http.StatusBadRequest)
 			return
 		}
+		if req.Reply != "once" && req.Reply != "always" && req.Reply != "reject" {
+			http.Error(w, "invalid reply value: expected once, always, or reject", http.StatusBadRequest)
+			return
+		}
 		factorySession := false
 		if req.Reply != "reject" {
 			var err error
@@ -461,6 +465,11 @@ func (s *Server) handleSessionPermission(w http.ResponseWriter, r *http.Request)
 								return
 							}
 							if handled {
+								gate, err = s.factory.ResolveAuthorityEscalationGate(r.Context(), gate.IssueID, "approve")
+								if err != nil {
+									writeFactoryError(w, err)
+									return
+								}
 								writeJSON(w, gate)
 								return
 							}
