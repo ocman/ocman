@@ -242,24 +242,33 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 		baseRef = git.ResolveBaseRef(ctx, repoRoot)
 	}
 	res, err := git.CreateWorktree(ctx, git.CreateWorktreeRequest{
-		RepoRoot:  repoRoot,
-		Branch:    req.Branch,
-		NewBranch: req.NewBranch,
-		BaseRef:   baseRef,
+		RepoRoot:         repoRoot,
+		Branch:           req.Branch,
+		NewBranch:        req.NewBranch,
+		BaseRef:          baseRef,
+		MustCreateBranch: req.MustCreateBranch,
 	})
 	if err != nil {
 		return nil, err
+	}
+	rollback := func() {
+		if req.MustCreateBranch && !res.Reused && !res.BranchExisted {
+			_ = git.RemoveWorktree(context.WithoutCancel(ctx), repoRoot, res.Path, true)
+			_ = git.DeleteBranch(context.WithoutCancel(ctx), repoRoot, req.Branch)
+		}
 	}
 
 	// Ensure the project's single opencode instance is running and get
 	// its port. This is the only launch path; no per-worktree process.
 	ensured, err := h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: repoRoot})
 	if err != nil {
+		rollback()
 		return nil, fmt.Errorf("ensuring project opencode: %w", err)
 	}
 
 	// Create the session in-app on that instance, rooted at the worktree.
 	if h.deps.CreateSession == nil {
+		rollback()
 		return nil, fmt.Errorf("CreateWorktreeSession: CreateSession dep not wired")
 	}
 	request := platforms.CreateSessionRequest{
@@ -273,6 +282,7 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 	var created *platforms.CreateSessionResponse
 	if req.PermissionRules != nil {
 		if h.deps.CreateConfiguredSession == nil {
+			rollback()
 			return nil, fmt.Errorf("CreateWorktreeSession: CreateConfiguredSession dep not wired")
 		}
 		created, err = h.deps.CreateConfiguredSession(ctx, request, req.PermissionRules)
@@ -280,6 +290,7 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 		created, err = h.deps.CreateSession(ctx, request)
 	}
 	if err != nil {
+		rollback()
 		return nil, fmt.Errorf("creating worktree session: %w", err)
 	}
 

@@ -291,6 +291,9 @@ func TestClaimFactoryImplementation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if second.FrozenPolicy.DeliveryRemoteRepo != "acme/repo" {
+		t.Fatalf("claimed delivery target = %#v", second.FrozenPolicy)
+	}
 	if err := db.SetFactoryAttemptDeliveryTarget(ctx, second.ID, "forgejo", "evil.example", "attacker/repo", time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -304,11 +307,11 @@ func TestClaimFactoryImplementation(t *testing.T) {
 	if changed, err := db.StopFactoryAttempt(ctx, second.ID, time.Now()); err != nil || !changed {
 		t.Fatalf("stop second implementation = %v, %v", changed, err)
 	}
-	if changed, err := db.CompleteFactoryImplementationAttempt(ctx, second.ID, second.AgentToken, model.FactoryAttemptResult{SchemaVersion: 1, Summary: "done", PRURL: "https://forge.example/pr/2"}, time.Now()); err == nil || changed {
-		t.Fatalf("accepted another PR for one Epic = %v, %v", changed, err)
+	if changed, err := db.CompleteFactoryImplementationAttempt(ctx, second.ID, second.AgentToken, model.FactoryAttemptResult{SchemaVersion: 1, Summary: "done", PRURL: "https://forge.example/pr/2"}, time.Now()); err != nil || !changed {
+		t.Fatalf("complete replacement PR implementation = %v, %v", changed, err)
 	}
-	if changed, err := db.CompleteFactoryImplementationAttempt(ctx, second.ID, second.AgentToken, model.FactoryAttemptResult{SchemaVersion: 1, Summary: "done", PRURL: "https://forge.example/pr/1"}, time.Now()); err != nil || !changed {
-		t.Fatalf("complete second implementation = %v, %v", changed, err)
+	if prURL, err := db.FactoryEpicPRURL(ctx, epic.ID); err != nil || prURL != "https://forge.example/pr/2" {
+		t.Fatalf("latest Epic PR URL = %q, %v", prURL, err)
 	}
 	if _, err := db.db.Exec(`UPDATE factory_epic SET status = 'closed' WHERE id = ?`, epic.ID); err != nil {
 		t.Fatal(err)

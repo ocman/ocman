@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"path"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/factory"
@@ -23,38 +24,136 @@ type factoryHandoffHost interface {
 	ValidateFactoryHandoff(context.Context, string, string) (string, error)
 }
 
-func (l factoryImplementationLauncher) ValidateImplementationHandoff(ctx context.Context, repoRoot, branch, prURL string, policy model.FactoryAttemptPolicy) error {
-	owner := l.server.router().ForDir(repoRoot)
-	host, ok := owner.(factoryHandoffHost)
-	if !ok {
-		return errors.New("factory handoff validation is unavailable")
-	}
-	head, err := host.ValidateFactoryHandoff(ctx, repoRoot, branch)
-	if err != nil {
-		return err
-	}
+func (l factoryImplementationLauncher) ValidateImplementationHandoff(ctx context.Context, repoRoot, branch, previousPRURL, prURL string, policy model.FactoryAttemptPolicy) error {
 	remote := forge.Remote{Type: forge.RemoteType(policy.DeliveryRemoteType), Host: policy.DeliveryRemoteHost, Repo: policy.DeliveryRemoteRepo}
 	client, ok := l.server.resolveForge(remote)
 	if !ok || remote.Repo == "" {
 		return errors.New("factory delivery target is unavailable")
 	}
-	parsed, err := url.Parse(prURL)
+	pr, err := lookupFactoryPR(ctx, client, remote.Repo, prURL)
 	if err != nil {
 		return err
 	}
-	number, err := strconv.Atoi(path.Base(parsed.Path))
-	if err != nil {
-		return errors.New("pull request URL has no numeric identifier")
+	validationBranch := branch
+	if previousPRURL != "" {
+		previous, err := lookupFactoryPR(ctx, client, remote.Repo, previousPRURL)
+		if err != nil {
+			return err
+		}
+		if previousPRURL == prURL {
+			if previous.Status != "open" && previous.Status != "draft" {
+				return errors.New("completed pull request requires a replacement")
+			}
+			if !validFactoryBranch(branch, pr.Branch) {
+				return errors.New("pull request does not publish the shared Factory branch HEAD")
+			}
+		} else if previous.Status != "closed" && previous.Status != "merged" {
+			return errors.New("factory epic already uses an open pull request")
+		} else if expected, ok := nextFactoryBranch(branch, previous.Branch); !ok || (pr.Status != "merged" && pr.Branch != expected) {
+			return errors.New("pull request does not publish the shared Factory branch HEAD")
+		} else {
+			validationBranch = expected
+		}
+	} else if pr.Status != "merged" && pr.Branch != branch {
+		return errors.New("pull request does not publish the shared Factory branch HEAD")
 	}
-	pr, err := client.LookupPR(ctx, remote.Repo, number)
+	owner := l.server.router().ForDir(repoRoot)
+	host, ok := owner.(factoryHandoffHost)
+	if !ok {
+		return errors.New("factory handoff validation is unavailable")
+	}
+	head, err := host.ValidateFactoryHandoff(ctx, repoRoot, validationBranch)
 	if err != nil {
 		return err
 	}
-	branchMatches := pr.Branch == branch || pr.Status == "merged"
-	if pr.URL == prURL && branchMatches && pr.HeadSHA == head && !pr.CrossFork && (pr.Status == "open" || pr.Status == "draft" || pr.Status == "merged") {
+	if pr.HeadSHA == head && !pr.CrossFork && (pr.Status == "open" || pr.Status == "draft" || pr.Status == "merged") {
 		return nil
 	}
 	return errors.New("pull request does not publish the shared Factory branch HEAD")
+}
+
+func (l factoryImplementationLauncher) ResolveImplementationBranch(ctx context.Context, repoRoot, branch, previousPRURL string, policy model.FactoryAttemptPolicy) (string, string, error) {
+	if previousPRURL == "" {
+		return branch, "", nil
+	}
+	remote := forge.Remote{Type: forge.RemoteType(policy.DeliveryRemoteType), Host: policy.DeliveryRemoteHost, Repo: policy.DeliveryRemoteRepo}
+	client, ok := l.server.resolveForge(remote)
+	if !ok || remote.Repo == "" {
+		return "", "", errors.New("factory delivery target is unavailable")
+	}
+	previous, err := lookupFactoryPR(ctx, client, remote.Repo, previousPRURL)
+	if err != nil {
+		return "", "", err
+	}
+	switch previous.Status {
+	case "open", "draft":
+		if validFactoryBranch(branch, previous.Branch) {
+			return previous.Branch, "", nil
+		}
+	case "closed", "merged":
+		if next, ok := nextFactoryBranch(branch, previous.Branch); ok {
+			if previous.HeadSHA == "" {
+				return "", "", errors.New("factory pull request has no head commit")
+			}
+			branches, err := l.server.router().ForDir(repoRoot).GitBranches(ctx, repoRoot)
+			if err != nil {
+				return "", "", err
+			}
+			for _, existing := range branches {
+				if existing == next {
+					return "", "", errors.New("replacement Factory branch already exists")
+				}
+			}
+			return next, previous.HeadSHA, nil
+		}
+	}
+	return "", "", errors.New("factory pull request has an invalid branch or status")
+}
+
+func validFactoryBranch(base, branch string) bool {
+	if branch == base {
+		return true
+	}
+	prefix := base + "-"
+	if !strings.HasPrefix(branch, prefix) {
+		return false
+	}
+	n, err := strconv.Atoi(strings.TrimPrefix(branch, prefix))
+	return err == nil && n >= 2 && branch == prefix+strconv.Itoa(n)
+}
+
+func nextFactoryBranch(base, current string) (string, bool) {
+	if current == base {
+		return base + "-2", true
+	}
+	prefix := base + "-"
+	if !strings.HasPrefix(current, prefix) {
+		return "", false
+	}
+	n, err := strconv.Atoi(strings.TrimPrefix(current, prefix))
+	if err != nil || n < 2 || current != prefix+strconv.Itoa(n) {
+		return "", false
+	}
+	return prefix + strconv.Itoa(n+1), true
+}
+
+func lookupFactoryPR(ctx context.Context, client forge.Forge, repo, prURL string) (forge.PR, error) {
+	parsed, err := url.Parse(prURL)
+	if err != nil {
+		return forge.PR{}, err
+	}
+	number, err := strconv.Atoi(path.Base(parsed.Path))
+	if err != nil {
+		return forge.PR{}, errors.New("pull request URL has no numeric identifier")
+	}
+	pr, err := client.LookupPR(ctx, repo, number)
+	if err != nil {
+		return forge.PR{}, err
+	}
+	if pr.URL != prURL {
+		return forge.PR{}, errors.New("pull request URL does not match the delivery target")
+	}
+	return pr, nil
 }
 
 func (l factoryImplementationLauncher) LaunchImplementationSession(ctx context.Context, req factory.ImplementationSessionRequest) (factory.PlanningSession, error) {
@@ -98,7 +197,7 @@ func (l factoryImplementationLauncher) LaunchImplementationSession(ctx context.C
 		rules = append(rules, factorySkillDirectoryRules()...)
 	}
 	rules = append(rules, platforms.PermissionRule{Permission: "mcp_factory", Pattern: "factory", Action: "allow"})
-	created, err := owner.CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{ProjectDir: req.Repository, Branch: req.Branch, Title: "implementation " + req.WorkID + " (@factory)", NewBranch: true, PermissionRules: rules})
+	created, err := owner.CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{ProjectDir: req.Repository, Branch: req.Branch, BaseRef: req.BaseRef, MustCreateBranch: req.BaseRef != "", Title: "implementation " + req.WorkID + " (@factory)", NewBranch: true, PermissionRules: rules})
 	if err != nil {
 		return factory.PlanningSession{}, fmt.Errorf("create Factory worktree: %w", err)
 	}

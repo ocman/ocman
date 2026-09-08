@@ -1003,7 +1003,16 @@ func (d *DB) ClaimFactoryImplementation(ctx context.Context, epicID, issueID, pr
 	if err != nil {
 		return model.NativeEpic{}, model.FactoryAttempt{}, err
 	}
-	policyJSON, err := json.Marshal(model.FactoryAttemptPolicy{Repository: epic.InitialProject, Profile: profile})
+	attemptPolicy := model.FactoryAttemptPolicy{Repository: epic.InitialProject, Profile: profile}
+	if err := tx.QueryRowContext(ctx, `SELECT
+		json_extract(frozen_policy_json, '$.deliveryRemoteType'),
+		json_extract(frozen_policy_json, '$.deliveryRemoteHost'),
+		json_extract(frozen_policy_json, '$.deliveryRemoteRepo')
+		FROM factory_attempt WHERE epic_id = ? AND json_extract(frozen_policy_json, '$.deliveryRemoteRepo') <> ''
+		ORDER BY created_at DESC, rowid DESC LIMIT 1`, epicID).Scan(&attemptPolicy.DeliveryRemoteType, &attemptPolicy.DeliveryRemoteHost, &attemptPolicy.DeliveryRemoteRepo); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return model.NativeEpic{}, model.FactoryAttempt{}, err
+	}
+	policyJSON, err := json.Marshal(attemptPolicy)
 	if err != nil {
 		return model.NativeEpic{}, model.FactoryAttempt{}, err
 	}
@@ -1017,7 +1026,7 @@ func (d *DB) ClaimFactoryImplementation(ctx context.Context, epicID, issueID, pr
 	if err := tx.Commit(); err != nil {
 		return model.NativeEpic{}, model.FactoryAttempt{}, err
 	}
-	return epic, model.FactoryAttempt{ID: id, EpicID: epicID, WorkID: issueID, Sequence: sequence, Phase: model.FactoryAttemptPrepared, FrozenPolicy: model.FactoryAttemptPolicy{Repository: epic.InitialProject, Profile: profile}, CreatedAt: now, UpdatedAt: now, AgentToken: agentToken}, nil
+	return epic, model.FactoryAttempt{ID: id, EpicID: epicID, WorkID: issueID, Sequence: sequence, Phase: model.FactoryAttemptPrepared, FrozenPolicy: attemptPolicy, CreatedAt: now, UpdatedAt: now, AgentToken: agentToken}, nil
 }
 
 // ClaimFactoryPlan marks one poured Plan as claimed and allocates its attempt together.

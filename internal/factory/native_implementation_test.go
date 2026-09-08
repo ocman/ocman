@@ -33,9 +33,19 @@ type fakeImplementationLauncher struct {
 	handoffErr  error
 	handoffs    int
 	store       *state.DB
+	branch      string
+	baseRef     string
+	branchErr   error
 }
 
-func (f *fakeImplementationLauncher) ValidateImplementationHandoff(context.Context, string, string, string, model.FactoryAttemptPolicy) error {
+func (f *fakeImplementationLauncher) ResolveImplementationBranch(_ context.Context, _, branch, _ string, _ model.FactoryAttemptPolicy) (string, string, error) {
+	if f.branch != "" {
+		branch = f.branch
+	}
+	return branch, f.baseRef, f.branchErr
+}
+
+func (f *fakeImplementationLauncher) ValidateImplementationHandoff(context.Context, string, string, string, string, model.FactoryAttemptPolicy) error {
 	f.handoffs++
 	return f.handoffErr
 }
@@ -241,7 +251,7 @@ func TestNativeDispatchRunsReadyTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	launcher := &fakeImplementationLauncher{store: db}
+	launcher := &fakeImplementationLauncher{store: db, branch: "factory/replacement", baseRef: "factory/previous"}
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 	epic := createPouredWorkEpic(t, svc, "Ship")
 	if err := svc.MutateGraph(t.Context(), GraphMutation{Action: "create", EpicID: epic.ID, ParentID: pouredIssueID(t, svc, epic.ID, "mol"), Kind: "task", Title: "Implement it"}); err != nil {
@@ -255,7 +265,7 @@ func TestNativeDispatchRunsReadyTask(t *testing.T) {
 	if err := svc.Dispatch(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if len(launcher.calls) != 1 || launcher.calls[0].WorkID != taskID || launcher.calls[0].Branch != "factory/"+epic.ID {
+	if len(launcher.calls) != 1 || launcher.calls[0].WorkID != taskID || launcher.calls[0].Branch != "factory/replacement" || launcher.calls[0].BaseRef != "factory/previous" {
 		t.Fatalf("launches = %#v", launcher.calls)
 	}
 	attempts, err := db.ListFactoryAttempts(t.Context(), epic.ID)
@@ -269,6 +279,10 @@ func TestNativeDispatchRunsReadyTask(t *testing.T) {
 	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", "https://forge.example/pr/1"); !errors.Is(err, ErrInvalidRequest) || !strings.Contains(err.Error(), "uncommitted changes") {
 		t.Fatalf("dirty handoff error = %v", err)
 	}
+	launcher.handoffErr = errors.New("factory epic already uses an open pull request")
+	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", "https://forge.example/pr/1"); !errors.Is(err, ErrInvalidRequest) || !strings.Contains(err.Error(), "open pull request") {
+		t.Fatalf("open PR handoff error = %v", err)
+	}
 	launcher.handoffErr = errors.New("forge lookup failed")
 	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", "https://forge.example/pr/1"); err == nil || errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("operational handoff error = %v", err)
@@ -277,7 +291,7 @@ func TestNativeDispatchRunsReadyTask(t *testing.T) {
 	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", "https://forge.example/pr/1"); err != nil {
 		t.Fatal(err)
 	}
-	if launcher.handoffs != 4 || len(launcher.stops) != 1 {
+	if launcher.handoffs != 5 || len(launcher.stops) != 1 {
 		t.Fatalf("handoffs/stops = %d/%d", launcher.handoffs, len(launcher.stops))
 	}
 	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", "https://forge.example/pr/1"); err != nil {

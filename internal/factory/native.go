@@ -687,7 +687,7 @@ type NativeService struct {
 }
 
 type ImplementationSessionRequest struct {
-	EpicID, WorkID, AttemptID, AgentToken, Repository, Title, Description, Branch, Profile string
+	EpicID, WorkID, AttemptID, AgentToken, Repository, Title, Description, Branch, BaseRef, Profile string
 }
 
 // ImplementationLauncher is the host/platform seam for a configured worktree
@@ -700,7 +700,8 @@ type ImplementationLauncher interface {
 	StopImplementationSession(context.Context, PlanningSession) error
 	ImplementationPermissionPending(context.Context, PlanningSession, string) (bool, error)
 	RespondImplementationPermission(context.Context, PlanningSession, string, string) error
-	ValidateImplementationHandoff(context.Context, string, string, string, model.FactoryAttemptPolicy) error
+	ResolveImplementationBranch(context.Context, string, string, string, model.FactoryAttemptPolicy) (string, string, error)
+	ValidateImplementationHandoff(context.Context, string, string, string, string, model.FactoryAttemptPolicy) error
 }
 
 const maxCapacity = 1000
@@ -1548,7 +1549,19 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 		if err != nil {
 			continue
 		} // A saturated project must not stall other projects.
-		request := ImplementationSessionRequest{EpicID: epic.ID, WorkID: next.issue.ID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: epic.InitialProject, Title: next.issue.Title, Description: next.issue.Description, Branch: "factory/" + epic.ID, Profile: "factory-implement/v1"}
+		branch := "factory/" + epic.ID
+		baseRef := ""
+		if completionStore, ok := s.store.(nativeAttemptCompletionStore); ok {
+			previousPR, branchErr := completionStore.FactoryEpicPRURL(ctx, epic.ID)
+			if branchErr == nil {
+				branch, baseRef, branchErr = s.implementation.ResolveImplementationBranch(ctx, epic.InitialProject, branch, previousPR, attempt.FrozenPolicy)
+			}
+			if branchErr != nil {
+				_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "launch_failed", Message: "Implementation branch could not be resolved: " + branchErr.Error()}, time.Now())
+				continue
+			}
+		}
+		request := ImplementationSessionRequest{EpicID: epic.ID, WorkID: next.issue.ID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: epic.InitialProject, Title: next.issue.Title, Description: next.issue.Description, Branch: branch, BaseRef: baseRef, Profile: "factory-implement/v1"}
 		session, launchErr := s.implementation.LaunchImplementationSession(ctx, request)
 		if launchErr != nil {
 			if session.ID != "" {
@@ -1714,10 +1727,7 @@ func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentTok
 	if err != nil {
 		return err
 	}
-	if existingPR != "" && existingPR != prURL {
-		return fmt.Errorf("%w: factory epic already uses a different pull request", ErrInvalidRequest)
-	}
-	if err := s.implementation.ValidateImplementationHandoff(ctx, attempt.FrozenPolicy.Repository, "factory/"+attempt.EpicID, prURL, attempt.FrozenPolicy); err != nil {
+	if err := s.implementation.ValidateImplementationHandoff(ctx, attempt.FrozenPolicy.Repository, "factory/"+attempt.EpicID, existingPR, prURL, attempt.FrozenPolicy); err != nil {
 		return factoryHandoffError(err)
 	}
 	stopping, err := store.StopFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, time.Now())
@@ -1730,7 +1740,7 @@ func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentTok
 	if err := s.implementation.StopImplementationSession(context.WithoutCancel(ctx), attempt.Session); err != nil {
 		return fmt.Errorf("stop completed Factory session: %w", err)
 	}
-	if err := s.implementation.ValidateImplementationHandoff(context.WithoutCancel(ctx), attempt.FrozenPolicy.Repository, "factory/"+attempt.EpicID, prURL, attempt.FrozenPolicy); err != nil {
+	if err := s.implementation.ValidateImplementationHandoff(context.WithoutCancel(ctx), attempt.FrozenPolicy.Repository, "factory/"+attempt.EpicID, existingPR, prURL, attempt.FrozenPolicy); err != nil {
 		return factoryHandoffError(err)
 	}
 	result := model.FactoryAttemptResult{SchemaVersion: 1, Summary: summary, PRURL: prURL}
@@ -1761,7 +1771,10 @@ func factoryHandoffError(err error) error {
 		"factory branch has not been pushed with an upstream",
 		"factory branch HEAD has not been pushed",
 		"factory shared branch worktree was not found",
+		"factory epic already uses an open pull request",
+		"completed pull request requires a replacement",
 		"pull request URL has no numeric identifier",
+		"pull request URL does not match the delivery target",
 		"pull request does not publish the shared Factory branch HEAD":
 		return fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	default:

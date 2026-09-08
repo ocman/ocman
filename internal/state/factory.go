@@ -229,18 +229,6 @@ func (d *DB) CompleteFactoryImplementationAttempt(ctx context.Context, id, agent
 		return false, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if result.PRURL != "" {
-		var existing string
-		err := tx.QueryRowContext(ctx, `SELECT json_extract(CASE WHEN json_valid(result_json) THEN result_json ELSE '{}' END, '$.prUrl') FROM factory_attempt
-			WHERE epic_id = (SELECT epic_id FROM factory_attempt WHERE id = ?) AND terminal_outcome = 'succeeded'
-			AND json_extract(CASE WHEN json_valid(result_json) THEN result_json ELSE '{}' END, '$.prUrl') <> '' LIMIT 1`, id).Scan(&existing)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return false, err
-		}
-		if existing != "" && existing != result.PRURL {
-			return false, errors.New("factory epic already uses a different pull request")
-		}
-	}
 	updated, err := tx.ExecContext(ctx, `UPDATE factory_attempt
 		SET phase = 'terminal', terminal_outcome = 'succeeded', result_json = ?, finished_at = ?, updated_at = ?
 		WHERE id = ? AND phase = 'stopping' AND json_extract(frozen_policy_json, '$.profile') = 'factory-implement/v1'
@@ -281,7 +269,8 @@ func (d *DB) FactoryEpicPRURL(ctx context.Context, epicID string) (string, error
 	var prURL string
 	err := d.db.QueryRowContext(ctx, `SELECT json_extract(CASE WHEN json_valid(result_json) THEN result_json ELSE '{}' END, '$.prUrl') FROM factory_attempt
 		WHERE epic_id = ? AND terminal_outcome = 'succeeded'
-		AND json_extract(CASE WHEN json_valid(result_json) THEN result_json ELSE '{}' END, '$.prUrl') <> '' LIMIT 1`, epicID).Scan(&prURL)
+		AND json_extract(CASE WHEN json_valid(result_json) THEN result_json ELSE '{}' END, '$.prUrl') <> ''
+		ORDER BY finished_at DESC, rowid DESC LIMIT 1`, epicID).Scan(&prURL)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}

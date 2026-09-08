@@ -48,6 +48,8 @@ type CreateWorktreeRequest struct {
 	NewBranch bool
 	// BaseRef is the base when NewBranch is true. Ignored otherwise.
 	BaseRef string
+	// MustCreateBranch refuses existing branches instead of reusing them.
+	MustCreateBranch bool
 }
 
 // CreateWorktreeResult tells the caller what happened.
@@ -155,6 +157,9 @@ func CreateWorktree(ctx context.Context, req CreateWorktreeRequest) (*CreateWork
 	for _, e := range existing {
 		if filepath.Clean(e.Path) == filepath.Clean(target) {
 			if e.Branch == req.Branch {
+				if req.MustCreateBranch {
+					return nil, fmt.Errorf("%w: %s", ErrBranchAlreadyExists, req.Branch)
+				}
 				return &CreateWorktreeResult{
 					Path:   target,
 					Branch: req.Branch,
@@ -199,6 +204,9 @@ func CreateWorktree(ctx context.Context, req CreateWorktreeRequest) (*CreateWork
 	newBranch := req.NewBranch
 	branchExisted := false
 	if newBranch && branchExists(ctx, req.RepoRoot, req.Branch) {
+		if req.MustCreateBranch {
+			return nil, fmt.Errorf("%w: %s", ErrBranchAlreadyExists, req.Branch)
+		}
 		newBranch = false
 		branchExisted = true
 	}
@@ -246,6 +254,15 @@ func CreateWorktree(ctx context.Context, req CreateWorktreeRequest) (*CreateWork
 		}
 	}
 	return nil, addErr
+}
+
+// DeleteBranch removes a local branch after its newly-created worktree was rolled back.
+func DeleteBranch(ctx context.Context, repoRoot, branch string) error {
+	out, err := gitexec.Command(ctx, "-C", repoRoot, "branch", "-D", "--", branch).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("delete branch: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
 }
 
 // RemoveWorktree runs `git worktree remove [--force] <path>` for a worktree in

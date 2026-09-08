@@ -31,6 +31,7 @@ type factoryImplementationHost struct {
 	handoffBranch string
 	handoffHead   string
 	upstreams     hostsvc.ProjectUpstreams
+	branches      []string
 }
 
 func (h *factoryImplementationHost) ValidateFactoryHandoff(_ context.Context, repo, branch string) (string, error) {
@@ -40,6 +41,10 @@ func (h *factoryImplementationHost) ValidateFactoryHandoff(_ context.Context, re
 
 func (h *factoryImplementationHost) ProjectUpstreams(context.Context, string) (*hostsvc.ProjectUpstreams, error) {
 	return &h.upstreams, nil
+}
+
+func (h *factoryImplementationHost) GitBranches(context.Context, string) ([]string, error) {
+	return h.branches, nil
 }
 
 func (h *factoryImplementationHost) RemoteID() string {
@@ -76,7 +81,7 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 		srv := New(nil, nil, "", registry, nil)
 		srv.hostRouter = hostsvc.NewRouter(host)
 
-		request := factory.ImplementationSessionRequest{EpicID: "epic-1", WorkID: "work-1", AttemptID: "attempt-1", AgentToken: "token", Profile: "factory-implement/v1", Repository: "/repo", Branch: "factory/work", Title: "Remove dead code", Description: "Delete the obsolete helper and run its package tests."}
+		request := factory.ImplementationSessionRequest{EpicID: "epic-1", WorkID: "work-1", AttemptID: "attempt-1", AgentToken: "token", Profile: "factory-implement/v1", Repository: "/repo", Branch: "factory/work", BaseRef: "factory/previous", Title: "Remove dead code", Description: "Delete the obsolete helper and run its package tests."}
 		got, err := (factoryImplementationLauncher{server: srv}).LaunchImplementationSession(ctx, request)
 		if err != nil {
 			t.Fatal(err)
@@ -87,23 +92,19 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 		if err := (factoryImplementationLauncher{server: srv}).PromptImplementationSession(ctx, got, request); err != nil {
 			t.Fatal(err)
 		}
-		if host.request.ProjectDir != "/repo" || host.request.Branch != "factory/work" || host.request.Title != "implementation work-1 (@factory)" || !host.request.NewBranch || !reflect.DeepEqual(host.request.PermissionRules, rules) {
+		if host.request.ProjectDir != "/repo" || host.request.Branch != "factory/work" || host.request.BaseRef != "factory/previous" || host.request.Title != "implementation work-1 (@factory)" || !host.request.NewBranch || !reflect.DeepEqual(host.request.PermissionRules, rules) {
 			t.Fatalf("worktree request = %#v", host.request)
 		}
 		if sent.SessionID != "worktree-session" || !strings.Contains(sent.Message, "Remove dead code") || !strings.Contains(sent.Message, "Delete the obsolete helper") || !strings.Contains(sent.Message, "attempt-1") || !strings.Contains(sent.Message, "token") || !strings.Contains(sent.Message, "complete_attempt") || !strings.Contains(sent.Message, "request_recovery") || !strings.Contains(sent.Message, "single pull request") || !strings.Contains(sent.Message, "clean commit") || !strings.Contains(sent.Message, "pr_url") {
 			t.Fatalf("prompt = %#v", sent)
 		}
-		host.handoffErr = errors.New("invalid handoff")
-		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "https://example.com/pr/1", model.FactoryAttemptPolicy{}); !errors.Is(err, host.handoffErr) || host.handoffRepo != "/repo" || host.handoffBranch != "factory/epic-1" {
-			t.Fatalf("handoff validation = %q, %q, %v", host.handoffRepo, host.handoffBranch, err)
-		}
 	})
 
 	t.Run("validates the PR branch and pushed HEAD", func(t *testing.T) {
 		state := "open"
-		ref := "factory/epic-1"
+		prBranch := "factory/epic-1"
 		api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = fmt.Fprintf(w, `{"number":1,"state":%q,"merged":%t,"html_url":"https://github.com/acme/repo/pull/1","head":{"ref":%q,"sha":"abc123","repo":{"full_name":"acme/repo"}},"base":{"repo":{"full_name":"acme/repo"}}}`, state, state == "merged", ref)
+			_, _ = fmt.Fprintf(w, `{"number":1,"state":%q,"merged":%t,"html_url":"https://github.com/acme/repo/pull/1","head":{"ref":%q,"sha":"abc123","repo":{"full_name":"acme/repo"}},"base":{"repo":{"full_name":"acme/repo"}}}`, state, state == "merged", prBranch)
 		}))
 		defer api.Close()
 		host := &factoryImplementationHost{handoffHead: "abc123", upstreams: hostsvc.ProjectUpstreams{Remotes: []forge.Remote{{Type: forge.RemoteTypeGitHub, Repo: "acme/repo"}}}}
@@ -111,22 +112,95 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 		srv.hostRouter = hostsvc.NewRouter(host)
 		srv.integrations.GitHub = github.NewForTest(api.URL, "token", api.Client())
 		policy := model.FactoryAttemptPolicy{DeliveryRemoteType: string(forge.RemoteTypeGitHub), DeliveryRemoteRepo: "acme/repo"}
-		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", policy); err != nil {
+		host.handoffErr = errors.New("invalid handoff")
+		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "", "https://github.com/acme/repo/pull/1", policy); !errors.Is(err, host.handoffErr) {
+			t.Fatalf("handoff error = %v", err)
+		}
+		host.handoffErr = nil
+		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "", "https://github.com/acme/repo/pull/1", policy); err != nil {
 			t.Fatal(err)
 		}
+		prBranch = "factory/epic-1-2"
+		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "", "https://github.com/acme/repo/pull/1", policy); err == nil {
+			t.Fatal("accepted a rotated first PR")
+		}
+		prBranch = "factory/epic-1"
 		state = "merged"
-		ref = "refs/pull/1/head"
-		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", policy); err != nil {
+		prBranch = "refs/pull/1/head"
+		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "", "https://github.com/acme/repo/pull/1", policy); err != nil {
 			t.Fatalf("merged PR: %v", err)
 		}
 		state = "closed"
-		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", policy); err == nil {
+		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "", "https://github.com/acme/repo/pull/1", policy); err == nil {
 			t.Fatal("accepted an unmerged closed PR")
 		}
 		state = "open"
-		ref = "factory/epic-1"
-		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/other", "https://github.com/acme/repo/pull/1", policy); err == nil {
+		prBranch = "factory/epic-1"
+		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/other", "", "https://github.com/acme/repo/pull/1", policy); err == nil {
 			t.Fatal("accepted a PR for another branch")
+		}
+	})
+
+	t.Run("accepts a replacement branch after the shared PR closes", func(t *testing.T) {
+		previousState := "merged"
+		previousBranch := "factory/epic-1"
+		previousHead := "old"
+		replacementBranch := "factory/epic-1-2"
+		api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasSuffix(r.URL.Path, "/1") {
+				_, _ = fmt.Fprintf(w, `{"number":1,"state":%q,"merged":%t,"html_url":"https://github.com/acme/repo/pull/1","head":{"ref":%q,"sha":%q,"repo":{"full_name":"acme/repo"}},"base":{"repo":{"full_name":"acme/repo"}}}`, previousState, previousState == "merged", previousBranch, previousHead)
+				return
+			}
+			_, _ = fmt.Fprintf(w, `{"number":2,"state":"open","merged":false,"html_url":"https://github.com/acme/repo/pull/2","head":{"ref":%q,"sha":"new","repo":{"full_name":"acme/repo"}},"base":{"repo":{"full_name":"acme/repo"}}}`, replacementBranch)
+		}))
+		defer api.Close()
+		host := &factoryImplementationHost{handoffHead: "new"}
+		srv := New(nil, nil, "", platforms.NewRegistry(), nil)
+		srv.hostRouter = hostsvc.NewRouter(host)
+		srv.integrations.GitHub = github.NewForTest(api.URL, "token", api.Client())
+		policy := model.FactoryAttemptPolicy{DeliveryRemoteType: string(forge.RemoteTypeGitHub), DeliveryRemoteRepo: "acme/repo"}
+		launcher := factoryImplementationLauncher{server: srv}
+		if branch, baseRef, err := launcher.ResolveImplementationBranch(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", policy); err != nil || branch != "factory/epic-1-2" || baseRef != "old" {
+			t.Fatalf("resolved replacement branch/base = %q/%q, %v", branch, baseRef, err)
+		}
+		host.branches = []string{"factory/epic-1-2"}
+		if _, _, err := launcher.ResolveImplementationBranch(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", policy); err == nil || !strings.Contains(err.Error(), "already exists") {
+			t.Fatalf("existing replacement branch error = %v", err)
+		}
+		host.branches = nil
+		previousHead = ""
+		if _, _, err := launcher.ResolveImplementationBranch(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", policy); err == nil || !strings.Contains(err.Error(), "no head commit") {
+			t.Fatalf("missing previous head error = %v", err)
+		}
+		previousHead = "old"
+		if err := launcher.ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", "https://github.com/acme/repo/pull/2", policy); err != nil || host.handoffBranch != "factory/epic-1-2" {
+			t.Fatalf("replacement handoff branch = %q, err = %v", host.handoffBranch, err)
+		}
+		previousState = "closed"
+		if err := launcher.ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", "https://github.com/acme/repo/pull/2", policy); err != nil {
+			t.Fatalf("replacement after closed PR: %v", err)
+		}
+		previousState = "open"
+		if branch, baseRef, err := launcher.ResolveImplementationBranch(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", policy); err != nil || branch != "factory/epic-1" || baseRef != "" {
+			t.Fatalf("resolved open PR branch/base = %q/%q, %v", branch, baseRef, err)
+		}
+		if err := launcher.ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", "https://github.com/acme/repo/pull/2", policy); err == nil {
+			t.Fatal("replaced an open shared PR")
+		}
+		previousState, previousBranch = "merged", "factory/epic-1-2"
+		if branch, baseRef, err := launcher.ResolveImplementationBranch(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", policy); err != nil || branch != "factory/epic-1-3" || baseRef != "old" {
+			t.Fatalf("resolved second replacement branch/base = %q/%q, %v", branch, baseRef, err)
+		}
+		if err := launcher.ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", "https://github.com/acme/repo/pull/1", policy); err == nil {
+			t.Fatal("reused a merged pull request")
+		}
+		replacementBranch = "factory/epic-1-lookalike"
+		if err := launcher.ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", "https://github.com/acme/repo/pull/2", policy); err == nil {
+			t.Fatal("accepted a non-numbered replacement branch")
+		}
+		previousState = "unknown"
+		if _, _, err := launcher.ResolveImplementationBranch(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", policy); err == nil {
+			t.Fatal("resolved a branch from an unknown PR status")
 		}
 	})
 

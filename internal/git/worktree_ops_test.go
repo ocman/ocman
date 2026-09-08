@@ -237,6 +237,9 @@ func TestCreate_NewBranchButBranchAlreadyExists(t *testing.T) {
 	if err := seedBranch.Run(); err != nil {
 		t.Fatalf("seed branch: %v", err)
 	}
+	if _, err := CreateWorktree(context.Background(), CreateWorktreeRequest{RepoRoot: repo, Branch: "preexisting", NewBranch: true, BaseRef: "main", MustCreateBranch: true}); !errors.Is(err, ErrBranchAlreadyExists) {
+		t.Fatalf("MustCreateBranch error = %v, want ErrBranchAlreadyExists", err)
+	}
 
 	res, err := CreateWorktree(context.Background(), CreateWorktreeRequest{
 		RepoRoot:  repo,

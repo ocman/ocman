@@ -18,6 +18,7 @@ var (
 	// already attached to another worktree (git refuses to attach
 	// the same branch in two places).
 	ErrBranchCheckedOutElsewhere = errors.New("branch is already checked out in another worktree")
+	ErrBranchAlreadyExists       = errors.New("branch already exists")
 
 	// ErrPathConflict indicates that the target path already exists
 	// and is *not* a worktree for the requested branch (e.g. a stale

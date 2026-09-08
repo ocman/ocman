@@ -106,12 +106,13 @@ type FetchPRHeadRequest struct {
 
 // WorktreeSessionRequest captures a create-worktree-and-launch action.
 type WorktreeSessionRequest struct {
-	ProjectDir      string
-	Branch          string
-	Title           string
-	NewBranch       bool
-	BaseRef         string
-	PermissionRules []platforms.PermissionRule
+	ProjectDir       string
+	Branch           string
+	Title            string
+	NewBranch        bool
+	BaseRef          string
+	MustCreateBranch bool
+	PermissionRules  []platforms.PermissionRule
 }
 
 // WorktreeSessionResult is the outcome of CreateWorktreeSession: the
