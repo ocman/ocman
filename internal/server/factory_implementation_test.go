@@ -101,8 +101,9 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 
 	t.Run("validates the PR branch and pushed HEAD", func(t *testing.T) {
 		state := "open"
+		ref := "factory/epic-1"
 		api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = fmt.Fprintf(w, `{"number":1,"state":%q,"merged":%t,"html_url":"https://github.com/acme/repo/pull/1","head":{"ref":"factory/epic-1","sha":"abc123","repo":{"full_name":"acme/repo"}},"base":{"repo":{"full_name":"acme/repo"}}}`, state, state == "merged")
+			_, _ = fmt.Fprintf(w, `{"number":1,"state":%q,"merged":%t,"html_url":"https://github.com/acme/repo/pull/1","head":{"ref":%q,"sha":"abc123","repo":{"full_name":"acme/repo"}},"base":{"repo":{"full_name":"acme/repo"}}}`, state, state == "merged", ref)
 		}))
 		defer api.Close()
 		host := &factoryImplementationHost{handoffHead: "abc123", upstreams: hostsvc.ProjectUpstreams{Remotes: []forge.Remote{{Type: forge.RemoteTypeGitHub, Repo: "acme/repo"}}}}
@@ -114,6 +115,7 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 			t.Fatal(err)
 		}
 		state = "merged"
+		ref = "refs/pull/1/head"
 		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", policy); err != nil {
 			t.Fatalf("merged PR: %v", err)
 		}
@@ -121,6 +123,8 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", policy); err == nil {
 			t.Fatal("accepted an unmerged closed PR")
 		}
+		state = "open"
+		ref = "factory/epic-1"
 		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/other", "https://github.com/acme/repo/pull/1", policy); err == nil {
 			t.Fatal("accepted a PR for another branch")
 		}
