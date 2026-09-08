@@ -1096,10 +1096,21 @@ func TestFactoryMolClosureGuardsRequiredWorkAndCancelsOpenOptionalWork(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootID := factoryIssueID(t, db, epic.ID, "mol")
-	if err := db.CloseFactoryEpic(ctx, epic.ID); !errors.Is(err, model.ErrEpicClosureBlocked) {
+	if err := db.CloseFactoryEpic(ctx, epic.ID, false); !errors.Is(err, model.ErrEpicClosureBlocked) {
 		t.Fatalf("CloseFactoryEpic before Mol closure = %v", err)
 	}
+	if err := db.CloseFactoryEpic(ctx, epic.ID, true); err != nil {
+		t.Fatalf("forced CloseFactoryEpic: %v", err)
+	}
+	forced, err := db.GetFactoryEpic(ctx, epic.ID)
+	if err != nil || forced.Status != "closed" {
+		t.Fatalf("forced Epic = %#v, %v", forced, err)
+	}
+	epic, err = db.CreateFactoryEpic(ctx, "Ship normally", "", "/repo", "", formula)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootID := factoryIssueID(t, db, epic.ID, "mol")
 	optionalID := factoryChildIssueID(t, db, rootID, 2)
 	if _, err := db.db.Exec(`UPDATE factory_issue_hierarchy SET requirement = 'optional' WHERE child_issue_id = ?`, optionalID); err != nil {
 		t.Fatal(err)
@@ -1128,8 +1139,44 @@ func TestFactoryMolClosureGuardsRequiredWorkAndCancelsOpenOptionalWork(t *testin
 	if err := db.db.QueryRow(`SELECT status, outcome, outcome_reason FROM factory_issue WHERE id = ?`, optionalID).Scan(&status, &outcome, &reason); err != nil || status != "closed" || outcome != "cancelled" || reason != "container_closed_without_execution" {
 		t.Fatalf("optional closure = %q, %q, %q, %v", status, outcome, reason, err)
 	}
-	if err := db.CloseFactoryEpic(ctx, epic.ID); err != nil {
+	if err := db.CloseFactoryEpic(ctx, epic.ID, false); err != nil {
 		t.Fatalf("CloseFactoryEpic: %v", err)
+	}
+}
+
+func TestPausedFactoryEpicCannotBeClaimed(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	ctx := context.Background()
+	epic, err := db.CreateFactoryEpic(ctx, "Pause", "", "/repo", "", nativeTracerFormula(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	planID := factoryIssueID(t, db, epic.ID, "plan")
+	if err := db.SetFactoryEpicPaused(ctx, epic.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := db.ClaimFactoryPlan(ctx, epic.ID, planID, "factory-plan/v1", time.Now()); err == nil {
+		t.Fatal("claimed work from paused Epic")
+	}
+	paused, err := db.GetFactoryEpic(ctx, epic.ID)
+	if err != nil || paused.Status != "paused" {
+		t.Fatalf("paused Epic = %#v, %v", paused, err)
+	}
+	if err := db.SetFactoryEpicPaused(ctx, epic.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := db.ClaimFactoryPlan(ctx, epic.ID, planID, "factory-plan/v1", time.Now()); err != nil {
+		t.Fatalf("claim after resume: %v", err)
+	}
+	if err := db.SetFactoryEpicPaused(ctx, "missing", true); !errors.Is(err, model.ErrNativeEpicNotFound) {
+		t.Fatalf("pause missing Epic = %v", err)
+	}
+	if err := db.CloseFactoryEpic(ctx, epic.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetFactoryEpicPaused(ctx, epic.ID, true); err == nil {
+		t.Fatal("paused a closed Epic")
 	}
 }
 

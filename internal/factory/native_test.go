@@ -43,7 +43,7 @@ func (s *nativeClosureStoreFake) CloseFactoryMol(_ context.Context, epicID, molI
 	s.closedMol = epicID + "/" + molID
 	return nil
 }
-func (s *nativeClosureStoreFake) CloseFactoryEpic(_ context.Context, epicID string) error {
+func (s *nativeClosureStoreFake) CloseFactoryEpic(_ context.Context, epicID string, _ bool) error {
 	s.closedEpic = epicID
 	return nil
 }
@@ -151,7 +151,7 @@ func TestNativeServiceRejectsUnavailableOptionalStores(t *testing.T) {
 			return err
 		}},
 		{"close Mol", func() error { return svc.CloseMol(ctx, "epic", "mol") }},
-		{"close Epic", func() error { return svc.CloseEpic(ctx, "epic") }},
+		{"close Epic", func() error { return svc.CloseEpic(ctx, "epic", false) }},
 		{"defer Issue", func() error { return svc.DeferIssue(ctx, "epic", "issue", "later") }},
 		{"resume Issue", func() error { return svc.ResumeIssue(ctx, "epic", "issue") }},
 		{"retry Issue", func() error { return svc.RetryIssueAt(ctx, "epic", "issue", time.Now().Add(time.Minute)) }},
@@ -738,7 +738,7 @@ func TestNativeClosureAndRemovedIssueAccessors(t *testing.T) {
 	if err := svc.CloseMol(context.Background(), "epic", "mol"); err != nil || store.closedMol != "epic/mol" {
 		t.Fatalf("CloseMol = %v, %q", err, store.closedMol)
 	}
-	if err := svc.CloseEpic(context.Background(), "epic"); err != nil || store.closedEpic != "epic" {
+	if err := svc.CloseEpic(context.Background(), "epic", false); err != nil || store.closedEpic != "epic" {
 		t.Fatalf("CloseEpic = %v, %q", err, store.closedEpic)
 	}
 	issues, err := svc.ListRemovedIssues(context.Background(), "epic")

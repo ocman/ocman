@@ -31,6 +31,7 @@ vi.mock('../lib/api', () => ({ api: {
     factoryPlanGate: vi.fn(),
 		factoryCloseMol: vi.fn(),
 		factoryCloseEpic: vi.fn(),
+		factorySetEpicPaused: vi.fn(),
    factoryFormula: vi.fn(),
    factoryFormulas: vi.fn(),
    validateFactoryFormula: vi.fn(),
@@ -79,6 +80,7 @@ beforeEach(() => {
 	vi.mocked(api.factoryPlanGate).mockReset();
 		vi.mocked(api.factoryCloseMol).mockReset();
 		vi.mocked(api.factoryCloseEpic).mockReset();
+		vi.mocked(api.factorySetEpicPaused).mockReset();
   vi.mocked(api.factoryFormulas).mockReset();
   vi.mocked(api.validateFactoryFormula).mockReset();
   vi.mocked(api.previewFactoryFormula).mockReset();
@@ -92,6 +94,7 @@ beforeEach(() => {
   vi.mocked(api.projects).mockResolvedValue([{ directory: '/repo', sessionCount: 1, messageCount: 1, totalTokensIn: 0, totalTokensOut: 0, lastUsed: 0 }]);
 		vi.mocked(api.factoryCloseMol).mockResolvedValue(undefined);
 	vi.mocked(api.factoryCloseEpic).mockResolvedValue(undefined);
+	vi.mocked(api.factorySetEpicPaused).mockResolvedValue(undefined);
 	vi.mocked(api.mutateFactoryGraph).mockResolvedValue(undefined);
 	vi.mocked(api.factoryRemovedIssues).mockResolvedValue([]);
 		vi.mocked(api.factoryClaimPlan).mockResolvedValue({} as never);
@@ -560,8 +563,28 @@ describe('Factory interactions', () => {
 		expect(screen.getByText('Closure blocked by: Required review')).toBeInTheDocument();
 		await user.click(screen.getByRole('button', { name: 'Close Mol' }));
 		await waitFor(() => expect(api.factoryCloseMol).toHaveBeenCalledWith('epic-1', 'epic-1.1'));
+		vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+		vi.mocked(api.factoryCloseEpic).mockRejectedValueOnce(Object.assign(new Error('factory Epic closure is blocked'), { status: 409 }));
 		await user.click(screen.getByRole('button', { name: 'Close epic' }));
-		await waitFor(() => expect(api.factoryCloseEpic).toHaveBeenCalledWith('epic-1'));
+		await waitFor(() => expect(api.factoryCloseEpic).toHaveBeenCalledWith('epic-1', false));
+		expect(api.factoryCloseEpic).toHaveBeenCalledTimes(1);
+		vi.mocked(api.factoryCloseEpic).mockRejectedValueOnce(Object.assign(new Error('factory Epic closure is blocked'), { status: 409 }));
+		await user.click(screen.getByRole('button', { name: 'Close epic' }));
+		await waitFor(() => expect(api.factoryCloseEpic).toHaveBeenLastCalledWith('epic-1', true));
+		expect(window.confirm).toHaveBeenCalledWith('This epic still has unfinished work. Close it anyway?');
+	});
+
+	it('pauses and resumes an epic', async () => {
+		const user = userEvent.setup();
+		vi.mocked(api.factoryEpic)
+			.mockResolvedValueOnce({ id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo' } as never)
+			.mockResolvedValue({ id: 'epic-1', goal: 'Ship Factory', status: 'paused', initialProject: '/repo' } as never);
+		vi.mocked(api.factoryIssues).mockResolvedValue([]);
+		renderFactory(<MemoryRouter initialEntries={['/factory/epics/epic-1']}><Routes><Route path="/factory/epics/:id" element={<FactoryEpicDetail />} /></Routes></MemoryRouter>);
+		await user.click(await screen.findByRole('button', { name: 'Pause epic' }));
+		await waitFor(() => expect(api.factorySetEpicPaused).toHaveBeenCalledWith('epic-1', true));
+		await user.click(await screen.findByRole('button', { name: 'Resume epic' }));
+		await waitFor(() => expect(api.factorySetEpicPaused).toHaveBeenCalledWith('epic-1', false));
 	});
 
 	it('explains delayed, retry, blocked, and conditional queue dispatch states', async () => {

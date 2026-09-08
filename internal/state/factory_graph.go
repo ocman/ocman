@@ -900,19 +900,39 @@ func closeFactoryDescendants(ctx context.Context, tx *sql.Tx, molID string) erro
 	return err
 }
 
-// CloseFactoryEpic requires the root Mol to have been explicitly closed.
-func (d *DB) CloseFactoryEpic(ctx context.Context, epicID string) error {
+// CloseFactoryEpic requires the root Mol to have been explicitly closed unless
+// the operator explicitly overrides the remaining work guard.
+func (d *DB) CloseFactoryEpic(ctx context.Context, epicID string, force bool) error {
 	result, err := d.db.ExecContext(ctx, `UPDATE factory_epic SET status = 'closed', updated_at = ?
-		WHERE id = ? AND status = 'open' AND EXISTS (
+		WHERE id = ? AND status IN ('open', 'paused') AND (? OR EXISTS (
 			SELECT 1 FROM factory_issue i WHERE i.epic_id = factory_epic.id AND i.kind = 'mol' AND i.status = 'closed' AND i.outcome = 'succeeded'
 				AND NOT EXISTS (SELECT 1 FROM factory_issue_hierarchy h WHERE h.child_issue_id = i.id)
-		)`, time.Now().UnixMilli(), epicID)
+		))`, time.Now().UnixMilli(), epicID, force)
 	if err != nil {
 		return err
 	}
 	changed, err := result.RowsAffected()
 	if err != nil || changed != 1 {
 		return fmt.Errorf("%w: close the root Mol successfully before closing the Epic", model.ErrEpicClosureBlocked)
+	}
+	return nil
+}
+
+func (d *DB) SetFactoryEpicPaused(ctx context.Context, epicID string, paused bool) error {
+	status := "paused"
+	if !paused {
+		status = "open"
+	}
+	result, err := d.db.ExecContext(ctx, `UPDATE factory_epic SET status = ?, updated_at = ? WHERE id = ? AND status IN ('open', 'paused')`, status, time.Now().UnixMilli(), epicID)
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil || changed != 1 {
+		if _, getErr := d.GetFactoryEpic(ctx, epicID); errors.Is(getErr, model.ErrNativeEpicNotFound) {
+			return getErr
+		}
+		return errors.New("factory Epic cannot be paused or resumed")
 	}
 	return nil
 }

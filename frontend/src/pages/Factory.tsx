@@ -4,7 +4,7 @@ import { MarkdownContent } from '../components/assistant/MarkdownText';
 import { Button, SelectField } from '../components/Control';
 import { SearchSelect } from '../components/SearchSelect';
 import { StatusBadge } from '../components/StatusBadge';
-import { useClaimFactoryPlan, useCloseFactoryEpic, useCloseFactoryMol, useCreateWorkEpic, useDecideFactoryPlanGate, useFactoryCapacityPolicy, useFactoryFormula, useFactoryFormulas, useFactoryGraphIssues, useFactoryIssues, useFactoryProposals, useFactoryQueue, useFactoryRemovedIssues, useMaterializeFactoryPlan, useMutateFactoryGraph, usePourFactoryEpic, usePreviewFactoryFormula, useProjects, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryRecoveryGate, useSaveFactoryFormula, useSessions, useSetFactoryCapacityPolicy, useValidateFactoryFormula, useWorkEpic, useWorkEpics } from '../lib/queries';
+import { useClaimFactoryPlan, useCloseFactoryEpic, useCloseFactoryMol, useCreateWorkEpic, useDecideFactoryPlanGate, useFactoryCapacityPolicy, useFactoryFormula, useFactoryFormulas, useFactoryGraphIssues, useFactoryIssues, useFactoryProposals, useFactoryQueue, useFactoryRemovedIssues, useMaterializeFactoryPlan, useMutateFactoryGraph, usePourFactoryEpic, usePreviewFactoryFormula, useProjects, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryRecoveryGate, useSaveFactoryFormula, useSessions, useSetFactoryCapacityPolicy, useSetFactoryEpicPaused, useValidateFactoryFormula, useWorkEpic, useWorkEpics } from '../lib/queries';
 import type { FactoryAttempt, FactoryFormula, FactoryGraphMutation, FactoryIssue, FactoryQueueItem, Session } from '../lib/api';
 
 const TRACER_FORMULA_ID = 'ocman/tracer';
@@ -64,6 +64,7 @@ function DispatchExplanation({ item }: { item: DispatchEvidence }) {
     case 'running': return <span>Dispatch: in progress.</span>;
     case 'completed': return <span>Dispatch: complete.</span>;
     case 'reference': return <span>Dispatch: reference work is not scheduled.</span>;
+		case 'paused': return <span>Dispatch: epic paused.</span>;
     default: return null;
   }
 }
@@ -346,6 +347,7 @@ export function FactoryEpicDetail() {
   const decideGate = useDecideFactoryPlanGate(id);
 	const closeMol = useCloseFactoryMol(id);
   const closeEpic = useCloseFactoryEpic(id);
+	const setPaused = useSetFactoryEpicPaused(id);
 	const allEpics = useWorkEpics();
 	const graphIssueQueries = useFactoryGraphIssues(allEpics.data);
 	const graphIssues = useFactoryIssues(id);
@@ -360,10 +362,18 @@ export function FactoryEpicDetail() {
 	const progress = epic.data.progress ?? { requiredTotal: 0, requiredSucceeded: 0, optionalOpen: 0 };
 	const rootMolID = graphIssues.data?.find((issue) => issue.kind === 'mol' && !issue.parentId)?.id;
 	const closureError = closeMol.error ?? closeEpic.error;
+	const close = async () => {
+		try {
+			await closeEpic.mutateAsync(false);
+		} catch (error) {
+			if (!(error instanceof Error) || (error as Error & { status?: number }).status !== 409 || !window.confirm('This epic still has unfinished work. Close it anyway?')) return;
+			closeEpic.mutate(true);
+		}
+	};
   return <FactoryPage>
     <h2>{epic.data.goal}</h2>
     <dl className="factory-epic-details"><div><dt>Status</dt><dd data-testid="epic-status">{epic.data.status}</dd></div><div><dt>Project</dt><dd>{epic.data.initialProject}</dd></div></dl>
-    <section aria-label="Closure progress"><p>Required work: {progress.requiredSucceeded}/{progress.requiredTotal} complete. Optional work open: {progress.optionalOpen}.</p>{!!progress.closureBlockers?.length && <p>Closure blocked by: {progress.closureBlockers.join(', ')}</p>}<Button type="button" onClick={() => rootMolID && closeMol.mutate(rootMolID)} disabled={closeMol.isPending || !rootMolID}>Close Mol</Button><Button type="button" onClick={() => closeEpic.mutate()} disabled={closeEpic.isPending}>Close epic</Button>{(closeMol.isError || closeEpic.isError) && <p role="alert">{closureError instanceof Error ? closureError.message : 'Could not close container.'}</p>}</section>
+    <section aria-label="Closure progress"><p>Required work: {progress.requiredSucceeded}/{progress.requiredTotal} complete. Optional work open: {progress.optionalOpen}.</p>{!!progress.closureBlockers?.length && <p>Closure blocked by: {progress.closureBlockers.join(', ')}</p>}<Button type="button" onClick={() => rootMolID && closeMol.mutate(rootMolID)} disabled={closeMol.isPending || !rootMolID}>Close Mol</Button><Button type="button" onClick={() => void close()} disabled={closeEpic.isPending}>Close epic</Button>{epic.data.status !== 'closed' && <Button type="button" onClick={() => setPaused.mutate(epic.data!.status !== 'paused')} disabled={setPaused.isPending}>{epic.data.status === 'paused' ? 'Resume epic' : 'Pause epic'}</Button>}{(closeMol.isError || closeEpic.isError || setPaused.isError) && <p role="alert">{(closureError ?? setPaused.error) instanceof Error ? (closureError ?? setPaused.error)!.message : 'Could not update epic.'}</p>}</section>
     <PlanningAttempts epicID={id} attempts={epic.data.attempts ?? []} />
     {proposals.isError && <QueryError error={proposals.error} retry={() => void proposals.refetch()} />}
     {proposalHistory.map((proposal) => <section key={proposal.revision}><p>Proposal revision: {proposal.revision}</p><p>Content hash: {proposal.contentHash}</p><pre>{JSON.stringify(proposal.manifest, null, 2)}</pre>{proposal.rationaleMarkdown && <MarkdownContent text={proposal.rationaleMarkdown} />}</section>)}

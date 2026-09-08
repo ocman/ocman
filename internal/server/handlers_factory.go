@@ -267,13 +267,35 @@ func (s *Server) handleFactoryEpic(w http.ResponseWriter, r *http.Request) {
 	if len(parts) == 2 && parts[1] == "close" && r.Method == http.MethodPost {
 		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
 			closer, ok := s.factory.(interface {
-				CloseEpic(context.Context, string) error
+				CloseEpic(context.Context, string, bool) error
 			})
 			if !ok {
 				writeFactoryError(w, factory.ErrFactoryUnavailable)
 				return
 			}
-			if err := closer.CloseEpic(r.Context(), parts[0]); err != nil {
+			force, err := strconv.ParseBool(r.URL.Query().Get("force"))
+			if err != nil && r.URL.Query().Has("force") {
+				http.Error(w, "invalid force value", http.StatusBadRequest)
+				return
+			}
+			if err := closer.CloseEpic(r.Context(), parts[0], force); err != nil {
+				writeFactoryError(w, err)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		})(w, r)
+		return
+	}
+	if len(parts) == 2 && (parts[1] == "pause" || parts[1] == "resume") && r.Method == http.MethodPost {
+		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+			lifecycle, ok := s.factory.(interface {
+				SetEpicPaused(context.Context, string, bool) error
+			})
+			if !ok {
+				writeFactoryError(w, factory.ErrFactoryUnavailable)
+				return
+			}
+			if err := lifecycle.SetEpicPaused(r.Context(), parts[0], parts[1] == "pause"); err != nil {
 				writeFactoryError(w, err)
 				return
 			}

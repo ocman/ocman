@@ -75,6 +75,7 @@ const (
 	DispatchRetryWait     DispatchState = "retry_wait"
 	DispatchBlocked       DispatchState = "terminally_blocked"
 	DispatchNotApplicable DispatchState = "not_applicable"
+	DispatchPaused        DispatchState = "paused"
 )
 
 type FormulaOrigin string
@@ -645,7 +646,10 @@ type nativeDelayStore interface {
 }
 type nativeClosureStore interface {
 	CloseFactoryMol(context.Context, string, string) error
-	CloseFactoryEpic(context.Context, string) error
+	CloseFactoryEpic(context.Context, string, bool) error
+}
+type nativeEpicLifecycleStore interface {
+	SetFactoryEpicPaused(context.Context, string, bool) error
 }
 type nativeReopenStore interface {
 	ReopenFactoryIssue(context.Context, string, string) error
@@ -980,12 +984,31 @@ func (s *NativeService) CloseMol(ctx context.Context, epicID, molID string) erro
 	return store.CloseFactoryMol(ctx, epicID, molID)
 }
 
-func (s *NativeService) CloseEpic(ctx context.Context, epicID string) error {
+func (s *NativeService) CloseEpic(ctx context.Context, epicID string, force bool) error {
 	store, ok := s.store.(nativeClosureStore)
 	if !ok {
 		return ErrFactoryUnavailable
 	}
-	return store.CloseFactoryEpic(ctx, epicID)
+	return store.CloseFactoryEpic(ctx, epicID, force)
+}
+
+func (s *NativeService) SetEpicPaused(ctx context.Context, epicID string, paused bool) error {
+	store, ok := s.store.(nativeEpicLifecycleStore)
+	if !ok {
+		return ErrFactoryUnavailable
+	}
+	if err := store.SetFactoryEpicPaused(ctx, epicID, paused); err != nil {
+		return err
+	}
+	if !paused {
+		if err := s.Dispatch(ctx); err != nil {
+			select {
+			case s.dispatchWake <- struct{}{}:
+			default:
+			}
+		}
+	}
+	return nil
 }
 
 // ReopenIssue returns failed or cancelled work to the queue and dispatches.
@@ -1528,6 +1551,9 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 		return err
 	}
 	for _, epic := range epics {
+		if epic.Status != "open" {
+			continue
+		}
 		issues, err := s.store.ListFactoryIssues(ctx, epic.ID)
 		if err != nil {
 			return err
@@ -1657,16 +1683,21 @@ func (s *NativeService) Queue(ctx context.Context) ([]DispatchItem, error) {
 				continue
 			}
 			item := DispatchItem{ID: issue.ID, EpicID: epic.ID, Title: issue.Title, Repository: epic.InitialProject, OutcomeReason: issue.OutcomeReason, Blockers: issue.Blockers, RetryAt: issue.RetryAt, RetryAttempts: issue.RetryAttempts}
-			if attempt, ok := byWork[issue.ID]; ok {
+			attempt, attempted := byWork[issue.ID]
+			if attempted {
 				item.AttemptID, item.Session, item.Outcome = attempt.ID, attempt.Session, string(attempt.Outcome)
-				if attempt.Phase == model.FactoryAttemptTerminal {
-					if issue.DispatchState == string(DispatchRetryWait) || issue.DispatchState == string(DispatchReady) {
-						item.State = DispatchState(issue.DispatchState)
-					} else {
-						item.State = DispatchCompleted
-					}
+			}
+			if attempted && attempt.Phase != model.FactoryAttemptTerminal {
+				item.State = DispatchRunning
+			} else if epic.Status == "closed" {
+				continue
+			} else if epic.Status == "paused" && issue.DispatchState == string(DispatchReady) {
+				item.State = DispatchPaused
+			} else if attempted {
+				if issue.DispatchState == string(DispatchRetryWait) || issue.DispatchState == string(DispatchReady) {
+					item.State = DispatchState(issue.DispatchState)
 				} else {
-					item.State = DispatchRunning
+					item.State = DispatchCompleted
 				}
 			} else if issue.DispatchState != "" {
 				item.State = DispatchState(issue.DispatchState)

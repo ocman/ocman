@@ -390,6 +390,60 @@ func TestNativeImplementationDispatchClaimsBeforeWorktreeLaunchAndHonorsCapacity
 	}
 }
 
+func TestPausedEpicDispatchesOnlyAfterResume(t *testing.T) {
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	launcher := &fakeImplementationLauncher{}
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
+	epic := createPouredWorkEpic(t, svc, "Paused")
+	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.MaterializeFactoryPlan(t.Context(), epic.ID, pouredIssueID(t, svc, epic.ID, "materialization"), "factory-materialize/v1", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetEpicPaused(t.Context(), epic.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Dispatch(t.Context()); err != nil || len(launcher.calls) != 0 {
+		t.Fatalf("paused dispatch = %v, launches = %#v", err, launcher.calls)
+	}
+	queue, err := svc.Queue(t.Context())
+	if err != nil || len(queue) != 1 || queue[0].State != DispatchPaused {
+		t.Fatalf("paused queue = %#v, %v", queue, err)
+	}
+	if err := svc.SetEpicPaused(t.Context(), epic.ID, false); err != nil || len(launcher.calls) != 1 {
+		t.Fatalf("resume = %v, launches = %#v", err, launcher.calls)
+	}
+	if err := svc.SetEpicPaused(t.Context(), epic.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Dispatch(t.Context()); err != nil || len(launcher.stops) != 0 {
+		t.Fatalf("active paused dispatch = %v, stops = %#v", err, launcher.stops)
+	}
+	attempts, err := db.ListFactoryAttempts(t.Context(), epic.ID)
+	if err != nil || len(attempts) != 1 {
+		t.Fatalf("attempts = %#v, %v", attempts, err)
+	}
+	if _, err := db.FailFactoryAttempt(t.Context(), attempts[0].ID, model.FactoryAttemptFailure{Type: "launch_failed", Message: "retry"}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.WakeFactoryRetries(t.Context(), time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	queue, err = svc.Queue(t.Context())
+	if err != nil || len(queue) != 1 || queue[0].State != DispatchPaused {
+		t.Fatalf("paused retry queue = %#v, %v", queue, err)
+	}
+}
+
 func TestNativeImplementationCompletionDispatchesNextReadyWork(t *testing.T) {
 	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {

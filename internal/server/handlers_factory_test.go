@@ -38,6 +38,9 @@ type fakeFactoryService struct {
 	gateAction            string
 	gateRequest           factory.PlanGateDecisionRequest
 	closedEpicID          string
+	closedEpicForce       bool
+	pausedEpicID          string
+	paused                bool
 	closedMolEpicID       string
 	closedMolID           string
 	reopenedIssueID       string
@@ -191,8 +194,13 @@ func (f *fakeFactoryService) DecidePlanGate(_ context.Context, _ string, action 
 	f.gateAction, f.gateRequest = action, req
 	return factory.PlanGate{Resolution: action}, f.err
 }
-func (f *fakeFactoryService) CloseEpic(_ context.Context, epicID string) error {
+func (f *fakeFactoryService) CloseEpic(_ context.Context, epicID string, force bool) error {
 	f.closedEpicID = epicID
+	f.closedEpicForce = force
+	return f.err
+}
+func (f *fakeFactoryService) SetEpicPaused(_ context.Context, epicID string, paused bool) error {
+	f.pausedEpicID, f.paused = epicID, paused
 	return f.err
 }
 func (f *fakeFactoryService) ReopenIssue(_ context.Context, epicID, issueID string) error {
@@ -289,7 +297,7 @@ func TestFactoryEpicRoutes(t *testing.T) {
 	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"formulaId":"custom/child"`) || !strings.Contains(rec.Body.String(), `"bindings":{"goal":"Ship"}`) {
 		t.Fatalf("pour = %d: %s", rec.Code, rec.Body.String())
 	}
-	for _, tt := range []struct{ path, wantMol string }{{"/api/factory/epics/fac-1/mols/fac-1/close", "fac-1"}, {"/api/factory/epics/fac-1/close", ""}} {
+	for _, tt := range []struct{ path, wantMol string }{{"/api/factory/epics/fac-1/mols/fac-1/close", "fac-1"}, {"/api/factory/epics/fac-1/close?force=true", ""}} {
 		rec = httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, tt.path, nil)
 		req.RemoteAddr = "127.0.0.1:1"
@@ -297,12 +305,31 @@ func TestFactoryEpicRoutes(t *testing.T) {
 		if rec.Code != http.StatusNoContent {
 			t.Fatalf("close %s = %d: %s", tt.path, rec.Code, rec.Body.String())
 		}
-		if tt.wantMol == "" && svc.closedEpicID != "fac-1" {
-			t.Fatalf("closed epic = %q", svc.closedEpicID)
+		if tt.wantMol == "" && (svc.closedEpicID != "fac-1" || !svc.closedEpicForce) {
+			t.Fatalf("closed epic = %q, force = %v", svc.closedEpicID, svc.closedEpicForce)
 		}
 		if tt.wantMol != "" && (svc.closedMolEpicID != "fac-1" || svc.closedMolID != tt.wantMol) {
 			t.Fatalf("closed Mol = %q/%q", svc.closedMolEpicID, svc.closedMolID)
 		}
+	}
+	for _, tt := range []struct {
+		action string
+		paused bool
+	}{{"pause", true}, {"resume", false}} {
+		rec = httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/factory/epics/fac-1/"+tt.action, nil)
+		req.RemoteAddr = "127.0.0.1:1"
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNoContent || svc.pausedEpicID != "fac-1" || svc.paused != tt.paused {
+			t.Fatalf("%s epic = %d, %q/%v: %s", tt.action, rec.Code, svc.pausedEpicID, svc.paused, rec.Body.String())
+		}
+	}
+	badForce := httptest.NewRequest(http.MethodPost, "/api/factory/epics/fac-1/close?force=maybe", nil)
+	badForce.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, badForce)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid close force = %d: %s", rec.Code, rec.Body.String())
 	}
 	rec = httptest.NewRecorder()
 	reopen := httptest.NewRequest(http.MethodPost, "/api/factory/epics/fac-1/issues/fac-1.1.4/reopen", nil)
@@ -517,6 +544,8 @@ func TestFactoryRoutesSanitizeServiceFailures(t *testing.T) {
 		{http.MethodPost, "/api/factory/epics/fac-1/mutations", `{"action":"edit","issueId":"work","title":"Rename"}`},
 		{http.MethodPost, "/api/factory/epics/fac-1/pour", ""},
 		{http.MethodPost, "/api/factory/epics/fac-1/close", ""},
+		{http.MethodPost, "/api/factory/epics/fac-1/pause", ""},
+		{http.MethodPost, "/api/factory/epics/fac-1/resume", ""},
 		{http.MethodPost, "/api/factory/epics/fac-1/mols/mol-1/close", ""},
 		{http.MethodPost, "/api/factory/epics/fac-1/issues/work/reopen", ""},
 		{http.MethodPost, "/api/factory/epics/fac-1/plans/plan-1", ""},

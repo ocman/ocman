@@ -243,6 +243,16 @@ export class BackendUnavailableError extends Error {
   }
 }
 
+export class APIError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'APIError';
+    this.status = status;
+  }
+}
+
 // Internal: classify a fetch/parse failure. A network-level failure
 // (fetch rejects with TypeError) or a non-JSON body on an OK response
 // (resp.json() rejects with SyntaxError, e.g. a proxy serving an HTML
@@ -310,7 +320,7 @@ async function throwForStatus(resp: Response): Promise<never> {
   if (resp.status === 401) {
     throw raiseAuthError(body || 'unauthorized');
   }
-  throw new Error(envelopeMessage(body) ?? body);
+  throw new APIError(envelopeMessage(body) ?? body, resp.status);
 }
 
 // envelopeMessage returns the human-readable message of a structured
@@ -458,7 +468,8 @@ export const api = {
 	 factoryPlanGate: (id: string, action: 'approve' | 'revise' | 'reject', request: FactoryPlanGateDecisionRequest) =>
 		postJSON<FactoryPlanGate, FactoryPlanGateDecisionRequest>(`/api/factory/epics/${encodeURIComponent(id)}/plan-gate/${action}`, request),
 	 factoryCloseMol: (id: string, molID: string) => postJSON<void, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/mols/${encodeURIComponent(molID)}/close`, undefined, { parseJSON: false }),
-	 factoryCloseEpic: (id: string) => postJSON<void, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/close`, undefined, { parseJSON: false }),
+	 factoryCloseEpic: (id: string, force: boolean) => postJSON<void, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/close${force ? '?force=true' : ''}`, undefined, { parseJSON: false }),
+	 factorySetEpicPaused: (id: string, paused: boolean) => postJSON<void, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/${paused ? 'pause' : 'resume'}`, undefined, { parseJSON: false }),
 		factoryFormula: (id: string, version: number, signal?: AbortSignal) =>
 		fetchJSON<FactoryFormula>(`/api/factory/formulas/${encodeURIComponent(id)}/${version}`, signal),
 	 factoryFormulas: (signal?: AbortSignal) => fetchJSON<FactoryFormula[]>('/api/factory/formulas', signal),

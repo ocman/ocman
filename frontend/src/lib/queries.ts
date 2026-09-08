@@ -139,7 +139,11 @@ export function useCloseFactoryMol(id: string) {
 }
 export function useCloseFactoryEpic(id: string) {
   const client = useQueryClient();
-  return useMutation({ mutationFn: () => api.factoryCloseEpic(id), onSuccess: () => client.invalidateQueries({ queryKey: ['factory-epics', id] }) });
+  return useMutation({ mutationFn: (force: boolean) => api.factoryCloseEpic(id, force), onSuccess: () => invalidateFactoryState(client) });
+}
+export function useSetFactoryEpicPaused(id: string) {
+  const client = useQueryClient();
+  return useMutation({ mutationFn: (paused: boolean) => api.factorySetEpicPaused(id, paused), onSuccess: () => invalidateFactoryState(client) });
 }
 
 export function useFactoryFormula(id: string, version: number) {
