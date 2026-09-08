@@ -455,7 +455,7 @@ func (s *Service) emitPermissionPending(sessionID, permissionID string, judgeSta
 		"permissionID":  permissionID,
 		"sessionID":     sessionID,
 		"judgeStartsAt": judgeStartsAt,
-	}).Info("emitting ocman.permission.pending")
+	}).Debug("emitting ocman.permission.pending")
 	s.emitSessionSseEvent(sessionID, "ocman.permission.pending", payload)
 }
 

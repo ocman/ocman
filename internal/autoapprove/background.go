@@ -133,9 +133,9 @@ func (s *Service) backgroundAutoApprove(
 	logger.WithFields(log.Fields{
 		"enabled":            enabled,
 		"autoApproveDefault": s.deps.DefaultEnabled,
-	}).Info("background auto-approve: checking enabled state")
+	}).Debug("background auto-approve: checking enabled state")
 	if !enabled {
-		logger.Info("background auto-approve: disabled, skipping")
+		logger.Debug("background auto-approve: disabled, skipping")
 		return
 	}
 	s.persistLifecycle(asked, sessionID, permissionID, state.PermissionLifecycle{})
@@ -169,7 +169,7 @@ func (s *Service) backgroundAutoApprove(
 	if hash := permissionHash(permission, patterns, metadata); hash != "" {
 		if cachedReason, ok := s.lookupInheritedSafeCommandVerdict(ctx, sessionID, hash); ok {
 			s.setLifecycleMethod(asked, sessionID, permissionID, state.PermissionEvaluationCache, state.PermissionEvaluationCacheSafe)
-			logger.WithField("hash", hash).Info("background auto-approve: safe-command cache hit, skipping judge")
+			logger.WithField("hash", hash).Debug("background auto-approve: safe-command cache hit, skipping judge")
 			finalReason := "cached: " + cachedReason
 			s.recordJudgedWithReasoning(sessionID, permissionID, verdictSafe, finalReason)
 			s.respondAndPersistSafeApproval(
@@ -314,7 +314,7 @@ func (s *Service) backgroundAutoApprove(
 	// - no DB row (a notice attached to a manually-resolved prompt
 	//   would be misleading)
 	if ctx.Err() != nil {
-		logger.WithField("ctxErr", ctx.Err()).Info("background auto-approve: cancelled before result could be applied")
+		logger.WithField("ctxErr", ctx.Err()).Debug("background auto-approve: cancelled before result could be applied")
 		return
 	}
 
@@ -334,7 +334,7 @@ func (s *Service) backgroundAutoApprove(
 	logger.WithFields(log.Fields{
 		"verdict":        string(result.Verdict),
 		"judgeSessionID": result.SessionID,
-	}).Info("background auto-approve: judge returned")
+	}).Debug("background auto-approve: judge returned")
 
 	if result.Verdict != verdictSafe {
 		// Notify connected clients so they can show the judge's one-line
@@ -400,7 +400,7 @@ func (s *Service) respondAndPersistSafeApproval(
 		return
 	}
 	if !s.finishAIResponse(sessionID, permissionID, true) {
-		logger.Info("background auto-approve: user response won permission race")
+		logger.Debug("background auto-approve: user response won permission race")
 		return
 	}
 
@@ -468,7 +468,7 @@ func (s *Service) respondAndPersistSafeApproval(
 	// /api/sessions/notify poll.
 	s.broadcastPermissionResolved(sessionID, permissionID, "auto-approved")
 
-	logger.Info("background auto-approve: permission approved")
+	logger.Debug("background auto-approve: permission approved")
 }
 
 // deniedReason reports why a permission request is hard-denied, or ""
