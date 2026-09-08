@@ -144,7 +144,7 @@ func (s *Service) backgroundAutoApprove(
 	// Hard denylist. Checked before the safe-command cache and before
 	// the judge, because both are reachable by untrusted input: the
 	// judge prompt interpolates the agent's own command text, and one
-	// safe verdict caches by md5(command) and is inherited by every
+	// safe verdict is cached by a collision-resistant request key and inherited by every
 	// child session without re-judging. No verdict, cache entry, or
 	// inherited approval may auto-approve a denylisted action.
 	if reason := deniedReason(permission, patterns, metadata); reason != "" {
@@ -156,19 +156,17 @@ func (s *Service) backgroundAutoApprove(
 		return
 	}
 
-	// Safe-command cache short-circuit. When the *exact same* Bash
-	// command was previously approved in this session — or in any
+	// Safe-permission cache short-circuit. When the exact same request
+	// was previously approved in this session — or in any
 	// ancestor session, so a child inherits the parent's approvals —
 	// skip the LLM judge and the configured delay entirely: respond
 	// "once", persist the audit row, and emit the SSE notice. The
 	// "cached: " prefix (plus "inherited from parent: " for an
 	// ancestor hit) makes the origin visible in the UI and DB.
 	//
-	// commandHash returns "" for non-Bash tools (Edit/Write/Webfetch/…)
-	// and for malformed metadata, so the cache is opt-in by data
-	// shape — no Edit permission can ever auto-approve from this
-	// cache, regardless of metadata content.
-	if hash := commandHash(metadata); hash != "" {
+	// Bash commands retain their existing exact-command key. Other tools
+	// include the full permission, patterns, and metadata in the key.
+	if hash := permissionHash(permission, patterns, metadata); hash != "" {
 		if cachedReason, ok := s.lookupInheritedSafeCommandVerdict(ctx, sessionID, hash); ok {
 			s.setLifecycleMethod(asked, sessionID, permissionID, state.PermissionEvaluationCache, state.PermissionEvaluationCacheSafe)
 			logger.WithField("hash", hash).Info("background auto-approve: safe-command cache hit, skipping judge")
@@ -352,13 +350,9 @@ func (s *Service) backgroundAutoApprove(
 		return
 	}
 
-	// Populate the per-session safe-command cache so subsequent
-	// permission.asked events for the same raw command (different
-	// permissionID, same session) skip the judge entirely. Only
-	// safe verdicts are cached — unsafe verdicts always re-judge so
-	// the user gets fresh reasoning. Skipped when metadata has no
-	// "command" key (non-Bash tools).
-	if hash := commandHash(metadata); hash != "" {
+	// Cache the safe request so a repeat with a different permission ID
+	// skips the judge. Unsafe verdicts are never cached.
+	if hash := permissionHash(permission, patterns, metadata); hash != "" {
 		s.recordSafeCommandVerdict(sessionID, hash, result.Reasoning)
 	}
 

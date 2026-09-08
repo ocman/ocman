@@ -3,6 +3,9 @@ package autoapprove
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
@@ -994,7 +997,7 @@ func TestEnsureAutoApproveCancellation(t *testing.T) {
 
 // TestCommandHash verifies the per-session safe-command cache key
 // derivation. The hash must:
-//   - return md5(metadata["command"]) as hex when a Bash command is
+//   - return a SHA-256 hex key when a Bash command is
 //     present (deterministic, identical inputs → identical hashes).
 //   - return "" when metadata is nil, empty, missing the "command"
 //     key, or the command is a non-string / empty string (no caching
@@ -1012,8 +1015,8 @@ func TestCommandHash(t *testing.T) {
 	if h1 != h2 {
 		t.Errorf("identical commands should hash equal; got %q vs %q", h1, h2)
 	}
-	if len(h1) != 32 {
-		t.Errorf("md5 hex should be 32 chars; got %d", len(h1))
+	if len(h1) != 64 {
+		t.Errorf("sha256 hex should be 64 chars; got %d", len(h1))
 	}
 
 	// Different command → different hash.
@@ -1049,6 +1052,19 @@ func TestCommandHash(t *testing.T) {
 	})
 	if withExtras != h1 {
 		t.Errorf("extra metadata keys should not affect hash; got %q vs %q", withExtras, h1)
+	}
+	if got := permissionHash("external_directory", nil, map[string]any{"bad": make(chan int)}); got != "" {
+		t.Errorf("unserializable permission should not be cached; got %q", got)
+	}
+	externalMetadata := map[string]any{"command": "ls", "filepath": "/repo/a"}
+	if permissionHash("external_directory", []string{"/repo/a/*"}, externalMetadata) == commandHash(externalMetadata) {
+		t.Error("non-Bash permission with command metadata must use the full request key")
+	}
+	if permissionHash("Bash", nil, externalMetadata) != commandHash(externalMetadata) {
+		t.Error("Bash permission should retain exact-command caching")
+	}
+	if got := permissionHash("Bash", nil, map[string]any{"filepath": "/repo/a"}); got != "" {
+		t.Errorf("Bash permission without a command should not be cached; got %q", got)
 	}
 }
 
@@ -1184,7 +1200,7 @@ func TestInheritedSafeCommandVerdict(t *testing.T) {
 
 // TestBackgroundAutoApprove_SafeCommandCacheHit verifies the wire-in:
 // when the per-session safe-command cache already has an entry for
-// md5(metadata["command"]), backgroundAutoApprove must:
+// the key for metadata["command"], backgroundAutoApprove must:
 //
 //  1. Skip the LLM judge entirely (proven by s.judge=nil: any judge
 //     call would panic the test).
@@ -1294,6 +1310,49 @@ func TestBackgroundAutoApprove_SafeCommandCacheHit(t *testing.T) {
 	}
 	if len(store.records) != 1 || store.records[0].perm.ApprovedBy != "ai" || store.records[0].perm.Reply != "once" || store.records[0].perm.AskedAt != 123 || store.records[0].perm.Metadata["command"] != command {
 		t.Fatalf("AI approval row = %#v", store.records)
+	}
+}
+
+func TestBackgroundAutoApprove_SafeFilepathCacheHit(t *testing.T) {
+	const (
+		sessionID    = "ses-cache"
+		permissionID = "perm-cache"
+		permission   = "external_directory"
+		filepath     = "/repo/other/file.go"
+	)
+	patterns := []string{"/repo/other/*"}
+	metadata := map[string]any{"filepath": filepath}
+	payload, err := json.Marshal(struct {
+		Permission string         `json:"permission"`
+		Patterns   []string       `json:"patterns"`
+		Metadata   map[string]any `json:"metadata"`
+	}{permission, patterns, metadata})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(append([]byte("permission\x00"), payload...))
+
+	responded := false
+	fp := &fakePlatform{id: "opencode", respondPermissionFn: func(req platforms.RespondPermissionRequest) error {
+		responded = req.PermissionID == permissionID && req.Reply == "once"
+		return nil
+	}}
+	s := &Service{
+		autoApprove:      make(map[string]*autoApproveStatus),
+		deps:             Deps{DefaultEnabled: true},
+		safeCommandCache: map[string]map[string]string{sessionID: {hex.EncodeToString(sum[:]): "Safe external path."}},
+	}
+
+	s.backgroundAutoApprove(t.Context(), "opencode", fp, sessionID, permissionID, askedPermission{
+		platformID: "opencode",
+		permission: permission,
+		patterns:   patterns,
+		metadata:   metadata,
+		askedAt:    123,
+	})
+
+	if !responded {
+		t.Fatal("identical safe filepath permission was judged again instead of using the cache")
 	}
 }
 

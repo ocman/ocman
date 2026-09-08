@@ -1,7 +1,7 @@
 // Package autoapprove implements ocman's LLM-judged permission
 // auto-approval pipeline: an SSE tee that observes permission.asked
 // events, a per-permission state machine with dedup and cancellation,
-// a transient-session LLM judge, a per-session safe-command cache, and
+// a transient-session LLM judge, a per-session safe-permission cache, and
 // a headless watcher that subscribes to every running OpenCode
 // instance's /global/event stream.
 //
@@ -116,8 +116,7 @@ type Service struct {
 	autoApprove   map[string]*autoApproveStatus
 	autoApproveMu sync.Mutex
 
-	// safeCommandCache remembers safe Bash-command verdicts per
-	// session keyed by md5(metadata["command"]). See commandHash.
+	// safeCommandCache remembers exact safe requests per session.
 	safeCommandCache   map[string]map[string]string
 	safeCommandCacheMu sync.Mutex
 

@@ -2,9 +2,10 @@ package autoapprove
 
 import (
 	"context"
-	"crypto/md5"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 
@@ -268,7 +269,7 @@ func (s *Service) lookupAutoApproveStatus(sessionID, permissionID string) (autoA
 	return *st, true
 }
 
-// --- Per-session safe-command cache ---
+// --- Per-session safe-permission cache ---
 //
 // The autoApprove map above caches verdicts by the OpenCode-generated
 // permissionID, so resurrecting *the same prompt* short-circuits the
@@ -277,10 +278,9 @@ func (s *Service) lookupAutoApproveStatus(sessionID, permissionID string) (autoA
 // permissionID, so the user pays for the judge each time.
 //
 // The safe-command cache fills that gap: when the judge returns "safe"
-// for a Bash command, we additionally remember the verdict keyed by
-// md5(metadata["command"]) inside the session. The next time the same
-// raw command shows up — even with a different permissionID — we skip
-// the LLM and respond "once" immediately.
+// for a permission, we additionally remember the verdict under a SHA-256
+// key inside the session. Bash keys contain the exact command; other keys
+// contain the full request. A repeat with a new permissionID skips the LLM.
 //
 // Only **safe** verdicts are cached. Unsafe verdicts always re-run
 // through the judge so the user gets fresh reasoning if a flagged
@@ -295,7 +295,7 @@ func (s *Service) lookupAutoApproveStatus(sessionID, permissionID string) (autoA
 // ApprovedPermission DB rows cover audit and notice replay; this
 // cache is purely a performance optimisation.
 
-// commandHash returns the md5 hex of metadata["command"] when present
+// commandHash returns the domain-separated SHA-256 of metadata["command"] when present
 // and non-empty, or "" otherwise. Empty means "not cacheable" — callers
 // must not record or look up against an empty hash.
 //
@@ -316,7 +316,24 @@ func commandHash(metadata map[string]any) string {
 	if !ok || cmd == "" {
 		return ""
 	}
-	sum := md5.Sum([]byte(cmd))
+	sum := sha256.Sum256([]byte("command\x00" + cmd))
+	return hex.EncodeToString(sum[:])
+}
+
+func permissionHash(permission string, patterns []string, metadata map[string]any) string {
+	switch strings.ToLower(permission) {
+	case "bash", "bash command":
+		return commandHash(metadata)
+	}
+	payload, err := json.Marshal(struct {
+		Permission string         `json:"permission"`
+		Patterns   []string       `json:"patterns"`
+		Metadata   map[string]any `json:"metadata"`
+	}{permission, patterns, metadata})
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(append([]byte("permission\x00"), payload...))
 	return hex.EncodeToString(sum[:])
 }
 
