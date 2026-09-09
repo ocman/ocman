@@ -14,6 +14,7 @@ export function ActivityTab() {
   const activityQ = useActivity({ days: 365, dir });
   const dailyQ = useActivity({ days: days || undefined, dir });
   const hourlyQ = useHourly({ days: days || undefined, dir });
+  const daily = dailyQ.data?.slice(-days);
   const errors = queryErrors(activityQ.error, dailyQ.error, hourlyQ.error);
 
   return (
@@ -24,9 +25,9 @@ export function ActivityTab() {
       {(activityQ.data?.length ?? 0) > 0 && <HeatmapChart activity={activityQ.data ?? []} />}
       <div className="analytics-chart-pair">
         <ChartSlot isLoading={dailyQ.isLoading} label="Loading daily messages"><ChartCard title="Daily Messages">
-            <Bar data={{ labels: dailyQ.data?.map((day) => day.date.slice(5)) ?? [], datasets: [
-              { label: 'User Prompts', data: dailyQ.data?.map((day) => day.userMessages) ?? [], backgroundColor: 'rgba(166, 227, 161, 0.6)', borderRadius: 2 },
-              { label: 'Assistant Turns', data: dailyQ.data?.map((day) => day.messages) ?? [], backgroundColor: 'rgba(137, 180, 250, 0.6)', borderRadius: 2 },
+            <Bar data={{ labels: daily?.map((day) => day.date.slice(5)) ?? [], datasets: [
+              { label: 'User Prompts', data: daily?.map((day) => day.userMessages) ?? [], backgroundColor: 'rgba(166, 227, 161, 0.6)', borderRadius: 2 },
+              { label: 'Assistant Turns', data: daily?.map((day) => day.messages) ?? [], backgroundColor: 'rgba(137, 180, 250, 0.6)', borderRadius: 2 },
             ] }} options={BAR_OPTIONS_SESSIONS} />
           </ChartCard></ChartSlot>
         <ChartSlot isLoading={hourlyQ.isLoading} label="Loading sessions by hour"><ChartCard title="Sessions by Hour of Day">

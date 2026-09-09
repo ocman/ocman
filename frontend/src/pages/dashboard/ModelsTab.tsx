@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Bar, Doughnut } from 'react-chartjs-2';
-import { BAR_OPTIONS_COST_BY_MODEL, BAR_OPTIONS_HOURLY_TOKENS, BAR_OPTIONS_TOKENS_BY_MODEL, CHART_COLORS } from '../../lib/chartConfig';
+import { BAR_OPTIONS_COST_BY_MODEL, BAR_OPTIONS_HOURLY_TOKENS, BAR_OPTIONS_TOKENS_BY_MODEL, CHART_COLORS, DOUGHNUT_OPTIONS } from '../../lib/chartConfig';
 import { formatCompactNumber, formatCurrency, formatNumber, formatPercent } from '../../lib/format';
 import { useHourlyTokens, useMetrics, useModels } from '../../lib/queries';
 import { ModelLogo } from '../../components/ModelLogo';
@@ -29,7 +29,7 @@ export function ModelsTab() {
       {errors.map((error) => <div key={error.message} className="oc-error-banner">{error.message}</div>)}
       <div className="analytics-chart-pair">
         <ChartSlot isLoading={modelsQ.isLoading} label="Loading model usage"><ChartCard title="Model Usage">
-              <Doughnut data={{ labels: top.map((item) => item.model), datasets: [{ data: top.map((item) => item.count), backgroundColor: CHART_COLORS, borderWidth: 0 }] }} options={{ responsive: true, maintainAspectRatio: false, animation: false }} />
+              <Doughnut data={{ labels: top.map((item) => item.model), datasets: [{ data: top.map((item) => item.count), backgroundColor: CHART_COLORS, borderWidth: 0 }] }} options={DOUGHNUT_OPTIONS} />
             </ChartCard></ChartSlot>
         <ChartSlot isLoading={modelsQ.isLoading} label="Loading tokens by model"><ChartCard title="Tokens by Model">
               <Bar data={{ labels: top.map((item) => item.model), datasets: [
@@ -76,5 +76,5 @@ function HourlyModelTokens({ data, days }: { data: Array<{ datetime: string; pro
     values.get(key)!.set(point.datetime, (values.get(key)!.get(point.datetime) ?? 0) + tokens);
   }
   const models = [...totals].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([key]) => key);
-  return <ChartCard title="Tokens per Hour by Model" style={{ marginTop: 24 }}><Bar data={{ labels, datasets: models.map((key, index) => ({ label: key.split('/').pop(), data: labels.map((label) => values.get(key)?.get(label) ?? 0), backgroundColor: CHART_COLORS[index % CHART_COLORS.length] })) }} options={{ ...BAR_OPTIONS_HOURLY_TOKENS, plugins: { ...BAR_OPTIONS_HOURLY_TOKENS.plugins, tooltip: { callbacks: { label: (context) => `${context.dataset.label}: ${formatCompactNumber(context.raw as number)} tokens` } } } }} /></ChartCard>;
+  return <ChartCard title="Tokens per Hour by Model" style={{ marginTop: 24 }}><Bar data={{ labels, datasets: models.map((key, index) => ({ label: key.split('/').pop(), data: labels.map((label) => values.get(key)?.get(label) ?? 0), backgroundColor: CHART_COLORS[index % CHART_COLORS.length] })) }} options={{ ...BAR_OPTIONS_HOURLY_TOKENS, plugins: { ...BAR_OPTIONS_HOURLY_TOKENS.plugins, tooltip: { callbacks: { ...BAR_OPTIONS_HOURLY_TOKENS.plugins.tooltip.callbacks, label: (context) => `${context.dataset.label}: ${formatCompactNumber(context.raw as number)} tokens` } } } }} /></ChartCard>;
 }

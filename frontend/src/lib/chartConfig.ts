@@ -24,6 +24,10 @@ export const STOP_REASON_COLORS = [
 ];
 
 const baseLegendLabels = { color: '#bac2de', boxWidth: 12, padding: 12 } as const;
+const stackedInteraction = { mode: 'index' as const, intersect: false } as const;
+type TooltipTotalItem = { parsed: { x?: number | null; y?: number | null } };
+const tooltipTotal = (items: TooltipTotalItem[]) => `Total: ${formatCompactNumber(items.reduce((sum, item) => sum + Number(item.parsed.y ?? item.parsed.x ?? 0), 0))}`;
+const tooltipCostTotal = (items: TooltipTotalItem[]) => `Total: ${formatCurrency(items.reduce((sum, item) => sum + Number(item.parsed.y ?? 0), 0), 2)}`;
 
 /**
  * Tokens-per-second bar chart. Y-axis ticks are suffixed with
@@ -45,7 +49,7 @@ export const BAR_OPTIONS_DURATION = {
   responsive: true,
   maintainAspectRatio: false,
   animation: false as const,
-  plugins: { legend: { display: false } },
+  plugins: { legend: { position: 'bottom' as const, labels: baseLegendLabels } },
   scales: {
     x: { grid: { display: false }, ticks: CHART_X_TICKS },
     y: { beginAtZero: true, ticks: { callback: (v: string | number) => `${v}s` } },
@@ -57,7 +61,11 @@ export const BAR_OPTIONS_STACKED = {
   responsive: true,
   maintainAspectRatio: false,
   animation: false as const,
-  plugins: { legend: { position: 'top' as const, labels: baseLegendLabels } },
+  interaction: stackedInteraction,
+  plugins: {
+    legend: { position: 'bottom' as const, labels: baseLegendLabels },
+    tooltip: { callbacks: { footer: tooltipTotal } },
+  },
   scales: {
     x: { stacked: true, grid: { display: false }, ticks: CHART_X_TICKS },
     y: {
@@ -87,7 +95,7 @@ export const BAR_OPTIONS_COST_BY_MODEL = {
   responsive: true,
   maintainAspectRatio: false,
   animation: false as const,
-  interaction: { mode: 'index' as const, intersect: false },
+  interaction: stackedInteraction,
   plugins: {
     legend: { position: 'bottom' as const, labels: { ...baseLegendLabels, padding: 8, font: { size: 11 } } },
     tooltip: {
@@ -95,6 +103,7 @@ export const BAR_OPTIONS_COST_BY_MODEL = {
       callbacks: {
         label: (ctx: { dataset: { label?: string }; parsed: { y: number | null } }) =>
           `${ctx.dataset.label ?? ''}: ${formatCurrency(Number(ctx.parsed.y ?? 0), 2)}`,
+        footer: tooltipCostTotal,
       },
     },
   },
@@ -143,7 +152,7 @@ export const BAR_OPTIONS_SESSIONS = {
   animation: false as const,
   plugins: {
     legend: {
-      position: 'top' as const,
+      position: 'bottom' as const,
       labels: { color: '#bac2de', boxWidth: 12, padding: 8, font: { size: 11 } },
     },
   },
@@ -180,11 +189,13 @@ export const BAR_OPTIONS_TOKENS_BY_MODEL = {
   maintainAspectRatio: false,
   animation: false as const,
   indexAxis: 'y' as const,
+  interaction: stackedInteraction,
   plugins: {
     legend: {
       position: 'bottom' as const,
       labels: { color: '#bac2de', boxWidth: 12, padding: 8, font: { size: 11 } },
     },
+    tooltip: { callbacks: { footer: tooltipTotal } },
   },
   scales: {
     x: {
@@ -201,11 +212,13 @@ export const BAR_OPTIONS_HOURLY_TOKENS = {
   responsive: true,
   maintainAspectRatio: false,
   animation: false as const,
+  interaction: stackedInteraction,
   plugins: {
     legend: {
       position: 'bottom' as const,
       labels: { color: '#bac2de', boxWidth: 12, padding: 8, font: { size: 11 } },
     },
+    tooltip: { callbacks: { footer: tooltipTotal } },
   },
   scales: {
     x: { stacked: true, grid: { display: false }, ticks: { maxRotation: 0, autoSkip: false } },

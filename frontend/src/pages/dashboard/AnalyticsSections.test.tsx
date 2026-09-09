@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('react-chartjs-2', () => ({
   Bar: ({ data }: { data: unknown }) => <div data-testid="bar-chart" data-chart={JSON.stringify(data)} />,
-  Doughnut: ({ data }: { data: unknown }) => <div data-testid="doughnut-chart" data-chart={JSON.stringify(data)} />,
+  Doughnut: ({ data, options }: { data: unknown; options: unknown }) => <div data-testid="doughnut-chart" data-chart={JSON.stringify(data)} data-options={JSON.stringify(options)} />,
   Line: () => <div data-testid="line-chart" />,
 }));
 vi.mock('../../components/ProjectScopePicker', () => ({ ProjectScopePicker: () => <div>project scope</div> }));
@@ -84,6 +84,20 @@ describe('analytics sections', () => {
     expect(screen.queryByRole('combobox', { name: 'Model' })).not.toBeInTheDocument();
   });
 
+  it('plots only the selected daily activity range', () => {
+    useActivity.mockReturnValueOnce(query([])).mockReturnValueOnce(query(Array.from({ length: 366 }, (_, index) => ({
+      date: `day-${index}`,
+      messages: index,
+      userMessages: index,
+      sessions: 0,
+    }))));
+    renderTab(<ActivityTab />);
+    const card = screen.getByText('Daily Messages').closest('.chart-card') as HTMLElement;
+    const chart = JSON.parse(within(card).getByTestId('bar-chart').getAttribute('data-chart') ?? '{}');
+    expect(chart.labels).toHaveLength(30);
+    expect(chart.datasets[0].data[0]).toBe(336);
+  });
+
   it('shows partial activity query failures', () => {
     useActivity.mockReturnValueOnce(query([])).mockReturnValueOnce({ ...query([]), error: new Error('daily failed') });
     renderTab(<ActivityTab />);
@@ -115,6 +129,8 @@ describe('analytics sections', () => {
     fireEvent.click(screen.getByRole('option', { name: 'two' }));
     const chart = JSON.parse(screen.getByTestId('doughnut-chart').getAttribute('data-chart') ?? '{}');
     expect(chart.labels).toEqual(['two']);
+    const options = JSON.parse(screen.getByTestId('doughnut-chart').getAttribute('data-options') ?? '{}');
+    expect(options.plugins.legend.position).toBe('right');
   });
 
   it('ranks hourly models by token volume', () => {

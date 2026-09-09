@@ -7,6 +7,8 @@ import {
   BAR_OPTIONS_DURATION,
   BAR_OPTIONS_STACKED,
   BAR_OPTIONS_COST_BY_MODEL,
+  BAR_OPTIONS_SESSIONS,
+  BAR_OPTIONS_TOKENS_BY_MODEL,
   BAR_OPTIONS_HOURLY_TOKENS,
   LINE_OPTIONS_COST,
   LINE_OPTIONS_CACHE,
@@ -48,6 +50,19 @@ describe('chartConfig', () => {
     expect(DOUGHNUT_OPTIONS.plugins.legend.position).toBe('right');
   });
 
+  it('renders Cartesian chart legends below the plot', () => {
+    for (const opts of [
+      BAR_OPTIONS_DURATION,
+      BAR_OPTIONS_STACKED,
+      BAR_OPTIONS_COST_BY_MODEL,
+      BAR_OPTIONS_SESSIONS,
+      BAR_OPTIONS_TOKENS_BY_MODEL,
+      BAR_OPTIONS_HOURLY_TOKENS,
+    ]) {
+      expect(opts.plugins.legend.position).toBe('bottom');
+    }
+  });
+
   it('uses stacked y-axes on the stacked bar charts', () => {
     expect(BAR_OPTIONS_STACKED.scales.x.stacked).toBe(true);
     expect(BAR_OPTIONS_STACKED.scales.y.stacked).toBe(true);
@@ -55,6 +70,14 @@ describe('chartConfig', () => {
     expect(BAR_OPTIONS_COST_BY_MODEL.scales.y.stacked).toBe(true);
     expect(BAR_OPTIONS_HOURLY_TOKENS.scales.x.stacked).toBe(true);
     expect(BAR_OPTIONS_HOURLY_TOKENS.scales.y.stacked).toBe(true);
+  });
+
+  it('shows the stacked total in tooltips', () => {
+    const verticalFooter = BAR_OPTIONS_STACKED.plugins.tooltip.callbacks.footer;
+    const horizontalFooter = BAR_OPTIONS_TOKENS_BY_MODEL.plugins.tooltip.callbacks.footer;
+    expect(verticalFooter([{ parsed: { y: 3 } }, { parsed: { y: 7 } }])).toBe('Total: 10');
+    expect(horizontalFooter([{ parsed: { x: 4 } }, { parsed: { x: 6 } }])).toBe('Total: 10');
+    expect(BAR_OPTIONS_STACKED.interaction.mode).toBe('index');
   });
 
   it('hides zero-cost model entries from daily cost tooltips', () => {
