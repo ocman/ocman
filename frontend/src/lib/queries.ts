@@ -215,6 +215,10 @@ export function useReopenFactoryIssue() {
 	return useMutation({ mutationFn: ({ epicId, issueId }: { epicId: string; issueId: string }) => api.reopenFactoryIssue(epicId, issueId), onSuccess: () => invalidateFactoryState(client) });
 }
 
+export function useInvestigateFactoryUnblock() {
+	return useMutation({ mutationFn: ({ epicId, issueId }: { epicId: string; issueId: string }) => api.investigateFactoryUnblock(epicId, issueId) });
+}
+
 // ---------------------------------------------------------------------------
 // Sessions list
 // ---------------------------------------------------------------------------

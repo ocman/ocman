@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -150,6 +151,52 @@ func TestFactoryPlanningLauncherUsesLocalHostAndAppliesBoundedRules(t *testing.T
 	}
 	if !strings.HasSuffix(sent.Message, "[Review and approve the plan](/factory/epics/epic-1)") {
 		t.Fatalf("prompt does not end with approval link: %q", sent.Message)
+	}
+}
+
+func TestFactoryUnblockLauncherCreatesReadOnlyConversation(t *testing.T) {
+	endpoint := connectedPlanningMCP(t)
+	var sent platforms.SendMessageRequest
+	var rules platforms.SetPermissionRulesRequest
+	platform := &fakePlatform{id: "local-agent", caps: platforms.Capabilities{PermissionRules: true}}
+	platform.createSessionFn = func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+		return &platforms.CreateSessionResponse{ID: "unblock-1"}, nil
+	}
+	platform.setPermissionRulesFn = func(req platforms.SetPermissionRulesRequest) error { rules = req; return nil }
+	platform.sendMessageFn = func(req platforms.SendMessageRequest) error { sent = req; return nil }
+	registry := platforms.NewRegistry()
+	registry.Register(platform)
+	srv := New(nil, nil, "", registry, nil)
+	srv.factory = &fakeFactoryService{
+		epics:  []factory.WorkEpic{{ID: "epic-1", Goal: "Ship", Status: "open", InitialProject: "/repo"}},
+		issues: []factory.Issue{{ID: "issue-1", EpicID: "epic-1", Kind: "implementation", Title: "Transport", Status: "closed", Outcome: "failed", OutcomeReason: "merged branch"}},
+	}
+	srv.hostRouter = hostsvc.NewRouter(&ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+		return &hostsvc.EnsureProjectOpencodeResult{Endpoint: endpoint, RepoRoot: req.ProjectDir}, nil
+	}})
+
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/factory/epics/epic-1/issues/issue-1/unblock", nil)
+	request.RemoteAddr = "127.0.0.1:1234"
+	mux.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusCreated || !strings.Contains(recorder.Body.String(), `"id":"unblock-1"`) || sent.SessionID != "unblock-1" {
+		t.Fatalf("response = %d %s, sent = %#v", recorder.Code, recorder.Body.String(), sent)
+	}
+	if !strings.Contains(sent.Message, "Allow and Reject buttons") || !strings.Contains(sent.Message, "cannot run before approval") || !strings.Contains(sent.Message, "factory_unblock") || !strings.Contains(sent.Message, "merged branch") {
+		t.Fatalf("prompt = %q", sent.Message)
+	}
+	want := platforms.PermissionRule{Permission: "mcp_factory_unblock", Pattern: "factory_unblock", Action: "ask"}
+	if !slices.Contains(rules.Rules, want) || slices.Contains(rules.Rules, platforms.PermissionRule{Permission: "mcp_factory", Pattern: "factory", Action: "allow"}) {
+		t.Fatalf("rules = %#v", rules.Rules)
+	}
+	var token string
+	srv.factoryUnblockTokens.Range(func(key, _ any) bool { token, _ = key.(string); return false })
+	if token == "" || !srv.consumeFactoryUnblock(token, "epic-1") || srv.consumeFactoryUnblock(token, "epic-1") {
+		t.Fatal("unblock token was not scoped and single-use")
 	}
 }
 

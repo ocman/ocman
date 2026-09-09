@@ -37,11 +37,52 @@ type fakeFactoryService struct {
 	completionSummary string
 	completionPRURL   string
 	err               error
+	reopenedEpicID    string
+	reopenedIssueID   string
+}
+
+func (f *fakeFactoryService) ReopenIssue(_ context.Context, epicID, issueID string) error {
+	f.reopenedEpicID, f.reopenedIssueID = epicID, issueID
+	return f.err
+}
+
+func (*fakeFactoryService) ConsumeFactoryUnblock(token, epicID string) bool {
+	return token == "unblock-token" && epicID == "epic-1"
 }
 
 func (f *fakeFactoryService) MutateGraph(_ context.Context, mutation factory.GraphMutation) error {
 	f.mutation = mutation
 	return f.err
+}
+
+func (f *fakeFactoryService) MutateFactoryUnblock(ctx context.Context, mutation factory.GraphMutation) error {
+	return f.MutateGraph(ctx, mutation)
+}
+
+func TestFactoryUnblockToolExecutesApprovedOcmanActions(t *testing.T) {
+	svc := &fakeFactoryService{}
+	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{FactoryService: svc})...)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := callTool(t, srv, "factory_unblock", map[string]any{"action": "reopen", "epic_id": "epic-1", "issue_id": "issue-1", "unblock_token": "unblock-token"}); got.IsError {
+		t.Fatalf("reopen failed: %s", resultText(got))
+	}
+	if svc.reopenedEpicID != "epic-1" || svc.reopenedIssueID != "issue-1" {
+		t.Fatalf("reopened = %q/%q", svc.reopenedEpicID, svc.reopenedIssueID)
+	}
+
+	mutation := `{"action":"unlink","issueId":"issue-2","dependsOnId":"issue-1","dependencyType":"blocks"}`
+	if got := callTool(t, srv, "factory_unblock", map[string]any{"action": "mutate_graph", "epic_id": "epic-1", "mutation_json": mutation, "unblock_token": "unblock-token"}); got.IsError {
+		t.Fatalf("mutation failed: %s", resultText(got))
+	}
+	if svc.mutation.EpicID != "epic-1" || svc.mutation.Actor != "mcp_unblock" || svc.mutation.Action != "unlink" {
+		t.Fatalf("mutation = %#v", svc.mutation)
+	}
+	if got := callTool(t, srv, "factory_unblock", map[string]any{"action": "reopen", "epic_id": "epic-1", "issue_id": "issue-1", "unblock_token": "wrong"}); !got.IsError || resultText(got) != "unblock action is not authorized" {
+		t.Fatalf("unauthorized result = %#v", got)
+	}
 }
 
 func (f *fakeFactoryService) CreateWorkEpic(_ context.Context, req factory.CreateWorkEpicRequest) (factory.WorkEpic, error) {

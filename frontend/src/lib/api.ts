@@ -450,6 +450,8 @@ export const api = {
 			postJSON<FactoryMaterialization, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/materializations/${encodeURIComponent(issueID)}`, undefined),
 		reopenFactoryIssue: (id: string, issueID: string) =>
 			postJSON<unknown, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/issues/${encodeURIComponent(issueID)}/reopen`, undefined),
+		investigateFactoryUnblock: (id: string, issueID: string) =>
+			postJSON<{ platform: string; id: string }, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/issues/${encodeURIComponent(issueID)}/unblock`, undefined),
 		factoryIssues: (id: string, signal?: AbortSignal) =>
 		 fetchJSON<FactoryIssue[]>(`/api/factory/epics/${encodeURIComponent(id)}/issues`, signal),
 		factoryIssueComments: (epicID: string, issueID: string, signal?: AbortSignal) =>

@@ -83,12 +83,19 @@ func (s *Server) mcpHandler() http.Handler {
 // The handler is localhost-only (enforced by the caller in StartOnListener).
 // It is only registered when the OpenCode platform adapter is present.
 func (s *Server) buildMCPHandler() http.Handler {
-	return s.buildMCPHandlerFor(factoryMCPService{s.factory}, s.routineSvc, sessionMCPService{s})
+	return s.buildMCPHandlerFor(factoryMCPService{factoryService: s.factory, consumeUnblock: s.consumeFactoryUnblock}, s.routineSvc, sessionMCPService{s})
 }
 
 // factoryMCPService keeps operator decisions behind the browser while allowing
 // agents to create Epics and maintain Factory Issues that have not started or closed.
-type factoryMCPService struct{ factoryService }
+type factoryMCPService struct {
+	factoryService
+	consumeUnblock func(string, string) bool
+}
+
+func (s factoryMCPService) ConsumeFactoryUnblock(token, epicID string) bool {
+	return s.consumeUnblock != nil && s.consumeUnblock(token, epicID)
+}
 
 func (s factoryMCPService) CreateWorkEpic(ctx context.Context, req factory.CreateWorkEpicRequest) (factory.WorkEpic, error) {
 	if req.FormulaID != "" || req.FormulaRevision != 0 {
@@ -101,6 +108,18 @@ func (s factoryMCPService) MutateGraph(ctx context.Context, mutation factory.Gra
 	if mutation.Action == "create" && (mutation.Kind == "implementation" || mutation.Kind == "task") {
 		return factory.ErrActionNotPermitted
 	}
+	return s.factoryService.MutateGraph(ctx, mutation)
+}
+func (s factoryMCPService) ReopenIssue(ctx context.Context, epicID, issueID string) error {
+	reopener, ok := s.factoryService.(interface {
+		ReopenIssue(context.Context, string, string) error
+	})
+	if !ok {
+		return factory.ErrActionNotPermitted
+	}
+	return reopener.ReopenIssue(ctx, epicID, issueID)
+}
+func (s factoryMCPService) MutateFactoryUnblock(ctx context.Context, mutation factory.GraphMutation) error {
 	return s.factoryService.MutateGraph(ctx, mutation)
 }
 func (factoryMCPService) SaveFormula(context.Context, factory.FormulaSaveRequest) (factory.NativeFormulaView, error) {

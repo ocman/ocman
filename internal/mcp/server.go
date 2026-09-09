@@ -42,6 +42,9 @@ func New(deps Deps) *Server {
 	addFileTools(s, &fileTools{sign: deps.SignFile})
 
 	addFactoryTools(s, &factoryTools{svc: deps.FactoryService})
+	for _, tool := range factoryUnblockServerTools(deps.FactoryService) {
+		s.AddTool(tool.Tool, tool.Handler)
+	}
 	addInboxTools(s, &inboxTools{store: deps.InboxStore})
 	addRoutineTools(s, &routineTools{svc: deps.RoutineService})
 	addSessionTools(s, &sessionTools{svc: deps.SessionService})
@@ -67,6 +70,7 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 		{Tool: embedFileTool(), Handler: (&fileTools{sign: deps.SignFile}).handleEmbedFile},
 	}
 	tools = append(tools, factoryServerTools(&factoryTools{svc: deps.FactoryService})...)
+	tools = append(tools, factoryUnblockServerTools(deps.FactoryService)...)
 	tools = append(tools, inboxServerTools(&inboxTools{store: deps.InboxStore})...)
 	tools = append(tools, routineServerTools(&routineTools{svc: deps.RoutineService})...)
 	tools = append(tools, sessionServerTools(&sessionTools{svc: deps.SessionService})...)

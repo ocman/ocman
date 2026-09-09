@@ -19,6 +19,7 @@ vi.mock('../lib/api', () => ({ api: {
 		factoryClaimPlan: vi.fn(),
 		factoryMaterialize: vi.fn(),
 		reopenFactoryIssue: vi.fn(),
+		investigateFactoryUnblock: vi.fn(),
 		factoryIssues: vi.fn(),
 		factoryIssueComments: vi.fn(),
 		addFactoryIssueComment: vi.fn(),
@@ -68,6 +69,7 @@ beforeEach(() => {
 		vi.mocked(api.factoryClaimPlan).mockReset();
 		vi.mocked(api.factoryMaterialize).mockReset();
 		vi.mocked(api.reopenFactoryIssue).mockReset();
+		vi.mocked(api.investigateFactoryUnblock).mockReset();
 	vi.mocked(api.factoryIssues).mockReset();
 	vi.mocked(api.factoryIssueComments).mockReset();
 	vi.mocked(api.addFactoryIssueComment).mockReset();
@@ -100,6 +102,7 @@ beforeEach(() => {
 		vi.mocked(api.factoryClaimPlan).mockResolvedValue({} as never);
 		vi.mocked(api.factoryMaterialize).mockResolvedValue({} as never);
 		vi.mocked(api.reopenFactoryIssue).mockResolvedValue(undefined);
+		vi.mocked(api.investigateFactoryUnblock).mockResolvedValue({ platform: 'opencode', id: 'unblock-session' });
 	vi.mocked(api.factoryProposals).mockResolvedValue([]);
 	vi.mocked(api.resolveFactoryRecoveryGate).mockResolvedValue({ resolution: 'resume' } as never);
 	vi.mocked(api.resolveFactoryAuthorityGate).mockResolvedValue({ resolution: 'approve' } as never);
@@ -114,6 +117,16 @@ afterEach(() => {
 });
 
 describe('Factory interactions', () => {
+	it('opens an unblock conversation for failed work', async () => {
+		const user = userEvent.setup();
+		vi.mocked(api.factoryEpics).mockResolvedValue([{ id: 'epic-1', goal: 'Ship', status: 'open', initialProject: '/repo' }] as never);
+		vi.mocked(api.factoryIssues).mockResolvedValue([{ id: 'issue-1', epicId: 'epic-1', kind: 'implementation', title: 'Transport', status: 'closed', outcome: 'failed', outcomeReason: 'merged branch' }] as never);
+		renderFactory(<MemoryRouter initialEntries={['/factory/overview']}><Routes><Route path="/factory/overview" element={<FactoryOverview />} /><Route path="*" element={<LocationMarker />} /></Routes></MemoryRouter>);
+
+		await user.click(await screen.findByRole('button', { name: 'Investigate unblock' }));
+		await waitFor(() => expect(api.investigateFactoryUnblock).toHaveBeenCalledWith('epic-1', 'issue-1'));
+		expect(screen.getByText('/session/unblock-session?factoryEpic=epic-1')).toBeInTheDocument();
+	});
   it('creates an epic and clears the form after success', async () => {
     const user = userEvent.setup();
     vi.mocked(api.createFactoryEpic).mockResolvedValue({ id: 'epic-1' } as never);
@@ -346,11 +359,10 @@ describe('Factory interactions', () => {
     expect(guidanceTrigger).toHaveAttribute('popovertarget', guidance?.id);
     expect(guidance).toHaveAttribute('popover', 'auto');
     expect(within(inbox).getByText('Plan approved, no work graph yet')).toBeInTheDocument();
-    expect(within(inbox).getByText('Stuck: nothing can proceed')).toBeInTheDocument();
-    expect(within(inbox).getByText('Closure blocked by: Dependent task')).toBeInTheDocument();
-    expect(within(inbox).getByRole('link', { name: 'Manage graph' })).toHaveAttribute('href', '/factory/epics/epic-3');
-    // The epic with a Reopen row is not double-reported as stuck; closed epics never appear.
-    expect(within(inbox).getAllByText('Stuck: nothing can proceed')).toHaveLength(1);
+		expect(within(inbox).getByText('Blocked: a prerequisite failed')).toBeInTheDocument();
+		expect(within(inbox).getByText('Dispatch: cannot proceed because a prerequisite failed.')).toBeInTheDocument();
+		expect(within(inbox).getAllByRole('button', { name: 'Investigate unblock' })).toHaveLength(2);
+		// The epic with a failed row is not double-reported as blocked; closed epics never appear.
     expect(within(inbox).queryByText('Cancelled')).not.toBeInTheDocument();
 
     await user.click(within(inbox).getByRole('button', { name: 'Reopen' }));

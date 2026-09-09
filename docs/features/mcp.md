@@ -73,6 +73,7 @@ production binary. Change it if you moved the listener with `-mcp-addr`.
 | Tool | Description |
 |------|-------------|
 | `factory` | Native Factory control surface. Use `action: "help"` for actions, validation, examples, output schemas, and domain errors. Formula actions accept TOML only. Implementation Issues run sequentially in one shared Epic worktree; `complete_attempt` requires a clean, pushed handoff and the one pull request whose head matches that branch. |
+| `factory_unblock` | Executes a user-approved `reopen` or typed `mutate_graph` action proposed by a read-only Factory unblock session. Ocman configures this tool as `ask`, so OpenCode shows Allow and Reject buttons before execution. |
 | `inbox` | Send owner-local Inbox items and recall them by opaque ID. Unknown and already recalled IDs are successful no-ops. Use `action: "help"` for schemas and examples. |
 | `routines` | Create, inspect, update, run, and soft-delete routines. Use `action: "help"` for current inputs, examples, output schemas, and domain errors. |
 | `sessions` | Read-only session listing, search, and detail inspection. Search matches recent session IDs, titles, directories, platforms, and host names. The tool cannot create, cancel, or message sessions. |
@@ -101,6 +102,11 @@ refused; they stay in the Factory action inbox. `submit_proposal` additionally r
 Planning Attempt's `attempt_id` and `attempt_token`. Its manifest accepts an
 issue graph with `nodes` and typed `edges` (`blocks` or `on_failure`); legacy
 per-node `dependsOn` remains accepted for stored and older proposals.
+
+Failed and terminally blocked work can launch a read-only unblock session from
+the Factory action inbox. The agent explains one minimal repair, then invokes
+`factory_unblock`; OpenCode's per-session permission prompt keeps the actual
+reopen or graph mutation behind explicit user approval in the conversation.
 
 > **Upgrade warning:** the native Factory cutover does not migrate legacy
 > Factory runs. Retired YAML Formula tables are kept under `legacy_factory_*`

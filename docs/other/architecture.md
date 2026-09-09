@@ -104,8 +104,11 @@ flowchart TD
    TOML Formulas compile to canonical JSON. A Plan session is read-only at the
    project root; approval of an exact revision enables user-requested atomic
    materialization of the proposed Implementation Issues and dependencies. Ready Issues
-   launch configured worktree sessions. The browser uses REST while agents use the one action-based
-   `factory` MCP tool. Routines are not involved.
+   launch configured worktree sessions. Failed or terminally blocked work can
+   launch a read-only diagnosis session; its scoped `factory_unblock` MCP tool
+   remains permission-gated in the conversation before reopening work or
+   applying a graph mutation. The browser uses REST while agents use MCP.
+   Routines are not involved.
 - **Factory persistence.** Native `factory_*` tables own the graph and its
    provenance in `state.db`; they do not reference or alter routine tables.
 - **internal/factory/model.** Dependency-neutral persistence records shared by
@@ -148,9 +151,10 @@ flowchart TD
   inert historical data. No API, MCP tool, UI, or scheduler reads them. A DAG
   cannot be converted losslessly to one routine prompt, so recovery is a
   manual read-only SQLite export.
-- **internal/mcp.** MCP handlers expose action-based `factory` and `routines`,
-  read-only session inspection, and `embed_file`. File embedding uses signed
-  tokens persisted in `state.db`.
+- **internal/mcp.** MCP handlers expose action-based `factory`,
+  permission-gated `factory_unblock`, `inbox`, and `routines` tools, read-only
+  session inspection, and `embed_file`. File embedding uses signed tokens
+  persisted in `state.db`.
 - **internal/opencodeskills.** Extracts binary-embedded ocman skills into
   XDG data and installs only ocman-owned symlinks for OpenCode discovery.
   Retirement unlinks only the exact verified symlink and preserves extracted data.
@@ -243,5 +247,7 @@ flowchart TD
 - **Factory.** `/factory` presents actionable approval Gates, Epics, Issues,
    Queue, and Configuration through TanStack Query. Browser mutations create
    native Epics, pour Mols, decide exact Plan revisions, and explicitly close
-   completed containers. The dispatcher records attempts before launching the
-   read-only planning or configured implementation session.
+   completed containers. It can also launch a read-only unblock conversation;
+   approved repairs return through the scoped MCP tool. The dispatcher records
+   attempts before launching the read-only planning or configured implementation
+   session.

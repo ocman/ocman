@@ -141,6 +141,8 @@ type Server struct {
 	runtime      ocruntime.Runtime
 	openCodeAuth ocapi.Auth
 	factory      factoryService
+	// ponytail: unblock sessions are rare; expire tokens if this map becomes measurable.
+	factoryUnblockTokens sync.Map
 
 	getNewAssistantMessages func(context.Context, int64) ([]db.LLMMessageRow, int64, error)
 

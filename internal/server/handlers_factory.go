@@ -211,6 +211,17 @@ func (s *Server) handleFactoryEpic(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if len(parts) == 4 && parts[1] == "issues" && parts[3] == "unblock" && r.Method == http.MethodPost {
+		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+			session, err := s.launchFactoryUnblockSession(r.Context(), parts[0], parts[2])
+			if err != nil {
+				writeFactoryError(w, err)
+				return
+			}
+			writeJSONStatus(w, http.StatusCreated, session)
+		})(w, r)
+		return
+	}
 	if len(parts) == 2 && parts[1] == "removed-issues" && r.Method == http.MethodGet {
 		removed, ok := s.factory.(interface {
 			ListRemovedIssues(context.Context, string) ([]factory.Issue, error)

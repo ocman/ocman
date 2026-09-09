@@ -252,7 +252,7 @@ func TestMainMuxMCPRejectsExecutableIssueCreation(t *testing.T) {
 }
 
 func TestDedicatedMCPFactoryServiceRejectsUserOnlyActions(t *testing.T) {
-	service := factoryMCPService{&fakeFactoryService{epics: []factory.WorkEpic{{ID: "epic"}}}}
+	service := factoryMCPService{factoryService: &fakeFactoryService{epics: []factory.WorkEpic{{ID: "epic"}}}}
 	checks := []struct {
 		name string
 		call func() error
@@ -288,7 +288,7 @@ func TestDedicatedMCPFactoryServiceRejectsUserOnlyActions(t *testing.T) {
 
 func TestDedicatedMCPFactoryServiceAllowsGraphMutations(t *testing.T) {
 	underlying := &fakeFactoryService{}
-	service := factoryMCPService{underlying}
+	service := factoryMCPService{factoryService: underlying}
 	for _, action := range []string{"create", "edit", "reparent", "link", "unlink", "delete"} {
 		mutation := factory.GraphMutation{Action: action, EpicID: "epic", ParentID: "epic.1", Kind: "mol", Title: "Work"}
 		if err := service.MutateGraph(t.Context(), mutation); err != nil {

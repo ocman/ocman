@@ -4,7 +4,7 @@ import { MarkdownContent } from '../components/assistant/MarkdownText';
 import { Button, SelectField } from '../components/Control';
 import { SearchSelect } from '../components/SearchSelect';
 import { StatusBadge } from '../components/StatusBadge';
-import { useClaimFactoryPlan, useCloseFactoryEpic, useCloseFactoryMol, useCreateWorkEpic, useDecideFactoryPlanGate, useFactoryCapacityPolicy, useFactoryFormula, useFactoryFormulas, useFactoryGraphIssues, useFactoryIssues, useFactoryProposals, useFactoryQueue, useFactoryRemovedIssues, useMaterializeFactoryPlan, useMutateFactoryGraph, usePourFactoryEpic, usePreviewFactoryFormula, useProjects, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryRecoveryGate, useSaveFactoryFormula, useSessions, useSetFactoryCapacityPolicy, useSetFactoryEpicPaused, useValidateFactoryFormula, useWorkEpic, useWorkEpics } from '../lib/queries';
+import { useClaimFactoryPlan, useCloseFactoryEpic, useCloseFactoryMol, useCreateWorkEpic, useDecideFactoryPlanGate, useFactoryCapacityPolicy, useFactoryFormula, useFactoryFormulas, useFactoryGraphIssues, useFactoryIssues, useFactoryProposals, useFactoryQueue, useFactoryRemovedIssues, useInvestigateFactoryUnblock, useMaterializeFactoryPlan, useMutateFactoryGraph, usePourFactoryEpic, usePreviewFactoryFormula, useProjects, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryRecoveryGate, useSaveFactoryFormula, useSessions, useSetFactoryCapacityPolicy, useSetFactoryEpicPaused, useValidateFactoryFormula, useWorkEpic, useWorkEpics } from '../lib/queries';
 import type { FactoryAttempt, FactoryFormula, FactoryGraphMutation, FactoryIssue, FactoryQueueItem, Session } from '../lib/api';
 
 const TRACER_FORMULA_ID = 'ocman/tracer';
@@ -227,8 +227,14 @@ function FailedWorkItem({ issue, epic }: { issue: FactoryIssue; epic: string }) 
 		<td><strong>{epic}</strong></td>
 		<td className="factory-table-id">{issue.id}<span>{issue.title}</span></td>
 		<td><strong>Work {issue.outcome}{issue.retryAttempts ? ` after ${issue.retryAttempts} attempts` : ''}</strong>{issue.outcomeReason && <span>{issue.outcomeReason}</span>}{guidance && <><button type="button" className="factory-error-help-trigger" popoverTarget={helpID}>How to resolve</button><div id={helpID} className="factory-error-help" popover="auto"><strong>Configure a delivery remote</strong><p>{guidance}</p></div></>}</td>
-		<td><div className="factory-inbox-actions"><Button type="button" variant="accent" disabled={reopen.isPending} onClick={() => reopen.mutate({ epicId: issue.epicId, issueId: issue.id })}>Reopen</Button></div>{reopen.isError && <p role="alert">{reopen.error instanceof Error ? reopen.error.message : 'Could not reopen work.'}</p>}</td>
+		<td><div className="factory-inbox-actions"><InvestigateUnblockButton issue={issue} /><Button type="button" disabled={reopen.isPending} onClick={() => reopen.mutate({ epicId: issue.epicId, issueId: issue.id })}>Reopen</Button></div>{reopen.isError && <p role="alert">{reopen.error instanceof Error ? reopen.error.message : 'Could not reopen work.'}</p>}</td>
 	</tr>;
+}
+
+function InvestigateUnblockButton({ issue }: { issue: FactoryIssue }) {
+	const investigate = useInvestigateFactoryUnblock();
+	const navigate = useNavigate();
+	return <><Button type="button" variant="accent" disabled={investigate.isPending} onClick={() => investigate.mutate({ epicId: issue.epicId, issueId: issue.id }, { onSuccess: (session) => navigate(`/session/${encodeURIComponent(session.id)}?factoryEpic=${encodeURIComponent(issue.epicId)}`) })}>Investigate unblock</Button>{investigate.isError && <p role="alert">{investigate.error instanceof Error ? investigate.error.message : 'Could not start unblock investigation.'}</p>}</>;
 }
 
 function MaterializationItem({ issue, epic }: { issue: FactoryIssue; epic: string }) {
@@ -288,12 +294,13 @@ export function FactoryOverview() {
 	const planning = epics.data?.flatMap((epic) => (epic.attempts ?? []).filter((attempt) => (attempt.phase === 'prepared' || attempt.phase === 'active' || attempt.phase === 'stopping') && !runningAttemptIDs.has(attempt.id)).map((attempt) => ({ epic, attempt }))) ?? [];
 	const readyPlans = issues.filter((issue) => openEpics.has(issue.epicId) && issue.kind === 'plan' && issue.dispatchState === 'ready' && !planning.some(({ attempt }) => attempt.workId === issue.id));
 	const failedWork = issues.filter((issue) => openEpics.has(issue.epicId) && (issue.kind === 'task' || issue.kind === 'implementation') && issue.status === 'closed' && (issue.outcome === 'failed' || issue.outcome === 'cancelled'));
+	const blockedWork = issues.filter((issue) => openEpics.has(issue.epicId) && issue.dispatchState === 'terminally_blocked' && !failedWork.some((failed) => failed.epicId === issue.epicId));
 	const materializations = issues.filter((issue) => openEpics.has(issue.epicId) && issue.kind === 'materialization' && issue.dispatchState === 'ready');
 	// Stuck epics with an actionable row above are already covered; this catches the dead-ends nothing else surfaces.
-	const stuck = epics.data?.filter((epic) => epic.progress?.stuck && !failedWork.some((issue) => issue.epicId === epic.id) && !materializations.some((issue) => issue.epicId === epic.id)) ?? [];
+	const stuck = epics.data?.filter((epic) => epic.progress?.stuck && !failedWork.some((issue) => issue.epicId === epic.id) && !blockedWork.some((issue) => issue.epicId === epic.id) && !materializations.some((issue) => issue.epicId === epic.id)) ?? [];
 	// ponytail: answering live prompts stays on the session page.
 	const prompts = [...new Map([...running.map((item) => ({ session: sessionByID.get(item.session?.id ?? ''), epic: epicGoal(item.epicId), issueID: item.id, issueTitle: item.title })), ...planning.map(({ epic, attempt }) => ({ session: sessionByID.get(attempt.session.id), epic: epic.goal, issueID: attempt.workId, issueTitle: 'Planning' }))].filter((item): item is { session: Session; epic: string; issueID: string; issueTitle: string } => Boolean(item.session?.pendingPermission || item.session?.pendingQuestion)).map((item) => [item.session.id, item])).values()];
-	const inboxCount = readyPlans.length + planGates.length + recoveryGates.length + authorityGates.length + prompts.length + failedWork.length + materializations.length + stuck.length;
+	const inboxCount = readyPlans.length + planGates.length + recoveryGates.length + authorityGates.length + prompts.length + failedWork.length + blockedWork.length + materializations.length + stuck.length;
 	const liveStatus = (sessionID?: string) => { const session = sessionID ? sessionByID.get(sessionID) : undefined; return session && session.status !== 'done' ? <StatusBadge status={session.status} pending={session.pendingPermission || session.pendingQuestion} /> : null; };
 	return <FactoryPage>
 		<h2>Action inbox</h2>
@@ -308,6 +315,7 @@ export function FactoryOverview() {
 			{recoveryGates.map((issue) => <RecoveryGateItem key={issue.id} issue={issue} epic={epicGoal(issue.epicId)} />)}
 			{authorityGates.map((issue) => <AuthorityGateItem key={issue.id} issue={issue} epic={epicGoal(issue.epicId)} />)}
 			{failedWork.map((issue) => <FailedWorkItem key={issue.id} issue={issue} epic={epicGoal(issue.epicId)} />)}
+			{blockedWork.map((issue) => <tr key={issue.id}><td><strong>{epicGoal(issue.epicId)}</strong></td><td className="factory-table-id">{issue.id}<span>{issue.title}</span></td><td><strong>Blocked: a prerequisite failed</strong><span><DispatchExplanation item={issue} /></span></td><td><InvestigateUnblockButton issue={issue} /></td></tr>)}
 			{materializations.map((issue) => <MaterializationItem key={issue.id} issue={issue} epic={epicGoal(issue.epicId)} />)}
 			{stuck.map((epic) => <tr key={`stuck-${epic.id}`}><td><strong>{epic.goal}</strong></td><td className="factory-table-id">{epic.id}<span>Epic</span></td><td><strong>Stuck: nothing can proceed</strong><span>Closure blocked by: {epic.progress.closureBlockers?.join(', ')}</span></td><td><Link to={`/factory/epics/${encodeURIComponent(epic.id)}`}>Manage graph</Link></td></tr>)}
 			{prompts.map(({ session, epic, issueID, issueTitle }) => <tr key={session.id}><td><strong>{epic}</strong></td><td className="factory-table-id">{issueID}<span>{issueTitle}</span></td><td>Agent is waiting for you: {session.title}<span>{session.pendingPermission ? 'Permission prompt' : 'Question'}</span></td><td><Link to={`/session/${encodeURIComponent(session.id)}`}>Answer in session</Link></td></tr>)}
