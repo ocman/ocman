@@ -356,7 +356,7 @@ func (s *Service) settleRunning(ctx context.Context, recoverOrphans bool) error 
 			continue
 		}
 		switch detail.Session.Status {
-		case db.StatusDone:
+		case db.StatusDone, db.StatusWaiting:
 			result = errors.Join(result, s.finish(ctx, run, RunSuccess, ""))
 		case db.StatusError:
 			result = errors.Join(result, s.finish(ctx, run, RunFailure, detail.Session.Status.String()))

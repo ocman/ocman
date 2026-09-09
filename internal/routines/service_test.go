@@ -590,6 +590,7 @@ func TestTerminalStatusesRecurrenceOneShotsAndAutoDelete(t *testing.T) {
 		wantNext   bool
 	}{
 		{"done cron", db.StatusDone, RunSuccess, Schedule{Kind: ScheduleCron, Cron: "*/5 * * * *", Timezone: "UTC"}, false, true},
+		{"waiting cron", db.StatusWaiting, RunSuccess, Schedule{Kind: ScheduleCron, Cron: "*/5 * * * *", Timezone: "UTC"}, false, true},
 		{"error", db.StatusError, RunFailure, Schedule{Kind: ScheduleNone}, false, false},
 		{"interrupted", db.StatusInterrupted, RunInterrupted, Schedule{Kind: ScheduleNone}, false, false},
 		{"once", db.StatusDone, RunSuccess, Schedule{Kind: ScheduleOnce, At: time.Date(2030, 1, 1, 9, 1, 0, 0, time.UTC)}, false, false},
@@ -662,7 +663,7 @@ func TestFinishingRunDoesNotOverwriteRoutineEditedAfterClaim(t *testing.T) {
 	}
 }
 
-func TestRecoveryKeepsBusyLinkedRunAndSettlesItLater(t *testing.T) {
+func TestRecoveryKeepsBusyLinkedRun(t *testing.T) {
 	h := newHarness(t)
 	routine, _ := h.svc.Create(t.Context(), validInput())
 	if _, err := h.svc.RunNow(t.Context(), routine.ID); err != nil {
@@ -674,21 +675,5 @@ func TestRecoveryKeepsBusyLinkedRunAndSettlesItLater(t *testing.T) {
 	runs, _ := h.db.ListRoutineRuns(t.Context(), routine.ID)
 	if runs[0].State != RunRunning {
 		t.Fatalf("busy run = %+v", runs[0])
-	}
-	h.platform.setStatus(db.StatusWaiting)
-	if err := h.svc.Recover(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	runs, _ = h.db.ListRoutineRuns(t.Context(), routine.ID)
-	if runs[0].State != RunRunning {
-		t.Fatalf("waiting run = %+v", runs[0])
-	}
-	h.platform.setStatus(db.StatusDone)
-	if err := h.svc.Recover(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	runs, _ = h.db.ListRoutineRuns(t.Context(), routine.ID)
-	if runs[0].State != RunSuccess {
-		t.Fatalf("settled run = %+v", runs[0])
 	}
 }
