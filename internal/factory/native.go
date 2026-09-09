@@ -1806,6 +1806,7 @@ func factoryHandoffError(err error) error {
 		"completed pull request requires a replacement",
 		"pull request URL has no numeric identifier",
 		"pull request URL does not match the delivery target",
+		"pull request must be ready for review",
 		"pull request does not publish the shared Factory branch HEAD":
 		return fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	default:

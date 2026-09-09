@@ -34,6 +34,9 @@ func (l factoryImplementationLauncher) ValidateImplementationHandoff(ctx context
 	if err != nil {
 		return err
 	}
+	if pr.Status == "draft" {
+		return errors.New("pull request must be ready for review")
+	}
 	validationBranch := branch
 	if previousPRURL != "" {
 		previous, err := lookupFactoryPR(ctx, client, remote.Repo, previousPRURL)
@@ -84,6 +87,12 @@ func (l factoryImplementationLauncher) ResolveImplementationBranch(ctx context.C
 	previous, err := lookupFactoryPR(ctx, client, remote.Repo, previousPRURL)
 	if err != nil {
 		return "", "", err
+	}
+	if previous.Status == "open" && validFactoryBranch(branch, previous.Branch) {
+		if err := client.ConvertPRToDraft(ctx, remote.Repo, previous.Number); err != nil {
+			return "", "", fmt.Errorf("convert Factory pull request to draft: %w", err)
+		}
+		previous.Status = "draft"
 	}
 	switch previous.Status {
 	case "open", "draft":
@@ -212,9 +221,9 @@ Title: %s
 Task:
 %s
 
-Work only on this Issue in the assigned worktree. Inspect the existing code, make the smallest correct change, and run the relevant checks. All implementation Issues in this Work Epic use the shared branch %s and run sequentially.
+Work only on this Issue in the assigned worktree. Inspect the existing code, make the smallest correct change, and run the relevant checks. All implementation Issues in this Work Epic use the shared branch %s and run sequentially. Keep its pull request in draft while working: convert a reused pull request to draft before editing, or create a new draft pull request as soon as the branch is first pushed.
 
-Before completion, leave the shared worktree on a clean commit, push the branch, and create or reuse its single pull request. Then use the factory MCP action complete_attempt with attempt_id %s, attempt_token %s, pr_url set to that pull request, and a concise summary. If you cannot safely continue, use request_recovery with the same attempt ID and token instead of guessing.`, req.WorkID, req.EpicID, req.Title, req.Description, req.Branch, req.AttemptID, req.AgentToken)
+Before completion, leave the shared worktree on a clean commit, push the branch, mark its single pull request ready for review, then use the factory MCP action complete_attempt with attempt_id %s, attempt_token %s, pr_url set to that pull request, and a concise summary. If you cannot safely continue, use request_recovery with the same attempt ID and token instead of guessing.`, req.WorkID, req.EpicID, req.Title, req.Description, req.Branch, req.AttemptID, req.AgentToken)
 	return l.server.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt})
 }
 

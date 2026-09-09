@@ -207,6 +207,7 @@ type Forge interface {
 	// repo (owner/name).
 	ListPRs(ctx context.Context, repo string, opts ListOptions) ([]PR, RateLimit, error)
 	LookupPR(ctx context.Context, repo string, number int) (PR, error)
+	ConvertPRToDraft(ctx context.Context, repo string, number int) error
 
 	// ListIssues returns one page of issues for the repo.
 	ListIssues(ctx context.Context, repo string, opts ListOptions) ([]Issue, RateLimit, error)

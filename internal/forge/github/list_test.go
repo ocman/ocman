@@ -127,6 +127,68 @@ func TestLookupIssueRejectsPullRequest(t *testing.T) {
 	}
 }
 
+func TestConvertPRToDraft(t *testing.T) {
+	var mutation map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/repos/alice/repo/pulls/7" {
+			_, _ = w.Write([]byte(`{"node_id":"PR_node"}`))
+			return
+		}
+		if r.URL.Path != "/graphql" || r.Method != http.MethodPost {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&mutation); err != nil {
+			t.Fatal(err)
+		}
+		_, _ = w.Write([]byte(`{"data":{"convertPullRequestToDraft":{"pullRequest":{"isDraft":true}}}}`))
+	}))
+	defer srv.Close()
+
+	if err := newTestClient(t, srv, "token").ConvertPRToDraft(t.Context(), "alice/repo", 7); err != nil {
+		t.Fatal(err)
+	}
+	variables, _ := mutation["variables"].(map[string]any)
+	if variables["id"] != "PR_node" {
+		t.Fatalf("mutation = %#v", mutation)
+	}
+}
+
+func TestConvertPRToDraftErrors(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		pullBody string
+		pullCode int
+		gqlBody  string
+		gqlCode  int
+		want     string
+	}{
+		{name: "pull lookup", pullCode: http.StatusBadGateway, want: "status 502"},
+		{name: "missing node ID", pullBody: `{}`, want: "no node ID"},
+		{name: "graphql status", pullBody: `{"node_id":"PR_node"}`, gqlCode: http.StatusBadGateway, want: "status 502"},
+		{name: "graphql error", pullBody: `{"node_id":"PR_node"}`, gqlBody: `{"errors":[{"message":"denied"}]}`, want: "denied"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/graphql" {
+					if tt.gqlCode != 0 {
+						w.WriteHeader(tt.gqlCode)
+					}
+					_, _ = w.Write([]byte(tt.gqlBody))
+					return
+				}
+				if tt.pullCode != 0 {
+					w.WriteHeader(tt.pullCode)
+				}
+				_, _ = w.Write([]byte(tt.pullBody))
+			}))
+			defer srv.Close()
+			if err := newTestClient(t, srv, "token").ConvertPRToDraft(t.Context(), "alice/repo", 7); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestListPRs_StateMergedDetection(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`[

@@ -131,6 +131,49 @@ func TestLookupPRAndIssue(t *testing.T) {
 	}
 }
 
+func TestConvertPRToDraft(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch || r.URL.Path != "/api/v1/repos/alice/repo/pulls/7" {
+			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		}
+		var body struct {
+			Draft bool `json:"draft"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !body.Draft {
+			t.Fatalf("body = %#v, %v", body, err)
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"draft":true}`))
+	}))
+	defer srv.Close()
+
+	if err := newTestClient(t, srv, "token").ConvertPRToDraft(t.Context(), "alice/repo", 7); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestConvertPRToDraftRejectsFailedEdit(t *testing.T) {
+	for _, tt := range []struct {
+		name, body, want string
+		status           int
+	}{
+		{name: "status", status: http.StatusForbidden, want: "status 403"},
+		{name: "not draft", status: http.StatusOK, body: `{"draft":false}`, want: "not converted"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tt.status)
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer srv.Close()
+			err := newTestClient(t, srv, "token").ConvertPRToDraft(t.Context(), "alice/repo", 7)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v", err)
+			}
+		})
+	}
+}
+
 func TestLookupIssueRejectsPullRequest(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"number":3,"title":"PR","pull_request":{"url":"https://example/pr/3"}}`))

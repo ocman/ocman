@@ -12,8 +12,10 @@
 package forgejo
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -144,6 +146,34 @@ func (c *Client) LookupPR(ctx context.Context, repo string, number int) (forge.P
 		return forge.PR{}, fmt.Errorf("decoding pull: %w", err)
 	}
 	return raw.toForge(c.host, repo), nil
+}
+
+func (c *Client) ConvertPRToDraft(ctx context.Context, repo string, number int) error {
+	path := fmt.Sprintf("/api/v1/repos/%s/pulls/%d", repo, number)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, c.baseURL+path, bytes.NewBufferString(`{"draft":true}`))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	if c.token != "" {
+		req.Header.Set("Authorization", "token "+c.token)
+	}
+	body, _, status, err := forgehttp.Get(ctx, c.http, req)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusOK && status != http.StatusCreated {
+		return fmt.Errorf("forgejo %s: status %d", path, status)
+	}
+	var pr fjPR
+	if err := json.Unmarshal(body, &pr); err != nil {
+		return fmt.Errorf("decoding edited pull: %w", err)
+	}
+	if !pr.Draft {
+		return errors.New("forgejo pull request was not converted to draft")
+	}
+	return nil
 }
 
 // ListIssues returns one page of issues for owner/name. Uses

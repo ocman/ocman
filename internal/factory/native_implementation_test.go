@@ -283,6 +283,10 @@ func TestNativeDispatchRunsReadyTask(t *testing.T) {
 	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", "https://forge.example/pr/1"); !errors.Is(err, ErrInvalidRequest) || !strings.Contains(err.Error(), "open pull request") {
 		t.Fatalf("open PR handoff error = %v", err)
 	}
+	launcher.handoffErr = errors.New("pull request must be ready for review")
+	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", "https://forge.example/pr/1"); !errors.Is(err, ErrInvalidRequest) || !strings.Contains(err.Error(), "ready for review") {
+		t.Fatalf("draft PR handoff error = %v", err)
+	}
 	launcher.handoffErr = errors.New("forge lookup failed")
 	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", "https://forge.example/pr/1"); err == nil || errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("operational handoff error = %v", err)
@@ -291,7 +295,7 @@ func TestNativeDispatchRunsReadyTask(t *testing.T) {
 	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", "https://forge.example/pr/1"); err != nil {
 		t.Fatal(err)
 	}
-	if launcher.handoffs != 5 || len(launcher.stops) != 1 {
+	if launcher.handoffs != 6 || len(launcher.stops) != 1 {
 		t.Fatalf("handoffs/stops = %d/%d", launcher.handoffs, len(launcher.stops))
 	}
 	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", "https://forge.example/pr/1"); err != nil {

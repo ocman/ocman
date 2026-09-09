@@ -95,16 +95,17 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 		if host.request.ProjectDir != "/repo" || host.request.Branch != "factory/work" || host.request.BaseRef != "factory/previous" || host.request.Title != "implementation work-1 (@factory)" || !host.request.NewBranch || !reflect.DeepEqual(host.request.PermissionRules, rules) {
 			t.Fatalf("worktree request = %#v", host.request)
 		}
-		if sent.SessionID != "worktree-session" || !strings.Contains(sent.Message, "Remove dead code") || !strings.Contains(sent.Message, "Delete the obsolete helper") || !strings.Contains(sent.Message, "attempt-1") || !strings.Contains(sent.Message, "token") || !strings.Contains(sent.Message, "complete_attempt") || !strings.Contains(sent.Message, "request_recovery") || !strings.Contains(sent.Message, "single pull request") || !strings.Contains(sent.Message, "clean commit") || !strings.Contains(sent.Message, "pr_url") {
+		if sent.SessionID != "worktree-session" || !strings.Contains(sent.Message, "Remove dead code") || !strings.Contains(sent.Message, "Delete the obsolete helper") || !strings.Contains(sent.Message, "attempt-1") || !strings.Contains(sent.Message, "token") || !strings.Contains(sent.Message, "complete_attempt") || !strings.Contains(sent.Message, "request_recovery") || !strings.Contains(sent.Message, "draft while working") || !strings.Contains(sent.Message, "ready for review") || !strings.Contains(sent.Message, "clean commit") || !strings.Contains(sent.Message, "pr_url") {
 			t.Fatalf("prompt = %#v", sent)
 		}
 	})
 
 	t.Run("validates the PR branch and pushed HEAD", func(t *testing.T) {
 		state := "open"
+		draft := false
 		prBranch := "factory/epic-1"
 		api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			_, _ = fmt.Fprintf(w, `{"number":1,"state":%q,"merged":%t,"html_url":"https://github.com/acme/repo/pull/1","head":{"ref":%q,"sha":"abc123","repo":{"full_name":"acme/repo"}},"base":{"repo":{"full_name":"acme/repo"}}}`, state, state == "merged", prBranch)
+			_, _ = fmt.Fprintf(w, `{"number":1,"state":%q,"draft":%t,"merged":%t,"html_url":"https://github.com/acme/repo/pull/1","head":{"ref":%q,"sha":"abc123","repo":{"full_name":"acme/repo"}},"base":{"repo":{"full_name":"acme/repo"}}}`, state, draft, state == "merged", prBranch)
 		}))
 		defer api.Close()
 		host := &factoryImplementationHost{handoffHead: "abc123", upstreams: hostsvc.ProjectUpstreams{Remotes: []forge.Remote{{Type: forge.RemoteTypeGitHub, Repo: "acme/repo"}}}}
@@ -120,6 +121,11 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "", "https://github.com/acme/repo/pull/1", policy); err != nil {
 			t.Fatal(err)
 		}
+		draft = true
+		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "", "https://github.com/acme/repo/pull/1", policy); err == nil || !strings.Contains(err.Error(), "ready for review") {
+			t.Fatalf("draft PR error = %v", err)
+		}
+		draft = false
 		prBranch = "factory/epic-1-2"
 		if err := (factoryImplementationLauncher{server: srv}).ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "", "https://github.com/acme/repo/pull/1", policy); err == nil {
 			t.Fatal("accepted a rotated first PR")
@@ -146,9 +152,15 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 		previousBranch := "factory/epic-1"
 		previousHead := "old"
 		replacementBranch := "factory/epic-1-2"
+		convertedToDraft := 0
 		api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost && r.URL.Path == "/graphql" {
+				convertedToDraft++
+				_, _ = w.Write([]byte(`{"data":{"convertPullRequestToDraft":{"pullRequest":{"isDraft":true}}}}`))
+				return
+			}
 			if strings.HasSuffix(r.URL.Path, "/1") {
-				_, _ = fmt.Fprintf(w, `{"number":1,"state":%q,"merged":%t,"html_url":"https://github.com/acme/repo/pull/1","head":{"ref":%q,"sha":%q,"repo":{"full_name":"acme/repo"}},"base":{"repo":{"full_name":"acme/repo"}}}`, previousState, previousState == "merged", previousBranch, previousHead)
+				_, _ = fmt.Fprintf(w, `{"number":1,"node_id":"PR_node","state":%q,"merged":%t,"html_url":"https://github.com/acme/repo/pull/1","head":{"ref":%q,"sha":%q,"repo":{"full_name":"acme/repo"}},"base":{"repo":{"full_name":"acme/repo"}}}`, previousState, previousState == "merged", previousBranch, previousHead)
 				return
 			}
 			_, _ = fmt.Fprintf(w, `{"number":2,"state":"open","merged":false,"html_url":"https://github.com/acme/repo/pull/2","head":{"ref":%q,"sha":"new","repo":{"full_name":"acme/repo"}},"base":{"repo":{"full_name":"acme/repo"}}}`, replacementBranch)
@@ -181,8 +193,19 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 			t.Fatalf("replacement after closed PR: %v", err)
 		}
 		previousState = "open"
+		previousBranch = "unrelated"
+		if _, _, err := launcher.ResolveImplementationBranch(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", policy); err == nil {
+			t.Fatal("resolved an unrelated open PR")
+		}
+		if convertedToDraft != 0 {
+			t.Fatalf("converted unrelated PR to draft %d times", convertedToDraft)
+		}
+		previousBranch = "factory/epic-1"
 		if branch, baseRef, err := launcher.ResolveImplementationBranch(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", policy); err != nil || branch != "factory/epic-1" || baseRef != "" {
 			t.Fatalf("resolved open PR branch/base = %q/%q, %v", branch, baseRef, err)
+		}
+		if convertedToDraft != 1 {
+			t.Fatalf("draft conversions = %d", convertedToDraft)
 		}
 		if err := launcher.ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", "https://github.com/acme/repo/pull/2", policy); err == nil {
 			t.Fatal("replaced an open shared PR")

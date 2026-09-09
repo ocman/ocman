@@ -1,8 +1,10 @@
 package github
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -96,6 +98,59 @@ func (c *Client) LookupPR(ctx context.Context, repo string, number int) (forge.P
 		return forge.PR{}, fmt.Errorf("decoding pull: %w", err)
 	}
 	return raw.toForge(repo), nil
+}
+
+func (c *Client) ConvertPRToDraft(ctx context.Context, repo string, number int) error {
+	path := fmt.Sprintf("/repos/%s/pulls/%d", repo, number)
+	body, _, status, err := c.fetch(ctx, path)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusOK {
+		return fmt.Errorf("github api %s: status %d", path, status)
+	}
+	var pr struct {
+		NodeID string `json:"node_id"`
+	}
+	if err := json.Unmarshal(body, &pr); err != nil {
+		return fmt.Errorf("decoding pull: %w", err)
+	}
+	if pr.NodeID == "" {
+		return errors.New("github pull request has no node ID")
+	}
+	payload, err := json.Marshal(map[string]any{
+		"query":     "mutation($id:ID!){convertPullRequestToDraft(input:{pullRequestId:$id}){pullRequest{isDraft}}}",
+		"variables": map[string]string{"id": pr.NodeID},
+	})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base()+"/graphql", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Content-Type", "application/json")
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	body, _, status, err = forgehttp.Get(ctx, c.http, req)
+	if err != nil {
+		return err
+	}
+	var result struct {
+		Errors []struct{ Message string } `json:"errors"`
+	}
+	if status != http.StatusOK {
+		return fmt.Errorf("github graphql: status %d", status)
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("decoding github graphql response: %w", err)
+	}
+	if len(result.Errors) != 0 {
+		return fmt.Errorf("github graphql: %s", result.Errors[0].Message)
+	}
+	return nil
 }
 
 // ListIssues returns one page of issues for owner/name. GitHub's
