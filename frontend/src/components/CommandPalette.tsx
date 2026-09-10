@@ -287,12 +287,12 @@ export function CommandPalette() {
   }, [location.pathname, sessions]);
 
   useEffect(() => {
-    if (paletteOpen) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setQuery('');
-      setSelectedIndex(0);
-      inputRef.current?.focus();
-    }
+    if (!paletteOpen) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setQuery('');
+    setSelectedIndex(0);
+    const focusFrame = requestAnimationFrame(() => inputRef.current?.focus());
+    return () => cancelAnimationFrame(focusFrame);
     // Depend on `mode` too: reopening into a different mode while the palette
     // is already open must clear any leftover query.
   }, [paletteOpen, mode]);
