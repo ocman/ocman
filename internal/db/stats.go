@@ -73,7 +73,10 @@ func modelKey(provider, model string) string {
 func (d *DB) GetStats(ctx context.Context) (*Stats, error) {
 	s := &Stats{}
 
-	err := d.db.QueryRowContext(ctx, `SELECT count(*) FROM session`).Scan(&s.TotalSessions)
+	err := d.db.QueryRowContext(ctx, `
+		SELECT count(*), COALESCE(SUM(instr(title, '@') > 0), 0)
+		FROM session
+	`).Scan(&s.TotalSessions, &s.SubagentSessions)
 	if err != nil {
 		return nil, err
 	}

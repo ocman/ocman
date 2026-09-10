@@ -28,7 +28,12 @@ export function OverviewTab() {
           <>
           <div className="analytics-scope-note">Inventory totals are scoped to this {overview.inventoryScope} ocman instance.</div>
           <div className="metrics-summary-grid">
-            <MetricCard label="Sessions" value={formatNumber(overview.totalSessions)} tone="blue" />
+            <MetricCard
+              label="Sessions"
+              value={formatNumber(overview.totalSessions - overview.subagentSessions)}
+              tone="blue"
+              subvalue={`${formatNumber(overview.subagentSessions)} subagent session${overview.subagentSessions === 1 ? '' : 's'}`}
+            />
             <MetricCard label="Projects" value={formatNumber(overview.totalProjects)} tone="blue" />
             <MetricCard label="Routines" value={formatNumber(overview.totalRoutines)} tone="green" />
             <MetricCard label="Routine runs" value={formatNumber(total(overview.routineRunsByStatus))} tone="purple" subvalue={breakdown(overview.routineRunsByStatus)} />

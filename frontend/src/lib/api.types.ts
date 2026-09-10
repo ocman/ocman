@@ -963,6 +963,7 @@ export type MetricsPerformance = Pick<MetricsDashboard,
 export interface AnalyticsOverview {
   inventoryScope: string;
   totalSessions: number;
+  subagentSessions: number;
   totalProjects: number;
   totalRoutines: number;
   routineRunsByStatus: Record<string, number>;

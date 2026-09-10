@@ -59,7 +59,7 @@ describe('analytics sections', () => {
     useHourlyTokens.mockReturnValue(query([]));
     useModels.mockReturnValue(query([{ provider: 'provider', model: 'model', count: 2, tokensIn: 10, tokensOut: 5 }]));
     useMetrics.mockReturnValue(query(metrics));
-    useAnalyticsOverview.mockReturnValue(query({ inventoryScope: 'local', totalSessions: 10, totalProjects: 2, totalRoutines: 1, routineRunsByStatus: { done: 3 }, factoryEpicsByStatus: { active: 1 }, factoryIssuesByStatus: { done: 4 }, factoryAttemptsByPhase: { terminal: 5 }, factoryAttemptsByTerminalOutcome: { successful: 4 } }));
+    useAnalyticsOverview.mockReturnValue(query({ inventoryScope: 'local', totalSessions: 10, subagentSessions: 2, totalProjects: 2, totalRoutines: 1, routineRunsByStatus: { done: 3 }, factoryEpicsByStatus: { active: 1 }, factoryIssuesByStatus: { done: 4 }, factoryAttemptsByPhase: { terminal: 5 }, factoryAttemptsByTerminalOutcome: { successful: 4 } }));
     usePermissionStats.mockReturnValue(query({ eligibleRequests: 1, autoApprovedRate: 1, manualPreemptions: 0, manualPreemptionRate: 0, medianJudgmentDurationMs: 10, medianManualResponseDurationMs: 20, userDecisionCount: 1, userDecisionRate: 1, affectedSessions: 1, unresolvedEligibleRequests: 0, observedUserWaitMs: 5000, p50UserWaitMs: 5000, p95UserWaitMs: 5000, daily: [] }));
     useMetricLogs.mockImplementation(({ kind }: { kind: string }) => query({ kind, total: 0, availableAgents: [], availableModels: [], [`${kind}s`]: [] }));
   });
@@ -69,6 +69,8 @@ describe('analytics sections', () => {
     const inventory = screen.getByRole('region', { name: 'All-time inventory' });
     const activity = screen.getByRole('region', { name: 'Request activity' });
     expect(within(inventory).getByText('Factory attempts')).toBeInTheDocument();
+    expect(within(inventory).getByText('8')).toBeInTheDocument();
+    expect(within(inventory).getByText('2 subagent sessions')).toBeInTheDocument();
     expect(within(inventory).queryByRole('combobox')).not.toBeInTheDocument();
     expect(within(activity).getByText('Total Cost')).toBeInTheDocument();
     expect(within(activity).getByRole('combobox', { name: 'Last' })).toBeInTheDocument();

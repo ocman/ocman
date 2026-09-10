@@ -305,12 +305,13 @@ type Part struct {
 
 // Stats holds aggregate statistics.
 type Stats struct {
-	TotalSessions  int     `json:"totalSessions"`
-	TotalMessages  int     `json:"totalMessages"`
-	TotalProjects  int     `json:"totalProjects"`
-	TotalTokensIn  int64   `json:"totalTokensIn"`
-	TotalTokensOut int64   `json:"totalTokensOut"`
-	TotalCost      float64 `json:"totalCost"`
+	TotalSessions    int     `json:"totalSessions"`
+	SubagentSessions int     `json:"subagentSessions"`
+	TotalMessages    int     `json:"totalMessages"`
+	TotalProjects    int     `json:"totalProjects"`
+	TotalTokensIn    int64   `json:"totalTokensIn"`
+	TotalTokensOut   int64   `json:"totalTokensOut"`
+	TotalCost        float64 `json:"totalCost"`
 }
 
 // MetricsSummary holds the dashboard KPI cards for request analytics.

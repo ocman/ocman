@@ -7,9 +7,10 @@ import (
 )
 
 type analyticsOverview struct {
-	InventoryScope string `json:"inventoryScope"`
-	TotalSessions  int    `json:"totalSessions"`
-	TotalProjects  int    `json:"totalProjects"`
+	InventoryScope   string `json:"inventoryScope"`
+	TotalSessions    int    `json:"totalSessions"`
+	SubagentSessions int    `json:"subagentSessions"`
+	TotalProjects    int    `json:"totalProjects"`
 	state.AnalyticsOverviewCounts
 }
 
@@ -30,6 +31,7 @@ func (s *Server) handleAnalyticsOverview(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, analyticsOverview{
 		InventoryScope:          "local",
 		TotalSessions:           stats.TotalSessions,
+		SubagentSessions:        stats.SubagentSessions,
 		TotalProjects:           stats.TotalProjects,
 		AnalyticsOverviewCounts: counts,
 	})

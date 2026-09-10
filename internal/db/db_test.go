@@ -921,6 +921,7 @@ func TestGetStats(t *testing.T) {
 	now := time.Now().UnixMilli()
 	insertSession(t, db, "s1", "Session 1", "/a", now, now)
 	insertSession(t, db, "s2", "Session 2", "/b", now, now)
+	insertSession(t, db, "subagent", "Research (@explore subagent)", "/a", now, now)
 	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{"role": "user"})
 	insertMessage(t, db, "m2", "s1", now, map[string]interface{}{
 		"role":   "assistant",
@@ -932,8 +933,11 @@ func TestGetStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetStats: %v", err)
 	}
-	if stats.TotalSessions != 2 {
-		t.Errorf("TotalSessions = %d, want 2", stats.TotalSessions)
+	if stats.TotalSessions != 3 {
+		t.Errorf("TotalSessions = %d, want 3", stats.TotalSessions)
+	}
+	if stats.SubagentSessions != 1 {
+		t.Errorf("SubagentSessions = %d, want 1", stats.SubagentSessions)
 	}
 	if stats.TotalMessages != 1 {
 		t.Errorf("TotalMessages = %d, want 1", stats.TotalMessages)
