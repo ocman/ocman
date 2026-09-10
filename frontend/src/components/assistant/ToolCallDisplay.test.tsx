@@ -283,6 +283,14 @@ describe('ToolCallDisplay expand toggles', () => {
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
   });
 
+  it('does not render patch contents until expanded', () => {
+    const { container } = renderTool(variants[0][1]);
+
+    expect(container.querySelector('.oc-tool-content')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { expanded: false }));
+    expect(container.querySelector('.oc-tool-content')).not.toBeNull();
+  });
+
   it('exposes the shell output toggle state', () => {
     renderTool({
       argsText: JSON.stringify({ command: 'many-lines' }),

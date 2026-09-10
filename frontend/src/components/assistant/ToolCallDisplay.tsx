@@ -618,8 +618,8 @@ const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArg
           <span className="oc-tool-label">{patchSummary}</span>
           {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={toolStatus === 'running'} />}
         </button>
-        {patchBody && (
-          <div className="oc-tool-content" onClick={() => !expanded && setExpanded(true)} style={!expanded ? { cursor: 'pointer' } : undefined}>
+        {expanded && patchBody && (
+          <div className="oc-tool-content">
             {renderPatch(patchBody)}
           </div>
         )}
