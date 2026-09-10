@@ -207,7 +207,7 @@ async function installDefaultRoutes(page: Page) {
     }),
   );
   await page.route('/api/analytics/overview', (route: Route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ inventoryScope: 'local', totalSessions: 12, totalProjects: 3, totalRoutines: 1, routineRunsByStatus: { done: 4 }, factoryEpicsByStatus: { active: 1 }, factoryIssuesByStatus: { done: 5 }, factoryAttemptsByPhase: { terminal: 6 }, factoryAttemptsByTerminalOutcome: { successful: 5 } }) }),
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ inventoryScope: 'local', totalSessions: 12, subagentSessions: 2, totalProjects: 3, totalRoutines: 1, routineRunsByStatus: { done: 4 }, factoryEpicsByStatus: { active: 1 }, factoryIssuesByStatus: { done: 5 }, factoryAttemptsByPhase: { terminal: 6 }, factoryAttemptsByTerminalOutcome: { successful: 5 } }) }),
   );
   await page.route('/api/permission-stats*', (route: Route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ eligibleRequests: 2, autoApprovedCount: 1, autoApprovedRate: 0.5, judgmentRequests: 1, manualPreemptions: 0, manualPreemptionRate: 0, medianJudgmentDurationMs: 10, medianManualResponseDurationMs: 20, userDecisionCount: 1, userDecisionRate: 0.5, affectedSessions: 1, unresolvedEligibleRequests: 0, observedUserWaitMs: 5000, p50UserWaitMs: 5000, p95UserWaitMs: 5000, daily: [] }) }),
