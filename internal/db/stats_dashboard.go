@@ -24,8 +24,9 @@ type CostCalculator interface {
 // type.
 type requestRow struct {
 	RequestLogEntry
-	completed bool
-	isError   bool
+	estimatedCostByType CostByType
+	completed           bool
+	isError             bool
 }
 
 // MetricsDashboardOptions groups the inputs to GetMetricsDashboard
@@ -271,6 +272,12 @@ func (d *DB) scanDashboardRows(ctx context.Context, opts MetricsDashboardOptions
 		}
 		if opts.Pricing != nil {
 			entry.CalcCost = opts.Pricing.CalcCost(mkey, entry.InputTokens, entry.OutputTokens, entry.CacheReadTokens, entry.CacheWriteTokens)
+			entry.estimatedCostByType = CostByType{
+				Input:      opts.Pricing.CalcCost(mkey, entry.InputTokens, 0, 0, 0),
+				Output:     opts.Pricing.CalcCost(mkey, 0, entry.OutputTokens, 0, 0),
+				CacheRead:  opts.Pricing.CalcCost(mkey, 0, 0, entry.CacheReadTokens, 0),
+				CacheWrite: opts.Pricing.CalcCost(mkey, 0, 0, 0, entry.CacheWriteTokens),
+			}
 		}
 		// Effective cost: prefer the platform-reported value; fall back
 		// to the token-derived estimate when the platform reports $0
@@ -344,6 +351,10 @@ func (d *DB) aggregateSummaryAndBuckets(dashboard *MetricsDashboard, filtered []
 		dashboard.Summary.CacheWriteTokens += entry.CacheWriteTokens
 		dashboard.Summary.TotalCost += entry.Cost
 		dashboard.Summary.TotalCalcCost += entry.CalcCost
+		dashboard.Summary.EstimatedCostByType.Input += entry.estimatedCostByType.Input
+		dashboard.Summary.EstimatedCostByType.Output += entry.estimatedCostByType.Output
+		dashboard.Summary.EstimatedCostByType.CacheRead += entry.estimatedCostByType.CacheRead
+		dashboard.Summary.EstimatedCostByType.CacheWrite += entry.estimatedCostByType.CacheWrite
 		dashboard.Summary.TotalEffectiveCost += entry.EffectiveCost
 		if entry.completed {
 			dashboard.Summary.CompletedRequests++

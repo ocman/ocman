@@ -316,24 +316,25 @@ type Stats struct {
 
 // MetricsSummary holds the dashboard KPI cards for request analytics.
 type MetricsSummary struct {
-	Requests           int     `json:"requests"`
-	CompletedRequests  int     `json:"completedRequests"`
-	SuccessfulRequests int     `json:"successfulRequests"`
-	ErrorRequests      int     `json:"errorRequests"`
-	ErrorRate          float64 `json:"errorRate"`
-	TotalTokens        int64   `json:"totalTokens"`
-	InputTokens        int64   `json:"inputTokens"`
-	OutputTokens       int64   `json:"outputTokens"`
-	CacheReadTokens    int64   `json:"cacheReadTokens"`
-	CacheWriteTokens   int64   `json:"cacheWriteTokens"`
-	AvgTokensPerSec    float64 `json:"avgTokensPerSec"`
-	AvgDurationMs      float64 `json:"avgDurationMs"`
-	P50DurationMs      float64 `json:"p50DurationMs"`
-	P95DurationMs      float64 `json:"p95DurationMs"`
-	TotalDurationMs    int64   `json:"totalDurationMs"`
-	CacheHitRate       float64 `json:"cacheHitRate"`
-	TotalCost          float64 `json:"totalCost"`
-	TotalCalcCost      float64 `json:"totalCalcCost"`
+	Requests            int        `json:"requests"`
+	CompletedRequests   int        `json:"completedRequests"`
+	SuccessfulRequests  int        `json:"successfulRequests"`
+	ErrorRequests       int        `json:"errorRequests"`
+	ErrorRate           float64    `json:"errorRate"`
+	TotalTokens         int64      `json:"totalTokens"`
+	InputTokens         int64      `json:"inputTokens"`
+	OutputTokens        int64      `json:"outputTokens"`
+	CacheReadTokens     int64      `json:"cacheReadTokens"`
+	CacheWriteTokens    int64      `json:"cacheWriteTokens"`
+	AvgTokensPerSec     float64    `json:"avgTokensPerSec"`
+	AvgDurationMs       float64    `json:"avgDurationMs"`
+	P50DurationMs       float64    `json:"p50DurationMs"`
+	P95DurationMs       float64    `json:"p95DurationMs"`
+	TotalDurationMs     int64      `json:"totalDurationMs"`
+	CacheHitRate        float64    `json:"cacheHitRate"`
+	TotalCost           float64    `json:"totalCost"`
+	TotalCalcCost       float64    `json:"totalCalcCost"`
+	EstimatedCostByType CostByType `json:"estimatedCostByType"`
 	// TotalEffectiveCost is the headline cost: per request it uses the
 	// platform-reported cost when that is non-zero, otherwise the
 	// token-derived estimate. This reconciles subscription-plan
@@ -341,6 +342,13 @@ type MetricsSummary struct {
 	// matches what the per-row tables show.
 	TotalEffectiveCost       float64 `json:"totalEffectiveCost"`
 	CostPerSuccessfulRequest float64 `json:"costPerSuccessfulRequest"`
+}
+
+type CostByType struct {
+	Input      float64 `json:"input"`
+	Output     float64 `json:"output"`
+	CacheRead  float64 `json:"cacheRead"`
+	CacheWrite float64 `json:"cacheWrite"`
 }
 
 // MetricsPoint holds chart data for a time bucket (hour or day).

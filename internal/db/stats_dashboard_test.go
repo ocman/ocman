@@ -566,6 +566,34 @@ func TestGetMetricsDashboard_RequestOutcomesDurationsCostsAndAgents(t *testing.T
 	}
 }
 
+func TestGetMetricsDashboard_EstimatedCostByType(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "session", "/p", now, now)
+	insertMessage(t, db, "request", "s1", now, map[string]interface{}{
+		"role":       "assistant",
+		"finish":     "end_turn",
+		"providerID": "provider",
+		"modelID":    "model",
+		"tokens": map[string]interface{}{
+			"input": 10, "output": 20,
+			"cache": map[string]interface{}{"read": 30, "write": 40},
+		},
+	})
+
+	dash, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{
+		Pricing: stubPricing{inputRate: 1, outputRate: 2, cacheReadRate: 3, cacheWriteRate: 4},
+	})
+	if err != nil {
+		t.Fatalf("GetMetricsDashboard: %v", err)
+	}
+	if got, want := dash.Summary.EstimatedCostByType, (CostByType{Input: 10, Output: 40, CacheRead: 90, CacheWrite: 160}); got != want {
+		t.Fatalf("EstimatedCostByType = %+v, want %+v", got, want)
+	}
+}
+
 func TestGetMetricsDashboard_CostByModel_UsesEstimatedCostWhenReportedCostIsZero(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()

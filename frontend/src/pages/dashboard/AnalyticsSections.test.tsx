@@ -40,7 +40,7 @@ import { PermissionsTab } from './PermissionsTab';
 const query = (data: unknown) => ({ data, isLoading: false, error: null });
 const metrics = {
   availableAgents: ['build'], availableModels: ['provider/model'],
-  summary: { requests: 1, completedRequests: 1, successfulRequests: 1, errorRequests: 0, errorRate: 0, totalTokens: 15, inputTokens: 10, outputTokens: 5, avgTokensPerSec: 5, avgDurationMs: 1000, p50DurationMs: 900, p95DurationMs: 1200, totalDurationMs: 1000, cacheHitRate: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalCost: 0.1, totalCalcCost: 0.1, totalEffectiveCost: 0.1, costPerSuccessfulRequest: 0.1 },
+  summary: { requests: 1, completedRequests: 1, successfulRequests: 1, errorRequests: 0, errorRate: 0, totalTokens: 15, inputTokens: 10, outputTokens: 5, avgTokensPerSec: 5, avgDurationMs: 1000, p50DurationMs: 900, p95DurationMs: 1200, totalDurationMs: 1000, cacheHitRate: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalCost: 0.1, totalCalcCost: 0.1, totalEffectiveCost: 0.1, estimatedCostByType: { input: 0.01, output: 0.04, cacheRead: 0.02, cacheWrite: 0.03 }, costPerSuccessfulRequest: 0.1 },
   series: [{ label: 'Sep 1', avgOutputTokensSec: 5, inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, avgDurationMs: 1000, p50DurationMs: 900, p95DurationMs: 1200, avgCacheEfficiency: 0, errorRate: 0 }],
   stopReasons: [{ reason: 'end_turn', count: 1 }],
   dailyEstimatedCostByModel: { models: [], series: [] }, dailyEffectiveCostByModel: { models: [], series: [] }, costByModel: { models: [], series: [] },
@@ -117,6 +117,8 @@ describe('analytics sections', () => {
   it('owns model and cost filtering', () => {
     renderTab(<ModelsTab />);
     expect(screen.getByText('Effective Cost per Day by Model (USD)')).toBeInTheDocument();
+    expect(screen.getByText('Cost Distribution by Model')).toBeInTheDocument();
+    expect(screen.getByText('Estimated Cost Distribution by Type')).toBeInTheDocument();
     expect(screen.getByText('Agent breakdown')).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Model' })).toBeInTheDocument();
   });
@@ -129,10 +131,29 @@ describe('analytics sections', () => {
     renderTab(<ModelsTab />);
     fireEvent.click(screen.getByRole('combobox', { name: 'Model' }));
     fireEvent.click(screen.getByRole('option', { name: 'two' }));
-    const chart = JSON.parse(screen.getByTestId('doughnut-chart').getAttribute('data-chart') ?? '{}');
+    const card = screen.getByText('Model Usage').closest('.chart-card') as HTMLElement;
+    const chart = JSON.parse(within(card).getByTestId('doughnut-chart').getAttribute('data-chart') ?? '{}');
     expect(chart.labels).toEqual(['two']);
-    const options = JSON.parse(screen.getByTestId('doughnut-chart').getAttribute('data-options') ?? '{}');
+    const options = JSON.parse(within(card).getByTestId('doughnut-chart').getAttribute('data-options') ?? '{}');
     expect(options.plugins.legend.position).toBe('right');
+  });
+
+  it('plots model and type cost distributions', () => {
+    useMetrics.mockReturnValue(query({
+      ...metrics,
+      costByModel: { models: ['provider/one', 'provider/two'], series: [{ label: 'Sep 1', costs: [0.6, 0.4] }] },
+    }));
+    renderTab(<ModelsTab />);
+
+    const modelCard = screen.getByText('Cost Distribution by Model').closest('.chart-card') as HTMLElement;
+    const modelChart = JSON.parse(within(modelCard).getByTestId('doughnut-chart').getAttribute('data-chart') ?? '{}');
+    expect(modelChart.labels).toEqual(['one', 'two']);
+    expect(modelChart.datasets[0].data).toEqual([0.6, 0.4]);
+
+    const typeCard = screen.getByText('Estimated Cost Distribution by Type').closest('.chart-card') as HTMLElement;
+    const typeChart = JSON.parse(within(typeCard).getByTestId('doughnut-chart').getAttribute('data-chart') ?? '{}');
+    expect(typeChart.labels).toEqual(['Input', 'Output', 'Cache read', 'Cache write']);
+    expect(typeChart.datasets[0].data).toEqual([0.01, 0.04, 0.02, 0.03]);
   });
 
   it('ranks hourly models by token volume', () => {

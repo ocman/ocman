@@ -142,6 +142,18 @@ export const DOUGHNUT_OPTIONS = {
   plugins: { legend: { position: 'right' as const, labels: baseLegendLabels } },
 } as const;
 
+export const COST_DOUGHNUT_OPTIONS = {
+  ...DOUGHNUT_OPTIONS,
+  plugins: {
+    ...DOUGHNUT_OPTIONS.plugins,
+    tooltip: {
+      callbacks: {
+        label: (context: { label?: string; parsed: number }) => `${context.label ?? ''}: ${formatCurrency(context.parsed, 4)}`,
+      },
+    },
+  },
+} as const;
+
 /**
  * Sessions-per-day bar chart. The custom tick callback only renders
  * the first / last / every-Nth label so a long range stays readable.

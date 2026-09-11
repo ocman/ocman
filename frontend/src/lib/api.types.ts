@@ -851,6 +851,12 @@ export interface MetricsSummary {
   cacheHitRate: number;
   totalCost: number;
   totalCalcCost: number;
+  estimatedCostByType: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+  };
   /**
    * Headline cost: per request, the platform-reported cost when it's
    * non-zero, otherwise the token-derived estimate. Reconciles

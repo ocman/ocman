@@ -1855,12 +1855,15 @@ func TestGetSessionTree_ReturnsDeepTreeWithoutUnrelatedSessions(t *testing.T) {
 
 // stubPricing is a CostCalculator that returns a fixed per-token cost.
 type stubPricing struct {
-	inputRate  float64
-	outputRate float64
+	inputRate      float64
+	outputRate     float64
+	cacheReadRate  float64
+	cacheWriteRate float64
 }
 
-func (s stubPricing) CalcCost(_ string, in, out, _, _ int64) float64 {
-	return float64(in)*s.inputRate + float64(out)*s.outputRate
+func (s stubPricing) CalcCost(_ string, in, out, cacheRead, cacheWrite int64) float64 {
+	return float64(in)*s.inputRate + float64(out)*s.outputRate +
+		float64(cacheRead)*s.cacheReadRate + float64(cacheWrite)*s.cacheWriteRate
 }
 
 func TestGetMetricsDashboardCumulativeCalcCost(t *testing.T) {

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Bar, Doughnut } from 'react-chartjs-2';
-import { BAR_OPTIONS_COST_BY_MODEL, BAR_OPTIONS_HOURLY_TOKENS, BAR_OPTIONS_TOKENS_BY_MODEL, CHART_COLORS, DOUGHNUT_OPTIONS } from '../../lib/chartConfig';
-import { formatCompactNumber, formatCurrency, formatNumber, formatPercent } from '../../lib/format';
+import { BAR_OPTIONS_COST_BY_MODEL, BAR_OPTIONS_HOURLY_TOKENS, BAR_OPTIONS_TOKENS_BY_MODEL, CHART_COLORS, COST_DOUGHNUT_OPTIONS, DOUGHNUT_OPTIONS } from '../../lib/chartConfig';
+import { formatCompactNumber, formatCurrency, formatNumber, formatPercent, renderModel } from '../../lib/format';
 import { useHourlyTokens, useMetrics, useModels } from '../../lib/queries';
 import { ModelLogo } from '../../components/ModelLogo';
 import { AnalyticsFilters } from './AnalyticsFilters';
@@ -20,6 +20,8 @@ export function ModelsTab() {
   const models = [...(modelsQ.data ?? [])].sort((a, b) => b.count - a.count);
   const selectedModels = model ? models.filter((item) => `${item.provider}/${item.model}` === model) : models;
   const top = selectedModels.slice(0, 8);
+  const modelCosts = metricsQ.data?.costByModel;
+  const costByType = metricsQ.data?.summary.estimatedCostByType;
   const errors = queryErrors(modelsQ.error, hourlyQ.error, metricsQ.error);
   const modelOptions = [{ value: '', label: 'All models' }, ...models.map((item) => ({ value: `${item.provider}/${item.model}`, label: item.model, icon: <ModelLogo model={`${item.provider}/${item.model}`} /> }))];
 
@@ -41,6 +43,10 @@ export function ModelsTab() {
       </div>
       {metricsQ.isLoading && !metricsQ.data && <ChartSkeletons labels={['Loading effective cost', 'Loading agent breakdown']} />}
       {metricsQ.data && <>
+            <div className="analytics-chart-pair">
+              <ChartCard title="Cost Distribution by Model"><Doughnut data={{ labels: modelCosts?.models.map(renderModel), datasets: [{ data: modelCosts?.series.at(-1)?.costs ?? [], backgroundColor: CHART_COLORS, borderWidth: 0 }] }} options={COST_DOUGHNUT_OPTIONS} /></ChartCard>
+              <ChartCard title="Estimated Cost Distribution by Type"><Doughnut data={{ labels: ['Input', 'Output', 'Cache read', 'Cache write'], datasets: [{ data: [costByType?.input ?? 0, costByType?.output ?? 0, costByType?.cacheRead ?? 0, costByType?.cacheWrite ?? 0], backgroundColor: CHART_COLORS.slice(0, 4), borderWidth: 0 }] }} options={COST_DOUGHNUT_OPTIONS} /></ChartCard>
+            </div>
             <div className="metrics-chart-grid"><ChartCard title="Effective Cost per Day by Model (USD)"><Bar data={{ labels: metricsQ.data.dailyEffectiveCostByModel.series.map((point) => point.label), datasets: buildCostByModelDatasets(metricsQ.data) }} options={BAR_OPTIONS_COST_BY_MODEL} /></ChartCard></div>
             <div className="chart-card">
               <h3>Agent breakdown</h3>
