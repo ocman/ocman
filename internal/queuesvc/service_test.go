@@ -3,8 +3,10 @@ package queuesvc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -793,4 +795,48 @@ func TestNotify_FiresForEveryQueueMutation(t *testing.T) {
 			t.Fatalf("failed-send notify count = %d, want 0 (no state change)", rec.count())
 		}
 	})
+}
+
+func TestSessionLocksAreReclaimedAfterUse(t *testing.T) {
+	svc := New(&memStore{}, &recSender{}, statusStub{ok: true}, nil)
+	for i := 0; i < 100; i++ {
+		svc.Flush(t.Context(), "opencode", fmt.Sprintf("session-%d", i))
+	}
+	if len(svc.locks) != 0 {
+		t.Fatalf("idle session locks = %d, want 0", len(svc.locks))
+	}
+}
+
+func TestSessionLockWaiterPreventsEarlyReclamation(t *testing.T) {
+	svc := New(&memStore{}, &recSender{}, statusStub{ok: true}, nil)
+	key := sessionKey{Platform: "opencode", SessionID: "session"}
+	unlockFirst := svc.lockFor(key)
+	second := make(chan func(), 1)
+	go func() { second <- svc.lockFor(key) }()
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		svc.mu.Lock()
+		refs := svc.locks[key].refs
+		svc.mu.Unlock()
+		if refs == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("second lock waiter was not registered")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	unlockFirst()
+	unlockSecond := <-second
+	svc.mu.Lock()
+	if len(svc.locks) != 1 {
+		t.Fatalf("locks while second holder is active = %d, want 1", len(svc.locks))
+	}
+	svc.mu.Unlock()
+	unlockSecond()
+	if len(svc.locks) != 0 {
+		t.Fatalf("locks after final holder = %d, want 0", len(svc.locks))
+	}
 }

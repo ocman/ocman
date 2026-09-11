@@ -131,6 +131,21 @@ func TestCache_HonoursTTLAndDedupes(t *testing.T) {
 	}
 }
 
+func TestCacheDropsExpiredEntries(t *testing.T) {
+	c := newCache(time.Second, func(_ context.Context, _ string) Info {
+		return Info{Branch: "main"}
+	})
+	c.entries["expired"] = &cacheEntry{fetched: time.Now().Add(-2 * time.Second)}
+
+	c.lookup(context.Background(), "fresh")
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, ok := c.entries["expired"]; ok {
+		t.Fatal("expired repository-info entry was retained")
+	}
+}
+
 func TestCache_EmptyDirShortCircuits(t *testing.T) {
 	var calls int64
 	c := newCache(time.Minute, func(_ context.Context, _ string) Info {

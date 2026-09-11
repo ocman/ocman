@@ -89,7 +89,12 @@ func (c *cache) lookup(ctx context.Context, dir string) Info {
 	}
 
 	c.mu.Lock()
-	if e, ok := c.entries[dir]; ok && time.Since(e.fetched) < c.ttl {
+	for key, entry := range c.entries {
+		if time.Since(entry.fetched) >= c.ttl {
+			delete(c.entries, key)
+		}
+	}
+	if e, ok := c.entries[dir]; ok {
 		info := e.info
 		c.mu.Unlock()
 		return info

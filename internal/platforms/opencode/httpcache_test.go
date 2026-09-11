@@ -1,6 +1,7 @@
 package opencode
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -56,6 +57,19 @@ func TestHTTPCache_ExpiresAfterTTL(t *testing.T) {
 	time.Sleep(40 * time.Millisecond)
 	if _, ok := c.get("p", "/x"); ok {
 		t.Error("expected miss after TTL elapsed")
+	}
+	if len(c.entries) != 0 {
+		t.Fatalf("expired entries = %d, want 0", len(c.entries))
+	}
+}
+
+func TestHTTPCache_BoundsFreshPorts(t *testing.T) {
+	c := newHTTPCache(time.Minute)
+	for i := 0; i < 1000; i++ {
+		c.put(fmt.Sprint(i), "/agent", []byte("body"))
+	}
+	if len(c.entries) > httpCacheMaxEntries {
+		t.Fatalf("cache entries = %d, want at most %d", len(c.entries), httpCacheMaxEntries)
 	}
 }
 

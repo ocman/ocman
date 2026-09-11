@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
@@ -438,6 +439,42 @@ func TestClearPromptsForPortRemovesOnlyOwnedDirectories(t *testing.T) {
 	other, _ := a.ListPermissions(context.Background(), "ses-other")
 	if len(owned) != 0 || len(other) != 1 {
 		t.Fatalf("after clear: owned=%#v other=%#v", owned, other)
+	}
+}
+
+func TestClearPromptsForPortReclaimsResolvedMarkersAndAffinity(t *testing.T) {
+	resetSessionPortAffinityForTests()
+	defer resetSessionPortAffinityForTests()
+	oldCatalogCache, oldSessionCache := catalogCache, sessionCache
+	catalogCache = newHTTPCache(time.Minute)
+	sessionCache = newHTTPCache(time.Minute)
+	defer func() {
+		catalogCache, sessionCache = oldCatalogCache, oldSessionCache
+	}()
+
+	a := New(nil, nil)
+	const (
+		port = "4321"
+		dir  = "/repo/owned"
+		sid  = "ses-owned"
+		pid  = "perm-owned"
+	)
+	a.ObservePromptAsked(port, dir, "permission", platforms.LivePrompt{"id": pid, "sessionID": sid})
+	a.ObservePromptResolved(dir, "permission", sid, pid)
+	rememberSessionPort(sid, port)
+	catalogCache.put(port, "/agent", []byte("catalog"))
+	sessionCache.put(port, "/session/"+sid, []byte("session"))
+
+	a.ClearPromptsForPort(port)
+
+	if len(a.prompts.changed) != 0 {
+		t.Fatalf("resolved prompt markers = %d, want 0", len(a.prompts.changed))
+	}
+	if got := preferredSessionPort(sid); got != "" {
+		t.Fatalf("session affinity after port removal = %q, want empty", got)
+	}
+	if len(catalogCache.entries) != 0 || len(sessionCache.entries) != 0 {
+		t.Fatalf("HTTP cache rows after port removal = catalog:%d session:%d", len(catalogCache.entries), len(sessionCache.entries))
 	}
 }
 

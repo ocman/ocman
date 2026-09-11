@@ -78,7 +78,7 @@ type Service struct {
 	// One lock per session serializes flush drains so an enqueue-driven
 	// flush and an idle-driven flush cannot pop the same head twice.
 	mu    sync.Mutex
-	locks map[sessionKey]*sync.Mutex
+	locks map[sessionKey]*sessionLock
 
 	// drainGuards[key] records the source message visible before a queued send
 	// for that session and we have NOT yet seen a real session.idle edge.
@@ -100,6 +100,11 @@ type drainGuard struct {
 	createdAt  int64
 }
 
+type sessionLock struct {
+	mu   sync.Mutex
+	refs int
+}
+
 // New builds a queue service. notify may be nil.
 func New(store Store, sender Sender, status StatusInferer, notify func(context.Context, string, string)) *Service {
 	return &Service{
@@ -107,7 +112,7 @@ func New(store Store, sender Sender, status StatusInferer, notify func(context.C
 		sender:      sender,
 		status:      status,
 		notify:      notify,
-		locks:       map[sessionKey]*sync.Mutex{},
+		locks:       map[sessionKey]*sessionLock{},
 		drainGuards: map[sessionKey]drainGuard{},
 	}
 }
@@ -132,15 +137,26 @@ func (s *Service) clearDrainedSinceIdle(key sessionKey) {
 	s.mu.Unlock()
 }
 
-func (s *Service) lockFor(key sessionKey) *sync.Mutex {
+func (s *Service) lockFor(key sessionKey) func() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	m, ok := s.locks[key]
 	if !ok {
-		m = &sync.Mutex{}
+		m = &sessionLock{}
 		s.locks[key] = m
 	}
-	return m
+	m.refs++
+	s.mu.Unlock()
+
+	m.mu.Lock()
+	return func() {
+		m.mu.Unlock()
+		s.mu.Lock()
+		m.refs--
+		if m.refs == 0 && s.locks[key] == m {
+			delete(s.locks, key)
+		}
+		s.mu.Unlock()
+	}
 }
 
 // ErrEmptyMessage is returned by Enqueue when a message has neither text
@@ -178,9 +194,8 @@ func (s *Service) Enqueue(ctx context.Context, platformID string, forceQueue boo
 	}
 
 	key := sessionKey{Platform: platformID, SessionID: req.SessionID}
-	lock := s.lockFor(key)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock := s.lockFor(key)
+	defer unlock()
 
 	existing, err := s.store.CountQueuedMessages(ctx, platformID, req.SessionID)
 	if err != nil {
@@ -225,9 +240,8 @@ func (s *Service) Enqueue(ctx context.Context, platformID string, forceQueue boo
 // id let a local instance's idle edge drain a remote session's queue.
 func (s *Service) Flush(ctx context.Context, platformID, sessionID string) {
 	key := sessionKey{Platform: platformID, SessionID: sessionID}
-	lock := s.lockFor(key)
-	lock.Lock()
-	defer lock.Unlock()
+	unlock := s.lockFor(key)
+	defer unlock()
 	// A real idle edge re-arms the enqueue fast-path: the previous turn
 	// has genuinely finished, so the next drained message starts a fresh
 	// turn.
@@ -362,18 +376,17 @@ func (s *Service) Sweep(ctx context.Context) {
 				continue
 			}
 		}
-		lock := s.lockFor(key)
-		lock.Lock()
+		unlock := s.lockFor(key)
 		current, stillGuarded := s.currentDrainGuard(key)
 		if guarded != stillGuarded || (guarded && current.generation != guard.generation) {
-			lock.Unlock()
+			unlock()
 			continue
 		}
 		if stillGuarded {
 			s.clearDrainedSinceIdle(key)
 		}
 		s.drainHead(ctx, key, false)
-		lock.Unlock()
+		unlock()
 	}
 }
 

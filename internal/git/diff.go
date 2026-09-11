@@ -134,6 +134,7 @@ func (d *diffCache) lookupCached(dir string) *Diff {
 		return nil
 	}
 	if time.Since(e.fetched) > diffCacheTTL {
+		delete(diffCacheStorage, dir)
 		return nil
 	}
 	return e.v
@@ -142,6 +143,11 @@ func (d *diffCache) lookupCached(dir string) *Diff {
 func (d *diffCache) put(dir string, v *Diff) {
 	diffCacheMu.Lock()
 	defer diffCacheMu.Unlock()
+	for key, entry := range diffCacheStorage {
+		if time.Since(entry.fetched) > diffCacheTTL {
+			delete(diffCacheStorage, key)
+		}
+	}
 	diffCacheStorage[dir] = diffEntry{v: v, fetched: time.Now()}
 }
 

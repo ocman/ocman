@@ -7,9 +7,32 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/gitexec"
 )
+
+func TestDiffCacheDropsExpiredEntries(t *testing.T) {
+	diffCacheMu.Lock()
+	diffCacheStorage = map[string]diffEntry{
+		"expired": {v: &Diff{}, fetched: time.Now().Add(-2 * diffCacheTTL)},
+	}
+	diffCacheMu.Unlock()
+	t.Cleanup(func() {
+		diffCacheMu.Lock()
+		diffCacheStorage = map[string]diffEntry{}
+		diffCacheMu.Unlock()
+	})
+
+	if got := defaultDiffCache.lookupCached("expired"); got != nil {
+		t.Fatal("expired diff cache entry returned a value")
+	}
+	diffCacheMu.Lock()
+	defer diffCacheMu.Unlock()
+	if len(diffCacheStorage) != 0 {
+		t.Fatalf("expired diff cache entries = %d, want 0", len(diffCacheStorage))
+	}
+}
 
 // gitInit prepares a fresh repo at dir with a single committed file
 // (foo.txt = "hello\n") so subsequent test mutations produce

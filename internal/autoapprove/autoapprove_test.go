@@ -1136,6 +1136,67 @@ func TestSafeCommandCache(t *testing.T) {
 	}
 }
 
+func TestAutoApproveCachesAreBounded(t *testing.T) {
+	s := &Service{}
+	for i := 0; i < 5000; i++ {
+		permissionID := fmt.Sprintf("permission-%d", i)
+		if _, ok := s.claimAutoApprove(t.Context(), "session", permissionID); !ok {
+			t.Fatalf("claim %s rejected", permissionID)
+		}
+		s.recordJudged("session", permissionID, verdictSafe)
+		s.releaseAutoApprove("session", permissionID)
+	}
+	if len(s.autoApprove) > maxAutoApproveVerdicts {
+		t.Fatalf("auto-approve verdicts = %d, want at most %d", len(s.autoApprove), maxAutoApproveVerdicts)
+	}
+	if verdict, ok := s.lookupJudged("session", "permission-4999"); !ok || verdict != verdictSafe {
+		t.Fatalf("latest bounded verdict = (%q, %v), want safe replay", verdict, ok)
+	}
+
+	for i := 0; i < 300; i++ {
+		s.recordSafeCommandVerdict("parent", fmt.Sprintf("hash-%d", i), "safe")
+	}
+	if len(s.safeCommandCache["parent"]) > maxSafeCommandsPerSession {
+		t.Fatalf("safe commands = %d, want at most %d", len(s.safeCommandCache["parent"]), maxSafeCommandsPerSession)
+	}
+
+	for i := 0; i < 1100; i++ {
+		s.recordSafeCommandVerdict(fmt.Sprintf("session-%d", i), "hash", "safe")
+	}
+	if len(s.safeCommandCache) > maxSafeCommandSessions {
+		t.Fatalf("safe-command sessions = %d, want at most %d", len(s.safeCommandCache), maxSafeCommandSessions)
+	}
+
+	s.deps.ParentSessionID = func(_ context.Context, id string) (string, bool) {
+		return "parent", id == "child"
+	}
+	s.recordSafeCommandVerdict("parent", "inherited", "still safe")
+	if got, ok := s.lookupInheritedSafeCommandVerdict(t.Context(), "child", "inherited"); !ok || got != "inherited from parent: still safe" {
+		t.Fatalf("bounded parent inheritance = (%q, %v)", got, ok)
+	}
+}
+
+func TestAutoApproveCacheShrinksAfterOverlappingClaimsSettle(t *testing.T) {
+	s := &Service{}
+	permissionIDs := make([]string, maxAutoApproveVerdicts+10)
+	for i := range permissionIDs {
+		permissionIDs[i] = fmt.Sprintf("permission-%d", i)
+		if _, ok := s.claimAutoApprove(t.Context(), "session", permissionIDs[i]); !ok {
+			t.Fatalf("claim %s rejected", permissionIDs[i])
+		}
+		s.recordJudged("session", permissionIDs[i], verdictSafe)
+	}
+	if len(s.autoApprove) <= maxAutoApproveVerdicts {
+		t.Fatalf("overlapping claims = %d, want temporary overflow", len(s.autoApprove))
+	}
+	for _, permissionID := range permissionIDs {
+		s.releaseAutoApprove("session", permissionID)
+	}
+	if len(s.autoApprove) > maxAutoApproveVerdicts {
+		t.Fatalf("settled verdicts = %d, want at most %d", len(s.autoApprove), maxAutoApproveVerdicts)
+	}
+}
+
 // TestInheritedSafeCommandVerdict covers a child session inheriting a
 // parent's approved command via the ParentSessionID dep: an own-session
 // hit returns unprefixed, an ancestor hit is prefixed with "inherited

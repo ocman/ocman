@@ -113,7 +113,24 @@ func (s *Service) claimAutoApproveWithStart(parent context.Context, sessionID, p
 		cancel:        cancel,
 		judgeStartsAt: judgeStartsAt,
 	}
+	s.pruneAutoApproveLocked(key)
 	return ctx, true
+}
+
+func (s *Service) pruneAutoApproveLocked(keep string) {
+	for len(s.autoApprove) > maxAutoApproveVerdicts {
+		removed := false
+		for key, status := range s.autoApprove {
+			if key != keep && status.cancel == nil {
+				delete(s.autoApprove, key)
+				removed = true
+				break
+			}
+		}
+		if !removed {
+			return
+		}
+	}
 }
 
 // markAutoApproveChecking flips the status's checking flag, signalling
@@ -162,6 +179,8 @@ func (s *Service) releaseAutoApprove(sessionID, permissionID string) {
 	// verdicts are kept so REST resurrection can replay them.
 	if st.verdict == "" {
 		delete(s.autoApprove, key)
+	} else {
+		s.pruneAutoApproveLocked(key)
 	}
 	s.autoApproveMu.Unlock()
 	if cancel != nil {
@@ -229,8 +248,15 @@ func (s *Service) recordJudgedWithReasoning(sessionID, permissionID string, verd
 	}
 	st.verdict = verdict
 	st.reasoning = reasoning
+	s.pruneAutoApproveLocked(key)
 	s.autoApproveMu.Unlock()
 }
+
+const (
+	maxAutoApproveVerdicts    = 4096
+	maxSafeCommandSessions    = 1024
+	maxSafeCommandsPerSession = 256
+)
 
 // lookupJudged returns the cached verdict for (sessionID, permissionID)
 // and ok=true if the judge already produced a verdict in this process.
@@ -406,8 +432,20 @@ func (s *Service) recordSafeCommandVerdict(sessionID, hash, reasoning string) {
 	}
 	bySession, ok := s.safeCommandCache[sessionID]
 	if !ok {
+		if len(s.safeCommandCache) >= maxSafeCommandSessions {
+			for oldSession := range s.safeCommandCache {
+				delete(s.safeCommandCache, oldSession)
+				break
+			}
+		}
 		bySession = make(map[string]string)
 		s.safeCommandCache[sessionID] = bySession
+	}
+	if _, exists := bySession[hash]; !exists && len(bySession) >= maxSafeCommandsPerSession {
+		for oldHash := range bySession {
+			delete(bySession, oldHash)
+			break
+		}
 	}
 	bySession[hash] = reasoning
 }

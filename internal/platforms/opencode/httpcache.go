@@ -54,6 +54,8 @@ type httpCacheEntry struct {
 	expiresAt time.Time
 }
 
+const httpCacheMaxEntries = 256
+
 func newHTTPCache(ttl time.Duration) *httpCache {
 	return &httpCache{
 		ttl:     ttl,
@@ -84,15 +86,20 @@ func newHTTPCacheNamed(ttl time.Duration, name string) *httpCache {
 // must not mutate it. (None of our call sites do; they all hand the
 // bytes to json.Unmarshal which copies what it needs.)
 func (c *httpCache) get(port, path string) ([]byte, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	e, ok := c.entries[httpCacheKey{port, path}]
+	c.mu.Lock()
+	key := httpCacheKey{port, path}
+	e, ok := c.entries[key]
 	if !ok {
+		c.mu.Unlock()
 		return nil, false
 	}
 	if time.Now().After(e.expiresAt) {
+		delete(c.entries, key)
+		c.mu.Unlock()
+		c.metrics.RecordEvictions(context.Background(), 1)
 		return nil, false
 	}
+	c.mu.Unlock()
 	return e.body, true
 }
 
@@ -100,11 +107,30 @@ func (c *httpCache) get(port, path string) ([]byte, bool) {
 // the same key.
 func (c *httpCache) put(port, path string, body []byte) {
 	c.mu.Lock()
-	c.entries[httpCacheKey{port, path}] = httpCacheEntry{
+	now := time.Now()
+	var dropped int64
+	for key, entry := range c.entries {
+		if now.After(entry.expiresAt) {
+			delete(c.entries, key)
+			dropped++
+		}
+	}
+	key := httpCacheKey{port, path}
+	if _, exists := c.entries[key]; !exists {
+		for len(c.entries) >= httpCacheMaxEntries {
+			for oldKey := range c.entries {
+				delete(c.entries, oldKey)
+				dropped++
+				break
+			}
+		}
+	}
+	c.entries[key] = httpCacheEntry{
 		body:      body,
-		expiresAt: time.Now().Add(c.ttl),
+		expiresAt: now.Add(c.ttl),
 	}
 	c.mu.Unlock()
+	c.metrics.RecordEvictions(context.Background(), dropped)
 }
 
 // invalidate drops a single (port, path) entry. Useful after a
@@ -120,9 +146,8 @@ func (c *httpCache) invalidate(port, path string) {
 	}
 }
 
-// invalidatePort drops every entry for a port. Called when port
-// discovery observes that a previously-running OpenCode instance has
-// disappeared, so we don't keep its cached catalog around forever.
+// invalidatePort drops every entry for a port. ClearPromptsForPort calls it
+// when the auto-approve watcher observes that an OpenCode port disappeared.
 func (c *httpCache) invalidatePort(port string) {
 	c.mu.Lock()
 	var dropped int64

@@ -144,6 +144,18 @@ func forgetSessionPort(sessionID, port string) {
 	}
 }
 
+func forgetSessionsForPort(port string) {
+	if port == "" {
+		return
+	}
+	sessionPortAffinity.Range(func(key, value interface{}) bool {
+		if value == port {
+			sessionPortAffinity.CompareAndDelete(key, value)
+		}
+		return true
+	})
+}
+
 // discoverOpenCodePorts returns a map of directory -> port for all running
 // OpenCode instances. Results are cached for portCacheTTL.
 func discoverOpenCodePorts() map[string]string {

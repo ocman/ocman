@@ -22,23 +22,25 @@ type livePromptEntry struct {
 }
 
 type livePromptRegistry struct {
-	mu        sync.RWMutex
-	entries   map[string]livePromptEntry
-	version   map[string]uint64
-	changed   map[string]uint64
-	applied   map[string]uint64
-	scopePort map[string]string
-	portGen   map[string]uint64
+	mu          sync.RWMutex
+	entries     map[string]livePromptEntry
+	version     map[string]uint64
+	changed     map[string]uint64
+	changeScope map[string]string
+	applied     map[string]uint64
+	scopePort   map[string]string
+	portGen     map[string]uint64
 }
 
 func newLivePromptRegistry() *livePromptRegistry {
 	return &livePromptRegistry{
-		entries:   make(map[string]livePromptEntry),
-		version:   make(map[string]uint64),
-		changed:   make(map[string]uint64),
-		applied:   make(map[string]uint64),
-		scopePort: make(map[string]string),
-		portGen:   make(map[string]uint64),
+		entries:     make(map[string]livePromptEntry),
+		version:     make(map[string]uint64),
+		changed:     make(map[string]uint64),
+		changeScope: make(map[string]string),
+		applied:     make(map[string]uint64),
+		scopePort:   make(map[string]string),
+		portGen:     make(map[string]uint64),
 	}
 }
 
@@ -92,6 +94,7 @@ func (a *Adapter) observePromptAsked(port string, generation uint64, directory, 
 	scope := promptScope(directory, kind)
 	a.prompts.version[scope]++
 	a.prompts.changed[key] = a.prompts.version[scope]
+	a.prompts.changeScope[key] = scope
 	if port != "" {
 		a.prompts.scopePort[scope] = port
 	}
@@ -124,6 +127,7 @@ func (a *Adapter) ObservePromptResolved(directory, kind, sessionID, requestID st
 	scope := promptScope(directory, kind)
 	a.prompts.version[scope]++
 	a.prompts.changed[key] = a.prompts.version[scope]
+	a.prompts.changeScope[key] = scope
 	a.prompts.mu.Unlock()
 }
 
@@ -195,6 +199,9 @@ func (a *Adapter) ClearPromptsForPort(port string) {
 	if a == nil || a.prompts == nil || port == "" {
 		return
 	}
+	forgetSessionsForPort(port)
+	catalogCache.invalidatePort(port)
+	sessionCache.invalidatePort(port)
 	a.prompts.mu.Lock()
 	a.prompts.portGen[port]++
 	directories := make(map[string]bool)
@@ -212,6 +219,14 @@ func (a *Adapter) ClearPromptsForPort(port string) {
 		if directories[entry.directory] {
 			delete(a.prompts.entries, key)
 			delete(a.prompts.changed, key)
+			delete(a.prompts.changeScope, key)
+		}
+	}
+	for key, scope := range a.prompts.changeScope {
+		directory, _, _ := strings.Cut(scope, "\x00")
+		if directories[directory] {
+			delete(a.prompts.changed, key)
+			delete(a.prompts.changeScope, key)
 		}
 	}
 	a.prompts.mu.Unlock()
@@ -340,6 +355,12 @@ func (r *livePromptRegistry) applySnapshot(directory, kind string, token uint64,
 			if onPrompt != nil {
 				onPrompt(clonePrompt(cloned))
 			}
+		}
+	}
+	for key, changed := range r.changed {
+		if r.changeScope[key] == scope && changed <= token {
+			delete(r.changed, key)
+			delete(r.changeScope, key)
 		}
 	}
 	return true
