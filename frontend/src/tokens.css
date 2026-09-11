@@ -335,7 +335,7 @@ header h1 span { color: inherit; font-weight: 400; }
 .main-nav.collapsed .main-nav-brand,
 .main-nav.collapsed nav a span { opacity: 0; }
 .main-nav nav { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 2px; padding: 10px 7px; overflow-y: auto; }
-.main-nav nav a:last-child { margin-top: auto; }
+.main-nav nav a.nav-bottom-start { margin-top: auto; }
 .main-nav nav a {
   height: 34px;
   padding: 0 10px;

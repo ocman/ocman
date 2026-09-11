@@ -59,12 +59,14 @@ function RoutesBoundary({ children }: { children: ReactNode }) {
 
 const MAIN_NAV_ITEMS = [
   { to: '/', label: 'Home', icon: 'bi-house', activeOnSession: true },
-  { to: '/subscription-usage', label: 'Usage', icon: 'bi-speedometer2' },
   { to: '/sessions', label: 'Sessions', icon: 'bi-collection' },
   { to: '/projects', label: 'Projects', icon: 'bi-folder' },
   { to: '/factory/overview', label: 'Factory', icon: 'bi-buildings' },
   { to: '/routines', label: 'Routines', icon: 'bi-clock-history' },
   { to: '/analytics', label: 'Analytics', icon: 'bi-bar-chart' },
+  // Bottom-pinned group: `bottomStart` carries the margin-top:auto that
+  // pushes this item and everything after it to the bottom of the rail.
+  { to: '/subscription-usage', label: 'Usage', icon: 'bi-speedometer2', bottomStart: true },
   { to: '/settings', label: 'Settings', icon: 'bi-gear' },
 ];
 
@@ -104,9 +106,10 @@ export function MainNav({
                 aria-label={item.label}
                 title={collapsed ? item.label : undefined}
                 className={({ isActive }) =>
-                  isActive || (item.activeOnSession && location.pathname.startsWith('/session/'))
-                    ? 'active'
-                    : undefined
+                  [
+                    isActive || (item.activeOnSession && location.pathname.startsWith('/session/')) ? 'active' : '',
+                    item.bottomStart ? 'nav-bottom-start' : '',
+                  ].filter(Boolean).join(' ') || undefined
                 }
                 onClick={onMobileClose}
               >
