@@ -419,7 +419,7 @@ describe('Factory interactions', () => {
     renderFactory(<MemoryRouter><FactoryEpics /></MemoryRouter>);
     await user.click(screen.getByRole('button', { name: 'New epic' }));
 
-    expect(await screen.findByText('The outcome this Factory work should deliver.')).toBeInTheDocument();
+    expect(await screen.findByText('A short clear title for the outcome this Factory work should deliver.')).toBeInTheDocument();
     expect(screen.getByText('Optional context, constraints, and decisions for the planning work.')).toBeInTheDocument();
     expect(screen.getByText('The local repository where Factory starts work. Commands run on this machine.')).toBeInTheDocument();
     expect(screen.getByText('Defines the initial work graph. Formula revisions are immutable.')).toBeInTheDocument();

@@ -146,7 +146,7 @@ func (d *DB) SaveNativeFactoryFormulaRevision(ctx context.Context, saved model.N
 	return saved, nil
 }
 
-func (d *DB) CreateFactoryEpic(ctx context.Context, goal, brief, project, instantiationID string, formula model.NativeFormula) (model.NativeEpic, error) {
+func (d *DB) CreateFactoryEpic(ctx context.Context, preferredID, goal, brief, project, instantiationID string, formula model.NativeFormula) (model.NativeEpic, error) {
 	if err := validateNativeFormula(formula, map[string]bool{}); err != nil {
 		return model.NativeEpic{}, err
 	}
@@ -171,8 +171,11 @@ func (d *DB) CreateFactoryEpic(ctx context.Context, goal, brief, project, instan
 	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_project (path, created_at) VALUES (?, ?) ON CONFLICT(path) DO NOTHING`, project, now); err != nil {
 		return model.NativeEpic{}, fmt.Errorf("creating Factory project: %w", err)
 	}
-	id, err := insertFactoryEpic(ctx, tx, goal, brief, project, instantiationID, now)
+	id, err := insertFactoryEpic(ctx, tx, preferredID, goal, brief, project, instantiationID, now)
 	if err != nil {
+		if errors.Is(err, model.ErrNativeEpicIDTaken) {
+			return model.NativeEpic{}, err
+		}
 		if instantiationID != "" {
 			existing, lookupErr := scanFactoryEpic(tx.QueryRowContext(ctx, `SELECT id, status, goal, brief, project_path, instantiation_id, formula_id, formula_version, formula_hash FROM factory_epic WHERE instantiation_id = ?`, instantiationID))
 			if lookupErr == nil && existing.Goal == goal && existing.Brief == brief && existing.InitialProject == project {
@@ -1557,49 +1560,88 @@ func factoryGraphID(prefix string) (string, error) {
 	return prefix + hex.EncodeToString(random[:]), nil
 }
 
-func insertFactoryEpic(ctx context.Context, tx *sql.Tx, goal, brief, project, instantiationID string, now int64) (string, error) {
+// insertFactoryEpic inserts the epic row. preferredID, when set, is used
+// verbatim and a collision is reported as model.ErrNativeEpicIDTaken so the
+// caller (an agent naming the epic) can pick another name. With no preferred
+// ID the goal slug plus a random suffix is retried until it lands.
+func insertFactoryEpic(ctx context.Context, tx *sql.Tx, preferredID, goal, brief, project, instantiationID string, now int64) (string, error) {
+	insert := func(id string) error {
+		_, err := tx.ExecContext(ctx, `INSERT INTO factory_epic (id, project_path, status, goal, brief, instantiation_id, created_at, updated_at) VALUES (?, ?, 'open', ?, ?, ?, ?, ?)`, id, project, goal, brief, instantiationID, now, now)
+		return err
+	}
+	if preferredID != "" {
+		err := insert(preferredID)
+		if err == nil {
+			return preferredID, nil
+		}
+		if factoryEpicIDTaken(err) {
+			return "", model.ErrNativeEpicIDTaken
+		}
+		return "", fmt.Errorf("creating Factory Epic: %w", err)
+	}
 	for {
 		id, err := factoryEpicID(goal)
 		if err != nil {
 			return "", err
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO factory_epic (id, project_path, status, goal, brief, instantiation_id, created_at, updated_at) VALUES (?, ?, 'open', ?, ?, ?, ?, ?)`, id, project, goal, brief, instantiationID, now, now)
-		if err == nil {
+		if err = insert(id); err == nil {
 			return id, nil
 		}
-		if strings.Contains(err.Error(), "UNIQUE constraint failed: factory_epic.id") {
+		if factoryEpicIDTaken(err) {
 			continue
 		}
 		return "", fmt.Errorf("creating Factory Epic: %w", err)
 	}
 }
 
+func factoryEpicIDTaken(err error) bool {
+	return strings.Contains(err.Error(), "UNIQUE constraint failed: factory_epic.id")
+}
+
 func factoryEpicID(goal string) (string, error) {
-	initials := make([]byte, 0, 10)
-	inWord := false
-	for i := 0; i < len(goal) && len(initials) < 10; i++ {
-		c := goal[i]
-		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
-			if !inWord {
-				if c >= 'A' && c <= 'Z' {
-					c += 'a' - 'A'
-				}
-				initials = append(initials, c)
-			}
-			inWord = true
-		} else {
-			inWord = false
-		}
-	}
-	if len(initials) == 0 {
-		initials = []byte("epic")
-	}
 	var random [3]byte
 	if _, err := rand.Read(random[:]); err != nil {
 		return "", fmt.Errorf("generating Factory Epic ID: %w", err)
 	}
 	suffix := strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(random[:]))[:4]
-	return string(initials) + "-" + suffix, nil
+	return FactoryEpicSlug(goal) + "-" + suffix, nil
+}
+
+// factoryEpicSlugSkip are filler words dropped from a generated slug so the
+// prefix keeps the words that carry meaning.
+var factoryEpicSlugSkip = map[string]bool{
+	"a": true, "an": true, "the": true, "to": true, "for": true, "of": true,
+	"and": true, "or": true, "in": true, "on": true, "at": true, "by": true,
+	"with": true, "so": true, "that": true, "it": true, "its": true,
+	"we": true, "should": true, "into": true, "from": true, "is": true,
+}
+
+// FactoryEpicSlug derives a readable kebab-case prefix from a goal: the first
+// few meaningful ASCII words, lowercased, capped so the ID stays git-ref safe.
+func FactoryEpicSlug(goal string) string {
+	var words []string
+	for _, word := range strings.FieldsFunc(strings.ToLower(goal), func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9')
+	}) {
+		if factoryEpicSlugSkip[word] {
+			continue
+		}
+		if len(word) > 12 {
+			word = word[:12]
+		}
+		words = append(words, word)
+		if len(words) == 3 {
+			break
+		}
+	}
+	slug := strings.Join(words, "-")
+	if len(slug) > 24 {
+		slug = strings.TrimRight(slug[:24], "-")
+	}
+	if slug == "" {
+		return "epic"
+	}
+	return slug
 }
 
 func factoryChildID(ctx context.Context, tx *sql.Tx, parentID string) (string, error) {

@@ -19,7 +19,7 @@ func TestFactoryGraphCreateAndPourAreDurableAndAtomic(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	formula := nativeTracerFormula(t)
-	epic, err := db.CreateFactoryEpic(context.Background(), "Ship search", "Keep it small", "/repo", "", formula)
+	epic, err := db.CreateFactoryEpic(context.Background(), "", "Ship search", "Keep it small", "/repo", "", formula)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestFactoryGraphCreateAndPourAreDurableAndAtomic(t *testing.T) {
 func TestFactoryIssueCommentsAreAppendOnly(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
-	epic, err := db.CreateFactoryEpic(t.Context(), "Ship", "", "/repo", "", nativeTracerFormula(t))
+	epic, err := db.CreateFactoryEpic(t.Context(), "", "Ship", "", "/repo", "", nativeTracerFormula(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,11 +80,11 @@ func TestFactoryGraphMutationsRejectCyclesAndSoftDelete(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	first, err := db.CreateFactoryEpic(ctx, "First", "", "/repo", "", nativeTracerFormula(t))
+	first, err := db.CreateFactoryEpic(ctx, "", "First", "", "/repo", "", nativeTracerFormula(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := db.CreateFactoryEpic(ctx, "Second", "", "/repo", "", nativeTracerFormula(t))
+	second, err := db.CreateFactoryEpic(ctx, "", "Second", "", "/repo", "", nativeTracerFormula(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func TestFactoryGraphMutationsRejectSelfReference(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	epic, err := db.CreateFactoryEpic(ctx, "Self", "", "/repo", "", nativeTracerFormula(t))
+	epic, err := db.CreateFactoryEpic(ctx, "", "Self", "", "/repo", "", nativeTracerFormula(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,11 +197,11 @@ func TestFactoryGraphMutationRejectsStartedOrClosedIssues(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	first, err := db.CreateFactoryEpic(ctx, "First", "", "/repo", "", nativeTracerFormula(t))
+	first, err := db.CreateFactoryEpic(ctx, "", "First", "", "/repo", "", nativeTracerFormula(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := db.CreateFactoryEpic(ctx, "Second", "", "/repo", "", nativeTracerFormula(t))
+	second, err := db.CreateFactoryEpic(ctx, "", "Second", "", "/repo", "", nativeTracerFormula(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +275,7 @@ func TestFactoryGraphMutationRollsBackOnAuditFailure(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	epic, err := db.CreateFactoryEpic(ctx, "Ship", "", "/repo", "", nativeTracerFormula(t))
+	epic, err := db.CreateFactoryEpic(ctx, "", "Ship", "", "/repo", "", nativeTracerFormula(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,13 +311,12 @@ func TestFactoryGraphIDsAreReadableAndNeverReuseChildIndices(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	epic, err := db.CreateFactoryEpic(ctx, "Ship Factory IDs", "", "/repo", "", nativeTracerFormula(t))
+	epic, err := db.CreateFactoryEpic(ctx, "", "Ship Factory IDs", "", "/repo", "", nativeTracerFormula(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	parts := strings.Split(epic.ID, "-")
-	if len(parts) != 2 || parts[0] != "sfi" || len(parts[1]) != 4 {
-		t.Fatalf("Epic ID = %q", epic.ID)
+	if !strings.HasPrefix(epic.ID, "ship-factory-ids-") || len(epic.ID) != len("ship-factory-ids-")+4 {
+		t.Fatalf("Epic ID = %q, want ship-factory-ids-<4 chars>", epic.ID)
 	}
 	rootID := factoryIssueID(t, db, epic.ID, "mol")
 	planID := factoryIssueID(t, db, epic.ID, "plan")
@@ -399,7 +398,7 @@ func TestFactoryServicePoursCreatedBuiltInEpic(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	formula := nativeTracerFormula(t)
-	epic, err := db.CreateFactoryEpic(context.Background(), "Ship search", "Keep it small", "/repo", "", formula)
+	epic, err := db.CreateFactoryEpic(context.Background(), "", "Ship search", "Keep it small", "/repo", "", formula)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -413,7 +412,7 @@ func TestFactoryPourNormalizesLegacyBuiltInSourceHash(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 	formula := nativeTracerFormula(t)
-	epic, err := db.CreateFactoryEpic(ctx, "Ship search", "Keep it small", "/repo", "", formula)
+	epic, err := db.CreateFactoryEpic(ctx, "", "Ship search", "Keep it small", "/repo", "", formula)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -485,7 +484,7 @@ func TestFactoryPourPersistsNestedMolFormulaPins(t *testing.T) {
 	ctx := context.Background()
 	child := model.NativeFormula{ID: "custom/child", Version: 1, Source: "child", Hash: "same-hash", Inputs: []string{"goal", "initial_project"}, Nodes: []model.NativeFormulaNode{{Key: "plan", Kind: "plan"}}}
 	parent := model.NativeFormula{ID: "custom/parent", Version: 1, Source: "parent", Hash: "same-hash", Inputs: []string{"goal", "initial_project"}, Nodes: []model.NativeFormulaNode{{Key: "plan", Kind: "plan"}}, Composition: []model.NativeFormulaComposition{{Key: "child", Requirement: "optional", Bindings: map[string]string{"goal": "goal", "initial_project": "initial_project"}, Formula: child}}}
-	epic, err := db.CreateFactoryEpic(ctx, "Ship", "Brief", "/repo", "", parent)
+	epic, err := db.CreateFactoryEpic(ctx, "", "Ship", "Brief", "/repo", "", parent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -522,7 +521,7 @@ func TestFactoryPourRejectsChangedPinAndRollsBack(t *testing.T) {
 	pinned := model.NativeFormula{ID: "custom/parent", Version: 1, Source: "pinned", Hash: "pinned-hash", Nodes: []model.NativeFormulaNode{{Key: "plan", Kind: "plan"}}}
 	invalid := pinned
 	invalid.Edges = []model.NativeFormulaEdge{{From: "missing", To: "plan"}}
-	if _, err := db.CreateFactoryEpic(ctx, "Ship", "Brief", "/repo", "", invalid); err == nil {
+	if _, err := db.CreateFactoryEpic(ctx, "", "Ship", "Brief", "/repo", "", invalid); err == nil {
 		t.Fatal("accepted an invalid Formula graph")
 	}
 	for _, table := range []string{"factory_issue", "factory_issue_hierarchy", "factory_issue_dependency", "factory_mol_formula"} {
@@ -531,7 +530,7 @@ func TestFactoryPourRejectsChangedPinAndRollsBack(t *testing.T) {
 			t.Fatalf("%s count = %d, %v", table, count, err)
 		}
 	}
-	epic, err := db.CreateFactoryEpic(ctx, "Ship", "Brief", "/repo", "", pinned)
+	epic, err := db.CreateFactoryEpic(ctx, "", "Ship", "Brief", "/repo", "", pinned)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -547,7 +546,7 @@ func TestFactoryCreationRejectsInvalidFormulaKeyBeforeWrites(t *testing.T) {
 	defer db.Close()
 	child := model.NativeFormula{ID: "custom/child", Version: 1, Source: "child", Hash: "child-hash", Nodes: []model.NativeFormulaNode{{Key: "plan", Kind: "plan"}}}
 	formula := model.NativeFormula{ID: "custom/parent", Version: 1, Source: "source", Hash: "hash", Nodes: []model.NativeFormulaNode{{Key: "plan", Kind: "plan"}}, Composition: []model.NativeFormulaComposition{{Key: "not valid", Formula: child}}}
-	if _, err := db.CreateFactoryEpic(context.Background(), "Ship", "Brief", "/repo", "", formula); err == nil {
+	if _, err := db.CreateFactoryEpic(context.Background(), "", "Ship", "Brief", "/repo", "", formula); err == nil {
 		t.Fatal("accepted an invalid Formula key")
 	}
 	for _, table := range []string{"factory_project", "factory_epic", "factory_formula_identity", "factory_issue", "factory_issue_hierarchy", "factory_mol_formula"} {
@@ -566,7 +565,7 @@ func TestFactoryPourRollsBackNestedStorageFailure(t *testing.T) {
 	if _, err := db.db.Exec(`CREATE TRIGGER fail_nested_pin BEFORE INSERT ON factory_mol_formula WHEN NEW.mol_id LIKE '%.2' BEGIN SELECT RAISE(ABORT, 'nested pin failure'); END`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.CreateFactoryEpic(context.Background(), "Ship", "Brief", "/repo", "", parent); err == nil || !strings.Contains(err.Error(), "nested pin failure") {
+	if _, err := db.CreateFactoryEpic(context.Background(), "", "Ship", "Brief", "/repo", "", parent); err == nil || !strings.Contains(err.Error(), "nested pin failure") {
 		t.Fatalf("CreateFactoryEpic error = %v, want nested storage failure", err)
 	}
 	for _, table := range []string{"factory_epic", "factory_issue", "factory_issue_hierarchy", "factory_mol_formula"} {
@@ -581,16 +580,49 @@ func TestFactoryEpicCreationIsIdempotentByInstantiationID(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	formula := nativeTracerFormula(t)
-	first, err := db.CreateFactoryEpic(context.Background(), "Ship", "Brief", "/repo", "intake-1", formula)
+	first, err := db.CreateFactoryEpic(context.Background(), "", "Ship", "Brief", "/repo", "intake-1", formula)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := db.CreateFactoryEpic(context.Background(), "Ship", "Brief", "/repo", "intake-1", formula)
+	second, err := db.CreateFactoryEpic(context.Background(), "", "Ship", "Brief", "/repo", "intake-1", formula)
 	if err != nil || second.ID != first.ID {
 		t.Fatalf("second create = %#v, %v", second, err)
 	}
-	if _, err := db.CreateFactoryEpic(context.Background(), "Changed", "Brief", "/repo", "intake-1", formula); !errors.Is(err, model.ErrNativeInstantiationConflict) {
+	if _, err := db.CreateFactoryEpic(context.Background(), "", "Changed", "Brief", "/repo", "intake-1", formula); !errors.Is(err, model.ErrNativeInstantiationConflict) {
 		t.Fatalf("mismatched create error = %v", err)
+	}
+}
+
+func TestFactoryEpicSlugKeepsMeaningfulWords(t *testing.T) {
+	for goal, want := range map[string]string{
+		"Ship Factory IDs":                      "ship-factory-ids",
+		"Add support for multi-remote sessions": "add-support-multi",
+		"the a of":                              "epic",
+		"":                                      "epic",
+		"Ünicode":                               "nicode",
+		"Supercalifragilistic naming":           "supercalifra-naming",
+		"one two three four five":               "one-two-three",
+	} {
+		if got := FactoryEpicSlug(goal); got != want {
+			t.Errorf("FactoryEpicSlug(%q) = %q, want %q", goal, got, want)
+		}
+	}
+}
+
+func TestFactoryEpicUsesPreferredIDAndReportsCollision(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	ctx := context.Background()
+	epic, err := db.CreateFactoryEpic(ctx, "pretty-epic-ids", "Ship", "", "/repo", "", nativeTracerFormula(t))
+	if err != nil || epic.ID != "pretty-epic-ids" {
+		t.Fatalf("CreateFactoryEpic = %#v, %v", epic, err)
+	}
+	if _, err := db.CreateFactoryEpic(ctx, "pretty-epic-ids", "Ship again", "", "/repo", "", nativeTracerFormula(t)); !errors.Is(err, model.ErrNativeEpicIDTaken) {
+		t.Fatalf("duplicate preferred ID error = %v, want ErrNativeEpicIDTaken", err)
+	}
+	// A taken ID must not be mistaken for an instantiation conflict.
+	if _, err := db.CreateFactoryEpic(ctx, "pretty-epic-ids", "Ship again", "", "/repo", "intake-9", nativeTracerFormula(t)); !errors.Is(err, model.ErrNativeEpicIDTaken) {
+		t.Fatalf("duplicate preferred ID with instantiation error = %v, want ErrNativeEpicIDTaken", err)
 	}
 }
 
@@ -599,7 +631,7 @@ func TestFactoryMaterializationIsAtomicAndIdempotent(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 	materialize := func(instantiation string) (model.NativeEpic, model.NativeMaterialization, error) {
-		epic, err := db.CreateFactoryEpic(ctx, "Ship "+instantiation, "Brief", "/repo", instantiation, nativeTracerFormula(t))
+		epic, err := db.CreateFactoryEpic(ctx, "", "Ship "+instantiation, "Brief", "/repo", instantiation, nativeTracerFormula(t))
 		if err != nil {
 			return model.NativeEpic{}, model.NativeMaterialization{}, err
 		}
@@ -660,7 +692,7 @@ func TestFactoryMaterializesMultipleImplementationIssuesWithDependencies(t *test
 	db := openTestStateDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	epic, err := db.CreateFactoryEpic(ctx, "Ship", "Brief", "/repo", "multi", nativeTracerFormula(t))
+	epic, err := db.CreateFactoryEpic(ctx, "", "Ship", "Brief", "/repo", "multi", nativeTracerFormula(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -723,7 +755,7 @@ func TestFactoryMaterializesMultipleImplementationIssuesWithDependencies(t *test
 		t.Fatalf("secondary materialized root closed revised materialization: %q, %v", materializationStatus, err)
 	}
 
-	failedEpic, err := db.CreateFactoryEpic(ctx, "Fail", "Brief", "/repo", "multi-failure", nativeTracerFormula(t))
+	failedEpic, err := db.CreateFactoryEpic(ctx, "", "Fail", "Brief", "/repo", "multi-failure", nativeTracerFormula(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -764,7 +796,7 @@ func TestFactoryMaterializesExplicitProposalEdges(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	epic, err := db.CreateFactoryEpic(ctx, "Ship", "Brief", "/repo", "explicit-edges", nativeTracerFormula(t))
+	epic, err := db.CreateFactoryEpic(ctx, "", "Ship", "Brief", "/repo", "explicit-edges", nativeTracerFormula(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -806,7 +838,7 @@ func TestFactoryRematerializationRemovesSupersededDescendants(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	epic, err := db.CreateFactoryEpic(ctx, "Ship", "Brief", "/repo", "", nativeTracerFormula(t))
+	epic, err := db.CreateFactoryEpic(ctx, "", "Ship", "Brief", "/repo", "", nativeTracerFormula(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -868,7 +900,7 @@ func TestFactoryIssueDispatchExplainsOutcomesAndDelays(t *testing.T) {
 			db := openTestStateDB(t)
 			defer db.Close()
 			formula := model.NativeFormula{ID: "test/" + strings.ReplaceAll(tt.name, " ", "-"), Version: 1, Source: tt.name, Hash: tt.name, Nodes: []model.NativeFormulaNode{{Key: "a", Kind: tt.blockerKind}, {Key: "b", Kind: "implementation"}}, Edges: []model.NativeFormulaEdge{{From: "b", To: "a", Type: tt.edgeType}}}
-			epic, err := db.CreateFactoryEpic(ctx, "Ship", "", "/repo", "", formula)
+			epic, err := db.CreateFactoryEpic(ctx, "", "Ship", "", "/repo", "", formula)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -913,7 +945,7 @@ func TestFactoryIssueDeferralAndRetryWake(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 	formula := model.NativeFormula{ID: "test/delay", Version: 1, Source: "delay", Hash: "delay", Nodes: []model.NativeFormulaNode{{Key: "work", Kind: "task"}}}
-	epic, err := db.CreateFactoryEpic(ctx, "Ship", "", "/repo", "", formula)
+	epic, err := db.CreateFactoryEpic(ctx, "", "Ship", "", "/repo", "", formula)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -956,7 +988,7 @@ func TestFactoryReferenceDescendantsCannotBeClaimed(t *testing.T) {
 	defer db.Close()
 	child := model.NativeFormula{ID: "test/reference-child", Version: 1, Source: "child", Hash: "child", Inputs: []string{"goal"}, Nodes: []model.NativeFormulaNode{{Key: "plan", Kind: "plan"}}}
 	parent := model.NativeFormula{ID: "test/reference-parent", Version: 1, Source: "parent", Hash: "parent", Inputs: []string{"goal"}, Composition: []model.NativeFormulaComposition{{Key: "reference", Requirement: "reference", Bindings: map[string]string{"goal": "goal"}, Formula: child}}}
-	epic, err := db.CreateFactoryEpic(context.Background(), "Ship", "", "/repo", "", parent)
+	epic, err := db.CreateFactoryEpic(context.Background(), "", "Ship", "", "/repo", "", parent)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -969,7 +1001,7 @@ func TestFactoryPlanClaimAndProposalInventory(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	epic, err := db.CreateFactoryEpic(ctx, "Ship", "Brief", "/repo", "claim-and-proposals", nativeTracerFormula(t))
+	epic, err := db.CreateFactoryEpic(ctx, "", "Ship", "Brief", "/repo", "claim-and-proposals", nativeTracerFormula(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -984,7 +1016,7 @@ func TestFactoryPlanClaimAndProposalInventory(t *testing.T) {
 		t.Fatalf("ListFactoryEpics = %#v, %v", epics, err)
 	}
 	planID := factoryIssueID(t, db, epic.ID, "plan")
-	closed, err := db.CreateFactoryEpic(ctx, "Closed", "", "/repo", "closed-plan", nativeTracerFormula(t))
+	closed, err := db.CreateFactoryEpic(ctx, "", "Closed", "", "/repo", "closed-plan", nativeTracerFormula(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1062,7 +1094,7 @@ func TestFactoryPlanRejectionClosesPendingWork(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	epic, err := db.CreateFactoryEpic(ctx, "Reject", "", "/repo", "", nativeTracerFormula(t))
+	epic, err := db.CreateFactoryEpic(ctx, "", "Reject", "", "/repo", "", nativeTracerFormula(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1092,7 +1124,7 @@ func TestFactoryMolClosureGuardsRequiredWorkAndCancelsOpenOptionalWork(t *testin
 	defer db.Close()
 	ctx := context.Background()
 	formula := model.NativeFormula{ID: "test/closure", Version: 1, Source: "closure", Hash: "closure", Nodes: []model.NativeFormulaNode{{Key: "required", Kind: "task"}, {Key: "optional", Kind: "task"}, {Key: "gate", Kind: "gate"}}}
-	epic, err := db.CreateFactoryEpic(ctx, "Ship", "", "/repo", "", formula)
+	epic, err := db.CreateFactoryEpic(ctx, "", "Ship", "", "/repo", "", formula)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1106,7 +1138,7 @@ func TestFactoryMolClosureGuardsRequiredWorkAndCancelsOpenOptionalWork(t *testin
 	if err != nil || forced.Status != "closed" {
 		t.Fatalf("forced Epic = %#v, %v", forced, err)
 	}
-	epic, err = db.CreateFactoryEpic(ctx, "Ship normally", "", "/repo", "", formula)
+	epic, err = db.CreateFactoryEpic(ctx, "", "Ship normally", "", "/repo", "", formula)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1148,7 +1180,7 @@ func TestPausedFactoryEpicCannotBeClaimed(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	epic, err := db.CreateFactoryEpic(ctx, "Pause", "", "/repo", "", nativeTracerFormula(t))
+	epic, err := db.CreateFactoryEpic(ctx, "", "Pause", "", "/repo", "", nativeTracerFormula(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1185,7 +1217,7 @@ func TestFactoryMolClosureRollsBackOptionalCancellationOnFailure(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 	formula := model.NativeFormula{ID: "test/closure-rollback", Version: 1, Source: "closure", Hash: "closure", Nodes: []model.NativeFormulaNode{{Key: "required", Kind: "task"}, {Key: "optional", Kind: "task"}}}
-	epic, err := db.CreateFactoryEpic(ctx, "Ship", "", "/repo", "", formula)
+	epic, err := db.CreateFactoryEpic(ctx, "", "Ship", "", "/repo", "", formula)
 	if err != nil {
 		t.Fatal(err)
 	}

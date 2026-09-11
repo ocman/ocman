@@ -26,6 +26,8 @@ type nativeStoreFake struct {
 	acknowledged  string
 	comments      []model.NativeIssueComment
 	commentErr    error
+	preferredID   string
+	takenEpicIDs  map[string]bool
 }
 
 func (s *nativeStoreFake) UpsertFactoryLocalExecutionAck(_ context.Context, host, project, profile, version, _ string, _ time.Time) error {
@@ -105,8 +107,16 @@ func (r testProjectResolver) ResolveLocalProject(context.Context, string) (strin
 	return r.root, r.err
 }
 
-func (s *nativeStoreFake) CreateFactoryEpic(_ context.Context, goal, brief, project, _ string, formula model.NativeFormula) (model.NativeEpic, error) {
-	s.epic = model.NativeEpic{ID: "epic-1", Status: "open", Goal: goal, Brief: brief, InitialProject: project, FormulaID: formula.ID, FormulaVersion: formula.Version, FormulaHash: formula.Hash}
+func (s *nativeStoreFake) CreateFactoryEpic(_ context.Context, preferredID, goal, brief, project, _ string, formula model.NativeFormula) (model.NativeEpic, error) {
+	if s.takenEpicIDs[preferredID] {
+		return model.NativeEpic{}, model.ErrNativeEpicIDTaken
+	}
+	s.preferredID = preferredID
+	id := preferredID
+	if id == "" {
+		id = "epic-1"
+	}
+	s.epic = model.NativeEpic{ID: id, Status: "open", Goal: goal, Brief: brief, InitialProject: project, FormulaID: formula.ID, FormulaVersion: formula.Version, FormulaHash: formula.Hash}
 	return s.epic, nil
 }
 
@@ -123,6 +133,46 @@ func TestNativeServiceCanonicalizesProjectAndRejectsResolverFailure(t *testing.T
 	svc = NewNative(store, testProjectResolver{err: errors.New("not a repo")})
 	if _, err := svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{Goal: "Ship", InitialProject: "/repo", AcknowledgeLocalExecution: true}); !errors.Is(err, ErrProjectNotLocalGit) {
 		t.Fatalf("CreateWorkEpic error = %v, want ErrProjectNotLocalGit", err)
+	}
+}
+
+func TestCreateWorkEpicPassesHumanFriendlyIDAndRejectsBadOrTakenOnes(t *testing.T) {
+	store := &nativeStoreFake{takenEpicIDs: map[string]bool{"taken-name": true}}
+	svc := NewNative(store, testProjectResolver{root: "/repo"})
+	create := func(id string) (WorkEpic, error) {
+		return svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{EpicID: id, Goal: "Ship", InitialProject: "/repo", AcknowledgeLocalExecution: true})
+	}
+	epic, err := create("  Pretty-Epic-IDs ")
+	if err != nil || epic.ID != "pretty-epic-ids" || store.preferredID != "pretty-epic-ids" {
+		t.Fatalf("create = %#v, %v (store got %q)", epic, err, store.preferredID)
+	}
+	for _, bad := range []string{"a", "Has Spaces", "dots.not.allowed", "-leading", "trailing-", strings.Repeat("x", 41)} {
+		if _, err := create(bad); !errors.Is(err, ErrInvalidRequest) {
+			t.Errorf("create(%q) error = %v, want ErrInvalidRequest", bad, err)
+		}
+	}
+	if _, err := create("taken-name"); !errors.Is(err, ErrEpicIDTaken) {
+		t.Fatalf("taken ID error = %v, want ErrEpicIDTaken", err)
+	}
+	if epic, err := create(""); err != nil || epic.ID != "epic-1" {
+		t.Fatalf("create without ID = %#v, %v", epic, err)
+	}
+}
+
+func TestCreateWorkEpicKeepsGoalAShortTitle(t *testing.T) {
+	store := &nativeStoreFake{}
+	svc := NewNative(store, testProjectResolver{root: "/repo"})
+	create := func(goal string) (WorkEpic, error) {
+		return svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{Goal: goal, InitialProject: "/repo", AcknowledgeLocalExecution: true})
+	}
+	if _, err := create("  Prettify\n  Factory  Epic IDs\t"); err != nil || store.epic.Goal != "Prettify Factory Epic IDs" {
+		t.Fatalf("goal = %q, %v", store.epic.Goal, err)
+	}
+	if _, err := create(strings.Repeat("x", 81)); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("long goal error = %v, want ErrInvalidRequest", err)
+	}
+	if _, err := create(strings.Repeat("é", 80)); err != nil {
+		t.Fatalf("80-rune goal error = %v", err)
 	}
 }
 

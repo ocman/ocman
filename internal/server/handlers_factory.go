@@ -577,6 +577,10 @@ func writeFactoryError(w http.ResponseWriter, err error) {
 		http.Error(w, "factory instantiation conflict", http.StatusConflict)
 		return
 	}
+	if errors.Is(err, factory.ErrEpicIDTaken) {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
 	if errors.Is(err, factory.ErrActionNotPermitted) {
 		http.Error(w, "factory action is not permitted", http.StatusForbidden)
 		return

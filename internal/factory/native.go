@@ -24,7 +24,16 @@ import (
 
 var customFormulaID = regexp.MustCompile(`^custom/[a-z][a-z0-9_-]*$`)
 
+// epicIDPattern constrains a caller-supplied Epic ID. Dots are excluded
+// because child issue IDs are "<epicID>.<n>", and the ID also has to stay
+// safe inside the "factory/<epicID>" Git branch name.
+var epicIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$`)
+
 const planningProfile = "factory-plan/v1"
+
+// maxGoalRunes caps the Epic goal, which doubles as the Epic's title in
+// every list and header.
+const maxGoalRunes = 80
 
 var (
 	ErrWorkEpicNotFound        = errors.New("work epic not found")
@@ -37,6 +46,7 @@ var (
 	ErrProjectNotLocalGit      = errors.New("project is not a local Git repository")
 	ErrActionNotPermitted      = errors.New("factory action is not permitted")
 	ErrAcknowledgementRequired = errors.New("local execution acknowledgement is required")
+	ErrEpicIDTaken             = errors.New("factory epic id already taken: pick another human-friendly id")
 )
 
 type Health string
@@ -86,7 +96,11 @@ const (
 )
 
 type CreateWorkEpicRequest struct {
-	InstantiationID           string `json:"instantiationId"`
+	InstantiationID string `json:"instantiationId"`
+	// EpicID is an optional human-friendly kebab-case ID for the Epic,
+	// normally supplied by the agent that creates it. Empty means the ID is
+	// derived from the goal.
+	EpicID                    string `json:"epicId,omitempty"`
 	Goal                      string `json:"goal"`
 	Brief                     string `json:"brief,omitempty"`
 	InitialProject            string `json:"initialProject"`
@@ -592,7 +606,7 @@ type Materialization struct {
 type GraphMutation = model.GraphMutation
 
 type nativeStore interface {
-	CreateFactoryEpic(context.Context, string, string, string, string, model.NativeFormula) (model.NativeEpic, error)
+	CreateFactoryEpic(ctx context.Context, preferredID, goal, brief, project, instantiationID string, formula model.NativeFormula) (model.NativeEpic, error)
 	ListFactoryEpics(context.Context) ([]model.NativeEpic, error)
 	GetFactoryEpic(context.Context, string) (model.NativeEpic, error)
 	PourFactoryEpic(context.Context, string, model.NativeFormula) (model.NativeEpic, []model.NativeIssue, error)
@@ -924,6 +938,17 @@ func (s *NativeService) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRe
 	if strings.TrimSpace(req.Goal) == "" || strings.TrimSpace(req.InitialProject) == "" {
 		return WorkEpic{}, fmt.Errorf("%w: goal and initialProject are required", ErrInvalidRequest)
 	}
+	// The goal is the Epic's display name everywhere, so it has to stay a
+	// title: one line, short enough to read in a table row. Detail belongs
+	// in the brief.
+	req.Goal = strings.Join(strings.Fields(req.Goal), " ")
+	if len([]rune(req.Goal)) > maxGoalRunes {
+		return WorkEpic{}, fmt.Errorf("%w: goal must be a short clear title of at most %d characters; move the detail into brief", ErrInvalidRequest, maxGoalRunes)
+	}
+	epicID := strings.ToLower(strings.TrimSpace(req.EpicID))
+	if epicID != "" && !epicIDPattern.MatchString(epicID) {
+		return WorkEpic{}, fmt.Errorf("%w: epicId must be 2-40 characters of lowercase letters, digits and dashes", ErrInvalidRequest)
+	}
 	project, err := s.canonicalProject(ctx, req.InitialProject)
 	if err != nil {
 		return WorkEpic{}, err
@@ -947,9 +972,12 @@ func (s *NativeService) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRe
 	if err != nil {
 		return WorkEpic{}, err
 	}
-	epic, err := s.store.CreateFactoryEpic(ctx, req.Goal, req.Brief, req.InitialProject, req.InstantiationID, formula)
-	if errors.Is(err, model.ErrNativeInstantiationConflict) {
+	epic, err := s.store.CreateFactoryEpic(ctx, epicID, req.Goal, req.Brief, req.InitialProject, req.InstantiationID, formula)
+	switch {
+	case errors.Is(err, model.ErrNativeInstantiationConflict):
 		err = ErrInstantiationConflict
+	case errors.Is(err, model.ErrNativeEpicIDTaken):
+		err = fmt.Errorf("%w: %q", ErrEpicIDTaken, epicID)
 	}
 	return nativeEpic(epic), err
 }

@@ -180,7 +180,7 @@ function CreateEpic({ onCreated }: { onCreated?: () => void }) {
   }
   const selectedFormula = formulas.data?.find((item) => `${item.id}@${item.version}` === formula);
   return <form className="factory-create" onSubmit={(event) => void submit(event)}>
-    <div className="factory-field"><label>Goal<input name="goal" required aria-describedby="factory-goal-help" /></label><p id="factory-goal-help">The outcome this Factory work should deliver.</p></div>
+    <div className="factory-field"><label>Goal<input name="goal" required maxLength={80} aria-describedby="factory-goal-help" /></label><p id="factory-goal-help">A short clear title for the outcome this Factory work should deliver.</p></div>
     <div className="factory-field"><label>Brief<textarea name="brief" aria-describedby="factory-brief-help" /></label><p id="factory-brief-help">Optional context, constraints, and decisions for the planning work.</p></div>
     <div className="factory-field"><label>Initial Factory project<SearchSelect value={initialProject} ariaLabel="Initial Factory project" placeholder={projects.isLoading ? 'Loading projects…' : 'Select a project'} searchLabel="Search projects" disabled={projects.isLoading || !projects.data?.some((project) => !project.archived)} onChange={(value) => { setInitialProject(value); setError(''); }} options={projects.data?.filter((project) => !project.archived).map((project) => ({ value: project.directory, label: project.directory })) ?? []} /></label><p>The local repository where Factory starts work. Commands run on this machine.</p></div>
     {projects.isError && <p role="alert">Could not load Factory projects.</p>}

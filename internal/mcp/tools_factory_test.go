@@ -272,13 +272,18 @@ func TestFactoryToolCreatesEpicForPreplannedGraph(t *testing.T) {
 	}
 	t.Cleanup(srv.Close)
 
-	got := callTool(t, srv, "factory", map[string]any{"action": "create", "goal": "Ship", "brief": "Already broken down", "initial_project": "/repo", "acknowledge_local_execution": true})
+	got := callTool(t, srv, "factory", map[string]any{"action": "create", "epic_id": "pretty-epic-ids", "goal": "Ship", "brief": "Already broken down", "initial_project": "/repo", "acknowledge_local_execution": true})
 	if got.IsError || !strings.Contains(resultText(got), `"id": "epic-1"`) {
 		t.Fatalf("create = %q", resultText(got))
 	}
-	if svc.createReq.Goal != "Ship" || svc.createReq.Brief != "Already broken down" || svc.createReq.InitialProject != "/repo" || !svc.createReq.AcknowledgeLocalExecution || svc.createReq.FormulaID != "" {
+	if svc.createReq.Goal != "Ship" || svc.createReq.Brief != "Already broken down" || svc.createReq.InitialProject != "/repo" || !svc.createReq.AcknowledgeLocalExecution || svc.createReq.FormulaID != "" || svc.createReq.EpicID != "pretty-epic-ids" {
 		t.Fatalf("create request = %#v", svc.createReq)
 	}
+	svc.err = fmt.Errorf("%w: %q", factory.ErrEpicIDTaken, "pretty-epic-ids")
+	if got := callTool(t, srv, "factory", map[string]any{"action": "create", "epic_id": "pretty-epic-ids", "goal": "Ship", "initial_project": "/repo", "acknowledge_local_execution": true}); !got.IsError || !strings.Contains(resultText(got), "pick another human-friendly id") {
+		t.Fatalf("taken epic_id = %q", resultText(got))
+	}
+	svc.err = nil
 	if got := callTool(t, srv, "factory", map[string]any{"action": "create", "goal": "Ship", "initial_project": "/repo", "acknowledge_local_execution": false}); !got.IsError || resultText(got) != "acknowledge_local_execution must be true" {
 		t.Fatalf("unacknowledged create = %q", resultText(got))
 	}

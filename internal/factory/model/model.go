@@ -13,6 +13,7 @@ func ValidNativeFormulaKey(key string) bool { return nativeFormulaKey.MatchStrin
 var (
 	ErrNativeEpicNotFound          = errors.New("factory epic not found")
 	ErrNativeInstantiationConflict = errors.New("factory instantiation conflict")
+	ErrNativeEpicIDTaken           = errors.New("factory epic id already taken")
 	ErrInvalidGraphMutation        = errors.New("invalid factory graph mutation")
 	ErrEpicClosureBlocked          = errors.New("factory Epic closure is blocked")
 )

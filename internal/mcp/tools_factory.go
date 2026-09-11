@@ -78,7 +78,7 @@ var factoryActions = []factoryAction{
 	{name: "approve_authority", description: "Approves one out-of-profile permission request exactly once.", example: `{"action":"approve_authority","authority_gate_id":"gate-1"}`, required: []string{"authority_gate_id"}, output: "AuthorityEscalationGate", errors: []string{"authority_gate_id is required", "factory request failed"}},
 	{name: "reject_authority", description: "Rejects one out-of-profile permission request exactly once.", example: `{"action":"reject_authority","authority_gate_id":"gate-1"}`, required: []string{"authority_gate_id"}, output: "AuthorityEscalationGate", errors: []string{"authority_gate_id is required", "factory request failed"}},
 	{name: "mutate_graph", description: "Creates, edits, reparents, links, unlinks, or soft-deletes local Factory Issues unless they are in progress or closed.", example: `{"action":"mutate_graph","mutation_json":"{\"action\":\"create\",\"epicId\":\"epic-1\",\"parentId\":\"epic-1.1\",\"kind\":\"task\",\"title\":\"Implement the change\"}"}`, required: []string{"mutation_json"}, output: map[string]string{"status": "ok"}, errors: []string{"mutation_json is required", "mutation_json is invalid", "factory request failed"}},
-	{name: "create", description: "Creates and pours a Factory Work Epic with the built-in tracer Formula. Use issues and mutate_graph to add an already-planned ticket breakdown.", example: `{"action":"create","goal":"Ship","initial_project":"/repo","acknowledge_local_execution":true}`, required: []string{"goal", "initial_project", "acknowledge_local_execution"}, optional: []string{"brief", "instantiation_id"}, output: "WorkEpic", errors: []string{"goal is required", "initial_project is required", "acknowledge_local_execution must be true", "factory action is not permitted", "factory request failed"}},
+	{name: "create", description: "Creates and pours a Factory Work Epic with the built-in tracer Formula. Use issues and mutate_graph to add an already-planned ticket breakdown. goal is the Epic's title: one short clear line of at most 80 characters, e.g. \"Prettify Factory Epic IDs\" — never a paragraph. Put context, constraints and decisions in brief instead. Always pass epic_id: a short human-friendly kebab-case name for the work (2-40 lowercase letters, digits and dashes), e.g. pretty-epic-ids. If it comes back taken, call create again with a different name.", example: `{"action":"create","epic_id":"pretty-epic-ids","goal":"Prettify Factory Epic IDs","brief":"IDs are built from initials today.","initial_project":"/repo","acknowledge_local_execution":true}`, required: []string{"goal", "initial_project", "acknowledge_local_execution"}, optional: []string{"epic_id", "brief", "instantiation_id"}, output: "WorkEpic", errors: []string{"goal is required", "initial_project is required", "acknowledge_local_execution must be true", "goal must be a short clear title of at most 80 characters; move the detail into brief", "factory epic id already taken: pick another human-friendly id", "factory action is not permitted", "factory request failed"}},
 	{name: "pour", description: "Retired: pouring Factory graphs is a user action.", example: `{"action":"pour"}`, output: "none", errors: []string{"factory action is not permitted"}},
 	{name: "claim_plan", description: "Retired: claiming Factory Planning Work is a user action.", example: `{"action":"claim_plan"}`, output: "none", errors: []string{"factory action is not permitted"}},
 	{name: "reopen_issue", description: "Reopening failed or cancelled work is a user action: the operator does it from the Factory action inbox, so ask them instead of retrying.", example: `{"action":"reopen_issue"}`, output: "none", errors: []string{"factory action is not permitted"}},
@@ -139,6 +139,7 @@ func (t *factoryTools) handle(ctx context.Context, req mcplib.CallToolRequest) (
 		}
 		epic, err := t.svc.CreateWorkEpic(ctx, factory.CreateWorkEpicRequest{
 			InstantiationID:           req.GetString("instantiation_id", ""),
+			EpicID:                    req.GetString("epic_id", ""),
 			Goal:                      req.GetString("goal", ""),
 			Brief:                     req.GetString("brief", ""),
 			InitialProject:            req.GetString("initial_project", ""),
@@ -460,6 +461,9 @@ func factoryToolError(err error) *mcplib.CallToolResult {
 	}
 	if errors.Is(err, factory.ErrInstantiationConflict) {
 		return mcplib.NewToolResultError("factory instantiation conflict")
+	}
+	if errors.Is(err, factory.ErrEpicIDTaken) {
+		return mcplib.NewToolResultError(err.Error())
 	}
 	if errors.Is(err, factory.ErrFormulaNotFound) {
 		return mcplib.NewToolResultError("factory Formula not found")
