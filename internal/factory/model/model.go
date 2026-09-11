@@ -47,6 +47,7 @@ type NativeIssue struct {
 	GateResolution string
 	DispatchState  string
 	Blockers       []NativeIssueBlocker
+	DependsOn      []NativeIssueDependency
 	RetryAt        int64
 	RetryAttempts  int
 	Description    string
@@ -54,6 +55,13 @@ type NativeIssue struct {
 	ManifestKey    string
 	CreatedAt      int64
 	RemovedAt      int64
+}
+
+// NativeIssueDependency is every declared edge, satisfied or not, so the graph
+// keeps its shape as work completes. Blockers only carry unsatisfied edges.
+type NativeIssueDependency struct {
+	ID   string `json:"id"`
+	Type string `json:"type"`
 }
 
 type NativeIssueBlocker struct {

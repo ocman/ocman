@@ -102,11 +102,15 @@ describe('Factory routes', () => {
   it('renders an epic graph', () => {
     const epic = { id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo', formulaId: 'ocman/tracer', formulaVersion: 1, formulaRevision: 1, formulaHash: 'hash', formulaOrigin: 'built-in', instantiationId: 'request-1' };
     vi.mocked(useWorkEpic).mockReturnValue({ data: epic, isLoading: false, isError: false } as never);
-    vi.mocked(useFactoryIssues).mockReturnValue({ data: [{ id: 'issue-1', epicId: epic.id, kind: 'mol', title: 'Child Formula', status: 'open', formulaId: 'custom/child', formulaVersion: 1, formulaHash: 'child-hash', bindings: { goal: 'Ship Factory' } }], isLoading: false, isError: false } as never);
+    vi.mocked(useFactoryIssues).mockReturnValue({ data: [
+      { id: 'issue-1', epicId: epic.id, kind: 'mol', title: 'Child Formula', status: 'open', formulaId: 'custom/child', formulaVersion: 1, formulaHash: 'child-hash', bindings: { goal: 'Ship Factory' } },
+      { id: 'issue-2', epicId: epic.id, parentId: 'issue-1', kind: 'task', title: 'Child work', status: 'open' },
+    ], isLoading: false, isError: false } as never);
     renderRoute('/factory/epics/epic-1');
     expect(screen.getByRole('heading', { name: 'Ship Factory' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Open issue issue-1' }));
-    expect(screen.getByRole('dialog', { name: 'Issue issue-1' })).toHaveTextContent('Child Formula');
+    expect(screen.queryByRole('button', { name: 'Open issue issue-1' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open issue issue-2' }));
+    expect(screen.getByRole('dialog', { name: 'Issue issue-2' })).toHaveTextContent('Child work');
   });
 
   it('renders issues as tickets', () => {

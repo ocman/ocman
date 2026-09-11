@@ -740,6 +740,30 @@ func TestFactoryMaterializesMultipleImplementationIssuesWithDependencies(t *test
 	if byKey["backend"].DispatchState != "ready" || byKey["frontend"].DispatchState != "waiting" || len(byKey["frontend"].Blockers) != 1 || byKey["frontend"].Blockers[0].ID != byKey["backend"].ID {
 		t.Fatalf("materialized dispatch graph = %#v", byKey)
 	}
+	dependsOnBackend := func(issue model.NativeIssue) bool {
+		for _, edge := range issue.DependsOn {
+			if edge.ID == byKey["backend"].ID && edge.Type == "blocks" {
+				return true
+			}
+		}
+		return false
+	}
+	if !dependsOnBackend(byKey["frontend"]) {
+		t.Fatalf("declared dependency edges = %#v", byKey["frontend"].DependsOn)
+	}
+	// A satisfied edge stops blocking, but the graph must keep its shape.
+	if _, err := db.db.ExecContext(ctx, `UPDATE factory_issue SET status = 'closed', outcome = 'succeeded' WHERE id = ?`, byKey["backend"].ID); err != nil {
+		t.Fatal(err)
+	}
+	settled := map[string]model.NativeIssue{}
+	for _, issue := range mustListFactoryIssues(t, db, epic.ID) {
+		if issue.ManifestKey != "" {
+			settled[issue.ManifestKey] = issue
+		}
+	}
+	if len(settled["frontend"].Blockers) != 0 || !dependsOnBackend(settled["frontend"]) {
+		t.Fatalf("settled dependency edges = %#v", settled["frontend"])
+	}
 	revised, err := db.SaveFactoryProposalRevision(ctx, model.NativeProposalRevision{EpicID: epic.ID, MolID: molID, Project: "/repo", ManifestJSON: string(manifest), ContentHash: "multi-revised"})
 	if err != nil {
 		t.Fatal(err)

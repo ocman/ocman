@@ -367,8 +367,14 @@ describe('Factory interactions', () => {
 
     await user.click(within(inbox).getByRole('button', { name: 'Reopen' }));
     await waitFor(() => expect(api.reopenFactoryIssue).toHaveBeenCalledWith('epic-1', 'epic-1.4'));
+    let finishMaterialize = () => {};
+    vi.mocked(api.factoryMaterialize).mockReturnValueOnce(new Promise((resolve) => { finishMaterialize = () => resolve(undefined as never); }));
     await user.click(within(inbox).getByRole('button', { name: 'Materialize plan' }));
     await waitFor(() => expect(api.factoryMaterialize).toHaveBeenCalledWith('epic-2', 'epic-2.3'));
+    // The request is slow; the button has to say it is working.
+    expect(await within(inbox).findByRole('button', { name: 'Materializing…' })).toBeDisabled();
+    finishMaterialize();
+    await waitFor(() => expect(within(inbox).getByRole('button', { name: 'Materialize plan' })).toBeEnabled());
   });
 
   it('shows running implementation and planning work with live session status', async () => {
@@ -467,6 +473,7 @@ describe('Factory interactions', () => {
 			{ id: 'issue-3', epicId: 'epic-1', kind: 'task', title: 'Active work', status: 'in_progress' },
 			{ id: 'issue-4', epicId: 'epic-1', kind: 'task', title: 'Finished work', status: 'closed' },
 			{ id: 'issue-5', epicId: 'epic-1', kind: 'task', title: 'Deferred work', status: 'deferred' },
+			{ id: 'issue-6', epicId: 'epic-1', kind: 'task', title: 'Backlog work', status: 'open' },
 		];
     vi.mocked(api.factoryEpic).mockResolvedValue({ id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo' } as never);
 		vi.mocked(api.factoryIssues).mockResolvedValueOnce([]).mockResolvedValue(pouredIssues as never);
@@ -477,16 +484,18 @@ describe('Factory interactions', () => {
     await user.click(screen.getByRole('button', { name: 'Pour graph' }));
 
     expect(await screen.findByLabelText('Epic issues by status')).toBeInTheDocument();
-    expect(within(screen.getByRole('region', { name: 'Backlog issues' })).getByText('Child Formula')).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Backlog issues' })).getByText('Backlog work')).toBeInTheDocument();
+    expect(screen.queryByText('Child Formula')).not.toBeInTheDocument();
     expect(within(screen.getByRole('region', { name: 'Blocked issues' })).getByText('Blocked work')).toBeInTheDocument();
     expect(within(screen.getByRole('region', { name: 'In progress issues' })).getByText('Active work')).toBeInTheDocument();
     expect(within(screen.getByRole('region', { name: 'Done issues' })).getByText('Finished work')).toBeInTheDocument();
     expect(within(screen.getByRole('region', { name: 'Other issues' })).getByText('Deferred work')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Open issue issue-1' }));
-    expect(screen.getByRole('dialog', { name: 'Issue issue-1' })).toHaveTextContent('Child Formula');
+    await user.click(screen.getByRole('button', { name: 'Open issue issue-6' }));
+    expect(screen.getByRole('dialog', { name: 'Issue issue-6' })).toHaveTextContent('Backlog work');
   });
 
   it('shows the linked planning session on epic detail', async () => {
+    const user = userEvent.setup();
     vi.mocked(api.factoryEpic).mockResolvedValue({ id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo', attempts: [
       { id: 'attempt-0', workId: 'epic-1.plan', phase: 'terminal', session: { platform: 'opencode', id: 'session-0' } },
       { id: 'attempt-1', workId: 'epic-1.plan', phase: 'active', session: { platform: 'opencode', id: 'session-1' } },
@@ -494,6 +503,7 @@ describe('Factory interactions', () => {
     vi.mocked(api.factoryIssues).mockResolvedValue([]);
     renderFactory(<MemoryRouter initialEntries={['/factory/epics/epic-1']}><Routes><Route path="/factory/epics/:id" element={<FactoryEpicDetail />} /></Routes></MemoryRouter>);
 
+    await user.click(await screen.findByRole('tab', { name: 'Plan' }));
     const planning = await screen.findByRole('region', { name: 'Planning' });
     expect(planning).not.toHaveTextContent('attempt-1');
     expect(planning).not.toHaveTextContent('session-1');
@@ -504,22 +514,65 @@ describe('Factory interactions', () => {
   });
 
   it('shows the latest immutable proposal revision and hash on epic detail', async () => {
+    const user = userEvent.setup();
     vi.mocked(api.factoryEpic).mockResolvedValue({ id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo', proposal: { revision: 2, contentHash: 'sha256:abc123' } } as never);
     vi.mocked(api.factoryIssues).mockResolvedValue([]);
     vi.mocked(api.factoryProposals).mockResolvedValue([{ revision: 1, contentHash: 'sha256:old', manifest: { nodes: [] } }, { revision: 2, contentHash: 'sha256:abc123', manifest: { nodes: [] }, rationaleMarkdown: '# Why' }] as never);
     renderFactory(<MemoryRouter initialEntries={['/factory/epics/epic-1']}><Routes><Route path="/factory/epics/:id" element={<FactoryEpicDetail />} /></Routes></MemoryRouter>);
 
+    await user.click(await screen.findByRole('tab', { name: 'Plan' }));
     expect(await screen.findByText('Proposal revision: 2')).toBeInTheDocument();
     expect(screen.getByText('Content hash: sha256:abc123')).toBeInTheDocument();
     expect(screen.getByText('Proposal revision: 1')).toBeInTheDocument();
   });
 
+  it('separates board, graph, and plan into tabs with the actions always visible', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.factoryEpic).mockResolvedValue({ id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo' } as never);
+    vi.mocked(api.factoryIssues).mockResolvedValue([
+      { id: 'epic-1.1', epicId: 'epic-1', kind: 'mol', title: 'Root Mol', status: 'open' },
+      { id: 'epic-1.1.1', epicId: 'epic-1', parentId: 'epic-1.1', kind: 'task', title: 'Board work', status: 'open' },
+    ] as never);
+    vi.mocked(api.factoryProposals).mockResolvedValue([{ revision: 1, contentHash: 'sha256:one', manifest: { nodes: [] } }] as never);
+    renderFactory(<MemoryRouter initialEntries={['/factory/epics/epic-1']}><Routes><Route path="/factory/epics/:id" element={<FactoryEpicDetail />} /></Routes></MemoryRouter>);
+
+    expect(await screen.findByText('Board work')).toBeInTheDocument();
+    expect(screen.queryByText('Proposal revision: 1')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: 'Graph' }));
+    expect(screen.getByRole('tabpanel', { name: 'Graph' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Status legend')).toBeInTheDocument();
+    expect(screen.queryByText('Board work')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: 'Plan' }));
+    expect(await screen.findByText('Proposal revision: 1')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Plan' })).toHaveAttribute('aria-selected', 'true');
+
+    // Actions never move with the tab.
+    expect(within(screen.getByRole('region', { name: 'Epic actions' })).getByRole('button', { name: 'Close epic' })).toBeInTheDocument();
+  });
+
+  it('keeps every epic action above the proposal history', async () => {
+    vi.mocked(api.factoryEpic).mockResolvedValue({ id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo', planGate: { issueId: 'epic-1.1.2', proposalRevision: 2, proposalHash: 'sha256:abc123', resolution: 'open' } } as never);
+    vi.mocked(api.factoryIssues).mockResolvedValue([]);
+    vi.mocked(api.factoryProposals).mockResolvedValue([{ revision: 2, contentHash: 'sha256:abc123', manifest: { nodes: [] } }] as never);
+    renderFactory(<MemoryRouter initialEntries={['/factory/epics/epic-1']}><Routes><Route path="/factory/epics/:id" element={<FactoryEpicDetail />} /></Routes></MemoryRouter>);
+
+    const actions = await screen.findByRole('region', { name: 'Epic actions' });
+    for (const name of ['Approve plan', 'Request revision', 'Reject plan', 'Pour graph', 'Close epic', 'Pause epic']) {
+      expect(within(actions).getByRole('button', { name })).toBeInTheDocument();
+    }
+    expect(actions.compareDocumentPosition(screen.getByText('Proposal revision: 2')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('shows a retryable proposal history error', async () => {
+    const user = userEvent.setup();
     vi.mocked(api.factoryEpic).mockResolvedValue({ id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo' } as never);
     vi.mocked(api.factoryIssues).mockResolvedValue([]);
     vi.mocked(api.factoryProposals).mockRejectedValue(new Error('Proposal history unavailable'));
     renderFactory(<MemoryRouter initialEntries={['/factory/epics/epic-1']}><Routes><Route path="/factory/epics/:id" element={<FactoryEpicDetail />} /></Routes></MemoryRouter>);
 
+    await user.click(await screen.findByRole('tab', { name: 'Plan' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Proposal history unavailable');
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
   });
@@ -566,24 +619,38 @@ describe('Factory interactions', () => {
 		expect(await screen.findByRole('status')).toHaveTextContent('Plan rejected.');
 	});
 
-	it('distinguishes optional work from closure blockers and explicitly closes the Mol before the Epic', async () => {
+	it('distinguishes optional work from closure blockers and closes the root Mol as part of closing the Epic', async () => {
 		const user = userEvent.setup();
 		vi.mocked(api.factoryEpic).mockResolvedValue({ id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo', progress: { requiredTotal: 3, requiredSucceeded: 2, optionalOpen: 4, closureBlockers: ['Required review'] } } as never);
 		vi.mocked(api.factoryIssues).mockResolvedValue([{ id: 'epic-1.1', epicId: 'epic-1', kind: 'mol', title: 'Root Mol', status: 'open' }] as never);
 		renderFactory(<MemoryRouter initialEntries={['/factory/epics/epic-1']}><Routes><Route path="/factory/epics/:id" element={<FactoryEpicDetail />} /></Routes></MemoryRouter>);
 		expect(await screen.findByText('Required work: 2/3 complete. Optional work open: 4.')).toBeInTheDocument();
 		expect(screen.getByText('Closure blocked by: Required review')).toBeInTheDocument();
-		await user.click(screen.getByRole('button', { name: 'Close Mol' }));
-		await waitFor(() => expect(api.factoryCloseMol).toHaveBeenCalledWith('epic-1', 'epic-1.1'));
+		expect(screen.queryByRole('button', { name: 'Close Mol' })).not.toBeInTheDocument();
 		vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
 		vi.mocked(api.factoryCloseEpic).mockRejectedValueOnce(Object.assign(new Error('factory Epic closure is blocked'), { status: 409 }));
 		await user.click(screen.getByRole('button', { name: 'Close epic' }));
+		await waitFor(() => expect(api.factoryCloseMol).toHaveBeenCalledWith('epic-1', 'epic-1.1'));
 		await waitFor(() => expect(api.factoryCloseEpic).toHaveBeenCalledWith('epic-1', false));
 		expect(api.factoryCloseEpic).toHaveBeenCalledTimes(1);
 		vi.mocked(api.factoryCloseEpic).mockRejectedValueOnce(Object.assign(new Error('factory Epic closure is blocked'), { status: 409 }));
 		await user.click(screen.getByRole('button', { name: 'Close epic' }));
 		await waitFor(() => expect(api.factoryCloseEpic).toHaveBeenLastCalledWith('epic-1', true));
 		expect(window.confirm).toHaveBeenCalledWith('This epic still has unfinished work. Close it anyway?');
+	});
+
+	it('reports the Epic closure guard rather than the hidden root Mol failure', async () => {
+		const user = userEvent.setup();
+		vi.mocked(api.factoryEpic).mockResolvedValue({ id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo' } as never);
+		vi.mocked(api.factoryIssues).mockResolvedValue([{ id: 'epic-1.1', epicId: 'epic-1', kind: 'mol', title: 'Root Mol', status: 'open' }] as never);
+		vi.mocked(api.factoryCloseMol).mockRejectedValue(new Error('factory Mol has incomplete required work'));
+		vi.mocked(api.factoryCloseEpic).mockRejectedValueOnce(Object.assign(new Error('close the root Mol successfully before closing the Epic'), { status: 409 }));
+		vi.spyOn(window, 'confirm').mockReturnValue(false);
+		renderFactory(<MemoryRouter initialEntries={['/factory/epics/epic-1']}><Routes><Route path="/factory/epics/:id" element={<FactoryEpicDetail />} /></Routes></MemoryRouter>);
+		await user.click(await screen.findByRole('button', { name: 'Close epic' }));
+		await waitFor(() => expect(api.factoryCloseEpic).toHaveBeenCalledWith('epic-1', false));
+		expect(await screen.findByRole('alert')).toHaveTextContent('close the root Mol successfully before closing the Epic');
+		expect(screen.queryByText('factory Mol has incomplete required work')).not.toBeInTheDocument();
 	});
 
 	it('pauses and resumes an epic', async () => {

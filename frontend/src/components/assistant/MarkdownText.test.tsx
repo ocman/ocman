@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 class ResizeObserver {
@@ -95,6 +96,19 @@ describe('MarkdownText', () => {
 
     expect(screen.getByRole('link', { name: 'Plan session' })).not.toHaveAttribute('target');
     expect(screen.getByRole('link', { name: 'Docs' })).toHaveAttribute('target', '_blank');
+  });
+
+  it('routes in-app links through the router instead of reloading the page', async () => {
+    const user = userEvent.setup();
+    render(<MemoryRouter initialEntries={['/session/one']}>
+      <Routes>
+        <Route path="/session/one" element={<MarkdownText text="[Plan session](/session/plan-session)" />} />
+        <Route path="/session/plan-session" element={<p>Landed on the plan session</p>} />
+      </Routes>
+    </MemoryRouter>);
+
+    await user.click(screen.getByRole('link', { name: 'Plan session' }));
+    expect(await screen.findByText('Landed on the plan session')).toBeInTheDocument();
   });
 
   it('shows the source when Mermaid cannot render it', async () => {

@@ -6,6 +6,7 @@ test('Factory tracer approves one plan, materializes one worktree session, and c
   let claimed = false;
   let approved = false;
   let materialized = false;
+  let molClosed = false;
   let closed = false;
   const issues = () => poured ? [
     { id: 'ship-a1b2.1', epicId: epic.id, kind: 'mol', title: 'Tracer Mol', status: closed ? 'closed' : 'open', requirement: 'required' },
@@ -29,7 +30,7 @@ test('Factory tracer approves one plan, materializes one worktree session, and c
 	await page.route(`/api/factory/epics/${epic.id}/plans/${epic.id}.1.1`, (route) => { claimed = true; return route.fulfill({ status: 201, json: {} }); });
   await page.route(`/api/factory/epics/${epic.id}/plan-gate/approve`, (route) => { approved = true; materialized = true; return route.fulfill({ json: view().planGate }); });
 	await page.route(`/api/factory/epics/${epic.id}/materializations/${epic.id}.1.3`, (route) => { materialized = true; return route.fulfill({ status: 201, json: {} }); });
-  await page.route(`/api/factory/epics/${epic.id}/mols/${epic.id}.1/close`, (route) => route.fulfill({ status: 204 }));
+  await page.route(`/api/factory/epics/${epic.id}/mols/${epic.id}.1/close`, (route) => { molClosed = true; return route.fulfill({ status: 204 }); });
   await page.route(`/api/factory/epics/${epic.id}/close`, (route) => { closed = true; return route.fulfill({ status: 204 }); });
 
   await page.goto('/factory/epics');
@@ -46,10 +47,11 @@ test('Factory tracer approves one plan, materializes one worktree session, and c
   await page.getByRole('button', { name: 'Approve plan' }).click();
   await page.reload();
   await expect(page.getByTestId('issue-title-ship-a1b2.1.4')).toHaveText('Implementation');
-  await page.getByRole('button', { name: 'Close Mol' }).click();
+  await expect(page.getByTestId('issue-title-ship-a1b2.1')).toHaveCount(0);
   await page.getByRole('button', { name: 'Close epic' }).click();
   await page.reload();
   await expect(page.getByTestId('epic-status')).toHaveText('closed');
+  expect(molClosed).toBe(true);
 });
 
 test('Factory tracer rejects a plan without creating implementation work', async ({ mockedPage: page }) => {

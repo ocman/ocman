@@ -210,6 +210,8 @@ export interface FactoryIssue {
 	prUrl?: string;
 	dispatchState?: string;
 	blockers?: { id: string; epicId?: string; reason: string; outcome: string }[];
+	/** Every declared edge, satisfied or not, unlike blockers. */
+	dependsOn?: { id: string; type: string }[];
 	retryAt?: number;
 	retryAttempts?: number;
   description?: string;

@@ -507,7 +507,7 @@ func (d *DB) deriveFactoryIssueDispatch(ctx context.Context, epicID string, issu
 		byID[issues[i].ID] = &issues[i]
 		issues[i].DispatchState = "waiting"
 	}
-	rows, err := d.db.QueryContext(ctx, `SELECT d.issue_id, d.type, b.id, b.epic_id, b.kind, b.status, b.outcome, b.outcome_reason, COALESCE(g.resolution, '') FROM factory_issue_dependency d JOIN factory_issue b ON b.id = d.depends_on_issue_id LEFT JOIN factory_plan_gate g ON g.issue_id = b.id WHERE d.issue_id IN (SELECT id FROM factory_issue WHERE epic_id = ?) AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = b.id)`, epicID)
+	rows, err := d.db.QueryContext(ctx, `SELECT d.issue_id, d.type, b.id, b.epic_id, b.kind, b.status, b.outcome, b.outcome_reason, COALESCE(g.resolution, '') FROM factory_issue_dependency d JOIN factory_issue b ON b.id = d.depends_on_issue_id LEFT JOIN factory_plan_gate g ON g.issue_id = b.id WHERE d.issue_id IN (SELECT id FROM factory_issue WHERE epic_id = ?) AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = b.id) ORDER BY d.issue_id, d.depends_on_issue_id`, epicID)
 	if err != nil {
 		return nil, err
 	}
@@ -521,7 +521,13 @@ func (d *DB) deriveFactoryIssueDispatch(ctx context.Context, epicID string, issu
 			return nil, err
 		}
 		issue := byID[issueID]
-		if issue == nil || issue.Status != "open" || factoryIssueRequirement(issue, byID) == "reference" {
+		if issue == nil {
+			continue
+		}
+		// Every declared edge is reported so the graph keeps its shape; Blockers below
+		// stay restricted to the unsatisfied edges that actually hold work back.
+		issue.DependsOn = append(issue.DependsOn, model.NativeIssueDependency{ID: blockerID, Type: edgeType})
+		if issue.Status != "open" || factoryIssueRequirement(issue, byID) == "reference" {
 			continue
 		}
 		succeeded := status == "closed" && outcome == "succeeded" && (kind != "gate" || resolution == "approved")

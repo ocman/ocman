@@ -8,7 +8,10 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
 import type { ComponentProps, FC, ReactNode } from 'react';
+import { Link, useInRouterContext } from 'react-router-dom';
 import { LinkPreviewStrip } from '../GitHubLinkPreview';
+import { FactoryEpicCard } from '../FactoryEpicCard';
+import { factoryEpicIDFromHref } from '../factoryEpicStatus';
 import { Modal } from '../Modal';
 
 let mermaidPromise: Promise<typeof import('mermaid')['default']> | undefined;
@@ -127,7 +130,7 @@ function ZoomableGraphicModal({ label, closeLabel, maxScale = 4, onClose, childr
   );
 }
 
-function MermaidDiagram({ source }: { source: string }) {
+export function MermaidDiagram({ source }: { source: string }) {
   const id = `oc-mermaid-${useId().replaceAll(':', '')}`;
   const [result, setResult] = useState({ source: '', svg: '', failed: false });
   const [expanded, setExpanded] = useState(false);
@@ -214,9 +217,15 @@ function CodeBlockPre(props: any) {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function MarkdownLink(props: any) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { node: _node, href, ...rest } = props;
-  const internal = href?.startsWith('/') || href?.startsWith('#');
-  return <a {...rest} href={href} target={internal ? undefined : '_blank'} rel={internal ? undefined : 'noopener noreferrer'} />;
+  const { node: _node, href, children, ...rest } = props;
+  const routed = useInRouterContext();
+  const epicID = factoryEpicIDFromHref(href);
+  if (epicID && routed) return <FactoryEpicCard epicID={epicID}>{children}</FactoryEpicCard>;
+  const internal = href?.startsWith('/');
+  // In-app paths must not reload the page; anchors and externals stay plain.
+  if (internal && routed) return <Link {...rest} to={href}>{children}</Link>;
+  const local = internal || href?.startsWith('#');
+  return <a {...rest} href={href} target={local ? undefined : '_blank'} rel={local ? undefined : 'noopener noreferrer'}>{children}</a>;
 }
 
 // Module-scoped to keep prop references stable across renders. Fresh

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 
@@ -150,7 +151,11 @@ func (t *factoryTools) handle(ctx context.Context, req mcplib.CallToolRequest) (
 		if err != nil {
 			return factoryToolError(err), nil
 		}
-		return toolResultJSON(epic), nil
+		result := toolResultJSON(epic)
+		// ocman renders this link as a live epic card, so the user gets status and a
+		// way in without leaving the conversation.
+		result.Content = append(result.Content, mcplib.NewTextContent(fmt.Sprintf("End your reply with this link so the user can open the epic: [%s](/factory/epics/%s)", epic.Goal, epic.ID)))
+		return result, nil
 	case "complete_attempt":
 		attemptID, _ := req.RequireString("attempt_id")
 		token, _ := req.RequireString("attempt_token")

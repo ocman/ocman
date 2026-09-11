@@ -492,33 +492,34 @@ func hasFormulaCycle(edges []FormulaGraphEdge) bool {
 }
 
 type Issue struct {
-	ID             string                     `json:"id"`
-	EpicID         string                     `json:"epicId"`
-	ParentID       string                     `json:"parentId,omitempty"`
-	Requirement    string                     `json:"requirement,omitempty"`
-	FormulaID      string                     `json:"formulaId,omitempty"`
-	FormulaVersion int                        `json:"formulaVersion,omitempty"`
-	FormulaHash    string                     `json:"formulaHash,omitempty"`
-	Bindings       map[string]string          `json:"bindings,omitempty"`
-	Kind           string                     `json:"kind"`
-	Title          string                     `json:"title"`
-	Status         string                     `json:"status"`
-	Outcome        string                     `json:"outcome,omitempty"`
-	OutcomeReason  string                     `json:"outcomeReason,omitempty"`
-	Conclusion     string                     `json:"conclusion,omitempty"`
-	PRURL          string                     `json:"prUrl,omitempty"`
-	DispatchState  string                     `json:"dispatchState,omitempty"`
-	Blockers       []model.NativeIssueBlocker `json:"blockers,omitempty"`
-	RetryAt        int64                      `json:"retryAt,omitempty"`
-	RetryAttempts  int                        `json:"retryAttempts,omitempty"`
-	Description    string                     `json:"description,omitempty"`
-	PlanRevision   int                        `json:"planRevision,omitempty"`
-	ManifestKey    string                     `json:"manifestKey,omitempty"`
-	RemovedAt      int64                      `json:"removedAt,omitempty"`
-	AttemptID      string                     `json:"attemptId,omitempty"`
-	Session        PlanningSession            `json:"session,omitempty"`
-	Recovery       *RecoveryGate              `json:"recovery,omitempty"`
-	Authority      *AuthorityEscalationGate   `json:"authority,omitempty"`
+	ID             string                        `json:"id"`
+	EpicID         string                        `json:"epicId"`
+	ParentID       string                        `json:"parentId,omitempty"`
+	Requirement    string                        `json:"requirement,omitempty"`
+	FormulaID      string                        `json:"formulaId,omitempty"`
+	FormulaVersion int                           `json:"formulaVersion,omitempty"`
+	FormulaHash    string                        `json:"formulaHash,omitempty"`
+	Bindings       map[string]string             `json:"bindings,omitempty"`
+	Kind           string                        `json:"kind"`
+	Title          string                        `json:"title"`
+	Status         string                        `json:"status"`
+	Outcome        string                        `json:"outcome,omitempty"`
+	OutcomeReason  string                        `json:"outcomeReason,omitempty"`
+	Conclusion     string                        `json:"conclusion,omitempty"`
+	PRURL          string                        `json:"prUrl,omitempty"`
+	DispatchState  string                        `json:"dispatchState,omitempty"`
+	Blockers       []model.NativeIssueBlocker    `json:"blockers,omitempty"`
+	DependsOn      []model.NativeIssueDependency `json:"dependsOn,omitempty"`
+	RetryAt        int64                         `json:"retryAt,omitempty"`
+	RetryAttempts  int                           `json:"retryAttempts,omitempty"`
+	Description    string                        `json:"description,omitempty"`
+	PlanRevision   int                           `json:"planRevision,omitempty"`
+	ManifestKey    string                        `json:"manifestKey,omitempty"`
+	RemovedAt      int64                         `json:"removedAt,omitempty"`
+	AttemptID      string                        `json:"attemptId,omitempty"`
+	Session        PlanningSession               `json:"session,omitempty"`
+	Recovery       *RecoveryGate                 `json:"recovery,omitempty"`
+	Authority      *AuthorityEscalationGate      `json:"authority,omitempty"`
 }
 
 type RecoveryGate = model.RecoveryGate
@@ -2213,7 +2214,7 @@ func nativeIssues(issues []model.NativeIssue) []Issue {
 	out := make([]Issue, len(issues))
 	for i := range issues {
 		issue := issues[i]
-		out[i] = Issue{ID: issue.ID, EpicID: issue.EpicID, ParentID: issue.ParentID, Requirement: issue.Requirement, FormulaID: issue.FormulaID, FormulaVersion: issue.FormulaVersion, FormulaHash: issue.FormulaHash, Bindings: issue.Bindings, Kind: issue.Kind, Title: issue.Title, Status: issue.Status, Description: issue.Description, PlanRevision: issue.PlanRevision, ManifestKey: issue.ManifestKey, Outcome: issue.Outcome, OutcomeReason: issue.OutcomeReason, DispatchState: issue.DispatchState, Blockers: issue.Blockers, RetryAt: issue.RetryAt, RetryAttempts: issue.RetryAttempts, RemovedAt: issue.RemovedAt}
+		out[i] = Issue{ID: issue.ID, EpicID: issue.EpicID, ParentID: issue.ParentID, Requirement: issue.Requirement, FormulaID: issue.FormulaID, FormulaVersion: issue.FormulaVersion, FormulaHash: issue.FormulaHash, Bindings: issue.Bindings, Kind: issue.Kind, Title: issue.Title, Status: issue.Status, Description: issue.Description, PlanRevision: issue.PlanRevision, ManifestKey: issue.ManifestKey, Outcome: issue.Outcome, OutcomeReason: issue.OutcomeReason, DispatchState: issue.DispatchState, Blockers: issue.Blockers, DependsOn: issue.DependsOn, RetryAt: issue.RetryAt, RetryAttempts: issue.RetryAttempts, RemovedAt: issue.RemovedAt}
 	}
 	return out
 }
