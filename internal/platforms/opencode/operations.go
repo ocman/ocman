@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"net/http"
 	"net/url"
@@ -262,12 +263,115 @@ func marshalRequest(v any) ([]byte, error) {
 	return payload, nil
 }
 
-// SendMessage submits a composer message via /session/{id}/prompt_async.
+// SendMessage submits a composer message through OpenCode's V2 steering API
+// when the session is available there, falling back to the legacy async API.
 func (a *Adapter) SendMessage(ctx context.Context, req platforms.SendMessageRequest) error {
+	lockIndex := crc32.ChecksumIEEE([]byte(req.SessionID)) % uint32(len(a.sendLock))
+	sendMu := &a.sendLock[lockIndex]
+	sendMu.Lock()
+	defer sendMu.Unlock()
+
 	port, _, err := a.resolvePort(req.SessionID)
 	if err != nil {
 		return err
 	}
+	err = sendMessageOnPort(ctx, port, req)
+	if err == nil {
+		rememberSessionPort(req.SessionID, port)
+		return nil
+	}
+	var upstream *platforms.UpstreamError
+	if errors.As(err, &upstream) {
+		return err
+	}
+	forgetSessionPort(req.SessionID, port)
+	InvalidateOpenCodePortCache()
+	retryPort, _, retryResolveErr := a.resolvePortCtx(ctx, req.SessionID)
+	if retryResolveErr == nil && retryPort != "" && retryPort != port {
+		if retryErr := sendMessageOnPort(ctx, retryPort, req); retryErr == nil {
+			rememberSessionPort(req.SessionID, retryPort)
+			return nil
+		}
+	}
+	return err
+}
+
+func sendMessageOnPort(ctx context.Context, port string, req platforms.SendMessageRequest) error {
+	if !serverAdvertisesV2(ctx, port) {
+		return sendMessageLegacy(ctx, port, req)
+	}
+	v2Path := fmt.Sprintf("/api/session/%s", req.SessionID)
+	if body, err := getJSON(ctx, port, v2Path); err == nil && v2SessionMatches(body, req) {
+		err := sendMessageV2(ctx, port, req)
+		var upstream *platforms.UpstreamError
+		if !errors.As(err, &upstream) || (upstream.Status != http.StatusNotFound && upstream.Status != http.StatusMethodNotAllowed) {
+			return err
+		}
+	}
+	return sendMessageLegacy(ctx, port, req)
+}
+
+func serverAdvertisesV2(ctx context.Context, port string) bool {
+	body, err := getJSON(ctx, port, "/api/health")
+	if err != nil {
+		return false
+	}
+	var health struct {
+		PID int `json:"pid"`
+	}
+	return json.Unmarshal(body, &health) == nil && health.PID > 0
+}
+
+func v2SessionMatches(body []byte, req platforms.SendMessageRequest) bool {
+	mr := parseOpenCodeModelRefInternal(req.Model)
+	if mr != nil && mr.ProviderID == "" {
+		return false
+	}
+	var response struct {
+		Data struct {
+			Agent string `json:"agent"`
+			Model struct {
+				ID         string `json:"id"`
+				ProviderID string `json:"providerID"`
+				Variant    string `json:"variant"`
+			} `json:"model"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(body, &response) != nil {
+		return false
+	}
+	if req.Agent != "" && response.Data.Agent != req.Agent {
+		return false
+	}
+	if mr != nil && (response.Data.Model.ID != mr.ModelID || response.Data.Model.ProviderID != mr.ProviderID) {
+		return false
+	}
+	if req.Reasoning != "" {
+		return response.Data.Model.Variant == req.Reasoning
+	}
+	if mr != nil {
+		return response.Data.Model.Variant == "" || response.Data.Model.Variant == "default"
+	}
+	return true
+}
+
+func sendMessageV2(ctx context.Context, port string, req platforms.SendMessageRequest) error {
+	prompt := map[string]any{"text": req.Message}
+	if len(req.Images) > 0 {
+		files := make([]map[string]string, 0, len(req.Images))
+		for _, img := range req.Images {
+			files = append(files, map[string]string{"uri": img.URL})
+		}
+		prompt["files"] = files
+	}
+	payload, err := marshalRequest(map[string]any{"prompt": prompt, "delivery": "steer"})
+	if err != nil {
+		return err
+	}
+	return postJSON(ctx, port, fmt.Sprintf("/api/session/%s/prompt", req.SessionID), payload)
+}
+
+func sendMessageLegacy(ctx context.Context, port string, req platforms.SendMessageRequest) error {
 	parts := make([]map[string]string, 0, 1+len(req.Images))
 	if req.Message != "" {
 		parts = append(parts, map[string]string{"type": "text", "text": req.Message})
@@ -291,22 +395,8 @@ func (a *Adapter) SendMessage(ctx context.Context, req platforms.SendMessageRequ
 	}
 	path := fmt.Sprintf("/session/%s/prompt_async", req.SessionID)
 	if err := postJSON(ctx, port, path, payload); err != nil {
-		var upstream *platforms.UpstreamError
-		if errors.As(err, &upstream) {
-			return err
-		}
-		forgetSessionPort(req.SessionID, port)
-		InvalidateOpenCodePortCache()
-		retryPort, _, retryResolveErr := a.resolvePortCtx(ctx, req.SessionID)
-		if retryResolveErr == nil && retryPort != "" && retryPort != port {
-			if retryErr := postJSON(ctx, retryPort, path, payload); retryErr == nil {
-				rememberSessionPort(req.SessionID, retryPort)
-				return nil
-			}
-		}
 		return err
 	}
-	rememberSessionPort(req.SessionID, port)
 	return nil
 }
 

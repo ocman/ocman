@@ -12,6 +12,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -54,7 +55,8 @@ type Adapter struct {
 	// turns is the live view of which sessions are running a turn, fed
 	// from each instance's /session/status snapshot and session.status
 	// events. See live_status.go.
-	turns *liveStatusRegistry
+	turns    *liveStatusRegistry
+	sendLock [64]sync.Mutex // serializes V2 selection check + prompt; collisions only reduce concurrency
 }
 
 // New returns a new OpenCode adapter backed by the given read-only DB.
