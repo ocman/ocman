@@ -130,7 +130,7 @@ function ZoomableGraphicModal({ label, closeLabel, maxScale = 4, onClose, childr
   );
 }
 
-export function MermaidDiagram({ source }: { source: string }) {
+function MermaidDiagram({ source }: { source: string }) {
   const id = `oc-mermaid-${useId().replaceAll(':', '')}`;
   const [result, setResult] = useState({ source: '', svg: '', failed: false });
   const [expanded, setExpanded] = useState(false);

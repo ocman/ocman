@@ -63,18 +63,6 @@
 .factory-tab { padding: 8px 14px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--text-dim); font: inherit; cursor: pointer; }
 .factory-tab:hover { color: var(--text); }
 .factory-tab.active { border-bottom-color: var(--accent); color: var(--text); }
-.factory-graph { display: grid; gap: 12px; }
-.factory-graph-legend { display: flex; flex-wrap: wrap; gap: 12px; margin: 0; padding: 0; list-style: none; color: var(--text-dim); font-size: 12px; }
-.factory-graph-legend li { display: flex; align-items: center; gap: 6px; }
-.factory-graph-swatch { width: 12px; height: 12px; border: 1px solid var(--border); border-radius: 3px; }
-/* Keep in sync with STATE_STYLE in factoryGraph.ts, which needs literal colours for the SVG. */
-.factory-graph-swatch.done { border-color: var(--green); background: color-mix(in srgb, var(--green) 18%, var(--bg)); }
-.factory-graph-swatch.failed { border-color: var(--red); background: color-mix(in srgb, var(--red) 18%, var(--bg)); }
-.factory-graph-swatch.running { border-color: var(--blue); background: color-mix(in srgb, var(--blue) 18%, var(--bg)); }
-.factory-graph-swatch.blocked { border-color: var(--peach); background: color-mix(in srgb, var(--peach) 18%, var(--bg)); }
-.factory-graph-swatch.ready { border-color: var(--teal); background: color-mix(in srgb, var(--teal) 18%, var(--bg)); }
-.factory-graph-swatch.waiting { border-color: var(--overlay1); background: color-mix(in srgb, var(--overlay1) 18%, var(--bg)); }
-.factory-graph-swatch.deferred { border-color: var(--surface2); background: color-mix(in srgb, var(--surface2) 18%, var(--bg)); }
 .factory-capacity { margin: 0; color: var(--text-dim); }
 .factory-graph-controls { display: grid; gap: 12px; }
 .factory-graph-controls > p { margin: 0; color: var(--text-dim); }

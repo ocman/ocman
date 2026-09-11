@@ -1,7 +1,7 @@
 import { useDeferredValue, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, NavLink, useNavigate, useParams } from 'react-router-dom';
-import { MarkdownContent, MermaidDiagram } from '../components/assistant/MarkdownText';
-import { factoryGraphDiagram } from './factoryGraph';
+import { MarkdownContent } from '../components/assistant/MarkdownText';
+import { EpicGraph } from './EpicGraph';
 import { Button, SelectField } from '../components/Control';
 import { SearchSelect } from '../components/SearchSelect';
 import { StatusBadge } from '../components/StatusBadge';
@@ -425,17 +425,6 @@ export function FactoryEpicDetail() {
     </section>}
     {managing && graphIssues.data && <Drawer title="Manage graph" onClose={() => setManaging(false)}><GraphControls epicID={id} issues={graphIssues.data} allIssues={graphIssueQueries.flatMap((query) => query.data ?? [])} /></Drawer>}
   </FactoryPage>;
-}
-
-const GRAPH_LEGEND = ['done', 'failed', 'running', 'blocked', 'ready', 'waiting', 'deferred'] as const;
-
-function EpicGraph({ issues }: { issues?: FactoryIssue[] }) {
-	const source = factoryGraphDiagram(issues ?? []);
-	if (!source) return <p className="oc-empty">This epic has no work to draw yet.</p>;
-	return <div className="factory-graph">
-		<ul className="factory-graph-legend" aria-label="Status legend">{GRAPH_LEGEND.map((state) => <li key={state}><span className={`factory-graph-swatch ${state}`} aria-hidden="true" />{state}</li>)}</ul>
-		<MermaidDiagram source={source} />
-	</div>;
 }
 
 function PlanningAttempts({ epicID, attempts }: { epicID: string; attempts: FactoryAttempt[] }) {

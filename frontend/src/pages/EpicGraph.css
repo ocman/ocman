@@ -1,0 +1,25 @@
+.factory-graph { display: grid; gap: 12px; }
+.factory-graph-canvas { height: min(70vh, 640px); border: 1px solid var(--border); background: var(--bg); }
+.factory-graph-legend { display: flex; flex-wrap: wrap; gap: 12px; margin: 0; padding: 0; list-style: none; color: var(--text-dim); font-size: 12px; }
+.factory-graph-legend li { display: flex; align-items: center; gap: 6px; }
+.factory-graph-swatch { width: 12px; height: 12px; border: 1px solid var(--border); border-radius: 3px; }
+.factory-node { display: grid; gap: 2px; text-align: left; }
+.factory-node span { color: var(--text-dim); font-size: 11px; }
+
+.factory-node-box { width: 200px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); color: var(--text); font-size: 12px; }
+.factory-node-box.selected { outline: 2px solid var(--accent); }
+
+/* One palette for the node border and its legend swatch. */
+.factory-node-box--done, .factory-graph-swatch.done { border-color: var(--green); background: color-mix(in srgb, var(--green) 18%, var(--bg)); }
+.factory-node-box--failed, .factory-graph-swatch.failed { border-color: var(--red); background: color-mix(in srgb, var(--red) 18%, var(--bg)); }
+.factory-node-box--running, .factory-graph-swatch.running { border-color: var(--blue); background: color-mix(in srgb, var(--blue) 18%, var(--bg)); }
+.factory-node-box--blocked, .factory-graph-swatch.blocked { border-color: var(--peach); background: color-mix(in srgb, var(--peach) 18%, var(--bg)); }
+.factory-node-box--ready, .factory-graph-swatch.ready { border-color: var(--teal); background: color-mix(in srgb, var(--teal) 18%, var(--bg)); }
+.factory-node-box--waiting, .factory-graph-swatch.waiting { border-color: var(--overlay1); background: color-mix(in srgb, var(--overlay1) 18%, var(--bg)); }
+.factory-node-box--deferred, .factory-graph-swatch.deferred { border-color: var(--surface2); background: color-mix(in srgb, var(--surface2) 18%, var(--bg)); }
+
+.react-flow__edge.factory-edge--hierarchy .react-flow__edge-path { stroke-dasharray: 4 4; stroke: var(--overlay1); }
+.react-flow__edge.factory-edge--on_failure .react-flow__edge-path { stroke: var(--peach); }
+.react-flow__edge-text { fill: var(--text-dim); font-size: 10px; }
+.react-flow__controls-button { border-bottom-color: var(--border); background: var(--bg-card); fill: var(--text); }
+.react-flow__controls-button:hover { background: var(--bg-hover); }

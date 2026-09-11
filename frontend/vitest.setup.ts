@@ -30,6 +30,20 @@ import { cleanup, configure } from '@testing-library/react';
   }
 }
 
+// jsdom ships no ResizeObserver, which anything measuring its own box (React
+// Flow, xterm) constructs on mount. A no-op observer is enough: jsdom never
+// lays out, so a real one would only ever report zeroes.
+if (!('ResizeObserver' in globalThis)) {
+  Object.defineProperty(globalThis, 'ResizeObserver', {
+    configurable: true,
+    value: class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  });
+}
+
 // Auto-cleanup the rendered DOM between tests so a stale tree from a
 // previous case can't satisfy a `findByRole` query in the next one.
 // Also fires under the node environment but degrades to a no-op when

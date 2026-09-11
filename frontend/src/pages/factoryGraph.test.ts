@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { factoryGraphDiagram, factoryIssueState } from './factoryGraph';
+import { factoryGraphModel, factoryIssueState } from './factoryGraph';
 import type { FactoryIssue } from '../lib/api';
 
 const issue = (overrides: Partial<FactoryIssue> & Pick<FactoryIssue, 'id'>): FactoryIssue => ({
@@ -24,39 +24,58 @@ describe('factoryIssueState', () => {
   });
 });
 
-describe('factoryGraphDiagram', () => {
+describe('factoryGraphModel', () => {
   it('is empty when only containers exist', () => {
-    expect(factoryGraphDiagram([issue({ id: 'e.1', kind: 'mol' })])).toBe('');
-    expect(factoryGraphDiagram([])).toBe('');
+    expect(factoryGraphModel([issue({ id: 'e.1', kind: 'mol' })])).toEqual({ nodes: [], edges: [] });
+    expect(factoryGraphModel([])).toEqual({ nodes: [], edges: [] });
   });
 
   it('lifts children of the invisible Mol to the top and keeps declared edges', () => {
-    const source = factoryGraphDiagram([
+    const { nodes, edges } = factoryGraphModel([
       issue({ id: 'e.1', kind: 'mol', title: 'Root Mol' }),
       issue({ id: 'e.1.1', parentId: 'e.1', kind: 'implementation', title: 'Backend', status: 'closed', outcome: 'succeeded' }),
       issue({ id: 'e.1.2', parentId: 'e.1', title: 'Frontend', dispatchState: 'waiting', dependsOn: [{ id: 'e.1.1', type: 'blocks' }] }),
       issue({ id: 'e.1.2.1', parentId: 'e.1.2', title: 'Subtask', dispatchState: 'ready' }),
     ]);
-    expect(source).not.toContain('Root Mol');
-    expect(source).toContain('n0["Backend<br/>implementation · done"]:::done');
-    expect(source).toContain('n1["Frontend<br/>task · waiting"]:::waiting');
-    expect(source).toContain('  n0 --> n1');
-    expect(source).toContain('  n1 -.-> n2');
+    expect(nodes.map((node) => node.id)).toEqual(['e.1.1', 'e.1.2', 'e.1.2.1']);
+    expect(nodes.map((node) => node.state)).toEqual(['done', 'waiting', 'ready']);
     // The Mol parent produced no dangling hierarchy edge.
-    expect(source).not.toContain('-.-> n0');
-  });
-
-  it('labels on_failure edges and neutralises quotes in titles', () => {
-    const source = factoryGraphDiagram([
-      issue({ id: 'a', title: 'Ship "it"\nnow' }),
-      issue({ id: 'b', title: 'Recover', dependsOn: [{ id: 'a', type: 'on_failure' }] }),
+    expect(edges).toEqual([
+      { id: 'blocks:e.1.1->e.1.2', source: 'e.1.1', target: 'e.1.2', kind: 'blocks' },
+      { id: 'hierarchy:e.1.2->e.1.2.1', source: 'e.1.2', target: 'e.1.2.1', kind: 'hierarchy' },
     ]);
-    expect(source).toContain('n0["Ship #quot;it#quot; now<br/>task · waiting"]');
-    expect(source).toContain('  n0 -- on failure --> n1');
   });
 
-  it('ignores edges to unknown or self nodes', () => {
-    const source = factoryGraphDiagram([issue({ id: 'a', dependsOn: [{ id: 'gone', type: 'blocks' }, { id: 'a', type: 'blocks' }] })]);
-    expect(source.split('\n').filter((line) => line.includes('-->'))).toEqual([]);
+  it('places dependents below what they wait for', () => {
+    const { nodes } = factoryGraphModel([
+      issue({ id: 'a' }),
+      issue({ id: 'b', dependsOn: [{ id: 'a', type: 'blocks' }] }),
+      issue({ id: 'c', dependsOn: [{ id: 'b', type: 'blocks' }, { id: 'a', type: 'blocks' }] }),
+      issue({ id: 'sibling' }),
+    ]);
+    const y = Object.fromEntries(nodes.map((node) => [node.id, node.y]));
+    expect(y.a).toBeLessThan(y.b);
+    // The longest path wins: c sits below b even though it also depends on a.
+    expect(y.b).toBeLessThan(y.c);
+    // Same-layer nodes are spread across columns instead of stacking.
+    expect(nodes.find((node) => node.id === 'sibling')!.y).toBe(y.a);
+    expect(nodes.find((node) => node.id === 'sibling')!.x).toBeGreaterThan(nodes.find((node) => node.id === 'a')!.x);
+  });
+
+  it('still draws every node when dependencies form a cycle', () => {
+    const { nodes, edges } = factoryGraphModel([
+      issue({ id: 'a', dependsOn: [{ id: 'b', type: 'blocks' }] }),
+      issue({ id: 'b', dependsOn: [{ id: 'a', type: 'blocks' }] }),
+    ]);
+    expect(nodes).toHaveLength(2);
+    expect(edges).toHaveLength(2);
+  });
+
+  it('labels on_failure edges and drops unknown or self references', () => {
+    const { edges } = factoryGraphModel([
+      issue({ id: 'a', dependsOn: [{ id: 'gone', type: 'blocks' }, { id: 'a', type: 'blocks' }] }),
+      issue({ id: 'b', dependsOn: [{ id: 'a', type: 'on_failure' }, { id: 'a', type: 'on_failure' }] }),
+    ]);
+    expect(edges).toEqual([{ id: 'on_failure:a->b', source: 'a', target: 'b', kind: 'on_failure' }]);
   });
 });

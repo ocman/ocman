@@ -542,7 +542,11 @@ describe('Factory interactions', () => {
     await user.click(screen.getByRole('tab', { name: 'Graph' }));
     expect(screen.getByRole('tabpanel', { name: 'Graph' })).toBeInTheDocument();
     expect(screen.getByLabelText('Status legend')).toBeInTheDocument();
-    expect(screen.queryByText('Board work')).not.toBeInTheDocument();
+    expect(screen.getByTestId('epic-graph')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Epic issues by status')).not.toBeInTheDocument();
+    // A node opens the same issue details as the board.
+    await user.click(screen.getByText('Board work'));
+    expect(await screen.findByRole('dialog', { name: 'Issue epic-1.1.1' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: 'Plan' }));
     expect(await screen.findByText('Proposal revision: 1')).toBeInTheDocument();
