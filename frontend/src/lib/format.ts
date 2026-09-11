@@ -50,6 +50,17 @@ export function formatSeconds(seconds: number): string {
   return days + 'd ' + (totalHours % 24) + 'h';
 }
 
+// timeUntilISO renders how long is left until an ISO-8601 timestamp, e.g.
+// "2d 3h". Returns '' for unparseable or already-elapsed input so callers
+// can omit the hint entirely.
+// ponytail: evaluated at render, not on a timer — whatever refetches the
+// data is what moves this number.
+export function timeUntilISO(iso: string, now = Date.now()): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t) || t <= now) return '';
+  return formatSeconds((t - now) / 1000);
+}
+
 export function formatPercent(value: number, digits = 0): string {
   return `${(value * 100).toFixed(digits)}%`;
 }

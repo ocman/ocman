@@ -1,5 +1,6 @@
 import { usePageTitle } from '../lib/headerContext';
 import { useSubscriptionUsage } from '../lib/queries';
+import { timeUntilISO } from '../lib/format';
 import type { SubscriptionProviderUsage } from '../lib/api';
 
 const STATUS_LABELS: Record<string, string> = {
@@ -33,6 +34,7 @@ function ProviderCard({ provider }: { provider: SubscriptionProviderUsage }) {
             {window.resetsAt && (
               <span className="subscription-reset">
                 Resets <time dateTime={window.resetsAt}>{new Date(window.resetsAt).toLocaleString()}</time>
+                {timeUntilISO(window.resetsAt) && <span className="subscription-reset-in"> (in {timeUntilISO(window.resetsAt)})</span>}
               </span>
             )}
           </div>

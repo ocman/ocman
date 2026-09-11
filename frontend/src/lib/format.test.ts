@@ -6,6 +6,7 @@ import {
   formatDuration,
   formatNumber,
   formatSeconds,
+  timeUntilISO,
   formatTokensPerSecond,
   fuzzyMatch,
   relativeTime,
@@ -170,6 +171,19 @@ describe('formatSeconds', () => {
     expect(formatSeconds(90)).toBe('1m 30s');
     expect(formatSeconds(3720)).toBe('1h 2m');
     expect(formatSeconds(90_000)).toBe('1d 1h');
+  });
+});
+
+describe('timeUntilISO', () => {
+  const now = Date.parse('2026-09-11T12:00:00Z');
+  it.each([
+    ['2026-09-13T14:00:00Z', '2d 2h'],
+    ['2026-09-11T16:10:00Z', '4h 10m'],
+    ['2026-09-11T12:00:30Z', '30s'],
+    ['2026-09-11T11:59:00Z', ''],
+    ['not-a-date', ''],
+  ])('renders %s as %s', (iso, expected) => {
+    expect(timeUntilISO(iso, now)).toBe(expected);
   });
 });
 

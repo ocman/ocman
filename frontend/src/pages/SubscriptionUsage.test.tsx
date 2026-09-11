@@ -32,6 +32,24 @@ describe('SubscriptionUsage', () => {
     expect(screen.getAllByText(/% used/)).toHaveLength(3);
   });
 
+  it('shows the time left until each window resets', () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date('2026-09-11T12:00:00Z'));
+    vi.mocked(useSubscriptionUsage).mockReturnValue({
+      data: { providers: [
+        { id: 'anthropic', name: 'Anthropic', status: 'ok', windows: [
+          { name: '5 hours', usedPercent: 1, resetsAt: '2026-09-11T16:10:00Z' },
+          { name: 'expired', usedPercent: 2, resetsAt: '2026-09-10T16:10:00Z' },
+        ] },
+      ] },
+    } as never);
+
+    render(<SubscriptionUsage />);
+    expect(screen.getByText('(in 4h 10m)')).toBeInTheDocument();
+    expect(screen.queryByText(/\(in 0s\)/)).not.toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
   it('shows provider errors and retries the request', () => {
     const refetch = vi.fn();
     vi.mocked(useSubscriptionUsage).mockReturnValue({

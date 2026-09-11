@@ -70,6 +70,7 @@
 .subscription-card-header h2 { margin: 0; font-size: 18px; }
 .subscription-plan { padding: 3px 8px; border: 1px solid var(--accent); color: var(--accent); font-size: 11px; text-transform: capitalize; }
 .subscription-status, .subscription-reset { color: var(--text-dim); font-size: 12px; }
+.subscription-reset-in { opacity: 0.7; }
 .subscription-windows { display: grid; gap: 20px; }
 .subscription-window { display: grid; gap: 8px; }
 .subscription-window-label { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
