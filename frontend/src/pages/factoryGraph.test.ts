@@ -86,6 +86,30 @@ describe('factoryGraphModel', () => {
     ]);
   });
 
+  it('leaves no node stranded for a real epic with resolved gates', () => {
+    // Shape taken from aamruifdam-crov: five recovery gates and one authority gate,
+    // all resolved, hanging off two implementations that carry no edge to them.
+    const gate = (id: string, workId: string) => issue({ id, parentId: 'e.1', kind: 'gate', title: 'Recovery gate', status: 'closed', outcome: 'succeeded', recovery: { issueId: id, epicId: 'epic-1', attemptId: 'a', workId, question: 'q', reason: 'r', choices: [], resolution: 'resume' } });
+    const { nodes, edges } = factoryGraphModel([
+      issue({ id: 'e.1', kind: 'mol' }),
+      issue({ id: 'e.1.3', parentId: 'e.1', kind: 'plan', status: 'closed', outcome: 'succeeded' }),
+      issue({ id: 'e.1.1', parentId: 'e.1', kind: 'gate', title: 'Approval gate', status: 'closed', outcome: 'succeeded', dependsOn: [{ id: 'e.1.3', type: 'blocks' }] }),
+      issue({ id: 'e.1.2', parentId: 'e.1', kind: 'materialization', status: 'closed', outcome: 'succeeded', dependsOn: [{ id: 'e.1.1', type: 'blocks' }] }),
+      issue({ id: 'e.1.4', parentId: 'e.1', kind: 'implementation', status: 'closed', outcome: 'succeeded', dependsOn: [{ id: 'e.1.2', type: 'blocks' }] }),
+      issue({ id: 'e.1.5', parentId: 'e.1', kind: 'implementation', status: 'closed', outcome: 'succeeded', dependsOn: [{ id: 'e.1.2', type: 'blocks' }, { id: 'e.1.4', type: 'blocks' }] }),
+      gate('e.1.10', 'e.1.4'),
+      gate('e.1.11', 'e.1.4'),
+      issue({ id: 'e.1.12', parentId: 'e.1', kind: 'gate', title: 'Authority escalation gate', status: 'closed', outcome: 'succeeded', authority: { issueId: 'e.1.12', epicId: 'epic-1', attemptId: 'a', requestId: 'r', workId: 'e.1.5', permission: 'bash', target: 'rm', resolution: 'approve' } }),
+      gate('e.1.13', 'e.1.5'),
+    ]);
+    const connected = new Set(edges.flatMap((edge) => [edge.source, edge.target]));
+    // Only the plan is a root; every gate hangs off something.
+    expect(nodes.filter((node) => !connected.has(node.id)).map((node) => node.id)).toEqual([]);
+    expect(edges.filter((edge) => edge.kind === 'interrupts').map((edge) => `${edge.source}->${edge.target}`)).toEqual([
+      'e.1.4->e.1.10', 'e.1.4->e.1.11', 'e.1.5->e.1.12', 'e.1.5->e.1.13',
+    ]);
+  });
+
   it('labels on_failure edges and drops unknown or self references', () => {
     const { edges } = factoryGraphModel([
       issue({ id: 'a', dependsOn: [{ id: 'gone', type: 'blocks' }, { id: 'a', type: 'blocks' }] }),
