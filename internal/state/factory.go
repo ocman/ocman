@@ -378,6 +378,9 @@ func (d *DB) CreateFactoryRecoveryGate(ctx context.Context, attemptID, question,
 	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_recovery_gate (issue_id, epic_id, attempt_id, work_item_id, question, reason, choices_json, created_at) SELECT ?, epic_id, id, work_item_id, ?, ?, ?, ? FROM factory_attempt WHERE id = ?`, gateID, question, reason, string(choicesJSON), now, attemptID); err != nil {
 		return model.RecoveryGate{}, err
 	}
+	if err := linkFactoryGateToWork(ctx, tx, gateID, attemptID); err != nil {
+		return model.RecoveryGate{}, err
+	}
 	details, _ := json.Marshal(map[string]any{"question": question, "reason": reason, "choices": choices})
 	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_audit_record (epic_id, work_item_id, attempt_id, actor, action, details_json, created_at) SELECT epic_id, work_item_id, id, 'agent', 'recovery.requested', ?, ? FROM factory_attempt WHERE id = ?`, string(details), now, attemptID); err != nil {
 		return model.RecoveryGate{}, err
@@ -450,6 +453,9 @@ func (d *DB) CreateFactoryAuthorityEscalationGate(ctx context.Context, session, 
 		return model.AuthorityEscalationGate{}, false, err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO factory_authority_escalation_gate (issue_id, epic_id, attempt_id, work_item_id, request_id, permission, target, created_at) SELECT ?, epic_id, id, work_item_id, ?, ?, ?, ? FROM factory_attempt WHERE id = ?`, gateID, requestID, permission, target, now, attemptID); err != nil {
+		return model.AuthorityEscalationGate{}, false, err
+	}
+	if err = linkFactoryGateToWork(ctx, tx, gateID, attemptID); err != nil {
 		return model.AuthorityEscalationGate{}, false, err
 	}
 	details, _ := json.Marshal(map[string]string{"requestId": requestID, "permission": permission, "target": target})
@@ -904,4 +910,14 @@ func (d *DB) AppendFactoryAuditOnce(ctx context.Context, record model.AuditRecor
 		return fmt.Errorf("appending Factory audit once: %w", err)
 	}
 	return nil
+}
+
+// linkFactoryGateToWork records that a gate was raised out of an attempt on a
+// work item, so the graph can draw the two together. The gate is a
+// reference-requirement child, which deriveFactoryIssueDispatch skips, so the
+// edge describes the relationship without holding any work back.
+func linkFactoryGateToWork(ctx context.Context, tx *sql.Tx, gateID, attemptID string) error {
+	_, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO factory_issue_dependency (issue_id, depends_on_issue_id, type)
+		SELECT ?, work_item_id, 'blocks' FROM factory_attempt WHERE id = ? AND work_item_id <> '' AND work_item_id <> ?`, gateID, attemptID, gateID)
+	return err
 }

@@ -48,13 +48,13 @@ export function factoryGraphModel(issues: FactoryIssue[]): { nodes: GraphNode[];
   };
 
   const edges: GraphEdge[] = [];
+  // One edge per pair: a gate's link to the work it interrupted is both stored as
+  // a dependency and derivable from its attempt, and drawing it twice is noise.
   const seen = new Set<string>();
   const add = (source: string | undefined, target: string, kind: GraphEdge['kind']) => {
-    if (!source || source === target) return;
-    const id = `${kind}:${source}->${target}`;
-    if (seen.has(id)) return;
-    seen.add(id);
-    edges.push({ id, source, target, kind });
+    if (!source || source === target || seen.has(`${source}->${target}`)) return;
+    seen.add(`${source}->${target}`);
+    edges.push({ id: `${kind}:${source}->${target}`, source, target, kind });
   };
   for (const issue of visible) {
     // A recovery or authority gate is parented to its container, not to the work
@@ -62,7 +62,9 @@ export function factoryGraphModel(issues: FactoryIssue[]): { nodes: GraphNode[];
     const interrupted = issue.recovery?.workId ?? issue.authority?.workId;
     if (interrupted) add(visibleAncestor(interrupted), issue.id, 'interrupts');
     else add(visibleAncestor(issue.parentId), issue.id, 'hierarchy');
-    for (const edge of issue.dependsOn ?? []) add(visibleAncestor(edge.id), issue.id, edge.type === 'on_failure' ? 'on_failure' : 'blocks');
+    for (const edge of issue.dependsOn ?? []) {
+      add(visibleAncestor(edge.id), issue.id, interrupted ? 'interrupts' : edge.type === 'on_failure' ? 'on_failure' : 'blocks');
+    }
   }
 
   // Longest-path layering over a DAG. A cycle would starve Kahn's queue, so

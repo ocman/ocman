@@ -202,7 +202,7 @@ import (
 //	73 - expire missed one-time routine schedules and repair active target uniqueness.
 //	74 - add durable owner-local Inbox items.
 //	75 - allow multiple sequential recovery gates for one Factory attempt.
-const latestSchemaVersion = 75
+const latestSchemaVersion = 76
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -457,6 +457,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV74(tx)
 	case 75:
 		return migrateToV75(tx)
+	case 76:
+		return migrateToV76(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -2556,4 +2558,29 @@ func migrateToV75(tx *sql.Tx) error {
 		CREATE INDEX factory_recovery_gate_open_idx ON factory_recovery_gate (attempt_id, resolution);
 	`)
 	return err
+}
+
+// migrateToV76 records the edge from the work item an attempt was running to the
+// recovery or authority gate it raised. Both gates already store work_item_id,
+// but never wrote a dependency row, so the graph had nothing to draw. The gate
+// is a reference-requirement child, so deriveFactoryIssueDispatch skips it and
+// scheduling is unaffected.
+func migrateToV76(tx *sql.Tx) error {
+	for _, table := range []string{"factory_recovery_gate", "factory_authority_escalation_gate"} {
+		var exists int
+		if err := tx.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name = ?`, table).Scan(&exists); err != nil {
+			return err
+		}
+		if exists == 0 {
+			continue
+		}
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO factory_issue_dependency (issue_id, depends_on_issue_id, type)
+			SELECT g.issue_id, g.work_item_id, 'blocks' FROM ` + table + ` g
+			WHERE g.work_item_id <> '' AND g.work_item_id <> g.issue_id
+				AND EXISTS (SELECT 1 FROM factory_issue i WHERE i.id = g.work_item_id)
+				AND EXISTS (SELECT 1 FROM factory_issue i WHERE i.id = g.issue_id)`); err != nil {
+			return err
+		}
+	}
+	return nil
 }

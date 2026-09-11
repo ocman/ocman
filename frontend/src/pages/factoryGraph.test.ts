@@ -110,6 +110,15 @@ describe('factoryGraphModel', () => {
     ]);
   });
 
+  it('draws one edge when a gate both stores and implies its link to the work', () => {
+    const { edges } = factoryGraphModel([
+      issue({ id: 'e.1', kind: 'mol' }),
+      issue({ id: 'e.1.1', parentId: 'e.1', kind: 'implementation', title: 'Backend' }),
+      issue({ id: 'e.1.2', parentId: 'e.1', kind: 'gate', title: 'Recovery gate', dependsOn: [{ id: 'e.1.1', type: 'blocks' }], recovery: { issueId: 'e.1.2', epicId: 'epic-1', attemptId: 'a', workId: 'e.1.1', question: 'q', reason: 'r', choices: [], resolution: 'open' } }),
+    ]);
+    expect(edges).toEqual([{ id: 'interrupts:e.1.1->e.1.2', source: 'e.1.1', target: 'e.1.2', kind: 'interrupts' }]);
+  });
+
   it('labels on_failure edges and drops unknown or self references', () => {
     const { edges } = factoryGraphModel([
       issue({ id: 'a', dependsOn: [{ id: 'gone', type: 'blocks' }, { id: 'a', type: 'blocks' }] }),

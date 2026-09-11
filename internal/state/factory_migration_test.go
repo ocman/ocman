@@ -445,3 +445,54 @@ func TestFactoryRecoveryGateAuditsEveryResolution(t *testing.T) {
 		})
 	}
 }
+
+// Gates created before v76 stored the work item they came out of but never wrote
+// the edge, leaving them stranded in the graph.
+func TestMigrateV76BackfillsGateEdgesToInterruptedWork(t *testing.T) {
+	db, err := Open(t.TempDir() + "/state.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if _, err := db.db.Exec(`
+		INSERT INTO factory_project (path, created_at) VALUES ('/repo', 1);
+		INSERT INTO factory_epic (id, project_path, status, goal, brief, created_at, updated_at) VALUES ('epic', '/repo', 'open', 'Goal', '', 1, 1);
+		INSERT INTO factory_issue (id, epic_id, kind, title, status, created_at) VALUES ('mol', 'epic', 'mol', 'Mol', 'open', 1), ('work', 'epic', 'implementation', 'Work', 'in_progress', 1);
+		INSERT INTO factory_issue_hierarchy (parent_issue_id, child_issue_id, child_index, requirement) VALUES ('mol', 'work', 1, 'required');
+		INSERT INTO factory_issue_child_sequence (parent_issue_id, next_index) VALUES ('mol', 2);
+		INSERT INTO factory_attempt (id, epic_id, work_item_id, sequence, phase, session_platform, session_id, frozen_policy_json, created_at, updated_at, started_at) VALUES ('attempt', 'epic', 'work', 1, 'active', 'opencode', 'session', '{"repository":"/repo","profile":"factory-implement/v1"}', 1, 1, 1);
+	`); err != nil {
+		t.Fatal(err)
+	}
+	gate, err := db.CreateFactoryRecoveryGate(t.Context(), "attempt", "Choose", "blocked", nil, time.UnixMilli(10))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Reproduce a gate written by an older ocman: the row exists, the edge does not.
+	if _, err := db.db.Exec(`DELETE FROM factory_issue_dependency WHERE issue_id = ?`, gate.IssueID); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := migrateToV76(tx); err != nil {
+		t.Fatal(err)
+	}
+	// Running it twice must not duplicate the edge.
+	if err := migrateToV76(tx); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var dependsOn string
+	var count int
+	if err := db.db.QueryRow(`SELECT count(*), COALESCE(max(depends_on_issue_id), '') FROM factory_issue_dependency WHERE issue_id = ?`, gate.IssueID).Scan(&count, &dependsOn); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 || dependsOn != "work" {
+		t.Fatalf("backfilled edges = %d rows depending on %q", count, dependsOn)
+	}
+}

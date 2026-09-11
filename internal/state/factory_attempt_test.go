@@ -102,6 +102,19 @@ func TestFactoryAttemptRecoveryAndAuthorityGates(t *testing.T) {
 	if paused, err := db.IsFactoryAttemptRecoveryPaused(ctx, attempt.ID); err != nil || !paused {
 		t.Fatalf("recovery paused = %v, %v", paused, err)
 	}
+	// The gate records the work it came out of, without holding that work back.
+	issues := mustListFactoryIssues(t, db, epic.ID)
+	byIssueID := map[string]model.NativeIssue{}
+	for _, issue := range issues {
+		byIssueID[issue.ID] = issue
+	}
+	gate := byIssueID[recovery.IssueID]
+	if len(gate.DependsOn) != 1 || gate.DependsOn[0].ID != workID {
+		t.Fatalf("recovery gate edges = %#v", gate.DependsOn)
+	}
+	if work := byIssueID[workID]; work.DispatchState != "ready" || len(work.Blockers) != 0 {
+		t.Fatalf("work dispatch after gate = %q, %#v", work.DispatchState, work.Blockers)
+	}
 
 	authority, handled, err := db.CreateFactoryAuthorityEscalationGate(ctx, "session", "request", "external_directory", "/tmp", at)
 	if err != nil || !handled || authority.Permission != "external_directory" {
