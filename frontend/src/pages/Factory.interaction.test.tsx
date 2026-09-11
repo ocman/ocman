@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
@@ -544,8 +544,10 @@ describe('Factory interactions', () => {
     expect(screen.getByLabelText('Status legend')).toBeInTheDocument();
     expect(screen.getByTestId('epic-graph')).toBeInTheDocument();
     expect(screen.queryByLabelText('Epic issues by status')).not.toBeInTheDocument();
-    // A node opens the same issue details as the board.
-    await user.click(screen.getByText('Board work'));
+    // A node opens the same issue details as the board. Dispatched directly:
+    // user-event's mousedown reaches d3-zoom, which reads event.view.document
+    // and jsdom leaves view null.
+    fireEvent.click(screen.getByText('Board work'));
     expect(await screen.findByRole('dialog', { name: 'Issue epic-1.1.1' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: 'Plan' }));
