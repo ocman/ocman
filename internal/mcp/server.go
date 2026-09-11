@@ -42,6 +42,8 @@ func New(deps Deps) *Server {
 	addFileTools(s, &fileTools{sign: deps.SignFile})
 
 	addFactoryTools(s, &factoryTools{svc: deps.FactoryService})
+	// Keep unblock separate: OpenCode permissions apply per tool, so folding it
+	// into factory would either prompt for every action or bypass its approval.
 	for _, tool := range factoryUnblockServerTools(deps.FactoryService) {
 		s.AddTool(tool.Tool, tool.Handler)
 	}
