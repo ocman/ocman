@@ -71,6 +71,21 @@ describe('factoryGraphModel', () => {
     expect(edges).toHaveLength(2);
   });
 
+  it('hangs a recovery or authority gate off the work it interrupted', () => {
+    const gate = { issueId: 'e.1.3', epicId: 'epic-1', attemptId: 'a1', workId: 'e.1.1', question: 'Now what?', reason: 'stuck', choices: [], resolution: 'open' };
+    const { edges } = factoryGraphModel([
+      issue({ id: 'e.1', kind: 'mol' }),
+      issue({ id: 'e.1.1', parentId: 'e.1', kind: 'implementation', title: 'Backend', status: 'in_progress' }),
+      issue({ id: 'e.1.3', parentId: 'e.1', kind: 'gate', title: 'Recovery gate', recovery: gate }),
+      issue({ id: 'e.1.4', parentId: 'e.1', kind: 'gate', title: 'Permission gate', authority: { ...gate, issueId: 'e.1.4', requestId: 'r1', permission: 'bash', target: 'rm', workId: 'e.1.1' } }),
+    ]);
+    // Both gates point at the interrupted work instead of floating loose under the Mol.
+    expect(edges).toEqual([
+      { id: 'interrupts:e.1.1->e.1.3', source: 'e.1.1', target: 'e.1.3', kind: 'interrupts' },
+      { id: 'interrupts:e.1.1->e.1.4', source: 'e.1.1', target: 'e.1.4', kind: 'interrupts' },
+    ]);
+  });
+
   it('labels on_failure edges and drops unknown or self references', () => {
     const { edges } = factoryGraphModel([
       issue({ id: 'a', dependsOn: [{ id: 'gone', type: 'blocks' }, { id: 'a', type: 'blocks' }] }),

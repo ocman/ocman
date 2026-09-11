@@ -18,7 +18,7 @@ export interface GraphEdge {
   id: string;
   source: string;
   target: string;
-  kind: 'hierarchy' | 'blocks' | 'on_failure';
+  kind: 'hierarchy' | 'blocks' | 'on_failure' | 'interrupts';
 }
 
 const COLUMN = 260;
@@ -57,7 +57,11 @@ export function factoryGraphModel(issues: FactoryIssue[]): { nodes: GraphNode[];
     edges.push({ id, source, target, kind });
   };
   for (const issue of visible) {
-    add(visibleAncestor(issue.parentId), issue.id, 'hierarchy');
+    // A recovery or authority gate is parented to its container, not to the work
+    // it interrupted, which would leave it floating. Its attempt knows better.
+    const interrupted = issue.recovery?.workId ?? issue.authority?.workId;
+    if (interrupted) add(visibleAncestor(interrupted), issue.id, 'interrupts');
+    else add(visibleAncestor(issue.parentId), issue.id, 'hierarchy');
     for (const edge of issue.dependsOn ?? []) add(visibleAncestor(edge.id), issue.id, edge.type === 'on_failure' ? 'on_failure' : 'blocks');
   }
 

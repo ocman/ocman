@@ -34,6 +34,10 @@ func TestFactoryGraphCreateAndPourAreDurableAndAtomic(t *testing.T) {
 	if err != nil || len(issues) != 4 || issues[0].Kind != "mol" || issues[1].Kind != "plan" || issues[1].ParentID != issues[0].ID || issues[2].ParentID != issues[0].ID || issues[3].ParentID != issues[0].ID {
 		t.Fatalf("ListFactoryIssues = %#v, %v", issues, err)
 	}
+	// The poured gate and materialization are reported as a chain, not as loose work.
+	if len(issues[2].DependsOn) != 1 || issues[2].DependsOn[0].ID != issues[1].ID || len(issues[3].DependsOn) != 1 || issues[3].DependsOn[0].ID != issues[2].ID {
+		t.Fatalf("poured dependency chain = %#v, %#v", issues[2].DependsOn, issues[3].DependsOn)
+	}
 	for table, want := range map[string]int{"factory_project": 1, "factory_epic": 1, "factory_formula_identity": 1, "factory_issue": 4, "factory_issue_hierarchy": 3, "factory_issue_dependency": 2} {
 		var count int
 		if err := db.db.QueryRow(`SELECT count(*) FROM ` + table).Scan(&count); err != nil || count != want {

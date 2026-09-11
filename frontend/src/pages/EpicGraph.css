@@ -20,6 +20,7 @@
 
 .react-flow__edge.factory-edge--hierarchy .react-flow__edge-path { stroke-dasharray: 4 4; stroke: var(--overlay1); }
 .react-flow__edge.factory-edge--on_failure .react-flow__edge-path { stroke: var(--peach); }
+.react-flow__edge.factory-edge--interrupts .react-flow__edge-path { stroke: var(--peach); stroke-dasharray: 2 3; }
 .react-flow__edge-text { fill: var(--text-dim); font-size: 10px; }
 .react-flow__controls-button { border-bottom-color: var(--border); background: var(--bg-card); fill: var(--text); }
 .react-flow__controls-button:hover { background: var(--bg-hover); }
