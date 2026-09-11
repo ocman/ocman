@@ -33,6 +33,10 @@ test('Factory tracer approves one plan, materializes one worktree session, and c
   await page.route(`/api/factory/epics/${epic.id}/mols/${epic.id}.1/close`, (route) => { molClosed = true; return route.fulfill({ status: 204 }); });
   await page.route(`/api/factory/epics/${epic.id}/close`, (route) => { closed = true; return route.fulfill({ status: 204 }); });
 
+  // Every reload below reads state that a POST flips in the route handler above,
+  // so the POST has to land before the reload cancels it.
+  const posted = (path: string) => page.waitForResponse((response) => response.url().endsWith(path) && response.request().method() === 'POST');
+
   await page.goto('/factory/epics');
   await page.getByRole('button', { name: 'New epic' }).click();
   await page.getByLabel('Goal').fill(epic.goal);
@@ -41,14 +45,20 @@ test('Factory tracer approves one plan, materializes one worktree session, and c
   await page.getByRole('checkbox', { name: 'Allow Factory agents to run commands in this repository' }).check();
   await page.getByRole('button', { name: 'Create epic', exact: true }).click();
   await page.getByRole('link', { name: epic.goal }).click();
+  const pouring = posted(`/api/factory/epics/${epic.id}/pour`);
   await page.getByRole('button', { name: 'Pour graph' }).click();
+  await pouring;
   await page.reload();
   await expect(page.getByRole('link', { name: 'Open session' })).toHaveAttribute('href', '/session/plan-session?factoryEpic=ship-a1b2');
+  const approving = posted(`/api/factory/epics/${epic.id}/plan-gate/approve`);
   await page.getByRole('button', { name: 'Approve plan' }).click();
+  await approving;
   await page.reload();
   await expect(page.getByTestId('issue-title-ship-a1b2.1.4')).toHaveText('Implementation');
   await expect(page.getByTestId('issue-title-ship-a1b2.1')).toHaveCount(0);
+  const closing = posted(`/api/factory/epics/${epic.id}/close`);
   await page.getByRole('button', { name: 'Close epic' }).click();
+  await closing;
   await page.reload();
   await expect(page.getByTestId('epic-status')).toHaveText('closed');
   expect(molClosed).toBe(true);
@@ -75,6 +85,8 @@ test('Factory tracer rejects a plan without creating implementation work', async
   await page.route(`/api/factory/epics/${epic.id}/pour`, (route) => { poured = true; return route.fulfill({ status: 201, json: issues() }); });
   await page.route(`/api/factory/epics/${epic.id}/plan-gate/reject`, (route) => { rejected = true; return route.fulfill({ json: view().planGate }); });
 
+  const posted = (path: string) => page.waitForResponse((response) => response.url().endsWith(path) && response.request().method() === 'POST');
+
   await page.goto('/factory/epics');
   await page.getByRole('button', { name: 'New epic' }).click();
   await page.getByLabel('Goal').fill(epic.goal);
@@ -83,7 +95,9 @@ test('Factory tracer rejects a plan without creating implementation work', async
   await page.getByRole('checkbox', { name: 'Allow Factory agents to run commands in this repository' }).check();
   await page.getByRole('button', { name: 'Create epic', exact: true }).click();
   await page.getByRole('link', { name: epic.goal }).click();
+  const pouring = posted(`/api/factory/epics/${epic.id}/pour`);
   await page.getByRole('button', { name: 'Pour graph' }).click();
+  await pouring;
   await page.reload();
   await page.getByRole('button', { name: 'Reject plan' }).click();
   await expect(page.getByRole('status')).toHaveText('Plan rejected.');
