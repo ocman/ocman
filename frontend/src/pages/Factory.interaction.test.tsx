@@ -125,7 +125,7 @@ describe('Factory interactions', () => {
 
 		await user.click(await screen.findByRole('button', { name: 'Investigate unblock' }));
 		await waitFor(() => expect(api.investigateFactoryUnblock).toHaveBeenCalledWith('epic-1', 'issue-1'));
-		expect(screen.getByText('/session/unblock-session?factoryEpic=epic-1')).toBeInTheDocument();
+		expect(await screen.findByText('/session/unblock-session?factoryEpic=epic-1')).toBeInTheDocument();
 	});
   it('creates an epic and clears the form after success', async () => {
     const user = userEvent.setup();
