@@ -20,6 +20,7 @@ import type {
   ActivityDay,
   MetricsPerformance,
   AnalyticsOverview,
+  SubscriptionUsageResponse,
   MetricsLog,
   MetricsLogKind,
   PermissionStats,
@@ -391,6 +392,14 @@ export function useAnalyticsOverview() {
   return useQuery<AnalyticsOverview>({
     queryKey: ['analyticsOverview'],
     queryFn: ({ signal }) => api.analyticsOverview(signal),
+  });
+}
+
+export function useSubscriptionUsage() {
+  return useQuery<SubscriptionUsageResponse>({
+    queryKey: ['subscriptionUsage'],
+    queryFn: ({ signal }) => api.subscriptionUsage(signal),
+    refetchOnWindowFocus: false,
   });
 }
 

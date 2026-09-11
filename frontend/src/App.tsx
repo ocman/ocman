@@ -13,6 +13,7 @@ import { SessionDetail } from './pages/session-detail';
 import { SharedConversationView } from './pages/SharedConversationView';
 import { ImportSharedConversation } from './pages/ImportSharedConversation';
 import { Login } from './pages/Login';
+import { SubscriptionUsage } from './pages/SubscriptionUsage';
 import { onSessionChanged } from './lib/useGlobalEvents';
 import { HeaderProvider } from './lib/HeaderProvider';
 import { useHeaderInfo } from './lib/headerContext';
@@ -58,6 +59,7 @@ function RoutesBoundary({ children }: { children: ReactNode }) {
 
 const MAIN_NAV_ITEMS = [
   { to: '/', label: 'Home', icon: 'bi-house', activeOnSession: true },
+  { to: '/subscription-usage', label: 'Usage', icon: 'bi-speedometer2' },
   { to: '/sessions', label: 'Sessions', icon: 'bi-collection' },
   { to: '/projects', label: 'Projects', icon: 'bi-folder' },
   { to: '/factory/overview', label: 'Factory', icon: 'bi-buildings' },
@@ -529,6 +531,7 @@ export function AppRoutes() {
       <Route element={<DashboardLayout />}>
         <Route path="/" element={<RootRedirect />} />
         <Route path="/sessions" element={<SessionsTab />} />
+        <Route path="/subscription-usage" element={<SubscriptionUsage />} />
         <Route path="/projects" element={<ProjectsTab />} />
         <Route path="/analytics/:section?" element={<AnalyticsTab />} />
         <Route path="/stats" element={<LegacyAnalyticsRedirect section="performance" />} />

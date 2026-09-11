@@ -102,7 +102,11 @@ export type {
 	FactoryPlanGateDecisionRequest,
 	FactoryGraphMutation,
 	FactoryRecoveryGate,
-	FactoryAuthorityEscalationGate,
+  FactoryAuthorityEscalationGate,
+  SubscriptionProviderStatus,
+  SubscriptionUsageWindow,
+  SubscriptionProviderUsage,
+  SubscriptionUsageResponse,
 } from './api.types';
 
 // Type imports used by the api object below.
@@ -114,6 +118,7 @@ import type {
   McpConfigInstallResult,
   MetricsPerformance,
   AnalyticsOverview,
+  SubscriptionUsageResponse,
   MetricsLog,
   MetricsLogKind,
   PermissionStats,
@@ -432,6 +437,8 @@ export const api = {
     fetchJSON<MetricsPerformance>(`/api/metrics/performance${queryString(params)}`, signal),
   analyticsOverview: (signal?: AbortSignal) =>
     fetchJSON<AnalyticsOverview>('/api/analytics/overview', signal),
+  subscriptionUsage: (signal?: AbortSignal) =>
+    fetchJSON<SubscriptionUsageResponse>('/api/subscription-usage', signal),
   metricLogs: (params: { kind: MetricsLogKind; agent?: string; model?: string; days?: number; limit?: number; offset?: number; sessionLimit?: number; sessionOffset?: number; projectLimit?: number; projectOffset?: number; dir?: string }, signal?: AbortSignal) =>
     fetchJSON<MetricsLog>(`/api/metric-logs${queryString(params)}`, signal),
   permissionStats: (params?: { days?: number; dir?: string }, signal?: AbortSignal) =>

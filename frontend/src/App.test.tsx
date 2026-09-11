@@ -16,6 +16,7 @@ describe('routeTitle', () => {
   it.each([
     ['/', 'Home'],
     ['/sessions', 'Sessions'],
+    ['/subscription-usage', 'Usage'],
     ['/analytics/overview', 'Analytics'],
     ['/analytics/performance', 'Analytics'],
     ['/settings', 'Settings'],
@@ -51,7 +52,9 @@ describe('MainNav', () => {
     expect(screen.getByRole('link', { name: 'Projects' })).toHaveClass('active');
     expect(screen.getByRole('link', { name: 'Analytics' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Stats' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Usage' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Usage' })).toHaveAttribute('href', '/subscription-usage');
+    const links = screen.getAllByRole('link');
+    expect(links.indexOf(screen.getByRole('link', { name: 'Usage' }))).toBe(links.indexOf(screen.getByRole('link', { name: 'Sessions' })) - 1);
     expect(screen.getByRole('link', { name: 'Routines' })).toHaveAttribute('href', '/routines');
     expect(screen.getByRole('link', { name: 'Factory' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Sessions' }).querySelector('i')).toHaveClass('bi-collection');

@@ -50,7 +50,7 @@ flowchart LR
     Ocman -->|read/write SQLite| StateDB[(state.db)]
     Ocman -->|Authenticated HTTP/SSE proxy| OCInst[Running OpenCode<br/>instances]
     Ocman -->|exec| Shell[git / tmux / lsof / bd<br/>host tools]
-    Ocman -->|REST| Forges[GitHub / Forgejo]
+    Ocman -->|REST| APIs[GitHub / Forgejo<br/>provider usage APIs]
     Ocman <-->|gRPC + token| Remotes[Remote ocman<br/>instances]
     Ocman -.->|OTLP, optional| Otel[Telemetry collector]
 ```
@@ -62,6 +62,9 @@ flowchart LR
 - **state.db.** Ocman's own state: archive flags, routines and run history,
   permission approval provenance, settings, Factory records, and remote
   tokens. Legacy `workflow_*` rows remain inert for manual recovery.
+- **Provider usage APIs.** The subscription usage page reads OpenCode's local
+  OAuth credentials server-side and returns only normalized quota windows;
+  provider tokens and account identifiers never reach the browser.
 - **Remote ocman instances.** The hub dials remotes over gRPC and re-exposes
   their sessions and hosts transparently. The owning remote enriches session
   detail with its persisted approvals and tees synthetic approval events into

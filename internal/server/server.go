@@ -138,9 +138,10 @@ type Server struct {
 	// newLocalHost. Defaults to the native tmux runtime; tests override it
 	// (before the host router is built) with a fake so session-mode
 	// handlers don't spawn (and leak) real tmux sessions in temp dirs.
-	runtime      ocruntime.Runtime
-	openCodeAuth ocapi.Auth
-	factory      factoryService
+	runtime           ocruntime.Runtime
+	openCodeAuth      ocapi.Auth
+	subscriptionUsage subscriptionUsageClient
+	factory           factoryService
 	// ponytail: unblock sessions are rare; expire tokens if this map becomes measurable.
 	factoryUnblockTokens sync.Map
 
@@ -222,15 +223,16 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		registry = platforms.NewRegistry()
 	}
 	s := &Server{
-		db:           database,
-		stateDB:      stateDB,
-		addr:         addr,
-		registry:     registry,
-		auth:         auth,
-		integrations: newForgeClients(),
-		startTime:    time.Now(),
-		broadcastHub: newBroadcastHub(),
-		activity:     newClientActivityPolicy(time.Now),
+		db:                database,
+		stateDB:           stateDB,
+		addr:              addr,
+		registry:          registry,
+		auth:              auth,
+		integrations:      newForgeClients(),
+		subscriptionUsage: newSubscriptionUsageClient(),
+		startTime:         time.Now(),
+		broadcastHub:      newBroadcastHub(),
+		activity:          newClientActivityPolicy(time.Now),
 
 		runtime: ocruntime.NewNativeRuntime(),
 	}

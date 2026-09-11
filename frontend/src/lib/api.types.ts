@@ -812,6 +812,26 @@ export interface Stats {
   totalCost: number;
 }
 
+export type SubscriptionProviderStatus = 'ok' | 'expired' | 'unauthorized' | 'rate_limited' | 'upstream_error';
+
+export interface SubscriptionUsageWindow {
+  name: string;
+  usedPercent: number;
+  resetsAt?: string;
+}
+
+export interface SubscriptionProviderUsage {
+  id: string;
+  name: string;
+  plan?: string;
+  status: SubscriptionProviderStatus;
+  windows: SubscriptionUsageWindow[];
+}
+
+export interface SubscriptionUsageResponse {
+  providers: SubscriptionProviderUsage[];
+}
+
 export interface MetricsSummary {
   requests: number;
   completedRequests: number;
