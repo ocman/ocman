@@ -490,6 +490,9 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 			Store: s.stateDB, Router: s.router(), Sessions: s.sessions, Platforms: s.registry,
 		})
 	}
+	if s.remotes != nil {
+		s.remotes.SetWebhookDispatcher(s.routineSvc)
+	}
 	if s.db != nil {
 		if _, ok := s.registry.Get(opencode.PlatformID); ok {
 			opencode.StartSessionsRefresher(ctx, s.db, s.HasDemand)

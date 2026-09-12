@@ -25,6 +25,30 @@ model, and trigger recorded when each run started.
 Select a routine row to open its editable settings and run history in the side
 drawer.
 
+## Webhook deliveries
+
+An accepted encrypted inbox delivery may trigger every matching subscription
+for its owner. The routine prompt is sent unchanged, followed by this fixed
+untrusted-data envelope:
+
+```json
+{
+  "inboxId": "...",
+  "deliveryId": "...",
+  "method": "POST",
+  "headers": {},
+  "query": {},
+  "receivedAt": 0,
+  "bodyBase64": "..."
+}
+```
+
+Subscriptions combine header and RFC 6901 JSON Pointer predicates with AND.
+Predicates support only `exists`, `equals`, and `oneOf`; scripts and regular
+expressions are not evaluated. Disabled routines pause dispatch, while deleted
+routines cancel queued dispatches. Delivery and dispatch history is retained
+for 30 days.
+
 Use **Delete** to remove a routine from the UI and stop future scheduled runs.
 Deletion is soft: ocman retains the routine and its run history in `state.db`.
 

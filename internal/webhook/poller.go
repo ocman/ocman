@@ -19,10 +19,11 @@ const (
 )
 
 type Poller struct {
-	Store *state.DB
-	Inbox state.WebhookInbox
-	HTTP  *http.Client
-	Now   func() time.Time
+	Store    *state.DB
+	Inbox    state.WebhookInbox
+	HTTP     *http.Client
+	Now      func() time.Time
+	Routines RoutineDispatcher
 }
 
 func (p *Poller) Run(ctx context.Context) {
@@ -54,22 +55,26 @@ func Register(ctx context.Context, store *state.DB, routineID, relayURL, enrollm
 	if err := store.SaveWebhookInbox(ctx, inbox); err != nil {
 		return state.WebhookInbox{}, err
 	}
+	if err := store.SaveWebhookSubscription(ctx, state.WebhookSubscription{ID: "subscription-" + allocation.ID, InboxID: allocation.ID, RoutineID: routineID}); err != nil {
+		return state.WebhookInbox{}, err
+	}
 	return inbox, nil
 }
 
 // Poll traverses the complete relay cursor range. A bad delivery is recorded
 // and skipped, so it cannot block newer deliveries behind it.
 func (p *Poller) Poll(ctx context.Context) error {
+	now := time.Now
+	if p.Now != nil {
+		now = p.Now
+	}
+	_ = p.Store.CleanupWebhookHistory(ctx, now().Add(-state.WebhookHistoryRetention).UnixMilli())
 	identity, err := age.ParseX25519Identity(p.Inbox.Identity)
 	if err != nil {
 		return fmt.Errorf("parsing webhook identity: %w", err)
 	}
 	client := share.RelayClient{BaseURL: p.Inbox.RelayURL, HTTP: p.HTTP}
 	cursor := ""
-	now := time.Now
-	if p.Now != nil {
-		now = p.Now
-	}
 	for {
 		page, err := client.ListInboxDeliveries(ctx, p.Inbox.ID, p.Inbox.FetchToken, cursor)
 		if err != nil {
@@ -88,7 +93,11 @@ func (p *Poller) Poll(ctx context.Context) error {
 				var envelope relay.InboxEnvelope
 				envelope, err = relay.DecryptInboxEnvelope(identity, p.Inbox.ID, delivery.ID, ciphertext)
 				if err == nil {
-					_, err = p.Store.AcceptWebhookDelivery(ctx, p.Inbox.ID, delivery.ID, envelope.Request.Method+" webhook", string(envelope.Body), envelope.Request.ReceivedAt)
+					if accepted, dispatchErr := p.Store.AcceptWebhookDelivery(ctx, p.Inbox.ID, delivery.ID, envelope.Request.Method+" webhook", string(envelope.Body), envelope.Request.ReceivedAt); dispatchErr != nil {
+						err = dispatchErr
+					} else if accepted && p.Routines != nil {
+						err = Dispatch(p.Store, p.Routines, p.Inbox.ID, delivery.ID, envelope, now())
+					}
 					if err == nil {
 						err = client.AcknowledgeInboxDelivery(ctx, p.Inbox.ID, delivery.ID, p.Inbox.AcknowledgmentToken)
 					}

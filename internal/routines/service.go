@@ -249,6 +249,14 @@ func (s *Service) RunNow(ctx context.Context, routineID string) (state.RoutineRu
 	return s.claimAndDispatch(ctx, routine, occurrence, "manual")
 }
 
+// RunWebhook uses the normal routine lifecycle for an already-matched delivery.
+func (s *Service) RunWebhook(ctx context.Context, routineID, payload string, occurrence int64) (state.RoutineRun, error) {
+	routine, err := s.store.GetRoutine(ctx, routineID)
+	if err != nil { return state.RoutineRun{}, err }
+	if routine.Deleted || !routine.Enabled { return state.RoutineRun{}, fmt.Errorf("routine is disabled") }
+	return s.claimAndDispatchPrompt(ctx, routine, occurrence, "webhook", routine.Prompt+"\n\n"+payload)
+}
+
 func (s *Service) Tick(ctx context.Context) error {
 	if err := s.settleRunning(ctx, false); err != nil {
 		return err
@@ -270,6 +278,10 @@ func (s *Service) Recover(ctx context.Context) error {
 }
 
 func (s *Service) claimAndDispatch(ctx context.Context, routine state.Routine, occurrence int64, trigger string) (state.RoutineRun, error) {
+	return s.claimAndDispatchPrompt(ctx, routine, occurrence, trigger, routine.Prompt)
+}
+
+func (s *Service) claimAndDispatchPrompt(ctx context.Context, routine state.Routine, occurrence int64, trigger, prompt string) (state.RoutineRun, error) {
 	now := s.now().UnixMilli()
 	run, claimed, err := s.store.ClaimRoutineRun(ctx, state.RoutineRun{
 		ID: s.newID("run-"), RoutineID: routine.ID, Trigger: trigger, State: RunRunning,
@@ -314,7 +326,7 @@ func (s *Service) claimAndDispatch(ctx context.Context, routine state.Routine, o
 	if err := s.store.LinkRoutineRun(ctx, run.ID, platformID, sessionID, s.now().UnixMilli(), created && run.SessionMode == SessionReuse); err != nil {
 		return s.failDispatch(ctx, run, fmt.Errorf("linking routine session: %w", err))
 	}
-	if err := s.sessions.SendMessage(ctx, platformID, platforms.SendMessageRequest{SessionID: sessionID, Message: run.Prompt, Agent: run.Agent, Model: run.Model}); err != nil {
+	if err := s.sessions.SendMessage(ctx, platformID, platforms.SendMessageRequest{SessionID: sessionID, Message: prompt, Agent: run.Agent, Model: run.Model}); err != nil {
 		return s.failDispatch(ctx, run, err)
 	}
 	return s.store.GetRoutineRun(ctx, run.ID)

@@ -202,7 +202,8 @@ import (
 //	73 - expire missed one-time routine schedules and repair active target uniqueness.
 //	74 - add durable owner-local Inbox items.
 //	75 - allow multiple sequential recovery gates for one Factory attempt.
-const latestSchemaVersion = 77
+//	78 - add routine webhook subscriptions and dispatch claims.
+const latestSchemaVersion = 78
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -461,6 +462,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV76(tx)
 	case 77:
 		return migrateToV77(tx)
+	case 78:
+		return migrateToV78(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -2611,6 +2614,32 @@ func migrateToV77(tx *sql.Tx) error {
 			accepted_at INTEGER NOT NULL,
 			PRIMARY KEY (inbox_id, delivery_id)
 		);
+	`)
+	return err
+}
+
+func migrateToV78(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS webhook_subscription (
+			id TEXT PRIMARY KEY,
+			inbox_id TEXT NOT NULL REFERENCES webhook_inbox(id) ON DELETE CASCADE,
+			routine_id TEXT NOT NULL REFERENCES routine(id),
+			header_predicates_json TEXT NOT NULL DEFAULT '{}',
+			json_predicates_json TEXT NOT NULL DEFAULT '{}',
+			created_at INTEGER NOT NULL,
+			UNIQUE (inbox_id, routine_id)
+		);
+		CREATE TABLE IF NOT EXISTS webhook_dispatch (
+			inbox_id TEXT NOT NULL,
+			delivery_id TEXT NOT NULL,
+			routine_id TEXT NOT NULL,
+			state TEXT NOT NULL,
+			error TEXT NOT NULL DEFAULT '',
+			created_at INTEGER NOT NULL,
+			finished_at INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (inbox_id, delivery_id, routine_id)
+		);
+		CREATE INDEX IF NOT EXISTS webhook_dispatch_retention_idx ON webhook_dispatch (finished_at);
 	`)
 	return err
 }

@@ -7,6 +7,88 @@ import (
 	"time"
 )
 
+type WebhookSubscription struct {
+	ID                   string `json:"id"`
+	InboxID              string `json:"inboxId"`
+	RoutineID            string `json:"routineId"`
+	HeaderPredicatesJSON string `json:"headerPredicates"`
+	JSONPredicatesJSON   string `json:"jsonPredicates"`
+	CreatedAt            int64  `json:"createdAt"`
+}
+
+type WebhookDispatch struct {
+	InboxID    string
+	DeliveryID string
+	RoutineID  string
+	State      string
+	Error      string
+}
+
+const WebhookHistoryRetention = 30 * 24 * time.Hour
+
+func (d *DB) CleanupWebhookHistory(ctx context.Context, before int64) error {
+	_, err := d.db.ExecContext(ctx, `DELETE FROM webhook_dispatch WHERE finished_at > 0 AND finished_at < ?`, before)
+	if err != nil {
+		return err
+	}
+	_, err = d.db.ExecContext(ctx, `DELETE FROM webhook_delivery WHERE accepted_at > 0 AND accepted_at < ?`, before)
+	return err
+}
+
+func (d *DB) SaveWebhookSubscription(ctx context.Context, sub WebhookSubscription) error {
+	if sub.ID == "" || sub.InboxID == "" || sub.RoutineID == "" {
+		return fmt.Errorf("webhook subscription requires id, inbox, and routine")
+	}
+	if sub.HeaderPredicatesJSON == "" {
+		sub.HeaderPredicatesJSON = "{}"
+	}
+	if sub.JSONPredicatesJSON == "" {
+		sub.JSONPredicatesJSON = "{}"
+	}
+	if sub.CreatedAt == 0 {
+		sub.CreatedAt = time.Now().UnixMilli()
+	}
+	_, err := d.db.ExecContext(ctx, `INSERT INTO webhook_subscription (id,inbox_id,routine_id,header_predicates_json,json_predicates_json,created_at) VALUES (?,?,?,?,?,?) ON CONFLICT(inbox_id,routine_id) DO UPDATE SET header_predicates_json=excluded.header_predicates_json,json_predicates_json=excluded.json_predicates_json`, sub.ID, sub.InboxID, sub.RoutineID, sub.HeaderPredicatesJSON, sub.JSONPredicatesJSON, sub.CreatedAt)
+	return err
+}
+
+func (d *DB) ListWebhookSubscriptions(ctx context.Context, inboxID string) ([]WebhookSubscription, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT id,inbox_id,routine_id,header_predicates_json,json_predicates_json,created_at FROM webhook_subscription WHERE inbox_id=? ORDER BY id`, inboxID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []WebhookSubscription
+	for rows.Next() {
+		var s WebhookSubscription
+		if err := rows.Scan(&s.ID, &s.InboxID, &s.RoutineID, &s.HeaderPredicatesJSON, &s.JSONPredicatesJSON, &s.CreatedAt); err != nil {
+			return nil, err
+		}
+		result = append(result, s)
+	}
+	return result, rows.Err()
+}
+
+// ClaimWebhookDispatch is the durable deduplication boundary for a delivery.
+func (d *DB) ClaimWebhookDispatch(ctx context.Context, inboxID, deliveryID, routineID string, now int64) (bool, error) {
+	r, err := d.db.ExecContext(ctx, `INSERT INTO webhook_dispatch (inbox_id,delivery_id,routine_id,state,created_at) VALUES (?,?,?,'queued',?) ON CONFLICT DO NOTHING`, inboxID, deliveryID, routineID, now)
+	if err != nil {
+		return false, err
+	}
+	n, err := r.RowsAffected()
+	return n == 1, err
+}
+
+func (d *DB) FinishWebhookDispatch(ctx context.Context, inboxID, deliveryID, routineID, state, message string, now int64) error {
+	_, err := d.db.ExecContext(ctx, `UPDATE webhook_dispatch SET state=?,error=?,finished_at=? WHERE inbox_id=? AND delivery_id=? AND routine_id=? AND state='queued'`, state, message, now, inboxID, deliveryID, routineID)
+	return err
+}
+
+func (d *DB) RecordWebhookIgnored(ctx context.Context, inboxID, deliveryID string, now int64) error {
+	_, err := d.db.ExecContext(ctx, `INSERT INTO webhook_dispatch (inbox_id,delivery_id,routine_id,state,created_at,finished_at) VALUES (?,?,?,'ignored',?,?) ON CONFLICT DO NOTHING`, inboxID, deliveryID, "", now, now)
+	return err
+}
+
 type WebhookInbox struct {
 	ID                  string `json:"id"`
 	RoutineID           string `json:"routineId"`

@@ -130,11 +130,25 @@ func (d *DB) UpdateRoutine(ctx context.Context, routine Routine) error {
 }
 
 func (d *DB) SoftDeleteRoutine(ctx context.Context, id string, now int64) error {
-	result, err := d.db.ExecContext(ctx, `UPDATE routine SET enabled = 0, deleted = 1, deleted_at = ?, updated_at = ? WHERE id = ? AND deleted = 0`, now, now, id)
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("beginning routine deletion: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	result, err := tx.ExecContext(ctx, `UPDATE routine SET enabled = 0, deleted = 1, deleted_at = ?, updated_at = ? WHERE id = ? AND deleted = 0`, now, now, id)
 	if err != nil {
 		return fmt.Errorf("deleting routine: %w", err)
 	}
-	return requireRoutineChange(result)
+	if err := requireRoutineChange(result); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE webhook_dispatch SET state='cancelled', finished_at=? WHERE routine_id=? AND state='queued'`, now, id); err != nil {
+		return fmt.Errorf("cancelling webhook dispatches: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing routine deletion: %w", err)
+	}
+	return nil
 }
 
 func requireRoutineChange(result sql.Result) error {

@@ -53,6 +53,7 @@ type Manager struct {
 	// before Start.
 	beforeAdapterRegister func()
 	refreshInventories    func(context.Context)
+	webhookDispatcher     webhook.RoutineDispatcher
 }
 
 func (m *Manager) webhookRemote(id string) (*RemoteConn, error) {
@@ -101,7 +102,11 @@ func (m *Manager) PollWebhookInbox(ctx context.Context, owner, routineID string)
 	if err != nil {
 		return err
 	}
-	return (&webhook.Poller{Store: m.store, Inbox: inbox}).Poll(ctx)
+	return (&webhook.Poller{Store: m.store, Inbox: inbox, Routines: m.webhookDispatcher}).Poll(ctx)
+}
+
+func (m *Manager) SetWebhookDispatcher(dispatcher webhook.RoutineDispatcher) {
+	m.webhookDispatcher = dispatcher
 }
 
 // managedRemote bundles a RemoteConn with its registered adapters and the
