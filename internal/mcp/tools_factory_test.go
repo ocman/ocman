@@ -235,6 +235,9 @@ func TestFactoryActionRegistryKeepsHelpAndValidationConsistent(t *testing.T) {
 	if err := json.Unmarshal([]byte(resultText(help)), &documented); err != nil {
 		t.Fatalf("decode help: %v", err)
 	}
+	if guidance, ok := documented["reply_cards"].(string); !ok || !strings.Contains(guidance, "Do not") || !strings.Contains(guidance, "[[ocman:card") {
+		t.Fatalf("missing card emission guidance: %#v", documented["reply_cards"])
+	}
 	actions, ok := documented["actions"].([]any)
 	if !ok || len(actions) == 0 {
 		t.Fatalf("actions = %#v", documented["actions"])
@@ -262,6 +265,9 @@ func TestFactoryActionRegistryKeepsHelpAndValidationConsistent(t *testing.T) {
 		if got.IsError != denied {
 			t.Fatalf("%s example = %q, error = %v", action, resultText(got), got.IsError)
 		}
+		if !denied && action != "create" && len(got.Content) != 1 {
+			t.Fatalf("%s unexpectedly emitted extra card guidance: %#v", action, got.Content)
+		}
 	}
 }
 
@@ -273,36 +279,37 @@ func TestDeniedFactoryActionsOfferHumanCards(t *testing.T) {
 	}
 	t.Cleanup(srv.Close)
 	for _, tc := range []struct {
-		args map[string]any
-		link string
+		args   map[string]any
+		target string
 	}{
-		{map[string]any{"action": "pour", "epic_id": "epic-1"}, "/factory/epics/epic-1?human=1"},
-		{map[string]any{"action": "claim_plan", "epic_id": "epic-1", "issue_id": "epic-1.1"}, "/factory/epics/epic-1?human=1&issue=epic-1.1"},
-		{map[string]any{"action": "reopen_issue", "epic_id": "epic-1", "issue_id": "epic-1.3"}, "/factory/epics/epic-1?human=1&issue=epic-1.3"},
-		{map[string]any{"action": "reopen_issue"}, "/factory/overview?human=1"},
-		{map[string]any{"action": "create", "epic_id": "new-epic", "goal": "Ship", "initial_project": "/repo", "formula_id": "custom/team", "acknowledge_local_execution": true}, "/factory/overview?human=1"},
-		{map[string]any{"action": "approve_plan", "epic_id": "epic-1", "revision": 1, "expected_hash": "hash"}, "/factory/epics/epic-1?human=1"},
-		{map[string]any{"action": "revise_plan", "epic_id": "epic-1", "revision": 1, "expected_hash": "hash"}, "/factory/epics/epic-1?human=1"},
-		{map[string]any{"action": "reject_plan", "epic_id": "epic-1", "revision": 1, "expected_hash": "hash"}, "/factory/epics/epic-1?human=1"},
-		{map[string]any{"action": "resume_recovery", "recovery_gate_id": "gate-1", "response": "Use A"}, "/factory/epics/epic-1?human=1&issue=gate-1"},
-		{map[string]any{"action": "retry_recovery", "recovery_gate_id": "gate-1", "response": "Retry"}, "/factory/epics/epic-1?human=1&issue=gate-1"},
-		{map[string]any{"action": "cancel_recovery", "recovery_gate_id": "gate-1", "response": "Cancel"}, "/factory/epics/epic-1?human=1&issue=gate-1"},
-		{map[string]any{"action": "approve_authority", "authority_gate_id": "gate-1"}, "/factory/epics/epic-1?human=1&issue=gate-1"},
-		{map[string]any{"action": "reject_authority", "authority_gate_id": "gate-1"}, "/factory/epics/epic-1?human=1&issue=gate-1"},
-		{map[string]any{"action": "approve_authority", "authority_gate_id": "missing"}, "/factory/overview?human=1"},
-		{map[string]any{"action": "save_formula", "formula_id": "custom/team", "formula_source": "version = 1"}, "/factory/overview?human=1"},
-		{map[string]any{"action": "set_capacity_policy", "global_capacity": 1, "project_capacity": 1, "project_overrides": map[string]any{}}, "/factory/overview?human=1"},
-		{map[string]any{"action": "mutate_graph", "mutation_json": `{"action":"unlink","epicId":"epic-1","issueId":"epic-1.3","dependsOnId":"epic-1.2"}`}, "/factory/epics/epic-1?human=1&issue=epic-1.3"},
-		{map[string]any{"action": "pour", "epic_id": "a)b", "issue_id": "x&y"}, "/factory/epics/a%29b?human=1&issue=x%26y"},
+		{map[string]any{"action": "pour", "epic_id": "epic-1"}, "type=factory-epic epic=epic-1"},
+		{map[string]any{"action": "claim_plan", "epic_id": "epic-1", "issue_id": "epic-1.1"}, "type=factory-issue epic=epic-1 issue=epic-1.1"},
+		{map[string]any{"action": "reopen_issue", "epic_id": "epic-1", "issue_id": "epic-1.3"}, "type=factory-issue epic=epic-1 issue=epic-1.3"},
+		{map[string]any{"action": "reopen_issue"}, "type=factory-epic"},
+		{map[string]any{"action": "create", "epic_id": "new-epic", "goal": "Ship", "initial_project": "/repo", "formula_id": "custom/team", "acknowledge_local_execution": true}, "type=factory-epic"},
+		{map[string]any{"action": "approve_plan", "epic_id": "epic-1", "revision": 1, "expected_hash": "hash"}, "type=factory-epic epic=epic-1"},
+		{map[string]any{"action": "revise_plan", "epic_id": "epic-1", "revision": 1, "expected_hash": "hash"}, "type=factory-epic epic=epic-1"},
+		{map[string]any{"action": "reject_plan", "epic_id": "epic-1", "revision": 1, "expected_hash": "hash"}, "type=factory-epic epic=epic-1"},
+		{map[string]any{"action": "resume_recovery", "recovery_gate_id": "gate-1", "response": "Use A"}, "type=factory-issue epic=epic-1 issue=gate-1"},
+		{map[string]any{"action": "retry_recovery", "recovery_gate_id": "gate-1", "response": "Retry"}, "type=factory-issue epic=epic-1 issue=gate-1"},
+		{map[string]any{"action": "cancel_recovery", "recovery_gate_id": "gate-1", "response": "Cancel"}, "type=factory-issue epic=epic-1 issue=gate-1"},
+		{map[string]any{"action": "approve_authority", "authority_gate_id": "gate-1"}, "type=factory-issue epic=epic-1 issue=gate-1"},
+		{map[string]any{"action": "reject_authority", "authority_gate_id": "gate-1"}, "type=factory-issue epic=epic-1 issue=gate-1"},
+		{map[string]any{"action": "approve_authority", "authority_gate_id": "missing"}, "type=factory-epic"},
+		{map[string]any{"action": "save_formula", "formula_id": "custom/team", "formula_source": "version = 1"}, "type=factory-epic"},
+		{map[string]any{"action": "set_capacity_policy", "global_capacity": 1, "project_capacity": 1, "project_overrides": map[string]any{}}, "type=factory-epic"},
+		{map[string]any{"action": "mutate_graph", "mutation_json": `{"action":"unlink","epicId":"epic-1","issueId":"epic-1.3","dependsOnId":"epic-1.2"}`}, "type=factory-issue epic=epic-1 issue=epic-1.3"},
+		{map[string]any{"action": "pour", "epic_id": "a)b", "issue_id": "x&y"}, "type=factory-issue epic=a%29b issue=x&y"},
 	} {
-		t.Run(tc.args["action"].(string)+tc.link, func(t *testing.T) {
+		t.Run(tc.args["action"].(string)+tc.target, func(t *testing.T) {
 			got := callTool(t, srv, "factory", tc.args)
 			if !got.IsError || len(got.Content) != 2 {
 				t.Fatalf("denied result = %#v", got)
 			}
 			card := got.Content[1].(mcplib.TextContent).Text
-			if !strings.Contains(card, tc.link) || !strings.Contains(card, "human") {
-				t.Fatalf("card = %q, want %q", card, tc.link)
+			marker := "[[ocman:card " + tc.target + " action=" + tc.args["action"].(string) + "]]"
+			if !strings.Contains(card, marker) || !strings.Contains(card, "human") {
+				t.Fatalf("card = %q, want %q", card, marker)
 			}
 		})
 	}
@@ -310,7 +317,7 @@ func TestDeniedFactoryActionsOfferHumanCards(t *testing.T) {
 		t.Fatal("denied MCP call reopened work")
 	}
 	got := callTool(t, srv, "factory_unblock", map[string]any{"action": "reopen", "epic_id": "epic-1", "issue_id": "epic-1.3", "unblock_token": "wrong"})
-	if !got.IsError || len(got.Content) != 2 || !strings.Contains(got.Content[1].(mcplib.TextContent).Text, "/factory/epics/epic-1?human=1&issue=epic-1.3") {
+	if !got.IsError || len(got.Content) != 2 || !strings.Contains(got.Content[1].(mcplib.TextContent).Text, "[[ocman:card type=factory-issue epic=epic-1 issue=epic-1.3 action=reopen]]") {
 		t.Fatalf("unblock denial = %#v", got)
 	}
 }
@@ -326,6 +333,10 @@ func TestFactoryToolCreatesEpicForPreplannedGraph(t *testing.T) {
 	got := callTool(t, srv, "factory", map[string]any{"action": "create", "epic_id": "pretty-epic-ids", "goal": "Ship", "brief": "Already broken down", "initial_project": "/repo", "acknowledge_local_execution": true})
 	if got.IsError || !strings.Contains(resultText(got), `"id": "epic-1"`) {
 		t.Fatalf("create = %q", resultText(got))
+	}
+	guidance := got.Content[1].(mcplib.TextContent).Text
+	if !strings.Contains(guidance, "Only in this creation response") || !strings.Contains(guidance, "Do not repeat") || !strings.Contains(guidance, "[[ocman:card type=factory-epic epic=epic-1 action=created]]") {
+		t.Fatalf("creation card guidance must be scoped to this response: %q", guidance)
 	}
 	if svc.createReq.Goal != "Ship" || svc.createReq.Brief != "Already broken down" || svc.createReq.InitialProject != "/repo" || !svc.createReq.AcknowledgeLocalExecution || svc.createReq.FormulaID != "" || svc.createReq.EpicID != "pretty-epic-ids" {
 		t.Fatalf("create request = %#v", svc.createReq)

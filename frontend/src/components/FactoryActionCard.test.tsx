@@ -34,6 +34,123 @@ beforeEach(() => {
 });
 
 describe('Factory human action cards', () => {
+  it('renders an explicit creation marker even when no action is pending', async () => {
+    vi.mocked(api.factoryIssues).mockResolvedValue([{ ...issue, status: 'in_progress', outcome: undefined }]);
+    renderCard('Created it. [[ocman:card type=factory-epic epic=ship action=created]]');
+    expect(await screen.findByTestId('epic-card-ship')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Ship Factory' })).toHaveAttribute('href', '/factory/epics/ship');
+    expect(screen.queryByText(/\[\[ocman:card/)).not.toBeInTheDocument();
+    expect(api.reopenFactoryIssue).not.toHaveBeenCalled();
+  });
+
+  it('renders a reopen marker and hides it after live state changes', async () => {
+    const client = renderCard('Please reopen this. [[ocman:card type=factory-issue epic=ship issue=ship.3 action=reopen_issue]]');
+    await screen.findByRole('button', { name: 'Reopen issue' });
+    expect(api.reopenFactoryIssue).not.toHaveBeenCalled();
+    act(() => client.setQueryData(['factory-epics', 'ship', 'issues'], [{ ...issue, status: 'open', outcome: undefined }]));
+    await waitFor(() => expect(screen.queryByLabelText('Factory human actions')).not.toBeInTheDocument());
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.getByText('Please reopen this.')).toBeInTheDocument();
+  });
+
+  it('does not substitute another pending action for a resolved marker', async () => {
+    vi.mocked(api.factoryIssues).mockResolvedValue([{ ...issue, kind: 'plan', status: 'open', outcome: undefined, dispatchState: 'ready' }]);
+    vi.mocked(api.factoryEpic).mockResolvedValue({ ...epic, planGate: { issueId: 'gate', resolution: 'open', proposalRevision: 1, proposalHash: 'hash' } });
+    const client = renderCard('[[ocman:card type=factory-issue epic=ship issue=ship.3 action=reopen_issue]]');
+    await waitFor(() => expect(client.getQueryState(['factory-epics', 'ship', 'issues'])?.status).toBe('success'));
+    expect(screen.queryByLabelText('Factory human actions')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+  });
+
+  it('preserves surrounding markdown and multiple creation markers', async () => {
+    renderCard('**Created** [[ocman:card type=factory-epic epic=ship action=created]] and [[ocman:card type=factory-epic epic=second action=created]].');
+    expect(await screen.findByTestId('epic-card-ship')).toBeInTheDocument();
+    expect(await screen.findByTestId('epic-card-second')).toBeInTheDocument();
+    expect(screen.getByText('Created').tagName).toBe('STRONG');
+  });
+
+  it('decodes marker targets without turning them into endpoints', async () => {
+    vi.mocked(api.factoryEpic).mockResolvedValue({ ...epic, id: 'a)b' });
+    vi.mocked(api.factoryIssues).mockResolvedValue([{ ...issue, epicId: 'a)b', id: 'x&y' }]);
+    renderCard('[[ocman:card type=factory-issue epic=a%29b issue=x%26y action=reopen_issue]]');
+    await screen.findByRole('button', { name: 'Reopen issue' });
+    expect(api.factoryIssues).toHaveBeenCalledWith('a)b', expect.any(AbortSignal));
+    expect(screen.getByRole('link', { name: 'Build API' })).toHaveAttribute('href', '/factory/issues/x%26y');
+  });
+
+  it('hides a resolved plan marker even if other work could be reopened', async () => {
+    const gate = { issueId: 'gate', resolution: 'open', proposalRevision: 1, proposalHash: 'hash' };
+    vi.mocked(api.factoryEpic).mockResolvedValue({ ...epic, planGate: gate });
+    const client = renderCard('[[ocman:card type=factory-epic epic=ship action=approve_plan]]');
+    await screen.findByRole('button', { name: 'Approve plan' });
+    act(() => client.setQueryData(['factory-epics', 'ship'], { ...epic, planGate: { ...gate, resolution: 'approved' } }));
+    await waitFor(() => expect(screen.queryByLabelText('Factory human actions')).not.toBeInTheDocument());
+  });
+
+  it('keeps a graph-edit marker only while its target can be edited', async () => {
+    vi.mocked(api.factoryIssues).mockResolvedValue([{ ...issue, status: 'open', outcome: undefined }]);
+    const client = renderCard('[[ocman:card type=factory-issue epic=ship issue=ship.3 action=mutate_graph]]');
+    await screen.findByRole('link', { name: 'Manage graph' });
+    act(() => client.setQueryData(['factory-epics', 'ship', 'issues'], [{ ...issue, status: 'closed', outcome: 'succeeded' }]));
+    await waitFor(() => expect(screen.queryByLabelText('Factory human actions')).not.toBeInTheDocument());
+  });
+
+  it.each([
+    '`[[ocman:card type=factory-epic epic=ship action=created]]`',
+    '```text\n[[ocman:card type=factory-epic epic=ship action=created]]\n```',
+    '[[ocman:card type=factory-epic epic=ship action=created]](https://example.com)',
+    '[[ocman:card type=factory-epic epic=ship action=unknown]]',
+    '[[ocman:card type=factory-issue epic=ship action=reopen_issue]]',
+    '[[ocman:card type=factory-epic action=created]]',
+    '[[ocman:card type=factory-epic epic=%FF action=created]]',
+    '[[ocman:card type=factory-epic epic=ship action=created]',
+  ])('keeps code, links, and invalid markers literal: %s', async (text) => {
+    renderCard(text);
+    await act(async () => {});
+    expect(api.factoryEpic).not.toHaveBeenCalled();
+    expect(screen.getByText(/ocman:card/)).toBeInTheDocument();
+  });
+
+  it('keeps ordinary epic references as plain links without a card', async () => {
+    renderCard('[Ship Factory](/factory/epics/ship)');
+    await act(async () => {});
+    expect(screen.getByRole('link', { name: 'Ship Factory' })).toHaveAttribute('href', '/factory/epics/ship');
+    expect(screen.queryByTestId('epic-card-ship')).not.toBeInTheDocument();
+    expect(api.factoryEpic).not.toHaveBeenCalled();
+  });
+
+  it('removes the action card and link when the human action is no longer required', async () => {
+    const client = renderCard();
+    await screen.findByRole('button', { name: 'Reopen issue' });
+    act(() => client.setQueryData(['factory-epics', 'ship', 'issues'], [{ ...issue, status: 'open', outcome: undefined }]));
+    await waitFor(() => expect(screen.queryByLabelText('Factory human actions')).not.toBeInTheDocument());
+    expect(screen.queryByRole('link', { name: 'Factory actions' })).not.toBeInTheDocument();
+  });
+
+  it('does not show an action card for an epic with no pending human decisions', async () => {
+    vi.mocked(api.factoryIssues).mockResolvedValue([{ ...issue, status: 'in_progress', outcome: undefined }]);
+    const client = renderCard('[Factory actions](/factory/epics/ship?human=1)');
+    await waitFor(() => expect(client.getQueryState(['factory-epics', 'ship', 'issues'])?.status).toBe('success'));
+    expect(screen.queryByLabelText('Factory human actions')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Factory actions' })).not.toBeInTheDocument();
+  });
+
+  it.each(['resume', 'retry', 'cancel'])('hides resolved recovery %s', async (resolution) => {
+    vi.mocked(api.factoryIssues).mockResolvedValue([{ ...issue, kind: 'gate', recovery: { issueId: 'ship.3', epicId: 'ship', attemptId: 'attempt', workId: 'ship.1', question: 'Which API?', reason: 'Choose', choices: [], resolution } }]);
+    const client = renderCard();
+    await waitFor(() => expect(client.getQueryState(['factory-epics', 'ship', 'issues'])?.status).toBe('success'));
+    expect(screen.queryByLabelText('Factory human actions')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Factory actions' })).not.toBeInTheDocument();
+  });
+
+  it.each(['approve', 'reject'])('hides resolved authority %s', async (resolution) => {
+    vi.mocked(api.factoryIssues).mockResolvedValue([{ ...issue, kind: 'gate', authority: { issueId: 'ship.3', epicId: 'ship', attemptId: 'attempt', workId: 'ship.1', requestId: 'req', permission: 'bash', target: 'git push', resolution } }]);
+    const client = renderCard();
+    await waitFor(() => expect(client.getQueryState(['factory-epics', 'ship', 'issues'])?.status).toBe('success'));
+    expect(screen.queryByLabelText('Factory human actions')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Factory actions' })).not.toBeInTheDocument();
+  });
+
   it.each([
     ['/factory/epics/ship?human=1&issue=ship.3', { epicID: 'ship', issueID: 'ship.3' }],
     ['/factory/epics/a%29b?human=1&issue=x%26y', { epicID: 'a)b', issueID: 'x&y' }],
@@ -62,7 +179,8 @@ describe('Factory human action cards', () => {
     expect(await screen.findByRole('button', { name: 'Reopening…' })).toBeDisabled();
     vi.mocked(api.factoryIssues).mockResolvedValue([{ ...issue, status: 'open', outcome: undefined }]);
     await act(async () => finish({}));
-    expect(await screen.findByText('Issue reopened.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByLabelText('Factory human actions')).not.toBeInTheDocument());
+    expect(screen.queryByRole('link', { name: 'Factory actions' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Reopen issue' })).not.toBeInTheDocument();
     expect(api.factoryIssues).toHaveBeenCalledTimes(2);
   });
@@ -79,8 +197,9 @@ describe('Factory human action cards', () => {
   it.each(['open', 'succeeded', 'paused', 'closed', 'plan'])('does not offer reopening for ineligible work: %s', async (state) => {
     if (state === 'paused' || state === 'closed') vi.mocked(api.factoryEpic).mockResolvedValue({ ...epic, status: state });
     else vi.mocked(api.factoryIssues).mockResolvedValue([{ ...issue, ...(state === 'open' ? { status: 'open' } : state === 'plan' ? { kind: 'plan' } : { outcome: 'succeeded' }) }]);
-    renderCard();
-    await screen.findByText('Build API');
+    const client = renderCard();
+    await waitFor(() => expect(client.getQueryState(['factory-epics', 'ship', 'issues'])?.status).toBe('success'));
+    expect(screen.queryByLabelText('Factory human actions')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Reopen issue' })).not.toBeInTheDocument();
   });
 
@@ -176,22 +295,26 @@ describe('Factory human action cards', () => {
   });
 
   it('handles deleted issues without offering a different target', async () => {
-    renderCard('[Factory actions](/factory/epics/ship?human=1&issue=missing)');
-    expect(await screen.findByText('Issue missing is no longer available.')).toBeInTheDocument();
+    const client = renderCard('[Factory actions](/factory/epics/ship?human=1&issue=missing)');
+    await waitFor(() => expect(client.getQueryState(['factory-epics', 'ship', 'issues'])?.status).toBe('success'));
+    expect(screen.queryByLabelText('Factory human actions')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Factory actions' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Reopen issue' })).not.toBeInTheDocument();
   });
 
   it('retries failed reads without exposing stale actions', async () => {
     vi.mocked(api.factoryIssues).mockRejectedValueOnce(new Error('Offline'));
     renderCard();
-    expect(screen.getByText('Loading available actions…')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Factory human actions')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Factory actions' })).not.toBeInTheDocument();
     fireEvent.click(await screen.findByRole('button', { name: 'Retry' }));
     expect(await screen.findByRole('button', { name: 'Reopen issue' })).toBeInTheDocument();
   });
 
-  it('renders an inbox card when the tool has no target', () => {
+  it('keeps an inbox link when the tool has no actionable target', () => {
     renderCard('[Factory actions](/factory/overview?human=1)');
-    expect(screen.getByRole('link', { name: 'Open action inbox' })).toHaveAttribute('href', '/factory/overview');
+    expect(screen.getByRole('link', { name: 'Factory actions' })).toHaveAttribute('href', '/factory/overview');
+    expect(screen.queryByLabelText('Factory human actions')).not.toBeInTheDocument();
     expect(api.factoryEpic).not.toHaveBeenCalled();
     expect(api.factoryIssues).not.toHaveBeenCalled();
   });

@@ -10,9 +10,10 @@ import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
 import type { ComponentProps, FC, ReactNode } from 'react';
 import { Link, useInRouterContext } from 'react-router-dom';
 import { LinkPreviewStrip } from '../GitHubLinkPreview';
-import { FactoryEpicCard } from '../FactoryEpicCard';
 import { FactoryActionCard } from '../FactoryActionCard';
-import { factoryActionFromHref, factoryEpicIDFromHref } from '../factoryEpicStatus';
+import { FactoryEpicCard } from '../FactoryEpicCard';
+import { factoryActionFromHref } from '../factoryEpicStatus';
+import { remarkFactoryCards } from '../factoryCards';
 import { Modal } from '../Modal';
 
 let mermaidPromise: Promise<typeof import('mermaid')['default']> | undefined;
@@ -220,10 +221,14 @@ function MarkdownLink(props: any) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { node: _node, href, children, ...rest } = props;
   const routed = useInRouterContext();
+  if (props['data-ocman-card'] && routed) {
+    const epicID = props['data-ocman-epic'];
+    return props['data-ocman-action'] === 'created'
+      ? <FactoryEpicCard epicID={epicID}>{children}</FactoryEpicCard>
+      : <FactoryActionCard key={`${epicID}/${props['data-ocman-issue']}/${props['data-ocman-action']}`} epicID={epicID} issueID={props['data-ocman-issue']} requestedAction={props['data-ocman-action']}>{children}</FactoryActionCard>;
+  }
   const action = factoryActionFromHref(href);
-  if (action && routed) return <FactoryActionCard key={`${action.epicID}/${action.issueID}`} {...action} />;
-  const epicID = factoryEpicIDFromHref(href);
-  if (epicID && routed) return <FactoryEpicCard epicID={epicID}>{children}</FactoryEpicCard>;
+  if (action && routed) return <FactoryActionCard key={`${action.epicID}/${action.issueID}`} {...action}>{children}</FactoryActionCard>;
   const internal = href?.startsWith('/');
   // In-app paths must not reload the page; anchors and externals stay plain.
   if (internal && routed) return <Link {...rest} to={href}>{children}</Link>;
@@ -234,7 +239,7 @@ function MarkdownLink(props: any) {
 // Module-scoped to keep prop references stable across renders. Fresh
 // array/object literals here would invalidate react-markdown's
 // internal unified-processor cache on every streaming chunk.
-const REMARK_PLUGINS = [remarkGfm];
+const REMARK_PLUGINS = [remarkGfm, remarkFactoryCards];
 const REHYPE_PLUGINS = [rehypeHighlight];
 const MARKDOWN_COMPONENTS = { pre: CodeBlockPre, a: MarkdownLink, img: MarkdownImage };
 

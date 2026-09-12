@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import type { FactoryAuthorityEscalationGate, FactoryEpic, FactoryIssue, FactoryPlanGate, FactoryRecoveryGate } from '../lib/api';
 import { useClaimFactoryPlan, useDecideFactoryPlanGate, useFactoryIssues, useMaterializeFactoryPlan, usePourFactoryEpic, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryRecoveryGate, useWorkEpic } from '../lib/queries';
 import { Button } from './Control';
@@ -55,6 +55,21 @@ function availableWorkAction(issue: FactoryIssue) {
   if (issue.dispatchState === 'ready' && ['plan', 'materialization'].includes(issue.kind)) return issue.kind;
 }
 
+function requiresHumanAction(epic: FactoryEpic, issues: FactoryIssue[], issueID: string, requestedAction?: string) {
+  const accepts = (...actions: string[]) => !requestedAction || actions.includes(requestedAction);
+  if (epic.status === 'closed') return false;
+  if (epic.planGate?.resolution === 'open' && accepts('approve_plan', 'revise_plan', 'reject_plan', 'submit_proposal')) return true;
+  if (epic.status === 'open' && !issueID && !issues.length && accepts('pour')) return true;
+  if (requestedAction === 'mutate_graph') return epic.status === 'open' && issues.some((issue) => (!issueID || issue.id === issueID) && issue.status === 'open');
+  return issues.some((issue) => (!issueID || issue.id === issueID) && (
+    (epic.status === 'open' && availableWorkAction(issue) && accepts(...WORK_REQUESTS[availableWorkAction(issue)!])) ||
+    (issue.recovery && !['resume', 'retry', 'cancel'].includes(issue.recovery.resolution) && accepts('resume_recovery', 'retry_recovery', 'cancel_recovery')) ||
+    (issue.authority && !['approve', 'reject'].includes(issue.authority.resolution) && accepts('approve_authority', 'reject_authority'))
+  ));
+}
+
+const WORK_REQUESTS: Record<string, string[]> = { reopen: ['reopen_issue', 'reopen'], plan: ['claim_plan'], materialization: ['materialize_plan'] };
+
 function IssueDecisions({ issue }: { issue: FactoryIssue }) {
   return <>
     {issue.recovery && !['resume', 'retry', 'cancel'].includes(issue.recovery.resolution) && <RecoveryActions key={`${issue.recovery.issueId}/${issue.recovery.resolution}`} gate={issue.recovery} />}
@@ -104,16 +119,20 @@ function EpicActions({ epic, issues, issueID }: { epic: FactoryEpic; issues: Fac
 }
 
 // Inline elements only: markdown links can be children of a paragraph.
-export function FactoryActionCard({ epicID, issueID = '' }: { epicID: string; issueID?: string }) {
+export function FactoryActionCard({ epicID, issueID = '', requestedAction, children = 'Factory actions' }: { epicID: string; issueID?: string; requestedAction?: string; children?: ReactNode }) {
   const epic = useWorkEpic(epicID);
   const issues = useFactoryIssues(epicID);
   const to = epicID ? `/factory/epics/${encodeURIComponent(epicID)}` : '/factory/overview';
+  const link = <Link to={issueID ? `/factory/issues/${encodeURIComponent(issueID)}` : to}>{children}</Link>;
+  if (!epicID) return link;
+  if (!epic.isSuccess || !issues.isSuccess) return <>
+    {(epic.isError || issues.isError) && <span role="alert">Could not load Factory actions. {link} <button type="button" onClick={() => { void epic.refetch(); void issues.refetch(); }}>Retry</button></span>}
+  </>;
+  if (!requiresHumanAction(epic.data, issues.data, issueID, requestedAction)) return null;
   return <span className="oc-epic-card oc-factory-action-card" aria-label="Factory human actions">
     <Link className="oc-epic-card-goal" to={to}>{epic.data?.goal || epicID || 'Factory action inbox'}</Link>
     <span className="oc-epic-card-status oc-epic-card-status--action">{epic.data ? factoryEpicStatus(epic.data).text : 'Human action required'}</span>
     {epicID && <span className="oc-epic-card-id">{epicID}</span>}
-    {epicID && (epic.isLoading || issues.isLoading) && <span role="status">Loading available actions…</span>}
-    {(epic.isError || issues.isError) && <span role="alert">Could not load Factory actions. <button type="button" onClick={() => { void epic.refetch(); void issues.refetch(); }}>Retry</button></span>}
     {epic.isSuccess && issues.isSuccess && <EpicActions epic={epic.data} issues={issues.data} issueID={issueID} />}
     <span className="oc-factory-action-buttons">
       {epicID && <Link to={to}>Manage graph</Link>}

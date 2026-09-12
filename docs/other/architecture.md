@@ -270,3 +270,7 @@ flowchart TD
    approved repairs return through the scoped MCP tool. The dispatcher records
    attempts before launching the read-only planning or configured implementation
    session.
+   Factory MCP results can carry `[[ocman:card ...]]` markers in the conversation.
+   The markdown renderer turns them into creation or human-action cards using
+   the same TanStack Query state and REST mutations as the Factory pages.
+   Resolved actions disappear on refresh; rendering a marker never executes it.

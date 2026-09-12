@@ -83,7 +83,10 @@ production binary. Change it if you moved the listener with `-mcp-addr`.
 
 Ocman installs the `ocman-factory` skill globally for OpenCode. It teaches the
 single action-based `factory` tool and directs agents to `action: "help"`
-before using detailed actions.
+before using detailed actions. Agents copy the returned `[[ocman:card ...]]`
+marker verbatim in the response that creates an epic or requests a required
+human action, not as a footer on every turn or routine status update. Markers
+must appear as normal text, outside code blocks or markdown links.
 
 Factory tool errors intentionally contain only domain-level guidance. Open
 Factory at `/factory` to inspect the native Issue graph.
@@ -98,16 +101,29 @@ available through `mutate_graph`; `create` can create Epics after explicitly
 acknowledging local execution and uses the built-in tracer Formula. `save_formula`,
 `set_capacity_policy`, Plan decisions, recovery decisions, authority
 decisions, and `reopen_issue` (returning failed work to the queue) are
-refused. Each permission denial returns a link the agent should include in its
-reply. Ocman renders it as a live epic or issue card with human action buttons.
-For example, `reopen_issue` with `epic_id` and `issue_id` produces a card with
+refused. Each permission denial returns a card marker for the agent's reply.
+Ocman interprets its type, target IDs, and action, then reads the live state to
+decide whether to render a card. Action markers show nothing while loading or
+after that action is resolved. Creation markers remain visible. Ordinary markdown
+links stay links; markers inside code examples are displayed literally.
+
+For example:
+
+```text
+[[ocman:card type=factory-epic epic=my-epic action=created]]
+[[ocman:card type=factory-issue epic=my-epic issue=my-epic.3 action=reopen_issue]]
+```
+
+IDs are percent-encoded when needed. The renderer handles live status, button
+availability, and click results, so the model does not need to reproduce UI logic.
+`reopen_issue` with `epic_id` and `issue_id` produces a card with
 **Reopen issue** for failed or cancelled implementation work. Rendering the card
 does nothing; clicking the button uses the same human-action endpoint as the
 Factory action inbox. The card refreshes live state and reports action errors.
 It also offers planning, materialization, plan decisions, recovery, and authority
 decisions when available. Graph editing, formula editing, and capacity changes
 link to their existing Factory screens. Requests without a resolvable target
-show an action-inbox card with navigation to those screens.
+remain links to the action inbox.
 
 `submit_proposal` additionally requires the active
 Planning Attempt's `attempt_id` and `attempt_token`. Its manifest accepts an
