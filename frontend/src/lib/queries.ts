@@ -36,8 +36,58 @@ import type {
 	FactoryFormula,
 	FactoryCapacityPolicy,
 	FactoryPlanGateDecisionRequest,
-	FactoryGraphMutation,
+  FactoryGraphMutation,
+  InboxResponse,
+  InboxItem,
 } from './api';
+
+export function useInbox() {
+  return useQuery<InboxResponse>({
+    queryKey: ['inbox'],
+    queryFn: ({ signal }) => api.inbox(signal),
+    refetchInterval: 10_000,
+  });
+}
+
+export function useMarkInboxItemRead() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, remoteId }: Pick<InboxItem, 'id' | 'remoteId'>) => api.markInboxItemRead(id, remoteId),
+    onMutate: ({ id, remoteId }) => {
+      client.setQueryData<InboxResponse>(['inbox'], (data) => data && {
+        ...data,
+        unreadTotal: Math.max(0, data.unreadTotal - (data.items.some((item) => item.id === id && item.remoteId === remoteId && !item.readAt) ? 1 : 0)),
+        items: data.items.map((item) => item.id === id && item.remoteId === remoteId ? { ...item, readAt: Date.now() } : item),
+      });
+    },
+    onSettled: () => client.invalidateQueries({ queryKey: ['inbox'] }),
+  });
+}
+
+export function useArchiveInboxItems() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (items: Pick<InboxItem, 'id' | 'remoteId'>[]) => api.archiveInboxItems(items),
+    onSuccess: (_result, items) => client.setQueryData<InboxResponse>(['inbox'], (data) => data && {
+      ...data,
+      items: data.items.filter((item) => !items.some((selected) => selected.id === item.id && selected.remoteId === item.remoteId)),
+      unreadTotal: data.unreadTotal - items.filter((selected) => data.items.some((item) => item.id === selected.id && item.remoteId === selected.remoteId && !item.readAt)).length,
+    }),
+    onSettled: () => client.invalidateQueries({ queryKey: ['inbox'] }),
+  });
+}
+
+export function useArchiveAllReadInboxItems() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (remoteId: string) => api.archiveAllReadInboxItems(remoteId),
+    onSuccess: (_result, remoteId) => client.setQueryData<InboxResponse>(['inbox'], (data) => data && {
+      ...data,
+      items: data.items.filter((item) => item.remoteId !== remoteId || !item.readAt),
+    }),
+    onSettled: () => client.invalidateQueries({ queryKey: ['inbox'] }),
+  });
+}
 
 export function useWorkEpics(enabled = true) {
   return useQuery<FactoryEpic[]>({

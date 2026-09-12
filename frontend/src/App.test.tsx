@@ -4,18 +4,24 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { MainNav, RootRedirect } from './App';
-import { useSessions } from './lib/queries';
+import { useInbox, useSessions } from './lib/queries';
 import { routeTitle } from './lib/routeTitle';
 import { useUiStore } from './lib/uiStore';
 
 vi.mock('./lib/queries', () => ({
   useSessions: vi.fn(),
+  useInbox: vi.fn(),
 }));
+
+beforeEach(() => {
+  vi.mocked(useInbox).mockReturnValue({ data: { items: [], unreadTotal: 0 } } as never);
+});
 
 describe('routeTitle', () => {
   it.each([
     ['/', 'Home'],
     ['/sessions', 'Sessions'],
+    ['/inbox', 'Inbox'],
     ['/subscription-usage', 'Usage'],
     ['/analytics/overview', 'Analytics'],
     ['/analytics/performance', 'Analytics'],
