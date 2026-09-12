@@ -689,6 +689,13 @@ func (s *nativeStoreFake) AppendFactoryIssueComment(_ context.Context, _, issueI
 	return comment, s.commentErr
 }
 
+func TestNativeIssuesExposeCreationTime(t *testing.T) {
+	got := nativeIssues([]model.NativeIssue{{ID: "issue-1", CreatedAt: 1_700_000_000_000}})
+	if len(got) != 1 || got[0].CreatedAt != 1_700_000_000_000 {
+		t.Fatalf("nativeIssues CreatedAt = %#v", got)
+	}
+}
+
 func TestNativeServiceIssueComments(t *testing.T) {
 	store := &nativeStoreFake{}
 	svc := NewNative(store)

@@ -8,6 +8,7 @@ import { AnalyticsFilters } from './AnalyticsFilters';
 import { useDashboard } from './context';
 import { ChartCard, ChartSlot, ChartSkeletons } from './shared';
 import { buildCostByModelDatasets } from './metricsChartData';
+import { DataTable } from '../../components/DataTable';
 
 export function ModelsTab() {
   const { dirScope } = useDashboard();
@@ -50,10 +51,10 @@ export function ModelsTab() {
             <div className="metrics-chart-grid"><ChartCard title="Effective Cost per Day by Model (USD)"><Bar data={{ labels: metricsQ.data.dailyEffectiveCostByModel.series.map((point) => point.label), datasets: buildCostByModelDatasets(metricsQ.data) }} options={BAR_OPTIONS_COST_BY_MODEL} /></ChartCard></div>
             <div className="chart-card">
               <h3>Agent breakdown</h3>
-              <div className="metrics-table-wrap"><table><thead><tr><th>Agent</th><th>Requests</th><th>Errors</th><th>Tokens</th><th>Effective cost</th></tr></thead><tbody>
+              <div className="metrics-table-wrap"><DataTable><thead><tr><th>Agent</th><th>Requests</th><th>Errors</th><th>Tokens</th><th>Effective cost</th></tr></thead><tbody>
                 {metricsQ.data.agents.map((agent) => <tr key={agent.agent}><td>{agent.agent || 'Unknown'}</td><td>{formatNumber(agent.requests)}</td><td>{formatPercent(agent.errorRate)}</td><td>{formatCompactNumber(agent.totalTokens)}</td><td>{formatCurrency(agent.effectiveCost)}</td></tr>)}
                 {metricsQ.data.agents.length === 0 && <tr><td colSpan={5}>No agents matched the current filters</td></tr>}
-              </tbody></table></div>
+              </tbody></DataTable></div>
             </div>
       </>}
       {hourlyQ.isLoading && !hourlyQ.data && <ChartSkeletons labels={['Loading hourly model tokens']} />}

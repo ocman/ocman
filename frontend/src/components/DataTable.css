@@ -1,0 +1,25 @@
+.oc-data-table { width: 100%; border-collapse: collapse; margin-bottom: 32px; }
+.oc-data-table th { padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text-dim); font-size: 12px; letter-spacing: .5px; text-align: left; text-transform: uppercase; }
+.oc-data-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
+.oc-data-table tbody tr:hover { background: var(--bg-hover); cursor: pointer; }
+
+.oc-data-table-group-header { display: flex; align-items: center; min-height: 36px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--accent) 4%, var(--bg)); color: var(--text-dim); transition: background .12s ease; }
+.oc-data-table-group > .oc-data-table-group-header { gap: 8px; padding: 0 12px; border-top: 0; }
+.oc-data-table-group + .oc-data-table-group > .oc-data-table-group-header { border-top: 1px solid var(--border); }
+.oc-data-table-group > [role="list"] > [role="listitem"]:first-child { border-top: 0; }
+.oc-data-table-group-title { color: var(--text); font: 600 11px 'SF Mono', Consolas, monospace; letter-spacing: .4px; text-transform: uppercase; }
+.oc-data-table-group-count { margin-left: auto; padding: 1px 6px; border-radius: 8px; background: color-mix(in srgb, var(--text-dim) 12%, transparent); color: var(--overlay0); font-size: 10px; font-weight: 600; }
+.oc-data-table-marker { width: 10px; height: 10px; border: 1.5px solid var(--text-dim); border-radius: 50%; }
+.oc-data-table-row { display: grid; grid-template-columns: minmax(280px, 1fr) auto; align-items: center; gap: 16px; min-height: 46px; padding: 6px 12px; border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent); }
+.oc-data-table-row-main { display: grid; gap: 3px; min-width: 0; }
+.oc-data-table-row-main a, .oc-data-table-row-main button { overflow: hidden; padding: 0; border: 0; background: none; color: var(--text); font: inherit; font-weight: 550; text-align: left; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.oc-data-table-row-main a:hover, .oc-data-table-row-main button:hover { color: var(--accent); }
+.oc-data-table-row-subline { color: var(--text-dim); font: 11px var(--font-conversation-mono); }
+.oc-data-table-row-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: end; gap: 6px; min-width: 0; }
+.oc-data-table-field-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+@media (max-width: 640px) {
+  .oc-data-table-row { grid-template-columns: 1fr; gap: 6px; padding-block: 9px; }
+  .oc-data-table-row-main a, .oc-data-table-row-main button { overflow: visible; white-space: normal; }
+  .oc-data-table-row-meta { justify-content: start; }
+}

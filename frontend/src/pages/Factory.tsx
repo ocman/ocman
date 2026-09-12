@@ -2,10 +2,11 @@ import { useDeferredValue, useId, useRef, useState, type FormEvent, type ReactNo
 import { Link, NavLink, useNavigate, useParams } from 'react-router-dom';
 import { MarkdownContent } from '../components/assistant/MarkdownText';
 import { EpicGraph } from './EpicGraph';
-import { Button, SelectField } from '../components/Control';
+import { Button, SearchField, SelectField } from '../components/Control';
 import { SearchSelect } from '../components/SearchSelect';
 import { ProjectLabel } from '../components/ProjectLabel';
 import { StatusBadge } from '../components/StatusBadge';
+import { DataTableGroup, DataTableRow } from '../components/DataTable';
 import { FactoryStartedToast } from '../components/FactoryStartedToast';
 import { FactoryImplementationModel } from '../components/FactoryImplementationModel';
 import { useFactoryImplementationModel } from '../components/useFactoryImplementationModel';
@@ -14,7 +15,7 @@ import type { FactoryAttempt, FactoryFormula, FactoryGraphMutation, FactoryIssue
 
 const TRACER_FORMULA_ID = 'ocman/tracer';
 import { Modal } from '../components/Modal';
-import { IssueDrawer } from './FactoryIssues';
+import { FactoryIssueRow, IssueDrawer } from './FactoryIssues';
 import './Factory.css';
 
 function newInstantiationID() {
@@ -28,26 +29,29 @@ function QueryError({ error, retry }: { error: unknown; retry: () => void }) {
   </div>;
 }
 
-function IssueList({ epicID, query = '' }: { epicID: string; query?: string }) {
+const isClosed = (status: string) => status === 'closed' || status === 'completed';
+const statusLabel = (status: string) => status.replaceAll('_', ' ').replace(/^./, (letter) => letter.toUpperCase());
+
+function IssueList({ epicID }: { epicID: string }) {
   const issues = useFactoryIssues(epicID);
   const [selected, setSelected] = useState<FactoryIssue>();
+	const [query, setQuery] = useState('');
+	const [statusFilter, setStatusFilter] = useState('active');
+	const [kind, setKind] = useState('');
+	const search = useDeferredValue(query.trim().toLowerCase());
   if (issues.isLoading) return <p role="status">Loading issues…</p>;
   if (issues.isError) return <QueryError error={issues.error} retry={() => void issues.refetch()} />;
-  // ponytail: Mols are containers, not work; they'd sit in Backlog forever. Render as swimlanes when an epic has sibling Mols.
-  const visible = issues.data?.filter((issue) => issue.kind !== 'mol' && `${issue.id} ${issue.title} ${issue.kind} ${issue.status}`.toLowerCase().includes(query)) ?? [];
-  if (!visible.length) return <p className="oc-empty">{query ? 'No issues match this search.' : 'This epic has no issues yet.'}</p>;
-  const columns = [
-    ['backlog', 'Backlog'],
-    ['blocked', 'Blocked'],
-    ['in_progress', 'In progress'],
-    ['closed', 'Done'],
-    ['other', 'Other'],
-  ] as const;
-  const status = (issue: FactoryIssue) => {
-    const normalized = { open: 'backlog', completed: 'closed' }[issue.status] ?? issue.status;
-    return columns.some(([key]) => key === normalized) ? normalized : 'other';
-  };
-  return <><div className="factory-kanban" aria-label="Epic issues by status">{columns.map(([key, label]) => <section key={key} className="factory-kanban-column" aria-label={`${label} issues`}><h4>{label}</h4><ul>{visible.filter((issue) => status(issue) === key).map((issue) => <li key={issue.id}><button type="button" onClick={() => setSelected(issue)} aria-label={`Open issue ${issue.id}`}><strong data-testid={`issue-title-${issue.id}`}>{issue.title}</strong><span>{issue.id} · {issue.kind}</span></button></li>)}</ul></section>)}</div>{selected && <IssueDrawer key={selected.id} issue={selected} onClose={() => setSelected(undefined)} />}</>;
+	// ponytail: Mols are containers, not work, so keep them out of the ticket inventory.
+	const inventory = issues.data?.filter((issue) => issue.kind !== 'mol') ?? [];
+	const kinds = [...new Set(inventory.map((issue) => issue.kind))].sort();
+	const filtered = inventory.filter((issue) => `${issue.id} ${issue.title} ${issue.kind} ${issue.status}`.toLowerCase().includes(search) && (!kind || issue.kind === kind));
+	const closedCount = filtered.filter((issue) => isClosed(issue.status)).length;
+	const visible = filtered.filter((issue) => statusFilter === 'all' || (statusFilter === 'closed' ? isClosed(issue.status) : !isClosed(issue.status)));
+	const statusGroups: Record<string, string> = { in_progress: 'In progress', blocked: 'Blocked', retry_wait: 'Waiting', deferred: 'Waiting', open: 'Open', closed: 'Closed', completed: 'Closed' };
+	const groupFor = (issue: FactoryIssue) => statusGroups[issue.status] ?? statusLabel(issue.status);
+	const order = ['In progress', 'Blocked', 'Open', 'Waiting', 'Closed'];
+	const groups = [...new Set(visible.map(groupFor))].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+	return <><InventoryToolbar label="Find board issues" value={query} onChange={setQuery}><label>Board status<SelectField value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="active">Open only</option><option value="all">Open + closed</option><option value="closed">Closed only</option></SelectField></label><label>Board type<SelectField value={kind} onChange={(event) => setKind(event.target.value)}><option value="">All types</option>{kinds.map((value) => <option key={value} value={value}>{value}</option>)}</SelectField></label><span className="factory-result-count" aria-live="polite">{visible.length} shown{statusFilter === 'active' && closedCount > 0 ? ` · ${closedCount} closed hidden` : statusFilter === 'all' && closedCount > 0 ? ` · ${closedCount} closed` : ''}</span></InventoryToolbar>{!visible.length ? <p className="oc-empty">{inventory.length ? 'No issues match these filters.' : 'This epic has no issues yet.'}</p> : <div className="factory-list" aria-label="Epic issues by status">{groups.map((group) => { const items = visible.filter((issue) => groupFor(issue) === group); return <DataTableGroup key={group} label={group} noun="issues" count={items.length} markerClassName={`factory-status-dot--${group.toLowerCase().replaceAll(' ', '-')}`}>{items.map((issue) => <FactoryIssueRow key={issue.id} issue={issue} onOpen={() => setSelected(issue)} />)}</DataTableGroup>; })}</div>}{selected && <IssueDrawer key={selected.id} issue={selected} onClose={() => setSelected(undefined)} />}</>;
 }
 
 type DispatchEvidence = Pick<FactoryIssue, 'dispatchState' | 'blockers' | 'retryAt' | 'retryAttempts' | 'outcomeReason'>;
@@ -73,6 +77,10 @@ function DispatchExplanation({ item }: { item: DispatchEvidence }) {
 		case 'paused': return <span>Dispatch: epic paused.</span>;
     default: return null;
   }
+}
+
+function FactoryDataRow({ id, idLabel = 'Issue', title, epic, detail, actions }: { id: string; idLabel?: string; title: ReactNode; epic?: ReactNode; detail?: ReactNode; actions?: ReactNode }) {
+	return <DataTableRow primary={title} secondary={<><span className="oc-data-table-field-label">{idLabel} </span>{id}{epic && <> · <span className="oc-data-table-field-label">Epic </span>{epic}</>}</>} meta={<>{detail && <div className="factory-row-detail">{detail}</div>}{actions}</>} />;
 }
 
 
@@ -205,12 +213,7 @@ function RecoveryGateItem({ issue, epic }: { issue: FactoryIssue; epic: string }
 	const act = (action: 'resume' | 'retry' | 'cancel') => resolve.mutate({ id: gate.issueId, action, response: action === 'resume' ? response : '' });
 	// Only the clicked button reports the in-flight request; the others share the mutation.
 	const busy = (action: string) => resolve.isPending && resolve.variables?.action === action;
-	return <tr>
-		<td><strong>{epic}</strong></td>
-		<td className="factory-table-id">{issue.id}<span>{issue.title}</span></td>
-		<td><strong>{gate.question || issue.title}</strong>{gate.reason && <span>{gate.reason}</span>}</td>
-		<td><div className="factory-inbox-control">{gate.choices?.length ? <label>Response<select aria-label={`Recovery response for ${issue.id}`} value={response} disabled={pending} onChange={(event) => setResponse(event.target.value)}>{gate.choices.map((choice) => <option key={choice} value={choice}>{choice}</option>)}</select></label> : <label>Response<input aria-label={`Recovery response for ${issue.id}`} value={response} disabled={pending} onChange={(event) => setResponse(event.target.value)} /></label>}<div className="factory-inbox-actions">{pending ? <Button type="button" variant="accent" disabled={resolve.isPending} onClick={() => act('resume')}>{busy('resume') ? 'Resuming…' : 'Retry resume'}</Button> : <><Button type="button" variant="accent" disabled={resolve.isPending} onClick={() => act('resume')}>{busy('resume') ? 'Resuming…' : 'Resume'}</Button><Button type="button" disabled={resolve.isPending} onClick={() => act('retry')}>{busy('retry') ? 'Retrying…' : 'Retry'}</Button><Button type="button" disabled={resolve.isPending} onClick={() => act('cancel')}>{busy('cancel') ? 'Cancelling…' : 'Cancel work'}</Button></>}</div>{resolve.isError && <p role="alert">{resolve.error instanceof Error ? resolve.error.message : 'Could not resolve recovery gate.'}</p>}</div></td>
-	</tr>;
+	return <FactoryDataRow id={issue.id} epic={epic} title={<strong>{issue.title}</strong>} detail={<><strong>{gate.question || issue.title}</strong>{gate.reason && <span>{gate.reason}</span>}</>} actions={<div className="factory-inbox-control">{gate.choices?.length ? <label>Response<select aria-label={`Recovery response for ${issue.id}`} value={response} disabled={pending} onChange={(event) => setResponse(event.target.value)}>{gate.choices.map((choice) => <option key={choice} value={choice}>{choice}</option>)}</select></label> : <label>Response<input aria-label={`Recovery response for ${issue.id}`} value={response} disabled={pending} onChange={(event) => setResponse(event.target.value)} /></label>}<div className="factory-inbox-actions">{pending ? <Button type="button" variant="accent" disabled={resolve.isPending} onClick={() => act('resume')}>{busy('resume') ? 'Resuming…' : 'Retry resume'}</Button> : <><Button type="button" variant="accent" disabled={resolve.isPending} onClick={() => act('resume')}>{busy('resume') ? 'Resuming…' : 'Resume'}</Button><Button type="button" disabled={resolve.isPending} onClick={() => act('retry')}>{busy('retry') ? 'Retrying…' : 'Retry'}</Button><Button type="button" disabled={resolve.isPending} onClick={() => act('cancel')}>{busy('cancel') ? 'Cancelling…' : 'Cancel work'}</Button></>}</div>{resolve.isError && <p role="alert">{resolve.error instanceof Error ? resolve.error.message : 'Could not resolve recovery gate.'}</p>}</div>} />;
 }
 
 function AuthorityGateItem({ issue, epic }: { issue: FactoryIssue; epic: string }) {
@@ -219,12 +222,7 @@ function AuthorityGateItem({ issue, epic }: { issue: FactoryIssue; epic: string 
 	const pendingAction = gate.resolution === 'approve_pending' ? 'approve' : gate.resolution === 'reject_pending' ? 'reject' : undefined;
 	// Only the clicked button reports the in-flight request; the others share the mutation.
 	const busy = (action: string) => resolve.isPending && resolve.variables?.action === action;
-	return <tr>
-		<td><strong>{epic}</strong></td>
-		<td className="factory-table-id">{issue.id}<span>{issue.title}</span></td>
-		<td><strong>Allow {gate.permission}{gate.target && ` on ${gate.target}`}?</strong></td>
-		<td><div className="factory-inbox-actions">{pendingAction ? <Button type="button" variant="accent" disabled={resolve.isPending} onClick={() => resolve.mutate({ id: gate.issueId, action: pendingAction })}>{busy(pendingAction) ? 'Retrying…' : `Retry ${pendingAction}`}</Button> : <><Button type="button" variant="accent" disabled={resolve.isPending} onClick={() => resolve.mutate({ id: gate.issueId, action: 'approve' })}>{busy('approve') ? 'Approving…' : 'Approve'}</Button><Button type="button" disabled={resolve.isPending} onClick={() => resolve.mutate({ id: gate.issueId, action: 'reject' })}>{busy('reject') ? 'Rejecting…' : 'Reject'}</Button></>}</div>{resolve.isError && <p role="alert">{resolve.error instanceof Error ? resolve.error.message : 'Could not resolve permission escalation.'}</p>}</td>
-	</tr>;
+	return <FactoryDataRow id={issue.id} epic={epic} title={<strong>{issue.title}</strong>} detail={<strong>Allow {gate.permission}{gate.target && ` on ${gate.target}`}?</strong>} actions={<div><div className="factory-inbox-actions">{pendingAction ? <Button type="button" variant="accent" disabled={resolve.isPending} onClick={() => resolve.mutate({ id: gate.issueId, action: pendingAction })}>{busy(pendingAction) ? 'Retrying…' : `Retry ${pendingAction}`}</Button> : <><Button type="button" variant="accent" disabled={resolve.isPending} onClick={() => resolve.mutate({ id: gate.issueId, action: 'approve' })}>{busy('approve') ? 'Approving…' : 'Approve'}</Button><Button type="button" disabled={resolve.isPending} onClick={() => resolve.mutate({ id: gate.issueId, action: 'reject' })}>{busy('reject') ? 'Rejecting…' : 'Reject'}</Button></>}</div>{resolve.isError && <p role="alert">{resolve.error instanceof Error ? resolve.error.message : 'Could not resolve permission escalation.'}</p>}</div>} />;
 }
 
 function FailedWorkItem({ issue, epic }: { issue: FactoryIssue; epic: string }) {
@@ -233,12 +231,7 @@ function FailedWorkItem({ issue, epic }: { issue: FactoryIssue; epic: string }) 
 	const guidance = issue.outcomeReason?.includes('no supported Factory delivery remote')
 		? 'Add a GitHub or Forgejo git remote (preferably origin), authenticate ocman with GITHUB_TOKEN, FORGEJO_TOKEN/GITEA_TOKEN, or the gh/tea CLI, restart ocman if its environment changed, then reopen this work.'
 		: undefined;
-	return <tr>
-		<td><strong>{epic}</strong></td>
-		<td className="factory-table-id">{issue.id}<span>{issue.title}</span></td>
-		<td><strong>Work {issue.outcome}{issue.retryAttempts ? ` after ${issue.retryAttempts} attempts` : ''}</strong>{issue.outcomeReason && <span>{issue.outcomeReason}</span>}{guidance && <><button type="button" className="factory-error-help-trigger" popoverTarget={helpID}>How to resolve</button><div id={helpID} className="factory-error-help" popover="auto"><strong>Configure a delivery remote</strong><p>{guidance}</p></div></>}</td>
-		<td><div className="factory-inbox-actions"><InvestigateUnblockButton issue={issue} /><Button type="button" disabled={reopen.isPending} onClick={() => reopen.mutate({ epicId: issue.epicId, issueId: issue.id })}>{reopen.isPending ? 'Reopening…' : 'Reopen'}</Button></div>{reopen.isError && <p role="alert">{reopen.error instanceof Error ? reopen.error.message : 'Could not reopen work.'}</p>}</td>
-	</tr>;
+	return <FactoryDataRow id={issue.id} epic={epic} title={<strong>{issue.title}</strong>} detail={<><strong>Work {issue.outcome}{issue.retryAttempts ? ` after ${issue.retryAttempts} attempts` : ''}</strong>{issue.outcomeReason && <span>{issue.outcomeReason}</span>}{guidance && <><button type="button" className="factory-error-help-trigger" popoverTarget={helpID}>How to resolve</button><div id={helpID} className="factory-error-help" popover="auto"><strong>Configure a delivery remote</strong><p>{guidance}</p></div></>}</>} actions={<div><div className="factory-inbox-actions"><InvestigateUnblockButton issue={issue} /><Button type="button" disabled={reopen.isPending} onClick={() => reopen.mutate({ epicId: issue.epicId, issueId: issue.id })}>{reopen.isPending ? 'Reopening…' : 'Reopen'}</Button></div>{reopen.isError && <p role="alert">{reopen.error instanceof Error ? reopen.error.message : 'Could not reopen work.'}</p>}</div>} />;
 }
 
 function InvestigateUnblockButton({ issue }: { issue: FactoryIssue }) {
@@ -249,43 +242,47 @@ function InvestigateUnblockButton({ issue }: { issue: FactoryIssue }) {
 
 function MaterializationItem({ issue, epic }: { issue: FactoryIssue; epic: string }) {
 	const materialize = useMaterializeFactoryPlan();
-	return <tr>
-		<td><strong>{epic}</strong></td>
-		<td className="factory-table-id">{issue.id}<span>{issue.title}</span></td>
-		<td><strong>Plan approved, no work graph yet</strong><span>Materialize the approved plan, or add work through Manage graph.</span></td>
-		<td><div className="factory-inbox-actions"><Button type="button" variant="accent" disabled={materialize.isPending} onClick={() => materialize.mutate({ epicId: issue.epicId, issueId: issue.id })}>{materialize.isPending ? 'Materializing…' : 'Materialize plan'}</Button></div>{materialize.isError && <p role="alert">{materialize.error instanceof Error ? materialize.error.message : 'Could not materialize plan.'}</p>}</td>
-	</tr>;
+	return <FactoryDataRow id={issue.id} epic={epic} title={<strong>{issue.title}</strong>} detail={<>Plan approved, no work graph yet<span>Materialize the approved plan, or add work through Manage graph.</span></>} actions={<div><div className="factory-inbox-actions"><Button type="button" variant="accent" disabled={materialize.isPending} onClick={() => materialize.mutate({ epicId: issue.epicId, issueId: issue.id })}>{materialize.isPending ? 'Materializing…' : 'Materialize plan'}</Button></div>{materialize.isError && <p role="alert">{materialize.error instanceof Error ? materialize.error.message : 'Could not materialize plan.'}</p>}</div>} />;
 }
 
 function PlanningItem({ issue, epic }: { issue: FactoryIssue; epic: string }) {
 	const claim = useClaimFactoryPlan(issue.epicId);
 	const navigate = useNavigate();
-	return <tr>
-		<td><strong>{epic}</strong></td>
-		<td className="factory-table-id">{issue.id}<span>{issue.title}</span></td>
-		<td>Ready for planning</td>
-		<td><Button type="button" variant="accent" disabled={claim.isPending} onClick={() => claim.mutate(issue.id, { onSuccess: ({ session }) => navigate(`/session/${encodeURIComponent(session.id)}?factoryEpic=${encodeURIComponent(issue.epicId)}`) })}>{claim.isPending ? 'Claiming plan…' : 'Claim plan'}</Button>{claim.isError && <p role="alert">{claim.error instanceof Error ? claim.error.message : 'Could not claim planning work.'}</p>}</td>
-	</tr>;
+	return <FactoryDataRow id={issue.id} epic={epic} title={<strong>{issue.title}</strong>} detail="Ready for planning" actions={<div><Button type="button" variant="accent" disabled={claim.isPending} onClick={() => claim.mutate(issue.id, { onSuccess: ({ session }) => navigate(`/session/${encodeURIComponent(session.id)}?factoryEpic=${encodeURIComponent(issue.epicId)}`) })}>{claim.isPending ? 'Claiming plan…' : 'Claim plan'}</Button>{claim.isError && <p role="alert">{claim.error instanceof Error ? claim.error.message : 'Could not claim planning work.'}</p>}</div>} />;
 }
 
 export function FactoryEpics() {
   const epics = useWorkEpics();
   const [query, setQuery] = useState('');
+	const [status, setStatus] = useState('active');
+	const [project, setProject] = useState('');
   const [creating, setCreating] = useState(false);
-  const deferredQuery = useDeferredValue(query.trim().toLowerCase());
-  const visible = epics.data?.filter((epic) => `${epic.id} ${epic.goal} ${epic.initialProject}`.toLowerCase().includes(deferredQuery)) ?? [];
+	const deferredQuery = useDeferredValue(query.trim().toLowerCase());
+	const projects = [...new Set(epics.data?.map((epic) => epic.initialProject) ?? [])].sort();
+	const filtered = epics.data?.filter((epic) => `${epic.id} ${epic.goal} ${epic.initialProject}`.toLowerCase().includes(deferredQuery) && (!project || epic.initialProject === project)) ?? [];
+	const closedCount = filtered.filter((epic) => isClosed(epic.status)).length;
+	const visible = filtered.filter((epic) => status === 'all' || (status === 'closed' ? isClosed(epic.status) : !isClosed(epic.status)));
+	const groups = [...new Set(visible.map((epic) => epic.status))].sort((a, b) => ['open', 'paused', 'closed'].indexOf(a) - ['open', 'paused', 'closed'].indexOf(b));
   return <FactoryPage>
     {epics.isLoading && <p role="status">Loading epics…</p>}
     {epics.isError && <QueryError error={epics.error} retry={() => void epics.refetch()} />}
     <h2>Epics</h2>
-    <InventoryToolbar label="Find epics" value={query} onChange={setQuery}><Button type="button" variant="accent" onClick={() => setCreating(true)}>New epic</Button></InventoryToolbar>
+		<InventoryToolbar label="Find epics" value={query} onChange={setQuery}>
+			<label>Epic status<SelectField value={status} onChange={(event) => setStatus(event.target.value)}><option value="active">Open only</option><option value="all">Open + closed</option><option value="closed">Closed only</option></SelectField></label>
+			<label>Epic project<SelectField value={project} onChange={(event) => setProject(event.target.value)}><option value="">All projects</option>{projects.map((path) => <option key={path} value={path}>{path}</option>)}</SelectField></label>
+			<span className="factory-result-count" aria-live="polite">{visible.length} shown{status === 'active' && closedCount > 0 ? ` · ${closedCount} closed hidden` : status === 'all' && closedCount > 0 ? ` · ${closedCount} closed` : ''}</span>
+			<Button type="button" variant="accent" onClick={() => setCreating(true)}>New epic</Button>
+		</InventoryToolbar>
     {creating && <Drawer title="Create epic" onClose={() => setCreating(false)}><CreateEpic onCreated={() => setCreating(false)} /></Drawer>}
     {!epics.isLoading && !epics.isError && !visible.length && <p className="oc-empty">No epics match this search.</p>}
-    {!!visible.length && <div className="factory-table-wrap"><table className="factory-table" aria-label="Epics"><thead><tr><th>Goal</th><th>Project</th><th>Status</th><th>Progress</th></tr></thead><tbody>{visible.map((epic) => <tr key={epic.id}><td><Link to={`/factory/epics/${encodeURIComponent(epic.id)}`}>{epic.goal}</Link></td><td><ProjectLabel path={epic.initialProject} /></td><td>{epic.status}</td><td>Closure: required {epic.progress?.requiredSucceeded ?? 0}/{epic.progress?.requiredTotal ?? 0} complete. Optional work open: {epic.progress?.optionalOpen ?? 0}.{!!epic.progress?.closureBlockers?.length && <span>Closure blocked by: {epic.progress.closureBlockers.join(', ')}</span>}</td></tr>)}</tbody></table></div>}
+		{!!visible.length && <div className="factory-list" aria-label="Epics">{groups.map((group) => { const items = visible.filter((epic) => epic.status === group); const label = statusLabel(group); return <DataTableGroup key={group} label={label} noun="epics" count={items.length} markerClassName={`factory-status-dot--${label.toLowerCase().replaceAll(' ', '-')}`}>{items.map((epic) => <DataTableRow key={epic.id} primary={<Link to={`/factory/epics/${encodeURIComponent(epic.id)}`}>{epic.goal}</Link>} secondary={<span className="factory-list-id">{epic.id}</span>} meta={<><span className="factory-chip"><ProjectLabel path={epic.initialProject} /></span><span className="factory-chip">Required {epic.progress?.requiredSucceeded ?? 0}/{epic.progress?.requiredTotal ?? 0}</span><span className="factory-chip">Optional open {epic.progress?.optionalOpen ?? 0}</span>{!!epic.progress?.closureBlockers?.length && <span className="factory-row-detail factory-chip--danger">Blocked by: {epic.progress.closureBlockers.join(', ')}</span>}</>} />)}</DataTableGroup>; })}</div>}
   </FactoryPage>;
 }
 
 export function FactoryOverview() {
+	const [actionQuery, setActionQuery] = useState('');
+	const [actionType, setActionType] = useState('all');
+	const deferredActionQuery = useDeferredValue(actionQuery.trim().toLowerCase());
 	const epics = useWorkEpics();
 	const queue = useFactoryQueue();
 	const sessions = useSessions();
@@ -296,48 +293,60 @@ export function FactoryOverview() {
 	const issues = issueQueries.flatMap((result) => result.data ?? []);
 	const issuesLoading = issueQueries.some((result) => result.isLoading);
 	const issueError = issueQueries.find((result) => result.isError);
-	const recoveryGates = issues.filter((issue) => issue.recovery && issue.recovery.resolution !== 'resume' && issue.recovery.resolution !== 'retry' && issue.recovery.resolution !== 'cancel');
-	const authorityGates = issues.filter((issue) => issue.authority && issue.authority.resolution !== 'approve' && issue.authority.resolution !== 'reject');
+	const allRecoveryGates = issues.filter((issue) => issue.recovery && issue.recovery.resolution !== 'resume' && issue.recovery.resolution !== 'retry' && issue.recovery.resolution !== 'cancel');
+	const allAuthorityGates = issues.filter((issue) => issue.authority && issue.authority.resolution !== 'approve' && issue.authority.resolution !== 'reject');
 	const openEpics = new Set(epics.data?.filter((epic) => epic.status === 'open').map((epic) => epic.id));
 	const running = queue.data?.filter((item) => item.state === 'running') ?? [];
 	const runningAttemptIDs = new Set(running.map((item) => item.attemptId));
 	const planning = epics.data?.flatMap((epic) => (epic.attempts ?? []).filter((attempt) => (attempt.phase === 'prepared' || attempt.phase === 'active' || attempt.phase === 'stopping') && !runningAttemptIDs.has(attempt.id)).map((attempt) => ({ epic, attempt }))) ?? [];
-	const readyPlans = issues.filter((issue) => openEpics.has(issue.epicId) && issue.kind === 'plan' && issue.dispatchState === 'ready' && !planning.some(({ attempt }) => attempt.workId === issue.id));
-	const failedWork = issues.filter((issue) => openEpics.has(issue.epicId) && ['task', 'implementation', 'delivery'].includes(issue.kind) && issue.status === 'closed' && (issue.outcome === 'failed' || issue.outcome === 'cancelled'));
-	const blockedWork = issues.filter((issue) => openEpics.has(issue.epicId) && issue.dispatchState === 'terminally_blocked' && !failedWork.some((failed) => failed.epicId === issue.epicId));
-	const materializations = issues.filter((issue) => openEpics.has(issue.epicId) && issue.kind === 'materialization' && issue.dispatchState === 'ready');
+	const allReadyPlans = issues.filter((issue) => openEpics.has(issue.epicId) && issue.kind === 'plan' && issue.dispatchState === 'ready' && !planning.some(({ attempt }) => attempt.workId === issue.id));
+	const allFailedWork = issues.filter((issue) => openEpics.has(issue.epicId) && ['task', 'implementation', 'delivery'].includes(issue.kind) && issue.status === 'closed' && (issue.outcome === 'failed' || issue.outcome === 'cancelled'));
+	const allBlockedWork = issues.filter((issue) => openEpics.has(issue.epicId) && issue.dispatchState === 'terminally_blocked' && !allFailedWork.some((failed) => failed.epicId === issue.epicId));
+	const allMaterializations = issues.filter((issue) => openEpics.has(issue.epicId) && issue.kind === 'materialization' && issue.dispatchState === 'ready');
 	// Stuck epics with an actionable row above are already covered; this catches the dead-ends nothing else surfaces.
-	const stuck = epics.data?.filter((epic) => epic.progress?.stuck && !failedWork.some((issue) => issue.epicId === epic.id) && !blockedWork.some((issue) => issue.epicId === epic.id) && !materializations.some((issue) => issue.epicId === epic.id)) ?? [];
+	const allStuck = epics.data?.filter((epic) => epic.progress?.stuck && !allFailedWork.some((issue) => issue.epicId === epic.id) && !allBlockedWork.some((issue) => issue.epicId === epic.id) && !allMaterializations.some((issue) => issue.epicId === epic.id)) ?? [];
 	// ponytail: answering live prompts stays on the session page.
-	const prompts = [...new Map([...running.map((item) => ({ session: sessionByID.get(item.session?.id ?? ''), epic: epicGoal(item.epicId), issueID: item.id, issueTitle: item.title })), ...planning.map(({ epic, attempt }) => ({ session: sessionByID.get(attempt.session.id), epic: epic.goal, issueID: attempt.workId, issueTitle: 'Planning' }))].filter((item): item is { session: Session; epic: string; issueID: string; issueTitle: string } => Boolean(item.session?.pendingPermission || item.session?.pendingQuestion)).map((item) => [item.session.id, item])).values()];
-	const inboxCount = readyPlans.length + planGates.length + recoveryGates.length + authorityGates.length + prompts.length + failedWork.length + blockedWork.length + materializations.length + stuck.length;
+	const allPrompts = [...new Map([...running.map((item) => ({ session: sessionByID.get(item.session?.id ?? ''), epic: epicGoal(item.epicId), issueID: item.id, issueTitle: item.title })), ...planning.map(({ epic, attempt }) => ({ session: sessionByID.get(attempt.session.id), epic: epic.goal, issueID: attempt.workId, issueTitle: 'Planning' }))].filter((item): item is { session: Session; epic: string; issueID: string; issueTitle: string } => Boolean(item.session?.pendingPermission || item.session?.pendingQuestion)).map((item) => [item.session.id, item])).values()];
+	const matchesAction = (type: string, ...values: Array<string | undefined>) => (actionType === 'all' || actionType === type) && values.join(' ').toLowerCase().includes(deferredActionQuery);
+	const readyPlans = allReadyPlans.filter((issue) => matchesAction('planning', epicGoal(issue.epicId), issue.id, issue.title));
+	const visiblePlanGates = planGates.filter((epic) => matchesAction('review', epic.goal, epic.id, epic.planGate?.issueId));
+	const recoveryGates = allRecoveryGates.filter((issue) => matchesAction('recovery', epicGoal(issue.epicId), issue.id, issue.title, issue.recovery?.question, issue.recovery?.reason));
+	const authorityGates = allAuthorityGates.filter((issue) => matchesAction('permission', epicGoal(issue.epicId), issue.id, issue.title, issue.authority?.permission, issue.authority?.target));
+	const failedWork = allFailedWork.filter((issue) => matchesAction('failed', epicGoal(issue.epicId), issue.id, issue.title, issue.outcomeReason));
+	const blockedWork = allBlockedWork.filter((issue) => matchesAction('blocked', epicGoal(issue.epicId), issue.id, issue.title, issue.outcomeReason));
+	const materializations = allMaterializations.filter((issue) => matchesAction('materialization', epicGoal(issue.epicId), issue.id, issue.title));
+	const stuck = allStuck.filter((epic) => matchesAction('stuck', epic.goal, epic.id, ...(epic.progress?.closureBlockers ?? [])));
+	const prompts = allPrompts.filter((item) => matchesAction(item.session.pendingPermission ? 'permission' : 'prompt', item.epic, item.issueID, item.issueTitle, item.session.title));
+	const inboxTotal = allReadyPlans.length + planGates.length + allRecoveryGates.length + allAuthorityGates.length + allPrompts.length + allFailedWork.length + allBlockedWork.length + allMaterializations.length + allStuck.length;
+	const inboxCount = readyPlans.length + visiblePlanGates.length + recoveryGates.length + authorityGates.length + prompts.length + failedWork.length + blockedWork.length + materializations.length + stuck.length;
 	const liveStatus = (sessionID?: string) => { const session = sessionID ? sessionByID.get(sessionID) : undefined; return session && session.status !== 'done' ? <StatusBadge status={session.status} pending={session.pendingPermission || session.pendingQuestion} /> : null; };
 	return <FactoryPage>
 		<h2>Action inbox</h2>
+		<InventoryToolbar label="Find actions" value={actionQuery} onChange={setActionQuery}><label>Action type<SelectField value={actionType} onChange={(event) => setActionType(event.target.value)}><option value="all">All actions</option><option value="planning">Planning</option><option value="review">Plan review</option><option value="recovery">Recovery</option><option value="permission">Permission</option><option value="prompt">Agent prompt</option><option value="failed">Failed work</option><option value="blocked">Blocked work</option><option value="materialization">Materialization</option><option value="stuck">Stuck epic</option></SelectField></label><span className="factory-result-count" aria-live="polite">{inboxCount} action{inboxCount === 1 ? '' : 's'}</span></InventoryToolbar>
 		{epics.isLoading && <p role="status">Loading epics…</p>}
 		{epics.isError && <QueryError error={epics.error} retry={() => void epics.refetch()} />}
 		{issuesLoading && <p role="status">Loading action inbox…</p>}
 		{issueError && <QueryError error={issueError.error} retry={() => void issueError.refetch()} />}
-		{!epics.isLoading && !epics.isError && !issuesLoading && !issueError && !inboxCount && <p className="oc-empty">Nothing needs your attention.</p>}
-		{!!inboxCount && <div className="factory-table-wrap"><table className="factory-table factory-inbox" aria-label="Action inbox"><thead><tr><th>Epic</th><th>Issue ID</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+		{!epics.isLoading && !epics.isError && !issuesLoading && !issueError && !inboxCount && <p className="oc-empty">{inboxTotal ? 'No actions match these filters.' : 'Nothing needs your attention.'}</p>}
+		{!!inboxCount && <div className="factory-list" aria-label="Action inbox"><DataTableGroup label="Needs attention" noun="actions" count={inboxCount} markerClassName="factory-status-dot--blocked">
 			{readyPlans.map((issue) => <PlanningItem key={issue.id} issue={issue} epic={epicGoal(issue.epicId)} />)}
-			{planGates.map((epic) => <tr key={epic.id}><td><strong>{epic.goal}</strong></td><td className="factory-table-id">{epic.planGate!.issueId}<span>Plan approval</span></td><td>Revision {epic.planGate!.proposalRevision}</td><td><Link to={`/factory/epics/${encodeURIComponent(epic.id)}`}>Review plan</Link></td></tr>)}
+			{visiblePlanGates.map((epic) => <FactoryDataRow key={epic.id} id={epic.planGate!.issueId} epic={epic.goal} title={<strong>Plan approval</strong>} detail={`Revision ${epic.planGate!.proposalRevision}`} actions={<Link to={`/factory/epics/${encodeURIComponent(epic.id)}`}>Review plan</Link>} />)}
 			{recoveryGates.map((issue) => <RecoveryGateItem key={issue.id} issue={issue} epic={epicGoal(issue.epicId)} />)}
 			{authorityGates.map((issue) => <AuthorityGateItem key={issue.id} issue={issue} epic={epicGoal(issue.epicId)} />)}
 			{failedWork.map((issue) => <FailedWorkItem key={issue.id} issue={issue} epic={epicGoal(issue.epicId)} />)}
-			{blockedWork.map((issue) => <tr key={issue.id}><td><strong>{epicGoal(issue.epicId)}</strong></td><td className="factory-table-id">{issue.id}<span>{issue.title}</span></td><td><strong>Blocked: a prerequisite failed</strong><span><DispatchExplanation item={issue} /></span></td><td><InvestigateUnblockButton issue={issue} /></td></tr>)}
+			{blockedWork.map((issue) => <FactoryDataRow key={issue.id} id={issue.id} epic={epicGoal(issue.epicId)} title={<strong>{issue.title}</strong>} detail={<><strong>Blocked: a prerequisite failed</strong><span><DispatchExplanation item={issue} /></span></>} actions={<InvestigateUnblockButton issue={issue} />} />)}
 			{materializations.map((issue) => <MaterializationItem key={issue.id} issue={issue} epic={epicGoal(issue.epicId)} />)}
-			{stuck.map((epic) => <tr key={`stuck-${epic.id}`}><td><strong>{epic.goal}</strong></td><td className="factory-table-id">{epic.id}<span>Epic</span></td><td><strong>Stuck: nothing can proceed</strong><span>Closure blocked by: {epic.progress.closureBlockers?.join(', ')}</span></td><td><Link to={`/factory/epics/${encodeURIComponent(epic.id)}`}>Manage graph</Link></td></tr>)}
-			{prompts.map(({ session, epic, issueID, issueTitle }) => <tr key={session.id}><td><strong>{epic}</strong></td><td className="factory-table-id">{issueID}<span>{issueTitle}</span></td><td>Agent is waiting for you: {session.title}<span>{session.pendingPermission ? 'Permission prompt' : 'Question'}</span></td><td><Link to={`/session/${encodeURIComponent(session.id)}`}>Answer in session</Link></td></tr>)}
-		</tbody></table></div>}
+			{stuck.map((epic) => <FactoryDataRow key={`stuck-${epic.id}`} id={epic.id} idLabel="Epic" title={<strong>{epic.goal}</strong>} detail={<>Stuck: nothing can proceed<span>Closure blocked by: {epic.progress.closureBlockers?.join(', ')}</span></>} actions={<Link to={`/factory/epics/${encodeURIComponent(epic.id)}`}>Manage graph</Link>} />)}
+			{prompts.map(({ session, epic, issueID, issueTitle }) => <FactoryDataRow key={session.id} id={issueID} epic={epic} title={<strong>{issueTitle}</strong>} detail={<>Agent is waiting for you: {session.title}<span>{session.pendingPermission ? 'Permission prompt' : 'Question'}</span></>} actions={<Link to={`/session/${encodeURIComponent(session.id)}`}>Answer in session</Link>} />)}
+		</DataTableGroup></div>}
 		<h2>Live work</h2>
 		{queue.isLoading && <p role="status">Loading live work…</p>}
 		{queue.isError && <QueryError error={queue.error} retry={() => void queue.refetch()} />}
 		{!queue.isLoading && !queue.isError && !running.length && !planning.length && <p className="oc-empty">No agents are working right now.</p>}
-		{(!!running.length || !!planning.length) && <div className="factory-table-wrap"><table className="factory-table" aria-label="Live work"><thead><tr><th>Epic</th><th>Issue ID</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-			{planning.map(({ epic, attempt }) => <tr key={attempt.id}><td><strong>Planning: {epic.goal}</strong></td><td className="factory-table-id">{attempt.workId}<span>Planning</span></td><td>{liveStatus(attempt.session.id) ?? attempt.phase}</td><td>{attempt.session.id && <Link to={`/session/${encodeURIComponent(attempt.session.id)}?factoryEpic=${encodeURIComponent(epic.id)}`} aria-label={`Open session ${attempt.session.id}`}>Open session</Link>}</td></tr>)}
-			{running.map((item) => <tr key={item.id}><td><strong>{epicGoal(item.epicId)}</strong></td><td className="factory-table-id">{item.id}<span>{item.title}</span></td><td>{liveStatus(item.session?.id) ?? item.state}</td><td>{item.session?.id && <Link to={`/session/${encodeURIComponent(item.session.id)}`} aria-label={`Open session ${item.session.id}`}>Open session</Link>}</td></tr>)}
-		</tbody></table></div>}
+		{(!!running.length || !!planning.length) && <div className="factory-list" aria-label="Live work"><DataTableGroup label="In progress" noun="work items" count={running.length + planning.length} markerClassName="factory-status-dot--in-progress">
+			{planning.map(({ epic, attempt }) => <FactoryDataRow key={attempt.id} id={attempt.workId} epic={epic.goal} title={<strong>Planning</strong>} detail={liveStatus(attempt.session.id) ?? attempt.phase} actions={attempt.session.id && <Link to={`/session/${encodeURIComponent(attempt.session.id)}?factoryEpic=${encodeURIComponent(epic.id)}`} aria-label={`Open session ${attempt.session.id}`}>Open session</Link>} />)}
+			{running.map((item) => <FactoryDataRow key={item.id} id={item.id} epic={epicGoal(item.epicId)} title={<strong>{item.title}</strong>} detail={liveStatus(item.session?.id) ?? item.state} actions={item.session?.id && <Link to={`/session/${encodeURIComponent(item.session.id)}`} aria-label={`Open session ${item.session.id}`}>Open session</Link>} />)}
+		</DataTableGroup></div>}
 	</FactoryPage>;
 }
 
@@ -444,18 +453,12 @@ function PlanningAttempts({ epicID, attempts }: { epicID: string; attempts: Fact
 }
 
 function InventoryToolbar({ label, value, onChange, children }: { label: string; value: string; onChange: (value: string) => void; children?: ReactNode }) {
-  return <div className="factory-toolbar" role="search"><label>{label}<input type="search" value={value} onChange={(event) => onChange(event.target.value)} /></label>{children}</div>;
+  return <div className="factory-toolbar factory-filter-bar" role="search"><label>{label}<SearchField value={value} onChange={(event) => onChange(event.target.value)} /></label>{children}</div>;
 }
 
 function QueueTable({ label, items }: { label: string; items: FactoryQueueItem[] }) {
-  return <div className="factory-table-wrap"><table className="factory-table" aria-label={label}><thead><tr><th>Issue</th><th>Epic</th><th>Project</th><th>Dispatch</th><th>Outcome</th><th>Session</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}>
-		<td><strong>{item.title}</strong><span>{item.id}</span></td>
-		<td className="factory-table-id">{item.epicId}</td>
-		<td><ProjectLabel path={item.repository} /></td>
-		<td>{item.state}{item.attemptId && <span>Attempt {item.attemptId}</span>}<DispatchExplanation item={{ ...item, dispatchState: item.state }} /></td>
-		<td>{item.outcome || '-'}</td>
-		<td>{item.session?.id ? <Link to={`/session/${encodeURIComponent(item.session.id)}`} aria-label={`Open session ${item.session.id}`}>Open session</Link> : '-'}</td>
-	</tr>)}</tbody></table></div>;
+  const marker = label === 'Active work' ? 'factory-status-dot--in-progress' : label === 'Waiting work' ? 'factory-status-dot--waiting' : '';
+  return <DataTableGroup label={label} noun="items" count={items.length} markerClassName={marker}>{items.map((item) => <DataTableRow key={item.id} primary={<strong>{item.title}</strong>} secondary={<><span className="oc-data-table-field-label">Issue </span>{item.id}</>} meta={<><span className="factory-chip"><span className="oc-data-table-field-label">Epic </span>{item.epicId}</span><span className="factory-chip"><span className="oc-data-table-field-label">Project </span><ProjectLabel path={item.repository} /></span><span className="factory-chip"><span className="oc-data-table-field-label">Dispatch </span>{item.state}</span>{item.attemptId && <span className="factory-chip">Attempt {item.attemptId}</span>}{item.outcome && <span className="factory-chip"><span className="oc-data-table-field-label">Outcome </span>{item.outcome}</span>}<span className="factory-row-detail"><DispatchExplanation item={{ ...item, dispatchState: item.state }} /></span>{item.session?.id && <Link to={`/session/${encodeURIComponent(item.session.id)}`} aria-label={`Open session ${item.session.id}`}>Open session</Link>}</>} />)}</DataTableGroup>;
 }
 
 export function FactoryQueue() {
@@ -473,9 +476,7 @@ export function FactoryQueue() {
     {queue.isLoading && <p role="status">Loading execution queue…</p>}
     {queue.isError && <QueryError error={queue.error} retry={() => void queue.refetch()} />}
     {!queue.isLoading && !queue.isError && !visible && <p className="oc-empty">No implementation work is active or waiting.</p>}
-    {!!active.length && <section><h3>Active work</h3><QueueTable label="Active work" items={active} /></section>}
-    {!!next.length && <section><h3>Next up</h3><QueueTable label="Next up" items={next} /></section>}
-    {!!waiting.length && <section><h3>Waiting work</h3><QueueTable label="Waiting work" items={waiting} /></section>}
+    {!!visible && <div className="factory-list" aria-label="Execution queue">{!!active.length && <QueueTable label="Active work" items={active} />}{!!next.length && <QueueTable label="Next up" items={next} />}{!!waiting.length && <QueueTable label="Waiting work" items={waiting} />}</div>}
   </FactoryPage>;
 }
 

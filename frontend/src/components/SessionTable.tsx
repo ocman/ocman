@@ -11,6 +11,7 @@ import { ProjectLabel } from './ProjectLabel';
 import { filterVisibleSessions } from '../lib/sessionVisibility';
 import { nestSessions } from '../lib/nestSessions';
 import { SessionTableSkeleton } from './Skeleton';
+import { DataTable, DataTableGroupHeader } from './DataTable';
 import { projectRootForDirectory } from '../lib/worktrees';
 import { rollupGroupStatus } from '../lib/sidebarHelpers';
 import { remoteLog } from '../lib/remoteLog';
@@ -257,7 +258,7 @@ export function GroupedSessionTable({
 
   if (groups.length === 0) {
     return (
-      <table>
+      <DataTable>
         <tbody>
           <tr>
             <td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 24 }}>
@@ -265,7 +266,7 @@ export function GroupedSessionTable({
             </td>
           </tr>
         </tbody>
-      </table>
+      </DataTable>
     );
   }
 
@@ -284,7 +285,7 @@ export function GroupedSessionTable({
 
         return (
           <div key={group.directory || '__empty__'} className="oc-session-group">
-            <div className="oc-session-group-header-row">
+            <DataTableGroupHeader className="oc-session-group-header-row">
               <button
                 type="button"
                 className={`oc-session-group-header${collapsed ? ' collapsed' : ''}`}
@@ -334,7 +335,7 @@ export function GroupedSessionTable({
                   </div>
                 </details>
               )}
-            </div>
+            </DataTableGroupHeader>
             {group.placeholder ? (
               !collapsed && (
                 <div className="oc-session-group-placeholder">
@@ -351,7 +352,7 @@ export function GroupedSessionTable({
                 </div>
               )
             ) : !collapsed && (
-              <table>
+              <DataTable>
                 <thead>
                   <tr>
                     <th>Session</th>
@@ -405,7 +406,7 @@ export function GroupedSessionTable({
                     );
                   })}
                 </tbody>
-              </table>
+              </DataTable>
             )}
           </div>
         );
@@ -449,7 +450,7 @@ export function SessionTable({ sessions, showProject, loading, includeArchived }
 
   if (!visibleSessions.length) {
     return (
-      <table>
+      <DataTable>
         <tbody>
           <tr>
             <td colSpan={colCount} style={{ textAlign: 'center', color: 'var(--text-dim)', padding: 24 }}>
@@ -457,12 +458,12 @@ export function SessionTable({ sessions, showProject, loading, includeArchived }
             </td>
           </tr>
         </tbody>
-      </table>
+      </DataTable>
     );
   }
 
   return (
-    <table>
+    <DataTable>
       <thead>
         <tr>
           <th>Session</th>
@@ -531,6 +532,6 @@ export function SessionTable({ sessions, showProject, loading, includeArchived }
           );
         })}
       </tbody>
-    </table>
+    </DataTable>
   );
 }

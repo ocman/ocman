@@ -24,7 +24,7 @@ beforeEach(() => {
   } as never);
   vi.mocked(useFactoryGraphIssues).mockReturnValue([{
     data: [
-      { id: 'fac-1', epicId: 'epic-1', kind: 'task', title: 'Prepare issue data', status: 'open' },
+			{ id: 'fac-1', epicId: 'epic-1', kind: 'task', title: 'Prepare issue data', status: 'open', createdAt: 1_700_000_000_000 },
 		{ id: 'fac-42', epicId: 'epic-1', kind: 'implementation', title: 'Add issue drawer', status: 'closed', description: 'Show the full ticket.', conclusion: 'Rendered and tested.', prUrl: 'https://forge.example/pulls/1', parentId: 'fac-1', blockers: [{ id: 'fac-1', epicId: 'epic-1', reason: '', outcome: '' }] },
     ],
     isLoading: false,
@@ -37,9 +37,21 @@ it('shows a ticket list and opens issue details in a drawer', async () => {
   const user = userEvent.setup();
   render(<MemoryRouter initialEntries={['/factory/issues']}><Routes><Route path="/factory/issues/:issueId?" element={<FactoryIssues />} /></Routes></MemoryRouter>);
 
-  expect(screen.getByText('fac-42')).toBeInTheDocument();
-	expect(screen.getByText('closed')).toBeInTheDocument();
-  expect(screen.queryByText('Show the full ticket.')).not.toBeInTheDocument();
+	expect(screen.getByRole('region', { name: 'Open issues' })).toBeInTheDocument();
+	expect(screen.getByLabelText('task issue')).toBeInTheDocument();
+	expect(screen.getByText('#fac-1')).toBeInTheDocument();
+	expect(screen.getByText(/created/).closest('time')).toHaveAttribute('datetime', '2023-11-14T22:13:20.000Z');
+	expect(screen.queryByText('#fac-42')).not.toBeInTheDocument();
+	expect(screen.getByText('1 shown · 1 closed hidden')).toBeInTheDocument();
+	 expect(screen.queryByText('Show the full ticket.')).not.toBeInTheDocument();
+	await user.selectOptions(screen.getByLabelText('Issue status'), 'all');
+	expect(screen.getByRole('region', { name: 'Closed issues' })).toBeInTheDocument();
+	expect(screen.getByText('#fac-42')).toBeInTheDocument();
+	expect(screen.getByText('2 shown · 1 closed')).toBeInTheDocument();
+	await user.selectOptions(screen.getByLabelText('Issue status'), 'closed');
+	expect(screen.queryByText('#fac-1')).not.toBeInTheDocument();
+	await user.selectOptions(screen.getByLabelText('Issue type'), 'implementation');
+	expect(screen.queryByText('#fac-1')).not.toBeInTheDocument();
 
   await user.click(screen.getByRole('button', { name: 'Open issue fac-42' }));
 

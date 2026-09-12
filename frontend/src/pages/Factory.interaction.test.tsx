@@ -165,16 +165,30 @@ describe('Factory interactions', () => {
     vi.mocked(api.factoryEpics).mockResolvedValue([
       { id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo' },
       { id: 'epic-2', goal: 'Refresh docs', status: 'open', initialProject: '/docs' },
+      { id: 'epic-3', goal: 'Retired work', status: 'closed', initialProject: '/repo' },
     ] as never);
     renderFactory(<MemoryRouter><FactoryEpics /></MemoryRouter>);
     expect(await screen.findByRole('link', { name: 'Ship Factory' })).toBeInTheDocument();
-		const table = screen.getByRole('table', { name: 'Epics' });
-		expect(within(table).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual(['Goal', 'Project', 'Status', 'Progress']);
-		expect(within(table).getByRole('cell', { name: '/repo' })).toBeInTheDocument();
+		expect(screen.getByRole('region', { name: 'Open epics' })).toBeInTheDocument();
+		expect(screen.queryByRole('link', { name: 'Retired work' })).not.toBeInTheDocument();
+		expect(screen.getByText('2 shown · 1 closed hidden')).toBeInTheDocument();
 
     await user.type(screen.getByLabelText('Find epics'), 'docs');
     expect(await screen.findByRole('link', { name: 'Refresh docs' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Ship Factory' })).not.toBeInTheDocument();
+
+		await user.clear(screen.getByLabelText('Find epics'));
+		await user.selectOptions(screen.getByLabelText('Epic status'), 'all');
+		expect(await screen.findByRole('link', { name: 'Retired work' })).toBeInTheDocument();
+		expect(screen.getByText('3 shown · 1 closed')).toBeInTheDocument();
+		expect(screen.getByRole('region', { name: 'Closed epics' })).toBeInTheDocument();
+		await user.selectOptions(screen.getByLabelText('Epic status'), 'closed');
+		expect(screen.getByRole('link', { name: 'Retired work' })).toBeInTheDocument();
+		expect(screen.queryByRole('link', { name: 'Refresh docs' })).not.toBeInTheDocument();
+		await user.selectOptions(screen.getByLabelText('Epic status'), 'all');
+		await user.selectOptions(screen.getByLabelText('Epic project'), '/docs');
+		expect(screen.getByRole('link', { name: 'Refresh docs' })).toBeInTheDocument();
+		expect(screen.queryByRole('link', { name: 'Ship Factory' })).not.toBeInTheDocument();
   });
 
   it('lists every actionable gate and live prompt in the action inbox', async () => {
@@ -190,14 +204,14 @@ describe('Factory interactions', () => {
 	  { id: 'epic-1.8', epicId: 'epic-1', kind: 'gate', title: 'Pending authority', status: 'open', authority: { issueId: 'epic-1.8', epicId: 'epic-1', attemptId: 'a2', workId: 'epic-1.4', requestId: 'req-2', permission: 'external_directory', target: '/outside', resolution: 'approve_pending' } },
       { id: 'epic-1.7', epicId: 'epic-1', kind: 'gate', title: 'Resolved', status: 'closed', recovery: { issueId: 'epic-1.7', resolution: 'resume', choices: [] } },
     ] : []) as never);
-    vi.mocked(api.sessions).mockResolvedValue([{ id: 'plan-session', title: 'Plan docs', status: 'waiting', pendingQuestion: true, pendingPermission: false }] as never);
+		vi.mocked(api.sessions).mockResolvedValue([{ id: 'plan-session', title: 'Plan docs', status: 'waiting', pendingQuestion: true, pendingPermission: false }, { id: 'permission-session', title: 'Approve deploy', status: 'waiting', pendingQuestion: false, pendingPermission: true }] as never);
+		vi.mocked(api.factoryQueue).mockResolvedValue([{ id: 'epic-1.10', epicId: 'epic-1', title: 'Deploy', repository: '/repo', state: 'running', session: { platform: 'opencode', id: 'permission-session' } }] as never);
     renderFactory(<MemoryRouter><FactoryOverview /></MemoryRouter>);
 
-		const inbox = await screen.findByRole('table', { name: 'Action inbox' });
-		expect(within(inbox).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual(['Epic', 'Issue ID', 'Status', 'Actions']);
-		expect(within(inbox).getAllByText('Ship Factory')).not.toHaveLength(0);
-		expect(within(inbox).getByText('epic-1.2')).toBeInTheDocument();
-		expect(within(inbox).getByRole('cell', { name: /epic-1\.5.*Recovery/ })).toBeInTheDocument();
+		const inbox = await screen.findByRole('region', { name: 'Needs attention actions' });
+		expect(inbox).toHaveTextContent('Ship Factory');
+		expect(inbox).toHaveTextContent('epic-1.2');
+		expect(within(inbox).getByText('Recovery')).toBeInTheDocument();
     expect(within(inbox).getByRole('link', { name: 'Review plan' })).toHaveAttribute('href', '/factory/epics/epic-1');
     expect(within(inbox).getByText('Tests fail. Continue?')).toBeInTheDocument();
     expect(within(inbox).getByText('Allow bash on rm -rf dist?')).toBeInTheDocument();
@@ -205,8 +219,18 @@ describe('Factory interactions', () => {
 		expect(within(inbox).getByRole('button', { name: 'Retry approve' })).toBeInTheDocument();
 		expect(within(inbox).getByRole('button', { name: 'Retry resume' })).toBeInTheDocument();
     expect(within(inbox).queryByText('Resolved')).not.toBeInTheDocument();
-    expect(within(inbox).getByText('Agent is waiting for you: Plan docs')).toBeInTheDocument();
-    expect(within(inbox).getByRole('link', { name: 'Answer in session' })).toHaveAttribute('href', '/session/plan-session');
+		expect(within(inbox).getByText('Agent is waiting for you: Plan docs')).toBeInTheDocument();
+		expect(within(inbox).getAllByRole('link', { name: 'Answer in session' }).some((link) => link.getAttribute('href') === '/session/plan-session')).toBe(true);
+
+		await user.selectOptions(screen.getByLabelText('Action type'), 'permission');
+		expect(within(inbox).getByText('Allow bash on rm -rf dist?')).toBeInTheDocument();
+		expect(within(inbox).getByText('Agent is waiting for you: Approve deploy')).toBeInTheDocument();
+		expect(within(inbox).queryByText('Tests fail. Continue?')).not.toBeInTheDocument();
+		await user.type(screen.getByLabelText('Find actions'), 'outside');
+		expect(within(inbox).getByText('Allow external_directory on /outside?')).toBeInTheDocument();
+		expect(within(inbox).queryByText('Allow bash on rm -rf dist?')).not.toBeInTheDocument();
+		await user.clear(screen.getByLabelText('Find actions'));
+		await user.selectOptions(screen.getByLabelText('Action type'), 'all');
 
     await user.selectOptions(screen.getByLabelText('Recovery response for epic-1.5'), 'Fix tests');
 		await user.click(within(inbox).getByRole('button', { name: 'Resume' }));
@@ -253,7 +277,7 @@ describe('Factory interactions', () => {
     });
     renderFactory(<MemoryRouter><Routes><Route path="/" element={<FactoryOverview />} /><Route path="/session/:id" element={<LocationMarker />} /></Routes></MemoryRouter>);
 
-    const inbox = await screen.findByRole('table', { name: 'Action inbox' });
+    const inbox = await screen.findByRole('region', { name: 'Needs attention actions' });
     await user.click(within(inbox).getByRole('button', { name: 'Claim plan' }));
 
     await waitFor(() => expect(api.factoryClaimPlan).toHaveBeenCalledWith('epic-1', 'epic-1.1'));
@@ -363,7 +387,7 @@ describe('Factory interactions', () => {
     } as Record<string, unknown[]>)[id] ?? []) as never);
     renderFactory(<MemoryRouter><FactoryOverview /></MemoryRouter>);
 
-    const inbox = await screen.findByRole('table', { name: 'Action inbox' });
+    const inbox = await screen.findByRole('region', { name: 'Needs attention actions' });
     expect(within(inbox).getByText('Work failed after 4 attempts')).toBeInTheDocument();
     expect(within(inbox).getByText('Implementation Session could not be launched: no supported Factory delivery remote')).toBeInTheDocument();
     const guidanceTrigger = within(inbox).getByRole('button', { name: 'How to resolve' });
@@ -405,17 +429,17 @@ describe('Factory interactions', () => {
     ] as never);
     renderFactory(<MemoryRouter><FactoryOverview /></MemoryRouter>);
 
-		const live = await screen.findByRole('table', { name: 'Live work' });
-		expect(within(live).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual(['Epic', 'Issue ID', 'Status', 'Actions']);
-		expect(within(live).getByText('Planning: Ship Factory')).toBeInTheDocument();
-		expect(within(live).getByText('epic-1.1')).toBeInTheDocument();
-		expect(within(live).getByRole('cell', { name: /epic-1\.4.*Implement controls/ })).toBeInTheDocument();
+		const live = await screen.findByRole('region', { name: 'In progress work items' });
+		expect(within(live).getByText('Planning')).toBeInTheDocument();
+		expect(live).toHaveTextContent('Ship Factory');
+		expect(live).toHaveTextContent('epic-1.1');
+		expect(live).toHaveTextContent('epic-1.4');
     expect(within(live).getByText('Implement controls')).toBeInTheDocument();
     expect(within(live).queryByText('Next up')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Claim plan' })).not.toBeInTheDocument();
     expect(within(live).getAllByRole('link', { name: /Open session/ })).toHaveLength(3);
     expect(await within(live).findByText('Busy')).toBeInTheDocument();
-    expect(within(live).getByRole('cell', { name: /epic-1\.6.*Finish handoff/ }).parentElement).toHaveTextContent('running');
+    expect(within(live).getByText('Finish handoff').closest('[role="listitem"]')).toHaveTextContent('running');
     expect(within(live).queryByText('Done')).not.toBeInTheDocument();
     expect(screen.getByText('Nothing needs your attention.')).toBeInTheDocument();
   });
@@ -496,12 +520,14 @@ describe('Factory interactions', () => {
     await user.click(screen.getByRole('button', { name: 'Pour graph' }));
 
     expect(await screen.findByLabelText('Epic issues by status')).toBeInTheDocument();
-    expect(within(screen.getByRole('region', { name: 'Backlog issues' })).getByText('Backlog work')).toBeInTheDocument();
+		expect(within(screen.getByRole('region', { name: 'Open issues' })).getByText('Backlog work')).toBeInTheDocument();
     expect(screen.queryByText('Child Formula')).not.toBeInTheDocument();
     expect(within(screen.getByRole('region', { name: 'Blocked issues' })).getByText('Blocked work')).toBeInTheDocument();
     expect(within(screen.getByRole('region', { name: 'In progress issues' })).getByText('Active work')).toBeInTheDocument();
-    expect(within(screen.getByRole('region', { name: 'Done issues' })).getByText('Finished work')).toBeInTheDocument();
-    expect(within(screen.getByRole('region', { name: 'Other issues' })).getByText('Deferred work')).toBeInTheDocument();
+		expect(screen.queryByText('Finished work')).not.toBeInTheDocument();
+		expect(within(screen.getByRole('region', { name: 'Waiting issues' })).getByText('Deferred work')).toBeInTheDocument();
+		await user.selectOptions(screen.getByLabelText('Board status'), 'all');
+		expect(within(screen.getByRole('region', { name: 'Closed issues' })).getByText('Finished work')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Open issue issue-6' }));
     expect(screen.getByRole('dialog', { name: 'Issue issue-6' })).toHaveTextContent('Backlog work');
   });
@@ -696,21 +722,18 @@ describe('Factory interactions', () => {
 		] as never);
     renderFactory(<MemoryRouter><FactoryQueue /></MemoryRouter>);
 
-    expect(await screen.findByRole('heading', { name: 'Active work' })).toBeInTheDocument();
-		const active = screen.getByRole('table', { name: 'Active work' });
-		expect(within(active).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual(['Issue', 'Epic', 'Project', 'Dispatch', 'Outcome', 'Session']);
+		const active = await screen.findByRole('region', { name: 'Active work items' });
 		expect(within(active).getByTitle('/repo')).toHaveTextContent('repo');
     expect(screen.getByRole('link', { name: 'Open session session-1' })).toHaveAttribute('href', '/session/session-1');
-    expect(screen.getByRole('heading', { name: 'Next up' })).toBeInTheDocument();
-		expect(screen.getByRole('table', { name: 'Next up' })).toBeInTheDocument();
-		expect(screen.getByRole('table', { name: 'Waiting work' })).toBeInTheDocument();
+		expect(screen.getByRole('region', { name: 'Next up items' })).toBeInTheDocument();
+		expect(screen.getByRole('region', { name: 'Waiting work items' })).toBeInTheDocument();
 		expect(screen.getByText('Next implementation')).toBeInTheDocument();
 		expect(screen.getByText('Waiting implementation')).toBeInTheDocument();
 		expect(screen.getByText('Retry implementation')).toBeInTheDocument();
-		expect(screen.getByText('Waiting implementation').closest('tr')).toHaveTextContent('Dispatch: cannot proceed because gate-1 failed: Rejected.');
+		expect(screen.getByText('Waiting implementation').closest('[role="listitem"]')).toHaveTextContent('Dispatch: cannot proceed because gate-1 failed: Rejected.');
 		expect(screen.getByText('Dispatch: retry 2 scheduled for 2023-11-14T22:13:20.000Z.')).toBeInTheDocument();
-		expect(screen.getByText('Skipped recovery').closest('tr')).toHaveTextContent('Dispatch: not applicable because the recovery condition was not met (test-1 succeeded: Passed).');
-		expect(screen.getByText('Undelivered optional work').closest('tr')).toHaveTextContent('Dispatch: Final delivery is complete; this work will not run.');
+		expect(screen.getByText('Skipped recovery').closest('[role="listitem"]')).toHaveTextContent('Dispatch: not applicable because the recovery condition was not met (test-1 succeeded: Passed).');
+		expect(screen.getByText('Undelivered optional work').closest('[role="listitem"]')).toHaveTextContent('Dispatch: Final delivery is complete; this work will not run.');
 		expect(screen.getByText('Dispatch: delayed: waiting for review.')).toBeInTheDocument();
 		expect(screen.getByText('Capacity: 10 global, 4 per project.')).toBeInTheDocument();
 	});
@@ -730,6 +753,8 @@ describe('Factory interactions', () => {
 		vi.mocked(api.factoryIssues).mockResolvedValue([{ id: 'issue-1', epicId: 'epic-1', kind: 'implementation', title: 'Apply change', status: 'closed', outcome: 'failed', outcomeReason: 'Tests failed', dispatchState: 'completed' }] as never);
 		renderFactory(<MemoryRouter initialEntries={['/factory/epics/epic-1']}><Routes><Route path="/factory/epics/:id" element={<FactoryEpicDetail />} /></Routes></MemoryRouter>);
 
+		expect(screen.queryByRole('button', { name: 'Open issue issue-1' })).not.toBeInTheDocument();
+		await user.selectOptions(await screen.findByLabelText('Board status'), 'all');
 		await user.click(await screen.findByRole('button', { name: 'Open issue issue-1' }));
 		expect(screen.getByRole('dialog', { name: 'Issue issue-1' })).toHaveTextContent('failed: Tests failed');
 	});

@@ -8,6 +8,7 @@ import { matchesScope } from '../../lib/projectTree';
 import { useUiStore } from '../../lib/uiStore';
 import { useDashboard as useDashboardCtx } from './context';
 import { DashboardToolbar } from './DashboardToolbar';
+import { DataTable } from '../../components/DataTable';
 
 // ---------------------------------------------------------------------------
 // Projects tab
@@ -75,7 +76,7 @@ export function ProjectsTab() {
         actionTitle="Start a session in a project directory"
         onAction={openProjectPalette}
       />
-    <table>
+    <DataTable>
       <thead>
         <tr>
           <th>Project</th>
@@ -121,7 +122,7 @@ export function ProjectsTab() {
           </tr>
         ))}
       </tbody>
-    </table>
+    </DataTable>
     </div>
   );
 }

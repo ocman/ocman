@@ -517,6 +517,7 @@ type Issue struct {
 	Description    string                        `json:"description,omitempty"`
 	PlanRevision   int                           `json:"planRevision,omitempty"`
 	ManifestKey    string                        `json:"manifestKey,omitempty"`
+	CreatedAt      int64                         `json:"createdAt,omitempty"`
 	RemovedAt      int64                         `json:"removedAt,omitempty"`
 	AttemptID      string                        `json:"attemptId,omitempty"`
 	Session        PlanningSession               `json:"session,omitempty"`
@@ -2331,7 +2332,7 @@ func nativeIssues(issues []model.NativeIssue) []Issue {
 	out := make([]Issue, len(issues))
 	for i := range issues {
 		issue := issues[i]
-		out[i] = Issue{ID: issue.ID, EpicID: issue.EpicID, ParentID: issue.ParentID, Requirement: issue.Requirement, FormulaID: issue.FormulaID, FormulaVersion: issue.FormulaVersion, FormulaHash: issue.FormulaHash, Bindings: issue.Bindings, Kind: issue.Kind, Title: issue.Title, Status: issue.Status, Description: issue.Description, PlanRevision: issue.PlanRevision, ManifestKey: issue.ManifestKey, Outcome: issue.Outcome, OutcomeReason: issue.OutcomeReason, DispatchState: issue.DispatchState, Blockers: issue.Blockers, DependsOn: issue.DependsOn, RetryAt: issue.RetryAt, RetryAttempts: issue.RetryAttempts, RemovedAt: issue.RemovedAt}
+		out[i] = Issue{ID: issue.ID, EpicID: issue.EpicID, ParentID: issue.ParentID, Requirement: issue.Requirement, FormulaID: issue.FormulaID, FormulaVersion: issue.FormulaVersion, FormulaHash: issue.FormulaHash, Bindings: issue.Bindings, Kind: issue.Kind, Title: issue.Title, Status: issue.Status, Description: issue.Description, PlanRevision: issue.PlanRevision, ManifestKey: issue.ManifestKey, Outcome: issue.Outcome, OutcomeReason: issue.OutcomeReason, DispatchState: issue.DispatchState, Blockers: issue.Blockers, DependsOn: issue.DependsOn, RetryAt: issue.RetryAt, RetryAttempts: issue.RetryAttempts, CreatedAt: issue.CreatedAt, RemovedAt: issue.RemovedAt}
 	}
 	return out
 }

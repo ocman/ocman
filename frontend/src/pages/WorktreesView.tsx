@@ -11,6 +11,7 @@ import { useOpencodeLaunch } from '../lib/useCapabilities';
 import { sessionsForWorktree } from '../lib/worktrees';
 import { WorktreesTableSkeleton } from '../components/Skeleton';
 import { ProjectLabel } from '../components/ProjectLabel';
+import { DataTable } from '../components/DataTable';
 import './Dashboard.css';
 import './WorktreesView.css';
 
@@ -135,7 +136,7 @@ export function WorktreesView() {
       ) : error ? (
         <div className="oc-list-error">{error}</div>
       ) : (
-        <table>
+        <DataTable>
           <thead>
             <tr>
               <th>Branch</th>
@@ -232,7 +233,7 @@ export function WorktreesView() {
               ))
             )}
           </tbody>
-        </table>
+        </DataTable>
       )}
     </div>
   );

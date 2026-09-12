@@ -1,4 +1,5 @@
 import './Skeleton.css';
+import { DataTable } from './DataTable';
 
 // ---------------------------------------------------------------------------
 // Skeleton — base shimmer block.
@@ -35,7 +36,7 @@ interface SessionTableSkeletonProps {
 
 export function SessionTableSkeleton({ rows = 5, showProject = false }: SessionTableSkeletonProps) {
   return (
-    <table aria-busy="true" aria-label="Loading sessions">
+    <DataTable aria-busy="true" aria-label="Loading sessions">
       <thead>
         <tr>
           <th>Session</th>
@@ -70,7 +71,7 @@ export function SessionTableSkeleton({ rows = 5, showProject = false }: SessionT
           </tr>
         ))}
       </tbody>
-    </table>
+    </DataTable>
   );
 }
 
@@ -85,7 +86,7 @@ interface WorktreesTableSkeletonProps {
 
 export function WorktreesTableSkeleton({ rows = 3 }: WorktreesTableSkeletonProps) {
   return (
-    <table aria-busy="true" aria-label="Loading worktrees">
+    <DataTable aria-busy="true" aria-label="Loading worktrees">
       <thead>
         <tr>
           <th>Branch</th>
@@ -120,7 +121,7 @@ export function WorktreesTableSkeleton({ rows = 3 }: WorktreesTableSkeletonProps
           </tr>
         ))}
       </tbody>
-    </table>
+    </DataTable>
   );
 }
 

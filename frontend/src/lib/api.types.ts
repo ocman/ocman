@@ -222,6 +222,7 @@ export interface FactoryIssue {
   description?: string;
 	planRevision?: number;
 	manifestKey?: string;
+	createdAt?: number;
 	removedAt?: number;
 	attemptId?: string;
 	session?: { platform: string; id: string };

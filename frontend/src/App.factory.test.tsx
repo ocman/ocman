@@ -120,8 +120,8 @@ describe('Factory routes', () => {
     vi.mocked(useFactoryGraphIssues).mockReturnValue([{ data: [{ id: 'issue-1', epicId: epic.id, kind: 'plan', title: 'Plan Factory', status: 'open' }], isLoading: false, isError: false }] as never);
     renderRoute('/factory/issues');
     expect(screen.getByRole('heading', { name: 'Factory issues' })).toBeInTheDocument();
-    expect(screen.getByText('issue-1')).toBeInTheDocument();
+		expect(screen.getByText('#issue-1')).toBeInTheDocument();
     expect(screen.getByText('Plan Factory')).toBeInTheDocument();
-    expect(screen.getByText('open')).toBeInTheDocument();
+		expect(screen.getByRole('region', { name: 'Open issues' })).toBeInTheDocument();
   });
 });

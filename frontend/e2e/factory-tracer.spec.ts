@@ -50,9 +50,10 @@ test('Factory tracer approves a plan, checkpoints implementation, delivers a PR,
 
   await page.goto('/factory/epics');
   await page.getByRole('button', { name: 'New epic' }).click();
+  const createEpic = page.getByRole('dialog', { name: 'Create epic' });
   await page.getByLabel('Goal').fill(epic.goal);
   await page.getByRole('combobox', { name: 'Initial Factory project' }).click();
-  await page.getByRole('option', { name: '/repo' }).click();
+  await createEpic.getByRole('option', { name: '/repo' }).click();
   await page.getByRole('checkbox', { name: 'Allow Factory agents to run commands in this project' }).check();
   await page.getByRole('button', { name: 'Create epic', exact: true }).click();
   await page.getByRole('link', { name: epic.goal }).click();
@@ -65,8 +66,9 @@ test('Factory tracer approves a plan, checkpoints implementation, delivers a PR,
   await page.getByRole('button', { name: 'Approve plan' }).click();
   await approving;
   await page.reload();
-  await expect(page.getByTestId('issue-title-ship-a1b2.1.4')).toHaveText('Implementation');
-  await expect(page.getByTestId('issue-title-ship-a1b2.1')).toHaveCount(0);
+  await page.getByLabel('Board status').selectOption('all');
+  await expect(page.getByRole('button', { name: 'Open issue ship-a1b2.1.4' })).toHaveText('Implementation');
+  await expect(page.getByRole('button', { name: 'Open issue ship-a1b2.1', exact: true })).toHaveCount(0);
   await expect(page.getByText('Closure blocked by: Final delivery')).toBeVisible();
   const prematureClose = posted(`/api/factory/epics/${epic.id}/close`);
   page.once('dialog', (dialog) => dialog.dismiss());
@@ -77,6 +79,7 @@ test('Factory tracer approves a plan, checkpoints implementation, delivers a PR,
   // Simulate the final delivery agent completing after the implementation checkpoint.
   delivered = true;
   await page.reload();
+  await page.getByLabel('Board status').selectOption('all');
   await expect(page.getByText('Required work: 2/2 complete. Optional work open: 0.')).toBeVisible();
   await page.getByRole('button', { name: 'Open issue ship-a1b2.1.5', exact: true }).click();
   await expect(page.getByRole('link', { name: prURL })).toHaveAttribute('href', prURL);
@@ -114,9 +117,10 @@ test('Factory tracer rejects a plan without creating implementation work', async
 
   await page.goto('/factory/epics');
   await page.getByRole('button', { name: 'New epic' }).click();
+  const createEpic = page.getByRole('dialog', { name: 'Create epic' });
   await page.getByLabel('Goal').fill(epic.goal);
   await page.getByRole('combobox', { name: 'Initial Factory project' }).click();
-  await page.getByRole('option', { name: '/repo' }).click();
+  await createEpic.getByRole('option', { name: '/repo' }).click();
   await page.getByRole('checkbox', { name: 'Allow Factory agents to run commands in this project' }).check();
   await page.getByRole('button', { name: 'Create epic', exact: true }).click();
   await page.getByRole('link', { name: epic.goal }).click();
@@ -128,6 +132,19 @@ test('Factory tracer rejects a plan without creating implementation work', async
   await expect(page.getByRole('status')).toHaveText('Plan rejected.');
   await page.reload();
   await expect(page.getByText('Implementation', { exact: true })).toHaveCount(0);
+});
+
+test('Factory issues keep every rendered row reachable', async ({ mockedPage: page }) => {
+  const epic = { id: 'many-issues', status: 'open', goal: 'Many issues', brief: '', initialProject: '/repo', attempts: [] };
+  const issues = Array.from({ length: 20 }, (_, index) => ({ id: `many-issues.${index + 1}`, epicId: epic.id, kind: 'task', title: `Issue ${index + 1}`, status: 'open' }));
+  await page.route('/api/factory/epics', (route) => route.fulfill({ json: [epic] }));
+  await page.route(`/api/factory/epics/${epic.id}/issues`, (route) => route.fulfill({ json: issues }));
+
+  await page.goto('/factory/issues');
+
+  await page.getByRole('button', { name: 'Open issue many-issues.20' }).click();
+  await expect(page.getByRole('dialog', { name: 'Issue many-issues.20' })).toBeVisible();
+  await expect(page.locator('.factory-list')).toHaveJSProperty('scrollHeight', await page.locator('.factory-list').evaluate((list) => list.clientHeight));
 });
 
 test.describe('narrow Factory navigation', () => {

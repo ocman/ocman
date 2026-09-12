@@ -1,9 +1,19 @@
 import { useDeferredValue, useState, type FormEvent } from 'react';
 import { Link, NavLink, useNavigate, useParams } from 'react-router-dom';
 import { Modal } from '../components/Modal';
-import type { FactoryIssue } from '../lib/api';
+import { SearchField, SelectField } from '../components/Control';
+import { ProjectLabel } from '../components/ProjectLabel';
+import { DataTableGroup, DataTableRow } from '../components/DataTable';
+import type { FactoryEpic, FactoryIssue } from '../lib/api';
 import { useAddFactoryIssueComment, useFactoryGraphIssues, useFactoryIssueComments, useWorkEpics } from '../lib/queries';
+import './Factory.css';
 import './FactoryIssues.css';
+
+const issueIcons: Record<string, string> = { plan: 'bi-map', implementation: 'bi-code-square', delivery: 'bi-box-arrow-up-right', gate: 'bi-sign-stop', task: 'bi-check2-square', mol: 'bi-diagram-3', materialization: 'bi-bezier2' };
+
+export function FactoryIssueRow({ issue, epic, onOpen }: { issue: FactoryIssue; epic?: Pick<FactoryEpic, 'initialProject'>; onOpen: () => void }) {
+	return <DataTableRow primary={<div className="factory-list-title-line"><i className={`bi ${issueIcons[issue.kind] ?? 'bi-circle'} factory-list-type-icon`} role="img" aria-label={`${issue.kind} issue`} /><button type="button" aria-label={`Open issue ${issue.id}`} onClick={onOpen}>{issue.title}</button></div>} secondary={<span className="factory-list-subline"><span>#{issue.id}</span>{!!issue.createdAt && <> · <time dateTime={new Date(issue.createdAt).toISOString()} title={new Date(issue.createdAt).toLocaleString()}>created {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(issue.createdAt)}</time></>}</span>} meta={<>{epic && <span className="factory-chip"><ProjectLabel path={epic.initialProject} /></span>}<span className="factory-chip">{issue.epicId}</span>{issue.requirement && <span className="factory-chip">{issue.requirement}</span>}{issue.outcome && <span className={`factory-chip${issue.outcome === 'failed' ? ' factory-chip--danger' : ''}`}>{issue.outcome}</span>}</>} />;
+}
 
 export function IssueDrawer({ issue, onClose }: { issue: FactoryIssue; onClose: () => void }) {
 	const comments = useFactoryIssueComments(issue.epicId, issue.id);
@@ -48,21 +58,34 @@ export function FactoryIssues() {
   const epics = useWorkEpics();
   const queries = useFactoryGraphIssues(epics.data);
   const [query, setQuery] = useState('');
+	const [status, setStatus] = useState('active');
+	const [kind, setKind] = useState('');
+	const [project, setProject] = useState('');
   const search = useDeferredValue(query.trim().toLowerCase());
   const issues = queries.flatMap((result) => result.data ?? []);
   const selected = issues.find((issue) => issue.id === issueId);
-  const visible = issues.filter((issue) => `${issue.id} ${issue.title} ${issue.status}`.toLowerCase().includes(search));
+	const epicByID = new Map(epics.data?.map((epic) => [epic.id, epic]));
+	const kinds = [...new Set(issues.map((issue) => issue.kind))].sort();
+	const projects = [...new Set(epics.data?.map((epic) => epic.initialProject) ?? [])].sort();
+	const closed = (issue: FactoryIssue) => issue.status === 'closed' || issue.status === 'completed';
+	const filtered = issues.filter((issue) => `${issue.id} ${issue.title} ${issue.status} ${issue.kind} ${epicByID.get(issue.epicId)?.goal ?? ''}`.toLowerCase().includes(search) && (!kind || issue.kind === kind) && (!project || epicByID.get(issue.epicId)?.initialProject === project));
+	const closedCount = filtered.filter(closed).length;
+	const visible = filtered.filter((issue) => status === 'all' || (status === 'closed' ? closed(issue) : !closed(issue)));
+	const statusGroups: Record<string, string> = { in_progress: 'In progress', blocked: 'Blocked', retry_wait: 'Waiting', deferred: 'Waiting', open: 'Open', closed: 'Closed', completed: 'Closed' };
+	const groupFor = (issue: FactoryIssue) => statusGroups[issue.status] ?? issue.status.replaceAll('_', ' ').replace(/^./, (letter) => letter.toUpperCase());
+	const groupOrder = ['In progress', 'Blocked', 'Open', 'Waiting', 'Closed'];
+	const groups = [...new Set(visible.map(groupFor))].sort((a, b) => groupOrder.indexOf(a) - groupOrder.indexOf(b));
   const failed = queries.find((result) => result.isError);
 
   return <main className="factory-issue-page">
     <nav aria-label="Factory"><NavLink to="/factory/overview">Overview</NavLink><NavLink to="/factory/epics">Epics</NavLink><NavLink to="/factory/issues">Issues</NavLink><NavLink to="/factory/queue">Queue</NavLink><NavLink to="/factory/configuration">Configuration</NavLink><NavLink to="/factory/how-to" className={({ isActive }) => `factory-how-to-link${isActive ? ' active' : ''}`}><i className="bi bi-book" aria-hidden="true" />How to</NavLink></nav>
     <h2>Factory issues</h2>
-    <div className="factory-issue-toolbar" role="search"><label>Find issues<input type="search" value={query} onChange={(event) => setQuery(event.target.value)} /></label></div>
+		<div className="factory-issue-toolbar factory-filter-bar" role="search"><label>Find issues<SearchField value={query} onChange={(event) => setQuery(event.target.value)} /></label><label>Issue status<SelectField value={status} onChange={(event) => setStatus(event.target.value)}><option value="active">Open only</option><option value="all">Open + closed</option><option value="closed">Closed only</option></SelectField></label><label>Issue type<SelectField value={kind} onChange={(event) => setKind(event.target.value)}><option value="">All types</option>{kinds.map((value) => <option key={value} value={value}>{value}</option>)}</SelectField></label><label>Issue project<SelectField value={project} onChange={(event) => setProject(event.target.value)}><option value="">All projects</option>{projects.map((value) => <option key={value} value={value}>{value}</option>)}</SelectField></label><span className="factory-result-count" aria-live="polite">{visible.length} shown{status === 'active' && closedCount > 0 ? ` · ${closedCount} closed hidden` : status === 'all' && closedCount > 0 ? ` · ${closedCount} closed` : ''}</span></div>
     {(epics.isLoading || queries.some((result) => result.isLoading)) && <p role="status">Loading issues...</p>}
     {epics.isError && <p role="alert">{epics.error instanceof Error ? epics.error.message : 'Factory issues are unavailable.'} <button type="button" onClick={() => void epics.refetch()}>Retry</button></p>}
     {failed && <p role="alert">{failed.error instanceof Error ? failed.error.message : 'Factory issues are unavailable.'} <button type="button" onClick={() => void failed.refetch()}>Retry</button></p>}
     {!epics.isLoading && !epics.isError && !failed && !visible.length && <p className="oc-empty">{issues.length ? 'No issues match this search.' : 'No Factory issues yet.'}</p>}
-    {!!visible.length && <div className="factory-ticket-table-wrap"><table className="factory-ticket-table"><thead><tr><th>ID</th><th>Title</th><th>Status</th></tr></thead><tbody>{visible.map((issue) => <tr key={issue.id}><td>{issue.id}</td><td><button type="button" aria-label={`Open issue ${issue.id}`} onClick={() => navigate(`/factory/issues/${encodeURIComponent(issue.id)}`)}>{issue.title}</button></td><td><span>{issue.status}</span></td></tr>)}</tbody></table></div>}
+		{!!visible.length && <div className="factory-list" aria-label="Issues">{groups.map((group) => { const items = visible.filter((issue) => groupFor(issue) === group); return <DataTableGroup key={group} label={group} noun="issues" count={items.length} markerClassName={`factory-status-dot--${group.toLowerCase().replaceAll(' ', '-')}`}>{items.map((issue) => <FactoryIssueRow key={issue.id} issue={issue} epic={epicByID.get(issue.epicId)} onOpen={() => navigate(`/factory/issues/${encodeURIComponent(issue.id)}`)} />)}</DataTableGroup>; })}</div>}
     {selected && <IssueDrawer key={selected.id} issue={selected} onClose={() => navigate('/factory/issues')} />}
   </main>;
 }

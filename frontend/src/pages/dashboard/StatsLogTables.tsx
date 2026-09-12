@@ -28,6 +28,7 @@ import {
 } from '../../lib/chartConfig';
 import { MetricCard, ChartCard } from './shared';
 import { ModelLabel } from '../../components/ModelLogo';
+import { DataTable } from '../../components/DataTable';
 
 const dim = { color: 'var(--text-dim)' } as const;
 const dash = <span style={dim}>—</span>;
@@ -206,7 +207,7 @@ export function SessionLogTable({
   const navigate = useNavigate();
   return (
     <div className="metrics-table-wrap">
-      <table>
+      <DataTable>
         <thead>
           <tr>
             <th>#</th>
@@ -234,7 +235,7 @@ export function SessionLogTable({
             </tr>
           ))}
         </tbody>
-      </table>
+      </DataTable>
     </div>
   );
 }
@@ -249,7 +250,7 @@ export function ProjectLogTable({
   const navigate = useNavigate();
   return (
     <div className="metrics-table-wrap">
-      <table>
+      <DataTable>
         <thead>
           <tr>
             <th>#</th>
@@ -274,7 +275,7 @@ export function ProjectLogTable({
             </tr>
           ))}
         </tbody>
-      </table>
+      </DataTable>
     </div>
   );
 }
@@ -289,7 +290,7 @@ export function RequestLogTable({
   const navigate = useNavigate();
   return (
     <div className="metrics-table-wrap">
-      <table>
+      <DataTable>
         <thead>
           <tr>
             <th>#</th>
@@ -334,7 +335,7 @@ export function RequestLogTable({
             </tr>
           ))}
         </tbody>
-      </table>
+      </DataTable>
     </div>
   );
 }
