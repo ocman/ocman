@@ -2,6 +2,7 @@ package autoapprove
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -10,6 +11,37 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 )
+
+func TestCreateJudgeSessionHiddenAtCreation(t *testing.T) {
+	const title = "(auto-approve subagent)"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/session" {
+			var payload map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Error(err)
+			}
+			// OpenCode publishes session.created before returning this response.
+			// The sidebar's subagent title filter must already apply then.
+			if payload["title"] != title {
+				t.Errorf("session visible at creation: title = %q, want %q", payload["title"], title)
+			}
+			if payload["directory"] != "/project" {
+				t.Errorf("directory = %q, want /project", payload["directory"])
+			}
+			_, _ = w.Write([]byte(`{"id":"judge"}`))
+			return
+		}
+		t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+	u, _ := url.Parse(server.URL)
+	j := &PermissionJudge{httpClient: server.Client()}
+	id, err := j.createSession(context.Background(), u.Port(), "/project", title)
+	if err != nil || id != "judge" {
+		t.Fatalf("createSession = %q, %v", id, err)
+	}
+}
 
 func TestPermissionJudgeAuthenticatesRequests(t *testing.T) {
 	const password = "judge-secret"

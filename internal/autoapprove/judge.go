@@ -401,7 +401,9 @@ func (j *PermissionJudge) JudgeWithCallback(ctx context.Context, directory, perm
 // createSession creates a new OpenCode session in the given directory,
 // sets the given title, and returns the session ID.
 func (j *PermissionJudge) createSession(ctx context.Context, port, directory, title string) (string, error) {
-	payload, _ := json.Marshal(map[string]string{"directory": directory})
+	// Set the title at creation so the sidebar's subagent filter applies
+	// before session.created is published, without a create-then-rename gap.
+	payload, _ := json.Marshal(map[string]string{"directory": directory, "title": title})
 	apiURL := fmt.Sprintf("http://127.0.0.1:%s/session", port)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(payload))
 	if err != nil {
@@ -422,21 +424,6 @@ func (j *PermissionJudge) createSession(ctx context.Context, port, directory, ti
 	body, _ := io.ReadAll(resp.Body)
 	if err := json.Unmarshal(body, &parsed); err != nil || parsed.ID == "" {
 		return "", fmt.Errorf("create session: could not parse session ID from response")
-	}
-
-	// Set the title so the session is identifiable in the sidebar.
-	if title != "" {
-		titlePayload, _ := json.Marshal(map[string]string{"title": title})
-		titleURL := fmt.Sprintf("http://127.0.0.1:%s/session/%s", port, parsed.ID)
-		titleReq, err := http.NewRequestWithContext(ctx, http.MethodPatch, titleURL, bytes.NewReader(titlePayload))
-		if err == nil {
-			titleReq.Header.Set("Content-Type", "application/json")
-			titleResp, err := j.httpClient.Do(titleReq)
-			if err == nil {
-				titleResp.Body.Close()
-			}
-		}
-		// Title setting is best-effort — don't fail the whole judge if it doesn't work.
 	}
 
 	return parsed.ID, nil
