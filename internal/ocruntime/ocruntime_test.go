@@ -34,6 +34,7 @@ func TestAllocateLoopbackPort_BindsSuccessfully(t *testing.T) {
 // fakeLaunch records the launch call so we can assert the port was
 // threaded into the pane command.
 type fakeLaunch struct {
+	ctx          context.Context
 	dir, command string
 	env          map[string]string
 	session      string
@@ -41,8 +42,9 @@ type fakeLaunch struct {
 	calls        int
 }
 
-func (f *fakeLaunch) fn(dir, command string, env map[string]string) (string, error) {
+func (f *fakeLaunch) fn(ctx context.Context, dir, command string, env map[string]string) (string, error) {
 	f.calls++
+	f.ctx = ctx
 	f.dir, f.command, f.env = dir, command, env
 	if f.session == "" {
 		f.session = "~/src/repo"
@@ -53,8 +55,10 @@ func (f *fakeLaunch) fn(dir, command string, env map[string]string) (string, err
 func TestNativeLaunch_ThreadsPortPermissionAndPassword(t *testing.T) {
 	f := &fakeLaunch{}
 	rt := &NativeRuntime{launch: f.fn, auth: ocapi.New("managed-secret")}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
 
-	inst, err := rt.Launch(context.Background(), LaunchSpec{
+	inst, err := rt.Launch(ctx, LaunchSpec{
 		RepoRoot:       "/home/u/src/repo",
 		Port:           41235,
 		PermissionJSON: `{"external_directory":{}}`,
@@ -65,6 +69,9 @@ func TestNativeLaunch_ThreadsPortPermissionAndPassword(t *testing.T) {
 
 	if f.calls != 1 {
 		t.Fatalf("launch calls = %d, want 1", f.calls)
+	}
+	if f.ctx != ctx {
+		t.Error("launch did not receive the caller context")
 	}
 	// Port threaded into the command, not --port 0.
 	if !strings.Contains(f.command, "--port 41235") {
@@ -275,13 +282,19 @@ func TestNativeProbe_IdentityUnavailable(t *testing.T) {
 
 func TestNativeStop(t *testing.T) {
 	var killed string
-	rt := &NativeRuntime{kill: func(s string) error { killed = s; return nil }}
+	var gotCtx context.Context
+	rt := &NativeRuntime{kill: func(ctx context.Context, s string) error { gotCtx, killed = ctx, s; return nil }}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
 
-	if err := rt.Stop(context.Background(), &Instance{ID: "~/src/repo"}); err != nil {
+	if err := rt.Stop(ctx, &Instance{ID: "~/src/repo"}); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
 	if killed != "~/src/repo" {
 		t.Errorf("killed session = %q, want ~/src/repo", killed)
+	}
+	if gotCtx != ctx {
+		t.Error("kill did not receive the caller context")
 	}
 
 	// No ID -> error, no kill.

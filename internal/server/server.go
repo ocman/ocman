@@ -586,7 +586,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// earlier process (e.g. after an air rebuild / crash). They can
 	// never belong to a live connection at boot, so this self-heals the
 	// old per-viewer session leak. Cheap and safe when tmux is absent.
-	term.SweepLegacySessions()
+	term.SweepLegacySessions(ctx)
 
 	// Start the server in a goroutine so we can wait for the context.
 	errCh := make(chan error, 1)

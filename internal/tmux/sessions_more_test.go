@@ -85,7 +85,7 @@ func TestListWindows(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			readLog := fakeTmux(t, tt.body)
 
-			got, err := ListWindows("repo")
+			got, err := ListWindows(t.Context(), "repo")
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("want error, got nil")
@@ -146,7 +146,7 @@ func TestListSessionsCmd(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fakeTmux(t, tt.body)
 
-			got, err := ListSessions()
+			got, err := ListSessions(t.Context())
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("want error, got nil")
@@ -196,7 +196,7 @@ func TestListClientsCmd(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fakeTmux(t, tt.body)
 
-			got, err := ListClients()
+			got, err := ListClients(t.Context())
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("want error, got nil")
@@ -227,7 +227,7 @@ func TestSwitchClient(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			readLog := fakeTmux(t, tt.body)
 
-			err := SwitchClient("/dev/ttys001", "repo")
+			err := SwitchClient(t.Context(), "/dev/ttys001", "repo")
 			if tt.wantErr != (err != nil) {
 				t.Fatalf("SwitchClient() error = %v, wantErr %v", err, tt.wantErr)
 			}
@@ -283,7 +283,7 @@ func TestLaunchOpencodeCmd(t *testing.T) {
 				dir = filepath.Join(home, tt.dirUnder)
 			}
 
-			name, err := LaunchOpencode(dir)
+			name, err := LaunchOpencode(t.Context(), dir)
 			if tt.wantErr != "" {
 				if err == nil {
 					t.Fatalf("want error containing %q, got nil", tt.wantErr)
@@ -366,7 +366,7 @@ func TestLaunchOpencodeEnvCmd(t *testing.T) {
 				dir = filepath.Join(home, "src/repo")
 			}
 
-			name, launched, err := LaunchOpencodeEnv(dir, map[string]string{"OPENCODE_PERMISSION": "{}"})
+			name, launched, err := LaunchOpencodeEnv(t.Context(), dir, map[string]string{"OPENCODE_PERMISSION": "{}"})
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("error = %v; want it to contain %q", err, tt.wantErr)
@@ -439,7 +439,7 @@ func TestRestartOpencodeCmd(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			readLog := fakeTmux(t, tt.body)
 
-			target, err := RestartOpencode("/tmp/repo")
+			target, err := RestartOpencode(t.Context(), "/tmp/repo")
 			switch {
 			case tt.wantErrIs != nil:
 				if !errors.Is(err, tt.wantErrIs) {

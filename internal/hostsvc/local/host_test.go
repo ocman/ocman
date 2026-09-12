@@ -109,30 +109,42 @@ func TestLocalHost_GitMethods(t *testing.T) {
 
 func TestLocalHost_InjectedDeps(t *testing.T) {
 	var launchedDir string
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var gotContexts []context.Context
 	h := New(Deps{
-		LaunchTmux: func(dir string) (string, error) {
+		LaunchTmux: func(got context.Context, dir string) (string, error) {
+			gotContexts = append(gotContexts, got)
 			launchedDir = dir
 			return "sess-name", nil
 		},
-		TmuxSessions: func() ([]hostsvc.TmuxSession, error) {
+		TmuxSessions: func(got context.Context) ([]hostsvc.TmuxSession, error) {
+			gotContexts = append(gotContexts, got)
 			return []hostsvc.TmuxSession{{Name: "s"}}, nil
 		},
 		Projects: func(context.Context) ([]db.ProjectStats, error) {
 			return []db.ProjectStats{{Directory: "/p"}}, nil
 		},
-		TermWindows: func(dir string) ([]hostsvc.TermWindow, error) {
+		TermWindows: func(got context.Context, dir string) ([]hostsvc.TermWindow, error) {
+			gotContexts = append(gotContexts, got)
 			return []hostsvc.TermWindow{{Name: "w", Title: dir}}, nil
 		},
-		TermCreateWindow: func(dir string) (string, error) { return "win-" + dir, nil },
-		TermKillWindow:   func(string, string) error { return nil },
-		TermAttach: func(_ context.Context, req hostsvc.TermAttachRequest, _ hostsvc.TermConn) error {
+		TermCreateWindow: func(got context.Context, dir string) (string, error) {
+			gotContexts = append(gotContexts, got)
+			return "win-" + dir, nil
+		},
+		TermKillWindow: func(got context.Context, _, _ string) error {
+			gotContexts = append(gotContexts, got)
+			return nil
+		},
+		TermAttach: func(got context.Context, req hostsvc.TermAttachRequest, _ hostsvc.TermConn) error {
+			gotContexts = append(gotContexts, got)
 			if req.Dir != "/d" {
 				t.Errorf("TermAttach dir = %q", req.Dir)
 			}
 			return nil
 		},
 	})
-	ctx := context.Background()
 
 	res, err := h.LaunchTmux(ctx, hostsvc.LaunchTmuxRequest{Directory: "/d"})
 	if err != nil || res.Session != "sess-name" || launchedDir != "/d" {
@@ -162,6 +174,14 @@ func TestLocalHost_InjectedDeps(t *testing.T) {
 	}
 	if err := h.TermAttach(ctx, hostsvc.TermAttachRequest{Dir: "/d"}, nil); err != nil {
 		t.Fatalf("TermAttach: %v", err)
+	}
+	if len(gotContexts) != 6 {
+		t.Fatalf("context-bearing dependency calls = %d, want 6", len(gotContexts))
+	}
+	for i, got := range gotContexts {
+		if got != ctx {
+			t.Errorf("dependency context %d was not the caller context", i)
+		}
 	}
 }
 

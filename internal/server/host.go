@@ -74,8 +74,8 @@ func (s *Server) resolveOwner(w http.ResponseWriter, dir, remoteID string) (host
 }
 
 // hostTmuxSessions adapts listTmuxSessions to the hostsvc shape.
-func (s *Server) hostTmuxSessions() ([]hostsvc.TmuxSession, error) {
-	sessions, err := tmux.ListSessions()
+func (s *Server) hostTmuxSessions(ctx context.Context) ([]hostsvc.TmuxSession, error) {
+	sessions, err := tmux.ListSessions(ctx)
 	if err != nil {
 		return nil, err
 	}

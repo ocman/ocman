@@ -1,6 +1,7 @@
 package tmux
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 )
@@ -17,7 +18,7 @@ func TestLaunchOpencodeEnvWith_SeedsEnvOnNewSession(t *testing.T) {
 
 	f := &fakeEnvRunner{}
 
-	name, launched, err := LaunchOpencodeEnvWith(f.toRunner(), dir, true,
+	name, launched, err := LaunchOpencodeEnvWith(t.Context(), f.toRunner(), dir, true,
 		map[string]string{"OPENCODE_PERMISSION": `{"external_directory":{}}`})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -50,7 +51,7 @@ func TestLaunchOpencodeEnvWith_IdempotentReuse(t *testing.T) {
 
 	f := &fakeEnvRunner{existing: []Session{{Name: wantName, ResolvedPath: dir}}}
 
-	name, launched, err := LaunchOpencodeEnvWith(f.toRunner(), dir, true,
+	name, launched, err := LaunchOpencodeEnvWith(t.Context(), f.toRunner(), dir, true,
 		map[string]string{"OPENCODE_PERMISSION": "{}"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -77,7 +78,7 @@ func TestLaunchOpencodeEnvWith_EnvOnNewWindow(t *testing.T) {
 
 	f := &fakeEnvRunner{existing: []Session{{Name: wantName, ResolvedPath: dir}}}
 
-	_, launched, err := LaunchOpencodeEnvWith(f.toRunner(), dir, false,
+	_, launched, err := LaunchOpencodeEnvWith(t.Context(), f.toRunner(), dir, false,
 		map[string]string{"OPENCODE_PERMISSION": "{}"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -109,9 +110,9 @@ type fakeEnvRunner struct {
 
 func (f *fakeEnvRunner) toRunner() Runner {
 	return Runner{
-		ListSessions: func() ([]Session, error) { return f.existing, f.listErr },
-		ListWindows:  func(string) ([]Window, error) { return nil, nil },
-		NewSessionEnv: func(name, _, command string, env map[string]string) error {
+		ListSessions: func(context.Context) ([]Session, error) { return f.existing, f.listErr },
+		ListWindows:  func(context.Context, string) ([]Window, error) { return nil, nil },
+		NewSessionEnv: func(_ context.Context, name, _, command string, env map[string]string) error {
 			if f.newEnvErr != nil {
 				return f.newEnvErr
 			}
@@ -120,7 +121,7 @@ func (f *fakeEnvRunner) toRunner() Runner {
 			f.newSessionCmd = append(f.newSessionCmd, command)
 			return nil
 		},
-		NewWindowEnv: func(_, _, command string, env map[string]string) error {
+		NewWindowEnv: func(_ context.Context, _, _, command string, env map[string]string) error {
 			if f.newWinErr != nil {
 				return f.newWinErr
 			}

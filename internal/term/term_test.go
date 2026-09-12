@@ -187,7 +187,7 @@ func TestLooksLikeHostname(t *testing.T) {
 func TestAllTermWindowNames_NoTmuxServerReturnsEmpty(t *testing.T) {
 	installFakeTmux(t, "error connecting to /private/tmp/tmux-501/default (No such file or directory)")
 
-	names, err := allTermWindowNames()
+	names, err := allTermWindowNames(t.Context())
 	if err != nil {
 		t.Fatalf("allTermWindowNames() error = %v", err)
 	}
@@ -199,7 +199,7 @@ func TestAllTermWindowNames_NoTmuxServerReturnsEmpty(t *testing.T) {
 func TestAllTermWindowNames_TmuxPermissionErrorReturnsError(t *testing.T) {
 	installFakeTmux(t, "error connecting to /private/tmp/tmux-501/default (Permission denied)")
 
-	_, err := allTermWindowNames()
+	_, err := allTermWindowNames(t.Context())
 	if err == nil {
 		t.Fatal("allTermWindowNames() error = nil, want error")
 	}
@@ -290,7 +290,7 @@ func TestTermWindowLifecycle_Integration(t *testing.T) {
 	// terminals may be live in it.
 	cleanup := func() {
 		for _, dir := range []string{dirA, dirB} {
-			names, err := listTermWindowNames(dir)
+			names, err := listTermWindowNames(t.Context(), dir)
 			if err != nil {
 				continue
 			}
@@ -303,16 +303,16 @@ func TestTermWindowLifecycle_Integration(t *testing.T) {
 	cleanup() // pre-clean in case a previous run aborted
 
 	// Initially empty.
-	if got, err := listTermWindowNames(dirA); err != nil || len(got) != 0 {
+	if got, err := listTermWindowNames(t.Context(), dirA); err != nil || len(got) != 0 {
 		t.Fatalf("listTermWindowNames(dirA) = %v, %v; want empty", got, err)
 	}
 
 	// Create two windows for dirA; indices allocate 1, 2.
-	w1, err := CreateWindow(dirA)
+	w1, err := CreateWindow(t.Context(), dirA)
 	if err != nil {
 		t.Fatalf("CreateWindow(dirA) #1: %v", err)
 	}
-	w2, err := CreateWindow(dirA)
+	w2, err := CreateWindow(t.Context(), dirA)
 	if err != nil {
 		t.Fatalf("CreateWindow(dirA) #2: %v", err)
 	}
@@ -323,7 +323,7 @@ func TestTermWindowLifecycle_Integration(t *testing.T) {
 
 	// A window for a *different* dir gets its own hash namespace and a
 	// fresh index 1 (independent counters per dir).
-	wb, err := CreateWindow(dirB)
+	wb, err := CreateWindow(t.Context(), dirB)
 	if err != nil {
 		t.Fatalf("CreateWindow(dirB): %v", err)
 	}
@@ -332,11 +332,11 @@ func TestTermWindowLifecycle_Integration(t *testing.T) {
 	}
 
 	// list is scoped per dir.
-	listA, _ := listTermWindowNames(dirA)
+	listA, _ := listTermWindowNames(t.Context(), dirA)
 	if len(listA) != 2 {
 		t.Fatalf("dirA windows = %v; want 2", listA)
 	}
-	listB, _ := listTermWindowNames(dirB)
+	listB, _ := listTermWindowNames(t.Context(), dirB)
 	if len(listB) != 1 || listB[0] != wb {
 		t.Fatalf("dirB windows = %v; want [%s]", listB, wb)
 	}
@@ -348,7 +348,8 @@ func TestTermWindowLifecycle_Integration(t *testing.T) {
 	}
 
 	// existence checks.
-	if !termWindowExists(w1) {
+	exists, err := termWindowExists(t.Context(), w1)
+	if err != nil || !exists {
 		t.Fatalf("expected %q to exist", w1)
 	}
 
@@ -356,10 +357,14 @@ func TestTermWindowLifecycle_Integration(t *testing.T) {
 	if err := killWindowForTest(w1); err != nil {
 		t.Fatalf("kill %q: %v", w1, err)
 	}
-	if termWindowExists(w1) {
+	exists, err = termWindowExists(t.Context(), w1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exists {
 		t.Fatalf("expected %q to be gone after kill", w1)
 	}
-	w1b, err := CreateWindow(dirA)
+	w1b, err := CreateWindow(t.Context(), dirA)
 	if err != nil {
 		t.Fatalf("CreateWindow(dirA) after kill: %v", err)
 	}
@@ -369,7 +374,7 @@ func TestTermWindowLifecycle_Integration(t *testing.T) {
 
 	// ensureTermWindow reuses the lowest existing window rather than
 	// creating a new one.
-	ens, err := ensureTermWindow(dirA)
+	ens, err := ensureTermWindow(t.Context(), dirA)
 	if err != nil {
 		t.Fatalf("ensureTermWindow(dirA): %v", err)
 	}
@@ -379,7 +384,7 @@ func TestTermWindowLifecycle_Integration(t *testing.T) {
 
 	// titles: a freshly spawned shell is idle, so its title is empty
 	// (the UI falls back to the tab number).
-	infos, err := listTermWindowInfo(dirA)
+	infos, err := listTermWindowInfo(t.Context(), dirA)
 	if err != nil {
 		t.Fatalf("listTermWindowInfo(dirA): %v", err)
 	}
@@ -387,7 +392,8 @@ func TestTermWindowLifecycle_Integration(t *testing.T) {
 		t.Fatal("expected at least one window info")
 	}
 	// The session exists now.
-	if !ocmanSessionExists() {
+	exists, err = ocmanSessionExists(t.Context())
+	if err != nil || !exists {
 		t.Fatal("expected ocman-term session to exist after creating windows")
 	}
 }
@@ -456,7 +462,7 @@ func TestAttachLocalPTY_Integration(t *testing.T) {
 		t.Skip("tmux not available")
 	}
 	dir := t.TempDir()
-	win, err := CreateWindow(dir)
+	win, err := CreateWindow(t.Context(), dir)
 	if err != nil {
 		t.Fatalf("CreateWindow: %v", err)
 	}
@@ -464,10 +470,10 @@ func TestAttachLocalPTY_Integration(t *testing.T) {
 
 	conn := newFakeTermConn(
 		hostsvc.TermFrame{Resize: &hostsvc.TermSize{Cols: 100, Rows: 40}},
-		hostsvc.TermFrame{Data: []byte("printf OCMAN_MARKER\r")},
+		hostsvc.TermFrame{Data: []byte("sleep 2.2; printf OCMAN_%s MARKER\r")},
 	)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
 	attachDone := make(chan error, 1)
 	go func() {
@@ -500,7 +506,7 @@ func TestAttachLocalPTY_Integration(t *testing.T) {
 // asked to kill an arbitrary window. Runs without a tmux binary.
 func TestLocalTermKillWindow_RejectsCrossDir(t *testing.T) {
 	dir := t.TempDir()
-	err := KillWindow(dir, "ocman-deadbeef00-1") // valid shape, wrong hash
+	err := KillWindow(t.Context(), dir, "ocman-deadbeef00-1") // valid shape, wrong hash
 	if err == nil {
 		t.Fatal("expected error killing a cross-dir window, got nil")
 	}
@@ -510,14 +516,30 @@ func TestLocalTermKillWindow_RejectsCrossDir(t *testing.T) {
 // session doesn't exist yet, so the UI shows a clean "+" state rather
 // than erroring. With no tmux server running there is no session.
 func TestLocalTermWindows_EmptyWithoutSession(t *testing.T) {
-	if ocmanSessionExists() {
+	exists, err := ocmanSessionExists(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if exists {
 		t.Skip("ocman-term session already running in this environment")
 	}
-	wins, err := Windows(t.TempDir())
+	wins, err := Windows(t.Context(), t.TempDir())
 	if err != nil {
 		t.Fatalf("Windows: %v", err)
 	}
 	if wins == nil || len(wins) != 0 {
 		t.Fatalf("expected empty non-nil slice, got %#v", wins)
+	}
+}
+
+func TestTerminalExistenceChecksPropagateCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	if _, err := Windows(ctx, t.TempDir()); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Windows error = %v, want context canceled", err)
+	}
+	if _, err := termWindowExists(ctx, "ocman-deadbeef00-1"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("termWindowExists error = %v, want context canceled", err)
 	}
 }

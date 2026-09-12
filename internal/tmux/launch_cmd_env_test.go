@@ -102,7 +102,7 @@ func TestLaunchOpencodeCmdEnvWith(t *testing.T) {
 				newWinErr: tc.newWinErr,
 			}
 
-			name, launched, err := LaunchOpencodeCmdEnvWith(f.toRunner(), dir, cmd, tc.idempotent, env)
+			name, launched, err := LaunchOpencodeCmdEnvWith(t.Context(), f.toRunner(), dir, cmd, tc.idempotent, env)
 
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {

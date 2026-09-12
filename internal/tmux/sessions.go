@@ -1,6 +1,7 @@
 package tmux
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -125,8 +126,8 @@ var ValidComponent = regexp.MustCompile(`^[a-zA-Z0-9._/~-]+$`)
 var ValidTTYPath = regexp.MustCompile(`^/dev/(ttys?\d+|pts/\d+)$`)
 
 // ListClients returns all connected tmux clients.
-func ListClients() ([]Client, error) {
-	out, err := exec.Command("tmux", "list-clients", "-F", "#{client_tty}\t#{client_session}\t#{client_width}\t#{client_height}").Output()
+func ListClients(ctx context.Context) ([]Client, error) {
+	out, err := outputCommand(ctx, "list-clients", "-F", "#{client_tty}\t#{client_session}\t#{client_width}\t#{client_height}")
 	if err != nil {
 		return nil, err
 	}
@@ -151,8 +152,8 @@ func ListClients() ([]Client, error) {
 }
 
 // ListSessions returns all tmux sessions.
-func ListSessions() ([]Session, error) {
-	out, err := exec.Command("tmux", "list-sessions", "-F", "#{session_name}\t#{session_windows}").Output()
+func ListSessions(ctx context.Context) ([]Session, error) {
+	out, err := outputCommand(ctx, "list-sessions", "-F", "#{session_name}\t#{session_windows}")
 	if err != nil {
 		return nil, err
 	}
@@ -185,8 +186,8 @@ func ListSessions() ([]Session, error) {
 // `Path` is the current pane's working directory, which is good enough
 // for worktree-window matching because each worktree session runs a
 // single opencode process rooted at that directory.
-func ListWindows(sessionName string) ([]Window, error) {
-	out, err := exec.Command("tmux", "list-windows", "-t", sessionName, "-F", "#{window_name}\t#{pane_current_path}\t#{pane_current_command}\t#{pane_start_command}").Output()
+func ListWindows(ctx context.Context, sessionName string) ([]Window, error) {
+	out, err := outputCommand(ctx, "list-windows", "-t", sessionName, "-F", "#{window_name}\t#{pane_current_path}\t#{pane_current_command}\t#{pane_start_command}")
 	if err != nil {
 		return nil, err
 	}
@@ -218,18 +219,18 @@ func WindowRunsOpencode(win Window) bool {
 }
 
 // SwitchClient switches the given tmux client to the given session.
-func SwitchClient(clientTTY, targetSession string) error {
-	return exec.Command("tmux", "switch-client", "-c", clientTTY, "-t", targetSession).Run()
+func SwitchClient(ctx context.Context, clientTTY, targetSession string) error {
+	return runCommand(ctx, commandTimeout, "switch-client", "-c", clientTTY, "-t", targetSession)
 }
 
 // SwitchRunner abstracts the side-effectful calls used by
 // handleTmuxSwitch so that unit tests can inject fakes without
 // requiring a real tmux binary.
 type SwitchRunner struct {
-	ListSessions func() ([]Session, error)
-	ListClients  func() ([]Client, error)
-	ListWindows  func(sessionName string) ([]Window, error)
-	SwitchClient func(clientTTY, targetSession string) error
+	ListSessions func(context.Context) ([]Session, error)
+	ListClients  func(context.Context) ([]Client, error)
+	ListWindows  func(context.Context, string) ([]Window, error)
+	SwitchClient func(context.Context, string, string) error
 }
 
 var DefaultSwitchRunner = SwitchRunner{
@@ -281,33 +282,33 @@ func SessionNameForPath(directory string) string {
 //
 // Pass an empty `command` to start an ordinary login shell.
 type Runner struct {
-	ListSessions   func() ([]Session, error)
-	ListWindows    func(sessionName string) ([]Window, error)
-	NewSession     func(name, directory, command string) error
-	NewWindow      func(name, directory, command string) error
-	NewNamedWindow func(sessionName, windowName, directory, command string) error
-	KillSession    func(name string) error
-	KillWindow     func(target string) error
+	ListSessions   func(context.Context) ([]Session, error)
+	ListWindows    func(context.Context, string) ([]Window, error)
+	NewSession     func(context.Context, string, string, string) error
+	NewWindow      func(context.Context, string, string, string) error
+	NewNamedWindow func(context.Context, string, string, string, string) error
+	KillSession    func(context.Context, string) error
+	KillWindow     func(context.Context, string) error
 
 	// NewSessionEnv / NewWindowEnv mirror NewSession / NewWindow but seed
 	// the pane with the given environment (tmux `-e KEY=VAL`). Used by the
 	// one-opencode-per-project launcher to pass OPENCODE_PERMISSION at
 	// launch. Optional: only the env-aware launcher path uses them.
-	NewSessionEnv func(name, directory, command string, env map[string]string) error
-	NewWindowEnv  func(name, directory, command string, env map[string]string) error
+	NewSessionEnv func(context.Context, string, string, string, map[string]string) error
+	NewWindowEnv  func(context.Context, string, string, string, map[string]string) error
 }
 
 var DefaultRunner = Runner{
 	ListSessions: ListSessions,
 	ListWindows:  ListWindows,
-	NewSession: func(name, directory, command string) error {
+	NewSession: func(ctx context.Context, name, directory, command string) error {
 		args := []string{"new-session", "-d", "-s", name, "-c", directory}
 		if command != "" {
 			args = append(args, command)
 		}
-		return exec.Command("tmux", args...).Run()
+		return runCommand(ctx, commandTimeout, args...)
 	},
-	NewWindow: func(name, directory, command string) error {
+	NewWindow: func(ctx context.Context, name, directory, command string) error {
 		// -d: create the window without switching the session's active
 		// window, so a client already attached to this session keeps its
 		// current view instead of jumping to the freshly launched window.
@@ -315,36 +316,36 @@ var DefaultRunner = Runner{
 		if command != "" {
 			args = append(args, command)
 		}
-		return exec.Command("tmux", args...).Run()
+		return runCommand(ctx, commandTimeout, args...)
 	},
-	NewNamedWindow: func(sessionName, windowName, directory, command string) error {
+	NewNamedWindow: func(ctx context.Context, sessionName, windowName, directory, command string) error {
 		args := []string{"new-window", "-d", "-t", sessionName, "-n", windowName, "-c", directory}
 		if command != "" {
 			args = append(args, command)
 		}
-		return exec.Command("tmux", args...).Run()
+		return runCommand(ctx, commandTimeout, args...)
 	},
-	KillSession: func(name string) error {
-		return exec.Command("tmux", "kill-session", "-t", name).Run()
+	KillSession: func(ctx context.Context, name string) error {
+		return runCommand(ctx, commandTimeout, "kill-session", "-t", name)
 	},
-	KillWindow: func(target string) error {
-		return exec.Command("tmux", "kill-window", "-t", target).Run()
+	KillWindow: func(ctx context.Context, target string) error {
+		return runCommand(ctx, commandTimeout, "kill-window", "-t", target)
 	},
-	NewSessionEnv: func(name, directory, command string, env map[string]string) error {
+	NewSessionEnv: func(ctx context.Context, name, directory, command string, env map[string]string) error {
 		args := []string{"new-session", "-d", "-s", name, "-c", directory}
 		args = append(args, envArgs(env)...)
 		if command != "" {
 			args = append(args, command)
 		}
-		return exec.Command("tmux", args...).Run()
+		return runCommand(ctx, commandTimeout, args...)
 	},
-	NewWindowEnv: func(name, directory, command string, env map[string]string) error {
+	NewWindowEnv: func(ctx context.Context, name, directory, command string, env map[string]string) error {
 		args := []string{"new-window", "-d", "-t", name, "-c", directory}
 		args = append(args, envArgs(env)...)
 		if command != "" {
 			args = append(args, command)
 		}
-		return exec.Command("tmux", args...).Run()
+		return runCommand(ctx, commandTimeout, args...)
 	},
 }
 
@@ -417,7 +418,7 @@ func OpencodeCommandForPort(port int) string {
 // session matching (dot/underscore skew aware), same idempotent
 // short-circuit, but the caller supplies the command instead of the
 // hardcoded --port 0 one.
-func LaunchOpencodeCmdEnvWith(r Runner, directory, command string, idempotent bool, env map[string]string) (string, bool, error) {
+func LaunchOpencodeCmdEnvWith(ctx context.Context, r Runner, directory, command string, idempotent bool, env map[string]string) (string, bool, error) {
 	sessionName := SessionNameForPath(directory)
 	if !ValidComponent.MatchString(sessionName) {
 		return "", false, fmt.Errorf("derived tmux session name %q contains invalid characters", sessionName)
@@ -425,7 +426,7 @@ func LaunchOpencodeCmdEnvWith(r Runner, directory, command string, idempotent bo
 
 	sessionExists := false
 	wantPath := filepath.Clean(directory)
-	if existing, err := r.ListSessions(); err == nil {
+	if existing, err := r.ListSessions(ctx); err == nil {
 		for _, ts := range existing {
 			if filepath.Clean(ts.ResolvedPath) == wantPath {
 				sessionExists = true
@@ -440,11 +441,11 @@ func LaunchOpencodeCmdEnvWith(r Runner, directory, command string, idempotent bo
 	}
 
 	if !sessionExists {
-		if err := r.NewSessionEnv(sessionName, directory, command, env); err != nil {
+		if err := r.NewSessionEnv(ctx, sessionName, directory, command, env); err != nil {
 			return "", false, fmt.Errorf("tmux new-session: %w", err)
 		}
 	} else {
-		if err := r.NewWindowEnv(sessionName, directory, command, env); err != nil {
+		if err := r.NewWindowEnv(ctx, sessionName, directory, command, env); err != nil {
 			return "", false, fmt.Errorf("tmux new-window: %w", err)
 		}
 	}
@@ -457,8 +458,8 @@ func LaunchOpencodeCmdEnvWith(r Runner, directory, command string, idempotent bo
 //
 // This is the original (non-idempotent) launcher kept for callers that
 // explicitly want a fresh window every time.
-func LaunchOpencode(directory string) (string, error) {
-	name, _, err := LaunchOpencodeWith(DefaultRunner, directory, false)
+func LaunchOpencode(ctx context.Context, directory string) (string, error) {
+	name, _, err := LaunchOpencodeWith(ctx, DefaultRunner, directory, false)
 	if err == nil {
 		opencode.InvalidateOpenCodePortCache()
 	}
@@ -468,14 +469,14 @@ func LaunchOpencode(directory string) (string, error) {
 // LaunchOpencodeWith launches opencode without seeding tmux environment
 // variables. The callback adapters preserve the non-env Runner seam used by
 // callers and tests while sharing the launch and session-matching logic.
-func LaunchOpencodeWith(r Runner, directory string, idempotent bool) (string, bool, error) {
-	r.NewSessionEnv = func(name, directory, command string, _ map[string]string) error {
-		return r.NewSession(name, directory, command)
+func LaunchOpencodeWith(ctx context.Context, r Runner, directory string, idempotent bool) (string, bool, error) {
+	r.NewSessionEnv = func(ctx context.Context, name, directory, command string, _ map[string]string) error {
+		return r.NewSession(ctx, name, directory, command)
 	}
-	r.NewWindowEnv = func(name, directory, command string, _ map[string]string) error {
-		return r.NewWindow(name, directory, command)
+	r.NewWindowEnv = func(ctx context.Context, name, directory, command string, _ map[string]string) error {
+		return r.NewWindow(ctx, name, directory, command)
 	}
-	return LaunchOpencodeCmdEnvWith(r, directory, OpencodeCommand, idempotent, nil)
+	return LaunchOpencodeCmdEnvWith(ctx, r, directory, OpencodeCommand, idempotent, nil)
 }
 
 // LaunchOpencodeEnv finds or creates a tmux session named after directory
@@ -483,8 +484,8 @@ func LaunchOpencodeWith(r Runner, directory string, idempotent bool) (string, bo
 // OPENCODE_PERMISSION). It is the env-aware, idempotent launcher used by
 // the one-opencode-per-project host primitive: when a session for the
 // directory already exists it returns launched=false and touches nothing.
-func LaunchOpencodeEnv(directory string, env map[string]string) (string, bool, error) {
-	name, launched, err := LaunchOpencodeEnvWith(DefaultRunner, directory, true, env)
+func LaunchOpencodeEnv(ctx context.Context, directory string, env map[string]string) (string, bool, error) {
+	name, launched, err := LaunchOpencodeEnvWith(ctx, DefaultRunner, directory, true, env)
 	if err == nil && launched {
 		opencode.InvalidateOpenCodePortCache()
 	}
@@ -497,26 +498,26 @@ func LaunchOpencodeEnv(directory string, env map[string]string) (string, bool, e
 // otherwise creates the session (or opens a window in an existing one)
 // with opencode as the pane's foreground command and env seeded via
 // tmux `-e`.
-func LaunchOpencodeEnvWith(r Runner, directory string, idempotent bool, env map[string]string) (string, bool, error) {
-	return LaunchOpencodeCmdEnvWith(r, directory, OpencodeCommand, idempotent, env)
+func LaunchOpencodeEnvWith(ctx context.Context, r Runner, directory string, idempotent bool, env map[string]string) (string, bool, error) {
+	return LaunchOpencodeCmdEnvWith(ctx, r, directory, OpencodeCommand, idempotent, env)
 }
 
-func RestartOpencode(directory string) (string, error) {
-	target, err := RestartOpencodeWith(DefaultRunner, directory)
+func RestartOpencode(ctx context.Context, directory string) (string, error) {
+	target, err := RestartOpencodeWith(ctx, DefaultRunner, directory)
 	if err == nil {
 		opencode.InvalidateOpenCodePortCache()
 	}
 	return target, err
 }
 
-func RestartOpencodeWith(r Runner, directory string) (string, error) {
-	existingSessions, err := r.ListSessions()
+func RestartOpencodeWith(ctx context.Context, r Runner, directory string) (string, error) {
+	existingSessions, err := r.ListSessions(ctx)
 	if err != nil {
 		return "", fmt.Errorf("listing tmux sessions: %w", err)
 	}
 	want := filepath.Clean(directory)
 	for _, ts := range existingSessions {
-		windows, err := r.ListWindows(ts.Name)
+		windows, err := r.ListWindows(ctx, ts.Name)
 		if err != nil {
 			return "", fmt.Errorf("listing tmux windows: %w", err)
 		}
@@ -526,16 +527,16 @@ func RestartOpencodeWith(r Runner, directory string) (string, error) {
 			}
 			target := ts.Name + ":" + win.Name
 			if ts.Windows <= 1 {
-				if err := r.KillSession(ts.Name); err != nil {
+				if err := r.KillSession(ctx, ts.Name); err != nil {
 					return "", fmt.Errorf("tmux kill-session: %w", err)
 				}
-				name, _, err := LaunchOpencodeWith(r, directory, false)
+				name, _, err := LaunchOpencodeWith(ctx, r, directory, false)
 				return name, err
 			}
-			if err := r.KillWindow(target); err != nil {
+			if err := r.KillWindow(ctx, target); err != nil {
 				return "", fmt.Errorf("tmux kill-window: %w", err)
 			}
-			if err := r.NewNamedWindow(ts.Name, win.Name, directory, OpencodeCommand); err != nil {
+			if err := r.NewNamedWindow(ctx, ts.Name, win.Name, directory, OpencodeCommand); err != nil {
 				return "", fmt.Errorf("tmux new-window: %w", err)
 			}
 			return target, nil

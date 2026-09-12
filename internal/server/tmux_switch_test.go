@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -26,19 +27,19 @@ type fakeSwitchRunner struct {
 
 func (f *fakeSwitchRunner) toRunner() tmux.SwitchRunner {
 	return tmux.SwitchRunner{
-		ListSessions: func() ([]tmux.Session, error) {
+		ListSessions: func(context.Context) ([]tmux.Session, error) {
 			return f.sessions, f.listSessErr
 		},
-		ListWindows: func(sessionName string) ([]tmux.Window, error) {
+		ListWindows: func(_ context.Context, sessionName string) ([]tmux.Window, error) {
 			if f.listWinErr != nil {
 				return nil, f.listWinErr
 			}
 			return f.windows[sessionName], nil
 		},
-		ListClients: func() ([]tmux.Client, error) {
+		ListClients: func(context.Context) ([]tmux.Client, error) {
 			return f.clients, f.listCliErr
 		},
-		SwitchClient: func(tty, sess string) error {
+		SwitchClient: func(_ context.Context, tty, sess string) error {
 			f.switchedTTY = tty
 			f.switchedSess = sess
 			return f.switchErr

@@ -37,7 +37,7 @@ import (
 type Deps struct {
 	// LaunchTmux runs `opencode --port 0` in a tmux session for the
 	// directory, returning the session name.
-	LaunchTmux func(directory string) (string, error)
+	LaunchTmux func(context.Context, string) (string, error)
 	// CreateSession creates a session on the OpenCode platform. Injected
 	// (rather than importing the adapter) so CreateWorktreeSession can
 	// create the in-app worktree session on the project's single
@@ -60,7 +60,7 @@ type Deps struct {
 	// reuses, dead is discarded and relaunched.
 	ManagedStore ManagedStore
 	// TmuxSessions lists the host's tmux sessions.
-	TmuxSessions func() ([]hostsvc.TmuxSession, error)
+	TmuxSessions func(context.Context) ([]hostsvc.TmuxSession, error)
 	// Projects returns the host's known projects.
 	Projects         func(ctx context.Context) ([]db.ProjectStats, error)
 	ProjectUpstreams func(ctx context.Context, dir string) (*hostsvc.ProjectUpstreams, error)
@@ -69,12 +69,12 @@ type Deps struct {
 	// (tmux/git/opencode on PATH, whisper installed, etc.).
 	Caps func() hostsvc.HostCaps
 	// TermWindows lists the in-app terminal windows for a directory.
-	TermWindows func(dir string) ([]hostsvc.TermWindow, error)
+	TermWindows func(context.Context, string) ([]hostsvc.TermWindow, error)
 	// TermCreateWindow creates a new terminal window for a directory and
 	// returns its name.
-	TermCreateWindow func(dir string) (string, error)
+	TermCreateWindow func(context.Context, string) (string, error)
 	// TermKillWindow kills the named terminal window for a directory.
-	TermKillWindow func(dir, window string) error
+	TermKillWindow func(context.Context, string, string) error
 	// TermAttach attaches a local PTY to the selected window and bridges
 	// it to conn until either side closes.
 	TermAttach func(ctx context.Context, req hostsvc.TermAttachRequest, conn hostsvc.TermConn) error
@@ -325,7 +325,7 @@ func (h *Host) LaunchTmux(ctx context.Context, req hostsvc.LaunchTmuxRequest) (*
 	// (hub -> gRPC -> remote Server.LaunchTmux -> here). Log so the
 	// launch is traceable on both sides.
 	log.WithField("directory", req.Directory).Info("host: launching opencode in tmux")
-	name, err := h.deps.LaunchTmux(req.Directory)
+	name, err := h.deps.LaunchTmux(ctx, req.Directory)
 	if err != nil {
 		log.WithError(err).WithField("directory", req.Directory).Error("host: failed to launch opencode in tmux")
 		return nil, err
@@ -672,7 +672,7 @@ func (h *Host) TmuxSessions(ctx context.Context) ([]hostsvc.TmuxSession, error) 
 	if h.deps.TmuxSessions == nil {
 		return nil, nil
 	}
-	return h.deps.TmuxSessions()
+	return h.deps.TmuxSessions(ctx)
 }
 
 func (h *Host) Projects(ctx context.Context) ([]db.ProjectStats, error) {
@@ -682,25 +682,25 @@ func (h *Host) Projects(ctx context.Context) ([]db.ProjectStats, error) {
 	return h.deps.Projects(ctx)
 }
 
-func (h *Host) TermWindows(_ context.Context, dir string) ([]hostsvc.TermWindow, error) {
+func (h *Host) TermWindows(ctx context.Context, dir string) ([]hostsvc.TermWindow, error) {
 	if h.deps.TermWindows == nil {
 		return nil, nil
 	}
-	return h.deps.TermWindows(dir)
+	return h.deps.TermWindows(ctx, dir)
 }
 
-func (h *Host) TermCreateWindow(_ context.Context, dir string) (string, error) {
+func (h *Host) TermCreateWindow(ctx context.Context, dir string) (string, error) {
 	if h.deps.TermCreateWindow == nil {
 		return "", nil
 	}
-	return h.deps.TermCreateWindow(dir)
+	return h.deps.TermCreateWindow(ctx, dir)
 }
 
-func (h *Host) TermKillWindow(_ context.Context, dir, window string) error {
+func (h *Host) TermKillWindow(ctx context.Context, dir, window string) error {
 	if h.deps.TermKillWindow == nil {
 		return nil
 	}
-	return h.deps.TermKillWindow(dir, window)
+	return h.deps.TermKillWindow(ctx, dir, window)
 }
 
 func (h *Host) TermAttach(ctx context.Context, req hostsvc.TermAttachRequest, conn hostsvc.TermConn) error {

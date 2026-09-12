@@ -24,7 +24,7 @@ func (s *Server) handleTmuxClients(w http.ResponseWriter, r *http.Request) {
 	// There is no directory to route by and no remote equivalent on the
 	// Host seam: switching a remote's tmux client from this browser
 	// would attach nothing the user can see.
-	clients, err := tmux.ListClients() // ocman:allow-host-helper — machine-local by definition
+	clients, err := tmux.ListClients(r.Context()) // ocman:allow-host-helper — machine-local by definition
 	if err != nil {
 		if tmux.IsServerNotRunningError(err) {
 			writeJSON(w, map[string]interface{}{
@@ -182,7 +182,7 @@ func (s *Server) handleTmuxSwitchWith(w http.ResponseWriter, r *http.Request, ru
 	// strings to tmux. Targets may be either a plain session name or a
 	// `session:window` pair (used by worktree sessions, which open in a
 	// named window inside the existing project session).
-	existingSessions, err := runner.ListSessions()
+	existingSessions, err := runner.ListSessions(r.Context())
 	if err != nil {
 		serverError(w, "verifying tmux session", err)
 		return
@@ -205,7 +205,7 @@ func (s *Server) handleTmuxSwitchWith(w http.ResponseWriter, r *http.Request, ru
 		return
 	}
 	if windowName != "" {
-		windows, err := runner.ListWindows(sessionName)
+		windows, err := runner.ListWindows(r.Context(), sessionName)
 		if err != nil {
 			serverError(w, "verifying tmux window", err)
 			return
@@ -229,7 +229,7 @@ func (s *Server) handleTmuxSwitchWith(w http.ResponseWriter, r *http.Request, ru
 	// was open. Instead, if no client is supplied, look at the live
 	// list of connected tmux clients: if exactly one exists, use it;
 	// otherwise the caller must disambiguate.
-	existingClients, err := runner.ListClients()
+	existingClients, err := runner.ListClients(r.Context())
 	if err != nil {
 		serverError(w, "verifying tmux client", err)
 		return
@@ -273,7 +273,7 @@ func (s *Server) handleTmuxSwitchWith(w http.ResponseWriter, r *http.Request, ru
 		"session": req.Session,
 	}).Info("switching tmux client")
 
-	if err := runner.SwitchClient(clientTTY, req.Session); err != nil {
+	if err := runner.SwitchClient(r.Context(), clientTTY, req.Session); err != nil {
 		log.WithFields(log.Fields{
 			"client":  clientTTY,
 			"session": req.Session,

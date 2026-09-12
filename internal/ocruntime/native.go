@@ -18,8 +18,8 @@ const KindNativeTmux = "native-tmux"
 type NativeRuntime struct {
 	// launch/kill are seams so tests exercise Launch/Stop without a real
 	// tmux binary. Nil values fall back to the tmux package defaults.
-	launch func(directory, command string, env map[string]string) (session string, err error)
-	kill   func(session string) error
+	launch func(context.Context, string, string, map[string]string) (session string, err error)
+	kill   func(context.Context, string) error
 
 	// httpClient probes /config; nil uses the package default.
 	httpClient *http.Client
@@ -34,10 +34,10 @@ func NewNativeRuntime() *NativeRuntime {
 
 func NewNativeRuntimeWithAuth(auth ocapi.Auth) *NativeRuntime {
 	return &NativeRuntime{
-		launch: func(directory, command string, env map[string]string) (string, error) {
+		launch: func(ctx context.Context, directory, command string, env map[string]string) (string, error) {
 			// The host already checked for a healthy project server. A tmux
 			// session alone may only contain shells or a stale OpenCode window.
-			name, _, err := tmux.LaunchOpencodeCmdEnvWith(tmux.DefaultRunner, directory, command, false, env)
+			name, _, err := tmux.LaunchOpencodeCmdEnvWith(ctx, tmux.DefaultRunner, directory, command, false, env)
 			return name, err
 		},
 		kill: tmux.DefaultRunner.KillSession,
@@ -48,7 +48,7 @@ func NewNativeRuntimeWithAuth(auth ocapi.Auth) *NativeRuntime {
 // Launch threads spec.Port into `opencode --port N`, seeds
 // OPENCODE_PERMISSION, and returns the loopback endpoint + tmux session
 // name as the instance ID.
-func (r *NativeRuntime) Launch(_ context.Context, spec LaunchSpec) (*Instance, error) {
+func (r *NativeRuntime) Launch(ctx context.Context, spec LaunchSpec) (*Instance, error) {
 	if spec.RepoRoot == "" {
 		return nil, fmt.Errorf("ocruntime: LaunchSpec.RepoRoot is required")
 	}
@@ -67,7 +67,7 @@ func (r *NativeRuntime) Launch(_ context.Context, spec LaunchSpec) (*Instance, e
 	r.auth.AddServerEnv(env)
 
 	command := tmux.OpencodeCommandForPort(spec.Port)
-	session, err := r.launch(spec.RepoRoot, command, env)
+	session, err := r.launch(ctx, spec.RepoRoot, command, env)
 	if err != nil {
 		return nil, fmt.Errorf("ocruntime: launch native tmux opencode: %w", err)
 	}
@@ -101,11 +101,11 @@ func (r *NativeRuntime) Probe(ctx context.Context, inst *Instance) error {
 }
 
 // Stop kills the tmux session backing the instance.
-func (r *NativeRuntime) Stop(_ context.Context, inst *Instance) error {
+func (r *NativeRuntime) Stop(ctx context.Context, inst *Instance) error {
 	if inst == nil || inst.ID == "" {
 		return fmt.Errorf("ocruntime: Stop requires an instance with an ID")
 	}
-	if err := r.kill(inst.ID); err != nil {
+	if err := r.kill(ctx, inst.ID); err != nil {
 		return fmt.Errorf("ocruntime: stop native tmux opencode: %w", err)
 	}
 	return nil

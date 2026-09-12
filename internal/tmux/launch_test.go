@@ -1,6 +1,7 @@
 package tmux
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -38,38 +39,38 @@ type fakeTmuxRunner struct {
 
 func (f *fakeTmuxRunner) toRunner() Runner {
 	return Runner{
-		ListSessions: func() ([]Session, error) {
+		ListSessions: func(context.Context) ([]Session, error) {
 			if f.listErr != nil {
 				return nil, f.listErr
 			}
 			return f.existing, nil
 		},
-		ListWindows: func(sessionName string) ([]Window, error) {
+		ListWindows: func(_ context.Context, sessionName string) ([]Window, error) {
 			if f.listWindowsErr != nil {
 				return nil, f.listWindowsErr
 			}
 			return f.windows[sessionName], nil
 		},
-		NewSession: func(name, _, command string) error {
+		NewSession: func(_ context.Context, name, _, command string) error {
 			f.newSessionCalls = append(f.newSessionCalls, name)
 			f.newSessionCommands = append(f.newSessionCommands, command)
 			return f.newSessionErr
 		},
-		NewWindow: func(name, _, command string) error {
+		NewWindow: func(_ context.Context, name, _, command string) error {
 			f.newWindowCalls = append(f.newWindowCalls, name)
 			f.newWindowCommands = append(f.newWindowCommands, command)
 			return f.newWindowErr
 		},
-		NewNamedWindow: func(sessionName, windowName, _, command string) error {
+		NewNamedWindow: func(_ context.Context, sessionName, windowName, _, command string) error {
 			f.newNamedWindowCalls = append(f.newNamedWindowCalls, sessionName+":"+windowName)
 			f.newNamedWindowCommands = append(f.newNamedWindowCommands, command)
 			return f.newNamedWindowErr
 		},
-		KillSession: func(name string) error {
+		KillSession: func(_ context.Context, name string) error {
 			f.killSessionCalls = append(f.killSessionCalls, name)
 			return f.killSessionErr
 		},
-		KillWindow: func(target string) error {
+		KillWindow: func(_ context.Context, target string) error {
 			f.killWindowCalls = append(f.killWindowCalls, target)
 			return f.killWindowErr
 		},
@@ -90,7 +91,7 @@ func TestLaunchOpencodeInTmuxWith_Idempotent_ReusesExisting(t *testing.T) {
 		existing: []Session{{Name: wantName, ResolvedPath: dir}},
 	}
 
-	name, launched, err := LaunchOpencodeWith(f.toRunner(), dir, true)
+	name, launched, err := LaunchOpencodeWith(t.Context(), f.toRunner(), dir, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -120,7 +121,7 @@ func TestLaunchOpencodeInTmuxWith_Idempotent_CreatesWhenAbsent(t *testing.T) {
 
 	f := &fakeTmuxRunner{} // no existing sessions
 
-	name, launched, err := LaunchOpencodeWith(f.toRunner(), dir, true)
+	name, launched, err := LaunchOpencodeWith(t.Context(), f.toRunner(), dir, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -156,7 +157,7 @@ func TestLaunchOpencodeInTmuxWith_NonIdempotent_OpensNewWindow(t *testing.T) {
 		existing: []Session{{Name: wantName, ResolvedPath: dir}},
 	}
 
-	name, launched, err := LaunchOpencodeWith(f.toRunner(), dir, false)
+	name, launched, err := LaunchOpencodeWith(t.Context(), f.toRunner(), dir, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -192,7 +193,7 @@ func TestLaunchOpencodeInTmuxWith_MatchesDottedPathAgainstUnderscoreName(t *test
 		existing: []Session{{Name: underscoreName, ResolvedPath: dir}},
 	}
 
-	name, launched, err := LaunchOpencodeWith(f.toRunner(), dir, false)
+	name, launched, err := LaunchOpencodeWith(t.Context(), f.toRunner(), dir, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -226,7 +227,7 @@ func TestLaunchOpencodeInTmuxWith_PropagatesNewSessionError(t *testing.T) {
 	wantErr := errors.New("boom")
 	f := &fakeTmuxRunner{newSessionErr: wantErr}
 
-	_, launched, err := LaunchOpencodeWith(f.toRunner(), dir, true)
+	_, launched, err := LaunchOpencodeWith(t.Context(), f.toRunner(), dir, true)
 	if err == nil {
 		t.Fatalf("want error, got nil")
 	}
@@ -250,7 +251,7 @@ func TestLaunchOpencodeInTmuxWith_RejectsInvalidDerivedName(t *testing.T) {
 
 	f := &fakeTmuxRunner{}
 
-	_, _, err := LaunchOpencodeWith(f.toRunner(), dir, true)
+	_, _, err := LaunchOpencodeWith(t.Context(), f.toRunner(), dir, true)
 	if err == nil {
 		t.Fatal("expected error for derived name with invalid characters")
 	}
@@ -272,7 +273,7 @@ func TestRestartOpencodeInTmuxWith_RestartsMatchingOpencodeWindow(t *testing.T) 
 		}},
 	}
 
-	target, err := RestartOpencodeWith(f.toRunner(), dir)
+	target, err := RestartOpencodeWith(t.Context(), f.toRunner(), dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -293,7 +294,7 @@ func TestRestartOpencodeInTmuxWith_RejectsUnmanagedWindow(t *testing.T) {
 		windows:  map[string][]Window{"repo": {{Name: "shell", Path: "/tmp/repo", Command: "zsh"}}},
 	}
 
-	_, err := RestartOpencodeWith(f.toRunner(), "/tmp/repo")
+	_, err := RestartOpencodeWith(t.Context(), f.toRunner(), "/tmp/repo")
 	if !errors.Is(err, ErrNoManagedOpencodePane) {
 		t.Fatalf("err = %v, want ErrNoManagedOpencodePane", err)
 	}
@@ -316,7 +317,7 @@ func TestRestartOpencodeInTmuxWith_SingleWindowKillsSession(t *testing.T) {
 		windows:  map[string][]Window{name: {{Name: "oc", Path: dir, Command: "opencode"}}},
 	}
 
-	if _, err := RestartOpencodeWith(f.toRunner(), dir); err != nil {
+	if _, err := RestartOpencodeWith(t.Context(), f.toRunner(), dir); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(f.killSessionCalls) != 1 || f.killSessionCalls[0] != name {
@@ -340,7 +341,7 @@ func TestRestartOpencodeInTmuxWith_MatchesViaStartCommand(t *testing.T) {
 		}},
 	}
 
-	target, err := RestartOpencodeWith(f.toRunner(), dir)
+	target, err := RestartOpencodeWith(t.Context(), f.toRunner(), dir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

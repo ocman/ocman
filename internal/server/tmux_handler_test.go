@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -48,15 +49,15 @@ func TestHandleTermWindowsRoutesToRemoteHost(t *testing.T) {
 	srv := testServer(t)
 	var listedDir, createdDir, killedDir, killedWin string
 	srv.HostRouter().RegisterRemote("abc", local.New(local.Deps{
-		TermWindows: func(dir string) ([]hostsvc.TermWindow, error) {
+		TermWindows: func(_ context.Context, dir string) ([]hostsvc.TermWindow, error) {
 			listedDir = dir
 			return []hostsvc.TermWindow{{Name: "ocman-abc-1", Title: "vim"}}, nil
 		},
-		TermCreateWindow: func(dir string) (string, error) {
+		TermCreateWindow: func(_ context.Context, dir string) (string, error) {
 			createdDir = dir
 			return "ocman-abc-2", nil
 		},
-		TermKillWindow: func(dir, window string) error {
+		TermKillWindow: func(_ context.Context, dir, window string) error {
 			killedDir, killedWin = dir, window
 			return nil
 		},

@@ -19,10 +19,10 @@ func TestNativeRuntimeLaunchUsesExistingTmuxSession(t *testing.T) {
 
 	var command string
 	tmux.DefaultRunner = tmux.Runner{
-		ListSessions: func() ([]tmux.Session, error) {
+		ListSessions: func(context.Context) ([]tmux.Session, error) {
 			return []tmux.Session{{Name: session, ResolvedPath: repo}}, nil
 		},
-		NewWindowEnv: func(_, _, gotCommand string, _ map[string]string) error {
+		NewWindowEnv: func(_ context.Context, _, _, gotCommand string, _ map[string]string) error {
 			command = gotCommand
 			return nil
 		},
