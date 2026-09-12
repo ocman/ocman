@@ -57,6 +57,10 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Sort all platforms together by recency, then apply the limit.
+	// Project sidebars request limit=0 to keep every session in the time window.
+	if limit == 0 {
+		limit = len(all)
+	}
 	all = sortAndLimitSessions(all, limit)
 
 	statePhase := srvtiming.Begin(ctx, "state_overlay")

@@ -37,6 +37,54 @@ vi.mock('../../lib/useGlobalEvents', () => ({
 
 import { useSidebarSessions } from './useSidebarSessions';
 
+describe('useSidebarSessions project visibility', () => {
+  it('keeps a quiet project after newer sessions, including when switching views', async () => {
+    const sessions = Array.from({ length: 25 }, (_, i) => ({
+      id: `session-${i}`, platform: 'opencode', directory: '/repo/busy',
+      title: `Work ${i}`, status: 'waiting', timeUpdated: Date.now() - i * 1000,
+    } as Session));
+    const quiet = { ...sessions[0], id: 'dev-stack', directory: '/repo/dev-stack', timeUpdated: Date.now() - 60_000 };
+    const all = [...sessions, quiet];
+    const getSessions = vi.fn(async ({ limit }: { limit?: number } = {}) =>
+      all.slice(0, limit === 0 ? undefined : (limit ?? 500)));
+    useApiStore.setState({ getSessions, recentSessions: [], recentSessionsHash: '' });
+    const { result, rerender } = renderHook(({ sidebarView }: { sidebarView: 'recent' | 'projects' }) =>
+      useSidebarSessions({
+        id: sessions[0].id, sessionId: sessions[0].id, collapsedProjects: [], sidebarView,
+        abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
+      }), { initialProps: { sidebarView: 'recent' } });
+
+    await act(async () => { await result.current.loadRecentSessions(); });
+    expect(result.current.recentSessions).toHaveLength(15);
+    await act(async () => { rerender({ sidebarView: 'projects' }); });
+    expect(result.current.recentSessions).toContainEqual(quiet);
+    expect(result.current.recentSessions).toHaveLength(all.length);
+    await act(async () => { rerender({ sidebarView: 'recent' }); });
+    expect(result.current.recentSessions).toHaveLength(15);
+  });
+
+  it('keeps project sessions when adding the open session outside the window', async () => {
+    const sessions = Array.from({ length: 25 }, (_, i) => ({
+      id: `session-${i}`, platform: 'opencode', directory: '/repo/busy',
+      title: `Work ${i}`, status: 'waiting', timeUpdated: Date.now(),
+    } as Session));
+    const open = { ...sessions[0], id: 'older-open', directory: '/repo/older', timeUpdated: Date.now() - 96 * 60 * 60 * 1000 };
+    useApiStore.setState({
+      getSessions: vi.fn().mockResolvedValue(sessions),
+      getSession: vi.fn().mockResolvedValue({ session: open }),
+      recentSessions: [], recentSessionsHash: '',
+    });
+    const { result } = renderHook(() => useSidebarSessions({
+      id: open.id, sessionId: open.id, collapsedProjects: [], sidebarView: 'projects',
+      abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
+    }));
+    await act(async () => { await result.current.loadRecentSessions(); });
+    expect(result.current.recentSessions).toHaveLength(26);
+    expect(result.current.recentSessions).toContainEqual(expect.objectContaining(open));
+    expect(result.current.recentSessions).toContainEqual(sessions[24]);
+  });
+});
+
 describe('useSidebarSessions live refresh', () => {
   const getSessions = vi.fn().mockResolvedValue([]);
 

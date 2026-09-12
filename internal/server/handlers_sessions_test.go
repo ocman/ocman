@@ -108,6 +108,36 @@ func TestHandleSessions_EmptyRegistry(t *testing.T) {
 	}
 }
 
+func TestHandleSessions_ZeroLimitIncludesAllProjects(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	sessions := make([]db.Session, 501)
+	for i := range sessions {
+		sessions[i] = mkSession("fake", fmt.Sprintf("session-%03d", i), "Work", int64(1_000_000-i))
+	}
+	reg.Register(&fakePlatform{id: "fake", sessions: sessions})
+	for _, tt := range []struct {
+		query string
+		want  int
+	}{
+		{"?limit=0", 501},
+		{"?limit=20", 20},
+		{"", 500},
+	} {
+		t.Run(tt.query, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			srv.handleSessions(rr, httptest.NewRequest(http.MethodGet, "/api/sessions"+tt.query, nil))
+			if rr.Code != http.StatusOK {
+				t.Fatalf("status = %d; body=%s", rr.Code, rr.Body)
+			}
+			var got []db.Session
+			mustUnmarshal(t, rr.Body.Bytes(), &got)
+			if len(got) != tt.want {
+				t.Fatalf("got %d sessions, want %d", len(got), tt.want)
+			}
+		})
+	}
+}
+
 func TestHandleSessions_SinglePlatform_SortedByBucketDesc(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	// Three sessions, two in the same 5-minute bucket (bucketMs =

@@ -760,14 +760,14 @@ describe('SessionDetail — sidebar polling', () => {
     });
   });
 
-  it('passes the configured recent-sessions window via the `since` filter', async () => {
+  it('passes the configured time window without capping project sessions', async () => {
     const handle = renderSessionPage({ sessionId: 'sess_1' });
     await flushPromises();
     await waitFor(() => expect(handle.store.getSessions).toHaveBeenCalled());
     const [params] = handle.store.getSessions.mock.calls[0] as [{ since?: number; limit?: number }];
     expect(typeof params.since).toBe('number');
     expect(params.since).toBeLessThan(Date.now());
-    expect(params.limit).toBeGreaterThan(0);
+    expect(params.limit).toBe(0);
   });
 });
 

@@ -129,15 +129,17 @@ export function useSidebarSessions({
   const loadRecentSessions = useCallback(async (signal?: AbortSignal) => {
     try {
       const since = Date.now() - sidebarRecentHoursRef.current * 60 * 60 * 1000;
+      // Project groups must not lose sessions to other projects' activity.
+      const visibleLimit = sidebarView === 'recent' ? RECENT_SESSIONS_LIMIT : undefined;
       // /api/sessions can serialize a Go nil slice as JSON `null`;
       // coerce here so .find() / filterVisibleSessions never see null.
-      const result = (await getSessions({ since, limit: RECENT_SESSIONS_LIMIT + 5 }, signal)) ?? [];
+      const result = (await getSessions({ since, limit: sidebarView === 'recent' ? RECENT_SESSIONS_LIMIT + 5 : 0 }, signal)) ?? [];
       if (signal?.aborted) return;
       // Child sessions are useful while active; completed output has
       // already bubbled up to the parent.
       const rooted = filterInactiveChildren(result, id);
       const visible = (showArchivedRecentRef.current ? rooted : filterVisibleSessions(rooted))
-        .slice(0, RECENT_SESSIONS_LIMIT);
+        .slice(0, visibleLimit);
       // The re-inject below only works if the open session is in the
       // windowed fetch. When it isn't (older than the recent window, or
       // ranked past the backend's limit) fetch it once by id so the
@@ -153,7 +155,7 @@ export function useSidebarSessions({
       openSessionFallbackRef.current = resolved.cache;
       const current = resolved.session;
       const nextRecentSessions = current && !visible.some((s) => s.id === current.id)
-        ? [current, ...visible].slice(0, RECENT_SESSIONS_LIMIT)
+        ? [current, ...visible].slice(0, visibleLimit)
         : visible;
 
       const merged = mergeSidebarSessions(
@@ -169,7 +171,7 @@ export function useSidebarSessions({
       if (e instanceof DOMException && e.name === 'AbortError') return;
       throw e;
     }
-  }, [getSessions, getSession, id, storeSetRecentSessions]);
+  }, [getSessions, getSession, id, sidebarView, storeSetRecentSessions]);
 
   // Initial load when the active session changes (or is set the
   // first time).
