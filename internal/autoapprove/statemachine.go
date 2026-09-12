@@ -295,6 +295,14 @@ func (s *Service) lookupAutoApproveStatus(sessionID, permissionID string) (autoA
 	return *st, true
 }
 
+// DeferPermissionNotification reports whether the AI is still handling a
+// specific permission. Missing state fails open so missed events cannot hide a
+// prompt indefinitely.
+func (s *Service) DeferPermissionNotification(sessionID, permissionID string) bool {
+	status, ok := s.lookupAutoApproveStatus(sessionID, permissionID)
+	return ok && status.manualResolvedAt == 0 && (status.cancel != nil || status.verdict == verdictSafe)
+}
+
 // --- Per-session safe-permission cache ---
 //
 // The autoApprove map above caches verdicts by the OpenCode-generated

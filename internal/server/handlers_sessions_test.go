@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/autoapprove"
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -1244,6 +1245,103 @@ func TestHandleSessionsNotify_JSONShape(t *testing.T) {
 	empty, _ := newSessionsTestServer(t)
 	if got := getNotifyJSON(t, empty, ""); got != "[]" {
 		t.Errorf("empty notify JSON = %s, want []", got)
+	}
+}
+
+func TestHandleSessionsNotify_DelaysPermissionsWhileAutoApproveRuns(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		autoApprove     bool
+		aiReviewing     bool
+		aiDeclined      bool
+		pendingQuestion bool
+		status          db.SessionStatus
+		want            string
+	}{
+		{
+			name: "disabled keeps current behavior",
+			want: `[{"id":"pending","status":"waiting","seen":false,` +
+				`"pendingPermission":true,"title":"pending","directory":"/repo"}]`,
+		},
+		{
+			name:        "enabled hides permission and waiting fallback",
+			autoApprove: true,
+			aiReviewing: true,
+			want:        `[]`,
+		},
+		{
+			name:        "enabled fails open when review was not observed",
+			autoApprove: true,
+			want: `[{"id":"pending","status":"waiting","seen":false,` +
+				`"pendingPermission":true,"title":"pending","directory":"/repo"}]`,
+		},
+		{
+			name:        "enabled preserves unrelated errors",
+			autoApprove: true,
+			aiReviewing: true,
+			status:      db.StatusError,
+			want: `[{"id":"pending","status":"error","seen":false,` +
+				`"title":"pending","directory":"/repo"}]`,
+		},
+		{
+			name:        "enabled shows permission after AI declines",
+			autoApprove: true,
+			aiDeclined:  true,
+			want: `[{"id":"pending","status":"waiting","seen":false,` +
+				`"pendingPermission":true,"title":"pending","directory":"/repo"}]`,
+		},
+		{
+			name:            "enabled keeps questions visible",
+			autoApprove:     true,
+			aiReviewing:     true,
+			pendingQuestion: true,
+			want: `[{"id":"pending","status":"waiting","seen":false,` +
+				`"pendingQuestion":true,"title":"pending","directory":"/repo"}]`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, reg := newSessionsTestServer(t)
+			srv.WithAutoApproveDefault(tc.autoApprove)
+			if tc.aiReviewing || tc.aiDeclined {
+				srv.aaSvcCached = autoapprove.NewService(autoapprove.Deps{
+					DefaultEnabled: true,
+					SessionDir:     func(string) (string, error) { return "/repo", nil },
+				})
+				srv.aaOnce.Do(func() {})
+			}
+			pending := mkSession("fake", "pending", "pending", 10_000)
+			pending.Directory = "/repo"
+			pending.Status = tc.status
+			if pending.Status == "" {
+				pending.Status = db.StatusWaiting
+			}
+			pending.PendingPermission = true
+			pending.PendingQuestion = tc.pendingQuestion
+			adapter := &fakePlatform{
+				id:       "fake",
+				caps:     platforms.Capabilities{AutoApprove: true},
+				sessions: []db.Session{pending},
+				listPermissionsFn: func(string) ([]platforms.LivePrompt, error) {
+					return []platforms.LivePrompt{{"id": "permission-1", "sessionID": pending.ID}}, nil
+				},
+			}
+			reg.Register(adapter)
+			if tc.aiReviewing {
+				srv.aaSvc().SetJudgeDelayMs(30_000)
+				srv.aaSvc().Ensure("fake", adapter, pending.ID, "permission-1", "Bash", nil, map[string]any{"command": "pwd"})
+				defer srv.aaSvc().Cancel(pending.ID, "permission-1")
+			} else if tc.aiDeclined {
+				srv.aaSvc().Ensure("fake", adapter, pending.ID, "permission-1", "Bash", nil, map[string]any{"command": "rm -rf /"})
+				deadline := time.Now().Add(time.Second)
+				for srv.aaSvc().DeferPermissionNotification(pending.ID, "permission-1") && time.Now().Before(deadline) {
+					time.Sleep(time.Millisecond)
+				}
+			}
+
+			if got := getNotifyJSON(t, srv, ""); got != tc.want {
+				t.Errorf("notify JSON = %s\nwant %s", got, tc.want)
+			}
+		})
 	}
 }
 

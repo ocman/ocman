@@ -133,8 +133,10 @@ func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
 	out := make([]notifyEntry, 0, len(all))
 	for i := range all {
 		se := &all[i]
-		hasPrompt := se.PendingPermission || se.PendingQuestion
-		isUnseenTerminal := (se.Status == db.StatusWaiting || se.Status == db.StatusError) && !se.Seen
+		deferredPermission := se.PendingPermission && s.deferPermissionNotification(ctx, se)
+		pendingPermission := se.PendingPermission && !deferredPermission
+		hasPrompt := pendingPermission || se.PendingQuestion
+		isUnseenTerminal := (se.Status == db.StatusError || (se.Status == db.StatusWaiting && !deferredPermission)) && !se.Seen
 		if !hasPrompt && !isUnseenTerminal {
 			continue
 		}
@@ -142,7 +144,7 @@ func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
 			ID:                se.ID,
 			Status:            se.Status,
 			Seen:              se.Seen,
-			PendingPermission: se.PendingPermission,
+			PendingPermission: pendingPermission,
 			PendingQuestion:   se.PendingQuestion,
 			Title:             se.Title,
 			Directory:         se.Directory,
@@ -150,6 +152,41 @@ func (s *Server) handleSessionsNotify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, out)
+}
+
+func (s *Server) deferPermissionNotification(ctx context.Context, session *db.Session) bool {
+	if isRemotePlatformID(session.Platform) || s.registry == nil {
+		return false
+	}
+	adapter, ok := s.registry.Get(platforms.ID(session.Platform))
+	if !ok || !adapter.Capabilities().AutoApprove {
+		return false
+	}
+	enabled := s.autoApproveDefault
+	if s.stateDB != nil {
+		value, exists, err := s.stateDB.GetAutoApprove(ctx, session.Platform, session.ID)
+		if err != nil {
+			return false
+		}
+		if exists {
+			enabled = value
+		}
+	}
+	if !enabled {
+		return false
+	}
+	prompts, err := adapter.ListPermissions(ctx, session.ID)
+	if err != nil || len(prompts) == 0 {
+		return false
+	}
+	for _, prompt := range prompts {
+		permissionID, _ := prompt["id"].(string)
+		promptSessionID, _ := prompt["sessionID"].(string)
+		if permissionID == "" || promptSessionID == "" || !s.aaSvc().DeferPermissionNotification(promptSessionID, permissionID) {
+			return false
+		}
+	}
+	return true
 }
 
 // --- Session detail ---

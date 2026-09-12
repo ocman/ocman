@@ -471,8 +471,12 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 			if ocAdapter != nil {
 				ocAdapter.ObservePromptAskedFromPort(port, portGeneration, directory, kind, prompt)
 			}
-			if sessionID, _ := prompt["sessionID"].(string); sessionID != "" && w.svc != nil && w.svc.deps.BroadcastSessionChanged != nil {
+			sessionID, _ := prompt["sessionID"].(string)
+			if sessionID != "" && w.svc != nil && w.svc.deps.BroadcastSessionChanged != nil {
 				w.svc.deps.BroadcastSessionChanged(sessionID)
+			}
+			if requestID, _ := prompt["id"].(string); kind == "permission" && w.svc != nil {
+				w.svc.SurfacePermissionNotification(sessionID, requestID)
 			}
 		},
 		OnPromptResolved: func(directory, kind, sessionID, requestID string) {

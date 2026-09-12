@@ -163,6 +163,37 @@ func TestJudgedPermissionsCache(t *testing.T) {
 	}
 }
 
+func TestDeferPermissionNotification(t *testing.T) {
+	flagged := 0
+	s := &Service{
+		autoApprove: make(map[string]*autoApproveStatus),
+		deps: Deps{BroadcastGlobalEvent: func(event string, _ []byte) {
+			if event == "ocman.permission.flagged" {
+				flagged++
+			}
+		}},
+	}
+	_, ok := s.claimAutoApprove(t.Context(), "session", "checking")
+	if !ok {
+		t.Fatal("claim checking permission")
+	}
+	defer s.Cancel("session", "checking")
+	s.recordJudged("session", "safe", verdictSafe)
+	s.recordJudged("session", "unsafe", verdictUnsafe)
+
+	if !s.DeferPermissionNotification("session", "checking") || !s.DeferPermissionNotification("session", "safe") {
+		t.Error("checking and safe permissions should remain deferred")
+	}
+	if s.DeferPermissionNotification("session", "unsafe") || s.DeferPermissionNotification("session", "missing") {
+		t.Error("unsafe and unobserved permissions should notify")
+	}
+	s.SurfacePermissionNotification("session", "unsafe")
+	s.SurfacePermissionNotification("session", "safe")
+	if flagged != 1 {
+		t.Errorf("flagged broadcasts = %d, want 1", flagged)
+	}
+}
+
 // TestEnsureAutoApproveSkipsAlreadyJudged is the regression for the
 // reported bug: after the judge has already evaluated a permissionID,
 // a subsequent Ensure call for the SAME (sessionID,
@@ -1427,8 +1458,8 @@ func TestBackgroundAutoApprove_SafeFilepathCacheHit(t *testing.T) {
 // and no session-directory resolver, the function should fall through
 // past the cache check (no hit) and attempt the normal judge path; the
 // directory lookup fails because deps.SessionDir is nil, so the function
-// warn-returns BEFORE ever touching the nil judge. Observable: no
-// RespondPermission call.
+// leaves the permission for human review before touching the nil judge.
+// Observable: no RespondPermission call.
 func TestBackgroundAutoApprove_SafeCommandCacheMiss_DifferentSession(t *testing.T) {
 	const command = "pnpm test"
 
@@ -1467,10 +1498,11 @@ func TestBackgroundAutoApprove_SafeCommandCacheMiss_DifferentSession(t *testing.
 	if respondCalls != 0 {
 		t.Errorf("session B should NOT have been auto-approved from session A's cache; RespondPermission called %d times", respondCalls)
 	}
-	// And no per-permissionID verdict should be recorded for the B
-	// permission — the function bailed before reaching that path.
-	if _, ok := s.lookupJudged("ses-B", "perm-B"); ok {
-		t.Errorf("session B permission should not have a cached verdict")
+	if verdict, ok := s.lookupJudged("ses-B", "perm-B"); !ok || verdict != verdictUnsafe {
+		t.Errorf("session B verdict = (%q, %v), want unsafe", verdict, ok)
+	}
+	if s.DeferPermissionNotification("ses-B", "perm-B") {
+		t.Error("session B permission should be released for human review")
 	}
 }
 

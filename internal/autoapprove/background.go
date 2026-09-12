@@ -185,6 +185,8 @@ func (s *Service) backgroundAutoApprove(
 	if directoryErr != nil {
 		s.setLifecycleMethod(asked, sessionID, permissionID, state.PermissionEvaluationJudge, state.PermissionEvaluationError)
 		logger.WithError(directoryErr).Warn("background auto-approve: could not resolve session directory")
+		s.recordJudgedWithReasoning(sessionID, permissionID, verdictUnsafe, "auto-approve could not resolve the session directory")
+		s.emitFlagged(sessionID, permissionID, "auto-approve could not resolve the session directory")
 		return
 	}
 	s.setLifecycleMethod(asked, sessionID, permissionID, state.PermissionEvaluationJudge, "")
@@ -342,11 +344,7 @@ func (s *Service) backgroundAutoApprove(
 		// for human review. The judge session has already been deleted
 		// (see JudgeWithCallback), so result.SessionID is always empty
 		// and the payload no longer carries a link — only the reasoning.
-		// We emit the event when there is something useful to show
-		// (reasoning is the practical floor).
-		if result.Reasoning != "" {
-			s.emitFlagged(sessionID, permissionID, result.Reasoning)
-		}
+		s.emitFlagged(sessionID, permissionID, result.Reasoning)
 		return
 	}
 
@@ -397,6 +395,8 @@ func (s *Service) respondAndPersistSafeApproval(
 	}); err != nil {
 		s.finishAIResponse(sessionID, permissionID, false)
 		logger.WithError(err).Warn("background auto-approve: failed to respond to permission")
+		s.recordJudgedWithReasoning(sessionID, permissionID, verdictUnsafe, "auto-approve could not submit its approval")
+		s.emitFlagged(sessionID, permissionID, "auto-approve could not submit its approval")
 		return
 	}
 	if !s.finishAIResponse(sessionID, permissionID, true) {
@@ -509,4 +509,14 @@ func (s *Service) emitFlagged(sessionID, permissionID, reasoning string) {
 	}
 	s.emitSessionSseEvent(sessionID, "ocman.permission.flagged", payload)
 	s.broadcastGlobalEvent("ocman.permission.flagged", payload)
+}
+
+// SurfacePermissionNotification repeats a fast unsafe verdict after the
+// platform has recorded the prompt, closing the event-order race where the
+// first flagged broadcast arrived before the prompt became listable.
+func (s *Service) SurfacePermissionNotification(sessionID, permissionID string) {
+	status, ok := s.lookupAutoApproveStatus(sessionID, permissionID)
+	if ok && status.verdict == verdictUnsafe && status.manualResolvedAt == 0 {
+		s.emitFlagged(sessionID, permissionID, status.reasoning)
+	}
 }
