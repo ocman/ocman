@@ -40,6 +40,32 @@ bare IP literals, and the host of `OCMAN_PUBLIC_BASE_URL`. Anything else gets
 `421 Misdirected Request`. If you reach ocman through a hostname (a tunnel, a Tailscale
 MagicDNS name, a reverse proxy), set `OCMAN_PUBLIC_BASE_URL` to that external origin.
 
+## Security model / trust boundary
+
+An unauthenticated loopback deployment trusts every process on the machine. That
+includes local agents and other software that can call ocman's privileged session,
+worktree, tmux, OpenCode, and MCP actions. Loopback means local reachability, not
+user identity. Treat the machine and every process on it as part of the trust
+boundary, or configure password authentication.
+
+Auto-approval is not a trust boundary: its judge evaluates session content and
+permission metadata that an agent can influence. The judge is deliberately scoped
+to the supplied request and cannot read files, run commands, or use tools; it also
+uses a per-session safe-command cache and a hard denylist. These are guardrails,
+not a replacement for authentication or human review, and the judge denies when
+it is uncertain.
+
+When worktree permission inheritance is enabled, child sessions can receive the
+parent's approved permissions, custom permission rules, or YOLO permission
+posture. Review a parent's permissions before starting child sessions, especially
+when the parent or its content is not fully trusted.
+
+Do not treat a same-host reverse proxy as a credential. Requests forwarded by a
+local proxy may appear to come from loopback even when the client is remote or
+untrusted. Require password authentication in this setup and set
+`OCMAN_PUBLIC_BASE_URL` (or `-public-base-url`) to the public origin; proxy
+locality must not be used to justify `-auth-trust-localhost`.
+
 ## Flags
 
 | Flag | Default | Description |
