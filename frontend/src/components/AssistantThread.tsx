@@ -562,13 +562,7 @@ export function AssistantThread({
   // races streaming DOM growth. useStickyBottom follows the tail until
   // the user gestures away from it, and drives the scroll-to-bottom
   // affordance. See lib/useStickyBottom.ts.
-  //
-  // The composer renders inside the viewport (as ViewportFooter), so its
-  // subtree is excluded from gesture detection — otherwise clicking into
-  // the textarea to type would read as "stop following the reply".
-  const { showScrollToBottom, scrollToBottom } = useStickyBottom(viewportRef, {
-    ignoreGesturesWithin: '.oc-viewport-footer',
-  });
+  const { showScrollToBottom, scrollToBottom } = useStickyBottom(viewportRef);
 
   // Alt+H / Alt+L (Option+H / Option+L on Mac) jump between user messages in
   // the history. Alt+H: previous user message (up). Alt+L: next user message
@@ -672,7 +666,7 @@ export function AssistantThread({
     return () => clearTimeout(timeout);
   }, [scrollToMessageId, scrollToMessageTick, hasMore, loadingMore, onLoadMore]);
 
-  // Track the ViewportFooter height so the scroll-to-bottom button
+  // Track the composer height so the scroll-to-bottom button
   // (positioned absolute inside .oc-thread) can float just above it.
   // RAF-coalesced to avoid layout thrash when the textarea resizes on
   // every keystroke.
@@ -723,6 +717,7 @@ export function AssistantThread({
         <ThreadPrimitive.Viewport
           ref={setViewportRef}
           className="oc-thread-viewport"
+          data-testid="conversation-viewport"
           autoScroll={false}
           scrollToBottomOnRunStart={false}
         >
@@ -736,10 +731,10 @@ export function AssistantThread({
           </ThreadPrimitive.Empty>
           <ThreadPrimitive.Messages components={THREAD_MESSAGE_COMPONENTS} />
           {footer && <div className="oc-thread-footer">{footer}</div>}
-          <ThreadPrimitive.ViewportFooter ref={footerRef} className="oc-viewport-footer">
-            {composer}
-          </ThreadPrimitive.ViewportFooter>
         </ThreadPrimitive.Viewport>
+        <div ref={footerRef} className="oc-viewport-footer" data-testid="conversation-composer">
+          {composer}
+        </div>
         {/* Our own affordance rather than ThreadPrimitive.ScrollToBottom:
              the primitive's visibility comes from the library's 1px
              at-bottom check, which flips off and on with every streaming

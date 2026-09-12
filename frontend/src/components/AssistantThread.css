@@ -2,6 +2,7 @@
 .oc-thread { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
 .oc-thread-viewport {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   display: flex;
@@ -1084,16 +1085,12 @@
   50% { opacity: 1; transform: scale(1); }
 }
 
-/* Viewport footer — wraps the composer/permission/question overlay.
-   Uses sticky positioning so the library's ViewportFooter can measure
-   its height and the viewport auto-accounts for it in scroll math.
-   margin-top: auto pushes the footer to the bottom of the flex-column
-   viewport when the conversation is empty or too short to fill it. */
+/* Composer and prompts stay outside the conversation's scroll area. */
 .oc-viewport-footer {
-  position: sticky;
-  bottom: 0;
+  flex-shrink: 0;
+  padding: 0 16px;
+  position: relative;
   z-index: 52;
-  margin-top: auto;
 }
 
 /* Scroll to bottom - floats above composer */

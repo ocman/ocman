@@ -19,6 +19,38 @@ import { test, expect, MOCK_SESSION, MOCK_SESSION_2, mockSessionWithLiveConnecti
 
 const SESSION_URL = `/session/${MOCK_SESSION.id}`;
 
+for (const width of [1280, 390]) {
+  test(`conversation scrolling stays above the composer at ${width}px`, async ({ mockedPage: page }) => {
+    await page.setViewportSize({ width, height: 720 });
+    const historical = buildSyntheticHistoricalThread(MOCK_SESSION.id);
+    await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), (route) =>
+      route.fulfill({
+        json: {
+          session: mockSessionWithLiveConnection(),
+          ...historical,
+          totalMessages: historical.messages.length,
+        },
+      }),
+    );
+    await page.goto(SESSION_URL);
+    const viewport = page.getByTestId('conversation-viewport');
+    const composer = page.getByTestId('conversation-composer');
+    await expect(composer.getByRole('textbox')).toBeVisible();
+    await expect.poll(() => viewport.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+    const initialComposer = (await composer.boundingBox())!;
+    for (const position of [0, 0.5, 1]) {
+      await viewport.evaluate((el, fraction) => {
+        el.scrollTop = fraction * (el.scrollHeight - el.clientHeight);
+      }, position);
+      const scrollBox = (await viewport.boundingBox())!;
+      const composerBox = (await composer.boundingBox())!;
+      expect(scrollBox.y + scrollBox.height).toBeLessThanOrEqual(composerBox.y);
+      expect(composerBox.y).toBe(initialComposer.y);
+      expect(composerBox.y + composerBox.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+    }
+  });
+}
+
 function buildSyntheticHistoricalThread(sessionId: string) {
   const messages: Array<Record<string, unknown>> = [];
   const parts: Array<Record<string, unknown>> = [];
