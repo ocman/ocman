@@ -7,6 +7,7 @@ import './SearchSelect.css';
 export interface SearchSelectOption {
   value: string;
   label: string;
+  displayLabel?: ReactNode;
   icon?: ReactNode;
 }
 
@@ -63,7 +64,7 @@ export function SearchSelect({
           setOpen((current) => !current);
         }}
       >
-        <span className="oc-search-select-label">{selected?.icon}{selected?.label ?? (value || placeholder)}</span>
+        <span className="oc-search-select-label">{selected?.icon}{selected?.displayLabel ?? selected?.label ?? (value || placeholder)}</span>
         <i className="bi bi-chevron-down" aria-hidden="true" />
       </button>
       {open && (
@@ -88,7 +89,7 @@ export function SearchSelect({
                   setOpen(false);
                 }}
               >
-                <span className="oc-search-select-label">{option.icon}{option.label}</span>
+                <span className="oc-search-select-label">{option.icon}{option.displayLabel ?? option.label}</span>
               </button>
             ))}
             {visible.length === 0 && <small>No matches</small>}

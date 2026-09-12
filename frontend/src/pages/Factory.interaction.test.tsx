@@ -58,7 +58,7 @@ async function fillEpicForm(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText('Brief'), ' Native graph ');
   await user.click(screen.getByRole('combobox', { name: 'Initial Factory project' }));
   await user.click(screen.getByRole('option', { name: '/repo' }));
-	await user.click(screen.getByRole('checkbox', { name: 'Allow Factory agents to run commands in this repository' }));
+	await user.click(screen.getByRole('checkbox', { name: 'Allow Factory agents to run commands in this project' }));
 }
 
 beforeEach(() => {
@@ -427,7 +427,7 @@ describe('Factory interactions', () => {
 
     expect(await screen.findByText('A short clear title for the outcome this Factory work should deliver.')).toBeInTheDocument();
     expect(screen.getByText('Optional context, constraints, and decisions for the planning work.')).toBeInTheDocument();
-    expect(screen.getByText('The local repository where Factory starts work. Commands run on this machine.')).toBeInTheDocument();
+    expect(screen.getByText('The local project where Factory starts work. Commands run on this machine.')).toBeInTheDocument();
     expect(screen.getByText('Defines the initial work graph. Formula revisions are immutable.')).toBeInTheDocument();
     expect(screen.getByText('Creates a plan, waits for approval, then materializes the approved plan.')).toBeInTheDocument();
 
@@ -685,7 +685,8 @@ describe('Factory interactions', () => {
 
     expect(await screen.findByRole('heading', { name: 'Active work' })).toBeInTheDocument();
 		const active = screen.getByRole('table', { name: 'Active work' });
-		expect(within(active).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual(['Issue', 'Epic', 'Repository', 'Dispatch', 'Outcome', 'Session']);
+		expect(within(active).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual(['Issue', 'Epic', 'Project', 'Dispatch', 'Outcome', 'Session']);
+		expect(within(active).getByTitle('/repo')).toHaveTextContent('repo');
     expect(screen.getByRole('link', { name: 'Open session session-1' })).toHaveAttribute('href', '/session/session-1');
     expect(screen.getByRole('heading', { name: 'Next up' })).toBeInTheDocument();
 		expect(screen.getByRole('table', { name: 'Next up' })).toBeInTheDocument();

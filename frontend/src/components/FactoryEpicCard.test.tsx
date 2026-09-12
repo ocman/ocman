@@ -136,7 +136,8 @@ describe('FactoryEpicCard', () => {
 
     expect(await screen.findByText('Plan awaiting your approval')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Ship Factory' })).toHaveAttribute('href', '/factory/epics/ship-a1b2');
-    expect(screen.getByText('ship-a1b2 · /repo')).toBeInTheDocument();
+    expect(screen.getByTestId('epic-card-ship-a1b2')).toHaveTextContent('ship-a1b2 · /repo');
+    expect(screen.getByTitle('/repo')).toHaveTextContent('/repo');
   });
 
   it('keeps the link usable when the epic cannot be loaded', async () => {

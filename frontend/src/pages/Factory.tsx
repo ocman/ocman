@@ -4,6 +4,7 @@ import { MarkdownContent } from '../components/assistant/MarkdownText';
 import { EpicGraph } from './EpicGraph';
 import { Button, SelectField } from '../components/Control';
 import { SearchSelect } from '../components/SearchSelect';
+import { ProjectLabel } from '../components/ProjectLabel';
 import { StatusBadge } from '../components/StatusBadge';
 import { useClaimFactoryPlan, useCloseFactoryEpic, useCloseFactoryMol, useCreateWorkEpic, useDecideFactoryPlanGate, useFactoryCapacityPolicy, useFactoryFormula, useFactoryFormulas, useFactoryGraphIssues, useFactoryIssues, useFactoryProposals, useFactoryQueue, useFactoryRemovedIssues, useInvestigateFactoryUnblock, useMaterializeFactoryPlan, useMutateFactoryGraph, usePourFactoryEpic, usePreviewFactoryFormula, useProjects, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryRecoveryGate, useSaveFactoryFormula, useSessions, useSetFactoryCapacityPolicy, useSetFactoryEpicPaused, useValidateFactoryFormula, useWorkEpic, useWorkEpics } from '../lib/queries';
 import type { FactoryAttempt, FactoryFormula, FactoryGraphMutation, FactoryIssue, FactoryQueueItem, Session } from '../lib/api';
@@ -184,10 +185,10 @@ function CreateEpic({ onCreated }: { onCreated?: () => void }) {
   return <form className="factory-create" onSubmit={(event) => void submit(event)}>
     <div className="factory-field"><label>Goal<input name="goal" required maxLength={80} aria-describedby="factory-goal-help" /></label><p id="factory-goal-help">A short clear title for the outcome this Factory work should deliver.</p></div>
     <div className="factory-field"><label>Brief<textarea name="brief" aria-describedby="factory-brief-help" /></label><p id="factory-brief-help">Optional context, constraints, and decisions for the planning work.</p></div>
-    <div className="factory-field"><label>Initial Factory project<SearchSelect value={initialProject} ariaLabel="Initial Factory project" placeholder={projects.isLoading ? 'Loading projects…' : 'Select a project'} searchLabel="Search projects" disabled={projects.isLoading || !projects.data?.some((project) => !project.archived)} onChange={(value) => { setInitialProject(value); setError(''); }} options={projects.data?.filter((project) => !project.archived).map((project) => ({ value: project.directory, label: project.directory })) ?? []} /></label><p>The local repository where Factory starts work. Commands run on this machine.</p></div>
+    <div className="factory-field"><label>Initial Factory project<SearchSelect value={initialProject} ariaLabel="Initial Factory project" placeholder={projects.isLoading ? 'Loading projects…' : 'Select a project'} searchLabel="Search projects" disabled={projects.isLoading || !projects.data?.some((project) => !project.archived)} onChange={(value) => { setInitialProject(value); setError(''); }} options={projects.data?.filter((project) => !project.archived).map((project) => ({ value: project.directory, label: project.directory, displayLabel: <ProjectLabel path={project.directory} /> })) ?? []} /></label><p>The local project where Factory starts work. Commands run on this machine.</p></div>
     {projects.isError && <p role="alert">Could not load Factory projects.</p>}
     <div className="factory-field"><label>Formula<SelectField name="formula" value={formula} onChange={(event) => setFormula(event.target.value)} aria-describedby="factory-formula-help"><option value="">Built-in tracer</option>{formulas.data?.filter((item) => item.id !== TRACER_FORMULA_ID).map((item) => <option key={`${item.id}@${item.version}`} value={`${item.id}@${item.version}`}>{item.name} · {item.id}@{item.version}</option>)}</SelectField></label><p id="factory-formula-help">Defines the initial work graph. Formula revisions are immutable.</p><p aria-live="polite">{describeFormula(selectedFormula)}</p></div>
-		<label><input type="checkbox" name="acknowledgeLocalExecution" />Allow Factory agents to run commands in this repository</label>
+		<label><input type="checkbox" name="acknowledgeLocalExecution" />Allow Factory agents to run commands in this project</label>
     <Button type="submit" variant="accent" disabled={create.isPending}>{create.isPending ? 'Creating…' : 'Create epic'}</Button>
     {error && <p role="alert">{error}</p>}
   </form>;
@@ -277,7 +278,7 @@ export function FactoryEpics() {
     <InventoryToolbar label="Find epics" value={query} onChange={setQuery}><Button type="button" variant="accent" onClick={() => setCreating(true)}>New epic</Button></InventoryToolbar>
     {creating && <Drawer title="Create epic" onClose={() => setCreating(false)}><CreateEpic onCreated={() => setCreating(false)} /></Drawer>}
     {!epics.isLoading && !epics.isError && !visible.length && <p className="oc-empty">No epics match this search.</p>}
-    {!!visible.length && <div className="factory-table-wrap"><table className="factory-table" aria-label="Epics"><thead><tr><th>Goal</th><th>Project</th><th>Status</th><th>Progress</th></tr></thead><tbody>{visible.map((epic) => <tr key={epic.id}><td><Link to={`/factory/epics/${encodeURIComponent(epic.id)}`}>{epic.goal}</Link></td><td>{epic.initialProject}</td><td>{epic.status}</td><td>Closure: required {epic.progress?.requiredSucceeded ?? 0}/{epic.progress?.requiredTotal ?? 0} complete. Optional work open: {epic.progress?.optionalOpen ?? 0}.{!!epic.progress?.closureBlockers?.length && <span>Closure blocked by: {epic.progress.closureBlockers.join(', ')}</span>}</td></tr>)}</tbody></table></div>}
+    {!!visible.length && <div className="factory-table-wrap"><table className="factory-table" aria-label="Epics"><thead><tr><th>Goal</th><th>Project</th><th>Status</th><th>Progress</th></tr></thead><tbody>{visible.map((epic) => <tr key={epic.id}><td><Link to={`/factory/epics/${encodeURIComponent(epic.id)}`}>{epic.goal}</Link></td><td><ProjectLabel path={epic.initialProject} /></td><td>{epic.status}</td><td>Closure: required {epic.progress?.requiredSucceeded ?? 0}/{epic.progress?.requiredTotal ?? 0} complete. Optional work open: {epic.progress?.optionalOpen ?? 0}.{!!epic.progress?.closureBlockers?.length && <span>Closure blocked by: {epic.progress.closureBlockers.join(', ')}</span>}</td></tr>)}</tbody></table></div>}
   </FactoryPage>;
 }
 
@@ -342,8 +343,8 @@ export function FactoryHowTo() {
 		<article className="factory-how-to">
 			<div className="factory-how-to-intro"><p>From a goal to reviewed work</p><h2>How Factory works</h2><p>Factory turns a goal into a planned graph of coding-agent work, runs that work within configured capacity, and brings decisions back to you.</p></div>
 			<ol>
-				<li><span className="factory-how-to-step" aria-hidden="true">1</span><div><h3>Create an epic</h3><p>Open <Link to="/factory/epics">Epics</Link>, choose <strong>New epic</strong>, then provide the outcome, supporting context, starting repository, and Formula. A Formula defines the shape of the initial work.</p></div></li>
-				<li><span className="factory-how-to-step" aria-hidden="true">2</span><div><h3>Review the plan</h3><p>The planning agent proposes the work graph: issues, dependencies, and the repositories involved. The plan appears in the <Link to="/factory/overview">Overview</Link> action inbox. Approve it, request a revision with feedback, or reject it.</p></div></li>
+				<li><span className="factory-how-to-step" aria-hidden="true">1</span><div><h3>Create an epic</h3><p>Open <Link to="/factory/epics">Epics</Link>, choose <strong>New epic</strong>, then provide the outcome, supporting context, starting project, and Formula. A Formula defines the shape of the initial work.</p></div></li>
+				<li><span className="factory-how-to-step" aria-hidden="true">2</span><div><h3>Review the plan</h3><p>The planning agent proposes the work graph: issues, dependencies, and the projects involved. The plan appears in the <Link to="/factory/overview">Overview</Link> action inbox. Approve it, request a revision with feedback, or reject it.</p></div></li>
 				<li><span className="factory-how-to-step" aria-hidden="true">3</span><div><h3>Let Factory execute</h3><p>After approval, Factory materializes the graph and dispatches ready issues. Dependencies control order, while global and per-project capacity limit parallel work. Follow active and waiting work in the <Link to="/factory/queue">Queue</Link>.</p></div></li>
 				<li><span className="factory-how-to-step" aria-hidden="true">4</span><div><h3>Handle decisions</h3><p>Factory pauses when it needs plan approval, a permission decision, an answer, or recovery from failed work. These requests collect in the action inbox. Agent prompts open in their session; graph-level decisions stay on the Factory page.</p></div></li>
 				<li><span className="factory-how-to-step" aria-hidden="true">5</span><div><h3>Review the result</h3><p>Use <Link to="/factory/issues">Issues</Link> to inspect work and outcomes. Required work must succeed before its container can close. Optional work does not block closure, but any unfinished optional work remains visible.</p></div></li>
@@ -392,7 +393,7 @@ export function FactoryEpicDetail() {
 	};
   return <FactoryPage>
     <h2>{epic.data.goal}</h2>
-    <dl className="factory-epic-details"><div><dt>Status</dt><dd data-testid="epic-status">{epic.data.status}</dd></div><div><dt>Project</dt><dd>{epic.data.initialProject}</dd></div></dl>
+    <dl className="factory-epic-details"><div><dt>Status</dt><dd data-testid="epic-status">{epic.data.status}</dd></div><div><dt>Project</dt><dd><ProjectLabel path={epic.data.initialProject} /></dd></div></dl>
     {/* ponytail: every epic action lives here, above the proposal dumps that used to push them off screen. */}
     <section className="factory-epic-actions" aria-label="Epic actions">
       {epic.data.planGate?.resolution === 'open' && <div className="factory-epic-gate" aria-label="Plan approval gate"><h3>Plan approval</h3><p>Revision {epic.data.planGate.proposalRevision}: {epic.data.planGate.proposalHash}</p><label>Feedback<textarea value={feedback} onChange={(event) => setFeedback(event.target.value)} /></label><div className="factory-epic-action-row">{(['approve', 'revise', 'reject'] as const).map((action) => <Button key={action} type="button" variant={action === 'approve' ? 'accent' : 'default'} disabled={decideGate.isPending} onClick={() => decideGate.mutate({ action, expectedRevision: epic.data!.planGate!.proposalRevision, expectedHash: epic.data!.planGate!.proposalHash, feedback }, { onSuccess: () => setGateStatus(action === 'approve' ? 'Plan approved.' : action === 'revise' ? 'Revision requested.' : 'Plan rejected.') })}>{action === 'approve' ? 'Approve plan' : action === 'revise' ? 'Request revision' : 'Reject plan'}</Button>)}</div>{decideGate.isError && <p role="alert">{decideGate.error instanceof Error ? decideGate.error.message : 'Could not decide Plan gate.'}</p>}</div>}
@@ -441,10 +442,10 @@ function InventoryToolbar({ label, value, onChange, children }: { label: string;
 }
 
 function QueueTable({ label, items }: { label: string; items: FactoryQueueItem[] }) {
-  return <div className="factory-table-wrap"><table className="factory-table" aria-label={label}><thead><tr><th>Issue</th><th>Epic</th><th>Repository</th><th>Dispatch</th><th>Outcome</th><th>Session</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}>
+  return <div className="factory-table-wrap"><table className="factory-table" aria-label={label}><thead><tr><th>Issue</th><th>Epic</th><th>Project</th><th>Dispatch</th><th>Outcome</th><th>Session</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}>
 		<td><strong>{item.title}</strong><span>{item.id}</span></td>
 		<td className="factory-table-id">{item.epicId}</td>
-		<td>{item.repository}</td>
+		<td><ProjectLabel path={item.repository} /></td>
 		<td>{item.state}{item.attemptId && <span>Attempt {item.attemptId}</span>}<DispatchExplanation item={{ ...item, dispatchState: item.state }} /></td>
 		<td>{item.outcome || '-'}</td>
 		<td>{item.session?.id ? <Link to={`/session/${encodeURIComponent(item.session.id)}`} aria-label={`Open session ${item.session.id}`}>Open session</Link> : '-'}</td>
