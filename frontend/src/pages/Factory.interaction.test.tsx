@@ -10,6 +10,7 @@ import { FactoryConfiguration, FactoryEpicDetail, FactoryEpics, FactoryOverview,
 import { FactoryPlanApproval } from '../components/FactoryPlanApproval';
 
 vi.mock('../lib/api', () => ({ api: {
+		sessionModels: vi.fn(),
     factoryEpics: vi.fn(),
     projects: vi.fn(),
     sessions: vi.fn(),
@@ -62,6 +63,7 @@ async function fillEpicForm(user: ReturnType<typeof userEvent.setup>) {
 }
 
 beforeEach(() => {
+	vi.mocked(api.sessionModels).mockReset().mockResolvedValue({ models: [], hasProviders: false });
   vi.mocked(api.factoryEpic).mockReset();
   vi.mocked(api.projects).mockReset();
   vi.mocked(api.createFactoryEpic).mockReset();
@@ -263,6 +265,7 @@ describe('Factory interactions', () => {
 
   it('approves a Plan without leaving its planning session', async () => {
     const user = userEvent.setup();
+		vi.mocked(api.sessionModels).mockResolvedValue({ hasProviders: true, models: [{ provider: 'openai', model: 'gpt-6-astra' }, { provider: 'openai', model: 'gpt-5.6-sol' }, { provider: 'anthropic', model: 'claude-sonnet-4' }] });
     vi.mocked(api.factoryEpic).mockResolvedValue({ id: 'epic-1', goal: 'Routines', status: 'open', initialProject: '/repo', attempts: [{ id: 'attempt-1', workId: 'epic-1.1', phase: 'active', session: { platform: 'opencode', id: 'planning-session' } }], planGate: { issueId: 'epic-1.2', proposalRevision: 2, proposalHash: 'hash-2', resolution: 'open' } } as never);
     vi.mocked(api.factoryIssues).mockResolvedValue([{ id: 'epic-1.3', epicId: 'epic-1', kind: 'materialization', title: 'Materialize', status: 'open' }] as never);
     vi.mocked(api.factoryPlanGate).mockImplementation(async () => {
@@ -273,9 +276,11 @@ describe('Factory interactions', () => {
     renderFactory(<MemoryRouter><FactoryPlanApproval epicID="epic-1" platformID="opencode" sessionID="planning-session" /></MemoryRouter>);
 
     expect(await screen.findByText('Approval starts implementation.')).toBeInTheDocument();
+		await waitFor(() => expect(screen.getByLabelText('Implementation model')).toHaveValue('openai/gpt-5.6-sol'));
+		await user.selectOptions(screen.getByLabelText('Implementation model'), 'anthropic/claude-sonnet-4');
     await user.click(screen.getByRole('button', { name: 'Approve plan' }));
 
-    await waitFor(() => expect(api.factoryPlanGate).toHaveBeenCalledWith('epic-1', 'approve', { expectedRevision: 2, expectedHash: 'hash-2', feedback: undefined }));
+    await waitFor(() => expect(api.factoryPlanGate).toHaveBeenCalledWith('epic-1', 'approve', { expectedRevision: 2, expectedHash: 'hash-2', feedback: undefined, implementationModel: 'anthropic/claude-sonnet-4' }));
     expect(await screen.findByText("Plan approved. We're starting work.")).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Approve plan' })).not.toBeInTheDocument();
     expect(api.factoryMaterialize).not.toHaveBeenCalled();

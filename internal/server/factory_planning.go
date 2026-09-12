@@ -245,8 +245,25 @@ func planningGetJSON(ctx context.Context, client *http.Client, url string, targe
 }
 
 func (l factoryPlanningLauncher) PromptPlanningSession(ctx context.Context, session factory.PlanningSession, req factory.PlanningSessionRequest) error {
+	var planningModel string
+	if adapter, ok := l.server.registry.Get(platforms.ID(session.Platform)); ok {
+		if catalog, err := adapter.SessionModels(ctx, session.ID); err == nil && catalog != nil {
+			planningModel = factoryStrongModel(catalog.Models)
+		}
+	}
 	prompt := fmt.Sprintf("Plan Factory Work Epic %s (planning work %s). Inspect the repository without modifying it. First grill the user: load the grilling skill if available, and either way ask one sharp question at a time until the goal, scope, and non-goals are unambiguous. Do not propose an issue graph until the user tells you to proceed. Then, if the to-tickets skill is available, load it; either way, split the plan into tracer-bullet vertical slices with explicit blocking edges. Factory's proposal approval replaces the skill's tracker publication step. Submit the resulting issue graph with the factory MCP action submit_proposal using epic_id %s, attempt_id %s, and attempt_token %s. Split the work into multiple focused implementation Issues by default. Give every manifest node a stable key, concise title, actionable description, and add explicit edges from each dependent node to its blocker where ordering matters. After submitting, recap the proposed Issues and include a Mermaid flowchart of their dependencies. Tell the user that Approve and start implementation materializes the Plan and begins implementation. End your final response with [Review and approve the plan](/factory/epics/%s)", req.EpicID, req.WorkID, req.EpicID, req.AttemptID, req.AgentToken, req.EpicID)
-	return l.server.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt})
+	prompt = "At approval, ask the user to confirm the implementation model. Recommend Opus or Sol for balanced implementation, or Sonnet or Terra for speed. Fable and Astra are preferred for planning. The approval control records the user's model choice.\n\n" + prompt
+	return l.server.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt, Model: planningModel})
+}
+
+func factoryStrongModel(models []platforms.SessionModel) string {
+	for _, candidate := range models {
+		name := strings.ToLower(candidate.Model + " " + candidate.ModelName)
+		if candidate.IsAvailable && (strings.Contains(name, "fable") || strings.Contains(name, "astra")) {
+			return candidate.Provider + "/" + candidate.Model
+		}
+	}
+	return ""
 }
 
 func (l factoryPlanningLauncher) StopPlanningSession(ctx context.Context, session factory.PlanningSession) error {

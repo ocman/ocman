@@ -170,6 +170,7 @@ export interface FactoryMaterialization {
 }
 
 export interface FactoryPlanGate {
+	implementationModel?: string;
 	issueId: string;
 	proposalRevision: number;
 	proposalHash: string;
@@ -180,6 +181,7 @@ export interface FactoryPlanGate {
 }
 
 export interface FactoryPlanGateDecisionRequest {
+	implementationModel?: string;
 	expectedRevision: number;
 	expectedHash: string;
 	feedback?: string;

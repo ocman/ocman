@@ -130,7 +130,7 @@ func (f *fakeFactoryService) DecidePlanGate(_ context.Context, _ string, action 
 	if f.err != nil {
 		return factory.PlanGate{}, f.err
 	}
-	return factory.PlanGate{Resolution: action, ProposalRevision: req.ExpectedRevision, ProposalHash: req.ExpectedHash}, nil
+	return factory.PlanGate{Resolution: action, ProposalRevision: req.ExpectedRevision, ProposalHash: req.ExpectedHash, ImplementationModel: req.ImplementationModel}, nil
 }
 func (f *fakeFactoryService) CreateRecoveryGate(_ context.Context, attemptID, _ string, question, reason string, choices []string) (factory.RecoveryGate, error) {
 	if f.err != nil {
@@ -513,7 +513,7 @@ func TestFactoryToolPlanGateActionsRequireExactProposal(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(srv.Close)
-	if got := callTool(t, srv, "factory", map[string]any{"action": "approve_plan", "epic_id": "epic-1", "revision": 2, "expected_hash": "hash-2"}); got.IsError || !strings.Contains(resultText(got), `"resolution": "approve"`) {
+	if got := callTool(t, srv, "factory", map[string]any{"action": "approve_plan", "epic_id": "epic-1", "revision": 2, "expected_hash": "hash-2", "implementation_model": "openai/gpt-5.6-sol"}); got.IsError || !strings.Contains(resultText(got), `"resolution": "approve"`) || !strings.Contains(resultText(got), `"implementationModel": "openai/gpt-5.6-sol"`) {
 		t.Fatalf("approve = %q", resultText(got))
 	}
 	if got := callTool(t, srv, "factory", map[string]any{"action": "reject_plan", "epic_id": "epic-1", "revision": 2}); !got.IsError || resultText(got) != "expected_hash is required" {

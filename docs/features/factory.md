@@ -6,6 +6,21 @@ weight: 9
 Factory implements a Work Epic sequentially on one shared branch, then runs a
 separate delivery session to publish the final pull request.
 
+## Planning and implementation models
+
+New planning sessions prefer an available Fable or Astra model. If neither is
+available, they use the runtime default.
+
+Plan approval includes an implementation model selector in the planning session,
+Epic page, and inline action card. It suggests an available Opus or Sol model for
+balanced implementation, or Sonnet or Terra when only a fast model is available.
+Choose a fast model for speed, any other available model, or Runtime default.
+
+Approval saves the exact model reference with the Plan gate and copies it into
+each implementation Attempt, including final delivery. Retrying approval keeps
+the original choice. MCP callers can supply `implementation_model` as a
+`provider/model` reference to `approve_plan` after confirming it with the user.
+
 ## Implementation checkpoints
 
 Each implementation session tests its change, commits it, pushes the shared

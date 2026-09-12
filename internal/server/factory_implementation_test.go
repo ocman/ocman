@@ -178,8 +178,12 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 		if got != (factory.PlanningSession{Platform: "opencode", ID: "worktree-session"}) {
 			t.Fatalf("session = %#v", got)
 		}
+		request.Model = "openai/gpt-5.6-sol"
 		if err := (factoryImplementationLauncher{server: srv}).PromptImplementationSession(ctx, got, request); err != nil {
 			t.Fatal(err)
+		}
+		if sent.Model != request.Model {
+			t.Fatalf("model = %q", sent.Model)
 		}
 		if host.request.ProjectDir != "/repo" || host.request.Branch != "factory/work" || host.request.BaseRef != "factory/previous" || host.request.Title != "implementation work-1 (@factory)" || !host.request.NewBranch || !reflect.DeepEqual(host.request.PermissionRules, rules) {
 			t.Fatalf("worktree request = %#v", host.request)

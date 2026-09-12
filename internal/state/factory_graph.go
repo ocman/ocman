@@ -1049,6 +1049,9 @@ func (d *DB) ClaimFactoryImplementation(ctx context.Context, epicID, issueID, pr
 		return model.NativeEpic{}, model.FactoryAttempt{}, err
 	}
 	attemptPolicy.Delivery = kind == "delivery"
+	if err := tx.QueryRowContext(ctx, `SELECT implementation_model FROM factory_plan_gate WHERE epic_id = ?`, epicID).Scan(&attemptPolicy.Model); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return model.NativeEpic{}, model.FactoryAttempt{}, err
+	}
 	if err := tx.QueryRowContext(ctx, `SELECT json_extract(CASE WHEN json_valid(result_json) THEN result_json ELSE '{}' END, '$.commitSha') FROM factory_attempt WHERE epic_id = ? AND terminal_outcome = 'succeeded' AND json_extract(CASE WHEN json_valid(result_json) THEN result_json ELSE '{}' END, '$.commitSha') <> '' ORDER BY finished_at DESC, rowid DESC LIMIT 1`, epicID).Scan(&attemptPolicy.CheckpointSHA); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return model.NativeEpic{}, model.FactoryAttempt{}, err
 	}
@@ -1191,7 +1194,7 @@ func (d *DB) saveFactoryProposalRevision(ctx context.Context, proposal model.Nat
 	}
 	var gateID string
 	if err := tx.QueryRowContext(ctx, `SELECT id FROM factory_issue WHERE epic_id = ? AND kind = 'gate' ORDER BY id LIMIT 1`, proposal.EpicID).Scan(&gateID); err == nil {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO factory_plan_gate (epic_id, issue_id, proposal_revision, proposal_hash, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(epic_id) DO UPDATE SET proposal_revision = excluded.proposal_revision, proposal_hash = excluded.proposal_hash, outcome = '', resolution = 'open', feedback = '', review_issue_ids_json = '[]', updated_at = excluded.updated_at`, proposal.EpicID, gateID, proposal.Revision, proposal.ContentHash, proposal.CreatedAt); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO factory_plan_gate (epic_id, issue_id, proposal_revision, proposal_hash, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(epic_id) DO UPDATE SET proposal_revision = excluded.proposal_revision, proposal_hash = excluded.proposal_hash, outcome = '', resolution = 'open', feedback = '', implementation_model = '', review_issue_ids_json = '[]', updated_at = excluded.updated_at`, proposal.EpicID, gateID, proposal.Revision, proposal.ContentHash, proposal.CreatedAt); err != nil {
 			return model.NativeProposalRevision{}, false, fmt.Errorf("resetting Factory Plan gate: %w", err)
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'open' WHERE id = ?`, gateID); err != nil {
@@ -1208,7 +1211,7 @@ func (d *DB) saveFactoryProposalRevision(ctx context.Context, proposal model.Nat
 }
 
 func (d *DB) GetFactoryPlanGate(ctx context.Context, epicID string) (model.NativePlanGate, error) {
-	return scanFactoryPlanGate(d.db.QueryRowContext(ctx, `SELECT epic_id, issue_id, proposal_revision, proposal_hash, outcome, resolution, feedback, review_issue_ids_json FROM factory_plan_gate WHERE epic_id = ?`, epicID))
+	return scanFactoryPlanGate(d.db.QueryRowContext(ctx, `SELECT epic_id, issue_id, proposal_revision, proposal_hash, outcome, resolution, feedback, review_issue_ids_json, implementation_model FROM factory_plan_gate WHERE epic_id = ?`, epicID))
 }
 
 // MaterializeFactoryPlan creates the approved implementation graph and closes
@@ -1221,7 +1224,7 @@ func (d *DB) MaterializeFactoryPlan(ctx context.Context, epicID, issueID, profil
 	defer func() { _ = tx.Rollback() }()
 
 	var gate model.NativePlanGate
-	gate, err = scanFactoryPlanGate(tx.QueryRowContext(ctx, `SELECT epic_id, issue_id, proposal_revision, proposal_hash, outcome, resolution, feedback, review_issue_ids_json FROM factory_plan_gate WHERE epic_id = ?`, epicID))
+	gate, err = scanFactoryPlanGate(tx.QueryRowContext(ctx, `SELECT epic_id, issue_id, proposal_revision, proposal_hash, outcome, resolution, feedback, review_issue_ids_json, implementation_model FROM factory_plan_gate WHERE epic_id = ?`, epicID))
 	if err != nil {
 		return model.NativeMaterialization{}, fmt.Errorf("reading Factory Plan approval: %w", err)
 	}
@@ -1428,13 +1431,13 @@ func (d *DB) MaterializeFactoryPlan(ctx context.Context, epicID, issueID, profil
 	return result, nil
 }
 
-func (d *DB) DecideFactoryPlanGate(ctx context.Context, epicID, action string, revision int, hash, feedback string) (model.NativePlanGate, error) {
+func (d *DB) DecideFactoryPlanGate(ctx context.Context, epicID, action string, revision int, hash, feedback string, implementationModel ...string) (model.NativePlanGate, error) {
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return model.NativePlanGate{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	gate, err := scanFactoryPlanGate(tx.QueryRowContext(ctx, `SELECT epic_id, issue_id, proposal_revision, proposal_hash, outcome, resolution, feedback, review_issue_ids_json FROM factory_plan_gate WHERE epic_id = ?`, epicID))
+	gate, err := scanFactoryPlanGate(tx.QueryRowContext(ctx, `SELECT epic_id, issue_id, proposal_revision, proposal_hash, outcome, resolution, feedback, review_issue_ids_json, implementation_model FROM factory_plan_gate WHERE epic_id = ?`, epicID))
 	if err != nil {
 		return model.NativePlanGate{}, err
 	}
@@ -1452,6 +1455,12 @@ func (d *DB) DecideFactoryPlanGate(ctx context.Context, epicID, action string, r
 	}
 	if action == "approve" {
 		gate.Outcome, gate.Resolution = "succeeded", "approved"
+		if len(implementationModel) > 0 {
+			gate.ImplementationModel = implementationModel[0]
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE factory_plan_gate SET implementation_model = ? WHERE epic_id = ?`, gate.ImplementationModel, epicID); err != nil {
+			return model.NativePlanGate{}, err
+		}
 	}
 	if action == "revise" {
 		gate.Outcome, gate.Resolution = "", "revision_requested"
@@ -1518,7 +1527,7 @@ type factoryPlanGateScanner interface{ Scan(...any) error }
 func scanFactoryPlanGate(scanner factoryPlanGateScanner) (model.NativePlanGate, error) {
 	var gate model.NativePlanGate
 	var review string
-	if err := scanner.Scan(&gate.EpicID, &gate.IssueID, &gate.ProposalRevision, &gate.ProposalHash, &gate.Outcome, &gate.Resolution, &gate.Feedback, &review); err != nil {
+	if err := scanner.Scan(&gate.EpicID, &gate.IssueID, &gate.ProposalRevision, &gate.ProposalHash, &gate.Outcome, &gate.Resolution, &gate.Feedback, &review, &gate.ImplementationModel); err != nil {
 		return model.NativePlanGate{}, err
 	}
 	if err := json.Unmarshal([]byte(review), &gate.ReviewIssueIDs); err != nil {

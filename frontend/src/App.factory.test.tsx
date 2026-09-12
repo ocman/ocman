@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppRoutes } from './App';
 import { useAddFactoryIssueComment, useClaimFactoryPlan, useCloseFactoryEpic, useCloseFactoryMol, useCreateWorkEpic, useDecideFactoryPlanGate, useFactoryFormula, useFactoryFormulas, useFactoryGraphIssues, useFactoryIssueComments, useFactoryIssues, useFactoryProposals, useFactoryQueue, useFactoryRemovedIssues, useMaterializeFactoryPlan, useMutateFactoryGraph, usePourFactoryEpic, useProjects, useResolveFactoryAuthorityGate, useResolveFactoryRecoveryGate, useSessions, useSetFactoryEpicPaused, useWorkEpic, useWorkEpics } from './lib/queries';
 
@@ -33,7 +34,7 @@ vi.mock('./lib/queries', () => ({
 }));
 
 function renderRoute(path: string) {
-  render(<MemoryRouter initialEntries={[path]}><AppRoutes /></MemoryRouter>);
+  render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[path]}><AppRoutes /></MemoryRouter></QueryClientProvider>);
 }
 
 beforeEach(() => {

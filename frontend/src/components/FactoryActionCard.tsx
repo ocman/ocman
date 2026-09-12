@@ -4,15 +4,20 @@ import type { FactoryAuthorityEscalationGate, FactoryEpic, FactoryIssue, Factory
 import { useClaimFactoryPlan, useDecideFactoryPlanGate, useFactoryIssues, useMaterializeFactoryPlan, usePourFactoryEpic, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryRecoveryGate, useWorkEpic } from '../lib/queries';
 import { Button } from './Control';
 import { factoryEpicStatus } from './factoryEpicStatus';
+import { FactoryImplementationModel } from './FactoryImplementationModel';
+import { useFactoryImplementationModel } from './useFactoryImplementationModel';
 import './FactoryEpicCard.css';
 
-function PlanActions({ epicID, gate }: { epicID: string; gate: FactoryPlanGate }) {
+function PlanActions({ epic, gate }: { epic: FactoryEpic; gate: FactoryPlanGate }) {
+	const epicID = epic.id;
+	const implementation = useFactoryImplementationModel(epic);
   const decide = useDecideFactoryPlanGate(epicID);
   const [feedback, setFeedback] = useState('');
   return <span className="oc-factory-action-issue">
     <span>Plan revision {gate.proposalRevision}. Approval starts implementation.</span>
     <label>Plan feedback<input value={feedback} onChange={(event) => setFeedback(event.target.value)} /></label>
-    <span className="oc-factory-action-buttons">{(['approve', 'revise', 'reject'] as const).map((action) => <Button key={action} type="button" disabled={decide.isPending || decide.isSuccess} onClick={() => decide.mutate({ action, expectedRevision: gate.proposalRevision, expectedHash: gate.proposalHash, feedback })}>{action === 'approve' ? 'Approve plan' : action === 'revise' ? 'Request revision' : 'Reject plan'}</Button>)}</span>
+    <FactoryImplementationModel {...implementation} />
+    <span className="oc-factory-action-buttons">{(['approve', 'revise', 'reject'] as const).map((action) => <Button key={action} type="button" disabled={decide.isPending || decide.isSuccess || (action === 'approve' && implementation.loading)} onClick={() => decide.mutate({ action, expectedRevision: gate.proposalRevision, expectedHash: gate.proposalHash, feedback, ...(action === 'approve' && implementation.model && { implementationModel: implementation.model }) })}>{action === 'approve' ? 'Approve plan' : action === 'revise' ? 'Request revision' : 'Reject plan'}</Button>)}</span>
     {decide.isPending && <span role="status">Saving decision…</span>}
     {decide.isSuccess && <span role="status">Plan decision saved.</span>}
     {decide.isError && <span role="alert">{decide.error.message}</span>}
@@ -90,7 +95,7 @@ function EpicActions({ epic, issues, issueID }: { epic: FactoryEpic; issues: Fac
   const gate = epic.planGate;
   return <>
     {selected.map((issue) => <IssueActions key={issue.id} issue={issue} enabled={epic.status === 'open'} />)}
-    {gate?.resolution === 'open' && <><Link to={`/factory/epics/${encodeURIComponent(epic.id)}`}>Review plan</Link><PlanActions key={`${gate.proposalRevision}/${gate.proposalHash}`} epicID={epic.id} gate={gate} /></>}
+    {gate?.resolution === 'open' && <><Link to={`/factory/epics/${encodeURIComponent(epic.id)}`}>Review plan</Link><PlanActions key={`${gate.proposalRevision}/${gate.proposalHash}`} epic={epic} gate={gate} /></>}
     {issueID && !selected.length && <span role="status">Issue {issueID} is no longer available.</span>}
     {epic.status === 'open' && !issues.length && !issueID && <Button type="button" disabled={pour.isPending || pour.isSuccess} onClick={() => pour.mutate()}>{pour.isPending ? 'Pouring…' : 'Pour graph'}</Button>}
     {pour.isSuccess && <span role="status">Graph poured.</span>}

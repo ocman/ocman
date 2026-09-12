@@ -16,6 +16,7 @@ func TestInboxMigration(t *testing.T) {
 	if _, err := raw.Exec(`
 		CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL);
 		INSERT INTO schema_version (version, applied_at) VALUES (73, 0);
+		CREATE TABLE factory_plan_gate (epic_id TEXT PRIMARY KEY);
 	`); err != nil {
 		t.Fatal(err)
 	}

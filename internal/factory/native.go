@@ -574,20 +574,22 @@ type ProposalRevision struct {
 }
 
 type PlanGate struct {
-	IssueID          string   `json:"issueId"`
-	ProposalRevision int      `json:"proposalRevision"`
-	ProposalHash     string   `json:"proposalHash"`
-	Outcome          string   `json:"outcome,omitempty"`
-	Resolution       string   `json:"resolution"`
-	Feedback         string   `json:"feedback,omitempty"`
-	ReviewIssueIDs   []string `json:"reviewIssueIds,omitempty"`
+	ImplementationModel string   `json:"implementationModel,omitempty"`
+	IssueID             string   `json:"issueId"`
+	ProposalRevision    int      `json:"proposalRevision"`
+	ProposalHash        string   `json:"proposalHash"`
+	Outcome             string   `json:"outcome,omitempty"`
+	Resolution          string   `json:"resolution"`
+	Feedback            string   `json:"feedback,omitempty"`
+	ReviewIssueIDs      []string `json:"reviewIssueIds,omitempty"`
 }
 
 type PlanGateDecisionRequest struct {
-	ExpectedRevision int    `json:"expectedRevision"`
-	ExpectedHash     string `json:"expectedHash"`
-	Actor            string `json:"actor,omitempty"`
-	Feedback         string `json:"feedback,omitempty"`
+	ImplementationModel string `json:"implementationModel,omitempty"`
+	ExpectedRevision    int    `json:"expectedRevision"`
+	ExpectedHash        string `json:"expectedHash"`
+	Actor               string `json:"actor,omitempty"`
+	Feedback            string `json:"feedback,omitempty"`
 }
 
 type ClaimedPlan struct {
@@ -630,7 +632,7 @@ type nativePlanningStore interface {
 	GetFactoryProposalRevision(context.Context, string, int) (model.NativeProposalRevision, error)
 	ListFactoryProposalRevisions(context.Context, string) ([]model.NativeProposalRevision, error)
 	GetFactoryPlanGate(context.Context, string) (model.NativePlanGate, error)
-	DecideFactoryPlanGate(context.Context, string, string, int, string, string) (model.NativePlanGate, error)
+	DecideFactoryPlanGate(context.Context, string, string, int, string, string, ...string) (model.NativePlanGate, error)
 	MaterializeFactoryPlan(context.Context, string, string, string, time.Time) (model.NativeMaterialization, error)
 	ClaimFactoryImplementation(context.Context, string, string, string, time.Time) (model.NativeEpic, model.FactoryAttempt, error)
 }
@@ -711,6 +713,7 @@ type NativeService struct {
 }
 
 type ImplementationSessionRequest struct {
+	Model                                                                                           string
 	EpicID, WorkID, AttemptID, AgentToken, Repository, Title, Description, Branch, BaseRef, Profile string
 	TargetBranch                                                                                    string
 	Delivery                                                                                        bool
@@ -1377,7 +1380,14 @@ func (s *NativeService) DecidePlanGate(ctx context.Context, epicID, action strin
 	if req.ExpectedRevision < 1 || strings.TrimSpace(req.ExpectedHash) == "" {
 		return PlanGate{}, fmt.Errorf("%w: plan revision and hash are required", ErrInvalidRequest)
 	}
-	gate, err := store.DecideFactoryPlanGate(ctx, epicID, action, req.ExpectedRevision, req.ExpectedHash, strings.TrimSpace(req.Feedback))
+	implementationModel := strings.TrimSpace(req.ImplementationModel)
+	if implementationModel != "" {
+		provider, name, valid := strings.Cut(implementationModel, "/")
+		if !valid || provider == "" || name == "" || len(implementationModel) > 300 || strings.ContainsAny(implementationModel, " \t\r\n") {
+			return PlanGate{}, fmt.Errorf("%w: implementation model must be provider/model", ErrInvalidRequest)
+		}
+	}
+	gate, err := store.DecideFactoryPlanGate(ctx, epicID, action, req.ExpectedRevision, req.ExpectedHash, strings.TrimSpace(req.Feedback), implementationModel)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PlanGate{}, fmt.Errorf("%w: factory Plan gate is unavailable", ErrInvalidRequest)
 	}
@@ -1684,7 +1694,7 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 				continue
 			}
 		}
-		request := ImplementationSessionRequest{EpicID: epic.ID, WorkID: next.issue.ID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: epic.InitialProject, Title: next.issue.Title, Description: next.issue.Description, Branch: branch, BaseRef: baseRef, Profile: "factory-implement/v1", TargetBranch: attempt.FrozenPolicy.TargetBranch, Delivery: attempt.FrozenPolicy.Delivery}
+		request := ImplementationSessionRequest{Model: attempt.FrozenPolicy.Model, EpicID: epic.ID, WorkID: next.issue.ID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: epic.InitialProject, Title: next.issue.Title, Description: next.issue.Description, Branch: branch, BaseRef: baseRef, Profile: "factory-implement/v1", TargetBranch: attempt.FrozenPolicy.TargetBranch, Delivery: attempt.FrozenPolicy.Delivery}
 		session, launchErr := s.implementation.LaunchImplementationSession(ctx, request)
 		if launchErr != nil {
 			if session.ID != "" {
@@ -1950,7 +1960,7 @@ func factoryHandoffError(err error) error {
 }
 
 func nativePlanGate(gate model.NativePlanGate) PlanGate {
-	return PlanGate{IssueID: gate.IssueID, ProposalRevision: gate.ProposalRevision, ProposalHash: gate.ProposalHash, Outcome: gate.Outcome, Resolution: gate.Resolution, Feedback: gate.Feedback, ReviewIssueIDs: gate.ReviewIssueIDs}
+	return PlanGate{ImplementationModel: gate.ImplementationModel, IssueID: gate.IssueID, ProposalRevision: gate.ProposalRevision, ProposalHash: gate.ProposalHash, Outcome: gate.Outcome, Resolution: gate.Resolution, Feedback: gate.Feedback, ReviewIssueIDs: gate.ReviewIssueIDs}
 }
 
 // ClaimPlan records a prepared Attempt before exposing the bounded Planning Session.

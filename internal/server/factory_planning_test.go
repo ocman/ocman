@@ -24,6 +24,26 @@ type factoryPlanningHost struct {
 	restartCalls       int
 }
 
+func TestFactoryStrongModel(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		models []platforms.SessionModel
+		want   string
+	}{
+		{"none", nil, ""},
+		{"balanced only", []platforms.SessionModel{{Provider: "p", Model: "opus", IsAvailable: true}}, ""},
+		{"unavailable", []platforms.SessionModel{{Provider: "p", Model: "fable"}}, ""},
+		{"astra", []platforms.SessionModel{{Provider: "p", Model: "gpt-6-astra", IsAvailable: true}}, "p/gpt-6-astra"},
+		{"display name", []platforms.SessionModel{{Provider: "p", Model: "strong", ModelName: "Fable", IsAvailable: true}}, "p/strong"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := factoryStrongModel(tc.models); got != tc.want {
+				t.Fatalf("model = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func (h *factoryPlanningHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
 	return h.ensured, nil
 }

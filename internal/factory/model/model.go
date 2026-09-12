@@ -97,14 +97,15 @@ type NativeProposalRevision struct {
 }
 
 type NativePlanGate struct {
-	EpicID           string
-	IssueID          string
-	ProposalRevision int
-	ProposalHash     string
-	Outcome          string
-	Resolution       string
-	Feedback         string
-	ReviewIssueIDs   []string
+	ImplementationModel string
+	EpicID              string
+	IssueID             string
+	ProposalRevision    int
+	ProposalHash        string
+	Outcome             string
+	Resolution          string
+	Feedback            string
+	ReviewIssueIDs      []string
 }
 
 type NativeMaterialization struct {
@@ -187,6 +188,7 @@ const (
 )
 
 type FactoryAttemptPolicy struct {
+	Model              string `json:"model,omitempty"`
 	Branch             string `json:"branch,omitempty"`
 	BaseRef            string `json:"baseRef,omitempty"`
 	TargetBranch       string `json:"targetBranch,omitempty"`
