@@ -20,6 +20,7 @@ import (
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/webhook"
 )
 
 // Server is the remote-side gRPC service. It is a thin translation layer
@@ -619,6 +620,39 @@ func (s *Server) TmuxSessions(ctx context.Context, _ *pb.Empty) (*pb.JsonResp, e
 
 func (s *Server) HostCapabilities(_ context.Context, _ *pb.Empty) (*pb.JsonResp, error) {
 	return jsonResp(s.host.Capabilities(), nil)
+}
+
+func (s *Server) RegisterWebhookInbox(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
+	if s.inboxStore == nil {
+		return nil, status.Error(codes.FailedPrecondition, "webhook state is unavailable")
+	}
+	var input struct {
+		RoutineID       string `json:"routineId"`
+		RelayURL        string `json:"relayUrl"`
+		EnrollmentToken string `json:"enrollmentToken"`
+	}
+	if err := unmarshalJSON(req.Payload, &input); err != nil {
+		return nil, err
+	}
+	inbox, err := webhook.Register(ctx, s.inboxStore, input.RoutineID, input.RelayURL, input.EnrollmentToken, nil)
+	return jsonResp(inbox, err)
+}
+
+func (s *Server) PollWebhookInbox(ctx context.Context, req *pb.JsonReq) (*pb.Empty, error) {
+	if s.inboxStore == nil {
+		return nil, status.Error(codes.FailedPrecondition, "webhook state is unavailable")
+	}
+	var input struct {
+		RoutineID string `json:"routineId"`
+	}
+	if err := unmarshalJSON(req.Payload, &input); err != nil {
+		return nil, err
+	}
+	inbox, err := s.inboxStore.GetWebhookInbox(ctx, input.RoutineID)
+	if err != nil {
+		return nil, err
+	}
+	return &pb.Empty{}, (&webhook.Poller{Store: s.inboxStore, Inbox: inbox}).Poll(ctx)
 }
 
 func (s *Server) BeadsStatus(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {

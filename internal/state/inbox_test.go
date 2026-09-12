@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestInboxMigration(t *testing.T) {
@@ -197,5 +198,44 @@ func TestArchiveInboxItemsAndAllRead(t *testing.T) {
 	}
 	if count, err := db.CountUnreadInboxItems(t.Context()); err != nil || count != 1 {
 		t.Fatalf("unread count = %d, %v; want 1", count, err)
+	}
+}
+
+func TestWebhookDeliveryAcceptanceIsIdempotent(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	if err := db.SaveWebhookInbox(t.Context(), WebhookInbox{ID: "inbox", RoutineID: "routine", RelayURL: "https://relay", Identity: "identity"}); err != nil {
+		t.Fatal(err)
+	}
+	accepted, err := db.AcceptWebhookDelivery(t.Context(), "inbox", "delivery", "POST webhook", "body", 10)
+	if err != nil || !accepted {
+		t.Fatalf("first acceptance = %v, %v", accepted, err)
+	}
+	accepted, err = db.AcceptWebhookDelivery(t.Context(), "inbox", "delivery", "POST webhook", "body", 10)
+	if err != nil || accepted {
+		t.Fatalf("duplicate acceptance = %v, %v", accepted, err)
+	}
+	items, err := db.ListInboxItems(t.Context())
+	if err != nil || len(items) != 1 {
+		t.Fatalf("items = %v, %v", items, err)
+	}
+}
+
+func TestWebhookDeliveryErrorBackoffIsBounded(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	if err := db.SaveWebhookInbox(t.Context(), WebhookInbox{ID: "inbox", RoutineID: "routine", RelayURL: "https://relay", Identity: "identity"}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.UnixMilli(1000)
+	for i := 0; i < 8; i++ {
+		if err := db.RecordWebhookDeliveryError(t.Context(), "inbox", "delivery", "bad ciphertext", now); err != nil {
+			t.Fatal(err)
+		}
+		now = now.Add(time.Hour)
+	}
+	allowed, err := db.WebhookDeliveryRetryAllowed(t.Context(), "inbox", "delivery", now)
+	if err != nil || allowed {
+		t.Fatalf("retry after max attempts = %v, %v", allowed, err)
 	}
 }

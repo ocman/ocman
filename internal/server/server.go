@@ -451,6 +451,8 @@ func (s *Server) RemoteServerHost() hostsvc.Host { return s.router().Local() }
 // remote-access gRPC server over the same adapters.
 func (s *Server) Registry() *platforms.Registry { return s.registry }
 
+func (s *Server) StateDB() *state.DB { return s.stateDB }
+
 // HostRouter returns the host router so the remote Manager (Phase 4+)
 // can register remote hosts as connections come up.
 func (s *Server) HostRouter() *hostsvc.Router { return s.router() }

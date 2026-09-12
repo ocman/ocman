@@ -71,6 +71,8 @@ service Ocman {
   rpc TmuxSessions(Empty) returns (JsonResp);
   rpc HostCapabilities(Empty) returns (JsonResp);         // hostsvc.HostCaps
   rpc BeadsStatus(JsonReq) returns (JsonResp);            // {dir} -> hostsvc.BeadsStatus
+  rpc RegisterWebhookInbox(JsonReq) returns (JsonResp);   // {routineId,relayUrl,enrollmentToken}
+  rpc PollWebhookInbox(JsonReq) returns (Empty);          // {routineId}
 
   // --- Owner-local Inbox ---
   rpc InboxItems(Empty) returns (JsonResp);               // []state.InboxItem

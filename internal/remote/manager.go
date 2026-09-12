@@ -11,6 +11,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/webhook"
 )
 
 // Manager owns the hub-side remote connections: it loads saved remotes
@@ -52,6 +53,55 @@ type Manager struct {
 	// before Start.
 	beforeAdapterRegister func()
 	refreshInventories    func(context.Context)
+}
+
+func (m *Manager) webhookRemote(id string) (*RemoteConn, error) {
+	if id == "local" || id == "" {
+		return nil, nil
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, remote := range m.remotes {
+		if remote.conn != nil && remote.conn.RemoteID() == id {
+			if remote.conn.Client() == nil {
+				return nil, ErrRemoteOffline
+			}
+			return remote.conn, nil
+		}
+	}
+	return nil, ErrRemoteOffline
+}
+
+func (m *Manager) RegisterWebhookInbox(ctx context.Context, owner, routineID, relayURL, enrollmentToken string) (state.WebhookInbox, error) {
+	conn, err := m.webhookRemote(owner)
+	if err != nil {
+		return state.WebhookInbox{}, err
+	}
+	if conn != nil {
+		return conn.RegisterWebhookInbox(ctx, routineID, relayURL, enrollmentToken)
+	}
+	if m.store == nil {
+		return state.WebhookInbox{}, ErrRemoteOffline
+	}
+	return webhook.Register(ctx, m.store, routineID, relayURL, enrollmentToken, nil)
+}
+
+func (m *Manager) PollWebhookInbox(ctx context.Context, owner, routineID string) error {
+	conn, err := m.webhookRemote(owner)
+	if err != nil {
+		return err
+	}
+	if conn != nil {
+		return conn.PollWebhookInbox(ctx, routineID)
+	}
+	if m.store == nil {
+		return ErrRemoteOffline
+	}
+	inbox, err := m.store.GetWebhookInbox(ctx, routineID)
+	if err != nil {
+		return err
+	}
+	return (&webhook.Poller{Store: m.store, Inbox: inbox}).Poll(ctx)
 }
 
 // managedRemote bundles a RemoteConn with its registered adapters and the

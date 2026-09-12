@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -23,6 +24,23 @@ type RelayAllocation struct {
 	MaxChunkBytes int64  `json:"maxChunkBytes"`
 	MaxChunks     int    `json:"maxChunks"`
 	MaxShareBytes int64  `json:"maxShareBytes"`
+}
+
+type InboxAllocation struct {
+	ID                  string `json:"id"`
+	IngestionURL        string `json:"ingestionUrl"`
+	ManagementToken     string `json:"managementToken"`
+	FetchToken          string `json:"fetchToken"`
+	AcknowledgmentToken string `json:"acknowledgmentToken"`
+	KeyVersion          int    `json:"keyVersion"`
+}
+
+type InboxDelivery struct {
+	ID string `json:"id"`
+}
+type InboxDeliveryPage struct {
+	Deliveries []InboxDelivery `json:"deliveries"`
+	Cursor     string          `json:"cursor"`
 }
 
 // RelayClient writes sealed chunks to a share relay.
@@ -97,6 +115,94 @@ func (c RelayClient) Delete(ctx context.Context, allocation RelayAllocation) err
 		return relayStatusError("deleting", resp)
 	}
 	return nil
+}
+
+func (c RelayClient) RegisterInbox(ctx context.Context, recipient, enrollmentToken string) (InboxAllocation, error) {
+	body, err := json.Marshal(map[string]string{"recipient": recipient})
+	if err != nil {
+		return InboxAllocation{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.BaseURL, "/")+"/inboxes", bytes.NewReader(body))
+	if err != nil {
+		return InboxAllocation{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+enrollmentToken)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.client().Do(req)
+	if err != nil {
+		return InboxAllocation{}, relayTransportError("registering", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		return InboxAllocation{}, relayStatusError("registering", resp)
+	}
+	var out InboxAllocation
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&out); err != nil {
+		return InboxAllocation{}, fmt.Errorf("decoding inbox registration: %w", err)
+	}
+	return out, nil
+}
+
+func (c RelayClient) ListInboxDeliveries(ctx context.Context, inboxID, token, cursor string) (InboxDeliveryPage, error) {
+	u := strings.TrimRight(c.BaseURL, "/") + "/inboxes/" + inboxID + "/deliveries"
+	if cursor != "" {
+		u += "?cursor=" + url.QueryEscape(cursor)
+	}
+	return c.inboxJSON(ctx, http.MethodGet, u, token, InboxDeliveryPage{})
+}
+
+func (c RelayClient) FetchInboxDelivery(ctx context.Context, inboxID, deliveryID, token string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(c.BaseURL, "/")+"/inboxes/"+inboxID+"/deliveries/"+deliveryID, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.client().Do(req)
+	if err != nil {
+		return nil, relayTransportError("fetching", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, relayStatusError("fetching", resp)
+	}
+	return io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+}
+
+func (c RelayClient) AcknowledgeInboxDelivery(ctx context.Context, inboxID, deliveryID, token string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.BaseURL, "/")+"/inboxes/"+inboxID+"/deliveries/"+deliveryID+"/ack", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.client().Do(req)
+	if err != nil {
+		return relayTransportError("acknowledging", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		return relayStatusError("acknowledging", resp)
+	}
+	return nil
+}
+
+func (c RelayClient) inboxJSON(ctx context.Context, method, endpoint, token string, out InboxDeliveryPage) (InboxDeliveryPage, error) {
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, nil)
+	if err != nil {
+		return out, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.client().Do(req)
+	if err != nil {
+		return out, relayTransportError("listing", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return out, relayStatusError("listing", resp)
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 256<<10)).Decode(&out); err != nil {
+		return out, err
+	}
+	return out, nil
 }
 
 // RelayError reports a failed relay request. Status is 0 when the
