@@ -62,7 +62,7 @@ function DispatchExplanation({ item }: { item: DispatchEvidence }) {
   const hasBlocker = Boolean(item.blockers?.length);
   switch (item.dispatchState) {
     case 'terminally_blocked': return <span>Dispatch: cannot proceed because {hasBlocker ? blocker : 'a prerequisite failed'}.</span>;
-    case 'not_applicable': return <span>Dispatch: not applicable because the recovery condition was not met{hasBlocker && <> ({blocker})</>}.</span>;
+    case 'not_applicable': return <span>Dispatch: {item.outcomeReason || <>not applicable because the recovery condition was not met{hasBlocker && <> ({blocker})</>}.</>}</span>;
     case 'deferred': return <span>Dispatch: delayed{item.outcomeReason ? `: ${item.outcomeReason}` : ''}.</span>;
     case 'retry_wait': return <span>Dispatch: retry {item.retryAttempts ?? 0} scheduled for {item.retryAt ? new Date(item.retryAt).toISOString() : 'a later time'}.</span>;
     case 'waiting': return <span>Dispatch: waiting for prerequisites{hasBlocker && <>: {blocker}</>}.</span>;
@@ -303,7 +303,7 @@ export function FactoryOverview() {
 	const runningAttemptIDs = new Set(running.map((item) => item.attemptId));
 	const planning = epics.data?.flatMap((epic) => (epic.attempts ?? []).filter((attempt) => (attempt.phase === 'prepared' || attempt.phase === 'active' || attempt.phase === 'stopping') && !runningAttemptIDs.has(attempt.id)).map((attempt) => ({ epic, attempt }))) ?? [];
 	const readyPlans = issues.filter((issue) => openEpics.has(issue.epicId) && issue.kind === 'plan' && issue.dispatchState === 'ready' && !planning.some(({ attempt }) => attempt.workId === issue.id));
-	const failedWork = issues.filter((issue) => openEpics.has(issue.epicId) && (issue.kind === 'task' || issue.kind === 'implementation') && issue.status === 'closed' && (issue.outcome === 'failed' || issue.outcome === 'cancelled'));
+	const failedWork = issues.filter((issue) => openEpics.has(issue.epicId) && ['task', 'implementation', 'delivery'].includes(issue.kind) && issue.status === 'closed' && (issue.outcome === 'failed' || issue.outcome === 'cancelled'));
 	const blockedWork = issues.filter((issue) => openEpics.has(issue.epicId) && issue.dispatchState === 'terminally_blocked' && !failedWork.some((failed) => failed.epicId === issue.epicId));
 	const materializations = issues.filter((issue) => openEpics.has(issue.epicId) && issue.kind === 'materialization' && issue.dispatchState === 'ready');
 	// Stuck epics with an actionable row above are already covered; this catches the dead-ends nothing else surfaces.

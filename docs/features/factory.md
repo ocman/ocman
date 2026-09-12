@@ -43,6 +43,12 @@ checks, and creates a review-ready PR. It searches for an existing open PR from
 the same branch into the recorded target first, so retries can reuse a PR that
 was created before the session was interrupted.
 
+Delivery admission rechecks the current graph in the claim transaction, so new
+required work cannot be skipped between a dependency refresh and launch. Ready
+optional tasks run before delivery too. Deferred or blocked optional work does
+not delay delivery; after delivery succeeds, it remains visible as not applicable
+and cannot start on the delivered branch.
+
 The delivery session completes with `pr_url`. Ocman validates the repository,
 source branch, target branch, and pushed HEAD. It rejects draft, closed, merged,
 and cross-fork PRs for final delivery. Success shows **Ready for review**; it

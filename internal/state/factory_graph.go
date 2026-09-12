@@ -457,7 +457,16 @@ func (d *DB) ListFactoryIssues(ctx context.Context, epicID string) ([]model.Nati
 	if _, err := d.GetFactoryEpic(ctx, epicID); err != nil {
 		return nil, err
 	}
-	rows, err := d.db.QueryContext(ctx, `SELECT i.id, i.epic_id, COALESCE(h.parent_issue_id, ''), COALESCE(h.requirement, ''), i.kind, i.title, i.status, i.description, COALESCE(f.formula_id, ''), COALESCE(f.formula_version, 0), COALESCE(f.formula_hash, ''), COALESCE(f.bindings_json, '{}'), COALESCE(m.proposal_revision, 0), COALESCE(p.manifest_key, ''), i.outcome, i.outcome_reason, COALESCE(g.resolution, ''), i.retry_at, i.retry_attempts, i.created_at FROM factory_issue i LEFT JOIN factory_issue_hierarchy h ON h.child_issue_id = i.id LEFT JOIN factory_mol_formula f ON f.mol_id = i.id LEFT JOIN factory_materialization_provenance p ON p.entity_kind = 'issue' AND p.entity_id = i.id LEFT JOIN factory_materialization m ON m.id = p.materialization_id LEFT JOIN factory_plan_gate g ON g.issue_id = i.id LEFT JOIN factory_removed_issue r ON r.issue_id = i.id WHERE i.epic_id = ? AND r.issue_id IS NULL ORDER BY CASE i.kind WHEN 'mol' THEN 0 WHEN 'plan' THEN 1 WHEN 'gate' THEN 2 ELSE 3 END`, epicID)
+	return listFactoryIssues(ctx, d.db, epicID)
+}
+
+type factoryIssueReader interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+// The claim path uses the same dispatch calculation inside its transaction.
+func listFactoryIssues(ctx context.Context, reader factoryIssueReader, epicID string) ([]model.NativeIssue, error) {
+	rows, err := reader.QueryContext(ctx, `SELECT i.id, i.epic_id, COALESCE(h.parent_issue_id, ''), COALESCE(h.requirement, ''), i.kind, i.title, i.status, i.description, COALESCE(f.formula_id, ''), COALESCE(f.formula_version, 0), COALESCE(f.formula_hash, ''), COALESCE(f.bindings_json, '{}'), COALESCE(m.proposal_revision, 0), COALESCE(p.manifest_key, ''), i.outcome, i.outcome_reason, COALESCE(g.resolution, ''), i.retry_at, i.retry_attempts, i.created_at FROM factory_issue i LEFT JOIN factory_issue_hierarchy h ON h.child_issue_id = i.id LEFT JOIN factory_mol_formula f ON f.mol_id = i.id LEFT JOIN factory_materialization_provenance p ON p.entity_kind = 'issue' AND p.entity_id = i.id LEFT JOIN factory_materialization m ON m.id = p.materialization_id LEFT JOIN factory_plan_gate g ON g.issue_id = i.id LEFT JOIN factory_removed_issue r ON r.issue_id = i.id WHERE i.epic_id = ? AND r.issue_id IS NULL ORDER BY CASE i.kind WHEN 'mol' THEN 0 WHEN 'plan' THEN 1 WHEN 'gate' THEN 2 ELSE 3 END`, epicID)
 	if err != nil {
 		return nil, fmt.Errorf("listing Factory issues: %w", err)
 	}
@@ -477,7 +486,7 @@ func (d *DB) ListFactoryIssues(ctx context.Context, epicID string) ([]model.Nati
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	return d.deriveFactoryIssueDispatch(ctx, epicID, issues)
+	return deriveFactoryIssueDispatch(ctx, reader, epicID, issues)
 }
 
 // ListRemovedFactoryIssues preserves the details of soft-deleted work for audit.
@@ -501,13 +510,17 @@ func (d *DB) ListRemovedFactoryIssues(ctx context.Context, epicID string) ([]mod
 	return issues, rows.Err()
 }
 
-func (d *DB) deriveFactoryIssueDispatch(ctx context.Context, epicID string, issues []model.NativeIssue) ([]model.NativeIssue, error) {
+func deriveFactoryIssueDispatch(ctx context.Context, reader factoryIssueReader, epicID string, issues []model.NativeIssue) ([]model.NativeIssue, error) {
 	byID := make(map[string]*model.NativeIssue, len(issues))
+	delivered := false
 	for i := range issues {
 		byID[issues[i].ID] = &issues[i]
 		issues[i].DispatchState = "waiting"
+		if issues[i].Kind == "delivery" && issues[i].Status == "closed" && issues[i].Outcome == "succeeded" {
+			delivered = true
+		}
 	}
-	rows, err := d.db.QueryContext(ctx, `SELECT d.issue_id, d.type, b.id, b.epic_id, b.kind, b.status, b.outcome, b.outcome_reason, COALESCE(g.resolution, '') FROM factory_issue_dependency d JOIN factory_issue b ON b.id = d.depends_on_issue_id LEFT JOIN factory_plan_gate g ON g.issue_id = b.id WHERE d.issue_id IN (SELECT id FROM factory_issue WHERE epic_id = ?) AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = b.id) ORDER BY d.issue_id, d.depends_on_issue_id`, epicID)
+	rows, err := reader.QueryContext(ctx, `SELECT d.issue_id, d.type, b.id, b.epic_id, b.kind, b.status, b.outcome, b.outcome_reason, COALESCE(g.resolution, '') FROM factory_issue_dependency d JOIN factory_issue b ON b.id = d.depends_on_issue_id LEFT JOIN factory_plan_gate g ON g.issue_id = b.id WHERE d.issue_id IN (SELECT id FROM factory_issue WHERE epic_id = ?) AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = b.id) ORDER BY d.issue_id, d.depends_on_issue_id`, epicID)
 	if err != nil {
 		return nil, err
 	}
@@ -564,6 +577,11 @@ func (d *DB) deriveFactoryIssueDispatch(ctx context.Context, epicID string, issu
 		issue := &issues[i]
 		if factoryIssueRequirement(issue, byID) == "reference" {
 			issue.DispatchState = "reference"
+			continue
+		}
+		if delivered && (issue.Kind == "task" || issue.Kind == "implementation") && issue.Status != "closed" {
+			issue.DispatchState = "not_applicable"
+			issue.OutcomeReason = "Final delivery is complete; this work will not run."
 			continue
 		}
 		switch issue.Status {
@@ -998,6 +1016,9 @@ func (d *DB) ClaimFactoryImplementation(ctx context.Context, epicID, issueID, pr
 			)
 		)`, issueID, issueID, epicID).Scan(&kind, &status); err != nil || (kind != "implementation" && kind != "task" && kind != "delivery") || status != "open" {
 		return model.NativeEpic{}, model.FactoryAttempt{}, errors.New("factory implementation issue is not ready")
+	}
+	if err := validateFactoryDeliveryOrder(ctx, tx, epicID, kind); err != nil {
+		return model.NativeEpic{}, model.FactoryAttempt{}, err
 	}
 	policy := model.FactoryCapacityPolicy{GlobalCapacity: 10, ProjectCapacity: 4}
 	_ = tx.QueryRowContext(ctx, `SELECT global_capacity, project_capacity FROM factory_capacity_policy WHERE id = 1`).Scan(&policy.GlobalCapacity, &policy.ProjectCapacity)

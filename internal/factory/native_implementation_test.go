@@ -40,6 +40,99 @@ type fakeImplementationLauncher struct {
 	resolutions int
 }
 
+type deliveryMutationStore struct {
+	*state.DB
+	afterEnsure func() error
+}
+
+func (s *deliveryMutationStore) EnsureFactoryDeliveryIssue(ctx context.Context, epicID string) error {
+	if err := s.DB.EnsureFactoryDeliveryIssue(ctx, epicID); err != nil {
+		return err
+	}
+	if fn := s.afterEnsure; fn != nil {
+		s.afterEnsure = nil
+		return fn()
+	}
+	return nil
+}
+
+func TestDeliveryAdmissionUsesCurrentGraph(t *testing.T) {
+	for _, requirement := range []string{"required", "optional"} {
+		t.Run(requirement, func(t *testing.T) {
+			db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			store := &deliveryMutationStore{DB: db}
+			launcher := &fakeImplementationLauncher{}
+			svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
+			epic := createPouredWorkEpic(t, svc, "Delivery admission")
+			mol := pouredIssueID(t, svc, epic.ID, "mol")
+			proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: mol, Project: "/repo", Nodes: []ManifestNode{{Key: "work", Type: "implementation", Requirement: "required"}}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
+				t.Fatal(err)
+			}
+			first := launcher.calls[0]
+			if err := svc.CompleteAttempt(t.Context(), first.AttemptID, first.AgentToken, "first", ""); err != nil {
+				t.Fatal(err)
+			}
+			// Commit new work after refreshing dependencies, before claiming delivery.
+			store.afterEnsure = func() error {
+				return svc.MutateGraph(t.Context(), GraphMutation{Action: "create", EpicID: epic.ID, ParentID: mol, Kind: "task", Title: "Late work", Requirement: requirement})
+			}
+			if err := svc.Dispatch(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if len(launcher.calls) != 2 || launcher.calls[1].Delivery || launcher.calls[1].Title != "Late work" {
+				t.Fatalf("delivery skipped runnable work: %#v", launcher.calls)
+			}
+			late := launcher.calls[1]
+			if err := svc.CompleteAttempt(t.Context(), late.AttemptID, late.AgentToken, "late", ""); err != nil {
+				t.Fatal(err)
+			}
+			if err := svc.MutateGraph(t.Context(), GraphMutation{Action: "create", EpicID: epic.ID, ParentID: mol, Kind: "task", Title: "Deferred optional", Requirement: "optional"}); err != nil {
+				t.Fatal(err)
+			}
+			issues, err := svc.ListIssues(t.Context(), epic.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var deferredID string
+			for _, issue := range issues {
+				if issue.Title == "Deferred optional" {
+					deferredID = issue.ID
+				}
+			}
+			if err := svc.DeferIssue(t.Context(), epic.ID, deferredID, "Later"); err != nil {
+				t.Fatal(err)
+			}
+			if err := svc.Dispatch(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if len(launcher.calls) != 3 || !launcher.calls[2].Delivery {
+				t.Fatalf("delivery did not follow completed work: %#v", launcher.calls)
+			}
+			delivery := launcher.calls[2]
+			if err := svc.CompleteAttempt(t.Context(), delivery.AttemptID, delivery.AgentToken, "delivered", "https://forge.example/pr/1"); err != nil {
+				t.Fatal(err)
+			}
+			if err := svc.ResumeIssue(t.Context(), epic.ID, deferredID); err != nil {
+				t.Fatal(err)
+			}
+			if err := svc.Dispatch(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			if len(launcher.calls) != 3 {
+				t.Fatalf("implementation resumed after final delivery: %#v", launcher.calls)
+			}
+		})
+	}
+}
+
 func (f *fakeImplementationLauncher) PrepareImplementationWorkspace(context.Context, string, string, string, string) (string, string, error) {
 	return "main", f.baseRef, f.branchErr
 }

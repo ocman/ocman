@@ -19,6 +19,39 @@ func (d *DB) FactoryAttemptHasRecoveryResponse(ctx context.Context, attemptID, r
 	return err == nil, err
 }
 
+// Recheck the live graph under the claim transaction. Cached delivery edges are
+// for display, not authority to skip work committed after their last refresh.
+func validateFactoryDeliveryOrder(ctx context.Context, tx *sql.Tx, epicID, kind string) error {
+	issues, err := listFactoryIssues(ctx, tx, epicID)
+	if err != nil {
+		return err
+	}
+	byID := make(map[string]*model.NativeIssue, len(issues))
+	for i := range issues {
+		byID[issues[i].ID] = &issues[i]
+	}
+	for _, issue := range issues {
+		if issue.Kind == "delivery" && issue.Status == "closed" && issue.Outcome == "succeeded" {
+			return errors.New("factory final delivery is already complete")
+		}
+		if kind != "delivery" || issue.Kind == "delivery" || issue.Kind == "mol" || issue.DispatchState == "not_applicable" || (issue.Kind == "gate" && issue.GateResolution == "") {
+			continue
+		}
+		requirement := factoryIssueRequirement(&issue, byID)
+		if requirement == "reference" {
+			continue
+		}
+		succeeded := issue.Status == "closed" && issue.Outcome == "succeeded" && (issue.Kind != "gate" || issue.GateResolution == "approved")
+		if requirement == "required" && !succeeded {
+			return errors.New("factory delivery requires all required work to succeed")
+		}
+		if (issue.Kind == "task" || issue.Kind == "implementation") && (issue.DispatchState == "ready" || issue.Status == "in_progress") {
+			return errors.New("factory delivery must wait for runnable optional work")
+		}
+	}
+	return nil
+}
+
 // EnsureFactoryDeliveryIssue gives delivery its own retryable issue. Dependencies
 // follow the current required work, including tasks added after materialization.
 func (d *DB) EnsureFactoryDeliveryIssue(ctx context.Context, epicID string) error {

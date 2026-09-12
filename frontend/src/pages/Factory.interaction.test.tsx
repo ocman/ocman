@@ -344,7 +344,7 @@ describe('Factory interactions', () => {
     await waitFor(() => expect(api.factoryIssues).toHaveBeenCalledTimes(2));
   });
 
-  it('surfaces exhausted work, unmaterialized plans, and stuck epics with an unblocking action', async () => {
+  it.each(['task', 'delivery'])('surfaces exhausted %s work, unmaterialized plans, and stuck epics with an unblocking action', async (kind) => {
     const user = userEvent.setup();
     vi.mocked(api.factoryEpics).mockResolvedValue([
       { id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo', planGate: { issueId: 'epic-1.2', proposalRevision: 1, proposalHash: 'abc', resolution: 'approved' }, progress: { requiredTotal: 4, requiredSucceeded: 3, optionalOpen: 0, closureBlockers: ['Remove dead helpers'], stuck: true } },
@@ -354,7 +354,7 @@ describe('Factory interactions', () => {
     ] as never);
     vi.mocked(api.factoryIssues).mockImplementation((id) => Promise.resolve(({
       'epic-1': [
-        { id: 'epic-1.4', epicId: 'epic-1', kind: 'task', title: 'Remove dead helpers', status: 'closed', outcome: 'failed', outcomeReason: 'Implementation Session could not be launched: no supported Factory delivery remote', retryAttempts: 4, dispatchState: 'completed' },
+        { id: 'epic-1.4', epicId: 'epic-1', kind, title: 'Remove dead helpers', status: 'closed', outcome: 'failed', outcomeReason: 'Implementation Session could not be launched: no supported Factory delivery remote', retryAttempts: 4, dispatchState: 'completed' },
         { id: 'epic-1.5', epicId: 'epic-1', kind: 'task', title: 'Done', status: 'closed', outcome: 'succeeded', dispatchState: 'completed' },
       ],
       'epic-2': [{ id: 'epic-2.3', epicId: 'epic-2', kind: 'materialization', title: 'materialization: Refresh docs', status: 'open', dispatchState: 'ready' }],
@@ -691,6 +691,7 @@ describe('Factory interactions', () => {
 			{ id: 'implement-3', epicId: 'epic-3', title: 'Waiting implementation', repository: '/repo', state: 'terminally_blocked', blockers: [{ id: 'gate-1', reason: 'Rejected', outcome: 'failed' }] },
 			{ id: 'implement-4', epicId: 'epic-4', title: 'Retry implementation', repository: '/repo', state: 'retry_wait', retryAt: 1_700_000_000_000, retryAttempts: 2 },
 			{ id: 'implement-5', epicId: 'epic-5', title: 'Skipped recovery', repository: '/repo', state: 'not_applicable', blockers: [{ id: 'test-1', reason: 'Passed', outcome: 'succeeded' }] },
+			{ id: 'implement-6', epicId: 'epic-6', title: 'Undelivered optional work', repository: '/repo', state: 'not_applicable', outcomeReason: 'Final delivery is complete; this work will not run.' },
 			{ id: 'implement-6', epicId: 'epic-6', title: 'Deferred implementation', repository: '/repo', state: 'deferred', outcomeReason: 'waiting for review' },
 		] as never);
     renderFactory(<MemoryRouter><FactoryQueue /></MemoryRouter>);
@@ -709,6 +710,7 @@ describe('Factory interactions', () => {
 		expect(screen.getByText('Waiting implementation').closest('tr')).toHaveTextContent('Dispatch: cannot proceed because gate-1 failed: Rejected.');
 		expect(screen.getByText('Dispatch: retry 2 scheduled for 2023-11-14T22:13:20.000Z.')).toBeInTheDocument();
 		expect(screen.getByText('Skipped recovery').closest('tr')).toHaveTextContent('Dispatch: not applicable because the recovery condition was not met (test-1 succeeded: Passed).');
+		expect(screen.getByText('Undelivered optional work').closest('tr')).toHaveTextContent('Dispatch: Final delivery is complete; this work will not run.');
 		expect(screen.getByText('Dispatch: delayed: waiting for review.')).toBeInTheDocument();
 		expect(screen.getByText('Capacity: 10 global, 4 per project.')).toBeInTheDocument();
 	});

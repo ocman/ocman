@@ -151,6 +151,14 @@ describe('Factory human action cards', () => {
     expect(screen.queryByRole('link', { name: 'Factory actions' })).not.toBeInTheDocument();
   });
 
+  it.each(['failed', 'cancelled'])('reopens %s delivery work on a human click', async (outcome) => {
+    vi.mocked(api.factoryIssues).mockResolvedValue([{ ...issue, kind: 'delivery', outcome }]);
+    vi.mocked(api.reopenFactoryIssue).mockResolvedValue({});
+    renderCard();
+    fireEvent.click(await screen.findByRole('button', { name: 'Reopen issue' }));
+    expect(await screen.findByText('Issue reopened.')).toBeInTheDocument();
+    expect(api.reopenFactoryIssue).toHaveBeenCalledWith('ship', 'ship.3');
+  });
   it.each([
     ['/factory/epics/ship?human=1&issue=ship.3', { epicID: 'ship', issueID: 'ship.3' }],
     ['/factory/epics/a%29b?human=1&issue=x%26y', { epicID: 'a)b', issueID: 'x&y' }],

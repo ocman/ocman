@@ -51,7 +51,7 @@ function AuthorityActions({ gate }: { gate: FactoryAuthorityEscalationGate }) {
 }
 
 function availableWorkAction(issue: FactoryIssue) {
-  if (issue.status === 'closed' && ['task', 'implementation'].includes(issue.kind) && ['failed', 'cancelled'].includes(issue.outcome ?? '')) return 'reopen';
+  if (issue.status === 'closed' && ['task', 'implementation', 'delivery'].includes(issue.kind) && ['failed', 'cancelled'].includes(issue.outcome ?? '')) return 'reopen';
   if (issue.dispatchState === 'ready' && ['plan', 'materialization'].includes(issue.kind)) return issue.kind;
 }
 

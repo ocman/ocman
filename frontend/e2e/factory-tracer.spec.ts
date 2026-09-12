@@ -1,11 +1,13 @@
 import { test, expect } from './fixtures';
 
-test('Factory tracer approves one plan, materializes one worktree session, and closes its containers', async ({ mockedPage: page }) => {
+test('Factory tracer approves a plan, checkpoints implementation, delivers a PR, and closes its containers', async ({ mockedPage: page }) => {
   const epic = { id: 'ship-a1b2', status: 'open', goal: 'Ship tracer', brief: '', initialProject: '/repo', formulaId: 'ocman/tracer', formulaVersion: 1, formulaRevision: 1, formulaHash: 'formula', formulaOrigin: 'built_in', instantiationId: 'one', progress: { requiredTotal: 1, requiredSucceeded: 0, optionalOpen: 0 }, attempts: [] as object[] };
   let poured = false;
   let claimed = false;
   let approved = false;
   let materialized = false;
+  let delivered = false;
+  const prURL = 'https://forge.example/acme/repo/pulls/1';
   let molClosed = false;
   let closed = false;
   const issues = () => poured ? [
@@ -14,8 +16,9 @@ test('Factory tracer approves one plan, materializes one worktree session, and c
     { id: 'ship-a1b2.1.2', epicId: epic.id, parentId: 'ship-a1b2.1', kind: 'gate', title: 'Approval', status: approved ? 'closed' : 'open', requirement: 'required' },
     { id: 'ship-a1b2.1.3', epicId: epic.id, parentId: 'ship-a1b2.1', kind: 'materialization', title: 'Materialization', status: materialized ? 'closed' : 'open', requirement: 'required' },
     ...(materialized ? [{ id: 'ship-a1b2.1.4', epicId: epic.id, parentId: 'ship-a1b2.1', kind: 'implementation', title: 'Implementation', status: 'closed', outcome: 'succeeded', requirement: 'required', dispatchState: 'completed', session: { platform: 'opencode', id: 'worktree-session' } }] : []),
+    ...(materialized ? [{ id: 'ship-a1b2.1.5', epicId: epic.id, parentId: 'ship-a1b2.1', kind: 'delivery', title: 'Final delivery', status: delivered ? 'closed' : 'open', outcome: delivered ? 'succeeded' : '', requirement: 'required', dispatchState: delivered ? 'completed' : 'ready', prUrl: delivered ? prURL : undefined }] : []),
   ] : [];
-  const view = () => ({ ...epic, status: closed ? 'closed' : 'open', progress: { requiredTotal: materialized ? 1 : 0, requiredSucceeded: materialized ? 1 : 0, optionalOpen: 0 }, attempts: claimed ? [{ id: 'plan-attempt', phase: 'active', session: { platform: 'opencode', id: 'plan-session' } }] : [], proposal: claimed ? { epicId: epic.id, molId: 'ship-a1b2.1', project: '/repo', revision: 1, contentHash: 'exact', manifest: { epicId: epic.id, molId: 'ship-a1b2.1', project: '/repo', nodes: [{ key: 'implementation', type: 'implementation', requirement: 'required' }] } } : undefined, planGate: claimed ? { issueId: 'ship-a1b2.1.2', proposalRevision: 1, proposalHash: 'exact', resolution: approved ? 'approved' : 'open' } : undefined });
+  const view = () => ({ ...epic, status: closed ? 'closed' : 'open', progress: { requiredTotal: materialized ? 2 : 0, requiredSucceeded: delivered ? 2 : materialized ? 1 : 0, optionalOpen: 0, deliveryStatus: delivered ? 'ready_for_review' : materialized ? 'pending' : undefined, closureBlockers: materialized && !delivered ? ['Final delivery'] : [] }, attempts: claimed ? [{ id: 'plan-attempt', phase: 'active', session: { platform: 'opencode', id: 'plan-session' } }] : [], proposal: claimed ? { epicId: epic.id, molId: 'ship-a1b2.1', project: '/repo', revision: 1, contentHash: 'exact', manifest: { epicId: epic.id, molId: 'ship-a1b2.1', project: '/repo', nodes: [{ key: 'implementation', type: 'implementation', requirement: 'required' }] } } : undefined, planGate: claimed ? { issueId: 'ship-a1b2.1.2', proposalRevision: 1, proposalHash: 'exact', resolution: approved ? 'approved' : 'open' } : undefined });
   await page.route('/api/factory/formulas', (route) => route.fulfill({ json: [] }));
   await page.route('/api/factory/queue', (route) => route.fulfill({ json: [] }));
   await page.route('/api/projects', (route) => route.fulfill({ json: [{ directory: '/repo', archived: false }] }));
@@ -30,8 +33,16 @@ test('Factory tracer approves one plan, materializes one worktree session, and c
 	await page.route(`/api/factory/epics/${epic.id}/plans/${epic.id}.1.1`, (route) => { claimed = true; return route.fulfill({ status: 201, json: {} }); });
   await page.route(`/api/factory/epics/${epic.id}/plan-gate/approve`, (route) => { approved = true; materialized = true; return route.fulfill({ json: view().planGate }); });
 	await page.route(`/api/factory/epics/${epic.id}/materializations/${epic.id}.1.3`, (route) => { materialized = true; return route.fulfill({ status: 201, json: {} }); });
-  await page.route(`/api/factory/epics/${epic.id}/mols/${epic.id}.1/close`, (route) => { molClosed = true; return route.fulfill({ status: 204 }); });
-  await page.route(`/api/factory/epics/${epic.id}/close`, (route) => { closed = true; return route.fulfill({ status: 204 }); });
+  await page.route(`/api/factory/epics/${epic.id}/mols/${epic.id}.1/close`, (route) => {
+    if (!delivered) return route.fulfill({ status: 409, body: 'Final delivery is incomplete' });
+    molClosed = true;
+    return route.fulfill({ status: 204 });
+  });
+  await page.route(`/api/factory/epics/${epic.id}/close`, (route) => {
+    if (!delivered) return route.fulfill({ status: 409, body: 'Final delivery is incomplete' });
+    closed = true;
+    return route.fulfill({ status: 204 });
+  });
 
   // Every reload below reads state that a POST flips in the route handler above,
   // so the POST has to land before the reload cancels it.
@@ -42,7 +53,7 @@ test('Factory tracer approves one plan, materializes one worktree session, and c
   await page.getByLabel('Goal').fill(epic.goal);
   await page.getByRole('combobox', { name: 'Initial Factory project' }).click();
   await page.getByRole('option', { name: '/repo' }).click();
-  await page.getByRole('checkbox', { name: 'Allow Factory agents to run commands in this repository' }).check();
+  await page.getByRole('checkbox', { name: 'Allow Factory agents to run commands in this project' }).check();
   await page.getByRole('button', { name: 'Create epic', exact: true }).click();
   await page.getByRole('link', { name: epic.goal }).click();
   const pouring = posted(`/api/factory/epics/${epic.id}/pour`);
@@ -56,6 +67,20 @@ test('Factory tracer approves one plan, materializes one worktree session, and c
   await page.reload();
   await expect(page.getByTestId('issue-title-ship-a1b2.1.4')).toHaveText('Implementation');
   await expect(page.getByTestId('issue-title-ship-a1b2.1')).toHaveCount(0);
+  await expect(page.getByText('Closure blocked by: Final delivery')).toBeVisible();
+  const prematureClose = posted(`/api/factory/epics/${epic.id}/close`);
+  page.once('dialog', (dialog) => dialog.dismiss());
+  await page.getByRole('button', { name: 'Close epic' }).click();
+  expect((await prematureClose).status()).toBe(409);
+  expect(closed).toBe(false);
+  await expect(page.getByRole('alert')).toHaveText('Final delivery is incomplete');
+  // Simulate the final delivery agent completing after the implementation checkpoint.
+  delivered = true;
+  await page.reload();
+  await expect(page.getByText('Required work: 2/2 complete. Optional work open: 0.')).toBeVisible();
+  await page.getByRole('button', { name: 'Open issue ship-a1b2.1.5', exact: true }).click();
+  await expect(page.getByRole('link', { name: prURL })).toHaveAttribute('href', prURL);
+  await page.getByRole('button', { name: 'Close issue details' }).click();
   const closing = posted(`/api/factory/epics/${epic.id}/close`);
   await page.getByRole('button', { name: 'Close epic' }).click();
   await closing;
@@ -92,7 +117,7 @@ test('Factory tracer rejects a plan without creating implementation work', async
   await page.getByLabel('Goal').fill(epic.goal);
   await page.getByRole('combobox', { name: 'Initial Factory project' }).click();
   await page.getByRole('option', { name: '/repo' }).click();
-  await page.getByRole('checkbox', { name: 'Allow Factory agents to run commands in this repository' }).check();
+  await page.getByRole('checkbox', { name: 'Allow Factory agents to run commands in this project' }).check();
   await page.getByRole('button', { name: 'Create epic', exact: true }).click();
   await page.getByRole('link', { name: epic.goal }).click();
   const pouring = posted(`/api/factory/epics/${epic.id}/pour`);
