@@ -58,3 +58,37 @@ func TestRelayClientRejectsBadStatus(t *testing.T) {
 		t.Fatal("Create succeeded on 429")
 	}
 }
+
+func TestRelayInboxClientRejectsBadStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "nope", http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+	c := RelayClient{BaseURL: srv.URL}
+
+	tests := map[string]func() error{
+		"register": func() error { _, err := c.RegisterInbox(t.Context(), "recipient", "token"); return err },
+		"register with secret": func() error {
+			_, err := c.RegisterInboxWithSecret(t.Context(), "recipient", "token", "secret", "X-Secret")
+			return err
+		},
+		"rotate": func() error { _, err := c.RotateInbox(t.Context(), "inbox", "token", "recipient"); return err },
+		"revoke": func() error { return c.RevokeInbox(t.Context(), "inbox", "token") },
+		"list": func() error {
+			_, err := c.ListInboxDeliveries(t.Context(), "inbox", "token", "cursor")
+			return err
+		},
+		"fetch": func() error {
+			_, err := c.FetchInboxDelivery(t.Context(), "inbox", "delivery", "token")
+			return err
+		},
+		"acknowledge": func() error { return c.AcknowledgeInboxDelivery(t.Context(), "inbox", "delivery", "token") },
+	}
+	for name, call := range tests {
+		t.Run(name, func(t *testing.T) {
+			if err := call(); err == nil {
+				t.Fatal("request succeeded on 429")
+			}
+		})
+	}
+}

@@ -258,3 +258,60 @@ func TestWebhookInboxHTTPRedactsCredentials(t *testing.T) {
 		t.Fatalf("missing ingestion URL: %s", body)
 	}
 }
+
+func TestWebhookInboxHTTPLifecycle(t *testing.T) {
+	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/inboxes":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"id":"inbox","ingestionUrl":"https://relay.test/i/inbox","managementToken":"manage","fetchToken":"fetch","acknowledgmentToken":"ack","keyVersion":1}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/inboxes/inbox/rotate":
+			_, _ = w.Write([]byte(`{"keyVersion":2}`))
+		case r.Method == http.MethodDelete && r.URL.Path == "/inboxes/inbox":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer relay.Close()
+
+	srv, handler, _ := routineHTTPServer(t)
+	srv.relayURL = relay.URL
+	created := doRoutineRequest(t, handler, http.MethodPost, "/api/routines", validRoutineBody)
+	var routine state.Routine
+	if created.Code != http.StatusCreated || json.Unmarshal(created.Body.Bytes(), &routine) != nil {
+		t.Fatalf("create routine: %d %s", created.Code, created.Body.String())
+	}
+	path := "/api/routines/" + routine.ID + "/webhook-inbox"
+
+	if rec := doRoutineRequest(t, handler, http.MethodPost, path, `{"enrollmentToken":"enroll","secret":"validate","secretHeader":"X-Webhook-Secret"}`); rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"validationSecret":"validate"`) {
+		t.Fatalf("register: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := doRoutineRequest(t, handler, http.MethodGet, path, ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"keyVersion":1`) || strings.Contains(rec.Body.String(), "manage") {
+		t.Fatalf("get: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := doRoutineRequest(t, handler, http.MethodPost, path, `{}`); rec.Code != http.StatusConflict {
+		t.Fatalf("duplicate register: %d %s", rec.Code, rec.Body.String())
+	}
+
+	subscriptions := path + "/subscriptions"
+	if rec := doRoutineRequest(t, handler, http.MethodGet, subscriptions, ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), routine.ID) {
+		t.Fatalf("list subscriptions: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := doRoutineRequest(t, handler, http.MethodPut, subscriptions, `{}`); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"id":"subscription-inbox-`+routine.ID+`"`) {
+		t.Fatalf("save subscription: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := doRoutineRequest(t, handler, http.MethodDelete, subscriptions, `{"routineId":"`+routine.ID+`"}`); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete subscription: %d %s", rec.Code, rec.Body.String())
+	}
+
+	if rec := doRoutineRequest(t, handler, http.MethodPut, path, `{"reset":true}`); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"keyVersion":2`) {
+		t.Fatalf("rotate: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := doRoutineRequest(t, handler, http.MethodDelete, path, ""); rec.Code != http.StatusNoContent {
+		t.Fatalf("revoke: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := doRoutineRequest(t, handler, http.MethodGet, path, ""); rec.Code != http.StatusOK || rec.Body.String() != "null\n" {
+		t.Fatalf("get after revoke: %d %s", rec.Code, rec.Body.String())
+	}
+}
