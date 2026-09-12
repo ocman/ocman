@@ -296,7 +296,7 @@ func main() {
 		// Start the remote-access gRPC server when -remote-listen is set
 		// (multi-remote support). Off by default so single-host installs
 		// are byte-for-byte unchanged (NFR-6).
-		listening, listenAddr, tlsOn := startRemoteServer(ctx, srv, ident, *remoteListen, *remoteTLSCert, *remoteTLSKey, *remoteTrustedOverlay)
+		listening, listenAddr, tlsOn := startRemoteServer(ctx, srv, stateDB, ident, *remoteListen, *remoteTLSCert, *remoteTLSKey, *remoteTrustedOverlay)
 		srv.WithRemoteAccess(ident.InstanceID, listenAddr, listening, tlsOn)
 
 		// Start the hub-side remote manager: it loads any saved remotes
@@ -453,11 +453,12 @@ func buildAuth(ctx context.Context, stateDB *state.DB, flagValue, fileValue stri
 // is non-empty. It returns (listening, boundAddr, tls). On failure it
 // logs and returns listening=false so the HTTP server still starts —
 // the remote surface is opt-in and must never block normal operation.
-func startRemoteServer(ctx context.Context, srv *server.Server, ident state.InstanceIdentity, listenAddr, tlsCert, tlsKey string, trustedOverlay bool) (bool, string, bool) {
+func startRemoteServer(ctx context.Context, srv *server.Server, stateDB *state.DB, ident state.InstanceIdentity, listenAddr, tlsCert, tlsKey string, trustedOverlay bool) (bool, string, bool) {
 	if listenAddr == "" {
 		return false, "", false
 	}
 	rsrv := remote.NewServer(srv.Registry(), srv.RemoteServerHost(), ident.InstanceID, version).
+		UseInboxStore(stateDB).
 		UseSessions(srv.SessionService()).
 		UseSessionEnricher(srv.EnrichRemoteSessionDetail).
 		UseEventProxy(srv.ProxyRemoteSessionEvents)

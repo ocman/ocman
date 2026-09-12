@@ -19,6 +19,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 // Server is the remote-side gRPC service. It is a thin translation layer
@@ -33,11 +34,18 @@ type Server struct {
 	registry      *platforms.Registry
 	sessions      *sessionsvc.Service
 	host          hostsvc.Host
+	inboxStore    *state.DB
 	instanceID    string
 	version       string
 	origins       *originCache
 	enrichSession func(context.Context, string, string, *platforms.SessionDetail)
 	proxyEvents   func(context.Context, string, string, platforms.Platform, io.Writer, io.Writer, func()) error
+}
+
+// UseInboxStore installs the state store authoritative for this instance's Inbox.
+func (s *Server) UseInboxStore(store *state.DB) *Server {
+	s.inboxStore = store
+	return s
 }
 
 // NewServer builds the remote-side gRPC service over the given local

@@ -65,6 +65,9 @@ const (
 	Ocman_TmuxSessions_FullMethodName           = "/ocman.remote.v1.Ocman/TmuxSessions"
 	Ocman_HostCapabilities_FullMethodName       = "/ocman.remote.v1.Ocman/HostCapabilities"
 	Ocman_BeadsStatus_FullMethodName            = "/ocman.remote.v1.Ocman/BeadsStatus"
+	Ocman_InboxItems_FullMethodName             = "/ocman.remote.v1.Ocman/InboxItems"
+	Ocman_MarkInboxItemRead_FullMethodName      = "/ocman.remote.v1.Ocman/MarkInboxItemRead"
+	Ocman_ArchiveInboxItems_FullMethodName      = "/ocman.remote.v1.Ocman/ArchiveInboxItems"
 	Ocman_TermWindows_FullMethodName            = "/ocman.remote.v1.Ocman/TermWindows"
 	Ocman_TermCreateWindow_FullMethodName       = "/ocman.remote.v1.Ocman/TermCreateWindow"
 	Ocman_TermKillWindow_FullMethodName         = "/ocman.remote.v1.Ocman/TermKillWindow"
@@ -140,6 +143,10 @@ type OcmanClient interface {
 	TmuxSessions(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error)
 	HostCapabilities(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error)
 	BeadsStatus(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
+	// --- Owner-local Inbox ---
+	InboxItems(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error)
+	MarkInboxItemRead(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*Empty, error)
+	ArchiveInboxItems(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*Empty, error)
 	// In-app terminal windows (directory-scoped, executed on the owner).
 	TermWindows(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	TermCreateWindow(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
@@ -630,6 +637,36 @@ func (c *ocmanClient) BeadsStatus(ctx context.Context, in *JsonReq, opts ...grpc
 	return out, nil
 }
 
+func (c *ocmanClient) InboxItems(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JsonResp)
+	err := c.cc.Invoke(ctx, Ocman_InboxItems_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *ocmanClient) MarkInboxItemRead(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Ocman_MarkInboxItemRead_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *ocmanClient) ArchiveInboxItems(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Ocman_ArchiveInboxItems_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *ocmanClient) TermWindows(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(JsonResp)
@@ -769,6 +806,10 @@ type OcmanServer interface {
 	TmuxSessions(context.Context, *Empty) (*JsonResp, error)
 	HostCapabilities(context.Context, *Empty) (*JsonResp, error)
 	BeadsStatus(context.Context, *JsonReq) (*JsonResp, error)
+	// --- Owner-local Inbox ---
+	InboxItems(context.Context, *Empty) (*JsonResp, error)
+	MarkInboxItemRead(context.Context, *JsonReq) (*Empty, error)
+	ArchiveInboxItems(context.Context, *JsonReq) (*Empty, error)
 	// In-app terminal windows (directory-scoped, executed on the owner).
 	TermWindows(context.Context, *JsonReq) (*JsonResp, error)
 	TermCreateWindow(context.Context, *JsonReq) (*JsonResp, error)
@@ -927,6 +968,15 @@ func (UnimplementedOcmanServer) HostCapabilities(context.Context, *Empty) (*Json
 }
 func (UnimplementedOcmanServer) BeadsStatus(context.Context, *JsonReq) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method BeadsStatus not implemented")
+}
+func (UnimplementedOcmanServer) InboxItems(context.Context, *Empty) (*JsonResp, error) {
+	return nil, status.Error(codes.Unimplemented, "method InboxItems not implemented")
+}
+func (UnimplementedOcmanServer) MarkInboxItemRead(context.Context, *JsonReq) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method MarkInboxItemRead not implemented")
+}
+func (UnimplementedOcmanServer) ArchiveInboxItems(context.Context, *JsonReq) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method ArchiveInboxItems not implemented")
 }
 func (UnimplementedOcmanServer) TermWindows(context.Context, *JsonReq) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method TermWindows not implemented")
@@ -1788,6 +1838,60 @@ func _Ocman_BeadsStatus_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Ocman_InboxItems_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).InboxItems(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_InboxItems_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).InboxItems(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Ocman_MarkInboxItemRead_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JsonReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).MarkInboxItemRead(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_MarkInboxItemRead_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).MarkInboxItemRead(ctx, req.(*JsonReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Ocman_ArchiveInboxItems_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(JsonReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).ArchiveInboxItems(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_ArchiveInboxItems_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).ArchiveInboxItems(ctx, req.(*JsonReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Ocman_TermWindows_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(JsonReq)
 	if err := dec(in); err != nil {
@@ -2064,6 +2168,18 @@ var Ocman_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "BeadsStatus",
 			Handler:    _Ocman_BeadsStatus_Handler,
+		},
+		{
+			MethodName: "InboxItems",
+			Handler:    _Ocman_InboxItems_Handler,
+		},
+		{
+			MethodName: "MarkInboxItemRead",
+			Handler:    _Ocman_MarkInboxItemRead_Handler,
+		},
+		{
+			MethodName: "ArchiveInboxItems",
+			Handler:    _Ocman_ArchiveInboxItems_Handler,
 		},
 		{
 			MethodName: "TermWindows",

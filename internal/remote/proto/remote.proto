@@ -72,6 +72,11 @@ service Ocman {
   rpc HostCapabilities(Empty) returns (JsonResp);         // hostsvc.HostCaps
   rpc BeadsStatus(JsonReq) returns (JsonResp);            // {dir} -> hostsvc.BeadsStatus
 
+  // --- Owner-local Inbox ---
+  rpc InboxItems(Empty) returns (JsonResp);               // []state.InboxItem
+  rpc MarkInboxItemRead(JsonReq) returns (Empty);         // {id}
+  rpc ArchiveInboxItems(JsonReq) returns (Empty);         // {ids,allRead}
+
   // In-app terminal windows (directory-scoped, executed on the owner).
   rpc TermWindows(JsonReq) returns (JsonResp);            // {dir} -> {windows:[...]}
   rpc TermCreateWindow(JsonReq) returns (JsonResp);       // {dir} -> {window}
