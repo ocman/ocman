@@ -1381,10 +1381,24 @@ func (s *NativeService) DecidePlanGate(ctx context.Context, epicID, action strin
 	if errors.Is(err, sql.ErrNoRows) {
 		return PlanGate{}, fmt.Errorf("%w: factory Plan gate is unavailable", ErrInvalidRequest)
 	}
+	if err == nil && action == "approve" {
+		issues, listErr := s.store.ListFactoryIssues(ctx, epicID)
+		if listErr != nil {
+			return nativePlanGate(gate), listErr
+		}
+		for _, issue := range issues {
+			if issue.Kind == "materialization" && issue.Status == "open" {
+				if _, err := s.Materialize(ctx, epicID, issue.ID); err != nil {
+					return nativePlanGate(gate), err
+				}
+			}
+		}
+		_ = s.Dispatch(ctx)
+	}
 	return nativePlanGate(gate), err
 }
 
-// Materialize creates implementation work without launching an agent session.
+// Materialize creates implementation work and dispatches ready issues.
 func (s *NativeService) Materialize(ctx context.Context, epicID, issueID string) (Materialization, error) {
 	s.materializationMu.Lock()
 	defer s.materializationMu.Unlock()

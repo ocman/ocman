@@ -113,8 +113,8 @@ flowchart TD
    Epics, Mols, typed Issues, dependencies, attempts, Formula revisions,
    Plan revisions, approvals, and materialization provenance in `state.db`.
    TOML Formulas compile to canonical JSON. A Plan session is read-only at the
-   project root; approval of an exact revision enables user-requested atomic
-   materialization of the proposed Implementation Issues and dependencies. Ready Issues
+   project root; approval of an exact revision automatically materializes the
+   proposed Implementation Issues and dependencies atomically. Ready Issues
    launch configured worktree sessions on one shared branch. Each implementation
    handoff records the clean, pushed commit in its Attempt result; the next
    Attempt freezes that checkpoint and target branch in its policy. PR lookups

@@ -571,6 +571,9 @@ func TestPausedEpicDispatchesOnlyAfterResume(t *testing.T) {
 	launcher := &fakeImplementationLauncher{}
 	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
 	epic := createPouredWorkEpic(t, svc, "Paused")
+	if err := svc.SetEpicPaused(t.Context(), epic.ID, true); err != nil {
+		t.Fatal(err)
+	}
 	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required"}}}})
 	if err != nil {
 		t.Fatal(err)
@@ -579,9 +582,6 @@ func TestPausedEpicDispatchesOnlyAfterResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := db.MaterializeFactoryPlan(t.Context(), epic.ID, pouredIssueID(t, svc, epic.ID, "materialization"), "factory-materialize/v1", time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	if err := svc.SetEpicPaused(t.Context(), epic.ID, true); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.Dispatch(t.Context()); err != nil || len(launcher.calls) != 0 {

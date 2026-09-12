@@ -6,6 +6,7 @@ import { Button, SelectField } from '../components/Control';
 import { SearchSelect } from '../components/SearchSelect';
 import { ProjectLabel } from '../components/ProjectLabel';
 import { StatusBadge } from '../components/StatusBadge';
+import { FactoryStartedToast } from '../components/FactoryStartedToast';
 import { useClaimFactoryPlan, useCloseFactoryEpic, useCloseFactoryMol, useCreateWorkEpic, useDecideFactoryPlanGate, useFactoryCapacityPolicy, useFactoryFormula, useFactoryFormulas, useFactoryGraphIssues, useFactoryIssues, useFactoryProposals, useFactoryQueue, useFactoryRemovedIssues, useInvestigateFactoryUnblock, useMaterializeFactoryPlan, useMutateFactoryGraph, usePourFactoryEpic, usePreviewFactoryFormula, useProjects, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryRecoveryGate, useSaveFactoryFormula, useSessions, useSetFactoryCapacityPolicy, useSetFactoryEpicPaused, useValidateFactoryFormula, useWorkEpic, useWorkEpics } from '../lib/queries';
 import type { FactoryAttempt, FactoryFormula, FactoryGraphMutation, FactoryIssue, FactoryQueueItem, Session } from '../lib/api';
 
@@ -369,6 +370,7 @@ export function FactoryEpicDetail() {
 	const removedIssues = useFactoryRemovedIssues(id);
 	const [feedback, setFeedback] = useState('');
 	const [gateStatus, setGateStatus] = useState('');
+	const [started, setStarted] = useState(false);
 	const [managing, setManaging] = useState(false);
 	const [tab, setTab] = useState<'board' | 'graph' | 'plan'>();
   const proposalHistory = proposals.data ?? (epic.data?.proposal ? [epic.data.proposal] : []);
@@ -393,10 +395,11 @@ export function FactoryEpicDetail() {
 	};
   return <FactoryPage>
     <h2>{epic.data.goal}</h2>
+		<FactoryStartedToast open={started} onOpenChange={setStarted} />
     <dl className="factory-epic-details"><div><dt>Status</dt><dd data-testid="epic-status">{epic.data.status}</dd></div><div><dt>Project</dt><dd><ProjectLabel path={epic.data.initialProject} /></dd></div></dl>
     {/* ponytail: every epic action lives here, above the proposal dumps that used to push them off screen. */}
     <section className="factory-epic-actions" aria-label="Epic actions">
-      {epic.data.planGate?.resolution === 'open' && <div className="factory-epic-gate" aria-label="Plan approval gate"><h3>Plan approval</h3><p>Revision {epic.data.planGate.proposalRevision}: {epic.data.planGate.proposalHash}</p><label>Feedback<textarea value={feedback} onChange={(event) => setFeedback(event.target.value)} /></label><div className="factory-epic-action-row">{(['approve', 'revise', 'reject'] as const).map((action) => <Button key={action} type="button" variant={action === 'approve' ? 'accent' : 'default'} disabled={decideGate.isPending} onClick={() => decideGate.mutate({ action, expectedRevision: epic.data!.planGate!.proposalRevision, expectedHash: epic.data!.planGate!.proposalHash, feedback }, { onSuccess: () => setGateStatus(action === 'approve' ? 'Plan approved.' : action === 'revise' ? 'Revision requested.' : 'Plan rejected.') })}>{action === 'approve' ? 'Approve plan' : action === 'revise' ? 'Request revision' : 'Reject plan'}</Button>)}</div>{decideGate.isError && <p role="alert">{decideGate.error instanceof Error ? decideGate.error.message : 'Could not decide Plan gate.'}</p>}</div>}
+      {epic.data.planGate?.resolution === 'open' && <div className="factory-epic-gate" aria-label="Plan approval gate"><h3>Plan approval</h3><p>Revision {epic.data.planGate.proposalRevision}: {epic.data.planGate.proposalHash}</p><label>Feedback<textarea value={feedback} onChange={(event) => setFeedback(event.target.value)} /></label><div className="factory-epic-action-row">{(['approve', 'revise', 'reject'] as const).map((action) => <Button key={action} type="button" variant={action === 'approve' ? 'accent' : 'default'} disabled={decideGate.isPending} onClick={() => decideGate.mutate({ action, expectedRevision: epic.data!.planGate!.proposalRevision, expectedHash: epic.data!.planGate!.proposalHash, feedback }, { onSuccess: () => { if (action === 'approve') { setGateStatus(''); setStarted(true); } else setGateStatus(action === 'revise' ? 'Revision requested.' : 'Plan rejected.'); } })}>{action === 'approve' ? 'Approve plan' : action === 'revise' ? 'Request revision' : 'Reject plan'}</Button>)}</div>{decideGate.isError && <p role="alert">{decideGate.error instanceof Error ? decideGate.error.message : 'Could not decide Plan gate.'}</p>}</div>}
       {epic.data.planGate?.resolution === 'revision_requested' && <div className="factory-epic-gate" aria-label="Plan approval gate"><h3>Plan approval</h3><p role="status">Revision requested. Waiting for a new Plan proposal.</p><Button type="button" disabled={epic.isFetching || proposals.isFetching} onClick={() => { setGateStatus(''); void Promise.all([epic.refetch(), proposals.refetch()]); }}>{epic.isFetching || proposals.isFetching ? 'Checking…' : 'Check for new proposal'}</Button></div>}
       {gateStatus && <p role="status">{gateStatus}</p>}
       <div className="factory-epic-action-row">

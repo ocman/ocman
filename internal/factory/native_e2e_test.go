@@ -2,12 +2,57 @@ package factory
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/factory/model"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
+
+type approvalListErrorStore struct{ *state.DB }
+
+func (approvalListErrorStore) ListFactoryIssues(context.Context, string) ([]model.NativeIssue, error) {
+	return nil, errors.New("listing issues failed")
+}
+
+func TestApprovalRetriesAfterMaterializationFailure(t *testing.T) {
+	for _, failure := range []string{"list", "materialize"} {
+		t.Run(failure, func(t *testing.T) {
+			db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = db.Close() })
+			launcher := &fakeImplementationLauncher{}
+			svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
+			epic := createPouredWorkEpic(t, svc, "Retry approval")
+			proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required"}}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if failure == "list" {
+				svc.store = approvalListErrorStore{db}
+			} else {
+				svc.store = materializationNotFoundStore{db}
+			}
+			request := PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}
+			if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", request); err == nil {
+				t.Fatal("approval must report failure to create work")
+			}
+			if len(launcher.calls) != 0 {
+				t.Fatal("failed materialization started work")
+			}
+			svc.store = db
+			if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", request); err != nil {
+				t.Fatal(err)
+			}
+			if len(launcher.calls) != 1 {
+				t.Fatalf("retry must start work once: %#v", launcher.calls)
+			}
+		})
+	}
+}
 
 func TestNativeFactoryFlowPersistsAndDispatchesOnlyApprovedWork(t *testing.T) {
 	t.Run("approved proposal survives restart and dispatches", func(t *testing.T) {
@@ -45,6 +90,12 @@ func TestNativeFactoryFlowPersistsAndDispatchesOnlyApprovedWork(t *testing.T) {
 		}
 		if _, err := svc.DecidePlanGate(context.Background(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: "stale"}); err == nil {
 			t.Fatal("approved proposal with stale hash")
+		}
+		if _, err := svc.DecidePlanGate(context.Background(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
+			t.Fatal(err)
+		}
+		if len(implementation.calls) != 1 {
+			t.Fatalf("approval must create and start implementation: launches = %#v", implementation.calls)
 		}
 		if _, err := svc.DecidePlanGate(context.Background(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
 			t.Fatal(err)
