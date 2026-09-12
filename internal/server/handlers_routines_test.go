@@ -293,6 +293,9 @@ func TestWebhookInboxHTTPLifecycle(t *testing.T) {
 	if rec := doRoutineRequest(t, handler, http.MethodPost, path, `{}`); rec.Code != http.StatusConflict {
 		t.Fatalf("duplicate register: %d %s", rec.Code, rec.Body.String())
 	}
+	if rec := doRoutineRequest(t, handler, http.MethodPatch, path, `{}`); rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("unsupported inbox method: %d %s", rec.Code, rec.Body.String())
+	}
 
 	subscriptions := path + "/subscriptions"
 	if rec := doRoutineRequest(t, handler, http.MethodGet, subscriptions, ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), routine.ID) {
@@ -304,6 +307,19 @@ func TestWebhookInboxHTTPLifecycle(t *testing.T) {
 	if rec := doRoutineRequest(t, handler, http.MethodDelete, subscriptions, `{"routineId":"`+routine.ID+`"}`); rec.Code != http.StatusNoContent {
 		t.Fatalf("delete subscription: %d %s", rec.Code, rec.Body.String())
 	}
+	for _, tc := range []struct {
+		method   string
+		body     string
+		expected int
+	}{
+		{http.MethodPut, `{"`, http.StatusBadRequest},
+		{http.MethodDelete, `{"`, http.StatusBadRequest},
+		{http.MethodPatch, `{}`, http.StatusMethodNotAllowed},
+	} {
+		if rec := doRoutineRequest(t, handler, tc.method, subscriptions, tc.body); rec.Code != tc.expected {
+			t.Fatalf("%s subscriptions: %d %s", tc.method, rec.Code, rec.Body.String())
+		}
+	}
 
 	if rec := doRoutineRequest(t, handler, http.MethodPut, path, `{"reset":true}`); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"keyVersion":2`) {
 		t.Fatalf("rotate: %d %s", rec.Code, rec.Body.String())
@@ -313,5 +329,53 @@ func TestWebhookInboxHTTPLifecycle(t *testing.T) {
 	}
 	if rec := doRoutineRequest(t, handler, http.MethodGet, path, ""); rec.Code != http.StatusOK || rec.Body.String() != "null\n" {
 		t.Fatalf("get after revoke: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestWebhookInboxHTTPFailures(t *testing.T) {
+	srv, handler, _ := routineHTTPServer(t)
+	created := doRoutineRequest(t, handler, http.MethodPost, "/api/routines", validRoutineBody)
+	var routine state.Routine
+	if created.Code != http.StatusCreated || json.Unmarshal(created.Body.Bytes(), &routine) != nil {
+		t.Fatalf("create routine: %d %s", created.Code, created.Body.String())
+	}
+	path := "/api/routines/" + routine.ID + "/webhook-inbox"
+	if rec := doRoutineRequest(t, handler, http.MethodPost, path, `{"`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("malformed register: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := doRoutineRequest(t, handler, http.MethodPost, path, `{}`); rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unconfigured relay: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := doRoutineRequest(t, handler, http.MethodPut, path, `{}`); rec.Code != http.StatusNotFound {
+		t.Fatalf("rotate missing inbox: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := doRoutineRequest(t, handler, http.MethodDelete, path, ""); rec.Code != http.StatusNotFound {
+		t.Fatalf("revoke missing inbox: %d %s", rec.Code, rec.Body.String())
+	}
+
+	relay := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "relay failed", http.StatusBadGateway)
+	}))
+	defer relay.Close()
+	srv.relayURL = relay.URL
+	if rec := doRoutineRequest(t, handler, http.MethodPost, path, `{}`); rec.Code != http.StatusInternalServerError {
+		t.Fatalf("failed registration: %d %s", rec.Code, rec.Body.String())
+	}
+	if err := srv.stateDB.SaveWebhookInbox(t.Context(), state.WebhookInbox{
+		ID: "inbox", RoutineID: routine.ID, RelayURL: relay.URL, ManagementToken: "manage", Identity: "identity",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if rec := doRoutineRequest(t, handler, http.MethodPut, path, `{"`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("malformed rotation: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := doRoutineRequest(t, handler, http.MethodPut, path, `{"recipient":"recipient"}`); rec.Code != http.StatusInternalServerError {
+		t.Fatalf("failed rotation: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := doRoutineRequest(t, handler, http.MethodDelete, path, ""); rec.Code != http.StatusInternalServerError {
+		t.Fatalf("failed revocation: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := doRoutineRequest(t, handler, http.MethodGet, "/api/routines/missing/webhook-inbox/subscriptions", ""); rec.Code != http.StatusNotFound {
+		t.Fatalf("missing subscriptions: %d %s", rec.Code, rec.Body.String())
 	}
 }

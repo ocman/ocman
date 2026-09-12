@@ -279,6 +279,77 @@ func startTestServer(t *testing.T, token string, srv *Server) *grpc.ClientConn {
 	return conn
 }
 
+func TestRemoteHostRemainingMutationsRoundTrip(t *testing.T) {
+	conn := &RemoteConn{client: pb.NewOcmanClient(startTestServer(t, "token", NewServer(platforms.NewRegistry(), localStubHost{}, "remote", "test")))}
+	host := newRemoteHost(conn)
+
+	branches, err := host.GitBranches(t.Context(), "/repo")
+	if err != nil || len(branches) != 1 || branches[0] != "main" {
+		t.Fatalf("branches = %v, %v", branches, err)
+	}
+	if err := host.GitCheckout(t.Context(), "/repo", "main"); err != nil {
+		t.Fatalf("checkout: %v", err)
+	}
+	if err := host.RemoveWorktree(t.Context(), hostsvc.RemoveWorktreeRequest{Path: "/repo/worktree"}); err != nil {
+		t.Fatalf("remove worktree: %v", err)
+	}
+	if managed, err := host.ManagedOpencodes(t.Context()); err != nil || len(managed) != 0 {
+		t.Fatalf("managed opencodes = %v, %v", managed, err)
+	}
+
+	offline := newRemoteHost(&RemoteConn{})
+	if _, err := offline.GitBranches(t.Context(), "/repo"); !errors.Is(err, ErrRemoteOffline) {
+		t.Fatalf("offline branches: %v", err)
+	}
+	if err := offline.GitCheckout(t.Context(), "/repo", "main"); !errors.Is(err, ErrRemoteOffline) {
+		t.Fatalf("offline checkout: %v", err)
+	}
+	if err := offline.RemoveWorktree(t.Context(), hostsvc.RemoveWorktreeRequest{}); !errors.Is(err, ErrRemoteOffline) {
+		t.Fatalf("offline remove worktree: %v", err)
+	}
+	if _, err := offline.ManagedOpencodes(t.Context()); !errors.Is(err, ErrRemoteOffline) {
+		t.Fatalf("offline managed opencodes: %v", err)
+	}
+	for name, call := range map[string]func() error{
+		"beads":          func() error { _, err := offline.BeadsStatus(t.Context(), "/repo"); return err },
+		"git info":       func() error { _, err := offline.GitInfo(t.Context(), []string{"/repo"}); return err },
+		"git diff":       func() error { _, err := offline.GitDiff(t.Context(), "/repo", hostsvc.GitDiffOptions{}); return err },
+		"upstreams":      func() error { _, err := offline.ProjectUpstreams(t.Context(), "/repo"); return err },
+		"fetch PR":       func() error { _, err := offline.FetchPRHead(t.Context(), hostsvc.FetchPRHeadRequest{}); return err },
+		"list worktrees": func() error { _, err := offline.ListWorktrees(t.Context(), "/repo"); return err },
+		"base ref":       func() error { _, err := offline.WorktreeDefaultBaseRef(t.Context(), "/repo"); return err },
+		"create worktree": func() error {
+			_, err := offline.CreateWorktreeSession(t.Context(), hostsvc.WorktreeSessionRequest{})
+			return err
+		},
+		"launch tmux": func() error { _, err := offline.LaunchTmux(t.Context(), hostsvc.LaunchTmuxRequest{}); return err },
+		"ensure opencode": func() error {
+			_, err := offline.EnsureProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{})
+			return err
+		},
+		"stop opencode": func() error {
+			return offline.StopProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{})
+		},
+		"restart opencode": func() error {
+			_, err := offline.RestartProjectOpencode(t.Context(), hostsvc.EnsureProjectOpencodeRequest{})
+			return err
+		},
+		"tmux sessions": func() error { _, err := offline.TmuxSessions(t.Context()); return err },
+		"projects":      func() error { _, err := offline.Projects(t.Context()); return err },
+		"term windows":  func() error { _, err := offline.TermWindows(t.Context(), "/repo"); return err },
+		"term create":   func() error { _, err := offline.TermCreateWindow(t.Context(), "/repo"); return err },
+		"term kill":     func() error { return offline.TermKillWindow(t.Context(), "/repo", "window") },
+		"term attach":   func() error { return offline.TermAttach(t.Context(), hostsvc.TermAttachRequest{}, nil) },
+		"identities":    func() error { _, err := offline.ProjectIdentities(t.Context()); return err },
+	} {
+		t.Run("offline "+name, func(t *testing.T) {
+			if err := call(); !errors.Is(err, ErrRemoteOffline) {
+				t.Fatalf("error = %v, want ErrRemoteOffline", err)
+			}
+		})
+	}
+}
+
 func TestServer_HelloAndSessionsRoundTrip(t *testing.T) {
 	reg := platforms.NewRegistry()
 	fp := &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "s1", Platform: "opencode", Title: "Hi"}}}

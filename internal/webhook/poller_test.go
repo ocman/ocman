@@ -117,6 +117,9 @@ func TestPollerContinuesPastPoisonAndDeduplicatesAfterAckLoss(t *testing.T) {
 	if err := db.SaveWebhookSubscription(t.Context(), state.WebhookSubscription{ID: "sub", InboxID: allocation.ID, RoutineID: "routine"}); err != nil {
 		t.Fatal(err)
 	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	(&Poller{Store: db, Inbox: inbox, HTTP: relayServer.Client()}).Run(ctx)
 	clock := time.Now()
 	transport := &pollerTransport{base: http.DefaultTransport, poisonID: poisonID, failAck: true}
 	dispatcher := &pollerDispatcher{}

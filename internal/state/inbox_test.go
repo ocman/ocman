@@ -207,6 +207,28 @@ func TestWebhookDeliveryAcceptanceIsIdempotent(t *testing.T) {
 	if err := db.SaveWebhookInbox(t.Context(), WebhookInbox{ID: "inbox", RoutineID: "routine", RelayURL: "https://relay", Identity: "identity"}); err != nil {
 		t.Fatal(err)
 	}
+	inboxes, err := db.ListWebhookInboxes(t.Context())
+	if err != nil || len(inboxes) != 1 || inboxes[0].ID != "inbox" {
+		t.Fatalf("inboxes = %+v, %v", inboxes, err)
+	}
+	if err := db.RecordWebhookIgnored(t.Context(), "inbox", "ignored", 5); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := db.ClaimWebhookDispatch(t.Context(), "inbox", "dispatched", "routine", 6)
+	if err != nil || !claimed {
+		t.Fatalf("first dispatch claim = %v, %v", claimed, err)
+	}
+	claimed, err = db.ClaimWebhookDispatch(t.Context(), "inbox", "dispatched", "routine", 7)
+	if err != nil || claimed {
+		t.Fatalf("duplicate dispatch claim = %v, %v", claimed, err)
+	}
+	if err := db.FinishWebhookDispatch(t.Context(), "inbox", "dispatched", "routine", "success", "", 8); err != nil {
+		t.Fatal(err)
+	}
+	counts, err := db.WebhookDispatchCounts(t.Context(), "inbox")
+	if err != nil || counts["ignored"] != 1 || counts["success"] != 1 {
+		t.Fatalf("dispatch counts = %+v, %v", counts, err)
+	}
 	accepted, err := db.AcceptWebhookDelivery(t.Context(), "inbox", "delivery", "POST webhook", "body", 10)
 	if err != nil || !accepted {
 		t.Fatalf("first acceptance = %v, %v", accepted, err)
@@ -237,5 +259,49 @@ func TestWebhookDeliveryErrorBackoffIsBounded(t *testing.T) {
 	allowed, err := db.WebhookDeliveryRetryAllowed(t.Context(), "inbox", "delivery", now)
 	if err != nil || allowed {
 		t.Fatalf("retry after max attempts = %v, %v", allowed, err)
+	}
+}
+
+func TestWebhookStoreReportsClosedDatabase(t *testing.T) {
+	db := openTestStateDB(t)
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	tests := map[string]func() error{
+		"cleanup": func() error { return db.CleanupWebhookHistory(ctx, 1) },
+		"save sub": func() error {
+			return db.SaveWebhookSubscription(ctx, WebhookSubscription{ID: "sub", InboxID: "inbox", RoutineID: "routine"})
+		},
+		"list subs":  func() error { _, err := db.ListWebhookSubscriptions(ctx, "inbox"); return err },
+		"delete sub": func() error { return db.DeleteWebhookSubscription(ctx, "inbox", "routine") },
+		"claim":      func() error { _, err := db.ClaimWebhookDispatch(ctx, "inbox", "delivery", "routine", 1); return err },
+		"finish": func() error {
+			return db.FinishWebhookDispatch(ctx, "inbox", "delivery", "routine", "failure", "error", 1)
+		},
+		"ignore": func() error { return db.RecordWebhookIgnored(ctx, "inbox", "delivery", 1) },
+		"save inbox": func() error {
+			return db.SaveWebhookInbox(ctx, WebhookInbox{ID: "inbox", RoutineID: "routine", RelayURL: "https://relay", Identity: "identity"})
+		},
+		"get inbox":    func() error { _, err := db.GetWebhookInbox(ctx, "routine"); return err },
+		"list inboxes": func() error { _, err := db.ListWebhookInboxes(ctx); return err },
+		"delete inbox": func() error { return db.DeleteWebhookInbox(ctx, "routine") },
+		"counts":       func() error { _, err := db.WebhookDispatchCounts(ctx, "inbox"); return err },
+		"accept": func() error {
+			_, err := db.AcceptWebhookDelivery(ctx, "inbox", "delivery", "title", "body", 1)
+			return err
+		},
+		"record error": func() error { return db.RecordWebhookDeliveryError(ctx, "inbox", "delivery", "error", time.Now()) },
+		"retry": func() error {
+			_, err := db.WebhookDeliveryRetryAllowed(ctx, "inbox", "delivery", time.Now())
+			return err
+		},
+	}
+	for name, call := range tests {
+		t.Run(name, func(t *testing.T) {
+			if err := call(); err == nil {
+				t.Fatal("operation succeeded on closed database")
+			}
+		})
 	}
 }

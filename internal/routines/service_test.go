@@ -205,6 +205,34 @@ func TestCRUD(t *testing.T) {
 	}
 }
 
+func TestRunWebhookAppendsPayload(t *testing.T) {
+	h := newHarness(t)
+	routine, err := h.svc.Create(t.Context(), validInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.svc.RunWebhook(t.Context(), routine.ID, "payload", 123)
+	if err != nil || run.Trigger != "webhook" || run.OccurrenceAt != 123 {
+		t.Fatalf("run = %+v, %v", run, err)
+	}
+	if got := h.platform.sent[0].Message; got != " inspect this\n\n\npayload" {
+		t.Fatalf("message = %q", got)
+	}
+
+	disabled := validInput()
+	disabled.Name, disabled.Enabled = "Disabled", false
+	disabledRoutine, err := h.svc.Create(t.Context(), disabled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.RunWebhook(t.Context(), disabledRoutine.ID, "payload", 124); err == nil {
+		t.Fatal("disabled routine ran")
+	}
+	if _, err := h.svc.RunWebhook(t.Context(), "missing", "payload", 125); !errors.Is(err, state.ErrRoutineNotFound) {
+		t.Fatalf("missing routine error = %v", err)
+	}
+}
+
 func TestDefaultsConflictsAndMissingOperations(t *testing.T) {
 	sdb, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
