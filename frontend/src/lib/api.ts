@@ -1,4 +1,5 @@
 import { record as recordPerf, templatePath } from './perfRing';
+import type { WebhookInbox, WebhookSubscription } from './api.types';
 
 // Re-export every wire type from the dedicated types module so existing
 // imports of `'./api'` continue to work unchanged. New code can import
@@ -67,6 +68,8 @@ export type {
   FavoriteEntry,
   SessionModelsResponse,
   AgentInfo,
+  WebhookInbox,
+  WebhookSubscription,
   QueuedMessage,
   TmuxClient,
   TmuxSession,
@@ -894,13 +897,20 @@ export const api = {
     remove: (req: WorktreeRemoveRequest): Promise<{ removed: boolean }> =>
       postJSON<{ removed: boolean }>('/api/worktree/remove', req),
   },
-	routines: {
+  routines: {
 		list: (signal?: AbortSignal) => fetchJSON<Routine[]>('/api/routines', signal),
 		create: (input: RoutineInput) => postJSON<Routine, RoutineInput>('/api/routines', input),
 		update: (id: string, input: RoutineInput) => postJSON<Routine, RoutineInput>(`/api/routines/${encodeURIComponent(id)}`, input, { method: 'PUT' }),
 		remove: (id: string) => postJSON<void, undefined>(`/api/routines/${encodeURIComponent(id)}`, undefined, { method: 'DELETE', parseJSON: false }),
 		run: (id: string) => postJSON<RoutineRun, undefined>(`/api/routines/${encodeURIComponent(id)}/run`, undefined),
-		history: (id: string, signal?: AbortSignal) => fetchJSON<RoutineRun[]>(`/api/routines/${encodeURIComponent(id)}/history`, signal),
+    history: (id: string, signal?: AbortSignal) => fetchJSON<RoutineRun[]>(`/api/routines/${encodeURIComponent(id)}/history`, signal),
+    webhook: (id: string, signal?: AbortSignal) => fetchJSON<WebhookInbox | null>(`/api/routines/${encodeURIComponent(id)}/webhook-inbox`, signal),
+    createWebhook: (id: string, input: { enrollmentToken: string; secret?: string; secretHeader?: string }) => postJSON<WebhookInbox>(`/api/routines/${encodeURIComponent(id)}/webhook-inbox`, input),
+    revokeWebhook: (id: string) => postJSON<void>(`/api/routines/${encodeURIComponent(id)}/webhook-inbox`, undefined, { method: 'DELETE', parseJSON: false }),
+    rotateWebhook: (id: string, input: { recipient?: string; reset?: boolean }) => postJSON<{ keyVersion: number }>(`/api/routines/${encodeURIComponent(id)}/webhook-inbox`, input, { method: 'PUT' }),
+    subscriptions: (id: string, signal?: AbortSignal) => fetchJSON<WebhookSubscription[]>(`/api/routines/${encodeURIComponent(id)}/webhook-inbox/subscriptions`, signal),
+    saveSubscription: (id: string, input: Partial<WebhookSubscription>) => postJSON<WebhookSubscription>(`/api/routines/${encodeURIComponent(id)}/webhook-inbox/subscriptions`, input, { method: 'PUT' }),
+    removeSubscription: (id: string, routineId: string) => postJSON<void>(`/api/routines/${encodeURIComponent(id)}/webhook-inbox/subscriptions`, { routineId }, { method: 'DELETE', parseJSON: false }),
 	},
   compactSession: (sessionId: string, providerID: string, modelID: string) =>
     postJSON<void>(

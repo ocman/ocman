@@ -38,3 +38,10 @@
 .routine-row-actions .oc-button + .oc-button { border-left: 1px solid var(--border); }
 .routine-delete, .routine-error { color: var(--danger); }
 @media (max-width: 640px) { .routine-page { padding: 12px; }.routine-header { align-items: stretch; flex-direction: column; }.routine-drawer { padding: 18px; } }
+.routine-webhooks { margin-top: 2rem; }
+.routine-webhook-card { display: flex; flex-wrap: wrap; gap: 1rem; align-items: end; padding: 1rem; margin-top: .75rem; border: 1px solid var(--oc-border); border-radius: .5rem; }
+.routine-webhook-card > div { flex: 1 1 12rem; }
+.routine-webhook-card label { flex: 2 1 22rem; }
+.routine-webhook-card input { width: 100%; }
+.routine-webhook-status { flex: 1 1 100%; margin: 0; }
+@media (max-width: 600px) { .routine-webhook-card { align-items: stretch; } .routine-webhook-card .routine-actions { width: 100%; } }

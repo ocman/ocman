@@ -33,6 +33,7 @@ type InboxAllocation struct {
 	FetchToken          string `json:"fetchToken"`
 	AcknowledgmentToken string `json:"acknowledgmentToken"`
 	KeyVersion          int    `json:"keyVersion"`
+	SecretHeader        string `json:"secretHeader,omitempty"`
 }
 
 type InboxDelivery struct {
@@ -141,6 +142,77 @@ func (c RelayClient) RegisterInbox(ctx context.Context, recipient, enrollmentTok
 		return InboxAllocation{}, fmt.Errorf("decoding inbox registration: %w", err)
 	}
 	return out, nil
+}
+
+func (c RelayClient) RegisterInboxWithSecret(ctx context.Context, recipient, enrollmentToken, secret, secretHeader string) (InboxAllocation, error) {
+	body, err := json.Marshal(map[string]string{"recipient": recipient, "secret": secret, "secretHeader": secretHeader})
+	if err != nil {
+		return InboxAllocation{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.BaseURL, "/")+"/inboxes", bytes.NewReader(body))
+	if err != nil {
+		return InboxAllocation{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+enrollmentToken)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.client().Do(req)
+	if err != nil {
+		return InboxAllocation{}, relayTransportError("registering", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		return InboxAllocation{}, relayStatusError("registering", resp)
+	}
+	var out InboxAllocation
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&out); err != nil {
+		return InboxAllocation{}, err
+	}
+	return out, nil
+}
+
+func (c RelayClient) RotateInbox(ctx context.Context, id, token, recipient string) (int, error) {
+	body, err := json.Marshal(map[string]string{"recipient": recipient})
+	if err != nil {
+		return 0, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(c.BaseURL, "/")+"/inboxes/"+id+"/rotate", bytes.NewReader(body))
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.client().Do(req)
+	if err != nil {
+		return 0, relayTransportError("rotating", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, relayStatusError("rotating", resp)
+	}
+	var out struct {
+		KeyVersion int `json:"keyVersion"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return 0, err
+	}
+	return out.KeyVersion, nil
+}
+
+func (c RelayClient) RevokeInbox(ctx context.Context, id, token string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, strings.TrimRight(c.BaseURL, "/")+"/inboxes/"+id, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.client().Do(req)
+	if err != nil {
+		return relayTransportError("revoking", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
+		return relayStatusError("revoking", resp)
+	}
+	return nil
 }
 
 func (c RelayClient) ListInboxDeliveries(ctx context.Context, inboxID, token, cursor string) (InboxDeliveryPage, error) {

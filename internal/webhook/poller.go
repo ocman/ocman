@@ -41,11 +41,15 @@ func (p *Poller) Run(ctx context.Context) {
 }
 
 func Register(ctx context.Context, store *state.DB, routineID, relayURL, enrollmentToken string, client *http.Client) (state.WebhookInbox, error) {
+	return RegisterWithSecret(ctx, store, routineID, relayURL, enrollmentToken, "", "", client)
+}
+
+func RegisterWithSecret(ctx context.Context, store *state.DB, routineID, relayURL, enrollmentToken, secret, secretHeader string, client *http.Client) (state.WebhookInbox, error) {
 	identity, err := age.GenerateX25519Identity()
 	if err != nil {
 		return state.WebhookInbox{}, fmt.Errorf("generating webhook identity: %w", err)
 	}
-	allocation, err := (share.RelayClient{BaseURL: relayURL, HTTP: client}).RegisterInbox(ctx, identity.Recipient().String(), enrollmentToken)
+	allocation, err := (share.RelayClient{BaseURL: relayURL, HTTP: client}).RegisterInboxWithSecret(ctx, identity.Recipient().String(), enrollmentToken, secret, secretHeader)
 	if err != nil {
 		return state.WebhookInbox{}, err
 	}

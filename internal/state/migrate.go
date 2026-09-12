@@ -203,7 +203,7 @@ import (
 //	74 - add durable owner-local Inbox items.
 //	75 - allow multiple sequential recovery gates for one Factory attempt.
 //	78 - add routine webhook subscriptions and dispatch claims.
-const latestSchemaVersion = 78
+const latestSchemaVersion = 79
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -464,6 +464,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV77(tx)
 	case 78:
 		return migrateToV78(tx)
+	case 79:
+		return migrateToV79(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -2641,5 +2643,29 @@ func migrateToV78(tx *sql.Tx) error {
 		);
 		CREATE INDEX IF NOT EXISTS webhook_dispatch_retention_idx ON webhook_dispatch (finished_at);
 	`)
+	return err
+}
+
+func migrateToV79(tx *sql.Tx) error {
+	rows, err := tx.Query(`PRAGMA table_info(webhook_inbox)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notnull, pk int
+		var name, typ string
+		var dflt any
+		if err := rows.Scan(&cid, &name, &typ, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		if name == "ingestion_url" {
+			return rows.Err()
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	_, err = tx.Exec(`ALTER TABLE webhook_inbox ADD COLUMN ingestion_url TEXT NOT NULL DEFAULT ''`)
 	return err
 }

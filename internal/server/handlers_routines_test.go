@@ -230,3 +230,31 @@ func TestRoutineHTTPUnexpectedStoreError(t *testing.T) {
 		}
 	}
 }
+
+func TestWebhookInboxHTTPRedactsCredentials(t *testing.T) {
+	srv, handler, _ := routineHTTPServer(t)
+	created := doRoutineRequest(t, handler, http.MethodPost, "/api/routines", validRoutineBody)
+	var routine state.Routine
+	if created.Code != http.StatusCreated || json.Unmarshal(created.Body.Bytes(), &routine) != nil {
+		t.Fatalf("create routine: %d %s", created.Code, created.Body.String())
+	}
+	if err := srv.stateDB.SaveWebhookInbox(t.Context(), state.WebhookInbox{
+		ID: "inbox", RoutineID: routine.ID, RelayURL: "https://relay", IngestionURL: "https://relay/i/inbox/token",
+		ManagementToken: "management", FetchToken: "fetch", AcknowledgmentToken: "ack", Identity: "private-key",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rec := doRoutineRequest(t, handler, http.MethodGet, "/api/routines/"+routine.ID+"/webhook-inbox", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: %d %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, secret := range []string{"management", "fetch", "ack", "private-key"} {
+		if strings.Contains(body, secret) {
+			t.Fatalf("response leaked %q: %s", secret, body)
+		}
+	}
+	if !strings.Contains(body, "https://relay/i/inbox/token") {
+		t.Fatalf("missing ingestion URL: %s", body)
+	}
+}

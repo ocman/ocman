@@ -82,6 +82,9 @@ export interface Routine {
   expiredAt?: number;
 }
 
+export interface WebhookSubscription { id: string; inboxId: string; routineId: string; headerPredicates: string; jsonPredicates: string; createdAt: number }
+export interface WebhookInbox { id: string; routineId: string; relayUrl: string; ingestionUrl: string; keyVersion: number; createdAt: number; counts: Record<string, number>; subscriptions: WebhookSubscription[]; validationSecret?: string; validationHeader?: string }
+
 export interface RoutineRun {
   id: string;
   routineId: string;

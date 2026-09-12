@@ -96,6 +96,8 @@ export function Routines() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [webhooks, setWebhooks] = useState<Record<string, import('../lib/api.types').WebhookInbox | null>>({});
+  const [webhookBusy, setWebhookBusy] = useState<string>();
 
   const load = async () => {
     const [items, projectItems] = await Promise.all([api.routines.list(), api.projects()]);
@@ -103,6 +105,8 @@ export function Routines() {
     setProjects(projectItems);
     const entries = await Promise.all(items.map(async (item) => [item.id, await api.routines.history(item.id)] as const));
     setHistory(Object.fromEntries(entries));
+    const inboxes = await Promise.all(items.map(async (item) => [item.id, await api.routines.webhook(item.id)] as const));
+    setWebhooks(Object.fromEntries(inboxes));
   };
 
   useEffect(() => {
@@ -115,9 +119,11 @@ export function Routines() {
         const [items, projectItems] = await Promise.all([api.routines.list(), api.projects()]);
         const entries = await Promise.all(items.map(async (item) => [item.id, await api.routines.history(item.id)] as const));
         if (active) {
-          setRoutines(items);
-          setProjects(projectItems);
-          setHistory(Object.fromEntries(entries));
+         setRoutines(items);
+         setProjects(projectItems);
+         setHistory(Object.fromEntries(entries));
+          const inboxes = await Promise.all(items.map(async (item) => [item.id, await api.routines.webhook(item.id)] as const));
+          if (active) setWebhooks(Object.fromEntries(inboxes));
         }
       } catch (err) {
         if (active) setError(err instanceof Error ? err.message : 'Could not load routines.');
@@ -293,6 +299,11 @@ export function Routines() {
           </tr>;
         })}</tbody></table></div></section>
       )}
+      <section aria-labelledby="webhook-inboxes-heading" className="routine-webhooks">
+        <h2 id="webhook-inboxes-heading">Webhook inboxes</h2>
+        <p>Receive encrypted webhooks and dispatch matching deliveries to routines. Relay and owner credentials stay on the server.</p>
+        {routines.map((routine) => { const inbox = webhooks[routine.id]; const busyInbox = webhookBusy === routine.id; return <article key={routine.id} className="routine-webhook-card"><div><h3>Inbox: {routine.name}</h3><small>{routine.remoteId || 'local'} owner</small></div>{inbox ? <><label>Ingestion URL<input readOnly value={inbox.ingestionUrl} aria-label={`${routine.name} ingestion URL`} onFocus={(event) => event.currentTarget.select()} /></label><p className="routine-webhook-status">Key v{inbox.keyVersion} · {Object.entries(inbox.counts).map(([state, count]) => `${state}: ${count}`).join(' · ') || 'pending: 0'}</p><div className="routine-actions"><Button type="button" disabled={busyInbox} onClick={() => { void navigator.clipboard?.writeText(inbox.ingestionUrl); }}>Copy URL</Button><Button type="button" disabled={busyInbox} onClick={() => { if (window.confirm('Revoke this webhook inbox?')) { setWebhookBusy(routine.id); void api.routines.revokeWebhook(routine.id).then(() => setWebhooks({ ...webhooks, [routine.id]: null })).catch((err) => setError(err.message)).finally(() => setWebhookBusy(undefined)); } }}>Revoke</Button><Button type="button" disabled={busyInbox} onClick={() => { if (window.confirm('Reset the key? Existing pending deliveries will become unreadable.')) { setWebhookBusy(routine.id); void api.routines.rotateWebhook(routine.id, { reset: true }).then(() => api.routines.webhook(routine.id)).then((next) => setWebhooks({ ...webhooks, [routine.id]: next })).catch((err) => setError(err.message)).finally(() => setWebhookBusy(undefined)); } }}>Reset key</Button></div></> : <Button type="button" variant="accent" disabled={busyInbox} onClick={() => { const enrollmentToken = window.prompt('Relay enrollment token'); if (!enrollmentToken) return; const secret = window.prompt('Optional shared secret (leave blank for URL-only validation)') || ''; const secretHeader = secret ? (window.prompt('Header name', 'X-Webhook-Secret') || 'X-Webhook-Secret') : ''; setWebhookBusy(routine.id); void api.routines.createWebhook(routine.id, { enrollmentToken, secret, secretHeader }).then((created) => setWebhooks({ ...webhooks, [routine.id]: created })).catch((err) => setError(err.message)).finally(() => setWebhookBusy(undefined)); }}>Create inbox</Button>}</article>; })}
+      </section>
     </main>
   );
 }

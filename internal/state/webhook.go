@@ -69,6 +69,11 @@ func (d *DB) ListWebhookSubscriptions(ctx context.Context, inboxID string) ([]We
 	return result, rows.Err()
 }
 
+func (d *DB) DeleteWebhookSubscription(ctx context.Context, inboxID, routineID string) error {
+	_, err := d.db.ExecContext(ctx, `DELETE FROM webhook_subscription WHERE inbox_id=? AND routine_id=?`, inboxID, routineID)
+	return err
+}
+
 // ClaimWebhookDispatch is the durable deduplication boundary for a delivery.
 func (d *DB) ClaimWebhookDispatch(ctx context.Context, inboxID, deliveryID, routineID string, now int64) (bool, error) {
 	r, err := d.db.ExecContext(ctx, `INSERT INTO webhook_dispatch (inbox_id,delivery_id,routine_id,state,created_at) VALUES (?,?,?,'queued',?) ON CONFLICT DO NOTHING`, inboxID, deliveryID, routineID, now)
@@ -97,6 +102,7 @@ type WebhookInbox struct {
 	FetchToken          string `json:"fetchToken"`
 	AcknowledgmentToken string `json:"acknowledgmentToken"`
 	Identity            string `json:"identity"`
+	IngestionURL        string `json:"ingestionUrl"`
 	KeyVersion          int    `json:"keyVersion"`
 	CreatedAt           int64  `json:"createdAt"`
 }
@@ -112,13 +118,13 @@ func (d *DB) SaveWebhookInbox(ctx context.Context, inbox WebhookInbox) error {
 		inbox.CreatedAt = time.Now().UnixMilli()
 	}
 	_, err := d.db.ExecContext(ctx, `INSERT INTO webhook_inbox
-		(id, routine_id, relay_url, management_token, fetch_token, acknowledgment_token, identity, key_version, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		(id, routine_id, relay_url, management_token, fetch_token, acknowledgment_token, identity, ingestion_url, key_version, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(routine_id) DO UPDATE SET id=excluded.id, relay_url=excluded.relay_url,
 		management_token=excluded.management_token, fetch_token=excluded.fetch_token,
 		acknowledgment_token=excluded.acknowledgment_token, identity=excluded.identity,
-		key_version=excluded.key_version`, inbox.ID, inbox.RoutineID, inbox.RelayURL,
-		inbox.ManagementToken, inbox.FetchToken, inbox.AcknowledgmentToken, inbox.Identity,
+		key_version=excluded.key_version, ingestion_url=excluded.ingestion_url`, inbox.ID, inbox.RoutineID, inbox.RelayURL,
+		inbox.ManagementToken, inbox.FetchToken, inbox.AcknowledgmentToken, inbox.Identity, inbox.IngestionURL,
 		inbox.KeyVersion, inbox.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("saving webhook inbox: %w", err)
@@ -129,13 +135,36 @@ func (d *DB) SaveWebhookInbox(ctx context.Context, inbox WebhookInbox) error {
 func (d *DB) GetWebhookInbox(ctx context.Context, routineID string) (WebhookInbox, error) {
 	var inbox WebhookInbox
 	err := d.db.QueryRowContext(ctx, `SELECT id, routine_id, relay_url, management_token, fetch_token,
-		acknowledgment_token, identity, key_version, created_at FROM webhook_inbox WHERE routine_id = ?`, routineID).
+		acknowledgment_token, identity, ingestion_url, key_version, created_at FROM webhook_inbox WHERE routine_id = ?`, routineID).
 		Scan(&inbox.ID, &inbox.RoutineID, &inbox.RelayURL, &inbox.ManagementToken, &inbox.FetchToken,
-			&inbox.AcknowledgmentToken, &inbox.Identity, &inbox.KeyVersion, &inbox.CreatedAt)
+			&inbox.AcknowledgmentToken, &inbox.Identity, &inbox.IngestionURL, &inbox.KeyVersion, &inbox.CreatedAt)
 	if err != nil {
 		return WebhookInbox{}, err
 	}
 	return inbox, nil
+}
+
+func (d *DB) DeleteWebhookInbox(ctx context.Context, routineID string) error {
+	_, err := d.db.ExecContext(ctx, `DELETE FROM webhook_inbox WHERE routine_id = ?`, routineID)
+	return err
+}
+
+func (d *DB) WebhookDispatchCounts(ctx context.Context, inboxID string) (map[string]int, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT state, COUNT(*) FROM webhook_dispatch WHERE inbox_id=? GROUP BY state`, inboxID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	counts := map[string]int{}
+	for rows.Next() {
+		var state string
+		var count int
+		if err := rows.Scan(&state, &count); err != nil {
+			return nil, err
+		}
+		counts[state] = count
+	}
+	return counts, rows.Err()
 }
 
 // AcceptWebhookDelivery commits the inbox item and relay identity together.

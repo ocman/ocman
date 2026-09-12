@@ -1,14 +1,18 @@
 package server
 
 import (
+	"database/sql"
 	"errors"
 	"math"
 	"net/http"
 	"strings"
 	"time"
 
+	"filippo.io/age"
 	"github.com/NoUseFreak/ocman/internal/routines"
+	"github.com/NoUseFreak/ocman/internal/share"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/webhook"
 )
 
 type routineRequest struct {
@@ -58,7 +62,7 @@ func (s *Server) handleRoutines(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, action, extra := cutRoutinePath(rest)
-	if id == "" || extra != "" {
+	if id == "" || (extra != "" && !(action == "webhook-inbox" && extra == "subscriptions")) {
 		http.NotFound(w, r)
 		return
 	}
@@ -91,8 +95,186 @@ func (s *Server) handleRoutines(w http.ResponseWriter, r *http.Request) {
 			runs = []state.RoutineRun{}
 		}
 		writeJSON(w, runs)
+	case "webhook-inbox":
+		if extra == "subscriptions" {
+			s.handleWebhookSubscriptions(w, r, id)
+		} else {
+			s.handleWebhookInbox(w, r, id)
+		}
 	default:
 		http.NotFound(w, r)
+	}
+}
+
+func (s *Server) handleWebhookSubscriptions(w http.ResponseWriter, r *http.Request, routineID string) {
+	inbox, err := s.stateDB.GetWebhookInbox(r.Context(), routineID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		subs, err := s.stateDB.ListWebhookSubscriptions(r.Context(), inbox.ID)
+		if err != nil {
+			serverError(w, "listing webhook subscriptions", err)
+			return
+		}
+		writeJSON(w, subs)
+	case http.MethodPut:
+		var sub state.WebhookSubscription
+		if !readAndUnmarshal(w, r, maxRequestBody, &sub) {
+			return
+		}
+		sub.InboxID, sub.RoutineID = inbox.ID, routineID
+		if sub.ID == "" {
+			sub.ID = "subscription-" + inbox.ID + "-" + sub.RoutineID
+		}
+		if err := s.stateDB.SaveWebhookSubscription(r.Context(), sub); err != nil {
+			serverError(w, "saving webhook subscription", err)
+			return
+		}
+		writeJSON(w, sub)
+	case http.MethodDelete:
+		var sub struct {
+			RoutineID string `json:"routineId"`
+		}
+		if !readAndUnmarshal(w, r, maxRequestBody, &sub) {
+			return
+		}
+		if err := s.stateDB.DeleteWebhookSubscription(r.Context(), inbox.ID, sub.RoutineID); err != nil {
+			serverError(w, "deleting webhook subscription", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+type webhookInboxView struct {
+	ID            string                      `json:"id"`
+	RoutineID     string                      `json:"routineId"`
+	RelayURL      string                      `json:"relayUrl"`
+	IngestionURL  string                      `json:"ingestionUrl"`
+	KeyVersion    int                         `json:"keyVersion"`
+	CreatedAt     int64                       `json:"createdAt"`
+	Counts        map[string]int              `json:"counts"`
+	Subscriptions []state.WebhookSubscription `json:"subscriptions"`
+}
+
+func (s *Server) handleWebhookInbox(w http.ResponseWriter, r *http.Request, routineID string) {
+	if s.stateDB == nil {
+		http.Error(w, "state database unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	routine, err := s.routineSvc.Get(r.Context(), routineID)
+	if err != nil {
+		s.writeRoutineError(w, "getting routine", err)
+		return
+	}
+	if routine.RemoteID != "" && routine.RemoteID != "local" {
+		http.Error(w, "webhook inbox owner is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	inbox, err := s.stateDB.GetWebhookInbox(r.Context(), routineID)
+	switch r.Method {
+	case http.MethodGet:
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				writeJSON(w, nil)
+				return
+			}
+			serverError(w, "getting webhook inbox", err)
+			return
+		}
+		counts, err := s.stateDB.WebhookDispatchCounts(r.Context(), inbox.ID)
+		if err != nil {
+			serverError(w, "getting webhook status", err)
+			return
+		}
+		subs, err := s.stateDB.ListWebhookSubscriptions(r.Context(), inbox.ID)
+		if err != nil {
+			serverError(w, "getting webhook subscriptions", err)
+			return
+		}
+		writeJSON(w, webhookInboxView{inbox.ID, routine.ID, inbox.RelayURL, inbox.IngestionURL, inbox.KeyVersion, inbox.CreatedAt, counts, subs})
+	case http.MethodPost:
+		if err == nil {
+			http.Error(w, "webhook inbox already exists", http.StatusConflict)
+			return
+		}
+		var req struct{ EnrollmentToken, Secret, SecretHeader string }
+		if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+			return
+		}
+		if s.relayURL == "" {
+			http.Error(w, "relay is not configured", http.StatusServiceUnavailable)
+			return
+		}
+		inbox, err := webhook.RegisterWithSecret(r.Context(), s.stateDB, routine.ID, s.relayURL, req.EnrollmentToken, req.Secret, req.SecretHeader, nil)
+		if err != nil {
+			serverError(w, "registering webhook inbox", err)
+			return
+		}
+		writeJSONStatus(w, http.StatusCreated, struct {
+			webhookInboxView
+			ValidationSecret string `json:"validationSecret,omitempty"`
+			ValidationHeader string `json:"validationHeader,omitempty"`
+		}{webhookInboxView{inbox.ID, routine.ID, inbox.RelayURL, inbox.IngestionURL, inbox.KeyVersion, inbox.CreatedAt, map[string]int{}, []state.WebhookSubscription{}}, req.Secret, req.SecretHeader})
+	case http.MethodDelete:
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		if err := (&share.RelayClient{BaseURL: inbox.RelayURL}).RevokeInbox(r.Context(), inbox.ID, inbox.ManagementToken); err != nil {
+			serverError(w, "revoking webhook inbox", err)
+			return
+		}
+		if err := s.stateDB.DeleteWebhookInbox(r.Context(), routineID); err != nil {
+			serverError(w, "deleting webhook inbox", err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	case http.MethodPut:
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		var req struct {
+			Recipient string `json:"recipient"`
+			Reset     bool   `json:"reset"`
+		}
+		if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+			return
+		}
+		if req.Reset {
+			req.Recipient = ""
+		}
+		if req.Recipient == "" {
+			id, e := age.GenerateX25519Identity()
+			if e != nil {
+				serverError(w, "generating webhook key", e)
+				return
+			}
+			req.Recipient = id.Recipient().String()
+			inbox.Identity = id.String()
+		}
+		version, err := (&share.RelayClient{BaseURL: inbox.RelayURL}).RotateInbox(r.Context(), inbox.ID, inbox.ManagementToken, req.Recipient)
+		if err != nil {
+			serverError(w, "rotating webhook inbox", err)
+			return
+		}
+		inbox.KeyVersion = version
+		if err := s.stateDB.SaveWebhookInbox(r.Context(), inbox); err != nil {
+			serverError(w, "saving webhook key", err)
+			return
+		}
+		writeJSON(w, struct {
+			KeyVersion int  `json:"keyVersion"`
+			Reset      bool `json:"reset"`
+		}{version, req.Reset})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 

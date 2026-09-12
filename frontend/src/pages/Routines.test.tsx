@@ -7,7 +7,7 @@ import { api, type Routine } from '../lib/api';
 import { Routines } from './Routines';
 
 vi.mock('../lib/headerContext', () => ({ usePageTitle: vi.fn() }));
-vi.mock('../lib/api', () => ({ api: { projects: vi.fn(), sessions: vi.fn(), agents: vi.fn(), sessionModels: vi.fn(), routines: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), run: vi.fn(), history: vi.fn() } } }));
+vi.mock('../lib/api', () => ({ api: { projects: vi.fn(), sessions: vi.fn(), agents: vi.fn(), sessionModels: vi.fn(), routines: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), run: vi.fn(), history: vi.fn(), webhook: vi.fn() } } }));
 
 const routine: Routine = {
   id: 'routine-1', name: 'Morning check', prompt: 'Inspect the build', directory: '/repo', remoteId: 'local',
@@ -30,6 +30,7 @@ describe('Routines', () => {
     vi.mocked(api.routines.update).mockResolvedValue(routine);
     vi.mocked(api.routines.remove).mockResolvedValue(undefined);
     vi.mocked(api.routines.run).mockResolvedValue({} as never);
+    vi.mocked(api.routines.webhook).mockResolvedValue(null);
   });
 
   afterEach(() => vi.useRealTimers());
