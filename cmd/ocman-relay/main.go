@@ -46,6 +46,7 @@ func main() {
 	maxChunkBytes := flag.Int64("max-chunk-bytes", relay.DefaultMaxChunkBytes, "maximum size of one appended chunk")
 	maxChunks := flag.Int("max-chunks", relay.DefaultMaxChunks, "maximum number of chunks per share")
 	maxShareBytes := flag.Int64("max-share-bytes", relay.DefaultMaxShareBytes, "maximum total bytes per share")
+	maxInboxBodyBytes := flag.Int64("max-inbox-body-bytes", relay.DefaultMaxInboxBodyBytes, "maximum size of one webhook inbox delivery")
 	createPerHour := flag.Float64("create-per-hour", relay.DefaultCreatePerHour, "share creations allowed per client address per hour")
 	createBurst := flag.Float64("create-burst", relay.DefaultCreateBurst, "burst capacity for share creation")
 	trustProxy := flag.Bool("trust-proxy", false, "read the client address from X-Forwarded-For (only behind a proxy that overwrites it)")
@@ -61,14 +62,16 @@ func main() {
 	}
 
 	cfg := relay.Config{
-		Store:         backend,
-		MaxChunkBytes: *maxChunkBytes,
-		MaxChunks:     *maxChunks,
-		MaxShareBytes: *maxShareBytes,
-		TTL:           *ttl,
-		CreatePerHour: *createPerHour,
-		CreateBurst:   *createBurst,
-		TrustProxy:    *trustProxy,
+		Store:             backend,
+		MaxChunkBytes:     *maxChunkBytes,
+		MaxChunks:         *maxChunks,
+		MaxShareBytes:     *maxShareBytes,
+		MaxInboxBodyBytes: *maxInboxBodyBytes,
+		TTL:               *ttl,
+		CreatePerHour:     *createPerHour,
+		CreateBurst:       *createBurst,
+		TrustProxy:        *trustProxy,
+		EnrollmentToken:   os.Getenv("OCMAN_RELAY_INBOX_ENROLLMENT_TOKEN"),
 	}
 	if !*noViewer {
 		assets, err := webui.FS()

@@ -35,12 +35,13 @@ import (
 // Defaults for the storage limits. They exist because share creation is
 // unauthenticated: the relay is protected by caps, not credentials.
 const (
-	DefaultMaxChunkBytes = 1 << 20  // 1 MiB per chunk
-	DefaultMaxChunks     = 4096     // chunks per share
-	DefaultMaxShareBytes = 32 << 20 // 32 MiB total per share
-	DefaultTTL           = 30 * 24 * time.Hour
-	DefaultCreatePerHour = 60
-	DefaultCreateBurst   = 10
+	DefaultMaxChunkBytes     = 1 << 20  // 1 MiB per chunk
+	DefaultMaxChunks         = 4096     // chunks per share
+	DefaultMaxShareBytes     = 32 << 20 // 32 MiB total per share
+	DefaultTTL               = 30 * 24 * time.Hour
+	DefaultCreatePerHour     = 60
+	DefaultCreateBurst       = 10
+	DefaultMaxInboxBodyBytes = 1 << 20
 )
 
 // Config configures a relay server.
@@ -67,6 +68,11 @@ type Config struct {
 	// X-Forwarded-For. Only enable it behind a proxy that overwrites
 	// that header, or clients can forge their rate-limit identity.
 	TrustProxy bool
+	// EnrollmentToken authorizes webhook inbox registration. An empty token
+	// disables registration while leaving existing inboxes usable.
+	EnrollmentToken string
+	// MaxInboxBodyBytes caps one webhook request body.
+	MaxInboxBodyBytes int64
 	// Now is the clock, overridable in tests.
 	Now func() time.Time
 }
@@ -107,6 +113,9 @@ func New(cfg Config) (*Server, error) {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
+	if cfg.MaxInboxBodyBytes <= 0 {
+		cfg.MaxInboxBodyBytes = DefaultMaxInboxBodyBytes
+	}
 	if cfg.MaxChunks > int(share.MaxSeq)+1 {
 		return nil, fmt.Errorf("relay: MaxChunks %d exceeds the addressable sequence space", cfg.MaxChunks)
 	}
@@ -125,6 +134,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /s/{id}", s.handleRead)
 	s.mux.HandleFunc("PUT /s/{id}/{seq}", s.handleAppend)
 	s.mux.HandleFunc("DELETE /s/{id}", s.handleDelete)
+	s.mux.HandleFunc("POST /inboxes", s.handleRegisterInbox)
+	s.mux.HandleFunc("GET /inboxes/{id}", s.handleManageInbox)
+	s.mux.HandleFunc("POST /i/{id}/{token}", s.handleIngestInbox)
+	s.mux.HandleFunc("GET /inboxes/{id}/deliveries", s.handleListInboxDeliveries)
+	s.mux.HandleFunc("GET /inboxes/{id}/deliveries/{deliveryID}", s.handleFetchInboxDelivery)
+	s.mux.HandleFunc("POST /inboxes/{id}/deliveries/{deliveryID}/ack", s.handleAcknowledgeInboxDelivery)
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, "ok\n")
