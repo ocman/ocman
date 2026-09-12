@@ -108,6 +108,19 @@ export function formatDate(ts: number): string {
   });
 }
 
+export function formatSubscriptionResetDate(ts: string): string {
+  const date = new Date(ts);
+  if (Number.isNaN(date.getTime())) return 'Invalid Date';
+  const day = date.getDate();
+  const suffix = day % 100 >= 11 && day % 100 <= 13
+    ? 'th'
+    : ['th', 'st', 'nd', 'rd'][day % 10] || 'th';
+  const weekday = date.toLocaleDateString('en-US', { weekday: 'long' });
+  const month = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec'][date.getMonth()];
+  const time = `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}:${date.getSeconds().toString().padStart(2, '0')}`;
+  return `${weekday} ${month} ${day}${suffix} ${date.getFullYear()}, ${time}`;
+}
+
 export function relativeTime(ts: number): string {
   const diff = Date.now() - ts;
   const mins = Math.floor(diff / 60000);

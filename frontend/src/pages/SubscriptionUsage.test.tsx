@@ -50,6 +50,20 @@ describe('SubscriptionUsage', () => {
     vi.useRealTimers();
   });
 
+  it('formats reset dates with the weekday and ordinal day', () => {
+    const resetsAt = new Date(2026, 8, 19, 13, 38, 36).toISOString();
+    vi.mocked(useSubscriptionUsage).mockReturnValue({
+      data: { providers: [
+        { id: 'anthropic', name: 'Anthropic', status: 'ok', windows: [
+          { name: '5 hours', usedPercent: 1, resetsAt },
+        ] },
+      ] },
+    } as never);
+
+    render(<SubscriptionUsage />);
+    expect(screen.getByText('Saturday Sept 19th 2026, 13:38:36')).toBeInTheDocument();
+  });
+
   it('shows provider errors and retries the request', () => {
     const refetch = vi.fn();
     vi.mocked(useSubscriptionUsage).mockReturnValue({

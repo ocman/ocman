@@ -6,6 +6,7 @@ import {
   formatDuration,
   formatNumber,
   formatSeconds,
+  formatSubscriptionResetDate,
   timeUntilISO,
   formatTokensPerSecond,
   fuzzyMatch,
@@ -184,6 +185,26 @@ describe('timeUntilISO', () => {
     ['not-a-date', ''],
   ])('renders %s as %s', (iso, expected) => {
     expect(timeUntilISO(iso, now)).toBe(expected);
+  });
+});
+
+describe('formatSubscriptionResetDate', () => {
+  it.each([
+    [1, 'Tuesday Sept 1st 2026, 13:08:06'],
+    [2, 'Wednesday Sept 2nd 2026, 13:08:06'],
+    [3, 'Thursday Sept 3rd 2026, 13:08:06'],
+    [4, 'Friday Sept 4th 2026, 13:08:06'],
+    [11, 'Friday Sept 11th 2026, 13:08:06'],
+    [12, 'Saturday Sept 12th 2026, 13:08:06'],
+    [13, 'Sunday Sept 13th 2026, 13:08:06'],
+    [21, 'Monday Sept 21st 2026, 13:08:06'],
+  ])('formats September %i with the correct ordinal', (day, expected) => {
+    const iso = new Date(2026, 8, day, 13, 8, 6).toISOString();
+    expect(formatSubscriptionResetDate(iso)).toBe(expected);
+  });
+
+  it('preserves the invalid date fallback', () => {
+    expect(formatSubscriptionResetDate('not-a-date')).toBe('Invalid Date');
   });
 });
 
