@@ -24,6 +24,27 @@ type factoryHandoffHost interface {
 	ValidateFactoryHandoff(context.Context, string, string) (string, error)
 }
 
+type factoryWorkspaceHost interface {
+	PrepareFactoryWorkspace(context.Context, string, string, string, string) (string, string, error)
+	ValidateFactoryCheckpoint(context.Context, string, string, string) (string, error)
+}
+
+func (l factoryImplementationLauncher) PrepareImplementationWorkspace(ctx context.Context, repo, branch, checkpoint, target string) (string, string, error) {
+	host, ok := l.server.router().ForDir(repo).(factoryWorkspaceHost)
+	if !ok {
+		return "", "", errors.New("factory workspace validation is unavailable")
+	}
+	return host.PrepareFactoryWorkspace(ctx, repo, branch, checkpoint, target)
+}
+
+func (l factoryImplementationLauncher) ValidateImplementationCheckpoint(ctx context.Context, repo, branch, checkpoint string) (string, error) {
+	host, ok := l.server.router().ForDir(repo).(factoryWorkspaceHost)
+	if !ok {
+		return "", errors.New("factory workspace validation is unavailable")
+	}
+	return host.ValidateFactoryCheckpoint(ctx, repo, branch, checkpoint)
+}
+
 func (l factoryImplementationLauncher) ValidateImplementationHandoff(ctx context.Context, repoRoot, branch, previousPRURL, prURL string, policy model.FactoryAttemptPolicy) error {
 	remote := forge.Remote{Type: forge.RemoteType(policy.DeliveryRemoteType), Host: policy.DeliveryRemoteHost, Repo: policy.DeliveryRemoteRepo}
 	client, ok := l.server.resolveForge(remote)
@@ -36,6 +57,15 @@ func (l factoryImplementationLauncher) ValidateImplementationHandoff(ctx context
 	}
 	if pr.Status == "draft" {
 		return errors.New("pull request must be ready for review")
+	}
+	if policy.Delivery {
+		valid := pr.Status == "open" && pr.Branch == branch && pr.BaseBranch == policy.TargetBranch
+		if policy.ForceComplete {
+			valid = pr.Status == "merged" && pr.BaseBranch == policy.TargetBranch
+		}
+		if !valid {
+			return errors.New("delivery pull request must be open and target the recorded branch")
+		}
 	}
 	validationBranch := branch
 	if previousPRURL != "" {
@@ -221,9 +251,16 @@ Title: %s
 Task:
 %s
 
-Work only on this Issue in the assigned worktree. Inspect the existing code, make the smallest correct change, and run the relevant checks. All implementation Issues in this Work Epic use the shared branch %s and run sequentially. Keep its pull request in draft while working: convert a reused pull request to draft before editing, or create a new draft pull request as soon as the branch is first pushed.
+Work only on this Issue in the assigned worktree. Inspect the existing code, make the smallest correct change, and run the relevant checks. All implementation Issues in this Work Epic use the shared branch %s and run sequentially. Keep this assigned branch. Do not create a pull request during implementation; Factory schedules a separate final delivery session.
 
-Before completion, leave the shared worktree on a clean commit, push the branch, mark its single pull request ready for review, then use the factory MCP action complete_attempt with attempt_id %s, attempt_token %s, pr_url set to that pull request, and a concise summary. If you cannot safely continue, use request_recovery with the same attempt ID and token instead of guessing.`, req.WorkID, req.EpicID, req.Title, req.Description, req.Branch, req.AttemptID, req.AgentToken)
+Before completion, leave the shared worktree on a clean commit, push the branch with an upstream, then use the factory MCP action complete_attempt with attempt_id %s, attempt_token %s, and a concise summary. Omit pr_url. Factory verifies and records the commit checkpoint. If you cannot safely continue, use request_recovery with the same attempt ID and token instead of guessing.`, req.WorkID, req.EpicID, req.Title, req.Description, req.Branch, req.AttemptID, req.AgentToken)
+	if req.Delivery {
+		prompt = fmt.Sprintf(`Deliver Factory Work Epic %s from the assigned shared branch %s into %s.
+
+All required implementation Issues have completed. Inspect their summaries through the factory tool, review the combined diff, and run the repository-required checks. Fix integration issues on this branch if necessary, commit, and push. Search the forge for an existing open pull request from this exact branch into the target branch before creating one; reuse it on retries. Create the final pull request if none exists, summarize the entire Epic, and mark it ready for review. Never merge it or reuse a merged/closed pull request. If the branch was merged or changed unexpectedly, request recovery instead of guessing.
+
+Leave the worktree clean and pushed, then call factory complete_attempt with attempt_id %s, attempt_token %s, summary describing the delivery checks, and pr_url set to the final pull request URL. Factory validates the branch, target, and HEAD. If delivery is blocked, use request_recovery with the same attempt credentials.`, req.EpicID, req.Branch, req.TargetBranch, req.AttemptID, req.AgentToken)
+	}
 	return l.server.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt})
 }
 

@@ -53,6 +53,7 @@ type User struct {
 // PR is the normalised shape of a pull/merge request returned by
 // any Forge implementation.
 type PR struct {
+	BaseBranch         string    `json:"baseBranch,omitempty"`
 	Number             int       `json:"number"`
 	Title              string    `json:"title"`
 	Body               string    `json:"body"`

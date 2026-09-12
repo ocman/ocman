@@ -14,6 +14,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/factory"
 	"github.com/NoUseFreak/ocman/internal/factory/model"
 	"github.com/NoUseFreak/ocman/internal/forge"
+	"github.com/NoUseFreak/ocman/internal/forge/forgejo"
 	"github.com/NoUseFreak/ocman/internal/forge/github"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -34,9 +35,97 @@ type factoryImplementationHost struct {
 	branches      []string
 }
 
+func TestFactoryResolvesDeletedForgejoBranch(t *testing.T) {
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprint(w, `{"number":604,"state":"closed","merged":true,"html_url":"https://forge.example/dries/ocman/pulls/604","head":{"ref":"refs/pull/604/head","label":"factory/aamruifdam-crov-2","sha":"ad222f13c6acde6a9874bf93bd2e25bd97698630","repo":{"full_name":"dries/ocman"}},"base":{"repo":{"full_name":"dries/ocman"}}}`)
+	}))
+	defer api.Close()
+	srv := New(nil, nil, "", platforms.NewRegistry(), nil)
+	srv.hostRouter = hostsvc.NewRouter(&factoryImplementationHost{})
+	srv.integrations.Forgejo = forgejo.NewRegistryForTest(map[string]*forgejo.Client{
+		"forge.example": forgejo.NewForTest("forge.example", api.URL, "token", api.Client()),
+	})
+	policy := model.FactoryAttemptPolicy{DeliveryRemoteType: "forgejo", DeliveryRemoteHost: "forge.example", DeliveryRemoteRepo: "dries/ocman"}
+	branch, base, err := (factoryImplementationLauncher{server: srv}).ResolveImplementationBranch(t.Context(), "/repo", "factory/aamruifdam-crov", "https://forge.example/dries/ocman/pulls/604", policy)
+	if err != nil || branch != "factory/aamruifdam-crov-3" || base != "ad222f13c6acde6a9874bf93bd2e25bd97698630" {
+		t.Fatalf("replacement branch/base = %q/%q, %v", branch, base, err)
+	}
+}
+
 func (h *factoryImplementationHost) ValidateFactoryHandoff(_ context.Context, repo, branch string) (string, error) {
 	h.handoffRepo, h.handoffBranch = repo, branch
 	return h.handoffHead, h.handoffErr
+}
+
+func (h *factoryImplementationHost) PrepareFactoryWorkspace(_ context.Context, _, _, _, target string) (string, string, error) {
+	return target, "", h.handoffErr
+}
+
+func (h *factoryImplementationHost) ValidateFactoryCheckpoint(_ context.Context, _, _, _ string) (string, error) {
+	return h.handoffHead, h.handoffErr
+}
+
+func TestFactoryDeliveryValidatesFinalPR(t *testing.T) {
+	for _, provider := range []string{"forgejo", "github"} {
+		t.Run(provider, func(t *testing.T) {
+			branch, target, head, state, fork, draft, merged := "factory/epic", "main", "abc123", "open", false, false, false
+			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				headRepo := "acme/repo"
+				mergedAt := "null"
+				if fork {
+					headRepo = "other/repo"
+				}
+				if merged {
+					mergedAt = `"2026-09-12T00:00:00Z"`
+				}
+				_, _ = fmt.Fprintf(w, `{"number":1,"state":%q,"draft":%t,"merged":%t,"merged_at":%s,"html_url":"https://forge.example/acme/repo/pulls/1","head":{"ref":%q,"sha":%q,"repo":{"full_name":%q}},"base":{"ref":%q,"repo":{"full_name":"acme/repo"}}}`, state, draft, merged, mergedAt, branch, head, headRepo, target)
+			}))
+			defer api.Close()
+			srv := New(nil, nil, "", platforms.NewRegistry(), nil)
+			host := &factoryImplementationHost{handoffHead: "abc123"}
+			srv.hostRouter = hostsvc.NewRouter(host)
+			srv.integrations.Forgejo = forgejo.NewRegistryForTest(map[string]*forgejo.Client{"forge.example": forgejo.NewForTest("forge.example", api.URL, "token", api.Client())})
+			srv.integrations.GitHub = github.NewForTest(api.URL, "token", api.Client())
+			launcher := factoryImplementationLauncher{server: srv}
+			policy := model.FactoryAttemptPolicy{Delivery: true, TargetBranch: "main", DeliveryRemoteType: provider, DeliveryRemoteHost: "forge.example", DeliveryRemoteRepo: "acme/repo"}
+			validate := func() error {
+				return launcher.ValidateImplementationHandoff(t.Context(), "/repo", "factory/epic", "", "https://forge.example/acme/repo/pulls/1", policy)
+			}
+			if err := validate(); err != nil {
+				t.Fatal(err)
+			}
+			for _, change := range []func(){func() { target = "wrong" }, func() { branch = "wrong" }, func() { head = "wrong" }, func() { state = "closed" }, func() { fork = true }, func() { draft = true }} {
+				change()
+				if err := validate(); err == nil {
+					t.Fatal("accepted invalid delivery PR")
+				}
+				branch, target, head, state, fork, draft, merged = "factory/epic", "main", "abc123", "open", false, false, false
+			}
+			state, merged, branch, policy.ForceComplete = "closed", true, "factory/epic-old", true
+			if err := validate(); err != nil {
+				t.Fatalf("force-complete merged PR: %v", err)
+			}
+			target = "wrong"
+			if err := validate(); err == nil {
+				t.Fatal("force-completed a merged PR into another target")
+			}
+			state, merged, branch, policy.ForceComplete = "open", false, "factory/epic", false
+			target = "main"
+			if target, _, err := launcher.PrepareImplementationWorkspace(t.Context(), "/repo", branch, "", "main"); err != nil || target != "main" {
+				t.Fatalf("workspace = %q, %v", target, err)
+			}
+			if head, err := launcher.ValidateImplementationCheckpoint(t.Context(), "/repo", branch, ""); err != nil || head != "abc123" {
+				t.Fatalf("checkpoint = %q, %v", head, err)
+			}
+			srv.hostRouter = hostsvc.NewRouter(&struct{ hostsvc.Host }{})
+			if _, _, err := launcher.PrepareImplementationWorkspace(t.Context(), "/repo", branch, "", "main"); err == nil {
+				t.Fatal("accepted host without workspace capability")
+			}
+			if _, err := launcher.ValidateImplementationCheckpoint(t.Context(), "/repo", branch, ""); err == nil {
+				t.Fatal("accepted host without checkpoint capability")
+			}
+		})
+	}
 }
 
 func (h *factoryImplementationHost) ProjectUpstreams(context.Context, string) (*hostsvc.ProjectUpstreams, error) {
@@ -95,8 +184,17 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 		if host.request.ProjectDir != "/repo" || host.request.Branch != "factory/work" || host.request.BaseRef != "factory/previous" || host.request.Title != "implementation work-1 (@factory)" || !host.request.NewBranch || !reflect.DeepEqual(host.request.PermissionRules, rules) {
 			t.Fatalf("worktree request = %#v", host.request)
 		}
-		if sent.SessionID != "worktree-session" || !strings.Contains(sent.Message, "Remove dead code") || !strings.Contains(sent.Message, "Delete the obsolete helper") || !strings.Contains(sent.Message, "attempt-1") || !strings.Contains(sent.Message, "token") || !strings.Contains(sent.Message, "complete_attempt") || !strings.Contains(sent.Message, "request_recovery") || !strings.Contains(sent.Message, "draft while working") || !strings.Contains(sent.Message, "ready for review") || !strings.Contains(sent.Message, "clean commit") || !strings.Contains(sent.Message, "pr_url") {
+		if sent.SessionID != "worktree-session" || !strings.Contains(sent.Message, "Remove dead code") || !strings.Contains(sent.Message, "Delete the obsolete helper") || !strings.Contains(sent.Message, "attempt-1") || !strings.Contains(sent.Message, "token") || !strings.Contains(sent.Message, "complete_attempt") || !strings.Contains(sent.Message, "request_recovery") || !strings.Contains(sent.Message, "Do not create a pull request") || !strings.Contains(sent.Message, "Omit pr_url") || !strings.Contains(sent.Message, "clean commit") {
 			t.Fatalf("prompt = %#v", sent)
+		}
+		request.Delivery, request.TargetBranch = true, "main"
+		if err := (factoryImplementationLauncher{server: srv}).PromptImplementationSession(ctx, got, request); err != nil {
+			t.Fatal(err)
+		}
+		for _, text := range []string{"Deliver Factory Work Epic", "into main", "reuse it on retries", "pr_url", "Never merge"} {
+			if !strings.Contains(sent.Message, text) {
+				t.Fatalf("delivery prompt missing %q: %s", text, sent.Message)
+			}
 		}
 	})
 

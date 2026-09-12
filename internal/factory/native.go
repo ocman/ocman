@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"path"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -110,6 +111,7 @@ type CreateWorkEpicRequest struct {
 }
 
 type FactoryProgress struct {
+	DeliveryStatus    string   `json:"deliveryStatus,omitempty"`
 	RequiredTotal     int      `json:"requiredTotal"`
 	RequiredSucceeded int      `json:"requiredSucceeded"`
 	OptionalOpen      int      `json:"optionalOpen"`
@@ -633,6 +635,9 @@ type nativePlanningStore interface {
 	ClaimFactoryImplementation(context.Context, string, string, string, time.Time) (model.NativeEpic, model.FactoryAttempt, error)
 }
 type nativeAttemptCompletionStore interface {
+	EnsureFactoryDeliveryIssue(context.Context, string) error
+	SetFactoryAttemptWorkspace(context.Context, string, model.FactoryAttemptPolicy) error
+	FactoryAttemptHasRecoveryResponse(context.Context, string, string) (bool, error)
 	CompleteFactoryImplementationAttempt(context.Context, string, string, model.FactoryAttemptResult, time.Time) (bool, error)
 	FactoryEpicPRURL(context.Context, string) (string, error)
 	StopFactoryAttempt(context.Context, string, time.Time) (bool, error)
@@ -707,11 +712,15 @@ type NativeService struct {
 
 type ImplementationSessionRequest struct {
 	EpicID, WorkID, AttemptID, AgentToken, Repository, Title, Description, Branch, BaseRef, Profile string
+	TargetBranch                                                                                    string
+	Delivery                                                                                        bool
 }
 
 // ImplementationLauncher is the host/platform seam for a configured worktree
 // session. Implementations must apply Profile before publishing the session.
 type ImplementationLauncher interface {
+	PrepareImplementationWorkspace(context.Context, string, string, string, string) (string, string, error)
+	ValidateImplementationCheckpoint(context.Context, string, string, string) (string, error)
 	LaunchImplementationSession(context.Context, ImplementationSessionRequest) (PlanningSession, error)
 	PromptImplementationSession(context.Context, PlanningSession, ImplementationSessionRequest) error
 	ResumeImplementationSession(context.Context, PlanningSession, string, string) error
@@ -1114,6 +1123,16 @@ func factoryProgress(issues []model.NativeIssue) FactoryProgress {
 		}
 	}
 	progress.Stuck = len(progress.ClosureBlockers) > 0 && !movable
+	for _, issue := range issues {
+		if issue.Kind != "delivery" {
+			continue
+		}
+		if issue.Status == "closed" && issue.Outcome == "succeeded" {
+			progress.DeliveryStatus = "ready_for_review"
+		} else if progress.RequiredTotal-progress.RequiredSucceeded == 1 {
+			progress.DeliveryStatus = "pending"
+		}
+	}
 	return progress
 }
 
@@ -1583,12 +1602,17 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 		if epic.Status != "open" {
 			continue
 		}
+		if completionStore, ok := s.store.(nativeAttemptCompletionStore); ok {
+			if err := completionStore.EnsureFactoryDeliveryIssue(ctx, epic.ID); err != nil {
+				return err
+			}
+		}
 		issues, err := s.store.ListFactoryIssues(ctx, epic.ID)
 		if err != nil {
 			return err
 		}
 		for _, issue := range issues {
-			if (issue.Kind == "implementation" || issue.Kind == "task") && issue.DispatchState == "ready" {
+			if (issue.Kind == "implementation" || issue.Kind == "task" || issue.Kind == "delivery") && issue.DispatchState == "ready" {
 				ready = append(ready, candidate{issue, epic})
 			}
 		}
@@ -1607,16 +1631,46 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 		branch := "factory/" + epic.ID
 		baseRef := ""
 		if completionStore, ok := s.store.(nativeAttemptCompletionStore); ok {
-			previousPR, branchErr := completionStore.FactoryEpicPRURL(ctx, epic.ID)
+			var branchErr error
+			if attempt.FrozenPolicy.Branch != "" {
+				branch = attempt.FrozenPolicy.Branch
+			} else {
+				// Existing PR-based epics resolve their branch once when adopting checkpoints.
+				var previousPR string
+				previousPR, branchErr = completionStore.FactoryEpicPRURL(ctx, epic.ID)
+				if branchErr == nil && previousPR != "" {
+					branch, baseRef, branchErr = s.implementation.ResolveImplementationBranch(ctx, epic.InitialProject, branch, previousPR, attempt.FrozenPolicy)
+				}
+			}
 			if branchErr == nil {
-				branch, baseRef, branchErr = s.implementation.ResolveImplementationBranch(ctx, epic.InitialProject, branch, previousPR, attempt.FrozenPolicy)
+				checkpoint := attempt.FrozenPolicy.CheckpointSHA
+				// A retry of the same Issue may retain its own committed progress.
+				if attempt.Sequence > 1 && checkpoint != "" {
+					_, branchErr = s.implementation.ValidateImplementationCheckpoint(ctx, epic.InitialProject, branch, checkpoint)
+					checkpoint = ""
+				}
+				var workspaceBase string
+				if branchErr == nil {
+					attempt.FrozenPolicy.TargetBranch, workspaceBase, branchErr = s.implementation.PrepareImplementationWorkspace(ctx, epic.InitialProject, branch, checkpoint, attempt.FrozenPolicy.TargetBranch)
+				}
+				if workspaceBase != "" && attempt.FrozenPolicy.BaseRef != "" {
+					workspaceBase = attempt.FrozenPolicy.BaseRef
+				}
+				if baseRef == "" {
+					baseRef = workspaceBase
+				}
+			}
+			if branchErr == nil {
+				attempt.FrozenPolicy.Branch = branch
+				attempt.FrozenPolicy.BaseRef = baseRef
+				branchErr = completionStore.SetFactoryAttemptWorkspace(ctx, attempt.ID, attempt.FrozenPolicy)
 			}
 			if branchErr != nil {
 				_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "launch_failed", Message: "Implementation branch could not be resolved: " + branchErr.Error()}, time.Now())
 				continue
 			}
 		}
-		request := ImplementationSessionRequest{EpicID: epic.ID, WorkID: next.issue.ID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: epic.InitialProject, Title: next.issue.Title, Description: next.issue.Description, Branch: branch, BaseRef: baseRef, Profile: "factory-implement/v1"}
+		request := ImplementationSessionRequest{EpicID: epic.ID, WorkID: next.issue.ID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: epic.InitialProject, Title: next.issue.Title, Description: next.issue.Description, Branch: branch, BaseRef: baseRef, Profile: "factory-implement/v1", TargetBranch: attempt.FrozenPolicy.TargetBranch, Delivery: attempt.FrozenPolicy.Delivery}
 		session, launchErr := s.implementation.LaunchImplementationSession(ctx, request)
 		if launchErr != nil {
 			if session.ID != "" {
@@ -1708,7 +1762,7 @@ func (s *NativeService) Queue(ctx context.Context) ([]DispatchItem, error) {
 			return nil, err
 		}
 		for _, issue := range issues {
-			if issue.Kind != "implementation" && issue.Kind != "task" {
+			if issue.Kind != "implementation" && issue.Kind != "task" && issue.Kind != "delivery" {
 				continue
 			}
 			item := DispatchItem{ID: issue.ID, EpicID: epic.ID, Title: issue.Title, Repository: epic.InitialProject, OutcomeReason: issue.OutcomeReason, Blockers: issue.Blockers, RetryAt: issue.RetryAt, RetryAttempts: issue.RetryAttempts}
@@ -1753,9 +1807,8 @@ func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentTok
 		return ErrFactoryUnavailable
 	}
 	summary, prURL = strings.TrimSpace(summary), strings.TrimSpace(prURL)
-	parsedPR, parseErr := url.ParseRequestURI(prURL)
-	if attemptID == "" || agentToken == "" || summary == "" || parseErr != nil || (parsedPR.Scheme != "http" && parsedPR.Scheme != "https") || parsedPR.Host == "" {
-		return fmt.Errorf("%w: attempt ID, token, summary, and pull request URL are required", ErrInvalidRequest)
+	if attemptID == "" || agentToken == "" || summary == "" {
+		return fmt.Errorf("%w: attempt ID, token, and summary are required", ErrInvalidRequest)
 	}
 	valid, err := store.ValidateFactoryAttemptToken(ctx, attemptID, agentToken)
 	if err != nil {
@@ -1777,17 +1830,54 @@ func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentTok
 	if !found {
 		return fmt.Errorf("%w: factory implementation attempt is not active", ErrInvalidRequest)
 	}
+	legacy := attempt.FrozenPolicy.Branch == ""
+	var parsedPR *url.URL
+	if legacy || attempt.FrozenPolicy.Delivery {
+		var parseErr error
+		parsedPR, parseErr = url.ParseRequestURI(prURL)
+		if parseErr != nil || (parsedPR.Scheme != "http" && parsedPR.Scheme != "https") || parsedPR.Host == "" {
+			return fmt.Errorf("%w: delivery requires a pull request URL", ErrInvalidRequest)
+		}
+	} else if prURL != "" {
+		return fmt.Errorf("%w: implementation handoffs require a commit checkpoint, not a pull request", ErrInvalidRequest)
+	}
 	if attempt.Phase == model.FactoryAttemptTerminal && attempt.Outcome == model.FactoryAttemptSucceeded {
 		if attempt.Result != nil && attempt.Result.Summary == summary && attempt.Result.PRURL == prURL {
 			return nil
 		}
 		return fmt.Errorf("%w: factory implementation attempt already completed with a different result", ErrInvalidRequest)
 	}
-	existingPR, err := store.FactoryEpicPRURL(ctx, attempt.EpicID)
-	if err != nil {
-		return err
+	if attempt.FrozenPolicy.Delivery {
+		response := "Force-complete the delivery attempt using merged PR #" + path.Base(parsedPR.Path)
+		attempt.FrozenPolicy.ForceComplete, err = store.FactoryAttemptHasRecoveryResponse(ctx, attemptID, response)
+		if err != nil {
+			return err
+		}
 	}
-	if err := s.implementation.ValidateImplementationHandoff(ctx, attempt.FrozenPolicy.Repository, "factory/"+attempt.EpicID, existingPR, prURL, attempt.FrozenPolicy); err != nil {
+	result := model.FactoryAttemptResult{SchemaVersion: 2, Summary: summary, PRURL: prURL}
+	validate := func(ctx context.Context) error {
+		if legacy {
+			existingPR, err := store.FactoryEpicPRURL(ctx, attempt.EpicID)
+			if err != nil {
+				return err
+			}
+			result.SchemaVersion = 1
+			return s.implementation.ValidateImplementationHandoff(ctx, attempt.FrozenPolicy.Repository, "factory/"+attempt.EpicID, existingPR, prURL, attempt.FrozenPolicy)
+		}
+		head, err := s.implementation.ValidateImplementationCheckpoint(ctx, attempt.FrozenPolicy.Repository, attempt.FrozenPolicy.Branch, attempt.FrozenPolicy.CheckpointSHA)
+		if err != nil {
+			return err
+		}
+		if result.CommitSHA != "" && result.CommitSHA != head {
+			return errors.New("factory branch changed while completing the handoff")
+		}
+		result.Branch, result.CommitSHA, result.TargetBranch = attempt.FrozenPolicy.Branch, head, attempt.FrozenPolicy.TargetBranch
+		if attempt.FrozenPolicy.Delivery {
+			return s.implementation.ValidateImplementationHandoff(ctx, attempt.FrozenPolicy.Repository, attempt.FrozenPolicy.Branch, "", prURL, attempt.FrozenPolicy)
+		}
+		return nil
+	}
+	if err := validate(ctx); err != nil {
 		return factoryHandoffError(err)
 	}
 	stopping, err := store.StopFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, time.Now())
@@ -1800,10 +1890,9 @@ func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentTok
 	if err := s.implementation.StopImplementationSession(context.WithoutCancel(ctx), attempt.Session); err != nil {
 		return fmt.Errorf("stop completed Factory session: %w", err)
 	}
-	if err := s.implementation.ValidateImplementationHandoff(context.WithoutCancel(ctx), attempt.FrozenPolicy.Repository, "factory/"+attempt.EpicID, existingPR, prURL, attempt.FrozenPolicy); err != nil {
+	if err := validate(context.WithoutCancel(ctx)); err != nil {
 		return factoryHandoffError(err)
 	}
-	result := model.FactoryAttemptResult{SchemaVersion: 1, Summary: summary, PRURL: prURL}
 	changed, err := store.CompleteFactoryImplementationAttempt(context.WithoutCancel(ctx), attemptID, agentToken, result, time.Now())
 	if err != nil {
 		return err
@@ -1828,6 +1917,9 @@ func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentTok
 func factoryHandoffError(err error) error {
 	switch err.Error() {
 	case "factory worktree has uncommitted changes",
+		"factory handoff does not include the accepted checkpoint",
+		"factory branch changed while completing the handoff",
+		"delivery pull request must be open and target the recorded branch",
 		"factory branch has not been pushed with an upstream",
 		"factory branch HEAD has not been pushed",
 		"factory shared branch worktree was not found",

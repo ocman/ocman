@@ -85,6 +85,7 @@ flowchart TD
     State --> FactoryModel
     Factory --> Registry
     Factory --> Router
+    Factory -->|final delivery validation| Forge
     Routines --> Registry
     Routines --> Router
     Routines --> State
@@ -107,7 +108,14 @@ flowchart TD
    TOML Formulas compile to canonical JSON. A Plan session is read-only at the
    project root; approval of an exact revision enables user-requested atomic
    materialization of the proposed Implementation Issues and dependencies. Ready Issues
-   launch configured worktree sessions. Failed or terminally blocked work can
+   launch configured worktree sessions on one shared branch. Each implementation
+   handoff records the clean, pushed commit in its Attempt result; the next
+   Attempt freezes that checkpoint and target branch in its policy. PR lookups
+   are reserved for final delivery and one-time adoption of legacy PR-based work.
+   A required delivery Issue depends on the implementation work and runs a
+   separate model session to verify the combined changes and publish the final
+   PR. Delivery retries preserve completed implementation Issues.
+   Failed or terminally blocked work can
    launch a read-only diagnosis session; its scoped `factory_unblock` MCP tool
    remains permission-gated in the conversation before reopening work or
    applying a graph mutation. The browser uses REST while agents use MCP.

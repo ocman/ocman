@@ -342,18 +342,19 @@ func (r ghPR) toForge(repo string) forge.PR {
 		status = "merged"
 	}
 	pr := forge.PR{
-		Number:    r.Number,
-		Title:     r.Title,
-		Body:      r.Body,
-		Author:    r.User.Login,
-		Status:    status,
-		UpdatedAt: r.UpdatedAt,
-		Branch:    r.Head.Ref,
-		URL:       r.HTMLURL,
-		Host:      HostName,
-		Repo:      repo,
-		HeadSHA:   r.Head.SHA,
-		CrossFork: r.Head.Repo.FullName != "" && r.Head.Repo.FullName != r.Base.Repo.FullName,
+		Number:     r.Number,
+		Title:      r.Title,
+		Body:       r.Body,
+		Author:     r.User.Login,
+		Status:     status,
+		UpdatedAt:  r.UpdatedAt,
+		Branch:     r.Head.Ref,
+		BaseBranch: r.Base.Ref,
+		URL:        r.HTMLURL,
+		Host:       HostName,
+		Repo:       repo,
+		HeadSHA:    r.Head.SHA,
+		CrossFork:  r.Head.Repo.FullName != "" && r.Head.Repo.FullName != r.Base.Repo.FullName,
 	}
 	for _, l := range r.Labels {
 		pr.Labels = append(pr.Labels, forge.Label{Name: l.Name, Color: l.Color})

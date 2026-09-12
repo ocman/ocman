@@ -16,6 +16,8 @@ export function factoryEpicStatus(epic: FactoryEpic): { text: string; tone: 'act
   }
   if (epic.status === 'closed') return { text: 'Closed', tone: 'done' };
   if (epic.status === 'paused') return { text: 'Paused', tone: 'idle' };
+  if (epic.progress?.deliveryStatus === 'ready_for_review') return { text: 'Ready for review', tone: 'done' };
+  if (epic.progress?.deliveryStatus === 'pending') return { text: epic.progress.stuck ? 'Implementation complete, delivery blocked' : 'Implementation complete, delivery pending', tone: epic.progress.stuck ? 'action' : 'idle' };
   if (epic.progress?.stuck) return { text: 'Stuck: nothing can proceed', tone: 'action' };
   const { requiredSucceeded, requiredTotal, optionalOpen } = epic.progress ?? { requiredSucceeded: 0, requiredTotal: 0, optionalOpen: 0 };
   if (requiredTotal) return { text: `${requiredSucceeded}/${requiredTotal} required work complete${optionalOpen ? `, ${optionalOpen} optional open` : ''}`, tone: requiredSucceeded === requiredTotal ? 'done' : 'idle' };

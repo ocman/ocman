@@ -85,6 +85,14 @@ func (h *Host) ValidateFactoryHandoff(ctx context.Context, repoRoot, branch stri
 	return git.ValidateFactoryHandoff(ctx, repoRoot, branch)
 }
 
+func (h *Host) PrepareFactoryWorkspace(ctx context.Context, repoRoot, branch, checkpoint, target string) (string, string, error) {
+	return git.PrepareFactoryWorkspace(ctx, repoRoot, branch, checkpoint, target)
+}
+
+func (h *Host) ValidateFactoryCheckpoint(ctx context.Context, repoRoot, branch, checkpoint string) (string, error) {
+	return git.ValidateFactoryCheckpoint(ctx, repoRoot, branch, checkpoint)
+}
+
 // ManagedInstance is the host's view of a persisted managed instance.
 // It mirrors the fields the host needs to reconstruct an
 // ocruntime.Instance for a re-probe after a restart. The state layer

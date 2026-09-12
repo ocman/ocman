@@ -131,6 +131,28 @@ func TestLookupPRAndIssue(t *testing.T) {
 	}
 }
 
+func TestLookupPRDeletedBranch(t *testing.T) {
+	for _, tt := range []struct {
+		name, ref, label, want string
+	}{
+		{"deleted", "refs/pull/604/head", "factory/epic-2", "factory/epic-2"},
+		{"missing label", "refs/pull/604/head", "", "refs/pull/604/head"},
+		{"existing branch", "factory/epic-2", "different", "factory/epic-2"},
+		{"other pull ref", "refs/pull/605/head", "factory/epic-2", "refs/pull/605/head"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]any{"number": 604, "state": "closed", "merged": true, "head": map[string]string{"ref": tt.ref, "label": tt.label, "sha": "abc123"}})
+			}))
+			defer srv.Close()
+			pr, err := newTestClient(t, srv, "tok").LookupPR(t.Context(), "alice/myproj", 604)
+			if err != nil || pr.Branch != tt.want || pr.HeadSHA != "abc123" || pr.Status != "merged" {
+				t.Fatalf("LookupPR() = %+v, %v", pr, err)
+			}
+		})
+	}
+}
+
 func TestConvertPRToDraft(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPatch || r.URL.Path != "/api/v1/repos/alice/repo/pulls/7" {

@@ -379,14 +379,20 @@ type fjLabel struct {
 }
 
 type fjRef struct {
-	Ref  string `json:"ref"`
-	SHA  string `json:"sha"`
-	Repo struct {
+	Ref   string `json:"ref"`
+	Label string `json:"label"`
+	SHA   string `json:"sha"`
+	Repo  struct {
 		FullName string `json:"full_name"`
 	} `json:"repo"`
 }
 
 func (r fjPR) toForge(host, repo string) forge.PR {
+	branch := r.Head.Ref
+	// Forgejo retains the original branch in label after deleting the head branch.
+	if branch == fmt.Sprintf("refs/pull/%d/head", r.Number) && r.Head.Label != "" {
+		branch = r.Head.Label
+	}
 	status := r.State
 	switch {
 	case r.State == "open" && r.Draft:
@@ -395,18 +401,19 @@ func (r fjPR) toForge(host, repo string) forge.PR {
 		status = "merged"
 	}
 	pr := forge.PR{
-		Number:    r.Number,
-		Title:     r.Title,
-		Body:      r.Body,
-		Author:    r.User.Login,
-		Status:    status,
-		UpdatedAt: r.UpdatedAt,
-		Branch:    r.Head.Ref,
-		URL:       r.HTMLURL,
-		Host:      host,
-		Repo:      repo,
-		HeadSHA:   r.Head.SHA,
-		CrossFork: r.Head.Repo.FullName != "" && r.Head.Repo.FullName != r.Base.Repo.FullName,
+		Number:     r.Number,
+		Title:      r.Title,
+		Body:       r.Body,
+		Author:     r.User.Login,
+		Status:     status,
+		UpdatedAt:  r.UpdatedAt,
+		Branch:     branch,
+		BaseBranch: r.Base.Ref,
+		URL:        r.HTMLURL,
+		Host:       host,
+		Repo:       repo,
+		HeadSHA:    r.Head.SHA,
+		CrossFork:  r.Head.Repo.FullName != "" && r.Head.Repo.FullName != r.Base.Repo.FullName,
 	}
 	for _, l := range r.Labels {
 		pr.Labels = append(pr.Labels, forge.Label{Name: l.Name, Color: l.Color})

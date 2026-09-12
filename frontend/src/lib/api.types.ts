@@ -134,7 +134,7 @@ export interface FactoryEpic {
 	attempts?: FactoryAttempt[];
 	proposal?: FactoryProposal;
 	planGate?: FactoryPlanGate;
-  progress: { requiredTotal: number; requiredSucceeded: number; optionalOpen: number; closureBlockers?: string[]; stuck?: boolean };
+  progress: { requiredTotal: number; requiredSucceeded: number; optionalOpen: number; closureBlockers?: string[]; stuck?: boolean; deliveryStatus?: 'pending' | 'ready_for_review' };
 }
 
 export interface FactoryAttempt {

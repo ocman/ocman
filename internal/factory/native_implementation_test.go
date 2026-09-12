@@ -31,22 +31,198 @@ type fakeImplementationLauncher struct {
 	launched    chan struct{}
 	dead        bool
 	handoffErr  error
+	prErr       error
 	handoffs    int
 	store       *state.DB
 	branch      string
 	baseRef     string
 	branchErr   error
+	resolutions int
+}
+
+func (f *fakeImplementationLauncher) PrepareImplementationWorkspace(context.Context, string, string, string, string) (string, string, error) {
+	return "main", f.baseRef, f.branchErr
+}
+
+func (f *fakeImplementationLauncher) ValidateImplementationCheckpoint(context.Context, string, string, string) (string, error) {
+	f.handoffs++
+	return "abc123", f.handoffErr
 }
 
 func (f *fakeImplementationLauncher) ResolveImplementationBranch(_ context.Context, _, branch, _ string, _ model.FactoryAttemptPolicy) (string, string, error) {
+	f.resolutions++
 	if f.branch != "" {
 		branch = f.branch
 	}
 	return branch, f.baseRef, f.branchErr
 }
 
-func (f *fakeImplementationLauncher) ValidateImplementationHandoff(context.Context, string, string, string, string, model.FactoryAttemptPolicy) error {
+func TestCheckpointFlowDeliversOnlyAfterImplementation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.db")
+	db, err := state.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	launcher := &fakeImplementationLauncher{}
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
+	epic := createPouredWorkEpic(t, svc, "Checkpoint delivery")
+	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{
+		{Key: "first", Type: "implementation", Requirement: "required"},
+		{Key: "second", Type: "implementation", Requirement: "required", DependsOn: []string{"first"}},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Materialize(t.Context(), epic.ID, pouredIssueID(t, svc, epic.ID, "materialization")); err != nil {
+		t.Fatal(err)
+	}
+	first := launcher.calls[0]
+	if first.Delivery {
+		t.Fatal("delivery started before implementation")
+	}
+	if err := svc.CompleteAttempt(t.Context(), first.AttemptID, first.AgentToken, "first", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err = state.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc = NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
+	if err := svc.Dispatch(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	second := launcher.calls[1]
+	secondAttempt, _, err := db.GetFactoryAttempt(t.Context(), second.AttemptID)
+	if err != nil || second.Delivery || second.Branch != first.Branch || secondAttempt.FrozenPolicy.CheckpointSHA != "abc123" {
+		t.Fatalf("second attempt = %#v, %v", secondAttempt, err)
+	}
+	if err := svc.CompleteAttempt(t.Context(), second.AttemptID, second.AgentToken, "second", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Dispatch(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	delivery := launcher.calls[2]
+	if !delivery.Delivery || delivery.TargetBranch != "main" || delivery.Branch != first.Branch || launcher.resolutions != 0 {
+		t.Fatalf("delivery = %#v; PR resolutions = %d", delivery, launcher.resolutions)
+	}
+	if got, err := svc.GetWorkEpic(t.Context(), epic.ID); err != nil || got.Progress.DeliveryStatus != "pending" {
+		t.Fatalf("delivery progress = %#v, %v", got.Progress, err)
+	}
+	if err := svc.CompleteAttempt(t.Context(), delivery.AttemptID, delivery.AgentToken, "delivered", ""); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("missing PR: %v", err)
+	}
+	gate, err := svc.CreateRecoveryGate(t.Context(), delivery.AttemptID, delivery.AgentToken, "Forge unavailable", "retry delivery", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ResolveRecoveryGate(t.Context(), gate.IssueID, "retry", "Try again"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Dispatch(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	retry := launcher.calls[len(launcher.calls)-1]
+	if !retry.Delivery || retry.WorkID != delivery.WorkID || retry.AttemptID == delivery.AttemptID {
+		t.Fatalf("retried implementation instead of delivery: %#v", retry)
+	}
+	gate, err = svc.CreateRecoveryGate(t.Context(), retry.AttemptID, retry.AgentToken, "The delivery PR is already merged", "The delivery branch was rotated after merge", []string{"Force-complete the delivery attempt using merged PR #2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = svc.ResolveRecoveryGate(t.Context(), gate.IssueID, "resume", "Force-complete the delivery attempt using merged PR #2"); err != nil {
+		t.Fatal(err)
+	}
+	launcher.prErr = errors.New("delivery pull request must be open and target the recorded branch")
+	if err := svc.CompleteAttempt(t.Context(), retry.AttemptID, retry.AgentToken, "delivered", "https://forge.example/pr/1"); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("wrong force-complete PR: %v", err)
+	}
+	gate, err = svc.CreateRecoveryGate(t.Context(), retry.AttemptID, retry.AgentToken, "The delivery PR is already merged", "The delivery branch was rotated after merge", []string{"Force-complete the delivery attempt using merged PR #1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = svc.ResolveRecoveryGate(t.Context(), gate.IssueID, "resume", "Force-complete the delivery attempt using merged PR #1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.CompleteAttempt(t.Context(), retry.AttemptID, retry.AgentToken, "delivered", "https://forge.example/pr/1"); err != nil {
+		t.Fatal(err)
+	}
+	launcher.prErr = nil
+	if err := svc.CompleteAttempt(t.Context(), retry.AttemptID, retry.AgentToken, "delivered", "https://forge.example/pr/1"); err != nil {
+		t.Fatalf("idempotent delivery: %v", err)
+	}
+	if err := svc.CompleteAttempt(t.Context(), retry.AttemptID, retry.AgentToken, "different", "https://forge.example/pr/1"); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("changed result: %v", err)
+	}
+	if err := svc.Dispatch(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(launcher.calls) != 4 {
+		t.Fatalf("extra launches: %#v", launcher.calls)
+	}
+	if got, err := svc.GetWorkEpic(t.Context(), epic.ID); err != nil || got.Progress.DeliveryStatus != "ready_for_review" {
+		t.Fatalf("delivered progress = %#v, %v", got.Progress, err)
+	}
+	for _, id := range []string{first.AttemptID, second.AttemptID} {
+		attempt, found, err := db.GetFactoryAttempt(t.Context(), id)
+		if err != nil || !found || attempt.Outcome != model.FactoryAttemptSucceeded || attempt.Result.CommitSHA != "abc123" || attempt.Result.PRURL != "" {
+			t.Fatalf("implementation lost: %#v, %v", attempt, err)
+		}
+	}
+}
+
+func TestLegacyAttemptKeepsPRContractThenAdoptsCheckpoint(t *testing.T) {
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	launcher := &fakeImplementationLauncher{branch: "factory/legacy-2", baseRef: "legacy-head"}
+	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
+	epic := createPouredWorkEpic(t, svc, "Legacy")
+	if err := svc.MutateGraph(t.Context(), GraphMutation{Action: "create", EpicID: epic.ID, ParentID: pouredIssueID(t, svc, epic.ID, "mol"), Kind: "task", Title: "Old attempt"}); err != nil {
+		t.Fatal(err)
+	}
+	_, attempt, err := db.ClaimFactoryImplementation(t.Context(), epic.ID, pouredIssueID(t, svc, epic.ID, "task"), "factory-implement/v1", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ActivateFactoryAttempt(t.Context(), attempt.ID, PlanningSession{Platform: "opencode", ID: "old"}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.CompleteAttempt(t.Context(), attempt.ID, attempt.AgentToken, "legacy", ""); err == nil {
+		t.Fatal("legacy completion lost its PR contract")
+	}
+	if err := svc.CompleteAttempt(t.Context(), attempt.ID, attempt.AgentToken, "legacy", "https://forge.example/pr/1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.MutateGraph(t.Context(), GraphMutation{Action: "create", EpicID: epic.ID, ParentID: pouredIssueID(t, svc, epic.ID, "mol"), Kind: "task", Title: "New attempt"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Dispatch(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(launcher.calls) != 1 || launcher.resolutions != 1 || launcher.calls[0].Branch != "factory/legacy-2" || launcher.calls[0].BaseRef != "legacy-head" {
+		t.Fatalf("legacy adoption = %#v", launcher.calls)
+	}
+	prepared, _, err := db.GetFactoryAttempt(t.Context(), launcher.calls[0].AttemptID)
+	if err != nil || prepared.FrozenPolicy.BaseRef != "legacy-head" {
+		t.Fatalf("legacy base not persisted: %#v, %v", prepared, err)
+	}
+}
+
+func (f *fakeImplementationLauncher) ValidateImplementationHandoff(_ context.Context, _, _, _, _ string, policy model.FactoryAttemptPolicy) error {
 	f.handoffs++
+	if f.prErr != nil && !policy.ForceComplete {
+		return f.prErr
+	}
 	return f.handoffErr
 }
 
@@ -265,40 +441,32 @@ func TestNativeDispatchRunsReadyTask(t *testing.T) {
 	if err := svc.Dispatch(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if len(launcher.calls) != 1 || launcher.calls[0].WorkID != taskID || launcher.calls[0].Branch != "factory/replacement" || launcher.calls[0].BaseRef != "factory/previous" {
+	if len(launcher.calls) != 1 || launcher.calls[0].WorkID != taskID || launcher.calls[0].Branch != "factory/"+epic.ID || launcher.calls[0].BaseRef != "factory/previous" {
 		t.Fatalf("launches = %#v", launcher.calls)
 	}
 	attempts, err := db.ListFactoryAttempts(t.Context(), epic.ID)
 	if err != nil || len(attempts) != 1 {
 		t.Fatalf("attempts = %#v, %v", attempts, err)
 	}
-	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", ""); err == nil {
-		t.Fatal("completed without pull request URL")
+	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", "https://forge.example/pr/1"); err == nil {
+		t.Fatal("implementation accepted a premature pull request")
 	}
 	launcher.handoffErr = errors.New("factory worktree has uncommitted changes")
-	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", "https://forge.example/pr/1"); !errors.Is(err, ErrInvalidRequest) || !strings.Contains(err.Error(), "uncommitted changes") {
+	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", ""); !errors.Is(err, ErrInvalidRequest) || !strings.Contains(err.Error(), "uncommitted changes") {
 		t.Fatalf("dirty handoff error = %v", err)
 	}
-	launcher.handoffErr = errors.New("factory epic already uses an open pull request")
-	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", "https://forge.example/pr/1"); !errors.Is(err, ErrInvalidRequest) || !strings.Contains(err.Error(), "open pull request") {
-		t.Fatalf("open PR handoff error = %v", err)
-	}
-	launcher.handoffErr = errors.New("pull request must be ready for review")
-	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", "https://forge.example/pr/1"); !errors.Is(err, ErrInvalidRequest) || !strings.Contains(err.Error(), "ready for review") {
-		t.Fatalf("draft PR handoff error = %v", err)
-	}
-	launcher.handoffErr = errors.New("forge lookup failed")
-	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", "https://forge.example/pr/1"); err == nil || errors.Is(err, ErrInvalidRequest) {
+	launcher.handoffErr = errors.New("git lookup failed")
+	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", ""); err == nil || errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("operational handoff error = %v", err)
 	}
 	launcher.handoffErr = nil
-	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", "https://forge.example/pr/1"); err != nil {
+	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", ""); err != nil {
 		t.Fatal(err)
 	}
-	if launcher.handoffs != 6 || len(launcher.stops) != 1 {
+	if launcher.handoffs != 4 || len(launcher.stops) != 1 {
 		t.Fatalf("handoffs/stops = %d/%d", launcher.handoffs, len(launcher.stops))
 	}
-	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", "https://forge.example/pr/1"); err != nil {
+	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", ""); err != nil {
 		t.Fatalf("idempotent completion: %v", err)
 	}
 	archived, err := db.ArchivedSessions(t.Context())
@@ -348,32 +516,32 @@ func TestNativeImplementationDispatchClaimsBeforeWorktreeLaunchAndHonorsCapacity
 		t.Fatalf("launches = %#v", launcher.calls)
 	}
 	queue, err := svc.Queue(context.Background())
-	if err != nil || len(queue) != 2 || queue[0].AttemptID == "" || queue[1].State != DispatchReady {
+	if err != nil || len(queue) != 4 || queue[0].AttemptID == "" || queue[2].State != DispatchReady {
 		t.Fatalf("queue = %#v, %v", queue, err)
 	}
-	if err := db.DeferFactoryIssue(context.Background(), queue[1].EpicID, queue[1].ID, "waiting for review"); err != nil {
+	if err := db.DeferFactoryIssue(context.Background(), queue[2].EpicID, queue[2].ID, "waiting for review"); err != nil {
 		t.Fatal(err)
 	}
 	queue, err = svc.Queue(context.Background())
-	if err != nil || queue[1].State != DispatchDeferred || queue[1].OutcomeReason != "waiting for review" {
+	if err != nil || queue[2].State != DispatchDeferred || queue[2].OutcomeReason != "waiting for review" {
 		t.Fatalf("deferred queue = %#v, %v", queue, err)
 	}
-	if err := db.ResumeFactoryIssue(context.Background(), queue[1].EpicID, queue[1].ID); err != nil {
+	if err := db.ResumeFactoryIssue(context.Background(), queue[2].EpicID, queue[2].ID); err != nil {
 		t.Fatal(err)
 	}
 	wakeAt := time.Now().Add(time.Hour)
-	if err := db.RetryFactoryIssueAt(context.Background(), queue[1].EpicID, queue[1].ID, wakeAt); err != nil {
+	if err := db.RetryFactoryIssueAt(context.Background(), queue[2].EpicID, queue[2].ID, wakeAt); err != nil {
 		t.Fatal(err)
 	}
 	queue, err = svc.Queue(context.Background())
-	if err != nil || queue[1].State != DispatchRetryWait || queue[1].RetryAttempts != 1 || queue[1].RetryAt != wakeAt.UnixMilli() {
+	if err != nil || queue[2].State != DispatchRetryWait || queue[2].RetryAttempts != 1 || queue[2].RetryAt != wakeAt.UnixMilli() {
 		t.Fatalf("retry queue = %#v, %v", queue, err)
 	}
-	if err := svc.CompleteAttempt(context.Background(), attempts[0].ID, launcher.calls[0].AgentToken, "Implemented and tested.", "https://forge.example/pr/1"); err != nil {
+	if err := svc.CompleteAttempt(context.Background(), attempts[0].ID, launcher.calls[0].AgentToken, "Implemented and tested.", ""); err != nil {
 		t.Fatal(err)
 	}
 	completed, found, err := db.GetFactoryAttempt(context.Background(), attempts[0].ID)
-	if err != nil || !found || completed.Outcome != model.FactoryAttemptSucceeded || completed.Result == nil || completed.Result.Summary != "Implemented and tested." || completed.Result.PRURL != "https://forge.example/pr/1" {
+	if err != nil || !found || completed.Outcome != model.FactoryAttemptSucceeded || completed.Result == nil || completed.Result.Summary != "Implemented and tested." || completed.Result.PRURL != "" || completed.Result.CommitSHA != "abc123" {
 		t.Fatalf("completed attempt = %#v, %v, %v", completed, found, err)
 	}
 	issues, err := svc.ListIssues(context.Background(), attempts[0].EpicID)
@@ -443,7 +611,7 @@ func TestPausedEpicDispatchesOnlyAfterResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	queue, err = svc.Queue(t.Context())
-	if err != nil || len(queue) != 1 || queue[0].State != DispatchPaused {
+	if err != nil || len(queue) != 2 || queue[0].State != DispatchPaused {
 		t.Fatalf("paused retry queue = %#v, %v", queue, err)
 	}
 }
@@ -481,7 +649,7 @@ func TestNativeImplementationCompletionDispatchesNextReadyWork(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(svc.Close)
-	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", "https://forge.example/pr/1"); err != nil {
+	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", ""); err != nil {
 		t.Fatal(err)
 	}
 	select {
@@ -632,7 +800,7 @@ func TestNativeImplementationDispatchStopsPartialLaunchAndRecoversDeadSession(t 
 		t.Fatalf("stopped sessions = %#v", launcher.stops)
 	}
 	queue, err := svc.Queue(context.Background())
-	if err != nil || len(queue) != 1 || queue[0].State != DispatchRetryWait || queue[0].RetryAttempts != 1 || queue[0].RetryAt == 0 || queue[0].OutcomeReason != "Implementation Session could not be launched: unavailable" {
+	if err != nil || len(queue) != 2 || queue[0].State != DispatchRetryWait || queue[0].RetryAttempts != 1 || queue[0].RetryAt == 0 || queue[0].OutcomeReason != "Implementation Session could not be launched: unavailable" {
 		t.Fatalf("queue after failed launch = %#v, %v", queue, err)
 	}
 
@@ -861,7 +1029,7 @@ func TestNativeRecoveryGateRetryAndCancel(t *testing.T) {
 			}
 			if action == "retry" {
 				queue, err := svc.Queue(context.Background())
-				if err != nil || len(queue) != 1 || queue[0].State != DispatchRunning || queue[0].AttemptID != attempts[1].ID {
+				if err != nil || len(queue) != 2 || queue[0].State != DispatchRunning || queue[0].AttemptID != attempts[1].ID {
 					t.Fatalf("retry queue = %#v, %v", queue, err)
 				}
 			}
@@ -905,7 +1073,7 @@ func TestNativeStuckEpicRecoversThroughReopenIssue(t *testing.T) {
 		}
 	}
 	got, err := svc.GetWorkEpic(context.Background(), epic.ID)
-	if err != nil || !got.Progress.Stuck || got.Progress.RequiredTotal != 4 || got.Progress.RequiredSucceeded != 3 || !reflect.DeepEqual(got.Progress.ClosureBlockers, []string{"Only task"}) {
+	if err != nil || !got.Progress.Stuck || got.Progress.RequiredTotal != 5 || got.Progress.RequiredSucceeded != 3 || !reflect.DeepEqual(got.Progress.ClosureBlockers, []string{"Only task", "Deliver the completed work"}) {
 		t.Fatalf("stuck epic = %#v, %v", got.Progress, err)
 	}
 	if err := svc.ReopenIssue(context.Background(), epic.ID, pouredIssueID(t, svc, epic.ID, "plan")); err == nil {

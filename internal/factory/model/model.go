@@ -187,6 +187,12 @@ const (
 )
 
 type FactoryAttemptPolicy struct {
+	Branch             string `json:"branch,omitempty"`
+	BaseRef            string `json:"baseRef,omitempty"`
+	TargetBranch       string `json:"targetBranch,omitempty"`
+	CheckpointSHA      string `json:"checkpointSha,omitempty"`
+	Delivery           bool   `json:"delivery,omitempty"`
+	ForceComplete      bool   `json:"-"`
 	PlanRevision       int    `json:"planRevision"`
 	PlanHash           string `json:"planHash"`
 	TargetID           string `json:"targetId"`
@@ -198,6 +204,9 @@ type FactoryAttemptPolicy struct {
 }
 
 type FactoryAttemptResult struct {
+	Branch        string `json:"branch,omitempty"`
+	CommitSHA     string `json:"commitSha,omitempty"`
+	TargetBranch  string `json:"targetBranch,omitempty"`
 	SchemaVersion int    `json:"schemaVersion"`
 	Summary       string `json:"summary"`
 	PRURL         string `json:"prUrl,omitempty"`

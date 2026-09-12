@@ -611,6 +611,13 @@ func (d *DB) MutateFactoryGraph(ctx context.Context, m model.GraphMutation) erro
 	if epicStatus != "open" {
 		return invalid("factory epic is unavailable for structural mutation")
 	}
+	var delivering int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM factory_issue WHERE epic_id = ? AND kind = 'delivery' AND (status = 'in_progress' OR (status = 'closed' AND outcome = 'succeeded')) AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = factory_issue.id)`, m.EpicID).Scan(&delivering); err != nil {
+		return err
+	}
+	if delivering != 0 {
+		return invalid("factory delivery has started; finish or recover delivery before changing the graph")
+	}
 	openIssue := func(id string, local bool) (string, error) {
 		var epicID, status string
 		err := tx.QueryRowContext(ctx, `SELECT epic_id, status FROM factory_issue WHERE id = ? AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = factory_issue.id)`, id).Scan(&epicID, &status)
@@ -766,7 +773,7 @@ func closePlanOnApprovalTx(ctx context.Context, tx *sql.Tx, epicID string, now i
 // work that exhausted its launch retries.
 func (d *DB) ReopenFactoryIssue(ctx context.Context, epicID, issueID string) error {
 	result, err := d.db.ExecContext(ctx, `UPDATE factory_issue SET status = 'open', outcome = '', outcome_reason = '', retry_attempts = 0, retry_at = 0
-		WHERE id = ? AND epic_id = ? AND kind IN ('task', 'implementation') AND status = 'closed' AND outcome IN ('failed', 'cancelled')
+		WHERE id = ? AND epic_id = ? AND kind IN ('task', 'implementation', 'delivery') AND status = 'closed' AND outcome IN ('failed', 'cancelled')
 		AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = factory_issue.id)
 		AND EXISTS (SELECT 1 FROM factory_epic WHERE id = ? AND status = 'open')`, issueID, epicID, epicID)
 	if err != nil {
@@ -989,7 +996,7 @@ func (d *DB) ClaimFactoryImplementation(ctx context.Context, epicID, issueID, pr
 				(d.type = 'blocks' AND b.status = 'closed' AND b.outcome = 'succeeded' AND (b.kind <> 'gate' OR g.resolution = 'approved'))
 				OR (d.type = 'on_failure' AND b.status = 'closed' AND ((b.kind <> 'gate' AND b.outcome = 'failed') OR (b.kind = 'gate' AND g.resolution = 'rejected')))
 			)
-		)`, issueID, issueID, epicID).Scan(&kind, &status); err != nil || (kind != "implementation" && kind != "task") || status != "open" {
+		)`, issueID, issueID, epicID).Scan(&kind, &status); err != nil || (kind != "implementation" && kind != "task" && kind != "delivery") || status != "open" {
 		return model.NativeEpic{}, model.FactoryAttempt{}, errors.New("factory implementation issue is not ready")
 	}
 	policy := model.FactoryCapacityPolicy{GlobalCapacity: 10, ProjectCapacity: 4}
@@ -1033,6 +1040,18 @@ func (d *DB) ClaimFactoryImplementation(ctx context.Context, epicID, issueID, pr
 		return model.NativeEpic{}, model.FactoryAttempt{}, err
 	}
 	attemptPolicy := model.FactoryAttemptPolicy{Repository: epic.InitialProject, Profile: profile}
+	var previousPolicy string
+	if err := tx.QueryRowContext(ctx, `SELECT frozen_policy_json FROM factory_attempt WHERE epic_id = ? AND json_extract(frozen_policy_json, '$.branch') <> '' ORDER BY created_at DESC, rowid DESC LIMIT 1`, epicID).Scan(&previousPolicy); err == nil {
+		if err := json.Unmarshal([]byte(previousPolicy), &attemptPolicy); err != nil {
+			return model.NativeEpic{}, model.FactoryAttempt{}, err
+		}
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return model.NativeEpic{}, model.FactoryAttempt{}, err
+	}
+	attemptPolicy.Delivery = kind == "delivery"
+	if err := tx.QueryRowContext(ctx, `SELECT json_extract(CASE WHEN json_valid(result_json) THEN result_json ELSE '{}' END, '$.commitSha') FROM factory_attempt WHERE epic_id = ? AND terminal_outcome = 'succeeded' AND json_extract(CASE WHEN json_valid(result_json) THEN result_json ELSE '{}' END, '$.commitSha') <> '' ORDER BY finished_at DESC, rowid DESC LIMIT 1`, epicID).Scan(&attemptPolicy.CheckpointSHA); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return model.NativeEpic{}, model.FactoryAttempt{}, err
+	}
 	if err := tx.QueryRowContext(ctx, `SELECT
 		json_extract(frozen_policy_json, '$.deliveryRemoteType'),
 		json_extract(frozen_policy_json, '$.deliveryRemoteHost'),
