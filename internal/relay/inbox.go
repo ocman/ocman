@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -23,17 +24,23 @@ const inboxFormatVersion = 1
 const inboxPageSize = 50
 
 type inboxMeta struct {
-	Version            int    `json:"v"`
-	Recipient          string `json:"recipient"`
-	KeyVersion         int    `json:"keyVersion"`
-	IngestHash         string `json:"ingestHash"`
-	ManagementHash     string `json:"managementHash"`
-	FetchHash          string `json:"fetchHash"`
-	AcknowledgmentHash string `json:"acknowledgmentHash"`
+	Version            int            `json:"v"`
+	Recipient          string         `json:"recipient"`
+	KeyVersion         int            `json:"keyVersion"`
+	IngestHash         string         `json:"ingestHash"`
+	ManagementHash     string         `json:"managementHash"`
+	FetchHash          string         `json:"fetchHash"`
+	AcknowledgmentHash string         `json:"acknowledgmentHash"`
+	CreatedAt          int64          `json:"createdAt"`
+	SecretHash         string         `json:"secretHash,omitempty"`
+	SecretHeader       string         `json:"secretHeader,omitempty"`
+	Recipients         map[int]string `json:"recipients,omitempty"`
 }
 
 type inboxRegistrationRequest struct {
-	Recipient string `json:"recipient"`
+	Recipient    string `json:"recipient"`
+	Secret       string `json:"secret,omitempty"`
+	SecretHeader string `json:"secretHeader,omitempty"`
 }
 
 type inboxRegistrationResponse struct {
@@ -43,6 +50,11 @@ type inboxRegistrationResponse struct {
 	FetchToken          string `json:"fetchToken"`
 	AcknowledgmentToken string `json:"acknowledgmentToken"`
 	KeyVersion          int    `json:"keyVersion"`
+	SecretHeader        string `json:"secretHeader,omitempty"`
+}
+
+type inboxRotationRequest struct {
+	Recipient string `json:"recipient"`
 }
 
 type inboxIngestResponse struct {
@@ -124,7 +136,16 @@ func (s *Server) handleRegisterInbox(w http.ResponseWriter, r *http.Request) {
 		ManagementHash:     hashToken(managementToken),
 		FetchHash:          hashToken(fetchToken),
 		AcknowledgmentHash: hashToken(acknowledgmentToken),
+		CreatedAt:          s.cfg.Now().UnixMilli(),
+		SecretHeader:       request.SecretHeader,
 	}
+	if request.Secret != "" {
+		m.SecretHash = hashToken(request.Secret)
+		if m.SecretHeader == "" {
+			m.SecretHeader = s.cfg.InboxSecretHeader
+		}
+	}
+	m.Recipients = map[int]string{1: m.Recipient}
 	if err := putInboxMeta(r.Context(), s.cfg.Store, id, m); err != nil {
 		serverError(w, err)
 		return
@@ -136,6 +157,7 @@ func (s *Server) handleRegisterInbox(w http.ResponseWriter, r *http.Request) {
 		FetchToken:          fetchToken,
 		AcknowledgmentToken: acknowledgmentToken,
 		KeyVersion:          1,
+		SecretHeader:        m.SecretHeader,
 	})
 }
 
@@ -163,7 +185,18 @@ func (s *Server) handleIngestInbox(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "inbox not found", http.StatusNotFound)
 		return
 	}
-	recipient, err := age.ParseX25519Recipient(m.Recipient)
+	if m.SecretHash != "" {
+		secret := r.Header.Get(m.SecretHeader)
+		if subtle.ConstantTimeCompare([]byte(hashToken(secret)), []byte(m.SecretHash)) != 1 {
+			http.Error(w, "invalid webhook secret", http.StatusUnauthorized)
+			return
+		}
+	}
+	if !s.inboxIngest.allow(id) {
+		http.Error(w, "too many webhook deliveries", http.StatusTooManyRequests)
+		return
+	}
+	recipient, err := age.ParseX25519Recipient(m.currentRecipient())
 	if err != nil {
 		serverError(w, err)
 		return
@@ -191,14 +224,39 @@ func (s *Server) handleIngestInbox(w http.ResponseWriter, r *http.Request) {
 		Body:          body,
 		Request: InboxRequest{
 			Method:     r.Method,
-			Header:     r.Header.Clone(),
+			Header:     nil,
 			Query:      r.URL.Query(),
 			ReceivedAt: s.cfg.Now().UnixMilli(),
 		},
 	}
+	var headersOK bool
+	envelope.Request.Header, headersOK = retainedHeaders(r.Header, m.SecretHeader, s.cfg.MaxInboxHeaderBytes)
+	if !headersOK {
+		http.Error(w, "webhook headers too large", http.StatusRequestEntityTooLarge)
+		return
+	}
 	ciphertext, err := encryptInboxEnvelope(recipient, envelope)
 	if err != nil {
 		serverError(w, err)
+		return
+	}
+	s.mutations.Lock()
+	defer s.mutations.Unlock()
+	objects, err := s.cfg.Store.List(r.Context(), inboxDeliveryPrefix(id))
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	if len(objects) >= s.cfg.MaxInboxPendingDeliveries {
+		http.Error(w, "inbox has too many pending deliveries", http.StatusRequestEntityTooLarge)
+		return
+	}
+	var pending int64
+	for _, object := range objects {
+		pending += object.Size
+	}
+	if pending+int64(len(ciphertext)) > s.cfg.MaxInboxPendingBytes {
+		http.Error(w, "inbox pending quota exceeded", http.StatusRequestEntityTooLarge)
 		return
 	}
 	if err := s.cfg.Store.Put(r.Context(), inboxDeliveryKey(id, deliveryID), ciphertext); err != nil {
@@ -206,6 +264,39 @@ func (s *Server) handleIngestInbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, inboxIngestResponse{DeliveryID: deliveryID})
+}
+
+func (s *Server) handleRotateInbox(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	m, ok := s.authoriseInbox(w, r, id, func(m inboxMeta) string { return m.ManagementHash })
+	if !ok {
+		return
+	}
+	var request inboxRotationRequest
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&request) != nil {
+		http.Error(w, "invalid recipient", http.StatusBadRequest)
+		return
+	}
+	recipient, err := age.ParseX25519Recipient(request.Recipient)
+	if err != nil {
+		http.Error(w, "invalid X25519 recipient", http.StatusBadRequest)
+		return
+	}
+	s.mutations.Lock()
+	defer s.mutations.Unlock()
+	m.KeyVersion++
+	if m.Recipients == nil {
+		m.Recipients = map[int]string{1: m.Recipient}
+	}
+	m.Recipients[m.KeyVersion] = recipient.String()
+	m.Recipient = recipient.String()
+	if err := putInboxMeta(r.Context(), s.cfg.Store, id, m); err != nil {
+		serverError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		KeyVersion int `json:"keyVersion"`
+	}{m.KeyVersion})
 }
 
 func (s *Server) handleListInboxDeliveries(w http.ResponseWriter, r *http.Request) {
@@ -294,6 +385,19 @@ func (s *Server) handleAcknowledgeInboxDelivery(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *Server) handleRevokeInbox(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.authoriseInbox(w, r, r.PathValue("id"), func(m inboxMeta) string { return m.ManagementHash }); !ok {
+		return
+	}
+	s.mutations.Lock()
+	defer s.mutations.Unlock()
+	if err := s.cfg.Store.DeletePrefix(r.Context(), "inboxes/"+r.PathValue("id")); err != nil {
+		serverError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // DecryptInboxEnvelope decrypts and validates one delivery for its expected
 // inbox and delivery identity.
 func DecryptInboxEnvelope(identity age.Identity, inboxID, deliveryID string, ciphertext []byte) (InboxEnvelope, error) {
@@ -309,7 +413,7 @@ func DecryptInboxEnvelope(identity age.Identity, inboxID, deliveryID string, cip
 	if err := json.Unmarshal(plain, &envelope); err != nil {
 		return InboxEnvelope{}, fmt.Errorf("decoding inbox delivery: %w", err)
 	}
-	if envelope.FormatVersion != inboxFormatVersion || envelope.KeyVersion != 1 {
+	if envelope.FormatVersion != inboxFormatVersion || envelope.KeyVersion < 1 {
 		return InboxEnvelope{}, fmt.Errorf("unsupported inbox envelope version")
 	}
 	if envelope.InboxID != inboxID || envelope.DeliveryID != deliveryID {
@@ -407,7 +511,36 @@ func getInboxMeta(ctx context.Context, store share.Store, id string) (inboxMeta,
 	if err := json.Unmarshal(data, &m); err != nil || m.Version != inboxFormatVersion {
 		return inboxMeta{}, false, fmt.Errorf("invalid inbox metadata")
 	}
+	if m.Recipients == nil && m.Recipient != "" {
+		m.Recipients = map[int]string{m.KeyVersion: m.Recipient}
+	}
 	return m, true, nil
+}
+
+func (m inboxMeta) currentRecipient() string { return m.Recipients[m.KeyVersion] }
+
+var sensitiveInboxHeaders = map[string]bool{
+	"authorization": true, "cookie": true, "set-cookie": true,
+	"proxy-authorization": true, "x-webhook-secret": true,
+}
+
+func retainedHeaders(src http.Header, secretHeader string, max int64) (http.Header, bool) {
+	out := make(http.Header)
+	var size int64
+	for name, values := range src {
+		if strings.EqualFold(name, secretHeader) || sensitiveInboxHeaders[strings.ToLower(name)] {
+			continue
+		}
+		for _, value := range values {
+			candidate := int64(len(name) + len(value) + 4)
+			if size+candidate > max {
+				return nil, false
+			}
+			out.Add(name, value)
+			size += candidate
+		}
+	}
+	return out, true
 }
 
 func (s *Server) authoriseInbox(w http.ResponseWriter, r *http.Request, id string, credential func(inboxMeta) string) (inboxMeta, bool) {

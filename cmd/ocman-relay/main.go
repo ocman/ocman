@@ -47,6 +47,13 @@ func main() {
 	maxChunks := flag.Int("max-chunks", relay.DefaultMaxChunks, "maximum number of chunks per share")
 	maxShareBytes := flag.Int64("max-share-bytes", relay.DefaultMaxShareBytes, "maximum total bytes per share")
 	maxInboxBodyBytes := flag.Int64("max-inbox-body-bytes", relay.DefaultMaxInboxBodyBytes, "maximum size of one webhook inbox delivery")
+	maxInboxHeaderBytes := flag.Int64("max-inbox-header-bytes", relay.DefaultMaxInboxHeaderBytes, "maximum retained webhook header bytes")
+	maxInboxPendingBytes := flag.Int64("max-inbox-pending-bytes", relay.DefaultMaxInboxPendingBytes, "maximum pending ciphertext bytes per inbox")
+	maxInboxPendingDeliveries := flag.Int("max-inbox-pending-deliveries", relay.DefaultMaxInboxPendingDeliveries, "maximum pending deliveries per inbox")
+	inboxIngestPerHour := flag.Float64("inbox-ingest-per-hour", relay.DefaultInboxIngestPerHour, "webhook ingests allowed per inbox per hour")
+	inboxIngestBurst := flag.Float64("inbox-ingest-burst", relay.DefaultInboxIngestBurst, "webhook ingest burst capacity per inbox")
+	inboxTTL := flag.Duration("inbox-ttl", relay.DefaultInboxTTL, "how long an inbox is retained")
+	inboxSecretHeader := flag.String("inbox-secret-header", "X-Webhook-Secret", "header name used for optional inbox shared-secret validation")
 	createPerHour := flag.Float64("create-per-hour", relay.DefaultCreatePerHour, "share creations allowed per client address per hour")
 	createBurst := flag.Float64("create-burst", relay.DefaultCreateBurst, "burst capacity for share creation")
 	trustProxy := flag.Bool("trust-proxy", false, "read the client address from X-Forwarded-For (only behind a proxy that overwrites it)")
@@ -62,16 +69,23 @@ func main() {
 	}
 
 	cfg := relay.Config{
-		Store:             backend,
-		MaxChunkBytes:     *maxChunkBytes,
-		MaxChunks:         *maxChunks,
-		MaxShareBytes:     *maxShareBytes,
-		MaxInboxBodyBytes: *maxInboxBodyBytes,
-		TTL:               *ttl,
-		CreatePerHour:     *createPerHour,
-		CreateBurst:       *createBurst,
-		TrustProxy:        *trustProxy,
-		EnrollmentToken:   os.Getenv("OCMAN_RELAY_INBOX_ENROLLMENT_TOKEN"),
+		Store:                     backend,
+		MaxChunkBytes:             *maxChunkBytes,
+		MaxChunks:                 *maxChunks,
+		MaxShareBytes:             *maxShareBytes,
+		MaxInboxBodyBytes:         *maxInboxBodyBytes,
+		MaxInboxHeaderBytes:       *maxInboxHeaderBytes,
+		MaxInboxPendingBytes:      *maxInboxPendingBytes,
+		MaxInboxPendingDeliveries: *maxInboxPendingDeliveries,
+		InboxIngestPerHour:        *inboxIngestPerHour,
+		InboxIngestBurst:          *inboxIngestBurst,
+		InboxTTL:                  *inboxTTL,
+		InboxSecretHeader:         *inboxSecretHeader,
+		TTL:                       *ttl,
+		CreatePerHour:             *createPerHour,
+		CreateBurst:               *createBurst,
+		TrustProxy:                *trustProxy,
+		EnrollmentToken:           os.Getenv("OCMAN_RELAY_INBOX_ENROLLMENT_TOKEN"),
 	}
 	if !*noViewer {
 		assets, err := webui.FS()

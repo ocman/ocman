@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"filippo.io/age"
 	"github.com/NoUseFreak/ocman/internal/share"
@@ -56,8 +57,12 @@ func newInboxHarness(t *testing.T, tweak func(*Config)) *harness {
 }
 
 func registerInbox(t *testing.T, h *harness, recipient string) inboxRegistrationResponse {
+	return registerInboxRequest(t, h, inboxRegistrationRequest{Recipient: recipient})
+}
+
+func registerInboxRequest(t *testing.T, h *harness, request inboxRegistrationRequest) inboxRegistrationResponse {
 	t.Helper()
-	body, _ := json.Marshal(inboxRegistrationRequest{Recipient: recipient})
+	body, _ := json.Marshal(request)
 	rec := h.do(http.MethodPost, "/inboxes", body, testEnrollmentToken)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("register: status %d, body %s", rec.Code, rec.Body)
@@ -67,6 +72,132 @@ func registerInbox(t *testing.T, h *harness, recipient string) inboxRegistration
 		t.Fatalf("decode registration: %v", err)
 	}
 	return got
+}
+
+func TestInboxSecretValidationStripsSensitiveHeaders(t *testing.T) {
+	h := newInboxHarness(t, nil)
+	identity, _ := age.GenerateX25519Identity()
+	registered := registerInboxRequest(t, h, inboxRegistrationRequest{Recipient: identity.Recipient().String(), Secret: "shared"})
+	req := httptest.NewRequest(http.MethodPost, registered.IngestionURL, strings.NewReader("payload"))
+	req.Header.Set("X-Webhook-Secret", "shared")
+	req.Header.Set("Authorization", "Bearer private")
+	req.Header.Set("Cookie", "private=1")
+	req.Header.Set("X-Trace", "kept")
+	rec := httptest.NewRecorder()
+	h.srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status %d, body %s", rec.Code, rec.Body)
+	}
+	var accepted inboxIngestResponse
+	_ = json.Unmarshal(rec.Body.Bytes(), &accepted)
+	fetched := h.do(http.MethodGet, "/inboxes/"+registered.ID+"/deliveries/"+accepted.DeliveryID, nil, registered.FetchToken)
+	envelope, err := DecryptInboxEnvelope(identity, registered.ID, accepted.DeliveryID, fetched.Body.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Request.Header.Get("X-Webhook-Secret") != "" || envelope.Request.Header.Get("Authorization") != "" || envelope.Request.Header.Get("Cookie") != "" || envelope.Request.Header.Get("X-Trace") != "kept" {
+		t.Fatalf("retained headers = %+v", envelope.Request.Header)
+	}
+	for _, secret := range []string{"", "wrong"} {
+		req := httptest.NewRequest(http.MethodPost, registered.IngestionURL, strings.NewReader("payload"))
+		if secret != "" {
+			req.Header.Set("X-Webhook-Secret", secret)
+		}
+		rec := httptest.NewRecorder()
+		h.srv.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("secret %q: status %d, want 401", secret, rec.Code)
+		}
+	}
+	objects, err := h.store.List(context.Background(), "inboxes/"+registered.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, object := range objects {
+		data, err := h.store.Get(context.Background(), object.Key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(data, []byte("shared")) {
+			t.Fatalf("shared secret stored in plaintext at %s", object.Key)
+		}
+	}
+}
+
+func TestInboxCredentialsAndQuotasAreIsolated(t *testing.T) {
+	h := newInboxHarness(t, func(c *Config) {
+		c.MaxInboxPendingBytes = 1 << 20
+		c.MaxInboxPendingDeliveries = 1
+		c.InboxIngestBurst = 1
+		c.InboxIngestPerHour = 1
+	})
+	first, _ := age.GenerateX25519Identity()
+	second, _ := age.GenerateX25519Identity()
+	a := registerInboxRequest(t, h, inboxRegistrationRequest{Recipient: first.Recipient().String(), Secret: "a"})
+	b := registerInboxRequest(t, h, inboxRegistrationRequest{Recipient: second.Recipient().String(), Secret: "b"})
+	for _, tc := range []struct {
+		r      inboxRegistrationResponse
+		secret string
+	}{{a, "a"}, {b, "b"}} {
+		req := httptest.NewRequest(http.MethodPost, tc.r.IngestionURL, strings.NewReader("x"))
+		req.Header.Set("X-Webhook-Secret", tc.secret)
+		rec := httptest.NewRecorder()
+		h.srv.ServeHTTP(rec, req)
+		if rec.Code != http.StatusAccepted {
+			t.Fatalf("first ingest: %d", rec.Code)
+		}
+		req = httptest.NewRequest(http.MethodPost, tc.r.IngestionURL, strings.NewReader("x"))
+		req.Header.Set("X-Webhook-Secret", tc.secret)
+		rec = httptest.NewRecorder()
+		h.srv.ServeHTTP(rec, req)
+		if rec.Code != http.StatusTooManyRequests && rec.Code != http.StatusRequestEntityTooLarge {
+			t.Fatalf("quota/rate status %d", rec.Code)
+		}
+	}
+	// A credential from one inbox cannot authenticate another inbox.
+	req := httptest.NewRequest(http.MethodPost, b.IngestionURL, strings.NewReader("x"))
+	req.Header.Set("X-Webhook-Secret", "a")
+	rec := httptest.NewRecorder()
+	h.srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("cross-inbox secret status %d", rec.Code)
+	}
+}
+
+func TestInboxRotationRevocationAndExpiry(t *testing.T) {
+	h := newInboxHarness(t, func(c *Config) { c.InboxTTL = time.Hour })
+	old, _ := age.GenerateX25519Identity()
+	next, _ := age.GenerateX25519Identity()
+	registered := registerInbox(t, h, old.Recipient().String())
+	rotateBody, _ := json.Marshal(inboxRotationRequest{Recipient: next.Recipient().String()})
+	rotated := h.do(http.MethodPost, "/inboxes/"+registered.ID+"/rotate", rotateBody, registered.ManagementToken)
+	if rotated.Code != http.StatusOK {
+		t.Fatalf("rotate status %d", rotated.Code)
+	}
+	newDelivery := h.do(http.MethodPost, registered.IngestionURL, []byte("new"), "")
+	var accepted inboxIngestResponse
+	_ = json.Unmarshal(newDelivery.Body.Bytes(), &accepted)
+	fetched := h.do(http.MethodGet, "/inboxes/"+registered.ID+"/deliveries/"+accepted.DeliveryID, nil, registered.FetchToken)
+	if envelope, err := DecryptInboxEnvelope(next, registered.ID, accepted.DeliveryID, fetched.Body.Bytes()); err != nil || envelope.KeyVersion != 2 {
+		t.Fatalf("rotated delivery = %+v, err %v", envelope, err)
+	}
+	if rec := h.do(http.MethodDelete, "/inboxes/"+registered.ID, nil, registered.ManagementToken); rec.Code != http.StatusNoContent {
+		t.Fatalf("revoke status %d", rec.Code)
+	}
+	if rec := h.do(http.MethodGet, "/inboxes/"+registered.ID, nil, registered.ManagementToken); rec.Code != http.StatusNotFound {
+		t.Fatalf("after revoke status %d", rec.Code)
+	}
+
+	h2 := newInboxHarness(t, func(c *Config) { c.InboxTTL = time.Hour })
+	identity, _ := age.GenerateX25519Identity()
+	expired := registerInbox(t, h2, identity.Recipient().String())
+	h2.now = h2.now.Add(2 * time.Hour)
+	if err := h2.srv.Sweep(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if rec := h2.do(http.MethodGet, "/inboxes/"+expired.ID, nil, expired.ManagementToken); rec.Code != http.StatusNotFound {
+		t.Fatalf("expired status %d", rec.Code)
+	}
 }
 
 func TestInboxRoundTrip(t *testing.T) {
@@ -366,7 +497,7 @@ func TestDecryptInboxEnvelopeRejectsWrongIdentityTamperingAndVersions(t *testing
 
 	for _, unsupported := range []InboxEnvelope{
 		{FormatVersion: 2, KeyVersion: 1, InboxID: registered.ID, DeliveryID: accepted.DeliveryID},
-		{FormatVersion: 1, KeyVersion: 2, InboxID: registered.ID, DeliveryID: accepted.DeliveryID},
+		{FormatVersion: 0, KeyVersion: 1, InboxID: registered.ID, DeliveryID: accepted.DeliveryID},
 	} {
 		plain, _ := json.Marshal(unsupported)
 		var encrypted bytes.Buffer

@@ -35,13 +35,19 @@ import (
 // Defaults for the storage limits. They exist because share creation is
 // unauthenticated: the relay is protected by caps, not credentials.
 const (
-	DefaultMaxChunkBytes     = 1 << 20  // 1 MiB per chunk
-	DefaultMaxChunks         = 4096     // chunks per share
-	DefaultMaxShareBytes     = 32 << 20 // 32 MiB total per share
-	DefaultTTL               = 30 * 24 * time.Hour
-	DefaultCreatePerHour     = 60
-	DefaultCreateBurst       = 10
-	DefaultMaxInboxBodyBytes = 1 << 20
+	DefaultMaxChunkBytes             = 1 << 20  // 1 MiB per chunk
+	DefaultMaxChunks                 = 4096     // chunks per share
+	DefaultMaxShareBytes             = 32 << 20 // 32 MiB total per share
+	DefaultTTL                       = 30 * 24 * time.Hour
+	DefaultCreatePerHour             = 60
+	DefaultCreateBurst               = 10
+	DefaultMaxInboxBodyBytes         = 1 << 20
+	DefaultMaxInboxHeaderBytes       = 16 << 10
+	DefaultMaxInboxPendingBytes      = 32 << 20
+	DefaultMaxInboxPendingDeliveries = 4096
+	DefaultInboxIngestPerHour        = 3600
+	DefaultInboxIngestBurst          = 100
+	DefaultInboxTTL                  = 30 * 24 * time.Hour
 )
 
 // Config configures a relay server.
@@ -72,16 +78,24 @@ type Config struct {
 	// disables registration while leaving existing inboxes usable.
 	EnrollmentToken string
 	// MaxInboxBodyBytes caps one webhook request body.
-	MaxInboxBodyBytes int64
+	MaxInboxBodyBytes         int64
+	MaxInboxHeaderBytes       int64
+	MaxInboxPendingBytes      int64
+	MaxInboxPendingDeliveries int
+	InboxIngestPerHour        float64
+	InboxIngestBurst          float64
+	InboxTTL                  time.Duration
+	InboxSecretHeader         string
 	// Now is the clock, overridable in tests.
 	Now func() time.Time
 }
 
 // Server is the relay's HTTP handler.
 type Server struct {
-	cfg     Config
-	mux     *http.ServeMux
-	creates *rateLimiter
+	cfg         Config
+	mux         *http.ServeMux
+	creates     *rateLimiter
+	inboxIngest *rateLimiter
 	// ponytail: one relay-wide lock keeps quota checks and mutations atomic;
 	// use per-share/store transactions if append throughput ever matters.
 	mutations sync.Mutex
@@ -116,14 +130,36 @@ func New(cfg Config) (*Server, error) {
 	if cfg.MaxInboxBodyBytes <= 0 {
 		cfg.MaxInboxBodyBytes = DefaultMaxInboxBodyBytes
 	}
+	if cfg.MaxInboxHeaderBytes <= 0 {
+		cfg.MaxInboxHeaderBytes = DefaultMaxInboxHeaderBytes
+	}
+	if cfg.MaxInboxPendingBytes <= 0 {
+		cfg.MaxInboxPendingBytes = DefaultMaxInboxPendingBytes
+	}
+	if cfg.MaxInboxPendingDeliveries <= 0 {
+		cfg.MaxInboxPendingDeliveries = DefaultMaxInboxPendingDeliveries
+	}
+	if cfg.InboxIngestPerHour <= 0 {
+		cfg.InboxIngestPerHour = DefaultInboxIngestPerHour
+	}
+	if cfg.InboxIngestBurst <= 0 {
+		cfg.InboxIngestBurst = DefaultInboxIngestBurst
+	}
+	if cfg.InboxTTL <= 0 {
+		cfg.InboxTTL = DefaultInboxTTL
+	}
+	if cfg.InboxSecretHeader == "" {
+		cfg.InboxSecretHeader = "X-Webhook-Secret"
+	}
 	if cfg.MaxChunks > int(share.MaxSeq)+1 {
 		return nil, fmt.Errorf("relay: MaxChunks %d exceeds the addressable sequence space", cfg.MaxChunks)
 	}
 
 	s := &Server{
-		cfg:     cfg,
-		mux:     http.NewServeMux(),
-		creates: newRateLimiter(cfg.CreatePerHour, cfg.CreateBurst, cfg.Now),
+		cfg:         cfg,
+		mux:         http.NewServeMux(),
+		creates:     newRateLimiter(cfg.CreatePerHour, cfg.CreateBurst, cfg.Now),
+		inboxIngest: newRateLimiter(cfg.InboxIngestPerHour, cfg.InboxIngestBurst, cfg.Now),
 	}
 	s.routes()
 	return s, nil
@@ -136,6 +172,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /s/{id}", s.handleDelete)
 	s.mux.HandleFunc("POST /inboxes", s.handleRegisterInbox)
 	s.mux.HandleFunc("GET /inboxes/{id}", s.handleManageInbox)
+	s.mux.HandleFunc("DELETE /inboxes/{id}", s.handleRevokeInbox)
+	s.mux.HandleFunc("POST /inboxes/{id}/rotate", s.handleRotateInbox)
+	s.mux.HandleFunc("PUT /inboxes/{id}/recipient", s.handleRotateInbox)
 	s.mux.HandleFunc("POST /i/{id}/{token}", s.handleIngestInbox)
 	s.mux.HandleFunc("GET /inboxes/{id}/deliveries", s.handleListInboxDeliveries)
 	s.mux.HandleFunc("GET /inboxes/{id}/deliveries/{deliveryID}", s.handleFetchInboxDelivery)
