@@ -149,8 +149,20 @@ func (c *Client) LookupPR(ctx context.Context, repo string, number int) (forge.P
 }
 
 func (c *Client) ConvertPRToDraft(ctx context.Context, repo string, number int) error {
+	current, err := c.LookupPR(ctx, repo, number)
+	if err != nil {
+		return err
+	}
+	if current.Status == "draft" {
+		return nil
+	}
+	// Forgejo derives draft status from the title, not an editable draft flag.
+	payload, err := json.Marshal(map[string]string{"title": "WIP: " + current.Title})
+	if err != nil {
+		return err
+	}
 	path := fmt.Sprintf("/api/v1/repos/%s/pulls/%d", repo, number)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, c.baseURL+path, bytes.NewBufferString(`{"draft":true}`))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, c.baseURL+path, bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}

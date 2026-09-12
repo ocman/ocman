@@ -722,6 +722,7 @@ type ImplementationSessionRequest struct {
 // ImplementationLauncher is the host/platform seam for a configured worktree
 // session. Implementations must apply Profile before publishing the session.
 type ImplementationLauncher interface {
+	ResolveImplementationWorkspace(context.Context, string, string, PlanningSession) (string, string, error)
 	PrepareImplementationWorkspace(context.Context, string, string, string, string) (string, string, error)
 	ValidateImplementationCheckpoint(context.Context, string, string, string) (string, error)
 	LaunchImplementationSession(context.Context, ImplementationSessionRequest) (PlanningSession, error)
@@ -1854,9 +1855,14 @@ func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentTok
 	if !found {
 		return fmt.Errorf("%w: factory implementation attempt is not active", ErrInvalidRequest)
 	}
-	legacy := attempt.FrozenPolicy.Branch == ""
+	if attempt.Phase == model.FactoryAttemptTerminal && attempt.Outcome == model.FactoryAttemptSucceeded {
+		if attempt.Result != nil && attempt.Result.Summary == summary && attempt.Result.PRURL == prURL {
+			return nil
+		}
+		return fmt.Errorf("%w: factory implementation attempt already completed with a different result", ErrInvalidRequest)
+	}
 	var parsedPR *url.URL
-	if legacy || attempt.FrozenPolicy.Delivery {
+	if attempt.FrozenPolicy.Delivery {
 		var parseErr error
 		parsedPR, parseErr = url.ParseRequestURI(prURL)
 		if parseErr != nil || (parsedPR.Scheme != "http" && parsedPR.Scheme != "https") || parsedPR.Host == "" {
@@ -1865,11 +1871,14 @@ func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentTok
 	} else if prURL != "" {
 		return fmt.Errorf("%w: implementation handoffs require a commit checkpoint, not a pull request", ErrInvalidRequest)
 	}
-	if attempt.Phase == model.FactoryAttemptTerminal && attempt.Outcome == model.FactoryAttemptSucceeded {
-		if attempt.Result != nil && attempt.Result.Summary == summary && attempt.Result.PRURL == prURL {
-			return nil
+	if attempt.FrozenPolicy.Branch == "" {
+		// Older sessions did not record their workspace. Adopt it without a PR
+		// lookup or branch rotation; the session may already be on a successor.
+		branch, target, err := s.implementation.ResolveImplementationWorkspace(ctx, attempt.FrozenPolicy.Repository, "factory/"+attempt.EpicID, attempt.Session)
+		if err != nil {
+			return factoryHandoffError(err)
 		}
-		return fmt.Errorf("%w: factory implementation attempt already completed with a different result", ErrInvalidRequest)
+		attempt.FrozenPolicy.Branch, attempt.FrozenPolicy.TargetBranch = branch, target
 	}
 	if attempt.FrozenPolicy.Delivery {
 		response := "Force-complete the delivery attempt using merged PR #" + path.Base(parsedPR.Path)
@@ -1880,14 +1889,6 @@ func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentTok
 	}
 	result := model.FactoryAttemptResult{SchemaVersion: 2, Summary: summary, PRURL: prURL}
 	validate := func(ctx context.Context) error {
-		if legacy {
-			existingPR, err := store.FactoryEpicPRURL(ctx, attempt.EpicID)
-			if err != nil {
-				return err
-			}
-			result.SchemaVersion = 1
-			return s.implementation.ValidateImplementationHandoff(ctx, attempt.FrozenPolicy.Repository, "factory/"+attempt.EpicID, existingPR, prURL, attempt.FrozenPolicy)
-		}
 		head, err := s.implementation.ValidateImplementationCheckpoint(ctx, attempt.FrozenPolicy.Repository, attempt.FrozenPolicy.Branch, attempt.FrozenPolicy.CheckpointSHA)
 		if err != nil {
 			return err

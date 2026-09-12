@@ -61,7 +61,13 @@ successful delivery; additional work after delivery belongs in a new Epic.
 
 ## Existing work
 
-Already-running Attempts retain their original PR-based completion contract.
-When existing work first adopts checkpoints, Factory resolves its prior delivery
-PR once to preserve the shared branch and completed work. Later implementation
-handoffs no longer depend on that PR's status or branch metadata.
+Already-running implementation Attempts can complete with a clean, pushed commit
+and no `pr_url`, even if their original prompt required a PR. Factory recovers the
+session's actual worktree branch, including numbered successor branches, and
+records its checkpoint for subsequent Issues. This completion does not consult
+or change an existing PR. Only final delivery requires a review-ready PR.
+
+Previously completed PR-based results remain valid history. When launching new
+work from that history, Factory resolves the prior PR once to preserve the shared
+branch and completed work. On Forgejo, converting an existing PR to draft uses
+the `WIP: ` title prefix.

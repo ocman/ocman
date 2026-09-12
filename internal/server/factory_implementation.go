@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -27,6 +28,37 @@ type factoryHandoffHost interface {
 type factoryWorkspaceHost interface {
 	PrepareFactoryWorkspace(context.Context, string, string, string, string) (string, string, error)
 	ValidateFactoryCheckpoint(context.Context, string, string, string) (string, error)
+}
+
+// ResolveImplementationWorkspace recovers the actual branch of a session started
+// before Factory persisted workspaces. It never creates or edits a pull request.
+func (l factoryImplementationLauncher) ResolveImplementationWorkspace(ctx context.Context, repo, branch string, session factory.PlanningSession) (string, string, error) {
+	platform, ok := l.server.registry.Get(platforms.ID(session.Platform))
+	if !ok {
+		return "", "", errors.New("implementation platform is unavailable")
+	}
+	detail, err := platform.Session(ctx, session.ID, 1, 0)
+	if err != nil {
+		return "", "", err
+	}
+	if detail == nil || detail.Session == nil || detail.Session.Directory == "" {
+		return "", "", errors.New("implementation session directory is unavailable")
+	}
+	owner := l.server.router().ForDir(repo)
+	worktrees, err := owner.ListWorktrees(ctx, repo)
+	if err != nil {
+		return "", "", err
+	}
+	for _, worktree := range worktrees {
+		if filepath.Clean(worktree.Path) == filepath.Clean(detail.Session.Directory) && validFactoryBranch(branch, worktree.Branch) {
+			target, err := owner.WorktreeDefaultBaseRef(ctx, repo)
+			if err != nil {
+				return "", "", err
+			}
+			return worktree.Branch, target, nil
+		}
+	}
+	return "", "", errors.New("factory shared branch worktree was not found")
 }
 
 func (l factoryImplementationLauncher) PrepareImplementationWorkspace(ctx context.Context, repo, branch, checkpoint, target string) (string, string, error) {

@@ -239,6 +239,13 @@ func (d *DB) CompleteFactoryImplementationAttempt(ctx context.Context, id, agent
 	if err != nil || !changed {
 		return changed, err
 	}
+	// Adopt the verified workspace of a pre-checkpoint attempt atomically with
+	// its result, so subsequent issues reuse the same branch and target.
+	if result.Branch != "" && result.TargetBranch != "" {
+		if _, err := tx.ExecContext(ctx, `UPDATE factory_attempt SET frozen_policy_json = json_set(frozen_policy_json, '$.branch', ?, '$.targetBranch', ?) WHERE id = ? AND COALESCE(json_extract(frozen_policy_json, '$.branch'), '') = ''`, result.Branch, result.TargetBranch, id); err != nil {
+			return false, err
+		}
+	}
 	issue, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'closed', outcome = 'succeeded', outcome_reason = ''
 		WHERE id = (SELECT work_item_id FROM factory_attempt WHERE id = ?) AND status = 'in_progress'`, id)
 	if err != nil {

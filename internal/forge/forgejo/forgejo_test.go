@@ -154,23 +154,40 @@ func TestLookupPRDeletedBranch(t *testing.T) {
 }
 
 func TestConvertPRToDraft(t *testing.T) {
+	title := `fix: handle "quoted" titles`
+	draft := false
+	patches := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPatch || r.URL.Path != "/api/v1/repos/alice/repo/pulls/7" {
-			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
+		if r.URL.Path != "/api/v1/repos/alice/repo/pulls/7" || r.Header.Get("Authorization") != "token token" {
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
 		}
-		var body struct {
-			Draft bool `json:"draft"`
+		if r.Method == http.MethodPatch {
+			patches++
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body) != 1 || body["title"] != `WIP: fix: handle "quoted" titles` {
+				t.Errorf("body = %#v, %v", body, err)
+			}
+			// Forgejo ignores unsupported edit fields such as draft.
+			if edited, ok := body["title"].(string); ok {
+				title = edited
+				draft = strings.HasPrefix(title, "WIP: ")
+			}
+			w.WriteHeader(http.StatusCreated)
+		} else if r.Method != http.MethodGet {
+			t.Errorf("method = %s", r.Method)
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !body.Draft {
-			t.Fatalf("body = %#v, %v", body, err)
-		}
-		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte(`{"draft":true}`))
+		_ = json.NewEncoder(w).Encode(map[string]any{"state": "open", "title": title, "draft": draft})
 	}))
 	defer srv.Close()
 
-	if err := newTestClient(t, srv, "token").ConvertPRToDraft(t.Context(), "alice/repo", 7); err != nil {
-		t.Fatal(err)
+	client := newTestClient(t, srv, "token")
+	for range 2 {
+		if err := client.ConvertPRToDraft(t.Context(), "alice/repo", 7); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if patches != 1 {
+		t.Fatalf("patches = %d; already-draft PR should be left alone", patches)
 	}
 }
 
@@ -181,9 +198,14 @@ func TestConvertPRToDraftRejectsFailedEdit(t *testing.T) {
 	}{
 		{name: "status", status: http.StatusForbidden, want: "status 403"},
 		{name: "not draft", status: http.StatusOK, body: `{"draft":false}`, want: "not converted"},
+		{name: "invalid response", status: http.StatusOK, body: `{`, want: "decoding edited pull"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodGet {
+					_, _ = w.Write([]byte(`{"state":"open","title":"Fix bug"}`))
+					return
+				}
 				w.WriteHeader(tt.status)
 				_, _ = w.Write([]byte(tt.body))
 			}))
@@ -193,6 +215,19 @@ func TestConvertPRToDraftRejectsFailedEdit(t *testing.T) {
 				t.Fatalf("error = %v", err)
 			}
 		})
+	}
+}
+
+func TestConvertPRToDraftRejectsFailedLookup(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("must not edit after failed lookup: %s", r.Method)
+		}
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+	if err := newTestClient(t, srv, "token").ConvertPRToDraft(t.Context(), "alice/repo", 7); err == nil || !strings.Contains(err.Error(), "status 403") {
+		t.Fatalf("error = %v", err)
 	}
 }
 

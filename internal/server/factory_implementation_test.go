@@ -16,6 +16,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/forge"
 	"github.com/NoUseFreak/ocman/internal/forge/forgejo"
 	"github.com/NoUseFreak/ocman/internal/forge/github"
+	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
@@ -33,6 +34,62 @@ type factoryImplementationHost struct {
 	handoffHead   string
 	upstreams     hostsvc.ProjectUpstreams
 	branches      []string
+	worktrees     []git.Worktree
+	worktreeErr   error
+	target        string
+	targetErr     error
+}
+
+func (h *factoryImplementationHost) ListWorktrees(context.Context, string) ([]git.Worktree, error) {
+	return h.worktrees, h.worktreeErr
+}
+
+func (h *factoryImplementationHost) WorktreeDefaultBaseRef(context.Context, string) (string, error) {
+	return h.target, h.targetErr
+}
+
+func TestFactoryResolvesLegacyWorkspaceWithoutForge(t *testing.T) {
+	for _, name := range []string{"shared", "successor", "unrelated branch", "different worktree", "missing detail", "missing session", "missing directory", "session error", "missing platform", "worktree error", "target error"} {
+		t.Run(name, func(t *testing.T) {
+			detail := &platforms.SessionDetail{Session: &db.Session{Directory: "/worktree"}}
+			var sessionErr error
+			host := &factoryImplementationHost{target: "main", worktrees: []git.Worktree{{Path: "/worktree", Branch: "factory/epic"}}}
+			switch name {
+			case "successor":
+				host.worktrees[0].Branch = "factory/epic-2"
+			case "unrelated branch":
+				host.worktrees[0].Branch = "factory/other"
+			case "different worktree":
+				host.worktrees[0].Path = "/other"
+			case "missing detail":
+				detail = nil
+			case "missing session":
+				detail.Session = nil
+			case "missing directory":
+				detail.Session.Directory = ""
+			case "session error":
+				sessionErr = errors.New("session unavailable")
+			case "worktree error":
+				host.worktreeErr = errors.New("owner disconnected")
+			case "target error":
+				host.targetErr = errors.New("target unavailable")
+			}
+			registry := platforms.NewRegistry()
+			if name != "missing platform" {
+				registry.Register(&fakePlatform{id: "test", sessionDetailFn: func(string) (*platforms.SessionDetail, error) { return detail, sessionErr }})
+			}
+			srv := New(nil, nil, "", registry, nil)
+			srv.hostRouter = hostsvc.NewRouter(host)
+			branch, target, err := (factoryImplementationLauncher{server: srv}).ResolveImplementationWorkspace(t.Context(), "/repo", "factory/epic", factory.PlanningSession{Platform: "test", ID: "old"})
+			if name == "shared" || name == "successor" {
+				if err != nil || branch != host.worktrees[0].Branch || target != "main" {
+					t.Fatalf("workspace = %q/%q, %v", branch, target, err)
+				}
+			} else if err == nil {
+				t.Fatalf("accepted invalid workspace = %q/%q", branch, target)
+			}
+		})
+	}
 }
 
 func TestFactoryResolvesDeletedForgejoBranch(t *testing.T) {

@@ -44,6 +44,13 @@ func (f *fakeImplementationLauncher) PrepareImplementationWorkspace(context.Cont
 	return "main", f.baseRef, f.branchErr
 }
 
+func (f *fakeImplementationLauncher) ResolveImplementationWorkspace(_ context.Context, _, branch string, _ PlanningSession) (string, string, error) {
+	if f.branch != "" {
+		branch = f.branch
+	}
+	return branch, "main", f.branchErr
+}
+
 func (f *fakeImplementationLauncher) ValidateImplementationCheckpoint(context.Context, string, string, string) (string, error) {
 	f.handoffs++
 	return "abc123", f.handoffErr
@@ -178,7 +185,7 @@ func TestCheckpointFlowDeliversOnlyAfterImplementation(t *testing.T) {
 	}
 }
 
-func TestLegacyAttemptKeepsPRContractThenAdoptsCheckpoint(t *testing.T) {
+func TestLegacyAttemptCompletesWithoutPRThenAdoptsCheckpoint(t *testing.T) {
 	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -197,11 +204,25 @@ func TestLegacyAttemptKeepsPRContractThenAdoptsCheckpoint(t *testing.T) {
 	if _, err := db.ActivateFactoryAttempt(t.Context(), attempt.ID, PlanningSession{Platform: "opencode", ID: "old"}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.CompleteAttempt(t.Context(), attempt.ID, attempt.AgentToken, "legacy", ""); err == nil {
-		t.Fatal("legacy completion lost its PR contract")
+	launcher.branchErr = errors.New("workspace unavailable")
+	if err := svc.CompleteAttempt(t.Context(), attempt.ID, attempt.AgentToken, "legacy", ""); !errors.Is(err, launcher.branchErr) {
+		t.Fatalf("workspace error = %v", err)
 	}
-	if err := svc.CompleteAttempt(t.Context(), attempt.ID, attempt.AgentToken, "legacy", "https://forge.example/pr/1"); err != nil {
+	launcher.branchErr = nil
+	launcher.handoffErr = errors.New("factory branch HEAD has not been pushed")
+	if err := svc.CompleteAttempt(t.Context(), attempt.ID, attempt.AgentToken, "legacy", ""); !errors.Is(err, ErrInvalidRequest) || len(launcher.stops) != 0 {
+		t.Fatalf("unpublished legacy handoff = %v, stops = %v", err, launcher.stops)
+	}
+	launcher.handoffErr = nil
+	if err := svc.CompleteAttempt(t.Context(), attempt.ID, attempt.AgentToken, "legacy", ""); err != nil {
 		t.Fatal(err)
+	}
+	completed, _, err := db.GetFactoryAttempt(t.Context(), attempt.ID)
+	if err != nil || completed.Result == nil || completed.Result.PRURL != "" || completed.Result.CommitSHA != "abc123" || completed.FrozenPolicy.Branch != "factory/legacy-2" || completed.FrozenPolicy.TargetBranch != "main" {
+		t.Fatalf("legacy checkpoint = %#v, %v", completed, err)
+	}
+	if err := svc.CompleteAttempt(t.Context(), attempt.ID, attempt.AgentToken, "legacy", ""); err != nil {
+		t.Fatalf("idempotent legacy completion: %v", err)
 	}
 	if err := svc.MutateGraph(t.Context(), GraphMutation{Action: "create", EpicID: epic.ID, ParentID: pouredIssueID(t, svc, epic.ID, "mol"), Kind: "task", Title: "New attempt"}); err != nil {
 		t.Fatal(err)
@@ -209,12 +230,15 @@ func TestLegacyAttemptKeepsPRContractThenAdoptsCheckpoint(t *testing.T) {
 	if err := svc.Dispatch(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if len(launcher.calls) != 1 || launcher.resolutions != 1 || launcher.calls[0].Branch != "factory/legacy-2" || launcher.calls[0].BaseRef != "legacy-head" {
+	if len(launcher.calls) != 1 || launcher.resolutions != 0 || launcher.calls[0].Branch != "factory/legacy-2" || launcher.calls[0].BaseRef != "legacy-head" || launcher.calls[0].Delivery {
 		t.Fatalf("legacy adoption = %#v", launcher.calls)
 	}
 	prepared, _, err := db.GetFactoryAttempt(t.Context(), launcher.calls[0].AttemptID)
 	if err != nil || prepared.FrozenPolicy.BaseRef != "legacy-head" {
 		t.Fatalf("legacy base not persisted: %#v, %v", prepared, err)
+	}
+	if prepared.FrozenPolicy.CheckpointSHA != "abc123" {
+		t.Fatalf("legacy checkpoint not inherited: %#v", prepared)
 	}
 }
 
