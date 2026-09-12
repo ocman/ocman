@@ -50,7 +50,7 @@ func (s *Server) UseInboxStore(store *state.DB) *Server {
 	return s
 }
 
-func (s *Server) UseWebhookDispatcher(dispatcher webhook.RoutineDispatcher) *Server {
+	func (s *Server) UseWebhookDispatcher(dispatcher webhook.RoutineDispatcher) *Server {
 	s.webhookDispatcher = dispatcher
 	return s
 }
