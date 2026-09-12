@@ -55,7 +55,8 @@ func RegisterWithSecret(ctx context.Context, store *state.DB, routineID, relayUR
 	}
 	inbox := state.WebhookInbox{ID: allocation.ID, RoutineID: routineID, RelayURL: relayURL,
 		ManagementToken: allocation.ManagementToken, FetchToken: allocation.FetchToken,
-		AcknowledgmentToken: allocation.AcknowledgmentToken, Identity: identity.String(), KeyVersion: allocation.KeyVersion}
+		AcknowledgmentToken: allocation.AcknowledgmentToken, Identity: identity.String(),
+		IngestionURL: allocation.IngestionURL, KeyVersion: allocation.KeyVersion}
 	if err := store.SaveWebhookInbox(ctx, inbox); err != nil {
 		return state.WebhookInbox{}, err
 	}
@@ -97,9 +98,9 @@ func (p *Poller) Poll(ctx context.Context) error {
 				var envelope relay.InboxEnvelope
 				envelope, err = relay.DecryptInboxEnvelope(identity, p.Inbox.ID, delivery.ID, ciphertext)
 				if err == nil {
-					if accepted, dispatchErr := p.Store.AcceptWebhookDelivery(ctx, p.Inbox.ID, delivery.ID, envelope.Request.Method+" webhook", string(envelope.Body), envelope.Request.ReceivedAt); dispatchErr != nil {
+					if _, dispatchErr := p.Store.AcceptWebhookDelivery(ctx, p.Inbox.ID, delivery.ID, envelope.Request.Method+" webhook", string(envelope.Body), envelope.Request.ReceivedAt); dispatchErr != nil {
 						err = dispatchErr
-					} else if accepted && p.Routines != nil {
+					} else if p.Routines != nil {
 						err = Dispatch(p.Store, p.Routines, p.Inbox.ID, delivery.ID, envelope, now())
 					}
 					if err == nil {

@@ -62,7 +62,7 @@ func (s *Server) handleRoutines(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, action, extra := cutRoutinePath(rest)
-	if id == "" || (extra != "" && !(action == "webhook-inbox" && extra == "subscriptions")) {
+	if id == "" || (extra != "" && (action != "webhook-inbox" || extra != "subscriptions")) {
 		http.NotFound(w, r)
 		return
 	}
@@ -173,7 +173,28 @@ func (s *Server) handleWebhookInbox(w http.ResponseWriter, r *http.Request, rout
 		return
 	}
 	if routine.RemoteID != "" && routine.RemoteID != "local" {
-		http.Error(w, "webhook inbox owner is unavailable", http.StatusServiceUnavailable)
+		if r.Method != http.MethodPost || s.remotes == nil {
+			http.Error(w, "webhook inbox owner is unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		var req struct{ EnrollmentToken, Secret, SecretHeader string }
+		if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+			return
+		}
+		if s.relayURL == "" {
+			http.Error(w, "relay is not configured", http.StatusServiceUnavailable)
+			return
+		}
+		inbox, err := s.remotes.RegisterWebhookInboxWithSecret(r.Context(), routine.RemoteID, routine.ID, s.relayURL, req.EnrollmentToken, req.Secret, req.SecretHeader)
+		if err != nil {
+			serverError(w, "registering remote webhook inbox", err)
+			return
+		}
+		writeJSONStatus(w, http.StatusCreated, struct {
+			webhookInboxView
+			ValidationSecret string `json:"validationSecret,omitempty"`
+			ValidationHeader string `json:"validationHeader,omitempty"`
+		}{webhookInboxView{inbox.ID, routine.ID, inbox.RelayURL, inbox.IngestionURL, inbox.KeyVersion, inbox.CreatedAt, map[string]int{}, []state.WebhookSubscription{}}, req.Secret, req.SecretHeader})
 		return
 	}
 	inbox, err := s.stateDB.GetWebhookInbox(r.Context(), routineID)

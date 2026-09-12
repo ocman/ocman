@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -76,6 +77,16 @@ func (d *DB) DeleteWebhookSubscription(ctx context.Context, inboxID, routineID s
 
 // ClaimWebhookDispatch is the durable deduplication boundary for a delivery.
 func (d *DB) ClaimWebhookDispatch(ctx context.Context, inboxID, deliveryID, routineID string, now int64) (bool, error) {
+	updated, err := d.db.ExecContext(ctx, `UPDATE webhook_dispatch SET state='queued', error='', finished_at=0, created_at=?
+		WHERE inbox_id=? AND delivery_id=? AND routine_id=? AND state='failure'`, now, inboxID, deliveryID, routineID)
+	if err != nil {
+		return false, err
+	}
+	if count, err := updated.RowsAffected(); err != nil {
+		return false, err
+	} else if count == 1 {
+		return true, nil
+	}
 	r, err := d.db.ExecContext(ctx, `INSERT INTO webhook_dispatch (inbox_id,delivery_id,routine_id,state,created_at) VALUES (?,?,?,'queued',?) ON CONFLICT DO NOTHING`, inboxID, deliveryID, routineID, now)
 	if err != nil {
 		return false, err
@@ -144,6 +155,25 @@ func (d *DB) GetWebhookInbox(ctx context.Context, routineID string) (WebhookInbo
 	return inbox, nil
 }
 
+func (d *DB) ListWebhookInboxes(ctx context.Context) ([]WebhookInbox, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT id, routine_id, relay_url, management_token, fetch_token,
+		acknowledgment_token, identity, ingestion_url, key_version, created_at FROM webhook_inbox ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []WebhookInbox
+	for rows.Next() {
+		var inbox WebhookInbox
+		if err := rows.Scan(&inbox.ID, &inbox.RoutineID, &inbox.RelayURL, &inbox.ManagementToken, &inbox.FetchToken,
+			&inbox.AcknowledgmentToken, &inbox.Identity, &inbox.IngestionURL, &inbox.KeyVersion, &inbox.CreatedAt); err != nil {
+			return nil, err
+		}
+		result = append(result, inbox)
+	}
+	return result, rows.Err()
+}
+
 func (d *DB) DeleteWebhookInbox(ctx context.Context, routineID string) error {
 	_, err := d.db.ExecContext(ctx, `DELETE FROM webhook_inbox WHERE routine_id = ?`, routineID)
 	return err
@@ -185,7 +215,7 @@ func (d *DB) AcceptWebhookDelivery(ctx context.Context, inboxID, deliveryID, tit
 			return false, err
 		}
 	}
-	if err != sql.ErrNoRows {
+	if !errors.Is(err, sql.ErrNoRows) {
 		return false, err
 	}
 	itemID := inboxID + ":" + deliveryID

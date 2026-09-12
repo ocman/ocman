@@ -8,6 +8,10 @@ import (
 )
 
 func (c *RemoteConn) RegisterWebhookInbox(ctx context.Context, routineID, relayURL, enrollmentToken string) (state.WebhookInbox, error) {
+	return c.RegisterWebhookInboxWithSecret(ctx, routineID, relayURL, enrollmentToken, "", "")
+}
+
+func (c *RemoteConn) RegisterWebhookInboxWithSecret(ctx context.Context, routineID, relayURL, enrollmentToken, secret, secretHeader string) (state.WebhookInbox, error) {
 	client := c.Client()
 	if client == nil {
 		return state.WebhookInbox{}, ErrRemoteOffline
@@ -16,7 +20,9 @@ func (c *RemoteConn) RegisterWebhookInbox(ctx context.Context, routineID, relayU
 		RoutineID       string `json:"routineId"`
 		RelayURL        string `json:"relayUrl"`
 		EnrollmentToken string `json:"enrollmentToken"`
-	}{routineID, relayURL, enrollmentToken})
+		Secret          string `json:"secret"`
+		SecretHeader    string `json:"secretHeader"`
+	}{routineID, relayURL, enrollmentToken, secret, secretHeader})
 	if err != nil {
 		return state.WebhookInbox{}, err
 	}

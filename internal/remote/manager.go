@@ -74,17 +74,21 @@ func (m *Manager) webhookRemote(id string) (*RemoteConn, error) {
 }
 
 func (m *Manager) RegisterWebhookInbox(ctx context.Context, owner, routineID, relayURL, enrollmentToken string) (state.WebhookInbox, error) {
+	return m.RegisterWebhookInboxWithSecret(ctx, owner, routineID, relayURL, enrollmentToken, "", "")
+}
+
+func (m *Manager) RegisterWebhookInboxWithSecret(ctx context.Context, owner, routineID, relayURL, enrollmentToken, secret, secretHeader string) (state.WebhookInbox, error) {
 	conn, err := m.webhookRemote(owner)
 	if err != nil {
 		return state.WebhookInbox{}, err
 	}
 	if conn != nil {
-		return conn.RegisterWebhookInbox(ctx, routineID, relayURL, enrollmentToken)
+		return conn.RegisterWebhookInboxWithSecret(ctx, routineID, relayURL, enrollmentToken, secret, secretHeader)
 	}
 	if m.store == nil {
 		return state.WebhookInbox{}, ErrRemoteOffline
 	}
-	return webhook.Register(ctx, m.store, routineID, relayURL, enrollmentToken, nil)
+	return webhook.RegisterWithSecret(ctx, m.store, routineID, relayURL, enrollmentToken, secret, secretHeader, nil)
 }
 
 func (m *Manager) PollWebhookInbox(ctx context.Context, owner, routineID string) error {

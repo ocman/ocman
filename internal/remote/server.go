@@ -32,20 +32,26 @@ import (
 type Server struct {
 	pb.UnimplementedOcmanServer
 
-	registry      *platforms.Registry
-	sessions      *sessionsvc.Service
-	host          hostsvc.Host
-	inboxStore    *state.DB
-	instanceID    string
-	version       string
-	origins       *originCache
-	enrichSession func(context.Context, string, string, *platforms.SessionDetail)
-	proxyEvents   func(context.Context, string, string, platforms.Platform, io.Writer, io.Writer, func()) error
+	registry          *platforms.Registry
+	sessions          *sessionsvc.Service
+	host              hostsvc.Host
+	inboxStore        *state.DB
+	instanceID        string
+	version           string
+	origins           *originCache
+	enrichSession     func(context.Context, string, string, *platforms.SessionDetail)
+	proxyEvents       func(context.Context, string, string, platforms.Platform, io.Writer, io.Writer, func()) error
+	webhookDispatcher webhook.RoutineDispatcher
 }
 
 // UseInboxStore installs the state store authoritative for this instance's Inbox.
 func (s *Server) UseInboxStore(store *state.DB) *Server {
 	s.inboxStore = store
+	return s
+}
+
+func (s *Server) UseWebhookDispatcher(dispatcher webhook.RoutineDispatcher) *Server {
+	s.webhookDispatcher = dispatcher
 	return s
 }
 
@@ -630,11 +636,13 @@ func (s *Server) RegisterWebhookInbox(ctx context.Context, req *pb.JsonReq) (*pb
 		RoutineID       string `json:"routineId"`
 		RelayURL        string `json:"relayUrl"`
 		EnrollmentToken string `json:"enrollmentToken"`
+		Secret          string `json:"secret"`
+		SecretHeader    string `json:"secretHeader"`
 	}
 	if err := unmarshalJSON(req.Payload, &input); err != nil {
 		return nil, err
 	}
-	inbox, err := webhook.Register(ctx, s.inboxStore, input.RoutineID, input.RelayURL, input.EnrollmentToken, nil)
+	inbox, err := webhook.RegisterWithSecret(ctx, s.inboxStore, input.RoutineID, input.RelayURL, input.EnrollmentToken, input.Secret, input.SecretHeader, nil)
 	return jsonResp(inbox, err)
 }
 
@@ -652,7 +660,7 @@ func (s *Server) PollWebhookInbox(ctx context.Context, req *pb.JsonReq) (*pb.Emp
 	if err != nil {
 		return nil, err
 	}
-	return &pb.Empty{}, (&webhook.Poller{Store: s.inboxStore, Inbox: inbox}).Poll(ctx)
+	return &pb.Empty{}, (&webhook.Poller{Store: s.inboxStore, Inbox: inbox, Routines: s.webhookDispatcher}).Poll(ctx)
 }
 
 func (s *Server) BeadsStatus(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {

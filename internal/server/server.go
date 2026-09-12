@@ -32,6 +32,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/telemetry"
 	"github.com/NoUseFreak/ocman/internal/term"
 	"github.com/NoUseFreak/ocman/internal/tmux"
+	"github.com/NoUseFreak/ocman/internal/webhook"
 	"github.com/NoUseFreak/ocman/internal/worker"
 )
 
@@ -308,6 +309,8 @@ func (s *Server) refreshProjectsIndexAsync() {
 // same hooks) the HTTP layer uses.
 func (s *Server) SessionService() *sessionsvc.Service { return s.sessions }
 
+func (s *Server) RoutineService() *routines.Service { return s.routineSvc }
+
 // newLocalHost builds the in-process hostsvc.Host, wiring the tmux,
 // projects, and capability operations that live in this package into the
 // dependency-injected local Host (which owns the the git package call
@@ -513,6 +516,15 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	if s.routineSvc != nil {
 		if err := s.routineSvc.Recover(context.WithoutCancel(ctx)); err != nil {
 			return fmt.Errorf("recovering routines: %w", err)
+		}
+	}
+	if s.stateDB != nil {
+		inboxes, err := s.stateDB.ListWebhookInboxes(context.WithoutCancel(ctx))
+		if err != nil {
+			return fmt.Errorf("loading webhook inboxes: %w", err)
+		}
+		for _, inbox := range inboxes {
+			go (&webhook.Poller{Store: s.stateDB, Inbox: inbox, Routines: s.routineSvc}).Run(ctx)
 		}
 	}
 
