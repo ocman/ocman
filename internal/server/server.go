@@ -124,6 +124,8 @@ type Server struct {
 	// means "use s.remotes"; tests override it to inject remote-tagged
 	// rows without a full remote.Manager.
 	remoteProjectsFn func() []db.ProjectStats
+	inboxSourcesFn   func() []string
+	inboxItemsFn     func(context.Context, string) ([]state.InboxItem, error)
 
 	routineSvc *routines.Service
 
