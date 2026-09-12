@@ -5,3 +5,6 @@
 .oc-epic-card-status--done { color: var(--green); }
 .oc-epic-card-status--idle { color: var(--text-dim); }
 .oc-epic-card-id { color: var(--text-dim); font: 11px var(--font-conversation-mono); overflow-wrap: anywhere; }
+.oc-factory-action-card { gap: 8px; min-width: min(300px, 100%); }
+.oc-factory-action-issue { display: grid; gap: 4px; border-top: 1px solid var(--border); padding-top: 8px; }
+.oc-factory-action-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

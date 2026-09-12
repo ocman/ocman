@@ -2,6 +2,21 @@ import type { FactoryEpic } from '../lib/api';
 
 const EPIC_PATH = /^\/factory\/epics\/([^/?#]+)$/;
 
+// Only local Factory links opt in. Model text never supplies an endpoint or executable payload.
+export function factoryActionFromHref(href?: string) {
+  if (!href?.startsWith('/factory/')) return undefined;
+  const url = new URL(href, 'http://ocman.local');
+  if (url.searchParams.get('human') !== '1') return undefined;
+  if (url.pathname === '/factory/overview') return { epicID: '', issueID: '' };
+  const match = EPIC_PATH.exec(url.pathname);
+  if (!match) return undefined;
+  try {
+    return { epicID: decodeURIComponent(match[1]), issueID: url.searchParams.get('issue') ?? '' };
+  } catch {
+    return undefined;
+  }
+}
+
 export function factoryEpicIDFromHref(href?: string) {
   return href ? EPIC_PATH.exec(href)?.[1] : undefined;
 }

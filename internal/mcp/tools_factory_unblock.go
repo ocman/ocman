@@ -30,7 +30,8 @@ func factoryUnblockServerTools(service any) []server.ServerTool {
 		mcplib.WithString("issue_id"),
 		mcplib.WithString("mutation_json"),
 	)
-	return []server.ServerTool{{Tool: tool, Handler: func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
+	return []server.ServerTool{{Tool: tool, Handler: func(ctx context.Context, req mcplib.CallToolRequest) (result *mcplib.CallToolResult, err error) {
+		defer func() { result = factoryHumanActionResult(ctx, nil, req, result) }()
 		action, err := req.RequireString("action")
 		if err != nil {
 			return mcplib.NewToolResultError("action is required"), nil

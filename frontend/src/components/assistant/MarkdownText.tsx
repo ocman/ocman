@@ -11,7 +11,8 @@ import type { ComponentProps, FC, ReactNode } from 'react';
 import { Link, useInRouterContext } from 'react-router-dom';
 import { LinkPreviewStrip } from '../GitHubLinkPreview';
 import { FactoryEpicCard } from '../FactoryEpicCard';
-import { factoryEpicIDFromHref } from '../factoryEpicStatus';
+import { FactoryActionCard } from '../FactoryActionCard';
+import { factoryActionFromHref, factoryEpicIDFromHref } from '../factoryEpicStatus';
 import { Modal } from '../Modal';
 
 let mermaidPromise: Promise<typeof import('mermaid')['default']> | undefined;
@@ -219,6 +220,8 @@ function MarkdownLink(props: any) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { node: _node, href, children, ...rest } = props;
   const routed = useInRouterContext();
+  const action = factoryActionFromHref(href);
+  if (action && routed) return <FactoryActionCard key={`${action.epicID}/${action.issueID}`} {...action} />;
   const epicID = factoryEpicIDFromHref(href);
   if (epicID && routed) return <FactoryEpicCard epicID={epicID}>{children}</FactoryEpicCard>;
   const internal = href?.startsWith('/');

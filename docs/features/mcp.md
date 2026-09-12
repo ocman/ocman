@@ -98,7 +98,18 @@ available through `mutate_graph`; `create` can create Epics after explicitly
 acknowledging local execution and uses the built-in tracer Formula. `save_formula`,
 `set_capacity_policy`, Plan decisions, recovery decisions, authority
 decisions, and `reopen_issue` (returning failed work to the queue) are
-refused; they stay in the Factory action inbox. `submit_proposal` additionally requires the active
+refused. Each permission denial returns a link the agent should include in its
+reply. Ocman renders it as a live epic or issue card with human action buttons.
+For example, `reopen_issue` with `epic_id` and `issue_id` produces a card with
+**Reopen issue** for failed or cancelled implementation work. Rendering the card
+does nothing; clicking the button uses the same human-action endpoint as the
+Factory action inbox. The card refreshes live state and reports action errors.
+It also offers planning, materialization, plan decisions, recovery, and authority
+decisions when available. Graph editing, formula editing, and capacity changes
+link to their existing Factory screens. Requests without a resolvable target
+show an action-inbox card with navigation to those screens.
+
+`submit_proposal` additionally requires the active
 Planning Attempt's `attempt_id` and `attempt_token`. Its manifest accepts an
 issue graph with `nodes` and typed `edges` (`blocks` or `on_failure`); legacy
 per-node `dependsOn` remains accepted for stored and older proposals.

@@ -11,6 +11,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/factory"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
+	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/mcptest"
 	"github.com/sirupsen/logrus"
 	logtest "github.com/sirupsen/logrus/hooks/test"
@@ -261,6 +262,56 @@ func TestFactoryActionRegistryKeepsHelpAndValidationConsistent(t *testing.T) {
 		if got.IsError != denied {
 			t.Fatalf("%s example = %q, error = %v", action, resultText(got), got.IsError)
 		}
+	}
+}
+
+func TestDeniedFactoryActionsOfferHumanCards(t *testing.T) {
+	svc := &fakeFactoryService{err: factory.ErrActionNotPermitted, epic: factory.WorkEpic{ID: "epic-1"}, issues: []factory.Issue{{ID: "gate-1"}}}
+	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{FactoryService: svc})...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(srv.Close)
+	for _, tc := range []struct {
+		args map[string]any
+		link string
+	}{
+		{map[string]any{"action": "pour", "epic_id": "epic-1"}, "/factory/epics/epic-1?human=1"},
+		{map[string]any{"action": "claim_plan", "epic_id": "epic-1", "issue_id": "epic-1.1"}, "/factory/epics/epic-1?human=1&issue=epic-1.1"},
+		{map[string]any{"action": "reopen_issue", "epic_id": "epic-1", "issue_id": "epic-1.3"}, "/factory/epics/epic-1?human=1&issue=epic-1.3"},
+		{map[string]any{"action": "reopen_issue"}, "/factory/overview?human=1"},
+		{map[string]any{"action": "create", "epic_id": "new-epic", "goal": "Ship", "initial_project": "/repo", "formula_id": "custom/team", "acknowledge_local_execution": true}, "/factory/overview?human=1"},
+		{map[string]any{"action": "approve_plan", "epic_id": "epic-1", "revision": 1, "expected_hash": "hash"}, "/factory/epics/epic-1?human=1"},
+		{map[string]any{"action": "revise_plan", "epic_id": "epic-1", "revision": 1, "expected_hash": "hash"}, "/factory/epics/epic-1?human=1"},
+		{map[string]any{"action": "reject_plan", "epic_id": "epic-1", "revision": 1, "expected_hash": "hash"}, "/factory/epics/epic-1?human=1"},
+		{map[string]any{"action": "resume_recovery", "recovery_gate_id": "gate-1", "response": "Use A"}, "/factory/epics/epic-1?human=1&issue=gate-1"},
+		{map[string]any{"action": "retry_recovery", "recovery_gate_id": "gate-1", "response": "Retry"}, "/factory/epics/epic-1?human=1&issue=gate-1"},
+		{map[string]any{"action": "cancel_recovery", "recovery_gate_id": "gate-1", "response": "Cancel"}, "/factory/epics/epic-1?human=1&issue=gate-1"},
+		{map[string]any{"action": "approve_authority", "authority_gate_id": "gate-1"}, "/factory/epics/epic-1?human=1&issue=gate-1"},
+		{map[string]any{"action": "reject_authority", "authority_gate_id": "gate-1"}, "/factory/epics/epic-1?human=1&issue=gate-1"},
+		{map[string]any{"action": "approve_authority", "authority_gate_id": "missing"}, "/factory/overview?human=1"},
+		{map[string]any{"action": "save_formula", "formula_id": "custom/team", "formula_source": "version = 1"}, "/factory/overview?human=1"},
+		{map[string]any{"action": "set_capacity_policy", "global_capacity": 1, "project_capacity": 1, "project_overrides": map[string]any{}}, "/factory/overview?human=1"},
+		{map[string]any{"action": "mutate_graph", "mutation_json": `{"action":"unlink","epicId":"epic-1","issueId":"epic-1.3","dependsOnId":"epic-1.2"}`}, "/factory/epics/epic-1?human=1&issue=epic-1.3"},
+		{map[string]any{"action": "pour", "epic_id": "a)b", "issue_id": "x&y"}, "/factory/epics/a%29b?human=1&issue=x%26y"},
+	} {
+		t.Run(tc.args["action"].(string)+tc.link, func(t *testing.T) {
+			got := callTool(t, srv, "factory", tc.args)
+			if !got.IsError || len(got.Content) != 2 {
+				t.Fatalf("denied result = %#v", got)
+			}
+			card := got.Content[1].(mcplib.TextContent).Text
+			if !strings.Contains(card, tc.link) || !strings.Contains(card, "human") {
+				t.Fatalf("card = %q, want %q", card, tc.link)
+			}
+		})
+	}
+	if svc.reopenedEpicID != "" {
+		t.Fatal("denied MCP call reopened work")
+	}
+	got := callTool(t, srv, "factory_unblock", map[string]any{"action": "reopen", "epic_id": "epic-1", "issue_id": "epic-1.3", "unblock_token": "wrong"})
+	if !got.IsError || len(got.Content) != 2 || !strings.Contains(got.Content[1].(mcplib.TextContent).Text, "/factory/epics/epic-1?human=1&issue=epic-1.3") {
+		t.Fatalf("unblock denial = %#v", got)
 	}
 }
 
