@@ -1342,3 +1342,17 @@
 }
 
 @media print { .oc-ai-approval-detail { max-width: none; box-shadow: none; } }
+.oc-skill-called {
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+.oc-skill-called > summary {
+  cursor: pointer;
+  color: var(--text-dim);
+}
+
+.oc-skill-called[open] > summary {
+  margin-bottom: 12px;
+}

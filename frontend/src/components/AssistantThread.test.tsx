@@ -78,7 +78,9 @@ vi.mock('@assistant-ui/react', async () => {
     },
     MessagePrimitive: {
       Root,
-      Content: () => <div>Reply</div>,
+      Content: ({ components }: { components: { Text: React.ComponentType<{ text: string }> } }) => (
+        <>{message.content.map((part, index) => <components.Text key={index} text={part.text} />)}</>
+      ),
     },
     useMessage: (selector: (value: typeof message) => unknown) => selector(message),
   };
@@ -98,13 +100,59 @@ class StubResizeObserver {
 }
 
 beforeEach(() => {
+  Element.prototype.scrollTo = vi.fn();
   vi.stubGlobal('ResizeObserver', StubResizeObserver);
   useUiStore.getState().setShowMessageMetadata(false);
   threadState.renderUser = false;
+  message.content = [{ type: 'text', text: 'Reply' }];
   turnStats.promptCacheRebuilt = false;
   message.metadata.custom = { model: 'openai/gpt-5', time: { created: 1000, completed: 2000 }, tokens: { output: 10 } };
 });
 afterEach(() => vi.unstubAllGlobals());
+
+describe('AssistantThread slash-command skills', () => {
+  const instructions = '# Review Pull Request\n\nReview the changes carefully.\n\nBase directory for this skill: /home/user/.config/opencode/skills/review-pr\nRelative paths in this skill (e.g., scripts/, references/) are relative to this base directory.';
+
+  it('collapses skill instructions and lets the user expand them', async () => {
+    const user = userEvent.setup();
+    threadState.renderUser = true;
+    message.content = [{ type: 'text', text: instructions + '\n\nReview PR 42' }];
+    render(<AssistantThread />);
+
+    const summary = screen.getByText('Skill called: /review-pr');
+    const details = summary.closest('details');
+    expect(details).not.toHaveAttribute('open');
+    expect(details?.textContent).toContain(instructions);
+    expect(screen.getByText('Review PR 42').closest('details')).toBeNull();
+    await user.click(summary);
+    expect(details).toHaveAttribute('open');
+    await user.click(summary);
+    expect(details).not.toHaveAttribute('open');
+  });
+
+  it('keeps ordinary user text and partial footer mentions as plain text', () => {
+    threadState.renderUser = true;
+    const text = 'Explain this line:\nBase directory for this skill: /home/user/skills/review-pr';
+    message.content = [{ type: 'text', text }];
+    const { container } = render(<AssistantThread />);
+    expect(container.querySelector('details')).toBeNull();
+    expect(container.textContent).toContain(text);
+  });
+
+  it('collapses a skill without arguments and with CRLF line endings', () => {
+    threadState.renderUser = true;
+    message.content = [{ type: 'text', text: instructions.replaceAll('\n', '\r\n') }];
+    render(<AssistantThread />);
+    expect(screen.getByText('Skill called: /review-pr').closest('details')).not.toHaveAttribute('open');
+  });
+
+  it('does not collapse skill text quoted by the assistant', () => {
+    message.content = [{ type: 'text', text: instructions }];
+    render(<AssistantThread />);
+    expect(screen.queryByText('Skill called: /review-pr')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Review Pull Request' })).toBeInTheDocument();
+  });
+});
 
 describe('AssistantThread attached images', () => {
   it('expands an attached image from the keyboard', async () => {

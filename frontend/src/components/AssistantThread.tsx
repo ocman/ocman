@@ -94,6 +94,20 @@ export const ImageDisplay: FC<{ image: string; filename?: string }> = ({ image, 
 
 const UserTextPart: FC<{ text: string }> = ({ text }) => {
   if (!text.trim()) return null;
+  // Slash-command skills arrive as plain user text with this generated footer.
+  const skill = /^Base directory for this skill: [^\r\n]+[/\\]([^/\\\r\n]+)\r?\nRelative paths in this skill [^\r\n]*are relative to this base directory\./m.exec(text);
+  if (skill) {
+    const end = skill.index + skill[0].length;
+    return (
+      <>
+        <details className="oc-skill-called">
+          <summary>Skill called: /{skill[1]}</summary>
+          <div style={{ whiteSpace: 'pre-wrap' }}>{text.slice(0, end)}</div>
+        </details>
+        <UserTextPart text={text.slice(end)} />
+      </>
+    );
+  }
   return (
     <>
       <span style={{ whiteSpace: 'pre-wrap' }}>{text}</span>
