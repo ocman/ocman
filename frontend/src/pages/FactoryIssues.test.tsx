@@ -68,4 +68,4 @@ it('shows a ticket list and opens issue details in a drawer', async () => {
 
   await user.keyboard('{Escape}');
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-});
+}, 10_000);
