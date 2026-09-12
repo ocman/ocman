@@ -63,6 +63,7 @@ comes from a template you control in **Settings**.
   {{< card link="multi-remote" title="Multi-remote" subtitle="Attach other ocman instances and manage every machine from one dashboard." >}}
   {{< card link="mcp" title="MCP server" subtitle="Factory, Inbox, routine, session inspection, and file display tools." >}}
   {{< card link="routines" title="Routines" subtitle="Save a project prompt, run it now, or schedule it in a fresh session." >}}
+  {{< card link="webhooks" title="Encrypted webhooks" subtitle="Queue provider requests safely while owners or relays are offline." >}}
 {{< /cards >}}
 
 ## Also included

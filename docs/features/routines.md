@@ -82,8 +82,8 @@ Scheduled runs use the same session behavior as manual runs.
   occurrence in that timezone after the previous run settles.
 
 The scheduler checks due routines every five seconds. Disable a routine to
-stop automatic runs without deleting it. Webhook triggers are deferred and
-are not supported.
+stop automatic runs without deleting it. Webhook delivery polling is
+independent of the scheduler and runs on the owner of the inbox.
 
 ## Completion and history
 

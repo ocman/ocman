@@ -52,6 +52,7 @@ flowchart LR
     Ocman -->|exec| Shell[git / tmux / lsof / bd<br/>host tools]
     Ocman -->|REST| APIs[GitHub / Forgejo<br/>provider usage APIs]
     Ocman <-->|gRPC + token| Remotes[Remote ocman<br/>instances]
+    Ocman -->|encrypted webhook poll| Relay[ocman-relay<br/>ciphertext persistence]
     Ocman -.->|OTLP, optional| Otel[Telemetry collector]
 ```
 
@@ -69,6 +70,12 @@ flowchart LR
   their sessions and hosts transparently. The owning remote enriches session
   detail with its persisted approvals and tees synthetic approval events into
   the gRPC event stream before the hub forwards them to the browser.
+- **Encrypted webhooks.** Providers submit plaintext to the relay's ingestion
+  URL, where ocman encrypts a versioned age X25519 envelope. The relay
+  persists ciphertext plus visible size/timing metadata; the owning local or
+  remote ocman decrypts it, durably accepts it in `state.db`, claims routine
+  dispatches, then acknowledges the relay. A lost acknowledgment is retried
+  without duplicate scheduling.
 
 ## 2. Backend composition
 
@@ -157,7 +164,8 @@ flowchart TD
   `sessionsvc`, and leave the run active until platform-neutral session status
   reports success or failure. Startup resumes observation of linked runs.
   Timeout schedules become an absolute due time when saved. Cron schedules
-  use a five-field expression and IANA timezone. Webhooks are deferred.
+  use a five-field expression and IANA timezone. Webhook polling is an
+  independent owner-local/remote delivery loop.
 - **Legacy Workflow storage.** The `workflow_*` tables remain in `state.db` as
   inert historical data. No API, MCP tool, UI, or scheduler reads them. A DAG
   cannot be converted losslessly to one routine prompt, so recovery is a
