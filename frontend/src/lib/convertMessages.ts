@@ -561,6 +561,7 @@ export function createConvertMessages(): ConvertMessagesFn {
       if (pd.type === 'step-start' || pd.type === 'step-finish' || pd.type === 'snapshot') return;
 
       const toolCallsBefore = toolCalls.length;
+      const toolCallId = pd.callID || msgPartsRaw[partIdx]?.id || `${m.id}-${partIdx}`;
       switch (pd.type) {
         case 'text':
           if (pd.text?.trim()) {
@@ -572,7 +573,7 @@ export function createConvertMessages(): ConvertMessagesFn {
           }
           break;
         case 'tool': {
-          const { toolCall, images } = convertToolPart(toolCtx, pd, partIdx, toolCalls.length);
+          const { toolCall, images } = convertToolPart(toolCtx, pd, partIdx, toolCallId);
           toolCalls.push(toolCall);
           imageParts.push(...images);
           break;
@@ -610,7 +611,7 @@ export function createConvertMessages(): ConvertMessagesFn {
         default:
           // Unrecognized part types render as tool-like operations so
           // they still appear in the UI.
-          toolCalls.push(convertUnknownPart(toolCtx, pd, partIdx, toolCalls.length));
+          toolCalls.push(convertUnknownPart(toolCtx, pd, partIdx, toolCallId));
           break;
       }
 

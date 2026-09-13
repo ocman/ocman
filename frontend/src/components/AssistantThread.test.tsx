@@ -19,7 +19,7 @@ vi.hoisted(() => {
 const { message, threadState, turnStats } = vi.hoisted(() => ({
   message: {
     id: 'assistant-1',
-    content: [{ type: 'text', text: 'Reply' }],
+    content: [{ type: 'text', text: 'Reply' }] as Array<{ type: string; text?: string; [key: string]: unknown }>,
     createdAt: new Date('2026-07-16T12:00:00Z'),
     status: { type: 'complete' },
     metadata: { custom: { model: 'openai/gpt-5', time: { created: 1000, completed: 2000 }, tokens: { output: 10 } } as Record<string, unknown> },
@@ -78,8 +78,10 @@ vi.mock('@assistant-ui/react', async () => {
     },
     MessagePrimitive: {
       Root,
-      Content: ({ components }: { components: { Text: React.ComponentType<{ text: string }> } }) => (
-        <>{message.content.map((part, index) => <components.Text key={index} text={part.text} />)}</>
+      Content: ({ components }: { components: { Text: React.ComponentType<{ text: string }>; tools?: { Fallback: React.ComponentType<Record<string, unknown>> } } }) => (
+        <>{message.content.map((part, index) => part.type === 'tool-call' && components.tools
+          ? <components.tools.Fallback key={index} {...part} />
+          : <components.Text key={index} text={part.text ?? ''} />)}</>
       ),
     },
     useMessage: (selector: (value: typeof message) => unknown) => selector(message),
@@ -207,6 +209,20 @@ describe('AssistantThread message jumps', () => {
       'data-scroll-on-run-start',
       'false',
     );
+  });
+
+  it('reveals and highlights only the requested tool call', async () => {
+    message.content = [
+      { type: 'tool-call', toolCallId: 'call-1', toolName: 'bash', argsText: 'completed\necho first', result: 'first' },
+      { type: 'tool-call', toolCallId: 'call-2', toolName: 'bash', argsText: 'completed\ngit commit', result: Array.from({ length: 13 }, (_, i) => `line ${i}`).join('\n') },
+    ];
+    const { container } = render(<AssistantThread scrollToToolCall={{ messageId: 'assistant-1', toolCallId: 'call-2', tick: 1 }} />);
+
+    expect(screen.getByRole('button', { name: 'Collapse output' })).toHaveAttribute('aria-expanded', 'true');
+    await vi.waitFor(() => expect(container.querySelector('[data-tool-call-id="call-2"]')?.firstElementChild).toHaveClass('oc-msg-scroll-highlight'));
+    expect(container.querySelector('[data-tool-call-id="call-1"]')?.firstElementChild).not.toHaveClass('oc-msg-scroll-highlight');
+    expect(container.querySelector('[data-tool-call-id="call-2"]')?.firstElementChild).toHaveFocus();
+    expect(Element.prototype.scrollTo).toHaveBeenCalled();
   });
 });
 

@@ -355,17 +355,25 @@ function ApprovalFootnote({ approvals }: { approvals: ToolApproval[] }) {
  */
 export const ToolCallDisplay: FC<ToolCallMessagePartProps> = (props) => {
   const approvals = toolApprovals(props.artifact);
+  let body: React.ReactNode;
   if (props.toolName === 'ocman:auto-approved') {
     const aiApprovals = approvals.filter((approval) => approval.approvedBy === 'ai');
-    return aiApprovals.length > 0
+    body = aiApprovals.length > 0
       ? <ApprovalFootnote approvals={aiApprovals} />
       : <ToolCallBody {...props} />;
+  } else if (approvals.length === 0) {
+    body = <ToolCallBody {...props} />;
+  } else {
+    body = (
+      <div className="oc-tool-with-footnote">
+        <ToolCallBody {...props} />
+        <ApprovalFootnote approvals={approvals} />
+      </div>
+    );
   }
-  if (approvals.length === 0) return <ToolCallBody {...props} />;
   return (
-    <div className="oc-tool-with-footnote">
-      <ToolCallBody {...props} />
-      <ApprovalFootnote approvals={approvals} />
+    <div className="oc-tool-source" data-tool-call-id={props.toolCallId}>
+      {body}
     </div>
   );
 };

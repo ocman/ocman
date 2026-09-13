@@ -9,7 +9,7 @@ import { onSessionChanged } from '../lib/useGlobalEvents';
 import { ChangesRefreshButton, type PaneSummary } from './SessionChangesSidebar';
 import { TodoList } from './TodoList';
 import { SessionSection, TokensSection, CommitsSection, LiveSection } from './SessionInfoSections';
-import type { Session } from '../lib/api';
+import type { Session, SessionInfoCommit } from '../lib/api';
 import type { TodoItem } from '../lib/todos';
 
 // SessionInfoSidebar mirrors the structure of SessionChangesSidebar /
@@ -66,6 +66,8 @@ interface SessionInfoSidebarProps {
   onRefresh?: (refresh: () => void) => void;
   // Called whenever the underlying request's loading flag flips.
   onLoadingChange?: (loading: boolean) => void;
+  onNavigateCommit?: (commit: SessionInfoCommit) => void;
+  commitSourceStatus?: string | null;
 }
 
 export function SessionInfoSidebar({
@@ -77,6 +79,8 @@ export function SessionInfoSidebar({
   onSummaryChange,
   onRefresh,
   onLoadingChange,
+  onNavigateCommit,
+  commitSourceStatus,
 }: SessionInfoSidebarProps) {
   const caps = usePlatformCapabilities(platformId);
   // Commit observations are owner-state data, independent of the
@@ -220,7 +224,9 @@ export function SessionInfoSidebar({
       {liveEnabled && loading && !data ? (
         <section className="oc-info-section"><div className="oc-info-empty">Loading commits...</div></section>
       ) : null}
-      {data?.commitCaptureSupported ? <CommitsSection commits={data.commits ?? []} /> : null}
+      {data?.commitCaptureSupported ? (
+        <CommitsSection commits={data.commits ?? []} onNavigateCommit={onNavigateCommit} sourceStatus={commitSourceStatus} />
+      ) : null}
       {todoSection}
       {tokensSection}
       {liveSection}

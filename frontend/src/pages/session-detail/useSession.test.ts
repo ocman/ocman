@@ -231,6 +231,47 @@ describe('useSession — initial load', () => {
     expect(result.current.parts[0]?.messageId).toBe('old');
   });
 
+  it('keeps live messages when fetched jump history is hydrated', async () => {
+    const kept = { id: 'kept', sessionId: SID, timeCreated: 1_000, data: { role: 'assistant' as const } };
+    const live = { id: 'live', sessionId: SID, timeCreated: 2_000, data: { role: 'assistant' as const } };
+    const livePart = { id: 'live-part', messageId: 'live', sessionId: SID, data: { type: 'text', text: 'live result' } };
+    const detail = makeDetail({ messages: [kept, live], parts: [livePart] });
+    const { result } = renderHook(() => useSession(SID, { fetchSession: vi.fn().mockResolvedValue(detail) }));
+    await waitFor(() => expect(result.current.session?.id).toBe(SID));
+
+    act(() => result.current.hydrateHistory(
+      [{ ...kept, data: { role: 'assistant', finish: 'stale' } }, { id: 'middle', sessionId: SID, timeCreated: 1_500, data: { role: 'user' } }, { ...live, data: { role: 'assistant', finish: 'stale' } }],
+      [{ id: 'old-part', messageId: 'old', sessionId: SID, data: { type: 'text', text: 'old' } }, { ...livePart, data: { type: 'text', text: 'stale' } }],
+    ));
+
+    expect(result.current.messages.map((message) => message.id)).toEqual(['kept', 'middle', 'live']);
+    expect(result.current.messages[0].data).not.toHaveProperty('finish');
+    expect(result.current.messages[2].data).not.toHaveProperty('finish');
+    expect(result.current.parts.find((part) => part.id === 'live-part')?.data).toEqual(livePart.data);
+  });
+
+  it('retains a protected jump target when hydrated history exceeds the memory limit', async () => {
+    const detail = makeDetail({ messages: [{ id: 'latest', sessionId: SID, timeCreated: 300, data: { role: 'assistant' } }] });
+    const { result } = renderHook(() => useSession(SID, {
+      fetchSession: vi.fn().mockResolvedValue(detail),
+      maxMessages: 200,
+      trimTo: 150,
+      protectedMessageId: 'oldest',
+    }));
+    await waitFor(() => expect(result.current.session?.id).toBe(SID));
+    const history = Array.from({ length: 201 }, (_, index) => ({
+      id: index === 0 ? 'oldest' : `m-${index}`,
+      sessionId: SID,
+      timeCreated: index,
+      data: { role: 'assistant' as const },
+    }));
+
+    act(() => result.current.hydrateHistory(history, []));
+
+    await waitFor(() => expect(result.current.messages).toHaveLength(150));
+    expect(result.current.messages.some((message) => message.id === 'oldest')).toBe(true);
+  });
+
   it('skips when id is undefined', () => {
     const fetchSession = vi.fn();
     const { result } = renderHook(() => useSession(undefined, { fetchSession }));

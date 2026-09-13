@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { flushPromises, makeSession, makeSessionDetail, renderSessionPage } from './harness';
 import { useUiStore } from '../../../lib/uiStore';
+import type { SessionInfo } from '../../../lib/api';
 
 let slot: HTMLDivElement;
 let navigationSlot: HTMLSpanElement;
@@ -99,6 +100,31 @@ describe('SessionDetail — phone overlay panels', () => {
 
     fireEvent.click(screen.getByTestId('mobile-details-toggle'));
     expect(useUiStore.getState().changesSidebarOpenTabs).toEqual(['session']);
+  });
+
+  it('closes details after jumping to a commit source', async () => {
+    useUiStore.setState({ changesSidebarOpenTabs: ['info'] });
+    const session = makeSession();
+    const detail = makeSessionDetail(session, {
+      messages: [{ id: 'message-1', sessionId: session.id, timeCreated: 1, data: { role: 'assistant' } }],
+      parts: [{ id: 'part-1', messageId: 'message-1', sessionId: session.id, data: { type: 'tool', tool: 'bash', callID: 'call-1', state: { status: 'completed' } } }],
+    });
+    const sessionInfo: SessionInfo = {
+      sessionId: session.id, supported: false,
+      context: { tokens: 0, cost: 0, estCost: 0 },
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      messages: { user: 0, assistant: 0 }, mcpServers: [], lspServers: [],
+      commitCaptureSupported: true,
+      commits: [{ order: 1, sha: 'abc1234', branch: 'main', subject: 'Close details', sourceMessageId: 'message-1', toolPartId: 'part-1', toolCallId: 'call-1', observedAt: 1 }],
+    };
+    renderSessionPage({ detail, sessionInfo });
+    await screen.findByTestId('assistant-thread');
+    fireEvent.click(screen.getByTestId('mobile-details-toggle'));
+    expect(screen.getByTestId('session-layout')).toHaveClass('mobile-details-open');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open source call for commit abc1234: Close details' }));
+
+    expect(screen.getByTestId('session-layout')).not.toHaveClass('mobile-details-open');
   });
 
   it('closes an open overlay on an external route change (palette, redirect)', async () => {

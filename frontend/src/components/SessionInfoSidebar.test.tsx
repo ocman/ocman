@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { SessionInfoSidebar } from './SessionInfoSidebar';
 import type { Session } from '../lib/api';
@@ -32,10 +33,10 @@ function makeSession(overrides: Partial<Session> = {}): Session {
   };
 }
 
-function renderSidebar(session: Session) {
+function renderSidebar(session: Session, onNavigateCommit?: Parameters<typeof SessionInfoSidebar>[0]['onNavigateCommit']) {
   return render(
     <MemoryRouter>
-      <SessionInfoSidebar sessionId={session.id} platformId="opencode" session={session} />
+      <SessionInfoSidebar sessionId={session.id} platformId="opencode" session={session} onNavigateCommit={onNavigateCommit} />
     </MemoryRouter>,
   );
 }
@@ -67,8 +68,8 @@ describe('SessionInfoSidebar commits', () => {
       messages: { user: 0, assistant: 0 }, mcpServers: [], lspServers: [],
       commitCaptureSupported: true,
       commits: [
-        { order: 1, sha: 'abcdef123', branch: 'feature/x', subject: 'Add capture' },
-        { order: 2, sha: '123456789', branch: null, subject: 'Detached work' },
+        { order: 1, sha: 'abcdef123', branch: 'feature/x', subject: 'Add capture', sourceMessageId: 'm1', toolPartId: 'p1', toolCallId: 'c1', observedAt: 1 },
+        { order: 2, sha: '123456789', branch: null, subject: 'Detached work', sourceMessageId: 'm2', toolPartId: 'p2', toolCallId: 'c2', observedAt: 2 },
       ],
     };
     renderSidebar(makeSession());
@@ -77,6 +78,27 @@ describe('SessionInfoSidebar commits', () => {
     expect(screen.getByText('feature/x')).toBeInTheDocument();
     expect(screen.getByText('Detached HEAD')).toBeInTheDocument();
     expect(screen.getByText('Detached work')).toBeInTheDocument();
+    sessionInfoResult.data = null;
+  });
+
+  it('opens a commit source with keyboard activation', async () => {
+    const user = userEvent.setup();
+    const onNavigateCommit = vi.fn();
+    sessionInfoResult.data = {
+      sessionId: 's', supported: false,
+      context: { tokens: 0, cost: 0, estCost: 0 },
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      messages: { user: 0, assistant: 0 }, mcpServers: [], lspServers: [],
+      commitCaptureSupported: true,
+      commits: [{ order: 1, sha: 'abcdef123', branch: 'main', subject: 'Ship it', sourceMessageId: 'm1', toolPartId: 'p1', toolCallId: 'c1', observedAt: 1 }],
+    };
+    renderSidebar(makeSession(), onNavigateCommit);
+
+    await user.tab();
+    const button = screen.getByRole('button', { name: 'Open source call for commit abcdef1: Ship it' });
+    expect(button).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(onNavigateCommit).toHaveBeenCalledWith(expect.objectContaining({ toolPartId: 'p1', toolCallId: 'c1' }));
     sessionInfoResult.data = null;
   });
 

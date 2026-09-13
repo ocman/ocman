@@ -508,6 +508,7 @@ export interface FilePart {
 
 export interface PartData {
   type: string;
+  callID?: string;
   text?: string;
   tool?: string;
   /** OpenCode tool execution timestamps, present on live SSE snapshots. */

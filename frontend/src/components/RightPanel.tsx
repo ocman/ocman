@@ -10,7 +10,7 @@ import { SessionInfoSidebar } from './SessionInfoSidebar';
 import { UpstreamPane } from './upstream/UpstreamPane';
 import { ErrorBoundary } from './ErrorBoundary';
 import { useUpstreams } from '../lib/useUpstreams';
-import type { Session } from '../lib/api';
+import type { Session, SessionInfoCommit } from '../lib/api';
 import type { MessageBookmark, MessageBookmarkGroup } from '../lib/messageBookmarks';
 import { MessageBookmarksPane } from './MessageBookmarksPane';
 import { BeadsPane } from './BeadsPane';
@@ -53,6 +53,8 @@ interface RightPanelProps {
   selectedMessageBookmarkKey: string | null;
   onRemoveMessageBookmark: (bookmark: MessageBookmark) => void;
   onScrollToMessageBookmark: (bookmark: MessageBookmark) => void;
+  onNavigateCommit?: (commit: SessionInfoCommit) => void;
+  commitSourceStatus?: string | null;
 }
 
 const TAB_LABELS: Record<ChangesSidebarTab, string> = {
@@ -145,6 +147,8 @@ export function RightPanel({
   selectedMessageBookmarkKey,
   onRemoveMessageBookmark,
   onScrollToMessageBookmark,
+  onNavigateCommit,
+  commitSourceStatus,
 }: RightPanelProps) {
   const openTabs = useUiStore((s) => s.changesSidebarOpenTabs);
   const sizes = useUiStore((s) => s.changesSidebarTabSizes);
@@ -311,6 +315,8 @@ export function RightPanel({
             selectedMessageBookmarkKey={selectedMessageBookmarkKey}
             onRemoveMessageBookmark={onRemoveMessageBookmark}
             onScrollToMessageBookmark={onScrollToMessageBookmark}
+            onNavigateCommit={onNavigateCommit}
+            commitSourceStatus={commitSourceStatus}
             upstreams={upstreamsResult.upstreams}
             upstreamLoading={upstreamsResult.loading}
             upstreamError={upstreamsResult.error}
@@ -437,6 +443,8 @@ interface PaneProps {
   selectedMessageBookmarkKey: string | null;
   onRemoveMessageBookmark: (bookmark: MessageBookmark) => void;
   onScrollToMessageBookmark: (bookmark: MessageBookmark) => void;
+  onNavigateCommit?: (commit: SessionInfoCommit) => void;
+  commitSourceStatus?: string | null;
   // Upstream remotes for the current project. Only the 'upstream' pane
   // consumes this; the other panes ignore it. Resolved at RightPanel
   // level so we don't re-detect per pane.
@@ -466,6 +474,8 @@ function Pane({
   selectedMessageBookmarkKey,
   onRemoveMessageBookmark,
   onScrollToMessageBookmark,
+  onNavigateCommit,
+  commitSourceStatus,
   upstreams,
   upstreamLoading,
   upstreamError,
@@ -549,6 +559,8 @@ function Pane({
               onSummaryChange={handleSummary}
               onRefresh={handleRefresh}
               onLoadingChange={handleLoadingChange}
+              onNavigateCommit={onNavigateCommit}
+              commitSourceStatus={commitSourceStatus}
             />
           )}
           {tab === 'session' && (

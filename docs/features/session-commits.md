@@ -33,3 +33,13 @@ persistence, the owner sends a change notice through the active session event
 stream so the browser refreshes Session Info. Capture does not depend on that
 stream or an open browser. Older owners that do not report commit-capture
 support leave the Commits section hidden.
+
+Select a commit in Session Info to jump to the bash call that produced it.
+Ocman opens collapsed output and highlights the exact call, including when one
+assistant message contains several tool calls. If the message is older than the
+loaded transcript window, ocman fetches that session's history from its owner
+only after selection. History reads do not create commit observations.
+
+The recorded commit remains in Session Info if its source message or tool call
+was deleted. In that case ocman reports that the source is no longer available
+instead of jumping to another call.

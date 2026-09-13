@@ -25,6 +25,7 @@ import type {
   SessionDetail as SessionDetailPayload,
   AgentInfo,
   PlatformCapabilities,
+  SessionInfo,
 } from '../../../lib/api';
 
 /**
@@ -144,11 +145,13 @@ const mockState: {
   apiStub: ReturnType<typeof makeApiStub>;
   assistantThreadCrashMessage: string | null;
   assistantThreadCrashCount: number;
+  sessionInfo: SessionInfo | null;
 } = {
   caps: fullCaps(),
   apiStub: makeApiStub(),
   assistantThreadCrashMessage: null,
   assistantThreadCrashCount: 0,
+  sessionInfo: null,
 };
 
 /**
@@ -253,7 +256,7 @@ vi.mock('../../../lib/useSessionChanges', () => ({
 
 vi.mock('../../../lib/useSessionInfo', () => ({
   useSessionInfo: () => ({
-    data: null,
+    data: mockState.sessionInfo,
     loading: false,
     error: null,
     refresh: vi.fn(),
@@ -285,12 +288,14 @@ vi.mock('../../../components/AssistantThread', () => ({
     hasMore,
     scrollToMessageId,
     scrollToMessageTick,
+    scrollToToolCall,
   }: {
     composer?: React.ReactNode;
     footer?: React.ReactNode;
     hasMore?: boolean;
     scrollToMessageId?: string | null;
     scrollToMessageTick?: number;
+    scrollToToolCall?: { messageId: string; toolCallId: string; tick: number } | null;
   }) => {
     if (mockState.assistantThreadCrashCount > 0) {
       mockState.assistantThreadCrashCount -= 1;
@@ -302,6 +307,7 @@ vi.mock('../../../components/AssistantThread', () => ({
         <div data-testid="assistant-thread-has-more">{String(hasMore)}</div>
         <div data-testid="assistant-thread-scroll-target">{scrollToMessageId || ''}</div>
         <div data-testid="assistant-thread-scroll-tick">{scrollToMessageTick || 0}</div>
+        <div data-testid="assistant-thread-tool-target">{scrollToToolCall ? `${scrollToToolCall.messageId}:${scrollToToolCall.toolCallId}:${scrollToToolCall.tick}` : ''}</div>
         <div data-testid="assistant-thread-composer">{composer}</div>
         <div data-testid="assistant-thread-footer">{footer}</div>
       </div>
@@ -403,6 +409,7 @@ export interface RenderOptions {
   caps?: PlatformCapabilities;
   assistantThreadCrashMessage?: string;
   assistantThreadCrashCount?: number;
+  sessionInfo?: SessionInfo | null;
   /** Override apiStore actions individually. */
   storeOverrides?: Record<string, unknown>;
   /** Override module-level api.* functions (e.g. `session`). The
@@ -456,6 +463,7 @@ export function renderSessionPage(opts: RenderOptions = {}): RenderHandle {
   mockState.apiStub = makeApiStub();
   mockState.assistantThreadCrashMessage = opts.assistantThreadCrashMessage ?? null;
   mockState.assistantThreadCrashCount = opts.assistantThreadCrashCount ?? 0;
+  mockState.sessionInfo = opts.sessionInfo ?? null;
 
   const detail =
     opts.detail ?? makeSessionDetail(makeSession({ id: opts.sessionId ?? 'sess_1' }));

@@ -155,7 +155,15 @@ export function TokensSection({
   );
 }
 
-export function CommitsSection({ commits }: { commits: NonNullable<SessionInfo['commits']> }) {
+export function CommitsSection({
+  commits,
+  onNavigateCommit,
+  sourceStatus,
+}: {
+  commits: NonNullable<SessionInfo['commits']>;
+  onNavigateCommit?: (commit: NonNullable<SessionInfo['commits']>[number]) => void;
+  sourceStatus?: string | null;
+}) {
   return (
     <section className="oc-info-section">
       <h3 className="oc-info-section-header">Commits</h3>
@@ -164,16 +172,25 @@ export function CommitsSection({ commits }: { commits: NonNullable<SessionInfo['
       ) : (
         <ul className="oc-info-list">
           {commits.map((commit) => (
-            <li key={commit.order} className="oc-info-commit">
-              <div className="oc-info-commit-meta">
-                <code>{commit.sha.slice(0, 7)}</code>
-                <span>{commit.branch ?? 'Detached HEAD'}</span>
-              </div>
-              <div className="oc-info-commit-subject">{commit.subject}</div>
+            <li key={commit.order}>
+              <button
+                type="button"
+                className="oc-info-commit"
+                aria-label={`Open source call for commit ${commit.sha.slice(0, 7)}: ${commit.subject}`}
+                onClick={() => onNavigateCommit?.(commit)}
+                disabled={!onNavigateCommit}
+              >
+                <span className="oc-info-commit-meta">
+                  <code>{commit.sha.slice(0, 7)}</code>
+                  <span>{commit.branch ?? 'Detached HEAD'}</span>
+                </span>
+                <span className="oc-info-commit-subject">{commit.subject}</span>
+              </button>
             </li>
           ))}
         </ul>
       )}
+      {sourceStatus ? <div className="oc-info-empty" role="status">{sourceStatus}</div> : null}
     </section>
   );
 }

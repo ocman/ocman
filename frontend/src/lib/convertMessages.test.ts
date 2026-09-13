@@ -583,6 +583,16 @@ describe('isSynthesizedTerminal', () => {
 });
 
 describe('convertMessages', () => {
+  it('keeps the persisted tool call identity for source navigation', () => {
+    const [result] = convertMessages(
+      [makeMessage('m1', { role: 'assistant' })],
+      [makePart('m1', { type: 'tool', tool: 'bash', callID: 'call-1', state: { status: 'completed', input: { command: 'git commit' } } }, 'part-1')],
+    );
+
+    const call = asContentArray(result.content).find((part) => part.type === 'tool-call');
+    expect(call?.type === 'tool-call' && call.toolCallId).toBe('call-1');
+  });
+
   it('marks an assistant message with a completion timestamp complete', () => {
     const [result] = convertMessages([
       makeMessage('m1', { role: 'assistant', time: { created: 1, completed: 2 } }),

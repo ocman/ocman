@@ -127,10 +127,10 @@ function diffResult(filePath: string, before: string, after: string): string {
 }
 
 /** Muted one-line tool call (`__read__` / `__skill__` renderers). */
-function mutedLine(ctx: ToolPartContext, toolName: string, renderer: '__read__' | '__skill__', text: string, callIndex: number): ToolCallItem {
+function mutedLine(renderer: '__read__' | '__skill__', text: string, toolCallId: string): ToolCallItem {
   return {
     type: 'tool-call',
-    toolCallId: `${ctx.messageId}-${toolName}-${callIndex}`,
+    toolCallId,
     toolName: renderer,
     argsText: text,
     result: undefined,
@@ -150,7 +150,7 @@ function renderSpecialTool(
   argsText: string,
   title: string,
   partIdx: number,
-  callIndex: number,
+  toolCallId: string,
 ): ToolCallItem | null {
   switch (toolName) {
     case 'read':
@@ -163,7 +163,7 @@ function renderSpecialTool(
       if (inp.offset) params.push(`offset=${inp.offset}`);
       if (inp.limit) params.push(`limit=${inp.limit}`);
       const suffix = params.length > 0 ? ` [${params.join(', ')}]` : '';
-      return mutedLine(ctx, toolName, '__read__', `Read ${displayPath}${suffix}`, callIndex);
+      return mutedLine('__read__', `Read ${displayPath}${suffix}`, toolCallId);
     }
     case 'Skill':
     case 'skill':
@@ -172,7 +172,7 @@ function renderSpecialTool(
       // Skill loads collapse to a single muted line — the input is just
       // the skill name and the output is the whole skill body.
       const skillName = inp.name || inp.skill || title || 'unknown';
-      return mutedLine(ctx, toolName, '__skill__', `Skill "${skillName}"`, callIndex);
+      return mutedLine('__skill__', `Skill "${skillName}"`, toolCallId);
     }
     case 'task':
     case 'mcp_task':
@@ -205,7 +205,7 @@ function renderSpecialTool(
       }
       return {
         type: 'tool-call',
-        toolCallId: `${ctx.messageId}-${toolName}-${callIndex}`,
+        toolCallId,
         toolName: '__task__',
         argsText: `${status}${toolTimeSuffix(ctx, partIdx)}\n${label}`,
         result: JSON.stringify({ taskId, taskOutput, subSession, liveTools }),
@@ -221,7 +221,7 @@ function renderSpecialTool(
         : JSON.stringify(input);
       return {
         type: 'tool-call',
-        toolCallId: `${ctx.messageId}-${toolName}-${callIndex}`,
+        toolCallId,
         toolName: '__question__',
         argsText: `${toolStatus(ctx, st.status, partIdx)}\n${questionsJson}`,
         result: typeof st.output === 'string' && st.output.trim()
@@ -233,19 +233,19 @@ function renderSpecialTool(
     case 'mcp_grep': {
       const grepPattern = inp.pattern || argsText || title || '';
       const include = inp.include ? ` (${inp.include})` : '';
-      return mutedLine(ctx, toolName, '__read__', `${grepPattern ? `Grep ${grepPattern}` : 'Grep'}${include}`, callIndex);
+      return mutedLine('__read__', `${grepPattern ? `Grep ${grepPattern}` : 'Grep'}${include}`, toolCallId);
     }
     case 'glob':
     case 'mcp_glob': {
       const pattern = inp.pattern || argsText || title || '';
       const path = inp.path ? ` (${inp.path})` : '';
-      return mutedLine(ctx, toolName, '__read__', `${pattern ? `Glob ${pattern}` : 'Glob'}${path}`, callIndex);
+      return mutedLine('__read__', `${pattern ? `Glob ${pattern}` : 'Glob'}${path}`, toolCallId);
     }
     case 'webfetch':
     case 'mcp_webfetch':
     case 'mcp_Webfetch': {
       const url = inp.url || argsText || title || '';
-      return mutedLine(ctx, toolName, '__read__', url ? `Fetch ${url}` : 'Webfetch', callIndex);
+      return mutedLine('__read__', url ? `Fetch ${url}` : 'Webfetch', toolCallId);
     }
     default:
       return null;
@@ -260,12 +260,12 @@ function genericBlock(
   argsText: string,
   resultText: string,
   partIdx: number,
-  callIndex: number,
+  toolCallId: string,
 ): ToolCallItem {
   const enc = toolTitleEncoding(toolName, title, argsText);
   return {
     type: 'tool-call',
-    toolCallId: `${ctx.messageId}-${toolName}-${callIndex}`,
+    toolCallId,
     toolName,
     argsText: `${toolStatus(ctx, st.status, partIdx)}${toolTimeSuffix(ctx, partIdx)}${shellUserExecutedSuffix(ctx, toolName, st.metadata)}${enc.meta}\n${enc.titleLine}${argsText}`,
     result: resultText || undefined,
@@ -277,7 +277,7 @@ export function convertToolPart(
   ctx: ToolPartContext,
   pd: PartData,
   partIdx: number,
-  callIndex: number,
+  toolCallId: string,
 ): { toolCall: ToolCallItem; images: ImageItem[] } {
   const st = pd.state || {};
   const input = st.input || {};
@@ -286,7 +286,7 @@ export function convertToolPart(
   let title = st.title || st.metadata?.description || inp.description || '';
   const toolName = pd.tool || 'unknown';
 
-  const special = renderSpecialTool(ctx, toolName, st, input, inp, argsText, title, partIdx, callIndex);
+  const special = renderSpecialTool(ctx, toolName, st, input, inp, argsText, title, partIdx, toolCallId);
   if (special) return { toolCall: special, images: [] };
 
   // For edit/write tools, generate a unified diff; the diff is shown as
@@ -312,7 +312,7 @@ export function convertToolPart(
     resultText = toolOutput(st);
   }
 
-  const toolCall = genericBlock(ctx, toolName, st, title, argsText, resultText, partIdx, callIndex);
+  const toolCall = genericBlock(ctx, toolName, st, title, argsText, resultText, partIdx, toolCallId);
 
   // Extract image attachments from tool results (e.g. screenshot tools).
   const images: ImageItem[] = [];
@@ -328,7 +328,7 @@ export function convertToolPart(
  * Convert a part of unrecognised type as a tool-like operation so it
  * still appears in the UI (e.g. "write", "file", custom tools).
  */
-export function convertUnknownPart(ctx: ToolPartContext, pd: PartData, partIdx: number, callIndex: number): ToolCallItem {
+export function convertUnknownPart(ctx: ToolPartContext, pd: PartData, partIdx: number, toolCallId: string): ToolCallItem {
   const st = pd.state || {};
   const input = st.input || {};
   const inp = input as Record<string, string>;
@@ -338,5 +338,5 @@ export function convertUnknownPart(ctx: ToolPartContext, pd: PartData, partIdx: 
     title = toolName + ' ' + (inp.filePath.split('/').pop() || inp.filePath);
   }
   const argsText = defaultArgsText(input, inp, true);
-  return genericBlock(ctx, toolName, st, title, argsText, toolOutput(st), partIdx, callIndex);
+  return genericBlock(ctx, toolName, st, title, argsText, toolOutput(st), partIdx, toolCallId);
 }

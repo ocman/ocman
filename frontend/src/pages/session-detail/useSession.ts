@@ -85,7 +85,7 @@ export interface UseSessionResult extends SessionView {
   reload: () => Promise<void>;
   /** Prepend an older page. Idempotent across overlapping ids. */
   loadMore: () => Promise<void>;
-  /** Replace the paged message set with fetched history for an explicit jump. */
+  /** Merge fetched history into the live message set for an explicit jump. */
   hydrateHistory: (messages: Message[], parts: Part[]) => void;
   /** True for first load until the initial fetch resolves. */
   loading: boolean;
@@ -839,7 +839,24 @@ export function useSession(
 
   const hydrateHistory = useCallback((messages: Message[], parts: Part[]) => {
     const current = viewRef.current;
-    dispatch({ type: 'load', view: { ...current, messages, parts } });
+    const currentMessages = new Map(current.messages.map((message) => [message.id, message]));
+    const currentParts = new Map(current.parts.map((part) => [part.id, part]));
+    const fetchedMessageIDs = new Set(messages.map((message) => message.id));
+    const fetchedPartIDs = new Set(parts.map((part) => part.id));
+    dispatch({
+      type: 'load',
+      view: {
+        ...current,
+        messages: [
+          ...messages.map((message) => currentMessages.get(message.id) ?? message),
+          ...current.messages.filter((message) => !fetchedMessageIDs.has(message.id)),
+        ],
+        parts: [
+          ...parts.map((part) => currentParts.get(part.id) ?? part),
+          ...current.parts.filter((part) => !fetchedPartIDs.has(part.id)),
+        ],
+      },
+    });
     setTotalMessages((total) => Math.max(total, messages.length));
   }, []);
 

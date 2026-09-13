@@ -473,6 +473,7 @@ export function AssistantThread({
   onToggleMessageBookmark,
   scrollToMessageId,
   scrollToMessageTick,
+  scrollToToolCall,
 }: {
   hasMore?: boolean;
   loadingMore?: boolean;
@@ -483,6 +484,7 @@ export function AssistantThread({
   onToggleMessageBookmark?: (messageId: string) => void;
   scrollToMessageId?: string | null;
   scrollToMessageTick?: number;
+  scrollToToolCall?: { messageId: string; toolCallId: string; tick: number } | null;
 }) {
   trackRender('AssistantThread');
   const showToolDetails = useUiStore((s) => s.showToolDetails);
@@ -679,6 +681,32 @@ export function AssistantThread({
     const timeout = setTimeout(() => target.classList.remove('oc-msg-scroll-highlight'), 1200);
     return () => clearTimeout(timeout);
   }, [scrollToMessageId, scrollToMessageTick, hasMore, loadingMore, onLoadMore]);
+
+  useEffect(() => {
+    if (!scrollToToolCall) return;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const message = viewport.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(scrollToToolCall.messageId)}"]`);
+    const source = message?.querySelector<HTMLElement>(`[data-tool-call-id="${CSS.escape(scrollToToolCall.toolCallId)}"]`);
+    if (!source?.firstElementChild) return;
+    source.querySelector<HTMLButtonElement>('[aria-expanded="false"]')?.click();
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const frame = requestAnimationFrame(() => {
+      const target = source.firstElementChild as HTMLElement | null;
+      if (!target) return;
+      const viewportTop = viewport.getBoundingClientRect().top;
+      const targetTop = target.getBoundingClientRect().top - viewportTop + viewport.scrollTop;
+      viewport.scrollTo({ top: Math.max(0, targetTop - 12), behavior: 'smooth' });
+      target.classList.add('oc-msg-scroll-highlight');
+      target.tabIndex = -1;
+      target.focus({ preventScroll: true });
+      timeout = setTimeout(() => target.classList.remove('oc-msg-scroll-highlight'), 1200);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      if (timeout) clearTimeout(timeout);
+    };
+  }, [scrollToToolCall]);
 
   // Track the composer height so the scroll-to-bottom button
   // (positioned absolute inside .oc-thread) can float just above it.
