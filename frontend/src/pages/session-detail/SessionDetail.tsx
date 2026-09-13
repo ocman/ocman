@@ -10,9 +10,9 @@
 // `useSession`; the page is mostly props plumbing from there to the
 // individual UI surfaces.
 
-import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { createPortal, flushSync } from 'react-dom';
+import { flushSync } from 'react-dom';
 import { useStickyNavigate } from '../../lib/useStickyNavigate';
 import { useSyncRef } from '../../lib/useSyncRef';
 import * as Toast from '@radix-ui/react-toast';
@@ -69,6 +69,8 @@ import { findFirstUnreadMessageId, countUnreadMessages } from './unreadMarker';
 import { ThreadBoundaryFallback } from './ThreadBoundaryFallback';
 import { SessionToasts } from './SessionToasts';
 import { SessionActionsMenu } from './SessionActionsMenu';
+import { HeaderPortal, MobileHeaderControls } from './MobileHeaderControls';
+import { useMobilePanel } from './useMobilePanel';
 import { SessionModals, type MessageJumpHistory } from './SessionModals';
 import { SessionSidebar } from './SessionSidebar';
 import { useSessionActions } from './useSessionActions';
@@ -78,23 +80,6 @@ import { usePendingSend } from './usePendingSend';
 import { useFailedSendRehydrate } from './useFailedSendRehydrate';
 import { useAutoApprove } from '../../lib/useAutoApprove';
 import { ThreadSkeleton } from '../../components/Skeleton';
-
-/** Mounts session controls into a slot owned by the top-level header. */
-function HeaderPortal({
-  children,
-  slot = 'header-actions-slot',
-}: {
-  children: React.ReactNode;
-  slot?: string;
-}) {
-  const [target, setTarget] = useState<HTMLElement | null>(null);
-  useLayoutEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing with an external DOM node owned by <Header />; documented as a legitimate use of setState-in-effect.
-    setTarget(document.getElementById(slot));
-  }, [slot]);
-  if (!target) return null;
-  return createPortal(children, target);
-}
 
 /** Memory bound on the in-memory message list. */
 const MAX_RETAINED_MESSAGES = 200;
@@ -137,51 +122,15 @@ export function SessionDetail({ id }: SessionDetailProps) {
     });
   }, [navigate]);
 
-  // Phone-only overlay panels (sessions drawer / details panel). On
-  // viewports <=768px the sidebar and right panel are hidden by
-  // default and open as full-screen overlays via header toggles; the
-  // classes this state drives are inert on wider viewports (see the
-  // @media block in SessionDetail.css).
-  const [mobilePanel, setMobilePanel] = useState<'sidebar' | 'details' | null>(null);
-  const toggleMobileSidebar = useCallback(() => {
-    setMobilePanel((p) => (p === 'sidebar' ? null : 'sidebar'));
-  }, []);
-  const toggleMobileDetails = useCallback(() => {
-    // Seeding happens OUTSIDE the setState updater: updaters must be
-    // pure (StrictMode double-invokes them), so the store mutation
-    // can't live inside one.
-    const opening = mobilePanel !== 'details';
-    if (opening) {
-      // The right panel may be collapsed (no open panes) from a
-      // desktop session; a full-screen overlay with only the icon
-      // strip reads as broken, so seed one pane. Deliberately
-      // persisted: the desktop later reopens with that pane, which
-      // beats snapshot/restore bookkeeping for a rare case.
-      const ui = useUiStore.getState();
-      if (ui.changesSidebarOpenTabs.length === 0) ui.toggleChangesSidebarTab('info');
-    }
-    setMobilePanel(opening ? 'details' : null);
-  }, [mobilePanel]);
-  useEffect(() => {
-    if (!mobilePanel) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMobilePanel(null);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [mobilePanel]);
+  const { mobilePanel, toggleMobileSidebar, toggleMobileDetails, closeMobilePanel } = useMobilePanel(id);
   // Selecting a session from the drawer should reveal the conversation.
   // The drawer click path closes synchronously here (no flicker frame);
-  // the id-keyed effect below covers every other navigation source
+  // useMobilePanel's id-keyed effect covers every other navigation source
   // (command palette, auto-redirect, closed-session reopen).
   const navigateFromSidebar = useCallback((nextId: string) => {
-    setMobilePanel(null);
+    closeMobilePanel();
     navigateToSession(nextId);
-  }, [navigateToSession]);
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- closing a phone overlay in response to an external route change; no render loop (id only changes via navigation).
-    setMobilePanel(null);
-  }, [id]);
+  }, [closeMobilePanel, navigateToSession]);
 
   // The new SSE pipeline. Owns the EventSource, the reducer, the
   // initial fetch + reload + loadMore, the cache mirror, and the
@@ -883,50 +832,11 @@ export function SessionDetail({ id }: SessionDetailProps) {
         className={`session-layout${mobilePanel === 'sidebar' ? ' mobile-sidebar-open' : ''}${mobilePanel === 'details' ? ' mobile-details-open' : ''}`}
         data-testid="session-layout"
       >
-        <HeaderPortal slot="header-navigation-slot">
-          {mobilePanel !== 'sidebar' && (
-            <button
-              type="button"
-              className="mobile-sessions-back"
-              data-testid="mobile-sessions-toggle"
-              aria-label="Open session list"
-              aria-expanded="false"
-              onClick={toggleMobileSidebar}
-            >
-              <i className="bi bi-chevron-left" aria-hidden="true" />
-              <span>Sessions</span>
-            </button>
-          )}
-        </HeaderPortal>
-        <HeaderPortal slot="header-mobile-title-slot">
-          {mobilePanel === 'sidebar' && <span>Sessions</span>}
-        </HeaderPortal>
-        <HeaderPortal>
-          {mobilePanel === 'sidebar' && (
-            <button
-              type="button"
-              className="mobile-sessions-done"
-              data-testid="mobile-sessions-toggle"
-              aria-label="Close session list"
-              aria-expanded="true"
-              onClick={toggleMobileSidebar}
-            >
-              Done
-            </button>
-          )}
-          {mobilePanel !== 'sidebar' && (
-            <button
-              type="button"
-              className="mobile-panel-toggle"
-              data-testid="mobile-details-toggle"
-              aria-label={mobilePanel === 'details' ? 'Close session details' : 'Open session details'}
-              aria-expanded={mobilePanel === 'details'}
-              onClick={toggleMobileDetails}
-            >
-              <i className={`bi ${mobilePanel === 'details' ? 'bi-x-lg' : 'bi-layout-sidebar-reverse'}`} aria-hidden="true" />
-            </button>
-          )}
-        </HeaderPortal>
+        <MobileHeaderControls
+          mobilePanel={mobilePanel}
+          toggleMobileSidebar={toggleMobileSidebar}
+          toggleMobileDetails={toggleMobileDetails}
+        />
         <SessionSidebar
           activeId={id}
           sidebarWidth={sidebarWidth}
