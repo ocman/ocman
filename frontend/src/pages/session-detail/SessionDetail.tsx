@@ -25,9 +25,7 @@ import { useMessageBookmarks } from './useMessageBookmarks';
 import { OcmanRuntimeProvider } from '../../components/OcmanRuntimeProvider';
 import { AssistantThread } from '../../components/AssistantThread';
 import { ShareLinkModal } from '../../components/ShareExportMenu';
-import { Composer, type ComposerHandle } from '../../components/assistant/Composer';
-import { QuestionPrompt } from '../../components/session/QuestionPrompt';
-import { PermissionPrompt } from '../../components/session/PermissionPrompt';
+import type { ComposerHandle } from '../../components/assistant/Composer';
 import { RightPanel } from '../../components/RightPanel';
 import { SessionTerminalDock } from '../../components/SessionTerminalDock';
 import { ErrorBoundary, type FallbackRender } from '../../components/ErrorBoundary';
@@ -35,7 +33,6 @@ import { RateLimitBanner } from '../../components/RateLimitBanner';
 import { PermissionModeLock } from '../../components/PermissionModeLock';
 import { SessionWarningBanner } from '../../components/SessionWarningBanner';
 import { McpAuthBanner } from '../../components/McpAuthBanner';
-import { FactoryPlanApproval } from '../../components/FactoryPlanApproval';
 import { useUiStore } from '../../lib/uiStore';
 import { useTmux } from '../../lib/useTmux';
 import { useApiStore } from '../../lib/apiStore';
@@ -72,6 +69,7 @@ import { SessionActionsMenu } from './SessionActionsMenu';
 import { HeaderPortal, MobileHeaderControls } from './MobileHeaderControls';
 import { useMobilePanel } from './useMobilePanel';
 import { SessionModals, type MessageJumpHistory } from './SessionModals';
+import { SessionComposerSlot } from './SessionComposerSlot';
 import { useSessionModal } from './useSessionModal';
 import { SessionSidebar } from './SessionSidebar';
 import { useSessionActions } from './useSessionActions';
@@ -833,97 +831,85 @@ export function SessionDetail({ id }: SessionDetailProps) {
                   scrollToMessageId={scrollToMessageBookmark?.sessionId === session.id ? scrollToMessageBookmark.id : null}
                   scrollToMessageTick={scrollToMessageBookmark?.sessionId === session.id ? scrollToMessageBookmark.tick : 0}
                   composer={(
-                    <ErrorBoundary name="session:composer" inline resetKey={session.id}>
-                      <FactoryPlanApproval epicID={factoryEpicID} platformID={session.platform} sessionID={session.id} />
-                      {firstUnreadMessageId && unreadMessageCount > 0 && (
-                        <button
-                          type="button"
-                          className="oc-jump-unread"
-                          data-testid="jump-to-first-unread"
-                          onClick={() => setScrollToMessageBookmark({
-                            sessionId: session.id,
-                            id: firstUnreadMessageId,
-                            tick: Date.now(),
-                          })}
-                          title="Scroll to the first message you haven't seen yet"
-                        >
-                          <i className="bi bi-arrow-up" aria-hidden="true" />
-                          {' '}
-                          {unreadMessageCount} new message{unreadMessageCount === 1 ? '' : 's'}
-                        </button>
-                      )}
-                      {pendingPermission && caps.respondPermission ? (
-                        <PermissionPrompt
-                          permission={pendingPermission}
-                          onReply={handlePermissionReply}
-                          disabled={answeringPermission}
-                          error={permissionError}
-                          autoApproveCapable={caps.autoApprove}
-                          autoApproveEnabled={autoApprove.enabled}
-                          autoApproveChecking={autoApproveChecking}
-                          judgeStartsAt={judgeStartsAt}
-                          judgeReasoning={judgeReasoning}
-                          onEnableAutoApprove={() => autoApprove.setEnabled(true)}
-                        />
-                      ) : pendingQuestion && portAvailable && caps.respondQuestion ? (
-                        <QuestionPrompt
-                          question={pendingQuestion}
-                          onReply={handleQuestionReply}
-                          onReject={handleQuestionReject}
-                          disabled={answeringQuestion}
-                          error={questionError}
-                        />
-                      ) : caps.composer ? (
-                        <Composer
-                          composerRef={composerRef}
-                          onSend={handleSend}
-                          onRetryChange={setSendRetryDelaySeconds}
-                          onCommand={handleCommand}
-                          onShell={handleShell}
-                          shellExec={caps.shellExec}
-                          queuedShellCommand={queuedShellCommand}
-                          onCancelQueuedShell={cancelQueuedShell}
-                          queuedMessages={queuedMessages}
-                          onRemoveQueuedMessage={removeQueuedMessage}
-                          onMoveQueuedMessage={moveQueuedMessage}
-                          onAbort={handleAbort}
-                          isRunning={isRunning}
-                          disabled={!portAvailable || hasPendingPrompt}
-                          disabledHint={hasPendingPrompt
-                            ? 'Respond to the pending prompt above before sending a new message.'
-                            : caps.liveConnectionHint}
-                          whisperAvailable={whisperAvailable}
-                          models={composerModels}
-                          modelEntries={modelEntries}
-                          selectedModel={selectedModel}
-                          onModelChange={handleModelChange}
-                          onToggleFavorite={handleToggleFavorite}
-                          onRefreshModels={refreshModels}
-                          activeAgent={activeAgent}
-                          selectedAgent={selectedAgent}
-                          onAgentChange={handleAgentChange}
-                          agents={agents}
-                          agentsLoaded={agentsLoaded}
-                          contextTokens={session?.contextTokenCount || undefined}
-                          activeDurationMs={session?.activeDurationMs}
-                          timeCreated={session?.timeCreated}
-                          durationMs={session?.durationMs}
-                          sessionId={session?.id}
-                          tokensPerSecond={liveTokensPerSecond ?? undefined}
-                          tokenStats={tokenStats}
-                          estimatedCost={sessionTree.find((item) => item.id === session?.id && item.platform === session?.platform)?.totalEstCost ?? session?.totalEstCost}
-                          sessionTreeStats={sessionTreeStats}
-                          selectedReasoning={selectedReasoning}
-                          onReasoningChange={setSelectedReasoning}
-                          onLaunchRequest={launchHintActive ? () => { void handleLaunchOpencode(); } : undefined}
-                          launching={launchingOpencode}
-                          directory={session?.directory}
-                          newConversation={totalMessages === 0}
-                          worktreesSupported={worktreesSupported}
-                          permissionControl={permissionControl}
-                        />
-                      ) : null}
-                    </ErrorBoundary>
+                    <SessionComposerSlot
+                      sessionId={session.id}
+                      platformId={session.platform}
+                      factoryEpicID={factoryEpicID}
+                      firstUnreadMessageId={firstUnreadMessageId}
+                      unreadMessageCount={unreadMessageCount}
+                      onJumpToUnread={(messageId) => setScrollToMessageBookmark({
+                        sessionId: session.id,
+                        id: messageId,
+                        tick: Date.now(),
+                      })}
+                      permission={pendingPermission && caps.respondPermission ? {
+                        permission: pendingPermission,
+                        onReply: handlePermissionReply,
+                        disabled: answeringPermission,
+                        error: permissionError,
+                        autoApproveCapable: caps.autoApprove,
+                        autoApproveEnabled: autoApprove.enabled,
+                        autoApproveChecking,
+                        judgeStartsAt,
+                        judgeReasoning,
+                        onEnableAutoApprove: () => autoApprove.setEnabled(true),
+                      } : null}
+                      question={pendingQuestion && portAvailable && caps.respondQuestion ? {
+                        question: pendingQuestion,
+                        onReply: handleQuestionReply,
+                        onReject: handleQuestionReject,
+                        disabled: answeringQuestion,
+                        error: questionError,
+                      } : null}
+                      composer={caps.composer ? {
+                        composerRef,
+                        onSend: handleSend,
+                        onRetryChange: setSendRetryDelaySeconds,
+                        onCommand: handleCommand,
+                        onShell: handleShell,
+                        shellExec: caps.shellExec,
+                        queuedShellCommand,
+                        onCancelQueuedShell: cancelQueuedShell,
+                        queuedMessages,
+                        onRemoveQueuedMessage: removeQueuedMessage,
+                        onMoveQueuedMessage: moveQueuedMessage,
+                        onAbort: handleAbort,
+                        isRunning,
+                        disabled: !portAvailable || hasPendingPrompt,
+                        disabledHint: hasPendingPrompt
+                          ? 'Respond to the pending prompt above before sending a new message.'
+                          : caps.liveConnectionHint,
+                        whisperAvailable,
+                        models: composerModels,
+                        modelEntries,
+                        selectedModel,
+                        onModelChange: handleModelChange,
+                        onToggleFavorite: handleToggleFavorite,
+                        onRefreshModels: refreshModels,
+                        activeAgent,
+                        selectedAgent,
+                        onAgentChange: handleAgentChange,
+                        agents,
+                        agentsLoaded,
+                        contextTokens: session.contextTokenCount || undefined,
+                        activeDurationMs: session.activeDurationMs,
+                        timeCreated: session.timeCreated,
+                        durationMs: session.durationMs,
+                        sessionId: session.id,
+                        tokensPerSecond: liveTokensPerSecond ?? undefined,
+                        tokenStats,
+                        estimatedCost: sessionTree.find((item) => item.id === session.id && item.platform === session.platform)?.totalEstCost ?? session.totalEstCost,
+                        sessionTreeStats,
+                        selectedReasoning,
+                        onReasoningChange: setSelectedReasoning,
+                        onLaunchRequest: launchHintActive ? () => { void handleLaunchOpencode(); } : undefined,
+                        launching: launchingOpencode,
+                        directory: session.directory,
+                        newConversation: totalMessages === 0,
+                        worktreesSupported,
+                        permissionControl,
+                      } : null}
+                    />
                   )}
                   footer={showSseNotice || showSseDebug ? (
                     <>
