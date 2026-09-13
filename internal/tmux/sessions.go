@@ -245,8 +245,10 @@ var DefaultSwitchRunner = SwitchRunner{
 // To match the convention used by existing sessions (e.g.
 // "~/src/github.com/NoUseFreak/ocman"), directories under the user's home
 // are rendered as a tilde-relative path; directories outside home stay
-// absolute. tmux itself replaces dots with underscores when displaying
-// the name, so callers see e.g. "~/src/github_com/NoUseFreak/ocman".
+// absolute. tmux replaces dots with underscores in session names, so the
+// name is returned in that spelling ("~/src/github_com/NoUseFreak/ocman")
+// — it is the only form that works as a `-t` target for kill-session
+// later (a dotted name is parsed as a window separator and fails).
 //
 // Empty/"."/"/" inputs fall back to "opencode" so we never hand tmux an
 // invalid name.
@@ -255,16 +257,17 @@ func SessionNameForPath(directory string) string {
 		return "opencode"
 	}
 	clean := filepath.Clean(directory)
+	name := clean
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
 		homeClean := filepath.Clean(home)
 		if clean == homeClean {
 			return "~"
 		}
 		if rel, err := filepath.Rel(homeClean, clean); err == nil && !strings.HasPrefix(rel, "..") && rel != "." {
-			return "~/" + filepath.ToSlash(rel)
+			name = "~/" + filepath.ToSlash(rel)
 		}
 	}
-	return clean
+	return strings.ReplaceAll(name, ".", "_")
 }
 
 // Runner abstracts the tmux side-effects so unit tests can stub

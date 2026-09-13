@@ -84,9 +84,20 @@ func TestTmuxSessionNameForPath(t *testing.T) {
 		want      string
 	}{
 		{
-			name:      "directory under home becomes tilde-prefixed",
+			// tmux stores session names with dots replaced by
+			// underscores. Return that spelling so the name Launch hands
+			// out is a valid `-t` target for Stop: `kill-session -t
+			// '~/src/github.com/x'` fails with "can't find window", the
+			// old instance survives, and a restart leaves two opencode
+			// processes serving one directory.
+			name:      "directory under home becomes tilde-prefixed with dots folded",
 			directory: filepath.Join(home, "src/github.com/NoUseFreak/ocman"),
-			want:      "~/src/github.com/NoUseFreak/ocman",
+			want:      "~/src/github_com/NoUseFreak/ocman",
+		},
+		{
+			name:      "path outside home folds dots",
+			directory: "/srv/example.org/app",
+			want:      "/srv/example_org/app",
 		},
 		{
 			name:      "home itself becomes ~",
@@ -101,7 +112,7 @@ func TestTmuxSessionNameForPath(t *testing.T) {
 		{
 			name:      "trailing slash is cleaned",
 			directory: filepath.Join(home, "src/github.com/NoUseFreak/ocman") + "/",
-			want:      "~/src/github.com/NoUseFreak/ocman",
+			want:      "~/src/github_com/NoUseFreak/ocman",
 		},
 		{
 			name:      "empty falls back to opencode",
