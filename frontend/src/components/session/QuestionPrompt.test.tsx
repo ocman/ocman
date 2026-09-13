@@ -49,6 +49,17 @@ describe('QuestionPrompt', () => {
     expect(onReply).not.toHaveBeenCalled();
   });
 
+  it('does not submit the focused choice with Space', async () => {
+    const user = userEvent.setup();
+    const onReply = vi.fn();
+    render(<QuestionPrompt question={question} onReply={onReply} onReject={vi.fn()} />);
+
+    screen.getByRole('radio', { name: /Option A/ }).focus();
+    await user.keyboard('[Space]');
+
+    expect(onReply).not.toHaveBeenCalled();
+  });
+
   describe('multiple-choice questions', () => {
     const multiQuestion: PendingQuestion = {
       requestId: 'q-multi',

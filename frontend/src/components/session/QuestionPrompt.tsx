@@ -59,7 +59,7 @@ export function QuestionPrompt({
   const [currentStep, setCurrentStep] = useState(0);
   // Keyboard-focused row (option index or CUSTOM_ROW). Distinct from the
   // committed "selected" answer — focus moves freely with arrow keys,
-  // selection only updates on Enter/Space/number-key.
+  // selection only updates on Enter/number-key.
   const [focusedRow, setFocusedRow] = useState<number>(0);
 
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -247,10 +247,7 @@ export function QuestionPrompt({
     if (isInputFocused) return; // let the input handle everything else
 
     if (e.key === ' ') {
-      if (focusedRow >= 0 && focusedRow < currentQ.options.length) {
-        e.preventDefault();
-        selectOption(currentStep, focusedRow);
-      }
+      e.preventDefault();
       return;
     }
 

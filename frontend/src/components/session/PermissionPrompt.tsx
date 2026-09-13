@@ -332,6 +332,12 @@ export function PermissionPrompt({
   useLayoutEffect(() => {
     const onWindowKeyDown = (e: KeyboardEvent) => {
       if (wasHandledByPrompt(e)) return;
+      if (e.key === ' ') {
+        e.preventDefault();
+        e.stopPropagation();
+        markHandledByPrompt(e);
+        return;
+      }
       if (stepRef.current === 'confirm-always') {
         handleConfirmKeyDownRef.current?.(e);
         markHandledByPrompt(e);

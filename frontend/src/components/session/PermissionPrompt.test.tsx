@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { act, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { PermissionPrompt, type PendingPermission } from './PermissionPrompt';
 
@@ -38,6 +39,17 @@ describe('PermissionPrompt', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r', bubbles: true }));
 
     await waitFor(() => expect(onReply).toHaveBeenCalledWith('reject'));
+  });
+
+  it('does not submit the focused choice with Space', async () => {
+    const onReply = vi.fn();
+    const user = userEvent.setup();
+    render(<PermissionPrompt permission={permission} onReply={onReply} />);
+
+    screen.getByRole('button', { name: 'Allow once' }).focus();
+    await user.keyboard('[Space]');
+
+    expect(onReply).not.toHaveBeenCalled();
   });
 
   describe('mount-time settle window', () => {
