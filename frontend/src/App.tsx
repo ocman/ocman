@@ -34,7 +34,7 @@ import { useAuthStore } from './lib/authStore';
 import { useUiStore } from './lib/uiStore';
 import { useShortcut, useShortcutDispatcher } from './lib/shortcutRegistry';
 import { useApiStore } from './lib/apiStore';
-import { useSessions, insertProvisionalSession } from './lib/queries';
+import { useInbox, useSessions, insertProvisionalSession } from './lib/queries';
 import { remoteLog } from './lib/remoteLog';
 import { usePerformanceCleanup } from './lib/usePerformanceCleanup';
 import { useMemoryMonitor } from './lib/useMemoryMonitor';
@@ -42,6 +42,7 @@ import { useLongTaskMonitor } from './lib/useLongTaskMonitor';
 import { installDevHandle as installPerfDevHandle } from './lib/perfRing';
 import { ClientActivityReporter } from './lib/ClientActivityReporter';
 import { routeTitle } from './lib/routeTitle';
+import { Inbox } from './pages/Inbox';
 
 // Top-level boundary keyed on the current pathname so navigating away from
 // a crashed route auto-recovers without forcing the user to reload. Inner
@@ -60,6 +61,7 @@ function RoutesBoundary({ children }: { children: ReactNode }) {
 const MAIN_NAV_ITEMS = [
   { to: '/', label: 'Home', icon: 'bi-house', activeOnSession: true },
   { to: '/sessions', label: 'Sessions', icon: 'bi-collection' },
+  { to: '/inbox', label: 'Inbox', icon: 'bi-inbox' },
   { to: '/projects', label: 'Projects', icon: 'bi-folder' },
   { to: '/factory/overview', label: 'Factory', icon: 'bi-buildings' },
   { to: '/routines', label: 'Routines', icon: 'bi-clock-history' },
@@ -83,6 +85,7 @@ export function MainNav({
   const toggleLabel = mobileOpen
     ? 'Close navigation'
     : collapsed ? 'Expand navigation' : 'Collapse navigation';
+  const inbox = useInbox();
 
   return (
     <>
@@ -115,6 +118,7 @@ export function MainNav({
               >
                 <i className={`bi ${item.icon}`} aria-hidden="true" />
                 <span>{item.label}</span>
+                {item.to === '/inbox' && inbox.data?.unreadTotal ? <b className="nav-unread-badge">{inbox.data.unreadTotal > 99 ? '99+' : inbox.data.unreadTotal}</b> : null}
               </NavLink>
           ))}
         </nav>
@@ -534,6 +538,7 @@ export function AppRoutes() {
       <Route element={<DashboardLayout />}>
         <Route path="/" element={<RootRedirect />} />
         <Route path="/sessions" element={<SessionsTab />} />
+        <Route path="/inbox" element={<Inbox />} />
         <Route path="/subscription-usage" element={<SubscriptionUsage />} />
         <Route path="/projects" element={<ProjectsTab />} />
         <Route path="/analytics/:section?" element={<AnalyticsTab />} />

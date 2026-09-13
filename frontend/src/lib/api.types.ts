@@ -27,6 +27,21 @@
  */
 export type SessionStatus = 'waiting' | 'busy' | 'done' | 'error' | 'interrupted';
 
+export interface InboxItem {
+  id: string;
+  title: string;
+  body: string;
+  createdAt: number;
+  readAt?: number;
+  archivedAt?: number;
+  remoteId: string;
+}
+
+export interface InboxResponse {
+  items: InboxItem[];
+  unreadTotal: number;
+}
+
 /**
  * Minimal per-session projection returned by /api/sessions/notify.
  * Only sessions that could drive the favicon/title notification state

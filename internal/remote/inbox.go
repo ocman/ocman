@@ -118,6 +118,22 @@ func (m *Manager) InboxItems(ctx context.Context, source string) ([]state.InboxI
 	return conn.InboxItems(ctx)
 }
 
+// InboxSources returns the local owner and currently connected remote owners.
+func (m *Manager) InboxSources() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	sources := []string{}
+	if m.store != nil {
+		sources = append(sources, "local")
+	}
+	for _, mr := range m.remotes {
+		if mr.platform != nil && mr.conn != nil && mr.conn.RemoteID() != "" {
+			sources = append(sources, mr.conn.RemoteID())
+		}
+	}
+	return sources
+}
+
 func (m *Manager) MarkInboxItemRead(ctx context.Context, source, id string) error {
 	store, conn, err := m.inboxOwner(source)
 	if err != nil {

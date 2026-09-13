@@ -74,7 +74,7 @@ production binary. Change it if you moved the listener with `-mcp-addr`.
 |------|-------------|
 | `factory` | Native Factory control surface. Use `action: "help"` for actions, validation, examples, output schemas, and domain errors. Formula actions accept TOML only. Implementation Issues run sequentially on a shared branch; `complete_attempt` records a verified clean, pushed commit checkpoint without `pr_url`. A separate final delivery Issue creates or reuses the review-ready PR and completes with `pr_url`. |
 | `factory_unblock` | Executes a user-approved `reopen` or typed `mutate_graph` action proposed by a read-only Factory unblock session. Ocman configures this tool as `ask`, so OpenCode shows Allow and Reject buttons before execution. |
-| `inbox` | Send owner-local Inbox items and recall them by opaque ID. Unknown and already recalled IDs are successful no-ops. Use `action: "help"` for schemas and examples. |
+| `inbox` | Send owner-local Inbox items and recall them by opaque ID. Unknown and already recalled IDs are successful no-ops. Use `action: "help"` for schemas and examples. Agents should send only asynchronous completions needing attention, blocked decisions, or important failures, not routine progress. |
 | `routines` | Create, inspect, update, run, and soft-delete routines. Use `action: "help"` for current inputs, examples, output schemas, and domain errors. |
 | `sessions` | Read-only session listing, search, and detail inspection. Search matches recent session IDs, titles, directories, platforms, and host names. The tool cannot create, cancel, or message sessions. |
 | `embed_file` | Make a file on disk viewable to the user in the ocman UI. Takes an absolute `path` (plus an optional `label`) and returns a signed URL and a markdown snippet the agent pastes into its reply. Images and SVGs render inline in the conversation; PDFs and other types open or download in the browser. See [Embedding generated assets](#embedding-generated-assets). |
@@ -149,6 +149,15 @@ action-based `routines` tool supports listing, reading, creating, replacing,
 running, soft-deleting, and viewing run history. Its `help` action is the
 authoritative contract for agents.
 
+### Inbox
+
+Ocman installs the `ocman-inbox` skill globally for OpenCode. It permits only
+the `inbox` actions `help`, `send`, and `recall`. Agents should use `send` for
+an asynchronous completion that needs attention, a blocked decision, or an
+important failure outside the active conversation. Routine progress and
+successful intermediate steps stay in the conversation. Reading or archiving
+Inbox items is a user-only dashboard operation and is not exposed to agents.
+
 ## Sessions
 
 The `sessions` tool intentionally stops at inspection: `list`, `search`, and
@@ -189,6 +198,7 @@ MCP interaction guidance lives in:
 .opencode/skills/ocman-factory/SKILL.md
 .opencode/skills/ocman-routines/SKILL.md
 .opencode/skills/ocman-sessions/SKILL.md
+.opencode/skills/ocman-inbox/SKILL.md
 ```
 
 At startup, ocman extracts and links the skill into OpenCode's global skill

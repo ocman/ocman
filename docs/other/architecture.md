@@ -47,7 +47,7 @@ flowchart LR
     Browser[Browser SPA<br/>REST + SSE] --> Ocman[ocman<br/>Go binary :8228]
     Agent[AI agents<br/>MCP clients] -->|/mcp| Ocman
     Ocman -->|read-only SQLite| OCDB[(opencode.db)]
-    Ocman -->|read/write SQLite| StateDB[(state.db)]
+    Ocman -->|read/write SQLite<br/>Inbox + state| StateDB[(state.db)]
     Ocman -->|Authenticated HTTP/SSE proxy| OCInst[Running OpenCode<br/>instances]
     Ocman -->|exec| Shell[git / tmux / lsof / bd<br/>host tools]
     Ocman -->|REST| APIs[GitHub / Forgejo<br/>provider usage APIs]
@@ -61,8 +61,10 @@ flowchart LR
   Vite server on :8228 proxies `/api` to the air backend on :8229.
 - **opencode.db.** Foreign data, opened read-only. Ocman never writes to it.
 - **state.db.** Ocman's own state: archive flags, routines and run history,
-  permission approval provenance, settings, Factory records, and remote
-  tokens. Legacy `workflow_*` rows remain inert for manual recovery.
+  permission approval provenance, settings, Factory records, Inbox items, and
+  remote tokens. Inbox sends are owner-local and persist until recalled or
+  archived by the user. Legacy `workflow_*` rows remain inert for manual
+  recovery.
 - **Provider usage APIs.** The subscription usage page reads OpenCode's local
   OAuth credentials server-side and returns only normalized quota windows;
   provider tokens and account identifiers never reach the browser.
@@ -98,12 +100,15 @@ flowchart TD
     Routines --> State
     Server --> MCP[internal/mcp<br/>MCP tools]
     MCP --> Factory
+    MCP --> Inbox[Inbox<br/>state + owner routing]
     MCP --> Routines
     MCP --> Registry
     Registry --> OC[platforms/opencode + internal/db<br/>adapter and read-only queries]
     Registry --> RP[remote.Platform<br/>gRPC-backed]
     Router --> Local[hostsvc/local<br/>git, tmux, worktree, Beads, runtimes]
     Server --> State[internal/state<br/>state.db]
+    Inbox --> State
+    Inbox -.->|remote RPC| Router
     Server --> Forge[forge + integrations<br/>GitHub/Forgejo clients]
 ```
 
@@ -174,6 +179,10 @@ flowchart TD
   permission-gated `factory_unblock`, `inbox`, and `routines` tools, read-only
   session inspection, and `embed_file`. File embedding uses signed tokens
   persisted in `state.db`.
+- **Inbox.** The `inbox` MCP tool is deliberately limited to `help`, `send`, and
+  `recall`. Sends write the owning host's `state.db`; remote sends and recalls
+  cross the owner-routed gRPC seam. The browser alone lists, reads, and
+  archives Inbox state through REST.
 - **internal/opencodeskills.** Extracts binary-embedded ocman skills into
   XDG data and installs only ocman-owned symlinks for OpenCode discovery.
   Retirement unlinks only the exact verified symlink and preserves extracted data.
@@ -199,6 +208,7 @@ sequenceDiagram
     participant A as opencode adapter
     participant D as opencode.db / OC HTTP
     participant E as SSE broadcast
+    participant I as Inbox state
 
     B->>S: GET /api/sessions
     S->>R: resolve platform/host
@@ -216,6 +226,10 @@ sequenceDiagram
     R->>A: create session and send saved prompt
     Note over Q,A: poll linked session until it settles
     E-->>B: SSE (session.updated)
+    A->>I: MCP inbox send (attention/blocked/failure only)
+    I-->>S: local state or owner-routed remote RPC
+    B->>S: REST Inbox list/read/archive
+    S-->>B: Inbox JSON (polling and mutation refresh)
 ```
 
 The key property: ocman never persists session status. The live turn signal

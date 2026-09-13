@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/NoUseFreak/ocman/internal/opencodeskills"
 )
 
 // TestResolveAuthPassword_Precedence pins the env > file > flag
@@ -84,8 +86,36 @@ func TestEmbeddedSkillsUseActionContracts(t *testing.T) {
 			t.Errorf("Sessions skill exposes retired action %q", retired)
 		}
 	}
-	if len(skills) != 3 {
+	inboxSource := strings.ToLower(string(skills["ocman-inbox"]))
+	for _, required := range []string{"inbox", `{"action":"help"}`, `{"action":"send","title"`, `{"action":"recall","item_id"`, "asynchronous", "blocked", "important failure", "routine progress", "read or archive"} {
+		if !strings.Contains(inboxSource, required) {
+			t.Errorf("Inbox skill is missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"list", "read", "archive"} {
+		if strings.Contains(inboxSource, `"action":"`+forbidden+`"`) {
+			t.Errorf("Inbox skill exposes unsupported action %q", forbidden)
+		}
+	}
+	if len(skills) != 4 {
 		t.Fatalf("embedded skills = %#v", skills)
+	}
+}
+
+func TestEmbeddedInboxSkillInstalls(t *testing.T) {
+	dataHome, configHome := t.TempDir(), t.TempDir()
+	t.Setenv("XDG_DATA_HOME", dataHome)
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	if err := opencodeskills.Install(embeddedSkills()); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dataHome, "ocman", "opencode", "skills", "ocman-inbox", "SKILL.md")
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != string(inboxSkill) {
+		t.Fatal("installed Inbox skill differs from embedded skill")
 	}
 }
 
