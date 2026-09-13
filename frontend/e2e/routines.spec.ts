@@ -14,7 +14,10 @@ test('creates and runs a routine', async ({ mockedPage: page }) => {
     return route.fulfill({ json: routines });
   });
   await page.route('/api/routines/routine-1/history', (route) => route.fulfill({ json: runs }));
-  await page.route('/api/routines/routine-1/webhook', (route) => route.fulfill({ json: null }));
+  await page.route('/api/routines/routine-1/webhook-inbox', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await route.fulfill({ json: null });
+  });
   await page.route('/api/routines/routine-1/run', (route) => {
     const run = { id: 'run-1', routineId: 'routine-1', routineUpdatedAt: Date.now(), routineName: 'Release check', prompt: 'Check release health', directory: '/home/user/projects/myapp', remoteId: 'local', trigger: 'manual', platform: 'opencode', sessionId: 'routine-session', state: 'running', occurrenceAt: Date.now(), createdAt: Date.now() };
     runs = [run];
@@ -30,6 +33,7 @@ test('creates and runs a routine', async ({ mockedPage: page }) => {
   await page.getByRole('button', { name: 'Create routine' }).click();
   const routine = page.getByRole('row', { name: 'View Release check history' });
   await expect(routine).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'New routine' })).toBeHidden();
   await routine.getByRole('button', { name: 'Run' }).click();
   await routine.click();
   await expect(page.getByRole('dialog', { name: 'Release check history' })).toBeVisible();
