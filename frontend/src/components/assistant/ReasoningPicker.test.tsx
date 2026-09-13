@@ -27,39 +27,57 @@ describe('ReasoningPicker', () => {
     return { onSelect, onClose };
   }
 
-  it('renders as a dialog whose options are buttons', () => {
+  it('renders a dialog with a default row and no search input', () => {
     renderPicker();
 
     expect(screen.getByRole('dialog', { name: 'Reasoning level' })).toBeInTheDocument();
-    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual([
-      'default',
-      'low',
-      'high',
-    ]);
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['default', 'low', 'high']);
   });
 
-  it('focuses the current option and picks with the keyboard', async () => {
+  it('renders nothing without options', () => {
+    renderPicker({ options: [] });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('highlights the current option and picks with the keyboard', async () => {
     const user = userEvent.setup();
     const { onSelect, onClose } = renderPicker();
 
-    expect(screen.getByRole('button', { name: 'low' })).toHaveFocus();
+    expect(screen.getByRole('option', { name: 'low' })).toHaveAttribute('aria-selected', 'true');
 
     await user.keyboard('{ArrowDown}');
-    expect(screen.getByRole('button', { name: 'high' })).toHaveFocus();
+    expect(screen.getByRole('option', { name: 'high' })).toHaveAttribute('aria-selected', 'true');
 
     await user.keyboard('{Enter}');
     expect(onSelect).toHaveBeenCalledWith('high');
     expect(onClose).toHaveBeenCalled();
   });
 
-  it('activates a focused option with Space', async () => {
+  it('selects the default row when no current value is set', async () => {
+    const user = userEvent.setup();
+    const { onSelect } = renderPicker({ current: undefined });
+
+    expect(screen.getByRole('option', { name: 'default' })).toHaveAttribute('aria-selected', 'true');
+    await user.keyboard('{Enter}');
+    expect(onSelect).toHaveBeenCalledWith('');
+  });
+
+  it('follows the mouse and picks on click', async () => {
     const user = userEvent.setup();
     const { onSelect } = renderPicker();
 
-    await user.keyboard('{ArrowUp}');
-    expect(screen.getByRole('button', { name: 'default' })).toHaveFocus();
+    await user.hover(screen.getByRole('option', { name: 'high' }));
+    expect(screen.getByRole('option', { name: 'high' })).toHaveAttribute('aria-selected', 'true');
 
-    await user.keyboard(' ');
+    await user.click(screen.getByRole('option', { name: 'default' }));
     expect(onSelect).toHaveBeenCalledWith('');
+  });
+
+  it('closes on Escape', async () => {
+    const user = userEvent.setup();
+    const { onClose } = renderPicker();
+    await user.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalled();
   });
 });

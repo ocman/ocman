@@ -71,8 +71,16 @@ export interface CommandListPickerProps<T extends PickerEntryBase> {
   open: boolean;
   /** Pre-built, pre-sorted entries to display. */
   entries: T[];
-  /** Fuse field weights, e.g. [{ name: 'label', weight: 1 }]. */
-  fuseKeys: NonNullable<IFuseOptions<T>['keys']>;
+  /** Fuse field weights, e.g. [{ name: 'label', weight: 1 }]. Unused when `searchable` is false. */
+  fuseKeys?: NonNullable<IFuseOptions<T>['keys']>;
+  /**
+   * False renders a static title instead of the search input and hosts the
+   * keyboard model on the listbox itself; the initially highlighted row is
+   * the current entry. Default true.
+   */
+  searchable?: boolean;
+  /** Extra class on the dialog (e.g. to narrow it). */
+  dialogClassName?: string;
   /**
    * When provided AND there's no active query, entries are grouped into
    * sections by this function. Omit to always render a flat list.
@@ -105,6 +113,8 @@ export function CommandListPicker<T extends PickerEntryBase>({
   open,
   entries,
   fuseKeys,
+  searchable = true,
+  dialogClassName,
   sectionOf,
   sectionOrder,
   renderRow,
@@ -118,24 +128,29 @@ export function CommandListPicker<T extends PickerEntryBase>({
 }: CommandListPickerProps<T>) {
   // Parent remounts on open (conditional render), so useState picks up
   // initialQuery fresh each invocation without resurrecting stale state.
-  const [query, setQuery] = useState(initialQuery ?? '');
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [query, setQuery] = useState(searchable ? (initialQuery ?? '') : '');
+  // ponytail: the non-searching start index is computed over `entries`,
+  // which only equals the rendered order when there are no sections.
+  const [selectedIndex, setSelectedIndex] = useState(
+    () => (searchable ? 0 : Math.max(0, entries.findIndex(isCurrent))),
+  );
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   // The list is a listbox driven from the input (combobox +
   // aria-activedescendant): focus stays in the search field, which is
-  // what the arrow keys already assume.
+  // what the arrow keys already assume. Without an input the listbox
+  // itself takes focus and hosts the same key handler.
   const listId = useId();
   const optionId = (index: number) => `${listId}-option-${index}`;
 
   useEffect(() => {
     if (!open) return;
-    requestAnimationFrame(() => inputRef.current?.focus());
-  }, [open]);
+    requestAnimationFrame(() => (searchable ? inputRef.current : listRef.current)?.focus());
+  }, [open, searchable]);
 
   const fuse = useMemo(
     () => new Fuse(entries, {
-      keys: fuseKeys,
+      keys: fuseKeys ?? ['value'],
       // 0.45 keeps one-typo queries surfacing without opening the floodgates.
       threshold: 0.45,
       // Don't penalize matches found late in long strings.
@@ -220,27 +235,42 @@ export function CommandListPicker<T extends PickerEntryBase>({
       label={placeholder(total)}
       onClose={onClose}
       backdropClassName="oc-cmd-backdrop"
-      dialogClassName="oc-cmd-palette oc-model-picker"
+      dialogClassName={`oc-cmd-palette oc-model-picker${dialogClassName ? ` ${dialogClassName}` : ''}`}
     >
       <div className="oc-cmd-input-wrap">
-        <i className="bi bi-search oc-cmd-search-icon" />
-        <input
-          ref={inputRef}
-          className="oc-cmd-input"
-          type="text"
-          role="combobox"
-          aria-expanded="true"
-          aria-autocomplete="list"
-          aria-controls={listId}
-          aria-activedescendant={activeItemIndex >= 0 ? optionId(activeItemIndex) : undefined}
-          placeholder={placeholder(total)}
-          value={query}
-          onChange={(e) => { setQuery(e.target.value); setSelectedIndex(0); }}
-          onKeyDown={onInputKeyDown}
-        />
+        {searchable ? (
+          <>
+            <i className="bi bi-search oc-cmd-search-icon" />
+            <input
+              ref={inputRef}
+              className="oc-cmd-input"
+              type="text"
+              role="combobox"
+              aria-expanded="true"
+              aria-autocomplete="list"
+              aria-controls={listId}
+              aria-activedescendant={activeItemIndex >= 0 ? optionId(activeItemIndex) : undefined}
+              placeholder={placeholder(total)}
+              value={query}
+              onChange={(e) => { setQuery(e.target.value); setSelectedIndex(0); }}
+              onKeyDown={onInputKeyDown}
+            />
+          </>
+        ) : (
+          <span className="oc-model-picker-title">{placeholder(total)}</span>
+        )}
         <kbd className="oc-cmd-kbd">ESC</kbd>
       </div>
-      <div className="oc-cmd-results" id={listId} role="listbox" aria-label={placeholder(total)} ref={listRef}>
+      <div
+        className="oc-cmd-results"
+        id={listId}
+        role="listbox"
+        aria-label={placeholder(total)}
+        ref={listRef}
+        tabIndex={searchable ? undefined : 0}
+        aria-activedescendant={!searchable && activeItemIndex >= 0 ? optionId(activeItemIndex) : undefined}
+        onKeyDown={searchable ? undefined : onInputKeyDown}
+      >
         {filteredEntries.length === 0 && (
           <div className="oc-cmd-empty" role="presentation">{emptyMessage}</div>
         )}
