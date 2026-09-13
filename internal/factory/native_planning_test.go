@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -327,7 +328,7 @@ func TestNativeProposalIsImmutableAndScoped(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{})
+	svc := NewNativeWithPlanning(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/wrong": "/wrong"}}, &fakePlanningLauncher{})
 	epic := createPouredWorkEpic(t, svc, "Ship")
 	manifest := ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required"}}}
 	first, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest, RationaleMarkdown: "# Why"})
@@ -365,6 +366,37 @@ func TestNativeProposalIsImmutableAndScoped(t *testing.T) {
 	}
 	if _, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "one", Type: "implementation", Requirement: "optional"}}}}); err == nil {
 		t.Fatal("proposal without required implementation was accepted")
+	}
+}
+
+func TestNativeProposalCanonicalizesNodeProjectsAndRejectsUndeclaredTargets(t *testing.T) {
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	svc := NewNativeWithPlanning(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other/subdir": "/other", "/unknown": "/unknown"}}, &fakePlanningLauncher{})
+	epic, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Ship", InitialProject: "/repo", AcknowledgeLocalExecution: true, Projects: []ProjectAdmission{{Path: "/other/subdir", AcknowledgeLocalExecution: true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Pour(t.Context(), epic.ID); err != nil {
+		t.Fatal(err)
+	}
+	manifest := ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{
+		{Key: "default", Type: "implementation", Requirement: "required"},
+		{Key: "other", Type: "implementation", Requirement: "required", Project: "/other/subdir"},
+	}}
+	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if proposal.Manifest.Nodes[0].Project != "/repo" || proposal.Manifest.Nodes[1].Project != "/other" {
+		t.Fatalf("canonical projects = %#v", proposal.Manifest.Nodes)
+	}
+	manifest.Nodes[1].Project = "/unknown"
+	if _, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest}); err == nil || !strings.Contains(err.Error(), "not admitted") {
+		t.Fatalf("undeclared target error = %v", err)
 	}
 }
 

@@ -9,7 +9,7 @@ import { api, type FactoryEpic, type FactoryIssue } from '../lib/api';
 
 vi.mock('../lib/api', () => ({ api: { factoryEpic: vi.fn(), factoryIssues: vi.fn(), factoryClaimPlan: vi.fn() } }));
 
-const plan: FactoryIssue = { id: 'ship-a1b2.1.1', epicId: 'ship-a1b2', kind: 'plan', title: 'Plan delivery', status: 'open', dispatchState: 'ready' };
+const plan: FactoryIssue = { id: 'ship-a1b2.1.1', epicId: 'ship-a1b2', project: '/repo', kind: 'plan', title: 'Plan delivery', status: 'open', dispatchState: 'ready' };
 
 beforeEach(() => {
   vi.mocked(api.factoryIssues).mockResolvedValue([]);

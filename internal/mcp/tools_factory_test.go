@@ -358,15 +358,18 @@ func TestFactoryToolMutateGraphUsesStrictInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(srv.Close)
-	mutation := `{"action":"link","epicId":"epic-1","issueId":"epic-1.1","dependsOnId":"other-1.1","dependencyType":"blocks"}`
+	mutation := `{"action":"link","epicId":"epic-1","issueId":"epic-1.1","dependsOnId":"other-1.1","dependencyType":"blocks","project":"/other"}`
 	if got := callTool(t, srv, "factory", map[string]any{"action": "mutate_graph", "mutation_json": mutation}); got.IsError {
 		t.Fatalf("mutate = %q", resultText(got))
 	}
-	if svc.mutation != (factory.GraphMutation{Action: "link", EpicID: "epic-1", IssueID: "epic-1.1", DependsOnID: "other-1.1", DependencyType: "blocks", Actor: "mcp"}) {
+	if svc.mutation != (factory.GraphMutation{Action: "link", EpicID: "epic-1", IssueID: "epic-1.1", DependsOnID: "other-1.1", DependencyType: "blocks", Project: "/other", Actor: "mcp"}) {
 		t.Fatalf("mutation = %#v", svc.mutation)
 	}
 	if got := callTool(t, srv, "factory", map[string]any{"action": "mutate_graph", "mutation_json": `{"action":"delete","issueId":"x","unexpected":true}`}); !got.IsError || resultText(got) != "mutation_json is invalid" {
 		t.Fatalf("unknown mutation field = %q", resultText(got))
+	}
+	if got := callTool(t, srv, "factory", map[string]any{"action": "mutate_graph", "mutation_json": `{"action":"delete","issueId":"x","project":42}`}); !got.IsError || resultText(got) != "mutation_json is invalid" {
+		t.Fatalf("non-string project = %q", resultText(got))
 	}
 }
 
@@ -378,7 +381,7 @@ func TestFactoryToolPlanningActions(t *testing.T) {
 	}
 	t.Cleanup(srv.Close)
 
-	manifest := `{"epicId":"epic-1","molId":"epic-1","project":"/repo","nodes":[{"key":"implement","type":"implementation","requirement":"required"}]}`
+	manifest := `{"epicId":"epic-1","molId":"epic-1","project":"/repo","nodes":[{"key":"implement","type":"implementation","requirement":"required","project":"/other"},{"key":"default","type":"implementation","requirement":"required"}]}`
 	// Agents must prove they own the Epic: a proposal without the planning
 	// attempt's token never reaches the service.
 	if got := callTool(t, srv, "factory", map[string]any{"action": "submit_proposal", "epic_id": "epic-1", "manifest_json": manifest}); !got.IsError || svc.submitProposalReq.EpicID != "" {
@@ -387,7 +390,7 @@ func TestFactoryToolPlanningActions(t *testing.T) {
 	if got := callTool(t, srv, "factory", map[string]any{"action": "submit_proposal", "epic_id": "epic-1", "manifest_json": manifest, "rationale_markdown": "why", "attempt_id": "fa_1", "attempt_token": "fat_1"}); got.IsError {
 		t.Fatalf("submit failed: %s", resultText(got))
 	}
-	want := factory.SubmitProposalRequest{EpicID: "epic-1", Manifest: factory.ProposalManifest{EpicID: "epic-1", MolID: "epic-1", Project: "/repo", Nodes: []factory.ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required"}}}, RationaleMarkdown: "why", AttemptID: "fa_1", AttemptToken: "fat_1"}
+	want := factory.SubmitProposalRequest{EpicID: "epic-1", Manifest: factory.ProposalManifest{EpicID: "epic-1", MolID: "epic-1", Project: "/repo", Nodes: []factory.ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", Project: "/other"}, {Key: "default", Type: "implementation", Requirement: "required"}}}, RationaleMarkdown: "why", AttemptID: "fa_1", AttemptToken: "fat_1"}
 	if !reflect.DeepEqual(svc.submitProposalReq, want) {
 		t.Fatalf("submit = %#v", svc.submitProposalReq)
 	}
@@ -404,6 +407,7 @@ func TestFactoryToolPlanningActions(t *testing.T) {
 		{"action": "claim_plan", "epic_id": "epic-1"},
 		{"action": "submit_proposal", "epic_id": "epic-1", "manifest_json": "{"},
 		{"action": "submit_proposal", "epic_id": "epic-1", "manifest_json": `{"epicId":"epic-1","molId":"epic-1","project":"/repo","nodes":[],"unexpected":true}`},
+		{"action": "submit_proposal", "epic_id": "epic-1", "manifest_json": `{"epicId":"epic-1","molId":"epic-1","project":"/repo","nodes":[{"key":"bad","type":"implementation","requirement":"required","project":42}]}`},
 		{"action": "proposal", "epic_id": "epic-1", "revision": 0},
 	} {
 		if got := callTool(t, srv, "factory", args); !got.IsError {

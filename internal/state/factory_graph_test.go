@@ -49,11 +49,11 @@ func TestFactoryGraphCreateAndPourAreDurableAndAtomic(t *testing.T) {
 func TestFactoryEpicProjectRemovalRules(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
-	epic, err := db.CreateFactoryEpicWithProjects(t.Context(), "", "Ship", "", "/repo", "", nativeTracerFormula(t), []string{"/busy", "/clean", "/delivered"})
+	epic, err := db.CreateFactoryEpicWithProjects(t.Context(), "", "Ship", "", "/repo", "", nativeTracerFormula(t), []string{"/busy", "/clean", "/delivered", "/target"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, err := db.GetFactoryEpic(t.Context(), epic.ID); err != nil || len(got.Projects) != 4 || got.Projects[0].Path != "/repo" || got.Projects[0].Removable {
+	if got, err := db.GetFactoryEpic(t.Context(), epic.ID); err != nil || len(got.Projects) != 5 || got.Projects[0].Path != "/repo" || got.Projects[0].Removable {
 		t.Fatalf("projects = %#v, %v", got.Projects, err)
 	}
 	if err := db.RemoveFactoryEpicProject(t.Context(), epic.ID, "/clean"); err != nil {
@@ -78,6 +78,12 @@ func TestFactoryEpicProjectRemovalRules(t *testing.T) {
 	}
 	if err := db.RemoveFactoryEpicProject(t.Context(), epic.ID, "/delivered"); !errors.Is(err, model.ErrEpicProjectHistory) {
 		t.Fatalf("Delivery history removal error = %v", err)
+	}
+	if _, err := db.db.Exec(`INSERT INTO factory_issue (id, epic_id, project_path, kind, title, status, created_at) VALUES ('target-work', ?, '/target', 'task', 'Target work', 'open', 1)`, epic.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.RemoveFactoryEpicProject(t.Context(), epic.ID, "/target"); !errors.Is(err, model.ErrEpicProjectHistory) {
+		t.Fatalf("targeted project removal error = %v", err)
 	}
 	if err := db.RemoveFactoryEpicProject(t.Context(), epic.ID, "/missing"); !errors.Is(err, model.ErrEpicProjectNotFound) {
 		t.Fatalf("missing project removal error = %v", err)
@@ -129,6 +135,9 @@ func TestFactoryGraphMutationsRejectCyclesAndSoftDelete(t *testing.T) {
 	second, err := db.CreateFactoryEpic(ctx, "", "Second", "", "/repo", "", nativeTracerFormula(t))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if err := db.MutateFactoryGraph(ctx, model.GraphMutation{Action: "create", EpicID: first.ID, ParentID: factoryIssueID(t, db, first.ID, "mol"), Kind: "implementation", Title: "Wrong target", Project: "/missing"}); !errors.Is(err, model.ErrInvalidGraphMutation) {
+		t.Fatalf("unadmitted mutation error = %v", err)
 	}
 	for _, epic := range []model.NativeEpic{first, second} {
 		if err := db.MutateFactoryGraph(ctx, model.GraphMutation{Action: "create", EpicID: epic.ID, ParentID: factoryIssueID(t, db, epic.ID, "mol"), Kind: "implementation", Title: "Work"}); err != nil {

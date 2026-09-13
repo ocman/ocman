@@ -233,7 +233,7 @@ describe('Factory interactions', () => {
       { id: 'epic-1.7', epicId: 'epic-1', kind: 'gate', title: 'Resolved', status: 'closed', recovery: { issueId: 'epic-1.7', resolution: 'resume', choices: [] } },
     ] : []) as never);
 		vi.mocked(api.sessions).mockResolvedValue([{ id: 'plan-session', title: 'Plan docs', status: 'waiting', pendingQuestion: true, pendingPermission: false }, { id: 'permission-session', title: 'Approve deploy', status: 'waiting', pendingQuestion: false, pendingPermission: true }] as never);
-		vi.mocked(api.factoryQueue).mockResolvedValue([{ id: 'epic-1.10', epicId: 'epic-1', title: 'Deploy', repository: '/repo', state: 'running', session: { platform: 'opencode', id: 'permission-session' } }] as never);
+		vi.mocked(api.factoryQueue).mockResolvedValue([{ id: 'epic-1.10', epicId: 'epic-1', title: 'Deploy', project: '/repo', state: 'running', session: { platform: 'opencode', id: 'permission-session' } }] as never);
     renderFactory(<MemoryRouter><FactoryOverview /></MemoryRouter>);
 
 		const inbox = await screen.findByRole('region', { name: 'Needs attention actions' });
@@ -447,9 +447,9 @@ describe('Factory interactions', () => {
     ] as never);
     vi.mocked(api.factoryIssues).mockResolvedValue([{ id: 'epic-1.1', epicId: 'epic-1', kind: 'plan', title: 'Plan', status: 'open', dispatchState: 'ready' }] as never);
     vi.mocked(api.factoryQueue).mockResolvedValue([
-      { id: 'epic-1.4', epicId: 'epic-1', title: 'Implement controls', repository: '/repo', state: 'running', attemptId: 'a1', session: { platform: 'opencode', id: 'impl-session' } },
-      { id: 'epic-1.6', epicId: 'epic-1', title: 'Finish handoff', repository: '/repo', state: 'running', attemptId: 'a2', session: { platform: 'opencode', id: 'settled-session' } },
-      { id: 'epic-1.5', epicId: 'epic-1', title: 'Next up', repository: '/repo', state: 'ready' },
+      { id: 'epic-1.4', epicId: 'epic-1', title: 'Implement controls', project: '/repo', state: 'running', attemptId: 'a1', session: { platform: 'opencode', id: 'impl-session' } },
+      { id: 'epic-1.6', epicId: 'epic-1', title: 'Finish handoff', project: '/repo', state: 'running', attemptId: 'a2', session: { platform: 'opencode', id: 'settled-session' } },
+      { id: 'epic-1.5', epicId: 'epic-1', title: 'Next up', project: '/repo', state: 'ready' },
     ] as never);
     vi.mocked(api.sessions).mockResolvedValue([
       { id: 'impl-session', title: 'Implement', status: 'busy', pendingQuestion: false, pendingPermission: false },
@@ -750,19 +750,19 @@ describe('Factory interactions', () => {
 
 	it('explains delayed, retry, blocked, and conditional queue dispatch states', async () => {
 		vi.mocked(api.factoryQueue).mockResolvedValue([
-			{ id: 'implement-1', epicId: 'epic-1', title: 'Active implementation', repository: '/repo', state: 'running', attemptId: 'attempt-1', session: { platform: 'opencode', id: 'session-1' } },
-			{ id: 'implement-2', epicId: 'epic-2', title: 'Next implementation', repository: '/repo', state: 'ready' },
-			{ id: 'implement-3', epicId: 'epic-3', title: 'Waiting implementation', repository: '/repo', state: 'terminally_blocked', blockers: [{ id: 'gate-1', reason: 'Rejected', outcome: 'failed' }] },
-			{ id: 'implement-4', epicId: 'epic-4', title: 'Retry implementation', repository: '/repo', state: 'retry_wait', retryAt: 1_700_000_000_000, retryAttempts: 2 },
-			{ id: 'implement-5', epicId: 'epic-5', title: 'Skipped recovery', repository: '/repo', state: 'not_applicable', blockers: [{ id: 'test-1', reason: 'Passed', outcome: 'succeeded' }] },
-			{ id: 'implement-6', epicId: 'epic-6', title: 'Undelivered optional work', repository: '/repo', state: 'not_applicable', outcomeReason: 'Final delivery is complete; this work will not run.' },
-			{ id: 'implement-6', epicId: 'epic-6', title: 'Deferred implementation', repository: '/repo', state: 'deferred', outcomeReason: 'waiting for review' },
+			{ id: 'implement-1', epicId: 'epic-1', title: 'Active implementation', project: '/other', state: 'running', attemptId: 'attempt-1', session: { platform: 'opencode', id: 'session-1' } },
+			{ id: 'implement-2', epicId: 'epic-2', title: 'Next implementation', project: '/repo', state: 'ready' },
+			{ id: 'implement-3', epicId: 'epic-3', title: 'Waiting implementation', project: '/repo', state: 'terminally_blocked', blockers: [{ id: 'gate-1', reason: 'Rejected', outcome: 'failed' }] },
+			{ id: 'implement-4', epicId: 'epic-4', title: 'Retry implementation', project: '/repo', state: 'retry_wait', retryAt: 1_700_000_000_000, retryAttempts: 2 },
+			{ id: 'implement-5', epicId: 'epic-5', title: 'Skipped recovery', project: '/repo', state: 'not_applicable', blockers: [{ id: 'test-1', reason: 'Passed', outcome: 'succeeded' }] },
+			{ id: 'implement-6', epicId: 'epic-6', title: 'Undelivered optional work', project: '/repo', state: 'not_applicable', outcomeReason: 'Final delivery is complete; this work will not run.' },
+			{ id: 'implement-6', epicId: 'epic-6', title: 'Deferred implementation', project: '/repo', state: 'deferred', outcomeReason: 'waiting for review' },
 		] as never);
     renderFactory(<MemoryRouter><FactoryQueue /></MemoryRouter>);
 
 		const active = await screen.findByRole('region', { name: 'Active work items' });
-		expect(within(active).getByTitle('/repo')).toHaveTextContent('repo');
-		expect(within(active).getByTestId('cell-project')).toHaveAttribute('href', '/project/%2Frepo');
+		expect(within(active).getByTitle('/other')).toHaveTextContent('other');
+		expect(within(active).getByTestId('cell-project')).toHaveAttribute('href', '/project/%2Fother');
 		expect(within(active).getByTestId('cell-epic')).toHaveAttribute('href', '/factory/epics/epic-1');
     expect(screen.getByRole('link', { name: 'Open session session-1' })).toHaveAttribute('href', '/session/session-1');
 		expect(screen.getByRole('region', { name: 'Next up items' })).toBeInTheDocument();
@@ -776,10 +776,11 @@ describe('Factory interactions', () => {
 		expect(screen.getByText('Undelivered optional work').closest('[role="listitem"]')).toHaveTextContent('Dispatch: Final delivery is complete; this work will not run.');
 		expect(screen.getByText('Dispatch: delayed: waiting for review.')).toBeInTheDocument();
 		expect(screen.getByText('Capacity: 10 global, 4 per project.')).toBeInTheDocument();
+		expect(screen.getByText('/other')).toBeInTheDocument();
 	});
 
 	it('links cross-Epic blocker evidence without treating it as local progress', async () => {
-		vi.mocked(api.factoryQueue).mockResolvedValue([{ id: 'implement-1', epicId: 'epic-1', title: 'Waiting implementation', repository: '/repo', state: 'terminally_blocked', blockers: [{ id: 'review-1', epicId: 'epic-2', reason: 'Rejected', outcome: 'failed' }] }] as never);
+		vi.mocked(api.factoryQueue).mockResolvedValue([{ id: 'implement-1', epicId: 'epic-1', title: 'Waiting implementation', project: '/repo', state: 'terminally_blocked', blockers: [{ id: 'review-1', epicId: 'epic-2', reason: 'Rejected', outcome: 'failed' }] }] as never);
 		renderFactory(<MemoryRouter><FactoryQueue /></MemoryRouter>);
 
 		const blocker = await screen.findByRole('link', { name: 'Open blocker review-1' });
@@ -861,7 +862,7 @@ describe('Factory interactions', () => {
   });
 
 	it('shows queue empty state when only completed history is returned', async () => {
-		vi.mocked(api.factoryQueue).mockResolvedValue([{ id: 'implement-1', epicId: 'epic-1', title: 'Completed implementation', repository: '/repo', state: 'completed' }] as never);
+		vi.mocked(api.factoryQueue).mockResolvedValue([{ id: 'implement-1', epicId: 'epic-1', title: 'Completed implementation', project: '/repo', state: 'completed' }] as never);
 		renderFactory(<MemoryRouter><FactoryQueue /></MemoryRouter>);
 		expect(await screen.findByText('No implementation work is active or waiting.')).toBeInTheDocument();
 	});

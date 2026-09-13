@@ -24,8 +24,8 @@ beforeEach(() => {
   } as never);
   vi.mocked(useFactoryGraphIssues).mockReturnValue([{
     data: [
-			{ id: 'fac-1', epicId: 'epic-1', kind: 'task', title: 'Prepare issue data', status: 'open', createdAt: 1_700_000_000_000 },
-		{ id: 'fac-42', epicId: 'epic-1', kind: 'implementation', title: 'Add issue drawer', status: 'closed', description: 'Show the full ticket.', conclusion: 'Rendered and tested.', prUrl: 'https://forge.example/pulls/1', parentId: 'fac-1', blockers: [{ id: 'fac-1', epicId: 'epic-1', reason: '', outcome: '' }] },
+			{ id: 'fac-1', epicId: 'epic-1', project: '/other', kind: 'task', title: 'Prepare issue data', status: 'open', createdAt: 1_700_000_000_000 },
+		{ id: 'fac-42', epicId: 'epic-1', project: '/repo', kind: 'implementation', title: 'Add issue drawer', status: 'closed', description: 'Show the full ticket.', conclusion: 'Rendered and tested.', prUrl: 'https://forge.example/pulls/1', parentId: 'fac-1', blockers: [{ id: 'fac-1', epicId: 'epic-1', reason: '', outcome: '' }] },
     ],
     isLoading: false,
     isError: false,
@@ -40,8 +40,9 @@ it('shows a ticket list and opens issue details in a drawer', async () => {
 	expect(screen.getByRole('region', { name: 'Open issues' })).toBeInTheDocument();
 	expect(screen.getByLabelText('task issue')).toBeInTheDocument();
 	expect(screen.getByRole('link', { name: '#fac-1' })).toHaveAttribute('href', '/factory/epics/epic-1');
-	expect(screen.getByTestId('cell-project')).toHaveAttribute('href', '/project/%2Frepo');
+	expect(screen.getByTestId('cell-project')).toHaveAttribute('href', '/project/%2Fother');
 	expect(screen.getByRole('link', { name: 'Ship Factory' })).toHaveAttribute('href', '/factory/epics/epic-1');
+	expect(screen.getByTitle('/other')).toBeInTheDocument();
 	expect(screen.getByText(/created/).closest('time')).toHaveAttribute('datetime', '2023-11-14T22:13:20.000Z');
 	expect(screen.queryByText('#fac-42')).not.toBeInTheDocument();
 	expect(screen.getByText('1 shown · 1 closed hidden')).toBeInTheDocument();

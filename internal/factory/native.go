@@ -68,7 +68,7 @@ type DispatchItem struct {
 	ID            string                     `json:"id"`
 	EpicID        string                     `json:"epicId"`
 	Title         string                     `json:"title"`
-	Repository    string                     `json:"repository"`
+	Project       string                     `json:"project"`
 	State         DispatchState              `json:"state"`
 	AttemptID     string                     `json:"attemptId,omitempty"`
 	Session       model.PlanningSession      `json:"session,omitempty"`
@@ -508,6 +508,7 @@ func hasFormulaCycle(edges []FormulaGraphEdge) bool {
 type Issue struct {
 	ID             string                        `json:"id"`
 	EpicID         string                        `json:"epicId"`
+	Project        string                        `json:"project"`
 	ParentID       string                        `json:"parentId,omitempty"`
 	Requirement    string                        `json:"requirement,omitempty"`
 	FormulaID      string                        `json:"formulaId,omitempty"`
@@ -547,6 +548,7 @@ type ManifestNode struct {
 	Requirement string   `json:"requirement"`
 	Title       string   `json:"title,omitempty"`
 	Description string   `json:"description,omitempty"`
+	Project     string   `json:"project,omitempty"`
 	DependsOn   []string `json:"dependsOn,omitempty"`
 	Pinned      bool     `json:"pinned,omitempty"`
 }
@@ -1151,11 +1153,46 @@ func (s *NativeService) MutateGraph(ctx context.Context, mutation GraphMutation)
 	if !ok {
 		return ErrFactoryUnavailable
 	}
-	err := store.MutateFactoryGraph(ctx, mutation)
+	epic, err := s.store.GetFactoryEpic(ctx, mutation.EpicID)
+	if errors.Is(err, model.ErrNativeEpicNotFound) {
+		return ErrWorkEpicNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if mutation.Action == "create" || mutation.Project != "" {
+		mutation.Project, err = s.canonicalIssueProject(ctx, epic, mutation.Project)
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrInvalidRequest, err)
+		}
+	}
+	err = store.MutateFactoryGraph(ctx, mutation)
 	if errors.Is(err, model.ErrInvalidGraphMutation) {
 		return fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
 	return err
+}
+
+func (s *NativeService) canonicalIssueProject(ctx context.Context, epic model.NativeEpic, target string) (string, error) {
+	if target == "" {
+		target = epic.InitialProject
+	}
+	canonical, err := s.canonicalProject(ctx, target)
+	if err != nil {
+		return "", fmt.Errorf("project target %q is invalid: %w", target, err)
+	}
+	projects := epic.Projects
+	if len(projects) == 0 {
+		projects = []model.EpicProject{{Path: epic.InitialProject}}
+	}
+	admitted := make([]string, 0, len(projects))
+	for _, project := range projects {
+		admitted = append(admitted, project.Path)
+		if project.Path == canonical {
+			return canonical, nil
+		}
+	}
+	return "", fmt.Errorf("project target %q is not admitted to Epic %s; admitted projects: %s", canonical, epic.ID, strings.Join(admitted, ", "))
 }
 
 func factoryProgress(issues []model.NativeIssue) FactoryProgress {
@@ -1739,19 +1776,19 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 				var previousPR string
 				previousPR, branchErr = completionStore.FactoryEpicPRURL(ctx, epic.ID)
 				if branchErr == nil && previousPR != "" {
-					branch, baseRef, branchErr = s.implementation.ResolveImplementationBranch(ctx, epic.InitialProject, branch, previousPR, attempt.FrozenPolicy)
+					branch, baseRef, branchErr = s.implementation.ResolveImplementationBranch(ctx, next.issue.Project, branch, previousPR, attempt.FrozenPolicy)
 				}
 			}
 			if branchErr == nil {
 				checkpoint := attempt.FrozenPolicy.CheckpointSHA
 				// A retry of the same Issue may retain its own committed progress.
 				if attempt.Sequence > 1 && checkpoint != "" {
-					_, branchErr = s.implementation.ValidateImplementationCheckpoint(ctx, epic.InitialProject, branch, checkpoint)
+					_, branchErr = s.implementation.ValidateImplementationCheckpoint(ctx, next.issue.Project, branch, checkpoint)
 					checkpoint = ""
 				}
 				var workspaceBase string
 				if branchErr == nil {
-					attempt.FrozenPolicy.TargetBranch, workspaceBase, branchErr = s.implementation.PrepareImplementationWorkspace(ctx, epic.InitialProject, branch, checkpoint, attempt.FrozenPolicy.TargetBranch)
+					attempt.FrozenPolicy.TargetBranch, workspaceBase, branchErr = s.implementation.PrepareImplementationWorkspace(ctx, next.issue.Project, branch, checkpoint, attempt.FrozenPolicy.TargetBranch)
 				}
 				if workspaceBase != "" && attempt.FrozenPolicy.BaseRef != "" {
 					workspaceBase = attempt.FrozenPolicy.BaseRef
@@ -1770,7 +1807,7 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 				continue
 			}
 		}
-		request := ImplementationSessionRequest{Model: attempt.FrozenPolicy.Model, EpicID: epic.ID, WorkID: next.issue.ID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: epic.InitialProject, Title: next.issue.Title, Description: next.issue.Description, Branch: branch, BaseRef: baseRef, Profile: "factory-implement/v1", TargetBranch: attempt.FrozenPolicy.TargetBranch, Delivery: attempt.FrozenPolicy.Delivery}
+		request := ImplementationSessionRequest{Model: attempt.FrozenPolicy.Model, EpicID: epic.ID, WorkID: next.issue.ID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: next.issue.Project, Title: next.issue.Title, Description: next.issue.Description, Branch: branch, BaseRef: baseRef, Profile: "factory-implement/v1", TargetBranch: attempt.FrozenPolicy.TargetBranch, Delivery: attempt.FrozenPolicy.Delivery}
 		session, launchErr := s.implementation.LaunchImplementationSession(ctx, request)
 		if launchErr != nil {
 			if session.ID != "" {
@@ -1865,7 +1902,7 @@ func (s *NativeService) Queue(ctx context.Context) ([]DispatchItem, error) {
 			if issue.Kind != "implementation" && issue.Kind != "task" && issue.Kind != "delivery" {
 				continue
 			}
-			item := DispatchItem{ID: issue.ID, EpicID: epic.ID, Title: issue.Title, Repository: epic.InitialProject, OutcomeReason: issue.OutcomeReason, Blockers: issue.Blockers, RetryAt: issue.RetryAt, RetryAttempts: issue.RetryAttempts}
+			item := DispatchItem{ID: issue.ID, EpicID: epic.ID, Title: issue.Title, Project: issue.Project, OutcomeReason: issue.OutcomeReason, Blockers: issue.Blockers, RetryAt: issue.RetryAt, RetryAttempts: issue.RetryAttempts}
 			attempt, attempted := byWork[issue.ID]
 			if attempted {
 				item.AttemptID, item.Session, item.Outcome = attempt.ID, attempt.Session, string(attempt.Outcome)
@@ -2134,6 +2171,16 @@ func (s *NativeService) SubmitProposal(ctx context.Context, req SubmitProposalRe
 		if issue.Kind == "mol" && issue.ParentID == "" {
 			rootMolID = issue.ID
 			break
+		}
+	}
+	req.Manifest.Project, err = s.canonicalIssueProject(ctx, epic, req.Manifest.Project)
+	if err != nil {
+		return ProposalRevision{}, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
+	}
+	for i := range req.Manifest.Nodes {
+		req.Manifest.Nodes[i].Project, err = s.canonicalIssueProject(ctx, epic, req.Manifest.Nodes[i].Project)
+		if err != nil {
+			return ProposalRevision{}, fmt.Errorf("%w: node %q: %w", ErrInvalidRequest, req.Manifest.Nodes[i].Key, err)
 		}
 	}
 	if err := validateProposalManifest(req.Manifest, epic, rootMolID); err != nil {
@@ -2442,7 +2489,7 @@ func nativeIssues(issues []model.NativeIssue) []Issue {
 	out := make([]Issue, len(issues))
 	for i := range issues {
 		issue := issues[i]
-		out[i] = Issue{ID: issue.ID, EpicID: issue.EpicID, ParentID: issue.ParentID, Requirement: issue.Requirement, FormulaID: issue.FormulaID, FormulaVersion: issue.FormulaVersion, FormulaHash: issue.FormulaHash, Bindings: issue.Bindings, Kind: issue.Kind, Title: issue.Title, Status: issue.Status, Description: issue.Description, PlanRevision: issue.PlanRevision, ManifestKey: issue.ManifestKey, Outcome: issue.Outcome, OutcomeReason: issue.OutcomeReason, DispatchState: issue.DispatchState, Blockers: issue.Blockers, DependsOn: issue.DependsOn, RetryAt: issue.RetryAt, RetryAttempts: issue.RetryAttempts, CreatedAt: issue.CreatedAt, RemovedAt: issue.RemovedAt}
+		out[i] = Issue{ID: issue.ID, EpicID: issue.EpicID, Project: issue.Project, ParentID: issue.ParentID, Requirement: issue.Requirement, FormulaID: issue.FormulaID, FormulaVersion: issue.FormulaVersion, FormulaHash: issue.FormulaHash, Bindings: issue.Bindings, Kind: issue.Kind, Title: issue.Title, Status: issue.Status, Description: issue.Description, PlanRevision: issue.PlanRevision, ManifestKey: issue.ManifestKey, Outcome: issue.Outcome, OutcomeReason: issue.OutcomeReason, DispatchState: issue.DispatchState, Blockers: issue.Blockers, DependsOn: issue.DependsOn, RetryAt: issue.RetryAt, RetryAttempts: issue.RetryAttempts, CreatedAt: issue.CreatedAt, RemovedAt: issue.RemovedAt}
 	}
 	return out
 }

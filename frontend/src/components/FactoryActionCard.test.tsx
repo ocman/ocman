@@ -19,7 +19,7 @@ const epic: FactoryEpic = {
   formulaRevision: 1, formulaHash: 'hash', formulaOrigin: 'built-in', instantiationId: 'one',
   progress: { requiredTotal: 1, requiredSucceeded: 0, optionalOpen: 0 },
 };
-const issue: FactoryIssue = { id: 'ship.3', epicId: 'ship', title: 'Build API', kind: 'implementation', status: 'closed', outcome: 'failed', outcomeReason: 'Dependency failed' };
+const issue: FactoryIssue = { id: 'ship.3', epicId: 'ship', project: '/repo', title: 'Build API', kind: 'implementation', status: 'closed', outcome: 'failed', outcomeReason: 'Dependency failed' };
 
 function renderCard(text = '[Factory actions](/factory/epics/ship?human=1&issue=ship.3)') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });

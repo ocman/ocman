@@ -42,6 +42,7 @@ type EpicProject struct {
 type NativeIssue struct {
 	ID             string
 	EpicID         string
+	Project        string
 	ParentID       string
 	Requirement    string
 	FormulaID      string
@@ -91,6 +92,7 @@ type GraphMutation struct {
 	Title          string `json:"title"`
 	Description    string `json:"description"`
 	Requirement    string `json:"requirement"`
+	Project        string `json:"project,omitempty"`
 	Actor          string `json:"actor"`
 }
 

@@ -642,8 +642,11 @@ func TestFactoryPlanningRoutes(t *testing.T) {
 	if rec := request(http.MethodPost, "/api/factory/epics/fac-1/proposals", `{"manifest":{}} {}`, "127.0.0.1:1"); rec.Code != http.StatusBadRequest {
 		t.Fatalf("multiple proposal bodies = %d", rec.Code)
 	}
-	if rec := request(http.MethodPost, "/api/factory/epics/fac-1/proposals", `{"epicId":"wrong","attemptId":"attempt-1","attemptToken":"fat_token","manifest":{"epicId":"fac-1"}}`, "127.0.0.1:1"); rec.Code != http.StatusCreated || svc.submitProposalReq.EpicID != "fac-1" {
+	if rec := request(http.MethodPost, "/api/factory/epics/fac-1/proposals", `{"epicId":"wrong","attemptId":"attempt-1","attemptToken":"fat_token","manifest":{"epicId":"fac-1","nodes":[{"key":"default"},{"key":"other","project":"/other"}]}}`, "127.0.0.1:1"); rec.Code != http.StatusCreated || svc.submitProposalReq.EpicID != "fac-1" || svc.submitProposalReq.Manifest.Nodes[0].Project != "" || svc.submitProposalReq.Manifest.Nodes[1].Project != "/other" {
 		t.Fatalf("proposal submit = %d, %#v", rec.Code, svc.submitProposalReq)
+	}
+	if rec := request(http.MethodPost, "/api/factory/epics/fac-1/proposals", `{"attemptId":"attempt-1","attemptToken":"fat_token","manifest":{"nodes":[{"key":"bad","project":42}]}}`, "127.0.0.1:1"); rec.Code != http.StatusBadRequest {
+		t.Fatalf("non-string node project = %d: %s", rec.Code, rec.Body.String())
 	}
 	if rec := request(http.MethodPost, "/api/factory/epics/fac-1/proposals", `{"manifest":{"epicId":"fac-1"}}`, "127.0.0.1:1"); rec.Code != http.StatusBadRequest {
 		t.Fatalf("tokenless proposal = %d: %s", rec.Code, rec.Body.String())
@@ -677,8 +680,11 @@ func TestFactoryGraphMutationRouteIsLocalAndStrict(t *testing.T) {
 	if rec := request(`{"action":"edit","issueId":"fac-1.1","title":"Rename"}`, "192.0.2.1:1"); rec.Code != http.StatusForbidden {
 		t.Fatalf("remote mutation = %d: %s", rec.Code, rec.Body.String())
 	}
-	if rec := request(`{"action":"edit","epicId":"wrong","issueId":"fac-1.1","title":"Rename"}`, "127.0.0.1:1"); rec.Code != http.StatusNoContent || svc.mutation.EpicID != "fac-1" || svc.mutation.Actor != "user" {
+	if rec := request(`{"action":"edit","epicId":"wrong","issueId":"fac-1.1","title":"Rename","project":"/other"}`, "127.0.0.1:1"); rec.Code != http.StatusNoContent || svc.mutation.EpicID != "fac-1" || svc.mutation.Project != "/other" || svc.mutation.Actor != "user" {
 		t.Fatalf("mutation = %d: %#v", rec.Code, svc.mutation)
+	}
+	if rec := request(`{"action":"edit","issueId":"fac-1.1","title":"Rename","project":42}`, "127.0.0.1:1"); rec.Code != http.StatusBadRequest {
+		t.Fatalf("non-string project = %d: %s", rec.Code, rec.Body.String())
 	}
 	svc.err = fmt.Errorf("%w: invalid mutation", factory.ErrInvalidRequest)
 	if rec := request(`{"action":"edit","issueId":"fac-1.1","title":"Rename"}`, "127.0.0.1:1"); rec.Code != http.StatusBadRequest {
@@ -687,7 +693,7 @@ func TestFactoryGraphMutationRouteIsLocalAndStrict(t *testing.T) {
 }
 
 func TestFactoryStatusQueueAndGateRoutes(t *testing.T) {
-	svc := &fakeFactoryService{queue: []factory.DispatchItem{{ID: "work", State: "ready"}}}
+	svc := &fakeFactoryService{queue: []factory.DispatchItem{{ID: "work", Project: "/other", State: "ready"}}}
 	srv := New(nil, nil, "", nil, nil)
 	srv.factory = svc
 	mux, err := srv.routes()
@@ -700,6 +706,9 @@ func TestFactoryStatusQueueAndGateRoutes(t *testing.T) {
 		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("GET %s = %d: %s", path, rec.Code, rec.Body.String())
+		}
+		if path == "/api/factory/queue" && !strings.Contains(rec.Body.String(), `"project":"/other"`) {
+			t.Fatalf("GET %s omitted project: %s", path, rec.Body.String())
 		}
 	}
 	for _, path := range []string{"/api/factory/recovery-gates/gate/invalid", "/api/factory/authority-gates/gate/invalid"} {

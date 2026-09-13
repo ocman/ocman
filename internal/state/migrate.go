@@ -208,7 +208,8 @@ import (
 //	82 - persist live commit observations attributed to their source session
 //	     and terminal tool call.
 //	83 - persist each Factory Epic's admitted local project set.
-const latestSchemaVersion = 83
+//	84 - persist each Factory Issue's canonical target project.
+const latestSchemaVersion = 84
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -479,9 +480,30 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV82(tx)
 	case 83:
 		return migrateToV83(tx)
+	case 84:
+		return migrateToV84(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
+}
+
+func migrateToV84(tx *sql.Tx) error {
+	var exists bool
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'factory_issue')`).Scan(&exists); err != nil || !exists {
+		return err
+	}
+	if err := addColumnIfMissing(tx, "factory_issue", "project_path", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	_, err := tx.Exec(`
+		UPDATE factory_issue SET project_path = (SELECT project_path FROM factory_epic WHERE id = factory_issue.epic_id) WHERE project_path = '';
+		CREATE TRIGGER IF NOT EXISTS factory_issue_default_project AFTER INSERT ON factory_issue
+		WHEN NEW.project_path = ''
+		BEGIN
+			UPDATE factory_issue SET project_path = (SELECT project_path FROM factory_epic WHERE id = NEW.epic_id) WHERE id = NEW.id;
+		END;
+	`)
+	return err
 }
 
 func migrateToV82(tx *sql.Tx) error {

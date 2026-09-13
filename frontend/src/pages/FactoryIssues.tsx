@@ -24,7 +24,7 @@ export function EpicCell({ id, goal }: { id?: string; goal?: string }) {
 }
 
 export function FactoryIssueRow({ issue, epic, onOpen }: { issue: FactoryIssue; epic?: EpicRef; onOpen: () => void }) {
-	return <DataTableRow className={epic ? 'factory-grid-row' : ''} primary={<div className="factory-list-title-line"><i className={`bi ${issueIcons[issue.kind] ?? 'bi-circle'} factory-list-type-icon`} role="img" aria-label={`${issue.kind} issue`} title={`${issue.kind} issue`} /><button type="button" aria-label={`Open issue ${issue.id}`} onClick={onOpen}>{issue.title}</button></div>} secondary={<span className="factory-list-subline"><Link to={`/factory/epics/${encodeURIComponent(issue.epicId)}`}>#{issue.id}</Link>{!!issue.createdAt && <> · <time dateTime={new Date(issue.createdAt).toISOString()} title={new Date(issue.createdAt).toLocaleString()}>created {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(issue.createdAt)}</time></>}</span>} meta={epic && <><ProjectCell path={epic.initialProject} /><EpicCell id={epic.id} goal={epic.goal} /></>} />;
+	return <DataTableRow className={epic ? 'factory-grid-row' : ''} primary={<div className="factory-list-title-line"><i className={`bi ${issueIcons[issue.kind] ?? 'bi-circle'} factory-list-type-icon`} role="img" aria-label={`${issue.kind} issue`} title={`${issue.kind} issue`} /><button type="button" aria-label={`Open issue ${issue.id}`} onClick={onOpen}>{issue.title}</button></div>} secondary={<span className="factory-list-subline"><Link to={`/factory/epics/${encodeURIComponent(issue.epicId)}`}>#{issue.id}</Link>{!!issue.createdAt && <> · <time dateTime={new Date(issue.createdAt).toISOString()} title={new Date(issue.createdAt).toLocaleString()}>created {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(issue.createdAt)}</time></>}</span>} meta={epic && <><ProjectCell path={issue.project} /><EpicCell id={epic.id} goal={epic.goal} /></>} />;
 }
 
 export function IssueDrawer({ issue, onClose }: { issue: FactoryIssue; onClose: () => void }) {
@@ -44,6 +44,7 @@ export function IssueDrawer({ issue, onClose }: { issue: FactoryIssue; onClose: 
       <div><dt>Status</dt><dd>{issue.status}</dd></div>
       <div><dt>Type</dt><dd>{issue.kind}</dd></div>
       <div><dt>Epic</dt><dd><Link to={`/factory/epics/${encodeURIComponent(issue.epicId)}`}>{issue.epicId}</Link></dd></div>
+		<div><dt>Project</dt><dd><ProjectLabel path={issue.project} /></dd></div>
       {issue.parentId && <div><dt>Parent</dt><dd>{issue.parentId}</dd></div>}
       {issue.requirement && <div><dt>Requirement</dt><dd>{issue.requirement}</dd></div>}
       {issue.dispatchState && <div><dt>Dispatch</dt><dd>{issue.dispatchState}</dd></div>}
@@ -78,9 +79,9 @@ export function FactoryIssues() {
   const selected = issues.find((issue) => issue.id === issueId);
 	const epicByID = new Map(epics.data?.map((epic) => [epic.id, epic]));
 	const kinds = [...new Set(issues.map((issue) => issue.kind))].sort();
-	const projects = [...new Set(epics.data?.map((epic) => epic.initialProject) ?? [])].sort();
+	const projects = [...new Set(issues.map((issue) => issue.project))].sort();
 	const closed = (issue: FactoryIssue) => issue.status === 'closed' || issue.status === 'completed';
-	const filtered = issues.filter((issue) => `${issue.id} ${issue.title} ${issue.status} ${issue.kind} ${epicByID.get(issue.epicId)?.goal ?? ''}`.toLowerCase().includes(search) && (!kind || issue.kind === kind) && (!project || epicByID.get(issue.epicId)?.initialProject === project));
+	const filtered = issues.filter((issue) => `${issue.id} ${issue.title} ${issue.status} ${issue.kind} ${issue.project} ${epicByID.get(issue.epicId)?.goal ?? ''}`.toLowerCase().includes(search) && (!kind || issue.kind === kind) && (!project || issue.project === project));
 	const closedCount = filtered.filter(closed).length;
 	const visible = filtered.filter((issue) => status === 'all' || (status === 'closed' ? closed(issue) : !closed(issue)));
 	const statusGroups: Record<string, string> = { in_progress: 'In progress', blocked: 'Blocked', retry_wait: 'Waiting', deferred: 'Waiting', open: 'Open', closed: 'Closed', completed: 'Closed' };

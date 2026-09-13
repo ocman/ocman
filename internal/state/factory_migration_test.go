@@ -487,6 +487,41 @@ func TestMigrateV82BackfillsPermanentEpicProject(t *testing.T) {
 	}
 }
 
+func TestMigrateV84BackfillsIssueProjects(t *testing.T) {
+	raw, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	if err := ensureSchemaVersionTable(raw); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := raw.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for version := 1; version <= 83; version++ {
+		if err := applyMigration(tx, version); err != nil {
+			t.Fatalf("apply migration v%d: %v", version, err)
+		}
+	}
+	if _, err := tx.Exec(`INSERT INTO factory_project (path, created_at) VALUES ('/repo', 1);
+		INSERT INTO factory_epic (id, project_path, status, goal, created_at, updated_at) VALUES ('epic', '/repo', 'open', 'Goal', 1, 1);
+		INSERT INTO factory_issue (id, epic_id, kind, title, status, created_at) VALUES ('issue', 'epic', 'implementation', 'Work', 'open', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateToV84(tx); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var project string
+	if err := raw.QueryRow(`SELECT project_path FROM factory_issue WHERE id = 'issue'`).Scan(&project); err != nil || project != "/repo" {
+		t.Fatalf("project = %q, %v", project, err)
+	}
+}
+
 // Gates created before v76 stored the work item they came out of but never wrote
 // the edge, leaving them stranded in the graph.
 func TestMigrateV76BackfillsGateEdgesToInterruptedWork(t *testing.T) {

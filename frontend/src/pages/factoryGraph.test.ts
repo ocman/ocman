@@ -3,7 +3,7 @@ import { factoryGraphModel, factoryIssueState, proposalIssues } from './factoryG
 import type { FactoryIssue } from '../lib/api';
 
 const issue = (overrides: Partial<FactoryIssue> & Pick<FactoryIssue, 'id'>): FactoryIssue => ({
-  epicId: 'epic-1', kind: 'task', title: 'Work', status: 'open', ...overrides,
+  epicId: 'epic-1', project: '/repo', kind: 'task', title: 'Work', status: 'open', ...overrides,
 });
 
 describe('factoryIssueState', () => {

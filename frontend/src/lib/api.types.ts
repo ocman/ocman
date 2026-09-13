@@ -169,7 +169,7 @@ export interface FactoryClaimedPlan {
 }
 
 export interface FactoryProposal {
-	manifest: { epicId: string; molId: string; project: string; nodes: { key: string; type: string; requirement: string; title?: string; description?: string; dependsOn?: string[] }[]; edges?: { from: string; to: string; type: 'blocks' | 'on_failure' }[] };
+	manifest: { epicId: string; molId: string; project: string; nodes: { key: string; type: string; requirement: string; title?: string; description?: string; project?: string; dependsOn?: string[] }[]; edges?: { from: string; to: string; type: 'blocks' | 'on_failure' }[] };
 	revision: number;
 	contentHash: string;
 	rationaleMarkdown?: string;
@@ -217,6 +217,7 @@ export interface CreateWorkEpicRequest {
 export interface FactoryIssue {
   id: string;
   epicId: string;
+	project: string;
   parentId?: string;
   requirement?: string;
   formulaId?: string;
@@ -288,13 +289,14 @@ export interface FactoryGraphMutation {
   title?: string;
   description?: string;
   requirement?: string;
+	project?: string;
 }
 
 export interface FactoryQueueItem {
   id: string;
   epicId: string;
   title: string;
-  repository: string;
+	project: string;
   state: string;
   attemptId?: string;
   session?: { platform: string; id: string };

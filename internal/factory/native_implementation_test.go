@@ -3,6 +3,7 @@ package factory
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -38,6 +39,7 @@ type fakeImplementationLauncher struct {
 	baseRef     string
 	branchErr   error
 	resolutions int
+	prepared    []string
 }
 
 type deliveryMutationStore struct {
@@ -140,7 +142,8 @@ func TestDeliveryAdmissionUsesCurrentGraph(t *testing.T) {
 	}
 }
 
-func (f *fakeImplementationLauncher) PrepareImplementationWorkspace(context.Context, string, string, string, string) (string, string, error) {
+func (f *fakeImplementationLauncher) PrepareImplementationWorkspace(_ context.Context, repository, _, checkpoint, _ string) (string, string, error) {
+	f.prepared = append(f.prepared, repository+":"+checkpoint)
 	return "main", f.baseRef, f.branchErr
 }
 
@@ -1104,6 +1107,91 @@ func TestNativeRecoveryResumeDeliversBeforeClosingGate(t *testing.T) {
 	issues, err = svc.ListIssues(t.Context(), epic.ID)
 	if err != nil || !hasRecoveryGate(issues, gate.IssueID, "resume") {
 		t.Fatalf("resolved recovery issues = %#v, %v", issues, err)
+	}
+}
+
+func TestNativeDispatchChargesIssueTargetAndFreezesItsRepository(t *testing.T) {
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.SetFactoryCapacityPolicy(t.Context(), model.FactoryCapacityPolicy{GlobalCapacity: 3, ProjectCapacity: 1}); err != nil {
+		t.Fatal(err)
+	}
+	launcher := &fakeImplementationLauncher{store: db}
+	svc := NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other": "/other"}}, &fakePlanningLauncher{}, launcher)
+	for i, project := range []string{"/other", "/other", "/repo"} {
+		epic, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: fmt.Sprintf("Ship %d", i), InitialProject: "/repo", AcknowledgeLocalExecution: true, Projects: []ProjectAdmission{{Path: "/other", AcknowledgeLocalExecution: true}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.Pour(t.Context(), epic.ID); err != nil {
+			t.Fatal(err)
+		}
+		if err := svc.MutateGraph(t.Context(), GraphMutation{Action: "create", EpicID: epic.ID, ParentID: pouredIssueID(t, svc, epic.ID, "mol"), Kind: "task", Title: "Implement", Project: project}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := svc.Dispatch(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(launcher.calls) != 2 || launcher.calls[0].Repository != "/other" || launcher.calls[1].Repository != "/repo" {
+		t.Fatalf("launch targets = %#v", launcher.calls)
+	}
+	for _, call := range launcher.calls {
+		attempt, found, err := db.GetFactoryAttempt(t.Context(), call.AttemptID)
+		if err != nil || !found || attempt.FrozenPolicy.Repository != call.Repository {
+			t.Fatalf("attempt repository = %#v, %v, %v", attempt, found, err)
+		}
+	}
+	queue, err := svc.Queue(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	projects := map[string]int{}
+	for _, item := range queue {
+		projects[item.Project]++
+	}
+	if projects["/other"] == 0 || projects["/repo"] == 0 {
+		t.Fatalf("queue projects = %#v", projects)
+	}
+}
+
+func TestNativeDispatchDoesNotCarryWorkspaceHistoryAcrossIssueProjects(t *testing.T) {
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	launcher := &fakeImplementationLauncher{store: db}
+	svc := NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other": "/other"}}, &fakePlanningLauncher{}, launcher)
+	epic, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Ship", InitialProject: "/repo", AcknowledgeLocalExecution: true, Projects: []ProjectAdmission{{Path: "/other", AcknowledgeLocalExecution: true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Pour(t.Context(), epic.ID); err != nil {
+		t.Fatal(err)
+	}
+	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{
+		{Key: "first", Type: "implementation", Requirement: "required"},
+		{Key: "second", Type: "implementation", Requirement: "required", Project: "/other", DependsOn: []string{"first"}},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
+		t.Fatal(err)
+	}
+	first := launcher.calls[0]
+	if err := svc.CompleteAttempt(t.Context(), first.AttemptID, first.AgentToken, "done", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Dispatch(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(launcher.calls) != 2 || launcher.calls[1].Repository != "/other" || !reflect.DeepEqual(launcher.prepared, []string{"/repo:", "/other:"}) {
+		t.Fatalf("cross-project launches = %#v, prepared = %#v", launcher.calls, launcher.prepared)
 	}
 }
 
