@@ -1025,6 +1025,48 @@ func TestFactoryReferenceDescendantsCannotBeClaimed(t *testing.T) {
 	}
 }
 
+func TestFactoryImportRollsBackAndRecordsProvenance(t *testing.T) {
+	for _, table := range []string{"factory_audit_record", "factory_proposal_revision", "factory_plan_gate"} {
+		t.Run(table, func(t *testing.T) {
+			db := openTestStateDB(t)
+			t.Cleanup(func() { _ = db.Close() })
+			epic, err := db.CreateFactoryEpic(t.Context(), "", "Import", "", "/repo", "import", nativeTracerFormula(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			planID := factoryIssueID(t, db, epic.ID, "plan")
+			proposal := model.NativeProposalRevision{EpicID: epic.ID, MolID: factoryIssueID(t, db, epic.ID, "mol"), Project: "/repo", ManifestJSON: `{}`, ContentHash: "import-hash"}
+			if _, err := db.db.Exec(`CREATE TRIGGER fail_import BEFORE INSERT ON ` + table + ` BEGIN SELECT RAISE(ABORT, 'write failed'); END`); err != nil {
+				t.Fatal(err)
+			}
+			if _, ok, err := db.ImportFactoryProposalRevision(t.Context(), proposal); err == nil || ok {
+				t.Fatalf("import ignored write failure: %v, %v", ok, err)
+			}
+			var status string
+			if err := db.db.QueryRow(`SELECT status FROM factory_issue WHERE id = ?`, planID).Scan(&status); err != nil || status != "open" {
+				t.Fatalf("failed import completed planning: %q, %v", status, err)
+			}
+			for _, table := range []string{"factory_audit_record", "factory_proposal_revision"} {
+				var count int
+				if err := db.db.QueryRow(`SELECT count(*) FROM `+table+` WHERE epic_id = ?`, epic.ID).Scan(&count); err != nil || count != 0 {
+					t.Fatalf("failed import left %s rows: %d, %v", table, count, err)
+				}
+			}
+			if _, err := db.db.Exec(`DROP TRIGGER fail_import`); err != nil {
+				t.Fatal(err)
+			}
+			saved, ok, err := db.ImportFactoryProposalRevision(t.Context(), proposal)
+			if err != nil || !ok || saved.Revision != 1 {
+				t.Fatalf("retry = %#v, %v, %v", saved, ok, err)
+			}
+			var hash string
+			if err := db.db.QueryRow(`SELECT json_extract(details_json, '$.contentHash') FROM factory_audit_record WHERE epic_id = ? AND action = 'proposal.import' AND actor = 'agent'`, epic.ID).Scan(&hash); err != nil || hash != proposal.ContentHash {
+				t.Fatalf("import provenance = %q, %v", hash, err)
+			}
+		})
+	}
+}
+
 func TestFactoryPlanClaimAndProposalInventory(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()

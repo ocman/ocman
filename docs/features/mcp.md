@@ -130,6 +130,16 @@ Planning Attempt's `attempt_id` and `attempt_token`. Its manifest accepts an
 issue graph with `nodes` and typed `edges` (`blocks` or `on_failure`); legacy
 per-node `dependsOn` remains accepted for stored and older proposals.
 
+For a complete plan made in a regular session, use `create`, then `issues` to
+find the root `mol` ID, then `import_proposal`. It accepts `epic_id`,
+`manifest_json` in the same format as `submit_proposal`, and optional
+`rationale_markdown`, without attempt credentials. Import is allowed only before
+any Factory attempt has been claimed and while the approval gate is unresolved.
+It creates a proposal and returns a human approval card, without launching a
+planning session or implementation. Re-import after a revision request to submit
+the updated plan. The agent still cannot approve it. See
+[Use an existing plan](../factory/#use-an-existing-plan).
+
 Failed and terminally blocked work can launch a read-only unblock session from
 the Factory action inbox. The agent explains one minimal repair, then invokes
 `factory_unblock`; OpenCode's per-session permission prompt keeps the actual

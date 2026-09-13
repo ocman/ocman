@@ -1175,20 +1175,45 @@ func (d *DB) ClaimFactoryPlan(ctx context.Context, epicID, issueID, profile stri
 }
 
 func (d *DB) SaveFactoryProposalRevision(ctx context.Context, proposal model.NativeProposalRevision) (model.NativeProposalRevision, error) {
-	proposal, _, err := d.saveFactoryProposalRevision(ctx, proposal, "", "")
+	proposal, _, err := d.saveFactoryProposalRevision(ctx, proposal, "", "", false)
 	return proposal, err
 }
 
 func (d *DB) SaveFactoryProposalRevisionForAttempt(ctx context.Context, proposal model.NativeProposalRevision, attemptID, token string) (model.NativeProposalRevision, bool, error) {
-	return d.saveFactoryProposalRevision(ctx, proposal, attemptID, token)
+	return d.saveFactoryProposalRevision(ctx, proposal, attemptID, token, false)
 }
 
-func (d *DB) saveFactoryProposalRevision(ctx context.Context, proposal model.NativeProposalRevision, attemptID, token string) (model.NativeProposalRevision, bool, error) {
+// ImportFactoryProposalRevision completes unclaimed planning work and opens its
+// approval gate atomically. No planning or implementation attempt is launched.
+func (d *DB) ImportFactoryProposalRevision(ctx context.Context, proposal model.NativeProposalRevision) (model.NativeProposalRevision, bool, error) {
+	return d.saveFactoryProposalRevision(ctx, proposal, "", "", true)
+}
+
+func (d *DB) saveFactoryProposalRevision(ctx context.Context, proposal model.NativeProposalRevision, attemptID, token string, imported bool) (model.NativeProposalRevision, bool, error) {
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return model.NativeProposalRevision{}, false, fmt.Errorf("beginning Factory proposal submission: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	if imported {
+		// Completing the Plan in this transaction prevents a concurrent human
+		// claim from starting a planner for a proposal already awaiting review.
+		result, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'closed', outcome = 'succeeded', outcome_reason = 'Existing plan imported'
+			WHERE epic_id = ? AND kind = 'plan' AND (status = 'open' OR (status = 'closed' AND outcome = 'succeeded'))
+			AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = factory_issue.id)
+			AND EXISTS (SELECT 1 FROM factory_epic WHERE id = ? AND status = 'open')
+			AND NOT EXISTS (SELECT 1 FROM factory_attempt WHERE epic_id = ?)
+			AND NOT EXISTS (SELECT 1 FROM factory_plan_gate WHERE epic_id = ? AND resolution NOT IN ('open', 'revision_requested'))
+			AND EXISTS (SELECT 1 FROM factory_issue g WHERE g.epic_id = ? AND g.kind = 'gate' AND g.status = 'open'
+				AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = g.id))`, proposal.EpicID, proposal.EpicID, proposal.EpicID, proposal.EpicID, proposal.EpicID)
+		if err != nil {
+			return model.NativeProposalRevision{}, false, err
+		}
+		changed, err := result.RowsAffected()
+		if err != nil || changed == 0 {
+			return model.NativeProposalRevision{}, false, err
+		}
+	}
 	if attemptID != "" {
 		var authorized int
 		err := tx.QueryRowContext(ctx, `SELECT 1 FROM factory_attempt a JOIN factory_external_mapping m ON m.system = 'factory' AND m.external_kind = 'attempt_token' AND m.external_id = ? AND m.entity_kind = 'attempt' AND m.entity_id = a.id WHERE a.id = ? AND a.epic_id = ? AND a.phase = 'active' AND json_extract(a.frozen_policy_json, '$.profile') = 'factory-plan/v1' AND NOT EXISTS (SELECT 1 FROM factory_plan_gate g WHERE g.epic_id = a.epic_id AND g.resolution IN ('approved', 'rejected'))`, token, attemptID, proposal.EpicID).Scan(&authorized)
@@ -1210,6 +1235,15 @@ func (d *DB) saveFactoryProposalRevision(ctx context.Context, proposal model.Nat
 		return model.NativeProposalRevision{}, false, fmt.Errorf("allocating Factory proposal revision: %w", err)
 	}
 	proposal.CreatedAt = time.Now().UnixMilli()
+	if imported {
+		details, err := json.Marshal(map[string]any{"revision": proposal.Revision, "contentHash": proposal.ContentHash})
+		if err != nil {
+			return model.NativeProposalRevision{}, false, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO factory_audit_record (epic_id, actor, action, details_json, created_at) VALUES (?, 'agent', 'proposal.import', ?, ?)`, proposal.EpicID, string(details), proposal.CreatedAt); err != nil {
+			return model.NativeProposalRevision{}, false, err
+		}
+	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_proposal_revision (epic_id, mol_id, project_path, revision, manifest_json, rationale_markdown, content_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, proposal.EpicID, proposal.MolID, proposal.Project, proposal.Revision, proposal.ManifestJSON, proposal.RationaleMarkdown, proposal.ContentHash, proposal.CreatedAt); err != nil {
 		return model.NativeProposalRevision{}, false, fmt.Errorf("saving Factory proposal revision: %w", err)
 	}

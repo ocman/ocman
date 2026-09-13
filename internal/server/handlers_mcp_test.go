@@ -286,6 +286,17 @@ func TestDedicatedMCPFactoryServiceRejectsUserOnlyActions(t *testing.T) {
 	}
 }
 
+func TestMCPFactoryImportsPlanButCannotApproveIt(t *testing.T) {
+	underlying := &fakeFactoryService{}
+	service := factoryMCPService{factoryService: underlying}
+	if _, err := service.SubmitProposal(t.Context(), factory.SubmitProposalRequest{Import: true, EpicID: "epic"}); err != nil || !underlying.submitProposalReq.Import {
+		t.Fatalf("import = %#v, %v", underlying.submitProposalReq, err)
+	}
+	if _, err := service.DecidePlanGate(t.Context(), "epic", "approve", factory.PlanGateDecisionRequest{ExpectedRevision: 1, ExpectedHash: "hash"}); !errors.Is(err, factory.ErrActionNotPermitted) || underlying.gateAction != "" {
+		t.Fatalf("agent approved imported plan: %v", err)
+	}
+}
+
 func TestDedicatedMCPFactoryServiceAllowsGraphMutations(t *testing.T) {
 	underlying := &fakeFactoryService{}
 	service := factoryMCPService{factoryService: underlying}

@@ -6,6 +6,28 @@ weight: 9
 Factory implements a Work Epic sequentially on one shared branch, then runs a
 separate delivery session to publish the final pull request.
 
+## Use an existing plan
+
+If a regular session has already planned the work, ask it to import that plan
+into Factory. It creates an Epic, reads `issues` to find the root `mol` ID,
+then calls `import_proposal` with the ticket breakdown and dependency edges.
+No dedicated planning session starts.
+
+The imported proposal still requires **human approval**. Review its tickets,
+choose an implementation model, then approve through the action card or Epic
+page. Importing alone does not materialize tickets or start implementation.
+
+Include the scope, acceptance criteria, verification steps, and relevant decisions
+in the ticket descriptions and proposal rationale. Implementation sessions do
+not inherit the original conversation.
+
+Import is available before any Factory attempt has been claimed. It marks
+the planning work complete, so a competing planner cannot start while the proposal is
+awaiting review. You can request a revision and have the original session call
+`import_proposal` again. Each import creates an immutable revision; approval
+must match its exact revision and hash. Approved or rejected plans cannot be
+replaced through import. Proposal history and the pending gate survive restart.
+
 ## Planning and implementation models
 
 New planning sessions prefer an available Fable or Astra model. If neither is

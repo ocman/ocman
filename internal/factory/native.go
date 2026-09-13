@@ -557,8 +557,10 @@ type SubmitProposalRequest struct {
 	EpicID            string           `json:"epicId"`
 	Manifest          ProposalManifest `json:"manifest"`
 	RationaleMarkdown string           `json:"rationaleMarkdown,omitempty"`
-	// AttemptID/AttemptToken prove a Planning Session owns EpicID. Agents
-	// must send both; a user submitting through the UI sends neither.
+	// Import is set only by the explicit existing-plan import action. It
+	// skips the planning attempt, never the approval gate.
+	Import bool `json:"-"`
+	// AttemptID/AttemptToken prove a Planning Session owns EpicID.
 	AttemptID    string `json:"attemptId,omitempty"`
 	AttemptToken string `json:"attemptToken,omitempty"`
 }
@@ -629,6 +631,7 @@ type nativePlanningStore interface {
 	ActivateFactoryAttempt(context.Context, string, model.PlanningSession, time.Time) (bool, error)
 	FailFactoryAttempt(context.Context, string, model.FactoryAttemptFailure, time.Time) (bool, error)
 	SaveFactoryProposalRevision(context.Context, model.NativeProposalRevision) (model.NativeProposalRevision, error)
+	ImportFactoryProposalRevision(context.Context, model.NativeProposalRevision) (model.NativeProposalRevision, bool, error)
 	SaveFactoryProposalRevisionForAttempt(context.Context, model.NativeProposalRevision, string, string) (model.NativeProposalRevision, bool, error)
 	GetFactoryProposalRevision(context.Context, string, int) (model.NativeProposalRevision, error)
 	ListFactoryProposalRevisions(context.Context, string) ([]model.NativeProposalRevision, error)
@@ -2021,6 +2024,9 @@ func (s *NativeService) SubmitProposal(ctx context.Context, req SubmitProposalRe
 	if (req.AttemptID == "") != (req.AttemptToken == "") {
 		return ProposalRevision{}, fmt.Errorf("%w: attempt ID and token are required", ErrInvalidRequest)
 	}
+	if req.Import && req.AttemptID != "" {
+		return ProposalRevision{}, fmt.Errorf("%w: imported plans cannot include attempt credentials", ErrInvalidRequest)
+	}
 	issues, err := s.store.ListFactoryIssues(ctx, epic.ID)
 	if err != nil {
 		return ProposalRevision{}, err
@@ -2049,7 +2055,13 @@ func (s *NativeService) SubmitProposal(ctx context.Context, req SubmitProposalRe
 	hash := sha256.Sum256(content)
 	proposal := model.NativeProposalRevision{EpicID: req.EpicID, MolID: req.Manifest.MolID, Project: req.Manifest.Project, ManifestJSON: string(manifestJSON), RationaleMarkdown: req.RationaleMarkdown, ContentHash: hex.EncodeToString(hash[:])}
 	var saved model.NativeProposalRevision
-	if req.AttemptID != "" {
+	if req.Import {
+		var authorized bool
+		saved, authorized, err = store.ImportFactoryProposalRevision(ctx, proposal)
+		if err == nil && !authorized {
+			return ProposalRevision{}, fmt.Errorf("%w: plan import requires an open Epic with unclaimed planning work and an unresolved approval gate", ErrInvalidRequest)
+		}
+	} else if req.AttemptID != "" {
 		var authorized bool
 		saved, authorized, err = store.SaveFactoryProposalRevisionForAttempt(ctx, proposal, req.AttemptID, req.AttemptToken)
 		if err == nil && !authorized {

@@ -54,6 +54,7 @@ type factoryAction struct {
 var factoryFormulaOutput = map[string]string{"id": "string", "version": "integer", "name": "string", "source": "string", "hash": "string (canonical compiled JSON)", "sourceHash": "string (TOML source provenance)", "compiled": "object (canonical interchange JSON)", "inputs": "string[]", "nodes": "FormulaGraphNode[]", "edges": "FormulaGraphEdge[]", "composition": "FormulaComposition[]", "valid": "boolean", "errors": "string[]"}
 
 var factoryActions = []factoryAction{
+	{name: "import_proposal", description: "Imports a complete existing plan from a plain session without launching a planning session. First create the Epic, then use issues to find its root mol ID. Pass the same manifest format as submit_proposal, with self-contained ticket descriptions and dependency edges. Only allowed before any Factory attempt has been claimed and while the approval gate is unresolved. Re-import to submit a revised plan. Returns an immutable proposal awaiting human approval; never starts implementation. Present the proposal for review and wait for explicit approval and implementation-model confirmation.", example: `{"action":"import_proposal","epic_id":"epic-1","manifest_json":"{\"epicId\":\"epic-1\",\"molId\":\"epic-1\",\"project\":\"/repo\",\"nodes\":[{\"key\":\"implement\",\"type\":\"implementation\",\"requirement\":\"required\",\"title\":\"Implement the change\",\"description\":\"Scope, acceptance criteria and verification steps.\"}]}"}`, required: []string{"epic_id", "manifest_json"}, optional: []string{"rationale_markdown"}, output: "ProposalRevision", errors: []string{"epic_id is required", "manifest_json is required", "manifest_json is invalid", "import_proposal does not accept attempt credentials", "factory action is not permitted", "factory epic not found", "factory request failed"}},
 	{name: "help", description: "Describes every available Factory action.", example: `{"action":"help"}`, output: "Factory action documentation", errors: []string{"action is required"}},
 	{name: "list", description: "Lists Factory Work Epics.", example: `{"action":"list"}`, output: "WorkEpic[]", errors: []string{"factory request failed"}},
 	{name: "get", description: "Gets one Factory Work Epic.", example: `{"action":"get","epic_id":"epic-1"}`, required: []string{"epic_id"}, output: "WorkEpic", errors: []string{"epic_id is required", "factory epic not found", "factory request failed"}},
@@ -81,7 +82,7 @@ var factoryActions = []factoryAction{
 	{name: "approve_authority", description: "Approves one out-of-profile permission request exactly once.", example: `{"action":"approve_authority","authority_gate_id":"gate-1"}`, required: []string{"authority_gate_id"}, output: "AuthorityEscalationGate", errors: []string{"authority_gate_id is required", "factory request failed"}},
 	{name: "reject_authority", description: "Rejects one out-of-profile permission request exactly once.", example: `{"action":"reject_authority","authority_gate_id":"gate-1"}`, required: []string{"authority_gate_id"}, output: "AuthorityEscalationGate", errors: []string{"authority_gate_id is required", "factory request failed"}},
 	{name: "mutate_graph", description: "Creates, edits, reparents, links, unlinks, or soft-deletes local Factory Issues unless they are in progress or closed.", example: `{"action":"mutate_graph","mutation_json":"{\"action\":\"create\",\"epicId\":\"epic-1\",\"parentId\":\"epic-1.1\",\"kind\":\"task\",\"title\":\"Implement the change\"}"}`, required: []string{"mutation_json"}, output: map[string]string{"status": "ok"}, errors: []string{"mutation_json is required", "mutation_json is invalid", "factory request failed"}},
-	{name: "create", description: "Creates and pours a Factory Work Epic with the built-in tracer Formula. Use issues and mutate_graph to add an already-planned ticket breakdown. goal is the Epic's title: one short clear line of at most 80 characters, e.g. \"Prettify Factory Epic IDs\" — never a paragraph. Put context, constraints and decisions in brief instead. Always pass epic_id: a short human-friendly kebab-case name for the work (2-40 lowercase letters, digits and dashes), e.g. pretty-epic-ids. If it comes back taken, call create again with a different name.", example: `{"action":"create","epic_id":"pretty-epic-ids","goal":"Prettify Factory Epic IDs","brief":"IDs are built from initials today.","initial_project":"/repo","acknowledge_local_execution":true}`, required: []string{"goal", "initial_project", "acknowledge_local_execution"}, optional: []string{"epic_id", "brief", "instantiation_id"}, output: "WorkEpic", errors: []string{"goal is required", "initial_project is required", "acknowledge_local_execution must be true", "goal must be a short clear title of at most 80 characters; move the detail into brief", "factory epic id already taken: pick another human-friendly id", "factory action is not permitted", "factory request failed"}},
+	{name: "create", description: "Creates and pours a Factory Work Epic with the built-in tracer Formula. For an already-planned ticket breakdown, use issues then import_proposal to skip the planning session while keeping human approval. goal is the Epic's title: one short clear line of at most 80 characters, e.g. \"Prettify Factory Epic IDs\" — never a paragraph. Put context, constraints and decisions in brief instead. Always pass epic_id: a short human-friendly kebab-case name for the work (2-40 lowercase letters, digits and dashes), e.g. pretty-epic-ids. If it comes back taken, call create again with a different name.", example: `{"action":"create","epic_id":"pretty-epic-ids","goal":"Prettify Factory Epic IDs","brief":"IDs are built from initials today.","initial_project":"/repo","acknowledge_local_execution":true}`, required: []string{"goal", "initial_project", "acknowledge_local_execution"}, optional: []string{"epic_id", "brief", "instantiation_id"}, output: "WorkEpic", errors: []string{"goal is required", "initial_project is required", "acknowledge_local_execution must be true", "goal must be a short clear title of at most 80 characters; move the detail into brief", "factory epic id already taken: pick another human-friendly id", "factory action is not permitted", "factory request failed"}},
 	{name: "pour", description: "Pouring Factory graphs is a human action. Copy the returned card marker verbatim in this response so the user can click the action.", example: `{"action":"pour","epic_id":"epic-1"}`, optional: []string{"epic_id"}, output: "Denial with a human action card marker", errors: []string{"factory action is not permitted"}},
 	{name: "claim_plan", description: "Claiming Factory Planning Work is a human action. Copy the returned card marker verbatim in this response so the user can click the action.", example: `{"action":"claim_plan","epic_id":"epic-1","issue_id":"epic-1.1"}`, optional: []string{"epic_id", "issue_id"}, output: "Denial with a human action card marker", errors: []string{"factory action is not permitted"}},
 	{name: "reopen_issue", description: "Reopening failed or cancelled work is a human action. Pass epic_id and issue_id, then copy the returned card marker verbatim in this response so the user can click Reopen issue. Do not retry the denied action.", example: `{"action":"reopen_issue","epic_id":"epic-1","issue_id":"epic-1.3"}`, optional: []string{"epic_id", "issue_id"}, output: "Denial with a human action card marker", errors: []string{"factory action is not permitted"}},
@@ -420,7 +421,7 @@ func (t *factoryTools) handleAction(ctx context.Context, req mcplib.CallToolRequ
 			return factoryToolError(err), nil
 		}
 		return toolResultJSON(formula), nil
-	case "submit_proposal":
+	case "submit_proposal", "import_proposal":
 		id, result := factoryEpicID(req)
 		if result != nil {
 			return result, nil
@@ -438,14 +439,22 @@ func (t *factoryTools) handleAction(ctx context.Context, req mcplib.CallToolRequ
 		rationale, _ := req.RequireString("rationale_markdown")
 		attemptID, _ := req.RequireString("attempt_id")
 		token, _ := req.RequireString("attempt_token")
-		if attemptID == "" || token == "" {
+		imported := action == "import_proposal"
+		if imported && (attemptID != "" || token != "") {
+			return mcplib.NewToolResultError("import_proposal does not accept attempt credentials"), nil
+		}
+		if !imported && (attemptID == "" || token == "") {
 			return mcplib.NewToolResultError("attempt_id and attempt_token are required"), nil
 		}
-		proposal, err := t.svc.SubmitProposal(ctx, factory.SubmitProposalRequest{EpicID: id, Manifest: manifest, RationaleMarkdown: rationale, AttemptID: attemptID, AttemptToken: token})
+		proposal, err := t.svc.SubmitProposal(ctx, factory.SubmitProposalRequest{EpicID: id, Manifest: manifest, RationaleMarkdown: rationale, AttemptID: attemptID, AttemptToken: token, Import: imported})
 		if err != nil {
 			return factoryToolError(err), nil
 		}
-		return toolResultJSON(proposal), nil
+		result = toolResultJSON(proposal)
+		if imported {
+			result.Content = append(result.Content, mcplib.NewTextContent("The imported plan awaits human approval. Copy this marker verbatim into this response, outside code or links: "+factoryCardMarker(id, "", "approve_plan")+". Do not approve or start implementation on the user's behalf."))
+		}
+		return result, nil
 	case "proposal":
 		id, result := factoryEpicID(req)
 		if result != nil {

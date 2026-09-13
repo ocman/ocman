@@ -182,7 +182,7 @@ func (f *fakeFactoryService) AddIssueComment(_ context.Context, _, issueID, acto
 }
 func (f *fakeFactoryService) SubmitProposal(_ context.Context, req factory.SubmitProposalRequest) (factory.ProposalRevision, error) {
 	f.submitProposalReq = req
-	return factory.ProposalRevision{EpicID: req.EpicID, Revision: 1}, nil
+	return factory.ProposalRevision{EpicID: req.EpicID, Revision: 1}, f.err
 }
 func (f *fakeFactoryService) GetProposal(_ context.Context, epicID string, revision int) (factory.ProposalRevision, error) {
 	f.proposalEpicID, f.proposalRevision = epicID, revision
@@ -265,7 +265,7 @@ func TestFactoryActionRegistryKeepsHelpAndValidationConsistent(t *testing.T) {
 		if got.IsError != denied {
 			t.Fatalf("%s example = %q, error = %v", action, resultText(got), got.IsError)
 		}
-		if !denied && action != "create" && len(got.Content) != 1 {
+		if !denied && action != "create" && action != "import_proposal" && len(got.Content) != 1 {
 			t.Fatalf("%s unexpectedly emitted extra card guidance: %#v", action, got.Content)
 		}
 	}
@@ -409,6 +409,42 @@ func TestFactoryToolPlanningActions(t *testing.T) {
 		if got := callTool(t, srv, "factory", args); !got.IsError {
 			t.Fatalf("invalid input accepted: %#v", args)
 		}
+	}
+}
+
+func TestFactoryToolImportsExistingPlan(t *testing.T) {
+	svc := &fakeFactoryService{}
+	srv, err := mcptest.NewServer(t, internalmcp.ServerTools(internalmcp.Deps{FactoryService: svc})...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(srv.Close)
+	manifest := `{"epicId":"epic-1","molId":"epic-1","project":"/repo","nodes":[{"key":"implement","type":"implementation","requirement":"required"}]}`
+	got := callTool(t, srv, "factory", map[string]any{"action": "import_proposal", "epic_id": "epic-1", "manifest_json": manifest, "rationale_markdown": "Already planned"})
+	if got.IsError || !svc.submitProposalReq.Import || svc.submitProposalReq.AttemptID != "" || svc.submitProposalReq.AttemptToken != "" || svc.submitProposalReq.RationaleMarkdown != "Already planned" || len(svc.submitProposalReq.Manifest.Nodes) != 1 {
+		t.Fatalf("import = %q, service saw %#v", resultText(got), svc.submitProposalReq)
+	}
+	if len(got.Content) != 2 || !strings.Contains(got.Content[1].(mcplib.TextContent).Text, "[[ocman:card type=factory-epic epic=epic-1 action=approve_plan]]") {
+		t.Fatalf("missing human approval card: %#v", got.Content)
+	}
+	for _, args := range []map[string]any{
+		{"action": "import_proposal", "manifest_json": manifest},
+		{"action": "import_proposal", "epic_id": "epic-1"},
+		{"action": "import_proposal", "epic_id": "epic-1", "manifest_json": "{"},
+		{"action": "import_proposal", "epic_id": "epic-1", "manifest_json": manifest + `{}`},
+		{"action": "import_proposal", "epic_id": "epic-1", "manifest_json": `{"unknown":true}`},
+		{"action": "import_proposal", "epic_id": "epic-1", "manifest_json": manifest, "attempt_id": "attempt"},
+		{"action": "import_proposal", "epic_id": "epic-1", "manifest_json": manifest, "attempt_token": "token"},
+	} {
+		svc.submitProposalReq = factory.SubmitProposalRequest{}
+		if got := callTool(t, srv, "factory", args); !got.IsError || svc.submitProposalReq.Import {
+			t.Fatalf("invalid import accepted: %#v", args)
+		}
+	}
+	svc.err = fmt.Errorf("%w: planning work is already claimed", factory.ErrInvalidRequest)
+	got = callTool(t, srv, "factory", map[string]any{"action": "import_proposal", "epic_id": "epic-1", "manifest_json": manifest})
+	if !got.IsError || !strings.Contains(resultText(got), "already claimed") || len(got.Content) != 1 {
+		t.Fatalf("import conflict should explain the error without an action card: %#v", got)
 	}
 }
 
