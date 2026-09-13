@@ -176,13 +176,13 @@ export function CommitsSection({
               <button
                 type="button"
                 className="oc-info-commit"
-                aria-label={`Open source call for commit ${commit.sha.slice(0, 7)}: ${commit.subject}`}
+                aria-label={`Open source call for commit ${commit.sha.slice(0, 7)} on ${commit.branch ?? 'Detached HEAD'}: ${commit.subject}`}
                 onClick={() => onNavigateCommit?.(commit)}
                 disabled={!onNavigateCommit}
               >
                 <span className="oc-info-commit-meta">
                   <code>{commit.sha.slice(0, 7)}</code>
-                  <span>{commit.branch ?? 'Detached HEAD'}</span>
+                  <span className="oc-info-commit-branch">{commit.branch ?? 'Detached HEAD'}</span>
                 </span>
                 <span className="oc-info-commit-subject">{commit.subject}</span>
               </button>

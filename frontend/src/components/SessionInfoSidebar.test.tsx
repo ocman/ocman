@@ -95,7 +95,7 @@ describe('SessionInfoSidebar commits', () => {
     renderSidebar(makeSession(), onNavigateCommit);
 
     await user.tab();
-    const button = screen.getByRole('button', { name: 'Open source call for commit abcdef1: Ship it' });
+    const button = screen.getByRole('button', { name: 'Open source call for commit abcdef1 on main: Ship it' });
     expect(button).toHaveFocus();
     await user.keyboard('{Enter}');
     expect(onNavigateCommit).toHaveBeenCalledWith(expect.objectContaining({ toolPartId: 'p1', toolCallId: 'c1' }));

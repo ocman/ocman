@@ -122,7 +122,7 @@ describe('SessionDetail — phone overlay panels', () => {
     fireEvent.click(screen.getByTestId('mobile-details-toggle'));
     expect(screen.getByTestId('session-layout')).toHaveClass('mobile-details-open');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open source call for commit abc1234: Close details' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open source call for commit abc1234 on main: Close details' }));
 
     expect(screen.getByTestId('session-layout')).not.toHaveClass('mobile-details-open');
   });

@@ -258,11 +258,14 @@ func runWithRecover(name string, body func()) {
 // completes against the live writer or sees closed=true and skips. All
 // writes go through write(), which takes the same mutex.
 type Sink struct {
-	w      io.Writer
-	flush  func()
-	mu     sync.Mutex
-	closed bool
-	busy   atomic.Bool
+	w            io.Writer
+	flush        func()
+	mu           sync.Mutex
+	closed       bool
+	asyncMu      sync.Mutex
+	asyncRunning bool
+	pendingEvent string
+	pendingData  []byte
 }
 
 // write emits a single named SSE event. It is a no-op if the sink has
@@ -282,12 +285,30 @@ func (s *Sink) write(eventType string, data []byte) {
 }
 
 func (s *Sink) writeAsync(eventType string, data []byte) {
-	if s == nil || !s.busy.CompareAndSwap(false, true) {
+	if s == nil {
 		return
 	}
+	s.asyncMu.Lock()
+	s.pendingEvent, s.pendingData = eventType, data
+	if s.asyncRunning {
+		s.asyncMu.Unlock()
+		return
+	}
+	s.asyncRunning = true
+	s.asyncMu.Unlock()
 	go func() {
-		defer s.busy.Store(false)
-		s.write(eventType, data)
+		for {
+			s.asyncMu.Lock()
+			eventType, data := s.pendingEvent, s.pendingData
+			s.pendingEvent, s.pendingData = "", nil
+			if eventType == "" {
+				s.asyncRunning = false
+				s.asyncMu.Unlock()
+				return
+			}
+			s.asyncMu.Unlock()
+			s.write(eventType, data)
+		}
 	}()
 }
 

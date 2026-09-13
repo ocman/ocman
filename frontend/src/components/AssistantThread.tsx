@@ -689,6 +689,8 @@ export function AssistantThread({
     const message = viewport.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(scrollToToolCall.messageId)}"]`);
     const source = message?.querySelector<HTMLElement>(`[data-tool-call-id="${CSS.escape(scrollToToolCall.toolCallId)}"]`);
     if (!source?.firstElementChild) return;
+    viewport.querySelectorAll('.oc-tool-source-revealed').forEach((node) => node.classList.remove('oc-tool-source-revealed'));
+    source.classList.add('oc-tool-source-revealed');
     source.querySelector<HTMLButtonElement>('[aria-expanded="false"]')?.click();
     let timeout: ReturnType<typeof setTimeout> | undefined;
     const frame = requestAnimationFrame(() => {

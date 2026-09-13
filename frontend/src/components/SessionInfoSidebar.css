@@ -170,10 +170,17 @@
   gap: 8px;
   color: var(--overlay0);
   font-size: 11px;
+  min-width: 0;
 }
 
 .oc-info-commit-meta code {
   color: var(--accent);
+  flex-shrink: 0;
+}
+
+.oc-info-commit-branch {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .oc-info-commit-subject {

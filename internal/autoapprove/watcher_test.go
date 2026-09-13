@@ -135,11 +135,14 @@ type commitNotificationWriter struct {
 type blockingNotificationWriter struct {
 	started chan struct{}
 	release chan struct{}
+	once    sync.Once
+	writes  atomic.Int32
 }
 
 func (w *blockingNotificationWriter) Write(p []byte) (int, error) {
-	close(w.started)
+	w.once.Do(func() { close(w.started) })
 	<-w.release
+	w.writes.Add(1)
 	return len(p), nil
 }
 
@@ -211,6 +214,31 @@ func TestAutoApproveWatcherCommitCaptureDoesNotWaitForSessionSink(t *testing.T) 
 		t.Fatal("session sink was not notified")
 	}
 	close(writer.release)
+}
+
+func TestSessionSinkDoesNotDropChangesWhileWriting(t *testing.T) {
+	writer := &blockingNotificationWriter{started: make(chan struct{}), release: make(chan struct{})}
+	sink := &Sink{w: writer}
+	sink.writeAsync("ocman.session.changed", []byte(`{"sessionID":"s1"}`))
+	select {
+	case <-writer.started:
+	case <-time.After(waitTimeout):
+		t.Fatal("first write did not start")
+	}
+	sink.writeAsync("ocman.session.changed", []byte(`{"sessionID":"s1"}`))
+	close(writer.release)
+	deadline := time.After(waitTimeout)
+	for {
+		if writer.writes.Load() == 2 {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("writes = %d, want 2", writer.writes.Load())
+		default:
+			time.Sleep(time.Millisecond)
+		}
+	}
 }
 
 func wrappedPermissionAskedEvent(directory, sessionID, permissionID string) string {

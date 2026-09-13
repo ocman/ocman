@@ -105,6 +105,7 @@ beforeEach(() => {
   Element.prototype.scrollTo = vi.fn();
   vi.stubGlobal('ResizeObserver', StubResizeObserver);
   useUiStore.getState().setShowMessageMetadata(false);
+  useUiStore.setState({ showToolDetails: true });
   threadState.renderUser = false;
   message.content = [{ type: 'text', text: 'Reply' }];
   turnStats.promptCacheRebuilt = false;
@@ -223,6 +224,31 @@ describe('AssistantThread message jumps', () => {
     expect(container.querySelector('[data-tool-call-id="call-1"]')?.firstElementChild).not.toHaveClass('oc-msg-scroll-highlight');
     expect(container.querySelector('[data-tool-call-id="call-2"]')?.firstElementChild).toHaveFocus();
     expect(Element.prototype.scrollTo).toHaveBeenCalled();
+  });
+
+  it('reveals the requested call while tool details are hidden', async () => {
+    useUiStore.setState({ showToolDetails: false });
+    message.content = [
+      { type: 'tool-call', toolCallId: 'call-1', toolName: 'bash', argsText: 'completed\ngit commit', result: 'done' },
+    ];
+    const { container } = render(<AssistantThread scrollToToolCall={{ messageId: 'assistant-1', toolCallId: 'call-1', tick: 1 }} />);
+
+    await vi.waitFor(() => expect(container.querySelector('[data-tool-call-id="call-1"]')).toHaveClass('oc-tool-source-revealed'));
+  });
+
+  it('only keeps the latest requested call revealed', async () => {
+    useUiStore.setState({ showToolDetails: false });
+    message.content = [
+      { type: 'tool-call', toolCallId: 'call-1', toolName: 'bash', argsText: 'completed\nfirst', result: 'done' },
+      { type: 'tool-call', toolCallId: 'call-2', toolName: 'bash', argsText: 'completed\nsecond', result: 'done' },
+    ];
+    const { container, rerender } = render(<AssistantThread scrollToToolCall={{ messageId: 'assistant-1', toolCallId: 'call-1', tick: 1 }} />);
+    await vi.waitFor(() => expect(container.querySelector('[data-tool-call-id="call-1"]')).toHaveClass('oc-tool-source-revealed'));
+
+    rerender(<AssistantThread scrollToToolCall={{ messageId: 'assistant-1', toolCallId: 'call-2', tick: 2 }} />);
+
+    await vi.waitFor(() => expect(container.querySelector('[data-tool-call-id="call-2"]')).toHaveClass('oc-tool-source-revealed'));
+    expect(container.querySelector('[data-tool-call-id="call-1"]')).not.toHaveClass('oc-tool-source-revealed');
   });
 });
 

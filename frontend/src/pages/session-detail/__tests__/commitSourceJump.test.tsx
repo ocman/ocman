@@ -34,11 +34,11 @@ describe('SessionDetail commit source jump', () => {
     renderSessionPage({ detail, sessionInfo, apiOverrides: { session: fetchSession } });
     await screen.findByTestId('assistant-thread');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open source call for commit abc1234: Tracked commit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open source call for commit abc1234 on main: Tracked commit' }));
     expect(screen.getByTestId('assistant-thread-tool-target')).toHaveTextContent('old-message:commit-call:1');
-    fireEvent.click(screen.getByRole('button', { name: 'Open source call for commit def5678: Second commit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open source call for commit def5678 on main: Second commit' }));
     expect(screen.getByTestId('assistant-thread-tool-target')).toHaveTextContent('old-message:commit-call:2');
-    fireEvent.click(screen.getByRole('button', { name: 'Open source call for commit def5678: Second commit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open source call for commit def5678 on main: Second commit' }));
     expect(screen.getByTestId('assistant-thread-tool-target')).toHaveTextContent('old-message:commit-call:3');
     expect(fetchSession).toHaveBeenCalledOnce();
   });
@@ -52,7 +52,7 @@ describe('SessionDetail commit source jump', () => {
     renderSessionPage({ detail, sessionInfo: info('old-message', 'commit-part', '') });
     await screen.findByTestId('assistant-thread');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open source call for commit abc1234: Tracked commit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open source call for commit abc1234 on main: Tracked commit' }));
 
     expect(screen.getByTestId('assistant-thread-tool-target')).toHaveTextContent('old-message:commit-part:1');
   });
@@ -73,8 +73,8 @@ describe('SessionDetail commit source jump', () => {
     renderSessionPage({ detail, sessionInfo, apiOverrides: { session: fetchSession } });
     await screen.findByTestId('assistant-thread');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Open source call for commit abc1234: Tracked commit' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Open source call for commit def5678: Loaded commit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open source call for commit abc1234 on main: Tracked commit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open source call for commit def5678 on main: Loaded commit' }));
     expect(screen.getByTestId('assistant-thread-tool-target')).toHaveTextContent('loaded-message:loaded-call:1');
     await act(async () => { release(); await gate; });
     expect(screen.getByTestId('assistant-thread-tool-target')).toHaveTextContent('loaded-message:loaded-call:1');
@@ -92,7 +92,7 @@ describe('SessionDetail commit source jump', () => {
     renderSessionPage({ detail: initial, sessionInfo: info(), apiOverrides: { session: fetchSession } });
 
     await screen.findByTestId('assistant-thread');
-    fireEvent.click(await screen.findByRole('button', { name: 'Open source call for commit abc1234: Tracked commit' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open source call for commit abc1234 on main: Tracked commit' }));
 
     await waitFor(() => expect(fetchSession).toHaveBeenLastCalledWith(session.id, 2_147_483_647, 0, expect.any(AbortSignal), platform));
     await waitFor(() => expect(screen.getByTestId('assistant-thread-tool-target')).toHaveTextContent('old-message:commit-call:1'));
@@ -104,10 +104,10 @@ describe('SessionDetail commit source jump', () => {
     renderSessionPage({ detail, sessionInfo: info(), apiOverrides: { session: vi.fn().mockResolvedValue(detail) } });
 
     await screen.findByTestId('assistant-thread');
-    fireEvent.click(await screen.findByRole('button', { name: 'Open source call for commit abc1234: Tracked commit' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open source call for commit abc1234 on main: Tracked commit' }));
 
     expect((await screen.findByText('Source call is no longer available.')).closest('[role="status"]')).not.toBeNull();
-    expect(screen.getByRole('button', { name: 'Open source call for commit abc1234: Tracked commit' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open source call for commit abc1234 on main: Tracked commit' })).toBeInTheDocument();
     expect(screen.getByTestId('assistant-thread-tool-target')).toHaveTextContent('');
   });
 
@@ -130,7 +130,7 @@ describe('SessionDetail commit source jump', () => {
     const page = renderSessionPage({ detail: firstDetail, sessions: [first, second], sessionInfo: info(), apiOverrides: { session: fetchSession } });
 
     await screen.findByTestId('assistant-thread');
-    fireEvent.click(await screen.findByRole('button', { name: 'Open source call for commit abc1234: Tracked commit' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open source call for commit abc1234 on main: Tracked commit' }));
     act(() => page.navigate(`/session/${second.id}`));
     await waitFor(() => expect(fetchSession).toHaveBeenCalledWith(second.id, expect.any(Number), 0, expect.any(AbortSignal), undefined));
     await act(async () => { release(); await gate; });
@@ -149,7 +149,7 @@ describe('SessionDetail commit source jump', () => {
     const fetchSession = vi.fn((id: string) => Promise.resolve(id === first.id ? firstDetail : secondDetail));
     const page = renderSessionPage({ detail: firstDetail, sessions: [first, second], sessionInfo: info(), apiOverrides: { session: fetchSession } });
     await screen.findByTestId('assistant-thread');
-    fireEvent.click(screen.getByRole('button', { name: 'Open source call for commit abc1234: Tracked commit' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open source call for commit abc1234 on main: Tracked commit' }));
     expect(screen.getByTestId('assistant-thread-tool-target')).toHaveTextContent('old-message:commit-call:1');
 
     act(() => page.navigate('/session/sess_2'));
