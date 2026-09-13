@@ -1,10 +1,17 @@
 import type { ThreadMessageLike } from '@assistant-ui/react';
-import type { Message, Part, PartData, FilePart, TaskSessionData } from './api';
+import type { Message, Part, PartData, TaskSessionData } from './api';
 import type { FailedSend } from './failedSends';
-import { extractTaskId } from './taskId';
 import { messageModelRef } from './turnStats';
 import { formatSeconds } from './format';
-import { SHELL_DESC_META, type ToolApproval } from './threadHelpers';
+import type { ToolApproval } from './threadHelpers';
+import {
+  convertToolPart,
+  convertUnknownPart,
+  USER_TOOL_EXECUTION_NOTICE,
+  type ImageItem,
+  type ToolCallItem,
+  type ToolPartContext,
+} from './convertToolPart';
 
 /**
  * Returns true when the MIME type denotes an image (`image/...`).
@@ -22,8 +29,6 @@ export function isImageMime(mime: string | undefined): boolean {
  * `JSON.parse` on every SSE delta for parts that haven't changed.
  */
 const parsedPartCache = new WeakMap<Part, PartData>();
-const USER_TOOL_EXECUTION_NOTICE = 'The following tool was executed by the user';
-const USER_EXECUTED_TOOL_META = '@user-executed-tool';
 
 function displayErrorMessage(message: string): string {
   try {
@@ -295,6 +300,107 @@ function partsEqual(a: Part[], b: Part[]): boolean {
  * exported `convertMessages` matches this shape via a default
  * instance.
  */
+/**
+ * Permission approvals render on the tool call they unblocked. New
+ * payloads match metadata against tool input; legacy payloads fall back
+ * to the latest tool that started before the notice. Returns the
+ * approvals keyed by tool part id plus the notice ids that were inlined
+ * (and therefore drop out of the thread).
+ */
+function indexApprovals(
+  messages: Message[],
+  parts: Part[],
+  partsByMsg: Record<string, Part[]>,
+): { approvalsByPartId: Record<string, ToolApproval[]>; inlinedNotices: Set<string> } {
+  const approvalsByPartId: Record<string, ToolApproval[]> = {};
+  const inlinedNotices = new Set<string>();
+  const notices = messages.filter((m) => m.data?.role === 'notice');
+  if (notices.length === 0) return { approvalsByPartId, inlinedNotices };
+  const toolParts = parts
+    .filter((p) => parsePart(p).type === 'tool' && partStartedAt(p) > 0)
+    .sort((a, b) => partStartedAt(a) - partStartedAt(b));
+  for (const notice of notices) {
+    for (const pd of (partsByMsg[notice.id] || EMPTY_PARTS).map(parsePart)) {
+      if (pd.type !== 'auto-approved') continue;
+      const target = matchingToolPart(toolParts, pd, notice.timeCreated);
+      if (!target) continue;
+      inlinedNotices.add(notice.id);
+      const list = approvalsByPartId[target.id] || (approvalsByPartId[target.id] = []);
+      list.push(approvalFromPart(pd));
+    }
+  }
+  return { approvalsByPartId, inlinedNotices };
+}
+
+function approvalFromPart(pd: PartData): ToolApproval {
+  return {
+    permission: pd.permission || '',
+    patterns: pd.patterns || [],
+    reasoning: pd.reasoning || '',
+    approvedBy: pd.approvedBy === 'user' ? 'user' : 'ai',
+    reply: pd.reply,
+    metadata: pd.metadata,
+    askedAt: pd.askedAt,
+    approvedAt: pd.approvedAt,
+  };
+}
+
+/**
+ * Detect mid-conversation model switches. Walk the messages in order
+ * tracking the last user message; the first assistant message carrying
+ * a model seeds the baseline (no chip), and any later assistant message
+ * whose model differs from the previously-active one flags the user
+ * message that triggered it so the renderer can draw a "model changed"
+ * divider above that user turn. Falls back to the assistant message
+ * when no preceding user message exists.
+ */
+function detectModelChanges(filtered: Message[]): Record<string, string> {
+  const modelChangedById: Record<string, string> = {};
+  let prevModel = '';
+  let lastUserId = '';
+  for (const m of filtered) {
+    if (m.data?.role === 'user') lastUserId = m.id;
+    if (m.data?.role !== 'assistant') continue;
+    const ref = messageModelRef(m);
+    if (!ref) continue;
+    if (prevModel && ref !== prevModel) {
+      modelChangedById[lastUserId || m.id] = ref;
+    }
+    prevModel = ref;
+  }
+  return modelChangedById;
+}
+
+/**
+ * Synthetic notice messages (auto-approve, etc.) render as a special
+ * assistant-role entry so they appear inline in the thread.
+ */
+function convertNoticeMessage(m: Message, rawParts: Part[]): ThreadMessageLike {
+  const noticeContent: Exclude<ThreadMessageLike['content'], string>[number][] = [];
+  for (const pd of rawParts.map(parsePart)) {
+    if (pd.type === 'auto-approved') {
+      noticeContent.push({
+        type: 'tool-call' as const,
+        toolCallId: m.id,
+        toolName: 'ocman:auto-approved',
+        argsText: '',
+        artifact: { ocmanApprovals: [approvalFromPart(pd)] },
+        result: undefined,
+      });
+    }
+    if (pd.type === 'text' && pd.text) {
+      noticeContent.push({ type: 'text' as const, text: pd.text });
+    }
+  }
+  return {
+    role: 'assistant' as const,
+    id: m.id,
+    content: noticeContent.length > 0 ? noticeContent : [{ type: 'text' as const, text: '' }],
+    createdAt: new Date(m.timeCreated),
+    status: { type: 'complete' as const, reason: 'stop' as const },
+  };
+}
+
 export type ConvertMessagesFn = (
   messages: Message[],
   parts: Part[],
@@ -360,36 +466,7 @@ export function createConvertMessages(): ConvertMessagesFn {
       state.lastPartsByMsg = partsByMsg;
     }
 
-    // Permission approvals render on the tool call they unblocked. New
-    // payloads match metadata against tool input; legacy payloads fall back
-    // to the latest tool that started before the notice.
-    const approvalsByPartId: Record<string, ToolApproval[]> = {};
-    const inlinedNotices = new Set<string>();
-    const notices = messages.filter((m) => m.data?.role === 'notice');
-    if (notices.length > 0) {
-      const toolParts = parts
-        .filter((p) => parsePart(p).type === 'tool' && partStartedAt(p) > 0)
-        .sort((a, b) => partStartedAt(a) - partStartedAt(b));
-      for (const notice of notices) {
-        for (const pd of (partsByMsg[notice.id] || EMPTY_PARTS).map(parsePart)) {
-          if (pd.type !== 'auto-approved') continue;
-          const target = matchingToolPart(toolParts, pd, notice.timeCreated);
-          if (!target) continue;
-          inlinedNotices.add(notice.id);
-          const list = approvalsByPartId[target.id] || (approvalsByPartId[target.id] = []);
-          list.push({
-            permission: pd.permission || '',
-            patterns: pd.patterns || [],
-            reasoning: pd.reasoning || '',
-            approvedBy: pd.approvedBy === 'user' ? 'user' : 'ai',
-            reply: pd.reply,
-            metadata: pd.metadata,
-            askedAt: pd.askedAt,
-            approvedAt: pd.approvedAt,
-          });
-        }
-      }
-    }
+    const { approvalsByPartId, inlinedNotices } = indexApprovals(messages, parts, partsByMsg);
     const hasApprovals = inlinedNotices.size > 0;
 
     const filtered = messages.filter(
@@ -397,65 +474,10 @@ export function createConvertMessages(): ConvertMessagesFn {
         || (m.data?.role === 'notice' && !inlinedNotices.has(m.id)),
     );
 
-    // Detect mid-conversation model switches. Walk the messages in
-    // order tracking the last user message; the first assistant message
-    // carrying a model seeds the baseline (no chip), and any later
-    // assistant message whose model differs from the previously-active
-    // one flags the user message that triggered it so the renderer can
-    // draw a "model changed" divider above that user turn. Falls back to
-    // the assistant message when no preceding user message exists.
-    const modelChangedById: Record<string, string> = {};
-    let prevModel = '';
-    let lastUserId = '';
-    for (const m of filtered) {
-      if (m.data?.role === 'user') lastUserId = m.id;
-      if (m.data?.role !== 'assistant') continue;
-      const ref = messageModelRef(m);
-      if (!ref) continue;
-      if (prevModel && ref !== prevModel) {
-        modelChangedById[lastUserId || m.id] = ref;
-      }
-      prevModel = ref;
-    }
+    const modelChangedById = detectModelChanges(filtered);
 
   const result = filtered.map((m, idx): ThreadMessageLike => {
-    // Synthetic notice messages (auto-approve, etc.) are rendered as a
-    // special assistant-role entry so they appear inline in the thread.
-    if (m.data?.role === 'notice') {
-      const noticeParts = (partsByMsg[m.id] || EMPTY_PARTS).map(parsePart);
-      const noticeContent: Exclude<ThreadMessageLike['content'], string>[number][] = [];
-      for (const pd of noticeParts) {
-        if (pd.type === 'auto-approved') {
-          noticeContent.push({
-            type: 'tool-call' as const,
-            toolCallId: m.id,
-            toolName: 'ocman:auto-approved',
-            argsText: '',
-            artifact: { ocmanApprovals: [{
-              permission: pd.permission || '',
-              patterns: pd.patterns || [],
-              reasoning: pd.reasoning ?? '',
-              approvedBy: pd.approvedBy === 'user' ? 'user' : 'ai',
-              reply: pd.reply,
-              metadata: pd.metadata,
-              askedAt: pd.askedAt,
-              approvedAt: pd.approvedAt,
-            }] },
-            result: undefined,
-          });
-        }
-        if (pd.type === 'text' && pd.text) {
-          noticeContent.push({ type: 'text' as const, text: pd.text });
-        }
-      }
-      return {
-        role: 'assistant' as const,
-        id: m.id,
-        content: noticeContent.length > 0 ? noticeContent : [{ type: 'text' as const, text: '' }],
-        createdAt: new Date(m.timeCreated),
-        status: { type: 'complete' as const, reason: 'stop' as const },
-      };
-    }
+    if (m.data?.role === 'notice') return convertNoticeMessage(m, partsByMsg[m.id] || EMPTY_PARTS);
 
     const role = m.data.role as 'user' | 'assistant';
 
@@ -516,91 +538,23 @@ export function createConvertMessages(): ConvertMessagesFn {
     }
 
     const msgParts = msgPartsRaw.map(parsePart);
-    let pendingUserToolExecutionNotice = false;
 
     // Build content as string | content array. Using string for
     // simple text, and the full content array format for messages
     // with tool calls or images.
     const textPieces: string[] = [];
-    const imageParts: Array<{ type: 'image'; image: string }> = [];
-    const toolCalls: Array<{
-      type: 'tool-call';
-      toolCallId: string;
-      toolName: string;
-      argsText: string;
-      artifact?: { ocmanApprovals: ToolApproval[] };
-      result?: string;
-    }> = [];
+    const imageParts: ImageItem[] = [];
+    const toolCalls: ToolCallItem[] = [];
 
-    // Build a time-suffix string for a tool part. `startedAt` is the
-    // part's own timeCreated; `completedAt` is the next part's
-    // timeCreated (or the message's time.completed for the last tool).
-    // Returns '' when no useful timing is available.
-    const msgCompleted = (m.data.time as { completed?: number } | undefined)?.completed || 0;
-    function toolCompletedAt(partIdx: number): number {
-      const currentEnd = msgParts[partIdx]?.time?.end || 0;
-      if (currentEnd) return currentEnd;
-      // Walk forward to find the next tool part's timeCreated.
-      for (let j = partIdx + 1; j < msgPartsRaw.length; j++) {
-        const nextPd = msgParts[j];
-        const nextTime = msgPartsRaw[j].timeCreated || nextPd?.time?.start || 0;
-        if (nextPd && nextPd.type === 'tool' && nextTime) {
-          return nextTime;
-        }
-      }
-      return msgCompleted;
-    }
-
-    function toolTimeSuffix(partIdx: number): string {
-      const started = msgPartsRaw[partIdx]?.timeCreated || msgParts[partIdx]?.time?.start || 0;
-      if (!started) return '';
-      const ended = toolCompletedAt(partIdx);
-      return `\n@time:${started},${ended || 0}`;
-    }
-
-    function toolStatus(status: unknown, partIdx: number): string {
-      if (typeof status === 'string' && status) return status;
-      if (isSynthesizedTerminal(msgPartsRaw)) return 'completed';
-      return toolCompletedAt(partIdx) ? 'completed' : 'running';
-    }
-
-    function userExecutedToolSuffix(toolName: string): string {
-      if (!pendingUserToolExecutionNotice) return '';
-      pendingUserToolExecutionNotice = false;
-      return toolName === 'bash' || toolName === 'mcp_bash' ? `\n${USER_EXECUTED_TOOL_META}` : '';
-    }
-
-    function shellUserExecutedSuffix(toolName: string, metadata: NonNullable<PartData['state']>['metadata']): string {
-      if (metadata?.ocmanUserExecutedShell && (toolName === 'bash' || toolName === 'mcp_bash')) {
-        pendingUserToolExecutionNotice = false;
-        return `\n${USER_EXECUTED_TOOL_META}`;
-      }
-      return userExecutedToolSuffix(toolName);
-    }
-
-    // Shell tools keep their command verbatim in argsText: the description
-    // travels as a `@desc:` marker line, so a multi-line command (heredoc)
-    // never has its first line mistaken for a description. Titles that just
-    // restate the command are dropped.
-    function toolTitleEncoding(toolName: string, title: string, command: string): { meta: string; titleLine: string } {
-      if (toolName !== 'bash' && toolName !== 'mcp_bash') {
-        return { meta: '', titleLine: title ? title + '\n' : '' };
-      }
-      // OpenCode titles a bash part with the command itself, newlines
-      // collapsed to spaces — compare whitespace-insensitively so that
-      // never shows up as a description.
-      const flatten = (s: string) => s.replace(/\s+/g, ' ').trim();
-      const desc = flatten(title);
-      const redundant = !desc || flatten(command).startsWith(desc.replace(/…\s*$/, ''));
-      return { meta: redundant ? '' : `\n${SHELL_DESC_META}${desc}`, titleLine: '' };
-    }
-
-    function toolOutput(st: NonNullable<PartData['state']>): string {
-      const output = st.output ?? st.metadata?.output ?? st.error;
-      if (typeof output === 'string') return output;
-      if (output != null) return JSON.stringify(output, null, 2);
-      return '';
-    }
+    const toolCtx: ToolPartContext = {
+      messageId: m.id,
+      msgParts,
+      msgPartsRaw,
+      msgCompleted: (m.data.time as { completed?: number } | undefined)?.completed || 0,
+      projectDirectory: projectDirectory || '',
+      taskLiveOutput,
+      pendingUserToolExecutionNotice: false,
+    };
 
     msgParts.forEach((pd, partIdx) => {
       // Skip non-renderable lifecycle parts
@@ -611,227 +565,16 @@ export function createConvertMessages(): ConvertMessagesFn {
         case 'text':
           if (pd.text?.trim()) {
             if (pd.text.trim() === USER_TOOL_EXECUTION_NOTICE) {
-              pendingUserToolExecutionNotice = true;
+              toolCtx.pendingUserToolExecutionNotice = true;
               break;
             }
             textPieces.push(pd.text);
           }
           break;
         case 'tool': {
-          const st = pd.state || {};
-          const input = st.input || {};
-          const inp = input as Record<string, string>;
-          let argsText = '';
-          if (typeof input === 'string') argsText = input;
-          else if (inp.command) argsText = inp.command;
-          else if (inp.filePath) argsText = inp.filePath;
-          else if (inp.prompt) argsText = inp.prompt;
-          else argsText = JSON.stringify(input, null, 2);
-
-          let title = st.title || st.metadata?.description || inp.description || '';
-
-          // For edit tools, generate a unified diff from oldString/newString
-          let resultText = '';
-          const toolName = pd.tool || 'unknown';
-          const isEdit = toolName === 'edit' || toolName === 'mcp_edit';
-          const isRead = toolName === 'read' || toolName === 'mcp_read';
-          const isWrite = toolName === 'write' || toolName === 'mcp_write' || toolName === 'mcp_Write';
-          if (isWrite && inp.content) {
-            // Show the written content as a full-addition diff.
-            // Pass a structured payload so AssistantThread can render
-            // it with @pierre/diffs instead of the old text format.
-            const writeTarget = relativizePath(inp.filePath || title || 'file', projectDirectory || '');
-            title = 'Write ' + writeTarget;
-            argsText = ''; // diff is shown as result, no need for args
-            resultText = JSON.stringify({
-              __diff: true,
-              filePath: inp.filePath || '',
-              before: '',
-              after: inp.content as string,
-            });
-          } else if (isEdit && inp.oldString && inp.newString) {
-            const editTarget = relativizePath(inp.filePath || title || 'file', projectDirectory || '');
-            title = 'Edit ' + editTarget;
-            argsText = ''; // diff is shown as result, no need for args
-            // Prefer full before/after from filediff metadata so the
-            // diff shows real surrounding context.
-            const fd = st.metadata?.filediff;
-            if (fd && typeof fd.before === 'string' && typeof fd.after === 'string') {
-              resultText = JSON.stringify({
-                __diff: true,
-                filePath: inp.filePath || '',
-                before: fd.before,
-                after: fd.after,
-              });
-            } else {
-              resultText = JSON.stringify({
-                __diff: true,
-                filePath: inp.filePath || '',
-                before: inp.oldString,
-                after: inp.newString,
-              });
-            }
-          } else if (isRead) {
-            // Render reads as a muted inline line, not a collapsible
-            // block. Paths are shown relative to the session's project
-            // directory when possible.
-            const readTarget = inp.filePath || argsText || title || 'file';
-            const displayPath = relativizePath(readTarget, projectDirectory || '');
-            const params: string[] = [];
-            if (inp.offset) params.push(`offset=${inp.offset}`);
-            if (inp.limit) params.push(`limit=${inp.limit}`);
-            const suffix = params.length > 0 ? ` [${params.join(', ')}]` : '';
-            toolCalls.push({
-              type: 'tool-call' as const,
-              toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
-              toolName: '__read__',
-              argsText: `Read ${displayPath}${suffix}`,
-              result: undefined,
-            });
-            break;
-          } else if (toolName === 'Skill' || toolName === 'skill' || toolName === 'mcp_Skill' || toolName === 'mcp_skill') {
-            // Skill loads collapse to a single muted line in the
-            // Read/Grep style — the input is just the skill name and
-            // the output is the whole skill body, neither of which
-            // is interesting in the thread.
-            const skillName = inp.name || inp.skill || title || 'unknown';
-            toolCalls.push({
-              type: 'tool-call' as const,
-              toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
-              toolName: '__skill__',
-              argsText: `Skill "${skillName}"`,
-              result: undefined,
-            });
-            break;
-          } else if (
-            toolName === 'task' ||
-            toolName === 'mcp_task' ||
-            toolName === 'Task' ||
-            toolName === 'mcp_Task'
-          ) {
-            // Render subagent calls without the prompt, with a link
-            // to the session.
-            const desc = inp.description || title || 'Subagent task';
-            const agentType = inp.subagent_type || '';
-            const label = agentType ? `${desc} (${agentType})` : desc;
-            const taskId = extractTaskId(st);
-            let taskOutput = '';
-            const status = toolStatus(st.status, partIdx);
-            if (typeof st.output === 'string' && st.output.trim()) {
-              // Some platforms wrap the final output in <task_result>
-              // tags; strip the OpenCode task_id line if present.
-              taskOutput = truncate(
-                st.output.replace(/task_id:\s*ses_[^\s)]+[^\n]*\n?/, '').trim(),
-                5000,
-              );
-            }
-            // Sub-session data for rendering an embedded thread
-            // preview. Available both while running (from polling)
-            // and after completion (from the persisted session).
-            let subSession: TaskSessionData | undefined;
-            if (taskId && taskLiveOutput?.[taskId]) {
-              subSession = taskLiveOutput[taskId];
-            }
-            // Live tool list comes from the platform hook cache,
-            // injected by the backend into state.metadata.liveTools
-            // for the most recent running Task tool_use.
-            type LiveTool = { toolName: string; summary?: string; subagentId?: string; startedAt?: string };
-            let liveTools: LiveTool[] = [];
-            if (status === 'running' && st.metadata) {
-              const meta = st.metadata as Record<string, unknown>;
-              if (Array.isArray(meta.liveTools)) {
-                liveTools = (meta.liveTools as LiveTool[]).filter(
-                  (t) => t && typeof t.toolName === 'string' && t.toolName !== '',
-                );
-              }
-            }
-            toolCalls.push({
-              type: 'tool-call' as const,
-              toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
-              toolName: '__task__',
-              argsText: `${status}${toolTimeSuffix(partIdx)}\n${label}`,
-              result: JSON.stringify({ taskId, taskOutput, subSession, liveTools }),
-            });
-            break;
-          } else if (toolName === 'question' || toolName === 'mcp_question' || toolName === 'Question') {
-            // Render questions as a special interactive-looking card.
-            const questionsData = inp.questions || input?.questions;
-            let questionsJson = '';
-            if (questionsData) {
-              questionsJson = typeof questionsData === 'string' ? questionsData : JSON.stringify(questionsData);
-            } else {
-              questionsJson = JSON.stringify(input);
-            }
-            toolCalls.push({
-              type: 'tool-call' as const,
-              toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
-              toolName: '__question__',
-              argsText: `${toolStatus(st.status, partIdx)}\n${questionsJson}`,
-              result:
-                typeof st.output === 'string' && st.output.trim()
-                  ? st.output
-                  : st.output
-                    ? JSON.stringify(st.output)
-                    : undefined,
-            });
-            break;
-          } else if (toolName === 'grep' || toolName === 'mcp_grep') {
-            const grepPattern = inp.pattern || argsText || title || '';
-            const include = inp.include ? ` (${inp.include})` : '';
-            const grepText = grepPattern ? `Grep ${grepPattern}` : 'Grep';
-            toolCalls.push({
-              type: 'tool-call' as const,
-              toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
-              toolName: '__read__',
-              argsText: `${grepText}${include}`,
-              result: undefined,
-            });
-            break;
-          } else if (toolName === 'glob' || toolName === 'mcp_glob') {
-            const pattern = inp.pattern || argsText || title || '';
-            const path = inp.path ? ` (${inp.path})` : '';
-            const globText = pattern ? `Glob ${pattern}` : 'Glob';
-            toolCalls.push({
-              type: 'tool-call' as const,
-              toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
-              toolName: '__read__',
-              argsText: `${globText}${path}`,
-              result: undefined,
-            });
-            break;
-          } else if (toolName === 'webfetch' || toolName === 'mcp_webfetch' || toolName === 'mcp_Webfetch') {
-            const url = inp.url || argsText || title || '';
-            const fetchText = url ? `Fetch ${url}` : 'Webfetch';
-            toolCalls.push({
-              type: 'tool-call' as const,
-              toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
-              toolName: '__read__',
-              argsText: fetchText,
-              result: undefined,
-            });
-            break;
-          } else {
-            resultText = toolOutput(st);
-          }
-
-          const enc = toolTitleEncoding(toolName, title, argsText);
-          toolCalls.push({
-            type: 'tool-call' as const,
-            toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
-            toolName,
-            argsText: `${toolStatus(st.status, partIdx)}${toolTimeSuffix(partIdx)}${shellUserExecutedSuffix(toolName, st.metadata)}${enc.meta}\n${enc.titleLine}${argsText}`,
-            result: resultText || undefined,
-          });
-
-          // Extract image attachments from tool results (e.g.
-          // screenshot tools).
-          if (st.attachments && Array.isArray(st.attachments)) {
-            for (const att of st.attachments as FilePart[]) {
-              if (isImageMime(att.mime) && att.url) {
-                imageParts.push({ type: 'image' as const, image: att.url });
-              }
-            }
-          }
+          const { toolCall, images } = convertToolPart(toolCtx, pd, partIdx, toolCalls.length);
+          toolCalls.push(toolCall);
+          imageParts.push(...images);
           break;
         }
         case 'reasoning': {
@@ -864,37 +607,11 @@ export function createConvertMessages(): ConvertMessagesFn {
           }
           break;
         }
-        default: {
-          // Treat unrecognized part types as tool-like operations so
-          // they still appear in the UI (e.g. "write", "file",
-          // custom tools).
-          const st = pd.state || {};
-          const input = st.input || {};
-          const inp = input as Record<string, string>;
-          const toolName = pd.tool || pd.type || 'unknown';
-          let title = st.title || st.metadata?.description || inp.description || '';
-          if (!title && inp.filePath) {
-            title = toolName + ' ' + (inp.filePath.split('/').pop() || inp.filePath);
-          }
-          let argsText = '';
-          if (typeof input === 'string') argsText = input;
-          else if (inp.command) argsText = inp.command;
-          else if (inp.filePath) argsText = inp.filePath;
-          else {
-            const s = JSON.stringify(input, null, 2);
-            if (s !== '{}') argsText = s;
-          }
-          const resultText = toolOutput(st);
-          const enc = toolTitleEncoding(toolName, title, argsText);
-          toolCalls.push({
-            type: 'tool-call' as const,
-            toolCallId: m.id + '-' + toolName + '-' + toolCalls.length,
-            toolName,
-            argsText: `${toolStatus(st.status, partIdx)}${toolTimeSuffix(partIdx)}${shellUserExecutedSuffix(toolName, st.metadata)}${enc.meta}\n${enc.titleLine}${argsText}`,
-            result: resultText || undefined,
-          });
+        default:
+          // Unrecognized part types render as tool-like operations so
+          // they still appear in the UI.
+          toolCalls.push(convertUnknownPart(toolCtx, pd, partIdx, toolCalls.length));
           break;
-        }
       }
 
       // Footnote any approval that unblocked this part onto the
