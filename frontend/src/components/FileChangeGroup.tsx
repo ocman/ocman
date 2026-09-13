@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { FileChange, SessionEdit } from '../lib/api';
 import { DiffView } from './DiffView';
 import { RawDiffView } from './RawDiffView';
+import { ChangedFileRow } from './ChangedFileRow';
 
 // One row in the session-changes sidebar: a single line with the
 // filename + total +A/-D, click to reveal the diff body inline.
@@ -53,71 +54,56 @@ export function ChangeDiffBody({
 }
 
 export function FileChangeGroup({ change, defaultExpanded = false }: FileChangeGroupProps) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
   const [showEdits, setShowEdits] = useState(false);
 
   const hasMultipleEdits = change.editCount > 1;
 
   return (
-    <li>
-      <button
-        type="button"
-        className="oc-changes-list-row"
-        onClick={() => setExpanded((e) => !e)}
-        aria-expanded={expanded}
-      >
-        <span className="oc-changes-list-path" title={change.path}>
-          {change.displayPath || change.path}
-        </span>
-        <span className="oc-changes-list-counts">
-          {change.additions > 0 && <span className="oc-changes-add">+{change.additions}</span>}
-          {change.deletions > 0 && <span className="oc-changes-del">-{change.deletions}</span>}
-        </span>
-      </button>
-      {expanded && (
+    <ChangedFileRow
+      path={change.path}
+      displayPath={change.displayPath}
+      additions={change.additions}
+      deletions={change.deletions}
+      defaultExpanded={defaultExpanded}
+      expandedFooter={hasMultipleEdits && (
         <>
-          <div className="oc-changes-list-body-expanded">
-            <ChangeDiffBody
-              patch={change.patch}
-              before={change.before}
-              after={change.after}
-              filePath={change.path}
-            />
-          </div>
-          {hasMultipleEdits && (
-            <>
-              <button
-                type="button"
-                className="oc-changes-list-edits-toggle"
-                onClick={() => setShowEdits((s) => !s)}
-              >
-                {showEdits ? 'Hide' : 'Show'} {change.editCount} individual edits
-              </button>
-              {showEdits && (
-                <div className="oc-changes-list-body-expanded">
-                  {change.edits.map((edit: SessionEdit, i) => (
-                    <div key={edit.partId} className="oc-change-edit">
-                      <div className="oc-change-edit-meta">
-                        Edit {i + 1} of {change.editCount}
-                        {' \u2022 '}
-                        <span className="oc-changes-add">+{edit.additions}</span>
-                        {' '}
-                        <span className="oc-changes-del">-{edit.deletions}</span>
-                      </div>
-                      <ChangeDiffBody
-                        patch={edit.patch}
-                        before={edit.before}
-                        after={edit.after}
-                        filePath={change.path}
-                      />
-                    </div>
-                  ))}
+          <button
+            type="button"
+            className="oc-changes-list-edits-toggle"
+            onClick={() => setShowEdits((s) => !s)}
+          >
+            {showEdits ? 'Hide' : 'Show'} {change.editCount} individual edits
+          </button>
+          {showEdits && (
+            <div className="oc-changes-list-body-expanded">
+              {change.edits.map((edit: SessionEdit, i) => (
+                <div key={edit.partId} className="oc-change-edit">
+                  <div className="oc-change-edit-meta">
+                    Edit {i + 1} of {change.editCount}
+                    {' \u2022 '}
+                    <span className="oc-changes-add">+{edit.additions}</span>
+                    {' '}
+                    <span className="oc-changes-del">-{edit.deletions}</span>
+                  </div>
+                  <ChangeDiffBody
+                    patch={edit.patch}
+                    before={edit.before}
+                    after={edit.after}
+                    filePath={change.path}
+                  />
                 </div>
-              )}
-            </>
+              ))}
+            </div>
           )}
         </>
       )}
-    </li>
+    >
+      <ChangeDiffBody
+        patch={change.patch}
+        before={change.before}
+        after={change.after}
+        filePath={change.path}
+      />
+    </ChangedFileRow>
   );
 }

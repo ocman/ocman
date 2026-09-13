@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo } from 'react';
 import type { WorkingTreeFile } from '../lib/api';
 import { useWorkingTreeDiff } from '../lib/useWorkingTreeDiff';
 import { useInfiniteRows } from '../lib/useInfiniteRows';
@@ -9,6 +9,7 @@ import { useFullscreenDiff } from './useFullscreenDiff';
 import { ChangesRefreshButton, type PaneSummary } from './SessionChangesSidebar';
 import { groupWorkingTreeFiles } from './groupWorkingTreeFiles';
 import { SidebarFileListSkeleton } from './Skeleton';
+import { ChangedFileRow } from './ChangedFileRow';
 
 // Lazy-mount budget for the per-file rows. Working trees with
 // hundreds of dirty files (post-rebase, after a generated-files
@@ -273,36 +274,24 @@ interface WorkingTreeFileRowProps {
 // every diff at once. Matches the screenshot reference where the
 // list reads like `git status -s` until you ask for more.
 function WorkingTreeFileRow({ file }: WorkingTreeFileRowProps) {
-  const [expanded, setExpanded] = useState(false);
   return (
-    <li>
-      <button
-        type="button"
-        className="oc-changes-list-row"
-        onClick={() => setExpanded((e) => !e)}
-        aria-expanded={expanded}
-      >
+    <ChangedFileRow
+      path={file.path}
+      displayPath={file.oldPath && file.status === 'renamed' ? `${file.oldPath} → ${file.path}` : file.path}
+      additions={file.additions}
+      deletions={file.deletions}
+      statusBadge={
         <span
           className={`oc-change-group-status oc-change-group-status-${file.status}`}
           title={file.status}
         >
           {STATUS_LABELS[file.status]}
         </span>
-        <span className="oc-changes-list-path" title={file.path}>
-          {file.oldPath && file.status === 'renamed' ? `${file.oldPath} → ${file.path}` : file.path}
-        </span>
-        <span className="oc-changes-list-counts">
-          {file.additions > 0 && <span className="oc-changes-add">+{file.additions}</span>}
-          {file.deletions > 0 && <span className="oc-changes-del">-{file.deletions}</span>}
-        </span>
-      </button>
-      {expanded && (
-        <div className="oc-changes-list-body-expanded">
-          {file.isBinary
-            ? <div className="oc-diff-empty">Binary file — diff not shown.</div>
-            : <RawDiffView diff={file.diff} filePath={file.path} />}
-        </div>
-      )}
-    </li>
+      }
+    >
+      {file.isBinary
+        ? <div className="oc-diff-empty">Binary file — diff not shown.</div>
+        : <RawDiffView diff={file.diff} filePath={file.path} />}
+    </ChangedFileRow>
   );
 }
