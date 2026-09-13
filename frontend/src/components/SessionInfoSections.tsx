@@ -155,7 +155,7 @@ export function TokensSection({
   );
 }
 
-export function CommitsSection({ commits }: { commits: SessionInfo['commits'] }) {
+export function CommitsSection({ commits }: { commits: NonNullable<SessionInfo['commits']> }) {
   return (
     <section className="oc-info-section">
       <h3 className="oc-info-section-header">Commits</h3>

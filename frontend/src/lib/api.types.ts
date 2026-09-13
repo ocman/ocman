@@ -835,7 +835,8 @@ export interface SessionInfo {
   lspServers: LSPServer[];
   messages: SessionInfoMessages;
   todos?: SessionInfoTodo[];
-  commits: SessionInfoCommit[];
+  commits?: SessionInfoCommit[];
+  commitCaptureSupported?: boolean;
 }
 
 export interface Stats {

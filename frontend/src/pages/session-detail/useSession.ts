@@ -468,6 +468,7 @@ export function useSession(
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let attempt = 0;
     let hasConnectedOnce = false;
+    let reconnectingAfterError = false;
 
     // Refetch trigger for `session.diff` events. The server emits
     // these when an edit/write tool's `state.metadata.filediff` is
@@ -481,6 +482,17 @@ export function useSession(
     const scheduleDiffRefetch = () => {
       if (cancelled) return;
       void doFetch('reconcile');
+    };
+
+    const markPartResourcesDirty = (event: SseEvent) => {
+      if (event.type !== 'message.part.updated') return;
+      const part = event.properties?.part as Record<string, unknown> | undefined;
+      if (!part || part.type !== 'tool') return;
+      const tool = part.tool as string | undefined;
+      if (tool === 'edit' || tool === 'write' ||
+          tool === 'mcp_edit' || tool === 'mcp_write' || tool === 'mcp_Edit' || tool === 'mcp_Write') {
+        setChangesDirtyTick((t) => t + 1);
+      }
     };
 
     /**
@@ -558,10 +570,12 @@ export function useSession(
         // emitted during the gap reconcile in one shot. Use the
         // reconcile mode so we don't clobber any in-memory state
         // the server's response hasn't caught up with.
-        if (hasConnectedOnce) {
+        if (hasConnectedOnce || reconnectingAfterError) {
           void doFetch('reconcile');
+          setChangesDirtyTick((t) => t + 1);
         }
         hasConnectedOnce = true;
+        reconnectingAfterError = false;
       };
       evtSource.onmessage = (evt) => {
         if (cancelled) return;
@@ -591,20 +605,7 @@ export function useSession(
         // Derive bumped/dirtied signals from event type. The
         // reducer itself stays platform-agnostic; these effects
         // are SSE-handler-side only.
-        if (parsed.type === 'message.part.updated') {
-          const props = parsed.properties || {};
-          const part = props.part as Record<string, unknown> | undefined;
-          if (part && part.type === 'tool') {
-            const tool = part.tool as string | undefined;
-            if (tool && (
-              tool === 'edit' || tool === 'write' ||
-              tool === 'mcp_edit' || tool === 'mcp_write' ||
-              tool === 'mcp_Edit' || tool === 'mcp_Write'
-            )) {
-              setChangesDirtyTick((t) => t + 1);
-            }
-          }
-        }
+        markPartResourcesDirty(parsed);
         // `session.diff` carries the per-file diff payload for the
         // right-panel changes view. We bump changesDirtyTick so the
         // panel refreshes its REST call, and (debounced) trigger a
@@ -682,6 +683,10 @@ export function useSession(
           console.log('[ocman:sse:' + eventName + ']', parsed.type, parsed.properties);
         }
         dispatch({ type: 'sse', event: parsed });
+        markPartResourcesDirty(parsed);
+        if (parsed.type === 'ocman.session.changed') {
+          setChangesDirtyTick((t) => t + 1);
+        }
       };
       // Known OpenCode named event channels. Do not include the
       // default `message` channel here: browsers deliver that channel
@@ -711,11 +716,13 @@ export function useSession(
         'ocman.permission.flagged',
         'ocman.permission.auto-approved',
         'ocman.permission.approved',
+        'ocman.session.changed',
       ].forEach((name) => {
         evtSource?.addEventListener(name, handleNamedEvent(name));
       });
       evtSource.onerror = () => {
         if (cancelled) return;
+        reconnectingAfterError = true;
         evtSource?.close();
         evtSource = null;
         const delay = reconnectDelay(attempt);

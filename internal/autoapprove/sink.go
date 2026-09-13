@@ -76,3 +76,9 @@ func (s *Service) lookupSinks(sessionID string) []*Sink {
 	}
 	return sinks
 }
+
+func (s *Service) emitSessionSseEventAsync(sessionID, eventType string, payload []byte) {
+	for _, sink := range s.lookupSinks(sessionID) {
+		sink.writeAsync(eventType, payload)
+	}
+}

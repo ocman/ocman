@@ -79,16 +79,15 @@ export function SessionInfoSidebar({
   onLoadingChange,
 }: SessionInfoSidebarProps) {
   const caps = usePlatformCapabilities(platformId);
-  // We always issue the fetch when the platform has at least *some*
-  // useful data to return. The backend handler degrades gracefully
-  // (returns Supported=false with empty slices) for adapters that
-  // don't implement SessionInfo, so this only stays disabled when no
-  // platform claims this session at all (typically during initial
-  // load before capabilities resolve).
+  // Commit observations are owner-state data, independent of the
+  // platform's live SessionInfo capability. Fetch once the owning
+  // platform is known; the backend returns a compatible unsupported
+  // payload when live context data is unavailable.
   const liveEnabled = caps.sessionInfo;
   const { data, loading, error, refresh } = useSessionInfo(sessionId, {
-    enabled: liveEnabled,
+    enabled: !!platformId,
     dirtyTick,
+    platformId,
   });
 
   // Per-session git info now comes from /api/git/info, fetched
@@ -221,7 +220,7 @@ export function SessionInfoSidebar({
       {liveEnabled && loading && !data ? (
         <section className="oc-info-section"><div className="oc-info-empty">Loading commits...</div></section>
       ) : null}
-      {data ? <CommitsSection commits={data.commits ?? []} /> : null}
+      {data?.commitCaptureSupported ? <CommitsSection commits={data.commits ?? []} /> : null}
       {todoSection}
       {tokensSection}
       {liveSection}

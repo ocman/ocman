@@ -1955,6 +1955,44 @@ func TestHandleSessionInfo_EnrichesPersistedCommits(t *testing.T) {
 	if len(got.Commits) != 1 || got.Commits[0].SHA != "abc1234" || got.Commits[0].Branch == nil || *got.Commits[0].Branch != "old-name" {
 		t.Fatalf("commits = %#v", got.Commits)
 	}
+	if !got.CommitCaptureSupported {
+		t.Fatal("commit capture should be reported as supported")
+	}
+}
+
+func TestHandleSessionInfo_DoesNotEnrichRemoteFromHubState(t *testing.T) {
+	srv, rawDB := testServerWithRawDB(t)
+	defer rawDB.Close()
+	const platformID = "r-owner:opencode"
+	const sessionID = "same-session"
+	srv.registry.Register(&fakePlatform{
+		id:       platformID,
+		sessions: []db.Session{{ID: sessionID, Platform: platformID}},
+		info: &platforms.SessionInfo{
+			SessionID: sessionID, CommitCaptureSupported: true,
+			Commits: []platforms.SessionCommit{{Order: 1, SHA: "owner123", Subject: "owner"}},
+		},
+	})
+	if _, err := srv.stateDB.RecordSessionCommit(t.Context(), state.SessionCommit{
+		Platform: platformID, SessionID: sessionID, SHA: "hub4567", Subject: "hub",
+		SourceMessageID: "same-message", ToolPartID: "same-part", ToolCallID: "same-call", SourceCallID: "same-call",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/session/"+sessionID+"/info?platform="+platformID, nil)
+	rr := httptest.NewRecorder()
+	srv.handleSessionInfo(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var got platforms.SessionInfo
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Commits) != 1 || got.Commits[0].SHA != "owner123" {
+		t.Fatalf("remote commits = %#v", got.Commits)
+	}
 }
 
 // TestHandleSessionInfo_UnsupportedReturns200 verifies that adapters

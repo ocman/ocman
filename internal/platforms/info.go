@@ -40,7 +40,8 @@ type SessionInfo struct {
 	Todos []TodoItem `json:"todos,omitempty"`
 	// Commits contains immutable live observations enriched by ocman's state
 	// store. Adapters leave this empty; the owning server serializes it.
-	Commits []SessionCommit `json:"commits"`
+	Commits                []SessionCommit `json:"commits,omitempty"`
+	CommitCaptureSupported bool            `json:"commitCaptureSupported,omitempty"`
 }
 
 type SessionCommit struct {

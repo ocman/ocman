@@ -262,6 +262,7 @@ type Sink struct {
 	flush  func()
 	mu     sync.Mutex
 	closed bool
+	busy   atomic.Bool
 }
 
 // write emits a single named SSE event. It is a no-op if the sink has
@@ -278,6 +279,16 @@ func (s *Sink) write(eventType string, data []byte) {
 		return
 	}
 	WriteSSEEvent(s.w, s.flush, eventType, data)
+}
+
+func (s *Sink) writeAsync(eventType string, data []byte) {
+	if s == nil || !s.busy.CompareAndSwap(false, true) {
+		return
+	}
+	go func() {
+		defer s.busy.Store(false)
+		s.write(eventType, data)
+	}()
 }
 
 // close marks the sink as closed so future write() calls become no-ops.

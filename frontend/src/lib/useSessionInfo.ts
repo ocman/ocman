@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { useApiStore } from './apiStore';
 import type { SessionInfo } from './api';
 import {
@@ -21,7 +22,7 @@ const EMPTY_INFO: SessionInfo = {
   commits: [],
 };
 
-export type UseSessionInfoOptions = DebouncedSessionResourceOptions;
+export type UseSessionInfoOptions = DebouncedSessionResourceOptions & { platformId?: string };
 export type UseSessionInfoResult = DebouncedSessionResourceResult<SessionInfo>;
 
 /**
@@ -38,12 +39,17 @@ export type UseSessionInfoResult = DebouncedSessionResourceResult<SessionInfo>;
  */
 export function useSessionInfo(
   sessionId: string | undefined,
-  options: UseSessionInfoOptions = {},
+  { platformId, ...options }: UseSessionInfoOptions = {},
 ): UseSessionInfoResult {
   const getSessionInfo = useApiStore((s) => s.getSessionInfo);
+  const fetchInfo = useCallback(
+    (_resourceId: string, signal: AbortSignal) => getSessionInfo(sessionId!, signal, platformId),
+    [getSessionInfo, sessionId, platformId],
+  );
+  const resourceId = sessionId ? `${platformId ?? 'local'}:${sessionId}` : undefined;
   return useDebouncedSessionResource(
-    sessionId,
-    getSessionInfo,
+    resourceId,
+    fetchInfo,
     EMPTY_INFO,
     'Failed to load session info',
     options,

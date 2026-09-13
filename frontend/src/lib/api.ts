@@ -578,10 +578,11 @@ export const api = {
   // status, configured LSP servers and their status. Returns
   // supported=false (HTTP 200) when the owning platform can't produce
   // a meaningful snapshot (e.g. OpenCode without a live port).
-  sessionInfo: async (id: string, signal?: AbortSignal) => {
-    const info = await fetchJSON<SessionInfo>(`/api/session/${encodeURIComponent(id)}/info`, signal);
-    return { ...info, commits: info.commits ?? [] };
-  },
+  sessionInfo: (id: string, signal?: AbortSignal, platform?: string) =>
+    fetchJSON<SessionInfo>(
+      `/api/session/${encodeURIComponent(id)}/info${queryString({ platform })}`,
+      signal,
+    ),
   /**
    * Batch-fetch sub-session data for multiple task sessions. Returns
    * messages + parts per task so the frontend can render an embedded

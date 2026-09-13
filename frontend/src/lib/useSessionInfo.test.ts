@@ -137,9 +137,15 @@ describe('useSessionInfo', () => {
     const result = mod.useSessionInfo('sess-1');
     // The initial fetch fires synchronously inside the effect.
     expect(getSessionInfo).toHaveBeenCalledTimes(1);
-    expect(getSessionInfo).toHaveBeenCalledWith('sess-1', expect.any(AbortSignal));
+    expect(getSessionInfo).toHaveBeenCalledWith('sess-1', expect.any(AbortSignal), undefined);
     expect(result.loading).toBe(true);
     expect(reactMock.states[0]).toBeNull();
+  });
+
+  it('qualifies remote requests by platform', async () => {
+    const { mod, getSessionInfo } = await loadHookHarness();
+    mod.useSessionInfo('same', { platformId: 'r-box:opencode' });
+    expect(getSessionInfo).toHaveBeenCalledWith('same', expect.any(AbortSignal), 'r-box:opencode');
   });
 
   it('aborts the in-flight request on cleanup', async () => {

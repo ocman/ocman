@@ -196,6 +196,8 @@ func (s *Server) SessionInfo(ctx context.Context, req *pb.SessionRef) (*pb.JsonR
 	if err != nil {
 		return nil, err
 	}
+	info.CommitCaptureSupported = true
+	info.Commits = make([]platforms.SessionCommit, 0, len(commits))
 	for _, commit := range commits {
 		info.Commits = append(info.Commits, platforms.SessionCommit{
 			Order: commit.Order, SHA: commit.SHA, Branch: commit.Branch,

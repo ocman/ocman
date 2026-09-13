@@ -388,6 +388,20 @@ describe('useSession — SSE event dispatch', () => {
     expect((data.state as { status?: string }).status).toBe('running');
   });
 
+  it('dirties session info after the owner confirms persisted changes', async () => {
+    const detail = makeDetail();
+    const fetchSession = vi.fn().mockResolvedValue(detail);
+    const { result } = renderHook(() => useSession(SID, { fetchSession }));
+    await waitFor(() => expect(result.current.session?.id).toBe(SID));
+
+    const before = result.current.changesDirtyTick;
+    act(() => {
+      FakeEventSource.latest()!.emitNamed('ocman.session.changed', { sessionID: SID });
+    });
+
+    expect(result.current.changesDirtyTick).toBe(before + 1);
+  });
+
   it('routes raw named tool payloads as live tool snapshots', async () => {
     const detail = makeDetail();
     const fetchSession = vi.fn().mockResolvedValue(detail);
@@ -467,6 +481,7 @@ describe('useSession — reconnect after error', () => {
     act(() => {
       first.open();
     });
+    const dirtyBeforeReconnect = result.current.changesDirtyTick;
 
     // Disconnect.
     act(() => {
@@ -485,8 +500,27 @@ describe('useSession — reconnect after error', () => {
       FakeEventSource.latest()!.open();
     });
     expect(result.current.status).toBe('live');
+    expect(result.current.changesDirtyTick).toBe(dirtyBeforeReconnect + 1);
     // Two fetches total: initial mount + reconnect reconciliation.
     expect(fetchSession).toHaveBeenCalledTimes(2);
+  });
+
+  it('refreshes resources when the first successful open follows an offline start', async () => {
+    vi.useFakeTimers();
+    const detail = makeDetail();
+    const fetchSession = vi.fn().mockResolvedValue(detail);
+    const { result } = renderHook(() => useSession(SID, {
+      fetchSession,
+      reconnectDelay: () => 10,
+    }));
+    await vi.waitFor(() => expect(FakeEventSource.latest()).toBeDefined());
+    const dirtyBeforeReconnect = result.current.changesDirtyTick;
+
+    act(() => FakeEventSource.latest()!.error());
+    await act(async () => { await vi.advanceTimersByTimeAsync(15); });
+    act(() => FakeEventSource.latest()!.open());
+
+    expect(result.current.changesDirtyTick).toBe(dirtyBeforeReconnect + 1);
   });
 });
 

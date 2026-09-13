@@ -127,17 +127,42 @@ func permissionAskedEvent(sessionID, permissionID, permission, command string) s
 	) + "\n\n"
 }
 
+type commitNotificationWriter struct {
+	once sync.Once
+	done chan struct{}
+}
+
+type blockingNotificationWriter struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (w *blockingNotificationWriter) Write(p []byte) (int, error) {
+	close(w.started)
+	<-w.release
+	return len(p), nil
+}
+
+func (w *commitNotificationWriter) Write(p []byte) (int, error) {
+	if strings.Contains(string(p), "event: ocman.session.changed") {
+		w.once.Do(func() { close(w.done) })
+	}
+	return len(p), nil
+}
+
 func TestAutoApproveWatcherCapturesCommitWithoutJudgeOrBrowser(t *testing.T) {
 	event := "data: " + `{"type":"message.part.updated","properties":{"part":{"id":"p1","messageID":"m1","sessionID":"child","callID":"c1","type":"tool","tool":"bash","state":{"status":"completed","input":{"command":"git commit -m captured"},"output":"[main abc1234] captured"}}}}` + "\n\n"
 	upstream := newFakeOpenCodeEventServer([]string{event})
 	defer upstream.close()
 	store := &commitStoreStub{}
 	broadcast := make(chan struct{}, 1)
+	sink := &commitNotificationWriter{done: make(chan struct{})}
 	svc := NewService(Deps{CommitStore: store, DefaultEnabled: false, BroadcastSessionChanged: func(sessionID string) {
 		if sessionID == "child" {
 			broadcast <- struct{}{}
 		}
 	}})
+	svc.RegisterSink("child", sink, nil)
 	watcher := newAutoApproveWatcher(svc)
 	if err := watcher.streamOnce(t.Context(), upstream.port()); err != nil {
 		t.Fatal(err)
@@ -150,6 +175,11 @@ func TestAutoApproveWatcherCapturesCommitWithoutJudgeOrBrowser(t *testing.T) {
 	if len(store.commits) != 1 || store.commits[0].SessionID != "child" || store.commits[0].SHA != "abc1234" {
 		t.Fatalf("commits=%#v", store.commits)
 	}
+	select {
+	case <-sink.done:
+	case <-time.After(waitTimeout):
+		t.Fatal("session stream notification missing")
+	}
 }
 
 func TestAutoApproveWatcherDoesNotBroadcastFailedPersistence(t *testing.T) {
@@ -159,6 +189,28 @@ func TestAutoApproveWatcherDoesNotBroadcastFailedPersistence(t *testing.T) {
 	if broadcasts != 0 {
 		t.Fatalf("broadcasts = %d, want 0", broadcasts)
 	}
+}
+
+func TestAutoApproveWatcherCommitCaptureDoesNotWaitForSessionSink(t *testing.T) {
+	writer := &blockingNotificationWriter{started: make(chan struct{}), release: make(chan struct{})}
+	svc := NewService(Deps{CommitStore: &commitStoreStub{}})
+	svc.RegisterSink("s1", writer, nil)
+	done := make(chan struct{})
+	go func() {
+		newAutoApproveWatcher(svc).recordTerminalPart(t.Context(), terminalPart{SessionID: "s1", MessageID: "m1", PartID: "p1", CallID: "c1", Command: "git commit -m captured", Output: "[main abc1234] captured"})
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("commit capture blocked on session sink")
+	}
+	select {
+	case <-writer.started:
+	case <-time.After(time.Second):
+		t.Fatal("session sink was not notified")
+	}
+	close(writer.release)
 }
 
 func wrappedPermissionAskedEvent(directory, sessionID, permissionID string) string {

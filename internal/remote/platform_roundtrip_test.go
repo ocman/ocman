@@ -12,6 +12,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 // connectedPair spins an in-process remote server over a fakePlatform +
@@ -96,6 +97,62 @@ func TestRemotePlatform_AllReadMethods(t *testing.T) {
 	}
 	if rp.LiveStatus("s1") != nil {
 		t.Error("LiveStatus should be nil for a remote adapter")
+	}
+}
+
+func TestRemotePlatform_SessionInfoUsesOwnerCommitStore(t *testing.T) {
+	const sessionID = "same-session"
+	for _, tc := range []struct {
+		owner string
+		sha   string
+	}{
+		{owner: "one", sha: "1111111"},
+		{owner: "two", sha: "2222222"},
+	} {
+		t.Run(tc.owner, func(t *testing.T) {
+			path := t.TempDir() + "/state.db"
+			store, err := state.Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.RecordSessionCommit(t.Context(), state.SessionCommit{
+				Platform: "opencode", SessionID: sessionID, SHA: tc.sha, Subject: tc.owner,
+				SourceMessageID: "same-message", ToolPartID: "same-part", ToolCallID: "same-call", SourceCallID: "same-call",
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.Close(); err != nil {
+				t.Fatal(err)
+			}
+			store, err = state.Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = store.Close() })
+
+			reg := platforms.NewRegistry()
+			reg.Register(&fakePlatform{id: "opencode", sessions: []db.Session{{ID: sessionID}}})
+			srv := NewServer(reg, localStubHost{}, tc.owner, "v-test").UseInboxStore(store)
+			ln, err := NewListener(ListenConfig{Addr: "127.0.0.1:0", Token: "tok", TrustedOverlay: true}, srv)
+			if err != nil {
+				t.Fatal(err)
+			}
+			go func() { _ = ln.Serve() }()
+			t.Cleanup(ln.Stop)
+			conn := NewRemoteConn("grpc://"+ln.Addr(), "tok")
+			if err := conn.Connect(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(conn.Close)
+
+			info, err := newRemotePlatform(conn, "opencode", func() string { return tc.owner }).SessionInfo(t.Context(), sessionID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !info.CommitCaptureSupported || len(info.Commits) != 1 || info.Commits[0].SHA != tc.sha {
+				t.Fatalf("owner %s info = %#v", tc.owner, info)
+			}
+		})
 	}
 }
 

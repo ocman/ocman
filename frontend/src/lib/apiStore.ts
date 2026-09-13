@@ -108,7 +108,7 @@ type ApiStore = {
   refreshCachedSessions: (signal?: AbortSignal) => Promise<Session[]>;
   getSession: (id: string, limit?: number, offset?: number, signal?: AbortSignal) => Promise<SessionDetail>;
   getSessionChanges: (id: string, signal?: AbortSignal) => Promise<SessionChanges>;
-  getSessionInfo: (id: string, signal?: AbortSignal) => Promise<SessionInfo>;
+  getSessionInfo: (id: string, signal?: AbortSignal, platform?: string) => Promise<SessionInfo>;
   getGitDiff: (dir: string, opts?: { fresh?: boolean }, signal?: AbortSignal) => Promise<WorkingTreeDiff>;
   archiveSession: (platform: string, sessionId: string, timeUpdated: number, archived?: boolean) => Promise<{ ok: boolean }>;
   archiveProject: (directory: string, archived?: boolean, remoteId?: string) => Promise<{ ok: boolean }>;
@@ -333,7 +333,10 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   },
   getSession: (id, limit = 50, offset = 0, signal) => get().runRequest(`session:get:${id}`, () => api.session(id, limit, offset, signal)),
   getSessionChanges: (id, signal) => get().runRequest(`session:changes:${id}`, () => api.sessionChanges(id, signal)),
-  getSessionInfo: (id, signal) => get().runRequest(`session:info:${id}`, () => api.sessionInfo(id, signal)),
+  getSessionInfo: (id, signal, platform) => get().runRequest(
+    `session:info:${platform ?? 'local'}:${id}`,
+    () => api.sessionInfo(id, signal, platform),
+  ),
   getGitDiff: (dir, opts, signal) => get().runRequest(`git:diff:${dir}`, () => api.gitDiff(dir, opts, signal)),
   archiveSession: (platform, sessionId, timeUpdated, archived = true) => get().runRequest(`session:archive:${sessionId}`, () => api.archiveSession(platform, sessionId, timeUpdated, archived)),
   archiveProject: (directory, archived = true, remoteId) => get().runRequest(`project:archive:${remoteId ?? 'local'}:${directory}`, () => api.archiveProject(directory, archived, remoteId)),

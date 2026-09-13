@@ -185,7 +185,7 @@ func (s *Server) handleSessionInfo(w http.ResponseWriter, r *http.Request) {
 			if info.LSPServers == nil {
 				info.LSPServers = []platforms.LSPServer{}
 			}
-			if s.stateDB != nil {
+			if s.stateDB != nil && !isRemotePlatformID(string(adapter.ID())) {
 				commits, listErr := s.stateDB.ListSessionCommits(r.Context(), string(adapter.ID()), sessionID)
 				if listErr != nil {
 					writePlatformError(w, "fetching session commits", listErr)
@@ -199,9 +199,7 @@ func (s *Server) handleSessionInfo(w http.ResponseWriter, r *http.Request) {
 						ObservedAt: commit.ObservedAt,
 					})
 				}
-			}
-			if info.Commits == nil {
-				info.Commits = []platforms.SessionCommit{}
+				info.CommitCaptureSupported = true
 			}
 		}
 		writeWithUnsupportedFallback(w, "fetching session info", info, err, zero)

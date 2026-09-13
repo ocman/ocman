@@ -219,16 +219,17 @@ sequenceDiagram
     A->>D: SQL json_extract
     A->>A: overlay pending prompt registry
     D-->>B: JSON (status settled at query time)
-    R->>O: gRPC Session / StreamEvents (remote only)
-    O->>A: Session / ProxyEvents
-     O->>O: inject persisted approvals,<br/>tee synthetic approval events
-     O-->>S: enriched JSON / framed SSE
+    R->>O: gRPC Session / SessionInfo / StreamEvents (remote only)
+    O->>A: Session / SessionInfo / ProxyEvents
+    O->>I: read owner-local approvals and commit observations
+    O->>O: inject persisted approvals,<br/>tee synthetic approval events
+    O-->>S: owner-enriched JSON / framed SSE
     Note over S,Q: every 5 s: claim due routines
     Q->>R: ensure project instance and create fresh session
     R->>A: create session and send saved prompt
     Note over Q,A: poll linked session until it settles
     E-->>B: SSE (session.updated)
-    A->>I: persist commit observations / MCP inbox send
+    A->>I: persist owner-local commit observations / MCP inbox send
     I-->>S: local state or owner-routed remote RPC
     B->>S: REST Inbox list/read/archive
     S-->>B: Inbox JSON (polling and mutation refresh)
@@ -246,6 +247,14 @@ run snapshot in `state.db`, then create and prompt a fresh session through the
 shared session service. The run stays active until that session settles. The
 same row stores success or failure, any error, and the session link shown in
 history.
+
+Remote commit observations stay on the owner. The hub neither writes raw remote
+tool output to its state database nor appends hub-local observations to a remote
+Session Info response. While connected, the existing proxied session event
+stream triggers the browser's debounced Session Info refresh. While
+disconnected, the owner can continue capturing independently; the hub follows
+its normal unavailable behavior and reads the persisted owner records after
+reconnect. Neither side reconstructs missed observations from transcripts.
 
 ## 4. Frontend composition
 

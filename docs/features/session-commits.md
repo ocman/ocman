@@ -20,3 +20,16 @@ the name printed at commit time, or **Detached HEAD** when Git printed a
 detached-HEAD summary. Later branch switches, renames, deletion, amendments,
 and worktree removal do not rewrite earlier observations. Amendments appear as
 additional observations when Git prints a new commit summary.
+
+Each ocman instance stores observations for its local sessions in its own
+`state.db`. A hub reads remote observations from the session owner through the
+existing Session Info RPC. It never substitutes rows from the hub database, so
+the same session and tool IDs on different machines remain isolated.
+
+The owner's watcher keeps capturing while a hub is disconnected. Session Info
+is unavailable through that hub until the owner reconnects, then the owner
+returns its persisted observations without scanning transcripts. After
+persistence, the owner sends a change notice through the active session event
+stream so the browser refreshes Session Info. Capture does not depend on that
+stream or an open browser. Older owners that do not report commit-capture
+support leave the Commits section hidden.

@@ -131,6 +131,21 @@ describe('api.sendMessage', () => {
   });
 });
 
+describe('api.sessionInfo', () => {
+  it('routes through the compound platform and preserves old payload capability', async () => {
+    const captured: string[] = [];
+    stubFetch((url) => {
+      captured.push(url);
+      return new Response(JSON.stringify({ sessionId: 'same', supported: false }), { status: 200 });
+    });
+
+    const info = await api.sessionInfo('same', undefined, 'r-box:opencode');
+
+    expect(captured).toEqual(['/api/session/same/info?platform=r-box%3Aopencode']);
+    expect(info).not.toHaveProperty('commitCaptureSupported');
+  });
+});
+
 describe('backend-down error classification', () => {
   it('fetchJSON maps a network failure (TypeError) to BackendUnavailableError', async () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new TypeError('Load failed'))));

@@ -2,6 +2,7 @@ package autoapprove
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -578,8 +579,12 @@ func (w *autoApproveWatcher) recordTerminalPart(ctx context.Context, part termin
 		}
 		inserted = inserted || ok
 	}
-	if inserted && !failed && w.svc.deps.BroadcastSessionChanged != nil {
-		w.svc.deps.BroadcastSessionChanged(part.SessionID)
+	if inserted && !failed {
+		payload, _ := json.Marshal(map[string]string{"sessionID": part.SessionID})
+		w.svc.emitSessionSseEventAsync(part.SessionID, "ocman.session.changed", payload)
+		if w.svc.deps.BroadcastSessionChanged != nil {
+			w.svc.deps.BroadcastSessionChanged(part.SessionID)
+		}
 	}
 }
 

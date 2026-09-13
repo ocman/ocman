@@ -8,12 +8,13 @@ import { __handleSessionChangedForTests } from '../lib/useGlobalEvents';
 
 const useGitInfo = vi.hoisted(() => vi.fn(() => ({ infos: {}, loading: false, error: null })));
 const sessionInfoResult = vi.hoisted(() => ({ data: null as null | Record<string, unknown>, loading: false, error: null, refresh: vi.fn() }));
+const useSessionInfo = vi.hoisted(() => vi.fn(() => sessionInfoResult));
 
 vi.mock('../lib/useCapabilities', () => ({
   usePlatformCapabilities: () => ({ sessionInfo: false }),
 }));
 vi.mock('../lib/useSessionInfo', () => ({
-  useSessionInfo: () => sessionInfoResult,
+  useSessionInfo,
 }));
 vi.mock('../lib/useGitInfo', () => ({
   useGitInfo,
@@ -64,6 +65,7 @@ describe('SessionInfoSidebar commits', () => {
       context: { tokens: 0, cost: 0, estCost: 0 },
       tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       messages: { user: 0, assistant: 0 }, mcpServers: [], lspServers: [],
+      commitCaptureSupported: true,
       commits: [
         { order: 1, sha: 'abcdef123', branch: 'feature/x', subject: 'Add capture' },
         { order: 2, sha: '123456789', branch: null, subject: 'Detached work' },
@@ -75,6 +77,29 @@ describe('SessionInfoSidebar commits', () => {
     expect(screen.getByText('feature/x')).toBeInTheDocument();
     expect(screen.getByText('Detached HEAD')).toBeInTheDocument();
     expect(screen.getByText('Detached work')).toBeInTheDocument();
+    sessionInfoResult.data = null;
+  });
+
+  it('routes equal remote session IDs through their compound platform', () => {
+    render(
+      <MemoryRouter>
+        <SessionInfoSidebar sessionId="same" platformId="r-owner-two:opencode" session={makeSession({ id: 'same' })} />
+      </MemoryRouter>,
+    );
+    expect(useSessionInfo).toHaveBeenCalledWith('same', expect.objectContaining({
+      platformId: 'r-owner-two:opencode',
+    }));
+  });
+
+  it('does not claim capture support for an older remote payload', () => {
+    sessionInfoResult.data = {
+      sessionId: 's', supported: false,
+      context: { tokens: 0, cost: 0, estCost: 0 },
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      messages: { user: 0, assistant: 0 }, mcpServers: [], lspServers: [],
+    };
+    renderSidebar(makeSession({ platform: 'r-old:opencode' }));
+    expect(screen.queryByRole('heading', { name: 'Commits' })).toBeNull();
     sessionInfoResult.data = null;
   });
 
