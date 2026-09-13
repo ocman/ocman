@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -213,7 +214,7 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 	skillRules := factorySkillRulesFixture(t)
 	ctx := context.Background()
 	endpoint := connectedPlanningMCP(t)
-	rules := []platforms.PermissionRule{{Permission: "read", Pattern: "*", Action: "allow"}, {Permission: "glob", Pattern: "*", Action: "allow"}, {Permission: "grep", Pattern: "*", Action: "allow"}, {Permission: "list", Pattern: "*", Action: "allow"}, {Permission: "bash", Pattern: "*", Action: "allow"}, {Permission: "edit", Pattern: "*", Action: "allow"}, {Permission: "task", Pattern: "*", Action: "allow"}, {Permission: "external_directory", Pattern: "*", Action: "ask"}}
+	rules := []platforms.PermissionRule{{Permission: "read", Pattern: "*", Action: "allow"}, {Permission: "glob", Pattern: "*", Action: "allow"}, {Permission: "grep", Pattern: "*", Action: "allow"}, {Permission: "list", Pattern: "*", Action: "allow"}, {Permission: "bash", Pattern: "*", Action: "allow"}, {Permission: "edit", Pattern: "*", Action: "allow"}, {Permission: "task", Pattern: "*", Action: "allow"}, {Permission: "external_directory", Pattern: "*", Action: "ask"}, {Permission: "external_directory", Pattern: filepath.Join("/other", "**"), Action: "allow"}, {Permission: "edit", Pattern: filepath.Join("/other", "**"), Action: "deny"}}
 	rules = append(rules, skillRules...)
 	rules = append(rules, platforms.PermissionRule{Permission: "mcp_factory", Pattern: "factory", Action: "allow"})
 
@@ -227,7 +228,7 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 		srv := New(nil, nil, "", registry, nil)
 		srv.hostRouter = hostsvc.NewRouter(host)
 
-		request := factory.ImplementationSessionRequest{EpicID: "epic-1", WorkID: "work-1", AttemptID: "attempt-1", AgentToken: "token", Profile: "factory-implement/v1", Repository: "/repo", Branch: "factory/work", BaseRef: "factory/previous", Title: "Remove dead code", Description: "Delete the obsolete helper and run its package tests."}
+		request := factory.ImplementationSessionRequest{EpicID: "epic-1", WorkID: "work-1", AttemptID: "attempt-1", AgentToken: "token", Profile: "factory-implement/v1", Repository: "/repo", Projects: []string{"/repo", "/other"}, Branch: "factory/work", BaseRef: "factory/previous", Title: "Remove dead code", Description: "Delete the obsolete helper and run its package tests."}
 		got, err := (factoryImplementationLauncher{server: srv}).LaunchImplementationSession(ctx, request)
 		if err != nil {
 			t.Fatal(err)

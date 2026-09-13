@@ -264,6 +264,12 @@ func (l factoryImplementationLauncher) LaunchImplementationSession(ctx context.C
 		return factory.PlanningSession{}, err
 	}
 	rules := []platforms.PermissionRule{{Permission: "read", Pattern: "*", Action: "allow"}, {Permission: "glob", Pattern: "*", Action: "allow"}, {Permission: "grep", Pattern: "*", Action: "allow"}, {Permission: "list", Pattern: "*", Action: "allow"}, {Permission: "bash", Pattern: "*", Action: "allow"}, {Permission: "edit", Pattern: "*", Action: "allow"}, {Permission: "task", Pattern: "*", Action: "allow"}, {Permission: "external_directory", Pattern: "*", Action: "ask"}}
+	for _, project := range req.Projects {
+		if project != req.Repository {
+			pattern := filepath.Join(project, "**")
+			rules = append(rules, platforms.PermissionRule{Permission: "external_directory", Pattern: pattern, Action: "allow"}, platforms.PermissionRule{Permission: "edit", Pattern: pattern, Action: "deny"})
+		}
+	}
 	if owner.RemoteID() == "local" {
 		// Keep exceptions after the catch-all: OpenCode uses the last match.
 		rules = append(rules, factoryExternalDirectoryRules()...)

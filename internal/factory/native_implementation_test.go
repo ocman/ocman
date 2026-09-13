@@ -798,9 +798,15 @@ func TestNativeImplementationLaunchFailureLeavesTerminalAttempt(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	launcher := &fakeImplementationLauncher{err: errors.New("unavailable")}
-	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
-	epic := createPouredWorkEpic(t, svc, "Ship")
-	proposal, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required"}}}})
+	svc := NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other": "/other"}}, &fakePlanningLauncher{}, launcher)
+	epic, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Ship", InitialProject: "/repo", AcknowledgeLocalExecution: true, Projects: []ProjectAdmission{{Path: "/other", AcknowledgeLocalExecution: true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Pour(t.Context(), epic.ID); err != nil {
+		t.Fatal(err)
+	}
+	proposal, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", Project: "/other"}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -840,6 +846,9 @@ func TestNativeImplementationLaunchFailureLeavesTerminalAttempt(t *testing.T) {
 	attempts, err = db.ListFactoryAttempts(context.Background(), epic.ID)
 	if err != nil || len(attempts) != 2 || attempts[1].Phase != model.FactoryAttemptActive {
 		t.Fatalf("recovered attempts = %#v, %v", attempts, err)
+	}
+	if len(launcher.calls) != 2 || launcher.calls[0].Repository != "/other" || launcher.calls[1].Repository != "/other" || !reflect.DeepEqual(launcher.prepared, []string{"/other:", "/other:"}) {
+		t.Fatalf("recovered workspaces = %#v, prepared = %#v", launcher.calls, launcher.prepared)
 	}
 }
 
@@ -1159,7 +1168,8 @@ func TestNativeDispatchChargesIssueTargetAndFreezesItsRepository(t *testing.T) {
 }
 
 func TestNativeDispatchDoesNotCarryWorkspaceHistoryAcrossIssueProjects(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	path := filepath.Join(t.TempDir(), "state.db")
+	db, err := state.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1187,11 +1197,25 @@ func TestNativeDispatchDoesNotCarryWorkspaceHistoryAcrossIssueProjects(t *testin
 	if err := svc.CompleteAttempt(t.Context(), first.AttemptID, first.AgentToken, "done", ""); err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err = state.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	launcher.store = db
+	svc = NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other": "/other"}}, &fakePlanningLauncher{}, launcher)
 	if err := svc.Dispatch(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	if len(launcher.calls) != 2 || launcher.calls[1].Repository != "/other" || !reflect.DeepEqual(launcher.prepared, []string{"/repo:", "/other:"}) {
 		t.Fatalf("cross-project launches = %#v, prepared = %#v", launcher.calls, launcher.prepared)
+	}
+	for _, call := range launcher.calls {
+		if !reflect.DeepEqual(call.Projects, []string{"/repo", "/other"}) {
+			t.Fatalf("launch projects = %#v", call.Projects)
+		}
 	}
 }
 

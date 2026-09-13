@@ -199,21 +199,22 @@ const (
 )
 
 type FactoryAttemptPolicy struct {
-	Model              string `json:"model,omitempty"`
-	Branch             string `json:"branch,omitempty"`
-	BaseRef            string `json:"baseRef,omitempty"`
-	TargetBranch       string `json:"targetBranch,omitempty"`
-	CheckpointSHA      string `json:"checkpointSha,omitempty"`
-	Delivery           bool   `json:"delivery,omitempty"`
-	ForceComplete      bool   `json:"-"`
-	PlanRevision       int    `json:"planRevision"`
-	PlanHash           string `json:"planHash"`
-	TargetID           string `json:"targetId"`
-	Repository         string `json:"repository"`
-	Profile            string `json:"profile"`
-	DeliveryRemoteType string `json:"deliveryRemoteType,omitempty"`
-	DeliveryRemoteHost string `json:"deliveryRemoteHost,omitempty"`
-	DeliveryRemoteRepo string `json:"deliveryRemoteRepo,omitempty"`
+	Model              string   `json:"model,omitempty"`
+	Branch             string   `json:"branch,omitempty"`
+	BaseRef            string   `json:"baseRef,omitempty"`
+	TargetBranch       string   `json:"targetBranch,omitempty"`
+	CheckpointSHA      string   `json:"checkpointSha,omitempty"`
+	Delivery           bool     `json:"delivery,omitempty"`
+	ForceComplete      bool     `json:"-"`
+	PlanRevision       int      `json:"planRevision"`
+	PlanHash           string   `json:"planHash"`
+	TargetID           string   `json:"targetId"`
+	Repository         string   `json:"repository"`
+	Projects           []string `json:"projects,omitempty"`
+	Profile            string   `json:"profile"`
+	DeliveryRemoteType string   `json:"deliveryRemoteType,omitempty"`
+	DeliveryRemoteHost string   `json:"deliveryRemoteHost,omitempty"`
+	DeliveryRemoteRepo string   `json:"deliveryRemoteRepo,omitempty"`
 }
 
 type FactoryAttemptResult struct {

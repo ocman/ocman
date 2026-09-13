@@ -3,8 +3,9 @@ title: Factory delivery
 weight: 9
 ---
 
-Factory implements a Work Epic sequentially on one shared branch, then runs a
-separate delivery session to publish the final pull request.
+Factory implements a Work Epic sequentially, using one shared branch and
+workspace per admitted project, then runs a separate delivery session to
+publish the final pull request.
 
 ## Use an existing plan
 
@@ -55,6 +56,11 @@ the branch, target branch, and commit SHA. Before launching the next Issue,
 Ocman checks that the branch still matches that checkpoint. Missing branches,
 dirty worktrees, or unexpected commits require reconciliation rather than a
 silent reset. Checkpoints survive an ocman restart.
+
+Implementation sessions run in the Issue's target project workspace. They may
+read other projects admitted to the Epic, but path-specific permission rules
+deny edits there. Shell access remains enabled, so these rules enforce agent
+policy; they are not filesystem isolation.
 
 ## Final delivery
 

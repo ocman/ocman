@@ -664,7 +664,7 @@ type nativeAttemptCompletionStore interface {
 	SetFactoryAttemptWorkspace(context.Context, string, model.FactoryAttemptPolicy) error
 	FactoryAttemptHasRecoveryResponse(context.Context, string, string) (bool, error)
 	CompleteFactoryImplementationAttempt(context.Context, string, string, model.FactoryAttemptResult, time.Time) (bool, error)
-	FactoryEpicPRURL(context.Context, string) (string, error)
+	FactoryEpicPRURL(context.Context, string, string) (string, error)
 	StopFactoryAttempt(context.Context, string, time.Time) (bool, error)
 	ValidateFactoryAttemptToken(context.Context, string, string) (bool, error)
 }
@@ -738,6 +738,7 @@ type NativeService struct {
 type ImplementationSessionRequest struct {
 	Model                                                                                           string
 	EpicID, WorkID, AttemptID, AgentToken, Repository, Title, Description, Branch, BaseRef, Profile string
+	Projects                                                                                        []string
 	TargetBranch                                                                                    string
 	Delivery                                                                                        bool
 }
@@ -1767,6 +1768,7 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 		} // A saturated project must not stall other projects.
 		branch := "factory/" + epic.ID
 		baseRef := ""
+		repository := attempt.FrozenPolicy.Repository
 		if completionStore, ok := s.store.(nativeAttemptCompletionStore); ok {
 			var branchErr error
 			if attempt.FrozenPolicy.Branch != "" {
@@ -1774,21 +1776,21 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 			} else {
 				// Existing PR-based epics resolve their branch once when adopting checkpoints.
 				var previousPR string
-				previousPR, branchErr = completionStore.FactoryEpicPRURL(ctx, epic.ID)
+				previousPR, branchErr = completionStore.FactoryEpicPRURL(ctx, epic.ID, repository)
 				if branchErr == nil && previousPR != "" {
-					branch, baseRef, branchErr = s.implementation.ResolveImplementationBranch(ctx, next.issue.Project, branch, previousPR, attempt.FrozenPolicy)
+					branch, baseRef, branchErr = s.implementation.ResolveImplementationBranch(ctx, repository, branch, previousPR, attempt.FrozenPolicy)
 				}
 			}
 			if branchErr == nil {
 				checkpoint := attempt.FrozenPolicy.CheckpointSHA
 				// A retry of the same Issue may retain its own committed progress.
 				if attempt.Sequence > 1 && checkpoint != "" {
-					_, branchErr = s.implementation.ValidateImplementationCheckpoint(ctx, next.issue.Project, branch, checkpoint)
+					_, branchErr = s.implementation.ValidateImplementationCheckpoint(ctx, repository, branch, checkpoint)
 					checkpoint = ""
 				}
 				var workspaceBase string
 				if branchErr == nil {
-					attempt.FrozenPolicy.TargetBranch, workspaceBase, branchErr = s.implementation.PrepareImplementationWorkspace(ctx, next.issue.Project, branch, checkpoint, attempt.FrozenPolicy.TargetBranch)
+					attempt.FrozenPolicy.TargetBranch, workspaceBase, branchErr = s.implementation.PrepareImplementationWorkspace(ctx, repository, branch, checkpoint, attempt.FrozenPolicy.TargetBranch)
 				}
 				if workspaceBase != "" && attempt.FrozenPolicy.BaseRef != "" {
 					workspaceBase = attempt.FrozenPolicy.BaseRef
@@ -1807,7 +1809,7 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 				continue
 			}
 		}
-		request := ImplementationSessionRequest{Model: attempt.FrozenPolicy.Model, EpicID: epic.ID, WorkID: next.issue.ID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: next.issue.Project, Title: next.issue.Title, Description: next.issue.Description, Branch: branch, BaseRef: baseRef, Profile: "factory-implement/v1", TargetBranch: attempt.FrozenPolicy.TargetBranch, Delivery: attempt.FrozenPolicy.Delivery}
+		request := ImplementationSessionRequest{Model: attempt.FrozenPolicy.Model, EpicID: epic.ID, WorkID: next.issue.ID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: repository, Projects: attempt.FrozenPolicy.Projects, Title: next.issue.Title, Description: next.issue.Description, Branch: branch, BaseRef: baseRef, Profile: "factory-implement/v1", TargetBranch: attempt.FrozenPolicy.TargetBranch, Delivery: attempt.FrozenPolicy.Delivery}
 		session, launchErr := s.implementation.LaunchImplementationSession(ctx, request)
 		if launchErr != nil {
 			if session.ID != "" {

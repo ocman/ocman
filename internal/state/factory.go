@@ -186,7 +186,8 @@ func (d *DB) SetFactoryAttemptDeliveryTarget(ctx context.Context, id, remoteType
 	err = tx.QueryRowContext(ctx, `SELECT json_extract(frozen_policy_json, '$.deliveryRemoteType'),
 		json_extract(frozen_policy_json, '$.deliveryRemoteHost'), json_extract(frozen_policy_json, '$.deliveryRemoteRepo')
 		FROM factory_attempt WHERE epic_id = (SELECT epic_id FROM factory_attempt WHERE id = ?)
-		AND json_extract(frozen_policy_json, '$.deliveryRemoteRepo') <> '' ORDER BY sequence LIMIT 1`, id).Scan(&savedType, &savedHost, &savedRepo)
+		AND json_extract(frozen_policy_json, '$.repository') = (SELECT json_extract(frozen_policy_json, '$.repository') FROM factory_attempt WHERE id = ?)
+		AND json_extract(frozen_policy_json, '$.deliveryRemoteRepo') <> '' ORDER BY sequence LIMIT 1`, id, id).Scan(&savedType, &savedHost, &savedRepo)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
@@ -272,12 +273,12 @@ func (d *DB) CompleteFactoryImplementationAttempt(ctx context.Context, id, agent
 	return true, nil
 }
 
-func (d *DB) FactoryEpicPRURL(ctx context.Context, epicID string) (string, error) {
+func (d *DB) FactoryEpicPRURL(ctx context.Context, epicID, project string) (string, error) {
 	var prURL string
 	err := d.db.QueryRowContext(ctx, `SELECT json_extract(CASE WHEN json_valid(result_json) THEN result_json ELSE '{}' END, '$.prUrl') FROM factory_attempt
-		WHERE epic_id = ? AND terminal_outcome = 'succeeded'
+		WHERE epic_id = ? AND json_extract(frozen_policy_json, '$.repository') = ? AND terminal_outcome = 'succeeded'
 		AND json_extract(CASE WHEN json_valid(result_json) THEN result_json ELSE '{}' END, '$.prUrl') <> ''
-		ORDER BY finished_at DESC, rowid DESC LIMIT 1`, epicID).Scan(&prURL)
+		ORDER BY finished_at DESC, rowid DESC LIMIT 1`, epicID, project).Scan(&prURL)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}

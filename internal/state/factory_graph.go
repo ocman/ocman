@@ -1215,6 +1215,14 @@ func (d *DB) ClaimFactoryImplementation(ctx context.Context, epicID, issueID, pr
 		return model.NativeEpic{}, model.FactoryAttempt{}, err
 	}
 	attemptPolicy.Repository = project
+	projects, err := listFactoryEpicProjectsWith(ctx, tx, epicID)
+	if err != nil {
+		return model.NativeEpic{}, model.FactoryAttempt{}, err
+	}
+	attemptPolicy.Projects = make([]string, 0, len(projects))
+	for _, admitted := range projects {
+		attemptPolicy.Projects = append(attemptPolicy.Projects, admitted.Path)
+	}
 	attemptPolicy.Delivery = kind == "delivery"
 	if err := tx.QueryRowContext(ctx, `SELECT implementation_model FROM factory_plan_gate WHERE epic_id = ?`, epicID).Scan(&attemptPolicy.Model); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return model.NativeEpic{}, model.FactoryAttempt{}, err

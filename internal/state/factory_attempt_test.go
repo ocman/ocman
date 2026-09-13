@@ -270,7 +270,7 @@ func TestClaimFactoryImplementation(t *testing.T) {
 	if _, err := db.db.Exec(`UPDATE factory_attempt SET phase = 'terminal', terminal_outcome = 'succeeded' WHERE id = ?`, planning.ID); err != nil {
 		t.Fatal(err)
 	}
-	if prURL, err := db.FactoryEpicPRURL(ctx, epic.ID); err != nil || prURL != "" {
+	if prURL, err := db.FactoryEpicPRURL(ctx, epic.ID, "/repo"); err != nil || prURL != "" {
 		t.Fatalf("PR URL with resultless planning attempt = %q, %v", prURL, err)
 	}
 	if owned, err := db.IsFactoryImplementationSession(ctx, "session"); err != nil || !owned {
@@ -323,8 +323,31 @@ func TestClaimFactoryImplementation(t *testing.T) {
 	if changed, err := db.CompleteFactoryImplementationAttempt(ctx, second.ID, second.AgentToken, model.FactoryAttemptResult{SchemaVersion: 1, Summary: "done", PRURL: "https://forge.example/pr/2"}, time.Now()); err != nil || !changed {
 		t.Fatalf("complete replacement PR implementation = %v, %v", changed, err)
 	}
-	if prURL, err := db.FactoryEpicPRURL(ctx, epic.ID); err != nil || prURL != "https://forge.example/pr/2" {
+	if prURL, err := db.FactoryEpicPRURL(ctx, epic.ID, "/repo"); err != nil || prURL != "https://forge.example/pr/2" {
 		t.Fatalf("latest Epic PR URL = %q, %v", prURL, err)
+	}
+	other, err := db.CreatePreparedFactoryAttempt(ctx, epic.ID, workIDs[1], model.FactoryAttemptPolicy{Repository: "/other", Profile: "factory-implement/v1"}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetFactoryAttemptDeliveryTarget(ctx, other.ID, "forgejo", "other.example", "acme/other", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	storedOther, found, err := db.GetFactoryAttempt(ctx, other.ID)
+	if err != nil || !found || storedOther.FrozenPolicy.DeliveryRemoteRepo != "acme/other" {
+		t.Fatalf("other repository delivery target = %#v, %v, %v", storedOther.FrozenPolicy, found, err)
+	}
+	if changed, err := db.ActivateFactoryAttempt(ctx, other.ID, model.PlanningSession{Platform: "opencode", ID: "other-session"}, time.Now()); err != nil || !changed {
+		t.Fatalf("activate other project attempt = %v, %v", changed, err)
+	}
+	if changed, err := db.CompleteFactoryAttempt(ctx, other.ID, model.FactoryAttemptResult{SchemaVersion: 1, Summary: "other", PRURL: "https://forge.example/pr/3"}, time.Now()); err != nil || !changed {
+		t.Fatalf("complete other project attempt = %v, %v", changed, err)
+	}
+	if prURL, err := db.FactoryEpicPRURL(ctx, epic.ID, "/repo"); err != nil || prURL != "https://forge.example/pr/2" {
+		t.Fatalf("repository PR URL leaked from another project = %q, %v", prURL, err)
+	}
+	if prURL, err := db.FactoryEpicPRURL(ctx, epic.ID, "/other"); err != nil || prURL != "https://forge.example/pr/3" {
+		t.Fatalf("other repository PR URL = %q, %v", prURL, err)
 	}
 	if _, err := db.db.Exec(`UPDATE factory_epic SET status = 'closed' WHERE id = ?`, epic.ID); err != nil {
 		t.Fatal(err)
