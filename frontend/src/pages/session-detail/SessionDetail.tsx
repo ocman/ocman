@@ -18,7 +18,6 @@ import { useSyncRef } from '../../lib/useSyncRef';
 import * as Toast from '@radix-ui/react-toast';
 import './SessionDetail.css';
 import { api } from '../../lib/api';
-import type { SessionWarning } from '../../lib/api';
 import { cleanTitle } from '../../lib/format';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { canLaunchSession } from './launchGate';
@@ -65,7 +64,8 @@ import { usePaletteCommands } from './usePaletteCommands';
 import { SseStatusIndicator } from './SseStatusIndicator';
 import { remoteLog } from '../../lib/remoteLog';
 import { isRecoverableThreadBoundaryError } from './threadBoundaryRecovery';
-import { findFirstUnreadMessageId, countUnreadMessages } from './unreadMarker';
+import { useUnreadMarker } from './useUnreadMarker';
+import { sessionWarningKey, useSessionWarnings } from './useSessionWarnings';
 import { ThreadBoundaryFallback } from './ThreadBoundaryFallback';
 import { SessionToasts } from './SessionToasts';
 import { SessionActionsMenu } from './SessionActionsMenu';
@@ -86,10 +86,6 @@ const MAX_RETAINED_MESSAGES = 200;
 const TRIMMED_RETAINED_MESSAGES = 150;
 const ALL_MESSAGES_LIMIT = 2_147_483_647;
 const THREAD_BOUNDARY_AUTO_RECOVERY_COOLDOWN_MS = 5_000;
-
-function sessionWarningKey(sessionId: string, warning: SessionWarning): string {
-  return `${sessionId}:${warning.kind}:${warning.message}:${(warning.ports ?? []).join(',')}`;
-}
 
 /**
  * Props for the inner SessionDetail component.
@@ -189,53 +185,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
     observeMessages(messages);
   }, [messages, observeMessages]);
 
-  // Snapshot of the user's last-seen cutoff for the current session.
-  // Used to compute the "first unread" marker and the "N new
-  // messages" jump pill. Captured once per session id; subsequent
-  // updates (markSessionSeen, SSE) do NOT move the cutoff so the
-  // marker stays at the same message even after the persisted seen
-  // state has been bumped forward. Resets on session navigation.
-  //
-  // Stored as state (not a ref) so the eslint react-hooks/refs rule
-  // doesn't trip on render-time reads. The state initialisation
-  // tracks the active session id alongside the cutoff so we can
-  // detect navigation without an effect (the setState-during-render
-  // pattern React supports for derived state).
-  const [unreadCutoffState, setUnreadCutoffState] = useState<{ sessionId: string; cutoff: number } | null>(null);
-  if (session && unreadCutoffState?.sessionId !== session.id) {
-    setUnreadCutoffState({
-      sessionId: session.id,
-      cutoff: session.seenTimeUpdated || 0,
-    });
-  }
-  const unreadCutoff = unreadCutoffState?.sessionId === session?.id
-    ? (unreadCutoffState?.cutoff ?? 0)
-    : 0;
-  const firstUnreadMessageId = useMemo(
-    () => session ? findFirstUnreadMessageId(messages, unreadCutoff) : null,
-    [session, messages, unreadCutoff],
-  );
-  const unreadMessageCount = useMemo(
-    () => firstUnreadMessageId ? countUnreadMessages(messages, unreadCutoff) : 0,
-    [messages, firstUnreadMessageId, unreadCutoff],
-  );
-  const [dismissedSessionWarnings, setDismissedSessionWarnings] = useState<Set<string>>(() => new Set());
-  const visibleSessionWarnings = useMemo(() => {
-    if (!session) return [];
-    return (session.warnings ?? []).filter((warning) => (
-      !dismissedSessionWarnings.has(sessionWarningKey(session.id, warning))
-    ));
-  }, [session, dismissedSessionWarnings]);
-  const dismissSessionWarning = useCallback((warning: SessionWarning) => {
-    if (!session) return;
-    const key = sessionWarningKey(session.id, warning);
-    setDismissedSessionWarnings((current) => {
-      if (current.has(key)) return current;
-      const next = new Set(current);
-      next.add(key);
-      return next;
-    });
-  }, [session]);
+  const { firstUnreadMessageId, unreadMessageCount } = useUnreadMarker(session, messages);
+  const { visibleSessionWarnings, dismissSessionWarning } = useSessionWarnings(session);
 
   const handleScrollToMessageBookmark = useCallback((bookmark: MessageBookmark) => {
     const updateScrollRequest = () => {
@@ -568,7 +519,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
       remoteLog.error('Failed to create session', e);
       setShowCreateSessionErrorToast(true);
     }
-  }, [createSession, launchOpencodeInTmux, tmux.available, navigateToSession, seedNewSession, session]);
+  }, [createSession, launchOpencodeInTmux, tmux.available, navigateToSession, seedNewSession, session, setShowCreateSessionErrorToast]);
 
   const handleNewSession = useCallback(async (title?: string) => {
     if (!session) return;
@@ -757,9 +708,10 @@ export function SessionDetail({ id }: SessionDetailProps) {
 
   const hasMore = platformMessageCount(messages) < totalMessages;
   const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
+  const sessionId = session?.id;
   const permissionControl = useMemo(
-    () => (caps.permissionRules && portAvailable && session?.id ? <PermissionModeLock sessionId={session.id} /> : null),
-    [caps.permissionRules, portAvailable, session?.id],
+    () => (caps.permissionRules && portAvailable && sessionId ? <PermissionModeLock sessionId={sessionId} /> : null),
+    [caps.permissionRules, portAvailable, sessionId],
   );
   const showSseNotice = portAvailable && !sseActive;
   const showSseDebug = debugMode && sseDebugEvents.length > 0;
