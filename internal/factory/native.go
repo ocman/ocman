@@ -1986,7 +1986,7 @@ func (s *NativeService) ClaimPlan(ctx context.Context, epicID, issueID string) (
 	if err != nil {
 		return ClaimedPlan{}, err
 	}
-	request := PlanningSessionRequest{EpicID: epic.ID, WorkID: issueID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: epic.InitialProject, Title: "plan " + issueID + " (@factory)"}
+	request := PlanningSessionRequest{EpicID: epic.ID, WorkID: issueID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: epic.InitialProject, Title: "PLAN " + issueID + " (@factory)"}
 	session, launchErr := s.planning.LaunchPlanningSession(ctx, request)
 	if launchErr != nil {
 		if session.ID != "" {

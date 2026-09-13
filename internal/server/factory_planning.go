@@ -109,7 +109,7 @@ func (s *Server) launchFactoryUnblockSession(ctx context.Context, epicID, issueI
 	}
 	token := hex.EncodeToString(tokenBytes)
 	launcher := factoryPlanningLauncher{server: s}
-	session, err := launcher.launchReadOnlySession(ctx, factory.PlanningSessionRequest{Repository: epic.InitialProject, Title: "Unblock: " + issue.Title}, platforms.PermissionRule{Permission: "mcp_factory_unblock", Pattern: "factory_unblock", Action: "ask"})
+	session, err := launcher.launchReadOnlySession(ctx, factory.PlanningSessionRequest{Repository: epic.InitialProject, Title: "UNBL: " + issue.Title}, platforms.PermissionRule{Permission: "mcp_factory_unblock", Pattern: "factory_unblock", Action: "ask"})
 	if err != nil {
 		return session, err
 	}

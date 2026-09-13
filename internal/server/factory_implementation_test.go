@@ -242,7 +242,7 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 		if sent.Model != request.Model {
 			t.Fatalf("model = %q", sent.Model)
 		}
-		if host.request.ProjectDir != "/repo" || host.request.Branch != "factory/work" || host.request.BaseRef != "factory/previous" || host.request.Title != "implementation work-1 (@factory)" || !host.request.NewBranch || !reflect.DeepEqual(host.request.PermissionRules, rules) {
+		if host.request.ProjectDir != "/repo" || host.request.Branch != "factory/work" || host.request.BaseRef != "factory/previous" || host.request.Title != "IMPL work-1 (@factory)" || !host.request.NewBranch || !reflect.DeepEqual(host.request.PermissionRules, rules) {
 			t.Fatalf("worktree request = %#v", host.request)
 		}
 		if sent.SessionID != "worktree-session" || !strings.Contains(sent.Message, "Remove dead code") || !strings.Contains(sent.Message, "Delete the obsolete helper") || !strings.Contains(sent.Message, "attempt-1") || !strings.Contains(sent.Message, "token") || !strings.Contains(sent.Message, "complete_attempt") || !strings.Contains(sent.Message, "request_recovery") || !strings.Contains(sent.Message, "Do not create a pull request") || !strings.Contains(sent.Message, "Omit pr_url") || !strings.Contains(sent.Message, "clean commit") {

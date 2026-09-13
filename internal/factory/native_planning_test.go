@@ -103,7 +103,7 @@ func TestNativePlanClaimPersistsAttemptBeforeLaunching(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if claimed.Attempt.Phase != "active" || claimed.Session.ID != "plan-1" || len(launcher.calls) != 1 || launcher.calls[0].Repository != "/repo" || launcher.calls[0].Title != "plan "+pouredIssueID(t, svc, epic.ID, "plan")+" (@factory)" {
+	if claimed.Attempt.Phase != "active" || claimed.Session.ID != "plan-1" || len(launcher.calls) != 1 || launcher.calls[0].Repository != "/repo" || launcher.calls[0].Title != "PLAN "+pouredIssueID(t, svc, epic.ID, "plan")+" (@factory)" {
 		t.Fatalf("claim = %#v, launches = %#v", claimed, launcher.calls)
 	}
 	attempts, err := db.ListFactoryAttempts(context.Background(), epic.ID)
