@@ -1,0 +1,3 @@
+# Coordinate Factory work across projects
+
+A Work Epic owns an explicitly admitted set of local projects while retaining its original Epic project as the permanent default. Every executable Issue targets one project; Factory keeps workspace, checkpoint, Delivery, and pull-request lineage per `(Epic, project)`, creates Project Deliveries progressively, and uses forge-observed merge gates when downstream work requires an upstream Delivery to merge. Scope can expand only after human admission and local-execution acknowledgement. Execution remains sequential, and non-target write restrictions are agent policy rather than filesystem isolation.

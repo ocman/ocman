@@ -368,7 +368,7 @@ func (f *fakeImplementationLauncher) ObserveImplementationDelivery(context.Conte
 	return f.observation, f.observationSHA, f.observationErr
 }
 
-func TestMergeGatePollsForgeAndUnblocksAfterMerge(t *testing.T) {
+func TestTwoProjectFlowWaitsForSDKMergeAndBothDeliveries(t *testing.T) {
 	previousInterval := factoryMergeGatePollInterval
 	factoryMergeGatePollInterval = 0
 	defer func() { factoryMergeGatePollInterval = previousInterval }()
@@ -442,6 +442,33 @@ func TestMergeGatePollsForgeAndUnblocksAfterMerge(t *testing.T) {
 	}
 	if launcher.observations != 3 || len(launcher.calls) != 3 || launcher.calls[2].Repository != "/app" {
 		t.Fatalf("merged observation did not launch downstream: observations=%d calls=%#v", launcher.observations, launcher.calls)
+	}
+	if got, err := svc.GetWorkEpic(t.Context(), epic.ID); err != nil || got.Progress.DeliveryStatus != "pending" {
+		t.Fatalf("Epic became ready before application delivery: %#v, %v", got.Progress, err)
+	}
+	application := launcher.calls[2]
+	if err := svc.CompleteAttempt(t.Context(), application.AttemptID, application.AgentToken, "Application", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Dispatch(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(launcher.calls) != 4 || !launcher.calls[3].Delivery || launcher.calls[3].Repository != "/app" {
+		t.Fatalf("application delivery did not launch: %#v", launcher.calls)
+	}
+	if got, err := svc.GetWorkEpic(t.Context(), epic.ID); err != nil || got.Progress.DeliveryStatus != "pending" {
+		t.Fatalf("Epic became ready while application delivery was running: %#v, %v", got.Progress, err)
+	}
+	applicationDelivery := launcher.calls[3]
+	if err := svc.CompleteAttempt(t.Context(), applicationDelivery.AttemptID, applicationDelivery.AgentToken, "Delivered application", "https://forge.example/pulls/2"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := svc.GetWorkEpic(t.Context(), epic.ID)
+	if err != nil || got.Progress.DeliveryStatus != "ready_for_review" || !reflect.DeepEqual(got.Progress.ProjectDeliveries, []ProjectDeliveryStatus{
+		{Project: "/app", IssueID: applicationDelivery.WorkID, Status: "ready_for_review", Lineage: 1},
+		{Project: "/sdk", IssueID: delivery.WorkID, Status: "ready_for_review", Lineage: 1},
+	}) {
+		t.Fatalf("completed two-project delivery progress = %#v, %v", got.Progress, err)
 	}
 }
 

@@ -152,6 +152,9 @@ func TestFactoryDeliveryValidatesFinalPR(t *testing.T) {
 			if err := validate(); err != nil {
 				t.Fatal(err)
 			}
+			if status, observedHead, err := launcher.ObserveImplementationDelivery(t.Context(), "https://forge.example/acme/repo/pulls/1", policy); err != nil || status != "open" || observedHead != "abc123" {
+				t.Fatalf("delivery observation = %q/%q, %v", status, observedHead, err)
+			}
 			for _, change := range []func(){func() { target = "wrong" }, func() { branch = "wrong" }, func() { head = "wrong" }, func() { state = "closed" }, func() { fork = true }, func() { draft = true }} {
 				change()
 				if err := validate(); err == nil {
@@ -183,6 +186,10 @@ func TestFactoryDeliveryValidatesFinalPR(t *testing.T) {
 				t.Fatal("accepted host without checkpoint capability")
 			}
 		})
+	}
+	srv := New(nil, nil, "", platforms.NewRegistry(), nil)
+	if _, _, err := (factoryImplementationLauncher{server: srv}).ObserveImplementationDelivery(t.Context(), "https://forge.example/acme/repo/pulls/1", model.FactoryAttemptPolicy{}); err == nil {
+		t.Fatal("observed delivery without a forge target")
 	}
 }
 

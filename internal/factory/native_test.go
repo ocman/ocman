@@ -922,6 +922,21 @@ kind = "plan"`}); err != nil {
 	}); got.DeliveryStatus != "" || len(got.ProjectDeliveries) != 0 {
 		t.Fatalf("nested reference delivery progress = %#v", got)
 	}
+	if got := factoryProgress([]model.NativeIssue{
+		{ID: "reference", Kind: "mol", Requirement: "reference"},
+		{ID: "nested", ParentID: "reference", Project: "/reference", Kind: "task", Status: "open"},
+	}); got.DeliveryStatus != "" || len(got.ProjectDeliveries) != 0 {
+		t.Fatalf("parent reference delivery progress = %#v", got)
+	}
+	if got := factoryProgress([]model.NativeIssue{
+		{ID: "b", Project: "/repo", Kind: "delivery", Status: "closed", Outcome: "failed", CreatedAt: 1},
+		{ID: "a", Project: "/repo", Kind: "delivery", Status: "in_progress", CreatedAt: 1},
+	}); got.DeliveryStatus != "pending" || !reflect.DeepEqual(got.ProjectDeliveries, []ProjectDeliveryStatus{
+		{Project: "/repo", IssueID: "a", Status: "in_progress", Lineage: 1},
+		{Project: "/repo", IssueID: "b", Status: "failed", Lineage: 2},
+	}) {
+		t.Fatalf("failed delivery progress = %#v", got)
+	}
 }
 
 func TestNativeClosureAndRemovedIssueAccessors(t *testing.T) {

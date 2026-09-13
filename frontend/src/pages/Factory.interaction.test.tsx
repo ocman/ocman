@@ -133,6 +133,17 @@ describe('Factory interactions', () => {
 		await user.click(approve);
 		await waitFor(() => expect(api.resolveFactoryProjectGate).toHaveBeenCalledWith('gate-1', 'approve', '', true));
 	});
+	it('rejects a requested project with durable feedback', async () => {
+		const user = userEvent.setup();
+		vi.mocked(api.factoryEpics).mockResolvedValue([{ id: 'epic-1', goal: 'Ship', status: 'open', initialProject: '/repo' }] as never);
+		vi.mocked(api.factoryIssues).mockResolvedValue([{ id: 'gate-1', epicId: 'epic-1', kind: 'gate', title: 'Project scope request', status: 'open', projectRequest: { issueId: 'gate-1', epicId: 'epic-1', attemptId: 'attempt-1', workId: 'work-1', requestedProject: '/shared', reason: 'Contract moved', resolution: 'open' } }] as never);
+		renderFactory(<MemoryRouter><FactoryOverview /></MemoryRouter>);
+		const response = await screen.findByLabelText('Rejection response');
+		await user.clear(response);
+		await user.type(response, 'Keep the contract local.');
+		await user.click(screen.getByRole('button', { name: 'Reject and resume' }));
+		await waitFor(() => expect(api.resolveFactoryProjectGate).toHaveBeenCalledWith('gate-1', 'reject', 'Keep the contract local.', false));
+	});
 	it('opens an unblock conversation for failed work', async () => {
 		const user = userEvent.setup();
 		vi.mocked(api.factoryEpics).mockResolvedValue([{ id: 'epic-1', goal: 'Ship', status: 'open', initialProject: '/repo' }] as never);
@@ -795,6 +806,13 @@ describe('Factory interactions', () => {
 			{ id: 'implement-6', epicId: 'epic-6', title: 'Undelivered optional work', project: '/repo', state: 'not_applicable', outcomeReason: 'Final delivery is complete; this work will not run.' },
 			{ id: 'implement-6', epicId: 'epic-6', title: 'Deferred implementation', project: '/repo', state: 'deferred', outcomeReason: 'waiting for review' },
 			{ id: 'implement-7', epicId: 'epic-7', title: 'Merge-gated implementation', project: '/app', state: 'waiting', blockers: [{ id: 'delivery-1', type: 'merge_gated', reason: 'Waiting for the Project Delivery PR to merge.', outcome: 'open' }] },
+			{ id: 'implement-8', epicId: 'epic-8', title: 'Unknown blocker', project: '/repo', state: 'terminally_blocked' },
+			{ id: 'implement-9', epicId: 'epic-9', title: 'Conditional work', project: '/repo', state: 'not_applicable' },
+			{ id: 'implement-10', epicId: 'epic-10', title: 'Unexplained delay', project: '/repo', state: 'deferred' },
+			{ id: 'implement-11', epicId: 'epic-11', title: 'Unscheduled retry', project: '/repo', state: 'retry_wait' },
+			{ id: 'implement-12', epicId: 'epic-12', title: 'Plain wait', project: '/repo', state: 'waiting' },
+			{ id: 'implement-13', epicId: 'epic-13', title: 'Reference work', project: '/repo', state: 'reference' },
+			{ id: 'implement-14', epicId: 'epic-14', title: 'Paused work', project: '/repo', state: 'paused' },
 		] as never);
     renderFactory(<MemoryRouter><FactoryQueue /></MemoryRouter>);
 
@@ -814,6 +832,13 @@ describe('Factory interactions', () => {
 		expect(screen.getByText('Undelivered optional work').closest('[role="listitem"]')).toHaveTextContent('Dispatch: Final delivery is complete; this work will not run.');
 		expect(screen.getByText('Dispatch: delayed: waiting for review.')).toBeInTheDocument();
 		expect(screen.getByText('Merge-gated implementation').closest('[role="listitem"]')).toHaveTextContent('merge gate on delivery-1 open: Waiting for the Project Delivery PR to merge.');
+		expect(screen.getByText('Unknown blocker').closest('[role="listitem"]')).toHaveTextContent('Dispatch: cannot proceed because a prerequisite failed.');
+		expect(screen.getByText('Conditional work').closest('[role="listitem"]')).toHaveTextContent('Dispatch: not applicable because the recovery condition was not met.');
+		expect(screen.getByText('Unexplained delay').closest('[role="listitem"]')).toHaveTextContent('Dispatch: delayed.');
+		expect(screen.getByText('Unscheduled retry').closest('[role="listitem"]')).toHaveTextContent('Dispatch: retry 0 scheduled for a later time.');
+		expect(screen.getByText('Plain wait').closest('[role="listitem"]')).toHaveTextContent('Dispatch: waiting for prerequisites.');
+		expect(screen.getByText('Reference work').closest('[role="listitem"]')).toHaveTextContent('Dispatch: reference work is not scheduled.');
+		expect(screen.getByText('Paused work').closest('[role="listitem"]')).toHaveTextContent('Dispatch: epic paused.');
 		expect(screen.getByText('Capacity: 10 global, 4 per project.')).toBeInTheDocument();
 		expect(screen.getByText('/other')).toBeInTheDocument();
 	});
@@ -953,6 +978,21 @@ describe('Factory interactions', () => {
 		expect(screen.getByRole('status')).toHaveTextContent('Formula is valid');
 		expect(screen.getByText('plan · plan')).toBeInTheDocument();
 		expect(screen.getByText('approval → plan')).toBeInTheDocument();
+	});
+
+	it('shows Factory configuration query and validation errors', async () => {
+		const user = userEvent.setup();
+		vi.mocked(api.factoryCapacityPolicy).mockRejectedValue(new Error('Capacity unavailable'));
+		vi.mocked(api.factoryFormula).mockRejectedValue(new Error('Formula unavailable'));
+		vi.mocked(api.factoryFormulas).mockRejectedValue(new Error('Revisions unavailable'));
+		vi.mocked(api.validateFactoryFormula).mockRejectedValue(new Error('Invalid TOML'));
+		renderFactory(<MemoryRouter><FactoryConfiguration /></MemoryRouter>);
+		expect(await screen.findByText('Capacity unavailable')).toBeInTheDocument();
+		expect(await screen.findByText('Formula unavailable')).toBeInTheDocument();
+		expect(await screen.findByText('Revisions unavailable')).toBeInTheDocument();
+		await user.type(screen.getByLabelText('Custom Formula ID'), 'custom/team');
+		await user.click(screen.getByRole('button', { name: 'Validate TOML' }));
+		expect(await screen.findByText('Invalid TOML')).toBeInTheDocument();
 	});
 
 	it('offers accessible custom TOML Formula controls', () => {

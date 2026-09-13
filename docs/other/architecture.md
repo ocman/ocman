@@ -94,7 +94,7 @@ flowchart TD
     State --> FactoryModel
     Factory --> Registry
     Factory --> Router
-    Factory -->|final delivery validation| Forge
+    Factory -->|Project Delivery validation + merge observation| Forge
     Routines --> Registry
     Routines --> Router
     Routines --> State
@@ -119,21 +119,26 @@ flowchart TD
    Plan revisions, approvals, and materialization provenance in `state.db`.
    TOML Formulas compile to canonical JSON. A Plan session is read-only at the
    project root; approval of an exact revision automatically materializes the
-   proposed Implementation Issues and dependencies atomically. Ready Issues
-   launch configured worktree sessions on one shared branch. Each implementation
-   handoff records the clean, pushed commit in its Attempt result; the next
-   Attempt freezes that checkpoint and target branch in its policy. PR lookups
-   are reserved for final delivery and one-time adoption of legacy PR-based work.
-   A required delivery Issue depends on the implementation work and runs a
-   separate model session to verify the combined changes and publish the final
-   PR. Delivery retries preserve completed implementation Issues.
+   proposed Implementation Issues and dependencies atomically. As defined by
+   [ADR 0008](../adr/0008-coordinate-factory-work-across-projects.md), an Epic
+   owns an admitted local project set, each executable Issue targets one project,
+   and each project has an independent shared branch, checkpoint, and Delivery
+   lineage. Ready Issues launch configured worktree sessions in their target
+   project. Each implementation handoff records the clean, pushed commit in its
+   Attempt result; the next Attempt for that project freezes the checkpoint and
+   target branch in its policy. A required Project Delivery is created
+   progressively for each changed project and publishes that project's PR.
+   Forge observations satisfy merge-gated cross-project dependencies; a recorded
+   merge makes later work create a successor instead of refreshing the Delivery.
+   Delivery retries preserve completed implementation Issues.
    Failed or terminally blocked work can
    launch a read-only diagnosis session; its scoped `factory_unblock` MCP tool
    remains permission-gated in the conversation before reopening work or
    applying a graph mutation. Implementation agents can also pause behind a
-   durable project-admission gate; human REST approval adopts the project and
-   launches an additive scoped Plan, while rejection resumes the same session
-   with feedback. The browser uses REST while agents use MCP.
+   durable project-admission gate; human REST approval adopts the local project,
+   records execution acknowledgement, and launches an additive scoped Plan,
+   while rejection resumes the same session with feedback. The browser uses REST
+   while agents use MCP.
    Routines are not involved.
 - **Factory persistence.** Native `factory_*` tables own the graph and its
    provenance in `state.db`; they do not reference or alter routine tables.
