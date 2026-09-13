@@ -3,7 +3,6 @@ import { useState, type ReactNode } from 'react';
 import type { FactoryAuthorityEscalationGate, FactoryEpic, FactoryIssue, FactoryPlanGate, FactoryRecoveryGate } from '../lib/api';
 import { useClaimFactoryPlan, useDecideFactoryPlanGate, useFactoryIssues, useMaterializeFactoryPlan, usePourFactoryEpic, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryRecoveryGate, useWorkEpic } from '../lib/queries';
 import { Button } from './Control';
-import { factoryEpicStatus } from './factoryEpicStatus';
 import { FactoryImplementationModel } from './FactoryImplementationModel';
 import { useFactoryImplementationModel } from './useFactoryImplementationModel';
 import './FactoryEpicCard.css';
@@ -55,17 +54,21 @@ function availableWorkAction(issue: FactoryIssue) {
   if (issue.dispatchState === 'ready' && ['plan', 'materialization'].includes(issue.kind)) return issue.kind;
 }
 
+function requiresIssueAction(epic: FactoryEpic, issue: FactoryIssue, requestedAction?: string) {
+  const accepts = (...actions: string[]) => !requestedAction || actions.includes(requestedAction);
+  const action = availableWorkAction(issue);
+  return (epic.status === 'open' && action && accepts(...WORK_REQUESTS[action])) ||
+    (issue.recovery && !['resume', 'retry', 'cancel'].includes(issue.recovery.resolution) && accepts('resume_recovery', 'retry_recovery', 'cancel_recovery')) ||
+    (issue.authority && !['approve', 'reject'].includes(issue.authority.resolution) && accepts('approve_authority', 'reject_authority'));
+}
+
 function requiresHumanAction(epic: FactoryEpic, issues: FactoryIssue[], issueID: string, requestedAction?: string) {
   const accepts = (...actions: string[]) => !requestedAction || actions.includes(requestedAction);
   if (epic.status === 'closed') return false;
   if (epic.planGate?.resolution === 'open' && accepts('approve_plan', 'revise_plan', 'reject_plan', 'submit_proposal')) return true;
   if (epic.status === 'open' && !issueID && !issues.length && accepts('pour')) return true;
   if (requestedAction === 'mutate_graph') return epic.status === 'open' && issues.some((issue) => (!issueID || issue.id === issueID) && issue.status === 'open');
-  return issues.some((issue) => (!issueID || issue.id === issueID) && (
-    (epic.status === 'open' && availableWorkAction(issue) && accepts(...WORK_REQUESTS[availableWorkAction(issue)!])) ||
-    (issue.recovery && !['resume', 'retry', 'cancel'].includes(issue.recovery.resolution) && accepts('resume_recovery', 'retry_recovery', 'cancel_recovery')) ||
-    (issue.authority && !['approve', 'reject'].includes(issue.authority.resolution) && accepts('approve_authority', 'reject_authority'))
-  ));
+  return issues.some((issue) => (!issueID || issue.id === issueID) && requiresIssueAction(epic, issue, requestedAction));
 }
 
 const WORK_REQUESTS: Record<string, string[]> = { reopen: ['reopen_issue', 'reopen'], plan: ['claim_plan'], materialization: ['materialize_plan'] };
@@ -89,7 +92,6 @@ function IssueActions({ issue, enabled }: { issue: FactoryIssue; enabled: boolea
   const action = enabled ? availableWorkAction(issue) : undefined;
   return <span className="oc-factory-action-issue">
     <Link to={`/factory/issues/${encodeURIComponent(issue.id)}`}>{issue.title}</Link>
-    <span className="oc-epic-card-id">{issue.id} · {issue.outcome || issue.status}</span>
     {issue.outcomeReason && <span>{issue.outcomeReason}</span>}
     <span className="oc-factory-action-buttons">
       {action === 'reopen' && !reopened && <Button type="button" disabled={pending} onClick={() => reopen.mutate(target)}>{reopen.isPending ? 'Reopening…' : 'Reopen issue'}</Button>}
@@ -109,7 +111,7 @@ function EpicActions({ epic, issues, issueID }: { epic: FactoryEpic; issues: Fac
   const selected = issues.filter((issue) => !issueID || issue.id === issueID);
   const gate = epic.planGate;
   return <>
-    {selected.map((issue) => <IssueActions key={issue.id} issue={issue} enabled={epic.status === 'open'} />)}
+    {selected.filter((issue) => requiresIssueAction(epic, issue)).map((issue) => <IssueActions key={issue.id} issue={issue} enabled={epic.status === 'open'} />)}
     {gate?.resolution === 'open' && <><Link to={`/factory/epics/${encodeURIComponent(epic.id)}`}>Review plan</Link><PlanActions key={`${gate.proposalRevision}/${gate.proposalHash}`} epic={epic} gate={gate} /></>}
     {issueID && !selected.length && <span role="status">Issue {issueID} is no longer available.</span>}
     {epic.status === 'open' && !issues.length && !issueID && <Button type="button" disabled={pour.isPending || pour.isSuccess} onClick={() => pour.mutate()}>{pour.isPending ? 'Pouring…' : 'Pour graph'}</Button>}
@@ -131,14 +133,10 @@ export function FactoryActionCard({ epicID, issueID = '', requestedAction, child
   if (!requiresHumanAction(epic.data, issues.data, issueID, requestedAction)) return null;
   return <span className="oc-epic-card oc-factory-action-card" aria-label="Factory human actions">
     <Link className="oc-epic-card-goal" to={to}>{epic.data?.goal || epicID || 'Factory action inbox'}</Link>
-    <span className="oc-epic-card-status oc-epic-card-status--action">{epic.data ? factoryEpicStatus(epic.data).text : 'Human action required'}</span>
-    {epicID && <span className="oc-epic-card-id">{epicID}</span>}
     {epic.isSuccess && issues.isSuccess && <EpicActions epic={epic.data} issues={issues.data} issueID={issueID} />}
     <span className="oc-factory-action-buttons">
       {epicID && <Link to={to}>Manage graph</Link>}
       <Link to="/factory/overview">Open action inbox</Link>
-      <Link to="/factory/configuration">Edit formulas and capacity</Link>
-      {!epicID && <Link to="/factory/epics">Create epic</Link>}
     </span>
   </span>;
 }

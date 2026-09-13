@@ -34,6 +34,24 @@ beforeEach(() => {
 });
 
 describe('Factory human action cards', () => {
+  it('shows the epic and pending decisions without listing the work graph', async () => {
+    vi.mocked(api.factoryEpic).mockResolvedValue({ ...epic, planGate: { issueId: 'gate', resolution: 'open', proposalRevision: 1, proposalHash: 'hash' } });
+    vi.mocked(api.factoryIssues).mockResolvedValue([
+      { ...issue, id: 'ship.1', title: 'Completed plan', kind: 'plan', outcome: 'succeeded' },
+      { ...issue, id: 'ship.2', title: 'Running implementation', status: 'in_progress', outcome: undefined },
+      { ...issue, id: 'ship.4', title: 'Queued implementation', status: 'open', outcome: undefined },
+      { ...issue, id: 'ship.5', title: 'Resolved permission', kind: 'gate', outcome: 'succeeded', authority: { issueId: 'ship.5', epicId: 'ship', attemptId: 'attempt', workId: 'ship.2', requestId: 'req', permission: 'bash', target: 'git push', resolution: 'approve' } },
+      issue,
+    ]);
+    renderCard('[Factory actions](/factory/epics/ship?human=1)');
+    expect(await screen.findByRole('button', { name: 'Approve plan' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Ship Factory' })).toHaveAttribute('href', '/factory/epics/ship');
+    expect(screen.getByRole('button', { name: 'Reopen issue' })).toBeInTheDocument();
+    expect(screen.queryAllByText(/Completed plan|Running implementation|Queued implementation|Resolved permission/)).toHaveLength(0);
+    expect(screen.queryByText(/required work complete/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Edit formulas and capacity' })).not.toBeInTheDocument();
+  });
+
   it('renders an explicit creation marker even when no action is pending', async () => {
     vi.mocked(api.factoryIssues).mockResolvedValue([{ ...issue, status: 'in_progress', outcome: undefined }]);
     renderCard('Created it. [[ocman:card type=factory-epic epic=ship action=created]]');
