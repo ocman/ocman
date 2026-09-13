@@ -202,8 +202,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
   });
   const {
     session,
-    messages: rawMessages,
-    parts: rawParts,
+    messages,
+    parts,
     pendingPermission,
     pendingQuestion,
     checkingPermissionId,
@@ -237,15 +237,12 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // is properly batched and React doesn't see a setState during
   // another component's render phase. observeMessages is a stable
   // useCallback inside usePendingSend, so the effect only re-runs
-  // when rawMessages itself changes identity (i.e., a real SSE
+  // when messages itself changes identity (i.e., a real SSE
   // update).
   const observeMessages = pending.observeMessages;
   useEffect(() => {
-    observeMessages(rawMessages);
-  }, [rawMessages, observeMessages]);
-
-  const messages = rawMessages;
-  const parts = rawParts;
+    observeMessages(messages);
+  }, [messages, observeMessages]);
 
   // Snapshot of the user's last-seen cutoff for the current session.
   // Used to compute the "first unread" marker and the "N new
@@ -294,8 +291,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
       return next;
     });
   }, [session]);
-
-  const changeModelFromNotice = openModelPicker;
 
   const handleScrollToMessageBookmark = useCallback((bookmark: MessageBookmark) => {
     const updateScrollRequest = () => {
@@ -817,10 +812,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
     refreshThread: reload,
     refreshMessageQueue,
   });
-
-  void setSubagentTokens; // exposed for the legacy hook; not needed
-                          // by the new pipeline since SSE handles
-                          // subagent token tracking inside useSession.
 
   const handleThreadBoundaryRetry = useCallback((error: Error, force = false) => {
     const now = Date.now();
@@ -1344,7 +1335,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
               <RateLimitBanner
                 key={session.id}
                 notice={session.notice}
-                onChangeModel={caps.composer && !hasPendingPrompt ? changeModelFromNotice : undefined}
+                onChangeModel={caps.composer && !hasPendingPrompt ? openModelPicker : undefined}
               />
             )}
             <McpAuthBanner sessionId={session.id} platformId={session.platform} />
