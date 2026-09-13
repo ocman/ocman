@@ -103,7 +103,8 @@ function GraphControls({ epicID, issues, allIssues }: { epicID: string; issues: 
   const selectedIssueID = issueID || openIssues[0]?.id || '';
   const selectedIssue = openIssues.find((issue) => issue.id === selectedIssueID);
   const selectedDependencyType = dependencyType === 'merge_gated' && selectedIssue?.kind !== 'implementation' && selectedIssue?.kind !== 'task' ? 'blocks' : dependencyType;
-  const targets = allIssues.filter((issue) => selectedDependencyType === 'merge_gated' ? issue.kind === 'delivery' && issue.project !== selectedIssue?.project : issue.status === 'open');
+  const linkedTargets = new Set(selectedIssue?.dependsOn?.filter((dependency) => dependency.type === selectedDependencyType).map((dependency) => dependency.id));
+  const targets = allIssues.filter((issue) => action === 'unlink' ? linkedTargets.has(issue.id) : selectedDependencyType === 'merge_gated' ? issue.kind === 'delivery' && issue.project !== selectedIssue?.project : issue.status === 'open').sort((a, b) => action !== 'unlink' && selectedDependencyType === 'merge_gated' ? (b.createdAt ?? 0) - (a.createdAt ?? 0) || b.id.localeCompare(a.id) : 0);
   const noTarget = (action === 'reparent' && !openIssues.some((issue) => issue.id !== selectedIssueID)) || ((action === 'link' || action === 'unlink') && !targets.some((issue) => issue.id !== selectedIssueID));
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -450,7 +451,7 @@ export function FactoryEpicDetail() {
         {epic.data.status !== 'closed' && <Button type="button" onClick={() => setPaused.mutate(epic.data!.status !== 'paused')} disabled={setPaused.isPending}>{epic.data.status === 'paused' ? 'Resume epic' : 'Pause epic'}</Button>}
       </div>
 		<p>Required work: {progress.requiredSucceeded}/{progress.requiredTotal} complete. Optional work open: {progress.optionalOpen}.</p>
-		{!!progress.projectDeliveries?.length && <ul aria-label="Project deliveries" className="factory-issues">{progress.projectDeliveries.map((delivery) => <li key={delivery.issueId ?? `${delivery.project}:pending`}><ProjectLabel path={delivery.project} /><span>{delivery.status === 'ready_for_review' ? 'Ready for review' : delivery.status.replaceAll('_', ' ').replace(/^./, (value) => value.toUpperCase())}</span></li>)}</ul>}
+		{!!progress.projectDeliveries?.length && <ul aria-label="Project deliveries" className="factory-issues">{progress.projectDeliveries.map((delivery) => <li key={delivery.issueId ?? `${delivery.project}:pending`}><ProjectLabel path={delivery.project} />{delivery.lineage && <span>Delivery {delivery.lineage}</span>}<span>{delivery.status === 'ready_for_review' ? 'Ready for review' : delivery.status.replaceAll('_', ' ').replace(/^./, (value) => value.toUpperCase())}</span></li>)}</ul>}
 		{!!progress.closureBlockers?.length && <p>Closure blocked by: {progress.closureBlockers.join(', ')}</p>}
       {pour.isError && <p role="alert">{pour.error instanceof Error ? pour.error.message : 'Could not pour graph.'}</p>}
       {(closeEpic.isError || setPaused.isError) && <p role="alert">{(closeEpic.error ?? setPaused.error) instanceof Error ? (closeEpic.error ?? setPaused.error)!.message : 'Could not update epic.'}</p>}

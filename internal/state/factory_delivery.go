@@ -19,7 +19,7 @@ func (d *DB) ListFactoryMergeGateDeliveries(ctx context.Context, observedBefore 
 		JOIN factory_issue delivery ON delivery.id = dependency.depends_on_issue_id AND delivery.kind = 'delivery'
 		JOIN factory_attempt a ON a.work_item_id = delivery.id AND a.terminal_outcome = 'succeeded'
 		LEFT JOIN factory_merge_gate_observation observation ON observation.delivery_issue_id = delivery.id
-		WHERE dependency.type = 'merge_gated' AND json_extract(a.result_json, '$.prUrl') <> ''
+		WHERE dependency.type = 'merge_gated' AND delivery.status = 'closed' AND delivery.outcome = 'succeeded' AND json_extract(a.result_json, '$.prUrl') <> ''
 		AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id IN (dependency.issue_id, delivery.id))
 		AND (observation.delivery_issue_id IS NULL OR (observation.status <> 'merged' AND observation.observed_at <= ?))
 		AND NOT EXISTS (SELECT 1 FROM factory_attempt newer WHERE newer.work_item_id = delivery.id AND newer.terminal_outcome = 'succeeded' AND (newer.finished_at > a.finished_at OR (newer.finished_at = a.finished_at AND newer.rowid > a.rowid)))
@@ -45,9 +45,12 @@ func (d *DB) ListFactoryMergeGateDeliveries(ctx context.Context, observedBefore 
 
 func (d *DB) RecordFactoryDeliveryObservation(ctx context.Context, observation model.FactoryDeliveryObservation) error {
 	_, err := d.db.ExecContext(ctx, `INSERT INTO factory_merge_gate_observation (delivery_issue_id, attempt_id, pr_url, commit_sha, status, reason, observed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		SELECT ?, ?, ?, ?, ?, ?, ?
+		WHERE EXISTS (SELECT 1 FROM factory_issue WHERE id = ? AND kind = 'delivery' AND status = 'closed' AND outcome = 'succeeded')
+		AND EXISTS (SELECT 1 FROM factory_attempt a WHERE a.id = ? AND a.work_item_id = ? AND a.terminal_outcome = 'succeeded'
+			AND NOT EXISTS (SELECT 1 FROM factory_attempt newer WHERE newer.work_item_id = a.work_item_id AND newer.terminal_outcome = 'succeeded' AND (newer.finished_at > a.finished_at OR (newer.finished_at = a.finished_at AND newer.rowid > a.rowid))))
 		ON CONFLICT(delivery_issue_id) DO UPDATE SET attempt_id = excluded.attempt_id, pr_url = excluded.pr_url, commit_sha = excluded.commit_sha, status = excluded.status, reason = excluded.reason, observed_at = excluded.observed_at
-		WHERE factory_merge_gate_observation.status <> 'merged' AND factory_merge_gate_observation.observed_at <= excluded.observed_at`, observation.DeliveryIssueID, observation.AttemptID, observation.PRURL, observation.CommitSHA, observation.Status, observation.Reason, observation.ObservedAt)
+		WHERE factory_merge_gate_observation.status <> 'merged' AND factory_merge_gate_observation.observed_at <= excluded.observed_at`, observation.DeliveryIssueID, observation.AttemptID, observation.PRURL, observation.CommitSHA, observation.Status, observation.Reason, observation.ObservedAt, observation.DeliveryIssueID, observation.AttemptID, observation.DeliveryIssueID)
 	return err
 }
 
@@ -71,12 +74,14 @@ func validateFactoryDeliveryOrder(ctx context.Context, tx *sql.Tx, epicID, proje
 	for i := range issues {
 		byID[issues[i].ID] = &issues[i]
 	}
+	var latest *model.NativeIssue
 	for _, issue := range issues {
 		if issue.Project != project {
 			continue
 		}
-		if issue.Kind == "delivery" && issue.Status == "closed" && issue.Outcome == "succeeded" {
-			return errors.New("factory project delivery is already complete")
+		if issue.Kind == "delivery" && (latest == nil || issue.CreatedAt > latest.CreatedAt || (issue.CreatedAt == latest.CreatedAt && issue.ID > latest.ID)) {
+			copy := issue
+			latest = &copy
 		}
 		if kind != "delivery" || issue.Kind == "delivery" || issue.Kind == "mol" || issue.DispatchState == "not_applicable" || (issue.Kind == "gate" && issue.GateResolution == "") {
 			continue
@@ -93,6 +98,9 @@ func validateFactoryDeliveryOrder(ctx context.Context, tx *sql.Tx, epicID, proje
 			return errors.New("factory delivery must wait for runnable optional work")
 		}
 	}
+	if kind != "delivery" && latest != nil && latest.Status == "closed" && latest.Outcome == "succeeded" {
+		return errors.New("factory project delivery is already complete")
+	}
 	return nil
 }
 
@@ -108,6 +116,9 @@ func (d *DB) EnsureFactoryDeliveryIssue(ctx context.Context, epicID string) erro
 		parent     string
 		blockers   []string
 		executable bool
+		status     string
+		outcome    string
+		merged     bool
 	}
 	projects := map[string]*projectDelivery{}
 	byID := make(map[string]*model.NativeIssue, len(issues))
@@ -116,12 +127,6 @@ func (d *DB) EnsureFactoryDeliveryIssue(ctx context.Context, epicID string) erro
 	}
 	for _, issue := range issues {
 		if issue.Kind == "delivery" {
-			project := projects[issue.Project]
-			if project == nil {
-				project = &projectDelivery{}
-				projects[issue.Project] = project
-			}
-			project.delivery = issue.ID
 			continue
 		}
 		requirement := factoryIssueRequirement(&issue, byID)
@@ -149,13 +154,18 @@ func (d *DB) EnsureFactoryDeliveryIssue(ctx context.Context, epicID string) erro
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	rows, err := tx.QueryContext(ctx, `SELECT id, project_path FROM factory_issue WHERE epic_id = ? AND kind = 'delivery' AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = factory_issue.id)`, epicID)
+	rows, err := tx.QueryContext(ctx, `SELECT id, project_path, status, outcome,
+		EXISTS(SELECT 1 FROM factory_merge_gate_observation WHERE delivery_issue_id = factory_issue.id AND status = 'merged')
+		FROM factory_issue WHERE epic_id = ? AND kind = 'delivery'
+		AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = factory_issue.id)
+		ORDER BY created_at, id`, epicID)
 	if err != nil {
 		return err
 	}
 	for rows.Next() {
-		var delivery, projectPath string
-		if err := rows.Scan(&delivery, &projectPath); err != nil {
+		var delivery, projectPath, status, outcome string
+		var merged bool
+		if err := rows.Scan(&delivery, &projectPath, &status, &outcome, &merged); err != nil {
 			rows.Close()
 			return err
 		}
@@ -164,7 +174,7 @@ func (d *DB) EnsureFactoryDeliveryIssue(ctx context.Context, epicID string) erro
 			project = &projectDelivery{}
 			projects[projectPath] = project
 		}
-		project.delivery = delivery
+		project.delivery, project.status, project.outcome, project.merged = delivery, status, outcome, merged
 	}
 	if err := rows.Close(); err != nil {
 		return err
@@ -178,6 +188,32 @@ func (d *DB) EnsureFactoryDeliveryIssue(ctx context.Context, epicID string) erro
 	sort.Strings(paths)
 	for _, path := range paths {
 		project := projects[path]
+		newWork := project.delivery == ""
+		for _, blocker := range project.blockers {
+			var covered bool
+			if project.delivery != "" {
+				err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM factory_issue_dependency WHERE issue_id = ? AND depends_on_issue_id = ? AND type = 'blocks')`, project.delivery, blocker).Scan(&covered)
+				if err != nil {
+					return err
+				}
+			}
+			newWork = newWork || !covered
+		}
+		if project.status == "closed" && project.outcome == "succeeded" {
+			if !newWork {
+				continue
+			}
+			if project.merged {
+				project.delivery = ""
+			} else {
+				if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'open', outcome = '', outcome_reason = '', retry_at = 0, retry_attempts = 0 WHERE id = ?`, project.delivery); err != nil {
+					return err
+				}
+				if _, err := tx.ExecContext(ctx, `DELETE FROM factory_merge_gate_observation WHERE delivery_issue_id = ?`, project.delivery); err != nil {
+					return err
+				}
+			}
+		}
 		if project.delivery == "" {
 			project.delivery, err = factoryChildID(ctx, tx, project.parent)
 			if err != nil {

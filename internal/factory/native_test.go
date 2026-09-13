@@ -881,8 +881,8 @@ kind = "plan"`}); err != nil {
 		{ID: "other", Project: "/other", Kind: "delivery", Title: "Deliver other", Status: "open", DispatchState: "waiting"},
 	})
 	if deliveries.DeliveryStatus != "pending" || !reflect.DeepEqual(deliveries.ProjectDeliveries, []ProjectDeliveryStatus{
-		{Project: "/other", IssueID: "other", Status: "waiting"},
-		{Project: "/repo", IssueID: "repo", Status: "ready_for_review"},
+		{Project: "/other", IssueID: "other", Status: "waiting", Lineage: 1},
+		{Project: "/repo", IssueID: "repo", Status: "ready_for_review", Lineage: 1},
 	}) {
 		t.Fatalf("delivery progress = %#v", deliveries)
 	}
@@ -899,9 +899,19 @@ kind = "plan"`}); err != nil {
 	})
 	if deliveries.DeliveryStatus != "pending" || !reflect.DeepEqual(deliveries.ProjectDeliveries, []ProjectDeliveryStatus{
 		{Project: "/other", Status: "pending"},
-		{Project: "/repo", IssueID: "repo", Status: "ready_for_review"},
+		{Project: "/repo", IssueID: "repo", Status: "ready_for_review", Lineage: 1},
 	}) {
 		t.Fatalf("missing delivery progress = %#v", deliveries)
+	}
+	lineage := factoryProgress([]model.NativeIssue{
+		{ID: "repo-1", Project: "/repo", Kind: "delivery", Status: "closed", Outcome: "succeeded", CreatedAt: 1},
+		{ID: "repo-2", Project: "/repo", Kind: "delivery", Status: "open", DispatchState: "ready", CreatedAt: 2},
+	})
+	if lineage.DeliveryStatus != "pending" || !reflect.DeepEqual(lineage.ProjectDeliveries, []ProjectDeliveryStatus{
+		{Project: "/repo", IssueID: "repo-1", Status: "ready_for_review", Lineage: 1},
+		{Project: "/repo", IssueID: "repo-2", Status: "ready", Lineage: 2},
+	}) {
+		t.Fatalf("delivery lineage progress = %#v", lineage)
 	}
 	if got := factoryProgress([]model.NativeIssue{{ID: "reference", Project: "/reference", Kind: "task", Requirement: "reference", Status: "open", DispatchState: "reference"}}); got.DeliveryStatus != "" || len(got.ProjectDeliveries) != 0 {
 		t.Fatalf("reference delivery progress = %#v", got)

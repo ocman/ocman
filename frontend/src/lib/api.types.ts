@@ -153,7 +153,7 @@ export interface FactoryEpic {
 	attempts?: FactoryAttempt[];
 	proposal?: FactoryProposal;
 	planGate?: FactoryPlanGate;
-  progress: { requiredTotal: number; requiredSucceeded: number; optionalOpen: number; closureBlockers?: string[]; stuck?: boolean; deliveryStatus?: 'pending' | 'ready_for_review'; projectDeliveries?: { project: string; issueId?: string; status: string }[] };
+  progress: { requiredTotal: number; requiredSucceeded: number; optionalOpen: number; closureBlockers?: string[]; stuck?: boolean; deliveryStatus?: 'pending' | 'ready_for_review'; projectDeliveries?: { project: string; issueId?: string; status: string; lineage?: number }[] };
 }
 
 export interface FactoryAttempt {

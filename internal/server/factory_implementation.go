@@ -173,7 +173,7 @@ func (l factoryImplementationLauncher) ResolveImplementationBranch(ctx context.C
 		}
 	case "closed", "merged":
 		if next, ok := nextFactoryBranch(branch, previous.Branch); ok {
-			if previous.HeadSHA == "" {
+			if previous.Status == "closed" && previous.HeadSHA == "" {
 				return "", "", errors.New("factory pull request has no head commit")
 			}
 			branches, err := l.server.router().ForDir(repoRoot).GitBranches(ctx, repoRoot)
@@ -184,6 +184,9 @@ func (l factoryImplementationLauncher) ResolveImplementationBranch(ctx context.C
 				if existing == next {
 					return "", "", errors.New("replacement Factory branch already exists")
 				}
+			}
+			if previous.Status == "merged" {
+				return next, "", nil
 			}
 			return next, previous.HeadSHA, nil
 		}

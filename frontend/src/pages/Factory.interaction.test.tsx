@@ -741,16 +741,19 @@ describe('Factory interactions', () => {
 			progress: {
 				requiredTotal: 4, requiredSucceeded: 3, optionalOpen: 0, deliveryStatus: 'pending',
 				projectDeliveries: [
-					{ project: '/repo', issueId: 'delivery-1', status: 'ready_for_review' },
-					{ project: '/other', issueId: 'delivery-2', status: 'waiting' },
+					{ project: '/repo', issueId: 'delivery-1', status: 'ready_for_review', lineage: 1 },
+					{ project: '/repo', issueId: 'delivery-3', status: 'ready', lineage: 2 },
+					{ project: '/other', issueId: 'delivery-2', status: 'waiting', lineage: 1 },
 				],
 			},
 		} as never);
 		vi.mocked(api.factoryIssues).mockResolvedValue([]);
 		renderFactory(<MemoryRouter initialEntries={['/factory/epics/epic-1']}><Routes><Route path="/factory/epics/:id" element={<FactoryEpicDetail />} /></Routes></MemoryRouter>);
 		const deliveries = await screen.findByRole('list', { name: 'Project deliveries' });
-		expect(within(deliveries).getByText('/repo')).toBeInTheDocument();
+		expect(within(deliveries).getAllByText('/repo')).toHaveLength(2);
 		expect(within(deliveries).getByText('Ready for review')).toBeInTheDocument();
+		expect(within(deliveries).getByText('Delivery 2')).toBeInTheDocument();
+		expect(within(deliveries).getByText('Ready')).toBeInTheDocument();
 		expect(within(deliveries).getByText('/other')).toBeInTheDocument();
 		expect(within(deliveries).getByText('Waiting')).toBeInTheDocument();
 	});
@@ -843,7 +846,7 @@ describe('Factory interactions', () => {
       { id: 'epic-2', goal: 'Review Factory', status: 'open', initialProject: '/review' },
     ] as never);
     vi.mocked(api.factoryEpic).mockResolvedValue({ id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo' } as never);
-		vi.mocked(api.factoryIssues).mockImplementation((id) => Promise.resolve(id === 'epic-1' ? [{ id: 'epic-1.1', epicId: 'epic-1', project: '/app', kind: 'task', title: 'Plan', status: 'open' }] : [{ id: 'epic-2.1', epicId: 'epic-2', project: '/sdk', kind: 'task', title: 'Review', status: 'open' }, { id: 'epic-2.2', epicId: 'epic-2', project: '/sdk', kind: 'delivery', title: 'SDK delivery', status: 'closed' }]) as never);
+		vi.mocked(api.factoryIssues).mockImplementation((id) => Promise.resolve(id === 'epic-1' ? [{ id: 'epic-1.1', epicId: 'epic-1', project: '/app', kind: 'task', title: 'Plan', status: 'open', dependsOn: [{ id: 'epic-2.2', type: 'merge_gated' }] }] : [{ id: 'epic-2.1', epicId: 'epic-2', project: '/sdk', kind: 'task', title: 'Review', status: 'open' }, { id: 'epic-2.2', epicId: 'epic-2', project: '/sdk', kind: 'delivery', title: 'SDK delivery 1', status: 'closed', createdAt: 1 }, { id: 'epic-2.3', epicId: 'epic-2', project: '/sdk', kind: 'delivery', title: 'SDK delivery 2', status: 'open', createdAt: 2 }]) as never);
     renderFactory(<MemoryRouter initialEntries={['/factory/epics/epic-1']}><Routes><Route path="/factory/epics/:id" element={<FactoryEpicDetail />} /></Routes></MemoryRouter>);
 
     const manage = await screen.findByRole('button', { name: 'Manage graph' });
@@ -855,8 +858,11 @@ describe('Factory interactions', () => {
     expect(screen.getByRole('option', { name: 'Work Epic epic-2: Review (epic-2.1)' })).toBeInTheDocument();
 		expect(screen.getByRole('option', { name: 'Merge gated' })).toBeInTheDocument();
 		await user.selectOptions(screen.getByLabelText('Dependency type'), 'merge_gated');
-		expect(screen.getByRole('option', { name: 'Work Epic epic-2: SDK delivery (epic-2.2)' })).toBeInTheDocument();
+		expect(screen.getByRole('option', { name: 'Work Epic epic-2: SDK delivery 1 (epic-2.2)' })).toBeInTheDocument();
+		expect(screen.getByLabelText('Dependency target')).toHaveValue('epic-2.3');
 		expect(screen.queryByRole('option', { name: 'Work Epic epic-2: Review (epic-2.1)' })).not.toBeInTheDocument();
+		await user.selectOptions(screen.getByLabelText('Graph action'), 'unlink');
+		expect(screen.getByLabelText('Dependency target')).toHaveValue('epic-2.2');
     await user.selectOptions(screen.getByLabelText('Graph action'), 'create');
     await user.type(screen.getByLabelText('Work title'), 'Implement controls');
     await user.type(screen.getByLabelText('Work description'), 'Keyboard accessible');

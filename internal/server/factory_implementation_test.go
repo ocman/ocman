@@ -105,7 +105,7 @@ func TestFactoryResolvesDeletedForgejoBranch(t *testing.T) {
 	})
 	policy := model.FactoryAttemptPolicy{DeliveryRemoteType: "forgejo", DeliveryRemoteHost: "forge.example", DeliveryRemoteRepo: "dries/ocman"}
 	branch, base, err := (factoryImplementationLauncher{server: srv}).ResolveImplementationBranch(t.Context(), "/repo", "factory/aamruifdam-crov", "https://forge.example/dries/ocman/pulls/604", policy)
-	if err != nil || branch != "factory/aamruifdam-crov-3" || base != "ad222f13c6acde6a9874bf93bd2e25bd97698630" {
+	if err != nil || branch != "factory/aamruifdam-crov-3" || base != "" {
 		t.Fatalf("replacement branch/base = %q/%q, %v", branch, base, err)
 	}
 }
@@ -332,7 +332,7 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 		srv.integrations.GitHub = github.NewForTest(api.URL, "token", api.Client())
 		policy := model.FactoryAttemptPolicy{DeliveryRemoteType: string(forge.RemoteTypeGitHub), DeliveryRemoteRepo: "acme/repo"}
 		launcher := factoryImplementationLauncher{server: srv}
-		if branch, baseRef, err := launcher.ResolveImplementationBranch(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", policy); err != nil || branch != "factory/epic-1-2" || baseRef != "old" {
+		if branch, baseRef, err := launcher.ResolveImplementationBranch(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", policy); err != nil || branch != "factory/epic-1-2" || baseRef != "" {
 			t.Fatalf("resolved replacement branch/base = %q/%q, %v", branch, baseRef, err)
 		}
 		host.branches = []string{"factory/epic-1-2"}
@@ -341,8 +341,8 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 		}
 		host.branches = nil
 		previousHead = ""
-		if _, _, err := launcher.ResolveImplementationBranch(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", policy); err == nil || !strings.Contains(err.Error(), "no head commit") {
-			t.Fatalf("missing previous head error = %v", err)
+		if branch, baseRef, err := launcher.ResolveImplementationBranch(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", policy); err != nil || branch != "factory/epic-1-2" || baseRef != "" {
+			t.Fatalf("merged target base = %q/%q, %v", branch, baseRef, err)
 		}
 		previousHead = "old"
 		if err := launcher.ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", "https://github.com/acme/repo/pull/2", policy); err != nil || host.handoffBranch != "factory/epic-1-2" {
@@ -371,7 +371,7 @@ func TestFactoryImplementationLauncher(t *testing.T) {
 			t.Fatal("replaced an open shared PR")
 		}
 		previousState, previousBranch = "merged", "factory/epic-1-2"
-		if branch, baseRef, err := launcher.ResolveImplementationBranch(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", policy); err != nil || branch != "factory/epic-1-3" || baseRef != "old" {
+		if branch, baseRef, err := launcher.ResolveImplementationBranch(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", policy); err != nil || branch != "factory/epic-1-3" || baseRef != "" {
 			t.Fatalf("resolved second replacement branch/base = %q/%q, %v", branch, baseRef, err)
 		}
 		if err := launcher.ValidateImplementationHandoff(ctx, "/repo", "factory/epic-1", "https://github.com/acme/repo/pull/1", "https://github.com/acme/repo/pull/1", policy); err == nil {

@@ -76,6 +76,151 @@ func TestFactoryDeliveryTracksRequiredGraph(t *testing.T) {
 	}
 }
 
+func TestFactoryDeliveryRefreshesThenCreatesSuccessor(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	ctx := t.Context()
+	epic, err := db.CreateFactoryEpicWithProjects(ctx, "", "Delivery lineage", "", "/repo", "", nativeTracerFormula(t), []string{"/app"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mol := factoryIssueID(t, db, epic.ID, "mol")
+	for _, mutation := range []model.GraphMutation{
+		{Action: "create", EpicID: epic.ID, ParentID: mol, Kind: "task", Title: "Repo work", Project: "/repo"},
+		{Action: "create", EpicID: epic.ID, ParentID: mol, Kind: "task", Title: "App work", Project: "/app"},
+	} {
+		if err := db.MutateFactoryGraph(ctx, mutation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.EnsureFactoryDeliveryIssue(ctx, epic.ID); err != nil {
+		t.Fatal(err)
+	}
+	issues, _ := db.ListFactoryIssues(ctx, epic.ID)
+	var firstDelivery, appWork string
+	for _, issue := range issues {
+		if issue.Kind == "delivery" && issue.Project == "/repo" {
+			firstDelivery = issue.ID
+		}
+		if issue.Title == "App work" {
+			appWork = issue.ID
+		}
+	}
+	if _, err := db.db.Exec(`UPDATE factory_issue SET status = 'closed', outcome = 'succeeded' WHERE id = ?`, firstDelivery); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.db.Exec(`INSERT INTO factory_attempt (id, epic_id, work_item_id, sequence, phase, terminal_outcome, frozen_policy_json, result_json, created_at, updated_at, finished_at) VALUES ('delivery-1', ?, ?, 1, 'terminal', 'succeeded', '{"repository":"/repo","profile":"factory-implement/v1","branch":"factory/lineage","targetBranch":"main","delivery":true}', '{"prUrl":"https://forge.example/pulls/1","commitSha":"one"}', 1, 1, 1)`, epic.ID, firstDelivery); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.RecordFactoryDeliveryObservation(ctx, model.FactoryDeliveryObservation{DeliveryIssueID: firstDelivery, AttemptID: "delivery-1", PRURL: "https://forge.example/pulls/1", CommitSHA: "one", Status: "open", ObservedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.MutateFactoryGraph(ctx, model.GraphMutation{Action: "create", EpicID: epic.ID, ParentID: mol, Kind: "task", Title: "Refresh work", Project: "/repo"}); err != nil {
+		t.Fatalf("adding work before merge: %v", err)
+	}
+	if err := db.EnsureFactoryDeliveryIssue(ctx, epic.ID); err != nil {
+		t.Fatal(err)
+	}
+	var status, outcome string
+	if err := db.db.QueryRow(`SELECT status, outcome FROM factory_issue WHERE id = ?`, firstDelivery).Scan(&status, &outcome); err != nil || status != "open" || outcome != "" {
+		t.Fatalf("refreshed delivery = %q/%q, %v", status, outcome, err)
+	}
+	var deliveryCount int
+	if err := db.db.QueryRow(`SELECT count(*) FROM factory_issue WHERE epic_id = ? AND project_path = '/repo' AND kind = 'delivery'`, epic.ID).Scan(&deliveryCount); err != nil || deliveryCount != 1 {
+		t.Fatalf("refresh delivery count = %d, %v", deliveryCount, err)
+	}
+	if err := db.db.QueryRow(`SELECT count(*) FROM factory_merge_gate_observation WHERE delivery_issue_id = ?`, firstDelivery).Scan(&deliveryCount); err != nil || deliveryCount != 0 {
+		t.Fatalf("stale refresh observation count = %d, %v", deliveryCount, err)
+	}
+	pending, err := db.ListFactoryMergeGateDeliveries(ctx, time.Now(), 8)
+	if err != nil || len(pending) != 0 {
+		t.Fatalf("open refresh was polled = %#v, %v", pending, err)
+	}
+	if err := db.RecordFactoryDeliveryObservation(ctx, model.FactoryDeliveryObservation{DeliveryIssueID: firstDelivery, AttemptID: "delivery-1", PRURL: "https://forge.example/pulls/1", CommitSHA: "one", Status: "merged", ObservedAt: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.db.QueryRow(`SELECT count(*) FROM factory_merge_gate_observation WHERE delivery_issue_id = ?`, firstDelivery).Scan(&deliveryCount); err != nil || deliveryCount != 0 {
+		t.Fatalf("in-flight observation restored stale merge = %d, %v", deliveryCount, err)
+	}
+	if _, err := db.db.Exec(`UPDATE factory_issue SET status = 'closed', outcome = 'succeeded' WHERE project_path = '/repo' AND kind NOT IN ('delivery', 'mol')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.UpsertFactoryLocalExecutionAck(ctx, "local", "/repo", "factory-implement", "v1", "operator", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	_, refresh, err := db.ClaimFactoryImplementation(ctx, epic.ID, firstDelivery, "factory-implement/v1", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refresh.FrozenPolicy.Branch != "factory/lineage" || refresh.FrozenPolicy.TargetBranch != "main" {
+		t.Fatalf("refresh workspace = %#v", refresh.FrozenPolicy)
+	}
+	for _, statement := range []struct {
+		query string
+		arg   string
+	}{
+		{`DELETE FROM factory_external_mapping WHERE entity_id = ?`, refresh.ID},
+		{`DELETE FROM factory_attempt WHERE id = ?`, refresh.ID},
+		{`UPDATE factory_issue SET status = 'closed', outcome = 'succeeded' WHERE id = ?`, firstDelivery},
+	} {
+		if _, err := db.db.Exec(statement.query, statement.arg); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := db.MutateFactoryGraph(ctx, model.GraphMutation{Action: "link", EpicID: epic.ID, IssueID: appWork, DependsOnID: firstDelivery, DependencyType: "merge_gated"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.db.Exec(`UPDATE factory_issue SET status = 'closed', outcome = 'succeeded' WHERE id = ?`, firstDelivery); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.RecordFactoryDeliveryObservation(ctx, model.FactoryDeliveryObservation{DeliveryIssueID: firstDelivery, AttemptID: "delivery-1", PRURL: "https://forge.example/pulls/1", CommitSHA: "one", Status: "merged", ObservedAt: 3}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.MutateFactoryGraph(ctx, model.GraphMutation{Action: "create", EpicID: epic.ID, ParentID: mol, Kind: "task", Title: "Successor work", Project: "/repo"}); err != nil {
+		t.Fatalf("adding work after merge: %v", err)
+	}
+	if err := db.EnsureFactoryDeliveryIssue(ctx, epic.ID); err != nil {
+		t.Fatal(err)
+	}
+	issues, err = db.ListFactoryIssues(ctx, epic.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var successor, successorWork string
+	for _, issue := range issues {
+		if issue.Kind == "delivery" && issue.Project == "/repo" && issue.ID != firstDelivery {
+			successor = issue.ID
+		}
+		if issue.Title == "Successor work" {
+			successorWork = issue.ID
+		}
+	}
+	if successor == "" {
+		t.Fatal("successor delivery was not created")
+	}
+	var pinned int
+	if err := db.db.QueryRow(`SELECT count(*) FROM factory_issue_dependency WHERE issue_id = ? AND depends_on_issue_id = ? AND type = 'merge_gated'`, appWork, firstDelivery).Scan(&pinned); err != nil || pinned != 1 {
+		t.Fatalf("existing merge gate moved = %d, %v", pinned, err)
+	}
+	if err := db.MutateFactoryGraph(ctx, model.GraphMutation{Action: "link", EpicID: epic.ID, IssueID: appWork, DependsOnID: successor, DependencyType: "merge_gated"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.db.Exec(`UPDATE factory_issue SET status = 'closed', outcome = 'succeeded' WHERE project_path = '/repo' AND kind = 'task'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.db.Exec(`UPDATE factory_issue SET status = 'open', outcome = '' WHERE id = ?`, successorWork); err != nil {
+		t.Fatal(err)
+	}
+	_, attempt, err := db.ClaimFactoryImplementation(ctx, epic.ID, successorWork, "factory-implement/v1", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempt.FrozenPolicy.Branch != "" || attempt.FrozenPolicy.CheckpointSHA != "" || attempt.FrozenPolicy.TargetBranch != "main" {
+		t.Fatalf("successor workspace = %#v", attempt.FrozenPolicy)
+	}
+}
+
 func TestFactoryMergeGateUsesForgeObservation(t *testing.T) {
 	for _, tt := range []struct {
 		status, want string

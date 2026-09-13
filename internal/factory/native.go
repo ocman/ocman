@@ -136,6 +136,7 @@ type ProjectDeliveryStatus struct {
 	Project string `json:"project"`
 	IssueID string `json:"issueId,omitempty"`
 	Status  string `json:"status"`
+	Lineage int    `json:"lineage,omitempty"`
 }
 
 type WorkEpic struct {
@@ -1286,10 +1287,24 @@ func factoryProgress(issues []model.NativeIssue) FactoryProgress {
 	}
 	deliveryProjects := map[string]bool{}
 	allDelivered := true
+	var deliveryIssues []model.NativeIssue
 	for _, issue := range issues {
 		if issue.Kind != "delivery" {
 			continue
 		}
+		deliveryIssues = append(deliveryIssues, issue)
+	}
+	sort.Slice(deliveryIssues, func(i, j int) bool {
+		if deliveryIssues[i].Project != deliveryIssues[j].Project {
+			return deliveryIssues[i].Project < deliveryIssues[j].Project
+		}
+		if deliveryIssues[i].CreatedAt != deliveryIssues[j].CreatedAt {
+			return deliveryIssues[i].CreatedAt < deliveryIssues[j].CreatedAt
+		}
+		return deliveryIssues[i].ID < deliveryIssues[j].ID
+	})
+	lineages := map[string]int{}
+	for _, issue := range deliveryIssues {
 		status := issue.DispatchState
 		if issue.Status == "closed" && issue.Outcome == "succeeded" {
 			status = "ready_for_review"
@@ -1303,7 +1318,8 @@ func factoryProgress(issues []model.NativeIssue) FactoryProgress {
 		}
 		requiredDelivery[issue.Project] = true
 		deliveryProjects[issue.Project] = true
-		progress.ProjectDeliveries = append(progress.ProjectDeliveries, ProjectDeliveryStatus{Project: issue.Project, IssueID: issue.ID, Status: status})
+		lineages[issue.Project]++
+		progress.ProjectDeliveries = append(progress.ProjectDeliveries, ProjectDeliveryStatus{Project: issue.Project, IssueID: issue.ID, Status: status, Lineage: lineages[issue.Project]})
 	}
 	for project := range requiredDelivery {
 		if !deliveryProjects[project] {
@@ -1312,7 +1328,10 @@ func factoryProgress(issues []model.NativeIssue) FactoryProgress {
 		}
 	}
 	sort.Slice(progress.ProjectDeliveries, func(i, j int) bool {
-		return progress.ProjectDeliveries[i].Project < progress.ProjectDeliveries[j].Project
+		if progress.ProjectDeliveries[i].Project != progress.ProjectDeliveries[j].Project {
+			return progress.ProjectDeliveries[i].Project < progress.ProjectDeliveries[j].Project
+		}
+		return progress.ProjectDeliveries[i].Lineage < progress.ProjectDeliveries[j].Lineage
 	})
 	if len(requiredDelivery) > 0 {
 		progress.DeliveryStatus = "pending"

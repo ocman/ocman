@@ -652,9 +652,6 @@ func deriveFactoryIssueDispatch(ctx context.Context, reader factoryIssueReader, 
 	for i := range issues {
 		byID[issues[i].ID] = &issues[i]
 		issues[i].DispatchState = "waiting"
-		if issues[i].Kind == "delivery" && issues[i].Status == "closed" && issues[i].Outcome == "succeeded" {
-			delivered[issues[i].Project] = true
-		}
 	}
 	rows, err := reader.QueryContext(ctx, `SELECT d.issue_id, d.type, b.id, b.epic_id, b.kind, b.status, b.outcome, b.outcome_reason, COALESCE(g.resolution, ''), COALESCE(o.status, ''), COALESCE(o.reason, '') FROM factory_issue_dependency d JOIN factory_issue b ON b.id = d.depends_on_issue_id LEFT JOIN factory_plan_gate g ON g.issue_id = b.id LEFT JOIN factory_merge_gate_observation o ON o.delivery_issue_id = b.id WHERE d.issue_id IN (SELECT id FROM factory_issue WHERE epic_id = ?) AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = b.id) ORDER BY d.issue_id, d.depends_on_issue_id`, epicID)
 	if err != nil {
@@ -730,6 +727,33 @@ func deriveFactoryIssueDispatch(ctx context.Context, reader factoryIssueReader, 
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
+	}
+	latestDelivery := map[string]*model.NativeIssue{}
+	for i := range issues {
+		issue := &issues[i]
+		latest := latestDelivery[issue.Project]
+		if issue.Kind == "delivery" && (latest == nil || issue.CreatedAt > latest.CreatedAt || (issue.CreatedAt == latest.CreatedAt && issue.ID > latest.ID)) {
+			latestDelivery[issue.Project] = issue
+		}
+	}
+	for project, delivery := range latestDelivery {
+		if delivery.Status != "closed" || delivery.Outcome != "succeeded" {
+			continue
+		}
+		covered := map[string]bool{}
+		for _, dependency := range delivery.DependsOn {
+			if dependency.Type == "blocks" {
+				covered[dependency.ID] = true
+			}
+		}
+		delivered[project] = true
+		for i := range issues {
+			issue := &issues[i]
+			if issue.Project == project && (issue.Kind == "implementation" || issue.Kind == "task") && factoryIssueRequirement(issue, byID) == "required" && !covered[issue.ID] {
+				delivered[project] = false
+				break
+			}
+		}
 	}
 	for i := range issues {
 		issue := &issues[i]
@@ -836,7 +860,11 @@ func (d *DB) MutateFactoryGraph(ctx context.Context, m model.GraphMutation) erro
 		movedProject = m.Project
 	}
 	var delivering int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM factory_issue WHERE epic_id = ? AND project_path IN (?, ?) AND kind = 'delivery' AND (status = 'in_progress' OR (status = 'closed' AND outcome = 'succeeded')) AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = factory_issue.id)`, m.EpicID, project, movedProject).Scan(&delivering); err != nil {
+	deliveryLock := "(status = 'in_progress' OR (status = 'closed' AND outcome = 'succeeded'))"
+	if m.Action == "create" {
+		deliveryLock = "status = 'in_progress'"
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM factory_issue WHERE epic_id = ? AND project_path IN (?, ?) AND kind = 'delivery' AND `+deliveryLock+` AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = factory_issue.id)`, m.EpicID, project, movedProject).Scan(&delivering); err != nil {
 		return err
 	}
 	if delivering != 0 {
@@ -1311,6 +1339,17 @@ func (d *DB) ClaimFactoryImplementation(ctx context.Context, epicID, issueID, pr
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return model.NativeEpic{}, model.FactoryAttempt{}, err
 	}
+	var successorLineage bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(
+		SELECT 1 FROM factory_issue current
+		WHERE current.id = (SELECT id FROM factory_issue WHERE epic_id = ? AND project_path = ? AND kind = 'delivery' AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = factory_issue.id) ORDER BY created_at DESC, id DESC LIMIT 1)
+		AND NOT EXISTS (SELECT 1 FROM factory_attempt a WHERE a.epic_id = current.epic_id AND json_extract(a.frozen_policy_json, '$.repository') = current.project_path AND a.created_at >= current.created_at)
+		AND EXISTS (SELECT 1 FROM factory_issue prior JOIN factory_merge_gate_observation observation ON observation.delivery_issue_id = prior.id AND observation.status = 'merged' WHERE prior.epic_id = current.epic_id AND prior.project_path = current.project_path AND prior.kind = 'delivery' AND prior.id <> current.id))`, epicID, project).Scan(&successorLineage); err != nil {
+		return model.NativeEpic{}, model.FactoryAttempt{}, err
+	}
+	if successorLineage {
+		attemptPolicy.Branch, attemptPolicy.BaseRef, attemptPolicy.CheckpointSHA = "", "", ""
+	}
 	attemptPolicy.Repository = project
 	projects, err := listFactoryEpicProjectsWith(ctx, tx, epicID)
 	if err != nil {
@@ -1324,8 +1363,10 @@ func (d *DB) ClaimFactoryImplementation(ctx context.Context, epicID, issueID, pr
 	if err := tx.QueryRowContext(ctx, `SELECT implementation_model FROM factory_plan_gate WHERE epic_id = ?`, epicID).Scan(&attemptPolicy.Model); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return model.NativeEpic{}, model.FactoryAttempt{}, err
 	}
-	if err := tx.QueryRowContext(ctx, `SELECT json_extract(CASE WHEN json_valid(result_json) THEN result_json ELSE '{}' END, '$.commitSha') FROM factory_attempt WHERE epic_id = ? AND json_extract(frozen_policy_json, '$.repository') = ? AND terminal_outcome = 'succeeded' AND json_extract(CASE WHEN json_valid(result_json) THEN result_json ELSE '{}' END, '$.commitSha') <> '' ORDER BY finished_at DESC, rowid DESC LIMIT 1`, epicID, project).Scan(&attemptPolicy.CheckpointSHA); err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return model.NativeEpic{}, model.FactoryAttempt{}, err
+	if !successorLineage {
+		if err := tx.QueryRowContext(ctx, `SELECT json_extract(CASE WHEN json_valid(result_json) THEN result_json ELSE '{}' END, '$.commitSha') FROM factory_attempt WHERE epic_id = ? AND json_extract(frozen_policy_json, '$.repository') = ? AND terminal_outcome = 'succeeded' AND json_extract(CASE WHEN json_valid(result_json) THEN result_json ELSE '{}' END, '$.commitSha') <> '' ORDER BY finished_at DESC, rowid DESC LIMIT 1`, epicID, project).Scan(&attemptPolicy.CheckpointSHA); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return model.NativeEpic{}, model.FactoryAttempt{}, err
+		}
 	}
 	if err := tx.QueryRowContext(ctx, `SELECT
 		json_extract(frozen_policy_json, '$.deliveryRemoteType'),
@@ -1797,13 +1838,16 @@ func (d *DB) MaterializeFactoryPlan(ctx context.Context, epicID, issueID, profil
 	for _, index := range append(executable, deliveries...) {
 		if manifest.Nodes[index].Type == "delivery" {
 			var existingID, status, outcome string
-			err := tx.QueryRowContext(ctx, `SELECT id, status, outcome FROM factory_issue WHERE epic_id = ? AND project_path = ? AND kind = 'delivery' AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = factory_issue.id) ORDER BY created_at LIMIT 1`, epicID, manifest.Nodes[index].Project).Scan(&existingID, &status, &outcome)
+			var merged bool
+			err := tx.QueryRowContext(ctx, `SELECT id, status, outcome, EXISTS(SELECT 1 FROM factory_merge_gate_observation WHERE delivery_issue_id = factory_issue.id AND status = 'merged') FROM factory_issue WHERE epic_id = ? AND project_path = ? AND kind = 'delivery' AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = factory_issue.id) ORDER BY created_at DESC, id DESC LIMIT 1`, epicID, manifest.Nodes[index].Project).Scan(&existingID, &status, &outcome, &merged)
 			if err == nil {
-				if status == "in_progress" || (status == "closed" && outcome == "succeeded") {
+				if status == "in_progress" {
 					return model.NativeMaterialization{}, errors.New("factory approved Plan cannot replace a started Project Delivery")
 				}
-				issueIDs[manifest.Nodes[index].Key], reusedDeliveries[existingID] = existingID, true
-				continue
+				if status != "closed" || outcome != "succeeded" || !merged {
+					issueIDs[manifest.Nodes[index].Key], reusedDeliveries[existingID] = existingID, true
+					continue
+				}
 			}
 			if !errors.Is(err, sql.ErrNoRows) {
 				return model.NativeMaterialization{}, err
@@ -1870,6 +1914,9 @@ func (d *DB) MaterializeFactoryPlan(ctx context.Context, epicID, issueID, profil
 		if reusedDeliveries[deliveryID] {
 			if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET title = ?, description = ?, status = 'open', outcome = '', outcome_reason = '', retry_at = 0, retry_attempts = 0 WHERE id = ?`, title, strings.TrimSpace(node.Description), deliveryID); err != nil {
 				return model.NativeMaterialization{}, fmt.Errorf("reusing Factory delivery: %w", err)
+			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM factory_merge_gate_observation WHERE delivery_issue_id = ?`, deliveryID); err != nil {
+				return model.NativeMaterialization{}, fmt.Errorf("resetting Factory delivery observation: %w", err)
 			}
 			var parentID string
 			if err := tx.QueryRowContext(ctx, `SELECT parent_issue_id FROM factory_issue_hierarchy WHERE child_issue_id = ?`, deliveryID).Scan(&parentID); err != nil {
