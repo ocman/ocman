@@ -67,6 +67,7 @@ import { useUnreadMarker } from './useUnreadMarker';
 import { sessionWarningKey, useSessionWarnings } from './useSessionWarnings';
 import { ThreadBoundaryFallback } from './ThreadBoundaryFallback';
 import { SessionToasts } from './SessionToasts';
+import { useSessionToasts } from './useSessionToasts';
 import { SessionActionsMenu } from './SessionActionsMenu';
 import { HeaderPortal, MobileHeaderControls } from './MobileHeaderControls';
 import { useMobilePanel } from './useMobilePanel';
@@ -321,10 +322,10 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // Tmux state.
   const tmux = useTmux();
   const openWorktreeForm = useUiStore((s) => s.openWorktreeForm);
-  // Surface a failed OpenCode launch (previously logged only) via the
-  // restart toast, so the user isn't left with a button that appears to
-  // do nothing. Declared here so useTmuxActions can report into it.
-  const [restartToastMessage, setRestartToastMessage] = useState<string | null>(null);
+  const toasts = useSessionToasts();
+  const { setShowRenameToast, setRestartToastMessage, setShowCreateSessionErrorToast, setSendRetryDelaySeconds } = toasts.setters;
+  // A failed OpenCode launch surfaces via the restart toast, so the user
+  // isn't left with a button that appears to do nothing.
   const tmuxActions = useTmuxActions(tmux, session?.directory, setRestartToastMessage, {
     reload,
     isLive: () => portAvailableRef.current,
@@ -383,11 +384,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const [showMovePathDialog, setShowMovePathDialog] = useState(false);
   const [showMessageJumpPicker, setShowMessageJumpPicker] = useState(false);
   const [messageJumpHistory, setMessageJumpHistory] = useState<MessageJumpHistory | null>(null);
-  const [showRenameToast, setShowRenameToast] = useState(false);
-  const [showCreateSessionErrorToast, setShowCreateSessionErrorToast] = useState(false);
-  const [showDisconnectedToast, setShowDisconnectedToast] = useState(false);
-  const [copyToastMessage, setCopyToastMessage] = useState<string | null>(null);
-  const [sendRetryDelaySeconds, setSendRetryDelaySeconds] = useState<number | null>(null);
   const [threadBoundaryResetNonce, setThreadBoundaryResetNonce] = useState(0);
 
   const archiveSession = useApiStore((state) => state.archiveSession);
@@ -561,11 +557,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
     setShowRenameModal,
     setShowForkPicker,
     setShowMovePicker,
-    setShowRenameToast,
-    setShowDisconnectedToast,
-    setRestartToastMessage,
+    ...toasts.setters,
     reloadCapabilities,
-    setCopyToastMessage,
     refreshThread: reload,
     refreshMessageQueue,
   });
@@ -1035,18 +1028,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
           </>
         )}
         <SessionToasts
-          showRenameToast={showRenameToast}
-          setShowRenameToast={setShowRenameToast}
-          restartToastMessage={restartToastMessage}
-          setRestartToastMessage={setRestartToastMessage}
-          showCreateSessionErrorToast={showCreateSessionErrorToast}
-          setShowCreateSessionErrorToast={setShowCreateSessionErrorToast}
-          showDisconnectedToast={showDisconnectedToast}
-          setShowDisconnectedToast={setShowDisconnectedToast}
-          copyToastMessage={copyToastMessage}
-          setCopyToastMessage={setCopyToastMessage}
-          sendRetryDelaySeconds={sendRetryDelaySeconds}
-          setSendRetryDelaySeconds={setSendRetryDelaySeconds}
+          {...toasts.state}
+          {...toasts.setters}
           tmuxAvailable={tmux.available}
           liveConnectionHint={!!caps.liveConnectionHint}
           hasDirectory={!!session?.directory}
