@@ -155,6 +155,7 @@ type FactoryAuditRecord = model.AuditRecord
 
 type PlanningSessionRequest struct {
 	EpicID, WorkID, AttemptID, AgentToken, Repository, Title string
+	Projects                                                 []string
 }
 
 type PlanningLauncher interface {
@@ -965,7 +966,11 @@ func (s *NativeService) canonicalProject(ctx context.Context, path string) (stri
 	if err != nil || !filepath.IsAbs(project) {
 		return "", fmt.Errorf("%w: %w", ErrProjectNotLocalGit, err)
 	}
-	return filepath.Clean(project), nil
+	project = filepath.Clean(project)
+	if strings.ContainsAny(project, "*?[") {
+		return "", fmt.Errorf("%w: project paths cannot contain wildcards", ErrInvalidRequest)
+	}
+	return project, nil
 }
 
 func (s *NativeService) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRequest) (WorkEpic, error) {
@@ -2072,7 +2077,11 @@ func (s *NativeService) ClaimPlan(ctx context.Context, epicID, issueID string) (
 	if err != nil {
 		return ClaimedPlan{}, err
 	}
-	request := PlanningSessionRequest{EpicID: epic.ID, WorkID: issueID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: epic.InitialProject, Title: "PLAN " + issueID + " (@factory)"}
+	projects := make([]string, len(epic.Projects))
+	for i, project := range epic.Projects {
+		projects[i] = project.Path
+	}
+	request := PlanningSessionRequest{EpicID: epic.ID, WorkID: issueID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: epic.InitialProject, Projects: projects, Title: "PLAN " + issueID + " (@factory)"}
 	session, launchErr := s.planning.LaunchPlanningSession(ctx, request)
 	if launchErr != nil {
 		if session.ID != "" {

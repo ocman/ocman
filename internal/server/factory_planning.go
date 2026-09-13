@@ -28,6 +28,11 @@ func (l factoryPlanningLauncher) LaunchPlanningSession(ctx context.Context, req 
 }
 
 func (l factoryPlanningLauncher) launchReadOnlySession(ctx context.Context, req factory.PlanningSessionRequest, mcpRule platforms.PermissionRule) (factory.PlanningSession, error) {
+	for _, project := range req.Projects {
+		if !filepath.IsAbs(project) || filepath.Clean(project) != project || strings.ContainsAny(project, "*?[") {
+			return factory.PlanningSession{}, fmt.Errorf("invalid admitted project path %q", project)
+		}
+	}
 	var platformID string
 	for _, candidate := range l.server.registry.Platforms() {
 		remoteID, _ := remote.SplitPlatformID(string(candidate.ID()))
@@ -60,6 +65,11 @@ func (l factoryPlanningLauncher) launchReadOnlySession(ctx context.Context, req 
 		{Permission: "grep", Pattern: "*", Action: "allow"},
 		{Permission: "list", Pattern: "*", Action: "allow"},
 		{Permission: "external_directory", Pattern: "*", Action: "deny"},
+	}
+	for _, project := range req.Projects {
+		if project != req.Repository {
+			rules = append(rules, platforms.PermissionRule{Permission: "external_directory", Pattern: filepath.Join(project, "**"), Action: "allow"})
+		}
 	}
 	// Session rules override agent defaults; restore these after the catch-all.
 	rules = append(rules, factoryExternalDirectoryRules()...)
@@ -110,13 +120,17 @@ func (s *Server) launchFactoryUnblockSession(ctx context.Context, epicID, issueI
 	}
 	token := hex.EncodeToString(tokenBytes)
 	launcher := factoryPlanningLauncher{server: s}
-	session, err := launcher.launchReadOnlySession(ctx, factory.PlanningSessionRequest{Repository: epic.InitialProject, Title: "UNBL: " + issue.Title}, platforms.PermissionRule{Permission: "mcp_factory_unblock", Pattern: "factory_unblock", Action: "ask"})
+	projects := make([]string, len(epic.Projects))
+	for i, project := range epic.Projects {
+		projects[i] = project.Path
+	}
+	session, err := launcher.launchReadOnlySession(ctx, factory.PlanningSessionRequest{Repository: epic.InitialProject, Projects: projects, Title: "UNBL: " + issue.Title}, platforms.PermissionRule{Permission: "mcp_factory_unblock", Pattern: "factory_unblock", Action: "ask"})
 	if err != nil {
 		return session, err
 	}
 	s.factoryUnblockTokens.Store(token, epic.ID)
 	evidence, _ := json.Marshal(issue)
-	prompt := fmt.Sprintf("Investigate why Factory Issue %s in Work Epic %s is blocked. The current evidence is:\n\n```json\n%s\n```\n\nInspect the repository and Factory state without modifying files. Propose the smallest safe fix, explain it in the conversation, then invoke the factory_unblock MCP tool with that exact action and unblock_token %s. Its permission prompt supplies the user-facing Allow and Reject buttons, and the action cannot run before approval. Supported actions are reopen with epic_id and issue_id, or mutate_graph with epic_id and a strict GraphMutation JSON payload. After execution, explain what changed.", issue.ID, epic.ID, evidence, token)
+	prompt := fmt.Sprintf("Investigate why Factory Issue %s in Work Epic %s is blocked. The current evidence is:\n\n```json\n%s\n```\n\nInspect the admitted repositories without modifying files:\n- %s\n\nInspect Factory state too. Propose the smallest safe fix, explain it in the conversation, then invoke the factory_unblock MCP tool with that exact action and unblock_token %s. Its permission prompt supplies the user-facing Allow and Reject buttons, and the action cannot run before approval. Supported actions are reopen with epic_id and issue_id, or mutate_graph with epic_id and a strict GraphMutation JSON payload. After execution, explain what changed.", issue.ID, epic.ID, evidence, strings.Join(projects, "\n- "), token)
 	if err := s.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt}); err != nil {
 		s.factoryUnblockTokens.Delete(token)
 		_ = s.sessions.Dispose(ctx, session.Platform, platforms.DisposeSessionRequest{SessionID: session.ID})
@@ -268,7 +282,7 @@ func (l factoryPlanningLauncher) PromptPlanningSession(ctx context.Context, sess
 			planningModel = factoryStrongModel(catalog.Models)
 		}
 	}
-	prompt := fmt.Sprintf("Plan Factory Work Epic %s (planning work %s). Inspect the repository without modifying it. First grill the user: load the grilling skill if available, and either way ask one sharp question at a time until the goal, scope, and non-goals are unambiguous. Do not propose an issue graph until the user tells you to proceed. While grilling, do not call submit_proposal and do not link to /factory/epics/%s; that link renders an approve card, and it must appear only once the full plan is submitted. Then, if the to-tickets skill is available, load it; either way, split the plan into tracer-bullet vertical slices with explicit blocking edges. Factory's proposal approval replaces the skill's tracker publication step. Submit the resulting issue graph with the factory MCP action submit_proposal using epic_id %s, attempt_id %s, and attempt_token %s. Split the work into multiple focused implementation Issues by default. Give every manifest node a stable key, concise title, actionable description, and add explicit edges from each dependent node to its blocker where ordering matters. After submitting, recap the proposed Issues and include a Mermaid flowchart of their dependencies. Tell the user that Approve and start implementation materializes the Plan and begins implementation. End only that post-submission recap with [Review and approve the plan](/factory/epics/%s)", req.EpicID, req.WorkID, req.EpicID, req.EpicID, req.AttemptID, req.AgentToken, req.EpicID)
+	prompt := fmt.Sprintf("Plan Factory Work Epic %s (planning work %s). Inspect the admitted repositories without modifying them:\n- %s\n\nFirst grill the user: load the grilling skill if available, and either way ask one sharp question at a time until the goal, scope, and non-goals are unambiguous. Do not propose an issue graph until the user tells you to proceed. While grilling, do not call submit_proposal and do not link to /factory/epics/%s; that link renders an approve card, and it must appear only once the full plan is submitted. Then, if the to-tickets skill is available, load it; either way, split the plan into tracer-bullet vertical slices with explicit blocking edges. Factory's proposal approval replaces the skill's tracker publication step. Submit the resulting issue graph with the factory MCP action submit_proposal using epic_id %s, attempt_id %s, and attempt_token %s. Split the work into multiple focused implementation Issues by default. Give every manifest node a stable key, concise title, actionable description, and add explicit edges from each dependent node to its blocker where ordering matters. After submitting, recap the proposed Issues and include a Mermaid flowchart of their dependencies. Tell the user that Approve and start implementation materializes the Plan and begins implementation. End only that post-submission recap with [Review and approve the plan](/factory/epics/%s)", req.EpicID, req.WorkID, strings.Join(req.Projects, "\n- "), req.EpicID, req.EpicID, req.AttemptID, req.AgentToken, req.EpicID)
 	prompt = "At approval, ask the user to confirm the implementation model. Recommend Opus or Sol for balanced implementation, or Sonnet or Terra for speed. Fable and Astra are preferred for planning. The approval control records the user's model choice.\n\n" + prompt
 	return l.server.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt, Model: planningModel})
 }

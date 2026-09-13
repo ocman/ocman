@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/factory"
+	"github.com/NoUseFreak/ocman/internal/factory/model"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -158,6 +159,15 @@ func TestFactoryExternalDirectoryRulesDataPaths(t *testing.T) {
 	}
 }
 
+func TestFactoryPlanningLauncherRejectsUnsafeProjectPatterns(t *testing.T) {
+	launcher := factoryPlanningLauncher{server: New(nil, nil, "", platforms.NewRegistry(), nil)}
+	for _, project := range []string{"relative", "/other/../repo", "/other*", "/other[repo"} {
+		if _, err := launcher.LaunchPlanningSession(t.Context(), factory.PlanningSessionRequest{Repository: "/repo", Projects: []string{"/repo", project}}); err == nil {
+			t.Fatalf("accepted project path %q", project)
+		}
+	}
+}
+
 func TestFactoryPlanningLauncherUsesLocalHostAndAppliesBoundedRules(t *testing.T) {
 	skillRules := factorySkillRulesFixture(t)
 	endpoint := connectedPlanningMCP(t)
@@ -183,14 +193,15 @@ func TestFactoryPlanningLauncherUsesLocalHostAndAppliesBoundedRules(t *testing.T
 		return &hostsvc.EnsureProjectOpencodeResult{Endpoint: endpoint, RepoRoot: req.ProjectDir}, nil
 	}})
 
-	got, err := (factoryPlanningLauncher{server: srv}).LaunchPlanningSession(context.Background(), factory.PlanningSessionRequest{EpicID: "epic-1", WorkID: "work-1", Repository: "/repo", Title: "Plan: Ship"})
+	req := factory.PlanningSessionRequest{EpicID: "epic-1", WorkID: "work-1", AttemptID: "fa_1", AgentToken: "fat_secret", Repository: "/repo", Projects: []string{"/repo", "/other"}, Title: "Plan: Ship"}
+	got, err := (factoryPlanningLauncher{server: srv}).LaunchPlanningSession(context.Background(), req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got != (factory.PlanningSession{Platform: "local-agent", ID: "session-1"}) || ensured != "/repo" {
 		t.Fatalf("session = %#v, ensured = %q", got, ensured)
 	}
-	if err := (factoryPlanningLauncher{server: srv}).PromptPlanningSession(context.Background(), got, factory.PlanningSessionRequest{EpicID: "epic-1", WorkID: "work-1", AttemptID: "fa_1", AgentToken: "fat_secret"}); err != nil {
+	if err := (factoryPlanningLauncher{server: srv}).PromptPlanningSession(context.Background(), got, req); err != nil {
 		t.Fatal(err)
 	}
 	if created != (platforms.CreateSessionRequest{Directory: "/repo", Title: "Plan: Ship", Port: strings.TrimPrefix(endpoint, "http://127.0.0.1:")}) {
@@ -202,6 +213,7 @@ func TestFactoryPlanningLauncherUsesLocalHostAndAppliesBoundedRules(t *testing.T
 		{Permission: "grep", Pattern: "*", Action: "allow"},
 		{Permission: "list", Pattern: "*", Action: "allow"},
 		{Permission: "external_directory", Pattern: "*", Action: "deny"},
+		{Permission: "external_directory", Pattern: filepath.Join("/other", "**"), Action: "allow"},
 	}
 	wantRules = append(wantRules, skillRules...)
 	wantRules = append(wantRules, platforms.PermissionRule{Permission: "bash", Pattern: "*", Action: "deny"}, platforms.PermissionRule{Permission: "edit", Pattern: "*", Action: "deny"}, platforms.PermissionRule{Permission: "task", Pattern: "*", Action: "deny"}, platforms.PermissionRule{Permission: "webfetch", Pattern: "*", Action: "deny"}, platforms.PermissionRule{Permission: "mcp_factory", Pattern: "factory", Action: "allow"})
@@ -215,8 +227,19 @@ func TestFactoryPlanningLauncherUsesLocalHostAndAppliesBoundedRules(t *testing.T
 	if !strings.Contains(sent.Message, "load the grilling skill if available") || !strings.Contains(sent.Message, "Do not propose an issue graph until the user tells you to proceed") || !strings.Contains(sent.Message, "While grilling, do not call submit_proposal and do not link to /factory/epics/epic-1") || !strings.Contains(sent.Message, "End only that post-submission recap with") || !strings.Contains(sent.Message, "if the to-tickets skill is available") || !strings.Contains(sent.Message, "either way, split the plan into tracer-bullet vertical slices") || !strings.Contains(sent.Message, "Factory's proposal approval replaces") || !strings.Contains(sent.Message, "multiple focused implementation Issues by default") || !strings.Contains(sent.Message, "explicit edges") || !strings.Contains(sent.Message, "Mermaid flowchart") || !strings.Contains(sent.Message, "Approve and start implementation materializes the Plan and begins implementation") {
 		t.Fatalf("prompt does not explain inline plan review: %q", sent.Message)
 	}
+	if !strings.Contains(sent.Message, "/repo") || !strings.Contains(sent.Message, "/other") {
+		t.Fatalf("prompt does not list admitted projects: %q", sent.Message)
+	}
 	if !strings.HasSuffix(sent.Message, "[Review and approve the plan](/factory/epics/epic-1)") {
 		t.Fatalf("prompt does not end with approval link: %q", sent.Message)
+	}
+}
+
+func TestFactoryPlanningLauncherRejectsUnsafeProjectPattern(t *testing.T) {
+	launcher := factoryPlanningLauncher{server: New(nil, nil, "", platforms.NewRegistry(), nil)}
+	_, err := launcher.LaunchPlanningSession(t.Context(), factory.PlanningSessionRequest{Repository: "/repo", Projects: []string{"/repo", "/other*"}})
+	if err == nil || !strings.Contains(err.Error(), "invalid admitted project path") {
+		t.Fatalf("LaunchPlanningSession error = %v", err)
 	}
 }
 
@@ -234,7 +257,7 @@ func TestFactoryUnblockLauncherCreatesReadOnlyConversation(t *testing.T) {
 	registry.Register(platform)
 	srv := New(nil, nil, "", registry, nil)
 	srv.factory = &fakeFactoryService{
-		epics:  []factory.WorkEpic{{ID: "epic-1", Goal: "Ship", Status: "open", InitialProject: "/repo"}},
+		epics:  []factory.WorkEpic{{ID: "epic-1", Goal: "Ship", Status: "open", InitialProject: "/repo", Projects: []model.EpicProject{{Path: "/repo"}, {Path: "/other", Removable: true}}}},
 		issues: []factory.Issue{{ID: "issue-1", EpicID: "epic-1", Kind: "implementation", Title: "Transport", Status: "closed", Outcome: "failed", OutcomeReason: "merged branch"}},
 	}
 	srv.hostRouter = hostsvc.NewRouter(&ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
@@ -256,8 +279,12 @@ func TestFactoryUnblockLauncherCreatesReadOnlyConversation(t *testing.T) {
 		t.Fatalf("prompt = %q", sent.Message)
 	}
 	want := platforms.PermissionRule{Permission: "mcp_factory_unblock", Pattern: "factory_unblock", Action: "ask"}
-	if !slices.Contains(rules.Rules, want) || slices.Contains(rules.Rules, platforms.PermissionRule{Permission: "mcp_factory", Pattern: "factory", Action: "allow"}) {
+	projectRule := platforms.PermissionRule{Permission: "external_directory", Pattern: filepath.Join("/other", "**"), Action: "allow"}
+	if !slices.Contains(rules.Rules, want) || !slices.Contains(rules.Rules, projectRule) || slices.Contains(rules.Rules, platforms.PermissionRule{Permission: "mcp_factory", Pattern: "factory", Action: "allow"}) {
 		t.Fatalf("rules = %#v", rules.Rules)
+	}
+	if !strings.Contains(sent.Message, "/repo") || !strings.Contains(sent.Message, "/other") {
+		t.Fatalf("prompt does not list admitted projects: %q", sent.Message)
 	}
 	var token string
 	srv.factoryUnblockTokens.Range(func(key, _ any) bool { token, _ = key.(string); return false })

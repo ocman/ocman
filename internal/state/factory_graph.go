@@ -1243,6 +1243,10 @@ func (d *DB) ClaimFactoryPlan(ctx context.Context, epicID, issueID, profile stri
 	if err != nil {
 		return model.NativeEpic{}, model.FactoryAttempt{}, fmt.Errorf("getting Factory Epic for Plan claim: %w", err)
 	}
+	epic.Projects, err = listFactoryEpicProjectsWith(ctx, tx, epicID)
+	if err != nil {
+		return model.NativeEpic{}, model.FactoryAttempt{}, err
+	}
 	if epic.Status != "open" {
 		return model.NativeEpic{}, model.FactoryAttempt{}, errors.New("factory Epic is closed")
 	}

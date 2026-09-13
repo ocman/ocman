@@ -91,8 +91,14 @@ func TestNativePlanClaimPersistsAttemptBeforeLaunching(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 	launcher := &fakePlanningLauncher{result: PlanningSession{Platform: "agent", ID: "plan-1"}}
-	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, launcher)
-	epic := createPouredWorkEpic(t, svc, "Ship")
+	svc := NewNativeWithPlanning(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other": "/other"}}, launcher)
+	epic, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Ship", InitialProject: "/repo", AcknowledgeLocalExecution: true, Projects: []ProjectAdmission{{Path: "/other", AcknowledgeLocalExecution: true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Pour(t.Context(), epic.ID); err != nil {
+		t.Fatal(err)
+	}
 	launcher.onLaunch = func(PlanningSessionRequest) {
 		attempts, err := db.ListFactoryAttempts(context.Background(), epic.ID)
 		if err != nil || len(attempts) != 1 || attempts[0].Phase != "prepared" {
@@ -103,7 +109,7 @@ func TestNativePlanClaimPersistsAttemptBeforeLaunching(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if claimed.Attempt.Phase != "active" || claimed.Session.ID != "plan-1" || len(launcher.calls) != 1 || launcher.calls[0].Repository != "/repo" || launcher.calls[0].Title != "PLAN "+pouredIssueID(t, svc, epic.ID, "plan")+" (@factory)" {
+	if claimed.Attempt.Phase != "active" || claimed.Session.ID != "plan-1" || len(launcher.calls) != 1 || launcher.calls[0].Repository != "/repo" || !reflect.DeepEqual(launcher.calls[0].Projects, []string{"/repo", "/other"}) || launcher.calls[0].Title != "PLAN "+pouredIssueID(t, svc, epic.ID, "plan")+" (@factory)" {
 		t.Fatalf("claim = %#v, launches = %#v", claimed, launcher.calls)
 	}
 	attempts, err := db.ListFactoryAttempts(context.Background(), epic.ID)

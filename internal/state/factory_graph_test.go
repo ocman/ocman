@@ -1109,7 +1109,7 @@ func TestFactoryPlanClaimAndProposalInventory(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	epic, err := db.CreateFactoryEpic(ctx, "", "Ship", "Brief", "/repo", "claim-and-proposals", nativeTracerFormula(t))
+	epic, err := db.CreateFactoryEpicWithProjects(ctx, "", "Ship", "Brief", "/repo", "claim-and-proposals", nativeTracerFormula(t), []string{"/other"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1135,7 +1135,7 @@ func TestFactoryPlanClaimAndProposalInventory(t *testing.T) {
 		t.Fatal("claimed Plan from closed Epic")
 	}
 	claimedEpic, attempt, err := db.ClaimFactoryPlan(ctx, epic.ID, planID, "factory-plan/v1", time.UnixMilli(1_000))
-	if err != nil || claimedEpic.ID != epic.ID || attempt.WorkID != planID || attempt.Sequence != 1 || attempt.FrozenPolicy.Repository != "/repo" {
+	if err != nil || claimedEpic.ID != epic.ID || !reflect.DeepEqual(claimedEpic.Projects, []model.EpicProject{{Path: "/repo"}, {Path: "/other", Removable: true}}) || attempt.WorkID != planID || attempt.Sequence != 1 || attempt.FrozenPolicy.Repository != "/repo" {
 		t.Fatalf("ClaimFactoryPlan = %#v, %#v, %v", claimedEpic, attempt, err)
 	}
 	if changed, err := db.ActivateFactoryAttempt(ctx, attempt.ID, model.PlanningSession{Platform: "opencode", ID: "session"}, time.Now()); err != nil || !changed {

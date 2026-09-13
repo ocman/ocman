@@ -189,10 +189,12 @@ func TestCreateWorkEpicRejectsInvalidSecondaryProjects(t *testing.T) {
 		{name: "acknowledgement", project: ProjectAdmission{Path: "/other"}, want: ErrAcknowledgementRequired},
 		{name: "duplicate", project: ProjectAdmission{Path: "/main/subdir", AcknowledgeLocalExecution: true}, want: ErrInvalidRequest},
 		{name: "remote", project: ProjectAdmission{Path: "/other", RemoteID: "remote-1", AcknowledgeLocalExecution: true}, want: ErrInvalidRequest},
+		{name: "wildcard", project: ProjectAdmission{Path: "/other*", AcknowledgeLocalExecution: true}, want: ErrInvalidRequest},
+		{name: "character class", project: ProjectAdmission{Path: "/other[repo", AcknowledgeLocalExecution: true}, want: ErrInvalidRequest},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := NewNative(&nativeStoreFake{}, testProjectResolver{roots: map[string]string{"/main": "/main", "/main/subdir": "/main", "/other": "/other"}})
+			svc := NewNative(&nativeStoreFake{}, testProjectResolver{roots: map[string]string{"/main": "/main", "/main/subdir": "/main", "/other": "/other", "/other*": "/other*", "/other[repo": "/other[repo"}})
 			_, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Ship", InitialProject: "/main", AcknowledgeLocalExecution: true, Projects: []ProjectAdmission{tt.project}})
 			if !errors.Is(err, tt.want) {
 				t.Fatalf("error = %v, want %v", err, tt.want)
