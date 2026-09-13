@@ -8,7 +8,8 @@ import { IssueDrawer } from './FactoryIssues';
 import type { FactoryIssue } from '../lib/api';
 import './EpicGraph.css';
 
-export function EpicGraph({ issues }: { issues?: FactoryIssue[] }) {
+// preview: nodes are proposal keys, not issues, so there is nothing to open on click.
+export function EpicGraph({ issues, preview }: { issues?: FactoryIssue[]; preview?: boolean }) {
   const [selected, setSelected] = useState<FactoryIssue>();
   const { nodes, edges } = useMemo(() => {
     const model = factoryGraphModel(issues ?? []);
@@ -46,7 +47,7 @@ export function EpicGraph({ issues }: { issues?: FactoryIssue[] }) {
         nodesConnectable={false}
         edgesFocusable={false}
         proOptions={{ hideAttribution: true }}
-        onNodeClick={(_event, node) => setSelected(byID.get(node.id))}
+        onNodeClick={preview ? undefined : (_event, node) => setSelected(byID.get(node.id))}
       >
         <Background />
         <Controls showInteractive={false} />

@@ -599,13 +599,22 @@ describe('Factory interactions', () => {
   it('keeps every epic action above the proposal history', async () => {
     vi.mocked(api.factoryEpic).mockResolvedValue({ id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo', planGate: { issueId: 'epic-1.1.2', proposalRevision: 2, proposalHash: 'sha256:abc123', resolution: 'open' } } as never);
     vi.mocked(api.factoryIssues).mockResolvedValue([]);
-    vi.mocked(api.factoryProposals).mockResolvedValue([{ revision: 2, contentHash: 'sha256:abc123', manifest: { nodes: [] } }] as never);
+    vi.mocked(api.factoryProposals).mockResolvedValue([
+      { revision: 1, contentHash: 'sha256:old', manifest: { nodes: [{ key: 'old', type: 'implementation', requirement: 'required', title: 'Stale node' }] }, rationaleMarkdown: 'old' },
+      { revision: 2, contentHash: 'sha256:abc123', manifest: { nodes: [{ key: 'api', type: 'implementation', requirement: 'required', title: 'Ship API' }, { key: 'ui', type: 'implementation', requirement: 'required', title: 'Ship UI', dependsOn: ['api'] }] }, rationaleMarkdown: 'Because reasons.' },
+    ] as never);
     renderFactory(<MemoryRouter initialEntries={['/factory/epics/epic-1']}><Routes><Route path="/factory/epics/:id" element={<FactoryEpicDetail />} /></Routes></MemoryRouter>);
 
     const actions = await screen.findByRole('region', { name: 'Epic actions' });
     for (const name of ['Approve plan', 'Request revision', 'Reject plan', 'Pour graph', 'Close epic', 'Pause epic']) {
       expect(within(actions).getByRole('button', { name })).toBeInTheDocument();
     }
+    // The gate draws exactly the revision it decides on, so the user sees the to-be plan.
+    const preview = await within(actions).findByLabelText('Proposed plan');
+    expect(within(preview).getByText('Ship API')).toBeInTheDocument();
+    expect(within(preview).getByText('Ship UI')).toBeInTheDocument();
+    expect(within(preview).queryByText('Stale node')).not.toBeInTheDocument();
+    expect(within(preview).getByText('Rationale')).toBeInTheDocument();
     expect(actions.compareDocumentPosition(screen.getByText('Proposal revision: 2')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 

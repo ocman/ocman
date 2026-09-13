@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { factoryGraphModel, factoryIssueState } from './factoryGraph';
+import { factoryGraphModel, factoryIssueState, proposalIssues } from './factoryGraph';
 import type { FactoryIssue } from '../lib/api';
 
 const issue = (overrides: Partial<FactoryIssue> & Pick<FactoryIssue, 'id'>): FactoryIssue => ({
@@ -125,5 +125,28 @@ describe('factoryGraphModel', () => {
       issue({ id: 'b', dependsOn: [{ id: 'a', type: 'on_failure' }, { id: 'a', type: 'on_failure' }] }),
     ]);
     expect(edges).toEqual([{ id: 'on_failure:a->b', source: 'a', target: 'b', kind: 'on_failure' }]);
+  });
+});
+
+describe('proposalIssues', () => {
+  it('turns manifest nodes and edges into drawable issues with blockers first', () => {
+    const issues = proposalIssues({
+      epicId: 'epic-1', molId: 'epic-1.1', project: '/repo',
+      nodes: [
+        { key: 'api', type: 'implementation', requirement: 'required', title: 'API' },
+        { key: 'ui', type: 'implementation', requirement: 'required', title: 'UI', dependsOn: ['api'] },
+        { key: 'docs', type: 'implementation', requirement: 'optional' },
+      ],
+      // Manifest edges point from the dependent to its blocker.
+      edges: [{ from: 'docs', to: 'ui', type: 'on_failure' }],
+    });
+    expect(issues.map((issue) => [issue.id, issue.title, issue.dispatchState, issue.dependsOn])).toEqual([
+      ['api', 'API', 'ready', undefined],
+      ['ui', 'UI', 'waiting', [{ id: 'api', type: 'blocks' }]],
+      ['docs', 'docs', 'waiting', [{ id: 'ui', type: 'on_failure' }]],
+    ]);
+    const { nodes, edges } = factoryGraphModel(issues);
+    expect(nodes.map((node) => [node.id, node.y])).toEqual([['api', 0], ['ui', 120], ['docs', 240]]);
+    expect(edges.map((edge) => edge.id)).toEqual(['blocks:api->ui', 'on_failure:ui->docs']);
   });
 });

@@ -1,6 +1,6 @@
 // Layout for the epic work graph: hierarchy and declared dependencies placed on
 // layers, with status as a class name so the palette stays in CSS.
-import type { FactoryIssue } from '../lib/api';
+import type { FactoryIssue, FactoryProposal } from '../lib/api';
 
 export type GraphState = 'done' | 'failed' | 'running' | 'blocked' | 'ready' | 'waiting' | 'deferred';
 
@@ -31,6 +31,28 @@ export function factoryIssueState(issue: FactoryIssue): GraphState {
   if (issue.status === 'blocked' || issue.dispatchState === 'blocked' || issue.dispatchState === 'terminally_blocked') return 'blocked';
   if (issue.dispatchState === 'ready') return 'ready';
   return 'waiting';
+}
+
+// Shapes a not-yet-materialized proposal as issues so the epic graph can draw
+// it. Nodes without blockers are 'ready', the rest 'waiting'.
+export function proposalIssues(manifest: FactoryProposal['manifest']): FactoryIssue[] {
+  const dependsOn = new Map<string, { id: string; type: string }[]>();
+  const add = (key: string, id: string, type: string) => dependsOn.set(key, [...(dependsOn.get(key) ?? []), { id, type }]);
+  for (const node of manifest.nodes) for (const dependency of node.dependsOn ?? []) add(node.key, dependency, 'blocks');
+  // Manifest edges point from the dependent node to its blocker (see native.go).
+  for (const edge of manifest.edges ?? []) add(edge.from, edge.to, edge.type);
+  return manifest.nodes.map((node) => ({
+    id: node.key,
+    epicId: manifest.epicId,
+    kind: node.type,
+    requirement: node.requirement,
+    title: node.title || node.key,
+    description: node.description,
+    status: 'open',
+    dispatchState: dependsOn.has(node.key) ? 'waiting' : 'ready',
+    dependsOn: dependsOn.get(node.key),
+    manifestKey: node.key,
+  }));
 }
 
 export function factoryGraphModel(issues: FactoryIssue[]): { nodes: GraphNode[]; edges: GraphEdge[] } {
