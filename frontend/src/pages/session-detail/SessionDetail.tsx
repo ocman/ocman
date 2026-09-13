@@ -73,11 +73,8 @@ import { findFirstUnreadMessageId, countUnreadMessages } from './unreadMarker';
 import { ThreadBoundaryFallback } from './ThreadBoundaryFallback';
 import { SessionToasts } from './SessionToasts';
 import { SessionActionsMenu } from './SessionActionsMenu';
+import { SessionModals, type MessageJumpHistory } from './SessionModals';
 import { SessionSidebar } from './SessionSidebar';
-import { RenameModal } from './RenameModal';
-import { ForkPicker } from './ForkPicker';
-import { MessageJumpPicker } from './MessageJumpPicker';
-import { MovePathDialog, MovePicker } from './MovePicker';
 import { useSessionActions } from './useSessionActions';
 import { useMessageQueue } from '../../lib/useMessageQueue';
 import { platformMessageCount, useSession } from './useSession';
@@ -498,7 +495,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const [showMovePicker, setShowMovePicker] = useState(false);
   const [showMovePathDialog, setShowMovePathDialog] = useState(false);
   const [showMessageJumpPicker, setShowMessageJumpPicker] = useState(false);
-  const [messageJumpHistory, setMessageJumpHistory] = useState<{ sessionId: string; messages: typeof messages; parts: typeof parts } | null>(null);
+  const [messageJumpHistory, setMessageJumpHistory] = useState<MessageJumpHistory | null>(null);
   const [showRenameToast, setShowRenameToast] = useState(false);
   const [showCreateSessionErrorToast, setShowCreateSessionErrorToast] = useState(false);
   const [showDisconnectedToast, setShowDisconnectedToast] = useState(false);
@@ -819,21 +816,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
     refreshThread: reload,
     refreshMessageQueue,
   });
-
-  const handleMoveDestination = useCallback((directory: string) => {
-    if (!session) return;
-    pending.begin(`/move ${directory}`);
-    api.moveSession(session.id, directory)
-      .then(() => {
-        pending.clear();
-        patchSession({ directory });
-        patchRecentSession(session.id, { directory });
-      })
-      .catch((error) => {
-        remoteLog.error('Failed to move session', error);
-        pending.fail(error instanceof Error ? error.message : 'Unknown error');
-      });
-  }, [patchRecentSession, patchSession, pending, session]);
 
   void setSubagentTokens; // exposed for the legacy hook; not needed
                           // by the new pipeline since SSE handles
@@ -1310,86 +1292,34 @@ export function SessionDetail({ id }: SessionDetailProps) {
                   ) : undefined}
                 />
               </ErrorBoundary>
-              {showRenameModal && session && (
-                <RenameModal
-                  sessionId={session.id}
-                  initialTitle={session.title || ''}
-                  onClose={() => setShowRenameModal(false)}
-                  onRenamed={(newTitle) => {
-                    patchSession({ title: newTitle });
-                    patchRecentSession(session.id, { title: newTitle });
-                    setShowRenameToast(true);
-                  }}
-                />
-              )}
-              {showForkPicker && session && (
-                <ForkPicker
-                  open
-                  messages={messages}
-                  parts={parts}
-                  onClose={() => setShowForkPicker(false)}
-                  onSelect={(messageID) => {
-                    setShowForkPicker(false);
-                    pending.begin('/fork');
-                    api.forkSession(session.id, messageID)
-                      .then(({ id: forkedID }) => {
-                        pending.clear();
-                        navigateToSession(forkedID);
-                      })
-                      .catch((error) => {
-                        remoteLog.error('Failed to fork session', error);
-                        pending.fail(error instanceof Error ? error.message : 'Unknown error');
-                      });
-                  }}
-                />
-              )}
-              {showMessageJumpPicker && session && (
-                <MessageJumpPicker
-                  open
-                  messages={messageJumpHistory?.sessionId === session.id ? messageJumpHistory.messages : messages}
-                  parts={messageJumpHistory?.sessionId === session.id ? messageJumpHistory.parts : parts}
-                  onClose={() => setShowMessageJumpPicker(false)}
-                  onSelect={(messageId) => {
-                    if (!messages.some((message) => message.id === messageId) && messageJumpHistory?.sessionId === session.id) {
-                      hydrateHistory(messageJumpHistory.messages, messageJumpHistory.parts);
-                    }
-                    setScrollToMessageBookmark({
-                      sessionId: session.id,
-                      id: messageId,
-                      tick: Date.now(),
-                    });
-                  }}
-                />
-              )}
-              {showMovePicker && session && (
-                <MovePicker
-                  open
-                  currentDirectory={session.directory}
-                  directories={[
-                    ...(allProjects ?? [])
-                      .filter((project) => (project.remoteId || 'local') === (session.remoteId || 'local'))
-                      .map((project) => project.directory),
-                    ...recentSessions
-                      .filter((recent) => (recent.remoteId || 'local') === (session.remoteId || 'local'))
-                      .map((recent) => recent.directory),
-                  ]}
-                  onClose={() => setShowMovePicker(false)}
-                  onCustom={() => setShowMovePathDialog(true)}
-                  onSelect={(directory) => {
-                    setShowMovePicker(false);
-                    handleMoveDestination(directory);
-                  }}
-                />
-              )}
-              {showMovePathDialog && session && (
-                <MovePathDialog
-                  onClose={() => setShowMovePathDialog(false)}
-                  onSelect={(directory) => {
-                    setShowMovePathDialog(false);
-                    handleMoveDestination(directory);
-                  }}
-                />
-              )}
+              <SessionModals
+                session={session}
+                messages={messages}
+                parts={parts}
+                allProjects={allProjects}
+                recentSessions={recentSessions}
+                messageJumpHistory={messageJumpHistory}
+                pending={pending}
+                showRenameModal={showRenameModal}
+                setShowRenameModal={setShowRenameModal}
+                showForkPicker={showForkPicker}
+                setShowForkPicker={setShowForkPicker}
+                showMessageJumpPicker={showMessageJumpPicker}
+                setShowMessageJumpPicker={setShowMessageJumpPicker}
+                showMovePicker={showMovePicker}
+                setShowMovePicker={setShowMovePicker}
+                showMovePathDialog={showMovePathDialog}
+                setShowMovePathDialog={setShowMovePathDialog}
+                patchSession={patchSession}
+                navigateToSession={navigateToSession}
+                hydrateHistory={hydrateHistory}
+                onRenamed={() => setShowRenameToast(true)}
+                onScrollToMessage={(messageId) => setScrollToMessageBookmark({
+                  sessionId: session.id,
+                  id: messageId,
+                  tick: Date.now(),
+                })}
+              />
             </OcmanRuntimeProvider>
           )}
           {session && (
