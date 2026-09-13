@@ -52,16 +52,9 @@ function renderModals(over: Partial<SessionModalsProps> = {}) {
     recentSessions: [{ id: 's2', directory: '/recent-local' } as Session],
     messageJumpHistory: null,
     pending: { pending: null, begin: vi.fn(), fail: vi.fn(), clear: vi.fn(), observeMessages: vi.fn() },
-    showRenameModal: false,
-    setShowRenameModal: vi.fn(),
-    showForkPicker: false,
-    setShowForkPicker: vi.fn(),
-    showMessageJumpPicker: false,
-    setShowMessageJumpPicker: vi.fn(),
-    showMovePicker: false,
-    setShowMovePicker: vi.fn(),
-    showMovePathDialog: false,
-    setShowMovePathDialog: vi.fn(),
+    openModal: null,
+    onClose: vi.fn(),
+    onOpen: vi.fn(),
     patchSession: vi.fn(),
     navigateToSession: vi.fn(),
     hydrateHistory: vi.fn(),
@@ -85,7 +78,7 @@ describe('SessionModals', () => {
   });
 
   it('patches title locally and in the sidebar after a rename', () => {
-    const p = renderModals({ showRenameModal: true });
+    const p = renderModals({ openModal: 'rename' });
     fireEvent.click(screen.getByText('rename-now'));
     expect(p.patchSession).toHaveBeenCalledWith({ title: 'Renamed' });
     expect(patchRecentSession).toHaveBeenCalledWith('s1', { title: 'Renamed' });
@@ -93,9 +86,9 @@ describe('SessionModals', () => {
   });
 
   it('forks and navigates to the new session', async () => {
-    const p = renderModals({ showForkPicker: true });
+    const p = renderModals({ openModal: 'fork' });
     fireEvent.click(screen.getByText('First prompt'));
-    expect(p.setShowForkPicker).toHaveBeenCalledWith(false);
+    expect(p.onClose).toHaveBeenCalled();
     expect(p.pending.begin).toHaveBeenCalledWith('/fork');
     expect(api.forkSession).toHaveBeenCalledWith('s1', 'msg-user-1');
     await waitFor(() => expect(p.navigateToSession).toHaveBeenCalledWith('sess-forked'));
@@ -104,7 +97,7 @@ describe('SessionModals', () => {
 
   it('hydrates history before jumping to a message not in the live window', () => {
     const p = renderModals({
-      showMessageJumpPicker: true,
+      openModal: 'jump',
       messageJumpHistory: { sessionId: 's1', messages: historyMessages, parts: historyParts },
     });
     fireEvent.click(screen.getByText('Ancient prompt'));
@@ -113,13 +106,13 @@ describe('SessionModals', () => {
   });
 
   it('lists same-host directories and moves the session', async () => {
-    const p = renderModals({ showMovePicker: true });
+    const p = renderModals({ openModal: 'move' });
     expect(screen.getByText('/proj-local')).toBeInTheDocument();
     expect(screen.getByText('/recent-local')).toBeInTheDocument();
     expect(screen.queryByText('/proj-remote')).toBeNull();
 
     fireEvent.click(screen.getByText('/proj-local'));
-    expect(p.setShowMovePicker).toHaveBeenCalledWith(false);
+    expect(p.onClose).toHaveBeenCalled();
     expect(api.moveSession).toHaveBeenCalledWith('s1', '/proj-local');
     await waitFor(() => expect(p.patchSession).toHaveBeenCalledWith({ directory: '/proj-local' }));
     expect(patchRecentSession).toHaveBeenCalledWith('s1', { directory: '/proj-local' });
@@ -127,10 +120,10 @@ describe('SessionModals', () => {
 
   it('reports a failed move on the pending bubble', async () => {
     vi.mocked(api.moveSession).mockRejectedValueOnce(new Error('nope'));
-    const p = renderModals({ showMovePathDialog: true });
+    const p = renderModals({ openModal: 'movePath' });
     fireEvent.change(screen.getByLabelText('Project directory'), { target: { value: '/custom' } });
     fireEvent.click(screen.getByRole('button', { name: 'Move' }));
-    expect(p.setShowMovePathDialog).toHaveBeenCalledWith(false);
+    expect(p.onClose).toHaveBeenCalled();
     await waitFor(() => expect(p.pending.fail).toHaveBeenCalledWith('nope'));
   });
 });

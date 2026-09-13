@@ -72,6 +72,7 @@ import { SessionActionsMenu } from './SessionActionsMenu';
 import { HeaderPortal, MobileHeaderControls } from './MobileHeaderControls';
 import { useMobilePanel } from './useMobilePanel';
 import { SessionModals, type MessageJumpHistory } from './SessionModals';
+import { useSessionModal } from './useSessionModal';
 import { SessionSidebar } from './SessionSidebar';
 import { useSessionActions } from './useSessionActions';
 import { useMessageQueue } from '../../lib/useMessageQueue';
@@ -377,12 +378,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     checkingPermissionId === pendingPermission.permissionId;
 
   // Toast / modal state.
-  const [showShareModal, setShowShareModal] = useState(false);
-  const [showRenameModal, setShowRenameModal] = useState(false);
-  const [showForkPicker, setShowForkPicker] = useState(false);
-  const [showMovePicker, setShowMovePicker] = useState(false);
-  const [showMovePathDialog, setShowMovePathDialog] = useState(false);
-  const [showMessageJumpPicker, setShowMessageJumpPicker] = useState(false);
+  const modal = useSessionModal();
   const [messageJumpHistory, setMessageJumpHistory] = useState<MessageJumpHistory | null>(null);
   const [threadBoundaryResetNonce, setThreadBoundaryResetNonce] = useState(0);
 
@@ -554,9 +550,9 @@ export function SessionDetail({ id }: SessionDetailProps) {
     handleCompact,
     handleNewSession,
     handleTmuxShortcut,
-    setShowRenameModal,
-    setShowForkPicker,
-    setShowMovePicker,
+    setShowRenameModal: modal.setterFor('rename'),
+    setShowForkPicker: modal.setterFor('fork'),
+    setShowMovePicker: modal.setterFor('move'),
     ...toasts.setters,
     reloadCapabilities,
     refreshThread: reload,
@@ -626,7 +622,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     activeModelRef: useSyncRef(activeModel),
     tmux,
     setSelectedReasoning,
-    setShowRenameModal,
+    setShowRenameModal: modal.setterFor('rename'),
     openModelPicker,
     openAgentPicker,
   });
@@ -641,7 +637,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     handleNewSession,
     openModelPicker,
     openMessageJumpPicker: () => {
-      setShowMessageJumpPicker(true);
+      modal.open('jump');
       if (!session) return;
       void api.session(session.id, ALL_MESSAGES_LIMIT, 0, undefined, session.platform)
         .then((detail) => {
@@ -776,14 +772,14 @@ export function SessionDetail({ id }: SessionDetailProps) {
               liveConnectionHint={caps.liveConnectionHint}
               launchingOpencode={launchingOpencode}
               onNewSession={() => { void handleNewSession(); }}
-              onShare={() => setShowShareModal(true)}
+              onShare={() => modal.open('share')}
               onTmuxSwitch={handleTmuxSwitch}
               onLaunchOpencode={() => { void handleLaunchOpencode(); }}
               onOpenVSCode={handleVSCodeShortcut}
             />
           </HeaderPortal>}
-          {session && showShareModal && (
-            <ShareLinkModal sessionId={session.id} onClose={() => setShowShareModal(false)} />
+          {session && modal.openModal === 'share' && (
+            <ShareLinkModal sessionId={session.id} onClose={modal.close} />
           )}
           {loading ? (
             <ThreadSkeleton rows={5} />
@@ -965,16 +961,9 @@ export function SessionDetail({ id }: SessionDetailProps) {
                 recentSessions={recentSessions}
                 messageJumpHistory={messageJumpHistory}
                 pending={pending}
-                showRenameModal={showRenameModal}
-                setShowRenameModal={setShowRenameModal}
-                showForkPicker={showForkPicker}
-                setShowForkPicker={setShowForkPicker}
-                showMessageJumpPicker={showMessageJumpPicker}
-                setShowMessageJumpPicker={setShowMessageJumpPicker}
-                showMovePicker={showMovePicker}
-                setShowMovePicker={setShowMovePicker}
-                showMovePathDialog={showMovePathDialog}
-                setShowMovePathDialog={setShowMovePathDialog}
+                openModal={modal.openModal}
+                onClose={modal.close}
+                onOpen={modal.open}
                 patchSession={patchSession}
                 navigateToSession={navigateToSession}
                 hydrateHistory={hydrateHistory}

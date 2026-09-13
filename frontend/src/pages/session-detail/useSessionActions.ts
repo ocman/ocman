@@ -84,9 +84,9 @@ export interface UseSessionActionsOptions {
   handleCompact: () => Promise<void>;
   handleNewSession: (title?: string) => Promise<void>;
   handleTmuxShortcut: () => void;
-  setShowRenameModal: Dispatch<SetStateAction<boolean>>;
-  setShowForkPicker: Dispatch<SetStateAction<boolean>>;
-  setShowMovePicker: Dispatch<SetStateAction<boolean>>;
+  setShowRenameModal: (show: boolean) => void;
+  setShowForkPicker: (show: boolean) => void;
+  setShowMovePicker: (show: boolean) => void;
   setShowRenameToast: Dispatch<SetStateAction<boolean>>;
   setShowDisconnectedToast: Dispatch<SetStateAction<boolean>>;
   setRestartToastMessage: Dispatch<SetStateAction<string | null>>;

@@ -1,5 +1,4 @@
 import { useCallback } from 'react';
-import type { Dispatch, SetStateAction } from 'react';
 import { api } from '../../lib/api';
 import type { Message, Part, Project, Session } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
@@ -9,6 +8,7 @@ import { ForkPicker } from './ForkPicker';
 import { MessageJumpPicker } from './MessageJumpPicker';
 import { MovePathDialog, MovePicker } from './MovePicker';
 import type { UsePendingSendResult } from './usePendingSend';
+import type { SessionModal } from './useSessionModal';
 
 export interface MessageJumpHistory {
   sessionId: string;
@@ -26,16 +26,9 @@ export interface SessionModalsProps {
   messageJumpHistory: MessageJumpHistory | null;
   pending: UsePendingSendResult;
 
-  showRenameModal: boolean;
-  setShowRenameModal: Dispatch<SetStateAction<boolean>>;
-  showForkPicker: boolean;
-  setShowForkPicker: Dispatch<SetStateAction<boolean>>;
-  showMessageJumpPicker: boolean;
-  setShowMessageJumpPicker: Dispatch<SetStateAction<boolean>>;
-  showMovePicker: boolean;
-  setShowMovePicker: Dispatch<SetStateAction<boolean>>;
-  showMovePathDialog: boolean;
-  setShowMovePathDialog: Dispatch<SetStateAction<boolean>>;
+  openModal: SessionModal | null;
+  onClose: () => void;
+  onOpen: (modal: SessionModal) => void;
 
   patchSession: (patch: Partial<Pick<Session, 'title' | 'directory'>>) => void;
   navigateToSession: (id: string) => void;
@@ -53,16 +46,9 @@ export function SessionModals({
   recentSessions,
   messageJumpHistory,
   pending,
-  showRenameModal,
-  setShowRenameModal,
-  showForkPicker,
-  setShowForkPicker,
-  showMessageJumpPicker,
-  setShowMessageJumpPicker,
-  showMovePicker,
-  setShowMovePicker,
-  showMovePathDialog,
-  setShowMovePathDialog,
+  openModal,
+  onClose,
+  onOpen,
   patchSession,
   navigateToSession,
   hydrateHistory,
@@ -90,11 +76,11 @@ export function SessionModals({
 
   return (
     <>
-      {showRenameModal && (
+      {openModal === 'rename' && (
         <RenameModal
           sessionId={session.id}
           initialTitle={session.title || ''}
-          onClose={() => setShowRenameModal(false)}
+          onClose={onClose}
           onRenamed={(newTitle) => {
             patchSession({ title: newTitle });
             patchRecentSession(session.id, { title: newTitle });
@@ -102,14 +88,14 @@ export function SessionModals({
           }}
         />
       )}
-      {showForkPicker && (
+      {openModal === 'fork' && (
         <ForkPicker
           open
           messages={messages}
           parts={parts}
-          onClose={() => setShowForkPicker(false)}
+          onClose={onClose}
           onSelect={(messageID) => {
-            setShowForkPicker(false);
+            onClose();
             pending.begin('/fork');
             api.forkSession(session.id, messageID)
               .then(({ id: forkedID }) => {
@@ -123,12 +109,12 @@ export function SessionModals({
           }}
         />
       )}
-      {showMessageJumpPicker && (
+      {openModal === 'jump' && (
         <MessageJumpPicker
           open
           messages={jumpHistory ? jumpHistory.messages : messages}
           parts={jumpHistory ? jumpHistory.parts : parts}
-          onClose={() => setShowMessageJumpPicker(false)}
+          onClose={onClose}
           onSelect={(messageId) => {
             if (jumpHistory && !messages.some((message) => message.id === messageId)) {
               hydrateHistory(jumpHistory.messages, jumpHistory.parts);
@@ -137,7 +123,7 @@ export function SessionModals({
           }}
         />
       )}
-      {showMovePicker && (
+      {openModal === 'move' && (
         <MovePicker
           open
           currentDirectory={session.directory}
@@ -145,19 +131,19 @@ export function SessionModals({
             ...(allProjects ?? []).filter((project) => sameHost(project.remoteId)).map((project) => project.directory),
             ...recentSessions.filter((recent) => sameHost(recent.remoteId)).map((recent) => recent.directory),
           ]}
-          onClose={() => setShowMovePicker(false)}
-          onCustom={() => setShowMovePathDialog(true)}
+          onClose={onClose}
+          onCustom={() => onOpen('movePath')}
           onSelect={(directory) => {
-            setShowMovePicker(false);
+            onClose();
             handleMoveDestination(directory);
           }}
         />
       )}
-      {showMovePathDialog && (
+      {openModal === 'movePath' && (
         <MovePathDialog
-          onClose={() => setShowMovePathDialog(false)}
+          onClose={onClose}
           onSelect={(directory) => {
-            setShowMovePathDialog(false);
+            onClose();
             handleMoveDestination(directory);
           }}
         />
