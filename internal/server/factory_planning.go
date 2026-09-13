@@ -61,7 +61,8 @@ func (l factoryPlanningLauncher) launchReadOnlySession(ctx context.Context, req 
 		{Permission: "list", Pattern: "*", Action: "allow"},
 		{Permission: "external_directory", Pattern: "*", Action: "deny"},
 	}
-	rules = append(rules, factorySkillDirectoryRules()...)
+	// Session rules override agent defaults; restore these after the catch-all.
+	rules = append(rules, factoryExternalDirectoryRules()...)
 	rules = append(rules,
 		platforms.PermissionRule{Permission: "bash", Pattern: "*", Action: "deny"},
 		platforms.PermissionRule{Permission: "edit", Pattern: "*", Action: "deny"},
@@ -128,7 +129,7 @@ func (s *Server) consumeFactoryUnblock(token, epicID string) bool {
 	return s.factoryUnblockTokens.CompareAndDelete(token, epicID)
 }
 
-func factorySkillDirectoryRules() []platforms.PermissionRule {
+func factoryExternalDirectoryRules() []platforms.PermissionRule {
 	home, _ := os.UserHomeDir()
 	if !filepath.IsAbs(home) {
 		return nil
@@ -143,6 +144,18 @@ func factorySkillDirectoryRules() []platforms.PermissionRule {
 		filepath.Join(home, ".agents", "skills"),
 	}
 	allowed := make(map[string]struct{})
+	dataHome := os.Getenv("XDG_DATA_HOME")
+	if !filepath.IsAbs(dataHome) {
+		dataHome = filepath.Join(home, ".local", "share")
+	}
+	// Truncated outputs may not exist yet when the session is created.
+	outputDirectory := filepath.Join(dataHome, "opencode", "tool-output")
+	if !strings.ContainsAny(outputDirectory, "*?[") {
+		allowed[outputDirectory] = struct{}{}
+		if resolved, err := filepath.EvalSymlinks(outputDirectory); err == nil && !strings.ContainsAny(resolved, "*?[") {
+			allowed[resolved] = struct{}{}
+		}
+	}
 	for _, directory := range directories {
 		entries, err := os.ReadDir(directory)
 		if err != nil {
@@ -159,6 +172,10 @@ func factorySkillDirectoryRules() []platforms.PermissionRule {
 				continue
 			}
 			allowed[resolved] = struct{}{}
+			// Tools check the requested path, which can still contain the symlink.
+			if !strings.ContainsAny(skillDirectory, "*?[") {
+				allowed[skillDirectory] = struct{}{}
+			}
 		}
 	}
 	rules := make([]platforms.PermissionRule, 0, len(allowed))

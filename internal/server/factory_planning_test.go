@@ -95,20 +95,66 @@ func factorySkillRulesFixture(t *testing.T) []platforms.PermissionRule {
 	}
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", configHome)
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, "data"))
 
 	return []platforms.PermissionRule{
 		{Permission: "external_directory", Pattern: filepath.Join(home, ".agents", "skills", "agent-skill", "**"), Action: "allow"},
 		{Permission: "external_directory", Pattern: filepath.Join(home, ".claude", "skills", "claude-skill", "**"), Action: "allow"},
+		{Permission: "external_directory", Pattern: filepath.Join(link, "**"), Action: "allow"},
 		{Permission: "external_directory", Pattern: filepath.Join(configHome, "opencode", "skills", "user-skill", "**"), Action: "allow"},
 		{Permission: "external_directory", Pattern: filepath.Join(dataSkill, "**"), Action: "allow"},
+		{Permission: "external_directory", Pattern: filepath.Join(home, "data", "opencode", "tool-output", "**"), Action: "allow"},
 	}
 }
 
-func TestFactorySkillDirectoryRulesRejectsRelativeHome(t *testing.T) {
+func TestFactoryExternalDirectoryRulesRejectsRelativeHome(t *testing.T) {
 	t.Setenv("HOME", "relative")
 	t.Setenv("XDG_CONFIG_HOME", "")
-	if rules := factorySkillDirectoryRules(); len(rules) != 0 {
+	if rules := factoryExternalDirectoryRules(); len(rules) != 0 {
 		t.Fatalf("rules = %#v", rules)
+	}
+}
+
+func TestFactoryExternalDirectoryRulesDataPaths(t *testing.T) {
+	for _, dataHome := range []string{"", "relative", "custom", "bad*path"} {
+		t.Run(dataHome, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("XDG_CONFIG_HOME", "relative")
+			value := dataHome
+			if dataHome == "custom" || dataHome == "bad*path" {
+				value = filepath.Join(home, dataHome)
+			}
+			t.Setenv("XDG_DATA_HOME", value)
+			root := filepath.Join(home, ".local", "share")
+			if filepath.IsAbs(value) {
+				root = value
+			}
+			output := filepath.Join(root, "opencode", "tool-output")
+			if err := os.MkdirAll(filepath.Dir(output), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			target, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(target, output); err != nil {
+				t.Fatal(err)
+			}
+			rules := factoryExternalDirectoryRules()
+			if dataHome == "bad*path" {
+				if len(rules) != 0 {
+					t.Fatalf("wildcard path granted access: %#v", rules)
+				}
+				return
+			}
+			for _, directory := range []string{output, target} {
+				want := platforms.PermissionRule{Permission: "external_directory", Pattern: filepath.Join(directory, "**"), Action: "allow"}
+				if !slices.Contains(rules, want) {
+					t.Errorf("missing rule %#v in %#v", want, rules)
+				}
+			}
+		})
 	}
 }
 
