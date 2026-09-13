@@ -1005,6 +1005,9 @@ func (s *NativeService) ListWorkEpics(ctx context.Context) ([]WorkEpic, error) {
 	result := nativeEpics(epics)
 	if store, ok := s.store.(nativePlanningStore); ok {
 		for i := range result {
+			if attempts, attemptsErr := store.ListFactoryAttempts(ctx, result[i].ID); attemptsErr == nil {
+				result[i].Attempts = attempts
+			}
 			if gate, gateErr := store.GetFactoryPlanGate(ctx, result[i].ID); gateErr == nil {
 				decoded := nativePlanGate(gate)
 				result[i].PlanGate = &decoded

@@ -110,6 +110,13 @@ func TestNativePlanClaimPersistsAttemptBeforeLaunching(t *testing.T) {
 	if err != nil || len(attempts) != 1 || attempts[0].Session != claimed.Session {
 		t.Fatalf("attempts = %#v, %v", attempts, err)
 	}
+	listed, err := svc.ListWorkEpics(context.Background())
+	if err != nil || len(listed) != 1 {
+		t.Fatalf("listed epics = %#v, %v", listed, err)
+	}
+	if !reflect.DeepEqual(listed[0].Attempts, attempts) {
+		t.Fatalf("overview attempts = %#v, want %#v", listed[0].Attempts, attempts)
+	}
 	if _, err := svc.ClaimPlan(context.Background(), epic.ID, pouredIssueID(t, svc, epic.ID, "plan")); err == nil || len(launcher.calls) != 1 {
 		t.Fatalf("second claim = %v, launches = %#v", err, launcher.calls)
 	}
