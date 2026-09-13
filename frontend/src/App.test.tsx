@@ -61,10 +61,13 @@ describe('MainNav', () => {
     expect(screen.getByRole('link', { name: 'Usage' })).toHaveAttribute('href', '/subscription-usage');
     const links = screen.getAllByRole('link');
     const usage = screen.getByRole('link', { name: 'Usage' });
-    // Usage sits in the bottom group, directly above Settings, and carries
-    // the marker class that pushes that group to the bottom of the rail.
+    const inbox = screen.getByRole('link', { name: 'Inbox' });
+    // Bottom group is Inbox > Usage > Settings; Inbox carries the marker
+    // class that pushes that group to the bottom of the rail.
+    expect(links.indexOf(inbox)).toBe(links.indexOf(usage) - 1);
     expect(links.indexOf(usage)).toBe(links.indexOf(screen.getByRole('link', { name: 'Settings' })) - 1);
-    expect(usage).toHaveClass('nav-bottom-start');
+    expect(inbox).toHaveClass('nav-bottom-start');
+    expect(usage).not.toHaveClass('nav-bottom-start');
     expect(screen.getByRole('link', { name: 'Routines' })).toHaveAttribute('href', '/routines');
     expect(screen.getByRole('link', { name: 'Factory' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Sessions' }).querySelector('i')).toHaveClass('bi-collection');

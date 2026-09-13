@@ -61,14 +61,14 @@ function RoutesBoundary({ children }: { children: ReactNode }) {
 const MAIN_NAV_ITEMS = [
   { to: '/', label: 'Home', icon: 'bi-house', activeOnSession: true },
   { to: '/sessions', label: 'Sessions', icon: 'bi-collection' },
-  { to: '/inbox', label: 'Inbox', icon: 'bi-inbox' },
   { to: '/projects', label: 'Projects', icon: 'bi-folder' },
   { to: '/factory/overview', label: 'Factory', icon: 'bi-buildings' },
   { to: '/routines', label: 'Routines', icon: 'bi-clock-history' },
   { to: '/analytics', label: 'Analytics', icon: 'bi-bar-chart' },
   // Bottom-pinned group: `bottomStart` carries the margin-top:auto that
   // pushes this item and everything after it to the bottom of the rail.
-  { to: '/subscription-usage', label: 'Usage', icon: 'bi-speedometer2', bottomStart: true },
+  { to: '/inbox', label: 'Inbox', icon: 'bi-inbox', bottomStart: true },
+  { to: '/subscription-usage', label: 'Usage', icon: 'bi-speedometer2' },
   { to: '/settings', label: 'Settings', icon: 'bi-gear' },
 ];
 
