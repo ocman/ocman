@@ -234,6 +234,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 25
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       - name: Install pnpm
         run: npm install -g pnpm@10.11.1
       - name: Cache pnpm store
@@ -242,6 +245,14 @@ jobs:
           path: ~/.local/share/pnpm/store
           key: pnpm-${{ runner.os }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
           restore-keys: pnpm-${{ runner.os }}-
+      - name: Cache Go build and module cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum') }}
+          restore-keys: go-${{ runner.os }}-
       - name: Install dependencies
         working-directory: frontend
         run: pnpm install --frozen-lockfile
@@ -251,6 +262,8 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: pnpm build
+      - name: Build production binary
+        run: go build -o ocman .
       - name: Run Playwright tests
         working-directory: frontend
         run: pnpm test:e2e
@@ -262,43 +275,9 @@ jobs:
           path: frontend/playwright-report
           retention-days: 7
 
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 25
-      - name: Install pnpm
-        run: npm install -g pnpm@10.11.1
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: ~/.local/share/pnpm/store
-          key: pnpm-${{ runner.os }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
-          restore-keys: pnpm-${{ runner.os }}-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - name: Cache Go build and module cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ hashFiles('go.sum') }}
-          restore-keys: go-${{ runner.os }}-
-      - run: make build
-      - uses: actions/upload-artifact@v3
-        with:
-          name: ocman-linux-amd64
-          path: ocman
-          retention-days: 7
-
   tag:
     name: Semantic Tag
-    needs: [frontend, backend, e2e, build]
+    needs: [frontend, backend, e2e]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
