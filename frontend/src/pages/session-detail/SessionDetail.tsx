@@ -16,7 +16,7 @@ import { createPortal, flushSync } from 'react-dom';
 import { useStickyNavigate } from '../../lib/useStickyNavigate';
 import * as Toast from '@radix-ui/react-toast';
 import './SessionDetail.css';
-import { api, sessionExportMarkdownUrl } from '../../lib/api';
+import { api } from '../../lib/api';
 import type { SessionWarning } from '../../lib/api';
 import { cleanTitle, shortPath } from '../../lib/format';
 import { projectRootForDirectory } from '../../lib/worktrees';
@@ -72,6 +72,7 @@ import { isRecoverableThreadBoundaryError } from './threadBoundaryRecovery';
 import { findFirstUnreadMessageId, countUnreadMessages } from './unreadMarker';
 import { ThreadBoundaryFallback } from './ThreadBoundaryFallback';
 import { SessionToasts } from './SessionToasts';
+import { SessionActionsMenu } from './SessionActionsMenu';
 import { SessionSidebar } from './SessionSidebar';
 import { RenameModal } from './RenameModal';
 import { ForkPicker } from './ForkPicker';
@@ -1120,94 +1121,19 @@ export function SessionDetail({ id }: SessionDetailProps) {
         />
         <div className="session-main" data-testid="session-main">
           {session && mobilePanel !== 'sidebar' && <HeaderPortal>
-            <details className="oc-project-menu header-actions-menu">
-              <summary
-                className="oc-project-menu-trigger"
-                title="Session actions"
-                aria-label="Session actions"
-              >⋯</summary>
-              <div className="oc-project-menu-list" role="menu">
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="oc-project-menu-item"
-                  onClick={(e) => {
-                    (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open');
-                    void handleNewSession();
-                  }}
-                  title="New session"
-                >New session</button>
-
-                <div className="oc-project-menu-separator" role="separator" />
-
-                <a
-                  role="menuitem"
-                  className="oc-project-menu-item"
-                  href={sessionExportMarkdownUrl(session.id)}
-                  download={`conversation-${session.id}.md`}
-                  onClick={(e) => {
-                    (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open');
-                  }}
-                >Download Markdown</a>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="oc-project-menu-item"
-                  onClick={(e) => {
-                    (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open');
-                    // Defer so the menu unmounts before print snapshots the page.
-                    window.setTimeout(() => window.print(), 50);
-                  }}
-                >Print / Save as PDF</button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="oc-project-menu-item"
-                  onClick={(e) => {
-                    (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open');
-                    setShowShareModal(true);
-                  }}
-                >Share link…</button>
-
-                <div className="oc-project-menu-separator" role="separator" />
-
-                {tmux.available && matchingTmuxSession && (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="oc-project-menu-item"
-                    onClick={(e) => {
-                      (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open');
-                      handleTmuxSwitch(e, matchingTmuxSession.name);
-                    }}
-                    title={`Switch tmux to ${shortPath(matchingTmuxSession.name)} (T)`}
-                  >Switch tmux</button>
-                )}
-                {tmux.available && !portAvailable && caps.liveConnectionHint && (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="oc-project-menu-item"
-                    onClick={(e) => {
-                      (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open');
-                      void handleLaunchOpencode();
-                    }}
-                    disabled={launchingOpencode}
-                    title="Launch opencode --port 0 in a new tmux window"
-                  >{launchingOpencode ? 'Launching…' : 'Launch opencode'}</button>
-                )}
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="oc-project-menu-item"
-                  onClick={(e) => {
-                    (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open');
-                    handleVSCodeShortcut();
-                  }}
-                  title="Open in VS Code (V)"
-                >Open in VS Code</button>
-              </div>
-            </details>
+            <SessionActionsMenu
+              sessionId={session.id}
+              tmuxAvailable={tmux.available}
+              matchingTmuxSession={matchingTmuxSession}
+              portAvailable={portAvailable}
+              liveConnectionHint={caps.liveConnectionHint}
+              launchingOpencode={launchingOpencode}
+              onNewSession={() => { void handleNewSession(); }}
+              onShare={() => setShowShareModal(true)}
+              onTmuxSwitch={handleTmuxSwitch}
+              onLaunchOpencode={() => { void handleLaunchOpencode(); }}
+              onOpenVSCode={handleVSCodeShortcut}
+            />
           </HeaderPortal>}
           {session && showShareModal && (
             <ShareLinkModal sessionId={session.id} onClose={() => setShowShareModal(false)} />
