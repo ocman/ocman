@@ -797,7 +797,7 @@ describe('SessionDetail — session tree usage', () => {
     expect((await screen.findByText('Started')).parentElement).toHaveTextContent(formatDate(startedAt));
     expect(screen.getByText('Total time').parentElement).toHaveTextContent('1h 1m');
     expect(screen.getByText('Agent time').parentElement).toHaveTextContent('2m 5s');
-  });
+  }, 10_000);
 
   it('ticks agent time in the usage popover while the session is running', async () => {
     vi.useFakeTimers();

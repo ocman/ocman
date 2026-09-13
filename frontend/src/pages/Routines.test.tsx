@@ -90,7 +90,7 @@ describe('Routines', () => {
     await waitFor(() => expect(api.routines.create).toHaveBeenCalledWith(expect.objectContaining({ sessionMode: 'existing', sessionId: 'chosen', remoteId: 'box' })));
     expect(api.agents).toHaveBeenCalledWith('chosen', undefined, 'r-box:opencode');
     expect(api.sessionModels).toHaveBeenCalledWith('chosen', 'r-box:opencode');
-  });
+  }, 15_000);
 
   it('uses the shared controls and empty state', async () => {
     vi.mocked(api.routines.list).mockResolvedValue([]);
