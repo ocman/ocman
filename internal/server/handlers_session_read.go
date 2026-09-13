@@ -177,13 +177,31 @@ func writeWithUnsupportedFallback[T any](w http.ResponseWriter, desc string, res
 func (s *Server) handleSessionInfo(w http.ResponseWriter, r *http.Request) {
 	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
 		info, err := adapter.SessionInfo(r.Context(), sessionID)
-		zero := &platforms.SessionInfo{SessionID: sessionID, MCPServers: []platforms.MCPServer{}, LSPServers: []platforms.LSPServer{}}
+		zero := &platforms.SessionInfo{SessionID: sessionID, MCPServers: []platforms.MCPServer{}, LSPServers: []platforms.LSPServer{}, Commits: []platforms.SessionCommit{}}
 		if info != nil {
 			if info.MCPServers == nil {
 				info.MCPServers = []platforms.MCPServer{}
 			}
 			if info.LSPServers == nil {
 				info.LSPServers = []platforms.LSPServer{}
+			}
+			if s.stateDB != nil {
+				commits, listErr := s.stateDB.ListSessionCommits(r.Context(), string(adapter.ID()), sessionID)
+				if listErr != nil {
+					writePlatformError(w, "fetching session commits", listErr)
+					return
+				}
+				for _, commit := range commits {
+					info.Commits = append(info.Commits, platforms.SessionCommit{
+						Order: commit.Order, SHA: commit.SHA, Branch: commit.Branch,
+						Subject: commit.Subject, SourceMessageID: commit.SourceMessageID,
+						ToolPartID: commit.ToolPartID, ToolCallID: commit.ToolCallID,
+						ObservedAt: commit.ObservedAt,
+					})
+				}
+			}
+			if info.Commits == nil {
+				info.Commits = []platforms.SessionCommit{}
 			}
 		}
 		writeWithUnsupportedFallback(w, "fetching session info", info, err, zero)

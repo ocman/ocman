@@ -61,10 +61,10 @@ flowchart LR
   Vite server on :8228 proxies `/api` to the air backend on :8229.
 - **opencode.db.** Foreign data, opened read-only. Ocman never writes to it.
 - **state.db.** Ocman's own state: archive flags, routines and run history,
-  permission approval provenance, settings, Factory records, Inbox items, and
-  remote tokens. Inbox sends are owner-local and persist until recalled or
-  archived by the user. Legacy `workflow_*` rows remain inert for manual
-  recovery.
+  permission approval provenance, live session commit observations, settings,
+  Factory records, Inbox items, and remote tokens. Inbox sends are owner-local
+  and persist until recalled or archived by the user. Legacy `workflow_*` rows
+  remain inert for manual recovery.
 - **Provider usage APIs.** The subscription usage page reads OpenCode's local
   OAuth credentials server-side and returns only normalized quota windows;
   provider tokens and account identifiers never reach the browser.
@@ -162,7 +162,9 @@ flowchart TD
   an HTTP client that attaches to live instances, with `lsof`-based discovery
   for instances started outside ocman. One process-wide `/global/event` stream
   per instance keeps pending permission and question state in memory across
-  all session directories.
+  all session directories. The same live stream captures completed bash parts
+  containing Git commit summaries and stores immutable observations in
+  `state.db`; transcript reads never trigger capture.
 - **internal/routines.** Validates and stores manual, timeout, one-time and
   cron routines. Manual and scheduled dispatch share the durable occurrence
   claim, launch a fresh managed session through `hostsvc.Router` and
@@ -208,12 +210,12 @@ sequenceDiagram
     participant A as opencode adapter
     participant D as opencode.db / OC HTTP
     participant E as SSE broadcast
-    participant I as Inbox state
+    participant I as state.db
 
     B->>S: GET /api/sessions
     S->>R: resolve platform/host
     R->>A: ListSessions()
-    D-->>A: background /global/event prompt updates
+    D-->>A: background /global/event prompts + terminal parts
     A->>D: SQL json_extract
     A->>A: overlay pending prompt registry
     D-->>B: JSON (status settled at query time)
@@ -226,7 +228,7 @@ sequenceDiagram
     R->>A: create session and send saved prompt
     Note over Q,A: poll linked session until it settles
     E-->>B: SSE (session.updated)
-    A->>I: MCP inbox send (attention/blocked/failure only)
+    A->>I: persist commit observations / MCP inbox send
     I-->>S: local state or owner-routed remote RPC
     B->>S: REST Inbox list/read/archive
     S-->>B: Inbox JSON (polling and mutation refresh)

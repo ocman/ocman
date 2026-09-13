@@ -205,7 +205,9 @@ import (
 //	78 - add routine webhook subscriptions and dispatch claims.
 //	80 - repair webhook inboxes created by the schema-version collision.
 //	81 - persist the implementation model selected at Factory Plan approval.
-const latestSchemaVersion = 81
+//	82 - persist live commit observations attributed to their source session
+//	     and terminal tool call.
+const latestSchemaVersion = 82
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -472,9 +474,33 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV80(tx)
 	case 81:
 		return migrateToV81(tx)
+	case 82:
+		return migrateToV82(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
+}
+
+func migrateToV82(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS session_commit (
+			observation_order INTEGER PRIMARY KEY AUTOINCREMENT,
+			platform          TEXT NOT NULL,
+			session_id        TEXT NOT NULL,
+			sha               TEXT NOT NULL,
+			branch            TEXT,
+			subject           TEXT NOT NULL,
+			source_message_id TEXT NOT NULL,
+			tool_part_id      TEXT NOT NULL,
+			tool_call_id      TEXT NOT NULL,
+			source_call_id    TEXT NOT NULL,
+			observed_at       INTEGER NOT NULL,
+			UNIQUE (platform, session_id, source_call_id, sha)
+		);
+		CREATE INDEX IF NOT EXISTS session_commit_session_order
+			ON session_commit(platform, session_id, observation_order);
+	`)
+	return err
 }
 
 func migrateToV54(tx *sql.Tx) error {

@@ -73,6 +73,7 @@ func (s *Server) aaSvc() *autoapprove.Service {
 		// checks.
 		if s.stateDB != nil {
 			deps.Store = s.stateDB
+			deps.CommitStore = s.stateDB
 		}
 		s.aaSvcCached = autoapprove.NewService(deps)
 	})

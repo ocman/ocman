@@ -155,6 +155,29 @@ export function TokensSection({
   );
 }
 
+export function CommitsSection({ commits }: { commits: SessionInfo['commits'] }) {
+  return (
+    <section className="oc-info-section">
+      <h3 className="oc-info-section-header">Commits</h3>
+      {commits.length === 0 ? (
+        <div className="oc-info-empty">No commits captured.</div>
+      ) : (
+        <ul className="oc-info-list">
+          {commits.map((commit) => (
+            <li key={commit.order} className="oc-info-commit">
+              <div className="oc-info-commit-meta">
+                <code>{commit.sha.slice(0, 7)}</code>
+                <span>{commit.branch ?? 'Detached HEAD'}</span>
+              </div>
+              <div className="oc-info-commit-subject">{commit.subject}</div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 export function LiveSection({
   loading,
   error,

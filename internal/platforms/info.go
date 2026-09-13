@@ -38,6 +38,20 @@ type SessionInfo struct {
 	// always reflects the conversation's current task tracker rather
 	// than a slice limited by message pagination.
 	Todos []TodoItem `json:"todos,omitempty"`
+	// Commits contains immutable live observations enriched by ocman's state
+	// store. Adapters leave this empty; the owning server serializes it.
+	Commits []SessionCommit `json:"commits"`
+}
+
+type SessionCommit struct {
+	Order           int64   `json:"order"`
+	SHA             string  `json:"sha"`
+	Branch          *string `json:"branch"`
+	Subject         string  `json:"subject"`
+	SourceMessageID string  `json:"sourceMessageId"`
+	ToolPartID      string  `json:"toolPartId"`
+	ToolCallID      string  `json:"toolCallId"`
+	ObservedAt      int64   `json:"observedAt"`
 }
 
 // MessageCounts is the user/assistant turn breakdown surfaced by the

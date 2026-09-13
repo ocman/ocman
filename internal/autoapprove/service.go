@@ -44,6 +44,10 @@ type SettingsStore interface {
 	UpsertPermissionLifecycle(context.Context, state.PermissionLifecycle) error
 }
 
+type CommitStore interface {
+	RecordSessionCommit(context.Context, state.SessionCommit) (bool, error)
+}
+
 // Deps bundles the service's external dependencies. Every func field
 // is optional — nil fields turn the corresponding side effect into a
 // no-op, which is what the tests rely on.
@@ -53,6 +57,9 @@ type Deps struct {
 
 	// Store persists/loads settings and approval audit rows. May be nil.
 	Store SettingsStore
+	// CommitStore persists live terminal observations independently of judge
+	// enablement. It is normally the same state DB as Store.
+	CommitStore CommitStore
 
 	// SessionDir resolves a session ID to its working directory (used
 	// for OpenCode port discovery). May be nil when no session DB is

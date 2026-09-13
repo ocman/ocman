@@ -815,6 +815,17 @@ export interface SessionInfoMessages {
   assistant: number;
 }
 
+export interface SessionInfoCommit {
+  order: number;
+  sha: string;
+  branch: string | null;
+  subject: string;
+  sourceMessageId: string;
+  toolPartId: string;
+  toolCallId: string;
+  observedAt: number;
+}
+
 export interface SessionInfo {
   sessionId: string;
   supported: boolean;
@@ -824,6 +835,7 @@ export interface SessionInfo {
   lspServers: LSPServer[];
   messages: SessionInfoMessages;
   todos?: SessionInfoTodo[];
+  commits: SessionInfoCommit[];
 }
 
 export interface Stats {

@@ -14,6 +14,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 const (
@@ -454,6 +455,15 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 		close(firstReconciliationFinished)
 	}
 
+	commitParts := make(chan terminalPart, 32)
+	commitDone := make(chan struct{})
+	go func() {
+		defer close(commitDone)
+		for part := range commitParts {
+			w.recordTerminalPart(streamCtx, part)
+		}
+	}()
+
 	tee := &Tee{
 		W:     io.Discard, // we only need the parsing side; nothing else consumes this stream
 		Flush: nil,
@@ -522,17 +532,55 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 			w.handleSessionChanged(streamCtx, sessionID)
 		},
 		OnSessionDataChanged: w.handleSessionDataChanged,
+		OnTerminalPart: func(part terminalPart) {
+			select {
+			case commitParts <- part:
+			case <-streamCtx.Done():
+			default:
+				log.WithField("session_id", part.SessionID).Warn("session commit capture queue full; dropping live observation")
+			}
+		},
 	}
 
 	// Copy bytes through the tee until the stream ends. io.Copy
 	// returns nil on clean EOF and a non-nil error on read failure or
 	// ctx cancel (the request context propagates to the body reader).
 	_, err = io.Copy(tee, resp.Body)
+	close(commitParts)
+	<-commitDone
 	<-firstReconciliationFinished
 	if err != nil && ctx.Err() == nil {
 		return fmt.Errorf("read /global/event: %w", err)
 	}
 	return nil
+}
+
+func (w *autoApproveWatcher) recordTerminalPart(ctx context.Context, part terminalPart) {
+	if w.svc == nil || w.svc.deps.CommitStore == nil {
+		return
+	}
+	inserted, failed := false, false
+	for _, summary := range parseGitCommitSummaries(part.Output, part.Command) {
+		sourceCallID := part.CallID
+		if sourceCallID == "" {
+			sourceCallID = part.PartID
+		}
+		ok, err := w.svc.deps.CommitStore.RecordSessionCommit(ctx, state.SessionCommit{
+			Platform: string(opencode.PlatformID), SessionID: part.SessionID,
+			SHA: summary.SHA, Branch: summary.Branch, Subject: summary.Subject,
+			SourceMessageID: part.MessageID, ToolPartID: part.PartID,
+			ToolCallID: part.CallID, SourceCallID: sourceCallID,
+		})
+		if err != nil {
+			failed = true
+			log.WithError(err).WithField("session_id", part.SessionID).Warn("failed to record session commit")
+			continue
+		}
+		inserted = inserted || ok
+	}
+	if inserted && !failed && w.svc.deps.BroadcastSessionChanged != nil {
+		w.svc.deps.BroadcastSessionChanged(part.SessionID)
+	}
 }
 
 func (w *autoApproveWatcher) broadcastSessionStatus(adapter *opencode.Adapter, port, sessionID, statusType string) {

@@ -5,9 +5,10 @@ import { usePlatformCapabilities } from '../lib/useCapabilities';
 import { useSessionInfo } from '../lib/useSessionInfo';
 import { useGitInfo } from '../lib/useGitInfo';
 import { useSidebarCallbacks } from '../lib/useSidebarCallbacks';
+import { onSessionChanged } from '../lib/useGlobalEvents';
 import { ChangesRefreshButton, type PaneSummary } from './SessionChangesSidebar';
 import { TodoList } from './TodoList';
-import { SessionSection, TokensSection, LiveSection } from './SessionInfoSections';
+import { SessionSection, TokensSection, CommitsSection, LiveSection } from './SessionInfoSections';
 import type { Session } from '../lib/api';
 import type { TodoItem } from '../lib/todos';
 
@@ -122,6 +123,10 @@ export function SessionInfoSidebar({
 
   useSidebarCallbacks({ refresh, loading, onRefresh, onLoadingChange });
 
+  useEffect(() => onSessionChanged((changedId) => {
+    if (changedId === sessionId) refresh();
+  }), [sessionId, refresh]);
+
   // Session section: cross-platform metadata. Renders whenever a
   // session is available, regardless of caps.sessionInfo. Branch is
   // shown when gitInfo is populated; the changes summary uses the
@@ -213,6 +218,10 @@ export function SessionInfoSidebar({
   const Body = (
     <div className="oc-changes-sidebar-body oc-info-body">
       {sessionSection}
+      {liveEnabled && loading && !data ? (
+        <section className="oc-info-section"><div className="oc-info-empty">Loading commits...</div></section>
+      ) : null}
+      {data ? <CommitsSection commits={data.commits ?? []} /> : null}
       {todoSection}
       {tokensSection}
       {liveSection}

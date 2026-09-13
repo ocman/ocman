@@ -1927,6 +1927,36 @@ func TestHandleSessionInfo_PlatformPayload(t *testing.T) {
 	}
 }
 
+func TestHandleSessionInfo_EnrichesPersistedCommits(t *testing.T) {
+	srv, rawDB := testServerWithRawDB(t)
+	defer rawDB.Close()
+	fakeSessions := []db.Session{{ID: "fk-commit", Platform: "fake", Directory: "/x", TimeUpdated: 1}}
+	srv.registry.Register(&fakePlatform{id: "fake", sessions: fakeSessions, info: &platforms.SessionInfo{SessionID: "fk-commit"}})
+	srv.registry.RememberSessions("fake", fakeSessions)
+	branch := "old-name"
+	if _, err := srv.stateDB.RecordSessionCommit(t.Context(), state.SessionCommit{
+		Platform: "fake", SessionID: "fk-commit", SHA: "abc1234", Branch: &branch,
+		Subject: "kept", SourceMessageID: "m1", ToolPartID: "p1", ToolCallID: "c1", SourceCallID: "c1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/session/fk-commit/info", nil)
+	req.URL.Path = "/api/session/fk-commit/info"
+	rr := httptest.NewRecorder()
+	srv.handleSessionInfo(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	var got platforms.SessionInfo
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Commits) != 1 || got.Commits[0].SHA != "abc1234" || got.Commits[0].Branch == nil || *got.Commits[0].Branch != "old-name" {
+		t.Fatalf("commits = %#v", got.Commits)
+	}
+}
+
 // TestHandleSessionInfo_UnsupportedReturns200 verifies that adapters
 // reporting ErrUnsupported (e.g. OpenCode without a live port) yield
 // an HTTP 200 with Supported=false and non-nil empty

@@ -4,14 +4,16 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { SessionInfoSidebar } from './SessionInfoSidebar';
 import type { Session } from '../lib/api';
+import { __handleSessionChangedForTests } from '../lib/useGlobalEvents';
 
 const useGitInfo = vi.hoisted(() => vi.fn(() => ({ infos: {}, loading: false, error: null })));
+const sessionInfoResult = vi.hoisted(() => ({ data: null as null | Record<string, unknown>, loading: false, error: null, refresh: vi.fn() }));
 
 vi.mock('../lib/useCapabilities', () => ({
   usePlatformCapabilities: () => ({ sessionInfo: false }),
 }));
 vi.mock('../lib/useSessionInfo', () => ({
-  useSessionInfo: () => ({ data: null, loading: false, error: null, refresh: vi.fn() }),
+  useSessionInfo: () => sessionInfoResult,
 }));
 vi.mock('../lib/useGitInfo', () => ({
   useGitInfo,
@@ -52,5 +54,36 @@ describe('SessionInfoSidebar parent link', () => {
   it('renders no parent link for a top-level session', () => {
     renderSidebar(makeSession());
     expect(screen.queryByRole('link', { name: 'View parent session' })).toBeNull();
+  });
+});
+
+describe('SessionInfoSidebar commits', () => {
+  it('renders captured commits with recorded branch semantics', () => {
+    sessionInfoResult.data = {
+      sessionId: 's', supported: false,
+      context: { tokens: 0, cost: 0, estCost: 0 },
+      tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      messages: { user: 0, assistant: 0 }, mcpServers: [], lspServers: [],
+      commits: [
+        { order: 1, sha: 'abcdef123', branch: 'feature/x', subject: 'Add capture' },
+        { order: 2, sha: '123456789', branch: null, subject: 'Detached work' },
+      ],
+    };
+    renderSidebar(makeSession());
+    expect(screen.getByRole('heading', { name: 'Commits' })).toBeInTheDocument();
+    expect(screen.getByText('abcdef1')).toBeInTheDocument();
+    expect(screen.getByText('feature/x')).toBeInTheDocument();
+    expect(screen.getByText('Detached HEAD')).toBeInTheDocument();
+    expect(screen.getByText('Detached work')).toBeInTheDocument();
+    sessionInfoResult.data = null;
+  });
+
+  it('refetches info after a matching persisted-change notification', () => {
+    sessionInfoResult.refresh.mockClear();
+    renderSidebar(makeSession());
+    __handleSessionChangedForTests(JSON.stringify({ sessionID: 'other' }));
+    expect(sessionInfoResult.refresh).not.toHaveBeenCalled();
+    __handleSessionChangedForTests(JSON.stringify({ sessionID: 's' }));
+    expect(sessionInfoResult.refresh).toHaveBeenCalledOnce();
   });
 });

@@ -18,6 +18,7 @@ const EMPTY_INFO: SessionInfo = {
   mcpServers: [],
   lspServers: [],
   messages: { user: 0, assistant: 0 },
+  commits: [],
 };
 
 export type UseSessionInfoOptions = DebouncedSessionResourceOptions;

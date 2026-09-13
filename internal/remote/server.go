@@ -50,7 +50,7 @@ func (s *Server) UseInboxStore(store *state.DB) *Server {
 	return s
 }
 
-	func (s *Server) UseWebhookDispatcher(dispatcher webhook.RoutineDispatcher) *Server {
+func (s *Server) UseWebhookDispatcher(dispatcher webhook.RoutineDispatcher) *Server {
 	s.webhookDispatcher = dispatcher
 	return s
 }
@@ -188,7 +188,23 @@ func (s *Server) SessionInfo(ctx context.Context, req *pb.SessionRef) (*pb.JsonR
 	if err != nil {
 		return nil, err
 	}
-	return jsonResp(p.SessionInfo(ctx, req.SessionId))
+	info, err := p.SessionInfo(ctx, req.SessionId)
+	if err != nil || info == nil || s.inboxStore == nil {
+		return jsonResp(info, err)
+	}
+	commits, err := s.inboxStore.ListSessionCommits(ctx, req.Platform, req.SessionId)
+	if err != nil {
+		return nil, err
+	}
+	for _, commit := range commits {
+		info.Commits = append(info.Commits, platforms.SessionCommit{
+			Order: commit.Order, SHA: commit.SHA, Branch: commit.Branch,
+			Subject: commit.Subject, SourceMessageID: commit.SourceMessageID,
+			ToolPartID: commit.ToolPartID, ToolCallID: commit.ToolCallID,
+			ObservedAt: commit.ObservedAt,
+		})
+	}
+	return jsonResp(info, nil)
 }
 
 func (s *Server) AgentCatalog(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {

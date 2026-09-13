@@ -100,6 +100,7 @@ async function loadHookHarness(opts?: {
         mcpServers: [],
         lspServers: [],
         messages: { user: 1, assistant: 1 },
+        commits: [],
       } satisfies SessionInfo);
 
   vi.doMock('./apiStore', () => ({

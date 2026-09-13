@@ -16,8 +16,22 @@ import (
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
+	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/testutil"
 )
+
+type commitStoreStub struct {
+	commits []state.SessionCommit
+	err     error
+}
+
+func (s *commitStoreStub) RecordSessionCommit(_ context.Context, commit state.SessionCommit) (bool, error) {
+	if s.err != nil {
+		return false, s.err
+	}
+	s.commits = append(s.commits, commit)
+	return true, nil
+}
 
 // waitTimeout is deliberately generous: these tests coordinate real
 // goroutines and HTTP connections, so a tight budget only buys flakes on
@@ -111,6 +125,40 @@ func permissionAskedEvent(sessionID, permissionID, permission, command string) s
 		`{"id":"evt_x","type":"permission.asked","properties":{"id":%q,"sessionID":%q,"permission":%q,"patterns":[],"metadata":{"command":%q}}}`,
 		permissionID, sessionID, permission, command,
 	) + "\n\n"
+}
+
+func TestAutoApproveWatcherCapturesCommitWithoutJudgeOrBrowser(t *testing.T) {
+	event := "data: " + `{"type":"message.part.updated","properties":{"part":{"id":"p1","messageID":"m1","sessionID":"child","callID":"c1","type":"tool","tool":"bash","state":{"status":"completed","input":{"command":"git commit -m captured"},"output":"[main abc1234] captured"}}}}` + "\n\n"
+	upstream := newFakeOpenCodeEventServer([]string{event})
+	defer upstream.close()
+	store := &commitStoreStub{}
+	broadcast := make(chan struct{}, 1)
+	svc := NewService(Deps{CommitStore: store, DefaultEnabled: false, BroadcastSessionChanged: func(sessionID string) {
+		if sessionID == "child" {
+			broadcast <- struct{}{}
+		}
+	}})
+	watcher := newAutoApproveWatcher(svc)
+	if err := watcher.streamOnce(t.Context(), upstream.port()); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-broadcast:
+	case <-time.After(waitTimeout):
+		t.Fatal("commit capture was not broadcast")
+	}
+	if len(store.commits) != 1 || store.commits[0].SessionID != "child" || store.commits[0].SHA != "abc1234" {
+		t.Fatalf("commits=%#v", store.commits)
+	}
+}
+
+func TestAutoApproveWatcherDoesNotBroadcastFailedPersistence(t *testing.T) {
+	broadcasts := 0
+	svc := NewService(Deps{CommitStore: &commitStoreStub{err: errors.New("write failed")}, BroadcastSessionChanged: func(string) { broadcasts++ }})
+	newAutoApproveWatcher(svc).recordTerminalPart(t.Context(), terminalPart{SessionID: "s1", MessageID: "m1", PartID: "p1", CallID: "c1", Command: "git commit -m captured", Output: "[main abc1234] captured"})
+	if broadcasts != 0 {
+		t.Fatalf("broadcasts = %d, want 0", broadcasts)
+	}
 }
 
 func wrappedPermissionAskedEvent(directory, sessionID, permissionID string) string {

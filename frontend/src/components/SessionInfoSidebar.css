@@ -148,6 +148,28 @@
   white-space: normal;
 }
 
+.oc-info-commit {
+  padding: 3px 12px;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+}
+
+.oc-info-commit-meta {
+  display: flex;
+  gap: 8px;
+  color: var(--overlay0);
+  font-size: 11px;
+}
+
+.oc-info-commit-meta code {
+  color: var(--accent);
+}
+
+.oc-info-commit-subject {
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
 /* Status text: plain muted annotation. No colour, no pill, no
  * background — the row above already implies the server exists; the
  * status string is just a small detail label. Matches the muted
