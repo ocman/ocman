@@ -45,7 +45,6 @@ import { useApiStore } from '../../lib/apiStore';
 import { useGitInfo } from '../../lib/useGitInfo';
 import { usePlatformCapabilities, useOpencodeLaunch } from '../../lib/useCapabilities';
 import { listFailedSends, type FailedSend } from '../../lib/failedSends';
-import { getProjectModel, saveProjectModel } from '../../lib/projectModel';
 import { recheckFaviconNotify } from '../../lib/useFaviconNotify';
 import { createSessionWithLaunch } from '../../lib/createSessionWithLaunch';
 import {
@@ -53,16 +52,14 @@ import {
   computeLiveTokens,
   mergeTokenStats,
   aggregateSessionTreeStats,
-  deriveActiveModelAndAgent,
-  agentModelRef,
 } from '../../lib/sessionStatus';
-import { computeTurnStats, latestTurnModel } from '../../lib/turnStats';
 import { useSubagentTracking } from './useSubagentTracking';
 import { useTmuxActions } from './useTmuxActions';
 import { useSessionStatus } from './useSessionStatus';
 import { useSidebarSessions } from './useSidebarSessions';
 import { useSidebarProjectGroups } from './useSidebarProjectGroups';
 import { useSessionCapabilities } from './useSessionCapabilities';
+import { useComposerModel } from './useComposerModel';
 import { usePromptHandlers } from './usePromptHandlers';
 import { usePromptSync } from './usePromptSync';
 import { useSessionShortcuts } from './useSessionShortcuts';
@@ -369,7 +366,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const patchRecentSession = useApiStore((state) => state.patchRecentSession);
   const abortControllerRef = useRef<AbortController | null>(null);
   const resetSessionIdRef = useRef<string | undefined>(undefined);
-  const modelSeededSessionRef = useRef<string | undefined>(undefined);
   const {
     recentSessions,
     recentSessionsRef,
@@ -531,7 +527,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
 
     if (resetSessionIdRef.current !== id) {
       resetSessionIdRef.current = id;
-      modelSeededSessionRef.current = undefined;
       setSelectedModel('');
       setSelectedAgent('');
       setSelectedReasoning('');
@@ -655,40 +650,23 @@ export function SessionDetail({ id }: SessionDetailProps) {
     return () => setInfo({});
   }, [session, setInfo]);
 
-  // The model the session is currently on, used to pre-seed the
-  // composer when no explicit selection has been made yet. Prefer the
-  // model behind the most recent turn (what OpenCode will keep using),
-  // falling back to the session's default model.
-  const turnStatsMap = useMemo(() => computeTurnStats(messages, parts), [messages, parts]);
-  const { activeAgent } = useMemo(
-    () => deriveActiveModelAndAgent(messages, session),
-    [messages, session],
-  );
-  const activeModel = useMemo(
-    () =>
-      latestTurnModel(messages, turnStatsMap) ||
-      (messages.length === 0 ? getProjectModel(session?.directory || '') : '') ||
-      session?.defaultModel ||
-      '',
-    [messages, turnStatsMap, session?.directory, session?.defaultModel],
-  );
-
-  // Pre-seed the composer's model with the session's current model on
-  // session open. The composer's `selectedModel` is the single source
-  // of truth for the next message; seed exactly once per session so
-  // later assistant responses cannot move the composer selection.
-  useEffect(() => {
-    if (!id) return;
-    if (modelSeededSessionRef.current === id) return;
-    // The page is not remounted on navigation, so for a render or two
-    // after `id` flips `session`/`messages` still hold the previously
-    // viewed session. Seeding from those would latch the old session's
-    // model and the one-shot guard would then block the correct one.
-    if (session?.id !== id) return;
-    if (!activeModel) return;
-    setSelectedModel(activeModel);
-    modelSeededSessionRef.current = id;
-  }, [activeModel, id, session?.id, setSelectedModel]);
+  const {
+    activeAgent,
+    activeModel,
+    composerModels,
+    handleModelChange,
+    handleAgentChange,
+  } = useComposerModel({
+    id,
+    session,
+    messages,
+    parts,
+    modelOptions,
+    agents,
+    setSelectedModel,
+    setSelectedAgent,
+    setSelectedReasoning,
+  });
 
   const handleNewSessionInDirectory = useCallback(async (directory: string, remoteId?: string, platform?: string, title?: string) => {
     // Prefer the target project's own platform/host (e.g. a remote
@@ -856,28 +834,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
     );
   }, [handleThreadBoundaryRetry, id]);
 
-  const handleModelChange = useCallback((model: string) => {
-    modelSeededSessionRef.current = id;
-    setSelectedModel(model);
-    setSelectedReasoning('');
-    if (session?.directory) saveProjectModel(session.directory, model);
-  }, [id, session?.directory, setSelectedModel, setSelectedReasoning]);
-
-  // Switching to an agent that defines a model selects that model in
-  // the composer (and thus respects it on send). A later manual model
-  // change overrides it; switching agents again re-applies the new
-  // agent's model. Agents without a model leave the selection as-is.
-  const handleAgentChange = useCallback((agent: string) => {
-    modelSeededSessionRef.current = id;
-    setSelectedAgent(agent);
-    const info = agents.find((a) => a.name === agent);
-    const agentModel = agentModelRef(info);
-    if (agentModel) {
-      setSelectedModel(agentModel);
-      setSelectedReasoning('');
-    }
-  }, [agents, id, setSelectedAgent, setSelectedModel, setSelectedReasoning]);
-
   // Alt+J / Alt+K: navigate between recent sessions.
   const jumpToSession = useCallback((direction: 1 | -1) => {
     const sessions = recentSessionsRef.current;
@@ -931,10 +887,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
 
   const hasMore = platformMessageCount(messages) < totalMessages;
   const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
-  const composerModels = useMemo(
-    () => Array.from(new Set([activeModel, session?.defaultModel, ...modelOptions].filter((model): model is string => !!model))),
-    [activeModel, session?.defaultModel, modelOptions],
-  );
   const permissionControl = useMemo(
     () => (caps.permissionRules && portAvailable && session?.id ? <PermissionModeLock sessionId={session.id} /> : null),
     [caps.permissionRules, portAvailable, session?.id],
