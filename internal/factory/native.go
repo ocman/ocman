@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/factory/model"
-	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/sirupsen/logrus"
 )
 
@@ -1955,7 +1954,7 @@ func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentTok
 // only loses the notification.
 func (s *NativeService) notifyEpicDelivered(ctx context.Context, epicID, summary, prURL string) {
 	inbox, ok := s.store.(interface {
-		CreateInboxItem(context.Context, string, string) (state.InboxItem, error)
+		NotifyInbox(context.Context, string, string) error
 	})
 	if !ok {
 		return
@@ -1965,7 +1964,7 @@ func (s *NativeService) notifyEpicDelivered(ctx context.Context, epicID, summary
 		title = "Factory delivered: " + epic.Goal
 	}
 	body := summary + "\n\nPR: " + prURL + "\nEpic: " + epicID
-	if _, err := inbox.CreateInboxItem(ctx, title, body); err != nil {
+	if err := inbox.NotifyInbox(ctx, title, body); err != nil {
 		logrus.WithError(err).WithField("epic", epicID).Warn("factory: inbox notification failed")
 	}
 }

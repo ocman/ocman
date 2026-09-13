@@ -61,6 +61,13 @@ func (d *DB) CreateInboxItem(ctx context.Context, title, body string) (InboxItem
 	return item, nil
 }
 
+// NotifyInbox is CreateInboxItem for callers that only need the error, so
+// packages like factory can assert the capability without importing state.
+func (d *DB) NotifyInbox(ctx context.Context, title, body string) error {
+	_, err := d.CreateInboxItem(ctx, title, body)
+	return err
+}
+
 // ListInboxItems returns active items newest first.
 func (d *DB) ListInboxItems(ctx context.Context) ([]InboxItem, error) {
 	rows, err := d.db.QueryContext(ctx, `SELECT `+inboxItemColumns+` FROM inbox_item WHERE archived_at IS NULL ORDER BY created_at DESC, id DESC`)
