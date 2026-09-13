@@ -210,7 +210,8 @@ import (
 //	83 - persist each Factory Epic's admitted local project set.
 //	84 - persist each Factory Issue's canonical target project.
 //	85 - persist Factory project scope expansion gates.
-const latestSchemaVersion = 85
+//	86 - add merge-gated dependencies and durable forge observations.
+const latestSchemaVersion = 86
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -485,9 +486,45 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV84(tx)
 	case 85:
 		return migrateToV85(tx)
+	case 86:
+		return migrateToV86(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
+}
+
+func migrateToV86(tx *sql.Tx) error {
+	var exists bool
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'factory_issue')`).Scan(&exists); err != nil || !exists {
+		return err
+	}
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'factory_issue_dependency')`).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("migrate v86: factory_issue_dependency table is missing")
+	}
+	_, err := tx.Exec(`
+		CREATE TABLE factory_issue_dependency_v86 (
+			issue_id TEXT NOT NULL REFERENCES factory_issue(id),
+			depends_on_issue_id TEXT NOT NULL REFERENCES factory_issue(id),
+			type TEXT NOT NULL CHECK (type IN ('blocks', 'on_failure', 'merge_gated')),
+			PRIMARY KEY (issue_id, depends_on_issue_id, type)
+		);
+		INSERT INTO factory_issue_dependency_v86 SELECT issue_id, depends_on_issue_id, type FROM factory_issue_dependency;
+		DROP TABLE factory_issue_dependency;
+		ALTER TABLE factory_issue_dependency_v86 RENAME TO factory_issue_dependency;
+		CREATE TABLE IF NOT EXISTS factory_merge_gate_observation (
+			delivery_issue_id TEXT PRIMARY KEY REFERENCES factory_issue(id),
+			attempt_id TEXT NOT NULL REFERENCES factory_attempt(id),
+			pr_url TEXT NOT NULL,
+			commit_sha TEXT NOT NULL,
+			status TEXT NOT NULL CHECK (status IN ('open', 'draft', 'merged', 'closed', 'unavailable', 'changed')),
+			reason TEXT NOT NULL DEFAULT '',
+			observed_at INTEGER NOT NULL
+		);
+	`)
+	return err
 }
 
 func migrateToV85(tx *sql.Tx) error {

@@ -59,7 +59,7 @@ type DispatchEvidence = Pick<FactoryIssue, 'dispatchState' | 'blockers' | 'retry
 
 function BlockerEvidence({ blockers }: { blockers?: FactoryIssue['blockers'] }) {
   if (!blockers?.length) return null;
-  return <>{blockers.map(({ id, epicId, outcome, reason }, index) => <span key={id}>{index > 0 && '; '}<Link to={`/factory/issues/${encodeURIComponent(id)}`} aria-label={`Open blocker ${id}`}>{id}{epicId ? ` in Work Epic ${epicId}` : ''}</Link> {outcome || 'pending'}{reason ? `: ${reason}` : ''}</span>)}</>;
+  return <>{blockers.map(({ id, epicId, type, outcome, reason }, index) => <span key={id}>{index > 0 && '; '}{type === 'merge_gated' && 'merge gate on '}<Link to={`/factory/issues/${encodeURIComponent(id)}`} aria-label={`Open blocker ${id}`}>{id}{epicId ? ` in Work Epic ${epicId}` : ''}</Link> {outcome || 'pending'}{reason ? `: ${reason}` : ''}</span>)}</>;
 }
 
 function DispatchExplanation({ item }: { item: DispatchEvidence }) {
@@ -97,11 +97,13 @@ function GraphControls({ epicID, issues, allIssues }: { epicID: string; issues: 
   const [action, setAction] = useState<FactoryGraphMutation['action']>('create');
   const [confirmed, setConfirmed] = useState(false);
   const [issueID, setIssueID] = useState('');
+  const [dependencyType, setDependencyType] = useState<NonNullable<FactoryGraphMutation['dependencyType']>>('blocks');
   const [mutationStatus, setMutationStatus] = useState('');
   const openIssues = issues.filter((issue) => issue.status === 'open');
-  const targets = allIssues.filter((issue) => issue.status === 'open');
   const selectedIssueID = issueID || openIssues[0]?.id || '';
   const selectedIssue = openIssues.find((issue) => issue.id === selectedIssueID);
+  const selectedDependencyType = dependencyType === 'merge_gated' && selectedIssue?.kind !== 'implementation' && selectedIssue?.kind !== 'task' ? 'blocks' : dependencyType;
+  const targets = allIssues.filter((issue) => selectedDependencyType === 'merge_gated' ? issue.kind === 'delivery' && issue.project !== selectedIssue?.project : issue.status === 'open');
   const noTarget = (action === 'reparent' && !openIssues.some((issue) => issue.id !== selectedIssueID)) || ((action === 'link' || action === 'unlink') && !targets.some((issue) => issue.id !== selectedIssueID));
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -110,7 +112,7 @@ function GraphControls({ epicID, issues, allIssues }: { epicID: string; issues: 
     if (action === 'create') Object.assign(mutation, { parentId: selectedIssueID, kind: String(form.get('kind')), title: String(form.get('title')).trim(), description: String(form.get('description')).trim(), requirement: String(form.get('requirement')) });
     if (action === 'edit') Object.assign(mutation, { title: String(form.get('title')).trim(), description: String(form.get('description')).trim() });
     if (action === 'reparent') Object.assign(mutation, { parentId: String(form.get('parentId')), requirement: String(form.get('requirement')) });
-    if (action === 'link' || action === 'unlink') Object.assign(mutation, { dependsOnId: String(form.get('dependsOnId')), dependencyType: String(form.get('dependencyType')) as 'blocks' | 'on_failure' });
+    if (action === 'link' || action === 'unlink') Object.assign(mutation, { dependsOnId: String(form.get('dependsOnId')), dependencyType: selectedDependencyType });
     try { await mutate.mutateAsync(mutation); setConfirmed(false); setMutationStatus(action === 'delete' ? 'Work soft-deleted. It remains in Factory audit history.' : 'Graph updated.'); } catch { /* The mutation error is rendered below. */ }
   }
   return <section className="factory-graph-controls" aria-label="Manage graph">
@@ -122,7 +124,7 @@ function GraphControls({ epicID, issues, allIssues }: { epicID: string; issues: 
       {action === 'edit' && <><label>Title<input key={`title-${selectedIssueID}`} aria-label="Work title" name="title" required defaultValue={selectedIssue?.title} /></label><label>Description<textarea key={`description-${selectedIssueID}`} aria-label="Work description" name="description" defaultValue={selectedIssue?.description} /></label></>}
       {(action === 'create' || action === 'reparent') && <label>Requirement<select name="requirement"><option value="required">Required</option><option value="optional">Optional</option></select></label>}
       {action === 'reparent' && <label>New parent<select aria-label="New parent" name="parentId">{openIssues.filter((issue) => issue.id !== selectedIssueID).map((issue) => <option key={issue.id} value={issue.id}>{issue.title} ({issue.id})</option>)}</select></label>}
-      {(action === 'link' || action === 'unlink') && <><label>Dependency target<select aria-label="Dependency target" name="dependsOnId">{targets.filter((issue) => issue.id !== selectedIssueID).map((issue) => <option key={issue.id} value={issue.id}>{issue.epicId === epicID ? 'This Work Epic' : `Work Epic ${issue.epicId}`}: {issue.title} ({issue.id})</option>)}</select></label><label>Dependency type<select name="dependencyType"><option value="blocks">Blocks</option><option value="on_failure">On failure</option></select></label></>}
+      {(action === 'link' || action === 'unlink') && <><label>Dependency type<select name="dependencyType" value={selectedDependencyType} onChange={(event) => setDependencyType(event.target.value as typeof dependencyType)}><option value="blocks">Blocks</option><option value="on_failure">On failure</option>{(selectedIssue?.kind === 'implementation' || selectedIssue?.kind === 'task') && <option value="merge_gated">Merge gated</option>}</select></label><label>Dependency target<select aria-label="Dependency target" name="dependsOnId">{targets.filter((issue) => issue.id !== selectedIssueID).map((issue) => <option key={issue.id} value={issue.id}>{issue.epicId === epicID ? 'This Work Epic' : `Work Epic ${issue.epicId}`}: {issue.title} ({issue.id})</option>)}</select></label></>}
       {action === 'delete' && <label><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /> I understand this soft-deletes this work and its descendants.</label>}
       {noTarget && <p role="alert">Select another open work item for this change.</p>}
       <Button type="submit" variant="accent" disabled={mutate.isPending || noTarget || (action === 'delete' && !confirmed)}>{mutate.isPending ? 'Saving…' : action === 'delete' ? 'Soft-delete work' : 'Save graph change'}</Button>

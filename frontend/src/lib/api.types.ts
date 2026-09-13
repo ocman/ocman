@@ -169,7 +169,7 @@ export interface FactoryClaimedPlan {
 }
 
 export interface FactoryProposal {
-	manifest: { epicId: string; molId: string; project: string; nodes: { key: string; type: string; requirement: string; title?: string; description?: string; project?: string; dependsOn?: string[] }[]; edges?: { from: string; to: string; type: 'blocks' | 'on_failure' }[] };
+	manifest: { epicId: string; molId: string; project: string; nodes: { key: string; type: string; requirement: string; title?: string; description?: string; project?: string; dependsOn?: string[] }[]; edges?: { from: string; to: string; type: 'blocks' | 'on_failure' | 'merge_gated' }[] };
 	revision: number;
 	contentHash: string;
 	rationaleMarkdown?: string;
@@ -232,7 +232,7 @@ export interface FactoryIssue {
 	conclusion?: string;
 	prUrl?: string;
 	dispatchState?: string;
-	blockers?: { id: string; epicId?: string; reason: string; outcome: string }[];
+	blockers?: { id: string; epicId?: string; type?: 'blocks' | 'on_failure' | 'merge_gated'; reason: string; outcome: string }[];
 	/** Every declared edge, satisfied or not, unlike blockers. */
 	dependsOn?: { id: string; type: string }[];
 	retryAt?: number;
@@ -298,7 +298,7 @@ export interface FactoryGraphMutation {
   issueId?: string;
   parentId?: string;
   dependsOnId?: string;
-  dependencyType?: 'blocks' | 'on_failure';
+	dependencyType?: 'blocks' | 'on_failure' | 'merge_gated';
   kind?: string;
   title?: string;
   description?: string;
@@ -316,7 +316,7 @@ export interface FactoryQueueItem {
   session?: { platform: string; id: string };
   outcome?: string;
 	outcomeReason?: string;
-   blockers?: { id: string; epicId?: string; reason: string; outcome: string }[];
+   blockers?: { id: string; epicId?: string; type?: 'blocks' | 'on_failure' | 'merge_gated'; reason: string; outcome: string }[];
   retryAt?: number;
   retryAttempts?: number;
 }

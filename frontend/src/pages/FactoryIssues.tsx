@@ -48,7 +48,7 @@ export function IssueDrawer({ issue, onClose }: { issue: FactoryIssue; onClose: 
       {issue.parentId && <div><dt>Parent</dt><dd>{issue.parentId}</dd></div>}
       {issue.requirement && <div><dt>Requirement</dt><dd>{issue.requirement}</dd></div>}
       {issue.dispatchState && <div><dt>Dispatch</dt><dd>{issue.dispatchState}</dd></div>}
-      <div><dt>Blocked by</dt><dd>{issue.blockers?.length ? issue.blockers.map((blocker, index) => <span key={blocker.id}>{index > 0 && ', '}<Link to={`/factory/issues/${encodeURIComponent(blocker.id)}`}>{blocker.id}</Link>{blocker.reason ? `: ${blocker.reason}` : ''}</span>) : 'none'}</dd></div>
+      <div><dt>Blocked by</dt><dd>{issue.blockers?.length ? issue.blockers.map((blocker, index) => <span key={blocker.id}>{index > 0 && ', '}{blocker.type === 'merge_gated' && 'merge gate on '}<Link to={`/factory/issues/${encodeURIComponent(blocker.id)}`}>{blocker.id}</Link>{blocker.reason ? `: ${blocker.reason}` : ''}</span>) : 'none'}</dd></div>
 		{issue.outcome && <div><dt>Outcome</dt><dd>{issue.outcome}{issue.outcomeReason ? `: ${issue.outcomeReason}` : ''}</dd></div>}
 		{issue.conclusion && <div><dt>Conclusion</dt><dd>{issue.conclusion}</dd></div>}
 		{issue.prUrl && <div><dt>Pull request</dt><dd><a href={issue.prUrl} target="_blank" rel="noreferrer">{issue.prUrl}</a></dd></div>}

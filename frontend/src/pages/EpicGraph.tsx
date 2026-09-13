@@ -26,8 +26,8 @@ export function EpicGraph({ issues, preview }: { issues?: FactoryIssue[]; previe
       id: edge.id,
       source: edge.source,
       target: edge.target,
-      label: edge.kind === 'on_failure' ? 'on failure' : edge.kind === 'interrupts' ? 'needs you' : undefined,
-      animated: edge.kind === 'blocks',
+      label: edge.kind === 'on_failure' ? 'on failure' : edge.kind === 'merge_gated' ? 'merge gated' : edge.kind === 'interrupts' ? 'needs you' : undefined,
+      animated: edge.kind === 'blocks' || edge.kind === 'merge_gated',
       className: `factory-edge factory-edge--${edge.kind}`,
       markerEnd: { type: MarkerType.ArrowClosed },
     }));

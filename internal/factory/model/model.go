@@ -80,8 +80,20 @@ type NativeIssueDependency struct {
 type NativeIssueBlocker struct {
 	ID      string `json:"id"`
 	EpicID  string `json:"epicId"`
+	Type    string `json:"type"`
 	Reason  string `json:"reason"`
 	Outcome string `json:"outcome"`
+}
+
+type FactoryDeliveryObservation struct {
+	DeliveryIssueID string
+	AttemptID       string
+	PRURL           string
+	CommitSHA       string
+	Status          string
+	Reason          string
+	ObservedAt      int64
+	Policy          FactoryAttemptPolicy
 }
 
 type GraphMutation struct {

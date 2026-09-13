@@ -791,6 +791,7 @@ describe('Factory interactions', () => {
 			{ id: 'implement-5', epicId: 'epic-5', title: 'Skipped recovery', project: '/repo', state: 'not_applicable', blockers: [{ id: 'test-1', reason: 'Passed', outcome: 'succeeded' }] },
 			{ id: 'implement-6', epicId: 'epic-6', title: 'Undelivered optional work', project: '/repo', state: 'not_applicable', outcomeReason: 'Final delivery is complete; this work will not run.' },
 			{ id: 'implement-6', epicId: 'epic-6', title: 'Deferred implementation', project: '/repo', state: 'deferred', outcomeReason: 'waiting for review' },
+			{ id: 'implement-7', epicId: 'epic-7', title: 'Merge-gated implementation', project: '/app', state: 'waiting', blockers: [{ id: 'delivery-1', type: 'merge_gated', reason: 'Waiting for the Project Delivery PR to merge.', outcome: 'open' }] },
 		] as never);
     renderFactory(<MemoryRouter><FactoryQueue /></MemoryRouter>);
 
@@ -809,6 +810,7 @@ describe('Factory interactions', () => {
 		expect(screen.getByText('Skipped recovery').closest('[role="listitem"]')).toHaveTextContent('Dispatch: not applicable because the recovery condition was not met (test-1 succeeded: Passed).');
 		expect(screen.getByText('Undelivered optional work').closest('[role="listitem"]')).toHaveTextContent('Dispatch: Final delivery is complete; this work will not run.');
 		expect(screen.getByText('Dispatch: delayed: waiting for review.')).toBeInTheDocument();
+		expect(screen.getByText('Merge-gated implementation').closest('[role="listitem"]')).toHaveTextContent('merge gate on delivery-1 open: Waiting for the Project Delivery PR to merge.');
 		expect(screen.getByText('Capacity: 10 global, 4 per project.')).toBeInTheDocument();
 		expect(screen.getByText('/other')).toBeInTheDocument();
 	});
@@ -841,7 +843,7 @@ describe('Factory interactions', () => {
       { id: 'epic-2', goal: 'Review Factory', status: 'open', initialProject: '/review' },
     ] as never);
     vi.mocked(api.factoryEpic).mockResolvedValue({ id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo' } as never);
-    vi.mocked(api.factoryIssues).mockImplementation((id) => Promise.resolve(id === 'epic-1' ? [{ id: 'epic-1.1', epicId: 'epic-1', kind: 'mol', title: 'Plan', status: 'open' }] : [{ id: 'epic-2.1', epicId: 'epic-2', kind: 'task', title: 'Review', status: 'open' }]) as never);
+		vi.mocked(api.factoryIssues).mockImplementation((id) => Promise.resolve(id === 'epic-1' ? [{ id: 'epic-1.1', epicId: 'epic-1', project: '/app', kind: 'task', title: 'Plan', status: 'open' }] : [{ id: 'epic-2.1', epicId: 'epic-2', project: '/sdk', kind: 'task', title: 'Review', status: 'open' }, { id: 'epic-2.2', epicId: 'epic-2', project: '/sdk', kind: 'delivery', title: 'SDK delivery', status: 'closed' }]) as never);
     renderFactory(<MemoryRouter initialEntries={['/factory/epics/epic-1']}><Routes><Route path="/factory/epics/:id" element={<FactoryEpicDetail />} /></Routes></MemoryRouter>);
 
     const manage = await screen.findByRole('button', { name: 'Manage graph' });
@@ -851,6 +853,10 @@ describe('Factory interactions', () => {
     expect(screen.getByLabelText('Work title')).toHaveValue('Plan');
     await user.selectOptions(screen.getByLabelText('Graph action'), 'link');
     expect(screen.getByRole('option', { name: 'Work Epic epic-2: Review (epic-2.1)' })).toBeInTheDocument();
+		expect(screen.getByRole('option', { name: 'Merge gated' })).toBeInTheDocument();
+		await user.selectOptions(screen.getByLabelText('Dependency type'), 'merge_gated');
+		expect(screen.getByRole('option', { name: 'Work Epic epic-2: SDK delivery (epic-2.2)' })).toBeInTheDocument();
+		expect(screen.queryByRole('option', { name: 'Work Epic epic-2: Review (epic-2.1)' })).not.toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText('Graph action'), 'create');
     await user.type(screen.getByLabelText('Work title'), 'Implement controls');
     await user.type(screen.getByLabelText('Work description'), 'Keyboard accessible');

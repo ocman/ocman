@@ -721,6 +721,10 @@ type nativeReopenStore interface {
 type nativeMutationStore interface {
 	MutateFactoryGraph(context.Context, GraphMutation) error
 }
+type nativeMergeGateStore interface {
+	ListFactoryMergeGateDeliveries(context.Context, time.Time, int) ([]model.FactoryDeliveryObservation, error)
+	RecordFactoryDeliveryObservation(context.Context, model.FactoryDeliveryObservation) error
+}
 type nativeCommentStore interface {
 	AppendFactoryIssueComment(context.Context, string, string, string, string, time.Time) (model.NativeIssueComment, error)
 	ListFactoryIssueComments(context.Context, string, string) ([]model.NativeIssueComment, error)
@@ -748,6 +752,7 @@ type NativeService struct {
 	recoveryMu        sync.Mutex
 	authorityMu       sync.Mutex
 	projectRequestMu  sync.Mutex
+	mergeGateMu       sync.Mutex
 	startOnce         sync.Once
 	closeOnce         sync.Once
 	dispatchWG        sync.WaitGroup
@@ -778,9 +783,12 @@ type ImplementationLauncher interface {
 	RespondImplementationPermission(context.Context, PlanningSession, string, string) error
 	ResolveImplementationBranch(context.Context, string, string, string, model.FactoryAttemptPolicy) (string, string, error)
 	ValidateImplementationHandoff(context.Context, string, string, string, string, model.FactoryAttemptPolicy) error
+	ObserveImplementationDelivery(context.Context, string, model.FactoryAttemptPolicy) (string, string, error)
 }
 
 const maxCapacity = 1000
+
+var factoryMergeGatePollInterval = 30 * time.Second
 
 type CapacityPolicy = model.FactoryCapacityPolicy
 
@@ -1937,6 +1945,9 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 	if err := s.reconcileImplementationSessions(ctx, store); err != nil {
 		return err
 	}
+	if err := s.observeMergeGates(ctx); err != nil {
+		return err
+	}
 	if delays, ok := s.store.(nativeDelayStore); ok {
 		if err := delays.WakeFactoryRetries(ctx, time.Now()); err != nil {
 			return err
@@ -2050,6 +2061,47 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 			_ = s.implementation.StopImplementationSession(context.WithoutCancel(ctx), session)
 			_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "prompt_failed", Message: "Implementation Session could not be prompted"}, time.Now())
 		}
+	}
+	return nil
+}
+
+func (s *NativeService) observeMergeGates(ctx context.Context) error {
+	s.mergeGateMu.Lock()
+	defer s.mergeGateMu.Unlock()
+	store, ok := s.store.(nativeMergeGateStore)
+	if !ok {
+		return nil
+	}
+	observations, err := store.ListFactoryMergeGateDeliveries(ctx, time.Now().Add(-factoryMergeGatePollInterval), 8)
+	if err != nil {
+		return err
+	}
+	errs := make(chan error, len(observations))
+	var wg sync.WaitGroup
+	for _, observation := range observations {
+		wg.Add(1)
+		go func(observation model.FactoryDeliveryObservation) {
+			defer wg.Done()
+			observation.ObservedAt = time.Now().UnixMilli()
+			pollCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+			status, head, observeErr := s.implementation.ObserveImplementationDelivery(pollCtx, observation.PRURL, observation.Policy)
+			if observeErr != nil {
+				observation.Status, observation.Reason = "unavailable", "Forge could not verify the Project Delivery PR: "+observeErr.Error()
+			} else if head != observation.CommitSHA {
+				observation.Status, observation.Reason = "changed", "Project Delivery PR no longer points to its recorded commit. Restore or replace the PR."
+			} else {
+				observation.Status, observation.Reason = status, ""
+			}
+			if err := store.RecordFactoryDeliveryObservation(ctx, observation); err != nil {
+				errs <- err
+			}
+		}(observation)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		return err
 	}
 	return nil
 }
@@ -2464,8 +2516,8 @@ func (s *NativeService) SubmitScopePlan(ctx context.Context, req SubmitProposalR
 		return ProposalRevision{}, err
 	}
 	for _, node := range req.Manifest.Nodes {
-		if node.Requirement == "reference" {
-			return ProposalRevision{}, fmt.Errorf("%w: scope Plan cannot add reference work", ErrInvalidRequest)
+		if node.Requirement == "reference" || node.Type != "implementation" {
+			return ProposalRevision{}, fmt.Errorf("%w: scope Plan can only add implementation work", ErrInvalidRequest)
 		}
 	}
 	saved, err := store.ApplyFactoryScopePlan(ctx, proposal, req.AttemptID, req.AttemptToken, time.Now())
@@ -2587,7 +2639,7 @@ func validateProposalManifest(manifest ProposalManifest, epic model.NativeEpic, 
 	if manifest.EpicID != epic.ID || manifest.MolID != rootMolID || manifest.Project != epic.InitialProject {
 		return errors.New("proposal manifest scope does not match Epic")
 	}
-	keys, required := map[string]ManifestNode{}, 0
+	keys, deliveries, deliveryKeys, implementations, required := map[string]ManifestNode{}, map[string]bool{}, map[string]string{}, map[string]bool{}, 0
 	for _, node := range manifest.Nodes {
 		if _, exists := keys[node.Key]; !model.ValidNativeFormulaKey(node.Key) || exists {
 			return errors.New("proposal manifest keys must be unique and stable")
@@ -2599,15 +2651,33 @@ func validateProposalManifest(manifest ProposalManifest, epic model.NativeEpic, 
 		if node.Pinned && node.Requirement != "reference" {
 			return errors.New("only reference proposal nodes may be pinned")
 		}
-		if node.Type != "implementation" {
+		if node.Type != "implementation" && node.Type != "delivery" {
 			return errors.New("proposal manifest node type is invalid")
 		}
-		if node.Requirement == "required" {
+		if node.Type == "delivery" && (node.Requirement != "required" || node.Pinned || len(node.DependsOn) != 0) {
+			return errors.New("proposal delivery placeholder is invalid")
+		}
+		if node.Type == "delivery" && deliveries[node.Project] {
+			return errors.New("proposal has duplicate delivery placeholders for a project")
+		}
+		deliveries[node.Project] = node.Type == "delivery" || deliveries[node.Project]
+		if node.Type == "delivery" {
+			deliveryKeys[node.Project] = node.Key
+		}
+		if node.Type == "implementation" && node.Requirement == "required" {
 			required++
+		}
+		if node.Type == "implementation" && node.Requirement != "reference" {
+			implementations[node.Project] = true
 		}
 	}
 	if required == 0 {
 		return errors.New("proposal manifest requires at least one required implementation node")
+	}
+	for project, delivery := range deliveries {
+		if delivery && !implementations[project] {
+			return errors.New("proposal delivery placeholder requires implementation work in its project")
+		}
 	}
 	edges := append([]ManifestEdge(nil), manifest.Edges...)
 	for _, node := range manifest.Nodes {
@@ -2621,11 +2691,18 @@ func validateProposalManifest(manifest ProposalManifest, epic model.NativeEpic, 
 		from, fromExists := keys[edge.From]
 		to, toExists := keys[edge.To]
 		pair := edge.From + "\x00" + edge.To
-		if !fromExists || !toExists || from.Requirement == "reference" || to.Requirement == "reference" || (edge.Type != "blocks" && edge.Type != "on_failure") || seenEdges[pair] {
+		validType := edge.Type == "blocks" || edge.Type == "on_failure" || edge.Type == "merge_gated"
+		validDelivery := edge.Type == "merge_gated" && to.Type == "delivery" && from.Type == "implementation" && from.Project != to.Project
+		if !fromExists || !toExists || from.Requirement == "reference" || to.Requirement == "reference" || !validType || (edge.Type == "merge_gated" && !validDelivery) || (edge.Type != "merge_gated" && (from.Type == "delivery" || to.Type == "delivery")) || seenEdges[pair] {
 			return errors.New("proposal manifest dependency is invalid")
 		}
 		seenEdges[pair] = true
 		dependencies[edge.From] = append(dependencies[edge.From], edge.To)
+	}
+	for _, node := range manifest.Nodes {
+		if node.Type == "implementation" && node.Requirement == "required" && deliveryKeys[node.Project] != "" {
+			dependencies[deliveryKeys[node.Project]] = append(dependencies[deliveryKeys[node.Project]], node.Key)
+		}
 	}
 	visiting, visited := map[string]bool{}, map[string]bool{}
 	var visit func(string) error

@@ -552,6 +552,39 @@ func TestMigrateV85CreatesProjectRequestGates(t *testing.T) {
 	}
 }
 
+func TestMigrateV86AddsMergeGatesAndDeliveryObservations(t *testing.T) {
+	raw, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	if err := ensureSchemaVersionTable(raw); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := raw.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for version := 1; version <= 85; version++ {
+		if err := applyMigration(tx, version); err != nil {
+			t.Fatalf("apply migration v%d: %v", version, err)
+		}
+	}
+	if err := migrateToV86(tx); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var dependencySchema, observationSchema string
+	if err := raw.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'factory_issue_dependency'`).Scan(&dependencySchema); err != nil || !strings.Contains(dependencySchema, "merge_gated") {
+		t.Fatalf("dependency schema = %q, %v", dependencySchema, err)
+	}
+	if err := raw.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'factory_merge_gate_observation'`).Scan(&observationSchema); err != nil || !strings.Contains(observationSchema, "delivery_issue_id") {
+		t.Fatalf("observation schema = %q, %v", observationSchema, err)
+	}
+}
+
 // Gates created before v76 stored the work item they came out of but never wrote
 // the edge, leaving them stranded in the graph.
 func TestMigrateV76BackfillsGateEdgesToInterruptedWork(t *testing.T) {

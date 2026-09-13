@@ -126,6 +126,14 @@ describe('factoryGraphModel', () => {
     ]);
     expect(edges).toEqual([{ id: 'on_failure:a->b', source: 'a', target: 'b', kind: 'on_failure' }]);
   });
+
+  it('keeps merge-gated delivery edges distinct', () => {
+    const { edges } = factoryGraphModel([
+      issue({ id: 'delivery', kind: 'delivery', status: 'closed', outcome: 'succeeded' }),
+      issue({ id: 'app', dependsOn: [{ id: 'delivery', type: 'merge_gated' }] }),
+    ]);
+    expect(edges).toContainEqual({ id: 'merge_gated:delivery->app', source: 'delivery', target: 'app', kind: 'merge_gated' });
+  });
 });
 
 describe('proposalIssues', () => {

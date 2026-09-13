@@ -656,7 +656,7 @@ func deriveFactoryIssueDispatch(ctx context.Context, reader factoryIssueReader, 
 			delivered[issues[i].Project] = true
 		}
 	}
-	rows, err := reader.QueryContext(ctx, `SELECT d.issue_id, d.type, b.id, b.epic_id, b.kind, b.status, b.outcome, b.outcome_reason, COALESCE(g.resolution, '') FROM factory_issue_dependency d JOIN factory_issue b ON b.id = d.depends_on_issue_id LEFT JOIN factory_plan_gate g ON g.issue_id = b.id WHERE d.issue_id IN (SELECT id FROM factory_issue WHERE epic_id = ?) AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = b.id) ORDER BY d.issue_id, d.depends_on_issue_id`, epicID)
+	rows, err := reader.QueryContext(ctx, `SELECT d.issue_id, d.type, b.id, b.epic_id, b.kind, b.status, b.outcome, b.outcome_reason, COALESCE(g.resolution, ''), COALESCE(o.status, ''), COALESCE(o.reason, '') FROM factory_issue_dependency d JOIN factory_issue b ON b.id = d.depends_on_issue_id LEFT JOIN factory_plan_gate g ON g.issue_id = b.id LEFT JOIN factory_merge_gate_observation o ON o.delivery_issue_id = b.id WHERE d.issue_id IN (SELECT id FROM factory_issue WHERE epic_id = ?) AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = b.id) ORDER BY d.issue_id, d.depends_on_issue_id`, epicID)
 	if err != nil {
 		return nil, err
 	}
@@ -664,8 +664,8 @@ func deriveFactoryIssueDispatch(ctx context.Context, reader factoryIssueReader, 
 	waiting := map[string]bool{}
 	blocked := map[string]bool{}
 	for rows.Next() {
-		var issueID, edgeType, blockerID, blockerEpicID, kind, status, outcome, reason, resolution string
-		if err := rows.Scan(&issueID, &edgeType, &blockerID, &blockerEpicID, &kind, &status, &outcome, &reason, &resolution); err != nil {
+		var issueID, edgeType, blockerID, blockerEpicID, kind, status, outcome, reason, resolution, mergeStatus, mergeReason string
+		if err := rows.Scan(&issueID, &edgeType, &blockerID, &blockerEpicID, &kind, &status, &outcome, &reason, &resolution, &mergeStatus, &mergeReason); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -688,10 +688,32 @@ func deriveFactoryIssueDispatch(ctx context.Context, reader factoryIssueReader, 
 			}
 			if status == "closed" {
 				blocked[issueID] = true
-				issue.Blockers = append(issue.Blockers, model.NativeIssueBlocker{ID: blockerID, EpicID: blockerEpicID, Reason: reason, Outcome: outcome})
+				issue.Blockers = append(issue.Blockers, model.NativeIssueBlocker{ID: blockerID, EpicID: blockerEpicID, Type: edgeType, Reason: reason, Outcome: outcome})
 			} else {
 				waiting[issueID] = true
-				issue.Blockers = append(issue.Blockers, model.NativeIssueBlocker{ID: blockerID, EpicID: blockerEpicID, Reason: reason, Outcome: outcome})
+				issue.Blockers = append(issue.Blockers, model.NativeIssueBlocker{ID: blockerID, EpicID: blockerEpicID, Type: edgeType, Reason: reason, Outcome: outcome})
+			}
+		case "merge_gated":
+			if mergeStatus == "merged" {
+				continue
+			}
+			if mergeReason == "" {
+				switch mergeStatus {
+				case "closed":
+					mergeReason = "Project Delivery PR was closed without merge. Reopen or replace the PR."
+				case "open":
+					mergeReason = "Waiting for the Project Delivery PR to merge."
+				case "draft":
+					mergeReason = "Waiting for the draft Project Delivery PR to become ready and merge."
+				default:
+					mergeReason = "Waiting for the forge to verify the Project Delivery PR."
+				}
+			}
+			issue.Blockers = append(issue.Blockers, model.NativeIssueBlocker{ID: blockerID, EpicID: blockerEpicID, Type: edgeType, Reason: mergeReason, Outcome: mergeStatus})
+			if mergeStatus == "closed" || mergeStatus == "changed" {
+				blocked[issueID] = true
+			} else {
+				waiting[issueID] = true
 			}
 		default: // on_failure
 			if failed {
@@ -699,10 +721,10 @@ func deriveFactoryIssueDispatch(ctx context.Context, reader factoryIssueReader, 
 			}
 			if status == "closed" {
 				notApplicable[issueID] = true
-				issue.Blockers = append(issue.Blockers, model.NativeIssueBlocker{ID: blockerID, EpicID: blockerEpicID, Reason: reason, Outcome: outcome})
+				issue.Blockers = append(issue.Blockers, model.NativeIssueBlocker{ID: blockerID, EpicID: blockerEpicID, Type: edgeType, Reason: reason, Outcome: outcome})
 			} else {
 				waiting[issueID] = true
-				issue.Blockers = append(issue.Blockers, model.NativeIssueBlocker{ID: blockerID, EpicID: blockerEpicID, Reason: reason, Outcome: outcome})
+				issue.Blockers = append(issue.Blockers, model.NativeIssueBlocker{ID: blockerID, EpicID: blockerEpicID, Type: edgeType, Reason: reason, Outcome: outcome})
 			}
 		}
 	}
@@ -777,9 +799,9 @@ func (d *DB) MutateFactoryGraph(ctx context.Context, m model.GraphMutation) erro
 			return invalid(fmt.Sprintf("project target %q is not admitted to Epic %s", m.Project, m.EpicID))
 		}
 	}
-	project := m.Project
+	project, issueKind := m.Project, m.Kind
 	if m.Action != "create" {
-		if err := tx.QueryRowContext(ctx, `SELECT project_path FROM factory_issue WHERE id = ? AND epic_id = ?`, m.IssueID, m.EpicID).Scan(&project); err != nil {
+		if err := tx.QueryRowContext(ctx, `SELECT project_path, kind FROM factory_issue WHERE id = ? AND epic_id = ?`, m.IssueID, m.EpicID).Scan(&project, &issueKind); err != nil {
 			return invalid("factory issue is unavailable for structural mutation")
 		}
 	}
@@ -917,9 +939,18 @@ func (d *DB) MutateFactoryGraph(ctx context.Context, m model.GraphMutation) erro
 			if m.IssueID == m.DependsOnID {
 				return invalid("factory issue cannot depend on itself")
 			}
-			if _, err = openIssue(m.DependsOnID, false); err == nil {
+			var blockerKind, blockerProject string
+			if m.DependencyType == "merge_gated" {
+				err = tx.QueryRowContext(ctx, `SELECT kind, project_path FROM factory_issue WHERE id = ? AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = factory_issue.id)`, m.DependsOnID).Scan(&blockerKind, &blockerProject)
+				if err != nil || blockerKind != "delivery" || (issueKind != "implementation" && issueKind != "task") || project == blockerProject {
+					err = invalid("merge-gated dependency must target a Project Delivery")
+				}
+			} else {
+				_, err = openIssue(m.DependsOnID, false)
+			}
+			if err == nil {
 				var cycle bool
-				if m.DependencyType != "blocks" && m.DependencyType != "on_failure" {
+				if m.DependencyType != "blocks" && m.DependencyType != "on_failure" && m.DependencyType != "merge_gated" {
 					err = invalid("invalid Factory dependency type")
 				} else if cycle, err = factoryDependencyCycle(ctx, tx, m.IssueID, m.DependsOnID); err == nil && cycle {
 					err = invalid("factory dependency creates a cycle")
@@ -1219,6 +1250,7 @@ func (d *DB) ClaimFactoryImplementation(ctx context.Context, epicID, issueID, pr
 			AND NOT (
 				(d.type = 'blocks' AND b.status = 'closed' AND b.outcome = 'succeeded' AND (b.kind <> 'gate' OR g.resolution = 'approved'))
 				OR (d.type = 'on_failure' AND b.status = 'closed' AND ((b.kind <> 'gate' AND b.outcome = 'failed') OR (b.kind = 'gate' AND g.resolution = 'rejected')))
+				OR (d.type = 'merge_gated' AND b.kind = 'delivery' AND EXISTS (SELECT 1 FROM factory_merge_gate_observation o WHERE o.delivery_issue_id = b.id AND o.status = 'merged'))
 			)
 		)`, issueID, issueID, epicID).Scan(&kind, &status, &project); err != nil || (kind != "implementation" && kind != "task" && kind != "delivery") || status != "open" {
 		return model.NativeEpic{}, model.FactoryAttempt{}, errors.New("factory implementation issue is not ready")
@@ -1685,6 +1717,9 @@ func (d *DB) MaterializeFactoryPlan(ctx context.Context, epicID, issueID, profil
 		return model.NativeMaterialization{}, errors.New("factory approved Plan manifest is invalid")
 	}
 	executable := make([]int, 0, len(manifest.Nodes))
+	deliveries := make([]int, 0, len(manifest.Nodes))
+	deliveryProjects := map[string]bool{}
+	implementationProjects := map[string]bool{}
 	keys := make(map[string]int, len(manifest.Nodes))
 	required := 0
 	for i := range manifest.Nodes {
@@ -1699,19 +1734,32 @@ func (d *DB) MaterializeFactoryPlan(ctx context.Context, epicID, issueID, profil
 		if !model.ValidNativeFormulaKey(node.Key) {
 			return model.NativeMaterialization{}, errors.New("factory approved Plan manifest is invalid")
 		}
-		if _, exists := keys[node.Key]; exists || node.Type != "implementation" || (node.Requirement != "required" && node.Requirement != "optional" && node.Requirement != "reference") || (node.Pinned && node.Requirement != "reference") {
+		if _, exists := keys[node.Key]; exists || (node.Type != "implementation" && node.Type != "delivery") || (node.Requirement != "required" && node.Requirement != "optional" && node.Requirement != "reference") || (node.Pinned && node.Requirement != "reference") {
+			return model.NativeMaterialization{}, errors.New("factory approved Plan manifest is invalid")
+		}
+		if node.Type == "delivery" && (node.Requirement != "required" || node.Pinned || len(node.DependsOn) != 0 || deliveryProjects[node.Project]) {
 			return model.NativeMaterialization{}, errors.New("factory approved Plan manifest is invalid")
 		}
 		keys[node.Key] = len(keys)
-		if node.Requirement != "reference" {
+		if node.Type == "implementation" && node.Requirement != "reference" {
 			executable = append(executable, len(keys)-1)
+			implementationProjects[node.Project] = true
 		}
-		if node.Requirement == "required" {
+		if node.Type == "delivery" {
+			deliveries = append(deliveries, len(keys)-1)
+			deliveryProjects[node.Project] = true
+		}
+		if node.Type == "implementation" && node.Requirement == "required" {
 			required++
 		}
 	}
 	if required == 0 {
 		return model.NativeMaterialization{}, errors.New("factory approved Plan manifest is invalid")
+	}
+	for project := range deliveryProjects {
+		if !implementationProjects[project] {
+			return model.NativeMaterialization{}, errors.New("factory approved Plan manifest is invalid")
+		}
 	}
 	edges := manifest.Edges
 	for _, index := range executable {
@@ -1728,7 +1776,9 @@ func (d *DB) MaterializeFactoryPlan(ctx context.Context, epicID, issueID, profil
 		from, fromOK := keys[edge.From]
 		to, toOK := keys[edge.To]
 		pair := edge.From + "\x00" + edge.To
-		if !fromOK || !toOK || manifest.Nodes[from].Requirement == "reference" || manifest.Nodes[to].Requirement == "reference" || (edge.Type != "blocks" && edge.Type != "on_failure") || seenEdges[pair] {
+		validType := edge.Type == "blocks" || edge.Type == "on_failure" || edge.Type == "merge_gated"
+		validDelivery := fromOK && toOK && edge.Type == "merge_gated" && manifest.Nodes[from].Type == "implementation" && manifest.Nodes[to].Type == "delivery" && manifest.Nodes[from].Project != manifest.Nodes[to].Project
+		if !fromOK || !toOK || manifest.Nodes[from].Requirement == "reference" || manifest.Nodes[to].Requirement == "reference" || !validType || (edge.Type == "merge_gated" && !validDelivery) || (edge.Type != "merge_gated" && (manifest.Nodes[from].Type == "delivery" || manifest.Nodes[to].Type == "delivery")) || seenEdges[pair] {
 			return model.NativeMaterialization{}, errors.New("factory approved Plan manifest is invalid")
 		}
 		seenEdges[pair] = true
@@ -1742,13 +1792,28 @@ func (d *DB) MaterializeFactoryPlan(ctx context.Context, epicID, issueID, profil
 		return model.NativeMaterialization{}, err
 	}
 	now := at.UnixMilli()
-	implementationIDs := make(map[string]string, len(executable))
-	for _, index := range executable {
+	issueIDs := make(map[string]string, len(executable)+len(deliveries))
+	reusedDeliveries := map[string]bool{}
+	for _, index := range append(executable, deliveries...) {
+		if manifest.Nodes[index].Type == "delivery" {
+			var existingID, status, outcome string
+			err := tx.QueryRowContext(ctx, `SELECT id, status, outcome FROM factory_issue WHERE epic_id = ? AND project_path = ? AND kind = 'delivery' AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = factory_issue.id) ORDER BY created_at LIMIT 1`, epicID, manifest.Nodes[index].Project).Scan(&existingID, &status, &outcome)
+			if err == nil {
+				if status == "in_progress" || (status == "closed" && outcome == "succeeded") {
+					return model.NativeMaterialization{}, errors.New("factory approved Plan cannot replace a started Project Delivery")
+				}
+				issueIDs[manifest.Nodes[index].Key], reusedDeliveries[existingID] = existingID, true
+				continue
+			}
+			if !errors.Is(err, sql.ErrNoRows) {
+				return model.NativeMaterialization{}, err
+			}
+		}
 		implementationID, err := factoryChildID(ctx, tx, proposal.MolID)
 		if err != nil {
 			return model.NativeMaterialization{}, err
 		}
-		implementationIDs[manifest.Nodes[index].Key] = implementationID
+		issueIDs[manifest.Nodes[index].Key] = implementationID
 	}
 	var active int
 	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM factory_materialization m JOIN factory_materialization_provenance p ON p.materialization_id = m.id AND p.entity_kind = 'issue' JOIN factory_issue i ON i.id = p.entity_id WHERE m.epic_id = ? AND i.status = 'in_progress' AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = i.id)`, epicID).Scan(&active); err != nil {
@@ -1760,19 +1825,19 @@ func (d *DB) MaterializeFactoryPlan(ctx context.Context, epicID, issueID, profil
 	// Superseded implementations take their descendants with them; an orphan
 	// whose parent is removed would break the requirement walk in listings.
 	if _, err := tx.ExecContext(ctx, `WITH RECURSIVE superseded(id) AS (
-			SELECT p.entity_id FROM factory_materialization m JOIN factory_materialization_provenance p ON p.materialization_id = m.id AND p.entity_kind = 'issue' WHERE m.epic_id = ?
-			UNION ALL SELECT h.child_issue_id FROM factory_issue_hierarchy h JOIN superseded s ON h.parent_issue_id = s.id)
+			SELECT p.entity_id FROM factory_materialization m JOIN factory_materialization_provenance p ON p.materialization_id = m.id AND p.entity_kind = 'issue' JOIN factory_issue i ON i.id = p.entity_id AND i.kind <> 'delivery' WHERE m.epic_id = ?
+			UNION ALL SELECT h.child_issue_id FROM factory_issue_hierarchy h JOIN superseded s ON h.parent_issue_id = s.id JOIN factory_issue child ON child.id = h.child_issue_id AND child.kind <> 'delivery')
 		INSERT INTO factory_removed_issue (issue_id, plan_id, plan_revision, removed_at)
 		SELECT id, ?, ?, ? FROM superseded WHERE true
 		ON CONFLICT(issue_id) DO NOTHING`, epicID, epicID, proposal.Revision, now); err != nil {
 		return model.NativeMaterialization{}, fmt.Errorf("removing superseded Factory implementation: %w", err)
 	}
 	primary := manifest.Nodes[executable[0]]
-	primaryID := implementationIDs[primary.Key]
+	primaryID := issueIDs[primary.Key]
 	result := model.NativeMaterialization{ID: id, EpicID: epicID, IssueID: issueID, ProposalRevision: proposal.Revision, ProposalHash: proposal.ContentHash, ManifestKey: primary.Key, ImplementationID: primaryID}
 	for _, index := range executable {
 		node := manifest.Nodes[index]
-		implementationID := implementationIDs[node.Key]
+		implementationID := issueIDs[node.Key]
 		title, description := strings.TrimSpace(node.Title), strings.TrimSpace(node.Description)
 		if title == "" {
 			title = "Implementation: " + goal
@@ -1795,21 +1860,64 @@ func (d *DB) MaterializeFactoryPlan(ctx context.Context, epicID, issueID, profil
 		}
 		result.Issues = append(result.Issues, model.NativeMaterializedIssue{ManifestKey: node.Key, IssueID: implementationID})
 	}
+	for _, index := range deliveries {
+		node := manifest.Nodes[index]
+		deliveryID := issueIDs[node.Key]
+		title := strings.TrimSpace(node.Title)
+		if title == "" {
+			title = "Deliver the completed work"
+		}
+		if reusedDeliveries[deliveryID] {
+			if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET title = ?, description = ?, status = 'open', outcome = '', outcome_reason = '', retry_at = 0, retry_attempts = 0 WHERE id = ?`, title, strings.TrimSpace(node.Description), deliveryID); err != nil {
+				return model.NativeMaterialization{}, fmt.Errorf("reusing Factory delivery: %w", err)
+			}
+			var parentID string
+			if err := tx.QueryRowContext(ctx, `SELECT parent_issue_id FROM factory_issue_hierarchy WHERE child_issue_id = ?`, deliveryID).Scan(&parentID); err != nil {
+				return model.NativeMaterialization{}, err
+			}
+			if parentID != proposal.MolID {
+				indexedID, err := factoryChildID(ctx, tx, proposal.MolID)
+				if err != nil {
+					return model.NativeMaterialization{}, err
+				}
+				index, _ := factoryChildIndex(indexedID)
+				if _, err := tx.ExecContext(ctx, `DELETE FROM factory_issue_hierarchy WHERE child_issue_id = ?`, deliveryID); err != nil {
+					return model.NativeMaterialization{}, err
+				}
+				if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue_hierarchy (parent_issue_id, child_issue_id, child_index, requirement) VALUES (?, ?, ?, 'required')`, proposal.MolID, deliveryID, index); err != nil {
+					return model.NativeMaterialization{}, err
+				}
+			}
+			result.Issues = append(result.Issues, model.NativeMaterializedIssue{ManifestKey: node.Key, IssueID: deliveryID})
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue (id, epic_id, project_path, kind, title, description, status, created_at) VALUES (?, ?, ?, 'delivery', ?, ?, 'open', ?)`, deliveryID, epicID, node.Project, title, strings.TrimSpace(node.Description), now); err != nil {
+			return model.NativeMaterialization{}, fmt.Errorf("creating Factory delivery: %w", err)
+		}
+		index, _ := factoryChildIndex(deliveryID)
+		if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue_hierarchy (parent_issue_id, child_issue_id, child_index, requirement) VALUES (?, ?, ?, 'required')`, proposal.MolID, deliveryID, index); err != nil {
+			return model.NativeMaterialization{}, fmt.Errorf("adding Factory delivery closure: %w", err)
+		}
+		result.Issues = append(result.Issues, model.NativeMaterializedIssue{ManifestKey: node.Key, IssueID: deliveryID})
+	}
 	for _, edge := range edges {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue_dependency (issue_id, depends_on_issue_id, type) VALUES (?, ?, ?)`, implementationIDs[edge.From], implementationIDs[edge.To], edge.Type); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue_dependency (issue_id, depends_on_issue_id, type) VALUES (?, ?, ?)`, issueIDs[edge.From], issueIDs[edge.To], edge.Type); err != nil {
 			return model.NativeMaterialization{}, fmt.Errorf("adding Factory implementation dependency: %w", err)
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_materialization (id, epic_id, issue_id, proposal_revision, proposal_hash, manifest_key, profile, implementation_issue_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, epicID, issueID, proposal.Revision, proposal.ContentHash, primary.Key, profile, primaryID, now); err != nil {
 		return model.NativeMaterialization{}, fmt.Errorf("recording Factory materialization: %w", err)
 	}
-	for _, index := range executable {
+	for _, index := range append(executable, deliveries...) {
 		node := manifest.Nodes[index]
-		implementationID := implementationIDs[node.Key]
-		entities := []struct{ kind, id string }{{"issue", implementationID}, {"hierarchy", proposal.MolID + "\x00" + implementationID}, {"dependency", implementationID + "\x00" + issueID}}
+		implementationID := issueIDs[node.Key]
+		entities := []struct{ kind, id string }{{"issue", implementationID}, {"hierarchy", proposal.MolID + "\x00" + implementationID}}
+		if node.Type == "implementation" {
+			entities = append(entities, struct{ kind, id string }{"dependency", implementationID + "\x00" + issueID})
+		}
 		for _, edge := range edges {
 			if edge.From == node.Key {
-				entities = append(entities, struct{ kind, id string }{"dependency", implementationID + "\x00" + implementationIDs[edge.To]})
+				entities = append(entities, struct{ kind, id string }{"dependency", implementationID + "\x00" + issueIDs[edge.To]})
 			}
 		}
 		for _, entity := range entities {

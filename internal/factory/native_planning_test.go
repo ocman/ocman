@@ -449,6 +449,45 @@ func TestNativeProposalAcceptsMultipleImplementationIssuesAndRejectsDependencyCy
 	}
 }
 
+func TestNativeProposalMergeGateRequiresDeliveryPlaceholder(t *testing.T) {
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	svc := NewNativeWithPlanning(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/sdk": "/sdk"}}, &fakePlanningLauncher{})
+	epic, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Merge gate", InitialProject: "/repo", AcknowledgeLocalExecution: true, Projects: []ProjectAdmission{{Path: "/sdk", AcknowledgeLocalExecution: true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Pour(t.Context(), epic.ID); err != nil {
+		t.Fatal(err)
+	}
+	manifest := ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{
+		{Key: "sdk", Type: "implementation", Requirement: "required", Project: "/sdk"},
+		{Key: "sdk-delivery", Type: "delivery", Requirement: "required", Project: "/sdk"},
+		{Key: "app", Type: "implementation", Requirement: "required", Project: "/repo"},
+	}, Edges: []ManifestEdge{{From: "app", To: "sdk-delivery", Type: "merge_gated"}}}
+	if _, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest}); err != nil {
+		t.Fatalf("delivery merge gate rejected: %v", err)
+	}
+	manifest.Edges[0].To = "sdk"
+	if _, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest}); err == nil {
+		t.Fatal("merge gate targeting implementation was accepted")
+	}
+	manifest.Edges[0].To = "sdk-delivery"
+	manifest.Nodes[2].Project = "/sdk"
+	if _, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest}); err == nil {
+		t.Fatal("same-project merge gate was accepted")
+	}
+	manifest.Nodes = append(manifest.Nodes, ManifestNode{Key: "app-delivery", Type: "delivery", Requirement: "required", Project: "/repo"})
+	manifest.Nodes[2].Project = "/repo"
+	manifest.Edges = []ManifestEdge{{From: "app", To: "sdk-delivery", Type: "merge_gated"}, {From: "sdk", To: "app-delivery", Type: "merge_gated"}}
+	if _, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest}); err == nil {
+		t.Fatal("reciprocal project merge gates were accepted")
+	}
+}
+
 // A Planning Session proves it owns an Epic with the attempt token minted at
 // claim time; a token from another Epic (or a forged one) cannot reset that
 // Epic's approval by submitting a proposal for it.

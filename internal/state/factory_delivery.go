@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"sort"
 	"strconv"
@@ -10,6 +11,45 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/factory/model"
 )
+
+func (d *DB) ListFactoryMergeGateDeliveries(ctx context.Context, observedBefore time.Time, limit int) ([]model.FactoryDeliveryObservation, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT delivery.id, a.id,
+		json_extract(a.result_json, '$.prUrl'), json_extract(a.result_json, '$.commitSha'), a.frozen_policy_json
+		FROM factory_issue_dependency dependency
+		JOIN factory_issue delivery ON delivery.id = dependency.depends_on_issue_id AND delivery.kind = 'delivery'
+		JOIN factory_attempt a ON a.work_item_id = delivery.id AND a.terminal_outcome = 'succeeded'
+		LEFT JOIN factory_merge_gate_observation observation ON observation.delivery_issue_id = delivery.id
+		WHERE dependency.type = 'merge_gated' AND json_extract(a.result_json, '$.prUrl') <> ''
+		AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id IN (dependency.issue_id, delivery.id))
+		AND (observation.delivery_issue_id IS NULL OR (observation.status <> 'merged' AND observation.observed_at <= ?))
+		AND NOT EXISTS (SELECT 1 FROM factory_attempt newer WHERE newer.work_item_id = delivery.id AND newer.terminal_outcome = 'succeeded' AND (newer.finished_at > a.finished_at OR (newer.finished_at = a.finished_at AND newer.rowid > a.rowid)))
+		GROUP BY delivery.id ORDER BY delivery.created_at LIMIT ?`, observedBefore.UnixMilli(), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var observations []model.FactoryDeliveryObservation
+	for rows.Next() {
+		var observation model.FactoryDeliveryObservation
+		var policyJSON string
+		if err := rows.Scan(&observation.DeliveryIssueID, &observation.AttemptID, &observation.PRURL, &observation.CommitSHA, &policyJSON); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(policyJSON), &observation.Policy); err != nil {
+			return nil, err
+		}
+		observations = append(observations, observation)
+	}
+	return observations, rows.Err()
+}
+
+func (d *DB) RecordFactoryDeliveryObservation(ctx context.Context, observation model.FactoryDeliveryObservation) error {
+	_, err := d.db.ExecContext(ctx, `INSERT INTO factory_merge_gate_observation (delivery_issue_id, attempt_id, pr_url, commit_sha, status, reason, observed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(delivery_issue_id) DO UPDATE SET attempt_id = excluded.attempt_id, pr_url = excluded.pr_url, commit_sha = excluded.commit_sha, status = excluded.status, reason = excluded.reason, observed_at = excluded.observed_at
+		WHERE factory_merge_gate_observation.status <> 'merged' AND factory_merge_gate_observation.observed_at <= excluded.observed_at`, observation.DeliveryIssueID, observation.AttemptID, observation.PRURL, observation.CommitSHA, observation.Status, observation.Reason, observation.ObservedAt)
+	return err
+}
 
 func (d *DB) FactoryAttemptHasRecoveryResponse(ctx context.Context, attemptID, response string) (bool, error) {
 	var found int

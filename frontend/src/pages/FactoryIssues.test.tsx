@@ -25,7 +25,7 @@ beforeEach(() => {
   vi.mocked(useFactoryGraphIssues).mockReturnValue([{
     data: [
 			{ id: 'fac-1', epicId: 'epic-1', project: '/other', kind: 'task', title: 'Prepare issue data', status: 'open', createdAt: 1_700_000_000_000 },
-		{ id: 'fac-42', epicId: 'epic-1', project: '/repo', kind: 'implementation', title: 'Add issue drawer', status: 'closed', description: 'Show the full ticket.', conclusion: 'Rendered and tested.', prUrl: 'https://forge.example/pulls/1', parentId: 'fac-1', blockers: [{ id: 'fac-1', epicId: 'epic-1', reason: '', outcome: '' }] },
+		{ id: 'fac-42', epicId: 'epic-1', project: '/repo', kind: 'implementation', title: 'Add issue drawer', status: 'closed', description: 'Show the full ticket.', conclusion: 'Rendered and tested.', prUrl: 'https://forge.example/pulls/1', parentId: 'fac-1', blockers: [{ id: 'fac-1', epicId: 'epic-1', type: 'merge_gated', reason: 'Waiting for merge', outcome: 'open' }] },
     ],
     isLoading: false,
     isError: false,
@@ -67,6 +67,7 @@ it('shows a ticket list and opens issue details in a drawer', async () => {
 	expect(drawer).toHaveTextContent('Ready for review.');
   expect(drawer).toHaveTextContent('Parentfac-1');
   expect(drawer).toHaveTextContent('Blocked by');
+	expect(drawer).toHaveTextContent('merge gate on fac-1: Waiting for merge');
   const blocker = screen.getByRole('link', { name: 'fac-1' });
 	expect(blocker).toHaveAttribute('href', '/factory/issues/fac-1');
 	await user.type(screen.getByLabelText('Add comment'), 'Looks good');

@@ -137,6 +137,16 @@ func (l factoryImplementationLauncher) ValidateImplementationHandoff(ctx context
 	return errors.New("pull request does not publish the shared Factory branch HEAD")
 }
 
+func (l factoryImplementationLauncher) ObserveImplementationDelivery(ctx context.Context, prURL string, policy model.FactoryAttemptPolicy) (string, string, error) {
+	remote := forge.Remote{Type: forge.RemoteType(policy.DeliveryRemoteType), Host: policy.DeliveryRemoteHost, Repo: policy.DeliveryRemoteRepo}
+	client, ok := l.server.resolveForge(remote)
+	if !ok || remote.Repo == "" {
+		return "", "", errors.New("factory delivery target is unavailable")
+	}
+	pr, err := lookupFactoryPR(ctx, client, remote.Repo, prURL)
+	return pr.Status, pr.HeadSHA, err
+}
+
 func (l factoryImplementationLauncher) ResolveImplementationBranch(ctx context.Context, repoRoot, branch, previousPRURL string, policy model.FactoryAttemptPolicy) (string, string, error) {
 	if previousPRURL == "" {
 		return branch, "", nil

@@ -18,7 +18,7 @@ export interface GraphEdge {
   id: string;
   source: string;
   target: string;
-  kind: 'hierarchy' | 'blocks' | 'on_failure' | 'interrupts';
+  kind: 'hierarchy' | 'blocks' | 'on_failure' | 'merge_gated' | 'interrupts';
 }
 
 const COLUMN = 260;
@@ -85,7 +85,7 @@ export function factoryGraphModel(issues: FactoryIssue[]): { nodes: GraphNode[];
     if (interrupted) add(visibleAncestor(interrupted), issue.id, 'interrupts');
     else add(visibleAncestor(issue.parentId), issue.id, 'hierarchy');
     for (const edge of issue.dependsOn ?? []) {
-      add(visibleAncestor(edge.id), issue.id, interrupted ? 'interrupts' : edge.type === 'on_failure' ? 'on_failure' : 'blocks');
+      add(visibleAncestor(edge.id), issue.id, interrupted ? 'interrupts' : edge.type === 'on_failure' ? 'on_failure' : edge.type === 'merge_gated' ? 'merge_gated' : 'blocks');
     }
   }
 

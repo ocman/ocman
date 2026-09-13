@@ -871,7 +871,7 @@ func TestFactoryMaterializesExplicitProposalEdges(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
 	ctx := context.Background()
-	epic, err := db.CreateFactoryEpic(ctx, "", "Ship", "Brief", "/repo", "explicit-edges", nativeTracerFormula(t))
+	epic, err := db.CreateFactoryEpicWithProjects(ctx, "", "Ship", "Brief", "/repo", "explicit-edges", nativeTracerFormula(t), []string{"/sdk"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -879,10 +879,11 @@ func TestFactoryMaterializesExplicitProposalEdges(t *testing.T) {
 	manifest, _ := json.Marshal(map[string]any{
 		"epicId": epic.ID, "molId": molID, "project": "/repo",
 		"nodes": []map[string]any{
-			{"key": "backend", "type": "implementation", "requirement": "required"},
+			{"key": "backend", "type": "implementation", "requirement": "required", "project": "/sdk"},
+			{"key": "sdk-delivery", "type": "delivery", "requirement": "required", "project": "/sdk"},
 			{"key": "frontend", "type": "implementation", "requirement": "required"},
 		},
-		"edges": []map[string]string{{"from": "frontend", "to": "backend", "type": "on_failure"}},
+		"edges": []map[string]string{{"from": "frontend", "to": "backend", "type": "on_failure"}, {"from": "frontend", "to": "sdk-delivery", "type": "merge_gated"}},
 	})
 	proposal, err := db.SaveFactoryProposalRevision(ctx, model.NativeProposalRevision{EpicID: epic.ID, MolID: molID, Project: "/repo", ManifestJSON: string(manifest), ContentHash: "explicit-edges"})
 	if err != nil {
@@ -904,6 +905,10 @@ func TestFactoryMaterializesExplicitProposalEdges(t *testing.T) {
 	if err != nil || edgeType != "on_failure" {
 		t.Fatalf("explicit edge = %q, %v", edgeType, err)
 	}
+	err = db.db.QueryRow(`SELECT d.type FROM factory_issue_dependency d JOIN factory_issue delivery ON delivery.id = d.depends_on_issue_id WHERE d.issue_id = ? AND delivery.kind = 'delivery'`, byKey["frontend"]).Scan(&edgeType)
+	if err != nil || edgeType != "merge_gated" || byKey["sdk-delivery"] == "" {
+		t.Fatalf("materialized merge gate = %q, %v, issues %#v", edgeType, err, byKey)
+	}
 }
 
 // Re-materializing an Epic supersedes its previous implementation. Work the
@@ -918,8 +923,12 @@ func TestFactoryRematerializationRemovesSupersededDescendants(t *testing.T) {
 		t.Fatal(err)
 	}
 	mol, materialization := factoryIssueID(t, db, epic.ID, "mol"), factoryIssueID(t, db, epic.ID, "materialization")
-	approveAndMaterialize := func(hash string) model.NativeMaterialization {
-		manifest, _ := json.Marshal(map[string]any{"epicId": epic.ID, "molId": mol, "project": "/repo", "nodes": []map[string]string{{"key": "implement", "type": "implementation", "requirement": "required"}}})
+	approveAndMaterialize := func(hash string, delivery bool) model.NativeMaterialization {
+		nodes := []map[string]string{{"key": "implement", "type": "implementation", "requirement": "required"}}
+		if delivery {
+			nodes = append(nodes, map[string]string{"key": "delivery", "type": "delivery", "requirement": "required"})
+		}
+		manifest, _ := json.Marshal(map[string]any{"epicId": epic.ID, "molId": mol, "project": "/repo", "nodes": nodes})
 		proposal, err := db.SaveFactoryProposalRevision(ctx, model.NativeProposalRevision{EpicID: epic.ID, MolID: mol, Project: "/repo", ManifestJSON: string(manifest), ContentHash: hash})
 		if err != nil {
 			t.Fatal(err)
@@ -933,13 +942,20 @@ func TestFactoryRematerializationRemovesSupersededDescendants(t *testing.T) {
 		}
 		return result
 	}
-	first := approveAndMaterialize("first")
+	first := approveAndMaterialize("first", false)
 	if err := db.MutateFactoryGraph(ctx, model.GraphMutation{Action: "create", EpicID: epic.ID, ParentID: first.ImplementationID, Kind: "task", Title: "Follow-up"}); err != nil {
 		t.Fatal(err)
 	}
-	second := approveAndMaterialize("second")
+	if err := db.EnsureFactoryDeliveryIssue(ctx, epic.ID); err != nil {
+		t.Fatal(err)
+	}
+	originalDelivery := factoryIssueID(t, db, epic.ID, "delivery")
+	second := approveAndMaterialize("second", true)
 	if second.ImplementationID == first.ImplementationID {
 		t.Fatalf("second materialization reused implementation %s", first.ImplementationID)
+	}
+	if len(second.Issues) != 2 || second.Issues[1].IssueID != originalDelivery {
+		t.Fatalf("materialization did not reuse delivery %s: %#v", originalDelivery, second.Issues)
 	}
 	issues, err := db.ListFactoryIssues(ctx, epic.ID)
 	if err != nil {

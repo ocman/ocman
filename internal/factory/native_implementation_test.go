@@ -45,6 +45,10 @@ type fakeImplementationLauncher struct {
 	handoffRepo    string
 	handoffBranch  string
 	handoffPolicy  model.FactoryAttemptPolicy
+	observation    string
+	observationSHA string
+	observationErr error
+	observations   int
 }
 
 type deliveryMutationStore struct {
@@ -357,6 +361,88 @@ func (f *fakeImplementationLauncher) ValidateImplementationHandoff(_ context.Con
 		return f.prErr
 	}
 	return f.handoffErr
+}
+
+func (f *fakeImplementationLauncher) ObserveImplementationDelivery(context.Context, string, model.FactoryAttemptPolicy) (string, string, error) {
+	f.observations++
+	return f.observation, f.observationSHA, f.observationErr
+}
+
+func TestMergeGatePollsForgeAndUnblocksAfterMerge(t *testing.T) {
+	previousInterval := factoryMergeGatePollInterval
+	factoryMergeGatePollInterval = 0
+	defer func() { factoryMergeGatePollInterval = previousInterval }()
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	launcher := &fakeImplementationLauncher{store: db, observation: "open", observationSHA: "abc123"}
+	svc := NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/app": "/app", "/sdk": "/sdk"}}, &fakePlanningLauncher{}, launcher)
+	epic, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Merge gate", InitialProject: "/app", AcknowledgeLocalExecution: true, Projects: []ProjectAdmission{{Path: "/sdk", AcknowledgeLocalExecution: true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Pour(t.Context(), epic.ID); err != nil {
+		t.Fatal(err)
+	}
+	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/app", Nodes: []ManifestNode{
+		{Key: "sdk", Type: "implementation", Requirement: "required", Project: "/sdk"},
+		{Key: "sdk-delivery", Type: "delivery", Requirement: "required", Project: "/sdk"},
+		{Key: "app", Type: "implementation", Requirement: "required", Project: "/app"},
+	}, Edges: []ManifestEdge{{From: "app", To: "sdk-delivery", Type: "merge_gated"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
+		t.Fatal(err)
+	}
+	if len(launcher.calls) != 1 || launcher.calls[0].Repository != "/sdk" || launcher.calls[0].Delivery {
+		t.Fatalf("first launch = %#v", launcher.calls)
+	}
+	if err := svc.CompleteAttempt(t.Context(), launcher.calls[0].AttemptID, launcher.calls[0].AgentToken, "SDK", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Dispatch(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	delivery := launcher.calls[1]
+	if !delivery.Delivery || delivery.Repository != "/sdk" {
+		t.Fatalf("delivery = %#v", delivery)
+	}
+	if err := svc.CompleteAttempt(t.Context(), delivery.AttemptID, delivery.AgentToken, "Delivered SDK", "https://forge.example/pulls/1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Dispatch(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if launcher.observations != 1 || len(launcher.calls) != 2 {
+		t.Fatalf("open observation launched downstream: observations=%d calls=%#v", launcher.observations, launcher.calls)
+	}
+	launcher.observationSHA = "different"
+	if err := svc.Dispatch(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	issues, err := svc.ListIssues(t.Context(), epic.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, issue := range issues {
+		if issue.Project == "/app" && issue.Kind == "implementation" && (issue.DispatchState != "terminally_blocked" || len(issue.Blockers) != 1 || issue.Blockers[0].Outcome != "changed") {
+			t.Fatalf("changed delivery commit did not block downstream: %#v", issue)
+		}
+	}
+	if launcher.observations != 2 || len(launcher.calls) != 2 {
+		t.Fatalf("changed commit launched downstream: observations=%d calls=%#v", launcher.observations, launcher.calls)
+	}
+	launcher.observationSHA = "abc123"
+	launcher.observation = "merged"
+	if err := svc.Dispatch(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if launcher.observations != 3 || len(launcher.calls) != 3 || launcher.calls[2].Repository != "/app" {
+		t.Fatalf("merged observation did not launch downstream: observations=%d calls=%#v", launcher.observations, launcher.calls)
+	}
 }
 
 func TestProjectDeliveryValidatesItsRecordedIdentity(t *testing.T) {

@@ -1,6 +1,7 @@
 package state
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -72,6 +73,135 @@ func TestFactoryDeliveryTracksRequiredGraph(t *testing.T) {
 	}
 	if err := db.ReopenFactoryIssue(ctx, epic.ID, delivery); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestFactoryMergeGateUsesForgeObservation(t *testing.T) {
+	for _, tt := range []struct {
+		status, want string
+	}{
+		{"merged", "ready"},
+		{"open", "waiting"},
+		{"draft", "waiting"},
+		{"closed", "terminally_blocked"},
+		{"unavailable", "waiting"},
+	} {
+		t.Run(tt.status, func(t *testing.T) {
+			db := openTestStateDB(t)
+			defer db.Close()
+			ctx := t.Context()
+			epic, err := db.CreateFactoryEpicWithProjects(ctx, "", "Merge gate", "", "/app", "", nativeTracerFormula(t), []string{"/sdk"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			mol := factoryIssueID(t, db, epic.ID, "mol")
+			for _, mutation := range []model.GraphMutation{
+				{Action: "create", EpicID: epic.ID, ParentID: mol, Kind: "task", Title: "SDK", Project: "/sdk"},
+				{Action: "create", EpicID: epic.ID, ParentID: mol, Kind: "task", Title: "App", Project: "/app"},
+			} {
+				if err := db.MutateFactoryGraph(ctx, mutation); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := db.EnsureFactoryDeliveryIssue(ctx, epic.ID); err != nil {
+				t.Fatal(err)
+			}
+			issues, _ := db.ListFactoryIssues(ctx, epic.ID)
+			var deliveryID, appID, sdkID string
+			for _, issue := range issues {
+				if issue.Kind == "delivery" && issue.Project == "/sdk" {
+					deliveryID = issue.ID
+				}
+				if issue.Title == "App" {
+					appID = issue.ID
+				}
+				if issue.Title == "SDK" {
+					sdkID = issue.ID
+				}
+			}
+			if err := db.MutateFactoryGraph(ctx, model.GraphMutation{Action: "link", EpicID: epic.ID, IssueID: sdkID, DependsOnID: deliveryID, DependencyType: "merge_gated"}); err == nil {
+				t.Fatal("same-project merge gate was accepted")
+			}
+			if err := db.MutateFactoryGraph(ctx, model.GraphMutation{Action: "link", EpicID: epic.ID, IssueID: appID, DependsOnID: deliveryID, DependencyType: "merge_gated"}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.db.Exec(`UPDATE factory_issue SET status = 'closed', outcome = 'succeeded' WHERE id = ?`, deliveryID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.db.Exec(`INSERT INTO factory_attempt (id, epic_id, work_item_id, sequence, phase, terminal_outcome, frozen_policy_json, result_json, created_at, updated_at, finished_at) VALUES ('delivery-attempt', ?, ?, 1, 'terminal', 'succeeded', '{"repository":"/sdk","profile":"factory-implement/v1"}', '{"prUrl":"https://forge.example/pulls/1","commitSha":"abc"}', 1, 1, 1)`, epic.ID, deliveryID); err != nil {
+				t.Fatal(err)
+			}
+			reason := ""
+			if tt.status == "unavailable" {
+				reason = "Forge could not verify the Project Delivery PR"
+			}
+			if err := db.RecordFactoryDeliveryObservation(ctx, model.FactoryDeliveryObservation{DeliveryIssueID: deliveryID, AttemptID: "delivery-attempt", PRURL: "https://forge.example/pulls/1", CommitSHA: "abc", Status: tt.status, Reason: reason, ObservedAt: time.Now().UnixMilli()}); err != nil {
+				t.Fatal(err)
+			}
+			if tt.status == "merged" {
+				if err := db.RecordFactoryDeliveryObservation(ctx, model.FactoryDeliveryObservation{DeliveryIssueID: deliveryID, AttemptID: "delivery-attempt", PRURL: "https://forge.example/pulls/1", CommitSHA: "abc", Status: "open", ObservedAt: 1}); err != nil {
+					t.Fatal(err)
+				}
+				var status string
+				if err := db.db.QueryRow(`SELECT status FROM factory_merge_gate_observation WHERE delivery_issue_id = ?`, deliveryID).Scan(&status); err != nil || status != "merged" {
+					t.Fatalf("merged observation regressed to %q, %v", status, err)
+				}
+			}
+			if err := db.RecordFactoryDeliveryObservation(ctx, model.FactoryDeliveryObservation{DeliveryIssueID: deliveryID, AttemptID: "delivery-attempt", PRURL: "https://forge.example/pulls/1", CommitSHA: "abc", Status: tt.status, Reason: reason, ObservedAt: time.Now().UnixMilli()}); err != nil {
+				t.Fatal(err)
+			}
+			var observationCount int
+			if err := db.db.QueryRow(`SELECT count(*) FROM factory_merge_gate_observation WHERE delivery_issue_id = ?`, deliveryID).Scan(&observationCount); err != nil || observationCount != 1 {
+				t.Fatalf("observation count = %d, %v", observationCount, err)
+			}
+			pending, err := db.ListFactoryMergeGateDeliveries(ctx, time.Now().Add(-30*time.Second), 8)
+			if err != nil || (tt.status != "merged" && len(pending) != 0) {
+				t.Fatalf("throttled observations = %#v, %v", pending, err)
+			}
+			issues, err = db.ListFactoryIssues(ctx, epic.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, issue := range issues {
+				if issue.ID != appID {
+					continue
+				}
+				if issue.DispatchState != tt.want || (tt.status != "merged" && (len(issue.Blockers) != 1 || issue.Blockers[0].Type != "merge_gated")) {
+					t.Fatalf("merge-gated issue = %#v, want %s", issue, tt.want)
+				}
+				if tt.status == "closed" && !strings.Contains(issue.Blockers[0].Reason, "closed without merge") {
+					t.Fatalf("closed PR reason = %q", issue.Blockers[0].Reason)
+				}
+			}
+			if err := db.UpsertFactoryLocalExecutionAck(ctx, "local", "/app", "factory-implement", "v1", "operator", time.Now()); err != nil {
+				t.Fatal(err)
+			}
+			_, _, claimErr := db.ClaimFactoryImplementation(ctx, epic.ID, appID, "factory-implement/v1", time.Now())
+			if (claimErr == nil) != (tt.status == "merged") {
+				t.Fatalf("claim error = %v", claimErr)
+			}
+		})
+	}
+}
+
+func TestFactoryMergeGateRequiresDelivery(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	ctx := t.Context()
+	epic, err := db.CreateFactoryEpic(ctx, "", "Gate", "", "/repo", "", nativeTracerFormula(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mol := factoryIssueID(t, db, epic.ID, "mol")
+	for _, title := range []string{"First", "Second"} {
+		if err := db.MutateFactoryGraph(ctx, model.GraphMutation{Action: "create", EpicID: epic.ID, ParentID: mol, Kind: "task", Title: title}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	issues, _ := db.ListFactoryIssues(ctx, epic.ID)
+	first, second := issues[len(issues)-2].ID, issues[len(issues)-1].ID
+	if err := db.MutateFactoryGraph(ctx, model.GraphMutation{Action: "link", EpicID: epic.ID, IssueID: second, DependsOnID: first, DependencyType: "merge_gated"}); err == nil {
+		t.Fatal("merge gate targeting non-delivery was accepted")
 	}
 }
 
