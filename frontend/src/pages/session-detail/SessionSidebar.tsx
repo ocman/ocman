@@ -19,23 +19,21 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Session } from '../../lib/api';
-import { cleanTitle, fuzzyMatch, shortPath, relativeTime } from '../../lib/format';
-import { projectRootForDirectory } from '../../lib/worktrees';
-import { isTerminalStatus } from '../../lib/sessionStatus';
-import { StatusBadge } from '../../components/StatusBadge';
+import { cleanTitle, fuzzyMatch, shortPath } from '../../lib/format';
 import { HostBadge } from '../../components/HostBadge';
 import { ProjectLabel } from '../../components/ProjectLabel';
-import { ShortPath, GitStatusLine } from '../../components/SessionTable';
+import { GitStatusLine } from '../../components/SessionTable';
 import { BackendStats } from '../../components/BackendStats';
 import { SidebarResizer } from '../../components/SidebarResizer';
 import { SessionSidebarListSkeleton } from '../../components/Skeleton';
 import { GettingStartedEmpty } from '../../components/GettingStartedEmpty';
 import { rollupGroupStatus } from '../../lib/sidebarHelpers';
 import { nestSessions } from '../../lib/nestSessions';
-import { remoteLog } from '../../lib/remoteLog';
-import { useClickOutside } from '../../lib/useClickOutside';
 import { useDraftSessionIds } from '../../lib/composerDraft';
-import { ArchiveIcon, ArchiveFilterIcon } from './SidebarIcons';
+import { ArchiveIcon } from './SidebarIcons';
+import { SidebarSessionRow } from './SidebarSessionRow';
+import { SidebarHeader } from './SidebarHeader';
+import { TmuxClientPopover } from './TmuxClientPopover';
 import type { TmuxState } from '../../lib/useTmux';
 import type { GitInfo } from '../../lib/api';
 
@@ -116,14 +114,9 @@ export function SessionSidebar({
   onArchiveProject,
 }: SessionSidebarProps) {
   const sidebarListRef = useRef<HTMLDivElement>(null);
-  const filterRef = useRef<HTMLDivElement>(null);
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [showChildren, setShowChildren] = useState(true);
-  const [searching, setSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const draftSessionIds = useDraftSessionIds();
-
-  useClickOutside(filterRef, filtersOpen, () => setFiltersOpen(false));
 
   // Keep the active session's sidebar row visible. The list doesn't reorder
   // to follow the cursor, so when the user switches sessions (or flips
@@ -152,118 +145,26 @@ export function SessionSidebar({
     return () => cancelAnimationFrame(raf);
   }, [activeId, recentSessions]);
 
-  // Shared row renderer — used by both the flat and grouped views so
+  // Shared row renderer — used by both the pinned and grouped views so
   // all live-status / archive / navigation behaviour stays identical.
-  // For the currently-viewed session we trust the SSE-derived status
-  // over the last poll (OpenCode's DB can lag SSE by several seconds;
-  // using the poll value here would leave the sidebar pulse running
-  // after the composer has already gone idle).
-  const renderRow = (sib: Session, inGroup: boolean, depth = 0) => {
-    const displayStatus = sib.id === activeId ? activeDisplayStatus : sib.status;
-    // Grouped rows no longer carry their own git line — the directory
-    // sub-header above them shows the branch/worktree once for all
-    // siblings. Ungrouped rows (the pinned group) keep the project
-    // path + git line since they have no directory sub-header.
-    const projectRoot = projectRootForDirectory(sib.directory || '');
-    const isWorktree = !!sib.directory && sib.directory !== projectRoot;
-    return (
-      <div
-        key={sib.id}
-        role="button"
-        tabIndex={0}
-        aria-selected={sib.id === activeId}
-        className={`session-sidebar-item ${sib.id === activeId ? 'active' : ''}${archivingSessionIds.has(sib.id) ? ' archiving' : ''}${inGroup ? ' in-group' : ''}${depth > 0 ? ' session-sidebar-item-child' : ''}`}
-        onClick={() => {
-          if (debugMode) {
-            remoteLog.info('[ocman:nav] sidebar click', {
-              from: activeId,
-              to: sib.id,
-              at: performance.now(),
-            });
-          }
-          onNavigateToSession(sib.id);
-        }}
-        // Middle click archives the row. preventDefault on mousedown stops
-        // the browser's middle-click autoscroll from kicking in.
-        onMouseDown={(e) => { if (e.button === 1) e.preventDefault(); }}
-        onAuxClick={(e) => {
-          if (e.button !== 1) return;
-          e.preventDefault();
-          onArchiveSession(e, sib);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            if (debugMode) {
-              remoteLog.info('[ocman:nav] sidebar key', {
-                from: activeId,
-                to: sib.id,
-                at: performance.now(),
-              });
-            }
-            onNavigateToSession(sib.id);
-          }
-        }}
-      >
-        {depth > 0 && (
-          <span
-            className="session-child-branch"
-            style={{ '--depth': depth } as React.CSSProperties}
-            aria-hidden="true"
-          >
-            &#9492;&#9472;
-          </span>
-        )}
-        <StatusBadge
-          status={displayStatus}
-          compact
-          seen={isTerminalStatus(displayStatus) && sib.seen}
-          pending={sib.pendingPermission || sib.pendingQuestion}
-          draft={draftSessionIds.has(sib.id)}
-          titleOverride={sib.notice?.message}
-        />
-        <span className="session-sidebar-item-body">
-          <span className="session-sidebar-title">
-            {cleanTitle(sib.title) || 'Untitled'}
-          </span>
-          {!inGroup && (
-            <>
-              <span className="session-sidebar-project">
-                <span className="session-sidebar-project-path">
-                  <ShortPath path={isWorktree ? projectRoot : sib.directory} />
-                </span>
-              </span>
-              <GitStatusLine info={siblingGitInfos[sib.directory]} icon={isWorktree ? 'worktree' : 'branch'} />
-            </>
-          )}
-        </span>
-        <span className="session-sidebar-meta">
-          <span className="session-sidebar-time" title={new Date(sib.timeUpdated).toLocaleString()}>{relativeTime(sib.timeUpdated)}</span>
-          <span className="session-sidebar-actions">
-            <button
-              type="button"
-              className={`session-pin-btn session-sidebar-pin-btn${sib.pinned ? ' pinned' : ''}`}
-              onClick={(e) => onPinSession(e, sib)}
-              title={sib.pinned ? 'Unpin session' : 'Pin session'}
-              aria-label={sib.pinned ? 'Unpin session' : 'Pin session'}
-            >
-              <i className={`bi ${sib.pinned ? 'bi-pin-fill' : 'bi-pin'}`} aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              className="session-archive-btn session-sidebar-archive-btn"
-              onClick={(e) => onArchiveSession(e, sib)}
-              title="Archive session"
-              aria-label="Archive session"
-              disabled={archivingSessionIds.has(sib.id)}
-            >
-              <ArchiveIcon />
-            </button>
-          </span>
-        </span>
-      </div>
-    );
-  };
+  const renderRow = (sib: Session, inGroup: boolean, depth = 0) => (
+    <SidebarSessionRow
+      key={sib.id}
+      session={sib}
+      inGroup={inGroup}
+      depth={depth}
+      active={sib.id === activeId}
+      activeId={activeId}
+      activeDisplayStatus={activeDisplayStatus}
+      archiving={archivingSessionIds.has(sib.id)}
+      draft={draftSessionIds.has(sib.id)}
+      debugMode={debugMode}
+      gitInfo={siblingGitInfos[sib.directory]}
+      onNavigateToSession={onNavigateToSession}
+      onArchiveSession={onArchiveSession}
+      onPinSession={onPinSession}
+    />
+  );
 
   // The pinned group always renders first and is never reorderable;
   // the remaining project groups are drag-sortable.
@@ -479,91 +380,16 @@ export function SessionSidebar({
   return (
     <div className="session-sidebar" data-testid="session-sidebar" style={{ width: sidebarWidth }}>
       <SidebarResizer />
-      <div className="session-sidebar-header">
-        {searching ? (
-          <input
-            type="search"
-            className="session-sidebar-search"
-            aria-label="Search sessions"
-            placeholder="Search sessions"
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key !== 'Escape') return;
-              setSearchQuery('');
-              setSearching(false);
-            }}
-            autoFocus
-          />
-        ) : (
-          <button
-            type="button"
-            className="session-sidebar-heading"
-            data-testid="sidebar-heading"
-            aria-label="Search sessions"
-            onClick={() => setSearching(true)}
-          >
-            <i className="bi bi-search session-sidebar-search-icon" aria-hidden="true" />
-            <span className="session-sidebar-heading-desktop">Sessions</span>
-            <span className="session-sidebar-heading-mobile">Search sessions</span>
-          </button>
-        )}
-        <div className="session-sidebar-header-actions" ref={filterRef}>
-          <button
-            type="button"
-            className={`session-sidebar-new${showArchivedRecent || !showChildren ? ' active' : ''}`}
-            onClick={() => setFiltersOpen((open) => !open)}
-            title="Filter sessions"
-            aria-label="Filter sessions"
-            aria-expanded={filtersOpen}
-            aria-controls="session-sidebar-filters"
-          ><ArchiveFilterIcon /></button>
-          {filtersOpen && (
-            <div id="session-sidebar-filters" className="session-sidebar-filters" role="group" aria-label="Session filters">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={showArchivedRecent}
-                  onChange={(event) => {
-                    const checked = event.target.checked;
-                    setShowArchivedRecent(() => checked);
-                  }}
-                />
-                <span>Show archived</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={showChildren}
-                  onChange={(event) => setShowChildren(event.target.checked)}
-                />
-                <span>Show children</span>
-              </label>
-            </div>
-          )}
-        </div>
-      </div>
+      <SidebarHeader
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        showArchivedRecent={showArchivedRecent}
+        setShowArchivedRecent={setShowArchivedRecent}
+        showChildren={showChildren}
+        setShowChildren={setShowChildren}
+      />
       {pendingTmuxSession && pickerPos && (
-        <div
-          ref={pickerRef}
-          className="tmux-client-popover"
-          style={{ top: pickerPos.top, left: pickerPos.left }}
-        >
-          <div className="tmux-client-picker-header">
-            <span>Select tmux client</span>
-          </div>
-          {tmux.clients.map(c => (
-            <div
-              key={c.tty}
-              className="tmux-client-picker-item"
-              onClick={() => onClientSelect(c.tty)}
-            >
-              <span className="tmux-client-tty">{c.tty}</span>
-              <span className="tmux-client-session">{shortPath(c.session)}</span>
-              <span className="tmux-client-size">{c.width}&times;{c.height}</span>
-            </div>
-          ))}
-        </div>
+        <TmuxClientPopover pickerRef={pickerRef} pos={pickerPos} clients={tmux.clients} onSelect={onClientSelect} />
       )}
       <div className="session-sidebar-list" ref={sidebarListRef}>
         {loadingRecentSessions ? (
