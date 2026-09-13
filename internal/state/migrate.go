@@ -203,7 +203,8 @@ import (
 //	74 - add durable owner-local Inbox items.
 //	75 - allow multiple sequential recovery gates for one Factory attempt.
 //	78 - add routine webhook subscriptions and dispatch claims.
-const latestSchemaVersion = 79
+//	80 - repair webhook inboxes created by the schema-version collision.
+const latestSchemaVersion = 80
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -466,6 +467,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV78(tx)
 	case 79:
 		return migrateToV79(tx)
+	case 80:
+		return migrateToV80(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -2647,6 +2650,20 @@ func migrateToV78(tx *sql.Tx) error {
 }
 
 func migrateToV79(tx *sql.Tx) error {
+	if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS webhook_inbox (
+		id TEXT PRIMARY KEY,
+		routine_id TEXT NOT NULL,
+		relay_url TEXT NOT NULL,
+		management_token TEXT NOT NULL,
+		fetch_token TEXT NOT NULL,
+		acknowledgment_token TEXT NOT NULL,
+		identity TEXT NOT NULL,
+		key_version INTEGER NOT NULL DEFAULT 1,
+		created_at INTEGER NOT NULL,
+		ingestion_url TEXT NOT NULL DEFAULT ''
+	)`); err != nil {
+		return err
+	}
 	rows, err := tx.Query(`PRAGMA table_info(webhook_inbox)`)
 	if err != nil {
 		return err
@@ -2667,5 +2684,22 @@ func migrateToV79(tx *sql.Tx) error {
 		return err
 	}
 	_, err = tx.Exec(`ALTER TABLE webhook_inbox ADD COLUMN ingestion_url TEXT NOT NULL DEFAULT ''`)
+	return err
+}
+
+func migrateToV80(tx *sql.Tx) error {
+	_, err := tx.Exec(`CREATE TABLE IF NOT EXISTS webhook_inbox (
+		id TEXT PRIMARY KEY,
+		routine_id TEXT NOT NULL,
+		relay_url TEXT NOT NULL,
+		management_token TEXT NOT NULL,
+		fetch_token TEXT NOT NULL,
+		acknowledgment_token TEXT NOT NULL,
+		identity TEXT NOT NULL,
+		key_version INTEGER NOT NULL DEFAULT 1,
+		created_at INTEGER NOT NULL,
+		ingestion_url TEXT NOT NULL DEFAULT ''
+	);
+	CREATE UNIQUE INDEX IF NOT EXISTS webhook_inbox_routine_uq ON webhook_inbox (routine_id)`)
 	return err
 }
