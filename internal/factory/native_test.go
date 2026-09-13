@@ -876,6 +876,42 @@ kind = "plan"`}); err != nil {
 	if factoryProgress([]model.NativeIssue{{ID: "done", Kind: "task", Status: "closed", Outcome: "succeeded"}}).Stuck {
 		t.Error("closable epic reported stuck")
 	}
+	deliveries := factoryProgress([]model.NativeIssue{
+		{ID: "repo", Project: "/repo", Kind: "delivery", Title: "Deliver repo", Status: "closed", Outcome: "succeeded"},
+		{ID: "other", Project: "/other", Kind: "delivery", Title: "Deliver other", Status: "open", DispatchState: "waiting"},
+	})
+	if deliveries.DeliveryStatus != "pending" || !reflect.DeepEqual(deliveries.ProjectDeliveries, []ProjectDeliveryStatus{
+		{Project: "/other", IssueID: "other", Status: "waiting"},
+		{Project: "/repo", IssueID: "repo", Status: "ready_for_review"},
+	}) {
+		t.Fatalf("delivery progress = %#v", deliveries)
+	}
+	deliveries = factoryProgress([]model.NativeIssue{
+		{ID: "repo", Project: "/repo", Kind: "delivery", Status: "closed", Outcome: "succeeded"},
+		{ID: "other", Project: "/other", Kind: "delivery", Status: "closed", Outcome: "succeeded"},
+	})
+	if deliveries.DeliveryStatus != "ready_for_review" {
+		t.Fatalf("aggregate delivery status = %q", deliveries.DeliveryStatus)
+	}
+	deliveries = factoryProgress([]model.NativeIssue{
+		{ID: "repo", Project: "/repo", Kind: "delivery", Status: "closed", Outcome: "succeeded"},
+		{ID: "other-work", Project: "/other", Kind: "task", Status: "closed", Outcome: "succeeded"},
+	})
+	if deliveries.DeliveryStatus != "pending" || !reflect.DeepEqual(deliveries.ProjectDeliveries, []ProjectDeliveryStatus{
+		{Project: "/other", Status: "pending"},
+		{Project: "/repo", IssueID: "repo", Status: "ready_for_review"},
+	}) {
+		t.Fatalf("missing delivery progress = %#v", deliveries)
+	}
+	if got := factoryProgress([]model.NativeIssue{{ID: "reference", Project: "/reference", Kind: "task", Requirement: "reference", Status: "open", DispatchState: "reference"}}); got.DeliveryStatus != "" || len(got.ProjectDeliveries) != 0 {
+		t.Fatalf("reference delivery progress = %#v", got)
+	}
+	if got := factoryProgress([]model.NativeIssue{
+		{ID: "optional", Kind: "mol", Requirement: "optional"},
+		{ID: "reference", ParentID: "optional", Project: "/reference", Kind: "task", Requirement: "reference", Status: "open", DispatchState: "reference"},
+	}); got.DeliveryStatus != "" || len(got.ProjectDeliveries) != 0 {
+		t.Fatalf("nested reference delivery progress = %#v", got)
+	}
 }
 
 func TestNativeClosureAndRemovedIssueAccessors(t *testing.T) {

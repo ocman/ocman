@@ -75,6 +75,95 @@ func TestFactoryDeliveryTracksRequiredGraph(t *testing.T) {
 	}
 }
 
+func TestFactoryDeliveryTracksProjectsProgressively(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	ctx := t.Context()
+	epic, err := db.CreateFactoryEpicWithProjects(ctx, "", "Delivery", "", "/repo", "", nativeTracerFormula(t), []string{"/other", "/optional", "/reference", "/idle"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mol := factoryIssueID(t, db, epic.ID, "mol")
+	for _, work := range []model.GraphMutation{
+		{Action: "create", EpicID: epic.ID, ParentID: mol, Kind: "task", Title: "Repo work", Project: "/repo"},
+		{Action: "create", EpicID: epic.ID, ParentID: mol, Kind: "implementation", Title: "Other work", Project: "/other"},
+		{Action: "create", EpicID: epic.ID, ParentID: mol, Kind: "task", Title: "Optional project work", Requirement: "optional", Project: "/optional"},
+		{Action: "create", EpicID: epic.ID, ParentID: mol, Kind: "task", Title: "Reference project work", Requirement: "reference", Project: "/reference"},
+	} {
+		if err := db.MutateFactoryGraph(ctx, work); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.EnsureFactoryDeliveryIssue(ctx, epic.ID); err != nil {
+		t.Fatal(err)
+	}
+	issues, err := db.ListFactoryIssues(ctx, epic.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deliveries := map[string]model.NativeIssue{}
+	var otherWork string
+	for _, issue := range issues {
+		if issue.Kind == "delivery" {
+			deliveries[issue.Project] = issue
+		}
+		if issue.Title == "Other work" {
+			otherWork = issue.ID
+		}
+	}
+	if len(deliveries) != 3 {
+		t.Fatalf("deliveries = %#v", deliveries)
+	}
+	for project, delivery := range deliveries {
+		for _, dependency := range delivery.DependsOn {
+			for _, issue := range issues {
+				if issue.ID == dependency.ID && issue.Project != project {
+					t.Fatalf("delivery %s depends on %s project %s", project, dependency.ID, issue.Project)
+				}
+			}
+		}
+	}
+	if _, err := db.db.Exec(`UPDATE factory_issue SET status = 'closed', outcome = 'succeeded' WHERE epic_id = ? AND kind NOT IN ('delivery', 'mol')`, epic.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.db.Exec(`UPDATE factory_issue SET status = 'open', outcome = '' WHERE id = ?`, otherWork); err != nil {
+		t.Fatal(err)
+	}
+	issues, err = db.ListFactoryIssues(ctx, epic.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, issue := range issues {
+		if issue.Kind != "delivery" {
+			continue
+		}
+		want := "waiting"
+		if issue.Project == "/repo" || issue.Project == "/optional" {
+			want = "ready"
+		}
+		if issue.DispatchState != want {
+			t.Errorf("delivery %s state = %s, want %s", issue.Project, issue.DispatchState, want)
+		}
+	}
+
+	if err := db.UpsertFactoryLocalExecutionAck(ctx, "local", "/repo", "factory-implement", "v1", "operator", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	_, attempt, err := db.ClaimFactoryImplementation(ctx, epic.ID, deliveries["/repo"].ID, "factory-implement/v1", time.Now())
+	if err != nil {
+		t.Fatalf("upstream project was not progressively deliverable: %v", err)
+	}
+	if !attempt.FrozenPolicy.Delivery || attempt.FrozenPolicy.Repository != "/repo" {
+		t.Fatalf("delivery attempt = %#v", attempt)
+	}
+	if err := db.MutateFactoryGraph(ctx, model.GraphMutation{Action: "create", EpicID: epic.ID, ParentID: mol, Kind: "task", Title: "More other work", Project: "/other"}); err != nil {
+		t.Fatalf("other project was sealed: %v", err)
+	}
+	if err := db.MutateFactoryGraph(ctx, model.GraphMutation{Action: "create", EpicID: epic.ID, ParentID: mol, Kind: "task", Title: "Too late", Project: "/repo"}); err == nil {
+		t.Fatal("delivery did not seal its project")
+	}
+}
+
 func TestFactoryWorkspaceRequiresPreparedAttempt(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()

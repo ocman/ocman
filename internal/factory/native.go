@@ -121,14 +121,21 @@ type ProjectAdmission struct {
 }
 
 type FactoryProgress struct {
-	DeliveryStatus    string   `json:"deliveryStatus,omitempty"`
-	RequiredTotal     int      `json:"requiredTotal"`
-	RequiredSucceeded int      `json:"requiredSucceeded"`
-	OptionalOpen      int      `json:"optionalOpen"`
-	ClosureBlockers   []string `json:"closureBlockers,omitempty"`
+	DeliveryStatus    string                  `json:"deliveryStatus,omitempty"`
+	ProjectDeliveries []ProjectDeliveryStatus `json:"projectDeliveries,omitempty"`
+	RequiredTotal     int                     `json:"requiredTotal"`
+	RequiredSucceeded int                     `json:"requiredSucceeded"`
+	OptionalOpen      int                     `json:"optionalOpen"`
+	ClosureBlockers   []string                `json:"closureBlockers,omitempty"`
 	// Stuck means closure is blocked yet nothing can move on its own: no
 	// work is ready, running, or waiting to retry, and no gate is open.
 	Stuck bool `json:"stuck,omitempty"`
+}
+
+type ProjectDeliveryStatus struct {
+	Project string `json:"project"`
+	IssueID string `json:"issueId,omitempty"`
+	Status  string `json:"status"`
 }
 
 type WorkEpic struct {
@@ -1202,6 +1209,7 @@ func factoryProgress(issues []model.NativeIssue) FactoryProgress {
 		byID[issue.ID] = issue
 	}
 	var progress FactoryProgress
+	requirements := make(map[string]string, len(issues))
 	movable := false
 	for _, issue := range issues {
 		if issue.Kind == "mol" {
@@ -1214,7 +1222,7 @@ func factoryProgress(issues []model.NativeIssue) FactoryProgress {
 			movable = true
 		}
 		requirement := issue.Requirement
-		for parent := issue.ParentID; parent != ""; parent = byID[parent].ParentID {
+		for parent := issue.ParentID; requirement != "reference" && parent != ""; parent = byID[parent].ParentID {
 			if byID[parent].Requirement == "reference" {
 				requirement = "reference"
 				break
@@ -1223,6 +1231,7 @@ func factoryProgress(issues []model.NativeIssue) FactoryProgress {
 				requirement = "optional"
 			}
 		}
+		requirements[issue.ID] = requirement
 		switch requirement {
 		case "reference":
 			continue
@@ -1240,14 +1249,46 @@ func factoryProgress(issues []model.NativeIssue) FactoryProgress {
 		}
 	}
 	progress.Stuck = len(progress.ClosureBlockers) > 0 && !movable
+	requiredDelivery := map[string]bool{}
+	for _, issue := range issues {
+		if requirements[issue.ID] != "reference" && (issue.Kind == "implementation" || issue.Kind == "task") && issue.DispatchState != "not_applicable" {
+			requiredDelivery[issue.Project] = true
+		}
+	}
+	deliveryProjects := map[string]bool{}
+	allDelivered := true
 	for _, issue := range issues {
 		if issue.Kind != "delivery" {
 			continue
 		}
+		status := issue.DispatchState
 		if issue.Status == "closed" && issue.Outcome == "succeeded" {
+			status = "ready_for_review"
+		} else {
+			allDelivered = false
+			if issue.Status == "closed" {
+				status = issue.Outcome
+			} else if issue.Status != "open" {
+				status = issue.Status
+			}
+		}
+		requiredDelivery[issue.Project] = true
+		deliveryProjects[issue.Project] = true
+		progress.ProjectDeliveries = append(progress.ProjectDeliveries, ProjectDeliveryStatus{Project: issue.Project, IssueID: issue.ID, Status: status})
+	}
+	for project := range requiredDelivery {
+		if !deliveryProjects[project] {
+			allDelivered = false
+			progress.ProjectDeliveries = append(progress.ProjectDeliveries, ProjectDeliveryStatus{Project: project, Status: "pending"})
+		}
+	}
+	sort.Slice(progress.ProjectDeliveries, func(i, j int) bool {
+		return progress.ProjectDeliveries[i].Project < progress.ProjectDeliveries[j].Project
+	})
+	if len(requiredDelivery) > 0 {
+		progress.DeliveryStatus = "pending"
+		if allDelivered {
 			progress.DeliveryStatus = "ready_for_review"
-		} else if progress.RequiredTotal-progress.RequiredSucceeded == 1 {
-			progress.DeliveryStatus = "pending"
 		}
 	}
 	return progress

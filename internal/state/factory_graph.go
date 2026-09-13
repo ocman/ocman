@@ -643,12 +643,12 @@ func (d *DB) ListRemovedFactoryIssues(ctx context.Context, epicID string) ([]mod
 
 func deriveFactoryIssueDispatch(ctx context.Context, reader factoryIssueReader, epicID string, issues []model.NativeIssue) ([]model.NativeIssue, error) {
 	byID := make(map[string]*model.NativeIssue, len(issues))
-	delivered := false
+	delivered := map[string]bool{}
 	for i := range issues {
 		byID[issues[i].ID] = &issues[i]
 		issues[i].DispatchState = "waiting"
 		if issues[i].Kind == "delivery" && issues[i].Status == "closed" && issues[i].Outcome == "succeeded" {
-			delivered = true
+			delivered[issues[i].Project] = true
 		}
 	}
 	rows, err := reader.QueryContext(ctx, `SELECT d.issue_id, d.type, b.id, b.epic_id, b.kind, b.status, b.outcome, b.outcome_reason, COALESCE(g.resolution, '') FROM factory_issue_dependency d JOIN factory_issue b ON b.id = d.depends_on_issue_id LEFT JOIN factory_plan_gate g ON g.issue_id = b.id WHERE d.issue_id IN (SELECT id FROM factory_issue WHERE epic_id = ?) AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = b.id) ORDER BY d.issue_id, d.depends_on_issue_id`, epicID)
@@ -710,7 +710,7 @@ func deriveFactoryIssueDispatch(ctx context.Context, reader factoryIssueReader, 
 			issue.DispatchState = "reference"
 			continue
 		}
-		if delivered && (issue.Kind == "task" || issue.Kind == "implementation") && issue.Status != "closed" {
+		if delivered[issue.Project] && (issue.Kind == "task" || issue.Kind == "implementation") && issue.Status != "closed" {
 			issue.DispatchState = "not_applicable"
 			issue.OutcomeReason = "Final delivery is complete; this work will not run."
 			continue
@@ -750,8 +750,8 @@ func (d *DB) MutateFactoryGraph(ctx context.Context, m model.GraphMutation) erro
 	if m.EpicID == "" {
 		return invalid("factory epic is required for structural mutation")
 	}
-	var epicStatus string
-	if err := tx.QueryRowContext(ctx, `SELECT status FROM factory_epic WHERE id = ?`, m.EpicID).Scan(&epicStatus); err != nil {
+	var epicStatus, epicProject string
+	if err := tx.QueryRowContext(ctx, `SELECT status, project_path FROM factory_epic WHERE id = ?`, m.EpicID).Scan(&epicStatus, &epicProject); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return invalid("factory epic is unavailable for structural mutation")
 		}
@@ -759,6 +759,9 @@ func (d *DB) MutateFactoryGraph(ctx context.Context, m model.GraphMutation) erro
 	}
 	if epicStatus != "open" {
 		return invalid("factory epic is unavailable for structural mutation")
+	}
+	if m.Action == "create" && m.Project == "" {
+		m.Project = epicProject
 	}
 	if m.Project != "" {
 		var admitted bool
@@ -769,12 +772,33 @@ func (d *DB) MutateFactoryGraph(ctx context.Context, m model.GraphMutation) erro
 			return invalid(fmt.Sprintf("project target %q is not admitted to Epic %s", m.Project, m.EpicID))
 		}
 	}
+	project := m.Project
+	if m.Action != "create" {
+		if err := tx.QueryRowContext(ctx, `SELECT project_path FROM factory_issue WHERE id = ? AND epic_id = ?`, m.IssueID, m.EpicID).Scan(&project); err != nil {
+			return invalid("factory issue is unavailable for structural mutation")
+		}
+	}
+	movedProject := ""
+	if m.Action == "edit" {
+		movedProject = m.Project
+	}
 	var delivering int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM factory_issue WHERE epic_id = ? AND kind = 'delivery' AND (status = 'in_progress' OR (status = 'closed' AND outcome = 'succeeded')) AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = factory_issue.id)`, m.EpicID).Scan(&delivering); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM factory_issue WHERE epic_id = ? AND project_path IN (?, ?) AND kind = 'delivery' AND (status = 'in_progress' OR (status = 'closed' AND outcome = 'succeeded')) AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = factory_issue.id)`, m.EpicID, project, movedProject).Scan(&delivering); err != nil {
 		return err
 	}
 	if delivering != 0 {
-		return invalid("factory delivery has started; finish or recover delivery before changing the graph")
+		return invalid("factory project delivery has started; finish or recover delivery before changing that project")
+	}
+	if m.Action == "reparent" || m.Action == "delete" {
+		if err := tx.QueryRowContext(ctx, `WITH RECURSIVE descendants(id) AS (SELECT ? UNION ALL SELECT h.child_issue_id FROM factory_issue_hierarchy h JOIN descendants d ON h.parent_issue_id = d.id)
+			SELECT COUNT(*) FROM factory_issue i JOIN factory_issue delivery ON delivery.epic_id = i.epic_id AND delivery.project_path = i.project_path AND delivery.kind = 'delivery'
+			WHERE i.id IN (SELECT id FROM descendants) AND (delivery.status = 'in_progress' OR (delivery.status = 'closed' AND delivery.outcome = 'succeeded'))
+			AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = delivery.id)`, m.IssueID).Scan(&delivering); err != nil {
+			return err
+		}
+		if delivering != 0 {
+			return invalid("factory project delivery has started; finish or recover delivery before changing that project")
+		}
 	}
 	openIssue := func(id string, local bool) (string, error) {
 		var epicID, status string
@@ -978,6 +1002,9 @@ func factoryReachable(ctx context.Context, tx *sql.Tx, query, from, to string) (
 
 func factoryIssueRequirement(issue *model.NativeIssue, byID map[string]*model.NativeIssue) string {
 	requirement := issue.Requirement
+	if requirement == "reference" {
+		return requirement
+	}
 	for parent := byID[issue.ParentID]; parent != nil; parent = byID[parent.ParentID] {
 		if parent.Requirement == "reference" {
 			return "reference"
@@ -1162,7 +1189,7 @@ func (d *DB) ClaimFactoryImplementation(ctx context.Context, epicID, issueID, pr
 	if err := tx.QueryRowContext(ctx, `SELECT 1 FROM factory_local_execution_ack WHERE host_id = 'local' AND repo_root = ? AND profile_id = 'factory-implement' AND profile_version = 'v1'`, project).Scan(&acknowledged); err != nil {
 		return model.NativeEpic{}, model.FactoryAttempt{}, errors.New("factory implementation requires local execution acknowledgement")
 	}
-	if err := validateFactoryDeliveryOrder(ctx, tx, epicID, kind); err != nil {
+	if err := validateFactoryDeliveryOrder(ctx, tx, epicID, project, kind); err != nil {
 		return model.NativeEpic{}, model.FactoryAttempt{}, err
 	}
 	policy := model.FactoryCapacityPolicy{GlobalCapacity: 10, ProjectCapacity: 4}

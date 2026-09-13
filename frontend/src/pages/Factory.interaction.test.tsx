@@ -721,6 +721,26 @@ describe('Factory interactions', () => {
 		expect(window.confirm).toHaveBeenCalledWith('This epic still has unfinished work. Close it anyway?');
 	});
 
+	it('shows progressive delivery status for each changed project', async () => {
+		vi.mocked(api.factoryEpic).mockResolvedValue({
+			id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo',
+			progress: {
+				requiredTotal: 4, requiredSucceeded: 3, optionalOpen: 0, deliveryStatus: 'pending',
+				projectDeliveries: [
+					{ project: '/repo', issueId: 'delivery-1', status: 'ready_for_review' },
+					{ project: '/other', issueId: 'delivery-2', status: 'waiting' },
+				],
+			},
+		} as never);
+		vi.mocked(api.factoryIssues).mockResolvedValue([]);
+		renderFactory(<MemoryRouter initialEntries={['/factory/epics/epic-1']}><Routes><Route path="/factory/epics/:id" element={<FactoryEpicDetail />} /></Routes></MemoryRouter>);
+		const deliveries = await screen.findByRole('list', { name: 'Project deliveries' });
+		expect(within(deliveries).getByText('/repo')).toBeInTheDocument();
+		expect(within(deliveries).getByText('Ready for review')).toBeInTheDocument();
+		expect(within(deliveries).getByText('/other')).toBeInTheDocument();
+		expect(within(deliveries).getByText('Waiting')).toBeInTheDocument();
+	});
+
 	it('reports the Epic closure guard rather than the hidden root Mol failure', async () => {
 		const user = userEvent.setup();
 		vi.mocked(api.factoryEpic).mockResolvedValue({ id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo' } as never);

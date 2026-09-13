@@ -15,31 +15,35 @@ import (
 )
 
 type fakeImplementationLauncher struct {
-	calls       []ImplementationSessionRequest
-	err         error
-	probeErr    error
-	result      PlanningSession
-	stops       []PlanningSession
-	replies     []string
-	replyErr    error
-	recoveries  []string
-	recoveryErr error
-	onRecovery  func()
-	answered    bool
-	prompts     []ImplementationSessionRequest
-	promptErr   error
-	onPrompt    func(ImplementationSessionRequest)
-	launched    chan struct{}
-	dead        bool
-	handoffErr  error
-	prErr       error
-	handoffs    int
-	store       *state.DB
-	branch      string
-	baseRef     string
-	branchErr   error
-	resolutions int
-	prepared    []string
+	calls          []ImplementationSessionRequest
+	err            error
+	probeErr       error
+	result         PlanningSession
+	stops          []PlanningSession
+	replies        []string
+	replyErr       error
+	recoveries     []string
+	recoveryErr    error
+	onRecovery     func()
+	answered       bool
+	prompts        []ImplementationSessionRequest
+	promptErr      error
+	onPrompt       func(ImplementationSessionRequest)
+	launched       chan struct{}
+	dead           bool
+	handoffErr     error
+	prErr          error
+	handoffs       int
+	store          *state.DB
+	branch         string
+	baseRef        string
+	branchErr      error
+	resolutions    int
+	prepared       []string
+	deliveryTarget map[string][3]string
+	handoffRepo    string
+	handoffBranch  string
+	handoffPolicy  model.FactoryAttemptPolicy
 }
 
 type deliveryMutationStore struct {
@@ -345,12 +349,59 @@ func TestLegacyAttemptCompletesWithoutPRThenAdoptsCheckpoint(t *testing.T) {
 	}
 }
 
-func (f *fakeImplementationLauncher) ValidateImplementationHandoff(_ context.Context, _, _, _, _ string, policy model.FactoryAttemptPolicy) error {
+func (f *fakeImplementationLauncher) ValidateImplementationHandoff(_ context.Context, repository, branch, _, _ string, policy model.FactoryAttemptPolicy) error {
 	f.handoffs++
+	f.handoffRepo, f.handoffBranch, f.handoffPolicy = repository, branch, policy
 	if f.prErr != nil && !policy.ForceComplete {
 		return f.prErr
 	}
 	return f.handoffErr
+}
+
+func TestProjectDeliveryValidatesItsRecordedIdentity(t *testing.T) {
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	launcher := &fakeImplementationLauncher{}
+	svc := NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other": "/other"}}, &fakePlanningLauncher{}, launcher)
+	epic, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Project delivery", InitialProject: "/repo", AcknowledgeLocalExecution: true, Projects: []ProjectAdmission{{Path: "/other", AcknowledgeLocalExecution: true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Pour(t.Context(), epic.ID); err != nil {
+		t.Fatal(err)
+	}
+	mol := pouredIssueID(t, svc, epic.ID, "mol")
+	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: mol, Project: "/repo", Nodes: []ManifestNode{{Key: "other", Type: "implementation", Requirement: "required", Title: "Other work", Project: "/other"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	launcher.store = db
+	launcher.deliveryTarget = map[string][3]string{"/other": {"forgejo", "other.example", "acme/other"}}
+	if _, err := svc.DecidePlanGate(t.Context(), epic.ID, "approve", PlanGateDecisionRequest{ExpectedRevision: proposal.Revision, ExpectedHash: proposal.ContentHash}); err != nil {
+		t.Fatal(err)
+	}
+	if len(launcher.calls) != 1 || launcher.calls[0].Repository != "/other" || launcher.calls[0].Delivery {
+		t.Fatalf("implementation launch = %#v", launcher.calls)
+	}
+	if err := svc.CompleteAttempt(t.Context(), launcher.calls[0].AttemptID, launcher.calls[0].AgentToken, "implemented", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Dispatch(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(launcher.calls) != 2 || launcher.calls[1].Repository != "/other" || !launcher.calls[1].Delivery {
+		t.Fatalf("delivery launch = %#v", launcher.calls)
+	}
+	delivery := launcher.calls[1]
+	if err := svc.CompleteAttempt(t.Context(), delivery.AttemptID, delivery.AgentToken, "delivered", "https://other.example/acme/other/pulls/1"); err != nil {
+		t.Fatal(err)
+	}
+	if launcher.handoffRepo != "/other" || launcher.handoffBranch != delivery.Branch || launcher.handoffPolicy.DeliveryRemoteHost != "other.example" || launcher.handoffPolicy.DeliveryRemoteRepo != "acme/other" {
+		t.Fatalf("handoff identity = %q %q %#v", launcher.handoffRepo, launcher.handoffBranch, launcher.handoffPolicy)
+	}
 }
 
 type failingDispatchStore struct {
@@ -375,7 +426,11 @@ func (f *fakeImplementationLauncher) PromptImplementationSession(_ context.Conte
 
 func (f *fakeImplementationLauncher) LaunchImplementationSession(_ context.Context, req ImplementationSessionRequest) (PlanningSession, error) {
 	if f.store != nil {
-		if err := f.store.SetFactoryAttemptDeliveryTarget(context.Background(), req.AttemptID, "github", "github.com", "acme/repo", time.Now()); err != nil {
+		target := [3]string{"github", "github.com", "acme/repo"}
+		if configured, ok := f.deliveryTarget[req.Repository]; ok {
+			target = configured
+		}
+		if err := f.store.SetFactoryAttemptDeliveryTarget(context.Background(), req.AttemptID, target[0], target[1], target[2], time.Now()); err != nil {
 			return PlanningSession{}, err
 		}
 	}
