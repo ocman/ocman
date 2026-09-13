@@ -46,6 +46,44 @@ func TestFactoryGraphCreateAndPourAreDurableAndAtomic(t *testing.T) {
 	}
 }
 
+func TestFactoryEpicProjectRemovalRules(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	epic, err := db.CreateFactoryEpicWithProjects(t.Context(), "", "Ship", "", "/repo", "", nativeTracerFormula(t), []string{"/busy", "/clean", "/delivered"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := db.GetFactoryEpic(t.Context(), epic.ID); err != nil || len(got.Projects) != 4 || got.Projects[0].Path != "/repo" || got.Projects[0].Removable {
+		t.Fatalf("projects = %#v, %v", got.Projects, err)
+	}
+	if err := db.RemoveFactoryEpicProject(t.Context(), epic.ID, "/clean"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.RemoveFactoryEpicProject(t.Context(), epic.ID, "/repo"); !errors.Is(err, model.ErrEpicProjectPermanent) {
+		t.Fatalf("permanent removal error = %v", err)
+	}
+	workID := factoryIssueID(t, db, epic.ID, "plan")
+	if _, err := db.db.Exec(`INSERT INTO factory_attempt (id, epic_id, work_item_id, sequence, phase, terminal_outcome, frozen_policy_json, created_at, updated_at, started_at, finished_at) VALUES ('started', ?, ?, 1, 'terminal', 'succeeded', '{"repository":"/busy"}', 1, 1, 1, 1)`, epic.ID, workID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.RemoveFactoryEpicProject(t.Context(), epic.ID, "/busy"); !errors.Is(err, model.ErrEpicProjectHistory) {
+		t.Fatalf("started work removal error = %v", err)
+	}
+	if got, err := db.GetFactoryEpic(t.Context(), epic.ID); err != nil || got.Projects[1].Path != "/busy" || got.Projects[1].Removable {
+		t.Fatalf("busy project = %#v, %v", got.Projects, err)
+	}
+	if _, err := db.db.Exec(`INSERT INTO factory_workspace (id, epic_id, project_id, host_id, repo_root, worktree_path, remote_name, base_branch, base_sha, branch, state, created_at, updated_at) VALUES ('workspace', ?, '/delivered', 'local', '/delivered', '/tmp/worktree', 'origin', 'main', 'base', 'branch', 'completed', 1, 1);
+		INSERT INTO factory_delivery (id, epic_id, project_id, workspace_id, revision, remote_name, base_branch, branch, head_sha, state, created_at, updated_at) VALUES ('delivery', ?, '/delivered', 'workspace', 1, 'origin', 'main', 'branch', 'head', 'published', 1, 1)`, epic.ID, epic.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.RemoveFactoryEpicProject(t.Context(), epic.ID, "/delivered"); !errors.Is(err, model.ErrEpicProjectHistory) {
+		t.Fatalf("Delivery history removal error = %v", err)
+	}
+	if err := db.RemoveFactoryEpicProject(t.Context(), epic.ID, "/missing"); !errors.Is(err, model.ErrEpicProjectNotFound) {
+		t.Fatalf("missing project removal error = %v", err)
+	}
+}
+
 func TestFactoryIssueCommentsAreAppendOnly(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()

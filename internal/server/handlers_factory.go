@@ -166,6 +166,28 @@ func (s *Server) handleFactoryEpic(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, epic)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "projects" {
+		if r.Method != http.MethodDelete {
+			w.Header().Set("Allow", http.MethodDelete)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+			service, ok := s.factory.(interface {
+				RemoveWorkEpicProject(context.Context, string, string) error
+			})
+			if !ok {
+				writeFactoryError(w, factory.ErrFactoryUnavailable)
+				return
+			}
+			if err := service.RemoveWorkEpicProject(r.Context(), parts[0], r.URL.Query().Get("path")); err != nil {
+				writeFactoryError(w, err)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		})(w, r)
+		return
+	}
 	if len(parts) == 2 && parts[1] == "issues" && r.Method == http.MethodGet {
 		issues, err := s.factory.ListIssues(r.Context(), parts[0])
 		if err != nil {
@@ -573,6 +595,10 @@ func writeFactoryError(w http.ResponseWriter, err error) {
 		http.Error(w, "factory epic not found", http.StatusNotFound)
 		return
 	}
+	if errors.Is(err, factory.ErrEpicProjectNotFound) {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
 	if errors.Is(err, factory.ErrInstantiationConflict) {
 		http.Error(w, "factory instantiation conflict", http.StatusConflict)
 		return
@@ -591,6 +617,10 @@ func writeFactoryError(w http.ResponseWriter, err error) {
 	}
 	if errors.Is(err, factory.ErrInvalidRequest) || errors.Is(err, factory.ErrAcknowledgementRequired) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if errors.Is(err, factory.ErrEpicProjectPermanent) || errors.Is(err, factory.ErrEpicProjectHistory) {
+		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	}
 	if errors.Is(err, factory.ErrInvalidFormula) {

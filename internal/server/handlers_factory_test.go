@@ -49,6 +49,7 @@ type fakeFactoryService struct {
 	recoveryAction        string
 	recoveryResponse      string
 	removed               []factory.Issue
+	removedProject        string
 	queue                 []factory.DispatchItem
 	implementationSession bool
 	implementationChecks  int
@@ -57,6 +58,11 @@ type fakeFactoryService struct {
 	authorityAction       string
 	authorityErr          error
 	err                   error
+}
+
+func (f *fakeFactoryService) RemoveWorkEpicProject(_ context.Context, _ string, project string) error {
+	f.removedProject = project
+	return f.err
 }
 
 func (f *fakeFactoryService) CreateRecoveryGate(context.Context, string, string, string, string, []string) (factory.RecoveryGate, error) {
@@ -231,7 +237,10 @@ func TestWriteFactoryErrorSeparatesClientAndServerFailures(t *testing.T) {
 		{"unavailable", factory.ErrFactoryUnavailable, http.StatusServiceUnavailable},
 		{"missing Formula", factory.ErrFormulaNotFound, http.StatusNotFound},
 		{"missing epic", factory.ErrWorkEpicNotFound, http.StatusNotFound},
+		{"missing epic project", factory.ErrEpicProjectNotFound, http.StatusNotFound},
 		{"instantiation conflict", factory.ErrInstantiationConflict, http.StatusConflict},
+		{"permanent epic project", factory.ErrEpicProjectPermanent, http.StatusConflict},
+		{"epic project history", factory.ErrEpicProjectHistory, http.StatusConflict},
 		{"permission", factory.ErrActionNotPermitted, http.StatusForbidden},
 		{"non-local project", factory.ErrProjectNotLocalGit, http.StatusBadRequest},
 		{"acknowledgement", factory.ErrAcknowledgementRequired, http.StatusBadRequest},
@@ -275,6 +284,13 @@ func TestFactoryEpicRoutes(t *testing.T) {
 		if path == "/api/factory/epics/fac-1" && !strings.Contains(rec.Body.String(), `"attempts":[{"id":"attempt-1"`) {
 			t.Fatalf("detail = %s", rec.Body.String())
 		}
+	}
+	removeProject := httptest.NewRequest(http.MethodDelete, "/api/factory/epics/fac-1/projects?path=%2Fdocs", nil)
+	removeProject.RemoteAddr = "127.0.0.1:1"
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, removeProject)
+	if rec.Code != http.StatusNoContent || svc.removedProject != "/docs" {
+		t.Fatalf("remove project = %d, %q: %s", rec.Code, svc.removedProject, rec.Body.String())
 	}
 	gate := httptest.NewRequest(http.MethodPost, "/api/factory/epics/fac-1/plan-gate/approve", strings.NewReader(`{"expectedRevision":1,"expectedHash":"hash"}`))
 	gate.RemoteAddr = "127.0.0.1:1"

@@ -330,7 +330,7 @@ func TestFactoryToolCreatesEpicForPreplannedGraph(t *testing.T) {
 	}
 	t.Cleanup(srv.Close)
 
-	got := callTool(t, srv, "factory", map[string]any{"action": "create", "epic_id": "pretty-epic-ids", "goal": "Ship", "brief": "Already broken down", "initial_project": "/repo", "acknowledge_local_execution": true})
+	got := callTool(t, srv, "factory", map[string]any{"action": "create", "epic_id": "pretty-epic-ids", "goal": "Ship", "brief": "Already broken down", "initial_project": "/repo", "acknowledge_local_execution": true, "projects": []any{map[string]any{"path": "/docs", "acknowledgeLocalExecution": true}}})
 	if got.IsError || !strings.Contains(resultText(got), `"id": "epic-1"`) {
 		t.Fatalf("create = %q", resultText(got))
 	}
@@ -338,7 +338,7 @@ func TestFactoryToolCreatesEpicForPreplannedGraph(t *testing.T) {
 	if !strings.Contains(guidance, "Only in this creation response") || !strings.Contains(guidance, "Do not repeat") || !strings.Contains(guidance, "[[ocman:card type=factory-epic epic=epic-1 action=created]]") {
 		t.Fatalf("creation card guidance must be scoped to this response: %q", guidance)
 	}
-	if svc.createReq.Goal != "Ship" || svc.createReq.Brief != "Already broken down" || svc.createReq.InitialProject != "/repo" || !svc.createReq.AcknowledgeLocalExecution || svc.createReq.FormulaID != "" || svc.createReq.EpicID != "pretty-epic-ids" {
+	if svc.createReq.Goal != "Ship" || svc.createReq.Brief != "Already broken down" || svc.createReq.InitialProject != "/repo" || !svc.createReq.AcknowledgeLocalExecution || svc.createReq.FormulaID != "" || svc.createReq.EpicID != "pretty-epic-ids" || !reflect.DeepEqual(svc.createReq.Projects, []factory.ProjectAdmission{{Path: "/docs", AcknowledgeLocalExecution: true}}) {
 		t.Fatalf("create request = %#v", svc.createReq)
 	}
 	svc.err = fmt.Errorf("%w: %q", factory.ErrEpicIDTaken, "pretty-epic-ids")

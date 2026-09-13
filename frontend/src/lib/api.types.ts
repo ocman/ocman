@@ -143,6 +143,7 @@ export interface FactoryEpic {
   goal: string;
   brief?: string;
   initialProject: string;
+	projects?: { path: string; removable: boolean }[];
   formulaId: string;
   formulaVersion: number;
   formulaRevision: number;
@@ -210,6 +211,7 @@ export interface CreateWorkEpicRequest {
   formulaId?: string;
   formulaRevision?: number;
   acknowledgeLocalExecution: boolean;
+	projects?: { path: string; remoteId?: string; acknowledgeLocalExecution: boolean }[];
 }
 
 export interface FactoryIssue {

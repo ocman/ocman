@@ -151,6 +151,8 @@ function CreateEpic({ onCreated }: { onCreated?: () => void }) {
   const projects = useProjects();
   const [error, setError] = useState('');
   const [initialProject, setInitialProject] = useState('');
+	const [secondaryProjects, setSecondaryProjects] = useState<string[]>([]);
+	const [acknowledgedProjects, setAcknowledgedProjects] = useState<string[]>([]);
   const [formula, setFormula] = useState('');
   const pendingInstantiation = useRef<{ key: string; id: string } | undefined>(undefined);
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -170,7 +172,12 @@ function CreateEpic({ onCreated }: { onCreated?: () => void }) {
 			setError('Acknowledge local command execution.');
 			return;
 		}
-    const key = JSON.stringify([goal, brief, initialProject, selectedFormula]);
+		const missingAcknowledgement = secondaryProjects.find((path) => !acknowledgedProjects.includes(path));
+		if (missingAcknowledgement) {
+			setError(`Acknowledge local command execution in ${missingAcknowledgement}.`);
+			return;
+		}
+		const key = JSON.stringify([goal, brief, initialProject, secondaryProjects, selectedFormula]);
     try {
       if (pendingInstantiation.current?.key !== key) {
         pendingInstantiation.current = { key, id: newInstantiationID() };
@@ -181,11 +188,14 @@ function CreateEpic({ onCreated }: { onCreated?: () => void }) {
         brief: brief || undefined,
         initialProject,
 				acknowledgeLocalExecution,
+				...(secondaryProjects.length && { projects: secondaryProjects.map((path) => ({ path, acknowledgeLocalExecution: true })) }),
         ...(formula && { formulaId, formulaRevision: Number(formulaRevision) }),
       });
       pendingInstantiation.current = undefined;
       formElement.reset();
       setInitialProject('');
+			setSecondaryProjects([]);
+			setAcknowledgedProjects([]);
       setFormula('');
       setError('');
       onCreated?.();
@@ -197,7 +207,9 @@ function CreateEpic({ onCreated }: { onCreated?: () => void }) {
   return <form className="factory-create" onSubmit={(event) => void submit(event)}>
     <div className="factory-field"><label>Goal<input name="goal" required maxLength={80} aria-describedby="factory-goal-help" /></label><p id="factory-goal-help">A short clear title for the outcome this Factory work should deliver.</p></div>
     <div className="factory-field"><label>Brief<textarea name="brief" aria-describedby="factory-brief-help" /></label><p id="factory-brief-help">Optional context, constraints, and decisions for the planning work.</p></div>
-    <div className="factory-field"><label>Initial Factory project<SearchSelect value={initialProject} ariaLabel="Initial Factory project" placeholder={projects.isLoading ? 'Loading projects…' : 'Select a project'} searchLabel="Search projects" disabled={projects.isLoading || !projects.data?.some((project) => !project.archived)} onChange={(value) => { setInitialProject(value); setError(''); }} options={projects.data?.filter((project) => !project.archived).map((project) => ({ value: project.directory, label: project.directory, displayLabel: <ProjectLabel path={project.directory} /> })) ?? []} /></label><p>The local project where Factory starts work. Commands run on this machine.</p></div>
+		<div className="factory-field"><label>Initial Factory project<SearchSelect value={initialProject} ariaLabel="Initial Factory project" placeholder={projects.isLoading ? 'Loading projects…' : 'Select a project'} searchLabel="Search projects" disabled={projects.isLoading || !projects.data?.some((project) => !project.archived)} onChange={(value) => { setInitialProject(value); setSecondaryProjects((current) => current.filter((path) => path !== value)); setAcknowledgedProjects((current) => current.filter((path) => path !== value)); setError(''); }} options={projects.data?.filter((project) => !project.archived && !project.remoteId).map((project) => ({ value: project.directory, label: project.directory, displayLabel: <ProjectLabel path={project.directory} /> })) ?? []} /></label><p>The local project where Factory starts work. Commands run on this machine.</p></div>
+		<div className="factory-field"><label>Additional projects<select multiple aria-label="Additional projects" value={secondaryProjects} onChange={(event) => { const selected = [...event.currentTarget.selectedOptions].map(({ value }) => value); setSecondaryProjects(selected); setAcknowledgedProjects((current) => current.filter((path) => selected.includes(path))); setError(''); }}>{projects.data?.filter((project) => !project.archived && !project.remoteId && project.directory !== initialProject).map((project) => <option key={project.directory} value={project.directory} aria-label={`Additional project ${project.directory}`}>{project.directory}</option>)}</select></label><p>Optional local repositories this Epic may use.</p></div>
+		{secondaryProjects.map((path) => <label key={path}><input type="checkbox" checked={acknowledgedProjects.includes(path)} onChange={(event) => setAcknowledgedProjects((current) => event.target.checked ? [...current, path] : current.filter((item) => item !== path))} />Allow Factory agents to run commands in {path}</label>)}
     {projects.isError && <p role="alert">Could not load Factory projects.</p>}
     <div className="factory-field"><label>Formula<SelectField name="formula" value={formula} onChange={(event) => setFormula(event.target.value)} aria-describedby="factory-formula-help"><option value="">Built-in tracer</option>{formulas.data?.filter((item) => item.id !== TRACER_FORMULA_ID).map((item) => <option key={`${item.id}@${item.version}`} value={`${item.id}@${item.version}`}>{item.name} · {item.id}@{item.version}</option>)}</SelectField></label><p id="factory-formula-help">Defines the initial work graph. Formula revisions are immutable.</p><p aria-live="polite">{describeFormula(selectedFormula)}</p></div>
 		<label><input type="checkbox" name="acknowledgeLocalExecution" />Allow Factory agents to run commands in this project</label>
@@ -259,8 +271,9 @@ export function FactoryEpics() {
 	const [project, setProject] = useState('');
   const [creating, setCreating] = useState(false);
 	const deferredQuery = useDeferredValue(query.trim().toLowerCase());
-	const projects = [...new Set(epics.data?.map((epic) => epic.initialProject) ?? [])].sort();
-	const filtered = epics.data?.filter((epic) => `${epic.id} ${epic.goal} ${epic.initialProject}`.toLowerCase().includes(deferredQuery) && (!project || epic.initialProject === project)) ?? [];
+	const epicProjects = (epic: FactoryEpic) => epic.projects?.map(({ path }) => path) ?? [epic.initialProject];
+	const projects = [...new Set(epics.data?.flatMap(epicProjects) ?? [])].sort();
+	const filtered = epics.data?.filter((epic) => `${epic.id} ${epic.goal} ${epicProjects(epic).join(' ')}`.toLowerCase().includes(deferredQuery) && (!project || epicProjects(epic).includes(project))) ?? [];
 	const closedCount = filtered.filter((epic) => isClosed(epic.status)).length;
 	const visible = filtered.filter((epic) => status === 'all' || (status === 'closed' ? isClosed(epic.status) : !isClosed(epic.status)));
 	const groups = [...new Set(visible.map((epic) => epic.status))].sort((a, b) => ['open', 'paused', 'closed'].indexOf(a) - ['open', 'paused', 'closed'].indexOf(b));
@@ -276,7 +289,7 @@ export function FactoryEpics() {
 		</InventoryToolbar>
     {creating && <Drawer title="Create epic" onClose={() => setCreating(false)}><CreateEpic onCreated={() => setCreating(false)} /></Drawer>}
     {!epics.isLoading && !epics.isError && !visible.length && <p className="oc-empty">No epics match this search.</p>}
-		{!!visible.length && <div className="factory-list" aria-label="Epics">{groups.map((group) => { const items = visible.filter((epic) => epic.status === group); const label = statusLabel(group); return <DataTableGroup key={group} label={label} noun="epics" count={items.length} markerClassName={`factory-status-dot--${label.toLowerCase().replaceAll(' ', '-')}`}>{items.map((epic) => <DataTableRow key={epic.id} className="factory-grid-row" primary={<Link to={`/factory/epics/${encodeURIComponent(epic.id)}`}>{epic.goal}</Link>} secondary={<span className="factory-list-id">{epic.id}</span>} meta={<><ProjectCell path={epic.initialProject} /><div className="factory-cell" data-testid="epic-progress"><span>{epic.progress?.requiredSucceeded ?? 0}/{epic.progress?.requiredTotal ?? 0}</span><progress value={epic.progress?.requiredSucceeded ?? 0} max={epic.progress?.requiredTotal || 1} aria-label="Required issues done" /></div></>} />)}</DataTableGroup>; })}</div>}
+		{!!visible.length && <div className="factory-list" aria-label="Epics">{groups.map((group) => { const items = visible.filter((epic) => epic.status === group); const label = statusLabel(group); return <DataTableGroup key={group} label={label} noun="epics" count={items.length} markerClassName={`factory-status-dot--${label.toLowerCase().replaceAll(' ', '-')}`}>{items.map((epic) => <DataTableRow key={epic.id} className="factory-grid-row" primary={<Link to={`/factory/epics/${encodeURIComponent(epic.id)}`}>{epic.goal}</Link>} secondary={<span className="factory-list-id">{epic.id}</span>} meta={<><div className="factory-cell" data-testid="cell-project">{epicProjects(epic).map((path) => <Link key={path} to={`/project/${encodeURIComponent(path)}`}><ProjectLabel path={path} /></Link>)}</div><div className="factory-cell" data-testid="epic-progress"><span>{epic.progress?.requiredSucceeded ?? 0}/{epic.progress?.requiredTotal ?? 0}</span><progress value={epic.progress?.requiredSucceeded ?? 0} max={epic.progress?.requiredTotal || 1} aria-label="Required issues done" /></div></>} />)}</DataTableGroup>; })}</div>}
   </FactoryPage>;
 }
 
@@ -412,7 +425,7 @@ export function FactoryEpicDetail() {
   return <FactoryPage>
     <h2>{epic.data.goal}</h2>
 		<FactoryStartedToast open={started} onOpenChange={setStarted} />
-    <dl className="factory-epic-details"><div><dt>Status</dt><dd data-testid="epic-status">{epic.data.status}</dd></div><div><dt>Project</dt><dd><ProjectLabel path={epic.data.initialProject} /></dd></div></dl>
+		<dl className="factory-epic-details"><div><dt>Status</dt><dd data-testid="epic-status">{epic.data.status}</dd></div><div><dt>Projects</dt><dd>{(epic.data.projects ?? [{ path: epic.data.initialProject }]).map(({ path }, index) => <span key={path}>{index > 0 && ', '}<ProjectLabel path={path} /></span>)}</dd></div></dl>
     {/* ponytail: every epic action lives here, above the proposal dumps that used to push them off screen. */}
     <section className="factory-epic-actions" aria-label="Epic actions">
       {epic.data.planGate?.resolution === 'open' && <div className="factory-epic-gate" aria-label="Plan approval gate"><h3>Plan approval</h3><p>Revision {epic.data.planGate.proposalRevision}: {epic.data.planGate.proposalHash}</p>{gatedProposal && <div aria-label="Proposed plan"><EpicGraph issues={proposalIssues(gatedProposal.manifest)} preview />{gatedProposal.rationaleMarkdown && <details className="factory-proposal"><summary>Rationale</summary><MarkdownContent text={gatedProposal.rationaleMarkdown} /></details>}</div>}<FactoryImplementationModel {...implementation} /><label>Feedback<textarea value={feedback} onChange={(event) => setFeedback(event.target.value)} /></label><div className="factory-epic-action-row">{(['approve', 'revise', 'reject'] as const).map((action) => <Button key={action} type="button" variant={action === 'approve' ? 'accent' : 'default'} disabled={decideGate.isPending || (action === 'approve' && implementation.loading)} onClick={() => decideGate.mutate({ action, expectedRevision: epic.data!.planGate!.proposalRevision, expectedHash: epic.data!.planGate!.proposalHash, feedback, ...(action === 'approve' && implementation.model && { implementationModel: implementation.model }) }, { onSuccess: () => { if (action === 'approve') { setGateStatus(''); setStarted(true); } else setGateStatus(action === 'revise' ? 'Revision requested.' : 'Plan rejected.'); } })}>{action === 'approve' ? 'Approve plan' : action === 'revise' ? 'Request revision' : 'Reject plan'}</Button>)}</div>{decideGate.isError && <p role="alert">{decideGate.error instanceof Error ? decideGate.error.message : 'Could not decide Plan gate.'}</p>}</div>}

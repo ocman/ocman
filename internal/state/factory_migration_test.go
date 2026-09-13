@@ -446,6 +446,47 @@ func TestFactoryRecoveryGateAuditsEveryResolution(t *testing.T) {
 	}
 }
 
+func TestMigrateV82BackfillsPermanentEpicProject(t *testing.T) {
+	raw, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	if err := ensureSchemaVersionTable(raw); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := raw.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for version := 1; version <= 81; version++ {
+		if err := applyMigration(tx, version); err != nil {
+			t.Fatalf("apply migration v%d: %v", version, err)
+		}
+	}
+	if _, err := tx.Exec(`INSERT INTO factory_project (path, created_at) VALUES ('/repo', 1);
+		INSERT INTO factory_epic (id, project_path, status, goal, created_at, updated_at) VALUES ('epic', '/repo', 'open', 'Goal', 1, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateToV83(tx); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var path string
+	var permanent bool
+	if err := raw.QueryRow(`SELECT project_path, is_epic FROM factory_epic_project WHERE epic_id = 'epic'`).Scan(&path, &permanent); err != nil || path != "/repo" || !permanent {
+		t.Fatalf("backfill = %q, %t, %v", path, permanent, err)
+	}
+	if _, err := raw.Exec(`DELETE FROM factory_epic_project WHERE epic_id = 'epic' AND project_path = '/repo'`); err == nil {
+		t.Fatal("permanent Epic project was removable")
+	}
+	if _, err := raw.Exec(`UPDATE factory_epic_project SET is_epic = 0 WHERE epic_id = 'epic' AND project_path = '/repo'`); err == nil {
+		t.Fatal("permanent Epic project flag was mutable")
+	}
+}
+
 // Gates created before v76 stored the work item they came out of but never wrote
 // the edge, leaving them stranded in the graph.
 func TestMigrateV76BackfillsGateEdgesToInterruptedWork(t *testing.T) {

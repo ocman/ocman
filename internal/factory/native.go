@@ -48,6 +48,9 @@ var (
 	ErrActionNotPermitted      = errors.New("factory action is not permitted")
 	ErrAcknowledgementRequired = errors.New("local execution acknowledgement is required")
 	ErrEpicIDTaken             = errors.New("factory epic id already taken: pick another human-friendly id")
+	ErrEpicProjectPermanent    = model.ErrEpicProjectPermanent
+	ErrEpicProjectHistory      = model.ErrEpicProjectHistory
+	ErrEpicProjectNotFound     = model.ErrEpicProjectNotFound
 )
 
 type Health string
@@ -101,12 +104,19 @@ type CreateWorkEpicRequest struct {
 	// EpicID is an optional human-friendly kebab-case ID for the Epic,
 	// normally supplied by the agent that creates it. Empty means the ID is
 	// derived from the goal.
-	EpicID                    string `json:"epicId,omitempty"`
-	Goal                      string `json:"goal"`
-	Brief                     string `json:"brief,omitempty"`
-	InitialProject            string `json:"initialProject"`
-	FormulaID                 string `json:"formulaId,omitempty"`
-	FormulaRevision           int    `json:"formulaRevision,omitempty"`
+	EpicID                    string             `json:"epicId,omitempty"`
+	Goal                      string             `json:"goal"`
+	Brief                     string             `json:"brief,omitempty"`
+	InitialProject            string             `json:"initialProject"`
+	FormulaID                 string             `json:"formulaId,omitempty"`
+	FormulaRevision           int                `json:"formulaRevision,omitempty"`
+	AcknowledgeLocalExecution bool               `json:"acknowledgeLocalExecution"`
+	Projects                  []ProjectAdmission `json:"projects,omitempty"`
+}
+
+type ProjectAdmission struct {
+	Path                      string `json:"path"`
+	RemoteID                  string `json:"remoteId,omitempty"`
 	AcknowledgeLocalExecution bool   `json:"acknowledgeLocalExecution"`
 }
 
@@ -127,6 +137,7 @@ type WorkEpic struct {
 	Goal            string                 `json:"goal"`
 	Brief           string                 `json:"brief,omitempty"`
 	InitialProject  string                 `json:"initialProject"`
+	Projects        []model.EpicProject    `json:"projects"`
 	FormulaID       string                 `json:"formulaId"`
 	FormulaVersion  int                    `json:"formulaVersion"`
 	FormulaRevision int                    `json:"formulaRevision"`
@@ -620,6 +631,11 @@ type nativeStore interface {
 	PourFactoryEpic(context.Context, string, model.NativeFormula) (model.NativeEpic, []model.NativeIssue, error)
 	ListFactoryIssues(context.Context, string) ([]model.NativeIssue, error)
 }
+
+type nativeProjectSetStore interface {
+	CreateFactoryEpicWithProjects(context.Context, string, string, string, string, string, model.NativeFormula, []string) (model.NativeEpic, error)
+	RemoveFactoryEpicProject(context.Context, string, string) error
+}
 type nativeFormulaStore interface {
 	ListNativeFactoryFormulaRevisions(context.Context) ([]model.NativeFormulaRevision, error)
 	GetNativeFactoryFormulaRevision(context.Context, string, int) (model.NativeFormulaRevision, error)
@@ -982,6 +998,28 @@ func (s *NativeService) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRe
 	if err := acks.UpsertFactoryLocalExecutionAck(ctx, "local", project, "factory-implement", "v1", "operator", time.Now()); err != nil {
 		return WorkEpic{}, fmt.Errorf("%w: record local execution acknowledgement: %w", ErrFactoryUnavailable, err)
 	}
+	secondary := make([]string, 0, len(req.Projects))
+	seen := map[string]bool{project: true}
+	for _, admission := range req.Projects {
+		if admission.RemoteID != "" && admission.RemoteID != "local" {
+			return WorkEpic{}, fmt.Errorf("%w: project %q belongs to remote host %q; only local projects can be admitted", ErrInvalidRequest, admission.Path, admission.RemoteID)
+		}
+		canonical, err := s.canonicalProject(ctx, admission.Path)
+		if err != nil {
+			return WorkEpic{}, fmt.Errorf("secondary project %q: %w", admission.Path, err)
+		}
+		if seen[canonical] {
+			return WorkEpic{}, fmt.Errorf("%w: duplicate project %q", ErrInvalidRequest, canonical)
+		}
+		if !admission.AcknowledgeLocalExecution {
+			return WorkEpic{}, fmt.Errorf("%w for project %q", ErrAcknowledgementRequired, canonical)
+		}
+		if err := acks.UpsertFactoryLocalExecutionAck(ctx, "local", canonical, "factory-implement", "v1", "operator", time.Now()); err != nil {
+			return WorkEpic{}, fmt.Errorf("%w: record local execution acknowledgement for %q: %w", ErrFactoryUnavailable, canonical, err)
+		}
+		seen[canonical] = true
+		secondary = append(secondary, canonical)
+	}
 	formulaID, revision := req.FormulaID, req.FormulaRevision
 	if formulaID == "" {
 		formulaID, revision = "ocman/tracer", 1
@@ -990,7 +1028,16 @@ func (s *NativeService) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRe
 	if err != nil {
 		return WorkEpic{}, err
 	}
-	epic, err := s.store.CreateFactoryEpic(ctx, epicID, req.Goal, req.Brief, req.InitialProject, req.InstantiationID, formula)
+	var epic model.NativeEpic
+	if len(secondary) > 0 {
+		store, ok := s.store.(nativeProjectSetStore)
+		if !ok {
+			return WorkEpic{}, ErrFactoryUnavailable
+		}
+		epic, err = store.CreateFactoryEpicWithProjects(ctx, epicID, req.Goal, req.Brief, req.InitialProject, req.InstantiationID, formula, secondary)
+	} else {
+		epic, err = s.store.CreateFactoryEpic(ctx, epicID, req.Goal, req.Brief, req.InitialProject, req.InstantiationID, formula)
+	}
 	switch {
 	case errors.Is(err, model.ErrNativeInstantiationConflict):
 		err = ErrInstantiationConflict
@@ -998,6 +1045,22 @@ func (s *NativeService) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRe
 		err = fmt.Errorf("%w: %q", ErrEpicIDTaken, epicID)
 	}
 	return nativeEpic(epic), err
+}
+
+func (s *NativeService) RemoveWorkEpicProject(ctx context.Context, epicID, path string) error {
+	store, ok := s.store.(nativeProjectSetStore)
+	if !ok {
+		return ErrFactoryUnavailable
+	}
+	project, err := s.canonicalProject(ctx, path)
+	if err != nil {
+		if !filepath.IsAbs(path) {
+			return err
+		}
+		project = filepath.Clean(path)
+	}
+	err = store.RemoveFactoryEpicProject(ctx, epicID, project)
+	return err
 }
 
 func (s *NativeService) ListWorkEpics(ctx context.Context) ([]WorkEpic, error) {
@@ -2357,7 +2420,7 @@ func nativeEpic(epic model.NativeEpic) WorkEpic {
 	if epic.FormulaID == BuiltInTracerFormula().ID {
 		origin = FormulaOriginBuiltIn
 	}
-	return WorkEpic{ID: epic.ID, Status: epic.Status, Goal: epic.Goal, Brief: epic.Brief, InitialProject: epic.InitialProject, InstantiationID: epic.InstantiationID, FormulaID: epic.FormulaID, FormulaVersion: epic.FormulaVersion, FormulaRevision: epic.FormulaVersion, FormulaHash: epic.FormulaHash, FormulaOrigin: origin}
+	return WorkEpic{ID: epic.ID, Status: epic.Status, Goal: epic.Goal, Brief: epic.Brief, InitialProject: epic.InitialProject, Projects: epic.Projects, InstantiationID: epic.InstantiationID, FormulaID: epic.FormulaID, FormulaVersion: epic.FormulaVersion, FormulaRevision: epic.FormulaVersion, FormulaHash: epic.FormulaHash, FormulaOrigin: origin}
 }
 func nativeEpics(epics []model.NativeEpic) []WorkEpic {
 	out := make([]WorkEpic, len(epics))

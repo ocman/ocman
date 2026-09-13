@@ -66,6 +66,12 @@ function renderCard() {
 }
 
 describe('FactoryEpicCard', () => {
+	it('shows every Epic project', async () => {
+		vi.mocked(api.factoryEpic).mockResolvedValue(epic({ projects: [{ path: '/repo', removable: false }, { path: '/docs', removable: true }] }));
+		renderCard();
+		expect(await screen.findByText('/docs')).toBeInTheDocument();
+	});
+
   it('claims ready planning work from the card and opens its session', async () => {
     vi.mocked(api.factoryEpic).mockResolvedValue(epic());
     vi.mocked(api.factoryIssues).mockResolvedValue([plan]);

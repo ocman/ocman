@@ -144,6 +144,30 @@ describe('Factory interactions', () => {
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Create epic' })).not.toBeInTheDocument());
   });
 
+	it('selects, acknowledges, and displays additional projects', async () => {
+		const user = userEvent.setup();
+		vi.mocked(api.projects).mockResolvedValue([
+			{ directory: '/repo', sessionCount: 1, messageCount: 1, totalTokensIn: 0, totalTokensOut: 0, lastUsed: 0 },
+			{ directory: '/docs', sessionCount: 1, messageCount: 1, totalTokensIn: 0, totalTokensOut: 0, lastUsed: 0 },
+			{ directory: '/remote', remoteId: 'remote-1', sessionCount: 1, messageCount: 1, totalTokensIn: 0, totalTokensOut: 0, lastUsed: 0 },
+		]);
+		vi.mocked(api.createFactoryEpic).mockResolvedValue({ id: 'epic-1' } as never);
+		renderFactory(<MemoryRouter><FactoryEpics /></MemoryRouter>);
+		await fillEpicForm(user);
+		expect(screen.queryByRole('option', { name: '/remote' })).not.toBeInTheDocument();
+		await user.selectOptions(screen.getByRole('listbox', { name: 'Additional projects' }), '/docs');
+		await user.click(screen.getByRole('button', { name: 'Create epic' }));
+		expect(screen.getByRole('alert')).toHaveTextContent('Acknowledge local command execution in /docs.');
+		await user.click(screen.getByRole('checkbox', { name: 'Allow Factory agents to run commands in /docs' }));
+		await user.click(screen.getByRole('button', { name: 'Create epic' }));
+		await waitFor(() => expect(api.createFactoryEpic).toHaveBeenCalledWith(expect.objectContaining({ projects: [{ path: '/docs', acknowledgeLocalExecution: true }] })));
+
+		vi.mocked(api.factoryEpics).mockResolvedValue([{ id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo', projects: [{ path: '/repo', removable: false }, { path: '/docs', removable: true }] }] as never);
+		renderFactory(<MemoryRouter><FactoryEpics /></MemoryRouter>);
+		await screen.findByRole('link', { name: 'Ship Factory' });
+		expect(within(screen.getAllByRole('listitem').at(-1)!).getByText('/docs')).toBeInTheDocument();
+	});
+
   it('requires a selected Factory project and submits its canonical path', async () => {
     const user = userEvent.setup();
     renderFactory(<MemoryRouter><FactoryEpics /></MemoryRouter>);
@@ -515,12 +539,13 @@ describe('Factory interactions', () => {
 			{ id: 'issue-5', epicId: 'epic-1', kind: 'task', title: 'Deferred work', status: 'deferred' },
 			{ id: 'issue-6', epicId: 'epic-1', kind: 'task', title: 'Backlog work', status: 'open' },
 		];
-    vi.mocked(api.factoryEpic).mockResolvedValue({ id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo' } as never);
+		vi.mocked(api.factoryEpic).mockResolvedValue({ id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo', projects: [{ path: '/repo', removable: false }, { path: '/docs', removable: true }] } as never);
 		vi.mocked(api.factoryIssues).mockResolvedValueOnce([]).mockResolvedValue(pouredIssues as never);
 		vi.mocked(api.pourFactoryEpic).mockResolvedValue(pouredIssues as never);
     renderFactory(<MemoryRouter initialEntries={['/factory/epics/epic-1']}><Routes><Route path="/factory/epics/:id" element={<FactoryEpicDetail />} /></Routes></MemoryRouter>);
 
     await screen.findByText('This epic has no issues yet.');
+		expect(screen.getByText('Projects').nextElementSibling).toHaveTextContent('/repo, /docs');
     await user.click(screen.getByRole('button', { name: 'Pour graph' }));
 
     expect(await screen.findByLabelText('Epic issues by status')).toBeInTheDocument();

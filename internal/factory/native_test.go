@@ -15,23 +15,27 @@ import (
 )
 
 type nativeStoreFake struct {
-	epic          model.NativeEpic
-	issues        []model.NativeIssue
-	poured        bool
-	pouredFormula model.NativeFormula
-	policy        model.FactoryCapacityPolicy
-	formulas      []model.NativeFormulaRevision
-	mutation      model.GraphMutation
-	mutationErr   error
-	acknowledged  string
-	comments      []model.NativeIssueComment
-	commentErr    error
-	preferredID   string
-	takenEpicIDs  map[string]bool
+	epic             model.NativeEpic
+	issues           []model.NativeIssue
+	poured           bool
+	pouredFormula    model.NativeFormula
+	policy           model.FactoryCapacityPolicy
+	formulas         []model.NativeFormulaRevision
+	mutation         model.GraphMutation
+	mutationErr      error
+	acknowledged     string
+	acknowledgements []string
+	comments         []model.NativeIssueComment
+	commentErr       error
+	preferredID      string
+	takenEpicIDs     map[string]bool
+	removedProject   string
+	removeProjectErr error
 }
 
 func (s *nativeStoreFake) UpsertFactoryLocalExecutionAck(_ context.Context, host, project, profile, version, _ string, _ time.Time) error {
 	s.acknowledged = strings.Join([]string{host, project, profile, version}, "/")
+	s.acknowledgements = append(s.acknowledgements, s.acknowledged)
 	return nil
 }
 
@@ -99,11 +103,15 @@ func (s *nativeStoreFake) SetFactoryCapacityPolicy(_ context.Context, policy mod
 }
 
 type testProjectResolver struct {
-	root string
-	err  error
+	root  string
+	roots map[string]string
+	err   error
 }
 
-func (r testProjectResolver) ResolveLocalProject(context.Context, string) (string, error) {
+func (r testProjectResolver) ResolveLocalProject(_ context.Context, path string) (string, error) {
+	if root, ok := r.roots[path]; ok {
+		return root, nil
+	}
 	return r.root, r.err
 }
 
@@ -120,6 +128,23 @@ func (s *nativeStoreFake) CreateFactoryEpic(_ context.Context, preferredID, goal
 	return s.epic, nil
 }
 
+func (s *nativeStoreFake) CreateFactoryEpicWithProjects(ctx context.Context, preferredID, goal, brief, project, instantiationID string, formula model.NativeFormula, secondary []string) (model.NativeEpic, error) {
+	epic, err := s.CreateFactoryEpic(ctx, preferredID, goal, brief, project, instantiationID, formula)
+	if err == nil {
+		epic.Projects = []model.EpicProject{{Path: project}}
+		for _, path := range secondary {
+			epic.Projects = append(epic.Projects, model.EpicProject{Path: path, Removable: true})
+		}
+		s.epic = epic
+	}
+	return epic, err
+}
+
+func (s *nativeStoreFake) RemoveFactoryEpicProject(_ context.Context, _ string, project string) error {
+	s.removedProject = project
+	return s.removeProjectErr
+}
+
 func TestNativeServiceCanonicalizesProjectAndRejectsResolverFailure(t *testing.T) {
 	store := &nativeStoreFake{}
 	svc := NewNative(store, testProjectResolver{root: "/repo"})
@@ -133,6 +158,68 @@ func TestNativeServiceCanonicalizesProjectAndRejectsResolverFailure(t *testing.T
 	svc = NewNative(store, testProjectResolver{err: errors.New("not a repo")})
 	if _, err := svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{Goal: "Ship", InitialProject: "/repo", AcknowledgeLocalExecution: true}); !errors.Is(err, ErrProjectNotLocalGit) {
 		t.Fatalf("CreateWorkEpic error = %v, want ErrProjectNotLocalGit", err)
+	}
+}
+
+func TestCreateWorkEpicAdmitsCanonicalLocalProjects(t *testing.T) {
+	store := &nativeStoreFake{}
+	svc := NewNative(store, testProjectResolver{roots: map[string]string{"/main/subdir": "/main", "/other/subdir": "/other"}})
+	created, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{
+		Goal: "Ship", InitialProject: "/main/subdir", AcknowledgeLocalExecution: true,
+		Projects: []ProjectAdmission{{Path: "/other/subdir", AcknowledgeLocalExecution: true}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []model.EpicProject{{Path: "/main"}, {Path: "/other", Removable: true}}
+	if !reflect.DeepEqual(created.Projects, want) {
+		t.Fatalf("projects = %#v, want %#v", created.Projects, want)
+	}
+	if len(store.acknowledgements) != 2 {
+		t.Fatalf("acknowledgements = %#v", store.acknowledgements)
+	}
+}
+
+func TestCreateWorkEpicRejectsInvalidSecondaryProjects(t *testing.T) {
+	tests := []struct {
+		name    string
+		project ProjectAdmission
+		want    error
+	}{
+		{name: "acknowledgement", project: ProjectAdmission{Path: "/other"}, want: ErrAcknowledgementRequired},
+		{name: "duplicate", project: ProjectAdmission{Path: "/main/subdir", AcknowledgeLocalExecution: true}, want: ErrInvalidRequest},
+		{name: "remote", project: ProjectAdmission{Path: "/other", RemoteID: "remote-1", AcknowledgeLocalExecution: true}, want: ErrInvalidRequest},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := NewNative(&nativeStoreFake{}, testProjectResolver{roots: map[string]string{"/main": "/main", "/main/subdir": "/main", "/other": "/other"}})
+			_, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Ship", InitialProject: "/main", AcknowledgeLocalExecution: true, Projects: []ProjectAdmission{tt.project}})
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("error = %v, want %v", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestRemoveWorkEpicProjectCanonicalizesAndPreservesRemovalErrors(t *testing.T) {
+	store := &nativeStoreFake{removeProjectErr: model.ErrEpicProjectHistory}
+	svc := NewNative(store, testProjectResolver{root: "/other"})
+	if err := svc.RemoveWorkEpicProject(t.Context(), "epic", "/other/subdir"); !errors.Is(err, model.ErrEpicProjectHistory) {
+		t.Fatalf("error = %v", err)
+	}
+	if store.removedProject != "/other" {
+		t.Fatalf("removed project = %q", store.removedProject)
+	}
+}
+
+func TestRemoveWorkEpicProjectAllowsAStoredRepositoryThatNoLongerResolves(t *testing.T) {
+	store := &nativeStoreFake{}
+	svc := NewNative(store, testProjectResolver{err: errors.New("missing")})
+	if err := svc.RemoveWorkEpicProject(t.Context(), "epic", "/gone/../other"); err != nil {
+		t.Fatal(err)
+	}
+	if store.removedProject != "/other" {
+		t.Fatalf("removed project = %q", store.removedProject)
 	}
 }
 

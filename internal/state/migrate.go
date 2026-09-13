@@ -207,7 +207,8 @@ import (
 //	81 - persist the implementation model selected at Factory Plan approval.
 //	82 - persist live commit observations attributed to their source session
 //	     and terminal tool call.
-const latestSchemaVersion = 82
+//	83 - persist each Factory Epic's admitted local project set.
+const latestSchemaVersion = 83
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -476,6 +477,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV81(tx)
 	case 82:
 		return migrateToV82(tx)
+	case 83:
+		return migrateToV83(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -503,6 +506,34 @@ func migrateToV82(tx *sql.Tx) error {
 	return err
 }
 
+func migrateToV83(tx *sql.Tx) error {
+	var exists bool
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'factory_epic')`).Scan(&exists); err != nil || !exists {
+		return err
+	}
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS factory_epic_project (
+			epic_id TEXT NOT NULL REFERENCES factory_epic(id),
+			project_path TEXT NOT NULL REFERENCES factory_project(path),
+			is_epic INTEGER NOT NULL DEFAULT 0 CHECK (is_epic IN (0, 1)),
+			PRIMARY KEY (epic_id, project_path)
+		);
+		CREATE UNIQUE INDEX IF NOT EXISTS factory_epic_project_permanent_idx ON factory_epic_project(epic_id) WHERE is_epic = 1;
+		INSERT OR IGNORE INTO factory_epic_project (epic_id, project_path, is_epic)
+			SELECT id, project_path, 1 FROM factory_epic;
+		CREATE TRIGGER IF NOT EXISTS factory_epic_project_keep_permanent
+		BEFORE DELETE ON factory_epic_project WHEN OLD.is_epic = 1
+		BEGIN
+			SELECT RAISE(ABORT, 'factory Epic project cannot be removed');
+		END;
+		CREATE TRIGGER IF NOT EXISTS factory_epic_project_keep_permanent_update
+		BEFORE UPDATE ON factory_epic_project WHEN OLD.is_epic = 1 AND (NEW.is_epic <> 1 OR NEW.epic_id <> OLD.epic_id OR NEW.project_path <> OLD.project_path)
+		BEGIN
+			SELECT RAISE(ABORT, 'factory Epic project cannot be removed');
+		END;
+	`)
+	return err
+}
 func migrateToV54(tx *sql.Tx) error {
 	_, err := tx.Exec(`
 		CREATE TABLE IF NOT EXISTS factory_native_formula (

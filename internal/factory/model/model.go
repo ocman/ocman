@@ -14,6 +14,9 @@ var (
 	ErrNativeEpicNotFound          = errors.New("factory epic not found")
 	ErrNativeInstantiationConflict = errors.New("factory instantiation conflict")
 	ErrNativeEpicIDTaken           = errors.New("factory epic id already taken")
+	ErrEpicProjectPermanent        = errors.New("factory Epic project cannot be removed")
+	ErrEpicProjectHistory          = errors.New("factory project has started work or Delivery history")
+	ErrEpicProjectNotFound         = errors.New("factory Epic project not found")
 	ErrInvalidGraphMutation        = errors.New("invalid factory graph mutation")
 	ErrEpicClosureBlocked          = errors.New("factory Epic closure is blocked")
 )
@@ -28,6 +31,12 @@ type NativeEpic struct {
 	FormulaID       string
 	FormulaVersion  int
 	FormulaHash     string
+	Projects        []EpicProject
+}
+
+type EpicProject struct {
+	Path      string `json:"path"`
+	Removable bool   `json:"removable"`
 }
 
 type NativeIssue struct {
