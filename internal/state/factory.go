@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/factory/model"
@@ -158,7 +159,8 @@ func (d *DB) StopFactoryAttempt(ctx context.Context, id string, at time.Time) (b
 	result, err := d.db.ExecContext(ctx, `UPDATE factory_attempt SET phase = 'stopping', updated_at = ?
 		WHERE id = ? AND phase = 'active' AND json_extract(frozen_policy_json, '$.profile') = 'factory-implement/v1'
 		AND NOT EXISTS (SELECT 1 FROM factory_recovery_gate WHERE attempt_id = ? AND resolution NOT IN ('resume', 'retry', 'cancel'))
-		AND NOT EXISTS (SELECT 1 FROM factory_authority_escalation_gate WHERE attempt_id = ? AND resolution NOT IN ('approve', 'reject'))`, at.UnixMilli(), id, id, id)
+		AND NOT EXISTS (SELECT 1 FROM factory_authority_escalation_gate WHERE attempt_id = ? AND resolution NOT IN ('approve', 'reject'))
+		AND NOT EXISTS (SELECT 1 FROM factory_project_request_gate WHERE attempt_id = ? AND resolution NOT IN ('approved', 'rejected'))`, at.UnixMilli(), id, id, id, id)
 	if err != nil {
 		return false, fmt.Errorf("stopping Factory attempt: %w", err)
 	}
@@ -215,7 +217,8 @@ func (d *DB) CompleteFactoryAttempt(ctx context.Context, id string, result model
 	}
 	updated, err := d.db.ExecContext(ctx, `UPDATE factory_attempt
 		SET phase = 'terminal', terminal_outcome = 'succeeded', result_json = ?, finished_at = ?, updated_at = ?
-		WHERE id = ? AND phase = 'active'`, string(resultJSON), at.UnixMilli(), at.UnixMilli(), id)
+		WHERE id = ? AND phase = 'active'
+		AND NOT EXISTS (SELECT 1 FROM factory_project_request_gate WHERE attempt_id = ? AND resolution NOT IN ('approved', 'rejected'))`, string(resultJSON), at.UnixMilli(), at.UnixMilli(), id, id)
 	return factoryAttemptChanged(updated, err, "completing Factory attempt")
 }
 
@@ -235,7 +238,8 @@ func (d *DB) CompleteFactoryImplementationAttempt(ctx context.Context, id, agent
 		WHERE id = ? AND phase = 'stopping' AND json_extract(frozen_policy_json, '$.profile') = 'factory-implement/v1'
 		AND EXISTS (SELECT 1 FROM factory_external_mapping WHERE system = 'factory' AND external_kind = 'attempt_token' AND external_id = ? AND entity_kind = 'attempt' AND entity_id = factory_attempt.id)
 		AND NOT EXISTS (SELECT 1 FROM factory_recovery_gate WHERE attempt_id = ? AND resolution NOT IN ('resume', 'retry', 'cancel'))
-		AND NOT EXISTS (SELECT 1 FROM factory_authority_escalation_gate WHERE attempt_id = ? AND resolution NOT IN ('approve', 'reject'))`, string(resultJSON), at.UnixMilli(), at.UnixMilli(), id, agentToken, id, id)
+		AND NOT EXISTS (SELECT 1 FROM factory_authority_escalation_gate WHERE attempt_id = ? AND resolution NOT IN ('approve', 'reject'))
+		AND NOT EXISTS (SELECT 1 FROM factory_project_request_gate WHERE attempt_id = ? AND resolution NOT IN ('approved', 'rejected'))`, string(resultJSON), at.UnixMilli(), at.UnixMilli(), id, agentToken, id, id, id)
 	changed, err := factoryAttemptChanged(updated, err, "completing Factory implementation attempt")
 	if err != nil || !changed {
 		return changed, err
@@ -329,7 +333,7 @@ func (d *DB) FailFactoryAttempt(ctx context.Context, id string, failure model.Fa
 			return false, err
 		}
 	}
-	if failure.Type == "prompt_failed" {
+	if failure.Type == "prompt_failed" || strings.HasPrefix(failure.Type, "scope_") {
 		if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'open'
 			WHERE id = (SELECT work_item_id FROM factory_attempt WHERE id = ? AND json_extract(frozen_policy_json, '$.profile') = 'factory-plan/v1') AND status = 'in_progress'`, id); err != nil {
 			return false, err
@@ -358,7 +362,7 @@ func (d *DB) CreateFactoryRecoveryGate(ctx context.Context, attemptID, question,
 		return model.RecoveryGate{}, err
 	}
 	var parentID string
-	if err := tx.QueryRowContext(ctx, `SELECT h.parent_issue_id FROM factory_attempt a JOIN factory_issue i ON i.id = a.work_item_id JOIN factory_issue_hierarchy h ON h.child_issue_id = i.id WHERE a.id = ? AND a.phase = 'active' AND json_extract(a.frozen_policy_json, '$.profile') = 'factory-implement/v1'`, attemptID).Scan(&parentID); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT h.parent_issue_id FROM factory_attempt a JOIN factory_issue i ON i.id = a.work_item_id JOIN factory_issue_hierarchy h ON h.child_issue_id = i.id WHERE a.id = ? AND a.phase = 'active' AND json_extract(a.frozen_policy_json, '$.profile') = 'factory-implement/v1' AND NOT EXISTS (SELECT 1 FROM factory_project_request_gate p WHERE p.attempt_id = a.id AND p.resolution NOT IN ('approved', 'rejected'))`, attemptID).Scan(&parentID); err != nil {
 		return model.RecoveryGate{}, errors.New("factory implementation attempt is unavailable for recovery")
 	}
 	gateID, err := factoryChildID(ctx, tx, parentID)
@@ -401,11 +405,228 @@ func (d *DB) CreateFactoryRecoveryGate(ctx context.Context, attemptID, question,
 
 func (d *DB) IsFactoryAttemptRecoveryPaused(ctx context.Context, attemptID string) (bool, error) {
 	var found int
-	err := d.db.QueryRowContext(ctx, `SELECT 1 WHERE EXISTS (SELECT 1 FROM factory_recovery_gate WHERE attempt_id = ? AND resolution NOT IN ('resume', 'retry', 'cancel')) OR EXISTS (SELECT 1 FROM factory_authority_escalation_gate WHERE attempt_id = ? AND resolution NOT IN ('approve', 'reject'))`, attemptID, attemptID).Scan(&found)
+	err := d.db.QueryRowContext(ctx, `SELECT 1 WHERE EXISTS (SELECT 1 FROM factory_recovery_gate WHERE attempt_id = ? AND resolution NOT IN ('resume', 'retry', 'cancel')) OR EXISTS (SELECT 1 FROM factory_authority_escalation_gate WHERE attempt_id = ? AND resolution NOT IN ('approve', 'reject')) OR EXISTS (SELECT 1 FROM factory_project_request_gate WHERE attempt_id = ? AND resolution NOT IN ('approved', 'rejected'))`, attemptID, attemptID, attemptID).Scan(&found)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
 	return err == nil, err
+}
+
+// CreateFactoryProjectRequestGate records an implementation attempt's request
+// to add work outside the Epic's admitted project set.
+func (d *DB) CreateFactoryProjectRequestGate(ctx context.Context, attemptID, requestedProject, reason string, at time.Time) (model.ProjectRequestGate, error) {
+	if strings.TrimSpace(requestedProject) == "" {
+		return model.ProjectRequestGate{}, errors.New("factory project request requires a project")
+	}
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.ProjectRequestGate{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var existingID string
+	err = tx.QueryRowContext(ctx, `SELECT issue_id FROM factory_project_request_gate WHERE attempt_id = ? AND resolution NOT IN ('approved', 'rejected')`, attemptID).Scan(&existingID)
+	if err == nil {
+		return loadFactoryProjectRequestGate(ctx, tx, existingID)
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return model.ProjectRequestGate{}, err
+	}
+	var parentID, project string
+	if err := tx.QueryRowContext(ctx, `SELECT h.parent_issue_id, i.project_path FROM factory_attempt a JOIN factory_issue i ON i.id = a.work_item_id JOIN factory_issue_hierarchy h ON h.child_issue_id = i.id WHERE a.id = ? AND a.phase = 'active' AND i.status = 'in_progress' AND json_extract(a.frozen_policy_json, '$.profile') = 'factory-implement/v1' AND NOT EXISTS (SELECT 1 FROM factory_recovery_gate r WHERE r.attempt_id = a.id AND r.resolution NOT IN ('resume', 'retry', 'cancel')) AND NOT EXISTS (SELECT 1 FROM factory_authority_escalation_gate g WHERE g.attempt_id = a.id AND g.resolution NOT IN ('approve', 'reject'))`, attemptID).Scan(&parentID, &project); err != nil {
+		return model.ProjectRequestGate{}, errors.New("factory implementation attempt is unavailable for project request")
+	}
+	gateID, err := factoryChildID(ctx, tx, parentID)
+	if err != nil {
+		return model.ProjectRequestGate{}, err
+	}
+	index, err := factoryChildIndex(gateID)
+	if err != nil {
+		return model.ProjectRequestGate{}, err
+	}
+	now := at.UnixMilli()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue (id, epic_id, project_path, kind, title, description, status, created_at) SELECT ?, epic_id, ?, 'gate', 'Project scope request', ?, 'open', ? FROM factory_attempt WHERE id = ?`, gateID, project, reason, now, attemptID); err != nil {
+		return model.ProjectRequestGate{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue_hierarchy (parent_issue_id, child_issue_id, child_index, requirement) VALUES (?, ?, ?, 'reference')`, parentID, gateID, index); err != nil {
+		return model.ProjectRequestGate{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_project_request_gate (issue_id, epic_id, attempt_id, work_item_id, requested_project, reason, created_at) SELECT ?, epic_id, id, work_item_id, ?, ?, ? FROM factory_attempt WHERE id = ?`, gateID, requestedProject, reason, now, attemptID); err != nil {
+		return model.ProjectRequestGate{}, err
+	}
+	if err := linkFactoryGateToWork(ctx, tx, gateID, attemptID); err != nil {
+		return model.ProjectRequestGate{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_audit_record (epic_id, work_item_id, attempt_id, actor, action, details_json, created_at) SELECT epic_id, work_item_id, id, 'agent', 'project.requested', json_object('project', ?, 'reason', ?), ? FROM factory_attempt WHERE id = ?`, requestedProject, reason, now, attemptID); err != nil {
+		return model.ProjectRequestGate{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.ProjectRequestGate{}, err
+	}
+	return d.getFactoryProjectRequestGate(ctx, gateID)
+}
+
+// ResolveFactoryProjectRequestGate approves or rejects a scope expansion. An
+// approval admits the canonical project and replaces the interrupted work with
+// a blocking Plan in one transaction.
+func (d *DB) ResolveFactoryProjectRequestGate(ctx context.Context, gateID, action, canonicalProject, response string, at time.Time) (model.ProjectRequestGate, model.FactoryAttempt, error) {
+	if action != "approve" && action != "reject" {
+		return model.ProjectRequestGate{}, model.FactoryAttempt{}, errors.New("invalid project request gate action")
+	}
+	if action == "approve" && strings.TrimSpace(canonicalProject) == "" {
+		return model.ProjectRequestGate{}, model.FactoryAttempt{}, errors.New("approving project request requires a canonical project")
+	}
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.ProjectRequestGate{}, model.FactoryAttempt{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	gate, err := loadFactoryProjectRequestGate(ctx, tx, gateID)
+	if err != nil {
+		return model.ProjectRequestGate{}, model.FactoryAttempt{}, fmt.Errorf("reading Factory project request gate: %w", err)
+	}
+	if gate.Resolution != "open" {
+		return model.ProjectRequestGate{}, model.FactoryAttempt{}, errors.New("factory project request gate is unavailable")
+	}
+	attempt, err := scanFactoryAttempt(tx.QueryRowContext(ctx, `SELECT `+factoryAttemptColumns+` FROM factory_attempt WHERE id = ? AND phase = 'active'`, gate.AttemptID))
+	if err != nil {
+		return model.ProjectRequestGate{}, model.FactoryAttempt{}, errors.New("factory project request attempt is unavailable")
+	}
+	now := at.UnixMilli()
+	if action == "approve" {
+		var parentID string
+		if err := tx.QueryRowContext(ctx, `SELECT h.parent_issue_id FROM factory_attempt a JOIN factory_issue i ON i.id = a.work_item_id JOIN factory_issue_hierarchy h ON h.child_issue_id = i.id WHERE a.id = ? AND a.phase = 'active' AND i.status = 'in_progress'`, gate.AttemptID).Scan(&parentID); err != nil {
+			return model.ProjectRequestGate{}, model.FactoryAttempt{}, errors.New("factory project request attempt is unavailable")
+		}
+		planID, err := factoryChildID(ctx, tx, parentID)
+		if err != nil {
+			return model.ProjectRequestGate{}, model.FactoryAttempt{}, err
+		}
+		index, err := factoryChildIndex(planID)
+		if err != nil {
+			return model.ProjectRequestGate{}, model.FactoryAttempt{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO factory_project (path, created_at) VALUES (?, ?) ON CONFLICT(path) DO NOTHING`, canonicalProject, now); err != nil {
+			return model.ProjectRequestGate{}, model.FactoryAttempt{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO factory_epic_project (epic_id, project_path, is_epic) VALUES (?, ?, 0) ON CONFLICT(epic_id, project_path) DO NOTHING`, gate.EpicID, canonicalProject); err != nil {
+			return model.ProjectRequestGate{}, model.FactoryAttempt{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue (id, epic_id, project_path, kind, title, description, status, created_at) VALUES (?, ?, ?, 'plan', 'Plan project scope expansion', ?, 'open', ?)`, planID, gate.EpicID, canonicalProject, gate.Reason, now); err != nil {
+			return model.ProjectRequestGate{}, model.FactoryAttempt{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue_hierarchy (parent_issue_id, child_issue_id, child_index, requirement) VALUES (?, ?, ?, 'required')`, parentID, planID, index); err != nil {
+			return model.ProjectRequestGate{}, model.FactoryAttempt{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue_dependency (issue_id, depends_on_issue_id, type) VALUES (?, ?, 'blocks')`, gate.WorkID, planID); err != nil {
+			return model.ProjectRequestGate{}, model.FactoryAttempt{}, err
+		}
+		changed, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'deferred', outcome = '', outcome_reason = 'project_scope_expansion' WHERE id = ? AND status = 'in_progress'`, gate.WorkID)
+		if ok, changeErr := factoryAttemptChanged(changed, err, "deferring Factory work for project expansion"); changeErr != nil || !ok {
+			if changeErr != nil {
+				return model.ProjectRequestGate{}, model.FactoryAttempt{}, changeErr
+			}
+			return model.ProjectRequestGate{}, model.FactoryAttempt{}, errors.New("factory project request work is unavailable")
+		}
+		changed, err = tx.ExecContext(ctx, `UPDATE factory_attempt SET phase = 'terminal', terminal_outcome = 'cancelled', finished_at = ?, updated_at = ? WHERE id = ? AND phase = 'active'`, now, now, gate.AttemptID)
+		if ok, changeErr := factoryAttemptChanged(changed, err, "terminating Factory attempt for project expansion"); changeErr != nil || !ok {
+			if changeErr != nil {
+				return model.ProjectRequestGate{}, model.FactoryAttempt{}, changeErr
+			}
+			return model.ProjectRequestGate{}, model.FactoryAttempt{}, errors.New("factory project request attempt is unavailable")
+		}
+		gate.CanonicalProject, gate.PlanIssueID = canonicalProject, planID
+	}
+	gate.Response = strings.TrimSpace(response)
+	gate.Resolution = map[string]string{"approve": "approved", "reject": "reject_pending"}[action]
+	if _, err := tx.ExecContext(ctx, `UPDATE factory_project_request_gate SET canonical_project = ?, response = ?, resolution = ?, plan_issue_id = ?, resolved_at = ? WHERE issue_id = ? AND resolution = 'open'`, gate.CanonicalProject, gate.Response, gate.Resolution, gate.PlanIssueID, now, gateID); err != nil {
+		return model.ProjectRequestGate{}, model.FactoryAttempt{}, err
+	}
+	if action == "approve" {
+		if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'closed', outcome = 'succeeded', outcome_reason = 'approve' WHERE id = ?`, gateID); err != nil {
+			return model.ProjectRequestGate{}, model.FactoryAttempt{}, err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_audit_record (epic_id, work_item_id, attempt_id, actor, action, details_json, created_at) VALUES (?, ?, ?, 'user', ?, json_object('requestedProject', ?, 'canonicalProject', ?, 'planIssueId', ?), ?)`, gate.EpicID, gate.WorkID, gate.AttemptID, "project."+action, gate.RequestedProject, gate.CanonicalProject, gate.PlanIssueID, now); err != nil {
+		return model.ProjectRequestGate{}, model.FactoryAttempt{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.ProjectRequestGate{}, model.FactoryAttempt{}, err
+	}
+	return gate, attempt, nil
+}
+
+func (d *DB) CompleteFactoryProjectRequestRejection(ctx context.Context, gateID string, at time.Time) (model.ProjectRequestGate, error) {
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.ProjectRequestGate{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	result, err := tx.ExecContext(ctx, `UPDATE factory_project_request_gate SET resolution = 'rejected', resolved_at = ? WHERE issue_id = ? AND resolution = 'reject_pending'`, at.UnixMilli(), gateID)
+	changed, err := factoryAttemptChanged(result, err, "completing project request rejection")
+	if err != nil || !changed {
+		return model.ProjectRequestGate{}, errors.New("factory project request gate is unavailable")
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'closed', outcome = 'cancelled', outcome_reason = 'reject' WHERE id = ?`, gateID); err != nil {
+		return model.ProjectRequestGate{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.ProjectRequestGate{}, err
+	}
+	return d.getFactoryProjectRequestGate(ctx, gateID)
+}
+
+// FailFactoryProjectRequestRejection closes a rejection whose original
+// session was lost and schedules the retained work with the user's feedback.
+func (d *DB) FailFactoryProjectRequestRejection(ctx context.Context, gateID string, at time.Time) (model.ProjectRequestGate, error) {
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.ProjectRequestGate{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	gate, err := loadFactoryProjectRequestGate(ctx, tx, gateID)
+	if err != nil || gate.Resolution != "reject_pending" {
+		return model.ProjectRequestGate{}, errors.New("factory project request gate is unavailable")
+	}
+	now := at.UnixMilli()
+	if _, err := tx.ExecContext(ctx, `UPDATE factory_project_request_gate SET resolution = 'rejected', resolved_at = ? WHERE issue_id = ?`, now, gateID); err != nil {
+		return model.ProjectRequestGate{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'closed', outcome = 'cancelled', outcome_reason = 'reject' WHERE id = ?`, gateID); err != nil {
+		return model.ProjectRequestGate{}, err
+	}
+	message := "Project request rejected: " + gate.Response
+	result, err := tx.ExecContext(ctx, `UPDATE factory_attempt SET phase = 'terminal', terminal_outcome = 'failed', failure_type = 'interrupted_runtime', failure_message = ?, finished_at = ?, updated_at = ? WHERE id = ? AND phase = 'active'`, message, now, now, gate.AttemptID)
+	changed, err := factoryAttemptChanged(result, err, "failing unavailable project request attempt")
+	if err != nil || !changed {
+		return model.ProjectRequestGate{}, errors.New("factory project request attempt is unavailable")
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = CASE WHEN retry_attempts < ? THEN 'retry_wait' ELSE 'closed' END, outcome = CASE WHEN retry_attempts < ? THEN '' ELSE 'failed' END, outcome_reason = ?, retry_at = CASE retry_attempts WHEN 0 THEN ? WHEN 1 THEN ? WHEN 2 THEN ? ELSE 0 END, retry_attempts = retry_attempts + 1 WHERE id = ? AND status = 'in_progress'`, len(factoryRetryBackoff), len(factoryRetryBackoff), message, at.Add(factoryRetryBackoff[0]).UnixMilli(), at.Add(factoryRetryBackoff[1]).UnixMilli(), at.Add(factoryRetryBackoff[2]).UnixMilli(), gate.WorkID); err != nil {
+		return model.ProjectRequestGate{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.ProjectRequestGate{}, err
+	}
+	return d.getFactoryProjectRequestGate(ctx, gateID)
+}
+
+func (d *DB) GetFactoryProjectRequestGate(ctx context.Context, gateID string) (model.ProjectRequestGate, bool, error) {
+	gate, err := d.getFactoryProjectRequestGate(ctx, gateID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.ProjectRequestGate{}, false, nil
+	}
+	return gate, err == nil, err
+}
+
+func (d *DB) getFactoryProjectRequestGate(ctx context.Context, gateID string) (model.ProjectRequestGate, error) {
+	return loadFactoryProjectRequestGate(ctx, d.db, gateID)
+}
+
+func loadFactoryProjectRequestGate(ctx context.Context, scanner interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, gateID string) (model.ProjectRequestGate, error) {
+	var gate model.ProjectRequestGate
+	err := scanner.QueryRowContext(ctx, `SELECT issue_id, epic_id, attempt_id, work_item_id, requested_project, canonical_project, reason, response, resolution, plan_issue_id FROM factory_project_request_gate WHERE issue_id = ?`, gateID).Scan(&gate.IssueID, &gate.EpicID, &gate.AttemptID, &gate.WorkID, &gate.RequestedProject, &gate.CanonicalProject, &gate.Reason, &gate.Response, &gate.Resolution, &gate.PlanIssueID)
+	return gate, err
 }
 
 // CreateFactoryAuthorityEscalationGate persists an out-of-profile request.

@@ -597,7 +597,7 @@ type factoryIssueReader interface {
 
 // The claim path uses the same dispatch calculation inside its transaction.
 func listFactoryIssues(ctx context.Context, reader factoryIssueReader, epicID string) ([]model.NativeIssue, error) {
-	rows, err := reader.QueryContext(ctx, `SELECT i.id, i.epic_id, i.project_path, COALESCE(h.parent_issue_id, ''), COALESCE(h.requirement, ''), i.kind, i.title, i.status, i.description, COALESCE(f.formula_id, ''), COALESCE(f.formula_version, 0), COALESCE(f.formula_hash, ''), COALESCE(f.bindings_json, '{}'), COALESCE(m.proposal_revision, 0), COALESCE(p.manifest_key, ''), i.outcome, i.outcome_reason, COALESCE(g.resolution, ''), i.retry_at, i.retry_attempts, i.created_at FROM factory_issue i LEFT JOIN factory_issue_hierarchy h ON h.child_issue_id = i.id LEFT JOIN factory_mol_formula f ON f.mol_id = i.id LEFT JOIN factory_materialization_provenance p ON p.entity_kind = 'issue' AND p.entity_id = i.id LEFT JOIN factory_materialization m ON m.id = p.materialization_id LEFT JOIN factory_plan_gate g ON g.issue_id = i.id LEFT JOIN factory_removed_issue r ON r.issue_id = i.id WHERE i.epic_id = ? AND r.issue_id IS NULL ORDER BY CASE i.kind WHEN 'mol' THEN 0 WHEN 'plan' THEN 1 WHEN 'gate' THEN 2 ELSE 3 END`, epicID)
+	rows, err := reader.QueryContext(ctx, `SELECT i.id, i.epic_id, i.project_path, COALESCE(h.parent_issue_id, ''), COALESCE(h.requirement, ''), i.kind, i.title, i.status, i.description, COALESCE(f.formula_id, ''), COALESCE(f.formula_version, 0), COALESCE(f.formula_hash, ''), COALESCE(f.bindings_json, '{}'), COALESCE(m.proposal_revision, 0), COALESCE(p.manifest_key, ''), i.outcome, i.outcome_reason, COALESCE(g.resolution, pg.resolution, ''), i.retry_at, i.retry_attempts, i.created_at, COALESCE(pg.attempt_id, ''), COALESCE(pg.work_item_id, ''), COALESCE(pg.requested_project, ''), COALESCE(pg.canonical_project, ''), COALESCE(pg.reason, ''), COALESCE(pg.response, ''), COALESCE(pg.resolution, ''), COALESCE(pg.plan_issue_id, '') FROM factory_issue i LEFT JOIN factory_issue_hierarchy h ON h.child_issue_id = i.id LEFT JOIN factory_mol_formula f ON f.mol_id = i.id LEFT JOIN factory_materialization_provenance p ON p.entity_kind = 'issue' AND p.entity_id = i.id LEFT JOIN factory_materialization m ON m.id = p.materialization_id LEFT JOIN factory_plan_gate g ON g.issue_id = i.id LEFT JOIN factory_project_request_gate pg ON pg.issue_id = i.id LEFT JOIN factory_removed_issue r ON r.issue_id = i.id WHERE i.epic_id = ? AND r.issue_id IS NULL ORDER BY CASE i.kind WHEN 'mol' THEN 0 WHEN 'plan' THEN 1 WHEN 'gate' THEN 2 ELSE 3 END`, epicID)
 	if err != nil {
 		return nil, fmt.Errorf("listing Factory issues: %w", err)
 	}
@@ -606,8 +606,13 @@ func listFactoryIssues(ctx context.Context, reader factoryIssueReader, epicID st
 	for rows.Next() {
 		var issue model.NativeIssue
 		var bindings string
-		if err := rows.Scan(&issue.ID, &issue.EpicID, &issue.Project, &issue.ParentID, &issue.Requirement, &issue.Kind, &issue.Title, &issue.Status, &issue.Description, &issue.FormulaID, &issue.FormulaVersion, &issue.FormulaHash, &bindings, &issue.PlanRevision, &issue.ManifestKey, &issue.Outcome, &issue.OutcomeReason, &issue.GateResolution, &issue.RetryAt, &issue.RetryAttempts, &issue.CreatedAt); err != nil {
+		var projectGate model.ProjectRequestGate
+		if err := rows.Scan(&issue.ID, &issue.EpicID, &issue.Project, &issue.ParentID, &issue.Requirement, &issue.Kind, &issue.Title, &issue.Status, &issue.Description, &issue.FormulaID, &issue.FormulaVersion, &issue.FormulaHash, &bindings, &issue.PlanRevision, &issue.ManifestKey, &issue.Outcome, &issue.OutcomeReason, &issue.GateResolution, &issue.RetryAt, &issue.RetryAttempts, &issue.CreatedAt, &projectGate.AttemptID, &projectGate.WorkID, &projectGate.RequestedProject, &projectGate.CanonicalProject, &projectGate.Reason, &projectGate.Response, &projectGate.Resolution, &projectGate.PlanIssueID); err != nil {
 			return nil, fmt.Errorf("scanning Factory issue: %w", err)
+		}
+		if projectGate.AttemptID != "" {
+			projectGate.IssueID, projectGate.EpicID = issue.ID, issue.EpicID
+			issue.ProjectRequestGate = &projectGate
 		}
 		if err := json.Unmarshal([]byte(bindings), &issue.Bindings); err != nil {
 			return nil, fmt.Errorf("decoding Factory Mol bindings: %w", err)
@@ -777,6 +782,32 @@ func (d *DB) MutateFactoryGraph(ctx context.Context, m model.GraphMutation) erro
 		if err := tx.QueryRowContext(ctx, `SELECT project_path FROM factory_issue WHERE id = ? AND epic_id = ?`, m.IssueID, m.EpicID).Scan(&project); err != nil {
 			return invalid("factory issue is unavailable for structural mutation")
 		}
+	}
+	lockID := m.IssueID
+	if m.Action == "create" {
+		lockID = m.ParentID
+	}
+	var scopeLocked bool
+	lockQuery := `SELECT EXISTS(
+			SELECT 1 FROM factory_project_request_gate g
+			JOIN factory_issue p ON p.id = g.plan_issue_id
+			WHERE (g.work_item_id = ? OR g.plan_issue_id = ?) AND g.resolution = 'approved' AND p.status IN ('open', 'in_progress'))`
+	lockArgs := []any{lockID, lockID}
+	if m.Action == "reparent" || m.Action == "delete" {
+		lockQuery = `WITH RECURSIVE descendants(id) AS (SELECT ? UNION ALL SELECT h.child_issue_id FROM factory_issue_hierarchy h JOIN descendants d ON h.parent_issue_id = d.id)
+			SELECT EXISTS(SELECT 1 FROM factory_project_request_gate g JOIN factory_issue p ON p.id = g.plan_issue_id WHERE (g.work_item_id IN (SELECT id FROM descendants) OR g.plan_issue_id IN (SELECT id FROM descendants)) AND g.resolution = 'approved' AND p.status IN ('open', 'in_progress'))`
+		lockArgs = []any{lockID}
+	}
+	if err := tx.QueryRowContext(ctx, lockQuery, lockArgs...).Scan(&scopeLocked); err != nil {
+		return err
+	}
+	if !scopeLocked && m.Action == "reparent" {
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM factory_project_request_gate g JOIN factory_issue p ON p.id = g.plan_issue_id WHERE (g.work_item_id = ? OR g.plan_issue_id = ?) AND g.resolution = 'approved' AND p.status IN ('open', 'in_progress'))`, m.ParentID, m.ParentID).Scan(&scopeLocked); err != nil {
+			return err
+		}
+	}
+	if scopeLocked {
+		return invalid("factory issue is awaiting scoped replanning")
 	}
 	movedProject := ""
 	if m.Action == "edit" {
@@ -1100,6 +1131,13 @@ func closeFactoryDescendants(ctx context.Context, tx *sql.Tx, molID string) erro
 	if incompleteRequired != 0 {
 		return errors.New("factory Mol has incomplete required work")
 	}
+	var projectRequests int
+	if err := tx.QueryRowContext(ctx, descendants+` SELECT COUNT(*) FROM descendants d JOIN factory_project_request_gate g ON g.work_item_id = d.id WHERE g.resolution NOT IN ('approved', 'rejected')`, molID).Scan(&projectRequests); err != nil {
+		return err
+	}
+	if projectRequests != 0 {
+		return errors.New("factory Mol has pending project requests")
+	}
 	_, err := tx.ExecContext(ctx, descendants+` UPDATE factory_issue SET status = 'closed', outcome = 'cancelled', outcome_reason = 'container_closed_without_execution'
 		WHERE id IN (SELECT d.id FROM descendants d WHERE d.required = 0) AND status NOT IN ('closed', 'in_progress')`, molID)
 	return err
@@ -1199,7 +1237,7 @@ func (d *DB) ClaimFactoryImplementation(ctx context.Context, epicID, issueID, pr
 		policy.ProjectCapacity = override
 	}
 	var global, projectActive int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(CASE WHEN json_extract(frozen_policy_json, '$.repository') = ? THEN 1 ELSE 0 END), 0) FROM factory_attempt a WHERE phase IN ('prepared', 'active', 'stopping') AND json_extract(frozen_policy_json, '$.profile') = 'factory-implement/v1' AND NOT EXISTS (SELECT 1 FROM factory_recovery_gate r WHERE r.attempt_id = a.id AND r.resolution = 'open') AND NOT EXISTS (SELECT 1 FROM factory_authority_escalation_gate g WHERE g.attempt_id = a.id AND g.resolution NOT IN ('approve', 'reject'))`, project).Scan(&global, &projectActive); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(CASE WHEN json_extract(frozen_policy_json, '$.repository') = ? THEN 1 ELSE 0 END), 0) FROM factory_attempt a WHERE phase IN ('prepared', 'active', 'stopping') AND json_extract(frozen_policy_json, '$.profile') = 'factory-implement/v1' AND NOT EXISTS (SELECT 1 FROM factory_recovery_gate r WHERE r.attempt_id = a.id AND r.resolution = 'open') AND NOT EXISTS (SELECT 1 FROM factory_authority_escalation_gate g WHERE g.attempt_id = a.id AND g.resolution NOT IN ('approve', 'reject')) AND NOT EXISTS (SELECT 1 FROM factory_project_request_gate p WHERE p.attempt_id = a.id AND p.resolution NOT IN ('approved', 'rejected'))`, project).Scan(&global, &projectActive); err != nil {
 		return model.NativeEpic{}, model.FactoryAttempt{}, err
 	}
 	var epicActive int
@@ -1452,6 +1490,115 @@ func (d *DB) saveFactoryProposalRevision(ctx context.Context, proposal model.Nat
 
 func (d *DB) GetFactoryPlanGate(ctx context.Context, epicID string) (model.NativePlanGate, error) {
 	return scanFactoryPlanGate(d.db.QueryRowContext(ctx, `SELECT epic_id, issue_id, proposal_revision, proposal_hash, outcome, resolution, feedback, review_issue_ids_json, implementation_model FROM factory_plan_gate WHERE epic_id = ?`, epicID))
+}
+
+func (d *DB) GetFactoryProjectRequestGateForPlan(ctx context.Context, planID string) (model.ProjectRequestGate, bool, error) {
+	var gateID string
+	err := d.db.QueryRowContext(ctx, `SELECT issue_id FROM factory_project_request_gate WHERE plan_issue_id = ? AND resolution = 'approved'`, planID).Scan(&gateID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.ProjectRequestGate{}, false, nil
+	}
+	if err != nil {
+		return model.ProjectRequestGate{}, false, err
+	}
+	gate, err := d.getFactoryProjectRequestGate(ctx, gateID)
+	return gate, err == nil, err
+}
+
+// ApplyFactoryScopePlan appends newly discovered work and makes it block the
+// interrupted Issue. Existing Issues and successful Attempt checkpoints are
+// never rewritten.
+func (d *DB) ApplyFactoryScopePlan(ctx context.Context, proposal model.NativeProposalRevision, attemptID, token string, at time.Time) (model.NativeProposalRevision, error) {
+	var manifest struct {
+		EpicID, MolID, Project string
+		Nodes                  []struct {
+			Key, Type, Requirement, Title, Description, Project string
+			DependsOn                                           []string
+		}
+		Edges []struct{ From, To, Type string }
+	}
+	if err := json.Unmarshal([]byte(proposal.ManifestJSON), &manifest); err != nil {
+		return model.NativeProposalRevision{}, errors.New("factory scope Plan manifest is invalid")
+	}
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.NativeProposalRevision{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var planID, originalID string
+	err = tx.QueryRowContext(ctx, `SELECT a.work_item_id, g.work_item_id FROM factory_attempt a JOIN factory_external_mapping m ON m.system = 'factory' AND m.external_kind = 'attempt_token' AND m.external_id = ? AND m.entity_kind = 'attempt' AND m.entity_id = a.id JOIN factory_project_request_gate g ON g.plan_issue_id = a.work_item_id AND g.resolution = 'approved' JOIN factory_issue original ON original.id = g.work_item_id AND original.status = 'deferred' AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = original.id) WHERE a.id = ? AND a.epic_id = ? AND a.phase = 'active' AND json_extract(a.frozen_policy_json, '$.profile') = 'factory-plan/v1'`, token, attemptID, proposal.EpicID).Scan(&planID, &originalID)
+	if err != nil {
+		return model.NativeProposalRevision{}, errors.New("factory scope Plan attempt is unavailable")
+	}
+	var parentID string
+	if err := tx.QueryRowContext(ctx, `SELECT parent_issue_id FROM factory_issue_hierarchy WHERE child_issue_id = ?`, planID).Scan(&parentID); err != nil || parentID != manifest.MolID {
+		return model.NativeProposalRevision{}, errors.New("factory scope Plan manifest is invalid")
+	}
+	ids := make(map[string]string, len(manifest.Nodes))
+	for _, node := range manifest.Nodes {
+		var admitted bool
+		if node.Type != "implementation" || node.Requirement == "reference" || tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM factory_epic_project WHERE epic_id = ? AND project_path = ?)`, proposal.EpicID, node.Project).Scan(&admitted) != nil || !admitted {
+			return model.NativeProposalRevision{}, errors.New("factory scope Plan manifest is invalid")
+		}
+		id, err := factoryChildID(ctx, tx, parentID)
+		if err != nil {
+			return model.NativeProposalRevision{}, err
+		}
+		ids[node.Key] = id
+	}
+	now := at.UnixMilli()
+	for _, node := range manifest.Nodes {
+		id := ids[node.Key]
+		if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue (id, epic_id, project_path, kind, title, description, status, created_at) VALUES (?, ?, ?, 'implementation', ?, ?, 'open', ?)`, id, proposal.EpicID, node.Project, node.Title, node.Description, now); err != nil {
+			return model.NativeProposalRevision{}, err
+		}
+		index, _ := factoryChildIndex(id)
+		if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue_hierarchy (parent_issue_id, child_issue_id, child_index, requirement) VALUES (?, ?, ?, ?)`, parentID, id, index, node.Requirement); err != nil {
+			return model.NativeProposalRevision{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue_dependency (issue_id, depends_on_issue_id, type) VALUES (?, ?, 'blocks')`, id, planID); err != nil {
+			return model.NativeProposalRevision{}, err
+		}
+		if node.Requirement == "required" {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue_dependency (issue_id, depends_on_issue_id, type) VALUES (?, ?, 'blocks')`, originalID, id); err != nil {
+				return model.NativeProposalRevision{}, err
+			}
+		}
+	}
+	edges := manifest.Edges
+	for _, node := range manifest.Nodes {
+		for _, dependency := range node.DependsOn {
+			edges = append(edges, struct{ From, To, Type string }{node.Key, dependency, "blocks"})
+		}
+	}
+	for _, edge := range edges {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue_dependency (issue_id, depends_on_issue_id, type) VALUES (?, ?, ?)`, ids[edge.From], ids[edge.To], edge.Type); err != nil {
+			return model.NativeProposalRevision{}, err
+		}
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(revision), 0) + 1 FROM factory_proposal_revision WHERE epic_id = ?`, proposal.EpicID).Scan(&proposal.Revision); err != nil {
+		return model.NativeProposalRevision{}, err
+	}
+	proposal.CreatedAt = now
+	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_proposal_revision (epic_id, mol_id, project_path, revision, manifest_json, rationale_markdown, content_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, proposal.EpicID, proposal.MolID, proposal.Project, proposal.Revision, proposal.ManifestJSON, proposal.RationaleMarkdown, proposal.ContentHash, now); err != nil {
+		return model.NativeProposalRevision{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'closed', outcome = 'succeeded', outcome_reason = 'scope_replanned' WHERE id = ?`, planID); err != nil {
+		return model.NativeProposalRevision{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE factory_attempt SET phase = 'terminal', terminal_outcome = 'succeeded', finished_at = ?, updated_at = ? WHERE id = ?`, now, now, attemptID); err != nil {
+		return model.NativeProposalRevision{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'open', outcome_reason = '' WHERE id = ? AND status = 'deferred'`, originalID); err != nil {
+		return model.NativeProposalRevision{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO factory_audit_record (epic_id, work_item_id, attempt_id, actor, action, details_json, created_at) VALUES (?, ?, ?, 'agent', 'project.replanned', json_object('proposalRevision', ?), ?)`, proposal.EpicID, originalID, attemptID, proposal.Revision, now); err != nil {
+		return model.NativeProposalRevision{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.NativeProposalRevision{}, err
+	}
+	return proposal, nil
 }
 
 // MaterializeFactoryPlan creates the approved implementation graph and closes

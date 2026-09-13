@@ -19,6 +19,7 @@ describe('Factory API', () => {
 		await api.factoryMaterialize('epic/1', 'issue/2');
 		await api.resolveFactoryRecoveryGate('gate/1', 'resume', 'Use A');
 		await api.resolveFactoryAuthorityGate('gate/1', 'approve');
+		await api.resolveFactoryProjectGate('gate/1', 'approve', '', true);
     await api.factoryProposals('epic/1');
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
@@ -33,6 +34,7 @@ describe('Factory API', () => {
 			'/api/factory/epics/epic%2F1/materializations/issue%2F2',
 			'/api/factory/recovery-gates/gate%2F1/resume',
 			'/api/factory/authority-gates/gate%2F1/approve',
+			'/api/factory/project-gates/gate%2F1/approve',
       '/api/factory/epics/epic%2F1/proposals',
     ]);
     expect(fetchMock.mock.calls[2][1]).toMatchObject({ method: 'POST' });

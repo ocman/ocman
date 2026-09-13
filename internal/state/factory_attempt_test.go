@@ -417,8 +417,8 @@ func TestFactoryAttemptTokenAndFailureTransitions(t *testing.T) {
 	if changed, err := db.ActivateFactoryAttempt(ctx, planAttempt.ID, model.PlanningSession{Platform: "opencode", ID: "plan"}, now); err != nil || !changed {
 		t.Fatalf("activate plan = %v, %v", changed, err)
 	}
-	if changed, err := db.FailFactoryAttempt(ctx, planAttempt.ID, model.FactoryAttemptFailure{Type: "prompt_failed", Message: "prompt unavailable"}, now); err != nil || !changed {
-		t.Fatalf("prompt failure = %v, %v", changed, err)
+	if changed, err := db.FailFactoryAttempt(ctx, planAttempt.ID, model.FactoryAttemptFailure{Type: "scope_lookup_failed", Message: "scope unavailable"}, now); err != nil || !changed {
+		t.Fatalf("planning failure = %v, %v", changed, err)
 	}
 	issues, err = db.ListFactoryIssues(ctx, epic.ID)
 	if err != nil {

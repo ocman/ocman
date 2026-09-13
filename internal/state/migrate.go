@@ -209,7 +209,8 @@ import (
 //	     and terminal tool call.
 //	83 - persist each Factory Epic's admitted local project set.
 //	84 - persist each Factory Issue's canonical target project.
-const latestSchemaVersion = 84
+//	85 - persist Factory project scope expansion gates.
+const latestSchemaVersion = 85
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -482,9 +483,37 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV83(tx)
 	case 84:
 		return migrateToV84(tx)
+	case 85:
+		return migrateToV85(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
+}
+
+func migrateToV85(tx *sql.Tx) error {
+	var exists bool
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'factory_issue')`).Scan(&exists); err != nil || !exists {
+		return err
+	}
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS factory_project_request_gate (
+			issue_id          TEXT PRIMARY KEY REFERENCES factory_issue(id),
+			epic_id           TEXT NOT NULL REFERENCES factory_epic(id),
+			attempt_id        TEXT NOT NULL REFERENCES factory_attempt(id),
+			work_item_id      TEXT NOT NULL REFERENCES factory_issue(id),
+			requested_project TEXT NOT NULL,
+			canonical_project TEXT NOT NULL DEFAULT '',
+			reason            TEXT NOT NULL DEFAULT '',
+			response          TEXT NOT NULL DEFAULT '',
+			resolution        TEXT NOT NULL DEFAULT 'open' CHECK (resolution IN ('open', 'approve_pending', 'reject_pending', 'approved', 'rejected')),
+			plan_issue_id      TEXT NOT NULL DEFAULT '',
+			created_at         INTEGER NOT NULL,
+			resolved_at        INTEGER NOT NULL DEFAULT 0
+		);
+		CREATE UNIQUE INDEX IF NOT EXISTS factory_project_request_gate_open_idx
+			ON factory_project_request_gate(attempt_id) WHERE resolution NOT IN ('approved', 'rejected');
+	`)
+	return err
 }
 
 func migrateToV84(tx *sql.Tx) error {

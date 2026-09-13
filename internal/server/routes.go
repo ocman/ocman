@@ -106,6 +106,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/factory/queue", s.get(s.handleFactoryQueue))
 	mux.HandleFunc("/api/factory/recovery-gates/", s.requireAuth(s.handleFactoryRecoveryGate))
 	mux.HandleFunc("/api/factory/authority-gates/", s.requireAuth(s.handleFactoryAuthorityGate))
+	mux.HandleFunc("/api/factory/project-gates/", s.requireAuth(s.handleFactoryProjectGate))
 	mux.HandleFunc("/api/factory/configuration", s.requireAuth(s.handleFactoryConfiguration))
 	mux.HandleFunc("/api/factory/epics", s.requireAuth(s.handleFactoryEpics))
 	mux.HandleFunc("/api/factory/epics/", s.requireAuth(s.handleFactoryEpic))

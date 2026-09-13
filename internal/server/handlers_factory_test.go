@@ -57,6 +57,10 @@ type fakeFactoryService struct {
 	authorityGateID       string
 	authorityAction       string
 	authorityErr          error
+	projectGateID         string
+	projectGateAction     string
+	projectGateResponse   string
+	projectGateAck        bool
 	err                   error
 }
 
@@ -84,6 +88,10 @@ func (f *fakeFactoryService) EscalatePermission(context.Context, string, string,
 func (f *fakeFactoryService) ResolveAuthorityEscalationGate(_ context.Context, id, action string) (factory.AuthorityEscalationGate, error) {
 	f.authorityGateID, f.authorityAction = id, action
 	return factory.AuthorityEscalationGate{IssueID: id, Resolution: action}, f.authorityErr
+}
+func (f *fakeFactoryService) ResolveProjectRequest(_ context.Context, id, action, response string, acknowledge bool) (factory.ProjectRequestGate, error) {
+	f.projectGateID, f.projectGateAction, f.projectGateResponse, f.projectGateAck = id, action, response, acknowledge
+	return factory.ProjectRequestGate{IssueID: id, Resolution: action}, f.err
 }
 
 func (f *fakeFactoryService) ListFormulas(context.Context) ([]factory.NativeFormulaView, error) {
@@ -737,5 +745,33 @@ func TestFactoryStatusQueueAndGateRoutes(t *testing.T) {
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/factory/queue", nil))
 	if rec.Code != http.StatusInternalServerError || strings.Contains(rec.Body.String(), "queue failed") {
 		t.Fatalf("failed queue = %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestFactoryProjectGateRouteRequiresHumanLocalApproval(t *testing.T) {
+	service := &fakeFactoryService{}
+	server := New(nil, nil, "", nil, nil)
+	server.factory = service
+	mux, err := server.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/factory/project-gates/gate%2F1/approve", strings.NewReader(`{"acknowledgeLocalExecution":true,"response":"ok"}`))
+	req.RemoteAddr = "127.0.0.1:1234"
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if service.projectGateID != "gate/1" || service.projectGateAction != "approve" || !service.projectGateAck || service.projectGateResponse != "ok" {
+		t.Fatalf("request = %#v", service)
+	}
+
+	remote := httptest.NewRequest(http.MethodPost, "/api/factory/project-gates/gate/reject", strings.NewReader(`{"response":"no"}`))
+	remote.RemoteAddr = "192.0.2.1:1234"
+	denied := httptest.NewRecorder()
+	mux.ServeHTTP(denied, remote)
+	if denied.Code != http.StatusForbidden {
+		t.Fatalf("remote status = %d", denied.Code)
 	}
 }

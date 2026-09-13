@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useState, type ReactNode } from 'react';
-import type { FactoryAuthorityEscalationGate, FactoryEpic, FactoryIssue, FactoryPlanGate, FactoryRecoveryGate } from '../lib/api';
-import { useClaimFactoryPlan, useDecideFactoryPlanGate, useFactoryIssues, useMaterializeFactoryPlan, usePourFactoryEpic, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryRecoveryGate, useWorkEpic } from '../lib/queries';
+import type { FactoryAuthorityEscalationGate, FactoryEpic, FactoryIssue, FactoryPlanGate, FactoryProjectRequestGate, FactoryRecoveryGate } from '../lib/api';
+import { useClaimFactoryPlan, useDecideFactoryPlanGate, useFactoryIssues, useMaterializeFactoryPlan, usePourFactoryEpic, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryProjectGate, useResolveFactoryRecoveryGate, useWorkEpic } from '../lib/queries';
 import { Button } from './Control';
 import { FactoryImplementationModel } from './FactoryImplementationModel';
 import { useFactoryImplementationModel } from './useFactoryImplementationModel';
@@ -49,6 +49,12 @@ function AuthorityActions({ gate }: { gate: FactoryAuthorityEscalationGate }) {
   </span>;
 }
 
+function ProjectActions({ gate }: { gate: FactoryProjectRequestGate }) {
+	const resolve = useResolveFactoryProjectGate();
+	const [acknowledge, setAcknowledge] = useState(false);
+	return <span className="oc-factory-action-issue"><strong>Admit {gate.requestedProject}?</strong><span>{gate.reason}</span><label><input type="checkbox" checked={acknowledge} onChange={(event) => setAcknowledge(event.target.checked)} />Allow local command execution</label><span className="oc-factory-action-buttons"><Button type="button" disabled={!acknowledge || resolve.isPending || resolve.isSuccess} onClick={() => resolve.mutate({ id: gate.issueId, action: 'approve', response: '', acknowledge: true })}>Approve and replan</Button><Button type="button" disabled={resolve.isPending || resolve.isSuccess} onClick={() => resolve.mutate({ id: gate.issueId, action: 'reject', response: 'Continue without this project.', acknowledge: false })}>Reject and resume</Button></span>{resolve.isError && <span role="alert">{resolve.error.message}</span>}</span>;
+}
+
 function availableWorkAction(issue: FactoryIssue) {
   if (issue.status === 'closed' && ['task', 'implementation', 'delivery'].includes(issue.kind) && ['failed', 'cancelled'].includes(issue.outcome ?? '')) return 'reopen';
   if (issue.dispatchState === 'ready' && ['plan', 'materialization'].includes(issue.kind)) return issue.kind;
@@ -59,7 +65,8 @@ function requiresIssueAction(epic: FactoryEpic, issue: FactoryIssue, requestedAc
   const action = availableWorkAction(issue);
   return (epic.status === 'open' && action && accepts(...WORK_REQUESTS[action])) ||
     (issue.recovery && !['resume', 'retry', 'cancel'].includes(issue.recovery.resolution) && accepts('resume_recovery', 'retry_recovery', 'cancel_recovery')) ||
-    (issue.authority && !['approve', 'reject'].includes(issue.authority.resolution) && accepts('approve_authority', 'reject_authority'));
+    (issue.authority && !['approve', 'reject'].includes(issue.authority.resolution) && accepts('approve_authority', 'reject_authority')) ||
+		(issue.projectRequest && !['approved', 'rejected'].includes(issue.projectRequest.resolution) && accepts('request_project'));
 }
 
 function requiresHumanAction(epic: FactoryEpic, issues: FactoryIssue[], issueID: string, requestedAction?: string) {
@@ -77,6 +84,7 @@ function IssueDecisions({ issue }: { issue: FactoryIssue }) {
   return <>
     {issue.recovery && !['resume', 'retry', 'cancel'].includes(issue.recovery.resolution) && <RecoveryActions key={`${issue.recovery.issueId}/${issue.recovery.resolution}`} gate={issue.recovery} />}
     {issue.authority && !['approve', 'reject'].includes(issue.authority.resolution) && <AuthorityActions key={`${issue.authority.issueId}/${issue.authority.resolution}`} gate={issue.authority} />}
+		{issue.projectRequest && !['approved', 'rejected'].includes(issue.projectRequest.resolution) && <ProjectActions key={`${issue.projectRequest.issueId}/${issue.projectRequest.resolution}`} gate={issue.projectRequest} />}
   </>;
 }
 

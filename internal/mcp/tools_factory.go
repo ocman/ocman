@@ -75,6 +75,8 @@ var factoryActions = []factoryAction{
 	{name: "get_capacity_policy", description: "Gets Factory capacity limits.", example: `{"action":"get_capacity_policy"}`, output: "CapacityPolicy", errors: []string{"factory request failed"}},
 	{name: "set_capacity_policy", description: "Sets Factory capacity limits.", example: `{"action":"set_capacity_policy","global_capacity":10,"project_capacity":4,"project_overrides":{"/repo":2}}`, required: []string{"global_capacity", "project_capacity", "project_overrides"}, output: "CapacityPolicy", errors: []string{"global_capacity is required", "project_capacity is required", "project_overrides is invalid", "factory request failed"}},
 	{name: "request_recovery", description: "Pauses the assigned implementation Attempt for a human decision while preserving its session and worktree.", example: `{"action":"request_recovery","attempt_id":"fa-1","attempt_token":"token","question":"Which API should I use?","reason":"Both supported APIs change persisted behavior.","choices_json":"[\"API A\",\"API B\"]"}`, required: []string{"attempt_id", "attempt_token", "question", "reason"}, optional: []string{"choices_json"}, output: "RecoveryGate", errors: []string{"attempt_id is required", "attempt_token is required", "question is required", "reason is required", "choices_json is invalid", "factory request failed"}},
+	{name: "request_project", description: "Pauses the assigned implementation Attempt and asks a human to admit one additional local Git project.", example: `{"action":"request_project","attempt_id":"fa-1","attempt_token":"token","project":"/repo","reason":"The shared contract must change."}`, required: []string{"attempt_id", "attempt_token", "project", "reason"}, output: "ProjectRequestGate", errors: []string{"attempt_id is required", "attempt_token is required", "project is required", "reason is required", "factory action is not permitted", "factory request failed"}},
+	{name: "submit_scope_plan", description: "Appends required work for an approved project expansion without replacing completed Issues or checkpoints.", example: `{"action":"submit_scope_plan","epic_id":"epic-1","manifest_json":"{\"epicId\":\"epic-1\",\"molId\":\"epic-1.1\",\"project\":\"/repo\",\"nodes\":[{\"key\":\"shared\",\"type\":\"implementation\",\"requirement\":\"required\",\"project\":\"/other\"}]}","attempt_id":"fa-1","attempt_token":"token"}`, required: []string{"epic_id", "manifest_json", "attempt_id", "attempt_token"}, optional: []string{"rationale_markdown"}, output: "ProposalRevision", errors: []string{"factory action is not permitted", "manifest_json is invalid", "factory request failed"}},
 	{name: "complete_attempt", description: "Records a verified clean, pushed commit checkpoint for an implementation Attempt. Omit pr_url during implementation. Only the final delivery Attempt requires pr_url, after creating or reusing the Epic's final review-ready pull request.", example: `{"action":"complete_attempt","attempt_id":"fa-1","attempt_token":"token","summary":"Implemented and tested."}`, required: []string{"attempt_id", "attempt_token", "summary"}, optional: []string{"pr_url"}, output: map[string]string{"status": "completed"}, errors: []string{"attempt_id is required", "attempt_token is required", "summary is required", "factory request failed"}},
 	{name: "resume_recovery", description: "Resumes the paused implementation session with a durable human response.", example: `{"action":"resume_recovery","recovery_gate_id":"gate-1","response":"Use API A."}`, required: []string{"recovery_gate_id"}, optional: []string{"response"}, output: "RecoveryGate", errors: []string{"recovery_gate_id is required", "factory request failed"}},
 	{name: "retry_recovery", description: "Ends the paused attempt and starts a fresh implementation Attempt.", example: `{"action":"retry_recovery","recovery_gate_id":"gate-1","response":"Retry from a clean worktree."}`, required: []string{"recovery_gate_id"}, optional: []string{"response"}, output: "RecoveryGate", errors: []string{"recovery_gate_id is required", "factory request failed"}},
@@ -119,7 +121,7 @@ func factoryServerTools(tools *factoryTools) []server.ServerTool {
 	if tools == nil || tools.svc == nil {
 		return nil
 	}
-	return []server.ServerTool{{Tool: mcplib.NewTool("factory", mcplib.WithDescription("Factory Planning Work actions."), mcplib.WithString("implementation_model"), mcplib.WithString("action", mcplib.Required()), mcplib.WithString("epic_id"), mcplib.WithString("issue_id"), mcplib.WithString("body"), mcplib.WithString("goal"), mcplib.WithString("brief"), mcplib.WithString("initial_project"), mcplib.WithString("instantiation_id"), mcplib.WithBoolean("acknowledge_local_execution"), mcplib.WithArray("projects", mcplib.Items(map[string]any{"type": "object", "properties": map[string]any{"path": map[string]any{"type": "string"}, "remoteId": map[string]any{"type": "string"}, "acknowledgeLocalExecution": map[string]any{"type": "boolean"}}, "required": []string{"path", "acknowledgeLocalExecution"}})), mcplib.WithString("formula_id"), mcplib.WithString("formula_source"), mcplib.WithString("manifest_json"), mcplib.WithString("mutation_json"), mcplib.WithString("rationale_markdown"), mcplib.WithString("expected_hash"), mcplib.WithString("feedback"), mcplib.WithString("attempt_id"), mcplib.WithString("attempt_token"), mcplib.WithString("summary"), mcplib.WithString("pr_url"), mcplib.WithString("recovery_gate_id"), mcplib.WithString("authority_gate_id"), mcplib.WithString("question"), mcplib.WithString("reason"), mcplib.WithString("choices_json"), mcplib.WithString("response"), mcplib.WithNumber("revision"), mcplib.WithNumber("global_capacity"), mcplib.WithNumber("project_capacity"), mcplib.WithObject("project_overrides")), Handler: tools.handle}}
+	return []server.ServerTool{{Tool: mcplib.NewTool("factory", mcplib.WithDescription("Factory Planning Work actions."), mcplib.WithString("implementation_model"), mcplib.WithString("action", mcplib.Required()), mcplib.WithString("epic_id"), mcplib.WithString("issue_id"), mcplib.WithString("body"), mcplib.WithString("goal"), mcplib.WithString("brief"), mcplib.WithString("initial_project"), mcplib.WithString("project"), mcplib.WithString("instantiation_id"), mcplib.WithBoolean("acknowledge_local_execution"), mcplib.WithArray("projects", mcplib.Items(map[string]any{"type": "object", "properties": map[string]any{"path": map[string]any{"type": "string"}, "remoteId": map[string]any{"type": "string"}, "acknowledgeLocalExecution": map[string]any{"type": "boolean"}}, "required": []string{"path", "acknowledgeLocalExecution"}})), mcplib.WithString("formula_id"), mcplib.WithString("formula_source"), mcplib.WithString("manifest_json"), mcplib.WithString("mutation_json"), mcplib.WithString("rationale_markdown"), mcplib.WithString("expected_hash"), mcplib.WithString("feedback"), mcplib.WithString("attempt_id"), mcplib.WithString("attempt_token"), mcplib.WithString("summary"), mcplib.WithString("pr_url"), mcplib.WithString("recovery_gate_id"), mcplib.WithString("authority_gate_id"), mcplib.WithString("question"), mcplib.WithString("reason"), mcplib.WithString("choices_json"), mcplib.WithString("response"), mcplib.WithNumber("revision"), mcplib.WithNumber("global_capacity"), mcplib.WithNumber("project_capacity"), mcplib.WithObject("project_overrides")), Handler: tools.handle}}
 }
 func (t *factoryTools) handle(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	result, err := t.handleAction(ctx, req)
@@ -261,6 +263,36 @@ func (t *factoryTools) handleAction(ctx context.Context, req mcplib.CallToolRequ
 			return factoryToolError(err), nil
 		}
 		return toolResultJSON(gate), nil
+	case "request_project":
+		service, ok := t.svc.(interface {
+			RequestProject(context.Context, string, string, string, string) (factory.ProjectRequestGate, error)
+		})
+		if !ok {
+			return mcplib.NewToolResultError("factory action is not permitted"), nil
+		}
+		gate, err := service.RequestProject(ctx, req.GetString("attempt_id", ""), req.GetString("attempt_token", ""), req.GetString("project", ""), req.GetString("reason", ""))
+		if err != nil {
+			return factoryToolError(err), nil
+		}
+		result := toolResultJSON(gate)
+		result.Content = append(result.Content, mcplib.NewTextContent("Copy this marker verbatim into this response so the user can decide: "+factoryCardMarker(gate.EpicID, gate.IssueID, "request_project")))
+		return result, nil
+	case "submit_scope_plan":
+		service, ok := t.svc.(interface {
+			SubmitScopePlan(context.Context, factory.SubmitProposalRequest) (factory.ProposalRevision, error)
+		})
+		if !ok {
+			return mcplib.NewToolResultError("factory action is not permitted"), nil
+		}
+		manifest, result := factoryProposalManifest(req)
+		if result != nil {
+			return result, nil
+		}
+		proposal, err := service.SubmitScopePlan(ctx, factory.SubmitProposalRequest{EpicID: req.GetString("epic_id", ""), Manifest: manifest, RationaleMarkdown: req.GetString("rationale_markdown", ""), AttemptID: req.GetString("attempt_id", ""), AttemptToken: req.GetString("attempt_token", "")})
+		if err != nil {
+			return factoryToolError(err), nil
+		}
+		return toolResultJSON(proposal), nil
 	case "resume_recovery", "retry_recovery", "cancel_recovery":
 		gateID, _ := req.RequireString("recovery_gate_id")
 		response, _ := req.RequireString("response")
@@ -505,6 +537,20 @@ func factoryRecoveryChoices(req mcplib.CallToolRequest) ([]string, error) {
 		return nil, errors.New("invalid")
 	}
 	return choices, nil
+}
+
+func factoryProposalManifest(req mcplib.CallToolRequest) (factory.ProposalManifest, *mcplib.CallToolResult) {
+	raw, err := req.RequireString("manifest_json")
+	if err != nil {
+		return factory.ProposalManifest{}, mcplib.NewToolResultError("manifest_json is required")
+	}
+	var manifest factory.ProposalManifest
+	decoder := json.NewDecoder(bytes.NewReader([]byte(raw)))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&manifest) != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		return factory.ProposalManifest{}, mcplib.NewToolResultError("manifest_json is invalid")
+	}
+	return manifest, nil
 }
 
 func optionalFormulaID(req mcplib.CallToolRequest) string {

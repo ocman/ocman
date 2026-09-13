@@ -130,7 +130,10 @@ flowchart TD
    Failed or terminally blocked work can
    launch a read-only diagnosis session; its scoped `factory_unblock` MCP tool
    remains permission-gated in the conversation before reopening work or
-   applying a graph mutation. The browser uses REST while agents use MCP.
+   applying a graph mutation. Implementation agents can also pause behind a
+   durable project-admission gate; human REST approval adopts the project and
+   launches an additive scoped Plan, while rejection resumes the same session
+   with feedback. The browser uses REST while agents use MCP.
    Routines are not involved.
 - **Factory persistence.** Native `factory_*` tables own the graph and its
    provenance in `state.db`; they do not reference or alter routine tables.

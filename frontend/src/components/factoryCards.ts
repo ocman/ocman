@@ -2,7 +2,7 @@
 // expanded, so examples inside code blocks, inline code, and links stay literal.
 type MarkdownNode = { type: string; value?: string; children?: MarkdownNode[] };
 const CARD = /\[\[ocman:card type=(factory-epic|factory-issue)(?: epic=([^\s\]]+))?(?: issue=([^\s\]]+))? action=([a-z_]+)\]\]/g;
-const ACTIONS = new Set(['created', 'create', 'pour', 'claim_plan', 'reopen_issue', 'reopen', 'mutate_graph', 'submit_proposal', 'approve_plan', 'revise_plan', 'reject_plan', 'resume_recovery', 'retry_recovery', 'cancel_recovery', 'approve_authority', 'reject_authority', 'save_formula', 'set_capacity_policy']);
+const ACTIONS = new Set(['created', 'create', 'pour', 'claim_plan', 'reopen_issue', 'reopen', 'mutate_graph', 'submit_proposal', 'request_project', 'approve_plan', 'revise_plan', 'reject_plan', 'resume_recovery', 'retry_recovery', 'cancel_recovery', 'approve_authority', 'reject_authority', 'save_formula', 'set_capacity_policy']);
 
 export function remarkFactoryCards() {
   function transform(node: MarkdownNode) {

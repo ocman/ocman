@@ -20,6 +20,7 @@ type fakeImplementationLauncher struct {
 	probeErr       error
 	result         PlanningSession
 	stops          []PlanningSession
+	stopErr        error
 	replies        []string
 	replyErr       error
 	recoveries     []string
@@ -451,7 +452,7 @@ func (f *fakeImplementationLauncher) ProbeImplementationSession(context.Context,
 }
 func (f *fakeImplementationLauncher) StopImplementationSession(_ context.Context, session PlanningSession) error {
 	f.stops = append(f.stops, session)
-	return nil
+	return f.stopErr
 }
 func (f *fakeImplementationLauncher) RespondImplementationPermission(_ context.Context, session PlanningSession, requestID, reply string) error {
 	f.replies = append(f.replies, session.ID+":"+requestID+":"+reply)
@@ -1096,6 +1097,129 @@ func TestNativeRecoveryGateReleasesCapacityAndSurvivesRestart(t *testing.T) {
 	}
 	if _, err := svc.ResolveRecoveryGate(context.Background(), gate.IssueID, "resume", "Use A"); err == nil {
 		t.Fatal("resumed despite occupied capacity")
+	}
+}
+
+func TestNativeProjectRequestRequiresOwnerAndLaunchesScopePlan(t *testing.T) {
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	planning, implementation := &fakePlanningLauncher{result: PlanningSession{Platform: "opencode", ID: "scope-plan"}}, &fakeImplementationLauncher{}
+	svc := NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other/subdir": "/other"}}, planning, implementation)
+	epic := createPouredWorkEpic(t, svc, "Expand")
+	rootMolID := pouredIssueID(t, svc, epic.ID, "mol")
+	if err := svc.MutateGraph(t.Context(), GraphMutation{Action: "create", EpicID: epic.ID, ParentID: rootMolID, Kind: "mol", Title: "Nested scope"}); err != nil {
+		t.Fatal(err)
+	}
+	nestedMolID := ""
+	issues, err := svc.ListIssues(t.Context(), epic.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, issue := range issues {
+		if issue.Title == "Nested scope" {
+			nestedMolID = issue.ID
+		}
+	}
+	if nestedMolID == "" {
+		t.Fatal("nested Mol was not created")
+	}
+	if err := svc.MutateGraph(t.Context(), GraphMutation{Action: "create", EpicID: epic.ID, ParentID: nestedMolID, Kind: "implementation", Title: "Implement"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Dispatch(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	attempts, _ := db.ListFactoryAttempts(t.Context(), epic.ID)
+	attempt := attempts[len(attempts)-1]
+	if _, err := svc.RequestProject(t.Context(), attempt.ID, "wrong", "/other/subdir", "Shared contract"); !errors.Is(err, ErrActionNotPermitted) {
+		t.Fatalf("wrong owner error = %v", err)
+	}
+	gate, err := svc.RequestProject(t.Context(), attempt.ID, implementation.calls[0].AgentToken, "/other/subdir", "Shared contract")
+	if err != nil || gate.Resolution != "open" {
+		t.Fatalf("request = %#v, %v", gate, err)
+	}
+	if _, err := svc.ResolveProjectRequest(t.Context(), gate.IssueID, "approve", "", false); !errors.Is(err, ErrAcknowledgementRequired) {
+		t.Fatalf("approval without acknowledgement = %v", err)
+	}
+	if _, err := svc.ResolveProjectRequest(t.Context(), gate.IssueID, "reject", "", false); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("rejection without feedback = %v", err)
+	}
+	implementation.stopErr = errors.New("dispose failed")
+	if _, err := svc.ResolveProjectRequest(t.Context(), gate.IssueID, "approve", "", true); err == nil {
+		t.Fatal("approval succeeded despite failed session disposal")
+	}
+	stillOpen, found, err := db.GetFactoryProjectRequestGate(t.Context(), gate.IssueID)
+	if err != nil || !found || stillOpen.Resolution != "open" || len(planning.calls) != 0 {
+		t.Fatalf("gate after failed disposal = %#v, %v, planning %#v", stillOpen, err, planning.calls)
+	}
+	implementation.stopErr = nil
+	planning.err = errors.New("launch failed")
+	if _, err := svc.ResolveProjectRequest(t.Context(), gate.IssueID, "approve", "", true); err == nil {
+		t.Fatal("approval succeeded despite failed planning launch")
+	}
+	planning.err = nil
+	resolved, err := svc.ResolveProjectRequest(t.Context(), gate.IssueID, "approve", "", true)
+	if err != nil || resolved.CanonicalProject != "/other" || len(planning.calls) != 2 || !planning.calls[1].ScopeExpansion {
+		t.Fatalf("approval = %#v, %v, requests %#v", resolved, err, planning.calls)
+	}
+	restartedPlanning := &fakePlanningLauncher{result: PlanningSession{Platform: "opencode", ID: "scope-plan-2"}, dead: map[string]bool{"scope-plan": true}}
+	restarted := NewNativeWithPlanning(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other": "/other"}}, restartedPlanning)
+	if err := restarted.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	manifest := ProposalManifest{EpicID: epic.ID, MolID: nestedMolID, Project: "/repo", Nodes: []ManifestNode{{Key: "blocker", Type: "implementation", Requirement: "required", Title: "Shared blocker", Project: "/other"}}}
+	if _, err := restarted.ResolveProjectRequest(t.Context(), gate.IssueID, "approve", "", true); err != nil || len(restartedPlanning.calls) != 1 {
+		t.Fatalf("scope Plan restart = %v, calls %#v", err, restartedPlanning.calls)
+	}
+	if _, err := restarted.SubmitScopePlan(t.Context(), SubmitProposalRequest{EpicID: epic.ID, AttemptID: restartedPlanning.calls[0].AttemptID, AttemptToken: restartedPlanning.calls[0].AgentToken, Manifest: manifest}); err != nil {
+		t.Fatalf("nested scope Plan = %v", err)
+	}
+}
+
+func TestNativeProjectRejectionRetriesWhenSessionWasLost(t *testing.T) {
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	implementation := &fakeImplementationLauncher{}
+	svc := NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other": "/other"}}, &fakePlanningLauncher{}, implementation)
+	epic := createPouredWorkEpic(t, svc, "Reject scope")
+	if err := svc.MutateGraph(t.Context(), GraphMutation{Action: "create", EpicID: epic.ID, ParentID: pouredIssueID(t, svc, epic.ID, "mol"), Kind: "implementation", Title: "Work", Description: "Original task"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Dispatch(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	attempts, err := db.ListFactoryAttempts(t.Context(), epic.ID)
+	if err != nil || len(attempts) != 1 {
+		t.Fatalf("attempts = %#v, %v", attempts, err)
+	}
+	gate, err := svc.RequestProject(t.Context(), attempts[0].ID, implementation.calls[0].AgentToken, "/other", "Shared contract")
+	if err != nil {
+		t.Fatal(err)
+	}
+	implementation.dead = true
+	resolved, err := svc.ResolveProjectRequest(t.Context(), gate.IssueID, "reject", "Continue locally", false)
+	if err != nil || resolved.Resolution != "rejected" {
+		t.Fatalf("rejection = %#v, %v", resolved, err)
+	}
+	failed, found, err := db.GetFactoryAttempt(t.Context(), attempts[0].ID)
+	if err != nil || !found || failed.Phase != model.FactoryAttemptTerminal || failed.Outcome != model.FactoryAttemptFailed {
+		t.Fatalf("lost attempt = %#v, %v", failed, err)
+	}
+	implementation.dead = false
+	if err := db.WakeFactoryRetries(t.Context(), time.Now().Add(2*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Dispatch(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(implementation.calls) != 2 || !strings.Contains(implementation.calls[1].Description, "Project request rejected: Continue locally") {
+		t.Fatalf("retry requests = %#v", implementation.calls)
 	}
 }
 

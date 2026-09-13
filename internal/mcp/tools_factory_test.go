@@ -184,6 +184,17 @@ func (f *fakeFactoryService) SubmitProposal(_ context.Context, req factory.Submi
 	f.submitProposalReq = req
 	return factory.ProposalRevision{EpicID: req.EpicID, Revision: 1}, f.err
 }
+
+func (f *fakeFactoryService) SubmitScopePlan(_ context.Context, req factory.SubmitProposalRequest) (factory.ProposalRevision, error) {
+	return f.SubmitProposal(context.Background(), req)
+}
+
+func (f *fakeFactoryService) RequestProject(_ context.Context, attemptID, _ string, project, reason string) (factory.ProjectRequestGate, error) {
+	if f.err != nil {
+		return factory.ProjectRequestGate{}, f.err
+	}
+	return factory.ProjectRequestGate{IssueID: "gate-1", EpicID: "epic-1", AttemptID: attemptID, RequestedProject: project, Reason: reason, Resolution: "open"}, nil
+}
 func (f *fakeFactoryService) GetProposal(_ context.Context, epicID string, revision int) (factory.ProposalRevision, error) {
 	f.proposalEpicID, f.proposalRevision = epicID, revision
 	return factory.ProposalRevision{EpicID: epicID, Revision: revision}, nil
@@ -265,7 +276,7 @@ func TestFactoryActionRegistryKeepsHelpAndValidationConsistent(t *testing.T) {
 		if got.IsError != denied {
 			t.Fatalf("%s example = %q, error = %v", action, resultText(got), got.IsError)
 		}
-		if !denied && action != "create" && action != "import_proposal" && len(got.Content) != 1 {
+		if !denied && action != "create" && action != "import_proposal" && action != "request_project" && len(got.Content) != 1 {
 			t.Fatalf("%s unexpectedly emitted extra card guidance: %#v", action, got.Content)
 		}
 	}

@@ -55,16 +55,19 @@ type NativeIssue struct {
 	Outcome        string
 	OutcomeReason  string
 	GateResolution string
-	DispatchState  string
-	Blockers       []NativeIssueBlocker
-	DependsOn      []NativeIssueDependency
-	RetryAt        int64
-	RetryAttempts  int
-	Description    string
-	PlanRevision   int
-	ManifestKey    string
-	CreatedAt      int64
-	RemovedAt      int64
+
+	ProjectRequestGate *ProjectRequestGate `json:"projectRequestGate,omitempty"`
+
+	DispatchState string
+	Blockers      []NativeIssueBlocker
+	DependsOn     []NativeIssueDependency
+	RetryAt       int64
+	RetryAttempts int
+	Description   string
+	PlanRevision  int
+	ManifestKey   string
+	CreatedAt     int64
+	RemovedAt     int64
 }
 
 // NativeIssueDependency is every declared edge, satisfied or not, so the graph
@@ -274,6 +277,21 @@ type AuthorityEscalationGate struct {
 	Permission string `json:"permission"`
 	Target     string `json:"target"`
 	Resolution string `json:"resolution"`
+}
+
+// ProjectRequestGate records an implementation attempt's request to admit a
+// project that was outside its frozen Epic scope.
+type ProjectRequestGate struct {
+	IssueID          string `json:"issueId"`
+	EpicID           string `json:"epicId"`
+	AttemptID        string `json:"attemptId"`
+	WorkID           string `json:"workId"`
+	RequestedProject string `json:"requestedProject"`
+	CanonicalProject string `json:"canonicalProject,omitempty"`
+	Reason           string `json:"reason"`
+	Response         string `json:"response,omitempty"`
+	Resolution       string `json:"resolution"`
+	PlanIssueID      string `json:"planIssueId,omitempty"`
 }
 
 type NativeIssueComment struct {

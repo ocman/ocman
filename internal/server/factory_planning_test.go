@@ -233,6 +233,13 @@ func TestFactoryPlanningLauncherUsesLocalHostAndAppliesBoundedRules(t *testing.T
 	if !strings.HasSuffix(sent.Message, "[Review and approve the plan](/factory/epics/epic-1)") {
 		t.Fatalf("prompt does not end with approval link: %q", sent.Message)
 	}
+	req.ScopeExpansion = true
+	if err := (factoryPlanningLauncher{server: srv}).PromptPlanningSession(context.Background(), got, req); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sent.Message, "submit_scope_plan") || !strings.Contains(sent.Message, "Do not ask for another approval") || strings.Contains(sent.Message, "At approval") {
+		t.Fatalf("scope expansion prompt = %q", sent.Message)
+	}
 }
 
 func TestFactoryPlanningLauncherRejectsUnsafeProjectPattern(t *testing.T) {

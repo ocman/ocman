@@ -163,6 +163,7 @@ type FactoryAuditRecord = model.AuditRecord
 type PlanningSessionRequest struct {
 	EpicID, WorkID, AttemptID, AgentToken, Repository, Title string
 	Projects                                                 []string
+	ScopeExpansion                                           bool
 }
 
 type PlanningLauncher interface {
@@ -543,10 +544,12 @@ type Issue struct {
 	Session        PlanningSession               `json:"session,omitempty"`
 	Recovery       *RecoveryGate                 `json:"recovery,omitempty"`
 	Authority      *AuthorityEscalationGate      `json:"authority,omitempty"`
+	ProjectRequest *ProjectRequestGate           `json:"projectRequest,omitempty"`
 }
 
 type RecoveryGate = model.RecoveryGate
 type AuthorityEscalationGate = model.AuthorityEscalationGate
+type ProjectRequestGate = model.ProjectRequestGate
 type IssueComment = model.NativeIssueComment
 
 type ManifestNode struct {
@@ -646,6 +649,15 @@ type nativeProjectSetStore interface {
 	CreateFactoryEpicWithProjects(context.Context, string, string, string, string, string, model.NativeFormula, []string) (model.NativeEpic, error)
 	RemoveFactoryEpicProject(context.Context, string, string) error
 }
+type nativeProjectRequestStore interface {
+	CreateFactoryProjectRequestGate(context.Context, string, string, string, time.Time) (model.ProjectRequestGate, error)
+	GetFactoryProjectRequestGate(context.Context, string) (model.ProjectRequestGate, bool, error)
+	GetFactoryProjectRequestGateForPlan(context.Context, string) (model.ProjectRequestGate, bool, error)
+	ResolveFactoryProjectRequestGate(context.Context, string, string, string, string, time.Time) (model.ProjectRequestGate, model.FactoryAttempt, error)
+	CompleteFactoryProjectRequestRejection(context.Context, string, time.Time) (model.ProjectRequestGate, error)
+	FailFactoryProjectRequestRejection(context.Context, string, time.Time) (model.ProjectRequestGate, error)
+	ApplyFactoryScopePlan(context.Context, model.NativeProposalRevision, string, string, time.Time) (model.NativeProposalRevision, error)
+}
 type nativeFormulaStore interface {
 	ListNativeFactoryFormulaRevisions(context.Context) ([]model.NativeFormulaRevision, error)
 	GetNativeFactoryFormulaRevision(context.Context, string, int) (model.NativeFormulaRevision, error)
@@ -735,6 +747,7 @@ type NativeService struct {
 	materializationMu sync.Mutex
 	recoveryMu        sync.Mutex
 	authorityMu       sync.Mutex
+	projectRequestMu  sync.Mutex
 	startOnce         sync.Once
 	closeOnce         sync.Once
 	dispatchWG        sync.WaitGroup
@@ -865,7 +878,15 @@ func (s *NativeService) Start(ctx context.Context) error {
 				continue
 			}
 		}
-		if _, err := store.FailFactoryAttempt(ctx, attempt.ID, model.FactoryAttemptFailure{Type: "interrupted_startup", Message: "Planning Session was not durably available after restart"}, time.Now()); err != nil {
+		failureType := "interrupted_startup"
+		if projectRequests, ok := s.store.(nativeProjectRequestStore); ok {
+			if _, scopeExpansion, gateErr := projectRequests.GetFactoryProjectRequestGateForPlan(ctx, attempt.WorkID); gateErr != nil {
+				return gateErr
+			} else if scopeExpansion {
+				failureType = "scope_interrupted_startup"
+			}
+		}
+		if _, err := store.FailFactoryAttempt(ctx, attempt.ID, model.FactoryAttemptFailure{Type: failureType, Message: "Planning Session was not durably available after restart"}, time.Now()); err != nil {
 			return fmt.Errorf("recover Planning attempt: %w", err)
 		}
 	}
@@ -1630,6 +1651,159 @@ func (s *NativeService) CreateRecoveryGate(ctx context.Context, attemptID, agent
 	return store.CreateFactoryRecoveryGate(ctx, attemptID, strings.TrimSpace(question), strings.TrimSpace(reason), choices, time.Now())
 }
 
+func (s *NativeService) RequestProject(ctx context.Context, attemptID, agentToken, project, reason string) (ProjectRequestGate, error) {
+	store, ok := s.store.(nativeProjectRequestStore)
+	if !ok {
+		return ProjectRequestGate{}, ErrFactoryUnavailable
+	}
+	project, reason = strings.TrimSpace(project), strings.TrimSpace(reason)
+	if attemptID == "" || agentToken == "" || project == "" || reason == "" || !filepath.IsAbs(project) {
+		return ProjectRequestGate{}, fmt.Errorf("%w: attempt, token, absolute project path, and reason are required", ErrInvalidRequest)
+	}
+	tokens, ok := s.store.(nativeAttemptCompletionStore)
+	if !ok {
+		return ProjectRequestGate{}, ErrFactoryUnavailable
+	}
+	valid, err := tokens.ValidateFactoryAttemptToken(ctx, attemptID, agentToken)
+	if err != nil {
+		return ProjectRequestGate{}, err
+	}
+	if !valid {
+		return ProjectRequestGate{}, ErrActionNotPermitted
+	}
+	return store.CreateFactoryProjectRequestGate(ctx, attemptID, project, reason, time.Now())
+}
+
+func (s *NativeService) ResolveProjectRequest(ctx context.Context, gateID, action, response string, acknowledge bool) (ProjectRequestGate, error) {
+	s.projectRequestMu.Lock()
+	defer s.projectRequestMu.Unlock()
+	store, ok := s.store.(nativeProjectRequestStore)
+	if !ok {
+		return ProjectRequestGate{}, ErrFactoryUnavailable
+	}
+	gate, found, err := store.GetFactoryProjectRequestGate(ctx, gateID)
+	if err != nil {
+		return ProjectRequestGate{}, err
+	}
+	response = strings.TrimSpace(response)
+	if action == "reject" && response == "" {
+		return ProjectRequestGate{}, fmt.Errorf("%w: project rejection feedback is required", ErrInvalidRequest)
+	}
+	if action == "reject" && gate.Resolution == "reject_pending" {
+		if response != gate.Response {
+			return ProjectRequestGate{}, fmt.Errorf("%w: project rejection response does not match the pending decision", ErrInvalidRequest)
+		}
+		attempts, ok := s.store.(nativeAuthorityStore)
+		if !ok {
+			return ProjectRequestGate{}, ErrFactoryUnavailable
+		}
+		attempt, found, err := attempts.GetFactoryAttempt(ctx, gate.AttemptID)
+		if err != nil || !found {
+			return ProjectRequestGate{}, fmt.Errorf("%w: factory project request attempt is unavailable", ErrInvalidRequest)
+		}
+		return s.deliverProjectRejection(ctx, store, gate, attempt)
+	}
+	if found && action == "approve" && gate.Resolution == "approved" {
+		if !acknowledge {
+			return ProjectRequestGate{}, ErrAcknowledgementRequired
+		}
+		issues, listErr := s.store.ListFactoryIssues(ctx, gate.EpicID)
+		if listErr != nil {
+			return ProjectRequestGate{}, listErr
+		}
+		for _, issue := range issues {
+			if issue.ID == gate.PlanIssueID && issue.Status == "open" {
+				_, err = s.ClaimPlan(ctx, gate.EpicID, gate.PlanIssueID)
+				return gate, err
+			}
+		}
+		return gate, nil
+	}
+	if !found || gate.Resolution != "open" {
+		return ProjectRequestGate{}, fmt.Errorf("%w: factory project request is unavailable", ErrInvalidRequest)
+	}
+	canonical := ""
+	if action == "approve" {
+		if !acknowledge {
+			return ProjectRequestGate{}, ErrAcknowledgementRequired
+		}
+		canonical, err = s.canonicalProject(ctx, gate.RequestedProject)
+		if err != nil {
+			return ProjectRequestGate{}, err
+		}
+		epic, getErr := s.store.GetFactoryEpic(ctx, gate.EpicID)
+		if getErr != nil {
+			return ProjectRequestGate{}, getErr
+		}
+		for _, project := range epic.Projects {
+			if project.Path == canonical {
+				return ProjectRequestGate{}, fmt.Errorf("%w: project is already admitted", ErrInvalidRequest)
+			}
+		}
+		acks, ok := s.store.(localExecutionAckStore)
+		if !ok {
+			return ProjectRequestGate{}, ErrFactoryUnavailable
+		}
+		if err = acks.UpsertFactoryLocalExecutionAck(ctx, "local", canonical, "factory-implement", "v1", "operator", time.Now()); err != nil {
+			return ProjectRequestGate{}, err
+		}
+	} else if action != "reject" {
+		return ProjectRequestGate{}, fmt.Errorf("%w: invalid project request action", ErrInvalidRequest)
+	}
+	if action == "approve" {
+		if s.implementation == nil {
+			return ProjectRequestGate{}, errors.New("implementation launcher is unavailable")
+		}
+		attempts, ok := s.store.(nativeAuthorityStore)
+		if !ok {
+			return ProjectRequestGate{}, ErrFactoryUnavailable
+		}
+		attempt, found, getErr := attempts.GetFactoryAttempt(ctx, gate.AttemptID)
+		if getErr != nil || !found {
+			return ProjectRequestGate{}, fmt.Errorf("%w: factory project request attempt is unavailable", ErrInvalidRequest)
+		}
+		if attempt.Session.ID != "" {
+			if err := s.implementation.StopImplementationSession(context.WithoutCancel(ctx), attempt.Session); err != nil {
+				return ProjectRequestGate{}, fmt.Errorf("stop implementation for scope expansion: %w", err)
+			}
+		}
+	}
+	gate, attempt, err := store.ResolveFactoryProjectRequestGate(ctx, gateID, action, canonical, response, time.Now())
+	if err != nil {
+		return ProjectRequestGate{}, err
+	}
+	if action == "reject" {
+		return s.deliverProjectRejection(ctx, store, gate, attempt)
+	}
+	_, err = s.ClaimPlan(ctx, gate.EpicID, gate.PlanIssueID)
+	return gate, err
+}
+
+func (s *NativeService) deliverProjectRejection(ctx context.Context, store nativeProjectRequestStore, gate ProjectRequestGate, attempt model.FactoryAttempt) (ProjectRequestGate, error) {
+	if s.implementation == nil {
+		return ProjectRequestGate{}, errors.New("implementation launcher is unavailable")
+	}
+	alive, err := s.implementation.ProbeImplementationSession(ctx, attempt.Session)
+	if err != nil {
+		return ProjectRequestGate{}, fmt.Errorf("probe implementation for project rejection: %w", err)
+	}
+	if alive {
+		if err := s.implementation.ResumeImplementationSession(context.WithoutCancel(ctx), attempt.Session, gate.IssueID, gate.Response); err != nil {
+			return ProjectRequestGate{}, fmt.Errorf("deliver project rejection: %w", err)
+		}
+		return store.CompleteFactoryProjectRequestRejection(context.WithoutCancel(ctx), gate.IssueID, time.Now())
+	}
+	completed, err := store.FailFactoryProjectRequestRejection(context.WithoutCancel(ctx), gate.IssueID, time.Now())
+	if err != nil {
+		return ProjectRequestGate{}, err
+	}
+	select {
+	case s.dispatchWake <- struct{}{}:
+	default:
+	}
+	return completed, nil
+}
+
 func (s *NativeService) ResolveRecoveryGate(ctx context.Context, gateID, action, response string) (RecoveryGate, error) {
 	s.recoveryMu.Lock()
 	defer s.recoveryMu.Unlock()
@@ -1850,7 +2024,11 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 				continue
 			}
 		}
-		request := ImplementationSessionRequest{Model: attempt.FrozenPolicy.Model, EpicID: epic.ID, WorkID: next.issue.ID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: repository, Projects: attempt.FrozenPolicy.Projects, Title: next.issue.Title, Description: next.issue.Description, Branch: branch, BaseRef: baseRef, Profile: "factory-implement/v1", TargetBranch: attempt.FrozenPolicy.TargetBranch, Delivery: attempt.FrozenPolicy.Delivery}
+		description := next.issue.Description
+		if strings.HasPrefix(next.issue.OutcomeReason, "Project request rejected: ") {
+			description = strings.TrimSpace(description + "\n\n" + next.issue.OutcomeReason)
+		}
+		request := ImplementationSessionRequest{Model: attempt.FrozenPolicy.Model, EpicID: epic.ID, WorkID: next.issue.ID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: repository, Projects: attempt.FrozenPolicy.Projects, Title: next.issue.Title, Description: description, Branch: branch, BaseRef: baseRef, Profile: "factory-implement/v1", TargetBranch: attempt.FrozenPolicy.TargetBranch, Delivery: attempt.FrozenPolicy.Delivery}
 		session, launchErr := s.implementation.LaunchImplementationSession(ctx, request)
 		if launchErr != nil {
 			if session.ID != "" {
@@ -2162,17 +2340,32 @@ func (s *NativeService) ClaimPlan(ctx context.Context, epicID, issueID string) (
 		projects[i] = project.Path
 	}
 	request := PlanningSessionRequest{EpicID: epic.ID, WorkID: issueID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: epic.InitialProject, Projects: projects, Title: "PLAN " + issueID + " (@factory)"}
+	if projectRequests, ok := s.store.(nativeProjectRequestStore); ok {
+		_, request.ScopeExpansion, err = projectRequests.GetFactoryProjectRequestGateForPlan(ctx, issueID)
+		if err != nil {
+			_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "scope_lookup_failed", Message: "Scope expansion could not be loaded"}, time.Now())
+			return ClaimedPlan{}, err
+		}
+	}
 	session, launchErr := s.planning.LaunchPlanningSession(ctx, request)
 	if launchErr != nil {
 		if session.ID != "" {
 			_ = s.planning.StopPlanningSession(context.WithoutCancel(ctx), session)
 		}
-		_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "launch_failed", Message: "Planning Session could not be launched"}, time.Now())
+		failureType := "launch_failed"
+		if request.ScopeExpansion {
+			failureType = "scope_launch_failed"
+		}
+		_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: failureType, Message: "Planning Session could not be launched"}, time.Now())
 		return ClaimedPlan{}, ErrFactoryUnavailable
 	}
 	if activated, err := store.ActivateFactoryAttempt(ctx, attempt.ID, session, time.Now()); err != nil || !activated {
 		_ = s.planning.StopPlanningSession(context.WithoutCancel(ctx), session)
-		_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "activation_failed", Message: "Planning Session could not be recorded"}, time.Now())
+		failureType := "activation_failed"
+		if request.ScopeExpansion {
+			failureType = "scope_activation_failed"
+		}
+		_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: failureType, Message: "Planning Session could not be recorded"}, time.Now())
 		if err == nil {
 			err = errors.New("factory attempt was no longer prepared")
 		}
@@ -2192,10 +2385,7 @@ func (s *NativeService) SubmitProposal(ctx context.Context, req SubmitProposalRe
 	if !ok {
 		return ProposalRevision{}, ErrFactoryUnavailable
 	}
-	epic, err := s.store.GetFactoryEpic(ctx, req.EpicID)
-	if errors.Is(err, model.ErrNativeEpicNotFound) {
-		return ProposalRevision{}, ErrWorkEpicNotFound
-	}
+	proposal, err := s.proposalForRequest(ctx, req)
 	if err != nil {
 		return ProposalRevision{}, err
 	}
@@ -2262,6 +2452,100 @@ func (s *NativeService) SubmitProposal(ctx context.Context, req SubmitProposalRe
 		return ProposalRevision{}, err
 	}
 	return nativeProposal(saved)
+}
+
+func (s *NativeService) SubmitScopePlan(ctx context.Context, req SubmitProposalRequest) (ProposalRevision, error) {
+	store, ok := s.store.(nativeProjectRequestStore)
+	if !ok || req.AttemptID == "" || req.AttemptToken == "" {
+		return ProposalRevision{}, ErrActionNotPermitted
+	}
+	proposal, err := s.proposalForRequest(ctx, req)
+	if err != nil {
+		return ProposalRevision{}, err
+	}
+	for _, node := range req.Manifest.Nodes {
+		if node.Requirement == "reference" {
+			return ProposalRevision{}, fmt.Errorf("%w: scope Plan cannot add reference work", ErrInvalidRequest)
+		}
+	}
+	saved, err := store.ApplyFactoryScopePlan(ctx, proposal, req.AttemptID, req.AttemptToken, time.Now())
+	if err != nil {
+		return ProposalRevision{}, err
+	}
+	_ = s.Dispatch(ctx)
+	return nativeProposal(saved)
+}
+
+func (s *NativeService) proposalForRequest(ctx context.Context, req SubmitProposalRequest) (model.NativeProposalRevision, error) {
+	epic, err := s.store.GetFactoryEpic(ctx, req.EpicID)
+	if errors.Is(err, model.ErrNativeEpicNotFound) {
+		return model.NativeProposalRevision{}, ErrWorkEpicNotFound
+	}
+	if err != nil {
+		return model.NativeProposalRevision{}, err
+	}
+	if (req.AttemptID == "") != (req.AttemptToken == "") {
+		return model.NativeProposalRevision{}, fmt.Errorf("%w: attempt ID and token are required", ErrInvalidRequest)
+	}
+	issues, err := s.store.ListFactoryIssues(ctx, epic.ID)
+	if err != nil {
+		return model.NativeProposalRevision{}, err
+	}
+	rootMolID := ""
+	for _, issue := range issues {
+		if issue.Kind == "mol" && issue.ParentID == "" {
+			rootMolID = issue.ID
+			break
+		}
+	}
+	if req.AttemptID != "" {
+		if attempts, ok := s.store.(nativeAuthorityStore); ok {
+			attempt, found, attemptErr := attempts.GetFactoryAttempt(ctx, req.AttemptID)
+			if attemptErr != nil {
+				return model.NativeProposalRevision{}, attemptErr
+			}
+			if found {
+				if projectRequests, ok := s.store.(nativeProjectRequestStore); ok {
+					if _, scopeExpansion, gateErr := projectRequests.GetFactoryProjectRequestGateForPlan(ctx, attempt.WorkID); gateErr != nil {
+						return model.NativeProposalRevision{}, gateErr
+					} else if scopeExpansion {
+						for _, issue := range issues {
+							if issue.ID == attempt.WorkID {
+								rootMolID = issue.ParentID
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	req.Manifest.Project, err = s.canonicalIssueProject(ctx, epic, req.Manifest.Project)
+	if err != nil {
+		return model.NativeProposalRevision{}, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
+	}
+	for i := range req.Manifest.Nodes {
+		req.Manifest.Nodes[i].Project, err = s.canonicalIssueProject(ctx, epic, req.Manifest.Nodes[i].Project)
+		if err != nil {
+			return model.NativeProposalRevision{}, fmt.Errorf("%w: node %q: %w", ErrInvalidRequest, req.Manifest.Nodes[i].Key, err)
+		}
+	}
+	if err := validateProposalManifest(req.Manifest, epic, rootMolID); err != nil {
+		return model.NativeProposalRevision{}, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
+	}
+	manifestJSON, err := json.Marshal(req.Manifest)
+	if err != nil {
+		return model.NativeProposalRevision{}, fmt.Errorf("encoding proposal manifest: %w", err)
+	}
+	content, err := json.Marshal(struct {
+		Manifest  json.RawMessage `json:"manifest"`
+		Rationale string          `json:"rationaleMarkdown"`
+	}{manifestJSON, req.RationaleMarkdown})
+	if err != nil {
+		return model.NativeProposalRevision{}, fmt.Errorf("encoding proposal: %w", err)
+	}
+	hash := sha256.Sum256(content)
+	return model.NativeProposalRevision{EpicID: req.EpicID, MolID: req.Manifest.MolID, Project: req.Manifest.Project, ManifestJSON: string(manifestJSON), RationaleMarkdown: req.RationaleMarkdown, ContentHash: hex.EncodeToString(hash[:])}, nil
 }
 
 func (s *NativeService) GetProposal(ctx context.Context, epicID string, revision int) (ProposalRevision, error) {
@@ -2532,7 +2816,7 @@ func nativeIssues(issues []model.NativeIssue) []Issue {
 	out := make([]Issue, len(issues))
 	for i := range issues {
 		issue := issues[i]
-		out[i] = Issue{ID: issue.ID, EpicID: issue.EpicID, Project: issue.Project, ParentID: issue.ParentID, Requirement: issue.Requirement, FormulaID: issue.FormulaID, FormulaVersion: issue.FormulaVersion, FormulaHash: issue.FormulaHash, Bindings: issue.Bindings, Kind: issue.Kind, Title: issue.Title, Status: issue.Status, Description: issue.Description, PlanRevision: issue.PlanRevision, ManifestKey: issue.ManifestKey, Outcome: issue.Outcome, OutcomeReason: issue.OutcomeReason, DispatchState: issue.DispatchState, Blockers: issue.Blockers, DependsOn: issue.DependsOn, RetryAt: issue.RetryAt, RetryAttempts: issue.RetryAttempts, CreatedAt: issue.CreatedAt, RemovedAt: issue.RemovedAt}
+		out[i] = Issue{ID: issue.ID, EpicID: issue.EpicID, Project: issue.Project, ParentID: issue.ParentID, Requirement: issue.Requirement, FormulaID: issue.FormulaID, FormulaVersion: issue.FormulaVersion, FormulaHash: issue.FormulaHash, Bindings: issue.Bindings, Kind: issue.Kind, Title: issue.Title, Status: issue.Status, Description: issue.Description, PlanRevision: issue.PlanRevision, ManifestKey: issue.ManifestKey, Outcome: issue.Outcome, OutcomeReason: issue.OutcomeReason, DispatchState: issue.DispatchState, Blockers: issue.Blockers, DependsOn: issue.DependsOn, RetryAt: issue.RetryAt, RetryAttempts: issue.RetryAttempts, CreatedAt: issue.CreatedAt, RemovedAt: issue.RemovedAt, ProjectRequest: issue.ProjectRequestGate}
 	}
 	return out
 }

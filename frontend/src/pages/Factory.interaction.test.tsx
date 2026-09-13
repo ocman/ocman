@@ -29,6 +29,7 @@ vi.mock('../lib/api', () => ({ api: {
 		factoryQueue: vi.fn(),
 		resolveFactoryRecoveryGate: vi.fn(),
 		resolveFactoryAuthorityGate: vi.fn(),
+		resolveFactoryProjectGate: vi.fn(),
     factoryProposals: vi.fn(),
     factoryPlanGate: vi.fn(),
 		factoryCloseMol: vi.fn(),
@@ -80,6 +81,7 @@ beforeEach(() => {
 	vi.mocked(api.factoryQueue).mockReset();
 	vi.mocked(api.resolveFactoryRecoveryGate).mockReset();
 	vi.mocked(api.resolveFactoryAuthorityGate).mockReset();
+	vi.mocked(api.resolveFactoryProjectGate).mockReset();
   vi.mocked(api.factoryProposals).mockReset();
 	vi.mocked(api.factoryPlanGate).mockReset();
 		vi.mocked(api.factoryCloseMol).mockReset();
@@ -108,6 +110,7 @@ beforeEach(() => {
 	vi.mocked(api.factoryProposals).mockResolvedValue([]);
 	vi.mocked(api.resolveFactoryRecoveryGate).mockResolvedValue({ resolution: 'resume' } as never);
 	vi.mocked(api.resolveFactoryAuthorityGate).mockResolvedValue({ resolution: 'approve' } as never);
+	vi.mocked(api.resolveFactoryProjectGate).mockResolvedValue({ resolution: 'approved' } as never);
 	vi.mocked(api.factoryFormula).mockResolvedValue({ id: 'ocman/tracer', version: 1, name: 'Tracer', source: 'name = "Tracer"\n', hash: 'hash', sourceHash: 'source-hash', inputs: ['goal'], nodes: [{ key: 'plan', kind: 'plan' }], edges: [{ from: 'approval', to: 'plan' }], valid: true });
 	vi.mocked(api.factoryFormulas).mockResolvedValue([{ id: 'ocman/tracer', version: 1, name: 'Tracer', source: 'name = "Tracer"\n', hash: 'hash', sourceHash: 'source-hash', inputs: ['goal'], nodes: [{ key: 'plan', kind: 'plan' }], edges: [], valid: true }]);
 	vi.mocked(api.factoryCapacityPolicy).mockResolvedValue({ globalCapacity: 10, projectCapacity: 4, projectOverrides: { '/repo': 2 } });
@@ -119,6 +122,17 @@ afterEach(() => {
 });
 
 describe('Factory interactions', () => {
+	it('requires acknowledgement before approving a requested project', async () => {
+		const user = userEvent.setup();
+		vi.mocked(api.factoryEpics).mockResolvedValue([{ id: 'epic-1', goal: 'Ship', status: 'open', initialProject: '/repo' }] as never);
+		vi.mocked(api.factoryIssues).mockResolvedValue([{ id: 'gate-1', epicId: 'epic-1', kind: 'gate', title: 'Project scope request', status: 'open', projectRequest: { issueId: 'gate-1', epicId: 'epic-1', attemptId: 'attempt-1', workId: 'work-1', requestedProject: '/shared', reason: 'Contract moved', resolution: 'open' } }] as never);
+		renderFactory(<MemoryRouter><FactoryOverview /></MemoryRouter>);
+		const approve = await screen.findByRole('button', { name: 'Approve and replan' });
+		expect(approve).toBeDisabled();
+		await user.click(screen.getByRole('checkbox', { name: 'Allow Factory agents to run commands in this project' }));
+		await user.click(approve);
+		await waitFor(() => expect(api.resolveFactoryProjectGate).toHaveBeenCalledWith('gate-1', 'approve', '', true));
+	});
 	it('opens an unblock conversation for failed work', async () => {
 		const user = userEvent.setup();
 		vi.mocked(api.factoryEpics).mockResolvedValue([{ id: 'epic-1', goal: 'Ship', status: 'open', initialProject: '/repo' }] as never);

@@ -522,6 +522,36 @@ func TestMigrateV84BackfillsIssueProjects(t *testing.T) {
 	}
 }
 
+func TestMigrateV85CreatesProjectRequestGates(t *testing.T) {
+	raw, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	if err := ensureSchemaVersionTable(raw); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := raw.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for version := 1; version <= 84; version++ {
+		if err := applyMigration(tx, version); err != nil {
+			t.Fatalf("apply migration v%d: %v", version, err)
+		}
+	}
+	if err := migrateToV85(tx); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var schema string
+	if err := raw.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'factory_project_request_gate'`).Scan(&schema); err != nil || !strings.Contains(schema, "approve_pending") {
+		t.Fatalf("project request gate schema = %q, %v", schema, err)
+	}
+}
+
 // Gates created before v76 stored the work item they came out of but never wrote
 // the edge, leaving them stranded in the graph.
 func TestMigrateV76BackfillsGateEdgesToInterruptedWork(t *testing.T) {

@@ -246,6 +246,7 @@ export interface FactoryIssue {
 	session?: { platform: string; id: string };
 	recovery?: FactoryRecoveryGate;
 	authority?: FactoryAuthorityEscalationGate;
+	projectRequest?: FactoryProjectRequestGate;
 }
 
 export interface FactoryIssueComment {
@@ -277,6 +278,19 @@ export interface FactoryAuthorityEscalationGate {
 	permission: string;
 	target: string;
 	resolution: string;
+}
+
+export interface FactoryProjectRequestGate {
+	issueId: string;
+	epicId: string;
+	attemptId: string;
+	workId: string;
+	requestedProject: string;
+	canonicalProject?: string;
+	reason: string;
+	response?: string;
+	resolution: string;
+	planIssueId?: string;
 }
 
 export interface FactoryGraphMutation {

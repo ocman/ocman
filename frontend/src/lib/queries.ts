@@ -171,6 +171,11 @@ export function useResolveFactoryAuthorityGate() {
 	return useMutation({ mutationFn: ({ id, action }: { id: string; action: 'approve' | 'reject' }) => api.resolveFactoryAuthorityGate(id, action), onSuccess: () => invalidateFactoryState(client) });
 }
 
+export function useResolveFactoryProjectGate() {
+	const client = useQueryClient();
+	return useMutation({ mutationFn: ({ id, action, response, acknowledge }: { id: string; action: 'approve' | 'reject'; response: string; acknowledge: boolean }) => api.resolveFactoryProjectGate(id, action, response, acknowledge), onSettled: () => invalidateFactoryState(client) });
+}
+
 export function useFactoryProposals(id: string) {
   return useQuery<FactoryProposal[]>({
     queryKey: ['factory-epics', id, 'proposals'],

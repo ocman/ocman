@@ -95,6 +95,46 @@ func (s *Server) handleFactoryAuthorityGate(w http.ResponseWriter, r *http.Reque
 	})(w, r)
 }
 
+func (s *Server) handleFactoryProjectGate(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.EscapedPath(), "/api/factory/project-gates/"), "/"), "/")
+	if len(parts) != 2 || parts[0] == "" || (parts[1] != "approve" && parts[1] != "reject") {
+		http.Error(w, "invalid project gate action", http.StatusBadRequest)
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+		service, ok := s.factory.(interface {
+			ResolveProjectRequest(context.Context, string, string, string, bool) (factory.ProjectRequestGate, error)
+		})
+		if !ok {
+			writeFactoryError(w, factory.ErrFactoryUnavailable)
+			return
+		}
+		var request struct {
+			Response                  string `json:"response"`
+			AcknowledgeLocalExecution bool   `json:"acknowledgeLocalExecution"`
+		}
+		if !decodeFactoryRequest(w, r, &request) {
+			return
+		}
+		gateID, err := url.PathUnescape(parts[0])
+		if err != nil {
+			http.Error(w, "invalid project gate ID", http.StatusBadRequest)
+			return
+		}
+		gate, err := service.ResolveProjectRequest(r.Context(), gateID, parts[1], request.Response, request.AcknowledgeLocalExecution)
+		if err != nil {
+			writeFactoryError(w, err)
+			return
+		}
+		writeJSON(w, gate)
+	})(w, r)
+}
+
 func (s *Server) handleFactoryConfiguration(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:

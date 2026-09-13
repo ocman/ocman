@@ -137,6 +137,9 @@ func (factoryMCPService) ResolveRecoveryGate(context.Context, string, string, st
 func (factoryMCPService) ResolveAuthorityEscalationGate(context.Context, string, string) (factory.AuthorityEscalationGate, error) {
 	return factory.AuthorityEscalationGate{}, factory.ErrActionNotPermitted
 }
+func (factoryMCPService) ResolveProjectRequest(context.Context, string, string, string, bool) (factory.ProjectRequestGate, error) {
+	return factory.ProjectRequestGate{}, factory.ErrActionNotPermitted
+}
 
 func (s *Server) buildMCPHandlerFor(factoryService factoryService, routineService *routines.Service, sessionService sessionMCPService) http.Handler {
 	return internalmcp.New(internalmcp.Deps{

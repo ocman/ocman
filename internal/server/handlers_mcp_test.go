@@ -276,6 +276,10 @@ func TestDedicatedMCPFactoryServiceRejectsUserOnlyActions(t *testing.T) {
 			_, err := service.ResolveAuthorityEscalationGate(t.Context(), "gate", "approve")
 			return err
 		}},
+		{"resolve project request", func() error {
+			_, err := service.ResolveProjectRequest(t.Context(), "gate", "approve", "", true)
+			return err
+		}},
 	}
 	for _, check := range checks {
 		t.Run(check.name, func(t *testing.T) {

@@ -107,6 +107,7 @@ export type {
 	FactoryGraphMutation,
 	FactoryRecoveryGate,
   FactoryAuthorityEscalationGate,
+	FactoryProjectRequestGate,
   SubscriptionProviderStatus,
   SubscriptionUsageWindow,
   SubscriptionProviderUsage,
@@ -186,6 +187,7 @@ import type {
 	FactoryGraphMutation,
 	FactoryRecoveryGate,
 	FactoryAuthorityEscalationGate,
+	FactoryProjectRequestGate,
 } from './api.types';
 
 /**
@@ -487,6 +489,7 @@ export const api = {
     factoryQueue: (signal?: AbortSignal) => fetchJSON<FactoryQueueItem[]>('/api/factory/queue', signal),
 		resolveFactoryRecoveryGate: (id: string, action: 'resume' | 'retry' | 'cancel', response: string) => postJSON<FactoryRecoveryGate, { response: string }>(`/api/factory/recovery-gates/${encodeURIComponent(id)}/${action}`, { response }),
 		resolveFactoryAuthorityGate: (id: string, action: 'approve' | 'reject') => postJSON<FactoryAuthorityEscalationGate, Record<string, never>>(`/api/factory/authority-gates/${encodeURIComponent(id)}/${action}`, {}),
+		resolveFactoryProjectGate: (id: string, action: 'approve' | 'reject', response: string, acknowledgeLocalExecution: boolean) => postJSON<FactoryProjectRequestGate, { response: string; acknowledgeLocalExecution: boolean }>(`/api/factory/project-gates/${encodeURIComponent(id)}/${action}`, { response, acknowledgeLocalExecution }),
    factoryProposals: (id: string, signal?: AbortSignal) =>
       fetchJSON<FactoryProposal[]>(`/api/factory/epics/${encodeURIComponent(id)}/proposals`, signal),
 	 factoryPlanGate: (id: string, action: 'approve' | 'revise' | 'reject', request: FactoryPlanGateDecisionRequest) =>
