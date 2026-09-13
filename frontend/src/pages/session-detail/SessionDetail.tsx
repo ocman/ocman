@@ -44,7 +44,6 @@ import { useTmux } from '../../lib/useTmux';
 import { useApiStore } from '../../lib/apiStore';
 import { useGitInfo } from '../../lib/useGitInfo';
 import { usePlatformCapabilities, useOpencodeLaunch } from '../../lib/useCapabilities';
-import { listFailedSends, type FailedSend } from '../../lib/failedSends';
 import { recheckFaviconNotify } from '../../lib/useFaviconNotify';
 import { createSessionWithLaunch } from '../../lib/createSessionWithLaunch';
 import {
@@ -77,6 +76,7 @@ import { useSessionActions } from './useSessionActions';
 import { useMessageQueue } from '../../lib/useMessageQueue';
 import { platformMessageCount, useSession } from './useSession';
 import { usePendingSend } from './usePendingSend';
+import { useFailedSendRehydrate } from './useFailedSendRehydrate';
 import { useAutoApprove } from '../../lib/useAutoApprove';
 import { ThreadSkeleton } from '../../components/Skeleton';
 
@@ -494,7 +494,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const [copyToastMessage, setCopyToastMessage] = useState<string | null>(null);
   const [sendRetryDelaySeconds, setSendRetryDelaySeconds] = useState<number | null>(null);
   const [threadBoundaryResetNonce, setThreadBoundaryResetNonce] = useState(0);
-  const [failedSends, setFailedSends] = useState<FailedSend[]>([]);
 
   const archiveSession = useApiStore((state) => state.archiveSession);
   const getWhisperStatus = useApiStore((state) => state.getWhisperStatus);
@@ -530,7 +529,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
       setSelectedModel('');
       setSelectedAgent('');
       setSelectedReasoning('');
-      setFailedSends(id ? listFailedSends(id) : []);
     }
 
     getWhisperStatus().then((s) => setWhisperAvailable(s.available)).catch(() => setWhisperAvailable(false));
@@ -540,49 +538,13 @@ export function SessionDetail({ id }: SessionDetailProps) {
   }, [id, getWhisperStatus, refreshModels, setSelectedAgent, setSelectedModel, setSelectedReasoning]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  // Auto-rehydrate the pending bubble for any failed send that
-  // survived a page refresh. The user's text+images are persisted
-  // in localStorage; we replay them into the pending slot so the
-  // bubble re-appears with its retry banner.
-  //
-  // Skip entries whose text already appears as a real user message
-  // (the prompt actually reached the server and SSE delivered it).
-  const rehydratedRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    rehydratedRef.current = new Set();
-  }, [id]);
-  useEffect(() => {
-    if (!session || failedSends.length === 0) return;
-    if (pending.pending) return; // a fresh send is already in flight
-    const realUserTexts = new Set(
-      messages
-        .filter((m) => m.data?.role === 'user')
-        .flatMap((m) =>
-          parts
-            .filter((p) => p.messageId === m.id)
-            .map((p) => {
-              try {
-                const pd = typeof p.data === 'string' ? JSON.parse(p.data) : p.data;
-                return pd?.type === 'text' ? (pd.text || '') : '';
-              } catch {
-                return '';
-              }
-            })
-            .filter(Boolean),
-        ),
-    );
-    const ghost = failedSends.find((e) =>
-      !rehydratedRef.current.has(e.id) && !realUserTexts.has(e.text),
-    );
-    if (!ghost) return;
-    rehydratedRef.current.add(ghost.id);
-    pending.begin(ghost.text, ghost.images, {
-      model: ghost.model,
-      agent: ghost.agent,
-      reasoning: ghost.reasoning,
-    });
-    pending.fail(ghost.error);
-  }, [session, failedSends, messages, parts, pending]);
+  const { failedSends, setFailedSends } = useFailedSendRehydrate({
+    id,
+    sessionLoaded: !!session,
+    messages,
+    parts,
+    pending,
+  });
 
   // Mark session as seen on entry. Opening a session also unarchives it
   // server-side (handleSession), so optimistically clear the archived flag
