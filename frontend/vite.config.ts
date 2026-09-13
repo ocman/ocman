@@ -63,7 +63,10 @@ const configureApiProxy: ProxyOptions['configure'] = (proxy) => {
   // suite. This does NOT break real SSE — the proxy still pipes chunks to
   // the client; this listener only also reads them. The live-update fix
   // was server-side (statusRecorder implementing http.Flusher).
-  proxy.on('proxyRes', (proxyRes) => {
+  proxy.on('proxyRes', (proxyRes, _req, res) => {
+    // Air can kill the backend after SSE headers have been forwarded.
+    // Propagate that abort or the browser waits forever instead of retrying.
+    proxyRes.on('aborted', () => res.destroy())
     proxyRes.on('data', () => {})
   })
 }
