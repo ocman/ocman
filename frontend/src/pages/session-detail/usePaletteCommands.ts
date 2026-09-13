@@ -8,6 +8,7 @@
 // render. Callers must pass stable refs and callbacks.
 
 import { useEffect, useRef } from 'react';
+import type { StickyNavigate } from '../../lib/useStickyNavigate';
 import { useUiStore } from '../../lib/uiStore';
 import { openVSCode } from '../../lib/shortcuts';
 import { api } from '../../lib/api';
@@ -24,7 +25,7 @@ export interface PaletteCommandsOptions {
   /** Stable ref to the current archive action. */
   archiveSessionRef: React.MutableRefObject<(platform: string, id: string, timeUpdated: number, archive: boolean) => Promise<unknown>>;
   /** Stable ref to navigate. */
-  navigateRef: React.MutableRefObject<(to: string | number) => void>;
+  navigateRef: React.MutableRefObject<StickyNavigate>;
   /** Stable ref to portAvailable. */
   portAvailableRef: React.MutableRefObject<boolean>;
   /** Stable ref to caps. */

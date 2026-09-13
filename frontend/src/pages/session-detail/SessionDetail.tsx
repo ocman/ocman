@@ -14,6 +14,7 @@ import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } fr
 import { Link, useSearchParams } from 'react-router-dom';
 import { createPortal, flushSync } from 'react-dom';
 import { useStickyNavigate } from '../../lib/useStickyNavigate';
+import { useSyncRef } from '../../lib/useSyncRef';
 import * as Toast from '@radix-ui/react-toast';
 import './SessionDetail.css';
 import { api } from '../../lib/api';
@@ -896,27 +897,14 @@ export function SessionDetail({ id }: SessionDetailProps) {
   }, [id, navigateToSession, recentSessionsRef]);
 
   // Refs for the palette dispatcher / shortcut handlers.
-  const sessionRef = useRef(session);
-  useEffect(() => { sessionRef.current = session; }, [session]);
-  const selectedModelRef = useRef(selectedModel);
-  useEffect(() => { selectedModelRef.current = selectedModel; }, [selectedModel]);
-  const activeModelRef = useRef(activeModel);
-  useEffect(() => { activeModelRef.current = activeModel; }, [activeModel]);
-  const capsRef = useRef(caps);
-  useEffect(() => { capsRef.current = caps; }, [caps]);
-  const archiveSessionRef = useRef(archiveSession);
-  useEffect(() => { archiveSessionRef.current = archiveSession; }, [archiveSession]);
-  const navigateRef = useRef(navigate);
-  useEffect(() => { navigateRef.current = navigate; }, [navigate]);
-
   usePaletteCommands({
-    sessionRef,
-    archiveSessionRef: archiveSessionRef as React.MutableRefObject<(platform: string, id: string, timeUpdated: number, archive: boolean) => Promise<unknown>>,
-    navigateRef: navigateRef as React.MutableRefObject<(to: string | number) => void>,
+    sessionRef: useSyncRef(session),
+    archiveSessionRef: useSyncRef(archiveSession),
+    navigateRef: useSyncRef(navigate),
     portAvailableRef,
-    capsRef,
-    selectedModelRef,
-    activeModelRef,
+    capsRef: useSyncRef(caps),
+    selectedModelRef: useSyncRef(selectedModel),
+    activeModelRef: useSyncRef(activeModel),
     tmux,
     setSelectedReasoning,
     setShowRenameModal,
