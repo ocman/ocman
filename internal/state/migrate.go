@@ -203,7 +203,8 @@ import (
 //	74 - add durable owner-local Inbox items.
 //	75 - allow multiple sequential recovery gates for one Factory attempt.
 //	78 - add routine webhook subscriptions and dispatch claims.
-const latestSchemaVersion = 79
+//	80 - persist the implementation model selected at Factory Plan approval.
+const latestSchemaVersion = 80
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -466,6 +467,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV78(tx)
 	case 79:
 		return migrateToV79(tx)
+	case 80:
+		return migrateToV80(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -2668,4 +2671,8 @@ func migrateToV79(tx *sql.Tx) error {
 	}
 	_, err = tx.Exec(`ALTER TABLE webhook_inbox ADD COLUMN ingestion_url TEXT NOT NULL DEFAULT ''`)
 	return err
+}
+
+func migrateToV80(tx *sql.Tx) error {
+	return addColumnIfMissing(tx, "factory_plan_gate", "implementation_model", "TEXT NOT NULL DEFAULT ''")
 }

@@ -33,6 +33,10 @@ func TestInboxMigration(t *testing.T) {
 	if _, err := raw.Exec(`INSERT INTO inbox_item (id, title, body, created_at) VALUES ('id', 'title', 'body', 1)`); err != nil {
 		t.Fatalf("inbox_item table unavailable after migration: %v", err)
 	}
+	var columns int
+	if err := raw.QueryRow(`SELECT count(*) FROM pragma_table_info('factory_plan_gate') WHERE name = 'implementation_model'`).Scan(&columns); err != nil || columns != 1 {
+		t.Fatalf("implementation_model columns = %d, %v", columns, err)
+	}
 }
 
 func TestCreateInboxItemValidatesAndTrims(t *testing.T) {
