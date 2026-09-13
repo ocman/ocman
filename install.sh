@@ -121,14 +121,30 @@ start() {
 	mkdir -p "$RUN"
 	nohup "$BIN" -addr "$ADDR" >>"$LOG" 2>&1 &
 	echo $! >"$PIDFILE"
-	sleep 1
-	if pid=$(running_pid); then
-		info "started (pid $pid) — http://$ADDR  logs: $LOG"
+	if healthy; then
+		info "started (pid $(cat "$PIDFILE")) — http://$ADDR  logs: $LOG"
 	else
-		rm -f "$PIDFILE"
+		stop >/dev/null
 		tail -n 20 "$LOG" >&2 || true
 		die "failed to start; see $LOG"
 	fi
+}
+
+# healthy waits up to ~10s for the process to answer HTTP on $ADDR (any
+# status counts — an auth redirect still proves the listener is up). Fails
+# early if the process dies; falls back to the pid check without curl.
+healthy() {
+	local i
+	for i in $(seq 40); do
+		running_pid >/dev/null || return 1
+		if command -v curl >/dev/null; then
+			curl -s -o /dev/null --max-time 1 "http://$ADDR/" && return 0
+		elif [ "$i" -ge 4 ]; then
+			return 0
+		fi
+		sleep 0.25
+	done
+	return 1
 }
 
 stop() {
@@ -176,16 +192,17 @@ cmd_update() {
 
 cmd_uninstall() {
 	stop
-	rm -f "$BIN" "$LOG" "$PIDFILE"
+	rm -f "$BIN" "$BIN.new" "$LOG" "$PIDFILE"
 	rm -rf "$SRC"
 	info "removed binary, sources and logs"
+	local data="${XDG_DATA_HOME:-$HOME/.local/share}/ocman"
 	if [ "${1:-}" = "--purge" ]; then
-		rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/ocman"
+		rm -rf "$data"
 		info "purged ocman data (state.db included)"
 	else
-		info "kept your data in ~/.local/share/ocman — re-run with --purge to delete it"
+		info "kept your data in $data — re-run with --purge to delete it"
 	fi
-	rm -f "$CTL"
+	rm -f "$CTL" "$CTL.new"
 }
 
 usage() {
