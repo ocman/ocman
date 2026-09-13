@@ -1,6 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction, MutableRefObject } from 'react';
-import { flushSync } from 'react-dom';
 import { api, BackendUnavailableError, type PlatformCapabilities } from '../../lib/api';
 import type { AttachedImage } from '../../components/assistant/Composer';
 import type { PendingPermission } from '../../lib/sseHelpers';
@@ -10,15 +9,11 @@ import {
   removeFailedSend,
   type FailedSend,
 } from '../../lib/failedSends';
-import { createSessionWithLaunch } from '../../lib/createSessionWithLaunch';
 import { useApiStore } from '../../lib/apiStore';
-import { useUiStore } from '../../lib/uiStore';
 import { openVSCode } from '../../lib/shortcuts';
-import { copyTextToClipboard, copyToClipboard } from '../../lib/clipboard';
 import type { UsePendingSendResult } from './usePendingSend';
 import { remoteLog } from '../../lib/remoteLog';
-import { projectRootForDirectory } from '../../lib/worktrees';
-import { downloadSessionMarkdown, serializeSessionMarkdown } from '../../lib/exportMarkdown';
+import { runSlashCommand } from './slashCommands';
 import type { Message, Part } from '../../lib/api';
 
 // Narrowed session shape — only the fields needed by these handlers.
@@ -430,234 +425,37 @@ export function useSessionActions({
   const handleCommand = useCallback(async (command: string, args: string) => {
     if (!session) return;
 
-    if (command === 'archive') {
-      const recentSessions = recentSessionsRef.current;
-      const idx = recentSessions.findIndex((s) => s.id === session.id);
-      const nextSession = recentSessions[idx + 1] ?? recentSessions[idx - 1];
-      try {
-        await archiveSession(session.platform, session.id, session.timeUpdated, true);
-      } catch (e) {
-        remoteLog.error('Failed to archive session', e);
-        return;
-      }
-      // Remember the just-closed session so it can be reopened via the
-      // Alt+Shift+N "reopen last closed session" shortcut.
-      useApiStore.getState().pushClosedSession({
-        platform: session.platform,
-        id: session.id,
-        timeUpdated: session.timeUpdated,
-      });
-      if (nextSession) {
-        navigateToSession(nextSession.id);
-      } else {
-        flushSync(() => {
-          navigate('/');
-        });
-      }
-      return;
-    }
-
-    if (command === 'worktree' || command === 'wt') {
-      openWorktreeForm({
-        projectDir: session.directory,
-        branch: args.trim() || undefined,
-        // Inherit this session's always-allow permissions (#101).
-        parentSessionId: session.id,
-      });
-      return;
-    }
-
-    if (command === 'restart-opencode') {
-      const flags = args.trim() ? args.trim().toLowerCase().split(/\s+/) : [];
-      if (flags.some(flag => flag !== 'all' && flag !== 'now') || new Set(flags).size !== flags.length) {
-        pending.fail('Usage: /restart-opencode [all] [now]');
-        return;
-      }
-      const all = flags.includes('all');
-      const force = flags.includes('now');
-      pending.begin('/restart-opencode');
-      setRestartToastMessage(force ? 'Checking running sessions...' : 'Restarting OpenCode when sessions are idle...');
-      try {
-        let result = await api.restartOpencode(session.id, { all, force });
-        if (result.confirmationRequired) {
-          const scope = all ? 'all managed OpenCode instances' : 'this managed OpenCode instance';
-          if (!window.confirm(`Running OpenCode instances and sessions will be stopped. Force restart ${scope}?`)) {
-            pending.clear();
-            setRestartToastMessage(null);
-            return;
-          }
-          result = await api.restartOpencode(session.id, { all, force: true, confirmed: true });
-        }
-        pending.clear();
-        setRestartToastMessage(result.restarted === 1 ? 'Restarted OpenCode' : `Restarted ${result.restarted ?? 0} OpenCode instances`);
-        // The new instance re-reads its config, so the agent catalog
-        // and model list we fetched from the old one may be stale.
-        reloadCapabilities?.();
-      } catch (e) {
-        setRestartToastMessage(null);
-        remoteLog.error('Failed to restart OpenCode', e);
-        pending.fail(e instanceof Error ? e.message : 'Unknown error');
-      }
-      return;
-    }
-
-    if (command === 'details') {
-      // Pure client-side UI toggle — works regardless of live port.
-      useUiStore.getState().toggleToolDetails();
-      return;
-    }
-
-    // Display-only toggle for reasoning/thinking blocks (#290). Runs
-    // regardless of `portAvailable` — it never touches the agent, it
-    // just flips ocman's own render preference. Accepts optional
-    // `on`/`off` args; a bare `/thinking` flips the current value.
-    if (command === 'thinking') {
-      const arg = args.trim().toLowerCase();
-      const ui = useUiStore.getState();
-      if (arg === 'on' || arg === 'show') ui.setShowReasoning(true);
-      else if (arg === 'off' || arg === 'hide') ui.setShowReasoning(false);
-      else ui.toggleShowReasoning();
-      return;
-    }
-
-    if (command === 'export') {
-      downloadSessionMarkdown(session.title, messagesRef.current, partsRef.current);
-      return;
-    }
-
-    // /sessions (aliases /resume, /continue): thin shim onto the existing
-    // command palette, whose default mode is the session switcher (#292).
-    if (command === 'sessions' || command === 'resume' || command === 'continue') {
-      useUiStore.getState().openCommandPalette();
-      return;
-    }
-
-    if (command === 'share') {
-      // Share ocman's OWN session URL (issue #294) — not OpenCode's
-      // cloud share. The browser is already talking to this ocman
-      // instance, so window.location.origin is the reachable address
-      // (honours the actual bind address / any reverse proxy).
-      const url = `${window.location.origin}/session/${encodeURIComponent(session.id)}`;
-      const ok = await copyToClipboard(url);
-      setRestartToastMessage(
-        ok
-          ? 'Session link copied (reachable only where this ocman instance is)'
-          : 'Could not copy link to clipboard',
-      );
-      return;
-    }
-
-    if (command === 'copy') {
-      const transcript = serializeSessionMarkdown(session.title, messagesRef.current, partsRef.current);
-      const ok = await copyTextToClipboard(transcript);
-      setCopyToastMessage(ok ? 'Transcript copied' : 'Copy failed — clipboard unavailable');
-      return;
-    }
-
-    if (command === 'undo' || command === 'redo') {
-      if (!portAvailable) {
-        setShowDisconnectedToast(true);
-        return;
-      }
-      try {
-        if (command === 'undo') {
-          const last = messagesRef.current.at(-1);
-          if (!last) return;
-          await api.revertSession(session.id, last.id);
-        } else {
-          await api.unrevertSession(session.id);
-        }
-        await refreshThread?.();
-      } catch (e) {
-        remoteLog.error(`Failed to ${command} session`, e);
-      }
-      return;
-    }
-
-    if (!portAvailable) return;
-
-    if (command === 'compact') {
-      await handleCompact();
-      return;
-    }
-
-    if (command === 'fork') {
-      if (!caps.fork) return;
-      setShowForkPicker(true);
-      return;
-    }
-
-    if (command === 'move') {
-      if (!caps.move) return;
-      setShowMovePicker(true);
-      return;
-    }
-
-    if (command === 'new') {
-      await handleNewSession(args.trim() || undefined);
-      return;
-    }
-
-    if (command === 'clear') {
-      let newId: string | undefined;
-      let newDirectory = session.directory;
-      const clearTitle = args.trim() || undefined;
-      try {
-        const res = await createSessionWithLaunch(
-          { createSession, launchOpencodeInTmux, tmuxAvailable },
-          {
-            directory: session.directory,
-            fallbackDirectory: projectRootForDirectory(session.directory),
-            platform: session.platform,
-            remoteId: session.remoteId,
-            title: clearTitle,
-          },
-        );
-        newId = res.id;
-        newDirectory = res.directory ?? session.directory;
-      } catch (e) {
-        remoteLog.error('Failed to create session', e);
-        return;
-      }
-      try {
-        await archiveSession(session.platform, session.id, session.timeUpdated, true);
-      } catch (e) {
-        remoteLog.error('Failed to archive session', e);
-      }
-      if (newId) {
-        seedNewSession(newId, newDirectory, session.platform, clearTitle, session.remoteId);
-        navigateToSession(newId);
-      }
-      return;
-    }
-
-    if (command === 'tmux') {
-      handleTmuxShortcut();
-      return;
-    }
-
-    if (command === 'vscode') {
-      handleVSCodeShortcut();
-      return;
-    }
-
-    if (command === 'rename') {
-      const newTitle = args.trim();
-      if (newTitle) {
-        try {
-          await api.renameSession(session.id, newTitle);
-          // Optimistically update the sidebar store so the renamed
-          // title shows immediately instead of waiting for the 3s poll.
-          useApiStore.getState().patchRecentSession(session.id, { title: newTitle });
-          setShowRenameToast(true);
-        } catch (e) {
-          remoteLog.error('Failed to rename session', e);
-        }
-      } else {
-        setShowRenameModal(true);
-      }
-      return;
-    }
+    const handled = await runSlashCommand({
+      session,
+      portAvailable,
+      caps,
+      tmuxAvailable,
+      pending,
+      recentSessionsRef,
+      messagesRef,
+      partsRef,
+      archiveSession,
+      createSession,
+      launchOpencodeInTmux,
+      seedNewSession,
+      navigate,
+      navigateToSession,
+      openWorktreeForm,
+      handleCompact,
+      handleNewSession,
+      handleTmuxShortcut,
+      handleVSCodeShortcut,
+      setShowRenameModal,
+      setShowForkPicker,
+      setShowMovePicker,
+      setShowRenameToast,
+      setShowDisconnectedToast,
+      setRestartToastMessage,
+      setCopyToastMessage,
+      reloadCapabilities,
+      refreshThread,
+    }, command, args);
+    if (handled || !portAvailable) return;
 
     // Generic slash-command — surface the user's typed command via
     // the pending slot so the user sees something in the thread
@@ -680,7 +478,7 @@ export function useSessionActions({
       remoteLog.error('Failed to execute command', e);
       pending.fail(e instanceof Error ? e.message : 'Unknown error');
     }
-  }, [activeAgent, archiveSession, caps.fork, caps.move, createSession, launchOpencodeInTmux, tmuxAvailable, seedNewSession, handleCompact, handleNewSession, handleTmuxShortcut, handleVSCodeShortcut, navigate, navigateToSession, openWorktreeForm, portAvailable, recentSessionsRef, messagesRef, partsRef, refreshThread, selectedAgent, selectedModel, session, setShowForkPicker, setShowDisconnectedToast, setShowMovePicker, setShowRenameModal, setShowRenameToast, setRestartToastMessage, reloadCapabilities, setCopyToastMessage, pending]);
+  }, [activeAgent, archiveSession, caps, createSession, launchOpencodeInTmux, tmuxAvailable, seedNewSession, handleCompact, handleNewSession, handleTmuxShortcut, handleVSCodeShortcut, navigate, navigateToSession, openWorktreeForm, portAvailable, recentSessionsRef, messagesRef, partsRef, refreshThread, selectedAgent, selectedModel, session, setShowForkPicker, setShowDisconnectedToast, setShowMovePicker, setShowRenameModal, setShowRenameToast, setRestartToastMessage, reloadCapabilities, setCopyToastMessage, pending]);
 
   return {
     awaitingAssistantResponse,
