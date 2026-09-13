@@ -176,7 +176,12 @@ func TestManager_InventoryLoopKeepsRoutingInventoryFreshWithoutProjectsDemand(t 
 	mgr.refreshInventories = func(context.Context) { calls.Add(1) }
 	ctx, cancel := context.WithCancel(context.Background())
 	go mgr.RunInventoryLoop(ctx, time.Millisecond)
-	time.Sleep(10 * time.Millisecond)
+	// Poll instead of a fixed sleep: a loaded CI runner can starve a 1ms
+	// ticker for longer than any sleep we'd pick.
+	deadline := time.Now().Add(2 * time.Second)
+	for calls.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
 	cancel()
 	if got := calls.Load(); got == 0 {
 		t.Fatal("routing inventory stopped without projects demand")
