@@ -19,7 +19,6 @@ import * as Toast from '@radix-ui/react-toast';
 import './SessionDetail.css';
 import { api } from '../../lib/api';
 import { cleanTitle } from '../../lib/format';
-import { projectRootForDirectory } from '../../lib/worktrees';
 import { canLaunchSession } from './launchGate';
 import type { MessageBookmark } from '../../lib/messageBookmarks';
 import { useMessageBookmarks } from './useMessageBookmarks';
@@ -42,7 +41,6 @@ import { useTmux } from '../../lib/useTmux';
 import { useApiStore } from '../../lib/apiStore';
 import { useGitInfo } from '../../lib/useGitInfo';
 import { usePlatformCapabilities, useOpencodeLaunch } from '../../lib/useCapabilities';
-import { createSessionWithLaunch } from '../../lib/createSessionWithLaunch';
 import {
   isSessionRunning,
   computeLiveTokens,
@@ -56,6 +54,7 @@ import { useSidebarSessions } from './useSidebarSessions';
 import { useSidebarProjectGroups } from './useSidebarProjectGroups';
 import { useSessionCapabilities } from './useSessionCapabilities';
 import { useComposerModel } from './useComposerModel';
+import { useSessionCreation } from './useSessionCreation';
 import { usePromptHandlers } from './usePromptHandlers';
 import { usePromptSync } from './usePromptSync';
 import { useSessionSeen } from './useSessionSeen';
@@ -393,9 +392,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
 
   const archiveSession = useApiStore((state) => state.archiveSession);
   const getWhisperStatus = useApiStore((state) => state.getWhisperStatus);
-  const createSession = useApiStore((state) => state.createSession);
-  const launchOpencodeInTmux = useApiStore((state) => state.launchOpencodeInTmux);
-  const seedNewSession = useApiStore((state) => state.seedNewSession);
 
   const sidebarWidth = useUiStore((state) => state.sidebarWidth);
   const toggleCollapsedProject = useUiStore((state) => state.toggleCollapsedProject);
@@ -489,57 +485,19 @@ export function SessionDetail({ id }: SessionDetailProps) {
     setSelectedReasoning,
   });
 
-  const handleNewSessionInDirectory = useCallback(async (directory: string, remoteId?: string, platform?: string, title?: string) => {
-    // Prefer the target project's own platform/host (e.g. a remote
-    // project group) over the currently-open session's, so a "+" on a
-    // remote project actually targets that remote instead of falling
-    // back to the local adapter.
-    //
-    // Only inherit the open session's platform when the target is the
-    // same project — otherwise a "+" on a *different* project (whose
-    // group didn't carry a platform) leaks the current session's
-    // (possibly remote) platform onto it, mis-targeting the host.
-    const sameProject = !!session && projectRootForDirectory(directory) === projectRootForDirectory(session.directory);
-    const targetPlatform = platform ?? (sameProject ? session?.platform : undefined);
-    try {
-      const res = await createSessionWithLaunch(
-        {
-          createSession,
-          launchOpencodeInTmux,
-          tmuxAvailable: tmux.available,
-        },
-        { directory, fallbackDirectory: projectRootForDirectory(directory), platform: targetPlatform, remoteId, title },
-      );
-      if (res.id) {
-        const sessionDirectory = res.directory ?? directory;
-        seedNewSession(res.id, sessionDirectory, targetPlatform ?? '', title, remoteId);
-        navigateToSession(res.id);
-      }
-    } catch (e) {
-      remoteLog.error('Failed to create session', e);
-      setShowCreateSessionErrorToast(true);
-    }
-  }, [createSession, launchOpencodeInTmux, tmux.available, navigateToSession, seedNewSession, session, setShowCreateSessionErrorToast]);
-
-  const handleNewSession = useCallback(async (title?: string) => {
-    if (!session) return;
-    await handleNewSessionInDirectory(session.directory, session.remoteId, session.platform, title);
-  }, [session, handleNewSessionInDirectory]);
-
-  const handleCompact = useCallback(async () => {
-    if (!session || !portAvailable || !caps.compact) return;
-    const model = selectedModel || activeModel || '';
-    const slashIdx = model.indexOf('/');
-    const providerID = slashIdx > 0 ? model.slice(0, slashIdx) : '';
-    const modelID = slashIdx > 0 ? model.slice(slashIdx + 1) : model;
-    const agentBeforeCompact = selectedAgent || activeAgent || '';
-    try {
-      await api.compactSession(session.id, providerID, modelID);
-      if (agentBeforeCompact) setSelectedAgent(agentBeforeCompact);
-    } catch (e) {
-      remoteLog.error('Failed to compact session', e);
-    }
-  }, [activeAgent, activeModel, caps.compact, portAvailable, selectedAgent, selectedModel, session, setSelectedAgent]);
+  const { handleNewSessionInDirectory, handleNewSession, handleCompact } = useSessionCreation({
+    session,
+    portAvailable,
+    caps,
+    tmuxAvailable: tmux.available,
+    selectedModel,
+    activeModel,
+    selectedAgent,
+    activeAgent,
+    setSelectedAgent,
+    navigateToSession,
+    onCreateError: () => setShowCreateSessionErrorToast(true),
+  });
 
   // Kept in sync with `isRunning` (computed below) so handleShell can
   // decide whether to queue a `!`-prefixed shell command. The ref
