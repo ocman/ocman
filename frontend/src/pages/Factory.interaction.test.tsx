@@ -172,6 +172,10 @@ describe('Factory interactions', () => {
 		expect(screen.getByRole('region', { name: 'Open epics' })).toBeInTheDocument();
 		expect(screen.queryByRole('link', { name: 'Retired work' })).not.toBeInTheDocument();
 		expect(screen.getByText('2 shown · 1 closed hidden')).toBeInTheDocument();
+		const firstRow = screen.getByRole('link', { name: 'Ship Factory' }).closest('[role="listitem"]')!;
+		expect(within(firstRow as HTMLElement).getByTestId('epic-project')).toHaveAttribute('href', '/project/%2Frepo');
+		expect(within(firstRow as HTMLElement).getByTestId('epic-progress')).toHaveTextContent('0/0');
+		expect(within(firstRow as HTMLElement).getByRole('progressbar')).toHaveAttribute('max', '1');
 
     await user.type(screen.getByLabelText('Find epics'), 'docs');
     expect(await screen.findByRole('link', { name: 'Refresh docs' })).toBeInTheDocument();

@@ -11,7 +11,7 @@ export function DataTableGroupHeader({ className = '', ...props }: ComponentProp
 
 export function DataTableGroup({ label, noun, count, markerClassName = '', children }: { label: string; noun: string; count: number; markerClassName?: string; children: ReactNode }) {
   return <section className="oc-data-table-group" aria-label={`${label} ${noun}`}>
-    <DataTableGroupHeader><span className={`oc-data-table-marker ${markerClassName}`.trim()} aria-hidden="true" /><span className="oc-data-table-group-title">{label}</span><span className="oc-data-table-group-count">{count}</span></DataTableGroupHeader>
+    <DataTableGroupHeader><span className={`oc-data-table-marker ${markerClassName}`.trim()} title={label} aria-hidden="true" /><span className="oc-data-table-group-title">{label}</span><span className="oc-data-table-group-count">{count}</span></DataTableGroupHeader>
     <div role="list">{children}</div>
   </section>;
 }
