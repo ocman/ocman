@@ -1919,9 +1919,9 @@ func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentTok
 	if !stopping {
 		return fmt.Errorf("%w: factory implementation attempt is not active", ErrInvalidRequest)
 	}
-	if err := s.implementation.StopImplementationSession(context.WithoutCancel(ctx), attempt.Session); err != nil {
-		return fmt.Errorf("stop completed Factory session: %w", err)
-	}
+	// The completed session is archived by CompleteFactoryImplementationAttempt,
+	// not deleted: its transcript stays browsable. Re-validate so a push that
+	// raced the stop transition is still caught.
 	if err := validate(context.WithoutCancel(ctx)); err != nil {
 		return factoryHandoffError(err)
 	}

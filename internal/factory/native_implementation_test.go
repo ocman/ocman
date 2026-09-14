@@ -587,7 +587,9 @@ func TestNativeDispatchRunsReadyTask(t *testing.T) {
 	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", ""); err != nil {
 		t.Fatal(err)
 	}
-	if launcher.handoffs != 4 || len(launcher.stops) != 1 {
+	// A completed session is archived, never deleted: the transcript stays
+	// browsable in ocman.
+	if launcher.handoffs != 4 || len(launcher.stops) != 0 {
 		t.Fatalf("handoffs/stops = %d/%d", launcher.handoffs, len(launcher.stops))
 	}
 	if err := svc.CompleteAttempt(t.Context(), attempts[0].ID, launcher.calls[0].AgentToken, "done", ""); err != nil {
