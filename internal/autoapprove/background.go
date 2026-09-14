@@ -115,21 +115,7 @@ func (s *Service) backgroundAutoApprove(
 		"sessionID":    sessionID,
 		"permissionID": permissionID,
 	})
-	enabled := asked.lifecycleEnabled
-	directory := asked.directory
-	directoryErr := asked.directoryErr
-	if !asked.lifecycleObserved {
-		enabled = s.deps.DefaultEnabled
-		if s.deps.Store != nil {
-			if perSession, exists, err := s.deps.Store.GetAutoApprove(ctx, string(platformID), sessionID); err == nil && exists {
-				enabled = perSession
-			}
-		}
-		if enabled {
-			directory, directoryErr = s.ResolveSessionDir(sessionID)
-		}
-		asked = s.observeAskedLifecycle(sessionID, permissionID, asked, enabled, directory, directoryErr)
-	}
+	asked, enabled := s.prepareAutoApprove(ctx, platformID, sessionID, permissionID, asked)
 	logger.WithFields(log.Fields{
 		"enabled":            enabled,
 		"autoApproveDefault": s.deps.DefaultEnabled,
@@ -140,225 +126,160 @@ func (s *Service) backgroundAutoApprove(
 	}
 	s.persistLifecycle(asked, sessionID, permissionID, state.PermissionLifecycle{})
 	s.persistRecordedManualLifecycle(asked, sessionID, permissionID)
-
-	// Hard denylist. Checked before the safe-command cache and before
-	// the judge, because both are reachable by untrusted input: the
-	// judge prompt interpolates the agent's own command text, and one
-	// safe verdict is cached by a collision-resistant request key and inherited by every
-	// child session without re-judging. No verdict, cache entry, or
-	// inherited approval may auto-approve a denylisted action.
-	if reason := deniedReason(permission, patterns, metadata); reason != "" {
-		s.setLifecycleMethod(asked, sessionID, permissionID, state.PermissionEvaluationDenylist, state.PermissionEvaluationDenylisted)
-		logger.WithField("reason", reason).
-			Warn("background auto-approve: refusing, command is on the hard denylist")
-		s.recordJudgedWithReasoning(sessionID, permissionID, verdictUnsafe, "blocked by ocman's hard denylist: "+reason)
-		s.emitFlagged(sessionID, permissionID, "blocked by ocman's hard denylist: "+reason)
+	if s.shortCircuitAutoApprove(ctx, platformID, adapter, sessionID, permissionID, asked, logger) {
 		return
 	}
-
-	// Safe-permission cache short-circuit. When the exact same request
-	// was previously approved in this session — or in any
-	// ancestor session, so a child inherits the parent's approvals —
-	// skip the LLM judge and the configured delay entirely: respond
-	// "once", persist the audit row, and emit the SSE notice. The
-	// "cached: " prefix (plus "inherited from parent: " for an
-	// ancestor hit) makes the origin visible in the UI and DB.
-	//
-	// Bash commands retain their existing exact-command key. Other tools
-	// include the full permission, patterns, and metadata in the key.
-	if hash := permissionHash(permission, patterns, metadata); hash != "" {
-		if cachedReason, ok := s.lookupInheritedSafeCommandVerdict(ctx, sessionID, hash); ok {
-			s.setLifecycleMethod(asked, sessionID, permissionID, state.PermissionEvaluationCache, state.PermissionEvaluationCacheSafe)
-			logger.WithField("hash", hash).Debug("background auto-approve: safe-command cache hit, skipping judge")
-			finalReason := "cached: " + cachedReason
-			s.recordJudgedWithReasoning(sessionID, permissionID, verdictSafe, finalReason)
-			s.respondAndPersistSafeApproval(
-				platformID, adapter,
-				sessionID, permissionID, asked, finalReason,
-				logger,
-			)
-			return
-		}
-	}
-
-	// Resolve directory for port discovery.
-	if directoryErr != nil {
+	inputs, err := s.resolveJudgeInputs(ctx, asked.directory, asked.directoryErr, sessionID)
+	if err != nil {
 		s.setLifecycleMethod(asked, sessionID, permissionID, state.PermissionEvaluationJudge, state.PermissionEvaluationError)
-		logger.WithError(directoryErr).Warn("background auto-approve: could not resolve session directory")
-		s.recordJudgedWithReasoning(sessionID, permissionID, verdictUnsafe, "auto-approve could not resolve the session directory")
-		s.emitFlagged(sessionID, permissionID, "auto-approve could not resolve the session directory")
+		logger.WithError(err).Warn("background auto-approve: could not resolve session directory")
+		s.handleUnsafeVerdict(sessionID, permissionID, JudgeResult{Verdict: verdictUnsafe, Reasoning: "auto-approve could not resolve the session directory"})
 		return
 	}
 	s.setLifecycleMethod(asked, sessionID, permissionID, state.PermissionEvaluationJudge, "")
-
-	// Read the configured delay. Default to 0 on any error so the judge
-	// still fires rather than blocking indefinitely.
-	// The pending event was already emitted synchronously by the tee's
-	// onPermission callback using the cached delay; we re-read here to
-	// ensure the actual sleep matches the persisted value.
-	delayMs := s.judgeDelayMs.Load()
-	if s.deps.Store != nil {
-		if d, err := s.deps.Store.GetJudgeDelayMs(ctx); err == nil {
-			delayMs = d
-		}
-	}
-
-	// Apply the configured judge model (if any) so the persisted
-	// setting takes effect without a restart. Empty/unset falls back
-	// to the judgeModel* constants seeded in newPermissionJudge.
-	if s.judge != nil && s.deps.Store != nil {
-		if provider, modelID, ok := loadJudgeModel(ctx, s.deps.Store); ok {
-			s.judge.setModel(provider, modelID)
-		}
-	}
-
-	// Wait the configured delay before starting the judge, giving the
-	// human a window to respond manually. The context carries the
-	// judgeTimeout deadline so we don't wait past it.
-	if delayMs > 0 {
+	if inputs.delay > 0 {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(time.Duration(delayMs) * time.Millisecond):
+		case <-time.After(time.Duration(inputs.delay) * time.Millisecond):
 		}
 	}
-
-	// Flip the status to "checking" so replayAutoApproveState can
-	// route a freshly-connected sink to ocman.permission.checking
-	// rather than a stale countdown.
 	s.markAutoApproveChecking(sessionID, permissionID)
-
 	logger.Info("background auto-approve: judging permission")
-
-	// Load user-defined prompt sections from stateDB so headless runs
-	// use the same custom rules as the settings page.
-	var customSections []PromptSection
-	if s.deps.Store != nil {
-		if stored, err := s.deps.Store.GetPromptSections(ctx); err == nil {
-			for _, ps := range stored {
-				customSections = append(customSections, PromptSection{
-					Title:   ps.Title,
-					Content: ps.Content,
-					Enabled: ps.Enabled,
-				})
-			}
-		}
-	}
-
-	// Build a user-intent section from recent messages in this session
-	// so the judge can factor in what the user explicitly asked for.
-	if s.judge != nil && s.judge.openCodePort != nil {
-		port := s.judge.openCodePort(directory)
-		if port != "" {
-			msgs := s.judge.recentUserMessages(ctx, port, sessionID)
-			if len(msgs) > 0 {
-				var b strings.Builder
-				b.WriteString("The user recently sent these messages (oldest first):\n")
-				for _, m := range msgs {
-					b.WriteString("  - ")
-					// Truncate very long messages to keep the prompt concise.
-					if len(m) > 300 {
-						m = m[:300] + "…"
-					}
-					b.WriteString(m)
-					b.WriteString("\n")
-				}
-				b.WriteString("\nIf the permission request is a direct and proportionate consequence of what the user asked for, lean toward SAFE.")
-				customSections = append(customSections, PromptSection{
-					Title:   "Recent user intent",
-					Content: b.String(),
-				})
-			}
-		}
-	}
-
-	// Run the judge. The judge creates a transient OpenCode session,
-	// sends the prompt, collects the verdict, then deletes the session
-	// before returning (see JudgeWithCallback). We emit "checking" as
-	// soon as the session is created so the UI can show a spinner
-	// immediately. The sink is resolved on every emit so a client
-	// disconnect during the (potentially slow) judge run can't panic
-	// on a recycled writer.
-	//
-	// The judge session ID is intentionally NOT included in the
-	// payload: the session is deleted shortly after the verdict is
-	// extracted, so a "view judge session" link would 404 by the time
-	// the user clicked it. The one-line reasoning surfaced on the
-	// flagged/approved events is the durable signal.
-	emitChecking := func(_ string) {
-		// sessionID (all caps) matches OpenCode's wire convention so the
-		// frontend reducer routes this event to the correct session.
-		checkingPayload, err := json.Marshal(map[string]string{
-			"permissionId": permissionID,
-			"sessionID":    sessionID,
-		})
-		if err != nil {
-			return
-		}
-		s.emitSessionSseEvent(sessionID, "ocman.permission.checking", checkingPayload)
-	}
+	inputs.sections = s.resolveJudgeSections(ctx, inputs.directory, sessionID)
 	s.persistLifecycle(asked, sessionID, permissionID, state.PermissionLifecycle{
 		JudgeStartedAt:   time.Now().UnixMilli(),
 		EvaluationMethod: state.PermissionEvaluationJudge,
 	})
-	result := s.judge.JudgeWithCallback(ctx, directory, permission, patterns, metadata, customSections, emitChecking)
+	result := s.judge.JudgeWithCallback(ctx, inputs.directory, permission, patterns, metadata, inputs.sections, s.emitChecking(sessionID, permissionID))
 	s.completeJudgeLifecycle(asked, sessionID, permissionID, result)
-
-	// If the user replied to the permission (via ocman API or directly
-	// in the OpenCode TUI) while the judge was running, the cancel
-	// fired and ctx.Err() is non-nil. Drop the verdict entirely:
-	// - no recordJudged (the verdict is moot — the permission is
-	//   already resolved; if OpenCode resurrects it for any reason we
-	//   want a fresh judge rather than a stale cached verdict)
-	// - no RespondPermission (OpenCode would reject it anyway)
-	// - no auto-approved/flagged SSE event (the user already saw the
-	//   prompt clear via permission.replied)
-	// - no DB row (a notice attached to a manually-resolved prompt
-	//   would be misleading)
 	if ctx.Err() != nil {
 		logger.WithField("ctxErr", ctx.Err()).Debug("background auto-approve: cancelled before result could be applied")
 		return
 	}
-
-	// Record the verdict (and reasoning) so a later Ensure
-	// call for the same permissionID (e.g. the user re-opens the
-	// session and handleSessionPermissions resurrects it via REST)
-	// short-circuits instead of paying for another judge run, and so
-	// replayAutoApproveState can surface the flagged reasoning to a
-	// newly-connected sink. Recorded regardless of verdict — unsafe
-	// verdicts are the main reason this cache exists: safe verdicts
-	// already auto-respond and the permission disappears from
-	// OpenCode's pending list, but unsafe verdicts deliberately leave
-	// the prompt pending for the human, so without this cache every
-	// REST poll would re-judge.
-	s.recordJudgedWithReasoning(sessionID, permissionID, result.Verdict, result.Reasoning)
-
 	logger.WithFields(log.Fields{
 		"verdict":        string(result.Verdict),
 		"judgeSessionID": result.SessionID,
 	}).Debug("background auto-approve: judge returned")
-
 	if result.Verdict != verdictSafe {
-		// Notify connected clients so they can show the judge's one-line
-		// reasoning on the permission prompt even when the AI flagged it
-		// for human review. The judge session has already been deleted
-		// (see JudgeWithCallback), so result.SessionID is always empty
-		// and the payload no longer carries a link — only the reasoning.
-		s.emitFlagged(sessionID, permissionID, result.Reasoning)
+		s.handleUnsafeVerdict(sessionID, permissionID, result)
 		return
 	}
-
-	// Cache the safe request so a repeat with a different permission ID
-	// skips the judge. Unsafe verdicts are never cached.
+	s.recordJudgedWithReasoning(sessionID, permissionID, result.Verdict, result.Reasoning)
 	if hash := permissionHash(permission, patterns, metadata); hash != "" {
 		s.recordSafeCommandVerdict(sessionID, hash, result.Reasoning)
 	}
+	s.respondAndPersistSafeApproval(platformID, adapter, sessionID, permissionID, asked, result.Reasoning, logger)
+}
 
-	s.respondAndPersistSafeApproval(
-		platformID, adapter,
-		sessionID, permissionID, asked, result.Reasoning,
-		logger,
-	)
+type judgeInputs struct {
+	directory string
+	delay     int64
+	sections  []PromptSection
+}
+
+func (s *Service) prepareAutoApprove(ctx context.Context, platformID platforms.ID, sessionID, permissionID string, asked askedPermission) (askedPermission, bool) {
+	if asked.lifecycleObserved {
+		return asked, asked.lifecycleEnabled
+	}
+	enabled := s.deps.DefaultEnabled
+	if s.deps.Store != nil {
+		if perSession, exists, err := s.deps.Store.GetAutoApprove(ctx, string(platformID), sessionID); err == nil && exists {
+			enabled = perSession
+		}
+	}
+	var directory string
+	var directoryErr error
+	if enabled {
+		directory, directoryErr = s.ResolveSessionDir(sessionID)
+	}
+	return s.observeAskedLifecycle(sessionID, permissionID, asked, enabled, directory, directoryErr), enabled
+}
+
+func (s *Service) shortCircuitAutoApprove(ctx context.Context, platformID platforms.ID, adapter platforms.Platform, sessionID, permissionID string, asked askedPermission, logger *log.Entry) bool {
+	if reason := deniedReason(asked.permission, asked.patterns, asked.metadata); reason != "" {
+		reason = "blocked by ocman's hard denylist: " + reason
+		s.setLifecycleMethod(asked, sessionID, permissionID, state.PermissionEvaluationDenylist, state.PermissionEvaluationDenylisted)
+		logger.WithField("reason", reason).Warn("background auto-approve: refusing, command is on the hard denylist")
+		s.handleUnsafeVerdict(sessionID, permissionID, JudgeResult{Verdict: verdictUnsafe, Reasoning: reason})
+		return true
+	}
+	hash := permissionHash(asked.permission, asked.patterns, asked.metadata)
+	if hash == "" {
+		return false
+	}
+	cachedReason, ok := s.lookupInheritedSafeCommandVerdict(ctx, sessionID, hash)
+	if !ok {
+		return false
+	}
+	s.setLifecycleMethod(asked, sessionID, permissionID, state.PermissionEvaluationCache, state.PermissionEvaluationCacheSafe)
+	logger.WithField("hash", hash).Debug("background auto-approve: safe-command cache hit, skipping judge")
+	reason := "cached: " + cachedReason
+	s.recordJudgedWithReasoning(sessionID, permissionID, verdictSafe, reason)
+	s.respondAndPersistSafeApproval(platformID, adapter, sessionID, permissionID, asked, reason, logger)
+	return true
+}
+
+func (s *Service) resolveJudgeInputs(ctx context.Context, directory string, directoryErr error, sessionID string) (judgeInputs, error) {
+	if directoryErr != nil {
+		return judgeInputs{}, directoryErr
+	}
+	inputs := judgeInputs{directory: directory, delay: s.judgeDelayMs.Load()}
+	if s.deps.Store != nil {
+		if delay, err := s.deps.Store.GetJudgeDelayMs(ctx); err == nil {
+			inputs.delay = delay
+		}
+		if provider, modelID, ok := loadJudgeModel(ctx, s.deps.Store); ok && s.judge != nil {
+			s.judge.setModel(provider, modelID)
+		}
+	}
+	return inputs, nil
+}
+
+func (s *Service) resolveJudgeSections(ctx context.Context, directory, sessionID string) []PromptSection {
+	var sections []PromptSection
+	if s.deps.Store != nil {
+		if stored, err := s.deps.Store.GetPromptSections(ctx); err == nil {
+			for _, section := range stored {
+				sections = append(sections, PromptSection{Title: section.Title, Content: section.Content, Enabled: section.Enabled})
+			}
+		}
+	}
+	if s.judge == nil || s.judge.openCodePort == nil {
+		return sections
+	}
+	port := s.judge.openCodePort(directory)
+	if port == "" {
+		return sections
+	}
+	messages := s.judge.recentUserMessages(ctx, port, sessionID)
+	if len(messages) == 0 {
+		return sections
+	}
+	var content strings.Builder
+	content.WriteString("The user recently sent these messages (oldest first):\n")
+	for _, message := range messages {
+		if len(message) > 300 {
+			message = message[:300] + "…"
+		}
+		content.WriteString("  - " + message + "\n")
+	}
+	content.WriteString("\nIf the permission request is a direct and proportionate consequence of what the user asked for, lean toward SAFE.")
+	return append(sections, PromptSection{Title: "Recent user intent", Content: content.String()})
+}
+
+func (s *Service) emitChecking(sessionID, permissionID string) func(string) {
+	return func(string) {
+		payload, err := json.Marshal(map[string]string{"permissionId": permissionID, "sessionID": sessionID})
+		if err == nil {
+			s.emitSessionSseEvent(sessionID, "ocman.permission.checking", payload)
+		}
+	}
+}
+
+func (s *Service) handleUnsafeVerdict(sessionID, permissionID string, result JudgeResult) {
+	s.recordJudgedWithReasoning(sessionID, permissionID, result.Verdict, result.Reasoning)
+	s.emitFlagged(sessionID, permissionID, result.Reasoning)
 }
 
 // respondAndPersistSafeApproval clears a pending permission in OpenCode
