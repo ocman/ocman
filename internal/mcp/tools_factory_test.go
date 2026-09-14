@@ -23,6 +23,8 @@ type fakeFactoryService struct {
 	comments          []factory.IssueComment
 	commentActor      string
 	submitProposalReq factory.SubmitProposalRequest
+	scopeProposalReq  factory.SubmitProposalRequest
+	projectRequest    []string
 	proposalEpicID    string
 	proposalRevision  int
 	proposalsEpicID   string
@@ -186,10 +188,12 @@ func (f *fakeFactoryService) SubmitProposal(_ context.Context, req factory.Submi
 }
 
 func (f *fakeFactoryService) SubmitScopePlan(_ context.Context, req factory.SubmitProposalRequest) (factory.ProposalRevision, error) {
-	return f.SubmitProposal(context.Background(), req)
+	f.scopeProposalReq = req
+	return factory.ProposalRevision{EpicID: req.EpicID, Revision: 1}, f.err
 }
 
-func (f *fakeFactoryService) RequestProject(_ context.Context, attemptID, _ string, project, reason string) (factory.ProjectRequestGate, error) {
+func (f *fakeFactoryService) RequestProject(_ context.Context, attemptID, token, project, reason string) (factory.ProjectRequestGate, error) {
+	f.projectRequest = []string{attemptID, token, project, reason}
 	if f.err != nil {
 		return factory.ProjectRequestGate{}, f.err
 	}
@@ -352,6 +356,9 @@ func TestFactoryToolCreatesEpicForPreplannedGraph(t *testing.T) {
 	if svc.createReq.Goal != "Ship" || svc.createReq.Brief != "Already broken down" || svc.createReq.InitialProject != "/repo" || !svc.createReq.AcknowledgeLocalExecution || svc.createReq.FormulaID != "" || svc.createReq.EpicID != "pretty-epic-ids" || !reflect.DeepEqual(svc.createReq.Projects, []factory.ProjectAdmission{{Path: "/docs", AcknowledgeLocalExecution: true}}) {
 		t.Fatalf("create request = %#v", svc.createReq)
 	}
+	if got := callTool(t, srv, "factory", map[string]any{"action": "create", "goal": "Ship", "initial_project": "/repo", "acknowledge_local_execution": true, "projects": []any{42}}); !got.IsError || resultText(got) != "projects is invalid" {
+		t.Fatalf("invalid projects = %q", resultText(got))
+	}
 	svc.err = fmt.Errorf("%w: %q", factory.ErrEpicIDTaken, "pretty-epic-ids")
 	if got := callTool(t, srv, "factory", map[string]any{"action": "create", "epic_id": "pretty-epic-ids", "goal": "Ship", "initial_project": "/repo", "acknowledge_local_execution": true}); !got.IsError || !strings.Contains(resultText(got), "pick another human-friendly id") {
 		t.Fatalf("taken epic_id = %q", resultText(got))
@@ -405,6 +412,17 @@ func TestFactoryToolPlanningActions(t *testing.T) {
 	if !reflect.DeepEqual(svc.submitProposalReq, want) {
 		t.Fatalf("submit = %#v", svc.submitProposalReq)
 	}
+	got := callTool(t, srv, "factory", map[string]any{"action": "request_project", "attempt_id": "fa_1", "attempt_token": "fat_1", "project": "/other", "reason": "shared code"})
+	if got.IsError || len(got.Content) != 2 || !strings.Contains(got.Content[1].(mcplib.TextContent).Text, "action=request_project") {
+		t.Fatalf("project request = %#v", got)
+	}
+	if !reflect.DeepEqual(svc.projectRequest, []string{"fa_1", "fat_1", "/other", "shared code"}) {
+		t.Fatalf("project request arguments = %#v", svc.projectRequest)
+	}
+	got = callTool(t, srv, "factory", map[string]any{"action": "submit_scope_plan", "epic_id": "epic-1", "manifest_json": manifest, "attempt_id": "fa_1", "attempt_token": "fat_1"})
+	if got.IsError || !strings.Contains(resultText(got), `"epicId": "epic-1"`) || svc.scopeProposalReq.AttemptID != "fa_1" || svc.scopeProposalReq.AttemptToken != "fat_1" || svc.scopeProposalReq.Manifest.Nodes[0].Project != "/other" {
+		t.Fatalf("scope Plan = %#v", got)
+	}
 	if got := callTool(t, srv, "factory", map[string]any{"action": "proposal", "epic_id": "epic-1", "revision": 2}); got.IsError {
 		t.Fatalf("proposal failed: %s", resultText(got))
 	}
@@ -419,6 +437,7 @@ func TestFactoryToolPlanningActions(t *testing.T) {
 		{"action": "submit_proposal", "epic_id": "epic-1", "manifest_json": "{"},
 		{"action": "submit_proposal", "epic_id": "epic-1", "manifest_json": `{"epicId":"epic-1","molId":"epic-1","project":"/repo","nodes":[],"unexpected":true}`},
 		{"action": "submit_proposal", "epic_id": "epic-1", "manifest_json": `{"epicId":"epic-1","molId":"epic-1","project":"/repo","nodes":[{"key":"bad","type":"implementation","requirement":"required","project":42}]}`},
+		{"action": "submit_scope_plan", "epic_id": "epic-1", "manifest_json": "{", "attempt_id": "fa_1", "attempt_token": "fat_1"},
 		{"action": "proposal", "epic_id": "epic-1", "revision": 0},
 	} {
 		if got := callTool(t, srv, "factory", args); !got.IsError {

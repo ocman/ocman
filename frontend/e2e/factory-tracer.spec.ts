@@ -53,7 +53,7 @@ test('Factory tracer approves a plan, checkpoints implementation, delivers a PR,
   const createEpic = page.getByRole('dialog', { name: 'Create epic' });
   await page.getByLabel('Goal').fill(epic.goal);
   await page.getByRole('combobox', { name: 'Initial Factory project' }).click();
-  await createEpic.getByRole('option', { name: '/repo' }).click();
+  await createEpic.getByRole('option', { name: '/repo', exact: true }).click();
   await page.getByRole('checkbox', { name: 'Allow Factory agents to run commands in this project' }).check();
   await page.getByRole('button', { name: 'Create epic', exact: true }).click();
   await page.getByRole('link', { name: epic.goal }).click();
@@ -120,7 +120,7 @@ test('Factory tracer rejects a plan without creating implementation work', async
   const createEpic = page.getByRole('dialog', { name: 'Create epic' });
   await page.getByLabel('Goal').fill(epic.goal);
   await page.getByRole('combobox', { name: 'Initial Factory project' }).click();
-  await createEpic.getByRole('option', { name: '/repo' }).click();
+  await createEpic.getByRole('option', { name: '/repo', exact: true }).click();
   await page.getByRole('checkbox', { name: 'Allow Factory agents to run commands in this project' }).check();
   await page.getByRole('button', { name: 'Create epic', exact: true }).click();
   await page.getByRole('link', { name: epic.goal }).click();

@@ -2,6 +2,7 @@ package state
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -107,8 +108,22 @@ func TestFactoryProjectRequestGateApprovalExpandsScopeAtomically(t *testing.T) {
 	if changed, err := db.ActivateFactoryAttempt(ctx, planAttempt.ID, model.PlanningSession{Platform: "opencode", ID: "scope-plan"}, time.UnixMilli(18)); err != nil || !changed {
 		t.Fatalf("activate scope plan = %v, %v", changed, err)
 	}
-	manifest, _ := json.Marshal(map[string]any{"epicId": epic.ID, "molId": nestedMolID, "project": "/repo", "nodes": []map[string]any{{"key": "blocker", "type": "implementation", "requirement": "required", "title": "New blocker", "project": "/canonical"}}})
-	applied, err := db.ApplyFactoryScopePlan(ctx, model.NativeProposalRevision{EpicID: epic.ID, MolID: nestedMolID, Project: "/repo", ManifestJSON: string(manifest), ContentHash: "scope"}, planAttempt.ID, planAttempt.AgentToken, time.UnixMilli(19))
+	manifest, _ := json.Marshal(map[string]any{"epicId": epic.ID, "molId": nestedMolID, "project": "/repo", "nodes": []map[string]any{{"key": "blocker", "type": "implementation", "requirement": "required", "title": "New blocker", "project": "/canonical"}, {"key": "follow-up", "type": "implementation", "requirement": "optional", "title": "Optional follow-up", "project": "/canonical", "dependsOn": []string{"blocker"}}}})
+	proposal := model.NativeProposalRevision{EpicID: epic.ID, MolID: nestedMolID, Project: "/repo", ManifestJSON: string(manifest), ContentHash: "scope"}
+	for name, invalid := range map[string]model.NativeProposalRevision{
+		"malformed manifest": {EpicID: epic.ID, ManifestJSON: "{"},
+		"wrong Mol":          {EpicID: epic.ID, ManifestJSON: strings.Replace(string(manifest), nestedMolID, molID, 1)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := db.ApplyFactoryScopePlan(ctx, invalid, planAttempt.ID, planAttempt.AgentToken, time.UnixMilli(19)); err == nil {
+				t.Fatal("invalid scope Plan succeeded")
+			}
+		})
+	}
+	if _, err := db.ApplyFactoryScopePlan(ctx, proposal, planAttempt.ID, "wrong", time.UnixMilli(19)); err == nil {
+		t.Fatal("scope Plan with wrong token succeeded")
+	}
+	applied, err := db.ApplyFactoryScopePlan(ctx, proposal, planAttempt.ID, planAttempt.AgentToken, time.UnixMilli(19))
 	if err != nil || applied.Revision == 0 {
 		t.Fatalf("apply scope Plan = %#v, %v", applied, err)
 	}
@@ -116,7 +131,7 @@ func TestFactoryProjectRequestGateApprovalExpandsScopeAtomically(t *testing.T) {
 	if original.Status != "open" || original.DispatchState != "waiting" || len(original.DependsOn) != 2 {
 		t.Fatalf("replanned original = %#v", original)
 	}
-	blocker := ""
+	blocker, followUp := "", model.NativeIssue{}
 	issues, err := db.ListFactoryIssues(ctx, epic.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -125,9 +140,15 @@ func TestFactoryProjectRequestGateApprovalExpandsScopeAtomically(t *testing.T) {
 		if issue.Title == "New blocker" {
 			blocker = issue.ID
 		}
+		if issue.Title == "Optional follow-up" {
+			followUp = issue
+		}
 	}
 	if blocker == "" {
 		t.Fatal("new blocker not found")
+	}
+	if len(followUp.DependsOn) != 2 {
+		t.Fatalf("optional follow-up dependencies = %#v", followUp.DependsOn)
 	}
 	if _, err := db.db.Exec(`UPDATE factory_issue SET status = 'closed', outcome = 'succeeded' WHERE id = ?`, blocker); err != nil {
 		t.Fatal(err)

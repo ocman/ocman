@@ -578,6 +578,8 @@ func TestFactoryRoutesSanitizeServiceFailures(t *testing.T) {
 		{http.MethodGet, "/api/factory/epics/fac-1/proposals", ""},
 		{http.MethodPost, "/api/factory/epics/fac-1/proposals", `{"attemptId":"attempt-1","attemptToken":"token","manifest":{"epicId":"fac-1"}}`},
 		{http.MethodGet, "/api/factory/epics/fac-1/proposals/1", ""},
+		{http.MethodDelete, "/api/factory/epics/fac-1/projects?path=%2Fdocs", ""},
+		{http.MethodPost, "/api/factory/project-gates/gate/reject", `{"response":"no"}`},
 		{http.MethodGet, "/api/factory/formulas", ""},
 		{http.MethodPost, "/api/factory/formulas", `{"id":"custom/team","source":"version = 1"}`},
 		{http.MethodPost, "/api/factory/formulas/validate", `{"id":"custom/team","source":"version = 1"}`},
@@ -602,6 +604,8 @@ func TestFactoryRoutesSanitizeServiceFailures(t *testing.T) {
 		{http.MethodPut, "/api/factory/epics"},
 		{http.MethodDelete, "/api/factory/epics/fac-1/issues/work/comments"},
 		{http.MethodGet, "/api/factory/epics/fac-1/pour"},
+		{http.MethodGet, "/api/factory/epics/fac-1/projects"},
+		{http.MethodGet, "/api/factory/project-gates/gate/approve"},
 		{http.MethodPut, "/api/factory/formulas"},
 		{http.MethodGet, "/api/factory/formulas/validate"},
 		{http.MethodPost, "/api/factory/formulas/custom%2Fteam/1"},
@@ -773,5 +777,18 @@ func TestFactoryProjectGateRouteRequiresHumanLocalApproval(t *testing.T) {
 	mux.ServeHTTP(denied, remote)
 	if denied.Code != http.StatusForbidden {
 		t.Fatalf("remote status = %d", denied.Code)
+	}
+
+	recorder = httptest.NewRecorder()
+	mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/api/factory/project-gates/gate/invalid", nil))
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("invalid path status = %d", recorder.Code)
+	}
+	bad := httptest.NewRequest(http.MethodPost, "/api/factory/project-gates/gate/reject", strings.NewReader(`{"response":"no","extra":true}`))
+	bad.RemoteAddr = "127.0.0.1:1234"
+	recorder = httptest.NewRecorder()
+	mux.ServeHTTP(recorder, bad)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("invalid body status = %d", recorder.Code)
 	}
 }

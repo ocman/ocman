@@ -1336,6 +1336,50 @@ func TestNativeProjectRejectionRetriesWhenSessionWasLost(t *testing.T) {
 	}
 }
 
+func TestNativeProjectRejectionRetriesDelivery(t *testing.T) {
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	implementation := &fakeImplementationLauncher{}
+	svc := NewNativeWithExecution(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other": "/other"}}, &fakePlanningLauncher{}, implementation)
+	epic := createPouredWorkEpic(t, svc, "Retry rejection")
+	if err := svc.MutateGraph(t.Context(), GraphMutation{Action: "create", EpicID: epic.ID, ParentID: pouredIssueID(t, svc, epic.ID, "mol"), Kind: "implementation", Title: "Work"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Dispatch(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	attempts, err := db.ListFactoryAttempts(t.Context(), epic.ID)
+	if err != nil || len(attempts) != 1 {
+		t.Fatalf("attempts = %#v, %v", attempts, err)
+	}
+	gate, err := svc.RequestProject(t.Context(), attempts[0].ID, implementation.calls[0].AgentToken, "/other", "Shared contract")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ResolveProjectRequest(t.Context(), gate.IssueID, "resume", "", false); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("invalid action error = %v", err)
+	}
+	implementation.recoveryErr = errors.New("delivery failed")
+	if _, err := svc.ResolveProjectRequest(t.Context(), gate.IssueID, "reject", "Continue locally", false); err == nil {
+		t.Fatal("failed delivery returned success")
+	}
+	pending, found, err := db.GetFactoryProjectRequestGate(t.Context(), gate.IssueID)
+	if err != nil || !found || pending.Resolution != "reject_pending" {
+		t.Fatalf("pending gate = %#v, %v, %v", pending, found, err)
+	}
+	if _, err := svc.ResolveProjectRequest(t.Context(), gate.IssueID, "reject", "Different response", false); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("changed response error = %v", err)
+	}
+	implementation.recoveryErr = nil
+	resolved, err := svc.ResolveProjectRequest(t.Context(), gate.IssueID, "reject", "Continue locally", false)
+	if err != nil || resolved.Resolution != "rejected" || len(implementation.recoveries) != 2 {
+		t.Fatalf("retry = %#v, recoveries %#v, %v", resolved, implementation.recoveries, err)
+	}
+}
+
 func TestNativeRecoveryResumeDeliversBeforeClosingGate(t *testing.T) {
 	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
