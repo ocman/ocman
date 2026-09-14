@@ -15,6 +15,7 @@
 .oc-data-table-row-main a, .oc-data-table-row-main button { overflow: hidden; padding: 0; border: 0; background: none; color: var(--text); font: inherit; font-weight: 550; text-align: left; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .oc-data-table-row-main a:hover, .oc-data-table-row-main button:hover { color: var(--accent); }
 .oc-data-table-row-subline { color: var(--text-dim); font: 11px var(--font-conversation-mono); }
+.oc-data-table-row-main .oc-data-table-row-subline a { color: inherit; font: inherit; }
 .oc-data-table-row-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: end; gap: 6px; min-width: 0; }
 .oc-data-table-field-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 

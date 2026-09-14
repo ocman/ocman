@@ -33,18 +33,23 @@
 .factory-status-dot--paused, .factory-status-dot--waiting { border-color: var(--warning); background: var(--warning); }
 .factory-status-dot--closed { border-color: var(--accent2); background: var(--accent2); }
 /* ponytail: fixed column widths so cells line up across rows; a real <table> if more columns show up */
-.factory-list .factory-epic-row { grid-template-columns: minmax(280px, 1fr) 220px 200px; }
-.factory-list .factory-epic-row .oc-data-table-row-meta { display: contents; }
-.factory-epic-cell { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; color: var(--text-dim); font-size: 12px; text-decoration: none; white-space: nowrap; }
-a.factory-epic-cell:hover { color: var(--accent); }
-.factory-epic-cell > span { flex: 0 0 auto; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
-.factory-epic-cell:has(progress) { display: grid; gap: 4px; align-content: center; }
-.factory-epic-cell progress { appearance: none; width: 100%; height: 6px; border: 0; border-radius: 3px; overflow: hidden; background: var(--surface2); accent-color: var(--accent); }
-.factory-epic-cell progress::-webkit-progress-bar { background: var(--surface2); }
-.factory-epic-cell progress::-webkit-progress-value { background: var(--accent); }
-.factory-epic-cell progress::-moz-progress-bar { background: var(--accent); }
+.factory-list { --factory-cols: minmax(280px, 1fr) 220px 200px; }
+.factory-list--queue { --factory-cols: minmax(240px, 1fr) 200px 200px minmax(240px, 1fr); }
+.factory-list--actions { --factory-cols: minmax(200px, 1fr) 160px 180px minmax(240px, 1.2fr) auto; }
+.factory-list .factory-grid-row { grid-template-columns: var(--factory-cols); }
+.factory-list .factory-grid-row .oc-data-table-row-meta { display: contents; }
+.factory-list .factory-grid-row .factory-row-detail { flex: none; min-width: 0; max-width: none; }
+.factory-cell { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; color: var(--text-dim); font-size: 12px; text-decoration: none; white-space: nowrap; }
+a.factory-cell:hover { color: var(--accent); }
+.factory-cell > span { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.factory-cell--actions { justify-content: end; overflow: visible; white-space: normal; }
+.factory-cell:has(progress) { display: grid; gap: 4px; align-content: center; }
+.factory-cell progress { appearance: none; width: 100%; height: 6px; border: 0; border-radius: 3px; overflow: hidden; background: var(--surface2); accent-color: var(--accent); }
+.factory-cell progress::-webkit-progress-bar { background: var(--surface2); }
+.factory-cell progress::-webkit-progress-value { background: var(--accent); }
+.factory-cell progress::-moz-progress-bar { background: var(--accent); }
 @media (max-width: 900px) {
-  .factory-list .factory-epic-row { grid-template-columns: 1fr; gap: 6px; padding-block: 9px; }
+  .factory-list .factory-grid-row { grid-template-columns: 1fr; gap: 6px; padding-block: 9px; }
 }
 .factory-list-title-line { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
 .factory-list-id { flex: 0 0 auto; color: var(--text-dim); font: 11px var(--font-conversation-mono); }

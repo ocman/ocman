@@ -39,7 +39,9 @@ it('shows a ticket list and opens issue details in a drawer', async () => {
 
 	expect(screen.getByRole('region', { name: 'Open issues' })).toBeInTheDocument();
 	expect(screen.getByLabelText('task issue')).toBeInTheDocument();
-	expect(screen.getByText('#fac-1')).toBeInTheDocument();
+	expect(screen.getByRole('link', { name: '#fac-1' })).toHaveAttribute('href', '/factory/epics/epic-1');
+	expect(screen.getByTestId('cell-project')).toHaveAttribute('href', '/project/%2Frepo');
+	expect(screen.getByRole('link', { name: 'Ship Factory' })).toHaveAttribute('href', '/factory/epics/epic-1');
 	expect(screen.getByText(/created/).closest('time')).toHaveAttribute('datetime', '2023-11-14T22:13:20.000Z');
 	expect(screen.queryByText('#fac-42')).not.toBeInTheDocument();
 	expect(screen.getByText('1 shown · 1 closed hidden')).toBeInTheDocument();

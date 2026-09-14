@@ -11,8 +11,20 @@ import './FactoryIssues.css';
 
 const issueIcons: Record<string, string> = { plan: 'bi-map', implementation: 'bi-code-square', delivery: 'bi-box-arrow-up-right', gate: 'bi-sign-stop', task: 'bi-check2-square', mol: 'bi-diagram-3', materialization: 'bi-bezier2' };
 
-export function FactoryIssueRow({ issue, epic, onOpen }: { issue: FactoryIssue; epic?: Pick<FactoryEpic, 'initialProject'>; onOpen: () => void }) {
-	return <DataTableRow primary={<div className="factory-list-title-line"><i className={`bi ${issueIcons[issue.kind] ?? 'bi-circle'} factory-list-type-icon`} role="img" aria-label={`${issue.kind} issue`} title={`${issue.kind} issue`} /><button type="button" aria-label={`Open issue ${issue.id}`} onClick={onOpen}>{issue.title}</button></div>} secondary={<span className="factory-list-subline"><span>#{issue.id}</span>{!!issue.createdAt && <> · <time dateTime={new Date(issue.createdAt).toISOString()} title={new Date(issue.createdAt).toLocaleString()}>created {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(issue.createdAt)}</time></>}</span>} meta={<>{epic && <span className="factory-chip"><ProjectLabel path={epic.initialProject} /></span>}<span className="factory-chip">{issue.epicId}</span>{issue.requirement && <span className="factory-chip">{issue.requirement}</span>}{issue.outcome && <span className={`factory-chip${issue.outcome === 'failed' ? ' factory-chip--danger' : ''}`}>{issue.outcome}</span>}</>} />;
+export type EpicRef = Pick<FactoryEpic, 'id' | 'goal' | 'initialProject'>;
+
+/** Grid cell linking to the project page; renders an empty cell so grid columns stay aligned when the path is unknown. */
+export function ProjectCell({ path }: { path?: string }) {
+	return path ? <Link className="factory-cell" data-testid="cell-project" to={`/project/${encodeURIComponent(path)}`}><ProjectLabel path={path} /></Link> : <span className="factory-cell" data-testid="cell-project" />;
+}
+
+/** Grid cell linking to the epic; shows the goal when known, else the id. */
+export function EpicCell({ id, goal }: { id?: string; goal?: string }) {
+	return id ? <Link className="factory-cell" data-testid="cell-epic" to={`/factory/epics/${encodeURIComponent(id)}`} title={id}><span>{goal ?? id}</span></Link> : <span className="factory-cell" data-testid="cell-epic" />;
+}
+
+export function FactoryIssueRow({ issue, epic, onOpen }: { issue: FactoryIssue; epic?: EpicRef; onOpen: () => void }) {
+	return <DataTableRow className={epic ? 'factory-grid-row' : ''} primary={<div className="factory-list-title-line"><i className={`bi ${issueIcons[issue.kind] ?? 'bi-circle'} factory-list-type-icon`} role="img" aria-label={`${issue.kind} issue`} title={`${issue.kind} issue`} /><button type="button" aria-label={`Open issue ${issue.id}`} onClick={onOpen}>{issue.title}</button></div>} secondary={<span className="factory-list-subline"><Link to={`/factory/epics/${encodeURIComponent(issue.epicId)}`}>#{issue.id}</Link>{!!issue.createdAt && <> · <time dateTime={new Date(issue.createdAt).toISOString()} title={new Date(issue.createdAt).toLocaleString()}>created {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(issue.createdAt)}</time></>}</span>} meta={epic && <><ProjectCell path={epic.initialProject} /><EpicCell id={epic.id} goal={epic.goal} /></>} />;
 }
 
 export function IssueDrawer({ issue, onClose }: { issue: FactoryIssue; onClose: () => void }) {

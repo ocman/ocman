@@ -173,7 +173,7 @@ describe('Factory interactions', () => {
 		expect(screen.queryByRole('link', { name: 'Retired work' })).not.toBeInTheDocument();
 		expect(screen.getByText('2 shown · 1 closed hidden')).toBeInTheDocument();
 		const firstRow = screen.getByRole('link', { name: 'Ship Factory' }).closest('[role="listitem"]')!;
-		expect(within(firstRow as HTMLElement).getByTestId('epic-project')).toHaveAttribute('href', '/project/%2Frepo');
+		expect(within(firstRow as HTMLElement).getByTestId('cell-project')).toHaveAttribute('href', '/project/%2Frepo');
 		expect(within(firstRow as HTMLElement).getByTestId('epic-progress')).toHaveTextContent('0/0');
 		expect(within(firstRow as HTMLElement).getByRole('progressbar')).toHaveAttribute('max', '1');
 
@@ -737,6 +737,8 @@ describe('Factory interactions', () => {
 
 		const active = await screen.findByRole('region', { name: 'Active work items' });
 		expect(within(active).getByTitle('/repo')).toHaveTextContent('repo');
+		expect(within(active).getByTestId('cell-project')).toHaveAttribute('href', '/project/%2Frepo');
+		expect(within(active).getByTestId('cell-epic')).toHaveAttribute('href', '/factory/epics/epic-1');
     expect(screen.getByRole('link', { name: 'Open session session-1' })).toHaveAttribute('href', '/session/session-1');
 		expect(screen.getByRole('region', { name: 'Next up items' })).toBeInTheDocument();
 		expect(screen.getByRole('region', { name: 'Waiting work items' })).toBeInTheDocument();
