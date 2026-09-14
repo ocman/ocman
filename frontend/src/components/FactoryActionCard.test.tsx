@@ -11,7 +11,7 @@ import { MarkdownContent } from './assistant/MarkdownText';
 vi.mock('../lib/api', () => ({ api: {
   factoryEpic: vi.fn(), factoryIssues: vi.fn(), reopenFactoryIssue: vi.fn(),
   factoryClaimPlan: vi.fn(), factoryMaterialize: vi.fn(), pourFactoryEpic: vi.fn(),
-  factoryPlanGate: vi.fn(), resolveFactoryRecoveryGate: vi.fn(), resolveFactoryAuthorityGate: vi.fn(),
+  factoryPlanGate: vi.fn(), resolveFactoryRecoveryGate: vi.fn(), resolveFactoryAuthorityGate: vi.fn(), resolveFactoryProjectGate: vi.fn(),
 } }));
 
 const epic: FactoryEpic = {
@@ -319,6 +319,24 @@ describe('Factory human action cards', () => {
     expect(await screen.findByText('Permission decision saved.')).toBeInTheDocument();
     expect(api.resolveFactoryAuthorityGate).toHaveBeenCalledWith('ship.3', action);
   });
+
+	it.each([
+		['Approve and replan', 'approve', '', true],
+		['Reject and resume', 'reject', 'Continue without this project.', false],
+	] as const)('submits %s for a project request', async (label, action, response, acknowledge) => {
+		const projectRequest = { issueId: 'ship.4', epicId: 'ship', attemptId: 'attempt', workId: 'ship.1', requestedProject: '/shared', reason: 'The contract moved', resolution: 'open' };
+		vi.mocked(api.factoryIssues).mockResolvedValue([{ ...issue, id: 'ship.4', kind: 'gate', projectRequest }]);
+		vi.mocked(api.resolveFactoryProjectGate).mockResolvedValue({ ...projectRequest, resolution: action === 'approve' ? 'approved' : 'rejected' });
+		renderCard('[Factory actions](/factory/epics/ship?human=1&issue=ship.4&action=request_project)');
+
+		const button = await screen.findByRole('button', { name: label });
+		if (acknowledge) {
+			expect(button).toBeDisabled();
+			fireEvent.click(screen.getByRole('checkbox', { name: 'Allow local command execution' }));
+		}
+		fireEvent.click(button);
+		await waitFor(() => expect(api.resolveFactoryProjectGate).toHaveBeenCalledWith('ship.4', action, response, acknowledge));
+	});
 
   it('handles deleted issues without offering a different target', async () => {
     const client = renderCard('[Factory actions](/factory/epics/ship?human=1&issue=missing)');
