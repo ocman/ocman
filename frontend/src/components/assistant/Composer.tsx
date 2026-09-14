@@ -4,7 +4,12 @@ import { useComposerDrafts } from './useComposerDrafts';
 import { isMacPlatform } from '../../lib/shortcuts';
 import { useShortcut } from '../../lib/shortcutRegistry';
 import { useUiStore } from '../../lib/uiStore';
-import { api, BackendUnavailableError, type SlashCommand, type AgentInfo, type SessionModelEntry } from '../../lib/api';
+import { BackendUnavailableError, type SlashCommand, type AgentInfo, type SessionModelEntry } from '../../lib/api';
+import { useComposerAttachments, type AttachedImage } from './useComposerAttachments';
+import { useSlashMenu } from './useSlashMenu';
+import { useComposerPickers } from './useComposerPickers';
+import { useRunningDuration } from './useRunningDuration';
+import { describeModel } from './composerModel';
 import { agentColor } from '../../lib/agentColor';
 import { ModelPicker } from './ModelPicker';
 import { AgentPicker } from './AgentPicker';
@@ -20,33 +25,14 @@ import { useComposerAudio } from './useComposerAudio';
 import { routeComposerSubmit } from './composerSubmit';
 import { getContextWindow, formatTokenCount } from '../../lib/models/contextWindows';
 import { formatCurrency, formatDate, formatDuration, formatTokensPerSecond } from '../../lib/format';
-import { BUILTIN_COMMANDS, KNOWN_AGENTS, modelHasVariants } from '../../lib/commands/builtinCommands';
-import { remoteLog } from '../../lib/remoteLog';
+import { KNOWN_AGENTS, modelHasVariants } from '../../lib/commands/builtinCommands';
 import { ModelLabel } from '../ModelLogo';
 
-export interface AttachedImage {
-  url: string;
-  mime: string;
-}
+export type { AttachedImage } from './useComposerAttachments';
 
 export interface ComposerHandle {
   openModelPicker: (query?: string) => void;
   openAgentPicker: (query?: string) => void;
-}
-
-interface AttachedFileRef {
-  path: string;
-  name: string;
-  mime: string;
-}
-
-function readFileAsDataURL(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
 }
 
 interface ComposerFooterProps {
@@ -555,13 +541,9 @@ function ComposerImpl({
   permissionControl?: ReactNode;
   composerRef?: Ref<ComposerHandle>;
 }) {
-  const [displayDurationMs, setDisplayDurationMs] = useState(activeDurationMs ?? 0);
-
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [images, setImages] = useState<AttachedImage[]>([]);
-  const [files, setFiles] = useState<AttachedFileRef[]>([]);
   // Keep the draft locked until the send succeeds. Backend outages retry;
   // other errors unlock the unchanged draft for manual correction/retry.
   const [sending, setSending] = useState(false);
@@ -570,23 +552,9 @@ function ComposerImpl({
   const sessionIdRef = useRef(sessionId);
   const { clearDraftNow, scheduleDraftSave } = useComposerDrafts(inputRef, sessionId, sessionIdRef);
 
-  useEffect(() => {
-    const baseDurationMs = activeDurationMs ?? 0;
-    if (!isRunning) return;
-
-    const startedAt = Date.now();
-    const updateDuration = () => {
-      setDisplayDurationMs(baseDurationMs + Date.now() - startedAt);
-    };
-    const initialTimer = window.setTimeout(updateDuration, 0);
-    const timer = window.setInterval(updateDuration, 1_000);
-    return () => {
-      window.clearTimeout(initialTimer);
-      window.clearInterval(timer);
-    };
-  }, [activeDurationMs, isRunning]);
-
-  const visibleDurationMs = isRunning ? displayDurationMs : (activeDurationMs ?? 0);
+  const visibleDurationMs = useRunningDuration(activeDurationMs, isRunning);
+  const attachments = useComposerAttachments(sessionIdRef, disabled);
+  const { images, files } = attachments;
 
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
   useEffect(() => { sendingRef.current = sending; }, [sending]);
@@ -636,40 +604,7 @@ function ComposerImpl({
     }
   }, [disabled]);
 
-  const [slashCommands, setSlashCommands] = useState<SlashCommand[]>(BUILTIN_COMMANDS);
-  const [showSlashMenu, setShowSlashMenu] = useState(false);
-  const [slashFilter, setSlashFilter] = useState('');
-  const [slashIndex, setSlashIndex] = useState(0);
   const [isBashMode, setIsBashMode] = useState(false);
-  const [modelPickerOpen, setModelPickerOpen] = useState(false);
-  const [modelPickerQuery, setModelPickerQuery] = useState('');
-  const [agentPickerOpen, setAgentPickerOpen] = useState(false);
-  const [agentPickerQuery, setAgentPickerQuery] = useState('');
-  const [skillPickerOpen, setSkillPickerOpen] = useState(false);
-  const [skillPickerQuery, setSkillPickerQuery] = useState('');
-  const [routinePickerOpen, setRoutinePickerOpen] = useState(false);
-  const [routinePickerQuery, setRoutinePickerQuery] = useState('');
-  const [reasoningPickerOpen, setReasoningPickerOpen] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
-  const slashMenuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!sessionId) return;
-    let cancelled = false;
-    api.commands(sessionId).then(cmds => {
-      if (!cancelled) {
-        const fetched = cmds || [];
-        const merged = [
-          ...BUILTIN_COMMANDS.filter(b => !fetched.some(f => f.name === b.name)),
-          ...fetched,
-        ];
-        setSlashCommands(merged);
-      }
-    }).catch(() => {
-      setSlashCommands(BUILTIN_COMMANDS);
-    });
-    return () => { cancelled = true; };
-  }, [sessionId]);
 
   const hasModels = !!((models && models.length > 0) || (modelEntries && modelEntries.length > 0));
   // Agent picker has something to show as long as the live catalog has an agent.
@@ -679,132 +614,36 @@ function ComposerImpl({
     : KNOWN_AGENTS;
   const agentOptions = Array.from(new Set([activeAgent, ...cyclableAgents].filter((a): a is string => !!a)));
   const effectiveAgent = selectedAgent || activeAgent || '';
-  const hasSkills = slashCommands.some(c => c.source === 'skill');
   // Variants == the reasoning options the effective model exposes, so the
   // /variants command is hidden when the model has none (OpenCode parity).
   const hasVariants = modelHasVariants(selectedModel, modelEntries);
-  const filteredCommands = slashCommands.filter(cmd => {
-    if (cmd.name === 'model' && !hasModels) return false;
-    if ((cmd.name === 'agent' || cmd.name === 'agents') && !hasAgents && (!activeAgent)) return false;
-    if (cmd.name === 'skills' && !hasSkills) return false;
-    // Mirror OpenCode: /variants is hidden when the model exposes no variants.
-    if (cmd.name === 'variants' && !hasVariants) return false;
-    return cmd.name.toLowerCase().startsWith(slashFilter.toLowerCase());
+  const slash = useSlashMenu(sessionId, { hasModels, hasAgents, activeAgent, hasVariants });
+  const pickers = useComposerPickers({
+    inputRef,
+    sessionIdRef,
+    scheduleDraftSave,
+    models,
+    agents,
+    agentOptions,
+    onModelChange,
+    onAgentChange,
+    onRefreshModels,
   });
-
-  useEffect(() => {
-    if (!showSlashMenu || !slashMenuRef.current) return;
-    const active = slashMenuRef.current.querySelector('.oc-slash-item.active');
-    if (active) active.scrollIntoView({ block: 'nearest' });
-  }, [slashIndex, showSlashMenu]);
-
-  // Try to resolve `args` to a concrete model without opening the palette.
-  // Matches against the full `provider/model` string or the bare model name,
-  // case-insensitively. Returns the resolved value if there's exactly one match.
-  const resolveModelArg = useCallback((arg: string): string | null => {
-    const list = models || [];
-    if (!arg) return null;
-    const q = arg.toLowerCase();
-    const exact = list.find((m) => m.toLowerCase() === q);
-    if (exact) return exact;
-    const byModelName = list.filter((m) => {
-      const idx = m.indexOf('/');
-      const name = idx > 0 ? m.slice(idx + 1) : m;
-      return name.toLowerCase() === q;
-    });
-    if (byModelName.length === 1) return byModelName[0];
-    return null;
-  }, [models]);
-
-  // Open the /model palette. If `arg` uniquely identifies a model, apply it
-  // directly instead of opening the modal. The arg is otherwise pre-filled
-  // as the palette's initial query.
-  const openModelPicker = useCallback((arg = '') => {
-    const resolved = resolveModelArg(arg);
-    if (resolved) {
-      onModelChange?.(resolved);
-      return;
-    }
-    // Fire-and-forget: pull the latest provider catalog. The picker opens
-    // with current data; the refresh flows in via a `modelEntries` prop
-    // update on the next render.
-    onRefreshModels?.();
-    setModelPickerQuery(arg);
-    setModelPickerOpen(true);
-  }, [resolveModelArg, onModelChange, onRefreshModels]);
-
-  // Same shape as resolveModelArg: case-insensitive exact match against
-  // known agent names, so `/agent plan` applies without opening the palette.
-  const resolveAgentArg = useCallback((arg: string): string | null => {
-    if (!arg) return null;
-    const q = arg.toLowerCase();
-    const names = new Set<string>();
-    for (const a of agents || []) names.add(a.name);
-    for (const n of agentOptions) names.add(n);
-    for (const n of names) {
-      if (n.toLowerCase() === q) return n;
-    }
-    return null;
-  }, [agents, agentOptions]);
-
-  const openAgentPicker = useCallback((arg = '') => {
-    const resolved = resolveAgentArg(arg);
-    if (resolved) {
-      onAgentChange?.(resolved);
-      return;
-    }
-    setAgentPickerQuery(arg);
-    setAgentPickerOpen(true);
-  }, [resolveAgentArg, onAgentChange]);
+  const { openModelPicker, openAgentPicker, openSkillPicker, openRoutinePicker } = pickers;
 
   useImperativeHandle(composerRef, () => ({
     openModelPicker,
     openAgentPicker,
   }), [openModelPicker, openAgentPicker]);
 
-  const openSkillPicker = useCallback((arg: string) => {
-    setSkillPickerQuery(arg);
-    setSkillPickerOpen(true);
-  }, []);
-
-  // On skill select: prefill `/<skill> ` into the composer — do not send.
-  // Matches OpenCode's DialogSkill, which inserts the command for the user
-  // to complete/submit themselves.
-  const insertSkill = useCallback((skill: string) => {
-    setSkillPickerOpen(false);
-    const el = inputRef.current;
-    if (!el) return;
-    el.value = '/' + skill + ' ';
-    el.focus();
-    const sid = sessionIdRef.current;
-    if (sid) scheduleDraftSave(sid, () => el.value);
-  }, [scheduleDraftSave]);
-
-  const openRoutinePicker = useCallback((arg: string) => {
-    setRoutinePickerQuery(arg);
-    setRoutinePickerOpen(true);
-  }, []);
-
-  const insertRoutine = useCallback((routine: { prompt: string }) => {
-    setRoutinePickerOpen(false);
-    const el = inputRef.current;
-    if (!el) return;
-    el.value = routine.prompt;
-    el.focus();
-    const sid = sessionIdRef.current;
-    if (sid) scheduleDraftSave(sid, () => el.value);
-  }, [scheduleDraftSave]);
-
   const clearComposerInput = useCallback(() => {
     const el = inputRef.current;
     if (!el) return;
     el.value = '';
-    setShowSlashMenu(false);
-    setSlashFilter('');
-    setSlashIndex(0);
+    slash.close();
     const sid = sessionIdRef.current;
     if (sid) clearDraftNow(sid);
-  }, [clearDraftNow]);
+  }, [clearDraftNow, slash]);
 
   const selectSlashCommand = useCallback((cmd: SlashCommand) => {
     const el = inputRef.current;
@@ -824,7 +663,7 @@ function ComposerImpl({
     }
     if (cmd.name === 'help') {
       clearComposerInput();
-      setHelpOpen(true);
+      pickers.help.setOpen(true);
       return;
     }
     if (cmd.name === 'skills') {
@@ -841,56 +680,13 @@ function ComposerImpl({
     // reasoning variant. Hidden from the menu when the model has none.
     if (cmd.name === 'variants') {
       clearComposerInput();
-      setReasoningPickerOpen(true);
+      pickers.reasoning.setOpen(true);
       return;
     }
     el.value = '/' + cmd.name + ' ';
     el.focus();
-    setShowSlashMenu(false);
-    setSlashFilter('');
-    setSlashIndex(0);
-  }, [clearComposerInput, openModelPicker, openAgentPicker, openSkillPicker, openRoutinePicker]);
-
-  const addImageFiles = useCallback(async (files: File[]) => {
-    const imageFiles = files.filter(f => f.type.startsWith('image/'));
-    const newImages: AttachedImage[] = [];
-    for (const file of imageFiles) {
-      try {
-        const url = await readFileAsDataURL(file);
-        newImages.push({ url, mime: file.type });
-      } catch (err) {
-        remoteLog.error('Failed to read image', err);
-      }
-    }
-    if (newImages.length > 0) setImages(prev => [...prev, ...newImages]);
-
-    const otherFiles = files.filter(f => !f.type.startsWith('image/'));
-    if (otherFiles.length === 0) return;
-    const sid = sessionIdRef.current;
-    if (!sid) return;
-    const newFiles: AttachedFileRef[] = [];
-    for (const file of otherFiles) {
-      try {
-        const saved = await api.uploadComposerAttachment(sid, file);
-        newFiles.push({
-          path: saved.path,
-          name: saved.name || file.name,
-          mime: saved.mime || file.type || 'application/octet-stream',
-        });
-      } catch (err) {
-        remoteLog.error('Failed to save attachment', err);
-      }
-    }
-    if (newFiles.length > 0) setFiles(prev => [...prev, ...newFiles]);
-  }, []);
-
-  const removeImage = useCallback((index: number) => {
-    setImages(prev => prev.filter((_, i) => i !== index));
-  }, []);
-
-  const removeFile = useCallback((index: number) => {
-    setFiles(prev => prev.filter((_, i) => i !== index));
-  }, []);
+    slash.close();
+  }, [clearComposerInput, openModelPicker, openAgentPicker, openSkillPicker, openRoutinePicker, pickers, slash]);
 
   // ---------------------------------------------------------------------------
   // Audio recording — delegated to useComposerAudio hook
@@ -905,18 +701,11 @@ function ComposerImpl({
     isDictationSupported,
   } = useComposerAudio({ whisperAvailable, disabled, inputRef });
 
-  const closeSlashMenu = () => {
-    setShowSlashMenu(false);
-    setSlashFilter('');
-    setSlashIndex(0);
-  };
-
   const clearAfterSubmit = () => {
     if (inputRef.current) inputRef.current.value = '';
-    closeSlashMenu();
+    slash.close();
     setIsBashMode(false);
-    setImages([]);
-    setFiles([]);
+    attachments.clear();
     const sid = sessionIdRef.current;
     if (sid) clearDraftNow(sid);
   };
@@ -957,7 +746,7 @@ function ComposerImpl({
     setIsBashMode(false);
     if (command === 'model') openModelPicker(args);
     else if (command === 'agent' || command === 'agents') openAgentPicker(args);
-    else if (command === 'help') setHelpOpen(true);
+    else if (command === 'help') pickers.help.setOpen(true);
     else if (command === 'skills') openSkillPicker(args);
     else openRoutinePicker(args);
     return true;
@@ -968,10 +757,7 @@ function ComposerImpl({
     const route = routeComposerSubmit(raw, { shellExec: !!shellExec });
     if (route.kind === 'noop' && images.length === 0 && files.length === 0) return;
 
-    const fileReferenceText = files.length > 0
-      ? `Attached files saved on disk:\n${files.map(f => `- ${f.path} (${f.mime})`).join('\n')}`
-      : '';
-    const withFileReferences = (text: string) => [text, fileReferenceText].filter(Boolean).join('\n\n');
+    const withFileReferences = (text: string) => [text, attachments.fileReferenceText].filter(Boolean).join('\n\n');
 
     if (route.kind === 'command' && onCommand) {
       if (openClientCommand(route.command, route.args)) return;
@@ -991,23 +777,23 @@ function ComposerImpl({
     const el = e.currentTarget;
     const hasArg = el.value.includes(' ');
 
-    if (showSlashMenu && !hasArg && e.key === 'ArrowDown') {
+    if (slash.open && !hasArg && e.key === 'ArrowDown') {
       e.preventDefault();
-      setSlashIndex((slashIndex + 1) % Math.max(filteredCommands.length, 1));
+      slash.moveIndex(1);
       return;
     }
-    if (showSlashMenu && !hasArg && e.key === 'ArrowUp') {
+    if (slash.open && !hasArg && e.key === 'ArrowUp') {
       e.preventDefault();
-      setSlashIndex((slashIndex - 1 + Math.max(filteredCommands.length, 1)) % Math.max(filteredCommands.length, 1));
+      slash.moveIndex(-1);
       return;
     }
-    if (showSlashMenu && e.key === 'Escape') {
+    if (slash.open && e.key === 'Escape') {
       e.preventDefault();
-      closeSlashMenu();
+      slash.close();
       return;
     }
-    if (showSlashMenu && !hasArg && (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey))) {
-      const cmd = filteredCommands[slashIndex];
+    if (slash.open && !hasArg && (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey))) {
+      const cmd = slash.filtered[slash.index];
       if (cmd) {
         e.preventDefault();
         selectSlashCommand(cmd);
@@ -1039,23 +825,9 @@ function ComposerImpl({
     const el = e.currentTarget;
     const value = el.value;
     setIsBashMode(value.startsWith('!') && !!shellExec);
-    const show = value.startsWith('/') && !value.includes(' ') && !value.includes('\n');
-    setShowSlashMenu(show);
-    setSlashFilter(show ? value.slice(1) : '');
-    if (!show) setSlashIndex(0);
+    slash.syncToInput(value);
     const sid = sessionIdRef.current;
     if (sid) scheduleDraftSave(sid, () => el.value);
-  };
-
-  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    if (disabled) return;
-    const imageFiles = Array.from(e.clipboardData.items)
-      .filter((item) => item.type.startsWith('image/'))
-      .map((item) => item.getAsFile())
-      .filter((file): file is File => !!file);
-    if (imageFiles.length === 0) return;
-    e.preventDefault();
-    void addImageFiles(imageFiles);
   };
 
   useEffect(() => {
@@ -1070,45 +842,9 @@ function ComposerImpl({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isRunning, onAbort]);
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (disabled) return;
-    const files = Array.from(e.dataTransfer.files);
-    addImageFiles(files);
-  }, [disabled, addImageFiles]);
-
   const effectiveModel = selectedModel || '';
 
-  // Label shown on the composer's model button. Prefer the human-readable
-  // `modelName` from the rich entries (e.g. "Claude Opus 4.7"), falling back
-  // to the bare model id from the "provider/model" string.
-  const modelButtonLabel = (() => {
-    if (!effectiveModel) return '';
-    const match = modelEntries?.find((e) => e.provider && `${e.provider}/${e.model}` === effectiveModel);
-    if (match) return match.modelName || match.model;
-    const slash = effectiveModel.indexOf('/');
-    return slash > 0 ? effectiveModel.slice(slash + 1) : effectiveModel;
-  })();
-  // Warn when the selected model isn't available on this session's host
-  // (e.g. provider not connected on a remote). Only trust the rich entries;
-  // the string fallback has no availability data so we stay silent there.
-  const modelUnavailable = (() => {
-    if (!effectiveModel || !modelEntries || modelEntries.length === 0) return false;
-    const match = modelEntries.find((e) => e.provider && `${e.provider}/${e.model}` === effectiveModel);
-    return !!match && !match.isAvailable;
-  })();
-  // Reasoning options for the effective model, derived from the model entries.
-  const reasoningOptions: string[] = (() => {
-    if (!effectiveModel || !modelEntries) return [];
-    const match = modelEntries.find((e) => e.provider && `${e.provider}/${e.model}` === effectiveModel);
-    return match?.reasoning ?? [];
-  })();
+  const { label: modelButtonLabel, unavailable: modelUnavailable, reasoningOptions } = describeModel(effectiveModel, modelEntries);
   const hasReasoning = reasoningOptions.length > 0;
   const dictationShortcut = useMemo(() => ({
     id: 'composer.dictation',
@@ -1162,76 +898,76 @@ function ComposerImpl({
     <div
       className={`oc-composer-wrap${uiDisabled ? ' oc-composer-disabled' : ''}`}
       ref={wrapRef}
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
+      onDragOver={attachments.handleDragOver}
+      onDrop={attachments.handleDrop}
       onClick={disabled && onLaunchRequest ? onLaunchRequest : undefined}
       style={disabled && onLaunchRequest ? { cursor: 'pointer' } : undefined}
     >
-      {modelPickerOpen && (
+      {pickers.model.open && (
         <ModelPicker
-          open={modelPickerOpen}
+          open
           models={models || []}
           modelEntries={modelEntries}
           currentModel={effectiveModel}
-          initialQuery={modelPickerQuery}
+          initialQuery={pickers.model.query}
           onSelect={(m) => onModelChange?.(m)}
           onToggleFavorite={onToggleFavorite}
-          onClose={() => { setModelPickerOpen(false); inputRef.current?.focus(); }}
-          onBack={() => { setModelPickerOpen(false); useUiStore.getState().openPalette('command'); }}
+          onClose={pickers.model.close}
+          onBack={() => { pickers.model.setOpen(false); useUiStore.getState().openPalette('command'); }}
         />
       )}
-      {agentPickerOpen && (
+      {pickers.agent.open && (
         <AgentPicker
-          open={agentPickerOpen}
+          open
           agentNames={agentOptions}
           agents={agents}
           activeAgent={activeAgent}
           currentAgent={effectiveAgent}
-          initialQuery={agentPickerQuery}
+          initialQuery={pickers.agent.query}
           onSelect={(a) => onAgentChange?.(a)}
-          onClose={() => { setAgentPickerOpen(false); inputRef.current?.focus(); }}
+          onClose={pickers.agent.close}
         />
       )}
-      {skillPickerOpen && (
+      {pickers.skill.open && (
         <SkillPicker
-          open={skillPickerOpen}
-          commands={slashCommands}
-          initialQuery={skillPickerQuery}
-          onSelect={insertSkill}
-          onClose={() => { setSkillPickerOpen(false); inputRef.current?.focus(); }}
+          open
+          commands={slash.commands}
+          initialQuery={pickers.skill.query}
+          onSelect={pickers.insertSkill}
+          onClose={pickers.skill.close}
         />
       )}
-      {routinePickerOpen && (
+      {pickers.routine.open && (
         <RoutinePicker
-          open={routinePickerOpen}
-          initialQuery={routinePickerQuery}
-          onSelect={insertRoutine}
-          onClose={() => { setRoutinePickerOpen(false); inputRef.current?.focus(); }}
+          open
+          initialQuery={pickers.routine.query}
+          onSelect={pickers.insertRoutine}
+          onClose={pickers.routine.close}
         />
       )}
-      {reasoningPickerOpen && (
+      {pickers.reasoning.open && (
         <ReasoningPicker
-          open={reasoningPickerOpen}
+          open
           options={reasoningOptions}
           current={selectedReasoning}
           onSelect={(v) => onReasoningChange?.(v)}
-          onClose={() => { setReasoningPickerOpen(false); inputRef.current?.focus(); }}
+          onClose={pickers.reasoning.close}
         />
       )}
-      {helpOpen && (
+      {pickers.help.open && (
         <HelpDialog
-          open={helpOpen}
-          commands={slashCommands}
-          onClose={() => { setHelpOpen(false); inputRef.current?.focus(); }}
+          open
+          commands={slash.commands}
+          onClose={pickers.help.close}
         />
       )}
-      {showSlashMenu && (
+      {slash.open && (
         <SlashCommandMenu
-          commands={filteredCommands}
-          activeIndex={slashIndex}
-          menuRef={slashMenuRef}
+          commands={slash.filtered}
+          activeIndex={slash.index}
+          menuRef={slash.menuRef}
           onSelect={selectSlashCommand}
-          onHover={setSlashIndex}
+          onHover={slash.setIndex}
         />
       )}
       {isRecording && (
@@ -1273,14 +1009,14 @@ function ComposerImpl({
             {images.map((img, i) => (
               <div key={i} className="oc-composer-image-thumb">
                 <img src={img.url} alt={`Attachment ${i + 1}`} />
-                <button className="oc-composer-image-remove" onClick={() => removeImage(i)}>{'\u00D7'}</button>
+                <button className="oc-composer-image-remove" onClick={() => attachments.removeImage(i)}>{'\u00D7'}</button>
               </div>
             ))}
             {files.map((file, i) => (
               <div key={file.path} className="oc-composer-file-thumb" title={file.path}>
                 <span className="oc-composer-file-icon">file</span>
                 <span className="oc-composer-file-name">{file.name}</span>
-                <button className="oc-composer-image-remove" onClick={() => removeFile(i)}>{'\u00D7'}</button>
+                <button className="oc-composer-image-remove" onClick={() => attachments.removeFile(i)}>{'\u00D7'}</button>
               </div>
             ))}
           </div>
@@ -1297,7 +1033,7 @@ function ComposerImpl({
           spellCheck={false}
           onKeyDown={handleInputKeyDown}
           onInput={handleInput}
-          onPaste={handlePaste}
+          onPaste={attachments.handlePaste}
           data-1p-ignore
           data-lpignore="true"
           data-bwignore
@@ -1321,13 +1057,13 @@ function ComposerImpl({
           modelButtonLabel={modelButtonLabel}
           effectiveModel={effectiveModel}
           hasReasoning={hasReasoning}
-          openReasoningPicker={() => { if (!uiDisabled) setReasoningPickerOpen(true); }}
+          openReasoningPicker={() => { if (!uiDisabled) pickers.reasoning.setOpen(true); }}
           selectedReasoning={selectedReasoning}
           permissionControl={permissionControl}
           onLaunchRequest={onLaunchRequest}
           launching={launching}
           fileInputRef={fileInputRef}
-          addFiles={(selectedFiles) => { void addImageFiles(selectedFiles); }}
+          addFiles={(selectedFiles) => { void attachments.addFiles(selectedFiles); }}
           isDictationSupported={isDictationSupported}
           micRef={micRef}
           handleMicClick={() => { void handleMicClick(); }}
