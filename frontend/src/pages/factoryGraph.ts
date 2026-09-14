@@ -48,6 +48,7 @@ export function proposalIssues(manifest: FactoryProposal['manifest']): FactoryIs
     requirement: node.requirement,
     title: node.title || node.key,
     description: node.description,
+		project: node.project || manifest.project,
     status: 'open',
     dispatchState: dependsOn.has(node.key) ? 'waiting' : 'ready',
     dependsOn: dependsOn.get(node.key),

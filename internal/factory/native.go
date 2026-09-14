@@ -2460,49 +2460,9 @@ func (s *NativeService) SubmitProposal(ctx context.Context, req SubmitProposalRe
 	if err != nil {
 		return ProposalRevision{}, err
 	}
-	if (req.AttemptID == "") != (req.AttemptToken == "") {
-		return ProposalRevision{}, fmt.Errorf("%w: attempt ID and token are required", ErrInvalidRequest)
-	}
 	if req.Import && req.AttemptID != "" {
 		return ProposalRevision{}, fmt.Errorf("%w: imported plans cannot include attempt credentials", ErrInvalidRequest)
 	}
-	issues, err := s.store.ListFactoryIssues(ctx, epic.ID)
-	if err != nil {
-		return ProposalRevision{}, err
-	}
-	rootMolID := ""
-	for _, issue := range issues {
-		if issue.Kind == "mol" && issue.ParentID == "" {
-			rootMolID = issue.ID
-			break
-		}
-	}
-	req.Manifest.Project, err = s.canonicalIssueProject(ctx, epic, req.Manifest.Project)
-	if err != nil {
-		return ProposalRevision{}, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
-	}
-	for i := range req.Manifest.Nodes {
-		req.Manifest.Nodes[i].Project, err = s.canonicalIssueProject(ctx, epic, req.Manifest.Nodes[i].Project)
-		if err != nil {
-			return ProposalRevision{}, fmt.Errorf("%w: node %q: %w", ErrInvalidRequest, req.Manifest.Nodes[i].Key, err)
-		}
-	}
-	if err := validateProposalManifest(req.Manifest, epic, rootMolID); err != nil {
-		return ProposalRevision{}, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
-	}
-	manifestJSON, err := json.Marshal(req.Manifest)
-	if err != nil {
-		return ProposalRevision{}, fmt.Errorf("encoding proposal manifest: %w", err)
-	}
-	content, err := json.Marshal(struct {
-		Manifest  json.RawMessage `json:"manifest"`
-		Rationale string          `json:"rationaleMarkdown"`
-	}{manifestJSON, req.RationaleMarkdown})
-	if err != nil {
-		return ProposalRevision{}, fmt.Errorf("encoding proposal: %w", err)
-	}
-	hash := sha256.Sum256(content)
-	proposal := model.NativeProposalRevision{EpicID: req.EpicID, MolID: req.Manifest.MolID, Project: req.Manifest.Project, ManifestJSON: string(manifestJSON), RationaleMarkdown: req.RationaleMarkdown, ContentHash: hex.EncodeToString(hash[:])}
 	var saved model.NativeProposalRevision
 	if req.Import {
 		var authorized bool

@@ -222,7 +222,7 @@ describe('Factory interactions', () => {
 		expect(screen.queryByRole('link', { name: 'Retired work' })).not.toBeInTheDocument();
 		expect(screen.getByText('2 shown · 1 closed hidden')).toBeInTheDocument();
 		const firstRow = screen.getByRole('link', { name: 'Ship Factory' }).closest('[role="listitem"]')!;
-		expect(within(firstRow as HTMLElement).getByTestId('cell-project')).toHaveAttribute('href', '/project/%2Frepo');
+		expect(within(within(firstRow as HTMLElement).getByTestId('cell-project')).getByRole('link')).toHaveAttribute('href', '/project/%2Frepo');
 		expect(within(firstRow as HTMLElement).getByTestId('epic-progress')).toHaveTextContent('0/0');
 		expect(within(firstRow as HTMLElement).getByRole('progressbar')).toHaveAttribute('max', '1');
 
