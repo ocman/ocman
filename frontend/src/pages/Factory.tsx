@@ -13,6 +13,7 @@ import { FactoryImplementationModel } from '../components/FactoryImplementationM
 import { useFactoryImplementationModel } from '../components/useFactoryImplementationModel';
 import { useClaimFactoryPlan, useCloseFactoryEpic, useCloseFactoryMol, useCreateWorkEpic, useDecideFactoryPlanGate, useFactoryCapacityPolicy, useFactoryFormula, useFactoryFormulas, useFactoryGraphIssues, useFactoryIssues, useFactoryProposals, useFactoryQueue, useFactoryRemovedIssues, useInvestigateFactoryUnblock, useMaterializeFactoryPlan, useMutateFactoryGraph, usePourFactoryEpic, usePreviewFactoryFormula, useProjects, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryProjectGate, useResolveFactoryRecoveryGate, useSaveFactoryFormula, useSessions, useSetFactoryCapacityPolicy, useSetFactoryEpicPaused, useValidateFactoryFormula, useWorkEpic, useWorkEpics } from '../lib/queries';
 import type { FactoryAttempt, FactoryEpic, FactoryFormula, FactoryGraphMutation, FactoryIssue, FactoryQueueItem, Session } from '../lib/api';
+import { fuzzyMatch } from '../lib/format';
 
 const TRACER_FORMULA_ID = 'ocman/tracer';
 import { Modal } from '../components/Modal';
@@ -45,7 +46,7 @@ function IssueList({ epicID }: { epicID: string }) {
 	// ponytail: Mols are containers, not work, so keep them out of the ticket inventory.
 	const inventory = issues.data?.filter((issue) => issue.kind !== 'mol') ?? [];
 	const kinds = [...new Set(inventory.map((issue) => issue.kind))].sort();
-	const filtered = inventory.filter((issue) => `${issue.id} ${issue.title} ${issue.kind} ${issue.status}`.toLowerCase().includes(search) && (!kind || issue.kind === kind));
+	const filtered = inventory.filter((issue) => fuzzyMatch(search, `${issue.id} ${issue.title} ${issue.kind} ${issue.status}`) && (!kind || issue.kind === kind));
 	const closedCount = filtered.filter((issue) => isClosed(issue.status)).length;
 	const visible = filtered.filter((issue) => statusFilter === 'all' || (statusFilter === 'closed' ? isClosed(issue.status) : !isClosed(issue.status)));
 	const statusGroups: Record<string, string> = { in_progress: 'In progress', blocked: 'Blocked', retry_wait: 'Waiting', deferred: 'Waiting', open: 'Open', closed: 'Closed', completed: 'Closed' };
@@ -289,7 +290,7 @@ export function FactoryEpics() {
 	const deferredQuery = useDeferredValue(query.trim().toLowerCase());
 	const epicProjects = (epic: FactoryEpic) => epic.projects?.map(({ path }) => path) ?? [epic.initialProject];
 	const projects = [...new Set(epics.data?.flatMap(epicProjects) ?? [])].sort();
-	const filtered = epics.data?.filter((epic) => `${epic.id} ${epic.goal} ${epicProjects(epic).join(' ')}`.toLowerCase().includes(deferredQuery) && (!project || epicProjects(epic).includes(project))) ?? [];
+	const filtered = epics.data?.filter((epic) => fuzzyMatch(deferredQuery, `${epic.id} ${epic.goal} ${epicProjects(epic).join(' ')}`) && (!project || epicProjects(epic).includes(project))) ?? [];
 	const closedCount = filtered.filter((epic) => isClosed(epic.status)).length;
 	const visible = filtered.filter((epic) => status === 'all' || (status === 'closed' ? isClosed(epic.status) : !isClosed(epic.status)));
 	const groups = [...new Set(visible.map((epic) => epic.status))].sort((a, b) => ['open', 'paused', 'closed'].indexOf(a) - ['open', 'paused', 'closed'].indexOf(b));
@@ -340,7 +341,7 @@ export function FactoryOverview() {
 	const allStuck = epics.data?.filter((epic) => epic.progress?.stuck && !allFailedWork.some((issue) => issue.epicId === epic.id) && !allBlockedWork.some((issue) => issue.epicId === epic.id) && !allMaterializations.some((issue) => issue.epicId === epic.id)) ?? [];
 	// ponytail: answering live prompts stays on the session page.
 	const allPrompts = [...new Map([...running.map((item) => ({ session: sessionByID.get(item.session?.id ?? ''), epic: epicByID.get(item.epicId), issueID: item.id, issueTitle: item.title })), ...planning.map(({ epic, attempt }) => ({ session: sessionByID.get(attempt.session.id), epic, issueID: attempt.workId, issueTitle: 'Planning' }))].filter((item): item is { session: Session; epic: FactoryEpic | undefined; issueID: string; issueTitle: string } => Boolean(item.session?.pendingPermission || item.session?.pendingQuestion)).map((item) => [item.session.id, item])).values()];
-	const matchesAction = (type: string, ...values: Array<string | undefined>) => (actionType === 'all' || actionType === type) && values.join(' ').toLowerCase().includes(deferredActionQuery);
+	const matchesAction = (type: string, ...values: Array<string | undefined>) => (actionType === 'all' || actionType === type) && fuzzyMatch(deferredActionQuery, values.join(' '));
 	const readyPlans = allReadyPlans.filter((issue) => matchesAction('planning', epicGoal(issue.epicId), issue.id, issue.title));
 	const visiblePlanGates = planGates.filter((epic) => matchesAction('review', epic.goal, epic.id, epic.planGate?.issueId));
 	const recoveryGates = allRecoveryGates.filter((issue) => matchesAction('recovery', epicGoal(issue.epicId), issue.id, issue.title, issue.recovery?.question, issue.recovery?.reason));

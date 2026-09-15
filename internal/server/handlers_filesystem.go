@@ -247,10 +247,6 @@ func searchDirectories(root, query string, limit int, exact string) ([]directory
 
 	const maxDepth = 6
 	const maxVisited = 2500
-	maxCandidates := limit * 4
-	if maxCandidates < limit {
-		maxCandidates = limit
-	}
 
 	tokens := directorySearchTokens(query)
 	includeHidden := strings.Contains(query, ".")
@@ -334,7 +330,7 @@ func searchDirectories(root, query string, limit int, exact string) ([]directory
 					emitted[cleanPath] = struct{}{}
 				}
 			}
-			if depth < maxDepth && len(candidates) < maxCandidates {
+			if depth < maxDepth {
 				if isHeavyDirectorySearchBranch(name) && !directoryNameMatchesAnyToken(name, tokens) {
 					continue
 				}
@@ -370,10 +366,9 @@ func directorySearchScore(rel, name, query string, depth int) (int, bool) {
 	}
 	relLower := strings.ToLower(rel)
 	nameLower := strings.ToLower(name)
-	for _, token := range tokens {
-		if !strings.Contains(relLower, token) {
-			return 0, false
-		}
+	searchText := strings.NewReplacer("/", " ", "\\", " ").Replace(relLower)
+	if !fuzzySubsequence(strings.Join(tokens, " "), searchText) {
+		return 0, false
 	}
 
 	score := depth * 5
@@ -426,11 +421,22 @@ func directorySearchVisitRank(name string, tokens []string) int {
 func directoryNameMatchesAnyToken(name string, tokens []string) bool {
 	nameLower := strings.ToLower(name)
 	for _, token := range tokens {
-		if token != "" && strings.Contains(nameLower, token) {
+		if token != "" && fuzzySubsequence(token, nameLower) {
 			return true
 		}
 	}
 	return false
+}
+
+func fuzzySubsequence(query, text string) bool {
+	q := []rune(strings.ToLower(query))
+	i := 0
+	for _, char := range strings.ToLower(text) {
+		if i < len(q) && char == q[i] {
+			i++
+		}
+	}
+	return i == len(q)
 }
 
 func isHeavyDirectorySearchBranch(name string) bool {

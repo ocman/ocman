@@ -213,7 +213,7 @@ describe('Factory interactions', () => {
     const user = userEvent.setup();
     vi.mocked(api.factoryEpics).mockResolvedValue([
       { id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo' },
-      { id: 'epic-2', goal: 'Refresh docs', status: 'open', initialProject: '/docs' },
+      { id: 'epic-2', goal: 'Refresh docs', status: 'open', initialProject: '/banana-frontend' },
       { id: 'epic-3', goal: 'Retired work', status: 'closed', initialProject: '/repo' },
     ] as never);
     renderFactory(<MemoryRouter><FactoryEpics /></MemoryRouter>);
@@ -226,7 +226,7 @@ describe('Factory interactions', () => {
 		expect(within(firstRow as HTMLElement).getByTestId('epic-progress')).toHaveTextContent('0/0');
 		expect(within(firstRow as HTMLElement).getByRole('progressbar')).toHaveAttribute('max', '1');
 
-    await user.type(screen.getByLabelText('Find epics'), 'docs');
+    await user.type(screen.getByLabelText('Find epics'), 'banfron');
     expect(await screen.findByRole('link', { name: 'Refresh docs' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Ship Factory' })).not.toBeInTheDocument();
 
@@ -239,7 +239,7 @@ describe('Factory interactions', () => {
 		expect(screen.getByRole('link', { name: 'Retired work' })).toBeInTheDocument();
 		expect(screen.queryByRole('link', { name: 'Refresh docs' })).not.toBeInTheDocument();
 		await user.selectOptions(screen.getByLabelText('Epic status'), 'all');
-		await user.selectOptions(screen.getByLabelText('Epic project'), '/docs');
+		await user.selectOptions(screen.getByLabelText('Epic project'), '/banana-frontend');
 		expect(screen.getByRole('link', { name: 'Refresh docs' })).toBeInTheDocument();
 		expect(screen.queryByRole('link', { name: 'Ship Factory' })).not.toBeInTheDocument();
   });
@@ -279,7 +279,7 @@ describe('Factory interactions', () => {
 		expect(within(inbox).getByText('Allow bash on rm -rf dist?')).toBeInTheDocument();
 		expect(within(inbox).getByText('Agent is waiting for you: Approve deploy')).toBeInTheDocument();
 		expect(within(inbox).queryByText('Tests fail. Continue?')).not.toBeInTheDocument();
-		await user.type(screen.getByLabelText('Find actions'), 'outside');
+		await user.type(screen.getByLabelText('Find actions'), 'otie');
 		expect(within(inbox).getByText('Allow external_directory on /outside?')).toBeInTheDocument();
 		expect(within(inbox).queryByText('Allow bash on rm -rf dist?')).not.toBeInTheDocument();
 		await user.clear(screen.getByLabelText('Find actions'));
@@ -650,6 +650,9 @@ describe('Factory interactions', () => {
 
     expect(await screen.findByText('Board work')).toBeInTheDocument();
     expect(screen.queryByText('Proposal revision: 1')).not.toBeInTheDocument();
+		await user.type(screen.getByLabelText('Find board issues'), 'bowr');
+		expect(screen.getByText('Board work')).toBeInTheDocument();
+		await user.clear(screen.getByLabelText('Find board issues'));
 
     await user.click(screen.getByRole('tab', { name: 'Graph' }));
     expect(screen.getByRole('tabpanel', { name: 'Graph' })).toBeInTheDocument();

@@ -5,6 +5,7 @@ import { SearchField, SelectField } from '../components/Control';
 import { ProjectLabel } from '../components/ProjectLabel';
 import { DataTableGroup, DataTableRow } from '../components/DataTable';
 import type { FactoryEpic, FactoryIssue } from '../lib/api';
+import { fuzzyMatch } from '../lib/format';
 import { useAddFactoryIssueComment, useFactoryGraphIssues, useFactoryIssueComments, useWorkEpics } from '../lib/queries';
 import './Factory.css';
 import './FactoryIssues.css';
@@ -81,7 +82,7 @@ export function FactoryIssues() {
 	const kinds = [...new Set(issues.map((issue) => issue.kind))].sort();
 	const projects = [...new Set(issues.map((issue) => issue.project))].sort();
 	const closed = (issue: FactoryIssue) => issue.status === 'closed' || issue.status === 'completed';
-	const filtered = issues.filter((issue) => `${issue.id} ${issue.title} ${issue.status} ${issue.kind} ${issue.project} ${epicByID.get(issue.epicId)?.goal ?? ''}`.toLowerCase().includes(search) && (!kind || issue.kind === kind) && (!project || issue.project === project));
+	const filtered = issues.filter((issue) => fuzzyMatch(search, `${issue.id} ${issue.title} ${issue.status} ${issue.kind} ${issue.project} ${epicByID.get(issue.epicId)?.goal ?? ''}`) && (!kind || issue.kind === kind) && (!project || issue.project === project));
 	const closedCount = filtered.filter(closed).length;
 	const visible = filtered.filter((issue) => status === 'all' || (status === 'closed' ? closed(issue) : !closed(issue)));
 	const statusGroups: Record<string, string> = { in_progress: 'In progress', blocked: 'Blocked', retry_wait: 'Waiting', deferred: 'Waiting', open: 'Open', closed: 'Closed', completed: 'Closed' };

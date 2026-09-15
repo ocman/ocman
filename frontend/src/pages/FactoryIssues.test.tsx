@@ -47,6 +47,9 @@ it('shows a ticket list and opens issue details in a drawer', async () => {
 	expect(screen.queryByText('#fac-42')).not.toBeInTheDocument();
 	expect(screen.getByText('1 shown · 1 closed hidden')).toBeInTheDocument();
 	 expect(screen.queryByText('Show the full ticket.')).not.toBeInTheDocument();
+	await user.type(screen.getByLabelText('Find issues'), 'prida');
+	expect(screen.getByText('Prepare issue data')).toBeInTheDocument();
+	await user.clear(screen.getByLabelText('Find issues'));
 	await user.selectOptions(screen.getByLabelText('Issue status'), 'all');
 	expect(screen.getByRole('region', { name: 'Closed issues' })).toBeInTheDocument();
 	expect(screen.getByText('#fac-42')).toBeInTheDocument();

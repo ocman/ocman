@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import Fuse, { type IFuseOptions } from 'fuse.js';
+import { fuzzyMatch } from '../../lib/format';
 import { Modal } from '../Modal';
 import '../CommandPalette.css';
 import './ModelPicker.css';
@@ -11,6 +11,8 @@ export interface PickerEntryBase {
   value: string;
 }
 
+type SearchKey<T> = keyof T | { name: keyof T; weight?: number };
+
 // Flat list model: a section header or a selectable entry. Flat so
 // keyboard navigation tracks a single index and headers are skipped.
 type PickerItem<T> =
@@ -18,9 +20,8 @@ type PickerItem<T> =
   | { kind: 'entry'; entry: T; key: string };
 
 // groupIntoItems flattens entries into a header+row list. When
-// showSections is false (i.e. under search) headers are dropped — Fuse
-// returns results by relevance and per-section headers would shuffle
-// that ordering. When showSections is true, entries are partitioned by
+  // showSections is false (i.e. under search) headers are dropped. When
+  // showSections is true, entries are partitioned by
 // sectionOf following sectionOrder; entries are emitted in input order
 // within each section.
 function groupIntoItems<T extends PickerEntryBase>(
@@ -71,8 +72,8 @@ export interface CommandListPickerProps<T extends PickerEntryBase> {
   open: boolean;
   /** Pre-built, pre-sorted entries to display. */
   entries: T[];
-  /** Fuse field weights, e.g. [{ name: 'label', weight: 1 }]. Unused when `searchable` is false. */
-  fuseKeys?: NonNullable<IFuseOptions<T>['keys']>;
+  /** Fields included in fuzzy matching. Unused when `searchable` is false. */
+  fuseKeys?: SearchKey<T>[];
   /**
    * False renders a static title instead of the search input and hosts the
    * keyboard model on the listbox itself; the initially highlighted row is
@@ -103,9 +104,9 @@ export interface CommandListPickerProps<T extends PickerEntryBase> {
 
 /**
  * CommandListPicker is the shared command-palette dropdown behind
- * ModelPicker and AgentPicker: a Fuse-backed, keyboard-navigable list
+ * ModelPicker and AgentPicker: a fuzzy-filtered, keyboard-navigable list
  * rendered in a portal over a backdrop. Concrete pickers supply the
- * entries, Fuse keys, sectioning, and per-row rendering; everything
+ * entries, search fields, sectioning, and per-row rendering; everything
  * else (query state, autofocus, extended search, header-skipping
  * keyboard nav, Escape/Backspace handling, the portal shell) lives here.
  */
@@ -148,33 +149,16 @@ export function CommandListPicker<T extends PickerEntryBase>({
     requestAnimationFrame(() => (searchable ? inputRef.current : listRef.current)?.focus());
   }, [open, searchable]);
 
-  const fuse = useMemo(
-    () => new Fuse(entries, {
-      keys: fuseKeys ?? ['value'],
-      // 0.45 keeps one-typo queries surfacing without opening the floodgates.
-      threshold: 0.45,
-      // Don't penalize matches found late in long strings.
-      ignoreLocation: true,
-      // Friendlier for non-ASCII names.
-      ignoreDiacritics: true,
-      // AND-of-tokens so "claude opus" matches rows with both tokens.
-      useExtendedSearch: true,
-      includeScore: true,
-    }),
-    // fuseKeys is treated as stable per picker; entries drives rebuilds.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [entries],
-  );
-
   // Normalize whitespace and short-circuit empty queries.
   const extendedQuery = useMemo(() => query.trim().split(/\s+/).filter(Boolean).join(' '), [query]);
 
   const filteredEntries = useMemo(() => {
     if (!extendedQuery) return entries;
-    return fuse.search(extendedQuery, { limit: 200 }).map((r) => r.item);
-  }, [extendedQuery, fuse, entries]);
+    const keys = (fuseKeys ?? ['value']).map((key) => typeof key === 'object' ? key.name : key).filter((key): key is keyof T & string => typeof key === 'string');
+    return entries.filter((entry) => fuzzyMatch(extendedQuery, keys.map((key) => String((entry as unknown as Record<string, unknown>)[key] ?? '')).join(' '))).slice(0, 200);
+  }, [entries, extendedQuery, fuseKeys]);
 
-  // Section only when not searching; on search show a flat ranked list.
+  // Section only when not searching; on search show a flat filtered list.
   const items = useMemo(
     () => groupIntoItems(filteredEntries, !query.trim(), sectionOf, sectionOrder),
     [filteredEntries, query, sectionOf, sectionOrder],

@@ -10,6 +10,7 @@ const entries: Entry[] = [
   { value: 'a', label: 'alpha' },
   { value: 'b', label: 'beta' },
   { value: 'c', label: 'gamma' },
+  { value: 'd', label: 'banana-frontend' },
 ];
 
 describe('CommandListPicker', () => {
@@ -45,11 +46,11 @@ describe('CommandListPicker', () => {
       const input = screen.getByRole('combobox');
       expect(screen.getByRole('option', { name: 'alpha' })).toHaveAttribute('aria-selected', 'true');
 
-      await user.type(input, 'gam');
-      expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['gamma']);
+      await user.type(input, 'banfron');
+      expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['banana-frontend']);
 
       await user.keyboard('{Enter}');
-      expect(onSelect).toHaveBeenCalledWith('c');
+      expect(onSelect).toHaveBeenCalledWith('d');
     });
 
     it('shows the empty message when nothing matches', async () => {
@@ -66,7 +67,7 @@ describe('CommandListPicker', () => {
       const { onSelect } = renderPicker({ searchable: false, dialogClassName: 'x-narrow' });
 
       expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
-      expect(screen.getByText('Pick (3)')).toBeInTheDocument();
+      expect(screen.getByText('Pick (4)')).toBeInTheDocument();
       expect(screen.getByRole('dialog')).toHaveClass('x-narrow');
       expect(screen.getByRole('option', { name: 'beta' })).toHaveAttribute('aria-selected', 'true');
 

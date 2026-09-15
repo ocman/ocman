@@ -98,6 +98,14 @@ describe('CommandPalette project mode', () => {
         totalTokensOut: 10,
         lastUsed: 2000,
       },
+      {
+        directory: '/Users/peter/workspace/banana-frontend',
+        sessionCount: 1,
+        messageCount: 1,
+        totalTokensIn: 10,
+        totalTokensOut: 5,
+        lastUsed: 1000,
+      },
     ]);
     mocks.apiState.browseDirectories.mockImplementation(async (dir?: string) => {
       if (dir === '/Users/peter/workspace/research') {
@@ -332,6 +340,11 @@ describe('CommandPalette project mode', () => {
 
     // Present with the full list.
     expect(await screen.findByText('Create new project')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByPlaceholderText('Select a project to start a session...'), {
+      target: { value: 'banfron' },
+    });
+    expect(screen.getByText('workspace/banana-frontend')).toBeInTheDocument();
 
     // Still present when the search filters every project out.
     fireEvent.change(screen.getByPlaceholderText('Select a project to start a session...'), {

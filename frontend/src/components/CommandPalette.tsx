@@ -2,11 +2,10 @@ import { useState, useEffect, useId, useRef, useMemo, useCallback } from 'react'
 import './CommandPalette.css';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import Fuse from 'fuse.js';
 import { useApiStore } from '../lib/apiStore';
 import { useUiStore } from '../lib/uiStore';
 import { useOpencodeLaunch } from '../lib/useCapabilities';
-import { cleanTitle, relativeTime, shortPath } from '../lib/format';
+import { cleanTitle, fuzzyMatch, relativeTime, shortPath } from '../lib/format';
 import { isTerminalStatus } from '../lib/sessionStatus';
 import type { Session, Project, DirectoryBrowseEntry, DirectorySearchEntry } from '../lib/api';
 import { useTmux } from '../lib/useTmux';
@@ -391,19 +390,6 @@ export function CommandPalette() {
     }
   }, [paletteOpen, mode, refreshCachedSessions]);
 
-  const sessionFuse = useMemo(
-    () =>
-      new Fuse(sessions ?? [], {
-        keys: [
-          { name: 'title', getFn: (s) => cleanTitle(s.title) },
-          'directory',
-        ],
-        threshold: 0.4,
-        includeScore: true,
-      }),
-    [sessions],
-  );
-
   const results: ResultItem[] = useMemo(() => {
     if (mode === 'search') {
       if (!sessions) return [];
@@ -421,9 +407,9 @@ export function CommandPalette() {
           .slice(0, 20)
           .map((s) => ({ kind: 'session' as const, session: s }));
       }
-      return sessionFuse.search(query, { limit: 20 }).map((r) => ({
+      return sessions.filter((session) => fuzzyMatch(query, `${cleanTitle(session.title)} ${session.directory}`)).slice(0, 20).map((session) => ({
         kind: 'session' as const,
-        session: r.item,
+        session,
       }));
     }
 
@@ -452,7 +438,7 @@ export function CommandPalette() {
       if (!projectListLoaded || projectListLoading || projectListError) return [];
       const q = query.trim().toLowerCase();
       const projects = projectList
-        .filter((p) => !q || p.directory.toLowerCase().includes(q))
+        .filter((p) => fuzzyMatch(q, p.directory))
         .sort((a, b) => b.lastUsed - a.lastUsed)
         .slice(0, 20)
         .map((p) => ({ kind: 'project' as const, project: p }));
@@ -466,20 +452,20 @@ export function CommandPalette() {
 
     if (isCommandQuery(query)) {
       const q = stripCommandPrefix(query).toLowerCase();
-      const commands = staticCommands.filter((item) => item.label.toLowerCase().includes(q));
-      const scoped = SCOPED_COMMANDS.filter((item) => item.label.toLowerCase().includes(q));
-      const navs = NAV_ITEMS.filter((item) => item.label.toLowerCase().includes(q));
+      const commands = staticCommands.filter((item) => fuzzyMatch(q, item.label));
+      const scoped = SCOPED_COMMANDS.filter((item) => fuzzyMatch(q, item.label));
+      const navs = NAV_ITEMS.filter((item) => fuzzyMatch(q, item.label));
       return dedupeCommandNavItems([...commands, ...scoped, ...navs]);
     }
 
     const q = query.toLowerCase();
-    const commands = staticCommands.filter((item) => item.label.toLowerCase().includes(q));
-    const navs = NAV_ITEMS.filter((item) => item.label.toLowerCase().includes(q));
-    const scoped = SCOPED_COMMANDS.filter((item) => item.label.toLowerCase().includes(q));
+    const commands = staticCommands.filter((item) => fuzzyMatch(q, item.label));
+    const navs = NAV_ITEMS.filter((item) => fuzzyMatch(q, item.label));
+    const scoped = SCOPED_COMMANDS.filter((item) => fuzzyMatch(q, item.label));
     const sessionResults = sessions
-      ? sessionFuse.search(query, { limit: 10 }).map((r) => ({
+      ? sessions.filter((session) => fuzzyMatch(query, `${cleanTitle(session.title)} ${session.directory}`)).slice(0, 10).map((session) => ({
           kind: 'session' as const,
-          session: r.item,
+          session,
         }))
       : [];
 
@@ -499,7 +485,7 @@ export function CommandPalette() {
     }
 
     return uniqueResults;
-  }, [mode, query, sessions, sessionFuse, staticCommands, projectBrowser, projectList, projectListLoading, projectListLoaded, projectListError]);
+  }, [mode, query, sessions, staticCommands, projectBrowser, projectList, projectListLoading, projectListLoaded, projectListError]);
 
   useEffect(() => {
     if (!listRef.current) return;

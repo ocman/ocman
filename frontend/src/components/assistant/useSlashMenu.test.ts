@@ -23,9 +23,9 @@ describe('useSlashMenu', () => {
     expect(result.current.filtered.some((c) => c.name === 'skills')).toBe(true);
     expect(result.current.filtered.some((c) => c.name === 'variants')).toBe(false);
 
-    act(() => result.current.syncToInput('/mo'));
+    act(() => result.current.syncToInput('/myskl'));
     expect(result.current.open).toBe(true);
-    expect(result.current.filtered.every((c) => c.name.startsWith('mo'))).toBe(true);
+    expect(result.current.filtered.map((c) => c.name)).toEqual(['my-skill']);
 
     act(() => result.current.moveIndex(-1));
     expect(result.current.index).toBe(result.current.filtered.length - 1);

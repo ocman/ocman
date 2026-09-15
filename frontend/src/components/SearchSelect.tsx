@@ -1,6 +1,6 @@
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
-import Fuse from 'fuse.js';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useClickOutside } from '../lib/useClickOutside';
+import { fuzzyMatch } from '../lib/format';
 import './Control.css';
 import './SearchSelect.css';
 
@@ -35,11 +35,7 @@ export function SearchSelect({
   const search = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const fuse = useMemo(
-    () => new Fuse(options, { keys: ['label', 'value'], threshold: 0.4, ignoreLocation: true }),
-    [options],
-  );
-  const visible = query ? fuse.search(query).map(({ item }) => item) : options;
+  const visible = query ? options.filter((option) => fuzzyMatch(query, `${option.label} ${option.value}`)) : options;
 
   useClickOutside(root, open, () => setOpen(false));
 

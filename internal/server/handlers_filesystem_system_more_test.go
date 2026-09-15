@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -598,6 +599,8 @@ func TestDirectorySearchScore(t *testing.T) {
 		{"path-only match scores worst", "myapp/inner", "inner", "myapp", 2, 45, true},
 		{"multi token all present", "src/myapp", "myapp", "src myapp", 2, 45, true},
 		{"multi token one absent", "src/myapp", "myapp", "src nope", 2, 0, false},
+		{"fuzzy subsequence", "banana-frontend", "banana-frontend", "banfron", 1, 40, true},
+		{"out of order rejected", "banana-frontend", "banana-frontend", "fronban", 1, 0, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -639,6 +642,30 @@ func TestSearchDirectories_EmptyQueryAndExactSeed(t *testing.T) {
 	}
 	if len(hidden) != 1 || hidden[0].Path != filepath.Join(root, ".hidden") {
 		t.Errorf("entries = %v, want the hidden directory", hidden)
+	}
+}
+
+func TestSearchDirectories_FuzzyCandidatesDoNotStopTraversal(t *testing.T) {
+	root := t.TempDir()
+	for i := range 41 {
+		if err := os.Mkdir(filepath.Join(root, fmt.Sprintf("banana-frontend-%02d", i)), 0o755); err != nil {
+			t.Fatalf("mkdir decoy: %v", err)
+		}
+	}
+	project := filepath.Join(root, "workspace", "banana-frontend")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatalf("mkdir project: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(project, "go.mod"), []byte("module example.com/project\n"), 0o644); err != nil {
+		t.Fatalf("write project marker: %v", err)
+	}
+
+	got, err := searchDirectories(root, "banfron", 10, "")
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(got) == 0 || got[0].Path != project {
+		t.Fatalf("entries = %+v, want project %q first", got, project)
 	}
 }
 

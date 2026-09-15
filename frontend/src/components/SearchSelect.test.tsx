@@ -34,6 +34,7 @@ it('fuzzy filters and selects an option', async () => {
       options={[
         { value: 'openai/gpt-5', label: 'openai/gpt-5' },
         { value: 'anthropic/claude', label: 'anthropic/claude' },
+        { value: 'banana-frontend', label: 'banana-frontend' },
       ]}
       ariaLabel="Model"
       placeholder="Choose model"
@@ -43,9 +44,9 @@ it('fuzzy filters and selects an option', async () => {
   );
 
   await user.click(screen.getByRole('combobox'));
-  await user.type(screen.getByRole('textbox', { name: 'Search models' }), 'opnai');
-  await user.click(screen.getByRole('option', { name: 'openai/gpt-5' }));
+  await user.type(screen.getByRole('textbox', { name: 'Search models' }), 'banfron');
+  await user.click(screen.getByRole('option', { name: 'banana-frontend' }));
 
-  expect(onChange).toHaveBeenCalledWith('openai/gpt-5');
+  expect(onChange).toHaveBeenCalledWith('banana-frontend');
   expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
 });

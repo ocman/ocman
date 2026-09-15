@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type SlashCommand } from '../../lib/api';
 import { BUILTIN_COMMANDS } from '../../lib/commands/builtinCommands';
+import { fuzzyMatch } from '../../lib/format';
 
 export interface SlashMenuVisibility {
   hasModels: boolean;
@@ -46,7 +47,7 @@ export function useSlashMenu(sessionId: string | undefined, vis: SlashMenuVisibi
     if (cmd.name === 'skills' && !hasSkills) return false;
     // Mirror OpenCode: /variants is hidden when the model exposes no variants.
     if (cmd.name === 'variants' && !vis.hasVariants) return false;
-    return cmd.name.toLowerCase().startsWith(filter.toLowerCase());
+    return fuzzyMatch(filter, cmd.name);
   });
 
   useEffect(() => {
