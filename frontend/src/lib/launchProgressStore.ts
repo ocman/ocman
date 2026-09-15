@@ -18,10 +18,22 @@ export type LaunchPhase = 'idle' | 'running' | 'success' | 'error';
 /** Ordered step list; the overlay renders steps in this order. */
 export const LAUNCH_STEP_ORDER: readonly LaunchStepId[] = ['launch', 'wait', 'create'];
 
+/**
+ * Progress begins before the very first createSession call so the user
+ * is informed the moment the process is invoked. When opencode is
+ * already running that call returns almost instantly; a flow that
+ * finishes within this window drops straight back to idle instead of
+ * flashing "Session ready". The overlay CSS delays the card by the same
+ * amount so nothing is drawn for those fast flows.
+ */
+export const LAUNCH_QUICK_MS = 400;
+
 type LaunchProgressStore = {
   phase: LaunchPhase;
   /** Directory the session is being created in. */
   directory: string;
+  /** Date.now() at begin(); drives the quick-success suppression. */
+  startedAt: number;
   /** Active step while phase === 'running' (or the step that failed). */
   step: LaunchStepId;
   /** 1-based retry attempt for the wait/create loop; 0 = not started. */
@@ -45,6 +57,7 @@ type LaunchProgressStore = {
 export const useLaunchProgressStore = create<LaunchProgressStore>((set) => ({
   phase: 'idle',
   directory: '',
+  startedAt: 0,
   step: 'launch',
   attempt: 0,
   maxAttempts: 0,
@@ -55,6 +68,7 @@ export const useLaunchProgressStore = create<LaunchProgressStore>((set) => ({
     set({
       phase: 'running',
       directory,
+      startedAt: Date.now(),
       step: opts?.skipLaunch ? 'wait' : 'launch',
       attempt: 0,
       maxAttempts: 0,
@@ -66,7 +80,12 @@ export const useLaunchProgressStore = create<LaunchProgressStore>((set) => ({
   setAttempt: (attempt, maxAttempts) =>
     set((s) => (s.phase === 'running' ? { attempt, maxAttempts } : {})),
   succeed: () =>
-    set((s) => (s.phase === 'running' ? { phase: 'success' } : {})),
+    set((s) => {
+      if (s.phase !== 'running') return {};
+      // Fast path (opencode already up): nothing to confirm, go quiet.
+      if (Date.now() - s.startedAt < LAUNCH_QUICK_MS) return { phase: 'idle' };
+      return { phase: 'success' };
+    }),
   fail: (message) =>
     set((s) => (s.phase === 'running' ? { phase: 'error', error: message } : {})),
   dismiss: () =>

@@ -56,11 +56,35 @@ describe('createSessionWithLaunch', () => {
     expect(res).toEqual({ id: 'abc' });
     expect(createSession).toHaveBeenCalledTimes(1);
     expect(launchOpencodeInTmux).not.toHaveBeenCalled();
-    // Fast path: the progress overlay never appears.
+    // Fast path: a quick success drops back to idle, no "Session ready".
     expect(useLaunchProgressStore.getState().phase).toBe('idle');
   });
 
-  it('rethrows non-unreachable errors without launching', async () => {
+  it('reports progress before the first createSession call resolves', async () => {
+    // In a closed project the backend boots opencode inside the first
+    // POST /api/sessions, so the user must see progress immediately —
+    // not only after that call fails with "unreachable".
+    let phaseDuringCall = '';
+    const createSession = vi.fn().mockImplementation(async () => {
+      phaseDuringCall = useLaunchProgressStore.getState().phase;
+      vi.advanceTimersByTime(5000);
+      return { id: 'slow' };
+    });
+
+    const res = await createSessionWithLaunch(
+      { createSession, launchOpencodeInTmux: vi.fn(), tmuxAvailable: true },
+      { directory: '/tmp/closed' },
+    );
+
+    expect(res).toEqual({ id: 'slow' });
+    expect(phaseDuringCall).toBe('running');
+    const state = useLaunchProgressStore.getState();
+    expect(state.directory).toBe('/tmp/closed');
+    // Slow first call: confirm success so the card doesn't vanish unexplained.
+    expect(state.phase).toBe('success');
+  });
+
+  it('rethrows non-unreachable errors without launching, surfacing them in the overlay', async () => {
     const err = new Error('boom');
     const createSession = vi.fn().mockRejectedValue(err);
     const launchOpencodeInTmux = vi.fn();
@@ -72,7 +96,9 @@ describe('createSessionWithLaunch', () => {
       ),
     ).rejects.toBe(err);
     expect(launchOpencodeInTmux).not.toHaveBeenCalled();
-    expect(useLaunchProgressStore.getState().phase).toBe('idle');
+    const state = useLaunchProgressStore.getState();
+    expect(state.phase).toBe('error');
+    expect(state.error).toBe('boom');
   });
 
   it('rethrows unreachable errors when tmux is unavailable, surfacing an error in the overlay', async () => {
@@ -198,7 +224,10 @@ describe('createSessionWithLaunch', () => {
     const createSession = vi
       .fn()
       .mockRejectedValueOnce(unreachable())
-      .mockResolvedValueOnce({ id: 'main-id' });
+      .mockImplementationOnce(async () => {
+        vi.advanceTimersByTime(5000); // slow enough to warrant a success card
+        return { id: 'main-id' };
+      });
     const launchOpencodeInTmux = vi
       .fn()
       .mockRejectedValueOnce(new Error('directory missing'));

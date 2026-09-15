@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import { LaunchProgressOverlay } from './LaunchProgressOverlay';
-import { useLaunchProgressStore } from '../lib/launchProgressStore';
+import { LAUNCH_QUICK_MS, useLaunchProgressStore } from '../lib/launchProgressStore';
 
 function resetStore() {
   useLaunchProgressStore.setState({
@@ -80,12 +80,27 @@ describe('LaunchProgressOverlay', () => {
     expect(screen.getByTestId('launch-step-wait')).toHaveClass('error');
   });
 
+  it('skips the success card when the flow finishes quickly', () => {
+    vi.useFakeTimers({ shouldAdvanceTime: false });
+    render(<LaunchProgressOverlay />);
+    act(() => {
+      const s = useLaunchProgressStore.getState();
+      s.begin('/tmp/foo');
+      vi.advanceTimersByTime(LAUNCH_QUICK_MS - 1);
+      s.succeed();
+    });
+
+    expect(screen.queryByTestId('launch-progress-overlay')).not.toBeInTheDocument();
+    expect(useLaunchProgressStore.getState().phase).toBe('idle');
+  });
+
   it('auto-dismisses shortly after success', () => {
     vi.useFakeTimers({ shouldAdvanceTime: false });
     render(<LaunchProgressOverlay />);
     act(() => {
       const s = useLaunchProgressStore.getState();
       s.begin('/tmp/foo');
+      vi.advanceTimersByTime(LAUNCH_QUICK_MS);
       s.succeed();
     });
 

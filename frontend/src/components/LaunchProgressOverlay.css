@@ -14,7 +14,9 @@
   z-index: 2147483646;
   font-size: 13px;
   color: var(--text);
-  animation: oc-launch-slide-in 0.2s ease-out;
+  /* Delay matches LAUNCH_QUICK_MS: progress begins before the first
+   * request, so hold the card invisible until a flow proves slow. */
+  animation: oc-launch-slide-in 0.2s ease-out 0.4s both;
 }
 
 @keyframes oc-launch-slide-in {

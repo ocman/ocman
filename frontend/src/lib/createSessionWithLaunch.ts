@@ -22,8 +22,10 @@
  * Progress is reported to the global launchProgressStore so the
  * LaunchProgressOverlay can show the user which step is running
  * (launch tmux → wait for opencode → create session) no matter which
- * surface triggered the call. Callers with their own progress UI can
- * opt out via `reportProgress: false`.
+ * surface triggered the call. Reporting starts before step 1, because
+ * the first `createSession` already boots opencode server-side when
+ * the project is closed. Callers with their own progress UI can opt
+ * out via `reportProgress: false`.
  */
 
 import { remoteLog } from './remoteLog';
@@ -180,10 +182,21 @@ export async function createSessionWithLaunch(
     return { ...res, directory: target };
   }
 
+  // Report before the first call, not after it fails: in a closed
+  // project the backend already boots opencode inside this request
+  // (EnsureProjectOpencode), which can take 10-20 s. The store/overlay
+  // suppress the card when the call returns quickly.
+  progress.begin(directory, { skipLaunch: !!alreadyLaunched });
+
   try {
-    return await createSession(directory, platform, title);
+    const res = await createSession(directory, platform, title);
+    progress.succeed();
+    return res;
   } catch (err) {
-    if (!isUnreachable(err)) throw err;
+    if (!isUnreachable(err)) {
+      progress.fail(errorMessage(err));
+      throw err;
+    }
     // We retry-on-unreachable in two situations:
     //   - tmux is available and we can launch opencode ourselves
     //   - the caller already launched opencode and just wants us to
@@ -193,7 +206,6 @@ export async function createSessionWithLaunch(
       // opencode for us, so the session genuinely can't be created.
       // Surface it in the overlay rather than failing silently — the
       // command-palette caller otherwise only logs the error.
-      progress.begin(directory, { skipLaunch: true });
       progress.fail(
         'No running OpenCode instance in this directory, and ocman can\'t start one ' +
           'because tmux is not on its PATH. After a reboot, ocman is often launched ' +
@@ -203,8 +215,6 @@ export async function createSessionWithLaunch(
       );
       throw err;
     }
-
-    progress.begin(directory, { skipLaunch: !!alreadyLaunched });
 
     if (!alreadyLaunched) {
       progress.step('launch');
