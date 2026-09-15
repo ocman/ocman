@@ -637,5 +637,5 @@
 
 /* Responsive */
 @media (max-width: 768px) {
-  .oc-composer-wrap { padding: 8px 12px 12px 12px; }
+  .oc-composer-wrap { padding: 8px 0 12px; }
 }
