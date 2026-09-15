@@ -1,4 +1,4 @@
-import { useDeferredValue, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { createContext, useContext, useDeferredValue, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, NavLink, useNavigate, useParams } from 'react-router-dom';
 import { MarkdownContent } from '../components/assistant/MarkdownText';
 import { EpicGraph } from './EpicGraph';
@@ -80,8 +80,13 @@ function DispatchExplanation({ item }: { item: DispatchEvidence }) {
   }
 }
 
+// ponytail: a context instead of threading onOpen through every inbox item; rows open the drawer when a provider is present.
+const OpenIssueContext = createContext<((id: string) => void) | undefined>(undefined);
+
 function FactoryDataRow({ id, idLabel = 'Issue', title, epic, detail, actions }: { id: string; idLabel?: string; title: ReactNode; epic?: EpicRef; detail?: ReactNode; actions?: ReactNode }) {
-	return <DataTableRow className="factory-grid-row" primary={title} secondary={<><span className="oc-data-table-field-label">{idLabel} </span>{epic ? <Link to={`/factory/epics/${encodeURIComponent(epic.id)}`}>{id}</Link> : id}</>} meta={<><ProjectCell path={epic?.initialProject} /><EpicCell id={epic?.id} goal={epic?.goal} /><div className="factory-row-detail">{detail}</div><div className="factory-cell factory-cell--actions">{actions}</div></>} />;
+	const openIssue = useContext(OpenIssueContext);
+	const primary = openIssue && idLabel === 'Issue' ? <button type="button" aria-label={`Open issue ${id}`} onClick={() => openIssue(id)}>{title}</button> : title;
+	return <DataTableRow className="factory-grid-row" primary={primary} secondary={<><span className="oc-data-table-field-label">{idLabel} </span>{epic ? <Link to={`/factory/epics/${encodeURIComponent(epic.id)}`}>{id}</Link> : id}</>} meta={<><ProjectCell path={epic?.initialProject} /><EpicCell id={epic?.id} goal={epic?.goal} /><div className="factory-row-detail">{detail}</div><div className="factory-cell factory-cell--actions">{actions}</div></>} />;
 }
 
 
@@ -307,6 +312,7 @@ export function FactoryEpics() {
 export function FactoryOverview() {
 	const [actionQuery, setActionQuery] = useState('');
 	const [actionType, setActionType] = useState('all');
+	const [openIssueID, setOpenIssueID] = useState<string>();
 	const deferredActionQuery = useDeferredValue(actionQuery.trim().toLowerCase());
 	const epics = useWorkEpics();
 	const queue = useFactoryQueue();
@@ -348,7 +354,8 @@ export function FactoryOverview() {
 	const inboxTotal = allReadyPlans.length + planGates.length + allRecoveryGates.length + allAuthorityGates.length + allProjectGates.length + allPrompts.length + allFailedWork.length + allBlockedWork.length + allMaterializations.length + allStuck.length;
 	const inboxCount = readyPlans.length + visiblePlanGates.length + recoveryGates.length + authorityGates.length + projectGates.length + prompts.length + failedWork.length + blockedWork.length + materializations.length + stuck.length;
 	const liveStatus = (sessionID?: string) => { const session = sessionID ? sessionByID.get(sessionID) : undefined; return session && session.status !== 'done' ? <StatusBadge status={session.status} pending={session.pendingPermission || session.pendingQuestion} /> : null; };
-	return <FactoryPage>
+	const openIssue = openIssueID ? issues.find((issue) => issue.id === openIssueID) : undefined;
+	return <FactoryPage><OpenIssueContext.Provider value={setOpenIssueID}>
 		<h2>Action inbox</h2>
 		<InventoryToolbar label="Find actions" value={actionQuery} onChange={setActionQuery}><label>Action type<SelectField value={actionType} onChange={(event) => setActionType(event.target.value)}><option value="all">All actions</option><option value="planning">Planning</option><option value="review">Plan review</option><option value="project">Project scope</option><option value="recovery">Recovery</option><option value="permission">Permission</option><option value="prompt">Agent prompt</option><option value="failed">Failed work</option><option value="blocked">Blocked work</option><option value="materialization">Materialization</option><option value="stuck">Stuck epic</option></SelectField></label><span className="factory-result-count" aria-live="polite">{inboxCount} action{inboxCount === 1 ? '' : 's'}</span></InventoryToolbar>
 		{epics.isLoading && <p role="status">Loading epics…</p>}
@@ -376,7 +383,8 @@ export function FactoryOverview() {
 			{planning.map(({ epic, attempt }) => <FactoryDataRow key={attempt.id} id={attempt.workId} epic={epic} title={<strong>Planning</strong>} detail={liveStatus(attempt.session.id) ?? attempt.phase} actions={attempt.session.id && <Link to={`/session/${encodeURIComponent(attempt.session.id)}?factoryEpic=${encodeURIComponent(epic.id)}`} aria-label={`Open session ${attempt.session.id}`}>Open session</Link>} />)}
 			{running.map((item) => <FactoryDataRow key={item.id} id={item.id} epic={epicByID.get(item.epicId)} title={<strong>{item.title}</strong>} detail={liveStatus(item.session?.id) ?? item.state} actions={item.session?.id && <Link to={`/session/${encodeURIComponent(item.session.id)}`} aria-label={`Open session ${item.session.id}`}>Open session</Link>} />)}
 		</DataTableGroup></div>}
-	</FactoryPage>;
+		{openIssue && <IssueDrawer key={openIssue.id} issue={openIssue} onClose={() => setOpenIssueID(undefined)} />}
+	</OpenIssueContext.Provider></FactoryPage>;
 }
 
 export function FactoryHowTo() {

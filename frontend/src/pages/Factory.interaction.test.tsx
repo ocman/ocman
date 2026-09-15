@@ -497,6 +497,26 @@ describe('Factory interactions', () => {
     expect(screen.getByText('Nothing needs your attention.')).toBeInTheDocument();
   });
 
+  it('opens the issue drawer from action inbox and live work rows', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.factoryEpics).mockResolvedValue([{ id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo' }] as never);
+    vi.mocked(api.factoryIssues).mockResolvedValue([
+      { id: 'epic-1.1', epicId: 'epic-1', kind: 'plan', title: 'Plan: ship', status: 'open', dispatchState: 'ready', description: 'Plan the work' },
+      { id: 'epic-1.4', epicId: 'epic-1', kind: 'task', title: 'Implement controls', status: 'in_progress', dispatchState: 'running', description: 'Build the controls' },
+    ] as never);
+    vi.mocked(api.factoryQueue).mockResolvedValue([{ id: 'epic-1.4', epicId: 'epic-1', title: 'Implement controls', repository: '/repo', state: 'running', attemptId: 'a1', session: { platform: 'opencode', id: 'impl-session' } }] as never);
+    vi.mocked(api.factoryIssueComments).mockResolvedValue([]);
+    renderFactory(<MemoryRouter><FactoryOverview /></MemoryRouter>);
+
+    await user.click(await screen.findByRole('button', { name: 'Open issue epic-1.1' }));
+    expect(screen.getByRole('dialog', { name: 'Issue epic-1.1' })).toHaveTextContent('Plan the work');
+    await user.click(screen.getByRole('button', { name: 'Close issue details' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Open issue epic-1.4' }));
+    expect(screen.getByRole('dialog', { name: 'Issue epic-1.4' })).toHaveTextContent('Build the controls');
+  });
+
   it('creates an epic from the selected immutable Formula revision', async () => {
     const user = userEvent.setup();
     vi.mocked(api.factoryFormulas).mockResolvedValue([{ id: 'custom/team', version: 2, name: 'Team', source: '', hash: 'hash', sourceHash: 'source-hash', inputs: [], nodes: [], edges: [], valid: true }] as never);

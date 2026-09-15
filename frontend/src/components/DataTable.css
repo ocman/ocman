@@ -14,6 +14,7 @@
 .oc-data-table-row-main { display: grid; gap: 3px; min-width: 0; }
 .oc-data-table-row-main a, .oc-data-table-row-main button { overflow: hidden; padding: 0; border: 0; background: none; color: var(--text); font: inherit; font-weight: 550; text-align: left; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .oc-data-table-row-main a:hover, .oc-data-table-row-main button:hover { color: var(--accent); }
+.oc-data-table-row-main a strong, .oc-data-table-row-main button strong { font-weight: inherit; }
 .oc-data-table-row-subline { color: var(--text-dim); font: 11px var(--font-conversation-mono); }
 .oc-data-table-row-main .oc-data-table-row-subline a { color: inherit; font: inherit; }
 .oc-data-table-row-meta { display: flex; flex-wrap: wrap; align-items: center; justify-content: end; gap: 6px; min-width: 0; }
