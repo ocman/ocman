@@ -45,6 +45,7 @@ export function RateLimitBanner({ notice, onChangeModel }: RateLimitBannerProps)
   }, [notice.retryAt]);
 
   let title = 'Error';
+  if (notice.kind === 'retry') title = 'Retrying';
   if (notice.kind === 'rate_limit') title = 'Rate limited';
   if (notice.kind === 'provider_overloaded') title = 'Provider overloaded';
 

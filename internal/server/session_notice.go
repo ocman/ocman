@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 )
@@ -139,11 +140,10 @@ func parseDuration(s string) (int64, bool) {
 	}
 }
 
-// deriveSessionNotice returns a SessionNotice for a session whose
-// status is "error" and whose latest error matches a known transient
-// pattern. Returns nil when no notice applies.
+// deriveSessionNotice returns a SessionNotice for an error or an active
+// provider retry whose latest error matches a known transient pattern.
 func deriveSessionNotice(s db.Session) *db.SessionNotice {
-	if s.Status != db.StatusError {
+	if s.Status != db.StatusError && s.Status != db.StatusBusy {
 		return nil
 	}
 
@@ -154,6 +154,9 @@ func deriveSessionNotice(s db.Session) *db.SessionNotice {
 		}
 		parsed, ok := parseRateLimitNotice(text, s.LastErrorAt)
 		if ok {
+			if s.Status == db.StatusBusy && (parsed.RetryAt == 0 || parsed.RetryAt <= time.Now().UnixMilli()) {
+				continue
+			}
 			return &db.SessionNotice{
 				Kind:    "rate_limit",
 				Message: parsed.Message,
@@ -162,6 +165,9 @@ func deriveSessionNotice(s db.Session) *db.SessionNotice {
 			}
 		}
 		if parsed, ok := parseProviderOverloadNotice(text, s.LastErrorAt); ok {
+			if s.Status == db.StatusBusy && (parsed.RetryAt == 0 || parsed.RetryAt <= time.Now().UnixMilli()) {
+				continue
+			}
 			return &db.SessionNotice{
 				Kind:    "provider_overloaded",
 				Message: parsed.Message,
@@ -169,6 +175,9 @@ func deriveSessionNotice(s db.Session) *db.SessionNotice {
 				Attempt: parsed.Attempt,
 			}
 		}
+	}
+	if s.Status == db.StatusBusy {
+		return nil
 	}
 
 	for _, text := range []string{s.LastErrorMessage, s.LastErrorName} {

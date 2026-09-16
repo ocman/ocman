@@ -35,6 +35,12 @@ describe('RateLimitBanner', () => {
     expect(screen.getByText(/x/)).toBeInTheDocument();
   });
 
+  it('labels live retry notices as retrying', () => {
+    renderBanner({ kind: 'retry', message: 'provider request failed', retryAt: 0, attempt: 1 });
+    expect(screen.getByText(/Retrying/)).toBeInTheDocument();
+    expect(screen.getByText(/provider request failed/)).toBeInTheDocument();
+  });
+
   it('renders provider overload notices', () => {
     renderBanner({ kind: 'provider_overloaded', message: 'provider is overloaded', retryAt: 0, attempt: 0 });
     expect(screen.getByText(/Provider overloaded/)).toBeInTheDocument();

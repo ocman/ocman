@@ -476,6 +476,46 @@ describe('reduceSessionView — session.status / session.idle', () => {
     expect(view.session?.status).toBe('busy');
   });
 
+  it('surfaces OpenCode retry details while the session remains busy', () => {
+    let view = makeView({ session: makeSession({ status: 'waiting' }) });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('session.status', {
+        status: {
+          type: 'retry',
+          message: "This request would exceed your account's rate limit.",
+          next: 1_700_000_300_000,
+          attempt: 2,
+        },
+      }),
+    });
+
+    expect(view.session).toMatchObject({
+      status: 'busy',
+      notice: {
+        kind: 'retry',
+        message: "This request would exceed your account's rate limit.",
+        retryAt: 1_700_000_300_000,
+        attempt: 2,
+      },
+    });
+  });
+
+  it.each(['retry', 'rate_limit', 'provider_overloaded'])('clears a %s notice when the next attempt starts', (kind) => {
+    let view = makeView({
+      session: makeSession({
+        status: 'busy',
+        notice: { kind, message: 'try again', retryAt: 1_700_000_300_000, attempt: 2 },
+      }),
+    });
+    view = reduceSessionView(view, {
+      type: 'sse',
+      event: sseEvent('session.status', { status: { type: 'busy' } }),
+    });
+
+    expect(view.session?.notice).toBeUndefined();
+  });
+
   it('accepts interrupted', () => {
     let view = makeView({ session: makeSession({ status: 'busy' }) });
     view = reduceSessionView(view, {

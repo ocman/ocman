@@ -2,6 +2,7 @@ package server
 
 import (
 	"testing"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 )
@@ -256,8 +257,34 @@ func TestDeriveSessionNotice_ErroredWithProviderOverloadInName(t *testing.T) {
 	}
 }
 
+func TestDeriveSessionNotice_BusyWithRateLimit(t *testing.T) {
+	s := db.Session{
+		Status:           db.StatusBusy,
+		LastErrorMessage: "this request would exceed your account's rate limit. Please try again later [retrying in 5m attempt 1]",
+		LastErrorAt:      time.Now().UnixMilli(),
+	}
+	notice := deriveSessionNotice(s)
+	if notice == nil {
+		t.Fatal("expected notice")
+	}
+	if notice.Kind != "rate_limit" {
+		t.Errorf("kind = %q, want rate_limit", notice.Kind)
+	}
+}
+
+func TestDeriveSessionNotice_BusyAfterRetryDeadline(t *testing.T) {
+	s := db.Session{
+		Status:           db.StatusBusy,
+		LastErrorMessage: "rate limit exceeded [retrying in 5m attempt 1]",
+		LastErrorAt:      time.Now().Add(-10 * time.Minute).UnixMilli(),
+	}
+	if notice := deriveSessionNotice(s); notice != nil {
+		t.Fatalf("expired retry should not produce a notice, got %+v", notice)
+	}
+}
+
 func TestDeriveSessionNotice_NonErrorStatus(t *testing.T) {
-	for _, status := range []db.SessionStatus{db.StatusDone, db.StatusWaiting, db.StatusBusy, db.StatusInterrupted} {
+	for _, status := range []db.SessionStatus{db.StatusDone, db.StatusWaiting, db.StatusInterrupted} {
 		s := db.Session{
 			Status:           status,
 			LastErrorMessage: "rate limit exceeded",

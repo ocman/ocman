@@ -447,6 +447,18 @@ function normaliseStatus(raw: unknown): SessionMetadata['status'] | null {
   return null;
 }
 
+function retryNotice(raw: unknown): SessionMetadata['notice'] | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const status = raw as Record<string, unknown>;
+  if (status.type !== 'retry' || typeof status.message !== 'string') return null;
+  return {
+    kind: 'retry',
+    message: status.message,
+    retryAt: typeof status.next === 'number' ? status.next : 0,
+    attempt: typeof status.attempt === 'number' ? status.attempt : 0,
+  };
+}
+
 /**
  * Reconcile-mode load: merge `incoming` into `state` such that
  * messages and parts the server returns supersede their in-memory
@@ -884,14 +896,20 @@ function reducePartDelta(state: SessionView, props: Record<string, unknown>): Se
 function reduceSessionStatus(state: SessionView, props: Record<string, unknown>): SessionView {
   const status = normaliseStatus(props.status);
   if (!status) return state;
+  const notice = retryNotice(props.status);
+  const clearRetryNotice = !notice && ['retry', 'rate_limit', 'provider_overloaded'].includes(state.session?.notice?.kind ?? '');
   // Treat `session.status` with status === idle the same as
   // session.idle — also flag a refetch so the host hook reconciles
   // any missed content.
   const refetch = isSessionStatusIdle({ properties: props });
-  if (state.session && state.session.status === status && !refetch) return state;
+  if (state.session && state.session.status === status && !refetch && !notice && !clearRetryNotice) return state;
   return {
     ...state,
-    session: state.session ? { ...state.session, status } : state.session,
+    session: state.session ? {
+      ...state.session,
+      status,
+      ...(notice ? { notice } : clearRetryNotice ? { notice: undefined } : {}),
+    } : state.session,
     _refetchRequested: refetch || state._refetchRequested,
   };
 }
