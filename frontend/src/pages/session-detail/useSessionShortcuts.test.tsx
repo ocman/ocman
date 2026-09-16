@@ -13,9 +13,7 @@ describe('useSessionShortcuts', () => {
     renderHook(() => useSessionShortcuts({
       session: null,
       portAvailable: false,
-      matchingTmuxSession: undefined,
       jumpToSession: vi.fn(),
-      handleTmuxShortcut: vi.fn(),
       handleVSCodeShortcut: vi.fn(),
       handleNewSession: vi.fn(),
       openMessageJumpPicker: vi.fn(),
@@ -31,9 +29,7 @@ describe('useSessionShortcuts', () => {
     renderHook(() => useSessionShortcuts({
       session: null,
       portAvailable: false,
-      matchingTmuxSession: undefined,
       jumpToSession: vi.fn(),
-      handleTmuxShortcut: vi.fn(),
       handleVSCodeShortcut: vi.fn(),
       handleNewSession: vi.fn(),
       openMessageJumpPicker,
@@ -44,5 +40,23 @@ describe('useSessionShortcuts', () => {
     expect(shortcut?.keys).toEqual({ code: 'KeyG', alt: true });
     shortcut?.handler(new KeyboardEvent('keydown'));
     expect(openMessageJumpPicker).toHaveBeenCalledOnce();
+  });
+
+  it('registers Alt+C and Alt+T for a new session', () => {
+    renderHook(() => useSessionShortcuts({
+      session: null,
+      portAvailable: false,
+      jumpToSession: vi.fn(),
+      handleVSCodeShortcut: vi.fn(),
+      handleNewSession: vi.fn(),
+      openMessageJumpPicker: vi.fn(),
+      openModelPicker: vi.fn(),
+    }));
+
+    expect(useShortcutRegistry.getState().shortcuts.get('session.new-session')?.keys).toEqual([
+      { code: 'KeyC', alt: true },
+      { code: 'KeyT', alt: true },
+    ]);
+    expect(useShortcutRegistry.getState().shortcuts.has('session.switch-tmux')).toBe(false);
   });
 });

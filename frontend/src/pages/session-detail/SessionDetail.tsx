@@ -36,6 +36,7 @@ import { PermissionModeLock } from '../../components/PermissionModeLock';
 import { SessionWarningBanner } from '../../components/SessionWarningBanner';
 import { McpAuthBanner } from '../../components/McpAuthBanner';
 import { useUiStore } from '../../lib/uiStore';
+import { projectRootForDirectory } from '../../lib/worktrees';
 import { useTmux } from '../../lib/useTmux';
 import { useApiStore } from '../../lib/apiStore';
 import { useGitInfo } from '../../lib/useGitInfo';
@@ -342,6 +343,9 @@ export function SessionDetail({ id }: SessionDetailProps) {
 
   // Sidebar state, archive/pin handlers, archived toggle, collapsed groups.
   const collapsedProjects = useUiStore((state) => state.collapsedProjects);
+  const sidebarView = useUiStore((state) => state.sidebarView);
+  const setSidebarView = useUiStore((state) => state.setSidebarView);
+  const openProjectSessionPalette = useUiStore((state) => state.openProjectSessionPalette);
   const abortControllerRef = useRef<AbortController | null>(null);
   const resetSessionIdRef = useRef<string | undefined>(undefined);
   const {
@@ -362,7 +366,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     // last one) — session?.id would be undefined and skip the load.
     sessionId: session?.id ?? id,
     collapsedProjects,
-    sidebarView: 'projects',
+    sidebarView,
     abortSignalRef: abortControllerRef,
     navigate,
   });
@@ -711,9 +715,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   useSessionShortcuts({
     session,
     portAvailable,
-    matchingTmuxSession,
     jumpToSession,
-    handleTmuxShortcut,
     handleVSCodeShortcut,
     handleNewSession,
     openModelPicker,
@@ -820,6 +822,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
         <SessionSidebar
           activeId={id}
           sidebarWidth={sidebarWidth}
+          sidebarView={sidebarView}
+          setSidebarView={setSidebarView}
           showArchivedRecent={showArchivedRecent}
           setShowArchivedRecent={setShowArchivedRecent}
           loadingRecentSessions={loadingRecentSessions}
@@ -839,6 +843,9 @@ export function SessionDetail({ id }: SessionDetailProps) {
           onNavigateToSession={navigateFromSidebar}
           onArchiveSession={handleArchiveSession}
           onPinSession={handlePinSession}
+          onNewSession={() => openProjectSessionPalette(
+            session?.directory ? projectRootForDirectory(session.directory) : undefined,
+          )}
           onClientSelect={handleClientSelect}
           onNewSessionInDirectory={handleNewSessionInDirectory}
           onArchiveProject={handleArchiveProjectFromSidebar}

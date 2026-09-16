@@ -38,11 +38,16 @@ function renderSidebar(
   onNewSessionInDirectory: (directory: string, remoteId?: string, platform?: string) => void = vi.fn(),
   onArchiveSession: (e: React.MouseEvent, s: Session) => void = vi.fn(),
   setShowArchivedRecent: (updater: (current: boolean) => boolean) => void = vi.fn(),
+  sidebarView: 'recent' | 'projects' = 'projects',
+  setSidebarView: (view: 'recent' | 'projects') => void = vi.fn(),
+  onNewSession: () => void = vi.fn(),
 ) {
   return render(
     <SessionSidebar
       activeId="s"
       sidebarWidth={300}
+      sidebarView={sidebarView}
+      setSidebarView={setSidebarView}
       showArchivedRecent={false}
       setShowArchivedRecent={setShowArchivedRecent}
       loadingRecentSessions={false}
@@ -70,6 +75,7 @@ function renderSidebar(
       onNavigateToSession={vi.fn()}
       onArchiveSession={onArchiveSession}
       onPinSession={vi.fn()}
+      onNewSession={onNewSession}
       onClientSelect={vi.fn()}
       onNewSessionInDirectory={onNewSessionInDirectory}
       onArchiveProject={vi.fn()}
@@ -78,6 +84,106 @@ function renderSidebar(
 }
 
 describe('SessionSidebar', () => {
+  it('uses compact relative times', () => {
+    const now = Date.now();
+    const group: SidebarProjectGroup = {
+      directory: '/repo',
+      sessions: [
+        session({ timeUpdated: now }),
+        session({ id: 's2', title: 'Older', timeUpdated: now - 86_400_000 }),
+      ],
+      lastUpdated: now,
+      aggregate: { kind: 'none' },
+    };
+
+    renderSidebar(group, {});
+
+    expect(screen.getByText('now')).toBeInTheDocument();
+    expect(screen.getByText('1d')).toBeInTheDocument();
+  });
+
+  it('renders a flat recent list with project, title, branch, and time', () => {
+    const now = Date.now();
+    const group: SidebarProjectGroup = {
+      directory: '/workspace/repo',
+      sessions: [session({ directory: '/workspace/repo', timeUpdated: now })],
+      lastUpdated: now,
+      aggregate: { kind: 'none' },
+    };
+
+    renderSidebar(group, { '/workspace/repo': gitInfo('main') }, vi.fn(), vi.fn(), vi.fn(), 'recent');
+
+    const row = screen.getByText('Fix thing').closest('.session-sidebar-item');
+    expect(row).toHaveClass('flat');
+    expect(row).toHaveTextContent('workspace/repo');
+    expect(row).toHaveTextContent('Fix thing');
+    expect(row).toHaveTextContent('main');
+    expect(row).toHaveTextContent('now');
+  });
+
+  it('reuses flat rows for pinned project cards', () => {
+    const group: SidebarProjectGroup = {
+      directory: '__pinned__',
+      sessions: [session({ pinned: true })],
+      lastUpdated: 1,
+      aggregate: { kind: 'none' },
+      isPinned: true,
+    };
+
+    renderSidebar(group, {});
+
+    expect(screen.getByText('Fix thing').closest('.session-sidebar-item')).toHaveClass('flat');
+  });
+
+  it('shows pinned flat rows without a heading and separates normal rows', () => {
+    const group: SidebarProjectGroup = {
+      directory: '/repo',
+      sessions: [session({ pinned: true }), session({ id: 'normal', title: 'Normal session' })],
+      lastUpdated: 1,
+      aggregate: { kind: 'none' },
+    };
+
+    renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), 'recent');
+
+    expect(screen.queryByText('Pinned')).not.toBeInTheDocument();
+    expect(screen.getByTestId('flat-pinned-divider')).toBeInTheDocument();
+    expect(screen.getByText('Normal session')).toBeInTheDocument();
+  });
+
+  it('reserves branch space while git info loads', () => {
+    const group: SidebarProjectGroup = {
+      directory: '/repo', sessions: [session()], lastUpdated: 1, aggregate: { kind: 'none' },
+    };
+    renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), 'recent');
+
+    expect(screen.getByText('Fix thing').closest('.session-sidebar-item'))
+      .toContainElement(document.querySelector('.session-sidebar-git-slot'));
+  });
+
+  it('switches between flat and grouped views from the header', () => {
+    const setSidebarView = vi.fn();
+    const group: SidebarProjectGroup = {
+      directory: '/repo', sessions: [session()], lastUpdated: 1, aggregate: { kind: 'none' },
+    };
+    renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), 'recent', setSidebarView);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Group sessions by project' }));
+
+    expect(setSidebarView).toHaveBeenCalledWith('projects');
+  });
+
+  it('opens the new-session project selector from the header', () => {
+    const onNewSession = vi.fn();
+    const group: SidebarProjectGroup = {
+      directory: '/repo', sessions: [session()], lastUpdated: 1, aggregate: { kind: 'none' },
+    };
+    renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), 'recent', vi.fn(), onNewSession);
+
+    fireEvent.click(screen.getByRole('button', { name: 'New session' }));
+
+    expect(onNewSession).toHaveBeenCalledOnce();
+  });
+
   it('shows the git branch once in the directory sub-header, not per row', () => {
     const group: SidebarProjectGroup = {
       directory: '/repo',
@@ -263,7 +369,7 @@ describe('SessionSidebar', () => {
     expect(screen.getByText('Fix thing')).toBeInTheDocument();
   });
 
-  it('turns the heading into a fuzzy title search', () => {
+  it('filters from the persistent fuzzy title search', () => {
     const group: SidebarProjectGroup = {
       directory: '/repo',
       sessions: [session(), session({ id: 'other', title: 'Unrelated work' })],
@@ -272,12 +378,36 @@ describe('SessionSidebar', () => {
     };
 
     renderSidebar(group, {});
-    fireEvent.click(screen.getByRole('button', { name: 'Search sessions' }));
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), {
       target: { value: 'fxthg' },
     });
 
     expect(screen.getByText('Fix thing')).toBeInTheDocument();
     expect(screen.queryByText('Unrelated work')).not.toBeInTheDocument();
+  });
+
+  it('searches project paths and branches', () => {
+    const group: SidebarProjectGroup = {
+      directory: '/workspace/ocman',
+      sessions: [
+        session({ directory: '/workspace/ocman' }),
+        session({ id: 'other', title: 'Other work', directory: '/workspace/elsewhere' }),
+      ],
+      lastUpdated: 1,
+      aggregate: { kind: 'none' },
+    };
+    renderSidebar(group, {
+      '/workspace/ocman': gitInfo('feature/sidebar-search'),
+      '/workspace/elsewhere': gitInfo('main'),
+    }, vi.fn(), vi.fn(), vi.fn(), 'recent');
+    const search = screen.getByRole('searchbox', { name: 'Search sessions' });
+
+    fireEvent.change(search, { target: { value: 'ocman' } });
+    expect(screen.getByText('Fix thing')).toBeInTheDocument();
+    expect(screen.queryByText('Other work')).not.toBeInTheDocument();
+
+    fireEvent.change(search, { target: { value: 'sidebar-search' } });
+    expect(screen.getByText('Fix thing')).toBeInTheDocument();
+    expect(screen.queryByText('Other work')).not.toBeInTheDocument();
   });
 });

@@ -159,6 +159,7 @@ export function CommandPalette() {
   const {
     paletteOpen,
     paletteMode,
+    projectSessionInitialDirectory,
     closePalette: rawClosePalette,
     openProjectSessionPalette,
     openProjectPalette,
@@ -290,8 +291,6 @@ export function CommandPalette() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setQuery('');
     setSelectedIndex(0);
-    const focusFrame = requestAnimationFrame(() => inputRef.current?.focus());
-    return () => cancelAnimationFrame(focusFrame);
     // Depend on `mode` too: reopening into a different mode while the palette
     // is already open must clear any leftover query.
   }, [paletteOpen, mode]);
@@ -313,6 +312,11 @@ export function CommandPalette() {
       .then((list) => {
         if (controller.signal.aborted) return;
         setProjectList(list);
+        if (projectSessionInitialDirectory) {
+          const sorted = [...list].sort((a, b) => b.lastUsed - a.lastUsed);
+          const index = sorted.findIndex((project) => project.directory === projectSessionInitialDirectory);
+          setSelectedIndex(index < 0 ? 0 : index);
+        }
         setProjectListLoading(false);
         setProjectListLoaded(true);
       })
@@ -325,7 +329,7 @@ export function CommandPalette() {
         setProjectListError(message);
       });
     return () => controller.abort();
-  }, [paletteOpen, mode, projects]);
+  }, [paletteOpen, mode, projectSessionInitialDirectory, projects]);
 
   useEffect(() => () => {
     projectBrowserAbortRef.current?.abort();
@@ -617,6 +621,7 @@ export function CommandPalette() {
           <i className="bi bi-search oc-cmd-search-icon" />
           <input
             ref={inputRef}
+            autoFocus
             className="oc-cmd-input"
             type="text"
             role="combobox"

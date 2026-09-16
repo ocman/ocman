@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => {
   const uiState = {
     paletteOpen: true,
     paletteMode: 'project' as 'command' | 'search' | 'project' | 'project-session',
+    projectSessionInitialDirectory: undefined as string | undefined,
     closePalette: vi.fn(),
     openProjectPalette: vi.fn(() => {
       uiState.paletteMode = 'project';
@@ -80,6 +81,7 @@ describe('CommandPalette project mode', () => {
     Element.prototype.scrollIntoView = vi.fn();
     mocks.uiState.paletteOpen = true;
     mocks.uiState.paletteMode = 'project';
+    mocks.uiState.projectSessionInitialDirectory = undefined;
     mocks.apiState.cachedSessions = [];
     mocks.apiState.getProjects.mockResolvedValue([
       {
@@ -282,27 +284,25 @@ describe('CommandPalette project mode', () => {
     expect(mocks.apiState.browseDirectories).not.toHaveBeenCalled();
   });
 
-  it('waits for the Option+N dead key to settle before focusing the project picker', () => {
+  it('preselects the requested project in session-project mode', async () => {
+    mocks.uiState.paletteMode = 'project-session';
+    mocks.uiState.projectSessionInitialDirectory = '/Users/peter/workspace/research';
+
+    renderPalette();
+
+    const project = await screen.findByText('workspace/research');
+    expect(project.closest('[role="option"]')).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('focuses the project picker when it opens', () => {
     mocks.uiState.paletteOpen = false;
     mocks.uiState.paletteMode = 'project-session';
-    let focusFrame: FrameRequestCallback | undefined;
-    const focusSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
-      focusFrame = callback;
-      return 1;
-    });
 
     const { rerenderPalette } = renderPalette();
     mocks.uiState.paletteOpen = true;
     rerenderPalette();
 
-    const activeElement = document.activeElement;
-    if (activeElement instanceof HTMLInputElement) {
-      fireEvent.change(activeElement, { target: { value: '~' } });
-    }
-    act(() => focusFrame?.(0));
-    focusSpy.mockRestore();
-
-    expect(screen.getByPlaceholderText('Select a project to start a session...')).toHaveValue('');
+    expect(screen.getByPlaceholderText('Select a project to start a session...')).toHaveFocus();
   });
 
   it('creates a session from a known project in session-project mode', async () => {

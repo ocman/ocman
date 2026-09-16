@@ -12,6 +12,8 @@ export interface SidebarSessionRowProps {
   session: Session;
   /** Rendered under a directory sub-header (no own project/git line). */
   inGroup: boolean;
+  /** Flat recent rows carry their own project and branch context. */
+  flat?: boolean;
   /** Nesting depth for child sessions. */
   depth?: number;
   active: boolean;
@@ -31,6 +33,7 @@ export interface SidebarSessionRowProps {
 export function SidebarSessionRow({
   session: sib,
   inGroup,
+  flat = false,
   depth = 0,
   active,
   activeId,
@@ -54,12 +57,22 @@ export function SidebarSessionRow({
   // path + git line since they have no directory sub-header.
   const projectRoot = projectRootForDirectory(sib.directory || '');
   const isWorktree = !!sib.directory && sib.directory !== projectRoot;
+  const statusBadge = (
+    <StatusBadge
+      status={displayStatus}
+      compact
+      seen={isTerminalStatus(displayStatus) && sib.seen}
+      pending={sib.pendingPermission || sib.pendingQuestion}
+      draft={draft}
+      titleOverride={sib.notice?.message}
+    />
+  );
   return (
     <div
       role="button"
       tabIndex={0}
       aria-selected={active}
-      className={`session-sidebar-item ${active ? 'active' : ''}${archiving ? ' archiving' : ''}${inGroup ? ' in-group' : ''}${depth > 0 ? ' session-sidebar-item-child' : ''}`}
+      className={`session-sidebar-item ${active ? 'active' : ''}${archiving ? ' archiving' : ''}${inGroup ? ' in-group' : ''}${flat ? ' flat' : ''}${depth > 0 ? ' session-sidebar-item-child' : ''}`}
       onClick={() => {
         if (debugMode) {
           remoteLog.info('[ocman:nav] sidebar click', {
@@ -101,19 +114,23 @@ export function SidebarSessionRow({
           &#9492;&#9472;
         </span>
       )}
-      <StatusBadge
-        status={displayStatus}
-        compact
-        seen={isTerminalStatus(displayStatus) && sib.seen}
-        pending={sib.pendingPermission || sib.pendingQuestion}
-        draft={draft}
-        titleOverride={sib.notice?.message}
-      />
+      {!flat && statusBadge}
       <span className="session-sidebar-item-body">
+        {flat && (
+          <span className="session-sidebar-project">
+            {statusBadge}
+            <span className="session-sidebar-project-path">
+              <ShortPath path={isWorktree ? projectRoot : sib.directory} />
+            </span>
+            <span className="session-sidebar-time" title={new Date(sib.timeUpdated).toLocaleString()}>
+              {relativeTime(sib.timeUpdated).replace('just now', 'now').replace(' ago', '')}
+            </span>
+          </span>
+        )}
         <span className="session-sidebar-title">
           {cleanTitle(sib.title) || 'Untitled'}
         </span>
-        {!inGroup && (
+        {!inGroup && !flat && (
           <>
             <span className="session-sidebar-project">
               <span className="session-sidebar-project-path">
@@ -123,9 +140,18 @@ export function SidebarSessionRow({
             <GitStatusLine info={gitInfo} icon={isWorktree ? 'worktree' : 'branch'} />
           </>
         )}
+        {flat && (
+          <span className="session-sidebar-git-slot">
+            <GitStatusLine info={gitInfo} icon={isWorktree ? 'worktree' : 'branch'} />
+          </span>
+        )}
       </span>
       <span className="session-sidebar-meta">
-        <span className="session-sidebar-time" title={new Date(sib.timeUpdated).toLocaleString()}>{relativeTime(sib.timeUpdated)}</span>
+        {!flat && (
+          <span className="session-sidebar-time" title={new Date(sib.timeUpdated).toLocaleString()}>
+            {relativeTime(sib.timeUpdated).replace('just now', 'now').replace(' ago', '')}
+          </span>
+        )}
         <span className="session-sidebar-actions">
           <button
             type="button"

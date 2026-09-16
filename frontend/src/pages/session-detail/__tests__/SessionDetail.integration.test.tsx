@@ -17,8 +17,10 @@ import {
 import { recordFailedSend, clearFailedSends } from '../../../lib/failedSends';
 import { useApiStore } from '../../../lib/apiStore';
 import { formatDate } from '../../../lib/format';
+import { useUiStore } from '../../../lib/uiStore';
 
 beforeEach(() => {
+  useUiStore.getState().setSidebarView('recent');
   // jsdom does not implement scrollIntoView or scrollTo; the
   // AssistantThread (via @assistant-ui/react's auto-scroll viewport)
   // invokes both after every message append.
@@ -761,6 +763,7 @@ describe('SessionDetail — sidebar polling', () => {
   });
 
   it('passes the configured time window without capping project sessions', async () => {
+    useUiStore.getState().setSidebarView('projects');
     const handle = renderSessionPage({ sessionId: 'sess_1' });
     await flushPromises();
     await waitFor(() => expect(handle.store.getSessions).toHaveBeenCalled());

@@ -298,8 +298,10 @@ function GlobalHotkeys() {
   const projectPaletteShortcut = useMemo(() => ({
     id: 'site.project-palette',
     scope: 'site' as const,
-    keys: { code: 'KeyN', alt: true },
-    label: 'Alt+N',
+    keys: [
+      { code: 'KeyN', alt: true },
+      { code: 'KeyN', alt: true, shift: true },
+    ],
     description: 'Create new session in project',
     handler: () => useUiStore.getState().openPalette('project-session'),
     runInEditable: true,
@@ -308,8 +310,7 @@ function GlobalHotkeys() {
   const reopenClosedShortcut = useMemo(() => ({
     id: 'site.reopen-closed-session',
     scope: 'site' as const,
-    keys: { code: 'KeyN', alt: true, shift: true },
-    label: 'Alt+Shift+N',
+    keys: { code: 'KeyT', alt: true, shift: true },
     description: 'Reopen last closed session',
     enabled: () => useApiStore.getState().closedSessionStack.length > 0,
     handler: reopenClosedSession,

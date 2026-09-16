@@ -1,21 +1,16 @@
 import { useMemo } from 'react';
 import { useShortcut } from '../../lib/shortcutRegistry';
 import { useSyncRef } from '../../lib/useSyncRef';
-import type { Session, TmuxSession } from '../../lib/api';
+import type { Session } from '../../lib/api';
 
 export interface UseSessionShortcutsOptions {
   /** Page session — used by the enabled() guards to gate shortcuts
    *  that require an active session. */
   session: Session | null;
-  /** Whether the platform process is reachable (gates create/switch). */
+  /** Whether the platform process is reachable (gates create). */
   portAvailable: boolean;
-  /** The tmux session whose path matches the page directory, if any.
-   *  The "switch tmux" shortcut is disabled when this is undefined. */
-  matchingTmuxSession: TmuxSession | undefined;
   /** Navigate by `direction` in the recent-sessions list. */
   jumpToSession: (direction: 1 | -1) => void;
-  /** Switch the user's tmux client to the matching session. */
-  handleTmuxShortcut: () => void;
   /** Open the page directory in VS Code. */
   handleVSCodeShortcut: () => void;
   /** Create a new session in the current project. */
@@ -30,9 +25,8 @@ export interface UseSessionShortcutsOptions {
  * Registers the per-page keyboard shortcuts:
  *
  *   Alt+J / Alt+K — next / previous recent session
- *   Alt+T         — switch tmux to matching session
- *   Alt+V         — open in VS Code
- *   Alt+C         — create new session in current project
+  *   Alt+V         — open in VS Code
+  *   Alt+C / Alt+T — create new session in current project
  *   Alt+M         — open the model-change palette
  *   Alt+G         — open the user-message jump picker
  *
@@ -44,9 +38,7 @@ export interface UseSessionShortcutsOptions {
 export function useSessionShortcuts({
   session,
   portAvailable,
-  matchingTmuxSession,
   jumpToSession,
-  handleTmuxShortcut,
   handleVSCodeShortcut,
   handleNewSession,
   openMessageJumpPicker,
@@ -55,12 +47,10 @@ export function useSessionShortcuts({
   // Mirror the latest handler / state values into refs so shortcut
   // descriptors below can reference them without forcing a re-bind
   // on every render of the page.
-  const handleTmuxShortcutRef = useSyncRef(handleTmuxShortcut);
   const handleVSCodeShortcutRef = useSyncRef(handleVSCodeShortcut);
   const handleNewSessionRef = useSyncRef(handleNewSession);
   const openMessageJumpPickerRef = useSyncRef(openMessageJumpPicker);
   const openModelPickerRef = useSyncRef(openModelPicker);
-  const matchingTmuxSessionRef = useSyncRef(matchingTmuxSession);
   const sessionRef = useSyncRef(session);
   const portAvailableRef = useSyncRef(portAvailable);
 
@@ -84,16 +74,6 @@ export function useSessionShortcuts({
   useShortcut(navNextShortcut);
   useShortcut(navPrevShortcut);
 
-  const switchTmuxShortcut = useMemo(() => ({
-    id: 'session.switch-tmux',
-    scope: 'session' as const,
-    keys: { code: 'KeyT', alt: true },
-    description: 'Switch tmux for current session',
-    enabled: () => !!matchingTmuxSessionRef.current,
-    handler: () => handleTmuxShortcutRef.current(),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), []);
-
   const openVscodeShortcut = useMemo(() => ({
     id: 'session.open-vscode',
     scope: 'session' as const,
@@ -107,14 +87,16 @@ export function useSessionShortcuts({
   const newSessionShortcut = useMemo(() => ({
     id: 'session.new-session',
     scope: 'session' as const,
-    keys: { code: 'KeyC', alt: true },
+    keys: [
+      { code: 'KeyC', alt: true },
+      { code: 'KeyT', alt: true },
+    ],
     description: 'Create new session in current project',
     enabled: () => !!sessionRef.current && portAvailableRef.current,
     handler: () => handleNewSessionRef.current(),
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), []);
 
-  useShortcut(switchTmuxShortcut);
   useShortcut(openVscodeShortcut);
   useShortcut(newSessionShortcut);
 

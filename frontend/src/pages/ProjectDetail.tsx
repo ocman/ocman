@@ -140,23 +140,10 @@ export function ProjectDetail() {
     openVSCode(directory);
   }, [directory]);
 
-  const handleTmuxSwitchRef = useRef(handleTmuxSwitch);
-  useEffect(() => { handleTmuxSwitchRef.current = handleTmuxSwitch; }, [handleTmuxSwitch]);
   const handleOpenVSCodeRef = useRef(handleOpenVSCode);
   useEffect(() => { handleOpenVSCodeRef.current = handleOpenVSCode; }, [handleOpenVSCode]);
-  const matchingTmuxSessionRef = useRef(matchingTmuxSession);
-  useEffect(() => { matchingTmuxSessionRef.current = matchingTmuxSession; }, [matchingTmuxSession]);
   const directoryRef = useRef(directory);
   useEffect(() => { directoryRef.current = directory; }, [directory]);
-
-  const switchTmuxShortcut = useMemo(() => ({
-    id: 'project.switch-tmux',
-    scope: 'project' as const,
-    keys: { code: 'KeyT', alt: true },
-    description: 'Switch tmux for current project',
-    enabled: () => !!matchingTmuxSessionRef.current,
-    handler: () => handleTmuxSwitchRef.current(),
-  }), []);
 
   const openVscodeShortcut = useMemo(() => ({
     id: 'project.open-vscode',
@@ -167,7 +154,6 @@ export function ProjectDetail() {
     handler: () => handleOpenVSCodeRef.current(),
   }), []);
 
-  useShortcut(switchTmuxShortcut);
   useShortcut(openVscodeShortcut);
 
   return (

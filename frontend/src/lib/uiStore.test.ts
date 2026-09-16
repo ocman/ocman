@@ -24,6 +24,30 @@ describe('uiStore session history', () => {
   });
 });
 
+describe('uiStore sidebar view', () => {
+  it('switches between recent and project sessions', () => {
+    initial.setSidebarView('projects');
+    expect(useUiStore.getState().sidebarView).toBe('projects');
+
+    initial.setSidebarView('recent');
+    expect(useUiStore.getState().sidebarView).toBe('recent');
+  });
+});
+
+describe('uiStore project session palette', () => {
+  it('opens with an initial project and clears it on close', () => {
+    initial.openProjectSessionPalette('/repo');
+    expect(useUiStore.getState()).toMatchObject({
+      paletteOpen: true,
+      paletteMode: 'project-session',
+      projectSessionInitialDirectory: '/repo',
+    });
+
+    initial.closePalette();
+    expect(useUiStore.getState().projectSessionInitialDirectory).toBeUndefined();
+  });
+});
+
 describe('uiStore sidebar width clamping', () => {
   beforeEach(() => {
     useUiStore.setState({

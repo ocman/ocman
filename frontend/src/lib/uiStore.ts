@@ -29,6 +29,8 @@ export type PaletteCommand =
   | { kind: 'nav'; id: string; label: string; path: string }
   | { kind: 'scoped'; id: string; label: string; description: string };
 
+export type SidebarView = 'recent' | 'projects';
+
 // One of the views available in the right-hand panel. Adding a new
 // view is just an extra entry here plus a render branch in
 // RightPanel — the strip / open-tabs logic handles n tabs uniformly.
@@ -57,6 +59,9 @@ type UiStore = {
 
   sidebarWidth: number;
   setSidebarWidth: (width: number) => void;
+
+  sidebarView: SidebarView;
+  setSidebarView: (view: SidebarView) => void;
 
   // Collapsed project directories in the "projects" sidebar view. Stored as
   // a plain string[] (not Set) so Zustand's persist middleware can serialise
@@ -180,10 +185,11 @@ type UiStore = {
 
   paletteOpen: boolean;
   paletteMode: PaletteMode;
+  projectSessionInitialDirectory: string | undefined;
   openCommandPalette: () => void;
   openSearchPalette: () => void;
   openProjectPalette: () => void;
-  openProjectSessionPalette: () => void;
+  openProjectSessionPalette: (initialDirectory?: string) => void;
   openPalette: (mode: PaletteMode) => void;
   closePalette: () => void;
 
@@ -241,6 +247,9 @@ export const useUiStore = create<UiStore>()(
 
       sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
       setSidebarWidth: (width) => set({ sidebarWidth: clampWidth(width) }),
+
+      sidebarView: 'recent',
+      setSidebarView: (view) => set({ sidebarView: view }),
 
       collapsedProjects: [],
       toggleCollapsedProject: (directory) =>
@@ -340,12 +349,25 @@ export const useUiStore = create<UiStore>()(
 
       paletteOpen: false,
       paletteMode: 'command',
+      projectSessionInitialDirectory: undefined,
       openCommandPalette: () => set({ paletteOpen: true, paletteMode: 'command' }),
       openSearchPalette: () => set({ paletteOpen: true, paletteMode: 'search' }),
       openProjectPalette: () => set({ paletteOpen: true, paletteMode: 'project' }),
-      openProjectSessionPalette: () => set({ paletteOpen: true, paletteMode: 'project-session' }),
-      openPalette: (mode: PaletteMode) => set({ paletteOpen: true, paletteMode: mode }),
-      closePalette: () => set({ paletteOpen: false, paletteCommand: null }),
+      openProjectSessionPalette: (initialDirectory) => set({
+        paletteOpen: true,
+        paletteMode: 'project-session',
+        projectSessionInitialDirectory: initialDirectory,
+      }),
+      openPalette: (mode: PaletteMode) => set({
+        paletteOpen: true,
+        paletteMode: mode,
+        projectSessionInitialDirectory: undefined,
+      }),
+      closePalette: () => set({
+        paletteOpen: false,
+        paletteCommand: null,
+        projectSessionInitialDirectory: undefined,
+      }),
 
       paletteCommand: null,
       dispatchCommand: (cmd: PaletteCommand) => set({ paletteCommand: cmd }),
@@ -411,6 +433,7 @@ export const useUiStore = create<UiStore>()(
         mainNavCollapsed: s.mainNavCollapsed,
         lastOpenedSessionId: s.lastOpenedSessionId,
         sidebarWidth: s.sidebarWidth,
+        sidebarView: s.sidebarView,
         bellEnabled: s.bellEnabled,
         showToolDetails: s.showToolDetails,
         showReasoning: s.showReasoning,

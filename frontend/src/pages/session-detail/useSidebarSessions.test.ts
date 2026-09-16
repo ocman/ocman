@@ -83,6 +83,26 @@ describe('useSidebarSessions project visibility', () => {
     expect(result.current.recentSessions).toContainEqual(expect.objectContaining(open));
     expect(result.current.recentSessions).toContainEqual(sessions[24]);
   });
+
+  it('keeps older pinned sessions in the capped recent view', async () => {
+    const sessions = Array.from({ length: 25 }, (_, i) => ({
+      id: `session-${i}`, platform: 'opencode', directory: '/repo',
+      title: `Work ${i}`, status: 'waiting', timeUpdated: Date.now() - i * 1000,
+      pinned: i === 24, pinnedAt: i === 24 ? 1 : 0,
+    } as Session));
+    const getSessions = vi.fn(async ({ limit }: { limit?: number } = {}) =>
+      sessions.slice(0, limit === 0 ? undefined : (limit ?? 500)));
+    useApiStore.setState({ getSessions, recentSessions: [], recentSessionsHash: '' });
+    const { result } = renderHook(() => useSidebarSessions({
+      id: sessions[0].id, sessionId: sessions[0].id, collapsedProjects: [], sidebarView: 'recent',
+      abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
+    }));
+
+    await act(async () => { await result.current.loadRecentSessions(); });
+
+    expect(result.current.recentSessions).toHaveLength(15);
+    expect(result.current.recentSessions).toContainEqual(sessions[24]);
+  });
 });
 
 describe('useSidebarSessions live refresh', () => {

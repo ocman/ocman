@@ -58,6 +58,8 @@ export interface SessionSidebarProps {
   /** Currently active session id from the URL. */
   activeId: string | undefined;
   sidebarWidth: number;
+  sidebarView: 'recent' | 'projects';
+  setSidebarView: (view: 'recent' | 'projects') => void;
   showArchivedRecent: boolean;
   setShowArchivedRecent: (updater: (current: boolean) => boolean) => void;
   loadingRecentSessions: boolean;
@@ -78,6 +80,7 @@ export interface SessionSidebarProps {
   onNavigateToSession: (id: string) => void;
   onArchiveSession: (e: React.MouseEvent, session: Session) => void;
   onPinSession: (e: React.MouseEvent, session: Session) => void;
+  onNewSession: () => void;
   onClientSelect: (tty: string) => void;
   onNewSessionInDirectory: (directory: string, remoteId?: string, platform?: string) => void;
   onArchiveProject: (directory: string, remoteId?: string) => void;
@@ -90,6 +93,8 @@ export interface SessionSidebarProps {
 export function SessionSidebar({
   activeId,
   sidebarWidth,
+  sidebarView,
+  setSidebarView,
   showArchivedRecent,
   setShowArchivedRecent,
   loadingRecentSessions,
@@ -109,6 +114,7 @@ export function SessionSidebar({
   onNavigateToSession,
   onArchiveSession,
   onPinSession,
+  onNewSession,
   onClientSelect,
   onNewSessionInDirectory,
   onArchiveProject,
@@ -143,15 +149,16 @@ export function SessionSidebar({
       }
     });
     return () => cancelAnimationFrame(raf);
-  }, [activeId, recentSessions]);
+  }, [activeId, sidebarView, recentSessions]);
 
   // Shared row renderer — used by both the pinned and grouped views so
   // all live-status / archive / navigation behaviour stays identical.
-  const renderRow = (sib: Session, inGroup: boolean, depth = 0) => (
+  const renderRow = (sib: Session, inGroup: boolean, depth = 0, flat = false) => (
     <SidebarSessionRow
       key={sib.id}
       session={sib}
       inGroup={inGroup}
+      flat={flat}
       depth={depth}
       active={sib.id === activeId}
       activeId={activeId}
@@ -172,15 +179,25 @@ export function SessionSidebar({
     const query = searchQuery.trim();
     if (showChildren && !query) return sidebarProjectGroups;
     return sidebarProjectGroups.flatMap((group) => {
+      const projectMatches = !!query && fuzzyMatch(query, group.directory);
       const sessions = group.sessions.filter((session) =>
         (showChildren || !session.parentId) &&
-        (!query || fuzzyMatch(query, cleanTitle(session.title))),
+        (!query || projectMatches || matchesSessionSearch(query, session, siblingGitInfos[session.directory])),
       );
-      return query && sessions.length === 0 ? [] : [{ ...group, sessions }];
+      return query && !projectMatches && sessions.length === 0 ? [] : [{ ...group, sessions }];
     });
-  }, [sidebarProjectGroups, searchQuery, showChildren]);
+  }, [sidebarProjectGroups, searchQuery, showChildren, siblingGitInfos]);
 
-  const pinnedGroup = filteredProjectGroups.find((g) => g.isPinned && g.sessions.length > 0);
+  const filteredPinnedSessions = useMemo(() => {
+    const query = searchQuery.trim();
+    return recentSessions
+      .filter((session) => session.pinned)
+      .filter((session) =>
+        (showChildren || !session.parentId) &&
+        (!query || matchesSessionSearch(query, session, siblingGitInfos[session.directory])),
+      )
+      .sort((a, b) => b.pinnedAt - a.pinnedAt);
+  }, [recentSessions, searchQuery, showChildren, siblingGitInfos]);
   const sortableGroups = useMemo(
     () => filteredProjectGroups.filter((g) => !g.isPinned),
     [filteredProjectGroups],
@@ -205,7 +222,10 @@ export function SessionSidebar({
     [sidebarProjectGroups, onReorderProjects],
   );
 
-  const renderPinnedGroup = (group: SidebarProjectGroup) => {
+  const renderPinnedRows = (sessions: Session[]) =>
+    nestSessions(sessions).map(({ session, depth }) => renderRow(session, false, depth, true));
+
+  const renderPinnedGroup = (sessions: Session[]) => {
     // The "Pinned" group is always expanded and has a
     // distinct header (pin icon, no collapse, no "+", not draggable).
     return (
@@ -216,7 +236,7 @@ export function SessionSidebar({
             <span className="session-sidebar-group-label">Pinned</span>
           </div>
         </div>
-        {nestSessions(group.sessions).map(({ session: sib, depth }) => renderRow(sib, false, depth))}
+        {renderPinnedRows(sessions)}
       </div>
     );
   };
@@ -354,7 +374,7 @@ export function SessionSidebar({
 
   const renderProjectsView = () => (
     <>
-      {pinnedGroup && renderPinnedGroup(pinnedGroup)}
+      {filteredPinnedSessions.length > 0 && renderPinnedGroup(filteredPinnedSessions)}
       <DndContext
         sensors={dndSensors}
         collisionDetection={closestCenter}
@@ -377,6 +397,28 @@ export function SessionSidebar({
     </>
   );
 
+  const renderFlatView = () => {
+    const query = searchQuery.trim();
+    const visible = recentSessions.filter((session) =>
+      (showChildren || !session.parentId) &&
+      (!query || matchesSessionSearch(query, session, siblingGitInfos[session.directory])),
+    );
+    const unpinned = visible.filter((session) => !session.pinned);
+    return (
+      <>
+        {filteredPinnedSessions.length > 0 && (
+          <div className="session-sidebar-flat-pinned">
+            {renderPinnedRows(filteredPinnedSessions)}
+          </div>
+        )}
+        {filteredPinnedSessions.length > 0 && unpinned.length > 0 && (
+          <div className="session-sidebar-flat-divider" data-testid="flat-pinned-divider" aria-hidden="true" />
+        )}
+        {nestSessions(unpinned).map(({ session, depth }) => renderRow(session, false, depth, true))}
+      </>
+    );
+  };
+
   return (
     <div className="session-sidebar" data-testid="session-sidebar" style={{ width: sidebarWidth }}>
       <SidebarResizer />
@@ -387,6 +429,9 @@ export function SessionSidebar({
         setShowArchivedRecent={setShowArchivedRecent}
         showChildren={showChildren}
         setShowChildren={setShowChildren}
+        sidebarView={sidebarView}
+        setSidebarView={setSidebarView}
+        onNewSession={onNewSession}
       />
       {pendingTmuxSession && pickerPos && (
         <TmuxClientPopover pickerRef={pickerRef} pos={pickerPos} clients={tmux.clients} onSelect={onClientSelect} />
@@ -394,11 +439,11 @@ export function SessionSidebar({
       <div className="session-sidebar-list" ref={sidebarListRef}>
         {loadingRecentSessions ? (
           <SessionSidebarListSkeleton rows={5} />
-        ) : // The sidebar always groups by project: list every unarchived
-        // project even with no sessions (e.g. after archiving the last
-        // one), so only fall back to the empty state when there are no
-        // groups either.
-        sidebarProjectGroups.length === 0 ? (
+        ) : sidebarView === 'recent' && recentSessions.length === 0 ? (
+          <GettingStartedEmpty compact />
+        ) : sidebarView === 'recent' ? (
+          renderFlatView()
+        ) : sidebarProjectGroups.length === 0 ? (
           <GettingStartedEmpty compact />
         ) : (
           renderProjectsView()
@@ -407,6 +452,11 @@ export function SessionSidebar({
       <BackendStats />
     </div>
   );
+}
+
+function matchesSessionSearch(query: string, session: Session, gitInfo?: GitInfo): boolean {
+  return [cleanTitle(session.title), session.directory, gitInfo?.branch]
+    .some((value) => !!value && fuzzyMatch(query, value));
 }
 
 // SortableProjectGroup wraps one project group with dnd-kit's

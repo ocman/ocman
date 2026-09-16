@@ -9,9 +9,12 @@ export interface SidebarHeaderProps {
   setShowArchivedRecent: (updater: (current: boolean) => boolean) => void;
   showChildren: boolean;
   setShowChildren: (show: boolean) => void;
+  sidebarView: 'recent' | 'projects';
+  setSidebarView: (view: 'recent' | 'projects') => void;
+  onNewSession: () => void;
 }
 
-/** Sidebar heading: search toggle/input and the filters popover. */
+/** Sidebar search and controls. */
 export function SidebarHeader({
   searchQuery,
   setSearchQuery,
@@ -19,42 +22,41 @@ export function SidebarHeader({
   setShowArchivedRecent,
   showChildren,
   setShowChildren,
+  sidebarView,
+  setSidebarView,
+  onNewSession,
 }: SidebarHeaderProps) {
   const filterRef = useRef<HTMLDivElement>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [searching, setSearching] = useState(false);
   useClickOutside(filterRef, filtersOpen, () => setFiltersOpen(false));
   return (
     <div className="session-sidebar-header">
-      {searching ? (
+      <label className="session-sidebar-search" data-testid="sidebar-search">
+        <i className="bi bi-search session-sidebar-search-icon" aria-hidden="true" />
         <input
           type="search"
-          className="session-sidebar-search"
+          className="session-sidebar-search-input"
           aria-label="Search sessions"
-          placeholder="Search sessions"
+          placeholder="Search"
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.target.value)}
           onKeyDown={(event) => {
             if (event.key !== 'Escape') return;
             setSearchQuery('');
-            setSearching(false);
+            event.currentTarget.blur();
           }}
-          autoFocus
         />
-      ) : (
+      </label>
+      <div className="session-sidebar-header-actions" ref={filterRef}>
         <button
           type="button"
-          className="session-sidebar-heading"
-          data-testid="sidebar-heading"
-          aria-label="Search sessions"
-          onClick={() => setSearching(true)}
+          className="session-sidebar-new"
+          onClick={() => setSidebarView(sidebarView === 'recent' ? 'projects' : 'recent')}
+          title={sidebarView === 'recent' ? 'Group sessions by project' : 'Show flat session list'}
+          aria-label={sidebarView === 'recent' ? 'Group sessions by project' : 'Show flat session list'}
         >
-          <i className="bi bi-search session-sidebar-search-icon" aria-hidden="true" />
-          <span className="session-sidebar-heading-desktop">Sessions</span>
-          <span className="session-sidebar-heading-mobile">Search sessions</span>
+          <i className={`bi ${sidebarView === 'recent' ? 'bi-folder2' : 'bi-list-ul'}`} aria-hidden="true" />
         </button>
-      )}
-      <div className="session-sidebar-header-actions" ref={filterRef}>
         <button
           type="button"
           className={`session-sidebar-new${showArchivedRecent || !showChildren ? ' active' : ''}`}
@@ -64,6 +66,15 @@ export function SidebarHeader({
           aria-expanded={filtersOpen}
           aria-controls="session-sidebar-filters"
         ><ArchiveFilterIcon /></button>
+        <button
+          type="button"
+          className="session-sidebar-new"
+          onClick={onNewSession}
+          title="New session"
+          aria-label="New session"
+        >
+          <i className="bi bi-plus-lg" aria-hidden="true" />
+        </button>
         {filtersOpen && (
           <div id="session-sidebar-filters" className="session-sidebar-filters" role="group" aria-label="Session filters">
             <label>

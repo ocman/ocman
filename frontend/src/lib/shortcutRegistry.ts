@@ -22,9 +22,7 @@ export type Scope = 'site' | 'session' | 'project' | 'composer' | 'prompt';
 export type KeyBinding = {
   // Physical key code, e.g. 'KeyJ', 'Space', 'ArrowUp', 'Slash'.
   code: string;
-  // Modifiers. Defaults to false. `ctrl` and `meta` are currently not
-  // supported (no existing shortcut uses them); the dispatcher requires both
-  // to be unpressed on every match.
+  // Modifiers. Defaults to false. Ctrl and Meta are deliberately unsupported.
   alt?: boolean;
   shift?: boolean;
 };
@@ -142,9 +140,6 @@ function anyBindingUsesAlt(shortcut: Shortcut): boolean {
 
 function bindingMatches(binding: KeyBinding, e: KeyboardEvent): boolean {
   if (e.code !== binding.code) return false;
-  // ctrl/meta must always be off — no current shortcut uses them and
-  // accepting them here would stomp on Cmd+J on Mac, Ctrl+L in the browser,
-  // etc.
   if (e.ctrlKey || e.metaKey) return false;
   if (!!binding.alt !== e.altKey) return false;
   if (!!binding.shift !== e.shiftKey) return false;
@@ -161,9 +156,9 @@ export type DispatchOutcome = {
   // The shortcut that should handle the event, if any. Null when no
   // shortcut matches, or when the best match is gated by `enabled()`.
   match: Shortcut | null;
-  // Whether the event should have its default action suppressed. True
-  // whenever any Alt-based binding syntactically matched, regardless of
-  // whether a handler ran.
+  // Whether the event should have its default action suppressed. True when
+  // any Alt-based binding syntactically matched, regardless of whether a
+  // handler ran.
   preventDefault: boolean;
 };
 
@@ -179,7 +174,7 @@ export function matchShortcut(
 
   let best: Shortcut | null = null;
   let bestPriority = -Infinity;
-  // True when at least one Alt-based binding syntactically matched —
+  // True when at least one Alt binding syntactically matched —
   // regardless of whether we end up running its handler.
   let altBindingMatched = false;
 
@@ -203,8 +198,8 @@ export function matchShortcut(
 
   // preventDefault runs when either:
   //   - a handler will run (best !== null), OR
-  //   - any Alt binding syntactically matched — blocking Mac's Option
-  //     character even for shortcuts that are currently gated.
+  //   - any Alt binding syntactically matched — blocking Option input even
+  //     for shortcuts that are gated.
   return { match: best, preventDefault: best !== null || altBindingMatched };
 }
 
@@ -273,8 +268,8 @@ function keyLabel(code: string, shift: boolean): string {
   return KEY_CODE_LABELS[code] ?? code;
 }
 
-// Platform-aware modifier labels. Follows macOS convention: ⌥ for Option,
-// ⇧ for Shift. Windows/Linux gets the spelled-out names.
+// Platform-aware modifier labels. Apple platforms use ⌥/⇧;
+// Windows/Linux use Alt/Shift.
 function modLabel(kind: 'alt' | 'shift'): string {
   const mac = isMacPlatform();
   if (kind === 'alt') return mac ? '⌥' : 'Alt';

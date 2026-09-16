@@ -493,13 +493,43 @@ test('sidebar logo collapses the main navigation', async ({ mockedPage: page }) 
 
 test('sidebar shows "Sessions" heading', async ({ mockedPage: page }) => {
   await page.goto(SESSION_URL);
-  await expect(page.getByTestId('sidebar-heading')).toContainText('Sessions');
+  await expect(page.getByRole('searchbox', { name: 'Search sessions' })).toBeVisible();
 });
 
 test('sidebar shows both mock sessions', async ({ mockedPage: page }) => {
   await page.goto(SESSION_URL);
   await expect(page.getByRole('button', { name: /Fix the login bug/ })).toBeVisible({ timeout: 5_000 });
   await expect(page.getByRole('button', { name: /Refactor auth module/ })).toBeVisible({ timeout: 5_000 });
+});
+
+test('Option+N and Option+Shift+N open and focus the project picker', async ({ mockedPage: page }) => {
+  await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), (route) =>
+    route.fulfill({
+      json: {
+        session: mockSessionWithLiveConnection(),
+        messages: [],
+        parts: [],
+        totalMessages: 0,
+      },
+    }),
+  );
+  await page.goto(SESSION_URL);
+  const composer = page.getByTestId('conversation-composer').getByRole('textbox');
+  await composer.focus();
+
+  await page.keyboard.press('Alt+n');
+
+  const picker = page.getByPlaceholder('Select a project to start a session...');
+  await expect(picker).toBeVisible();
+  await expect(picker).toBeFocused();
+  await expect(picker).toHaveValue('');
+
+  await page.keyboard.press('Escape');
+  await expect(picker).toBeHidden();
+  await composer.focus();
+  await page.keyboard.press('Alt+Shift+n');
+  await expect(picker).toBeVisible();
+  await expect(picker).toBeFocused();
 });
 
 test('pinned session aligns with grouped session rows', async ({ mockedPage: page }) => {
@@ -512,9 +542,8 @@ test('pinned session aligns with grouped session rows', async ({ mockedPage: pag
   );
 
   await page.goto(SESSION_URL);
-  const sessionRows = page.getByRole('button', { name: /Fix the login bug/ });
-  const pinnedStatus = sessionRows.nth(0).getByLabel(/^Session status:/);
-  const groupedStatus = sessionRows.nth(1).getByLabel(/^Session status:/);
+  const pinnedStatus = page.getByRole('button', { name: /Fix the login bug/ }).getByLabel(/^Session status:/);
+  const groupedStatus = page.getByRole('button', { name: /Refactor auth module/ }).getByLabel(/^Session status:/);
   await expect(pinnedStatus).toBeVisible({ timeout: 5_000 });
   await expect(groupedStatus).toBeVisible({ timeout: 5_000 });
 
