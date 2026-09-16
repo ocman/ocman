@@ -107,8 +107,10 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
-    host: '0.0.0.0',
+    // Tailscale Serve owns :8228 on the tailnet address; bind its upstream to loopback.
+    host: '127.0.0.1',
     port: 8228,
+    strictPort: true,
     allowedHosts: extraAllowedHosts,
      proxy: {
        // Disable response buffering for /api so SSE event streams
@@ -132,8 +134,9 @@ export default defineConfig({
      },
    },
    preview: {
-     host: '0.0.0.0',
+     host: '127.0.0.1',
      port: 8228,
+     strictPort: true,
      allowedHosts: extraAllowedHosts,
       proxy: {
         '/api': {

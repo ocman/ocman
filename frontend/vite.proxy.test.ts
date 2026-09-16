@@ -5,6 +5,10 @@ import { createServer, type ProxyOptions } from 'vite';
 import { expect, it } from 'vitest';
 import config from './vite.config';
 
+it.each(['server', 'preview'] as const)('%s keeps the Tailscale upstream on loopback port 8228', (mode) => {
+  expect(config[mode]).toMatchObject({ host: '127.0.0.1', port: 8228, strictPort: true });
+});
+
 it.each(['/api/events', '/api/session/test/events', '/mcp'])('disconnects %s when the backend restarts, then streams again', async (path) => {
   let upstream: ServerResponse;
   const backend = createHttpServer((_req, res) => {
