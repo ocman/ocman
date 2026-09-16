@@ -10,7 +10,6 @@ import { remoteLog } from '../../lib/remoteLog';
 import { onSessionChanged, onSseConnect } from '../../lib/useGlobalEvents';
 import { useActivityScope } from '../../lib/activityScopes';
 
-const RECENT_SESSIONS_LIMIT = 15;
 /**
  * Reconciliation backstop for events missed while disconnected. Normal
  * updates arrive through the global SSE stream.
@@ -21,19 +20,6 @@ const SIDEBAR_REFRESH_MS = 3 * 60 * 1000;
  * animation can finish. Matches the CSS transition.
  */
 const ARCHIVE_ANIMATION_MS = 220;
-
-function limitRecentSessions(sessions: Session[], activeId: string | undefined): Session[] {
-  const protectedIds = new Set(
-    sessions.filter((session) => session.pinned || session.id === activeId).map((session) => session.id),
-  );
-  let ordinarySlots = Math.max(0, RECENT_SESSIONS_LIMIT - protectedIds.size);
-  return sessions.filter((session) => {
-    if (protectedIds.has(session.id)) return true;
-    if (ordinarySlots === 0) return false;
-    ordinarySlots--;
-    return true;
-  });
-}
 
 export interface UseSidebarSessionsOptions {
   /** The active session id from the URL. */
@@ -165,12 +151,8 @@ export function useSidebarSessions({
       const candidates = current && !visible.some((s) => s.id === current.id)
         ? [current, ...visible]
         : visible;
-      const nextRecentSessions = sidebarView === 'recent'
-        ? limitRecentSessions(candidates, id)
-        : candidates;
-
       const merged = mergeSidebarSessions(
-        nextRecentSessions,
+        candidates,
         useApiStore.getState().recentSessions,
         id,
       );
@@ -182,7 +164,7 @@ export function useSidebarSessions({
       if (e instanceof DOMException && e.name === 'AbortError') return;
       throw e;
     }
-  }, [getSessions, getSession, id, sidebarView, storeSetRecentSessions]);
+  }, [getSessions, getSession, id, storeSetRecentSessions]);
 
   // Initial load when the active session changes (or is set the
   // first time).

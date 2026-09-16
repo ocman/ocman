@@ -55,12 +55,12 @@ describe('useSidebarSessions project visibility', () => {
       }), { initialProps: { sidebarView: 'recent' } });
 
     await act(async () => { await result.current.loadRecentSessions(); });
-    expect(result.current.recentSessions).toHaveLength(15);
+    expect(result.current.recentSessions.map((s) => s.id)).toEqual(all.map((s) => s.id));
     await act(async () => { rerender({ sidebarView: 'projects' }); });
     expect(result.current.recentSessions).toContainEqual(quiet);
     expect(result.current.recentSessions).toHaveLength(all.length);
     await act(async () => { rerender({ sidebarView: 'recent' }); });
-    expect(result.current.recentSessions).toHaveLength(15);
+    expect(result.current.recentSessions.map((s) => s.id)).toEqual(all.map((s) => s.id));
   });
 
   it('keeps project sessions when adding the open session outside the window', async () => {
@@ -84,7 +84,7 @@ describe('useSidebarSessions project visibility', () => {
     expect(result.current.recentSessions).toContainEqual(sessions[24]);
   });
 
-  it('keeps older pinned sessions in the capped recent view', async () => {
+  it('keeps all recent sessions including older pinned sessions', async () => {
     const sessions = Array.from({ length: 25 }, (_, i) => ({
       id: `session-${i}`, platform: 'opencode', directory: '/repo',
       title: `Work ${i}`, status: 'waiting', timeUpdated: Date.now() - i * 1000,
@@ -100,7 +100,7 @@ describe('useSidebarSessions project visibility', () => {
 
     await act(async () => { await result.current.loadRecentSessions(); });
 
-    expect(result.current.recentSessions).toHaveLength(15);
+    expect(result.current.recentSessions.map((s) => s.id)).toEqual(sessions.map((s) => s.id));
     expect(result.current.recentSessions).toContainEqual(sessions[24]);
   });
 });
