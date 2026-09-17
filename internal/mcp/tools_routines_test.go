@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/routines"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/mark3labs/mcp-go/mcptest"
@@ -121,5 +122,57 @@ func TestRoutineToolValidationAndErrors(t *testing.T) {
 	svc.err = errors.New("database details")
 	if result := callTool(t, srv, "routines", map[string]any{"action": "list"}); !result.IsError || resultText(result) != "routine request failed" {
 		t.Fatalf("internal error result = %q", resultText(result))
+	}
+}
+
+func TestRoutineToolPermissionRules(t *testing.T) {
+	svc := &fakeRoutineService{}
+	srv := routineServer(t, svc)
+
+	// Valid permission_rules JSON is parsed and passed through.
+	result := callTool(t, srv, "routines", map[string]any{
+		"action": "create", "name": "Guarded run", "prompt": "go", "directory": "/repo",
+		"permission_rules": `[{"permission":"bash","pattern":"*","action":"allow"},{"permission":"edit","pattern":"src/*","action":"ask"}]`,
+	})
+	if result.IsError {
+		t.Fatalf("create with permission_rules failed: %s", resultText(result))
+	}
+	want := []platforms.PermissionRule{
+		{Permission: "bash", Pattern: "*", Action: "allow"},
+		{Permission: "edit", Pattern: "src/*", Action: "ask"},
+	}
+	if len(svc.input.PermissionRules) != len(want) {
+		t.Fatalf("PermissionRules = %v, want %v", svc.input.PermissionRules, want)
+	}
+	for i, r := range want {
+		if svc.input.PermissionRules[i] != r {
+			t.Errorf("rule[%d] = %+v, want %+v", i, svc.input.PermissionRules[i], r)
+		}
+	}
+
+	// Empty array is valid (clears rules / uses platform defaults).
+	result = callTool(t, srv, "routines", map[string]any{
+		"action": "create", "name": "Default perms", "prompt": "go", "directory": "/repo",
+		"permission_rules": `[]`,
+	})
+	if result.IsError || len(svc.input.PermissionRules) != 0 {
+		t.Fatalf("empty rules: result=%q rules=%v", resultText(result), svc.input.PermissionRules)
+	}
+
+	// Omitting permission_rules entirely leaves it nil/empty.
+	result = callTool(t, srv, "routines", map[string]any{
+		"action": "create", "name": "No perms", "prompt": "go", "directory": "/repo",
+	})
+	if result.IsError || svc.input.PermissionRules != nil {
+		t.Fatalf("omitted rules: result=%q rules=%v", resultText(result), svc.input.PermissionRules)
+	}
+
+	// Invalid JSON is rejected with a validation error.
+	result = callTool(t, srv, "routines", map[string]any{
+		"action": "create", "name": "Bad perms", "prompt": "go", "directory": "/repo",
+		"permission_rules": `not-json`,
+	})
+	if !result.IsError {
+		t.Fatalf("invalid JSON: expected error, got %q", resultText(result))
 	}
 }

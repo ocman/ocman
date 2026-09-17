@@ -1,0 +1,180 @@
+.perm-rules-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ── Presets ─────────────────────────────────────────────── */
+
+.perm-rules-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.perm-rules-preset {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.1s, color 0.1s;
+}
+
+.perm-rules-preset:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.perm-rules-preset--active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.perm-rules-preset--danger.perm-rules-preset--active {
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+
+.perm-rules-preset--custom {
+  cursor: default;
+  border-style: dashed;
+  border-color: var(--accent3);
+  color: var(--accent3);
+}
+
+.perm-rules-preset:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Rule list ───────────────────────────────────────────── */
+
+.perm-rules-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.perm-rules-header {
+  display: grid;
+  grid-template-columns: 1fr 1fr 90px 28px;
+  gap: 6px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.perm-rules-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 90px 28px;
+  gap: 6px;
+  align-items: start;
+}
+
+.perm-rules-row--invalid {
+  grid-template-rows: auto auto;
+}
+
+.perm-rules-row--invalid .perm-rules-cell:first-child {
+  /* highlight the first field if invalid; row-error sits below */
+}
+
+.perm-rules-cell input,
+.perm-rules-cell select {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.perm-rules-cell input:focus,
+.perm-rules-cell select:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.perm-rules-row--invalid .perm-rules-cell input,
+.perm-rules-row--invalid .perm-rules-cell select {
+  border-color: var(--danger);
+}
+
+.perm-rules-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 16px;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+}
+
+.perm-rules-remove:hover:not(:disabled) {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.perm-rules-remove:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.perm-rules-row-error {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 2px 4px;
+  font-size: 11px;
+  color: var(--danger);
+}
+
+/* ── Add button ──────────────────────────────────────────── */
+
+.perm-rules-add {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 5px 10px;
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.1s, color 0.1s;
+}
+
+.perm-rules-add:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.perm-rules-add:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Empty state ─────────────────────────────────────────── */
+
+.perm-rules-empty {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+}

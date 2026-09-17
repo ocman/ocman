@@ -6,6 +6,7 @@ import { ProjectLabel } from '../components/ProjectLabel';
 import { DataTable } from '../components/DataTable';
 import { SearchSelect } from '../components/SearchSelect';
 import { api, type PermissionRule, type Project, type Routine, type RoutineInput, type RoutineRun, type RoutineScheduleKind, type RoutineSessionMode, type Session } from '../lib/api';
+import { PermissionRulesEditor } from '../components/PermissionRulesEditor';
 import { cleanTitle, formatDateTimeShort } from '../lib/format';
 import { usePageTitle } from '../lib/headerContext';
 import './Routines.css';
@@ -285,6 +286,10 @@ export function Routines() {
           {form.kind === 'cron' && <><label>Cron expression<input required placeholder="0 9 * * *" value={form.cron} onChange={(event) => setForm({ ...form, cron: event.target.value })} /></label><label>Timezone<input required value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} /></label></>}
           <label className="routine-check"><input type="checkbox" checked={form.enabled} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} /> Enabled</label>
           <label className="routine-check"><input type="checkbox" checked={form.deleteAfterSuccess} onChange={(event) => setForm({ ...form, deleteAfterSuccess: event.target.checked })} /> Delete after a successful run</label>
+          <label>Permissions
+            <small>Pre-approve permissions so this routine runs without prompts. Rules are evaluated top-to-bottom.</small>
+            <PermissionRulesEditor rules={editingRules} onChange={setEditingRules} disabled={busy} />
+          </label>
           <div className="routine-actions"><Button disabled={busy || !form.directory || (form.sessionMode === 'existing' && !form.sessionId)} type="submit" variant="accent">{editing ? 'Save changes' : 'Create routine'}</Button><Button type="button" disabled={busy} onClick={() => setShowForm(false)}>Cancel</Button></div>
         </form>
         </Modal>
