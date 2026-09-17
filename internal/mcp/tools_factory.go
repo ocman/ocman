@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/NoUseFreak/ocman/internal/factory"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	mcplib "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/sirupsen/logrus"
@@ -121,7 +122,7 @@ func factoryServerTools(tools *factoryTools) []server.ServerTool {
 	if tools == nil || tools.svc == nil {
 		return nil
 	}
-	return []server.ServerTool{{Tool: mcplib.NewTool("factory", mcplib.WithDescription("Factory Planning Work actions."), mcplib.WithString("implementation_model"), mcplib.WithString("action", mcplib.Required()), mcplib.WithString("epic_id"), mcplib.WithString("issue_id"), mcplib.WithString("body"), mcplib.WithString("goal"), mcplib.WithString("brief"), mcplib.WithString("initial_project"), mcplib.WithString("project"), mcplib.WithString("instantiation_id"), mcplib.WithBoolean("acknowledge_local_execution"), mcplib.WithArray("projects", mcplib.Items(map[string]any{"type": "object", "properties": map[string]any{"path": map[string]any{"type": "string"}, "remoteId": map[string]any{"type": "string"}, "acknowledgeLocalExecution": map[string]any{"type": "boolean"}}, "required": []string{"path", "acknowledgeLocalExecution"}})), mcplib.WithString("formula_id"), mcplib.WithString("formula_source"), mcplib.WithString("manifest_json"), mcplib.WithString("mutation_json"), mcplib.WithString("rationale_markdown"), mcplib.WithString("expected_hash"), mcplib.WithString("feedback"), mcplib.WithString("attempt_id"), mcplib.WithString("attempt_token"), mcplib.WithString("summary"), mcplib.WithString("pr_url"), mcplib.WithString("recovery_gate_id"), mcplib.WithString("authority_gate_id"), mcplib.WithString("question"), mcplib.WithString("reason"), mcplib.WithString("choices_json"), mcplib.WithString("response"), mcplib.WithNumber("revision"), mcplib.WithNumber("global_capacity"), mcplib.WithNumber("project_capacity"), mcplib.WithObject("project_overrides")), Handler: tools.handle}}
+	return []server.ServerTool{{Tool: mcplib.NewTool("factory", mcplib.WithDescription("Factory Planning Work actions."), mcplib.WithString("implementation_model"), mcplib.WithString("action", mcplib.Required()), mcplib.WithString("epic_id"), mcplib.WithString("issue_id"), mcplib.WithString("body"), mcplib.WithString("goal"), mcplib.WithString("brief"), mcplib.WithString("initial_project"), mcplib.WithString("project"), mcplib.WithString("instantiation_id"), mcplib.WithBoolean("acknowledge_local_execution"), mcplib.WithArray("projects", mcplib.Items(map[string]any{"type": "object", "properties": map[string]any{"path": map[string]any{"type": "string"}, "remoteId": map[string]any{"type": "string"}, "acknowledgeLocalExecution": map[string]any{"type": "boolean"}}, "required": []string{"path", "acknowledgeLocalExecution"}})), mcplib.WithString("formula_id"), mcplib.WithString("formula_source"), mcplib.WithString("manifest_json"), mcplib.WithString("mutation_json"), mcplib.WithString("rationale_markdown"), mcplib.WithString("expected_hash"), mcplib.WithString("feedback"), mcplib.WithString("attempt_id"), mcplib.WithString("attempt_token"), mcplib.WithString("summary"), mcplib.WithString("pr_url"), mcplib.WithString("recovery_gate_id"), mcplib.WithString("authority_gate_id"), mcplib.WithString("question"), mcplib.WithString("reason"), mcplib.WithString("choices_json"), mcplib.WithString("response"), mcplib.WithNumber("revision"), mcplib.WithNumber("global_capacity"), mcplib.WithNumber("project_capacity"), mcplib.WithObject("project_overrides"), mcplib.WithString("permission_rules")), Handler: tools.handle}}
 }
 func (t *factoryTools) handle(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 	result, err := t.handleAction(ctx, req)
@@ -216,6 +217,12 @@ func (t *factoryTools) handleAction(ctx context.Context, req mcplib.CallToolRequ
 				return mcplib.NewToolResultError("projects is invalid"), nil
 			}
 		}
+		var permRules []platforms.PermissionRule
+		if raw := req.GetString("permission_rules", ""); raw != "" {
+			if err := json.Unmarshal([]byte(raw), &permRules); err != nil {
+				return mcplib.NewToolResultError("permission_rules: invalid JSON"), nil
+			}
+		}
 		epic, err := t.svc.CreateWorkEpic(ctx, factory.CreateWorkEpicRequest{
 			InstantiationID:           req.GetString("instantiation_id", ""),
 			EpicID:                    req.GetString("epic_id", ""),
@@ -226,6 +233,7 @@ func (t *factoryTools) handleAction(ctx context.Context, req mcplib.CallToolRequ
 			FormulaRevision:           req.GetInt("revision", 0),
 			AcknowledgeLocalExecution: true,
 			Projects:                  projects,
+			PermissionRules:           permRules,
 		})
 		if err != nil {
 			return factoryToolError(err), nil

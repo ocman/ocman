@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/sirupsen/logrus"
 )
 
@@ -104,14 +105,15 @@ type CreateWorkEpicRequest struct {
 	// EpicID is an optional human-friendly kebab-case ID for the Epic,
 	// normally supplied by the agent that creates it. Empty means the ID is
 	// derived from the goal.
-	EpicID                    string             `json:"epicId,omitempty"`
-	Goal                      string             `json:"goal"`
-	Brief                     string             `json:"brief,omitempty"`
-	InitialProject            string             `json:"initialProject"`
-	FormulaID                 string             `json:"formulaId,omitempty"`
-	FormulaRevision           int                `json:"formulaRevision,omitempty"`
-	AcknowledgeLocalExecution bool               `json:"acknowledgeLocalExecution"`
-	Projects                  []ProjectAdmission `json:"projects,omitempty"`
+	EpicID                    string                     `json:"epicId,omitempty"`
+	Goal                      string                     `json:"goal"`
+	Brief                     string                     `json:"brief,omitempty"`
+	InitialProject            string                     `json:"initialProject"`
+	FormulaID                 string                     `json:"formulaId,omitempty"`
+	FormulaRevision           int                        `json:"formulaRevision,omitempty"`
+	AcknowledgeLocalExecution bool                       `json:"acknowledgeLocalExecution"`
+	Projects                  []ProjectAdmission         `json:"projects,omitempty"`
+	PermissionRules           []platforms.PermissionRule `json:"permissionRules,omitempty"`
 }
 
 type ProjectAdmission struct {
@@ -165,6 +167,7 @@ type PlanningSessionRequest struct {
 	EpicID, WorkID, AttemptID, AgentToken, Repository, Title string
 	Projects                                                 []string
 	ScopeExpansion                                           bool
+	PermissionRules                                          []model.PermissionRule
 }
 
 type PlanningLauncher interface {
@@ -650,6 +653,10 @@ type nativeProjectSetStore interface {
 	CreateFactoryEpicWithProjects(context.Context, string, string, string, string, string, model.NativeFormula, []string) (model.NativeEpic, error)
 	RemoveFactoryEpicProject(context.Context, string, string) error
 }
+
+type epicPermissionStore interface {
+	SetFactoryEpicPermissionRules(ctx context.Context, epicID string, rules []model.PermissionRule) error
+}
 type nativeProjectRequestStore interface {
 	CreateFactoryProjectRequestGate(context.Context, string, string, string, time.Time) (model.ProjectRequestGate, error)
 	GetFactoryProjectRequestGate(context.Context, string) (model.ProjectRequestGate, bool, error)
@@ -767,6 +774,7 @@ type ImplementationSessionRequest struct {
 	Projects                                                                                        []string
 	TargetBranch                                                                                    string
 	Delivery                                                                                        bool
+	PermissionRules                                                                                 []model.PermissionRule
 }
 
 // ImplementationLauncher is the host/platform seam for a configured worktree
@@ -1089,7 +1097,21 @@ func (s *NativeService) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRe
 	case errors.Is(err, model.ErrNativeEpicIDTaken):
 		err = fmt.Errorf("%w: %q", ErrEpicIDTaken, epicID)
 	}
-	return nativeEpic(epic), err
+	if err != nil {
+		return WorkEpic{}, err
+	}
+	if len(req.PermissionRules) > 0 {
+		if ps, ok := s.store.(epicPermissionStore); ok {
+			modelRules := make([]model.PermissionRule, len(req.PermissionRules))
+			for i, r := range req.PermissionRules {
+				modelRules[i] = model.PermissionRule{Permission: r.Permission, Pattern: r.Pattern, Action: r.Action}
+			}
+			if err := ps.SetFactoryEpicPermissionRules(ctx, epic.ID, modelRules); err != nil {
+				return WorkEpic{}, fmt.Errorf("storing Epic permission rules: %w", err)
+			}
+		}
+	}
+	return nativeEpic(epic), nil
 }
 
 func (s *NativeService) RemoveWorkEpicProject(ctx context.Context, epicID, path string) error {
@@ -2058,7 +2080,7 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 		if strings.HasPrefix(next.issue.OutcomeReason, "Project request rejected: ") {
 			description = strings.TrimSpace(description + "\n\n" + next.issue.OutcomeReason)
 		}
-		request := ImplementationSessionRequest{Model: attempt.FrozenPolicy.Model, EpicID: epic.ID, WorkID: next.issue.ID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: repository, Projects: attempt.FrozenPolicy.Projects, Title: next.issue.Title, Description: description, Branch: branch, BaseRef: baseRef, Profile: "factory-implement/v1", TargetBranch: attempt.FrozenPolicy.TargetBranch, Delivery: attempt.FrozenPolicy.Delivery}
+		request := ImplementationSessionRequest{Model: attempt.FrozenPolicy.Model, EpicID: epic.ID, WorkID: next.issue.ID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: repository, Projects: attempt.FrozenPolicy.Projects, Title: next.issue.Title, Description: description, Branch: branch, BaseRef: baseRef, Profile: "factory-implement/v1", TargetBranch: attempt.FrozenPolicy.TargetBranch, Delivery: attempt.FrozenPolicy.Delivery, PermissionRules: attempt.FrozenPolicy.PermissionRules}
 		session, launchErr := s.implementation.LaunchImplementationSession(ctx, request)
 		if launchErr != nil {
 			if session.ID != "" {
@@ -2410,7 +2432,7 @@ func (s *NativeService) ClaimPlan(ctx context.Context, epicID, issueID string) (
 	for i, project := range epic.Projects {
 		projects[i] = project.Path
 	}
-	request := PlanningSessionRequest{EpicID: epic.ID, WorkID: issueID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: epic.InitialProject, Projects: projects, Title: "PLAN " + issueID + " (@factory)"}
+	request := PlanningSessionRequest{EpicID: epic.ID, WorkID: issueID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: epic.InitialProject, Projects: projects, Title: "PLAN " + issueID + " (@factory)", PermissionRules: attempt.FrozenPolicy.PermissionRules}
 	if projectRequests, ok := s.store.(nativeProjectRequestStore); ok {
 		_, request.ScopeExpansion, err = projectRequests.GetFactoryProjectRequestGateForPlan(ctx, issueID)
 		if err != nil {

@@ -21,6 +21,14 @@ var (
 	ErrEpicClosureBlocked          = errors.New("factory Epic closure is blocked")
 )
 
+// PermissionRule mirrors platforms.PermissionRule. It is defined here to
+// avoid an import cycle (platforms → db → state → model).
+type PermissionRule struct {
+	Permission string `json:"permission"`
+	Pattern    string `json:"pattern"`
+	Action     string `json:"action"`
+}
+
 type NativeEpic struct {
 	ID              string
 	Status          string
@@ -32,6 +40,7 @@ type NativeEpic struct {
 	FormulaVersion  int
 	FormulaHash     string
 	Projects        []EpicProject
+	PermissionRules []PermissionRule
 }
 
 type EpicProject struct {
@@ -214,22 +223,23 @@ const (
 )
 
 type FactoryAttemptPolicy struct {
-	Model              string   `json:"model,omitempty"`
-	Branch             string   `json:"branch,omitempty"`
-	BaseRef            string   `json:"baseRef,omitempty"`
-	TargetBranch       string   `json:"targetBranch,omitempty"`
-	CheckpointSHA      string   `json:"checkpointSha,omitempty"`
-	Delivery           bool     `json:"delivery,omitempty"`
-	ForceComplete      bool     `json:"-"`
-	PlanRevision       int      `json:"planRevision"`
-	PlanHash           string   `json:"planHash"`
-	TargetID           string   `json:"targetId"`
-	Repository         string   `json:"repository"`
-	Projects           []string `json:"projects,omitempty"`
-	Profile            string   `json:"profile"`
-	DeliveryRemoteType string   `json:"deliveryRemoteType,omitempty"`
-	DeliveryRemoteHost string   `json:"deliveryRemoteHost,omitempty"`
-	DeliveryRemoteRepo string   `json:"deliveryRemoteRepo,omitempty"`
+	Model              string           `json:"model,omitempty"`
+	Branch             string           `json:"branch,omitempty"`
+	BaseRef            string           `json:"baseRef,omitempty"`
+	TargetBranch       string           `json:"targetBranch,omitempty"`
+	CheckpointSHA      string           `json:"checkpointSha,omitempty"`
+	Delivery           bool             `json:"delivery,omitempty"`
+	ForceComplete      bool             `json:"-"`
+	PlanRevision       int              `json:"planRevision"`
+	PlanHash           string           `json:"planHash"`
+	TargetID           string           `json:"targetId"`
+	Repository         string           `json:"repository"`
+	Projects           []string         `json:"projects,omitempty"`
+	Profile            string           `json:"profile"`
+	DeliveryRemoteType string           `json:"deliveryRemoteType,omitempty"`
+	DeliveryRemoteHost string           `json:"deliveryRemoteHost,omitempty"`
+	DeliveryRemoteRepo string           `json:"deliveryRemoteRepo,omitempty"`
+	PermissionRules    []PermissionRule `json:"permissionRules,omitempty"`
 }
 
 type FactoryAttemptResult struct {

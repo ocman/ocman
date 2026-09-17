@@ -212,7 +212,8 @@ import (
 //	85 - persist Factory project scope expansion gates.
 //	86 - add merge-gated dependencies and durable forge observations.
 //	87 - add permission_rules_json to routine for pre-approved permission rules.
-const latestSchemaVersion = 87
+//	88 - add permission_rules_json to factory_epic for pre-approved session permissions.
+const latestSchemaVersion = 88
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -491,6 +492,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV86(tx)
 	case 87:
 		return migrateToV87(tx)
+	case 88:
+		return migrateToV88(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -502,6 +505,14 @@ func migrateToV87(tx *sql.Tx) error {
 		return err
 	}
 	return addColumnIfMissing(tx, "routine", "permission_rules_json", "TEXT NOT NULL DEFAULT '[]'")
+}
+
+func migrateToV88(tx *sql.Tx) error {
+	var exists bool
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='factory_epic')`).Scan(&exists); err != nil || !exists {
+		return err
+	}
+	return addColumnIfMissing(tx, "factory_epic", "permission_rules_json", "TEXT NOT NULL DEFAULT '[]'")
 }
 
 func migrateToV86(tx *sql.Tx) error {

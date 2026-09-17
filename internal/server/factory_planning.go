@@ -80,6 +80,10 @@ func (l factoryPlanningLauncher) launchReadOnlySession(ctx context.Context, req 
 		platforms.PermissionRule{Permission: "webfetch", Pattern: "*", Action: "deny"},
 		mcpRule,
 	)
+	// Append Epic-level user rules last so they override the profile defaults.
+	for _, r := range req.PermissionRules {
+		rules = append(rules, platforms.PermissionRule{Permission: r.Permission, Pattern: r.Pattern, Action: r.Action})
+	}
 	created, err := l.server.sessions.CreateConfigured(ctx, platformID, platforms.CreateSessionRequest{Directory: req.Repository, Title: req.Title, Port: ensured.Port()}, rules)
 	if err != nil {
 		var cleanup *sessionsvc.ConfiguredSessionCleanupError

@@ -1376,6 +1376,14 @@ func (d *DB) ClaimFactoryImplementation(ctx context.Context, epicID, issueID, pr
 		ORDER BY created_at DESC, rowid DESC LIMIT 1`, epicID, project).Scan(&attemptPolicy.DeliveryRemoteType, &attemptPolicy.DeliveryRemoteHost, &attemptPolicy.DeliveryRemoteRepo); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return model.NativeEpic{}, model.FactoryAttempt{}, err
 	}
+	// Carry forward the Epic-level permission rules into every attempt policy.
+	var epicRulesJSON string
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(permission_rules_json, '[]') FROM factory_epic WHERE id = ?`, epicID).Scan(&epicRulesJSON); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return model.NativeEpic{}, model.FactoryAttempt{}, err
+	}
+	if epicRulesJSON != "" && epicRulesJSON != "[]" {
+		_ = json.Unmarshal([]byte(epicRulesJSON), &attemptPolicy.PermissionRules)
+	}
 	policyJSON, err := json.Marshal(attemptPolicy)
 	if err != nil {
 		return model.NativeEpic{}, model.FactoryAttempt{}, err
@@ -1454,6 +1462,14 @@ func (d *DB) ClaimFactoryPlan(ctx context.Context, epicID, issueID, profile stri
 	}
 	now := at.UnixMilli()
 	policy := model.FactoryAttemptPolicy{Repository: epic.InitialProject, Profile: profile}
+	// Carry forward the Epic-level permission rules into the planning attempt.
+	var epicRulesJSON string
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(permission_rules_json, '[]') FROM factory_epic WHERE id = ?`, epicID).Scan(&epicRulesJSON); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return model.NativeEpic{}, model.FactoryAttempt{}, fmt.Errorf("reading Epic permission rules for Plan claim: %w", err)
+	}
+	if epicRulesJSON != "" && epicRulesJSON != "[]" {
+		_ = json.Unmarshal([]byte(epicRulesJSON), &policy.PermissionRules)
+	}
 	policyJSON, err := json.Marshal(policy)
 	if err != nil {
 		return model.NativeEpic{}, model.FactoryAttempt{}, fmt.Errorf("encoding Factory Plan policy: %w", err)

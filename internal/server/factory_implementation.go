@@ -288,6 +288,10 @@ func (l factoryImplementationLauncher) LaunchImplementationSession(ctx context.C
 		rules = append(rules, factoryExternalDirectoryRules()...)
 	}
 	rules = append(rules, platforms.PermissionRule{Permission: "mcp_factory", Pattern: "factory", Action: "allow"})
+	// Append Epic-level user rules last so they override the profile defaults.
+	for _, r := range req.PermissionRules {
+		rules = append(rules, platforms.PermissionRule{Permission: r.Permission, Pattern: r.Pattern, Action: r.Action})
+	}
 	created, err := owner.CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{ProjectDir: req.Repository, Branch: req.Branch, BaseRef: req.BaseRef, MustCreateBranch: req.BaseRef != "", Title: "IMPL " + req.WorkID + " (@factory)", NewBranch: true, PermissionRules: rules})
 	if err != nil {
 		return factory.PlanningSession{}, fmt.Errorf("create Factory worktree: %w", err)
