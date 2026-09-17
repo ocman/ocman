@@ -42,18 +42,19 @@ func (h *testHost) EnsureProjectOpencode(context.Context, hostsvc.EnsureProjectO
 
 type testPlatform struct {
 	platforms.Platform
-	mu           sync.Mutex
-	id           platforms.ID
-	status       db.SessionStatus
-	sessionErr   error
-	emptySession bool
-	onSession    func()
-	onSend       func()
-	createErr    error
-	sendErr      error
-	created      int
-	sent         []platforms.SendMessageRequest
-	directory    string
+	mu              sync.Mutex
+	id              platforms.ID
+	status          db.SessionStatus
+	sessionErr      error
+	emptySession    bool
+	onSession       func()
+	onSend          func()
+	createErr       error
+	sendErr         error
+	created         int
+	sent            []platforms.SendMessageRequest
+	directory       string
+	permissionRules []platforms.PermissionRule
 }
 
 func (p *testPlatform) ID() platforms.ID {
@@ -101,10 +102,22 @@ func (p *testPlatform) setStatus(status db.SessionStatus) {
 	p.status = status
 	p.mu.Unlock()
 }
+func (p *testPlatform) SetPermissionRules(_ context.Context, req platforms.SetPermissionRulesRequest) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.permissionRules = req.Rules
+	return nil
+}
+func (p *testPlatform) DisposeSession(context.Context, platforms.DisposeSessionRequest) error { return nil }
 func (p *testPlatform) counts() (int, int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.created, len(p.sent)
+}
+func (p *testPlatform) capturedRules() []platforms.PermissionRule {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.permissionRules
 }
 
 type harness struct {
@@ -703,5 +716,63 @@ func TestRecoveryKeepsBusyLinkedRun(t *testing.T) {
 	runs, _ := h.db.ListRoutineRuns(t.Context(), routine.ID)
 	if runs[0].State != RunRunning {
 		t.Fatalf("busy run = %+v", runs[0])
+	}
+}
+
+func TestPermissionRulesPassedToNewSession(t *testing.T) {
+	h := newHarness(t)
+
+	rules := []platforms.PermissionRule{
+		{Permission: "bash", Pattern: "ls *", Action: "allow"},
+		{Permission: "bash", Pattern: "rm *", Action: "deny"},
+	}
+	input := validInput()
+	input.PermissionRules = rules
+
+	routine, err := h.svc.Create(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Mark the routine as due now.
+	h.platform.setStatus(db.StatusDone)
+	_, err = h.svc.RunNow(t.Context(), routine.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := h.platform.capturedRules()
+	if len(got) != len(rules) {
+		t.Fatalf("permission rules applied = %v, want %v", got, rules)
+	}
+	for i, r := range rules {
+		if got[i] != r {
+			t.Errorf("rule[%d] = %+v, want %+v", i, got[i], r)
+		}
+	}
+}
+
+func TestEmptyPermissionRulesPassedToNewSession(t *testing.T) {
+	h := newHarness(t)
+
+	input := validInput() // no PermissionRules set
+	routine, err := h.svc.Create(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.platform.setStatus(db.StatusDone)
+	_, err = h.svc.RunNow(t.Context(), routine.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// CreateConfigured with empty rules is still called; SetPermissionRules
+	// receives an empty slice (restores platform defaults — no blocking prompts).
+	got := h.platform.capturedRules()
+	if got == nil {
+		// SetPermissionRules was called with nil or zero-length; either is fine.
+		return
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected empty rules, got %v", got)
 	}
 }

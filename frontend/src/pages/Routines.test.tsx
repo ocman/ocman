@@ -13,7 +13,7 @@ const routine: Routine = {
   id: 'routine-1', name: 'Morning check', prompt: 'Inspect the build', directory: '/repo', remoteId: 'local',
   agent: 'plan', model: 'anthropic/claude-sonnet-4',
   sessionMode: 'new', sessionId: '',
-  scheduleKind: 'cron', scheduleConfigJSON: '{"cron":"0 9 * * *","timezone":"Europe/Brussels"}', nextDueAt: 2_000_000,
+  scheduleKind: 'cron', scheduleConfigJSON: '{"cron":"0 9 * * *","timezone":"Europe/Brussels"}', permissionRulesJSON: '[]', nextDueAt: 2_000_000,
   enabled: true, deleted: false, deleteAfterSuccess: false, createdAt: 1_000, updatedAt: 1_000,
 };
 

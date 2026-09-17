@@ -61,6 +61,7 @@ type Input struct {
 	Schedule           Schedule
 	Enabled            bool
 	DeleteAfterSuccess bool
+	PermissionRules    []platforms.PermissionRule
 }
 
 type Deps struct {
@@ -183,12 +184,21 @@ func buildRoutine(input Input, now time.Time) (state.Routine, error) {
 	if err != nil {
 		return state.Routine{}, fmt.Errorf("invalid schedule: %w", ErrValidation)
 	}
+	rules := input.PermissionRules
+	if rules == nil {
+		rules = []platforms.PermissionRule{}
+	}
+	rulesJSON, err := json.Marshal(rules)
+	if err != nil {
+		return state.Routine{}, fmt.Errorf("invalid permission rules: %w", ErrValidation)
+	}
 	return state.Routine{
 		Name: name, Prompt: input.Prompt, Directory: directory, RemoteID: remoteID,
 		Agent: strings.TrimSpace(input.Agent), Model: strings.TrimSpace(input.Model),
 		SessionMode: sessionMode, SessionID: sessionID,
 		ScheduleKind: input.Schedule.Kind, ScheduleConfigJSON: config, NextDueAt: due,
 		Enabled: input.Enabled, DeleteAfterSuccess: input.DeleteAfterSuccess,
+		PermissionRulesJSON: string(rulesJSON),
 	}, nil
 }
 
@@ -305,7 +315,11 @@ func (s *Service) claimAndDispatchPrompt(ctx context.Context, routine state.Rout
 	sessionID := run.TargetSessionID
 	created := false
 	if sessionID == "" {
-		result, err := s.sessions.Create(ctx, platformID, platforms.CreateSessionRequest{Directory: run.Directory, Port: ensured.Port()})
+		var rules []platforms.PermissionRule
+		if err := json.Unmarshal([]byte(routine.PermissionRulesJSON), &rules); err != nil || rules == nil {
+			rules = []platforms.PermissionRule{}
+		}
+		result, err := s.sessions.CreateConfigured(ctx, platformID, platforms.CreateSessionRequest{Directory: run.Directory, Port: ensured.Port()}, rules)
 		if err != nil {
 			return s.failDispatch(ctx, run, err)
 		}

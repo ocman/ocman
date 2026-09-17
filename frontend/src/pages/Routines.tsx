@@ -5,7 +5,7 @@ import { Modal } from '../components/Modal';
 import { ProjectLabel } from '../components/ProjectLabel';
 import { DataTable } from '../components/DataTable';
 import { SearchSelect } from '../components/SearchSelect';
-import { api, type Project, type Routine, type RoutineInput, type RoutineRun, type RoutineScheduleKind, type RoutineSessionMode, type Session } from '../lib/api';
+import { api, type PermissionRule, type Project, type Routine, type RoutineInput, type RoutineRun, type RoutineScheduleKind, type RoutineSessionMode, type Session } from '../lib/api';
 import { cleanTitle, formatDateTimeShort } from '../lib/format';
 import { usePageTitle } from '../lib/headerContext';
 import './Routines.css';
@@ -56,7 +56,7 @@ function formFor(routine: Routine): FormState {
   };
 }
 
-function inputFor(form: FormState, remoteId: string): RoutineInput {
+function inputFor(form: FormState, remoteId: string, permissionRules: RoutineInput['permissionRules'] = []): RoutineInput {
   return {
     name: form.name,
     prompt: form.prompt,
@@ -74,7 +74,12 @@ function inputFor(form: FormState, remoteId: string): RoutineInput {
     },
     enabled: form.enabled,
     deleteAfterSuccess: form.deleteAfterSuccess,
+    permissionRules,
   };
+}
+
+function parsePermissionRules(json: string): PermissionRule[] {
+  try { return JSON.parse(json) as PermissionRule[]; } catch { return []; }
 }
 
 function sessionKey(remoteId: string, sessionId: string) {
@@ -92,6 +97,7 @@ export function Routines() {
   const [history, setHistory] = useState<Record<string, RoutineRun[]>>({});
   const [form, setForm] = useState<FormState>(emptyForm);
   const [editing, setEditing] = useState<string>();
+  const [editingRules, setEditingRules] = useState<PermissionRule[]>([]);
   const [historyRoutine, setHistoryRoutine] = useState<Routine>();
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -170,6 +176,7 @@ export function Routines() {
   const openCreate = () => {
     setHistoryRoutine(undefined);
     setEditing(undefined);
+    setEditingRules([]);
     setForm(emptyForm());
     setShowForm(true);
     setError('');
@@ -178,6 +185,7 @@ export function Routines() {
   const openEdit = (routine: Routine) => {
     setHistoryRoutine(undefined);
     setEditing(routine.id);
+    setEditingRules(parsePermissionRules(routine.permissionRulesJSON));
     setForm(formFor(routine));
     setShowForm(true);
     setError('');
@@ -189,7 +197,7 @@ export function Routines() {
     setError('');
     try {
       const remoteId = form.remoteId || 'local';
-      const input = inputFor(form, remoteId);
+      const input = inputFor(form, remoteId, editingRules);
       if (editing) await api.routines.update(editing, input);
       else await api.routines.create(input);
       await load();

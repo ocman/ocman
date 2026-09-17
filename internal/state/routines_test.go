@@ -73,6 +73,35 @@ func TestRoutineCRUDUniquenessOrderingAndSoftDelete(t *testing.T) {
 	}
 }
 
+func TestRoutinePermissionRulesJSON(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+
+	routine := testRoutine("r-perm", "Permission test", 1)
+	routine.PermissionRulesJSON = `[{"permission":"bash","pattern":"*","action":"allow"}]`
+	if err := db.CreateRoutine(t.Context(), routine); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := db.GetRoutine(t.Context(), routine.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PermissionRulesJSON != routine.PermissionRulesJSON {
+		t.Fatalf("PermissionRulesJSON = %q, want %q", got.PermissionRulesJSON, routine.PermissionRulesJSON)
+	}
+
+	routine.PermissionRulesJSON = `[{"permission":"bash","pattern":"ls *","action":"allow"},{"permission":"bash","pattern":"rm *","action":"deny"}]`
+	routine.UpdatedAt = 2
+	if err := db.UpdateRoutine(t.Context(), routine); err != nil {
+		t.Fatal(err)
+	}
+	got, err = db.GetRoutine(t.Context(), routine.ID)
+	if err != nil || got.PermissionRulesJSON != routine.PermissionRulesJSON {
+		t.Fatalf("after update PermissionRulesJSON = %q, err = %v", got.PermissionRulesJSON, err)
+	}
+}
+
 func TestRoutineRunSnapshotsHistoryAndOrdering(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()

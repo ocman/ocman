@@ -87,6 +87,7 @@ export interface Routine {
   sessionId: string;
   scheduleKind: RoutineScheduleKind;
   scheduleConfigJSON: string;
+  permissionRulesJSON: string;
   nextDueAt: number;
   enabled: boolean;
   deleted: boolean;
@@ -135,6 +136,7 @@ export interface RoutineInput {
   schedule: { kind: RoutineScheduleKind; timeoutMs?: number; at?: number; cron?: string; timezone?: string };
   enabled: boolean;
   deleteAfterSuccess: boolean;
+  permissionRules: PermissionRule[];
 }
 
 export interface FactoryEpic {

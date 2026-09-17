@@ -35,7 +35,8 @@ func routineHTTPServer(t *testing.T) (*Server, http.Handler, *atomic.Int32) {
 		createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			return &platforms.CreateSessionResponse{ID: "session-1"}, nil
 		},
-		sendMessageFn: func(platforms.SendMessageRequest) error { sent.Add(1); return nil },
+		sendMessageFn:        func(platforms.SendMessageRequest) error { sent.Add(1); return nil },
+		setPermissionRulesFn: func(platforms.SetPermissionRulesRequest) error { return nil },
 	})
 	router := hostsvc.NewRouter(&routineTestHost{})
 	srv.registry = registry

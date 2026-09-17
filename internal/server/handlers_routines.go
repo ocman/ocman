@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"filippo.io/age"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/routines"
 	"github.com/NoUseFreak/ocman/internal/share"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -16,17 +17,18 @@ import (
 )
 
 type routineRequest struct {
-	Name               string                 `json:"name"`
-	Prompt             string                 `json:"prompt"`
-	Directory          string                 `json:"directory"`
-	RemoteID           string                 `json:"remoteId"`
-	Agent              string                 `json:"agent"`
-	Model              string                 `json:"model"`
-	SessionMode        string                 `json:"sessionMode"`
-	SessionID          string                 `json:"sessionId"`
-	Schedule           routineScheduleRequest `json:"schedule"`
-	Enabled            bool                   `json:"enabled"`
-	DeleteAfterSuccess bool                   `json:"deleteAfterSuccess"`
+	Name               string                   `json:"name"`
+	Prompt             string                   `json:"prompt"`
+	Directory          string                   `json:"directory"`
+	RemoteID           string                   `json:"remoteId"`
+	Agent              string                   `json:"agent"`
+	Model              string                   `json:"model"`
+	SessionMode        string                   `json:"sessionMode"`
+	SessionID          string                   `json:"sessionId"`
+	Schedule           routineScheduleRequest   `json:"schedule"`
+	Enabled            bool                     `json:"enabled"`
+	DeleteAfterSuccess bool                     `json:"deleteAfterSuccess"`
+	PermissionRules    []platforms.PermissionRule `json:"permissionRules"`
 }
 
 type routineScheduleRequest struct {
@@ -48,6 +50,7 @@ func (req routineRequest) input() (routines.Input, error) {
 			At: time.UnixMilli(req.Schedule.At), Cron: req.Schedule.Cron, Timezone: req.Schedule.Timezone,
 		},
 		Enabled: req.Enabled, DeleteAfterSuccess: req.DeleteAfterSuccess,
+		PermissionRules: req.PermissionRules,
 	}, nil
 }
 
