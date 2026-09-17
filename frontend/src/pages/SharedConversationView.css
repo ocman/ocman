@@ -54,23 +54,27 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding-bottom: 16px;
+  height: auto;
+  padding: 0 16px 16px;
   margin-bottom: 16px;
-  border-bottom: 1px solid var(--oc-border);
+  border-bottom: 1px solid var(--border);
 }
 
 .oc-shared-title-block {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   min-width: 0;
 }
 
 .oc-shared-title {
+  display: block;
   margin: 0;
   font-size: 20px;
   font-weight: 600;
-  color: var(--oc-text);
+  color: var(--text);
+  white-space: normal;
   overflow-wrap: anywhere;
 }
 
@@ -81,30 +85,20 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--oc-text-muted);
-  background: var(--oc-surface);
-  border: 1px solid var(--oc-border);
-  border-radius: 999px;
+  color: var(--text-muted);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
 }
 
 .oc-shared-toolbar {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
 }
 
-.oc-shared-action {
-  padding: 6px 12px;
-  font-size: 13px;
-  color: var(--oc-text);
+.oc-shared-toolbar a {
   text-decoration: none;
-  background: var(--oc-surface);
-  border: 1px solid var(--oc-border);
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.oc-shared-action:hover {
-  background: var(--oc-surface-hover);
 }
 
 .oc-shared-toggle {
@@ -112,9 +106,13 @@
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: var(--oc-text-muted);
+  color: var(--text-muted);
   cursor: pointer;
   user-select: none;
+}
+
+.oc-shared-toggle input {
+  accent-color: var(--accent);
 }
 
 .oc-shared-loading,

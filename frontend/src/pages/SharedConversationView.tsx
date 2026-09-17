@@ -4,6 +4,7 @@ import { api, sharedExportMarkdownUrl, type SharedConversation } from '../lib/ap
 import { OcmanRuntimeProvider } from '../components/OcmanRuntimeProvider';
 import { AssistantThread } from '../components/AssistantThread';
 import { ErrorBoundary } from '../components/ErrorBoundary';
+import { Button } from '../components/Control';
 import { PrintCollapseContext } from '../lib/printCollapseContext';
 import './SharedConversationView.css';
 import { mergeRelayChunks, readRelayShare, relayKeyFromFragment, relayPollMs } from '../lib/relayShare';
@@ -132,7 +133,7 @@ export function SharedConversationView({ relay = false }: { relay?: boolean }) {
             Collapse tool outputs
           </label>
           {!relay && <a
-            className="oc-shared-action"
+            className="oc-button oc-button--default oc-button--normal"
             href={token ? sharedExportMarkdownUrl(token) : '#'}
             download
             data-testid="shared-download-md"
@@ -141,21 +142,20 @@ export function SharedConversationView({ relay = false }: { relay?: boolean }) {
           </a>}
           {relay && (
             <a
-              className="oc-shared-action"
+              className="oc-button oc-button--default oc-button--normal"
               href={`http://127.0.0.1:8228/import-share?url=${encodeURIComponent(window.location.href)}`}
               data-testid="shared-fork-local"
             >
               Fork in local ocman
             </a>
           )}
-          <button
+          <Button
             type="button"
-            className="oc-shared-action"
             onClick={() => window.print()}
             data-testid="shared-print-pdf"
           >
             Print / Save as PDF
-          </button>
+          </Button>
         </div>
       </header>
 
