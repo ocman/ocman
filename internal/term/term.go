@@ -71,7 +71,9 @@ func AttachLocalPTY(ctx context.Context, req hostsvc.TermAttachRequest, conn hos
 	// ensureOcmanSession) plus per-window resize-window calls below so
 	// each viewer sizes its own window independently.
 	target := SessionName + ":" + windowName
-	args := []string{"attach-session", "-t", target}
+	// The attached client is xterm.js, regardless of the server's TERM.
+	// Advertise OSC 52 so tmux sends copy-mode text to the browser.
+	args := []string{"-T", "clipboard", "attach-session", "-t", target}
 	if req.Readonly {
 		args = append(args, "-r")
 	}

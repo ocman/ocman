@@ -501,6 +501,64 @@ func TestAttachLocalPTY_Integration(t *testing.T) {
 
 // ── local Host terminal deps ─────────────────────────────────────────
 
+func TestAttachLocalPTY_Clipboard(t *testing.T) {
+	bin, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skip("tmux not available")
+	}
+	// Isolate clipboard options and buffers from the user's running tmux.
+	socket := fmt.Sprintf("ocman-clipboard-%d-%d", os.Getpid(), time.Now().UnixNano())
+	dir := t.TempDir()
+	script := fmt.Sprintf("#!/bin/sh\nexec %q -L %q -f /dev/null \"$@\"\n", bin, socket)
+	if err := os.WriteFile(filepath.Join(dir, "tmux"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("TERM", "screen") // Has no clipboard feature by default.
+	t.Cleanup(func() { _ = exec.Command(bin, "-L", socket, "kill-server").Run() })
+	win, err := CreateWindow(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn := newFakeTermConn(hostsvc.TermFrame{Resize: &hostsvc.TermSize{Cols: 80, Rows: 24}})
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- AttachLocalPTY(ctx, hostsvc.TermAttachRequest{Dir: dir, Window: win}, conn) }()
+	var client string
+	for ctx.Err() == nil {
+		out, _ := exec.Command(bin, "-L", socket, "list-clients", "-F", "#{client_name}").Output()
+		client = strings.TrimSpace(string(out))
+		if client != "" && len(conn.output()) > 0 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if client == "" {
+		t.Fatal("browser terminal client did not attach")
+	}
+	// set-buffer -w uses the same client clipboard output as copy-mode.
+	if out, err := exec.Command(bin, "-L", socket, "set-buffer", "-w", "-t", client, "héllo").CombinedOutput(); err != nil {
+		t.Fatalf("copy: %v: %s", err, out)
+	}
+	for ctx.Err() == nil && !strings.Contains(string(conn.output()), "\x1b]52;;aMOpbGxv") {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !strings.Contains(string(conn.output()), "\x1b]52;;aMOpbGxv") {
+		t.Fatal("tmux copy did not reach the browser connection as OSC 52")
+	}
+	_ = conn.Close()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("terminal did not detach")
+	}
+}
+
 // KillWindow must refuse a window that doesn't belong to dir
 // (wrong hash namespace) before any tmux call, so a remote can't be
 // asked to kill an arbitrary window. Runs without a tmux binary.

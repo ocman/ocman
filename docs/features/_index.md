@@ -69,6 +69,11 @@ comes from a template you control in **Settings**.
 ## Also included
 
 - **Terminals.** In-app browser terminals backed by tmux.
+  Copying in tmux copy mode writes to the browser user's clipboard, including
+  for remote terminals. If the browser blocks automatic copying, click
+  **Copy to clipboard** in the terminal. This requires tmux's `set-clipboard`
+  option to be `on` or `external`, not `off`. Existing custom bindings that
+  pipe to host tools such as `pbcopy` still run those tools.
 - **Voice input.** Local transcription through whisper-cpp, no cloud round-trip.
 - **Auth.** Optional password gate with rate-limited logins and signed cookies. Off by default on localhost.
 - **PWA and desktop.** Installable as a Progressive Web App, or run the native macOS build.

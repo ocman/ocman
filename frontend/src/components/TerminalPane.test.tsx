@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { TerminalPane } from './TerminalPane';
 
@@ -13,21 +13,26 @@ const mocks = vi.hoisted(() => ({
 		write: ReturnType<typeof vi.fn>;
 		onData: ReturnType<typeof vi.fn>;
 		attachCustomKeyEventHandler: ReturnType<typeof vi.fn>;
+		parser: { registerOscHandler: ReturnType<typeof vi.fn> };
 		dispose: ReturnType<typeof vi.fn>;
 	}>,
 	fits: [] as Array<{ fit: ReturnType<typeof vi.fn> }>,
+	copy: vi.fn(),
 }));
+
+vi.mock('../lib/clipboard', () => ({ copyToClipboard: mocks.copy }));
 
 vi.mock('@xterm/xterm', () => ({
 	Terminal: class {
 		cols = 80;
 		rows = 24;
 		loadAddon = vi.fn();
-		open = vi.fn();
+		open = vi.fn((el: HTMLElement) => { el.tabIndex = -1; el.focus(); });
 		focus = vi.fn();
 		write = vi.fn();
 		onData = vi.fn(() => ({ dispose: vi.fn() }));
 		attachCustomKeyEventHandler = vi.fn();
+		parser = { registerOscHandler: vi.fn(() => ({ dispose: vi.fn() })) };
 		dispose = vi.fn();
 		constructor() { mocks.terminals.push(this); }
 	},
@@ -64,6 +69,7 @@ beforeEach(() => {
 	FakeWebSocket.instances.length = 0;
 	resize = undefined;
 	disconnect.mockReset();
+	mocks.copy.mockReset().mockResolvedValue(true);
 	vi.stubGlobal('WebSocket', FakeWebSocket);
 	vi.stubGlobal('ResizeObserver', class {
 		constructor(callback: () => void) { resize = callback; }
@@ -73,6 +79,91 @@ beforeEach(() => {
 });
 
 afterEach(() => vi.unstubAllGlobals());
+
+it('copies tmux OSC 52 text to the browser clipboard without sending clipboard reads to the host', async () => {
+	const view = render(<TerminalPane dir="/repo" remoteId="remote-1" />);
+	const term = mocks.terminals[0];
+	expect(term.parser.registerOscHandler).toHaveBeenCalledWith(52, expect.any(Function));
+	const handler = term.parser.registerOscHandler.mock.calls[0][1] as (data: string) => boolean;
+	await act(async () => { expect(handler(';aMOpbGxv')).toBe(true); });
+	expect(mocks.copy).toHaveBeenCalledWith('héllo');
+	mocks.copy.mockClear();
+	for (const data of ['c;?', 'c;%%%bad', 'c;/w==', 'invalid', 'c;', 'p;?']) {
+		await act(async () => { expect(handler(data)).toBe(true); });
+	}
+	expect(mocks.copy).not.toHaveBeenCalled();
+	expect(FakeWebSocket.instances[0].send).not.toHaveBeenCalled();
+	view.unmount();
+	expect(term.parser.registerOscHandler.mock.results[0].value.dispose).toHaveBeenCalled();
+});
+
+it('offers a user-initiated copy when the browser blocks automatic copying', async () => {
+	mocks.copy.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
+	render(<TerminalPane dir="/repo" />);
+	const term = mocks.terminals[0];
+	expect(term.parser.registerOscHandler).toHaveBeenCalledWith(52, expect.any(Function));
+	const handler = term.parser.registerOscHandler.mock.calls[0][1] as (data: string) => boolean;
+	await act(async () => { handler('c;aGVsbG8='); });
+	fireEvent.click(screen.getByRole('button', { name: 'Copy to clipboard' }));
+	await waitFor(() => expect(mocks.copy).toHaveBeenCalledTimes(2));
+	expect(screen.getByRole('button', { name: 'Copy to clipboard' })).toBeInTheDocument();
+	fireEvent.click(screen.getByRole('button', { name: 'Copy to clipboard' }));
+	await waitFor(() => expect(screen.queryByRole('button', { name: 'Copy to clipboard' })).not.toBeInTheDocument());
+	expect(mocks.copy).toHaveBeenNthCalledWith(2, 'hello');
+});
+
+it('requires a click for an unfocused terminal and ignores copies in readonly terminals', async () => {
+	const view = render(<TerminalPane dir="/repo" />);
+	const term = mocks.terminals[0];
+	const handler = term.parser.registerOscHandler.mock.calls[0][1] as (data: string) => boolean;
+	(document.activeElement as HTMLElement).blur();
+	await act(async () => { handler('c;aGVsbG8='); });
+	expect(mocks.copy).not.toHaveBeenCalled();
+	expect(screen.getByRole('button', { name: 'Copy to clipboard' })).toBeInTheDocument();
+	view.unmount();
+	render(<TerminalPane dir="/repo" readonly />);
+	const readonlyHandler = mocks.terminals[1].parser.registerOscHandler.mock.calls[0][1];
+	await act(async () => { readonlyHandler('c;aGVsbG8='); });
+	expect(mocks.copy).not.toHaveBeenCalled();
+	expect(screen.queryByRole('button', { name: 'Copy to clipboard' })).not.toBeInTheDocument();
+});
+
+it('keeps a newer copy available when an earlier clipboard write finishes', async () => {
+	let finish!: (ok: boolean) => void;
+	mocks.copy.mockImplementationOnce(() => new Promise<boolean>((resolve) => { finish = resolve; }));
+	mocks.copy.mockResolvedValueOnce(false);
+	const view = render(<TerminalPane dir="/repo" />);
+	const handler = mocks.terminals[0].parser.registerOscHandler.mock.calls[0][1];
+	await act(async () => { handler('c;b2xk'); handler('c;bmV3'); });
+	await act(async () => { finish(true); });
+	fireEvent.click(screen.getByRole('button', { name: 'Copy to clipboard' }));
+	await waitFor(() => expect(mocks.copy).toHaveBeenLastCalledWith('new'));
+	view.unmount();
+});
+
+it('ignores completion of a clipboard write after unmount', async () => {
+	let finish!: (ok: boolean) => void;
+	mocks.copy.mockImplementationOnce(() => new Promise<boolean>((resolve) => { finish = resolve; }));
+	const view = render(<TerminalPane dir="/repo" />);
+	const handler = mocks.terminals[0].parser.registerOscHandler.mock.calls[0][1];
+	await act(async () => { handler('c;aGVsbG8='); });
+	view.unmount();
+	await act(async () => { finish(true); });
+	expect(screen.queryByRole('button', { name: 'Copy to clipboard' })).not.toBeInTheDocument();
+});
+
+it('restores terminal focus after the legacy clipboard fallback removes its textarea', async () => {
+	const focused = vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+	mocks.copy.mockImplementationOnce(async () => {
+		(document.activeElement as HTMLElement).blur();
+		return true;
+	});
+	render(<TerminalPane dir="/repo" />);
+	const term = mocks.terminals[0];
+	await act(async () => { term.parser.registerOscHandler.mock.calls[0][1]('c;aGVsbG8='); });
+	expect(term.focus).toHaveBeenCalled();
+	focused.mockRestore();
+});
 
 it('connects an interactive remote terminal and forwards terminal traffic', async () => {
 	const view = render(<TerminalPane dir="/repo path" window="shell" remoteId="remote-1" />);

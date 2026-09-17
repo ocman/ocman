@@ -43,3 +43,10 @@
   font-size: 12px;
   pointer-events: none;
 }
+
+.oc-term-copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+}

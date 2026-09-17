@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { copyToClipboard } from '../lib/clipboard';
 import { TerminalSkeleton } from './Skeleton';
 import '@xterm/xterm/css/xterm.css';
 import './TerminalPane.css';
@@ -36,6 +37,7 @@ interface TerminalPaneProps {
 export function TerminalPane({ dir, window: win, readonly = false, remoteId }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<ConnState>('connecting');
+  const [pendingCopy, setPendingCopy] = useState<string | null>(null);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -54,6 +56,34 @@ export function TerminalPane({ dir, window: win, readonly = false, remoteId }: T
     term.loadAddon(fit);
     term.open(el);
     fit.fit();
+
+    let disposed = false;
+    // Tmux copy-mode sends OSC 52 to its client, which is this browser.
+    // Never answer clipboard read requests with the user's local contents.
+    const clipboardSub = term.parser.registerOscHandler(52, (data) => {
+      const separator = data.indexOf(';');
+      const encoded = data.slice(separator + 1);
+      if (readonly || separator < 0 || !encoded || encoded === '?') return true;
+      let text: string;
+      try {
+        text = new TextDecoder('utf-8', { fatal: true }).decode(
+          Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0)),
+        );
+      } catch {
+        return true;
+      }
+      setPendingCopy(text);
+      if (document.hasFocus() && el.contains(document.activeElement)) {
+        // Do not block terminal parsing while a browser permission prompt is open.
+        void copyToClipboard(text).then((ok) => {
+          if (disposed) return;
+          if (ok) setPendingCopy((current) => current === text ? null : current);
+          // The legacy textarea fallback can leave focus on the body.
+          if (document.hasFocus() && document.activeElement === document.body) term.focus();
+        });
+      }
+      return true;
+    });
 
     // The dev server (vite :8228) and prod binary (:8229) both serve
     // /api on the same origin, so derive ws(s):// from window.location.
@@ -138,6 +168,8 @@ export function TerminalPane({ dir, window: win, readonly = false, remoteId }: T
     ro.observe(el);
 
     return () => {
+      disposed = true;
+      clipboardSub.dispose();
       ro.disconnect();
       dataSub?.dispose();
       ws.close();
@@ -148,6 +180,19 @@ export function TerminalPane({ dir, window: win, readonly = false, remoteId }: T
   return (
     <div className="oc-term" data-testid="terminal-pane">
       <div className="oc-term-screen" ref={containerRef} />
+      {pendingCopy !== null && (
+        <button
+          type="button"
+          className="oc-term-copy"
+          onClick={async () => {
+            if (await copyToClipboard(pendingCopy)) {
+              setPendingCopy((current) => current === pendingCopy ? null : current);
+            }
+          }}
+        >
+          Copy to clipboard
+        </button>
+      )}
       {/* While connecting, overlay a loading skeleton so clicking a tab
           gives instant feedback before the PTY attaches. The xterm
           screen mounts underneath and the skeleton is removed once the
