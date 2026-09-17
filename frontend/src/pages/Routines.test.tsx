@@ -111,13 +111,18 @@ describe('Routines', () => {
     expect(await screen.findByText('expired')).toBeInTheDocument();
   });
 
-  it('shows webhook ownership, ingestion URL, and delivery state without credentials', async () => {
-    vi.mocked(api.routines.webhook).mockResolvedValue({ id: 'inbox-1', routineId: routine.id, relayUrl: 'https://relay', ingestionUrl: 'https://relay/i/inbox/token', keyVersion: 2, createdAt: 1_000, counts: { terminal: 1, failure: 2 }, subscriptions: [] });
+  it.each(['/i/inbox/token', 'https://relay/i/inbox/token'])('shows and copies a full read-only webhook URL for %s', async (ingestionUrl) => {
+    const user = userEvent.setup();
+    const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
+    vi.mocked(api.routines.webhook).mockResolvedValue({ id: 'inbox-1', routineId: routine.id, relayUrl: 'https://relay', ingestionUrl, keyVersion: 2, createdAt: 1_000, counts: { terminal: 1, failure: 2 }, subscriptions: [] });
     vi.mocked(api.routines.list).mockResolvedValue([{ ...routine, remoteId: 'box' }]);
     render(<MemoryRouter><Routines /></MemoryRouter>);
 
     expect(await screen.findByText('box owner')).toBeInTheDocument();
     expect(screen.getByLabelText('Morning check ingestion URL')).toHaveValue('https://relay/i/inbox/token');
+    expect(screen.getByLabelText('Morning check ingestion URL')).toHaveAttribute('readonly');
+    await user.click(screen.getByRole('button', { name: 'Copy URL' }));
+    expect(copy).toHaveBeenCalledWith('https://relay/i/inbox/token');
     expect(screen.getByText('Key v2 · terminal: 1 · failure: 2')).toBeInTheDocument();
     expect(screen.queryByText(/management|acknowledgment|identity/i)).not.toBeInTheDocument();
   });

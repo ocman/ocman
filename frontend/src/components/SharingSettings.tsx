@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api, type GlobalShareLink, type RelaySource } from '../lib/api';
-import { relativeTime } from '../lib/format';
+import { api, type GlobalShareLink, type RelaySource, type Session } from '../lib/api';
+import { cleanTitle, formatDateTimeShort } from '../lib/format';
 import { SettingRow, SettingToggle } from './SettingRow';
 import { useSettingSave } from '../lib/useSaveStatus';
-import { ShareLinkList } from './ShareLinkList';
+import { DataTable } from './DataTable';
 import { useShareLinks } from '../lib/useShareLinks';
 
 /**
@@ -26,11 +26,13 @@ export function SharingSettings() {
   const [enabled, setEnabled] = useState(true);
   const [relayUrl, setRelayUrl] = useState('');
   const [relaySource, setRelaySource] = useState<RelaySource>('');
+  const [sessions, setSessions] = useState<Session[]>([]);
   const sharingSave = useSettingSave();
   const state = useShareLinks(api.listAllShares, (link: GlobalShareLink) => link.sessionId);
   const { setError } = state;
 
   useEffect(() => {
+    void api.sessions().then(setSessions, () => setSessions([]));
     api.getSharingEnabled().then(
       (sharing) => {
         setEnabled(sharing.enabled);
@@ -92,21 +94,22 @@ export function SharingSettings() {
         desc={<>Every active public share link. Open the session to inspect it, or
           revoke a link to make it stop working immediately.</>}
       >
-        <ShareLinkList
-          state={state}
-          emptyText="No shared sessions."
-          urlLabel="Share URL"
-          renderLeading={(link) => (
-            <Link to={`/session/${encodeURIComponent(link.sessionId)}`} className="vscode-btn">
-              Inspect
-            </Link>
-          )}
-          renderFooter={(link) => (
-            <div className="settings-row-desc" style={{ marginTop: 4 }}>
-              Shared {relativeTime(link.createdAt)}
-            </div>
-          )}
-        />
+        {state.error && <div className="oc-share-menu-error" role="alert">{state.error}</div>}
+        {state.loaded && state.links.length === 0 && <div className="oc-share-menu-empty">No shared sessions.</div>}
+        {state.links.length > 0 && <DataTable aria-label="Shared sessions">
+          <thead><tr><th scope="col">Session title</th><th scope="col">Shared at</th><th scope="col">Actions</th></tr></thead>
+          <tbody>{state.links.map((link) => {
+            const session = sessions.find((item) => item.id === link.sessionId && item.platform === link.platform);
+            return <tr key={link.token}>
+              <td><Link to={`/session/${encodeURIComponent(link.sessionId)}?platform=${encodeURIComponent(link.platform)}`}>{cleanTitle(session?.title ?? '') || link.sessionId}</Link></td>
+              <td><time dateTime={new Date(link.createdAt).toISOString()}>{formatDateTimeShort(link.createdAt)}</time></td>
+              <td><div className="oc-share-menu-link-actions">
+                <button type="button" onClick={() => void state.copy(link)} data-testid="share-copy-link">{state.copied === link.token ? 'Copied!' : 'Copy URL'}</button>
+                <button type="button" className="oc-share-menu-revoke" onClick={() => void state.revoke(link)} disabled={state.busy} data-testid="share-revoke-link">Revoke</button>
+              </div></td>
+            </tr>;
+          })}</tbody>
+        </DataTable>}
       </SettingRow>
     </div>
   );

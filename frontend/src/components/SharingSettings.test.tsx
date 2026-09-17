@@ -1,14 +1,19 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { SharingSettings } from './SharingSettings';
+import { copyToClipboard } from '../lib/clipboard';
+import { formatDateTimeShort } from '../lib/format';
+
+vi.mock('../lib/clipboard', () => ({ copyToClipboard: vi.fn() }));
 
 vi.mock('../lib/api', () => ({
   api: {
     getSharingEnabled: vi.fn(),
     setSharingEnabled: vi.fn(),
     listAllShares: vi.fn(),
+    sessions: vi.fn(),
     revokeShareLink: vi.fn(),
   },
 }));
@@ -27,6 +32,7 @@ function seed(
 ) {
   m.getSharingEnabled.mockResolvedValue({ enabled, ...relay });
   m.listAllShares.mockResolvedValue(links);
+  m.sessions.mockResolvedValue([{ id: 'ses_a', platform: 'fake', title: 'Fix webhook setup' }]);
 }
 
 function renderUI() {
@@ -127,12 +133,44 @@ describe('SharingSettings', () => {
     seed(true, [link]);
     m.revokeShareLink.mockResolvedValue(undefined);
     renderUI();
-    expect(await screen.findByDisplayValue(link.url)).toBeInTheDocument();
+    const table = await screen.findByRole('table', { name: 'Shared sessions' });
+    expect(within(table).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual(['Session title', 'Shared at', 'Actions']);
+    expect(await within(table).findByRole('link', { name: 'Fix webhook setup' })).toHaveAttribute('href', '/session/ses_a?platform=fake');
+    expect(within(table).getByText(formatDateTimeShort(link.createdAt))).toHaveAttribute('datetime', new Date(link.createdAt).toISOString());
 
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
     });
     expect(m.revokeShareLink).toHaveBeenCalledWith('ses_a', 'tok1');
-    await waitFor(() => expect(screen.queryByDisplayValue(link.url)).not.toBeInTheDocument());
+    expect(await screen.findByText('No shared sessions.')).toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  });
+
+  it('copies the share URL from the table', async () => {
+    vi.mocked(copyToClipboard).mockResolvedValue(true);
+    seed(true, [link]);
+    renderUI();
+    fireEvent.click(await screen.findByRole('button', { name: 'Copy URL' }));
+    expect(await screen.findByRole('button', { name: 'Copied!' })).toBeInTheDocument();
+    expect(copyToClipboard).toHaveBeenCalledWith(link.url);
+  });
+
+  it('keeps links manageable when session titles are unavailable', async () => {
+    seed(true, [link]);
+    m.sessions.mockRejectedValue(new Error('offline'));
+    renderUI();
+    expect(await screen.findByRole('link', { name: 'ses_a' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Revoke' })).toBeEnabled();
+  });
+
+  it('matches titles using both platform and session ID', async () => {
+    seed(true, [link]);
+    m.sessions.mockResolvedValue([
+      { id: 'ses_a', platform: 'other', title: 'Wrong session' },
+      { id: 'ses_a', platform: 'fake', title: 'Correct session' },
+    ]);
+    renderUI();
+    expect(await screen.findByRole('link', { name: 'Correct session' })).toBeInTheDocument();
+    expect(screen.queryByText('Wrong session')).not.toBeInTheDocument();
   });
 });
