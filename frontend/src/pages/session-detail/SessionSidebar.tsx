@@ -30,6 +30,7 @@ import { GettingStartedEmpty } from '../../components/GettingStartedEmpty';
 import { rollupGroupStatus } from '../../lib/sidebarHelpers';
 import { nestSessions } from '../../lib/nestSessions';
 import { useDraftSessionIds } from '../../lib/composerDraft';
+import { useWorkEpics } from '../../lib/queries';
 import { ArchiveIcon } from './SidebarIcons';
 import { SidebarSessionRow } from './SidebarSessionRow';
 import { SidebarHeader } from './SidebarHeader';
@@ -121,8 +122,15 @@ export function SessionSidebar({
 }: SessionSidebarProps) {
   const sidebarListRef = useRef<HTMLDivElement>(null);
   const [showChildren, setShowChildren] = useState(true);
+  const [showFactory, setShowFactory] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const draftSessionIds = useDraftSessionIds();
+  const { data: workEpics } = useWorkEpics();
+  const factorySessions = useMemo(() => new Set(
+    (workEpics ?? []).flatMap((epic) =>
+      (epic.attempts ?? []).map(({ session }) => `${session.platform}\0${session.id}`),
+    ),
+  ), [workEpics]);
 
   // Keep the active session's sidebar row visible. The list doesn't reorder
   // to follow the cursor, so when the user switches sessions (or flips
@@ -177,27 +185,29 @@ export function SessionSidebar({
   // the remaining project groups are drag-sortable.
   const filteredProjectGroups = useMemo(() => {
     const query = searchQuery.trim();
-    if (showChildren && !query) return sidebarProjectGroups;
+    if (showChildren && showFactory && !query) return sidebarProjectGroups;
     return sidebarProjectGroups.flatMap((group) => {
       const projectMatches = !!query && fuzzyMatch(query, group.directory);
       const sessions = group.sessions.filter((session) =>
+        (showFactory || !factorySessions.has(`${session.platform}\0${session.id}`)) &&
         (showChildren || !session.parentId) &&
         (!query || projectMatches || matchesSessionSearch(query, session, siblingGitInfos[session.directory])),
       );
       return query && !projectMatches && sessions.length === 0 ? [] : [{ ...group, sessions }];
     });
-  }, [sidebarProjectGroups, searchQuery, showChildren, siblingGitInfos]);
+  }, [sidebarProjectGroups, searchQuery, showChildren, showFactory, siblingGitInfos, factorySessions]);
 
   const filteredPinnedSessions = useMemo(() => {
     const query = searchQuery.trim();
     return recentSessions
       .filter((session) => session.pinned)
       .filter((session) =>
+        (showFactory || !factorySessions.has(`${session.platform}\0${session.id}`)) &&
         (showChildren || !session.parentId) &&
         (!query || matchesSessionSearch(query, session, siblingGitInfos[session.directory])),
       )
       .sort((a, b) => b.pinnedAt - a.pinnedAt);
-  }, [recentSessions, searchQuery, showChildren, siblingGitInfos]);
+  }, [recentSessions, searchQuery, showChildren, showFactory, siblingGitInfos, factorySessions]);
   const sortableGroups = useMemo(
     () => filteredProjectGroups.filter((g) => !g.isPinned),
     [filteredProjectGroups],
@@ -400,6 +410,7 @@ export function SessionSidebar({
   const renderFlatView = () => {
     const query = searchQuery.trim();
     const visible = recentSessions.filter((session) =>
+      (showFactory || !factorySessions.has(`${session.platform}\0${session.id}`)) &&
       (showChildren || !session.parentId) &&
       (!query || matchesSessionSearch(query, session, siblingGitInfos[session.directory])),
     );
@@ -429,6 +440,8 @@ export function SessionSidebar({
         setShowArchivedRecent={setShowArchivedRecent}
         showChildren={showChildren}
         setShowChildren={setShowChildren}
+        showFactory={showFactory}
+        setShowFactory={setShowFactory}
         sidebarView={sidebarView}
         setSidebarView={setSidebarView}
         onNewSession={onNewSession}

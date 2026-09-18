@@ -1,14 +1,18 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { SessionSidebar, type SidebarProjectGroup } from './SessionSidebar';
 import type { GitInfo, Session } from '../../lib/api';
+import { useWorkEpics } from '../../lib/queries';
 
 vi.mock('../../components/BackendStats', () => ({
   BackendStats: () => null,
 }));
 vi.mock('../../components/SidebarResizer', () => ({
   SidebarResizer: () => null,
+}));
+vi.mock('../../lib/queries', () => ({
+  useWorkEpics: vi.fn(),
 }));
 const multiHost = vi.fn(() => false);
 vi.mock('../../lib/useCapabilities', async (importOriginal) => ({
@@ -84,6 +88,10 @@ function renderSidebar(
 }
 
 describe('SessionSidebar', () => {
+  beforeEach(() => {
+    vi.mocked(useWorkEpics).mockReturnValue({ data: [] } as never);
+  });
+
   it('uses compact relative times', () => {
     const now = Date.now();
     const group: SidebarProjectGroup = {
@@ -367,6 +375,28 @@ describe('SessionSidebar', () => {
 
     expect(screen.queryByText('Child task')).not.toBeInTheDocument();
     expect(screen.getByText('Fix thing')).toBeInTheDocument();
+  });
+
+  it.each(['projects', 'recent'] as const)('hides Factory sessions until enabled in the %s view', (sidebarView) => {
+    vi.mocked(useWorkEpics).mockReturnValue({
+      data: [{ attempts: [{ session: { platform: 'opencode', id: 'factory' } }] }],
+    } as never);
+    const group: SidebarProjectGroup = {
+      directory: '/repo',
+      sessions: [session(), session({ id: 'factory', title: 'Factory task' })],
+      lastUpdated: 1,
+      aggregate: { kind: 'none' },
+    };
+
+    renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), sidebarView);
+
+    expect(screen.queryByText('Factory task')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
+    const showFactory = screen.getByRole('checkbox', { name: 'Show factory' });
+    expect(showFactory).not.toBeChecked();
+
+    fireEvent.click(showFactory);
+    expect(screen.getByText('Factory task')).toBeInTheDocument();
   });
 
   it('filters from the persistent fuzzy title search', () => {
