@@ -27,6 +27,7 @@ import { getContextWindow, formatTokenCount } from '../../lib/models/contextWind
 import { formatCurrency, formatDate, formatDuration, formatTokensPerSecond } from '../../lib/format';
 import { KNOWN_AGENTS, modelHasVariants } from '../../lib/commands/builtinCommands';
 import { ModelLabel } from '../ModelLogo';
+import { ModalReturnFocusContext } from '../ModalReturnFocusContext';
 
 export type { AttachedImage } from './useComposerAttachments';
 
@@ -894,7 +895,7 @@ function ComposerImpl({
   ];
 
   return (
-    <>
+    <ModalReturnFocusContext value={inputRef}>
     <div
       className={`oc-composer-wrap${uiDisabled ? ' oc-composer-disabled' : ''}`}
       ref={wrapRef}
@@ -1113,7 +1114,7 @@ function ComposerImpl({
         visibleDurationMs={visibleDurationMs}
       />
     </div>
-    </>
+    </ModalReturnFocusContext>
   );
 }
 

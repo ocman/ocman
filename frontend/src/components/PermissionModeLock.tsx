@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, type PermissionRule } from '../lib/api';
 import { classifyPermissionMode, PERMISSION_MODES, type PermissionMode } from '../lib/permissionModes';
 import { CommandListPicker } from './assistant/CommandListPicker';
+import { Modal } from './Modal';
 
 const MENU_PERMISSION_MODES = PERMISSION_MODES;
 
@@ -107,21 +108,24 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
       />
       {error && <div className="oc-permission-lock-error">{error}</div>}
       {confirmMode && (
-        <div className="oc-cmd-backdrop" onClick={() => setConfirmMode(null)}>
-          <div className="oc-cmd-palette oc-permission-confirm" role="dialog" aria-label="Confirm permission mode" onClick={(e) => e.stopPropagation()}>
-            <div className="oc-permission-confirm-body">
-              <span className="oc-permission-mode-icon oc-permission-mode-yolo" aria-hidden="true"><i className="bi bi-exclamation-triangle" /></span>
-              <div>
-                <div className="oc-cmd-title">Switch to {confirmMode.label}?</div>
-                <div className="oc-cmd-meta">The agent will run edits and commands without asking.</div>
-              </div>
-            </div>
-            <div className="oc-permission-confirm-actions">
-              <button type="button" className="oc-permission-confirm-cancel" onClick={() => setConfirmMode(null)}>Cancel</button>
-              <button type="button" className="oc-permission-confirm-ok" onClick={() => { void apply(confirmMode.id); }}>Confirm</button>
+        <Modal
+          label="Confirm permission mode"
+          backdropClassName="oc-cmd-backdrop"
+          dialogClassName="oc-cmd-palette oc-permission-confirm"
+          onClose={() => setConfirmMode(null)}
+        >
+          <div className="oc-permission-confirm-body">
+            <span className="oc-permission-mode-icon oc-permission-mode-yolo" aria-hidden="true"><i className="bi bi-exclamation-triangle" /></span>
+            <div>
+              <div className="oc-cmd-title">Switch to {confirmMode.label}?</div>
+              <div className="oc-cmd-meta">The agent will run edits and commands without asking.</div>
             </div>
           </div>
-        </div>
+          <div className="oc-permission-confirm-actions">
+            <button type="button" className="oc-permission-confirm-cancel" onClick={() => setConfirmMode(null)}>Cancel</button>
+            <button type="button" className="oc-permission-confirm-ok" onClick={() => { void apply(confirmMode.id); }}>Confirm</button>
+          </div>
+        </Modal>
       )}
     </>
   );

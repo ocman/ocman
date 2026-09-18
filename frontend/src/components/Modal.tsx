@@ -1,5 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useContext, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
+import { ModalReturnFocusContext } from './ModalReturnFocusContext';
 
 const FOCUSABLE = [
   'a[href]',
@@ -31,6 +32,7 @@ export function Modal({
 }) {
   const backdropRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const returnFocusRef = useContext(ModalReturnFocusContext);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -46,12 +48,12 @@ export function Modal({
   //  - mark everything behind the dialog `inert`, which is the platform's
   //    own way of removing background content from the tab order, the
   //    a11y tree and pointer events — no hand-rolled trap needed for it,
-  //  - hand focus back to whatever opened the dialog on close.
+  //  - hand focus back to the owner's target or the opener on close.
   useEffect(() => {
     const backdrop = backdropRef.current;
     const dialog = dialogRef.current;
     if (!backdrop || !dialog) return;
-    const opener = document.activeElement as HTMLElement | null;
+    const returnTarget = returnFocusRef?.current ?? document.activeElement as HTMLElement | null;
 
     const inerted: HTMLElement[] = [];
     for (let node: HTMLElement | null = backdrop; node && node !== document.body; node = node.parentElement) {
@@ -71,9 +73,9 @@ export function Modal({
     return () => {
       // Un-inert before restoring focus: an inert element can't take focus.
       for (const node of inerted) node.removeAttribute('inert');
-      if (opener?.isConnected) opener.focus();
+      if (returnTarget?.isConnected) returnTarget.focus({ preventScroll: true });
     };
-  }, []);
+  }, [returnFocusRef]);
 
   // `inert` keeps Tab out of the background, but the browser would still
   // step from the last control into its own UI and back into the page.
