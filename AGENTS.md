@@ -292,6 +292,16 @@ handlers don't bypass the `Host` seam). User-facing docs:
   (build context is the repo root), `docker-compose.otel.yml` (the
   `make otel-*` LGTM stack; volume paths point at `../observability/`).
 
+## Development database isolation
+
+Every development run that can write to a database or apply migrations must use a disposable database isolated to the project AND worktree or feature branch. This includes application startup, dev servers, migration commands, scripts, and integration tests. Startup may apply migrations automatically; inspect the resolved database target before launching it.
+
+- Never point in-development code at the user's live database, a shared development database, or another checkout's database. A different HTTP port does not isolate a database.
+- Prefer the project's existing database-path or connection-string override. For file databases, use an ignored checkout-local directory with a separate path per feature branch, such as `.dev/<branch-key>/state.db`. For database servers, use a separate database or schema keyed by project, checkout, and branch. Avoid colliding sanitized branch names. Tests should use temporary databases.
+- Start empty and apply migrations plus test fixtures. If realistic data is necessary, use a database-consistent backup or export into the isolated target. Never blindly copy a running database file, and never copy experimental state back into the live database.
+- Verify the effective path or connection target, including subprocesses and background services. If no isolation override exists, add the smallest explicit override before running development code; do not fall back to the shared default.
+- Keep local databases and credentials out of version control. Only apply migrations to a live or shared database when the user explicitly requests that deployment or migration against that specific target.
+
 ## Dev commands
 
 ```sh
