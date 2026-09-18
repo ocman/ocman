@@ -37,7 +37,9 @@ func TestSubscriptionUsageRoute(t *testing.T) {
 		_, _ = w.Write([]byte(`{
 			"five_hour":{"utilization":1,"resets_at":"2026-09-11T16:10:00Z"},
 			"seven_day":{"utilization":23,"resets_at":"2026-09-16T08:00:00Z"},
-			"seven_day_opus":null
+			"seven_day_sonnet":{"utilization":31,"resets_at":"2026-09-17T08:00:00Z"},
+			"seven_day_opus":null,
+			"limits":[{"kind":"weekly_scoped","group":"fable","percent":42,"resets_at":"2026-09-18T08:00:00Z","scope":{"model":{"display_name":"Fable only"}}}]
 		}`))
 	}))
 	defer anthropic.Close()
@@ -79,7 +81,7 @@ func TestSubscriptionUsageRoute(t *testing.T) {
 	if len(got.Providers[0].Windows) != 2 || got.Providers[0].Windows[1].Name != "Codex Spark · 5 hours" {
 		t.Fatalf("OpenAI windows = %#v", got.Providers[0].Windows)
 	}
-	if len(got.Providers[1].Windows) != 2 || got.Providers[1].Windows[1].UsedPercent != 23 {
+	if len(got.Providers[1].Windows) != 4 || got.Providers[1].Windows[1].UsedPercent != 23 || got.Providers[1].Windows[2].Name != "7 days · Sonnet only" || got.Providers[1].Windows[3].Name != "7 days · Fable only" {
 		t.Fatalf("Anthropic windows = %#v", got.Providers[1].Windows)
 	}
 	if body := rec.Body.String(); strings.Contains(body, "openai-secret") || strings.Contains(body, "anthropic-secret") || strings.Contains(body, "account-secret") {

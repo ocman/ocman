@@ -226,6 +226,17 @@ func fetchAnthropicUsage(ctx context.Context, client subscriptionUsageClient, au
 		SevenDay          *window `json:"seven_day"`
 		SevenDayOAuthApps *window `json:"seven_day_oauth_apps"`
 		SevenDayOpus      *window `json:"seven_day_opus"`
+		SevenDaySonnet    *window `json:"seven_day_sonnet"`
+		Limits            []struct {
+			Kind     string  `json:"kind"`
+			Percent  float64 `json:"percent"`
+			ResetsAt string  `json:"resets_at"`
+			Scope    struct {
+				Model *struct {
+					DisplayName string `json:"display_name"`
+				} `json:"model"`
+			} `json:"scope"`
+		} `json:"limits"`
 	}
 	if json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body) != nil {
 		return result
@@ -237,11 +248,17 @@ func fetchAnthropicUsage(ctx context.Context, client subscriptionUsageClient, au
 	}{
 		{"5 hours", body.FiveHour},
 		{"7 days", body.SevenDay},
+		{"7 days · Sonnet only", body.SevenDaySonnet},
 		{"7 days · OAuth apps", body.SevenDayOAuthApps},
 		{"7 days · Opus", body.SevenDayOpus},
 	} {
 		if item.window != nil {
 			result.Windows = append(result.Windows, subscriptionUsageWindow{Name: item.name, UsedPercent: clampPercent(item.window.Utilization), ResetsAt: item.window.ResetsAt})
+		}
+	}
+	for _, limit := range body.Limits {
+		if limit.Kind == "weekly_scoped" && limit.Scope.Model != nil && limit.Scope.Model.DisplayName != "" {
+			result.Windows = append(result.Windows, subscriptionUsageWindow{Name: "7 days · " + limit.Scope.Model.DisplayName, UsedPercent: clampPercent(limit.Percent), ResetsAt: limit.ResetsAt})
 		}
 	}
 	return result
