@@ -18,6 +18,9 @@ export default defineConfig({
   test: {
     environment: 'node',
     setupFiles: ['./vitest.setup.ts'],
+    // The shared CI runner is CPU-starved while Go and Playwright jobs
+    // run alongside; the 5s default let healthy tests time out.
+    testTimeout: 15_000,
     exclude: [
       '**/node_modules/**',
       '**/dist/**',

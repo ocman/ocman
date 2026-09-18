@@ -40,8 +40,10 @@ func TestRunCommandCancellationTerminatesTmux(t *testing.T) {
 	var pid int
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
+		// The shell truncates the file before printf writes; an empty read
+		// means "not yet", not "corrupt".
 		data, err := os.ReadFile(pidFile)
-		if err == nil {
+		if err == nil && len(strings.TrimSpace(string(data))) > 0 {
 			pid, err = strconv.Atoi(strings.TrimSpace(string(data)))
 			if err != nil {
 				t.Fatalf("parse pid: %v", err)
