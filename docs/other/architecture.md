@@ -117,8 +117,9 @@ flowchart TD
 - **internal/factory.** The independent Software Factory boundary. It stores
    Epics, Mols, typed Issues, dependencies, attempts, Formula revisions,
    Plan revisions, approvals, and materialization provenance in `state.db`.
-   TOML Formulas compile to canonical JSON. A Plan session is read-only at the
-   project root; approval of an exact revision automatically materializes the
+   TOML Formulas compile to canonical JSON. A Plan session is instructed not to
+   modify files, but its configurable permission rules may allow shell commands
+   for research; approval of an exact revision automatically materializes the
    proposed Implementation Issues and dependencies atomically. As defined by
    [ADR 0008](../adr/0008-coordinate-factory-work-across-projects.md), an Epic
    owns an admitted local project set, each executable Issue targets one project,
@@ -301,8 +302,8 @@ flowchart TD
    native Epics, pour Mols, decide exact Plan revisions, and explicitly close
    completed containers. It can also launch a read-only unblock conversation;
    approved repairs return through the scoped MCP tool. The dispatcher records
-   attempts before launching the read-only planning or configured implementation
-   session.
+   attempts before launching the prompt-constrained planning or configured
+   implementation session.
    Factory MCP results can carry `[[ocman:card ...]]` markers in the conversation.
    The markdown renderer turns them into creation or human-action cards using
    the same TanStack Query state and REST mutations as the Factory pages.

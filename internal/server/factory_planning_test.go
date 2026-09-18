@@ -230,6 +230,9 @@ func TestFactoryPlanningLauncherUsesLocalHostAndAppliesBoundedRules(t *testing.T
 	if !strings.Contains(sent.Message, "/repo") || !strings.Contains(sent.Message, "/other") {
 		t.Fatalf("prompt does not list admitted projects: %q", sent.Message)
 	}
+	if !strings.Contains(sent.Message, "use them only for research and inspection; do not write files") {
+		t.Fatalf("prompt does not constrain shell use: %q", sent.Message)
+	}
 	if !strings.HasSuffix(sent.Message, "[Review and approve the plan](/factory/epics/epic-1)") {
 		t.Fatalf("prompt does not end with approval link: %q", sent.Message)
 	}

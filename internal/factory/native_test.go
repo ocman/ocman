@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
 type nativeStoreFake struct {
@@ -140,6 +141,15 @@ func (s *nativeStoreFake) CreateFactoryEpicWithProjects(ctx context.Context, pre
 	return epic, err
 }
 
+func (s *nativeStoreFake) CreateFactoryEpicWithProjectsAndPermissionRules(ctx context.Context, preferredID, goal, brief, project, instantiationID string, formula model.NativeFormula, secondary []string, rules []model.PermissionRule) (model.NativeEpic, error) {
+	epic, err := s.CreateFactoryEpicWithProjects(ctx, preferredID, goal, brief, project, instantiationID, formula, secondary)
+	if err == nil {
+		epic.PermissionRules = append([]model.PermissionRule(nil), rules...)
+		s.epic = epic
+	}
+	return epic, err
+}
+
 func (s *nativeStoreFake) RemoveFactoryEpicProject(_ context.Context, _ string, project string) error {
 	s.removedProject = project
 	return s.removeProjectErr
@@ -177,6 +187,19 @@ func TestCreateWorkEpicAdmitsCanonicalLocalProjects(t *testing.T) {
 	}
 	if len(store.acknowledgements) != 2 {
 		t.Fatalf("acknowledgements = %#v", store.acknowledgements)
+	}
+}
+
+func TestCreateWorkEpicStoresPermissionRulesDuringCreation(t *testing.T) {
+	store := &nativeStoreFake{}
+	svc := NewNative(store, testProjectResolver{root: "/repo"})
+	rules := []platforms.PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}
+	if _, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Ship", InitialProject: "/repo", AcknowledgeLocalExecution: true, PermissionRules: rules}); err != nil {
+		t.Fatal(err)
+	}
+	want := []model.PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}
+	if !reflect.DeepEqual(store.epic.PermissionRules, want) {
+		t.Fatalf("permission rules = %#v, want %#v", store.epic.PermissionRules, want)
 	}
 }
 

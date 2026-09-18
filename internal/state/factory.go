@@ -69,17 +69,6 @@ func (d *DB) SetFactoryCapacityPolicy(ctx context.Context, policy model.FactoryC
 	return nil
 }
 
-// SetFactoryEpicPermissionRules persists pre-approved permission rules for an Epic.
-// These rules are merged into every planning and implementation session launched for the Epic.
-func (d *DB) SetFactoryEpicPermissionRules(ctx context.Context, epicID string, rules []model.PermissionRule) error {
-	rulesJSON, err := json.Marshal(rules)
-	if err != nil {
-		return fmt.Errorf("encoding Factory Epic permission rules: %w", err)
-	}
-	_, err = d.db.ExecContext(ctx, `UPDATE factory_epic SET permission_rules_json = ? WHERE id = ?`, string(rulesJSON), epicID)
-	return err
-}
-
 // CreatePreparedFactoryAttempt durably allocates the next sequence for a Work Item.
 func (d *DB) CreatePreparedFactoryAttempt(ctx context.Context, epicID, workID string, policy model.FactoryAttemptPolicy, at time.Time) (model.FactoryAttempt, error) {
 	policyJSON, err := json.Marshal(policy)

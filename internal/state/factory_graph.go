@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -147,14 +148,18 @@ func (d *DB) SaveNativeFactoryFormulaRevision(ctx context.Context, saved model.N
 }
 
 func (d *DB) CreateFactoryEpic(ctx context.Context, preferredID, goal, brief, project, instantiationID string, formula model.NativeFormula) (model.NativeEpic, error) {
-	return d.createFactoryEpic(ctx, preferredID, goal, brief, project, instantiationID, formula, nil)
+	return d.createFactoryEpic(ctx, preferredID, goal, brief, project, instantiationID, formula, nil, nil)
 }
 
 func (d *DB) CreateFactoryEpicWithProjects(ctx context.Context, preferredID, goal, brief, project, instantiationID string, formula model.NativeFormula, secondary []string) (model.NativeEpic, error) {
-	return d.createFactoryEpic(ctx, preferredID, goal, brief, project, instantiationID, formula, secondary)
+	return d.createFactoryEpic(ctx, preferredID, goal, brief, project, instantiationID, formula, secondary, nil)
 }
 
-func (d *DB) createFactoryEpic(ctx context.Context, preferredID, goal, brief, project, instantiationID string, formula model.NativeFormula, secondary []string) (model.NativeEpic, error) {
+func (d *DB) CreateFactoryEpicWithProjectsAndPermissionRules(ctx context.Context, preferredID, goal, brief, project, instantiationID string, formula model.NativeFormula, secondary []string, rules []model.PermissionRule) (model.NativeEpic, error) {
+	return d.createFactoryEpic(ctx, preferredID, goal, brief, project, instantiationID, formula, secondary, rules)
+}
+
+func (d *DB) createFactoryEpic(ctx context.Context, preferredID, goal, brief, project, instantiationID string, formula model.NativeFormula, secondary []string, rules []model.PermissionRule) (model.NativeEpic, error) {
 	if err := validateNativeFormula(formula, map[string]bool{}); err != nil {
 		return model.NativeEpic{}, err
 	}
@@ -171,7 +176,11 @@ func (d *DB) createFactoryEpic(ctx context.Context, preferredID, goal, brief, pr
 			if err != nil {
 				return model.NativeEpic{}, err
 			}
-			if existing.Goal == goal && existing.Brief == brief && existing.InitialProject == project && factoryProjectSetMatches(existing.Projects, project, secondary) {
+			existing.PermissionRules, err = getFactoryEpicPermissionRules(ctx, tx, existing.ID)
+			if err != nil {
+				return model.NativeEpic{}, err
+			}
+			if existing.Goal == goal && existing.Brief == brief && existing.InitialProject == project && factoryProjectSetMatches(existing.Projects, project, secondary) && (rules == nil || slices.Equal(existing.PermissionRules, rules)) {
 				return existing, nil
 			}
 			return model.NativeEpic{}, model.ErrNativeInstantiationConflict
@@ -197,7 +206,10 @@ func (d *DB) createFactoryEpic(ctx context.Context, preferredID, goal, brief, pr
 			existing, lookupErr := scanFactoryEpic(tx.QueryRowContext(ctx, `SELECT id, status, goal, brief, project_path, instantiation_id, formula_id, formula_version, formula_hash FROM factory_epic WHERE instantiation_id = ?`, instantiationID))
 			if lookupErr == nil {
 				existing.Projects, lookupErr = listFactoryEpicProjectsWith(ctx, tx, existing.ID)
-				if lookupErr == nil && existing.Goal == goal && existing.Brief == brief && existing.InitialProject == project && factoryProjectSetMatches(existing.Projects, project, secondary) {
+				if lookupErr == nil {
+					existing.PermissionRules, lookupErr = getFactoryEpicPermissionRules(ctx, tx, existing.ID)
+				}
+				if lookupErr == nil && existing.Goal == goal && existing.Brief == brief && existing.InitialProject == project && factoryProjectSetMatches(existing.Projects, project, secondary) && (rules == nil || slices.Equal(existing.PermissionRules, rules)) {
 					return existing, nil
 				}
 			}
@@ -219,6 +231,12 @@ func (d *DB) createFactoryEpic(ctx context.Context, preferredID, goal, brief, pr
 	if _, err := tx.ExecContext(ctx, `UPDATE factory_epic SET formula_id = ?, formula_version = ?, formula_hash = ? WHERE id = ?`, formula.ID, formula.Version, formula.Hash, id); err != nil {
 		return model.NativeEpic{}, fmt.Errorf("recording Factory Formula: %w", err)
 	}
+	if rules != nil {
+		if err := setFactoryEpicPermissionRules(ctx, tx, id, rules); err != nil {
+			return model.NativeEpic{}, err
+		}
+		epic.PermissionRules = append([]model.PermissionRule(nil), rules...)
+	}
 	if _, err := pourFactoryEpicTx(ctx, tx, epic, formula, now); err != nil {
 		return model.NativeEpic{}, err
 	}
@@ -227,6 +245,29 @@ func (d *DB) createFactoryEpic(ctx context.Context, preferredID, goal, brief, pr
 	}
 	epic.FormulaID, epic.FormulaVersion, epic.FormulaHash = formula.ID, formula.Version, formula.Hash
 	return epic, nil
+}
+
+func setFactoryEpicPermissionRules(ctx context.Context, tx *sql.Tx, epicID string, rules []model.PermissionRule) error {
+	rulesJSON, err := json.Marshal(rules)
+	if err != nil {
+		return fmt.Errorf("encoding Factory Epic permission rules: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE factory_epic SET permission_rules_json = ? WHERE id = ?`, string(rulesJSON), epicID); err != nil {
+		return fmt.Errorf("storing Factory Epic permission rules: %w", err)
+	}
+	return nil
+}
+
+func getFactoryEpicPermissionRules(ctx context.Context, tx *sql.Tx, epicID string) ([]model.PermissionRule, error) {
+	var raw string
+	if err := tx.QueryRowContext(ctx, `SELECT permission_rules_json FROM factory_epic WHERE id = ?`, epicID).Scan(&raw); err != nil {
+		return nil, fmt.Errorf("reading Factory Epic permission rules: %w", err)
+	}
+	var rules []model.PermissionRule
+	if err := json.Unmarshal([]byte(raw), &rules); err != nil {
+		return nil, fmt.Errorf("decoding Factory Epic permission rules: %w", err)
+	}
+	return rules, nil
 }
 
 func (d *DB) ListFactoryEpics(ctx context.Context) ([]model.NativeEpic, error) {

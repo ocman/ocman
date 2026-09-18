@@ -650,12 +650,11 @@ type nativeStore interface {
 }
 
 type nativeProjectSetStore interface {
-	CreateFactoryEpicWithProjects(context.Context, string, string, string, string, string, model.NativeFormula, []string) (model.NativeEpic, error)
 	RemoveFactoryEpicProject(context.Context, string, string) error
 }
 
-type epicPermissionStore interface {
-	SetFactoryEpicPermissionRules(ctx context.Context, epicID string, rules []model.PermissionRule) error
+type configuredEpicStore interface {
+	CreateFactoryEpicWithProjectsAndPermissionRules(context.Context, string, string, string, string, string, model.NativeFormula, []string, []model.PermissionRule) (model.NativeEpic, error)
 }
 type nativeProjectRequestStore interface {
 	CreateFactoryProjectRequestGate(context.Context, string, string, string, time.Time) (model.ProjectRequestGate, error)
@@ -1081,16 +1080,15 @@ func (s *NativeService) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRe
 	if err != nil {
 		return WorkEpic{}, err
 	}
-	var epic model.NativeEpic
-	if len(secondary) > 0 {
-		store, ok := s.store.(nativeProjectSetStore)
-		if !ok {
-			return WorkEpic{}, ErrFactoryUnavailable
-		}
-		epic, err = store.CreateFactoryEpicWithProjects(ctx, epicID, req.Goal, req.Brief, req.InitialProject, req.InstantiationID, formula, secondary)
-	} else {
-		epic, err = s.store.CreateFactoryEpic(ctx, epicID, req.Goal, req.Brief, req.InitialProject, req.InstantiationID, formula)
+	modelRules := make([]model.PermissionRule, len(req.PermissionRules))
+	for i, rule := range req.PermissionRules {
+		modelRules[i] = model.PermissionRule{Permission: rule.Permission, Pattern: rule.Pattern, Action: rule.Action}
 	}
+	store, ok := s.store.(configuredEpicStore)
+	if !ok {
+		return WorkEpic{}, ErrFactoryUnavailable
+	}
+	epic, err := store.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, epicID, req.Goal, req.Brief, req.InitialProject, req.InstantiationID, formula, secondary, modelRules)
 	switch {
 	case errors.Is(err, model.ErrNativeInstantiationConflict):
 		err = ErrInstantiationConflict
@@ -1099,17 +1097,6 @@ func (s *NativeService) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRe
 	}
 	if err != nil {
 		return WorkEpic{}, err
-	}
-	if len(req.PermissionRules) > 0 {
-		if ps, ok := s.store.(epicPermissionStore); ok {
-			modelRules := make([]model.PermissionRule, len(req.PermissionRules))
-			for i, r := range req.PermissionRules {
-				modelRules[i] = model.PermissionRule{Permission: r.Permission, Pattern: r.Pattern, Action: r.Action}
-			}
-			if err := ps.SetFactoryEpicPermissionRules(ctx, epic.ID, modelRules); err != nil {
-				return WorkEpic{}, fmt.Errorf("storing Epic permission rules: %w", err)
-			}
-		}
 	}
 	return nativeEpic(epic), nil
 }

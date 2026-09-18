@@ -46,6 +46,58 @@ func TestFactoryGraphCreateAndPourAreDurableAndAtomic(t *testing.T) {
 	}
 }
 
+func TestFactoryEpicPermissionRulesAreAtomicAndPropagate(t *testing.T) {
+	rules := []model.PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}
+
+	t.Run("creation rolls back with rule storage", func(t *testing.T) {
+		db := openTestStateDB(t)
+		defer db.Close()
+		if _, err := db.db.Exec(`CREATE TRIGGER reject_epic_rules BEFORE UPDATE OF permission_rules_json ON factory_epic BEGIN SELECT RAISE(ABORT, 'reject rules'); END`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(t.Context(), "", "Ship", "", "/repo", "", nativeTracerFormula(t), nil, rules); err == nil {
+			t.Fatal("created Epic after permission-rule storage failed")
+		}
+		var count int
+		if err := db.db.QueryRow(`SELECT count(*) FROM factory_epic`).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("factory Epic count = %d, %v", count, err)
+		}
+	})
+
+	t.Run("rules freeze into planning and implementation attempts", func(t *testing.T) {
+		for _, kind := range []string{"plan", "implementation"} {
+			t.Run(kind, func(t *testing.T) {
+				db := openTestStateDB(t)
+				defer db.Close()
+				epic, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(t.Context(), "", "Ship", "", "/repo", "", nativeTracerFormula(t), nil, rules)
+				if err != nil {
+					t.Fatal(err)
+				}
+				issueID := factoryIssueID(t, db, epic.ID, "plan")
+				var attempt model.FactoryAttempt
+				if kind == "plan" {
+					_, attempt, err = db.ClaimFactoryPlan(t.Context(), epic.ID, issueID, "factory-plan/v1", time.Now())
+				} else {
+					molID := factoryIssueID(t, db, epic.ID, "mol")
+					if err = db.MutateFactoryGraph(t.Context(), model.GraphMutation{Action: "create", EpicID: epic.ID, ParentID: molID, Kind: "implementation", Title: "Build"}); err == nil {
+						issueID = factoryIssueID(t, db, epic.ID, "implementation")
+						err = db.UpsertFactoryLocalExecutionAck(t.Context(), "local", "/repo", "factory-implement", "v1", "operator", time.Now())
+					}
+					if err == nil {
+						_, attempt, err = db.ClaimFactoryImplementation(t.Context(), epic.ID, issueID, "factory-implement/v1", time.Now())
+					}
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !reflect.DeepEqual(attempt.FrozenPolicy.PermissionRules, rules) {
+					t.Fatalf("permission rules = %#v, want %#v", attempt.FrozenPolicy.PermissionRules, rules)
+				}
+			})
+		}
+	})
+}
+
 func TestFactoryEpicProjectRemovalRules(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()
@@ -641,6 +693,34 @@ func TestFactoryEpicCreationIsIdempotentByInstantiationID(t *testing.T) {
 	}
 	if _, err := db.CreateFactoryEpic(context.Background(), "", "Changed", "Brief", "/repo", "intake-1", formula); !errors.Is(err, model.ErrNativeInstantiationConflict) {
 		t.Fatalf("mismatched create error = %v", err)
+	}
+}
+
+func TestFactoryEpicPermissionRulesParticipateInInstantiationIdempotency(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	ctx := t.Context()
+	formula := nativeTracerFormula(t)
+	rules := []model.PermissionRule{{Permission: "bash", Pattern: "*", Action: "allow"}}
+	first, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Ship", "Brief", "/repo", "intake-rules", formula, nil, rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Ship", "Brief", "/repo", "intake-rules", formula, nil, rules)
+	if err != nil || second.ID != first.ID {
+		t.Fatalf("matching retry = %#v, %v", second, err)
+	}
+	different := []model.PermissionRule{{Permission: "bash", Pattern: "*", Action: "deny"}}
+	if _, err := db.CreateFactoryEpicWithProjectsAndPermissionRules(ctx, "", "Ship", "Brief", "/repo", "intake-rules", formula, nil, different); !errors.Is(err, model.ErrNativeInstantiationConflict) {
+		t.Fatalf("mismatched permission-rule retry error = %v", err)
+	}
+	var raw string
+	if err := db.db.QueryRowContext(ctx, `SELECT permission_rules_json FROM factory_epic WHERE id = ?`, first.ID).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var stored []model.PermissionRule
+	if err := json.Unmarshal([]byte(raw), &stored); err != nil || !reflect.DeepEqual(stored, rules) {
+		t.Fatalf("stored permission rules = %#v, %v", stored, err)
 	}
 }
 

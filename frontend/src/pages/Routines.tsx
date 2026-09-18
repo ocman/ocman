@@ -287,7 +287,7 @@ export function Routines() {
           <label className="routine-check"><input type="checkbox" checked={form.enabled} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} /> Enabled</label>
           <label className="routine-check"><input type="checkbox" checked={form.deleteAfterSuccess} onChange={(event) => setForm({ ...form, deleteAfterSuccess: event.target.checked })} /> Delete after a successful run</label>
           <label>Permissions
-            <small>Pre-approve permissions so this routine runs without prompts. Rules are evaluated top-to-bottom.</small>
+            <small>Applied only when this routine creates a new session. Existing and previously reused sessions keep their current rules.</small>
             <PermissionRulesEditor rules={editingRules} onChange={setEditingRules} disabled={busy} />
           </label>
           <div className="routine-actions"><Button disabled={busy || !form.directory || (form.sessionMode === 'existing' && !form.sessionId)} type="submit" variant="accent">{editing ? 'Save changes' : 'Create routine'}</Button><Button type="button" disabled={busy} onClick={() => setShowForm(false)}>Cancel</Button></div>
