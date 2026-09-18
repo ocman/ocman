@@ -50,9 +50,10 @@ type broadcastEvent struct {
 // and dropping them stalled queue drain, notifications, and the sidebar
 // under bursts (#490).
 var coalescingEvents = map[string]bool{
-	"ocman.queue.updated":   true,
-	"ocman.session.idle":    true,
-	"ocman.session.changed": true,
+	"ocman.queue.updated":    true,
+	"ocman.session.idle":     true,
+	"ocman.session.changed":  true,
+	"ocman.projects.changed": true,
 }
 
 // broadcastSub is one connected /api/events client. Non-coalescing events

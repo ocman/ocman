@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"slices"
 	"sync"
 	"time"
 
@@ -178,13 +180,58 @@ func (s *Server) refreshProjectsIndexOnce() error {
 		return err
 	}
 
+	refreshedAt := time.Now()
 	s.projects.mu.Lock()
+	changed := !s.projects.loaded || !slices.Equal(s.projects.data, projects)
 	s.projects.data = cloneProjectStats(projects)
 	s.projects.loaded = true
-	s.projects.refreshedAt = time.Now()
+	s.projects.refreshedAt = refreshedAt
 	s.projects.mu.Unlock()
 
+	s.persistProjectsIndex(ctx, projects, refreshedAt)
+	if changed {
+		s.broadcastGlobalEvent("ocman.projects.changed", []byte(`{}`))
+	}
+
 	return nil
+}
+
+func (s *Server) loadProjectsIndexCache(ctx context.Context) {
+	if s.stateDB == nil {
+		return
+	}
+	data, refreshedAt, err := s.stateDB.ProjectsCache(ctx)
+	if err != nil {
+		log.WithError(err).Warn("loading projects cache")
+		return
+	}
+	if data == nil {
+		return
+	}
+	var projects []db.ProjectStats
+	if err := json.Unmarshal(data, &projects); err != nil {
+		log.WithError(err).Warn("decoding projects cache")
+		return
+	}
+	s.projects.mu.Lock()
+	s.projects.data = projects
+	s.projects.loaded = true
+	s.projects.dirty = true
+	s.projects.refreshedAt = refreshedAt
+	s.projects.mu.Unlock()
+}
+
+func (s *Server) persistProjectsIndex(ctx context.Context, projects []db.ProjectStats, refreshedAt time.Time) {
+	if s.stateDB == nil {
+		return
+	}
+	data, err := json.Marshal(projects)
+	if err == nil {
+		err = s.stateDB.SaveProjectsCache(ctx, data, refreshedAt)
+	}
+	if err != nil {
+		log.WithError(err).Warn("saving projects cache")
+	}
 }
 
 func (s *Server) getProjects(ctx context.Context) ([]db.ProjectStats, error) {

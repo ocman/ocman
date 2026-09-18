@@ -212,9 +212,6 @@ func TestHandleCreateSession_RefreshesProjectsIndex(t *testing.T) {
 	if err := srv.activity.Update(clientActivityLease{ClientID: "client", Visible: true, Scopes: []string{"projects"}, TTLMS: 45_000}); err != nil {
 		t.Fatal(err)
 	}
-	sub, unsubscribe := srv.broadcastHub.subscribe()
-	defer unsubscribe()
-
 	reg := platforms.NewRegistry()
 	reg.Register(&fakePlatform{
 		id: "fake",
@@ -235,6 +232,8 @@ func TestHandleCreateSession_RefreshesProjectsIndex(t *testing.T) {
 	if err := srv.refreshProjectsIndex(); err != nil {
 		t.Fatalf("initial projects refresh: %v", err)
 	}
+	sub, unsubscribe := srv.broadcastHub.subscribe()
+	defer unsubscribe()
 
 	req := httptest.NewRequest(
 		http.MethodPost,
@@ -285,6 +284,14 @@ func TestHandleCreateSession_RefreshesProjectsIndex(t *testing.T) {
 			t.Fatalf("expected projects index to include created project, got %+v", projects)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+	select {
+	case event := <-sub.ch:
+		if event.event != "ocman.projects.changed" {
+			t.Fatalf("unexpected projects refresh event: %s", event.event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("projects refresh did not notify frontend")
 	}
 }
 

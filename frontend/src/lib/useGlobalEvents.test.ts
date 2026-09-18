@@ -20,9 +20,11 @@ import {
   __handleSurfaceForTests,
   __handleSessionChangedForTests,
   __handleQueueUpdatedForTests,
+  __handleProjectsChangedForTests,
   __resetForTests,
   onSessionChanged,
   onQueueUpdated,
+  onProjectsChanged,
   onSseConnect,
   useGlobalEvents,
 } from './useGlobalEvents';
@@ -222,5 +224,17 @@ describe('useGlobalEvents queue.updated handler', () => {
     __handleQueueUpdatedForTests(JSON.stringify({ reason: 'x' }));
     expect(cb).not.toHaveBeenCalled();
     unsub();
+  });
+});
+
+describe('useGlobalEvents projects.changed handler', () => {
+  it('notifies registered listeners', () => {
+    const cb = vi.fn();
+    const unsub = onProjectsChanged(cb);
+    __handleProjectsChangedForTests();
+    expect(cb).toHaveBeenCalledOnce();
+    unsub();
+    __handleProjectsChangedForTests();
+    expect(cb).toHaveBeenCalledOnce();
   });
 });

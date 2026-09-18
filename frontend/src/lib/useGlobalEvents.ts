@@ -101,6 +101,17 @@ const sessionChangedListeners = new Set<(
   patch?: Partial<Session>,
 ) => void>();
 
+const projectsChangedListeners = new Set<() => void>();
+
+export function onProjectsChanged(cb: () => void): () => void {
+  projectsChangedListeners.add(cb);
+  return () => projectsChangedListeners.delete(cb);
+}
+
+function handleProjectsChanged(): void {
+  for (const cb of projectsChangedListeners) cb();
+}
+
 /**
  * Register a callback fired on every ocman.session.changed broadcast.
  * The second arg is a provisional session row when the event carries
@@ -180,6 +191,7 @@ function open(): void {
   next.addEventListener('ocman.session.changed', (e) => {
     handleSessionChanged((e as MessageEvent).data);
   });
+  next.addEventListener('ocman.projects.changed', handleProjectsChanged);
   next.addEventListener('ocman.queue.updated', (e) => {
     handleQueueUpdated((e as MessageEvent).data);
   });
@@ -239,6 +251,10 @@ export function __handleSurfaceForTests(raw: string): void {
 /** Test-only: dispatch a raw session.changed payload. */
 export function __handleSessionChangedForTests(raw: string): void {
   handleSessionChanged(raw);
+}
+
+export function __handleProjectsChangedForTests(): void {
+  handleProjectsChanged();
 }
 
 /** Test-only: dispatch a raw queue.updated payload. */

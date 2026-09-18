@@ -299,9 +299,28 @@ func (s *Server) refreshProjectsIndexAsync() {
 		s.projects.mu.Unlock()
 		return
 	}
+	s.triggerProjectsIndexRefresh()
+}
+
+func (s *Server) triggerProjectsIndexRefresh() {
+	if s.db == nil && s.projects.fetch == nil {
+		return
+	}
+	st := &s.projects
+	st.mu.Lock()
+	st.dirty = true
+	if st.running {
+		st.mu.Unlock()
+		return
+	}
+	st.running = true
+	st.done = make(chan struct{})
+	done := st.done
+	st.mu.Unlock()
+
 	go runWithRecover("projects-index-async", func() {
-		if err := s.refreshProjectsIndex(); err != nil {
-			log.WithError(err).Warn("refreshing projects index after session creation")
+		if err := s.driveProjectsRefresh(done); err != nil {
+			log.WithError(err).Warn("refreshing projects index")
 		}
 	})
 }
@@ -490,6 +509,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// or handler can reach it. router() assigns lazily, and the loops
 	// started below race that assignment otherwise.
 	s.router()
+	s.loadProjectsIndexCache(context.WithoutCancel(ctx))
 	if s.stateDB != nil && s.routineSvc == nil {
 		s.routineSvc = routines.New(routines.Deps{
 			Store: s.stateDB, Router: s.router(), Sessions: s.sessions, Platforms: s.registry,

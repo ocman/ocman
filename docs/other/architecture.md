@@ -62,9 +62,9 @@ flowchart LR
 - **opencode.db.** Foreign data, opened read-only. Ocman never writes to it.
 - **state.db.** Ocman's own state: archive flags, routines and run history,
   permission approval provenance, live session commit observations, settings,
-  Factory records, Inbox items, and remote tokens. Inbox sends are owner-local
-  and persist until recalled or archived by the user. Legacy `workflow_*` rows
-  remain inert for manual recovery.
+  Factory records, Inbox items, remote tokens, and the last local projects-index
+  snapshot. Inbox sends are owner-local and persist until recalled or archived
+  by the user. Legacy `workflow_*` rows remain inert for manual recovery.
 - **Provider usage APIs.** The subscription usage page reads OpenCode's local
   OAuth credentials server-side and returns only normalized quota windows;
   provider tokens and account identifiers never reach the browser.
@@ -228,6 +228,12 @@ sequenceDiagram
     A->>D: SQL json_extract
     A->>A: overlay pending prompt registry
     D-->>B: JSON (status settled at query time)
+    B->>S: GET /api/projects
+    I-->>S: cached local projects snapshot
+    S-->>B: cached projects JSON
+    S->>D: background project aggregate refresh
+    S->>I: persist refreshed snapshot
+    E-->>B: SSE (ocman.projects.changed)
     R->>O: gRPC Session / SessionInfo / StreamEvents (remote only)
     O->>A: Session / SessionInfo / ProxyEvents
     O->>I: read owner-local approvals and commit observations
@@ -249,6 +255,13 @@ from the running OpenCode instance decides whether a session is busy; the
 last stored message row only settles which terminal state a finished session
 is in. Nothing is written back, so there is no sync problem with OpenCode's
 DB.
+
+The local projects index uses stale-while-refresh persistence. On startup the
+server hydrates the last snapshot from `state.db`; a request receives that
+snapshot immediately while the expensive `opencode.db` aggregate refreshes in
+the background. A changed result is persisted and announced over global SSE so
+TanStack Query refetches the authoritative list. Remote inventories and archive
+overlays remain live and are not stored in this cache.
 
 Ocman owns routine state. The Routines page creates, edits, soft-deletes, and
 starts routines over REST. Manual and scheduled paths first claim an immutable

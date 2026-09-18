@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -71,8 +72,6 @@ func TestHostProjectsRefreshesSkippedAsyncWork(t *testing.T) {
 		calls++
 		return []db.ProjectStats{{Directory: "/repo"}}, nil
 	}
-	srv.projects.loaded = true
-
 	srv.refreshProjectsIndexAsync()
 	if calls != 0 {
 		t.Fatalf("headless async refresh calls = %d, want 0", calls)
@@ -89,9 +88,11 @@ func TestHostProjectsRefreshesSkippedAsyncWork(t *testing.T) {
 
 func TestHostProjectsRefreshesAfterSkippedTick(t *testing.T) {
 	srv := New(nil, nil, "", nil, nil)
-	calls := 0
+	started := make(chan struct{})
+	release := make(chan struct{})
 	srv.projects.fetch = func() ([]db.ProjectStats, error) {
-		calls++
+		close(started)
+		<-release
 		return []db.ProjectStats{{Directory: "/fresh"}}, nil
 	}
 	srv.projects.loaded = true
@@ -102,9 +103,100 @@ func TestHostProjectsRefreshesAfterSkippedTick(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if calls != 1 || len(projects) != 1 || projects[0].Directory != "/fresh" {
-		t.Fatalf("request refresh = calls %d, projects %#v", calls, projects)
+	if len(projects) != 1 || projects[0].Directory != "/stale" {
+		t.Fatalf("request projects = %#v, want stale snapshot", projects)
 	}
+	<-started
+	close(release)
+	waitProjectsRefresh(t, srv)
+	projects, _ = srv.projectsSnapshot()
+	if len(projects) != 1 || projects[0].Directory != "/fresh" {
+		t.Fatalf("refreshed projects = %#v", projects)
+	}
+}
+
+func TestLoadProjectsIndexCache(t *testing.T) {
+	srv := testServer(t)
+	want := []db.ProjectStats{{Directory: "/cached", SessionCount: 2}}
+	data, err := json.Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refreshedAt := time.UnixMilli(1234)
+	if err := srv.stateDB.SaveProjectsCache(t.Context(), data, refreshedAt); err != nil {
+		t.Fatal(err)
+	}
+
+	srv.loadProjectsIndexCache(t.Context())
+	projects, loaded, dirty := srv.projectsSnapshotState()
+	if !loaded || !dirty || len(projects) != 1 || projects[0] != want[0] {
+		t.Fatalf("loaded=%v dirty=%v projects=%#v", loaded, dirty, projects)
+	}
+	if !srv.projects.refreshedAt.Equal(refreshedAt) {
+		t.Fatalf("refreshedAt = %v, want %v", srv.projects.refreshedAt, refreshedAt)
+	}
+}
+
+func TestRefreshProjectsIndexPersistsCache(t *testing.T) {
+	srv := testServer(t)
+	srv.projects.fetch = func() ([]db.ProjectStats, error) {
+		return []db.ProjectStats{{Directory: "/fresh", SessionCount: 2}}, nil
+	}
+	if err := srv.refreshProjectsIndex(); err != nil {
+		t.Fatal(err)
+	}
+
+	srv.projects = projectsIndexState{}
+	srv.loadProjectsIndexCache(t.Context())
+	projects, loaded := srv.projectsSnapshot()
+	if !loaded || len(projects) != 1 || projects[0].Directory != "/fresh" || projects[0].SessionCount != 2 {
+		t.Fatalf("loaded=%v projects=%#v", loaded, projects)
+	}
+}
+
+func TestRefreshProjectsIndexBroadcastsOnlyChanges(t *testing.T) {
+	srv := New(nil, nil, "", nil, nil)
+	srv.projects.fetch = func() ([]db.ProjectStats, error) {
+		return []db.ProjectStats{{Directory: "/repo"}}, nil
+	}
+	sub, unsubscribe := srv.broadcastHub.subscribe()
+	defer unsubscribe()
+
+	if err := srv.refreshProjectsIndex(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-sub.ch:
+		if event.event != "ocman.projects.changed" {
+			t.Fatalf("event = %q", event.event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for projects changed event")
+	}
+
+	if err := srv.refreshProjectsIndex(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-sub.ch:
+		t.Fatalf("unexpected unchanged event: %q", event.event)
+	default:
+	}
+}
+
+func waitProjectsRefresh(t *testing.T, srv *Server) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		srv.projects.mu.RLock()
+		running := srv.projects.running
+		srv.projects.mu.RUnlock()
+		if !running {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("timed out waiting for projects refresh")
 }
 
 // TestRefreshProjectsIndex_NilDB is a no-op guard: when the server has

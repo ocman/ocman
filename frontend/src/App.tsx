@@ -14,7 +14,7 @@ import { SharedConversationView } from './pages/SharedConversationView';
 import { ImportSharedConversation } from './pages/ImportSharedConversation';
 import { Login } from './pages/Login';
 import { SubscriptionUsage } from './pages/SubscriptionUsage';
-import { onSessionChanged } from './lib/useGlobalEvents';
+import { onProjectsChanged, onSessionChanged } from './lib/useGlobalEvents';
 import { HeaderProvider } from './lib/HeaderProvider';
 import { useHeaderInfo } from './lib/headerContext';
 import { CommandPalette } from './components/CommandPalette';
@@ -470,6 +470,10 @@ onSessionChanged((_sessionId, session) => {
   // it on the next fetch.
   if (session) insertProvisionalSession(queryClient, session);
   void queryClient.invalidateQueries({ queryKey: ['sessions'] });
+});
+
+onProjectsChanged(() => {
+  void queryClient.invalidateQueries({ queryKey: ['projects'] });
 });
 
 export default function App() {

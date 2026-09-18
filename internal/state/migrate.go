@@ -213,7 +213,8 @@ import (
 //	86 - add merge-gated dependencies and durable forge observations.
 //	87 - add permission_rules_json to routine for pre-approved permission rules.
 //	88 - add permission_rules_json to factory_epic for pre-approved session permissions.
-const latestSchemaVersion = 88
+//	89 - persist the local projects index for stale-while-refresh startup reads.
+const latestSchemaVersion = 89
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -494,9 +495,22 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV87(tx)
 	case 88:
 		return migrateToV88(tx)
+	case 89:
+		return migrateToV89(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
+}
+
+func migrateToV89(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS projects_cache (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			projects_json BLOB NOT NULL,
+			refreshed_at INTEGER NOT NULL
+		)
+	`)
+	return err
 }
 
 func migrateToV87(tx *sql.Tx) error {
