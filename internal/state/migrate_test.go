@@ -1,10 +1,13 @@
 package state
 
 import (
+	"bytes"
 	"database/sql"
+	"fmt"
 	"strings"
 	"testing"
 
+	log "github.com/sirupsen/logrus"
 	_ "modernc.org/sqlite"
 )
 
@@ -1098,10 +1101,7 @@ func TestMigrate_V14_CreatesRemoteTables(t *testing.T) {
 	}
 }
 
-// TestMigrateRejectsNewerSchema pins the downgrade guard: a database
-// written by a newer ocman must not be opened by an older binary, which
-// would silently run its old queries against an unknown schema.
-func TestMigrateRejectsNewerSchema(t *testing.T) {
+func TestMigrateLogsErrorOnNewerSchema(t *testing.T) {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatal(err)
@@ -1118,11 +1118,20 @@ func TestMigrateRejectsNewerSchema(t *testing.T) {
 		t.Fatalf("seed future version: %v", err)
 	}
 
-	err = migrate(db)
-	if err == nil {
-		t.Fatal("migrate accepted a schema newer than this binary understands")
+	var output bytes.Buffer
+	logger := log.StandardLogger()
+	previousOutput := logger.Out
+	log.SetOutput(&output)
+	t.Cleanup(func() { log.SetOutput(previousOutput) })
+	if err := migrate(db); err != nil {
+		t.Fatalf("migrate newer schema: %v", err)
 	}
-	if !strings.Contains(err.Error(), "newer ocman") {
-		t.Errorf("error should name the cause, got: %v", err)
+	for _, want := range []string{"level=error", "newer ocman", fmt.Sprintf("v%d", future), fmt.Sprintf("v%d", latestSchemaVersion)} {
+		if !strings.Contains(output.String(), want) {
+			t.Errorf("error log missing %q: %s", want, output.String())
+		}
+	}
+	if version, err := currentSchemaVersion(db); err != nil || version != future {
+		t.Fatalf("schema version = %d, %v; want %d", version, err, future)
 	}
 }

@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 // Schema versions:
@@ -232,13 +234,11 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 	if current > latestSchemaVersion {
-		// A newer ocman already migrated this database. The loop below
-		// would be a silent no-op and we'd run this binary's older
-		// queries against a schema we don't know — refuse instead.
-		return fmt.Errorf(
+		log.Errorf(
 			"state database is at schema v%d but this ocman only understands v%d: "+
-				"it was created by a newer ocman; upgrade ocman (or point -db at a different state database)",
+				"it was created by a newer ocman; continuing without migrations, compatibility is not guaranteed; upgrade ocman if errors occur",
 			current, latestSchemaVersion)
+		return nil
 	}
 	if current > 0 && current < latestSchemaVersion {
 		if err := backupBeforeMigration(db, current); err != nil {
