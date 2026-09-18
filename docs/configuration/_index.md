@@ -17,6 +17,16 @@ Ocman's own state (archived/seen flags, auth secret, favorites, cached projects)
 enforces owner-only permissions, `0700` for the directory and `0600` for the database and
 SQLite sidecars, and fails rather than continuing if existing paths cannot be secured.
 
+Before upgrading an existing state database, ocman saves a consistent SQLite backup
+beside it, named `state.db.backup-v<old>-to-v<new>-<unique>.db`. The backup includes
+committed WAL data and has owner-only permissions (`0600`). One backup covers the
+entire migration batch, which runs in a single transaction. Startup logs the backup
+path and refuses to migrate if the backup cannot be created or synced to disk.
+Fresh databases, in-memory databases, and databases already at the current version
+do not need a backup. Backups are retained, including after a failed migration;
+remove unneeded copies manually. They cover the state database only, not external
+artifact files or OpenCode's database. Ocman never restores a backup automatically.
+
 The HTTP server limits request-header read time and idle keep-alive connections, and bounds how
 long a request *body* may take to arrive (30 s for normal API calls, 5 min for uploads). There is
 deliberately no global read/write timeout, so SSE streams and in-app terminals keep working.

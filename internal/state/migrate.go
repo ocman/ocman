@@ -240,6 +240,11 @@ func migrate(db *sql.DB) error {
 				"it was created by a newer ocman; upgrade ocman (or point -db at a different state database)",
 			current, latestSchemaVersion)
 	}
+	if current > 0 && current < latestSchemaVersion {
+		if err := backupBeforeMigration(db, current); err != nil {
+			return fmt.Errorf("pre-migration backup: %w", err)
+		}
+	}
 
 	tx, err := db.Begin()
 	if err != nil {
