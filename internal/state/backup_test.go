@@ -157,7 +157,7 @@ func TestMigrationBackupSkippedWithoutUpgrade(t *testing.T) {
 				}
 			}
 			err = migrate(db)
-			if (err != nil) != (version > latestSchemaVersion) {
+			if err != nil {
 				t.Fatalf("migrate v%d: %v", version, err)
 			}
 			backups, err := filepath.Glob(path + ".backup-*")

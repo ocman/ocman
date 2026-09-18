@@ -94,6 +94,7 @@ vi.mock('../lib/turnStats', () => ({
 }));
 
 import { AssistantThread, ImageDisplay } from './AssistantThread';
+import { formatTimelineMarker } from '../lib/conversationTimeline';
 import { useUiStore } from '../lib/uiStore';
 import { TurnSpeechContext } from '../lib/turnSpeech';
 
@@ -189,6 +190,25 @@ describe('AssistantThread slash-command skills', () => {
     render(<AssistantThread />);
     expect(screen.queryByText('Skill called: /review-pr')).toBeNull();
     expect(screen.getByRole('heading', { name: 'Review Pull Request' })).toBeInTheDocument();
+  });
+});
+
+describe('conversation timeline markers', () => {
+  it('formats markers relative to the current day', () => {
+    const now = new Date(2026, 8, 14, 9);
+
+    expect(formatTimelineMarker(new Date(2026, 8, 14, 22, 23).getTime(), now)).toBe('Today 22:23');
+    expect(formatTimelineMarker(new Date(2026, 8, 13, 22, 23).getTime(), now)).toBe('Yesterday 22:23');
+    expect(formatTimelineMarker(new Date(2026, 8, 11, 22, 23).getTime(), now)).toBe('Friday September 11th, 22:23');
+  });
+
+  it('renders the marker attached to a conversation message', () => {
+    threadState.renderUser = true;
+    message.metadata.custom.timelineAt = new Date().setSeconds(0, 0);
+
+    render(<AssistantThread />);
+
+    expect(screen.getByText(/^Today \d{2}:\d{2}$/).closest('time')).toHaveAttribute('datetime');
   });
 });
 

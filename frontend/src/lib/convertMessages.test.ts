@@ -583,6 +583,54 @@ describe('isSynthesizedTerminal', () => {
 });
 
 describe('convertMessages', () => {
+  it('marks the conversation start and user prompts after hour-long pauses', () => {
+    const messages = [
+      makeMessage('u1', { role: 'user' }, 1_000),
+      makeMessage('a1', { role: 'assistant', time: { created: 2_000, completed: 3_000 } }, 2_000),
+      makeMessage('u2', { role: 'user' }, 3_000 + 60 * 60 * 1_000),
+      makeMessage('a2', { role: 'assistant', time: { created: 4_000, completed: 5_000 } }, 4_000),
+      makeMessage('u3', { role: 'user' }, 5_001 + 60 * 60 * 1_000),
+      makeMessage('u4', { role: 'user' }, 5_002 + 60 * 60 * 1_000),
+    ];
+
+    const out = createConvertMessages()(messages, []);
+    const marker = (index: number) => (out[index].metadata?.custom as Record<string, unknown> | undefined)?.timelineAt;
+
+    expect(marker(0)).toBe(1_000);
+    expect(marker(2)).toBeUndefined();
+    expect(marker(4)).toBe(5_001 + 60 * 60 * 1_000);
+    expect(marker(5)).toBeUndefined();
+  });
+
+  it('does not treat an in-progress assistant turn as an hour-long pause', () => {
+    const messages = [
+      makeMessage('a1', { role: 'assistant', time: { created: 1_000 } }, 1_000),
+      makeMessage('u1', { role: 'user' }, 1_001 + 60 * 60 * 1_000),
+    ];
+
+    const out = createConvertMessages()(messages, []);
+
+    expect((out[1].metadata?.custom as Record<string, unknown> | undefined)?.timelineAt).toBeUndefined();
+  });
+
+  it('invalidates cached user messages when surrounding timeline context changes', () => {
+    const convert = createConvertMessages();
+    const user = makeMessage('u2', { role: 'user' }, 4_000_001);
+    const first = convert([user], [])[0];
+    const assistant = makeMessage('a1', { role: 'assistant', time: { created: 3_500_000, completed: 3_500_001 } }, 3_500_000);
+
+    const second = convert([assistant, user], [])[1];
+
+    expect((first.metadata?.custom as Record<string, unknown>).timelineAt).toBe(4_000_001);
+    expect((second.metadata?.custom as Record<string, unknown> | undefined)?.timelineAt).toBeUndefined();
+    expect(second).not.toBe(first);
+
+    assistant.data.time = { created: 1_000, completed: 2_000 };
+    const third = convert([assistant, user], [])[1];
+    expect((third.metadata?.custom as Record<string, unknown>).timelineAt).toBe(4_000_001);
+    expect(third).not.toBe(second);
+  });
+
   it('keeps the persisted tool call identity for source navigation', () => {
     const [result] = convertMessages(
       [makeMessage('m1', { role: 'assistant' })],

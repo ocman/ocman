@@ -22,6 +22,7 @@ import { MarkdownText } from './assistant/MarkdownText';
 import { ToolCallDisplay } from './assistant/ToolCallDisplay';
 import { ModelLabel } from './ModelLogo';
 import { TurnSpeechContext } from '../lib/turnSpeech';
+import { formatTimelineMarker } from '../lib/conversationTimeline';
 
 interface MessageBookmarkContextValue {
   bookmarkedIds: Set<string>;
@@ -117,12 +118,29 @@ const UserTextPart: FC<{ text: string }> = ({ text }) => {
   );
 };
 
+const TimelineMarker: FC<{ timestamp: number }> = ({ timestamp }) => {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const id = setTimeout(() => setNow(new Date()), nextMidnight.getTime() - now.getTime());
+    return () => clearTimeout(id);
+  }, [now]);
+  const date = new Date(timestamp);
+  return (
+    <div className="oc-timeline-marker">
+      <hr />
+      <time dateTime={date.toISOString()}>{formatTimelineMarker(timestamp, now)}</time>
+    </div>
+  );
+};
+
 const UserMessage: FC = () => {
   const content = useMessage((m) => m.content);
   const id = useMessage((m) => m.id);
   const custom = useMessage((m) => m.metadata?.custom as Record<string, unknown> | undefined);
   const agent = typeof custom?.agent === 'string' ? (custom.agent as string) : undefined;
   const modelChangedTo = typeof custom?.modelChangedTo === 'string' ? (custom.modelChangedTo as string) : undefined;
+  const timelineAt = typeof custom?.timelineAt === 'number' ? custom.timelineAt : 0;
   const failed = (custom?.failed && typeof custom.failed === 'object')
     ? (custom.failed as { error?: string; imagesDropped?: boolean })
     : undefined;
@@ -145,6 +163,7 @@ const UserMessage: FC = () => {
 
   return (
     <>
+      {!!timelineAt && <TimelineMarker timestamp={timelineAt} />}
       {modelChangedTo && <ModelChangeDivider model={modelChangedTo} />}
     <MessagePrimitive.Root
       className={`oc-msg oc-msg-user${failed ? ' oc-msg-failed' : ''}`}
@@ -189,6 +208,7 @@ const AssistantMessage: FC = () => {
   const messageId = useMessage((m) => m.id);
   const custom = useMessage((m) => m.metadata?.custom as Record<string, unknown> | undefined);
   const modelChangedTo = typeof custom?.modelChangedTo === 'string' ? (custom.modelChangedTo as string) : undefined;
+  const timelineAt = typeof custom?.timelineAt === 'number' ? custom.timelineAt : 0;
   const turnStats = useTurnStats(messageId);
   const hasContent = content.some(
     (p) => (p.type === 'text' && 'text' in p && (p as { text: string }).text.trim()) || p.type === 'tool-call' || p.type === 'image'
@@ -208,6 +228,7 @@ const AssistantMessage: FC = () => {
   if (onlyMuted) {
     return (
       <>
+        {!!timelineAt && <TimelineMarker timestamp={timelineAt} />}
         {modelChangedTo && <ModelChangeDivider model={modelChangedTo} />}
         <MessagePrimitive.Root className="oc-msg oc-msg-muted" data-message-id={messageId}>
           <MessagePrimitive.Content components={ASSISTANT_PART_COMPONENTS} />
@@ -219,6 +240,7 @@ const AssistantMessage: FC = () => {
 
   return (
     <>
+      {!!timelineAt && <TimelineMarker timestamp={timelineAt} />}
       {modelChangedTo && <ModelChangeDivider model={modelChangedTo} />}
       <MessagePrimitive.Root className="oc-msg oc-msg-assistant" data-message-id={messageId}>
         <div className="oc-msg-body oc-md">

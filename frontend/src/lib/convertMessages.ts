@@ -136,6 +136,7 @@ type ConvertedCacheEntry = {
    * in the cache key like `msgAgent`.
    */
   modelChangedTo: string;
+  timelineAt: number;
   /** Whether reasoning parts were rendered into this result (#290). */
   showReasoning: boolean;
   /** Current clock value when this message contains active reasoning. */
@@ -475,6 +476,27 @@ export function createConvertMessages(): ConvertMessagesFn {
     );
 
     const modelChangedById = detectModelChanges(filtered);
+    const timelineById: Record<string, number> = {};
+    let hasConversationMessage = false;
+    let lastAssistantResponseAt = 0;
+    for (const message of filtered) {
+      if (message.data?.role !== 'user' && message.data?.role !== 'assistant') continue;
+      if (!hasConversationMessage) {
+        timelineById[message.id] = message.timeCreated;
+        hasConversationMessage = true;
+      } else if (
+        message.data.role === 'user' &&
+        lastAssistantResponseAt > 0 &&
+        message.timeCreated - lastAssistantResponseAt > 60 * 60 * 1_000
+      ) {
+        timelineById[message.id] = message.timeCreated;
+        lastAssistantResponseAt = 0;
+      }
+      if (message.data.role === 'assistant') {
+        const settled = message.data.time?.completed !== undefined || !!message.data.finish || !!message.data.error;
+        if (settled) lastAssistantResponseAt = message.data.time?.completed || message.timeCreated;
+      }
+    }
 
   const result = filtered.map((m, idx): ThreadMessageLike => {
     if (m.data?.role === 'notice') return convertNoticeMessage(m, partsByMsg[m.id] || EMPTY_PARTS);
@@ -507,6 +529,7 @@ export function createConvertMessages(): ConvertMessagesFn {
     // same Part references) because `partsByMsg` builds a fresh array
     // on every call even when the underlying Part objects are stable.
     const modelChangedTo = modelChangedById[m.id] || '';
+    const timelineAt = timelineById[m.id] || 0;
     const msgPartsRaw = partsByMsg[m.id] || EMPTY_PARTS;
     const reasoningNow = showReasoning && msgPartsRaw.some((part) => {
       const data = parsePart(part);
@@ -531,6 +554,7 @@ export function createConvertMessages(): ConvertMessagesFn {
       cached.failedById === failedById &&
       cached.msgAgent === msgAgent &&
       cached.modelChangedTo === modelChangedTo &&
+      cached.timelineAt === timelineAt &&
       cached.showReasoning === showReasoning &&
       cached.reasoningNow === reasoningNow
     ) {
@@ -658,6 +682,7 @@ export function createConvertMessages(): ConvertMessagesFn {
       ...(msgAgent ? { agent: msgAgent } : {}),
       ...(model ? { model } : {}),
       ...(modelChangedTo ? { modelChangedTo } : {}),
+      ...(timelineAt ? { timelineAt } : {}),
       ...(failedEntry ? { failed: { error: failedEntry.error, imagesDropped: !!failedEntry.imagesDropped } } : {}),
     };
     const metadata = Object.keys(customMeta).length > 0 ? { custom: customMeta } : undefined;
@@ -707,6 +732,7 @@ export function createConvertMessages(): ConvertMessagesFn {
       failedById,
       msgAgent,
       modelChangedTo,
+      timelineAt,
       showReasoning,
       reasoningNow,
       approvalSig,
