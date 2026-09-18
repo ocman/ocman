@@ -124,7 +124,11 @@ export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedd
         <SidebarFileListSkeleton rows={6} />
       )}
       {enabled && error && (
-        <div className="oc-changes-sidebar-error">Failed to load changes: {error}</div>
+        <div className="oc-changes-sidebar-error" role="alert">
+          {data
+            ? <>Refresh failed: {error}. Showing previous results; data may be out of date.</>
+            : <>Failed to load changes: {error}</>}
+        </div>
       )}
       {enabled && data && data.supported && files.length === 0 && !loading && (
         <div className="oc-changes-sidebar-empty">

@@ -144,7 +144,11 @@ export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = fal
         </div>
       )}
       {enabled && error && (
-        <div className="oc-changes-sidebar-error">Failed to load diff: {error}</div>
+        <div className="oc-changes-sidebar-error" role="alert">
+          {data
+            ? <>Refresh failed: {error}. Showing previous results; data may be out of date.</>
+            : <>Failed to load diff: {error}</>}
+        </div>
       )}
       {enabled && data && files.length === 0 && !loading && !notRepo && !error && (
         <div className="oc-changes-sidebar-empty">
