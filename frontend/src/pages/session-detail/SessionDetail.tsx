@@ -888,6 +888,9 @@ export function SessionDetail({ id }: SessionDetailProps) {
               parts={parts}
               sessionId={session.id}
               platformId={session.platform}
+              sessionStatus={session.status}
+              speechConnected={view.status === 'live'}
+              speechReconciled={!view._refetchRequested}
               canSend={portAvailable && caps.composer}
               pendingAgent={selectedAgent || activeAgent || undefined}
               agents={agents}

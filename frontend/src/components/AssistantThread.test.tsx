@@ -95,6 +95,7 @@ vi.mock('../lib/turnStats', () => ({
 
 import { AssistantThread, ImageDisplay } from './AssistantThread';
 import { useUiStore } from '../lib/uiStore';
+import { TurnSpeechContext } from '../lib/turnSpeech';
 
 class StubResizeObserver {
   observe() {}
@@ -109,9 +110,43 @@ beforeEach(() => {
   threadState.renderUser = false;
   message.content = [{ type: 'text', text: 'Reply' }];
   turnStats.promptCacheRebuilt = false;
+  turnStats.isLive = false;
+  turnStats.isSummaryAnchor = true;
   message.metadata.custom = { model: 'openai/gpt-5', time: { created: 1000, completed: 2000 }, tokens: { output: 10 } };
 });
 afterEach(() => vi.unstubAllGlobals());
+
+describe('turn actions', () => {
+  it('groups speaker and bookmark at the turn end and switches the speaker to stop', async () => {
+    const toggle = vi.fn();
+    const bookmark = vi.fn();
+    const speech = { answers: new Map([['assistant-1', 'Reply']]), speakingId: null as string | null, error: null, toggle };
+    const view = (value = speech) => <TurnSpeechContext.Provider value={value}>
+      <AssistantThread onToggleMessageBookmark={bookmark} />
+    </TurnSpeechContext.Provider>;
+    const { rerender } = render(view());
+    const group = screen.getByRole('group', { name: 'Turn actions' });
+    expect(group).toContainElement(screen.getByRole('button', { name: 'Read aloud' }));
+    expect(group).toContainElement(screen.getByRole('button', { name: 'Bookmark message' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Read aloud' }));
+    expect(toggle).toHaveBeenCalledWith('assistant-1');
+    await userEvent.click(screen.getByRole('button', { name: 'Bookmark message' }));
+    expect(bookmark).toHaveBeenCalledWith('assistant-1');
+    rerender(view({ ...speech, speakingId: 'assistant-1' }));
+    expect(screen.getByRole('button', { name: 'Stop reading' })).toBeInTheDocument();
+    turnStats.isSummaryAnchor = false;
+    rerender(view());
+    expect(screen.queryByRole('group', { name: 'Turn actions' })).not.toBeInTheDocument();
+  });
+  it('keeps live turns free of actions and shows playback errors accessibly', () => {
+    turnStats.isLive = true;
+    render(<TurnSpeechContext.Provider value={{ answers: new Map(), speakingId: null, error: 'Playback blocked', toggle: vi.fn() }}>
+      <AssistantThread onToggleMessageBookmark={vi.fn()} />
+    </TurnSpeechContext.Provider>);
+    expect(screen.queryByRole('group', { name: 'Turn actions' })).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Playback blocked');
+  });
+});
 
 describe('AssistantThread slash-command skills', () => {
   const instructions = '# Review Pull Request\n\nReview the changes carefully.\n\nBase directory for this skill: /home/user/.config/opencode/skills/review-pr\nRelative paths in this skill (e.g., scripts/, references/) are relative to this base directory.';

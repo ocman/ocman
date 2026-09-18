@@ -72,6 +72,7 @@ export function extractMessageFromEvent(
     data: {
       role,
       finish: info.finish as string | undefined,
+      summary: info.summary as boolean | undefined,
       modelID: info.modelID as string | undefined,
       providerID: info.providerID as string | undefined,
       agent: info.agent as string | undefined,

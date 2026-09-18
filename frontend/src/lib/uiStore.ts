@@ -111,6 +111,12 @@ type UiStore = {
   // Turn summaries remain visible regardless of this preference.
   showMessageMetadata: boolean;
   setShowMessageMetadata: (enabled: boolean) => void;
+  autoReadAnswers: boolean;
+  setAutoReadAnswers: (enabled: boolean) => void;
+  speechVoiceURI: string;
+  setSpeechVoiceURI: (uri: string) => void;
+  speechRate: number;
+  setSpeechRate: (rate: number) => void;
 
   // OS-level Web Notifications. Off by default — enabling requires the
   // user to grant browser permission, so we never preemptively claim
@@ -282,6 +288,12 @@ export const useUiStore = create<UiStore>()(
 
       showMessageMetadata: false,
       setShowMessageMetadata: (enabled) => set({ showMessageMetadata: enabled }),
+      autoReadAnswers: false,
+      setAutoReadAnswers: (enabled) => set({ autoReadAnswers: enabled }),
+      speechVoiceURI: '',
+      setSpeechVoiceURI: (uri) => set({ speechVoiceURI: uri }),
+      speechRate: 1,
+      setSpeechRate: (rate) => set({ speechRate: Math.min(2, Math.max(0.5, rate)) }),
 
       notificationsEnabled: false,
       setNotificationsEnabled: (enabled) => set({ notificationsEnabled: enabled }),
@@ -438,6 +450,9 @@ export const useUiStore = create<UiStore>()(
         showToolDetails: s.showToolDetails,
         showReasoning: s.showReasoning,
         showMessageMetadata: s.showMessageMetadata,
+        autoReadAnswers: s.autoReadAnswers,
+        speechVoiceURI: s.speechVoiceURI,
+        speechRate: s.speechRate,
         notificationsEnabled: s.notificationsEnabled,
         collapsedProjects: s.collapsedProjects,
         projectOrder: s.projectOrder,

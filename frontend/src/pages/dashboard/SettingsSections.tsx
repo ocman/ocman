@@ -11,6 +11,7 @@ import { useSaveStatus, useSettingSave } from '../../lib/useSaveStatus';
 import { useUiStore } from '../../lib/uiStore';
 import { useApiStore } from '../../lib/apiStore';
 import { api } from '../../lib/api';
+import { SpeechSettings } from '../../components/SpeechSettings';
 import {
   notificationsSupported,
   requestNotificationPermission,
@@ -194,6 +195,7 @@ export function SessionsSection() {
           onSave={(next) => setShowMessageMetadata(next)}
         />
       </SettingRow>
+      <SpeechSettings />
       <SettingRow
         label="Worktree sessions inherit parent permissions"
         desc="When you split a session into a worktree, seed the new session with the permissions you already approved with &ldquo;Allow always&rdquo; in the parent, so it doesn't re-prompt for them."

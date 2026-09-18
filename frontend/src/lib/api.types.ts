@@ -492,6 +492,7 @@ export interface Message {
   data: {
     role: string;
     finish?: string;
+    summary?: boolean;
     modelID?: string;
     providerID?: string;
     agent?: string;
@@ -528,6 +529,8 @@ export interface FilePart {
 
 export interface PartData {
   type: string;
+  synthetic?: boolean;
+  ignored?: boolean;
   callID?: string;
   text?: string;
   tool?: string;

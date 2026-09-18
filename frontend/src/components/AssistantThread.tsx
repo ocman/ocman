@@ -21,6 +21,7 @@ import { LinkPreviewStrip } from './GitHubLinkPreview';
 import { MarkdownText } from './assistant/MarkdownText';
 import { ToolCallDisplay } from './assistant/ToolCallDisplay';
 import { ModelLabel } from './ModelLogo';
+import { TurnSpeechContext } from '../lib/turnSpeech';
 
 interface MessageBookmarkContextValue {
   bookmarkedIds: Set<string>;
@@ -209,7 +210,6 @@ const AssistantMessage: FC = () => {
       <>
         {modelChangedTo && <ModelChangeDivider model={modelChangedTo} />}
         <MessagePrimitive.Root className="oc-msg oc-msg-muted" data-message-id={messageId}>
-          <MessageBookmarkButton messageId={messageId} />
           <MessagePrimitive.Content components={ASSISTANT_PART_COMPONENTS} />
           <TurnSummaryBar messageId={messageId} />
         </MessagePrimitive.Root>
@@ -221,7 +221,6 @@ const AssistantMessage: FC = () => {
     <>
       {modelChangedTo && <ModelChangeDivider model={modelChangedTo} />}
       <MessagePrimitive.Root className="oc-msg oc-msg-assistant" data-message-id={messageId}>
-        <MessageBookmarkButton messageId={messageId} />
         <div className="oc-msg-body oc-md">
           <MessagePrimitive.Content components={ASSISTANT_PART_COMPONENTS} />
         </div>
@@ -338,6 +337,7 @@ function AssistantMeta() {
  */
 function TurnSummaryBar({ messageId }: { messageId: string }) {
   const stats = useTurnStats(messageId);
+  const speech = React.useContext(TurnSpeechContext);
   const custom = useMessage((m) => m.metadata?.custom as Record<string, unknown> | undefined);
   const agent = typeof custom?.agent === 'string' ? (custom.agent as string) : undefined;
   const agentColor = useAgentColor(agent);
@@ -445,6 +445,18 @@ function TurnSummaryBar({ messageId }: { messageId: string }) {
           {i < items.length - 1 && <span className="oc-turn-sep">·</span>}
         </React.Fragment>
       ))}
+      {!isLive && <span className="oc-turn-actions" role="group" aria-label="Turn actions">
+        {speech.answers.has(messageId) && <button
+          type="button"
+          className="oc-turn-speech-btn"
+          aria-label={speech.speakingId === messageId ? 'Stop reading' : 'Read aloud'}
+          title={speech.speakingId === messageId ? 'Stop reading' : 'Read aloud'}
+          onClick={() => speech.toggle(messageId)}
+        >
+          <i className={`bi ${speech.speakingId === messageId ? 'bi-stop-fill' : 'bi-volume-up'}`} aria-hidden="true" />
+        </button>}
+        <MessageBookmarkButton messageId={messageId} />
+      </span>}
     </div>
   );
 }
@@ -488,6 +500,7 @@ export function AssistantThread({
 }) {
   trackRender('AssistantThread');
   const showToolDetails = useUiStore((s) => s.showToolDetails);
+  const speech = React.useContext(TurnSpeechContext);
   const threadRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const hasMoreRef = useRef(hasMore);
@@ -774,6 +787,7 @@ export function AssistantThread({
             <div className="oc-empty">No messages yet.</div>
           </ThreadPrimitive.Empty>
           <ThreadPrimitive.Messages components={THREAD_MESSAGE_COMPONENTS} />
+          {speech.error && <div role="status" className="oc-thread-error-note">{speech.error}</div>}
           {footer && <div className="oc-thread-footer">{footer}</div>}
         </ThreadPrimitive.Viewport>
         <div ref={footerRef} className="oc-viewport-footer" data-testid="conversation-composer">

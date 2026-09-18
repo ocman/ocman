@@ -73,6 +73,33 @@
   animation: oc-msg-scroll-highlight 1.2s ease-out;
 }
 
+.oc-turn-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.oc-turn-actions .oc-msg-bookmark-btn,
+.oc-turn-speech-btn {
+  position: static;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 1;
+}
+
+.oc-turn-speech-btn:hover {
+  color: var(--accent4);
+}
+
 .oc-tool-source {
   display: contents;
 }

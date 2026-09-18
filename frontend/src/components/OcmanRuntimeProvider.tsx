@@ -5,7 +5,7 @@ import {
   type AppendMessage,
   type ThreadMessageLike,
 } from '@assistant-ui/react';
-import type { AgentInfo, Message, Part, SessionModelEntry, TaskSessionData } from '../lib/api';
+import type { AgentInfo, Message, Part, SessionModelEntry, SessionStatus, TaskSessionData } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
 import { useUiStore } from '../lib/uiStore';
 import { AgentsContext } from '../lib/agentColor';
@@ -14,12 +14,16 @@ import type { FailedSend } from '../lib/failedSends';
 import { computeIsRunning, createConvertMessages, parsePart } from '../lib/convertMessages';
 import { computeTurnStats, ModelLabelsContext, TurnStatsContext } from '../lib/turnStats';
 import { formatModelRef } from '../lib/sessionStatus';
+import { TurnSpeechContext, useTurnSpeech } from '../lib/turnSpeech';
 
 interface Props {
   messages: Message[];
   parts: Part[];
   sessionId: string;
   platformId?: string;
+  sessionStatus?: SessionStatus;
+  speechConnected?: boolean;
+  speechReconciled?: boolean;
   /**
    * Whether the composer may currently send messages. Typically this
    * is `platformCapabilities.composer && portAvailable` — that is, the
@@ -52,6 +56,9 @@ export function OcmanRuntimeProvider({
   parts,
   sessionId,
   platformId,
+  sessionStatus,
+  speechConnected = false,
+  speechReconciled = true,
   canSend,
   pendingAgent,
   agents,
@@ -134,6 +141,8 @@ export function OcmanRuntimeProvider({
     () => computeTurnStats(messages, parts, isRunning),
     [messages, parts, isRunning],
   );
+  const speech = useTurnSpeech(messages, parts, turnStatsMap,
+    `${platformId ?? ''}:${sessionId}`, sessionStatus, speechConnected, speechReconciled);
 
   // Stable onNew callback — only changes when canSend, sessionId, or
   // sendMessage change. This prevents the store adapter object from
@@ -169,7 +178,9 @@ export function OcmanRuntimeProvider({
         <ModelLabelsContext.Provider value={modelLabels}>
           <TurnStatsContext.Provider value={turnStatsMap}>
             <AssistantRuntimeProvider runtime={runtime}>
-              {children}
+              <TurnSpeechContext.Provider value={speech}>
+                {children}
+              </TurnSpeechContext.Provider>
             </AssistantRuntimeProvider>
           </TurnStatsContext.Provider>
         </ModelLabelsContext.Provider>

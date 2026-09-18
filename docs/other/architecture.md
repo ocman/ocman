@@ -294,10 +294,15 @@ flowchart TD
     API -->|/api| Hub[ocman backend]
     SSE -->|events| Hub
     Comp --> Caps[useCapabilities<br/>capability gating]
+    Comp --> Speech[Browser speech synthesis<br/>local or online voice]
 ```
 
 - **Capability gating.** The UI never branches on platform identity. Features
   toggle via `/api/capabilities`, enforced by a lint script.
+- **Read aloud.** Turn-end controls select original final-answer text parts and
+  use browser speech synthesis. Opt-in autoplay waits for the idle reconciliation
+  in the focused session tab. Voice preferences stay in browser storage; audio
+  does not pass through the ocman backend.
 - **Client state.** Shared Zustand stores hold broad session state. The
   Routines page loads definitions and history over REST and keeps its form and
   selected edits locally.
