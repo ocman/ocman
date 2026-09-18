@@ -1009,14 +1009,30 @@ function ComposerImpl({
             {images.map((img, i) => (
               <div key={i} className="oc-composer-image-thumb">
                 <img src={img.url} alt={`Attachment ${i + 1}`} />
-                <button className="oc-composer-image-remove" onClick={() => attachments.removeImage(i)}>{'\u00D7'}</button>
+                <button
+                  type="button"
+                  className="oc-composer-image-remove"
+                  title={`Remove image attachment ${i + 1}`}
+                  aria-label={`Remove image attachment ${i + 1}`}
+                  onClick={() => attachments.removeImage(i)}
+                >
+                  {'\u00D7'}
+                </button>
               </div>
             ))}
             {files.map((file, i) => (
               <div key={file.path} className="oc-composer-file-thumb" title={file.path}>
                 <span className="oc-composer-file-icon">file</span>
                 <span className="oc-composer-file-name">{file.name}</span>
-                <button className="oc-composer-image-remove" onClick={() => attachments.removeFile(i)}>{'\u00D7'}</button>
+                <button
+                  type="button"
+                  className="oc-composer-image-remove"
+                  title={`Remove attached file ${file.name}, attachment ${i + 1}`}
+                  aria-label={`Remove attached file ${file.name}, attachment ${i + 1}`}
+                  onClick={() => attachments.removeFile(i)}
+                >
+                  {'\u00D7'}
+                </button>
               </div>
             ))}
           </div>

@@ -125,6 +125,8 @@ export function LaunchSplitButton({
         type="button"
         className="oc-upstream-launch-chevron"
         disabled={busy}
+        title="More launch options"
+        aria-label="More launch options"
         aria-haspopup="menu"
         aria-expanded={menuOpen}
         onClick={() => setMenuOpen((o) => !o)}
