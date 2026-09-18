@@ -8,7 +8,7 @@
  * assistant-ui hiccup instead of masking unrelated crashes.
  */
 const ASSISTANT_UI_LOOKUP_ERROR =
-  /ClientLookup: (?:Index -?\d+ out of bounds|Key ".*" not found)/;
+  /ClientLookup: (?:Index -?\d+ out of bounds|Key ".*" not found)/i;
 
 /**
  * assistant-ui occasionally throws a transient index/key lookup error while

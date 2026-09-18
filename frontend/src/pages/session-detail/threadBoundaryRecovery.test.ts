@@ -18,6 +18,14 @@ describe('isRecoverableThreadBoundaryError', () => {
     ).toBe(true);
   });
 
+  it('matches the lowercased store 0.3.x signature', () => {
+    expect(
+      isRecoverableThreadBoundaryError(
+        new Error('useClientLookup: index 150 out of bounds (length: 150) (ignore if recovered)'),
+      ),
+    ).toBe(true);
+  });
+
   it('matches the key-not-found variant', () => {
     expect(
       isRecoverableThreadBoundaryError(

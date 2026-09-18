@@ -3,8 +3,12 @@ import './AssistantThread.css';
 import {
   ThreadPrimitive,
   MessagePrimitive,
-  useMessage,
+  useAuiState,
+  type MessageState,
 } from '@assistant-ui/react';
+
+// assistant-ui 0.15 dropped `useMessage`; same selector shape over the aui store.
+const useMessage = <T,>(selector: (m: MessageState) => T): T => useAuiState((s) => selector(s.message));
 import { formatSeconds, formatTokensPerSecond, formatCompactNumber, formatCurrency } from '../lib/format';
 import { useModelLabel, useTurnStats } from '../lib/turnStats';
 import { shouldRenderAssistantMessage } from './assistantMessageVisibility';

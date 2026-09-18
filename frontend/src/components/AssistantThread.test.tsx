@@ -84,7 +84,7 @@ vi.mock('@assistant-ui/react', async () => {
           : <components.Text key={index} text={part.text ?? ''} />)}</>
       ),
     },
-    useMessage: (selector: (value: typeof message) => unknown) => selector(message),
+    useAuiState: (selector: (value: { message: typeof message }) => unknown) => selector({ message }),
   };
 });
 
