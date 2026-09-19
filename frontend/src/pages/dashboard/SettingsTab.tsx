@@ -3,6 +3,7 @@ import { usePageTitle } from '../../lib/headerContext';
 import { PromptTemplateSettings } from '../../components/upstream/PromptTemplateSettings';
 import { RemoteSettings } from '../../components/RemoteSettings';
 import { SharingSettings } from '../../components/SharingSettings';
+import { PluginSettings } from '../../components/PluginSettings';
 import { useAuthStore } from '../../lib/authStore';
 import { useUiStore } from '../../lib/uiStore';
 import { useApiStore } from '../../lib/apiStore';
@@ -47,6 +48,7 @@ export function SettingsTab() {
     { id: 'notifications', label: 'Notifications', show: true },
     { id: 'sessions', label: 'Sessions', show: true },
     { id: 'remotes', label: 'Remotes', show: true },
+    { id: 'plugins', label: 'Plugins', show: true },
     { id: 'auto-approve', label: 'Auto-approve', show: true },
     { id: 'sharing', label: 'Sharing', show: true },
     { id: 'templates', label: 'PR & Issue templates', show: true },
@@ -71,6 +73,10 @@ export function SettingsTab() {
         ))}
       </nav>
       <div className="settings-content">
+        {active === 'plugins' && <div className="settings-section">
+          <h2 className="settings-section-title">Plugins</h2>
+          <PluginSettings />
+        </div>}
         <div className="settings-section" hidden={active !== 'notifications'}>
           <h2 className="settings-section-title">Notifications</h2>
           <NotificationsSection />

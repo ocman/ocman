@@ -173,6 +173,16 @@ handlers don't bypass the `Host` seam). User-facing docs:
   of only serving HTTP.
 - `internal/platforms/` — `Platform` interface, `Registry`, common
   types/errors.
+- `internal/plugins/` — native executable discovery, versioned NDJSON protocol,
+  process supervision, and the `action.v1` broker. Trusted executables live in
+  `~/.local/share/ocman/plugins` or `OCMAN_PLUGIN_DIR`; even discovery runs code.
+  Settings manages owner-local enablement, grants, configuration, and diagnostics.
+  Remote projection uses authenticated `PluginOperation` RPCs; each owner keeps
+  its binaries, secrets, and action receipts. The browser receives typed palette
+  actions/results, never plugin JavaScript. See `docs/features/plugins.md` and
+  `internal/plugins/README.md`. Conversation-provider, platform-provider, iframe UI,
+  relay inbox capability, registry/updates, signatures, sandboxing, Slack, and Codex
+  are future work.
 - `internal/platforms/opencode/` — OpenCode adapter wrapping the DB
   + HTTP proxy client.
 - `internal/sessionsvc/` — session mutation service (validation,
@@ -568,7 +578,10 @@ detail into the prose below each one.
 
 ## Conventions
 
-- All Go packages live under `internal/` — nothing is exported.
+- Application Go packages live under `internal/`. The optional public plugin SDK
+  is `sdk/plugin`, with reusable tests in `sdk/plugin/conformance` and a deterministic
+  executable example in `examples/ocman-plugin-fixture`. SDK DTOs alias the canonical
+  types in `internal/plugins`; do not duplicate the wire definitions.
 - **Platform-agnostic frontend.** The UI must not branch on
   `session.platform === '...'`; capability gating goes through
   `/api/capabilities` + `useCapabilities()`. Enforced by

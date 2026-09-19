@@ -1291,6 +1291,7 @@ export interface HostCapabilities {
 
 /** One machine's host capabilities, grouped under its host identity. */
 export interface HostCapabilityEntry {
+  pluginManagement?: boolean;
   remoteId: string;
   remoteName: string;
   capabilities: HostCapabilities;

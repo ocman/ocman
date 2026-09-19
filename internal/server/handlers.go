@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -561,9 +562,10 @@ type capabilityEntry struct {
 // capabilities (AD-16/AD-17). Additive alongside the existing
 // platform-scoped entries; the frontend gates host UI on these flags.
 type hostCapabilityEntry struct {
-	RemoteID     string           `json:"remoteId"`
-	RemoteName   string           `json:"remoteName"`
-	Capabilities hostsvc.HostCaps `json:"capabilities"`
+	RemoteID         string           `json:"remoteId"`
+	RemoteName       string           `json:"remoteName"`
+	Capabilities     hostsvc.HostCaps `json:"capabilities"`
+	PluginManagement bool             `json:"pluginManagement"`
 }
 
 func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
@@ -581,15 +583,20 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 	// Host capabilities, grouped per machine. v1 surfaces the local
 	// machine; remote hosts are appended once registered (Phase 6).
 	hosts := []hostCapabilityEntry{{
-		RemoteID:     "local",
-		RemoteName:   "This machine",
-		Capabilities: s.hostCaps(),
+		RemoteID:         "local",
+		RemoteName:       "This machine",
+		Capabilities:     s.hostCaps(),
+		PluginManagement: s.stateDB != nil,
 	}}
+	pluginCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
 	for id, h := range s.router().Remotes() {
+		available := s.routePluginOperation(pluginCtx, id, remote.PluginRequest{Operation: "available"})
 		hosts = append(hosts, hostCapabilityEntry{
-			RemoteID:     id,
-			RemoteName:   id,
-			Capabilities: h.Capabilities(),
+			RemoteID:         id,
+			RemoteName:       id,
+			Capabilities:     h.Capabilities(),
+			PluginManagement: available.Error == nil && string(available.Value) == "true",
 		})
 	}
 

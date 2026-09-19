@@ -217,7 +217,9 @@ import (
 //	88 - add permission_rules_json to factory_epic for pre-approved session permissions.
 //	89 - persist the local projects index for stale-while-refresh startup reads.
 //	90 - add opt-in session archival to routines and their run snapshots.
-const latestSchemaVersion = 90
+//	91 - persist plugin discovery, grants and configuration checkpoints.
+//	92 - durable action operation receipts prevent replay after a host restart.
+const latestSchemaVersion = 92
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -505,6 +507,10 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV89(tx)
 	case 90:
 		return migrateToV90(tx)
+	case 91:
+		return migrateToV91(tx)
+	case 92:
+		return migrateToV92(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}

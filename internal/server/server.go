@@ -24,6 +24,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
+	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/queuesvc"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/routines"
@@ -127,7 +128,15 @@ type Server struct {
 	inboxSourcesFn   func() []string
 	inboxItemsFn     func(context.Context, string) ([]state.InboxItem, error)
 
-	routineSvc *routines.Service
+	routineSvc        *routines.Service
+	pluginMu          sync.Mutex
+	pluginRecovered   bool
+	pluginDiscovery   []pluginDiscoveryFailure
+	pluginCtx         context.Context
+	pluginProcesses   map[string]*plugins.Process
+	pluginStderr      map[string]string
+	pluginActionsOnce sync.Once
+	pluginActions     *plugins.ActionBroker
 
 	// queueSvcCached is the follow-up message queue service (#58), built
 	// lazily on first use. Guarded by
@@ -510,6 +519,13 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// started below race that assignment otherwise.
 	s.router()
 	s.loadProjectsIndexCache(context.WithoutCancel(ctx))
+	s.pluginMu.Lock()
+	s.pluginCtx = ctx
+	s.pluginMu.Unlock()
+	defer s.stopPluginProcesses()
+	if _, err := s.RescanPlugins(ctx); err != nil {
+		log.WithError(err).Warn("plugin discovery failed")
+	}
 	if s.stateDB != nil && s.routineSvc == nil {
 		s.routineSvc = routines.New(routines.Deps{
 			Store: s.stateDB, Router: s.router(), Sessions: s.sessions, Platforms: s.registry,

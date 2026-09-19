@@ -1,0 +1,263 @@
+---
+title: Plugins
+weight: 18
+---
+
+Ocman runs native plugin executables on the machine where they are installed.
+The first supported capability is `action.v1`, which adds commands to the command
+palette and returns results rendered by ocman. Manage installations in
+**Settings → Plugins**, selecting the plugin owner before making changes.
+
+## Trust and installation
+
+**Plugins are trusted native code, including during discovery.** Rescanning runs
+each candidate's `describe` command before you enable it. Only install code you
+trust to run with the ocman user's operating-system access. Grants limit the
+context ocman sends through its action broker; they do not restrict a plugin's
+filesystem or network access. Checksums detect changes, not publisher identity.
+There is no sandbox or signature verification.
+
+Install a regular executable named `ocman-plugin-<name>` directly under
+`~/.local/share/ocman/plugins`. Set `OCMAN_PLUGIN_DIR` on the owning ocman process
+to use another directory. Hidden files, symlinks, subdirectories, nested files,
+and files without executable permission are ignored. The host does not download
+or install binaries for you.
+
+For a local development installation, run these commands from the ocman checkout:
+
+```sh
+mkdir -p "$HOME/.local/share/ocman/plugins"
+go build -o "$HOME/.local/share/ocman/plugins/ocman-plugin-fixture" ./examples/ocman-plugin-fixture
+```
+
+Ocman scans at startup. Click **Rescan plugins** after installing, replacing, or
+removing an executable; there is no filesystem watcher. New registrations start
+disabled. Review the ID, version, SHA-256 checksum, capabilities, execution scope,
+and requested grants. Configure required settings, then click **Enable** and
+**Approve grants and enable**. Enablement requires approval of all requested
+grants, including an explicit empty set when none are requested.
+Approval is bound to the reviewed executable and declaration. If another rescan
+changes them before approval, refresh the catalog and review the new registration.
+
+Changed code or declarations revoke approval. Duplicate plugin IDs conflict and
+disable all matching candidates. An executable path cannot change its registered
+plugin ID. Fix the installation and rescan before approving it again.
+
+## Configuration and secrets
+
+**Configure** renders declared string, boolean, number, integer, and string-enum
+settings. The host rejects unknown fields, wrong types, and missing required
+values. Public values are replaced when saved and declared defaults are applied.
+Secret inputs are write-only strings: omitting a secret preserves it, while an
+empty string clears an optional secret. Reads show only whether it is configured.
+
+Configuration and health belong to the installation's owner. Public settings live
+in its `state.db`. Beside that database, ocman stores private plugin files under
+`plugin-data/<sha256(id)>/` and secret snapshots under
+`plugin-secrets/<sha256(id)>/`. Directories use mode `0700`; secret files use `0600`.
+These are permission-protected files, not an encrypted secret vault. Historical
+snapshots remain for rollback and diagnostic redaction.
+
+Serve processes receive effective configuration, including secrets, as one JSON
+object followed by a newline on inherited file descriptor 3. Read and close it
+before emitting the serve hello. Configuration is absent from arguments and
+environment variables; describe has no configuration descriptor. No repository
+path, inherited ocman credentials, or secret-store path is supplied.
+
+Saving configuration for a ready, enabled plugin restarts it and waits for its
+handshake. Failure restores the last working public and secret snapshots and
+restarts the previous configuration, even if the HTTP request was cancelled.
+If ocman exits before activation finishes, startup restores the last working
+checkpoint before launching enabled plugins. Saved edits to disabled plugins remain.
+Check **Refresh health** after a failed save. An enabled unhealthy plugin must be
+disabled before repairing its configuration, then enabled again. Disabled plugins
+can be configured without starting a serve process.
+
+## Process contract and lifecycle
+
+An executable accepts one argument, `describe` or `serve`. Stdout is strictly
+UTF-8 newline-delimited JSON, one object per line; diagnostics go to stderr.
+Each launch receives a fresh `OCMAN_PLUGIN_TOKEN`, which the first `hello` must
+echo. Never log or persist it. The remaining environment is
+`PATH=/usr/bin:/bin` and `LANG=C.UTF-8`; package runtime dependencies accordingly.
+
+- `describe` runs in `/` with stdin at EOF, emits one token-bound hello containing
+  the description, and exits successfully within three seconds.
+- `serve` runs in the plugin's private data directory. It reads configuration,
+  emits the same approved description in a token-bound hello, then waits for the
+  host's hello acknowledgment before handling calls. Readiness has a three-second
+  deadline.
+- The description includes a reverse-domain ID, release version, process version,
+  capability versions, execution scope, concurrency, grants, settings, and actions.
+  Process major versions must match; the lower minor is selected. Capabilities
+  negotiate independently. Unknown or incompatible capabilities are omitted.
+- General calls have an ID, stable operation ID, capability/version, method,
+  deadline, and parameters. They produce zero or more ordered chunks and exactly
+  one result. `action.v1` permits only the terminal result, without chunks.
+
+The server keeps one supervised serve process per enabled local registration and
+rechecks its approved checksum before launch. Disable, removal, or conflict stops
+it. Crashes and protocol failures settle callers without replaying their calls.
+Restart delays start at 100 ms and double to a five-second cap, with at most five
+automatic restarts per supervised lifetime. A successful handshake does not reset
+that budget. Exhaustion leaves durable unhealthy state across ocman restarts;
+**Retry**, **Restart**, or explicit enablement resets it.
+
+Calls respect advertised concurrency, at most 256. Deadlines or cancellation send
+a cancel frame; a plugin that fails to finish within the one-second cancellation
+grace is terminated. Shutdown sends a shutdown frame, allows one second to exit,
+then kills and reaps the process group. Frames are limited to 1 MiB, general call
+output to 8 MiB, and chunk/event queues are bounded. Invalid framing, stream
+ordering, or slow-consumer overflow terminates the process.
+
+The [wire contract](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/internal/plugins/README.md)
+defines exact frames, validation rules, error categories, and HTTP endpoints.
+
+## Authoring action.v1
+
+Advertise capability `{"name":"action","version":{"major":1,"minor":0}}`
+and declare actions in the description. For example:
+
+```json
+{
+  "id": "report",
+  "label": "Create report",
+  "placement": "session",
+  "requiredGrants": ["context.session"],
+  "surfaces": ["command-palette"],
+  "confirmation": "Create a report for this session?"
+}
+```
+
+Also include `context.session` in the plugin's `requestedGrants`. Placements are
+`global`, `project`, and `session`; `command-palette` is the only current surface.
+Each invocation uses method `invoke` with parameters such as:
+
+```json
+{"actionId":"report","context":{"sessionId":"ses-1"}}
+```
+
+There are no arbitrary action parameters. The broker sends only context covered
+by both the action's required grants and current user approvals:
+
+| Grant | Supplied context |
+| --- | --- |
+| `context.owner` | Opaque owner ID |
+| `context.project` | Opaque project ID, never a directory |
+| `context.session` | Opaque session ID |
+| `context.route` | Core route name without parameters or query strings |
+| `context.selection` | Up to 100 project/session references, never selected text |
+
+These references provide no API access to transcripts, credentials, databases,
+or filesystem paths. The host handles confirmation before dispatch. The plugin
+receives a maximum 30-second deadline and must honor cancellation.
+
+Return `{"results":[...]}` with 1–16 typed items, at most 1 MiB total:
+
+```json
+{"results":[{"kind":"notice","text":"Report ready"}]}
+```
+
+Other result kinds are HTTP(S) `link`, base64 `artifact`, static core `navigation`,
+and `refresh` hints. The host renders text, validates URLs and targets, and
+replaces artifact bytes with authorized download handles. HTML, JavaScript,
+arbitrary routes, filesystem download paths, and unknown result fields are rejected.
+Failures return a safe error category rather than diagnostic text.
+
+Keep the same operation ID across confirmation and retries. The owner deduplicates
+concurrent calls and commits a receipt before dispatch. Reusing an ID with changed
+input conflicts; after a host restart, a prior receipt also conflicts instead of
+repeating an uncertain side effect. Results and artifacts are memory-only, and
+their reads recheck grants. Never automatically retry a failed action with a new
+operation ID.
+
+## Remote ownership
+
+Every installation is identified by its owner and plugin ID. Install the binary
+on each machine that needs it; the hub neither copies executables nor persists
+remote secrets. Settings projects the selected owner's catalog, grants,
+configuration, health, and redacted stderr over authenticated gRPC. Secret updates
+pass through the hub to the owner, while responses expose only presence flags.
+
+For project/session contexts, owner-scoped actions run on the project owner and
+hub-scoped actions run on the hub. Global placements resolve to the hub, as does
+the `global` execution scope. The installation's `ownerId` is distinct from the
+project/session `context.ownerId`. A disconnected explicit owner fails closed,
+including when a hub action targets its project. Older remotes without plugin
+management show an unavailable state.
+
+The browser talks only to the hub. Remote calls use the closed `PluginOperation`
+RPC, not a raw plugin protocol tunnel. Each owner applies its own grants,
+confirmation, operation receipts, process supervision, and artifact checks.
+
+## Diagnostics and removal
+
+Settings lists up to 128 rejected executable filenames and safe host errors from
+the latest scan, including invalid descriptions, timeouts, and identity changes.
+Rescanning replaces this list; plugin stdout is never included in diagnostics.
+
+Use **Refresh health** to inspect status, restart count, and the safe last error.
+**Load recent stderr** shows bounded output from the current and most recently
+stopped process. Each capture is capped at 64 KiB and redacts launch tokens and
+current/historical secrets. Raw stderr stays out of SQL, telemetry, and API errors.
+Redaction cannot protect secrets deliberately encoded by trusted native code.
+
+Management mutations and stderr reads require a loopback peer and safe browser
+origin in addition to configured authentication. If those controls fail through
+a reverse proxy, use ocman's local endpoint. Action endpoints use normal
+authentication and origin protection.
+
+| Symptom | Check |
+| --- | --- |
+| No plugin discovered | Selected owner, directory override, executable name/permission, regular file, describe handshake and exit |
+| Conflict or approval lost | Duplicate IDs, changed binary/declaration, attempted ID change at a registered path; correct files and rescan |
+| Enabled but unhealthy | Recent stderr, configuration initialization, stdout framing, cancellation; repair and explicitly retry |
+| Action missing | Placement, selected owner, negotiated capability, enablement, and required grants |
+| Owner unavailable | Remote connection and that owner's plugin-management support |
+
+**Revoke grants** clears approvals and stops in-flight work before restarting the
+process. It denies affected actions and cached results, but cannot recall context
+already delivered. Use **Disable** to stop execution while retaining configuration,
+grants, and private data.
+
+To uninstall, disable the plugin, remove its executable on the owner, and rescan.
+Missing registrations remain visible as removed, retaining configuration and data.
+To erase those too, use **Remove data** and confirm permanent removal while the
+plugin is disabled. This deletes configuration, secrets, grants, and private data;
+it does not delete the executable. A remaining executable is rediscovered as
+disabled on the next scan. Operation receipts survive deletion to prevent
+uncertain action replay.
+
+## Development workflow
+
+Use the optional [Go SDK](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/sdk/plugin/README.md)
+at `github.com/NoUseFreak/ocman/sdk/plugin`, or implement the NDJSON contract in
+another language. `plugin.Run` handles the lifecycle and `plugin.ActionHandler`
+validates action dispatch/results. Plugins with settings read fd 3 before calling
+`Run` in serve mode. The deterministic
+[fixture](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/examples/ocman-plugin-fixture/main.go)
+demonstrates both modes, actions, cancellation, and safe failures.
+
+From the ocman checkout, run:
+
+```sh
+go test ./sdk/plugin/... ./internal/plugins
+go test ./internal/server ./internal/remote ./internal/state -run Plugin
+```
+
+External plugins can use `sdk/plugin/conformance.Run` for executable lifecycle
+checks and `RunActionGrants` for broker grant, minimization, deduplication, and
+revocation checks. Supply deterministic, side-effect-free test calls. Rebuild,
+rescan, review the new checksum, and enable again for a manual palette check.
+
+## Future work
+
+The current release supports native processes and `action.v1` only. The following
+are future work, not available plugin capabilities or integrations:
+
+- Conversation-provider and platform-provider capabilities.
+- Iframe UI contributions.
+- Relay inbox capability, separate from existing core Inbox and webhook features.
+- A plugin registry and automatic updates.
+- Publisher signatures and process sandboxing.
+- Slack integration and a Codex provider.

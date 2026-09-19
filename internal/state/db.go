@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/XSAM/otelsql"
 	log "github.com/sirupsen/logrus"
@@ -19,7 +20,10 @@ import (
 // sharelinks.go, remote.go, identity.go, inbox.go); this file owns
 // the connection lifecycle and shared helpers.
 type DB struct {
-	db *sql.DB
+	db      *sql.DB
+	dataDir string
+	// ponytail: serialize plugin file changes per DB; shard by plugin if contention matters.
+	pluginMu sync.Mutex
 }
 
 // DefaultDBPath returns the default path to the ocman state database.
@@ -69,7 +73,7 @@ func Open(path string) (*DB, error) {
 	// busy_timeout. One connection is plenty for a single-user dashboard.
 	db.SetMaxOpenConns(1)
 
-	stateDB := &DB{db: db}
+	stateDB := &DB{db: db, dataDir: filepath.Dir(path)}
 	if err := stateDB.init(); err != nil {
 		db.Close()
 		return nil, err

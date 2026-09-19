@@ -42,6 +42,7 @@ type Server struct {
 	enrichSession     func(context.Context, string, string, *platforms.SessionDetail)
 	proxyEvents       func(context.Context, string, string, platforms.Platform, io.Writer, io.Writer, func()) error
 	webhookDispatcher webhook.RoutineDispatcher
+	plugins           PluginHandler
 }
 
 // UseInboxStore installs the state store authoritative for this instance's Inbox.

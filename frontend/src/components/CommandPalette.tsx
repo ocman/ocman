@@ -13,8 +13,11 @@ import { createSessionWithLaunch } from '../lib/createSessionWithLaunch';
 import { useLaunchProgressStore } from '../lib/launchProgressStore';
 import { resolveTargetForDir } from '../lib/machinePicker';
 import { remoteLog } from '../lib/remoteLog';
+import { usePluginActions } from '../lib/usePluginActions';
+import type { PluginActionRequest } from '../lib/plugins';
+import { PluginActionDialog } from './PluginActionDialog';
 
-type CommandItem = { kind: 'command'; id: string; label: string; description: string };
+type CommandItem = { kind: 'command'; id: string; label: string; description: string; run?: () => void };
 type ScopedItem = { kind: 'scoped'; id: string; label: string; description: string };
 type NavItem = { kind: 'nav'; id: string; label: string; path: string };
 type CommandNavItem = CommandItem | ScopedItem | NavItem;
@@ -108,7 +111,7 @@ function dedupeCommandNavItems(items: CommandNavItem[]): CommandNavItem[] {
   const out: CommandNavItem[] = [];
 
   for (const item of items) {
-    const key = item.label.toLowerCase();
+    const key = item.kind === 'command' && item.run ? item.id : item.label.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(item);
@@ -167,6 +170,7 @@ export function CommandPalette() {
     openShortcuts,
   } = useUiStore();
   const mode = paletteMode;
+  const [actionInvocation, setActionInvocation] = useState<{ label: string; request: PluginActionRequest } | null>(null);
 
   const [projectList, setProjectList] = useState<Project[]>([]);
   const [projectListLoading, setProjectListLoading] = useState(false);
@@ -246,15 +250,6 @@ export function CommandPalette() {
       });
   }, [browseDirectories]);
 
-  // Effective static commands list. WORKTREE_COMMAND only appears when
-  // the host can launch a managed OpenCode instance (launch-gated on
-  // opencodeLaunch, not tmux; AD-8 / #393).
-  const staticCommands = useMemo(() => {
-    const cmds = [...STATIC_COMMANDS];
-    if (launchAllowed) cmds.push(WORKTREE_COMMAND);
-    return cmds;
-  }, [launchAllowed]);
-
   // Best-effort project inference for `cmd.worktree` so invoking /wt
   // from a project page or session page pre-fills the project field.
   // Falls back to undefined on global pages.
@@ -286,6 +281,30 @@ export function CommandPalette() {
 
     return undefined;
   }, [location.pathname, sessions]);
+
+  const contributions = usePluginActions(inferredProjectDir, paletteOpen && mode === 'command');
+  const staticCommands: CommandItem[] = useMemo(() => [
+    ...STATIC_COMMANDS,
+    ...(launchAllowed ? [WORKTREE_COMMAND] : []),
+    ...contributions.actions.map((item): CommandItem => ({
+      kind: 'command',
+      id: `action:${item.ownerId}:${item.pluginId}:${item.action.id}`,
+      label: item.action.label,
+      description: `${item.pluginId} · ${item.action.placement}`,
+      run: () => setActionInvocation({
+        label: item.action.label,
+        request: {
+          ownerId: item.ownerId,
+          pluginId: item.pluginId,
+          actionId: item.action.id,
+          operationId: crypto.randomUUID(),
+          placement: item.action.placement,
+          surface: 'command-palette',
+          context: contributions.context,
+        },
+      }),
+    })),
+  ], [launchAllowed, contributions.actions, contributions.context]);
 
   useEffect(() => {
     if (!paletteOpen) return;
@@ -480,6 +499,8 @@ export function CommandPalette() {
       const key =
         item.kind === 'session'
           ? `session:${item.session.id}`
+          : item.kind === 'command' && item.run
+          ? item.id
           : item.kind === 'command' || item.kind === 'nav'
           ? `navcmd:${item.label.toLowerCase()}`
           : `scoped:${item.id}`;
@@ -581,7 +602,9 @@ export function CommandPalette() {
       useUiStore.getState().dispatchCommand({ kind: 'scoped', id: item.id, label: item.label, description: item.description });
     } else if (item.kind === 'command') {
       closePalette();
-      if (item.id === 'cmd.shortcuts') {
+      if (item.run) {
+        item.run();
+      } else if (item.id === 'cmd.shortcuts') {
         openShortcuts();
       } else if (item.id === 'cmd.worktree') {
         openWorktreeForm({ projectDir: inferredProjectDir });
@@ -617,6 +640,7 @@ export function CommandPalette() {
     }
   }
 
+  if (actionInvocation) return <PluginActionDialog key={actionInvocation.request.operationId} {...actionInvocation} onClose={() => setActionInvocation(null)} />;
   if (!paletteOpen) return null;
 
   const projectQueryIsCurrentDirectory =
@@ -633,6 +657,7 @@ export function CommandPalette() {
             className="oc-cmd-input"
             type="text"
             role="combobox"
+            aria-label="Search commands and sessions"
             aria-expanded="true"
             aria-autocomplete="list"
             aria-controls={listId}
@@ -655,6 +680,7 @@ export function CommandPalette() {
           />
           <kbd className="oc-cmd-kbd">ESC</kbd>
         </div>
+        {contributions.unavailable && <p role="status">Some plugin actions are unavailable.</p>}
         {mode === 'project' && projectBrowser.open && (
           <div className="oc-cmd-browser-bar">
             <button

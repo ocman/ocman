@@ -1279,6 +1279,7 @@ func TestApplySessionState_PinnedScopesByPlatform(t *testing.T) {
 // --- graceful shutdown test ---
 
 func TestServerStart_ShutdownOnCancel(t *testing.T) {
+	t.Setenv("OCMAN_PLUGIN_DIR", t.TempDir())
 	srv := testServer(t)
 	srv.addr = "127.0.0.1:0" // random port
 
@@ -1299,6 +1300,9 @@ func TestServerStart_ShutdownOnCancel(t *testing.T) {
 }
 
 func TestServerStart_WiresRoutinesAndRetiresOldSurfaces(t *testing.T) {
+	pluginDir := t.TempDir()
+	t.Setenv("OCMAN_PLUGIN_DIR", pluginDir)
+	writeDiscoveryPlugin(t, pluginDir, "ocman-plugin-startup", "org.example.startup", "1")
 	srv := testServer(t)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -1326,6 +1330,11 @@ func TestServerStart_WiresRoutinesAndRetiresOldSurfaces(t *testing.T) {
 		t.Fatalf("routine list status = %d, want 200", resp.StatusCode)
 	}
 	resp.Body.Close()
+
+	plugin, err := srv.stateDB.GetPlugin(ctx, "org.example.startup")
+	if err != nil || plugin.Enabled || plugin.Removed {
+		t.Fatalf("startup discovery: %+v, %v", plugin, err)
+	}
 
 	resp, err = http.Post(baseURL+"/api/routines", "application/json", strings.NewReader(validRoutineBody))
 	if err != nil {

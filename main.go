@@ -462,6 +462,7 @@ func startRemoteServer(ctx context.Context, srv *server.Server, stateDB *state.D
 	}
 	rsrv := remote.NewServer(srv.Registry(), srv.RemoteServerHost(), ident.InstanceID, version).
 		UseInboxStore(stateDB).
+		UsePlugins(srv.RemotePluginOperation).
 		UseSessions(srv.SessionService()).
 		UseWebhookDispatcher(srv.RoutineService()).
 		UseSessionEnricher(srv.EnrichRemoteSessionDetail).

@@ -6,10 +6,10 @@ weight: 6
 ## Introduction
 
 Ocman is a single Go binary that serves a React SPA and acts as a control
-plane for coding-agent sessions. Four diagrams follow: the system context
+plane for coding-agent sessions. The main diagrams cover the system context
 (what ocman talks to), the backend composition (the Go packages), the
-session/event data flow, and the frontend composition. Each diagram is capped
-at roughly 10 blocks, and the detail lives in the text below it.
+session/event data flow, frontend composition, and plugin action flow. Detail
+lives in the text below each diagram.
 
 ### Cross-machine conversation sharing
 
@@ -44,14 +44,15 @@ Everything external that the ocman process touches.
 
 ```mermaid
 flowchart LR
-    Browser[Browser SPA<br/>REST + SSE] --> Ocman[ocman<br/>Go binary :8228]
+    Browser[Browser SPA<br/>REST + SSE] -->|core APIs + brokered plugin actions| Ocman[ocman<br/>Go binary :8228]
     Agent[AI agents<br/>MCP clients] -->|/mcp| Ocman
     Ocman -->|read-only SQLite| OCDB[(opencode.db)]
     Ocman -->|read/write SQLite<br/>Inbox + state| StateDB[(state.db)]
     Ocman -->|Authenticated HTTP/SSE proxy| OCInst[Running OpenCode<br/>instances]
     Ocman -->|exec| Shell[git / tmux / lsof / bd<br/>host tools]
+    Ocman -->|describe + supervised serve / NDJSON| PluginExec[Trusted native plugin processes]
     Ocman -->|REST| APIs[GitHub / Forgejo<br/>provider usage APIs]
-    Ocman <-->|gRPC + token| Remotes[Remote ocman<br/>instances]
+    Ocman <-->|gRPC + token: sessions, hosts, plugins| Remotes[Remote ocman<br/>instances]
     Ocman -->|encrypted webhook poll| Relay[ocman-relay<br/>ciphertext persistence]
     Ocman -.->|OTLP, optional| Otel[Telemetry collector]
 ```
@@ -68,10 +69,19 @@ flowchart LR
 - **Provider usage APIs.** The subscription usage page reads OpenCode's local
   OAuth credentials server-side and returns only normalized quota windows;
   provider tokens and account identifiers never reach the browser.
+- **Native plugin executables.** Startup and explicit rescans describe direct
+  executables from the local plugin directory. Each describe has a fresh token,
+  minimal environment, bounded output, and a three-second deadline. Duplicate
+  identities conflict; changed binaries lose approval. Discovery itself executes
+  trusted code. Grants minimize brokered context, not operating-system access.
+  See [Plugins](../features/plugins.md) for installation and operations.
 - **Remote ocman instances.** The hub dials remotes over gRPC and re-exposes
   their sessions and hosts transparently. The owning remote enriches session
   detail with its persisted approvals and tees synthetic approval events into
   the gRPC event stream before the hub forwards them to the browser.
+  Plugin catalog, management, health, actions and artifact reads use the same
+  authenticated connection. Each machine discovers its own binaries and stores
+  its own configuration and secrets. The hub never installs remote binaries.
 - **Encrypted webhooks.** Providers submit plaintext to the relay's ingestion
   URL, where ocman encrypts a versioned age X25519 envelope. The relay
   persists ciphertext plus visible size/timing metadata; the owning local or
@@ -104,16 +114,63 @@ flowchart TD
     MCP --> Routines
     MCP --> Registry
     Registry --> OC[platforms/opencode + internal/db<br/>adapter and read-only queries]
-    Registry --> RP[remote.Platform<br/>gRPC-backed]
+    Registry --> RP[internal/remote<br/>platform adapter + owner RPCs]
     Router --> Local[hostsvc/local<br/>git, tmux, worktree, Beads, runtimes]
     Server --> State[internal/state<br/>state.db]
     Inbox --> State
     Inbox -.->|remote RPC| Router
     Server --> Forge[forge + integrations<br/>GitHub/Forgejo clients]
+    State -.->|registration types| Plugins[internal/plugins<br/>protocol, supervision, action broker]
+    Server -->|management + authenticated actions| Plugins
+    Plugins -->|token-bound NDJSON + private configuration fd| PluginExec[External plugin process]
+    Server -->|owner-routed PluginOperation RPC| RP
+    PluginSDK[sdk/plugin<br/>optional public Go SDK] -->|canonical DTO aliases + validators| Plugins
 ```
 
 - **internal/server.** The HTTP mux, SSE broadcast and fanout, around 60
   handler files, plus tmux, terminal, whisper, auto-approve and routine ticks.
+- **internal/plugins.** External wire DTOs, bounded NDJSON, version negotiation,
+  handshake and stream-order validation, executable discovery, and description
+  validation. `Server.StartOnListener` scans once; `RescanPlugins` repeats the scan
+  and records identities, checksums, and conflicts in state. The server supervises
+  one serve process per enabled local plugin from its private data directory, with
+  bounded calls/output, cancellation, restart cutoff and process-group shutdown.
+  Process health is durable; sensitive stderr stays bounded in local memory.
+  Authenticated management routes expose catalog, health, grant approval and
+  revocation, configuration validation/update, restart/retry, and data removal.
+  Mutations and redacted stderr reads require localhost and safe browser origins.
+  Configuration reaches the child on a private inherited descriptor before
+  readiness; failed activation restores the last working public and secret values.
+  Authenticated action list/invoke/download endpoints use the action broker. It
+  filters context by each action's approved grants, requires host-issued confirmation
+  tokens when declared, and returns only typed results. Grant changes serialize with
+  dispatch and are checked again before results or artifact bytes are returned. See the
+  [wire contract](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/internal/plugins/README.md).
+  The remote `PluginOperation` RPC accepts a closed set of host operations, never
+  raw stdio messages. Both transports use the same lifecycle and action broker.
+  Catalog identities are `(ownerId, description.id)`; nested capabilities and
+  instances inherit that owner. Management and artifact endpoints take `ownerId`.
+  Action requests distinguish the installation `ownerId` from `context.ownerId`.
+  Project/session listings combine the owner's owner-scoped actions with the hub's
+  hub-scoped actions. Owner-scoped actions run on the owner; hub-scoped actions run
+  only on the hub. Global placements always resolve to the hub. Explicit disconnected
+  project owners fail closed. Remote secret updates pass through without hub
+  persistence, and responses contain secret presence only.
+  Configuration writes are capped at 1 MiB of canonical JSON; catalog responses
+  are capped at 16 MiB on both transports.
+- **sdk/plugin.** Optional public Go lifecycle and action helpers reuse the canonical
+  protocol DTOs and validators. `sdk/plugin/conformance` runs black-box executable
+  tests, including host-broker grant checks. `examples/ocman-plugin-fixture` is the
+  deterministic executable used by the supervisor integration tests. Plugins in
+  other languages can implement the same NDJSON contract directly.
+- **Plugin persistence.** `internal/state` stores discovered identities, capability
+  instances, enablement, grants, health and public configuration in schema v91.
+  Schema v92 adds operation receipts committed before action dispatch, preventing
+  replay after a host restart even when the original outcome is unknown.
+  Secret snapshots use separate `0600` files beside the configured database;
+  plugin-owned data uses its own directory. Configuration checkpoints restore
+  public values and secret references together. Disable and removal retain data;
+  permanent deletion is explicit. Catalog reads expose secret-presence flags only.
 - **internal/factory.** The independent Software Factory boundary. It stores
    Epics, Mols, typed Issues, dependencies, attempts, Formula revisions,
    Plan revisions, approvals, and materialization provenance in `state.db`.
@@ -285,6 +342,7 @@ flowchart TD
     Pages[pages/<br/>routes] --> Comp[components/<br/>~80 components]
     Pages --> Stores[Client state<br/>TanStack Query + Zustand]
     Comp --> Stores
+    Comp -->|plugin Settings + palette actions: explicit ownerId| API
     Stores --> API[lib/ API client]
     Stores --> SSE[SSE subscription]
     Pages --> Scopes[Ref-counted activity scopes]
@@ -303,9 +361,22 @@ flowchart TD
   use browser speech synthesis. Opt-in autoplay waits for the idle reconciliation
   in the focused session tab. Voice preferences stay in browser storage; audio
   does not pass through the ocman backend.
+- **Plugin Settings.** Settings uses shared setting rows and each host's
+  `pluginManagement` capability. The hub probes remote plugin support with a
+  bounded `available` RPC. Catalog, lifecycle, configuration, and stderr calls
+  carry the selected `ownerId`; switching owners clears the previous view.
+  Enabling requires checksum and grant review. Secret inputs are write-only,
+  and failed configuration activation reloads persisted configuration and health.
 - **Client state.** Shared Zustand stores hold broad session state. The
   Routines page loads definitions and history over REST and keeps its form and
   selected edits locally.
+- **Plugin actions.** The command palette merges `action.v1` contributions for
+  global, project, and session contexts. It sends opaque IDs and core route names
+  through the authenticated backend, resolving older contexts independently of
+  the recent-session search cache. Host dialogs render confirmation text and
+  typed results, including owner-routed artifact downloads. Confirmation reuses
+  the operation ID; failures and timeouts never trigger automatic invocation retries.
+  Plugins supply no browser JavaScript or HTML.
 - **Activity leases.** Mounted data subscriptions ref-count their scopes. One
   authenticated reporter renews the visible tab's lease, allowing the backend
   to skip view-serving session, project and metrics refreshes
@@ -326,3 +397,54 @@ flowchart TD
    The markdown renderer turns them into creation or human-action cards using
    the same TanStack Query state and REST mutations as the Factory pages.
    Resolved actions disappear on refresh; rendering a marker never executes it.
+
+## 5. Plugin action and remote projection flow
+
+```mermaid
+sequenceDiagram
+    participant B as Browser palette / Settings
+    participant H as Hub HTTP handlers
+    participant O as Installation owner
+    participant A as internal/plugins action broker
+    participant D as Owner state.db
+    participant P as External plugin process
+
+    B->>H: Catalog / management with ownerId
+    H->>O: Local call or authenticated PluginOperation RPC
+    O-->>B: Via hub: owner-qualified catalog, safe health, secret presence
+    B->>H: List actions for placement and context owner
+    H->>O: Owner-scoped actions; merge hub-scoped actions
+    H-->>B: Typed action declarations
+    B->>H: Invoke with installation ownerId and stable operationId
+    H->>O: Route to installation owner
+    O->>A: Validate enablement, scope, grants, confirmation
+    opt Confirmation required
+        A-->>B: Via owner and hub: confirmation text and bound token
+        B->>H: Same invocation and operationId plus confirmed token
+        H->>O: Route confirmed invocation
+        O->>A: Revalidate and admit
+    end
+    A->>D: Commit operation receipt before dispatch
+    A->>P: NDJSON action.v1 invoke with minimized context
+    P-->>A: One typed terminal result
+    A-->>B: Via owner and hub: authorized results / artifact handles
+    B->>H: Download artifact with installation ownerId
+    H->>O: Recheck grants and read owner-local artifact
+    O-->>B: Via hub: attachment bytes
+```
+
+- The installation owner supervises the process and owns its configuration,
+  secret files, operation receipts, and in-memory results. The hub projects
+  remote operations through a closed RPC, never raw plugin stdio.
+- The browser can target a hub installation while carrying a remote project's
+  context. These are separate owner identities; disconnected explicit project
+  owners fail closed. Global placements resolve to the hub.
+- Confirmation and result rendering belong to ocman. Calls are not replayed after
+  crashes, and durable receipts prevent uncertain side effects from being repeated
+  after host restart. Downloads recheck the installation's current grants.
+- Only `action.v1` is shipped. Conversation-provider, platform-provider, iframe UI,
+  relay inbox capability, registry/updates, signatures, sandboxing, Slack, and
+  Codex remain future work. Existing core Inbox and webhook services do not imply
+  a plugin capability for either.
+
+See [Plugins](../features/plugins.md) for the operator and authoring guide.

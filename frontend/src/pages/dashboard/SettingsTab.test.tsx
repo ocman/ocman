@@ -10,6 +10,7 @@ vi.mock('../../lib/headerContext', () => ({ usePageTitle: vi.fn() }));
 vi.mock('../../components/upstream/PromptTemplateSettings', () => ({ PromptTemplateSettings: () => null }));
 vi.mock('../../components/RemoteSettings', () => ({ RemoteSettings: () => null }));
 vi.mock('../../components/SharingSettings', () => ({ SharingSettings: () => null }));
+vi.mock('../../components/PluginSettings', () => ({ PluginSettings: () => <p>Plugin management</p> }));
 vi.mock('./SettingsSections', () => ({
   NotificationsSection: () => null,
   SessionsSection: () => null,
@@ -36,6 +37,13 @@ vi.mock('../../lib/usePwaInstall', () => ({
 }));
 
 describe('SettingsTab actions', () => {
+  it('opens plugin management from the Settings navigation', () => {
+    render(<SettingsTab />);
+    expect(screen.queryByText('Plugin management')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Plugins' }));
+    expect(screen.getByRole('heading', { name: 'Plugins' })).toBeVisible();
+    expect(screen.getByText('Plugin management')).toBeVisible();
+  });
   beforeEach(() => {
     logout.mockReset();
     promptInstall.mockReset();

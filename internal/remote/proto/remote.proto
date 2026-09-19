@@ -79,6 +79,9 @@ service Ocman {
   rpc MarkInboxItemRead(JsonReq) returns (Empty);         // {id}
   rpc ArchiveInboxItems(JsonReq) returns (Empty);         // {ids,allRead}
 
+  // Closed owner-local plugin management and action operations; never stdio frames.
+  rpc PluginOperation(JsonReq) returns (JsonResp);
+
   // In-app terminal windows (directory-scoped, executed on the owner).
   rpc TermWindows(JsonReq) returns (JsonResp);            // {dir} -> {windows:[...]}
   rpc TermCreateWindow(JsonReq) returns (JsonResp);       // {dir} -> {window}
