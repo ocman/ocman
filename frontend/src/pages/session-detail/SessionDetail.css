@@ -408,6 +408,13 @@ button.session-sidebar-group-header.collapsed::before {
   right: 8px;
   min-height: 20px;
   padding-left: 4px;
+  /* Transparent while the buttons are hidden: this box overlays the
+     project line, so an opaque background would clip the path and the
+     time on any row that actually has a background (i.e. .active). */
+  background: transparent;
+}
+.session-sidebar-item.flat:hover .session-sidebar-meta,
+.session-sidebar-item.flat:focus-visible .session-sidebar-meta {
   background: inherit;
 }
 .session-sidebar-item.flat .session-sidebar-actions {
