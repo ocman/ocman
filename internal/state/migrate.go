@@ -216,7 +216,8 @@ import (
 //	87 - add permission_rules_json to routine for pre-approved permission rules.
 //	88 - add permission_rules_json to factory_epic for pre-approved session permissions.
 //	89 - persist the local projects index for stale-while-refresh startup reads.
-const latestSchemaVersion = 89
+//	90 - add opt-in session archival to routines and their run snapshots.
+const latestSchemaVersion = 90
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -502,9 +503,28 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV88(tx)
 	case 89:
 		return migrateToV89(tx)
+	case 90:
+		return migrateToV90(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
+}
+
+// migrateToV90 snapshots the opt-in archive setting for each routine run.
+func migrateToV90(tx *sql.Tx) error {
+	for _, table := range []string{"routine", "routine_run"} {
+		var exists bool
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?)`, table).Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			continue
+		}
+		if err := addColumnIfMissing(tx, table, "archive_session_after_success", "INTEGER NOT NULL DEFAULT 0 CHECK (archive_session_after_success IN (0, 1))"); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func migrateToV89(tx *sql.Tx) error {

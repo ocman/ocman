@@ -14,6 +14,11 @@
 .routine-form textarea { min-height: 100px; resize: vertical; }
 .routine-form .routine-check { display: flex; align-items: center; color: var(--text); }
 .routine-form .routine-check input { accent-color: var(--accent); }
+.routine-form-group { border-top: 1px solid var(--border); }
+.routine-form-group > summary { padding: 12px 0; color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; }
+.routine-form-group > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.routine-form-group-fields { display: grid; gap: 14px; padding-bottom: 8px; }
+.routine-form-group-fields > p { margin: 0; color: var(--text-muted); font-size: 12px; }
 .routine-list, .routine-table-wrap, .routine-history-table-wrap { min-width: 0; max-width: 100%; }
 .routine-table-wrap, .routine-history-table-wrap { overflow-x: auto; border: 1px solid var(--border); background: var(--bg-card); }
 .routine-list table, .routine-detail-history table { width: 100%; border-collapse: collapse; font-size: 12px; }

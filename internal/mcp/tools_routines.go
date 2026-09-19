@@ -34,7 +34,7 @@ type routineAction struct {
 }
 
 var routineInputRequired = []string{"name", "prompt", "directory"}
-var routineInputOptional = []string{"remote_id", "agent", "model", "session_mode", "session_id", "schedule_kind", "timeout_ms", "at", "cron", "timezone", "enabled", "delete_after_success", "permission_rules"}
+var routineInputOptional = []string{"remote_id", "agent", "model", "session_mode", "session_id", "schedule_kind", "timeout_ms", "at", "cron", "timezone", "enabled", "delete_after_success", "archive_session_after_success", "permission_rules"}
 
 var routineActions = []routineAction{
 	{name: "help", description: "Describes every available routine action.", example: `{"action":"help"}`, output: "Routine action documentation"},
@@ -57,6 +57,7 @@ func routineServerTools(tools *routineTools) []server.ServerTool {
 		mcplib.WithString("directory"), mcplib.WithString("remote_id"), mcplib.WithString("agent"), mcplib.WithString("model"),
 		mcplib.WithString("session_mode"), mcplib.WithString("session_id"), mcplib.WithString("schedule_kind"), mcplib.WithNumber("timeout_ms"),
 		mcplib.WithNumber("at"), mcplib.WithString("cron"), mcplib.WithString("timezone"), mcplib.WithBoolean("enabled"), mcplib.WithBoolean("delete_after_success"),
+		mcplib.WithBoolean("archive_session_after_success"),
 		mcplib.WithString("permission_rules")), Handler: tools.handle}}
 }
 
@@ -177,8 +178,9 @@ func routineInput(req mcplib.CallToolRequest, arguments map[string]any) (routine
 		RemoteID: req.GetString("remote_id", ""), Agent: req.GetString("agent", ""), Model: req.GetString("model", ""),
 		SessionMode: req.GetString("session_mode", routines.SessionNew), SessionID: req.GetString("session_id", ""),
 		Schedule: routines.Schedule{Kind: req.GetString("schedule_kind", routines.ScheduleNone), Timeout: time.Duration(timeoutMS) * time.Millisecond, At: time.UnixMilli(int64(req.GetInt("at", 0))), Cron: req.GetString("cron", ""), Timezone: req.GetString("timezone", "")},
-		Enabled: boolArgument(arguments, "enabled"), DeleteAfterSuccess: boolArgument(arguments, "delete_after_success"),
-		PermissionRules: permRules,
+		Enabled:  boolArgument(arguments, "enabled"), DeleteAfterSuccess: boolArgument(arguments, "delete_after_success"),
+		ArchiveSessionAfterSuccess: boolArgument(arguments, "archive_session_after_success"),
+		PermissionRules:            permRules,
 	}, nil
 }
 

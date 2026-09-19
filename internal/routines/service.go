@@ -50,18 +50,19 @@ type Schedule struct {
 }
 
 type Input struct {
-	Name               string
-	Prompt             string
-	Directory          string
-	RemoteID           string
-	Agent              string
-	Model              string
-	SessionMode        string
-	SessionID          string
-	Schedule           Schedule
-	Enabled            bool
-	DeleteAfterSuccess bool
-	PermissionRules    []platforms.PermissionRule
+	Name                       string
+	Prompt                     string
+	Directory                  string
+	RemoteID                   string
+	Agent                      string
+	Model                      string
+	SessionMode                string
+	SessionID                  string
+	Schedule                   Schedule
+	Enabled                    bool
+	DeleteAfterSuccess         bool
+	ArchiveSessionAfterSuccess bool
+	PermissionRules            []platforms.PermissionRule
 }
 
 type Deps struct {
@@ -198,7 +199,8 @@ func buildRoutine(input Input, now time.Time) (state.Routine, error) {
 		SessionMode: sessionMode, SessionID: sessionID,
 		ScheduleKind: input.Schedule.Kind, ScheduleConfigJSON: config, NextDueAt: due,
 		Enabled: input.Enabled, DeleteAfterSuccess: input.DeleteAfterSuccess,
-		PermissionRulesJSON: string(rulesJSON),
+		ArchiveSessionAfterSuccess: input.ArchiveSessionAfterSuccess,
+		PermissionRulesJSON:        string(rulesJSON),
 	}, nil
 }
 
@@ -262,8 +264,12 @@ func (s *Service) RunNow(ctx context.Context, routineID string) (state.RoutineRu
 // RunWebhook uses the normal routine lifecycle for an already-matched delivery.
 func (s *Service) RunWebhook(ctx context.Context, routineID, payload string, occurrence int64) (state.RoutineRun, error) {
 	routine, err := s.store.GetRoutine(ctx, routineID)
-	if err != nil { return state.RoutineRun{}, err }
-	if routine.Deleted || !routine.Enabled { return state.RoutineRun{}, fmt.Errorf("routine is disabled") }
+	if err != nil {
+		return state.RoutineRun{}, err
+	}
+	if routine.Deleted || !routine.Enabled {
+		return state.RoutineRun{}, fmt.Errorf("routine is disabled")
+	}
 	return s.claimAndDispatchPrompt(ctx, routine, occurrence, "webhook", routine.Prompt+"\n\n"+payload)
 }
 
@@ -383,6 +389,12 @@ func (s *Service) settleRunning(ctx context.Context, recoverOrphans bool) error 
 		}
 		switch detail.Session.Status {
 		case db.StatusDone, db.StatusWaiting:
+			if run.ArchiveSessionAfterSuccess {
+				if err := s.store.ArchiveSession(ctx, run.Platform, run.SessionID, detail.Session.TimeUpdated); err != nil {
+					result = errors.Join(result, err)
+					continue
+				}
+			}
 			result = errors.Join(result, s.finish(ctx, run, RunSuccess, ""))
 		case db.StatusError:
 			result = errors.Join(result, s.finish(ctx, run, RunFailure, detail.Session.Status.String()))

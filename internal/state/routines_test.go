@@ -441,6 +441,10 @@ func TestRoutineAgentModelAndSessionMigration(t *testing.T) {
 	}
 	for _, table := range []string{"routine", "routine_run"} {
 		var agent, model string
+		var archive bool
+		if err := raw.QueryRow(`SELECT archive_session_after_success FROM ` + table).Scan(&archive); err != nil || archive {
+			t.Fatalf("%s archive default = %v, %v", table, archive, err)
+		}
 		if err := raw.QueryRow(`SELECT agent, model FROM `+table).Scan(&agent, &model); err != nil || agent != "" || model != "" {
 			t.Fatalf("%s defaults = agent %q model %q, %v", table, agent, model, err)
 		}

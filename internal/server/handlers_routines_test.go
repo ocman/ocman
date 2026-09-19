@@ -74,7 +74,7 @@ func TestRoutineHTTPLifecycle(t *testing.T) {
 		t.Fatalf("empty list: %d %s", rec.Code, rec.Body.String())
 	}
 
-	create := doRoutineRequest(t, handler, http.MethodPost, "/api/routines", validRoutineBody)
+	create := doRoutineRequest(t, handler, http.MethodPost, "/api/routines", strings.Replace(validRoutineBody, `"enabled":true`, `"enabled":true,"archiveSessionAfterSuccess":true`, 1))
 	if create.Code != http.StatusCreated {
 		t.Fatalf("create: %d %s", create.Code, create.Body.String())
 	}
@@ -82,12 +82,15 @@ func TestRoutineHTTPLifecycle(t *testing.T) {
 	if err := json.Unmarshal(create.Body.Bytes(), &created); err != nil || created.ID == "" || created.Name != "Daily check" || created.SessionMode != routines.SessionNew || !strings.Contains(create.Body.String(), `"agent":"build"`) || !strings.Contains(create.Body.String(), `"model":"openai/gpt-5.4"`) {
 		t.Fatalf("created=%+v err=%v", created, err)
 	}
+	if !created.ArchiveSessionAfterSuccess {
+		t.Fatal("archive setting was not saved")
+	}
 
 	if rec := doRoutineRequest(t, handler, http.MethodGet, "/api/routines/"+created.ID, ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"name":"Daily check"`) {
 		t.Fatalf("get: %d %s", rec.Code, rec.Body.String())
 	}
 	updatedBody := strings.Replace(validRoutineBody, "Daily check", "Renamed", 1)
-	if rec := doRoutineRequest(t, handler, http.MethodPut, "/api/routines/"+created.ID, updatedBody); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"name":"Renamed"`) {
+	if rec := doRoutineRequest(t, handler, http.MethodPut, "/api/routines/"+created.ID, updatedBody); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"name":"Renamed"`) || !strings.Contains(rec.Body.String(), `"archiveSessionAfterSuccess":false`) {
 		t.Fatalf("update: %d %s", rec.Code, rec.Body.String())
 	}
 	if rec := doRoutineRequest(t, handler, http.MethodGet, "/api/routines/"+created.ID+"/history", ""); rec.Code != http.StatusOK || rec.Body.String() != "[]\n" {

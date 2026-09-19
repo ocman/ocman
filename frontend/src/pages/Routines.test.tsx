@@ -14,7 +14,7 @@ const routine: Routine = {
   agent: 'plan', model: 'anthropic/claude-sonnet-4',
   sessionMode: 'new', sessionId: '',
   scheduleKind: 'cron', scheduleConfigJSON: '{"cron":"0 9 * * *","timezone":"Europe/Brussels"}', permissionRulesJSON: '[]', nextDueAt: 2_000_000,
-  enabled: true, deleted: false, deleteAfterSuccess: false, createdAt: 1_000, updatedAt: 1_000,
+  enabled: true, deleted: false, deleteAfterSuccess: false, archiveSessionAfterSuccess: true, createdAt: 1_000, updatedAt: 1_000,
 };
 
 describe('Routines', () => {
@@ -45,6 +45,7 @@ describe('Routines', () => {
     await user.type(screen.getByLabelText('Prompt'), 'Check production');
     await user.click(screen.getByRole('combobox', { name: 'Project' }));
     await user.click(screen.getByRole('option', { name: '/repo' }));
+    await user.click(screen.getByText('Session and model'));
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Agent' })).toBeEnabled());
     await user.click(screen.getByRole('combobox', { name: 'Agent' }));
     await user.click(screen.getByRole('option', { name: 'build' }));
@@ -57,12 +58,16 @@ describe('Routines', () => {
     await user.selectOptions(screen.getByLabelText('Schedule'), 'timeout');
     await user.clear(screen.getByLabelText('Minutes from now'));
     await user.type(screen.getByLabelText('Minutes from now'), '15');
+    await user.click(screen.getByText('After a run'));
     await user.click(screen.getByLabelText('Delete after a successful run'));
+    expect(screen.getByLabelText('Archive session after a successful run')).not.toBeChecked();
+    await user.click(screen.getByLabelText('Archive session after a successful run'));
     await user.click(screen.getByRole('button', { name: 'Create routine' }));
 
     await waitFor(() => expect(api.routines.create).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Deploy check', directory: '/repo', remoteId: 'local', agent: 'build', model: 'openai/gpt-5.4', sessionMode: 'new', sessionId: '', deleteAfterSuccess: true,
       schedule: { kind: 'timeout', timeoutMs: 900_000 },
+      archiveSessionAfterSuccess: true,
     })));
   }, 15_000);
 
@@ -81,6 +86,7 @@ describe('Routines', () => {
     await user.type(screen.getByLabelText('Prompt'), 'Check release status');
     await user.click(screen.getByRole('combobox', { name: 'Project' }));
     await user.click(screen.getByRole('option', { name: '/repo · Build box' }));
+    await user.click(screen.getByText('Session and model'));
     await user.selectOptions(screen.getByLabelText('Session'), 'existing');
     await waitFor(() => expect(api.sessions).toHaveBeenCalledWith({ dir: '/repo' }));
     await user.click(screen.getByRole('combobox', { name: 'Existing session' }));
@@ -103,6 +109,30 @@ describe('Routines', () => {
 
     await user.click(create);
     expect(screen.getByRole('button', { name: 'Cancel' })).toHaveClass('oc-button');
+  });
+
+  it('keeps essentials visible and optional groups collapsed until opened', async () => {
+    const user = userEvent.setup();
+    render(<MemoryRouter><Routines /></MemoryRouter>);
+    await user.click(await screen.findByRole('button', { name: 'New routine' }));
+    for (const name of ['Name', 'Prompt', 'Project', 'Schedule', 'Enabled']) {
+      expect(screen.getByLabelText(name)).toBeVisible();
+    }
+    for (const name of ['Session and model', 'After a run', 'Permissions']) {
+      const summary = screen.getByText(name);
+      expect(summary.closest('details')).not.toHaveAttribute('open');
+      await user.click(summary);
+      expect(summary.closest('details')).toHaveAttribute('open');
+      await user.click(summary);
+      expect(summary.closest('details')).not.toHaveAttribute('open');
+    }
+    expect(screen.getByLabelText('Session')).not.toBeVisible();
+    expect(screen.getByLabelText('Archive session after a successful run')).not.toBeVisible();
+    await user.click(screen.getByText('After a run'));
+    await user.click(screen.getByLabelText('Archive session after a successful run'));
+    await user.click(screen.getByText('After a run'));
+    await user.click(screen.getByText('After a run'));
+    expect(screen.getByLabelText('Archive session after a successful run')).toBeChecked();
   });
 
   it('shows missed timeout schedules as expired', async () => {
@@ -166,14 +196,19 @@ describe('Routines', () => {
     expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Close routine history' }));
     await user.click(within(row).getByRole('button', { name: 'Edit' }));
+    expect(screen.getByText('Session and model').closest('details')).not.toHaveAttribute('open');
+    await user.click(screen.getByText('Session and model'));
+    await user.click(screen.getByText('After a run'));
     expect(screen.getByRole('combobox', { name: 'Agent' })).toHaveTextContent('plan');
     expect(screen.getByRole('combobox', { name: 'Model' })).toHaveTextContent('anthropic/claude-sonnet-4');
     expect(screen.getByLabelText('Cron expression')).toHaveValue('0 9 * * *');
+    expect(screen.getByLabelText('Archive session after a successful run')).toBeChecked();
+    await user.click(screen.getByLabelText('Archive session after a successful run'));
     expect(screen.queryByRole('heading', { name: 'History' })).not.toBeInTheDocument();
     await user.clear(screen.getByLabelText('Name'));
     await user.type(screen.getByLabelText('Name'), 'Renamed');
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
-    await waitFor(() => expect(api.routines.update).toHaveBeenCalledWith(routine.id, expect.objectContaining({ name: 'Renamed' })));
+    await waitFor(() => expect(api.routines.update).toHaveBeenCalledWith(routine.id, expect.objectContaining({ name: 'Renamed', archiveSessionAfterSuccess: false })));
   });
 
   it('confirms before deleting a routine', async () => {

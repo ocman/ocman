@@ -92,6 +92,7 @@ export interface Routine {
   enabled: boolean;
   deleted: boolean;
   deleteAfterSuccess: boolean;
+  archiveSessionAfterSuccess: boolean;
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
@@ -136,6 +137,7 @@ export interface RoutineInput {
   schedule: { kind: RoutineScheduleKind; timeoutMs?: number; at?: number; cron?: string; timezone?: string };
   enabled: boolean;
   deleteAfterSuccess: boolean;
+  archiveSessionAfterSuccess: boolean;
   permissionRules: PermissionRule[];
 }
 

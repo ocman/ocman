@@ -29,11 +29,12 @@ type FormState = {
   timezone: string;
   enabled: boolean;
   deleteAfterSuccess: boolean;
+  archiveSessionAfterSuccess: boolean;
 };
 
 const emptyForm = (): FormState => ({
   name: '', prompt: '', directory: '', agent: '', model: '', sessionMode: 'new', sessionId: '', remoteId: '', kind: 'none', timeoutMinutes: '30', at: '', cron: '', timezone,
-  enabled: true, deleteAfterSuccess: false,
+  enabled: true, deleteAfterSuccess: false, archiveSessionAfterSuccess: false,
 });
 
 function formFor(routine: Routine): FormState {
@@ -54,6 +55,7 @@ function formFor(routine: Routine): FormState {
     timezone: config.timezone ?? timezone,
     enabled: routine.enabled,
     deleteAfterSuccess: routine.deleteAfterSuccess,
+    archiveSessionAfterSuccess: routine.archiveSessionAfterSuccess,
   };
 }
 
@@ -75,6 +77,7 @@ function inputFor(form: FormState, remoteId: string, permissionRules: RoutineInp
     },
     enabled: form.enabled,
     deleteAfterSuccess: form.deleteAfterSuccess,
+    archiveSessionAfterSuccess: form.archiveSessionAfterSuccess,
     permissionRules,
   };
 }
@@ -267,6 +270,16 @@ export function Routines() {
               if (project) setForm({ ...form, directory: project.directory, remoteId: project.remoteId || 'local', sessionId: '', agent: '', model: '' });
             }} />
           </label>
+          <label>Schedule<select value={form.kind} onChange={(event) => setForm({ ...form, kind: event.target.value as RoutineScheduleKind })}>
+            <option value="none">None</option><option value="timeout">Timeout</option><option value="once">Once</option><option value="cron">Cron</option>
+          </select></label>
+          {form.kind === 'timeout' && <label>Minutes from now<input required min="1" type="number" value={form.timeoutMinutes} onChange={(event) => setForm({ ...form, timeoutMinutes: event.target.value })} /></label>}
+          {form.kind === 'once' && <label>Run at<input required type="datetime-local" value={form.at} onChange={(event) => setForm({ ...form, at: event.target.value })} /></label>}
+          {form.kind === 'cron' && <><label>Cron expression<input required placeholder="0 9 * * *" value={form.cron} onChange={(event) => setForm({ ...form, cron: event.target.value })} /></label><label>Timezone<input required value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} /></label></>}
+          <label className="routine-check"><input type="checkbox" checked={form.enabled} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} /> Enabled</label>
+          <details className="routine-form-group">
+          <summary>Session and model</summary>
+          <div className="routine-form-group-fields">
           <label>Session<select aria-label="Session" value={form.sessionMode} onChange={(event) => setForm({ ...form, sessionMode: event.target.value as RoutineSessionMode, sessionId: '' })}>
             <option value="new">New session</option><option value="reuse">Reuse session</option><option value="existing">Existing session</option>
           </select><small>{form.sessionMode === 'new' ? 'Create a fresh session for every run.' : form.sessionMode === 'reuse' ? 'Create one on the first run, then keep using it.' : 'Continue a session from this project.'}</small></label>
@@ -278,18 +291,22 @@ export function Routines() {
           </label>}
           <label>Agent<SearchSelect value={form.agent} options={agentOptions} ariaLabel="Agent" placeholder="Default agent" searchLabel="Search agents" disabled={catalogLoading || !form.directory} onChange={(agent) => setForm({ ...form, agent })} /></label>
           <label>Model<SearchSelect value={form.model} options={modelOptions} ariaLabel="Model" placeholder="Default model" searchLabel="Search models" disabled={catalogLoading || !form.directory} onChange={(model) => setForm({ ...form, model })} /></label>
-          <label>Schedule<select value={form.kind} onChange={(event) => setForm({ ...form, kind: event.target.value as RoutineScheduleKind })}>
-            <option value="none">None</option><option value="timeout">Timeout</option><option value="once">Once</option><option value="cron">Cron</option>
-          </select></label>
-          {form.kind === 'timeout' && <label>Minutes from now<input required min="1" type="number" value={form.timeoutMinutes} onChange={(event) => setForm({ ...form, timeoutMinutes: event.target.value })} /></label>}
-          {form.kind === 'once' && <label>Run at<input required type="datetime-local" value={form.at} onChange={(event) => setForm({ ...form, at: event.target.value })} /></label>}
-          {form.kind === 'cron' && <><label>Cron expression<input required placeholder="0 9 * * *" value={form.cron} onChange={(event) => setForm({ ...form, cron: event.target.value })} /></label><label>Timezone<input required value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} /></label></>}
-          <label className="routine-check"><input type="checkbox" checked={form.enabled} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} /> Enabled</label>
+          </div>
+          </details>
+          <details className="routine-form-group">
+          <summary>After a run</summary>
+          <div className="routine-form-group-fields">
           <label className="routine-check"><input type="checkbox" checked={form.deleteAfterSuccess} onChange={(event) => setForm({ ...form, deleteAfterSuccess: event.target.checked })} /> Delete after a successful run</label>
-          <label>Permissions
-            <small>Applied only when this routine creates a new session. Existing and previously reused sessions keep their current rules.</small>
+          <label className="routine-check"><input type="checkbox" checked={form.archiveSessionAfterSuccess} onChange={(event) => setForm({ ...form, archiveSessionAfterSuccess: event.target.checked })} /> Archive session after a successful run</label>
+          </div>
+          </details>
+          <details className="routine-form-group">
+          <summary>Permissions</summary>
+          <div className="routine-form-group-fields">
+            <p>Applied only when this routine creates a new session. Existing and previously reused sessions keep their current rules.</p>
             <PermissionRulesEditor rules={editingRules} onChange={setEditingRules} disabled={busy} />
-          </label>
+          </div>
+          </details>
           <div className="routine-actions"><Button disabled={busy || !form.directory || (form.sessionMode === 'existing' && !form.sessionId)} type="submit" variant="accent">{editing ? 'Save changes' : 'Create routine'}</Button><Button type="button" disabled={busy} onClick={() => setShowForm(false)}>Cancel</Button></div>
         </form>
         </Modal>

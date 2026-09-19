@@ -18,6 +18,10 @@ The searchable agent and model lists use values seen in that project. Select
 the default option to let OpenCode choose. You can also disable a routine
 without deleting it.
 
+Name, prompt, project, schedule, and enabled status stay visible at the top.
+Expand **Session and model**, **After a run**, or **Permissions** for optional
+settings. These groups start collapsed when you create or edit a routine.
+
 Use **Edit** to change any of these fields. The change applies to future runs.
 Existing history keeps the name, prompt, project, session behavior, agent,
 model, and trigger recorded when each run started.
@@ -54,6 +58,12 @@ Deletion is soft: ocman retains the routine and its run history in `state.db`.
 
 The **Delete after a successful run** option performs the same soft delete
 only after a run succeeds. A failed run leaves the routine available.
+
+Enable **Archive session after a successful run** to hide completed sessions
+from the active session list. This is off by default and applies to scheduled
+and manual runs. Failed or interrupted runs stay visible. The routine and its
+schedule remain active, and history still links to the archived session.
+The setting is captured when each run starts; edits apply to future runs.
 
 ## Run a routine
 

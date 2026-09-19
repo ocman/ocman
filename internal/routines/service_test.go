@@ -95,7 +95,7 @@ func (p *testPlatform) Session(_ context.Context, id string, _, _ int) (*platfor
 	if p.onSession != nil {
 		p.onSession()
 	}
-	return &platforms.SessionDetail{Session: &db.Session{ID: id, Directory: p.directory, Status: p.status}}, nil
+	return &platforms.SessionDetail{Session: &db.Session{ID: id, Directory: p.directory, Status: p.status, TimeUpdated: 1234}}, nil
 }
 func (p *testPlatform) setStatus(status db.SessionStatus) {
 	p.mu.Lock()
@@ -108,7 +108,9 @@ func (p *testPlatform) SetPermissionRules(_ context.Context, req platforms.SetPe
 	p.permissionRules = req.Rules
 	return nil
 }
-func (p *testPlatform) DisposeSession(context.Context, platforms.DisposeSessionRequest) error { return nil }
+func (p *testPlatform) DisposeSession(context.Context, platforms.DisposeSessionRequest) error {
+	return nil
+}
 func (p *testPlatform) counts() (int, int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -701,6 +703,82 @@ func TestFinishingRunDoesNotOverwriteRoutineEditedAfterClaim(t *testing.T) {
 	}
 	if got.ScheduleConfigJSON != editedRoutine.ScheduleConfigJSON || got.NextDueAt != editedRoutine.NextDueAt || got.UpdatedAt != editedRoutine.UpdatedAt {
 		t.Fatalf("routine = %+v, want edited schedule %+v", got, editedRoutine)
+	}
+}
+
+func TestArchiveSessionAfterSuccessfulRun(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		enabled     bool
+		status      db.SessionStatus
+		wantArchive bool
+	}{
+		{"success", true, db.StatusDone, true},
+		{"waiting", true, db.StatusWaiting, true},
+		{"disabled", false, db.StatusDone, false},
+		{"failed", true, db.StatusError, false},
+		{"interrupted", true, db.StatusInterrupted, false},
+		{"busy", true, db.StatusBusy, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			input := validInput()
+			input.Schedule = Schedule{Kind: ScheduleCron, Cron: "*/5 * * * *", Timezone: "UTC"}
+			input.ArchiveSessionAfterSuccess = tc.enabled
+			routine, err := h.svc.Create(t.Context(), input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			h.now.Store(routine.NextDueAt)
+			if err := h.svc.Tick(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			runs, err := h.svc.History(t.Context(), routine.ID)
+			if err != nil || len(runs) != 1 {
+				t.Fatalf("runs = %+v, %v", runs, err)
+			}
+			run := runs[0]
+			// Editing the definition must not change the in-flight run's choice.
+			h.now.Add(1)
+			input.ArchiveSessionAfterSuccess = !tc.enabled
+			if _, err := h.svc.Update(t.Context(), routine.ID, input); err != nil {
+				t.Fatal(err)
+			}
+			h.platform.setStatus(tc.status)
+			if err := h.svc.Recover(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			archived, err := h.db.ArchivedSessions(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			stamp, ok := archived[state.Key{Platform: run.Platform, SessionID: run.SessionID}]
+			if ok != tc.wantArchive || (ok && stamp != 1234) {
+				t.Fatalf("archives = %+v", archived)
+			}
+			got, err := h.svc.Get(t.Context(), routine.ID)
+			if err != nil || !got.Enabled || got.Deleted || got.NextDueAt <= h.now.Load() {
+				t.Fatalf("routine = %+v, %v", got, err)
+			}
+		})
+	}
+}
+
+func TestArchiveSessionFailureIsReported(t *testing.T) {
+	h := newHarness(t)
+	input := validInput()
+	input.ArchiveSessionAfterSuccess = true
+	routine, err := h.svc.Create(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.RunNow(t.Context(), routine.ID); err != nil {
+		t.Fatal(err)
+	}
+	h.platform.setStatus(db.StatusDone)
+	h.platform.onSession = func() { _ = h.db.Close() }
+	if err := h.svc.Tick(t.Context()); err == nil || !strings.Contains(err.Error(), "archiving session") {
+		t.Fatalf("archive error = %v", err)
 	}
 }
 
