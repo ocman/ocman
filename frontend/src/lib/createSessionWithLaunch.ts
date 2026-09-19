@@ -61,6 +61,8 @@ export interface CreateSessionWithLaunchOptions {
    * progress UI (WorktreeFormModal).
    */
   reportProgress?: boolean;
+  /** The caller began progress before resolving the target machine. */
+  progressStarted?: boolean;
 }
 
 // Retry loop parameters. After launching opencode we poll the create
@@ -185,8 +187,8 @@ export async function createSessionWithLaunch(
   // Report before the first call, not after it fails: in a closed
   // project the backend already boots opencode inside this request
   // (EnsureProjectOpencode), which can take 10-20 s. The store/overlay
-  // suppress the card when the call returns quickly.
-  progress.begin(directory, { skipLaunch: !!alreadyLaunched });
+  // dismiss the card when the call returns quickly.
+  if (!opts.progressStarted) progress.begin(directory, { skipLaunch: !!alreadyLaunched });
 
   try {
     const res = await createSession(directory, platform, title);

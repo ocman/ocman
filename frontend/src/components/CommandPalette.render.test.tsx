@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Project } from '../lib/api';
+import { resolveTargetForDir, type MachineTarget } from '../lib/machinePicker';
+import { useLaunchProgressStore } from '../lib/launchProgressStore';
+import { LaunchProgressOverlay } from './LaunchProgressOverlay';
 
 const mocks = vi.hoisted(() => {
   const uiState = {
@@ -68,6 +71,7 @@ function renderPalette() {
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
         <CommandPalette />
+        <LaunchProgressOverlay />
       </MemoryRouter>
     </QueryClientProvider>
   );
@@ -76,8 +80,10 @@ function renderPalette() {
 }
 
 describe('CommandPalette project mode', () => {
+  afterEach(() => vi.restoreAllMocks());
   beforeEach(() => {
     vi.clearAllMocks();
+    useLaunchProgressStore.getState().dismiss();
     Element.prototype.scrollIntoView = vi.fn();
     mocks.uiState.paletteOpen = true;
     mocks.uiState.paletteMode = 'project';
@@ -183,7 +189,7 @@ describe('CommandPalette project mode', () => {
         ],
       };
     });
-    mocks.apiState.createSession.mockResolvedValue({ id: 'new-session' });
+    mocks.apiState.createSession.mockReset().mockResolvedValue({ id: 'new-session' });
     mocks.apiState.getTmuxSessions.mockResolvedValue({ available: false, sessions: [] });
     mocks.apiState.getTmuxClients.mockResolvedValue({ available: false, clients: [] });
   });
@@ -316,6 +322,46 @@ describe('CommandPalette project mode', () => {
       expect(mocks.apiState.createSession).toHaveBeenCalledWith('/Users/peter/workspace/ocman', undefined, undefined);
     });
     expect(mocks.apiState.seedNewSession).toHaveBeenCalledWith('new-session', '/Users/peter/workspace/ocman', '', undefined, 'local');
+  });
+
+  it('shows progress immediately while resolving the project machine, through session creation', async () => {
+    mocks.uiState.paletteMode = 'project-session';
+    let resolveTarget!: (target: MachineTarget | null) => void;
+    vi.mocked(resolveTargetForDir).mockReturnValueOnce(new Promise((resolve) => { resolveTarget = resolve; }));
+    let resolveSession!: (session: { id: string }) => void;
+    mocks.apiState.createSession.mockReturnValueOnce(new Promise((resolve) => { resolveSession = resolve; }));
+    renderPalette();
+
+    fireEvent.click(await screen.findByText('workspace/ocman'));
+
+    expect(screen.getByRole('status')).toHaveTextContent('Starting session in ocman');
+    expect(mocks.apiState.createSession).not.toHaveBeenCalled();
+    const startedAt = useLaunchProgressStore.getState().startedAt;
+    vi.spyOn(Date, 'now').mockReturnValue(startedAt + 5000);
+    await act(async () => { resolveTarget({ platform: '', remoteId: 'local' }); });
+    expect(screen.getByRole('status')).toHaveTextContent('Starting session in ocman');
+    expect(useLaunchProgressStore.getState().startedAt).toBe(startedAt);
+    await act(async () => { resolveSession({ id: 'new-session' }); });
+    expect(screen.getByRole('status')).toHaveTextContent('Session ready');
+  });
+
+  it('dismisses launch progress when machine selection is cancelled', async () => {
+    mocks.uiState.paletteMode = 'project-session';
+    vi.mocked(resolveTargetForDir).mockResolvedValueOnce(null);
+    renderPalette();
+    fireEvent.click(await screen.findByText('workspace/ocman'));
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+    expect(mocks.apiState.createSession).not.toHaveBeenCalled();
+  });
+
+  it('shows an error if target resolution fails', async () => {
+    mocks.uiState.paletteMode = 'project-session';
+    vi.mocked(resolveTargetForDir).mockRejectedValueOnce(new Error('Machine unavailable'));
+    renderPalette();
+    fireEvent.click(await screen.findByText('workspace/ocman'));
+    expect(await screen.findByText('Machine unavailable')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Failed to start session');
+    expect(mocks.apiState.createSession).not.toHaveBeenCalled();
   });
 
   it('seeds a new session with the selected project owner', async () => {

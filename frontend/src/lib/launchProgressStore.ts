@@ -23,8 +23,7 @@ export const LAUNCH_STEP_ORDER: readonly LaunchStepId[] = ['launch', 'wait', 'cr
  * is informed the moment the process is invoked. When opencode is
  * already running that call returns almost instantly; a flow that
  * finishes within this window drops straight back to idle instead of
- * flashing "Session ready". The overlay CSS delays the card by the same
- * amount so nothing is drawn for those fast flows.
+ * flashing "Session ready". The progress card itself appears immediately.
  */
 export const LAUNCH_QUICK_MS = 400;
 

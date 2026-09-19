@@ -10,6 +10,7 @@ import { isTerminalStatus } from '../lib/sessionStatus';
 import type { Session, Project, DirectoryBrowseEntry, DirectorySearchEntry } from '../lib/api';
 import { useTmux } from '../lib/useTmux';
 import { createSessionWithLaunch } from '../lib/createSessionWithLaunch';
+import { useLaunchProgressStore } from '../lib/launchProgressStore';
 import { resolveTargetForDir } from '../lib/machinePicker';
 import { remoteLog } from '../lib/remoteLog';
 
@@ -501,6 +502,8 @@ export function CommandPalette() {
     projectDir: string,
     opts?: { local?: boolean; remoteId?: string; platform?: string },
   ) {
+    const progress = useLaunchProgressStore.getState();
+    progress.begin(projectDir);
     closePalette();
     // Machine-aware create (multi-remote support, AD-15): ask the hub
     // which machine should run this project. Auto-resolves silently on
@@ -515,18 +518,21 @@ export function CommandPalette() {
         ? Promise.resolve({ platform: 'opencode', remoteId: 'local' })
         : resolveTargetForDir(projectDir);
     void target.then((selectedTarget) => {
-      if (selectedTarget === null) return; // operator cancelled the picker
+      if (selectedTarget === null) {
+        progress.dismiss();
+        return;
+      }
       // Fall back to inferring the platform from an existing session
       // when the resolver returned the empty (local-default) sentinel.
       const chosenPlatform =
         selectedTarget.platform || sessions?.find((s) => s.directory === projectDir)?.platform || '';
-      createSessionWithLaunch(
+      return createSessionWithLaunch(
         {
           createSession,
           launchOpencodeInTmux,
           tmuxAvailable: tmux.available,
         },
-        { directory: projectDir, platform: chosenPlatform || undefined, remoteId: selectedTarget.remoteId },
+        { directory: projectDir, platform: chosenPlatform || undefined, remoteId: selectedTarget.remoteId, progressStarted: true },
       )
         .then((res) => {
           if (res.id) {
@@ -536,8 +542,10 @@ export function CommandPalette() {
             void queryClient.invalidateQueries({ queryKey: ['sessions'] });
             navigate(`/session/${res.id}`);
           }
-        })
-        .catch((err) => remoteLog.error('Failed to create session', err));
+        });
+    }).catch((err) => {
+      progress.fail(err instanceof Error ? err.message : String(err));
+      remoteLog.error('Failed to create session', err);
     });
   }
 
