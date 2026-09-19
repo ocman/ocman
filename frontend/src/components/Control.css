@@ -1,6 +1,12 @@
 .oc-button, .oc-field { box-sizing: border-box; height: 38px; border: 1px solid var(--border); border-radius: 0; background: var(--bg-card); color: var(--text); font: inherit; font-size: 13px; }
 .oc-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; cursor: pointer; }
-.oc-button:hover { border-color: var(--text-dim); }
+.oc-button:hover:not(:disabled) { border-color: var(--text-dim); }
+.oc-button:disabled { opacity: .5; cursor: not-allowed; }
+.oc-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.oc-button[aria-busy="true"] { opacity: .85; cursor: progress; }
+.oc-button[aria-busy="true"]::before { content: ''; flex: 0 0 auto; width: 12px; height: 12px; border: 2px solid currentcolor; border-right-color: transparent; border-radius: 50%; animation: oc-button-spin .8s linear infinite; }
+@keyframes oc-button-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .oc-button[aria-busy="true"]::before { animation: none; } }
 .oc-button--accent { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); color: var(--accent); }
 .oc-button--muted { color: var(--text-muted); }
 .oc-button--link { border-color: transparent; color: var(--text-muted); background: transparent; text-decoration: underline; text-underline-offset: 3px; }

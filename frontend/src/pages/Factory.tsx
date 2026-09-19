@@ -92,7 +92,7 @@ function FactoryDataRow({ id, idLabel = 'Issue', title, epic, detail, actions }:
 
 
 function Drawer({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
-  return <Modal label={title} onClose={onClose} backdropClassName="factory-issue-backdrop" dialogClassName="factory-issue-drawer">
+  return <Modal label={title} onClose={onClose} backdropClassName="factory-issue-backdrop" dialogClassName="factory-issue-drawer factory-form-drawer">
     <header className="factory-form-drawer-header"><h2>{title}</h2><button className="factory-issue-close" type="button" onClick={onClose} aria-label={`Close ${title}`} title="Close"><i className="bi bi-x-lg" aria-hidden="true" /></button></header>
     {children}
   </Modal>;
@@ -134,7 +134,7 @@ function GraphControls({ epicID, issues, allIssues }: { epicID: string; issues: 
       {(action === 'link' || action === 'unlink') && <><label>Dependency type<select name="dependencyType" value={selectedDependencyType} onChange={(event) => setDependencyType(event.target.value as typeof dependencyType)}><option value="blocks">Blocks</option><option value="on_failure">On failure</option>{(selectedIssue?.kind === 'implementation' || selectedIssue?.kind === 'task') && <option value="merge_gated">Merge gated</option>}</select></label><label>Dependency target<select aria-label="Dependency target" name="dependsOnId">{targets.filter((issue) => issue.id !== selectedIssueID).map((issue) => <option key={issue.id} value={issue.id}>{issue.epicId === epicID ? 'This Work Epic' : `Work Epic ${issue.epicId}`}: {issue.title} ({issue.id})</option>)}</select></label></>}
       {action === 'delete' && <label><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /> I understand this soft-deletes this work and its descendants.</label>}
       {noTarget && <p role="alert">Select another open work item for this change.</p>}
-      <Button type="submit" variant="accent" disabled={mutate.isPending || noTarget || (action === 'delete' && !confirmed)}>{mutate.isPending ? 'Saving…' : action === 'delete' ? 'Soft-delete work' : 'Save graph change'}</Button>
+      <Button type="submit" variant="accent" aria-busy={mutate.isPending} disabled={mutate.isPending || noTarget || (action === 'delete' && !confirmed)}>{mutate.isPending ? 'Saving…' : action === 'delete' ? 'Soft-delete work' : 'Save graph change'}</Button>
     </form>}
     {mutate.isError && <p role="alert">{mutate.error instanceof Error ? mutate.error.message : 'Could not change the graph.'}</p>}
     {mutationStatus && <p role="status">{mutationStatus}</p>}
@@ -222,7 +222,7 @@ function CreateEpic({ onCreated }: { onCreated?: () => void }) {
     {projects.isError && <p role="alert">Could not load Factory projects.</p>}
     <div className="factory-field"><label>Formula<SelectField name="formula" value={formula} onChange={(event) => setFormula(event.target.value)} aria-describedby="factory-formula-help"><option value="">Built-in tracer</option>{formulas.data?.filter((item) => item.id !== TRACER_FORMULA_ID).map((item) => <option key={`${item.id}@${item.version}`} value={`${item.id}@${item.version}`}>{item.name} · {item.id}@{item.version}</option>)}</SelectField></label><p id="factory-formula-help">Defines the initial work graph. Formula revisions are immutable.</p><p aria-live="polite">{describeFormula(selectedFormula)}</p></div>
 		<label><input type="checkbox" name="acknowledgeLocalExecution" />Allow Factory agents to run commands in this project</label>
-    <Button type="submit" variant="accent" disabled={create.isPending}>{create.isPending ? 'Creating…' : 'Create epic'}</Button>
+    <Button type="submit" variant="accent" aria-busy={create.isPending} disabled={create.isPending}>{create.isPending ? 'Creating…' : 'Create epic'}</Button>
     {error && <p role="alert">{error}</p>}
   </form>;
 }
@@ -451,13 +451,24 @@ export function FactoryEpicDetail() {
 		<dl className="factory-epic-details"><div><dt>Status</dt><dd data-testid="epic-status">{epic.data.status}</dd></div><div><dt>Projects</dt><dd>{(epic.data.projects ?? [{ path: epic.data.initialProject }]).map(({ path }, index) => <span key={path}>{index > 0 && ', '}<ProjectLabel path={path} /></span>)}</dd></div></dl>
     {/* ponytail: every epic action lives here, above the proposal dumps that used to push them off screen. */}
     <section className="factory-epic-actions" aria-label="Epic actions">
-      {epic.data.planGate?.resolution === 'open' && <div className="factory-epic-gate" aria-label="Plan approval gate"><h3>Plan approval</h3><p>Revision {epic.data.planGate.proposalRevision}: {epic.data.planGate.proposalHash}</p>{gatedProposal && <div aria-label="Proposed plan"><EpicGraph issues={proposalIssues(gatedProposal.manifest)} preview />{gatedProposal.rationaleMarkdown && <details className="factory-proposal"><summary>Rationale</summary><MarkdownContent text={gatedProposal.rationaleMarkdown} /></details>}</div>}<FactoryImplementationModel {...implementation} /><label>Feedback<textarea value={feedback} onChange={(event) => setFeedback(event.target.value)} /></label><div className="factory-epic-action-row">{(['approve', 'revise', 'reject'] as const).map((action) => <Button key={action} type="button" variant={action === 'approve' ? 'accent' : 'default'} disabled={decideGate.isPending || (action === 'approve' && implementation.loading)} onClick={() => decideGate.mutate({ action, expectedRevision: epic.data!.planGate!.proposalRevision, expectedHash: epic.data!.planGate!.proposalHash, feedback, ...(action === 'approve' && implementation.model && { implementationModel: implementation.model }) }, { onSuccess: () => { if (action === 'approve') { setGateStatus(''); setStarted(true); } else setGateStatus(action === 'revise' ? 'Revision requested.' : 'Plan rejected.'); } })}>{action === 'approve' ? 'Approve plan' : action === 'revise' ? 'Request revision' : 'Reject plan'}</Button>)}</div>{decideGate.isError && <p role="alert">{decideGate.error instanceof Error ? decideGate.error.message : 'Could not decide Plan gate.'}</p>}</div>}
+      {epic.data.planGate?.resolution === 'open' && <div className="factory-epic-gate" aria-label="Plan approval gate">
+        <h3>Plan approval</h3><p>Revision {epic.data.planGate.proposalRevision}: {epic.data.planGate.proposalHash}</p>
+        {gatedProposal && <div aria-label="Proposed plan"><EpicGraph issues={proposalIssues(gatedProposal.manifest)} preview />{gatedProposal.rationaleMarkdown && <details className="factory-proposal"><summary>Rationale</summary><MarkdownContent text={gatedProposal.rationaleMarkdown} /></details>}</div>}
+        <FactoryImplementationModel {...implementation} />
+        <label>Feedback<textarea value={feedback} disabled={decideGate.isPending} placeholder="Changes to request or a reason for rejecting the plan" onChange={(event) => setFeedback(event.target.value)} /></label>
+        <div className="factory-epic-action-row">{([
+          ['approve', 'Approve plan', 'Approving…'],
+          ['revise', 'Request revision', 'Requesting revision…'],
+          ['reject', 'Reject plan', 'Rejecting…'],
+        ] as const).map(([action, label, pendingLabel]) => <Button key={action} type="button" variant={action === 'approve' ? 'accent' : 'default'} aria-busy={decideGate.isPending && decideGate.variables?.action === action} disabled={decideGate.isPending || (action === 'approve' && implementation.loading)} onClick={() => decideGate.mutate({ action, expectedRevision: epic.data!.planGate!.proposalRevision, expectedHash: epic.data!.planGate!.proposalHash, feedback, ...(action === 'approve' && implementation.model && { implementationModel: implementation.model }) }, { onSuccess: () => { if (action === 'approve') { setGateStatus(''); setStarted(true); } else setGateStatus(action === 'revise' ? 'Revision requested.' : 'Plan rejected.'); } })}>{decideGate.isPending && decideGate.variables?.action === action ? pendingLabel : label}</Button>)}</div>
+        {decideGate.isError && <p role="alert">{decideGate.error instanceof Error ? decideGate.error.message : 'Could not decide Plan gate.'}</p>}
+      </div>}
       {epic.data.planGate?.resolution === 'revision_requested' && <div className="factory-epic-gate" aria-label="Plan approval gate"><h3>Plan approval</h3><p role="status">Revision requested. Waiting for a new Plan proposal.</p><Button type="button" disabled={epic.isFetching || proposals.isFetching} onClick={() => { setGateStatus(''); void Promise.all([epic.refetch(), proposals.refetch()]); }}>{epic.isFetching || proposals.isFetching ? 'Checking…' : 'Check for new proposal'}</Button></div>}
       {gateStatus && <p role="status">{gateStatus}</p>}
       <div className="factory-epic-action-row">
-        <Button type="button" variant="accent" onClick={() => pour.mutate()} disabled={pour.isPending}>{pour.isPending ? 'Pouring…' : 'Pour graph'}</Button>
-        <Button type="button" onClick={() => void close()} disabled={closeEpic.isPending || closeMol.isPending}>Close epic</Button>
-        {epic.data.status !== 'closed' && <Button type="button" onClick={() => setPaused.mutate(epic.data!.status !== 'paused')} disabled={setPaused.isPending}>{epic.data.status === 'paused' ? 'Resume epic' : 'Pause epic'}</Button>}
+        <Button type="button" onClick={() => pour.mutate()} aria-busy={pour.isPending} disabled={pour.isPending}>{pour.isPending ? 'Pouring…' : 'Pour graph'}</Button>
+        <Button type="button" onClick={() => void close()} aria-busy={closeEpic.isPending || closeMol.isPending} disabled={closeEpic.isPending || closeMol.isPending}>{closeEpic.isPending || closeMol.isPending ? 'Closing…' : 'Close epic'}</Button>
+        {epic.data.status !== 'closed' && <Button type="button" onClick={() => setPaused.mutate(epic.data!.status !== 'paused')} aria-busy={setPaused.isPending} disabled={setPaused.isPending}>{setPaused.isPending ? (setPaused.variables ? 'Pausing…' : 'Resuming…') : epic.data.status === 'paused' ? 'Resume epic' : 'Pause epic'}</Button>}
       </div>
 		<p>Required work: {progress.requiredSucceeded}/{progress.requiredTotal} complete. Optional work open: {progress.optionalOpen}.</p>
 		{!!progress.projectDeliveries?.length && <ul aria-label="Project deliveries" className="factory-issues">{progress.projectDeliveries.map((delivery) => <li key={delivery.issueId ?? `${delivery.project}:pending`}><ProjectLabel path={delivery.project} />{delivery.lineage && <span>Delivery {delivery.lineage}</span>}<span>{delivery.status === 'ready_for_review' ? 'Ready for review' : delivery.status.replaceAll('_', ' ').replace(/^./, (value) => value.toUpperCase())}</span></li>)}</ul>}
@@ -565,7 +576,7 @@ export function FactoryConfiguration() {
 			<label>Global implementation capacity<input aria-label="Global implementation capacity" name="globalCapacity" type="number" min="1" max="1000" required defaultValue={policy.globalCapacity} /></label>
 			<label>Default project implementation capacity<input aria-label="Default project implementation capacity" name="projectCapacity" type="number" min="1" max="1000" required defaultValue={policy.projectCapacity} /></label>
 			<label>Project capacity overrides (JSON)<textarea aria-label="Project capacity overrides (JSON)" name="projectOverrides" defaultValue={JSON.stringify(policy.projectOverrides, null, 2)} /></label>
-			<button type="submit" disabled={saveCapacity.isPending}>{saveCapacity.isPending ? 'Saving…' : 'Save capacity policy'}</button>
+			<Button type="submit" variant="accent" aria-busy={saveCapacity.isPending} disabled={saveCapacity.isPending}>{saveCapacity.isPending ? 'Saving…' : 'Save capacity policy'}</Button>
 		</form>}
 		{capacityError && <p role="alert">{capacityError}</p>}
 		{error && <p role="alert">{error}</p>}
@@ -590,9 +601,11 @@ export function FactoryConfiguration() {
 			<form onSubmit={(event) => { event.preventDefault(); void saveFormulaRevision(event.currentTarget, 'save'); }}>
 				<label>Custom Formula ID<input aria-label="Custom Formula ID" name="id" required pattern="custom/[a-z][a-z0-9_-]*" /></label>
 				<label>Custom Formula TOML<textarea aria-label="Custom Formula TOML" name="source" required defaultValue={'version = 1\nname = "My Formula"\n\n[[input]]\nkey = "goal"\n\n[[input]]\nkey = "initial_project"\n\n[[issue]]\nkey = "plan"\nkind = "plan"\n'} /></label>
-				<button type="button" onClick={(event) => { if (event.currentTarget.form) void saveFormulaRevision(event.currentTarget.form, 'validate'); }} disabled={validateFormula.isPending}>Validate TOML</button>
-				<button type="button" onClick={(event) => { if (event.currentTarget.form) void saveFormulaRevision(event.currentTarget.form, 'preview'); }} disabled={previewFormula.isPending}>Preview Formula</button>
-				<button type="submit" disabled={saveFormula.isPending}>{saveFormula.isPending ? 'Saving…' : 'Save immutable revision'}</button>
+				<div className="factory-epic-action-row">
+					<Button type="button" aria-busy={validateFormula.isPending} onClick={(event) => { if (event.currentTarget.form) void saveFormulaRevision(event.currentTarget.form, 'validate'); }} disabled={validateFormula.isPending || previewFormula.isPending || saveFormula.isPending}>{validateFormula.isPending ? 'Validating…' : 'Validate TOML'}</Button>
+					<Button type="button" aria-busy={previewFormula.isPending} onClick={(event) => { if (event.currentTarget.form) void saveFormulaRevision(event.currentTarget.form, 'preview'); }} disabled={validateFormula.isPending || previewFormula.isPending || saveFormula.isPending}>{previewFormula.isPending ? 'Previewing…' : 'Preview Formula'}</Button>
+					<Button type="submit" variant="accent" aria-busy={saveFormula.isPending} disabled={validateFormula.isPending || previewFormula.isPending || saveFormula.isPending}>{saveFormula.isPending ? 'Saving…' : 'Save immutable revision'}</Button>
+				</div>
 			</form>
 			{validateFormula.data && <p role="status">Formula is {validateFormula.data.valid ? 'valid' : 'invalid'}{validateFormula.data.valid && `: ${validateFormula.data.hash}`}</p>}
 			{previewFormula.data && <pre aria-label="Formula preview">{JSON.stringify(previewFormula.data.compiled, null, 2)}</pre>}

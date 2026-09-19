@@ -707,6 +707,78 @@ describe('Factory interactions', () => {
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
   });
 
+	it.each([
+		['Approve plan', 'Approving…'],
+		['Request revision', 'Requesting revision…'],
+		['Reject plan', 'Rejecting…'],
+	])('shows immediate feedback for %s and permits retry after failure', async (label, pendingLabel) => {
+		const user = userEvent.setup();
+		vi.mocked(api.factoryEpic).mockResolvedValue({ id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo', planGate: { issueId: 'epic-1.approval', proposalRevision: 2, proposalHash: 'abc', resolution: 'open' } } as never);
+		vi.mocked(api.factoryIssues).mockResolvedValue([]);
+		let reject!: (error: Error) => void;
+		vi.mocked(api.factoryPlanGate).mockReturnValue(new Promise((_, fail) => { reject = fail; }));
+		renderFactory(<MemoryRouter initialEntries={['/factory/epics/epic-1']}><Routes><Route path="/factory/epics/:id" element={<FactoryEpicDetail />} /></Routes></MemoryRouter>);
+		await user.click(await screen.findByRole('button', { name: label }));
+		const pending = await screen.findByRole('button', { name: pendingLabel });
+		expect(pending).toBeDisabled();
+		expect(pending).toHaveAttribute('aria-busy', 'true');
+		for (const name of ['Approve plan', 'Request revision', 'Reject plan'].filter((name) => name !== label)) {
+			expect(screen.getByRole('button', { name })).toBeDisabled();
+		}
+		await user.click(pending);
+		expect(api.factoryPlanGate).toHaveBeenCalledTimes(1);
+		reject(new Error('Please retry'));
+		expect(await screen.findByRole('alert')).toHaveTextContent('Please retry');
+		expect(screen.getByRole('button', { name: label })).toBeEnabled();
+	});
+
+	it.each([
+		['open', 'Pause epic', 'Pausing…'],
+		['paused', 'Resume epic', 'Resuming…'],
+	])('shows pending feedback while changing an %s epic', async (status, label, pendingLabel) => {
+		const user = userEvent.setup();
+		vi.mocked(api.factoryEpic).mockResolvedValue({ id: 'epic-1', goal: 'Ship Factory', status, initialProject: '/repo' } as never);
+		vi.mocked(api.factoryIssues).mockResolvedValue([]);
+		vi.mocked(api.factorySetEpicPaused).mockReturnValue(new Promise(() => {}));
+		renderFactory(<MemoryRouter initialEntries={['/factory/epics/epic-1']}><Routes><Route path="/factory/epics/:id" element={<FactoryEpicDetail />} /></Routes></MemoryRouter>);
+		await user.click(await screen.findByRole('button', { name: label }));
+		expect(await screen.findByRole('button', { name: pendingLabel })).toBeDisabled();
+	});
+
+	it('keeps closing feedback visible through both container and epic requests', async () => {
+		const user = userEvent.setup();
+		vi.mocked(api.factoryEpic).mockResolvedValue({ id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo' } as never);
+		vi.mocked(api.factoryIssues).mockResolvedValue([{ id: 'mol-1', kind: 'mol', status: 'open' }] as never);
+		let finishContainer!: () => void;
+		vi.mocked(api.factoryCloseMol).mockReturnValue(new Promise((resolve) => { finishContainer = resolve; }));
+		vi.mocked(api.factoryCloseEpic).mockReturnValue(new Promise(() => {}));
+		renderFactory(<MemoryRouter initialEntries={['/factory/epics/epic-1']}><Routes><Route path="/factory/epics/:id" element={<FactoryEpicDetail />} /></Routes></MemoryRouter>);
+		await user.click(await screen.findByRole('button', { name: 'Close epic' }));
+		expect(await screen.findByRole('button', { name: 'Closing…' })).toBeDisabled();
+		expect(api.factoryCloseEpic).not.toHaveBeenCalled();
+		finishContainer();
+		await waitFor(() => expect(api.factoryCloseEpic).toHaveBeenCalled());
+		expect(screen.getByRole('button', { name: 'Closing…' })).toHaveAttribute('aria-busy', 'true');
+	});
+
+	it.each([
+		['Validate TOML', 'Validating…', 'validateFactoryFormula'],
+		['Preview Formula', 'Previewing…', 'previewFactoryFormula'],
+		['Save immutable revision', 'Saving…', 'saveFactoryFormula'],
+	] as const)('shows progress for %s and disables competing formula actions', async (label, pendingLabel, method) => {
+		const user = userEvent.setup();
+		vi.mocked(api[method]).mockReturnValue(new Promise(() => {}));
+		renderFactory(<MemoryRouter><FactoryConfiguration /></MemoryRouter>);
+		await user.type(await screen.findByLabelText('Custom Formula ID'), 'custom/example');
+		await user.click(screen.getByRole('button', { name: label }));
+		const pending = await screen.findByRole('button', { name: pendingLabel });
+		expect(pending).toHaveAttribute('aria-busy', 'true');
+		expect(pending).toBeDisabled();
+		for (const name of ['Validate TOML', 'Preview Formula', 'Save immutable revision'].filter((name) => name !== label)) {
+			expect(screen.getByRole('button', { name })).toBeDisabled();
+		}
+	});
+
 	it('approves the exact unresolved Plan gate revision', async () => {
 		const user = userEvent.setup();
 		vi.mocked(api.factoryEpic)

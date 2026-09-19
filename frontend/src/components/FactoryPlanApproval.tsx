@@ -28,7 +28,7 @@ export function FactoryPlanApproval({ epicID, platformID, sessionID }: { epicID:
 	return <><FactoryStartedToast open={started} onOpenChange={setStarted} />{visible && <aside className="factory-plan-approval" aria-label="Plan approval">
 		<span><strong>{gate.resolution === 'open' ? 'Plan ready for approval.' : 'Plan approved.'}</strong> Approval starts implementation.</span>
 		<FactoryImplementationModel {...implementation} />
-		<Button type="button" variant="accent" disabled={decide.isPending || implementation.loading} onClick={() => void approve()}>{decide.isPending ? 'Starting…' : gate.resolution === 'open' ? 'Approve plan' : 'Retry starting work'}</Button>
+		<Button type="button" variant="accent" aria-busy={decide.isPending} disabled={decide.isPending || implementation.loading} onClick={() => void approve()}>{decide.isPending ? 'Starting…' : gate.resolution === 'open' ? 'Approve plan' : 'Retry starting work'}</Button>
 		{error && <span role="alert">{error instanceof Error ? error.message : 'Could not start implementation.'}</span>}
 	</aside>}</>;
 }

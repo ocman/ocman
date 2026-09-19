@@ -31,7 +31,9 @@ test('Factory tracer approves a plan, checkpoints implementation, delivers a PR,
   await page.route(`/api/factory/epics/${epic.id}/proposals`, (route) => route.fulfill({ json: view().proposal ? [view().proposal] : [] }));
   await page.route(`/api/factory/epics/${epic.id}/pour`, (route) => { poured = true; claimed = true; return route.fulfill({ status: 201, json: issues() }); });
 	await page.route(`/api/factory/epics/${epic.id}/plans/${epic.id}.1.1`, (route) => { claimed = true; return route.fulfill({ status: 201, json: {} }); });
-  await page.route(`/api/factory/epics/${epic.id}/plan-gate/approve`, (route) => { approved = true; materialized = true; return route.fulfill({ json: view().planGate }); });
+  let finishApproval!: () => void;
+  const approvalPending = new Promise<void>((resolve) => { finishApproval = resolve; });
+  await page.route(`/api/factory/epics/${epic.id}/plan-gate/approve`, async (route) => { await approvalPending; approved = true; materialized = true; return route.fulfill({ json: view().planGate }); });
 	await page.route(`/api/factory/epics/${epic.id}/materializations/${epic.id}.1.3`, (route) => { materialized = true; return route.fulfill({ status: 201, json: {} }); });
   await page.route(`/api/factory/epics/${epic.id}/mols/${epic.id}.1/close`, (route) => {
     if (!delivered) return route.fulfill({ status: 409, body: 'Final delivery is incomplete' });
@@ -51,6 +53,8 @@ test('Factory tracer approves a plan, checkpoints implementation, delivers a PR,
   await page.goto('/factory/epics');
   await page.getByRole('button', { name: 'New epic' }).click();
   const createEpic = page.getByRole('dialog', { name: 'Create epic' });
+  await expect(createEpic.getByRole('checkbox')).toHaveCSS('width', '16px');
+  await expect(createEpic.getByLabel('Goal')).toHaveCSS('min-height', '38px');
   await page.getByLabel('Goal').fill(epic.goal);
   await page.getByRole('combobox', { name: 'Initial Factory project' }).click();
   await createEpic.getByRole('option', { name: '/repo', exact: true }).click();
@@ -64,6 +68,12 @@ test('Factory tracer approves a plan, checkpoints implementation, delivers a PR,
   await expect(page.getByRole('link', { name: 'Open session' })).toHaveAttribute('href', '/session/plan-session?factoryEpic=ship-a1b2');
   const approving = posted(`/api/factory/epics/${epic.id}/plan-gate/approve`);
   await page.getByRole('button', { name: 'Approve plan' }).click();
+  const approvingButton = page.getByRole('button', { name: 'Approving…' });
+  await expect(approvingButton).toBeDisabled();
+  await expect(approvingButton).toHaveAttribute('aria-busy', 'true');
+  expect(await approvingButton.evaluate((button) => getComputedStyle(button, '::before').animationName)).toBe('oc-button-spin');
+  await expect(page.getByRole('button', { name: 'Request revision' })).toBeDisabled();
+  finishApproval();
   await approving;
   await page.reload();
   await page.getByLabel('Board status').selectOption('all');
