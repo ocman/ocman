@@ -44,6 +44,16 @@ describe('routeTitle', () => {
 });
 
 describe('MainNav', () => {
+  it.each([1, 12, 120])('announces %i unread messages and caps the visible badge', (unreadTotal) => {
+    vi.mocked(useInbox).mockReturnValue({ data: { items: [], unreadTotal } } as never);
+    useUiStore.setState({ mainNavCollapsed: true });
+    render(<MemoryRouter><MainNav /></MemoryRouter>);
+    const link = screen.getByRole('link', { name: `Inbox, ${unreadTotal} unread messages` });
+    expect(link).toHaveTextContent(unreadTotal > 99 ? '99+' : String(unreadTotal));
+    expect(link).toHaveAttribute('title', `Inbox, ${unreadTotal} unread messages`);
+    useUiStore.setState({ mainNavCollapsed: false });
+  });
+
   it('shows the app destinations and collapses from the logo', async () => {
     const user = userEvent.setup();
 

@@ -220,7 +220,8 @@ import (
 //	91 - persist plugin discovery, grants and configuration checkpoints.
 //	92 - durable action operation receipts prevent replay after a host restart.
 //	93 - record hourly logical-size samples for the OpenCode and ocman databases.
-const latestSchemaVersion = 93
+//	94 - categorize Inbox items and persist actionable permission requests.
+const latestSchemaVersion = 94
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -514,6 +515,14 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV92(tx)
 	case 93:
 		return migrateToV93(tx)
+	case 94:
+		if err := migrateToV74(tx); err != nil {
+			return err
+		}
+		if err := addColumnIfMissing(tx, "inbox_item", "category", "TEXT NOT NULL DEFAULT 'general'"); err != nil {
+			return err
+		}
+		return addColumnIfMissing(tx, "inbox_item", "permission_json", "TEXT NOT NULL DEFAULT ''")
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}

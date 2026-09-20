@@ -462,6 +462,8 @@ export const api = {
    inbox: (signal?: AbortSignal) => fetchJSON<InboxResponse>('/api/inbox', signal),
    markInboxItemRead: (id: string, remoteId: string) =>
      postJSON<void, { id: string; remoteId: string }>('/api/inbox/open', { id, remoteId }, { parseJSON: false }),
+   markInboxItemUnread: (id: string, remoteId: string) =>
+     postJSON<void, { id: string; remoteId: string }>('/api/inbox/unread', { id, remoteId }, { parseJSON: false }),
    archiveInboxItems: (items: Pick<InboxItem, 'id' | 'remoteId'>[]) =>
      postJSON<void, { items: Pick<InboxItem, 'id' | 'remoteId'>[] }>('/api/inbox/archive', { items }, { parseJSON: false }),
    archiveAllReadInboxItems: (remoteId: string) =>
@@ -805,9 +807,10 @@ export const api = {
     sessionId: string,
     permissionId: string,
     reply: 'once' | 'always' | 'reject',
+    platform?: string,
   ) =>
     postJSON<void>(
-      `/api/session/${encodeURIComponent(sessionId)}/permissions/${encodeURIComponent(permissionId)}`,
+      `/api/session/${encodeURIComponent(sessionId)}/permissions/${encodeURIComponent(permissionId)}${queryString({ platform })}`,
       { reply },
       { parseJSON: false },
     ),

@@ -25,6 +25,7 @@ import {
   onSessionChanged,
   onQueueUpdated,
   onProjectsChanged,
+  onInboxChanged,
   onSseConnect,
   useGlobalEvents,
 } from './useGlobalEvents';
@@ -41,7 +42,8 @@ class FakeEventSource {
     FakeEventSource.instances.push(this);
   }
 
-  addEventListener() {}
+  listeners = new Map<string, () => void>();
+  addEventListener(name: string, listener: () => void) { this.listeners.set(name, listener); }
   close() {}
   open() { this.onopen?.(); }
   error() { this.onerror?.(); }
@@ -50,6 +52,18 @@ class FakeEventSource {
 (globalThis as unknown as { EventSource: typeof FakeEventSource }).EventSource = FakeEventSource;
 
 describe('useGlobalEvents connection', () => {
+  it('refreshes inbox subscribers when a permission changes and unsubscribes cleanly', () => {
+    const changed = vi.fn();
+    const unsubscribe = onInboxChanged(changed);
+    const { unmount } = renderHook(() => useGlobalEvents());
+    const source = FakeEventSource.instances.at(-1)!;
+    act(() => source.listeners.get('ocman.inbox.changed')?.());
+    expect(changed).toHaveBeenCalledOnce();
+    unsubscribe();
+    act(() => source.listeners.get('ocman.inbox.changed')?.());
+    expect(changed).toHaveBeenCalledOnce();
+    unmount();
+  });
   beforeEach(() => {
     vi.useFakeTimers();
     FakeEventSource.instances = [];

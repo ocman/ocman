@@ -97,6 +97,26 @@ func TestRemoteConnInboxRoundTrip(t *testing.T) {
 	}
 }
 
+func TestRemoteInboxPermissionRoundTrip(t *testing.T) {
+	store := openInboxStore(t)
+	permission := state.InboxPermission{Platform: "opencode", SessionID: "child-session", PermissionID: "permission", Permission: "bash", Patterns: []string{"git status"}, Metadata: map[string]any{"command": "git status"}}
+	if err := store.EnsurePermissionInboxItem(t.Context(), permission); err != nil {
+		t.Fatal(err)
+	}
+	conn := connectInboxRemote(t, "remote-1", store.DB)
+	items, err := conn.InboxItems(t.Context())
+	if err != nil || len(items) != 1 || items[0].Category != state.InboxPermissionCategory || !reflect.DeepEqual(items[0].Permission, &permission) {
+		t.Fatalf("remote permission: %+v, %v", items, err)
+	}
+	if err := store.ResolvePermissionInboxItem(t.Context(), permission.Platform, permission.SessionID, permission.PermissionID); err != nil {
+		t.Fatal(err)
+	}
+	items, err = conn.InboxItems(t.Context())
+	if err != nil || len(items) != 0 {
+		t.Fatalf("resolved remote permission: %+v, %v", items, err)
+	}
+}
+
 func TestServerInboxRejectsMissingStoreAndMalformedJSON(t *testing.T) {
 	server := NewServer(platforms.NewRegistry(), localStubHost{}, "remote-1", "v-test")
 	if _, err := server.InboxItems(t.Context(), &pb.Empty{}); status.Code(err) != codes.FailedPrecondition {
@@ -104,6 +124,9 @@ func TestServerInboxRejectsMissingStoreAndMalformedJSON(t *testing.T) {
 	}
 	if _, err := server.MarkInboxItemRead(t.Context(), &pb.JsonReq{}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("MarkInboxItemRead without store = %v", err)
+	}
+	if _, err := server.MarkInboxItemUnread(t.Context(), &pb.JsonReq{}); status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("MarkInboxItemUnread without store = %v", err)
 	}
 	if _, err := server.ArchiveInboxItems(t.Context(), &pb.JsonReq{}); status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("ArchiveInboxItems without store = %v", err)
@@ -113,6 +136,9 @@ func TestServerInboxRejectsMissingStoreAndMalformedJSON(t *testing.T) {
 	bad := &pb.JsonReq{Payload: []byte("{")}
 	if _, err := server.MarkInboxItemRead(t.Context(), bad); err == nil {
 		t.Fatal("MarkInboxItemRead accepted malformed JSON")
+	}
+	if _, err := server.MarkInboxItemUnread(t.Context(), bad); err == nil {
+		t.Fatal("MarkInboxItemUnread accepted malformed JSON")
 	}
 	if _, err := server.ArchiveInboxItems(t.Context(), bad); err == nil {
 		t.Fatal("ArchiveInboxItems accepted malformed JSON")
@@ -156,6 +182,24 @@ func TestManagerInboxKeepsOwnerLocalIDsIsolated(t *testing.T) {
 	if len(remoteItems) != 1 || remoteItems[0].ReadAt == 0 {
 		t.Fatalf("remote items = %#v", remoteItems)
 	}
+	if err := mgr.MarkInboxItemRead(t.Context(), "local", localItem.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.MarkInboxItemUnread(t.Context(), "remote-1", remoteItem.ID); err != nil {
+		t.Fatal(err)
+	}
+	localItems, _ = mgr.InboxItems(t.Context(), "local")
+	remoteItems, _ = mgr.InboxItems(t.Context(), "remote-1")
+	if localItems[0].ReadAt == 0 || remoteItems[0].ReadAt != 0 {
+		t.Fatalf("unread mutation crossed owners: local=%+v remote=%+v", localItems, remoteItems)
+	}
+	if err := mgr.MarkInboxItemUnread(t.Context(), "local", localItem.ID); err != nil {
+		t.Fatal(err)
+	}
+	localItems, _ = mgr.InboxItems(t.Context(), "local")
+	if localItems[0].ReadAt != 0 {
+		t.Fatalf("local unread mutation failed: %+v", localItems)
+	}
 	if err := mgr.ArchiveInboxItems(t.Context(), "local", []string{localItem.ID}, false); err != nil {
 		t.Fatal(err)
 	}
@@ -195,6 +239,9 @@ func TestManagerInboxOwnerSelectionFailsClosed(t *testing.T) {
 	mgr := NewManager(platforms.NewRegistry(), hostsvc.NewRouter(localStubHost{}), store.DB, "opencode")
 
 	for _, source := range []string{"", "missing"} {
+		if err := mgr.MarkInboxItemUnread(t.Context(), source, item.ID); !errors.Is(err, ErrRemoteOffline) {
+			t.Errorf("MarkInboxItemUnread source %q = %v, want ErrRemoteOffline", source, err)
+		}
 		if err := mgr.MarkInboxItemRead(t.Context(), source, item.ID); !errors.Is(err, ErrRemoteOffline) {
 			t.Errorf("MarkInboxItemRead source %q = %v, want ErrRemoteOffline", source, err)
 		}
@@ -212,6 +259,9 @@ func TestManagerInboxOwnerSelectionFailsClosed(t *testing.T) {
 	}
 	if err := mgr.MarkInboxItemRead(t.Context(), "offline", item.ID); !errors.Is(err, ErrRemoteOffline) {
 		t.Fatalf("MarkInboxItemRead offline = %v, want ErrRemoteOffline", err)
+	}
+	if err := mgr.MarkInboxItemUnread(t.Context(), "offline", item.ID); !errors.Is(err, ErrRemoteOffline) {
+		t.Fatalf("MarkInboxItemUnread offline = %v, want ErrRemoteOffline", err)
 	}
 	for _, source := range []string{"missing", "offline"} {
 		if err := mgr.ArchiveInboxItems(t.Context(), source, []string{item.ID}, false); !errors.Is(err, ErrRemoteOffline) {

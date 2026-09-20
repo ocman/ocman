@@ -372,6 +372,11 @@ func (d *DB) FinishRoutineRun(ctx context.Context, id, runState, errorText strin
 	} else if _, err := tx.ExecContext(ctx, `UPDATE routine SET next_due_at = ?, enabled = ?, updated_at = ? WHERE id = ? AND deleted = 0 AND updated_at = ?`, nextDueAt, enabled, finishedAt, routineID, routineUpdatedAt); err != nil {
 		return false, fmt.Errorf("advancing failed routine: %w", err)
 	}
+	body := fmt.Sprintf("Run %s finished with status **%s**.\n\n%s\n\n[View routines](/routines)", id, runState, errorText)
+	if _, err := tx.ExecContext(ctx, `INSERT INTO inbox_item (id, title, body, created_at, category)
+		SELECT ?, routine_name || ': ' || ?, ?, ?, 'routine' FROM routine_run WHERE id = ?`, "routine-"+id, runState, body, finishedAt, id); err != nil {
+		return false, fmt.Errorf("notifying routine completion: %w", err)
+	}
 	if err := tx.Commit(); err != nil {
 		return false, fmt.Errorf("committing routine run finish: %w", err)
 	}

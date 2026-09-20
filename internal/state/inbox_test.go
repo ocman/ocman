@@ -134,6 +134,110 @@ func TestMarkInboxItemReadIsIdempotentAndIsolated(t *testing.T) {
 	}
 }
 
+func TestMarkInboxItemUnreadIsIdempotentAndIsolated(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	if _, err := db.db.Exec(`INSERT INTO inbox_item (id, title, body, created_at, read_at, archived_at) VALUES
+		('read', 'Read', 'body', 1, 123, NULL),
+		('other', 'Other', 'body', 2, 456, NULL),
+		('archived', 'Archived', 'body', 3, 789, 900)`); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"read", "read", "missing", "archived"} {
+		if err := db.MarkInboxItemUnread(t.Context(), id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items, err := db.ListInboxItems(t.Context())
+	if err != nil || len(items) != 2 || items[0].ReadAt != 456 || items[1].ReadAt != 0 {
+		t.Fatalf("items after marking unread = %+v, %v", items, err)
+	}
+	var readAt int64
+	if err := db.db.QueryRow(`SELECT read_at FROM inbox_item WHERE id = 'archived'`).Scan(&readAt); err != nil || readAt != 789 {
+		t.Fatalf("archived read state = %d, %v", readAt, err)
+	}
+	if count, err := db.CountUnreadInboxItems(t.Context()); err != nil || count != 1 {
+		t.Fatalf("unread count = %d, %v; want 1", count, err)
+	}
+}
+
+func TestInboxCategoriesAndPermissionLifecycle(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	for _, category := range []string{InboxGeneral, InboxFactory, InboxRoutine} {
+		item, err := db.CreateCategorizedInboxItem(t.Context(), category, "body", category)
+		if err != nil || item.Category != category {
+			t.Fatalf("category %q: %+v, %v", category, item, err)
+		}
+	}
+	for _, category := range []string{"", "unknown", InboxPermissionCategory} {
+		if _, err := db.CreateCategorizedInboxItem(t.Context(), "title", "body", category); err == nil {
+			t.Fatalf("accepted category %q", category)
+		}
+	}
+	permission := InboxPermission{Platform: "opencode", SessionID: "child-session", PermissionID: "request", Permission: "bash", Patterns: []string{"git status"}, Metadata: map[string]any{"command": "git status"}}
+	for range 2 {
+		if err := db.EnsurePermissionInboxItem(t.Context(), permission); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items, err := db.ListInboxItems(t.Context())
+	if err != nil || len(items) != 4 {
+		t.Fatalf("dedup: %+v, %v", items, err)
+	}
+	var id string
+	for _, item := range items {
+		if item.Category == InboxPermissionCategory {
+			id = item.ID
+			if item.Permission == nil || item.Permission.SessionID != permission.SessionID || item.Permission.Metadata["command"] != "git status" {
+				t.Fatalf("permission = %+v", item.Permission)
+			}
+		}
+	}
+	if id == "" {
+		t.Fatal("permission item missing")
+	}
+	if err := db.MarkInboxItemRead(t.Context(), id); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.EnsurePermissionInboxItem(t.Context(), permission); err != nil {
+		t.Fatal(err)
+	}
+	if count, err := db.CountUnreadInboxItems(t.Context()); err != nil || count != 3 {
+		t.Fatalf("duplicate reset read state: %d, %v", count, err)
+	}
+	for range 2 {
+		if err := db.ResolvePermissionInboxItem(t.Context(), permission.Platform, permission.SessionID, permission.PermissionID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.EnsurePermissionInboxItem(t.Context(), permission); err != nil {
+		t.Fatal(err)
+	}
+	permission.PermissionID = "replied-before-asked"
+	if err := db.ResolvePermissionInboxItem(t.Context(), permission.Platform, permission.SessionID, permission.PermissionID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.EnsurePermissionInboxItem(t.Context(), permission); err != nil {
+		t.Fatal(err)
+	}
+	items, err = db.ListInboxItems(t.Context())
+	if err != nil || len(items) != 3 {
+		t.Fatalf("resolved prompt reopened: %+v, %v", items, err)
+	}
+	permission.Platform = "other-platform"
+	if err := db.EnsurePermissionInboxItem(t.Context(), permission); err != nil {
+		t.Fatal(err)
+	}
+	items, err = db.ListInboxItems(t.Context())
+	if err != nil || len(items) != 4 {
+		t.Fatalf("platform isolation: %+v, %v", items, err)
+	}
+	if err := db.EnsurePermissionInboxItem(t.Context(), InboxPermission{}); err == nil {
+		t.Fatal("accepted empty identity")
+	}
+}
+
 func TestRecallInboxItemIsIdempotent(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()

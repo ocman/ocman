@@ -56,6 +56,7 @@ func (s *Server) aaSvc() *autoapprove.Service {
 				return nil
 			},
 			BroadcastPermissionResolved: s.broadcastPermissionResolved,
+			PermissionAsked:             s.notifyPermissionInbox,
 			BroadcastQuestionResolved:   s.broadcastQuestionResolved,
 			BroadcastSessionIdle:        s.onSessionIdle,
 			BroadcastSessionChanged:     s.broadcastSessionChanged,

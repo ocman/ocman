@@ -83,6 +83,7 @@ func (s *Server) ensurePendingPermissions(adapter platforms.Platform, sessionID 
 		}
 		patterns := extractPermissionPatterns(entry)
 		metadata := extractPermissionMetadata(entry)
+		s.aaSvc().ObservePermissionPrompt(adapter.ID(), sessionID, entry)
 		s.aaSvc().Ensure(adapter.ID(), adapter, promptSessionID(entry, sessionID), permissionID, permission, patterns, metadata)
 	}
 }

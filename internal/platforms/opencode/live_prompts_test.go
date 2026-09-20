@@ -58,6 +58,55 @@ func TestAdapterLivePromptsBackSessionFlagsAndListingWithoutFanout(t *testing.T)
 	}
 }
 
+func TestRefreshPermissionsRequiresSuccessfulLiveSnapshot(t *testing.T) {
+	const dir, sid = "/repo/inbox", "ses-inbox"
+	var fail atomic.Bool
+	var empty atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/permission" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Query().Get("directory") != dir {
+			t.Errorf("wrong directory: %s", r.URL)
+		}
+		if fail.Load() {
+			http.Error(w, "offline", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if empty.Load() {
+			_, _ = io.WriteString(w, `[]`)
+			return
+		}
+		_, _ = io.WriteString(w, `[{"id":"perm-live","sessionID":"ses-inbox","permission":"bash"}]`)
+	}))
+	defer server.Close()
+	withTestPort(t, dir, strings.TrimPrefix(server.URL, "http://127.0.0.1:"))
+	a := New(newTestDBWithSession(t, sid, dir), nil)
+	prompts, err := a.RefreshPermissions(t.Context(), sid)
+	if err != nil || len(prompts) != 1 || prompts[0]["id"] != "perm-live" {
+		t.Fatalf("live snapshot: %+v, %v", prompts, err)
+	}
+	fail.Store(true)
+	if _, err := a.RefreshPermissions(t.Context(), sid); err == nil {
+		t.Fatal("unreachable snapshot reported success")
+	}
+	prompts, _ = a.ListPermissions(t.Context(), sid)
+	if len(prompts) != 1 {
+		t.Fatal("failed snapshot discarded cached permission")
+	}
+	fail.Store(false)
+	empty.Store(true)
+	prompts, err = a.RefreshPermissions(t.Context(), sid)
+	if err != nil || len(prompts) != 0 {
+		t.Fatalf("resolved snapshot: %+v, %v", prompts, err)
+	}
+	if _, err := a.RefreshPermissions(t.Context(), "missing-session"); err == nil {
+		t.Fatal("missing session reported a live snapshot")
+	}
+}
+
 func TestPermissionPromptBubblesFromGrandchildAcrossDirectories(t *testing.T) {
 	parentID := "ses-parent"
 	childID := "ses-child"

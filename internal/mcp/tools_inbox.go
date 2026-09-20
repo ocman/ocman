@@ -10,7 +10,7 @@ import (
 )
 
 type inboxStore interface {
-	CreateInboxItem(context.Context, string, string) (state.InboxItem, error)
+	CreateCategorizedInboxItem(context.Context, string, string, string) (state.InboxItem, error)
 	RecallInboxItem(context.Context, string) error
 }
 
@@ -22,7 +22,7 @@ func inboxServerTools(tools *inboxTools) []server.ServerTool {
 	}
 	return []server.ServerTool{{Tool: mcplib.NewTool("inbox",
 		mcplib.WithDescription("Send and recall owner-local Inbox items. Use action help for schemas and examples."),
-		mcplib.WithString("action", mcplib.Required()), mcplib.WithString("title"), mcplib.WithString("body"), mcplib.WithString("item_id")), Handler: tools.handle}}
+		mcplib.WithString("action", mcplib.Required()), mcplib.WithString("title"), mcplib.WithString("body"), mcplib.WithString("category", mcplib.Enum("general", "factory", "routine")), mcplib.WithString("item_id")), Handler: tools.handle}}
 }
 
 func addInboxTools(s *server.MCPServer, tools *inboxTools) {
@@ -41,7 +41,7 @@ func (t *inboxTools) handle(ctx context.Context, req mcplib.CallToolRequest) (*m
 		return toolResultJSON(map[string]any{
 			"actions": []string{"help", "send", "recall"},
 			"help":    map[string]any{"action": "Describes every available Inbox action.", "example": `{"action":"help"}`, "output_schema": "Inbox action documentation"},
-			"send":    map[string]any{"required": []string{"title", "body"}, "action": "Sends an unread item to this ocman instance's Inbox.", "example": `{"action":"send","title":"Review complete","body":"The pull request is ready."}`, "output_schema": map[string]string{"id": "opaque item ID"}},
+			"send":    map[string]any{"required": []string{"title", "body"}, "optional": map[string]string{"category": "general (default), factory, or routine; permission is reserved for live requests"}, "action": "Sends an unread item to this ocman instance's Inbox.", "example": `{"action":"send","title":"Review complete","body":"The pull request is ready.","category":"general"}`, "output_schema": map[string]string{"id": "opaque item ID"}},
 			"recall":  map[string]any{"required": []string{"item_id"}, "action": "Recalls an item. Unknown and already recalled IDs succeed.", "example": `{"action":"recall","item_id":"opaque-id"}`, "output_schema": map[string]string{"status": "recalled"}},
 			"rules":   []string{"title and body must be nonblank", "item IDs are opaque and owner-local"},
 			"errors":  []string{"action is required", "unknown action", "title is required", "body is required", "item_id is required", "inbox request failed"},
@@ -54,7 +54,11 @@ func (t *inboxTools) handle(ctx context.Context, req mcplib.CallToolRequest) (*m
 		if body == "" {
 			return mcplib.NewToolResultError("body is required"), nil
 		}
-		item, err := t.store.CreateInboxItem(ctx, title, body)
+		category := req.GetString("category", state.InboxGeneral)
+		if category != state.InboxGeneral && category != state.InboxFactory && category != state.InboxRoutine {
+			return mcplib.NewToolResultError("category must be general, factory, or routine"), nil
+		}
+		item, err := t.store.CreateCategorizedInboxItem(ctx, title, body, category)
 		if err != nil {
 			return mcplib.NewToolResultError("inbox request failed"), nil
 		}

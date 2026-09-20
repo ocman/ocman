@@ -22,9 +22,18 @@ vi.mock('mermaid', () => ({
   },
 }));
 
-import { MarkdownText } from './MarkdownText';
+import { MarkdownContent, MarkdownText } from './MarkdownText';
 
 describe('MarkdownText', () => {
+  it('preserves soft line breaks when requested without changing hard breaks or code', () => {
+    const text = 'First\nSecond\n\nHard  \nbreak\n\n```text\n  indented\n    code\n```';
+    const { container, rerender } = render(<MarkdownContent text={text} />);
+    expect(container.querySelectorAll('br')).toHaveLength(1);
+    rerender(<MarkdownContent text={text} preserveLineBreaks />);
+    expect(container.querySelectorAll('br')).toHaveLength(2);
+    expect(container.querySelector('pre code')?.textContent).toBe('  indented\n    code\n');
+  });
+
   beforeEach(() => {
     renderDiagram.mockReset().mockResolvedValue({ svg: '<svg aria-label="diagram"></svg>' });
   });

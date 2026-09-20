@@ -26,6 +26,10 @@ function s(
 }
 
 describe('useNotificationNotify controller', () => {
+  it('identifies permission prompts for inbox routing', () => {
+    const decisions = __evaluateForTests({ sessions: [s('permission-session', 'waiting', { pendingPermission: true })], hidden: false, permission: 'granted', enabled: true, baseline: null });
+    expect(decisions).toEqual([{ kind: 'prompt', sessionId: 'permission-session', permission: true }]);
+  });
   beforeEach(() => {
     __resetForTests();
   });
@@ -195,6 +199,11 @@ describe('useNotificationNotify controller', () => {
 });
 
 describe('notification details', () => {
+  it('routes permission notifications to the permission inbox', () => {
+    expect(__notificationDetailsForTests({ kind: 'prompt', sessionId: 'session-1', permission: true })).toMatchObject({
+      url: '/inbox?category=permission', requireInteraction: true,
+    });
+  });
   it('keeps existing session notification details unchanged', () => {
     expect(__notificationDetailsForTests({ kind: 'prompt', sessionId: 'session-1' })).toMatchObject({
       title: 'ocman — input required',

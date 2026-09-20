@@ -14,7 +14,7 @@ import { SharedConversationView } from './pages/SharedConversationView';
 import { ImportSharedConversation } from './pages/ImportSharedConversation';
 import { Login } from './pages/Login';
 import { SubscriptionUsage } from './pages/SubscriptionUsage';
-import { onProjectsChanged, onSessionChanged } from './lib/useGlobalEvents';
+import { onInboxChanged, onProjectsChanged, onSessionChanged } from './lib/useGlobalEvents';
 import { HeaderProvider } from './lib/HeaderProvider';
 import { useHeaderInfo } from './lib/headerContext';
 import { CommandPalette } from './components/CommandPalette';
@@ -106,8 +106,8 @@ export function MainNav({
             <NavLink
                 key={item.to}
                 to={item.to}
-                aria-label={item.label}
-                title={collapsed ? item.label : undefined}
+                aria-label={item.to === '/inbox' && inbox.data?.unreadTotal ? `Inbox, ${inbox.data.unreadTotal} unread messages` : item.label}
+                title={collapsed ? (item.to === '/inbox' && inbox.data?.unreadTotal ? `Inbox, ${inbox.data.unreadTotal} unread messages` : item.label) : undefined}
                 className={({ isActive }) =>
                   [
                     isActive || (item.activeOnSession && location.pathname.startsWith('/session/')) ? 'active' : '',
@@ -317,6 +317,15 @@ function GlobalHotkeys() {
     runInEditable: true,
   }), [reopenClosedSession]);
 
+  const inboxShortcut = useMemo(() => ({
+    id: 'site.open-inbox',
+    scope: 'site' as const,
+    keys: { code: 'KeyI', alt: true },
+    description: 'Open inbox',
+    handler: () => navigate('/inbox'),
+    runInEditable: true,
+  }), [navigate]);
+
   useShortcut(toggleShortcutsShortcut);
   useShortcut(scrollDownShortcut);
   useShortcut(scrollUpShortcut);
@@ -324,6 +333,7 @@ function GlobalHotkeys() {
   useShortcut(searchPaletteShortcut);
   useShortcut(projectPaletteShortcut);
   useShortcut(reopenClosedShortcut);
+  useShortcut(inboxShortcut);
 
   useHotkeys('esc', () => closeShortcuts(), {
     enabled: shortcutsOpen,
@@ -476,6 +486,8 @@ onProjectsChanged(() => {
   void queryClient.invalidateQueries({ queryKey: ['projects'] });
 });
 
+onInboxChanged(() => { void queryClient.invalidateQueries({ queryKey: ['inbox'] }); });
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -543,7 +555,6 @@ export function AppRoutes() {
       <Route element={<DashboardLayout />}>
         <Route path="/" element={<RootRedirect />} />
         <Route path="/sessions" element={<SessionsTab />} />
-        <Route path="/inbox" element={<Inbox />} />
         <Route path="/subscription-usage" element={<SubscriptionUsage />} />
         <Route path="/projects" element={<ProjectsTab />} />
         <Route path="/analytics/:section?" element={<AnalyticsTab />} />
@@ -552,6 +563,7 @@ export function AppRoutes() {
         <Route path="/routines" element={<Routines />} />
         <Route path="/settings" element={<SettingsTab />} />
       </Route>
+      <Route path="/inbox" element={<Inbox />} />
       <Route path="/project/:dir/worktrees" element={<WorktreesView />} />
       <Route path="/factory" element={<Navigate to="/factory/overview" replace />} />
       <Route path="/factory/overview" element={<FactoryOverview />} />

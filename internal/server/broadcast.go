@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"sync"
@@ -205,6 +206,7 @@ func (s *Server) broadcastGlobalEvent(event string, data []byte) {
 // so cross-page prompt toasts for the session clear immediately. reason
 // is a short tag for diagnostics ("auto-approved", "replied").
 func (s *Server) broadcastPermissionResolved(sessionID, permissionID, reason string) {
+	s.resolvePermissionInbox(context.Background(), "opencode", sessionID, permissionID)
 	if sessionID == "" {
 		return
 	}

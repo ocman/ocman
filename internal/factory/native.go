@@ -2360,7 +2360,7 @@ func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentTok
 // only loses the notification.
 func (s *NativeService) notifyEpicDelivered(ctx context.Context, epicID, summary, prURL string) {
 	inbox, ok := s.store.(interface {
-		NotifyInbox(context.Context, string, string) error
+		NotifyInbox(context.Context, string, string, string) error
 	})
 	if !ok {
 		return
@@ -2370,7 +2370,7 @@ func (s *NativeService) notifyEpicDelivered(ctx context.Context, epicID, summary
 		title = "Factory delivered: " + epic.Goal
 	}
 	body := summary + "\n\nPR: " + prURL + "\nEpic: " + epicID
-	if err := inbox.NotifyInbox(ctx, title, body); err != nil {
+	if err := inbox.NotifyInbox(ctx, title, body, "factory"); err != nil {
 		logrus.WithError(err).WithField("epic", epicID).Warn("factory: inbox notification failed")
 	}
 }

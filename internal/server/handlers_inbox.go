@@ -13,13 +13,15 @@ import (
 const inboxFanoutLimit = 8
 
 type inboxItemView struct {
-	ID         string `json:"id"`
-	Title      string `json:"title"`
-	Body       string `json:"body"`
-	CreatedAt  int64  `json:"createdAt"`
-	ReadAt     int64  `json:"readAt,omitempty"`
-	ArchivedAt int64  `json:"archivedAt,omitempty"`
-	RemoteID   string `json:"remoteId"`
+	ID         string                 `json:"id"`
+	Title      string                 `json:"title"`
+	Body       string                 `json:"body"`
+	CreatedAt  int64                  `json:"createdAt"`
+	ReadAt     int64                  `json:"readAt,omitempty"`
+	ArchivedAt int64                  `json:"archivedAt,omitempty"`
+	RemoteID   string                 `json:"remoteId"`
+	Category   string                 `json:"category"`
+	Permission *state.InboxPermission `json:"permission,omitempty"`
 }
 
 type inboxRef struct {
@@ -69,7 +71,7 @@ func (s *Server) handleInbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch r.URL.Path {
-	case "/api/inbox/read", "/api/inbox/open":
+	case "/api/inbox/read", "/api/inbox/open", "/api/inbox/unread":
 		s.handleInboxRead(w, r)
 	case "/api/inbox/archive":
 		s.handleInboxArchive(w, r, false)
@@ -118,7 +120,15 @@ func (s *Server) handleInboxList(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		for _, item := range result.items {
-			items = append(items, inboxItemView{item.ID, item.Title, item.Body, item.CreatedAt, item.ReadAt, item.ArchivedAt, result.source})
+			if item.Category == "" {
+				item.Category = state.InboxGeneral
+			}
+			if item.Permission != nil && result.source != "local" {
+				permission := *item.Permission
+				permission.Platform = remote.CompoundPlatformID(result.source, permission.Platform)
+				item.Permission = &permission
+			}
+			items = append(items, inboxItemView{item.ID, item.Title, item.Body, item.CreatedAt, item.ReadAt, item.ArchivedAt, result.source, item.Category, item.Permission})
 			if item.ReadAt == 0 {
 				unread++
 			}
@@ -149,8 +159,14 @@ func (s *Server) handleInboxRead(w http.ResponseWriter, r *http.Request) {
 		writeInboxOwnerError(w, req.RemoteID)
 		return
 	}
-	if err := s.inboxMarkRead(r.Context(), req.RemoteID, req.ID); err != nil {
-		serverError(w, "marking Inbox item read", err)
+	var err error
+	if r.URL.Path == "/api/inbox/unread" {
+		err = s.inboxMarkUnread(r.Context(), req.RemoteID, req.ID)
+	} else {
+		err = s.inboxMarkRead(r.Context(), req.RemoteID, req.ID)
+	}
+	if err != nil {
+		serverError(w, "updating Inbox item read state", err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -231,6 +247,12 @@ func (s *Server) inboxMarkRead(ctx context.Context, source, id string) error {
 		return s.remotes.MarkInboxItemRead(ctx, source, id)
 	}
 	return s.stateDB.MarkInboxItemRead(ctx, id)
+}
+func (s *Server) inboxMarkUnread(ctx context.Context, source, id string) error {
+	if s.remotes != nil {
+		return s.remotes.MarkInboxItemUnread(ctx, source, id)
+	}
+	return s.stateDB.MarkInboxItemUnread(ctx, id)
 }
 func (s *Server) inboxArchive(ctx context.Context, source string, ids []string, allRead bool) error {
 	if s.remotes != nil {

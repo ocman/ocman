@@ -48,6 +48,17 @@ func (s *Server) ArchiveInboxItems(ctx context.Context, req *pb.JsonReq) (*pb.Em
 	return &pb.Empty{}, s.inboxStore.ArchiveInboxItems(ctx, mutation.IDs)
 }
 
+func (s *Server) MarkInboxItemUnread(ctx context.Context, req *pb.JsonReq) (*pb.Empty, error) {
+	if s.inboxStore == nil {
+		return nil, status.Error(codes.FailedPrecondition, "Inbox store is unavailable")
+	}
+	var mutation inboxMutation
+	if err := unmarshalJSON(req.Payload, &mutation); err != nil {
+		return nil, err
+	}
+	return &pb.Empty{}, s.inboxStore.MarkInboxItemUnread(ctx, mutation.ID)
+}
+
 func (c *RemoteConn) InboxItems(ctx context.Context) ([]state.InboxItem, error) {
 	client := c.Client()
 	if client == nil {
@@ -74,6 +85,19 @@ func (c *RemoteConn) MarkInboxItemRead(ctx context.Context, id string) error {
 		return err
 	}
 	_, err = client.MarkInboxItemRead(ctx, &pb.JsonReq{Payload: payload})
+	return err
+}
+
+func (c *RemoteConn) MarkInboxItemUnread(ctx context.Context, id string) error {
+	client := c.Client()
+	if client == nil {
+		return ErrRemoteOffline
+	}
+	payload, err := marshalJSON(inboxMutation{ID: id})
+	if err != nil {
+		return err
+	}
+	_, err = client.MarkInboxItemUnread(ctx, &pb.JsonReq{Payload: payload})
 	return err
 }
 
@@ -143,6 +167,17 @@ func (m *Manager) MarkInboxItemRead(ctx context.Context, source, id string) erro
 		return store.MarkInboxItemRead(ctx, id)
 	}
 	return conn.MarkInboxItemRead(ctx, id)
+}
+
+func (m *Manager) MarkInboxItemUnread(ctx context.Context, source, id string) error {
+	store, conn, err := m.inboxOwner(source)
+	if err != nil {
+		return err
+	}
+	if store != nil {
+		return store.MarkInboxItemUnread(ctx, id)
+	}
+	return conn.MarkInboxItemUnread(ctx, id)
 }
 
 func (m *Manager) ArchiveInboxItems(ctx context.Context, source string, ids []string, allRead bool) error {

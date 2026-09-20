@@ -16,6 +16,32 @@ func testRoutine(id, name string, createdAt int64) Routine {
 	}
 }
 
+func TestRoutineCompletionCreatesOneCategorizedInboxItem(t *testing.T) {
+	for _, outcome := range []string{"success", "failure", "interrupted"} {
+		t.Run(outcome, func(t *testing.T) {
+			db := openTestStateDB(t)
+			defer db.Close()
+			routine := testRoutine("routine", "Daily checks", 1)
+			if err := db.CreateRoutine(t.Context(), routine); err != nil {
+				t.Fatal(err)
+			}
+			_, claimed, err := db.ClaimRoutineRun(t.Context(), RoutineRun{ID: "run", RoutineID: routine.ID, State: "running", Trigger: "manual", OccurrenceAt: 2, CreatedAt: 2})
+			if err != nil || !claimed {
+				t.Fatalf("claim: %v, %v", claimed, err)
+			}
+			for range 2 {
+				if _, err := db.FinishRoutineRun(t.Context(), "run", outcome, "details", 3, 0, false); err != nil {
+					t.Fatal(err)
+				}
+			}
+			items, err := db.ListInboxItems(t.Context())
+			if err != nil || len(items) != 1 || items[0].Category != InboxRoutine || items[0].Title != "Daily checks: "+outcome {
+				t.Fatalf("inbox: %+v, %v", items, err)
+			}
+		})
+	}
+}
+
 func TestRoutineCRUDUniquenessOrderingAndSoftDelete(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()

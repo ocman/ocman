@@ -261,8 +261,9 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 		PermissionReplied: func(sessionID, permissionID string) {
 			s.aaSvc().Cancel(sessionID, permissionID)
 		},
-		PermissionReplySucceeded: func(ctx context.Context, _ platforms.ID, req platforms.RespondPermissionRequest) {
+		PermissionReplySucceeded: func(ctx context.Context, platform platforms.ID, req platforms.RespondPermissionRequest) {
 			s.aaSvc().HandleDirectPermissionReply(ctx, req.SessionID, req.PermissionID, req.Reply)
+			s.resolvePermissionInbox(ctx, string(platform), req.SessionID, req.PermissionID)
 		},
 		SessionCreated: func(info sessionsvc.CreatedSession) {
 			s.broadcastSessionCreated(info)
@@ -572,6 +573,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	go s.runDatabaseSizeLoop(ctx)
 	go s.runQueueSweep(ctx)
 	go s.runRoutines(ctx)
+	go s.runPermissionInboxReconciliation(ctx)
 	// Headless auto-approve: subscribe directly to each OpenCode
 	// instance's /event SSE stream so permission.asked events drive
 	// the judge even when no browser tab is open. Without this, the

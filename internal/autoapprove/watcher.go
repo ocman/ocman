@@ -424,6 +424,7 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 		}
 		directories := w.directoriesForPort(port)
 		onPermission := func(prompt platforms.LivePrompt) {
+			w.svc.ObservePermissionPrompt(opencode.PlatformID, "", prompt)
 			if w.onPermission == nil {
 				return
 			}
@@ -479,6 +480,9 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 			}
 		},
 		OnPromptAsked: func(directory, kind string, prompt platforms.LivePrompt) {
+			if kind == "permission" {
+				w.svc.ObservePermissionPrompt(opencode.PlatformID, "", prompt)
+			}
 			if ocAdapter != nil {
 				ocAdapter.ObservePromptAskedFromPort(port, portGeneration, directory, kind, prompt)
 			}

@@ -250,7 +250,14 @@ flowchart TD
 - **Inbox.** The `inbox` MCP tool is deliberately limited to `help`, `send`, and
   `recall`. Sends write the owning host's `state.db`; remote sends and recalls
   cross the owner-routed gRPC seam. The browser alone lists, reads, and
-  archives Inbox state through REST.
+  archives Inbox state through REST. Messages carry Permission, Factory, Routine,
+  or Primary categories. The headless permission watcher creates owner-local
+  actionable messages even when auto-approval is disabled. Successful replies,
+  including TUI and automatic replies, archive them; a periodic reconciliation
+  handles missed events and aborted requests. Permission replies use the existing
+  session service with an explicit platform, including remote compound IDs.
+  Routine completion writes its notification in the same transaction as the run
+  outcome, and Factory deliveries explicitly use the Factory category.
 - **internal/opencodeskills.** Extracts binary-embedded ocman skills into
   XDG data and installs only ocman-owned symlinks for OpenCode discovery.
   Retirement unlinks only the exact verified symlink and preserves extracted data.
@@ -302,9 +309,12 @@ sequenceDiagram
     Note over Q,A: poll linked session until it settles
     E-->>B: SSE (session.updated)
     A->>I: persist owner-local commit observations / MCP inbox send
+    A->>I: create permission Inbox item; archive on resolution
+    Q->>I: commit run outcome and Routine Inbox notification
     I-->>S: local state or owner-routed remote RPC
-    B->>S: REST Inbox list/read/archive
-    S-->>B: Inbox JSON (polling and mutation refresh)
+    B->>S: REST Inbox list/read/archive and session permission reply
+    S-->>B: categorized Inbox JSON with permission actions
+    E-->>B: SSE (ocman.inbox.changed); polling fallback
 ```
 
 The key property: ocman never persists session status. The live turn signal

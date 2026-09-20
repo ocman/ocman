@@ -50,7 +50,7 @@ export function PromptToastNotify() {
 
   function handleOpen(entry: ToastEntry) {
     dismiss(entry.toastId);
-    navigate(`/session/${entry.sessionId}`);
+    navigate(entry.kind === 'permission' ? '/inbox?category=permission' : `/session/${entry.sessionId}`);
   }
 
   return (
@@ -89,11 +89,11 @@ export function PromptToastNotify() {
             <div className="oc-prompt-toast-actions">
               <Toast.Action
                 asChild
-                altText="Open session"
+                altText={t.kind === 'permission' ? 'Open inbox' : 'Open session'}
                 onClick={() => handleOpen(t)}
               >
                 <button type="button" className="oc-prompt-toast-open">
-                  Open session
+                  {t.kind === 'permission' ? 'Open inbox' : 'Open session'}
                 </button>
               </Toast.Action>
             </div>

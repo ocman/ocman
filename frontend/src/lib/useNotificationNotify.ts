@@ -39,6 +39,7 @@ export type NotifyShape = NotifyEntry;
 export type Decision = {
   kind: 'completed' | 'prompt';
   sessionId: string;
+  permission?: boolean;
 };
 
 type EvaluateInput = {
@@ -99,7 +100,7 @@ export function __evaluateForTests(input: EvaluateInput): Decision[] {
     if (firedKeys.has(dedupeKey)) continue;
     firedKeys.add(dedupeKey);
 
-    out.push({ kind, sessionId: s.id });
+    out.push({ kind, sessionId: s.id, ...(s.pendingPermission ? { permission: true } : {}) });
   }
   return out;
 }
@@ -142,7 +143,7 @@ export function __notificationDetailsForTests(d: Decision) {
   const body = isPrompt
     ? 'A session is waiting on your response.'
     : 'A coding-agent session has finished running.';
-  const url = `/session/${d.sessionId}`;
+  const url = d.permission ? '/inbox?category=permission' : `/session/${d.sessionId}`;
   return {
     title,
     body,

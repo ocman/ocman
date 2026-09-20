@@ -35,6 +35,16 @@ export interface InboxItem {
   readAt?: number;
   archivedAt?: number;
   remoteId: string;
+  category?: 'permission' | 'factory' | 'routine' | 'general';
+  permission?: {
+    platform: string;
+    sessionId: string;
+    permissionId: string;
+    permission: string;
+    patterns: string[];
+    always?: string[];
+    metadata?: Record<string, unknown>;
+  };
 }
 
 export interface InboxResponse {

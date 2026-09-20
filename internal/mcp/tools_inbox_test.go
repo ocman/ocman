@@ -80,6 +80,23 @@ func TestInboxToolDiscoveryAndActions(t *testing.T) {
 	if items, err := store.ListInboxItems(t.Context()); err != nil || len(items) != 0 {
 		t.Fatalf("items after recall = %#v, %v", items, err)
 	}
+	for _, category := range []string{"general", "factory", "routine"} {
+		if result := callTool(t, srv, "inbox", map[string]any{"action": "send", "title": category, "body": "body", "category": category}); result.IsError {
+			t.Fatalf("category %s: %s", category, resultText(result))
+		}
+	}
+	items, err = store.ListInboxItems(t.Context())
+	if err != nil || len(items) != 3 {
+		t.Fatalf("categorized items: %+v, %v", items, err)
+	}
+	for _, item := range items {
+		if item.Category != item.Title {
+			t.Fatalf("category not stored: %+v", item)
+		}
+	}
+	if result := callTool(t, srv, "inbox", map[string]any{"action": "send", "title": "Fake permission", "body": "body", "category": "permission"}); !result.IsError {
+		t.Fatal("accepted an actionable category from MCP")
+	}
 
 	if err := store.Close(); err != nil {
 		t.Fatal(err)

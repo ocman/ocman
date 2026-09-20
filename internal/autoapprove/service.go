@@ -78,6 +78,9 @@ type Deps struct {
 	// headless watcher. May be nil / return nil; Ensure fails safe.
 	OpencodePlatform func() platforms.Platform
 
+	// PermissionAsked records every prompt, independently of judge enablement.
+	PermissionAsked func(state.InboxPermission)
+
 	// Broadcast hooks fan events out to every connected client. All
 	// optional.
 	BroadcastPermissionResolved func(sessionID, permissionID, reason string)
@@ -96,6 +99,21 @@ type Deps struct {
 	// DefaultEnabled is the server-wide auto-approve default applied
 	// when a session has no per-session override.
 	DefaultEnabled bool
+}
+
+// ObservePermissionPrompt retains the full action scope, including OpenCode's
+// distinct "always" patterns, without depending on whether the judge runs.
+func (s *Service) ObservePermissionPrompt(platformID platforms.ID, sessionID string, prompt platforms.LivePrompt) {
+	if s == nil || s.deps.PermissionAsked == nil {
+		return
+	}
+	if id, _ := prompt["sessionID"].(string); id != "" {
+		sessionID = id
+	}
+	permissionID, _ := prompt["id"].(string)
+	permission, _ := prompt["permission"].(string)
+	metadata, _ := prompt["metadata"].(map[string]any)
+	s.deps.PermissionAsked(state.InboxPermission{Platform: string(platformID), SessionID: sessionID, PermissionID: permissionID, Permission: permission, Patterns: promptStrings(prompt["patterns"]), Always: promptStrings(prompt["always"]), Metadata: metadata})
 }
 
 // Service owns the auto-approve pipeline state for the lifetime of the

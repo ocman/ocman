@@ -65,6 +65,30 @@ export function useMarkInboxItemRead() {
   });
 }
 
+export function useMarkInboxItemUnread() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, remoteId }: Pick<InboxItem, 'id' | 'remoteId'>) => api.markInboxItemUnread(id, remoteId),
+    onSuccess: (_result, { id, remoteId }) => {
+      client.setQueryData<InboxResponse>(['inbox'], (data) => data && {
+        ...data,
+        unreadTotal: data.unreadTotal + (data.items.some((item) => item.id === id && item.remoteId === remoteId && item.readAt) ? 1 : 0),
+        items: data.items.map((item) => item.id === id && item.remoteId === remoteId ? { ...item, readAt: undefined } : item),
+      });
+    },
+    onSettled: () => client.invalidateQueries({ queryKey: ['inbox'] }),
+  });
+}
+
+export function useRespondInboxPermission() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ permission, reply }: { permission: NonNullable<InboxItem['permission']>; reply: 'once' | 'always' | 'reject' }) =>
+      api.respondPermission(permission.sessionId, permission.permissionId, reply, permission.platform),
+    onSettled: () => client.invalidateQueries({ queryKey: ['inbox'] }),
+  });
+}
+
 export function useArchiveInboxItems() {
   const client = useQueryClient();
   return useMutation({

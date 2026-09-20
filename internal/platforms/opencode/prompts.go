@@ -18,6 +18,20 @@ func (a *Adapter) ListPermissions(ctx context.Context, sessionID string) ([]plat
 	return a.listObservedPrompts(ctx, "permission", sessionID), nil
 }
 
+// RefreshPermissions obtains an authoritative snapshot before durable Inbox
+// reconciliation treats an absent request as resolved. Cached reads alone are
+// insufficient after a restart or while a source is temporarily unreachable.
+func (a *Adapter) RefreshPermissions(ctx context.Context, sessionID string) ([]platforms.LivePrompt, error) {
+	port, session, err := a.resolvePortCtx(ctx, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	if ok := <-a.startPromptReconciliation(ctx, port, []string{session.Directory}, []string{"permission"}, false); !ok || ctx.Err() != nil {
+		return nil, fmt.Errorf("refreshing pending permissions: %w", platforms.ErrPlatformUnreachable)
+	}
+	return a.ListPermissions(ctx, sessionID)
+}
+
 // ListQuestions returns pending question prompts for the session.
 func (a *Adapter) ListQuestions(ctx context.Context, sessionID string) ([]platforms.LivePrompt, error) {
 	if port, session, err := a.resolvePortCtx(ctx, sessionID); err == nil {

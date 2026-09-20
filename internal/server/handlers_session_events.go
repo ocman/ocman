@@ -163,6 +163,11 @@ func (s *Server) proxyOwnerSessionEvents(ctx context.Context, sessionID string, 
 	tee := &autoapprove.Tee{
 		W:     rawWriter,
 		Flush: flush,
+		OnPromptAsked: func(_ string, kind string, prompt platforms.LivePrompt) {
+			if kind == "permission" {
+				s.aaSvc().ObservePermissionPrompt(adapter.ID(), sessionID, prompt)
+			}
+		},
 		OnPermission: func(evtSessionID, permissionID, permission string, patterns []string, metadata map[string]any) {
 			registerSink(evtSessionID)
 			s.aaSvc().Ensure(adapter.ID(), adapter, evtSessionID, permissionID, permission, patterns, metadata)
@@ -170,6 +175,7 @@ func (s *Server) proxyOwnerSessionEvents(ctx context.Context, sessionID string, 
 		OnPermissionReplied: func(evtSessionID, permissionID, reply string) {
 			registerSink(evtSessionID)
 			s.aaSvc().HandlePermissionReplied(ctx, evtSessionID, permissionID, reply)
+			s.resolvePermissionInbox(ctx, string(adapter.ID()), evtSessionID, permissionID)
 		},
 	}
 	return adapter.ProxyEvents(ctx, sessionID, tee, flush)

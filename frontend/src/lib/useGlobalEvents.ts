@@ -102,6 +102,12 @@ const sessionChangedListeners = new Set<(
 ) => void>();
 
 const projectsChangedListeners = new Set<() => void>();
+const inboxChangedListeners = new Set<() => void>();
+
+export function onInboxChanged(cb: () => void): () => void {
+  inboxChangedListeners.add(cb);
+  return () => inboxChangedListeners.delete(cb);
+}
 
 export function onProjectsChanged(cb: () => void): () => void {
   projectsChangedListeners.add(cb);
@@ -171,6 +177,9 @@ function open(): void {
   if (source) return;
   const next = new EventSource('/api/events');
   source = next;
+  next.addEventListener('ocman.inbox.changed', () => {
+    for (const cb of inboxChangedListeners) cb();
+  });
   next.onopen = () => {
     reconnectAttempt = 0;
     // Reconcile consumers after the first open and every replacement stream.

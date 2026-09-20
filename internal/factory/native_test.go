@@ -34,6 +34,24 @@ type nativeStoreFake struct {
 	removeProjectErr error
 }
 
+type nativeInboxStoreFake struct {
+	nativeStoreFake
+	category, title, body string
+}
+
+func (s *nativeInboxStoreFake) NotifyInbox(_ context.Context, title, body, category string) error {
+	s.title, s.body, s.category = title, body, category
+	return nil
+}
+
+func TestFactoryDeliveryInboxCategory(t *testing.T) {
+	store := &nativeInboxStoreFake{}
+	NewNative(store).notifyEpicDelivered(t.Context(), "epic-1", "Ready for review", "https://forge.example/pulls/1")
+	if store.category != "factory" || !strings.Contains(store.body, "Ready for review") || store.title == "" {
+		t.Fatalf("notification: %+v", store)
+	}
+}
+
 func (s *nativeStoreFake) UpsertFactoryLocalExecutionAck(_ context.Context, host, project, profile, version, _ string, _ time.Time) error {
 	s.acknowledged = strings.Join([]string{host, project, profile, version}, "/")
 	s.acknowledgements = append(s.acknowledgements, s.acknowledged)

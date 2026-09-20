@@ -5,6 +5,7 @@ import { isValidElement, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 import rehypeHighlight from 'rehype-highlight';
 import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch';
 import type { ComponentProps, FC, ReactNode } from 'react';
@@ -240,14 +241,15 @@ function MarkdownLink(props: any) {
 // array/object literals here would invalidate react-markdown's
 // internal unified-processor cache on every streaming chunk.
 const REMARK_PLUGINS = [remarkGfm, remarkFactoryCards];
+const REMARK_PLUGINS_WITH_BREAKS = [...REMARK_PLUGINS, remarkBreaks];
 const REHYPE_PLUGINS = [rehypeHighlight];
 const MARKDOWN_COMPONENTS = { pre: CodeBlockPre, a: MarkdownLink, img: MarkdownImage };
 
-export const MarkdownContent: FC<{ text: string }> = ({ text }) => {
+export const MarkdownContent: FC<{ text: string; preserveLineBreaks?: boolean }> = ({ text, preserveLineBreaks = false }) => {
   if (!text.trim()) return null;
   return (
     <ReactMarkdown
-      remarkPlugins={REMARK_PLUGINS}
+      remarkPlugins={preserveLineBreaks ? REMARK_PLUGINS_WITH_BREAKS : REMARK_PLUGINS}
       rehypePlugins={REHYPE_PLUGINS}
       components={MARKDOWN_COMPONENTS}
     >
