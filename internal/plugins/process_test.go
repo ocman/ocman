@@ -425,7 +425,9 @@ func TestProcessBlockedWriteDeadline(t *testing.T) {
 	await(t, func() bool { return p.Health().Status == "ready" })
 	c := *call(1).Call
 	c.Params = json.RawMessage(`"` + strings.Repeat("x", MaxMessageBytes/2) + `"`)
-	c.DeadlineUnixMS = time.Now().Add(100 * time.Millisecond).UnixMilli()
+	// Leave time for large-message validation under CI coverage instrumentation;
+	// the deadline must exercise the blocked writer, not expire during admission.
+	c.DeadlineUnixMS = time.Now().Add(2 * time.Second).UnixMilli()
 	ch, err := p.Call(context.Background(), c)
 	if err != nil {
 		t.Fatal(err)
