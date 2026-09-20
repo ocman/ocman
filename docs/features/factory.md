@@ -54,43 +54,86 @@ awaiting review. You can request a revision and have the original session call
 must match its exact revision and hash. Approved or rejected plans cannot be
 replaced through import. Proposal history and the pending gate survive restart.
 
-## Formula prompts
+## Formula workflows
 
-Factory configuration has editable prompts for four stages: planning, scope
-expansion, implementation, and delivery. Choose a saved Formula revision to
-edit it, or use **Customize Tracer** to copy the built-in workflow into a custom
-Formula. Save an immutable revision, then select it when creating an Epic.
-Existing Epics keep their original Formula revision and prompts. Work inside a
-composed child Formula uses that child's pinned revision.
+A Formula is a YAML workflow. Its named `steps` contain their own `kind`,
+`needs`, `prompt`, and `config`. Dependencies point to prerequisite step names,
+following the convention used by GitHub Actions jobs. This is ocman's schema,
+not a GitHub Actions workflow file.
 
-Prompt edits update the Formula's TOML and content hash. The **Formula source**
-section is collapsed by default and opens a full-width, tall source editor.
-The graph viewer shows dependencies; compiled JSON remains available under a
-separate disclosure.
-
-The current built-in Formula is `ocman/tracer@2`. Its TOML contains all four
-stage prompts alongside the graph, and new Formula drafts include them too.
-The original `ocman/tracer@1` remains available unchanged for pinned Epics.
-
-Source authors can set these optional top-level keys before any `[[input]]` or
-other tables:
-
-```toml
-prompt_planning = "Inspect the code first. Ask only questions the repository cannot answer."
-prompt_scope_expansion = "Inspect the remaining graph and propose only the additional work."
-prompt_implementation = "Start with a failing test.\nMake the smallest correct change."
-prompt_delivery = "Review the complete diff and run the repository's release checks."
+```yaml
+version: 2
+name: Tracer
+steps:
+  plan:
+    kind: planning
+    prompt: |
+      Inspect the repository, clarify requirements, and propose focused tasks.
+  approve:
+    kind: approval
+    needs: [plan]
+  implement:
+    kind: implementation
+    needs: [approve]
+    config:
+      concurrency: 1
+    prompt: |
+      Implement the assigned task and run its checks.
+  verify:
+    kind: verification
+    needs: [implement]
+    prompt: |
+      Review the combined changes and run the repository-required checks.
+      Request recovery if a required check fails.
+  deliver:
+    kind: delivery
+    needs: [verify]
+    prompt: |
+      Summarize the changes and verification results in the final pull request.
 ```
 
-Each prompt is a non-empty double-quoted string, at most 32 KiB. Use `\n` for
-line breaks in TOML, or enter normal multiline text in the prompt fields.
-Omitted keys use the original stage defaults. These compatibility defaults do
-not change an older revision's source or hash.
+Use **Customize Tracer** in Factory configuration to start from the current
+built-in workflow, `ocman/tracer@3`. Expand **Formula source** to edit the YAML
+in a full-width, 15-line editor that can be resized vertically. Validate and
+preview it before saving an immutable revision. The graph includes implementation
+and every post-implementation check. Expand the implementation phase in an Epic's
+graph to see its planned tasks.
 
-The editable text controls the agent's workflow. Factory separately adds the
-Issue context, repository restrictions, attempt credentials, proposal submission
-instructions, and commit/PR completion protocol. Prompt changes do not change
-permission rules, approval gates, or completion validation.
+The first version supports one planning step, one implementation group, and one
+final delivery step. An initial plan approval must precede implementation. Add
+further human approvals before implementation or after checks, and any number
+of verification steps, by naming them and
+declaring `needs`. Every step must lead to final delivery; cycles, unknown keys,
+missing dependencies, and disconnected steps are rejected.
+
+The implementation group expands into the approved tasks. It succeeds only when
+all applicable required tasks succeed. Runnable optional tasks also finish before
+verification; deferred optional tasks do not hold the group open. Verification and delivery run once per
+changed project in that project's assigned worktree. A dependent step waits for
+all project instances of its prerequisites. Failed or paused checks block
+delivery; recovery or retry is explicit. Additional approval steps appear in
+the action inbox and require a user decision. A user can reconsider a rejected
+step with **Approve step**, which rechecks its prerequisites.
+
+Agent steps require a multiline prompt of at most 32 KiB. Optional `name` gives
+a step a display label. `config.model` accepts a `provider/model` reference and
+overrides the approved implementation model for that step. The implementation
+group supports `config.concurrency: 1`, reflecting the shared workspace's
+sequential execution. Planning can supply `config.scope_expansion_prompt` for
+additive replanning. Other configuration keys are rejected.
+
+Factory adds runtime context, repository restrictions, attempt credentials, and
+completion instructions to each prompt. Changing a prompt does not bypass
+permissions, approvals, or commit/PR validation. Planned tasks cannot inject
+delivery nodes into a YAML workflow; delivery is declared in the Formula.
+Within an implementation group, use ordinary task dependencies. The legacy
+cross-project merge-gate plan format remains available only to older revisions.
+
+The built-in workflow has been converted to YAML. Historical TOML revisions stay
+readable for pinned Epics; their source and hashes are not rewritten. New Epics
+use the selected YAML revision. Runtime step definitions and their project
+instances persist across restarts. Source edits, including comments and formatting,
+create a new revision rather than silently restoring an earlier source file.
 
 ## Planning and implementation models
 
@@ -127,10 +170,10 @@ policy; they are not filesystem isolation.
 
 ## Project Deliveries
 
-Factory adds a required Project Delivery for each project with executable work.
-Each Delivery depends only on required applicable work in its project and can
-start as soon as that work succeeds, even while another project's work is still
-blocked. Starting it seals only that project. The delivery model reviews that
+Factory runs a required Project Delivery for each project with executable work.
+YAML workflows wait for the declared checks and approvals across all changed
+projects. Older revisions allow Delivery as soon as the project's own required
+work succeeds. Starting it seals only that project. The delivery model reviews that
 project's combined changes, runs the required checks, and creates a review-ready
 PR against its recorded remote and target branch. It searches for an existing
 open PR from the same branch into the recorded target first, so retries can reuse

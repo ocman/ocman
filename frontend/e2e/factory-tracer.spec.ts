@@ -164,8 +164,8 @@ test.describe('narrow Factory navigation', () => {
     await page.route('/api/factory/queue', (route) => route.fulfill({ json: [] }));
     await page.route('/api/factory/configuration', (route) => route.fulfill({ json: { globalCapacity: 10, projectCapacity: 4, projectOverrides: {} } }));
     await page.route('/api/factory/epics', (route) => route.fulfill({ json: [] }));
-    await page.route('/api/factory/formulas**', (route) => route.fulfill({ json: route.request().url().includes('/ocman%2Ftracer/2') ? {
-      id: 'ocman/tracer', version: 2, name: 'Tracer', source: 'version = 1\nname = "Tracer"\n', hash: 'compiled-hash', sourceHash: 'source-hash', inputs: ['goal', 'initial_project'], nodes: [{ key: 'plan', kind: 'plan' }], edges: [], valid: true,
+    await page.route('/api/factory/formulas**', (route) => route.fulfill({ json: route.request().url().includes('/ocman%2Ftracer/3') ? {
+      id: 'ocman/tracer', version: 3, name: 'Tracer', source: 'version: 2\nname: Tracer\nsteps: {}\n', hash: 'compiled-hash', sourceHash: 'source-hash', inputs: ['goal', 'initial_project'], nodes: [{ key: 'plan', kind: 'planning' }], edges: [], valid: true,
     } : [] }));
 
     await page.goto('/factory/queue');
@@ -178,7 +178,14 @@ test.describe('narrow Factory navigation', () => {
     await expect(page).toHaveURL(/\/factory\/queue$/);
     await page.getByRole('link', { name: 'Configuration' }).press('Enter');
     await expect(page).toHaveURL(/\/factory\/configuration$/);
-    await expect(page.getByRole('heading', { name: 'Tracer · ocman/tracer@2' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Tracer · ocman/tracer@3' })).toBeVisible();
     await expect(page.getByRole('status')).toContainText('Formula is valid');
+    const editor = page.getByRole('textbox', { name: 'Formula YAML', includeHidden: true });
+    await expect(editor).toBeHidden();
+    await page.getByText('Formula source', { exact: true }).click();
+    await expect(editor).toBeVisible();
+    await expect(editor).toHaveAttribute('rows', '15');
+    await expect(editor).toHaveCSS('resize', 'vertical');
+    expect(await editor.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThan(250);
   });
 });

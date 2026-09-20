@@ -9,7 +9,7 @@ import (
 )
 
 func TestFactoryCustomStagePromptsKeepRuntimeProtocol(t *testing.T) {
-	for _, stage := range []string{"planning", "scope_expansion", "implementation", "delivery"} {
+	for _, stage := range []string{"planning", "scope_expansion", "implementation", "verification", "delivery"} {
 		t.Run(stage, func(t *testing.T) {
 			var sent platforms.SendMessageRequest
 			platform := &fakePlatform{id: "opencode", sendMessageFn: func(req platforms.SendMessageRequest) error { sent = req; return nil }}
@@ -27,7 +27,7 @@ func TestFactoryCustomStagePromptsKeepRuntimeProtocol(t *testing.T) {
 					action = "submit_scope_plan"
 				}
 			} else {
-				err = (factoryImplementationLauncher{server: srv}).PromptImplementationSession(t.Context(), session, factory.ImplementationSessionRequest{EpicID: "epic", WorkID: "work", AttemptID: "attempt", AgentToken: "secret", Prompt: custom, Delivery: stage == "delivery"})
+				err = (factoryImplementationLauncher{server: srv}).PromptImplementationSession(t.Context(), session, factory.ImplementationSessionRequest{EpicID: "epic", WorkID: "work", AttemptID: "attempt", AgentToken: "secret", Prompt: custom, Delivery: stage == "delivery", Verification: stage == "verification"})
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -37,7 +37,7 @@ func TestFactoryCustomStagePromptsKeepRuntimeProtocol(t *testing.T) {
 					t.Fatalf("missing %q in %q", text, sent.Message)
 				}
 			}
-			if strings.Contains(sent.Message, factory.DefaultFormulaPrompts()[stage]) {
+			if fallback := factory.DefaultFormulaPrompts()[stage]; fallback != "" && strings.Contains(sent.Message, fallback) {
 				t.Fatal("custom prompt did not replace the default")
 			}
 		})

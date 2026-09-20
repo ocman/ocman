@@ -49,6 +49,7 @@ type EpicProject struct {
 }
 
 type NativeIssue struct {
+	Workflow       *WorkflowStep `json:"workflow,omitempty"`
 	ID             string
 	EpicID         string
 	Project        string
@@ -176,7 +177,25 @@ type NativeFormula struct {
 	Composition []NativeFormulaComposition
 }
 
-type NativeFormulaNode struct{ Key, Kind string }
+type NativeFormulaNode struct {
+	Key, Kind string
+	Workflow  *WorkflowStep
+}
+
+type WorkflowStep struct {
+	Key    string             `json:"key" yaml:"-"`
+	Kind   string             `json:"kind" yaml:"kind"`
+	Name   string             `json:"name,omitempty" yaml:"name,omitempty"`
+	Needs  []string           `json:"needs,omitempty" yaml:"needs,omitempty"`
+	Prompt string             `json:"prompt,omitempty" yaml:"prompt,omitempty"`
+	Config WorkflowStepConfig `json:"config,omitempty" yaml:"config,omitempty"`
+}
+
+type WorkflowStepConfig struct {
+	Model                string `json:"model,omitempty" yaml:"model,omitempty"`
+	Concurrency          int    `json:"concurrency,omitempty" yaml:"concurrency,omitempty"`
+	ScopeExpansionPrompt string `json:"scopeExpansionPrompt,omitempty" yaml:"scope_expansion_prompt,omitempty"`
+}
 type NativeFormulaEdge struct{ From, To, Type string }
 type NativeFormulaComposition struct {
 	Key         string

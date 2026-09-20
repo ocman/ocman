@@ -60,7 +60,8 @@ func (f *fakePlanningLauncher) StopPlanningSession(_ context.Context, session Pl
 
 func createPouredWorkEpic(t *testing.T, svc *NativeService, goal string) WorkEpic {
 	t.Helper()
-	epic, err := svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{Goal: goal, InitialProject: "/repo", AcknowledgeLocalExecution: true})
+	// Exercise persisted pre-workflow epics; YAML execution has its own integration tests.
+	epic, err := svc.CreateWorkEpic(context.Background(), CreateWorkEpicRequest{Goal: goal, InitialProject: "/repo", AcknowledgeLocalExecution: true, FormulaID: "ocman/tracer", FormulaRevision: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -456,7 +457,7 @@ func TestNativeProposalMergeGateRequiresDeliveryPlaceholder(t *testing.T) {
 	}
 	defer db.Close()
 	svc := NewNativeWithPlanning(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/sdk": "/sdk"}}, &fakePlanningLauncher{})
-	epic, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Merge gate", InitialProject: "/repo", AcknowledgeLocalExecution: true, Projects: []ProjectAdmission{{Path: "/sdk", AcknowledgeLocalExecution: true}}})
+	epic, err := svc.CreateWorkEpic(t.Context(), CreateWorkEpicRequest{Goal: "Merge gate", InitialProject: "/repo", FormulaID: "ocman/tracer", FormulaRevision: 2, AcknowledgeLocalExecution: true, Projects: []ProjectAdmission{{Path: "/sdk", AcknowledgeLocalExecution: true}}})
 	if err != nil {
 		t.Fatal(err)
 	}

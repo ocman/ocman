@@ -280,8 +280,8 @@ func planningGetJSON(ctx context.Context, client *http.Client, url string, targe
 }
 
 func (l factoryPlanningLauncher) PromptPlanningSession(ctx context.Context, session factory.PlanningSession, req factory.PlanningSessionRequest) error {
-	var planningModel string
-	if adapter, ok := l.server.registry.Get(platforms.ID(session.Platform)); ok {
+	planningModel := req.Model
+	if adapter, ok := l.server.registry.Get(platforms.ID(session.Platform)); ok && planningModel == "" {
 		if catalog, err := adapter.SessionModels(ctx, session.ID); err == nil && catalog != nil {
 			planningModel = factoryStrongModel(catalog.Models)
 		}

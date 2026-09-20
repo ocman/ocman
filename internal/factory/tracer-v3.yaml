@@ -1,0 +1,43 @@
+version: 2
+name: Tracer
+
+steps:
+  plan:
+    kind: planning
+    prompt: |
+      Inspect the repository and clarify the goal, scope, and non-goals with the user.
+      Ask one question at a time. Wait for the user to proceed before proposing work.
+      Split the plan into focused implementation tasks with acceptance criteria
+      and explicit dependencies. Recap the proposed tasks after submission.
+    config:
+      scope_expansion_prompt: |
+        Inspect the retained graph and propose only the newly required work.
+        Preserve completed work and make the interrupted task wait for its new prerequisites.
+
+  approve:
+    kind: approval
+    needs: [plan]
+
+  implement:
+    kind: implementation
+    needs: [approve]
+    config:
+      concurrency: 1
+    prompt: |
+      Implement the assigned task with the smallest correct change.
+      Run the relevant checks and leave the shared worktree on a clean commit.
+
+  verify:
+    kind: verification
+    needs: [implement]
+    prompt: |
+      Review the project's combined changes against the approved plan.
+      Run the repository-required checks. Report failures through request_recovery.
+      Only complete this step when all required checks pass.
+
+  deliver:
+    kind: delivery
+    needs: [verify]
+    prompt: |
+      Summarize the completed work and verification results.
+      Create or reuse the project's final pull request and mark it ready for review.

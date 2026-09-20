@@ -331,6 +331,9 @@ Factory protocol: Search the forge for an existing open pull request from this e
 
 Leave the worktree clean and pushed, then call factory complete_attempt with attempt_id %s, attempt_token %s, summary describing the delivery checks, and pr_url set to the final pull request URL. Factory validates the branch, target, and HEAD. If delivery is blocked, use request_recovery with the same attempt credentials.`, req.EpicID, req.Branch, req.TargetBranch, body, req.AttemptID, req.AgentToken)
 	}
+	if req.Verification {
+		prompt = fmt.Sprintf("Verify Factory step %s in Work Epic %s on the assigned branch %s.\n\n%s\n\nFactory protocol: Run the required checks against the current shared worktree. Do not create or merge a pull request. If any required check fails, call request_recovery with attempt_id %s and attempt_token %s and report the failure; do not claim success. Only when all required checks pass, leave the worktree clean and pushed and call complete_attempt with the same attempt credentials and a summary of the checks. Omit pr_url.", req.WorkID, req.EpicID, req.Branch, body, req.AttemptID, req.AgentToken)
+	}
 	return l.server.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt, Model: req.Model})
 }
 

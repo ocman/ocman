@@ -486,11 +486,25 @@ func pourNativeFormulaTx(ctx context.Context, tx *sql.Tx, epic model.NativeEpic,
 		if node.Kind == "gate" {
 			nodeTitle = "Approval gate"
 		}
-		issues = append(issues, model.NativeIssue{ID: id, EpicID: epic.ID, Project: epic.InitialProject, ParentID: molID, Requirement: "required", Kind: node.Kind, Title: nodeTitle, Status: "open", Description: description})
+		if node.Workflow != nil {
+			nodeTitle = node.Workflow.Name
+			if nodeTitle == "" {
+				nodeTitle = node.Key
+			}
+			if node.Kind != "plan" {
+				description = node.Workflow.Prompt
+			}
+		}
+		issues = append(issues, model.NativeIssue{ID: id, EpicID: epic.ID, Project: epic.InitialProject, ParentID: molID, Requirement: "required", Kind: node.Kind, Title: nodeTitle, Status: "open", Description: description, Workflow: node.Workflow})
 	}
 	for _, issue := range issues {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue (id, epic_id, project_path, kind, title, description, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`, issue.ID, issue.EpicID, issue.Project, issue.Kind, issue.Title, issue.Description, issue.Status, now); err != nil {
 			return nil, fmt.Errorf("creating Factory issue: %w", err)
+		}
+		if issue.Workflow != nil {
+			if err := putWorkflowStep(ctx, tx, issue.ID, *issue.Workflow); err != nil {
+				return nil, err
+			}
 		}
 		if issue.Kind == "mol" {
 			bindingsJSON, err := json.Marshal(issue.Bindings)
@@ -663,6 +677,12 @@ func listFactoryIssues(ctx context.Context, reader factoryIssueReader, epicID st
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := attachWorkflowSteps(ctx, reader, epicID, issues); err != nil {
+		return nil, err
+	}
 	return deriveFactoryIssueDispatch(ctx, reader, epicID, issues)
 }
 
@@ -833,6 +853,9 @@ func deriveFactoryIssueDispatch(ctx context.Context, reader factoryIssueReader, 
 // MutateFactoryGraph applies graph edits atomically. In-progress and closed
 // Issues are immutable; all other lifecycle states remain editable.
 func (d *DB) MutateFactoryGraph(ctx context.Context, m model.GraphMutation) error {
+	if m.Action == "approve_step" || m.Action == "reject_step" {
+		return d.decideWorkflowStep(ctx, m)
+	}
 	invalid := func(message string) error { return fmt.Errorf("%w: %s", model.ErrInvalidGraphMutation, message) }
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -937,6 +960,13 @@ func (d *DB) MutateFactoryGraph(ctx context.Context, m model.GraphMutation) erro
 		return epicID, nil
 	}
 	if m.Action == "create" {
+		var workflow, implementationParent bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM factory_workflow_step w JOIN factory_issue i ON i.id = w.issue_id WHERE i.epic_id = ?), EXISTS(SELECT 1 FROM factory_issue WHERE id = ? AND kind = 'phase')`, m.EpicID, m.ParentID).Scan(&workflow, &implementationParent); err != nil {
+			return err
+		}
+		if workflow && !implementationParent {
+			return invalid("add workflow implementation tasks under the implementation phase")
+		}
 		if _, err := openIssue(m.ParentID, true); err != nil {
 			return err
 		}
@@ -968,6 +998,13 @@ func (d *DB) MutateFactoryGraph(ctx context.Context, m model.GraphMutation) erro
 		}
 		m.IssueID = id
 	} else {
+		var declared bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM factory_workflow_step WHERE issue_id = ?)`, m.IssueID).Scan(&declared); err != nil {
+			return err
+		}
+		if declared {
+			return invalid("workflow steps are pinned; edit the Formula for a new Epic")
+		}
 		if _, err := openIssue(m.IssueID, true); err != nil {
 			return err
 		}
@@ -1160,7 +1197,7 @@ func (d *DB) DeferFactoryIssue(ctx context.Context, epicID, issueID, reason stri
 }
 
 func (d *DB) ResumeFactoryIssue(ctx context.Context, epicID, issueID string) error {
-	result, err := d.db.ExecContext(ctx, `UPDATE factory_issue SET status = 'open', outcome_reason = '' WHERE id = ? AND epic_id = ? AND status = 'deferred'`, issueID, epicID)
+	result, err := d.db.ExecContext(ctx, `UPDATE factory_issue SET status = 'open', outcome_reason = '' WHERE id = ? AND epic_id = ? AND status = 'deferred' AND NOT (EXISTS (SELECT 1 FROM factory_workflow_step w JOIN factory_issue i ON i.id = w.issue_id WHERE i.epic_id = factory_issue.epic_id) AND EXISTS (SELECT 1 FROM factory_issue delivery WHERE delivery.epic_id = factory_issue.epic_id AND delivery.kind = 'delivery' AND delivery.status = 'closed' AND delivery.outcome = 'succeeded' AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = delivery.id)))`, issueID, epicID)
 	if err != nil {
 		return err
 	}
@@ -1404,6 +1441,15 @@ func (d *DB) ClaimFactoryImplementation(ctx context.Context, epicID, issueID, pr
 	if err := tx.QueryRowContext(ctx, `SELECT implementation_model FROM factory_plan_gate WHERE epic_id = ?`, epicID).Scan(&attemptPolicy.Model); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return model.NativeEpic{}, model.FactoryAttempt{}, err
 	}
+	workflowIssues, err := listFactoryIssues(ctx, tx, epicID)
+	if err != nil {
+		return model.NativeEpic{}, model.FactoryAttempt{}, err
+	}
+	for _, issue := range workflowIssues {
+		if issue.ID == issueID && issue.Workflow != nil && issue.Workflow.Config.Model != "" {
+			attemptPolicy.Model = issue.Workflow.Config.Model
+		}
+	}
 	if !successorLineage {
 		if err := tx.QueryRowContext(ctx, `SELECT json_extract(CASE WHEN json_valid(result_json) THEN result_json ELSE '{}' END, '$.commitSha') FROM factory_attempt WHERE epic_id = ? AND json_extract(frozen_policy_json, '$.repository') = ? AND terminal_outcome = 'succeeded' AND json_extract(CASE WHEN json_valid(result_json) THEN result_json ELSE '{}' END, '$.commitSha') <> '' ORDER BY finished_at DESC, rowid DESC LIMIT 1`, epicID, project).Scan(&attemptPolicy.CheckpointSHA); err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return model.NativeEpic{}, model.FactoryAttempt{}, err
@@ -1503,6 +1549,13 @@ func (d *DB) ClaimFactoryPlan(ctx context.Context, epicID, issueID, profile stri
 	}
 	now := at.UnixMilli()
 	policy := model.FactoryAttemptPolicy{Repository: epic.InitialProject, Profile: profile}
+	steps, err := workflowSteps(ctx, tx, epicID)
+	if err != nil {
+		return model.NativeEpic{}, model.FactoryAttempt{}, err
+	}
+	if step := steps[issueID]; step != nil {
+		policy.Model = step.Config.Model
+	}
 	// Carry forward the Epic-level permission rules into the planning attempt.
 	var epicRulesJSON string
 	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(permission_rules_json, '[]') FROM factory_epic WHERE id = ?`, epicID).Scan(&epicRulesJSON); err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -1786,6 +1839,10 @@ func (d *DB) MaterializeFactoryPlan(ctx context.Context, epicID, issueID, profil
 	if kind != "materialization" || status != "open" {
 		return model.NativeMaterialization{}, errors.New("factory materialization issue is not ready")
 	}
+	var workflow bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM factory_workflow_step WHERE issue_id = ?)`, issueID).Scan(&workflow); err != nil {
+		return model.NativeMaterialization{}, err
+	}
 	var proposal model.NativeProposalRevision
 	if err := tx.QueryRowContext(ctx, `SELECT epic_id, mol_id, project_path, revision, manifest_json, rationale_markdown, content_hash, created_at FROM factory_proposal_revision WHERE epic_id = ? AND revision = ? AND content_hash = ?`, epicID, gate.ProposalRevision, gate.ProposalHash).
 		Scan(&proposal.EpicID, &proposal.MolID, &proposal.Project, &proposal.Revision, &proposal.ManifestJSON, &proposal.RationaleMarkdown, &proposal.ContentHash, &proposal.CreatedAt); err != nil {
@@ -1854,6 +1911,9 @@ func (d *DB) MaterializeFactoryPlan(ctx context.Context, epicID, issueID, profil
 	if required == 0 {
 		return model.NativeMaterialization{}, errors.New("factory approved Plan manifest is invalid")
 	}
+	if workflow && len(deliveries) != 0 {
+		return model.NativeMaterialization{}, errors.New("workflow delivery belongs in the Formula, not the implementation plan")
+	}
 	for project := range deliveryProjects {
 		if !implementationProjects[project] {
 			return model.NativeMaterialization{}, errors.New("factory approved Plan manifest is invalid")
@@ -1910,7 +1970,11 @@ func (d *DB) MaterializeFactoryPlan(ctx context.Context, epicID, issueID, profil
 				return model.NativeMaterialization{}, err
 			}
 		}
-		implementationID, err := factoryChildID(ctx, tx, proposal.MolID)
+		parent := proposal.MolID
+		if workflow && manifest.Nodes[index].Type == "implementation" {
+			parent = issueID
+		}
+		implementationID, err := factoryChildID(ctx, tx, parent)
 		if err != nil {
 			return model.NativeMaterialization{}, err
 		}
@@ -1936,6 +2000,10 @@ func (d *DB) MaterializeFactoryPlan(ctx context.Context, epicID, issueID, profil
 	primary := manifest.Nodes[executable[0]]
 	primaryID := issueIDs[primary.Key]
 	result := model.NativeMaterialization{ID: id, EpicID: epicID, IssueID: issueID, ProposalRevision: proposal.Revision, ProposalHash: proposal.ContentHash, ManifestKey: primary.Key, ImplementationID: primaryID}
+	implementationParent := proposal.MolID
+	if workflow {
+		implementationParent = issueID
+	}
 	for _, index := range executable {
 		node := manifest.Nodes[index]
 		implementationID := issueIDs[node.Key]
@@ -1953,10 +2021,14 @@ func (d *DB) MaterializeFactoryPlan(ctx context.Context, epicID, issueID, profil
 		if err != nil {
 			return model.NativeMaterialization{}, err
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue_hierarchy (parent_issue_id, child_issue_id, child_index, requirement) VALUES (?, ?, ?, ?)`, proposal.MolID, implementationID, implementationIndex, node.Requirement); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue_hierarchy (parent_issue_id, child_issue_id, child_index, requirement) VALUES (?, ?, ?, ?)`, implementationParent, implementationID, implementationIndex, node.Requirement); err != nil {
 			return model.NativeMaterialization{}, fmt.Errorf("adding Factory implementation closure: %w", err)
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO factory_issue_dependency (issue_id, depends_on_issue_id, type) VALUES (?, ?, 'blocks')`, implementationID, issueID); err != nil {
+		dependencySQL := `INSERT INTO factory_issue_dependency (issue_id, depends_on_issue_id, type) VALUES (?, ?, 'blocks')`
+		if workflow {
+			dependencySQL = `INSERT INTO factory_issue_dependency (issue_id, depends_on_issue_id, type) SELECT ?, depends_on_issue_id, type FROM factory_issue_dependency WHERE issue_id = ?`
+		}
+		if _, err := tx.ExecContext(ctx, dependencySQL, implementationID, issueID); err != nil {
 			return model.NativeMaterialization{}, fmt.Errorf("adding Factory implementation dependency: %w", err)
 		}
 		result.Issues = append(result.Issues, model.NativeMaterializedIssue{ManifestKey: node.Key, IssueID: implementationID})
@@ -2015,8 +2087,12 @@ func (d *DB) MaterializeFactoryPlan(ctx context.Context, epicID, issueID, profil
 	for _, index := range append(executable, deliveries...) {
 		node := manifest.Nodes[index]
 		implementationID := issueIDs[node.Key]
-		entities := []struct{ kind, id string }{{"issue", implementationID}, {"hierarchy", proposal.MolID + "\x00" + implementationID}}
+		parent := proposal.MolID
 		if node.Type == "implementation" {
+			parent = implementationParent
+		}
+		entities := []struct{ kind, id string }{{"issue", implementationID}, {"hierarchy", parent + "\x00" + implementationID}}
+		if node.Type == "implementation" && !workflow {
 			entities = append(entities, struct{ kind, id string }{"dependency", implementationID + "\x00" + issueID})
 		}
 		for _, edge := range edges {
@@ -2030,7 +2106,11 @@ func (d *DB) MaterializeFactoryPlan(ctx context.Context, epicID, issueID, profil
 			}
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'closed', outcome = 'succeeded' WHERE id = ? AND status = 'open'`, issueID); err != nil {
+	completionSQL := `UPDATE factory_issue SET status = 'closed', outcome = 'succeeded' WHERE id = ? AND status = 'open'`
+	if workflow {
+		completionSQL = `UPDATE factory_issue SET kind = 'phase' WHERE id = ? AND status = 'open'`
+	}
+	if _, err := tx.ExecContext(ctx, completionSQL, issueID); err != nil {
 		return model.NativeMaterialization{}, fmt.Errorf("closing Factory materialization: %w", err)
 	}
 	if err := tx.Commit(); err != nil {

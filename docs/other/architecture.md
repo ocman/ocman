@@ -98,7 +98,7 @@ flowchart TD
     Server[internal/server<br/>HTTP, SSE, handlers] --> Registry[platforms.Registry<br/>session seam]
     Server --> Router[hostsvc.Router<br/>host/dir seam]
     Server --> Routines[internal/routines<br/>saved prompts + schedules]
-    Server --> Factory[internal/factory<br/>native Issue graph + dispatch]
+    Server --> Factory[internal/factory<br/>YAML workflows + Issue dispatch]
     Factory --> FactoryModel[internal/factory/model<br/>shared persistence records]
     Factory --> State
     State --> FactoryModel
@@ -174,7 +174,13 @@ flowchart TD
 - **internal/factory.** The independent Software Factory boundary. It stores
    Epics, Mols, typed Issues, dependencies, attempts, Formula revisions,
    Plan revisions, approvals, and materialization provenance in `state.db`.
-   TOML Formulas compile to canonical JSON. A Plan session is instructed not to
+   YAML Formulas declare named steps with prompts, configuration, and `needs`.
+   They compile to canonical JSON; historical TOML revisions remain readable.
+   Poured steps keep their frozen definitions in `factory_workflow_step`.
+   Implementation is a group whose required children must succeed before checks
+   or later approvals can proceed. Verification and delivery expand per changed
+   project; dependent steps wait for every project instance of each prerequisite.
+   A Plan session is instructed not to
    modify files, but its configurable permission rules may allow shell commands
    for research; approval of an exact revision automatically materializes the
    proposed Implementation Issues and dependencies atomically. As defined by
@@ -184,8 +190,9 @@ flowchart TD
    lineage. Ready Issues launch configured worktree sessions in their target
    project. Each implementation handoff records the clean, pushed commit in its
    Attempt result; the next Attempt for that project freezes the checkpoint and
-   target branch in its policy. A required Project Delivery is created
-   progressively for each changed project and publishes that project's PR.
+   target branch in its policy. Workflow Project Deliveries follow the declared
+   checks and approvals before publishing each project's PR. Legacy revisions
+   create deliveries progressively as their required project work completes.
    Forge observations satisfy merge-gated cross-project dependencies; a recorded
    merge makes later work create a successor instead of refreshing the Delivery.
    Delivery retries preserve completed implementation Issues.

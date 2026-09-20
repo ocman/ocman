@@ -56,9 +56,9 @@ export function proposalIssues(manifest: FactoryProposal['manifest']): FactoryIs
   }));
 }
 
-export function formulaIssues(formula: Pick<FactoryFormula, 'nodes' | 'edges'>): FactoryIssue[] {
+export function formulaIssues(formula: Pick<FactoryFormula, 'nodes' | 'edges' | 'steps'>): FactoryIssue[] {
   return (formula.nodes ?? []).map((node) => ({
-    id: node.key, epicId: '', project: '', kind: node.kind, title: node.key, status: 'open',
+    id: node.key, epicId: '', project: '', kind: node.kind, title: formula.steps?.[node.key]?.name || node.key, status: 'open',
     dependsOn: (formula.edges ?? []).filter((edge) => edge.from === node.key).map((edge) => ({ id: edge.to, type: edge.type ?? 'blocks' })),
   }));
 }

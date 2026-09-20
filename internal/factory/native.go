@@ -164,6 +164,7 @@ type PlanningSession = model.PlanningSession
 type FactoryAuditRecord = model.AuditRecord
 
 type PlanningSessionRequest struct {
+	Model                                                    string
 	Prompt                                                   string
 	EpicID, WorkID, AttemptID, AgentToken, Repository, Title string
 	Projects                                                 []string
@@ -219,20 +220,21 @@ type TracerFormula struct {
 
 // NativeFormulaView is the immutable, inspectable representation of a Formula revision.
 type NativeFormulaView struct {
-	Prompts     map[string]string    `json:"prompts"`
-	ID          string               `json:"id"`
-	Version     int                  `json:"version"`
-	Name        string               `json:"name"`
-	Source      string               `json:"source"`
-	Hash        string               `json:"hash"`
-	SourceHash  string               `json:"sourceHash"`
-	Compiled    json.RawMessage      `json:"compiled"`
-	Inputs      []string             `json:"inputs"`
-	Nodes       []FormulaGraphNode   `json:"nodes"`
-	Edges       []FormulaGraphEdge   `json:"edges"`
-	Composition []FormulaComposition `json:"composition"`
-	Valid       bool                 `json:"valid"`
-	Errors      []string             `json:"errors"`
+	Steps       map[string]model.WorkflowStep `json:"steps,omitempty"`
+	Prompts     map[string]string             `json:"prompts,omitempty"`
+	ID          string                        `json:"id"`
+	Version     int                           `json:"version"`
+	Name        string                        `json:"name"`
+	Source      string                        `json:"source"`
+	Hash        string                        `json:"hash"`
+	SourceHash  string                        `json:"sourceHash"`
+	Compiled    json.RawMessage               `json:"compiled"`
+	Inputs      []string                      `json:"inputs"`
+	Nodes       []FormulaGraphNode            `json:"nodes"`
+	Edges       []FormulaGraphEdge            `json:"edges"`
+	Composition []FormulaComposition          `json:"composition"`
+	Valid       bool                          `json:"valid"`
+	Errors      []string                      `json:"errors"`
 }
 
 type FormulaSaveRequest struct {
@@ -260,11 +262,11 @@ type FormulaComposition struct {
 }
 
 func BuiltInTracerFormula() TracerFormula {
-	compiled, err := compileNativeFormula(tracerFormulaV2Source)
+	compiled, err := compileNativeFormula(tracerWorkflowSource)
 	if err != nil {
 		panic("invalid built-in tracer Formula: " + err.Error())
 	}
-	return TracerFormula{ID: "ocman/tracer", Version: 2, Source: tracerFormulaV2Source, Hash: compiled.Hash}
+	return TracerFormula{ID: "ocman/tracer", Version: 3, Source: tracerWorkflowSource, Hash: compiled.Hash}
 }
 
 func sourceHash(source string) string {
@@ -273,13 +275,15 @@ func sourceHash(source string) string {
 }
 
 type compiledNativeFormula struct {
-	Version     int                  `json:"version"`
-	Name        string               `json:"name"`
-	Inputs      []string             `json:"inputs"`
-	Nodes       []FormulaGraphNode   `json:"nodes"`
-	Edges       []FormulaGraphEdge   `json:"edges"`
-	Composition []FormulaComposition `json:"composition"`
-	Prompts     map[string]string    `json:"prompts,omitempty"`
+	SourceDigest string                        `json:"sourceHash,omitempty"`
+	Steps        map[string]model.WorkflowStep `json:"steps,omitempty"`
+	Version      int                           `json:"version"`
+	Name         string                        `json:"name"`
+	Inputs       []string                      `json:"inputs"`
+	Nodes        []FormulaGraphNode            `json:"nodes"`
+	Edges        []FormulaGraphEdge            `json:"edges"`
+	Composition  []FormulaComposition          `json:"composition"`
+	Prompts      map[string]string             `json:"prompts,omitempty"`
 }
 
 type nativeDefinition struct {
@@ -290,6 +294,9 @@ type nativeDefinition struct {
 
 // compileNativeFormula accepts only the deliberately small TOML schema used by native Factory.
 func compileNativeFormula(source string) (nativeDefinition, error) {
+	if regexp.MustCompile(`(?m)^version\s*:`).MatchString(source) {
+		return compileWorkflow(source)
+	}
 	var result compiledNativeFormula
 	seenRoot, seenInput, seenNode, seenEdge, seenStable := map[string]bool{}, map[string]bool{}, map[string]bool{}, map[string]bool{}, map[string]bool{}
 	section := ""
@@ -531,6 +538,7 @@ func hasFormulaCycle(edges []FormulaGraphEdge) bool {
 }
 
 type Issue struct {
+	Workflow       *model.WorkflowStep           `json:"workflow,omitempty"`
 	ID             string                        `json:"id"`
 	EpicID         string                        `json:"epicId"`
 	Project        string                        `json:"project"`
@@ -781,6 +789,7 @@ type NativeService struct {
 }
 
 type ImplementationSessionRequest struct {
+	Verification                                                                                    bool
 	Prompt                                                                                          string
 	Model                                                                                           string
 	EpicID, WorkID, AttemptID, AgentToken, Repository, Title, Description, Branch, BaseRef, Profile string
@@ -1372,6 +1381,9 @@ func (s *NativeService) GetFormula(ctx context.Context, id string, version int) 
 	if id == formula.ID && version == 1 {
 		formula.Version, formula.Source = 1, tracerFormulaSource
 	}
+	if id == formula.ID && version == 2 {
+		formula.Version, formula.Source = 2, tracerFormulaV2Source
+	}
 	if id != formula.ID || version != formula.Version {
 		store, ok := s.store.(nativeFormulaStore)
 		if !ok {
@@ -1390,7 +1402,7 @@ func (s *NativeService) GetFormula(ctx context.Context, id string, version int) 
 	if err != nil {
 		return NativeFormulaView{}, err
 	}
-	return NativeFormulaView{ID: formula.ID, Version: formula.Version, Name: compiled.Name, Source: formula.Source, Hash: compiled.Hash, SourceHash: sourceHash(formula.Source), Compiled: json.RawMessage(compiled.JSON), Inputs: compiled.Inputs, Nodes: compiled.Nodes, Edges: compiled.Edges, Composition: compiled.Composition, Prompts: effectiveFormulaPrompts(compiled.Prompts), Valid: true, Errors: []string{}}, nil
+	return NativeFormulaView{ID: formula.ID, Version: formula.Version, Name: compiled.Name, Source: formula.Source, Hash: compiled.Hash, SourceHash: sourceHash(formula.Source), Compiled: json.RawMessage(compiled.JSON), Inputs: compiled.Inputs, Nodes: compiled.Nodes, Edges: compiled.Edges, Composition: compiled.Composition, Prompts: compiled.viewPrompts(), Steps: compiled.Steps, Valid: true, Errors: []string{}}, nil
 }
 
 func (s *NativeService) ListFormulas(ctx context.Context) ([]NativeFormulaView, error) {
@@ -1491,7 +1503,7 @@ func (s *NativeService) previewNativeFormula(ctx context.Context, id string, ver
 		compiled.Hash = hex.EncodeToString(sum[:])
 	}
 	problems := s.compositionErrors(ctx, id, version, compiled, map[string]bool{})
-	return NativeFormulaView{ID: id, Version: version, Name: compiled.Name, Source: source, Hash: compiled.Hash, SourceHash: sourceHash(source), Compiled: json.RawMessage(compiled.JSON), Inputs: compiled.Inputs, Nodes: compiled.Nodes, Edges: compiled.Edges, Composition: compiled.Composition, Prompts: effectiveFormulaPrompts(compiled.Prompts), Valid: len(problems) == 0, Errors: problems}, nil
+	return NativeFormulaView{ID: id, Version: version, Name: compiled.Name, Source: source, Hash: compiled.Hash, SourceHash: sourceHash(source), Compiled: json.RawMessage(compiled.JSON), Inputs: compiled.Inputs, Nodes: compiled.Nodes, Edges: compiled.Edges, Composition: compiled.Composition, Prompts: compiled.viewPrompts(), Steps: compiled.Steps, Valid: len(problems) == 0, Errors: problems}, nil
 }
 
 func nativeFormulaView(id string, revision int, _ string, source, hash, compiledJSON string) (NativeFormulaView, error) {
@@ -1502,7 +1514,7 @@ func nativeFormulaView(id string, revision int, _ string, source, hash, compiled
 	if compiledJSON != compiled.JSON || hash != compiled.Hash {
 		return NativeFormulaView{}, fmt.Errorf("%w: compiled content does not match source", ErrFormulaCorrupt)
 	}
-	return NativeFormulaView{ID: id, Version: revision, Name: compiled.Name, Source: source, Hash: compiled.Hash, SourceHash: sourceHash(source), Compiled: json.RawMessage(compiled.JSON), Inputs: compiled.Inputs, Nodes: compiled.Nodes, Edges: compiled.Edges, Composition: compiled.Composition, Prompts: effectiveFormulaPrompts(compiled.Prompts), Valid: true, Errors: []string{}}, nil
+	return NativeFormulaView{ID: id, Version: revision, Name: compiled.Name, Source: source, Hash: compiled.Hash, SourceHash: sourceHash(source), Compiled: json.RawMessage(compiled.JSON), Inputs: compiled.Inputs, Nodes: compiled.Nodes, Edges: compiled.Edges, Composition: compiled.Composition, Prompts: compiled.viewPrompts(), Steps: compiled.Steps, Valid: true, Errors: []string{}}, nil
 }
 
 func (s *NativeService) compositionErrors(ctx context.Context, root string, revision int, definition nativeDefinition, ancestors map[string]bool) []string {
@@ -1548,6 +1560,9 @@ func (s *NativeService) compositionErrors(ctx context.Context, root string, revi
 }
 
 func (s *NativeService) compositionSource(ctx context.Context, id string, revision int) (string, error) {
+	if id == "ocman/tracer" && revision == 3 {
+		return tracerWorkflowSource, nil
+	}
 	if id == "ocman/tracer" && revision == 2 {
 		return tracerFormulaV2Source, nil
 	}
@@ -2099,6 +2114,7 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 		}
 		request := ImplementationSessionRequest{Model: attempt.FrozenPolicy.Model, EpicID: epic.ID, WorkID: next.issue.ID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: repository, Projects: attempt.FrozenPolicy.Projects, Title: next.issue.Title, Description: description, Branch: branch, BaseRef: baseRef, Profile: "factory-implement/v1", TargetBranch: attempt.FrozenPolicy.TargetBranch, Delivery: attempt.FrozenPolicy.Delivery, PermissionRules: attempt.FrozenPolicy.PermissionRules}
 		request.Prompt = prompt
+		request.Verification = next.issue.Workflow != nil && next.issue.Workflow.Kind == "verification"
 		session, launchErr := s.implementation.LaunchImplementationSession(ctx, request)
 		if launchErr != nil {
 			if session.ID != "" {
@@ -2451,6 +2467,7 @@ func (s *NativeService) ClaimPlan(ctx context.Context, epicID, issueID string) (
 		projects[i] = project.Path
 	}
 	request := PlanningSessionRequest{EpicID: epic.ID, WorkID: issueID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: epic.InitialProject, Projects: projects, Title: "PLAN " + issueID + " (@factory)", PermissionRules: attempt.FrozenPolicy.PermissionRules}
+	request.Model = attempt.FrozenPolicy.Model
 	if projectRequests, ok := s.store.(nativeProjectRequestStore); ok {
 		_, request.ScopeExpansion, err = projectRequests.GetFactoryProjectRequestGateForPlan(ctx, issueID)
 		if err != nil {
@@ -2604,7 +2621,14 @@ func (s *NativeService) proposalForRequest(ctx context.Context, req SubmitPropos
 	if err != nil {
 		return model.NativeProposalRevision{}, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
+	workflow := false
+	for _, issue := range issues {
+		workflow = workflow || issue.Workflow != nil
+	}
 	for i := range req.Manifest.Nodes {
+		if workflow && req.Manifest.Nodes[i].Type == "delivery" {
+			return model.NativeProposalRevision{}, fmt.Errorf("%w: workflow delivery belongs in the Formula, not the implementation plan", ErrInvalidRequest)
+		}
 		req.Manifest.Nodes[i].Project, err = s.canonicalIssueProject(ctx, epic, req.Manifest.Nodes[i].Project)
 		if err != nil {
 			return model.NativeProposalRevision{}, fmt.Errorf("%w: node %q: %w", ErrInvalidRequest, req.Manifest.Nodes[i].Key, err)
@@ -2799,7 +2823,11 @@ func (s *NativeService) nativeFormula(ctx context.Context, id string, version in
 	}
 	formula := model.NativeFormula{ID: view.ID, Version: view.Version, Source: view.Source, Hash: view.Hash, Inputs: definition.Inputs}
 	for _, node := range definition.Nodes {
-		formula.Nodes = append(formula.Nodes, model.NativeFormulaNode{Key: node.Key, Kind: node.Kind})
+		runtimeNode := model.NativeFormulaNode{Key: node.Key, Kind: node.Kind}
+		if step, ok := definition.Steps[node.Key]; ok {
+			runtimeNode.Kind, runtimeNode.Workflow = workflowRuntimeKind(definition.Steps, node.Key), &step
+		}
+		formula.Nodes = append(formula.Nodes, runtimeNode)
 	}
 	for _, edge := range definition.Edges {
 		formula.Edges = append(formula.Edges, model.NativeFormulaEdge{From: edge.From, To: edge.To, Type: edge.Type})
@@ -2919,6 +2947,7 @@ func nativeIssues(issues []model.NativeIssue) []Issue {
 	for i := range issues {
 		issue := issues[i]
 		out[i] = Issue{ID: issue.ID, EpicID: issue.EpicID, Project: issue.Project, ParentID: issue.ParentID, Requirement: issue.Requirement, FormulaID: issue.FormulaID, FormulaVersion: issue.FormulaVersion, FormulaHash: issue.FormulaHash, Bindings: issue.Bindings, Kind: issue.Kind, Title: issue.Title, Status: issue.Status, Description: issue.Description, PlanRevision: issue.PlanRevision, ManifestKey: issue.ManifestKey, Outcome: issue.Outcome, OutcomeReason: issue.OutcomeReason, DispatchState: issue.DispatchState, Blockers: issue.Blockers, DependsOn: issue.DependsOn, RetryAt: issue.RetryAt, RetryAttempts: issue.RetryAttempts, CreatedAt: issue.CreatedAt, RemovedAt: issue.RemovedAt, ProjectRequest: issue.ProjectRequestGate}
+		out[i].Workflow = issue.Workflow
 	}
 	return out
 }

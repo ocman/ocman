@@ -107,6 +107,9 @@ func validateFactoryDeliveryOrder(ctx context.Context, tx *sql.Tx, epicID, proje
 // EnsureFactoryDeliveryIssue gives delivery its own retryable issue. Dependencies
 // follow the current required work, including tasks added after materialization.
 func (d *DB) EnsureFactoryDeliveryIssue(ctx context.Context, epicID string) error {
+	if handled, err := d.reconcileFactoryWorkflow(ctx, epicID); err != nil || handled {
+		return err
+	}
 	issues, err := d.ListFactoryIssues(ctx, epicID)
 	if err != nil {
 		return err

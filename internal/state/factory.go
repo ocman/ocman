@@ -497,6 +497,13 @@ func (d *DB) ResolveFactoryProjectRequestGate(ctx context.Context, gateID, actio
 		if err := tx.QueryRowContext(ctx, `SELECT h.parent_issue_id FROM factory_attempt a JOIN factory_issue i ON i.id = a.work_item_id JOIN factory_issue_hierarchy h ON h.child_issue_id = i.id WHERE a.id = ? AND a.phase = 'active' AND i.status = 'in_progress'`, gate.AttemptID).Scan(&parentID); err != nil {
 			return model.ProjectRequestGate{}, model.FactoryAttempt{}, errors.New("factory project request attempt is unavailable")
 		}
+		// Expansion discovered by a check still belongs to the implementation group.
+		var implementationPhase string
+		if err := tx.QueryRowContext(ctx, `SELECT i.id FROM factory_issue i JOIN factory_workflow_step w ON w.issue_id = i.id WHERE i.epic_id = ? AND i.kind = 'phase' AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = i.id)`, gate.EpicID).Scan(&implementationPhase); err == nil {
+			parentID = implementationPhase
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return model.ProjectRequestGate{}, model.FactoryAttempt{}, err
+		}
 		planID, err := factoryChildID(ctx, tx, parentID)
 		if err != nil {
 			return model.ProjectRequestGate{}, model.FactoryAttempt{}, err

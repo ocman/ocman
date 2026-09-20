@@ -221,7 +221,9 @@ import (
 //	92 - durable action operation receipts prevent replay after a host restart.
 //	93 - record hourly logical-size samples for the OpenCode and ocman databases.
 //	94 - categorize Inbox items and persist actionable permission requests.
-const latestSchemaVersion = 94
+//
+// 95 - pinned workflow step definitions for declarative Factory phases.
+const latestSchemaVersion = 95
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -523,6 +525,12 @@ func applyMigration(tx *sql.Tx, target int) error {
 			return err
 		}
 		return addColumnIfMissing(tx, "inbox_item", "permission_json", "TEXT NOT NULL DEFAULT ''")
+	case 95:
+		_, err := tx.Exec(`CREATE TABLE IF NOT EXISTS factory_workflow_step (
+			issue_id TEXT PRIMARY KEY REFERENCES factory_issue(id),
+			definition_json TEXT NOT NULL
+		)`)
+		return err
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}

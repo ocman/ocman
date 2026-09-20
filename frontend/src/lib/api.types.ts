@@ -229,6 +229,7 @@ export interface CreateWorkEpicRequest {
 }
 
 export interface FactoryIssue {
+	workflow?: FactoryWorkflowStep;
   id: string;
   epicId: string;
 	project: string;
@@ -308,7 +309,7 @@ export interface FactoryProjectRequestGate {
 }
 
 export interface FactoryGraphMutation {
-  action: 'create' | 'edit' | 'reparent' | 'link' | 'unlink' | 'delete';
+  action: 'create' | 'edit' | 'reparent' | 'link' | 'unlink' | 'delete' | 'approve_step' | 'reject_step';
   issueId?: string;
   parentId?: string;
   dependsOnId?: string;
@@ -342,6 +343,7 @@ export interface FactoryCapacityPolicy {
 }
 
 export interface FactoryFormula {
+	steps?: Record<string, FactoryWorkflowStep>;
 	/** Effective stage prompts, including compatibility defaults for older revisions. */
 	prompts?: Record<string, string>;
   id: string;
@@ -358,6 +360,15 @@ export interface FactoryFormula {
   composition?: { key: string; formula: string; revision: number; bindings: Record<string, string> }[];
   valid: boolean;
   errors?: string[];
+}
+
+export interface FactoryWorkflowStep {
+	key: string;
+	kind: 'planning' | 'approval' | 'implementation' | 'verification' | 'delivery';
+	name?: string;
+	needs?: string[];
+	prompt?: string;
+	config?: { model?: string; concurrency?: number; scopeExpansionPrompt?: string };
 }
 
 export interface FactoryFormulaSaveRequest { id: string; source: string; }

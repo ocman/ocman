@@ -32,7 +32,10 @@ func TestFormulaPromptAncestry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	builtin := BuiltInTracerFormula()
+	builtin, err := svc.GetFormula(t.Context(), "ocman/tracer", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
 	epic := model.NativeEpic{ID: "epic", FormulaID: builtin.ID, FormulaVersion: builtin.Version, FormulaHash: builtin.Hash}
 	for _, tc := range []struct {
 		name     string
@@ -111,12 +114,12 @@ func TestBuiltInFormulaContainsItsPrompts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if current.Version != 2 || len(compiled.Prompts) != 4 {
+	if current.Version != 3 || len(compiled.Steps) != 5 {
 		t.Fatalf("built-in = %#v", view)
 	}
-	for stage, prompt := range view.Prompts {
-		if compiled.Prompts[stage] != prompt || !strings.Contains(view.Source, "prompt_"+stage+" = ") {
-			t.Fatalf("%s prompt missing from source", stage)
+	for key, step := range view.Steps {
+		if compiled.Steps[key].Prompt != step.Prompt || !strings.Contains(view.Source, key+":") {
+			t.Fatalf("%s step missing from source", key)
 		}
 	}
 	legacy, err := svc.GetFormula(t.Context(), current.ID, 1)
@@ -131,7 +134,7 @@ func TestBuiltInFormulaContainsItsPrompts(t *testing.T) {
 		t.Fatal("legacy revision was rewritten")
 	}
 	listed, err := svc.ListFormulas(t.Context())
-	if err != nil || len(listed) == 0 || listed[0].Version != 2 {
+	if err != nil || len(listed) == 0 || listed[0].Version != 3 {
 		t.Fatalf("listed = %#v, %v", listed, err)
 	}
 	if source, err := svc.compositionSource(t.Context(), current.ID, current.Version); err != nil || source != view.Source {

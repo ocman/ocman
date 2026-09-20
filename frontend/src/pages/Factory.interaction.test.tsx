@@ -8,6 +8,28 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api, type FactoryClaimedPlan } from '../lib/api';
 import { FactoryConfiguration, FactoryEpicDetail, FactoryEpics, FactoryOverview, FactoryQueue } from './Factory';
 import { FactoryPlanApproval } from '../components/FactoryPlanApproval';
+const workflowSource = `version: 2
+name: Tracer
+steps:
+  plan:
+    kind: planning
+    prompt: Plan the work.
+  approve:
+    kind: approval
+    needs: [plan]
+  implement:
+    kind: implementation
+    needs: [approve]
+    prompt: Implement the assigned task.
+  verify:
+    kind: verification
+    needs: [implement]
+    prompt: Run the checks.
+  deliver:
+    kind: delivery
+    needs: [verify]
+    prompt: Open the pull request.
+`;
 
 vi.mock('../lib/api', () => ({ api: {
 		sessionModels: vi.fn(),
@@ -111,7 +133,7 @@ beforeEach(() => {
 	vi.mocked(api.resolveFactoryRecoveryGate).mockResolvedValue({ resolution: 'resume' } as never);
 	vi.mocked(api.resolveFactoryAuthorityGate).mockResolvedValue({ resolution: 'approve' } as never);
 	vi.mocked(api.resolveFactoryProjectGate).mockResolvedValue({ resolution: 'approved' } as never);
-	vi.mocked(api.factoryFormula).mockResolvedValue({ id: 'ocman/tracer', version: 1, name: 'Tracer', source: 'name = "Tracer"\n', hash: 'hash', sourceHash: 'source-hash', inputs: ['goal'], nodes: [{ key: 'plan', kind: 'plan' }], edges: [{ from: 'approval', to: 'plan' }], valid: true });
+	vi.mocked(api.factoryFormula).mockResolvedValue({ id: 'ocman/tracer', version: 3, name: 'Tracer', source: workflowSource, hash: 'hash', sourceHash: 'source-hash', inputs: ['goal'], nodes: [{ key: 'plan', kind: 'plan' }], edges: [{ from: 'approval', to: 'plan' }], valid: true });
 	vi.mocked(api.factoryFormulas).mockResolvedValue([{ id: 'ocman/tracer', version: 1, name: 'Tracer', source: 'name = "Tracer"\n', hash: 'hash', sourceHash: 'source-hash', inputs: ['goal'], nodes: [{ key: 'plan', kind: 'plan' }], edges: [], valid: true }]);
 	vi.mocked(api.factoryCapacityPolicy).mockResolvedValue({ globalCapacity: 10, projectCapacity: 4, projectOverrides: { '/repo': 2 } });
 });
@@ -242,6 +264,18 @@ describe('Factory interactions', () => {
 		await user.selectOptions(screen.getByLabelText('Epic project'), '/banana-frontend');
 		expect(screen.getByRole('link', { name: 'Refresh docs' })).toBeInTheDocument();
 		expect(screen.queryByRole('link', { name: 'Ship Factory' })).not.toBeInTheDocument();
+  });
+
+  it('offers user decisions for a ready workflow approval', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.factoryEpics).mockResolvedValue([{ id: 'epic', goal: 'Ship', status: 'open', initialProject: '/repo' }] as never);
+    vi.mocked(api.factoryIssues).mockResolvedValue([{ id: 'release', epicId: 'epic', title: 'Release approval', kind: 'approval', status: 'open', dispatchState: 'ready', workflow: { key: 'release', kind: 'approval', prompt: 'Review the check results.' } }] as never);
+    renderFactory(<MemoryRouter><FactoryOverview /></MemoryRouter>);
+    await user.click(await screen.findByRole('button', { name: 'Approve step' }));
+    expect(api.mutateFactoryGraph).toHaveBeenCalledWith('epic', { action: 'approve_step', issueId: 'release' });
+    vi.mocked(api.mutateFactoryGraph).mockRejectedValueOnce(new Error('not ready'));
+    await user.click(screen.getByRole('button', { name: 'Reject step' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not record workflow approval');
   });
 
   it('lists every actionable gate and live prompt in the action inbox', async () => {
@@ -762,7 +796,7 @@ describe('Factory interactions', () => {
 	});
 
 	it.each([
-		['Validate TOML', 'Validating…', 'validateFactoryFormula'],
+		['Validate Formula', 'Validating…', 'validateFactoryFormula'],
 		['Preview Formula', 'Previewing…', 'previewFactoryFormula'],
 		['Save immutable revision', 'Saving…', 'saveFactoryFormula'],
 	] as const)('shows progress for %s and disables competing formula actions', async (label, pendingLabel, method) => {
@@ -774,7 +808,7 @@ describe('Factory interactions', () => {
 		const pending = await screen.findByRole('button', { name: pendingLabel });
 		expect(pending).toHaveAttribute('aria-busy', 'true');
 		expect(pending).toBeDisabled();
-		for (const name of ['Validate TOML', 'Preview Formula', 'Save immutable revision'].filter((name) => name !== label)) {
+		for (const name of ['Validate Formula', 'Preview Formula', 'Save immutable revision'].filter((name) => name !== label)) {
 			expect(screen.getByRole('button', { name })).toBeDisabled();
 		}
 	});
@@ -1069,7 +1103,7 @@ describe('Factory interactions', () => {
 		renderFactory(<MemoryRouter><FactoryConfiguration /></MemoryRouter>);
 
 		expect(await screen.findByRole('heading', { name: 'Factory configuration' })).toBeInTheDocument();
-		expect(await screen.findByLabelText('Tracer Formula source')).toHaveValue('name = "Tracer"\n');
+		expect(await screen.findByLabelText('Tracer Formula source')).toHaveValue(workflowSource);
 		expect(screen.getByRole('status')).toHaveTextContent('Formula is valid');
 		expect(within(screen.getByTestId('epic-graph')).getByText('plan')).toBeInTheDocument();
 		expect(within(screen.getByTestId('epic-graph')).getByRole('button', { name: 'Fit View' })).toBeInTheDocument();
@@ -1080,22 +1114,23 @@ describe('Factory interactions', () => {
 		vi.mocked(api.factoryCapacityPolicy).mockRejectedValue(new Error('Capacity unavailable'));
 		vi.mocked(api.factoryFormula).mockRejectedValue(new Error('Formula unavailable'));
 		vi.mocked(api.factoryFormulas).mockRejectedValue(new Error('Revisions unavailable'));
-		vi.mocked(api.validateFactoryFormula).mockRejectedValue(new Error('Invalid TOML'));
+		vi.mocked(api.validateFactoryFormula).mockRejectedValue(new Error('Invalid YAML'));
 		renderFactory(<MemoryRouter><FactoryConfiguration /></MemoryRouter>);
 		expect(await screen.findByText('Capacity unavailable')).toBeInTheDocument();
 		expect(await screen.findByText('Formula unavailable')).toBeInTheDocument();
 		expect(await screen.findByText('Revisions unavailable')).toBeInTheDocument();
 		await user.type(screen.getByLabelText('Custom Formula ID'), 'custom/team');
-		await user.click(screen.getByRole('button', { name: 'Validate TOML' }));
-		expect(await screen.findByText('Invalid TOML')).toBeInTheDocument();
+		fireEvent.change(screen.getByLabelText('Formula YAML'), { target: { value: 'invalid: true' } });
+		await user.click(screen.getByRole('button', { name: 'Validate Formula' }));
+		expect(await screen.findByText('Invalid YAML')).toBeInTheDocument();
 	});
 
-	it('offers accessible custom TOML Formula controls', () => {
+	it('offers accessible YAML Formula controls', () => {
 		renderFactory(<MemoryRouter><FactoryConfiguration /></MemoryRouter>);
 
 		expect(screen.getByLabelText('Custom Formula ID')).toBeInTheDocument();
-		expect(screen.getByLabelText('Custom Formula TOML')).toBeInTheDocument();
-		expect(screen.getByRole('button', { name: 'Validate TOML' })).toBeInTheDocument();
+		expect(screen.getByLabelText('Formula YAML')).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Validate Formula' })).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Preview Formula' })).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Save immutable revision' })).toBeInTheDocument();
 	});
@@ -1138,24 +1173,21 @@ describe('Factory interactions', () => {
 
 	it('loads a revision for prompt editing and can customize the built-in defaults', async () => {
 		const user = userEvent.setup();
-		const base = { id: 'ocman/tracer', version: 1, name: 'Tracer', source: 'version = 1\nname = "Tracer"\n', hash: 'hash', sourceHash: 'source', inputs: [], nodes: [], edges: [], valid: true, prompts: { planning: 'Default planning', scope_expansion: 'Default scope', implementation: 'Default implementation', delivery: 'Default delivery' } };
+		const base = { id: 'ocman/tracer', version: 3, name: 'Tracer', source: workflowSource, hash: 'hash', sourceHash: 'source', inputs: [], nodes: [], edges: [], valid: true };
 		vi.mocked(api.factoryFormula).mockResolvedValue(base);
-		vi.mocked(api.factoryFormulas).mockResolvedValue([{ ...base, id: 'custom/team', version: 2, prompts: { ...base.prompts, planning: 'Team planning' } }]);
+		vi.mocked(api.factoryFormulas).mockResolvedValue([{ ...base, id: 'custom/team', version: 2, source: workflowSource.replace('name: Tracer', 'name: Team') }]);
 		renderFactory(<MemoryRouter><FactoryConfiguration /></MemoryRouter>);
 		const customize = await screen.findByRole('button', { name: 'Customize Tracer' });
-		for (const stage of ['planning', 'scope_expansion', 'implementation', 'delivery']) {
-			expect((screen.getByLabelText('Custom Formula TOML') as HTMLTextAreaElement).value).toContain(`prompt_${stage} = `);
-		}
+		expect(screen.getByLabelText('Formula YAML')).toHaveValue(workflowSource);
 		await user.click(customize);
 		expect(screen.getByLabelText('Custom Formula ID')).toHaveValue('custom/tracer');
-		expect(screen.getByLabelText('Planning prompt')).toHaveValue('Default planning');
-		expect((screen.getByLabelText('Custom Formula TOML') as HTMLTextAreaElement).value).toContain('prompt_delivery = "Default delivery"');
+		expect(screen.getByLabelText('Formula YAML')).toHaveValue(workflowSource);
 		await user.selectOptions(screen.getByLabelText('Formula'), 'custom/team@2');
 		expect(screen.getByLabelText('Custom Formula ID')).toHaveValue('custom/team');
-		expect(screen.getByLabelText('Planning prompt')).toHaveValue('Team planning');
+		expect(screen.getByLabelText('Formula YAML')).toHaveValue(workflowSource.replace('name: Tracer', 'name: Team'));
 		await user.selectOptions(screen.getByLabelText('Formula'), 'new');
 		expect(screen.getByLabelText('Custom Formula ID')).toHaveValue('');
-		expect(screen.getByLabelText('Planning prompt')).toHaveValue('Default planning');
+		expect(screen.getByLabelText('Formula YAML')).toHaveValue(workflowSource);
 	});
 
 	it('edits stage prompts in a new revision with a collapsed source editor', async () => {
@@ -1163,14 +1195,15 @@ describe('Factory interactions', () => {
 		vi.mocked(api.saveFactoryFormula).mockResolvedValue({ id: 'custom/team', version: 2, valid: true } as never);
 		renderFactory(<MemoryRouter><FactoryConfiguration /></MemoryRouter>);
 		await user.type(screen.getByLabelText('Custom Formula ID'), 'custom/team');
-		await user.type(screen.getByLabelText('Implementation prompt'), 'Test first.\nKeep changes small.');
-		const source = screen.getByLabelText('Custom Formula TOML');
+		const source = screen.getByLabelText('Formula YAML');
+		expect(source).toHaveAttribute('rows', '15');
 		expect(source.closest('details')).not.toHaveAttribute('open');
 		await user.click(screen.getByText('Formula source', { selector: 'summary' }));
 		expect(source).toBeVisible();
-		expect((source as HTMLTextAreaElement).value).toContain('prompt_implementation = "Test first.\\nKeep changes small."');
+		const edited = workflowSource.replace('Implement the assigned task', 'Test first, then implement the assigned task');
+		fireEvent.change(source, { target: { value: edited } });
 		await user.click(screen.getByRole('button', { name: 'Save immutable revision' }));
-		await waitFor(() => expect(api.saveFactoryFormula).toHaveBeenCalledWith(expect.objectContaining({ id: 'custom/team', source: expect.stringContaining('prompt_implementation = "Test first.\\nKeep changes small."') }), expect.anything()));
+		await waitFor(() => expect(api.saveFactoryFormula).toHaveBeenCalledWith(expect.objectContaining({ id: 'custom/team', source: edited }), expect.anything()));
 	});
 
 	it('announces preview and save success', async () => {
@@ -1192,7 +1225,7 @@ describe('Factory interactions', () => {
 		await user.type(screen.getByLabelText('Custom Formula ID'), 'custom/team');
 
 		await user.click(screen.getByRole('button', { name: 'Preview Formula' }));
-		expect(api.previewFactoryFormula).toHaveBeenCalledWith(expect.objectContaining({ id: 'custom/team', source: expect.stringContaining('version = 1') }), expect.anything());
+		expect(api.previewFactoryFormula).toHaveBeenCalledWith(expect.objectContaining({ id: 'custom/team', source: expect.stringContaining('version: 2') }), expect.anything());
 
 		expect(await screen.findByRole('alert', { name: 'Formula diagnostics' })).toHaveTextContent('composition child is missing binding for goal');
 		expect(screen.getByRole('alert', { name: 'Formula diagnostics' })).toHaveTextContent('composition child binding initial_project is unresolved');

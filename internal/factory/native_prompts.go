@@ -44,6 +44,17 @@ func (s *NativeService) issuePrompt(ctx context.Context, epic model.NativeEpic, 
 		if !found || steps >= len(issues) {
 			return "", fmt.Errorf("%w: invalid Formula ancestry", ErrFormulaCorrupt)
 		}
+		if issue.Workflow != nil {
+			if stage == "scope_expansion" {
+				for _, candidate := range issues {
+					if candidate.Workflow != nil && candidate.Workflow.Kind == "planning" && candidate.Workflow.Config.ScopeExpansionPrompt != "" {
+						return candidate.Workflow.Config.ScopeExpansionPrompt, nil
+					}
+				}
+				return DefaultFormulaPrompts()[stage], nil
+			}
+			return issue.Workflow.Prompt, nil
+		}
 		if issue.FormulaID != "" {
 			id, revision, hash = issue.FormulaID, issue.FormulaVersion, issue.FormulaHash
 			break

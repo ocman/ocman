@@ -3,7 +3,6 @@ import { Link, NavLink, useNavigate, useParams } from 'react-router-dom';
 import { MarkdownContent } from '../components/assistant/MarkdownText';
 import { EpicGraph } from './EpicGraph';
 import { formulaIssues, proposalIssues } from './factoryGraph';
-import { formulaStages, getFormulaPrompt, setFormulaPrompt } from './formulaPrompts';
 import { Button, SearchField, SelectField } from '../components/Control';
 import { SearchSelect } from '../components/SearchSelect';
 import { ProjectLabel } from '../components/ProjectLabel';
@@ -276,6 +275,11 @@ function MaterializationItem({ issue, epic }: { issue: FactoryIssue; epic?: Epic
 	return <FactoryDataRow id={issue.id} epic={epic} title={<strong>{issue.title}</strong>} detail={<>Plan approved, no work graph yet<span>Materialize the approved plan, or add work through Manage graph.</span></>} actions={<div><div className="factory-inbox-actions"><Button type="button" variant="accent" disabled={materialize.isPending} onClick={() => materialize.mutate({ epicId: issue.epicId, issueId: issue.id })}>{materialize.isPending ? 'Materializing…' : 'Materialize plan'}</Button></div>{materialize.isError && <p role="alert">{materialize.error instanceof Error ? materialize.error.message : 'Could not materialize plan.'}</p>}</div>} />;
 }
 
+function WorkflowApprovalItem({ issue, epic }: { issue: FactoryIssue; epic?: EpicRef }) {
+	const decide = useMutateFactoryGraph(issue.epicId);
+	return <FactoryDataRow id={issue.id} epic={epic} title={<strong>{issue.title}</strong>} detail={issue.workflow?.prompt || 'Workflow approval required'} actions={<div className="factory-inbox-actions"><Button type="button" variant="accent" disabled={decide.isPending} onClick={() => decide.mutate({ action: 'approve_step', issueId: issue.id })}>Approve step</Button><Button type="button" disabled={decide.isPending} onClick={() => decide.mutate({ action: 'reject_step', issueId: issue.id })}>Reject step</Button>{decide.isError && <p role="alert">Could not record workflow approval.</p>}</div>} />;
+}
+
 function PlanningItem({ issue, epic }: { issue: FactoryIssue; epic?: EpicRef }) {
 	const claim = useClaimFactoryPlan(issue.epicId);
 	const navigate = useNavigate();
@@ -338,6 +342,7 @@ export function FactoryOverview() {
 	const allFailedWork = issues.filter((issue) => openEpics.has(issue.epicId) && ['task', 'implementation', 'delivery'].includes(issue.kind) && issue.status === 'closed' && (issue.outcome === 'failed' || issue.outcome === 'cancelled'));
 	const allBlockedWork = issues.filter((issue) => openEpics.has(issue.epicId) && issue.dispatchState === 'terminally_blocked' && !allFailedWork.some((failed) => failed.epicId === issue.epicId));
 	const allMaterializations = issues.filter((issue) => openEpics.has(issue.epicId) && issue.kind === 'materialization' && issue.dispatchState === 'ready');
+	const allWorkflowApprovals = issues.filter((issue) => openEpics.has(issue.epicId) && issue.kind === 'approval' && ((issue.status === 'open' && issue.dispatchState === 'ready') || (issue.status === 'closed' && issue.outcome === 'failed')));
 	// Stuck epics with an actionable row above are already covered; this catches the dead-ends nothing else surfaces.
 	const allStuck = epics.data?.filter((epic) => epic.progress?.stuck && !allFailedWork.some((issue) => issue.epicId === epic.id) && !allBlockedWork.some((issue) => issue.epicId === epic.id) && !allMaterializations.some((issue) => issue.epicId === epic.id)) ?? [];
 	// ponytail: answering live prompts stays on the session page.
@@ -353,8 +358,9 @@ export function FactoryOverview() {
 	const materializations = allMaterializations.filter((issue) => matchesAction('materialization', epicGoal(issue.epicId), issue.id, issue.title));
 	const stuck = allStuck.filter((epic) => matchesAction('stuck', epic.goal, epic.id, ...(epic.progress?.closureBlockers ?? [])));
 	const prompts = allPrompts.filter((item) => matchesAction(item.session.pendingPermission ? 'permission' : 'prompt', item.epic?.goal, item.issueID, item.issueTitle, item.session.title));
-	const inboxTotal = allReadyPlans.length + planGates.length + allRecoveryGates.length + allAuthorityGates.length + allProjectGates.length + allPrompts.length + allFailedWork.length + allBlockedWork.length + allMaterializations.length + allStuck.length;
-	const inboxCount = readyPlans.length + visiblePlanGates.length + recoveryGates.length + authorityGates.length + projectGates.length + prompts.length + failedWork.length + blockedWork.length + materializations.length + stuck.length;
+	const workflowApprovals = allWorkflowApprovals.filter((issue) => matchesAction('review', epicGoal(issue.epicId), issue.id, issue.title));
+	const inboxTotal = allReadyPlans.length + planGates.length + allRecoveryGates.length + allAuthorityGates.length + allProjectGates.length + allPrompts.length + allFailedWork.length + allBlockedWork.length + allMaterializations.length + allStuck.length + allWorkflowApprovals.length;
+	const inboxCount = readyPlans.length + visiblePlanGates.length + recoveryGates.length + authorityGates.length + projectGates.length + prompts.length + failedWork.length + blockedWork.length + materializations.length + stuck.length + workflowApprovals.length;
 	const liveStatus = (sessionID?: string) => { const session = sessionID ? sessionByID.get(sessionID) : undefined; return session && session.status !== 'done' ? <StatusBadge status={session.status} pending={session.pendingPermission || session.pendingQuestion} /> : null; };
 	const openIssue = openIssueID ? issues.find((issue) => issue.id === openIssueID) : undefined;
 	return <FactoryPage><OpenIssueContext.Provider value={setOpenIssueID}>
@@ -367,6 +373,7 @@ export function FactoryOverview() {
 		{!epics.isLoading && !epics.isError && !issuesLoading && !issueError && !inboxCount && <p className="oc-empty">{inboxTotal ? 'No actions match these filters.' : 'Nothing needs your attention.'}</p>}
 		{!!inboxCount && <div className="factory-list factory-list--actions factory-list--inbox" aria-label="Action inbox"><DataTableGroup label="Needs attention" noun="actions" count={inboxCount} markerClassName="factory-status-dot--blocked">
 			{readyPlans.map((issue) => <PlanningItem key={issue.id} issue={issue} epic={epicByID.get(issue.epicId)} />)}
+			{workflowApprovals.map((issue) => <WorkflowApprovalItem key={issue.id} issue={issue} epic={epicByID.get(issue.epicId)} />)}
 			{visiblePlanGates.map((epic) => <FactoryDataRow key={epic.id} id={epic.planGate!.issueId} epic={epic} title={<strong>Plan approval</strong>} detail={`Revision ${epic.planGate!.proposalRevision}`} actions={<Link to={`/factory/epics/${encodeURIComponent(epic.id)}`}>Review plan</Link>} />)}
 			{recoveryGates.map((issue) => <RecoveryGateItem key={issue.id} issue={issue} epic={epicByID.get(issue.epicId)} />)}
 			{authorityGates.map((issue) => <AuthorityGateItem key={issue.id} issue={issue} epic={epicByID.get(issue.epicId)} />)}
@@ -541,10 +548,8 @@ function FormulaGraph({ formula }: { formula: FactoryFormula }) {
 	</>;
 }
 
-const newFormulaSource = 'version = 1\nname = "My Formula"\n\n[[input]]\nkey = "goal"\n\n[[input]]\nkey = "initial_project"\n\n[[issue]]\nkey = "plan"\nkind = "plan"\n';
-
 export function FactoryConfiguration() {
-	const formula = useFactoryFormula(TRACER_FORMULA_ID, 2);
+	const formula = useFactoryFormula(TRACER_FORMULA_ID, 3);
 	const formulas = useFactoryFormulas();
 	const validateFormula = useValidateFactoryFormula();
 	const previewFormula = usePreviewFactoryFormula();
@@ -557,19 +562,13 @@ export function FactoryConfiguration() {
 	const [formulaSaved, setFormulaSaved] = useState('');
 	const [selectedFormula, setSelectedFormula] = useState('new');
 	const [editedSource, setFormulaSource] = useState<string>();
-	const formulaSource = editedSource ?? formulaStages.reduce((source, [stage]) => {
-		const text = formula.data?.prompts?.[stage];
-		return text ? setFormulaPrompt(source, stage, text) : source;
-	}, newFormulaSource);
+	const formulaSource = editedSource ?? formula.data?.source ?? '';
 	const [formulaID, setFormulaID] = useState('');
 	const policy = capacity.data;
 	const inspectedFormula = formulas.data?.find((item) => `${item.id}@${item.version}` === selectedFormula);
 	function editFormula(selected?: FactoryFormula) {
 		setFormulaID(selected?.id === TRACER_FORMULA_ID ? 'custom/tracer' : selected?.id ?? '');
-		setFormulaSource(formulaStages.reduce((source, [stage]) => {
-			const text = selected?.prompts?.[stage] ?? formula.data?.prompts?.[stage];
-			return text ? setFormulaPrompt(source, stage, text) : source;
-		}, selected?.source ?? newFormulaSource));
+		setFormulaSource(selected?.source ?? formula.data?.source ?? '');
 		setFormulaErrors([]);
 		setFormulaSaved('');
 		setError('');
@@ -615,7 +614,7 @@ export function FactoryConfiguration() {
 			<p>Content hash: {formula.data.hash}</p>
 			<p>Source hash: {formula.data.sourceHash}</p>
 			<p role="status">Formula is {formula.data.valid ? 'valid' : 'invalid'}</p>
-			<details className="factory-formula-source"><summary>Tracer Formula source</summary><label>Tracer Formula source<textarea aria-label="Tracer Formula source" readOnly value={formula.data.source} /></label></details>
+			<details className="factory-formula-source"><summary>Tracer Formula source</summary><label>Tracer Formula source<textarea aria-label="Tracer Formula source" rows={15} readOnly value={formula.data.source} /></label></details>
 			<Button type="button" onClick={() => { setSelectedFormula('new'); editFormula(formula.data); }}>Customize Tracer</Button>
 			<h4>Graph</h4>
 			<p>Inputs: {formula.data.inputs.join(', ')}</p>
@@ -625,14 +624,13 @@ export function FactoryConfiguration() {
 			<h3>Custom Formula revisions</h3>
 			{formulas.isError && <QueryError error={formulas.error} retry={() => void formulas.refetch()} />}
 			<label>Formula<select aria-label="Formula" value={selectedFormula} onChange={(event) => { setSelectedFormula(event.target.value); editFormula(formulas.data?.find((item) => `${item.id}@${item.version}` === event.target.value)); }}><option value="new">New Formula</option>{formulas.data?.filter((item) => item.id !== TRACER_FORMULA_ID).map((item) => <option key={`${item.id}@${item.version}`} value={`${item.id}@${item.version}`}>{item.name} · {item.id}@{item.version}</option>)}</select></label>
-			{inspectedFormula && <section aria-label="Formula inspection"><p>Content hash: {inspectedFormula.hash}</p><p>Source hash: {inspectedFormula.sourceHash}</p><FormulaGraph formula={inspectedFormula} /><details className="factory-formula-source"><summary>Stored Formula source</summary><label>Stored Formula source<textarea aria-label="Stored Formula source" readOnly value={inspectedFormula.source} /></label></details></section>}
+			{inspectedFormula && <section aria-label="Formula inspection"><p>Content hash: {inspectedFormula.hash}</p><p>Source hash: {inspectedFormula.sourceHash}</p><FormulaGraph formula={inspectedFormula} /><details className="factory-formula-source"><summary>Stored Formula source</summary><label>Stored Formula source<textarea aria-label="Stored Formula source" rows={15} readOnly value={inspectedFormula.source} /></label></details></section>}
 			<form onSubmit={(event) => { event.preventDefault(); void saveFormulaRevision(event.currentTarget, 'save'); }}>
 				<label>Custom Formula ID<input aria-label="Custom Formula ID" name="id" required pattern="custom/[a-z][a-z0-9_-]*" value={formulaID} onChange={(event) => setFormulaID(event.target.value)} /></label>
-				<p>Edit the stage prompts, then save a new immutable revision. Existing epics keep their pinned revision. Factory adds runtime context and completion instructions.</p>
-				{formulaStages.map(([stage, label]) => <label key={stage}>{label}<textarea aria-label={label} value={getFormulaPrompt(formulaSource, stage, formula.data?.prompts?.[stage] ?? '')} onChange={(event) => setFormulaSource(setFormulaPrompt(formulaSource, stage, event.target.value))} /></label>)}
-				<details className="factory-formula-source"><summary>Formula source</summary><label>Custom Formula TOML<textarea aria-label="Custom Formula TOML" name="source" required value={formulaSource} onChange={(event) => setFormulaSource(event.target.value)} onInvalid={(event) => { event.currentTarget.closest('details')!.open = true; }} /></label></details>
+				<p>Define named steps with kind, needs, prompt, and config in the YAML source. Implementation contains the planned tasks; downstream checks wait for all required tasks. Saving creates a new revision.</p>
+				<details className="factory-formula-source"><summary>Formula source</summary><label>Formula YAML<textarea aria-label="Formula YAML" name="source" rows={15} required value={formulaSource} onChange={(event) => setFormulaSource(event.target.value)} onInvalid={(event) => { event.currentTarget.closest('details')!.open = true; }} /></label></details>
 				<div className="factory-epic-action-row">
-					<Button type="button" aria-busy={validateFormula.isPending} onClick={(event) => { if (event.currentTarget.form) void saveFormulaRevision(event.currentTarget.form, 'validate'); }} disabled={validateFormula.isPending || previewFormula.isPending || saveFormula.isPending}>{validateFormula.isPending ? 'Validating…' : 'Validate TOML'}</Button>
+					<Button type="button" aria-busy={validateFormula.isPending} onClick={(event) => { if (event.currentTarget.form) void saveFormulaRevision(event.currentTarget.form, 'validate'); }} disabled={validateFormula.isPending || previewFormula.isPending || saveFormula.isPending}>{validateFormula.isPending ? 'Validating…' : 'Validate Formula'}</Button>
 					<Button type="button" aria-busy={previewFormula.isPending} onClick={(event) => { if (event.currentTarget.form) void saveFormulaRevision(event.currentTarget.form, 'preview'); }} disabled={validateFormula.isPending || previewFormula.isPending || saveFormula.isPending}>{previewFormula.isPending ? 'Previewing…' : 'Preview Formula'}</Button>
 					<Button type="submit" variant="accent" aria-busy={saveFormula.isPending} disabled={validateFormula.isPending || previewFormula.isPending || saveFormula.isPending}>{saveFormula.isPending ? 'Saving…' : 'Save immutable revision'}</Button>
 				</div>
