@@ -40,6 +40,7 @@ export type {
   MetricsPerformance,
   AgentMetrics,
   AnalyticsOverview,
+  DatabaseSizeSample,
   MetricsLog,
   MetricsLogKind,
   PermissionEvaluationResult,
@@ -125,6 +126,7 @@ import type {
   McpConfigInstallResult,
   MetricsPerformance,
   AnalyticsOverview,
+  DatabaseSizeSample,
   SubscriptionUsageResponse,
   InboxItem,
   InboxResponse,
@@ -447,6 +449,8 @@ export const api = {
     fetchJSON<MetricsPerformance>(`/api/metrics/performance${queryString(params)}`, signal),
   analyticsOverview: (signal?: AbortSignal) =>
     fetchJSON<AnalyticsOverview>('/api/analytics/overview', signal),
+  databaseSizes: (params?: { days?: number }, signal?: AbortSignal) =>
+    fetchJSON<DatabaseSizeSample[]>(`/api/analytics/database-sizes${queryString(params)}`, signal),
   subscriptionUsage: (signal?: AbortSignal) =>
     fetchJSON<SubscriptionUsageResponse>('/api/subscription-usage', signal),
   metricLogs: (params: { kind: MetricsLogKind; agent?: string; model?: string; days?: number; limit?: number; offset?: number; sessionLimit?: number; sessionOffset?: number; projectLimit?: number; projectOffset?: number; dir?: string }, signal?: AbortSignal) =>

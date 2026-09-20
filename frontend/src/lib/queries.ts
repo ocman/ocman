@@ -20,6 +20,7 @@ import type {
   ActivityDay,
   MetricsPerformance,
   AnalyticsOverview,
+  DatabaseSizeSample,
   SubscriptionUsageResponse,
   MetricsLog,
   MetricsLogKind,
@@ -447,6 +448,13 @@ export function useAnalyticsOverview() {
   return useQuery<AnalyticsOverview>({
     queryKey: ['analyticsOverview'],
     queryFn: ({ signal }) => api.analyticsOverview(signal),
+  });
+}
+
+export function useDatabaseSizes(params?: { days?: number }) {
+  return useQuery<DatabaseSizeSample[]>({
+    queryKey: ['databaseSizes', params],
+    queryFn: ({ signal }) => api.databaseSizes(params, signal),
   });
 }
 

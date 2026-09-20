@@ -569,6 +569,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	go s.runAutoArchiveLoop(ctx)
 	go s.runProjectsIndexLoop(ctx)
 	go s.runLLMMetricsLoop(ctx)
+	go s.runDatabaseSizeLoop(ctx)
 	go s.runQueueSweep(ctx)
 	go s.runRoutines(ctx)
 	// Headless auto-approve: subscribe directly to each OpenCode

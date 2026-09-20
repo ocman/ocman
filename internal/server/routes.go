@@ -31,6 +31,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/plugins/actions/invoke", s.post(s.handlePluginActionInvoke))
 	mux.HandleFunc("/api/plugins/actions/artifact", s.get(s.handlePluginActionArtifact))
 	mux.HandleFunc("/api/analytics/overview", s.get(s.handleAnalyticsOverview))
+	mux.HandleFunc("/api/analytics/database-sizes", s.get(s.handleDatabaseSizes))
 	mux.HandleFunc("/api/subscription-usage", requireGET(s.requireLocalhost(s.handleSubscriptionUsage)))
 	mux.HandleFunc("/api/metrics", s.get(s.handleMetrics))
 	mux.HandleFunc("/api/metrics/performance", s.get(s.handleMetricsPerformance))

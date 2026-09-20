@@ -36,3 +36,19 @@ func (s *Server) handleAnalyticsOverview(w http.ResponseWriter, r *http.Request)
 		AnalyticsOverviewCounts: counts,
 	})
 }
+
+func (s *Server) handleDatabaseSizes(w http.ResponseWriter, r *http.Request) {
+	if s.stateDB == nil {
+		writeJSON(w, []state.DatabaseSizeSample{})
+		return
+	}
+	samples, err := s.stateDB.DatabaseSizeSamples(r.Context(), parseSinceParam(r))
+	if err != nil {
+		serverError(w, "fetching database size samples", err)
+		return
+	}
+	if samples == nil {
+		samples = []state.DatabaseSizeSample{}
+	}
+	writeJSON(w, samples)
+}

@@ -133,6 +133,17 @@ export const LINE_OPTIONS_CACHE = {
   },
 } as const;
 
+export const LINE_OPTIONS_DATABASE_SIZE = {
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: false as const,
+  plugins: { legend: { position: 'bottom' as const, labels: baseLegendLabels } },
+  scales: {
+    x: { grid: { display: false }, ticks: CHART_X_TICKS },
+    y: { type: 'logarithmic' as const, ticks: { callback: (v: string | number) => `${formatCompactNumber(Number(v))} MiB` } },
+  },
+} as const;
+
 /** Doughnut chart with a right-side legend (stop-reason breakdown). */
 export const DOUGHNUT_OPTIONS = {
   responsive: true,

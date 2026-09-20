@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('react-chartjs-2', () => ({
   Bar: ({ data }: { data: unknown }) => <div data-testid="bar-chart" data-chart={JSON.stringify(data)} />,
   Doughnut: ({ data, options }: { data: unknown; options: unknown }) => <div data-testid="doughnut-chart" data-chart={JSON.stringify(data)} data-options={JSON.stringify(options)} />,
-  Line: () => <div data-testid="line-chart" />,
+  Line: ({ data, options }: { data: unknown; options: unknown }) => <div data-testid="line-chart" data-chart={JSON.stringify(data)} data-options={JSON.stringify(options)} />,
 }));
 vi.mock('../../components/ProjectScopePicker', () => ({ ProjectScopePicker: () => <div>project scope</div> }));
 vi.mock('./context', () => ({ useDashboard: () => ({ projects: [], dirScope: '/repo', setDirScope: vi.fn() }) }));
@@ -16,6 +16,7 @@ const useHourly = vi.fn();
 const useHourlyTokens = vi.fn();
 const useMetrics = vi.fn();
 const useAnalyticsOverview = vi.fn();
+const useDatabaseSizes = vi.fn();
 const useModels = vi.fn();
 const usePermissionStats = vi.fn();
 const useMetricLogs = vi.fn();
@@ -25,6 +26,7 @@ vi.mock('../../lib/queries', () => ({
   useHourlyTokens: (...args: unknown[]) => useHourlyTokens(...args),
   useMetrics: (...args: unknown[]) => useMetrics(...args),
   useAnalyticsOverview: (...args: unknown[]) => useAnalyticsOverview(...args),
+  useDatabaseSizes: (...args: unknown[]) => useDatabaseSizes(...args),
   useModels: (...args: unknown[]) => useModels(...args),
   usePermissionStats: (...args: unknown[]) => usePermissionStats(...args),
   useMetricLogs: (...args: unknown[]) => useMetricLogs(...args),
@@ -60,6 +62,11 @@ describe('analytics sections', () => {
     useModels.mockReturnValue(query([{ provider: 'provider', model: 'model', count: 2, tokensIn: 10, tokensOut: 5 }]));
     useMetrics.mockReturnValue(query(metrics));
     useAnalyticsOverview.mockReturnValue(query({ inventoryScope: 'local', totalSessions: 10, subagentSessions: 2, totalProjects: 2, totalRoutines: 1, routineRunsByStatus: { done: 3 }, factoryEpicsByStatus: { active: 1 }, factoryIssuesByStatus: { done: 4 }, factoryAttemptsByPhase: { terminal: 5 }, factoryAttemptsByTerminalOutcome: { successful: 4 } }));
+    useDatabaseSizes.mockReturnValue(query([
+      { database: 'ocman', sampledAt: 1_757_500_000_000, sizeBytes: 10 * 1024 * 1024 },
+      { database: 'opencode', sampledAt: 1_757_500_000_000, sizeBytes: 100 * 1024 * 1024 },
+      { database: 'opencode', sampledAt: 1_757_503_600_000, sizeBytes: 120 * 1024 * 1024 },
+    ]));
     usePermissionStats.mockReturnValue(query({ eligibleRequests: 1, autoApprovedRate: 1, manualPreemptions: 0, manualPreemptionRate: 0, medianJudgmentDurationMs: 10, medianManualResponseDurationMs: 20, userDecisionCount: 1, userDecisionRate: 1, affectedSessions: 1, unresolvedEligibleRequests: 0, observedUserWaitMs: 5000, p50UserWaitMs: 5000, p95UserWaitMs: 5000, daily: [] }));
     useMetricLogs.mockImplementation(({ kind }: { kind: string }) => query({ kind, total: 0, availableAgents: [], availableModels: [], [`${kind}s`]: [] }));
   });
@@ -75,6 +82,16 @@ describe('analytics sections', () => {
     expect(within(activity).getByText('Total Cost')).toBeInTheDocument();
     expect(within(activity).getByRole('combobox', { name: 'Last' })).toBeInTheDocument();
     expect(useMetrics).toHaveBeenCalledWith({ days: 30, dir: '/repo' });
+    expect(useDatabaseSizes).toHaveBeenCalledWith({ days: 30 });
+    const storage = screen.getByText('Database Size (log scale)').closest('.chart-card') as HTMLElement;
+    const chart = JSON.parse(within(storage).getByTestId('line-chart').getAttribute('data-chart') ?? '{}');
+    expect(chart.datasets.map((dataset: { label: string }) => dataset.label)).toEqual(['OpenCode (MiB)', 'ocman (MiB)']);
+    expect(chart.datasets[1].data).toEqual([10, null]);
+    expect(chart.datasets.map((dataset: { pointRadius: number }) => dataset.pointRadius)).toEqual([1, 1]);
+    const options = JSON.parse(within(storage).getByTestId('line-chart').getAttribute('data-options') ?? '{}');
+    expect(Object.keys(options.scales)).toEqual(['x', 'y']);
+    expect(options.scales.y.type).toBe('logarithmic');
+    expect(screen.getByText('Database sizes cover this local instance and are not project-scoped.')).toBeInTheDocument();
   });
 
   it('shows activity without a misleading model filter', () => {
@@ -195,10 +212,35 @@ describe('analytics sections', () => {
   it('keeps separate overview loaders in their eventual slots', () => {
     useAnalyticsOverview.mockReturnValue({ data: undefined, isLoading: true, error: null });
     useMetrics.mockReturnValue({ data: undefined, isLoading: true, error: null });
+    useDatabaseSizes.mockReturnValue({ data: undefined, isLoading: true, error: null });
     renderTab(<OverviewTab />);
     expect(screen.getByRole('status', { name: 'Loading inventory' })).toBeInTheDocument();
     expect(screen.getByRole('status', { name: 'Loading request summary' })).toBeInTheDocument();
     expect(screen.getByRole('status', { name: 'Loading token usage' })).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Loading database sizes' })).toBeInTheDocument();
+  });
+
+  it('renders database sizes independently of request metrics', () => {
+    useMetrics.mockReturnValue({ data: undefined, isLoading: false, error: new Error('metrics failed') });
+    renderTab(<OverviewTab />);
+    expect(screen.getByText('metrics failed')).toBeInTheDocument();
+    expect(screen.getByText('Database Size (log scale)')).toBeInTheDocument();
+  });
+
+  it('shows a point for the first database size sample', () => {
+    useDatabaseSizes.mockReturnValue(query([{ database: 'ocman', sampledAt: 1_757_500_000_000, sizeBytes: 10 * 1024 * 1024 }]));
+    renderTab(<OverviewTab />);
+    const storage = screen.getByText('Database Size (log scale)').closest('.chart-card') as HTMLElement;
+    const chart = JSON.parse(within(storage).getByTestId('line-chart').getAttribute('data-chart') ?? '{}');
+    expect(chart.datasets.map((dataset: { pointRadius: number }) => dataset.pointRadius)).toEqual([1, 1]);
+    expect(chart.labels[0]).toContain('2025');
+  });
+
+  it('shows database size errors and empty history', () => {
+    useDatabaseSizes.mockReturnValue({ data: [], isLoading: false, error: new Error('sizes failed') });
+    renderTab(<OverviewTab />);
+    expect(screen.getByText('sizes failed')).toBeInTheDocument();
+    expect(screen.getByText('No database size samples yet.')).toBeInTheDocument();
   });
 
   it('queries permission data independently', () => {

@@ -1061,6 +1061,12 @@ export interface AnalyticsOverview {
   factoryAttemptsByTerminalOutcome: Record<string, number>;
 }
 
+export interface DatabaseSizeSample {
+  database: 'opencode' | 'ocman';
+  sampledAt: number;
+  sizeBytes: number;
+}
+
 export type MetricsLogKind = 'project' | 'session' | 'request';
 
 export interface MetricsLog {

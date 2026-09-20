@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
@@ -8,9 +9,9 @@ import (
 	"time"
 
 	"github.com/XSAM/otelsql"
-	_ "modernc.org/sqlite"
 	"go.opentelemetry.io/otel/attribute"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+	_ "modernc.org/sqlite"
 )
 
 // DB wraps the SQLite connection.
@@ -149,4 +150,16 @@ func (d *DB) Close() error {
 // caller would just unmarshal back into the same shape.
 func (d *DB) Stats() sql.DBStats {
 	return d.db.Stats()
+}
+
+// SizeBytes returns SQLite's current logical database size.
+func (d *DB) SizeBytes(ctx context.Context) (int64, error) {
+	var pages, pageSize int64
+	if err := d.db.QueryRowContext(ctx, `PRAGMA page_count`).Scan(&pages); err != nil {
+		return 0, fmt.Errorf("reading database page count: %w", err)
+	}
+	if err := d.db.QueryRowContext(ctx, `PRAGMA page_size`).Scan(&pageSize); err != nil {
+		return 0, fmt.Errorf("reading database page size: %w", err)
+	}
+	return pages * pageSize, nil
 }

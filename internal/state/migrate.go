@@ -219,7 +219,8 @@ import (
 //	90 - add opt-in session archival to routines and their run snapshots.
 //	91 - persist plugin discovery, grants and configuration checkpoints.
 //	92 - durable action operation receipts prevent replay after a host restart.
-const latestSchemaVersion = 92
+//	93 - record hourly logical-size samples for the OpenCode and ocman databases.
+const latestSchemaVersion = 93
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -511,6 +512,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV91(tx)
 	case 92:
 		return migrateToV92(tx)
+	case 93:
+		return migrateToV93(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
@@ -539,6 +542,18 @@ func migrateToV89(tx *sql.Tx) error {
 			id INTEGER PRIMARY KEY CHECK (id = 1),
 			projects_json BLOB NOT NULL,
 			refreshed_at INTEGER NOT NULL
+		)
+	`)
+	return err
+}
+
+func migrateToV93(tx *sql.Tx) error {
+	_, err := tx.Exec(`
+		CREATE TABLE IF NOT EXISTS database_size_sample (
+			database TEXT NOT NULL CHECK (database IN ('opencode', 'ocman')),
+			sampled_at INTEGER NOT NULL,
+			size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),
+			PRIMARY KEY (database, sampled_at)
 		)
 	`)
 	return err
