@@ -54,6 +54,44 @@ awaiting review. You can request a revision and have the original session call
 must match its exact revision and hash. Approved or rejected plans cannot be
 replaced through import. Proposal history and the pending gate survive restart.
 
+## Formula prompts
+
+Factory configuration has editable prompts for four stages: planning, scope
+expansion, implementation, and delivery. Choose a saved Formula revision to
+edit it, or use **Customize Tracer** to copy the built-in workflow into a custom
+Formula. Save an immutable revision, then select it when creating an Epic.
+Existing Epics keep their original Formula revision and prompts. Work inside a
+composed child Formula uses that child's pinned revision.
+
+Prompt edits update the Formula's TOML and content hash. The **Formula source**
+section is collapsed by default and opens a full-width, tall source editor.
+The graph viewer shows dependencies; compiled JSON remains available under a
+separate disclosure.
+
+The current built-in Formula is `ocman/tracer@2`. Its TOML contains all four
+stage prompts alongside the graph, and new Formula drafts include them too.
+The original `ocman/tracer@1` remains available unchanged for pinned Epics.
+
+Source authors can set these optional top-level keys before any `[[input]]` or
+other tables:
+
+```toml
+prompt_planning = "Inspect the code first. Ask only questions the repository cannot answer."
+prompt_scope_expansion = "Inspect the remaining graph and propose only the additional work."
+prompt_implementation = "Start with a failing test.\nMake the smallest correct change."
+prompt_delivery = "Review the complete diff and run the repository's release checks."
+```
+
+Each prompt is a non-empty double-quoted string, at most 32 KiB. Use `\n` for
+line breaks in TOML, or enter normal multiline text in the prompt fields.
+Omitted keys use the original stage defaults. These compatibility defaults do
+not change an older revision's source or hash.
+
+The editable text controls the agent's workflow. Factory separately adds the
+Issue context, repository restrictions, attempt credentials, proposal submission
+instructions, and commit/PR completion protocol. Prompt changes do not change
+permission rules, approval gates, or completion validation.
+
 ## Planning and implementation models
 
 New planning sessions prefer an available Fable or Astra model. If neither is

@@ -342,6 +342,8 @@ export interface FactoryCapacityPolicy {
 }
 
 export interface FactoryFormula {
+	/** Effective stage prompts, including compatibility defaults for older revisions. */
+	prompts?: Record<string, string>;
   id: string;
   version: number;
   name: string;

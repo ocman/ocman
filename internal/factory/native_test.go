@@ -402,7 +402,7 @@ func TestNativeServiceInspectsBuiltInTracerFormula(t *testing.T) {
 	if _, err := NewNative(&nativeStoreFake{}).GetFormula(context.Background(), "missing", 1); !errors.Is(err, ErrFormulaNotFound) {
 		t.Fatalf("missing Formula error = %v", err)
 	}
-	if _, err := NewNative(&nativeStoreFake{}).GetFormula(context.Background(), "ocman/tracer", 2); !errors.Is(err, ErrFormulaNotFound) {
+	if _, err := NewNative(&nativeStoreFake{}).GetFormula(context.Background(), "ocman/tracer", 3); !errors.Is(err, ErrFormulaNotFound) {
 		t.Fatalf("unknown Formula version error = %v", err)
 	}
 }
@@ -445,7 +445,7 @@ kind = "plan"
 		}
 	}
 	builtIn := BuiltInTracerFormula()
-	if got := sha256.Sum256(formulaCompiled(t, tracerFormulaSource)); builtIn.Hash != hex.EncodeToString(got[:]) {
+	if got := sha256.Sum256(formulaCompiled(t, builtIn.Source)); builtIn.Hash != hex.EncodeToString(got[:]) {
 		t.Fatalf("built-in hash changed: %q", builtIn.Hash)
 	}
 }

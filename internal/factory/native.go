@@ -164,6 +164,7 @@ type PlanningSession = model.PlanningSession
 type FactoryAuditRecord = model.AuditRecord
 
 type PlanningSessionRequest struct {
+	Prompt                                                   string
 	EpicID, WorkID, AttemptID, AgentToken, Repository, Title string
 	Projects                                                 []string
 	ScopeExpansion                                           bool
@@ -218,6 +219,7 @@ type TracerFormula struct {
 
 // NativeFormulaView is the immutable, inspectable representation of a Formula revision.
 type NativeFormulaView struct {
+	Prompts     map[string]string    `json:"prompts"`
 	ID          string               `json:"id"`
 	Version     int                  `json:"version"`
 	Name        string               `json:"name"`
@@ -258,12 +260,11 @@ type FormulaComposition struct {
 }
 
 func BuiltInTracerFormula() TracerFormula {
-	// Keep the built-in identity compatible with the original tracer release.
-	compiled, err := compileNativeFormula(tracerFormulaSource)
+	compiled, err := compileNativeFormula(tracerFormulaV2Source)
 	if err != nil {
 		panic("invalid built-in tracer Formula: " + err.Error())
 	}
-	return TracerFormula{ID: "ocman/tracer", Version: 1, Source: tracerFormulaSource, Hash: compiled.Hash}
+	return TracerFormula{ID: "ocman/tracer", Version: 2, Source: tracerFormulaV2Source, Hash: compiled.Hash}
 }
 
 func sourceHash(source string) string {
@@ -278,6 +279,7 @@ type compiledNativeFormula struct {
 	Nodes       []FormulaGraphNode   `json:"nodes"`
 	Edges       []FormulaGraphEdge   `json:"edges"`
 	Composition []FormulaComposition `json:"composition"`
+	Prompts     map[string]string    `json:"prompts,omitempty"`
 }
 
 type nativeDefinition struct {
@@ -391,14 +393,25 @@ func compileNativeFormula(source string) (nativeDefinition, error) {
 		}
 		key, value := strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
 		if section == "" {
-			if key != "version" && key != "name" {
+			stage := strings.TrimPrefix(key, "prompt_")
+			promptKey := key == "prompt_planning" || key == "prompt_scope_expansion" || key == "prompt_implementation" || key == "prompt_delivery"
+			if key != "version" && key != "name" && !promptKey {
 				return nativeDefinition{}, fmt.Errorf("line %d: unsupported top-level key", lineNo+1)
 			}
 			if seenRoot[key] {
 				return nativeDefinition{}, fmt.Errorf("line %d: duplicate key %s", lineNo+1, key)
 			}
 			seenRoot[key] = true
-			if key == "version" {
+			if promptKey {
+				text, err := unquoteTOML(value)
+				if err != nil || strings.TrimSpace(text) == "" || len(text) > 32768 {
+					return nativeDefinition{}, fmt.Errorf("line %d: %s must be a non-empty TOML string of at most 32768 bytes", lineNo+1, key)
+				}
+				if result.Prompts == nil {
+					result.Prompts = map[string]string{}
+				}
+				result.Prompts[stage] = text
+			} else if key == "version" {
 				n, err := strconv.Atoi(value)
 				if err != nil || n != 1 {
 					return nativeDefinition{}, fmt.Errorf("line %d: version must be 1", lineNo+1)
@@ -768,6 +781,7 @@ type NativeService struct {
 }
 
 type ImplementationSessionRequest struct {
+	Prompt                                                                                          string
 	Model                                                                                           string
 	EpicID, WorkID, AttemptID, AgentToken, Repository, Title, Description, Branch, BaseRef, Profile string
 	Projects                                                                                        []string
@@ -1074,7 +1088,8 @@ func (s *NativeService) CreateWorkEpic(ctx context.Context, req CreateWorkEpicRe
 	}
 	formulaID, revision := req.FormulaID, req.FormulaRevision
 	if formulaID == "" {
-		formulaID, revision = "ocman/tracer", 1
+		builtIn := BuiltInTracerFormula()
+		formulaID, revision = builtIn.ID, builtIn.Version
 	}
 	formula, err := s.nativeFormula(ctx, formulaID, revision)
 	if err != nil {
@@ -1354,6 +1369,9 @@ func factoryProgress(issues []model.NativeIssue) FactoryProgress {
 // GetFormula returns the exact immutable native Formula revision.
 func (s *NativeService) GetFormula(ctx context.Context, id string, version int) (NativeFormulaView, error) {
 	formula := BuiltInTracerFormula()
+	if id == formula.ID && version == 1 {
+		formula.Version, formula.Source = 1, tracerFormulaSource
+	}
 	if id != formula.ID || version != formula.Version {
 		store, ok := s.store.(nativeFormulaStore)
 		if !ok {
@@ -1372,11 +1390,12 @@ func (s *NativeService) GetFormula(ctx context.Context, id string, version int) 
 	if err != nil {
 		return NativeFormulaView{}, err
 	}
-	return NativeFormulaView{ID: formula.ID, Version: formula.Version, Name: compiled.Name, Source: formula.Source, Hash: compiled.Hash, SourceHash: sourceHash(formula.Source), Compiled: json.RawMessage(compiled.JSON), Inputs: compiled.Inputs, Nodes: compiled.Nodes, Edges: compiled.Edges, Composition: compiled.Composition, Valid: true, Errors: []string{}}, nil
+	return NativeFormulaView{ID: formula.ID, Version: formula.Version, Name: compiled.Name, Source: formula.Source, Hash: compiled.Hash, SourceHash: sourceHash(formula.Source), Compiled: json.RawMessage(compiled.JSON), Inputs: compiled.Inputs, Nodes: compiled.Nodes, Edges: compiled.Edges, Composition: compiled.Composition, Prompts: effectiveFormulaPrompts(compiled.Prompts), Valid: true, Errors: []string{}}, nil
 }
 
 func (s *NativeService) ListFormulas(ctx context.Context) ([]NativeFormulaView, error) {
-	builtIn, err := s.GetFormula(ctx, "ocman/tracer", 1)
+	current := BuiltInTracerFormula()
+	builtIn, err := s.GetFormula(ctx, current.ID, current.Version)
 	if err != nil {
 		return nil, err
 	}
@@ -1472,7 +1491,7 @@ func (s *NativeService) previewNativeFormula(ctx context.Context, id string, ver
 		compiled.Hash = hex.EncodeToString(sum[:])
 	}
 	problems := s.compositionErrors(ctx, id, version, compiled, map[string]bool{})
-	return NativeFormulaView{ID: id, Version: version, Name: compiled.Name, Source: source, Hash: compiled.Hash, SourceHash: sourceHash(source), Compiled: json.RawMessage(compiled.JSON), Inputs: compiled.Inputs, Nodes: compiled.Nodes, Edges: compiled.Edges, Composition: compiled.Composition, Valid: len(problems) == 0, Errors: problems}, nil
+	return NativeFormulaView{ID: id, Version: version, Name: compiled.Name, Source: source, Hash: compiled.Hash, SourceHash: sourceHash(source), Compiled: json.RawMessage(compiled.JSON), Inputs: compiled.Inputs, Nodes: compiled.Nodes, Edges: compiled.Edges, Composition: compiled.Composition, Prompts: effectiveFormulaPrompts(compiled.Prompts), Valid: len(problems) == 0, Errors: problems}, nil
 }
 
 func nativeFormulaView(id string, revision int, _ string, source, hash, compiledJSON string) (NativeFormulaView, error) {
@@ -1483,7 +1502,7 @@ func nativeFormulaView(id string, revision int, _ string, source, hash, compiled
 	if compiledJSON != compiled.JSON || hash != compiled.Hash {
 		return NativeFormulaView{}, fmt.Errorf("%w: compiled content does not match source", ErrFormulaCorrupt)
 	}
-	return NativeFormulaView{ID: id, Version: revision, Name: compiled.Name, Source: source, Hash: compiled.Hash, SourceHash: sourceHash(source), Compiled: json.RawMessage(compiled.JSON), Inputs: compiled.Inputs, Nodes: compiled.Nodes, Edges: compiled.Edges, Composition: compiled.Composition, Valid: true, Errors: []string{}}, nil
+	return NativeFormulaView{ID: id, Version: revision, Name: compiled.Name, Source: source, Hash: compiled.Hash, SourceHash: sourceHash(source), Compiled: json.RawMessage(compiled.JSON), Inputs: compiled.Inputs, Nodes: compiled.Nodes, Edges: compiled.Edges, Composition: compiled.Composition, Prompts: effectiveFormulaPrompts(compiled.Prompts), Valid: true, Errors: []string{}}, nil
 }
 
 func (s *NativeService) compositionErrors(ctx context.Context, root string, revision int, definition nativeDefinition, ancestors map[string]bool) []string {
@@ -1529,6 +1548,9 @@ func (s *NativeService) compositionErrors(ctx context.Context, root string, revi
 }
 
 func (s *NativeService) compositionSource(ctx context.Context, id string, revision int) (string, error) {
+	if id == "ocman/tracer" && revision == 2 {
+		return tracerFormulaV2Source, nil
+	}
 	if id == "ocman/tracer" && revision == 1 {
 		return tracerFormulaSource, nil
 	}
@@ -2016,6 +2038,14 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 		return ready[i].issue.ID < ready[j].issue.ID
 	})
 	for _, next := range ready {
+		stage := "implementation"
+		if next.issue.Kind == "delivery" {
+			stage = "delivery"
+		}
+		prompt, err := s.issuePrompt(ctx, next.epic, next.issue.ID, stage)
+		if err != nil {
+			return err
+		}
 		epic, attempt, err := store.ClaimFactoryImplementation(ctx, next.epic.ID, next.issue.ID, "factory-implement/v1", time.Now())
 		if err != nil {
 			continue
@@ -2068,6 +2098,7 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 			description = strings.TrimSpace(description + "\n\n" + next.issue.OutcomeReason)
 		}
 		request := ImplementationSessionRequest{Model: attempt.FrozenPolicy.Model, EpicID: epic.ID, WorkID: next.issue.ID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: repository, Projects: attempt.FrozenPolicy.Projects, Title: next.issue.Title, Description: description, Branch: branch, BaseRef: baseRef, Profile: "factory-implement/v1", TargetBranch: attempt.FrozenPolicy.TargetBranch, Delivery: attempt.FrozenPolicy.Delivery, PermissionRules: attempt.FrozenPolicy.PermissionRules}
+		request.Prompt = prompt
 		session, launchErr := s.implementation.LaunchImplementationSession(ctx, request)
 		if launchErr != nil {
 			if session.ID != "" {
@@ -2427,6 +2458,15 @@ func (s *NativeService) ClaimPlan(ctx context.Context, epicID, issueID string) (
 			return ClaimedPlan{}, err
 		}
 	}
+	stage := "planning"
+	if request.ScopeExpansion {
+		stage = "scope_expansion"
+	}
+	request.Prompt, err = s.issuePrompt(ctx, epic, issueID, stage)
+	if err != nil {
+		_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "formula_prompt_failed", Message: "Formula prompt could not be loaded"}, time.Now())
+		return ClaimedPlan{}, err
+	}
 	session, launchErr := s.planning.LaunchPlanningSession(ctx, request)
 	if launchErr != nil {
 		if session.ID != "" {
@@ -2758,9 +2798,6 @@ func (s *NativeService) nativeFormula(ctx context.Context, id string, version in
 		return model.NativeFormula{}, fmt.Errorf("%w: Formula is invalid", ErrFactoryUnavailable)
 	}
 	formula := model.NativeFormula{ID: view.ID, Version: view.Version, Source: view.Source, Hash: view.Hash, Inputs: definition.Inputs}
-	if id == "ocman/tracer" && version == 1 {
-		formula.Hash = BuiltInTracerFormula().Hash
-	}
 	for _, node := range definition.Nodes {
 		formula.Nodes = append(formula.Nodes, model.NativeFormulaNode{Key: node.Key, Kind: node.Kind})
 	}

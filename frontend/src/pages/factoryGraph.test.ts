@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { factoryGraphModel, factoryIssueState, proposalIssues } from './factoryGraph';
+import { factoryGraphModel, factoryIssueState, formulaIssues, proposalIssues } from './factoryGraph';
 import type { FactoryIssue } from '../lib/api';
 
 const issue = (overrides: Partial<FactoryIssue> & Pick<FactoryIssue, 'id'>): FactoryIssue => ({
@@ -133,6 +133,27 @@ describe('factoryGraphModel', () => {
       issue({ id: 'app', dependsOn: [{ id: 'delivery', type: 'merge_gated' }] }),
     ]);
     expect(edges).toContainEqual({ id: 'merge_gated:delivery->app', source: 'delivery', target: 'app', kind: 'merge_gated' });
+  });
+});
+
+describe('formulaIssues', () => {
+  it('draws dependencies from prerequisite to dependent and preserves edge types', () => {
+    const model = factoryGraphModel(formulaIssues({
+      nodes: [{ key: 'plan', kind: 'plan' }, { key: 'approval', kind: 'gate' }, { key: 'recovery', kind: 'task' }],
+      edges: [{ from: 'approval', to: 'plan' }, { from: 'recovery', to: 'approval', type: 'on_failure' }],
+    }));
+    expect(model.edges).toEqual([
+      expect.objectContaining({ source: 'plan', target: 'approval', kind: 'blocks' }),
+      expect.objectContaining({ source: 'approval', target: 'recovery', kind: 'on_failure' }),
+    ]);
+    expect(model.nodes.map((node) => node.issue.title)).toEqual(['plan', 'approval', 'recovery']);
+    expect(model.nodes[0].y).toBeLessThan(model.nodes[1].y);
+  });
+
+  it('handles empty graphs and nullable API arrays', () => {
+    expect(formulaIssues({ nodes: [], edges: [] })).toEqual([]);
+    expect(formulaIssues({ nodes: null, edges: null } as never)).toEqual([]);
+    expect(formulaIssues({ nodes: [{ key: 'plan', kind: 'plan' }], edges: null } as never)[0].dependsOn).toEqual([]);
   });
 });
 

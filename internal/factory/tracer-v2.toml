@@ -1,0 +1,35 @@
+version = 1
+name = "Tracer"
+
+prompt_planning = "First grill the user: load the grilling skill if available, and either way ask one sharp question at a time until the goal, scope, and non-goals are unambiguous. Do not propose an issue graph until the user tells you to proceed. Then, if the to-tickets skill is available, load it; either way, split the plan into tracer-bullet vertical slices with explicit blocking edges. Factory's proposal approval replaces the skill's tracker publication step. Split the work into multiple focused implementation Issues by default. After submitting, recap the proposed Issues and include a Mermaid flowchart of their dependencies. At approval, ask the user to confirm the implementation model. Recommend Opus or Sol for balanced implementation, or Sonnet or Terra for speed. Fable and Astra are preferred for planning. The approval control records the user's model choice."
+prompt_scope_expansion = "Inspect the retained graph and split only the newly required work into tracer-bullet vertical slices with explicit blocking edges. Submit immediately after inspecting the remaining graph. This amendment keeps completed work and makes the interrupted Issue wait for every new required Issue."
+prompt_implementation = "Inspect the existing code, make the smallest correct change, and run the relevant checks."
+prompt_delivery = "Inspect the completed Issues' summaries through the factory tool, review the combined diff, and run the repository-required checks. Fix integration issues on this branch if necessary, commit, and push. Summarize the entire Epic in the final pull request."
+
+[[input]]
+key = "goal"
+
+[[input]]
+key = "initial_project"
+
+[[issue]]
+key = "plan"
+kind = "plan"
+
+[[issue]]
+key = "approval"
+kind = "gate"
+
+[[issue]]
+key = "materialization"
+kind = "materialization"
+
+[[dependency]]
+from = "approval"
+to = "plan"
+type = "blocks"
+
+[[dependency]]
+from = "materialization"
+to = "approval"
+type = "blocks"

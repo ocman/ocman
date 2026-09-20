@@ -2,7 +2,8 @@ import { createContext, useContext, useDeferredValue, useId, useRef, useState, t
 import { Link, NavLink, useNavigate, useParams } from 'react-router-dom';
 import { MarkdownContent } from '../components/assistant/MarkdownText';
 import { EpicGraph } from './EpicGraph';
-import { proposalIssues } from './factoryGraph';
+import { formulaIssues, proposalIssues } from './factoryGraph';
+import { formulaStages, getFormulaPrompt, setFormulaPrompt } from './formulaPrompts';
 import { Button, SearchField, SelectField } from '../components/Control';
 import { SearchSelect } from '../components/SearchSelect';
 import { ProjectLabel } from '../components/ProjectLabel';
@@ -364,7 +365,7 @@ export function FactoryOverview() {
 		{issuesLoading && <p role="status">Loading action inbox…</p>}
 		{issueError && <QueryError error={issueError.error} retry={() => void issueError.refetch()} />}
 		{!epics.isLoading && !epics.isError && !issuesLoading && !issueError && !inboxCount && <p className="oc-empty">{inboxTotal ? 'No actions match these filters.' : 'Nothing needs your attention.'}</p>}
-		{!!inboxCount && <div className="factory-list factory-list--actions" aria-label="Action inbox"><DataTableGroup label="Needs attention" noun="actions" count={inboxCount} markerClassName="factory-status-dot--blocked">
+		{!!inboxCount && <div className="factory-list factory-list--actions factory-list--inbox" aria-label="Action inbox"><DataTableGroup label="Needs attention" noun="actions" count={inboxCount} markerClassName="factory-status-dot--blocked">
 			{readyPlans.map((issue) => <PlanningItem key={issue.id} issue={issue} epic={epicByID.get(issue.epicId)} />)}
 			{visiblePlanGates.map((epic) => <FactoryDataRow key={epic.id} id={epic.planGate!.issueId} epic={epic} title={<strong>Plan approval</strong>} detail={`Revision ${epic.planGate!.proposalRevision}`} actions={<Link to={`/factory/epics/${encodeURIComponent(epic.id)}`}>Review plan</Link>} />)}
 			{recoveryGates.map((issue) => <RecoveryGateItem key={issue.id} issue={issue} epic={epicByID.get(issue.epicId)} />)}
@@ -533,8 +534,17 @@ export function FactoryQueue() {
   </FactoryPage>;
 }
 
+function FormulaGraph({ formula }: { formula: FactoryFormula }) {
+	return <>
+		<EpicGraph key={formula.hash} issues={formulaIssues(formula)} preview />
+		<details><summary>Compiled Formula JSON</summary><pre>{JSON.stringify(formula.compiled, null, 2)}</pre></details>
+	</>;
+}
+
+const newFormulaSource = 'version = 1\nname = "My Formula"\n\n[[input]]\nkey = "goal"\n\n[[input]]\nkey = "initial_project"\n\n[[issue]]\nkey = "plan"\nkind = "plan"\n';
+
 export function FactoryConfiguration() {
-	const formula = useFactoryFormula(TRACER_FORMULA_ID, 1);
+	const formula = useFactoryFormula(TRACER_FORMULA_ID, 2);
 	const formulas = useFactoryFormulas();
 	const validateFormula = useValidateFactoryFormula();
 	const previewFormula = usePreviewFactoryFormula();
@@ -546,8 +556,26 @@ export function FactoryConfiguration() {
 	const [formulaErrors, setFormulaErrors] = useState<string[]>([]);
 	const [formulaSaved, setFormulaSaved] = useState('');
 	const [selectedFormula, setSelectedFormula] = useState('new');
+	const [editedSource, setFormulaSource] = useState<string>();
+	const formulaSource = editedSource ?? formulaStages.reduce((source, [stage]) => {
+		const text = formula.data?.prompts?.[stage];
+		return text ? setFormulaPrompt(source, stage, text) : source;
+	}, newFormulaSource);
+	const [formulaID, setFormulaID] = useState('');
 	const policy = capacity.data;
 	const inspectedFormula = formulas.data?.find((item) => `${item.id}@${item.version}` === selectedFormula);
+	function editFormula(selected?: FactoryFormula) {
+		setFormulaID(selected?.id === TRACER_FORMULA_ID ? 'custom/tracer' : selected?.id ?? '');
+		setFormulaSource(formulaStages.reduce((source, [stage]) => {
+			const text = selected?.prompts?.[stage] ?? formula.data?.prompts?.[stage];
+			return text ? setFormulaPrompt(source, stage, text) : source;
+		}, selected?.source ?? newFormulaSource));
+		setFormulaErrors([]);
+		setFormulaSaved('');
+		setError('');
+		previewFormula.reset();
+		validateFormula.reset();
+	}
 	async function save(event: FormEvent<HTMLFormElement>) {
 		event.preventDefault();
 		const form = new FormData(event.currentTarget);
@@ -587,20 +615,22 @@ export function FactoryConfiguration() {
 			<p>Content hash: {formula.data.hash}</p>
 			<p>Source hash: {formula.data.sourceHash}</p>
 			<p role="status">Formula is {formula.data.valid ? 'valid' : 'invalid'}</p>
-			<label>Tracer Formula source<textarea aria-label="Tracer Formula source" readOnly value={formula.data.source} /></label>
+			<details className="factory-formula-source"><summary>Tracer Formula source</summary><label>Tracer Formula source<textarea aria-label="Tracer Formula source" readOnly value={formula.data.source} /></label></details>
+			<Button type="button" onClick={() => { setSelectedFormula('new'); editFormula(formula.data); }}>Customize Tracer</Button>
 			<h4>Graph</h4>
 			<p>Inputs: {formula.data.inputs.join(', ')}</p>
-			<ul>{formula.data.nodes.map((node) => <li key={node.key}>{node.key} · {node.kind}</li>)}</ul>
-			<ul>{formula.data.edges.map((edge, index) => <li key={`${edge.from}-${edge.to}-${edge.type ?? 'blocks'}-${index}`}>{edge.from} → {edge.to}</li>)}</ul>
+			<FormulaGraph formula={formula.data} />
 		</section>}
 		<section>
 			<h3>Custom Formula revisions</h3>
 			{formulas.isError && <QueryError error={formulas.error} retry={() => void formulas.refetch()} />}
-			<label>Formula<select aria-label="Formula" value={selectedFormula} onChange={(event) => setSelectedFormula(event.target.value)}><option value="new">New Formula</option>{formulas.data?.filter((item) => item.id !== TRACER_FORMULA_ID).map((item) => <option key={`${item.id}@${item.version}`} value={`${item.id}@${item.version}`}>{item.name} · {item.id}@{item.version}</option>)}</select></label>
-			{inspectedFormula && <section aria-label="Formula inspection"><p>Content hash: {inspectedFormula.hash}</p><p>Source hash: {inspectedFormula.sourceHash}</p><pre>{JSON.stringify(inspectedFormula.compiled, null, 2)}</pre><label>Stored Formula source<textarea aria-label="Stored Formula source" readOnly value={inspectedFormula.source} /></label></section>}
+			<label>Formula<select aria-label="Formula" value={selectedFormula} onChange={(event) => { setSelectedFormula(event.target.value); editFormula(formulas.data?.find((item) => `${item.id}@${item.version}` === event.target.value)); }}><option value="new">New Formula</option>{formulas.data?.filter((item) => item.id !== TRACER_FORMULA_ID).map((item) => <option key={`${item.id}@${item.version}`} value={`${item.id}@${item.version}`}>{item.name} · {item.id}@{item.version}</option>)}</select></label>
+			{inspectedFormula && <section aria-label="Formula inspection"><p>Content hash: {inspectedFormula.hash}</p><p>Source hash: {inspectedFormula.sourceHash}</p><FormulaGraph formula={inspectedFormula} /><details className="factory-formula-source"><summary>Stored Formula source</summary><label>Stored Formula source<textarea aria-label="Stored Formula source" readOnly value={inspectedFormula.source} /></label></details></section>}
 			<form onSubmit={(event) => { event.preventDefault(); void saveFormulaRevision(event.currentTarget, 'save'); }}>
-				<label>Custom Formula ID<input aria-label="Custom Formula ID" name="id" required pattern="custom/[a-z][a-z0-9_-]*" /></label>
-				<label>Custom Formula TOML<textarea aria-label="Custom Formula TOML" name="source" required defaultValue={'version = 1\nname = "My Formula"\n\n[[input]]\nkey = "goal"\n\n[[input]]\nkey = "initial_project"\n\n[[issue]]\nkey = "plan"\nkind = "plan"\n'} /></label>
+				<label>Custom Formula ID<input aria-label="Custom Formula ID" name="id" required pattern="custom/[a-z][a-z0-9_-]*" value={formulaID} onChange={(event) => setFormulaID(event.target.value)} /></label>
+				<p>Edit the stage prompts, then save a new immutable revision. Existing epics keep their pinned revision. Factory adds runtime context and completion instructions.</p>
+				{formulaStages.map(([stage, label]) => <label key={stage}>{label}<textarea aria-label={label} value={getFormulaPrompt(formulaSource, stage, formula.data?.prompts?.[stage] ?? '')} onChange={(event) => setFormulaSource(setFormulaPrompt(formulaSource, stage, event.target.value))} /></label>)}
+				<details className="factory-formula-source"><summary>Formula source</summary><label>Custom Formula TOML<textarea aria-label="Custom Formula TOML" name="source" required value={formulaSource} onChange={(event) => setFormulaSource(event.target.value)} onInvalid={(event) => { event.currentTarget.closest('details')!.open = true; }} /></label></details>
 				<div className="factory-epic-action-row">
 					<Button type="button" aria-busy={validateFormula.isPending} onClick={(event) => { if (event.currentTarget.form) void saveFormulaRevision(event.currentTarget.form, 'validate'); }} disabled={validateFormula.isPending || previewFormula.isPending || saveFormula.isPending}>{validateFormula.isPending ? 'Validating…' : 'Validate TOML'}</Button>
 					<Button type="button" aria-busy={previewFormula.isPending} onClick={(event) => { if (event.currentTarget.form) void saveFormulaRevision(event.currentTarget.form, 'preview'); }} disabled={validateFormula.isPending || previewFormula.isPending || saveFormula.isPending}>{previewFormula.isPending ? 'Previewing…' : 'Preview Formula'}</Button>
@@ -608,7 +638,7 @@ export function FactoryConfiguration() {
 				</div>
 			</form>
 			{validateFormula.data && <p role="status">Formula is {validateFormula.data.valid ? 'valid' : 'invalid'}{validateFormula.data.valid && `: ${validateFormula.data.hash}`}</p>}
-			{previewFormula.data && <pre aria-label="Formula preview">{JSON.stringify(previewFormula.data.compiled, null, 2)}</pre>}
+			{previewFormula.data?.valid && <section aria-label="Formula preview"><FormulaGraph formula={previewFormula.data} /></section>}
 			{previewFormula.data && <p role="status">Preview {previewFormula.data.valid ? `valid: ${previewFormula.data.hash}` : 'invalid'}</p>}
 			{!!formulaErrors.length && <section role="alert" aria-label="Formula diagnostics"><p>Formula diagnostics</p><ul>{formulaErrors.map((diagnostic, index) => <li key={`${diagnostic}-${index}`}>{diagnostic}</li>)}</ul></section>}
 			{formulaSaved && <p role="status">{formulaSaved}</p>}

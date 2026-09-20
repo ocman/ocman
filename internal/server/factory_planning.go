@@ -287,17 +287,18 @@ func (l factoryPlanningLauncher) PromptPlanningSession(ctx context.Context, sess
 		}
 	}
 	action := "submit_proposal"
-	body := fmt.Sprintf("First grill the user: load the grilling skill if available, and either way ask one sharp question at a time until the goal, scope, and non-goals are unambiguous. Do not propose an issue graph until the user tells you to proceed. While grilling, do not call submit_proposal and do not link to /factory/epics/%s; that link renders an approve card, and it must appear only once the full plan is submitted. Then, if the to-tickets skill is available, load it; either way, split the plan into tracer-bullet vertical slices with explicit blocking edges. Factory's proposal approval replaces the skill's tracker publication step.", req.EpicID)
+	stage := "planning"
 	ending := fmt.Sprintf("Tell the user that Approve and start implementation materializes the Plan and begins implementation. End only that post-submission recap with [Review and approve the plan](/factory/epics/%s)", req.EpicID)
 	if req.ScopeExpansion {
 		action = "submit_scope_plan"
-		body = "Inspect the retained graph and split only the newly required work into tracer-bullet vertical slices with explicit blocking edges. Do not ask for another approval."
-		ending = "Submit immediately after inspecting the remaining graph. This amendment keeps completed work and makes the interrupted Issue wait for every new required Issue."
+		stage = "scope_expansion"
+		ending = "Do not ask for another approval. This amendment keeps completed work and makes the interrupted Issue wait for every new required Issue."
 	}
-	prompt := fmt.Sprintf("Plan Factory Work Epic %s (planning work %s). Inspect the admitted repositories without modifying them. If this Epic's permission rules allow shell commands, use them only for research and inspection; do not write files:\n- %s\n\n%s Submit the resulting issue graph with the factory MCP action %s using epic_id %s, attempt_id %s, and attempt_token %s. Split the work into multiple focused implementation Issues by default. Give every manifest node a stable key, concise title, actionable description, and add explicit edges from each dependent node to its blocker where ordering matters. Set a node's project when it targets a non-initial admitted repository; omission inherits the Epic's initial project. After submitting, recap the proposed Issues and include a Mermaid flowchart of their dependencies. %s", req.EpicID, req.WorkID, strings.Join(req.Projects, "\n- "), body, action, req.EpicID, req.AttemptID, req.AgentToken, ending)
-	if !req.ScopeExpansion {
-		prompt = "At approval, ask the user to confirm the implementation model. Recommend Opus or Sol for balanced implementation, or Sonnet or Terra for speed. Fable and Astra are preferred for planning. The approval control records the user's model choice.\n\n" + prompt
+	body := req.Prompt
+	if body == "" {
+		body = factory.DefaultFormulaPrompts()[stage]
 	}
+	prompt := fmt.Sprintf("Plan Factory Work Epic %s (planning work %s). Inspect the admitted repositories without modifying them. If this Epic's permission rules allow shell commands, use them only for research and inspection; do not write files:\n- %s\n\n%s\n\nFactory protocol: Submit the resulting issue graph with the factory MCP action %s using epic_id %s, attempt_id %s, and attempt_token %s. Give every manifest node a stable key, concise title, actionable description, and add explicit edges from each dependent node to its blocker where ordering matters. Set a node's project when it targets a non-initial admitted repository; omission inherits the Epic's initial project. Do not link to /factory/epics/%s before submitting the full plan; that link renders an approve card. %s", req.EpicID, req.WorkID, strings.Join(req.Projects, "\n- "), body, action, req.EpicID, req.AttemptID, req.AgentToken, req.EpicID, ending)
 	return l.server.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt, Model: planningModel})
 }
 

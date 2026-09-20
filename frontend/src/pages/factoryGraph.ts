@@ -1,6 +1,6 @@
 // Layout for the epic work graph: hierarchy and declared dependencies placed on
 // layers, with status as a class name so the palette stays in CSS.
-import type { FactoryIssue, FactoryProposal } from '../lib/api';
+import type { FactoryFormula, FactoryIssue, FactoryProposal } from '../lib/api';
 
 export type GraphState = 'done' | 'failed' | 'running' | 'blocked' | 'ready' | 'waiting' | 'deferred';
 
@@ -53,6 +53,13 @@ export function proposalIssues(manifest: FactoryProposal['manifest']): FactoryIs
     dispatchState: dependsOn.has(node.key) ? 'waiting' : 'ready',
     dependsOn: dependsOn.get(node.key),
     manifestKey: node.key,
+  }));
+}
+
+export function formulaIssues(formula: Pick<FactoryFormula, 'nodes' | 'edges'>): FactoryIssue[] {
+  return (formula.nodes ?? []).map((node) => ({
+    id: node.key, epicId: '', project: '', kind: node.kind, title: node.key, status: 'open',
+    dependsOn: (formula.edges ?? []).filter((edge) => edge.from === node.key).map((edge) => ({ id: edge.to, type: edge.type ?? 'blocks' })),
   }));
 }
 

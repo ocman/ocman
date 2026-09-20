@@ -27,7 +27,7 @@ func TestFactoryGraphCreateAndPourAreDurableAndAtomic(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := db.GetFactoryEpic(context.Background(), epic.ID)
-	if err != nil || got.FormulaID != "ocman/tracer" || got.FormulaVersion != 1 {
+	if err != nil || got.FormulaID != "ocman/tracer" || got.FormulaVersion != formula.Version {
 		t.Fatalf("GetFactoryEpic = %#v, %v", got, err)
 	}
 	issues, err := db.ListFactoryIssues(context.Background(), epic.ID)
@@ -515,6 +515,11 @@ func TestFactoryPourNormalizesLegacyBuiltInSourceHash(t *testing.T) {
 	defer db.Close()
 	ctx := context.Background()
 	formula := nativeTracerFormula(t)
+	legacy, err := factory.NewNative(db).GetFormula(ctx, "ocman/tracer", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	formula.Version, formula.Source, formula.Hash = legacy.Version, legacy.Source, legacy.Hash
 	epic, err := db.CreateFactoryEpic(ctx, "", "Ship search", "Keep it small", "/repo", "", formula)
 	if err != nil {
 		t.Fatal(err)

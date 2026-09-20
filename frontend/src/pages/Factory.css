@@ -9,30 +9,30 @@
 .factory-page > form, .factory-page > section { display: grid; gap: 14px; padding: 18px; border: 1px solid var(--border); background: var(--bg-card); }
 :is(.factory-page, .factory-form-drawer) form { display: grid; gap: 16px; }
 :is(.factory-page, .factory-form-drawer) label { display: grid; gap: 6px; min-width: 0; color: var(--text-dim); font-size: 12px; font-weight: 600; }
-:is(.factory-page, .factory-form-drawer) :is(input:not([type="checkbox"]), select, textarea) { box-sizing: border-box; width: 100%; min-width: 0; min-height: 38px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); font: inherit; font-size: 13px; font-weight: 400; }
+:is(.factory-page, .factory-form-drawer) :is(input:not([type="checkbox"]), select, textarea):not(.oc-field) { box-sizing: border-box; width: 100%; min-width: 0; min-height: 38px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 0; background: var(--bg); color: var(--text); font: inherit; font-size: 13px; font-weight: 400; }
+:is(.factory-page, .factory-form-drawer) .oc-field { width: 100%; }
 :is(.factory-page, .factory-form-drawer) textarea { min-height: 96px; resize: vertical; line-height: 1.5; }
 :is(.factory-page, .factory-form-drawer) textarea[name="source"], .factory-page textarea[readonly], .factory-page textarea[name="projectOverrides"] { font-family: var(--font-conversation-mono); }
 :is(.factory-page, .factory-form-drawer) :is(input, select, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 :is(.factory-page, .factory-form-drawer) label:has(> input[type="checkbox"]) { display: flex; align-items: start; gap: 10px; line-height: 1.5; font-weight: 400; cursor: pointer; }
 :is(.factory-page, .factory-form-drawer) input[type="checkbox"] { flex: 0 0 auto; width: 16px; height: 16px; margin: 1px 0 0; accent-color: var(--accent); }
-:is(.factory-page, .factory-form-drawer) .oc-button { justify-self: start; border-radius: 4px; font-weight: 500; white-space: nowrap; }
-:is(.factory-page, .factory-form-drawer) .oc-button--accent { background: color-mix(in srgb, var(--accent) 12%, var(--bg-card)); }
+:is(.factory-page, .factory-form-drawer) .oc-button { justify-self: start; white-space: nowrap; }
 .factory-form-drawer [role="alert"] { color: var(--danger); }
 .factory-page section > section { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--border); background: var(--bg); }
 .factory-page pre { max-width: 100%; overflow: auto; padding: 10px; border: 1px solid var(--border); background: var(--bg); font: 12px/1.5 var(--font-conversation-mono); }
 .factory-page [role="alert"] { color: var(--danger); }
 .factory-page [role="status"] { color: var(--text-dim); }
 .factory-create { display: grid; gap: 16px; }
+.factory-formula-source { min-width: 0; }
+.factory-formula-source summary { cursor: pointer; color: var(--text-dim); margin-bottom: 12px; }
+.factory-page .factory-formula-source textarea { min-height: 60vh; width: 100%; font-family: var(--font-conversation-mono); tab-size: 2; }
 .factory-field { display: grid; gap: 4px; }
 .factory-field > p { margin: 0; color: var(--text-dim); font-size: 12px; font-weight: 400; }
 .factory-toolbar { display: flex; align-items: end; gap: 12px; }
 .factory-toolbar label { display: grid; gap: 6px; min-width: min(100%, 320px); color: var(--text-dim); font-size: 12px; font-weight: 600; }
-.factory-toolbar input { box-sizing: border-box; width: 100%; height: 38px; padding: 0 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; }
 .factory-filter-bar { flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--border); background: var(--bg-card); }
 .factory-filter-bar > label:first-child { flex: 1 1 240px; }
 .factory-filter-bar label { min-width: 140px; }
-.factory-filter-bar .oc-field { width: 100%; }
-.factory-filter-bar .oc-field:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .factory-result-count { align-self: center; margin-left: auto; color: var(--text-dim); font-size: 12px; white-space: nowrap; }
 .factory-list { border: 1px solid var(--border); background: var(--bg-card); }
 .factory-status-dot--in-progress { border-color: var(--accent); background: var(--accent); }
@@ -43,6 +43,14 @@
 .factory-list { --factory-cols: minmax(280px, 1fr) 220px 200px; }
 .factory-list--queue { --factory-cols: minmax(240px, 1fr) 200px 200px minmax(240px, 1fr); }
 .factory-list--actions { --factory-cols: minmax(200px, 1fr) 160px 180px minmax(240px, 1.2fr) auto; }
+.factory-list--inbox { --factory-cols: minmax(0, 1fr) 160px minmax(240px, .65fr); }
+.factory-list--inbox .factory-row-detail { overflow-wrap: anywhere; line-height: 1.5; }
+.factory-list--inbox .factory-cell--actions { align-self: start; }
+.factory-list--inbox .factory-inbox-control { min-width: 0; width: 100%; }
+@media (min-width: 901px) {
+  .factory-list--inbox .factory-grid-row { row-gap: 12px; padding-block: 14px; }
+  .factory-list--inbox .factory-row-detail { grid-column: 1 / 3; align-self: start; }
+}
 .factory-list .factory-grid-row { grid-template-columns: var(--factory-cols); }
 .factory-list .factory-grid-row .oc-data-table-row-meta { display: contents; }
 .factory-list .factory-grid-row .factory-row-detail { flex: none; min-width: 0; max-width: none; }

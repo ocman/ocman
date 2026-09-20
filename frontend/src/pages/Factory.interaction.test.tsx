@@ -1071,8 +1071,8 @@ describe('Factory interactions', () => {
 		expect(await screen.findByRole('heading', { name: 'Factory configuration' })).toBeInTheDocument();
 		expect(await screen.findByLabelText('Tracer Formula source')).toHaveValue('name = "Tracer"\n');
 		expect(screen.getByRole('status')).toHaveTextContent('Formula is valid');
-		expect(screen.getByText('plan · plan')).toBeInTheDocument();
-		expect(screen.getByText('approval → plan')).toBeInTheDocument();
+		expect(within(screen.getByTestId('epic-graph')).getByText('plan')).toBeInTheDocument();
+		expect(within(screen.getByTestId('epic-graph')).getByRole('button', { name: 'Fit View' })).toBeInTheDocument();
 	});
 
 	it('shows Factory configuration query and validation errors', async () => {
@@ -1118,6 +1118,59 @@ describe('Factory interactions', () => {
 		await screen.findByLabelText('Project capacity overrides (JSON)');
 		await user.click(screen.getByRole('button', { name: 'Save capacity policy' }));
 		expect(await screen.findByRole('alert')).toHaveTextContent('factory capacity must be between 1 and 1000');
+	});
+
+	it('draws built-in, stored, and preview Formula graphs', async () => {
+		const user = userEvent.setup();
+		const formula = { id: 'custom/team', version: 1, name: 'Team', source: 'version = 1\nname = "Team"\n', hash: 'hash', sourceHash: 'source', inputs: [], nodes: [{ key: 'plan', kind: 'plan' }, { key: 'approval', kind: 'gate' }], edges: [{ from: 'approval', to: 'plan' }], compiled: { name: 'Team' }, valid: true };
+		vi.mocked(api.factoryFormula).mockResolvedValue(formula);
+		vi.mocked(api.factoryFormulas).mockResolvedValue([formula]);
+		vi.mocked(api.previewFactoryFormula).mockResolvedValue(formula);
+		renderFactory(<MemoryRouter><FactoryConfiguration /></MemoryRouter>);
+		expect(await screen.findByTestId('epic-graph')).toBeInTheDocument();
+		await user.selectOptions(screen.getByLabelText('Formula'), 'custom/team@1');
+		expect(within(screen.getByRole('region', { name: 'Formula inspection' })).getByTestId('epic-graph')).toBeInTheDocument();
+		await user.clear(screen.getByLabelText('Custom Formula ID'));
+		await user.type(screen.getByLabelText('Custom Formula ID'), 'custom/team');
+		await user.click(screen.getByRole('button', { name: 'Preview Formula' }));
+		expect(within(await screen.findByRole('region', { name: 'Formula preview' })).getByTestId('epic-graph')).toBeInTheDocument();
+	});
+
+	it('loads a revision for prompt editing and can customize the built-in defaults', async () => {
+		const user = userEvent.setup();
+		const base = { id: 'ocman/tracer', version: 1, name: 'Tracer', source: 'version = 1\nname = "Tracer"\n', hash: 'hash', sourceHash: 'source', inputs: [], nodes: [], edges: [], valid: true, prompts: { planning: 'Default planning', scope_expansion: 'Default scope', implementation: 'Default implementation', delivery: 'Default delivery' } };
+		vi.mocked(api.factoryFormula).mockResolvedValue(base);
+		vi.mocked(api.factoryFormulas).mockResolvedValue([{ ...base, id: 'custom/team', version: 2, prompts: { ...base.prompts, planning: 'Team planning' } }]);
+		renderFactory(<MemoryRouter><FactoryConfiguration /></MemoryRouter>);
+		const customize = await screen.findByRole('button', { name: 'Customize Tracer' });
+		for (const stage of ['planning', 'scope_expansion', 'implementation', 'delivery']) {
+			expect((screen.getByLabelText('Custom Formula TOML') as HTMLTextAreaElement).value).toContain(`prompt_${stage} = `);
+		}
+		await user.click(customize);
+		expect(screen.getByLabelText('Custom Formula ID')).toHaveValue('custom/tracer');
+		expect(screen.getByLabelText('Planning prompt')).toHaveValue('Default planning');
+		expect((screen.getByLabelText('Custom Formula TOML') as HTMLTextAreaElement).value).toContain('prompt_delivery = "Default delivery"');
+		await user.selectOptions(screen.getByLabelText('Formula'), 'custom/team@2');
+		expect(screen.getByLabelText('Custom Formula ID')).toHaveValue('custom/team');
+		expect(screen.getByLabelText('Planning prompt')).toHaveValue('Team planning');
+		await user.selectOptions(screen.getByLabelText('Formula'), 'new');
+		expect(screen.getByLabelText('Custom Formula ID')).toHaveValue('');
+		expect(screen.getByLabelText('Planning prompt')).toHaveValue('Default planning');
+	});
+
+	it('edits stage prompts in a new revision with a collapsed source editor', async () => {
+		const user = userEvent.setup();
+		vi.mocked(api.saveFactoryFormula).mockResolvedValue({ id: 'custom/team', version: 2, valid: true } as never);
+		renderFactory(<MemoryRouter><FactoryConfiguration /></MemoryRouter>);
+		await user.type(screen.getByLabelText('Custom Formula ID'), 'custom/team');
+		await user.type(screen.getByLabelText('Implementation prompt'), 'Test first.\nKeep changes small.');
+		const source = screen.getByLabelText('Custom Formula TOML');
+		expect(source.closest('details')).not.toHaveAttribute('open');
+		await user.click(screen.getByText('Formula source', { selector: 'summary' }));
+		expect(source).toBeVisible();
+		expect((source as HTMLTextAreaElement).value).toContain('prompt_implementation = "Test first.\\nKeep changes small."');
+		await user.click(screen.getByRole('button', { name: 'Save immutable revision' }));
+		await waitFor(() => expect(api.saveFactoryFormula).toHaveBeenCalledWith(expect.objectContaining({ id: 'custom/team', source: expect.stringContaining('prompt_implementation = "Test first.\\nKeep changes small."') }), expect.anything()));
 	});
 
 	it('announces preview and save success', async () => {
