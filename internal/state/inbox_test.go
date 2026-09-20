@@ -238,6 +238,33 @@ func TestInboxCategoriesAndPermissionLifecycle(t *testing.T) {
 	}
 }
 
+func TestArchivedInboxListingPreservesReadState(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	active, err := db.CreateInboxItem(t.Context(), "Active", "body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	archived, err := db.CreateInboxItem(t.Context(), "Archived", "body")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ArchiveInboxItems(t.Context(), []string{archived.ID}); err != nil {
+		t.Fatal(err)
+	}
+	items, err := db.ListInboxItems(t.Context())
+	if err != nil || len(items) != 1 || items[0].ID != active.ID {
+		t.Fatalf("active = %+v, %v", items, err)
+	}
+	items, err = db.ListArchivedInboxItems(t.Context())
+	if err != nil || len(items) != 1 || items[0].ID != archived.ID || items[0].ArchivedAt == 0 || items[0].ReadAt != 0 {
+		t.Fatalf("archived = %+v, %v", items, err)
+	}
+	if count, err := db.CountUnreadInboxItems(t.Context()); err != nil || count != 1 {
+		t.Fatalf("unread count = %d, %v", count, err)
+	}
+}
+
 func TestRecallInboxItemIsIdempotent(t *testing.T) {
 	db := openTestStateDB(t)
 	defer db.Close()

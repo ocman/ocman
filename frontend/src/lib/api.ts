@@ -459,7 +459,7 @@ export const api = {
     fetchJSON<PermissionStats>(`/api/permission-stats${queryString(params)}`, signal),
   projects: (signal?: AbortSignal) => fetchJSON<Project[]>('/api/projects', signal),
    factoryEpics: (signal?: AbortSignal) => fetchJSON<FactoryEpic[]>('/api/factory/epics', signal),
-   inbox: (signal?: AbortSignal) => fetchJSON<InboxResponse>('/api/inbox', signal),
+   inbox: (signal?: AbortSignal, archived = false) => fetchJSON<InboxResponse>(`/api/inbox${archived ? '?archived=true' : ''}`, signal),
    markInboxItemRead: (id: string, remoteId: string) =>
      postJSON<void, { id: string; remoteId: string }>('/api/inbox/open', { id, remoteId }, { parseJSON: false }),
    markInboxItemUnread: (id: string, remoteId: string) =>

@@ -76,6 +76,7 @@ service Ocman {
 
   // --- Owner-local Inbox ---
   rpc InboxItems(Empty) returns (JsonResp);               // []state.InboxItem
+  rpc ArchivedInboxItems(Empty) returns (JsonResp);       // []state.InboxItem
   rpc MarkInboxItemRead(JsonReq) returns (Empty);         // {id}
   rpc MarkInboxItemUnread(JsonReq) returns (Empty);       // {id}
   rpc ArchiveInboxItems(JsonReq) returns (Empty);         // {ids,allRead}

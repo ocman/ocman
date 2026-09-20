@@ -2,18 +2,21 @@
 .inbox-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .inbox-workspace { display: grid; grid-template-columns: minmax(300px, 360px) minmax(0, 1fr); flex: 1; min-height: 0; background: var(--bg); }
 .inbox-mailbox { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border); }
-.inbox-filters { display: grid; gap: 12px; padding: 16px; border-bottom: 1px solid var(--border); }
-.inbox-categories { display: flex; gap: 6px; }
-.inbox-types { display: flex; }
-.inbox-types .oc-button { width: 32px; height: 32px; padding: 0; font-size: 14px; }
+.inbox-filters { display: grid; gap: 8px; padding: 12px; border-bottom: 1px solid var(--border); }
+.inbox-filter-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.inbox-filter-row .oc-field { flex: 1; width: 0; height: 28px; padding: 0 8px; font-size: 12px; }
+.inbox-types { display: flex; flex-shrink: 0; }
+.inbox-types .oc-button { width: 28px; height: 28px; padding: 0; font-size: 14px; }
 .inbox-types .oc-button + .oc-button { margin-left: -1px; }
 .inbox-types .oc-button[aria-pressed="true"] { position: relative; width: auto; padding: 0 10px; background: color-mix(in srgb, var(--accent) 12%, var(--bg)); }
 .inbox-types .oc-button span { font-size: 12px; }
+.inbox-action-menu { position: relative; flex-shrink: 0; }
+.inbox-action-menu > summary { width: 28px; padding: 0; list-style: none; }
+.inbox-action-menu > summary::-webkit-details-marker { display: none; }
+.inbox-action-menu-items { position: absolute; top: calc(100% + 4px); right: 0; z-index: 10; display: grid; min-width: 190px; padding: 4px; border: 1px solid var(--border); background: var(--bg-card); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); }
+.inbox-action-menu-items .oc-button { justify-content: flex-start; border-color: transparent; }
 .inbox-permission-actions { padding: 0 var(--inbox-letter-padding) var(--inbox-letter-padding); }
 .inbox-permission-actions > a { display: inline-block; margin-bottom: 16px; }
-.inbox-categories .oc-button { flex: 1; }
-.inbox-categories .oc-button[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 12%, var(--bg)); }
-.inbox-count { font-size: 11px; font-variant-numeric: tabular-nums; opacity: .75; }
 .inbox-list { overflow-y: auto; flex: 1; min-height: 0; }
 .inbox-message { display: flex; align-items: flex-start; border-bottom: 1px solid var(--border); padding-left: 14px; border-left: 3px solid transparent; }
 .inbox-message:hover { background: var(--bg-card); }

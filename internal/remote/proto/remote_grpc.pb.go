@@ -68,6 +68,7 @@ const (
 	Ocman_RegisterWebhookInbox_FullMethodName   = "/ocman.remote.v1.Ocman/RegisterWebhookInbox"
 	Ocman_PollWebhookInbox_FullMethodName       = "/ocman.remote.v1.Ocman/PollWebhookInbox"
 	Ocman_InboxItems_FullMethodName             = "/ocman.remote.v1.Ocman/InboxItems"
+	Ocman_ArchivedInboxItems_FullMethodName     = "/ocman.remote.v1.Ocman/ArchivedInboxItems"
 	Ocman_MarkInboxItemRead_FullMethodName      = "/ocman.remote.v1.Ocman/MarkInboxItemRead"
 	Ocman_MarkInboxItemUnread_FullMethodName    = "/ocman.remote.v1.Ocman/MarkInboxItemUnread"
 	Ocman_ArchiveInboxItems_FullMethodName      = "/ocman.remote.v1.Ocman/ArchiveInboxItems"
@@ -151,6 +152,7 @@ type OcmanClient interface {
 	PollWebhookInbox(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*Empty, error)
 	// --- Owner-local Inbox ---
 	InboxItems(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error)
+	ArchivedInboxItems(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error)
 	MarkInboxItemRead(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*Empty, error)
 	MarkInboxItemUnread(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*Empty, error)
 	ArchiveInboxItems(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*Empty, error)
@@ -676,6 +678,16 @@ func (c *ocmanClient) InboxItems(ctx context.Context, in *Empty, opts ...grpc.Ca
 	return out, nil
 }
 
+func (c *ocmanClient) ArchivedInboxItems(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*JsonResp, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JsonResp)
+	err := c.cc.Invoke(ctx, Ocman_ArchivedInboxItems_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *ocmanClient) MarkInboxItemRead(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*Empty, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Empty)
@@ -859,6 +871,7 @@ type OcmanServer interface {
 	PollWebhookInbox(context.Context, *JsonReq) (*Empty, error)
 	// --- Owner-local Inbox ---
 	InboxItems(context.Context, *Empty) (*JsonResp, error)
+	ArchivedInboxItems(context.Context, *Empty) (*JsonResp, error)
 	MarkInboxItemRead(context.Context, *JsonReq) (*Empty, error)
 	MarkInboxItemUnread(context.Context, *JsonReq) (*Empty, error)
 	ArchiveInboxItems(context.Context, *JsonReq) (*Empty, error)
@@ -1031,6 +1044,9 @@ func (UnimplementedOcmanServer) PollWebhookInbox(context.Context, *JsonReq) (*Em
 }
 func (UnimplementedOcmanServer) InboxItems(context.Context, *Empty) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method InboxItems not implemented")
+}
+func (UnimplementedOcmanServer) ArchivedInboxItems(context.Context, *Empty) (*JsonResp, error) {
+	return nil, status.Error(codes.Unimplemented, "method ArchivedInboxItems not implemented")
 }
 func (UnimplementedOcmanServer) MarkInboxItemRead(context.Context, *JsonReq) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method MarkInboxItemRead not implemented")
@@ -1958,6 +1974,24 @@ func _Ocman_InboxItems_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Ocman_ArchivedInboxItems_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).ArchivedInboxItems(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_ArchivedInboxItems_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).ArchivedInboxItems(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Ocman_MarkInboxItemRead_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(JsonReq)
 	if err := dec(in); err != nil {
@@ -2318,6 +2352,10 @@ var Ocman_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "InboxItems",
 			Handler:    _Ocman_InboxItems_Handler,
+		},
+		{
+			MethodName: "ArchivedInboxItems",
+			Handler:    _Ocman_ArchivedInboxItems_Handler,
 		},
 		{
 			MethodName: "MarkInboxItemRead",

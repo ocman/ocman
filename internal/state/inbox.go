@@ -133,7 +133,19 @@ func (d *DB) ResolvePermissionInboxItem(ctx context.Context, platform, sessionID
 
 // ListInboxItems returns active items newest first.
 func (d *DB) ListInboxItems(ctx context.Context) ([]InboxItem, error) {
-	rows, err := d.db.QueryContext(ctx, `SELECT `+inboxItemColumns+` FROM inbox_item WHERE archived_at IS NULL ORDER BY created_at DESC, id DESC`)
+	return d.listInboxItems(ctx, false)
+}
+
+func (d *DB) ListArchivedInboxItems(ctx context.Context) ([]InboxItem, error) {
+	return d.listInboxItems(ctx, true)
+}
+
+func (d *DB) listInboxItems(ctx context.Context, archived bool) ([]InboxItem, error) {
+	condition := "archived_at IS NULL"
+	if archived {
+		condition = "archived_at IS NOT NULL"
+	}
+	rows, err := d.db.QueryContext(ctx, `SELECT `+inboxItemColumns+` FROM inbox_item WHERE `+condition+` ORDER BY created_at DESC, id DESC`)
 	if err != nil {
 		return nil, fmt.Errorf("listing Inbox items: %w", err)
 	}

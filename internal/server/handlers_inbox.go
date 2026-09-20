@@ -48,15 +48,21 @@ func (s *Server) inboxSources() []string {
 	return nil
 }
 
-func (s *Server) inboxItems(ctx context.Context, source string) ([]state.InboxItem, error) {
-	if s.inboxItemsFn != nil {
+func (s *Server) inboxItems(ctx context.Context, source string, archived bool) ([]state.InboxItem, error) {
+	if s.inboxItemsFn != nil && !archived {
 		return s.inboxItemsFn(ctx, source)
 	}
 	if s.remotes != nil {
+		if archived {
+			return s.remotes.ArchivedInboxItems(ctx, source)
+		}
 		return s.remotes.InboxItems(ctx, source)
 	}
 	if source != "local" || s.stateDB == nil {
 		return nil, remote.ErrRemoteOffline
+	}
+	if archived {
+		return s.stateDB.ListArchivedInboxItems(ctx)
 	}
 	return s.stateDB.ListInboxItems(ctx)
 }
@@ -104,7 +110,7 @@ func (s *Server) handleInboxList(w http.ResponseWriter, r *http.Request) {
 				ctx, cancel = context.WithTimeout(ctx, remoteFanoutTimeout)
 				defer cancel()
 			}
-			items, err := s.inboxItems(ctx, source)
+			items, err := s.inboxItems(ctx, source, r.URL.Query().Get("archived") == "true")
 			results[i] = result{source, items, err}
 		}(i, source)
 	}
@@ -129,7 +135,7 @@ func (s *Server) handleInboxList(w http.ResponseWriter, r *http.Request) {
 				item.Permission = &permission
 			}
 			items = append(items, inboxItemView{item.ID, item.Title, item.Body, item.CreatedAt, item.ReadAt, item.ArchivedAt, result.source, item.Category, item.Permission})
-			if item.ReadAt == 0 {
+			if item.ReadAt == 0 && item.ArchivedAt == 0 {
 				unread++
 			}
 		}

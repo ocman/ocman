@@ -23,6 +23,13 @@ func (s *Server) InboxItems(ctx context.Context, _ *pb.Empty) (*pb.JsonResp, err
 	return jsonResp(s.inboxStore.ListInboxItems(ctx))
 }
 
+func (s *Server) ArchivedInboxItems(ctx context.Context, _ *pb.Empty) (*pb.JsonResp, error) {
+	if s.inboxStore == nil {
+		return nil, status.Error(codes.FailedPrecondition, "Inbox store is unavailable")
+	}
+	return jsonResp(s.inboxStore.ListArchivedInboxItems(ctx))
+}
+
 func (s *Server) MarkInboxItemRead(ctx context.Context, req *pb.JsonReq) (*pb.Empty, error) {
 	if s.inboxStore == nil {
 		return nil, status.Error(codes.FailedPrecondition, "Inbox store is unavailable")
@@ -65,6 +72,22 @@ func (c *RemoteConn) InboxItems(ctx context.Context) ([]state.InboxItem, error) 
 		return nil, ErrRemoteOffline
 	}
 	resp, err := client.InboxItems(ctx, &pb.Empty{})
+	if err != nil {
+		return nil, err
+	}
+	var items []state.InboxItem
+	if err := unmarshalJSON(resp.Payload, &items); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+func (c *RemoteConn) ArchivedInboxItems(ctx context.Context) ([]state.InboxItem, error) {
+	client := c.Client()
+	if client == nil {
+		return nil, ErrRemoteOffline
+	}
+	resp, err := client.ArchivedInboxItems(ctx, &pb.Empty{})
 	if err != nil {
 		return nil, err
 	}
@@ -140,6 +163,17 @@ func (m *Manager) InboxItems(ctx context.Context, source string) ([]state.InboxI
 		return store.ListInboxItems(ctx)
 	}
 	return conn.InboxItems(ctx)
+}
+
+func (m *Manager) ArchivedInboxItems(ctx context.Context, source string) ([]state.InboxItem, error) {
+	store, conn, err := m.inboxOwner(source)
+	if err != nil {
+		return nil, err
+	}
+	if store != nil {
+		return store.ListArchivedInboxItems(ctx)
+	}
+	return conn.ArchivedInboxItems(ctx)
 }
 
 // InboxSources returns the local owner and currently connected remote owners.

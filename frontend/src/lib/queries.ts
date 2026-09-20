@@ -42,10 +42,10 @@ import type {
   InboxItem,
 } from './api';
 
-export function useInbox() {
+export function useInbox(archived = false) {
   return useQuery<InboxResponse>({
-    queryKey: ['inbox'],
-    queryFn: ({ signal }) => api.inbox(signal),
+    queryKey: archived ? ['inbox', 'archived'] : ['inbox'],
+    queryFn: ({ signal }) => api.inbox(signal, archived),
     refetchInterval: 10_000,
   });
 }

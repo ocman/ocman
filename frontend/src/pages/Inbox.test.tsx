@@ -10,11 +10,22 @@ const items = [{ id: '1', title: 'Build **finished**', body: 'See [details](http
 
 function renderInbox() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={client}><MemoryRouter><Inbox /></MemoryRouter></QueryClientProvider>);
+  return { client, ...render(<QueryClientProvider client={client}><MemoryRouter><Inbox /></MemoryRouter></QueryClientProvider>) };
+}
+
+function inboxAction(name: string) {
+  const toggle = screen.getByLabelText('Inbox actions');
+  if (!toggle.closest('details')?.open) fireEvent.click(toggle);
+  return screen.getByRole('button', { name });
+}
+
+function statusFilter(name: string) {
+  return within(screen.getByRole('group', { name: 'Message status' })).getByRole('button', { name });
 }
 
 describe('Inbox', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.spyOn(api, 'inbox').mockResolvedValue({ items, unreadTotal: 1 });
     vi.spyOn(api, 'markInboxItemRead').mockResolvedValue(undefined);
     vi.spyOn(api, 'markInboxItemUnread').mockResolvedValue(undefined);
@@ -34,14 +45,14 @@ describe('Inbox', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: /Build/ }));
     expect(within(screen.getByRole('region', { name: 'Message body' })).getByRole('link', { name: 'details' })).toBeInTheDocument();
     expect(title).toHaveAttribute('aria-current', 'true');
-    fireEvent.click(screen.getByRole('button', { name: 'Archive selected (1)' }));
+    fireEvent.click(inboxAction('Archive selected (1)'));
     await waitFor(() => expect(api.archiveInboxItems).toHaveBeenCalledWith([{ id: '1', remoteId: 'local' }]));
   });
 
   it('archives all read items for each source', async () => {
     renderInbox();
     await screen.findByText('Remote note');
-    fireEvent.click(screen.getByRole('button', { name: 'Archive all read' }));
+    fireEvent.click(inboxAction('Archive all read'));
     await waitFor(() => expect(api.archiveAllReadInboxItems).toHaveBeenCalledWith('local'));
     expect(api.archiveAllReadInboxItems).toHaveBeenCalledWith('laptop');
   });
@@ -53,9 +64,11 @@ describe('Inbox', () => {
     expect(factoryFilter).toHaveAttribute('title', 'Factory');
     expect(factoryFilter.textContent).toBe('');
     expect(factoryFilter.querySelector('i')).toHaveClass('bi-buildings');
-    fireEvent.click(screen.getByRole('button', { name: 'Unread 1' }));
+    fireEvent.click(statusFilter('Unread'));
     expect(screen.queryByText('Remote note')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Unread 1' })).toHaveAttribute('aria-pressed', 'true');
+    expect(statusFilter('Unread')).toHaveAttribute('aria-pressed', 'true');
+    expect(statusFilter('Unread')).toHaveTextContent('Unread');
+    expect(statusFilter('All').textContent).toBe('');
     fireEvent.click(factoryFilter);
     const typeGroup = screen.getByRole('group', { name: 'Message type' });
     expect(within(typeGroup).getAllByRole('button').map((button) => button.getAttribute('title'))).toEqual(['All', 'Primary', 'Factory', 'Routines', 'Permissions']);
@@ -63,12 +76,12 @@ describe('Inbox', () => {
     expect(factoryFilter).toHaveTextContent('Factory');
     expect(within(typeGroup).getByRole('button', { name: 'All' }).textContent).toBe('');
     expect(screen.getByText('No messages match these filters.')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Read 1' }));
+    fireEvent.click(statusFilter('All'));
     expect(screen.getByText('Remote note')).toBeInTheDocument();
     expect(screen.queryByText('Build **finished**')).not.toBeInTheDocument();
     fireEvent.click(within(typeGroup).getByRole('button', { name: 'All' }));
     expect(factoryFilter.textContent).toBe('');
-    fireEvent.click(screen.getByRole('button', { name: 'All 2' }));
+    fireEvent.click(statusFilter('All'));
     expect(screen.getByText('Build **finished**')).toBeInTheDocument();
   });
 
@@ -83,7 +96,7 @@ describe('Inbox', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Back to messages' }));
     expect(within(reader).getByText('Select a message')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Remote note/ }));
-    fireEvent.click(screen.getByRole('button', { name: /^Read / }));
+    fireEvent.click(statusFilter('Unread'));
     expect(within(reader).getByText('Select a message')).toBeInTheDocument();
   });
 
@@ -102,9 +115,9 @@ describe('Inbox', () => {
     const first = await screen.findByRole('checkbox', { name: /Build/ });
     fireEvent.click(first);
     fireEvent.click(first);
-    expect(screen.getByRole('button', { name: 'Archive selected' })).toBeDisabled();
+    expect(inboxAction('Archive selected')).toBeDisabled();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select Remote note' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Archive selected (1)' }));
+    fireEvent.click(inboxAction('Archive selected (1)'));
     await waitFor(() => expect(api.archiveInboxItems).toHaveBeenCalledWith([{ id: '1', remoteId: 'laptop' }]));
   });
 
@@ -113,7 +126,7 @@ describe('Inbox', () => {
     renderInbox();
     expect(screen.getByRole('status')).toHaveTextContent('Loading inbox');
     await screen.findByText('Your inbox is empty.');
-    expect(screen.getByRole('button', { name: 'Archive all read' })).toBeDisabled();
+    expect(inboxAction('Archive all read')).toBeDisabled();
   });
 
   it('treats older messages without a category as general', async () => {
@@ -146,25 +159,25 @@ describe('Inbox', () => {
   });
 
   it('marks the open message unread, updates the count, and returns to the list', async () => {
-    renderInbox();
+    const { client } = renderInbox();
     fireEvent.click(await screen.findByRole('button', { name: /Remote note/ }));
     vi.mocked(api.inbox).mockResolvedValue({ items: items.map((item) => ({ ...item, readAt: undefined })), unreadTotal: 2 });
     fireEvent.click(screen.getByRole('button', { name: 'Mark unread' }));
     await waitFor(() => expect(api.markInboxItemUnread).toHaveBeenCalledWith('2', 'laptop'));
     await screen.findByText('Select a message');
-    expect(screen.getByRole('button', { name: 'Unread 2' })).toBeInTheDocument();
+    expect(client.getQueryData(['inbox'])).toMatchObject({ unreadTotal: 2 });
     fireEvent.click(screen.getByRole('button', { name: /Remote note/ }));
     await waitFor(() => expect(api.markInboxItemRead).toHaveBeenCalledWith('2', 'laptop'));
   });
 
   it('keeps the reader and read state when marking unread fails', async () => {
     vi.mocked(api.markInboxItemUnread).mockRejectedValue(new Error('offline'));
-    renderInbox();
+    const { client } = renderInbox();
     fireEvent.click(await screen.findByRole('button', { name: /Remote note/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Mark unread' }));
     await screen.findByText('Could not mark the message as unread. Please try again.');
     expect(screen.getByRole('heading', { name: 'Remote note' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Unread 1' })).toBeInTheDocument();
+    expect(client.getQueryData(['inbox'])).toMatchObject({ unreadTotal: 1 });
   });
 
   it('shows permission actions and routes replies to the owning platform', async () => {
@@ -184,5 +197,39 @@ describe('Inbox', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
     await screen.findByText('Select a message');
     expect(screen.queryByRole('button', { name: 'Reject' })).not.toBeInTheDocument();
+  });
+
+  it('fuzzy searches message titles and bodies and clears the selected message', async () => {
+    renderInbox();
+    fireEvent.click(await screen.findByRole('button', { name: /Remote note/ }));
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search inbox' }), { target: { value: 'bldfsh' } });
+    await waitFor(() => expect(screen.queryByText('Remote note')).not.toBeInTheDocument());
+    expect(screen.getByText('Build **finished**')).toBeInTheDocument();
+    expect(screen.getByText('Select a message')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search inbox' }), { target: { value: 'bdy' } });
+    await waitFor(() => expect(screen.queryByText('Build **finished**')).not.toBeInTheDocument());
+    expect(screen.getByText('Remote note')).toBeInTheDocument();
+  });
+
+  it('browses archived messages without changing unread counts or offering resolved permission actions', async () => {
+    const permission = { platform: 'opencode', sessionId: 'session', permissionId: 'request', permission: 'bash', patterns: [] };
+    vi.mocked(api.inbox).mockImplementation(async (_signal, archived) => archived
+      ? { items: [{ ...items[0], title: 'Archived permission', archivedAt: Date.now(), permission }], unreadTotal: 0 }
+      : { items, unreadTotal: 1 });
+    const { client } = renderInbox();
+    await screen.findByText('Remote note');
+    fireEvent.click(statusFilter('Archived'));
+    fireEvent.click(await screen.findByRole('button', { name: /Archived permission/ }));
+    expect(api.markInboxItemRead).not.toHaveBeenCalled();
+    expect(client.getQueryData(['inbox'])).toMatchObject({ unreadTotal: 1 });
+    expect(screen.queryByRole('region', { name: 'Permission actions' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mark unread' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Archive message' })).toBeDisabled();
+    expect(inboxAction('Archive all read')).toBeDisabled();
+    fireEvent.keyDown(screen.getByLabelText('Inbox actions'), { key: 'Escape' });
+    expect(screen.getByLabelText('Inbox actions').closest('details')).not.toHaveAttribute('open');
+    fireEvent.click(statusFilter('All'));
+    expect(await screen.findByText('Remote note')).toBeInTheDocument();
+    expect(screen.queryByText('Archived permission')).not.toBeInTheDocument();
   });
 });

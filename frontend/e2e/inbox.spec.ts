@@ -11,6 +11,45 @@ test('Alt+I opens the inbox and is listed in keyboard shortcut help', async ({ m
   await expect(page.getByText('Open inbox', { exact: true })).toBeVisible();
 });
 
+test('compact two-row header searches and archives messages from the actions dropdown', async ({ mockedPage: page }) => {
+  let archived = false;
+  await page.route('**/api/inbox**', (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === '/api/inbox/archive-all-read') {
+      archived = true;
+      return route.fulfill({ status: 204 });
+    }
+    const showArchived = url.searchParams.get('archived') === 'true';
+    return route.fulfill({ json: { items: archived === showArchived ? [{ id: 'read', remoteId: 'local', title: 'Build finished', body: 'Review the changes.', createdAt: 1, readAt: 1, ...(archived ? { archivedAt: 2 } : {}) }] : [], unreadTotal: 0 } });
+  });
+  await page.goto('/inbox');
+  await expect(page.getByRole('button', { name: /Build finished/ })).toBeVisible();
+  for (const width of [1280, 390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    const search = await page.getByRole('searchbox', { name: 'Search inbox' }).boundingBox();
+    const status = await page.getByRole('group', { name: 'Message status' }).boundingBox();
+    const types = await page.getByRole('group', { name: 'Message type' }).boundingBox();
+    const actions = await page.getByLabel('Inbox actions').boundingBox();
+    expect(search!.y).toBe(status!.y);
+    expect(types!.y).toBe(actions!.y);
+    expect(types!.y).toBeGreaterThan(search!.y);
+    expect(types!.y - search!.y).toBeLessThanOrEqual(40);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  await page.getByRole('searchbox', { name: 'Search inbox' }).fill('bldfn');
+  await expect(page.getByRole('button', { name: /Build finished/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Unread', exact: true }).click();
+  await expect(page.getByText('No messages match these filters.')).toBeVisible();
+  await page.getByRole('group', { name: 'Message status' }).getByRole('button', { name: 'All', exact: true }).click();
+  await page.getByLabel('Inbox actions').click();
+  await page.getByRole('button', { name: 'Archive all read', exact: true }).click();
+  await expect(page.getByText('Your inbox is empty.')).toBeVisible();
+  await page.getByRole('button', { name: 'Archived', exact: true }).click();
+  await page.getByRole('button', { name: /Build finished/ }).click();
+  await expect(page.getByRole('heading', { name: 'Build finished' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Mark unread', exact: true })).toBeDisabled();
+});
+
 for (const unreadTotal of [1, 12, 120]) {
 test(`unread count ${unreadTotal} is centered and visible in collapsed navigation`, async ({ mockedPage: page }) => {
   await page.route('**/api/inbox', (route) => route.fulfill({ json: { items: [], unreadTotal } }));
@@ -56,9 +95,9 @@ test('mark unread updates navigation and survives reloading the inbox', async ({
   await expect(page.getByRole('heading', { name: 'Select a message' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Inbox, 1 unread messages' })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole('button', { name: 'Unread 1' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Unread', exact: true })).toBeVisible();
   await page.getByRole('button', { name: /Review ready/ }).click();
-  await expect(page.getByRole('button', { name: 'Unread 0' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Unread', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Inbox', exact: true })).toBeVisible();
 });
 

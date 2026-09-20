@@ -133,6 +133,17 @@ func TestInboxHTTPListAndMutations(t *testing.T) {
 	if len(items) != 0 {
 		t.Fatalf("active items after duplicate archive = %+v", items)
 	}
+	archivedList := httptest.NewRecorder()
+	mux.ServeHTTP(archivedList, httptest.NewRequest(http.MethodGet, "/api/inbox?archived=true", nil))
+	if archivedList.Code != http.StatusOK {
+		t.Fatalf("archived list = %d", archivedList.Code)
+	}
+	if err := json.Unmarshal(archivedList.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Items) != 1 || response.Items[0].ID != item.ID || response.Items[0].ArchivedAt == 0 || response.UnreadTotal != 0 {
+		t.Fatalf("archived response = %+v", response)
+	}
 }
 
 func TestInboxHTTPRejectsMalformedRequests(t *testing.T) {

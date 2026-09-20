@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useDeferredValue, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Button } from '../components/Control';
+import { Button, SearchField } from '../components/Control';
 import { PermissionPrompt } from '../components/session/PermissionPrompt';
 import { MarkdownContent } from '../components/assistant/MarkdownText';
 import { RelativeTime } from '../components/RelativeTime';
 import { useArchiveAllReadInboxItems, useArchiveInboxItems, useInbox, useMarkInboxItemRead, useMarkInboxItemUnread, useRespondInboxPermission } from '../lib/queries';
 import type { InboxItem } from '../lib/api';
+import { fuzzyMatch } from '../lib/format';
 import './Inbox.css';
 
 function sourceLabel(remoteId: string) {
@@ -15,7 +16,7 @@ function sourceLabel(remoteId: string) {
 const filters = [
   { id: 'all', label: 'All', icon: 'inbox' },
   { id: 'unread', label: 'Unread', icon: 'envelope' },
-  { id: 'read', label: 'Read', icon: 'envelope-open' },
+  { id: 'archived', label: 'Archived', icon: 'archive' },
 ] as const;
 
 function itemKey(item: InboxItem) {
@@ -46,26 +47,29 @@ function InboxPermissionActions({ permission }: { permission: NonNullable<InboxI
 }
 
 export function Inbox() {
-  const inbox = useInbox();
+  const [filter, setFilter] = useState<typeof filters[number]['id']>('all');
+  const archived = filter === 'archived';
+  const inbox = useInbox(archived);
   const archive = useArchiveInboxItems();
   const archiveRead = useArchiveAllReadInboxItems();
   const markRead = useMarkInboxItemRead();
   const markUnread = useMarkInboxItemUnread();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [activeKey, setActiveKey] = useState<string | null>(null);
-  const [filter, setFilter] = useState<typeof filters[number]['id']>('all');
+  const [search, setSearch] = useState('');
+  const query = useDeferredValue(search.trim());
+  const actions = useRef<HTMLDetailsElement>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const activeCategory = searchParams.get('category') ?? 'all';
   const items = inbox.data ? inbox.data.items : [];
   const activeItem = items.find((item) => itemKey(item) === activeKey);
   const categoryItems = items.filter((item) => activeCategory === 'all' || itemCategory(item) === activeCategory);
-  const unreadCount = categoryItems.filter((item) => !item.readAt).length;
-  const counts = { all: categoryItems.length, unread: unreadCount, read: categoryItems.length - unreadCount };
-  const visibleItems = categoryItems.filter((item) => filter === 'all' || (filter === 'read' ? !!item.readAt : !item.readAt));
-  const selectedItems = items.filter((item) => selected.has(itemKey(item)));
+  const visibleItems = categoryItems.filter((item) => (filter !== 'unread' || !item.readAt)
+    && fuzzyMatch(query, `${item.title} ${item.body} ${sourceLabel(item.remoteId)} ${JSON.stringify(item.permission ?? {})}`));
+  const selectedItems = items.filter((item) => !item.archivedAt && selected.has(itemKey(item)));
   const open = (item: InboxItem) => {
     setActiveKey(itemKey(item));
-    if (!item.readAt) markRead.mutate({ id: item.id, remoteId: item.remoteId });
+    if (!item.readAt && !item.archivedAt) markRead.mutate({ id: item.id, remoteId: item.remoteId });
   };
   const toggle = (item: InboxItem) => setSelected((current) => {
     const next = new Set(current);
@@ -73,9 +77,15 @@ export function Inbox() {
     if (next.has(key)) next.delete(key); else next.add(key);
     return next;
   });
-  const archiveSelected = () => archive.mutate(selectedItems.map(({ id, remoteId }) => ({ id, remoteId })), { onSuccess: () => setSelected(new Set()) });
+  const archiveSelected = () => {
+    actions.current?.removeAttribute('open');
+    archive.mutate(selectedItems.map(({ id, remoteId }) => ({ id, remoteId })), { onSuccess: () => setSelected(new Set()) });
+  };
   const remoteIds = [...new Set(items.map((item) => item.remoteId))];
-  const archiveAllRead = () => remoteIds.forEach((remoteId) => archiveRead.mutate(remoteId));
+  const archiveAllRead = () => {
+    actions.current?.removeAttribute('open');
+    remoteIds.forEach((remoteId) => archiveRead.mutate(remoteId));
+  };
   const selectCategory = (id: string) => {
     setSearchParams((params) => { params.set('category', id); return params; }, { replace: true });
     setActiveKey(null);
@@ -88,28 +98,36 @@ export function Inbox() {
     <div className={`inbox-workspace${activeItem ? ' has-active-message' : ''}`}>
       <section className="inbox-mailbox" aria-label="Inbox messages">
         <div className="inbox-filters">
-          <div className="inbox-categories" role="group" aria-label="Message category">
-            {filters.map(({ id, label, icon }) => <Button key={id} type="button" size="small" variant={filter === id ? 'accent' : 'default'} aria-pressed={filter === id} onClick={() => { setFilter(id); setActiveKey(null); }}>
-              <i className={`bi bi-${icon}`} aria-hidden="true" /><span>{label}</span>{' '}<span className="inbox-count">{counts[id]}</span>
-            </Button>)}
+          <div className="inbox-filter-row">
+            <SearchField aria-label="Search inbox" placeholder="Search inbox…" value={search} onChange={(event) => { setSearch(event.target.value); setActiveKey(null); }} />
+            <div className="inbox-types" role="group" aria-label="Message status">
+              {filters.map(({ id, label, icon }) => <Button key={id} type="button" size="small" title={label} aria-label={label} variant={filter === id ? 'accent' : 'default'} aria-pressed={filter === id} onClick={() => { setFilter(id); setActiveKey(null); setSelected(new Set()); }}>
+                <i className={`bi bi-${icon}`} aria-hidden="true" />{filter === id && <span>{label}</span>}
+              </Button>)}
+            </div>
           </div>
-          <div className="inbox-types" role="group" aria-label="Message type">
-            {categories.map(({ id, label, icon }) => <Button key={id} type="button" size="small" title={label} aria-label={label} aria-pressed={activeCategory === id} variant={activeCategory === id ? 'accent' : 'default'} onClick={() => selectCategory(id)}>
-              <i className={`bi bi-${icon}`} aria-hidden="true" />
-              {activeCategory === id && <span>{label}</span>}
-            </Button>)}
-          </div>
-          <div className="inbox-actions">
-            <Button type="button" size="small" disabled={!selectedItems.length || archive.isPending} onClick={archiveSelected}><i className="bi bi-archive" aria-hidden="true" />Archive selected{selectedItems.length > 0 && ` (${selectedItems.length})`}</Button>
-            <Button type="button" size="small" disabled={!items.some((item) => item.readAt) || archiveRead.isPending} onClick={archiveAllRead}>Archive all read</Button>
+          <div className="inbox-filter-row">
+            <div className="inbox-types" role="group" aria-label="Message type">
+              {categories.map(({ id, label, icon }) => <Button key={id} type="button" size="small" title={label} aria-label={label} aria-pressed={activeCategory === id} variant={activeCategory === id ? 'accent' : 'default'} onClick={() => selectCategory(id)}>
+                <i className={`bi bi-${icon}`} aria-hidden="true" />
+                {activeCategory === id && <span>{label}</span>}
+              </Button>)}
+            </div>
+            <details className="inbox-action-menu" ref={actions} onKeyDown={(event) => { if (event.key === 'Escape') event.currentTarget.open = false; }} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }}>
+              <summary className="oc-button oc-button--default oc-button--small" aria-label="Inbox actions" title="Inbox actions"><i className="bi bi-three-dots" aria-hidden="true" /></summary>
+              <div className="inbox-action-menu-items">
+                <Button type="button" size="small" disabled={!selectedItems.length || archive.isPending} onClick={archiveSelected}><i className="bi bi-archive" aria-hidden="true" />Archive selected{selectedItems.length > 0 && ` (${selectedItems.length})`}</Button>
+                <Button type="button" size="small" disabled={archived || !items.some((item) => item.readAt) || archiveRead.isPending} onClick={archiveAllRead}><i className="bi bi-check2-all" aria-hidden="true" />Archive all read</Button>
+              </div>
+            </details>
           </div>
         </div>
         <div className="inbox-list">
           {inbox.isLoading && <p className="oc-empty" role="status">Loading inbox…</p>}
           {inbox.isError && <p className="oc-empty" role="alert">Could not load inbox.</p>}
-          {inbox.isSuccess && !visibleItems.length && <p className="oc-empty">{items.length ? 'No messages match these filters.' : 'Your inbox is empty.'}</p>}
+          {inbox.isSuccess && !visibleItems.length && <p className="oc-empty">{items.length ? 'No messages match these filters.' : archived ? 'No archived messages.' : 'Your inbox is empty.'}</p>}
           {visibleItems.map((item) => <article key={itemKey(item)} className={`inbox-message${item.readAt ? '' : ' unread'}${activeKey === itemKey(item) ? ' active' : ''}`}>
-            <input className="inbox-select" type="checkbox" checked={selected.has(itemKey(item))} onChange={() => toggle(item)} aria-label={`Select ${item.title}`} />
+            <input className="inbox-select" type="checkbox" disabled={archived} checked={selected.has(itemKey(item))} onChange={() => toggle(item)} aria-label={`Select ${item.title}`} />
             <button type="button" className="inbox-message-open" onClick={() => open(item)} aria-current={activeKey === itemKey(item) ? 'true' : undefined}>
               <span className="inbox-meta"><span>{categories.find(({ id }) => id === itemCategory(item))?.label}</span><span><RelativeTime iso={new Date(item.createdAt).toISOString()} /></span></span>
               <span className="inbox-subject">{!item.readAt && <span className="inbox-unread-dot" aria-label="Unread" />}{item.title}</span>
@@ -124,8 +142,8 @@ export function Inbox() {
             <Button type="button" size="small" className="inbox-back" onClick={() => setActiveKey(null)}><i className="bi bi-arrow-left" aria-hidden="true" />Back to messages</Button>
             <span className="inbox-meta">From {sourceLabel(activeItem.remoteId)}</span>
             <div className="inbox-actions">
-            <Button type="button" size="small" disabled={!activeItem.readAt || markRead.isPending || markUnread.isPending} onClick={() => markUnread.mutate({ id: activeItem.id, remoteId: activeItem.remoteId }, { onSuccess: () => setActiveKey(null) })}><i className="bi bi-envelope" aria-hidden="true" />Mark unread</Button>
-            <Button type="button" size="small" disabled={archive.isPending} onClick={() => archive.mutate([{ id: activeItem.id, remoteId: activeItem.remoteId }])}><i className="bi bi-archive" aria-hidden="true" />Archive message</Button>
+             <Button type="button" size="small" disabled={archived || !activeItem.readAt || markRead.isPending || markUnread.isPending} onClick={() => markUnread.mutate({ id: activeItem.id, remoteId: activeItem.remoteId }, { onSuccess: () => setActiveKey(null) })}><i className="bi bi-envelope" aria-hidden="true" />Mark unread</Button>
+             <Button type="button" size="small" disabled={archived || archive.isPending} onClick={() => archive.mutate([{ id: activeItem.id, remoteId: activeItem.remoteId }])}><i className="bi bi-archive" aria-hidden="true" />Archive message</Button>
             </div>
           </div>
           <article className="inbox-letter" key={itemKey(activeItem)}>
@@ -134,7 +152,7 @@ export function Inbox() {
               <div className="inbox-meta"><span>{sourceLabel(activeItem.remoteId)}</span><time dateTime={new Date(activeItem.createdAt).toISOString()}>{new Date(activeItem.createdAt).toLocaleString()}</time></div>
             </div>
             <div className="inbox-body"><MarkdownContent text={activeItem.body} preserveLineBreaks /></div>
-            {activeItem.permission && <InboxPermissionActions permission={activeItem.permission} />}
+            {activeItem.permission && !activeItem.archivedAt && <InboxPermissionActions permission={activeItem.permission} />}
           </article>
         </> : <div className="inbox-reader-empty"><i className="bi bi-envelope-open" aria-hidden="true" /><h3>Select a message</h3><p>Choose a message from your inbox to read it here.</p></div>}
       </section>
