@@ -413,6 +413,9 @@ sequence.
    happening at all usually means the bot was never invited, the Slack user is
    not in `allowedUsers`, or Socket Mode is off — check **Refresh health** and
    **Load recent stderr** for the workspace's own error, such as `invalid_auth`.
+   A healthy connection logs `slack socket connected`; a received mention logs
+   either `forwarded slack mention` or `ignored slack event`, without logging
+   message text, member IDs or tokens.
 4. **Follow-up and reply.** Mention it again in the same thread while the turn is
    still running: the message is held and answered after the current turn, never
    interleaved. The completed answer is posted as a threaded reply.
