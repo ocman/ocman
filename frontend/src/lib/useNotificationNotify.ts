@@ -143,7 +143,7 @@ export function __notificationDetailsForTests(d: Decision) {
   const body = isPrompt
     ? 'A session is waiting on your response.'
     : 'A coding-agent session has finished running.';
-  const url = d.permission ? '/inbox?category=permission' : `/session/${d.sessionId}`;
+  const url = `/session/${d.sessionId}`;
   return {
     title,
     body,

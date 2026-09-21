@@ -199,9 +199,9 @@ describe('useNotificationNotify controller', () => {
 });
 
 describe('notification details', () => {
-  it('routes permission notifications to the permission inbox', () => {
+  it('routes permission notifications to the target session', () => {
     expect(__notificationDetailsForTests({ kind: 'prompt', sessionId: 'session-1', permission: true })).toMatchObject({
-      url: '/inbox?category=permission', requireInteraction: true,
+      url: '/session/session-1', requireInteraction: true,
     });
   });
   it('keeps existing session notification details unchanged', () => {

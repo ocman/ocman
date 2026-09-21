@@ -13,11 +13,13 @@ vi.mock('../lib/useToastNotify', () => ({ useToastNotify: () => ({
 function Location() { const location = useLocation(); return <output aria-label="Current route">{location.pathname}{location.search}</output>; }
 
 describe('PromptToastNotify', () => {
-  it('opens the inbox for permissions and the session for questions', async () => {
+  it('opens the target session for permissions and questions', async () => {
     render(<MemoryRouter><PromptToastNotify /><Location /></MemoryRouter>);
-    fireEvent.click(await screen.findByRole('button', { name: 'Open inbox' }));
-    expect(screen.getByLabelText('Current route')).toHaveTextContent('/inbox?category=permission');
-    fireEvent.click(screen.getByRole('button', { name: 'Open session' }));
+    const actions = await screen.findAllByRole('button', { name: 'Open session' });
+    expect(actions).toHaveLength(2);
+    fireEvent.click(actions[0]);
+    expect(screen.getByLabelText('Current route')).toHaveTextContent('/session/child');
+    fireEvent.click(actions[1]);
     expect(screen.getByLabelText('Current route')).toHaveTextContent('/session/question-session');
   });
 });
