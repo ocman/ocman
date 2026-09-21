@@ -177,6 +177,35 @@ it('uses project-scoped selectors for Slack configuration', async () => {
   }));
 });
 
+it('does not offer the previous project catalog while a new project is pending', async () => {
+  plugin.description.id = 'org.ocman.slack';
+  plugin.description.settings = [
+    { key: 'project', type: 'string', label: 'Project directory', required: true },
+    { key: 'agent', type: 'string', label: 'Agent (optional)' },
+  ];
+  const project = (directory: string) => ({ directory, sessionCount: 0, messageCount: 0, totalTokensIn: 0, totalTokensOut: 0, lastUsed: 0 });
+  vi.mocked(api.projects).mockResolvedValue([project('/repo'), project('/other')]);
+  vi.mocked(plugins.projectCatalog)
+    .mockResolvedValueOnce({ agents: ['build'], models: [] })
+    .mockReturnValueOnce(new Promise<{ agents: string[]; models: string[] }>(() => {}));
+  await open();
+  click('Configure');
+  await waitFor(() => expect(api.projects).toHaveBeenCalled());
+
+  fireEvent.click(screen.getByRole('combobox', { name: 'Project directory' }));
+  fireEvent.click(await screen.findByRole('option', { name: '/repo' }));
+  fireEvent.click(screen.getByRole('combobox', { name: 'Agent (optional)' }));
+  fireEvent.click(await screen.findByRole('option', { name: 'build' }));
+
+  // Switching projects must not keep offering the old project's agents: the
+  // pending catalog belongs to /other, so nothing is selectable until it lands.
+  fireEvent.click(screen.getByRole('combobox', { name: 'Project directory' }));
+  fireEvent.click(await screen.findByRole('option', { name: '/other' }));
+  await waitFor(() => expect(plugins.projectCatalog).toHaveBeenCalledWith('local', '/other', expect.any(AbortSignal)));
+  fireEvent.click(screen.getByRole('combobox', { name: 'Agent (optional)' }));
+  expect(screen.queryByRole('option', { name: 'build' })).not.toBeInTheDocument();
+});
+
 it('clears optional secrets explicitly and can undo clearing or editing', async () => {
   await open();
   click('Configure');
