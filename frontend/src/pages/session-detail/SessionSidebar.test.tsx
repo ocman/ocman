@@ -383,7 +383,14 @@ describe('SessionSidebar', () => {
     } as never);
     const group: SidebarProjectGroup = {
       directory: '/repo',
-      sessions: [session(), session({ id: 'factory', title: 'Factory task' })],
+      sessions: [
+        session(),
+        session({ id: 'grandchild', title: 'Factory grandchild', parentId: 'child', pinned: true }),
+        session({ id: 'child', title: 'Factory child', parentId: 'factory' }),
+        session({ id: 'factory', title: 'Factory task' }),
+        session({ id: 'normal-child', title: 'Normal child', parentId: 's' }),
+        session({ id: 'remote-child', title: 'Remote child', parentId: 'factory', platform: 'r-box:opencode' }),
+      ],
       lastUpdated: 1,
       aggregate: { kind: 'none' },
     };
@@ -391,12 +398,44 @@ describe('SessionSidebar', () => {
     renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), sidebarView);
 
     expect(screen.queryByText('Factory task')).not.toBeInTheDocument();
+    expect(screen.queryByText('Factory child')).not.toBeInTheDocument();
+    expect(screen.queryByText('Factory grandchild')).not.toBeInTheDocument();
+    expect(screen.getByText('Normal child')).toBeInTheDocument();
+    expect(screen.getByText('Remote child')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
     const showFactory = screen.getByRole('checkbox', { name: 'Show factory' });
     expect(showFactory).not.toBeChecked();
 
     fireEvent.click(showFactory);
     expect(screen.getByText('Factory task')).toBeInTheDocument();
+    expect(screen.getByText('Factory child')).toBeInTheDocument();
+    expect(screen.getAllByText('Factory grandchild')).toHaveLength(sidebarView === 'projects' ? 2 : 1);
+
+    fireEvent.click(showFactory);
+    expect(screen.queryByText('Factory child')).not.toBeInTheDocument();
+    expect(screen.queryByText('Factory grandchild')).not.toBeInTheDocument();
+  });
+
+  it.each(['projects', 'recent'] as const)('hides Factory descendants when the attempt is absent in the %s view', (sidebarView) => {
+    vi.mocked(useWorkEpics).mockReturnValue({
+      data: [{ attempts: [{ session: { platform: 'opencode', id: 'factory' } }] }],
+    } as never);
+    const group: SidebarProjectGroup = {
+      directory: '/repo',
+      sessions: [
+        session(),
+        session({ id: 'grandchild', title: 'Factory grandchild', parentId: 'child', pinned: true }),
+        session({ id: 'child', title: 'Factory child', parentId: 'factory' }),
+      ],
+      lastUpdated: 1,
+      aggregate: { kind: 'none' },
+    };
+
+    renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), sidebarView);
+
+    expect(screen.queryByText('Factory child')).not.toBeInTheDocument();
+    expect(screen.queryByText('Factory grandchild')).not.toBeInTheDocument();
+    expect(screen.getByText('Fix thing')).toBeInTheDocument();
   });
 
   it('filters from the persistent fuzzy title search', () => {

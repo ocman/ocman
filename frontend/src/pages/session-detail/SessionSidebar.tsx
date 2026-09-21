@@ -126,11 +126,28 @@ export function SessionSidebar({
   const [searchQuery, setSearchQuery] = useState('');
   const draftSessionIds = useDraftSessionIds();
   const { data: workEpics } = useWorkEpics();
-  const factorySessions = useMemo(() => new Set(
-    (workEpics ?? []).flatMap((epic) =>
-      (epic.attempts ?? []).map(({ session }) => `${session.platform}\0${session.id}`),
-    ),
-  ), [workEpics]);
+  const factorySessions = useMemo(() => {
+    const keys = new Set(
+      (workEpics ?? []).flatMap((epic) =>
+        (epic.attempts ?? []).map(({ session }) => `${session.platform}\0${session.id}`),
+      ),
+    );
+    const children = new Map<string, string[]>();
+    for (const session of [...recentSessions, ...sidebarProjectGroups.flatMap((group) => group.sessions)]) {
+      if (!session.parentId) continue;
+      const parent = `${session.platform}\0${session.parentId}`;
+      const siblings = children.get(parent) ?? [];
+      siblings.push(`${session.platform}\0${session.id}`);
+      children.set(parent, siblings);
+    }
+    // Set iteration visits added descendants too; membership checks stop cycles.
+    for (const key of keys) {
+      for (const child of children.get(key) ?? []) {
+        if (!keys.has(child)) keys.add(child);
+      }
+    }
+    return keys;
+  }, [workEpics, recentSessions, sidebarProjectGroups]);
 
   // Keep the active session's sidebar row visible. The list doesn't reorder
   // to follow the cursor, so when the user switches sessions (or flips
