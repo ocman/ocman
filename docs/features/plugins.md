@@ -251,9 +251,60 @@ the call's `operationId`.
 Retry and discard are privileged, localhost-only controls, like every other
 plugin mutation.
 
-Permission prompts stay in ocman: the thread never sees or answers them. A
-revoked grant, a disabled plugin, or an unresolvable project denies both
+A revoked grant, a disabled plugin, or an unresolvable project denies both
 directions, and denials never reach the provider.
+
+### Attention notices
+
+A thread only ever sees completed answers, so without help a session blocked on
+a permission prompt looks exactly like one that is still thinking. Ocman posts a
+short notice into the thread when its session cannot proceed on its own, or when
+a turn ends somewhere other than an answer:
+
+| Notice | When |
+|---|---|
+| Needs a permission decision | A permission prompt has been left for you — either auto-approve is off for the session, or it declined to approve |
+| Waiting on an answer | The agent asked a question, which is never auto-answered |
+| Ended with an error | The last turn failed |
+| Could not be delivered | A message was accepted from the provider but no session could be reached for it |
+
+Four things are worth knowing about them.
+
+**Decisions still happen in ocman.** A notice is a pointer, never a prompt: it
+carries a sentence and a link, and there is no way to approve, deny or answer
+anything from the thread. Permission provenance and the auto-approve rules are
+untouched — a thread cannot become a second approval channel.
+
+**They follow the auto-approve decision, not the prompt.** A permission the
+judge approves by itself produces no notice at all. Notices only appear once
+ocman has established that a prompt is genuinely yours to answer, so a session
+with auto-approve on stays quiet through the work it can do unattended.
+
+**They carry no session content.** A notice never includes the permission text,
+the command, the patterns, the tool metadata, the error message or any part of
+the transcript — a provider thread is usually a wider audience than the
+session's own operator. To see what is being asked, follow the link.
+
+**They resolve, they are not retracted.** Nothing posted into a thread is ever
+edited or deleted. A notice is resolved by what follows it: answer the prompt in
+ocman, the turn continues, and the completed reply lands underneath. Each notice
+is keyed on the prompt's own request id, so re-observing the same prompt — after
+a stream reconnect, a replayed notification, or an ocman restart — adds nothing.
+A second, different prompt in the same session is a new notice.
+
+### Linking back: set a public base URL
+
+Every notice links to the session it is about. Ocman builds that link from
+`--public-base-url` / `OCMAN_PUBLIC_BASE_URL` (see
+[Configuration](../../configuration/)). **Set it before pointing a conversation
+plugin at a provider.** Without it ocman falls back to its own listen address,
+which is normally `http://localhost:8228` — fine for you on this machine, and
+useless to anyone else reading the thread.
+
+Use the address a reader's browser would use: your Tailscale or reverse-proxy
+hostname, for example `OCMAN_PUBLIC_BASE_URL=https://ocman.example.ts.net`. A
+base URL with a subpath works too. Ocman does not publish anything at that
+address on your behalf — the value only shapes the links it writes.
 
 ## Slack
 

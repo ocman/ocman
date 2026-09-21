@@ -139,6 +139,24 @@ func (s *Server) startConversation(ctx context.Context, pluginID, dir string, me
 		return err
 	}
 	key := state.PluginConversationKey{PluginID: pluginID, AccountID: message.AccountID, ThreadID: message.ThreadID}
+	err := s.deliverConversationPrompt(ctx, key, dir, message)
+	if err != nil {
+		// The receipt above is already consumed, so no redelivery is coming for
+		// this message: the thread would otherwise wait forever on an answer
+		// that nobody is computing. Keyed on the event so a message that fails
+		// twice cannot say so twice. Best-effort — the original failure is what
+		// the caller acts on.
+		s.appendConversationNotice(ctx, key,
+			conversationNoticeOutcome+"unavailable:"+message.AccountID+":"+message.EventID,
+			s.conversationNotice("unavailable", ""))
+	}
+	return err
+}
+
+// deliverConversationPrompt creates or resumes the thread's session and hands
+// it the prompt. Split out from startConversation so every way of failing
+// after the receipt was consumed reaches the same notice.
+func (s *Server) deliverConversationPrompt(ctx context.Context, key state.PluginConversationKey, dir string, message plugins.ConversationMessage) error {
 	linked, resumed, err := s.stateDB.GetPluginConversation(ctx, key)
 	if err != nil {
 		return err
@@ -217,6 +235,15 @@ func (s *Server) replyToConversation(ctx context.Context, platformID, sessionID 
 		return
 	}
 	messageID, text := latestAssistantText(detail.Messages, detail.Parts)
+	// A failed turn produces no answer, or a partial one, so the thread needs
+	// telling that this is where it stopped. Keyed on the message the error is
+	// recorded against — an error always lands on the last assistant message —
+	// so a repeated idle edge for the same failed turn reports once, while the
+	// next turn's failure is a new notice.
+	if messageID != "" && detail.Session != nil && detail.Session.Status == db.StatusError {
+		s.appendConversationNotice(ctx, key, sessionID+conversationNoticeOutcome+"error:"+messageID,
+			s.conversationNotice("error", sessionID))
+	}
 	if text == "" {
 		return
 	}

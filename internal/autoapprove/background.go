@@ -122,6 +122,9 @@ func (s *Service) backgroundAutoApprove(
 	}).Debug("background auto-approve: checking enabled state")
 	if !enabled {
 		logger.Debug("background auto-approve: disabled, skipping")
+		// Nothing will approve this, so it is the user's to answer from the
+		// moment it is asked. The other report is handleUnsafeVerdict.
+		s.promptNeedsUser(platformID, sessionID, "permission", permissionID)
 		return
 	}
 	s.persistLifecycle(asked, sessionID, permissionID, state.PermissionLifecycle{})
@@ -133,7 +136,7 @@ func (s *Service) backgroundAutoApprove(
 	if err != nil {
 		s.setLifecycleMethod(asked, sessionID, permissionID, state.PermissionEvaluationJudge, state.PermissionEvaluationError)
 		logger.WithError(err).Warn("background auto-approve: could not resolve session directory")
-		s.handleUnsafeVerdict(sessionID, permissionID, JudgeResult{Verdict: verdictUnsafe, Reasoning: "auto-approve could not resolve the session directory"})
+		s.handleUnsafeVerdict(platformID, sessionID, permissionID, JudgeResult{Verdict: verdictUnsafe, Reasoning: "auto-approve could not resolve the session directory"})
 		return
 	}
 	s.setLifecycleMethod(asked, sessionID, permissionID, state.PermissionEvaluationJudge, "")
@@ -162,7 +165,7 @@ func (s *Service) backgroundAutoApprove(
 		"judgeSessionID": result.SessionID,
 	}).Debug("background auto-approve: judge returned")
 	if result.Verdict != verdictSafe {
-		s.handleUnsafeVerdict(sessionID, permissionID, result)
+		s.handleUnsafeVerdict(platformID, sessionID, permissionID, result)
 		return
 	}
 	s.recordJudgedWithReasoning(sessionID, permissionID, result.Verdict, result.Reasoning)
@@ -201,7 +204,7 @@ func (s *Service) shortCircuitAutoApprove(ctx context.Context, platformID platfo
 		reason = "blocked by ocman's hard denylist: " + reason
 		s.setLifecycleMethod(asked, sessionID, permissionID, state.PermissionEvaluationDenylist, state.PermissionEvaluationDenylisted)
 		logger.WithField("reason", reason).Warn("background auto-approve: refusing, command is on the hard denylist")
-		s.handleUnsafeVerdict(sessionID, permissionID, JudgeResult{Verdict: verdictUnsafe, Reasoning: reason})
+		s.handleUnsafeVerdict(platformID, sessionID, permissionID, JudgeResult{Verdict: verdictUnsafe, Reasoning: reason})
 		return true
 	}
 	hash := permissionHash(asked.permission, asked.patterns, asked.metadata)
@@ -277,9 +280,14 @@ func (s *Service) emitChecking(sessionID, permissionID string) func(string) {
 	}
 }
 
-func (s *Service) handleUnsafeVerdict(sessionID, permissionID string, result JudgeResult) {
+// handleUnsafeVerdict is the pipeline declining to approve: the permission is
+// now the user's to answer, so it is one of the two places that report a
+// permission as needing attention. The reasoning is deliberately not passed on
+// — it can quote the command under review.
+func (s *Service) handleUnsafeVerdict(platformID platforms.ID, sessionID, permissionID string, result JudgeResult) {
 	s.recordJudgedWithReasoning(sessionID, permissionID, result.Verdict, result.Reasoning)
 	s.emitFlagged(sessionID, permissionID, result.Reasoning)
+	s.promptNeedsUser(platformID, sessionID, "permission", permissionID)
 }
 
 // respondAndPersistSafeApproval clears a pending permission in OpenCode
@@ -316,8 +324,7 @@ func (s *Service) respondAndPersistSafeApproval(
 	}); err != nil {
 		s.finishAIResponse(sessionID, permissionID, false)
 		logger.WithError(err).Warn("background auto-approve: failed to respond to permission")
-		s.recordJudgedWithReasoning(sessionID, permissionID, verdictUnsafe, "auto-approve could not submit its approval")
-		s.emitFlagged(sessionID, permissionID, "auto-approve could not submit its approval")
+		s.handleUnsafeVerdict(platformID, sessionID, permissionID, JudgeResult{Verdict: verdictUnsafe, Reasoning: "auto-approve could not submit its approval"})
 		return
 	}
 	if !s.finishAIResponse(sessionID, permissionID, true) {

@@ -84,6 +84,7 @@ locality must not be used to justify `-auth-trust-localhost`.
 | `-db` | `~/.local/share/opencode/opencode.db` | Path to OpenCode's SQLite DB. Opened read-only. |
 | `-mcp-addr` | `127.0.0.1:8227` | Loopback listen address for the MCP endpoint. Local clients reach it without auth, so non-loopback addresses are refused. Empty disables it. |
 | `-platforms` | `opencode` | Comma-separated list of platforms to enable (`opencode`, `claude-code`). |
+| `-public-base-url` | _(unset)_ | Externally reachable base URL, e.g. `https://ocman.example.ts.net`. Used for the links ocman hands to readers elsewhere (share links, plugin attention notices) and for cookie/origin decisions. Falls back to the listen address, which only works locally. Also `OCMAN_PUBLIC_BASE_URL`. |
 | `-auth-password` | _(unset)_ | Password to require. Prefer `OCMAN_AUTH_PASSWORD` or `-auth-password-file`. |
 | `-auth-password-file` | _(unset)_ | Read auth password from file (trailing whitespace trimmed). |
 | `-auth-session-ttl` | `720h` (30 days) | Auth cookie lifetime. |
@@ -101,6 +102,7 @@ locality must not be used to justify `-auth-trust-localhost`.
 | Variable | Description |
 |----------|-------------|
 | `OCMAN_AUTH_PASSWORD` | Auth password. Empty string is treated as unset. |
+| `OCMAN_PUBLIC_BASE_URL` | Externally reachable base URL (same as `-public-base-url`, which takes precedence). Set it whenever something other than your own browser follows ocman's links — a shared session, or a [conversation plugin](../features/plugins/) posting attention notices into a chat thread. |
 | `OCMAN_AUTH_TRUST_LOCALHOST` | Truthy value enables the loopback auth bypass. |
 | `OCMAN_INSECURE_NO_AUTH` | Truthy value allows a non-loopback listen address with no password configured. |
 | `OPENCODE_SERVER_PASSWORD` | Password for managed OpenCode servers and all ocman-to-OpenCode HTTP/SSE traffic. |

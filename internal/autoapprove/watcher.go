@@ -483,6 +483,11 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 			if kind == "permission" {
 				w.svc.ObservePermissionPrompt(opencode.PlatformID, "", prompt)
 			}
+			if kind == "question" {
+				// A question is never auto-answered, so asking it already
+				// settles that the user has to.
+				w.svc.ObserveQuestionPrompt(opencode.PlatformID, prompt)
+			}
 			if ocAdapter != nil {
 				ocAdapter.ObservePromptAskedFromPort(port, portGeneration, directory, kind, prompt)
 			}

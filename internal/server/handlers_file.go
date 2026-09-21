@@ -97,14 +97,12 @@ func (s *Server) fileTokenSecret(ctx context.Context) ([]byte, error) {
 	return s.fileKey, s.fileKeyErr
 }
 
-// FileURL returns an absolute, browser-reachable URL that serves the file at
-// absPath. Used by the MCP embed_file tool so an agent can hand the
-// user a viewable link to an asset it generated on disk.
-func (s *Server) FileURL(ctx context.Context, absPath string) (string, error) {
-	key, err := s.fileTokenSecret(ctx)
-	if err != nil {
-		return "", err
-	}
+// publicURL turns an absolute in-app path into an absolute URL for a reader
+// who is not on this machine. The configured -public-base-url /
+// OCMAN_PUBLIC_BASE_URL wins; without it the listen address is the only thing
+// left to guess with, which yields a loopback URL that only works locally.
+// Callers that hand the link to a remote reader should say so in their docs.
+func (s *Server) publicURL(path string) string {
 	base := s.publicBaseURL
 	if base == "" {
 		addr := s.addr
@@ -116,7 +114,18 @@ func (s *Server) FileURL(ctx context.Context, absPath string) (string, error) {
 		}
 		base = "http://" + addr
 	}
-	return strings.TrimRight(base, "/") + filePathPrefix + signFilePath(key, absPath), nil
+	return strings.TrimRight(base, "/") + path
+}
+
+// FileURL returns an absolute, browser-reachable URL that serves the file at
+// absPath. Used by the MCP embed_file tool so an agent can hand the
+// user a viewable link to an asset it generated on disk.
+func (s *Server) FileURL(ctx context.Context, absPath string) (string, error) {
+	key, err := s.fileTokenSecret(ctx)
+	if err != nil {
+		return "", err
+	}
+	return s.publicURL(filePathPrefix + signFilePath(key, absPath)), nil
 }
 
 // handleFileProxy serves GET /api/file/{token}: the bytes of a file an

@@ -228,6 +228,26 @@ handlers don't bypass the `Host` seam). User-facing docs:
   anything bot-originated so a reply cannot loop, and honours `Retry-After`.
   Plugin events are drained by `Server.consumePluginEvents`; an unread event
   flood fails the process.
+
+  **Attention notices** (`plugin_conversation_notice.go`) tell a thread its
+  session cannot proceed: a permission or question awaiting the user, a turn
+  that errored, or a message accepted from the provider that reached no session.
+  They ride the same outbox, so dedup is the `(plugin, operation_id)` uniqueness
+  and needs no new state. Three invariants: a notice carries a fixed sentence
+  from `conversationNoticeText` plus a link and **never** session content
+  (permission text, patterns, metadata, error, transcript); it is a pointer, not
+  a prompt, so decisions stay in ocman under existing provenance/autoapproval
+  rules; and it **resolves rather than retracts** — keyed on the prompt's request
+  id, so a re-observed prompt appends nothing, and answering it lets the
+  continued turn's reply land under the notice. The trigger is the
+  `autoapprove.Deps.PromptNeedsUser` hook, fired *downstream of the approval
+  decision* (`handleUnsafeVerdict` and the `!enabled` branch of
+  `backgroundAutoApprove`, plus `ObserveQuestionPrompt` since a question is never
+  auto-answered) — reporting on the raw `permission.asked` edge would page the
+  user for every command the judge is about to approve. Links come from
+  `Server.publicURL`, i.e. `-public-base-url` / `OCMAN_PUBLIC_BASE_URL`; without
+  it they degrade to the loopback listen address, which is why the plugins doc
+  tells operators to set it before pointing a plugin at a remote provider.
 - `internal/platforms/opencode/` — OpenCode adapter wrapping the DB
   + HTTP proxy client.
 - `internal/sessionsvc/` — session mutation service (validation,

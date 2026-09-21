@@ -63,7 +63,7 @@ func TestHandleUnsafeVerdict(t *testing.T) {
 	}
 	svc.RegisterSink(sessionID, buf, nil)
 
-	svc.handleUnsafeVerdict(sessionID, permissionID, JudgeResult{Verdict: verdictUnsafe, Reasoning: "Needs human review."})
+	svc.handleUnsafeVerdict("opencode", sessionID, permissionID, JudgeResult{Verdict: verdictUnsafe, Reasoning: "Needs human review."})
 
 	status, ok := svc.lookupAutoApproveStatus(sessionID, permissionID)
 	if !ok || status.verdict != verdictUnsafe || status.reasoning != "Needs human review." {

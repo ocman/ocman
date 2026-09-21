@@ -81,6 +81,16 @@ type Deps struct {
 	// PermissionAsked records every prompt, independently of judge enablement.
 	PermissionAsked func(state.InboxPermission)
 
+	// PromptNeedsUser reports that a prompt has been left for the user to
+	// answer, with kind "permission" or "question". It is deliberately
+	// downstream of the auto-approval decision rather than on the raw
+	// permission.asked edge: a permission the judge approves is never the
+	// user's problem, so reporting on ask would page the user for work that
+	// resolves itself a second later. It carries identity only — no
+	// permission text, patterns or metadata — so a consumer that forwards it
+	// off-box cannot leak the command being requested. May be nil.
+	PromptNeedsUser func(platformID, sessionID, kind, requestID string)
+
 	// Broadcast hooks fan events out to every connected client. All
 	// optional.
 	BroadcastPermissionResolved func(sessionID, permissionID, reason string)
@@ -114,6 +124,24 @@ func (s *Service) ObservePermissionPrompt(platformID platforms.ID, sessionID str
 	permission, _ := prompt["permission"].(string)
 	metadata, _ := prompt["metadata"].(map[string]any)
 	s.deps.PermissionAsked(state.InboxPermission{Platform: string(platformID), SessionID: sessionID, PermissionID: permissionID, Permission: permission, Patterns: promptStrings(prompt["patterns"]), Always: promptStrings(prompt["always"]), Metadata: metadata})
+}
+
+// promptNeedsUser reports a prompt the user has to answer. Nil-safe, and safe
+// to call more than once for the same prompt: consumers key on the request ID.
+func (s *Service) promptNeedsUser(platformID platforms.ID, sessionID, kind, requestID string) {
+	if s == nil || s.deps.PromptNeedsUser == nil || sessionID == "" || requestID == "" {
+		return
+	}
+	s.deps.PromptNeedsUser(string(platformID), sessionID, kind, requestID)
+}
+
+// ObserveQuestionPrompt reports a question as needing the user. Unlike a
+// permission, a question is never auto-answered, so asking it is already the
+// decision that it is the user's to answer.
+func (s *Service) ObserveQuestionPrompt(platformID platforms.ID, prompt platforms.LivePrompt) {
+	sessionID, _ := prompt["sessionID"].(string)
+	requestID, _ := prompt["id"].(string)
+	s.promptNeedsUser(platformID, sessionID, "question", requestID)
 }
 
 // Service owns the auto-approve pipeline state for the lifetime of the

@@ -123,6 +123,12 @@ type conversationFixture struct {
 	targets  []string
 	sessions int
 	busy     bool
+	// errored reports the session's last turn as failed, so the outcome notice
+	// path can be driven without synthesizing an error message shape.
+	errored bool
+	// createErr makes session creation fail, standing in for an agent the host
+	// cannot reach at all.
+	createErr error
 }
 
 // sessionID names the Nth created session. The first keeps the plain name so a
@@ -173,6 +179,9 @@ func newConversationFixture(t *testing.T) *conversationFixture {
 		createSessionFn: func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 			f.mu.Lock()
 			defer f.mu.Unlock()
+			if f.createErr != nil {
+				return nil, f.createErr
+			}
 			f.sessions++
 			if req.Directory != f.project {
 				t.Errorf("session created outside the approved project: %q", req.Directory)
@@ -191,6 +200,9 @@ func newConversationFixture(t *testing.T) *conversationFixture {
 			status := db.StatusDone
 			if f.busy {
 				status = db.StatusBusy
+			}
+			if f.errored {
+				status = db.StatusError
 			}
 			f.mu.Unlock()
 			if id == "" {
