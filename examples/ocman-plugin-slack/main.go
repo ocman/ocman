@@ -4,7 +4,7 @@
 //
 // Slack app requirements (see docs/features/plugins.md):
 //   - Socket Mode enabled, app-level token (xapp-) with connections:write.
-//   - Bot token (xoxb-) with app_mentions:read and chat:write.
+//   - Bot token (xoxb-) with app_mentions:read, chat:write and assistant:write.
 //   - Event subscription: app_mention only, so every inbound message is an
 //     explicit @mention of the app.
 package main
@@ -247,6 +247,7 @@ func (b *bot) reply(ctx context.Context, operationID string, r plugin.Conversati
 		})
 		if err == nil {
 			b.record(operationID, outcomePosted)
+			b.setThreadStatus(ctx, channel, ts, "")
 			return nil
 		}
 		fmt.Fprintln(os.Stderr, err)
@@ -261,6 +262,16 @@ func (b *bot) reply(ctx context.Context, operationID string, r plugin.Conversati
 		if !errors.As(err, &failure) || failure.retryAfter == 0 || attempt >= rateLimitRetries || !sleep(ctx, failure.retryAfter) {
 			return plugin.Failure(plugin.ErrorUnavailable)
 		}
+	}
+}
+
+// setThreadStatus is best-effort UI feedback. A Slack status failure must
+// never suppress the prompt or the completed reply it describes.
+func (b *bot) setThreadStatus(ctx context.Context, channel, thread, status string) {
+	if _, err := b.call(ctx, "assistant.threads.setStatus", b.cfg.BotToken, map[string]string{
+		"channel_id": channel, "thread_ts": thread, "status": status,
+	}); err != nil {
+		fmt.Fprintln(os.Stderr, "slack assistant status unavailable")
 	}
 }
 

@@ -153,6 +153,8 @@ func (b *bot) session(ctx context.Context, out chan<- plugin.Event) error {
 			continue
 		}
 		fmt.Fprintln(os.Stderr, "forwarded slack mention")
+		channel, thread, _ := splitThread(message.ThreadID)
+		b.setThreadStatus(ctx, channel, thread, "Thinking...")
 		select {
 		case out <- event:
 		case <-ctx.Done():

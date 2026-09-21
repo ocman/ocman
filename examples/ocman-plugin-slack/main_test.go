@@ -178,9 +178,10 @@ func TestTranslate(t *testing.T) {
 // this plugin calls plus one Socket Mode connection.
 type slackMock struct {
 	*httptest.Server
-	posts chan map[string]string
-	acks  chan string
-	send  chan any
+	posts  chan map[string]string
+	status chan map[string]string
+	acks   chan string
+	send   chan any
 
 	// Scripted failures, consumed one per chat.postMessage call: rateLimited
 	// answers 429 with a cooldown (nothing posted), serverError answers 5xx
@@ -207,7 +208,7 @@ func (m *slackMock) nextFailure() string {
 
 func newSlackMock(t *testing.T) *slackMock {
 	t.Helper()
-	m := &slackMock{posts: make(chan map[string]string, 4), acks: make(chan string, 4), send: make(chan any, 4)}
+	m := &slackMock{posts: make(chan map[string]string, 4), status: make(chan map[string]string, 4), acks: make(chan string, 4), send: make(chan any, 4)}
 	upgrader := websocket.Upgrader{}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/apps.connections.open", func(w http.ResponseWriter, r *http.Request) {
@@ -235,6 +236,12 @@ func newSlackMock(t *testing.T) *slackMock {
 			return
 		}
 		m.posts <- body
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	})
+	mux.HandleFunc("/assistant.threads.setStatus", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		m.status <- body
 		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
 	})
 	mux.HandleFunc("/link", func(w http.ResponseWriter, r *http.Request) {
@@ -302,6 +309,9 @@ func TestSocketModeToNormalizedMessage(t *testing.T) {
 	if len(out) != 0 {
 		t.Fatal("unauthorized mention produced a message")
 	}
+	if status := <-m.status; status["channel_id"] != "C1" || status["thread_ts"] != "1700000000.000100" || status["status"] != "Thinking..." {
+		t.Fatalf("status %+v", status)
+	}
 
 	if err := b.reply(ctx, "conv-out:1", plugin.ConversationReply{AccountID: message.AccountID, ThreadID: message.ThreadID, Text: "shipped"}); err != nil {
 		t.Fatal(err)
@@ -309,6 +319,9 @@ func TestSocketModeToNormalizedMessage(t *testing.T) {
 	post := <-m.posts
 	if post["channel"] != "C1" || post["thread_ts"] != "1700000000.000100" || post["text"] != "shipped" {
 		t.Fatalf("post %+v", post)
+	}
+	if status := <-m.status; status["status"] != "" {
+		t.Fatalf("status was not cleared: %+v", status)
 	}
 
 	m.send <- map[string]string{"type": "disconnect", "reason": "refresh_requested"}

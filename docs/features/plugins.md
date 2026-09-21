@@ -336,6 +336,7 @@ oauth_config:
   scopes:
     bot:
       - app_mentions:read
+      - assistant:write
       - chat:write
 settings:
   event_subscriptions:
@@ -352,9 +353,10 @@ Then, in the app's settings:
    starts with `xoxb-`.
 3. Invite the bot to the channel you want to use.
 
-The scopes above are the complete set: `app_mentions:read` and `chat:write` on
-the bot token, `connections:write` on the app-level token. Nothing else is
-requested, and the plugin reads no channel history.
+The scopes above are the complete set: `app_mentions:read`, `chat:write` and
+`assistant:write` on the bot token, `connections:write` on the app-level token.
+The assistant scope shows `Thinking...` while a turn runs; it is cleared after
+the threaded reply is posted. The plugin reads no channel history.
 
 Build and install the executable **on the machine that owns the project** — a
 conversation plugin is owner-scoped, so the binary, the tokens and the project
