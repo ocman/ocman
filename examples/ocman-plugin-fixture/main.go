@@ -18,13 +18,17 @@ func main() {
 	d := plugin.Description{
 		ID: "org.ocman.fixture", Name: "Conformance fixture", Version: "1.0.0",
 		Protocol: plugin.Version{Major: 1}, Scope: plugin.ScopeHub, MaxConcurrency: 4,
-		Capabilities:    []plugin.Capability{{Name: "action", Version: plugin.Version{Major: 1}}, {Name: "fixture", Version: plugin.Version{Major: 1}}},
-		RequestedGrants: []string{"context.session"},
+		Capabilities: []plugin.Capability{{Name: "action", Version: plugin.Version{Major: 1}},
+			plugin.ConversationCapability, {Name: "fixture", Version: plugin.Version{Major: 1}}},
+		RequestedGrants: []string{"context.session", plugin.ConversationSessionGrant},
+		Settings:        []plugin.Setting{{Key: plugin.ConversationProjectSetting, Label: "Project directory", Type: "string", Required: true}},
 		Actions: []plugin.ActionDescriptor{
 			{ID: "notice", Label: "Notice", Placement: "global", Surfaces: []string{"command-palette"}},
 			{ID: "session", Label: "Session", Placement: "session", RequiredGrants: []string{"context.session"}, Surfaces: []string{"command-palette"}},
 		},
 	}
+	// The fixture has no provider, so a reply is accepted and discarded.
+	conversation := plugin.ConversationHandler(func(context.Context, plugin.ConversationReply) error { return nil })
 	action := plugin.ActionHandler(d, func(_ context.Context, _ plugin.Call, in plugin.ActionInvocation) ([]plugin.ActionResult, error) {
 		text := "Fixture ready"
 		if in.ActionID == "session" {
@@ -33,8 +37,11 @@ func main() {
 		return []plugin.ActionResult{{Kind: "notice", Text: text}}, nil
 	})
 	handler := func(ctx context.Context, call plugin.Call, emit func(json.RawMessage) error) (json.RawMessage, error) {
-		if call.Capability == "action" {
+		switch call.Capability {
+		case "action":
 			return action(ctx, call, emit)
+		case plugin.ConversationCapability.Name:
+			return conversation(ctx, call, emit)
 		}
 		switch call.Method {
 		case "stream":

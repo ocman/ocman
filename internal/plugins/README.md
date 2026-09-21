@@ -287,7 +287,7 @@ when rollback successfully restored the old process; read health for its state.
 
 ## action.v1
 
-The host currently negotiates `action` major 1, minor 0. Descriptions may declare
+The host negotiates `action` major 1, minor 0. Descriptions may declare
 up to 128 actions alongside that capability:
 
 ```json
@@ -386,3 +386,62 @@ argument 400, denied 403, missing 404, conflict 409, unavailable 503, deadline 5
 cancelled 408, and internal 500. Plugin diagnostics and transport errors are never
 returned. A listed plugin can become unavailable before invocation; the caller
 must handle the error without bypassing the broker.
+
+## conversation.v1
+
+The host negotiates `conversation` major 1, minor 0, independently of `action`.
+It carries exactly two provider-neutral moves; provider protocols, credentials,
+and payload shapes stay inside the plugin.
+
+A description declaring this capability must also request the
+`conversation.session` grant and declare a required, non-secret `project`
+setting. `Description.Validate` rejects a declaration missing either, so the
+approved configuration is always the single project the plugin can reach. There
+is no way to widen the grant to a second project.
+
+### Inbound: plugin-initiated normalized message
+
+```json
+{"type":"event","event":{"capability":"conversation","name":"message","data":{
+  "threadId":"C123:1700000000.000100","text":"ship it","project":"/srv/repo"}}}
+```
+
+| Field | Rule |
+| --- | --- |
+| `threadId` | `[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,127}`, opaque to the host |
+| `text` | 1–65536 bytes, valid UTF-8, no control characters except tab/CR/LF |
+| `project` | Optional claim, at most 1024 bytes, compared only |
+
+Unknown fields are rejected. A `project` that does not clean-compare equal to
+the configured project is denied, as is an empty configured project; the
+directory the host actually uses always comes from configuration, never from the
+event. Events for an unnegotiated capability are rejected by the stream, and an
+undrained event flood fails the process, so the host consumes them continuously.
+
+The host creates or resumes one managed session per `(pluginId, threadId)` in
+the approved project and delivers `text` as a prompt. Thread links are held for
+the host's lifetime only.
+
+### Outbound: host-initiated completed reply
+
+The call has capability `conversation`, version `{major:1,minor:0}`, method
+`reply`, and a 30-second deadline. conversation.v1 is unary: chunks are rejected.
+
+```json
+{"threadId":"C123:1700000000.000100","text":"Shipped."}
+```
+
+The text is the newest assistant message's text parts only, capped at 64 KiB;
+reasoning, tool, and file parts are excluded. The host strips control characters
+other than tab, CR, and LF rather than dropping a reply the wire would reject.
+The operation ID is
+`<sessionId>:<messageId>` and is reserved through the same durable receipt table
+as actions, so a repeated idle edge returns `conflict` instead of posting twice.
+Return `{}` as the terminal value.
+
+Both directions are admitted by `ConversationBroker` under the same critical
+section as revocation, reading enablement, grants, and the configured project
+from one row. A disabled plugin returns `unavailable`; a missing grant,
+undeclared capability, or unapproved project returns `permission_denied`.
+Session-starting work runs outside that section because it launches processes.
+Permission prompts remain in ocman and are never exposed to the provider.

@@ -180,11 +180,22 @@ func (d *DB) RemovePlugin(ctx context.Context, id string) error {
 // deletion and grant revocation. The callback must not call state methods taking
 // pluginMu or wait for plugin results. Only public declarations cross this seam.
 func (d *DB) WithPluginAuthorization(ctx context.Context, id string, use func(plugins.Description, []string) error) error {
+	return d.WithPluginConversation(ctx, id, func(desc plugins.Description, approved []string, _ string) error {
+		return use(desc, approved)
+	})
+}
+
+// WithPluginConversation is WithPluginAuthorization plus the plugin's one
+// approved conversation project, read from the same row under the same lock so
+// a reconfiguration cannot land between the grant check and the project check.
+// An unset or non-string setting yields an empty project, which fails closed.
+func (d *DB) WithPluginConversation(ctx context.Context, id string, use func(plugins.Description, []string, string) error) error {
 	d.pluginMu.Lock()
 	defer d.pluginMu.Unlock()
-	var description, grants string
+	var description, grants, config string
 	var enabled, removed bool
-	err := d.db.QueryRowContext(ctx, `SELECT description_json, grants_json, enabled, removed FROM plugin_registration WHERE id=?`, id).Scan(&description, &grants, &enabled, &removed)
+	err := d.db.QueryRowContext(ctx, `SELECT description_json, grants_json, config_json, enabled, removed FROM plugin_registration WHERE id=?`, id).
+		Scan(&description, &grants, &config, &enabled, &removed)
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && (!enabled || removed)) {
 		return plugins.ErrUnavailable
 	}
@@ -193,10 +204,13 @@ func (d *DB) WithPluginAuthorization(ctx context.Context, id string, use func(pl
 	}
 	var desc plugins.Description
 	var approved []string
-	if json.Unmarshal([]byte(description), &desc) != nil || json.Unmarshal([]byte(grants), &approved) != nil {
+	var values map[string]json.RawMessage
+	if json.Unmarshal([]byte(description), &desc) != nil || json.Unmarshal([]byte(grants), &approved) != nil || json.Unmarshal([]byte(config), &values) != nil {
 		return ErrPluginState
 	}
-	return use(desc, approved)
+	var project string
+	_ = json.Unmarshal(values[plugins.ConversationProjectSetting], &project)
+	return use(desc, approved, project)
 }
 
 func (d *DB) GetPlugin(ctx context.Context, id string) (PluginRegistration, error) {

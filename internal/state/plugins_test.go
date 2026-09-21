@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -617,5 +618,47 @@ func TestPluginDiagnosticsPartialSecret(t *testing.T) {
 		if got := d.RedactPluginDiagnostics(desc.ID, "stderr: "+text); got != "stderr: [REDACTED]" {
 			t.Fatalf("partial secret: %q", got)
 		}
+	}
+}
+
+func TestWithPluginConversation(t *testing.T) {
+	d, desc, _ := pluginFixture(t)
+	grants := []string{plugins.ConversationSessionGrant}
+	requirePluginOK(t, d.SetPluginConfiguration(t.Context(), desc.ID,
+		map[string]json.RawMessage{plugins.ConversationProjectSetting: json.RawMessage(`"/srv/repo"`)}, nil))
+
+	// A disabled plugin never reaches the callback.
+	if err := d.WithPluginConversation(t.Context(), desc.ID, func(plugins.Description, []string, string) error {
+		t.Fatal("disabled plugin authorized")
+		return nil
+	}); !errors.Is(err, plugins.ErrUnavailable) {
+		t.Fatalf("disabled: %v", err)
+	}
+	requirePluginOK(t, d.SetPluginEnabled(t.Context(), desc.ID, true, grants))
+
+	var seen string
+	var approved []string
+	requirePluginOK(t, d.WithPluginConversation(t.Context(), desc.ID, func(_ plugins.Description, g []string, project string) error {
+		approved, seen = g, project
+		return nil
+	}))
+	if seen != "/srv/repo" || !slices.Equal(approved, grants) {
+		t.Fatalf("project %q grants %v", seen, approved)
+	}
+
+	// A missing or non-string project value fails closed as an empty project.
+	requirePluginOK(t, d.SetPluginConfiguration(t.Context(), desc.ID,
+		map[string]json.RawMessage{plugins.ConversationProjectSetting: json.RawMessage(`42`)}, nil))
+	requirePluginOK(t, d.WithPluginConversation(t.Context(), desc.ID, func(_ plugins.Description, _ []string, project string) error {
+		seen = project
+		return nil
+	}))
+	if seen != "" {
+		t.Fatalf("non-string project surfaced as %q", seen)
+	}
+	if err := d.WithPluginConversation(t.Context(), "io.ocman.absent", func(plugins.Description, []string, string) error {
+		return nil
+	}); !errors.Is(err, plugins.ErrUnavailable) {
+		t.Fatalf("absent: %v", err)
 	}
 }

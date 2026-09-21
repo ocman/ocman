@@ -174,15 +174,30 @@ handlers don't bypass the `Host` seam). User-facing docs:
 - `internal/platforms/` — `Platform` interface, `Registry`, common
   types/errors.
 - `internal/plugins/` — native executable discovery, versioned NDJSON protocol,
-  process supervision, and the `action.v1` broker. Trusted executables live in
+  process supervision, and the `action.v1` / `conversation.v1` brokers. Trusted
+  executables live in
   `~/.local/share/ocman/plugins` or `OCMAN_PLUGIN_DIR`; even discovery runs code.
   Settings manages owner-local enablement, grants, configuration, and diagnostics.
   Remote projection uses authenticated `PluginOperation` RPCs; each owner keeps
   its binaries, secrets, and action receipts. The browser receives typed palette
   actions/results, never plugin JavaScript. See `docs/features/plugins.md` and
-  `internal/plugins/README.md`. Conversation-provider, platform-provider, iframe UI,
-  relay inbox capability, registry/updates, signatures, sandboxing, Slack, and Codex
+  `internal/plugins/README.md`. Platform-provider, iframe UI,
+  relay inbox capability, registry/updates, signatures, sandboxing, and Codex
   are future work.
+
+  **conversation.v1** is the chat-provider seam (`internal/plugins/conversation.go`,
+  `conversation_broker.go`, wired in `internal/server/plugin_conversation.go`).
+  A plugin emits an unsolicited normalized `message` event; the broker authorizes
+  it against enablement, the `conversation.session` grant, and the plugin's one
+  required `project` setting (all read from one row under one lock), then core
+  creates or resumes a managed session per thread and sends the text. On the
+  `session.idle` edge the host calls the plugin's `reply` method with the newest
+  assistant message's text, keyed by `<sessionId>:<messageId>` through the durable
+  operation-receipt table so a repeated edge cannot post twice. Provider details
+  stay in the plugin: `examples/ocman-plugin-slack` speaks Slack Socket Mode
+  (`apps.connections.open` → wss → `app_mention` → `chat.postMessage`). Plugin
+  events are drained by `Server.consumePluginEvents`; an unread event flood fails
+  the process.
 - `internal/platforms/opencode/` — OpenCode adapter wrapping the DB
   + HTTP proxy client.
 - `internal/sessionsvc/` — session mutation service (validation,

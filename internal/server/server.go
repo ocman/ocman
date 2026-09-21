@@ -138,6 +138,15 @@ type Server struct {
 	pluginActionsOnce sync.Once
 	pluginActions     *plugins.ActionBroker
 
+	// conversation.v1 state: the broker plus the live thread<->session
+	// links a completed reply is routed by. See plugin_conversation.go.
+	conversationOnce      sync.Once
+	conversationBroker    *plugins.ConversationBroker
+	conversationJobs      *worker.Worker[conversationJob]
+	conversationMu        sync.Mutex
+	conversationByThread  map[conversationThread]conversationSession
+	conversationBySession map[conversationSession]conversationThread
+
 	// queueSvcCached is the follow-up message queue service (#58), built
 	// lazily on first use. Guarded by
 	// queueSvcOnce. See queue.go.

@@ -45,6 +45,13 @@ fields, but action results intentionally reject unknown fields. The host owns
 approval, current grants, confirmation and deduplication. Requested grants are
 declarations, never approval; plugins receive only the minimized context.
 
+`RunWithEvents` is `Run` plus a plugin-initiated event source, for capabilities
+whose inbound direction is not a response to a host call. Events for a capability
+the host did not negotiate are dropped rather than failing the process; a closed
+channel is not an error. `ConversationHandler` serves `conversation.v1` reply
+calls and `NewConversationMessage` builds a validated inbound message event. See
+[the Slack plugin](../../examples/ocman-plugin-slack/main.go) for both directions.
+
 ## Conformance tests for external plugins
 
 Import `github.com/NoUseFreak/ocman/sdk/plugin/conformance` from a Go test package.
@@ -77,6 +84,11 @@ dispatch, context minimization, deduplication and revoked cached results. Select
 an action with nonempty required grants and valid context for its placement.
 Include extra context fields to exercise minimization. Confirmation-required
 actions are supported. No grant approval is sent over the wire.
+
+`RunConversationGrants` covers `conversation.v1`: the declaration contract, a
+denied and then granted reply dispatch through the real host broker, and denial
+of an inbound message naming a project other than the configured one. Pass the
+project directory the test configuration approves.
 
 The fixture's additional `fixture.v1` capability offers `stream`, `wait` and
 `error` solely for testing. Production plugins do not need that capability.

@@ -202,7 +202,10 @@ func (d Description) Validate() error {
 	if err := validateSettingsAndGrants(d.Settings, d.RequestedGrants); err != nil {
 		return err
 	}
-	return d.validateActions()
+	if err := d.validateActions(); err != nil {
+		return err
+	}
+	return d.validateConversation()
 }
 
 func (e Envelope) Validate() error {

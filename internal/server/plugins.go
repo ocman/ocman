@@ -125,7 +125,7 @@ func (s *Server) syncPluginProcessesLocked(ctx context.Context) error {
 		}
 		process, err := plugins.StartProcess(s.pluginCtx, plugins.LaunchConfig{
 			Candidate:     plugins.Discovery{Path: registration.ExecutablePath, Checksum: registration.Checksum, Description: registration.Description},
-			Supported:     []plugins.Capability{plugins.ActionCapability},
+			Supported:     []plugins.Capability{plugins.ActionCapability, plugins.ConversationCapability},
 			DataDir:       dir,
 			Configuration: configuration,
 			OnHealth: func(h plugins.Health) {
@@ -141,6 +141,11 @@ func (s *Server) syncPluginProcessesLocked(ctx context.Context) error {
 			s.pluginProcesses = make(map[string]*plugins.Process)
 		}
 		s.pluginProcesses[id] = process
+		// Events must be drained or the supervisor fails the process. The
+		// context is captured here, under pluginMu, because stopPluginProcesses
+		// clears s.pluginCtx.
+		eventCtx := context.WithoutCancel(s.pluginCtx)
+		go runWithRecover("plugin-events", func() { s.consumePluginEvents(eventCtx, id, process) })
 	}
 	return nil
 }

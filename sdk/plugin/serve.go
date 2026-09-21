@@ -40,6 +40,15 @@ func normalizedError(err error) *WireError {
 // Describe emits one hello and exits without invoking handler. Serve waits for
 // negotiation before dispatching. Shutdown cancels work and emits no more frames.
 func Run(ctx context.Context, mode Mode, token string, description Description, input io.ReadCloser, output io.WriteCloser, handler Handler) error {
+	return RunWithEvents(ctx, mode, token, description, input, output, handler, nil)
+}
+
+// RunWithEvents is Run plus a plugin-initiated event source, for capabilities
+// whose inbound direction is not a response to a host call. Events for a
+// capability the host did not negotiate are dropped rather than failing the
+// process, so a downgraded host only loses that direction. A nil or closed
+// channel behaves exactly like Run.
+func RunWithEvents(ctx context.Context, mode Mode, token string, description Description, input io.ReadCloser, output io.WriteCloser, handler Handler, events <-chan Event) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	closed := make(chan struct{})
@@ -127,6 +136,23 @@ func Run(ctx context.Context, mode Mode, token string, description Description, 
 				active[e.Call.ID] = stop
 				go dispatch(ctx, callCtx, *e.Call, handler, writes)
 			}
+		case event, ok := <-events:
+			if !ok {
+				events = nil
+				continue
+			}
+			// Stream.Accept fails closed permanently, so screen the
+			// negotiation here instead of letting a stray event end the run.
+			if !negotiated(accepted.Capabilities, event.Capability) {
+				continue
+			}
+			e := Envelope{Type: TypeEvent, Event: &event}
+			if err := stream.Accept(FromPlugin, e); err != nil {
+				return err
+			}
+			if err := encoder.Encode(e); err != nil {
+				return err
+			}
 		case e := <-writes:
 			if err := stream.Accept(FromPlugin, e); err != nil {
 				return err
@@ -140,6 +166,15 @@ func Run(ctx context.Context, mode Mode, token string, description Description, 
 			}
 		}
 	}
+}
+
+func negotiated(capabilities []Capability, name string) bool {
+	for _, c := range capabilities {
+		if c.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func dispatch(ctx, callCtx context.Context, call Call, handler Handler, writes chan<- Envelope) {

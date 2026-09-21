@@ -4,9 +4,11 @@ weight: 18
 ---
 
 Ocman runs native plugin executables on the machine where they are installed.
-The first supported capability is `action.v1`, which adds commands to the command
-palette and returns results rendered by ocman. Manage installations in
-**Settings → Plugins**, selecting the plugin owner before making changes.
+Two capabilities are supported: `action.v1`, which adds commands to the command
+palette and returns results rendered by ocman, and `conversation.v1`, which lets
+a chat provider start an ocman session and receive its completed reply. Manage
+installations in **Settings → Plugins**, selecting the plugin owner before making
+changes.
 
 ## Trust and installation
 
@@ -171,6 +173,103 @@ repeating an uncertain side effect. Results and artifacts are memory-only, and
 their reads recheck grants. Never automatically retry a failed action with a new
 operation ID.
 
+## Authoring conversation.v1
+
+Advertise capability `{"name":"conversation","version":{"major":1,"minor":0}}`.
+A conversation plugin must also request the `conversation.session` grant and
+declare a required, non-secret `project` setting. Ocman refuses a declaration
+that omits either, so the project you approve in **Configure** is always the one
+project the plugin can reach.
+
+The capability has exactly two moves. Inbound, the plugin emits an unsolicited
+`message` event:
+
+```json
+{"type":"event","event":{"capability":"conversation","name":"message",
+ "data":{"threadId":"C123:1700000000.000100","text":"ship it"}}}
+```
+
+`threadId` is an opaque provider thread identity that ocman only compares and
+echoes back. An optional `project` field is a claim, denied unless it matches the
+configured project; the directory actually used always comes from configuration.
+Ocman creates or resumes one managed session per thread in that project, then
+sends the text as a prompt.
+
+Outbound, ocman calls method `reply` on the same capability when the session's
+turn completes:
+
+```json
+{"threadId":"C123:1700000000.000100","text":"Shipped."}
+```
+
+Replies are plain text in v1: only the newest assistant message's text parts,
+capped at 64 KiB. Reasoning, tool, and file parts are excluded. The call carries
+a 30-second deadline and a per-turn operation ID, so a repeated idle edge
+conflicts instead of posting twice. Return `{}` on success.
+
+Permission prompts stay in ocman: the thread never sees or answers them. A
+revoked grant, a disabled plugin, or an unresolvable project denies both
+directions, and denials never reach the provider.
+
+## Slack
+
+The bundled [Slack plugin](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/examples/ocman-plugin-slack/main.go)
+connects a Slack thread to a session over Socket Mode. It needs no inbound
+network exposure and no relay.
+
+Create a Slack app (**From scratch**, or paste this manifest):
+
+```yaml
+display_information:
+  name: ocman
+features:
+  bot_user:
+    display_name: ocman
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read
+      - chat:write
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+  socket_mode_enabled: true
+```
+
+Then, in the app's settings:
+
+1. **Basic Information → App-Level Tokens**: generate a token with the
+   `connections:write` scope. It starts with `xapp-`.
+2. **Install App**: install to the workspace and copy the bot token, which
+   starts with `xoxb-`.
+3. Invite the bot to the channel you want to use.
+
+Build and install the executable on the machine that owns the project:
+
+```sh
+go build -o "$HOME/.local/share/ocman/plugins/ocman-plugin-slack" ./examples/ocman-plugin-slack
+```
+
+Rescan in **Settings → Plugins**, then **Configure**:
+
+| Setting | Value |
+| --- | --- |
+| `project` | Absolute path of the one project sessions may run in |
+| `appToken` | App-level `xapp-` token (write-only secret) |
+| `botToken` | Bot `xoxb-` token (write-only secret) |
+| `allowedUsers` | Comma-separated Slack user IDs allowed to drive sessions |
+
+Enable the plugin and approve the `conversation.session` grant. `@ocman ship it`
+in a channel or thread now starts a session in that project, and the assistant's
+completed reply appears in the same thread.
+
+Both tokens use the host's write-only secret handling: they are delivered only on
+file descriptor 3, never appear in logs, results, or error text, and are redacted
+from captured stderr. `allowedUsers` fails closed — an empty list authorizes
+nobody. Only `app_mention` events are subscribed, so every inbound message is an
+explicit mention; bot messages and unauthorized users are dropped silently.
+
 ## Remote ownership
 
 Every installation is identified by its owner and plugin ID. Install the binary
@@ -233,7 +332,9 @@ uncertain action replay.
 Use the optional [Go SDK](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/sdk/plugin/README.md)
 at `github.com/NoUseFreak/ocman/sdk/plugin`, or implement the NDJSON contract in
 another language. `plugin.Run` handles the lifecycle and `plugin.ActionHandler`
-validates action dispatch/results. Plugins with settings read fd 3 before calling
+validates action dispatch/results. `plugin.RunWithEvents` adds a plugin-initiated
+event source, and `plugin.ConversationHandler` plus `plugin.NewConversationMessage`
+cover both conversation directions. Plugins with settings read fd 3 before calling
 `Run` in serve mode. The deterministic
 [fixture](https://forgejo.nousefreak.be/dries/ocman/src/branch/main/examples/ocman-plugin-fixture/main.go)
 demonstrates both modes, actions, cancellation, and safe failures.
@@ -246,18 +347,23 @@ go test ./internal/server ./internal/remote ./internal/state -run Plugin
 ```
 
 External plugins can use `sdk/plugin/conformance.Run` for executable lifecycle
-checks and `RunActionGrants` for broker grant, minimization, deduplication, and
-revocation checks. Supply deterministic, side-effect-free test calls. Rebuild,
-rescan, review the new checksum, and enable again for a manual palette check.
+checks, `RunActionGrants` for broker grant, minimization, deduplication, and
+revocation checks, and `RunConversationGrants` for the conversation declaration
+contract plus grant and project denials. Supply deterministic, side-effect-free
+test calls. Rebuild, rescan, review the new checksum, and enable again for a
+manual palette check.
 
 ## Future work
 
-The current release supports native processes and `action.v1` only. The following
-are future work, not available plugin capabilities or integrations:
+The current release supports native processes, `action.v1`, and
+`conversation.v1`. The following are future work, not available plugin
+capabilities or integrations:
 
-- Conversation-provider and platform-provider capabilities.
+- Platform-provider capability.
 - Iframe UI contributions.
 - Relay inbox capability, separate from existing core Inbox and webhook features.
 - A plugin registry and automatic updates.
 - Publisher signatures and process sandboxing.
-- Slack integration and a Codex provider.
+- A Codex provider.
+- Conversation images, attachments, streaming replies, more than one project per
+  plugin, and answering permission prompts from the thread.

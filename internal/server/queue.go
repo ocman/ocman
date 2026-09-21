@@ -209,6 +209,9 @@ func (s *Server) onSessionIdle(platformID, sessionID string) {
 		return
 	}
 	s.queueFlushWorker().Enqueue(queueFlush{platformID: platformID, sessionID: sessionID})
+	go runWithRecover("plugin-conversation-reply", func() {
+		s.replyToConversation(context.Background(), platformID, sessionID)
+	})
 	go runWithRecover("share-relay-publish", func() {
 		adapter, ok := s.adapterForSession(context.Background(), "", sessionID)
 		if !ok {
