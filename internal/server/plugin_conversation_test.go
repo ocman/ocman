@@ -109,11 +109,12 @@ func (*conversationTestHost) EnsureProjectOpencode(_ context.Context, req hostsv
 }
 
 type conversationFixture struct {
-	s       *Server
-	mux     *http.ServeMux
-	cookie  *http.Cookie
-	record  string
-	project string
+	s         *Server
+	mux       *http.ServeMux
+	cookie    *http.Cookie
+	record    string
+	project   string
+	pluginDir string
 	// failThread configures the plugin to reject replies for one thread, so a
 	// delivery failure can be driven without breaking the plugin process.
 	failThread string
@@ -169,8 +170,9 @@ func newConversationFixture(t *testing.T) *conversationFixture {
 	t.Cleanup(func() { _ = stateDB.Close() })
 
 	f := &conversationFixture{
-		record:  filepath.Join(t.TempDir(), "replies"),
-		project: mustEvalSymlinks(t, t.TempDir()),
+		record:    filepath.Join(t.TempDir(), "replies"),
+		project:   mustEvalSymlinks(t, t.TempDir()),
+		pluginDir: pluginDir,
 	}
 	registry := platforms.NewRegistry()
 	registry.Register(&fakePlatform{
@@ -657,8 +659,8 @@ var conversationEventSeq atomic.Int64
 func conversationMessage(text string) plugins.ConversationMessage {
 	return plugins.ConversationMessage{
 		AccountID: conversationTestAccount, ThreadID: conversationTestThread,
-		EventID:   fmt.Sprintf("Ev%d", conversationEventSeq.Add(1)),
-		Text:      text,
+		EventID: fmt.Sprintf("Ev%d", conversationEventSeq.Add(1)),
+		Text:    text,
 	}
 }
 

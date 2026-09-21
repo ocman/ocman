@@ -42,6 +42,18 @@ func TestDescriptionSatisfiesContract(t *testing.T) {
 	}
 }
 
+// TestAPIBaseDefaultsToSlack pins the acceptance-harness hook: without the
+// override every call goes to Slack itself.
+func TestAPIBaseDefaultsToSlack(t *testing.T) {
+	if b := newBot(testConfig()); b.api != defaultAPI {
+		t.Fatalf("api %q", b.api)
+	}
+	t.Setenv("OCMAN_SLACK_API", "http://127.0.0.1:1/api")
+	if b := newBot(testConfig()); b.api != "http://127.0.0.1:1/api" {
+		t.Fatalf("api %q", b.api)
+	}
+}
+
 func TestAuthorizedFailsClosed(t *testing.T) {
 	for allowed, want := range map[string]bool{"U123": true, "U456": true, "U789": false, "": false} {
 		b := &bot{cfg: testConfig()}

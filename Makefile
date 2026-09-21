@@ -1,4 +1,4 @@
-.PHONY: docs docs-build dev dev-backend dev-remote dev-relay dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-platform-branching lint-settings-rows otel-up otel-down otel-logs otel-reset check-caddy-host caddy-up caddy-down caddy-cert install-hooks help
+.PHONY: docs docs-build dev dev-backend dev-remote dev-relay dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop install-plugin installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-platform-branching lint-settings-rows otel-up otel-down otel-logs otel-reset check-caddy-host caddy-up caddy-down caddy-cert install-hooks help
 
 # --- OTel dev defaults ----------------------------------------------------
 #
@@ -137,6 +137,17 @@ build-frontend:
 
 build-backend:
 	go build -o ocman .
+
+# Bundled plugins are trusted native code built from this checkout; nothing is
+# downloaded. -trimpath keeps the checksum ocman approves reproducible.
+PLUGIN ?= slack
+PLUGIN_DIR ?= $(HOME)/.local/share/ocman/plugins
+
+install-plugin: ## Build a bundled plugin into PLUGIN_DIR (PLUGIN=slack|fixture)
+	@mkdir -p "$(PLUGIN_DIR)"
+	go build -trimpath -o "$(PLUGIN_DIR)/ocman-plugin-$(PLUGIN)" ./examples/ocman-plugin-$(PLUGIN)
+	@shasum -a 256 "$(PLUGIN_DIR)/ocman-plugin-$(PLUGIN)" 2>/dev/null || sha256sum "$(PLUGIN_DIR)/ocman-plugin-$(PLUGIN)"
+	@echo "Rescan in Settings -> Plugins on this machine, then configure and enable it."
 
 # Desktop (Wails) build — produces a native .app / binary via `wails build`.
 #

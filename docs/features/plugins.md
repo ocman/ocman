@@ -25,12 +25,17 @@ to use another directory. Hidden files, symlinks, subdirectories, nested files,
 and files without executable permission are ignored. The host does not download
 or install binaries for you.
 
-For a local development installation, run these commands from the ocman checkout:
+Build the bundled plugins from an ocman checkout with one target, which creates
+the directory, builds reproducibly and prints the checksum you are about to
+approve:
 
 ```sh
-mkdir -p "$HOME/.local/share/ocman/plugins"
-go build -o "$HOME/.local/share/ocman/plugins/ocman-plugin-fixture" ./examples/ocman-plugin-fixture
+make install-plugin PLUGIN=slack      # or PLUGIN=fixture
+make install-plugin PLUGIN=slack PLUGIN_DIR=/custom/plugins
 ```
+
+Set `PLUGIN_DIR` to match `OCMAN_PLUGIN_DIR` if the owning ocman process uses a
+directory override.
 
 Ocman scans at startup. Click **Rescan plugins** after installing, replacing, or
 removing an executable; there is no filesystem watcher. New registrations start
@@ -347,13 +352,20 @@ Then, in the app's settings:
    starts with `xoxb-`.
 3. Invite the bot to the channel you want to use.
 
-Build and install the executable on the machine that owns the project:
+The scopes above are the complete set: `app_mentions:read` and `chat:write` on
+the bot token, `connections:write` on the app-level token. Nothing else is
+requested, and the plugin reads no channel history.
+
+Build and install the executable **on the machine that owns the project** — a
+conversation plugin is owner-scoped, so the binary, the tokens and the project
+all live on the same host, and the hub never copies them:
 
 ```sh
-go build -o "$HOME/.local/share/ocman/plugins/ocman-plugin-slack" ./examples/ocman-plugin-slack
+make install-plugin PLUGIN=slack
 ```
 
-Rescan in **Settings → Plugins**, then **Configure**:
+Rescan in **Settings → Plugins**, selecting that machine as the owner, then
+**Configure**:
 
 | Setting | Value |
 | --- | --- |
@@ -380,6 +392,52 @@ remembers that operation and absorbs ocman's next attempt, because a duplicate
 message in a thread everyone can see is worse than a reply that may already be
 there. That memory is per process, so a plugin restart inside the retry window
 can still post a reply twice.
+
+### Checking an installation
+
+Before pointing the plugin at a shared channel, set
+`OCMAN_PUBLIC_BASE_URL` (above) and walk these five steps in order. Each one
+fails in a distinct place, which is what makes the walkthrough worth doing as a
+sequence.
+
+1. **Installed.** `make install-plugin PLUGIN=slack` prints the binary's path
+   and SHA-256. **Rescan** must then list `org.ocman.slack` as *disabled*, with
+   that same checksum. A missing entry is a discovery problem: wrong owner
+   selected, wrong directory, or a non-executable file.
+2. **Configured and enabled.** Save the project and both tokens, then enable and
+   approve `conversation.session`. An enablement that is refused means the
+   declaration or the binary changed since the catalog was loaded — rescan and
+   review it again.
+3. **First mention.** `@ocman ship it` in a channel the bot was invited to.
+   A session appears in that project and the thread is now bound to it. Nothing
+   happening at all usually means the bot was never invited, the Slack user is
+   not in `allowedUsers`, or Socket Mode is off — check **Refresh health** and
+   **Load recent stderr** for the workspace's own error, such as `invalid_auth`.
+4. **Follow-up and reply.** Mention it again in the same thread while the turn is
+   still running: the message is held and answered after the current turn, never
+   interleaved. The completed answer is posted as a threaded reply.
+5. **Restart.** Restart ocman and mention the thread again. It continues the same
+   session, and any reply that was owed when ocman stopped is delivered — the
+   mapping and the delivery outbox are both durable. **Settings → Plugins →
+   Reply delivery** shows anything stuck, with *Retry delivery* and *Discard
+   reply* as the only two decisions.
+
+To remove it: disable the plugin, delete `ocman-plugin-slack` from the plugin
+directory, rescan, and use **Remove data** to erase the tokens, the thread
+mappings and the undelivered replies. Deleting the Slack app (or just revoking
+its tokens) is a separate step in Slack's own settings.
+
+Ocman's own tests cover this path against a mock workspace — the real
+executable, the host, and stand-ins for Slack's Web API and Socket Mode stream:
+
+```sh
+go test ./examples/ocman-plugin-slack
+go test ./internal/server -run Slack
+```
+
+They prove the wiring, not your workspace. A real Slack app, its two tokens, the
+channel invite, and the round trip through Slack itself still have to be checked
+by hand with the five steps above.
 
 ## Remote ownership
 

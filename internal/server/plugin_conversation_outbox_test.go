@@ -43,7 +43,12 @@ func (f *conversationFixture) pump(t *testing.T, s *Server) {
 
 func (f *conversationFixture) backlog(t *testing.T) state.PluginConversationBacklog {
 	t.Helper()
-	status, err := f.s.stateDB.PluginConversationBacklogStatus(t.Context(), conversationPluginDescription().ID)
+	return f.backlogFor(t, conversationPluginDescription().ID)
+}
+
+func (f *conversationFixture) backlogFor(t *testing.T, pluginID string) state.PluginConversationBacklog {
+	t.Helper()
+	status, err := f.s.stateDB.PluginConversationBacklogStatus(t.Context(), pluginID)
 	if err != nil {
 		t.Fatal(err)
 	}

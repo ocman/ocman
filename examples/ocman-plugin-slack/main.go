@@ -113,10 +113,17 @@ type bot struct {
 }
 
 func newBot(c config) *bot {
-	return &bot{
+	b := &bot{
 		cfg: c, api: defaultAPI, client: &http.Client{Timeout: 30 * time.Second},
 		outcomes: make(map[string]outcome),
 	}
+	// ponytail: acceptance harness hook, not a user setting. ocman launches a
+	// plugin with a fixed environment, so only a test wrapper can set this; it
+	// points the two Web API calls at a mock workspace instead of Slack.
+	if api := os.Getenv("OCMAN_SLACK_API"); api != "" {
+		b.api = api
+	}
+	return b
 }
 
 // slackError distinguishes the two cases a retry has to tell apart: a request

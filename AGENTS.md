@@ -177,6 +177,8 @@ handlers don't bypass the `Host` seam). User-facing docs:
   process supervision, and the `action.v1` / `conversation.v1` brokers. Trusted
   executables live in
   `~/.local/share/ocman/plugins` or `OCMAN_PLUGIN_DIR`; even discovery runs code.
+  Build the bundled ones with `make install-plugin PLUGIN=slack|fixture`
+  (`-trimpath`, so the checksum an operator approves is reproducible).
   Settings manages owner-local enablement, grants, configuration, and diagnostics.
   Remote projection uses authenticated `PluginOperation` RPCs; each owner keeps
   its binaries, secrets, and action receipts. The browser receives typed palette
@@ -239,6 +241,15 @@ handlers don't bypass the `Host` seam). User-facing docs:
   `examples/ocman-plugin-slack` speaks Slack Socket Mode
   (`apps.connections.open` → wss → `app_mention` → `chat.postMessage`), drops
   anything bot-originated so a reply cannot loop, and honours `Retry-After`.
+  `internal/server/plugin_conversation_slack_test.go` is the acceptance
+  walkthrough for that executable — the host's describe/discovery, the SDK
+  conversation conformance suite, and one end-to-end path (first mention,
+  mid-turn follow-up, completed reply, restart recovery) against a mock
+  workspace. The plugin's Web API base is redirected there with
+  `OCMAN_SLACK_API`, a test-wrapper hook only: ocman launches plugins with a
+  fixed environment, so it is unreachable in production. Mock coverage is not
+  live validation; a real Slack app, tokens and channel invite still need the
+  manual walkthrough in `docs/features/plugins.md`.
   Plugin events are drained by `Server.consumePluginEvents`; an unread event
   flood fails the process.
 
