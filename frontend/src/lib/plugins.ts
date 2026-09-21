@@ -88,6 +88,8 @@ export const plugins = {
   mutate: (owner: string, id: string, action: PluginMutation, input: PluginInput = {}) =>
     postJSON<unknown>(url(owner, `/${encodeURIComponent(id)}/${action}`), input),
   stderr: (owner: string, id: string) => fetchJSON<{ stderr: string }>(url(owner, `/${encodeURIComponent(id)}/stderr`)),
+  projectCatalog: (owner: string, directory: string, signal?: AbortSignal) =>
+    postJSON<{ agents: string[]; models: string[] }>(url(owner, '/project-catalog'), { directory }, { signal }),
   backlog: (owner: string, id: string, signal?: AbortSignal) =>
     fetchJSON<PluginBacklog>(url(owner, `/${encodeURIComponent(id)}/conversations`), signal),
 };

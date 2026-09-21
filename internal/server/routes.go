@@ -26,6 +26,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/plugins", s.get(s.handlePluginCatalog))
 	mux.HandleFunc("/api/plugins/discovery", s.get(s.handlePluginDiscovery))
 	mux.HandleFunc("/api/plugins/rescan", s.post(s.requireLocalhost(s.handlePluginRescan)))
+	mux.HandleFunc("/api/plugins/project-catalog", s.post(s.requireLocalhost(s.handlePluginProjectCatalog)))
 	mux.HandleFunc("/api/plugins/", s.requireAuth(s.handlePluginManagement))
 	mux.HandleFunc("/api/plugins/actions", s.get(s.handlePluginActions))
 	mux.HandleFunc("/api/plugins/actions/invoke", s.post(s.handlePluginActionInvoke))

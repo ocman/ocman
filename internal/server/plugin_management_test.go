@@ -78,6 +78,16 @@ func (f *pluginManagementTest) call(t *testing.T, method, path, body string, sta
 	return w.Body.String()
 }
 
+func TestPluginProjectCatalogRequiresDirectoryAndLocalhost(t *testing.T) {
+	f := newPluginManagementTest(t)
+	if got := f.request(http.MethodPost, "/project-catalog", `{}`, "127.0.0.1:1234", "", true).Code; got != http.StatusBadRequest {
+		t.Fatalf("missing directory: %d", got)
+	}
+	if got := f.request(http.MethodPost, "/project-catalog", `{"directory":"/repo"}`, "192.0.2.1:1234", "", true).Code; got != http.StatusForbidden {
+		t.Fatalf("non-local request: %d", got)
+	}
+}
+
 func (f *pluginManagementTest) approval(t *testing.T) string {
 	t.Helper()
 	p, err := f.s.stateDB.GetPlugin(t.Context(), f.description.ID)

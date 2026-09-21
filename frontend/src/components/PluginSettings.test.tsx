@@ -6,9 +6,9 @@ import { plugins, type PluginRegistration } from '../lib/plugins';
 import type { HostCapabilityEntry } from '../lib/api.types';
 import { PluginSettings } from './PluginSettings';
 
-vi.mock('../lib/api', () => ({ api: { capabilities: vi.fn() } }));
+vi.mock('../lib/api', () => ({ api: { capabilities: vi.fn(), projects: vi.fn() } }));
 vi.mock('../lib/plugins', () => ({
-  plugins: { list: vi.fn(), discovery: vi.fn(), rescan: vi.fn(), mutate: vi.fn(), stderr: vi.fn(), backlog: vi.fn() },
+  plugins: { list: vi.fn(), discovery: vi.fn(), rescan: vi.fn(), mutate: vi.fn(), stderr: vi.fn(), backlog: vi.fn(), projectCatalog: vi.fn() },
   // The example plugin serves no conversation, so its delivery backlog is not
   // part of the card; PluginDeliveryBacklog.test.tsx covers that on its own.
   hasConversationCapability: () => false,
@@ -37,6 +37,7 @@ beforeEach(() => {
     health: { status: 'disabled', restartCount: 0 },
   };
   vi.mocked(api.capabilities).mockResolvedValue({ platforms: [], hosts: [host('local'), host('remote'), host('old', false)] });
+  vi.mocked(api.projects).mockResolvedValue([]);
   vi.mocked(plugins.list).mockImplementation(async () => [structuredClone(plugin)]);
   vi.mocked(plugins.discovery).mockResolvedValue([]);
   vi.mocked(plugins.rescan).mockResolvedValue([]);
@@ -149,6 +150,31 @@ it('keeps secrets write-only, omits unchanged secrets, and sends typed configura
   click('Save configuration');
   await waitFor(() => expect(plugins.mutate).toHaveBeenLastCalledWith('local', plugin.description.id, 'configuration', { values: { mode: 'good' }, secrets: { token: 'write-only-value' } }));
   expect(screen.queryByDisplayValue('write-only-value')).not.toBeInTheDocument();
+});
+
+it('uses project-scoped selectors for Slack configuration', async () => {
+  plugin.description.id = 'org.ocman.slack';
+  plugin.description.settings = [
+    { key: 'project', type: 'string', label: 'Project directory', required: true },
+    { key: 'agent', type: 'string', label: 'Agent (optional)' },
+    { key: 'model', type: 'string', label: 'Model (optional provider/model)' },
+  ];
+  vi.mocked(api.projects).mockResolvedValue([{ directory: '/repo', sessionCount: 0, messageCount: 0, totalTokensIn: 0, totalTokensOut: 0, lastUsed: 0 }]);
+  vi.mocked(plugins.projectCatalog).mockResolvedValue({ agents: ['build'], models: ['openai/gpt-5'] });
+  await open();
+  click('Configure');
+  await waitFor(() => expect(api.projects).toHaveBeenCalled());
+  fireEvent.click(screen.getByRole('combobox', { name: 'Project directory' }));
+  fireEvent.click(await screen.findByRole('option', { name: '/repo' }));
+  await waitFor(() => expect(plugins.projectCatalog).toHaveBeenCalledWith('local', '/repo', expect.any(AbortSignal)));
+  fireEvent.click(screen.getByRole('combobox', { name: 'Agent (optional)' }));
+  fireEvent.click(screen.getByRole('option', { name: 'build' }));
+  fireEvent.click(screen.getByRole('combobox', { name: 'Model (optional provider/model)' }));
+  fireEvent.click(screen.getByRole('option', { name: 'openai/gpt-5' }));
+  click('Save configuration');
+  await waitFor(() => expect(plugins.mutate).toHaveBeenCalledWith('local', 'org.ocman.slack', 'configuration', {
+    values: { mode: 'good', project: '/repo', agent: 'build', model: 'openai/gpt-5' }, secrets: {},
+  }));
 });
 
 it('clears optional secrets explicitly and can undo clearing or editing', async () => {

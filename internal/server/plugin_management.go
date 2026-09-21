@@ -7,9 +7,12 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -43,6 +46,37 @@ func (s *Server) handlePluginDiscovery(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handlePluginRescan(w http.ResponseWriter, r *http.Request) {
 	s.servePluginOperation(w, r, remote.PluginRequest{Operation: "rescan"})
+}
+
+func (s *Server) handlePluginProjectCatalog(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Directory string `json:"directory"`
+	}
+	if !readAndUnmarshal(w, r, maxRequestBody, &input) || input.Directory == "" {
+		http.Error(w, "directory is required", http.StatusBadRequest)
+		return
+	}
+	values := map[string]json.RawMessage{"directory": json.RawMessage(strconv.Quote(input.Directory))}
+	s.servePluginOperation(w, r, remote.PluginRequest{Operation: "project-catalog", PluginID: "org.ocman.slack", Input: remote.PluginInput{Values: values}})
+}
+
+func (s *Server) pluginProjectCatalog(ctx context.Context, input remote.PluginInput) (any, error) {
+	var directory string
+	if input.Values == nil || json.Unmarshal(input.Values["directory"], &directory) != nil || directory == "" {
+		return nil, plugins.ErrInvalidMessage
+	}
+	ensured, err := s.router().Local().EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: directory})
+	if err != nil || ensured == nil {
+		return nil, err
+	}
+	agents, models, err := opencode.ProjectCatalog(ctx, ensured.Endpoint)
+	if err != nil {
+		return nil, err
+	}
+	return struct {
+		Agents []string `json:"agents"`
+		Models []string `json:"models"`
+	}{agents, models}, nil
 }
 
 // The action routes have longer mux matches and never pass through this handler.

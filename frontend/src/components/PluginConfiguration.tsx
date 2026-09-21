@@ -1,5 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { api, type Project } from '../lib/api';
 import type { PluginInput, PluginRegistration } from '../lib/plugins';
+import { plugins } from '../lib/plugins';
+import { SearchSelect } from './SearchSelect';
 import { SettingRow } from './SettingRow';
 
 export function PluginConfiguration({ plugin, save }: { plugin: PluginRegistration; save: (input: PluginInput) => Promise<void> }) {
@@ -12,6 +15,32 @@ export function PluginConfiguration({ plugin, save }: { plugin: PluginRegistrati
     return initial;
   });
   const [secrets, setSecrets] = useState<Record<string, string>>({});
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [catalog, setCatalog] = useState({ agents: [] as string[], models: [] as string[] });
+  const slack = plugin.description.id === 'org.ocman.slack';
+
+  useEffect(() => {
+    if (!slack) return;
+    const controller = new AbortController();
+    api.projects(controller.signal).then((items) => setProjects(items.filter((project) => (project.remoteId || 'local') === plugin.ownerId && !project.archived))).catch(() => {});
+    return () => controller.abort();
+  }, [plugin.ownerId, slack]);
+
+  useEffect(() => {
+    if (!slack || typeof values.project !== 'string' || !values.project) {
+      setCatalog({ agents: [], models: [] });
+      return;
+    }
+    const controller = new AbortController();
+    plugins.projectCatalog(plugin.ownerId, values.project, controller.signal).then(setCatalog).catch(() => setCatalog({ agents: [], models: [] }));
+    return () => controller.abort();
+  }, [plugin.ownerId, slack, values.project]);
+
+  const selectValue = (key: string, value: string) => setValues((previous) => ({ ...previous, [key]: value }));
+  const selectOptions = (items: string[], current: string, empty: string) => [
+    { value: '', label: empty },
+    ...Array.from(new Set([...items, current].filter(Boolean))).map((value) => ({ value, label: value })),
+  ];
 
   return <form aria-label="Plugin configuration" onSubmit={(event) => {
     event.preventDefault();
@@ -33,7 +62,13 @@ export function PluginConfiguration({ plugin, save }: { plugin: PluginRegistrati
           if (event.target.checked) next[s.key] = ''; else delete next[s.key];
           return next;
         })} />Clear {s.label}</label>}
-      </> : s.type === 'boolean' ? <select aria-label={s.label} required={s.required} value={String(values[s.key] ?? '')} onChange={(event) => setValues((previous) => {
+      </> : slack && s.key === 'project' ? <SearchSelect ariaLabel={s.label} searchLabel="Search projects" placeholder="Select a project" value={String(values.project ?? '')}
+        options={selectOptions(projects.map((project) => project.directory), String(values.project ?? ''), 'Select a project')}
+        onChange={(project) => setValues((previous) => ({ ...previous, project, agent: '', model: '' }))} />
+      : slack && (s.key === 'agent' || s.key === 'model') ? <SearchSelect ariaLabel={s.label} searchLabel={`Search ${s.key}s`} placeholder={`Default ${s.key}`} disabled={!values.project}
+        value={String(values[s.key] ?? '')} options={selectOptions(s.key === 'agent' ? catalog.agents : catalog.models, String(values[s.key] ?? ''), `Default ${s.key}`)}
+        onChange={(value) => selectValue(s.key, value)} />
+      : s.type === 'boolean' ? <select aria-label={s.label} required={s.required} value={String(values[s.key] ?? '')} onChange={(event) => setValues((previous) => {
         const next = { ...previous };
         if (event.target.value === '') delete next[s.key]; else next[s.key] = event.target.value === 'true';
         return next;

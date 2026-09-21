@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -90,6 +92,43 @@ func resolveOpenCodePortBySession(ctx context.Context, sessionID string) (string
 }
 
 // --- Catalogs ---
+
+// ProjectCatalog reads catalogs from a managed project before it has a session.
+func ProjectCatalog(ctx context.Context, endpoint string) (agents, models []string, err error) {
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Port() == "" || net.ParseIP(u.Hostname()) == nil || !net.ParseIP(u.Hostname()).IsLoopback() {
+		return nil, nil, errors.New("invalid OpenCode endpoint")
+	}
+	body, err := getJSONCached(ctx, u.Port(), "/agent")
+	if err != nil {
+		return nil, nil, err
+	}
+	var rawAgents []map[string]interface{}
+	if err := json.Unmarshal(body, &rawAgents); err != nil {
+		return nil, nil, err
+	}
+	for _, agent := range rawAgents {
+		if name := stringField(agent, "name"); name != "" {
+			agents = append(agents, name)
+		}
+	}
+	body, err = getJSONCached(ctx, u.Port(), "/provider")
+	if err != nil {
+		return nil, nil, err
+	}
+	var providers OpenCodeProvidersResponse
+	if err := json.Unmarshal(body, &providers); err != nil {
+		return nil, nil, err
+	}
+	for _, provider := range providers.All {
+		for model := range provider.Models {
+			models = append(models, provider.ID+"/"+model)
+		}
+	}
+	sort.Strings(agents)
+	sort.Strings(models)
+	return agents, models, nil
+}
 
 // AgentCatalog returns the OpenCode /agent catalog for the session's
 // running instance. Returns an empty slice when no instance is reachable.

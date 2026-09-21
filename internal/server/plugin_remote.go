@@ -71,6 +71,11 @@ func pluginResponse(value any, err error) remote.PluginResponse {
 func (s *Server) localPluginOperation(ctx context.Context, req remote.PluginRequest, fromRemote bool) remote.PluginResponse {
 	ctx = context.WithValue(ctx, pluginExecutionKey{}, pluginExecution{remote: fromRemote, owner: req.Action.Context.OwnerID})
 	switch req.Operation {
+	case "project-catalog":
+		if req.PluginID != "org.ocman.slack" || req.Read {
+			return pluginResponse(nil, plugins.ErrInvalidMessage)
+		}
+		return pluginResponse(s.pluginProjectCatalog(ctx, req.Input))
 	case "available":
 		return pluginResponse(true, nil)
 	case "discovery":
