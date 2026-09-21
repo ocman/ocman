@@ -4,9 +4,10 @@
 .factory-graph-legend li { display: flex; align-items: center; gap: 6px; }
 .factory-graph-swatch { width: 12px; height: 12px; border: 1px solid var(--border); border-radius: 3px; }
 .factory-node { display: grid; gap: 2px; text-align: left; }
+.factory-node strong { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; line-height: 16px; }
 .factory-node span { color: var(--text-dim); font-size: 11px; }
 
-.factory-node-box { width: 200px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); color: var(--text); font-size: 12px; }
+.factory-node-box { padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); color: var(--text); font-size: 12px; }
 .factory-node-box.selected { outline: 2px solid var(--accent); }
 
 /* One palette for the node border and its legend swatch. */

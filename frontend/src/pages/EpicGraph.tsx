@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Background, Controls, MarkerType, Position, ReactFlow, type Edge, type Node } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { GRAPH_STATES, factoryGraphModel } from './factoryGraph';
+import { GRAPH_NODE_HEIGHT, GRAPH_NODE_WIDTH, GRAPH_STATES, factoryGraphModel } from './factoryGraph';
 import { IssueDrawer } from './FactoryIssues';
 import type { FactoryIssue } from '../lib/api';
 import './EpicGraph.css';
@@ -16,7 +16,8 @@ export function EpicGraph({ issues, preview }: { issues?: FactoryIssue[]; previe
     const flowNodes: Node[] = model.nodes.map((node) => ({
       id: node.id,
       position: { x: node.x, y: node.y },
-      data: { label: <span className="factory-node"><strong>{node.issue.title}</strong><span>{node.issue.authority ? 'permission decision' : node.issue.recovery ? 'recovery decision' : node.issue.kind === 'phase' ? 'phase completion' : node.issue.workflow?.kind ?? node.issue.kind} · {node.state}</span></span> },
+      data: { label: <span className="factory-node"><strong title={node.issue.title}>{node.issue.title}</strong><span>{node.issue.authority ? 'permission decision' : node.issue.recovery ? 'recovery decision' : node.issue.kind === 'phase' ? 'phase completion' : node.issue.workflow?.kind ?? node.issue.kind} · {node.state}</span></span> },
+      style: { width: GRAPH_NODE_WIDTH, height: GRAPH_NODE_HEIGHT },
       className: `factory-node-box factory-node-box--${node.state}`,
       sourcePosition: Position.Bottom,
       targetPosition: Position.Top,

@@ -1,5 +1,5 @@
-// Layout for the epic work graph: hierarchy and declared dependencies placed on
-// layers, with status as a class name so the palette stays in CSS.
+// Shared Dagre layout for epic, proposal, and Formula graphs.
+import { graphlib, layout } from '@dagrejs/dagre';
 import type { FactoryFormula, FactoryIssue, FactoryProposal } from '../lib/api';
 
 export type GraphState = 'done' | 'failed' | 'running' | 'blocked' | 'ready' | 'waiting' | 'deferred';
@@ -21,8 +21,8 @@ export interface GraphEdge {
   kind: 'hierarchy' | 'completion' | 'blocks' | 'on_failure' | 'merge_gated' | 'interrupts';
 }
 
-const COLUMN = 260;
-const ROW = 120;
+export const GRAPH_NODE_WIDTH = 200;
+export const GRAPH_NODE_HEIGHT = 100;
 
 export function factoryIssueState(issue: FactoryIssue): GraphState {
   if (issue.status === 'closed') return issue.outcome && issue.outcome !== 'succeeded' ? 'failed' : 'done';
@@ -118,38 +118,37 @@ export function factoryGraphModel(issues: FactoryIssue[]): { nodes: GraphNode[];
   const replacedIDs = new Set(replaced.map((phase) => phase.id));
   visible = visible.filter((issue) => !replacedIDs.has(issue.id));
 
-  // Longest-path layering over a DAG. A cycle would starve Kahn's queue, so
-  // whatever is left keeps its current depth and still gets drawn.
-  const depth = new Map(visible.map((issue) => [issue.id, 0]));
-  const incoming = new Map(visible.map((issue) => [issue.id, 0]));
-  const outgoing = new Map<string, GraphEdge[]>();
-  for (const edge of edges) {
-    if (edge.kind === 'interrupts') continue;
-    incoming.set(edge.target, (incoming.get(edge.target) ?? 0) + 1);
-    outgoing.set(edge.source, [...(outgoing.get(edge.source) ?? []), edge]);
+  const graph = new graphlib.Graph().setGraph({ rankdir: 'TB', nodesep: 60, ranksep: 60 }).setDefaultEdgeLabel(() => ({}));
+  const owners = new Map(edges.filter((edge) => edge.kind === 'interrupts').map((edge) => [edge.target, edge.source]));
+  const decisions = new Map<string, string[]>();
+  // Stable input order keeps status updates and API sorting from moving the graph.
+  const ordered = [...visible].sort((a, b) => a.id.localeCompare(b.id));
+  for (const issue of ordered) {
+    const owner = owners.get(issue.id);
+    if (owner) decisions.set(owner, [...(decisions.get(owner) ?? []), issue.id]);
   }
-  const queue = visible.filter((issue) => !incoming.get(issue.id)).map((issue) => issue.id);
-  for (let head = 0; head < queue.length; head++) {
-    const id = queue[head];
-    for (const edge of outgoing.get(id) ?? []) {
-      depth.set(edge.target, Math.max(depth.get(edge.target) ?? 0, (depth.get(id) ?? 0) + 1));
-      incoming.set(edge.target, (incoming.get(edge.target) ?? 1) - 1);
-      if (!incoming.get(edge.target)) queue.push(edge.target);
+  for (const issue of ordered) {
+    if (owners.has(issue.id)) continue;
+    const count = decisions.get(issue.id)?.length ?? 0;
+    // Reserve a side column so decision history cannot stretch the execution ranks.
+    graph.setNode(issue.id, { width: count ? GRAPH_NODE_WIDTH * 2 + 60 : GRAPH_NODE_WIDTH, height: Math.max(1, count) * (GRAPH_NODE_HEIGHT + 20) - 20 });
+  }
+  for (const edge of [...edges].sort((a, b) => a.id.localeCompare(b.id))) {
+    const source = owners.get(edge.source) ?? edge.source;
+    const target = owners.get(edge.target) ?? edge.target;
+    if (source !== target) graph.setEdge(source, target);
+  }
+  layout(graph);
+  const positions = new Map<string, { x: number; y: number }>();
+  for (const id of graph.nodes()) {
+    const { x, y, width, height } = graph.node(id);
+    positions.set(id, { x: x - width / 2, y: y - GRAPH_NODE_HEIGHT / 2 });
+    for (const [index, decision] of (decisions.get(id) ?? []).entries()) {
+      positions.set(decision, { x: x - width / 2 + GRAPH_NODE_WIDTH + 60, y: y - height / 2 + index * (GRAPH_NODE_HEIGHT + 20) });
     }
   }
-
-  // Decisions sit beside the work they interrupted; resolving one does not finish it.
-  for (const edge of edges) {
-    if (edge.kind === 'interrupts') depth.set(edge.target, depth.get(edge.source) ?? 0);
-  }
-
-  const used = new Map<number, number>();
-  // Keep the execution path on the left even when old decisions arrive first.
-  const nodes = [...visible].sort((a, b) => Number(Boolean(a.recovery || a.authority)) - Number(Boolean(b.recovery || b.authority))).map((issue) => {
-    const row = depth.get(issue.id) ?? 0;
-    const column = used.get(row) ?? 0;
-    used.set(row, column + 1);
-    return { id: issue.id, issue, state: factoryIssueState(issue), x: column * COLUMN, y: row * ROW };
+  const nodes = visible.map((issue) => {
+    return { id: issue.id, issue, state: factoryIssueState(issue), ...positions.get(issue.id)! };
   });
   return { nodes, edges };
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { factoryGraphModel, factoryIssueState, formulaIssues, proposalIssues } from './factoryGraph';
+import { GRAPH_NODE_HEIGHT, GRAPH_NODE_WIDTH, factoryGraphModel, factoryIssueState, formulaIssues, proposalIssues } from './factoryGraph';
 import type { FactoryIssue } from '../lib/api';
 
 const issue = (overrides: Partial<FactoryIssue> & Pick<FactoryIssue, 'id'>): FactoryIssue => ({
@@ -26,6 +26,36 @@ describe('factoryIssueState', () => {
 });
 
 describe('factoryGraphModel', () => {
+  it('centers forks and joins and keeps the layout stable across status and input-order changes', () => {
+    const issues = [
+      issue({ id: 'start' }),
+      issue({ id: 'left', dependsOn: [{ id: 'start', type: 'blocks' }] }),
+      issue({ id: 'right', dependsOn: [{ id: 'start', type: 'blocks' }] }),
+      issue({ id: 'join', dependsOn: [{ id: 'left', type: 'blocks' }, { id: 'right', type: 'blocks' }] }),
+    ];
+    const coordinates = (input: FactoryIssue[]) => Object.fromEntries(factoryGraphModel(input).nodes.map(({ id, x, y }) => [id, { x, y }]));
+    const positions = coordinates(issues);
+    expect(positions.start.x).toBe((positions.left.x + positions.right.x) / 2);
+    expect(positions.join.x).toBe(positions.start.x);
+    expect(Math.abs(positions.left.x - positions.right.x)).toBeGreaterThan(GRAPH_NODE_WIDTH);
+    expect(coordinates(issues.toReversed().map((item) => ({ ...item, status: 'closed', outcome: 'succeeded', dependsOn: item.dependsOn?.toReversed() })))).toEqual(positions);
+  });
+
+  it('packs many decisions beside their task without overlaps or moving delivery ahead of work', () => {
+    const { nodes } = factoryGraphModel([
+      issue({ id: 'work', status: 'in_progress' }),
+      ...Array.from({ length: 15 }, (_, i) => issue({ id: `gate-${i}`, kind: 'gate', authority: { issueId: `gate-${i}`, epicId: 'epic-1', attemptId: 'a', workId: 'work', requestId: 'r', permission: 'bash', target: 'test', resolution: 'approve' } })),
+      issue({ id: 'deliver', kind: 'delivery', dependsOn: [{ id: 'work', type: 'blocks' }] }),
+    ]);
+    for (const a of nodes) for (const b of nodes) {
+      if (a.id === b.id) continue;
+      expect(Math.abs(a.x - b.x) >= GRAPH_NODE_WIDTH || Math.abs(a.y - b.y) >= GRAPH_NODE_HEIGHT).toBe(true);
+    }
+    const delivery = nodes.find((node) => node.id === 'deliver')!;
+    expect(nodes.filter((node) => node !== delivery).every((node) => node.y + GRAPH_NODE_HEIGHT < delivery.y)).toBe(true);
+    expect(Math.max(...nodes.map((node) => node.x)) - Math.min(...nodes.map((node) => node.x))).toBeLessThan(3 * GRAPH_NODE_WIDTH);
+  });
+
   it('keeps an unmaterialized phase visible', () => {
     const { nodes, edges } = factoryGraphModel([
       issue({ id: 'phase', kind: 'phase' }),
@@ -234,7 +264,9 @@ describe('proposalIssues', () => {
       ['docs', 'docs', 'waiting', [{ id: 'ui', type: 'on_failure' }]],
     ]);
     const { nodes, edges } = factoryGraphModel(issues);
-    expect(nodes.map((node) => [node.id, node.y])).toEqual([['api', 0], ['ui', 120], ['docs', 240]]);
+    expect(nodes.map((node) => node.id)).toEqual(['api', 'ui', 'docs']);
+    expect(nodes[0].y + GRAPH_NODE_HEIGHT).toBeLessThan(nodes[1].y);
+    expect(nodes[1].y + GRAPH_NODE_HEIGHT).toBeLessThan(nodes[2].y);
     expect(edges.map((edge) => edge.id)).toEqual(['blocks:api->ui', 'on_failure:ui->docs']);
   });
 });
