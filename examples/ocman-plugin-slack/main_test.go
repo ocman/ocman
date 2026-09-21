@@ -111,6 +111,10 @@ func TestTranslate(t *testing.T) {
 	if message.AccountID != "T1" || message.EventID != "Ev1" {
 		t.Fatalf("missing conversation identity: %+v", message)
 	}
+	direct := map[string]any{"type": "message", "channel_type": "im", "user": "U123", "text": "ship privately", "ts": "1700000000.000200", "channel": "D1"}
+	if message, ok = b.translate(mention(t, direct)); !ok || message.Text != "ship privately" || message.ThreadID != "D1:1700000000.000200" {
+		t.Fatalf("direct message: %+v %v", message, ok)
+	}
 	// Mentions inside the request survive; only the addressing one is stripped.
 	inner := map[string]any{}
 	for k, v := range base {
@@ -139,6 +143,7 @@ func TestTranslate(t *testing.T) {
 		"bot profile echo": func(e map[string]any) { e["bot_profile"] = map[string]any{"id": "B1"} },
 		"message subtype":  func(e map[string]any) { e["subtype"] = "message_changed" },
 		"not a mention":    func(e map[string]any) { e["type"] = "message" },
+		"channel message":  func(e map[string]any) { e["type"], e["channel_type"] = "message", "channel" },
 		"bad channel":      func(e map[string]any) { e["channel"] = "C 1" },
 		"bad timestamp":    func(e map[string]any) { e["ts"] = "nope" },
 		"mention only":     func(e map[string]any) { e["text"] = "<@U0BOT>" },

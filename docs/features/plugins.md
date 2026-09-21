@@ -338,10 +338,12 @@ oauth_config:
       - app_mentions:read
       - assistant:write
       - chat:write
+      - im:history
 settings:
   event_subscriptions:
     bot_events:
       - app_mention
+      - message.im
   socket_mode_enabled: true
 ```
 
@@ -351,10 +353,13 @@ Then, in the app's settings:
    `connections:write` scope. It starts with `xapp-`.
 2. **Install App**: install to the workspace and copy the bot token, which
    starts with `xoxb-`.
-3. Invite the bot to the channel you want to use.
+3. **App Home**: enable the Messages tab and allow users to send messages.
+4. Invite the bot to the channel you want to use.
 
-The scopes above are the complete set: `app_mentions:read`, `chat:write` and
-`assistant:write` on the bot token, `connections:write` on the app-level token.
+The scopes above are the complete set: `app_mentions:read`, `chat:write`,
+`im:history` and `assistant:write` on the bot token, `connections:write` on the
+app-level token. Authorized users can message the app directly without a
+mention; channel messages still require an explicit mention.
 The assistant scope shows `Thinking...` while a turn runs; it is cleared after
 the threaded reply is posted. The plugin reads no channel history.
 
@@ -385,8 +390,9 @@ completed reply appears in the same thread.
 Both tokens use the host's write-only secret handling: they are delivered only on
 file descriptor 3, never appear in logs, results, or error text, and are redacted
 from captured stderr. `allowedUsers` fails closed — an empty list authorizes
-nobody. Only `app_mention` events are subscribed, so every inbound message is an
-explicit mention; bot messages and unauthorized users are dropped silently.
+nobody. Channel messages arrive only as explicit `app_mention` events. Direct
+messages arrive as `message.im` events and are accepted only from the same user
+allowlist; bot messages and unauthorized users are dropped silently.
 
 On delivery, the plugin honours Slack's rate limits: a `429` posted nothing, so
 it waits out `Retry-After` (bounded) and retries in place, then hands the

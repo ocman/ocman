@@ -25,15 +25,16 @@ type eventPayload struct {
 	EventID string `json:"event_id"`
 	TeamID  string `json:"team_id"`
 	Event   struct {
-		Type       string          `json:"type"`
-		Subtype    string          `json:"subtype"`
-		User       string          `json:"user"`
-		BotID      string          `json:"bot_id"`
-		BotProfile json.RawMessage `json:"bot_profile"`
-		Text       string          `json:"text"`
-		TS         string          `json:"ts"`
-		ThreadTS   string          `json:"thread_ts"`
-		Channel    string          `json:"channel"`
+		Type        string          `json:"type"`
+		Subtype     string          `json:"subtype"`
+		User        string          `json:"user"`
+		BotID       string          `json:"bot_id"`
+		BotProfile  json.RawMessage `json:"bot_profile"`
+		Text        string          `json:"text"`
+		TS          string          `json:"ts"`
+		ThreadTS    string          `json:"thread_ts"`
+		Channel     string          `json:"channel"`
+		ChannelType string          `json:"channel_type"`
 	} `json:"event"`
 }
 
@@ -61,14 +62,15 @@ func (b *bot) authorized(user string) bool {
 	return false
 }
 
-// translate only accepts an explicit app mention from an authorized human.
+// translate accepts channel mentions and direct messages from authorized humans.
 func (b *bot) translate(env socketEnvelope) (plugin.ConversationMessage, bool) {
 	var payload eventPayload
 	if env.Type != "events_api" || json.Unmarshal(env.Payload, &payload) != nil {
 		return plugin.ConversationMessage{}, false
 	}
 	e := payload.Event
-	if e.Type != "app_mention" || e.Subtype != "" || e.BotID != "" || len(e.BotProfile) > 0 || !b.authorized(e.User) {
+	acceptedType := e.Type == "app_mention" || e.Type == "message" && e.ChannelType == "im"
+	if !acceptedType || e.Subtype != "" || e.BotID != "" || len(e.BotProfile) > 0 || !b.authorized(e.User) {
 		return plugin.ConversationMessage{}, false
 	}
 	thread := e.ThreadTS

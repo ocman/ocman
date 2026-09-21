@@ -4,9 +4,9 @@
 //
 // Slack app requirements (see docs/features/plugins.md):
 //   - Socket Mode enabled, app-level token (xapp-) with connections:write.
-//   - Bot token (xoxb-) with app_mentions:read, chat:write and assistant:write.
-//   - Event subscription: app_mention only, so every inbound message is an
-//     explicit @mention of the app.
+//   - Bot token (xoxb-) with app_mentions:read, im:history, chat:write and
+//     assistant:write.
+//   - Event subscriptions: app_mention and message.im.
 package main
 
 import (
