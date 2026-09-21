@@ -271,7 +271,7 @@ func (b *bot) setThreadStatus(ctx context.Context, channel, thread, status strin
 	if _, err := b.call(ctx, "assistant.threads.setStatus", b.cfg.BotToken, map[string]string{
 		"channel_id": channel, "thread_ts": thread, "status": status,
 	}); err != nil {
-		fmt.Fprintln(os.Stderr, "slack assistant status unavailable")
+		fmt.Fprintln(os.Stderr, err)
 	}
 }
 
