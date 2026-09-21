@@ -120,11 +120,21 @@ func hasConversation(caps []Capability) bool {
 }
 
 // validateConversation enforces the capability's declaration contract: a
-// conversation plugin must request the session grant and declare the single
-// required, non-secret project setting the user approves in Settings.
+// conversation plugin must run at owner scope, request the session grant, and
+// declare the single required, non-secret project setting the user approves in
+// Settings.
 func (d Description) validateConversation() error {
 	if !hasConversation(d.Capabilities) {
 		return nil
+	}
+	// Connector ownership is part of the contract, not a deployment choice. The
+	// connector holds one owner's provider credentials and drives that owner's
+	// one project, so it belongs to the machine it is installed on. A hub or
+	// global scope would let a second machine claim the same provider account,
+	// and for a long-lived socket that means two processes competing for one
+	// event stream, each seeing an arbitrary half of the conversation.
+	if d.Scope != ScopeOwner {
+		return ErrInvalidMessage
 	}
 	if !slices.Contains(d.RequestedGrants, ConversationSessionGrant) {
 		return ErrInvalidMessage

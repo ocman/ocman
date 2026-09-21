@@ -15,7 +15,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/plugins"
-	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/worker"
 )
@@ -182,15 +181,20 @@ func (s *Server) deliverConversationPrompt(ctx context.Context, key state.Plugin
 // session is authoritative and this one is abandoned, so a concurrent first
 // message can never leave the conversation with two mapped sessions.
 func (s *Server) createConversationSession(ctx context.Context, key state.PluginConversationKey, dir string) (state.PluginConversationSession, error) {
-	host := s.router().ForDir(dir)
+	// The owner is this machine, explicitly. A conversation plugin's binary,
+	// provider credentials, configuration and approved project are all
+	// owner-local, and dir was just validated on this filesystem. Inferring the
+	// owner instead (Router.ForDir) would consult the project inventory, which
+	// can hand the session to another machine that happens to claim the path —
+	// and whose permissive fallback silently degrades a disconnected remote
+	// back to the hub, running the conversation somewhere nobody approved it.
+	host := s.router().Local()
 	ensured, err := host.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir})
 	if err != nil {
 		return state.PluginConversationSession{}, err
 	}
-	platformID := "opencode"
-	if id := host.RemoteID(); id != "" && id != "local" {
-		platformID = remote.CompoundPlatformID(id, platformID)
-	}
+	// Owner-local by construction, so the platform is never remote-qualified.
+	const platformID = "opencode"
 	created, err := s.sessions.Create(ctx, platformID, platforms.CreateSessionRequest{Directory: dir, Port: ensured.Port()})
 	if err != nil {
 		return state.PluginConversationSession{}, err

@@ -102,11 +102,40 @@ func (s *Server) pumpConversationOutbox(ctx context.Context) {
 		log.WithError(err).Warn("claiming conversation replies for delivery")
 		return
 	}
+	allowed := map[string]bool{}
 	for _, delivery := range claimed {
-		if s.beginConversationDelivery(delivery.ID) {
+		id := delivery.Key.PluginID
+		if _, asked := allowed[id]; !asked {
+			allowed[id] = s.conversationDeliveryAllowed(ctx, id)
+		}
+		if allowed[id] && s.beginConversationDelivery(delivery.ID) {
 			s.conversationDeliveryWorker().Enqueue(delivery)
 		}
 	}
+}
+
+// conversationDeliveryAllowed reports whether a plugin may be delivered to right
+// now. Disabling an instance or revoking its grant has to stop delivery at once
+// — and stop it without spending the reply's retry budget, because an operator
+// disabling a plugin for an hour would otherwise return to find every owed
+// reply turned into a dead letter. An unauthorized delivery is left untouched
+// in its outbox: not attempted, not failed, not discarded, and picked up by the
+// next pump tick once the plugin is enabled and granted again. Re-enabling
+// therefore resumes owed work rather than replaying anything that was denied.
+//
+// Fails closed: an unreadable registration pauses instead of posting.
+func (s *Server) conversationDeliveryAllowed(ctx context.Context, pluginID string) bool {
+	// Lock order matches the broker's authorization: server lifecycle, then
+	// durable state.
+	s.pluginMu.Lock()
+	defer s.pluginMu.Unlock()
+	if s.stateDB == nil {
+		return false
+	}
+	return s.stateDB.WithPluginConversation(ctx, pluginID,
+		func(d plugins.Description, grants []string, _ string) error {
+			return plugins.ConversationAllowed(d, grants)
+		}) == nil
 }
 
 // kickConversationOutbox pumps without waiting for the next tick, so a fresh

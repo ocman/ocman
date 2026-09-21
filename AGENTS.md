@@ -195,7 +195,16 @@ handlers don't bypass the `Host` seam). User-facing docs:
   durable (`state.db`'s `plugin_conversation`, migration v96) and claimed by an
   atomic insert-if-absent, so a restart continues the same session, concurrent
   first messages cannot map two, and two workspaces reusing a thread identity
-  stay isolated; `platformId` owner-qualifies the session. Each inbound message
+  stay isolated; `platformId` owner-qualifies the session. A connector is
+  **owner-scoped by declaration** (`Description.Validate` refuses `hub`/`global`
+  with the capability): it holds one owner's provider credentials and drives that
+  owner's one project, so two machines sharing a provider app would compete for
+  one Socket Mode stream. `createConversationSession` therefore uses
+  `Router.Local()`, never `ForDir` — inferred ownership could run the session on
+  a machine that approved nothing, and its permissive fallback would silently
+  degrade a disconnected remote back to the hub. The hub only projects Settings
+  for a remote owner, and fails visibly (503) when that owner is disconnected.
+  Each inbound message
   carries the provider's stable `eventId`, reserved as
   `conv-in:<accountId>:<eventId>` in the durable operation-receipt table *before*
   any work, making a redelivery at-most-once rather than a duplicate prompt.
@@ -219,7 +228,11 @@ handlers don't bypass the `Host` seam). User-facing docs:
   attempts a delivery becomes a visible dead letter that blocks only its own
   conversation until a localhost-only `conversations/retry` or
   `conversations/discard` decides, surfaced in Settings → Plugins → Reply
-  delivery via `conversations`. Per-plugin count and byte caps pause *inbound*
+  delivery via `conversations`. The pump re-asks `plugins.ConversationAllowed`
+  *before* scheduling a row, so disabling an installation or revoking its grant
+  stops delivery at once without spending the reply's retry budget — the row
+  stays pending and unattempted, keeping its mapping and text, and re-enabling
+  delivers exactly the work already owed. Per-plugin count and byte caps pause *inbound*
   admission before the event receipt is reserved, so pressure stops new work
   visibly instead of dropping owed replies, and a redelivery is still accepted
   once the backlog drains. Provider details stay in the plugin:

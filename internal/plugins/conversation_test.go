@@ -93,11 +93,20 @@ func TestConversationDeclarationContract(t *testing.T) {
 	secretProject.Settings = []Setting{{Key: ConversationProjectSetting, Label: "Project", Type: "string", Required: true, Secret: true}}
 	optionalProject := conversationDescription()
 	optionalProject.Settings = []Setting{{Key: ConversationProjectSetting, Label: "Project", Type: "string"}}
+	// A connector belongs to the machine it is installed on. Any other scope
+	// would let a second machine claim the same provider account and compete
+	// for its event stream.
+	hubScope := conversationDescription()
+	hubScope.Scope = ScopeHub
+	globalScope := conversationDescription()
+	globalScope.Scope = ScopeGlobal
 	for name, d := range map[string]Description{
 		"missing grant":    noGrant,
 		"missing project":  noProject,
 		"secret project":   secretProject,
 		"optional project": optionalProject,
+		"hub scope":        hubScope,
+		"global scope":     globalScope,
 	} {
 		t.Run(name, func(t *testing.T) {
 			if d.Validate() == nil {
@@ -105,9 +114,11 @@ func TestConversationDeclarationContract(t *testing.T) {
 			}
 		})
 	}
-	// A plugin without the capability is unaffected by the contract.
+	// A plugin without the capability is unaffected by the contract, scope
+	// included: only a connector is pinned to its owner.
 	unrelated := conversationDescription()
 	unrelated.Capabilities, unrelated.RequestedGrants, unrelated.Settings = []Capability{ActionCapability}, nil, nil
+	unrelated.Scope = ScopeHub
 	if err := unrelated.Validate(); err != nil {
 		t.Fatalf("action-only plugin rejected: %v", err)
 	}

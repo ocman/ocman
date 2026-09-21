@@ -393,11 +393,20 @@ The host negotiates `conversation` major 1, minor 0, independently of `action`.
 It carries exactly two provider-neutral moves; provider protocols, credentials,
 and payload shapes stay inside the plugin.
 
-A description declaring this capability must also request the
-`conversation.session` grant and declare a required, non-secret `project`
-setting. `Description.Validate` rejects a declaration missing either, so the
-approved configuration is always the single project the plugin can reach. There
-is no way to widen the grant to a second project.
+A description declaring this capability must use execution scope `owner`, request
+the `conversation.session` grant, and declare a required, non-secret `project`
+setting. `Description.Validate` rejects a declaration missing any of the three,
+so the approved configuration is always the single project the plugin can reach.
+There is no way to widen the grant to a second project.
+
+`owner` scope is the connector-ownership rule: a connector holds one owner's
+provider credentials and drives that owner's one project, so it belongs to the
+machine it is installed on. `hub` or `global` would let a second machine claim
+the same provider account, and for a long-lived socket that means two processes
+competing for one event stream. Session creation follows the same rule: the host
+uses its own local host service, never an owner inferred from the project
+inventory, so a conversation can neither run on a machine that approved nothing
+nor fall back to the hub when an inferred owner is disconnected.
 
 ### Inbound: plugin-initiated normalized message
 
@@ -494,5 +503,10 @@ Both directions are admitted by `ConversationBroker` under the same critical
 section as revocation, reading enablement, grants, and the configured project
 from one row. A disabled plugin returns `unavailable`; a missing grant,
 undeclared capability, or unapproved project returns `permission_denied`.
+The delivery pump asks the same question (`ConversationAllowed`) *before* it
+schedules a row, so disabling an installation or revoking its grant stops
+delivery at once without spending the reply's retry budget: the row stays
+pending and unattempted, keeping its mapping and its text, and the next pump
+tick after re-enablement delivers exactly the work that was already owed.
 Session-starting work runs outside that section because it launches processes.
 Permission prompts remain in ocman and are never exposed to the provider.

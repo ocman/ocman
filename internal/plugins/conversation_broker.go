@@ -41,9 +41,11 @@ func NewConversationBroker(authorize ConversationAuthorization, start Conversati
 	return &ConversationBroker{authorize: authorize, start: start, call: call}
 }
 
-// conversationAllowed fails closed on an undeclared capability or a missing
-// grant, so an enabled plugin without the approved grant reaches nothing.
-func conversationAllowed(d Description, grants []string) error {
+// ConversationAllowed fails closed on an undeclared capability or a missing
+// grant, so an enabled plugin without the approved grant reaches nothing. It is
+// exported so the host can ask the same question before it schedules work,
+// rather than discovering the denial by attempting it.
+func ConversationAllowed(d Description, grants []string) error {
 	if !hasConversation(d.Capabilities) {
 		return &WireError{Category: ErrorNotFound}
 	}
@@ -69,7 +71,7 @@ func (b *ConversationBroker) Deliver(ctx context.Context, pluginID string, event
 	defer cancel()
 	var dir string
 	if err := b.authorize(ctx, pluginID, func(d Description, grants []string, project string) error {
-		if err := conversationAllowed(d, grants); err != nil {
+		if err := ConversationAllowed(d, grants); err != nil {
 			return err
 		}
 		if project == "" || !ConversationProjectAllowed(project, message.Project) {
@@ -94,7 +96,7 @@ func (b *ConversationBroker) Reply(ctx context.Context, pluginID, operationID st
 	defer cancel()
 	var replies <-chan Reply
 	if err := b.authorize(ctx, pluginID, func(d Description, grants []string, _ string) error {
-		if err := conversationAllowed(d, grants); err != nil {
+		if err := ConversationAllowed(d, grants); err != nil {
 			return err
 		}
 		params, err := json.Marshal(reply)

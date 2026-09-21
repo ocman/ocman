@@ -176,10 +176,10 @@ operation ID.
 ## Authoring conversation.v1
 
 Advertise capability `{"name":"conversation","version":{"major":1,"minor":0}}`.
-A conversation plugin must also request the `conversation.session` grant and
-declare a required, non-secret `project` setting. Ocman refuses a declaration
-that omits either, so the project you approve in **Configure** is always the one
-project the plugin can reach.
+A conversation plugin must use execution scope `owner`, request the
+`conversation.session` grant, and declare a required, non-secret `project`
+setting. Ocman refuses a declaration missing any of the three, so the project you
+approve in **Configure** is always the one project the plugin can reach.
 
 The capability has exactly two moves. Inbound, the plugin emits an unsolicited
 `message` event:
@@ -252,7 +252,14 @@ Retry and discard are privileged, localhost-only controls, like every other
 plugin mutation.
 
 A revoked grant, a disabled plugin, or an unresolvable project denies both
-directions, and denials never reach the provider.
+directions, and denials never reach the provider. A denial that arrives while a
+reply is already owed pauses that reply rather than failing it: the delivery
+stays queued, unattempted, and keeps its full retry budget, so disabling a
+connector for an afternoon does not turn every owed reply into a dead letter.
+Re-enabling it, or restoring the grant, delivers exactly the replies that were
+owed — nothing that was denied in between is replayed, because nothing was
+attempted. Mappings, queued replies and private data are never deleted by a
+denial.
 
 ### Attention notices
 
@@ -392,6 +399,16 @@ management show an unavailable state.
 The browser talks only to the hub. Remote calls use the closed `PluginOperation`
 RPC, not a raw plugin protocol tunnel. Each owner applies its own grants,
 confirmation, operation receipts, process supervision, and artifact checks.
+
+Conversation plugins are owner-scoped by declaration, so a connector belongs to
+the machine it is installed on. Give each installation its own provider app and
+credentials: two machines configured with the same Slack app would both open a
+Socket Mode connection and each receive an arbitrary half of the events. Thread
+mappings, inbound deduplication, and reply delivery all live in the owner's own
+`state.db`, and a conversation's session is always created on that owner — never
+on a machine inferred from the project inventory, and never on the hub as a
+fallback. The hub's only role is projecting Settings, which fails visibly when
+the owner is disconnected.
 
 ## Diagnostics and removal
 

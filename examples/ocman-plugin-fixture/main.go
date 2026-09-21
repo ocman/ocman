@@ -17,7 +17,9 @@ func main() {
 	}
 	d := plugin.Description{
 		ID: "org.ocman.fixture", Name: "Conformance fixture", Version: "1.0.0",
-		Protocol: plugin.Version{Major: 1}, Scope: plugin.ScopeHub, MaxConcurrency: 4,
+		// A conversation connector belongs to the machine it is installed on,
+		// so declaring the capability pins the fixture to owner scope.
+		Protocol: plugin.Version{Major: 1}, Scope: plugin.ScopeOwner, MaxConcurrency: 4,
 		Capabilities: []plugin.Capability{{Name: "action", Version: plugin.Version{Major: 1}},
 			plugin.ConversationCapability, {Name: "fixture", Version: plugin.Version{Major: 1}}},
 		RequestedGrants: []string{"context.session", plugin.ConversationSessionGrant},
