@@ -589,6 +589,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	// Replays conversation replies left unacknowledged by a disconnect or a
 	// crash, and is the clock for their bounded retries.
 	go s.runConversationDeliveryPump(ctx)
+	go s.runConversationReplyReconciliation(ctx)
 	go s.runRoutines(ctx)
 	go s.runPermissionInboxReconciliation(ctx)
 	// Headless auto-approve: subscribe directly to each OpenCode

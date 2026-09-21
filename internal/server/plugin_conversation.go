@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -22,6 +23,8 @@ import (
 // conversationFetchLimit bounds the messages read to extract one completed
 // reply. Only the newest assistant message is used.
 const conversationFetchLimit = 20
+
+const conversationReconcileInterval = 5 * time.Second
 
 // conversationInboundPrefix namespaces inbound delivery receipts in the shared
 // plugin operation table, so a message's event id can never collide with an
@@ -244,7 +247,7 @@ func (s *Server) replyToConversation(ctx context.Context, platformID, sessionID 
 	messageID, text := latestAssistantText(detail.Messages, detail.Parts)
 	// A session.changed event can arrive before session.idle. It is a recovery
 	// path for a missed idle edge, never permission to publish a partial turn.
-	if detail.Session == nil || (detail.Session.Status != db.StatusDone && detail.Session.Status != db.StatusError) {
+	if detail.Session == nil || !conversationReplyReady(detail.Session.Status) {
 		return
 	}
 	// A failed turn produces no answer, or a partial one, so the thread needs
@@ -270,6 +273,42 @@ func (s *Server) replyToConversation(ctx context.Context, platformID, sessionID 
 	}
 	if delivery != 0 {
 		s.kickConversationOutbox()
+	}
+}
+
+func conversationReplyReady(status db.SessionStatus) bool {
+	return status == db.StatusWaiting || status == db.StatusDone || status == db.StatusError
+}
+
+// runConversationReplyReconciliation is the backstop for OpenCode instances
+// that omit terminal idle/changed events. The outbox's session:message key
+// makes repeated scans harmless. ponytail: global scan; add dirty-session
+// tracking if conversation volume makes this measurable.
+func (s *Server) runConversationReplyReconciliation(ctx context.Context) {
+	s.reconcileConversationReplies(ctx)
+	ticker := time.NewTicker(conversationReconcileInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.reconcileConversationReplies(ctx)
+		}
+	}
+}
+
+func (s *Server) reconcileConversationReplies(ctx context.Context) {
+	if s.stateDB == nil {
+		return
+	}
+	sessions, err := s.stateDB.ListPluginConversationSessions(ctx)
+	if err != nil {
+		log.WithError(err).Warn("listing conversation sessions for reply reconciliation")
+		return
+	}
+	for _, session := range sessions {
+		s.replyToConversation(ctx, session.PlatformID, session.SessionID)
 	}
 }
 

@@ -111,6 +111,20 @@ func TestPluginConversationIsolation(t *testing.T) {
 	}
 }
 
+func TestListPluginConversationSessionsDeduplicates(t *testing.T) {
+	d, err := Open(filepath.Join(t.TempDir(), "state.db"))
+	requirePluginOK(t, err)
+	t.Cleanup(func() { _ = d.Close() })
+	session := PluginConversationSession{PlatformID: "opencode", SessionID: "ses-1"}
+	requireClaim(t, d, conversationKey("T1", "C1:1.0"), session)
+	requireClaim(t, d, conversationKey("T1", "C2:1.0"), session)
+	sessions, err := d.ListPluginConversationSessions(t.Context())
+	requirePluginOK(t, err)
+	if len(sessions) != 1 || sessions[0] != session {
+		t.Fatalf("sessions %+v", sessions)
+	}
+}
+
 func TestPluginConversationRejectsIncompleteIdentity(t *testing.T) {
 	d, err := Open(filepath.Join(t.TempDir(), "state.db"))
 	requirePluginOK(t, err)

@@ -118,3 +118,25 @@ func (d *DB) GetPluginConversationThread(ctx context.Context, session PluginConv
 	}
 	return key, true, nil
 }
+
+// ListPluginConversationSessions returns the durable session identities that
+// may owe a completed reply after an event edge was missed or the host restarted.
+func (d *DB) ListPluginConversationSessions(ctx context.Context) ([]PluginConversationSession, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT DISTINCT platform_id,session_id FROM plugin_conversation`)
+	if err != nil {
+		return nil, ErrPluginState
+	}
+	defer rows.Close()
+	var sessions []PluginConversationSession
+	for rows.Next() {
+		var session PluginConversationSession
+		if err := rows.Scan(&session.PlatformID, &session.SessionID); err != nil {
+			return nil, ErrPluginState
+		}
+		sessions = append(sessions, session)
+	}
+	if rows.Err() != nil {
+		return nil, ErrPluginState
+	}
+	return sessions, nil
+}
