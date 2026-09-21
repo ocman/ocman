@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import './Dashboard.css';
 import { Outlet, useSearchParams, useLocation } from 'react-router-dom';
-import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend, PointElement, LineElement } from 'chart.js';
+import { Chart as ChartJS, CategoryScale, LinearScale, LogarithmicScale, BarElement, ArcElement, Tooltip, Legend, PointElement, LineElement } from 'chart.js';
 import type { Project, Session } from '../lib/api';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useUiStore } from '../lib/uiStore';
@@ -14,7 +14,7 @@ export { SessionsTab } from './dashboard/SessionsTab';
 export { ProjectsTab } from './dashboard/ProjectsTab';
 export { SettingsTab } from './dashboard/SettingsTab';
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, PointElement, LineElement, Tooltip, Legend);
+ChartJS.register(CategoryScale, LinearScale, LogarithmicScale, BarElement, ArcElement, PointElement, LineElement, Tooltip, Legend);
 
 // Stable empty arrays so `data ?? []` doesn't create a new reference on
 // every render while the query is still loading.
