@@ -26,7 +26,7 @@ describe('workflow graph', () => {
     expect(vi.mocked(ReactFlow).mock.calls.at(-1)![0].onNodeClick).toBeUndefined();
   });
 
-  it('draws decision provenance without a dependency arrow and labels phase completion', () => {
+  it('draws decision provenance without a dependency arrow or implementation placeholder', () => {
     render(<EpicGraph issues={[
       { id: 'phase', kind: 'phase', epicId: 'epic', project: '/repo', title: 'Implement', status: 'open', dispatchState: 'ready' },
       { id: 'task', kind: 'implementation', parentId: 'phase', requirement: 'required', epicId: 'epic', project: '/repo', title: 'Task', status: 'in_progress' },
@@ -34,9 +34,7 @@ describe('workflow graph', () => {
     ]} />);
     const props = vi.mocked(ReactFlow).mock.calls.at(-1)![0];
     expect(props.edges).toContainEqual(expect.objectContaining({ source: 'task', target: 'gate', label: 'decision for task', markerEnd: undefined, animated: false }));
-    expect(props.edges).toContainEqual(expect.objectContaining({ source: 'task', target: 'phase', label: 'phase completion', markerEnd: { type: 'arrowclosed' } }));
-    render(props.nodes!.find((node) => node.id === 'phase')!.data.label as React.ReactElement);
-    expect(screen.getByText('phase completion · waiting')).toBeInTheDocument();
+    expect(props.nodes!.map((node) => node.id)).not.toContain('phase');
     render(props.nodes!.find((node) => node.id === 'gate')!.data.label as React.ReactElement);
     expect(screen.getByText('permission decision · done')).toBeInTheDocument();
   });
@@ -59,18 +57,18 @@ describe('workflow graph', () => {
     expect(screen.getByText('This epic has no work to draw yet.')).toBeInTheDocument();
     rerender(<EpicGraph issues={issues} />);
     const props = vi.mocked(ReactFlow).mock.calls.at(-1)![0];
-    expect(props.nodes?.map((node) => node.id)).toEqual(issues.map((issue) => issue.id));
+    expect(props.nodes?.map((node) => node.id)).toEqual(issues.filter((issue) => issue.kind !== 'phase').map((issue) => issue.id));
     expect(props.edges).toEqual(expect.arrayContaining([
       expect.objectContaining({ source: 'plan', target: 'approve' }),
-      expect.objectContaining({ source: 'approve', target: 'implement' }),
       expect.objectContaining({ source: 'approve', target: 'thread-session' }),
       expect.objectContaining({ source: 'thread-session', target: 'continuity' }),
-      expect.objectContaining({ source: 'implement', target: 'verify' }),
+      expect.objectContaining({ source: 'continuity', target: 'verify' }),
       expect.objectContaining({ source: 'verify', target: 'deliver' }),
     ]));
     rerender(<EpicGraph issues={[...issues, issue('new-task', 'implementation', 'implement', ['continuity'])]} />);
     const updated = vi.mocked(ReactFlow).mock.calls.at(-1)![0];
     expect(updated.nodes?.map((node) => node.id)).toContain('new-task');
     expect(updated.edges).toContainEqual(expect.objectContaining({ source: 'continuity', target: 'new-task' }));
+    expect(updated.edges).toContainEqual(expect.objectContaining({ source: 'new-task', target: 'verify' }));
   });
 });

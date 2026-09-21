@@ -68,7 +68,7 @@ export function factoryGraphModel(issues: FactoryIssue[]): { nodes: GraphNode[];
   // ponytail: Mols are invisible containers everywhere else in the UI; their
   // children are lifted to the nearest visible ancestor instead.
   const byID = new Map(issues.map((issue) => [issue.id, issue]));
-  const visible = issues.filter((issue) => issue.kind !== 'mol');
+  let visible = issues.filter((issue) => issue.kind !== 'mol');
   const shown = new Set(visible.map((issue) => issue.id));
   if (!visible.length) return { nodes: [], edges: [] };
   const visibleAncestor = (id?: string): string | undefined => {
@@ -78,7 +78,7 @@ export function factoryGraphModel(issues: FactoryIssue[]): { nodes: GraphNode[];
     return undefined;
   };
 
-  const edges: GraphEdge[] = [];
+  let edges: GraphEdge[] = [];
   // One edge per pair: a gate's link to the work it interrupted is both stored as
   // a dependency and derivable from its attempt, and drawing it twice is noise.
   const seen = new Set<string>();
@@ -105,6 +105,18 @@ export function factoryGraphModel(issues: FactoryIssue[]): { nodes: GraphNode[];
       add(visibleAncestor(edge.id), issue.id, edge.type === 'on_failure' ? 'on_failure' : edge.type === 'merge_gated' ? 'merge_gated' : 'blocks');
     }
   }
+
+  // Materialized tickets replace their phase placeholder. Route completion
+  // dependencies through those tickets while leaving empty Formula steps visible.
+  const replaced = visible.filter((phase) => phase.kind === 'phase' && issues.some((child) => child.parentId === phase.id && ['implementation', 'task', 'phase'].includes(child.kind)));
+  for (const phase of replaced) {
+    const incoming = edges.filter((edge) => edge.target === phase.id && edge.kind === 'completion');
+    const outgoing = edges.filter((edge) => edge.source === phase.id);
+    edges = edges.filter((edge) => edge.source !== phase.id && edge.target !== phase.id);
+    for (const before of incoming) for (const after of outgoing) add(before.source, after.target, after.kind);
+  }
+  const replacedIDs = new Set(replaced.map((phase) => phase.id));
+  visible = visible.filter((issue) => !replacedIDs.has(issue.id));
 
   // Longest-path layering over a DAG. A cycle would starve Kahn's queue, so
   // whatever is left keeps its current depth and still gets drawn.
