@@ -242,12 +242,17 @@ func (s *Server) replyToConversation(ctx context.Context, platformID, sessionID 
 		return
 	}
 	messageID, text := latestAssistantText(detail.Messages, detail.Parts)
+	// A session.changed event can arrive before session.idle. It is a recovery
+	// path for a missed idle edge, never permission to publish a partial turn.
+	if detail.Session == nil || (detail.Session.Status != db.StatusDone && detail.Session.Status != db.StatusError) {
+		return
+	}
 	// A failed turn produces no answer, or a partial one, so the thread needs
 	// telling that this is where it stopped. Keyed on the message the error is
 	// recorded against — an error always lands on the last assistant message —
 	// so a repeated idle edge for the same failed turn reports once, while the
 	// next turn's failure is a new notice.
-	if messageID != "" && detail.Session != nil && detail.Session.Status == db.StatusError {
+	if messageID != "" && detail.Session.Status == db.StatusError {
 		s.appendConversationNotice(ctx, key, sessionID+conversationNoticeOutcome+"error:"+messageID,
 			s.conversationNotice("error", sessionID))
 	}

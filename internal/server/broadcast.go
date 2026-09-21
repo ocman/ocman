@@ -270,6 +270,9 @@ func (s *Server) broadcastSessionChanged(sessionID string) {
 		return
 	}
 	s.broadcastGlobalEvent("ocman.session.changed", payload)
+	// OpenCode occasionally emits the terminal changed event without a matching
+	// idle edge. The durable outbox makes this recovery call idempotent.
+	s.replyToConversation(context.Background(), "opencode", sessionID)
 }
 
 func (s *Server) broadcastSessionStatus(sessionID string, status db.SessionStatus) {
