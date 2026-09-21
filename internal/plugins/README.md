@@ -403,12 +403,15 @@ is no way to widen the grant to a second project.
 
 ```json
 {"type":"event","event":{"capability":"conversation","name":"message","data":{
-  "threadId":"C123:1700000000.000100","text":"ship it","project":"/srv/repo"}}}
+  "accountId":"T0WORKSPACE","threadId":"C123:1700000000.000100","eventId":"Ev0A1B2C3",
+  "text":"ship it","project":"/srv/repo"}}}
 ```
 
 | Field | Rule |
 | --- | --- |
-| `threadId` | `[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,127}`, opaque to the host |
+| `accountId` | `[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,127}`, the provider workspace, opaque to the host |
+| `threadId` | Same charset, the conversation, opaque to the host |
+| `eventId` | Same charset, stable across redeliveries of this one event |
 | `text` | 1–65536 bytes, valid UTF-8, no control characters except tab/CR/LF |
 | `project` | Optional claim, at most 1024 bytes, compared only |
 
@@ -418,9 +421,27 @@ directory the host actually uses always comes from configuration, never from the
 event. Events for an unnegotiated capability are rejected by the stream, and an
 undrained event flood fails the process, so the host consumes them continuously.
 
-The host creates or resumes one managed session per `(pluginId, threadId)` in
-the approved project and delivers `text` as a prompt. Thread links are held for
-the host's lifetime only.
+The host creates or resumes one managed session per
+`(pluginId, accountId, threadId)` in the approved project and delivers `text` as
+a prompt. That mapping is durable (`state.db`'s `plugin_conversation`), so a
+restart of host or plugin continues the same session, and it is claimed by an
+atomic insert-if-absent, so concurrent first messages for one conversation can
+only ever produce one mapped session.
+
+`eventId` must be the provider's identifier for the *event*, not for the
+delivery attempt: the host reserves `conv-in:<accountId>:<eventId>` in the same
+durable receipt table as actions and drops a repeat outright. Reservation
+happens before any work, which makes a redelivery at-most-once — a crash in that
+window loses one prompt rather than posting a duplicate prompt and a duplicate
+reply into a thread everyone can see.
+
+Delivery goes through the follow-up queue rather than a direct send. An idle
+session answers immediately; a message arriving mid-turn is held and drained on
+the next `session.idle` edge, one per turn, in arrival order. External messages
+never interleave into a running turn the way a composer Enter deliberately does,
+because nobody in the thread can see that a turn is in flight. A mapped session
+that can no longer be sent to is set aside by the queue after repeated
+failures, with a `queue.updated` broadcast.
 
 ### Outbound: host-initiated completed reply
 
@@ -428,8 +449,12 @@ The call has capability `conversation`, version `{major:1,minor:0}`, method
 `reply`, and a 30-second deadline. conversation.v1 is unary: chunks are rejected.
 
 ```json
-{"threadId":"C123:1700000000.000100","text":"Shipped."}
+{"accountId":"T0WORKSPACE","threadId":"C123:1700000000.000100","text":"Shipped."}
 ```
+
+The account is echoed back so a plugin serving several workspaces posts into the
+right one. The thread is resolved from the session through the durable mapping,
+so a turn completing after a restart still reaches its thread.
 
 The text is the newest assistant message's text parts only, capped at 64 KiB;
 reasoning, tool, and file parts are excluded. The host strips control characters

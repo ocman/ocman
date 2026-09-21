@@ -65,13 +65,21 @@ func TestSplitThread(t *testing.T) {
 	}
 }
 
+// mention wraps an event in a Socket Mode envelope. team_id and event_id sit on
+// the payload, not the event: the envelope id is new on every delivery attempt,
+// so only event_id is stable enough for the host to deduplicate on.
 func mention(t *testing.T, event map[string]any) socketEnvelope {
 	t.Helper()
-	payload, err := json.Marshal(map[string]any{"event": event})
+	return mentionPayload(t, map[string]any{"team_id": "T1", "event_id": "Ev1", "event": event})
+}
+
+func mentionPayload(t *testing.T, payload map[string]any) socketEnvelope {
+	t.Helper()
+	data, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return socketEnvelope{Type: "events_api", EnvelopeID: "env-1", Payload: payload}
+	return socketEnvelope{Type: "events_api", EnvelopeID: "env-1", Payload: data}
 }
 
 func TestTranslate(t *testing.T) {
@@ -83,6 +91,11 @@ func TestTranslate(t *testing.T) {
 	}
 	if message.ThreadID != "C1:1700000000.000100" || message.Text != "ship it" || message.Project != "/repo" {
 		t.Fatalf("%+v", message)
+	}
+	// The workspace and the stable event id must reach the host: they key the
+	// durable mapping and the deduplication respectively.
+	if message.AccountID != "T1" || message.EventID != "Ev1" {
+		t.Fatalf("missing conversation identity: %+v", message)
 	}
 	// Mentions inside the request survive; only the addressing one is stripped.
 	inner := map[string]any{}
@@ -107,10 +120,14 @@ func TestTranslate(t *testing.T) {
 	for name, mutate := range map[string]func(map[string]any){
 		"unauthorized user": func(e map[string]any) { e["user"] = "U999" },
 		"bot echo":          func(e map[string]any) { e["bot_id"] = "B1" },
-		"not a mention":     func(e map[string]any) { e["type"] = "message" },
-		"bad channel":       func(e map[string]any) { e["channel"] = "C 1" },
-		"bad timestamp":     func(e map[string]any) { e["ts"] = "nope" },
-		"mention only":      func(e map[string]any) { e["text"] = "<@U0BOT>" },
+		// A post from this very app carries a bot_profile rather than a
+		// bot_id; accepting it would make every reply a new mention.
+		"bot profile echo": func(e map[string]any) { e["bot_profile"] = map[string]any{"id": "B1"} },
+		"message subtype":  func(e map[string]any) { e["subtype"] = "message_changed" },
+		"not a mention":    func(e map[string]any) { e["type"] = "message" },
+		"bad channel":      func(e map[string]any) { e["channel"] = "C 1" },
+		"bad timestamp":    func(e map[string]any) { e["ts"] = "nope" },
+		"mention only":     func(e map[string]any) { e["text"] = "<@U0BOT>" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			event := map[string]any{}
@@ -119,6 +136,18 @@ func TestTranslate(t *testing.T) {
 			}
 			mutate(event)
 			if _, ok := b.translate(mention(t, event)); ok {
+				t.Fatal("accepted")
+			}
+		})
+	}
+	// A delivery the host cannot key or deduplicate is dropped, not guessed at.
+	for name, payload := range map[string]map[string]any{
+		"no team id":  {"event_id": "Ev1", "event": base},
+		"no event id": {"team_id": "T1", "event": base},
+		"bad team id": {"team_id": "T 1", "event_id": "Ev1", "event": base},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, ok := b.translate(mentionPayload(t, payload)); ok {
 				t.Fatal("accepted")
 			}
 		})
@@ -229,7 +258,7 @@ func TestSocketModeToNormalizedMessage(t *testing.T) {
 		t.Fatal("unauthorized mention produced a message")
 	}
 
-	if err := b.reply(ctx, plugin.ConversationReply{ThreadID: message.ThreadID, Text: "shipped"}); err != nil {
+	if err := b.reply(ctx, plugin.ConversationReply{AccountID: message.AccountID, ThreadID: message.ThreadID, Text: "shipped"}); err != nil {
 		t.Fatal(err)
 	}
 	post := <-m.posts
@@ -246,11 +275,11 @@ func TestSocketModeToNormalizedMessage(t *testing.T) {
 func TestReplyRejectsUnknownThread(t *testing.T) {
 	m := newSlackMock(t)
 	b := m.bot()
-	if err := b.reply(t.Context(), plugin.ConversationReply{ThreadID: "not-a-thread", Text: "x"}); err == nil {
+	if err := b.reply(t.Context(), plugin.ConversationReply{AccountID: "T1", ThreadID: "not-a-thread", Text: "x"}); err == nil {
 		t.Fatal("accepted an unparseable thread")
 	}
 	b.cfg.BotToken = "wrong"
-	if err := b.reply(t.Context(), plugin.ConversationReply{ThreadID: "C1:1.0", Text: "x"}); err == nil {
+	if err := b.reply(t.Context(), plugin.ConversationReply{AccountID: "T1", ThreadID: "C1:1.0", Text: "x"}); err == nil {
 		t.Fatal("a rejected post must fail the call")
 	}
 }

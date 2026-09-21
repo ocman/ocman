@@ -20,10 +20,10 @@ func conversationDescription() plugin.Description {
 }
 
 func TestNewConversationMessage(t *testing.T) {
-	if _, err := plugin.NewConversationMessage(plugin.ConversationMessage{ThreadID: "bad thread", Text: "hi"}); err == nil {
+	if _, err := plugin.NewConversationMessage(plugin.ConversationMessage{AccountID: "T1", ThreadID: "bad thread", EventID: "Ev1", Text: "hi"}); err == nil {
 		t.Fatal("accepted an invalid message")
 	}
-	event, err := plugin.NewConversationMessage(plugin.ConversationMessage{ThreadID: "C1:1.0", Text: "hi"})
+	event, err := plugin.NewConversationMessage(plugin.ConversationMessage{AccountID: "T1", ThreadID: "C1:1.0", EventID: "Ev1", Text: "hi"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,12 +44,12 @@ func TestConversationHandler(t *testing.T) {
 		err    error
 		want   plugin.ErrorCategory
 	}{
-		{name: "success", call: reply, params: `{"threadId":"C1:1.0","text":"done"}`},
+		{name: "success", call: reply, params: `{"accountId":"T1","threadId":"C1:1.0","text":"done"}`},
 		{name: "wrong capability", call: plugin.Call{Capability: "action", Version: plugin.Version{Major: 1}, Method: "invoke"}, params: `{}`, want: plugin.ErrorNotFound},
 		{name: "wrong method", call: plugin.Call{Capability: plugin.ConversationCapability.Name, Version: plugin.ConversationCapability.Version, Method: "other"}, params: `{}`, want: plugin.ErrorNotFound},
-		{name: "invalid reply", call: reply, params: `{"threadId":"","text":"done"}`, want: plugin.ErrorInvalidArgument},
+		{name: "invalid reply", call: reply, params: `{"accountId":"T1","threadId":"","text":"done"}`, want: plugin.ErrorInvalidArgument},
 		{name: "invalid json", call: reply, params: `{`, want: plugin.ErrorInvalidArgument},
-		{name: "provider failure", call: reply, params: `{"threadId":"C1:1.0","text":"done"}`, err: plugin.Failure(plugin.ErrorUnavailable), want: plugin.ErrorUnavailable},
+		{name: "provider failure", call: reply, params: `{"accountId":"T1","threadId":"C1:1.0","text":"done"}`, err: plugin.Failure(plugin.ErrorUnavailable), want: plugin.ErrorUnavailable},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var seen plugin.ConversationReply
@@ -97,7 +97,7 @@ func conversationSession(t *testing.T, events <-chan plugin.Event) (*plugin.Enco
 }
 
 func TestRunWithEvents(t *testing.T) {
-	message, err := plugin.NewConversationMessage(plugin.ConversationMessage{ThreadID: "C1:1.0", Text: "start"})
+	message, err := plugin.NewConversationMessage(plugin.ConversationMessage{AccountID: "T1", ThreadID: "C1:1.0", EventID: "Ev1", Text: "start"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestRunWithEvents(t *testing.T) {
 		// A closed source must not end the run.
 		close(events)
 		call := plugin.Call{ID: 1, OperationID: "op", Capability: plugin.ConversationCapability.Name, Version: plugin.ConversationCapability.Version,
-			Method: plugin.ConversationReplyMethod, DeadlineUnixMS: time.Now().Add(time.Second).UnixMilli(), Params: json.RawMessage(`{"threadId":"C1:1.0","text":"done"}`)}
+			Method: plugin.ConversationReplyMethod, DeadlineUnixMS: time.Now().Add(time.Second).UnixMilli(), Params: json.RawMessage(`{"accountId":"T1","threadId":"C1:1.0","text":"done"}`)}
 		if err := enc.Encode(plugin.Envelope{Type: plugin.TypeCall, Call: &call}); err != nil {
 			t.Fatal(err)
 		}

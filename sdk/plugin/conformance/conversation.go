@@ -28,8 +28,8 @@ func RunConversationGrants(t *testing.T, executable string, project string) {
 		func(_ context.Context, _ string, admit func(plugins.Description, []string, string) error) error {
 			return admit(d, grants, project)
 		},
-		func(_ context.Context, _, threadID, dir, text string) error {
-			started = append(started, threadID+"|"+dir+"|"+text)
+		func(_ context.Context, _, dir string, m plugins.ConversationMessage) error {
+			started = append(started, m.AccountID+"|"+m.ThreadID+"|"+dir+"|"+m.Text)
 			return nil
 		},
 		func(_ context.Context, _ string, call plugins.Call) (<-chan plugins.Reply, error) {
@@ -48,7 +48,7 @@ func RunConversationGrants(t *testing.T, executable string, project string) {
 			return replies, nil
 		})
 
-	reply := plugins.ConversationReply{ThreadID: "conformance:1.0", Text: "conformance reply"}
+	reply := plugins.ConversationReply{AccountID: "conformance", ThreadID: "conformance:1.0", Text: "conformance reply"}
 	if err := broker.Reply(t.Context(), d.ID, "conformance-reply", reply); err == nil || calls != 0 {
 		t.Fatalf("ungranted reply dispatched: %v", err)
 	}
@@ -57,7 +57,9 @@ func RunConversationGrants(t *testing.T, executable string, project string) {
 		t.Fatalf("granted reply failed: %v", err)
 	}
 
-	message := plugins.ConversationMessage{ThreadID: "conformance:1.0", Text: "conformance prompt"}
+	message := plugins.ConversationMessage{
+		AccountID: "conformance", ThreadID: "conformance:1.0", EventID: "ev-1", Text: "conformance prompt",
+	}
 	data, err := json.Marshal(message)
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +68,7 @@ func RunConversationGrants(t *testing.T, executable string, project string) {
 	if err := broker.Deliver(t.Context(), d.ID, event); err != nil {
 		t.Fatalf("granted message denied: %v", err)
 	}
-	if len(started) != 1 || started[0] != "conformance:1.0|"+project+"|conformance prompt" {
+	if len(started) != 1 || started[0] != "conformance|conformance:1.0|"+project+"|conformance prompt" {
 		t.Fatalf("message did not start the configured project: %v", started)
 	}
 	message.Project = project + "-other"
@@ -78,7 +80,7 @@ func RunConversationGrants(t *testing.T, executable string, project string) {
 		t.Fatalf("unapproved project accepted: %v", err)
 	}
 	grants = nil
-	if err := broker.Deliver(t.Context(), d.ID, plugins.Event{Capability: event.Capability, Name: event.Name, Data: json.RawMessage(`{"threadId":"conformance:1.0","text":"revoked"}`)}); err == nil || len(started) != 1 {
+	if err := broker.Deliver(t.Context(), d.ID, plugins.Event{Capability: event.Capability, Name: event.Name, Data: json.RawMessage(`{"accountId":"conformance","threadId":"conformance:1.0","eventId":"ev-2","text":"revoked"}`)}); err == nil || len(started) != 1 {
 		t.Fatalf("revoked grant still started a session: %v", err)
 	}
 	c.send(plugin.Envelope{Type: plugin.TypeShutdown, Shutdown: &plugin.Shutdown{}}, false)

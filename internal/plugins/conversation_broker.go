@@ -23,8 +23,10 @@ const (
 type ConversationAuthorization func(ctx context.Context, pluginID string, use func(Description, []string, string) error) error
 
 // ConversationStart hands a normalized message to the host's session
-// orchestration. dir is the authorized project; a plugin never chooses it.
-type ConversationStart func(ctx context.Context, pluginID, threadID, dir, text string) error
+// orchestration. dir is the authorized project; a plugin never chooses it. The
+// whole message crosses this seam because the host owns both the durable
+// account/thread mapping and event deduplication, and both need it.
+type ConversationStart func(ctx context.Context, pluginID, dir string, message ConversationMessage) error
 
 // ConversationBroker is the only way a conversation plugin reaches a session,
 // and the only way a completed reply reaches a provider. It holds no state: a
@@ -78,7 +80,7 @@ func (b *ConversationBroker) Deliver(ctx context.Context, pluginID string, event
 	}); err != nil {
 		return err
 	}
-	return b.start(ctx, pluginID, message.ThreadID, dir, message.Text)
+	return b.start(ctx, pluginID, dir, message)
 }
 
 // Reply posts one completed assistant turn back to the originating thread.

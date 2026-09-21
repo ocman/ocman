@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,6 +16,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/remote"
+	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/worker"
 )
 
@@ -22,13 +24,10 @@ import (
 // reply. Only the newest assistant message is used.
 const conversationFetchLimit = 20
 
-type conversationThread struct{ pluginID, threadID string }
-
-// conversationSession identifies a session the way an idle edge does: a bare
-// session id is not an identity across machines (see onSessionIdle).
-type conversationSession struct {
-	platformID, sessionID string
-}
+// conversationInboundPrefix namespaces inbound delivery receipts in the shared
+// plugin operation table, so a message's event id can never collide with an
+// outbound reply's key.
+const conversationInboundPrefix = "conv-in:"
 
 type conversationJob struct {
 	ctx      context.Context
@@ -102,7 +101,7 @@ func (s *Server) consumePluginEvents(ctx context.Context, id string, p *plugins.
 // startConversation creates or resumes the thread's session in the plugin's one
 // approved project and delivers the normalized text as a prompt. dir comes from
 // the approved configuration; a plugin can never name another directory.
-func (s *Server) startConversation(ctx context.Context, pluginID, threadID, dir, text string) error {
+func (s *Server) startConversation(ctx context.Context, pluginID, dir string, message plugins.ConversationMessage) error {
 	dir = filepath.Clean(dir)
 	if !filepath.IsAbs(dir) {
 		return &plugins.WireError{Category: plugins.ErrorPermissionDenied}
@@ -111,55 +110,86 @@ func (s *Server) startConversation(ctx context.Context, pluginID, threadID, dir,
 		// An unapproved or nonexistent project is a denial, not a crash.
 		return &plugins.WireError{Category: plugins.ErrorPermissionDenied}
 	}
-	key := conversationThread{pluginID, threadID}
-	// Safe check-then-act: the worker serializes every job for one plugin, so
-	// two mentions in the same thread cannot race into two sessions.
-	s.conversationMu.Lock()
-	linked, resumed := s.conversationByThread[key]
-	s.conversationMu.Unlock()
-	if !resumed {
-		host := s.router().ForDir(dir)
-		ensured, err := host.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir})
-		if err != nil {
-			return err
-		}
-		platformID := "opencode"
-		if id := host.RemoteID(); id != "" && id != "local" {
-			platformID = remote.CompoundPlatformID(id, platformID)
-		}
-		created, err := s.sessions.Create(ctx, platformID, platforms.CreateSessionRequest{Directory: dir, Port: ensured.Port()})
-		if err != nil {
-			return err
-		}
-		linked = conversationSession{platformID: platformID, sessionID: created.ID}
-		s.linkConversation(key, linked)
+	if s.stateDB == nil {
+		return plugins.ErrUnavailable
 	}
-	return s.sendNow(ctx, linked.platformID, platforms.SendMessageRequest{SessionID: linked.sessionID, Message: text})
+	// Claim the delivery before doing any of its work. Reserve-then-act makes a
+	// redelivered event at-most-once rather than at-least-once: a crash in the
+	// window loses one prompt, where the other order would post a duplicate
+	// prompt and a duplicate reply into a thread everyone can see. The receipt
+	// is durable, so the dedup survives a restart of host and plugin alike.
+	operation := conversationInboundPrefix + message.AccountID + ":" + message.EventID
+	if err := s.stateDB.ReservePluginOperation(ctx, pluginID, operation); err != nil {
+		var wire *plugins.WireError
+		if errors.As(err, &wire) && wire.Category == plugins.ErrorConflict {
+			// A duplicate provider delivery is expected traffic, not a failure.
+			log.WithFields(log.Fields{"plugin_id": pluginID}).Debug("dropping duplicate conversation delivery")
+			return nil
+		}
+		return err
+	}
+	key := state.PluginConversationKey{PluginID: pluginID, AccountID: message.AccountID, ThreadID: message.ThreadID}
+	linked, resumed, err := s.stateDB.GetPluginConversation(ctx, key)
+	if err != nil {
+		return err
+	}
+	if !resumed {
+		if linked, err = s.createConversationSession(ctx, key, dir); err != nil {
+			return err
+		}
+	}
+	// Queue rather than send: an external message must never interleave into a
+	// running turn the way a composer Enter deliberately does, because nobody in
+	// the thread can see that a turn is in flight. forceQueue stays false so an
+	// idle session still answers immediately; the queue's own busy gate holds it
+	// for the next session.idle edge otherwise, preserving arrival order. A
+	// mapped session that can no longer be sent to is set aside by the queue
+	// after repeated failures, with a queue.updated broadcast.
+	return s.queueSvc().Enqueue(ctx, linked.PlatformID,
+		false, platforms.SendMessageRequest{SessionID: linked.SessionID, Message: message.Text})
 }
 
-// ponytail: thread links live for the host's lifetime. A restart also drops the
-// idle edge that would deliver the reply, so persisting them buys nothing yet.
-func (s *Server) linkConversation(key conversationThread, session conversationSession) {
-	s.conversationMu.Lock()
-	defer s.conversationMu.Unlock()
-	if s.conversationByThread == nil {
-		s.conversationByThread = map[conversationThread]conversationSession{}
-		s.conversationBySession = map[conversationSession]conversationThread{}
+// createConversationSession launches the project's instance, creates the
+// session and claims the mapping. Losing the claim is not an error: the winner's
+// session is authoritative and this one is abandoned, so a concurrent first
+// message can never leave the conversation with two mapped sessions.
+func (s *Server) createConversationSession(ctx context.Context, key state.PluginConversationKey, dir string) (state.PluginConversationSession, error) {
+	host := s.router().ForDir(dir)
+	ensured, err := host.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir})
+	if err != nil {
+		return state.PluginConversationSession{}, err
 	}
-	if previous, ok := s.conversationByThread[key]; ok {
-		delete(s.conversationBySession, previous)
+	platformID := "opencode"
+	if id := host.RemoteID(); id != "" && id != "local" {
+		platformID = remote.CompoundPlatformID(id, platformID)
 	}
-	s.conversationByThread[key] = session
-	s.conversationBySession[session] = key
+	created, err := s.sessions.Create(ctx, platformID, platforms.CreateSessionRequest{Directory: dir, Port: ensured.Port()})
+	if err != nil {
+		return state.PluginConversationSession{}, err
+	}
+	linked, won, err := s.stateDB.LinkPluginConversation(ctx, key,
+		state.PluginConversationSession{PlatformID: platformID, SessionID: created.ID})
+	if err != nil {
+		return state.PluginConversationSession{}, err
+	}
+	if !won {
+		log.WithFields(log.Fields{"plugin_id": key.PluginID, "session_id": created.ID, "mapped_session_id": linked.SessionID}).
+			Warn("abandoning conversation session that lost the mapping claim")
+	}
+	return linked, nil
 }
 
 // replyToConversation posts the session's completed assistant turn back to the
-// originating thread. Sessions with no linked thread are ignored.
+// originating thread. Sessions with no linked thread are ignored. The mapping is
+// read from the database, so a turn that completes after a restart still finds
+// its thread.
 func (s *Server) replyToConversation(ctx context.Context, platformID, sessionID string) {
-	s.conversationMu.Lock()
-	key, linked := s.conversationBySession[conversationSession{platformID: platformID, sessionID: sessionID}]
-	s.conversationMu.Unlock()
-	if !linked {
+	if s.stateDB == nil {
+		return
+	}
+	key, linked, err := s.stateDB.GetPluginConversationThread(ctx,
+		state.PluginConversationSession{PlatformID: platformID, SessionID: sessionID})
+	if err != nil || !linked {
 		return
 	}
 	adapter, ok := s.adapterForSession(ctx, platformID, sessionID)
@@ -177,8 +207,9 @@ func (s *Server) replyToConversation(ctx context.Context, platformID, sessionID 
 	}
 	// The message ID keys idempotency, so the same completed turn is posted once.
 	operation := sessionID + ":" + messageID
-	if err := s.conversations().Reply(ctx, key.pluginID, operation, plugins.ConversationReply{ThreadID: key.threadID, Text: text}); err != nil {
-		log.WithError(err).WithFields(log.Fields{"plugin_id": key.pluginID, "session_id": sessionID}).
+	reply := plugins.ConversationReply{AccountID: key.AccountID, ThreadID: key.ThreadID, Text: text}
+	if err := s.conversations().Reply(ctx, key.PluginID, operation, reply); err != nil {
+		log.WithError(err).WithFields(log.Fields{"plugin_id": key.PluginID, "session_id": sessionID}).
 			Warn("posting completed reply to conversation thread")
 	}
 }

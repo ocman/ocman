@@ -222,8 +222,10 @@ import (
 //	93 - record hourly logical-size samples for the OpenCode and ocman databases.
 //	94 - categorize Inbox items and persist actionable permission requests.
 //
-// 95 - pinned workflow step definitions for declarative Factory phases.
-const latestSchemaVersion = 95
+//	95 - pinned workflow step definitions for declarative Factory phases.
+//
+// 96 - persist plugin conversation thread to session mappings across restarts.
+const latestSchemaVersion = 96
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -531,6 +533,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 			definition_json TEXT NOT NULL
 		)`)
 		return err
+	case 96:
+		return migrateToV96(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}

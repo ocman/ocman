@@ -190,14 +190,26 @@ handlers don't bypass the `Host` seam). User-facing docs:
   A plugin emits an unsolicited normalized `message` event; the broker authorizes
   it against enablement, the `conversation.session` grant, and the plugin's one
   required `project` setting (all read from one row under one lock), then core
-  creates or resumes a managed session per thread and sends the text. On the
-  `session.idle` edge the host calls the plugin's `reply` method with the newest
-  assistant message's text, keyed by `<sessionId>:<messageId>` through the durable
-  operation-receipt table so a repeated edge cannot post twice. Provider details
-  stay in the plugin: `examples/ocman-plugin-slack` speaks Slack Socket Mode
-  (`apps.connections.open` → wss → `app_mention` → `chat.postMessage`). Plugin
-  events are drained by `Server.consumePluginEvents`; an unread event flood fails
-  the process.
+  creates or resumes a managed session for the conversation and sends the text.
+  The `(pluginId, accountId, threadId)` → `(platformId, sessionId)` mapping is
+  durable (`state.db`'s `plugin_conversation`, migration v96) and claimed by an
+  atomic insert-if-absent, so a restart continues the same session, concurrent
+  first messages cannot map two, and two workspaces reusing a thread identity
+  stay isolated; `platformId` owner-qualifies the session. Each inbound message
+  carries the provider's stable `eventId`, reserved as
+  `conv-in:<accountId>:<eventId>` in the durable operation-receipt table *before*
+  any work, making a redelivery at-most-once rather than a duplicate prompt.
+  Delivery goes through `queuesvc.Enqueue` (not `sendNow`): an idle session
+  answers now, a mid-turn message is held for the next `session.idle` edge in
+  arrival order, because an external message must never interleave into a turn
+  nobody in the thread can see. On the `session.idle` edge the host resolves the
+  thread from the session and calls the plugin's `reply` method with the newest
+  assistant message's text, keyed by `<sessionId>:<messageId>` through the same
+  receipt table so a repeated edge cannot post twice. Provider details stay in
+  the plugin: `examples/ocman-plugin-slack` speaks Slack Socket Mode
+  (`apps.connections.open` → wss → `app_mention` → `chat.postMessage`) and drops
+  anything bot-originated so a reply cannot loop. Plugin events are drained by
+  `Server.consumePluginEvents`; an unread event flood fails the process.
 - `internal/platforms/opencode/` — OpenCode adapter wrapping the DB
   + HTTP proxy client.
 - `internal/sessionsvc/` — session mutation service (validation,

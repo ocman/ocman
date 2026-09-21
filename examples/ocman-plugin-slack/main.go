@@ -154,14 +154,21 @@ type socketEnvelope struct {
 }
 
 type eventPayload struct {
-	Event struct {
-		Type     string `json:"type"`
-		User     string `json:"user"`
-		BotID    string `json:"bot_id"`
-		Text     string `json:"text"`
-		TS       string `json:"ts"`
-		ThreadTS string `json:"thread_ts"`
-		Channel  string `json:"channel"`
+	// EventID is stable across Slack's retries of the same event, unlike the
+	// Socket Mode envelope id, which is new on every delivery attempt. It is
+	// what lets the host deduplicate a redelivery.
+	EventID string `json:"event_id"`
+	TeamID  string `json:"team_id"`
+	Event   struct {
+		Type       string          `json:"type"`
+		Subtype    string          `json:"subtype"`
+		User       string          `json:"user"`
+		BotID      string          `json:"bot_id"`
+		BotProfile json.RawMessage `json:"bot_profile"`
+		Text       string          `json:"text"`
+		TS         string          `json:"ts"`
+		ThreadTS   string          `json:"thread_ts"`
+		Channel    string          `json:"channel"`
 	} `json:"event"`
 }
 
@@ -171,6 +178,7 @@ var (
 	leadingMention = regexp.MustCompile(`^(?:\s*<@[^>]*>)+\s*`)
 	slackID        = regexp.MustCompile(`^[A-Za-z0-9]{1,32}$`)
 	slackTS        = regexp.MustCompile(`^[0-9]{1,20}\.[0-9]{1,20}$`)
+	slackEventID   = regexp.MustCompile(`^[A-Za-z0-9]{1,64}$`)
 )
 
 func splitThread(threadID string) (string, string, bool) {
@@ -193,25 +201,31 @@ func (b *bot) authorized(user string) bool {
 
 // translate converts a Socket Mode envelope into a normalized message. Only
 // app_mention events from an authorized human are accepted, so every inbound
-// message is an explicit @mention. Unknown frames are silently ignored.
+// message is an explicit @mention. Anything the app itself or another bot
+// posted is dropped here, which is what keeps a reply from re-entering as a new
+// mention and looping. Unknown frames are silently ignored.
 func (b *bot) translate(env socketEnvelope) (plugin.ConversationMessage, bool) {
 	var payload eventPayload
 	if env.Type != "events_api" || json.Unmarshal(env.Payload, &payload) != nil {
 		return plugin.ConversationMessage{}, false
 	}
 	e := payload.Event
-	if e.Type != "app_mention" || e.BotID != "" || !b.authorized(e.User) {
+	if e.Type != "app_mention" || e.Subtype != "" || e.BotID != "" || len(e.BotProfile) > 0 || !b.authorized(e.User) {
 		return plugin.ConversationMessage{}, false
 	}
 	thread := e.ThreadTS
 	if thread == "" {
 		thread = e.TS
 	}
-	if !slackID.MatchString(e.Channel) || !slackTS.MatchString(thread) {
+	if !slackID.MatchString(e.Channel) || !slackTS.MatchString(thread) ||
+		!slackID.MatchString(payload.TeamID) || !slackEventID.MatchString(payload.EventID) {
 		return plugin.ConversationMessage{}, false
 	}
 	text := strings.TrimSpace(leadingMention.ReplaceAllString(e.Text, ""))
-	message := plugin.ConversationMessage{ThreadID: e.Channel + ":" + thread, Text: text, Project: b.cfg.Project}
+	message := plugin.ConversationMessage{
+		AccountID: payload.TeamID, ThreadID: e.Channel + ":" + thread,
+		EventID: payload.EventID, Text: text, Project: b.cfg.Project,
+	}
 	if message.Validate() != nil {
 		return plugin.ConversationMessage{}, false
 	}

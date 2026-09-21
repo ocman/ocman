@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -26,7 +27,11 @@ import (
 	plugin "github.com/NoUseFreak/ocman/sdk/plugin"
 )
 
-const conversationTestThread = "slackC1:1700000000.000100"
+const (
+	conversationTestThread  = "slackC1:1700000000.000100"
+	conversationTestAccount = "T0WORKSPACE"
+	conversationTestEvent   = "Ev0trigger"
+)
 
 func conversationPluginDescription() plugin.Description {
 	return plugin.Description{
@@ -70,7 +75,10 @@ func TestConversationPluginHelper(t *testing.T) {
 		})
 		events = make(chan plugin.Event, 4)
 		if cfg.Trigger != "" {
-			message, err := plugin.NewConversationMessage(plugin.ConversationMessage{ThreadID: conversationTestThread, Text: cfg.Trigger})
+			message, err := plugin.NewConversationMessage(plugin.ConversationMessage{
+				AccountID: conversationTestAccount, ThreadID: conversationTestThread,
+				EventID: conversationTestEvent, Text: cfg.Trigger,
+			})
 			if err == nil {
 				events <- message
 			}
@@ -98,7 +106,36 @@ type conversationFixture struct {
 
 	mu       sync.Mutex
 	prompts  []string
+	targets  []string
 	sessions int
+	busy     bool
+}
+
+// sessionID names the Nth created session. The first keeps the plain name so a
+// test can address it without knowing how many were created.
+func conversationSessionID(n int) string {
+	if n <= 1 {
+		return "ses-chat"
+	}
+	return fmt.Sprintf("ses-chat-%d", n)
+}
+
+func (f *conversationFixture) setBusy(busy bool) {
+	f.mu.Lock()
+	f.busy = busy
+	f.mu.Unlock()
+}
+
+func (f *conversationFixture) sentTo() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.targets...)
+}
+
+func (f *conversationFixture) createdSessions() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.sessions
 }
 
 func newConversationFixture(t *testing.T) *conversationFixture {
@@ -126,17 +163,27 @@ func newConversationFixture(t *testing.T) *conversationFixture {
 			if req.Directory != f.project {
 				t.Errorf("session created outside the approved project: %q", req.Directory)
 			}
-			return &platforms.CreateSessionResponse{ID: "ses-chat"}, nil
+			return &platforms.CreateSessionResponse{ID: conversationSessionID(f.sessions)}, nil
 		},
 		sendMessageFn: func(req platforms.SendMessageRequest) error {
 			f.mu.Lock()
 			defer f.mu.Unlock()
 			f.prompts = append(f.prompts, req.Message)
+			f.targets = append(f.targets, req.SessionID)
 			return nil
 		},
-		sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+			f.mu.Lock()
+			status := db.StatusDone
+			if f.busy {
+				status = db.StatusBusy
+			}
+			f.mu.Unlock()
+			if id == "" {
+				id = "ses-chat"
+			}
 			return &platforms.SessionDetail{
-				Session: &db.Session{ID: "ses-chat", Directory: f.project},
+				Session: &db.Session{ID: id, Directory: f.project, Status: status},
 				Messages: []db.Message{
 					{ID: "m1", TimeCreated: 100, Data: json.RawMessage(`{"role":"user"}`)},
 					{ID: "m2", TimeCreated: 200, Data: json.RawMessage(`{"role":"assistant"}`)},
@@ -307,7 +354,7 @@ func TestConversationPluginDeniedWithoutGrant(t *testing.T) {
 	if err := f.s.stateDB.SetPluginGrants(t.Context(), conversationPluginDescription().ID, nil); err != nil {
 		t.Fatal(err)
 	}
-	event := conversationMessageEvent(t, plugins.ConversationMessage{ThreadID: conversationTestThread, Text: "again"})
+	event := conversationMessageEvent(t, conversationMessage("again"))
 	err := f.s.conversations().Deliver(t.Context(), conversationPluginDescription().ID, event)
 	assertConversationDenied(t, err)
 	if prompts := f.awaitPromptsNoGrowth(t); len(prompts) != 1 {
@@ -315,7 +362,7 @@ func TestConversationPluginDeniedWithoutGrant(t *testing.T) {
 	}
 	// A revoked grant also blocks the outbound reply.
 	assertConversationDenied(t, f.s.conversations().Reply(t.Context(), conversationPluginDescription().ID, "op-1",
-		plugins.ConversationReply{ThreadID: conversationTestThread, Text: "leak"}))
+		plugins.ConversationReply{AccountID: conversationTestAccount, ThreadID: conversationTestThread, Text: "leak"}))
 }
 
 func TestConversationPluginDeniedForUnapprovedProject(t *testing.T) {
@@ -325,11 +372,12 @@ func TestConversationPluginDeniedForUnapprovedProject(t *testing.T) {
 	id := conversationPluginDescription().ID
 
 	// A project the host cannot resolve never produces a session.
-	err := f.s.conversations().Deliver(t.Context(), id, conversationMessageEvent(t, plugins.ConversationMessage{ThreadID: conversationTestThread, Text: "go"}))
+	err := f.s.conversations().Deliver(t.Context(), id, conversationMessageEvent(t, conversationMessage("go")))
 	assertConversationDenied(t, err)
 
 	// Nor does a plugin naming a project other than its configured one.
-	claim := plugins.ConversationMessage{ThreadID: conversationTestThread, Text: "go", Project: f.project}
+	claim := conversationMessage("go")
+	claim.Project = f.project
 	assertConversationDenied(t, f.s.conversations().Deliver(t.Context(), id, conversationMessageEvent(t, claim)))
 	if prompts := f.awaitPromptsNoGrowth(t); len(prompts) != 0 {
 		t.Fatalf("unapproved project started a session: %v", prompts)
@@ -340,9 +388,221 @@ func TestConversationPluginDisabledIsUnavailable(t *testing.T) {
 	f := newConversationFixture(t)
 	f.call(t, "POST", "/rescan", `{}`, 200)
 	err := f.s.conversations().Deliver(t.Context(), conversationPluginDescription().ID,
-		conversationMessageEvent(t, plugins.ConversationMessage{ThreadID: conversationTestThread, Text: "go"}))
+		conversationMessageEvent(t, conversationMessage("go")))
 	if err == nil {
 		t.Fatal("a disabled plugin reached session orchestration")
+	}
+}
+
+// settle fires the idle edge for the thread's session, so the next message is
+// not merely held behind the turn the previous one started.
+func (f *conversationFixture) settle(t *testing.T) {
+	t.Helper()
+	f.s.onSessionIdle("opencode", "ses-chat")
+	if err := f.s.queueFlushWorker().Drain(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// deliver runs one inbound message straight through the broker, bypassing the
+// per-plugin worker. Continuity must not depend on that serialization.
+func (f *conversationFixture) deliver(t *testing.T, m plugins.ConversationMessage) error {
+	t.Helper()
+	return f.s.conversations().Deliver(t.Context(), conversationPluginDescription().ID, conversationMessageEvent(t, m))
+}
+
+// restart stands in for an ocman restart: a brand new Server over the same
+// durable state, with none of the previous process's memory.
+func (f *conversationFixture) restart(t *testing.T) *Server {
+	t.Helper()
+	s := &Server{
+		stateDB: f.s.stateDB, pluginCtx: context.Background(), auth: f.s.auth,
+		registry: f.s.registry, hostRouter: hostsvc.NewRouter(&conversationTestHost{}),
+	}
+	s.sessions = sessionsvc.New(f.s.registry, sessionsvc.Hooks{})
+	return s
+}
+
+// TestConversationDuplicateDeliveryIsIgnored covers a provider redelivering the
+// same event: neither a second session nor a second prompt may result.
+func TestConversationDuplicateDeliveryIsIgnored(t *testing.T) {
+	f := newConversationFixture(t)
+	f.install(t, f.project, []string{plugins.ConversationSessionGrant})
+	f.awaitPrompts(t, 1)
+	f.settle(t)
+
+	repeat := conversationMessage("do it twice")
+	if err := f.deliver(t, repeat); err != nil {
+		t.Fatal(err)
+	}
+	// Same event id: a retry of one delivery, not a new request.
+	if err := f.deliver(t, repeat); err != nil {
+		t.Fatalf("a duplicate delivery must be dropped, not failed: %v", err)
+	}
+	prompts := f.awaitPromptsNoGrowth(t)
+	if len(prompts) != 2 || prompts[1] != "do it twice" {
+		t.Fatalf("duplicate delivery produced %v", prompts)
+	}
+	// A duplicate must be dropped outright, not merely held: a copy left in the
+	// queue would be a second prompt on the next idle edge.
+	queued, err := f.s.queueSvc().List(t.Context(), "opencode", "ses-chat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(queued) != 0 {
+		t.Fatalf("duplicate delivery left %d queued messages", len(queued))
+	}
+	if created := f.createdSessions(); created != 1 {
+		t.Fatalf("sessions created: %d, want 1", created)
+	}
+}
+
+// TestConversationConcurrentFirstMessagesMapOneSession drives concurrent first
+// messages for one thread through the broker directly, so the in-process worker
+// serialization cannot be what makes the mapping single.
+func TestConversationConcurrentFirstMessagesMapOneSession(t *testing.T) {
+	f := newConversationFixture(t)
+	f.install(t, f.project, []string{plugins.ConversationSessionGrant})
+	f.awaitPrompts(t, 1)
+
+	const racers = 4
+	var wg sync.WaitGroup
+	errs := make([]error, racers)
+	for i := range racers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			m := conversationMessage(fmt.Sprintf("racer %d", i))
+			m.ThreadID = "slackC9:1700000000.000900"
+			errs[i] = f.deliver(t, m)
+		}()
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("racer %d: %v", i, err)
+		}
+	}
+	mapped, ok, err := f.s.stateDB.GetPluginConversation(t.Context(), state.PluginConversationKey{
+		PluginID: conversationPluginDescription().ID, AccountID: conversationTestAccount,
+		ThreadID: "slackC9:1700000000.000900",
+	})
+	if err != nil || !ok {
+		t.Fatalf("thread not mapped: %v %v", ok, err)
+	}
+	// Every racer's message has to end up on the one mapped session, whether it
+	// was sent straight away or held behind the turn the first one started. A
+	// second mapped session would silently split the conversation in two.
+	landed := 0
+	for _, target := range f.sentTo()[1:] {
+		if target != mapped.SessionID {
+			t.Fatalf("prompt sent to unmapped session %q, mapped %q", target, mapped.SessionID)
+		}
+		landed++
+	}
+	queued, err := f.s.queueSvc().List(t.Context(), mapped.PlatformID, mapped.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if landed+len(queued) != racers {
+		t.Fatalf("%d sent and %d queued, want %d racer messages on the mapped session", landed, len(queued), racers)
+	}
+}
+
+// TestConversationMappingSurvivesRestart proves the mapping is durable: a
+// process with no memory of the thread still continues its session, and a turn
+// completing after the restart still resolves back to the thread.
+func TestConversationMappingSurvivesRestart(t *testing.T) {
+	f := newConversationFixture(t)
+	f.install(t, f.project, []string{plugins.ConversationSessionGrant})
+	f.awaitPrompts(t, 1)
+	before := f.sentTo()
+
+	restarted := f.restart(t)
+	if err := restarted.startConversation(t.Context(), conversationPluginDescription().ID, f.project, conversationMessage("still here?")); err != nil {
+		t.Fatal(err)
+	}
+	if created := f.createdSessions(); created != 1 {
+		t.Fatalf("restart created a second session for the thread: %d", created)
+	}
+	after := f.sentTo()
+	if len(after) != len(before)+1 || after[len(after)-1] != before[0] {
+		t.Fatalf("prompt after restart went to %v, want the mapped %q", after, before[0])
+	}
+	key, ok, err := restarted.stateDB.GetPluginConversationThread(t.Context(),
+		state.PluginConversationSession{PlatformID: "opencode", SessionID: before[0]})
+	if err != nil || !ok || key.ThreadID != conversationTestThread || key.AccountID != conversationTestAccount {
+		t.Fatalf("completed turn cannot find its thread after a restart: %+v %v %v", key, ok, err)
+	}
+}
+
+// TestConversationBusyTurnQueuesInOrder covers the external-message policy: a
+// mention arriving mid-turn is held rather than interleaved, and the held
+// messages drain one per turn in arrival order.
+func TestConversationBusyTurnQueuesInOrder(t *testing.T) {
+	f := newConversationFixture(t)
+	f.install(t, f.project, []string{plugins.ConversationSessionGrant})
+	f.awaitPrompts(t, 1)
+
+	f.setBusy(true)
+	for _, text := range []string{"second", "third"} {
+		if err := f.deliver(t, conversationMessage(text)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if prompts := f.awaitPromptsNoGrowth(t); len(prompts) != 1 {
+		t.Fatalf("a message interleaved into a running turn: %v", prompts)
+	}
+
+	f.setBusy(false)
+	f.settle(t)
+	prompts := f.awaitPrompts(t, 2)
+	if prompts[1] != "second" {
+		t.Fatalf("queue drained out of order: %v", prompts)
+	}
+	// One follow-up per turn: the next message waits for the next idle edge.
+	if prompts := f.awaitPromptsNoGrowth(t); len(prompts) != 2 {
+		t.Fatalf("the whole backlog drained into one turn: %v", prompts)
+	}
+	f.settle(t)
+	if prompts := f.awaitPrompts(t, 3); prompts[2] != "third" {
+		t.Fatalf("queue drained out of order: %v", prompts)
+	}
+}
+
+// TestConversationMappingIsolation covers the two ways a naive mapping merges
+// unrelated conversations: a thread identity reused in another workspace, and
+// two threads inside one workspace.
+func TestConversationMappingIsolation(t *testing.T) {
+	f := newConversationFixture(t)
+	f.install(t, f.project, []string{plugins.ConversationSessionGrant})
+	f.awaitPrompts(t, 1)
+
+	// Same thread identity, different workspace: providers do not guarantee
+	// thread ids are unique across accounts.
+	otherWorkspace := conversationMessage("other workspace")
+	otherWorkspace.AccountID = "T0OTHER"
+	// Same workspace, different thread.
+	otherThread := conversationMessage("other thread")
+	otherThread.ThreadID = "slackC2:1700000000.000200"
+	for _, m := range []plugins.ConversationMessage{otherWorkspace, otherThread} {
+		if err := f.deliver(t, m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if created := f.createdSessions(); created != 3 {
+		t.Fatalf("unrelated conversations shared a session: %d created", created)
+	}
+	targets := f.sentTo()
+	if len(targets) != 3 {
+		t.Fatalf("prompts %v", targets)
+	}
+	seen := map[string]bool{}
+	for _, target := range targets {
+		if seen[target] {
+			t.Fatalf("unrelated conversations mapped to the same session: %v", targets)
+		}
+		seen[target] = true
 	}
 }
 
@@ -352,6 +612,19 @@ func (f *conversationFixture) awaitPromptsNoGrowth(t *testing.T) []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.prompts...)
+}
+
+var conversationEventSeq atomic.Int64
+
+// conversationMessage builds an inbound message for the canonical test thread
+// with a fresh event id, so successive calls are distinct deliveries rather
+// than duplicates of one.
+func conversationMessage(text string) plugins.ConversationMessage {
+	return plugins.ConversationMessage{
+		AccountID: conversationTestAccount, ThreadID: conversationTestThread,
+		EventID:   fmt.Sprintf("Ev%d", conversationEventSeq.Add(1)),
+		Text:      text,
+	}
 }
 
 func conversationMessageEvent(t *testing.T, m plugins.ConversationMessage) plugins.Event {
@@ -416,7 +689,7 @@ func TestConversationReplyTextSanitizes(t *testing.T) {
 	if text != "before[31mafter\ttab" {
 		t.Fatalf("sanitized text %q", text)
 	}
-	if (plugins.ConversationReply{ThreadID: conversationTestThread, Text: text}).Validate() != nil {
+	if (plugins.ConversationReply{AccountID: conversationTestAccount, ThreadID: conversationTestThread, Text: text}).Validate() != nil {
 		t.Fatal("sanitized text still fails the wire contract")
 	}
 	trailing := []db.Part{{ID: "p", MessageID: "m1", Data: mustPartText(t, "ok\x1b")}}

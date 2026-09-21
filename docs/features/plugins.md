@@ -186,20 +186,30 @@ The capability has exactly two moves. Inbound, the plugin emits an unsolicited
 
 ```json
 {"type":"event","event":{"capability":"conversation","name":"message",
- "data":{"threadId":"C123:1700000000.000100","text":"ship it"}}}
+ "data":{"accountId":"T0WORKSPACE","threadId":"C123:1700000000.000100",
+         "eventId":"Ev0A1B2C3","text":"ship it"}}}
 ```
 
-`threadId` is an opaque provider thread identity that ocman only compares and
-echoes back. An optional `project` field is a claim, denied unless it matches the
-configured project; the directory actually used always comes from configuration.
-Ocman creates or resumes one managed session per thread in that project, then
-sends the text as a prompt.
+`accountId` (the provider workspace) and `threadId` (the conversation) are
+opaque identities ocman only compares and echoes back. An optional `project`
+field is a claim, denied unless it matches the configured project; the directory
+actually used always comes from configuration. Ocman keeps one managed session
+per `(plugin, account, thread)` and remembers it in its own database, so every
+later message in the thread continues the same session — across a restart of
+ocman or of the plugin — and two workspaces that reuse a thread identity stay
+isolated.
+
+`eventId` must identify the *event*, not the delivery attempt, so that a
+provider redelivering the same event repeats it. Ocman drops a repeat: a
+duplicate delivery never creates a second session or a second prompt. A mention
+that arrives while the session is still working is queued and sent when the turn
+finishes, in arrival order — it does not interrupt the running turn.
 
 Outbound, ocman calls method `reply` on the same capability when the session's
 turn completes:
 
 ```json
-{"threadId":"C123:1700000000.000100","text":"Shipped."}
+{"accountId":"T0WORKSPACE","threadId":"C123:1700000000.000100","text":"Shipped."}
 ```
 
 Replies are plain text in v1: only the newest assistant message's text parts,

@@ -38,23 +38,34 @@ const (
 	ConversationMaxProjectBytes = 1024
 )
 
-// ConversationMessage is the normalized inbound message. ThreadID is an opaque
-// provider thread identity that the host only compares and echoes back. Project
-// is an optional claim, denied unless it matches the configured project; the
-// directory actually used always comes from the configuration.
+// ConversationMessage is the normalized inbound message. AccountID (the
+// provider workspace/account) and ThreadID (the conversation) are opaque
+// identities the host only compares and echoes back; together with the plugin
+// they key the durable session mapping, so two workspaces with colliding thread
+// identities stay isolated. EventID is the provider's stable identifier for this
+// delivery, not for this connection attempt: a redelivery of the same event must
+// repeat it, which is what makes deduplication survive a restart. Project is an
+// optional claim, denied unless it matches the configured project; the directory
+// actually used always comes from the configuration.
 type ConversationMessage struct {
-	ThreadID string `json:"threadId"`
-	Text     string `json:"text"`
-	Project  string `json:"project,omitempty"`
+	AccountID string `json:"accountId"`
+	ThreadID  string `json:"threadId"`
+	EventID   string `json:"eventId"`
+	Text      string `json:"text"`
+	Project   string `json:"project,omitempty"`
 }
 
-// ConversationReply is one completed assistant turn, text only in v1.
+// ConversationReply is one completed assistant turn, text only in v1. It echoes
+// the account so a plugin serving several workspaces posts into the right one.
 type ConversationReply struct {
-	ThreadID string `json:"threadId"`
-	Text     string `json:"text"`
+	AccountID string `json:"accountId"`
+	ThreadID  string `json:"threadId"`
+	Text      string `json:"text"`
 }
 
-var conversationThreadID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,127}$`)
+// conversationID matches every opaque provider identity in this capability.
+// Compared and echoed only: never parsed, never used as a path.
+var conversationID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,127}$`)
 
 // conversationText allows newlines and tabs, unlike validText, because prompts
 // and assistant replies are multi-line. Other control characters are rejected.
@@ -67,15 +78,21 @@ func conversationText(s string) bool {
 	})
 }
 
+// Validate requires the account and event identities as well as the thread: a
+// message without a stable event id cannot be deduplicated, and one without an
+// account cannot be attributed to a workspace. Both fail closed rather than
+// silently degrading to a weaker guarantee.
 func (m ConversationMessage) Validate() error {
-	if !conversationThreadID.MatchString(m.ThreadID) || !conversationText(m.Text) || len(m.Project) > ConversationMaxProjectBytes {
+	if !conversationID.MatchString(m.AccountID) || !conversationID.MatchString(m.ThreadID) ||
+		!conversationID.MatchString(m.EventID) || !conversationText(m.Text) ||
+		len(m.Project) > ConversationMaxProjectBytes {
 		return ErrInvalidMessage
 	}
 	return nil
 }
 
 func (r ConversationReply) Validate() error {
-	if !conversationThreadID.MatchString(r.ThreadID) || !conversationText(r.Text) {
+	if !conversationID.MatchString(r.AccountID) || !conversationID.MatchString(r.ThreadID) || !conversationText(r.Text) {
 		return ErrInvalidMessage
 	}
 	return nil

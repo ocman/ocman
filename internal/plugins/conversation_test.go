@@ -20,17 +20,23 @@ func conversationDescription() Description {
 
 func TestConversationMessageValidation(t *testing.T) {
 	for name, m := range map[string]ConversationMessage{
-		"empty thread":    {ThreadID: "", Text: "hi"},
-		"thread charset":  {ThreadID: "chan nel:1", Text: "hi"},
-		"thread leading":  {ThreadID: "-c:1", Text: "hi"},
-		"empty text":      {ThreadID: "C1:1.0", Text: ""},
-		"blank text":      {ThreadID: "C1:1.0", Text: "   \n"},
-		"control text":    {ThreadID: "C1:1.0", Text: "a\x00b"},
-		"oversized text":  {ThreadID: "C1:1.0", Text: strings.Repeat("x", ConversationMaxTextBytes+1)},
-		"invalid utf8":    {ThreadID: "C1:1.0", Text: string([]byte{0xff, 0xfe})},
-		"long project":    {ThreadID: "C1:1.0", Text: "hi", Project: strings.Repeat("/p", 800)},
-		"long thread":     {ThreadID: "C" + strings.Repeat("1", 128), Text: "hi"},
-		"reply not text?": {ThreadID: "C1:1.0"},
+		"empty thread":    {AccountID: "T1", ThreadID: "", EventID: "Ev1", Text: "hi"},
+		"thread charset":  {AccountID: "T1", ThreadID: "chan nel:1", EventID: "Ev1", Text: "hi"},
+		"thread leading":  {AccountID: "T1", ThreadID: "-c:1", EventID: "Ev1", Text: "hi"},
+		"empty text":      {AccountID: "T1", ThreadID: "C1:1.0", EventID: "Ev1", Text: ""},
+		"blank text":      {AccountID: "T1", ThreadID: "C1:1.0", EventID: "Ev1", Text: "   \n"},
+		"control text":    {AccountID: "T1", ThreadID: "C1:1.0", EventID: "Ev1", Text: "a\x00b"},
+		"oversized text":  {AccountID: "T1", ThreadID: "C1:1.0", EventID: "Ev1", Text: strings.Repeat("x", ConversationMaxTextBytes+1)},
+		"invalid utf8":    {AccountID: "T1", ThreadID: "C1:1.0", EventID: "Ev1", Text: string([]byte{0xff, 0xfe})},
+		"long project":    {AccountID: "T1", ThreadID: "C1:1.0", EventID: "Ev1", Text: "hi", Project: strings.Repeat("/p", 800)},
+		"long thread":     {AccountID: "T1", ThreadID: "C" + strings.Repeat("1", 128), EventID: "Ev1", Text: "hi"},
+		"reply not text?": {AccountID: "T1", ThreadID: "C1:1.0", EventID: "Ev1"},
+		// Without an account there is no workspace to attribute the thread to,
+		// and without a stable event id a redelivery cannot be deduplicated.
+		"missing account": {ThreadID: "C1:1.0", EventID: "Ev1", Text: "hi"},
+		"account charset": {AccountID: "team one", ThreadID: "C1:1.0", EventID: "Ev1", Text: "hi"},
+		"missing event":   {AccountID: "T1", ThreadID: "C1:1.0", Text: "hi"},
+		"event charset":   {AccountID: "T1", ThreadID: "C1:1.0", EventID: "ev 1", Text: "hi"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if m.Validate() == nil {
@@ -38,21 +44,28 @@ func TestConversationMessageValidation(t *testing.T) {
 			}
 		})
 	}
-	valid := ConversationMessage{ThreadID: "C123:1515449522.000016", Text: "line one\n\tline two", Project: "/repo"}
+	valid := ConversationMessage{
+		AccountID: "T0001", ThreadID: "C123:1515449522.000016", EventID: "Ev0001",
+		Text: "line one\n\tline two", Project: "/repo",
+	}
 	if err := valid.Validate(); err != nil {
 		t.Fatalf("rejected valid message: %v", err)
 	}
-	if (ConversationReply{ThreadID: valid.ThreadID, Text: valid.Text}).Validate() != nil {
+	if (ConversationReply{AccountID: valid.AccountID, ThreadID: valid.ThreadID, Text: valid.Text}).Validate() != nil {
 		t.Fatal("rejected valid reply")
+	}
+	if (ConversationReply{ThreadID: valid.ThreadID, Text: valid.Text}).Validate() == nil {
+		t.Fatal("accepted a reply with no account to post into")
 	}
 }
 
 func TestDecodeConversationMessage(t *testing.T) {
 	for name, data := range map[string]string{
-		"unknown field": `{"threadId":"C1:1.0","text":"hi","channel":"C1"}`,
-		"trailing json": `{"threadId":"C1:1.0","text":"hi"} {}`,
-		"duplicate key": `{"threadId":"C1:1.0","threadId":"C2:1.0","text":"hi"}`,
-		"invalid":       `{"threadId":"","text":"hi"}`,
+		"unknown field": `{"accountId":"T1","threadId":"C1:1.0","eventId":"Ev1","text":"hi","channel":"C1"}`,
+		"trailing json": `{"accountId":"T1","threadId":"C1:1.0","eventId":"Ev1","text":"hi"} {}`,
+		"duplicate key": `{"accountId":"T1","threadId":"C1:1.0","threadId":"C2:1.0","eventId":"Ev1","text":"hi"}`,
+		"invalid":       `{"accountId":"T1","threadId":"","eventId":"Ev1","text":"hi"}`,
+		"no event id":   `{"accountId":"T1","threadId":"C1:1.0","text":"hi"}`,
 		"not an object": `[]`,
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -61,8 +74,8 @@ func TestDecodeConversationMessage(t *testing.T) {
 			}
 		})
 	}
-	m, err := DecodeConversationMessage(json.RawMessage(`{"threadId":"C1:1.0","text":"hi","project":"/repo"}`))
-	if err != nil || m.ThreadID != "C1:1.0" || m.Text != "hi" || m.Project != "/repo" {
+	m, err := DecodeConversationMessage(json.RawMessage(`{"accountId":"T1","threadId":"C1:1.0","eventId":"Ev1","text":"hi","project":"/repo"}`))
+	if err != nil || m.AccountID != "T1" || m.ThreadID != "C1:1.0" || m.EventID != "Ev1" || m.Text != "hi" || m.Project != "/repo" {
 		t.Fatalf("decode: %+v %v", m, err)
 	}
 }
@@ -132,8 +145,8 @@ func (h *conversationHarness) broker() *ConversationBroker {
 		func(_ context.Context, _ string, use func(Description, []string, string) error) error {
 			return use(h.description, h.grants, h.project)
 		},
-		func(_ context.Context, _, threadID, dir, text string) error {
-			h.started = append(h.started, threadID+"|"+dir+"|"+text)
+		func(_ context.Context, _, dir string, m ConversationMessage) error {
+			h.started = append(h.started, m.AccountID+"|"+m.ThreadID+"|"+m.EventID+"|"+dir+"|"+m.Text)
 			return nil
 		},
 		func(_ context.Context, _ string, call Call) (<-chan Reply, error) {
@@ -158,13 +171,15 @@ func conversationEvent(t *testing.T, m ConversationMessage) Event {
 }
 
 func TestConversationBrokerDeliver(t *testing.T) {
-	message := ConversationMessage{ThreadID: "C1:1.0", Text: "build it"}
+	message := ConversationMessage{AccountID: "T1", ThreadID: "C1:1.0", EventID: "Ev1", Text: "build it"}
 	t.Run("granted", func(t *testing.T) {
 		h := &conversationHarness{description: conversationDescription(), grants: []string{ConversationSessionGrant}, project: "/repo"}
 		if err := h.broker().Deliver(t.Context(), "org.example.chat", conversationEvent(t, message)); err != nil {
 			t.Fatal(err)
 		}
-		if len(h.started) != 1 || h.started[0] != "C1:1.0|/repo|build it" {
+		// The whole identity crosses the seam: the host needs the account and
+		// event id to key the mapping and deduplicate the delivery.
+		if len(h.started) != 1 || h.started[0] != "T1|C1:1.0|Ev1|/repo|build it" {
 			t.Fatalf("started %v", h.started)
 		}
 	})
@@ -204,13 +219,13 @@ func TestConversationBrokerDeliver(t *testing.T) {
 	t.Run("invalid payload", func(t *testing.T) {
 		h := &conversationHarness{description: conversationDescription(), grants: []string{ConversationSessionGrant}, project: "/repo"}
 		event := conversationEvent(t, message)
-		event.Data = json.RawMessage(`{"threadId":"C1:1.0","text":"hi","surprise":1}`)
+		event.Data = json.RawMessage(`{"accountId":"T1","threadId":"C1:1.0","eventId":"Ev1","text":"hi","surprise":1}`)
 		assertWire(t, h.broker().Deliver(t.Context(), "org.example.chat", event), ErrorInvalidArgument)
 	})
 }
 
 func TestConversationBrokerReply(t *testing.T) {
-	reply := ConversationReply{ThreadID: "C1:1.0", Text: "done"}
+	reply := ConversationReply{AccountID: "T1", ThreadID: "C1:1.0", Text: "done"}
 	success := Envelope{Type: TypeResult, Result: &Result{ID: 1, Value: json.RawMessage(`{}`)}}
 	t.Run("granted", func(t *testing.T) {
 		h := &conversationHarness{description: conversationDescription(), grants: []string{ConversationSessionGrant}, project: "/repo", result: success}
@@ -237,7 +252,7 @@ func TestConversationBrokerReply(t *testing.T) {
 	})
 	t.Run("invalid reply", func(t *testing.T) {
 		h := &conversationHarness{description: conversationDescription(), grants: []string{ConversationSessionGrant}, project: "/repo", result: success}
-		assertWire(t, h.broker().Reply(t.Context(), "org.example.chat", "ses:msg", ConversationReply{ThreadID: "C1:1.0"}), ErrorInvalidArgument)
+		assertWire(t, h.broker().Reply(t.Context(), "org.example.chat", "ses:msg", ConversationReply{AccountID: "T1", ThreadID: "C1:1.0"}), ErrorInvalidArgument)
 		assertWire(t, h.broker().Reply(t.Context(), "org.example.chat", "", reply), ErrorInvalidArgument)
 	})
 	t.Run("plugin error", func(t *testing.T) {
