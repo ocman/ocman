@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { plugins, type PluginInput, type PluginMutation, type PluginRegistration } from '../lib/plugins';
+import { hasConversationCapability, plugins, type PluginInput, type PluginMutation, type PluginRegistration } from '../lib/plugins';
 import { SettingRow } from './SettingRow';
 import { PluginConfiguration } from './PluginConfiguration';
+import { PluginDeliveryBacklog } from './PluginDeliveryBacklog';
 
 function PluginMetadata({ plugin: p }: { plugin: PluginRegistration }) {
   const d = p.description;
@@ -91,6 +92,7 @@ export function PluginSettingsCard({ plugin: p, owner, refresh }: {
         <button type="button" className="vscode-btn" onClick={() => { void mutate('remove-data'); }}>Confirm permanent removal</button>
         <button type="button" className="vscode-btn" onClick={() => setRemove(false)}>Cancel removal</button>
       </SettingRow>}
+      {hasConversationCapability(p) && <PluginDeliveryBacklog plugin={p} owner={owner} />}
       <SettingRow label="Recent stderr" desc="Bounded diagnostic output from the selected owner." block>
         <button type="button" className="vscode-btn" onClick={() => { void loadLogs(); }}>Load recent stderr</button>
         {logs !== null && <pre aria-label="Recent stderr" style={{ maxHeight: 240, overflow: 'auto', whiteSpace: 'pre-wrap' }}>{logs || 'No recent stderr.'}</pre>}

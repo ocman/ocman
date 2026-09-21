@@ -38,9 +38,13 @@ func NewConversationMessage(message ConversationMessage) (Event, error) {
 }
 
 // ConversationHandler serves unary conversation.v1 reply calls. The host owns
-// enablement, grants, the approved project and idempotency; this adapter only
-// checks the frame and hands over a validated reply.
-func ConversationHandler(reply func(context.Context, ConversationReply) error) Handler {
+// enablement, grants and the approved project; this adapter only checks the
+// frame and hands over a validated reply.
+//
+// The operation id is passed through because the host's delivery is
+// at-least-once: it is stable across retries of the same reply, so a provider
+// adapter can recognize a repeat and avoid posting a second visible message.
+func ConversationHandler(reply func(ctx context.Context, operationID string, r ConversationReply) error) Handler {
 	return func(ctx context.Context, call Call, _ func(json.RawMessage) error) (json.RawMessage, error) {
 		if reply == nil {
 			return nil, Failure(ErrorInternal)
@@ -52,7 +56,7 @@ func ConversationHandler(reply func(context.Context, ConversationReply) error) H
 		if json.Unmarshal(call.Params, &r) != nil || r.Validate() != nil {
 			return nil, Failure(ErrorInvalidArgument)
 		}
-		if err := reply(ctx, r); err != nil {
+		if err := reply(ctx, call.OperationID, r); err != nil {
 			return nil, err
 		}
 		return json.RawMessage(`{}`), nil

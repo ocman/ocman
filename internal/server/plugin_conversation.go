@@ -67,18 +67,20 @@ func (s *Server) buildConversations() {
 			if p == nil {
 				return nil, plugins.ErrUnavailable
 			}
-			// Reserved before dispatch, like actions: at-most-once matters more
-			// than retrying, because a duplicate post is visible to everyone in
-			// the thread. A dispatch that fails here loses that one reply.
-			if err := s.stateDB.ReservePluginOperation(ctx, id, call.OperationID); err != nil {
-				return nil, err
-			}
+			// No operation reservation here, unlike actions: the durable outbox
+			// row is this call's receipt, and it has to survive being retried.
+			// Reserving would turn the second attempt of an undelivered reply
+			// into a permanent conflict.
 			return p.Call(ctx, call)
 		})
 	// Serial per plugin (so one thread cannot fork two sessions) but unbounded,
 	// so a slow turn start never starves the supervisor's event channel — an
 	// unread event flood fails the plugin process.
 	s.conversationJobs = worker.NewKeyed(s.runConversationJob, func(j conversationJob) string { return j.pluginID })
+	s.conversationDeliveries = worker.NewKeyed(func(d state.PluginConversationDelivery) {
+		runWithRecover("plugin-conversation-delivery", func() { s.deliverConversationReply(d) })
+	}, state.PluginConversationDelivery.Group)
+	s.conversationInFlight = make(map[int64]bool)
 }
 
 func (s *Server) runConversationJob(job conversationJob) {
@@ -112,6 +114,14 @@ func (s *Server) startConversation(ctx context.Context, pluginID, dir string, me
 	}
 	if s.stateDB == nil {
 		return plugins.ErrUnavailable
+	}
+	// Pressure is applied here, at the producer, and before the event receipt
+	// is claimed: a full reply backlog pauses new integration work visibly
+	// instead of dropping replies the host already owes. Not consuming the
+	// receipt is what lets the provider's redelivery be accepted once the
+	// backlog drains.
+	if err := s.conversationBacklogPaused(ctx, pluginID); err != nil {
+		return err
 	}
 	// Claim the delivery before doing any of its work. Reserve-then-act makes a
 	// redelivered event at-most-once rather than at-least-once: a crash in the
@@ -179,10 +189,15 @@ func (s *Server) createConversationSession(ctx context.Context, key state.Plugin
 	return linked, nil
 }
 
-// replyToConversation posts the session's completed assistant turn back to the
-// originating thread. Sessions with no linked thread are ignored. The mapping is
-// read from the database, so a turn that completes after a restart still finds
-// its thread.
+// replyToConversation records the session's completed assistant turn for
+// delivery to the originating thread. Sessions with no linked thread are
+// ignored. The mapping is read from the database, so a turn that completes
+// after a restart still finds its thread.
+//
+// This function never talks to the provider. It appends the reply to the
+// durable outbox and wakes the delivery pump: a disconnect, a plugin crash or a
+// host restart between here and the post replays the delivery instead of losing
+// a completed reply.
 func (s *Server) replyToConversation(ctx context.Context, platformID, sessionID string) {
 	if s.stateDB == nil {
 		return
@@ -205,12 +220,17 @@ func (s *Server) replyToConversation(ctx context.Context, platformID, sessionID 
 	if text == "" {
 		return
 	}
-	// The message ID keys idempotency, so the same completed turn is posted once.
-	operation := sessionID + ":" + messageID
-	reply := plugins.ConversationReply{AccountID: key.AccountID, ThreadID: key.ThreadID, Text: text}
-	if err := s.conversations().Reply(ctx, key.PluginID, operation, reply); err != nil {
+	// The message ID keys the append, so a repeated idle edge for the same
+	// completed turn adds no second delivery. The receipt outlives the
+	// delivery, so this holds after the reply has been acknowledged.
+	delivery, err := s.stateDB.AppendPluginConversationReply(ctx, key, sessionID+":"+messageID, text)
+	if err != nil {
 		log.WithError(err).WithFields(log.Fields{"plugin_id": key.PluginID, "session_id": sessionID}).
-			Warn("posting completed reply to conversation thread")
+			Error("recording completed reply for delivery")
+		return
+	}
+	if delivery != 0 {
+		s.kickConversationOutbox()
 	}
 }
 

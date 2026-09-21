@@ -214,8 +214,42 @@ turn completes:
 
 Replies are plain text in v1: only the newest assistant message's text parts,
 capped at 64 KiB. Reasoning, tool, and file parts are excluded. The call carries
-a 30-second deadline and a per-turn operation ID, so a repeated idle edge
-conflicts instead of posting twice. Return `{}` on success.
+a 30-second deadline and a stable operation ID. Return `{}` on success.
+
+### Reply delivery
+
+A completed reply is durable work, not a best-effort call. Ocman writes it to a
+delivery outbox before contacting the plugin, so a disconnect, a plugin crash or
+a restart of ocman retries the reply instead of losing it. Each delivery has an
+immutable id that doubles as its sequence number and is passed to the plugin as
+the call's `operationId`.
+
+- **Ordering.** Replies for one conversation are delivered strictly in
+  sequence, one at a time: a later reply never overtakes an earlier one. Every
+  conversation is its own ordering group, so one failing thread never holds up
+  another's replies.
+- **Duplicate guarantee.** Delivery is **at-least-once**. The acknowledgment
+  happens after the call returns, so a crash in that window replays the same
+  delivery with the *same* `operationId`. A provider adapter is expected to
+  recognize a repeat and not post a second visible message. A repeated idle
+  edge for the same completed turn, by contrast, never produces a second
+  delivery: that is deduplicated durably on the host side.
+- **Retries.** Failures retry with exponential backoff from 5 seconds to a
+  5-minute ceiling. Provider-specific cooldowns (Slack's `Retry-After`) are
+  absorbed inside the plugin, which knows its provider's limits.
+- **Dead letters.** After 6 failed attempts a delivery stops retrying and waits
+  for a decision under **Settings → Plugins → Reply delivery**: *Retry
+  delivery* puts it back at the head of its conversation, *Discard reply* drops
+  it and lets the conversation continue. Its own conversation stays paused until
+  then, rather than delivering out of order.
+- **Backpressure.** The backlog is capped per plugin (500 undelivered replies,
+  8 MiB of reply text). At either cap ocman stops accepting *new* conversation
+  messages — visibly, in the same panel — instead of dropping replies it already
+  owes. A message refused this way is not marked as seen, so the provider's
+  redelivery is accepted once the backlog drains.
+
+Retry and discard are privileged, localhost-only controls, like every other
+plugin mutation.
 
 Permission prompts stay in ocman: the thread never sees or answers them. A
 revoked grant, a disabled plugin, or an unresolvable project denies both
@@ -279,6 +313,15 @@ file descriptor 3, never appear in logs, results, or error text, and are redacte
 from captured stderr. `allowedUsers` fails closed — an empty list authorizes
 nobody. Only `app_mention` events are subscribed, so every inbound message is an
 explicit mention; bot messages and unauthorized users are dropped silently.
+
+On delivery, the plugin honours Slack's rate limits: a `429` posted nothing, so
+it waits out `Retry-After` (bounded) and retries in place, then hands the
+delivery back to ocman's own backoff. A post whose outcome is *unknown* — a
+transport failure, or a Slack 5xx — is deliberately not repeated: the plugin
+remembers that operation and absorbs ocman's next attempt, because a duplicate
+message in a thread everyone can see is worse than a reply that may already be
+there. That memory is per process, so a plugin restart inside the retry window
+can still post a reply twice.
 
 ## Remote ownership
 

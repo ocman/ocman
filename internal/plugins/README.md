@@ -459,10 +459,36 @@ so a turn completing after a restart still reaches its thread.
 The text is the newest assistant message's text parts only, capped at 64 KiB;
 reasoning, tool, and file parts are excluded. The host strips control characters
 other than tab, CR, and LF rather than dropping a reply the wire would reject.
-The operation ID is
-`<sessionId>:<messageId>` and is reserved through the same durable receipt table
-as actions, so a repeated idle edge returns `conflict` instead of posting twice.
 Return `{}` as the terminal value.
+
+A completed turn is not called out directly. It is appended to the durable
+outbox (`state.db`'s `plugin_conversation_outbox`, migration v97) keyed by
+`<sessionId>:<messageID>` — so a repeated idle edge appends nothing — and
+delivered by a pump whose ordering group is one conversation. The wire
+`operationId` is `conv-out:<deliveryId>`, the row's AUTOINCREMENT id, which is
+both immutable and the delivery's sequence number, and is *stable across
+retries*.
+
+The outbox is the one place the reply path differs from actions: it does **not**
+reserve an operation receipt, because a receipt would make the second attempt of
+an undelivered reply a permanent `conflict`. Instead the row itself is the
+receipt — acknowledged by marking it done, never by deleting it — so the durable
+dedup survives while the retry stays possible. Acknowledgment follows the call,
+which makes delivery **at-least-once**: a crash between the post and the ack
+replays the same `operationId`, and suppressing that repeat is the provider
+adapter's job. An uncertain post should not be repeated blindly.
+
+Failures retry with bounded exponential backoff (5s doubling to a 5-minute
+ceiling); provider cooldowns such as Slack's `Retry-After` are absorbed inside
+the plugin. After 6 attempts the delivery becomes a dead letter: it stops
+retrying, keeps its conversation from advancing (rather than reordering around
+it) and waits for an explicit retry or discard through the localhost-only
+`conversations/retry` and `conversations/discard` plugin operations, with
+`conversations` reporting the backlog. Per-plugin count and byte caps
+(`PluginConversationOutboxMaxRows`, `PluginConversationOutboxMaxBytes`) pause
+*inbound* admission before the receipt is reserved, so pressure stops new work
+visibly instead of dropping replies already owed, and the provider's redelivery
+is still accepted later.
 
 Both directions are admitted by `ConversationBroker` under the same critical
 section as revocation, reading enablement, grants, and the configured project

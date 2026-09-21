@@ -7,7 +7,12 @@ import type { HostCapabilityEntry } from '../lib/api.types';
 import { PluginSettings } from './PluginSettings';
 
 vi.mock('../lib/api', () => ({ api: { capabilities: vi.fn() } }));
-vi.mock('../lib/plugins', () => ({ plugins: { list: vi.fn(), discovery: vi.fn(), rescan: vi.fn(), mutate: vi.fn(), stderr: vi.fn() } }));
+vi.mock('../lib/plugins', () => ({
+  plugins: { list: vi.fn(), discovery: vi.fn(), rescan: vi.fn(), mutate: vi.fn(), stderr: vi.fn(), backlog: vi.fn() },
+  // The example plugin serves no conversation, so its delivery backlog is not
+  // part of the card; PluginDeliveryBacklog.test.tsx covers that on its own.
+  hasConversationCapability: () => false,
+}));
 
 const host = (remoteId: string, pluginManagement = true): HostCapabilityEntry => ({
   remoteId, remoteName: remoteId, pluginManagement,

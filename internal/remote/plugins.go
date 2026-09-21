@@ -26,6 +26,9 @@ type PluginInput struct {
 	Grants   *[]string                  `json:"grants,omitempty"`
 	Values   map[string]json.RawMessage `json:"values,omitempty"`
 	Secrets  map[string]string          `json:"secrets,omitempty"`
+	// DeliveryID names one conversation reply in the owner's delivery
+	// backlog, for an explicit retry or discard of a dead letter.
+	DeliveryID int64 `json:"deliveryId,omitempty"`
 }
 
 // PluginRequest is a closed set of host operations, not a plugin protocol tunnel.

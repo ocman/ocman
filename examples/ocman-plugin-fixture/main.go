@@ -28,7 +28,7 @@ func main() {
 		},
 	}
 	// The fixture has no provider, so a reply is accepted and discarded.
-	conversation := plugin.ConversationHandler(func(context.Context, plugin.ConversationReply) error { return nil })
+	conversation := plugin.ConversationHandler(func(context.Context, string, plugin.ConversationReply) error { return nil })
 	action := plugin.ActionHandler(d, func(_ context.Context, _ plugin.Call, in plugin.ActionInvocation) ([]plugin.ActionResult, error) {
 		text := "Fixture ready"
 		if in.ActionID == "session" {

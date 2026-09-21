@@ -55,11 +55,15 @@ func (s *Server) handlePluginManagement(w http.ResponseWriter, r *http.Request) 
 	}
 	read := false
 	switch action {
-	case "health", "stderr":
+	case "health", "stderr", "conversations":
 		read = true
 	case "grants", "configuration":
 		read = r.Method == http.MethodGet
-	case "enable", "disable", "restart", "retry", "configuration/validate", "remove-data":
+	case "enable", "disable", "restart", "retry", "configuration/validate", "remove-data",
+		// Retrying or discarding a dead letter is a privileged control, not a
+		// read: it decides whether a reply reaches a thread. It takes the same
+		// localhost-only POST path as every other plugin mutation.
+		"conversations/retry", "conversations/discard":
 	default:
 		http.NotFound(w, r)
 		return
@@ -110,6 +114,9 @@ func (s *Server) manageLocalPlugin(ctx context.Context, id, action string, read 
 			}
 		}
 		return nil, err
+	}
+	if strings.HasPrefix(action, "conversations") {
+		return s.manageConversationBacklog(ctx, id, action, input)
 	}
 	if read {
 		switch action {

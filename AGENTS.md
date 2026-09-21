@@ -203,13 +203,31 @@ handlers don't bypass the `Host` seam). User-facing docs:
   answers now, a mid-turn message is held for the next `session.idle` edge in
   arrival order, because an external message must never interleave into a turn
   nobody in the thread can see. On the `session.idle` edge the host resolves the
-  thread from the session and calls the plugin's `reply` method with the newest
-  assistant message's text, keyed by `<sessionId>:<messageId>` through the same
-  receipt table so a repeated edge cannot post twice. Provider details stay in
-  the plugin: `examples/ocman-plugin-slack` speaks Slack Socket Mode
-  (`apps.connections.open` → wss → `app_mention` → `chat.postMessage`) and drops
-  anything bot-originated so a reply cannot loop. Plugin events are drained by
-  `Server.consumePluginEvents`; an unread event flood fails the process.
+  thread from the session and appends the newest assistant message's text to a
+  **durable reply outbox** (`plugin_conversation_outbox`, migration v97) keyed by
+  `<sessionId>:<messageId>`, so a repeated edge appends nothing.
+
+  Delivery is a separate, replayable step (`plugin_conversation_outbox.go`): each
+  row's AUTOINCREMENT id is both its immutable identity and its sequence, and is
+  passed as the wire `operationId` (`conv-out:<id>`), stable across retries. The
+  pump claims only the *head* of each ordering group — one provider conversation
+  — so replies in a thread never overtake each other while unrelated threads are
+  delivered concurrently. Acknowledgment follows the call, making delivery
+  **at-least-once**: a crash in that window replays the same operation id, and
+  the provider adapter is responsible for not posting twice (an uncertain post is
+  never repeated blindly). Failures retry with bounded backoff (5s → 5m); after 6
+  attempts a delivery becomes a visible dead letter that blocks only its own
+  conversation until a localhost-only `conversations/retry` or
+  `conversations/discard` decides, surfaced in Settings → Plugins → Reply
+  delivery via `conversations`. Per-plugin count and byte caps pause *inbound*
+  admission before the event receipt is reserved, so pressure stops new work
+  visibly instead of dropping owed replies, and a redelivery is still accepted
+  once the backlog drains. Provider details stay in the plugin:
+  `examples/ocman-plugin-slack` speaks Slack Socket Mode
+  (`apps.connections.open` → wss → `app_mention` → `chat.postMessage`), drops
+  anything bot-originated so a reply cannot loop, and honours `Retry-After`.
+  Plugin events are drained by `Server.consumePluginEvents`; an unread event
+  flood fails the process.
 - `internal/platforms/opencode/` — OpenCode adapter wrapping the DB
   + HTTP proxy client.
 - `internal/sessionsvc/` — session mutation service (validation,

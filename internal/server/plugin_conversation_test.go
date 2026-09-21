@@ -42,6 +42,7 @@ func conversationPluginDescription() plugin.Description {
 		Settings: []plugin.Setting{
 			{Key: plugin.ConversationProjectSetting, Label: "Project", Type: "string", Required: true},
 			{Key: "trigger", Label: "Trigger text", Type: "string"},
+			{Key: "failThread", Label: "Thread whose replies fail", Type: "string"},
 			{Key: "token", Label: "Provider token", Type: "string", Secret: true},
 		},
 	}
@@ -63,14 +64,24 @@ func TestConversationPluginHelper(t *testing.T) {
 		line, _ := bufio.NewReader(io.LimitReader(f, plugin.MaxMessageBytes)).ReadBytes('\n')
 		_ = f.Close()
 		var cfg struct {
-			Trigger string `json:"trigger"`
-			Token   string `json:"token"`
+			Trigger    string `json:"trigger"`
+			FailThread string `json:"failThread"`
+			Token      string `json:"token"`
 		}
 		_ = json.Unmarshal(bytes.TrimSpace(line), &cfg)
-		handler = plugin.ConversationHandler(func(_ context.Context, r plugin.ConversationReply) error {
+		// Every attempt is recorded with its operation id, so a test can see
+		// both that a delivery was replayed and that its identity was stable.
+		handler = plugin.ConversationHandler(func(_ context.Context, operationID string, r plugin.ConversationReply) error {
+			kind := "reply"
+			if cfg.FailThread != "" && r.ThreadID == cfg.FailThread {
+				kind = "fail"
+			}
 			out, _ := os.OpenFile(record, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
-			_, _ = fmt.Fprintf(out, "reply\t%s\t%s\n", r.ThreadID, strings.ReplaceAll(r.Text, "\n", "\\n"))
+			_, _ = fmt.Fprintf(out, "%s\t%s\t%s\t%s\n", kind, r.ThreadID, operationID, strings.ReplaceAll(r.Text, "\n", "\\n"))
 			_ = out.Close()
+			if kind == "fail" {
+				return plugin.Failure(plugin.ErrorUnavailable)
+			}
 			return nil
 		})
 		events = make(chan plugin.Event, 4)
@@ -103,6 +114,9 @@ type conversationFixture struct {
 	cookie  *http.Cookie
 	record  string
 	project string
+	// failThread configures the plugin to reject replies for one thread, so a
+	// delivery failure can be driven without breaking the plugin process.
+	failThread string
 
 	mu       sync.Mutex
 	prompts  []string
@@ -249,8 +263,12 @@ func (f *conversationFixture) install(t *testing.T, project string, grants []str
 	t.Helper()
 	id := conversationPluginDescription().ID
 	f.call(t, "POST", "/rescan", `{}`, 200)
+	values := map[string]json.RawMessage{"project": mustJSON(t, project), "trigger": mustJSON(t, "ship it")}
+	if f.failThread != "" {
+		values["failThread"] = mustJSON(t, f.failThread)
+	}
 	configuration, err := json.Marshal(pluginManagementInput{
-		Values:  map[string]json.RawMessage{"project": mustJSON(t, project), "trigger": mustJSON(t, "ship it")},
+		Values:  values,
 		Secrets: map[string]string{"token": "xoxb-super-secret"},
 	})
 	if err != nil {
@@ -325,8 +343,10 @@ func TestConversationPluginRoundTrip(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	// The control character in the assistant text is stripped, not dropped.
-	want := "reply\t" + conversationTestThread + "\tfirst half\\n\\nsecondhalf\n"
+	// The control character in the assistant text is stripped, not dropped. The
+	// operation id is the outbox row's immutable id, the first in a fresh
+	// database, and is what a provider adapter keys its own idempotency on.
+	want := "reply\t" + conversationTestThread + "\tconv-out:1\tfirst half\\n\\nsecondhalf\n"
 	if got := f.replies(); got != want {
 		t.Fatalf("reply %q, want %q", got, want)
 	}
@@ -418,6 +438,9 @@ func (f *conversationFixture) restart(t *testing.T) *Server {
 	s := &Server{
 		stateDB: f.s.stateDB, pluginCtx: context.Background(), auth: f.s.auth,
 		registry: f.s.registry, hostRouter: hostsvc.NewRouter(&conversationTestHost{}),
+		// The plugin process is relaunched by the new host at startup; what
+		// this Server does not have is any memory of work in flight.
+		pluginProcesses: f.s.pluginProcesses,
 	}
 	s.sessions = sessionsvc.New(f.s.registry, sessionsvc.Hooks{})
 	return s

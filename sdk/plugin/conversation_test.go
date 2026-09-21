@@ -36,7 +36,10 @@ func TestNewConversationMessage(t *testing.T) {
 }
 
 func TestConversationHandler(t *testing.T) {
-	reply := plugin.Call{Capability: plugin.ConversationCapability.Name, Version: plugin.ConversationCapability.Version, Method: plugin.ConversationReplyMethod}
+	reply := plugin.Call{
+		OperationID: "conv-out:7", Capability: plugin.ConversationCapability.Name,
+		Version:     plugin.ConversationCapability.Version, Method: plugin.ConversationReplyMethod,
+	}
 	for _, tc := range []struct {
 		name   string
 		call   plugin.Call
@@ -53,8 +56,9 @@ func TestConversationHandler(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var seen plugin.ConversationReply
-			h := plugin.ConversationHandler(func(_ context.Context, r plugin.ConversationReply) error {
-				seen = r
+			var seenOperation string
+			h := plugin.ConversationHandler(func(_ context.Context, operationID string, r plugin.ConversationReply) error {
+				seen, seenOperation = r, operationID
 				return tc.err
 			})
 			call := tc.call
@@ -66,8 +70,10 @@ func TestConversationHandler(t *testing.T) {
 				}
 				return
 			}
-			if err != nil || string(value) != `{}` || seen.Text != "done" {
-				t.Fatalf("%s %v %+v", value, err, seen)
+			// The operation id reaches the provider adapter: it is what lets a
+			// retried delivery be recognized instead of posted twice.
+			if err != nil || string(value) != `{}` || seen.Text != "done" || seenOperation != "conv-out:7" {
+				t.Fatalf("%s %v %+v %q", value, err, seen, seenOperation)
 			}
 		})
 	}
@@ -85,7 +91,7 @@ func conversationSession(t *testing.T, events <-chan plugin.Event) (*plugin.Enco
 	t.Cleanup(cancel)
 	t.Cleanup(func() { _ = host.Close() })
 	done := make(chan error, 1)
-	handler := plugin.ConversationHandler(func(context.Context, plugin.ConversationReply) error { return nil })
+	handler := plugin.ConversationHandler(func(context.Context, string, plugin.ConversationReply) error { return nil })
 	go func() {
 		done <- plugin.RunWithEvents(ctx, plugin.ModeServe, strings.Repeat("ab", 32), conversationDescription(), child, child, handler, events)
 	}()

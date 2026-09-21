@@ -33,14 +33,49 @@ export interface PluginRegistration {
   health: { status: string; restartCount: number; lastError?: string };
 }
 
+/** Conversation plugins are the only ones that owe replies to a provider. */
+export function hasConversationCapability(plugin: PluginRegistration) {
+  return (plugin.description.capabilities ?? []).some((c) => c.name === 'conversation');
+}
+
 export interface PluginInput {
   approval?: string;
   grants?: string[];
   values?: Record<string, string | boolean | number>;
   secrets?: Record<string, string>;
+  deliveryId?: number;
 }
 
-export type PluginMutation = 'enable' | 'disable' | 'retry' | 'restart' | 'grants' | 'configuration' | 'remove-data';
+export type PluginMutation =
+  | 'enable' | 'disable' | 'retry' | 'restart' | 'grants' | 'configuration' | 'remove-data'
+  | 'conversations/retry' | 'conversations/discard';
+
+/** One completed reply that exhausted its retries and needs a decision. */
+export interface PluginDeadLetter {
+  id: number;
+  accountId: string;
+  threadId: string;
+  attempts: number;
+  lastError: string;
+  updatedAt: number;
+  bytes: number;
+}
+
+/**
+ * Delivery backlog for a conversation plugin: undelivered replies, the limits
+ * that pause new work, and the dead letters awaiting a retry or a discard.
+ */
+export interface PluginBacklog {
+  pending: number;
+  dead: number;
+  bytes: number;
+  retrying: number;
+  paused: boolean;
+  maxRows: number;
+  maxBytes: number;
+  oldestUnsent: number;
+  deadLetters?: PluginDeadLetter[] | null;
+}
 
 function url(owner: string, path = '') {
   return `/api/plugins${path}?ownerId=${encodeURIComponent(owner)}`;
@@ -53,6 +88,8 @@ export const plugins = {
   mutate: (owner: string, id: string, action: PluginMutation, input: PluginInput = {}) =>
     postJSON<unknown>(url(owner, `/${encodeURIComponent(id)}/${action}`), input),
   stderr: (owner: string, id: string) => fetchJSON<{ stderr: string }>(url(owner, `/${encodeURIComponent(id)}/stderr`)),
+  backlog: (owner: string, id: string, signal?: AbortSignal) =>
+    fetchJSON<PluginBacklog>(url(owner, `/${encodeURIComponent(id)}/conversations`), signal),
 };
 
 export interface PluginActionContext {

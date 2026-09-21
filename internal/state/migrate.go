@@ -225,7 +225,10 @@ import (
 //	95 - pinned workflow step definitions for declarative Factory phases.
 //
 // 96 - persist plugin conversation thread to session mappings across restarts.
-const latestSchemaVersion = 96
+//
+//	97 - durable outbox for completed conversation replies, with sequence,
+//	     acknowledgment, bounded retry and a visible dead-letter state.
+const latestSchemaVersion = 97
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.
@@ -535,6 +538,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return err
 	case 96:
 		return migrateToV96(tx)
+	case 97:
+		return migrateToV97(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}

@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -167,6 +169,28 @@ type slackMock struct {
 	posts chan map[string]string
 	acks  chan string
 	send  chan any
+
+	// Scripted failures, consumed one per chat.postMessage call: rateLimited
+	// answers 429 with a cooldown (nothing posted), serverError answers 5xx
+	// (the outcome is unknown to the caller).
+	mu          sync.Mutex
+	rateLimited int
+	serverError int
+}
+
+// nextFailure consumes one scripted failure, if any.
+func (m *slackMock) nextFailure() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	switch {
+	case m.rateLimited > 0:
+		m.rateLimited--
+		return "rate-limited"
+	case m.serverError > 0:
+		m.serverError--
+		return "server-error"
+	}
+	return ""
 }
 
 func newSlackMock(t *testing.T) *slackMock {
@@ -185,6 +209,15 @@ func newSlackMock(t *testing.T) *slackMock {
 	mux.HandleFunc("/chat.postMessage", func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]string
 		_ = json.NewDecoder(r.Body).Decode(&body)
+		switch m.nextFailure() {
+		case "rate-limited":
+			w.Header().Set("Retry-After", "1")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		case "server-error":
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 		if r.Header.Get("Authorization") != "Bearer xoxb-test" {
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "error": "invalid_auth"})
 			return
@@ -258,7 +291,7 @@ func TestSocketModeToNormalizedMessage(t *testing.T) {
 		t.Fatal("unauthorized mention produced a message")
 	}
 
-	if err := b.reply(ctx, plugin.ConversationReply{AccountID: message.AccountID, ThreadID: message.ThreadID, Text: "shipped"}); err != nil {
+	if err := b.reply(ctx, "conv-out:1", plugin.ConversationReply{AccountID: message.AccountID, ThreadID: message.ThreadID, Text: "shipped"}); err != nil {
 		t.Fatal(err)
 	}
 	post := <-m.posts
@@ -275,12 +308,114 @@ func TestSocketModeToNormalizedMessage(t *testing.T) {
 func TestReplyRejectsUnknownThread(t *testing.T) {
 	m := newSlackMock(t)
 	b := m.bot()
-	if err := b.reply(t.Context(), plugin.ConversationReply{AccountID: "T1", ThreadID: "not-a-thread", Text: "x"}); err == nil {
+	if err := b.reply(t.Context(), "conv-out:1", plugin.ConversationReply{AccountID: "T1", ThreadID: "not-a-thread", Text: "x"}); err == nil {
 		t.Fatal("accepted an unparseable thread")
 	}
 	b.cfg.BotToken = "wrong"
-	if err := b.reply(t.Context(), plugin.ConversationReply{AccountID: "T1", ThreadID: "C1:1.0", Text: "x"}); err == nil {
+	if err := b.reply(t.Context(), "conv-out:2", plugin.ConversationReply{AccountID: "T1", ThreadID: "C1:1.0", Text: "x"}); err == nil {
 		t.Fatal("a rejected post must fail the call")
+	}
+}
+
+func slackReply(text string) plugin.ConversationReply {
+	return plugin.ConversationReply{AccountID: "T1", ThreadID: "C1:1700000000.000100", Text: text}
+}
+
+// TestReplyWaitsOutRateLimit covers Slack's documented rate-limit response: the
+// cooldown is respected in place, and because a 429 posted nothing, retrying it
+// is the one repeat that cannot duplicate a message.
+func TestReplyWaitsOutRateLimit(t *testing.T) {
+	previous := maxRateLimitWait
+	maxRateLimitWait = 20 * time.Millisecond
+	t.Cleanup(func() { maxRateLimitWait = previous })
+
+	m := newSlackMock(t)
+	m.rateLimited = 2
+	b := m.bot()
+	start := time.Now()
+	if err := b.reply(t.Context(), "conv-out:1", slackReply("shipped")); err != nil {
+		t.Fatalf("a rate-limited reply must still be delivered: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed < 2*maxRateLimitWait {
+		t.Fatalf("the cooldown was not respected: waited %s", elapsed)
+	}
+	if post := <-m.posts; post["text"] != "shipped" {
+		t.Fatalf("post %+v", post)
+	}
+	if len(m.posts) != 0 {
+		t.Fatal("a rate-limited reply posted more than once")
+	}
+	// Exhausting the in-call retries hands the delivery back to the host's own
+	// bounded backoff instead of waiting indefinitely.
+	m.rateLimited = rateLimitRetries + 1
+	if err := b.reply(t.Context(), "conv-out:2", slackReply("later")); err == nil {
+		t.Fatal("a persistent rate limit must fail the call, not loop")
+	}
+}
+
+// TestReplyDoesNotRepeatUncertainPost is the "no blind repeat" rule: when the
+// outcome of a post is unknown, the host's retry is absorbed rather than
+// answered with a second visible message.
+func TestReplyDoesNotRepeatUncertainPost(t *testing.T) {
+	m := newSlackMock(t)
+	m.serverError = 1
+	b := m.bot()
+	if err := b.reply(t.Context(), "conv-out:1", slackReply("shipped")); err == nil {
+		t.Fatal("an unknown outcome must be reported to the host")
+	}
+	if err := b.reply(t.Context(), "conv-out:1", slackReply("shipped")); err != nil {
+		t.Fatalf("the retry must be absorbed, not failed: %v", err)
+	}
+	if len(m.posts) != 0 {
+		t.Fatal("a post with an unknown outcome was repeated")
+	}
+	// A different reply is unaffected: only the one uncertain operation is held.
+	if err := b.reply(t.Context(), "conv-out:2", slackReply("next")); err != nil {
+		t.Fatal(err)
+	}
+	if post := <-m.posts; post["text"] != "next" {
+		t.Fatalf("post %+v", post)
+	}
+}
+
+// TestReplyIgnoresRepeatOfDeliveredOperation covers the ordinary at-least-once
+// case: the host lost the acknowledgment, not the post.
+func TestReplyIgnoresRepeatOfDeliveredOperation(t *testing.T) {
+	m := newSlackMock(t)
+	b := m.bot()
+	for range 2 {
+		if err := b.reply(t.Context(), "conv-out:1", slackReply("shipped")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if post := <-m.posts; post["text"] != "shipped" {
+		t.Fatalf("post %+v", post)
+	}
+	if len(m.posts) != 0 {
+		t.Fatal("a redelivered reply posted twice")
+	}
+}
+
+// TestRecordedOutcomesStayBounded proves the plugin's memory cannot grow with
+// traffic; the trade-off is that a restart forgets and may repost.
+func TestRecordedOutcomesStayBounded(t *testing.T) {
+	b := newBot(testConfig())
+	for i := range deliveredMemory + 10 {
+		b.record("conv-out:"+strconv.Itoa(i), outcomePosted)
+	}
+	if len(b.outcomes) != deliveredMemory || len(b.order) != deliveredMemory {
+		t.Fatalf("outcomes %d order %d", len(b.outcomes), len(b.order))
+	}
+	if b.knownOutcome("conv-out:0") != 0 {
+		t.Fatal("the oldest outcome was not evicted")
+	}
+	if b.knownOutcome("conv-out:"+strconv.Itoa(deliveredMemory+9)) != outcomePosted {
+		t.Fatal("the newest outcome was lost")
+	}
+	// Re-recording an existing operation must not consume a second slot.
+	b.record("conv-out:"+strconv.Itoa(deliveredMemory+9), outcomeUncertain)
+	if len(b.order) != deliveredMemory {
+		t.Fatalf("order %d", len(b.order))
 	}
 }
 

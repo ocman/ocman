@@ -138,12 +138,19 @@ type Server struct {
 	pluginActionsOnce sync.Once
 	pluginActions     *plugins.ActionBroker
 
-	// conversation.v1 state: just the broker and its delivery worker. The
-	// thread<->session mapping is durable (state.db's plugin_conversation),
-	// so it survives a restart. See plugin_conversation.go.
-	conversationOnce   sync.Once
-	conversationBroker *plugins.ConversationBroker
-	conversationJobs   *worker.Worker[conversationJob]
+	// conversation.v1 state: the broker, its inbound worker and the outbound
+	// delivery worker. Everything durable lives in state.db: the
+	// thread<->session mapping (plugin_conversation) and the reply outbox
+	// (plugin_conversation_outbox), so both survive a restart.
+	// conversationInFlight only prevents one process from delivering the same
+	// outbox row twice; it is guarded by conversationMu and is not state.
+	// See plugin_conversation.go and plugin_conversation_outbox.go.
+	conversationOnce       sync.Once
+	conversationBroker     *plugins.ConversationBroker
+	conversationJobs       *worker.Worker[conversationJob]
+	conversationDeliveries *worker.Worker[state.PluginConversationDelivery]
+	conversationMu         sync.Mutex
+	conversationInFlight   map[int64]bool
 
 	// queueSvcCached is the follow-up message queue service (#58), built
 	// lazily on first use. Guarded by
@@ -579,6 +586,9 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	go s.runLLMMetricsLoop(ctx)
 	go s.runDatabaseSizeLoop(ctx)
 	go s.runQueueSweep(ctx)
+	// Replays conversation replies left unacknowledged by a disconnect or a
+	// crash, and is the clock for their bounded retries.
+	go s.runConversationDeliveryPump(ctx)
 	go s.runRoutines(ctx)
 	go s.runPermissionInboxReconciliation(ctx)
 	// Headless auto-approve: subscribe directly to each OpenCode
