@@ -18,6 +18,7 @@ describe('factoryIssueState', () => {
     ['blocked', issue({ id: 'a', status: 'blocked' })],
     ['blocked', issue({ id: 'a', dispatchState: 'terminally_blocked' })],
     ['ready', issue({ id: 'a', dispatchState: 'ready' })],
+    ['waiting', issue({ id: 'a', kind: 'phase', dispatchState: 'ready' })],
     ['waiting', issue({ id: 'a', dispatchState: 'waiting' })],
   ])('maps %s', (want, input) => {
     expect(factoryIssueState(input)).toBe(want);
@@ -25,6 +26,43 @@ describe('factoryIssueState', () => {
 });
 
 describe('factoryGraphModel', () => {
+  it.each([
+    [{ requirement: 'required' }, true],
+    [{ requirement: 'reference' }, false],
+    [{ requirement: 'required', dispatchState: 'not_applicable' }, false],
+    [{ requirement: 'optional' }, true],
+    [{ requirement: 'optional', status: 'closed' }, false],
+    [{ requirement: 'optional', status: 'deferred' }, false],
+    [{ requirement: 'optional', dispatchState: 'terminally_blocked' }, false],
+  ] satisfies [Partial<FactoryIssue>, boolean][])('matches phase participation for %j', (overrides, participates) => {
+    const { edges } = factoryGraphModel([
+      issue({ id: 'phase', kind: 'phase' }),
+      issue({ id: 'child', parentId: 'phase', ...overrides }),
+    ]);
+    expect(edges.some((edge) => edge.source === 'child' && edge.target === 'phase' && edge.kind === 'completion')).toBe(participates);
+  });
+
+  it('places phase completion, verification and delivery after unfinished implementation dependencies', () => {
+    const { nodes, edges } = factoryGraphModel([
+      issue({ id: 'approve', kind: 'gate', status: 'closed', outcome: 'succeeded' }),
+      issue({ id: 'phase', kind: 'phase', dependsOn: [{ id: 'approve', type: 'blocks' }] }),
+      issue({ id: 'first', kind: 'implementation', parentId: 'phase', requirement: 'required', status: 'closed', outcome: 'succeeded', dependsOn: [{ id: 'approve', type: 'blocks' }] }),
+      issue({ id: 'last', kind: 'implementation', parentId: 'phase', requirement: 'required', status: 'in_progress', dependsOn: [{ id: 'first', type: 'blocks' }] }),
+      issue({ id: 'permission', kind: 'gate', parentId: 'phase', requirement: 'reference', status: 'closed', outcome: 'succeeded', dependsOn: [{ id: 'last', type: 'blocks' }], authority: { issueId: 'permission', epicId: 'epic-1', attemptId: 'a', workId: 'last', requestId: 'r', permission: 'bash', target: 'test', resolution: 'approve' } }),
+      issue({ id: 'verify', dependsOn: [{ id: 'phase', type: 'blocks' }] }),
+      issue({ id: 'deliver', kind: 'delivery', dependsOn: [{ id: 'verify', type: 'blocks' }] }),
+    ].reverse());
+    const y = Object.fromEntries(nodes.map((node) => [node.id, node.y]));
+    expect(y.last).toBeLessThan(y.phase);
+    expect(y.phase).toBeLessThan(y.verify);
+    expect(y.verify).toBeLessThan(y.deliver);
+    expect(y.permission).toBe(y.last);
+    expect(nodes.find((node) => node.id === 'permission')!.x).toBeGreaterThan(nodes.find((node) => node.id === 'last')!.x);
+    expect(edges).toContainEqual(expect.objectContaining({ source: 'last', target: 'phase', kind: 'completion' }));
+    expect(edges).not.toContainEqual(expect.objectContaining({ source: 'phase', target: 'last' }));
+    expect(edges).not.toContainEqual(expect.objectContaining({ source: 'permission', target: 'phase' }));
+  });
+
   it('is empty when only containers exist', () => {
     expect(factoryGraphModel([issue({ id: 'e.1', kind: 'mol' })])).toEqual({ nodes: [], edges: [] });
     expect(factoryGraphModel([])).toEqual({ nodes: [], edges: [] });

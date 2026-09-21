@@ -16,7 +16,7 @@ export function EpicGraph({ issues, preview }: { issues?: FactoryIssue[]; previe
     const flowNodes: Node[] = model.nodes.map((node) => ({
       id: node.id,
       position: { x: node.x, y: node.y },
-      data: { label: <span className="factory-node"><strong>{node.issue.title}</strong><span>{node.issue.workflow?.kind ?? node.issue.kind} · {node.state}</span></span> },
+      data: { label: <span className="factory-node"><strong>{node.issue.title}</strong><span>{node.issue.authority ? 'permission decision' : node.issue.recovery ? 'recovery decision' : node.issue.kind === 'phase' ? 'phase completion' : node.issue.workflow?.kind ?? node.issue.kind} · {node.state}</span></span> },
       className: `factory-node-box factory-node-box--${node.state}`,
       sourcePosition: Position.Bottom,
       targetPosition: Position.Top,
@@ -26,10 +26,10 @@ export function EpicGraph({ issues, preview }: { issues?: FactoryIssue[]; previe
       id: edge.id,
       source: edge.source,
       target: edge.target,
-      label: edge.kind === 'on_failure' ? 'on failure' : edge.kind === 'merge_gated' ? 'merge gated' : edge.kind === 'interrupts' ? 'needs you' : undefined,
+      label: edge.kind === 'on_failure' ? 'on failure' : edge.kind === 'merge_gated' ? 'merge gated' : edge.kind === 'interrupts' ? 'decision for task' : edge.kind === 'completion' ? 'phase completion' : edge.kind === 'hierarchy' ? 'contains' : undefined,
       animated: edge.kind === 'blocks' || edge.kind === 'merge_gated',
       className: `factory-edge factory-edge--${edge.kind}`,
-      markerEnd: { type: MarkerType.ArrowClosed },
+      markerEnd: edge.kind === 'interrupts' || edge.kind === 'hierarchy' ? undefined : { type: MarkerType.ArrowClosed },
     }));
     return { nodes: flowNodes, edges: flowEdges };
   }, [issues]);

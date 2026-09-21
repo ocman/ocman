@@ -26,6 +26,21 @@ describe('workflow graph', () => {
     expect(vi.mocked(ReactFlow).mock.calls.at(-1)![0].onNodeClick).toBeUndefined();
   });
 
+  it('draws decision provenance without a dependency arrow and labels phase completion', () => {
+    render(<EpicGraph issues={[
+      { id: 'phase', kind: 'phase', epicId: 'epic', project: '/repo', title: 'Implement', status: 'open', dispatchState: 'ready' },
+      { id: 'task', kind: 'implementation', parentId: 'phase', requirement: 'required', epicId: 'epic', project: '/repo', title: 'Task', status: 'in_progress' },
+      { id: 'gate', kind: 'gate', parentId: 'phase', requirement: 'reference', epicId: 'epic', project: '/repo', title: 'Permission', status: 'closed', outcome: 'succeeded', authority: { issueId: 'gate', epicId: 'epic', attemptId: 'a', workId: 'task', requestId: 'r', permission: 'bash', target: 'test', resolution: 'approve' } },
+    ]} />);
+    const props = vi.mocked(ReactFlow).mock.calls.at(-1)![0];
+    expect(props.edges).toContainEqual(expect.objectContaining({ source: 'task', target: 'gate', label: 'decision for task', markerEnd: undefined, animated: false }));
+    expect(props.edges).toContainEqual(expect.objectContaining({ source: 'task', target: 'phase', label: 'phase completion', markerEnd: { type: 'arrowclosed' } }));
+    render(props.nodes!.find((node) => node.id === 'phase')!.data.label as React.ReactElement);
+    expect(screen.getByText('phase completion · waiting')).toBeInTheDocument();
+    render(props.nodes!.find((node) => node.id === 'gate')!.data.label as React.ReactElement);
+    expect(screen.getByText('permission decision · done')).toBeInTheDocument();
+  });
+
   it('shows every workflow step, implementation task and dependency without expanding phases', () => {
     const issue = (id: string, kind: string, parentId?: string, blockers: string[] = []): FactoryIssue => ({
       id, kind, parentId, epicId: 'epic', project: '/repo', title: id, status: 'open',

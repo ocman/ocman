@@ -18,7 +18,7 @@ export interface GraphEdge {
   id: string;
   source: string;
   target: string;
-  kind: 'hierarchy' | 'blocks' | 'on_failure' | 'merge_gated' | 'interrupts';
+  kind: 'hierarchy' | 'completion' | 'blocks' | 'on_failure' | 'merge_gated' | 'interrupts';
 }
 
 const COLUMN = 260;
@@ -29,6 +29,7 @@ export function factoryIssueState(issue: FactoryIssue): GraphState {
   if (issue.status === 'in_progress' || issue.status === 'retry_wait') return 'running';
   if (issue.status === 'deferred') return 'deferred';
   if (issue.status === 'blocked' || issue.dispatchState === 'blocked' || issue.dispatchState === 'terminally_blocked') return 'blocked';
+  if (issue.kind === 'phase') return 'waiting';
   if (issue.dispatchState === 'ready') return 'ready';
   return 'waiting';
 }
@@ -90,10 +91,18 @@ export function factoryGraphModel(issues: FactoryIssue[]): { nodes: GraphNode[];
     // A recovery or authority gate is parented to its container, not to the work
     // it interrupted, which would leave it floating. Its attempt knows better.
     const interrupted = issue.recovery?.workId ?? issue.authority?.workId;
+    const parent = visibleAncestor(issue.parentId);
     if (interrupted) add(visibleAncestor(interrupted), issue.id, 'interrupts');
-    else add(visibleAncestor(issue.parentId), issue.id, 'hierarchy');
+    else if (parent && byID.get(parent)?.kind === 'phase') {
+      // Match the workflow's phase-completion barrier, not parent-first execution.
+      const excluded = issue.requirement === 'reference' || issue.dispatchState === 'not_applicable'
+        || (issue.requirement === 'optional' && (issue.status === 'closed' || issue.status === 'deferred' || issue.dispatchState === 'terminally_blocked'));
+      if (!excluded) add(issue.id, parent, 'completion');
+    } else add(parent, issue.id, 'hierarchy');
     for (const edge of issue.dependsOn ?? []) {
-      add(visibleAncestor(edge.id), issue.id, interrupted ? 'interrupts' : edge.type === 'on_failure' ? 'on_failure' : edge.type === 'merge_gated' ? 'merge_gated' : 'blocks');
+      // The interrupted-work edge records provenance, not a completion prerequisite.
+      if (edge.id === interrupted) continue;
+      add(visibleAncestor(edge.id), issue.id, edge.type === 'on_failure' ? 'on_failure' : edge.type === 'merge_gated' ? 'merge_gated' : 'blocks');
     }
   }
 
@@ -103,6 +112,7 @@ export function factoryGraphModel(issues: FactoryIssue[]): { nodes: GraphNode[];
   const incoming = new Map(visible.map((issue) => [issue.id, 0]));
   const outgoing = new Map<string, GraphEdge[]>();
   for (const edge of edges) {
+    if (edge.kind === 'interrupts') continue;
     incoming.set(edge.target, (incoming.get(edge.target) ?? 0) + 1);
     outgoing.set(edge.source, [...(outgoing.get(edge.source) ?? []), edge]);
   }
@@ -116,8 +126,14 @@ export function factoryGraphModel(issues: FactoryIssue[]): { nodes: GraphNode[];
     }
   }
 
+  // Decisions sit beside the work they interrupted; resolving one does not finish it.
+  for (const edge of edges) {
+    if (edge.kind === 'interrupts') depth.set(edge.target, depth.get(edge.source) ?? 0);
+  }
+
   const used = new Map<number, number>();
-  const nodes = visible.map((issue) => {
+  // Keep the execution path on the left even when old decisions arrive first.
+  const nodes = [...visible].sort((a, b) => Number(Boolean(a.recovery || a.authority)) - Number(Boolean(b.recovery || b.authority))).map((issue) => {
     const row = depth.get(issue.id) ?? 0;
     const column = used.get(row) ?? 0;
     used.set(row, column + 1);
