@@ -556,7 +556,7 @@ func TestConversationMappingSurvivesRestart(t *testing.T) {
 	before := f.sentTo()
 
 	restarted := f.restart(t)
-	if err := restarted.startConversation(t.Context(), conversationPluginDescription().ID, f.project, conversationMessage("still here?")); err != nil {
+	if err := restarted.startConversation(t.Context(), conversationPluginDescription().ID, plugins.ConversationConfig{Project: f.project}, conversationMessage("still here?")); err != nil {
 		t.Fatal(err)
 	}
 	if created := f.createdSessions(); created != 1 {

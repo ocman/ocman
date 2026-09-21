@@ -373,6 +373,8 @@ Rescan in **Settings → Plugins**, selecting that machine as the owner, then
 | `appToken` | App-level `xapp-` token (write-only secret) |
 | `botToken` | Bot `xoxb-` token (write-only secret) |
 | `allowedUsers` | Comma-separated Slack user IDs allowed to drive sessions |
+| `agent` | Optional OpenCode agent, such as `build` |
+| `model` | Optional `provider/model` for the first prompt in a new Slack thread |
 
 Enable the plugin and approve the `conversation.session` grant. `@ocman ship it`
 in a channel or thread now starts a session in that project, and the assistant's

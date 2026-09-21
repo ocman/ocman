@@ -48,7 +48,7 @@ func (s *Server) conversationWorker() *worker.Worker[conversationJob] {
 
 func (s *Server) buildConversations() {
 	s.conversationBroker = plugins.NewConversationBroker(
-		func(ctx context.Context, id string, use func(plugins.Description, []string, string) error) error {
+		func(ctx context.Context, id string, use func(plugins.Description, []string, plugins.ConversationConfig) error) error {
 			// Lock order matches actions: server lifecycle, then durable state.
 			s.pluginMu.Lock()
 			defer s.pluginMu.Unlock()
@@ -102,8 +102,8 @@ func (s *Server) consumePluginEvents(ctx context.Context, id string, p *plugins.
 // startConversation creates or resumes the thread's session in the plugin's one
 // approved project and delivers the normalized text as a prompt. dir comes from
 // the approved configuration; a plugin can never name another directory.
-func (s *Server) startConversation(ctx context.Context, pluginID, dir string, message plugins.ConversationMessage) error {
-	dir = filepath.Clean(dir)
+func (s *Server) startConversation(ctx context.Context, pluginID string, config plugins.ConversationConfig, message plugins.ConversationMessage) error {
+	dir := filepath.Clean(config.Project)
 	if !filepath.IsAbs(dir) {
 		return &plugins.WireError{Category: plugins.ErrorPermissionDenied}
 	}
@@ -138,7 +138,7 @@ func (s *Server) startConversation(ctx context.Context, pluginID, dir string, me
 		return err
 	}
 	key := state.PluginConversationKey{PluginID: pluginID, AccountID: message.AccountID, ThreadID: message.ThreadID}
-	err := s.deliverConversationPrompt(ctx, key, dir, message)
+	err := s.deliverConversationPrompt(ctx, key, dir, config.Values, message)
 	if err != nil {
 		// The receipt above is already consumed, so no redelivery is coming for
 		// this message: the thread would otherwise wait forever on an answer
@@ -155,7 +155,7 @@ func (s *Server) startConversation(ctx context.Context, pluginID, dir string, me
 // deliverConversationPrompt creates or resumes the thread's session and hands
 // it the prompt. Split out from startConversation so every way of failing
 // after the receipt was consumed reaches the same notice.
-func (s *Server) deliverConversationPrompt(ctx context.Context, key state.PluginConversationKey, dir string, message plugins.ConversationMessage) error {
+func (s *Server) deliverConversationPrompt(ctx context.Context, key state.PluginConversationKey, dir string, values map[string]json.RawMessage, message plugins.ConversationMessage) error {
 	linked, resumed, err := s.stateDB.GetPluginConversation(ctx, key)
 	if err != nil {
 		return err
@@ -172,8 +172,11 @@ func (s *Server) deliverConversationPrompt(ctx context.Context, key state.Plugin
 	// for the next session.idle edge otherwise, preserving arrival order. A
 	// mapped session that can no longer be sent to is set aside by the queue
 	// after repeated failures, with a queue.updated broadcast.
+	var agent, model string
+	_ = json.Unmarshal(values["agent"], &agent)
+	_ = json.Unmarshal(values["model"], &model)
 	return s.queueSvc().Enqueue(ctx, linked.PlatformID,
-		false, platforms.SendMessageRequest{SessionID: linked.SessionID, Message: message.Text})
+		false, platforms.SendMessageRequest{SessionID: linked.SessionID, Message: message.Text, Agent: agent, Model: model})
 }
 
 // createConversationSession launches the project's instance, creates the

@@ -133,7 +133,7 @@ func (s *Server) conversationDeliveryAllowed(ctx context.Context, pluginID strin
 		return false
 	}
 	return s.stateDB.WithPluginConversation(ctx, pluginID,
-		func(d plugins.Description, grants []string, _ string) error {
+		func(d plugins.Description, grants []string, _ plugins.ConversationConfig) error {
 			return plugins.ConversationAllowed(d, grants)
 		}) == nil
 }

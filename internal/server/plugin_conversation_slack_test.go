@@ -338,7 +338,7 @@ func TestSlackPluginEndToEnd(t *testing.T) {
 	// Restart recovery, inbound: a host with none of the previous process's
 	// memory continues the thread's session instead of starting a second one.
 	restarted := f.restart(t)
-	if err := restarted.startConversation(t.Context(), slackPluginID, f.project, plugins.ConversationMessage{
+	if err := restarted.startConversation(t.Context(), slackPluginID, plugins.ConversationConfig{Project: f.project}, plugins.ConversationMessage{
 		AccountID: slackTestTeam, ThreadID: slackTestThread(), EventID: "Ev3restart", Text: "still here?",
 	}); err != nil {
 		t.Fatal(err)

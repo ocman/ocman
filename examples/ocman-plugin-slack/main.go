@@ -63,6 +63,8 @@ func description() plugin.Description {
 			{Key: "appToken", Label: "App-level token (xapp-)", Type: "string", Required: true, Secret: true},
 			{Key: "botToken", Label: "Bot token (xoxb-)", Type: "string", Required: true, Secret: true},
 			{Key: "allowedUsers", Label: "Authorized Slack user IDs (comma separated)", Type: "string", Required: true},
+			{Key: "agent", Label: "Agent (optional)", Type: "string"},
+			{Key: "model", Label: "Model (optional provider/model)", Type: "string"},
 		},
 	}
 }

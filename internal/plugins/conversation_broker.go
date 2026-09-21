@@ -7,6 +7,13 @@ import (
 	"time"
 )
 
+// ConversationConfig is the host-owned, non-secret configuration admitted with
+// a conversation message. Providers cannot choose these values.
+type ConversationConfig struct {
+	Project string
+	Values  map[string]json.RawMessage
+}
+
 const (
 	// ConversationStartTimeout bounds inbound delivery, which may have to
 	// launch the project's opencode instance before the first prompt.
@@ -20,13 +27,13 @@ const (
 // configured project in the same critical section as revocation, exactly like
 // ActionAuthorization. The third callback argument is that configured project
 // directory. Work already admitted cannot be recalled on revocation.
-type ConversationAuthorization func(ctx context.Context, pluginID string, use func(Description, []string, string) error) error
+type ConversationAuthorization func(ctx context.Context, pluginID string, use func(Description, []string, ConversationConfig) error) error
 
 // ConversationStart hands a normalized message to the host's session
 // orchestration. dir is the authorized project; a plugin never chooses it. The
 // whole message crosses this seam because the host owns both the durable
 // account/thread mapping and event deduplication, and both need it.
-type ConversationStart func(ctx context.Context, pluginID, dir string, message ConversationMessage) error
+type ConversationStart func(ctx context.Context, pluginID string, config ConversationConfig, message ConversationMessage) error
 
 // ConversationBroker is the only way a conversation plugin reaches a session,
 // and the only way a completed reply reaches a provider. It holds no state: a
@@ -69,20 +76,20 @@ func (b *ConversationBroker) Deliver(ctx context.Context, pluginID string, event
 	}
 	ctx, cancel := context.WithTimeout(ctx, ConversationStartTimeout)
 	defer cancel()
-	var dir string
-	if err := b.authorize(ctx, pluginID, func(d Description, grants []string, project string) error {
+	var config ConversationConfig
+	if err := b.authorize(ctx, pluginID, func(d Description, grants []string, admitted ConversationConfig) error {
 		if err := ConversationAllowed(d, grants); err != nil {
 			return err
 		}
-		if project == "" || !ConversationProjectAllowed(project, message.Project) {
+		if admitted.Project == "" || !ConversationProjectAllowed(admitted.Project, message.Project) {
 			return &WireError{Category: ErrorPermissionDenied}
 		}
-		dir = project
+		config = admitted
 		return nil
 	}); err != nil {
 		return err
 	}
-	return b.start(ctx, pluginID, dir, message)
+	return b.start(ctx, pluginID, config, message)
 }
 
 // Reply posts one completed assistant turn back to the originating thread.
@@ -95,7 +102,7 @@ func (b *ConversationBroker) Reply(ctx context.Context, pluginID, operationID st
 	ctx, cancel := context.WithTimeout(ctx, ConversationReplyTimeout)
 	defer cancel()
 	var replies <-chan Reply
-	if err := b.authorize(ctx, pluginID, func(d Description, grants []string, _ string) error {
+	if err := b.authorize(ctx, pluginID, func(d Description, grants []string, _ ConversationConfig) error {
 		if err := ConversationAllowed(d, grants); err != nil {
 			return err
 		}
