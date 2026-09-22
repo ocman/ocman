@@ -74,6 +74,12 @@ describe('StatusBadge', () => {
     expect(dot?.getAttribute('title')).toBe('Unsent draft');
   });
 
+  it('keeps the spinner for a draft parked on a running turn', () => {
+    const { container } = render(<StatusBadge status="busy" compact draft />);
+    const dot = container.querySelector('.session-status-indicator[data-state="draft-busy"]');
+    expect(dot?.getAttribute('title')).toBe('Unsent draft — still working');
+  });
+
   it('lets titleOverride win over the derived tooltip', () => {
     const { container } = render(
       <StatusBadge status="interrupted" compact titleOverride="Rate limited" />,

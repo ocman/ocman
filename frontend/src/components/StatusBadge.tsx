@@ -29,7 +29,8 @@ interface StatusBadgeProps {
 function indicatorState(status: string, seen?: boolean, pending?: boolean, draft?: boolean): SessionStatusIndicatorState {
   if (pending) return 'permission';
   if (status === 'error') return 'error';
-  if (draft) return 'draft';
+  // A draft on a running turn keeps the spinner, in the draft colour.
+  if (draft) return status === 'busy' ? 'draft-busy' : 'draft';
   if (seen) return 'viewed';
   if (status === 'busy' || status === 'waiting' || status === 'interrupted') return status;
   return 'done';
@@ -40,7 +41,7 @@ export function StatusBadge({ status, compact, seen, pending, draft, titleOverri
   const title = pending
     ? 'Waiting for your response'
     : draft
-      ? 'Unsent draft'
+      ? status === 'busy' ? 'Unsent draft — still working' : 'Unsent draft'
       : titleOverride || hints[status] || labels[status] || status;
   if (compact) {
     return (

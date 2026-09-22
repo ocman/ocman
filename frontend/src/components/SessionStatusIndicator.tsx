@@ -9,7 +9,9 @@ export type SessionStatusIndicatorState =
   | 'permission'
   | 'error'
   | 'interrupted'
-  | 'draft';
+  | 'draft'
+  /** An unsent draft on a session whose turn is still running. */
+  | 'draft-busy';
 
 interface SessionStatusIndicatorProps extends HTMLAttributes<HTMLSpanElement> {
   state: SessionStatusIndicatorState;
