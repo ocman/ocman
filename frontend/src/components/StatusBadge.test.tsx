@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { render } from '@testing-library/react';
-import { ProgressingIcon } from './ProgressingIcon';
+import { SessionStatusIndicator } from './SessionStatusIndicator';
 import { StatusBadge } from './StatusBadge';
 
 describe('StatusBadge', () => {
-  it('hides an unlabelled progress spinner from assistive technology', () => {
-    const { container } = render(<ProgressingIcon />);
-    expect(container.querySelector('.oc-progressing-icon')?.getAttribute('aria-hidden')).toBe('true');
+  it('hides an unlabelled status indicator from assistive technology', () => {
+    const { container } = render(<SessionStatusIndicator state="busy" />);
+    expect(container.querySelector('.session-status-indicator')?.getAttribute('aria-hidden')).toBe('true');
   });
 
   it('labels every status, including interrupted', () => {
@@ -46,34 +46,31 @@ describe('StatusBadge', () => {
 
   it('renders a compact dot carrying the status and seen classes', () => {
     const { container } = render(<StatusBadge status="interrupted" compact seen />);
-    const dot = container.querySelector('.status-dot-compact');
-    expect(dot?.className).toContain('status-interrupted');
-    expect(dot?.className).toContain('status-seen');
+    const dot = container.querySelector('.session-status-indicator');
+    expect(dot?.getAttribute('data-state')).toBe('viewed');
     expect(dot?.getAttribute('title')).toContain('stopped before the turn finished');
   });
 
   it('renders the compact busy status as a progress spinner', () => {
     const { container } = render(<StatusBadge status="busy" compact />);
-    const spinner = container.querySelector('.oc-progressing-icon.status-dot-compact');
+    const spinner = container.querySelector('.session-status-indicator[data-state="busy"]');
     expect(spinner).not.toBeNull();
     expect(spinner?.getAttribute('aria-label')).toBe('Session status: Busy');
   });
 
   it('shows the attention icon for a pending prompt instead of the status', () => {
     const { container } = render(<StatusBadge status="busy" compact pending />);
-    expect(container.querySelector('.status-icon-compact.status-pending')).not.toBeNull();
-    expect(container.querySelector('.status-dot-compact')).toBeNull();
+    expect(container.querySelector('.session-status-indicator[data-state="permission"]')).not.toBeNull();
   });
 
   it('shows an error icon in compact mode', () => {
     const { container } = render(<StatusBadge status="error" compact />);
-    expect(container.querySelector('.status-icon-compact.status-error')).not.toBeNull();
+    expect(container.querySelector('.session-status-indicator[data-state="error"]')).not.toBeNull();
   });
 
   it('prefers a draft ring and its own tooltip over the status', () => {
     const { container } = render(<StatusBadge status="waiting" compact draft />);
-    const dot = container.querySelector('.status-dot-compact');
-    expect(dot?.className).toContain('has-draft');
+    const dot = container.querySelector('.session-status-indicator[data-state="draft"]');
     expect(dot?.getAttribute('title')).toBe('Unsent draft');
   });
 
@@ -81,7 +78,7 @@ describe('StatusBadge', () => {
     const { container } = render(
       <StatusBadge status="interrupted" compact titleOverride="Rate limited" />,
     );
-    expect(container.querySelector('.status-dot-compact')?.getAttribute('title')).toBe(
+    expect(container.querySelector('.session-status-indicator')?.getAttribute('title')).toBe(
       'Rate limited',
     );
   });

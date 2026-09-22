@@ -1,0 +1,52 @@
+.session-status-indicator {
+  display: inline-block;
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.session-status-indicator--compact {
+  cursor: default;
+  margin-top: 5px;
+}
+
+.session-status-indicator[data-state="busy"] {
+  border: 1px solid var(--accent);
+  border-right-color: transparent;
+  background: transparent;
+  animation: session-status-spin 0.8s linear infinite;
+}
+
+.session-status-indicator[data-state="viewed"] { background: var(--text-dim); }
+.session-status-indicator[data-state="interrupted"] { background: var(--accent4); }
+.session-status-indicator[data-state="draft"] {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--accent4);
+}
+
+.session-status-indicator[data-state="permission"],
+.session-status-indicator[data-state="error"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 10px;
+  height: 10px;
+  color: var(--danger);
+  background: transparent;
+}
+
+.session-status-indicator[data-state="permission"] {
+  color: var(--accent4);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes session-status-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-status-indicator { animation: none; }
+}
