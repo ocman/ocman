@@ -22,7 +22,7 @@ func TestMigrateInboxPreservesExistingItems(t *testing.T) {
 	if _, err := tx.Exec(`INSERT INTO inbox_item (id, title, body, created_at, read_at, archived_at) VALUES ('old', 'Title', 'Body', 1, 2, 3)`); err != nil {
 		t.Fatal(err)
 	}
-	for _, version := range []int{94, 96, 96} {
+	for _, version := range []int{94, 96, 97, 98, 98} {
 		if err := applyMigration(tx, version); err != nil {
 			t.Fatal(err)
 		}
