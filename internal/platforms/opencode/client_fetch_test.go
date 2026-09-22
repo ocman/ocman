@@ -35,6 +35,27 @@ func TestFetchSessionFromOpenCodeCtx_Healthy(t *testing.T) {
 	}
 }
 
+func TestFetchSessionFromOpenCodeCtx_DoesNotCountUnobservedTurn(t *testing.T) {
+	const sid = "sess-1"
+	const dir = "/tmp/proj"
+
+	fake := newOpencodeFake(t)
+	fake.SetSession(sid, []byte(`{"id":"sess-1","directory":"/tmp/proj","time":{"created":1000,"updated":1500}}`))
+	fake.AddMessage(sid, []byte(`{
+		"info":{"id":"a","sessionID":"sess-1","role":"assistant","time":{"created":1000}},
+		"parts":[]
+	}`))
+	withTestPort(t, dir, fake.Port())
+
+	detail, ok := New(newTestDBWithSession(t, sid, dir), nil).fetchSessionFromOpenCodeCtx(t.Context(), sid, 30, 0)
+	if !ok {
+		t.Fatal("fetchSessionFromOpenCodeCtx: ok=false")
+	}
+	if detail.Session.ActiveDurationMs != 0 {
+		t.Errorf("active duration = %d, want 0 before live status is observed", detail.Session.ActiveDurationMs)
+	}
+}
+
 func TestFetchSessionFromOpenCodeCtx_CarriesLastErrorMetadata(t *testing.T) {
 	const sid = "sess-1"
 	const dir = "/tmp/proj"

@@ -291,7 +291,12 @@ func (a *Adapter) fetchSessionFromOpenCodeCtx(ctx context.Context, sessionID str
 	// This path only runs with a live instance on `port`, so the live turn
 	// signal is authoritative here; the inference above only decides which
 	// terminal state a settled session is in.
-	sessionStatus := a.settleStatusOnPort(sessionID, port, inferredStatus)
+	turnState := db.TurnUnobserved
+	if a.turns != nil {
+		turnState = a.turns.turnStateForPort(sessionID, port)
+	}
+	sessionStatus := db.SettleSessionStatus(turnState, port != "", inferredStatus)
+	stats.activeDurationMs = stats.activeDurationAt(time.Now().UnixMilli(), turnState == db.TurnRunning)
 
 	userMsgCount := 0
 	for _, m := range untypedMessages {

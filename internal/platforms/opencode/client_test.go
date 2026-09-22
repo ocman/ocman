@@ -201,8 +201,8 @@ func TestIsSynthesizedTerminal_ShellOnlyMessage(t *testing.T) {
 		"info": map[string]interface{}{"id": "msg-1", "role": "assistant"},
 		"parts": []interface{}{
 			map[string]interface{}{
-				"type": "tool",
-				"tool": "bash",
+				"type":  "tool",
+				"tool":  "bash",
 				"state": map[string]interface{}{"status": "completed"},
 			},
 		},
@@ -384,9 +384,8 @@ func TestComputeMessageStats_ActiveDuration(t *testing.T) {
 }
 
 // TestComputeMessageStats_ActiveDuration_InFlightAssistant verifies that an
-// assistant message still in flight (no time.completed) does not contribute
-// to activeDurationMs. We can't know how long it has actually run vs. been
-// waiting, so we skip it rather than guess.
+// in-flight assistant contributes its elapsed time only while the session is
+// reported running.
 func TestComputeMessageStats_ActiveDuration_InFlightAssistant(t *testing.T) {
 	messages := []map[string]interface{}{
 		{
@@ -413,6 +412,20 @@ func TestComputeMessageStats_ActiveDuration_InFlightAssistant(t *testing.T) {
 	stats := computeMessageStats(messages)
 	if stats.activeDurationMs != 1500 {
 		t.Errorf("activeDurationMs = %d, want 1500 (in-flight message skipped)", stats.activeDurationMs)
+	}
+	if got := stats.activeDurationAt(5500, true); got != 4000 {
+		t.Errorf("activeDurationAt(running) = %d, want 4000", got)
+	}
+	if got := stats.activeDurationAt(5500, false); got != 1500 {
+		t.Errorf("activeDurationAt(settled) = %d, want 1500", got)
+	}
+
+	stats = computeMessageStats([]map[string]interface{}{
+		{"data": map[string]interface{}{"role": "assistant", "time": map[string]interface{}{"created": float64(1000)}}},
+		{"data": map[string]interface{}{"role": "user", "time": map[string]interface{}{"created": float64(2000)}}},
+	})
+	if got := stats.activeDurationAt(5500, true); got != 0 {
+		t.Errorf("activeDurationAt(new turn) = %d, want 0", got)
 	}
 }
 

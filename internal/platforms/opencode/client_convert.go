@@ -128,15 +128,15 @@ func convertOpenCodeMessages(ocMessages []map[string]interface{}) (
 // between turns). It does NOT subtract permission waits that occur within
 // a single assistant turn, because OpenCode does not persist
 // permission.asked/replied timestamps in the historical message log —
-// those are only available as live SSE events. Assistant messages still
-// in flight (no `time.completed`) are skipped so we don't conflate
-// "still working" with "active duration so far".
+// those are only available as live SSE events. Assistant messages still in
+// flight are tracked separately and only added while OpenCode reports busy.
 type messageStats struct {
 	totalInputTokens  float64
 	totalOutputTokens float64
 	totalCost         float64
 	durationMs        int64
 	activeDurationMs  int64
+	inFlightStartedAt int64
 	contextTokenCount float64
 	currentModel      string
 }
@@ -151,6 +151,7 @@ func computeMessageStats(messages []map[string]interface{}) messageStats {
 			continue
 		}
 		if role, _ := info["role"].(string); role == "user" {
+			stats.inFlightStartedAt = 0
 			providerID, _ := info["providerID"].(string)
 			modelID, _ := info["modelID"].(string)
 			if modelID == "" {
@@ -208,11 +209,14 @@ func computeMessageStats(messages []map[string]interface{}) messageStats {
 		// durations. Only assistant messages with both timestamps and
 		// completed > created contribute.
 		if role, _ := info["role"].(string); role == "assistant" {
+			stats.inFlightStartedAt = 0
 			if timeBlock, ok := info["time"].(map[string]interface{}); ok {
 				created, hasCreated := timeBlock["created"].(float64)
 				completed, hasCompleted := timeBlock["completed"].(float64)
 				if hasCreated && hasCompleted && completed > created {
 					stats.activeDurationMs += int64(completed - created)
+				} else if hasCreated && !hasCompleted {
+					stats.inFlightStartedAt = int64(created)
 				}
 			}
 		}

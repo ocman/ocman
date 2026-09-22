@@ -83,7 +83,14 @@ func TestAdapter_Owns(t *testing.T) {
 
 func TestAdapter_Session_FallsBackToDBWhenNoLivePort(t *testing.T) {
 	const sid = "sess-1"
-	database := newTestDBWithSession(t, sid, "/tmp/proj")
+	database := newTestDBWithSessions(t, []testSession{{
+		id:        sid,
+		directory: "/tmp/proj",
+		messages: []string{
+			`{"role":"user","time":{"created":1000}}`,
+			`{"role":"assistant","time":{"created":2000,"completed":5000}}`,
+		},
+	}})
 	restore := setDiscoverPortsImplForTests(func() map[string]string { return nil })
 	resetPortCacheForTests()
 	t.Cleanup(func() { restore(); resetPortCacheForTests() })
@@ -99,9 +106,11 @@ func TestAdapter_Session_FallsBackToDBWhenNoLivePort(t *testing.T) {
 	if detail.Session.ID != sid {
 		t.Errorf("session id = %q, want %q", detail.Session.ID, sid)
 	}
-	// No messages were inserted by the helper.
-	if len(detail.Messages) != 0 {
-		t.Errorf("got %d messages, want 0", len(detail.Messages))
+	if len(detail.Messages) != 2 {
+		t.Errorf("got %d messages, want 2", len(detail.Messages))
+	}
+	if detail.Session.ActiveDurationMs != 3000 {
+		t.Errorf("active duration = %d, want 3000", detail.Session.ActiveDurationMs)
 	}
 }
 
