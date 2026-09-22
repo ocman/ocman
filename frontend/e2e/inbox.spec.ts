@@ -133,7 +133,7 @@ for (const reply of ['once', 'always', 'reject'] as const) {
     const permission = { platform: 'r-laptop:opencode', sessionId: 'child-session', permissionId: 'perm-1', permission: 'bash', patterns: ['git status'], always: ['git *'], metadata: { command: 'git status' } };
     await page.route('**/api/inbox', (route) => route.fulfill({ json: {
       items: [
-        ...(!resolved ? [{ id: 'permission', remoteId: 'laptop', category: 'permission', title: 'Permission requested: bash', body: 'Review this request.', permission, createdAt: 2, readAt: 1 }] : []),
+        ...(!resolved ? [{ id: 'permission', remoteId: 'laptop', category: 'permission', title: 'Deployment review: Permission requested: bash', body: 'Review this request.', permission, session: { platform: permission.platform, sessionId: permission.sessionId, title: 'Deployment review' }, createdAt: 2, readAt: 1 }] : []),
         { id: 'factory', remoteId: 'local', category: 'factory', title: 'Factory delivered', body: 'Ready for review.', createdAt: 1, readAt: 1 },
       ], unreadTotal: 0,
     } }));
@@ -157,6 +157,8 @@ for (const reply of ['once', 'always', 'reject'] as const) {
     await page.getByRole('button', { name: /Permission requested: bash/ }).click();
     if (reply === 'reject') await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.getByRole('region', { name: 'Permission actions' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Deployment review: Permission requested: bash' })).toBeVisible();
+    await expect(page.getByTestId('inbox-message-header').getByRole('link', { name: 'Deployment review' })).toHaveAttribute('href', '/session/child-session?platform=r-laptop%3Aopencode');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.waitForTimeout(400); // Existing permission controls reject in-flight keys for 350 ms.
     await page.getByRole('button', { name: { once: 'Allow once', always: 'Allow always', reject: 'Reject' }[reply], exact: true }).click();

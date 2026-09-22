@@ -38,7 +38,6 @@ const categories = [
 function InboxPermissionActions({ permission }: { permission: NonNullable<InboxItem['permission']> }) {
   const respond = useRespondInboxPermission();
   return <section className="inbox-permission-actions" aria-label="Permission actions">
-    <Link to={`/session/${encodeURIComponent(permission.sessionId)}?platform=${encodeURIComponent(permission.platform)}`}>Open session</Link>
     <PermissionPrompt permission={permission} disabled={respond.isPending || respond.isSuccess}
       error={respond.isError ? 'Could not send your response. Please try again.' : null}
       onReply={(reply) => respond.mutate({ permission, reply })} />
@@ -63,9 +62,10 @@ export function Inbox() {
   const activeCategory = searchParams.get('category') ?? 'all';
   const items = inbox.data ? inbox.data.items : [];
   const activeItem = items.find((item) => itemKey(item) === activeKey);
+  const activeSession = activeItem?.session ?? (activeItem?.permission ? { ...activeItem.permission, title: '' } : undefined);
   const categoryItems = items.filter((item) => activeCategory === 'all' || itemCategory(item) === activeCategory);
   const visibleItems = categoryItems.filter((item) => (filter !== 'unread' || !item.readAt)
-    && fuzzyMatch(query, `${item.title} ${item.body} ${sourceLabel(item.remoteId)} ${JSON.stringify(item.permission ?? {})}`));
+    && fuzzyMatch(query, `${item.title} ${item.body} ${sourceLabel(item.remoteId)} ${JSON.stringify(item.session ?? {})} ${JSON.stringify(item.permission ?? {})}`));
   const selectedItems = items.filter((item) => !item.archivedAt && selected.has(itemKey(item)));
   const open = (item: InboxItem) => {
     setActiveKey(itemKey(item));
@@ -130,7 +130,7 @@ export function Inbox() {
             <input className="inbox-select" type="checkbox" disabled={archived} checked={selected.has(itemKey(item))} onChange={() => toggle(item)} aria-label={`Select ${item.title}`} />
             <button type="button" className="inbox-message-open" onClick={() => open(item)} aria-current={activeKey === itemKey(item) ? 'true' : undefined}>
               <span className="inbox-meta"><span>{categories.find(({ id }) => id === itemCategory(item))?.label}</span><span><RelativeTime iso={new Date(item.createdAt).toISOString()} /></span></span>
-              <span className="inbox-subject">{!item.readAt && <span className="inbox-unread-dot" aria-label="Unread" />}{item.title}</span>
+              <span className="inbox-subject">{!item.readAt && <span className="inbox-unread-dot" aria-label="Unread" />}<i className={`bi bi-${categories.find(({ id }) => id === itemCategory(item))?.icon ?? 'chat-left-text'}`} aria-hidden="true" />{item.title}</span>
               <span className="inbox-preview">{item.body}</span>
             </button>
           </article>)}
@@ -149,6 +149,9 @@ export function Inbox() {
           <article className="inbox-letter" key={itemKey(activeItem)}>
             <div className="inbox-letter-header" data-testid="inbox-message-header">
               <div className="inbox-letter-subject" role="heading" aria-level={3}><MarkdownContent text={activeItem.title} /></div>
+              <div className="inbox-meta">{activeSession
+                ? <span>Originating session: <Link to={`/session/${encodeURIComponent(activeSession.sessionId)}?platform=${encodeURIComponent(activeSession.platform)}`}>{activeSession.title || activeSession.sessionId}</Link></span>
+                : <span>Originating session unavailable</span>}</div>
               <div className="inbox-meta"><span>{sourceLabel(activeItem.remoteId)}</span><time dateTime={new Date(activeItem.createdAt).toISOString()}>{new Date(activeItem.createdAt).toLocaleString()}</time></div>
             </div>
             <div className="inbox-body"><MarkdownContent text={activeItem.body} preserveLineBreaks /></div>

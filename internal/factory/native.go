@@ -2393,33 +2393,13 @@ func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentTok
 		return fmt.Errorf("%w: factory implementation attempt is not active", ErrInvalidRequest)
 	}
 	if attempt.FrozenPolicy.Delivery {
-		s.notifyEpicDelivered(context.WithoutCancel(ctx), attempt.EpicID, summary, prURL)
+		s.notifyEpicDelivered(context.WithoutCancel(ctx), attempt.EpicID, summary, prURL, attempt.Session.Platform, attempt.Session.ID)
 	}
 	select {
 	case s.dispatchWake <- struct{}{}:
 	default:
 	}
 	return nil
-}
-
-// notifyEpicDelivered drops an Inbox item when an Epic's delivery attempt
-// lands a PR. Soft-fail: the handoff already succeeded, so a missing inbox
-// only loses the notification.
-func (s *NativeService) notifyEpicDelivered(ctx context.Context, epicID, summary, prURL string) {
-	inbox, ok := s.store.(interface {
-		NotifyInbox(context.Context, string, string, string) error
-	})
-	if !ok {
-		return
-	}
-	title := "Factory epic delivered"
-	if epic, err := s.store.GetFactoryEpic(ctx, epicID); err == nil && epic.Goal != "" {
-		title = "Factory delivered: " + epic.Goal
-	}
-	body := summary + "\n\nPR: " + prURL + "\nEpic: " + epicID
-	if err := inbox.NotifyInbox(ctx, title, body, "factory"); err != nil {
-		logrus.WithError(err).WithField("epic", epicID).Warn("factory: inbox notification failed")
-	}
 }
 
 func factoryHandoffError(err error) error {

@@ -57,6 +57,9 @@ func TestInboxToolDiscoveryAndActions(t *testing.T) {
 	for _, args := range []map[string]any{
 		{"action": "send", "title": " ", "body": "body"},
 		{"action": "send", "title": "title", "body": "\n"},
+		{"action": "send", "title": "title", "body": "body", "session_id": "ses-1"},
+		{"action": "send", "title": "title", "body": "body", "platform": "opencode"},
+		{"action": "send", "title": "title", "body": "body", "platform": "r-other:opencode", "session_id": "ses-1"},
 	} {
 		if result := callTool(t, srv, "inbox", args); !result.IsError {
 			t.Fatalf("blank send input accepted: %#v", args)
@@ -81,7 +84,7 @@ func TestInboxToolDiscoveryAndActions(t *testing.T) {
 		t.Fatalf("items after recall = %#v, %v", items, err)
 	}
 	for _, category := range []string{"general", "factory", "routine"} {
-		if result := callTool(t, srv, "inbox", map[string]any{"action": "send", "title": category, "body": "body", "category": category}); result.IsError {
+		if result := callTool(t, srv, "inbox", map[string]any{"action": "send", "title": category, "body": "body", "category": category, "platform": "opencode", "session_id": "ses-origin"}); result.IsError {
 			t.Fatalf("category %s: %s", category, resultText(result))
 		}
 	}
@@ -90,7 +93,7 @@ func TestInboxToolDiscoveryAndActions(t *testing.T) {
 		t.Fatalf("categorized items: %+v, %v", items, err)
 	}
 	for _, item := range items {
-		if item.Category != item.Title {
+		if item.Category != item.Title || item.Session == nil || item.Session.Platform != "opencode" || item.Session.SessionID != "ses-origin" {
 			t.Fatalf("category not stored: %+v", item)
 		}
 	}

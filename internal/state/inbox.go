@@ -35,6 +35,12 @@ type InboxPermission struct {
 	Metadata     map[string]any `json:"metadata,omitempty"`
 }
 
+type InboxSession struct {
+	Platform  string `json:"platform"`
+	SessionID string `json:"sessionId"`
+	Title     string `json:"title,omitempty"`
+}
+
 // InboxItem is one durable message owned by this ocman instance.
 type InboxItem struct {
 	ID         string           `json:"id"`
@@ -45,17 +51,24 @@ type InboxItem struct {
 	ArchivedAt int64            `json:"archivedAt,omitempty"`
 	Category   string           `json:"category"`
 	Permission *InboxPermission `json:"permission,omitempty"`
+	Session    *InboxSession    `json:"session,omitempty"`
 }
 
-const inboxItemColumns = `id, title, body, created_at, read_at, archived_at, category, permission_json`
+const inboxItemColumns = `id, title, body, created_at, read_at, archived_at, category, permission_json, session_json`
 
 func scanInboxItem(scanner interface{ Scan(...any) error }) (InboxItem, error) {
 	var item InboxItem
 	var readAt, archivedAt sql.NullInt64
-	var permissionJSON string
-	err := scanner.Scan(&item.ID, &item.Title, &item.Body, &item.CreatedAt, &readAt, &archivedAt, &item.Category, &permissionJSON)
+	var permissionJSON, sessionJSON string
+	err := scanner.Scan(&item.ID, &item.Title, &item.Body, &item.CreatedAt, &readAt, &archivedAt, &item.Category, &permissionJSON, &sessionJSON)
 	if err == nil && permissionJSON != "" {
 		err = json.Unmarshal([]byte(permissionJSON), &item.Permission)
+	}
+	if err == nil && sessionJSON != "" {
+		err = json.Unmarshal([]byte(sessionJSON), &item.Session)
+	}
+	if item.Session == nil && item.Permission != nil {
+		item.Session = &InboxSession{Platform: item.Permission.Platform, SessionID: item.Permission.SessionID}
 	}
 	if readAt.Valid {
 		item.ReadAt = readAt.Int64
@@ -72,6 +85,10 @@ func (d *DB) CreateInboxItem(ctx context.Context, title, body string) (InboxItem
 }
 
 func (d *DB) CreateCategorizedInboxItem(ctx context.Context, title, body, category string) (InboxItem, error) {
+	return d.CreateSessionInboxItem(ctx, title, body, category, nil)
+}
+
+func (d *DB) CreateSessionInboxItem(ctx context.Context, title, body, category string, session *InboxSession) (InboxItem, error) {
 	// Permission items can only be created from the permission lifecycle.
 	if category != InboxGeneral && category != InboxFactory && category != InboxRoutine {
 		return InboxItem{}, ErrInboxCategory
@@ -83,12 +100,19 @@ func (d *DB) CreateCategorizedInboxItem(ctx context.Context, title, body, catego
 	if body == "" {
 		return InboxItem{}, ErrInboxBodyRequired
 	}
+	if session != nil && (strings.TrimSpace(session.Platform) == "" || strings.TrimSpace(session.SessionID) == "") {
+		return InboxItem{}, errors.New("originating session requires platform and session ID")
+	}
+	sessionJSON, err := json.Marshal(session)
+	if err != nil {
+		return InboxItem{}, err
+	}
 	id, err := uuid.NewRandom()
 	if err != nil {
 		return InboxItem{}, fmt.Errorf("generating Inbox item ID: %w", err)
 	}
-	item := InboxItem{ID: id.String(), Title: title, Body: body, CreatedAt: time.Now().UnixMilli(), Category: category}
-	if _, err := d.db.ExecContext(ctx, `INSERT INTO inbox_item (`+inboxItemColumns+`) VALUES (?, ?, ?, ?, NULL, NULL, ?, '')`, item.ID, item.Title, item.Body, item.CreatedAt, category); err != nil {
+	item := InboxItem{ID: id.String(), Title: title, Body: body, CreatedAt: time.Now().UnixMilli(), Category: category, Session: session}
+	if _, err := d.db.ExecContext(ctx, `INSERT INTO inbox_item (`+inboxItemColumns+`) VALUES (?, ?, ?, ?, NULL, NULL, ?, '', ?)`, item.ID, item.Title, item.Body, item.CreatedAt, category, string(sessionJSON)); err != nil {
 		return InboxItem{}, fmt.Errorf("creating Inbox item: %w", err)
 	}
 	return item, nil
@@ -98,6 +122,11 @@ func (d *DB) CreateCategorizedInboxItem(ctx context.Context, title, body, catego
 // packages like factory can assert the capability without importing state.
 func (d *DB) NotifyInbox(ctx context.Context, title, body, category string) error {
 	_, err := d.CreateCategorizedInboxItem(ctx, title, body, category)
+	return err
+}
+
+func (d *DB) NotifySessionInbox(ctx context.Context, title, body, category, platform, sessionID string) error {
+	_, err := d.CreateSessionInboxItem(ctx, title, body, category, &InboxSession{Platform: platform, SessionID: sessionID})
 	return err
 }
 
@@ -119,15 +148,15 @@ func (d *DB) EnsurePermissionInboxItem(ctx context.Context, permission InboxPerm
 	}
 	title := "Permission requested: " + permission.Permission
 	body := "A session is waiting for your permission. Review the request below before responding."
-	_, err = d.db.ExecContext(ctx, `INSERT INTO inbox_item (`+inboxItemColumns+`) VALUES (?, ?, ?, ?, NULL, NULL, 'permission', ?) ON CONFLICT(id) DO NOTHING`, permissionInboxID(permission.Platform, permission.SessionID, permission.PermissionID), title, body, time.Now().UnixMilli(), string(payload))
+	_, err = d.db.ExecContext(ctx, `INSERT INTO inbox_item (`+inboxItemColumns+`) VALUES (?, ?, ?, ?, NULL, NULL, 'permission', ?, '') ON CONFLICT(id) DO NOTHING`, permissionInboxID(permission.Platform, permission.SessionID, permission.PermissionID), title, body, time.Now().UnixMilli(), string(payload))
 	return err
 }
 
 // A tombstone also handles a reply arriving before the corresponding asked event.
 func (d *DB) ResolvePermissionInboxItem(ctx context.Context, platform, sessionID, permissionID string) error {
 	now := time.Now().UnixMilli()
-	_, err := d.db.ExecContext(ctx, `INSERT INTO inbox_item (`+inboxItemColumns+`) VALUES (?, 'Permission resolved', 'This permission request has been handled.', ?, NULL, ?, 'permission', '')
-		ON CONFLICT(id) DO UPDATE SET archived_at = COALESCE(inbox_item.archived_at, excluded.archived_at)`, permissionInboxID(platform, sessionID, permissionID), now, now)
+	_, err := d.db.ExecContext(ctx, `INSERT INTO inbox_item (`+inboxItemColumns+`) VALUES (?, 'Permission resolved', 'This permission request has been handled.', ?, NULL, ?, 'permission', '', json_object('platform', ?, 'sessionId', ?))
+		ON CONFLICT(id) DO UPDATE SET archived_at = COALESCE(inbox_item.archived_at, excluded.archived_at)`, permissionInboxID(platform, sessionID, permissionID), now, now, platform, sessionID)
 	return err
 }
 

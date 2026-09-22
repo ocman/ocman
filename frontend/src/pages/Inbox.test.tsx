@@ -187,7 +187,7 @@ describe('Inbox', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Remote note/ }));
     expect(screen.getByRole('button', { name: 'Allow once' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Allow always' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open session' })).toHaveAttribute('href', '/session/child-session?platform=r-laptop%3Aopencode');
+    expect(within(screen.getByTestId('inbox-message-header')).getByRole('link', { name: 'child-session' })).toHaveAttribute('href', '/session/child-session?platform=r-laptop%3Aopencode');
     vi.mocked(api.respondPermission).mockRejectedValueOnce(new Error('offline'));
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
     await screen.findByText('Could not send your response. Please try again.');
@@ -209,6 +209,27 @@ describe('Inbox', () => {
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search inbox' }), { target: { value: 'bdy' } });
     await waitFor(() => expect(screen.queryByText('Build **finished**')).not.toBeInTheDocument());
     expect(screen.getByText('Remote note')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['general', 'chat-left-text'], ['factory', 'buildings'], ['routine', 'clock-history'], ['permission', 'shield-lock'],
+  ] as const)('shows the %s icon before the title and a session link in the header', async (category, icon) => {
+    vi.mocked(api.inbox).mockResolvedValue({ items: [{ ...items[0], category, session: { platform: 'r-laptop:opencode', sessionId: 'ses/source', title: 'Fix deployment' } }], unreadTotal: 1 });
+    renderInbox();
+    const message = await screen.findByRole('button', { name: /Build.*finished/ });
+    const subject = within(message).getByText('Build **finished**');
+    expect(subject.querySelector('i')).toHaveClass(`bi-${icon}`);
+    expect(subject.querySelector('i')).toHaveAttribute('aria-hidden', 'true');
+    fireEvent.click(message);
+    expect(within(screen.getByTestId('inbox-message-header')).getByRole('link', { name: 'Fix deployment' })).toHaveAttribute('href', '/session/ses%2Fsource?platform=r-laptop%3Aopencode');
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search inbox' }), { target: { value: 'Fix deployment' } });
+    expect(await screen.findByRole('button', { name: /Build.*finished/ })).toBeInTheDocument();
+  });
+
+  it('shows an explicit missing-session label for legacy messages', async () => {
+    renderInbox();
+    fireEvent.click(await screen.findByRole('button', { name: /Build.*finished/ }));
+    expect(within(screen.getByTestId('inbox-message-header')).getByText('Originating session unavailable')).toBeInTheDocument();
   });
 
   it('browses archived messages without changing unread counts or offering resolved permission actions', async () => {

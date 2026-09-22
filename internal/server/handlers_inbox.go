@@ -22,6 +22,7 @@ type inboxItemView struct {
 	RemoteID   string                 `json:"remoteId"`
 	Category   string                 `json:"category"`
 	Permission *state.InboxPermission `json:"permission,omitempty"`
+	Session    *state.InboxSession    `json:"session,omitempty"`
 }
 
 type inboxRef struct {
@@ -111,6 +112,9 @@ func (s *Server) handleInboxList(w http.ResponseWriter, r *http.Request) {
 				defer cancel()
 			}
 			items, err := s.inboxItems(ctx, source, r.URL.Query().Get("archived") == "true")
+			if err == nil {
+				items = s.inboxSessionContext(ctx, source, items)
+			}
 			results[i] = result{source, items, err}
 		}(i, source)
 	}
@@ -134,7 +138,7 @@ func (s *Server) handleInboxList(w http.ResponseWriter, r *http.Request) {
 				permission.Platform = remote.CompoundPlatformID(result.source, permission.Platform)
 				item.Permission = &permission
 			}
-			items = append(items, inboxItemView{item.ID, item.Title, item.Body, item.CreatedAt, item.ReadAt, item.ArchivedAt, result.source, item.Category, item.Permission})
+			items = append(items, inboxItemView{item.ID, item.Title, item.Body, item.CreatedAt, item.ReadAt, item.ArchivedAt, result.source, item.Category, item.Permission, item.Session})
 			if item.ReadAt == 0 && item.ArchivedAt == 0 {
 				unread++
 			}
