@@ -18,3 +18,20 @@ it('keeps the previous result when a refresh fails', async () => {
 
   expect(result.current.data).toBe('previous result');
 });
+
+it('reports loading while a refresh is in flight', async () => {
+  let resolveRefresh!: (value: string) => void;
+  const fetch = vi.fn()
+    .mockResolvedValueOnce('initial result')
+    .mockImplementationOnce(() => new Promise<string>((resolve) => { resolveRefresh = resolve; }));
+  const { result } = renderHook(() =>
+    useDebouncedSessionResource('session-1', fetch, '', 'failed'),
+  );
+
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  act(() => result.current.refresh());
+  expect(result.current.loading).toBe(true);
+
+  resolveRefresh('refreshed result');
+  await waitFor(() => expect(result.current.loading).toBe(false));
+});

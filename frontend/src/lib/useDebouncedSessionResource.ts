@@ -105,6 +105,7 @@ export function useDebouncedSessionResource<T>(
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
+      setLoading(true);
 
       fetch(sessionId, controller.signal)
         .then((resp) => {
