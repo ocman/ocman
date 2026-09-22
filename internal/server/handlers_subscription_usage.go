@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -72,8 +73,34 @@ func openCodeAuthPath() string {
 	return filepath.Join(home, ".local", "share", "opencode", "auth.json")
 }
 
+const subscriptionUsageTTL = time.Minute
+
+// subscriptionUsageCache keeps the last upstream answer for a minute so a
+// reopened panel or a leaned-on Refresh button can't hammer the providers.
+// ponytail: the lock is held across the fetch, so concurrent requests wait
+// for one upstream call instead of starting their own.
+type subscriptionUsageCache struct {
+	mu    sync.Mutex
+	at    time.Time
+	value subscriptionUsageResponse
+}
+
+func (c *subscriptionUsageCache) get(ctx context.Context, client subscriptionUsageClient) (subscriptionUsageResponse, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.at.IsZero() && time.Since(c.at) < subscriptionUsageTTL {
+		return c.value, nil
+	}
+	usage, err := fetchSubscriptionUsage(ctx, client)
+	if err != nil {
+		return subscriptionUsageResponse{}, err
+	}
+	c.value, c.at = usage, time.Now()
+	return usage, nil
+}
+
 func (s *Server) handleSubscriptionUsage(w http.ResponseWriter, r *http.Request) {
-	usage, err := fetchSubscriptionUsage(r.Context(), s.subscriptionUsage)
+	usage, err := s.subscriptionUsageCache.get(r.Context(), s.subscriptionUsage)
 	if err != nil {
 		serverError(w, "failed to read subscription usage", err)
 		return

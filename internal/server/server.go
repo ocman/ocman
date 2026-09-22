@@ -167,7 +167,10 @@ type Server struct {
 	runtime           ocruntime.Runtime
 	openCodeAuth      ocapi.Auth
 	subscriptionUsage subscriptionUsageClient
-	factory           factoryService
+	// Guards the providers against a reopened panel or a repeatedly
+	// clicked Refresh; see subscriptionUsageTTL.
+	subscriptionUsageCache subscriptionUsageCache
+	factory                factoryService
 	// ponytail: unblock sessions are rare; expire tokens if this map becomes measurable.
 	factoryUnblockTokens sync.Map
 

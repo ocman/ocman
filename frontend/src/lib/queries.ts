@@ -483,10 +483,14 @@ export function useDatabaseSizes(params?: { days?: number }) {
 }
 
 export function useSubscriptionUsage() {
+  // Cached for a minute: reopening the panel reuses it, and the server
+  // caps upstream calls at one a minute regardless of Refresh clicks.
   return useQuery<SubscriptionUsageResponse>({
     queryKey: ['subscriptionUsage'],
     queryFn: ({ signal }) => api.subscriptionUsage(signal),
     refetchOnWindowFocus: false,
+    staleTime: 60_000,
+    gcTime: Infinity,
   });
 }
 

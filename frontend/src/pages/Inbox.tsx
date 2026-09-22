@@ -127,10 +127,14 @@ export function Inbox() {
           {inbox.isError && <p className="oc-empty" role="alert">Could not load inbox.</p>}
           {inbox.isSuccess && !visibleItems.length && <p className="oc-empty">{items.length ? 'No messages match these filters.' : archived ? 'No archived messages.' : 'Your inbox is empty.'}</p>}
           {visibleItems.map((item) => <article key={itemKey(item)} className={`inbox-message${item.readAt ? '' : ' unread'}${activeKey === itemKey(item) ? ' active' : ''}`}>
-            <input className="inbox-select" type="checkbox" disabled={archived} checked={selected.has(itemKey(item))} onChange={() => toggle(item)} aria-label={`Select ${item.title}`} />
+            {/* The category icon doubles as the selection checkbox: clicking it
+                swaps in a check mark, so no separate checkbox column is needed. */}
+            <button type="button" role="checkbox" className="inbox-select" disabled={archived} aria-checked={selected.has(itemKey(item))} onClick={() => toggle(item)} aria-label={`Select ${item.title}`}>
+              <i className={`bi bi-${selected.has(itemKey(item)) ? 'check-square-fill' : categories.find(({ id }) => id === itemCategory(item))?.icon ?? 'chat-left-text'}`} aria-hidden="true" />
+            </button>
             <button type="button" className="inbox-message-open" onClick={() => open(item)} aria-current={activeKey === itemKey(item) ? 'true' : undefined}>
-              <span className="inbox-meta"><span>{categories.find(({ id }) => id === itemCategory(item))?.label}</span><span><RelativeTime iso={new Date(item.createdAt).toISOString()} /></span></span>
-              <span className="inbox-subject">{!item.readAt && <span className="inbox-unread-dot" aria-label="Unread" />}<i className={`bi bi-${categories.find(({ id }) => id === itemCategory(item))?.icon ?? 'chat-left-text'}`} aria-hidden="true" />{item.title}</span>
+              <span className="inbox-meta"><span><RelativeTime iso={new Date(item.createdAt).toISOString()} /></span></span>
+              <span className="inbox-subject">{!item.readAt && <span className="inbox-unread-dot" aria-label="Unread" />}{item.title}</span>
               <span className="inbox-preview">{item.body}</span>
             </button>
           </article>)}

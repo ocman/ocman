@@ -158,15 +158,17 @@ describe('AssistantThread slash-command skills', () => {
     message.content = [{ type: 'text', text: instructions + '\n\nReview PR 42' }];
     render(<AssistantThread />);
 
-    const summary = screen.getByText('Skill called: /review-pr');
-    const details = summary.closest('details');
-    expect(details).not.toHaveAttribute('open');
-    expect(details?.textContent).toContain(instructions);
-    expect(screen.getByText('Review PR 42').closest('details')).toBeNull();
-    await user.click(summary);
-    expect(details).toHaveAttribute('open');
-    await user.click(summary);
-    expect(details).not.toHaveAttribute('open');
+    const toggle = screen.getByRole('button', { name: '/review-pr' });
+    const body = () => document.querySelector('.oc-skill-called-body');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(body()).toBeNull();
+    // The arguments stay inline next to the command, not inside the toggle.
+    expect(screen.getByText('Review PR 42')).toBeInTheDocument();
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(body()?.textContent).toContain(instructions);
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('keeps ordinary user text and partial footer mentions as plain text', () => {
@@ -174,7 +176,7 @@ describe('AssistantThread slash-command skills', () => {
     const text = 'Explain this line:\nBase directory for this skill: /home/user/skills/review-pr';
     message.content = [{ type: 'text', text }];
     const { container } = render(<AssistantThread />);
-    expect(container.querySelector('details')).toBeNull();
+    expect(container.querySelector('.oc-skill-called')).toBeNull();
     expect(container.textContent).toContain(text);
   });
 
@@ -182,13 +184,13 @@ describe('AssistantThread slash-command skills', () => {
     threadState.renderUser = true;
     message.content = [{ type: 'text', text: instructions.replaceAll('\n', '\r\n') }];
     render(<AssistantThread />);
-    expect(screen.getByText('Skill called: /review-pr').closest('details')).not.toHaveAttribute('open');
+    expect(screen.getByRole('button', { name: '/review-pr' })).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('does not collapse skill text quoted by the assistant', () => {
     message.content = [{ type: 'text', text: instructions }];
     render(<AssistantThread />);
-    expect(screen.queryByText('Skill called: /review-pr')).toBeNull();
+    expect(screen.queryByRole('button', { name: '/review-pr' })).toBeNull();
     expect(screen.getByRole('heading', { name: 'Review Pull Request' })).toBeInTheDocument();
   });
 });

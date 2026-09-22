@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestSubscriptionUsageRoute(t *testing.T) {
@@ -152,6 +153,39 @@ func TestSubscriptionUsageRejectsMalformedAuthFile(t *testing.T) {
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusInternalServerError || strings.Contains(rec.Body.String(), authPath) {
 		t.Fatalf("malformed auth response = %d %q", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSubscriptionUsageCachesForAMinute(t *testing.T) {
+	var calls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.Write([]byte(`{"plan_type":"pro","primary_used_percent":10}`))
+	}))
+	defer upstream.Close()
+
+	authPath := filepath.Join(t.TempDir(), "auth.json")
+	if err := os.WriteFile(authPath, []byte(`{"openai":{"type":"oauth","access":"token","expires":4102444800000}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client := subscriptionUsageClient{http: http.DefaultClient, authPath: authPath, openAIURL: upstream.URL}
+
+	var cache subscriptionUsageCache
+	for range 3 {
+		if _, err := cache.get(t.Context(), client); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("upstream calls = %d, want 1", calls.Load())
+	}
+
+	cache.at = time.Now().Add(-subscriptionUsageTTL - time.Second)
+	if _, err := cache.get(t.Context(), client); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("upstream calls after expiry = %d, want 2", calls.Load())
 	}
 }
 

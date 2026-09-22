@@ -37,7 +37,8 @@ describe('Inbox', () => {
   it('opens markdown in the reading pane, marks unread items read, and archives selection', async () => {
     renderInbox();
     const title = await screen.findByRole('button', { name: /Build.*finished/ });
-    expect(within(title).getByText('Primary')).toBeInTheDocument();
+    // The row shows no category name — the icon carries the category.
+    expect(within(title).queryByText('Primary')).toBeNull();
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
     fireEvent.click(title);
     expect(screen.getByRole('link', { name: 'details' })).toHaveAttribute('href', 'https://example.com');
@@ -133,7 +134,7 @@ describe('Inbox', () => {
     vi.mocked(api.inbox).mockResolvedValue({ items: [{ ...items[0], category: undefined }], unreadTotal: 1 });
     renderInbox();
     const message = await screen.findByRole('button', { name: /Build.*finished/ });
-    expect(within(message).getByText('Primary')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: /Build/ }).querySelector('i')).toHaveClass('bi-chat-left-text');
     fireEvent.click(screen.getByRole('button', { name: 'Primary' }));
     expect(message).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Factory' }));
@@ -213,13 +214,18 @@ describe('Inbox', () => {
 
   it.each([
     ['general', 'chat-left-text'], ['factory', 'buildings'], ['routine', 'clock-history'], ['permission', 'shield-lock'],
-  ] as const)('shows the %s icon before the title and a session link in the header', async (category, icon) => {
+  ] as const)('shows the %s icon as the selection control and a session link in the header', async (category, icon) => {
     vi.mocked(api.inbox).mockResolvedValue({ items: [{ ...items[0], category, session: { platform: 'r-laptop:opencode', sessionId: 'ses/source', title: 'Fix deployment' } }], unreadTotal: 1 });
     renderInbox();
     const message = await screen.findByRole('button', { name: /Build.*finished/ });
-    const subject = within(message).getByText('Build **finished**');
-    expect(subject.querySelector('i')).toHaveClass(`bi-${icon}`);
-    expect(subject.querySelector('i')).toHaveAttribute('aria-hidden', 'true');
+    const select = screen.getByRole('checkbox', { name: /Build/ });
+    expect(select.querySelector('i')).toHaveClass(`bi-${icon}`);
+    expect(select.querySelector('i')).toHaveAttribute('aria-hidden', 'true');
+    // Selecting swaps the category icon for a check mark.
+    fireEvent.click(select);
+    expect(select).toHaveAttribute('aria-checked', 'true');
+    expect(select.querySelector('i')).toHaveClass('bi-check-square-fill');
+    fireEvent.click(select);
     fireEvent.click(message);
     expect(within(screen.getByTestId('inbox-message-header')).getByRole('link', { name: 'Fix deployment' })).toHaveAttribute('href', '/session/ses%2Fsource?platform=r-laptop%3Aopencode');
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search inbox' }), { target: { value: 'Fix deployment' } });

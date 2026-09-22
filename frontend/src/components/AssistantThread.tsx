@@ -98,19 +98,41 @@ export const ImageDisplay: FC<{ image: string; filename?: string }> = ({ image, 
   );
 };
 
+/**
+ * `/skill` rendered inline with its arguments. A <details> can't do this:
+ * Chrome lays out the hidden content as a block even when the element is
+ * inline, pushing the arguments onto the next line.
+ */
+const SkillCall: FC<{ name: string; instructions: string }> = ({ name, instructions }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        className="oc-skill-called"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <i className="bi bi-magic" aria-hidden="true" /> /{name}
+      </button>
+      {open && <div className="oc-skill-called-body">{instructions}</div>}
+    </>
+  );
+};
+
 const UserTextPart: FC<{ text: string }> = ({ text }) => {
   if (!text.trim()) return null;
   // Slash-command skills arrive as plain user text with this generated footer.
   const skill = /^Base directory for this skill: [^\r\n]+[/\\]([^/\\\r\n]+)\r?\nRelative paths in this skill [^\r\n]*are relative to this base directory\./m.exec(text);
   if (skill) {
     const end = skill.index + skill[0].length;
+    // Render as `/skill rest of the prompt`: the command is a clickable
+    // disclosure, the arguments stay inline after it.
+    const rest = text.slice(end).replace(/^\s+/, '');
     return (
       <>
-        <details className="oc-skill-called">
-          <summary>Skill called: /{skill[1]}</summary>
-          <div style={{ whiteSpace: 'pre-wrap' }}>{text.slice(0, end)}</div>
-        </details>
-        <UserTextPart text={text.slice(end)} />
+        <SkillCall name={skill[1]} instructions={text.slice(0, end)} />
+        {rest && <> <UserTextPart text={rest} /></>}
       </>
     );
   }
