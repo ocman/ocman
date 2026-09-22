@@ -39,8 +39,8 @@ describe('useSidebarProjectGroups', () => {
   it('buckets sessions, adds empty unarchived projects, pins on top, honours saved order', () => {
     useUiStore.setState({ projectOrder: ['/repo/quiet', '/repo/a'] });
     const recentSessions = [
-      session({ id: 'a1', directory: '/repo/a', timeUpdated: 10, status: 'busy' }),
-      session({ id: 'a2', directory: '/repo/a', timeUpdated: 20 }),
+      session({ id: 'a1', directory: '/repo/a', timeUpdated: 60_000, status: 'busy' }),
+      session({ id: 'a2', directory: '/repo/a', timeUpdated: 120_000 }),
       session({ id: 'b1', directory: '/repo/b', timeUpdated: 5, pinned: true, pinnedAt: 1 }),
     ];
     const { result } = renderHook(() =>
@@ -53,6 +53,15 @@ describe('useSidebarProjectGroups', () => {
     expect(groups[2].sessions.map((s) => s.id)).toEqual(['a2', 'a1']);
     // The active row's status is layered over the group rollup.
     expect(groups[2].aggregate).toMatchObject({ kind: 'waiting' });
+  });
+
+  it('preserves same-minute row order while retaining the exact latest activity', () => {
+    const recentSessions = [session({ id: 'first', timeUpdated: 60_001 }), session({ id: 'second', timeUpdated: 119_999 })];
+    const { result } = renderHook(() =>
+      useSidebarProjectGroups({ id: undefined, recentSessions, displayStatus: 'done' }));
+    const group = result.current.sidebarProjectGroups.find((g) => g.directory === '/repo/a')!;
+    expect(group.sessions.map((s) => s.id)).toEqual(['first', 'second']);
+    expect(group.lastUpdated).toBe(119_999);
   });
 
   it('reorders without the pinned pseudo-group and hides archived projects optimistically', async () => {

@@ -7,7 +7,7 @@ import { filterVisibleSessions } from '../../lib/sessionVisibility';
 import { computeSidebarHash, filterInactiveChildren, mergeSidebarSessions, pickNextSessionAfterArchive, resolveOpenSession } from '../../lib/sidebarHelpers';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { remoteLog } from '../../lib/remoteLog';
-import { onSessionChanged, onSseConnect } from '../../lib/useGlobalEvents';
+import { onSessionActivity, onSessionChanged, onSseConnect } from '../../lib/useGlobalEvents';
 import { useActivityScope } from '../../lib/activityScopes';
 
 /**
@@ -203,11 +203,41 @@ export function useSidebarSessions({
       refresh();
     });
     const unsubscribeConnect = onSseConnect(refresh);
+    const pendingActivity = new Map<string, number>();
+    const hiddenSessions = new Set<string>();
+    let subscribed = true;
+    const unsubscribeActivity = onSessionActivity((sessionID, timeUpdated) => {
+      const session = useApiStore.getState().recentSessions.find((s) => s.id === sessionID);
+      if (session) {
+        if (timeUpdated > session.timeUpdated) patchRecentSession(sessionID, { timeUpdated });
+      } else if (!hiddenSessions.has(sessionID)) {
+        const pending = pendingActivity.get(sessionID);
+        pendingActivity.set(sessionID, Math.max(pending ?? 0, timeUpdated));
+        if (pending !== undefined) return;
+        // Fetch the exact row: the list snapshot may not yet include an old
+        // session that just became active. Coalesce its streaming events.
+        getSession(sessionID, 1, 0, abortSignalRef.current?.signal).then(({ session: row }) => {
+          if (!subscribed) return;
+          const candidates = filterInactiveChildren([row], id);
+          if (!candidates.length || (!showArchivedRecentRef.current && !filterVisibleSessions(candidates).length)) {
+            hiddenSessions.add(sessionID);
+            return;
+          }
+          const current = useApiStore.getState().recentSessions;
+          const updated = { ...row, timeUpdated: Math.max(row.timeUpdated, pendingActivity.get(sessionID) ?? 0) };
+          const next = mergeSidebarSessions([updated, ...current.filter((s) => s.id !== sessionID)], current, id);
+          storeSetRecentSessions(next, computeSidebarHash(next));
+        }).catch((err) => remoteLog.error('Failed to refresh active session', err))
+          .finally(() => { pendingActivity.delete(sessionID); });
+      }
+    });
     return () => {
       unsubscribeChanged();
       unsubscribeConnect();
+      unsubscribeActivity();
+      subscribed = false;
     };
-  }, [loadRecentSessions, abortSignalRef, patchRecentSession]);
+  }, [loadRecentSessions, abortSignalRef, patchRecentSession, getSession, id, storeSetRecentSessions]);
 
   // Slow reconciliation loop, paused while the tab is hidden.
   useEffect(() => {

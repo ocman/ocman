@@ -23,6 +23,7 @@ import {
   __handleProjectsChangedForTests,
   __resetForTests,
   onSessionChanged,
+  onSessionActivity,
   onQueueUpdated,
   onProjectsChanged,
   onInboxChanged,
@@ -42,8 +43,8 @@ class FakeEventSource {
     FakeEventSource.instances.push(this);
   }
 
-  listeners = new Map<string, () => void>();
-  addEventListener(name: string, listener: () => void) { this.listeners.set(name, listener); }
+  listeners = new Map<string, (event?: { data: string }) => void>();
+  addEventListener(name: string, listener: (event?: { data: string }) => void) { this.listeners.set(name, listener); }
   close() {}
   open() { this.onopen?.(); }
   error() { this.onerror?.(); }
@@ -52,6 +53,23 @@ class FakeEventSource {
 (globalThis as unknown as { EventSource: typeof FakeEventSource }).EventSource = FakeEventSource;
 
 describe('useGlobalEvents connection', () => {
+  it('delivers activity timestamps and ignores malformed payloads', () => {
+    const activity = vi.fn();
+    const unsubscribe = onSessionActivity(activity);
+    const { unmount } = renderHook(() => useGlobalEvents());
+    const emit = FakeEventSource.instances.at(-1)!.listeners.get('ocman.session.activity')!;
+    act(() => {
+      emit({ data: '{' });
+      emit({ data: 'null' });
+      emit({ data: '{"sessionID":"s","timeUpdated":"123"}' });
+      emit({ data: '{"sessionID":"s","timeUpdated":123}' });
+    });
+    expect(activity).toHaveBeenCalledExactlyOnceWith('s', 123);
+    unsubscribe();
+    emit({ data: '{"sessionID":"s","timeUpdated":124}' });
+    expect(activity).toHaveBeenCalledOnce();
+    unmount();
+  });
   it('refreshes inbox subscribers when a permission changes and unsubscribes cleanly', () => {
     const changed = vi.fn();
     const unsubscribe = onInboxChanged(changed);

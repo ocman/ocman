@@ -14,15 +14,10 @@ import {
   SortableContext,
   arrayMove,
   sortableKeyboardCoordinates,
-  useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import type { Session } from '../../lib/api';
-import { cleanTitle, fuzzyMatch, shortPath } from '../../lib/format';
-import { HostBadge } from '../../components/HostBadge';
-import { ProjectLabel } from '../../components/ProjectLabel';
-import { GitStatusLine } from '../../components/SessionTable';
+import { cleanTitle, fuzzyMatch } from '../../lib/format';
 import { BackendStats } from '../../components/BackendStats';
 import { SidebarResizer } from '../../components/SidebarResizer';
 import { SessionSidebarListSkeleton } from '../../components/Skeleton';
@@ -31,8 +26,9 @@ import { rollupGroupStatus } from '../../lib/sidebarHelpers';
 import { nestSessions } from '../../lib/nestSessions';
 import { useDraftSessionIds } from '../../lib/composerDraft';
 import { useWorkEpics } from '../../lib/queries';
-import { ArchiveIcon } from './SidebarIcons';
+import { SidebarProjectGroup as ProjectGroup } from './SidebarProjectGroup';
 import { SidebarSessionRow } from './SidebarSessionRow';
+import { useSidebarReorder } from './useSidebarReorder';
 import { SidebarHeader } from './SidebarHeader';
 import { TmuxClientPopover } from './TmuxClientPopover';
 import type { TmuxState } from '../../lib/useTmux';
@@ -121,6 +117,7 @@ export function SessionSidebar({
   onArchiveProject,
 }: SessionSidebarProps) {
   const sidebarListRef = useRef<HTMLDivElement>(null);
+  useSidebarReorder(sidebarListRef, sidebarView);
   const [showChildren, setShowChildren] = useState(true);
   const [showFactory, setShowFactory] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -149,15 +146,10 @@ export function SessionSidebar({
     return keys;
   }, [workEpics, recentSessions, sidebarProjectGroups]);
 
-  // Keep the active session's sidebar row visible. The list doesn't reorder
-  // to follow the cursor, so when the user switches sessions (or flips
-  // views) the active row may be off-screen in a long list. We scroll it
-  // into view with `nearest` block alignment so we don't yank the viewport
-  // unless it's actually necessary. Skipped while the recent-sessions poll
-  // is mid-flight for the initial load — the DOM may not yet contain a row
-  // for `id`.
+  // Reveal the selection on navigation or initial load. Live activity must
+  // not repeatedly pull the user away from a manually scrolled position.
   useEffect(() => {
-    if (!activeId) return;
+    if (!activeId || loadingRecentSessions) return;
     const container = sidebarListRef.current;
     if (!container) return;
     // Run on the next frame so any just-expanded group has finished laying
@@ -174,7 +166,7 @@ export function SessionSidebar({
       }
     });
     return () => cancelAnimationFrame(raf);
-  }, [activeId, sidebarView, recentSessions]);
+  }, [activeId, sidebarView, loadingRecentSessions]);
 
   // Shared row renderer — used by both the pinned and grouped views so
   // all live-status / archive / navigation behaviour stays identical.
@@ -268,137 +260,6 @@ export function SessionSidebar({
     );
   };
 
-  // Sessions of one project group, sub-grouped by working directory:
-  // the main checkout first, then each worktree (most recently active
-  // first). Every directory gets one small sub-header carrying the
-  // branch/worktree identity, so individual rows stay a single line.
-  const renderDirGroups = (
-    group: SidebarProjectGroup,
-    hostRemoteId?: string,
-    hostPlatform?: string,
-  ) => {
-    const byDir = new Map<string, Session[]>();
-    for (const s of group.sessions) {
-      const dir = s.directory || group.directory;
-      const bucket = byDir.get(dir);
-      if (bucket) bucket.push(s);
-      else byDir.set(dir, [s]);
-    }
-    const latest = (dir: string) =>
-      Math.max(...(byDir.get(dir) ?? []).map((s) => s.timeUpdated));
-    const dirs = [...byDir.keys()].sort((a, b) => {
-      const aMain = a === group.directory ? 0 : 1;
-      const bMain = b === group.directory ? 0 : 1;
-      if (aMain !== bMain) return aMain - bMain;
-      return latest(b) - latest(a);
-    });
-    return dirs.map((dir) => {
-      const isWorktree = dir !== group.directory;
-      const info = siblingGitInfos[dir];
-      // Worktree slug — the final path segment of
-      // <repo-parent>/.worktrees/<repo>/<slug> — is what the user
-      // typed as the branch name in /wt; fall back to it when git
-      // info hasn't loaded yet.
-      const slug = dir.split('/').filter(Boolean).pop() || dir;
-      const showHeader = isWorktree || !!info?.branch;
-      const dirSessions = byDir.get(dir) ?? [];
-      const dirLabel = info?.branch ?? slug;
-      return (
-        <div key={dir} className="session-sidebar-dir-group">
-          {showHeader && (
-            <div className="session-sidebar-dir-header" title={dir}>
-              <span className="session-sidebar-dir-label">
-                {info?.branch ? (
-                  <GitStatusLine info={info} icon={isWorktree ? 'worktree' : 'branch'} />
-                ) : (
-                  <span className="git-status">
-                    <i className="bi bi-diagram-2 git-status-icon" aria-hidden="true" />
-                    <span className="git-status-branch">{slug}</span>
-                  </span>
-                )}
-              </span>
-              <button
-                type="button"
-                className="session-sidebar-group-new"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void onNewSessionInDirectory(dir, hostRemoteId, hostPlatform);
-                }}
-                title={`New session on ${dirLabel}`}
-                aria-label={`New session on ${dirLabel}`}
-              >+</button>
-            </div>
-          )}
-          {nestSessions(dirSessions).map(({ session: sib, depth }) =>
-            renderRow(sib, true, depth),
-          )}
-        </div>
-      );
-    });
-  };
-
-  // Header + session rows for a single (non-pinned) project group.
-  // `dragHandle` is injected by SortableProjectGroup so the grip lives
-  // in the header row but the drag listeners stay scoped to the handle
-  // (the header button itself still toggles collapse on click).
-  const renderGroupBody = (group: SidebarProjectGroup, dragHandle: React.ReactNode) => {
-    const collapsed = collapsedProjectSet.has(group.directory);
-    const label = group.directory ? shortPath(group.directory) : '(unknown)';
-    const remoteSession = group.sessions.find((s) => s.remoteId && s.remoteId !== 'local');
-    // Prefer per-session host identity; fall back to the group's own
-    // (set for session-less remote projects, e.g. an offline remote).
-    // For a local group `remoteSession` is undefined, so anchor the
-    // platform on the group's own first session — otherwise "+" passes
-    // an undefined platform and handleNewSessionInDirectory leaks the
-    // currently-open session's (possibly remote) platform onto this
-    // local project.
-    const hostRemoteId = remoteSession?.remoteId ?? group.remoteId;
-    const hostRemoteName = remoteSession?.remoteName ?? group.remoteName;
-    const hostPlatform = remoteSession?.platform ?? group.platform ?? group.sessions[0]?.platform;
-    return (
-      <>
-        <div className="session-sidebar-group-header-row">
-          {dragHandle}
-          <button
-            type="button"
-            className={`session-sidebar-group-header${collapsed ? ' collapsed' : ''}`}
-            aria-expanded={!collapsed}
-            title={group.directory || 'Unknown project'}
-            onClick={() => toggleCollapsedProject(group.directory)}
-          >
-            <ProjectLabel className="session-sidebar-group-label" path={group.directory} />
-          </button>
-          <HostBadge remoteName={hostRemoteName} remoteId={hostRemoteId} stale={remoteSession?.stale} />
-          {group.directory && (
-            <button
-              type="button"
-              className="session-sidebar-group-new"
-              onClick={(e) => {
-                e.stopPropagation();
-                void onNewSessionInDirectory(group.directory, hostRemoteId, hostPlatform);
-              }}
-              title={`New session in ${label}`}
-              aria-label={`New session in ${label}`}
-            >+</button>
-          )}
-          {group.directory && (
-            <button
-              type="button"
-              className="session-sidebar-group-new"
-              onClick={(e) => {
-                e.stopPropagation();
-                onArchiveProject(group.directory, hostRemoteId);
-              }}
-              title={`Archive ${label}`}
-              aria-label={`Archive ${label}`}
-            ><ArchiveIcon /></button>
-          )}
-        </div>
-        {!collapsed && renderDirGroups(group, hostRemoteId, hostPlatform)}
-      </>
-    );
-  };
-
   const renderProjectsView = () => (
     <>
       {filteredPinnedSessions.length > 0 && renderPinnedGroup(filteredPinnedSessions)}
@@ -412,12 +273,16 @@ export function SessionSidebar({
           strategy={verticalListSortingStrategy}
         >
           {sortableGroups.map((group) => (
-            <SortableProjectGroup
+            <ProjectGroup
               key={group.directory || '__empty__'}
-              id={group.directory || '__empty__'}
-            >
-              {(dragHandle) => renderGroupBody(group, dragHandle)}
-            </SortableProjectGroup>
+              group={group}
+              collapsed={collapsedProjectSet.has(group.directory)}
+              siblingGitInfos={siblingGitInfos}
+              toggleCollapsedProject={toggleCollapsedProject}
+              onNewSessionInDirectory={onNewSessionInDirectory}
+              onArchiveProject={onArchiveProject}
+              renderRow={renderRow}
+            />
           ))}
         </SortableContext>
       </DndContext>
@@ -487,44 +352,4 @@ export function SessionSidebar({
 function matchesSessionSearch(query: string, session: Session, gitInfo?: GitInfo): boolean {
   return [cleanTitle(session.title), session.directory, gitInfo?.branch]
     .some((value) => !!value && fuzzyMatch(query, value));
-}
-
-// SortableProjectGroup wraps one project group with dnd-kit's
-// useSortable. It renders the group container and hands a drag-handle
-// element to its render-prop child; the handle owns the drag listeners
-// so the collapse-toggle button and "+" button stay clickable. A 4px
-// activation distance lets a plain click through while still allowing
-// a deliberate drag.
-function SortableProjectGroup({
-  id,
-  children,
-}: {
-  id: string;
-  children: (dragHandle: React.ReactNode) => React.ReactNode;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id });
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.4 : undefined,
-  };
-  const dragHandle = (
-    <button
-      type="button"
-      className="session-sidebar-group-drag"
-      title="Drag to reorder"
-      aria-label="Drag to reorder project"
-      {...attributes}
-      {...listeners}
-      onClick={(e) => e.stopPropagation()}
-    >
-      <i className="bi bi-grip-vertical" aria-hidden="true" />
-    </button>
-  );
-  return (
-    <div ref={setNodeRef} style={style} className="session-sidebar-group">
-      {children(dragHandle)}
-    </div>
-  );
 }

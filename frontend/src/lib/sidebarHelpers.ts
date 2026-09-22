@@ -1,6 +1,12 @@
 import type { Session } from './api';
 import { projectRootForDirectory } from './worktrees';
 
+// Keep concurrent streams from trading places on every token. Ties retain
+// their existing order; timestamps themselves remain exact.
+export function compareSidebarActivity(a: Pick<Session, 'timeUpdated'>, b: Pick<Session, 'timeUpdated'>): number {
+  return Math.floor(b.timeUpdated / 60_000) - Math.floor(a.timeUpdated / 60_000);
+}
+
 /**
  * Compute a cheap dedup hash for a sidebar session list. Used to skip
  * `setState` calls when a poll returned identical data — the
@@ -34,12 +40,12 @@ export function filterInactiveChildren(
 ): Session[] {
   const isActive = (s: Session) =>
     s.status === 'busy' || s.pendingPermission || s.pendingQuestion;
-  return sessions.filter(
-    (s) =>
-      !s.parentId ||
-      s.id === currentId ||
-      isActive(s),
-  );
+  return sessions.filter((s) => {
+    // Match the backend list's internal-session exclusion. SSE can fetch
+    // details directly, which also exposes parentless auto-approve judges.
+    if (!s.parentId && s.title?.endsWith(' subagent)')) return false;
+    return !s.parentId || s.id === currentId || isActive(s);
+  });
 }
 
 /**
@@ -81,8 +87,8 @@ export async function resolveOpenSession(opts: {
 /**
  * Merge a fresh /api/sessions poll result over the current store rows.
  *
- * The poll is authoritative for everything except `seen`, which is
- * monotonic and must never be un-seen by a stale response.
+ * Seen and activity timestamps are monotonic: a stale response must not
+ * undo a live activity update or mark a session unseen again.
  *
  * `status` is not sticky either: sticky-busy used to live here because
  * the server derived status from the last message's shape and could not
@@ -105,6 +111,7 @@ export function mergeSidebarSessions(
   current: readonly Session[],
   activeId?: string,
 ): Session[] {
+  const rank = new Map(current.map((s, index) => [s.id, index]));
   return next.map((s) => {
     const unarchived = s.id === activeId ? { ...s, archived: false } : s;
     const live = current.find((ls) => ls.id === s.id);
@@ -112,8 +119,10 @@ export function mergeSidebarSessions(
     return {
       ...unarchived,
       seen: live.seen || s.seen,
+      timeUpdated: Math.max(live.timeUpdated, s.timeUpdated),
     };
-  });
+  }).sort((a, b) => compareSidebarActivity(a, b) ||
+    (rank.get(a.id) ?? current.length) - (rank.get(b.id) ?? current.length));
 }
 
 /**

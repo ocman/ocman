@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { api } from './api';
-import { computeSidebarHash } from './sidebarHelpers';
+import { compareSidebarActivity, computeSidebarHash } from './sidebarHelpers';
 import type {
   CapabilitiesResponse,
   DirectoryBrowseResponse,
@@ -160,6 +160,7 @@ export const useApiStore = create<ApiStore>((set, get) => ({
       const updated = { ...state.recentSessions[idx], ...patch };
       const next = [...state.recentSessions];
       next[idx] = updated;
+      next.sort(compareSidebarActivity);
       // Recompute hash so the next poll's dedup check stays accurate.
       return { recentSessions: next, recentSessionsHash: computeSidebarHash(next) };
     });
@@ -345,7 +346,21 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   getModels: (signal) => get().runRequest('models:get', () => api.models(undefined, signal)),
   getCapabilities: (signal) => get().runRequest('capabilities:get', () => api.capabilities(signal)),
   createSession: (directory, platform, title) => get().runRequest('session:create', () => api.createSession(directory, platform, title)),
-  sendMessage: (sessionId, message, images, model, agent, reasoning, platform, queue) => get().runRequest(`message:send:${sessionId}`, () => api.sendMessage(sessionId, message, images, model, agent, reasoning, platform, queue)),
+  sendMessage: (sessionId, message, images, model, agent, reasoning, platform, queue) => {
+    const previous = get().recentSessions.find((s) => s.id === sessionId)?.timeUpdated;
+    const now = Math.max(Date.now(), previous ?? 0);
+    if (!queue) get().patchRecentSession(sessionId, { timeUpdated: now });
+    return get().runRequest(`message:send:${sessionId}`, () =>
+      api.sendMessage(sessionId, message, images, model, agent, reasoning, platform, queue),
+    ).catch((error) => {
+      // Don't undo activity that arrived through SSE while the request ran.
+      if (!queue && previous !== undefined &&
+          get().recentSessions.find((s) => s.id === sessionId)?.timeUpdated === now) {
+        get().patchRecentSession(sessionId, { timeUpdated: previous });
+      }
+      throw error;
+    });
+  },
   listPermissions: (sessionId) => get().runRequest(`permissions:list:${sessionId}`, () => api.listPermissions(sessionId)),
   respondPermission: (sessionId, permissionId, reply) => get().runRequest(`permission:respond:${sessionId}`, () => api.respondPermission(sessionId, permissionId, reply)),
   listQuestions: (sessionId) => get().runRequest(`questions:list:${sessionId}`, () => api.listQuestions(sessionId)),

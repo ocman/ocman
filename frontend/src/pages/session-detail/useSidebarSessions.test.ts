@@ -23,8 +23,13 @@ import { useUiStore } from '../../lib/uiStore';
 
 let sessionChanged: ((sessionId: string, session?: Session, patch?: Partial<Session>) => void) | undefined;
 let sseConnect: (() => void) | undefined;
+let sessionActivity: ((sessionId: string, timeUpdated: number) => void) | undefined;
 
 vi.mock('../../lib/useGlobalEvents', () => ({
+  onSessionActivity: (cb: typeof sessionActivity) => {
+    sessionActivity = cb;
+    return () => { sessionActivity = undefined; };
+  },
   onSessionChanged: (cb: (sessionId: string, session?: Session, patch?: Partial<Session>) => void) => {
     sessionChanged = cb;
     return () => { sessionChanged = undefined; };
@@ -119,6 +124,38 @@ describe('useSidebarSessions live refresh', () => {
     });
   });
 
+  it('reorders background activity without a refetch and ignores older events', () => {
+    useApiStore.setState({ recentSessions: [
+      { id: 'first', timeUpdated: 120_000 }, { id: 'background', timeUpdated: 60_000 },
+    ] as Session[] });
+    const { unmount } = renderHook(() => useSidebarSessions({
+      id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
+      abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
+    }));
+    act(() => sessionActivity?.('background', 180_000));
+    expect(useApiStore.getState().recentSessions.map((s) => s.id)).toEqual(['background', 'first']);
+    act(() => sessionActivity?.('background', 90_000));
+    expect(useApiStore.getState().recentSessions[0].timeUpdated).toBe(180_000);
+    expect(getSessions).not.toHaveBeenCalled();
+    unmount();
+    expect(sessionActivity).toBeUndefined();
+  });
+
+  it('loads an unknown active session once and applies its latest streaming timestamp', async () => {
+    let resolve!: (value: { session: Session }) => void;
+    const getSession = vi.fn(() => new Promise<{ session: Session }>((done) => { resolve = done; }));
+    useApiStore.setState({ getSession: getSession as never, recentSessions: [] });
+    renderHook(() => useSidebarSessions({
+      id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
+      abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
+    }));
+    act(() => { sessionActivity?.('old', 180_000); sessionActivity?.('old', 180_001); });
+    expect(getSession).toHaveBeenCalledOnce();
+    await act(async () => { resolve({ session: { id: 'old', timeUpdated: 1, directory: '/repo', status: 'busy' } as Session }); });
+    expect(useApiStore.getState().recentSessions[0]).toMatchObject({ id: 'old', timeUpdated: 180_001 });
+    expect(getSessions).not.toHaveBeenCalled();
+  });
+
   it('refreshes on session changes and SSE reconnects', async () => {
     const abortController = new AbortController();
     renderHook(() => useSidebarSessions({
@@ -142,6 +179,23 @@ describe('useSidebarSessions live refresh', () => {
     act(() => sseConnect?.());
     await waitFor(() => expect(getSessions).toHaveBeenCalledTimes(3));
   });
+
+  it.each(['(auto-approve subagent)', 'Research (@explore subagent)'])(
+    'keeps hidden internal session %s out when SSE announces activity', async (title) => {
+      const getSession = vi.fn().mockResolvedValue({ session: {
+        id: 'internal', title, parentId: '', directory: '/repo', status: 'busy', timeUpdated: 1,
+      } as Session });
+      useApiStore.setState({ getSession, recentSessions: [], recentSessionsHash: '' });
+      renderHook(() => useSidebarSessions({
+        id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
+        abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
+      }));
+      await act(async () => { sessionActivity?.('internal', 180_000); });
+      expect(useApiStore.getState().recentSessions).toEqual([]);
+      await act(async () => { sessionActivity?.('internal', 180_001); });
+      expect(getSession).toHaveBeenCalledOnce();
+    },
+  );
 });
 
 describe('useSidebarSessions project collapse', () => {

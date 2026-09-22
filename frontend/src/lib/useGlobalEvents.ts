@@ -102,6 +102,21 @@ const sessionChangedListeners = new Set<(
 ) => void>();
 
 const projectsChangedListeners = new Set<() => void>();
+const sessionActivityListeners = new Set<(sessionId: string, timeUpdated: number) => void>();
+
+export function onSessionActivity(cb: (sessionId: string, timeUpdated: number) => void): () => void {
+  sessionActivityListeners.add(cb);
+  return () => sessionActivityListeners.delete(cb);
+}
+
+function handleSessionActivity(raw: string): void {
+  try {
+    const { sessionID, timeUpdated } = JSON.parse(raw);
+    if (typeof sessionID !== 'string' || !sessionID ||
+        typeof timeUpdated !== 'number' || !Number.isFinite(timeUpdated) || timeUpdated <= 0) return;
+    for (const cb of sessionActivityListeners) cb(sessionID, timeUpdated);
+  } catch { /* Ignore malformed SSE payloads. */ }
+}
 const inboxChangedListeners = new Set<() => void>();
 
 export function onInboxChanged(cb: () => void): () => void {
@@ -199,6 +214,9 @@ function open(): void {
   });
   next.addEventListener('ocman.session.changed', (e) => {
     handleSessionChanged((e as MessageEvent).data);
+  });
+  next.addEventListener('ocman.session.activity', (e) => {
+    handleSessionActivity((e as MessageEvent).data);
   });
   next.addEventListener('ocman.projects.changed', handleProjectsChanged);
   next.addEventListener('ocman.queue.updated', (e) => {

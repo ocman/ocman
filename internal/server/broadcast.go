@@ -54,6 +54,7 @@ var coalescingEvents = map[string]bool{
 	"ocman.queue.updated":    true,
 	"ocman.session.idle":     true,
 	"ocman.session.changed":  true,
+	"ocman.session.activity": true,
 	"ocman.projects.changed": true,
 }
 
