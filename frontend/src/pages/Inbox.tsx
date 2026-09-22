@@ -1,4 +1,4 @@
-import { useDeferredValue, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Button, SearchField } from '../components/Control';
 import { PermissionPrompt } from '../components/session/PermissionPrompt';
@@ -7,6 +7,7 @@ import { RelativeTime } from '../components/RelativeTime';
 import { useArchiveAllReadInboxItems, useArchiveInboxItems, useInbox, useMarkInboxItemRead, useMarkInboxItemUnread, useRespondInboxPermission } from '../lib/queries';
 import type { InboxItem } from '../lib/api';
 import { fuzzyMatch } from '../lib/format';
+import { useShortcut } from '../lib/shortcutRegistry';
 import './Inbox.css';
 
 function sourceLabel(remoteId: string) {
@@ -90,6 +91,34 @@ export function Inbox() {
     setSearchParams((params) => { params.set('category', id); return params; }, { replace: true });
     setActiveKey(null);
   };
+
+  // Open the first message once, when the inbox first loads, so the reader
+  // isn't empty on arrival. Only then: closing or filtering a message is a
+  // deliberate act and must not be undone. Skipped on narrow screens, where
+  // the reader replaces the list and would hide the inbox.
+  const autoSelected = useRef(false);
+  const firstItem = visibleItems[0];
+  useEffect(() => {
+    if (autoSelected.current || !firstItem || window.innerWidth <= 700) return;
+    autoSelected.current = true;
+    setActiveKey(itemKey(firstItem));
+    if (!firstItem.readAt && !firstItem.archivedAt) markRead.mutate({ id: firstItem.id, remoteId: firstItem.remoteId });
+    // markRead is a stable mutation handle; re-running on it would loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firstItem && itemKey(firstItem)]);
+
+  useShortcut({
+    id: 'inbox.archive',
+    scope: 'site',
+    keys: [{ code: 'Delete' }, { code: 'Backspace' }],
+    description: 'Archive the open message',
+    enabled: () => !!activeItem && !archived,
+    handler: () => {
+      if (!activeItem || archived) return;
+      archive.mutate([{ id: activeItem.id, remoteId: activeItem.remoteId }]);
+      setActiveKey(null);
+    },
+  });
 
   return <main className="inbox-page">
     {(archive.isError || archiveRead.isError) && <p role="alert">Could not archive messages. Please try again.</p>}

@@ -372,6 +372,23 @@
   font-family: 'SF Mono', Consolas, monospace;
 }
 
+/* Free-text setting input (e.g. auto-approve reviewer model) */
+.settings-text-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.settings-text-input input[type="text"] {
+  width: 220px;
+  padding: 4px 6px;
+  background: var(--surface0);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 13px;
+}
+
 /* Prompt sections editor */
 .settings-row--block {
   flex-direction: column;

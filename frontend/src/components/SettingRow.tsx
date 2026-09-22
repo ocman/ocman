@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { SaveStatus } from './SaveStatus';
 import { useSettingSave } from '../lib/useSaveStatus';
 
@@ -120,6 +120,60 @@ export function SettingNumber({
         }}
       />
       <span className="settings-delay-unit">{unit}</span>
+      <SaveStatus state={save.state} />
+    </div>
+  );
+}
+
+/**
+ * SettingText is a text input that saves on blur or Enter — not per
+ * keystroke, so a half-typed value never reaches the server.
+ */
+export function SettingText({
+  value,
+  placeholder,
+  save,
+  onSave,
+  ariaLabel,
+  disabled,
+}: {
+  value: string;
+  placeholder?: string;
+  save: Save;
+  onSave: (next: string) => void | Promise<unknown>;
+  ariaLabel?: string;
+  disabled?: boolean;
+}) {
+  const [draft, setDraft] = useState(value);
+  // Adopt a new server value unless the user is mid-edit.
+  const [committed, setCommitted] = useState(value);
+  if (value !== committed) {
+    setCommitted(value);
+    setDraft(value);
+  }
+
+  const commit = () => {
+    const next = draft.trim();
+    if (next === committed) return;
+    setCommitted(next);
+    setDraft(next);
+    void save.track(() => withMinSpinner(() => onSave(next))).catch(() => {});
+  };
+
+  return (
+    <div className="settings-text-input">
+      <input
+        type="text"
+        aria-label={ariaLabel}
+        placeholder={placeholder}
+        disabled={disabled}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+        }}
+      />
       <SaveStatus state={save.state} />
     </div>
   );

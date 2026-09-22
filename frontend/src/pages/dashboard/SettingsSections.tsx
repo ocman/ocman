@@ -6,7 +6,7 @@
  */
 import { useState, useRef, useEffect } from 'react';
 import { SaveStatus } from '../../components/SaveStatus';
-import { SettingRow, SettingToggle, SettingNumber } from '../../components/SettingRow';
+import { SettingRow, SettingToggle, SettingNumber, SettingText } from '../../components/SettingRow';
 import { useSaveStatus, useSettingSave } from '../../lib/useSaveStatus';
 import { useUiStore } from '../../lib/uiStore';
 import { useApiStore } from '../../lib/apiStore';
@@ -311,9 +311,18 @@ export function AutoApproveSection() {
   const setPromptSections = useUiStore((s) => s.setPromptSections);
   const setPromptSectionsApi = useApiStore((s) => s.setPromptSectionsApi);
   const setJudgeDelayApi = useApiStore((s) => s.setJudgeDelayApi);
+  const getJudgeModel = useApiStore((s) => s.getJudgeModel);
+  const setJudgeModelApi = useApiStore((s) => s.setJudgeModelApi);
   const delaySave = useSaveStatus();
   const sectionsSave = useSaveStatus();
   const autoApproveSave = useSettingSave();
+  const modelSave = useSettingSave();
+  const [judgeModel, setJudgeModel] = useState('');
+
+  useEffect(() => {
+    getJudgeModel().then(setJudgeModel).catch(() => { /* best-effort */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const saveSections = (next: PromptSection[]) => {
     setPromptSections(next);
@@ -348,6 +357,22 @@ export function AutoApproveSection() {
           onSave={(ms) => {
             setAutoApproveDelayMs(ms);
             return setJudgeDelayApi(ms);
+          }}
+        />
+      </SettingRow>
+      <SettingRow
+        label="Reviewer model"
+        desc={<>The model that judges permission prompts, as
+          <code> provider/model</code>. Leave empty for the default.</>}
+      >
+        <SettingText
+          ariaLabel="Auto-approve reviewer model"
+          placeholder="anthropic/claude-haiku-4-5"
+          value={judgeModel}
+          save={modelSave}
+          onSave={(next) => {
+            setJudgeModel(next);
+            return setJudgeModelApi(next);
           }}
         />
       </SettingRow>

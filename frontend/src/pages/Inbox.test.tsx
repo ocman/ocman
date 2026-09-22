@@ -4,13 +4,20 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { api } from '../lib/api';
+import { useShortcutDispatcher } from '../lib/shortcutRegistry';
 import { Inbox } from './Inbox';
+
+/** Routes keydown events to registered shortcuts, as App does. */
+function Shortcuts() {
+  useShortcutDispatcher();
+  return null;
+}
 
 const items = [{ id: '1', title: 'Build **finished**', body: 'See [details](https://example.com).', createdAt: Date.now(), remoteId: 'local', category: 'general' as const }, { id: '2', title: 'Remote note', body: 'body', createdAt: Date.now() - 1_000, readAt: Date.now(), remoteId: 'laptop', category: 'factory' as const }];
 
 function renderInbox() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return { client, ...render(<QueryClientProvider client={client}><MemoryRouter><Inbox /></MemoryRouter></QueryClientProvider>) };
+  return { client, ...render(<QueryClientProvider client={client}><MemoryRouter><Shortcuts /><Inbox /></MemoryRouter></QueryClientProvider>) };
 }
 
 function inboxAction(name: string) {
@@ -48,6 +55,28 @@ describe('Inbox', () => {
     expect(title).toHaveAttribute('aria-current', 'true');
     fireEvent.click(inboxAction('Archive selected (1)'));
     await waitFor(() => expect(api.archiveInboxItems).toHaveBeenCalledWith([{ id: '1', remoteId: 'local' }]));
+  });
+
+  it('opens the newest message on arrival and archives it with Delete or Backspace', async () => {
+    renderInbox();
+    const reader = screen.getByRole('region', { name: 'Message body' });
+    expect(within(await within(reader).findByTestId('inbox-message-header')).getByRole('heading', { name: 'Build finished' })).toBeInTheDocument();
+    await waitFor(() => expect(api.markInboxItemRead).toHaveBeenCalledWith('1', 'local'));
+
+    fireEvent.keyDown(document.body, { code: 'Backspace', key: 'Backspace' });
+    await waitFor(() => expect(api.archiveInboxItems).toHaveBeenCalledWith([{ id: '1', remoteId: 'local' }]));
+    // The reader is cleared, so a second Delete can't re-archive it.
+    vi.mocked(api.archiveInboxItems).mockClear();
+    fireEvent.keyDown(document.body, { code: 'Delete', key: 'Delete' });
+    expect(api.archiveInboxItems).not.toHaveBeenCalled();
+  });
+
+  it('leaves the archived view alone when Delete is pressed', async () => {
+    renderInbox();
+    await screen.findByText('Remote note');
+    fireEvent.click(statusFilter('Archived'));
+    fireEvent.keyDown(document.body, { code: 'Delete', key: 'Delete' });
+    expect(api.archiveInboxItems).not.toHaveBeenCalled();
   });
 
   it('archives all read items for each source', async () => {
@@ -246,6 +275,8 @@ describe('Inbox', () => {
     const { client } = renderInbox();
     await screen.findByText('Remote note');
     fireEvent.click(statusFilter('Archived'));
+    // Ignore the read from auto-selecting the first message on load.
+    vi.mocked(api.markInboxItemRead).mockClear();
     fireEvent.click(await screen.findByRole('button', { name: /Archived permission/ }));
     expect(api.markInboxItemRead).not.toHaveBeenCalled();
     expect(client.getQueryData(['inbox'])).toMatchObject({ unreadTotal: 1 });
