@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { SaveStatus } from './SaveStatus';
+import { SearchSelect, type SearchSelectOption } from './SearchSelect';
 import { useSettingSave } from '../lib/useSaveStatus';
 
 /**
@@ -126,52 +127,45 @@ export function SettingNumber({
 }
 
 /**
- * SettingText is a text input that saves on blur or Enter — not per
- * keystroke, so a half-typed value never reaches the server.
+ * SettingSelect is a searchable picker that runs `onSave` and shows save
+ * status. The current value is always an option, so a value the catalog
+ * no longer offers is still displayed rather than silently blanked.
  */
-export function SettingText({
+export type SettingSelectProps = {
+  value: string;
+  options: SearchSelectOption[];
+  save: Save;
+  onSave: (next: string) => void | Promise<unknown>;
+  ariaLabel: string;
+  placeholder: string;
+  searchLabel: string;
+  disabled?: boolean;
+};
+
+export function SettingSelect({
   value,
-  placeholder,
+  options,
   save,
   onSave,
   ariaLabel,
+  placeholder,
+  searchLabel,
   disabled,
-}: {
-  value: string;
-  placeholder?: string;
-  save: Save;
-  onSave: (next: string) => void | Promise<unknown>;
-  ariaLabel?: string;
-  disabled?: boolean;
-}) {
-  const [draft, setDraft] = useState(value);
-  // Adopt a new server value unless the user is mid-edit.
-  const [committed, setCommitted] = useState(value);
-  if (value !== committed) {
-    setCommitted(value);
-    setDraft(value);
-  }
-
-  const commit = () => {
-    const next = draft.trim();
-    if (next === committed) return;
-    setCommitted(next);
-    setDraft(next);
-    void save.track(() => withMinSpinner(() => onSave(next))).catch(() => {});
-  };
-
+}: SettingSelectProps) {
+  const known = options.some((option) => option.value === value);
+  const all = known ? options : [...options, { value, label: value }];
   return (
-    <div className="settings-text-input">
-      <input
-        type="text"
-        aria-label={ariaLabel}
+    <div className="settings-select-input">
+      <SearchSelect
+        value={value}
+        options={all}
+        ariaLabel={ariaLabel}
         placeholder={placeholder}
+        searchLabel={searchLabel}
         disabled={disabled}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') e.currentTarget.blur();
+        onChange={(next) => {
+          if (next === value) return;
+          void save.track(() => withMinSpinner(() => onSave(next))).catch(() => {});
         }}
       />
       <SaveStatus state={save.state} />

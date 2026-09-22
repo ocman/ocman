@@ -133,6 +133,7 @@ type ApiStore = {
   setJudgeDelayApi: (delayMs: number) => Promise<void>;
   getJudgeModel: () => Promise<string>;
   setJudgeModelApi: (model: string) => Promise<void>;
+  getJudgeModelOptions: (signal?: AbortSignal) => Promise<{ models: string[]; default: string }>;
   abortSession: (sessionId: string) => Promise<void>;
   getTmuxClients: (signal?: AbortSignal) => Promise<{ available: boolean; clients: TmuxClient[] }>;
   getTmuxSessions: (signal?: AbortSignal) => Promise<{ available: boolean; sessions: TmuxSession[] }>;
@@ -374,6 +375,7 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   setJudgeDelayApi: (delayMs) => get().runRequest('judge-delay:set', () => api.setJudgeDelay(delayMs)),
   getJudgeModel: () => get().runRequest('judge-model:get', () => api.getJudgeModel()),
   setJudgeModelApi: (model) => get().runRequest('judge-model:set', () => api.setJudgeModel(model)),
+  getJudgeModelOptions: (signal) => get().runRequest('judge-model-options:get', () => api.getJudgeModelOptions(signal)),
   abortSession: (sessionId) => get().runRequest(`session:abort:${sessionId}`, () => api.abortSession(sessionId)),
   getTmuxClients: (signal) => get().runRequest('tmux-clients:get', () => api.tmuxClients(signal)),
   getTmuxSessions: (signal) => get().runRequest('tmux-sessions:get', () => api.tmuxSessions(signal)),

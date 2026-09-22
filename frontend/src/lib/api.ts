@@ -1104,4 +1104,7 @@ export const api = {
 
   setJudgeModel: (model: string): Promise<void> =>
     postJSON<void>('/api/settings/judge-model', { model }, { parseJSON: false }),
+
+  getJudgeModelOptions: (signal?: AbortSignal) =>
+    fetchJSON<{ models: string[]; default: string }>('/api/settings/judge-model/options', signal),
 };

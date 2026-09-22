@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -206,6 +207,39 @@ func (s *Server) handleGetJudgeModel(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, map[string]string{"model": model})
+}
+
+// judgeModelOptions is swapped in tests.
+var judgeModelOptions = defaultJudgeModelOptions
+
+// defaultJudgeModelOptions lists every "provider/model" OpenCode knows
+// about, asking whichever running instance answers first. Any instance
+// will do: the provider catalog is a property of the user's OpenCode
+// config, not of the directory the instance happens to serve.
+func defaultJudgeModelOptions(ctx context.Context) []string {
+	for _, port := range opencode.DiscoverOpenCodePorts() {
+		_, models, err := opencode.ProjectCatalog(ctx, "http://127.0.0.1:"+port)
+		if err == nil && len(models) > 0 {
+			return models
+		}
+	}
+	return nil
+}
+
+// handleJudgeModelOptions handles GET /api/settings/judge-model/options.
+//
+// Returns the selectable models plus the built-in default, so the
+// Settings picker never hardcodes either. An empty list means no
+// OpenCode instance was reachable; the field stays free-text.
+func (s *Server) handleJudgeModelOptions(w http.ResponseWriter, r *http.Request) {
+	models := judgeModelOptions(r.Context())
+	if models == nil {
+		models = []string{}
+	}
+	writeJSON(w, map[string]any{
+		"models":  models,
+		"default": autoapprove.DefaultJudgeModel,
+	})
 }
 
 func (s *Server) handleSetJudgeModel(w http.ResponseWriter, r *http.Request) {

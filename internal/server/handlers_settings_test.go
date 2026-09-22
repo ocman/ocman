@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -110,6 +111,45 @@ func TestHandleJudgeModelMethodNotAllowed(t *testing.T) {
 	srv.handleJudgeModel(rec, httptest.NewRequest(http.MethodDelete, "/api/settings/judge-model", nil))
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("DELETE status = %d, want 405", rec.Code)
+	}
+}
+
+func TestHandleJudgeModelOptions(t *testing.T) {
+	prev := judgeModelOptions
+	t.Cleanup(func() { judgeModelOptions = prev })
+
+	decode := func(body []byte) (models []string, def string) {
+		t.Helper()
+		var resp struct {
+			Models  []string `json:"models"`
+			Default string   `json:"default"`
+		}
+		if err := json.Unmarshal(body, &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		return resp.Models, resp.Default
+	}
+
+	judgeModelOptions = func(context.Context) []string { return []string{"anthropic/x", "openai/y"} }
+	rec := httptest.NewRecorder()
+	(&Server{}).handleJudgeModelOptions(rec, httptest.NewRequest(http.MethodGet, "/api/settings/judge-model/options", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	models, def := decode(rec.Body.Bytes())
+	if len(models) != 2 || models[0] != "anthropic/x" {
+		t.Fatalf("models = %v", models)
+	}
+	if def != autoapprove.DefaultJudgeModel {
+		t.Fatalf("default = %q, want %q", def, autoapprove.DefaultJudgeModel)
+	}
+
+	// No reachable instance → an empty array, never a JSON null.
+	judgeModelOptions = func(context.Context) []string { return nil }
+	rec = httptest.NewRecorder()
+	(&Server{}).handleJudgeModelOptions(rec, httptest.NewRequest(http.MethodGet, "/api/settings/judge-model/options", nil))
+	if models, _ = decode(rec.Body.Bytes()); models == nil || len(models) != 0 {
+		t.Fatalf("empty models = %v, want []", models)
 	}
 }
 

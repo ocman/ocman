@@ -41,6 +41,10 @@ const judgeModelID = "claude-haiku-4-5"
 // user-selected judge model is stored, as a "provider/modelID" string.
 const JudgeModelSettingKey = "judge_model"
 
+// DefaultJudgeModel is the "provider/modelID" used when the setting is
+// unset, exposed so the UI can label the default instead of repeating it.
+const DefaultJudgeModel = judgeModelProvider + "/" + judgeModelID
+
 // loadJudgeModel reads the persisted judge model setting and splits it
 // into provider + modelID on the first "/". ok is false when the
 // setting is unset or malformed (no "/"), so callers keep the default.

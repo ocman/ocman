@@ -6,7 +6,7 @@
  */
 import { useState, useRef, useEffect } from 'react';
 import { SaveStatus } from '../../components/SaveStatus';
-import { SettingRow, SettingToggle, SettingNumber, SettingText } from '../../components/SettingRow';
+import { SettingRow, SettingToggle, SettingNumber, SettingSelect } from '../../components/SettingRow';
 import { useSaveStatus, useSettingSave } from '../../lib/useSaveStatus';
 import { useUiStore } from '../../lib/uiStore';
 import { useApiStore } from '../../lib/apiStore';
@@ -313,16 +313,28 @@ export function AutoApproveSection() {
   const setJudgeDelayApi = useApiStore((s) => s.setJudgeDelayApi);
   const getJudgeModel = useApiStore((s) => s.getJudgeModel);
   const setJudgeModelApi = useApiStore((s) => s.setJudgeModelApi);
+  const getJudgeModelOptions = useApiStore((s) => s.getJudgeModelOptions);
   const delaySave = useSaveStatus();
   const sectionsSave = useSaveStatus();
   const autoApproveSave = useSettingSave();
   const modelSave = useSettingSave();
   const [judgeModel, setJudgeModel] = useState('');
+  const [modelCatalog, setModelCatalog] = useState({ models: [] as string[], default: '' });
 
   useEffect(() => {
+    const controller = new AbortController();
     getJudgeModel().then(setJudgeModel).catch(() => { /* best-effort */ });
+    getJudgeModelOptions(controller.signal).then(setModelCatalog).catch(() => { /* best-effort */ });
+    return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // "" is the stored value meaning "use the built-in default", so it is a
+  // real option rather than an empty placeholder.
+  const modelOptions = [
+    { value: '', label: modelCatalog.default ? `Default (${modelCatalog.default})` : 'Default' },
+    ...modelCatalog.models.map((value) => ({ value, label: value })),
+  ];
 
   const saveSections = (next: PromptSection[]) => {
     setPromptSections(next);
@@ -362,13 +374,14 @@ export function AutoApproveSection() {
       </SettingRow>
       <SettingRow
         label="Reviewer model"
-        desc={<>The model that judges permission prompts, as
-          <code> provider/model</code>. Leave empty for the default.</>}
+        desc="The model that judges permission prompts. A fast, cheap model is usually the right pick."
       >
-        <SettingText
+        <SettingSelect
           ariaLabel="Auto-approve reviewer model"
-          placeholder="anthropic/claude-haiku-4-5"
+          placeholder="Default"
+          searchLabel="Search models"
           value={judgeModel}
+          options={modelOptions}
           save={modelSave}
           onSave={(next) => {
             setJudgeModel(next);
