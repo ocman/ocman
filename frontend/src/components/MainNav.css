@@ -1,0 +1,66 @@
+.main-nav-usage-root { position: relative; flex-shrink: 0; }
+
+.main-nav nav .main-nav-usage {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.main-nav nav .main-nav-usage i { width: 16px; flex-shrink: 0; font-size: 15px; text-align: center; }
+.main-nav nav .main-nav-usage:hover { color: var(--text); background: var(--bg-hover); }
+.main-nav nav .main-nav-usage.active { color: var(--text); background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.main-nav.collapsed:not(.mobile-open) .main-nav-usage span { opacity: 0; }
+
+.subscription-usage-popover {
+  position: fixed;
+  z-index: 400;
+  left: 196px;
+  bottom: 42px;
+  width: min(340px, calc(100vw - 212px));
+  max-height: min(560px, calc(100vh - 32px));
+  overflow-y: auto;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--mantle);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+}
+
+.main-nav.collapsed .subscription-usage-popover { left: 60px; width: min(340px, calc(100vw - 76px)); }
+.subscription-usage-popover .subscription-page-heading { align-items: center; margin-bottom: 10px; }
+.subscription-usage-popover .subscription-page-heading h2 { margin: 0; font-size: 14px; }
+.subscription-usage-popover .subscription-page-heading p { display: none; }
+.subscription-usage-popover .subscription-grid { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.subscription-usage-popover .subscription-card { padding: 9px; }
+.subscription-usage-popover .subscription-card-header { height: auto; margin-bottom: 6px; padding: 0; border: 0; }
+.subscription-usage-popover .subscription-card-header h2 { font-size: 12px; }
+.subscription-usage-popover .subscription-plan { padding: 2px 5px; font-size: 9px; }
+.subscription-usage-popover .subscription-windows { gap: 8px; }
+.subscription-usage-popover .subscription-window { gap: 4px; }
+.subscription-usage-popover .subscription-window-label { font-size: 11px; }
+.subscription-usage-popover .subscription-window progress { height: 5px; }
+.subscription-usage-popover .subscription-reset { font-size: 10px; }
+
+@media (max-width: 720px) {
+  .main-nav.collapsed .subscription-usage-popover,
+  .subscription-usage-popover {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: 42px;
+    width: auto;
+    max-height: calc(100vh - 100px);
+  }
+}

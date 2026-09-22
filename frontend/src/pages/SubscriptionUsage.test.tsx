@@ -2,7 +2,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSubscriptionUsage } from '../lib/queries';
-import { SubscriptionUsage } from './SubscriptionUsage';
+import { SubscriptionUsage, SubscriptionUsageContent } from './SubscriptionUsage';
 
 vi.mock('../lib/queries', () => ({ useSubscriptionUsage: vi.fn() }));
 
@@ -30,6 +30,7 @@ describe('SubscriptionUsage', () => {
     expect(screen.getByRole('progressbar', { name: 'OpenAI Codex Spark · 5 hours usage' })).toHaveValue(45);
     expect(screen.getByRole('progressbar', { name: 'Anthropic 5 hours usage' })).toHaveValue(1);
     expect(screen.getAllByText(/% used/)).toHaveLength(3);
+    expect(screen.getByRole('button', { name: 'Refresh' })).toHaveClass('oc-button', 'oc-button--small');
   });
 
   it('shows the time left until each window resets', () => {
@@ -62,6 +63,21 @@ describe('SubscriptionUsage', () => {
 
     render(<SubscriptionUsage />);
     expect(screen.getByText('Saturday Sept 19th 2026, 13:38:36')).toBeInTheDocument();
+  });
+
+  it('uses short reset labels in compact mode', () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.setSystemTime(new Date('2026-09-11T12:00:00Z'));
+    vi.mocked(useSubscriptionUsage).mockReturnValue({
+      data: { providers: [{ id: 'anthropic', name: 'Anthropic', status: 'ok', windows: [
+        { name: '5 hours', usedPercent: 1, resetsAt: '2026-09-11T16:10:00Z' },
+      ] }] },
+    } as never);
+
+    render(<SubscriptionUsageContent compact />);
+    expect(screen.getByText('Resets in 4h 10m')).toBeInTheDocument();
+    expect(screen.queryByText(/Thursday Sept/)).not.toBeInTheDocument();
+    vi.useRealTimers();
   });
 
   it('shows provider errors and retries the request', () => {

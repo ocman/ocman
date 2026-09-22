@@ -2,6 +2,7 @@ import { usePageTitle } from '../lib/headerContext';
 import { useSubscriptionUsage } from '../lib/queries';
 import { formatSubscriptionResetDate, timeUntilISO } from '../lib/format';
 import type { SubscriptionProviderUsage } from '../lib/api';
+import { Button } from '../components/Control';
 
 const STATUS_LABELS: Record<string, string> = {
   expired: 'OpenCode token expired',
@@ -10,7 +11,7 @@ const STATUS_LABELS: Record<string, string> = {
   upstream_error: 'Usage unavailable',
 };
 
-function ProviderCard({ provider }: { provider: SubscriptionProviderUsage }) {
+function ProviderCard({ provider, compact = false }: { provider: SubscriptionProviderUsage; compact?: boolean }) {
   return (
     <section className="subscription-card" aria-labelledby={`subscription-${provider.id}`}>
       <header className="subscription-card-header">
@@ -33,8 +34,12 @@ function ProviderCard({ provider }: { provider: SubscriptionProviderUsage }) {
             />
             {window.resetsAt && (
               <span className="subscription-reset">
-                Resets <time dateTime={window.resetsAt}>{formatSubscriptionResetDate(window.resetsAt)}</time>
-                {timeUntilISO(window.resetsAt) && <span className="subscription-reset-in"> (in {timeUntilISO(window.resetsAt)})</span>}
+                {compact && timeUntilISO(window.resetsAt)
+                  ? <>Resets in {timeUntilISO(window.resetsAt)}</>
+                  : <>
+                    Resets <time dateTime={window.resetsAt}>{formatSubscriptionResetDate(window.resetsAt)}</time>
+                    {timeUntilISO(window.resetsAt) && <span className="subscription-reset-in"> (in {timeUntilISO(window.resetsAt)})</span>}
+                  </>}
               </span>
             )}
           </div>
@@ -44,18 +49,17 @@ function ProviderCard({ provider }: { provider: SubscriptionProviderUsage }) {
   );
 }
 
-export function SubscriptionUsage() {
-  usePageTitle('Usage');
+export function SubscriptionUsageContent({ compact = false }: { compact?: boolean }) {
   const usage = useSubscriptionUsage();
 
   return (
-    <div className="subscription-page">
+    <div className="subscription-content">
       <div className="subscription-page-heading">
         <div>
-          <h1>Subscription usage</h1>
+          {compact ? <h2>Subscription usage</h2> : <h1>Subscription usage</h1>}
           <p>Current limits reported for OAuth subscriptions connected to OpenCode.</p>
         </div>
-        <button type="button" onClick={() => void usage.refetch()} disabled={usage.isFetching}>Refresh</button>
+        <Button size="small" onClick={() => void usage.refetch()} disabled={usage.isFetching}>Refresh</Button>
       </div>
       {usage.error instanceof Error && (
         <div className="oc-error-banner" role="alert">
@@ -67,9 +71,14 @@ export function SubscriptionUsage() {
       {usage.data?.providers.length === 0 && <div className="oc-empty">No OpenCode subscription credentials found.</div>}
       {usage.data && usage.data.providers.length > 0 && (
         <div className="subscription-grid">
-          {usage.data.providers.map((provider) => <ProviderCard provider={provider} key={provider.id} />)}
+          {usage.data.providers.map((provider) => <ProviderCard provider={provider} compact={compact} key={provider.id} />)}
         </div>
       )}
     </div>
   );
+}
+
+export function SubscriptionUsage() {
+  usePageTitle('Usage');
+  return <div className="subscription-page"><SubscriptionUsageContent /></div>;
 }

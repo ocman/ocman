@@ -4,17 +4,19 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { MainNav, RootRedirect } from './App';
-import { useInbox, useSessions } from './lib/queries';
+import { useInbox, useSessions, useSubscriptionUsage } from './lib/queries';
 import { routeTitle } from './lib/routeTitle';
 import { useUiStore } from './lib/uiStore';
 
 vi.mock('./lib/queries', () => ({
   useSessions: vi.fn(),
   useInbox: vi.fn(),
+  useSubscriptionUsage: vi.fn(),
 }));
 
 beforeEach(() => {
   vi.mocked(useInbox).mockReturnValue({ data: { items: [], unreadTotal: 0 } } as never);
+  vi.mocked(useSubscriptionUsage).mockReturnValue({ data: { providers: [] } } as never);
 });
 
 describe('routeTitle', () => {
@@ -68,14 +70,12 @@ describe('MainNav', () => {
     expect(screen.getByRole('link', { name: 'Projects' })).toHaveClass('active');
     expect(screen.getByRole('link', { name: 'Analytics' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Stats' })).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Usage' })).toHaveAttribute('href', '/subscription-usage');
-    const links = screen.getAllByRole('link');
-    const usage = screen.getByRole('link', { name: 'Usage' });
+    const usage = screen.getByRole('button', { name: 'Usage' });
     const inbox = screen.getByRole('link', { name: 'Inbox' });
     // Bottom group is Inbox > Usage > Settings; Inbox carries the marker
     // class that pushes that group to the bottom of the rail.
-    expect(links.indexOf(inbox)).toBe(links.indexOf(usage) - 1);
-    expect(links.indexOf(usage)).toBe(links.indexOf(screen.getByRole('link', { name: 'Settings' })) - 1);
+    expect(inbox.compareDocumentPosition(usage)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(usage.compareDocumentPosition(screen.getByRole('link', { name: 'Settings' }))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(inbox).toHaveClass('nav-bottom-start');
     expect(usage).not.toHaveClass('nav-bottom-start');
     expect(screen.getByRole('link', { name: 'Routines' })).toHaveAttribute('href', '/routines');
@@ -90,6 +90,26 @@ describe('MainNav', () => {
 
     await user.click(expand);
     expect(screen.getByRole('button', { name: 'Collapse navigation' })).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('opens usage as a popover without navigating', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={['/projects']}>
+        <MainNav />
+        <LocationMarker />
+      </MemoryRouter>,
+    );
+
+    const usage = screen.getByRole('button', { name: 'Usage' });
+    await user.click(usage);
+
+    expect(screen.getByRole('dialog', { name: 'Subscription usage' })).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/projects');
+    expect(usage).toHaveAttribute('aria-expanded', 'true');
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Subscription usage' })).not.toBeInTheDocument();
   });
 
   it('marks Home active on a session detail route', () => {

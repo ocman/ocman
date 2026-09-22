@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { AnalyticsTab, DashboardLayout, LegacyAnalyticsRedirect, SessionsTab, ProjectsTab, SettingsTab } from './pages/Dashboard';
@@ -34,7 +34,7 @@ import { useAuthStore } from './lib/authStore';
 import { useUiStore } from './lib/uiStore';
 import { useShortcut, useShortcutDispatcher } from './lib/shortcutRegistry';
 import { useApiStore } from './lib/apiStore';
-import { useInbox, useSessions, insertProvisionalSession } from './lib/queries';
+import { useSessions, insertProvisionalSession } from './lib/queries';
 import { remoteLog } from './lib/remoteLog';
 import { usePerformanceCleanup } from './lib/usePerformanceCleanup';
 import { useMemoryMonitor } from './lib/useMemoryMonitor';
@@ -43,6 +43,7 @@ import { installDevHandle as installPerfDevHandle } from './lib/perfRing';
 import { ClientActivityReporter } from './lib/ClientActivityReporter';
 import { routeTitle } from './lib/routeTitle';
 import { Inbox } from './pages/Inbox';
+import { MainNav } from './components/MainNav';
 
 // Top-level boundary keyed on the current pathname so navigating away from
 // a crashed route auto-recovers without forcing the user to reload. Inner
@@ -58,80 +59,7 @@ function RoutesBoundary({ children }: { children: ReactNode }) {
   );
 }
 
-const MAIN_NAV_ITEMS = [
-  { to: '/', label: 'Home', icon: 'bi-house', activeOnSession: true },
-  { to: '/sessions', label: 'Sessions', icon: 'bi-collection' },
-  { to: '/projects', label: 'Projects', icon: 'bi-folder' },
-  { to: '/factory/overview', label: 'Factory', icon: 'bi-buildings' },
-  { to: '/routines', label: 'Routines', icon: 'bi-clock-history' },
-  { to: '/analytics', label: 'Analytics', icon: 'bi-bar-chart' },
-  // Bottom-pinned group: `bottomStart` carries the margin-top:auto that
-  // pushes this item and everything after it to the bottom of the rail.
-  { to: '/inbox', label: 'Inbox', icon: 'bi-inbox', bottomStart: true },
-  { to: '/subscription-usage', label: 'Usage', icon: 'bi-speedometer2' },
-  { to: '/settings', label: 'Settings', icon: 'bi-gear' },
-];
-
-export function MainNav({
-  mobileOpen = false,
-  onMobileClose,
-}: {
-  mobileOpen?: boolean;
-  onMobileClose?: () => void;
-}) {
-  const location = useLocation();
-  const collapsed = useUiStore((s) => s.mainNavCollapsed);
-  const toggleCollapsed = useUiStore((s) => s.toggleMainNav);
-  const toggleLabel = mobileOpen
-    ? 'Close navigation'
-    : collapsed ? 'Expand navigation' : 'Collapse navigation';
-  const inbox = useInbox();
-
-  return (
-    <>
-      <aside className={`main-nav${collapsed ? ' collapsed' : ''}${mobileOpen ? ' mobile-open' : ''}`}>
-        <button
-          type="button"
-          className="main-nav-logo"
-          aria-label={toggleLabel}
-          aria-expanded={mobileOpen || !collapsed}
-          aria-controls="main-navigation"
-          onClick={mobileOpen ? onMobileClose : toggleCollapsed}
-        >
-          <img src="/favicon.svg" alt="" width={22} height={22} />
-          <span className="main-nav-brand">ocman</span>
-        </button>
-        <nav id="main-navigation" aria-label="Main navigation">
-          {MAIN_NAV_ITEMS.map((item) => (
-            <NavLink
-                key={item.to}
-                to={item.to}
-                aria-label={item.to === '/inbox' && inbox.data?.unreadTotal ? `Inbox, ${inbox.data.unreadTotal} unread messages` : item.label}
-                title={collapsed ? (item.to === '/inbox' && inbox.data?.unreadTotal ? `Inbox, ${inbox.data.unreadTotal} unread messages` : item.label) : undefined}
-                className={({ isActive }) =>
-                  [
-                    isActive || (item.activeOnSession && location.pathname.startsWith('/session/')) ? 'active' : '',
-                    item.bottomStart ? 'nav-bottom-start' : '',
-                  ].filter(Boolean).join(' ') || undefined
-                }
-                onClick={onMobileClose}
-              >
-                <i className={`bi ${item.icon}`} aria-hidden="true" />
-                <span>{item.label}</span>
-                {item.to === '/inbox' && inbox.data?.unreadTotal ? <b className="nav-unread-badge">{inbox.data.unreadTotal > 99 ? '99+' : inbox.data.unreadTotal}</b> : null}
-              </NavLink>
-          ))}
-        </nav>
-      </aside>
-      <button
-        type="button"
-        className={`main-nav-backdrop${mobileOpen ? ' visible' : ''}`}
-        aria-label="Close navigation"
-        onClick={onMobileClose}
-      />
-    </>
-  );
-}
+export { MainNav };
 
 function Header({ onOpenNav }: { onOpenNav: () => void }) {
   const location = useLocation();
