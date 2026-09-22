@@ -1475,9 +1475,7 @@ describe('SessionDetail — status badge follows the backend', () => {
     });
 
     await waitFor(() => {
-      // The status badge gets a status-error class via the StatusBadge
-      // component when `session.status === 'error'`.
-      expect(handle.result.container.querySelector('.status-error')).toBeInTheDocument();
+      expect(handle.result.container.querySelector('[data-state="error"]')).toBeInTheDocument();
     });
   });
 
@@ -1497,14 +1495,14 @@ describe('SessionDetail — status badge follows the backend', () => {
       });
     });
     await waitFor(() => {
-      expect(handle.result.container.querySelector('.status-busy')).toBeInTheDocument();
+      expect(handle.result.container.querySelector('[data-state="busy"]')).toBeInTheDocument();
     });
 
     act(() => { handle.sse()!.emitMessage(erroredMessage); });
     await flushPromises(8);
 
-    expect(handle.result.container.querySelector('.status-busy')).toBeInTheDocument();
-    expect(handle.result.container.querySelector('.status-error')).not.toBeInTheDocument();
+    expect(handle.result.container.querySelector('[data-state="busy"]')).toBeInTheDocument();
+    expect(handle.result.container.querySelector('[data-state="error"]')).not.toBeInTheDocument();
   });
 
   // The production failure sequence. OpenCode's `session.status`
@@ -1573,12 +1571,12 @@ describe('SessionDetail — status badge follows the backend', () => {
 
     // Asserted before the reconcile round trip resolves: that gap is
     // exactly where the badge used to claim `done`.
-    expect(handle.result.container.querySelector('.status-done')).not.toBeInTheDocument();
-    expect(handle.result.container.querySelector('.status-error')).toBeInTheDocument();
+    expect(handle.result.container.querySelector('[data-state="done"]')).not.toBeInTheDocument();
+    expect(handle.result.container.querySelector('[data-state="error"]')).toBeInTheDocument();
 
     await flushPromises(8);
-    expect(handle.result.container.querySelector('.status-done')).not.toBeInTheDocument();
-    expect(handle.result.container.querySelector('.status-error')).toBeInTheDocument();
+    expect(handle.result.container.querySelector('[data-state="done"]')).not.toBeInTheDocument();
+    expect(handle.result.container.querySelector('[data-state="error"]')).toBeInTheDocument();
   });
 
   // The active sidebar row overlays the page's display status on top of
@@ -1610,8 +1608,8 @@ describe('SessionDetail — status badge follows the backend', () => {
     const rows = handle.result.container.querySelectorAll('.session-sidebar-item');
     expect(rows.length).toBeGreaterThanOrEqual(2);
     for (const row of rows) {
-      expect(row.querySelector('.status-error')).not.toBeNull();
-      expect(row.querySelector('.status-done')).toBeNull();
+      expect(row.querySelector('[data-state="error"]')).not.toBeNull();
+      expect(row.querySelector('[data-state="done"]')).toBeNull();
     }
   });
 
