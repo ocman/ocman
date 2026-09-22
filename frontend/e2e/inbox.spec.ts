@@ -24,6 +24,11 @@ test('compact two-row header searches and archives messages from the actions dro
   });
   await page.goto('/inbox');
   await expect(page.getByRole('button', { name: /Build finished/ })).toBeVisible();
+  // On desktop the first message opens on arrival. On narrow screens an open
+  // message replaces the list (hiding the header measured below), so go back.
+  await expect(page.getByRole('heading', { name: 'Build finished' })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Back to messages' }).click();
   for (const width of [1280, 390, 320]) {
     await page.setViewportSize({ width, height: 844 });
     const search = await page.getByRole('searchbox', { name: 'Search inbox' }).boundingBox();

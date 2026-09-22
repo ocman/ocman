@@ -9,11 +9,8 @@ import { useUiStore } from '../../lib/uiStore';
 import { useApiStore } from '../../lib/apiStore';
 import { usePwaInstall } from '../../lib/usePwaInstall';
 import { SettingRow } from '../../components/SettingRow';
-import {
-  NotificationsSection,
-  SessionsSection,
-  AutoApproveSection,
-} from './SettingsSections';
+import { NotificationsSection, SessionsSection } from './SettingsSections';
+import { AutoApproveSection } from './AutoApproveSection';
 
 export function SettingsTab() {
   usePageTitle('Settings');

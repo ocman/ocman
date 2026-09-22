@@ -14,8 +14,8 @@ vi.mock('../../components/PluginSettings', () => ({ PluginSettings: () => <p>Plu
 vi.mock('./SettingsSections', () => ({
   NotificationsSection: () => null,
   SessionsSection: () => null,
-  AutoApproveSection: () => null,
 }));
+vi.mock('./AutoApproveSection', () => ({ AutoApproveSection: () => null }));
 vi.mock('../../lib/authStore', () => ({
   useAuthStore: (selector: (state: { authRequired: boolean; logout: typeof logout }) => unknown) =>
     selector({ authRequired: true, logout }),
