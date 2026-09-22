@@ -123,6 +123,25 @@ describe('SessionTerminalDock tabs', () => {
     expect(pane.getAttribute('data-window')).toBe('ocman-aaaaaaaaaa-2');
   });
 
+  it('collapses after closing the last terminal without creating a replacement', async () => {
+    const user = userEvent.setup();
+    let windows: TermWindow[] = [{ name: 'ocman-aaaaaaaaaa-1', title: '' }];
+    listWindows.mockImplementation(async () => ({ windows }));
+    killWindow.mockImplementation(async () => { windows = []; });
+    render(<SessionTerminalDock tmuxAvailable={true} directory={DIR} />);
+
+    await user.click(await screen.findByRole('tab', { name: '1' }));
+    expect(await screen.findByTestId('terminal-pane-stub')).toBeInTheDocument();
+    await user.click(screen.getByLabelText('Close terminal 1'));
+
+    expect(killWindow).toHaveBeenCalledWith(DIR, 'ocman-aaaaaaaaaa-1');
+    expect(screen.getByTitle('Show terminal')).toBeInTheDocument();
+    expect(screen.queryByTestId('terminal-pane-stub')).not.toBeInTheDocument();
+    expect(screen.queryByRole('separator', { name: 'Resize terminal' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
+    expect(createWindow).not.toHaveBeenCalled();
+  });
+
   it('closes a terminal via its × button and calls killWindow', async () => {
     const user = userEvent.setup();
     listWindows.mockResolvedValue({
@@ -133,7 +152,7 @@ describe('SessionTerminalDock tabs', () => {
     });
     render(<SessionTerminalDock tmuxAvailable={true} directory={DIR} />);
 
-    await screen.findByText('1');
+    await user.click(await screen.findByRole('tab', { name: '1' }));
     await user.click(screen.getByLabelText('Close terminal 1'));
 
     await waitFor(() =>
@@ -142,5 +161,7 @@ describe('SessionTerminalDock tabs', () => {
     // Optimistically removed from the strip.
     await waitFor(() => expect(screen.queryByText('1')).not.toBeInTheDocument());
     expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByTitle('Hide terminal')).toBeInTheDocument();
+    expect(screen.getByTestId('terminal-pane-stub')).toHaveAttribute('data-window', 'ocman-aaaaaaaaaa-2');
   });
 });

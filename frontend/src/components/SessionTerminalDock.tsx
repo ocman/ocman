@@ -163,6 +163,7 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
     // Optimistically drop the tab; restore on failure.
     setWindows((prev) => {
       const next = prev.filter((w) => w.name !== window);
+      if (next.length === 0) setOpen(false);
       setActive((cur) => (cur === window ? next[next.length - 1]?.name ?? null : cur));
       return next;
     });
