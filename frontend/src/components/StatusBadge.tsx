@@ -1,4 +1,5 @@
 import './StatusBadge.css';
+import { ProgressingIcon } from './ProgressingIcon';
 
 const labels: Record<string, string> = {
   waiting: 'Waiting',
@@ -59,6 +60,15 @@ export function StatusBadge({ status, compact, seen, pending, draft, titleOverri
         >
           <ExclamationIcon />
         </span>
+      );
+    }
+    if (status === 'busy' && !seen && !draft) {
+      return (
+        <ProgressingIcon
+          className="status-dot-compact status-busy"
+          aria-label={`Session status: ${titleOverride || labels[status]}`}
+          title={titleOverride || labels[status]}
+        />
       );
     }
     // An unsent draft turns the dot into a hollow ring. ponytail: only the

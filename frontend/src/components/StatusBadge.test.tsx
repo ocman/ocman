@@ -1,9 +1,15 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { render } from '@testing-library/react';
+import { ProgressingIcon } from './ProgressingIcon';
 import { StatusBadge } from './StatusBadge';
 
 describe('StatusBadge', () => {
+  it('hides an unlabelled progress spinner from assistive technology', () => {
+    const { container } = render(<ProgressingIcon />);
+    expect(container.querySelector('.oc-progressing-icon')?.getAttribute('aria-hidden')).toBe('true');
+  });
+
   it('labels every status, including interrupted', () => {
     for (const [status, label] of [
       ['waiting', 'Waiting'],
@@ -44,6 +50,13 @@ describe('StatusBadge', () => {
     expect(dot?.className).toContain('status-interrupted');
     expect(dot?.className).toContain('status-seen');
     expect(dot?.getAttribute('title')).toContain('stopped before the turn finished');
+  });
+
+  it('renders the compact busy status as a progress spinner', () => {
+    const { container } = render(<StatusBadge status="busy" compact />);
+    const spinner = container.querySelector('.oc-progressing-icon.status-dot-compact');
+    expect(spinner).not.toBeNull();
+    expect(spinner?.getAttribute('aria-label')).toBe('Session status: Busy');
   });
 
   it('shows the attention icon for a pending prompt instead of the status', () => {

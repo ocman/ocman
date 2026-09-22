@@ -1,0 +1,20 @@
+.oc-progressing-icon {
+  display: inline-block;
+  box-sizing: border-box;
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  color: var(--accent);
+  border: 1px solid currentcolor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: oc-progressing-icon-spin 0.8s linear infinite;
+}
+
+@keyframes oc-progressing-icon-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oc-progressing-icon { animation: none; }
+}
