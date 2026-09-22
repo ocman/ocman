@@ -133,8 +133,10 @@ export function Inbox() {
               <i className={`bi bi-${selected.has(itemKey(item)) ? 'check-square-fill' : categories.find(({ id }) => id === itemCategory(item))?.icon ?? 'chat-left-text'}`} aria-hidden="true" />
             </button>
             <button type="button" className="inbox-message-open" onClick={() => open(item)} aria-current={activeKey === itemKey(item) ? 'true' : undefined}>
-              <span className="inbox-meta"><span><RelativeTime iso={new Date(item.createdAt).toISOString()} /></span></span>
-              <span className="inbox-subject">{!item.readAt && <span className="inbox-unread-dot" aria-label="Unread" />}{item.title}</span>
+              <span className="inbox-headline">
+                <span className="inbox-subject">{!item.readAt && <span className="inbox-unread-dot" aria-label="Unread" />}{item.title}</span>
+                <span className="inbox-meta"><RelativeTime iso={new Date(item.createdAt).toISOString()} /></span>
+              </span>
               <span className="inbox-preview">{item.body}</span>
             </button>
           </article>)}
