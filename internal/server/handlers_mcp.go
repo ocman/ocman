@@ -13,10 +13,14 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/factory"
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/opencodeconfig"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
+	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/routines"
+	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 )
 
 // handleMCPConfigStatus reports whether OpenCode's global config
@@ -185,6 +189,56 @@ func (s sessionMCPService) GetSession(ctx context.Context, platform, id string, 
 	}
 	s.server.enrichSessionDetail(ctx, string(adapter.ID()), id, detail, !isRemotePlatformID(string(adapter.ID())))
 	return detail, nil
+}
+
+// CreateSession mirrors handleCreateSession (owner-pinned ensure, then
+// Create) and sends the prompt. The calling session, when given, picks the
+// owning machine and, without an explicit directory, the project root.
+func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.CreateSessionRequest) (internalmcp.CreatedSession, error) {
+	platformID, dir := in.Platform, in.Directory
+	if dir == "" {
+		detail, err := s.GetSession(ctx, in.Platform, in.SessionID, 0)
+		if err != nil {
+			return internalmcp.CreatedSession{}, err
+		}
+		dir = projectRootForDirectory(detail.Session.Directory)
+	}
+	if platformID == "" {
+		platformID = string(opencode.PlatformID)
+	}
+	if !s.server.sessions.KnownPlatform(platformID) {
+		return internalmcp.CreatedSession{}, fmt.Errorf("%w: unknown platform", internalmcp.ErrInvalidSessionCreate)
+	}
+	remoteID, _ := remote.SplitPlatformID(platformID)
+	owner := remoteID
+	if owner == "" {
+		owner = "local"
+	}
+	host, ok := s.server.router().LookupRemote(owner)
+	if !ok {
+		return internalmcp.CreatedSession{}, fmt.Errorf("%w: remote %s is not connected", internalmcp.ErrInvalidSessionCreate, owner)
+	}
+	var port string
+	ensured, err := host.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: projectRootForDirectory(dir)})
+	switch {
+	case err != nil && remoteID != "":
+		return internalmcp.CreatedSession{}, err
+	case err == nil:
+		port = ensured.Port()
+	} // A local ensure failure falls back to port discovery, as in handleCreateSession.
+	resp, err := s.server.sessions.Create(ctx, platformID, platforms.CreateSessionRequest{Directory: dir, Title: in.Title, Port: port})
+	var ve *sessionsvc.ValidationError
+	if errors.As(err, &ve) {
+		return internalmcp.CreatedSession{}, fmt.Errorf("%w: %s", internalmcp.ErrInvalidSessionCreate, ve.Error())
+	}
+	if err != nil {
+		return internalmcp.CreatedSession{}, err
+	}
+	created := internalmcp.CreatedSession{Platform: platformID, SessionID: resp.ID, Directory: dir}
+	if err := s.server.sendNow(ctx, platformID, platforms.SendMessageRequest{SessionID: resp.ID, Message: in.Prompt, Model: in.Model, Agent: in.Agent}); err != nil {
+		return created, err
+	}
+	return created, nil
 }
 
 // mcpServerURL returns the absolute URL of the MCP server endpoint.

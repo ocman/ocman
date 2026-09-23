@@ -4,7 +4,7 @@ weight: 3
 ---
 
 Ocman embeds an optional MCP (Model Context Protocol) server exposing Factory,
-Inbox, routine, read-only session, and file-embedding tools.
+Inbox, routine, session inspection and creation, and file-embedding tools.
 
 Ocman works fine as a plain dashboard without this. Install it only if you
 want conversational Factory handoff, Inbox delivery, routine management,
@@ -76,7 +76,7 @@ production binary. Change it if you moved the listener with `-mcp-addr`.
 | `factory_unblock` | Executes a user-approved `reopen` or typed `mutate_graph` action proposed by a read-only Factory unblock session. Ocman configures this tool as `ask`, so OpenCode shows Allow and Reject buttons before execution. |
 | `inbox` | Send owner-local Inbox items and recall them by opaque ID. Unknown and already recalled IDs are successful no-ops. Use `action: "help"` for schemas and examples. Agents should send only asynchronous completions needing attention, blocked decisions, or important failures, not routine progress. |
 | `routines` | Create, inspect, update, run, and soft-delete routines. Use `action: "help"` for current inputs, examples, output schemas, and domain errors. |
-| `sessions` | Read-only session listing, search, and detail inspection. Search matches recent session IDs, titles, directories, platforms, and host names. The tool cannot create, cancel, or message sessions. |
+| `sessions` | Session listing, search, detail inspection, and creation. Use `action: "help"` for schemas and examples. `list`, `search`, and `get` are read-only; search matches recent session IDs, titles, directories, platforms, and host names. `create` starts a new session. The tool cannot cancel or message existing sessions. |
 | `embed_file` | Make a file on disk viewable to the user in the ocman UI. Takes an absolute `path` (plus an optional `label`) and returns a signed URL and a markdown snippet the agent pastes into its reply. Images and SVGs render inline in the conversation; PDFs and other types open or download in the browser. See [Embedding generated assets](#embedding-generated-assets). |
 
 ## Factory
@@ -170,8 +170,22 @@ Inbox items is a user-only dashboard operation and is not exposed to agents.
 
 ## Sessions
 
-The `sessions` tool intentionally stops at inspection: `list`, `search`, and
-`get`. OpenCode's native Task tool owns subagent delegation. A configured
+The `sessions` tool inspects sessions with `list`, `search`, and `get`, and
+starts new top-level sessions with `create`.
+
+`create` sends `prompt` to the new session. `model` (`provider/model`), `agent`,
+and `title` are optional. `directory` must be absolute. When it is omitted, the
+session starts in the project root of the calling session, which the agent
+identifies with `platform` and `session_id`. The calling session also
+determines which machine runs the new one. New sessions use the platform's
+default permissions and do not inherit the caller's rules.
+
+OpenCode permissions apply to whole tools, so requiring approval for `create`
+also requires it for the read-only actions.
+
+Use `create` for independent work that should show up as its own session. For
+work inside the current turn, OpenCode's native Task tool handles subagent
+delegation. A configured
 subagent model overrides the caller's model; otherwise the subagent inherits
 the invoking primary agent's model. The installed `ocman-sessions` skill also
 documents one-off Task model selection.

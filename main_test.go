@@ -76,7 +76,7 @@ func TestEmbeddedSkillsUseActionContracts(t *testing.T) {
 		}
 	}
 	sessionsSource := strings.ToLower(string(skills["ocman-sessions"]))
-	for _, required := range []string{"sessions", `"action":"help"`, "read-only", "task", "subagent_type", "provider/model-id", "inherits"} {
+	for _, required := range []string{"sessions", `"action":"help"`, "read-only", "task", "subagent_type", "provider/model-id", "inherits", "`list`", "`search`", "`get`", `{"action":"create","prompt"`} {
 		if !strings.Contains(sessionsSource, required) {
 			t.Errorf("Sessions skill is missing %q", required)
 		}

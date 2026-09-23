@@ -55,7 +55,7 @@ and archive or unarchive anything by hand.
 ## Does the agent integration send my code anywhere?
 
 The [MCP server](../features/mcp/) is localhost-only and exposes Factory,
-routine, read-only session, and file-embedding tools. Model traffic stays between OpenCode and whatever provider
+routine, session inspection and creation, and file-embedding tools. Model traffic stays between OpenCode and whatever provider
 you configured there.
 
 ## Can I run it on several machines?
