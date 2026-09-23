@@ -169,11 +169,17 @@ func (s sessionMCPService) ListSessions(ctx context.Context, directory string) (
 }
 
 func (s sessionMCPService) GetSession(ctx context.Context, platform, id string, messageLimit int) (*platforms.SessionDetail, error) {
-	adapter, ok := s.server.registry.Get(platforms.ID(platform))
-	if !ok {
+	var adapter platforms.Platform
+	var detail *platforms.SessionDetail
+	var err error
+	if platform == "" {
+		adapter, detail, err = s.findSession(ctx, id, messageLimit)
+	} else if a, ok := s.server.registry.Get(platforms.ID(platform)); ok {
+		adapter = a
+		detail, err = a.Session(ctx, id, messageLimit, 0)
+	} else {
 		return nil, platforms.ErrNotFound
 	}
-	detail, err := adapter.Session(ctx, id, messageLimit, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -189,6 +195,44 @@ func (s sessionMCPService) GetSession(ctx context.Context, platform, id string, 
 	}
 	s.server.enrichSessionDetail(ctx, string(adapter.ID()), id, detail, !isRemotePlatformID(string(adapter.ID())))
 	return detail, nil
+}
+
+// findSession asks every available adapter for id, so callers may omit the
+// platform. Session IDs are only unique per platform, so more than one hit
+// is ambiguous rather than a guess.
+// ponytail: sequential fan-out, one Session call per adapter (remotes are a
+// gRPC round trip each); go concurrent if many remotes make this slow.
+func (s sessionMCPService) findSession(ctx context.Context, id string, messageLimit int) (platforms.Platform, *platforms.SessionDetail, error) {
+	var found platforms.Platform
+	var detail *platforms.SessionDetail
+	var matches []string
+	var firstErr error
+	for _, p := range s.server.registry.Platforms() {
+		if !p.Available(ctx) {
+			continue
+		}
+		d, err := p.Session(ctx, id, messageLimit, 0)
+		if err != nil {
+			if !errors.Is(err, platforms.ErrNotFound) && firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if d == nil || d.Session == nil {
+			continue
+		}
+		found, detail = p, d
+		matches = append(matches, string(p.ID()))
+	}
+	switch {
+	case len(matches) > 1:
+		return nil, nil, internalmcp.AmbiguousSessionError{Platforms: matches}
+	case len(matches) == 1:
+		return found, detail, nil
+	case firstErr != nil:
+		return nil, nil, firstErr
+	}
+	return nil, nil, platforms.ErrNotFound
 }
 
 // CreateSession mirrors handleCreateSession (owner-pinned ensure, then

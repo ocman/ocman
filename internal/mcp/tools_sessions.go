@@ -16,6 +16,14 @@ type sessionService interface {
 	GetSession(context.Context, string, string, int) (*platforms.SessionDetail, error)
 }
 
+// AmbiguousSessionError reports a platform-less lookup that matched a session
+// ID on more than one platform; the caller must pass one of Platforms.
+type AmbiguousSessionError struct{ Platforms []string }
+
+func (e AmbiguousSessionError) Error() string {
+	return "session_id exists on multiple platforms (" + strings.Join(e.Platforms, ", ") + "); pass platform"
+}
+
 type sessionTools struct{ svc sessionService }
 
 type sessionAction struct {
@@ -28,7 +36,7 @@ var sessionActions = []sessionAction{
 	{name: "help", description: "Describes every available session action.", example: `{"action":"help"}`, output: "Session action documentation"},
 	{name: "list", description: "Lists recent sessions, optionally scoped to one directory.", example: `{"action":"list","directory":"/repo","limit":50}`, optional: []string{"directory", "limit"}, output: "Session[]"},
 	{name: "search", description: "Searches recent session IDs, titles, directories, platforms, and host names.", example: `{"action":"search","query":"review","limit":20}`, required: []string{"query"}, optional: []string{"directory", "limit"}, output: "Session[]"},
-	{name: "get", description: "Gets one session with its latest messages and parts.", example: `{"action":"get","platform":"opencode","session_id":"ses_1","message_limit":20}`, required: []string{"platform", "session_id"}, optional: []string{"message_limit"}, output: "SessionDetail"},
+	{name: "get", description: "Gets one session with its latest messages and parts. Without platform, every platform is searched.", example: `{"action":"get","session_id":"ses_1","message_limit":20}`, required: []string{"session_id"}, optional: []string{"platform", "message_limit"}, output: "SessionDetail"},
 	{name: "create", description: "Starts a new top-level session and sends it prompt. Pass your own platform and session_id to default directory to your project root and run on your machine, or pass an absolute directory.", example: `{"action":"create","prompt":"Review the open PR","model":"anthropic/claude-sonnet-4","agent":"plan","platform":"opencode","session_id":"ses_caller"}`, required: []string{"prompt"}, optional: []string{"model", "agent", "title", "directory", "platform", "session_id"}, output: "{platform, session_id, directory}"},
 }
 
@@ -100,6 +108,10 @@ func (t *sessionTools) handle(ctx context.Context, req mcplib.CallToolRequest) (
 		if errors.Is(err, platforms.ErrNotFound) {
 			return mcplib.NewToolResultError("session not found"), nil
 		}
+		var ambiguous AmbiguousSessionError
+		if errors.As(err, &ambiguous) {
+			return mcplib.NewToolResultError(ambiguous.Error()), nil
+		}
 		if err != nil {
 			return mcplib.NewToolResultError("session request failed"), nil
 		}
@@ -127,8 +139,8 @@ func sessionHelp() map[string]any {
 		help[action.name] = map[string]any{"required": append([]string{}, action.required...), "optional": append([]string{}, action.optional...), "action": action.description, "example": action.example, "output_schema": action.output}
 	}
 	help["actions"] = actions
-	help["rules"] = []string{"only create changes state; start a session only when the user asks for one", "list and search return at most 500 recent sessions", "message_limit is between 0 and 100; 0 returns metadata without messages", "create: model is provider/model; directory is absolute; platform and session_id identify the calling session and go together", "create: the new session uses the platform's default permissions"}
-	help["errors"] = []string{"action is required", "unknown action", "session not found", "session request failed", "prompt is required", "model must be provider/model", "directory must be absolute", "platform and session_id must be provided together", "invalid session request: <reason>", "session <id> was created on <platform> but the prompt failed"}
+	help["rules"] = []string{"only create changes state; start a session only when the user asks for one", "list and search return at most 500 recent sessions", "message_limit is between 0 and 100; 0 returns metadata without messages", "get: platform is optional; pass it only when the session_id exists on multiple platforms", "create: model is provider/model; directory is absolute; platform and session_id identify the calling session and go together", "create: the new session uses the platform's default permissions"}
+	help["errors"] = []string{"action is required", "unknown action", "session not found", "session_id exists on multiple platforms (<platforms>); pass platform", "session request failed", "prompt is required", "model must be provider/model", "directory must be absolute", "platform and session_id must be provided together", "invalid session request: <reason>", "session <id> was created on <platform> but the prompt failed"}
 	return help
 }
 

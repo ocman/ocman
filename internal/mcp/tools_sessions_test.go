@@ -85,7 +85,7 @@ func TestSessionToolValidationAndErrors(t *testing.T) {
 		{args: map[string]any{"action": "search"}, want: "query is required"},
 		{args: map[string]any{"action": "search", "query": "  "}, want: "query is required"},
 		{args: map[string]any{"action": "list", "limit": 0}, want: "limit must be between 1 and 500"},
-		{args: map[string]any{"action": "get", "session_id": "x"}, want: "platform is required"},
+		{args: map[string]any{"action": "get"}, want: "session_id is required"},
 		{args: map[string]any{"action": "get", "platform": "opencode", "session_id": "x", "message_limit": 101}, want: "message_limit must be between 0 and 100"},
 	} {
 		result := callTool(t, srv, "sessions", test.args)
@@ -97,6 +97,10 @@ func TestSessionToolValidationAndErrors(t *testing.T) {
 	svc.err = platforms.ErrNotFound
 	if result := callTool(t, srv, "sessions", map[string]any{"action": "get", "platform": "opencode", "session_id": "missing"}); !result.IsError || resultText(result) != "session not found" {
 		t.Fatalf("not found result = %q", resultText(result))
+	}
+	svc.err = internalmcp.AmbiguousSessionError{Platforms: []string{"opencode", "r-box:opencode"}}
+	if result := callTool(t, srv, "sessions", map[string]any{"action": "get", "session_id": "dup"}); !result.IsError || resultText(result) != "session_id exists on multiple platforms (opencode, r-box:opencode); pass platform" {
+		t.Fatalf("ambiguous result = %q", resultText(result))
 	}
 	svc.err = errors.New("database details")
 	if result := callTool(t, srv, "sessions", map[string]any{"action": "list"}); !result.IsError || resultText(result) != "session request failed" {
