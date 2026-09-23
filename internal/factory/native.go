@@ -143,6 +143,7 @@ type WorkEpic struct {
 	InstantiationID string                 `json:"instantiationId"`
 	Proposal        *ProposalRevision      `json:"proposal,omitempty"`
 	PlanGate        *PlanGate              `json:"planGate,omitempty"`
+	Models          model.EpicModels       `json:"models"`
 	Attempts        []model.FactoryAttempt `json:"attempts,omitempty"`
 	Progress        FactoryProgress        `json:"progress"`
 }

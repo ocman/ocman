@@ -20,11 +20,8 @@ func (s *NativeService) DecidePlanGate(ctx context.Context, epicID, action strin
 		return PlanGate{}, fmt.Errorf("%w: plan revision and hash are required", ErrInvalidRequest)
 	}
 	implementationModel := strings.TrimSpace(req.ImplementationModel)
-	if implementationModel != "" {
-		provider, name, valid := strings.Cut(implementationModel, "/")
-		if !valid || provider == "" || name == "" || len(implementationModel) > 300 || strings.ContainsAny(implementationModel, " \t\r\n") {
-			return PlanGate{}, fmt.Errorf("%w: implementation model must be provider/model", ErrInvalidRequest)
-		}
+	if !validModel(implementationModel) {
+		return PlanGate{}, fmt.Errorf("%w: implementation model must be provider/model", ErrInvalidRequest)
 	}
 	gate, err := store.DecideFactoryPlanGate(ctx, epicID, action, req.ExpectedRevision, req.ExpectedHash, strings.TrimSpace(req.Feedback), implementationModel)
 	if errors.Is(err, sql.ErrNoRows) {

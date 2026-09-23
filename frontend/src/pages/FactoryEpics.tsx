@@ -10,6 +10,7 @@ import { DataTableGroup, DataTableRow } from '../components/DataTable';
 import { FactoryStartedToast } from '../components/FactoryStartedToast';
 import { FactoryImplementationModel } from '../components/FactoryImplementationModel';
 import { useFactoryImplementationModel } from '../components/useFactoryImplementationModel';
+import { FactoryEpicModels } from '../components/FactoryEpicModels';
 import { useCloseFactoryEpic, useCloseFactoryMol, useCreateWorkEpic, useDecideFactoryPlanGate, useFactoryFormulas, useFactoryGraphIssues, useFactoryIssues, useFactoryProposals, useFactoryRemovedIssues, useMutateFactoryGraph, usePourFactoryEpic, useProjects, useSetFactoryEpicPaused, useWorkEpic, useWorkEpics } from '../lib/queries';
 import type { FactoryAttempt, FactoryEpic, FactoryFormula, FactoryGraphMutation, FactoryIssue } from '../lib/api';
 import { fuzzyMatch } from '../lib/format';
@@ -258,6 +259,7 @@ export function FactoryEpicDetail() {
       </div>}
       {epic.data.planGate?.resolution === 'revision_requested' && <div className="factory-epic-gate" aria-label="Plan approval gate"><h3>Plan approval</h3><p role="status">Revision requested. Waiting for a new Plan proposal.</p><Button type="button" disabled={epic.isFetching || proposals.isFetching} onClick={() => { setGateStatus(''); void Promise.all([epic.refetch(), proposals.refetch()]); }}>{epic.isFetching || proposals.isFetching ? 'Checking…' : 'Check for new proposal'}</Button></div>}
       {gateStatus && <p role="status">{gateStatus}</p>}
+      <FactoryEpicModels epic={epic.data} />
       <div className="factory-epic-action-row">
         <Button type="button" onClick={() => pour.mutate()} aria-busy={pour.isPending} disabled={pour.isPending}>{pour.isPending ? 'Pouring…' : 'Pour graph'}</Button>
         <Button type="button" onClick={() => void close()} aria-busy={closeEpic.isPending || closeMol.isPending} disabled={closeEpic.isPending || closeMol.isPending}>{closeEpic.isPending || closeMol.isPending ? 'Closing…' : 'Close epic'}</Button>

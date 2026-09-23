@@ -150,6 +150,14 @@ each implementation Attempt, including final delivery. Retrying approval keeps
 the original choice. MCP callers can supply `implementation_model` as a
 `provider/model` reference to `approve_plan` after confirming it with the user.
 
+The Epic page's **Models** controls pick a planning, implementation, and
+verification model for that Epic at any time (`POST
+/api/factory/epics/<id>/models`). A choice there wins over the workflow step's
+`config.model` and the approval-time choice; Default falls back to them.
+Delivery uses the implementation model. Each Attempt freezes its model when it
+is claimed, so a change mid-implementation affects only work that has not
+started.
+
 ## Implementation checkpoints
 
 Each implementation session tests its change, commits it, pushes the shared

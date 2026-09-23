@@ -367,6 +367,7 @@ func (s *NativeService) GetWorkEpic(ctx context.Context, id string) (WorkEpic, e
 			result.PlanGate = &decoded
 		}
 	}
+	result.Models = s.epicModels(ctx, id)
 	issues, issuesErr := s.store.ListFactoryIssues(ctx, id)
 	if issuesErr != nil {
 		return result, issuesErr

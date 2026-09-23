@@ -139,10 +139,24 @@ func (d *DB) ClaimFactoryImplementation(ctx context.Context, epicID, issueID, pr
 	if err != nil {
 		return model.NativeEpic{}, model.FactoryAttempt{}, err
 	}
+	epicModels, err := getFactoryEpicModels(ctx, tx, epicID)
+	if err != nil {
+		return model.NativeEpic{}, model.FactoryAttempt{}, err
+	}
+	epicModel := epicModels.Implementation
 	for _, issue := range workflowIssues {
-		if issue.ID == issueID && issue.Workflow != nil && issue.Workflow.Config.Model != "" {
+		if issue.ID != issueID || issue.Workflow == nil {
+			continue
+		}
+		if issue.Workflow.Kind == "verification" {
+			epicModel = epicModels.Verification
+		}
+		if issue.Workflow.Config.Model != "" {
 			attemptPolicy.Model = issue.Workflow.Config.Model
 		}
+	}
+	if epicModel != "" {
+		attemptPolicy.Model = epicModel
 	}
 	if !successorLineage {
 		if err := tx.QueryRowContext(ctx, `SELECT json_extract(CASE WHEN json_valid(result_json) THEN result_json ELSE '{}' END, '$.commitSha') FROM factory_attempt WHERE epic_id = ? AND json_extract(frozen_policy_json, '$.repository') = ? AND terminal_outcome = 'succeeded' AND json_extract(CASE WHEN json_valid(result_json) THEN result_json ELSE '{}' END, '$.commitSha') <> '' ORDER BY finished_at DESC, rowid DESC LIMIT 1`, epicID, project).Scan(&attemptPolicy.CheckpointSHA); err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -249,6 +263,13 @@ func (d *DB) ClaimFactoryPlan(ctx context.Context, epicID, issueID, profile stri
 	}
 	if step := steps[issueID]; step != nil {
 		policy.Model = step.Config.Model
+	}
+	epicModels, err := getFactoryEpicModels(ctx, tx, epicID)
+	if err != nil {
+		return model.NativeEpic{}, model.FactoryAttempt{}, err
+	}
+	if epicModels.Plan != "" {
+		policy.Model = epicModels.Plan
 	}
 	// Carry forward the Epic-level permission rules into the planning attempt.
 	var epicRulesJSON string

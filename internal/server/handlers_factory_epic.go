@@ -186,6 +186,10 @@ func (s *Server) handleFactoryEpic(w http.ResponseWriter, r *http.Request) {
 		})(w, r)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "models" && r.Method == http.MethodPost {
+		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) { s.handleFactoryEpicModels(w, r, parts[0]) })(w, r)
+		return
+	}
 	if len(parts) == 2 && (parts[1] == "pause" || parts[1] == "resume") && r.Method == http.MethodPost {
 		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
 			lifecycle, ok := s.factory.(interface {

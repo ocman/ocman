@@ -5,8 +5,8 @@ import (
 	"fmt"
 )
 
-// v98 records the originating session of every session-backed Inbox item.
-const latestSchemaVersion = 98
+// v99 stores per-phase model choices on each Factory Epic.
+const latestSchemaVersion = 99
 
 // applyMigration runs the DDL for the given target version.
 func applyMigration(tx *sql.Tx, target int) error {
@@ -217,6 +217,12 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV97(tx)
 	case 98:
 		return addColumnIfMissing(tx, "inbox_item", "session_json", "TEXT NOT NULL DEFAULT ''")
+	case 99:
+		var exists bool
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='factory_epic')`).Scan(&exists); err != nil || !exists {
+			return err
+		}
+		return addColumnIfMissing(tx, "factory_epic", "models_json", "TEXT NOT NULL DEFAULT '{}'")
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
