@@ -290,7 +290,11 @@ func (a *Adapter) Session(ctx context.Context, id string, limit, offset int) (*p
 		return nil, err
 	}
 	applySessionDetailMetadataFromMessages(session, messages)
-	session.Status = a.settleStatus(id, session.Directory, session.Status, discoverOpenCodePorts())
+	// The live path can miss while the instance is up (e.g. a conversation
+	// over maxUpstreamConversationBytes); liveness is the port, as in Sessions.
+	ports := discoverOpenCodePorts()
+	session.LiveConnection = directoryHasLivePort(ports, session.Directory)
+	session.Status = a.settleStatus(id, session.Directory, session.Status, ports)
 	parts, err := a.db.GetSessionParts(ctx, id)
 	if err != nil {
 		fallbackPhase.End()

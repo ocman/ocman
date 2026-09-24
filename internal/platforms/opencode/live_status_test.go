@@ -2,6 +2,8 @@ package opencode
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
@@ -317,6 +319,27 @@ func TestSessions_DeadInstanceReportsInterrupted(t *testing.T) {
 	}
 	if sessions[0].LiveConnection {
 		t.Error("LiveConnection should be false with no instance")
+	}
+}
+
+// A running instance whose conversation can't be fetched (e.g. a body
+// over maxUpstreamConversationBytes) falls back to the DB, but the
+// session is still live: reporting it as disconnected leaves the UI
+// stuck on "OpenCode is not running" right after a successful launch.
+func TestSession_DBFallbackStillReportsLiveInstance(t *testing.T) {
+	const dir = "/repo/main"
+	database := newTestDBWithSession(t, "ses-1", dir)
+	fake := newOpencodeFake(t)
+	fake.SetSession("ses-1", json.RawMessage(`{"id":"ses-1","directory":"/repo/main"}`))
+	fake.messagesStatus = http.StatusInternalServerError
+	withTestPort(t, dir, fake.Port())
+
+	detail, err := New(database, nil).Session(context.Background(), "ses-1", 0, 0)
+	if err != nil {
+		t.Fatalf("Session: %v", err)
+	}
+	if !detail.Session.LiveConnection {
+		t.Error("LiveConnection should be true while an instance serves the directory")
 	}
 }
 
