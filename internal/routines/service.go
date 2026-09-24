@@ -17,7 +17,6 @@ import (
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/state"
-	"github.com/robfig/cron/v3"
 )
 
 const (
@@ -156,99 +155,6 @@ func normalizeWriteError(err error) error {
 	return err
 }
 
-func buildRoutine(input Input, now time.Time) (state.Routine, error) {
-	name := strings.TrimSpace(input.Name)
-	directory := strings.TrimSpace(input.Directory)
-	if name == "" || strings.TrimSpace(input.Prompt) == "" || directory == "" || !filepath.IsAbs(directory) {
-		return state.Routine{}, fmt.Errorf("name, prompt, and an absolute target directory are required: %w", ErrValidation)
-	}
-	remoteID := strings.TrimSpace(input.RemoteID)
-	if remoteID == "" {
-		remoteID = "local"
-	}
-	sessionMode := strings.TrimSpace(input.SessionMode)
-	if sessionMode == "" {
-		sessionMode = SessionNew
-	}
-	sessionID := strings.TrimSpace(input.SessionID)
-	switch sessionMode {
-	case SessionNew, SessionReuse:
-		sessionID = ""
-	case SessionExisting:
-		if sessionID == "" {
-			return state.Routine{}, fmt.Errorf("an existing session is required: %w", ErrValidation)
-		}
-	default:
-		return state.Routine{}, fmt.Errorf("invalid session mode: %w", ErrValidation)
-	}
-	config, due, err := encodeSchedule(input.Schedule, now)
-	if err != nil {
-		return state.Routine{}, fmt.Errorf("invalid schedule: %w", ErrValidation)
-	}
-	rules := input.PermissionRules
-	if rules == nil {
-		rules = []platforms.PermissionRule{}
-	}
-	rulesJSON, err := json.Marshal(rules)
-	if err != nil {
-		return state.Routine{}, fmt.Errorf("invalid permission rules: %w", ErrValidation)
-	}
-	return state.Routine{
-		Name: name, Prompt: input.Prompt, Directory: directory, RemoteID: remoteID,
-		Agent: strings.TrimSpace(input.Agent), Model: strings.TrimSpace(input.Model),
-		SessionMode: sessionMode, SessionID: sessionID,
-		ScheduleKind: input.Schedule.Kind, ScheduleConfigJSON: config, NextDueAt: due,
-		Enabled: input.Enabled, DeleteAfterSuccess: input.DeleteAfterSuccess,
-		ArchiveSessionAfterSuccess: input.ArchiveSessionAfterSuccess,
-		PermissionRulesJSON:        string(rulesJSON),
-	}, nil
-}
-
-func encodeSchedule(schedule Schedule, now time.Time) (string, int64, error) {
-	switch schedule.Kind {
-	case ScheduleNone:
-		return `{}`, 0, nil
-	case ScheduleTimeout:
-		if schedule.Timeout <= 0 || schedule.Timeout.Milliseconds() <= 0 {
-			return "", 0, ErrValidation
-		}
-		due := now.Add(schedule.Timeout).UnixMilli()
-		config, _ := json.Marshal(struct {
-			DueAt int64 `json:"dueAt"`
-		}{due})
-		return string(config), due, nil
-	case ScheduleOnce:
-		if schedule.At.IsZero() || !schedule.At.After(now) {
-			return "", 0, ErrValidation
-		}
-		due := schedule.At.UnixMilli()
-		config, _ := json.Marshal(struct {
-			At int64 `json:"at"`
-		}{due})
-		return string(config), due, nil
-	case ScheduleCron:
-		zone := schedule.Timezone
-		if zone == "" {
-			zone = "UTC"
-		}
-		location, err := time.LoadLocation(zone)
-		if err != nil || len(strings.Fields(schedule.Cron)) != 5 {
-			return "", 0, ErrValidation
-		}
-		parsed, err := cron.ParseStandard(schedule.Cron)
-		if err != nil {
-			return "", 0, err
-		}
-		config, _ := json.Marshal(struct {
-			Cron     string `json:"cron"`
-			Timezone string `json:"timezone"`
-		}{schedule.Cron, zone})
-		return string(config), parsed.Next(now.In(location)).UnixMilli(), nil
-	default:
-		return "", 0, ErrValidation
-	}
-}
-
 func (s *Service) RunNow(ctx context.Context, routineID string) (state.RoutineRun, error) {
 	routine, err := s.store.GetRoutine(ctx, routineID)
 	if err != nil {
@@ -353,7 +259,7 @@ func (s *Service) claimAndDispatchPrompt(ctx context.Context, routine state.Rout
 }
 
 func (s *Service) failDispatch(ctx context.Context, run state.RoutineRun, cause error) (state.RoutineRun, error) {
-	if err := s.finish(ctx, run, RunFailure, cause.Error()); err != nil {
+	if err := s.finish(ctx, run, RunFailure, cause.Error(), ""); err != nil {
 		return state.RoutineRun{}, fmt.Errorf("recording routine failure after %w: %w", cause, err)
 	}
 	return s.store.GetRoutineRun(ctx, run.ID)
@@ -368,7 +274,7 @@ func (s *Service) settleRunning(ctx context.Context, recoverOrphans bool) error 
 	for _, run := range runs {
 		if run.Platform == "" || run.SessionID == "" {
 			if recoverOrphans {
-				result = errors.Join(result, s.finish(ctx, run, RunInterrupted, "dispatch interrupted before session linkage"))
+				result = errors.Join(result, s.finish(ctx, run, RunInterrupted, "dispatch interrupted before session linkage", ""))
 			}
 			continue
 		}
@@ -379,14 +285,15 @@ func (s *Service) settleRunning(ctx context.Context, recoverOrphans bool) error 
 		detail, err := platform.Session(ctx, run.SessionID, 1, 0)
 		if err != nil {
 			if recoverOrphans || errors.Is(err, platforms.ErrNotFound) {
-				result = errors.Join(result, s.finish(ctx, run, RunInterrupted, "session is no longer available"))
+				result = errors.Join(result, s.finish(ctx, run, RunInterrupted, "session is no longer available", ""))
 			}
 			continue
 		}
 		if detail == nil || detail.Session == nil {
-			result = errors.Join(result, s.finish(ctx, run, RunInterrupted, "session is no longer available"))
+			result = errors.Join(result, s.finish(ctx, run, RunInterrupted, "session is no longer available", ""))
 			continue
 		}
+		_, reply := db.LatestAssistantText(detail.Messages, detail.Parts)
 		switch detail.Session.Status {
 		case db.StatusDone, db.StatusWaiting:
 			if run.ArchiveSessionAfterSuccess {
@@ -395,17 +302,17 @@ func (s *Service) settleRunning(ctx context.Context, recoverOrphans bool) error 
 					continue
 				}
 			}
-			result = errors.Join(result, s.finish(ctx, run, RunSuccess, ""))
+			result = errors.Join(result, s.finish(ctx, run, RunSuccess, "", reply))
 		case db.StatusError:
-			result = errors.Join(result, s.finish(ctx, run, RunFailure, detail.Session.Status.String()))
+			result = errors.Join(result, s.finish(ctx, run, RunFailure, detail.Session.Status.String(), reply))
 		case db.StatusInterrupted:
-			result = errors.Join(result, s.finish(ctx, run, RunInterrupted, detail.Session.Status.String()))
+			result = errors.Join(result, s.finish(ctx, run, RunInterrupted, detail.Session.Status.String(), ""))
 		}
 	}
 	return result
 }
 
-func (s *Service) finish(ctx context.Context, run state.RoutineRun, runState, errorText string) error {
+func (s *Service) finish(ctx context.Context, run state.RoutineRun, runState, errorText, reply string) error {
 	routine, err := s.store.GetRoutine(ctx, run.RoutineID)
 	if err != nil {
 		return err
@@ -425,6 +332,6 @@ func (s *Service) finish(ctx context.Context, run state.RoutineRun, runState, er
 		}
 		enabled = true
 	}
-	_, err = s.store.FinishRoutineRun(ctx, run.ID, runState, errorText, s.now().UnixMilli(), nextDue, enabled)
+	_, err = s.store.FinishRoutineRun(ctx, run.ID, runState, errorText, reply, s.now().UnixMilli(), nextDue, enabled)
 	return err
 }

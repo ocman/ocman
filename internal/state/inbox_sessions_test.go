@@ -87,7 +87,7 @@ func TestRoutineInboxIncludesRunSession(t *testing.T) {
 	if err := db.LinkRoutineRun(t.Context(), "run", "r-laptop:opencode", "ses-run", 2, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.FinishRoutineRun(t.Context(), "run", "success", "", 3, 0, false); err != nil {
+	if _, err := db.FinishRoutineRun(t.Context(), "run", "success", "", "", 3, 0, false); err != nil {
 		t.Fatal(err)
 	}
 	items, err := db.ListInboxItems(t.Context())

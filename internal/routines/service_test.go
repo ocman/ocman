@@ -55,6 +55,8 @@ type testPlatform struct {
 	sent            []platforms.SendMessageRequest
 	directory       string
 	permissionRules []platforms.PermissionRule
+	messages        []db.Message
+	parts           []db.Part
 }
 
 func (p *testPlatform) ID() platforms.ID {
@@ -95,7 +97,7 @@ func (p *testPlatform) Session(_ context.Context, id string, _, _ int) (*platfor
 	if p.onSession != nil {
 		p.onSession()
 	}
-	return &platforms.SessionDetail{Session: &db.Session{ID: id, Directory: p.directory, Status: p.status, TimeUpdated: 1234}}, nil
+	return &platforms.SessionDetail{Session: &db.Session{ID: id, Directory: p.directory, Status: p.status, TimeUpdated: 1234}, Messages: p.messages, Parts: p.parts}, nil
 }
 func (p *testPlatform) setStatus(status db.SessionStatus) {
 	p.mu.Lock()
@@ -852,5 +854,28 @@ func TestEmptyPermissionRulesPassedToNewSession(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Fatalf("expected empty rules, got %v", got)
+	}
+}
+
+func TestFinishedRunInboxIncludesFinalAssistantText(t *testing.T) {
+	h := newHarness(t)
+	routine, err := h.svc.Create(t.Context(), validInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.RunNow(t.Context(), routine.ID); err != nil {
+		t.Fatal(err)
+	}
+	h.platform.mu.Lock()
+	h.platform.messages = []db.Message{{ID: "m1", TimeCreated: 1, Data: []byte(`{"role":"assistant"}`)}}
+	h.platform.parts = []db.Part{{ID: "p1", MessageID: "m1", Data: []byte(`{"type":"text","text":"All checks passed."}`)}}
+	h.platform.mu.Unlock()
+	h.platform.setStatus(db.StatusDone)
+	if err := h.svc.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	items, err := h.db.ListInboxItems(t.Context())
+	if err != nil || len(items) != 1 || !strings.Contains(items[0].Body, "All checks passed.") {
+		t.Fatalf("inbox = %+v, %v", items, err)
 	}
 }

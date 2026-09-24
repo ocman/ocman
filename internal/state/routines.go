@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 var (
@@ -344,7 +345,8 @@ func (d *DB) LinkRoutineRun(ctx context.Context, id, platform, sessionID string,
 
 // FinishRoutineRun settles a claimed occurrence and advances its routine in
 // one transaction. Successful delete-after-success routines are soft deleted.
-func (d *DB) FinishRoutineRun(ctx context.Context, id, runState, errorText string, finishedAt, nextDueAt int64, enabled bool) (bool, error) {
+// reply, the session's final assistant text, is only shown in the Inbox item.
+func (d *DB) FinishRoutineRun(ctx context.Context, id, runState, errorText, reply string, finishedAt, nextDueAt int64, enabled bool) (bool, error) {
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, fmt.Errorf("beginning routine run finish: %w", err)
@@ -372,7 +374,13 @@ func (d *DB) FinishRoutineRun(ctx context.Context, id, runState, errorText strin
 	} else if _, err := tx.ExecContext(ctx, `UPDATE routine SET next_due_at = ?, enabled = ?, updated_at = ? WHERE id = ? AND deleted = 0 AND updated_at = ?`, nextDueAt, enabled, finishedAt, routineID, routineUpdatedAt); err != nil {
 		return false, fmt.Errorf("advancing failed routine: %w", err)
 	}
-	body := fmt.Sprintf("Run %s finished with status **%s**.\n\n%s\n\n[View routines](/routines)", id, runState, errorText)
+	body := fmt.Sprintf("Run %s finished with status **%s**.\n\n", id, runState)
+	for _, section := range []string{errorText, reply} {
+		if section = strings.TrimSpace(section); section != "" {
+			body += section + "\n\n"
+		}
+	}
+	body += "[View routines](/routines)"
 	if _, err := tx.ExecContext(ctx, `INSERT INTO inbox_item (id, title, body, created_at, category, session_json)
 		SELECT ?, routine_name || ': ' || ?, ?, ?, 'routine',
 		CASE WHEN platform <> '' AND session_id <> '' THEN json_object('platform', platform, 'sessionId', session_id) ELSE '' END

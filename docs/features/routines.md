@@ -29,6 +29,9 @@ model, and trigger recorded when each run started.
 Select a routine row to open its editable settings and run history in the side
 drawer.
 
+When a run finishes, ocman adds an Inbox item with the run status and the
+session's final assistant message.
+
 ## Webhook deliveries
 
 An accepted encrypted inbox delivery may trigger every matching subscription

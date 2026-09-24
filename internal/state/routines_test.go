@@ -30,13 +30,17 @@ func TestRoutineCompletionCreatesOneCategorizedInboxItem(t *testing.T) {
 				t.Fatalf("claim: %v, %v", claimed, err)
 			}
 			for range 2 {
-				if _, err := db.FinishRoutineRun(t.Context(), "run", outcome, "details", 3, 0, false); err != nil {
+				if _, err := db.FinishRoutineRun(t.Context(), "run", outcome, "details", "All checks passed.", 3, 0, false); err != nil {
 					t.Fatal(err)
 				}
 			}
 			items, err := db.ListInboxItems(t.Context())
 			if err != nil || len(items) != 1 || items[0].Category != InboxRoutine || items[0].Title != "Daily checks: "+outcome {
 				t.Fatalf("inbox: %+v, %v", items, err)
+			}
+			want := "Run run finished with status **" + outcome + "**.\n\ndetails\n\nAll checks passed.\n\n[View routines](/routines)"
+			if items[0].Body != want {
+				t.Fatalf("body = %q, want %q", items[0].Body, want)
 			}
 		})
 	}
@@ -286,11 +290,11 @@ func TestRoutineDueRunningLinkAndIdempotentFinish(t *testing.T) {
 		t.Fatalf("running = %+v, %v", running, err)
 	}
 
-	finished, err := db.FinishRoutineRun(t.Context(), run.ID, "failure", "interrupted", 4, 200, true)
+	finished, err := db.FinishRoutineRun(t.Context(), run.ID, "failure", "interrupted", "", 4, 200, true)
 	if err != nil || !finished {
 		t.Fatalf("finish = %v, %v", finished, err)
 	}
-	finished, err = db.FinishRoutineRun(t.Context(), run.ID, "success", "", 5, 300, true)
+	finished, err = db.FinishRoutineRun(t.Context(), run.ID, "success", "", "", 5, 300, true)
 	if err != nil || finished {
 		t.Fatalf("second finish = %v, %v", finished, err)
 	}
@@ -328,7 +332,7 @@ func TestRoutineStoreErrorsAfterClose(t *testing.T) {
 		{"list running", func() error { _, err := db.ListRunningRoutineRuns(t.Context()); return err }},
 		{"link run", func() error { return db.LinkRoutineRun(t.Context(), run.ID, "opencode", "session", 2, false) }},
 		{"finish run", func() error {
-			_, err := db.FinishRoutineRun(t.Context(), run.ID, "failure", "", 2, 0, false)
+			_, err := db.FinishRoutineRun(t.Context(), run.ID, "failure", "", "", 2, 0, false)
 			return err
 		}},
 	}
@@ -366,7 +370,7 @@ func TestRoutineRunWriteFailuresRollback(t *testing.T) {
 	if _, err := db.db.Exec(`CREATE TRIGGER reject_run_finish BEFORE UPDATE ON routine_run BEGIN SELECT RAISE(ABORT, 'reject finish'); END`); err != nil {
 		t.Fatal(err)
 	}
-	if finished, err := db.FinishRoutineRun(t.Context(), run.ID, "failure", "", 2, 0, false); err == nil || finished {
+	if finished, err := db.FinishRoutineRun(t.Context(), run.ID, "failure", "", "", 2, 0, false); err == nil || finished {
 		t.Fatalf("finish with rejected run update = %v, %v", finished, err)
 	}
 	if _, err := db.db.Exec(`DROP TRIGGER reject_run_finish`); err != nil {
@@ -378,7 +382,7 @@ func TestRoutineRunWriteFailuresRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, runState := range []string{"success", "failure"} {
-		if finished, err := db.FinishRoutineRun(t.Context(), run.ID, runState, "", 3, 0, false); err == nil || finished {
+		if finished, err := db.FinishRoutineRun(t.Context(), run.ID, runState, "", "", 3, 0, false); err == nil || finished {
 			t.Fatalf("%s with rejected routine update = %v, %v", runState, finished, err)
 		}
 	}
