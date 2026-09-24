@@ -16,6 +16,7 @@ import (
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/opencodeconfig"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/routines"
 )
 
@@ -162,6 +163,19 @@ func (s sessionMCPService) ListSessions(ctx context.Context, directory string) (
 	}
 	applySessionNotice(sessions)
 	return sessions, nil
+}
+
+// SearchSessionText searches this machine's OpenCode database only; remote
+// sessions are never content-searched.
+func (s sessionMCPService) SearchSessionText(ctx context.Context, query, directory string, since int64) ([]db.TextMatch, error) {
+	if s.server.db == nil {
+		return nil, nil
+	}
+	matches, err := s.server.db.SearchSessionText(ctx, query, directory, since, 500)
+	for i := range matches {
+		matches[i].Platform = string(opencode.PlatformID)
+	}
+	return matches, err
 }
 
 func (s sessionMCPService) GetSession(ctx context.Context, platform, id string, messageLimit int) (*platforms.SessionDetail, error) {

@@ -154,6 +154,29 @@ func TestSessionMCPGetEnrichesDetailWithoutMutatingState(t *testing.T) {
 	}
 }
 
+func TestSessionMCPSearchSessionTextTagsLocalPlatform(t *testing.T) {
+	srv, rawDB := testServerWithRawDB(t)
+	defer rawDB.Close()
+	for _, stmt := range []string{
+		`INSERT INTO session (id, title, directory, time_created, time_updated) VALUES ('s1', 't', '/work', 1, 500)`,
+		`INSERT INTO message (id, session_id, time_created, data) VALUES ('m1', 's1', 1, '{"role":"assistant"}')`,
+		`INSERT INTO part (id, message_id, session_id, time_created, data) VALUES ('p1', 'm1', 's1', 1, '{"type":"text","text":"used weave-cli"}')`,
+	} {
+		if _, err := rawDB.Exec(stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	matches, err := (sessionMCPService{srv}).SearchSessionText(t.Context(), "weave-cli", "", 100)
+	if err != nil || len(matches) != 1 || matches[0].Platform != "opencode" || matches[0].SessionID != "s1" || matches[0].Role != "assistant" {
+		t.Fatalf("matches = %#v, %v", matches, err)
+	}
+
+	srv.db = nil
+	if matches, err := (sessionMCPService{srv}).SearchSessionText(t.Context(), "weave-cli", "", 100); err != nil || matches != nil {
+		t.Fatalf("no-db matches = %#v, %v", matches, err)
+	}
+}
+
 func TestMCPServerURL(t *testing.T) {
 	tests := []struct {
 		name    string

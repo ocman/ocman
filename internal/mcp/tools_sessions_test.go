@@ -2,9 +2,11 @@ package mcp_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
@@ -20,6 +22,15 @@ type fakeSessionService struct {
 	id       string
 	limit    int
 	err      error
+	matches  []db.TextMatch
+	query    string
+	since    int64
+	textErr  error
+}
+
+func (f *fakeSessionService) SearchSessionText(_ context.Context, query, directory string, since int64) ([]db.TextMatch, error) {
+	f.query, f.dir, f.since = query, directory, since
+	return f.matches, f.textErr
 }
 
 func (f *fakeSessionService) ListSessions(_ context.Context, directory string) ([]db.Session, error) {
@@ -70,6 +81,70 @@ func TestSessionToolReadActions(t *testing.T) {
 	got := callTool(t, srv, "sessions", map[string]any{"action": "get", "session_id": "ses-review", "platform": "opencode", "message_limit": 10})
 	if got.IsError || svc.id != "ses-review" || svc.platform != "opencode" || svc.limit != 10 || !strings.Contains(resultText(got), "Review API") {
 		t.Fatalf("get result = %q, service = %#v", resultText(got), svc)
+	}
+}
+
+func TestSessionToolContentSearch(t *testing.T) {
+	hit := func(platform, session, part string) db.TextMatch {
+		return db.TextMatch{Platform: platform, SessionID: session, PartID: part, Role: "user", Snippet: "run weave-cli now"}
+	}
+	svc := &fakeSessionService{sessions: []db.Session{
+		{ID: "ses-title", Title: "weave-cli rollout", Platform: "opencode"},
+		{ID: "ses-body", Title: "Deploy", Platform: "opencode"},
+		{ID: "ses-body", Title: "Same ID on a remote", Platform: "r-x:opencode"},
+		{ID: "ses-none", Title: "Unrelated", Platform: "opencode"},
+	}, matches: []db.TextMatch{
+		hit("opencode", "ses-body", "p1"), hit("opencode", "ses-body", "p2"), hit("opencode", "ses-body", "p3"),
+		hit("opencode", "ses-body", "p4"), hit("opencode", "ses-body", "p5"), hit("opencode", "ses-body", "p6"),
+		hit("opencode", "ses-gone", "p7"),
+	}}
+	srv := sessionServer(t, svc)
+
+	before := time.Now().AddDate(0, 0, -3).UnixMilli()
+	result := callTool(t, srv, "sessions", map[string]any{"action": "search", "query": "weave-cli", "content": true, "since_days": 3, "directory": "/repo"})
+	if result.IsError || svc.query != "weave-cli" || svc.dir != "/repo" || svc.since < before-1000 || svc.since > before+1000 {
+		t.Fatalf("result = %q, service = %#v", resultText(result), svc)
+	}
+	var got []struct {
+		ID       string `json:"id"`
+		Platform string `json:"platform"`
+		Matches  []struct {
+			PartID  string `json:"partId"`
+			Snippet string `json:"snippet"`
+		} `json:"matches"`
+	}
+	if err := json.Unmarshal([]byte(resultText(result)), &got); err != nil {
+		t.Fatal(err)
+	}
+	// Title hit without content, content hit capped at 5; the remote twin,
+	// the unrelated session, and a hit outside the listing are dropped.
+	if len(got) != 2 || got[0].ID != "ses-title" || len(got[0].Matches) != 0 ||
+		got[1].ID != "ses-body" || got[1].Platform != "opencode" || len(got[1].Matches) != 5 || got[1].Matches[0].Snippet != "run weave-cli now" {
+		t.Fatalf("results = %+v", got)
+	}
+
+	if limited := callTool(t, srv, "sessions", map[string]any{"action": "search", "query": "weave-cli", "content": true, "limit": 1}); strings.Contains(resultText(limited), "ses-body") {
+		t.Fatalf("limit not applied: %q", resultText(limited))
+	}
+
+	svc.query = ""
+	if plain := callTool(t, srv, "sessions", map[string]any{"action": "search", "query": "weave-cli"}); plain.IsError || svc.query != "" || strings.Contains(resultText(plain), "ses-body") {
+		t.Fatalf("content search ran without opt-in: %q", resultText(plain))
+	}
+
+	for _, days := range []int{0, 366} {
+		if bad := callTool(t, srv, "sessions", map[string]any{"action": "search", "query": "x", "content": true, "since_days": days}); !bad.IsError || resultText(bad) != "since_days must be between 1 and 365" {
+			t.Fatalf("since_days %d: %q", days, resultText(bad))
+		}
+	}
+}
+
+func TestSessionToolContentSearchError(t *testing.T) {
+	svc := &fakeSessionService{}
+	srv := sessionServer(t, svc)
+	svc.textErr = errors.New("disk")
+	if result := callTool(t, srv, "sessions", map[string]any{"action": "search", "query": "x", "content": true}); !result.IsError || resultText(result) != "session request failed" || svc.query != "x" {
+		t.Fatalf("result = %q", resultText(result))
 	}
 }
 
