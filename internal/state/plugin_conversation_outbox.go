@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -48,8 +49,8 @@ const (
 	// PluginConversationOutboxMaxBytes bounds their total reply text.
 	PluginConversationOutboxMaxBytes = 8 << 20
 	// pluginConversationDoneRetention keeps delivered receipts long enough to
-	// suppress a late repeated idle edge, then prunes them so the table stays
-	// bounded. A repeat after this window would post again.
+	// suppress a late repeated idle edge, then prunes superseded ones so the
+	// table stays bounded. Each thread's latest turn is never pruned.
 	pluginConversationDoneRetention = 24 * time.Hour
 )
 
@@ -308,10 +309,23 @@ func (d *DB) PluginConversationBacklogFull(ctx context.Context, pluginID string)
 	return nil
 }
 
-// PrunePluginConversationOutbox drops delivered receipts past their retention.
+// PrunePluginConversationOutbox drops delivered receipts past their retention,
+// but only once a later turn has superseded them. Reconciliation re-derives
+// each thread's latest turn every few seconds, forever, so pruning that turn's
+// receipt re-posts the same answer. A turn is an operation's last ':' segment
+// (the message or request ID); SQLite has no last-index, so the rtrim strips
+// the trailing non-colon run to find it.
 func (d *DB) PrunePluginConversationOutbox(ctx context.Context) error {
+	const turn = `substr(%[1]s.operation_id, length(rtrim(%[1]s.operation_id, replace(%[1]s.operation_id, ':', ''))) + 1)`
 	_, err := d.db.ExecContext(ctx, `DELETE FROM plugin_conversation_outbox
-		WHERE status='done' AND updated_at<?`, time.Now().Add(-pluginConversationDoneRetention).UnixMilli())
+		WHERE status='done' AND updated_at<? AND EXISTS (
+			SELECT 1 FROM plugin_conversation_outbox n
+			WHERE n.plugin_id=plugin_conversation_outbox.plugin_id
+			  AND n.account_id=plugin_conversation_outbox.account_id
+			  AND n.thread_id=plugin_conversation_outbox.thread_id
+			  AND n.id>plugin_conversation_outbox.id
+			  AND `+fmt.Sprintf(turn, "n")+` <> `+fmt.Sprintf(turn, "plugin_conversation_outbox")+`)`,
+		time.Now().Add(-pluginConversationDoneRetention).UnixMilli())
 	if err != nil {
 		return ErrPluginState
 	}

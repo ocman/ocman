@@ -254,6 +254,29 @@ func TestConversationOutboxPrunesReceipts(t *testing.T) {
 	}
 }
 
+// TestConversationOutboxKeepsLatestTurnReceipts is the regression for replies
+// reposted daily: reconciliation re-derives the thread's latest turn every
+// tick, so pruning that turn's receipt re-appended and re-posted the same
+// answer once its retention lapsed. Only superseded turns may be pruned.
+func TestConversationOutboxKeepsLatestTurnReceipts(t *testing.T) {
+	d := outboxDB(t)
+	key := conversationKey("T1", "C1:1.0")
+	for _, op := range []string{"ses-1:m1", "ses-1:outcome:error:m2", "ses-1:m2"} {
+		appendReply(t, d, key, op, "text")
+		requirePluginOK(t, d.AckPluginConversationReply(t.Context(), claim(t, d)[0].ID))
+	}
+	_, err := d.db.ExecContext(t.Context(), `UPDATE plugin_conversation_outbox SET updated_at=?`,
+		time.Now().Add(-2*pluginConversationDoneRetention).UnixMilli())
+	requirePluginOK(t, err)
+	requirePluginOK(t, d.PrunePluginConversationOutbox(t.Context()))
+
+	for op, want := range map[string]bool{"ses-1:m2": false, "ses-1:outcome:error:m2": false, "ses-1:m1": true} {
+		if got := appendReply(t, d, key, op, "text") != 0; got != want {
+			t.Errorf("%s re-appended=%v, want %v", op, got, want)
+		}
+	}
+}
+
 func TestConversationOutboxRejectsInvalidReads(t *testing.T) {
 	d := outboxDB(t)
 	if _, err := d.PluginConversationBacklogStatus(t.Context(), ""); !errors.Is(err, ErrPluginInvalid) {
