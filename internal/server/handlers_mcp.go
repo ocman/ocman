@@ -13,11 +13,14 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/factory"
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/opencodeconfig"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
+	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/routines"
+	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 )
 
 // handleMCPConfigStatus reports whether OpenCode's global config
@@ -179,11 +182,17 @@ func (s sessionMCPService) SearchSessionText(ctx context.Context, query, directo
 }
 
 func (s sessionMCPService) GetSession(ctx context.Context, platform, id string, messageLimit int) (*platforms.SessionDetail, error) {
-	adapter, ok := s.server.registry.Get(platforms.ID(platform))
-	if !ok {
+	var adapter platforms.Platform
+	var detail *platforms.SessionDetail
+	var err error
+	if platform == "" {
+		adapter, detail, err = s.findSession(ctx, id, messageLimit)
+	} else if a, ok := s.server.registry.Get(platforms.ID(platform)); ok {
+		adapter = a
+		detail, err = a.Session(ctx, id, messageLimit, 0)
+	} else {
 		return nil, platforms.ErrNotFound
 	}
-	detail, err := adapter.Session(ctx, id, messageLimit, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -199,6 +208,94 @@ func (s sessionMCPService) GetSession(ctx context.Context, platform, id string, 
 	}
 	s.server.enrichSessionDetail(ctx, string(adapter.ID()), id, detail, !isRemotePlatformID(string(adapter.ID())))
 	return detail, nil
+}
+
+// findSession asks every available adapter for id, so callers may omit the
+// platform. Session IDs are only unique per platform, so more than one hit
+// is ambiguous rather than a guess.
+// ponytail: sequential fan-out, one Session call per adapter (remotes are a
+// gRPC round trip each); go concurrent if many remotes make this slow.
+func (s sessionMCPService) findSession(ctx context.Context, id string, messageLimit int) (platforms.Platform, *platforms.SessionDetail, error) {
+	var found platforms.Platform
+	var detail *platforms.SessionDetail
+	var matches []string
+	var firstErr error
+	for _, p := range s.server.registry.Platforms() {
+		if !p.Available(ctx) {
+			continue
+		}
+		d, err := p.Session(ctx, id, messageLimit, 0)
+		if err != nil {
+			if !errors.Is(err, platforms.ErrNotFound) && firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if d == nil || d.Session == nil {
+			continue
+		}
+		found, detail = p, d
+		matches = append(matches, string(p.ID()))
+	}
+	switch {
+	case len(matches) > 1:
+		return nil, nil, internalmcp.AmbiguousSessionError{Platforms: matches}
+	case len(matches) == 1:
+		return found, detail, nil
+	case firstErr != nil:
+		return nil, nil, firstErr
+	}
+	return nil, nil, platforms.ErrNotFound
+}
+
+// CreateSession mirrors handleCreateSession (owner-pinned ensure, then
+// Create) and sends the prompt. The calling session, when given, picks the
+// owning machine and, without an explicit directory, the project root.
+func (s sessionMCPService) CreateSession(ctx context.Context, in internalmcp.CreateSessionRequest) (internalmcp.CreatedSession, error) {
+	platformID, dir := in.Platform, in.Directory
+	if dir == "" {
+		detail, err := s.GetSession(ctx, in.Platform, in.SessionID, 0)
+		if err != nil {
+			return internalmcp.CreatedSession{}, err
+		}
+		dir = projectRootForDirectory(detail.Session.Directory)
+	}
+	if platformID == "" {
+		platformID = string(opencode.PlatformID)
+	}
+	if !s.server.sessions.KnownPlatform(platformID) {
+		return internalmcp.CreatedSession{}, fmt.Errorf("%w: unknown platform", internalmcp.ErrInvalidSessionCreate)
+	}
+	remoteID, _ := remote.SplitPlatformID(platformID)
+	owner := remoteID
+	if owner == "" {
+		owner = "local"
+	}
+	host, ok := s.server.router().LookupRemote(owner)
+	if !ok {
+		return internalmcp.CreatedSession{}, fmt.Errorf("%w: remote %s is not connected", internalmcp.ErrInvalidSessionCreate, owner)
+	}
+	var port string
+	ensured, err := host.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: projectRootForDirectory(dir)})
+	switch {
+	case err != nil && remoteID != "":
+		return internalmcp.CreatedSession{}, err
+	case err == nil:
+		port = ensured.Port()
+	} // A local ensure failure falls back to port discovery, as in handleCreateSession.
+	resp, err := s.server.sessions.Create(ctx, platformID, platforms.CreateSessionRequest{Directory: dir, Title: in.Title, Port: port})
+	var ve *sessionsvc.ValidationError
+	if errors.As(err, &ve) {
+		return internalmcp.CreatedSession{}, fmt.Errorf("%w: %s", internalmcp.ErrInvalidSessionCreate, ve.Error())
+	}
+	if err != nil {
+		return internalmcp.CreatedSession{}, err
+	}
+	created := internalmcp.CreatedSession{Platform: platformID, SessionID: resp.ID, Directory: dir}
+	if err := s.server.sendNow(ctx, platformID, platforms.SendMessageRequest{SessionID: resp.ID, Message: in.Prompt, Model: in.Model, Agent: in.Agent}); err != nil {
+		return created, err
+	}
+	return created, nil
 }
 
 // mcpServerURL returns the absolute URL of the MCP server endpoint.

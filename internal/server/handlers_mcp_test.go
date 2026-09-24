@@ -10,6 +10,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/factory"
+	internalmcp "github.com/NoUseFreak/ocman/internal/mcp"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/routines"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -174,6 +175,45 @@ func TestSessionMCPSearchSessionTextTagsLocalPlatform(t *testing.T) {
 	srv.db = nil
 	if matches, err := (sessionMCPService{srv}).SearchSessionText(t.Context(), "weave-cli", "", 100); err != nil || matches != nil {
 		t.Fatalf("no-db matches = %#v, %v", matches, err)
+	}
+}
+
+func TestSessionMCPGetWithoutPlatformSearchesAllPlatforms(t *testing.T) {
+	srv := testServer(t)
+	detailFor := func(platform string, ids ...string) func(string) (*platforms.SessionDetail, error) {
+		return func(id string) (*platforms.SessionDetail, error) {
+			for _, known := range ids {
+				if id == known {
+					return &platforms.SessionDetail{Session: &db.Session{ID: id, Platform: platform}}, nil
+				}
+			}
+			return nil, platforms.ErrNotFound
+		}
+	}
+	srv.registry.Register(&fakePlatform{id: "p-a", sessionDetailFn: detailFor("p-a", "only-a", "dup")})
+	srv.registry.Register(&fakePlatform{id: "p-b", sessionDetailFn: detailFor("p-b", "dup")})
+	svc := sessionMCPService{srv}
+
+	detail, err := svc.GetSession(t.Context(), "", "only-a", 0)
+	if err != nil || detail.Session.Platform != "p-a" {
+		t.Fatalf("unique lookup = %#v, %v", detail, err)
+	}
+	var ambiguous internalmcp.AmbiguousSessionError
+	if _, err := svc.GetSession(t.Context(), "", "dup", 0); !errors.As(err, &ambiguous) || strings.Join(ambiguous.Platforms, ",") != "p-a,p-b" {
+		t.Fatalf("duplicate lookup error = %v", err)
+	}
+	if detail, err := svc.GetSession(t.Context(), "p-b", "dup", 0); err != nil || detail.Session.Platform != "p-b" {
+		t.Fatalf("explicit platform = %#v, %v", detail, err)
+	}
+	if _, err := svc.GetSession(t.Context(), "", "missing", 0); !errors.Is(err, platforms.ErrNotFound) {
+		t.Fatalf("missing lookup error = %v", err)
+	}
+	srv.registry.Register(&fakePlatform{id: "p-down", sessionDetailFn: func(string) (*platforms.SessionDetail, error) { return nil, errors.New("remote down") }})
+	if _, err := svc.GetSession(t.Context(), "", "missing", 0); err == nil || errors.Is(err, platforms.ErrNotFound) {
+		t.Fatalf("adapter failure was reported as not found: %v", err)
+	}
+	if detail, err := svc.GetSession(t.Context(), "", "only-a", 0); err != nil || detail.Session.Platform != "p-a" {
+		t.Fatalf("one adapter failing hid a match: %#v, %v", detail, err)
 	}
 }
 

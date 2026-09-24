@@ -14,7 +14,8 @@ type Deps struct {
 	FactoryService factoryService
 	// Optional: nil disables routine tools.
 	RoutineService routineService
-	// Optional: nil disables read-only session tools.
+	// Optional: nil disables session tools. The create action also needs
+	// the service to implement CreateSession.
 	SessionService sessionService
 	// Optional: nil disables owner-local Inbox tools.
 	InboxStore inboxStore

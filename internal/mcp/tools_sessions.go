@@ -28,6 +28,14 @@ type sessionSearchResult struct {
 
 const maxMatchesPerSession = 5
 
+// AmbiguousSessionError reports a platform-less lookup that matched a session
+// ID on more than one platform; the caller must pass one of Platforms.
+type AmbiguousSessionError struct{ Platforms []string }
+
+func (e AmbiguousSessionError) Error() string {
+	return "session_id exists on multiple platforms (" + strings.Join(e.Platforms, ", ") + "); pass platform"
+}
+
 type sessionTools struct{ svc sessionService }
 
 type sessionAction struct {
@@ -37,10 +45,11 @@ type sessionAction struct {
 }
 
 var sessionActions = []sessionAction{
-	{name: "help", description: "Describes every available read-only session action.", example: `{"action":"help"}`, output: "Session action documentation"},
+	{name: "help", description: "Describes every available session action.", example: `{"action":"help"}`, output: "Session action documentation"},
 	{name: "list", description: "Lists recent sessions, optionally scoped to one directory.", example: `{"action":"list","directory":"/repo","limit":50}`, optional: []string{"directory", "limit"}, output: "Session[]"},
 	{name: "search", description: "Searches recent session IDs, titles, directories, platforms, and host names. With content true, also searches user and assistant message text (not tool output) of sessions updated in the last since_days; this is slow (tens of seconds).", example: `{"action":"search","query":"weave-cli","content":true,"since_days":7}`, required: []string{"query"}, optional: []string{"directory", "limit", "content", "since_days"}, output: "(Session & {matches?: {partId, messageId, role, snippet}[]})[]"},
-	{name: "get", description: "Gets one session with its latest messages and parts.", example: `{"action":"get","platform":"opencode","session_id":"ses_1","message_limit":20}`, required: []string{"platform", "session_id"}, optional: []string{"message_limit"}, output: "SessionDetail"},
+	{name: "get", description: "Gets one session with its latest messages and parts. Without platform, every platform is searched.", example: `{"action":"get","session_id":"ses_1","message_limit":20}`, required: []string{"session_id"}, optional: []string{"platform", "message_limit"}, output: "SessionDetail"},
+	{name: "create", description: "Starts a new top-level session and sends it prompt. Pass your own platform and session_id to default directory to your project root and run on your machine, or pass an absolute directory.", example: `{"action":"create","prompt":"Review the open PR","model":"anthropic/claude-sonnet-4","agent":"plan","platform":"opencode","session_id":"ses_caller"}`, required: []string{"prompt"}, optional: []string{"model", "agent", "title", "directory", "platform", "session_id"}, output: "{platform, session_id, directory}"},
 }
 
 func sessionServerTools(tools *sessionTools) []server.ServerTool {
@@ -48,9 +57,10 @@ func sessionServerTools(tools *sessionTools) []server.ServerTool {
 		return nil
 	}
 	return []server.ServerTool{{Tool: mcplib.NewTool("sessions",
-		mcplib.WithDescription("Read-only session inspection and search. Use action help for schemas and examples."),
+		mcplib.WithDescription("Inspect, search, and create sessions (actions: help, list, search, get, create). Use action help for schemas and examples."),
 		mcplib.WithString("action", mcplib.Required()), mcplib.WithString("session_id"), mcplib.WithString("platform"),
 		mcplib.WithString("directory"), mcplib.WithString("query"), mcplib.WithNumber("limit"), mcplib.WithNumber("message_limit"),
+		mcplib.WithString("prompt"), mcplib.WithString("model", mcplib.Description("provider/model")), mcplib.WithString("agent"), mcplib.WithString("title"),
 		mcplib.WithBoolean("content"), mcplib.WithNumber("since_days")), Handler: tools.handle}}
 }
 
@@ -128,10 +138,16 @@ func (t *sessionTools) handle(ctx context.Context, req mcplib.CallToolRequest) (
 		if errors.Is(err, platforms.ErrNotFound) {
 			return mcplib.NewToolResultError("session not found"), nil
 		}
+		var ambiguous AmbiguousSessionError
+		if errors.As(err, &ambiguous) {
+			return mcplib.NewToolResultError(ambiguous.Error()), nil
+		}
 		if err != nil {
 			return mcplib.NewToolResultError("session request failed"), nil
 		}
 		return toolResultJSON(detail), nil
+	case "create":
+		return t.create(ctx, req), nil
 	}
 	return mcplib.NewToolResultError("unknown action"), nil
 }
@@ -153,8 +169,8 @@ func sessionHelp() map[string]any {
 		help[action.name] = map[string]any{"required": append([]string{}, action.required...), "optional": append([]string{}, action.optional...), "action": action.description, "example": action.example, "output_schema": action.output}
 	}
 	help["actions"] = actions
-	help["rules"] = []string{"all actions are read-only", "list and search return at most 500 recent sessions", "message_limit is between 0 and 100; 0 returns metadata without messages", "search content: opt-in and slow; since_days is between 1 and 365 (default 7); only this machine's sessions are content-searched; at most 5 matches per session"}
-	help["errors"] = []string{"action is required", "unknown action", "session not found", "session request failed", "since_days must be between 1 and 365"}
+	help["rules"] = []string{"only create changes state; start a session only when the user asks for one", "list and search return at most 500 recent sessions", "message_limit is between 0 and 100; 0 returns metadata without messages", "get: platform is optional; pass it only when the session_id exists on multiple platforms", "create: model is provider/model; directory is absolute; platform and session_id identify the calling session and go together", "create: the new session uses the platform's default permissions", "search content: opt-in and slow; since_days is between 1 and 365 (default 7); only this machine's sessions are content-searched; at most 5 matches per session"}
+	help["errors"] = []string{"action is required", "unknown action", "session not found", "session_id exists on multiple platforms (<platforms>); pass platform", "session request failed", "prompt is required", "model must be provider/model", "directory must be absolute", "platform and session_id must be provided together", "invalid session request: <reason>", "session <id> was created on <platform> but the prompt failed", "since_days must be between 1 and 365"}
 	return help
 }
 

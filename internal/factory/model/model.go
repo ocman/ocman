@@ -43,6 +43,16 @@ type NativeEpic struct {
 	PermissionRules []PermissionRule
 }
 
+// EpicModels are the per-phase "provider/model" choices for an Epic. Empty
+// falls back to the workflow step, the plan-gate choice, then the runtime
+// default. Attempts freeze their model at claim, so edits reach only
+// unstarted work.
+type EpicModels struct {
+	Plan           string `json:"plan,omitempty"`
+	Implementation string `json:"implementation,omitempty"`
+	Verification   string `json:"verification,omitempty"`
+}
+
 type EpicProject struct {
 	Path      string `json:"path"`
 	Removable bool   `json:"removable"`

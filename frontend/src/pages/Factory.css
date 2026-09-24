@@ -103,6 +103,10 @@ a.factory-cell:hover { color: var(--accent); }
 .factory-epic-actions { display: grid; gap: 12px; padding: 14px; border: 1px solid var(--border); background: var(--bg-card); }
 .factory-epic-actions > p { margin: 0; color: var(--text-dim); }
 .factory-epic-action-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.factory-epic-models { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin: 0; padding: 0; border: 0; }
+.factory-epic-models legend { padding: 0; margin-bottom: 6px; font-weight: 600; }
+.factory-epic-models label { display: grid; gap: 4px; min-width: 220px; }
+.factory-epic-models > span { flex-basis: 100%; color: var(--text-dim); }
 .factory-epic-gate { display: grid; gap: 16px; padding-bottom: 20px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
 .factory-epic-gate h3 { margin: 0; }
 .factory-epic-gate p { margin: 0; color: var(--text-dim); overflow-wrap: anywhere; }
