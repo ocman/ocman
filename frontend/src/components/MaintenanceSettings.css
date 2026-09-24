@@ -1,0 +1,30 @@
+.maintenance-steps {
+  list-style: none;
+  margin: 12px 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.maintenance-steps small {
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.maintenance-steps [data-state="pending"],
+.maintenance-steps [data-state="skipped"] {
+  opacity: 0.6;
+}
+
+.maintenance-steps [data-state="running"] .bi {
+  display: inline-block;
+  animation: oc-spin 1s linear infinite;
+}
+
+.maintenance-steps [data-state="done"] .bi {
+  color: var(--accent2);
+}
+
+.maintenance-steps [data-state="failed"] .bi {
+  color: var(--danger);
+}

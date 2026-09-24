@@ -217,6 +217,7 @@ func main() {
 
 	// Open the OpenCode database only when the opencode platform is enabled.
 	var database *db.DB
+	openCodeDBPath := "" // maintenance is offered only for an opened database
 	if enabledPlatforms[string(opencodeplatform.PlatformID)] {
 		if _, err := os.Stat(*dbPath); os.IsNotExist(err) {
 			fmt.Fprintf(os.Stderr, "OpenCode database not found at: %s\n", *dbPath)
@@ -230,6 +231,7 @@ func main() {
 			log.Fatalf("Failed to open database: %v", err)
 		}
 		defer database.Close()
+		openCodeDBPath = *dbPath
 	}
 
 	stateDB, err := state.Open(state.DefaultDBPath())
@@ -284,6 +286,7 @@ func main() {
 			WithPublicBaseURL(resolvedBaseURL).
 			WithRelay(resolvedRelayURL, relaySource).
 			WithMCPAddr(*mcpAddr).
+			WithOpenCodeDBPath(openCodeDBPath).
 			WithRemoteAccess(ident.InstanceID, "", false, false)
 		if err := gui.RunGUI(ctx, srv, httpListenAddr); err != nil {
 			log.Fatalf("GUI error: %v", err)
@@ -294,7 +297,8 @@ func main() {
 			WithAutoApproveDefault(*autoApprove).
 			WithPublicBaseURL(resolvedBaseURL).
 			WithRelay(resolvedRelayURL, relaySource).
-			WithMCPAddr(*mcpAddr)
+			WithMCPAddr(*mcpAddr).
+			WithOpenCodeDBPath(openCodeDBPath)
 
 		// Start the remote-access gRPC server when -remote-listen is set
 		// (multi-remote support). Off by default so single-host installs

@@ -46,7 +46,7 @@ Everything external that the ocman process touches.
 flowchart LR
     Browser[Browser SPA<br/>REST + SSE] -->|core APIs + brokered plugin actions| Ocman[ocman<br/>Go binary :8228]
     Agent[AI agents<br/>MCP clients] -->|/mcp| Ocman
-    Ocman -->|read-only SQLite| OCDB[(opencode.db)]
+    Ocman -->|read-only SQLite<br/>maintenance writes| OCDB[(opencode.db)]
     Ocman -->|read/write SQLite<br/>Inbox + state| StateDB[(state.db)]
     Ocman -->|Authenticated HTTP/SSE proxy| OCInst[Running OpenCode<br/>instances]
     Ocman -->|exec| Shell[git / tmux / lsof / bd<br/>host tools]
@@ -60,7 +60,10 @@ flowchart LR
 - **Browser SPA.** The only UI. It talks REST/SSE to the hub, never to
   remotes directly. `:8228` is the production `-addr` default; in dev the
   Vite server on :8228 proxies `/api` to the air backend on :8229.
-- **opencode.db.** Foreign data, opened read-only. Ocman never writes to it.
+- **opencode.db.** Foreign data, opened read-only. The one exception is the
+  user-started maintenance job (`internal/ocmaint`, Settings → Maintenance).
+  It stops the managed instances, refuses while any other process holds the
+  file, and moves old `summary.diffs` patches into a restorable dump.
 - **state.db.** Ocman's own state: archive flags, routines and run history,
   permission approval provenance, live session commit observations, settings,
   Factory records, Inbox items, remote tokens, and the last local projects-index

@@ -532,6 +532,10 @@ minimal and match the surrounding code.
 - **Pure-Go SQLite**: uses `modernc.org/sqlite` (no CGo, no C compiler required).
 - **Two databases**: OpenCode's DB is opened read-only
   (`?mode=ro&_journal_mode=WAL`, default `~/.local/share/opencode/opencode.db`).
+  The only writer is `internal/ocmaint` (Settings → Maintenance), a
+  user-started job that stops the managed instances, blocks launches, refuses
+  while any other process holds the file, and moves `summary.diffs` from
+  sessions older than 30 days into `<db>.ocman-diffs` so they can be restored.
   Ocman's own state DB is writable (`~/.local/share/ocman/state.db`),
   auto-creates its schema, and runs a versioned migration on startup.
 - **OpenCode port discovery** uses `lsof` to find processes named

@@ -4,6 +4,7 @@ import { PromptTemplateSettings } from '../../components/upstream/PromptTemplate
 import { RemoteSettings } from '../../components/RemoteSettings';
 import { SharingSettings } from '../../components/SharingSettings';
 import { PluginSettings } from '../../components/PluginSettings';
+import { MaintenanceSettings } from '../../components/MaintenanceSettings';
 import { useAuthStore } from '../../lib/authStore';
 import { useUiStore } from '../../lib/uiStore';
 import { useApiStore } from '../../lib/apiStore';
@@ -49,6 +50,7 @@ export function SettingsTab() {
     { id: 'auto-approve', label: 'Auto-approve', show: true },
     { id: 'sharing', label: 'Sharing', show: true },
     { id: 'templates', label: 'PR & Issue templates', show: true },
+    { id: 'maintenance', label: 'Maintenance', show: true },
     { id: 'app', label: 'App', show: showAppSection },
     { id: 'account', label: 'Account', show: authRequired },
   ].filter((g) => g.show);
@@ -73,6 +75,10 @@ export function SettingsTab() {
         {active === 'plugins' && <div className="settings-section">
           <h2 className="settings-section-title">Plugins</h2>
           <PluginSettings />
+        </div>}
+        {active === 'maintenance' && <div className="settings-section">
+          <h2 className="settings-section-title">Maintenance</h2>
+          <MaintenanceSettings />
         </div>}
         <div className="settings-section" hidden={active !== 'notifications'}>
           <h2 className="settings-section-title">Notifications</h2>

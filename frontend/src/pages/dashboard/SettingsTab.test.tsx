@@ -11,6 +11,7 @@ vi.mock('../../components/upstream/PromptTemplateSettings', () => ({ PromptTempl
 vi.mock('../../components/RemoteSettings', () => ({ RemoteSettings: () => null }));
 vi.mock('../../components/SharingSettings', () => ({ SharingSettings: () => null }));
 vi.mock('../../components/PluginSettings', () => ({ PluginSettings: () => <p>Plugin management</p> }));
+vi.mock('../../components/MaintenanceSettings', () => ({ MaintenanceSettings: () => <p>Database maintenance</p> }));
 vi.mock('./SettingsSections', () => ({
   NotificationsSection: () => null,
   SessionsSection: () => null,
@@ -43,6 +44,12 @@ describe('SettingsTab actions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Plugins' }));
     expect(screen.getByRole('heading', { name: 'Plugins' })).toBeVisible();
     expect(screen.getByText('Plugin management')).toBeVisible();
+  });
+  it('mounts maintenance only when its group is opened', () => {
+    render(<SettingsTab />);
+    expect(screen.queryByText('Database maintenance')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Maintenance' }));
+    expect(screen.getByText('Database maintenance')).toBeVisible();
   });
   beforeEach(() => {
     logout.mockReset();
