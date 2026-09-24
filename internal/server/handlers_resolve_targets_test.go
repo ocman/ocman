@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/testutil"
 )
@@ -79,7 +80,7 @@ func initOriginRepo(t *testing.T) string {
 }
 
 // TestHandleResolveTargets_WithManagerLocalMatch exercises the
-// manager-present path: localProjectIdentities + localGitOrigin run, and
+// manager-present path: localProjectMatch + localGitOrigin run, and
 // the resolver matches the dir against the local projects index.
 func TestHandleResolveTargets_WithManagerLocalMatch(t *testing.T) {
 	repo := initOriginRepo(t)
@@ -109,6 +110,35 @@ func TestHandleResolveTargets_WithManagerLocalMatch(t *testing.T) {
 		if !bytes.Contains(rr.Body.Bytes(), []byte("candidates")) {
 			t.Fatal("response missing candidates key")
 		}
+	}
+}
+
+// TestHandleResolveTargets_ExactLocalDirWins: when the requested dir is
+// itself a local project, it resolves to that dir without scanning the
+// git origin of every other local project (which took seconds with a
+// few hundred projects), even if an earlier project shares its identity.
+func TestHandleResolveTargets_ExactLocalDirWins(t *testing.T) {
+	first := filepath.Join(t.TempDir(), "repo")
+	want := filepath.Join(t.TempDir(), "repo") // same basename identity
+	srv := testServer(t)
+	withManager(t, srv)
+	srv.projects.mu.Lock()
+	srv.projects.data = []db.ProjectStats{{Directory: first}, {Directory: want}}
+	srv.projects.loaded = true
+	srv.projects.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions/resolve-targets", bytes.NewBufferString(`{"dir":"`+want+`"}`))
+	rr := httptest.NewRecorder()
+	srv.handleResolveTargets(rr, req)
+
+	var resp struct {
+		Candidates []remote.TargetCandidate `json:"candidates"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Candidates) != 1 || resp.Candidates[0].Dir != want {
+		t.Fatalf("candidates = %+v, want local %s", resp.Candidates, want)
 	}
 }
 

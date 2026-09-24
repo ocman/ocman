@@ -50,7 +50,7 @@ func (s *Server) handleResolveTargets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	origin := localGitOrigin(r, req.Dir)
-	localIdents := s.localProjectIdentities(r)
+	localIdents := s.localProjectMatch(r, req.Dir, origin)
 	candidates := s.remotes.ResolveTargets(req.Dir, origin, localIdents)
 	// Log the resolution so a mis-targeted launch (e.g. a remote path the
 	// hub can't stat, yielding a basename-only identity that matches
@@ -68,30 +68,36 @@ func (s *Server) handleResolveTargets(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// localProjectIdentities builds origin-enriched ProjectIdentity records
-// for the local machine's known projects, used to match the requested
-// project against the local checkout.
-func (s *Server) localProjectIdentities(r *http.Request) []remote.ProjectIdentity {
+// localProjectMatch returns the local project matching dir's
+// identity (AD-9), or nil. ResolveTargets only uses the first local match,
+// so this stops there: an exact directory match needs no git call, and
+// otherwise origins are read one project at a time until one matches.
+// ponytail: a dir with no local match still shells out once per project;
+// cache origins by dir if resolving remote-only projects gets slow.
+func (s *Server) localProjectMatch(r *http.Request, dir, origin string) []remote.ProjectIdentity {
 	projects, err := s.router().Local().Projects(r.Context())
 	if err != nil {
 		return nil
 	}
-	out := make([]remote.ProjectIdentity, 0, len(projects))
+	key := remote.NormalizeProjectIdentity(origin, dir)
 	for _, p := range projects {
-		origin := localGitOrigin(r, p.Directory)
-		out = append(out, remote.ProjectIdentity{
-			Key:    remote.NormalizeProjectIdentity(origin, p.Directory),
-			Origin: origin,
-			Dir:    p.Directory,
-		})
+		if p.Directory == dir {
+			return []remote.ProjectIdentity{{Key: key, Origin: origin, Dir: dir}}
+		}
 	}
-	return out
+	for _, p := range projects {
+		o := localGitOrigin(r, p.Directory)
+		if k := remote.NormalizeProjectIdentity(o, p.Directory); k == key {
+			return []remote.ProjectIdentity{{Key: k, Origin: o, Dir: p.Directory}}
+		}
+	}
+	return nil
 }
 
 // localGitOrigin returns the git origin URL for a local directory, or ""
 // when the dir has no origin / isn't a repo.
 func localGitOrigin(r *http.Request, dir string) string {
-	// Deliberately local: the caller is localProjectIdentities, which
+	// Deliberately local: the caller is localProjectMatch, which
 	// enumerates *this* machine's checkouts so ResolveTargets can offer
 	// the hub as a candidate. Routing it through a Host would ask the
 	// wrong machine.
