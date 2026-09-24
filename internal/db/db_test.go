@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -706,6 +707,33 @@ func TestGetSessionMessages(t *testing.T) {
 	}
 	if messages[0].ID != "m1" || messages[1].ID != "m2" {
 		t.Errorf("messages out of order: %s, %s", messages[0].ID, messages[1].ID)
+	}
+}
+
+// A user message's summary.diffs holds full file patches and can reach
+// hundreds of MB; nothing renders it, so it must not leave the DB. The
+// boolean summary flag on compaction messages must survive.
+func TestGetSessionMessages_DropsSummaryDiffs(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Session", "/project", now, now)
+	insertMessage(t, db, "m1", "s1", now-1000, map[string]interface{}{
+		"role":    "user",
+		"summary": map[string]interface{}{"title": "t", "diffs": []interface{}{map[string]interface{}{"file": "a", "patch": "huge"}}},
+	})
+	insertMessage(t, db, "m2", "s1", now, map[string]interface{}{"role": "assistant", "summary": true})
+
+	messages, err := db.GetSessionMessages(t.Context(), "s1")
+	if err != nil {
+		t.Fatalf("GetSessionMessages: %v", err)
+	}
+	if got := string(messages[0].Data); strings.Contains(got, "diffs") || !strings.Contains(got, `"title":"t"`) {
+		t.Errorf("m1 data = %s, want summary without diffs", got)
+	}
+	if got := string(messages[1].Data); !strings.Contains(got, `"summary":true`) {
+		t.Errorf("m2 data = %s, want summary flag kept", got)
 	}
 }
 

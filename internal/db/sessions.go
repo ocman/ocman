@@ -498,8 +498,11 @@ func (d *DB) MessageCountsSince(ctx context.Context, cutoffs map[string]int64) (
 
 // GetSessionMessages returns all messages for a session.
 func (d *DB) GetSessionMessages(ctx context.Context, sessionID string) ([]Message, error) {
+	// summary.diffs carries a full patch per changed file (hundreds of MB
+	// after a large checkout move) and nothing reads it; the live path
+	// drops summary too (convertOpenCodeMessages).
 	rows, err := d.db.QueryContext(ctx, `
-		SELECT id, session_id, time_created, data
+		SELECT id, session_id, time_created, json_remove(data, '$.summary.diffs')
 		FROM message
 		WHERE session_id = ?
 		ORDER BY time_created
