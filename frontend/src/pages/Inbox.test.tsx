@@ -27,7 +27,7 @@ function inboxAction(name: string) {
 }
 
 function statusFilter(name: string) {
-  return within(screen.getByRole('group', { name: 'Message status' })).getByRole('button', { name });
+  return within(screen.getByRole('radiogroup', { name: 'Message status' })).getByRole('radio', { name });
 }
 
 describe('Inbox', () => {
@@ -90,27 +90,27 @@ describe('Inbox', () => {
   it('selects one message type at a time and labels only the active type', async () => {
     renderInbox();
     await screen.findByText('Remote note');
-    const factoryFilter = screen.getByRole('button', { name: 'Factory' });
+    const factoryFilter = screen.getByRole('radio', { name: 'Factory' });
     expect(factoryFilter).toHaveAttribute('title', 'Factory');
-    expect(factoryFilter.textContent).toBe('');
-    expect(factoryFilter.querySelector('i')).toHaveClass('bi-buildings');
+    expect(factoryFilter.closest('label')?.textContent).toBe('');
+    expect(factoryFilter.closest('label')?.querySelector('i')).toHaveClass('bi-buildings');
     fireEvent.click(statusFilter('Unread'));
     expect(screen.queryByText('Remote note')).not.toBeInTheDocument();
-    expect(statusFilter('Unread')).toHaveAttribute('aria-pressed', 'true');
-    expect(statusFilter('Unread')).toHaveTextContent('Unread');
-    expect(statusFilter('All').textContent).toBe('');
+    expect(statusFilter('Unread')).toBeChecked();
+    expect(statusFilter('Unread').closest('label')).toHaveTextContent('Unread');
+    expect(statusFilter('All').closest('label')?.textContent).toBe('');
     fireEvent.click(factoryFilter);
-    const typeGroup = screen.getByRole('group', { name: 'Message type' });
-    expect(within(typeGroup).getAllByRole('button').map((button) => button.getAttribute('title'))).toEqual(['All', 'Primary', 'Factory', 'Routines', 'Permissions']);
-    expect(within(typeGroup).getAllByRole('button', { pressed: true })).toEqual([factoryFilter]);
-    expect(factoryFilter).toHaveTextContent('Factory');
-    expect(within(typeGroup).getByRole('button', { name: 'All' }).textContent).toBe('');
+    const typeGroup = screen.getByRole('radiogroup', { name: 'Message type' });
+    expect(within(typeGroup).getAllByRole('radio').map((radio) => radio.getAttribute('title'))).toEqual(['All', 'Primary', 'Factory', 'Routines', 'Permissions']);
+    expect(within(typeGroup).getAllByRole('radio', { checked: true })).toEqual([factoryFilter]);
+    expect(factoryFilter.closest('label')).toHaveTextContent('Factory');
+    expect(within(typeGroup).getByRole('radio', { name: 'All' }).closest('label')?.textContent).toBe('');
     expect(screen.getByText('No messages match these filters.')).toBeInTheDocument();
     fireEvent.click(statusFilter('All'));
     expect(screen.getByText('Remote note')).toBeInTheDocument();
     expect(screen.queryByText('Build **finished**')).not.toBeInTheDocument();
-    fireEvent.click(within(typeGroup).getByRole('button', { name: 'All' }));
-    expect(factoryFilter.textContent).toBe('');
+    fireEvent.click(within(typeGroup).getByRole('radio', { name: 'All' }));
+    expect(factoryFilter.closest('label')?.textContent).toBe('');
     fireEvent.click(statusFilter('All'));
     expect(screen.getByText('Build **finished**')).toBeInTheDocument();
   });
@@ -164,9 +164,9 @@ describe('Inbox', () => {
     renderInbox();
     const message = await screen.findByRole('button', { name: /Build.*finished/ });
     expect(screen.getByRole('checkbox', { name: /Build/ }).querySelector('i')).toHaveClass('bi-chat-left-text');
-    fireEvent.click(screen.getByRole('button', { name: 'Primary' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Primary' }));
     expect(message).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Factory' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Factory' }));
     expect(screen.getByText('No messages match these filters.')).toBeInTheDocument();
   });
 

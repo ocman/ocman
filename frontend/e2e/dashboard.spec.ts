@@ -161,19 +161,34 @@ test('sessions tab shows session titles from mock data', async ({ mockedPage: pa
   await expect(page.locator('.session-title', { hasText: 'Refactor auth module' })).toBeVisible();
 });
 
-test('sessions tab shows time-range filter buttons', async ({ mockedPage: page }) => {
+test('sessions tab shows time-range choices', async ({ mockedPage: page }) => {
   await page.goto('/sessions');
   for (const label of ['12h', '24h', '7d', '30d', 'All']) {
-    await expect(page.locator('.oc-time-range-btn', { hasText: label })).toBeVisible();
+    await expect(page.getByRole('radiogroup', { name: 'Time range' }).getByRole('radio', { name: label, exact: true })).toBeVisible();
   }
 });
 
-test('time-range filter button becomes active when clicked', async ({ mockedPage: page }) => {
-  await page.goto('/sessions');
-  const btn7d = page.locator('.oc-time-range-btn', { hasText: '7d' });
-  await btn7d.click();
-  await expect(btn7d).toHaveClass(/active/);
+test('time-range selection updates the URL by mouse and keyboard', async ({ mockedPage: page }) => {
+  await page.goto('/sessions?t=24');
+  const range7d = page.getByRole('radio', { name: '7d', exact: true });
+  await range7d.click();
+  await expect(range7d).toBeChecked();
   await expect(page).toHaveURL(/[?&]t=168/);
+  await range7d.press('ArrowRight');
+  await expect(page.getByRole('radio', { name: '30d', exact: true })).toBeChecked();
+  await expect(page).toHaveURL(/[?&]t=720/);
+});
+
+test('project time ranges preserve the archive filter and survive reload', async ({ mockedPage: page }) => {
+  await page.goto(`/project/${encodeURIComponent('/home/user/projects/myapp')}?t=24&a=1`);
+  const range = page.getByRole('radiogroup', { name: 'Time range' });
+  await expect(range.getByRole('radio', { name: '24h', exact: true })).toBeChecked();
+  await range.getByRole('radio', { name: 'All', exact: true }).click();
+  await expect(range.getByRole('radio', { name: 'All', exact: true })).toBeChecked();
+  await expect(page).toHaveURL(/[?&]t=0/);
+  await expect(page).toHaveURL(/[?&]a=1/);
+  await page.reload();
+  await expect(range.getByRole('radio', { name: 'All', exact: true })).toBeChecked();
 });
 
 test('archive button present on each session row', async ({ mockedPage: page }) => {

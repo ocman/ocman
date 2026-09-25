@@ -4,6 +4,7 @@ import { Button, SearchField } from '../components/Control';
 import { PermissionPrompt } from '../components/session/PermissionPrompt';
 import { MarkdownContent } from '../components/assistant/MarkdownText';
 import { RelativeTime } from '../components/RelativeTime';
+import { SegmentedControl } from '../components/SegmentedControl';
 import { useArchiveAllReadInboxItems, useArchiveInboxItems, useInbox, useMarkInboxItemRead, useMarkInboxItemUnread, useRespondInboxPermission } from '../lib/queries';
 import type { InboxItem } from '../lib/api';
 import { fuzzyMatch } from '../lib/format';
@@ -129,19 +130,10 @@ export function Inbox() {
         <div className="inbox-filters">
           <div className="inbox-filter-row">
             <SearchField aria-label="Search inbox" placeholder="Search inbox…" value={search} onChange={(event) => { setSearch(event.target.value); setActiveKey(null); }} />
-            <div className="inbox-types" role="group" aria-label="Message status">
-              {filters.map(({ id, label, icon }) => <Button key={id} type="button" size="small" title={label} aria-label={label} variant={filter === id ? 'accent' : 'default'} aria-pressed={filter === id} onClick={() => { setFilter(id); setActiveKey(null); setSelected(new Set()); }}>
-                <i className={`bi bi-${icon}`} aria-hidden="true" />{filter === id && <span>{label}</span>}
-              </Button>)}
-            </div>
+            <SegmentedControl label="Message status" compact options={filters.map(({ id, label, icon }) => ({ value: id, label, icon: `bi-${icon}` }))} value={filter} onChange={(id) => { setFilter(id); setActiveKey(null); setSelected(new Set()); }} />
           </div>
           <div className="inbox-filter-row">
-            <div className="inbox-types" role="group" aria-label="Message type">
-              {categories.map(({ id, label, icon }) => <Button key={id} type="button" size="small" title={label} aria-label={label} aria-pressed={activeCategory === id} variant={activeCategory === id ? 'accent' : 'default'} onClick={() => selectCategory(id)}>
-                <i className={`bi bi-${icon}`} aria-hidden="true" />
-                {activeCategory === id && <span>{label}</span>}
-              </Button>)}
-            </div>
+            <SegmentedControl label="Message type" compact options={categories.map(({ id, label, icon }) => ({ value: id, label, icon: `bi-${icon}` }))} value={activeCategory} onChange={selectCategory} />
             <details className="inbox-action-menu" ref={actions} onKeyDown={(event) => { if (event.key === 'Escape') event.currentTarget.open = false; }} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }}>
               <summary className="oc-button oc-button--default oc-button--small" aria-label="Inbox actions" title="Inbox actions"><i className="bi bi-three-dots" aria-hidden="true" /></summary>
               <div className="inbox-action-menu-items">

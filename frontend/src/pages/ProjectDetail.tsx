@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { usePageTitle } from '../lib/headerContext';
 import { SessionTable } from '../components/SessionTable';
 import { ProjectLabel } from '../components/ProjectLabel';
+import { TimeRangeControl } from '../components/TimeRangeControl';
 import { useTmux } from '../lib/useTmux';
 import { useOpencodeLaunch } from '../lib/useCapabilities';
 import { useClickOutside } from '../lib/useClickOutside';
@@ -16,14 +17,6 @@ import type { TmuxClient } from '../lib/api';
 // Dashboard.css explicitly to get the .oc-time-range / .oc-time-range-btn
 // styles used by the filter bar below.
 import './Dashboard.css';
-
-const TIME_RANGE_OPTIONS = [
-  { label: '12h', value: 12 },
-  { label: '24h', value: 24 },
-  { label: '7d', value: 168 },
-  { label: '30d', value: 720 },
-  { label: 'All', value: 0 },
-];
 
 const DEFAULT_TIME_RANGE = 168; // 7d
 
@@ -191,13 +184,7 @@ export function ProjectDetail() {
         )}
       </h2>
       <div className="oc-time-range">
-        {TIME_RANGE_OPTIONS.map((opt) => (
-          <button
-            key={opt.value}
-            className={`oc-time-range-btn${timeRange === opt.value ? ' active' : ''}`}
-            onClick={() => setTimeRange(opt.value)}
-          >{opt.label}</button>
-        ))}
+        <TimeRangeControl value={timeRange} onChange={setTimeRange} />
         <button
           className={`oc-time-range-btn${excludeArchived ? ' active' : ''}`}
           onClick={() => setExcludeArchived(!excludeArchived)}
