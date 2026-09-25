@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, HTMLAttributes, InputHTMLAttributes, SelectHTMLAttributes } from 'react';
+import type { ButtonHTMLAttributes, ComponentPropsWithRef, HTMLAttributes, InputHTMLAttributes, SelectHTMLAttributes } from 'react';
 import './Control.css';
 
 type Variant = 'accent' | 'muted' | 'default' | 'link' | 'ghost';
@@ -22,4 +22,12 @@ export function SearchField({ className, ...props }: InputHTMLAttributes<HTMLInp
 
 export function SelectField({ className, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
 	return <select {...props} className={classes('oc-field', className)} />;
+}
+
+export function TextField({ className, ...props }: ComponentPropsWithRef<'input'>) {
+	return <input {...props} className={classes('oc-field', className)} />;
+}
+
+export function TextareaField({ className, ...props }: ComponentPropsWithRef<'textarea'>) {
+	return <textarea {...props} className={classes('oc-field', 'oc-field--textarea', className)} />;
 }
