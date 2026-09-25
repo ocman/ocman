@@ -4,6 +4,8 @@ import { Button, ButtonGroup } from '../components/Control';
 import { CopyButton } from '../components/CopyButton';
 import { EmptyState } from '../components/EmptyState';
 import { Modal } from '../components/Modal';
+import { ModalHeader } from '../components/ModalHeader';
+import { ModalFooter } from '../components/ModalFooter';
 import { ProjectLabel } from '../components/ProjectLabel';
 import { DataTable } from '../components/DataTable';
 import { SearchSelect } from '../components/SearchSelect';
@@ -262,7 +264,7 @@ export function Routines() {
       {showForm && (
         <Modal label={editing ? 'Edit routine' : 'New routine'} onClose={() => setShowForm(false)} canClose={!busy} backdropClassName="routine-drawer-backdrop" dialogClassName="routine-drawer" backdropTestId="routine-drawer-backdrop">
         <form className="routine-form" onSubmit={submit}>
-          <header><h2>{editing ? 'Edit routine' : 'New routine'}</h2><button type="button" disabled={busy} onClick={() => setShowForm(false)} aria-label="Close routine form" title="Close"><i className="bi bi-x-lg" aria-hidden="true" /></button></header>
+          <ModalHeader title={editing ? 'Edit routine' : 'New routine'} canClose={!busy} onClose={() => setShowForm(false)} closeLabel="Close routine form" />
           {error && <p role="alert" className="routine-error">{error}</p>}
           <label>Name<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
           <label>Prompt<textarea required value={form.prompt} onChange={(event) => setForm({ ...form, prompt: event.target.value })} /></label>
@@ -309,7 +311,7 @@ export function Routines() {
             <PermissionRulesEditor rules={editingRules} onChange={setEditingRules} disabled={busy} />
           </div>
           </details>
-          <ButtonGroup label="Routine form actions"><Button disabled={busy || !form.directory || (form.sessionMode === 'existing' && !form.sessionId)} type="submit" variant="accent">{editing ? 'Save changes' : 'Create routine'}</Button><Button type="button" disabled={busy} onClick={() => setShowForm(false)}>Cancel</Button></ButtonGroup>
+          <ModalFooter label="Routine form actions"><Button disabled={busy || !form.directory || (form.sessionMode === 'existing' && !form.sessionId)} type="submit" variant="accent">{editing ? 'Save changes' : 'Create routine'}</Button><Button type="button" disabled={busy} onClick={() => setShowForm(false)}>Cancel</Button></ModalFooter>
         </form>
         </Modal>
       )}
@@ -317,7 +319,7 @@ export function Routines() {
       {historyRoutine && (
         <Modal label={`${historyRoutine.name} history`} onClose={() => setHistoryRoutine(undefined)} backdropClassName="routine-drawer-backdrop" dialogClassName="routine-drawer" backdropTestId="routine-drawer-backdrop">
           <div className="routine-form">
-            <header><h2>{historyRoutine.name}</h2><button type="button" onClick={() => setHistoryRoutine(undefined)} aria-label="Close routine history" title="Close"><i className="bi bi-x-lg" aria-hidden="true" /></button></header>
+            <ModalHeader title={historyRoutine.name} onClose={() => setHistoryRoutine(undefined)} closeLabel="Close routine history" />
             <section className="routine-detail-history" aria-labelledby="routine-history-heading"><h3 id="routine-history-heading">History</h3>{selectedRuns.length === 0 ? <EmptyState>No runs yet.</EmptyState> : <div className="routine-history-table-wrap"><DataTable><thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Session</th></tr></thead><tbody>{selectedRuns.map((run) => <tr key={run.id}><td>{formatDateTimeShort(run.startedAt || run.createdAt)}</td><td>{run.trigger}</td><td><span className={`routine-state ${run.state}`}>{run.state}</span>{run.error && <small className="routine-error">{run.error}</small>}</td><td>{run.sessionId ? <Link to={`/session/${encodeURIComponent(run.sessionId)}?platform=${encodeURIComponent(run.platform ?? '')}`}>Open</Link> : '-'}</td></tr>)}</tbody></DataTable></div>}</section>
           </div>
         </Modal>

@@ -4,6 +4,7 @@ import { SearchField } from '../components/Control';
 import { InlineAlert } from '../components/InlineAlert';
 import { DataTableRow } from '../components/DataTable';
 import { Modal } from '../components/Modal';
+import { ModalHeader } from '../components/ModalHeader';
 import type { FactoryIssue } from '../lib/api';
 import { EpicCell, ProjectCell, type EpicRef } from './FactoryIssues';
 import { OpenIssueContext, type DispatchEvidence } from './factoryHelpers';
@@ -46,7 +47,7 @@ export function FactoryDataRow({ id, idLabel = 'Issue', title, epic, detail, act
 
 export function Drawer({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return <Modal label={title} onClose={onClose} backdropClassName="factory-issue-backdrop" dialogClassName="factory-issue-drawer factory-form-drawer">
-    <header className="factory-form-drawer-header"><h2>{title}</h2><button className="factory-issue-close" type="button" onClick={onClose} aria-label={`Close ${title}`} title="Close"><i className="bi bi-x-lg" aria-hidden="true" /></button></header>
+    <ModalHeader className="factory-form-drawer-header" title={title} onClose={onClose} closeLabel={`Close ${title}`} />
     {children}
   </Modal>;
 }

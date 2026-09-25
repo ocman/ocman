@@ -135,6 +135,26 @@ describe('Routines', () => {
     expect(screen.getByLabelText('Archive session after a successful run')).toBeChecked();
   });
 
+  it('keeps the form open while saving and restores focus after completion', async () => {
+    let finish!: (value: Routine) => void;
+    vi.mocked(api.routines.update).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const user = userEvent.setup();
+    render(<MemoryRouter><Routines /></MemoryRouter>);
+    const edit = await screen.findByRole('button', { name: 'Edit' });
+    await user.click(edit);
+    const actions = screen.getByRole('group', { name: 'Routine form actions' });
+    await user.click(within(actions).getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(api.routines.update).toHaveBeenCalled());
+    expect(screen.getByRole('button', { name: 'Close routine form' })).toBeDisabled();
+    expect(within(actions).getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByTestId('routine-drawer-backdrop'));
+    expect(screen.getByRole('dialog', { name: 'Edit routine' })).toBeInTheDocument();
+    await act(async () => finish(routine));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(edit).toHaveFocus();
+  });
+
   it('shows missed timeout schedules as expired', async () => {
     vi.mocked(api.routines.list).mockResolvedValue([{ ...routine, enabled: false, expiredAt: Date.now() }]);
     render(<MemoryRouter><Routines /></MemoryRouter>);
