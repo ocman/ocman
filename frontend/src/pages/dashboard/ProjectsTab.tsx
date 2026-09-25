@@ -9,6 +9,7 @@ import { useUiStore } from '../../lib/uiStore';
 import { useDashboard as useDashboardCtx } from './context';
 import { DashboardToolbar } from './DashboardToolbar';
 import { DataTable } from '../../components/DataTable';
+import { LoadingState } from '../../components/LoadingState';
 
 // ---------------------------------------------------------------------------
 // Projects tab
@@ -36,12 +37,7 @@ export function ProjectsTab() {
     .filter((p) => !q || fuzzyMatch(q, p.directory));
 
   if (projectsLoading && projects.length === 0) {
-    return (
-      <div className="oc-list-loading">
-        <div className="oc-spinner" />
-        Loading projects...
-      </div>
-    );
+    return <LoadingState>Loading projects...</LoadingState>;
   }
 
   // A failed query must never fall through to the table below: with no

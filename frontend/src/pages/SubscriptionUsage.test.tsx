@@ -100,16 +100,32 @@ describe('SubscriptionUsage', () => {
     expect(screen.getByRole('button', { name: 'Retry' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Retry' })).toHaveAttribute('aria-busy', 'true');
     expect(screen.getByRole('heading', { name: 'Anthropic' })).toBeInTheDocument();
+    expect(screen.queryByText('Loading subscription usage')).not.toBeInTheDocument();
   });
 
   it('shows loading and empty states', () => {
     vi.mocked(useSubscriptionUsage).mockReturnValue({ isLoading: true } as never);
     const { rerender } = render(<SubscriptionUsage />);
     expect(screen.getByRole('status')).toHaveTextContent('Loading subscription usage');
+    expect(screen.getByRole('status').firstElementChild).toHaveAttribute('aria-hidden', 'true');
 
     vi.mocked(useSubscriptionUsage).mockReturnValue({ data: { providers: [] } } as never);
     rerender(<SubscriptionUsage />);
     expect(screen.getByText('No OpenCode subscription credentials found.')).toBeInTheDocument();
+    expect(screen.queryByText('Loading subscription usage')).not.toBeInTheDocument();
+  });
+
+  it('keeps existing quota data visible while loading', () => {
+    vi.mocked(useSubscriptionUsage).mockReturnValue({
+      isLoading: true,
+      isFetching: true,
+      data: { providers: [{ id: 'openai', name: 'OpenAI', status: 'ok', windows: [
+        { name: '5 hours', usedPercent: 10 },
+      ] }] },
+    } as never);
+    render(<SubscriptionUsage />);
+    expect(screen.getByRole('progressbar', { name: 'OpenAI 5 hours usage' })).toHaveValue(10);
+    expect(screen.queryByText('Loading subscription usage')).not.toBeInTheDocument();
   });
 
   it('refreshes usage and exposes the fetching state on the shared control', () => {

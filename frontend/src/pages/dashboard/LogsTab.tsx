@@ -5,6 +5,7 @@ import { useMetricLogs } from '../../lib/queries';
 import { ModelLogo } from '../../components/ModelLogo';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../components/Tabs';
 import { InlineAlert } from '../../components/InlineAlert';
+import { LoadingState } from '../../components/LoadingState';
 import { AnalyticsFilters } from './AnalyticsFilters';
 import { useDashboard } from './context';
 import { MetricsPagination } from './shared';
@@ -53,7 +54,7 @@ export function LogsTab() {
           {logs && <span className="metrics-log-range"><LogRange page={page} pageSize={PAGE_SIZE} total={logs.total} /></span>}
         </div>
         {kinds.map((value) => <TabsContent key={value} value={value}>
-          {logsQ.isLoading && !logs && <div className="oc-list-loading"><div className="oc-spinner" />Loading logs...</div>}
+          {logsQ.isLoading && !logs && <LoadingState>Loading logs...</LoadingState>}
           {logs && value === 'project' && <ProjectLogTable projects={logs.projects ?? []} pageOffset={page * PAGE_SIZE} />}
           {logs && value === 'session' && <SessionLogTable sessions={logs.sessions ?? []} pageOffset={page * PAGE_SIZE} />}
           {logs && value === 'request' && <RequestLogTable requests={logs.requests ?? []} pageOffset={page * PAGE_SIZE} />}

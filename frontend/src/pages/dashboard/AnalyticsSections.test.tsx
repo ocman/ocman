@@ -257,4 +257,29 @@ describe('analytics sections', () => {
     expect(useMetricLogs).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'request', limit: 20 }));
     expect(screen.getByRole('table')).toBeInTheDocument();
   });
+
+  it('announces only the active log loader and retains stale tables during a failed refresh', () => {
+    useMetricLogs.mockReturnValue({ data: undefined, isLoading: true, error: null });
+    const { rerender } = renderTab(<LogsTab />);
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(screen.getByRole('status')).toHaveTextContent('Loading logs...');
+    expect(screen.getByRole('status').firstElementChild).toHaveAttribute('aria-hidden', 'true');
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+
+    useMetricLogs.mockReturnValue({
+      data: { kind: 'project', total: 0, availableAgents: [], availableModels: [], projects: [] },
+      isLoading: true,
+      error: new Error('Refresh failed'),
+    });
+    rerender(<MemoryRouter><LogsTab /></MemoryRouter>);
+    expect(screen.queryByText('Loading logs...')).not.toBeInTheDocument();
+    expect(screen.getByRole('table')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Refresh failed');
+
+    useMetricLogs.mockReturnValue({ data: undefined, isLoading: false, error: new Error('Logs failed') });
+    rerender(<MemoryRouter><LogsTab /></MemoryRouter>);
+    expect(screen.queryByText('Loading logs...')).not.toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Logs failed');
+  });
 });
