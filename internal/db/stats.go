@@ -111,40 +111,40 @@ func (d *DB) GetStats(ctx context.Context) (*Stats, error) {
 // so the figure matches the sessions list, which also hides them. Message,
 // token and cost totals intentionally still include subagent activity
 // because those represent real spend against the project.
+//
+// Totals are summed per session first (index-only message count, plus
+// either the denormalised session columns or a per-message aggregate on
+// older schemas — see sessionListProjection) and then rolled up per
+// directory, so the message blobs are never scanned per directory.
 func (d *DB) GetProjects(ctx context.Context) ([]ProjectStats, error) {
+	totals := `
+		SELECT
+			m.session_id,
+			SUM(CASE WHEN json_extract(m.data, '$.role') = 'assistant'
+				THEN COALESCE(json_extract(m.data, '$.tokens.input'), 0) ELSE 0 END) AS tokens_input,
+			SUM(CASE WHEN json_extract(m.data, '$.role') = 'assistant'
+				THEN COALESCE(json_extract(m.data, '$.tokens.output'), 0) ELSE 0 END) AS tokens_output,
+			SUM(CASE WHEN json_extract(m.data, '$.role') = 'assistant'
+				THEN COALESCE(json_extract(m.data, '$.cost'), 0) ELSE 0 END) AS cost
+		FROM message m
+		GROUP BY m.session_id`
+	if d.sessionTotals {
+		totals = `SELECT id AS session_id, tokens_input, tokens_output, cost FROM session`
+	}
 	rows, err := d.db.QueryContext(ctx, `
+		WITH totals AS (`+totals+`),
+		counts AS (SELECT session_id, count(*) AS message_count FROM message GROUP BY session_id)
 		SELECT
 			s.directory,
 			SUM(CASE WHEN s.title NOT LIKE '%(% subagent)' THEN 1 ELSE 0 END) AS session_count,
 			max(s.time_updated) AS last_used,
-			COALESCE((
-				SELECT count(*) FROM message m
-				JOIN session s2 ON m.session_id = s2.id
-				WHERE s2.directory = s.directory
-				AND json_extract(m.data, '$.role') = 'user'
-			), 0) AS message_count,
-			COALESCE((
-				SELECT SUM(COALESCE(json_extract(m.data, '$.tokens.input'), 0))
-				FROM message m
-				JOIN session s2 ON m.session_id = s2.id
-				WHERE s2.directory = s.directory
-				AND json_extract(m.data, '$.role') = 'assistant'
-			), 0) AS total_tokens_in,
-			COALESCE((
-				SELECT SUM(COALESCE(json_extract(m.data, '$.tokens.output'), 0))
-				FROM message m
-				JOIN session s2 ON m.session_id = s2.id
-				WHERE s2.directory = s.directory
-				AND json_extract(m.data, '$.role') = 'assistant'
-			), 0) AS total_tokens_out,
-			COALESCE((
-				SELECT SUM(COALESCE(json_extract(m.data, '$.cost'), 0))
-				FROM message m
-				JOIN session s2 ON m.session_id = s2.id
-				WHERE s2.directory = s.directory
-				AND json_extract(m.data, '$.role') = 'assistant'
-			), 0) AS total_cost
+			COALESCE(SUM(c.message_count), 0) AS message_count,
+			COALESCE(SUM(t.tokens_input), 0) AS total_tokens_in,
+			COALESCE(SUM(t.tokens_output), 0) AS total_tokens_out,
+			COALESCE(SUM(t.cost), 0) AS total_cost
 		FROM session s
+		LEFT JOIN totals t ON t.session_id = s.id
+		LEFT JOIN counts c ON c.session_id = s.id
 		GROUP BY s.directory
 		ORDER BY last_used DESC
 	`)

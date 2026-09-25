@@ -141,6 +141,19 @@ describe('useSidebarSessions live refresh', () => {
     expect(sessionActivity).toBeUndefined();
   });
 
+  it('ignores per-token activity that stays within the same minute bucket', () => {
+    useApiStore.setState({ recentSessions: [{ id: 'streaming', timeUpdated: 120_000 }] as Session[] });
+    renderHook(() => useSidebarSessions({
+      id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
+      abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
+    }));
+    const before = useApiStore.getState().recentSessions;
+    act(() => sessionActivity?.('streaming', 150_000));
+    expect(useApiStore.getState().recentSessions).toBe(before);
+    act(() => sessionActivity?.('streaming', 180_000));
+    expect(useApiStore.getState().recentSessions[0].timeUpdated).toBe(180_000);
+  });
+
   it('loads an unknown active session once and applies its latest streaming timestamp', async () => {
     let resolve!: (value: { session: Session }) => void;
     const getSession = vi.fn(() => new Promise<{ session: Session }>((done) => { resolve = done; }));

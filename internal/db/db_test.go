@@ -1303,6 +1303,38 @@ func TestGetProjects(t *testing.T) {
 	}
 }
 
+// TestGetProjects_UsesSessionTotalsWhenPresent: with the denormalised
+// columns present, project totals sum the session rows (subagents
+// included) and never re-read the message blobs.
+func TestGetProjects_UsesSessionTotalsWhenPresent(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	addSessionTotalsColumns(t, db)
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Session 1", "/project/a", now, now)
+	insertSession(t, db, "s4", "Task (code subagent)", "/project/a", now, now)
+	if _, err := db.db.Exec(`UPDATE session SET cost = 0.5, tokens_input = 10, tokens_output = 20`); err != nil {
+		t.Fatal(err)
+	}
+	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{"role": "user"})
+	insertMessage(t, db, "m2", "s4", now, map[string]interface{}{
+		"role": "assistant", "tokens": map[string]interface{}{"input": 100, "output": 50}, "cost": 0.25,
+	})
+
+	projects, err := db.GetProjects(t.Context())
+	if err != nil {
+		t.Fatalf("GetProjects: %v", err)
+	}
+	if len(projects) != 1 {
+		t.Fatalf("projects = %+v, want one", projects)
+	}
+	p := projects[0]
+	if p.SessionCount != 1 || p.MessageCount != 2 || p.TotalTokensIn != 20 || p.TotalTokensOut != 40 || p.TotalCost != 1.0 {
+		t.Errorf("project = %+v, want sessions 1, messages 2, tokens 20/40, cost 1.0", p)
+	}
+}
+
 func TestGetHourlyActivity(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()

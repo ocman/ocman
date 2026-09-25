@@ -4,7 +4,7 @@ import type { Session } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
 import { useUiStore } from '../../lib/uiStore';
 import { filterVisibleSessions } from '../../lib/sessionVisibility';
-import { computeSidebarHash, filterInactiveChildren, mergeSidebarSessions, pickNextSessionAfterArchive, resolveOpenSession } from '../../lib/sidebarHelpers';
+import { compareSidebarActivity, computeSidebarHash, filterInactiveChildren, mergeSidebarSessions, pickNextSessionAfterArchive, resolveOpenSession } from '../../lib/sidebarHelpers';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { remoteLog } from '../../lib/remoteLog';
 import { onSessionActivity, onSessionChanged, onSseConnect } from '../../lib/useGlobalEvents';
@@ -209,7 +209,11 @@ export function useSidebarSessions({
     const unsubscribeActivity = onSessionActivity((sessionID, timeUpdated) => {
       const session = useApiStore.getState().recentSessions.find((s) => s.id === sessionID);
       if (session) {
-        if (timeUpdated > session.timeUpdated) patchRecentSession(sessionID, { timeUpdated });
+        // Activity arrives per streamed token. The sidebar sorts and
+        // displays time at minute granularity, so a patch inside the same
+        // minute would only re-sort the list and re-render the page for
+        // nothing.
+        if (compareSidebarActivity(session, { timeUpdated }) > 0) patchRecentSession(sessionID, { timeUpdated });
       } else if (!hiddenSessions.has(sessionID)) {
         const pending = pendingActivity.get(sessionID);
         pendingActivity.set(sessionID, Math.max(pending ?? 0, timeUpdated));
