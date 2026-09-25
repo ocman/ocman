@@ -16,12 +16,10 @@ import { Login } from './pages/Login';
 import { SubscriptionUsage } from './pages/SubscriptionUsage';
 import { onInboxChanged, onProjectsChanged, onSessionChanged } from './lib/useGlobalEvents';
 import { HeaderProvider } from './lib/HeaderProvider';
-import { useHeaderInfo } from './lib/headerContext';
 import { CommandPalette } from './components/CommandPalette';
 import { WorktreeFormModal } from './components/WorktreeFormModal';
 import { MachinePickerModal } from './components/MachinePickerModal';
-import { PlatformBadge } from './components/PlatformBadge';
-import { HostBadge } from './components/HostBadge';
+import { AppHeader } from './components/AppHeader';
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useFaviconNotify } from './lib/useFaviconNotify';
@@ -41,7 +39,6 @@ import { useMemoryMonitor } from './lib/useMemoryMonitor';
 import { useLongTaskMonitor } from './lib/useLongTaskMonitor';
 import { installDevHandle as installPerfDevHandle } from './lib/perfRing';
 import { ClientActivityReporter } from './lib/ClientActivityReporter';
-import { routeTitle } from './lib/routeTitle';
 import { Inbox } from './pages/Inbox';
 import { MainNav } from './components/MainNav';
 
@@ -60,74 +57,6 @@ function RoutesBoundary({ children }: { children: ReactNode }) {
 }
 
 export { MainNav };
-
-function Header({ onOpenNav }: { onOpenNav: () => void }) {
-  const location = useLocation();
-  const path = location.pathname;
-  const { info } = useHeaderInfo();
-  const routeSessionId = path.startsWith('/session/')
-    ? decodeURIComponent(path.slice('/session/'.length).split('/')[0])
-    : undefined;
-  const sessionInfo = routeSessionId && info.sessionId === routeSessionId ? info : {};
-
-  let breadcrumb: React.ReactNode = routeTitle(path, sessionInfo.sessionTitle);
-  if (routeSessionId && sessionInfo.sessionTitle) {
-    breadcrumb = (
-      <>
-        {sessionInfo.sessionPlatform && (
-          <>
-            <PlatformBadge platform={sessionInfo.sessionPlatform} />{' '}
-          </>
-        )}
-        {sessionInfo.sessionTitle}
-      </>
-    );
-  }
-
-  // Right-hand side of the header: the project path for the current
-  // session. The richer per-session stats (Duration / Messages /
-  // Tokens / Changes / Cost) were moved to the right-panel
-  // "Session info" pane (SessionInfoSidebar); only Project stays in
-  // the header because it anchors the page at a glance.
-  return (
-    <header>
-      <h1>
-        <span id="header-navigation-slot" className="header-navigation-slot" />
-        <button
-          type="button"
-          className="mobile-nav-toggle"
-          aria-label="Open navigation"
-          onClick={onOpenNav}
-        >
-          <img src="/favicon.svg" alt="" width={20} height={20} />
-        </button>
-        <span id="header-mobile-title-slot" className="header-mobile-title-slot" />
-        <span className="header-breadcrumb">{breadcrumb}</span>
-      </h1>
-      <div className="header-right">
-        {routeSessionId && sessionInfo.sessionProject && (
-          <span
-            className="header-project"
-            title={sessionInfo.sessionProjectFull || sessionInfo.sessionProject}
-          >
-            <HostBadge
-              remoteName={sessionInfo.sessionRemoteName}
-              remoteId={sessionInfo.sessionRemoteId}
-              stale={sessionInfo.sessionRemoteStale}
-            />
-            {sessionInfo.sessionProject}
-          </span>
-        )}
-        {/* Portal target for per-route header action buttons (tmux,
-         * launch, VS Code, new session). SessionDetail mounts its
-         * action strip here via createPortal so the buttons appear
-         * stacked under the project name instead of hovering over
-         * the conversation. */}
-        <div id="header-actions-slot" className="header-actions" />
-      </div>
-    </header>
-  );
-}
 
 function GlobalHotkeys() {
   const {
@@ -465,7 +394,7 @@ function AuthenticatedShell() {
           onMobileClose={() => setMobileNavOpen(false)}
         />
         <div className="container">
-          <Header onOpenNav={() => setMobileNavOpen(true)} />
+          <AppHeader onOpenNav={() => setMobileNavOpen(true)} />
           <div className="content">
             <RoutesBoundary>
               <AppRoutes />

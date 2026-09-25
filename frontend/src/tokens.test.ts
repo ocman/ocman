@@ -4,7 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-// The shared look-and-feel classes in tokens.css are imported once at the
+// The shared look-and-feel classes in shared.css are imported once at the
 // app root; a component stylesheet redefining one at the same specificity
 // silently wins app-wide, because component CSS resolves later in the
 // import graph. jsdom applies no stylesheets and vitest serves CSS
@@ -30,11 +30,14 @@ function definedIn(selector: string): string[] {
     .sort();
 }
 
-describe('shared token classes', () => {
+describe('stylesheet ownership', () => {
   it.each([
-    ['.oc-error-banner'],
-    ['.oc-error-boundary'],
-  ])('%s is defined in exactly one stylesheet', (selector) => {
-    expect(definedIn(selector)).toEqual(['tokens.css']);
+    ['.oc-error-banner', ['shared.css']],
+    ['.oc-error-boundary', ['shared.css']],
+    // Print coordinates hiding app chrome across component boundaries.
+    ['.main-nav', ['components/MainNav.css', 'print.css']],
+    ['.app-header', ['components/AppHeader.css', 'print.css']],
+  ] as const)('%s stays within its owner and explicit print overrides', (selector, owners) => {
+    expect(definedIn(selector)).toEqual(owners);
   });
 });

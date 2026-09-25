@@ -1,0 +1,159 @@
+/* Existing cross-page helpers. Prefer component-owned styles for new UI. */
+.mono { font-family: 'SF Mono', Consolas, monospace; font-size: 12px; color: var(--text-dim); }
+.oc-cmd-badge {
+  margin-left: 6px;
+  padding: 0 5px;
+  font-size: 10px;
+  border-radius: 4px;
+  background: rgba(127, 127, 127, 0.18);
+  color: var(--text-dim);
+  vertical-align: middle;
+}
+.short-path-prefix { color: var(--text-dim); }
+.short-path-last { color: var(--subtext0); }
+.cell-dim { color: var(--overlay0); font-size: 11px; }
+.hidden { display: none; }
+
+/* Tags */
+.tag { display: inline-block; padding: 2px 8px; border-radius: 0; font-size: 11px; font-weight: 500; }
+.tag-additions { background: rgba(63, 185, 80, 0.15); color: var(--accent2); }
+.tag-deletions { background: rgba(248, 81, 73, 0.15); color: var(--danger); }
+.tag-files { background: rgba(88, 166, 255, 0.15); color: var(--accent); }
+
+/* Keyframes */
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+tr.no-port { opacity: 0.4; }
+
+.section-title { font-size: 18px; font-weight: 600; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+
+/* Loading spinner */
+.oc-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-dim);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 13px;
+  gap: 10px;
+}
+.oc-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--surface2);
+  border-top-color: var(--accent3);
+  border-radius: 50%;
+  animation: oc-spin 0.8s linear infinite;
+}
+@keyframes oc-spin { to { transform: rotate(360deg); } }
+
+/* Inline save status (spinner while saving, checkmark for 5s after) */
+.oc-save-status {
+  display: inline-flex;
+  align-items: center;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 13px;
+  line-height: 1;
+}
+.oc-save-status-spinner { width: 14px; height: 14px; border-width: 2px; }
+.oc-save-status-check { color: var(--accent3); font-weight: 700; }
+.oc-save-status-error { color: var(--danger); font-weight: 700; }
+
+/* List loading indicator */
+.oc-list-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 0;
+  color: var(--text-dim);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 13px;
+  gap: 10px;
+}
+
+.oc-empty { text-align: center; color: var(--text-dim); padding: 48px 0; font-style: italic; }
+
+/* Error boundary */
+.oc-error-boundary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 12px;
+  color: var(--text-dim);
+  font-family: 'SF Mono', Consolas, monospace;
+}
+.oc-error-boundary h2 { color: var(--danger); font-size: 18px; margin: 0; }
+.oc-error-boundary p { color: var(--text-dim); font-size: 13px; margin: 0; max-width: 400px; text-align: center; }
+.oc-error-boundary button {
+  background: var(--bg-card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 8px 20px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+}
+.oc-error-boundary button:hover { border-color: var(--accent); }
+
+/* Compact variant for boundaries embedded inside panels (right-panel
+   panes, composer slot, etc.) rather than the viewport. */
+.oc-error-boundary.inline { height: auto; padding: 16px; gap: 8px; }
+.oc-error-boundary.inline h2 { font-size: 14px; }
+.oc-error-boundary.inline p { font-size: 12px; max-width: none; }
+.oc-error-boundary.inline button { padding: 4px 12px; font-size: 12px; }
+
+/* Error banner */
+.oc-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: rgba(243, 139, 168, 0.1);
+  border: 1px solid var(--danger);
+  border-radius: 0;
+  color: var(--danger);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  margin: 8px 0;
+}
+.oc-error-banner button {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: 0;
+  padding: 2px 10px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.oc-error-banner button:hover { background: rgba(243, 139, 168, 0.15); }
+
+/* VS Code open button */
+.vscode-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 0;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.vscode-btn:hover {
+  background: var(--accent);
+  color: var(--white);
+  border-color: var(--accent);
+  text-decoration: none;
+}

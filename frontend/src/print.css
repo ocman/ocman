@@ -1,0 +1,48 @@
+/* Print / Save as PDF uses the live authenticated session view.
+   Hide chrome and release viewport constraints so the transcript paginates.
+   SharedConversationView.css owns the public share page's print rules. */
+@media print {
+  /* Target the session's outer aside without hiding embedded sidebars. */
+  .app-header,
+  .main-nav,
+  .main-nav-backdrop,
+  .session-sidebar,
+  .session-layout > aside,
+  .oc-changes-sidebar,
+  .header-actions,
+  .oc-term-dock,
+  .oc-viewport-footer,
+  .oc-scroll-btn {
+    display: none !important;
+  }
+
+  html,
+  body,
+  #root,
+  .app-shell,
+  .container,
+  .content,
+  .session-layout,
+  .session-main,
+  .oc-thread,
+  .oc-thread-viewport {
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    display: block !important;
+  }
+
+  /* ToolCallDisplay also expands its React-gated bodies via useIsPrinting.
+     Keep the public share page's explicit collapse-tools choice intact. */
+  .oc-tool-pre:not(.oc-collapse-tools *),
+  .oc-shell-block:not(.oc-collapse-tools *),
+  .oc-tool-compact-body:not(.oc-collapse-tools *),
+  .oc-embedded-thread:not(.oc-collapse-tools *),
+  .oc-tool-content:not(.oc-collapse-tools *) {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .oc-tool-expand { display: none !important; }
+}

@@ -1,0 +1,45 @@
+.oc-permission-lock {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.oc-permission-lock:hover { opacity: 0.9; }
+.oc-permission-lock:disabled { cursor: not-allowed; opacity: 0.6; }
+.oc-permission-lock-error { color: var(--red); cursor: default; }
+.oc-permission-mode-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  color: var(--overlay0);
+  text-align: center;
+  flex-shrink: 0;
+}
+.oc-permission-mode-copy { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
+.oc-permission-mode-default { color: color-mix(in srgb, var(--blue) 55%, var(--text-dim)); }
+.oc-permission-mode-plan { color: color-mix(in srgb, var(--mauve) 55%, var(--text-dim)); }
+.oc-permission-mode-auto-edit { color: color-mix(in srgb, var(--green) 55%, var(--text-dim)); }
+.oc-permission-mode-yolo { color: color-mix(in srgb, var(--yellow) 55%, var(--text-dim)); }
+.oc-permission-confirm { width: 380px; }
+.oc-permission-confirm-body { display: flex; gap: 12px; padding: 16px; border-bottom: 1px solid var(--border); }
+.oc-permission-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; }
+.oc-permission-confirm-cancel,
+.oc-permission-confirm-ok {
+  border: 1px solid var(--surface2);
+  background: var(--surface1);
+  color: var(--text);
+  padding: 5px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+.oc-permission-confirm-cancel:hover,
+.oc-permission-confirm-ok:hover { background: var(--bg-hover); }
+.oc-permission-confirm-ok { color: color-mix(in srgb, var(--yellow) 70%, var(--text)); }

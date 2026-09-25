@@ -1,0 +1,110 @@
+.app-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 24px; border-bottom: 1px solid var(--border); flex-shrink: 0; gap: 16px; height: var(--header-height); }
+.app-header h1 { display: flex; align-items: center; gap: 0.4em; font-size: 18px; font-weight: 600; color: var(--text-dim); white-space: nowrap; min-width: 0; }
+.app-header h1 > a { color: var(--text); font-weight: 600; }
+.app-header h1 span { color: inherit; font-weight: 400; }
+.header-breadcrumb { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.header-navigation-slot:empty,
+.header-mobile-title-slot:empty { display: none; }
+.header-mobile-title-slot { color: var(--text); }
+.mobile-nav-toggle { display: none; }
+
+/* Wails window dragging belongs only to the application header. */
+.wails-app .app-header { --wails-draggable: drag; padding: 12px 16px; }
+.wails-app .app-header h1 { font-size: 16px; font-weight: 500; }
+.wails-app .app-header h1,
+.wails-app .app-header a,
+.wails-app .app-header button,
+.wails-app .app-header input,
+.wails-app .app-header .header-project { --wails-draggable: no-drag; }
+
+.header-right {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 1;
+  min-width: 0;
+  max-width: 50%;
+}
+
+/* The project path anchors the session; richer metadata lives in Session Info. */
+.header-project {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 12px;
+  color: var(--subtext1);
+}
+
+/* Portal target for per-route header actions. */
+.header-actions { display: flex; justify-content: flex-end; gap: 4px; }
+.header-actions:empty { display: none; }
+.header-actions-menu { position: relative; flex-shrink: 0; }
+.header-actions-menu > summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  list-style: none;
+}
+.header-actions-menu > summary::-webkit-details-marker { display: none; }
+.header-actions-menu > summary:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.header-actions-menu .oc-project-menu-list {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 50;
+  min-width: 160px;
+  margin-top: 4px;
+  background: var(--mantle);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+}
+.header-actions-menu .oc-project-menu-item {
+  text-align: left;
+  padding: 8px 12px;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  display: block;
+  width: 100%;
+  text-decoration: none;
+}
+.header-actions-menu .oc-project-menu-item:hover { background: var(--bg-hover); }
+.header-actions-menu .oc-project-menu-separator { height: 1px; margin: 4px 0; background: var(--border); }
+
+@media (max-width: 768px) {
+  .app-header { padding: 0 12px; }
+  .app-header h1 { flex: 1; overflow: hidden; }
+  .header-navigation-slot { flex-shrink: 0; }
+  .header-right { max-width: none; flex-shrink: 0; }
+  .header-project { display: none; }
+  .mobile-nav-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+  .header-navigation-slot:not(:empty) + .mobile-nav-toggle,
+  .header-mobile-title-slot:not(:empty) ~ .header-breadcrumb { display: none; }
+}

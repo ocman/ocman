@@ -1,0 +1,32 @@
+/* Document defaults. Component and page layout belong beside their owners. */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* No active-input highlight: drop the browser focus outline on form
+   controls (inputs, textareas, selects, and our button-based selects). */
+input:focus, input:focus-visible,
+textarea:focus, textarea:focus-visible,
+select:focus, select:focus-visible { outline: none; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  overflow: hidden;
+  height: 100dvh;
+  height: 100vh; /* fallback for older browsers */
+}
+
+@supports (height: 100dvh) {
+  body { height: 100dvh; }
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* Global custom scrollbars */
+* { scrollbar-width: thin; scrollbar-color: var(--surface2) transparent; }
+*::-webkit-scrollbar { width: 6px; height: 6px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 0; }
+*::-webkit-scrollbar-thumb:hover { background: var(--overlay0); }

@@ -3,6 +3,7 @@ import { api, type PermissionRule } from '../lib/api';
 import { classifyPermissionMode, PERMISSION_MODES, type PermissionMode } from '../lib/permissionModes';
 import { CommandListPicker } from './assistant/CommandListPicker';
 import { Modal } from './Modal';
+import './PermissionModeLock.css';
 
 const MENU_PERMISSION_MODES = PERMISSION_MODES;
 
