@@ -135,6 +135,242 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
+});
+
+describe('useSession — bounded SSE work (#722)', () => {
+  const delta = (text: string) => ({
+    type: 'message.part.delta',
+    properties: { sessionID: SID, messageID: 'm', partID: 'p', field: 'text', delta: text },
+  });
+  const textOf = (parts: SessionDetail['parts']) => {
+    const data = parts.find((p) => p.id === 'p')?.data;
+    return (typeof data === 'string' ? JSON.parse(data) : data)?.text;
+  };
+  async function setup(debug = false) {
+    vi.useFakeTimers();
+    let frame: FrameRequestCallback = () => {};
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => { frame = cb; return 1; });
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+    const fetchSession = vi.fn(async (id: string) => {
+      const detail = makeDetail();
+      return { ...detail, session: { ...detail.session, id } };
+    });
+    const hook = renderHook(({ id }) => useSession(id, { fetchSession, debug }), { initialProps: { id: SID } });
+    await act(async () => {});
+    return { ...hook, fetchSession, sse: FakeEventSource.latest()!, frame: () => act(() => frame(0)) };
+  }
+
+  it('reduces an ordered burst once per frame, with a 50ms background fallback', async () => {
+    const { result, sse, frame, unmount } = await setup();
+    const before = result.current;
+    act(() => sse.emitMessage(delta('a')));
+    act(() => sse.emitNamed('message.part.delta', delta('b')));
+    expect(result.current).toBe(before);
+    frame();
+    expect(textOf(result.current.parts)).toBe('ab');
+    act(() => sse.emitMessage(delta('c')));
+    act(() => vi.advanceTimersByTime(50));
+    expect(textOf(result.current.parts)).toBe('abc');
+    frame();
+    expect(textOf(result.current.parts)).toBe('abc');
+    unmount();
+  });
+
+  it('trailing-debounces diff refetches on both channels', async () => {
+    const { fetchSession, sse, unmount } = await setup();
+    act(() => sse.emitMessage({ type: 'session.diff', properties: { sessionID: SID } }));
+    await act(async () => vi.advanceTimersByTime(400));
+    act(() => sse.emitNamed('session.diff', { sessionID: SID }));
+    await act(async () => vi.advanceTimersByTime(499));
+    expect(fetchSession).toHaveBeenCalledTimes(1);
+    await act(async () => vi.advanceTimersByTime(1));
+    expect(fetchSession).toHaveBeenCalledTimes(2);
+    unmount();
+  });
+
+  it('flushes final deltas and reconciles once per idle transition, including named events', async () => {
+    const { result, fetchSession, sse, unmount } = await setup();
+    act(() => sse.emitMessage(delta('final')));
+    await act(async () => sse.emitMessage({ type: 'session.idle', properties: { sessionID: SID } }));
+    await act(async () => sse.emitMessage({ type: 'session.status', properties: { sessionID: SID, status: 'idle' } }));
+    expect(fetchSession).toHaveBeenCalledTimes(2);
+    expect(textOf(result.current.parts)).toBe('final');
+    act(() => sse.emitNamed('session.status', { sessionID: SID, status: { type: 'busy' } }));
+    await act(async () => sse.emitNamed('session.status', { sessionID: SID, status: { type: 'idle' } }));
+    expect(fetchSession).toHaveBeenCalledTimes(3);
+    unmount();
+  });
+
+  it('keeps queued deltas in the outgoing cache and cancels delayed work on navigation', async () => {
+    const { result, fetchSession, sse, rerender, unmount } = await setup();
+    act(() => sse.emitMessage(delta('keep')));
+    act(() => sse.emitMessage({ type: 'session.diff', properties: { sessionID: SID } }));
+    await act(async () => rerender({ id: 'other' }));
+    expect(textOf(useApiStore.getState().getCachedSession(SID)!.parts)).toBe('keep');
+    await act(async () => vi.advanceTimersByTime(1000));
+    expect(fetchSession).toHaveBeenCalledTimes(2);
+    expect(result.current.sessionId).toBe('other');
+    expect(result.current.parts).toEqual([]);
+    unmount();
+  });
+
+  it('delivers urgent permissions immediately after earlier queued content', async () => {
+    const { result, sse, frame, unmount } = await setup();
+    act(() => sse.emitMessage(delta('before prompt')));
+    act(() => sse.emitNamed('permission.asked', {
+      id: 'perm', sessionID: SID, permission: 'bash', patterns: ['ls'],
+    }));
+    expect(result.current.pendingPermission?.permissionId).toBe('perm');
+    expect(textOf(result.current.parts)).toBe('before prompt');
+    frame();
+    expect(textOf(result.current.parts)).toBe('before prompt');
+    unmount();
+  });
+
+  it('preserves snapshot/delta ordering and flushes before applying a REST snapshot', async () => {
+    const { result, sse, frame, fetchSession, unmount } = await setup();
+    act(() => sse.emitNamed('message.part.updated', {
+      id: 'p', messageID: 'm', sessionID: SID, type: 'text', text: 'a',
+    }));
+    act(() => sse.emitMessage(delta('b')));
+    act(() => sse.emitNamed('message.part.updated', {
+      id: 'p', messageID: 'm', sessionID: SID, type: 'text', text: 'ab',
+    }));
+    frame();
+    expect(textOf(result.current.parts)).toBe('ab');
+
+    let resolve!: (detail: SessionDetail) => void;
+    fetchSession.mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    act(() => sse.emitMessage({ type: 'session.idle', properties: {} }));
+    act(() => sse.emitMessage(delta('c')));
+    await act(async () => resolve(makeDetail({
+      parts: [{ id: 'p', messageId: 'm', sessionId: SID, data: { type: 'text', text: 'abc' } }],
+    })));
+    frame();
+    expect(textOf(result.current.parts)).toBe('abc');
+    unmount();
+  });
+
+  it('cancels a pending diff fetch at idle and ignores idle events for another session', async () => {
+    const { fetchSession, sse, unmount } = await setup();
+    act(() => sse.emitNamed('session.diff', { sessionID: SID }));
+    await act(async () => sse.emitNamed('session.idle', { sessionID: SID }));
+    await act(async () => vi.advanceTimersByTime(500));
+    expect(fetchSession).toHaveBeenCalledTimes(2);
+    await act(async () => sse.emitMessage({ type: 'session.idle', properties: { sessionID: 'child' } }));
+    expect(fetchSession).toHaveBeenCalledTimes(2);
+    unmount();
+  });
+
+  it('does not abort an idle fetch for its twin, but fetches again for a new turn', async () => {
+    const { fetchSession, sse, unmount } = await setup();
+    fetchSession.mockImplementationOnce(() => new Promise(() => {}));
+    act(() => sse.emitMessage({ type: 'session.status', properties: { status: 'idle' } }));
+    const signal = (fetchSession.mock.calls[1] as unknown[])[3] as AbortSignal;
+    act(() => sse.emitNamed('session.idle', {}));
+    expect(fetchSession).toHaveBeenCalledTimes(2);
+    expect(signal.aborted).toBe(false);
+    act(() => sse.emitNamed('session.status', { status: 'busy' }));
+    await act(async () => sse.emitNamed('session.idle', {}));
+    expect(fetchSession).toHaveBeenCalledTimes(3);
+    expect(signal.aborted).toBe(true);
+    unmount();
+  });
+
+  it('allows the next idle event to retry a failed reconcile', async () => {
+    const { fetchSession, sse, unmount } = await setup();
+    fetchSession.mockRejectedValueOnce(new Error('offline'));
+    await act(async () => sse.emitNamed('session.idle', {}));
+    await act(async () => sse.emitNamed('session.idle', {}));
+    expect(fetchSession).toHaveBeenCalledTimes(3);
+    unmount();
+  });
+
+  it('does not mistake child message activity for a new parent turn', async () => {
+    const { fetchSession, sse, unmount } = await setup();
+    await act(async () => sse.emitNamed('session.idle', { sessionID: SID }));
+    act(() => sse.emitMessage({ type: 'message.created', properties: {
+      info: { id: 'child-message', sessionID: 'child', role: 'assistant' },
+    } }));
+    await act(async () => sse.emitNamed('session.status', { sessionID: SID, status: 'idle' }));
+    expect(fetchSession).toHaveBeenCalledTimes(2);
+    unmount();
+  });
+
+  it.each([
+    ['session.idle', 'session.status'],
+    ['session.status', 'session.idle'],
+  ])('keeps authoritative error after %s and its %s twin, flushing queued content', async (first, twin) => {
+    const { result, fetchSession, sse, unmount } = await setup();
+    const detail = makeDetail();
+    fetchSession.mockResolvedValueOnce({ ...detail, session: { ...detail.session, status: 'error' } });
+    await act(async () => sse.emitMessage({ type: first, properties: { status: 'idle' } }));
+    expect(result.current.session?.status).toBe('error');
+    act(() => sse.emitNamed('message.part.updated', {
+      id: 'p', messageID: 'm', sessionID: SID, type: 'text', text: 'final error details',
+    }));
+    expect(result.current.parts).toEqual([]);
+    await act(async () => sse.emitNamed(twin, { status: { type: 'idle' } }));
+    expect(textOf(result.current.parts)).toBe('final error details');
+    expect(result.current.session?.status).toBe('error');
+    expect(fetchSession).toHaveBeenCalledTimes(2);
+    unmount();
+  });
+
+  it('reconciles idle after reconnect even when the new turn only delivers snapshots', async () => {
+    const { result, fetchSession, sse, unmount } = await setup();
+    act(() => sse.open());
+    await act(async () => sse.emitNamed('session.idle', {}));
+    act(() => sse.error());
+    act(() => result.current.retryNow());
+    const reconnected = FakeEventSource.latest()!;
+    await act(async () => reconnected.open());
+    expect(fetchSession).toHaveBeenCalledTimes(3);
+    const detail = makeDetail();
+    fetchSession.mockResolvedValueOnce({ ...detail, session: { ...detail.session, status: 'error' } });
+    act(() => reconnected.emitNamed('message.updated', {
+      info: { id: 'm', sessionID: SID, role: 'assistant', finish: 'error', time: { created: 100 } },
+    }));
+    await act(async () => reconnected.emitNamed('session.idle', {}));
+    expect(fetchSession).toHaveBeenCalledTimes(4);
+    expect(result.current.session?.status).toBe('error');
+    unmount();
+  });
+
+  it('flushes on disconnect and preserves the unmount cache without delayed callbacks', async () => {
+    const { result, fetchSession, sse, frame, unmount } = await setup();
+    act(() => sse.emitMessage(delta('a')));
+    act(() => sse.error());
+    expect(textOf(result.current.parts)).toBe('a');
+    // A reconnect can still be scheduled when the user leaves.
+    unmount();
+    act(() => sse.emitMessage(delta('late')));
+    frame();
+    await act(async () => vi.advanceTimersByTime(1000));
+    expect(textOf(useApiStore.getState().getCachedSession(SID)!.parts)).toBe('a');
+    expect(fetchSession).toHaveBeenCalledTimes(1);
+    expect(FakeEventSource.instances).toHaveLength(1);
+  });
+
+  it('batches the debug ring and coalesces resource dirtiness', async () => {
+    const { result, sse, frame, unmount } = await setup(true);
+    act(() => {
+      sse.emitMessage(' ');
+      sse.emitMessage('{bad json');
+      for (let i = 0; i < 60; i++) sse.emitMessage(delta('x'));
+      sse.emitNamed('message.part.updated', {
+        id: 'tool', messageID: 'm', sessionID: SID, type: 'tool', tool: 'edit',
+      });
+      sse.emitNamed('ocman.session.changed', { sessionID: SID });
+    });
+    expect(result.current.sseDebugEvents).toEqual([]);
+    frame();
+    expect(result.current.sseDebugEvents).toHaveLength(50);
+    expect(result.current.changesDirtyTick).toBe(1);
+    expect(textOf(result.current.parts)).toBe('x'.repeat(60));
+    unmount();
+  });
 });
 
 describe('useSession — initial load', () => {
@@ -345,7 +581,7 @@ describe('useSession — SSE event dispatch', () => {
       });
     });
 
-    expect(result.current.messages.find((m) => m.id === 'm-1')).toBeDefined();
+    await waitFor(() => expect(result.current.messages.find((m) => m.id === 'm-1')).toBeDefined());
     expect(result.current.parts.find((p) => p.id === 'p-1')).toBeDefined();
   });
 
@@ -369,6 +605,7 @@ describe('useSession — SSE event dispatch', () => {
       });
     });
 
+    await waitFor(() => expect(result.current.parts.find((p) => p.id === 'p-dup')).toBeDefined());
     const part = result.current.parts.find((p) => p.id === 'p-dup');
     const data = typeof part?.data === 'string' ? JSON.parse(part.data) : part?.data;
     expect(data.text).toBe('one ');
@@ -393,6 +630,7 @@ describe('useSession — SSE event dispatch', () => {
       });
     });
 
+    await waitFor(() => expect(result.current.parts.find((p) => p.id === 'p-named')).toBeDefined());
     const part = result.current.parts.find((p) => p.id === 'p-named');
     const data = typeof part?.data === 'string' ? JSON.parse(part.data) : part?.data;
     expect(data.text).toBe('named ');
@@ -420,6 +658,7 @@ describe('useSession — SSE event dispatch', () => {
       });
     });
 
+    await waitFor(() => expect(result.current.messages.find((m) => m.id === 'm-tool-live')).toBeDefined());
     const stub = result.current.messages.find((m) => m.id === 'm-tool-live');
     expect(stub).toBeDefined();
     const part = result.current.parts.find((p) => p.id === 'p-tool-live');
@@ -440,7 +679,7 @@ describe('useSession — SSE event dispatch', () => {
       FakeEventSource.latest()!.emitNamed('ocman.session.changed', { sessionID: SID });
     });
 
-    expect(result.current.changesDirtyTick).toBe(before + 1);
+    await waitFor(() => expect(result.current.changesDirtyTick).toBe(before + 1));
   });
 
   it('routes raw named tool payloads as live tool snapshots', async () => {
@@ -465,6 +704,7 @@ describe('useSession — SSE event dispatch', () => {
       });
     });
 
+    await waitFor(() => expect(result.current.messages.find((m) => m.id === 'm-tool-channel')).toBeDefined());
     const stub = result.current.messages.find((m) => m.id === 'm-tool-channel');
     expect(stub).toBeDefined();
     const part = result.current.parts.find((p) => p.id === 'p-tool-channel');
@@ -919,7 +1159,7 @@ describe('useSession — subagent event routing', () => {
     });
 
     // Message with matching session ID should appear.
-    expect(result.current.messages.find((m) => m.id === 'm-parent')).toBeDefined();
+    await waitFor(() => expect(result.current.messages.find((m) => m.id === 'm-parent')).toBeDefined());
   });
 
   it('drops events whose sessionID belongs to a different (subagent) session', async () => {
@@ -946,6 +1186,7 @@ describe('useSession — subagent event routing', () => {
       });
     });
 
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 60)); });
     // The reducer should drop this event — no orphan message.
     expect(result.current.messages.find((m) => m.id === 'm-subagent')).toBeUndefined();
   });
@@ -969,6 +1210,7 @@ describe('useSession — subagent event routing', () => {
       });
     });
 
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 60)); });
     expect(result.current.parts.find((p) => p.id === 'p-sub')).toBeUndefined();
   });
 });

@@ -234,17 +234,11 @@ func (a *Adapter) settleStatusOnPort(sessionID, port string, inferred db.Session
 // SessionStatusOnPort returns the current settled status without fetching a
 // full session detail. It is used to push idle transitions to the sidebar.
 func (a *Adapter) SessionStatusOnPort(sessionID, port string) (db.SessionStatus, error) {
-	ctx := context.Background()
-	session, err := a.db.GetSession(ctx, sessionID)
+	status, err := a.db.GetSessionStatus(context.Background(), sessionID)
 	if err != nil {
 		return "", err
 	}
-	messages, err := a.db.GetSessionMessages(ctx, sessionID)
-	if err != nil {
-		return "", err
-	}
-	applySessionDetailMetadataFromMessages(session, messages)
-	return a.settleStatusOnPort(sessionID, port, session.Status), nil
+	return a.settleStatusOnPort(sessionID, port, status), nil
 }
 
 // portForDirectory returns the instance port serving a session directory,

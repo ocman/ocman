@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { useApiStore } from '../../lib/apiStore';
 import { useUiStore } from '../../lib/uiStore';
 import { cleanTitle, shortPath } from '../../lib/format';
@@ -31,17 +31,47 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
   const sessionSeenId = session?.id;
   const sessionSeenPlatform = session?.platform;
   const sessionSeenUpdated = session?.timeUpdated || 0;
-  useEffect(() => {
-    if (!sessionSeenId || !sessionSeenPlatform) return;
-    recordOpenedSession(sessionSeenId);
-    patchSession({ seen: true, archived: false });
-    patchRecentSession(sessionSeenId, { seen: true, archived: false });
-    void markSessionSeen(sessionSeenPlatform, sessionSeenId, sessionSeenUpdated)
+  const lastMarked = useRef(0);
+  const pendingMark = useRef<(() => void) | null>(null);
+  const markSeen = useCallback((platform: string, id: string, updated: number) => {
+    lastMarked.current = updated;
+    patchRecentSession(id, { seen: true, archived: false });
+    void markSessionSeen(platform, id, updated)
       .then(() => {
         recheckFaviconNotify();
       })
       .catch((err) => remoteLog.error('Failed to mark session seen', err));
-  }, [markSessionSeen, sessionSeenId, sessionSeenPlatform, sessionSeenUpdated, patchRecentSession, patchSession, recordOpenedSession]);
+  }, [markSessionSeen, patchRecentSession]);
+
+  useEffect(() => {
+    if (!sessionSeenId || !sessionSeenPlatform) return;
+    recordOpenedSession(sessionSeenId);
+    patchSession({ seen: true, archived: false });
+    markSeen(sessionSeenPlatform, sessionSeenId, sessionSeenUpdated);
+    return () => {
+      // A quick departure still acknowledges the latest content actually shown.
+      pendingMark.current?.();
+      pendingMark.current = null;
+    };
+  // Entry bookkeeping runs once per identity, not on every streamed update.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionSeenId, sessionSeenPlatform]);
+
+  // The entry can come from cache. Coalesce newer authoritative/streamed
+  // timestamps so its stale watermark does not leave the open session unread.
+  useEffect(() => {
+    if (!sessionSeenId || !sessionSeenPlatform || sessionSeenUpdated <= lastMarked.current) return;
+    const mark = () => {
+      markSeen(sessionSeenPlatform, sessionSeenId, sessionSeenUpdated);
+      pendingMark.current = null;
+    };
+    pendingMark.current = mark;
+    const timer = setTimeout(() => {
+      mark();
+      patchSession({ seen: true, archived: false });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [sessionSeenId, sessionSeenPlatform, sessionSeenUpdated, markSeen, patchSession]);
 
   // Header info.
   useEffect(() => {

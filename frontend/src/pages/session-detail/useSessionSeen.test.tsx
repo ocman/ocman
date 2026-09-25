@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 
 vi.hoisted(() => {
@@ -43,6 +43,8 @@ describe('useSessionSeen', () => {
     useUiStore.setState({ lastOpenedSessionId: undefined });
   });
 
+  afterEach(() => vi.useRealTimers());
+
   it('marks seen everywhere, records the open, and publishes header info', async () => {
     const patchSession = vi.fn();
     const { unmount } = renderHook(() => useSessionSeen({ session, patchSession }), { wrapper });
@@ -66,5 +68,66 @@ describe('useSessionSeen', () => {
     expect(markSessionSeen).not.toHaveBeenCalled();
     expect(setInfo).not.toHaveBeenCalled();
     expect(document.title).toBe('Session - ocman');
+  });
+
+  it('marks each identity on entry and flushes its newer watermark when leaving', () => {
+    const patchSession = vi.fn();
+    const { rerender } = renderHook(
+      ({ value }) => useSessionSeen({ session: value, patchSession }),
+      { wrapper, initialProps: { value: session } },
+    );
+    rerender({ value: { ...session, timeUpdated: 100 } });
+    expect(markSessionSeen).toHaveBeenCalledTimes(1);
+    rerender({ value: { ...session, id: 's2', timeUpdated: 200 } });
+    expect(markSessionSeen).toHaveBeenLastCalledWith('opencode', 's2', 200);
+    rerender({ value: { ...session, platform: 'r-other:opencode', timeUpdated: 300 } });
+    expect(markSessionSeen).toHaveBeenLastCalledWith('r-other:opencode', 's1', 300);
+    rerender({ value: session });
+    expect(markSessionSeen.mock.calls).toEqual([
+      ['opencode', 's1', 42],
+      ['opencode', 's1', 100],
+      ['opencode', 's2', 200],
+      ['r-other:opencode', 's1', 300],
+      ['opencode', 's1', 42],
+    ]);
+  });
+
+  it('advances a cached entry watermark to the authoritative timestamp once the burst settles', async () => {
+    vi.useFakeTimers();
+    const patchSession = vi.fn();
+    const { rerender, unmount } = renderHook(
+      ({ value }) => useSessionSeen({ session: value, patchSession }),
+      { wrapper, initialProps: { value: session } },
+    );
+    expect(markSessionSeen).toHaveBeenLastCalledWith('opencode', 's1', 42);
+    rerender({ value: { ...session, timeUpdated: 100, seen: false } });
+    await act(async () => vi.advanceTimersByTime(400));
+    rerender({ value: { ...session, timeUpdated: 200, seen: false } });
+    await act(async () => vi.advanceTimersByTime(499));
+    expect(markSessionSeen).toHaveBeenCalledTimes(1);
+    await act(async () => vi.advanceTimersByTime(1));
+    expect(markSessionSeen).toHaveBeenCalledTimes(2);
+    expect(markSessionSeen).toHaveBeenLastCalledWith('opencode', 's1', 200);
+    expect(patchRecentSession).toHaveBeenLastCalledWith('s1', { seen: true, archived: false });
+    expect(recheckFaviconNotify).toHaveBeenCalledTimes(2);
+    rerender({ value: { ...session, timeUpdated: 200 } });
+    await act(async () => vi.advanceTimersByTime(1000));
+    expect(markSessionSeen).toHaveBeenCalledTimes(2);
+    unmount();
+  });
+
+  it('flushes the latest observed watermark on unmount and cancels its timer', async () => {
+    vi.useFakeTimers();
+    const patchSession = vi.fn();
+    const { rerender, unmount } = renderHook(
+      ({ value }) => useSessionSeen({ session: value, patchSession }),
+      { wrapper, initialProps: { value: session } },
+    );
+    rerender({ value: { ...session, timeUpdated: 200 } });
+    unmount();
+    expect(markSessionSeen).toHaveBeenLastCalledWith('opencode', 's1', 200);
+    await act(async () => vi.advanceTimersByTime(500));
+    expect(markSessionSeen).toHaveBeenCalledTimes(2);
+    expect(patchSession).toHaveBeenCalledTimes(1);
   });
 });
