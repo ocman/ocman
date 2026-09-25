@@ -44,51 +44,6 @@
 /* Portal target for per-route header actions. */
 .header-actions { display: flex; justify-content: flex-end; gap: 4px; }
 .header-actions:empty { display: none; }
-.header-actions-menu { position: relative; flex-shrink: 0; }
-.header-actions-menu > summary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 24px;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-dim);
-  cursor: pointer;
-  list-style: none;
-}
-.header-actions-menu > summary::-webkit-details-marker { display: none; }
-.header-actions-menu > summary:hover {
-  color: var(--text);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-}
-.header-actions-menu .oc-project-menu-list {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  z-index: 50;
-  min-width: 160px;
-  margin-top: 4px;
-  background: var(--mantle);
-  border: 1px solid var(--border);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  display: flex;
-  flex-direction: column;
-}
-.header-actions-menu .oc-project-menu-item {
-  text-align: left;
-  padding: 8px 12px;
-  background: transparent;
-  border: 0;
-  color: var(--text);
-  font-size: 12px;
-  cursor: pointer;
-  display: block;
-  width: 100%;
-  text-decoration: none;
-}
-.header-actions-menu .oc-project-menu-item:hover { background: var(--bg-hover); }
-.header-actions-menu .oc-project-menu-separator { height: 1px; margin: 4px 0; background: var(--border); }
 
 @media (max-width: 768px) {
   .app-header { padding: 0 12px; }

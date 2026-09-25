@@ -1,6 +1,9 @@
+import { useRef } from 'react';
 import type { TmuxSession } from '../../lib/api';
 import { sessionExportMarkdownUrl } from '../../lib/api';
 import { shortPath } from '../../lib/format';
+import { IconButton } from '../../components/IconButton';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from '../../components/DropdownMenu';
 
 export interface SessionActionsMenuProps {
   sessionId: string;
@@ -17,11 +20,6 @@ export interface SessionActionsMenuProps {
   onOpenVSCode: () => void;
 }
 
-/** Closes the enclosing `<details>` menu before running the action. */
-function closeMenu(e: React.MouseEvent<HTMLElement>) {
-  (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open');
-}
-
 /** The "⋯" session actions menu mounted into the header slot. */
 export function SessionActionsMenu({
   sessionId,
@@ -36,77 +34,59 @@ export function SessionActionsMenu({
   onLaunchOpencode,
   onOpenVSCode,
 }: SessionActionsMenuProps) {
+  const afterClose = useRef<(() => void) | undefined>(undefined);
   return (
-    <details className="oc-project-menu header-actions-menu">
-      <summary
-        className="oc-project-menu-trigger"
-        title="Session actions"
-        aria-label="Session actions"
-      >⋯</summary>
-      <div className="oc-project-menu-list" role="menu">
-        <button
-          type="button"
-          role="menuitem"
-          className="oc-project-menu-item"
-          onClick={(e) => { closeMenu(e); onNewSession(); }}
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <IconButton label="Session actions" icon="bi-three-dots" variant="ghost" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent onCloseAutoFocus={() => {
+        const action = afterClose.current;
+        afterClose.current = undefined;
+        // Let Radix restore the trigger before the next dialog records its opener.
+        if (action) queueMicrotask(action);
+      }}>
+        <DropdownMenuItem
+          onSelect={() => { afterClose.current = onNewSession; }}
           title="New session"
-        >New session</button>
+        >New session</DropdownMenuItem>
 
-        <div className="oc-project-menu-separator" role="separator" />
+        <DropdownMenuSeparator />
 
-        <a
-          role="menuitem"
-          className="oc-project-menu-item"
-          href={sessionExportMarkdownUrl(sessionId)}
-          download={`conversation-${sessionId}.md`}
-          onClick={closeMenu}
-        >Download Markdown</a>
-        <button
-          type="button"
-          role="menuitem"
-          className="oc-project-menu-item"
-          onClick={(e) => {
-            closeMenu(e);
+        <DropdownMenuItem asChild>
+          <a
+            href={sessionExportMarkdownUrl(sessionId)}
+            download={`conversation-${sessionId}.md`}
+          >Download Markdown</a>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={() => {
             // Defer so the menu unmounts before print snapshots the page.
             window.setTimeout(() => window.print(), 50);
           }}
-        >Print / Save as PDF</button>
-        <button
-          type="button"
-          role="menuitem"
-          className="oc-project-menu-item"
-          onClick={(e) => { closeMenu(e); onShare(); }}
-        >Share link…</button>
+        >Print / Save as PDF</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => { afterClose.current = onShare; }}>Share link…</DropdownMenuItem>
 
-        <div className="oc-project-menu-separator" role="separator" />
+        <DropdownMenuSeparator />
 
         {tmuxAvailable && matchingTmuxSession && (
-          <button
-            type="button"
-            role="menuitem"
-            className="oc-project-menu-item"
-            onClick={(e) => { closeMenu(e); onTmuxSwitch(e, matchingTmuxSession.name); }}
+          <DropdownMenuItem
+            onClick={(e) => onTmuxSwitch(e, matchingTmuxSession.name)}
             title={`Switch tmux to ${shortPath(matchingTmuxSession.name)} (T)`}
-          >Switch tmux</button>
+          >Switch tmux</DropdownMenuItem>
         )}
         {tmuxAvailable && !portAvailable && liveConnectionHint && (
-          <button
-            type="button"
-            role="menuitem"
-            className="oc-project-menu-item"
-            onClick={(e) => { closeMenu(e); onLaunchOpencode(); }}
+          <DropdownMenuItem
+            onSelect={onLaunchOpencode}
             disabled={launchingOpencode}
             title="Launch opencode --port 0 in a new tmux window"
-          >{launchingOpencode ? 'Launching…' : 'Launch opencode'}</button>
+          >{launchingOpencode ? 'Launching…' : 'Launch opencode'}</DropdownMenuItem>
         )}
-        <button
-          type="button"
-          role="menuitem"
-          className="oc-project-menu-item"
-          onClick={(e) => { closeMenu(e); onOpenVSCode(); }}
+        <DropdownMenuItem
+          onSelect={onOpenVSCode}
           title="Open in VS Code (V)"
-        >Open in VS Code</button>
-      </div>
-    </details>
+        >Open in VS Code</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

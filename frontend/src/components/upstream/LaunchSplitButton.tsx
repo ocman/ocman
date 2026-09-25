@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { postHandle, UpstreamApiError } from '../../lib/upstreamApi';
 import { useApiStore } from '../../lib/apiStore';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../DropdownMenu';
 
 interface LaunchSplitButtonProps {
   directory: string;
@@ -121,56 +122,46 @@ export function LaunchSplitButton({
       >
         {busy ? 'Launching…' : launched ? 'Launched ✓' : 'Handle in new session'}
       </button>
-      <button
-        type="button"
-        className="oc-upstream-launch-chevron"
-        disabled={busy}
-        title="More launch options"
-        aria-label="More launch options"
-        aria-haspopup="menu"
-        aria-expanded={menuOpen}
-        onClick={() => setMenuOpen((o) => !o)}
-        data-testid="launch-menu-toggle"
-      >
-        ▾
-      </button>
-      {menuOpen && (
-        <ul role="menu" className="oc-upstream-launch-menu" data-testid="launch-menu">
-          <li>
-            <button
-              type="button"
-              onClick={() => void run('worktree', 'handle')}
-              data-testid="launch-worktree"
-            >
-              Handle in new worktree
-              {crossFork && <span className="oc-upstream-launch-hint"> (fetches PR ref)</span>}
-            </button>
-          </li>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+        <DropdownMenuTrigger
+          className="oc-upstream-launch-chevron"
+          disabled={busy}
+          title="More launch options"
+          aria-label="More launch options"
+          data-testid="launch-menu-toggle"
+        >
+          ▾
+        </DropdownMenuTrigger>
+        <DropdownMenuContent data-testid="launch-menu">
+          <DropdownMenuItem
+            disabled={busy}
+            onSelect={() => void run('worktree', 'handle')}
+            data-testid="launch-worktree"
+          >
+            Handle in new worktree
+            {crossFork && <span className="oc-upstream-launch-hint"> (fetches PR ref)</span>}
+          </DropdownMenuItem>
           {type === 'pr' && (
             <>
-              <li>
-                <button
-                  type="button"
-                  onClick={() => void run('worktree', 'review')}
-                  data-testid="launch-review-worktree"
-                >
-                  Review in new worktree
-                  {crossFork && <span className="oc-upstream-launch-hint"> (fetches PR ref)</span>}
-                </button>
-              </li>
-              <li>
-                <button
-                  type="button"
-                  onClick={() => void run('session', 'review')}
-                  data-testid="launch-review-session"
-                >
-                  Review in new session
-                </button>
-              </li>
+              <DropdownMenuItem
+                disabled={busy}
+                onSelect={() => void run('worktree', 'review')}
+                data-testid="launch-review-worktree"
+              >
+                Review in new worktree
+                {crossFork && <span className="oc-upstream-launch-hint"> (fetches PR ref)</span>}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={busy}
+                onSelect={() => void run('session', 'review')}
+                data-testid="launch-review-session"
+              >
+                Review in new session
+              </DropdownMenuItem>
             </>
           )}
-        </ul>
-      )}
+        </DropdownMenuContent>
+      </DropdownMenu>
       {error && (
         <div className="oc-upstream-launch-error" role="alert">
           {error}

@@ -667,38 +667,6 @@ a.oc-upstream-ci-check-name:hover {
   cursor: not-allowed;
 }
 
-.oc-upstream-launch-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  list-style: none;
-  padding: 4px 0;
-  margin: 0;
-  background: var(--surface0);
-  border: 1px solid var(--border);
-  border-radius: 0;
-  z-index: 10;
-  min-width: 14em;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-}
-
-.oc-upstream-launch-menu button {
-  display: block;
-  width: 100%;
-  background: none;
-  border: none;
-  color: var(--text);
-  text-align: left;
-  padding: 6px 12px;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 12px;
-}
-
-.oc-upstream-launch-menu button:hover {
-  background: var(--surface1);
-}
-
 .oc-upstream-launch-hint {
   margin-left: 6px;
   font-family: 'SF Mono', Consolas, monospace;

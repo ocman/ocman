@@ -96,7 +96,7 @@ describe('UpstreamPane owner-scoped resources', () => {
     await waitFor(() => expect(upstreamApi.fetchForgeUser).toHaveBeenCalledTimes(34));
   });
 
-  it('resets row launch state when the project changes', () => {
+  it('resets row launch state when the project changes', async () => {
     upstreamListMock.items = [{
       number: 42, title: 'Patch', body: '', author: 'alice', status: 'open', updatedAt: '',
       labels: [], assignees: [], requestedReviewers: [], branch: 'patch', url: 'https://example/pr/42',
@@ -105,7 +105,7 @@ describe('UpstreamPane owner-scoped resources', () => {
     const oneUpstream = [upstreams[0]];
     const { rerender } = render(<UpstreamPane directory="/old" remoteId="box" upstreams={oneUpstream} />);
     fireEvent.click(screen.getByRole('button', { expanded: false }));
-    fireEvent.click(screen.getByTestId('launch-menu-toggle'));
+    await userEvent.click(screen.getByTestId('launch-menu-toggle'));
     expect(screen.getByRole('menu')).toBeInTheDocument();
 
     rerender(<UpstreamPane directory="/new" remoteId="box" upstreams={oneUpstream} />);
