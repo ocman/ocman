@@ -10,6 +10,7 @@ import { IssueRow } from './IssueRow';
 import { RemoteErrorBanner } from './RemoteErrorBanner';
 import { UpstreamApiError } from '../../lib/upstreamApi';
 import { ProjectLabel } from '../ProjectLabel';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../Tabs';
 
 interface UpstreamPaneProps {
   directory: string | undefined;
@@ -50,7 +51,6 @@ export function UpstreamPane({
   onLoadingChange,
   onSummaryChange,
 }: UpstreamPaneProps) {
-  const [tab, setTab] = useState<Tab>('prs');
   const { infos: gitInfos } = useGitInfo(directory && upstreams.length > 0 ? [directory] : [], remoteId);
   const currentBranch = directory ? gitInfos[directory]?.branch : undefined;
 
@@ -78,29 +78,13 @@ export function UpstreamPane({
   }
 
   return (
-    <div className="oc-upstream-pane" data-testid="upstream-pane">
-      <div className="oc-upstream-tabs" role="tablist">
-        <button
-          role="tab"
-          aria-selected={tab === 'prs'}
-          className={`oc-upstream-tab${tab === 'prs' ? ' active' : ''}`}
-          onClick={() => setTab('prs')}
-          data-testid="upstream-tab-prs"
-        >
-          PRs
-        </button>
-        <button
-          role="tab"
-          aria-selected={tab === 'issues'}
-          className={`oc-upstream-tab${tab === 'issues' ? ' active' : ''}`}
-          onClick={() => setTab('issues')}
-          data-testid="upstream-tab-issues"
-        >
-          Issues
-        </button>
-      </div>
+    <Tabs defaultValue="prs" className="oc-upstream-pane" data-testid="upstream-pane">
+      <TabsList aria-label="Pull requests and issues">
+        <TabsTrigger value="prs" data-testid="upstream-tab-prs">PRs</TabsTrigger>
+        <TabsTrigger value="issues" data-testid="upstream-tab-issues">Issues</TabsTrigger>
+      </TabsList>
 
-      {tab === 'prs' ? (
+      <TabsContent value="prs" className="oc-upstream-panel">
         <UpstreamTabContent
           key="prs"
           kind="prs"
@@ -115,7 +99,8 @@ export function UpstreamPane({
           onLoadingChange={onLoadingChange}
           currentBranch={currentBranch}
         />
-      ) : (
+      </TabsContent>
+      <TabsContent value="issues" className="oc-upstream-panel">
         <UpstreamTabContent
           key="issues"
           kind="issues"
@@ -130,8 +115,8 @@ export function UpstreamPane({
           onLoadingChange={onLoadingChange}
           currentBranch={currentBranch}
         />
-      )}
-    </div>
+      </TabsContent>
+    </Tabs>
   );
 }
 

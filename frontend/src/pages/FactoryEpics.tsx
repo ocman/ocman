@@ -5,6 +5,7 @@ import { EpicGraph } from './EpicGraph';
 import { proposalIssues } from './factoryGraph';
 import { Button, SelectField } from '../components/Control';
 import { SearchSelect } from '../components/SearchSelect';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/Tabs';
 import { ProjectLabel } from '../components/ProjectLabel';
 import { DataTableGroup, DataTableRow } from '../components/DataTable';
 import { FactoryStartedToast } from '../components/FactoryStartedToast';
@@ -216,7 +217,7 @@ export function FactoryEpicDetail() {
 	const [gateStatus, setGateStatus] = useState('');
 	const [started, setStarted] = useState(false);
 	const [managing, setManaging] = useState(false);
-	const [tab, setTab] = useState<'board' | 'graph' | 'plan'>();
+	const [tab, setTab] = useState<string>();
   const proposalHistory = proposals.data ?? (epic.data?.proposal ? [epic.data.proposal] : []);
   if (epic.isLoading) return <FactoryPage><p role="status">Loading epic…</p></FactoryPage>;
   if (epic.isError) return <FactoryPage><QueryError error={epic.error} retry={() => void epic.refetch()} /></FactoryPage>;
@@ -271,21 +272,25 @@ export function FactoryEpicDetail() {
       {pour.isError && <p role="alert">{pour.error instanceof Error ? pour.error.message : 'Could not pour graph.'}</p>}
       {(closeEpic.isError || setPaused.isError) && <p role="alert">{(closeEpic.error ?? setPaused.error) instanceof Error ? (closeEpic.error ?? setPaused.error)!.message : 'Could not update epic.'}</p>}
     </section>
-    <div className="factory-tabs" role="tablist" aria-label="Epic views">
-      {(['board', 'graph', 'plan'] as const).map((value) => <button key={value} type="button" role="tab" aria-selected={active === value} className={`factory-tab${active === value ? ' active' : ''}`} onClick={() => setTab(value)}>{value === 'board' ? 'Board' : value === 'graph' ? 'Graph' : 'Plan'}</button>)}
-    </div>
-    {active === 'board' && <section role="tabpanel" aria-label="Board">
+    <Tabs value={active} onValueChange={setTab} className="factory-epic-views">
+    <TabsList aria-label="Epic views">
+      <TabsTrigger value="board">Board</TabsTrigger>
+      <TabsTrigger value="graph">Graph</TabsTrigger>
+      <TabsTrigger value="plan">Plan</TabsTrigger>
+    </TabsList>
+    <TabsContent value="board" asChild><section>
       <div className="factory-toolbar"><h3>Issues</h3><Button type="button" onClick={() => setManaging(true)} disabled={!graphIssues.data}>Manage graph</Button></div>
       <IssueList epicID={id} />
       {!!removedIssues.data?.length && <section aria-label="Removed work audit"><h3>Removed work audit</h3><ul className="factory-issues">{removedIssues.data.map((issue) => <li key={issue.id}><strong>{issue.title}</strong><span>{issue.kind} · Removed {issue.removedAt ? new Date(issue.removedAt).toISOString() : 'previously'}</span><span>Audit reference: {issue.id}</span></li>)}</ul></section>}
-    </section>}
-    {active === 'graph' && <section role="tabpanel" aria-label="Graph"><EpicGraph issues={graphIssues.data} /></section>}
-    {active === 'plan' && <section role="tabpanel" aria-label="Plan">
+    </section></TabsContent>
+    <TabsContent value="graph" asChild><section><EpicGraph issues={graphIssues.data} /></section></TabsContent>
+    <TabsContent value="plan" asChild><section>
       <PlanningAttempts epicID={id} attempts={epic.data.attempts ?? []} />
       {proposals.isError && <QueryError error={proposals.error} retry={() => void proposals.refetch()} />}
       {!proposals.isError && !proposalHistory.length && <p className="oc-empty">No plan has been proposed yet.</p>}
       {proposalHistory.map((proposal) => <details key={proposal.revision} className="factory-proposal"><summary>Proposal revision: {proposal.revision}</summary><p>Content hash: {proposal.contentHash}</p><pre>{JSON.stringify(proposal.manifest, null, 2)}</pre>{proposal.rationaleMarkdown && <MarkdownContent text={proposal.rationaleMarkdown} />}</details>)}
-    </section>}
+    </section></TabsContent>
+    </Tabs>
     {managing && graphIssues.data && <Drawer title="Manage graph" onClose={() => setManaging(false)}><GraphControls epicID={id} issues={graphIssues.data} allIssues={graphIssueQueries.flatMap((query) => query.data ?? [])} /></Drawer>}
   </FactoryPage>;
 }

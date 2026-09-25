@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { UpstreamPane } from './UpstreamPane';
 import * as upstreamApi from '../../lib/upstreamApi';
@@ -44,12 +45,28 @@ describe('UpstreamPane owner-scoped resources', () => {
     expect(useGitInfo).toHaveBeenCalledWith([], 'box');
   });
 
+  it('activates with the keyboard and preserves each tab’s filters across remounts', async () => {
+    const user = userEvent.setup();
+    render(<UpstreamPane directory="/repo" remoteId="box" upstreams={upstreams} />);
+    await user.click(screen.getByTestId('upstream-filter-closed'));
+    await user.click(screen.getByRole('tab', { name: 'PRs' }));
+    await user.keyboard('{ArrowRight}');
+    await waitFor(() => expect(screen.getByRole('tab', { name: 'Issues' })).toHaveFocus());
+    expect(screen.getByRole('tabpanel', { name: 'PRs' })).toBeInTheDocument();
+    await user.keyboard('{Enter}');
+    expect(screen.getAllByRole('tabpanel')).toHaveLength(1);
+    expect(screen.getByRole('tabpanel', { name: 'Issues' })).toBeInTheDocument();
+    expect(screen.getByTestId('upstream-filter-open')).toHaveClass('active');
+    await user.click(screen.getByRole('tab', { name: 'PRs' }));
+    expect(screen.getByTestId('upstream-filter-closed')).toHaveClass('active');
+  });
+
   it('reuses forge identities when switching tabs', async () => {
     render(<UpstreamPane directory="/repo" remoteId="box" upstreams={upstreams} />);
     fireEvent.click(screen.getByTestId('upstream-filter-mine'));
     await waitFor(() => expect(upstreamApi.fetchForgeUser).toHaveBeenCalledTimes(2));
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Issues' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Issues' }));
     await waitFor(() => expect(screen.getByRole('tab', { name: 'Issues' })).toHaveAttribute('aria-selected', 'true'));
     fireEvent.click(screen.getByTestId('upstream-filter-mine'));
     expect(upstreamApi.fetchForgeUser).toHaveBeenCalledTimes(2);
@@ -61,7 +78,7 @@ describe('UpstreamPane owner-scoped resources', () => {
     fireEvent.click(screen.getByTestId('upstream-filter-mine'));
     await waitFor(() => expect(upstreamApi.fetchForgeUser).toHaveBeenCalledTimes(2));
 
-    fireEvent.click(screen.getByRole('tab', { name: 'Issues' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Issues' }));
     fireEvent.click(screen.getByTestId('upstream-filter-mine'));
     await waitFor(() => expect(upstreamApi.fetchForgeUser).toHaveBeenCalledTimes(4));
   });

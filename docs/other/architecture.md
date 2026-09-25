@@ -289,7 +289,7 @@ within stable one-minute buckets, with reduced-motion-aware reorder animation.
 
 ```mermaid
 flowchart TD
-    Pages[pages/<br/>routes] --> Comp[components/<br/>~80 components]
+    Pages[pages/<br/>routes] --> Comp[components/<br/>shared controls + feature UI]
     Pages --> Stores[Client state<br/>TanStack Query + Zustand]
     Comp --> Stores
     Comp -->|plugin Settings + palette actions: explicit ownerId| API
@@ -305,6 +305,12 @@ flowchart TD
     Comp --> Speech[Browser speech synthesis<br/>local or online voice]
 ```
 
+- **Shared controls.** `Control`, `IconButton`, and `RefreshButton` own button
+  styling and feedback. `SegmentedControl` uses native radio inputs for
+  single-choice filters. `Tabs` wraps Radix UI for keyboard navigation, focus,
+  and tab/panel associations, using the app's CSS. Tabs activate on click,
+  Enter, or Space and unmount inactive panel content by default; pages keep
+  their own fetching, filter, and URL state.
 - **Capability gating.** The UI never branches on platform identity. Features
   toggle via `/api/capabilities`, enforced by a lint script.
 - **Read aloud.** Turn-end controls select original final-answer text parts and

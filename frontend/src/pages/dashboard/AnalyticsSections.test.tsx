@@ -253,7 +253,7 @@ describe('analytics sections', () => {
   it('fetches only the selected log grain', () => {
     renderTab(<LogsTab />);
     expect(useMetricLogs).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'project', projectLimit: 20 }));
-    fireEvent.click(screen.getByRole('button', { name: 'Request Log' }));
+    fireEvent.keyDown(screen.getByRole('tab', { name: 'Request Log' }), { key: 'Enter' });
     expect(useMetricLogs).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'request', limit: 20 }));
     expect(screen.getByRole('table')).toBeInTheDocument();
   });

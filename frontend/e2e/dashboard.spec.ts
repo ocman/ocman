@@ -310,19 +310,37 @@ test('performance shows agent and model filter dropdowns', async ({ mockedPage: 
 
 test('logs shows session log sub-tab', async ({ mockedPage: page }) => {
   await page.goto('/analytics/logs');
-  await expect(page.getByRole('button', { name: 'Session Log' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Session Log' })).toBeVisible();
 });
 
 test('logs shows request log sub-tab', async ({ mockedPage: page }) => {
   await page.goto('/analytics/logs');
-  await expect(page.getByRole('button', { name: 'Request Log' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Request Log' })).toBeVisible();
 });
 
 test('logs project log sub-tab switches view', async ({ mockedPage: page }) => {
   await page.goto('/analytics/logs');
-  const projectLogTab = page.getByRole('button', { name: 'Project Log' });
+  const projectLogTab = page.getByRole('tab', { name: 'Project Log' });
   await projectLogTab.click();
-  await expect(projectLogTab).toHaveClass(/active/);
+  await expect(projectLogTab).toHaveAttribute('aria-selected', 'true');
+});
+
+test('log tabs navigate without activating until Enter or Space', async ({ mockedPage: page }) => {
+  await page.goto('/analytics/logs');
+  const project = page.getByRole('tab', { name: 'Project Log' });
+  const request = page.getByRole('tab', { name: 'Request Log' });
+  await project.focus();
+  await project.press('End');
+  await expect(request).toBeFocused();
+  await expect(project).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tabpanel', { name: 'Project Log' })).toBeVisible();
+  await request.press('Enter');
+  await expect(request).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByRole('tabpanel', { name: 'Request Log' })).toBeVisible();
+  await request.press('Home');
+  await expect(project).toBeFocused();
+  await project.press('Space');
+  await expect(project).toHaveAttribute('aria-selected', 'true');
 });
 
 // ---------------------------------------------------------------------------

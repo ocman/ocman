@@ -1,13 +1,10 @@
 /* UpstreamPane styling — matches the dashboard's tab / filter design:
- *   - Internal tabs use the .nav-tab look (underline active indicator,
- *     accent color, sans-serif 13px scaled down a touch for the
- *     right-panel context).
+ *   - Internal tabs use the shared Tabs component.
  *   - Filter pills use the .oc-time-range-btn look (bordered, square
  *     corners, 11px monospace, accent border + text on active).
  *   - Catppuccin tokens (var(--accent), var(--text-dim), var(--border))
  *     keep colors consistent with the rest of the app.
  *
- * Kept self-contained so the feature can be lifted wholesale.
  */
 
 .oc-upstream-pane {
@@ -19,38 +16,11 @@
   font-size: 13px;
 }
 
-/* ---- Internal tabs (PRs / Issues) ---- */
-
-.oc-upstream-tabs {
+.oc-upstream-panel:not([hidden]) {
   display: flex;
-  gap: 0;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.oc-upstream-tab {
-  position: relative;
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  padding: 8px 16px;
-  color: var(--text-dim);
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.2px;
-  transition: color 0.15s;
-}
-
-.oc-upstream-tab:hover {
-  color: var(--text);
-}
-
-.oc-upstream-tab.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* ---- Tab content (scrollable) ---- */
