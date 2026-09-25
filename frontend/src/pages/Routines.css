@@ -1,4 +1,4 @@
-.routine-page { flex: 1; min-width: 0; overflow: auto; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 20px; padding: 24px; color: var(--text); background: var(--bg); }
+.routine-page { flex: 1; min-width: 0; overflow: auto; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 20px; color: var(--text); background: var(--bg); }
 .routine-header, .routine-list { width: 100%; }
 .routine-header { display: flex; align-items: center; justify-content: space-between; height: max-content; gap: 18px; }
 .routine-header p { margin: 0; color: var(--text-muted); }
@@ -38,7 +38,7 @@
 .routine-state.success { color: var(--success); }.routine-state.failure, .routine-state.interrupted, .routine-state.expired { color: var(--danger); }.routine-state.running { color: var(--yellow); }
 .routine-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .routine-delete, .routine-error { color: var(--danger); }
-@media (max-width: 640px) { .routine-page { padding: 12px; }.routine-header { align-items: stretch; flex-direction: column; }.routine-drawer { padding: 18px; } }
+@media (max-width: 640px) { .routine-header { align-items: stretch; flex-direction: column; }.routine-drawer { padding: 18px; } }
 .routine-webhooks { margin-top: 2rem; }
 .routine-webhook-card { display: flex; flex-wrap: wrap; gap: 1rem; align-items: end; padding: 1rem; margin-top: .75rem; border: 1px solid var(--oc-border); border-radius: .5rem; }
 .routine-webhook-card > div { flex: 1 1 12rem; }

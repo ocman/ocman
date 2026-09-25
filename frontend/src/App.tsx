@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useHotkeys } from 'react-hotkeys-hook';
 import { AnalyticsTab, DashboardLayout, LegacyAnalyticsRedirect, SessionsTab, ProjectsTab, SettingsTab } from './pages/Dashboard';
@@ -409,30 +409,34 @@ function AuthenticatedShell() {
 export function AppRoutes() {
   return (
     <Routes>
-      <Route element={<DashboardLayout />}>
-        <Route path="/" element={<RootRedirect />} />
-        <Route path="/sessions" element={<SessionsTab />} />
-        <Route path="/subscription-usage" element={<SubscriptionUsage />} />
-        <Route path="/projects" element={<ProjectsTab />} />
-        <Route path="/analytics/:section?" element={<AnalyticsTab />} />
-        <Route path="/stats" element={<LegacyAnalyticsRedirect section="performance" />} />
-        <Route path="/usage" element={<LegacyAnalyticsRedirect section="overview" />} />
-        <Route path="/routines" element={<Routines />} />
-        <Route path="/settings" element={<SettingsTab />} />
+      {/* The one owner of page padding and scrolling. Inbox and sessions
+          are full-bleed workspaces, so they sit outside it. */}
+      <Route element={<div className="page-content" data-testid="page-content"><Outlet /></div>}>
+        <Route element={<DashboardLayout />}>
+          <Route path="/" element={<RootRedirect />} />
+          <Route path="/sessions" element={<SessionsTab />} />
+          <Route path="/subscription-usage" element={<SubscriptionUsage />} />
+          <Route path="/projects" element={<ProjectsTab />} />
+          <Route path="/analytics/:section?" element={<AnalyticsTab />} />
+          <Route path="/stats" element={<LegacyAnalyticsRedirect section="performance" />} />
+          <Route path="/usage" element={<LegacyAnalyticsRedirect section="overview" />} />
+          <Route path="/routines" element={<Routines />} />
+          <Route path="/settings" element={<SettingsTab />} />
+        </Route>
+        <Route path="/project/:dir/worktrees" element={<WorktreesView />} />
+        <Route path="/factory" element={<Navigate to="/factory/overview" replace />} />
+        <Route path="/factory/overview" element={<FactoryOverview />} />
+        <Route path="/factory/how-to" element={<FactoryHowTo />} />
+        <Route path="/factory/epics" element={<FactoryEpics />} />
+        <Route path="/factory/epics/:id" element={<FactoryEpicDetail />} />
+        <Route path="/factory/issues/:issueId?" element={<FactoryIssues />} />
+        <Route path="/factory/queue" element={<FactoryQueue />} />
+        <Route path="/factory/configuration" element={<FactoryConfiguration />} />
+        <Route path="/project/:dir" element={<ProjectDetail />} />
+        <Route path="/import-share" element={<ImportSharedConversation />} />
       </Route>
       <Route path="/inbox" element={<Inbox />} />
-      <Route path="/project/:dir/worktrees" element={<WorktreesView />} />
-      <Route path="/factory" element={<Navigate to="/factory/overview" replace />} />
-      <Route path="/factory/overview" element={<FactoryOverview />} />
-	  <Route path="/factory/how-to" element={<FactoryHowTo />} />
-      <Route path="/factory/epics" element={<FactoryEpics />} />
-      <Route path="/factory/epics/:id" element={<FactoryEpicDetail />} />
-       <Route path="/factory/issues/:issueId?" element={<FactoryIssues />} />
-		<Route path="/factory/queue" element={<FactoryQueue />} />
-	  <Route path="/factory/configuration" element={<FactoryConfiguration />} />
-      <Route path="/project/:dir" element={<ProjectDetail />} />
       <Route path="/session/:id" element={<SessionDetail />} />
-      <Route path="/import-share" element={<ImportSharedConversation />} />
     </Routes>
   );
 }

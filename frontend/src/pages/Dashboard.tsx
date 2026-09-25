@@ -122,14 +122,12 @@ export function DashboardLayout() {
 
   return (
     <DashboardContext.Provider value={ctx}>
-      <div className={`dashboard-content${location.pathname === '/routines' ? ' dashboard-content-flush' : ''}`}>
-        {/* Per-tab boundary so a crash inside Stats / Usage / etc.
-            (chart.js render error, malformed metrics payload) stays local.
-            resetKey on pathname auto-clears when the user switches tabs. */}
-        <ErrorBoundary name={`dashboard:${location.pathname}`} resetKey={location.pathname}>
-          <Outlet />
-        </ErrorBoundary>
-      </div>
+      {/* Per-tab boundary so a crash inside Stats / Usage / etc.
+          (chart.js render error, malformed metrics payload) stays local.
+          resetKey on pathname auto-clears when the user switches tabs. */}
+      <ErrorBoundary name={`dashboard:${location.pathname}`} resetKey={location.pathname}>
+        <Outlet />
+      </ErrorBoundary>
     </DashboardContext.Provider>
   );
 }

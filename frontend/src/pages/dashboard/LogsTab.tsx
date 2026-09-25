@@ -43,7 +43,7 @@ export function LogsTab() {
   const modelOptions = [{ value: '', label: 'All models' }, ...(logs?.availableModels ?? []).map((value) => ({ value, label: renderModel(value), icon: <ModelLogo model={value} /> }))];
 
   return (
-    <div className="metrics-page">
+    <div>
       <AnalyticsFilters days={days} onDaysChange={setDays} agent={agent} onAgentChange={setAgent} agentOptions={agentOptions} model={model} onModelChange={setModel} modelOptions={modelOptions} />
       {logsQ.error instanceof Error && <InlineAlert>{logsQ.error.message}</InlineAlert>}
       <Tabs className="chart-card" value={kind} onValueChange={(value) => setKind(value as MetricsLogKind)}>

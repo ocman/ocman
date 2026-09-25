@@ -46,6 +46,7 @@ function wt(overrides: Partial<WorktreeEntry> = {}): WorktreeEntry {
 function renderView() {
   return render(
     <MemoryRouter>
+      <div id="header-actions-slot" />
       <WorktreesView />
     </MemoryRouter>,
   );

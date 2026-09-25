@@ -2,12 +2,12 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { usePageTitle } from '../lib/headerContext';
 import { SessionTable } from '../components/SessionTable';
-import { ProjectLabel } from '../components/ProjectLabel';
+import { HeaderPortal } from './session-detail/MobileHeaderControls';
 import { TimeRangeControl } from '../components/TimeRangeControl';
 import { useTmux } from '../lib/useTmux';
 import { useOpencodeLaunch } from '../lib/useCapabilities';
 import { useClickOutside } from '../lib/useClickOutside';
-import { shortPath } from '../lib/format';
+import { cleanTitle, fuzzyMatch, shortPath } from '../lib/format';
 import { openVSCode } from '../lib/shortcuts';
 import { useShortcut } from '../lib/shortcutRegistry';
 import { useSessions } from '../lib/queries';
@@ -105,6 +105,11 @@ export function ProjectDetail() {
   );
   const sessions = sessionsQ.data ?? [];
   const sessionsLoaded = !sessionsQ.isLoading;
+  const [search, setSearch] = useState('');
+  const q = search.trim();
+  const filteredSessions = q
+    ? sessions.filter((s) => fuzzyMatch(q, `${cleanTitle(s.title)} ${s.directory}`))
+    : sessions;
 
   const handleTmuxSwitch = useCallback((anchor?: HTMLElement | null) => {
     if (!matchingTmuxSession) return;
@@ -150,7 +155,7 @@ export function ProjectDetail() {
   useShortcut(openVscodeShortcut);
 
   return (
-    <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+    <div>
       {pendingTmuxSession && pickerPos && (
         <TmuxClientPicker
           pickerRef={pickerRef}
@@ -159,8 +164,7 @@ export function ProjectDetail() {
           onSelect={handleClientSelect}
         />
       )}
-      <h2 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <ProjectLabel path={directory} fallback="Project" style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }} />
+      <HeaderPortal>
         {matchingTmuxSession && (
           <button
             type="button"
@@ -182,7 +186,17 @@ export function ProjectDetail() {
             Worktrees
           </button>
         )}
-      </h2>
+      </HeaderPortal>
+      <div className="metrics-filters oc-projects-toolbar">
+        <input
+          type="search"
+          className="oc-project-search"
+          placeholder="Search sessions…"
+          aria-label="Search sessions"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
       <div className="oc-time-range">
         <TimeRangeControl value={timeRange} onChange={setTimeRange} />
         <button
@@ -190,7 +204,7 @@ export function ProjectDetail() {
           onClick={() => setExcludeArchived(!excludeArchived)}
         >Exclude archived</button>
       </div>
-      <SessionTable sessions={sessions} showProject={false} loading={!sessionsLoaded} includeArchived={!excludeArchived} />
+      <SessionTable sessions={filteredSessions} showProject={false} loading={!sessionsLoaded} includeArchived={!excludeArchived} />
     </div>
   );
 }

@@ -35,10 +35,12 @@ test('all dashboard destinations are visible with Settings at the bottom', async
   expect(navBox!.y + navBox!.height - settingsBox!.y - settingsBox!.height).toBeLessThanOrEqual(12);
 });
 
-test('dashboard content has space below the header', async ({ mockedPage: page }) => {
-  await page.goto('/sessions');
-  await expect(page.locator('.dashboard-content')).toHaveCSS('padding-top', '24px');
-});
+for (const path of ['/sessions', '/routines', '/factory/epics', '/project/%2Frepo']) {
+  test(`${path} gets the shared page padding`, async ({ mockedPage: page }) => {
+    await page.goto(path);
+    await expect(page.getByTestId('page-content')).toHaveCSS('padding', '24px 12px');
+  });
+}
 
 test('clicking Settings navigates to /settings', async ({ mockedPage: page }) => {
   await page.goto('/sessions');

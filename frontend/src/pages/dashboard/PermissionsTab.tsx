@@ -10,7 +10,7 @@ export function PermissionsTab() {
   const [days, setDays] = useState(30);
   const statsQ = usePermissionStats({ days, dir: dirScope || undefined });
   return (
-    <div className="metrics-page">
+    <div>
       <AnalyticsFilters days={days} onDaysChange={setDays} />
       {statsQ.error instanceof Error && <div className="oc-error-banner">{statsQ.error.message}</div>}
       {statsQ.isLoading && !statsQ.data && <ChartSkeletons labels={['Loading permission approvals', 'Loading observed user wait']} />}

@@ -18,3 +18,7 @@
 }
 .content { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .content:has(.session-layout) { padding: 0; }
+/* The single source of page padding for every non-workspace route.
+   Pages must not add their own outer padding. */
+.page-content { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; padding: 24px 12px; }
+@media (max-width: 640px) { .page-content { padding: 12px; } }

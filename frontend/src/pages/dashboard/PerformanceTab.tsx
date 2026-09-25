@@ -18,7 +18,7 @@ export function PerformanceTab() {
   const modelOptions = [{ value: '', label: 'All models' }, ...(metrics?.availableModels ?? []).map((value) => ({ value, label: renderModel(value), icon: <ModelLogo model={value} /> }))];
 
   return (
-    <div className="metrics-page">
+    <div>
       <AnalyticsFilters days={days} onDaysChange={setDays} agent={agent} onAgentChange={setAgent} agentOptions={agentOptions} model={model} onModelChange={setModel} modelOptions={modelOptions} />
       {metricsQ.error instanceof Error && <div className="oc-error-banner">{metricsQ.error.message}</div>}
       {metricsQ.isLoading && !metrics && <ChartSkeletons labels={['Loading throughput', 'Loading request latency', 'Loading error rate', 'Loading cache efficiency', 'Loading stop reasons']} />}

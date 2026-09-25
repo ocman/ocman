@@ -1,4 +1,4 @@
-.factory-page { flex: 1; min-width: 0; min-height: 0; overflow: auto; display: grid; align-content: start; gap: 20px; width: 100%; padding: 24px; color: var(--text); }
+.factory-page { flex: 1; min-width: 0; min-height: 0; overflow: auto; display: grid; align-content: start; gap: 20px; width: 100%; color: var(--text); }
 .factory-page nav { display: flex; gap: 0; min-height: 42px; overflow-x: auto; overflow-y: hidden; border-bottom: 1px solid var(--border); scrollbar-width: none; }
 .factory-page nav::-webkit-scrollbar { display: none; }
 .factory-page nav a { flex: 0 0 auto; padding: 10px 16px; border-bottom: 2px solid transparent; margin-bottom: -1px; color: var(--text-dim); font-size: 14px; font-weight: 500; text-decoration: none; white-space: nowrap; }
@@ -143,7 +143,7 @@ a.factory-cell:hover { color: var(--accent); }
 .factory-how-to-map a span { color: var(--text-dim); font-size: 13px; line-height: 1.45; }
 
 @media (max-width: 640px) {
-  .factory-page { gap: 16px; padding: 12px; }
+  .factory-page { gap: 16px; }
   .factory-page nav a { padding-inline: 12px; }
   .factory-page > form, .factory-page > section { padding: 14px; }
 	.factory-how-to { gap: 24px; }

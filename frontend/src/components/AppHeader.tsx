@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useHeaderInfo } from '../lib/headerContext';
-import { routeTitle } from '../lib/routeTitle';
+import { routeProjectDir, routeTitle } from '../lib/routeTitle';
+import { ProjectLabel } from './ProjectLabel';
 import { PlatformBadge } from './PlatformBadge';
 import { HostBadge } from './HostBadge';
 import './AppHeader.css';
@@ -16,7 +17,15 @@ export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
   const sessionInfo = routeSessionId && info.sessionId === routeSessionId ? info : {};
 
   let breadcrumb: ReactNode = routeTitle(path, sessionInfo.sessionTitle);
-  if (routeSessionId && sessionInfo.sessionTitle) {
+  const projectDir = routeProjectDir(path);
+  if (projectDir?.split('/').pop()) {
+    breadcrumb = (
+      <>
+        <ProjectLabel path={projectDir} />
+        {path.endsWith('/worktrees') && ' / Worktrees'}
+      </>
+    );
+  } else if (routeSessionId && sessionInfo.sessionTitle) {
     breadcrumb = (
       <>
         {sessionInfo.sessionPlatform && (

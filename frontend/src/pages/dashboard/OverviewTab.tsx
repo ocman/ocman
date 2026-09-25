@@ -49,7 +49,7 @@ export function OverviewTab() {
   const breakdown = (counts: Record<string, number>) => Object.entries(counts).map(([status, count]) => `${status}: ${count}`).join(' / ');
 
   return (
-    <div className="metrics-page">
+    <div>
       <section aria-labelledby="inventory-heading">
         <h2 id="inventory-heading" className="analytics-section-heading">All-time inventory</h2>
         {overviewQ.error instanceof Error && <div className="oc-error-banner">{overviewQ.error.message}</div>}

@@ -53,7 +53,7 @@ export function ProjectsTab() {
   }
 
   return (
-    <div className="metrics-page" style={{ padding: 0 }}>
+    <div>
       {projectsError && (
         <div className="oc-error-banner">
           {projectsError}
