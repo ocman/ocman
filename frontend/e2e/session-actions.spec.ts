@@ -299,15 +299,14 @@ test('clicking a session row in project detail navigates to session', async ({ m
 test('project detail shows time-range filter buttons and "Exclude archived" toggle', async ({ mockedPage: page }) => {
   await page.goto(`/project/${encodeURIComponent(MOCK_PROJECT.directory)}`);
 
-  const filterBar = page.locator('.oc-time-range');
-  await expect(filterBar).toBeVisible({ timeout: 5_000 });
-  // 5 time-range buttons (12h / 24h / 7d / 30d / All) plus the
-  // "Exclude archived" toggle.
-  await expect(filterBar.locator('button')).toHaveCount(6);
+  const timeRange = page.getByRole('radiogroup', { name: 'Time range' });
+  await expect(timeRange).toBeVisible({ timeout: 5_000 });
+  // 12h / 24h / 7d / 30d / All.
+  await expect(timeRange.getByRole('radio')).toHaveCount(5);
   // 7d is the default for project detail.
-  await expect(filterBar.locator('button.active', { hasText: '7d' })).toBeVisible();
+  await expect(timeRange.getByRole('radio', { name: '7d' })).toBeChecked();
   // Archived is included by default ⇒ the toggle is NOT active.
-  await expect(filterBar.locator('button', { hasText: 'Exclude archived' })).not.toHaveClass(/active/);
+  await expect(page.getByRole('button', { name: 'Exclude archived' })).not.toHaveClass(/active/);
 });
 
 test('project detail "Exclude archived" toggle hides locally-archived sessions', async ({ mockedPage: page }) => {

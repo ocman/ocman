@@ -79,6 +79,17 @@ describe('Inbox', () => {
     expect(api.archiveInboxItems).not.toHaveBeenCalled();
   });
 
+  it('keeps the actions menu open on a focusless click inside and closes it on an outside click', async () => {
+    renderInbox();
+    const menu = screen.getByLabelText('Inbox actions').closest('details')!;
+    menu.open = true;
+    // Safari: clicking a menu button blurs the summary without a relatedTarget.
+    fireEvent.blur(menu.querySelector('summary')!, { relatedTarget: null });
+    expect(menu.open).toBe(true);
+    fireEvent.mouseDown(document.body);
+    expect(menu.open).toBe(false);
+  });
+
   it('archives all read items for each source', async () => {
     renderInbox();
     await screen.findByText('Remote note');

@@ -9,6 +9,7 @@ import { EmptyState } from '../components/EmptyState';
 import { useArchiveAllReadInboxItems, useArchiveInboxItems, useInbox, useMarkInboxItemRead, useMarkInboxItemUnread, useRespondInboxPermission } from '../lib/queries';
 import type { InboxItem } from '../lib/api';
 import { fuzzyMatch } from '../lib/format';
+import { useClickOutside } from '../lib/useClickOutside';
 import { useShortcut } from '../lib/shortcutRegistry';
 import './Inbox.css';
 
@@ -61,6 +62,9 @@ export function Inbox() {
   const [search, setSearch] = useState('');
   const query = useDeferredValue(search.trim());
   const actions = useRef<HTMLDetailsElement>(null);
+  // Safari doesn't focus a clicked button, so blur carries no relatedTarget;
+  // outside clicks are detected here instead of in onBlur.
+  useClickOutside(actions, true, () => actions.current?.removeAttribute('open'));
   const [searchParams, setSearchParams] = useSearchParams();
   const activeCategory = searchParams.get('category') ?? 'all';
   const items = inbox.data ? inbox.data.items : [];
@@ -135,7 +139,7 @@ export function Inbox() {
           </div>
           <div className="inbox-filter-row">
             <SegmentedControl label="Message type" compact options={categories.map(({ id, label, icon }) => ({ value: id, label, icon: `bi-${icon}` }))} value={activeCategory} onChange={selectCategory} />
-            <details className="inbox-action-menu" ref={actions} onKeyDown={(event) => { if (event.key === 'Escape') event.currentTarget.open = false; }} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }}>
+            <details className="inbox-action-menu" ref={actions} onKeyDown={(event) => { if (event.key === 'Escape') event.currentTarget.open = false; }} onBlur={(event) => { if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }}>
               <summary className="oc-button oc-button--default oc-button--small" aria-label="Inbox actions" title="Inbox actions"><i className="bi bi-three-dots" aria-hidden="true" /></summary>
               <div className="inbox-action-menu-items">
                 <Button type="button" size="small" disabled={!selectedItems.length || archive.isPending} onClick={archiveSelected}><i className="bi bi-archive" aria-hidden="true" />Archive selected{selectedItems.length > 0 && ` (${selectedItems.length})`}</Button>
