@@ -7,16 +7,16 @@ import * as upstreamApi from '../../lib/upstreamApi';
 import { useGitInfo } from '../../lib/useGitInfo';
 import { _resetForgeUserCacheForTests } from '../../lib/useForgeUser';
 
-const upstreamListMock = vi.hoisted(() => ({ items: [] as unknown[] }));
+const upstreamListMock = vi.hoisted(() => ({ items: [] as unknown[], page: 1, hasMore: false, setPage: vi.fn() }));
 
 vi.mock('../../lib/useGitInfo', () => ({
   useGitInfo: vi.fn(() => ({ infos: {}, loading: false, error: null })),
 }));
 vi.mock('../../lib/useUpstreamList', () => ({
   useUpstreamList: () => ({
-    items: upstreamListMock.items, loading: false, error: null, page: 1,
-    pagination: { page: 1, hasMore: false }, rateLimit: { limited: false },
-    refresh: vi.fn(), setPage: vi.fn(),
+    items: upstreamListMock.items, loading: false, error: null, page: upstreamListMock.page,
+    pagination: { page: upstreamListMock.page, hasMore: upstreamListMock.hasMore }, rateLimit: { limited: false },
+    refresh: vi.fn(), setPage: upstreamListMock.setPage,
   }),
 }));
 
@@ -29,10 +29,37 @@ beforeEach(() => {
   vi.clearAllMocks();
   _resetForgeUserCacheForTests();
   upstreamListMock.items = [];
+  upstreamListMock.page = 1;
+  upstreamListMock.hasMore = false;
   vi.spyOn(upstreamApi, 'fetchForgeUser').mockResolvedValue({ login: 'alice', host: 'github.com' });
 });
 
 describe('UpstreamPane owner-scoped resources', () => {
+  it('hides pagination on the only page', () => {
+    render(<UpstreamPane directory="/repo" remoteId="box" upstreams={[upstreams[0]]} />);
+    expect(screen.queryByRole('group', { name: 'Pagination' })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    { page: 1, hasMore: true, previousDisabled: true, calls: [2] },
+    { page: 2, hasMore: true, previousDisabled: false, calls: [1, 3] },
+    { page: 3, hasMore: false, previousDisabled: false, calls: [2] },
+  ])('keeps one-based callbacks for page $page with hasMore=$hasMore', ({ page, hasMore, previousDisabled, calls }) => {
+    upstreamListMock.page = page;
+    upstreamListMock.hasMore = hasMore;
+    render(<UpstreamPane directory="/repo" remoteId="box" upstreams={[upstreams[0]]} />);
+    expect(screen.getByRole('group', { name: 'Pagination' })).toHaveTextContent(`page ${page}`);
+    const previous = screen.getByRole('button', { name: '‹ Prev' });
+    const next = screen.getByRole('button', { name: 'Next ›' });
+    expect(previous).toHaveAttribute('data-testid', 'upstream-page-prev');
+    expect(next).toHaveAttribute('data-testid', 'upstream-page-next');
+    expect(previous).toHaveProperty('disabled', previousDisabled);
+    expect(next).toHaveProperty('disabled', !hasMore);
+    fireEvent.click(previous);
+    fireEvent.click(next);
+    expect(upstreamListMock.setPage.mock.calls).toEqual(calls.map((value) => [value]));
+  });
+
   it('uses one git-info poll for every upstream group', () => {
     render(<UpstreamPane directory="/repo" remoteId="box" upstreams={upstreams} />);
 

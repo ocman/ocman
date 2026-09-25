@@ -10,6 +10,7 @@ import { IssueRow } from './IssueRow';
 import { RemoteErrorBanner } from './RemoteErrorBanner';
 import { UpstreamApiError } from '../../lib/upstreamApi';
 import { ProjectLabel } from '../ProjectLabel';
+import { Pagination } from '../Pagination';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../Tabs';
 
 interface UpstreamPaneProps {
@@ -360,41 +361,22 @@ function UpstreamRemoteGroup({
           );
         })}
       </ul>
-      <Pagination
-        page={list.page}
-        hasMore={list.pagination.hasMore}
-        onPrev={() => list.setPage(Math.max(1, list.page - 1))}
-        onNext={() => list.setPage(list.page + 1)}
-      />
+      {(list.page !== 1 || list.pagination.hasMore) && (
+        <Pagination
+          className="oc-upstream-pagination"
+          previousLabel="‹ Prev"
+          nextLabel="Next ›"
+          previousDisabled={list.page <= 1}
+          nextDisabled={!list.pagination.hasMore}
+          onPrevious={() => list.setPage(Math.max(1, list.page - 1))}
+          onNext={() => list.setPage(list.page + 1)}
+          previousTestId="upstream-page-prev"
+          nextTestId="upstream-page-next"
+        >
+          <span className="oc-upstream-pagination-page">page {list.page}</span>
+        </Pagination>
+      )}
     </section>
-  );
-}
-
-function Pagination({
-  page,
-  hasMore,
-  onPrev,
-  onNext,
-}: {
-  page: number;
-  hasMore: boolean;
-  onPrev: () => void;
-  onNext: () => void;
-}) {
-  if (page === 1 && !hasMore) {
-    // Only one page — no need for controls.
-    return null;
-  }
-  return (
-    <div className="oc-upstream-pagination">
-      <button onClick={onPrev} disabled={page <= 1} data-testid="upstream-page-prev">
-        ‹ Prev
-      </button>
-      <span className="oc-upstream-pagination-page">page {page}</span>
-      <button onClick={onNext} disabled={!hasMore} data-testid="upstream-page-next">
-        Next ›
-      </button>
-    </div>
   );
 }
 

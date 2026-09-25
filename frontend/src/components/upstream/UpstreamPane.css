@@ -498,36 +498,10 @@ a.oc-upstream-ci-check-name:hover {
 /* ---- Pagination ---- */
 
 .oc-upstream-pagination {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
   padding: 8px 10px;
-  font-family: 'SF Mono', Consolas, monospace;
   font-size: 11px;
-  color: var(--text-dim);
   border-top: 1px solid var(--border);
-}
-
-.oc-upstream-pagination button {
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 0;
-  color: var(--text-dim);
-  padding: 3px 10px;
-  cursor: pointer;
-  font-family: 'SF Mono', Consolas, monospace;
-  font-size: 11px;
-  transition: all 0.15s;
-}
-
-.oc-upstream-pagination button:hover:not(:disabled) {
-  color: var(--text);
-  border-color: var(--overlay0);
-}
-
-.oc-upstream-pagination button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 
 /* ---- Empty / no-upstream ---- */

@@ -3,6 +3,7 @@
  */
 import type { CSSProperties, ReactNode } from 'react';
 import { Skeleton } from '../../components/Skeleton';
+import { Pagination } from '../../components/Pagination';
 
 // ---------------------------------------------------------------------------
 // MetricCard
@@ -85,20 +86,16 @@ export function MetricsPagination({
   if (total <= pageSize) return null;
   const lastPage = Math.ceil(total / pageSize);
   return (
-    <div className="metrics-pagination">
-      <button
-        className="oc-time-range-btn"
-        disabled={page === 0}
-        onClick={() => onChange(page - 1)}
-      >Prev</button>
+    <Pagination
+      className="metrics-pagination"
+      previousDisabled={page === 0}
+      nextDisabled={(page + 1) * pageSize >= total}
+      onPrevious={() => onChange(page - 1)}
+      onNext={() => onChange(page + 1)}
+    >
       <span className="metrics-pagination-info">
         Page {page + 1} / {lastPage}
       </span>
-      <button
-        className="oc-time-range-btn"
-        disabled={(page + 1) * pageSize >= total}
-        onClick={() => onChange(page + 1)}
-      >Next</button>
-    </div>
+    </Pagination>
   );
 }
