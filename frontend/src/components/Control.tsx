@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, SelectHTMLAttributes } from 'react';
+import type { ButtonHTMLAttributes, HTMLAttributes, InputHTMLAttributes, SelectHTMLAttributes } from 'react';
 import './Control.css';
 
 type Variant = 'accent' | 'muted' | 'default' | 'link' | 'ghost';
@@ -10,6 +10,10 @@ function classes(...names: Array<string | undefined>) {
 
 export function Button({ className, variant = 'default', size = 'normal', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size }) {
 	return <button {...props} className={classes('oc-button', `oc-button--${variant}`, `oc-button--${size}`, className)} />;
+}
+
+export function ButtonGroup({ label, joined = false, className, ...props }: Omit<HTMLAttributes<HTMLDivElement>, 'role' | 'aria-label'> & { label: string; joined?: boolean }) {
+	return <div {...props} role="group" aria-label={label} className={classes('oc-button-group', joined ? 'oc-button-group--joined' : undefined, className)} />;
 }
 
 export function SearchField({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {

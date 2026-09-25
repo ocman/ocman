@@ -6,12 +6,6 @@
 
 /* ── Presets ─────────────────────────────────────────────── */
 
-.perm-rules-presets {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
 .perm-rules-preset {
   padding: 4px 10px;
   border: 1px solid var(--border);

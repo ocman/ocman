@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { EpicGraph } from './EpicGraph';
 import { formulaIssues } from './factoryGraph';
-import { Button } from '../components/Control';
+import { Button, ButtonGroup } from '../components/Control';
 import { useFactoryCapacityPolicy, useFactoryFormula, useFactoryFormulas, usePreviewFactoryFormula, useSaveFactoryFormula, useSetFactoryCapacityPolicy, useValidateFactoryFormula } from '../lib/queries';
 import type { FactoryFormula } from '../lib/api';
 import { TRACER_FORMULA_ID } from './factoryHelpers';
@@ -95,11 +95,11 @@ export function FactoryConfiguration() {
 				<label>Custom Formula ID<input aria-label="Custom Formula ID" name="id" required pattern="custom/[a-z][a-z0-9_-]*" value={formulaID} onChange={(event) => setFormulaID(event.target.value)} /></label>
 				<p>Define named steps with kind, needs, prompt, and config in the YAML source. Implementation contains the planned tasks; downstream checks wait for all required tasks. Saving creates a new revision.</p>
 				<details className="factory-formula-source"><summary>Formula source</summary><label>Formula YAML<textarea aria-label="Formula YAML" name="source" rows={15} required value={formulaSource} onChange={(event) => setFormulaSource(event.target.value)} onInvalid={(event) => { event.currentTarget.closest('details')!.open = true; }} /></label></details>
-				<div className="factory-epic-action-row">
+				<ButtonGroup label="Formula actions">
 					<Button type="button" aria-busy={validateFormula.isPending} onClick={(event) => { if (event.currentTarget.form) void saveFormulaRevision(event.currentTarget.form, 'validate'); }} disabled={validateFormula.isPending || previewFormula.isPending || saveFormula.isPending}>{validateFormula.isPending ? 'Validating…' : 'Validate Formula'}</Button>
 					<Button type="button" aria-busy={previewFormula.isPending} onClick={(event) => { if (event.currentTarget.form) void saveFormulaRevision(event.currentTarget.form, 'preview'); }} disabled={validateFormula.isPending || previewFormula.isPending || saveFormula.isPending}>{previewFormula.isPending ? 'Previewing…' : 'Preview Formula'}</Button>
 					<Button type="submit" variant="accent" aria-busy={saveFormula.isPending} disabled={validateFormula.isPending || previewFormula.isPending || saveFormula.isPending}>{saveFormula.isPending ? 'Saving…' : 'Save immutable revision'}</Button>
-				</div>
+				</ButtonGroup>
 			</form>
 			{validateFormula.data && <p role="status">Formula is {validateFormula.data.valid ? 'valid' : 'invalid'}{validateFormula.data.valid && `: ${validateFormula.data.hash}`}</p>}
 			{previewFormula.data?.valid && <section aria-label="Formula preview"><FormulaGraph formula={previewFormula.data} /></section>}

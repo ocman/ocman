@@ -313,7 +313,9 @@ flowchart TD
   Enter, or Space and unmount inactive panel content by default; pages keep
   their own fetching, filter, and URL state. `InlineAlert` reuses error-banner
   styling, announces errors, and optionally renders a busy-aware retry button;
-  callers own error messages and retry requests.
+  callers own error messages and retry requests. `ButtonGroup` groups independent
+  actions with an accessible label and wrapping or joined layout, preserving
+  each button's native focus and form behaviour.
 - **Capability gating.** The UI never branches on platform identity. Features
   toggle via `/api/capabilities`, enforced by a lint script.
 - **Read aloud.** Turn-end controls select original final-answer text parts and

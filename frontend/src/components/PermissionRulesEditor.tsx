@@ -1,5 +1,6 @@
 import type { PermissionRule } from '../lib/api.types';
 import { PERMISSION_MODES, classifyPermissionMode } from '../lib/permissionModes';
+import { ButtonGroup } from './Control';
 import './PermissionRulesEditor.css';
 
 const KNOWN_PERMISSIONS = ['*', 'bash', 'edit', 'external_directory'];
@@ -39,7 +40,7 @@ export function PermissionRulesEditor({ rules, onChange, disabled }: Props) {
   return (
     <div className="perm-rules-editor" aria-label="Permission rules">
       {/* Preset strip */}
-      <div className="perm-rules-presets" role="group" aria-label="Permission presets">
+      <ButtonGroup label="Permission presets">
         {PERMISSION_MODES.map((mode) => (
           <button
             key={mode.id}
@@ -57,7 +58,7 @@ export function PermissionRulesEditor({ rules, onChange, disabled }: Props) {
             Custom
           </span>
         )}
-      </div>
+      </ButtonGroup>
 
       {/* Rule rows */}
       {rules.length > 0 && (

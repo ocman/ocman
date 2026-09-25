@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { MarkdownContent } from '../components/assistant/MarkdownText';
 import { EpicGraph } from './EpicGraph';
 import { proposalIssues } from './factoryGraph';
-import { Button, SelectField } from '../components/Control';
+import { Button, ButtonGroup, SelectField } from '../components/Control';
 import { SearchSelect } from '../components/SearchSelect';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/Tabs';
 import { ProjectLabel } from '../components/ProjectLabel';
@@ -251,21 +251,21 @@ export function FactoryEpicDetail() {
         {gatedProposal && <div aria-label="Proposed plan"><EpicGraph issues={proposalIssues(gatedProposal.manifest)} preview />{gatedProposal.rationaleMarkdown && <details className="factory-proposal"><summary>Rationale</summary><MarkdownContent text={gatedProposal.rationaleMarkdown} /></details>}</div>}
         <FactoryImplementationModel {...implementation} />
         <label>Feedback<textarea value={feedback} disabled={decideGate.isPending} placeholder="Changes to request or a reason for rejecting the plan" onChange={(event) => setFeedback(event.target.value)} /></label>
-        <div className="factory-epic-action-row">{([
+        <ButtonGroup label="Plan approval actions">{([
           ['approve', 'Approve plan', 'Approving…'],
           ['revise', 'Request revision', 'Requesting revision…'],
           ['reject', 'Reject plan', 'Rejecting…'],
-        ] as const).map(([action, label, pendingLabel]) => <Button key={action} type="button" variant={action === 'approve' ? 'accent' : 'default'} aria-busy={decideGate.isPending && decideGate.variables?.action === action} disabled={decideGate.isPending || (action === 'approve' && implementation.loading)} onClick={() => decideGate.mutate({ action, expectedRevision: epic.data!.planGate!.proposalRevision, expectedHash: epic.data!.planGate!.proposalHash, feedback, ...(action === 'approve' && implementation.model && { implementationModel: implementation.model }) }, { onSuccess: () => { if (action === 'approve') { setGateStatus(''); setStarted(true); } else setGateStatus(action === 'revise' ? 'Revision requested.' : 'Plan rejected.'); } })}>{decideGate.isPending && decideGate.variables?.action === action ? pendingLabel : label}</Button>)}</div>
+        ] as const).map(([action, label, pendingLabel]) => <Button key={action} type="button" variant={action === 'approve' ? 'accent' : 'default'} aria-busy={decideGate.isPending && decideGate.variables?.action === action} disabled={decideGate.isPending || (action === 'approve' && implementation.loading)} onClick={() => decideGate.mutate({ action, expectedRevision: epic.data!.planGate!.proposalRevision, expectedHash: epic.data!.planGate!.proposalHash, feedback, ...(action === 'approve' && implementation.model && { implementationModel: implementation.model }) }, { onSuccess: () => { if (action === 'approve') { setGateStatus(''); setStarted(true); } else setGateStatus(action === 'revise' ? 'Revision requested.' : 'Plan rejected.'); } })}>{decideGate.isPending && decideGate.variables?.action === action ? pendingLabel : label}</Button>)}</ButtonGroup>
         {decideGate.isError && <p role="alert">{decideGate.error instanceof Error ? decideGate.error.message : 'Could not decide Plan gate.'}</p>}
       </div>}
       {epic.data.planGate?.resolution === 'revision_requested' && <div className="factory-epic-gate" aria-label="Plan approval gate"><h3>Plan approval</h3><p role="status">Revision requested. Waiting for a new Plan proposal.</p><Button type="button" disabled={epic.isFetching || proposals.isFetching} onClick={() => { setGateStatus(''); void Promise.all([epic.refetch(), proposals.refetch()]); }}>{epic.isFetching || proposals.isFetching ? 'Checking…' : 'Check for new proposal'}</Button></div>}
       {gateStatus && <p role="status">{gateStatus}</p>}
       <FactoryEpicModels epic={epic.data} />
-      <div className="factory-epic-action-row">
+      <ButtonGroup label="Epic controls">
         <Button type="button" onClick={() => pour.mutate()} aria-busy={pour.isPending} disabled={pour.isPending}>{pour.isPending ? 'Pouring…' : 'Pour graph'}</Button>
         <Button type="button" onClick={() => void close()} aria-busy={closeEpic.isPending || closeMol.isPending} disabled={closeEpic.isPending || closeMol.isPending}>{closeEpic.isPending || closeMol.isPending ? 'Closing…' : 'Close epic'}</Button>
         {epic.data.status !== 'closed' && <Button type="button" onClick={() => setPaused.mutate(epic.data!.status !== 'paused')} aria-busy={setPaused.isPending} disabled={setPaused.isPending}>{setPaused.isPending ? (setPaused.variables ? 'Pausing…' : 'Resuming…') : epic.data.status === 'paused' ? 'Resume epic' : 'Pause epic'}</Button>}
-      </div>
+      </ButtonGroup>
 		<p>Required work: {progress.requiredSucceeded}/{progress.requiredTotal} complete. Optional work open: {progress.optionalOpen}.</p>
 		{!!progress.projectDeliveries?.length && <ul aria-label="Project deliveries" className="factory-issues">{progress.projectDeliveries.map((delivery) => <li key={delivery.issueId ?? `${delivery.project}:pending`}><ProjectLabel path={delivery.project} />{delivery.lineage && <span>Delivery {delivery.lineage}</span>}<span>{delivery.status === 'ready_for_review' ? 'Ready for review' : delivery.status.replaceAll('_', ' ').replace(/^./, (value) => value.toUpperCase())}</span></li>)}</ul>}
 		{!!progress.closureBlockers?.length && <p>Closure blocked by: {progress.closureBlockers.join(', ')}</p>}
