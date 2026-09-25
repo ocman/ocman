@@ -2,6 +2,7 @@ import { useDeferredValue, useId, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button, SelectField } from '../components/Control';
 import { StatusBadge } from '../components/StatusBadge';
+import { EmptyState } from '../components/EmptyState';
 import { DataTableGroup, DataTableRow } from '../components/DataTable';
 import { useClaimFactoryPlan, useFactoryCapacityPolicy, useFactoryGraphIssues, useFactoryQueue, useInvestigateFactoryUnblock, useMaterializeFactoryPlan, useMutateFactoryGraph, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryProjectGate, useResolveFactoryRecoveryGate, useSessions, useWorkEpics } from '../lib/queries';
 import type { FactoryEpic, FactoryIssue, FactoryQueueItem, Session } from '../lib/api';
@@ -124,7 +125,7 @@ export function FactoryOverview() {
 		{epics.isError && <QueryError error={epics.error} retry={() => void epics.refetch()} />}
 		{issuesLoading && <p role="status">Loading action inbox…</p>}
 		{issueError && <QueryError error={issueError.error} retry={() => void issueError.refetch()} />}
-		{!epics.isLoading && !epics.isError && !issuesLoading && !issueError && !inboxCount && <p className="oc-empty">{inboxTotal ? 'No actions match these filters.' : 'Nothing needs your attention.'}</p>}
+		{!epics.isLoading && !epics.isError && !issuesLoading && !issueError && !inboxCount && <EmptyState>{inboxTotal ? 'No actions match these filters.' : 'Nothing needs your attention.'}</EmptyState>}
 		{!!inboxCount && <div className="factory-list factory-list--actions factory-list--inbox" aria-label="Action inbox"><DataTableGroup label="Needs attention" noun="actions" count={inboxCount} markerClassName="factory-status-dot--blocked">
 			{readyPlans.map((issue) => <PlanningItem key={issue.id} issue={issue} epic={epicByID.get(issue.epicId)} />)}
 			{workflowApprovals.map((issue) => <WorkflowApprovalItem key={issue.id} issue={issue} epic={epicByID.get(issue.epicId)} />)}
@@ -141,7 +142,7 @@ export function FactoryOverview() {
 		<h2>Live work</h2>
 		{queue.isLoading && <p role="status">Loading live work…</p>}
 		{queue.isError && <QueryError error={queue.error} retry={() => void queue.refetch()} />}
-		{!queue.isLoading && !queue.isError && !running.length && !planning.length && <p className="oc-empty">No agents are working right now.</p>}
+		{!queue.isLoading && !queue.isError && !running.length && !planning.length && <EmptyState>No agents are working right now.</EmptyState>}
 		{(!!running.length || !!planning.length) && <div className="factory-list factory-list--actions" aria-label="Live work"><DataTableGroup label="In progress" noun="work items" count={running.length + planning.length} markerClassName="factory-status-dot--in-progress">
 			{planning.map(({ epic, attempt }) => <FactoryDataRow key={attempt.id} id={attempt.workId} epic={epic} title={<strong>Planning</strong>} detail={liveStatus(attempt.session.id) ?? attempt.phase} actions={attempt.session.id && <Link to={`/session/${encodeURIComponent(attempt.session.id)}?factoryEpic=${encodeURIComponent(epic.id)}`} aria-label={`Open session ${attempt.session.id}`}>Open session</Link>} />)}
 			{running.map((item) => <FactoryDataRow key={item.id} id={item.id} epic={epicByID.get(item.epicId)} title={<strong>{item.title}</strong>} detail={liveStatus(item.session?.id) ?? item.state} actions={item.session?.id && <Link to={`/session/${encodeURIComponent(item.session.id)}`} aria-label={`Open session ${item.session.id}`}>Open session</Link>} />)}
@@ -186,7 +187,7 @@ export function FactoryQueue() {
     {capacity.data && <p className="factory-capacity">Capacity: {capacity.data.globalCapacity} global, {capacity.data.projectCapacity} per project.</p>}
     {queue.isLoading && <p role="status">Loading execution queue…</p>}
     {queue.isError && <QueryError error={queue.error} retry={() => void queue.refetch()} />}
-    {!queue.isLoading && !queue.isError && !visible && <p className="oc-empty">No implementation work is active or waiting.</p>}
+    {!queue.isLoading && !queue.isError && !visible && <EmptyState>No implementation work is active or waiting.</EmptyState>}
     {!!visible && <div className="factory-list factory-list--queue" aria-label="Execution queue">{!!active.length && <QueueTable label="Active work" items={active} epicByID={epicByID} />}{!!next.length && <QueueTable label="Next up" items={next} epicByID={epicByID} />}{!!waiting.length && <QueueTable label="Waiting work" items={waiting} epicByID={epicByID} />}</div>}
   </FactoryPage>;
 }

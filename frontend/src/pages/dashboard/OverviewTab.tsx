@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Bar, Line } from 'react-chartjs-2';
+import { EmptyState } from '../../components/EmptyState';
 import type { DatabaseSizeSample } from '../../lib/api';
 import { BAR_OPTIONS_STACKED, LINE_OPTIONS_DATABASE_SIZE } from '../../lib/chartConfig';
 import { formatNumber } from '../../lib/format';
@@ -28,7 +29,7 @@ function DatabaseSizeChart({ samples, isLoading }: { samples?: DatabaseSizeSampl
               { label: 'OpenCode (MiB)', data: opencodeSizes, borderColor: '#89b4fa', backgroundColor: 'rgba(137, 180, 250, 0.15)', tension: 0.25, pointRadius: 1 },
               { label: 'ocman (MiB)', data: ocmanSizes, borderColor: '#a6e3a1', backgroundColor: 'rgba(166, 227, 161, 0.15)', tension: 0.25, pointRadius: 1 },
             ],
-          }} options={LINE_OPTIONS_DATABASE_SIZE} /> : <p className="oc-empty">No database size samples yet.</p>}
+          }} options={LINE_OPTIONS_DATABASE_SIZE} /> : <EmptyState>No database size samples yet.</EmptyState>}
         </ChartCard>
       )}
     </div>

@@ -5,6 +5,7 @@ import { Background, Controls, MarkerType, Position, ReactFlow, type Edge, type 
 import '@xyflow/react/dist/style.css';
 import { GRAPH_NODE_HEIGHT, GRAPH_NODE_WIDTH, GRAPH_STATES, factoryGraphModel } from './factoryGraph';
 import { IssueDrawer } from './FactoryIssues';
+import { EmptyState } from '../components/EmptyState';
 import type { FactoryIssue } from '../lib/api';
 import './EpicGraph.css';
 
@@ -34,7 +35,7 @@ export function EpicGraph({ issues, preview }: { issues?: FactoryIssue[]; previe
     }));
     return { nodes: flowNodes, edges: flowEdges };
   }, [issues]);
-  if (!nodes.length) return <p className="oc-empty">This epic has no work to draw yet.</p>;
+  if (!nodes.length) return <EmptyState>This epic has no work to draw yet.</EmptyState>;
   const byID = new Map((issues ?? []).map((issue) => [issue.id, issue]));
   return <div className="factory-graph">
     <ul className="factory-graph-legend" aria-label="Status legend">{GRAPH_STATES.map((state) => <li key={state}><span className={`factory-graph-swatch ${state}`} aria-hidden="true" />{state}</li>)}</ul>

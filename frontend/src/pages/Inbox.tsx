@@ -5,6 +5,7 @@ import { PermissionPrompt } from '../components/session/PermissionPrompt';
 import { MarkdownContent } from '../components/assistant/MarkdownText';
 import { RelativeTime } from '../components/RelativeTime';
 import { SegmentedControl } from '../components/SegmentedControl';
+import { EmptyState } from '../components/EmptyState';
 import { useArchiveAllReadInboxItems, useArchiveInboxItems, useInbox, useMarkInboxItemRead, useMarkInboxItemUnread, useRespondInboxPermission } from '../lib/queries';
 import type { InboxItem } from '../lib/api';
 import { fuzzyMatch } from '../lib/format';
@@ -146,7 +147,7 @@ export function Inbox() {
         <div className="inbox-list">
           {inbox.isLoading && <p className="oc-empty" role="status">Loading inbox…</p>}
           {inbox.isError && <p className="oc-empty" role="alert">Could not load inbox.</p>}
-          {inbox.isSuccess && !visibleItems.length && <p className="oc-empty">{items.length ? 'No messages match these filters.' : archived ? 'No archived messages.' : 'Your inbox is empty.'}</p>}
+          {inbox.isSuccess && !visibleItems.length && <EmptyState>{items.length ? 'No messages match these filters.' : archived ? 'No archived messages.' : 'Your inbox is empty.'}</EmptyState>}
           {visibleItems.map((item) => <article key={itemKey(item)} className={`inbox-message${item.readAt ? '' : ' unread'}${activeKey === itemKey(item) ? ' active' : ''}`}>
             {/* The category icon doubles as the selection checkbox: clicking it
                 swaps in a check mark, so no separate checkbox column is needed. */}

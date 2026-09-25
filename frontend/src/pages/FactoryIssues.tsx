@@ -1,6 +1,7 @@
 import { useDeferredValue, useState, type FormEvent } from 'react';
 import { Link, NavLink, useNavigate, useParams } from 'react-router-dom';
 import { Modal } from '../components/Modal';
+import { EmptyState } from '../components/EmptyState';
 import { SearchField, SelectField } from '../components/Control';
 import { ProjectLabel } from '../components/ProjectLabel';
 import { DataTableGroup, DataTableRow } from '../components/DataTable';
@@ -59,7 +60,7 @@ export function IssueDrawer({ issue, onClose }: { issue: FactoryIssue; onClose: 
 			<h3>Comments</h3>
 			{comments.isLoading && <p role="status">Loading comments...</p>}
 			{comments.isError && <p role="alert">Could not load comments.</p>}
-			{comments.data && !comments.data.length && <p className="oc-empty">No comments yet.</p>}
+			{comments.data && !comments.data.length && <EmptyState>No comments yet.</EmptyState>}
 			{!!comments.data?.length && <ol>{comments.data.map((comment) => <li key={comment.id}><header><strong>{comment.actor}</strong><time dateTime={new Date(comment.createdAt).toISOString()}>{new Date(comment.createdAt).toLocaleString()}</time></header><p>{comment.body}</p></li>)}</ol>}
 			<form onSubmit={submit}><label>Add comment<textarea maxLength={16000} value={body} onChange={(event) => { setBody(event.target.value); setStatus(''); }} /></label><button type="submit" disabled={addComment.isPending || !body.trim()}>{addComment.isPending ? 'Adding...' : 'Add comment'}</button>{addComment.isError && <p role="alert">Could not add comment.</p>}{status && <p role="status">{status}</p>}</form>
 		</section>
@@ -98,7 +99,7 @@ export function FactoryIssues() {
     {(epics.isLoading || queries.some((result) => result.isLoading)) && <p role="status">Loading issues...</p>}
     {epics.isError && <p role="alert">{epics.error instanceof Error ? epics.error.message : 'Factory issues are unavailable.'} <button type="button" onClick={() => void epics.refetch()}>Retry</button></p>}
     {failed && <p role="alert">{failed.error instanceof Error ? failed.error.message : 'Factory issues are unavailable.'} <button type="button" onClick={() => void failed.refetch()}>Retry</button></p>}
-    {!epics.isLoading && !epics.isError && !failed && !visible.length && <p className="oc-empty">{issues.length ? 'No issues match this search.' : 'No Factory issues yet.'}</p>}
+    {!epics.isLoading && !epics.isError && !failed && !visible.length && <EmptyState>{issues.length ? 'No issues match this search.' : 'No Factory issues yet.'}</EmptyState>}
 		{!!visible.length && <div className="factory-list" aria-label="Issues">{groups.map((group) => { const items = visible.filter((issue) => groupFor(issue) === group); return <DataTableGroup key={group} label={group} noun="issues" count={items.length} markerClassName={`factory-status-dot--${group.toLowerCase().replaceAll(' ', '-')}`}>{items.map((issue) => <FactoryIssueRow key={issue.id} issue={issue} epic={epicByID.get(issue.epicId)} onOpen={() => navigate(`/factory/issues/${encodeURIComponent(issue.id)}`)} />)}</DataTableGroup>; })}</div>}
     {selected && <IssueDrawer key={selected.id} issue={selected} onClose={() => navigate('/factory/issues')} />}
   </main>;

@@ -4,6 +4,7 @@ import { formatSubscriptionResetDate, timeUntilISO } from '../lib/format';
 import type { SubscriptionProviderUsage } from '../lib/api';
 import { RefreshButton } from '../components/RefreshButton';
 import { InlineAlert } from '../components/InlineAlert';
+import { EmptyState } from '../components/EmptyState';
 
 const STATUS_LABELS: Record<string, string> = {
   expired: 'OpenCode token expired',
@@ -68,7 +69,7 @@ export function SubscriptionUsageContent({ compact = false }: { compact?: boolea
         </InlineAlert>
       )}
       {usage.isLoading && !usage.data && <div className="oc-list-loading" role="status"><span className="oc-spinner" />Loading subscription usage</div>}
-      {usage.data?.providers.length === 0 && <div className="oc-empty">No OpenCode subscription credentials found.</div>}
+      {usage.data?.providers.length === 0 && <EmptyState>No OpenCode subscription credentials found.</EmptyState>}
       {usage.data && usage.data.providers.length > 0 && (
         <div className="subscription-grid">
           {usage.data.providers.map((provider) => <ProviderCard provider={provider} compact={compact} key={provider.id} />)}
