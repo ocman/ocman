@@ -17,6 +17,33 @@ import (
 // DB wraps the SQLite connection.
 type DB struct {
 	db *sql.DB
+	// sessionTotals is true when the session table carries OpenCode's
+	// denormalised cost/tokens_input/tokens_output columns, letting the
+	// session list skip re-aggregating every message blob.
+	sessionTotals bool
+}
+
+// detectSessionTotals probes the session schema once. Older OpenCode
+// databases predate the denormalised total columns; the list query then
+// falls back to aggregating messages.
+func (d *DB) detectSessionTotals() {
+	rows, err := d.db.Query(`PRAGMA table_info(session)`)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	have := map[string]bool{}
+	for rows.Next() {
+		var cid int
+		var name, typ string
+		var notNull, pk int
+		var dflt any
+		if err := rows.Scan(&cid, &name, &typ, &notNull, &dflt, &pk); err != nil {
+			return
+		}
+		have[name] = true
+	}
+	d.sessionTotals = have["cost"] && have["tokens_input"] && have["tokens_output"]
 }
 
 // Connection-pool tuning constants for the read-only handle.
@@ -113,7 +140,9 @@ func Open(path string) (*DB, error) {
 			attribute.String("db.name", "opencode"),
 		),
 	)
-	return &DB{db: db}, nil
+	d := &DB{db: db}
+	d.detectSessionTotals()
+	return d, nil
 }
 
 // OpenReadWrite opens the database in read-write mode. This is intended for
@@ -133,7 +162,9 @@ func OpenReadWrite(path string) (*DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("pinging database: %w", err)
 	}
-	return &DB{db: db}, nil
+	d := &DB{db: db}
+	d.detectSessionTotals()
+	return d, nil
 }
 
 // Close closes the database.

@@ -314,14 +314,91 @@ func TestGetSessions_ReturnsSessionsWithStatus(t *testing.T) {
 	if s.Status != "waiting" {
 		t.Errorf("expected status 'waiting', got %q", s.Status)
 	}
-	if s.MessageCount != 1 {
-		t.Errorf("expected 1 user message, got %d", s.MessageCount)
+	if s.MessageCount != 2 {
+		t.Errorf("expected 2 messages, got %d", s.MessageCount)
 	}
 	if s.TotalInputTokens != 100 {
 		t.Errorf("expected 100 input tokens, got %d", s.TotalInputTokens)
 	}
 	if s.TotalOutputTokens != 50 {
 		t.Errorf("expected 50 output tokens, got %d", s.TotalOutputTokens)
+	}
+}
+
+// TestGetSessions_UsesSessionTotalsWhenPresent proves the list reads
+// cost/tokens from OpenCode's denormalised session columns instead of
+// re-aggregating every message blob: the columns deliberately disagree
+// with the messages, and the columns must win.
+func TestGetSessions_UsesSessionTotalsWhenPresent(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	addSessionTotalsColumns(t, db)
+
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Test Session", "/project/a", now-10000, now)
+	if _, err := db.db.Exec(`UPDATE session SET cost = 1.5, tokens_input = 7, tokens_output = 9 WHERE id = 's1'`); err != nil {
+		t.Fatal(err)
+	}
+	insertMessage(t, db, "m1", "s1", now-5000, map[string]interface{}{"role": "user"})
+	insertMessage(t, db, "m2", "s1", now, map[string]interface{}{
+		"role": "assistant", "finish": "end_turn",
+		"tokens": map[string]interface{}{"input": 100, "output": 50},
+		"cost":   0.005,
+	})
+
+	for _, tc := range []struct {
+		name string
+		get  func() (Session, error)
+	}{
+		{"GetSessions", func() (Session, error) {
+			ss, err := db.GetSessions(t.Context(), "", 0)
+			if err != nil || len(ss) != 1 {
+				t.Fatalf("GetSessions = %v, %v", ss, err)
+			}
+			return ss[0], nil
+		}},
+		{"GetSessionSummary", func() (Session, error) { return db.GetSessionSummary(t.Context(), "s1") }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := tc.get()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if s.TotalCost != 1.5 || s.TotalInputTokens != 7 || s.TotalOutputTokens != 9 {
+				t.Errorf("totals = cost %v in %d out %d, want 1.5/7/9 from session columns", s.TotalCost, s.TotalInputTokens, s.TotalOutputTokens)
+			}
+			if s.MessageCount != 2 || s.Status != "waiting" {
+				t.Errorf("messageCount=%d status=%q, want 2/waiting", s.MessageCount, s.Status)
+			}
+		})
+	}
+}
+
+// addSessionTotalsColumns mirrors the OpenCode migration that
+// denormalised per-session cost and token totals onto the session row.
+func addSessionTotalsColumns(t *testing.T, db *DB) {
+	t.Helper()
+	_, err := db.db.Exec(`
+		ALTER TABLE session ADD COLUMN cost REAL NOT NULL DEFAULT 0;
+		ALTER TABLE session ADD COLUMN tokens_input INTEGER NOT NULL DEFAULT 0;
+		ALTER TABLE session ADD COLUMN tokens_output INTEGER NOT NULL DEFAULT 0;
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.detectSessionTotals()
+}
+
+func TestDetectSessionTotals(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	db.detectSessionTotals()
+	if db.sessionTotals {
+		t.Fatal("legacy schema detected as having session totals")
+	}
+	addSessionTotalsColumns(t, db)
+	if !db.sessionTotals {
+		t.Fatal("session totals columns not detected")
 	}
 }
 

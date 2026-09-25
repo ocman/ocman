@@ -835,7 +835,7 @@ export interface SessionInfoTodo {
 // and are populated either way.
 // User / assistant turn breakdown for the session. Both zero when
 // the platform doesn't compute the breakdown — the UI then falls back
-// to the legacy `session.messageCount` (user turns only).
+// to the legacy `session.messageCount` (all messages, any role).
 export interface SessionInfoMessages {
   user: number;
   assistant: number;

@@ -28,42 +28,29 @@ const sessionListSelection = `
 // sessionListProjection completes the shared session-list projection.
 // Both GetSessions and GetSessionSummary use these exact expressions, so
 // an incremental refresh cannot drift from a full scan.
-const sessionListProjection = `
+//
+// Performance: message.data is dominated by summary.diffs, so anything
+// that json_extracts over every message reads the whole table. The
+// latest message is therefore located through the
+// (session_id, time_created, id) index and only that one blob is
+// parsed; message_count is an index-only count; and totals come from
+// the session row when the schema has them (sessionTotalsAggregate),
+// else from a per-message aggregate (legacyTotalsAggregate).
+func (d *DB) sessionListProjection() string {
+	agg := legacyTotalsAggregate
+	if d.sessionTotals {
+		agg = sessionTotalsAggregate
+	}
+	return `
 		),
-		message_aggregate AS (
-			SELECT
-				m.session_id,
-				SUM(CASE WHEN json_extract(m.data, '$.role') = 'user' THEN 1 ELSE 0 END) AS message_count,
-				SUM(CASE WHEN json_extract(m.data, '$.role') = 'assistant'
-					THEN COALESCE(json_extract(m.data, '$.tokens.input'), 0) ELSE 0 END) AS total_input_tokens,
-				SUM(CASE WHEN json_extract(m.data, '$.role') = 'assistant'
-					THEN COALESCE(json_extract(m.data, '$.tokens.output'), 0) ELSE 0 END) AS total_output_tokens,
-				SUM(CASE WHEN json_extract(m.data, '$.role') = 'assistant'
-					THEN COALESCE(json_extract(m.data, '$.cost'), 0) ELSE 0 END) AS total_cost
-			FROM message m
-			JOIN selected_sessions s ON s.id = m.session_id
-			GROUP BY m.session_id
-		),
-		ranked_messages AS (
-			SELECT
-				m.id, m.session_id, m.time_created, m.data,
-				ROW_NUMBER() OVER (
-					PARTITION BY m.session_id ORDER BY m.time_created DESC
-				) AS message_rank
-			FROM message m
-			JOIN selected_sessions s ON s.id = m.session_id
-		),
-		latest_message AS (
-			SELECT id, session_id, time_created, data
-			FROM ranked_messages
-			WHERE message_rank = 1
+		message_aggregate AS (` + agg + `
 		)
 		SELECT
 			s.id, s.project_id, s.parent_id, s.title, s.directory,
 			s.time_created, s.time_updated,
 			s.summary_additions, s.summary_deletions, s.summary_files,
 			s.share_url,
-			COALESCE(ma.message_count, 0) AS message_count,
+			(SELECT count(*) FROM message m WHERE m.session_id = s.id) AS message_count,
 			COALESCE(ma.total_input_tokens, 0) AS total_input_tokens,
 			COALESCE(ma.total_output_tokens, 0) AS total_output_tokens,
 			COALESCE(ma.total_cost, 0) AS total_cost,
@@ -100,8 +87,39 @@ const sessionListProjection = `
 			END AS last_synth_terminal
 		FROM selected_sessions s
 		LEFT JOIN message_aggregate ma ON ma.session_id = s.id
-		LEFT JOIN latest_message lm ON lm.session_id = s.id
+		LEFT JOIN message lm ON lm.id = (
+			SELECT id FROM message
+			WHERE session_id = s.id
+			ORDER BY time_created DESC, id DESC
+			LIMIT 1
+		)
 	`
+}
+
+// sessionTotalsAggregate reads OpenCode's denormalised per-session
+// totals. Index-only; never touches message.data.
+const sessionTotalsAggregate = `
+			SELECT
+				s.id AS session_id,
+				s.tokens_input AS total_input_tokens,
+				s.tokens_output AS total_output_tokens,
+				s.cost AS total_cost
+			FROM selected_sessions s`
+
+// legacyTotalsAggregate re-aggregates assistant messages for databases
+// that predate the session total columns.
+const legacyTotalsAggregate = `
+			SELECT
+				m.session_id,
+				SUM(CASE WHEN json_extract(m.data, '$.role') = 'assistant'
+					THEN COALESCE(json_extract(m.data, '$.tokens.input'), 0) ELSE 0 END) AS total_input_tokens,
+				SUM(CASE WHEN json_extract(m.data, '$.role') = 'assistant'
+					THEN COALESCE(json_extract(m.data, '$.tokens.output'), 0) ELSE 0 END) AS total_output_tokens,
+				SUM(CASE WHEN json_extract(m.data, '$.role') = 'assistant'
+					THEN COALESCE(json_extract(m.data, '$.cost'), 0) ELSE 0 END) AS total_cost
+			FROM message m
+			JOIN selected_sessions s ON s.id = m.session_id
+			GROUP BY m.session_id`
 
 // ErrSessionNotFound reports that a session has no row in the
 // session-list projection — either it does not exist, or it is one of
@@ -174,7 +192,7 @@ func scanSessionRow(scan func(dest ...any) error) (s Session, keep bool, err err
 //
 // Returns ErrSessionNotFound when the session has no row in the list.
 func (d *DB) GetSessionSummary(ctx context.Context, sessionID string) (Session, error) {
-	row := d.db.QueryRowContext(ctx, sessionListSelection+` WHERE s.id = ?`+sessionListProjection, sessionID)
+	row := d.db.QueryRowContext(ctx, sessionListSelection+` WHERE s.id = ?`+d.sessionListProjection(), sessionID)
 	s, keep, err := scanSessionRow(row.Scan)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -211,7 +229,7 @@ func (d *DB) GetSessions(ctx context.Context, directory string, since int64) ([]
 	if len(conditions) > 0 {
 		query += ` WHERE ` + strings.Join(conditions, ` AND `)
 	}
-	query += sessionListProjection + ` ORDER BY s.time_updated DESC`
+	query += d.sessionListProjection() + ` ORDER BY s.time_updated DESC`
 
 	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -251,7 +269,7 @@ func (d *DB) GetSessionTree(ctx context.Context, sessionID string) ([]Session, e
 			SELECT s.id FROM session s JOIN tree t ON s.parent_id = t.id
 		), selected_sessions AS (
 			SELECT * FROM session s WHERE s.id IN (SELECT id FROM tree)` +
-		sessionListProjection + ` ORDER BY s.time_created, s.id`
+		d.sessionListProjection() + ` ORDER BY s.time_created, s.id`
 
 	rows, err := d.db.QueryContext(ctx, query, sessionID)
 	if err != nil {

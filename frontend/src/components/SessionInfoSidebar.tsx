@@ -136,8 +136,8 @@ export function SessionInfoSidebar({
   // session's lifetime additions/deletions which the backend already
   // computes from the per-edit filediffs. The Messages row prefers
   // the user/assistant breakdown from /api/session/{id}/info when
-  // it's available and falls back to the legacy `messageCount` (user
-  // turns only) otherwise — this keeps the panel useful for Claude
+  // it's available and falls back to the legacy `messageCount` (all
+  // messages) otherwise — this keeps the panel useful for Claude
   // Code sessions, where the SessionInfo endpoint isn't implemented.
   //
   // Project intentionally lives in the page header (not here) so it
