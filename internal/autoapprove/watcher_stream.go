@@ -136,13 +136,13 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 			if ocAdapter == nil {
 				return
 			}
-			ocAdapter.ObserveSessionStatus(port, statusGeneration, sessionID, statusType)
-			w.broadcastSessionStatus(ocAdapter, port, sessionID, statusType)
+			if ocAdapter.ObserveSessionStatus(port, statusGeneration, sessionID, statusType) {
+				w.broadcastSessionStatus(ocAdapter, port, sessionID, statusType)
+			}
 		},
 		OnSessionIdle: func(sessionID string) {
 			w.markSessionDirtyIfKnown(sessionID)
-			if ocAdapter != nil {
-				ocAdapter.ObserveSessionStatus(port, statusGeneration, sessionID, "idle")
+			if ocAdapter != nil && ocAdapter.ObserveSessionStatus(port, statusGeneration, sessionID, "idle") {
 				w.broadcastSessionStatus(ocAdapter, port, sessionID, "idle")
 			}
 			if w.svc != nil && w.svc.deps.BroadcastSessionIdle != nil {

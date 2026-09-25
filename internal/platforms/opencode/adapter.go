@@ -156,8 +156,16 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 
 	// Settle every status against the live turn signal before anything
 	// else reads it, then drop the children that turn out to be idle.
+	resolvedPorts := make(map[string]string)
 	for i := range sessions {
-		sessions[i].Status = a.settleStatus(sessions[i].ID, sessions[i].Directory, sessions[i].Status, ports)
+		directory := sessions[i].Directory
+		port, ok := resolvedPorts[directory]
+		if !ok {
+			port = portForDirectory(ports, directory)
+			resolvedPorts[directory] = port
+		}
+		sessions[i].Status = a.settleStatusOnPort(sessions[i].ID, port, sessions[i].Status)
+		sessions[i].LiveConnection = port != ""
 	}
 	sessions = db.FilterInactiveChildren(sessions)
 
@@ -175,9 +183,6 @@ func (a *Adapter) Sessions(ctx context.Context, dir string, since int64) ([]db.S
 
 	for i := range sessions {
 		sessions[i].Platform = string(PlatformID)
-		if directoryHasLivePort(ports, sessions[i].Directory) {
-			sessions[i].LiveConnection = true
-		}
 		if pendingPerms[sessions[i].ID] {
 			sessions[i].PendingPermission = true
 		}

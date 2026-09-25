@@ -93,16 +93,18 @@ func (a *Adapter) StatusPortGeneration(port string) uint64 {
 	return a.turns.portGen[port]
 }
 
-// ObserveSessionStatus records one session.status event from an instance.
-func (a *Adapter) ObserveSessionStatus(port string, generation uint64, sessionID, statusType string) {
+// ObserveSessionStatus records one session.status event from an instance and
+// reports whether its running state changed, to coalesce paired idle events.
+func (a *Adapter) ObserveSessionStatus(port string, generation uint64, sessionID, statusType string) bool {
 	if a == nil || a.turns == nil || sessionID == "" {
-		return
+		return false
 	}
 	a.turns.mu.Lock()
 	defer a.turns.mu.Unlock()
 	if generation != 0 && a.turns.portGen[port] != generation {
-		return
+		return false
 	}
+	previous, observed := a.turns.entries[sessionID]
 	a.turns.seq++
 	// Idle is recorded rather than deleted so the entry keeps naming the
 	// port that owns this session: that is what lets TurnState tell
@@ -112,6 +114,7 @@ func (a *Adapter) ObserveSessionStatus(port string, generation uint64, sessionID
 		busy: turnRunning(statusType),
 		seq:  a.turns.seq,
 	}
+	return !observed || previous.port != port || previous.busy != turnRunning(statusType)
 }
 
 // statusSeq reads the current sequence. Captured before a snapshot fetch so
@@ -235,30 +238,28 @@ func (a *Adapter) settleStatusOnPort(sessionID, port string, inferred db.Session
 // full session detail. It is used to push idle transitions to the sidebar.
 func (a *Adapter) SessionStatusOnPort(sessionID, port string) (db.SessionStatus, error) {
 	ctx := context.Background()
-	session, err := a.db.GetSession(ctx, sessionID)
+	status, err := a.db.GetSessionMessageStatus(ctx, sessionID)
 	if err != nil {
 		return "", err
 	}
-	messages, err := a.db.GetSessionMessages(ctx, sessionID)
-	if err != nil {
-		return "", err
-	}
-	applySessionDetailMetadataFromMessages(session, messages)
-	return a.settleStatusOnPort(sessionID, port, session.Status), nil
+	return a.settleStatusOnPort(sessionID, port, status), nil
 }
+
+// resolveSessionDirectory is replaceable in tests to count filesystem lookups.
+var resolveSessionDirectory = normalizePortDirectory
 
 // portForDirectory returns the instance port serving a session directory,
 // folding a worktree back to its project root (worktree sessions run on the
 // project's shared instance). Empty when nothing live serves it.
 func portForDirectory(ports map[string]string, directory string) string {
-	if port, ok := ports[normalizePortDirectory(directory)]; ok {
+	if port, ok := ports[resolveSessionDirectory(directory)]; ok {
 		return port
 	}
 	root := foldWorktreeToProjectRoot(directory)
 	if root == directory {
 		return ""
 	}
-	return ports[normalizePortDirectory(root)]
+	return ports[resolveSessionDirectory(root)]
 }
 
 // fetchSessionStatusSnapshot reads GET /session/status from one instance and

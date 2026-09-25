@@ -363,7 +363,7 @@ var (
 	// Production never waits on it.
 	sessionsRefreshWG sync.WaitGroup
 	// lastRefreshEnd / lastRefreshCost record when the most recent
-	// successful unfiltered refresh finished and what it cost. Both are
+	// successful full or incremental refresh finished and what it cost. Both are
 	// guarded by sessionsMu. They exist so the query's own cost can rate
 	// limit how often it runs: on a multi-GB OpenCode DB a pass takes
 	// seconds, and anything that triggers passes faster than that pins a
@@ -830,6 +830,7 @@ func refreshSessionsIncremental(ctx context.Context, d dbGetSessions) ([]db.Sess
 			return out, nil
 		}
 
+		started := time.Now()
 		refreshed := make(map[string]db.Session, len(ids))
 		missing := make(map[string]struct{}, len(ids))
 		for _, id := range ids {
@@ -855,6 +856,8 @@ func refreshSessionsIncremental(ctx context.Context, d dbGetSessions) ([]db.Sess
 		// old slice or the whole new one.
 		sessionsSnapshot = merged
 		sessionsHave = true
+		lastRefreshEnd = time.Now()
+		lastRefreshCost = lastRefreshEnd.Sub(started)
 		extendSnapshotFreshness()
 		sessionsMu.Unlock()
 		return merged, nil
