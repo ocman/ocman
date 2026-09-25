@@ -311,7 +311,9 @@ flowchart TD
   single-choice filters. `Tabs` wraps Radix UI for keyboard navigation, focus,
   and tab/panel associations, using the app's CSS. Tabs activate on click,
   Enter, or Space and unmount inactive panel content by default; pages keep
-  their own fetching, filter, and URL state.
+  their own fetching, filter, and URL state. `InlineAlert` reuses error-banner
+  styling, announces errors, and optionally renders a busy-aware retry button;
+  callers own error messages and retry requests.
 - **Capability gating.** The UI never branches on platform identity. Features
   toggle via `/api/capabilities`, enforced by a lint script.
 - **Read aloud.** Turn-end controls select original final-answer text parts and

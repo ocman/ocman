@@ -4,6 +4,7 @@ import { renderModel } from '../../lib/format';
 import { useMetricLogs } from '../../lib/queries';
 import { ModelLogo } from '../../components/ModelLogo';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../components/Tabs';
+import { InlineAlert } from '../../components/InlineAlert';
 import { AnalyticsFilters } from './AnalyticsFilters';
 import { useDashboard } from './context';
 import { MetricsPagination } from './shared';
@@ -43,7 +44,7 @@ export function LogsTab() {
   return (
     <div className="metrics-page">
       <AnalyticsFilters days={days} onDaysChange={setDays} agent={agent} onAgentChange={setAgent} agentOptions={agentOptions} model={model} onModelChange={setModel} modelOptions={modelOptions} />
-      {logsQ.error instanceof Error && <div className="oc-error-banner">{logsQ.error.message}</div>}
+      {logsQ.error instanceof Error && <InlineAlert>{logsQ.error.message}</InlineAlert>}
       <Tabs className="chart-card" value={kind} onValueChange={(value) => setKind(value as MetricsLogKind)}>
         <div className="metrics-log-header">
           <TabsList aria-label="Log views" className="metrics-log-tabs">

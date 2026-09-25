@@ -3,6 +3,7 @@ import { useSubscriptionUsage } from '../lib/queries';
 import { formatSubscriptionResetDate, timeUntilISO } from '../lib/format';
 import type { SubscriptionProviderUsage } from '../lib/api';
 import { RefreshButton } from '../components/RefreshButton';
+import { InlineAlert } from '../components/InlineAlert';
 
 const STATUS_LABELS: Record<string, string> = {
   expired: 'OpenCode token expired',
@@ -62,10 +63,9 @@ export function SubscriptionUsageContent({ compact = false }: { compact?: boolea
         <RefreshButton size="small" variant="default" onClick={() => void usage.refetch()} loading={usage.isFetching} />
       </div>
       {usage.error instanceof Error && (
-        <div className="oc-error-banner" role="alert">
+        <InlineAlert onRetry={() => void usage.refetch()} retrying={usage.isFetching}>
           {usage.error.message}
-          <button type="button" onClick={() => void usage.refetch()}>Retry</button>
-        </div>
+        </InlineAlert>
       )}
       {usage.isLoading && !usage.data && <div className="oc-list-loading" role="status"><span className="oc-spinner" />Loading subscription usage</div>}
       {usage.data?.providers.length === 0 && <div className="oc-empty">No OpenCode subscription credentials found.</div>}

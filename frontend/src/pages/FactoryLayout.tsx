@@ -1,6 +1,7 @@
 import { useContext, type ReactNode } from 'react';
 import { Link, NavLink } from 'react-router-dom';
-import { Button, SearchField } from '../components/Control';
+import { SearchField } from '../components/Control';
+import { InlineAlert } from '../components/InlineAlert';
 import { DataTableRow } from '../components/DataTable';
 import { Modal } from '../components/Modal';
 import type { FactoryIssue } from '../lib/api';
@@ -8,10 +9,9 @@ import { EpicCell, ProjectCell, type EpicRef } from './FactoryIssues';
 import { OpenIssueContext, type DispatchEvidence } from './factoryHelpers';
 
 export function QueryError({ error, retry }: { error: unknown; retry: () => void }) {
-  return <div className="oc-error-banner" role="alert">
+  return <InlineAlert onRetry={retry}>
     {error instanceof Error ? error.message : 'Factory data is unavailable.'}
-    <Button type="button" onClick={retry}>Retry</Button>
-  </div>;
+  </InlineAlert>;
 }
 
 export function BlockerEvidence({ blockers }: { blockers?: FactoryIssue['blockers'] }) {

@@ -82,17 +82,24 @@ describe('SubscriptionUsage', () => {
 
   it('shows provider errors and retries the request', () => {
     const refetch = vi.fn();
-    vi.mocked(useSubscriptionUsage).mockReturnValue({
+    const result = {
       data: { providers: [{ id: 'anthropic', name: 'Anthropic', status: 'rate_limited', windows: [] }] },
       error: new Error('Could not load subscription usage.'),
       refetch,
-    } as never);
+      isFetching: false,
+    };
+    vi.mocked(useSubscriptionUsage).mockReturnValue(result as never);
 
-    render(<SubscriptionUsage />);
+    const { rerender } = render(<SubscriptionUsage />);
     expect(screen.getByText('Temporarily rate limited')).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('Could not load subscription usage.');
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(refetch).toHaveBeenCalledOnce();
+    vi.mocked(useSubscriptionUsage).mockReturnValue({ ...result, isFetching: true } as never);
+    rerender(<SubscriptionUsage />);
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Retry' })).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('heading', { name: 'Anthropic' })).toBeInTheDocument();
   });
 
   it('shows loading and empty states', () => {
