@@ -1,5 +1,30 @@
 import { test, expect } from './fixtures';
 
+test('code copying reports denial and succeeds on retry', async ({ mockedPage: page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+      writeText: async () => { throw new Error('Clipboard denied'); },
+    } });
+    document.execCommand = () => false;
+  });
+  await page.route('**/api/inbox**', (route) => route.fulfill({ json: {
+    items: [{ id: 'code', remoteId: 'local', title: 'Copy example', body: '```ts\nconst answer = 42;\n```', createdAt: 1, readAt: 1 }], unreadTotal: 0,
+  } }));
+  await page.goto('/inbox');
+  const copy = page.getByRole('button', { name: 'Copy code' });
+  await copy.focus();
+  await copy.press('Enter');
+  await expect(page.getByRole('status')).toHaveText('Could not copy to clipboard. Try again.');
+  await page.evaluate(() => {
+    navigator.clipboard.writeText = async (text: string) => {
+      (window as Window & { copiedText?: string }).copiedText = text;
+    };
+  });
+  await copy.click();
+  await expect(page.getByRole('status')).toHaveText('Copied!');
+  expect(await page.evaluate(() => (window as Window & { copiedText?: string }).copiedText)).toBe('const answer = 42;\n');
+});
+
 test('Alt+I opens the inbox and is listed in keyboard shortcut help', async ({ mockedPage: page }) => {
   await page.route('**/api/inbox', (route) => route.fulfill({ json: { items: [], unreadTotal: 0 } }));
   await page.goto('/sessions');

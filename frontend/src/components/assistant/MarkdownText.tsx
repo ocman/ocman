@@ -1,7 +1,7 @@
 // Markdown rendering for assistant text parts and tool output:
 // react-markdown wired with stable plugin/component references plus a
 // copy-button code block. Extracted from AssistantThread.tsx.
-import { isValidElement, useEffect, useId, useRef, useState } from 'react';
+import { isValidElement, useEffect, useId, useState } from 'react';
 import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -16,6 +16,7 @@ import { FactoryEpicCard } from '../FactoryEpicCard';
 import { factoryActionFromHref } from '../factoryEpicStatus';
 import { remarkFactoryCards } from '../factoryCards';
 import { Modal } from '../Modal';
+import { CopyButton } from '../CopyButton';
 
 let mermaidPromise: Promise<typeof import('mermaid')['default']> | undefined;
 function loadMermaid() {
@@ -53,23 +54,6 @@ function loadMermaid() {
     });
     return mermaid;
   });
-}
-
-function fallbackCopy(text: string) {
-  const el = document.createElement('div');
-  el.contentEditable = 'true';
-  el.style.position = 'fixed';
-  el.style.opacity = '0';
-  el.innerText = text;
-  document.body.appendChild(el);
-  // iOS requires selecting a range inside a contenteditable element
-  const range = document.createRange();
-  range.selectNodeContents(el);
-  const sel = window.getSelection();
-  sel?.removeAllRanges();
-  sel?.addRange(range);
-  document.execCommand('copy');
-  document.body.removeChild(el);
 }
 
 function nodeText(node: ReactNode): string {
@@ -190,29 +174,14 @@ function MarkdownImage({ node: _node, alt = '', ...props }: ComponentProps<'img'
 function CodeBlockPre(props: any) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { children, node: _node, ...rest } = props;
-  const codeRef = useRef<HTMLPreElement>(null);
-  const [copied, setCopied] = useState(false);
-  const handleCopy = () => {
-    const text = codeRef.current?.textContent || '';
-    // Show feedback immediately — don't wait for the async clipboard promise
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
-    } else {
-      fallbackCopy(text);
-    }
-  };
   const code = Array.isArray(children) ? children[0] : children;
   if (isValidElement<{ className?: string; children?: ReactNode }>(code) && code.props.className?.split(' ').includes('language-mermaid')) {
     return <MermaidDiagram source={nodeText(code.props.children)} />;
   }
   return (
     <div className="oc-code-block">
-      <button className={`oc-code-copy${copied ? ' oc-code-copy--copied' : ''}`} onClick={handleCopy} title="Copy code">
-        <i className={`bi ${copied ? 'bi-check2' : 'bi-copy'}`} aria-hidden="true" />
-      </button>
-      <pre ref={codeRef} {...rest}>{children}</pre>
+      <CopyButton className="oc-code-copy" iconOnly size="compact" label="Copy code" text={nodeText(children)} />
+      <pre {...rest}>{children}</pre>
     </div>
   );
 }

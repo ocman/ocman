@@ -305,8 +305,9 @@ flowchart TD
     Comp --> Speech[Browser speech synthesis<br/>local or online voice]
 ```
 
-- **Shared controls.** `Control`, `IconButton`, and `RefreshButton` own button
-  styling and feedback. `SegmentedControl` uses native radio inputs for
+- **Shared controls.** `Control`, `IconButton`, `RefreshButton`, and `CopyButton`
+  own button styling and feedback. Copy feedback follows the clipboard result
+  and clears its timers on unmount. `SegmentedControl` uses native radio inputs for
   single-choice filters. `Tabs` wraps Radix UI for keyboard navigation, focus,
   and tab/panel associations, using the app's CSS. Tabs activate on click,
   Enter, or Space and unmount inactive panel content by default; pages keep
