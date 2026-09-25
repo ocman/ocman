@@ -27,6 +27,7 @@ func installFakeTmux(t *testing.T, stderr string) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "tmux")
 	script := fmt.Sprintf(`#!/bin/sh
+if [ "$1" = "-L" ]; then shift 2; fi
 case "$1" in
   list-sessions|list-clients|list-windows)
     printf '%%s\n' %q >&2
@@ -273,14 +274,9 @@ func TestOcmanTermSessionName(t *testing.T) {
 // ── integration: real tmux create/list/kill lifecycle ────────────────
 //
 // Exercises the core window-management flow against a real tmux server.
-// Uses t.TempDir()-derived directories so the window-name hashes are
-// unique to this test and never collide with a developer's live
-// terminals in the shared ocman-term session. All windows it creates
-// are torn down on cleanup.
+// Each test uses disposable tmux servers, isolated from live terminals.
 func TestTermWindowLifecycle_Integration(t *testing.T) {
-	if !tmux.IsAvailable() {
-		t.Skip("tmux not available")
-	}
+	isolateTmux(t)
 
 	dirA := t.TempDir()
 	dirB := t.TempDir()
@@ -402,7 +398,7 @@ func TestTermWindowLifecycle_Integration(t *testing.T) {
 // session. Test helper kept separate so the production delete path
 // (handler) isn't entangled with test teardown.
 func killWindowForTest(name string) error {
-	return exec.Command("tmux", "kill-window", "-t", SessionName+":"+name).Run()
+	return exec.Command("tmux", "-L", socketName, "kill-window", "-t", SessionName+":"+name).Run()
 }
 
 // fakeTermConn is an in-memory hostsvc.TermConn for driving AttachLocalPTY
@@ -458,9 +454,7 @@ func (c *fakeTermConn) output() []byte {
 // that prints a marker, and asserts the marker comes back through the
 // TermConn. Covers the local TermAttach path end-to-end.
 func TestAttachLocalPTY_Integration(t *testing.T) {
-	if !tmux.IsAvailable() {
-		t.Skip("tmux not available")
-	}
+	isolateTmux(t)
 	dir := t.TempDir()
 	win, err := CreateWindow(t.Context(), dir)
 	if err != nil {
@@ -491,6 +485,10 @@ func TestAttachLocalPTY_Integration(t *testing.T) {
 	if !strings.Contains(string(conn.output()), "OCMAN_MARKER") {
 		t.Fatalf("marker not seen in PTY output: %q", conn.output())
 	}
+	out, err := exec.Command("tmux", "-L", socketName, "display-message", "-p", "-t", SessionName+":"+win, "#{window_width}x#{window_height}").Output()
+	if err != nil || strings.TrimSpace(string(out)) != "100x40" {
+		t.Fatalf("terminal size = %q, %v; want 100x40", out, err)
+	}
 	conn.Close()
 	select {
 	case <-attachDone:
@@ -502,20 +500,9 @@ func TestAttachLocalPTY_Integration(t *testing.T) {
 // ── local Host terminal deps ─────────────────────────────────────────
 
 func TestAttachLocalPTY_Clipboard(t *testing.T) {
-	bin, err := exec.LookPath("tmux")
-	if err != nil {
-		t.Skip("tmux not available")
-	}
-	// Isolate clipboard options and buffers from the user's running tmux.
-	socket := fmt.Sprintf("ocman-clipboard-%d-%d", os.Getpid(), time.Now().UnixNano())
+	bin := isolateTmux(t)
 	dir := t.TempDir()
-	script := fmt.Sprintf("#!/bin/sh\nexec %q -L %q -f /dev/null \"$@\"\n", bin, socket)
-	if err := os.WriteFile(filepath.Join(dir, "tmux"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("TERM", "screen") // Has no clipboard feature by default.
-	t.Cleanup(func() { _ = exec.Command(bin, "-L", socket, "kill-server").Run() })
 	win, err := CreateWindow(t.Context(), dir)
 	if err != nil {
 		t.Fatal(err)
@@ -528,7 +515,7 @@ func TestAttachLocalPTY_Clipboard(t *testing.T) {
 	go func() { done <- AttachLocalPTY(ctx, hostsvc.TermAttachRequest{Dir: dir, Window: win}, conn) }()
 	var client string
 	for ctx.Err() == nil {
-		out, _ := exec.Command(bin, "-L", socket, "list-clients", "-F", "#{client_name}").Output()
+		out, _ := exec.Command(bin, "-L", socketName, "list-clients", "-F", "#{client_name}").Output()
 		client = strings.TrimSpace(string(out))
 		if client != "" && len(conn.output()) > 0 {
 			break
@@ -539,7 +526,7 @@ func TestAttachLocalPTY_Clipboard(t *testing.T) {
 		t.Fatal("browser terminal client did not attach")
 	}
 	// set-buffer -w uses the same client clipboard output as copy-mode.
-	if out, err := exec.Command(bin, "-L", socket, "set-buffer", "-w", "-t", client, "héllo").CombinedOutput(); err != nil {
+	if out, err := exec.Command(bin, "-L", socketName, "set-buffer", "-w", "-t", client, "héllo").CombinedOutput(); err != nil {
 		t.Fatalf("copy: %v: %s", err, out)
 	}
 	for ctx.Err() == nil && !strings.Contains(string(conn.output()), "\x1b]52;;aMOpbGxv") {
@@ -574,6 +561,7 @@ func TestLocalTermKillWindow_RejectsCrossDir(t *testing.T) {
 // session doesn't exist yet, so the UI shows a clean "+" state rather
 // than erroring. With no tmux server running there is no session.
 func TestLocalTermWindows_EmptyWithoutSession(t *testing.T) {
+	isolateTmux(t)
 	exists, err := ocmanSessionExists(t.Context())
 	if err != nil {
 		t.Fatal(err)

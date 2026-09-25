@@ -1,5 +1,5 @@
 // Package term implements ocman's in-app browser terminals: named
-// windows inside one dedicated tmux session, plus the PTY bridge that
+// windows inside a dedicated tmux server and session, plus the PTY bridge that
 // attaches a hostsvc.TermConn to a window. The HTTP/WebSocket layer
 // lives in internal/server; this package owns the tmux call sites.
 package term
@@ -10,7 +10,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -34,6 +33,9 @@ import (
 // restart). Window names encode which directory each terminal belongs
 // to; see termWindowName.
 const SessionName = "ocman-term"
+
+// socketName isolates browser terminals from the user's default tmux server.
+const socketName = "ocman-term"
 
 // AttachLocalPTY is the local Host's TermAttach: it ensures the target
 // window exists in the ocman tmux session, opens a PTY attached to it,
@@ -73,7 +75,7 @@ func AttachLocalPTY(ctx context.Context, req hostsvc.TermAttachRequest, conn hos
 	target := SessionName + ":" + windowName
 	// The attached client is xterm.js, regardless of the server's TERM.
 	// Advertise OSC 52 so tmux sends copy-mode text to the browser.
-	args := []string{"-T", "clipboard", "attach-session", "-t", target}
+	args := []string{"-L", socketName, "-T", "clipboard", "attach-session", "-t", target}
 	if req.Readonly {
 		args = append(args, "-r")
 	}
@@ -130,7 +132,7 @@ func AttachLocalPTY(ctx context.Context, req hostsvc.TermAttachRequest, conn hos
 				// ... and the specific window, so this viewer's size
 				// doesn't depend on other clients attached to the shared
 				// ocman session (window-size is manual).
-				_ = tmux.Run(ctx, "resize-window", "-t", target,
+				_ = tmux.Run(ctx, "-L", socketName, "resize-window", "-t", target,
 					"-x", strconv.Itoa(int(rz.Cols)), "-y", strconv.Itoa(int(rz.Rows)))
 			}
 			continue
@@ -146,7 +148,7 @@ func AttachLocalPTY(ctx context.Context, req hostsvc.TermAttachRequest, conn hos
 // ocmanSessionExists reports whether the dedicated terminal session is
 // currently running.
 func ocmanSessionExists(ctx context.Context) (bool, error) {
-	err := tmux.Run(ctx, "has-session", "-t", SessionName)
+	err := tmux.Run(ctx, "-L", socketName, "has-session", "-t", SessionName)
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false, err
 	}
@@ -173,7 +175,7 @@ func ensureOcmanSession(ctx context.Context) error {
 	// so it never matches a terminal window pattern; it keeps the
 	// session alive even when no terminals exist yet. (tmux requires at
 	// least one window per session.)
-	if err := tmux.Run(ctx, "new-session", "-d",
+	if err := tmux.Run(ctx, "-L", socketName, "new-session", "-d",
 		"-s", SessionName, "-n", "_ocman_placeholder"); err != nil {
 		return fmt.Errorf("tmux new-session: %w", err)
 	}
@@ -186,7 +188,7 @@ func ensureOcmanSession(ctx context.Context) error {
 		{"set-option", "-t", SessionName, "allow-rename", "off"},
 		{"set-option", "-t", SessionName, "automatic-rename", "off"},
 	} {
-		if err := tmux.Run(ctx, opt...); err != nil {
+		if err := tmux.Run(ctx, append([]string{"-L", socketName}, opt...)...); err != nil {
 			log.WithError(err).WithField("option", opt[3]).
 				Debug("setting ocman session option")
 		}
@@ -244,7 +246,7 @@ func termWindowIndex(name string) int {
 // allTermWindowNames lists every terminal window in the ocman session
 // (across all directories) that matches the naming scheme.
 func allTermWindowNames(ctx context.Context) ([]string, error) {
-	out, err := tmux.Output(ctx, "list-windows", "-t", SessionName,
+	out, err := tmux.Output(ctx, "-L", socketName, "list-windows", "-t", SessionName,
 		"-F", "#{window_name}")
 	if err != nil {
 		if tmux.IsServerNotRunningError(err) {
@@ -328,7 +330,7 @@ func CreateWindow(ctx context.Context, dir string) (string, error) {
 	}
 	// Create detached so we never steal focus; viewers attach + select
 	// it themselves.
-	if err := tmux.Run(ctx, "new-window", "-d",
+	if err := tmux.Run(ctx, "-L", socketName, "new-window", "-d",
 		"-t", SessionName, "-n", windowName, "-c", dir); err != nil {
 		return "", fmt.Errorf("tmux new-window: %w", err)
 	}
@@ -387,131 +389,5 @@ func KillWindow(ctx context.Context, dir, window string) error {
 	if !exists {
 		return fmt.Errorf("terminal window not found")
 	}
-	return tmux.Run(ctx, "kill-window", "-t", SessionName+":"+window)
+	return tmux.Run(ctx, "-L", socketName, "kill-window", "-t", SessionName+":"+window)
 }
-
-// ── window titles ────────────────────────────────────────────────────
-
-// termWindow is a dedicated terminal window with a display title derived
-// from what's running in it. Alias of hostsvc.TermWindow so the local
-// Host deps and the REST handlers share one shape.
-type termWindow = hostsvc.TermWindow
-
-// idleShells are pane_current_command values that mean "nothing
-// interesting is running" — an idle shell prompt. Used to decide when a
-// command name is worth showing as a tab title.
-var idleShells = map[string]bool{
-	"zsh": true, "bash": true, "fish": true, "sh": true,
-	"dash": true, "ksh": true, "tcsh": true, "csh": true, "nu": true,
-}
-
-// listTermWindowInfo returns the terminal windows for dir (ascending
-// index order), each with a display title: the program-set pane title
-// (OSC) when meaningful, else the running command when not an idle
-// shell, else empty (the UI falls back to the tab number).
-func listTermWindowInfo(ctx context.Context, dir string) ([]termWindow, error) {
-	out, err := tmux.Output(ctx, "list-windows", "-t", SessionName,
-		"-F", "#{window_name}\t#{pane_current_command}\t#{pane_title}")
-	if err != nil {
-		return nil, err
-	}
-	prefix := WindowPrefix(dir)
-	var wins []termWindow
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if line == "" {
-			continue
-		}
-		parts := strings.SplitN(line, "\t", 3)
-		name := parts[0]
-		if !strings.HasPrefix(name, prefix) || !termWindowRe.MatchString(name) {
-			continue
-		}
-		cmd, paneTitle := "", ""
-		if len(parts) > 1 {
-			cmd = parts[1]
-		}
-		if len(parts) > 2 {
-			paneTitle = parts[2]
-		}
-		wins = append(wins, termWindow{Name: name, Title: termWindowTitle(cmd, paneTitle)})
-	}
-	sort.Slice(wins, func(i, j int) bool {
-		return termWindowIndex(wins[i].Name) < termWindowIndex(wins[j].Name)
-	})
-	return wins, nil
-}
-
-// termWindowTitle picks a display title from the pane's running command
-// and program-set pane title.
-func termWindowTitle(cmd, paneTitle string) string {
-	pt := strings.TrimSpace(paneTitle)
-	if pt != "" && pt != cmd && !looksLikeHostname(pt) {
-		return pt
-	}
-	if cmd != "" && !idleShells[cmd] {
-		return cmd
-	}
-	return ""
-}
-
-// looksLikeHostname is a cheap heuristic to reject tmux's default
-// pane_title (the local hostname) so it isn't shown as a tab title.
-func looksLikeHostname(s string) bool {
-	if strings.ContainsAny(s, " /\\:") {
-		return false
-	}
-	if host, err := os.Hostname(); err == nil && host != "" {
-		if s == host || strings.HasPrefix(host, s) || strings.HasPrefix(s, host) {
-			return true
-		}
-		if short, _, ok := strings.Cut(host, "."); ok && s == short {
-			return true
-		}
-	}
-	return false
-}
-
-// SweepLegacySessions removes orphaned ephemeral viewer sessions
-// from the previous implementation (`ocman-view-<uuid>`). They could
-// never belong to a live connection at startup, so killing them at boot
-// self-heals leaks across restarts. Safe no-op when tmux isn't running.
-func SweepLegacySessions(ctx context.Context) {
-	if !tmux.IsAvailable() {
-		return
-	}
-	sweepLegacySessions(func() ([]string, error) { return listSessionNames(ctx) }, func(name string) error { return killSession(ctx, name) })
-}
-
-func listSessionNames(ctx context.Context) ([]string, error) {
-	out, err := tmux.Output(ctx, "list-sessions", "-F", "#{session_name}")
-	if err != nil {
-		return nil, err
-	}
-	return strings.Split(strings.TrimSpace(string(out)), "\n"), nil
-}
-
-func killSession(ctx context.Context, name string) error {
-	return tmux.Run(ctx, "kill-session", "-t", name)
-}
-
-// sweepLegacySessions is the seam-injected core of SweepLegacySessions so
-// tests can assert which sessions get killed without a real tmux server.
-func sweepLegacySessions(list func() ([]string, error), kill func(string) error) {
-	names, err := list()
-	if err != nil {
-		return
-	}
-	for _, name := range names {
-		if !strings.HasPrefix(name, legacyViewPrefix) {
-			continue
-		}
-		if err := kill(name); err != nil {
-			log.WithError(err).WithField("session", name).
-				Debug("sweeping legacy ocman-view session")
-		}
-	}
-}
-
-// legacyViewPrefix names the ephemeral viewer sessions of the previous
-// implementation. Only sessions carrying it are swept.
-const legacyViewPrefix = "ocman-view-"

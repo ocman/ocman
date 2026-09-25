@@ -70,6 +70,12 @@ comes from a template you control in **Settings**.
 ## Also included
 
 - **Terminals.** In-app browser terminals backed by tmux.
+  They use a separate server, `tmux -L ocman-term`, so they do not appear in
+  your default server's session list. To attach outside ocman, run
+  `tmux -L ocman-term attach-session -t ocman-term` on the owning machine.
+  After upgrading from the shared-server version, reopen terminals in ocman.
+  Old shells remain accessible with `tmux -L default attach-session -t ocman-term`
+  until you finish and close them; running shells are not migrated or killed.
   Copying in tmux copy mode writes to the browser user's clipboard, including
   for remote terminals. If the browser blocks automatic copying, click
   **Copy to clipboard** in the terminal. This requires tmux's `set-clipboard`

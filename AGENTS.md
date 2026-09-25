@@ -320,7 +320,8 @@ handlers don't bypass the `Host` seam). User-facing docs:
   (`opencodeLaunch`) flag, distinct from `Tmux`; the frontend gates
   managed-launch UI on it.
 - `internal/term/` — in-app browser terminals: window naming/hashing,
-  window management in the dedicated `ocman-term` tmux session, and
+  window management in the dedicated `ocman-term` tmux session on its own
+  named server (`tmux -L ocman-term`), and
   the PTY bridge. WebSocket/REST layer stays in `internal/server`.
 - `internal/whisper/` — self-contained voice transcription via a local
   whisper-cpp binary (+ ffmpeg conversion).
