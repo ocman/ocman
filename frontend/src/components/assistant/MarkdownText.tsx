@@ -237,13 +237,22 @@ function MarkdownLink(props: any) {
   return <a {...rest} href={href} target={local ? undefined : '_blank'} rel={local ? undefined : 'noopener noreferrer'}>{children}</a>;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function MarkdownTable({ node: _node, ...props }: ComponentProps<'table'> & { node?: unknown }) {
+  return (
+    <div role="region" aria-label="Scrollable table" tabIndex={0} style={{ maxWidth: '100%', overflowX: 'auto' }}>
+      <table {...props} />
+    </div>
+  );
+}
+
 // Module-scoped to keep prop references stable across renders. Fresh
 // array/object literals here would invalidate react-markdown's
 // internal unified-processor cache on every streaming chunk.
 const REMARK_PLUGINS = [remarkGfm, remarkFactoryCards];
 const REMARK_PLUGINS_WITH_BREAKS = [...REMARK_PLUGINS, remarkBreaks];
 const REHYPE_PLUGINS = [rehypeHighlight];
-const MARKDOWN_COMPONENTS = { pre: CodeBlockPre, a: MarkdownLink, img: MarkdownImage };
+const MARKDOWN_COMPONENTS = { pre: CodeBlockPre, a: MarkdownLink, img: MarkdownImage, table: MarkdownTable };
 
 export const MarkdownContent: FC<{ text: string; preserveLineBreaks?: boolean }> = ({ text, preserveLineBreaks = false }) => {
   if (!text.trim()) return null;

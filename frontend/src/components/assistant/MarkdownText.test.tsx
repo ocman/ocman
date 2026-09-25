@@ -25,6 +25,15 @@ vi.mock('mermaid', () => ({
 import { MarkdownContent, MarkdownText } from './MarkdownText';
 
 describe('MarkdownText', () => {
+  it('keeps tables in a keyboard-accessible horizontal scroll container', () => {
+    render(<MarkdownContent text={'| Path | Details |\n| --- | --- |\n| `internal/very-long-path/file.go` | Content |'} />);
+    const region = screen.getByRole('region', { name: 'Scrollable table' });
+    expect(region).toContainElement(screen.getByRole('table'));
+    expect(region).toHaveAttribute('tabindex', '0');
+    expect(region).toHaveStyle({ maxWidth: '100%', overflowX: 'auto' });
+    expect(screen.getByRole('cell', { name: 'Content' })).toBeInTheDocument();
+  });
+
   it('preserves soft line breaks when requested without changing hard breaks or code', () => {
     const text = 'First\nSecond\n\nHard  \nbreak\n\n```text\n  indented\n    code\n```';
     const { container, rerender } = render(<MarkdownContent text={text} />);
