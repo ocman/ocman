@@ -2,7 +2,7 @@ import { usePageTitle } from '../lib/headerContext';
 import { useSubscriptionUsage } from '../lib/queries';
 import { formatSubscriptionResetDate, timeUntilISO } from '../lib/format';
 import type { SubscriptionProviderUsage } from '../lib/api';
-import { Button } from '../components/Control';
+import { RefreshButton } from '../components/RefreshButton';
 
 const STATUS_LABELS: Record<string, string> = {
   expired: 'OpenCode token expired',
@@ -59,7 +59,7 @@ export function SubscriptionUsageContent({ compact = false }: { compact?: boolea
           {compact ? <h2>Subscription usage</h2> : <h1>Subscription usage</h1>}
           <p>Current limits reported for OAuth subscriptions connected to OpenCode.</p>
         </div>
-        <Button size="small" onClick={() => void usage.refetch()} disabled={usage.isFetching}>Refresh</Button>
+        <RefreshButton size="small" variant="default" onClick={() => void usage.refetch()} loading={usage.isFetching} />
       </div>
       {usage.error instanceof Error && (
         <div className="oc-error-banner" role="alert">

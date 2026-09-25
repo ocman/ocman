@@ -6,7 +6,8 @@ import { useSidebarCallbacks } from '../lib/useSidebarCallbacks';
 import { RawDiffView } from './RawDiffView';
 import { FullscreenButton, type FullscreenDiffFile } from './DiffFullscreenModal';
 import { useFullscreenDiff } from './useFullscreenDiff';
-import { ChangesRefreshButton, type PaneSummary } from './SessionChangesSidebar';
+import type { PaneSummary } from './SessionChangesSidebar';
+import { RefreshButton } from './RefreshButton';
 import { groupWorkingTreeFiles } from './groupWorkingTreeFiles';
 import { SidebarFileListSkeleton } from './Skeleton';
 import { ChangedFileRow } from './ChangedFileRow';
@@ -227,7 +228,7 @@ export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = fal
           )}
         </span>
         <FullscreenButton onClick={openFullscreen} disabled={files.length === 0} />
-        <ChangesRefreshButton onClick={refresh} loading={loading} disabled={!enabled} />
+        <RefreshButton onClick={refresh} loading={loading} disabled={!enabled} />
       </div>
       {data && data.branch && (
         <div className="oc-changes-sidebar-branch">

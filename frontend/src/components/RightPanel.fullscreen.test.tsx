@@ -11,7 +11,6 @@ let fileCount = 0;
 const openFullscreen = vi.fn();
 
 vi.mock('./SessionChangesSidebar', () => ({
-  ChangesRefreshButton: () => null,
   SessionChangesSidebar: ({ sessionId, onSummaryChange, onFullscreen }: {
     sessionId: string;
     onSummaryChange?: (summary: { files: number; additions: number; deletions: number }) => void;

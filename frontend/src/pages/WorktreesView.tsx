@@ -12,6 +12,7 @@ import { sessionsForWorktree } from '../lib/worktrees';
 import { WorktreesTableSkeleton } from '../components/Skeleton';
 import { ProjectLabel } from '../components/ProjectLabel';
 import { DataTable } from '../components/DataTable';
+import { RefreshButton } from '../components/RefreshButton';
 import './Dashboard.css';
 import './WorktreesView.css';
 
@@ -118,9 +119,7 @@ export function WorktreesView() {
           <Link className="oc-time-range-btn" to={`/project/${encodeURIComponent(projectDir)}`}>
             Back to project
           </Link>
-          <button className="oc-time-range-btn" type="button" onClick={() => void load()}>
-            Refresh
-          </button>
+          <RefreshButton size="small" variant="default" onClick={() => void load()} loading={loading} />
           <button
             className="oc-time-range-btn active"
             type="button"

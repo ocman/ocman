@@ -8,7 +8,7 @@ import type { WorktreeEntry } from '../lib/api';
 
 // The view pulls in several hooks/stores that hit the network or the
 // browser. Mock them to thin, deterministic stubs so the test can focus
-// on the delete flow (the only logic this suite cares about).
+// on refresh and delete flows.
 vi.mock('../lib/headerContext', () => ({ usePageTitle: () => {} }));
 // Launch affordances gate on opencodeLaunch (AD-8 / #393), not tmux.
 // `launchAllowed` lets individual tests flip the flag.
@@ -19,11 +19,12 @@ vi.mock('../lib/uiStore', () => ({
   useUiStore: (selector: (s: { openWorktreeForm: () => void }) => unknown) =>
     selector({ openWorktreeForm: vi.fn() }),
 }));
-vi.mock('../lib/apiStore', () => ({
-  useApiStore: (
-    selector: (s: { cachedSessions: never[]; refreshCachedSessions: () => Promise<never[]> }) => unknown,
-  ) => selector({ cachedSessions: [], refreshCachedSessions: () => Promise.resolve([]) }),
-}));
+vi.mock('../lib/apiStore', () => {
+  const store = { cachedSessions: [], refreshCachedSessions: () => Promise.resolve([]) };
+  return {
+    useApiStore: (selector: (s: typeof store) => unknown) => selector(store),
+  };
+});
 
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
@@ -50,7 +51,7 @@ function renderView() {
   );
 }
 
-describe('WorktreesView delete flow', () => {
+describe('WorktreesView', () => {
   beforeEach(() => {
     launchState.allowed = true;
     vi.spyOn(api.worktree, 'list').mockResolvedValue({
@@ -59,6 +60,29 @@ describe('WorktreesView delete flow', () => {
   });
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('blocks duplicate refreshes and re-enables the control after a failed request', async () => {
+    renderView();
+    await screen.findByText('feature');
+    const button = screen.getByRole('button', { name: 'Refresh' });
+    let rejectRefresh!: (error: Error) => void;
+    vi.mocked(api.worktree.list).mockImplementationOnce(() => new Promise((_, reject) => { rejectRefresh = reject; }));
+    vi.mocked(api.worktree.list).mockClear();
+
+    fireEvent.click(button);
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    fireEvent.click(button);
+    expect(api.worktree.list).toHaveBeenCalledOnce();
+
+    rejectRefresh(new Error('Refresh failed'));
+    expect(await screen.findByText('Refresh failed')).toBeInTheDocument();
+    expect(button).toBeEnabled();
+    expect(button).toHaveAttribute('aria-busy', 'false');
+    fireEvent.click(button);
+    expect(await screen.findByText('feature')).toBeInTheDocument();
+    expect(api.worktree.list).toHaveBeenCalledTimes(2);
   });
 
   // AD-8 / #393: launch affordance shows when opencodeLaunch is on and

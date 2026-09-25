@@ -6,7 +6,8 @@ import { useSessionInfo } from '../lib/useSessionInfo';
 import { useGitInfo } from '../lib/useGitInfo';
 import { useSidebarCallbacks } from '../lib/useSidebarCallbacks';
 import { onSessionChanged } from '../lib/useGlobalEvents';
-import { ChangesRefreshButton, type PaneSummary } from './SessionChangesSidebar';
+import type { PaneSummary } from './SessionChangesSidebar';
+import { RefreshButton } from './RefreshButton';
 import { TodoList } from './TodoList';
 import { SessionSection, TokensSection, CommitsSection, LiveSection } from './SessionInfoSections';
 import type { Session, SessionInfoCommit } from '../lib/api';
@@ -248,7 +249,7 @@ export function SessionInfoSidebar({
     <aside className="oc-changes-sidebar" aria-label="Session info">
       <div className="oc-changes-sidebar-header">
         <span className="oc-changes-sidebar-title">Session info</span>
-        <ChangesRefreshButton onClick={refresh} loading={loading} disabled={!liveEnabled} />
+        <RefreshButton onClick={refresh} loading={loading} disabled={!liveEnabled} />
       </div>
       {Body}
     </aside>

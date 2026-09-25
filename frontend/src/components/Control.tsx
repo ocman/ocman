@@ -1,8 +1,8 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, SelectHTMLAttributes } from 'react';
 import './Control.css';
 
-type Variant = 'accent' | 'muted' | 'default' | 'link';
-type Size = 'small' | 'normal' | 'large';
+type Variant = 'accent' | 'muted' | 'default' | 'link' | 'ghost';
+type Size = 'compact' | 'small' | 'normal' | 'large';
 
 function classes(...names: Array<string | undefined>) {
 	return names.filter(Boolean).join(' ');

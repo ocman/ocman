@@ -104,4 +104,25 @@ describe('SubscriptionUsage', () => {
     rerender(<SubscriptionUsage />);
     expect(screen.getByText('No OpenCode subscription credentials found.')).toBeInTheDocument();
   });
+
+  it('refreshes usage and exposes the fetching state on the shared control', () => {
+    const refetch = vi.fn();
+    vi.mocked(useSubscriptionUsage).mockReturnValue({ refetch, isFetching: false } as never);
+    const { rerender } = render(<SubscriptionUsage />);
+    const button = screen.getByRole('button', { name: 'Refresh' });
+    fireEvent.click(button);
+    expect(refetch).toHaveBeenCalledOnce();
+
+    vi.mocked(useSubscriptionUsage).mockReturnValue({ refetch, isFetching: true } as never);
+    rerender(<SubscriptionUsage />);
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    fireEvent.click(button);
+    expect(refetch).toHaveBeenCalledOnce();
+
+    vi.mocked(useSubscriptionUsage).mockReturnValue({ refetch, isFetching: false } as never);
+    rerender(<SubscriptionUsage />);
+    expect(button).toBeEnabled();
+    expect(button).toHaveAttribute('aria-busy', 'false');
+  });
 });

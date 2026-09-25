@@ -9,6 +9,7 @@ import { ChangeDiffBody, FileChangeGroup } from './FileChangeGroup';
 import { FullscreenButton, type FullscreenDiffFile } from './DiffFullscreenModal';
 import { useFullscreenDiff } from './useFullscreenDiff';
 import { SidebarFileListSkeleton } from './Skeleton';
+import { RefreshButton } from './RefreshButton';
 
 // Lazy-mount budget for the per-file rows themselves. Sessions with
 // hundreds of touched files need this; we only render the first
@@ -183,7 +184,7 @@ export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedd
           )}
         </span>
         <FullscreenButton onClick={openFullscreen} disabled={files.length === 0} />
-        <ChangesRefreshButton onClick={refresh} loading={loading} disabled={!enabled} />
+        <RefreshButton onClick={refresh} loading={loading} disabled={!enabled} />
       </div>
       {Body}
       {Fullscreen}
@@ -210,31 +211,4 @@ function toFullscreenFiles(files: FileChange[]): FullscreenDiffFile[] {
       />
     ),
   }));
-}
-
-// ChangesRefreshButton is a small icon button rendered in the
-// sidebar/pane header. Disabled when the sidebar is in its
-// "not supported" state and visually muted while a request is
-// already in flight (so back-to-back clicks don't spam the
-// backend; the underlying hook will still abort the previous
-// request if one is mid-flight).
-interface ChangesRefreshButtonProps {
-  onClick: () => void;
-  loading?: boolean;
-  disabled?: boolean;
-}
-
-export function ChangesRefreshButton({ onClick, loading = false, disabled = false }: ChangesRefreshButtonProps) {
-  return (
-    <button
-      type="button"
-      className={`oc-changes-refresh-btn${loading ? ' loading' : ''}`}
-      onClick={onClick}
-      disabled={disabled || loading}
-      title="Refresh"
-      aria-label="Refresh"
-    >
-      <i className="bi bi-arrow-clockwise" aria-hidden="true" />
-    </button>
-  );
 }
