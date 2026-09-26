@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DiffFullscreenModal, type FullscreenDiffFile } from './DiffFullscreenModal';
 import { useFullscreenDiff } from './useFullscreenDiff';
@@ -10,6 +10,11 @@ const files: FullscreenDiffFile[] = [
   { key: 'b', path: 'src/deep/two.ts', additions: 0, deletions: 5, body: <div>diff-two</div> },
 ];
 
+// The tree renders inside a shadow root, which screen queries skip.
+function tree() {
+  return within(screen.getByTestId('changed-files-tree').shadowRoot as unknown as HTMLElement);
+}
+
 describe('DiffFullscreenModal', () => {
   it('shows the first file diff by default and switches on click', async () => {
     const user = userEvent.setup();
@@ -18,41 +23,58 @@ describe('DiffFullscreenModal', () => {
     expect(screen.getByText('diff-one')).toBeInTheDocument();
     expect(screen.queryByText('diff-two')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /two\.ts/ }));
+    await user.click(tree().getByRole('treeitem', { name: 'two.ts' }));
 
     expect(screen.getByText('diff-two')).toBeInTheDocument();
     expect(screen.queryByText('diff-one')).not.toBeInTheDocument();
   });
 
-  it('splits the path into name and directory', () => {
+  it('keeps the diff when a directory row is clicked', async () => {
+    const user = userEvent.setup();
     render(<DiffFullscreenModal title="Working tree" files={files} onClose={vi.fn()} />);
-    expect(screen.getByText('two.ts')).toBeInTheDocument();
-    expect(screen.getByText('src/deep')).toBeInTheDocument();
+    await user.click(tree().getByRole('treeitem', { name: 'deep' }));
+    expect(screen.getByText('diff-one')).toBeInTheDocument();
   });
 
-  it('splits both sides of a renamed path', () => {
+  it('nests files under their directories with change counts', () => {
+    render(<DiffFullscreenModal title="Working tree" files={files} onClose={vi.fn()} />);
+    const t = tree();
+    expect(t.getByRole('treeitem', { name: 'src' })).toBeInTheDocument();
+    expect(t.getByRole('treeitem', { name: 'deep' })).toBeInTheDocument();
+    expect(t.getByRole('treeitem', { name: 'one.ts' })).toHaveTextContent('+3');
+    expect(t.getByRole('treeitem', { name: 'two.ts' })).toHaveTextContent('-5');
+  });
+
+  it('places a rename at its new path', () => {
     const renamed = [{
       ...files[0],
       path: 'src/b.ts',
       oldPath: 'src/a.ts',
       label: 'src/a.ts → src/b.ts',
+      status: 'renamed',
     }];
     render(<DiffFullscreenModal title="Working tree" files={renamed} onClose={vi.fn()} />);
 
-    expect(screen.getByText('a.ts → b.ts')).toBeInTheDocument();
-    expect(screen.getByText('src')).toBeInTheDocument();
+    expect(tree().getByRole('treeitem', { name: 'b.ts' })).toBeInTheDocument();
+    expect(tree().queryByRole('treeitem', { name: 'a.ts' })).not.toBeInTheDocument();
   });
 
   it('does not treat an arrow in a filename as a rename', () => {
-    const arrowFile = [{
-      ...files[0],
-      path: 'src/a → b.ts',
-      label: 'src/a → b.ts',
-    }];
+    const arrowFile = [{ ...files[0], path: 'src/a → b.ts', label: 'src/a → b.ts' }];
     render(<DiffFullscreenModal title="Working tree" files={arrowFile} onClose={vi.fn()} />);
+    expect(tree().getByRole('treeitem', { name: 'a → b.ts' })).toBeInTheDocument();
+  });
 
-    expect(screen.getByText('a → b.ts')).toBeInTheDocument();
-    expect(screen.getByText('src')).toBeInTheDocument();
+  it('follows a refreshed file list', async () => {
+    const { rerender } = render(<DiffFullscreenModal title="Working tree" files={files} onClose={vi.fn()} />);
+    rerender(<DiffFullscreenModal title="Working tree" files={[files[1]]} onClose={vi.fn()} />);
+    await waitFor(() => expect(tree().queryByRole('treeitem', { name: 'one.ts' })).not.toBeInTheDocument());
+    expect(screen.getByText('diff-two')).toBeInTheDocument();
+  });
+
+  it('opens on initialKey when given', () => {
+    render(<DiffFullscreenModal title="Working tree" files={files} initialKey="b" onClose={vi.fn()} />);
+    expect(screen.getByText('diff-two')).toBeInTheDocument();
   });
 
   it('renders an empty state with no files', () => {

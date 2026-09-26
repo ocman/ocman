@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import './DiffFullscreenModal.css';
 import { Modal } from './Modal';
 import { IconButton } from './IconButton';
+import { ChangedFilesTree } from './ChangedFilesTree';
 
 // One entry in the fullscreen diff browser. `body` is the already-
 // built diff element for the file; React only renders the selected
@@ -28,14 +29,16 @@ export interface FullscreenDiffFile {
 interface DiffFullscreenModalProps {
   title: string;
   files: FullscreenDiffFile[];
+  // Key of the file to open on; falls back to the first file.
+  initialKey?: string;
   onClose: () => void;
 }
 
 // DiffFullscreenModal shows the same per-file diffs as the sidebar
-// panes, but in a 95vw/95vh two-column layout: file names on the
+// panes, but in a 95vw/95vh two-column layout: a file tree on the
 // left, the selected file's diff on the right.
-export function DiffFullscreenModal({ title, files, onClose }: DiffFullscreenModalProps) {
-  const [selectedKey, setSelectedKey] = useState<string | null>(files[0]?.key ?? null);
+export function DiffFullscreenModal({ title, files, initialKey, onClose }: DiffFullscreenModalProps) {
+  const [selectedKey, setSelectedKey] = useState<string | null>(initialKey || (files[0]?.key ?? null));
   // Selecting by key (not index) keeps the selection stable across a
   // background refresh; fall back to the first file when the selected
   // one disappears.
@@ -65,69 +68,19 @@ export function DiffFullscreenModal({ title, files, onClose }: DiffFullscreenMod
         </button>
       </header>
       <div className="oc-diff-fs-cols">
-        <ul className="oc-diff-fs-files" aria-label="Changed files">
-          {files.map((f) => {
-            const displayPath = splitDisplayPath(
-              f.oldPath ? f.path : (f.label ?? f.path),
-              f.oldPath,
-            );
-            return <li key={f.key}>
-              <button
-                type="button"
-                className={`oc-diff-fs-file${f.key === current?.key ? ' selected' : ''}`}
-                onClick={() => setSelectedKey(f.key)}
-                aria-current={f.key === current?.key}
-                title={f.label ?? f.path}
-              >
-                {f.status && (
-                  <span
-                    className={`oc-change-group-status oc-change-group-status-${f.status}`}
-                    title={f.status}
-                  >
-                    {f.statusLabel ?? f.status.charAt(0).toUpperCase()}
-                  </span>
-                )}
-                <span className="oc-diff-fs-file-name">{displayPath.name}</span>
-                <span className="oc-diff-fs-file-dir">{displayPath.dir}</span>
-                <span className="oc-diff-fs-file-counts">
-                  {f.additions > 0 && <span className="oc-changes-add">+{f.additions}</span>}
-                  {f.deletions > 0 && <span className="oc-changes-del">-{f.deletions}</span>}
-                </span>
-              </button>
-            </li>;
-          })}
-        </ul>
+        <ChangedFilesTree
+          files={files}
+          selectedKey={current?.key ?? null}
+          onSelect={setSelectedKey}
+        />
         <div className="oc-diff-fs-diff">
-          {current ? (
-            <>
-              <div className="oc-diff-fs-diff-path">{current.label ?? current.path}</div>
-              {current.body}
-            </>
-          ) : (
+          {current ? current.body : (
             <div className="oc-diff-empty">No changes to show.</div>
           )}
         </div>
       </div>
     </Modal>
   );
-}
-
-function basename(path: string): string {
-  const i = path.lastIndexOf('/');
-  return i === -1 ? path : path.slice(i + 1);
-}
-
-function dirname(path: string): string {
-  const i = path.lastIndexOf('/');
-  return i === -1 ? '' : path.slice(0, i);
-}
-
-function splitDisplayPath(path: string, oldPath?: string): { name: string; dir: string } {
-  const paths = oldPath ? [oldPath, path] : [path];
-  return {
-    name: paths.map(basename).join(' → '),
-    dir: [...new Set(paths.map(dirname))].join(' → '),
-  };
 }
 
 export function FullscreenButton({ onClick, disabled = false }: { onClick: () => void; disabled?: boolean }) {

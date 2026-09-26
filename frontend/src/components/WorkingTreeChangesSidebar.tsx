@@ -125,7 +125,7 @@ export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = fal
 
   // Fullscreen diff browser — same contract as SessionChangesSidebar.
   const fullscreenFiles = useMemo(() => toFullscreenFiles(files), [files]);
-  const { open: openFullscreen, modal: Fullscreen } = useFullscreenDiff(
+  const { open: openFullscreen, openFile, modal: Fullscreen } = useFullscreenDiff(
     'Working tree',
     fullscreenFiles,
     onFullscreen,
@@ -171,7 +171,7 @@ export function WorkingTreeChangesSidebar({ directory, dirtyTick, embedded = fal
               </header>
               <ul className="oc-changes-list">
                 {g.files.map((f) => (
-                  <WorkingTreeFileRow key={f.path} file={f} />
+                  <WorkingTreeFileRow key={f.path} file={f} onOpen={() => openFile(f.path)} />
                 ))}
               </ul>
             </section>
@@ -268,23 +268,20 @@ function toFullscreenFiles(files: WorkingTreeFile[]): FullscreenDiffFile[] {
 
 interface WorkingTreeFileRowProps {
   file: WorkingTreeFile;
+  onOpen: () => void;
 }
 
-// One file row in the working-tree list. Renders as a single line
-// (status badge + path + +A/-D counts); clicking the row toggles
-// an inline diff body underneath. Each row owns its own collapse
-// state, so multiple rows can be open at the same time.
-//
-// Default state is collapsed — opening a session shouldn't dump
-// every diff at once. Matches the screenshot reference where the
-// list reads like `git status -s` until you ask for more.
-function WorkingTreeFileRow({ file }: WorkingTreeFileRowProps) {
+// One file row in the working-tree list: status badge + path + +A/-D
+// counts, reading like `git status -s`. Clicking opens the fullscreen
+// diff browser on this file.
+function WorkingTreeFileRow({ file, onOpen }: WorkingTreeFileRowProps) {
   return (
     <ChangedFileRow
       path={file.path}
       displayPath={file.oldPath && file.status === 'renamed' ? `${file.oldPath} → ${file.path}` : file.path}
       additions={file.additions}
       deletions={file.deletions}
+      onOpen={onOpen}
       statusBadge={
         <span
           className={`oc-change-group-status oc-change-group-status-${file.status}`}
@@ -293,10 +290,6 @@ function WorkingTreeFileRow({ file }: WorkingTreeFileRowProps) {
           {STATUS_LABELS[file.status]}
         </span>
       }
-    >
-      {file.isBinary
-        ? <div className="oc-diff-empty">Binary file — diff not shown.</div>
-        : <RawDiffView diff={file.diff} filePath={file.path} />}
-    </ChangedFileRow>
+    />
   );
 }

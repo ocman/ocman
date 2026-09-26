@@ -5,7 +5,8 @@ import { usePlatformCapabilities } from '../lib/useCapabilities';
 import { useSessionChanges } from '../lib/useSessionChanges';
 import { useInfiniteRows } from '../lib/useInfiniteRows';
 import { useSidebarCallbacks } from '../lib/useSidebarCallbacks';
-import { ChangeDiffBody, FileChangeGroup } from './FileChangeGroup';
+import { FileChangeGroup } from './FileChangeGroup';
+import { ChangedFileRow } from './ChangedFileRow';
 import { FullscreenButton, type FullscreenDiffFile } from './DiffFullscreenModal';
 import { useFullscreenDiff } from './useFullscreenDiff';
 import { SidebarFileListSkeleton } from './Skeleton';
@@ -108,7 +109,7 @@ export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedd
   // Fullscreen diff browser. The sidebar owns the modal; the parent
   // only gets a callback to open it.
   const fullscreenFiles = useMemo(() => toFullscreenFiles(files), [files]);
-  const { open: openFullscreen, modal: Fullscreen } = useFullscreenDiff(
+  const { open: openFullscreen, openFile, modal: Fullscreen } = useFullscreenDiff(
     'Session changes',
     fullscreenFiles,
     onFullscreen,
@@ -140,9 +141,13 @@ export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedd
         <>
           <ul className="oc-changes-list">
             {files.slice(0, visibleFileCount).map((change) => (
-              <FileChangeGroup
+              <ChangedFileRow
                 key={change.path}
-                change={change}
+                path={change.path}
+                displayPath={change.displayPath}
+                additions={change.additions}
+                deletions={change.deletions}
+                onOpen={() => openFile(change.path)}
               />
             ))}
           </ul>
@@ -193,8 +198,7 @@ export function SessionChangesSidebar({ sessionId, platformId, dirtyTick, embedd
 }
 
 // toFullscreenFiles adapts the session-changes payload to the
-// fullscreen diff browser's file shape, reusing the sidebar's own
-// diff renderer for the body.
+// fullscreen diff browser's file shape.
 function toFullscreenFiles(files: FileChange[]): FullscreenDiffFile[] {
   return files.map((change) => ({
     key: change.path,
@@ -202,13 +206,6 @@ function toFullscreenFiles(files: FileChange[]): FullscreenDiffFile[] {
     label: change.displayPath || change.path,
     additions: change.additions,
     deletions: change.deletions,
-    body: (
-      <ChangeDiffBody
-        patch={change.patch}
-        before={change.before}
-        after={change.after}
-        filePath={change.path}
-      />
-    ),
+    body: <FileChangeGroup change={change} />,
   }));
 }

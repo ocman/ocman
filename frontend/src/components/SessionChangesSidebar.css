@@ -417,10 +417,6 @@ body.oc-sidebar-resizing .oc-changes-sidebar {
   background: var(--bg-hover);
 }
 
-.oc-changes-list-row[aria-expanded='true'] {
-  background: var(--bg-active);
-}
-
 .oc-changes-list-row .oc-change-group-status {
   /* Slightly smaller than the boxed-card variant so it fits a
      dense one-line row. */

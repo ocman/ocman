@@ -37,6 +37,6 @@ it('passes structured rename paths to the fullscreen browser', async () => {
   await user.click(screen.getByRole('button', { name: 'Fullscreen' }));
 
   const dialog = screen.getByRole('dialog', { name: 'Working tree' });
-  expect(within(dialog).getByText('a.ts → b.ts')).toBeInTheDocument();
-  expect(within(dialog).getByText('src')).toBeInTheDocument();
+  const tree = within(within(dialog).getByTestId('changed-files-tree').shadowRoot as unknown as HTMLElement);
+  expect(tree.getByRole('treeitem', { name: 'b.ts' })).toBeInTheDocument();
 });

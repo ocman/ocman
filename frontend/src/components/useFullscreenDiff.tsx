@@ -6,7 +6,8 @@ import { DiffFullscreenModal, type FullscreenDiffFile } from './DiffFullscreenMo
 // fullscreen diff browser and registers the open callback with an
 // embedded parent (RightPanel) via onFullscreen, mirroring the
 // onRefresh contract. Returns the open callback for the standalone
-// header's button plus the modal element (null while closed).
+// header's button, openFile for a file row, plus the modal element
+// (null while closed).
 //
 // Lives in its own file (not DiffFullscreenModal.tsx) so the modal
 // file only exports components, which React Fast Refresh requires.
@@ -14,14 +15,16 @@ export function useFullscreenDiff(
   title: string,
   files: FullscreenDiffFile[],
   onFullscreen?: (open: () => void) => void,
-): { open: () => void; modal: ReactNode } {
-  const [fullscreen, setFullscreen] = useState(false);
-  const open = useCallback(() => setFullscreen(true), []);
+): { open: () => void; openFile: (key: string) => void; modal: ReactNode } {
+  // null = closed; otherwise the file key to start on ('' = first file).
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const open = useCallback(() => setOpenKey(''), []);
+  const openFile = useCallback((key: string) => setOpenKey(key), []);
   useEffect(() => {
     onFullscreen?.(open);
   }, [onFullscreen, open]);
-  const modal = fullscreen ? (
-    <DiffFullscreenModal title={title} files={files} onClose={() => setFullscreen(false)} />
+  const modal = openKey !== null ? (
+    <DiffFullscreenModal title={title} files={files} initialKey={openKey} onClose={() => setOpenKey(null)} />
   ) : null;
-  return { open, modal };
+  return { open, openFile, modal };
 }

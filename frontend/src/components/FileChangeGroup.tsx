@@ -2,28 +2,16 @@ import { useState } from 'react';
 import type { FileChange, SessionEdit } from '../lib/api';
 import { DiffView } from './DiffView';
 import { RawDiffView } from './RawDiffView';
-import { ChangedFileRow } from './ChangedFileRow';
 
-// One row in the session-changes sidebar: a single line with the
-// filename + total +A/-D, click to reveal the diff body inline.
-// Visually mirrors WorkingTreeChangesSidebar's row style so both
-// panes feel consistent.
-//
-// Rows are collapsed by default (`defaultExpanded={false}`) — opening
-// a session shouldn't dump every diff at once. Multiple rows can be
-// open at the same time; toggle state is local to each row.
-//
-// Modern OpenCode parts ship a unified-diff `patch` string per edit,
-// which we render with RawDiffView. Legacy parts only provide
-// before/after snapshots, in which case we fall back to DiffView
-// (which calls simpleDiff to compute the diff client-side).
-//
-// When a file has multiple edits, an additional disclosure under the
-// diff body lets the user fan them out into per-edit diffs.
+// The diff body for one session-changes file, shown in the fullscreen
+// diff browser. Modern OpenCode parts ship a unified-diff `patch`
+// string per edit (RawDiffView); legacy parts only provide
+// before/after snapshots, rendered with DiffView (client-side
+// simpleDiff). When a file has multiple edits, a disclosure under the
+// diff fans them out into per-edit diffs.
 
 interface FileChangeGroupProps {
   change: FileChange;
-  defaultExpanded?: boolean;
 }
 
 // Renders one diff body for a FileChange or SessionEdit. Prefers
@@ -53,19 +41,18 @@ export function ChangeDiffBody({
   );
 }
 
-export function FileChangeGroup({ change, defaultExpanded = false }: FileChangeGroupProps) {
+export function FileChangeGroup({ change }: FileChangeGroupProps) {
   const [showEdits, setShowEdits] = useState(false);
 
-  const hasMultipleEdits = change.editCount > 1;
-
   return (
-    <ChangedFileRow
-      path={change.path}
-      displayPath={change.displayPath}
-      additions={change.additions}
-      deletions={change.deletions}
-      defaultExpanded={defaultExpanded}
-      expandedFooter={hasMultipleEdits && (
+    <>
+      <ChangeDiffBody
+        patch={change.patch}
+        before={change.before}
+        after={change.after}
+        filePath={change.path}
+      />
+      {change.editCount > 1 && (
         <>
           <button
             type="button"
@@ -97,13 +84,6 @@ export function FileChangeGroup({ change, defaultExpanded = false }: FileChangeG
           )}
         </>
       )}
-    >
-      <ChangeDiffBody
-        patch={change.patch}
-        before={change.before}
-        after={change.after}
-        filePath={change.path}
-      />
-    </ChangedFileRow>
+    </>
   );
 }
