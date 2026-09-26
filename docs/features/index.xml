@@ -1,0 +1,1679 @@
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom"><channel><title>ocman – Features</title><link>https://ocman.stenic.io/docs/features/</link><description>Recent content in Features on ocman</description><generator>Hugo -- gohugo.io</generator><language>en</language><atom:link href="https://ocman.stenic.io/docs/features/index.xml" rel="self" type="application/rss+xml"/><item><title>Multi-remote</title><link>https://ocman.stenic.io/docs/features/multi-remote/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://ocman.stenic.io/docs/features/multi-remote/</guid><description>
+&lt;p&gt;Manage coding-agent sessions running on several machines from one ocman
+dashboard. One ocman acts as the hub. It attaches to other ocman instances
+(the remotes) over a long-lived gRPC connection and shows every machine&amp;rsquo;s
+sessions in a single list. You can open, watch live, and drive any remote
+session, sending prompts, answering permission and question prompts, aborting
+and compacting, exactly as if it were local. Creating a session is
+machine-aware: the hub picks the host where the project already lives, and
+asks you to choose when it lives on more than one.&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;Off by default. A plain &lt;code&gt;./ocman&lt;/code&gt; with no remotes behaves exactly as
+before, and nothing below is required for single-machine use.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h2&gt;How it works&lt;span class="hx:absolute hx:-mt-20" id="how-it-works"&gt;&lt;/span&gt;
+&lt;a href="#how-it-works" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Every ocman has a stable random instance ID and a remote-access token,
+generated on first run and stored in &lt;code&gt;state.db&lt;/code&gt;. A remote opts in to being
+managed by starting its gRPC server with &lt;code&gt;-remote-listen&lt;/code&gt;. The hub dials each
+remote, authenticates with that remote&amp;rsquo;s token, and registers its sessions
+under a host badge.&lt;/p&gt;
+&lt;p&gt;The browser only ever talks to the hub over the normal REST/SSE API, and the
+hub fans out to remotes over gRPC. Host-local work (tmux, git worktrees, the
+in-app terminal, the agent process) always runs on the machine that owns it,
+so the hub never reaches into a remote&amp;rsquo;s filesystem directly. Opening the
+terminal on a remote project&amp;rsquo;s session opens a shell on the remote machine:
+the hub tunnels the browser WebSocket to the owner over a bidirectional gRPC
+stream, so keystrokes and PTY output cross the wire while the shell, cwd and
+tmux windows all stay on the remote.&lt;/p&gt;
+&lt;h2&gt;Prerequisites&lt;span class="hx:absolute hx:-mt-20" id="prerequisites"&gt;&lt;/span&gt;
+&lt;a href="#prerequisites" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;ul&gt;
+&lt;li&gt;ocman running on each machine you want to manage. The same version is
+safest; a protocol-version handshake flags incompatible builds.&lt;/li&gt;
+&lt;li&gt;Network reachability from the hub to each remote&amp;rsquo;s gRPC port. ocman does
+not manage networking, so use direct reachability, a VPN, or a trusted
+overlay such as Tailscale or WireGuard.&lt;/li&gt;
+&lt;li&gt;TLS certificates, unless both machines sit on a trusted overlay.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Step-by-step setup&lt;span class="hx:absolute hx:-mt-20" id="step-by-step-setup"&gt;&lt;/span&gt;
+&lt;a href="#step-by-step-setup" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;h3&gt;1. On each remote machine, turn on remote access&lt;span class="hx:absolute hx:-mt-20" id="1-on-each-remote-machine-turn-on-remote-access"&gt;&lt;/span&gt;
+&lt;a href="#1-on-each-remote-machine-turn-on-remote-access" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;p&gt;Start ocman with &lt;code&gt;-remote-listen&lt;/code&gt; set to the address its gRPC server
+should bind. Use a routable address (not &lt;code&gt;127.0.0.1&lt;/code&gt;) so the hub can
+reach it across the network:&lt;/p&gt;
+&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;div class="highlight"&gt;&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-sh" data-lang="sh"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# On the workstation you want to manage remotely:&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;ocman -remote-listen 0.0.0.0:8230 &lt;span class="se"&gt;\
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; -remote-tls-cert cert.pem -remote-tls-key key.pem&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;p&gt;This starts the gRPC server in addition to the normal web UI on &lt;code&gt;:8228&lt;/code&gt;. The
+remote&amp;rsquo;s existing REST behaviour and localhost posture are unchanged.&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;Pick any free port for the gRPC server; &lt;code&gt;8230&lt;/code&gt; is just a convention.
+The web UI port (&lt;code&gt;-addr&lt;/code&gt;, default &lt;code&gt;:8228&lt;/code&gt;) is independent.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h3&gt;2. On each remote machine, copy its access token&lt;span class="hx:absolute hx:-mt-20" id="2-on-each-remote-machine-copy-its-access-token"&gt;&lt;/span&gt;
+&lt;a href="#2-on-each-remote-machine-copy-its-access-token" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;p&gt;Open the remote&amp;rsquo;s own dashboard and go to &lt;strong&gt;Settings → Remotes&lt;/strong&gt;. The
+&lt;strong&gt;This machine&lt;/strong&gt; entry shows the remote&amp;rsquo;s instance ID and listen address.
+Click &lt;strong&gt;Reveal token&lt;/strong&gt; and copy the value.&lt;/p&gt;
+&lt;p&gt;You can also fetch it over the API on that machine:&lt;/p&gt;
+&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;div class="highlight"&gt;&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-sh" data-lang="sh"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;curl -s -X POST http://localhost:8228/api/settings/remote-access/reveal-token
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="c1"&gt;# -&amp;gt; { &amp;#34;token&amp;#34;: &amp;#34;…&amp;#34; }&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;p&gt;The token authenticates inbound gRPC connections. It is independent of
+the web UI password (&lt;code&gt;OCMAN_AUTH_PASSWORD&lt;/code&gt;).&lt;/p&gt;
+&lt;h3&gt;3. On the hub, attach the remote&lt;span class="hx:absolute hx:-mt-20" id="3-on-the-hub-attach-the-remote"&gt;&lt;/span&gt;
+&lt;a href="#3-on-the-hub-attach-the-remote" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;p&gt;Open the hub&amp;rsquo;s dashboard, go to &lt;strong&gt;Settings → Remotes → Attach a remote&lt;/strong&gt;,
+and enter:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Address.&lt;/strong&gt; Use &lt;code&gt;grpcs://workstation.lan:8230&lt;/code&gt; to dial TLS. Plaintext
+requires an explicit &lt;code&gt;grpc://&lt;/code&gt; address and &lt;code&gt;-remote-trusted-overlay&lt;/code&gt; on
+the remote; use it only over Tailscale, WireGuard, or an equivalent private
+encrypted overlay.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Token.&lt;/strong&gt; The value you revealed in step 2.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Display name&lt;/strong&gt; (optional). A friendly label for the host badge.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Click &lt;strong&gt;Add remote&lt;/strong&gt;. The hub dials, runs the handshake, and the row
+flips to &lt;strong&gt;connected&lt;/strong&gt;. The remote&amp;rsquo;s sessions now appear in the unified
+list with its host badge.&lt;/p&gt;
+&lt;h3&gt;4. Use it&lt;span class="hx:absolute hx:-mt-20" id="4-use-it"&gt;&lt;/span&gt;
+&lt;a href="#4-use-it" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Unified list.&lt;/strong&gt; Local and remote sessions are interleaved, each tagged
+with the owning machine. A slow or offline remote never blocks the list; its
+last-known sessions show dimmed with an &lt;em&gt;offline&lt;/em&gt; marker.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Open and drive.&lt;/strong&gt; Click any remote session to stream its transcript and
+use the composer, permission replies, abort and compact. These route to the
+owning remote and run there.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;New session.&lt;/strong&gt; When you start a session for a project, the hub looks up
+which machines already have that project checked out. On exactly one
+machine it starts there automatically; on several it asks you to pick; on
+none it asks which machine to start on.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;PRs and issues.&lt;/strong&gt; The project sidebar sends the owning &lt;code&gt;remoteId&lt;/code&gt; for
+upstream detection, lists, checks, identity lookups, branch highlighting,
+and session/worktree launches. Repository work runs on the owner.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Managing remotes&lt;span class="hx:absolute hx:-mt-20" id="managing-remotes"&gt;&lt;/span&gt;
+&lt;a href="#managing-remotes" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;The hub&amp;rsquo;s &lt;strong&gt;Settings → Remotes&lt;/strong&gt; page lists each attached remote with
+its health, hostname, reported instance ID, session count, and last-seen
+time. Per-remote actions:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Reconnect.&lt;/strong&gt; Force a fresh dial. This also happens automatically with
+backoff after a transient drop.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Edit.&lt;/strong&gt; Change the display name or address, replace the token, or
+enable and disable the remote.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Remove.&lt;/strong&gt; Detach the remote. Its sessions disappear from the list.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;The &lt;strong&gt;This machine&lt;/strong&gt; entry is non-removable, and its address and token
+cannot be edited.&lt;/p&gt;
+&lt;h2&gt;Security&lt;span class="hx:absolute hx:-mt-20" id="security"&gt;&lt;/span&gt;
+&lt;a href="#security" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Token auth is mandatory&lt;/strong&gt; on the gRPC channel. A missing or wrong
+token is rejected and shown as &lt;code&gt;auth-failed&lt;/code&gt; on the hub.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;TLS is the default requirement.&lt;/strong&gt; Start the remote with both
+&lt;code&gt;-remote-tls-cert&lt;/code&gt; and &lt;code&gt;-remote-tls-key&lt;/code&gt;, and use a &lt;code&gt;grpcs://&lt;/code&gt; address on
+the hub. Plaintext requires both &lt;code&gt;-remote-trusted-overlay&lt;/code&gt; on the remote
+and an explicit &lt;code&gt;grpc://&lt;/code&gt; address on the hub; bare addresses are rejected.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Plaintext exposes the bearer token.&lt;/strong&gt; With &lt;code&gt;grpc://&lt;/code&gt;, the remote-access
+token and all session traffic are unencrypted. Use this mode only when an
+encrypted trusted overlay such as Tailscale or WireGuard already protects
+the complete route between hub and remote. A private LAN alone is not an
+encrypted trusted overlay.&lt;/li&gt;
+&lt;li&gt;Stored remote tokens on the hub are encrypted at rest with an app-local
+key and are never returned to the browser. That protects against casual
+disclosure, not against an attacker who can read both the state DB and the
+app-local secret. Ocman enforces owner-only filesystem permissions on these
+files at startup.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Flags&lt;span class="hx:absolute hx:-mt-20" id="flags"&gt;&lt;/span&gt;
+&lt;a href="#flags" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;table&gt;
+&lt;thead&gt;
+&lt;tr&gt;
+&lt;th&gt;Flag&lt;/th&gt;
+&lt;th&gt;Default&lt;/th&gt;
+&lt;th&gt;Where&lt;/th&gt;
+&lt;th&gt;Description&lt;/th&gt;
+&lt;/tr&gt;
+&lt;/thead&gt;
+&lt;tbody&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;-remote-listen&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;&lt;em&gt;(unset, off)&lt;/em&gt;&lt;/td&gt;
+&lt;td&gt;remote&lt;/td&gt;
+&lt;td&gt;Bind address for the remote-access gRPC server, e.g. &lt;code&gt;0.0.0.0:8230&lt;/code&gt;. Empty disables it.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;-remote-tls-cert&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;&lt;em&gt;(unset)&lt;/em&gt;&lt;/td&gt;
+&lt;td&gt;remote&lt;/td&gt;
+&lt;td&gt;TLS certificate file. Required with &lt;code&gt;-remote-tls-key&lt;/code&gt; unless using a trusted overlay.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;-remote-tls-key&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;&lt;em&gt;(unset)&lt;/em&gt;&lt;/td&gt;
+&lt;td&gt;remote&lt;/td&gt;
+&lt;td&gt;TLS key file.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;-remote-trusted-overlay&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;&lt;code&gt;false&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;remote&lt;/td&gt;
+&lt;td&gt;Explicitly allow plaintext only on a trusted overlay network.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;The hub needs no flags. You add remotes at runtime from the Settings page,
+and ocman persists them in &lt;code&gt;state.db&lt;/code&gt;.&lt;/p&gt;
+&lt;h2&gt;Troubleshooting&lt;span class="hx:absolute hx:-mt-20" id="troubleshooting"&gt;&lt;/span&gt;
+&lt;a href="#troubleshooting" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;table&gt;
+&lt;thead&gt;
+&lt;tr&gt;
+&lt;th&gt;Symptom&lt;/th&gt;
+&lt;th&gt;Likely cause&lt;/th&gt;
+&lt;/tr&gt;
+&lt;/thead&gt;
+&lt;tbody&gt;
+&lt;tr&gt;
+&lt;td&gt;Health shows &lt;code&gt;auth-failed&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;Wrong token, or the remote regenerated its token. Reveal it again on the remote and update it on the hub (&lt;strong&gt;Edit&lt;/strong&gt;).&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;Health shows &lt;code&gt;offline&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;The hub can&amp;rsquo;t reach the remote&amp;rsquo;s gRPC address. Check the port, firewall, and overlay network. Sessions appear stale until it reconnects.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;Health shows &lt;code&gt;incompatible-version&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;Hub and remote are different ocman builds with an incompatible wire protocol. Align versions.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;Remote connected but no sessions&lt;/td&gt;
+&lt;td&gt;The remote may simply have none, or its OpenCode database isn&amp;rsquo;t where it expects. Check the remote&amp;rsquo;s own dashboard.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;New-session picker never finds a remote&amp;rsquo;s project&lt;/td&gt;
+&lt;td&gt;The remote&amp;rsquo;s project inventory refreshes on connect and periodically, so a freshly checked-out project may take a moment to appear.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;h2&gt;Limitations (v1)&lt;span class="hx:absolute hx:-mt-20" id="limitations-v1"&gt;&lt;/span&gt;
+&lt;a href="#limitations-v1" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;ul&gt;
+&lt;li&gt;Auto-approve for a remote session runs on the owning remote, with that
+machine&amp;rsquo;s settings, not the hub&amp;rsquo;s.&lt;/li&gt;
+&lt;li&gt;Stale sessions from an offline remote are kept in memory only. After a hub
+restart an offline remote shows no sessions until it reconnects.&lt;/li&gt;
+&lt;/ul&gt;</description></item><item><title>MCP server</title><link>https://ocman.stenic.io/docs/features/mcp/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://ocman.stenic.io/docs/features/mcp/</guid><description>
+&lt;p&gt;Ocman embeds an optional MCP (Model Context Protocol) server exposing Factory,
+Inbox, routine, session inspection and creation, and file-embedding tools.&lt;/p&gt;
+&lt;p&gt;Ocman works fine as a plain dashboard without this. Install it only if you
+want conversational Factory handoff, Inbox delivery, routine management,
+session inspection, or embedded file display.&lt;/p&gt;
+&lt;h2&gt;Endpoint&lt;span class="hx:absolute hx:-mt-20" id="endpoint"&gt;&lt;/span&gt;
+&lt;a href="#endpoint" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;The server uses the Streamable HTTP transport and listens on its own
+loopback-only port, separate from the web UI:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;http://127.0.0.1:8227/mcp&lt;/code&gt; is the dedicated MCP listener (&lt;code&gt;-mcp-addr&lt;/code&gt;).
+It works the same in dev and production, and needs no credentials.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;http://localhost:8228/mcp&lt;/code&gt; is the same endpoint on the web UI&amp;rsquo;s port,
+both in dev (Vite proxies it to the backend on &lt;code&gt;:8229&lt;/code&gt;) and for the
+production binary&amp;rsquo;s default &lt;code&gt;-addr&lt;/code&gt;. Password auth applies there, so a
+native MCP client gets &lt;code&gt;403&lt;/code&gt; when auth is configured.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;&lt;code&gt;/api/capabilities&lt;/code&gt; also reports the recommended URL as &lt;code&gt;mcpServer.url&lt;/code&gt;. Both
+paths are localhost-only. Origin-less native MCP clients work,
+cross-origin browser requests are rejected.&lt;/p&gt;
+&lt;p&gt;The dedicated listener exists because MCP clients cannot present an auth
+cookie, so it has to treat the loopback peer address as the credential. That
+is unsafe on the web UI&amp;rsquo;s port, where every request forwarded by a reverse
+proxy arrives from &lt;code&gt;127.0.0.1&lt;/code&gt;. Binding a separate loopback-only listener
+keeps it out of reach of a proxy pointed at the main port. Ocman refuses to
+bind &lt;code&gt;-mcp-addr&lt;/code&gt; to a non-loopback address, and &lt;code&gt;-mcp-addr &amp;quot;&amp;quot;&lt;/code&gt; disables the
+dedicated listener entirely.&lt;/p&gt;
+&lt;h2&gt;Setup&lt;span class="hx:absolute hx:-mt-20" id="setup"&gt;&lt;/span&gt;
+&lt;a href="#setup" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Ocman checks OpenCode&amp;rsquo;s global config on every page load and, if it doesn&amp;rsquo;t
+find its own entry, shows a toast offering to install it. Clicking &lt;strong&gt;Install&lt;/strong&gt;
+writes the entry below into &lt;code&gt;~/.config/opencode/opencode.json&lt;/code&gt;
+(&lt;code&gt;$XDG_CONFIG_HOME&lt;/code&gt; and &lt;code&gt;OPENCODE_CONFIG&lt;/code&gt; are honoured), after copying the
+original to &lt;code&gt;opencode.&amp;lt;timestamp&amp;gt;-backup.json&lt;/code&gt; in the same directory. Every
+other key in the file survives, including any other MCP servers. Restart
+OpenCode afterwards, since it reads the config at startup.&lt;/p&gt;
+&lt;p&gt;Ocman won&amp;rsquo;t touch a config it can&amp;rsquo;t rewrite losslessly, meaning a &lt;code&gt;.jsonc&lt;/code&gt;
+file or a &lt;code&gt;.json&lt;/code&gt; file with comments. The toast then shows the URL to paste in
+yourself. It also offers to update a stale entry, say one still pointing at an
+older port. &lt;code&gt;GET /api/mcp/config&lt;/code&gt; returns the same information.&lt;/p&gt;
+&lt;p&gt;To do it by hand, add the server to your project&amp;rsquo;s &lt;code&gt;opencode.json&lt;/code&gt; or the
+global config:&lt;/p&gt;
+&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;div class="highlight"&gt;&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-json" data-lang="json"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="p"&gt;{&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="nt"&gt;&amp;#34;$schema&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;https://opencode.ai/config.json&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="nt"&gt;&amp;#34;mcp&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="nt"&gt;&amp;#34;ocman&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="p"&gt;{&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="nt"&gt;&amp;#34;type&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;remote&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="nt"&gt;&amp;#34;url&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;http://127.0.0.1:8227/mcp&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="nt"&gt;&amp;#34;enabled&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="kc"&gt;true&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="p"&gt;}&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="p"&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;p&gt;The MCP port is fixed, so this config works for both &lt;code&gt;make dev&lt;/code&gt; and the
+production binary. Change it if you moved the listener with &lt;code&gt;-mcp-addr&lt;/code&gt;.&lt;/p&gt;
+&lt;h2&gt;Tools&lt;span class="hx:absolute hx:-mt-20" id="tools"&gt;&lt;/span&gt;
+&lt;a href="#tools" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;table&gt;
+&lt;thead&gt;
+&lt;tr&gt;
+&lt;th&gt;Tool&lt;/th&gt;
+&lt;th&gt;Description&lt;/th&gt;
+&lt;/tr&gt;
+&lt;/thead&gt;
+&lt;tbody&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;factory&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;Native Factory control surface. Use &lt;code&gt;action: &amp;quot;help&amp;quot;&lt;/code&gt; for actions, validation, examples, output schemas, and domain errors. Formula actions accept TOML only. Implementation Issues run sequentially on a shared branch; &lt;code&gt;complete_attempt&lt;/code&gt; records a verified clean, pushed commit checkpoint without &lt;code&gt;pr_url&lt;/code&gt;. A separate final delivery Issue creates or reuses the review-ready PR and completes with &lt;code&gt;pr_url&lt;/code&gt;.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;factory_unblock&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;Executes a user-approved &lt;code&gt;reopen&lt;/code&gt; or typed &lt;code&gt;mutate_graph&lt;/code&gt; action proposed by a read-only Factory unblock session. Ocman configures this tool as &lt;code&gt;ask&lt;/code&gt;, so OpenCode shows Allow and Reject buttons before execution.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;inbox&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;Send owner-local Inbox items and recall them by opaque ID. Unknown and already recalled IDs are successful no-ops. Use &lt;code&gt;action: &amp;quot;help&amp;quot;&lt;/code&gt; for schemas and examples. Agents should send only asynchronous completions needing attention, blocked decisions, or important failures, not routine progress.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;routines&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;Create, inspect, update, run, and soft-delete routines. Use &lt;code&gt;action: &amp;quot;help&amp;quot;&lt;/code&gt; for current inputs, examples, output schemas, and domain errors.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;sessions&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;Session listing, search, detail inspection, and creation. Use &lt;code&gt;action: &amp;quot;help&amp;quot;&lt;/code&gt; for schemas and examples. &lt;code&gt;list&lt;/code&gt;, &lt;code&gt;search&lt;/code&gt;, and &lt;code&gt;get&lt;/code&gt; are read-only; search matches recent session IDs, titles, directories, platforms, and host names. With &lt;code&gt;content: true&lt;/code&gt; it also scans user and assistant message text (not tool output) from the last &lt;code&gt;since_days&lt;/code&gt; (default 7). Each hit returns up to five &lt;code&gt;{partId, messageId, role, snippet}&lt;/code&gt; matches. Content search reads this machine&amp;rsquo;s OpenCode database, so it is slow on large databases (tens of seconds for a week) and never covers remote sessions. &lt;code&gt;get&lt;/code&gt; needs only &lt;code&gt;session_id&lt;/code&gt;; it asks for &lt;code&gt;platform&lt;/code&gt; only when that ID exists on more than one platform. &lt;code&gt;create&lt;/code&gt; starts a new session. The tool cannot cancel or message existing sessions.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;embed_file&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;Make a file on disk viewable to the user in the ocman UI. Takes an absolute &lt;code&gt;path&lt;/code&gt; (plus an optional &lt;code&gt;label&lt;/code&gt;) and returns a signed URL and a markdown snippet the agent pastes into its reply. Images and SVGs render inline in the conversation; PDFs and other types open or download in the browser. See &lt;a href="#embedding-generated-assets"&gt;Embedding generated assets&lt;/a&gt;
+.&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;h2&gt;Factory&lt;span class="hx:absolute hx:-mt-20" id="factory"&gt;&lt;/span&gt;
+&lt;a href="#factory" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Ocman installs the &lt;code&gt;ocman-factory&lt;/code&gt; skill globally for OpenCode. It teaches the
+single action-based &lt;code&gt;factory&lt;/code&gt; tool and directs agents to &lt;code&gt;action: &amp;quot;help&amp;quot;&lt;/code&gt;
+before using detailed actions. Agents copy the returned &lt;code&gt;[[ocman:card ...]]&lt;/code&gt;
+marker verbatim in the response that creates an epic or requests a required
+human action, not as a footer on every turn or routine status update. Markers
+must appear as normal text, outside code blocks or markdown links.&lt;/p&gt;
+&lt;p&gt;Factory tool errors intentionally contain only domain-level guidance. Open
+Factory at &lt;code&gt;/factory&lt;/code&gt; to inspect the native Issue graph.&lt;/p&gt;
+&lt;p&gt;Agents can list and append persistent Issue comments with &lt;code&gt;issue_comments&lt;/code&gt;
+and &lt;code&gt;add_issue_comment&lt;/code&gt;. Comments are append-only and remain separate from the
+linked session conversation.&lt;/p&gt;
+&lt;p&gt;Agent MCP sessions cannot perform operator decisions, create executable graph
+issues, or change Factory configuration. Non-executable graph edits remain
+available through &lt;code&gt;mutate_graph&lt;/code&gt;; &lt;code&gt;create&lt;/code&gt; can create Epics after explicitly
+acknowledging local execution and uses the built-in tracer Formula. &lt;code&gt;save_formula&lt;/code&gt;,
+&lt;code&gt;set_capacity_policy&lt;/code&gt;, Plan decisions, recovery decisions, authority
+decisions, and &lt;code&gt;reopen_issue&lt;/code&gt; (returning failed work to the queue) are
+refused. Each permission denial returns a card marker for the agent&amp;rsquo;s reply.
+Ocman interprets its type, target IDs, and action, then reads the live state to
+decide whether to render a card. Action markers show nothing while loading or
+after that action is resolved. Creation markers remain visible. Ordinary markdown
+links stay links; markers inside code examples are displayed literally.&lt;/p&gt;
+&lt;p&gt;For example:&lt;/p&gt;
+&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;div class="highlight"&gt;&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-text" data-lang="text"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;[[ocman:card type=factory-epic epic=my-epic action=created]]
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;[[ocman:card type=factory-issue epic=my-epic issue=my-epic.3 action=reopen_issue]]&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;p&gt;IDs are percent-encoded when needed. The renderer handles live status, button
+availability, and click results, so the model does not need to reproduce UI logic.
+&lt;code&gt;reopen_issue&lt;/code&gt; with &lt;code&gt;epic_id&lt;/code&gt; and &lt;code&gt;issue_id&lt;/code&gt; produces a card with
+&lt;strong&gt;Reopen issue&lt;/strong&gt; for failed or cancelled implementation work. Rendering the card
+does nothing; clicking the button uses the same human-action endpoint as the
+Factory action inbox. The card refreshes live state and reports action errors.
+It also offers planning, materialization, plan decisions, recovery, and authority
+decisions when available. Graph editing, formula editing, and capacity changes
+link to their existing Factory screens. Requests without a resolvable target
+remain links to the action inbox.&lt;/p&gt;
+&lt;p&gt;&lt;code&gt;submit_proposal&lt;/code&gt; additionally requires the active
+Planning Attempt&amp;rsquo;s &lt;code&gt;attempt_id&lt;/code&gt; and &lt;code&gt;attempt_token&lt;/code&gt;. Its manifest accepts an
+issue graph with &lt;code&gt;nodes&lt;/code&gt; and typed &lt;code&gt;edges&lt;/code&gt; (&lt;code&gt;blocks&lt;/code&gt; or &lt;code&gt;on_failure&lt;/code&gt;); legacy
+per-node &lt;code&gt;dependsOn&lt;/code&gt; remains accepted for stored and older proposals.&lt;/p&gt;
+&lt;p&gt;For a complete plan made in a regular session, use &lt;code&gt;create&lt;/code&gt;, then &lt;code&gt;issues&lt;/code&gt; to
+find the root &lt;code&gt;mol&lt;/code&gt; ID, then &lt;code&gt;import_proposal&lt;/code&gt;. It accepts &lt;code&gt;epic_id&lt;/code&gt;,
+&lt;code&gt;manifest_json&lt;/code&gt; in the same format as &lt;code&gt;submit_proposal&lt;/code&gt;, and optional
+&lt;code&gt;rationale_markdown&lt;/code&gt;, without attempt credentials. Import is allowed only before
+any Factory attempt has been claimed and while the approval gate is unresolved.
+It creates a proposal and returns a human approval card, without launching a
+planning session or implementation. Re-import after a revision request to submit
+the updated plan. The agent still cannot approve it. See
+&lt;a href="../factory/#use-an-existing-plan"&gt;Use an existing plan&lt;/a&gt;
+.&lt;/p&gt;
+&lt;p&gt;Failed and terminally blocked work can launch a read-only unblock session from
+the Factory action inbox. The agent explains one minimal repair, then invokes
+&lt;code&gt;factory_unblock&lt;/code&gt;; OpenCode&amp;rsquo;s per-session permission prompt keeps the actual
+reopen or graph mutation behind explicit user approval in the conversation.&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;&lt;strong&gt;Upgrade warning:&lt;/strong&gt; the native Factory cutover does not migrate legacy
+Factory runs. Retired YAML Formula tables are kept under &lt;code&gt;legacy_factory_*&lt;/code&gt;
+names for manual recovery when the v66 migration completed successfully; an
+installation already stamped with the defective v66 migration may have empty
+repair tables because dropped data cannot be reconstructed. The native
+Factory does not read these tables.&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h2&gt;Routines&lt;span class="hx:absolute hx:-mt-20" id="routines"&gt;&lt;/span&gt;
+&lt;a href="#routines" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Ocman installs the &lt;code&gt;ocman-routines&lt;/code&gt; skill globally for OpenCode. The
+action-based &lt;code&gt;routines&lt;/code&gt; tool supports listing, reading, creating, replacing,
+running, soft-deleting, and viewing run history. Its &lt;code&gt;help&lt;/code&gt; action is the
+authoritative contract for agents.&lt;/p&gt;
+&lt;h3&gt;Inbox&lt;span class="hx:absolute hx:-mt-20" id="inbox"&gt;&lt;/span&gt;
+&lt;a href="#inbox" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;p&gt;Ocman installs the &lt;code&gt;ocman-inbox&lt;/code&gt; skill globally for OpenCode. It permits only
+the &lt;code&gt;inbox&lt;/code&gt; actions &lt;code&gt;help&lt;/code&gt;, &lt;code&gt;send&lt;/code&gt;, and &lt;code&gt;recall&lt;/code&gt;. Agents should use &lt;code&gt;send&lt;/code&gt; for
+an asynchronous completion that needs attention, a blocked decision, or an
+important failure outside the active conversation. Routine progress and
+successful intermediate steps stay in the conversation. Reading or archiving
+Inbox items is a user-only dashboard operation and is not exposed to agents.&lt;/p&gt;
+&lt;h2&gt;Sessions&lt;span class="hx:absolute hx:-mt-20" id="sessions"&gt;&lt;/span&gt;
+&lt;a href="#sessions" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;The &lt;code&gt;sessions&lt;/code&gt; tool inspects sessions with &lt;code&gt;list&lt;/code&gt;, &lt;code&gt;search&lt;/code&gt;, and &lt;code&gt;get&lt;/code&gt;, and
+starts new top-level sessions with &lt;code&gt;create&lt;/code&gt;.&lt;/p&gt;
+&lt;p&gt;&lt;code&gt;create&lt;/code&gt; sends &lt;code&gt;prompt&lt;/code&gt; to the new session. &lt;code&gt;model&lt;/code&gt; (&lt;code&gt;provider/model&lt;/code&gt;), &lt;code&gt;agent&lt;/code&gt;,
+and &lt;code&gt;title&lt;/code&gt; are optional. &lt;code&gt;directory&lt;/code&gt; must be absolute. When it is omitted, the
+session starts in the project root of the calling session, which the agent
+identifies with &lt;code&gt;platform&lt;/code&gt; and &lt;code&gt;session_id&lt;/code&gt;. The calling session also
+determines which machine runs the new one. New sessions use the platform&amp;rsquo;s
+default permissions and do not inherit the caller&amp;rsquo;s rules.&lt;/p&gt;
+&lt;p&gt;OpenCode permissions apply to whole tools, so requiring approval for &lt;code&gt;create&lt;/code&gt;
+also requires it for the read-only actions.&lt;/p&gt;
+&lt;p&gt;Use &lt;code&gt;create&lt;/code&gt; for independent work that should show up as its own session. For
+work inside the current turn, OpenCode&amp;rsquo;s native Task tool handles subagent
+delegation. A configured
+subagent model overrides the caller&amp;rsquo;s model; otherwise the subagent inherits
+the invoking primary agent&amp;rsquo;s model. The installed &lt;code&gt;ocman-sessions&lt;/code&gt; skill also
+documents one-off Task model selection.&lt;/p&gt;
+&lt;h2&gt;Embedding generated assets&lt;span class="hx:absolute hx:-mt-20" id="embedding-generated-assets"&gt;&lt;/span&gt;
+&lt;a href="#embedding-generated-assets" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Agents routinely produce files a chat transcript cannot show: a rendered
+chart, an SVG diagram, a generated PDF. &lt;code&gt;embed_file&lt;/code&gt; closes that gap.&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;The agent writes the file to disk as usual.&lt;/li&gt;
+&lt;li&gt;It calls &lt;code&gt;embed_file&lt;/code&gt; with the absolute &lt;code&gt;path&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;Ocman returns a URL under &lt;code&gt;/api/file/{token}&lt;/code&gt; plus a &lt;code&gt;markdown&lt;/code&gt;
+snippet, which the agent includes in its reply.&lt;/li&gt;
+&lt;li&gt;The ocman UI renders that markdown: images and SVGs appear inline in
+the conversation, other types become a link the browser opens or
+downloads.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;The token is an HMAC over the absolute path, signed with a key persisted
+in &lt;code&gt;state.db&lt;/code&gt;, so links keep working across restarts while a hand-crafted
+or altered path is rejected with &lt;code&gt;403&lt;/code&gt;. The endpoint sits behind the
+normal dashboard auth guard, and responses carry &lt;code&gt;nosniff&lt;/code&gt; plus a
+&lt;code&gt;Content-Security-Policy: sandbox&lt;/code&gt; header so an SVG or HTML asset opened
+as a top-level document cannot run script.&lt;/p&gt;
+&lt;p&gt;MCP callers are local and already run as your user, so the tool does not
+restrict which paths may be embedded. An agent that can call it can read
+those files directly anyway.&lt;/p&gt;
+&lt;h2&gt;Installed skill&lt;span class="hx:absolute hx:-mt-20" id="installed-skill"&gt;&lt;/span&gt;
+&lt;a href="#installed-skill" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;MCP interaction guidance lives in:&lt;/p&gt;
+&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;div class="highlight"&gt;&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-text" data-lang="text"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;.opencode/skills/ocman-factory/SKILL.md
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;.opencode/skills/ocman-routines/SKILL.md
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;.opencode/skills/ocman-sessions/SKILL.md
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;.opencode/skills/ocman-inbox/SKILL.md&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;p&gt;At startup, ocman extracts and links the skill into OpenCode&amp;rsquo;s global skill
+directory. Restart OpenCode after installing or upgrading ocman so every
+conversation can discover it.&lt;/p&gt;</description></item><item><title>Routines</title><link>https://ocman.stenic.io/docs/features/routines/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://ocman.stenic.io/docs/features/routines/</guid><description>
+&lt;p&gt;Routines save a prompt for a project. Run one by hand or give it a schedule.
+Choose how each routine uses OpenCode sessions:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;New session&lt;/strong&gt; starts a fresh session for every run. This is the default.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Reuse session&lt;/strong&gt; starts a session on the first run and continues it later.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Existing session&lt;/strong&gt; continues a session you select from the project.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Create and manage routines&lt;span class="hx:absolute hx:-mt-20" id="create-and-manage-routines"&gt;&lt;/span&gt;
+&lt;a href="#create-and-manage-routines" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Open &lt;strong&gt;Routines&lt;/strong&gt; from the main navigation, then select &lt;strong&gt;New routine&lt;/strong&gt;. Enter
+a unique name, the prompt, the target project, session behavior, and a schedule.
+The searchable agent and model lists use values seen in that project. Select
+the default option to let OpenCode choose. You can also disable a routine
+without deleting it.&lt;/p&gt;
+&lt;p&gt;Name, prompt, project, schedule, and enabled status stay visible at the top.
+Expand &lt;strong&gt;Session and model&lt;/strong&gt;, &lt;strong&gt;After a run&lt;/strong&gt;, or &lt;strong&gt;Permissions&lt;/strong&gt; for optional
+settings. These groups start collapsed when you create or edit a routine.&lt;/p&gt;
+&lt;p&gt;Use &lt;strong&gt;Edit&lt;/strong&gt; to change any of these fields. The change applies to future runs.
+Existing history keeps the name, prompt, project, session behavior, agent,
+model, and trigger recorded when each run started.&lt;/p&gt;
+&lt;p&gt;Select a routine row to open its editable settings and run history in the side
+drawer.&lt;/p&gt;
+&lt;p&gt;When a run finishes, ocman adds an Inbox item with the run status and the
+session&amp;rsquo;s final assistant message.&lt;/p&gt;
+&lt;h2&gt;Webhook deliveries&lt;span class="hx:absolute hx:-mt-20" id="webhook-deliveries"&gt;&lt;/span&gt;
+&lt;a href="#webhook-deliveries" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;An accepted encrypted inbox delivery may trigger every matching subscription
+for its owner. The routine prompt is sent unchanged, followed by this fixed
+untrusted-data envelope:&lt;/p&gt;
+&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;div class="highlight"&gt;&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-json" data-lang="json"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="p"&gt;{&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="nt"&gt;&amp;#34;inboxId&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;...&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="nt"&gt;&amp;#34;deliveryId&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;...&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="nt"&gt;&amp;#34;method&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;POST&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="nt"&gt;&amp;#34;headers&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="p"&gt;{},&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="nt"&gt;&amp;#34;query&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="p"&gt;{},&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="nt"&gt;&amp;#34;receivedAt&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="mi"&gt;0&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="nt"&gt;&amp;#34;bodyBase64&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;...&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="p"&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;p&gt;Subscriptions combine header and RFC 6901 JSON Pointer predicates with AND.
+Predicates support only &lt;code&gt;exists&lt;/code&gt;, &lt;code&gt;equals&lt;/code&gt;, and &lt;code&gt;oneOf&lt;/code&gt;; scripts and regular
+expressions are not evaluated. Disabled routines pause dispatch, while deleted
+routines cancel queued dispatches. Delivery and dispatch history is retained
+for 30 days.&lt;/p&gt;
+&lt;p&gt;Use &lt;strong&gt;Delete&lt;/strong&gt; to remove a routine from the UI and stop future scheduled runs.
+Deletion is soft: ocman retains the routine and its run history in &lt;code&gt;state.db&lt;/code&gt;.&lt;/p&gt;
+&lt;p&gt;The &lt;strong&gt;Delete after a successful run&lt;/strong&gt; option performs the same soft delete
+only after a run succeeds. A failed run leaves the routine available.&lt;/p&gt;
+&lt;p&gt;Enable &lt;strong&gt;Archive session after a successful run&lt;/strong&gt; to hide completed sessions
+from the active session list. This is off by default and applies to scheduled
+and manual runs. Failed or interrupted runs stay visible. The routine and its
+schedule remain active, and history still links to the archived session.
+The setting is captured when each run starts; edits apply to future runs.&lt;/p&gt;
+&lt;h2&gt;Run a routine&lt;span class="hx:absolute hx:-mt-20" id="run-a-routine"&gt;&lt;/span&gt;
+&lt;a href="#run-a-routine" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;The Routines page and the composer provide different actions:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Run now&lt;/strong&gt; starts or selects a session according to the routine and sends the saved prompt.
+It records a manual run in the routine&amp;rsquo;s history.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;/routines&lt;/code&gt; in a session composer opens a picker and inserts the chosen
+prompt into the composer. It does not send the prompt, start a session, or
+create a history entry. Edit the text or send it like any other message.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Scheduled runs use the same session behavior as manual runs.&lt;/p&gt;
+&lt;h2&gt;Schedule semantics&lt;span class="hx:absolute hx:-mt-20" id="schedule-semantics"&gt;&lt;/span&gt;
+&lt;a href="#schedule-semantics" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;None&lt;/strong&gt; has no automatic run time. Use &lt;strong&gt;Run now&lt;/strong&gt; when needed.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Timeout&lt;/strong&gt; accepts a delay from now. When you save the routine, ocman turns
+that relative delay into one absolute due time. Restarting ocman or editing
+the routine later does not restart the original countdown. Saving an edit
+with a timeout calculates a new due time from that save. A timeout missed
+while ocman is offline expires at startup instead of running late.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Once&lt;/strong&gt; runs at one absolute date and time. The selected local time is
+saved as an absolute instant.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Cron&lt;/strong&gt; uses a standard five-field cron expression plus an IANA timezone,
+such as &lt;code&gt;0 9 * * 1-5&lt;/code&gt; with &lt;code&gt;Europe/Brussels&lt;/code&gt;. Ocman calculates each next
+occurrence in that timezone after the previous run settles.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;The scheduler checks due routines every five seconds. Disable a routine to
+stop automatic runs without deleting it. Webhook delivery polling is
+independent of the scheduler and runs on the owner of the inbox.&lt;/p&gt;
+&lt;h2&gt;Completion and history&lt;span class="hx:absolute hx:-mt-20" id="completion-and-history"&gt;&lt;/span&gt;
+&lt;a href="#completion-and-history" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;A run remains &lt;strong&gt;running&lt;/strong&gt; while its session is active or waiting for the
+session to settle. Session &lt;strong&gt;done&lt;/strong&gt; marks the run &lt;strong&gt;success&lt;/strong&gt;. Session
+&lt;strong&gt;error&lt;/strong&gt; marks it &lt;strong&gt;failure&lt;/strong&gt;. An interrupted or unavailable session marks
+the run &lt;strong&gt;interrupted&lt;/strong&gt;. Dispatch errors, including
+an unavailable host or a session that could not be created or prompted, also
+produce a failed history entry.&lt;/p&gt;
+&lt;p&gt;Open a routine row to see when each run started, whether it was manual or
+scheduled, and its current result. Failed runs show their error. Runs with a
+linked session include an &lt;strong&gt;Open&lt;/strong&gt; link.&lt;/p&gt;
+&lt;p&gt;Run records preserve their routine snapshot and remain available after a
+restart. Ocman resumes observing linked running sessions after startup. If a
+restart interrupted dispatch before ocman linked a session, the run fails
+instead of starting a duplicate session.&lt;/p&gt;
+&lt;h2&gt;Recover legacy Workflow data&lt;span class="hx:absolute hx:-mt-20" id="recover-legacy-workflow-data"&gt;&lt;/span&gt;
+&lt;a href="#recover-legacy-workflow-data" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Older ocman versions stored DAG definitions and runs in &lt;code&gt;workflow_*&lt;/code&gt; tables.
+Those tables and rows remain inert in &lt;code&gt;state.db&lt;/code&gt;. Routines do not read,
+execute, migrate, or delete them. A DAG cannot be converted losslessly to one
+prompt because its nodes, dependencies, approvals, commands, outputs, and
+branching have no equivalent in a routine.&lt;/p&gt;
+&lt;p&gt;There are no compatibility APIs. Use SQLite in read-only mode to inspect or
+export the old data. Stop ocman first if you plan to copy the database.&lt;/p&gt;
+&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;div class="highlight"&gt;&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-sh" data-lang="sh"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nv"&gt;DB&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$HOME&lt;/span&gt;&lt;span class="s2"&gt;/.local/share/ocman/state.db&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sqlite3 -readonly &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$DB&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;.tables &amp;#39;workflow_*&amp;#39;&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sqlite3 -readonly &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$DB&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;.dump &amp;#39;workflow_*&amp;#39;&amp;#34;&lt;/span&gt; &amp;gt; legacy-workflows.sql
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sqlite3 -readonly -json &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$DB&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;SELECT * FROM workflow_definition ORDER BY created_at;&amp;#34;&lt;/span&gt; &amp;gt; workflow-definitions.json
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sqlite3 -readonly -json &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$DB&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;SELECT * FROM workflow_version ORDER BY workflow_id, revision;&amp;#34;&lt;/span&gt; &amp;gt; workflow-versions.json
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sqlite3 -readonly -json &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$DB&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;SELECT * FROM workflow_run ORDER BY created_at;&amp;#34;&lt;/span&gt; &amp;gt; workflow-runs.json
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sqlite3 -readonly -json &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$DB&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;SELECT * FROM workflow_node_run ORDER BY run_id, position;&amp;#34;&lt;/span&gt; &amp;gt; workflow-node-runs.json
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sqlite3 -readonly -json &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$DB&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;SELECT * FROM workflow_node_attempt ORDER BY run_id, node_id, seq;&amp;#34;&lt;/span&gt; &amp;gt; workflow-node-attempts.json&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;p&gt;The full authored DAG is in &lt;code&gt;workflow_version.definition_json&lt;/code&gt;. To list the
+saved definitions in a readable form:&lt;/p&gt;
+&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;div class="highlight"&gt;&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-sql" data-lang="sql"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="k"&gt;SELECT&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="n"&gt;d&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="n"&gt;name&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="n"&gt;v&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="n"&gt;revision&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="n"&gt;v&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="n"&gt;created_at&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="n"&gt;v&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="n"&gt;definition_json&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="k"&gt;FROM&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="n"&gt;workflow_definition&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="k"&gt;AS&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="n"&gt;d&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="k"&gt;JOIN&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="n"&gt;workflow_version&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="k"&gt;AS&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="n"&gt;v&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="k"&gt;ON&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="n"&gt;v&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="n"&gt;workflow_id&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="n"&gt;d&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="n"&gt;id&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="k"&gt;ORDER&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="k"&gt;BY&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="n"&gt;d&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="n"&gt;name&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="k"&gt;COLLATE&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="n"&gt;NOCASE&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="n"&gt;v&lt;/span&gt;&lt;span class="p"&gt;.&lt;/span&gt;&lt;span class="n"&gt;revision&lt;/span&gt;&lt;span class="p"&gt;;&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;p&gt;Open that query without modifying the database:&lt;/p&gt;
+&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;div class="highlight"&gt;&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-sh" data-lang="sh"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;sqlite3 -readonly -header -column &lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;span class="nv"&gt;$DB&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;p&gt;Paste the SQL at the SQLite prompt. Extract any useful agent prompt from
+&lt;code&gt;definition_json&lt;/code&gt;, then create a routine manually. Keep commands, approval
+steps, dependencies, and output handling outside the routine prompt unless
+the agent can safely perform them itself.&lt;/p&gt;</description></item><item><title>Encrypted Webhooks</title><link>https://ocman.stenic.io/docs/features/webhooks/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://ocman.stenic.io/docs/features/webhooks/</guid><description>
+&lt;p&gt;An ocman owner can register an inbox with an &lt;code&gt;ocman-relay&lt;/code&gt; and expose its
+ingestion URL to a provider. The relay accepts requests while the owner is
+offline. It stores only age ciphertext and visible size/timing metadata; the
+owner later decrypts and queues the request in its local &lt;code&gt;state.db&lt;/code&gt;.&lt;/p&gt;
+&lt;h2&gt;Format And Boundaries&lt;span class="hx:absolute hx:-mt-20" id="format-and-boundaries"&gt;&lt;/span&gt;
+&lt;a href="#format-and-boundaries" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;The relay encrypts a versioned JSON envelope with age X25519. The recipient is
+an &lt;code&gt;age1...&lt;/code&gt; X25519 public key and the owner keeps the matching
+&lt;code&gt;AGE-SECRET-KEY-&lt;/code&gt; identity in &lt;code&gt;state.db&lt;/code&gt;. &lt;code&gt;formatVersion&lt;/code&gt; and &lt;code&gt;keyVersion&lt;/code&gt; are
+required, so a future format can be rejected rather than guessed.&lt;/p&gt;
+&lt;p&gt;The envelope contains the plaintext body at ingestion, request method, query,
+filtered headers, delivery identity, and &lt;code&gt;receivedAt&lt;/code&gt; milliseconds. Sensitive
+headers such as &lt;code&gt;Authorization&lt;/code&gt;, cookies, and the configured shared-secret
+header are excluded. Relay logs, storage metadata, and telemetry must never
+contain the body, credentials, age identity, or private keys. Object sizes and
+timestamps are intentionally visible to the relay operator.&lt;/p&gt;
+&lt;p&gt;The relay persists inbox metadata and ciphertext deliveries. The owner
+persists the private identity, relay credentials, accepted delivery, inbox
+item, retry state, and routine-dispatch claim in its own &lt;code&gt;state.db&lt;/code&gt;; these are
+separate persistence boundaries. Registration returns &lt;code&gt;202 Accepted&lt;/code&gt; only
+after ciphertext is durably stored. The owner acknowledges a delivery only
+after decryption, local acceptance, and all matching routine dispatch claims
+have been committed. A lost acknowledgment is safe: the next poll finds the
+durable delivery record and cannot schedule the same routine occurrence twice.&lt;/p&gt;
+&lt;h2&gt;Operations&lt;span class="hx:absolute hx:-mt-20" id="operations"&gt;&lt;/span&gt;
+&lt;a href="#operations" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Configure relay enrollment and limits before registration. Body size, retained
+header size, pending delivery count/bytes, ingest rate, inbox TTL, and relay
+storage TTL are enforced. Expiry and revocation delete the relay metadata and
+deliveries. A malformed or undecryptable delivery is recorded with bounded
+backoff and does not block later deliveries; it remains available for retry or
+operator investigation until expiry.&lt;/p&gt;
+&lt;p&gt;Key rotation changes the recipient and increments &lt;code&gt;keyVersion&lt;/code&gt;. Existing
+pending ciphertext remains decryptable only with the old identity if it is
+retained. Resetting or losing the private identity makes those deliveries
+unreadable; revoke and register a new inbox when recovery is not possible.&lt;/p&gt;
+&lt;p&gt;The UI exposes only the ingestion URL, key version, owner, and aggregate
+delivery states. Management, fetch, acknowledgment, enrollment, and private
+identity credentials stay server-side. Local and remote owners use the same
+owner API; the hub routes registration and polling to the owning ocman.&lt;/p&gt;
+&lt;h2&gt;Non-goals&lt;span class="hx:absolute hx:-mt-20" id="non-goals"&gt;&lt;/span&gt;
+&lt;a href="#non-goals" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;ul&gt;
+&lt;li&gt;Provider signature verification or challenge/handshake protocols.&lt;/li&gt;
+&lt;li&gt;Provider event deduplication beyond the relay delivery identity.&lt;/li&gt;
+&lt;li&gt;Arbitrary user validators, scripts, or regular expressions.&lt;/li&gt;
+&lt;li&gt;Exactly-once external side effects. Local routine scheduling is durable and
+deduplicated, but an agent or provider side effect can still be retried.&lt;/li&gt;
+&lt;/ul&gt;</description></item><item><title>Session commits</title><link>https://ocman.stenic.io/docs/features/session-commits/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://ocman.stenic.io/docs/features/session-commits/</guid><description>
+&lt;h2&gt;Session commits&lt;span class="hx:absolute hx:-mt-20" id="session-commits"&gt;&lt;/span&gt;
+&lt;a href="#session-commits" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Session Info shows commits that ocman observes in live OpenCode bash results.
+Capture is best effort and runs in the headless OpenCode event watcher, so it
+does not depend on an open browser or permission judging being enabled.&lt;/p&gt;
+&lt;p&gt;Ocman records only successful &lt;code&gt;git commit&lt;/code&gt; summary lines printed by completed
+or errored bash calls. It does not scan saved transcripts, poll &lt;code&gt;HEAD&lt;/code&gt;, install
+hooks, resolve full SHAs, or reconcile history after reconnects. Commits made
+while ocman is stopped, disconnected, or unable to keep up with the live event
+stream can therefore be absent.&lt;/p&gt;
+&lt;p&gt;The displayed SHA is exactly the abbreviated SHA printed by Git. The branch is
+the name printed at commit time, or &lt;strong&gt;Detached HEAD&lt;/strong&gt; when Git printed a
+detached-HEAD summary. Later branch switches, renames, deletion, amendments,
+and worktree removal do not rewrite earlier observations. Amendments appear as
+additional observations when Git prints a new commit summary.&lt;/p&gt;
+&lt;p&gt;Each ocman instance stores observations for its local sessions in its own
+&lt;code&gt;state.db&lt;/code&gt;. A hub reads remote observations from the session owner through the
+existing Session Info RPC. It never substitutes rows from the hub database, so
+the same session and tool IDs on different machines remain isolated.&lt;/p&gt;
+&lt;p&gt;The owner&amp;rsquo;s watcher keeps capturing while a hub is disconnected. Session Info
+is unavailable through that hub until the owner reconnects, then the owner
+returns its persisted observations without scanning transcripts. After
+persistence, the owner sends a change notice through the active session event
+stream so the browser refreshes Session Info. Capture does not depend on that
+stream or an open browser. Older owners that do not report commit-capture
+support leave the Commits section hidden.&lt;/p&gt;
+&lt;p&gt;Select a commit in Session Info to jump to the bash call that produced it.
+Ocman opens collapsed output and highlights the exact call, including when one
+assistant message contains several tool calls. If the message is older than the
+loaded transcript window, ocman fetches that session&amp;rsquo;s history from its owner
+only after selection. History reads do not create commit observations.&lt;/p&gt;
+&lt;p&gt;The recorded commit remains in Session Info if its source message or tool call
+was deleted. In that case ocman reports that the source is no longer available
+instead of jumping to another call.&lt;/p&gt;</description></item><item><title>Factory delivery</title><link>https://ocman.stenic.io/docs/features/factory/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://ocman.stenic.io/docs/features/factory/</guid><description>
+&lt;p&gt;Factory implements a Work Epic sequentially across one or more local Git
+repositories. It keeps an independent shared branch and workspace for each
+project, then runs a separate Project Delivery session for every changed
+project. This model is defined by &lt;a href="https://ocman.stenic.io/docs/adr/0008-coordinate-factory-work-across-projects/"&gt;ADR 0008&lt;/a&gt;
+.&lt;/p&gt;
+&lt;h2&gt;Projects and Issue targets&lt;span class="hx:absolute hx:-mt-20" id="projects-and-issue-targets"&gt;&lt;/span&gt;
+&lt;a href="#projects-and-issue-targets" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Every Work Epic has an &lt;strong&gt;Epic project set&lt;/strong&gt;. Its original Epic project is the
+permanent default; when creating the Epic, you can select additional local Git
+repositories and acknowledge local command execution for each one. Attached
+remote-host projects are not supported. A secondary project can be removed only
+before work or Delivery history exists for it, and the Epic project cannot be
+removed.&lt;/p&gt;
+&lt;p&gt;Planning and unblock sessions start in the Epic project and may read every
+admitted project, but no other external project. Each executable Issue has one
+project target, shown in Issue and queue views. A plan or graph mutation may set
+the target explicitly; an omitted target inherits the Epic project, and a target
+outside the admitted set is rejected. Dispatch, capacity accounting, retries,
+and recovery use the Issue target. Factory still runs only one implementation
+Attempt per Epic at a time.&lt;/p&gt;
+&lt;p&gt;Each project has its own Factory workspace lineage: branch, base, checkpoint,
+Delivery remote, pull request, recovery, and resume history do not cross project
+boundaries. An implementation session writes in its target workspace. It gets
+read access to other admitted projects and explicit edit-deny rules for those
+paths. Shell commands remain available, however, so this is agent policy rather
+than filesystem or container isolation.&lt;/p&gt;
+&lt;h2&gt;Use an existing plan&lt;span class="hx:absolute hx:-mt-20" id="use-an-existing-plan"&gt;&lt;/span&gt;
+&lt;a href="#use-an-existing-plan" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;If a regular session has already planned the work, ask it to import that plan
+into Factory. It creates an Epic, reads &lt;code&gt;issues&lt;/code&gt; to find the root &lt;code&gt;mol&lt;/code&gt; ID,
+then calls &lt;code&gt;import_proposal&lt;/code&gt; with the ticket breakdown and dependency edges.
+No dedicated planning session starts.&lt;/p&gt;
+&lt;p&gt;The imported proposal still requires &lt;strong&gt;human approval&lt;/strong&gt;. Review its tickets,
+choose an implementation model, then approve through the action card or Epic
+page. Importing alone does not materialize tickets or start implementation.&lt;/p&gt;
+&lt;p&gt;Include the scope, acceptance criteria, verification steps, and relevant decisions
+in the ticket descriptions and proposal rationale. Implementation sessions do
+not inherit the original conversation.&lt;/p&gt;
+&lt;p&gt;Import is available before any Factory attempt has been claimed. It marks
+the planning work complete, so a competing planner cannot start while the proposal is
+awaiting review. You can request a revision and have the original session call
+&lt;code&gt;import_proposal&lt;/code&gt; again. Each import creates an immutable revision; approval
+must match its exact revision and hash. Approved or rejected plans cannot be
+replaced through import. Proposal history and the pending gate survive restart.&lt;/p&gt;
+&lt;h2&gt;Formula workflows&lt;span class="hx:absolute hx:-mt-20" id="formula-workflows"&gt;&lt;/span&gt;
+&lt;a href="#formula-workflows" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;A Formula is a YAML workflow. Its named &lt;code&gt;steps&lt;/code&gt; contain their own &lt;code&gt;kind&lt;/code&gt;,
+&lt;code&gt;needs&lt;/code&gt;, &lt;code&gt;prompt&lt;/code&gt;, and &lt;code&gt;config&lt;/code&gt;. Dependencies point to prerequisite step names,
+following the convention used by GitHub Actions jobs. This is ocman&amp;rsquo;s schema,
+not a GitHub Actions workflow file.&lt;/p&gt;
+&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;div class="highlight"&gt;&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-yaml" data-lang="yaml"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nt"&gt;version&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="m"&gt;2&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nt"&gt;name&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="l"&gt;Tracer&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="nt"&gt;steps&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;plan&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;kind&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="l"&gt;planning&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;prompt&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="p"&gt;|&lt;/span&gt;&lt;span class="sd"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="sd"&gt; Inspect the repository, clarify requirements, and propose focused tasks.&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;approve&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;kind&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="l"&gt;approval&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;needs&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="l"&gt;plan]&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;implement&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;kind&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="l"&gt;implementation&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;needs&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="l"&gt;approve]&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;config&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;concurrency&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="m"&gt;1&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;prompt&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="p"&gt;|&lt;/span&gt;&lt;span class="sd"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="sd"&gt; Implement the assigned task and run its checks.&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;verify&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;kind&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="l"&gt;verification&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;needs&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="l"&gt;implement]&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;prompt&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="p"&gt;|&lt;/span&gt;&lt;span class="sd"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="sd"&gt; Review the combined changes and run the repository-required checks.
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="sd"&gt; Request recovery if a required check fails.&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;deliver&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;kind&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="l"&gt;delivery&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;needs&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="l"&gt;verify]&lt;/span&gt;&lt;span class="w"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="nt"&gt;prompt&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="w"&gt; &lt;/span&gt;&lt;span class="p"&gt;|&lt;/span&gt;&lt;span class="sd"&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="sd"&gt; Summarize the changes and verification results in the final pull request.&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;p&gt;Use &lt;strong&gt;Customize Tracer&lt;/strong&gt; in Factory configuration to start from the current
+built-in workflow, &lt;code&gt;ocman/tracer@3&lt;/code&gt;. Expand &lt;strong&gt;Formula source&lt;/strong&gt; to edit the YAML
+in a full-width, 15-line editor that can be resized vertically. Validate and
+preview it before saving an immutable revision. The graph includes implementation
+and every post-implementation check. Expand the implementation phase in an Epic&amp;rsquo;s
+graph to see its planned tasks.&lt;/p&gt;
+&lt;p&gt;The first version supports one planning step, one implementation group, and one
+final delivery step. An initial plan approval must precede implementation. Add
+further human approvals before implementation or after checks, and any number
+of verification steps, by naming them and
+declaring &lt;code&gt;needs&lt;/code&gt;. Every step must lead to final delivery; cycles, unknown keys,
+missing dependencies, and disconnected steps are rejected.&lt;/p&gt;
+&lt;p&gt;The implementation group expands into the approved tasks. It succeeds only when
+all applicable required tasks succeed. Runnable optional tasks also finish before
+verification; deferred optional tasks do not hold the group open. Verification and delivery run once per
+changed project in that project&amp;rsquo;s assigned worktree. A dependent step waits for
+all project instances of its prerequisites. Failed or paused checks block
+delivery; recovery or retry is explicit. Additional approval steps appear in
+the action inbox and require a user decision. A user can reconsider a rejected
+step with &lt;strong&gt;Approve step&lt;/strong&gt;, which rechecks its prerequisites.&lt;/p&gt;
+&lt;p&gt;Agent steps require a multiline prompt of at most 32 KiB. Optional &lt;code&gt;name&lt;/code&gt; gives
+a step a display label. &lt;code&gt;config.model&lt;/code&gt; accepts a &lt;code&gt;provider/model&lt;/code&gt; reference and
+overrides the approved implementation model for that step. The implementation
+group supports &lt;code&gt;config.concurrency: 1&lt;/code&gt;, reflecting the shared workspace&amp;rsquo;s
+sequential execution. Planning can supply &lt;code&gt;config.scope_expansion_prompt&lt;/code&gt; for
+additive replanning. Other configuration keys are rejected.&lt;/p&gt;
+&lt;p&gt;Factory adds runtime context, repository restrictions, attempt credentials, and
+completion instructions to each prompt. Changing a prompt does not bypass
+permissions, approvals, or commit/PR validation. Planned tasks cannot inject
+delivery nodes into a YAML workflow; delivery is declared in the Formula.
+Within an implementation group, use ordinary task dependencies. The legacy
+cross-project merge-gate plan format remains available only to older revisions.&lt;/p&gt;
+&lt;p&gt;The built-in workflow has been converted to YAML. Historical TOML revisions stay
+readable for pinned Epics; their source and hashes are not rewritten. New Epics
+use the selected YAML revision. Runtime step definitions and their project
+instances persist across restarts. Source edits, including comments and formatting,
+create a new revision rather than silently restoring an earlier source file.&lt;/p&gt;
+&lt;h2&gt;Planning and implementation models&lt;span class="hx:absolute hx:-mt-20" id="planning-and-implementation-models"&gt;&lt;/span&gt;
+&lt;a href="#planning-and-implementation-models" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;New planning sessions prefer an available Fable or Astra model. If neither is
+available, they use the runtime default.&lt;/p&gt;
+&lt;p&gt;Plan approval includes an implementation model selector in the planning session,
+Epic page, and inline action card. It suggests an available Opus or Sol model for
+balanced implementation, or Sonnet or Terra when only a fast model is available.
+Choose a fast model for speed, any other available model, or Runtime default.&lt;/p&gt;
+&lt;p&gt;Approval saves the exact model reference with the Plan gate and copies it into
+each implementation Attempt, including final delivery. Retrying approval keeps
+the original choice. MCP callers can supply &lt;code&gt;implementation_model&lt;/code&gt; as a
+&lt;code&gt;provider/model&lt;/code&gt; reference to &lt;code&gt;approve_plan&lt;/code&gt; after confirming it with the user.&lt;/p&gt;
+&lt;p&gt;The Epic page&amp;rsquo;s &lt;strong&gt;Models&lt;/strong&gt; controls pick a planning, implementation, and
+verification model for that Epic at any time (&lt;code&gt;POST /api/factory/epics/&amp;lt;id&amp;gt;/models&lt;/code&gt;). A choice there wins over the workflow step&amp;rsquo;s
+&lt;code&gt;config.model&lt;/code&gt; and the approval-time choice; Default falls back to them.
+Delivery uses the implementation model. Each Attempt freezes its model when it
+is claimed, so a change mid-implementation affects only work that has not
+started.&lt;/p&gt;
+&lt;h2&gt;Implementation checkpoints&lt;span class="hx:absolute hx:-mt-20" id="implementation-checkpoints"&gt;&lt;/span&gt;
+&lt;a href="#implementation-checkpoints" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Each implementation session tests its change, commits it, pushes the shared
+branch, and calls &lt;code&gt;factory&lt;/code&gt; with &lt;code&gt;action: &amp;quot;complete_attempt&amp;quot;&lt;/code&gt;, &lt;code&gt;attempt_id&lt;/code&gt;,
+&lt;code&gt;attempt_token&lt;/code&gt;, and &lt;code&gt;summary&lt;/code&gt;. It omits &lt;code&gt;pr_url&lt;/code&gt;.&lt;/p&gt;
+&lt;p&gt;Ocman checks that the worktree is clean, that its HEAD matches its upstream, and
+that it includes the previously accepted commit. The successful Attempt stores
+the branch, target branch, and commit SHA. Before launching the next Issue,
+Ocman checks that the branch still matches that checkpoint. Missing branches,
+dirty worktrees, or unexpected commits require reconciliation rather than a
+silent reset. Checkpoints survive an ocman restart.&lt;/p&gt;
+&lt;p&gt;Implementation sessions run in the Issue&amp;rsquo;s target project workspace. They may
+read other projects admitted to the Epic, but path-specific permission rules
+deny edits there. Shell access remains enabled, so these rules enforce agent
+policy; they are not filesystem isolation.&lt;/p&gt;
+&lt;h2&gt;Project Deliveries&lt;span class="hx:absolute hx:-mt-20" id="project-deliveries"&gt;&lt;/span&gt;
+&lt;a href="#project-deliveries" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Factory runs a required Project Delivery for each project with executable work.
+YAML workflows wait for the declared checks and approvals across all changed
+projects. Older revisions allow Delivery as soon as the project&amp;rsquo;s own required
+work succeeds. Starting it seals only that project. The delivery model reviews that
+project&amp;rsquo;s combined changes, runs the required checks, and creates a review-ready
+PR against its recorded remote and target branch. It searches for an existing
+open PR from the same branch into the recorded target first, so retries can reuse
+a PR created before the session was interrupted.&lt;/p&gt;
+&lt;p&gt;Delivery admission rechecks the current graph in the claim transaction, so new
+required work cannot be skipped between a dependency refresh and launch. Ready
+optional tasks run before delivery too. Deferred or blocked optional work does
+not delay delivery; after delivery succeeds, it remains visible as not applicable
+and cannot start on the delivered branch.&lt;/p&gt;
+&lt;p&gt;The Delivery session completes with &lt;code&gt;pr_url&lt;/code&gt;. Ocman validates the repository,
+source branch, target branch, and pushed HEAD. It rejects draft, closed, merged,
+and cross-fork PRs. Project status and Delivery lineage are shown on the Epic.
+The Epic shows &lt;strong&gt;Ready for review&lt;/strong&gt; only after every required Project Delivery
+succeeds; Factory does not merge the PRs.&lt;/p&gt;
+&lt;p&gt;New work discovered before Factory observes a Project Delivery PR merge refreshes
+that Delivery on the same branch and PR. After a merge gate records the merge,
+new work creates a successor Delivery from the updated target branch and
+publishes a new PR. Existing merge gates stay pinned to their original Delivery;
+newly created gates use the latest Delivery lineage.&lt;/p&gt;
+&lt;h2&gt;Cross-project dependencies&lt;span class="hx:absolute hx:-mt-20" id="cross-project-dependencies"&gt;&lt;/span&gt;
+&lt;a href="#cross-project-dependencies" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;An ordinary dependency can cross projects and is satisfied by the blocker&amp;rsquo;s
+validated implementation checkpoint. Use a &lt;strong&gt;merge-gated dependency&lt;/strong&gt; when a
+downstream Issue must wait for an upstream Project Delivery PR to merge. Factory
+polls the forge and records the observation; only a merged PR at the recorded
+Delivery commit satisfies the gate. Open, draft, closed-unmerged, changed, and
+temporarily unavailable PR observations keep the dependent Issue blocked and
+show the reason rather than failing it automatically.&lt;/p&gt;
+&lt;h2&gt;Scope expansion&lt;span class="hx:absolute hx:-mt-20" id="scope-expansion"&gt;&lt;/span&gt;
+&lt;a href="#scope-expansion" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;An implementation agent that discovers another required repository can request
+it with the project path and a reason. Factory pauses and preserves that Attempt
+until a user decides. Approval verifies the local Git repository, requires a new
+local-execution acknowledgement, admits it to the project set, and launches an
+additive replan of the remaining work. Completed Issues and checkpoints remain
+intact, and the paused Issue retries only after any new blockers succeed.
+Rejection records the response and resumes the same implementation session.&lt;/p&gt;
+&lt;p&gt;If a PR is merged before Factory records Delivery, the agent must request
+recovery. Factory accepts that merged PR only after a human resumes the same
+Attempt with &lt;code&gt;Force-complete the delivery attempt using merged PR #&amp;lt;number&amp;gt;&lt;/code&gt;.
+The PR number and target branch must match, and the assigned worktree must
+still be clean at its pushed checkpoint.&lt;/p&gt;
+&lt;p&gt;Delivery uses the same recovery gates, launch retries, and Reopen control as
+implementation. A Delivery failure does not reopen completed implementation
+Issues. Structural graph edits are paused while a Delivery is running. Once all
+required project Deliveries succeed, additional work belongs in a new Epic.&lt;/p&gt;
+&lt;h2&gt;Existing work&lt;span class="hx:absolute hx:-mt-20" id="existing-work"&gt;&lt;/span&gt;
+&lt;a href="#existing-work" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Already-running implementation Attempts can complete with a clean, pushed commit
+and no &lt;code&gt;pr_url&lt;/code&gt;, even if their original prompt required a PR. Factory recovers the
+session&amp;rsquo;s actual worktree branch, including numbered successor branches, and
+records its checkpoint for subsequent Issues. This completion does not consult
+or change an existing PR. Only Project Delivery requires a review-ready PR.&lt;/p&gt;
+&lt;p&gt;Previously completed PR-based results remain valid history. When launching new
+work from that history, Factory resolves the prior PR once to preserve the shared
+branch and completed work. On Forgejo, converting an existing PR to draft uses
+the &lt;code&gt;WIP: &lt;/code&gt; title prefix.&lt;/p&gt;</description></item><item><title>Plugins</title><link>https://ocman.stenic.io/docs/features/plugins/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://ocman.stenic.io/docs/features/plugins/</guid><description>
+&lt;p&gt;Ocman runs native plugin executables on the machine where they are installed.
+Two capabilities are supported: &lt;code&gt;action.v1&lt;/code&gt;, which adds commands to the command
+palette and returns results rendered by ocman, and &lt;code&gt;conversation.v1&lt;/code&gt;, which lets
+a chat provider start an ocman session and receive its completed reply. Manage
+installations in &lt;strong&gt;Settings → Plugins&lt;/strong&gt;, selecting the plugin owner before making
+changes.&lt;/p&gt;
+&lt;h2&gt;Trust and installation&lt;span class="hx:absolute hx:-mt-20" id="trust-and-installation"&gt;&lt;/span&gt;
+&lt;a href="#trust-and-installation" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;&lt;strong&gt;Plugins are trusted native code, including during discovery.&lt;/strong&gt; Rescanning runs
+each candidate&amp;rsquo;s &lt;code&gt;describe&lt;/code&gt; command before you enable it. Only install code you
+trust to run with the ocman user&amp;rsquo;s operating-system access. Grants limit the
+context ocman sends through its action broker; they do not restrict a plugin&amp;rsquo;s
+filesystem or network access. Checksums detect changes, not publisher identity.
+There is no sandbox or signature verification.&lt;/p&gt;
+&lt;p&gt;Install a regular executable named &lt;code&gt;ocman-plugin-&amp;lt;name&amp;gt;&lt;/code&gt; directly under
+&lt;code&gt;~/.local/share/ocman/plugins&lt;/code&gt;. Set &lt;code&gt;OCMAN_PLUGIN_DIR&lt;/code&gt; on the owning ocman process
+to use another directory. Hidden files, symlinks, subdirectories, nested files,
+and files without executable permission are ignored. The host does not download
+or install binaries for you.&lt;/p&gt;
+&lt;p&gt;Build the bundled plugins from an ocman checkout with one target, which creates
+the directory, builds reproducibly and prints the checksum you are about to
+approve:&lt;/p&gt;
+&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;div class="highlight"&gt;&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-sh" data-lang="sh"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;make install-plugin &lt;span class="nv"&gt;PLUGIN&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;slack &lt;span class="c1"&gt;# or PLUGIN=fixture&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;make install-plugin &lt;span class="nv"&gt;PLUGIN&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;slack &lt;span class="nv"&gt;PLUGIN_DIR&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;/custom/plugins&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;p&gt;Set &lt;code&gt;PLUGIN_DIR&lt;/code&gt; to match &lt;code&gt;OCMAN_PLUGIN_DIR&lt;/code&gt; if the owning ocman process uses a
+directory override.&lt;/p&gt;
+&lt;p&gt;Ocman scans at startup. Click &lt;strong&gt;Rescan plugins&lt;/strong&gt; after installing, replacing, or
+removing an executable; there is no filesystem watcher. New registrations start
+disabled. Review the ID, version, SHA-256 checksum, capabilities, execution scope,
+and requested grants. Configure required settings, then click &lt;strong&gt;Enable&lt;/strong&gt; and
+&lt;strong&gt;Approve grants and enable&lt;/strong&gt;. Enablement requires approval of all requested
+grants, including an explicit empty set when none are requested.
+Approval is bound to the reviewed executable and declaration. If another rescan
+changes them before approval, refresh the catalog and review the new registration.&lt;/p&gt;
+&lt;p&gt;Changed code or declarations revoke approval. Duplicate plugin IDs conflict and
+disable all matching candidates. An executable path cannot change its registered
+plugin ID. Fix the installation and rescan before approving it again.&lt;/p&gt;
+&lt;h2&gt;Configuration and secrets&lt;span class="hx:absolute hx:-mt-20" id="configuration-and-secrets"&gt;&lt;/span&gt;
+&lt;a href="#configuration-and-secrets" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;&lt;strong&gt;Configure&lt;/strong&gt; renders declared string, boolean, number, integer, and string-enum
+settings. The host rejects unknown fields, wrong types, and missing required
+values. Public values are replaced when saved and declared defaults are applied.
+Secret inputs are write-only strings: omitting a secret preserves it, while an
+empty string clears an optional secret. Reads show only whether it is configured.&lt;/p&gt;
+&lt;p&gt;Configuration and health belong to the installation&amp;rsquo;s owner. Public settings live
+in its &lt;code&gt;state.db&lt;/code&gt;. Beside that database, ocman stores private plugin files under
+&lt;code&gt;plugin-data/&amp;lt;sha256(id)&amp;gt;/&lt;/code&gt; and secret snapshots under
+&lt;code&gt;plugin-secrets/&amp;lt;sha256(id)&amp;gt;/&lt;/code&gt;. Directories use mode &lt;code&gt;0700&lt;/code&gt;; secret files use &lt;code&gt;0600&lt;/code&gt;.
+These are permission-protected files, not an encrypted secret vault. Historical
+snapshots remain for rollback and diagnostic redaction.&lt;/p&gt;
+&lt;p&gt;Serve processes receive effective configuration, including secrets, as one JSON
+object followed by a newline on inherited file descriptor 3. Read and close it
+before emitting the serve hello. Configuration is absent from arguments and
+environment variables; describe has no configuration descriptor. No repository
+path, inherited ocman credentials, or secret-store path is supplied.&lt;/p&gt;
+&lt;p&gt;Saving configuration for a ready, enabled plugin restarts it and waits for its
+handshake. Failure restores the last working public and secret snapshots and
+restarts the previous configuration, even if the HTTP request was cancelled.
+If ocman exits before activation finishes, startup restores the last working
+checkpoint before launching enabled plugins. Saved edits to disabled plugins remain.
+Check &lt;strong&gt;Refresh health&lt;/strong&gt; after a failed save. An enabled unhealthy plugin must be
+disabled before repairing its configuration, then enabled again. Disabled plugins
+can be configured without starting a serve process.&lt;/p&gt;
+&lt;h2&gt;Process contract and lifecycle&lt;span class="hx:absolute hx:-mt-20" id="process-contract-and-lifecycle"&gt;&lt;/span&gt;
+&lt;a href="#process-contract-and-lifecycle" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;An executable accepts one argument, &lt;code&gt;describe&lt;/code&gt; or &lt;code&gt;serve&lt;/code&gt;. Stdout is strictly
+UTF-8 newline-delimited JSON, one object per line; diagnostics go to stderr.
+Each launch receives a fresh &lt;code&gt;OCMAN_PLUGIN_TOKEN&lt;/code&gt;, which the first &lt;code&gt;hello&lt;/code&gt; must
+echo. Never log or persist it. The remaining environment is
+&lt;code&gt;PATH=/usr/bin:/bin&lt;/code&gt; and &lt;code&gt;LANG=C.UTF-8&lt;/code&gt;; package runtime dependencies accordingly.&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;describe&lt;/code&gt; runs in &lt;code&gt;/&lt;/code&gt; with stdin at EOF, emits one token-bound hello containing
+the description, and exits successfully within three seconds.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;serve&lt;/code&gt; runs in the plugin&amp;rsquo;s private data directory. It reads configuration,
+emits the same approved description in a token-bound hello, then waits for the
+host&amp;rsquo;s hello acknowledgment before handling calls. Readiness has a three-second
+deadline.&lt;/li&gt;
+&lt;li&gt;The description includes a reverse-domain ID, release version, process version,
+capability versions, execution scope, concurrency, grants, settings, and actions.
+Process major versions must match; the lower minor is selected. Capabilities
+negotiate independently. Unknown or incompatible capabilities are omitted.&lt;/li&gt;
+&lt;li&gt;General calls have an ID, stable operation ID, capability/version, method,
+deadline, and parameters. They produce zero or more ordered chunks and exactly
+one result. &lt;code&gt;action.v1&lt;/code&gt; permits only the terminal result, without chunks.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;The server keeps one supervised serve process per enabled local registration and
+rechecks its approved checksum before launch. Disable, removal, or conflict stops
+it. Crashes and protocol failures settle callers without replaying their calls.
+Restart delays start at 100 ms and double to a five-second cap, with at most five
+automatic restarts per supervised lifetime. A successful handshake does not reset
+that budget. Exhaustion leaves durable unhealthy state across ocman restarts;
+&lt;strong&gt;Retry&lt;/strong&gt;, &lt;strong&gt;Restart&lt;/strong&gt;, or explicit enablement resets it.&lt;/p&gt;
+&lt;p&gt;Calls respect advertised concurrency, at most 256. Deadlines or cancellation send
+a cancel frame; a plugin that fails to finish within the one-second cancellation
+grace is terminated. Shutdown sends a shutdown frame, allows one second to exit,
+then kills and reaps the process group. Frames are limited to 1 MiB, general call
+output to 8 MiB, and chunk/event queues are bounded. Invalid framing, stream
+ordering, or slow-consumer overflow terminates the process.&lt;/p&gt;
+&lt;p&gt;The &lt;a href="https://forgejo.nousefreak.be/dries/ocman/src/branch/main/internal/plugins/README.md" target="_blank" rel="noopener"&gt;wire contract&lt;/a&gt;
+defines exact frames, validation rules, error categories, and HTTP endpoints.&lt;/p&gt;
+&lt;h2&gt;Authoring action.v1&lt;span class="hx:absolute hx:-mt-20" id="authoring-actionv1"&gt;&lt;/span&gt;
+&lt;a href="#authoring-actionv1" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Advertise capability &lt;code&gt;{&amp;quot;name&amp;quot;:&amp;quot;action&amp;quot;,&amp;quot;version&amp;quot;:{&amp;quot;major&amp;quot;:1,&amp;quot;minor&amp;quot;:0}}&lt;/code&gt;
+and declare actions in the description. For example:&lt;/p&gt;
+&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;div class="highlight"&gt;&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-json" data-lang="json"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="p"&gt;{&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="nt"&gt;&amp;#34;id&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;report&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="nt"&gt;&amp;#34;label&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;Create report&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="nt"&gt;&amp;#34;placement&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;session&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="nt"&gt;&amp;#34;requiredGrants&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;context.session&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;],&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="nt"&gt;&amp;#34;surfaces&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="p"&gt;[&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;command-palette&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;],&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="nt"&gt;&amp;#34;confirmation&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt; &lt;span class="s2"&gt;&amp;#34;Create a report for this session?&amp;#34;&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="p"&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;p&gt;Also include &lt;code&gt;context.session&lt;/code&gt; in the plugin&amp;rsquo;s &lt;code&gt;requestedGrants&lt;/code&gt;. Placements are
+&lt;code&gt;global&lt;/code&gt;, &lt;code&gt;project&lt;/code&gt;, and &lt;code&gt;session&lt;/code&gt;; &lt;code&gt;command-palette&lt;/code&gt; is the only current surface.
+Each invocation uses method &lt;code&gt;invoke&lt;/code&gt; with parameters such as:&lt;/p&gt;
+&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;div class="highlight"&gt;&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-json" data-lang="json"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nt"&gt;&amp;#34;actionId&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;report&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="nt"&gt;&amp;#34;context&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:{&lt;/span&gt;&lt;span class="nt"&gt;&amp;#34;sessionId&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;ses-1&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;}}&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;p&gt;There are no arbitrary action parameters. The broker sends only context covered
+by both the action&amp;rsquo;s required grants and current user approvals:&lt;/p&gt;
+&lt;table&gt;
+&lt;thead&gt;
+&lt;tr&gt;
+&lt;th&gt;Grant&lt;/th&gt;
+&lt;th&gt;Supplied context&lt;/th&gt;
+&lt;/tr&gt;
+&lt;/thead&gt;
+&lt;tbody&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;context.owner&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;Opaque owner ID&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;context.project&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;Opaque project ID, never a directory&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;context.session&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;Opaque session ID&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;context.route&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;Core route name without parameters or query strings&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;context.selection&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;Up to 100 project/session references, never selected text&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;These references provide no API access to transcripts, credentials, databases,
+or filesystem paths. The host handles confirmation before dispatch. The plugin
+receives a maximum 30-second deadline and must honor cancellation.&lt;/p&gt;
+&lt;p&gt;Return &lt;code&gt;{&amp;quot;results&amp;quot;:[...]}&lt;/code&gt; with 1–16 typed items, at most 1 MiB total:&lt;/p&gt;
+&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;div class="highlight"&gt;&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-json" data-lang="json"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nt"&gt;&amp;#34;results&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:[{&lt;/span&gt;&lt;span class="nt"&gt;&amp;#34;kind&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;notice&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="nt"&gt;&amp;#34;text&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;Report ready&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;}]}&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;p&gt;Other result kinds are HTTP(S) &lt;code&gt;link&lt;/code&gt;, base64 &lt;code&gt;artifact&lt;/code&gt;, static core &lt;code&gt;navigation&lt;/code&gt;,
+and &lt;code&gt;refresh&lt;/code&gt; hints. The host renders text, validates URLs and targets, and
+replaces artifact bytes with authorized download handles. HTML, JavaScript,
+arbitrary routes, filesystem download paths, and unknown result fields are rejected.
+Failures return a safe error category rather than diagnostic text.&lt;/p&gt;
+&lt;p&gt;Keep the same operation ID across confirmation and retries. The owner deduplicates
+concurrent calls and commits a receipt before dispatch. Reusing an ID with changed
+input conflicts; after a host restart, a prior receipt also conflicts instead of
+repeating an uncertain side effect. Results and artifacts are memory-only, and
+their reads recheck grants. Never automatically retry a failed action with a new
+operation ID.&lt;/p&gt;
+&lt;h2&gt;Authoring conversation.v1&lt;span class="hx:absolute hx:-mt-20" id="authoring-conversationv1"&gt;&lt;/span&gt;
+&lt;a href="#authoring-conversationv1" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Advertise capability &lt;code&gt;{&amp;quot;name&amp;quot;:&amp;quot;conversation&amp;quot;,&amp;quot;version&amp;quot;:{&amp;quot;major&amp;quot;:1,&amp;quot;minor&amp;quot;:0}}&lt;/code&gt;.
+A conversation plugin must use execution scope &lt;code&gt;owner&lt;/code&gt;, request the
+&lt;code&gt;conversation.session&lt;/code&gt; grant, and declare a required, non-secret &lt;code&gt;project&lt;/code&gt;
+setting. Ocman refuses a declaration missing any of the three, so the project you
+approve in &lt;strong&gt;Configure&lt;/strong&gt; is always the one project the plugin can reach.&lt;/p&gt;
+&lt;p&gt;The capability has exactly two moves. Inbound, the plugin emits an unsolicited
+&lt;code&gt;message&lt;/code&gt; event:&lt;/p&gt;
+&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;div class="highlight"&gt;&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-json" data-lang="json"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nt"&gt;&amp;#34;type&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;event&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="nt"&gt;&amp;#34;event&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:{&lt;/span&gt;&lt;span class="nt"&gt;&amp;#34;capability&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;conversation&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="nt"&gt;&amp;#34;name&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;message&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="nt"&gt;&amp;#34;data&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:{&lt;/span&gt;&lt;span class="nt"&gt;&amp;#34;accountId&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;T0WORKSPACE&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="nt"&gt;&amp;#34;threadId&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;C123:1700000000.000100&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt; &lt;span class="nt"&gt;&amp;#34;eventId&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;Ev0A1B2C3&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="nt"&gt;&amp;#34;text&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;ship it&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;}}}&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;p&gt;&lt;code&gt;accountId&lt;/code&gt; (the provider workspace) and &lt;code&gt;threadId&lt;/code&gt; (the conversation) are
+opaque identities ocman only compares and echoes back. An optional &lt;code&gt;project&lt;/code&gt;
+field is a claim, denied unless it matches the configured project; the directory
+actually used always comes from configuration. Ocman keeps one managed session
+per &lt;code&gt;(plugin, account, thread)&lt;/code&gt; and remembers it in its own database, so every
+later message in the thread continues the same session — across a restart of
+ocman or of the plugin — and two workspaces that reuse a thread identity stay
+isolated.&lt;/p&gt;
+&lt;p&gt;&lt;code&gt;eventId&lt;/code&gt; must identify the &lt;em&gt;event&lt;/em&gt;, not the delivery attempt, so that a
+provider redelivering the same event repeats it. Ocman drops a repeat: a
+duplicate delivery never creates a second session or a second prompt. A mention
+that arrives while the session is still working is queued and sent when the turn
+finishes, in arrival order — it does not interrupt the running turn.&lt;/p&gt;
+&lt;p&gt;Outbound, ocman calls method &lt;code&gt;reply&lt;/code&gt; on the same capability when the session&amp;rsquo;s
+turn completes:&lt;/p&gt;
+&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;div class="highlight"&gt;&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-json" data-lang="json"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;&lt;span class="p"&gt;{&lt;/span&gt;&lt;span class="nt"&gt;&amp;#34;accountId&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;T0WORKSPACE&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="nt"&gt;&amp;#34;threadId&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;C123:1700000000.000100&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;,&lt;/span&gt;&lt;span class="nt"&gt;&amp;#34;text&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;:&lt;/span&gt;&lt;span class="s2"&gt;&amp;#34;Shipped.&amp;#34;&lt;/span&gt;&lt;span class="p"&gt;}&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;p&gt;Replies are plain text in v1: only the newest assistant message&amp;rsquo;s text parts,
+capped at 64 KiB. Reasoning, tool, and file parts are excluded. The call carries
+a 30-second deadline and a stable operation ID. Return &lt;code&gt;{}&lt;/code&gt; on success.&lt;/p&gt;
+&lt;h3&gt;Reply delivery&lt;span class="hx:absolute hx:-mt-20" id="reply-delivery"&gt;&lt;/span&gt;
+&lt;a href="#reply-delivery" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;p&gt;A completed reply is durable work, not a best-effort call. Ocman writes it to a
+delivery outbox before contacting the plugin, so a disconnect, a plugin crash or
+a restart of ocman retries the reply instead of losing it. Each delivery has an
+immutable id that doubles as its sequence number and is passed to the plugin as
+the call&amp;rsquo;s &lt;code&gt;operationId&lt;/code&gt;.&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Ordering.&lt;/strong&gt; Replies for one conversation are delivered strictly in
+sequence, one at a time: a later reply never overtakes an earlier one. Every
+conversation is its own ordering group, so one failing thread never holds up
+another&amp;rsquo;s replies.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Duplicate guarantee.&lt;/strong&gt; Delivery is &lt;strong&gt;at-least-once&lt;/strong&gt;. The acknowledgment
+happens after the call returns, so a crash in that window replays the same
+delivery with the &lt;em&gt;same&lt;/em&gt; &lt;code&gt;operationId&lt;/code&gt;. A provider adapter is expected to
+recognize a repeat and not post a second visible message. A repeated idle
+edge for the same completed turn, by contrast, never produces a second
+delivery: that is deduplicated durably on the host side.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Retries.&lt;/strong&gt; Failures retry with exponential backoff from 5 seconds to a
+5-minute ceiling. Provider-specific cooldowns (Slack&amp;rsquo;s &lt;code&gt;Retry-After&lt;/code&gt;) are
+absorbed inside the plugin, which knows its provider&amp;rsquo;s limits.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Dead letters.&lt;/strong&gt; After 6 failed attempts a delivery stops retrying and waits
+for a decision under &lt;strong&gt;Settings → Plugins → Reply delivery&lt;/strong&gt;: &lt;em&gt;Retry
+delivery&lt;/em&gt; puts it back at the head of its conversation, &lt;em&gt;Discard reply&lt;/em&gt; drops
+it and lets the conversation continue. Its own conversation stays paused until
+then, rather than delivering out of order.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Backpressure.&lt;/strong&gt; The backlog is capped per plugin (500 undelivered replies,
+8 MiB of reply text). At either cap ocman stops accepting &lt;em&gt;new&lt;/em&gt; conversation
+messages — visibly, in the same panel — instead of dropping replies it already
+owes. A message refused this way is not marked as seen, so the provider&amp;rsquo;s
+redelivery is accepted once the backlog drains.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Retry and discard are privileged, localhost-only controls, like every other
+plugin mutation.&lt;/p&gt;
+&lt;p&gt;A revoked grant, a disabled plugin, or an unresolvable project denies both
+directions, and denials never reach the provider. A denial that arrives while a
+reply is already owed pauses that reply rather than failing it: the delivery
+stays queued, unattempted, and keeps its full retry budget, so disabling a
+connector for an afternoon does not turn every owed reply into a dead letter.
+Re-enabling it, or restoring the grant, delivers exactly the replies that were
+owed — nothing that was denied in between is replayed, because nothing was
+attempted. Mappings, queued replies and private data are never deleted by a
+denial.&lt;/p&gt;
+&lt;h3&gt;Attention notices&lt;span class="hx:absolute hx:-mt-20" id="attention-notices"&gt;&lt;/span&gt;
+&lt;a href="#attention-notices" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;p&gt;A thread only ever sees completed answers, so without help a session blocked on
+a permission prompt looks exactly like one that is still thinking. Ocman posts a
+short notice into the thread when its session cannot proceed on its own, or when
+a turn ends somewhere other than an answer:&lt;/p&gt;
+&lt;table&gt;
+&lt;thead&gt;
+&lt;tr&gt;
+&lt;th&gt;Notice&lt;/th&gt;
+&lt;th&gt;When&lt;/th&gt;
+&lt;/tr&gt;
+&lt;/thead&gt;
+&lt;tbody&gt;
+&lt;tr&gt;
+&lt;td&gt;Needs a permission decision&lt;/td&gt;
+&lt;td&gt;A permission prompt has been left for you — either auto-approve is off for the session, or it declined to approve&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;Waiting on an answer&lt;/td&gt;
+&lt;td&gt;The agent asked a question, which is never auto-answered&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;Ended with an error&lt;/td&gt;
+&lt;td&gt;The last turn failed&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;Could not be delivered&lt;/td&gt;
+&lt;td&gt;A message was accepted from the provider but no session could be reached for it&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;Four things are worth knowing about them.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Decisions still happen in ocman.&lt;/strong&gt; A notice is a pointer, never a prompt: it
+carries a sentence and a link, and there is no way to approve, deny or answer
+anything from the thread. Permission provenance and the auto-approve rules are
+untouched — a thread cannot become a second approval channel.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;They follow the auto-approve decision, not the prompt.&lt;/strong&gt; A permission the
+judge approves by itself produces no notice at all. Notices only appear once
+ocman has established that a prompt is genuinely yours to answer, so a session
+with auto-approve on stays quiet through the work it can do unattended.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;They carry no session content.&lt;/strong&gt; A notice never includes the permission text,
+the command, the patterns, the tool metadata, the error message or any part of
+the transcript — a provider thread is usually a wider audience than the
+session&amp;rsquo;s own operator. To see what is being asked, follow the link.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;They resolve, they are not retracted.&lt;/strong&gt; Nothing posted into a thread is ever
+edited or deleted. A notice is resolved by what follows it: answer the prompt in
+ocman, the turn continues, and the completed reply lands underneath. Each notice
+is keyed on the prompt&amp;rsquo;s own request id, so re-observing the same prompt — after
+a stream reconnect, a replayed notification, or an ocman restart — adds nothing.
+A second, different prompt in the same session is a new notice.&lt;/p&gt;
+&lt;h3&gt;Linking back: set a public base URL&lt;span class="hx:absolute hx:-mt-20" id="linking-back-set-a-public-base-url"&gt;&lt;/span&gt;
+&lt;a href="#linking-back-set-a-public-base-url" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h3&gt;&lt;p&gt;Every notice links to the session it is about. Ocman builds that link from
+&lt;code&gt;--public-base-url&lt;/code&gt; / &lt;code&gt;OCMAN_PUBLIC_BASE_URL&lt;/code&gt; (see
+&lt;a href="../../configuration/"&gt;Configuration&lt;/a&gt;
+). &lt;strong&gt;Set it before pointing a conversation
+plugin at a provider.&lt;/strong&gt; Without it ocman falls back to its own listen address,
+which is normally &lt;code&gt;http://localhost:8228&lt;/code&gt; — fine for you on this machine, and
+useless to anyone else reading the thread.&lt;/p&gt;
+&lt;p&gt;Use the address a reader&amp;rsquo;s browser would use: your Tailscale or reverse-proxy
+hostname, for example &lt;code&gt;OCMAN_PUBLIC_BASE_URL=https://ocman.example.ts.net&lt;/code&gt;. A
+base URL with a subpath works too. Ocman does not publish anything at that
+address on your behalf — the value only shapes the links it writes.&lt;/p&gt;
+&lt;h2&gt;Slack&lt;span class="hx:absolute hx:-mt-20" id="slack"&gt;&lt;/span&gt;
+&lt;a href="#slack" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;See &lt;a href="../slack/"&gt;Slack integration&lt;/a&gt;
+for the reusable app manifest, setup,
+configuration, security model, and acceptance walkthrough.&lt;/p&gt;
+&lt;h2&gt;Remote ownership&lt;span class="hx:absolute hx:-mt-20" id="remote-ownership"&gt;&lt;/span&gt;
+&lt;a href="#remote-ownership" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Every installation is identified by its owner and plugin ID. Install the binary
+on each machine that needs it; the hub neither copies executables nor persists
+remote secrets. Settings projects the selected owner&amp;rsquo;s catalog, grants,
+configuration, health, and redacted stderr over authenticated gRPC. Secret updates
+pass through the hub to the owner, while responses expose only presence flags.&lt;/p&gt;
+&lt;p&gt;For project/session contexts, owner-scoped actions run on the project owner and
+hub-scoped actions run on the hub. Global placements resolve to the hub, as does
+the &lt;code&gt;global&lt;/code&gt; execution scope. The installation&amp;rsquo;s &lt;code&gt;ownerId&lt;/code&gt; is distinct from the
+project/session &lt;code&gt;context.ownerId&lt;/code&gt;. A disconnected explicit owner fails closed,
+including when a hub action targets its project. Older remotes without plugin
+management show an unavailable state.&lt;/p&gt;
+&lt;p&gt;The browser talks only to the hub. Remote calls use the closed &lt;code&gt;PluginOperation&lt;/code&gt;
+RPC, not a raw plugin protocol tunnel. Each owner applies its own grants,
+confirmation, operation receipts, process supervision, and artifact checks.&lt;/p&gt;
+&lt;p&gt;Conversation plugins are owner-scoped by declaration, so a connector belongs to
+the machine it is installed on. Give each installation its own provider app and
+credentials: two machines configured with the same Slack app would both open a
+Socket Mode connection and each receive an arbitrary half of the events. Thread
+mappings, inbound deduplication, and reply delivery all live in the owner&amp;rsquo;s own
+&lt;code&gt;state.db&lt;/code&gt;, and a conversation&amp;rsquo;s session is always created on that owner — never
+on a machine inferred from the project inventory, and never on the hub as a
+fallback. The hub&amp;rsquo;s only role is projecting Settings, which fails visibly when
+the owner is disconnected.&lt;/p&gt;
+&lt;h2&gt;Diagnostics and removal&lt;span class="hx:absolute hx:-mt-20" id="diagnostics-and-removal"&gt;&lt;/span&gt;
+&lt;a href="#diagnostics-and-removal" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Settings lists up to 128 rejected executable filenames and safe host errors from
+the latest scan, including invalid descriptions, timeouts, and identity changes.
+Rescanning replaces this list; plugin stdout is never included in diagnostics.&lt;/p&gt;
+&lt;p&gt;Use &lt;strong&gt;Refresh health&lt;/strong&gt; to inspect status, restart count, and the safe last error.
+&lt;strong&gt;Load recent stderr&lt;/strong&gt; shows bounded output from the current and most recently
+stopped process. Each capture is capped at 64 KiB and redacts launch tokens and
+current/historical secrets. Raw stderr stays out of SQL, telemetry, and API errors.
+Redaction cannot protect secrets deliberately encoded by trusted native code.&lt;/p&gt;
+&lt;p&gt;Management mutations and stderr reads require a loopback peer and safe browser
+origin in addition to configured authentication. If those controls fail through
+a reverse proxy, use ocman&amp;rsquo;s local endpoint. Action endpoints use normal
+authentication and origin protection.&lt;/p&gt;
+&lt;table&gt;
+&lt;thead&gt;
+&lt;tr&gt;
+&lt;th&gt;Symptom&lt;/th&gt;
+&lt;th&gt;Check&lt;/th&gt;
+&lt;/tr&gt;
+&lt;/thead&gt;
+&lt;tbody&gt;
+&lt;tr&gt;
+&lt;td&gt;No plugin discovered&lt;/td&gt;
+&lt;td&gt;Selected owner, directory override, executable name/permission, regular file, describe handshake and exit&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;Conflict or approval lost&lt;/td&gt;
+&lt;td&gt;Duplicate IDs, changed binary/declaration, attempted ID change at a registered path; correct files and rescan&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;Enabled but unhealthy&lt;/td&gt;
+&lt;td&gt;Recent stderr, configuration initialization, stdout framing, cancellation; repair and explicitly retry&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;Action missing&lt;/td&gt;
+&lt;td&gt;Placement, selected owner, negotiated capability, enablement, and required grants&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;Owner unavailable&lt;/td&gt;
+&lt;td&gt;Remote connection and that owner&amp;rsquo;s plugin-management support&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;&lt;strong&gt;Revoke grants&lt;/strong&gt; clears approvals and stops in-flight work before restarting the
+process. It denies affected actions and cached results, but cannot recall context
+already delivered. Use &lt;strong&gt;Disable&lt;/strong&gt; to stop execution while retaining configuration,
+grants, and private data.&lt;/p&gt;
+&lt;p&gt;To uninstall, disable the plugin, remove its executable on the owner, and rescan.
+Missing registrations remain visible as removed, retaining configuration and data.
+To erase those too, use &lt;strong&gt;Remove data&lt;/strong&gt; and confirm permanent removal while the
+plugin is disabled. This deletes configuration, secrets, grants, and private data;
+it does not delete the executable. A remaining executable is rediscovered as
+disabled on the next scan. Operation receipts survive deletion to prevent
+uncertain action replay.&lt;/p&gt;
+&lt;h2&gt;Development workflow&lt;span class="hx:absolute hx:-mt-20" id="development-workflow"&gt;&lt;/span&gt;
+&lt;a href="#development-workflow" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Use the optional &lt;a href="https://forgejo.nousefreak.be/dries/ocman/src/branch/main/sdk/plugin/README.md" target="_blank" rel="noopener"&gt;Go SDK&lt;/a&gt;
+at &lt;code&gt;github.com/NoUseFreak/ocman/sdk/plugin&lt;/code&gt;, or implement the NDJSON contract in
+another language. &lt;code&gt;plugin.Run&lt;/code&gt; handles the lifecycle and &lt;code&gt;plugin.ActionHandler&lt;/code&gt;
+validates action dispatch/results. &lt;code&gt;plugin.RunWithEvents&lt;/code&gt; adds a plugin-initiated
+event source, and &lt;code&gt;plugin.ConversationHandler&lt;/code&gt; plus &lt;code&gt;plugin.NewConversationMessage&lt;/code&gt;
+cover both conversation directions. Plugins with settings read fd 3 before calling
+&lt;code&gt;Run&lt;/code&gt; in serve mode. The deterministic
+&lt;a href="https://forgejo.nousefreak.be/dries/ocman/src/branch/main/examples/ocman-plugin-fixture/main.go" target="_blank" rel="noopener"&gt;fixture&lt;/a&gt;
+demonstrates both modes, actions, cancellation, and safe failures.&lt;/p&gt;
+&lt;p&gt;From the ocman checkout, run:&lt;/p&gt;
+&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;div class="highlight"&gt;&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-sh" data-lang="sh"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;go &lt;span class="nb"&gt;test&lt;/span&gt; ./sdk/plugin/... ./internal/plugins
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;go &lt;span class="nb"&gt;test&lt;/span&gt; ./internal/server ./internal/remote ./internal/state -run Plugin&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;p&gt;External plugins can use &lt;code&gt;sdk/plugin/conformance.Run&lt;/code&gt; for executable lifecycle
+checks, &lt;code&gt;RunActionGrants&lt;/code&gt; for broker grant, minimization, deduplication, and
+revocation checks, and &lt;code&gt;RunConversationGrants&lt;/code&gt; for the conversation declaration
+contract plus grant and project denials. Supply deterministic, side-effect-free
+test calls. Rebuild, rescan, review the new checksum, and enable again for a
+manual palette check.&lt;/p&gt;
+&lt;h2&gt;Future work&lt;span class="hx:absolute hx:-mt-20" id="future-work"&gt;&lt;/span&gt;
+&lt;a href="#future-work" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;The current release supports native processes, &lt;code&gt;action.v1&lt;/code&gt;, and
+&lt;code&gt;conversation.v1&lt;/code&gt;. The following are future work, not available plugin
+capabilities or integrations:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Platform-provider capability.&lt;/li&gt;
+&lt;li&gt;Iframe UI contributions.&lt;/li&gt;
+&lt;li&gt;Relay inbox capability, separate from existing core Inbox and webhook features.&lt;/li&gt;
+&lt;li&gt;A plugin registry and automatic updates.&lt;/li&gt;
+&lt;li&gt;Publisher signatures and process sandboxing.&lt;/li&gt;
+&lt;li&gt;A Codex provider.&lt;/li&gt;
+&lt;li&gt;Conversation images, attachments, streaming replies, more than one project per
+plugin, and answering permission prompts from the thread.&lt;/li&gt;
+&lt;/ul&gt;</description></item><item><title>Slack integration</title><link>https://ocman.stenic.io/docs/features/slack/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://ocman.stenic.io/docs/features/slack/</guid><description>
+&lt;p&gt;The bundled Slack plugin connects a Slack thread to an ocman session over
+Socket Mode. It needs no inbound network exposure and no relay. Channel messages
+require an explicit &lt;code&gt;@ocman&lt;/code&gt; mention. Allowlisted users can also talk to ocman
+from the app&amp;rsquo;s Messages tab without mentioning it.&lt;/p&gt;
+&lt;h2&gt;Create the Slack app&lt;span class="hx:absolute hx:-mt-20" id="create-the-slack-app"&gt;&lt;/span&gt;
+&lt;a href="#create-the-slack-app" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Create an app &lt;strong&gt;from a manifest&lt;/strong&gt; and paste
+&lt;a href="https://forgejo.nousefreak.be/dries/ocman/src/branch/main/examples/ocman-plugin-slack/slack-app-manifest.yaml" target="_blank" rel="noopener"&gt;&lt;code&gt;examples/ocman-plugin-slack/slack-app-manifest.yaml&lt;/code&gt;&lt;/a&gt;
+.
+The manifest is the configuration blueprint and enables:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;Socket Mode.&lt;/li&gt;
+&lt;li&gt;The App Home Messages tab and AI Assistant view.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;app_mention&lt;/code&gt; events for channels and &lt;code&gt;message.im&lt;/code&gt; events for direct chats.&lt;/li&gt;
+&lt;li&gt;The exact bot scopes: &lt;code&gt;app_mentions:read&lt;/code&gt;, &lt;code&gt;assistant:write&lt;/code&gt;, &lt;code&gt;chat:write&lt;/code&gt;, and
+&lt;code&gt;im:history&lt;/code&gt;.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;The plugin reads no channel history. &lt;code&gt;assistant:write&lt;/code&gt; only displays
+&lt;code&gt;Thinking...&lt;/code&gt; while a turn runs; the plugin clears it after posting the reply.&lt;/p&gt;
+&lt;p&gt;After creating the app:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;Under &lt;strong&gt;Basic Information → App-Level Tokens&lt;/strong&gt;, generate a token with the
+&lt;code&gt;connections:write&lt;/code&gt; scope. It starts with &lt;code&gt;xapp-&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;Under &lt;strong&gt;Install App&lt;/strong&gt;, install the app to the workspace and copy the bot
+token. It starts with &lt;code&gt;xoxb-&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;If Slack changed any scope after installation, reinstall the app and use the
+newly displayed bot token.&lt;/li&gt;
+&lt;li&gt;Invite the bot to each channel where it should receive mentions.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;h2&gt;Install and configure&lt;span class="hx:absolute hx:-mt-20" id="install-and-configure"&gt;&lt;/span&gt;
+&lt;a href="#install-and-configure" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Build and install the executable on the machine that owns the project:&lt;/p&gt;
+&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;div class="highlight"&gt;&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-sh" data-lang="sh"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;make install-plugin &lt;span class="nv"&gt;PLUGIN&lt;/span&gt;&lt;span class="o"&gt;=&lt;/span&gt;slack&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;p&gt;A conversation plugin is owner-scoped. The binary, tokens, and project all live
+on that host; the hub never copies them. In &lt;strong&gt;Settings → Plugins&lt;/strong&gt;, select that
+owner, rescan, and configure the Slack plugin:&lt;/p&gt;
+&lt;table&gt;
+&lt;thead&gt;
+&lt;tr&gt;
+&lt;th&gt;Setting&lt;/th&gt;
+&lt;th&gt;Value&lt;/th&gt;
+&lt;/tr&gt;
+&lt;/thead&gt;
+&lt;tbody&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;project&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;Absolute path of the one project sessions may run in&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;appToken&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;App-level &lt;code&gt;xapp-&lt;/code&gt; token&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;botToken&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;Bot &lt;code&gt;xoxb-&lt;/code&gt; token&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;allowedUsers&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;Comma-separated Slack member IDs allowed to drive sessions&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;agent&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;Optional OpenCode agent, such as &lt;code&gt;build&lt;/code&gt;&lt;/td&gt;
+&lt;/tr&gt;
+&lt;tr&gt;
+&lt;td&gt;&lt;code&gt;model&lt;/code&gt;&lt;/td&gt;
+&lt;td&gt;Optional &lt;code&gt;provider/model&lt;/code&gt; for a new Slack thread&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/tbody&gt;
+&lt;/table&gt;
+&lt;p&gt;Enable the plugin and approve the &lt;code&gt;conversation.session&lt;/code&gt; grant. Set
+&lt;code&gt;OCMAN_PUBLIC_BASE_URL&lt;/code&gt; to the address Slack users can open before using the
+integration; attention notices link back to that address.&lt;/p&gt;
+&lt;h2&gt;Conversation behavior&lt;span class="hx:absolute hx:-mt-20" id="conversation-behavior"&gt;&lt;/span&gt;
+&lt;a href="#conversation-behavior" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;&lt;code&gt;@ocman ship it&lt;/code&gt; in a channel or channel thread starts a session. A direct
+message starts one without a mention. The first message becomes the Slack thread
+root, completed replies stay in that thread, and follow-ups in the same thread
+continue the same durable ocman session. A new top-level direct message starts a
+new session.&lt;/p&gt;
+&lt;p&gt;Messages accepted while a turn is running are queued and sent to the session in
+arrival order. Permission prompts, questions, and turn failures post a fixed
+notice linking to ocman; Slack never receives permission details, errors, tool
+output, or hidden model reasoning.&lt;/p&gt;
+&lt;p&gt;Both tokens use write-only secret handling. They are delivered only on file
+descriptor 3, never appear in results or error text, and are redacted from
+captured stderr. &lt;code&gt;allowedUsers&lt;/code&gt; fails closed: an empty list authorizes nobody.
+Bot messages, message edits, and unauthorized users are dropped silently.&lt;/p&gt;
+&lt;p&gt;Reply delivery is durable and at-least-once. Slack &lt;code&gt;429&lt;/code&gt; responses honor
+&lt;code&gt;Retry-After&lt;/code&gt;. An uncertain transport or Slack 5xx outcome is not immediately
+repeated because a duplicate visible reply is worse than one that may already
+have landed.&lt;/p&gt;
+&lt;h2&gt;Verify the installation&lt;span class="hx:absolute hx:-mt-20" id="verify-the-installation"&gt;&lt;/span&gt;
+&lt;a href="#verify-the-installation" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Walk these steps in order before using a shared channel:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;Installed.&lt;/strong&gt; &lt;code&gt;make install-plugin PLUGIN=slack&lt;/code&gt; prints the path and SHA-256.
+Rescan must show &lt;code&gt;org.ocman.slack&lt;/code&gt; as disabled with the same checksum.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Configured.&lt;/strong&gt; Save the project and tokens, enable the plugin, and approve
+&lt;code&gt;conversation.session&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Connected.&lt;/strong&gt; &lt;strong&gt;Refresh health&lt;/strong&gt; should report healthy. Recent stderr should
+contain &lt;code&gt;slack socket connected&lt;/code&gt;, never tokens or message content.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Channel.&lt;/strong&gt; Mention &lt;code&gt;@ocman&lt;/code&gt; in an invited channel. A session appears and
+the completed reply lands in the same thread.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Direct chat.&lt;/strong&gt; Send a message from an allowlisted account in the app&amp;rsquo;s
+Messages tab. The reply remains in that assistant thread.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Follow-up.&lt;/strong&gt; Send another message in the same thread while a turn runs. It
+is answered after that turn rather than interleaved into it.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Restart.&lt;/strong&gt; Restart ocman and continue the thread. It should reuse the same
+session and deliver any reply owed before the restart.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;If nothing happens, confirm the channel invite, member ID allowlist, Socket Mode,
+event subscriptions, and reinstallation after scope changes. Then inspect
+&lt;strong&gt;Refresh health&lt;/strong&gt; and &lt;strong&gt;Load recent stderr&lt;/strong&gt;. &lt;code&gt;invalid_auth&lt;/code&gt; indicates a token
+problem; an &lt;code&gt;assistant.threads.setStatus&lt;/code&gt; error affects only the thinking status,
+not prompt or reply delivery.&lt;/p&gt;
+&lt;h2&gt;Test and remove&lt;span class="hx:absolute hx:-mt-20" id="test-and-remove"&gt;&lt;/span&gt;
+&lt;a href="#test-and-remove" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;The automated path uses the real executable with mock Slack Web API and Socket
+Mode endpoints:&lt;/p&gt;
+&lt;div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code"&gt;
+&lt;div&gt;&lt;div class="highlight"&gt;&lt;pre tabindex="0" class="chroma"&gt;&lt;code class="language-sh" data-lang="sh"&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;go &lt;span class="nb"&gt;test&lt;/span&gt; ./examples/ocman-plugin-slack
+&lt;/span&gt;&lt;/span&gt;&lt;span class="line"&gt;&lt;span class="cl"&gt;go &lt;span class="nb"&gt;test&lt;/span&gt; ./internal/server -run Slack&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;&lt;div class="hextra-code-copy-btn-container hx:opacity-0 hx:transition hx:group-hover/code:opacity-100 hx:flex hx:gap-1 hx:absolute hx:m-[11px] hx:right-0 hx:top-0"&gt;
+&lt;button
+class="hextra-code-copy-btn hx:group/copybtn hx:cursor-pointer hx:transition-all hx:active:opacity-50 hx:bg-primary-700/5 hx:border hx:border-black/5 hx:text-gray-600 hx:hover:text-gray-900 hx:rounded-md hx:p-1.5 hx:dark:bg-primary-300/10 hx:dark:border-white/10 hx:dark:text-gray-400 hx:dark:hover:text-gray-50"
+title="Copy code"
+aria-label="Copy code"
+data-copied-label="Copied!"
+&gt;
+&lt;div class="hextra-copy-icon hx:group-[.copied]/copybtn:hidden hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;div class="hextra-success-icon hx:hidden hx:group-[.copied]/copybtn:block hx:pointer-events-none hx:h-4 hx:w-4"&gt;&lt;/div&gt;
+&lt;/button&gt;
+&lt;/div&gt;
+&lt;/div&gt;
+&lt;p&gt;These tests cannot validate workspace configuration, tokens, channel membership,
+or Slack&amp;rsquo;s rendered UI.&lt;/p&gt;
+&lt;p&gt;To remove the integration, disable the plugin, delete &lt;code&gt;ocman-plugin-slack&lt;/code&gt; from
+the owner&amp;rsquo;s plugin directory, rescan, and use &lt;strong&gt;Remove data&lt;/strong&gt; to erase tokens,
+thread mappings, and undelivered replies. Revoke the tokens or delete the app in
+Slack separately.&lt;/p&gt;</description></item><item><title>Inbox</title><link>https://ocman.stenic.io/docs/features/inbox/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://ocman.stenic.io/docs/features/inbox/</guid><description>
+&lt;p&gt;The Inbox collects messages that need attention across connected machines.
+Press &lt;strong&gt;Alt+I&lt;/strong&gt;, or &lt;strong&gt;Option+I&lt;/strong&gt; on macOS, to open it from anywhere in the app.
+The first header row combines fuzzy search with All, Unread, and Archived.
+Search matches message titles, bodies, originating sessions, source machines, and permission details.
+The second row contains the message categories and an actions dropdown with
+Archive selected and Archive all read.
+Choose &lt;strong&gt;All&lt;/strong&gt;, &lt;strong&gt;Primary&lt;/strong&gt;, &lt;strong&gt;Factory&lt;/strong&gt;, &lt;strong&gt;Routines&lt;/strong&gt;, or &lt;strong&gt;Permissions&lt;/strong&gt; in the
+message-type group. One type is selected at a time; its icon and label are shown,
+while the others show icons with hover titles. Each message in the sidebar also
+shows its category icon before the title. Older messages appear under Primary.&lt;/p&gt;
+&lt;p&gt;Opening a message marks it read. Mark unread returns it to the unread list.
+Messages show their source machine in the reading pane, but there is no machine
+filter. Every detail header includes the originating session link, or
+&amp;ldquo;Originating session unavailable&amp;rdquo; for messages without recorded session metadata.
+Archived messages remain readable, but opening them does not mark them read or
+change the navigation&amp;rsquo;s unread count. Resolved permission actions are hidden.&lt;/p&gt;
+&lt;h2&gt;Permission requests&lt;span class="hx:absolute hx:-mt-20" id="permission-requests"&gt;&lt;/span&gt;
+&lt;a href="#permission-requests" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Every observed permission request creates one durable Inbox message on its owning
+machine, including requests from subagent sessions and sessions with auto-approval
+disabled. Open the message to review its command or patterns and choose &lt;strong&gt;Allow
+once&lt;/strong&gt;, &lt;strong&gt;Allow always&lt;/strong&gt;, or &lt;strong&gt;Reject&lt;/strong&gt;. Allow always uses the same confirmation
+step as the session&amp;rsquo;s permission prompt. Permission titles include the requesting
+session&amp;rsquo;s title. The originating-session link in the header opens that session,
+including when it is a subagent. If the session title is unavailable, its ID is shown.&lt;/p&gt;
+&lt;p&gt;Successful replies archive the message automatically, whether answered in the
+Inbox, a session, another browser, the OpenCode TUI, or by auto-approval. A failed
+reply keeps the message available for retry. A background check every 30 seconds
+archives requests that disappeared after an aborted turn or a missed event;
+failed checks against an unavailable owner leave the message intact.&lt;/p&gt;
+&lt;p&gt;Permission toast and system-notification links open the permission-filtered
+Inbox. Question notifications still open the session.&lt;/p&gt;
+&lt;h2&gt;Other messages&lt;span class="hx:absolute hx:-mt-20" id="other-messages"&gt;&lt;/span&gt;
+&lt;a href="#other-messages" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Factory delivery notifications use the Factory category. Routine runs create a
+Routine message when they succeed, fail, or are interrupted.&lt;/p&gt;
+&lt;p&gt;Agents can use the &lt;code&gt;inbox&lt;/code&gt; MCP tool to send messages with an optional &lt;code&gt;category&lt;/code&gt;
+of &lt;code&gt;general&lt;/code&gt;, &lt;code&gt;factory&lt;/code&gt;, or &lt;code&gt;routine&lt;/code&gt;. The default, &lt;code&gt;general&lt;/code&gt;, appears as Primary
+in the dashboard. The &lt;code&gt;permission&lt;/code&gt;
+category is reserved for actual permission requests and cannot be supplied by
+an agent. Include &lt;code&gt;session_id&lt;/code&gt; and the owner-local &lt;code&gt;platform&lt;/code&gt; together when
+sending from a session so the header can link back to it. Factory deliveries and
+routine completions record their session automatically. Use the tool&amp;rsquo;s &lt;code&gt;help&lt;/code&gt;
+action for its current schema.&lt;/p&gt;</description></item><item><title>Read answers aloud</title><link>https://ocman.stenic.io/docs/features/read-aloud/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://ocman.stenic.io/docs/features/read-aloud/</guid><description>
+&lt;p&gt;Use the speaker icon at the end of a completed assistant turn to read its final
+answer aloud. The icon changes to &lt;strong&gt;Stop&lt;/strong&gt; during playback. The bookmark icon
+beside it bookmarks the turn&amp;rsquo;s last assistant message.&lt;/p&gt;
+&lt;p&gt;Only the final answer&amp;rsquo;s text is spoken. Reasoning, progress messages, tool calls,
+command output, code blocks, images, and compaction summaries are excluded.
+Links are read by their labels and inline code is kept, so commands mentioned in
+ordinary prose can still be spoken. Failed, interrupted, and tool-only endings
+do not have a speaker button.&lt;/p&gt;
+&lt;p&gt;Under &lt;strong&gt;Settings → Sessions&lt;/strong&gt;, enable &lt;strong&gt;Read answers aloud&lt;/strong&gt; to automatically
+read new answers in the focused session tab. This is off by default and saved
+for the current browser. Opening history or reconnecting does not replay old
+answers. Playback stops when you send another prompt, leave the session, or
+disable automatic reading.&lt;/p&gt;
+&lt;p&gt;The same settings offer a voice selector, reading speed, and voice preview.
+Voices come from your browser or operating system. Automatic selection prefers
+a local voice matching the browser language. Voices marked &lt;strong&gt;online&lt;/strong&gt; may send
+answer text to their speech service. Ocman does not run a TTS server or store
+audio files.&lt;/p&gt;
+&lt;p&gt;Voice availability and automatic playback vary by browser and desktop webview.
+If playback is blocked, use the speaker button or preview the voice in Settings.
+Browsers without speech synthesis hide the speaker and disable automatic reading.&lt;/p&gt;</description></item><item><title>Database maintenance</title><link>https://ocman.stenic.io/docs/features/maintenance/</link><pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate><guid>https://ocman.stenic.io/docs/features/maintenance/</guid><description>
+&lt;p&gt;OpenCode&amp;rsquo;s database grows fast. Whenever a turn changes files, OpenCode stores
+a full patch of every changed file on that turn&amp;rsquo;s user message. It then stores
+the patch again in every &lt;code&gt;message.updated&lt;/code&gt; event in its event log. A checkout
+that moves across a large upstream change can add hundreds of megabytes in a
+single turn.&lt;/p&gt;
+&lt;p&gt;&lt;strong&gt;Settings → Maintenance&lt;/strong&gt; removes those patches from sessions that haven&amp;rsquo;t
+been updated for 30 days, then compacts the database. The patches are kept in
+a dump, so you can put them back.&lt;/p&gt;
+&lt;h2&gt;What is lost&lt;span class="hx:absolute hx:-mt-20" id="what-is-lost"&gt;&lt;/span&gt;
+&lt;a href="#what-is-lost" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;Only OpenCode&amp;rsquo;s own web app reads the patches, for its per-turn &amp;ldquo;changes&amp;rdquo;
+view. For cleaned sessions, that view, &lt;code&gt;GET /session/{id}/diff?messageID=&lt;/code&gt;, and
+the diffs section of &lt;code&gt;opencode export&lt;/code&gt; come back empty.&lt;/p&gt;
+&lt;p&gt;These are unaffected:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;ocman&lt;/li&gt;
+&lt;li&gt;the OpenCode terminal UI&lt;/li&gt;
+&lt;li&gt;reverting a turn, which works from snapshots&lt;/li&gt;
+&lt;li&gt;the per-session added, removed and changed-file counts&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h2&gt;Clean up&lt;span class="hx:absolute hx:-mt-20" id="clean-up"&gt;&lt;/span&gt;
+&lt;a href="#clean-up" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;&lt;strong&gt;Clean up&lt;/strong&gt; runs these steps and shows each one&amp;rsquo;s progress:&lt;/p&gt;
+&lt;ol&gt;
+&lt;li&gt;&lt;strong&gt;Check disk space.&lt;/strong&gt; Refuses unless the database&amp;rsquo;s volume has three times
+the database size free. That&amp;rsquo;s the worst case for the backup, the dump and
+compaction together.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Stop opencode.&lt;/strong&gt; Stops every opencode instance ocman manages and blocks
+new launches until the job ends. In-flight turns are interrupted. If any
+other process still has the database open (an opencode you started
+yourself, a &lt;code&gt;sqlite3&lt;/code&gt; shell), the job lists them and stops without changing
+anything.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Back up database.&lt;/strong&gt; Writes a consistent copy to
+&lt;code&gt;opencode.db.ocman-backup&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Dump diffs.&lt;/strong&gt; Copies the patches into &lt;code&gt;opencode.db.ocman-diffs&lt;/code&gt;, next to
+the database.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Remove diffs.&lt;/strong&gt; Removes only the patches that are in the dump.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Compact database.&lt;/strong&gt; Runs &lt;code&gt;VACUUM&lt;/code&gt; to return the freed space to the disk.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Delete backup.&lt;/strong&gt; Deletes the backup once everything succeeded. After a
+failure, the backup stays. It is one self-contained file. To restore it,
+stop every opencode, delete &lt;code&gt;opencode.db-wal&lt;/code&gt; and &lt;code&gt;opencode.db-shm&lt;/code&gt;, then
+copy the backup over &lt;code&gt;opencode.db&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Relaunch opencode.&lt;/strong&gt; Restarts the instances stopped in step 2. This step
+runs even when an earlier step failed.&lt;/li&gt;
+&lt;/ol&gt;
+&lt;p&gt;Running it again later adds newly old sessions to the same dump.&lt;/p&gt;
+&lt;h2&gt;Restore and delete&lt;span class="hx:absolute hx:-mt-20" id="restore-and-delete"&gt;&lt;/span&gt;
+&lt;a href="#restore-and-delete" class="subheading-anchor" aria-label="Permalink for this section"&gt;&lt;/a&gt;&lt;/h2&gt;&lt;p&gt;&lt;strong&gt;Restore&lt;/strong&gt; stops opencode the same way and puts every dumped patch back.
+&lt;strong&gt;Delete dump&lt;/strong&gt; removes the dump file for good.&lt;/p&gt;
+&lt;p&gt;Both buttons, like Clean up, only work from a browser on the machine running
+ocman. Each machine cleans its own database from its own Settings page.&lt;/p&gt;</description></item></channel></rss>
