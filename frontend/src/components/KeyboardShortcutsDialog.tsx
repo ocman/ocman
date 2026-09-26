@@ -8,6 +8,7 @@ import {
   type Shortcut,
 } from '../lib/shortcutRegistry';
 import { Modal } from './Modal';
+import { ModalHeader } from './ModalHeader';
 
 interface Props {
   open: boolean;
@@ -78,20 +79,13 @@ export function KeyboardShortcutsDialog({ open, onClose }: Props) {
       label="Keyboard shortcuts"
       onClose={onClose}
     >
-      <div className="oc-shortcuts-header">
-        <div>
-          <h2>Keyboard shortcuts</h2>
-          <p>Site-wide shortcuts and actions available on the current page.</p>
-        </div>
-        <button
-          type="button"
-          className="oc-shortcuts-close"
-          onClick={onClose}
-          aria-label="Close keyboard shortcuts"
-        >
-          <i className="bi bi-x-lg" />
-        </button>
-      </div>
+      <ModalHeader
+        className="oc-shortcuts-header"
+        title="Keyboard shortcuts"
+        description="Site-wide shortcuts and actions available on the current page."
+        onClose={onClose}
+        closeLabel="Close keyboard shortcuts"
+      />
       <div className={`oc-shortcuts-body${hasAnyContextScope ? '' : ' oc-shortcuts-body-single'}`}>
         {hasAnyContextScope && (
           <div className="oc-shortcuts-column">

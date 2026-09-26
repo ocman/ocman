@@ -1,0 +1,16 @@
+.oc-loading-spinner {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--surface2);
+  border-top-color: var(--accent3);
+  border-radius: 50%;
+  animation: oc-loading-spin 0.8s linear infinite;
+}
+
+@keyframes oc-loading-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .oc-loading-spinner { animation: none; }
+}

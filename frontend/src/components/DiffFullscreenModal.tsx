@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import './DiffFullscreenModal.css';
 import { Modal } from './Modal';
+import { IconButton } from './IconButton';
 
 // One entry in the fullscreen diff browser. `body` is the already-
 // built diff element for the file; React only renders the selected
@@ -129,20 +130,6 @@ function splitDisplayPath(path: string, oldPath?: string): { name: string; dir: 
   };
 }
 
-// FullscreenButton is the header icon button that opens the modal.
-// Shares the refresh button's styling so the header reads as one
-// group of actions.
 export function FullscreenButton({ onClick, disabled = false }: { onClick: () => void; disabled?: boolean }) {
-  return (
-    <button
-      type="button"
-      className="oc-changes-refresh-btn"
-      onClick={onClick}
-      disabled={disabled}
-      title="Fullscreen"
-      aria-label="Fullscreen"
-    >
-      <i className="bi bi-arrows-fullscreen" aria-hidden="true" />
-    </button>
-  );
+  return <IconButton icon="bi-arrows-fullscreen" label="Fullscreen" size="compact" variant="ghost" onClick={onClick} disabled={disabled} />;
 }

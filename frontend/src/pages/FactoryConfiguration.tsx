@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { EpicGraph } from './EpicGraph';
 import { formulaIssues } from './factoryGraph';
-import { Button } from '../components/Control';
+import { Button, ButtonGroup, TextField, TextareaField } from '../components/Control';
 import { useFactoryCapacityPolicy, useFactoryFormula, useFactoryFormulas, usePreviewFactoryFormula, useSaveFactoryFormula, useSetFactoryCapacityPolicy, useValidateFactoryFormula } from '../lib/queries';
 import type { FactoryFormula } from '../lib/api';
 import { TRACER_FORMULA_ID } from './factoryHelpers';
@@ -66,9 +66,9 @@ export function FactoryConfiguration() {
 		{capacity.isLoading && <p role="status">Loading capacity policy…</p>}
 		{capacity.isError && <QueryError error={capacity.error} retry={() => void capacity.refetch()} />}
 		{policy && <form onSubmit={(event) => void save(event)}>
-			<label>Global implementation capacity<input aria-label="Global implementation capacity" name="globalCapacity" type="number" min="1" max="1000" required defaultValue={policy.globalCapacity} /></label>
-			<label>Default project implementation capacity<input aria-label="Default project implementation capacity" name="projectCapacity" type="number" min="1" max="1000" required defaultValue={policy.projectCapacity} /></label>
-			<label>Project capacity overrides (JSON)<textarea aria-label="Project capacity overrides (JSON)" name="projectOverrides" defaultValue={JSON.stringify(policy.projectOverrides, null, 2)} /></label>
+			<label>Global implementation capacity<TextField aria-label="Global implementation capacity" name="globalCapacity" type="number" min="1" max="1000" required defaultValue={policy.globalCapacity} /></label>
+			<label>Default project implementation capacity<TextField aria-label="Default project implementation capacity" name="projectCapacity" type="number" min="1" max="1000" required defaultValue={policy.projectCapacity} /></label>
+			<label>Project capacity overrides (JSON)<TextareaField aria-label="Project capacity overrides (JSON)" name="projectOverrides" defaultValue={JSON.stringify(policy.projectOverrides, null, 2)} /></label>
 			<Button type="submit" variant="accent" aria-busy={saveCapacity.isPending} disabled={saveCapacity.isPending}>{saveCapacity.isPending ? 'Saving…' : 'Save capacity policy'}</Button>
 		</form>}
 		{capacityError && <p role="alert">{capacityError}</p>}
@@ -80,7 +80,7 @@ export function FactoryConfiguration() {
 			<p>Content hash: {formula.data.hash}</p>
 			<p>Source hash: {formula.data.sourceHash}</p>
 			<p role="status">Formula is {formula.data.valid ? 'valid' : 'invalid'}</p>
-			<details className="factory-formula-source"><summary>Tracer Formula source</summary><label>Tracer Formula source<textarea aria-label="Tracer Formula source" rows={15} readOnly value={formula.data.source} /></label></details>
+			<details className="factory-formula-source"><summary>Tracer Formula source</summary><label>Tracer Formula source<TextareaField aria-label="Tracer Formula source" rows={15} readOnly value={formula.data.source} /></label></details>
 			<Button type="button" onClick={() => { setSelectedFormula('new'); editFormula(formula.data); }}>Customize Tracer</Button>
 			<h4>Graph</h4>
 			<p>Inputs: {formula.data.inputs.join(', ')}</p>
@@ -90,16 +90,16 @@ export function FactoryConfiguration() {
 			<h3>Custom Formula revisions</h3>
 			{formulas.isError && <QueryError error={formulas.error} retry={() => void formulas.refetch()} />}
 			<label>Formula<select aria-label="Formula" value={selectedFormula} onChange={(event) => { setSelectedFormula(event.target.value); editFormula(formulas.data?.find((item) => `${item.id}@${item.version}` === event.target.value)); }}><option value="new">New Formula</option>{formulas.data?.filter((item) => item.id !== TRACER_FORMULA_ID).map((item) => <option key={`${item.id}@${item.version}`} value={`${item.id}@${item.version}`}>{item.name} · {item.id}@{item.version}</option>)}</select></label>
-			{inspectedFormula && <section aria-label="Formula inspection"><p>Content hash: {inspectedFormula.hash}</p><p>Source hash: {inspectedFormula.sourceHash}</p><FormulaGraph formula={inspectedFormula} /><details className="factory-formula-source"><summary>Stored Formula source</summary><label>Stored Formula source<textarea aria-label="Stored Formula source" rows={15} readOnly value={inspectedFormula.source} /></label></details></section>}
+			{inspectedFormula && <section aria-label="Formula inspection"><p>Content hash: {inspectedFormula.hash}</p><p>Source hash: {inspectedFormula.sourceHash}</p><FormulaGraph formula={inspectedFormula} /><details className="factory-formula-source"><summary>Stored Formula source</summary><label>Stored Formula source<TextareaField aria-label="Stored Formula source" rows={15} readOnly value={inspectedFormula.source} /></label></details></section>}
 			<form onSubmit={(event) => { event.preventDefault(); void saveFormulaRevision(event.currentTarget, 'save'); }}>
-				<label>Custom Formula ID<input aria-label="Custom Formula ID" name="id" required pattern="custom/[a-z][a-z0-9_-]*" value={formulaID} onChange={(event) => setFormulaID(event.target.value)} /></label>
+				<label>Custom Formula ID<TextField aria-label="Custom Formula ID" name="id" required pattern="custom/[a-z][a-z0-9_-]*" value={formulaID} onChange={(event) => setFormulaID(event.target.value)} /></label>
 				<p>Define named steps with kind, needs, prompt, and config in the YAML source. Implementation contains the planned tasks; downstream checks wait for all required tasks. Saving creates a new revision.</p>
-				<details className="factory-formula-source"><summary>Formula source</summary><label>Formula YAML<textarea aria-label="Formula YAML" name="source" rows={15} required value={formulaSource} onChange={(event) => setFormulaSource(event.target.value)} onInvalid={(event) => { event.currentTarget.closest('details')!.open = true; }} /></label></details>
-				<div className="factory-epic-action-row">
+				<details className="factory-formula-source"><summary>Formula source</summary><label>Formula YAML<TextareaField aria-label="Formula YAML" name="source" rows={15} required value={formulaSource} onChange={(event) => setFormulaSource(event.target.value)} onInvalid={(event) => { event.currentTarget.closest('details')!.open = true; }} /></label></details>
+				<ButtonGroup label="Formula actions">
 					<Button type="button" aria-busy={validateFormula.isPending} onClick={(event) => { if (event.currentTarget.form) void saveFormulaRevision(event.currentTarget.form, 'validate'); }} disabled={validateFormula.isPending || previewFormula.isPending || saveFormula.isPending}>{validateFormula.isPending ? 'Validating…' : 'Validate Formula'}</Button>
 					<Button type="button" aria-busy={previewFormula.isPending} onClick={(event) => { if (event.currentTarget.form) void saveFormulaRevision(event.currentTarget.form, 'preview'); }} disabled={validateFormula.isPending || previewFormula.isPending || saveFormula.isPending}>{previewFormula.isPending ? 'Previewing…' : 'Preview Formula'}</Button>
 					<Button type="submit" variant="accent" aria-busy={saveFormula.isPending} disabled={validateFormula.isPending || previewFormula.isPending || saveFormula.isPending}>{saveFormula.isPending ? 'Saving…' : 'Save immutable revision'}</Button>
-				</div>
+				</ButtonGroup>
 			</form>
 			{validateFormula.data && <p role="status">Formula is {validateFormula.data.valid ? 'valid' : 'invalid'}{validateFormula.data.valid && `: ${validateFormula.data.hash}`}</p>}
 			{previewFormula.data?.valid && <section aria-label="Formula preview"><FormulaGraph formula={previewFormula.data} /></section>}

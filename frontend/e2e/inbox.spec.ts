@@ -1,5 +1,30 @@
 import { test, expect } from './fixtures';
 
+test('code copying reports denial and succeeds on retry', async ({ mockedPage: page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
+      writeText: async () => { throw new Error('Clipboard denied'); },
+    } });
+    document.execCommand = () => false;
+  });
+  await page.route('**/api/inbox**', (route) => route.fulfill({ json: {
+    items: [{ id: 'code', remoteId: 'local', title: 'Copy example', body: '```ts\nconst answer = 42;\n```', createdAt: 1, readAt: 1 }], unreadTotal: 0,
+  } }));
+  await page.goto('/inbox');
+  const copy = page.getByRole('button', { name: 'Copy code' });
+  await copy.focus();
+  await copy.press('Enter');
+  await expect(page.getByRole('status')).toHaveText('Could not copy to clipboard. Try again.');
+  await page.evaluate(() => {
+    navigator.clipboard.writeText = async (text: string) => {
+      (window as Window & { copiedText?: string }).copiedText = text;
+    };
+  });
+  await copy.click();
+  await expect(page.getByRole('status')).toHaveText('Copied!');
+  expect(await page.evaluate(() => (window as Window & { copiedText?: string }).copiedText)).toBe('const answer = 42;\n');
+});
+
 test('Alt+I opens the inbox and is listed in keyboard shortcut help', async ({ mockedPage: page }) => {
   await page.route('**/api/inbox', (route) => route.fulfill({ json: { items: [], unreadTotal: 0 } }));
   await page.goto('/sessions');
@@ -32,8 +57,8 @@ test('compact two-row header searches and archives messages from the actions dro
   for (const width of [1280, 390, 320]) {
     await page.setViewportSize({ width, height: 844 });
     const search = await page.getByRole('searchbox', { name: 'Search inbox' }).boundingBox();
-    const status = await page.getByRole('group', { name: 'Message status' }).boundingBox();
-    const types = await page.getByRole('group', { name: 'Message type' }).boundingBox();
+    const status = await page.getByRole('radiogroup', { name: 'Message status' }).boundingBox();
+    const types = await page.getByRole('radiogroup', { name: 'Message type' }).boundingBox();
     const actions = await page.getByLabel('Inbox actions').boundingBox();
     expect(search!.y).toBe(status!.y);
     expect(types!.y).toBe(actions!.y);
@@ -43,13 +68,13 @@ test('compact two-row header searches and archives messages from the actions dro
   }
   await page.getByRole('searchbox', { name: 'Search inbox' }).fill('bldfn');
   await expect(page.getByRole('button', { name: /Build finished/ })).toBeVisible();
-  await page.getByRole('button', { name: 'Unread', exact: true }).click();
+  await page.getByRole('radio', { name: 'Unread', exact: true }).check();
   await expect(page.getByText('No messages match these filters.')).toBeVisible();
-  await page.getByRole('group', { name: 'Message status' }).getByRole('button', { name: 'All', exact: true }).click();
+  await page.getByRole('radiogroup', { name: 'Message status' }).getByRole('radio', { name: 'All', exact: true }).check();
   await page.getByLabel('Inbox actions').click();
   await page.getByRole('button', { name: 'Archive all read', exact: true }).click();
   await expect(page.getByText('Your inbox is empty.')).toBeVisible();
-  await page.getByRole('button', { name: 'Archived', exact: true }).click();
+  await page.getByRole('radio', { name: 'Archived', exact: true }).check();
   await page.getByRole('button', { name: /Build finished/ }).click();
   await expect(page.getByRole('heading', { name: 'Build finished' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Mark unread', exact: true })).toBeDisabled();
@@ -100,9 +125,9 @@ test('mark unread updates navigation and survives reloading the inbox', async ({
   await expect(page.getByRole('heading', { name: 'Select a message' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Inbox, 1 unread messages' })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole('button', { name: 'Unread', exact: true })).toBeVisible();
+  await expect(page.getByRole('radio', { name: 'Unread', exact: true })).toBeVisible();
   await page.getByRole('button', { name: /Review ready/ }).click();
-  await expect(page.getByRole('button', { name: 'Unread', exact: true })).toBeVisible();
+  await expect(page.getByRole('radio', { name: 'Unread', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Inbox', exact: true })).toBeVisible();
 });
 
@@ -151,14 +176,16 @@ for (const reply of ['once', 'always', 'reject'] as const) {
     await page.goto('/inbox?category=permission');
     await expect(page.getByRole('combobox')).toHaveCount(0);
     await expect(page.getByRole('button', { name: /Factory delivered/ })).toHaveCount(0);
-    await page.getByRole('button', { name: 'Factory', exact: true }).click();
+    await page.getByRole('radio', { name: 'Factory', exact: true }).click();
+    await expect(page.getByRole('radio', { name: 'Factory', exact: true })).toBeChecked();
     await expect(page.getByRole('button', { name: /Factory delivered/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /Permission requested: bash/ })).toHaveCount(0);
-    const types = page.getByRole('group', { name: 'Message type' });
-    await expect(types.getByRole('button', { pressed: true })).toHaveCount(1);
-    await expect(types.getByRole('button', { name: 'Factory', exact: true })).toHaveText('Factory');
-    await expect(types.getByRole('button', { name: 'Permissions', exact: true })).toHaveText('');
-    await types.getByRole('button', { name: 'All', exact: true }).click();
+    const types = page.getByRole('radiogroup', { name: 'Message type' });
+    await expect(types.getByRole('radio', { checked: true })).toHaveCount(1);
+    await expect(types.getByText('Factory', { exact: true })).toBeVisible();
+    await expect(types.getByText('Permissions', { exact: true })).toHaveCount(0);
+    await types.getByRole('radio', { name: 'All', exact: true }).click();
+    await expect(types.getByRole('radio', { name: 'All', exact: true })).toBeChecked();
     await page.getByRole('button', { name: /Permission requested: bash/ }).click();
     if (reply === 'reject') await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.getByRole('region', { name: 'Permission actions' })).toBeVisible();

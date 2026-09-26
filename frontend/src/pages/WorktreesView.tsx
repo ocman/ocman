@@ -12,6 +12,8 @@ import { sessionsForWorktree } from '../lib/worktrees';
 import { WorktreesTableSkeleton } from '../components/Skeleton';
 import { ProjectLabel } from '../components/ProjectLabel';
 import { DataTable } from '../components/DataTable';
+import { RefreshButton } from '../components/RefreshButton';
+import { HeaderPortal } from './session-detail/MobileHeaderControls';
 import './Dashboard.css';
 import './WorktreesView.css';
 
@@ -101,35 +103,27 @@ export function WorktreesView() {
 
   if (!allowed) {
     return (
-      <div className="metrics-page oc-worktrees-page">
+      <div>
         <div className="oc-list-error">Worktree sessions are unavailable on this host.</div>
       </div>
     );
   }
 
   return (
-    <div className="metrics-page oc-worktrees-page">
-      <div className="oc-worktrees-header">
-        <div>
-          <h2 className="section-title">Worktrees</h2>
-          <ProjectLabel className="mono oc-worktrees-project" path={projectDir} />
-        </div>
-        <div className="oc-worktrees-actions">
-          <Link className="oc-time-range-btn" to={`/project/${encodeURIComponent(projectDir)}`}>
-            Back to project
-          </Link>
-          <button className="oc-time-range-btn" type="button" onClick={() => void load()}>
-            Refresh
-          </button>
-          <button
-            className="oc-time-range-btn active"
-            type="button"
-            onClick={() => openWorktreeForm({ projectDir })}
-          >
-            New worktree session
-          </button>
-        </div>
-      </div>
+    <div>
+      <HeaderPortal>
+        <Link className="oc-time-range-btn" to={`/project/${encodeURIComponent(projectDir)}`}>
+          Back to project
+        </Link>
+        <RefreshButton size="small" variant="default" onClick={() => void load()} loading={loading} />
+        <button
+          className="oc-time-range-btn active"
+          type="button"
+          onClick={() => openWorktreeForm({ projectDir })}
+        >
+          New worktree session
+        </button>
+      </HeaderPortal>
 
       {loading ? (
         <WorktreesTableSkeleton rows={3} />

@@ -86,6 +86,9 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 		}
 	}()
 
+	// OpenCode emits session.status idle followed by session.idle. Keep the
+	// idle notification, but consume the already-broadcast status just once.
+	idleStatusBroadcast := make(map[string]bool)
 	tee := &Tee{
 		W: io.Discard,
 		OnPermission: func(sessionID, permissionID, permission string, patterns []string, metadata map[string]any) {
@@ -133,6 +136,11 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 		},
 		OnSessionStatus: func(sessionID, statusType string) {
 			w.markSessionDirtyIfKnown(sessionID)
+			if statusType == "idle" {
+				idleStatusBroadcast[sessionID] = true
+			} else {
+				delete(idleStatusBroadcast, sessionID)
+			}
 			if ocAdapter == nil {
 				return
 			}
@@ -142,9 +150,11 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 		},
 		OnSessionIdle: func(sessionID string) {
 			w.markSessionDirtyIfKnown(sessionID)
-			if ocAdapter != nil && ocAdapter.ObserveSessionStatus(port, statusGeneration, sessionID, "idle") {
+			if ocAdapter != nil && !idleStatusBroadcast[sessionID] {
+				ocAdapter.ObserveSessionStatus(port, statusGeneration, sessionID, "idle")
 				w.broadcastSessionStatus(ocAdapter, port, sessionID, "idle")
 			}
+			delete(idleStatusBroadcast, sessionID)
 			if w.svc != nil && w.svc.deps.BroadcastSessionIdle != nil {
 				w.svc.deps.BroadcastSessionIdle(string(opencode.PlatformID), sessionID)
 			}

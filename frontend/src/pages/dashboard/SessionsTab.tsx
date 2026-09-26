@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { cleanTitle, fuzzyMatch } from '../../lib/format';
 import { usePageTitle } from '../../lib/headerContext';
 import { SessionTable } from '../../components/SessionTable';
+import { TimeRangeControl } from '../../components/TimeRangeControl';
+import { InlineAlert } from '../../components/InlineAlert';
 import { matchesScope } from '../../lib/projectTree';
 import { useUiStore } from '../../lib/uiStore';
 import { useDashboard as useDashboardCtx } from './context';
@@ -25,10 +27,9 @@ export function SessionsTab() {
   return (
     <>
       {sessionsError && (
-        <div className="oc-error-banner">
+        <InlineAlert onRetry={() => loadSessions()} retrying={sessionsLoading}>
           {sessionsError}
-          <button onClick={() => loadSessions()}>Retry</button>
-        </div>
+        </InlineAlert>
       )}
       <DashboardToolbar
         projects={projects}
@@ -43,13 +44,7 @@ export function SessionsTab() {
         onAction={openProjectSessionPalette}
       />
       <div className="oc-time-range">
-        {[{label: '12h', value: 12}, {label: '24h', value: 24}, {label: '7d', value: 168}, {label: '30d', value: 720}, {label: 'All', value: 0}].map((opt) => (
-          <button
-            key={opt.value}
-            className={`oc-time-range-btn${timeRange === opt.value ? ' active' : ''}`}
-            onClick={() => setTimeRange(opt.value)}
-          >{opt.label}</button>
-        ))}
+        <TimeRangeControl value={timeRange} onChange={setTimeRange} />
         <button
           className={`oc-time-range-btn${showArchived ? ' active' : ''}`}
           onClick={() => setShowArchived(!showArchived)}

@@ -1,5 +1,6 @@
 import type { PermissionRule } from '../lib/api.types';
 import { PERMISSION_MODES, classifyPermissionMode } from '../lib/permissionModes';
+import { ButtonGroup, SelectField, TextField } from './Control';
 import './PermissionRulesEditor.css';
 
 const KNOWN_PERMISSIONS = ['*', 'bash', 'edit', 'external_directory'];
@@ -39,7 +40,7 @@ export function PermissionRulesEditor({ rules, onChange, disabled }: Props) {
   return (
     <div className="perm-rules-editor" aria-label="Permission rules">
       {/* Preset strip */}
-      <div className="perm-rules-presets" role="group" aria-label="Permission presets">
+      <ButtonGroup label="Permission presets">
         {PERMISSION_MODES.map((mode) => (
           <button
             key={mode.id}
@@ -57,7 +58,7 @@ export function PermissionRulesEditor({ rules, onChange, disabled }: Props) {
             Custom
           </span>
         )}
-      </div>
+      </ButtonGroup>
 
       {/* Rule rows */}
       {rules.length > 0 && (
@@ -75,8 +76,9 @@ export function PermissionRulesEditor({ rules, onChange, disabled }: Props) {
               <div key={i} className={`perm-rules-row${err ? ' perm-rules-row--invalid' : ''}`} role="listitem">
                 {/* Permission */}
                 <div className="perm-rules-cell">
-                  <input
+                  <TextField
                     aria-label={`Rule ${i + 1} permission`}
+                    aria-invalid={!rule.permission.trim()}
                     list={`perm-permissions-${i}`}
                     value={rule.permission}
                     disabled={disabled}
@@ -90,8 +92,9 @@ export function PermissionRulesEditor({ rules, onChange, disabled }: Props) {
 
                 {/* Pattern */}
                 <div className="perm-rules-cell">
-                  <input
+                  <TextField
                     aria-label={`Rule ${i + 1} pattern`}
+                    aria-invalid={!rule.pattern.trim()}
                     value={rule.pattern}
                     disabled={disabled}
                     placeholder="*"
@@ -101,8 +104,9 @@ export function PermissionRulesEditor({ rules, onChange, disabled }: Props) {
 
                 {/* Action */}
                 <div className="perm-rules-cell">
-                  <select
+                  <SelectField
                     aria-label={`Rule ${i + 1} action`}
+                    aria-invalid={!ACTIONS.includes(rule.action as (typeof ACTIONS)[number])}
                     value={rule.action}
                     disabled={disabled}
                     onChange={(e) => setRule(i, { action: e.target.value as PermissionRule['action'] })}
@@ -110,7 +114,7 @@ export function PermissionRulesEditor({ rules, onChange, disabled }: Props) {
                     {ACTIONS.map((a) => (
                       <option key={a} value={a}>{a}</option>
                     ))}
-                  </select>
+                  </SelectField>
                 </div>
 
                 {/* Remove */}

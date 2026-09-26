@@ -45,3 +45,16 @@ it.each([false, true])('shows matching session metadata, with optional platform 
   expect(container.querySelector('#header-mobile-title-slot')).toBeInTheDocument();
   expect(container.querySelector('#header-actions-slot')).toBeInTheDocument();
 });
+
+it.each([
+  ['/project/%2Frepos%2Focman', 'repos/ocman'],
+  ['/project/%2Frepos%2Focman/worktrees', 'repos/ocman / Worktrees'],
+])('labels project route %s with the project label', (path, title) => {
+  render(
+    <MemoryRouter initialEntries={[path]}>
+      <AppHeader onOpenNav={vi.fn()} />
+    </MemoryRouter>,
+  );
+  expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(title);
+  expect(screen.getByText('repos/ocman')).toHaveAttribute('title', '/repos/ocman');
+});

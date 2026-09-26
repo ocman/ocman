@@ -289,7 +289,7 @@ within stable one-minute buckets, with reduced-motion-aware reorder animation.
 
 ```mermaid
 flowchart TD
-    Pages[pages/<br/>routes] --> Comp[components/<br/>~80 components]
+    Pages[pages/<br/>routes] --> Comp[components/<br/>shared controls + feature UI]
     Pages --> Stores[Client state<br/>TanStack Query + Zustand]
     Comp --> Stores
     Comp -->|plugin Settings + palette actions: explicit ownerId| API
@@ -305,6 +305,24 @@ flowchart TD
     Comp --> Speech[Browser speech synthesis<br/>local or online voice]
 ```
 
+- **Shared controls.** `Control` provides buttons, button groups, text inputs,
+  textareas, search inputs, and selects with native form semantics and shared
+  focus, disabled, and invalid styles. `IconButton`, `RefreshButton`, and
+  `CopyButton` add action feedback; copying is confirmed only after success.
+  `Pagination` shares previous/next controls while callers own indexing, page
+  boundaries, totals, and requests.
+- **Selection and overlays.** `SegmentedControl` uses native radios for filters.
+  `Tabs` and `DropdownMenu` wrap Radix UI for keyboard navigation, focus, and
+  accessible associations, styled with the app's CSS. Tabs activate on click,
+  Enter, or Space and unmount inactive content by default. Menu actions that open
+  dialogs wait for the menu to restore focus so the dialog records a stable
+  opener. `ModalHeader` and `ModalFooter` compose the existing `Modal`,
+  `IconButton`, and `ButtonGroup`; `Modal` retains dismissal and focus handling.
+- **Loading and errors.** `LoadingState` pairs a decorative `Spinner` with one
+  status announcement and respects reduced-motion preferences. Structured
+  skeletons remain separate. `InlineAlert` announces errors and can show a
+  busy-aware retry button; `EmptyState` renders empty messages. Callers own
+  loading, stale-data, error, and empty-state decisions.
 - **Capability gating.** The UI never branches on platform identity. Features
   toggle via `/api/capabilities`, enforced by a lint script.
 - **Read aloud.** Turn-end controls select original final-answer text parts and

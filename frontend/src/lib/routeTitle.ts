@@ -1,3 +1,5 @@
+import { shortPath } from './format';
+
 const TITLES: Record<string, string> = {
   '/': 'Home',
   '/sessions': 'Sessions',
@@ -22,10 +24,16 @@ export function routeTitle(path: string, sessionTitle?: string): string {
     const id = decodeURIComponent(path.slice('/session/'.length).split('/')[0]);
     return sessionTitle || (id === 'new' ? 'New session' : 'Session');
   }
-  if (path.startsWith('/project/')) {
-    const dir = decodeURIComponent(path.slice('/project/'.length).split('/')[0]);
-    const name = dir.split('/').pop() || 'Project';
+  const dir = routeProjectDir(path);
+  if (dir !== undefined) {
+    const name = dir.split('/').pop() ? shortPath(dir) : 'Project';
     return path.endsWith('/worktrees') ? `${name} / Worktrees` : name;
   }
   return TITLES[path] || 'ocman';
+}
+
+/** Project directory of a `/project/<dir>[/...]` route, else undefined. */
+export function routeProjectDir(path: string): string | undefined {
+  if (!path.startsWith('/project/')) return undefined;
+  return decodeURIComponent(path.slice('/project/'.length).split('/')[0]);
 }

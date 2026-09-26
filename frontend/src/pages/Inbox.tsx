@@ -4,9 +4,12 @@ import { Button, SearchField } from '../components/Control';
 import { PermissionPrompt } from '../components/session/PermissionPrompt';
 import { MarkdownContent } from '../components/assistant/MarkdownText';
 import { RelativeTime } from '../components/RelativeTime';
+import { SegmentedControl } from '../components/SegmentedControl';
+import { EmptyState } from '../components/EmptyState';
 import { useArchiveAllReadInboxItems, useArchiveInboxItems, useInbox, useMarkInboxItemRead, useMarkInboxItemUnread, useRespondInboxPermission } from '../lib/queries';
 import type { InboxItem } from '../lib/api';
 import { fuzzyMatch } from '../lib/format';
+import { useClickOutside } from '../lib/useClickOutside';
 import { useShortcut } from '../lib/shortcutRegistry';
 import './Inbox.css';
 
@@ -59,6 +62,9 @@ export function Inbox() {
   const [search, setSearch] = useState('');
   const query = useDeferredValue(search.trim());
   const actions = useRef<HTMLDetailsElement>(null);
+  // Safari doesn't focus a clicked button, so blur carries no relatedTarget;
+  // outside clicks are detected here instead of in onBlur.
+  useClickOutside(actions, true, () => actions.current?.removeAttribute('open'));
   const [searchParams, setSearchParams] = useSearchParams();
   const activeCategory = searchParams.get('category') ?? 'all';
   const items = inbox.data ? inbox.data.items : [];
@@ -129,20 +135,11 @@ export function Inbox() {
         <div className="inbox-filters">
           <div className="inbox-filter-row">
             <SearchField aria-label="Search inbox" placeholder="Search inbox…" value={search} onChange={(event) => { setSearch(event.target.value); setActiveKey(null); }} />
-            <div className="inbox-types" role="group" aria-label="Message status">
-              {filters.map(({ id, label, icon }) => <Button key={id} type="button" size="small" title={label} aria-label={label} variant={filter === id ? 'accent' : 'default'} aria-pressed={filter === id} onClick={() => { setFilter(id); setActiveKey(null); setSelected(new Set()); }}>
-                <i className={`bi bi-${icon}`} aria-hidden="true" />{filter === id && <span>{label}</span>}
-              </Button>)}
-            </div>
+            <SegmentedControl label="Message status" compact options={filters.map(({ id, label, icon }) => ({ value: id, label, icon: `bi-${icon}` }))} value={filter} onChange={(id) => { setFilter(id); setActiveKey(null); setSelected(new Set()); }} />
           </div>
           <div className="inbox-filter-row">
-            <div className="inbox-types" role="group" aria-label="Message type">
-              {categories.map(({ id, label, icon }) => <Button key={id} type="button" size="small" title={label} aria-label={label} aria-pressed={activeCategory === id} variant={activeCategory === id ? 'accent' : 'default'} onClick={() => selectCategory(id)}>
-                <i className={`bi bi-${icon}`} aria-hidden="true" />
-                {activeCategory === id && <span>{label}</span>}
-              </Button>)}
-            </div>
-            <details className="inbox-action-menu" ref={actions} onKeyDown={(event) => { if (event.key === 'Escape') event.currentTarget.open = false; }} onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }}>
+            <SegmentedControl label="Message type" compact options={categories.map(({ id, label, icon }) => ({ value: id, label, icon: `bi-${icon}` }))} value={activeCategory} onChange={selectCategory} />
+            <details className="inbox-action-menu" ref={actions} onKeyDown={(event) => { if (event.key === 'Escape') event.currentTarget.open = false; }} onBlur={(event) => { if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }}>
               <summary className="oc-button oc-button--default oc-button--small" aria-label="Inbox actions" title="Inbox actions"><i className="bi bi-three-dots" aria-hidden="true" /></summary>
               <div className="inbox-action-menu-items">
                 <Button type="button" size="small" disabled={!selectedItems.length || archive.isPending} onClick={archiveSelected}><i className="bi bi-archive" aria-hidden="true" />Archive selected{selectedItems.length > 0 && ` (${selectedItems.length})`}</Button>
@@ -154,7 +151,7 @@ export function Inbox() {
         <div className="inbox-list">
           {inbox.isLoading && <p className="oc-empty" role="status">Loading inbox…</p>}
           {inbox.isError && <p className="oc-empty" role="alert">Could not load inbox.</p>}
-          {inbox.isSuccess && !visibleItems.length && <p className="oc-empty">{items.length ? 'No messages match these filters.' : archived ? 'No archived messages.' : 'Your inbox is empty.'}</p>}
+          {inbox.isSuccess && !visibleItems.length && <EmptyState>{items.length ? 'No messages match these filters.' : archived ? 'No archived messages.' : 'Your inbox is empty.'}</EmptyState>}
           {visibleItems.map((item) => <article key={itemKey(item)} className={`inbox-message${item.readAt ? '' : ' unread'}${activeKey === itemKey(item) ? ' active' : ''}`}>
             {/* The category icon doubles as the selection checkbox: clicking it
                 swaps in a check mark, so no separate checkbox column is needed. */}

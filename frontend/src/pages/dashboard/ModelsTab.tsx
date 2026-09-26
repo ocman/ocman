@@ -27,7 +27,7 @@ export function ModelsTab() {
   const modelOptions = [{ value: '', label: 'All models' }, ...models.map((item) => ({ value: `${item.provider}/${item.model}`, label: item.model, icon: <ModelLogo model={`${item.provider}/${item.model}`} /> }))];
 
   return (
-    <div className="metrics-page">
+    <div>
       <AnalyticsFilters days={days} onDaysChange={setDays} model={model} onModelChange={setModel} modelOptions={modelOptions} />
       {errors.map((error) => <div key={error.message} className="oc-error-banner">{error.message}</div>)}
       <div className="analytics-chart-pair">

@@ -1,13 +1,10 @@
 /* UpstreamPane styling — matches the dashboard's tab / filter design:
- *   - Internal tabs use the .nav-tab look (underline active indicator,
- *     accent color, sans-serif 13px scaled down a touch for the
- *     right-panel context).
+ *   - Internal tabs use the shared Tabs component.
  *   - Filter pills use the .oc-time-range-btn look (bordered, square
  *     corners, 11px monospace, accent border + text on active).
  *   - Catppuccin tokens (var(--accent), var(--text-dim), var(--border))
  *     keep colors consistent with the rest of the app.
  *
- * Kept self-contained so the feature can be lifted wholesale.
  */
 
 .oc-upstream-pane {
@@ -19,38 +16,11 @@
   font-size: 13px;
 }
 
-/* ---- Internal tabs (PRs / Issues) ---- */
-
-.oc-upstream-tabs {
+.oc-upstream-panel:not([hidden]) {
   display: flex;
-  gap: 0;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.oc-upstream-tab {
-  position: relative;
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  padding: 8px 16px;
-  color: var(--text-dim);
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.2px;
-  transition: color 0.15s;
-}
-
-.oc-upstream-tab:hover {
-  color: var(--text);
-}
-
-.oc-upstream-tab.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* ---- Tab content (scrollable) ---- */
@@ -528,36 +498,10 @@ a.oc-upstream-ci-check-name:hover {
 /* ---- Pagination ---- */
 
 .oc-upstream-pagination {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
   padding: 8px 10px;
-  font-family: 'SF Mono', Consolas, monospace;
   font-size: 11px;
-  color: var(--text-dim);
   border-top: 1px solid var(--border);
-}
-
-.oc-upstream-pagination button {
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 0;
-  color: var(--text-dim);
-  padding: 3px 10px;
-  cursor: pointer;
-  font-family: 'SF Mono', Consolas, monospace;
-  font-size: 11px;
-  transition: all 0.15s;
-}
-
-.oc-upstream-pagination button:hover:not(:disabled) {
-  color: var(--text);
-  border-color: var(--overlay0);
-}
-
-.oc-upstream-pagination button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 
 /* ---- Empty / no-upstream ---- */
@@ -695,38 +639,6 @@ a.oc-upstream-ci-check-name:hover {
 .oc-upstream-launch-chevron:disabled {
   opacity: 0.6;
   cursor: not-allowed;
-}
-
-.oc-upstream-launch-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  list-style: none;
-  padding: 4px 0;
-  margin: 0;
-  background: var(--surface0);
-  border: 1px solid var(--border);
-  border-radius: 0;
-  z-index: 10;
-  min-width: 14em;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-}
-
-.oc-upstream-launch-menu button {
-  display: block;
-  width: 100%;
-  background: none;
-  border: none;
-  color: var(--text);
-  text-align: left;
-  padding: 6px 12px;
-  cursor: pointer;
-  font-family: inherit;
-  font-size: 12px;
-}
-
-.oc-upstream-launch-menu button:hover {
-  background: var(--surface1);
 }
 
 .oc-upstream-launch-hint {

@@ -2,7 +2,10 @@ import { usePageTitle } from '../lib/headerContext';
 import { useSubscriptionUsage } from '../lib/queries';
 import { formatSubscriptionResetDate, timeUntilISO } from '../lib/format';
 import type { SubscriptionProviderUsage } from '../lib/api';
-import { Button } from '../components/Control';
+import { RefreshButton } from '../components/RefreshButton';
+import { InlineAlert } from '../components/InlineAlert';
+import { EmptyState } from '../components/EmptyState';
+import { LoadingState } from '../components/LoadingState';
 
 const STATUS_LABELS: Record<string, string> = {
   expired: 'OpenCode token expired',
@@ -59,16 +62,15 @@ export function SubscriptionUsageContent({ compact = false }: { compact?: boolea
           {compact ? <h2>Subscription usage</h2> : <h1>Subscription usage</h1>}
           <p>Current limits reported for OAuth subscriptions connected to OpenCode.</p>
         </div>
-        <Button size="small" onClick={() => void usage.refetch()} disabled={usage.isFetching}>Refresh</Button>
+        <RefreshButton size="small" variant="default" onClick={() => void usage.refetch()} loading={usage.isFetching} />
       </div>
       {usage.error instanceof Error && (
-        <div className="oc-error-banner" role="alert">
+        <InlineAlert onRetry={() => void usage.refetch()} retrying={usage.isFetching}>
           {usage.error.message}
-          <button type="button" onClick={() => void usage.refetch()}>Retry</button>
-        </div>
+        </InlineAlert>
       )}
-      {usage.isLoading && !usage.data && <div className="oc-list-loading" role="status"><span className="oc-spinner" />Loading subscription usage</div>}
-      {usage.data?.providers.length === 0 && <div className="oc-empty">No OpenCode subscription credentials found.</div>}
+      {usage.isLoading && !usage.data && <LoadingState>Loading subscription usage</LoadingState>}
+      {usage.data?.providers.length === 0 && <EmptyState>No OpenCode subscription credentials found.</EmptyState>}
       {usage.data && usage.data.providers.length > 0 && (
         <div className="subscription-grid">
           {usage.data.providers.map((provider) => <ProviderCard provider={provider} compact={compact} key={provider.id} />)}

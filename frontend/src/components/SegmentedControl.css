@@ -1,0 +1,8 @@
+.oc-segmented-control { display: inline-flex; flex-shrink: 0; }
+.oc-segmented-option { position: relative; }
+.oc-segmented-option + .oc-segmented-option { margin-left: -1px; }
+.oc-segmented-option input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; z-index: 3; cursor: pointer; }
+.oc-segmented-option .oc-button { min-width: 28px; }
+.oc-segmented-option i { font-size: 14px; }
+.oc-segmented-option input:checked + .oc-button { position: relative; z-index: 1; background: color-mix(in srgb, var(--accent) 12%, var(--bg)); }
+.oc-segmented-option input:focus-visible + .oc-button { position: relative; z-index: 2; outline: 2px solid var(--accent); outline-offset: 2px; }

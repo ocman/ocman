@@ -5,11 +5,6 @@
 .inbox-filters { display: grid; gap: 8px; padding: 12px; border-bottom: 1px solid var(--border); }
 .inbox-filter-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
 .inbox-filter-row .oc-field { flex: 1; width: 0; height: 28px; padding: 0 8px; font-size: 12px; }
-.inbox-types { display: flex; flex-shrink: 0; }
-.inbox-types .oc-button { width: 28px; height: 28px; padding: 0; font-size: 14px; }
-.inbox-types .oc-button + .oc-button { margin-left: -1px; }
-.inbox-types .oc-button[aria-pressed="true"] { position: relative; width: auto; padding: 0 10px; background: color-mix(in srgb, var(--accent) 12%, var(--bg)); }
-.inbox-types .oc-button span { font-size: 12px; }
 .inbox-action-menu { position: relative; flex-shrink: 0; }
 .inbox-action-menu > summary { width: 28px; padding: 0; list-style: none; }
 .inbox-action-menu > summary::-webkit-details-marker { display: none; }

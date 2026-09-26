@@ -1,7 +1,9 @@
 import { test, expect } from './fixtures';
 import type { PluginActionRequest } from '../src/lib/plugins';
 
-test('plugin actions: discovery, confirmation, results, and unavailable invocation', async ({ mockedPage: page }) => {
+test('plugin actions: discovery, confirmation, results, and unavailable invocation', async ({ mockedPage: page, browserName }) => {
+  // WebKit on macOS only tabs to buttons with Alt+Tab (no Full Keyboard Access).
+  const tab = browserName === 'webkit' ? 'Alt+Tab' : 'Tab';
   const requests: PluginActionRequest[] = [];
   await page.route('/api/plugins/actions?*', (route) => route.fulfill({ json: [
     { pluginId: 'org.example.report', ownerId: 'local', scope: 'hub', action: { id: 'report', label: 'Create report', placement: 'global' } },
@@ -35,9 +37,9 @@ test('plugin actions: discovery, confirmation, results, and unavailable invocati
   const dialog = page.getByRole('dialog', { name: 'Create report' });
   await expect(dialog.getByText('Create a report for this context?')).toBeVisible();
   expect(requests).toHaveLength(1);
-  await page.keyboard.press('Tab');
+  await page.keyboard.press(tab);
   await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
-  await page.keyboard.press('Tab');
+  await page.keyboard.press(tab);
   await expect(dialog.getByRole('button', { name: 'Confirm' })).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(dialog.getByText('Report ready')).toBeVisible();

@@ -42,8 +42,9 @@ for (const width of [1280, 390]) {
     await page.screenshot({ path: testInfo.outputPath('factory-drawer.png') });
     // A drawer's semantic header must not acquire the shell's fixed height
     // or native-window drag region, including when its title wraps.
-    const drawerHeader = heading.locator('..');
-    await expect(drawerHeader).toHaveCSS('height', '49px');
+    const drawerHeader = page.getByRole('dialog', { name: 'Create epic' }).getByTestId('modal-header');
+    await expect(drawerHeader).toHaveCSS('padding-bottom', '16px');
+    expect((await drawerHeader.boundingBox())!.height).toBeGreaterThan((await heading.boundingBox())!.height + 16);
     await page.evaluate(() => document.body.classList.add('wails-app'));
     expect(await drawerHeader.evaluate((element) => getComputedStyle(element).getPropertyValue('--wails-draggable'))).toBe('');
   });

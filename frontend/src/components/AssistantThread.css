@@ -403,10 +403,11 @@
   transition: opacity 0.15s;
   z-index: 1;
 }
-.oc-md .oc-code-block:hover .oc-code-copy { opacity: 1; }
+.oc-md .oc-code-block:hover .oc-code-copy, .oc-md .oc-code-copy:focus-visible,
+.oc-md .oc-code-copy[aria-busy="true"] { opacity: 1; }
 .oc-md .oc-code-copy:hover { color: var(--text); background: var(--surface2); }
-.oc-md .oc-code-copy--copied,
-.oc-md .oc-code-copy--copied:hover { color: var(--accent2); background: var(--surface1); opacity: 1; }
+.oc-md .oc-code-copy[data-copy-state="copied"] { color: var(--accent2); background: var(--surface1); opacity: 1; }
+.oc-md .oc-code-copy[data-copy-state="error"] { color: var(--danger); opacity: 1; }
 .oc-md .oc-mermaid { display: block; width: 100%; margin: 8px 0; padding: 12px 14px; overflow-x: auto; color: inherit; font: inherit; text-align: initial; background: rgba(0, 0, 0, 0.35); border: 1px solid var(--border); cursor: zoom-in; }
 .oc-md .oc-mermaid svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
 .oc-mermaid-modal-backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; padding: 12px; background: rgba(0, 0, 0, 0.75); }

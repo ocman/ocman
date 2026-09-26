@@ -1,0 +1,11 @@
+.oc-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  height: auto;
+  padding: 0;
+}
+
+.oc-modal-header h2 { margin: 0; }
+.oc-modal-header > .oc-icon-button { flex-shrink: 0; }

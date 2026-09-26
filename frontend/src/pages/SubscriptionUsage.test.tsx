@@ -82,26 +82,70 @@ describe('SubscriptionUsage', () => {
 
   it('shows provider errors and retries the request', () => {
     const refetch = vi.fn();
-    vi.mocked(useSubscriptionUsage).mockReturnValue({
+    const result = {
       data: { providers: [{ id: 'anthropic', name: 'Anthropic', status: 'rate_limited', windows: [] }] },
       error: new Error('Could not load subscription usage.'),
       refetch,
-    } as never);
+      isFetching: false,
+    };
+    vi.mocked(useSubscriptionUsage).mockReturnValue(result as never);
 
-    render(<SubscriptionUsage />);
+    const { rerender } = render(<SubscriptionUsage />);
     expect(screen.getByText('Temporarily rate limited')).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('Could not load subscription usage.');
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(refetch).toHaveBeenCalledOnce();
+    vi.mocked(useSubscriptionUsage).mockReturnValue({ ...result, isFetching: true } as never);
+    rerender(<SubscriptionUsage />);
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Retry' })).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('heading', { name: 'Anthropic' })).toBeInTheDocument();
+    expect(screen.queryByText('Loading subscription usage')).not.toBeInTheDocument();
   });
 
   it('shows loading and empty states', () => {
     vi.mocked(useSubscriptionUsage).mockReturnValue({ isLoading: true } as never);
     const { rerender } = render(<SubscriptionUsage />);
     expect(screen.getByRole('status')).toHaveTextContent('Loading subscription usage');
+    expect(screen.getByRole('status').firstElementChild).toHaveAttribute('aria-hidden', 'true');
 
     vi.mocked(useSubscriptionUsage).mockReturnValue({ data: { providers: [] } } as never);
     rerender(<SubscriptionUsage />);
     expect(screen.getByText('No OpenCode subscription credentials found.')).toBeInTheDocument();
+    expect(screen.queryByText('Loading subscription usage')).not.toBeInTheDocument();
+  });
+
+  it('keeps existing quota data visible while loading', () => {
+    vi.mocked(useSubscriptionUsage).mockReturnValue({
+      isLoading: true,
+      isFetching: true,
+      data: { providers: [{ id: 'openai', name: 'OpenAI', status: 'ok', windows: [
+        { name: '5 hours', usedPercent: 10 },
+      ] }] },
+    } as never);
+    render(<SubscriptionUsage />);
+    expect(screen.getByRole('progressbar', { name: 'OpenAI 5 hours usage' })).toHaveValue(10);
+    expect(screen.queryByText('Loading subscription usage')).not.toBeInTheDocument();
+  });
+
+  it('refreshes usage and exposes the fetching state on the shared control', () => {
+    const refetch = vi.fn();
+    vi.mocked(useSubscriptionUsage).mockReturnValue({ refetch, isFetching: false } as never);
+    const { rerender } = render(<SubscriptionUsage />);
+    const button = screen.getByRole('button', { name: 'Refresh' });
+    fireEvent.click(button);
+    expect(refetch).toHaveBeenCalledOnce();
+
+    vi.mocked(useSubscriptionUsage).mockReturnValue({ refetch, isFetching: true } as never);
+    rerender(<SubscriptionUsage />);
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    fireEvent.click(button);
+    expect(refetch).toHaveBeenCalledOnce();
+
+    vi.mocked(useSubscriptionUsage).mockReturnValue({ refetch, isFetching: false } as never);
+    rerender(<SubscriptionUsage />);
+    expect(button).toBeEnabled();
+    expect(button).toHaveAttribute('aria-busy', 'false');
   });
 });

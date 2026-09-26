@@ -3,7 +3,7 @@
 //
 // One reducer, one effect keyed on session id. On mount the hook
 // fetches `/api/session/{id}`, opens `/api/session/{id}/events`, and
-// dispatches every SSE message through the reducer. On error it
+// batches SSE messages through the reducer. On error it
 // closes the source and schedules a reconnect via the existing
 // `sseBackoff` schedule; on successful reconnect it refetches so
 // the gap is healed in one shot.
@@ -24,13 +24,11 @@ import { api, type Message, type Part, type SessionDetail } from '../../lib/api'
 import { useApiStore } from '../../lib/apiStore';
 import {
   initialSessionView,
-  reduceSessionView,
   seedDeltaOwnedFields,
   type SessionView,
-  type SseEvent,
 } from '../../lib/sessionReducer';
 import { computeReconnectDelay } from './sseBackoff';
-import { truncateSseData } from '../../lib/sseHelpers';
+import { createSessionSse, reduceBatchedSessionView } from './sessionSse';
 import { remoteLog } from '../../lib/remoteLog';
 import { useActivityScope } from '../../lib/activityScopes';
 
@@ -135,21 +133,8 @@ export interface UseSessionResult extends SessionView {
 }
 
 const DEFAULT_PAGE_SIZE = 30;
-const DEBUG_RING_SIZE = 50;
 /** Trailing debounce for the session-cache mirror (#460). */
 const CACHE_MIRROR_DEBOUNCE_MS = 500;
-
-function normalizeSseEnvelope(event: SseEvent): SseEvent {
-  if (event.properties) return event;
-  const raw = event as unknown as Record<string, unknown>;
-  const payload = raw.payload;
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return event;
-  const payloadEvent = payload as Record<string, unknown>;
-  if (typeof payloadEvent.type === 'string' && payloadEvent.properties && typeof payloadEvent.properties === 'object') {
-    return payloadEvent as unknown as SseEvent;
-  }
-  return { ...event, properties: payload as Record<string, unknown> };
-}
 
 /**
  * Default fetcher — wraps `api.session`. Pagination shape mirrors
@@ -246,7 +231,7 @@ export function useSession(
       }
     : initialSessionView(sessionId ?? '');
 
-  const [view, dispatch] = useReducer(reduceSessionView, initialView);
+  const [view, dispatch] = useReducer(reduceBatchedSessionView, initialView);
   const [status, setStatus] = useState<UseSessionStatus>(cached ? 'live' : 'loading');
   const [loading, setLoading] = useState<boolean>(!cached);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -470,31 +455,6 @@ export function useSession(
     let hasConnectedOnce = false;
     let reconnectingAfterError = false;
 
-    // Refetch trigger for `session.diff` events. The server emits
-    // these when an edit/write tool's `state.metadata.filediff` is
-    // ready; without a fast refetch the user sees an empty tool
-    // block until `session.idle` lands at end-of-turn. We
-    // intentionally fire immediately (not debounced) so the block
-    // populates as soon as the diff is ready, even mid-turn. The
-    // doFetch() AbortController guarantees that overlapping diff
-    // events cancel the previous in-flight fetch — at most one
-    // request is ever pending.
-    const scheduleDiffRefetch = () => {
-      if (cancelled) return;
-      void doFetch('reconcile');
-    };
-
-    const markPartResourcesDirty = (event: SseEvent) => {
-      if (event.type !== 'message.part.updated') return;
-      const part = event.properties?.part as Record<string, unknown> | undefined;
-      if (!part || part.type !== 'tool') return;
-      const tool = part.tool as string | undefined;
-      if (tool === 'edit' || tool === 'write' ||
-          tool === 'mcp_edit' || tool === 'mcp_write' || tool === 'mcp_Edit' || tool === 'mcp_Write') {
-        setChangesDirtyTick((t) => t + 1);
-      }
-    };
-
     /**
      * Fetch the session detail and dispatch a load. `mode` controls
      * whether the load replaces state wholesale or reconciles
@@ -517,7 +477,8 @@ export function useSession(
       abortRef.current = controller;
       try {
         const detail = await fetchSession(sessionId, pageSize, 0, controller.signal, routedPlatform);
-        if (cancelled || controller.signal.aborted) return;
+        if (cancelled || controller.signal.aborted) return false;
+        events.flush();
         dispatch({ type: 'load', view: viewFromDetail(sessionId, detail), mode });
         setTotalMessages(detail.totalMessages || detail.session.messageCount || 0);
         setLoadError(null);
@@ -540,20 +501,30 @@ export function useSession(
         // yet flipped to `live`.
         setStatus((prev) => (prev === 'loading' ? 'live' : prev));
         setLoading(false);
+        return true;
       } catch (err) {
-        if (cancelled || controller.signal.aborted) return;
-        if (err instanceof DOMException && err.name === 'AbortError') return;
+        if (cancelled || controller.signal.aborted) return false;
+        if (err instanceof DOMException && err.name === 'AbortError') return false;
         setLoadError(err instanceof Error ? err.message : 'Failed to load session');
         setStatus('error');
         setLoading(false);
+        return false;
       }
     };
+
+    const events = createSessionSse({
+      sessionId,
+      dispatch,
+      reconcile: () => doFetch('reconcile'),
+      dirty: () => setChangesDirtyTick((t) => t + 1),
+      debug: debug ? (rows) => setSseDebugEvents((prev) => [...prev, ...rows].slice(-50)) : undefined,
+    });
 
     // The public `reload()` is for user-explicit retry. Use the
     // wholesale-replace mode so the user sees a true authoritative
     // refresh (matches the URL-bar refresh affordance the user
     // would otherwise use).
-    reloadRef.current = () => doFetch('replace');
+    reloadRef.current = async () => { await doFetch('replace'); };
 
     const connect = () => {
       if (cancelled) return;
@@ -577,151 +548,10 @@ export function useSession(
         hasConnectedOnce = true;
         reconnectingAfterError = false;
       };
-      evtSource.onmessage = (evt) => {
-        if (cancelled) return;
-        const raw = evt.data || '';
-        if (!raw || !raw.trim()) return;
-        if (debug) {
-          setSseDebugEvents((prev) => {
-            const next = [...prev, { at: Date.now(), event: 'message', data: truncateSseData(raw) }];
-            return next.slice(-DEBUG_RING_SIZE);
-          });
-        }
-        let parsed: SseEvent;
-        try {
-          parsed = normalizeSseEnvelope(JSON.parse(raw) as SseEvent);
-        } catch {
-          return;
-        }
-        // Temporary diagnostic: log every event under ?debug so we
-        // can see the wire shape when the user reports "tool block
-        // doesn't show until refresh". Remove once the issue is
-        // resolved.
-        if (debug) {
-          console.log('[ocman:sse]', parsed.type, parsed.properties);
-        }
-        dispatch({ type: 'sse', event: parsed });
-
-        // Derive bumped/dirtied signals from event type. The
-        // reducer itself stays platform-agnostic; these effects
-        // are SSE-handler-side only.
-        markPartResourcesDirty(parsed);
-        // `session.diff` carries the per-file diff payload for the
-        // right-panel changes view. We bump changesDirtyTick so the
-        // panel refreshes its REST call, and (debounced) trigger a
-        // refetch of /api/session/{id} so any updated tool-part
-        // metadata (state.metadata.filediff on edit/write parts)
-        // lands in the thread without the user having to refresh.
-        // Without this, the user sees "tool blocks don't show until
-        // refresh" — the part exists in messages but its `filediff`
-        // metadata is only filled in on the server after the diff
-        // event lands. See spec/sse-rewrite for the canonical event
-        // table.
-        if (parsed.type === 'session.diff') {
-          setChangesDirtyTick((t) => t + 1);
-          scheduleDiffRefetch();
-        }
-        // `session.idle` and `session.status: idle` request a refetch
-        // (the reducer sets _refetchRequested; we observe via the
-        // event type because we can't read view synchronously here).
-        if (
-          parsed.type === 'session.idle' ||
-          (parsed.type === 'session.status' && isIdleStatus(parsed))
-        ) {
-          void doFetch('reconcile');
-        }
-      };
-      // OpenCode sometimes emits events on named SSE channels in
-      // addition to the default `message` channel. Listen for the
-      // known channel names so we don't silently drop them. The
-      // handler routes everything through the same reducer.
-      const handleNamedEvent = (eventName: string) => (evt: MessageEvent) => {
-        if (cancelled) return;
-        const raw = evt.data || '';
-        if (!raw || !raw.trim()) return;
-        if (debug) {
-          setSseDebugEvents((prev) => {
-            const next = [...prev, { at: Date.now(), event: eventName, data: truncateSseData(raw) }];
-            return next.slice(-DEBUG_RING_SIZE);
-          });
-        }
-        let parsed: SseEvent;
-        try {
-          parsed = normalizeSseEnvelope(JSON.parse(raw) as SseEvent);
-        } catch {
-          return;
-        }
-        // Some servers omit the `type` field when using a named
-        // channel (the event name IS the type). Fill it in so the
-        // reducer's switch matches. Named channels may also send the
-        // raw payload instead of the default-channel envelope; wrap
-        // those shapes into the reducer's expected `properties`
-        // contract so live tool-start snapshots render immediately
-        // rather than waiting for the completed REST snapshot.
-        {
-          const rawPayload = parsed as unknown as Record<string, unknown>;
-          const rawProperties = rawPayload.properties && typeof rawPayload.properties === 'object'
-            ? rawPayload.properties as Record<string, unknown>
-            : null;
-          const rawLooksLikePart = typeof rawPayload.id === 'string' && (
-            typeof rawPayload.messageID === 'string' || typeof rawPayload.messageId === 'string'
-          );
-          const shouldNormalize = !parsed.type || rawLooksLikePart || (
-            eventName === 'message.part.updated' && parsed.type !== eventName
-          );
-          if (shouldNormalize) {
-          if (eventName === 'message.part.updated') {
-            parsed = rawProperties
-              ? { type: eventName, properties: rawProperties }
-              : { type: eventName, properties: { part: rawPayload } };
-          } else {
-            parsed = { type: eventName, properties: rawProperties ?? rawPayload };
-          }
-          }
-        }
-        if (debug) {
-          console.log('[ocman:sse:' + eventName + ']', parsed.type, parsed.properties);
-        }
-        dispatch({ type: 'sse', event: parsed });
-        markPartResourcesDirty(parsed);
-        if (parsed.type === 'ocman.session.changed') {
-          setChangesDirtyTick((t) => t + 1);
-        }
-      };
-      // Known OpenCode named event channels. Do not include the
-      // default `message` channel here: browsers deliver that channel
-      // to both `onmessage` and `addEventListener('message')`, so
-      // registering both appends every live delta twice. Refresh is
-      // unaffected because REST snapshots only go through `doFetch`.
-      [
-        'message.created',
-        'message.updated',
-        'message.part.updated',
-        'message.part.delta',
-        'session.status',
-        'session.idle',
-        'session.diff',
-        'permission',
-        'permission.asked',
-        'permission.replied',
-        'question',
-        'question.asked',
-        'question.replied',
-        'question.rejected',
-        'approval',
-        'tool',
-        'error',
-        'ocman.permission.pending',
-        'ocman.permission.checking',
-        'ocman.permission.flagged',
-        'ocman.permission.auto-approved',
-        'ocman.permission.approved',
-        'ocman.session.changed',
-      ].forEach((name) => {
-        evtSource?.addEventListener(name, handleNamedEvent(name));
-      });
+      events.attach(evtSource);
       evtSource.onerror = () => {
         if (cancelled) return;
+        events.flush();
         reconnectingAfterError = true;
         evtSource?.close();
         evtSource = null;
@@ -752,6 +582,15 @@ export function useSession(
 
     return () => {
       cancelled = true;
+      const pending = events.dispose();
+      // The mirror cleanup has already saved the last rendered view. Preserve
+      // events still waiting for a frame without dispatching into the next session.
+      if (pending.length && viewRef.current.sessionId === sessionId) {
+        const outgoing = reduceBatchedSessionView(viewRef.current, { type: 'sseBatch', events: pending });
+        updateCachedSession(sessionId, (prev) => ({
+          ...prev, messages: outgoing.messages, parts: outgoing.parts,
+        }));
+      }
       abortRef.current?.abort();
       abortRef.current = null;
       loadMoreAbortRef.current?.abort();
@@ -886,19 +725,4 @@ export function useSession(
 
 export function platformMessageCount(messages: Message[]): number {
   return messages.reduce((count, message) => count + (message.data?.role === 'notice' ? 0 : 1), 0);
-}
-
-/**
- * True for `session.status` events whose payload reports idle.
- */
-function isIdleStatus(event: SseEvent): boolean {
-  const props = event.properties;
-  if (!props) return false;
-  const status = props.status;
-  if (typeof status === 'string') return status === 'idle';
-  if (status && typeof status === 'object' && !Array.isArray(status)) {
-    const t = (status as Record<string, unknown>).type;
-    return typeof t === 'string' && t === 'idle';
-  }
-  return false;
 }

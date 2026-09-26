@@ -18,7 +18,7 @@ export function ActivityTab() {
   const errors = queryErrors(activityQ.error, dailyQ.error, hourlyQ.error);
 
   return (
-    <div className="metrics-page">
+    <div>
       <AnalyticsFilters days={days} onDaysChange={setDays} />
       {errors.map((error) => <div key={error.message} className="oc-error-banner">{error.message}</div>)}
       {activityQ.isLoading && !activityQ.data && <ChartSkeletons labels={['Loading activity heatmap']} />}

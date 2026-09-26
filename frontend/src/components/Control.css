@@ -9,9 +9,27 @@
 @media (prefers-reduced-motion: reduce) { .oc-button[aria-busy="true"]::before { animation: none; } }
 .oc-button--accent { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); color: var(--accent); }
 .oc-button--muted { color: var(--text-muted); }
+.oc-button--ghost { border-color: transparent; border-radius: 4px; background: transparent; color: var(--overlay0); }
+.oc-button--ghost:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); border-color: var(--border); }
 .oc-button--link { border-color: transparent; color: var(--text-muted); background: transparent; text-decoration: underline; text-underline-offset: 3px; }
 .oc-button--link:hover { border-color: transparent; color: var(--accent); }
 .oc-button--small { height: 28px; padding: 0 8px; font-size: 12px; }
+.oc-button--compact { height: 22px; padding: 0 4px; font-size: 12px; }
 .oc-button--large { height: 52px; padding: 0 22px; font-size: 16px; font-weight: 700; }
 .oc-field { min-width: 0; padding: 0 12px; }
+.oc-field:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.oc-field:disabled { opacity: .5; cursor: not-allowed; }
+.oc-field:is([aria-invalid="true"], [aria-invalid="grammar"], [aria-invalid="spelling"]) { border-color: var(--danger); }
+.oc-field--textarea { height: auto; padding: 8px 12px; resize: vertical; line-height: 1.5; }
 .oc-field--search::placeholder { color: var(--text-dim); }
+.oc-button.oc-icon-button { aspect-ratio: 1; padding: 0; flex-shrink: 0; }
+.oc-button-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.oc-button-group--joined { flex-wrap: nowrap; gap: 0; border: 1px solid var(--border); }
+.oc-button-group--joined > .oc-button { border: 0; }
+.oc-button-group--joined > .oc-button + .oc-button { border-left: 1px solid var(--border); }
+.oc-copy-button[data-copy-state="copied"] { color: var(--accent2); }
+.oc-copy-button[data-copy-state="error"] { color: var(--danger); }
+.oc-copy-feedback { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.oc-icon-button[aria-busy="true"]::before { content: none; }
+.oc-icon-button[aria-busy="true"] > i { animation: oc-button-spin .8s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .oc-icon-button[aria-busy="true"] > i { animation: none; } }

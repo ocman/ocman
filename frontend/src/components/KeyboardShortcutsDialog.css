@@ -22,11 +22,8 @@
   overflow: hidden;
 }
 
-.oc-shortcuts-header {
-  display: flex;
+.oc-modal-header.oc-shortcuts-header {
   align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
   padding: 18px 20px 14px;
   border-bottom: 1px solid var(--border);
 }
@@ -40,24 +37,6 @@
   margin: 6px 0 0;
   color: var(--text-dim);
   font-size: 13px;
-}
-
-.oc-shortcuts-close {
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-dim);
-  width: 28px;
-  height: 28px;
-  border-radius: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-
-.oc-shortcuts-close:hover {
-  background: var(--bg-hover);
-  color: var(--text);
 }
 
 .oc-shortcuts-body {

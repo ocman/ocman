@@ -1,4 +1,4 @@
-.factory-issue-page { flex: 1; min-width: 0; min-height: 0; overflow: auto; display: grid; align-content: start; gap: 20px; width: 100%; padding: 24px; color: var(--text); }
+.factory-issue-page { flex: 1; min-width: 0; min-height: 0; overflow: auto; display: grid; align-content: start; gap: 20px; width: 100%; color: var(--text); }
 .factory-issue-page nav { display: flex; min-height: 42px; overflow-x: auto; overflow-y: hidden; border-bottom: 1px solid var(--border); }
 .factory-issue-page nav a { flex: 0 0 auto; padding: 10px 16px; border-bottom: 2px solid transparent; margin-bottom: -1px; color: var(--text-dim); font-size: 14px; font-weight: 500; text-decoration: none; }
 .factory-issue-page nav a.active { color: var(--accent); border-bottom-color: var(--accent); }
@@ -38,7 +38,7 @@
 .factory-issue-comments button { justify-self: start; }
 
 @media (max-width: 640px) {
-  .factory-issue-page { gap: 16px; padding: 12px; }
+  .factory-issue-page { gap: 16px; }
   .factory-issue-page nav a { padding-inline: 12px; }
   .factory-issue-drawer { padding: 18px; }
 }

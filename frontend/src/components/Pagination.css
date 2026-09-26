@@ -1,0 +1,11 @@
+.oc-pagination {
+  gap: 10px;
+  font-family: 'SF Mono', Consolas, monospace;
+  color: var(--text-dim);
+}
+
+.oc-pagination > .oc-button {
+  background: transparent;
+  color: inherit;
+  padding-inline: 10px;
+}

@@ -4,7 +4,8 @@ import './RightPanel.css';
 import { useUiStore, type ChangesSidebarTab } from '../lib/uiStore';
 import { ChangesSidebarResizer } from './ChangesSidebarResizer';
 import { FullscreenButton } from './DiffFullscreenModal';
-import { ChangesRefreshButton, SessionChangesSidebar, type PaneSummary } from './SessionChangesSidebar';
+import { SessionChangesSidebar, type PaneSummary } from './SessionChangesSidebar';
+import { RefreshButton } from './RefreshButton';
 import { WorkingTreeChangesSidebar } from './WorkingTreeChangesSidebar';
 import { SessionInfoSidebar } from './SessionInfoSidebar';
 import { UpstreamPane } from './upstream/UpstreamPane';
@@ -790,7 +791,7 @@ function PaneHeader({
       <span className="oc-right-panel-pane-actions">
         {hasFullscreen && <FullscreenButton onClick={onFullscreenClick} disabled={summary.files === 0} />}
         {hasRefresh && (
-          <ChangesRefreshButton onClick={onRefreshClick} loading={loading} />
+          <RefreshButton onClick={onRefreshClick} loading={loading} />
         )}
       </span>
     </div>
