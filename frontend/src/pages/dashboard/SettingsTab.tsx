@@ -10,6 +10,7 @@ import { useUiStore } from '../../lib/uiStore';
 import { useApiStore } from '../../lib/apiStore';
 import { usePwaInstall } from '../../lib/usePwaInstall';
 import { SettingRow } from '../../components/SettingRow';
+import { LinkPreviewSettings } from '../../components/LinkPreviewSettings';
 import { NotificationsSection, SessionsSection } from './SettingsSections';
 import { AutoApproveSection } from './AutoApproveSection';
 
@@ -50,6 +51,7 @@ export function SettingsTab() {
     { id: 'auto-approve', label: 'Auto-approve', show: true },
     { id: 'sharing', label: 'Sharing', show: true },
     { id: 'templates', label: 'PR & Issue templates', show: true },
+    { id: 'link-previews', label: 'Link previews', show: true },
     { id: 'maintenance', label: 'Maintenance', show: true },
     { id: 'app', label: 'App', show: showAppSection },
     { id: 'account', label: 'Account', show: authRequired },
@@ -123,6 +125,13 @@ export function SettingsTab() {
             <PromptTemplateSettings />
           </SettingRow>
         </div>
+
+        {active === 'link-previews' && <div className="settings-section">
+          <h2 className="settings-section-title">Link previews</h2>
+          <SettingRow block label="Custom link rules" desc="Create link cards for ticket IDs and other text patterns.">
+            <LinkPreviewSettings />
+          </SettingRow>
+        </div>}
 
         {showAppSection && (
           <div className="settings-section" hidden={active !== 'app'}>

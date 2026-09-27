@@ -11,6 +11,8 @@ import {
 } from '../lib/githubPreview';
 import type { GitHubPreviewData } from '../lib/githubPreview';
 import { RelativeTime } from './RelativeTime';
+import { extractCustomLinks, loadLinkPreviewRules } from '../lib/linkPreviewRules';
+import type { LinkPreviewRule } from '../lib/linkPreviewRules';
 import './GitHubLinkPreview.css';
 
 const PreviewCard: FC<{ data: GitHubPreviewData }> = ({ data }) => (
@@ -150,6 +152,17 @@ const ghRefresh = (url: string) => refreshGitHubPreview(url);
  */
 export const LinkPreviewStrip: FC<{ text: string }> = ({ text }) => {
   const [forgejoHosts, setForgejoHosts] = useState<string[]>([]);
+  const [customRules, setCustomRules] = useState<LinkPreviewRule[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    const reload = () => { loadLinkPreviewRules().then((rules) => {
+      if (active) setCustomRules(rules);
+    }).catch(() => {}); };
+    reload();
+    window.addEventListener('ocman:link-preview-rules-changed', reload);
+    return () => { active = false; window.removeEventListener('ocman:link-preview-rules-changed', reload); };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -161,6 +174,7 @@ export const LinkPreviewStrip: FC<{ text: string }> = ({ text }) => {
 
   const ghUrls = extractGitHubUrls(text);
   const fjUrls = extractForgejoUrls(text, forgejoHosts);
+  const customLinks = extractCustomLinks(text, customRules);
 
   const fjLoad = useCallback(
     (url: string) => cachedForgejoPreview(url, forgejoHosts),
@@ -171,7 +185,7 @@ export const LinkPreviewStrip: FC<{ text: string }> = ({ text }) => {
     [forgejoHosts],
   );
 
-  if (ghUrls.length === 0 && fjUrls.length === 0) return null;
+  if (ghUrls.length === 0 && fjUrls.length === 0 && customLinks.length === 0) return null;
   return (
     <div className="gh-preview-strip" data-testid="gh-preview-strip">
       {ghUrls.map((url) => (
@@ -179,6 +193,16 @@ export const LinkPreviewStrip: FC<{ text: string }> = ({ text }) => {
       ))}
       {fjUrls.map((url) => (
         <SinglePreview key={url} url={url} load={fjLoad} refresh={fjRefresh} />
+      ))}
+      {customLinks.map(({ url, label }) => (
+        <a className="gh-preview gh-preview--commit" key={url} href={url} target="_blank" rel="noopener noreferrer">
+          <span className="gh-preview__icon"><i className="bi bi-link-45deg" aria-hidden="true" /></span>
+          <span className="gh-preview__body">
+            <span className="gh-preview__title">{label}</span>
+            <span className="gh-preview__meta">{new URL(url).hostname}</span>
+          </span>
+          <span className="gh-preview__external" aria-hidden="true"><i className="bi bi-arrow-up-right" /></span>
+        </a>
       ))}
     </div>
   );

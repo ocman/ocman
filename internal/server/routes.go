@@ -161,6 +161,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// Prompt templates for the PR/Issue sidebar's "Handle this" launch
 	// action. Stored in state.db's generic `setting` table (schema v12).
 	mux.HandleFunc("/api/settings/prompt-templates", s.requireAuth(s.handlePromptTemplates))
+	mux.HandleFunc("/api/settings/link-preview-rules", s.requireAuth(s.handleLinkPreviewRules))
 	// Master toggle for public session sharing (on by default).
 	mux.HandleFunc("/api/settings/sharing", s.requireAuth(s.handleSharingSetting))
 	// Toggle for worktree sessions inheriting the parent's always-allow

@@ -44,6 +44,7 @@ it('issues one backend request per refresh cycle for N cards of the same URL', a
 
   let previewOk = true;
   const fetchMock = vi.fn().mockImplementation((url: string) => {
+    if (url === '/api/settings/link-preview-rules') return Promise.resolve(jsonResponse({ rules: [] }));
     if (url.startsWith('/api/integrations/status')) {
       return Promise.resolve(jsonResponse({ forgejo: { available: false, hosts: [] } }));
     }
@@ -109,6 +110,7 @@ it('renders one card for URLs that identify the same resource', async () => {
   vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
   vi.resetModules();
   vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+    if (url === '/api/settings/link-preview-rules') return Promise.resolve(jsonResponse({ rules: [] }));
     if (url.startsWith('/api/integrations/status')) {
       return Promise.resolve(jsonResponse({ forgejo: { available: false, hosts: [] } }));
     }
@@ -120,4 +122,18 @@ it('renders one card for URLs that identify the same resource', async () => {
   await flush();
 
   expect(screen.getAllByTestId('gh-preview-card')).toHaveLength(1);
+});
+
+it('shows configured text matches as link cards', async () => {
+  vi.resetModules();
+  vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+    if (url === '/api/settings/link-preview-rules') return Promise.resolve(jsonResponse({ rules: [
+      { pattern: 'ABC-\\d+', replacement: 'https://tracker.example.com/issues/$&' },
+    ] }));
+    return Promise.resolve(jsonResponse({ forgejo: { available: false, hosts: [] } }));
+  }));
+  const { LinkPreviewStrip } = await import('./GitHubLinkPreview');
+  render(<LinkPreviewStrip text="Look at ABC-42 and ABC-42" />);
+  expect(await screen.findByRole('link', { name: /ABC-42/ })).toHaveAttribute('href', 'https://tracker.example.com/issues/ABC-42');
+  expect(screen.getAllByRole('link')).toHaveLength(1);
 });
