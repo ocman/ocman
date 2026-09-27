@@ -1051,6 +1051,8 @@ function ComposerImpl({
           autoCapitalize="off"
           spellCheck={false}
           {...slash.inputAria}
+          // Items select on mousedown with preventDefault, so picking one never blurs.
+          onBlur={slash.close}
           onKeyDown={handleInputKeyDown}
           onInput={handleInput}
           onPaste={attachments.handlePaste}

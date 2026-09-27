@@ -69,9 +69,10 @@
   font-size: 13px;
   color: var(--text);
 }
+/* --surface0 equals the menu's --bg-card, so it hid the highlight. */
 .oc-slash-item:hover,
 .oc-slash-item.active {
-  background: var(--surface0);
+  background: var(--bg-hover);
 }
 .oc-slash-name {
   color: var(--accent);

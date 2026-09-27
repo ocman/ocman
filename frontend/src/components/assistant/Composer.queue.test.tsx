@@ -76,6 +76,17 @@ describe('Composer input', () => {
     expect(dispatch.mock.calls.some(([event]) => event instanceof CustomEvent)).toBe(false);
   });
 
+  it('closes the slash menu when the textarea loses focus', () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    render(<Composer isRunning={false} />);
+    const input = screen.getByRole('textbox');
+
+    fireEvent.input(input, { target: { value: '/he' } });
+    expect(screen.getByRole('listbox', { name: 'Slash commands' })).toBeInTheDocument();
+    fireEvent.blur(input);
+    expect(screen.queryByRole('listbox', { name: 'Slash commands' })).not.toBeInTheDocument();
+  });
+
   it('prefills a routine prompt without sending it', async () => {
     const onSend = vi.fn();
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify([
