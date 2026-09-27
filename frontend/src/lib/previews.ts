@@ -44,6 +44,8 @@ export interface PreviewConnection {
 export interface PreviewProvider {
   id: string;
   name: string;
+  /** The access a grant gives, shown before consent. */
+  notice?: string;
   connections: PreviewConnection[];
 }
 

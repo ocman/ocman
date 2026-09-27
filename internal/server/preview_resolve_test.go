@@ -208,3 +208,83 @@ func TestPreviewResolve_OwnerQualifiedAcrossRemotes(t *testing.T) {
 		t.Fatalf("reconnect served purged cache: %+v fetches %d->%d", got, before, fetches.Load())
 	}
 }
+
+// Forge links: public ones render without login; a private one uses the
+// owner machine's token only for the owner's own direct request, never
+// for a proxied viewer or a remote owner's content.
+func TestPreviewResolve_ForgeOwnerFallback(t *testing.T) {
+	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		owner := r.Header.Get("Authorization") == "Bearer tok-owner"
+		switch {
+		case r.URL.Path == "/repos/acme/pub":
+			fmt.Fprint(w, `{"private":false}`)
+		case r.URL.Path == "/repos/acme/pub/pulls/1":
+			fmt.Fprint(w, `{"title":"Public PR","state":"open"}`)
+		case r.URL.Path == "/repos/acme/priv" && owner:
+			fmt.Fprint(w, `{"private":true}`)
+		case r.URL.Path == "/repos/acme/priv/pulls/2" && owner:
+			fmt.Fprint(w, `{"title":"Private PR","state":"open"}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer api.Close()
+	s := previewServer(t, newMockOAuth(t), "").WithPreviewResolvers(
+		linkpreview.Forge{ID: "github", Host: "github.com", APIBase: api.URL, OwnerToken: "tok-owner"})
+	s.previewAuth.client = api.Client()
+	s.router().RegisterRemote("r1", s.router().Local())
+	const text = `{"text":"https://github.com/acme/pub/pull/1 https://github.com/acme/priv/pull/2"}`
+	titles := func(rr *httptest.ResponseRecorder) string {
+		t.Helper()
+		var resp struct{ Previews []linkpreview.Preview }
+		if rr.Code != http.StatusOK || json.Unmarshal(rr.Body.Bytes(), &resp) != nil || len(resp.Previews) != 2 {
+			t.Fatalf("resolve = %d %s", rr.Code, rr.Body.String())
+		}
+		return resp.Previews[0].Title + "|" + resp.Previews[1].Title
+	}
+	b := newBrowser()
+	if got := titles(b.do(t, s, http.MethodPost, "/api/previews/resolve", text)); got != "Public PR|Private PR" {
+		t.Fatalf("owner = %q", got)
+	}
+	if got := titles(b.do(t, s, http.MethodPost, "/api/previews/resolve?remoteId=r1", text)); got != "Public PR|" {
+		t.Fatalf("remote owner = %q", got)
+	}
+	mux, _ := s.routes()
+	req := httptest.NewRequest(http.MethodPost, "/api/previews/resolve", strings.NewReader(text))
+	req.RemoteAddr, req.Host = "127.0.0.1:1", "localhost:8228"
+	req.Header.Set("X-Forwarded-For", "192.0.2.4")
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	if got := titles(rr); got != "Public PR|" {
+		t.Fatalf("proxied viewer = %q", got)
+	}
+}
+
+func TestPreviewForges_FromEnv(t *testing.T) {
+	t.Setenv("OCMAN_GITHUB_PREVIEW_CLIENT_ID", "gid")
+	t.Setenv("OCMAN_GITHUB_PREVIEW_CLIENT_SECRET", "gsecret")
+	t.Setenv("OCMAN_FORGEJO_PREVIEW_APPS", "Code.Example.com=fid:fsec:ret, bad host=x:y,nocreds.example.com=,")
+	s := testServer(t)
+	registerForgejoClient(s, "tea.example.com", "https://tea.example.com")
+	m := s.previewManager()
+	for _, id := range []string{"github", "forgejo:code.example.com"} {
+		if _, ok := m.Provider(id); !ok {
+			t.Fatalf("provider %s missing", id)
+		}
+	}
+	if p, _ := m.Provider("forgejo:code.example.com"); p.ClientSecret != "fsec:ret" {
+		t.Fatalf("secret = %q", p.ClientSecret)
+	}
+	if _, ok := m.Provider("forgejo:nocreds.example.com"); ok {
+		t.Fatal("entry without credentials registered")
+	}
+	refs := s.linkPreviews().Discover("https://github.com/a/b/pull/1 https://code.example.com/a/b/pulls/2 "+
+		"https://tea.example.com/a/b/issues/3 https://nocreds.example.com/a/b/pulls/4", nil)
+	var got []string
+	for _, r := range refs {
+		got = append(got, r.Provider)
+	}
+	if strings.Join(got, ",") != "github,forgejo:code.example.com,forgejo:tea.example.com" {
+		t.Fatalf("providers = %v", got)
+	}
+}

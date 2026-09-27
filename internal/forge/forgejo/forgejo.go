@@ -88,6 +88,9 @@ func (c *Client) Host() string { return c.host }
 // Authenticated reports whether a token is configured.
 func (c *Client) Authenticated() bool { return c.token != "" }
 
+// Token is the owner machine's env/tea token ("" when anonymous).
+func (c *Client) Token() string { return c.token }
+
 // ListPRs returns one page of pull requests for owner/name.
 // Implements forge.Forge.ListPRs.
 func (c *Client) ListPRs(ctx context.Context, repo string, opts forge.ListOptions) ([]forge.PR, forge.RateLimit, error) {

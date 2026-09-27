@@ -149,8 +149,6 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// Integration endpoints. These proxy requests to third-party APIs
 	// using server-side credentials discovered at startup.
 	mux.HandleFunc("/api/integrations/status", s.get(s.handleIntegrationsStatus))
-	mux.HandleFunc("/api/integrations/github/preview", s.get(s.handleGitHubPreview))
-	mux.HandleFunc("/api/integrations/forgejo/preview", s.get(s.handleForgejoPreview))
 	// Viewer-scoped provider consent for private previews (preview_auth.go).
 	mux.HandleFunc("/api/previews/providers", s.get(s.handlePreviewProviders))
 	mux.HandleFunc("/api/previews/connect", s.post(s.handlePreviewConnect))

@@ -70,6 +70,9 @@ func (c *Client) base() string {
 // Authenticated reports whether a token was found.
 func (c *Client) Authenticated() bool { return c.token != "" }
 
+// Token is the owner machine's discovered token ("" when anonymous).
+func (c *Client) Token() string { return c.token }
+
 // GetPR fetches pull-request metadata.
 func (c *Client) GetPR(owner, repo string, number int) (map[string]interface{}, error) {
 	return c.get(fmt.Sprintf("/repos/%s/%s/pulls/%d", url.PathEscape(owner), url.PathEscape(repo), number))

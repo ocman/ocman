@@ -1,137 +1,93 @@
 // @vitest-environment jsdom
 
-import { render, screen, act } from '@testing-library/react';
-import { expect, it, vi, afterEach } from 'vitest';
-
-// IntersectionObserver isn't implemented by jsdom; capture the callbacks so
-// the test can drive "card entered the viewport".
-type IOEntries = { isIntersecting: boolean }[];
-const ioCallbacks: ((entries: IOEntries) => void)[] = [];
-
-class FakeIntersectionObserver {
-  constructor(cb: (entries: IOEntries) => void) {
-    ioCallbacks.push(cb);
-  }
-  observe() { /* noop */ }
-  unobserve() { /* noop */ }
-  disconnect() { /* noop */ }
-}
-
-afterEach(() => {
-  ioCallbacks.length = 0;
-  vi.useRealTimers();
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-});
+import { render, screen, waitFor } from '@testing-library/react';
+import { expect, it, vi, afterEach, beforeEach } from 'vitest';
+import type { PreviewResult } from '../lib/previews';
 
 function jsonResponse(body: unknown, ok = true, status = 200) {
   return { ok, status, json: async () => body } as Response;
 }
 
-// flush lets pending promise chains settle inside act().
-async function flush() {
-  await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-  });
-}
+let providersStatus = 200;
+let previews: PreviewResult[] = [];
+let fetchMock: ReturnType<typeof vi.fn>;
 
-it('issues one backend request per refresh cycle for N cards of the same URL', async () => {
-  vi.useFakeTimers();
-  vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
+beforeEach(() => {
   vi.resetModules();
-
-  let previewOk = true;
-  const fetchMock = vi.fn().mockImplementation((url: string) => {
+  providersStatus = 200;
+  fetchMock = vi.fn().mockImplementation((url: string) => {
     if (url === '/api/settings/link-preview-rules') return Promise.resolve(jsonResponse({ rules: [] }));
-    if (url.startsWith('/api/integrations/status')) {
-      return Promise.resolve(jsonResponse({ forgejo: { available: false, hosts: [] } }));
+    if (url.startsWith('/api/previews/providers')) {
+      return Promise.resolve(providersStatus === 200 ? jsonResponse({ providers: [] }) : jsonResponse({}, false, providersStatus));
     }
-    if (!previewOk) return Promise.resolve(jsonResponse({}, false, 502));
-    return Promise.resolve(jsonResponse({ title: 'Shared PR', state: 'open' }));
+    if (url.startsWith('/api/previews/resolve')) return Promise.resolve(jsonResponse({ previews }));
+    return Promise.resolve(jsonResponse({}, false, 404));
   });
   vi.stubGlobal('fetch', fetchMock);
-
-  const previewCalls = () =>
-    fetchMock.mock.calls.filter(([u]) => String(u).includes('/github/preview')).length;
-
-  const { LinkPreviewStrip } = await import('./GitHubLinkPreview');
-  const text = 'look at https://github.com/o/r/pull/1 please';
-
-  render(
-    <>
-      <LinkPreviewStrip text={text} />
-      <LinkPreviewStrip text={text} />
-      <LinkPreviewStrip text={text} />
-    </>,
-  );
-  await flush();
-
-  expect(screen.getAllByTestId('gh-preview-card')).toHaveLength(3);
-  expect(previewCalls()).toBe(1);
-
-  // Entering the viewport refreshes immediately but must not duplicate the
-  // mount request.
-  await act(async () => {
-    for (const cb of ioCallbacks) cb([{ isIntersecting: true }]);
-  });
-  await flush();
-  expect(previewCalls()).toBe(1);
-
-  // One 5 s cadence tick across all three cards = one backend request.
-  await act(async () => {
-    vi.advanceTimersByTime(5_000);
-  });
-  await flush();
-  expect(previewCalls()).toBe(2);
-
-  // A failed cycle keeps the previously successful card rendered...
-  previewOk = false;
-  await act(async () => {
-    vi.advanceTimersByTime(5_000);
-  });
-  await flush();
-  expect(previewCalls()).toBe(3);
-  expect(screen.getAllByTestId('gh-preview-card')).toHaveLength(3);
-  expect(screen.getAllByText('#1 Shared PR')).toHaveLength(3);
-
-  // ...and the next cycle recovers without a reload.
-  previewOk = true;
-  await act(async () => {
-    vi.advanceTimersByTime(5_000);
-  });
-  await flush();
-  expect(previewCalls()).toBe(4);
-  expect(screen.getAllByText('#1 Shared PR')).toHaveLength(3);
 });
 
-it('renders one card for URLs that identify the same resource', async () => {
-  vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
-  vi.resetModules();
-  vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
-    if (url === '/api/settings/link-preview-rules') return Promise.resolve(jsonResponse({ rules: [] }));
-    if (url.startsWith('/api/integrations/status')) {
-      return Promise.resolve(jsonResponse({ forgejo: { available: false, hosts: [] } }));
-    }
-    return Promise.resolve(jsonResponse({ title: 'Shared PR', state: 'open' }));
-  }));
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
+const resolveCalls = () => fetchMock.mock.calls.filter(([u]) => String(u).startsWith('/api/previews/resolve'));
+
+const pr: PreviewResult = {
+  provider: 'github', kind: 'pr', id: 'o/r#1', url: 'https://github.com/o/r/pull/1',
+  title: 'Shared PR', status: 'Merged', icon: 'bi-git', meta: ['ann'], state: 'ok',
+};
+
+it('renders public forge links as normalized cards without any connected provider', async () => {
+  previews = [pr];
   const { LinkPreviewStrip } = await import('./GitHubLinkPreview');
-  render(<LinkPreviewStrip text={'https://github.com/o/r/pull/7 https://github.com/o/r/pull/7/files'} />);
-  await flush();
+  render(<LinkPreviewStrip text="look at https://github.com/o/r/pull/1 please" />);
+  const card = await screen.findByRole('link', { name: /o\/r#1 Shared PR/ });
+  expect(card).toHaveAttribute('href', 'https://github.com/o/r/pull/1');
+  expect(card).toHaveClass('gh-preview--merged');
+  expect(card).toHaveTextContent('Merged · ann');
+  // Public links alone never flash a loading status.
+  expect(screen.queryByRole('status')).toBeNull();
+});
 
-  expect(screen.getAllByTestId('gh-preview-card')).toHaveLength(1);
+it('still resolves public links when private-preview access is refused', async () => {
+  providersStatus = 403;
+  previews = [{ ...pr, status: 'Open' }];
+  const { LinkPreviewStrip } = await import('./GitHubLinkPreview');
+  render(<LinkPreviewStrip text="https://github.com/o/r/pull/1" />);
+  expect(await screen.findByRole('link', { name: /Shared PR/ })).toHaveClass('gh-preview--open');
+});
+
+it('states the access level on a connect card for a private forge link', async () => {
+  fetchMock.mockImplementation((url: string) => {
+    if (url.startsWith('/api/previews/providers')) {
+      return Promise.resolve(jsonResponse({ providers: [{ id: 'github', name: 'GitHub', notice: 'Read-only access.', connections: [] }] }));
+    }
+    if (url.startsWith('/api/previews/resolve')) return Promise.resolve(jsonResponse({ previews: [{ ...pr, title: undefined, state: 'connect' }] }));
+    return Promise.resolve(jsonResponse({ rules: [] }));
+  });
+  const { LinkPreviewStrip } = await import('./GitHubLinkPreview');
+  render(<LinkPreviewStrip text="https://github.com/o/r/pull/1" />);
+  expect(await screen.findByRole('button', { name: 'Connect GitHub for o/r#1' })).toBeInTheDocument();
+  expect(screen.getByText('Read-only access.')).toBeInTheDocument();
+});
+
+it('skips resolving text without links when nothing is configured', async () => {
+  const { LinkPreviewStrip } = await import('./GitHubLinkPreview');
+  const { container } = render(<LinkPreviewStrip text="no links here" />);
+  await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u).startsWith('/api/previews/providers'))).toBe(true));
+  await new Promise((r) => setTimeout(r, 0));
+  expect(resolveCalls()).toHaveLength(0);
+  expect(container).toBeEmptyDOMElement();
 });
 
 it('shows configured text matches as link cards', async () => {
-  vi.resetModules();
-  vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+  fetchMock.mockImplementation((url: string) => {
     if (url === '/api/settings/link-preview-rules') return Promise.resolve(jsonResponse({ rules: [
       { pattern: 'ABC-\\d+', replacement: 'https://tracker.example.com/issues/$&' },
     ] }));
-    return Promise.resolve(jsonResponse({ forgejo: { available: false, hosts: [] } }));
-  }));
+    return Promise.resolve(jsonResponse({ providers: [] }));
+  });
   const { LinkPreviewStrip } = await import('./GitHubLinkPreview');
   render(<LinkPreviewStrip text="Look at ABC-42 and ABC-42" />);
   expect(await screen.findByRole('link', { name: /ABC-42/ })).toHaveAttribute('href', 'https://tracker.example.com/issues/ABC-42');

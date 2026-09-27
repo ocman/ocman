@@ -310,12 +310,23 @@ flowchart TD
   fetches, a 60/min per-grant budget and `Retry-After` backoff (stale data
   is served only to the same viewer). The grant is checked before the cache,
   and disconnect/sign-out purge it, so nothing outlives a connection.
-  In the browser, `LinkPreviewStrip` renders these next to the forge and
+  In the browser, `LinkPreviewStrip` renders these next to the
   custom-rule cards (owner from `PreviewOwnerContext`), with inline
   Connect/Reconnect and a workspace chooser for `ambiguous`; the request's
   `workspaces` map carries that choice. Settings → Link previews lists
   providers with display names only. Previews live in component state only
   and are dropped on `ocman:preview-auth-changed` before reloading.
+- **Forge previews** (`linkpreview.Forge`, `internal/server/preview_forges.go`).
+  GitHub and every https Forgejo host (tea logins plus
+  `OCMAN_FORGEJO_PREVIEW_APPS`) resolve PR/issue/commit links through the
+  normalized path; the old `/api/integrations/{github,forgejo}/preview`
+  proxies are gone. A viewer's own grant (GitHub App user grant, Forgejo
+  OAuth per host) wins; without one the resolver is a `linkpreview.Fallback`
+  that uses the owner machine's env/CLI token public-only (repository
+  visibility is checked before the resource is read). Only the owner's own
+  direct loopback request for a hub-owned session gets private results from
+  that token (`WithOwnerAccess`), cached under a separate key. A request
+  without private-preview access still resolves public links, with no viewer.
 - **Slack previews** (`linkpreview.Slack`, opt-in via
   `OCMAN_SLACK_PREVIEW_CLIENT_ID/_SECRET`). A dedicated OAuth app yields a
   per-viewer *user* token (`user_scope`, bot tokens refused); conversation.v1

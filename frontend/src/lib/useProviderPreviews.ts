@@ -31,9 +31,12 @@ export function useProviderPreviews(text: string): { previews: PreviewResult[]; 
   useEffect(() => {
     const abort = new AbortController();
     const timer = setTimeout(() => {
-      loadPreviewProviders(owner).then(async (providers) => {
-        if (providers.length === 0 || abort.signal.aborted) return;
-        setPending(true);
+      // Without private-preview access the provider list is refused, but
+      // public forge links still resolve.
+      loadPreviewProviders(owner).catch((): PreviewProvider[] => []).then(async (providers) => {
+        if ((providers.length === 0 && !/https?:\/\//.test(text)) || abort.signal.aborted) return;
+        // Public forge links alone resolve silently, as their cards always did.
+        if (providers.length > 0) setPending(true);
         const previews = await resolvePreviews(text, owner, abort.signal);
         if (!abort.signal.aborted) setResolved({ text, owner, previews, providers });
       }).catch(() => {

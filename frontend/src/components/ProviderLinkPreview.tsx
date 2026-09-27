@@ -12,7 +12,11 @@ const FallbackLink: FC<{ preview: PreviewResult }> = ({ preview }) => preview.ur
   ? <a className="gh-preview__title" href={preview.url} target="_blank" rel="noopener noreferrer">{preview.id}</a>
   : <span className="gh-preview__title">{preview.id}</span>;
 
+// Forge statuses keep their old card colours.
+const STATUS_CLASS: Record<string, string> = { Open: 'open', Merged: 'merged', Closed: 'closed' };
+
 const RichCard: FC<{ preview: PreviewResult }> = ({ preview }) => {
+  const cls = `gh-preview gh-preview--${STATUS_CLASS[preview.status ?? ''] ?? 'commit'}`;
   const body = <>
     <span className="gh-preview__icon"><i className={`bi ${preview.icon || 'bi-link-45deg'}`} aria-hidden="true" /></span>
     <span className="gh-preview__body">
@@ -25,10 +29,10 @@ const RichCard: FC<{ preview: PreviewResult }> = ({ preview }) => {
     </span>
   </>;
   return preview.url
-    ? <a className="gh-preview gh-preview--commit" href={preview.url} target="_blank" rel="noopener noreferrer" data-testid="provider-preview-card">
+    ? <a className={cls} href={preview.url} target="_blank" rel="noopener noreferrer" data-testid="provider-preview-card">
         {body}<span className="gh-preview__external" aria-hidden="true"><i className="bi bi-arrow-up-right" /></span>
       </a>
-    : <div className="gh-preview gh-preview--commit" data-testid="provider-preview-card">{body}</div>;
+    : <div className={cls} data-testid="provider-preview-card">{body}</div>;
 };
 
 const NOTICE: Partial<Record<PreviewResult['state'], string>> = {
@@ -56,6 +60,7 @@ export const ProviderPreview: FC<{ preview: PreviewResult; providers: PreviewPro
       <span className="gh-preview__body">
         <FallbackLink preview={preview} />
         <span className="gh-preview__meta">{name}: {notice}</span>
+        {preview.state === 'connect' && provider?.notice && <span className="gh-preview__meta">{provider.notice}</span>}
         {error && <span role="alert">{error}</span>}
       </span>
       {preview.state === 'ambiguous'

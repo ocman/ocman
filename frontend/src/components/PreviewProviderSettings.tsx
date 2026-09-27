@@ -48,7 +48,10 @@ export function PreviewProviderSettings() {
       return <SettingRow
         key={p.id}
         label={p.name}
-        desc={p.connections.length ? p.connections.map((c) => <div key={c.workspaceId}>{describe(c)}</div>) : 'Not connected'}
+        desc={<>
+          {p.connections.length ? p.connections.map((c) => <div key={c.workspaceId}>{describe(c)}</div>) : 'Not connected'}
+          {p.notice && <div>{p.notice}</div>}
+        </>}
       >
         <Button type="button" disabled={busy} aria-label={`${connectLabel} ${p.name}`} onClick={() => run(() => connectPreviewProvider(p.id))}>{connectLabel}</Button>
         {p.connections.map((c) => (

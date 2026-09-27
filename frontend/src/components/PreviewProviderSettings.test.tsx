@@ -16,7 +16,7 @@ it('shows connection states and disconnects with an immediate reload', async () 
   ];
   const fetchMock = vi.fn().mockImplementation((url: string) => {
     if (url.startsWith('/api/previews/providers')) {
-      return Promise.resolve(json({ providers: [{ id: 'mock', name: 'Tracker', connections }, { id: 'wiki', name: 'Wiki', connections: [] }] }));
+      return Promise.resolve(json({ providers: [{ id: 'mock', name: 'Tracker', connections }, { id: 'wiki', name: 'Wiki', notice: 'Forgejo OAuth has no granular scopes.', connections: [] }] }));
     }
     connections = connections.slice(1);
     return Promise.resolve(json(undefined, 204));
@@ -28,6 +28,7 @@ it('shows connection states and disconnects with an immediate reload', async () 
   expect(await screen.findByText('Connected: alice · Acme, Docs')).toBeInTheDocument();
   expect(screen.getByText('Expired: alice · Beta')).toBeInTheDocument();
   expect(screen.getByText('Not connected')).toBeInTheDocument();
+  expect(screen.getByText('Forgejo OAuth has no granular scopes.')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Reconnect Tracker' })).toHaveClass('oc-button');
   expect(screen.getByRole('button', { name: 'Connect Wiki' })).toBeEnabled();
 

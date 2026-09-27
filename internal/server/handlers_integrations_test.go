@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,27 +8,6 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/forge/forgejo"
 )
-
-// fakeForgejoServer mounts the minimal API endpoints needed to test the
-// Forgejo preview handler. Returns the httptest server plus a host string
-// the caller registers in srv.integrations.Forgejo.
-func fakeForgejoServer(t *testing.T) *httptest.Server {
-	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/v1/repos/alice/myproj/pulls/7":
-			_, _ = w.Write([]byte(`{"number":7,"title":"Patch","state":"open","html_url":"x","user":{"login":"alice"}}`))
-		case "/api/v1/repos/alice/myproj/issues/3":
-			_, _ = w.Write([]byte(`{"number":3,"title":"Bug","state":"closed","user":{"login":"alice"}}`))
-		case "/api/v1/repos/alice/myproj/git/commits/abc1234":
-			_, _ = w.Write([]byte(`{"sha":"abc1234","commit":{"message":"do thing"}}`))
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	t.Cleanup(srv.Close)
-	return srv
-}
 
 // registerForgejoClient wires a forgejo client pointed at api into the
 // server's integration registry under host "code.example.com". The pasted
@@ -40,94 +18,6 @@ func registerForgejoClient(srv *Server, host, apiBase string) {
 	srv.integrations.Forgejo = forgejo.NewRegistryForTest(map[string]*forgejo.Client{
 		host: client,
 	})
-}
-
-func TestHandleForgejoPreview_PR(t *testing.T) {
-	srv := testServer(t)
-	api := fakeForgejoServer(t)
-	registerForgejoClient(srv, "code.example.com", api.URL)
-
-	url := "https://code.example.com/alice/myproj/pulls/7"
-	req := httptest.NewRequest(http.MethodGet, "/api/integrations/forgejo/preview?url="+url, nil)
-	rr := httptest.NewRecorder()
-	srv.handleForgejoPreview(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
-	}
-	var data map[string]interface{}
-	if err := json.Unmarshal(rr.Body.Bytes(), &data); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if data["title"] != "Patch" || data["state"] != "open" {
-		t.Errorf("unexpected payload: %+v", data)
-	}
-}
-
-func TestHandleForgejoPreview_Issue(t *testing.T) {
-	srv := testServer(t)
-	api := fakeForgejoServer(t)
-	registerForgejoClient(srv, "code.example.com", api.URL)
-
-	url := "https://code.example.com/alice/myproj/issues/3"
-	req := httptest.NewRequest(http.MethodGet, "/api/integrations/forgejo/preview?url="+url, nil)
-	rr := httptest.NewRecorder()
-	srv.handleForgejoPreview(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
-	}
-	var data map[string]interface{}
-	_ = json.Unmarshal(rr.Body.Bytes(), &data)
-	if data["title"] != "Bug" {
-		t.Errorf("unexpected payload: %+v", data)
-	}
-}
-
-func TestHandleForgejoPreview_Commit(t *testing.T) {
-	srv := testServer(t)
-	api := fakeForgejoServer(t)
-	registerForgejoClient(srv, "code.example.com", api.URL)
-
-	url := "https://code.example.com/alice/myproj/commit/abc1234"
-	req := httptest.NewRequest(http.MethodGet, "/api/integrations/forgejo/preview?url="+url, nil)
-	rr := httptest.NewRecorder()
-	srv.handleForgejoPreview(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status: %d body=%s", rr.Code, rr.Body.String())
-	}
-	var data map[string]interface{}
-	_ = json.Unmarshal(rr.Body.Bytes(), &data)
-	if data["sha"] != "abc1234" {
-		t.Errorf("unexpected payload: %+v", data)
-	}
-}
-
-func TestHandleForgejoPreview_UnknownHostRejected(t *testing.T) {
-	srv := testServer(t)
-	api := fakeForgejoServer(t)
-	registerForgejoClient(srv, "code.example.com", api.URL)
-
-	// Host not in the registry => 422, never proxied.
-	url := "https://evil.example.org/alice/myproj/pulls/7"
-	req := httptest.NewRequest(http.MethodGet, "/api/integrations/forgejo/preview?url="+url, nil)
-	rr := httptest.NewRecorder()
-	srv.handleForgejoPreview(rr, req)
-
-	if rr.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("expected 422 for unknown host, got %d body=%s", rr.Code, rr.Body.String())
-	}
-}
-
-func TestHandleForgejoPreview_MissingURL(t *testing.T) {
-	srv := testServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/integrations/forgejo/preview", nil)
-	rr := httptest.NewRecorder()
-	srv.handleForgejoPreview(rr, req)
-	if rr.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d", rr.Code)
-	}
 }
 
 func TestHandleIntegrationsStatus_ReportsForgejoHosts(t *testing.T) {
@@ -144,38 +34,5 @@ func TestHandleIntegrationsStatus_ReportsForgejoHosts(t *testing.T) {
 	body := rr.Body.String()
 	if !strings.Contains(body, `"forgejo"`) || !strings.Contains(body, "code.example.com") {
 		t.Errorf("expected forgejo hosts in status payload, got %s", body)
-	}
-}
-
-// TestGitHubPreviewRejectsTraversalCaptures pins that the owner/repo
-// capture groups don't accept path-traversal payloads. With [^/]+ a
-// crafted url= smuggled `..` and `#` through, and since Go's transport
-// does not normalise dot segments the request URI became /repos/../user
-// — which GitHub resolves to /user, leaking the token owner's private
-// profile. The route is a plain GET, so it was reachable through the
-// DNS-rebinding hole closed in a4c49fd.
-func TestGitHubPreviewRejectsTraversalCaptures(t *testing.T) {
-	tests := []struct {
-		name    string
-		rawURL  string
-		matched bool
-	}{
-		{"ordinary PR", "https://github.com/NoUseFreak/ocman/pull/1", true},
-		{"ordinary issue", "https://github.com/NoUseFreak/ocman/issues/1", true},
-		{"ordinary commit", "https://github.com/NoUseFreak/ocman/commit/abcdef1", true},
-		{"dot-segment owner", "https://github.com/..%2Fuser%23/x/pull/1", false},
-		{"encoded slash in repo", "https://github.com/a/..%2F..%2Fuser/issues/1", false},
-		{"fragment in owner", "https://github.com/own#er/x/pull/1", false},
-		{"percent in repo", "https://github.com/a/re%2Fpo/pull/1", false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := ghPRRE.MatchString(tt.rawURL) ||
-				ghIssueRE.MatchString(tt.rawURL) ||
-				ghCommitRE.MatchString(tt.rawURL)
-			if got != tt.matched {
-				t.Errorf("matched = %v, want %v for %q", got, tt.matched, tt.rawURL)
-			}
-		})
 	}
 }

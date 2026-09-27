@@ -106,7 +106,22 @@ func (s *Service) resolve(ctx context.Context, viewerID, ownerID string, ref Ref
 	if !ok {
 		return Preview{Ref: ref, State: StateError}
 	}
+	fb, canFallback := r.(Fallback)
+	// Without the viewer's own grant a Fallback resolver previews with the
+	// owner credential: public resources only, unless this is the owner's
+	// own request. Cached under a separate per-viewer key.
+	fallback := func() Preview {
+		owner := ownerAccess(ctx)
+		mode := "#public"
+		if owner {
+			mode = "#owner"
+		}
+		return s.cached(ctx, r, fb.FallbackToken(), !owner, false, viewerID, ownerID, grantKey(viewerID, ownerID, ref.Provider, mode), ref)
+	}
 	if viewerID == "" {
+		if canFallback {
+			return fallback()
+		}
 		return Preview{Ref: ref, State: StateConnect}
 	}
 	if ref.Workspace == "" {
@@ -114,6 +129,8 @@ func (s *Service) resolve(ctx context.Context, viewerID, ownerID string, ref Ref
 		switch {
 		case err != nil:
 			return Preview{Ref: ref, State: StateError}
+		case len(ws) == 0 && canFallback:
+			return fallback()
 		case len(ws) == 0:
 			return Preview{Ref: ref, State: StateConnect}
 		case len(ws) > 1:
@@ -127,8 +144,17 @@ func (s *Service) resolve(ctx context.Context, viewerID, ownerID string, ref Ref
 	token, err := s.tokens.AccessToken(ctx, viewerID, ownerID, ref.Provider, ref.Workspace)
 	if err != nil {
 		s.Purge(viewerID, ownerID, ref.Provider)
-		return Preview{Ref: ref, State: tokenState(err)}
+		if st := tokenState(err); st != StateConnect || !canFallback {
+			return Preview{Ref: ref, State: st}
+		}
+		return fallback()
 	}
+	return s.cached(ctx, r, token, false, true, viewerID, ownerID, gk, ref)
+}
+
+// cached serves ref from the cache under gk, or fetches it within the
+// grant's budget. grant: token is the viewer's own (a 401 forgets it).
+func (s *Service) cached(ctx context.Context, r Resolver, token string, publicOnly, grant bool, viewerID, ownerID, gk string, ref Ref) Preview {
 	key := gk + "\x00" + ref.key()
 	now := s.now()
 	s.mu.Lock()
@@ -143,7 +169,7 @@ func (s *Service) resolve(ctx context.Context, viewerID, ownerID string, ref Ref
 		return staleOr(cached, hit, ref)
 	}
 	v, _, _ := s.group.Do(key, func() (any, error) {
-		return s.fetch(ctx, r, token, viewerID, ownerID, gk, key, ref), nil
+		return s.fetch(ctx, r, &API{token: token, publicOnly: publicOnly}, grant, viewerID, ownerID, gk, key, ref), nil
 	})
 	p := v.(Preview)
 	if p.State == StateRateLimited {
@@ -185,7 +211,7 @@ func tokenState(err error) State {
 	return StateError
 }
 
-func (s *Service) fetch(ctx context.Context, r Resolver, token, viewerID, ownerID, gk, key string, ref Ref) Preview {
+func (s *Service) fetch(ctx context.Context, r Resolver, api *API, grant bool, viewerID, ownerID, gk, key string, ref Ref) Preview {
 	// Detached from the caller so a shared in-flight fetch survives one
 	// caller going away, but still bounded.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), fetchTimeout)
@@ -200,13 +226,16 @@ func (s *Service) fetch(ctx context.Context, r Resolver, token, viewerID, ownerI
 	for _, h := range r.APIHosts() {
 		hosts[strings.ToLower(h)] = true
 	}
-	p, err := r.Fetch(ctx, &API{client: s.client, token: token, hosts: hosts}, ref)
+	api.client, api.hosts = s.client, hosts
+	p, err := r.Fetch(ctx, api, ref)
 	var he *HTTPError
 	errors.As(err, &he)
 	switch {
 	case err == nil:
 		p = sanitize(p, ref)
-	case he != nil && he.Status == http.StatusUnauthorized:
+	case errors.Is(err, ErrNeedsGrant):
+		p = Preview{Ref: ref, State: StateConnect}
+	case grant && he != nil && he.Status == http.StatusUnauthorized:
 		_ = s.tokens.Revoked(ctx, viewerID, ownerID, ref.Provider, ref.Workspace)
 		s.Purge(viewerID, ownerID, ref.Provider)
 		return Preview{Ref: ref, State: StateConnect}

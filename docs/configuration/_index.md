@@ -107,7 +107,17 @@ locality must not be used to justify `-auth-trust-localhost`.
 | `OCMAN_INSECURE_NO_AUTH` | Truthy value allows a non-loopback listen address with no password configured. |
 | `OPENCODE_SERVER_PASSWORD` | Password for managed OpenCode servers and all ocman-to-OpenCode HTTP/SSE traffic. |
 | `OCMAN_SLACK_PREVIEW_CLIENT_ID`, `OCMAN_SLACK_PREVIEW_CLIENT_SECRET` | Enable Slack message previews. Register a dedicated Slack app (not the conversation plugin's) with redirect URL `<public base>/api/previews/oauth/callback` and user token scopes `channels:history`, `channels:read`, `users:read`. Each viewer connects their own Slack account; private channels and DMs are always shown as denied. |
+| `OCMAN_GITHUB_PREVIEW_CLIENT_ID`, `OCMAN_GITHUB_PREVIEW_CLIENT_SECRET` | Let each viewer connect their own GitHub account for private PR, issue and commit previews. Register a GitHub App with callback URL `<public base>/api/previews/oauth/callback`, expiring user tokens, and read-only Metadata, Pull requests, Issues and Contents permissions. Public links preview without it. |
+| `OCMAN_FORGEJO_PREVIEW_APPS` | `host=client_id:client_secret[,host=…]`: one Forgejo OAuth2 application per exact host (https only), with redirect URI `<public base>/api/previews/oauth/callback`. Forgejo OAuth tokens have no granular scopes, so a viewer's grant can read and change everything their account can on that host; Settings says so before consent. Listed hosts join the tea-login hosts as previewable. |
 | `OCMAN_ALLOWED_HOSTS` | Vite dev/preview only: comma-separated extra hostnames allowed by the dev server (e.g. `foo.tailnet.ts.net,bar.lan`). |
+
+### Forge link previews and the owner-wide token
+
+GitHub and Forgejo links (`/owner/repo/pull|pulls|issues|commit/…` on github.com, the https hosts from your `tea` logins, and hosts in `OCMAN_FORGEJO_PREVIEW_APPS`) render as preview cards. Resolution, in order:
+
+1. The viewer's own connected grant, when they connected one. Only that browser sees the result.
+2. Otherwise the owner machine's forge token (`GITHUB_TOKEN`/`GH_TOKEN`, `gh auth token`, `FORGEJO_TOKEN`/`GITEA_TOKEN`, `tea` login), restricted to **public** repositories. A private repository offers Connect instead (or a plain link when no viewer app is configured).
+3. **Owner-wide fallback:** a direct, un-proxied loopback request to a session on this machine is the machine's own user, so it may preview private repositories with that owner token. Proxied browsers, password-shared viewers and remote owners' sessions never get it.
 
 ## Authentication
 

@@ -69,6 +69,9 @@ func (s *Server) WithPreviewProviders(client *http.Client, providers ...previewa
 
 func (s *Server) previewManager() *previewauth.Manager {
 	s.previewAuth.once.Do(func() {
+		fp, fr := s.forgePreviews()
+		s.previewAuth.providers = append(fp, s.previewAuth.providers...)
+		s.previewAuth.resolvers = append(fr, s.previewAuth.resolvers...)
 		// Slack previews use a dedicated app the operator registers for
 		// viewer consent, never the conversation.v1 plugin's bot app.
 		if id, secret := os.Getenv("OCMAN_SLACK_PREVIEW_CLIENT_ID"), os.Getenv("OCMAN_SLACK_PREVIEW_CLIENT_SECRET"); id != "" && secret != "" {

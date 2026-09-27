@@ -52,9 +52,26 @@ func (s *Server) handlePreviewResolve(w http.ResponseWriter, r *http.Request) {
 	if !readAndUnmarshal(w, r, maxPreviewResolveBody, &req) {
 		return
 	}
-	viewerID, ownerID, ok := s.previewContext(w, r, false)
+	homeID, ownerID, ok := s.previewOwner(r)
 	if !ok {
+		w.Header().Set("Cache-Control", "no-store")
+		http.Error(w, "owner unavailable", http.StatusServiceUnavailable)
 		return
+	}
+	// Without private-preview access there is no viewer: only public
+	// forge links resolve. The owner's own direct request may also use the
+	// owner machine's forge token for private ones — never a remote owner's
+	// content, and never another viewer.
+	ctx, viewerID := r.Context(), ""
+	if s.previewAccessAllowed(r) {
+		var err error
+		if viewerID, err = s.previewViewer(w, r, homeID, false); err != nil {
+			http.Error(w, "viewer unavailable", http.StatusInternalServerError)
+			return
+		}
+		if ownerID == homeID && directLocalRequest(r) {
+			ctx = linkpreview.WithOwnerAccess(ctx)
+		}
 	}
 	svc := s.linkPreviews()
 	refs := svc.Discover(req.Text, s.previewIdentifierRules(r.Context()))
@@ -63,7 +80,7 @@ func (s *Server) handlePreviewResolve(w http.ResponseWriter, r *http.Request) {
 			refs[i].Workspace = req.Workspaces[refs[i].Provider]
 		}
 	}
-	previews := svc.Resolve(r.Context(), viewerID, ownerID, refs)
+	previews := svc.Resolve(ctx, viewerID, ownerID, refs)
 	if previews == nil {
 		previews = []linkpreview.Preview{}
 	}

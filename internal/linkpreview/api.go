@@ -36,7 +36,13 @@ type API struct {
 	client *http.Client
 	token  string
 	hosts  map[string]bool
+	// publicOnly: token is not the viewer's own (see Fallback), so Fetch
+	// must return only resources that are public.
+	publicOnly bool
 }
+
+// PublicOnly reports that the resolver must not return private resources.
+func (a *API) PublicOnly() bool { return a.publicOnly }
 
 func validSegment(s string) bool {
 	return s != "" && s != "." && s != ".." && len(s) <= 256 && !strings.ContainsAny(s, "/\\?#%") &&

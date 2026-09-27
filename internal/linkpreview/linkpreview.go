@@ -11,6 +11,7 @@ package linkpreview
 
 import (
 	"context"
+	"errors"
 	"net/url"
 	"regexp"
 	"strings"
@@ -72,6 +73,31 @@ type Resolver interface {
 	// Fetch loads metadata through api. Errors should be *HTTPError when
 	// they come from the provider.
 	Fetch(ctx context.Context, api *API, ref Ref) (Preview, error)
+}
+
+// Fallback is a Resolver that can preview without the viewer's own grant,
+// using the owner machine's credential (env/CLI token, may be empty). Fetch
+// then sees API.PublicOnly() unless the request carries WithOwnerAccess, and
+// returns ErrNeedsGrant (or a 404) for anything that is not public.
+type Fallback interface {
+	Resolver
+	FallbackToken() string
+}
+
+// ErrNeedsGrant: the resource is private and the viewer may connect.
+var ErrNeedsGrant = errors.New("preview needs the viewer's own grant")
+
+type ownerAccessKey struct{}
+
+// WithOwnerAccess marks a request made by the owner machine's own user, who
+// may see private resources through the owner credential of a Fallback.
+func WithOwnerAccess(ctx context.Context) context.Context {
+	return context.WithValue(ctx, ownerAccessKey{}, true)
+}
+
+func ownerAccess(ctx context.Context) bool {
+	v, _ := ctx.Value(ownerAccessKey{}).(bool)
+	return v
 }
 
 // IdentifierRule routes a text pattern's matches (capture group 1 when

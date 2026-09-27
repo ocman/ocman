@@ -58,7 +58,9 @@ type Grant struct {
 
 // Provider is one OAuth application registered server-side.
 type Provider struct {
-	ID, Name                     string
+	ID, Name string
+	// Notice describes the access a grant gives, shown before consent.
+	Notice                       string
 	AuthURL, TokenURL, RevokeURL string
 	ClientID, ClientSecret       string
 	Scopes                       []string
@@ -376,6 +378,7 @@ type Connection struct {
 type ProviderStatus struct {
 	ID          string       `json:"id"`
 	Name        string       `json:"name"`
+	Notice      string       `json:"notice,omitempty"`
 	Connections []Connection `json:"connections"`
 }
 
@@ -402,7 +405,7 @@ func (m *Manager) Status(ctx context.Context, viewerID, ownerID string) ([]Provi
 		if conns == nil {
 			conns = []Connection{}
 		}
-		out = append(out, ProviderStatus{ID: id, Name: p.Name, Connections: conns})
+		out = append(out, ProviderStatus{ID: id, Name: p.Name, Notice: p.Notice, Connections: conns})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
