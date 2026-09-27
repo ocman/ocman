@@ -77,6 +77,15 @@ func TestPreviewResolve_ViewerScopedWithRuleFallback(t *testing.T) {
 	}
 
 	alice.do(t, s, http.MethodGet, alice.connect(t, s, m, "code-a", "/"), "")
+	if got = resolvePreviews(t, alice, s, text); got[0].State != linkpreview.StateAmbiguous || got[0].Title != "" {
+		t.Fatalf("two workspaces = %+v", got)
+	}
+	body, _ := json.Marshal(map[string]any{"text": text, "workspaces": map[string]string{"mock": "w2"}})
+	var chosen struct{ Previews []linkpreview.Preview }
+	_ = json.Unmarshal(alice.do(t, s, http.MethodPost, "/api/previews/resolve", string(body)).Body.Bytes(), &chosen)
+	if len(chosen.Previews) != 2 || chosen.Previews[0].Workspace != "w2" || chosen.Previews[0].Title != "Private ABC-1" {
+		t.Fatalf("chosen workspace = %+v", chosen.Previews)
+	}
 	alice.do(t, s, http.MethodPost, "/api/previews/disconnect", `{"provider":"mock","workspaceId":"w2"}`)
 	got = resolvePreviews(t, alice, s, text)
 	if len(got) != 2 || got[0].Title != "Private ABC-1" || got[1].Title != "Private ABC-2" || got[0].Workspace != "w1" {

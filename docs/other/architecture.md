@@ -310,6 +310,12 @@ flowchart TD
   fetches, a 60/min per-grant budget and `Retry-After` backoff (stale data
   is served only to the same viewer). The grant is checked before the cache,
   and disconnect/sign-out purge it, so nothing outlives a connection.
+  In the browser, `LinkPreviewStrip` renders these next to the forge and
+  custom-rule cards (owner from `PreviewOwnerContext`), with inline
+  Connect/Reconnect and a workspace chooser for `ambiguous`; the request's
+  `workspaces` map carries that choice. Settings → Link previews lists
+  providers with display names only. Previews live in component state only
+  and are dropped on `ocman:preview-auth-changed` before reloading.
 
 ## 3. Session and event data flow
 

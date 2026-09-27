@@ -13,6 +13,8 @@ import type { GitHubPreviewData } from '../lib/githubPreview';
 import { RelativeTime } from './RelativeTime';
 import { extractCustomLinks, loadLinkPreviewRules } from '../lib/linkPreviewRules';
 import type { LinkPreviewRule } from '../lib/linkPreviewRules';
+import { ProviderPreview } from './ProviderLinkPreview';
+import { hasRichPreview, needsCard, useProviderPreviews } from '../lib/useProviderPreviews';
 import './GitHubLinkPreview.css';
 
 const PreviewCard: FC<{ data: GitHubPreviewData }> = ({ data }) => (
@@ -174,7 +176,14 @@ export const LinkPreviewStrip: FC<{ text: string }> = ({ text }) => {
 
   const ghUrls = extractGitHubUrls(text);
   const fjUrls = extractForgejoUrls(text, forgejoHosts);
-  const customLinks = extractCustomLinks(text, customRules);
+  const provider = useProviderPreviews(text);
+  // A resolved provider card replaces its custom rule's plain fallback card.
+  const richIds = new Set(provider.previews.filter(hasRichPreview).map((p) => p.id));
+  const allCustom = extractCustomLinks(text, customRules);
+  const customLinks = allCustom.filter(({ label }) => !richIds.has(label));
+  // A plain provider fallback is redundant where a custom rule card exists.
+  const customLabels = new Set(allCustom.map(({ label }) => label));
+  const providerPreviews = provider.previews.filter((p) => needsCard(p) || !customLabels.has(p.id));
 
   const fjLoad = useCallback(
     (url: string) => cachedForgejoPreview(url, forgejoHosts),
@@ -185,7 +194,9 @@ export const LinkPreviewStrip: FC<{ text: string }> = ({ text }) => {
     [forgejoHosts],
   );
 
-  if (ghUrls.length === 0 && fjUrls.length === 0 && customLinks.length === 0) return null;
+  // Only announce loading where a link or rule match could become a card.
+  const loading = provider.loading && (customLinks.length > 0 || /https?:\/\//.test(text));
+  if (ghUrls.length === 0 && fjUrls.length === 0 && customLinks.length === 0 && providerPreviews.length === 0 && !loading) return null;
   return (
     <div className="gh-preview-strip" data-testid="gh-preview-strip">
       {ghUrls.map((url) => (
@@ -194,6 +205,10 @@ export const LinkPreviewStrip: FC<{ text: string }> = ({ text }) => {
       {fjUrls.map((url) => (
         <SinglePreview key={url} url={url} load={fjLoad} refresh={fjRefresh} />
       ))}
+      {providerPreviews.map((p) => (
+        <ProviderPreview key={[p.provider, p.workspace, p.kind, p.id].join('\u0000')} preview={p} providers={provider.providers} />
+      ))}
+      {loading && <span className="gh-preview__meta" role="status">Loading previews…</span>}
       {customLinks.map(({ url, label }) => (
         <a className="gh-preview gh-preview--commit" key={url} href={url} target="_blank" rel="noopener noreferrer">
           <span className="gh-preview__icon"><i className="bi bi-link-45deg" aria-hidden="true" /></span>

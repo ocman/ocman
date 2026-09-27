@@ -82,6 +82,7 @@ import { usePendingSend } from './usePendingSend';
 import { useFailedSendRehydrate } from './useFailedSendRehydrate';
 import { useAutoApprove } from '../../lib/useAutoApprove';
 import { ThreadSkeleton } from '../../components/Skeleton';
+import { PreviewOwnerContext } from '../../lib/previews';
 
 /** Memory bound on the in-memory message list. */
 const MAX_RETAINED_MESSAGES = 200;
@@ -915,6 +916,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                 resetKey={`${session.id}:${threadBoundaryResetNonce}`}
                 fallbackRender={renderThreadBoundaryFallback}
               >
+                <PreviewOwnerContext.Provider value={session.remoteId || 'local'}>
                 <AssistantThread
                   hasMore={hasMore}
                   loadingMore={loadingMore}
@@ -1032,6 +1034,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                     </>
                   ) : undefined}
                 />
+                </PreviewOwnerContext.Provider>
               </ErrorBoundary>
               <SessionModals
                 session={session}

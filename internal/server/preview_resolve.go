@@ -44,6 +44,10 @@ func (s *Server) previewIdentifierRules(ctx context.Context) []linkpreview.Ident
 func (s *Server) handlePreviewResolve(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Text string `json:"text"`
+		// Workspaces is the viewer's workspace choice per provider for
+		// resources several connected workspaces could own. An unconnected
+		// choice resolves as not connected.
+		Workspaces map[string]string `json:"workspaces"`
 	}
 	if !readAndUnmarshal(w, r, maxPreviewResolveBody, &req) {
 		return
@@ -53,7 +57,13 @@ func (s *Server) handlePreviewResolve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	svc := s.linkPreviews()
-	previews := svc.Resolve(r.Context(), viewerID, ownerID, svc.Discover(req.Text, s.previewIdentifierRules(r.Context())))
+	refs := svc.Discover(req.Text, s.previewIdentifierRules(r.Context()))
+	for i := range refs {
+		if refs[i].Workspace == "" {
+			refs[i].Workspace = req.Workspaces[refs[i].Provider]
+		}
+	}
+	previews := svc.Resolve(r.Context(), viewerID, ownerID, refs)
 	if previews == nil {
 		previews = []linkpreview.Preview{}
 	}

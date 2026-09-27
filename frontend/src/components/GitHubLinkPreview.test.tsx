@@ -54,7 +54,7 @@ it('issues one backend request per refresh cycle for N cards of the same URL', a
   vi.stubGlobal('fetch', fetchMock);
 
   const previewCalls = () =>
-    fetchMock.mock.calls.filter(([u]) => String(u).includes('/preview')).length;
+    fetchMock.mock.calls.filter(([u]) => String(u).includes('/github/preview')).length;
 
   const { LinkPreviewStrip } = await import('./GitHubLinkPreview');
   const text = 'look at https://github.com/o/r/pull/1 please';
