@@ -316,6 +316,14 @@ flowchart TD
   `workspaces` map carries that choice. Settings → Link previews lists
   providers with display names only. Previews live in component state only
   and are dropped on `ocman:preview-auth-changed` before reloading.
+- **Slack previews** (`linkpreview.Slack`, opt-in via
+  `OCMAN_SLACK_PREVIEW_CLIENT_ID/_SECRET`). A dedicated OAuth app yields a
+  per-viewer *user* token (`user_scope`, bot tokens refused); conversation.v1
+  bot tokens and grants are never used. `/archives/{channel}/p{ts}` links
+  (plus `thread_ts` replies) resolve only when `auth.test`'s workspace URL
+  matches the link host, and channels Slack reports private/DM/MPIM are
+  denied before any message is read. Slack `ok:false` codes map onto the
+  shared 401 (grant forgotten) / 403 / 404 / 429 handling.
 
 ## 3. Session and event data flow
 

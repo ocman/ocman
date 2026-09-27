@@ -106,6 +106,7 @@ locality must not be used to justify `-auth-trust-localhost`.
 | `OCMAN_AUTH_TRUST_LOCALHOST` | Truthy value enables the loopback auth bypass. |
 | `OCMAN_INSECURE_NO_AUTH` | Truthy value allows a non-loopback listen address with no password configured. |
 | `OPENCODE_SERVER_PASSWORD` | Password for managed OpenCode servers and all ocman-to-OpenCode HTTP/SSE traffic. |
+| `OCMAN_SLACK_PREVIEW_CLIENT_ID`, `OCMAN_SLACK_PREVIEW_CLIENT_SECRET` | Enable Slack message previews. Register a dedicated Slack app (not the conversation plugin's) with redirect URL `<public base>/api/previews/oauth/callback` and user token scopes `channels:history`, `channels:read`, `users:read`. Each viewer connects their own Slack account; private channels and DMs are always shown as denied. |
 | `OCMAN_ALLOWED_HOSTS` | Vite dev/preview only: comma-separated extra hostnames allowed by the dev server (e.g. `foo.tailnet.ts.net,bar.lan`). |
 
 ## Authentication

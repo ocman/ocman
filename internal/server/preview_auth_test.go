@@ -357,3 +357,15 @@ func TestPreviewAuth_OwnerAndAccessFailClosed(t *testing.T) {
 		t.Fatalf("auth on, cookie = %d", rr.Code)
 	}
 }
+
+func TestPreviewAuth_SlackFromEnv(t *testing.T) {
+	t.Setenv("OCMAN_SLACK_PREVIEW_CLIENT_ID", "cid")
+	t.Setenv("OCMAN_SLACK_PREVIEW_CLIENT_SECRET", "secret")
+	s := testServer(t)
+	if _, ok := s.previewManager().Provider("slack"); !ok {
+		t.Fatal("slack provider not registered")
+	}
+	if refs := s.linkPreviews().Discover("https://acme.slack.com/archives/C1/p1700000000000100", nil); len(refs) != 1 {
+		t.Fatalf("refs = %v", refs)
+	}
+}

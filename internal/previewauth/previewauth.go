@@ -67,6 +67,10 @@ type Provider struct {
 	BasicAuth bool
 	// AuthParams are extra fixed authorize-URL parameters.
 	AuthParams map[string]string
+	// DecodeToken, when set, returns the object in a token response that
+	// holds access_token/refresh_token/expires_in, or a sentinel error
+	// (Slack nests user tokens under authed_user and fails with ok:false).
+	DecodeToken func(raw map[string]any) (map[string]any, error)
 	// Identify maps a fresh token to the workspaces it grants. Nil means a
 	// single "default" workspace.
 	Identify func(ctx context.Context, client *http.Client, tok Token) ([]Grant, error)
@@ -244,13 +248,19 @@ func (m *Manager) tokenRequest(ctx context.Context, p Provider, form url.Values)
 	if code, _ := raw["error"].(string); code == "invalid_grant" {
 		return Token{}, ErrRevoked
 	}
-	access, _ := raw["access_token"].(string)
+	fields := raw
+	if p.DecodeToken != nil {
+		if fields, err = p.DecodeToken(raw); err != nil {
+			return Token{}, err
+		}
+	}
+	access, _ := fields["access_token"].(string)
 	if resp.StatusCode != http.StatusOK || access == "" {
 		return Token{}, ErrExchange
 	}
 	tok := Token{AccessToken: access, Raw: raw}
-	tok.RefreshToken, _ = raw["refresh_token"].(string)
-	if secs, ok := raw["expires_in"].(float64); ok && secs > 0 {
+	tok.RefreshToken, _ = fields["refresh_token"].(string)
+	if secs, ok := fields["expires_in"].(float64); ok && secs > 0 {
 		tok.ExpiresAt = time.Now().Add(time.Duration(secs) * time.Second)
 	}
 	return tok, nil

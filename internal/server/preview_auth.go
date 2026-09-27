@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -68,6 +69,12 @@ func (s *Server) WithPreviewProviders(client *http.Client, providers ...previewa
 
 func (s *Server) previewManager() *previewauth.Manager {
 	s.previewAuth.once.Do(func() {
+		// Slack previews use a dedicated app the operator registers for
+		// viewer consent, never the conversation.v1 plugin's bot app.
+		if id, secret := os.Getenv("OCMAN_SLACK_PREVIEW_CLIENT_ID"), os.Getenv("OCMAN_SLACK_PREVIEW_CLIENT_SECRET"); id != "" && secret != "" {
+			s.previewAuth.providers = append(s.previewAuth.providers, linkpreview.SlackOAuth(id, secret, ""))
+			s.previewAuth.resolvers = append(s.previewAuth.resolvers, linkpreview.Slack{})
+		}
 		s.previewAuth.manager = previewauth.New(s.stateDB, s.publicURL(previewCallback), s.previewAuth.client, s.previewAuth.providers...)
 		s.previewAuth.previews = linkpreview.New(s.previewAuth.manager, s.previewAuth.manager.Client(), s.previewAuth.resolvers...)
 		previews := s.previewAuth.previews
