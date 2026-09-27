@@ -27,6 +27,8 @@ export function SlashCommandMenu({ commands, activeIndex, menuRef, listboxId, op
         >
           <span className="oc-slash-name">/{cmd.name}</span>
           {cmd.description && <span className="oc-slash-desc">{cmd.description}</span>}
+          {/* OpenCode reports command | skill | mcp; ocman's own commands carry no source. */}
+          <span className="oc-slash-kind">{cmd.source || 'built-in'}</span>
         </div>
       ))}
     </div>

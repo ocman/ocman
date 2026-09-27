@@ -86,6 +86,12 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.oc-slash-kind {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--overlay1);
+  font-size: 11px;
+}
 
 /* Composer - OpenCode style */
 .oc-composer-wrap {
