@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useApiStore } from '../lib/apiStore';
 import { useUiStore } from '../lib/uiStore';
 import { useOpencodeLaunch } from '../lib/useCapabilities';
-import { cleanTitle, fuzzyMatch, relativeTime, shortPath } from '../lib/format';
+import { cleanTitle, fuzzyMatch, fuzzyRank, fuzzyScore, relativeTime, shortPath } from '../lib/format';
 import { isTerminalStatus } from '../lib/sessionStatus';
 import type { Session, Project, DirectoryBrowseEntry, DirectorySearchEntry } from '../lib/api';
 import { useTmux } from '../lib/useTmux';
@@ -21,6 +21,14 @@ type CommandItem = { kind: 'command'; id: string; label: string; description: st
 type ScopedItem = { kind: 'scoped'; id: string; label: string; description: string };
 type NavItem = { kind: 'nav'; id: string; label: string; path: string };
 type CommandNavItem = CommandItem | ScopedItem | NavItem;
+
+// Title matches outrank directory matches; a query spanning both
+// ("ocman fix") still matches via the joined text, ranked lowest.
+const sessionScore = (query: string) => (s: Session) => {
+  const title = cleanTitle(s.title);
+  const best = Math.max(fuzzyScore(query, title), fuzzyScore(query, s.directory) * 0.5);
+  return best >= 0 ? best : fuzzyMatch(query, `${title} ${s.directory}`) ? 0 : -1;
+};
 
 type ResultItem =
   | { kind: 'session'; session: Session }
@@ -431,7 +439,7 @@ export function CommandPalette() {
           .slice(0, 20)
           .map((s) => ({ kind: 'session' as const, session: s }));
       }
-      return sessions.filter((session) => fuzzyMatch(query, `${cleanTitle(session.title)} ${session.directory}`)).slice(0, 20).map((session) => ({
+      return fuzzyRank(sessions, sessionScore(query)).slice(0, 20).map((session) => ({
         kind: 'session' as const,
         session,
       }));
@@ -461,9 +469,9 @@ export function CommandPalette() {
     if (mode === 'project-session') {
       if (!projectListLoaded || projectListLoading || projectListError) return [];
       const q = query.trim().toLowerCase();
-      const projects = projectList
-        .filter((p) => fuzzyMatch(q, p.directory))
-        .sort((a, b) => b.lastUsed - a.lastUsed)
+      // Recency first so it breaks ties between equally good matches.
+      const byRecency = projectList.slice().sort((a, b) => b.lastUsed - a.lastUsed);
+      const projects = fuzzyRank(byRecency, (p) => fuzzyScore(q, p.directory))
         .slice(0, 20)
         .map((p) => ({ kind: 'project' as const, project: p }));
       // "Create new project" always stays at the end, unaffected by search.
@@ -476,18 +484,14 @@ export function CommandPalette() {
 
     if (isCommandQuery(query)) {
       const q = stripCommandPrefix(query).toLowerCase();
-      const commands = staticCommands.filter((item) => fuzzyMatch(q, item.label));
-      const scoped = SCOPED_COMMANDS.filter((item) => fuzzyMatch(q, item.label));
-      const navs = NAV_ITEMS.filter((item) => fuzzyMatch(q, item.label));
-      return dedupeCommandNavItems([...commands, ...scoped, ...navs]);
+      return dedupeCommandNavItems(fuzzyRank([...staticCommands, ...SCOPED_COMMANDS, ...NAV_ITEMS], (item) => fuzzyScore(q, item.label)));
     }
 
     const q = query.toLowerCase();
-    const commands = staticCommands.filter((item) => fuzzyMatch(q, item.label));
-    const navs = NAV_ITEMS.filter((item) => fuzzyMatch(q, item.label));
-    const scoped = SCOPED_COMMANDS.filter((item) => fuzzyMatch(q, item.label));
+    // Commands, scoped commands and nav items rank together; sessions follow.
+    const actions = fuzzyRank([...staticCommands, ...SCOPED_COMMANDS, ...NAV_ITEMS], (item) => fuzzyScore(q, item.label));
     const sessionResults = sessions
-      ? sessions.filter((session) => fuzzyMatch(query, `${cleanTitle(session.title)} ${session.directory}`)).slice(0, 10).map((session) => ({
+      ? fuzzyRank(sessions, sessionScore(query)).slice(0, 10).map((session) => ({
           kind: 'session' as const,
           session,
         }))
@@ -495,7 +499,7 @@ export function CommandPalette() {
 
     const uniqueResults: ResultItem[] = [];
     const seen = new Set<string>();
-    for (const item of [...commands, ...scoped, ...navs, ...sessionResults]) {
+    for (const item of [...actions, ...sessionResults]) {
       const key =
         item.kind === 'session'
           ? `session:${item.session.id}`

@@ -24,6 +24,18 @@ export function fuzzyScore(query: string, text: string): number {
   return Math.max(0, 500 - (last - first + 1 - q.length) - first);
 }
 
+// fuzzyRank keeps the items `score` accepts (>= 0) and sorts them
+// best-first. `pinned` items (favorites, defaults) outrank every other
+// match; match quality only orders within each group. Ties keep input
+// order, so pre-sorted input (recency, curated order) breaks them.
+export function fuzzyRank<T>(items: T[], score: (item: T) => number, pinned?: (item: T) => boolean): T[] {
+  return items
+    .map((item) => ({ item, s: score(item), p: pinned?.(item) ? 1 : 0 }))
+    .filter((r) => r.s >= 0)
+    .sort((a, b) => b.p - a.p || b.s - a.s)
+    .map((r) => r.item);
+}
+
 // fuzzyMatch: every char of `query` appears in `text` in order.
 export function fuzzyMatch(query: string, text: string): boolean {
   return fuzzyScore(query, text) >= 0;

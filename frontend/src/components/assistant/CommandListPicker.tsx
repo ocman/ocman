@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { fuzzyMatch } from '../../lib/format';
+import { fuzzyMatch, fuzzyRank, fuzzyScore } from '../../lib/format';
 import { Modal } from '../Modal';
 import '../CommandPalette.css';
 import './ModelPicker.css';
@@ -74,6 +74,8 @@ export interface CommandListPickerProps<T extends PickerEntryBase> {
   entries: T[];
   /** Fields included in fuzzy matching. Unused when `searchable` is false. */
   fuseKeys?: SearchKey<T>[];
+  /** Entries that outrank every other search match (favorites, defaults). */
+  pinned?: (e: T) => boolean;
   /**
    * False renders a static title instead of the search input and hosts the
    * keyboard model on the listbox itself; the initially highlighted row is
@@ -114,6 +116,7 @@ export function CommandListPicker<T extends PickerEntryBase>({
   open,
   entries,
   fuseKeys,
+  pinned,
   searchable = true,
   dialogClassName,
   sectionOf,
@@ -154,9 +157,23 @@ export function CommandListPicker<T extends PickerEntryBase>({
 
   const filteredEntries = useMemo(() => {
     if (!extendedQuery) return entries;
-    const keys = (fuseKeys ?? ['value']).map((key) => typeof key === 'object' ? key.name : key).filter((key): key is keyof T & string => typeof key === 'string');
-    return entries.filter((entry) => fuzzyMatch(extendedQuery, keys.map((key) => String((entry as unknown as Record<string, unknown>)[key] ?? '')).join(' '))).slice(0, 200);
-  }, [entries, extendedQuery, fuseKeys]);
+    const keys = (fuseKeys ?? ['value'])
+      .map((key) => typeof key === 'object' ? { name: key.name, weight: key.weight ?? 1 } : { name: key, weight: 1 })
+      .filter((key): key is { name: keyof T & string; weight: number } => typeof key.name === 'string');
+    const field = (entry: T, name: string) => String((entry as unknown as Record<string, unknown>)[name] ?? '');
+    // Best weighted per-field score; a match that only exists across fields
+    // (e.g. "anthropic opus") still counts, ranked lowest.
+    const score = (entry: T) => {
+      let best = -1;
+      for (const { name, weight } of keys) {
+        const s = fuzzyScore(extendedQuery, field(entry, name));
+        if (s >= 0) best = Math.max(best, s * weight);
+      }
+      if (best < 0 && fuzzyMatch(extendedQuery, keys.map(({ name }) => field(entry, name)).join(' '))) best = 0;
+      return best;
+    };
+    return fuzzyRank(entries, score, pinned).slice(0, 200);
+  }, [entries, extendedQuery, fuseKeys, pinned]);
 
   // Section only when not searching; on search show a flat filtered list.
   const items = useMemo(

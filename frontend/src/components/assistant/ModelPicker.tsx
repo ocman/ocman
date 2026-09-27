@@ -107,6 +107,9 @@ function sectionOf(e: PickerEntry): string {
   return 'Archived';
 }
 
+// Favorites and defaults outrank closer matches when searching.
+const isPinned = (e: PickerEntry) => e.isFavorite || e.isSessionDefault || e.isProviderDefault;
+
 // Command-palette–style modal for picking a model. Reuses the visual styling
 // of `CommandPalette` so it feels consistent with the rest of the app.
 export function ModelPicker({
@@ -190,6 +193,7 @@ export function ModelPicker({
         { name: 'provider', weight: 0.5 },
         { name: 'value', weight: 0.2 },
       ]}
+      pinned={isPinned}
       // Section only when we have rich data (string fallback has no section
       // metadata, so a flat alphabetical list is the right default).
       sectionOf={useRich ? sectionOf : undefined}

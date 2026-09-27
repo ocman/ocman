@@ -400,6 +400,23 @@ describe('CommandPalette project mode', () => {
     expect(screen.getByText('Create new project')).toBeInTheDocument();
   });
 
+  it('ranks known projects by match quality before recency', async () => {
+    mocks.uiState.paletteMode = 'project-session';
+    renderPalette();
+    await screen.findByText('workspace/ocman');
+
+    // "re" is a word-start substring only in .../research; ocman (most
+    // recent) and banana-frontend match as scattered letters.
+    fireEvent.change(screen.getByPlaceholderText('Select a project to start a session...'), {
+      target: { value: 're' },
+    });
+    const labels = screen.getAllByRole('option').map((o) => o.textContent ?? '');
+    expect(labels.findIndex((l) => l.includes('workspace/research'))).toBe(0);
+    // Equal scattered matches keep recency order.
+    expect(labels.findIndex((l) => l.includes('workspace/ocman')))
+      .toBeLessThan(labels.findIndex((l) => l.includes('workspace/banana-frontend')));
+  });
+
   it('switches to the filesystem browser when "Create new project" is selected', async () => {
     mocks.uiState.paletteMode = 'project-session';
 

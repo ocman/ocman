@@ -53,6 +53,36 @@ describe('CommandListPicker', () => {
       expect(onSelect).toHaveBeenCalledWith('d');
     });
 
+    it('ranks by match quality, with pinned entries above every other match', async () => {
+      const user = userEvent.setup();
+      const ranked: Entry[] = [
+        { value: 'x', label: 'my-sonnet-fav' },
+        { value: 'y', label: 'old-sonnet' },
+        { value: 'z', label: 'sonnet' },
+      ];
+      const { unmount } = render(
+        <CommandListPicker<Entry>
+          open entries={ranked} fuseKeys={['label']} renderRow={(e) => <span>{e.label}</span>}
+          placeholder={() => 'Pick'} emptyMessage="Nothing" isCurrent={() => false}
+          onSelect={vi.fn()} onClose={vi.fn()}
+        />,
+      );
+      await user.type(screen.getByRole('combobox'), 'sonnet');
+      // exact first, then word-start substrings (earlier position wins)
+      expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['sonnet', 'my-sonnet-fav', 'old-sonnet']);
+      unmount();
+
+      render(
+        <CommandListPicker<Entry>
+          open entries={ranked} fuseKeys={['label']} renderRow={(e) => <span>{e.label}</span>}
+          placeholder={() => 'Pick'} emptyMessage="Nothing" isCurrent={() => false}
+          pinned={(e) => e.value === 'x'} onSelect={vi.fn()} onClose={vi.fn()}
+        />,
+      );
+      await user.type(screen.getByRole('combobox'), 'sonnet');
+      expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual(['my-sonnet-fav', 'sonnet', 'old-sonnet']);
+    });
+
     it('shows the empty message when nothing matches', async () => {
       const user = userEvent.setup();
       renderPicker();

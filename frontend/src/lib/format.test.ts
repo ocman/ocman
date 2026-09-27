@@ -10,6 +10,7 @@ import {
   timeUntilISO,
   formatTokensPerSecond,
   fuzzyMatch,
+  fuzzyRank,
   fuzzyScore,
   relativeTime,
   renderModel,
@@ -32,6 +33,15 @@ describe('fuzzyScore', () => {
   it('returns -1 on no match and 0 for an empty query', () => {
     expect(fuzzyScore('zz', 'model')).toBe(-1);
     expect(fuzzyScore('', 'model')).toBe(0);
+  });
+});
+
+describe('fuzzyRank', () => {
+  it('drops non-matches, puts pinned first, and keeps input order on ties', () => {
+    const names = ['b-model', 'model', 'zzz', 'a-model'];
+    const score = (n: string) => fuzzyScore('model', n);
+    expect(fuzzyRank(names, score)).toEqual(['model', 'b-model', 'a-model']);
+    expect(fuzzyRank(names, score, (n) => n === 'a-model')).toEqual(['a-model', 'model', 'b-model']);
   });
 });
 

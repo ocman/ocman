@@ -77,6 +77,8 @@ function sectionOf(e: PickerEntry): string {
   return 'Primary';
 }
 const SECTION_ORDER = ['Active', 'Primary', 'Subagents', 'Hidden'];
+// The session's active agent outranks closer matches when searching.
+const isPinned = (e: PickerEntry) => e.isActive;
 
 // Command-palette–style modal for picking an agent. Styled alongside
 // ModelPicker so the two feel interchangeable.
@@ -131,6 +133,7 @@ export function AgentPicker({
         { name: 'description', weight: 0.4 },
         { name: 'mode', weight: 0.2 },
       ]}
+      pinned={isPinned}
       sectionOf={sectionOf}
       sectionOrder={SECTION_ORDER}
       renderRow={renderRow}
