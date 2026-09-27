@@ -1141,14 +1141,15 @@ describe('convertMessages', () => {
     });
   });
 
-  it('renders error text on assistant messages (skipping abort errors)', () => {
+  it('renders error text on assistant messages, including aborted turns', () => {
     const m = makeMessage('m', { role: 'assistant', error: { name: 'BadThing', data: { message: 'oops' } } });
     const out = convertMessages([m], []);
     expect(out[0].content).toContain('**BadThing:** oops');
 
-    const aborted = makeMessage('m', { role: 'assistant', error: { name: 'AbortError', data: {} } });
+    const aborted = makeMessage('m', { role: 'assistant', error: { name: 'MessageAbortedError', data: { message: 'The message was aborted' } } });
     const out2 = convertMessages([aborted], []);
-    expect(out2[0].content).toBe('');
+    expect(out2[0].content).toBe('**MessageAbortedError:** The message was aborted');
+    expect(out2[0].status).toEqual({ type: 'incomplete', reason: 'error' });
   });
 
   it('renders the message from a JSON error envelope', () => {

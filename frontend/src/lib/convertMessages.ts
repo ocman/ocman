@@ -649,16 +649,12 @@ export function createConvertMessages(): ConvertMessagesFn {
       }
     });
 
-    // If the message has an error object, inject the error details
-    // as visible text — but skip abort errors since the UI already
-    // shows an "interrupted" indicator.
+    // Show stored errors in the conversation, including aborted turns.
     if (role === 'assistant' && m.data.error) {
       const errName = m.data.error.name || 'Error';
       const isAbort = errName === 'MessageAbortedError' || errName === 'AbortError';
-      if (!isAbort) {
-        const errMessage = displayErrorMessage(m.data.error.data?.message || 'An unknown error occurred');
-        textPieces.push(`**${errName}:** ${errMessage}`);
-      }
+      const errMessage = displayErrorMessage(m.data.error.data?.message || (isAbort ? 'The message was aborted' : 'An unknown error occurred'));
+      textPieces.push(`**${errName}:** ${errMessage}`);
     }
 
     // User messages cannot contain tool-call parts in assistant-ui.

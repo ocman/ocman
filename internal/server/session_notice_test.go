@@ -312,6 +312,19 @@ func TestDeriveSessionNotice_ErroredWithGenericError(t *testing.T) {
 	}
 }
 
+func TestDeriveSessionNotice_AbortedMessage(t *testing.T) {
+	for _, name := range []string{"MessageAbortedError", "AbortError"} {
+		s := db.Session{
+			Status:           db.StatusError,
+			LastErrorName:    name,
+			LastErrorMessage: "The message was aborted",
+		}
+		if notice := deriveSessionNotice(s); notice != nil {
+			t.Errorf("%s should appear in the conversation, not a toast: %+v", name, notice)
+		}
+	}
+}
+
 // --- applySessionNotice tests ---
 
 func TestApplySessionNotice_EnrichesSlice(t *testing.T) {

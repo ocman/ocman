@@ -146,6 +146,9 @@ func deriveSessionNotice(s db.Session) *db.SessionNotice {
 	if s.Status != db.StatusError && s.Status != db.StatusBusy {
 		return nil
 	}
+	if s.LastErrorName == "MessageAbortedError" || s.LastErrorName == "AbortError" {
+		return nil
+	}
 
 	// Try the error message first (most specific), then the error name.
 	for _, text := range []string{s.LastErrorMessage, s.LastErrorName} {
