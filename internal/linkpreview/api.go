@@ -1,0 +1,100 @@
+package linkpreview
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+)
+
+// ErrUnsafeRequest is returned, without any network call, for a request to
+// a host outside the resolver's APIHosts or with an invalid path segment.
+var ErrUnsafeRequest = errors.New("unsafe preview request")
+
+// maxResponse bounds a provider response body.
+const maxResponse = 1 << 20
+
+// HTTPError is a non-2xx provider response. Redirects are never followed,
+// so a 3xx lands here too.
+type HTTPError struct {
+	Status     int
+	RetryAfter time.Duration
+}
+
+func (e *HTTPError) Error() string { return fmt.Sprintf("provider returned %d", e.Status) }
+
+// API is the only way a Resolver reaches its provider: fixed hosts,
+// escaped validated path segments, the viewer's bearer token, no redirects.
+type API struct {
+	client *http.Client
+	token  string
+	hosts  map[string]bool
+}
+
+func validSegment(s string) bool {
+	return s != "" && s != "." && s != ".." && len(s) <= 256 && !strings.ContainsAny(s, "/\\?#%") &&
+		strings.IndexFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f }) < 0
+}
+
+// JSON sends method to base + "/" + segments (each path-escaped) with an
+// optional JSON body and decodes a JSON response into out.
+func (a *API) JSON(ctx context.Context, method, base string, segments []string, query url.Values, body, out any) error {
+	u, err := url.Parse(base)
+	if err != nil || u.Scheme != "https" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || !a.hosts[strings.ToLower(u.Host)] {
+		return ErrUnsafeRequest
+	}
+	path, raw := strings.TrimRight(u.Path, "/"), strings.TrimRight(u.EscapedPath(), "/")
+	for _, s := range strings.Split(strings.Trim(u.Path, "/"), "/") {
+		if s == "." || s == ".." {
+			return ErrUnsafeRequest
+		}
+	}
+	for _, s := range segments {
+		if !validSegment(s) {
+			return ErrUnsafeRequest
+		}
+		path, raw = path+"/"+s, raw+"/"+url.PathEscape(s)
+	}
+	u.Path, u.RawPath, u.RawQuery = path, raw, query.Encode()
+
+	var rdr io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		rdr = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), rdr)
+	if err != nil {
+		return ErrUnsafeRequest
+	}
+	req.Header.Set("Accept", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if a.token != "" {
+		req.Header.Set("Authorization", "Bearer "+a.token)
+	}
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponse))
+		secs, _ := strconv.Atoi(resp.Header.Get("Retry-After"))
+		return &HTTPError{Status: resp.StatusCode, RetryAfter: time.Duration(secs) * time.Second}
+	}
+	if out == nil {
+		return nil
+	}
+	return json.NewDecoder(io.LimitReader(resp.Body, maxResponse)).Decode(out)
+}

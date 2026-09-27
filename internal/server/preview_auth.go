@@ -15,6 +15,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/linkpreview"
 	"github.com/NoUseFreak/ocman/internal/previewauth"
 )
 
@@ -47,6 +48,8 @@ type previewAuthState struct {
 	client    *http.Client
 	providers []previewauth.Provider
 	manager   *previewauth.Manager
+	resolvers []linkpreview.Resolver
+	previews  *linkpreview.Service
 }
 
 // WithPreviewProviders registers the OAuth applications viewers may connect.
@@ -60,6 +63,7 @@ func (s *Server) WithPreviewProviders(client *http.Client, providers ...previewa
 func (s *Server) previewManager() *previewauth.Manager {
 	s.previewAuth.once.Do(func() {
 		s.previewAuth.manager = previewauth.New(s.stateDB, s.publicURL(previewCallback), s.previewAuth.client, s.previewAuth.providers...)
+		s.previewAuth.previews = linkpreview.New(s.previewAuth.manager, s.previewAuth.manager.Client(), s.previewAuth.resolvers...)
 	})
 	return s.previewAuth.manager
 }
@@ -256,6 +260,7 @@ func (s *Server) handlePreviewDisconnect(w http.ResponseWriter, r *http.Request)
 			http.Error(w, "unknown provider", http.StatusNotFound)
 			return
 		}
+		s.linkPreviews().Purge(viewerID, ownerID, req.Provider)
 		if err != nil {
 			http.Error(w, "disconnect failed", http.StatusInternalServerError)
 			return
@@ -271,6 +276,7 @@ func (s *Server) signOutPreviewViewer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if ident, err := s.stateDB.InstanceIdentity(r.Context()); err == nil {
+		s.linkPreviews().Purge(hashViewer(c.Value), ident.InstanceID, "")
 		if err := s.previewManager().SignOut(r.Context(), hashViewer(c.Value), ident.InstanceID); err != nil {
 			log.WithError(err).Warn("preview auth: sign-out cleanup failed")
 		}

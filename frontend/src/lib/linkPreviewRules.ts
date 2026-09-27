@@ -3,6 +3,8 @@ import { fetchJSON, postJSON } from './api';
 export interface LinkPreviewRule {
   pattern: string;
   replacement: string;
+  /** Routes matches to a preview provider; `replacement` stays the fallback link. */
+  provider?: string;
 }
 
 const endpoint = '/api/settings/link-preview-rules';

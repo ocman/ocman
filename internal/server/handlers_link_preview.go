@@ -11,9 +11,14 @@ import (
 
 const linkPreviewRulesKey = "link_preview_rules"
 
+var providerIDPattern = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
+
 type linkPreviewRule struct {
 	Pattern     string `json:"pattern"`
 	Replacement string `json:"replacement"`
+	// Provider optionally routes matches to a preview provider; the
+	// replacement link stays the fallback when it cannot resolve them.
+	Provider string `json:"provider,omitempty"`
 }
 
 type linkPreviewRules struct {
@@ -84,6 +89,9 @@ func validateLinkPreviewRules(value linkPreviewRules) error {
 		}
 		if strings.Contains(rule.Replacement, "$1") && compiled.NumSubexp() == 0 {
 			return fmt.Errorf("rule %d: $1 requires a capture group", i+1)
+		}
+		if rule.Provider != "" && !providerIDPattern.MatchString(rule.Provider) {
+			return fmt.Errorf("rule %d: invalid provider", i+1)
 		}
 		u, err := url.Parse(rule.Replacement)
 		if err != nil || u == nil || (u.Scheme != "https" && u.Scheme != "http") || u.Hostname() == "" || u.User != nil {

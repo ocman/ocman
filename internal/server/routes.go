@@ -155,6 +155,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/previews/providers", s.get(s.handlePreviewProviders))
 	mux.HandleFunc("/api/previews/connect", s.post(s.handlePreviewConnect))
 	mux.HandleFunc("/api/previews/disconnect", s.post(s.handlePreviewDisconnect))
+	mux.HandleFunc("/api/previews/resolve", s.post(s.handlePreviewResolve))
 	mux.HandleFunc(previewCallback, s.get(s.handlePreviewCallback))
 
 	// Settings endpoints — user preferences that must be shared with the

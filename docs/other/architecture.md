@@ -288,6 +288,18 @@ flowchart TD
   viewer/owner/provider/workspace with the row key as associated data, refreshed
   under a per-grant singleflight, and deleted on `invalid_grant`, disconnect or
   sign-out. Any `remoteId` other than this machine fails closed (503).
+- **internal/linkpreview.** Normalized previews behind
+  `POST /api/previews/resolve` (text in, `Preview` list out; TS mirror in
+  `frontend/src/lib/previews.ts`). Registered `Resolver`s recognize known
+  direct URLs and custom link rules carrying a `provider` (the rule's
+  replacement link stays the client-side fallback), deduped by resource and
+  capped at 20 per text. Fetches go only through `linkpreview.API`: the
+  resolver's fixed API hosts, validated path segments, the viewer's token,
+  no redirects, 1 MiB bodies, 10 s timeouts. Results are cached per
+  viewer/owner/provider/workspace/resource with in-flight dedup, 4 concurrent
+  fetches, a 60/min per-grant budget and `Retry-After` backoff (stale data
+  is served only to the same viewer). The grant is checked before the cache,
+  and disconnect/sign-out purge it, so nothing outlives a connection.
 
 ## 3. Session and event data flow
 
