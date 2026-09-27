@@ -352,6 +352,14 @@ flowchart TD
   a link whose workspace `urlKey` differs from the grant's is `not_found`.
   GraphQL error codes (`AUTHENTICATION_ERROR`, `FORBIDDEN`, `RATELIMITED`,
   often on HTTP 400) map onto the shared 401 / 403 / 429 handling.
+- **Jira previews** (`linkpreview.Jira`, opt-in via
+  `OCMAN_JIRA_PREVIEW_CLIENT_ID`). Atlassian 3LO authorization code with
+  `read:jira-work read:me offline_access`; one grant per viewer and
+  Atlassian account (one rotating refresh token spans its sites). Each fetch
+  lists `oauth/token/accessible-resources` and calls
+  `api.atlassian.com/ex/jira/{cloudid}` for the site matching the link host,
+  which is never contacted itself. An identifier found on several sites
+  becomes `Choices`.
 
 ## 3. Session and event data flow
 

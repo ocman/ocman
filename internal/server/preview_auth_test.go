@@ -392,3 +392,15 @@ func TestPreviewAuth_LinearFromEnv(t *testing.T) {
 		t.Fatalf("refs = %v", refs)
 	}
 }
+
+func TestPreviewAuth_JiraFromEnv(t *testing.T) {
+	t.Setenv("OCMAN_JIRA_PREVIEW_CLIENT_ID", "cid")
+	t.Setenv("OCMAN_JIRA_PREVIEW_CLIENT_SECRET", "sec")
+	s := testServer(t)
+	if p, ok := s.previewManager().Provider("jira"); !ok || !p.JSONBody {
+		t.Fatal("jira provider not registered")
+	}
+	if refs := s.linkPreviews().Discover("https://acme.atlassian.net/browse/ABC-12", nil); len(refs) != 1 {
+		t.Fatalf("refs = %v", refs)
+	}
+}
