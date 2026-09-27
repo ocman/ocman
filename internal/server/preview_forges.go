@@ -69,5 +69,31 @@ func (s *Server) forgePreviews() ([]previewauth.Provider, []linkpreview.Resolver
 	for _, h := range hosts {
 		resolvers = append(resolvers, *forges[h])
 	}
+	gp, gr := gitlabPreviews()
+	return append(providers, gp...), append(resolvers, gr...)
+}
+
+// gitlabPreviews wires GitLab previews for the exact hosts in
+// OCMAN_GITLAB_PREVIEW_APPS=host=client_id[:secret][,…] (gitlab.com or a
+// self-managed host). Unlisted hosts are never contacted.
+func gitlabPreviews() ([]previewauth.Provider, []linkpreview.Resolver) {
+	var providers []previewauth.Provider
+	var resolvers []linkpreview.Resolver
+	seen := map[string]bool{}
+	for _, app := range strings.Split(os.Getenv("OCMAN_GITLAB_PREVIEW_APPS"), ",") {
+		host, creds, _ := strings.Cut(strings.TrimSpace(app), "=")
+		id, secret, _ := strings.Cut(creds, ":")
+		host = strings.ToLower(host)
+		if app == "" {
+			continue
+		}
+		if u, err := url.Parse("https://" + host); err != nil || u.Host != host || u.Hostname() == "" || id == "" || seen[host] {
+			log.WithField("entry", host).Warn("preview auth: ignoring invalid OCMAN_GITLAB_PREVIEW_APPS entry")
+			continue
+		}
+		seen[host] = true
+		providers = append(providers, linkpreview.GitLabOAuth(host, id, secret, "", ""))
+		resolvers = append(resolvers, linkpreview.GitLab{Host: host})
+	}
 	return providers, resolvers
 }

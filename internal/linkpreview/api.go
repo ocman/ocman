@@ -43,6 +43,32 @@ type API struct {
 	// must return only resources that are public.
 	publicOnly bool
 	header     http.Header
+	// slashes: a segment may hold "/"-separated valid parts, sent as one
+	// %2F-escaped segment (GitLab's URL-encoded project path).
+	slashes bool
+}
+
+// WithEncodedSlashes returns a copy of a whose segments may contain "/",
+// each part still validated, escaped as %2F within one segment.
+func (a *API) WithEncodedSlashes() *API {
+	c := *a
+	c.slashes = true
+	return &c
+}
+
+func (a *API) validSegment(s string) bool {
+	if validSegment(s) {
+		return true
+	}
+	if !a.slashes || !strings.Contains(s, "/") {
+		return false
+	}
+	for _, p := range strings.Split(s, "/") {
+		if !validSegment(p) {
+			return false
+		}
+	}
+	return true
 }
 
 // WithHeader returns a copy of a that also sends header k: v (e.g. an API
@@ -79,7 +105,7 @@ func (a *API) JSON(ctx context.Context, method, base string, segments []string, 
 		}
 	}
 	for _, s := range segments {
-		if !validSegment(s) {
+		if !a.validSegment(s) {
 			return ErrUnsafeRequest
 		}
 		path, raw = path+"/"+s, raw+"/"+url.PathEscape(s)

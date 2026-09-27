@@ -288,3 +288,24 @@ func TestPreviewForges_FromEnv(t *testing.T) {
 		t.Fatalf("providers = %v", got)
 	}
 }
+
+func TestPreviewGitLab_FromEnv(t *testing.T) {
+	t.Setenv("OCMAN_GITLAB_PREVIEW_APPS", "GitLab.com=gid:gsec, code.corp:8443=cid,bad host=x,noid.example=,code.corp:8443=dup")
+	s := testServer(t)
+	m := s.previewManager()
+	if p, ok := m.Provider("gitlab:gitlab.com"); !ok || p.ClientSecret != "gsec" || !p.PKCE || p.Scopes[0] != "read_api" {
+		t.Fatalf("gitlab.com provider = %+v %v", p, ok)
+	}
+	if p, ok := m.Provider("gitlab:code.corp:8443"); !ok || p.ClientID != "cid" || p.TokenURL != "https://code.corp:8443/oauth/token" {
+		t.Fatalf("self-managed provider = %+v %v", p, ok)
+	}
+	refs := s.linkPreviews().Discover("https://gitlab.com/a/b/-/merge_requests/1 https://code.corp:8443/g/s/p/-/issues/2 "+
+		"https://code.corp/g/p/-/issues/3 https://gitlab.example.com/g/p/-/issues/4 https://noid.example/g/p/-/issues/5", nil)
+	var got []string
+	for _, r := range refs {
+		got = append(got, r.Provider)
+	}
+	if strings.Join(got, ",") != "gitlab:gitlab.com,gitlab:code.corp:8443" {
+		t.Fatalf("providers = %v", got)
+	}
+}

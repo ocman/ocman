@@ -360,6 +360,13 @@ flowchart TD
   `api.atlassian.com/ex/jira/{cloudid}` for the site matching the link host,
   which is never contacted itself. An identifier found on several sites
   becomes `Choices`.
+- **GitLab previews** (`linkpreview.GitLab`, opt-in per host via
+  `OCMAN_GITLAB_PREVIEW_APPS`). One provider `gitlab:<host>` per instance
+  (authorization code + PKCE, `read_api`), so grants never cross instances.
+  Project paths are sent as one `%2F`-escaped segment
+  (`API.WithEncodedSlashes`). Public projects preview anonymously after a
+  visibility check; every call dials through a resolve-once, address-checked
+  dialer (no loopback/link-local; no private ranges for gitlab.com).
 
 ## 3. Session and event data flow
 
