@@ -128,3 +128,14 @@ func TestRouter_ForDir(t *testing.T) {
 		t.Error("unmatched dir should be local")
 	}
 }
+
+func TestRouter_OnUnregister(t *testing.T) {
+	r := NewRouter(stubHost{id: "local"})
+	var got []string
+	r.OnUnregister(func(id string) { got = append(got, id) })
+	r.RegisterRemote("r1", stubHost{id: "r1"})
+	r.UnregisterRemote("r1")
+	if _, ok := r.LookupRemote("r1"); ok || len(got) != 1 || got[0] != "r1" {
+		t.Fatalf("hook = %v, still registered = %v", got, ok)
+	}
+}

@@ -169,16 +169,18 @@ func (m *Manager) Begin(ctx context.Context, viewerID, ownerID, providerID, retu
 }
 
 // Complete consumes the state (always, even on failure) and, when it was
-// issued to this viewer on this owner, exchanges code and stores the grants.
+// issued to this viewer, exchanges code and stores the grants for the owner
+// recorded by Begin (the redirect URI is shared by every owner).
 // providerErr is the callback's error parameter (e.g. access_denied).
-func (m *Manager) Complete(ctx context.Context, viewerID, ownerID, st, code, providerErr string) (string, error) {
+func (m *Manager) Complete(ctx context.Context, viewerID, st, code, providerErr string) (string, error) {
 	if st == "" {
 		return "", ErrInvalidState
 	}
 	s, err := m.db.TakePreviewOAuthState(ctx, hashState(st))
-	if err != nil || s.ViewerID != viewerID || s.OwnerID != ownerID {
+	if err != nil || viewerID == "" || s.ViewerID != viewerID {
 		return "", ErrInvalidState
 	}
+	ownerID := s.OwnerID
 	p, ok := m.providers[s.Provider]
 	if !ok {
 		return s.ReturnTo, ErrUnknownProvider
@@ -317,9 +319,10 @@ func (m *Manager) Disconnect(ctx context.Context, viewerID, ownerID, providerID,
 	return err
 }
 
-// SignOut forgets the viewer entirely (browser sign-out).
-func (m *Manager) SignOut(ctx context.Context, viewerID, ownerID string) error {
-	gone, err := m.db.DeletePreviewViewer(ctx, viewerID, ownerID)
+// SignOut forgets the viewer and its grants for every owner (browser
+// sign-out).
+func (m *Manager) SignOut(ctx context.Context, viewerID string) error {
+	gone, err := m.db.DeletePreviewViewer(ctx, viewerID)
 	m.revokeAll(ctx, gone)
 	return err
 }

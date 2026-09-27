@@ -30,9 +30,15 @@ import (
 // request), so an unauthenticated remote client never reaches private
 // metadata. Signing out deletes the viewer and its provider grants.
 //
-// Owner routing: every endpoint takes remoteId. Only this machine ("",
-// "local" or its own instance ID) is served here; any other owner fails
-// closed until owner-routed previews exist.
+// Owner routing (multi-remote): the hub holds viewer credentials and makes
+// every provider call; nothing is routed to the remote. Instead every grant,
+// pending consent and cached preview is keyed by an explicit owner — this
+// machine's instance ID, or a connected remote's instance ID from remoteId —
+// so a grant made for one host never answers for another, and hub grants
+// never answer for remote content. The viewer (browser) identity is hub-wide
+// and registered under this machine's ID. An explicit remoteId that is not
+// connected fails closed (503) before any credential or cache is touched,
+// and a remote's disconnect purges its cached previews.
 
 const (
 	viewerCookieName   = "ocman_viewer"
@@ -64,6 +70,8 @@ func (s *Server) previewManager() *previewauth.Manager {
 	s.previewAuth.once.Do(func() {
 		s.previewAuth.manager = previewauth.New(s.stateDB, s.publicURL(previewCallback), s.previewAuth.client, s.previewAuth.providers...)
 		s.previewAuth.previews = linkpreview.New(s.previewAuth.manager, s.previewAuth.manager.Client(), s.previewAuth.resolvers...)
+		previews := s.previewAuth.previews
+		s.router().OnUnregister(func(remoteID string) { previews.Purge("", remoteID, "") })
 	})
 	return s.previewAuth.manager
 }
@@ -89,18 +97,22 @@ func (s *Server) previewAccessAllowed(r *http.Request) bool {
 	return s.auth.hasValidCookie(r) || (s.auth.trustLocalhost && directLocalRequest(r))
 }
 
-// previewOwner resolves remoteId to this machine's owner ID, failing closed
-// for any other machine.
-func (s *Server) previewOwner(r *http.Request) (string, bool) {
+// previewOwner resolves remoteId to an owner ID: this machine (home) or a
+// connected remote. A disconnected or unknown remote fails closed.
+func (s *Server) previewOwner(r *http.Request) (home, owner string, ok bool) {
 	ident, err := s.stateDB.InstanceIdentity(r.Context())
 	if err != nil {
-		return "", false
+		return "", "", false
 	}
-	switch r.URL.Query().Get("remoteId") {
+	switch id := r.URL.Query().Get("remoteId"); id {
 	case "", "local", ident.InstanceID:
-		return ident.InstanceID, true
+		return ident.InstanceID, ident.InstanceID, true
+	default:
+		if _, ok := s.router().LookupRemote(id); ok {
+			return ident.InstanceID, id, true
+		}
 	}
-	return "", false
+	return "", "", false
 }
 
 func hashViewer(secret string) string {
@@ -108,12 +120,13 @@ func hashViewer(secret string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// previewViewer resolves the request's viewer for owner. With create, a
-// browser without a viewer is issued one. An empty ID means "no viewer".
-func (s *Server) previewViewer(w http.ResponseWriter, r *http.Request, ownerID string, create bool) (string, error) {
+// previewViewer resolves the request's viewer, registered on this machine
+// (homeID). With create, a browser without a viewer is issued one. An empty
+// ID means "no viewer".
+func (s *Server) previewViewer(w http.ResponseWriter, r *http.Request, homeID string, create bool) (string, error) {
 	if c, err := r.Cookie(viewerCookieName); err == nil && c.Value != "" {
 		id := hashViewer(c.Value)
-		ok, err := s.stateDB.PreviewViewerExists(r.Context(), id, ownerID)
+		ok, err := s.stateDB.PreviewViewerExists(r.Context(), id, homeID)
 		if err != nil {
 			return "", err
 		}
@@ -130,7 +143,7 @@ func (s *Server) previewViewer(w http.ResponseWriter, r *http.Request, ownerID s
 	}
 	secret := base64.RawURLEncoding.EncodeToString(b)
 	id := hashViewer(secret)
-	if err := s.stateDB.CreatePreviewViewer(r.Context(), id, ownerID); err != nil {
+	if err := s.stateDB.CreatePreviewViewer(r.Context(), id, homeID); err != nil {
 		return "", err
 	}
 	s.setViewerCookie(w, r, secret, viewerCookieTTL)
@@ -157,12 +170,13 @@ func (s *Server) previewContext(w http.ResponseWriter, r *http.Request, create b
 		http.Error(w, errPreviewForbidden.Error(), http.StatusForbidden)
 		return "", "", false
 	}
-	ownerID, ok = s.previewOwner(r)
+	homeID, ownerID, ok := s.previewOwner(r)
 	if !ok {
+		w.Header().Set("Cache-Control", "no-store")
 		http.Error(w, "owner unavailable", http.StatusServiceUnavailable)
 		return "", "", false
 	}
-	viewerID, err := s.previewViewer(w, r, ownerID, create)
+	viewerID, err := s.previewViewer(w, r, homeID, create)
 	if err != nil {
 		http.Error(w, "viewer unavailable", http.StatusInternalServerError)
 		return "", "", false
@@ -212,16 +226,16 @@ func (s *Server) handlePreviewConnect(w http.ResponseWriter, r *http.Request) {
 }
 
 // handlePreviewCallback is the exact redirect URI registered with providers.
-// The state must have been issued to this browser's viewer on this owner;
-// anything else (CSRF, replay, another machine) is rejected without
-// redirecting anywhere.
+// The state must have been issued to this browser's viewer; anything else
+// (CSRF, replay) is rejected without redirecting anywhere. The grant is
+// stored for the owner recorded with the state at connect time.
 func (s *Server) handlePreviewCallback(w http.ResponseWriter, r *http.Request) {
-	viewerID, ownerID, ok := s.previewContext(w, r, false)
+	viewerID, _, ok := s.previewContext(w, r, false)
 	if !ok {
 		return
 	}
 	q := r.URL.Query()
-	returnTo, err := s.previewManager().Complete(r.Context(), viewerID, ownerID, q.Get("state"), q.Get("code"), q.Get("error"))
+	returnTo, err := s.previewManager().Complete(r.Context(), viewerID, q.Get("state"), q.Get("code"), q.Get("error"))
 	if errors.Is(err, previewauth.ErrInvalidState) {
 		http.Error(w, "invalid authorization state", http.StatusBadRequest)
 		return
@@ -275,11 +289,9 @@ func (s *Server) signOutPreviewViewer(w http.ResponseWriter, r *http.Request) {
 	if err != nil || c.Value == "" {
 		return
 	}
-	if ident, err := s.stateDB.InstanceIdentity(r.Context()); err == nil {
-		s.linkPreviews().Purge(hashViewer(c.Value), ident.InstanceID, "")
-		if err := s.previewManager().SignOut(r.Context(), hashViewer(c.Value), ident.InstanceID); err != nil {
-			log.WithError(err).Warn("preview auth: sign-out cleanup failed")
-		}
+	s.linkPreviews().Purge(hashViewer(c.Value), "", "")
+	if err := s.previewManager().SignOut(r.Context(), hashViewer(c.Value)); err != nil {
+		log.WithError(err).Warn("preview auth: sign-out cleanup failed")
 	}
 	s.setViewerCookie(w, r, "", 0)
 }

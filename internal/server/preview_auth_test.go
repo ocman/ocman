@@ -93,7 +93,7 @@ func (m *mockOAuth) serve(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte(`{"error":"invalid_grant"}`))
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "rotated", "refresh_token": "refresh-rotated", "expires_in": 3600})
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "rotated-" + r.PostForm.Get("refresh_token"), "refresh_token": "refresh-rotated", "expires_in": 3600})
 	}
 }
 

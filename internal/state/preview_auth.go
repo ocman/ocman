@@ -155,10 +155,10 @@ func (d *DB) PreviewViewerExists(ctx context.Context, viewerID, ownerID string) 
 }
 
 // DeletePreviewViewer forgets a viewer with all its pending states and
-// credentials (browser sign-out). It returns the deleted credentials so the
-// caller can revoke them at the provider.
-func (d *DB) DeletePreviewViewer(ctx context.Context, viewerID, ownerID string) ([]PreviewCredential, error) {
-	creds, err := d.previewCredentials(ctx, viewerID, ownerID, "", true)
+// credentials on every owner (browser sign-out). It returns the deleted
+// credentials so the caller can revoke them at the provider.
+func (d *DB) DeletePreviewViewer(ctx context.Context, viewerID string) ([]PreviewCredential, error) {
+	creds, err := d.previewCredentials(ctx, viewerID, "", "", true)
 	if err != nil {
 		return nil, err
 	}
@@ -168,11 +168,11 @@ func (d *DB) DeletePreviewViewer(ctx context.Context, viewerID, ownerID string) 
 	}
 	defer func() { _ = tx.Rollback() }()
 	for _, q := range []string{
-		`DELETE FROM preview_credential WHERE viewer_id=? AND owner_id=?`,
-		`DELETE FROM preview_oauth_state WHERE viewer_id=? AND owner_id=?`,
-		`DELETE FROM preview_viewer WHERE viewer_id=? AND owner_id=?`,
+		`DELETE FROM preview_credential WHERE viewer_id=?`,
+		`DELETE FROM preview_oauth_state WHERE viewer_id=?`,
+		`DELETE FROM preview_viewer WHERE viewer_id=?`,
 	} {
-		if _, err := tx.ExecContext(ctx, q, viewerID, ownerID); err != nil {
+		if _, err := tx.ExecContext(ctx, q, viewerID); err != nil {
 			return nil, err
 		}
 	}
@@ -282,6 +282,8 @@ func (d *DB) PreviewCredential(ctx context.Context, viewerID, ownerID, provider,
 	return PreviewCredential{}, ErrPreviewNotFound
 }
 
+// previewCredentials lists grants; an empty ownerID (sign-out only) matches
+// every owner.
 func (d *DB) previewCredentials(ctx context.Context, viewerID, ownerID, provider string, secrets bool) ([]PreviewCredential, error) {
 	// Resolve the key before the query: state.db has one connection, so
 	// reading the key setting while rows are open would deadlock.
@@ -292,20 +294,20 @@ func (d *DB) previewCredentials(ctx context.Context, viewerID, ownerID, provider
 			return nil, err
 		}
 	}
-	rows, err := d.db.QueryContext(ctx, `SELECT provider, workspace_id, workspace_name, account_name, sites_json, access_enc, refresh_enc, expires_at
-		FROM preview_credential WHERE viewer_id=? AND owner_id=? AND (?='' OR provider=?) ORDER BY provider, workspace_name, workspace_id`,
-		viewerID, ownerID, provider, provider)
+	rows, err := d.db.QueryContext(ctx, `SELECT owner_id, provider, workspace_id, workspace_name, account_name, sites_json, access_enc, refresh_enc, expires_at
+		FROM preview_credential WHERE viewer_id=? AND (?='' OR owner_id=?) AND (?='' OR provider=?) ORDER BY provider, workspace_name, workspace_id`,
+		viewerID, ownerID, ownerID, provider, provider)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []PreviewCredential
 	for rows.Next() {
-		c := PreviewCredential{ViewerID: viewerID, OwnerID: ownerID}
+		c := PreviewCredential{ViewerID: viewerID}
 		var sites string
 		var access, refresh []byte
 		var exp int64
-		if err := rows.Scan(&c.Provider, &c.WorkspaceID, &c.WorkspaceName, &c.AccountName, &sites, &access, &refresh, &exp); err != nil {
+		if err := rows.Scan(&c.OwnerID, &c.Provider, &c.WorkspaceID, &c.WorkspaceName, &c.AccountName, &sites, &access, &refresh, &exp); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(sites), &c.Sites); err != nil {

@@ -240,16 +240,19 @@ func (s *Service) fetch(ctx context.Context, r Resolver, token, viewerID, ownerI
 	return p
 }
 
-// Purge drops cached previews for a viewer's provider ("" = every provider).
+// Purge drops cached previews matching viewer, owner and provider; an empty
+// argument matches any value (Purge("", owner, "") forgets a whole owner).
 func (s *Service) Purge(viewerID, ownerID, provider string) {
-	prefix := viewerID + "\x00" + ownerID + "\x00"
-	if provider != "" {
-		prefix += provider + "\x00"
-	}
+	want := []string{viewerID, ownerID, provider}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for k := range s.cache {
-		if strings.HasPrefix(k, prefix) {
+		parts := strings.SplitN(k, "\x00", 4)
+		match := true
+		for i, w := range want {
+			match = match && (w == "" || parts[i] == w)
+		}
+		if match {
 			delete(s.cache, k)
 		}
 	}

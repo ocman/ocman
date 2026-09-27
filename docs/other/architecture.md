@@ -279,7 +279,7 @@ flowchart TD
   identity from the owner Host, then use the hub clients for metadata.
 - **internal/previewauth.** Viewer-scoped OAuth consent for private link
   previews. A *viewer* is one browser (random HttpOnly `ocman_viewer` cookie,
-  only its SHA-256 in `state.db`) on one owner machine, resolved only for a
+  only its SHA-256 in `state.db`, registered on the hub), resolved only for a
   request with app access (auth cookie, or a direct un-proxied loopback client
   when auth is off). Connect/callback/disconnect use a one-time state bound to
   viewer and owner, PKCE when the provider supports it, one exact redirect URI
@@ -287,7 +287,17 @@ flowchart TD
   Client secrets stay server-side; tokens are AES-GCM sealed per
   viewer/owner/provider/workspace with the row key as associated data, refreshed
   under a per-grant singleflight, and deleted on `invalid_grant`, disconnect or
-  sign-out. Any `remoteId` other than this machine fails closed (503).
+  sign-out (sign-out spans every owner).
+- **Preview ownership across remotes.** Design: the hub holds every viewer
+  credential and makes every provider call; nothing is routed to the remote.
+  Grants, consent states and cached previews are instead keyed by an explicit
+  owner — the hub's instance ID or a *connected* remote's instance ID taken
+  from `remoteId` — so a grant made for one host never answers for another
+  and hub grants never stand in for remote content. The shared callback
+  stores the grant under the owner recorded at connect time. An explicit
+  `remoteId` that is not connected fails closed with a bare 503 before any
+  credential or cache is touched, and `Router.OnUnregister` purges that
+  owner's cached previews on disconnect. The browser↔hub seam is unchanged.
 - **internal/linkpreview.** Normalized previews behind
   `POST /api/previews/resolve` (text in, `Preview` list out; TS mirror in
   `frontend/src/lib/previews.ts`). Registered `Resolver`s recognize known

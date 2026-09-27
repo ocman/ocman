@@ -142,12 +142,17 @@ func TestCompleteHandlesDenialAndUnknownState(t *testing.T) {
 		t.Fatal("PKCE sent for a provider without PKCE")
 	}
 	st := u.Query().Get("state")
-	ret, err := m.Complete(ctx, "v", "o", st, "", "access_denied")
+	ret, err := m.Complete(ctx, "v", st, "", "access_denied")
 	if ret != "/back" || !errors.Is(err, ErrExchange) {
 		t.Fatalf("denied = %q, %v", ret, err)
 	}
-	if _, err := m.Complete(ctx, "v", "o", st, "code", ""); !errors.Is(err, ErrInvalidState) {
+	if _, err := m.Complete(ctx, "v", st, "code", ""); !errors.Is(err, ErrInvalidState) {
 		t.Fatalf("reused state = %v", err)
+	}
+	other, _ := m.Begin(ctx, "v", "o", "p", "/")
+	ou, _ := url.Parse(other)
+	if _, err := m.Complete(ctx, "intruder", ou.Query().Get("state"), "code", ""); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("other viewer's state = %v", err)
 	}
 	if err := m.Disconnect(ctx, "v", "o", "nope", ""); !errors.Is(err, ErrUnknownProvider) {
 		t.Fatalf("disconnect unknown = %v", err)

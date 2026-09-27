@@ -26,6 +26,8 @@ type Router struct {
 	// for local). Installed by the remote Manager in Phase 8 to back
 	// ForDir with the inventory cache. Nil means "everything is local".
 	dirResolver func(dir string) string
+
+	onUnregister []func(remoteID string)
 }
 
 // NewRouter creates a Router with the given local Host. local must be
@@ -48,9 +50,24 @@ func (r *Router) RegisterRemote(remoteID string, h Host) {
 }
 
 // UnregisterRemote removes a remote Host (e.g. on disconnect/removal).
+// Registered OnUnregister hooks run after the entry is gone, outside the
+// router lock.
 func (r *Router) UnregisterRemote(remoteID string) {
 	r.mu.Lock()
 	delete(r.remotes, remoteID)
+	hooks := r.onUnregister
+	r.mu.Unlock()
+	for _, fn := range hooks {
+		fn(remoteID)
+	}
+}
+
+// OnUnregister adds a hook run whenever a remote is unregistered (e.g. to
+// purge data cached for that owner). Hooks must not call back into the
+// remote manager: UnregisterRemote may run under its lock.
+func (r *Router) OnUnregister(fn func(remoteID string)) {
+	r.mu.Lock()
+	r.onUnregister = append(r.onUnregister, fn)
 	r.mu.Unlock()
 }
 
