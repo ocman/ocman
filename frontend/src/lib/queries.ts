@@ -102,18 +102,6 @@ export function useArchiveInboxItems() {
   });
 }
 
-export function useArchiveAllReadInboxItems() {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (remoteId: string) => api.archiveAllReadInboxItems(remoteId),
-    onSuccess: (_result, remoteId) => client.setQueryData<InboxResponse>(['inbox'], (data) => data && {
-      ...data,
-      items: data.items.filter((item) => item.remoteId !== remoteId || !item.readAt),
-    }),
-    onSettled: () => client.invalidateQueries({ queryKey: ['inbox'] }),
-  });
-}
-
 export function useWorkEpics(enabled = true) {
   return useQuery<FactoryEpic[]>({
     queryKey: ['factory-epics'],

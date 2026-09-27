@@ -38,7 +38,6 @@ describe('Inbox', () => {
     vi.spyOn(api, 'markInboxItemUnread').mockResolvedValue(undefined);
     vi.spyOn(api, 'respondPermission').mockResolvedValue(undefined);
     vi.spyOn(api, 'archiveInboxItems').mockResolvedValue(undefined);
-    vi.spyOn(api, 'archiveAllReadInboxItems').mockResolvedValue(undefined);
   });
 
   it('opens markdown in the reading pane, marks unread items read, and archives selection', async () => {
@@ -90,12 +89,30 @@ describe('Inbox', () => {
     expect(menu.open).toBe(false);
   });
 
-  it('archives all read items for each source', async () => {
+  it('archives only the read items the filters show', async () => {
+    const readPrimary = { ...items[0], id: '3', title: 'Read primary', readAt: Date.now() };
+    vi.mocked(api.inbox).mockResolvedValue({ items: [...items, readPrimary], unreadTotal: 1 });
     renderInbox();
     await screen.findByText('Remote note');
+    fireEvent.click(screen.getByRole('radio', { name: 'Factory' }));
     fireEvent.click(inboxAction('Archive all read'));
-    await waitFor(() => expect(api.archiveAllReadInboxItems).toHaveBeenCalledWith('local'));
-    expect(api.archiveAllReadInboxItems).toHaveBeenCalledWith('laptop');
+    await waitFor(() => expect(api.archiveInboxItems).toHaveBeenCalledWith([{ id: '2', remoteId: 'laptop' }]));
+  });
+
+  it('disables archive all read when no shown item is read', async () => {
+    renderInbox();
+    await screen.findByText('Remote note');
+    fireEvent.click(screen.getByRole('radio', { name: 'Primary' }));
+    expect(inboxAction('Archive all read')).toBeDisabled();
+  });
+
+  it('archives only selected items the filters show', async () => {
+    renderInbox();
+    fireEvent.click(await screen.findByRole('checkbox', { name: /Build/ }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Remote note' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Factory' }));
+    fireEvent.click(inboxAction('Archive selected (1)'));
+    await waitFor(() => expect(api.archiveInboxItems).toHaveBeenCalledWith([{ id: '2', remoteId: 'laptop' }]));
   });
 
   it('selects one message type at a time and labels only the active type', async () => {

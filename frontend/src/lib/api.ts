@@ -466,8 +466,6 @@ export const api = {
      postJSON<void, { id: string; remoteId: string }>('/api/inbox/unread', { id, remoteId }, { parseJSON: false }),
    archiveInboxItems: (items: Pick<InboxItem, 'id' | 'remoteId'>[]) =>
      postJSON<void, { items: Pick<InboxItem, 'id' | 'remoteId'>[] }>('/api/inbox/archive', { items }, { parseJSON: false }),
-   archiveAllReadInboxItems: (remoteId: string) =>
-     postJSON<void, { remoteId: string }>('/api/inbox/archive-all-read', { remoteId }, { parseJSON: false }),
    factoryEpic: (id: string, signal?: AbortSignal) =>
      fetchJSON<FactoryEpic>(`/api/factory/epics/${encodeURIComponent(id)}`, signal),
    createFactoryEpic: (request: CreateWorkEpicRequest) =>

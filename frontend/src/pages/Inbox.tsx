@@ -6,7 +6,7 @@ import { MarkdownContent } from '../components/assistant/MarkdownText';
 import { RelativeTime } from '../components/RelativeTime';
 import { SegmentedControl } from '../components/SegmentedControl';
 import { EmptyState } from '../components/EmptyState';
-import { useArchiveAllReadInboxItems, useArchiveInboxItems, useInbox, useMarkInboxItemRead, useMarkInboxItemUnread, useRespondInboxPermission } from '../lib/queries';
+import { useArchiveInboxItems, useInbox, useMarkInboxItemRead, useMarkInboxItemUnread, useRespondInboxPermission } from '../lib/queries';
 import type { InboxItem } from '../lib/api';
 import { fuzzyMatch } from '../lib/format';
 import { useClickOutside } from '../lib/useClickOutside';
@@ -54,7 +54,6 @@ export function Inbox() {
   const archived = filter === 'archived';
   const inbox = useInbox(archived);
   const archive = useArchiveInboxItems();
-  const archiveRead = useArchiveAllReadInboxItems();
   const markRead = useMarkInboxItemRead();
   const markUnread = useMarkInboxItemUnread();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -73,7 +72,9 @@ export function Inbox() {
   const categoryItems = items.filter((item) => activeCategory === 'all' || itemCategory(item) === activeCategory);
   const visibleItems = categoryItems.filter((item) => (filter !== 'unread' || !item.readAt)
     && fuzzyMatch(query, `${item.title} ${item.body} ${sourceLabel(item.remoteId)} ${JSON.stringify(item.session ?? {})} ${JSON.stringify(item.permission ?? {})}`));
-  const selectedItems = items.filter((item) => !item.archivedAt && selected.has(itemKey(item)));
+  // Bulk actions only touch what the filters show; hidden selections stay put.
+  const selectedItems = visibleItems.filter((item) => !item.archivedAt && selected.has(itemKey(item)));
+  const readItems = archived ? [] : visibleItems.filter((item) => item.readAt);
   const open = (item: InboxItem) => {
     setActiveKey(itemKey(item));
     if (!item.readAt && !item.archivedAt) markRead.mutate({ id: item.id, remoteId: item.remoteId });
@@ -88,10 +89,9 @@ export function Inbox() {
     actions.current?.removeAttribute('open');
     archive.mutate(selectedItems.map(({ id, remoteId }) => ({ id, remoteId })), { onSuccess: () => setSelected(new Set()) });
   };
-  const remoteIds = [...new Set(items.map((item) => item.remoteId))];
   const archiveAllRead = () => {
     actions.current?.removeAttribute('open');
-    remoteIds.forEach((remoteId) => archiveRead.mutate(remoteId));
+    archive.mutate(readItems.map(({ id, remoteId }) => ({ id, remoteId })));
   };
   const selectCategory = (id: string) => {
     setSearchParams((params) => { params.set('category', id); return params; }, { replace: true });
@@ -127,7 +127,7 @@ export function Inbox() {
   });
 
   return <main className="inbox-page">
-    {(archive.isError || archiveRead.isError) && <p role="alert">Could not archive messages. Please try again.</p>}
+    {archive.isError && <p role="alert">Could not archive messages. Please try again.</p>}
     {markRead.isError && <p role="alert">Could not mark the message as read. Open it again to retry.</p>}
     {markUnread.isError && <p role="alert">Could not mark the message as unread. Please try again.</p>}
     <div className={`inbox-workspace${activeItem ? ' has-active-message' : ''}`}>
@@ -143,7 +143,7 @@ export function Inbox() {
               <summary className="oc-button oc-button--default oc-button--small" aria-label="Inbox actions" title="Inbox actions"><i className="bi bi-three-dots" aria-hidden="true" /></summary>
               <div className="inbox-action-menu-items">
                 <Button type="button" size="small" disabled={!selectedItems.length || archive.isPending} onClick={archiveSelected}><i className="bi bi-archive" aria-hidden="true" />Archive selected{selectedItems.length > 0 && ` (${selectedItems.length})`}</Button>
-                <Button type="button" size="small" disabled={archived || !items.some((item) => item.readAt) || archiveRead.isPending} onClick={archiveAllRead}><i className="bi bi-check2-all" aria-hidden="true" />Archive all read</Button>
+                <Button type="button" size="small" disabled={!readItems.length || archive.isPending} onClick={archiveAllRead}><i className="bi bi-check2-all" aria-hidden="true" />Archive all read</Button>
               </div>
             </details>
           </div>

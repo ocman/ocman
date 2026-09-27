@@ -40,7 +40,8 @@ test('compact two-row header searches and archives messages from the actions dro
   let archived = false;
   await page.route('**/api/inbox**', (route) => {
     const url = new URL(route.request().url());
-    if (url.pathname === '/api/inbox/archive-all-read') {
+    if (url.pathname === '/api/inbox/archive') {
+      expect(route.request().postDataJSON()).toEqual({ items: [{ id: 'read', remoteId: 'local' }] });
       archived = true;
       return route.fulfill({ status: 204 });
     }
