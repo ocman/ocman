@@ -5,8 +5,8 @@ import (
 	"fmt"
 )
 
-// v99 stores per-phase model choices on each Factory Epic.
-const latestSchemaVersion = 99
+// v100 adds viewer-scoped preview-provider consent (preview_auth.go).
+const latestSchemaVersion = 100
 
 // applyMigration runs the DDL for the given target version.
 func applyMigration(tx *sql.Tx, target int) error {
@@ -223,6 +223,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 			return err
 		}
 		return addColumnIfMissing(tx, "factory_epic", "models_json", "TEXT NOT NULL DEFAULT '{}'")
+	case 100:
+		return migrateToV100(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}

@@ -25,6 +25,8 @@ type DB struct {
 	dataDir string
 	// ponytail: serialize plugin file changes per DB; shard by plugin if contention matters.
 	pluginMu sync.Mutex
+	// previewKeyMu serializes first-use generation of the preview credential key.
+	previewKeyMu sync.Mutex
 }
 
 // DefaultDBPath returns the default path to the ocman state database.

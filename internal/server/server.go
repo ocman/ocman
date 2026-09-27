@@ -50,6 +50,7 @@ type Server struct {
 	sessions           *sessionsvc.Service
 	auth               *Auth
 	integrations       *forgeClients
+	previewAuth        previewAuthState
 	startTime          time.Time
 	projects           projectsIndexState
 	autoApproveDefault bool

@@ -303,6 +303,7 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 
 // handleAuthLogout clears the cookie. Always returns 204; idempotent.
 func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
+	s.signOutPreviewViewer(w, r)
 	if s.auth != nil {
 		s.auth.clearCookie(w, r)
 	}

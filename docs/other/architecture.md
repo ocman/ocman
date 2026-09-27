@@ -277,6 +277,17 @@ flowchart TD
 - **forge and integrations.** Forge-agnostic types in `internal/forge`, per-forge
   HTTP clients in `internal/forge/{github,forgejo}`. PR/Issue handlers obtain repository
   identity from the owner Host, then use the hub clients for metadata.
+- **internal/previewauth.** Viewer-scoped OAuth consent for private link
+  previews. A *viewer* is one browser (random HttpOnly `ocman_viewer` cookie,
+  only its SHA-256 in `state.db`) on one owner machine, resolved only for a
+  request with app access (auth cookie, or a direct un-proxied loopback client
+  when auth is off). Connect/callback/disconnect use a one-time state bound to
+  viewer and owner, PKCE when the provider supports it, one exact redirect URI
+  (`<public base>/api/previews/oauth/callback`) and same-origin return paths.
+  Client secrets stay server-side; tokens are AES-GCM sealed per
+  viewer/owner/provider/workspace with the row key as associated data, refreshed
+  under a per-grant singleflight, and deleted on `invalid_grant`, disconnect or
+  sign-out. Any `remoteId` other than this machine fails closed (503).
 
 ## 3. Session and event data flow
 
