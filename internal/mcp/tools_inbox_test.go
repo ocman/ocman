@@ -93,7 +93,11 @@ func TestInboxToolDiscoveryAndActions(t *testing.T) {
 		t.Fatalf("categorized items: %+v, %v", items, err)
 	}
 	for _, item := range items {
-		if item.Category != item.Title || item.Session == nil || item.Session.Platform != "opencode" || item.Session.SessionID != "ses-origin" {
+		wantCategory := item.Title
+		if wantCategory == "routine" {
+			wantCategory = state.InboxGeneral
+		}
+		if item.Category != wantCategory || item.Session == nil || item.Session.Platform != "opencode" || item.Session.SessionID != "ses-origin" {
 			t.Fatalf("category not stored: %+v", item)
 		}
 	}
