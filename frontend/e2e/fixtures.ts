@@ -343,6 +343,10 @@ async function installDefaultRoutes(page: Page) {
   await page.route('/api/settings/**', (route: Route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({}) }),
   );
+  // Every assistant text block loads the custom link rules.
+  await page.route('/api/settings/link-preview-rules', (route: Route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ rules: [] }) }),
+  );
   // Remotes settings group mounts RemoteSettings, which fetches
   // /api/settings/remote-access and /api/remotes on mount. Both must be
   // stubbed: an unmocked 401 (from a real auth-enabled backend behind the
