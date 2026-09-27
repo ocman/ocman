@@ -335,6 +335,16 @@ flowchart TD
   matches the link host, and channels Slack reports private/DM/MPIM are
   denied before any message is read. Slack `ok:false` codes map onto the
   shared 401 (grant forgotten) / 403 / 404 / 429 handling.
+- **Notion previews** (`linkpreview.Notion`, opt-in via
+  `OCMAN_NOTION_PREVIEW_CLIENT_ID/_SECRET`). A public connection
+  (`owner=user`, JSON token/revoke bodies with Basic auth) stores one grant
+  per viewer and Notion workspace; the viewer's page selection is the whole
+  permission model. Page links on notion.so / notion.com / app.notion.com /
+  `*.notion.site` resolve by page ID to the API-returned URL; routed ticket
+  identifiers run `POST /v1/search` and match titles by whole token. Several
+  matches become `Choices` (state `ambiguous`), none is `not_found`. An
+  unshared page is a 404 once the cache expires; a removed connection is a
+  401 and forgets the grant.
 
 ## 3. Session and event data flow
 

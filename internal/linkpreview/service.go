@@ -297,6 +297,15 @@ func short(s string, n int) string {
 	return s
 }
 
+const maxChoices = 5
+
+func safeURL(raw string) string {
+	if u, err := url.Parse(raw); err == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != "" && u.User == nil {
+		return u.String()
+	}
+	return ""
+}
+
 // sanitize keeps the request's identity and bounds everything else to
 // short display-safe text and an http(s) URL.
 func sanitize(p Preview, ref Ref) Preview {
@@ -304,8 +313,16 @@ func sanitize(p Preview, ref Ref) Preview {
 		Ref: ref, Title: short(p.Title, 200), Status: short(p.Status, 40),
 		UpdatedAt: p.UpdatedAt, State: StateOK,
 	}
-	if u, err := url.Parse(p.URL); err == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Host != "" && u.User == nil {
-		out.URL = u.String()
+	if u := safeURL(p.URL); u != "" {
+		out.URL = u
+	}
+	for _, c := range p.Choices {
+		if u := safeURL(c.URL); u != "" && len(out.Choices) < maxChoices {
+			out.Choices = append(out.Choices, Choice{Title: short(c.Title, 120), URL: u})
+		}
+	}
+	if len(out.Choices) > 0 {
+		out.State = StateAmbiguous
 	}
 	if iconPattern.MatchString(p.Icon) {
 		out.Icon = p.Icon

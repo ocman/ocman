@@ -95,3 +95,19 @@ it('falls back to plain links when resolving fails or the resource is missing', 
   expect(screen.queryByRole('button')).toBeNull();
   expect(screen.queryByTestId('provider-preview-card')).toBeNull();
 });
+
+it('offers the matching pages for an ambiguous ticket and labels pages by title', async () => {
+  previews = [
+    { ...ref, id: 'ABC-7', url: undefined, state: 'ambiguous', choices: [
+      { title: 'ABC-7 Retro', url: 'https://www.notion.so/Retro-1' },
+      { title: 'ABC-7 follow-up', url: 'https://www.notion.so/Follow-2' },
+    ] },
+    { provider: 'mock', kind: 'page', id: '0123-uuid', url: 'https://www.notion.so/Plan-3', title: 'Launch plan', state: 'ok' },
+  ];
+  const { LinkPreviewStrip } = await import('./GitHubLinkPreview');
+  render(<LinkPreviewStrip text="ABC-7 https://www.notion.so/Plan-3" />);
+  expect(await screen.findByText('Several pages match:')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'ABC-7 follow-up' })).toHaveAttribute('href', 'https://www.notion.so/Follow-2');
+  expect(screen.queryByRole('combobox')).toBeNull();
+  expect(screen.getByRole('link', { name: 'Launch plan' })).toHaveAttribute('href', 'https://www.notion.so/Plan-3');
+});

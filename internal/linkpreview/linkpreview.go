@@ -58,6 +58,15 @@ type Preview struct {
 	UpdatedAt time.Time `json:"updatedAt,omitzero"`
 	State     State     `json:"state"`
 	Stale     bool      `json:"stale,omitempty"` // cached data served while rate limited
+	// Choices are the candidates for an ambiguous ticket identifier; a
+	// resolver returning them makes the preview StateAmbiguous.
+	Choices []Choice `json:"choices,omitempty"`
+}
+
+// Choice is one provider-returned candidate resource.
+type Choice struct {
+	Title string `json:"title"`
+	URL   string `json:"url"`
 }
 
 // Resolver is one preview provider.

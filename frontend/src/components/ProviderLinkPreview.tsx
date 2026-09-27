@@ -6,7 +6,8 @@ import type { PreviewProvider, PreviewResult } from '../lib/previews';
 import { Button, SelectField } from './Control';
 import { RelativeTime } from './RelativeTime';
 
-const label = (p: PreviewResult) => p.title ? `${p.id} ${p.title}` : p.id;
+// A page ID is opaque; its title alone labels it.
+const label = (p: PreviewResult) => !p.title ? p.id : p.kind === 'page' ? p.title : `${p.id} ${p.title}`;
 
 const FallbackLink: FC<{ preview: PreviewResult }> = ({ preview }) => preview.url
   ? <a className="gh-preview__title" href={preview.url} target="_blank" rel="noopener noreferrer">{preview.id}</a>
@@ -47,6 +48,16 @@ export const ProviderPreview: FC<{ preview: PreviewResult; providers: PreviewPro
   const owner = useContext(PreviewOwnerContext);
   const [error, setError] = useState('');
   if (hasRichPreview(preview)) return <RichCard preview={preview} />;
+  if (preview.choices?.length) return (
+    <div className="gh-preview" data-testid="provider-preview-choices">
+      <span className="gh-preview__icon"><i className="bi bi-files" aria-hidden="true" /></span>
+      <span className="gh-preview__body">
+        <span className="gh-preview__title">{preview.id}</span>
+        <span className="gh-preview__meta">Several pages match:</span>
+        {preview.choices.map((c) => <a key={c.url} className="gh-preview__meta" href={c.url} target="_blank" rel="noopener noreferrer">{c.title}</a>)}
+      </span>
+    </div>
+  );
   const notice = NOTICE[preview.state];
   // not_found / error / rate limited: the plain link is the safe fallback.
   if (!notice) return preview.url ? <div className="gh-preview"><span className="gh-preview__body"><FallbackLink preview={preview} /></span></div> : null;

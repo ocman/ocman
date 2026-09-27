@@ -78,6 +78,10 @@ func (s *Server) previewManager() *previewauth.Manager {
 			s.previewAuth.providers = append(s.previewAuth.providers, linkpreview.SlackOAuth(id, secret, ""))
 			s.previewAuth.resolvers = append(s.previewAuth.resolvers, linkpreview.Slack{})
 		}
+		if id, secret := os.Getenv("OCMAN_NOTION_PREVIEW_CLIENT_ID"), os.Getenv("OCMAN_NOTION_PREVIEW_CLIENT_SECRET"); id != "" && secret != "" {
+			s.previewAuth.providers = append(s.previewAuth.providers, linkpreview.NotionOAuth(id, secret, ""))
+			s.previewAuth.resolvers = append(s.previewAuth.resolvers, linkpreview.Notion{})
+		}
 		s.previewAuth.manager = previewauth.New(s.stateDB, s.publicURL(previewCallback), s.previewAuth.client, s.previewAuth.providers...)
 		s.previewAuth.previews = linkpreview.New(s.previewAuth.manager, s.previewAuth.manager.Client(), s.previewAuth.resolvers...)
 		previews := s.previewAuth.previews

@@ -39,6 +39,19 @@ type API struct {
 	// publicOnly: token is not the viewer's own (see Fallback), so Fetch
 	// must return only resources that are public.
 	publicOnly bool
+	header     http.Header
+}
+
+// WithHeader returns a copy of a that also sends header k: v (e.g. an API
+// version). Accept, Content-Type and Authorization cannot be overridden.
+func (a *API) WithHeader(k, v string) *API {
+	c := *a
+	c.header = a.header.Clone()
+	if c.header == nil {
+		c.header = http.Header{}
+	}
+	c.header.Set(k, v)
+	return &c
 }
 
 // PublicOnly reports that the resolver must not return private resources.
@@ -81,6 +94,9 @@ func (a *API) JSON(ctx context.Context, method, base string, segments []string, 
 	req, err := http.NewRequestWithContext(ctx, method, u.String(), rdr)
 	if err != nil {
 		return ErrUnsafeRequest
+	}
+	for k, v := range a.header {
+		req.Header[k] = v
 	}
 	req.Header.Set("Accept", "application/json")
 	if body != nil {

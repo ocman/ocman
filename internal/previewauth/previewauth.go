@@ -69,6 +69,10 @@ type Provider struct {
 	BasicAuth bool
 	// AuthParams are extra fixed authorize-URL parameters.
 	AuthParams map[string]string
+	// JSONBody sends token and revoke requests as a JSON object instead of
+	// a form (Notion). Headers are extra fixed headers on those requests.
+	JSONBody bool
+	Headers  map[string]string
 	// DecodeToken, when set, returns the object in a token response that
 	// holds access_token/refresh_token/expires_in, or a sentinel error
 	// (Slack nests user tokens under authed_user and fails with ok:false).
@@ -229,14 +233,9 @@ func (m *Manager) tokenRequest(ctx context.Context, p Provider, form url.Values)
 			form.Set("client_secret", p.ClientSecret)
 		}
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.TokenURL, strings.NewReader(form.Encode()))
+	req, err := p.post(ctx, p.TokenURL, form)
 	if err != nil {
 		return Token{}, ErrExchange
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Accept", "application/json")
-	if p.BasicAuth {
-		req.SetBasicAuth(url.QueryEscape(p.ClientID), url.QueryEscape(p.ClientSecret))
 	}
 	resp, err := m.client.Do(req)
 	if err != nil {
@@ -266,6 +265,33 @@ func (m *Manager) tokenRequest(ctx context.Context, p Provider, form url.Values)
 		tok.ExpiresAt = time.Now().Add(time.Duration(secs) * time.Second)
 	}
 	return tok, nil
+}
+
+// post builds a client-authenticated POST of form to u, as a form or (with
+// JSONBody) a flat JSON object.
+func (p Provider) post(ctx context.Context, u string, form url.Values) (*http.Request, error) {
+	body, ctype := form.Encode(), "application/x-www-form-urlencoded"
+	if p.JSONBody {
+		obj := map[string]string{}
+		for k := range form {
+			obj[k] = form.Get(k)
+		}
+		b, _ := json.Marshal(obj)
+		body, ctype = string(b), "application/json"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, strings.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range p.Headers {
+		req.Header.Set(k, v)
+	}
+	req.Header.Set("Content-Type", ctype)
+	req.Header.Set("Accept", "application/json")
+	if p.BasicAuth {
+		req.SetBasicAuth(url.QueryEscape(p.ClientID), url.QueryEscape(p.ClientSecret))
+	}
+	return req, nil
 }
 
 // AccessToken returns a usable access token for a viewer's workspace,
@@ -347,17 +373,16 @@ func (m *Manager) revokeAll(ctx context.Context, creds []state.PreviewCredential
 			continue
 		}
 		seen[c.AccessToken] = true
-		form := url.Values{"token": {c.AccessToken}, "client_id": {p.ClientID}}
-		if p.ClientSecret != "" && !p.BasicAuth {
-			form.Set("client_secret", p.ClientSecret)
+		form := url.Values{"token": {c.AccessToken}}
+		if !p.BasicAuth {
+			form.Set("client_id", p.ClientID)
+			if p.ClientSecret != "" {
+				form.Set("client_secret", p.ClientSecret)
+			}
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.RevokeURL, strings.NewReader(form.Encode()))
+		req, err := p.post(ctx, p.RevokeURL, form)
 		if err != nil {
 			continue
-		}
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		if p.BasicAuth {
-			req.SetBasicAuth(url.QueryEscape(p.ClientID), url.QueryEscape(p.ClientSecret))
 		}
 		if resp, err := m.client.Do(req); err == nil {
 			_ = resp.Body.Close()

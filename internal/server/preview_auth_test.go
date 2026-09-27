@@ -369,3 +369,15 @@ func TestPreviewAuth_SlackFromEnv(t *testing.T) {
 		t.Fatalf("refs = %v", refs)
 	}
 }
+
+func TestPreviewAuth_NotionFromEnv(t *testing.T) {
+	t.Setenv("OCMAN_NOTION_PREVIEW_CLIENT_ID", "cid")
+	t.Setenv("OCMAN_NOTION_PREVIEW_CLIENT_SECRET", "secret")
+	s := testServer(t)
+	if _, ok := s.previewManager().Provider("notion"); !ok {
+		t.Fatal("notion provider not registered")
+	}
+	if refs := s.linkPreviews().Discover("https://www.notion.so/acme/Plan-0123456789abcdef0123456789abcdef", nil); len(refs) != 1 {
+		t.Fatalf("refs = %v", refs)
+	}
+}

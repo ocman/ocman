@@ -336,6 +336,14 @@ func TestSanitize(t *testing.T) {
 	if p.Provider != "mock" || p.ID != "ABC-1" || p.URL != ref.URL || p.Icon != "" || len([]rune(p.Title)) != 200 || len(p.Meta) != 4 {
 		t.Fatalf("sanitize = %+v", p)
 	}
+	var choices []Choice
+	for range 7 {
+		choices = append(choices, Choice{Title: "t", URL: "https://x.test/a"})
+	}
+	choices[0].URL = "javascript:alert(1)"
+	if p := sanitize(Preview{Choices: choices}, ref); p.State != StateAmbiguous || len(p.Choices) != maxChoices || p.Choices[0].URL != "https://x.test/a" {
+		t.Fatalf("choices = %+v", p)
+	}
 }
 
 func TestTokenState(t *testing.T) {

@@ -29,6 +29,8 @@ export interface PreviewResult extends PreviewRef {
   state: PreviewState;
   /** Cached data served while the provider is rate limited. */
   stale?: boolean;
+  /** Candidates for an ambiguous ticket identifier (state `ambiguous`). */
+  choices?: { title: string; url: string }[];
 }
 
 /** One grant: display names only (internal/previewauth.Connection). */

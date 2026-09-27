@@ -161,3 +161,42 @@ func TestCompleteHandlesDenialAndUnknownState(t *testing.T) {
 		t.Fatalf("String = %q", got)
 	}
 }
+
+func TestJSONBodyExchangeAndRevoke(t *testing.T) {
+	var mu sync.Mutex
+	var reqs []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		u, p, _ := r.BasicAuth()
+		mu.Lock()
+		b, _ := json.Marshal(body)
+		reqs = append(reqs, r.URL.Path+" "+r.Header.Get("Content-Type")+" "+r.Header.Get("X-Version")+" "+u+":"+p+" "+string(b))
+		mu.Unlock()
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "at", "workspace_id": "W1"})
+	}))
+	defer srv.Close()
+	ctx := context.Background()
+	m := New(openState(t), "https://ocman.test/cb", nil, Provider{
+		ID: "p", AuthURL: srv.URL + "/auth", TokenURL: srv.URL + "/token", RevokeURL: srv.URL + "/revoke",
+		ClientID: "cid", ClientSecret: "sec", BasicAuth: true, JSONBody: true, Headers: map[string]string{"X-Version": "v1"},
+	})
+	authURL, err := m.Begin(ctx, "v", "o", "p", "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	u, _ := url.Parse(authURL)
+	if _, err := m.Complete(ctx, "v", u.Query().Get("state"), "code1", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Disconnect(ctx, "v", "o", "p", ""); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		`/token application/json v1 cid:sec {"code":"code1","grant_type":"authorization_code","redirect_uri":"https://ocman.test/cb"}`,
+		`/revoke application/json v1 cid:sec {"token":"at"}`,
+	}
+	if len(reqs) != 2 || reqs[0] != want[0] || reqs[1] != want[1] {
+		t.Fatalf("requests:\n%v", reqs)
+	}
+}
