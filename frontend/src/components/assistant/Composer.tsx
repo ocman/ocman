@@ -967,6 +967,8 @@ function ComposerImpl({
           commands={slash.filtered}
           activeIndex={slash.index}
           menuRef={slash.menuRef}
+          listboxId={slash.listboxId}
+          optionId={slash.optionId}
           onSelect={selectSlashCommand}
           onHover={slash.setIndex}
         />
@@ -1048,6 +1050,7 @@ function ComposerImpl({
           autoCorrect="off"
           autoCapitalize="off"
           spellCheck={false}
+          {...slash.inputAria}
           onKeyDown={handleInputKeyDown}
           onInput={handleInput}
           onPaste={attachments.handlePaste}

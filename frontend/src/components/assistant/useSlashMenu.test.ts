@@ -40,6 +40,30 @@ describe('useSlashMenu', () => {
     expect(result.current.index).toBe(0);
   });
 
+  it('ranks name matches first, then description hits, and wires aria to the highlighted option', async () => {
+    commands.mockResolvedValue([
+      { name: 'ship-it', description: 'deploy the model' } as SlashCommand,
+      { name: 'remodel', description: 'x' } as SlashCommand,
+    ]);
+    const { result } = renderHook(() => useSlashMenu('s1', vis));
+    await waitFor(() => expect(result.current.commands.some((c) => c.name === 'remodel')).toBe(true));
+
+    act(() => result.current.syncToInput('/model'));
+    // exact built-in, then name substring, then description-only hit last
+    expect(result.current.filtered.map((c) => c.name)).toEqual(['model', 'remodel', 'ship-it']);
+
+    act(() => result.current.moveIndex(1));
+    expect(result.current.inputAria['aria-activedescendant']).toBe(result.current.optionId(1));
+    expect(result.current.inputAria['aria-controls']).toBe(result.current.listboxId);
+
+    // typing re-ranks, so the highlight snaps back to the best match
+    act(() => result.current.syncToInput('/mode'));
+    expect(result.current.index).toBe(0);
+
+    act(() => result.current.syncToInput('/zzz'));
+    expect(result.current.inputAria['aria-activedescendant']).toBeUndefined();
+  });
+
   it('hides feature commands that are unavailable and falls back on fetch failure', async () => {
     commands.mockRejectedValue(new Error('offline'));
     const { result } = renderHook(() => useSlashMenu('s1', { hasModels: false, hasAgents: false, activeAgent: undefined, hasVariants: true }));

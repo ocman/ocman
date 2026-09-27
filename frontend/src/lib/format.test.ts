@@ -10,11 +10,30 @@ import {
   timeUntilISO,
   formatTokensPerSecond,
   fuzzyMatch,
+  fuzzyScore,
   relativeTime,
   renderModel,
   shortPath,
   shortSessionID,
 } from './format';
+
+describe('fuzzyScore', () => {
+  const rank = (q: string, names: string[]) =>
+    names.filter((n) => fuzzyScore(q, n) >= 0).sort((a, b) => fuzzyScore(q, b) - fuzzyScore(q, a));
+
+  it('ranks exact > prefix > word-start > substring > subsequence', () => {
+    expect(rank('re', ['rxe', 'redo', 'restart-opencode', 'are', 'x-re', 're'])).toEqual(
+      ['re', 'redo', 'restart-opencode', 'x-re', 'are', 'rxe'],
+    );
+  });
+  it('prefers tighter and earlier subsequences', () => {
+    expect(fuzzyScore('mdl', 'model')).toBeGreaterThan(fuzzyScore('mdl', 'my-docs-list'));
+  });
+  it('returns -1 on no match and 0 for an empty query', () => {
+    expect(fuzzyScore('zz', 'model')).toBe(-1);
+    expect(fuzzyScore('', 'model')).toBe(0);
+  });
+});
 
 describe('fuzzyMatch', () => {
   it('matches contiguous substrings', () => {

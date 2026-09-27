@@ -1,14 +1,32 @@
-// fuzzyMatch: case-insensitive subsequence test. Every char of `query`
-// must appear in `text` in order (not necessarily contiguous).
-// ponytail: subsequence match, swap in a scoring lib if ranking matters.
-export function fuzzyMatch(query: string, text: string): boolean {
+// fuzzyScore: case-insensitive subsequence match with a rank; -1 = no
+// match, higher is better. Exact > prefix > substring at a word start >
+// other substring > scattered subsequence (tighter and earlier wins).
+// ponytail: hand-rolled tiers, swap in match-sorter if ranking needs more.
+export function fuzzyScore(query: string, text: string): number {
   const q = query.toLowerCase();
   const t = text.toLowerCase();
+  if (!q) return 0;
+  if (t === q) return 1000;
+  if (t.startsWith(q)) return 900 - t.length;
+  const at = t.indexOf(q);
+  if (at > 0) return (/[\s\-_/:.]/.test(t[at - 1]) ? 800 : 700) - at;
   let i = 0;
+  let first = -1;
+  let last = -1;
   for (let j = 0; j < t.length && i < q.length; j++) {
-    if (t[j] === q[i]) i++;
+    if (t[j] === q[i]) {
+      if (first < 0) first = j;
+      last = j;
+      i++;
+    }
   }
-  return i === q.length;
+  if (i < q.length) return -1;
+  return Math.max(0, 500 - (last - first + 1 - q.length) - first);
+}
+
+// fuzzyMatch: every char of `query` appears in `text` in order.
+export function fuzzyMatch(query: string, text: string): boolean {
+  return fuzzyScore(query, text) >= 0;
 }
 
 export function formatNumber(n: number): string {

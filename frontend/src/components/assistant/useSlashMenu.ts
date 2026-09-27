@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { api, type SlashCommand } from '../../lib/api';
 import { BUILTIN_COMMANDS } from '../../lib/commands/builtinCommands';
-import { fuzzyMatch } from '../../lib/format';
+import { fuzzyScore } from '../../lib/format';
 
 export interface SlashMenuVisibility {
   hasModels: boolean;
@@ -41,14 +41,24 @@ export function useSlashMenu(sessionId: string | undefined, vis: SlashMenuVisibi
   }, [sessionId]);
 
   const hasSkills = commands.some((c) => c.source === 'skill');
-  const filtered = commands.filter((cmd) => {
-    if (cmd.name === 'model' && !vis.hasModels) return false;
-    if ((cmd.name === 'agent' || cmd.name === 'agents') && !vis.hasAgents && !vis.activeAgent) return false;
-    if (cmd.name === 'skills' && !hasSkills) return false;
-    // Mirror OpenCode: /variants is hidden when the model exposes no variants.
-    if (cmd.name === 'variants' && !vis.hasVariants) return false;
-    return fuzzyMatch(filter, cmd.name);
-  });
+  const q = filter.toLowerCase();
+  const filtered = commands
+    .filter((cmd) => {
+      if (cmd.name === 'model' && !vis.hasModels) return false;
+      if ((cmd.name === 'agent' || cmd.name === 'agents') && !vis.hasAgents && !vis.activeAgent) return false;
+      if (cmd.name === 'skills' && !hasSkills) return false;
+      // Mirror OpenCode: /variants is hidden when the model exposes no variants.
+      return !(cmd.name === 'variants' && !vis.hasVariants);
+    })
+    .map((cmd) => {
+      const byName = fuzzyScore(filter, cmd.name);
+      // Name matches (+1) always outrank a plain substring hit in the description.
+      const score = byName >= 0 ? byName + 1 : q && cmd.description?.toLowerCase().includes(q) ? 0 : -1;
+      return { cmd, score };
+    })
+    .filter((r) => r.score >= 0)
+    .sort((a, b) => b.score - a.score) // stable: ties keep catalog order
+    .map((r) => r.cmd);
 
   useEffect(() => {
     if (!open || !menuRef.current) return;
@@ -67,7 +77,8 @@ export function useSlashMenu(sessionId: string | undefined, vis: SlashMenuVisibi
     const show = value.startsWith('/') && !value.includes(' ') && !value.includes('\n');
     setOpen(show);
     setFilter(show ? value.slice(1) : '');
-    if (!show) setIndex(0);
+    // Ranking reorders the list on every keystroke; keep the best match highlighted.
+    setIndex(0);
   }, []);
 
   const moveIndex = useCallback((delta: 1 | -1) => {
@@ -75,5 +86,18 @@ export function useSlashMenu(sessionId: string | undefined, vis: SlashMenuVisibi
     setIndex((i) => (i + delta + n) % n);
   }, [filtered.length]);
 
-  return { commands, open, filtered, index, setIndex, moveIndex, menuRef, close, syncToInput };
+  // ARIA wiring for the textarea: focus stays in it and the highlighted
+  // option is announced via aria-activedescendant. The textarea keeps its
+  // native textbox role (valid host for both attributes) rather than
+  // becoming a combobox, which suits a multiline message field.
+  const listboxId = useId();
+  const expanded = open && filtered.length > 0;
+  const optionId = (i: number) => `${listboxId}-opt-${i}`;
+  const inputAria = {
+    'aria-autocomplete': 'list',
+    'aria-controls': expanded ? listboxId : undefined,
+    'aria-activedescendant': expanded ? optionId(index) : undefined,
+  } as const;
+
+  return { commands, open, filtered, index, setIndex, moveIndex, menuRef, close, syncToInput, listboxId, optionId, inputAria };
 }

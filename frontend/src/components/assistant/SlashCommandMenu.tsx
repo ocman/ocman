@@ -4,18 +4,23 @@ interface SlashCommandMenuProps {
   commands: SlashCommand[];
   activeIndex: number;
   menuRef: React.RefObject<HTMLDivElement | null>;
+  listboxId: string;
+  optionId: (index: number) => string;
   onSelect: (cmd: SlashCommand) => void;
   onHover: (index: number) => void;
 }
 
-export function SlashCommandMenu({ commands, activeIndex, menuRef, onSelect, onHover }: SlashCommandMenuProps) {
+export function SlashCommandMenu({ commands, activeIndex, menuRef, listboxId, optionId, onSelect, onHover }: SlashCommandMenuProps) {
   if (commands.length === 0) return null;
 
   return (
-    <div className="oc-slash-menu" ref={menuRef}>
+    <div className="oc-slash-menu" ref={menuRef} id={listboxId} role="listbox" aria-label="Slash commands">
       {commands.map((cmd, i) => (
         <div
           key={cmd.name}
+          id={optionId(i)}
+          role="option"
+          aria-selected={i === activeIndex}
           className={`oc-slash-item${i === activeIndex ? ' active' : ''}`}
           onMouseDown={(e) => { e.preventDefault(); onSelect(cmd); }}
           onMouseEnter={() => onHover(i)}
