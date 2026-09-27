@@ -778,14 +778,12 @@ function ComposerImpl({
     const el = e.currentTarget;
     const hasArg = el.value.includes(' ');
 
-    if (slash.open && !hasArg && e.key === 'ArrowDown') {
+    // Tab / Shift+Tab step through the menu like ArrowDown / ArrowUp.
+    const menuDown = e.key === 'ArrowDown' || (e.key === 'Tab' && !e.shiftKey);
+    const menuUp = e.key === 'ArrowUp' || (e.key === 'Tab' && e.shiftKey);
+    if (slash.open && !hasArg && (menuDown || menuUp)) {
       e.preventDefault();
-      slash.moveIndex(1);
-      return;
-    }
-    if (slash.open && !hasArg && e.key === 'ArrowUp') {
-      e.preventDefault();
-      slash.moveIndex(-1);
+      slash.moveIndex(menuDown ? 1 : -1);
       return;
     }
     if (slash.open && e.key === 'Escape') {
@@ -793,7 +791,7 @@ function ComposerImpl({
       slash.close();
       return;
     }
-    if (slash.open && !hasArg && (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey))) {
+    if (slash.open && !hasArg && e.key === 'Enter' && !e.shiftKey) {
       const cmd = slash.filtered[slash.index];
       if (cmd) {
         e.preventDefault();

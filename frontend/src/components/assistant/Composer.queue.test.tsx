@@ -87,6 +87,22 @@ describe('Composer input', () => {
     expect(screen.queryByRole('listbox', { name: 'Slash commands' })).not.toBeInTheDocument();
   });
 
+  it('moves through the slash menu with Tab and Shift+Tab', () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    render(<Composer isRunning={false} />);
+    const input = screen.getByRole('textbox');
+    fireEvent.input(input, { target: { value: '/re' } });
+    const selected = () => screen.getAllByRole('option').findIndex((o) => o.getAttribute('aria-selected') === 'true');
+
+    expect(selected()).toBe(0);
+    fireEvent.keyDown(input, { key: 'Tab' });
+    expect(selected()).toBe(1);
+    fireEvent.keyDown(input, { key: 'Tab', shiftKey: true });
+    expect(selected()).toBe(0);
+    // still navigating, not selecting: the menu stays open with the typed text
+    expect(input).toHaveValue('/re');
+  });
+
   it('prefills a routine prompt without sending it', async () => {
     const onSend = vi.fn();
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify([
