@@ -381,3 +381,14 @@ func TestPreviewAuth_NotionFromEnv(t *testing.T) {
 		t.Fatalf("refs = %v", refs)
 	}
 }
+
+func TestPreviewAuth_LinearFromEnv(t *testing.T) {
+	t.Setenv("OCMAN_LINEAR_PREVIEW_CLIENT_ID", "cid")
+	s := testServer(t)
+	if p, ok := s.previewManager().Provider("linear"); !ok || !p.PKCE {
+		t.Fatal("linear provider not registered with PKCE")
+	}
+	if refs := s.linkPreviews().Discover("https://linear.app/acme/issue/ENG-12/fix-it", nil); len(refs) != 1 {
+		t.Fatalf("refs = %v", refs)
+	}
+}

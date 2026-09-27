@@ -345,6 +345,13 @@ flowchart TD
   matches become `Choices` (state `ambiguous`), none is `not_found`. An
   unshared page is a 404 once the cache expires; a removed connection is a
   401 and forgets the grant.
+- **Linear previews** (`linkpreview.Linear`, opt-in via
+  `OCMAN_LINEAR_PREVIEW_CLIENT_ID`). Authorization code + PKCE with the
+  `read` scope; the rotating refresh token is stored per viewer and Linear
+  organization. One GraphQL query returns the organization and the issue;
+  a link whose workspace `urlKey` differs from the grant's is `not_found`.
+  GraphQL error codes (`AUTHENTICATION_ERROR`, `FORBIDDEN`, `RATELIMITED`,
+  often on HTTP 400) map onto the shared 401 / 403 / 429 handling.
 
 ## 3. Session and event data flow
 

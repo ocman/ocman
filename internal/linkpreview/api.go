@@ -26,6 +26,9 @@ const maxResponse = 1 << 20
 type HTTPError struct {
 	Status     int
 	RetryAfter time.Duration
+	// Body is the bounded error response, for providers that report the
+	// real cause inside it (Linear's GraphQL 400s). Never in Error().
+	Body []byte
 }
 
 func (e *HTTPError) Error() string { return fmt.Sprintf("provider returned %d", e.Status) }
@@ -111,9 +114,9 @@ func (a *API) JSON(ctx context.Context, method, base string, segments []string, 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxResponse))
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponse))
 		secs, _ := strconv.Atoi(resp.Header.Get("Retry-After"))
-		return &HTTPError{Status: resp.StatusCode, RetryAfter: time.Duration(secs) * time.Second}
+		return &HTTPError{Status: resp.StatusCode, RetryAfter: time.Duration(secs) * time.Second, Body: b}
 	}
 	if out == nil {
 		return nil

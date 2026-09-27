@@ -155,7 +155,9 @@ func (s *Service) resolve(ctx context.Context, viewerID, ownerID string, ref Ref
 // cached serves ref from the cache under gk, or fetches it within the
 // grant's budget. grant: token is the viewer's own (a 401 forgets it).
 func (s *Service) cached(ctx context.Context, r Resolver, token string, publicOnly, grant bool, viewerID, ownerID, gk string, ref Ref) Preview {
-	key := gk + "\x00" + ref.key()
+	// The URL is part of the key: a resolver may check it against the grant
+	// (Linear's workspace), so the same ID via another link must not hit.
+	key := gk + "\x00" + ref.key() + "\x00" + ref.URL
 	now := s.now()
 	s.mu.Lock()
 	cached, hit := s.cache[key]

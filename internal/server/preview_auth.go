@@ -82,6 +82,11 @@ func (s *Server) previewManager() *previewauth.Manager {
 			s.previewAuth.providers = append(s.previewAuth.providers, linkpreview.NotionOAuth(id, secret, ""))
 			s.previewAuth.resolvers = append(s.previewAuth.resolvers, linkpreview.Notion{})
 		}
+		// Linear uses PKCE, so the client secret is optional.
+		if id := os.Getenv("OCMAN_LINEAR_PREVIEW_CLIENT_ID"); id != "" {
+			s.previewAuth.providers = append(s.previewAuth.providers, linkpreview.LinearOAuth(id, os.Getenv("OCMAN_LINEAR_PREVIEW_CLIENT_SECRET"), ""))
+			s.previewAuth.resolvers = append(s.previewAuth.resolvers, linkpreview.Linear{})
+		}
 		s.previewAuth.manager = previewauth.New(s.stateDB, s.publicURL(previewCallback), s.previewAuth.client, s.previewAuth.providers...)
 		s.previewAuth.previews = linkpreview.New(s.previewAuth.manager, s.previewAuth.manager.Client(), s.previewAuth.resolvers...)
 		previews := s.previewAuth.previews
