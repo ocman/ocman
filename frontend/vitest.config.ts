@@ -18,6 +18,10 @@ export default defineConfig({
   test: {
     environment: 'node',
     setupFiles: ['./vitest.setup.ts'],
+    // Node 25 ships a global `localStorage` that is unusable without
+    // `--localstorage-file`, warns on first access, and shadows jsdom's
+    // working Storage. Turn it off so jsdom's own implementation is used.
+    execArgv: ['--no-experimental-webstorage'],
     // The shared CI runner is CPU-starved while Go and Playwright jobs
     // run alongside; the 5s default let healthy tests time out.
     testTimeout: 15_000,

@@ -6,30 +6,6 @@ import '@testing-library/jest-dom/vitest';
 import { afterEach } from 'vitest';
 import { cleanup, configure } from '@testing-library/react';
 
-// jsdom in this project ships a `localStorage` whose methods are not
-// callable, so any persisted Zustand store that writes throws
-// "storage.setItem is not a function". Zustand resolves its storage once at
-// store-creation time, which happens during module import — before a
-// per-file stub can land — so patch it here, in the setup file that runs
-// first. Only a broken implementation is replaced; a real one is left alone,
-// as is the node environment (where there is no localStorage at all and
-// stores correctly degrade to non-persisting).
-{
-  const existing = (globalThis as { localStorage?: Partial<Storage> }).localStorage;
-  if (existing && typeof existing.setItem !== 'function') {
-    const mem = new Map<string, string>();
-    Object.defineProperty(globalThis, 'localStorage', {
-      configurable: true,
-      value: {
-        getItem: (key: string) => mem.get(key) ?? null,
-        setItem: (key: string, value: string) => void mem.set(key, value),
-        removeItem: (key: string) => void mem.delete(key),
-        clear: () => mem.clear(),
-      },
-    });
-  }
-}
-
 // jsdom ships no ResizeObserver, which anything measuring its own box (React
 // Flow, xterm) constructs on mount. A no-op observer is enough: jsdom never
 // lays out, so a real one would only ever report zeroes.
