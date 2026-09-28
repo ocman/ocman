@@ -1,4 +1,6 @@
 .oc-search-select {
+  /* Spans, not divs, so the picker stays valid inside a paragraph. */
+  display: block;
   position: relative;
 }
 .oc-search-select > button {
@@ -78,6 +80,7 @@
   color: var(--text-muted);
 }
 .oc-search-select-header {
+  display: block;
   padding: 8px 7px 4px;
   color: var(--text-dim);
   font-size: 10px;

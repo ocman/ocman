@@ -39,7 +39,7 @@ export function SearchSelect({
   search: searchOptions,
 }: SearchSelectProps) {
   const id = useId();
-  const root = useRef<HTMLDivElement>(null);
+  const root = useRef<HTMLSpanElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -58,7 +58,7 @@ export function SearchSelect({
   const selected = options.find((option) => option.value === value);
 
   return (
-    <div className="oc-search-select" ref={root} onKeyDown={(event) => event.key === 'Escape' && setOpen(false)}>
+    <span className="oc-search-select" ref={root} onKeyDown={(event) => event.key === 'Escape' && setOpen(false)}>
       <button
         type="button"
         role="combobox"
@@ -75,7 +75,7 @@ export function SearchSelect({
         <i className="bi bi-chevron-down" aria-hidden="true" />
       </button>
       {open && (
-        <div className="oc-search-select-menu">
+        <span className="oc-search-select-menu">
           <input
             ref={search}
             className="oc-field oc-field--search"
@@ -84,10 +84,10 @@ export function SearchSelect({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
-          <div id={id} role="listbox">
+          <span id={id} role="listbox">
             {shown.map((option, index) => [
               !query.trim() && option.section && option.section !== shown[index - 1]?.section
-                && <div key={`h:${option.section}`} role="presentation" className="oc-search-select-header">{option.section}</div>,
+                && <span key={`h:${option.section}`} role="presentation" className="oc-search-select-header">{option.section}</span>,
               <button
                 type="button"
                 role="option"
@@ -103,9 +103,9 @@ export function SearchSelect({
             ])}
             {visible.length === 0 && <small>No matches</small>}
             {visible.length > MAX_VISIBLE && <small>Type to search {visible.length - MAX_VISIBLE} more…</small>}
-          </div>
-        </div>
+          </span>
+        </span>
       )}
-    </div>
+    </span>
   );
 }

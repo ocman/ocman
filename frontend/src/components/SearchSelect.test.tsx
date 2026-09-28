@@ -61,3 +61,21 @@ it('caps rendered options so huge catalogs open instantly', async () => {
   await user.type(screen.getByRole('textbox'), 'm999');
   expect(screen.getByRole('option', { name: 'p/m999' })).toBeInTheDocument();
 });
+
+it('uses phrasing content only, so it can render inside a paragraph', async () => {
+  const user = userEvent.setup();
+  const { container } = render(
+    <p>
+      <SearchSelect
+        value=""
+        options={[{ value: 'a', label: 'a', section: 'Group' }]}
+        ariaLabel="Model"
+        placeholder="Choose model"
+        searchLabel="Search models"
+        onChange={vi.fn()}
+      />
+    </p>,
+  );
+  await user.click(screen.getByRole('combobox'));
+  expect(container.querySelector('p div')).toBeNull();
+});
