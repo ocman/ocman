@@ -1,0 +1,21 @@
+.oc-setup-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: var(--bg);
+  overflow: auto;
+}
+.oc-setup-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 999;
+  margin: 0;
+  background: var(--bg-card);
+  align-items: flex-start;
+}
+.oc-setup-banner > div { flex: 1; }
+.oc-setup-list { margin: 4px 0; padding-left: 18px; text-align: left; }
+.oc-setup-detail, .oc-setup-hint { color: var(--text-dim); }
+.oc-setup-hint { font-style: italic; }

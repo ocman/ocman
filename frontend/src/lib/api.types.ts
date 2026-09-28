@@ -746,6 +746,22 @@ export interface SessionChanges {
 // comments would be lost); `reason` then explains why. A non-empty
 // `currentUrl` with `configured: false` means the entry exists but is
 // stale — usually an old port.
+// One /api/doctor prerequisite check. A failing `required` check blocks
+// the app; a failing optional one only hides the feature it unlocks.
+export interface DoctorCheck {
+  id: string;
+  label: string;
+  required: boolean;
+  ok: boolean;
+  detail: string;
+  hint: string;
+}
+
+export interface DoctorReport {
+  checks: DoctorCheck[];
+  logPath?: string;
+}
+
 export interface McpConfigStatus {
   path: string;
   configured: boolean;

@@ -9,8 +9,33 @@ database read-only and talks to running OpenCode instances over their HTTP
 API. OpenCode keeps ownership of the data, and you can keep using the CLI on
 the same sessions at the same time.
 
-One binary, no runtime dependencies (pure-Go SQLite), listening on
-`127.0.0.1:8228` by default.
+One binary (pure-Go SQLite), listening on `127.0.0.1:8228` by default.
+
+## Requirements
+
+Ocman checks these on startup (`GET /api/doctor`). A missing required item
+shows a setup panel; a missing optional one shows a dismissable banner and
+hides only the feature it unlocks.
+
+Required:
+
+- **OpenCode**, with its database created. Install OpenCode:
+  https://opencode.ai, then run OpenCode once so it creates its database,
+  then restart ocman.
+- **git**: `brew install git`.
+
+Optional:
+
+| Tool | Unlocks | Hint |
+|------|---------|------|
+| tmux | launching managed OpenCode sessions, /wt worktree sessions and browser terminals | `brew install tmux` |
+| lsof | discovering OpenCode instances you started yourself | Install lsof; discovering externally started OpenCode instances needs it |
+| whisper-cpp + ffmpeg | voice input in the composer | `brew install whisper-cpp`, `brew install ffmpeg` (without ffmpeg only wav/mp3/ogg/flac work) |
+
+Apps launched from Finder get a minimal PATH. Ocman merges in your login
+shell's PATH; when that fails it reports: "Launched from Finder? Your login
+shell PATH could not be read; install tools in /usr/local/bin or
+/opt/homebrew/bin".
 
 ## Install
 

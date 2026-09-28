@@ -122,6 +122,7 @@ export type {
 import type {
   AuthMe,
   CapabilitiesResponse,
+  DoctorReport,
   FavoriteEntry,
   McpConfigStatus,
   McpConfigInstallResult,
@@ -541,6 +542,9 @@ export const api = {
     ),
   // --- MCP registration in OpenCode's global config ---
   // Whether OpenCode's global config points at ocman's MCP endpoint.
+  // Prerequisite checks (tools on PATH, OpenCode DB, ...) for onboarding.
+  getDoctor: (signal?: AbortSignal) =>
+    fetchJSON<DoctorReport>('/api/doctor', signal),
   getMcpConfig: (signal?: AbortSignal) =>
     fetchJSON<McpConfigStatus>('/api/mcp/config', signal),
   // Write the ocman entry into that config (backs the original up
