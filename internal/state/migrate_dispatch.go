@@ -6,7 +6,8 @@ import (
 )
 
 // v100 adds viewer-scoped preview-provider consent (preview_auth.go).
-const latestSchemaVersion = 100
+// v101 adds artifacts and their relay shares (artifacts.go).
+const latestSchemaVersion = 101
 
 // applyMigration runs the DDL for the given target version.
 func applyMigration(tx *sql.Tx, target int) error {
@@ -225,6 +226,8 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return addColumnIfMissing(tx, "factory_epic", "models_json", "TEXT NOT NULL DEFAULT '{}'")
 	case 100:
 		return migrateToV100(tx)
+	case 101:
+		return migrateToV101(tx)
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}

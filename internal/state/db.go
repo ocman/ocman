@@ -27,6 +27,9 @@ type DB struct {
 	pluginMu sync.Mutex
 	// previewKeyMu serializes first-use generation of the preview credential key.
 	previewKeyMu sync.Mutex
+	// artifactMu orders blob writes, artifact inserts and blob GC so a delete
+	// never removes a blob a concurrent create is about to reference.
+	artifactMu sync.Mutex
 }
 
 // DefaultDBPath returns the default path to the ocman state database.
