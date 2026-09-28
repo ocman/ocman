@@ -173,6 +173,7 @@ type Server struct {
 	// maint runs OpenCode database maintenance; nil without a DB path.
 	// Its gate refuses opencode launches while a job runs.
 	maint             *ocmaint.Runner
+	logPath           string // resolved log file; "" when stderr only
 	subscriptionUsage subscriptionUsageClient
 	// Guards the providers against a reopened panel or a repeatedly
 	// clicked Refresh; see subscriptionUsageTTL.

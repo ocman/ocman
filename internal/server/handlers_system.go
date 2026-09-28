@@ -20,6 +20,16 @@ import (
 	"github.com/NoUseFreak/ocman/internal/whisper"
 )
 
+// WithLogPath records the resolved log file path ("" = stderr only) so
+// dialogs and the UI can point users at it.
+func (s *Server) WithLogPath(path string) *Server {
+	s.logPath = path
+	return s
+}
+
+// LogPath returns the resolved log file path, "" when logging to stderr only.
+func (s *Server) LogPath() string { return s.logPath }
+
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	if !s.requireDB(w) {
 		return

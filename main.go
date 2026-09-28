@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -96,15 +97,6 @@ func main() {
 	// color when stdout isn't a TTY — which it isn't under `make dev`/air
 	// (piped). ForceColors keeps the color; FullTimestamp adds the date.
 	log.SetFormatter(&log.TextFormatter{ForceColors: true, FullTimestamp: true})
-	if err := opencodeskills.Remove("ocman-session-splitting"); err != nil {
-		log.WithError(err).Warn("removing retired ocman session-splitting skill")
-	}
-	if err := opencodeskills.Remove("ocman-workflows"); err != nil {
-		log.WithError(err).Warn("removing retired ocman workflows skill")
-	}
-	if err := opencodeskills.Install(embeddedSkills()); err != nil {
-		log.WithError(err).Warn("installing embedded ocman skills")
-	}
 
 	// When started by launchd / a login item after a reboot, ocman
 	// inherits a minimal PATH that omits homebrew and version-manager
@@ -133,7 +125,19 @@ func main() {
 	remoteTLSKey := flag.String("remote-tls-key", "", "TLS key file for the remote-access gRPC server")
 	remoteTrustedOverlay := flag.Bool("remote-trusted-overlay", false, "explicitly allow plaintext remote gRPC on a trusted overlay network")
 	insecureNoAuth := flag.Bool("insecure-no-auth", false, "allow a non-loopback -addr/-gui-addr with no password configured (also "+insecureNoAuthEnv+"=1)")
+	logFile := flag.String("log-file", "", "log file path in addition to stderr (empty = ~/Library/Logs/ocman/ocman.log on macOS, else $XDG_STATE_HOME/ocman/ocman.log; \"-\" or \"off\" = stderr only)")
 	flag.Parse()
+	home, _ := os.UserHomeDir()
+	logPath := setupLogFile(resolveLogPath(*logFile, runtime.GOOS, home, os.Getenv("XDG_STATE_HOME")))
+	if err := opencodeskills.Remove("ocman-session-splitting"); err != nil {
+		log.WithError(err).Warn("removing retired ocman session-splitting skill")
+	}
+	if err := opencodeskills.Remove("ocman-workflows"); err != nil {
+		log.WithError(err).Warn("removing retired ocman workflows skill")
+	}
+	if err := opencodeskills.Install(embeddedSkills()); err != nil {
+		log.WithError(err).Warn("installing embedded ocman skills")
+	}
 	if err := validateRemoteTransport(*remoteListen, *remoteTLSCert, *remoteTLSKey, *remoteTrustedOverlay); err != nil {
 		log.Fatal(err)
 	}
@@ -290,6 +294,7 @@ func main() {
 			WithRelay(resolvedRelayURL, relaySource).
 			WithMCPAddr(*mcpAddr).
 			WithOpenCodeDBPath(openCodeDBPath).
+			WithLogPath(logPath).
 			WithRemoteAccess(ident.InstanceID, "", false, false)
 		if err := gui.RunGUI(ctx, srv, httpListenAddr); err != nil {
 			log.Fatalf("GUI error: %v", err)
@@ -301,7 +306,8 @@ func main() {
 			WithPublicBaseURL(resolvedBaseURL).
 			WithRelay(resolvedRelayURL, relaySource).
 			WithMCPAddr(*mcpAddr).
-			WithOpenCodeDBPath(openCodeDBPath)
+			WithOpenCodeDBPath(openCodeDBPath).
+			WithLogPath(logPath)
 
 		// Start the remote-access gRPC server when -remote-listen is set
 		// (multi-remote support). Off by default so single-host installs

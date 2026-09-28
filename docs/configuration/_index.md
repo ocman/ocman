@@ -82,6 +82,7 @@ locality must not be used to justify `-auth-trust-localhost`.
 |------|---------|-------------|
 | `-addr` | `127.0.0.1:8228` | Listen address. |
 | `-db` | `~/.local/share/opencode/opencode.db` | Path to OpenCode's SQLite DB. Opened read-only. |
+| `-log-file` | _(platform default)_ | Also write the log to this file (plain text, dir `0700`, file `0600`). Default `~/Library/Logs/ocman/ocman.log` on macOS, otherwise `$XDG_STATE_HOME/ocman/ocman.log` (`~/.local/state/ocman/ocman.log`). A file over 10 MB at startup moves to `ocman.log.1`. `-` or `off` logs to stderr only. Check this file when the desktop app fails to start. |
 | `-mcp-addr` | `127.0.0.1:8227` | Loopback listen address for the MCP endpoint. Local clients reach it without auth, so non-loopback addresses are refused. Empty disables it. |
 | `-platforms` | `opencode` | Comma-separated list of platforms to enable (`opencode`, `claude-code`). |
 | `-public-base-url` | _(unset)_ | Externally reachable base URL, e.g. `https://ocman.example.ts.net`. Used for the links ocman hands to readers elsewhere (share links, plugin attention notices) and for cookie/origin decisions. Falls back to the listen address, which only works locally. Also `OCMAN_PUBLIC_BASE_URL`. |
