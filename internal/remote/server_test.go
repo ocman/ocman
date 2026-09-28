@@ -180,7 +180,7 @@ func (f *fakePlatform) ProxyEvents(_ context.Context, _ string, w io.Writer, flu
 // empty results for everything except Projects/Capabilities.
 type localStubHost struct{}
 
-func (localStubHost) RemoteID() string { return "local" }
+func (localStubHost) RemoteID() string                             { return "local" }
 func (localStubHost) Doctor(context.Context) []hostsvc.DoctorCheck { return nil }
 func (localStubHost) Capabilities() hostsvc.HostCaps {
 	return hostsvc.HostCaps{GitDiff: true, Worktrees: true, Tmux: true, Projects: true, Whisper: true}
