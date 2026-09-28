@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures';
 
-test('permission text fields show keyboard focus and invalid styling inside a shared-header dialog', async ({ mockedPage: page }) => {
+test('permission text fields have no focus highlight but show invalid styling inside a shared-header dialog', async ({ mockedPage: page }) => {
   await page.route('/api/routines', (route) => route.fulfill({ json: [] }));
   await page.goto('/routines');
   await page.getByRole('button', { name: 'New routine' }).click();
@@ -10,8 +10,8 @@ test('permission text fields show keyboard focus and invalid styling inside a sh
   await dialog.getByRole('button', { name: /Add rule/ }).click();
   const permission = dialog.getByLabel('Rule 1 permission');
   await permission.focus();
-  await expect(permission).toHaveCSS('outline-style', 'solid');
-  await expect(permission).toHaveCSS('outline-width', '2px');
+  // base.css drops the active-input highlight app-wide; shared fields must not bring it back.
+  await expect(permission).toHaveCSS('outline-style', 'none');
   const border = await permission.evaluate((element) => getComputedStyle(element).borderTopColor);
   await permission.fill('');
   await expect(permission).toHaveAttribute('aria-invalid', 'true');
