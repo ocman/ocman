@@ -9,11 +9,11 @@ it('groups link preview settings into tabs', async () => {
     ok: true, status: 200,
     json: async () => url.startsWith('/api/previews/apps')
       ? { kinds: [{ kind: 'github', name: 'GitHub', env: 'OCMAN_GITHUB_PREVIEW' }], apps: [], callbackUrl: 'http://x/cb' }
-      : url.startsWith('/api/previews/providers') ? { providers: [], ownerTokens: [] } : { rules: [] },
+      : url.startsWith('/api/previews/providers') ? { providers: [], rules: [], hostKinds: [] } : { rules: [] },
   } as Response)));
   const { LinkPreviewTabs } = await import('./LinkPreviewTabs');
   render(<LinkPreviewTabs />);
-  expect(await screen.findByText(/No sign-in apps yet/)).toBeInTheDocument();
+  expect(await screen.findByText(/fetched on this machine/)).toBeInTheDocument();
   expect(screen.queryByText('Redirect URI')).toBeNull();
 
   const apps = screen.getByRole('tab', { name: 'Sign-in apps' });

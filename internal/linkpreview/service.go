@@ -134,7 +134,20 @@ func (s *Service) resolve(ctx context.Context, viewerID, ownerID string, ref Ref
 		case len(ws) == 0:
 			return Preview{Ref: ref, State: StateConnect}
 		case len(ws) > 1:
-			return Preview{Ref: ref, State: StateAmbiguous}
+			// Several workspaces could own it: the first that previews wins.
+			var first Preview
+			for i, w := range ws {
+				one := ref
+				one.Workspace = w
+				p := s.resolve(ctx, viewerID, ownerID, one)
+				if p.State == StateOK || p.State == StateAmbiguous {
+					return p
+				}
+				if i == 0 {
+					first = p
+				}
+			}
+			return first
 		}
 		ref.Workspace = ws[0]
 	}

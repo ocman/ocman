@@ -40,31 +40,3 @@ func TestPreviewCredentialBoundToRowKey(t *testing.T) {
 		t.Fatalf("expired state = %v", err)
 	}
 }
-
-func TestDeletePreviewViewerSpansOwners(t *testing.T) {
-	d, err := Open(filepath.Join(t.TempDir(), "state.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer d.Close()
-	ctx := context.Background()
-	for _, c := range []PreviewCredential{
-		{ViewerID: "alice", OwnerID: "hub", Provider: "p", WorkspaceID: "w", AccessToken: "a-hub"},
-		{ViewerID: "alice", OwnerID: "r1", Provider: "p", WorkspaceID: "w", AccessToken: "a-r1"},
-		{ViewerID: "bob", OwnerID: "r1", Provider: "p", WorkspaceID: "w", AccessToken: "b-r1"},
-	} {
-		if err := d.PutPreviewCredential(ctx, c); err != nil {
-			t.Fatal(err)
-		}
-	}
-	gone, err := d.DeletePreviewViewer(ctx, "alice")
-	if err != nil || len(gone) != 2 || gone[0].AccessToken == gone[1].AccessToken {
-		t.Fatalf("gone = %+v, %v", gone, err)
-	}
-	if left, _ := d.PreviewCredentials(ctx, "alice", "r1", ""); len(left) != 0 {
-		t.Fatalf("alice left = %+v", left)
-	}
-	if left, _ := d.PreviewCredentials(ctx, "bob", "r1", ""); len(left) != 1 || left[0].OwnerID != "r1" {
-		t.Fatalf("bob = %+v", left)
-	}
-}

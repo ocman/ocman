@@ -63,7 +63,7 @@ comes from a template you control in **Settings**.
   {{< card link="multi-remote" title="Multi-remote" subtitle="Attach other ocman instances and manage every machine from one dashboard." >}}
   {{< card link="mcp" title="MCP server" subtitle="Factory, Inbox, routine, session inspection, and file display tools." >}}
   {{< card link="routines" title="Routines" subtitle="Save a project prompt, run it now, or schedule it in a fresh session." >}}
-  {{< card link="link-previews" title="Link previews" subtitle="Rich cards for forge, Slack, Notion, Linear and Jira links, per viewer." >}}
+  {{< card link="link-previews" title="Link previews" subtitle="Rich cards for forge, Slack, Notion, Linear and Jira links, fetched with this machine's tokens." >}}
   {{< card link="slack" title="Slack integration" subtitle="Run durable ocman conversations from channels and direct chats." >}}
   {{< card link="webhooks" title="Encrypted webhooks" subtitle="Queue provider requests safely while owners or relays are offline." >}}
 {{< /cards >}}

@@ -200,3 +200,31 @@ func TestJSONBodyExchangeAndRevoke(t *testing.T) {
 		t.Fatalf("requests:\n%v", reqs)
 	}
 }
+
+func TestConnectToken(t *testing.T) {
+	db := openState(t)
+	ctx := context.Background()
+	p := Provider{ID: "forge", Name: "Forge", TokenHelp: "paste",
+		Identify: func(_ context.Context, _ *http.Client, tok Token) ([]Grant, error) {
+			if tok.AccessToken != "pat" {
+				return nil, ErrExchange
+			}
+			return []Grant{{WorkspaceID: "w", AccountName: "me"}}, nil
+		}}
+	m := New(db, "https://ocman.test/cb", nil, p)
+	if _, err := m.Begin(ctx, "v", "o", "forge", "/"); !errors.Is(err, ErrNoOAuth) {
+		t.Fatalf("begin without app = %v", err)
+	}
+	if err := m.ConnectToken(ctx, "v", "o", p, "nope"); !errors.Is(err, ErrExchange) {
+		t.Fatalf("bad token = %v", err)
+	}
+	if err := m.ConnectToken(ctx, "v", "o", Provider{ID: "x"}, "pat"); !errors.Is(err, ErrNoTokenLogin) {
+		t.Fatalf("no token login = %v", err)
+	}
+	if err := m.ConnectToken(ctx, "v", "o", p, " pat\n"); err != nil {
+		t.Fatal(err)
+	}
+	if tok, err := m.AccessToken(ctx, "v", "o", "forge", "w"); err != nil || tok != "pat" {
+		t.Fatalf("stored = %q %v", tok, err)
+	}
+}

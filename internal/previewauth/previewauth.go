@@ -34,6 +34,8 @@ var (
 	ErrExpired         = errors.New("provider authorization expired")
 	ErrRevoked         = errors.New("provider authorization revoked")
 	ErrExchange        = errors.New("provider token exchange failed")
+	ErrNoOAuth         = errors.New("provider has no sign-in app")
+	ErrNoTokenLogin    = errors.New("provider does not accept personal tokens")
 )
 
 // stateTTL bounds how long a consent screen may stay open.
@@ -80,7 +82,15 @@ type Provider struct {
 	// Identify maps a fresh token to the workspaces it grants. Nil means a
 	// single "default" workspace.
 	Identify func(ctx context.Context, client *http.Client, tok Token) ([]Grant, error)
+	// TokenHelp, when set, lets a viewer paste a personal access or API
+	// token instead of OAuth consent, and says how to create one.
+	TokenHelp string
+	// IdentifyToken identifies a pasted token; nil uses Identify.
+	IdentifyToken func(ctx context.Context, client *http.Client, tok Token) ([]Grant, error)
 }
+
+// OAuth reports whether a sign-in app is configured for consent.
+func (p Provider) OAuth() bool { return p.AuthURL != "" && p.ClientID != "" }
 
 // Manager owns the consent flow for a fixed provider set.
 type Manager struct {
@@ -147,6 +157,9 @@ func (m *Manager) Begin(ctx context.Context, viewerID, ownerID, providerID, retu
 	if !ok {
 		return "", ErrUnknownProvider
 	}
+	if !p.OAuth() {
+		return "", ErrNoOAuth
+	}
 	st, verifier := randomToken(), randomToken()
 	if err := m.db.PutPreviewOAuthState(ctx, hashState(st), state.PreviewOAuthState{
 		ViewerID: viewerID, OwnerID: ownerID, Provider: providerID, Verifier: verifier,
@@ -212,16 +225,44 @@ func (m *Manager) Complete(ctx context.Context, viewerID, st, code, providerErr 
 			return s.ReturnTo, ErrExchange
 		}
 	}
+	return s.ReturnTo, m.store(ctx, viewerID, ownerID, p, grants, tok)
+}
+
+func (m *Manager) store(ctx context.Context, viewerID, ownerID string, p Provider, grants []Grant, tok Token) error {
 	for _, g := range grants {
 		if err := m.db.PutPreviewCredential(ctx, state.PreviewCredential{
 			ViewerID: viewerID, OwnerID: ownerID, Provider: p.ID, WorkspaceID: g.WorkspaceID,
 			WorkspaceName: g.WorkspaceName, AccountName: g.AccountName, Sites: g.Sites,
 			AccessToken: tok.AccessToken, RefreshToken: tok.RefreshToken, ExpiresAt: tok.ExpiresAt,
 		}); err != nil {
-			return s.ReturnTo, err
+			return err
 		}
 	}
-	return s.ReturnTo, nil
+	return nil
+}
+
+// ConnectToken stores a viewer's pasted personal token after checking it
+// with the provider. It never expires locally; a provider rejection (401)
+// forgets it like any other grant.
+// p need not be registered yet: a token may add a new forge host.
+func (m *Manager) ConnectToken(ctx context.Context, viewerID, ownerID string, p Provider, token string) error {
+	identify := p.IdentifyToken
+	if identify == nil {
+		identify = p.Identify
+	}
+	if p.TokenHelp == "" || identify == nil {
+		return ErrNoTokenLogin
+	}
+	token = strings.TrimSpace(token)
+	if token == "" || len(token) > 4096 || strings.ContainsAny(token, " \r\n\t") {
+		return ErrExchange
+	}
+	tok := Token{AccessToken: token}
+	grants, err := identify(ctx, m.client, tok)
+	if err != nil || len(grants) == 0 {
+		return ErrExchange
+	}
+	return m.store(ctx, viewerID, ownerID, p, grants, tok)
 }
 
 // tokenRequest posts to the token endpoint. Errors never include the body:
@@ -357,19 +398,13 @@ func (m *Manager) Disconnect(ctx context.Context, viewerID, ownerID, providerID,
 	return err
 }
 
-// SignOut forgets the viewer and its grants for every owner (browser
-// sign-out).
-func (m *Manager) SignOut(ctx context.Context, viewerID string) error {
-	gone, err := m.db.DeletePreviewViewer(ctx, viewerID)
-	m.revokeAll(ctx, gone)
-	return err
-}
-
 func (m *Manager) revokeAll(ctx context.Context, creds []state.PreviewCredential) {
 	seen := map[string]bool{}
 	for _, c := range creds {
 		p, ok := m.providers[c.Provider]
-		if !ok || p.RevokeURL == "" || seen[c.AccessToken] {
+		// ponytail: a pasted token is revoked at the provider only when an app
+		// exists too (then the OAuth revoke endpoint just rejects it).
+		if !ok || p.RevokeURL == "" || !p.OAuth() || seen[c.AccessToken] {
 			continue
 		}
 		seen[c.AccessToken] = true
@@ -404,6 +439,8 @@ type ProviderStatus struct {
 	ID          string       `json:"id"`
 	Name        string       `json:"name"`
 	Notice      string       `json:"notice,omitempty"`
+	OAuth       bool         `json:"oauth"`
+	TokenHelp   string       `json:"tokenHelp,omitempty"`
 	Connections []Connection `json:"connections"`
 }
 
@@ -430,7 +467,7 @@ func (m *Manager) Status(ctx context.Context, viewerID, ownerID string) ([]Provi
 		if conns == nil {
 			conns = []Connection{}
 		}
-		out = append(out, ProviderStatus{ID: id, Name: p.Name, Notice: p.Notice, Connections: conns})
+		out = append(out, ProviderStatus{ID: id, Name: p.Name, Notice: p.Notice, OAuth: p.OAuth(), TokenHelp: p.TokenHelp, Connections: conns})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil

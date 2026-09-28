@@ -112,6 +112,10 @@ func newHarness(t *testing.T) *harness {
 			w.WriteHeader(int(st))
 			return
 		}
+		if strings.Contains(r.Header.Get("Authorization"), "tok-elsewhere") {
+			w.WriteHeader(http.StatusNotFound) // a workspace that does not own it
+			return
+		}
 		id := strings.TrimPrefix(r.URL.Path, "/issues/")
 		fmt.Fprintf(w, `{"title":"Title of %s by %s","url":"https://tracker.example.com/browse/%s","icon":"bi-kanban"}`,
 			id, r.Header.Get("Authorization"), id)
@@ -314,14 +318,20 @@ func TestResolveFetchBudget(t *testing.T) {
 	}
 }
 
-func TestResolveAmbiguousWorkspace(t *testing.T) {
+func TestResolveTriesEachWorkspace(t *testing.T) {
 	h := newHarness(t)
-	h.tokens.grants["alice/w2"] = "tok2"
-	if p := h.one("alice", "ABC-1"); p.State != StateAmbiguous || h.hits.Load() != 0 {
-		t.Fatalf("ambiguous = %+v", p)
+	h.tokens.grants["alice/w2"] = "tok-elsewhere"
+	// Whatever order the workspaces come in, the one that owns it wins.
+	if p := h.one("alice", "ABC-1"); p.State != StateOK || !strings.Contains(p.Title, "tok-alice") {
+		t.Fatalf("multi-workspace = %+v", p)
+	}
+	delete(h.tokens.grants, "alice/w1")
+	h.tokens.grants["alice/w3"] = "tok-elsewhere-too"
+	if p := h.one("alice", "ABC-2"); p.State != StateNotFound {
+		t.Fatalf("owned by none = %+v", p)
 	}
 	p := h.svc.Resolve(context.Background(), "alice", "owner", []Ref{{Provider: "mock", Workspace: "w2", Kind: "issue", ID: "ABC-1"}})[0]
-	if p.State != StateOK || !strings.Contains(p.Title, "tok2") {
+	if p.State != StateNotFound {
 		t.Fatalf("explicit workspace = %+v", p)
 	}
 }

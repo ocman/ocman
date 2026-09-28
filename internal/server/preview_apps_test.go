@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/NoUseFreak/ocman/internal/forge/github"
 )
 
 type appsResp struct {
@@ -93,8 +92,12 @@ func TestPreviewApps_HostedAndValidation(t *testing.T) {
 			t.Fatalf("provider %s missing", id)
 		}
 	}
-	if refs := s.linkPreviews().Discover("https://code.example.com/a/b/pulls/2", nil); len(refs) != 1 || refs[0].Provider != "forgejo:code.example.com" {
-		t.Fatalf("refs = %v", refs)
+	// An app alone offers sign-in; links wait for a grant or token.
+	if p, _ := m.Provider("forgejo:code.example.com"); !p.OAuth() {
+		t.Fatal("saved app has no sign-in")
+	}
+	if refs := s.linkPreviews().Discover("https://code.example.com/a/b/pulls/2", nil); len(refs) != 0 {
+		t.Fatalf("unconfigured host looked up: %v", refs)
 	}
 }
 
@@ -115,28 +118,8 @@ func TestPreviewApps_Forbidden(t *testing.T) {
 			t.Fatalf("%s proxied = %d", target, rr.Code)
 		}
 	}
-	if _, ok := s.previewManager().Provider("linear"); ok {
+	if p, _ := s.previewManager().Provider("linear"); p.OAuth() {
 		t.Fatal("proxied save applied")
 	}
 }
 
-func TestPreviewProviders_ReportOwnerTokens(t *testing.T) {
-	s := testServer(t)
-	s.integrations.GitHub = github.NewForTest("https://api.github.com", "tok", nil)
-	registerForgejoClient(s, "tea.example.com", "https://tea.example.com")
-	var resp struct{ OwnerTokens []previewOwnerToken }
-	body := statusOf(t, newBrowser(), s)
-	if err := json.Unmarshal([]byte(body), &resp); err != nil {
-		t.Fatal(err)
-	}
-	var got []string
-	for _, o := range resp.OwnerTokens {
-		got = append(got, o.Provider)
-	}
-	if strings.Contains(body, `"tok"`) {
-		t.Fatalf("owner token leaked: %s", body)
-	}
-	if strings.Join(got, ",") != "github,forgejo:tea.example.com" {
-		t.Fatalf("owner tokens = %v", got)
-	}
-}

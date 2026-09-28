@@ -1,6 +1,6 @@
 import { useContext, useEffect, useState } from 'react';
-import { PREVIEW_AUTH_EVENT, PreviewOwnerContext, loadPreviewProviders, resolvePreviews } from './previews';
-import type { PreviewProvider, PreviewResult } from './previews';
+import { PREVIEW_AUTH_EVENT, PreviewOwnerContext, loadPreviewConfig, mayPreview, resolvePreviews } from './previews';
+import type { PreviewConfig, PreviewProvider, PreviewResult } from './previews';
 
 const RESOLVE_DELAY_MS = 300;
 
@@ -11,10 +11,12 @@ interface Resolved {
   providers: PreviewProvider[];
 }
 
+
 /**
- * Resolves `text` into provider previews for this browser's viewer. State
- * lives only in the component: a connect/disconnect/sign-out event drops it
- * before reloading, so one viewer's private titles never render for another.
+ * Resolves `text` into provider previews. The server holds every
+ * credential; the browser only knows which providers are configured and
+ * which link hosts they preview, so text that cannot produce a preview is
+ * never sent.
  */
 export function useProviderPreviews(text: string): { previews: PreviewResult[]; providers: PreviewProvider[]; loading: boolean } {
   const owner = useContext(PreviewOwnerContext);
@@ -31,14 +33,15 @@ export function useProviderPreviews(text: string): { previews: PreviewResult[]; 
   useEffect(() => {
     const abort = new AbortController();
     const timer = setTimeout(() => {
-      // Without private-preview access the provider list is refused, but
-      // public forge links still resolve.
-      loadPreviewProviders(owner).catch((): PreviewProvider[] => []).then(async (providers) => {
-        if ((providers.length === 0 && !/https?:\/\//.test(text)) || abort.signal.aborted) return;
-        // Public forge links alone resolve silently, as their cards always did.
-        if (providers.length > 0) setPending(true);
+      // Without app access the catalog is refused, but public forge links
+      // may still resolve, so any https link is worth one call.
+      loadPreviewConfig(owner).catch((): PreviewConfig | null => null).then(async (config) => {
+        const worth = config ? mayPreview(text, config) : /https:\/\//.test(text);
+        if (!worth || abort.signal.aborted) return;
+        // Public forge links resolve silently, as their cards always did.
+        if (config?.providers.some((p) => p.accounts.length)) setPending(true);
         const previews = await resolvePreviews(text, owner, abort.signal);
-        if (!abort.signal.aborted) setResolved({ text, owner, previews, providers });
+        if (!abort.signal.aborted) setResolved({ text, owner, previews, providers: config?.providers ?? [] });
       }).catch(() => {
         // Safe fallback: plain links and custom rule cards still render.
         if (!abort.signal.aborted) setResolved(null);
@@ -56,9 +59,8 @@ export function useProviderPreviews(text: string): { previews: PreviewResult[]; 
 
 export const hasRichPreview = (p: PreviewResult) => !!p.title && (p.state === 'ok' || p.stale);
 
-/** States that need the viewer to act: connect, reconnect or pick a workspace. */
-export const ACTION_STATES: ReadonlySet<PreviewResult['state']> = new Set(['connect', 'expired', 'denied', 'ambiguous']);
+/** States that explain why a link has no rich card. */
+export const NOTICE_STATES: ReadonlySet<PreviewResult['state']> = new Set(['connect', 'expired', 'denied']);
 
 /** Whether the preview renders more than its plain link. */
-export const needsCard = (p: PreviewResult) => hasRichPreview(p) || ACTION_STATES.has(p.state);
-
+export const needsCard = (p: PreviewResult) => hasRichPreview(p) || NOTICE_STATES.has(p.state) || !!p.choices?.length;

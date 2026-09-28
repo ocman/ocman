@@ -9,16 +9,16 @@ export function LinkPreviewTabs() {
   return (
     <Tabs defaultValue="accounts">
       <TabsList aria-label="Link preview settings">
-        <TabsTrigger value="accounts">Accounts</TabsTrigger>
+        <TabsTrigger value="accounts">Providers</TabsTrigger>
         <TabsTrigger value="apps">Sign-in apps</TabsTrigger>
         <TabsTrigger value="rules">Link rules</TabsTrigger>
       </TabsList>
       <TabsContent value="accounts">
-        <p className="settings-row-desc">Where previews come from, and the accounts this browser has connected.</p>
+        <p className="settings-row-desc">Previews are fetched on this machine with its tokens. Only links on set-up providers are looked up.</p>
         <PreviewProviderSettings />
       </TabsContent>
       <TabsContent value="apps">
-        <p className="settings-row-desc">OAuth apps that let viewers connect their own accounts. Saved apps override the environment.</p>
+        <p className="settings-row-desc">Optional. Needed only for Slack and Jira, which have no personal tokens. Saved apps override the environment.</p>
         <PreviewAppSettings />
       </TabsContent>
       <TabsContent value="rules">

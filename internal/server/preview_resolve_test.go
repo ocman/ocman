@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/linkpreview"
@@ -54,7 +53,7 @@ func resolvePreviews(t *testing.T, b *browser, s *Server, text string) []linkpre
 	return resp.Previews
 }
 
-func TestPreviewResolve_ViewerScopedWithRuleFallback(t *testing.T) {
+func TestPreviewResolve_MachineGrantsWithRuleFallback(t *testing.T) {
 	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"title":"Private %s"}`, strings.TrimPrefix(r.URL.Path, "/issues/"))
 	}))
@@ -62,43 +61,30 @@ func TestPreviewResolve_ViewerScopedWithRuleFallback(t *testing.T) {
 	m := newMockOAuth(t)
 	s := previewServer(t, m, "").WithPreviewResolvers(trackerResolver{api: api.URL})
 	s.previewAuth.client = api.Client()
-	alice, bob := newBrowser(), newBrowser()
+	laptop, phone := newBrowser(), newBrowser()
 
 	rules := `{"rules":[{"pattern":"\\b([A-Z]+-\\d+)\\b","replacement":"https://tracker.example.com/browse/$1","provider":"mock"}]}`
-	if rr := alice.do(t, s, http.MethodPost, "/api/settings/link-preview-rules", rules); rr.Code != http.StatusOK {
+	if rr := laptop.do(t, s, http.MethodPost, "/api/settings/link-preview-rules", rules); rr.Code != http.StatusOK {
 		t.Fatalf("rules = %d %s", rr.Code, rr.Body.String())
 	}
 	text := "Fix https://tracker.example.com/browse/ABC-1 (ABC-1) then ABC-2."
 
 	// Not connected: resources are discovered but nothing private resolves.
-	got := resolvePreviews(t, alice, s, text)
+	got := resolvePreviews(t, laptop, s, text)
 	if len(got) != 2 || got[0].State != linkpreview.StateConnect || got[0].Title != "" {
 		t.Fatalf("before connect = %+v", got)
 	}
 
-	alice.do(t, s, http.MethodGet, alice.connect(t, s, m, "code-a", "/"), "")
-	if got = resolvePreviews(t, alice, s, text); got[0].State != linkpreview.StateAmbiguous || got[0].Title != "" {
-		t.Fatalf("two workspaces = %+v", got)
-	}
-	body, _ := json.Marshal(map[string]any{"text": text, "workspaces": map[string]string{"mock": "w2"}})
-	var chosen struct{ Previews []linkpreview.Preview }
-	_ = json.Unmarshal(alice.do(t, s, http.MethodPost, "/api/previews/resolve", string(body)).Body.Bytes(), &chosen)
-	if len(chosen.Previews) != 2 || chosen.Previews[0].Workspace != "w2" || chosen.Previews[0].Title != "Private ABC-1" {
-		t.Fatalf("chosen workspace = %+v", chosen.Previews)
-	}
-	alice.do(t, s, http.MethodPost, "/api/previews/disconnect", `{"provider":"mock","workspaceId":"w2"}`)
-	got = resolvePreviews(t, alice, s, text)
-	if len(got) != 2 || got[0].Title != "Private ABC-1" || got[1].Title != "Private ABC-2" || got[0].Workspace != "w1" {
-		t.Fatalf("connected = %+v", got)
-	}
-	for _, p := range resolvePreviews(t, bob, s, text) {
-		if p.State != linkpreview.StateConnect || p.Title != "" {
-			t.Fatalf("bob sees %+v", p)
+	// Two workspaces: the backend picks the one that previews, for every browser.
+	laptop.do(t, s, http.MethodGet, laptop.connect(t, s, m, "code-a", "/"), "")
+	for _, b := range []*browser{laptop, phone} {
+		if got = resolvePreviews(t, b, s, text); len(got) != 2 || got[0].Title != "Private ABC-1" || got[1].Title != "Private ABC-2" {
+			t.Fatalf("connected = %+v", got)
 		}
 	}
 
-	alice.do(t, s, http.MethodPost, "/api/previews/disconnect", `{"provider":"mock"}`)
-	for _, p := range resolvePreviews(t, alice, s, text) {
+	phone.do(t, s, http.MethodPost, "/api/previews/disconnect", `{"provider":"mock"}`)
+	for _, p := range resolvePreviews(t, laptop, s, text) {
 		if p.State != linkpreview.StateConnect || p.Title != "" {
 			t.Fatalf("stale after disconnect: %+v", p)
 		}
@@ -140,28 +126,10 @@ func resolveAt(t *testing.T, b *browser, s *Server, remote, text string) []linkp
 	return resp.Previews
 }
 
-func connectAt(t *testing.T, b *browser, s *Server, m *mockOAuth, remote, code string) {
-	t.Helper()
-	rr := b.do(t, s, http.MethodPost, "/api/previews/connect?remoteId="+remote, `{"provider":"mock"}`)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("connect %s = %d %s", remote, rr.Code, rr.Body.String())
-	}
-	var resp struct{ AuthorizeURL string }
-	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
-	// The provider redirects to the shared callback without remoteId.
-	if rr := b.do(t, s, http.MethodGet, m.authorize(t, resp.AuthorizeURL, code), ""); rr.Code != http.StatusSeeOther || !strings.Contains(rr.Header().Get("Location"), "previewAuth=connected") {
-		t.Fatalf("callback %s = %d %s", remote, rr.Code, rr.Header().Get("Location"))
-	}
-	b.do(t, s, http.MethodPost, "/api/previews/disconnect?remoteId="+remote, `{"provider":"mock","workspaceId":"w2"}`)
-}
-
-// Two hosts with distinct grants for the same provider and two browsers:
-// each (browser, host) pair sees only previews fetched with its own grant,
-// and a disconnected host fails closed and loses its cached previews.
-func TestPreviewResolve_OwnerQualifiedAcrossRemotes(t *testing.T) {
-	var fetches atomic.Int32
+// Remote sessions preview with the hub's credentials; a disconnected
+// remote fails closed.
+func TestPreviewResolve_RemoteSessionsUseHubCredentials(t *testing.T) {
 	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fetches.Add(1)
 		fmt.Fprintf(w, `{"title":"Private via %s"}`, strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
 	}))
 	defer api.Close()
@@ -169,49 +137,24 @@ func TestPreviewResolve_OwnerQualifiedAcrossRemotes(t *testing.T) {
 	s := previewServer(t, m, "").WithPreviewResolvers(trackerResolver{api: api.URL})
 	s.previewAuth.client = api.Client()
 	s.router().RegisterRemote("r1", s.router().Local())
-	alice, bob := newBrowser(), newBrowser()
+	b := newBrowser()
 	const text = "https://tracker.example.com/browse/ABC-1"
+	b.do(t, s, http.MethodGet, b.connect(t, s, m, "code-a", "/"), "")
 
-	connectAt(t, alice, s, m, "local", "code-a") // access-1
-	connectAt(t, alice, s, m, "r1", "code-b")    // access-2
-	connectAt(t, bob, s, m, "r1", "code-c")      // access-3
-
-	for _, c := range []struct {
-		b      *browser
-		remote string
-		want   string
-	}{
-		{alice, "local", "Private via rotated-refresh-1"},
-		{alice, "r1", "Private via rotated-refresh-2"},
-		{bob, "r1", "Private via rotated-refresh-3"},
-		{bob, "local", ""},
-	} {
-		got := resolveAt(t, c.b, s, c.remote, text)
-		if len(got) != 1 || got[0].Title != c.want {
-			t.Fatalf("%s: got %+v, want %q", c.remote, got, c.want)
+	for _, remote := range []string{"local", "r1"} {
+		if got := resolveAt(t, b, s, remote, text); len(got) != 1 || !strings.HasPrefix(got[0].Title, "Private via ") {
+			t.Fatalf("%s: %+v", remote, got)
 		}
 	}
-
 	s.router().UnregisterRemote("r1")
-	rr := alice.do(t, s, http.MethodPost, "/api/previews/resolve?remoteId=r1", `{"text":"`+text+`"}`)
-	if rr.Code != http.StatusServiceUnavailable || strings.Contains(rr.Body.String(), "Private") {
+	if rr := b.do(t, s, http.MethodPost, "/api/previews/resolve?remoteId=r1", `{"text":"`+text+`"}`); rr.Code != http.StatusServiceUnavailable || strings.Contains(rr.Body.String(), "Private") {
 		t.Fatalf("disconnected owner = %d %s", rr.Code, rr.Body.String())
-	}
-	// Hub grants never stand in for the disconnected remote.
-	if got := resolveAt(t, alice, s, "local", text); got[0].Title != "Private via rotated-refresh-1" {
-		t.Fatalf("hub after disconnect = %+v", got)
-	}
-
-	before := fetches.Load()
-	s.router().RegisterRemote("r1", s.router().Local())
-	if got := resolveAt(t, alice, s, "r1", text); got[0].Title != "Private via rotated-refresh-2" || fetches.Load() != before+1 {
-		t.Fatalf("reconnect served purged cache: %+v fetches %d->%d", got, before, fetches.Load())
 	}
 }
 
-// Forge links: public ones render without login; a private one uses the
-// owner machine's token only for the owner's own direct request, never
-// for a proxied viewer or a remote owner's content.
+// Forge links: public ones render without app access; a private one uses
+// the machine's token for any request with app access, including a remote's
+// sessions, but never for an unauthenticated proxied request.
 func TestPreviewResolve_ForgeOwnerFallback(t *testing.T) {
 	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		owner := r.Header.Get("Authorization") == "Bearer tok-owner"
@@ -246,7 +189,7 @@ func TestPreviewResolve_ForgeOwnerFallback(t *testing.T) {
 	if got := titles(b.do(t, s, http.MethodPost, "/api/previews/resolve", text)); got != "Public PR|Private PR" {
 		t.Fatalf("owner = %q", got)
 	}
-	if got := titles(b.do(t, s, http.MethodPost, "/api/previews/resolve?remoteId=r1", text)); got != "Public PR|" {
+	if got := titles(b.do(t, s, http.MethodPost, "/api/previews/resolve?remoteId=r1", text)); got != "Public PR|Private PR" {
 		t.Fatalf("remote owner = %q", got)
 	}
 	mux, _ := s.routes()
@@ -278,13 +221,14 @@ func TestPreviewForges_FromEnv(t *testing.T) {
 	if _, ok := m.Provider("forgejo:nocreds.example.com"); ok {
 		t.Fatal("entry without credentials registered")
 	}
+	// An app host without a token is not configured, so it is not looked up.
 	refs := s.linkPreviews().Discover("https://github.com/a/b/pull/1 https://code.example.com/a/b/pulls/2 "+
 		"https://tea.example.com/a/b/issues/3 https://nocreds.example.com/a/b/pulls/4", nil)
 	var got []string
 	for _, r := range refs {
 		got = append(got, r.Provider)
 	}
-	if strings.Join(got, ",") != "github,forgejo:code.example.com,forgejo:tea.example.com" {
+	if strings.Join(got, ",") != "github,forgejo:tea.example.com" {
 		t.Fatalf("providers = %v", got)
 	}
 }
@@ -305,7 +249,9 @@ func TestPreviewGitLab_FromEnv(t *testing.T) {
 	for _, r := range refs {
 		got = append(got, r.Provider)
 	}
-	if strings.Join(got, ",") != "gitlab:gitlab.com,gitlab:code.corp:8443" {
+	// gitlab.com previews public projects anonymously; the self-managed
+	// host waits for a token.
+	if strings.Join(got, ",") != "gitlab:gitlab.com" {
 		t.Fatalf("providers = %v", got)
 	}
 }

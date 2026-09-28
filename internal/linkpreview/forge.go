@@ -208,7 +208,8 @@ func GitHubOAuth(clientID, clientSecret, apiBase string) previewauth.Provider {
 			}
 			return raw, nil
 		},
-		Identify: forgeIdentify(f, "github.com", "GitHub"),
+		Identify:  forgeIdentify(f, "github.com", "GitHub"),
+		TokenHelp: "Create a fine-grained personal access token at https://github.com/settings/personal-access-tokens/new with read-only Contents, Issues and Pull requests access.",
 	}
 }
 
@@ -223,6 +224,7 @@ func ForgejoOAuth(host, clientID, clientSecret string) previewauth.Provider {
 		AuthURL:  "https://" + host + "/login/oauth/authorize",
 		TokenURL: "https://" + host + "/login/oauth/access_token",
 		ClientID: clientID, ClientSecret: clientSecret, PKCE: true,
-		Identify: forgeIdentify(f, host, host),
+		Identify:  forgeIdentify(f, host, host),
+		TokenHelp: "Create an access token at https://" + host + "/user/settings/applications with read access to repositories and issues.",
 	}
 }

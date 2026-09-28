@@ -223,5 +223,6 @@ func LinearOAuth(clientID, clientSecret, apiBase string) previewauth.Provider {
 			}
 			return []previewauth.Grant{{WorkspaceID: data.Organization.ID, WorkspaceName: data.Organization.Name, AccountName: data.Viewer.Name}}, nil
 		},
+		TokenHelp: "Create a personal API key under Linear Settings → Security & access (one per workspace).",
 	}
 }

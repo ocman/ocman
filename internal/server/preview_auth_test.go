@@ -178,30 +178,32 @@ func statusOf(t *testing.T, b *browser, s *Server) string {
 	return rr.Body.String()
 }
 
-func TestPreviewAuth_ConnectIsolatedPerViewer(t *testing.T) {
+// OAuth grants belong to the machine: any browser with app access sees
+// and uses them, and signing out does not forget them.
+func TestPreviewAuth_ConnectIsMachineWide(t *testing.T) {
 	m := newMockOAuth(t)
 	path := filepath.Join(t.TempDir(), "state.db")
 	s := previewServer(t, m, path)
-	alice, bob := newBrowser(), newBrowser()
+	laptop, phone := newBrowser(), newBrowser()
 
-	cb := alice.connect(t, s, m, "code-a", "/settings?tab=links")
-	rr := alice.do(t, s, http.MethodGet, cb, "")
+	cb := laptop.connect(t, s, m, "code-a", "/settings?tab=links")
+	rr := laptop.do(t, s, http.MethodGet, cb, "")
 	if rr.Code != http.StatusSeeOther || rr.Header().Get("Location") != "/settings?previewAuth=connected&tab=links" {
 		t.Fatalf("callback = %d %q", rr.Code, rr.Header().Get("Location"))
 	}
-	body := statusOf(t, alice, s)
+	body := statusOf(t, phone, s)
 	if !strings.Contains(body, `"workspaceName":"Acme"`) || !strings.Contains(body, `"workspaceName":"Beta"`) || !strings.Contains(body, "Acme Site") {
-		t.Fatalf("alice status missing workspaces: %s", body)
+		t.Fatalf("other browser misses the machine grant: %s", body)
 	}
-	if strings.Contains(body, "access-") || strings.Contains(body, "refresh-") || strings.Contains(body, "shh") {
+	if strings.Contains(body, "access-1") || strings.Contains(body, "refresh-1") || strings.Contains(body, "shh") {
 		t.Fatalf("status leaks secrets: %s", body)
 	}
-	if body := statusOf(t, bob, s); strings.Contains(body, "Acme") {
-		t.Fatalf("bob sees alice's connection: %s", body)
+	if len(laptop.cookies) != 0 {
+		t.Fatalf("browser identity cookie set: %v", laptop.cookies)
 	}
 
 	// Replaying the consumed state fails, and does not redirect.
-	if rr := alice.do(t, s, http.MethodGet, cb, ""); rr.Code != http.StatusBadRequest {
+	if rr := laptop.do(t, s, http.MethodGet, cb, ""); rr.Code != http.StatusBadRequest {
 		t.Fatalf("replay = %d", rr.Code)
 	}
 
@@ -216,27 +218,22 @@ func TestPreviewAuth_ConnectIsolatedPerViewer(t *testing.T) {
 	}
 
 	// Disconnecting one workspace keeps the other and revokes at the provider.
-	if rr := alice.do(t, s, http.MethodPost, "/api/previews/disconnect", `{"provider":"mock","workspaceId":"w1"}`); rr.Code != http.StatusNoContent {
+	if rr := phone.do(t, s, http.MethodPost, "/api/previews/disconnect", `{"provider":"mock","workspaceId":"w1"}`); rr.Code != http.StatusNoContent {
 		t.Fatalf("disconnect = %d", rr.Code)
 	}
-	if body := statusOf(t, alice, s); strings.Contains(body, "Acme") || !strings.Contains(body, "Beta") {
+	if body := statusOf(t, laptop, s); strings.Contains(body, "Acme") || !strings.Contains(body, "Beta") {
 		t.Fatalf("after disconnect: %s", body)
 	}
 	if len(m.revoked) != 1 {
 		t.Fatalf("revoked = %v", m.revoked)
 	}
 
-	// Signing out forgets the viewer and its grants.
-	if rr := alice.do(t, s, http.MethodPost, "/api/auth/logout", ""); rr.Code != http.StatusNoContent {
+	// Signing out is about the browser session, not the machine's grants.
+	if rr := laptop.do(t, s, http.MethodPost, "/api/auth/logout", ""); rr.Code != http.StatusNoContent {
 		t.Fatalf("logout = %d", rr.Code)
 	}
-	if _, ok := alice.cookies[viewerCookieName]; ok {
-		t.Fatal("viewer cookie not cleared")
-	}
-	var n int
-	_ = sqlDB.QueryRow(`SELECT count(*) FROM preview_credential`).Scan(&n)
-	if n != 0 {
-		t.Fatalf("%d credentials survive sign-out", n)
+	if body := statusOf(t, phone, s); !strings.Contains(body, "Beta") {
+		t.Fatalf("grant lost on sign-out: %s", body)
 	}
 }
 
@@ -250,26 +247,16 @@ func openRaw(t *testing.T, path string) *sql.DB {
 	return db
 }
 
-func TestPreviewAuth_CallbackCSRFRejected(t *testing.T) {
-	m := newMockOAuth(t)
-	s := previewServer(t, m, "")
-	attacker, victim := newBrowser(), newBrowser()
-	victim.do(t, s, http.MethodPost, "/api/previews/connect", `{"provider":"mock"}`) // victim has a viewer
-
-	// The attacker starts consent for their own account and lures the victim
-	// to the callback: the state is bound to the attacker's viewer.
-	cb := attacker.connect(t, s, m, "code-x", "/")
-	if rr := victim.do(t, s, http.MethodGet, cb, ""); rr.Code != http.StatusBadRequest {
-		t.Fatalf("csrf callback = %d", rr.Code)
-	}
-	if body := statusOf(t, victim, s); strings.Contains(body, "Acme") {
-		t.Fatalf("victim got attacker grant: %s", body)
-	}
-	// Missing or forged state is rejected too.
+func TestPreviewAuth_CallbackRejectsForgedState(t *testing.T) {
+	s := previewServer(t, newMockOAuth(t), "")
+	b := newBrowser()
 	for _, target := range []string{previewCallback + "?code=x", previewCallback + "?state=forged&code=x"} {
-		if rr := victim.do(t, s, http.MethodGet, target, ""); rr.Code != http.StatusBadRequest {
+		if rr := b.do(t, s, http.MethodGet, target, ""); rr.Code != http.StatusBadRequest {
 			t.Fatalf("%s = %d", target, rr.Code)
 		}
+	}
+	if body := statusOf(t, b, s); strings.Contains(body, "Acme") {
+		t.Fatalf("forged state stored a grant: %s", body)
 	}
 }
 
@@ -314,13 +301,6 @@ func TestPreviewAuth_OwnerAndAccessFailClosed(t *testing.T) {
 		t.Fatalf("local owner = %d", rr.Code)
 	}
 
-	// A viewer cookie from another machine is unknown here.
-	other := previewServer(t, m, "")
-	b.connect(t, other, m, "code-o", "/")
-	if body := statusOf(t, b, s); strings.Contains(body, "Acme") {
-		t.Fatal("cross-machine viewer accepted")
-	}
-
 	// Auth off: only direct loopback clients reach private preview routes.
 	mux, _ := s.routes()
 	for _, mutate := range []func(*http.Request){
@@ -358,49 +338,34 @@ func TestPreviewAuth_OwnerAndAccessFailClosed(t *testing.T) {
 	}
 }
 
-func TestPreviewAuth_SlackFromEnv(t *testing.T) {
-	t.Setenv("OCMAN_SLACK_PREVIEW_CLIENT_ID", "cid")
-	t.Setenv("OCMAN_SLACK_PREVIEW_CLIENT_SECRET", "secret")
+// OAuth apps from the environment register their provider with consent;
+// an app alone does not configure previews until a grant exists.
+func TestPreviewAuth_AppsFromEnv(t *testing.T) {
+	for id, env := range map[string][]string{
+		"slack":  {"OCMAN_SLACK_PREVIEW_CLIENT_ID", "OCMAN_SLACK_PREVIEW_CLIENT_SECRET"},
+		"notion": {"OCMAN_NOTION_PREVIEW_CLIENT_ID", "OCMAN_NOTION_PREVIEW_CLIENT_SECRET"},
+		"linear": {"OCMAN_LINEAR_PREVIEW_CLIENT_ID"},
+		"jira":   {"OCMAN_JIRA_PREVIEW_CLIENT_ID", "OCMAN_JIRA_PREVIEW_CLIENT_SECRET"},
+	} {
+		t.Run(id, func(t *testing.T) {
+			for _, k := range env {
+				t.Setenv(k, "v")
+			}
+			s := testServer(t)
+			if p, ok := s.previewManager().Provider(id); !ok || !p.OAuth() {
+				t.Fatalf("%s provider = %+v %v", id, p, ok)
+			}
+			for _, e := range catalogOf(t, s) {
+				if e.ID == id && (e.Configured || !e.OAuth) {
+					t.Fatalf("%s entry = %+v", id, e)
+				}
+			}
+		})
+	}
 	s := testServer(t)
-	if _, ok := s.previewManager().Provider("slack"); !ok {
-		t.Fatal("slack provider not registered")
-	}
-	if refs := s.linkPreviews().Discover("https://acme.slack.com/archives/C1/p1700000000000100", nil); len(refs) != 1 {
-		t.Fatalf("refs = %v", refs)
-	}
-}
-
-func TestPreviewAuth_NotionFromEnv(t *testing.T) {
-	t.Setenv("OCMAN_NOTION_PREVIEW_CLIENT_ID", "cid")
-	t.Setenv("OCMAN_NOTION_PREVIEW_CLIENT_SECRET", "secret")
-	s := testServer(t)
-	if _, ok := s.previewManager().Provider("notion"); !ok {
-		t.Fatal("notion provider not registered")
-	}
-	if refs := s.linkPreviews().Discover("https://www.notion.so/acme/Plan-0123456789abcdef0123456789abcdef", nil); len(refs) != 1 {
-		t.Fatalf("refs = %v", refs)
-	}
-}
-
-func TestPreviewAuth_LinearFromEnv(t *testing.T) {
-	t.Setenv("OCMAN_LINEAR_PREVIEW_CLIENT_ID", "cid")
-	s := testServer(t)
-	if p, ok := s.previewManager().Provider("linear"); !ok || !p.PKCE {
-		t.Fatal("linear provider not registered with PKCE")
-	}
-	if refs := s.linkPreviews().Discover("https://linear.app/acme/issue/ENG-12/fix-it", nil); len(refs) != 1 {
-		t.Fatalf("refs = %v", refs)
-	}
-}
-
-func TestPreviewAuth_JiraFromEnv(t *testing.T) {
-	t.Setenv("OCMAN_JIRA_PREVIEW_CLIENT_ID", "cid")
-	t.Setenv("OCMAN_JIRA_PREVIEW_CLIENT_SECRET", "sec")
-	s := testServer(t)
-	if p, ok := s.previewManager().Provider("jira"); !ok || !p.JSONBody {
-		t.Fatal("jira provider not registered")
-	}
-	if refs := s.linkPreviews().Discover("https://acme.atlassian.net/browse/ABC-12", nil); len(refs) != 1 {
-		t.Fatalf("refs = %v", refs)
+	for _, id := range []string{"slack", "jira"} {
+		if _, ok := s.previewManager().Provider(id); ok {
+			t.Fatalf("%s registered without an app", id)
+		}
 	}
 }

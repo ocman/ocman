@@ -131,7 +131,11 @@ func (a *API) JSON(ctx context.Context, method, base string, segments []string, 
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if a.token != "" {
+	switch {
+	case strings.HasPrefix(a.token, "lin_api_"):
+		// Linear personal API keys go bare; OAuth tokens use Bearer.
+		req.Header.Set("Authorization", a.token)
+	case a.token != "":
 		req.Header.Set("Authorization", "Bearer "+a.token)
 	}
 	resp, err := a.client.Do(req)

@@ -1,18 +1,18 @@
 /**
- * e2e: authenticated link previews in the browser.
+ * e2e: link previews in the browser.
  *
- * Mocks the preview API as one server-side provider and walks the viewer
- * flow: clickable fallback link + Connect → provider consent → callback
- * redirect → rich card → reload → disconnect in Settings → fallback again.
- * Provider OAuth and API behaviour is covered by the Go lifecycle test.
+ * Mocks the preview API as one server-side provider and walks the flow:
+ * private link notice → paste a token in Settings → rich card → reload →
+ * remove the token → notice again. Provider API behaviour and token
+ * checking are covered by the Go tests.
  */
 
 import { test, expect, MOCK_SESSION } from './fixtures';
 
 const LINK = 'https://tracker.example.com/browse/ABC-42';
 
-test('connect, preview, reload and disconnect a provider', async ({ mockedPage: page }) => {
-  let connected = false;
+test('add a token, preview, reload and remove it', async ({ mockedPage: page }) => {
+  let token = '';
   await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), (route) =>
     route.fulfill({
       json: {
@@ -31,54 +31,57 @@ test('connect, preview, reload and disconnect a provider', async ({ mockedPage: 
     }),
   );
   await page.route('/api/previews/providers*', (route) => route.fulfill({
-    json: { providers: [{ id: 'tracker', name: 'Tracker', notice: 'Read-only access.', connections: connected
-      ? [{ workspaceId: 'w1', workspaceName: 'Acme', accountName: 'alice', sites: [], state: 'connected' }]
-      : [] }] },
+    json: {
+      providers: [{
+        id: 'tracker', name: 'Tracker', hosts: ['tracker.example.com'], configured: true, source: 'public',
+        token: true, oauth: false, tokenHelp: 'Create a read-only token.',
+        accounts: token ? [{ workspaceId: 'w1', workspaceName: 'Acme', accountName: 'alice', sites: [], state: 'connected' }] : [],
+      }],
+      rules: [], hostKinds: [],
+    },
   }));
   await page.route('/api/previews/resolve*', (route) => {
     const ref = { provider: 'tracker', kind: 'issue', id: 'ABC-42', url: LINK };
     if (!(route.request().postDataJSON() as { text: string }).text.includes(LINK)) return route.fulfill({ json: { previews: [] } });
-    return route.fulfill({ json: { previews: [connected
+    return route.fulfill({ json: { previews: [token
       ? { ...ref, workspace: 'w1', title: 'Launch plan', status: 'In Progress', state: 'ok' }
       : { ...ref, state: 'connect' }] } });
   });
-  let returnTo = '/';
-  await page.route('/api/previews/connect*', (route) => {
-    returnTo = (route.request().postDataJSON() as { returnTo: string }).returnTo;
-    return route.fulfill({ json: { authorizeUrl: '/api/previews/oauth/callback?state=s&code=c' } });
-  });
-  // Stands in for the provider consent screen redirecting to the callback.
-  await page.route('/api/previews/oauth/callback*', (route) => {
-    connected = true;
-    // WebKit cannot fulfill a 303, so redirect from the page instead.
-    return route.fulfill({ contentType: 'text/html',
-      body: `<script>location.replace(${JSON.stringify(`${returnTo}?previewAuth=connected`)})</script>` });
+  await page.route('/api/previews/token*', (route) => {
+    token = (route.request().postDataJSON() as { token: string }).token;
+    return route.fulfill({ status: 204 });
   });
   await page.route('/api/previews/disconnect*', (route) => {
-    connected = false;
+    token = '';
     return route.fulfill({ status: 204 });
   });
 
   await page.goto(`/session/${MOCK_SESSION.id}`);
   const notice = page.getByTestId('provider-preview-notice');
   await expect(notice.getByRole('link', { name: 'ABC-42' })).toHaveAttribute('href', LINK);
-  await expect(notice).toContainText('Tracker: Connect to preview');
+  await expect(notice).toContainText('Tracker: Private. Add a token');
   await expect(page.getByTestId('provider-preview-card')).toHaveCount(0);
 
-  await notice.getByRole('button', { name: 'Connect Tracker for ABC-42' }).click();
-  await expect(page).toHaveURL(/previewAuth=connected/);
+  await page.goto('/settings');
+  await page.getByRole('button', { name: 'Link previews' }).click();
+  await page.getByRole('button', { name: 'Add token for Tracker' }).click();
+  await expect(page.getByText('Create a read-only token.')).toBeVisible();
+  await page.getByLabel('Tracker token').fill('tok-1');
+  await page.getByRole('button', { name: 'Save token' }).click();
+  await expect(page.getByText('alice · Acme')).toBeVisible();
+  expect(token).toBe('tok-1');
+
+  await page.goto(`/session/${MOCK_SESSION.id}`);
   const card = page.getByTestId('provider-preview-card');
   await expect(card).toContainText('ABC-42 Launch plan');
   await expect(card).toHaveAttribute('href', LINK);
-
   await page.reload();
   await expect(page.getByTestId('provider-preview-card')).toContainText('Launch plan');
 
   await page.goto('/settings');
   await page.getByRole('button', { name: 'Link previews' }).click();
-  await expect(page.getByText('Connected: alice · Acme')).toBeVisible();
-  await page.getByRole('button', { name: 'Disconnect Tracker Acme' }).click();
-  await expect(page.getByText('Not connected')).toBeVisible();
+  await page.getByRole('button', { name: 'Remove Tracker Acme' }).click();
+  await expect(page.getByText('alice · Acme')).toHaveCount(0);
 
   await page.goto(`/session/${MOCK_SESSION.id}`);
   await expect(page.getByTestId('provider-preview-notice').getByRole('link', { name: 'ABC-42' })).toBeVisible();

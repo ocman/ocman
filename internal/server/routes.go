@@ -158,6 +158,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/previews/connect", s.post(s.handlePreviewConnect))
 	mux.HandleFunc("/api/previews/disconnect", s.post(s.handlePreviewDisconnect))
 	mux.HandleFunc("/api/previews/resolve", s.post(s.handlePreviewResolve))
+	mux.HandleFunc("/api/previews/token", s.post(s.handlePreviewToken))
 	mux.HandleFunc("/api/previews/apps", s.get(s.handlePreviewApps))
 	mux.HandleFunc("/api/previews/apps/save", s.post(s.handleSavePreviewApp))
 	mux.HandleFunc("/api/previews/apps/remove", s.post(s.handleRemovePreviewApp))

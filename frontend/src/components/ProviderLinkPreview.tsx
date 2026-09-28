@@ -1,9 +1,6 @@
-import { useContext, useState } from 'react';
 import type { FC } from 'react';
-import { PreviewOwnerContext, chooseWorkspace, connectPreviewProvider } from '../lib/previews';
 import { hasRichPreview } from '../lib/useProviderPreviews';
 import type { PreviewProvider, PreviewResult } from '../lib/previews';
-import { Button, SelectField } from './Control';
 import { RelativeTime } from './RelativeTime';
 
 // A page ID is opaque; its title alone labels it.
@@ -37,16 +34,13 @@ const RichCard: FC<{ preview: PreviewResult }> = ({ preview }) => {
 };
 
 const NOTICE: Partial<Record<PreviewResult['state'], string>> = {
-  connect: 'Connect to preview',
-  expired: 'Connection expired',
-  denied: 'Your account cannot view this',
-  ambiguous: 'Choose which workspace to preview from',
+  connect: 'Private. Add a token under Settings → Link previews to preview it.',
+  expired: 'The saved token expired. Replace it under Settings → Link previews.',
+  denied: 'The saved token cannot view this.',
 };
 
-/** One provider preview: a rich card, or a plain link with its connect affordance. */
+/** One provider preview: a rich card, or a plain link saying why there is none. */
 export const ProviderPreview: FC<{ preview: PreviewResult; providers: PreviewProvider[] }> = ({ preview, providers }) => {
-  const owner = useContext(PreviewOwnerContext);
-  const [error, setError] = useState('');
   if (hasRichPreview(preview)) return <RichCard preview={preview} />;
   if (preview.choices?.length) return (
     <div className="gh-preview" data-testid="provider-preview-choices">
@@ -61,25 +55,14 @@ export const ProviderPreview: FC<{ preview: PreviewResult; providers: PreviewPro
   const notice = NOTICE[preview.state];
   // not_found / error / rate limited: the plain link is the safe fallback.
   if (!notice) return preview.url ? <div className="gh-preview"><span className="gh-preview__body"><FallbackLink preview={preview} /></span></div> : null;
-  const provider = providers.find((p) => p.id === preview.provider);
-  const name = provider?.name ?? preview.provider;
-  const connect = () => { setError(''); connectPreviewProvider(preview.provider, owner).catch((err: unknown) => setError(String(err))); };
-  const verb = preview.state === 'connect' ? 'Connect' : 'Reconnect';
+  const name = providers.find((p) => p.id === preview.provider)?.name ?? preview.provider;
   return (
     <div className="gh-preview" data-testid="provider-preview-notice">
       <span className="gh-preview__icon"><i className="bi bi-lock" aria-hidden="true" /></span>
       <span className="gh-preview__body">
         <FallbackLink preview={preview} />
         <span className="gh-preview__meta">{name}: {notice}</span>
-        {preview.state === 'connect' && provider?.notice && <span className="gh-preview__meta">{provider.notice}</span>}
-        {error && <span role="alert">{error}</span>}
       </span>
-      {preview.state === 'ambiguous'
-        ? <SelectField aria-label={`Workspace for ${preview.id}`} value="" onChange={(e) => chooseWorkspace(preview.provider, e.target.value, owner)}>
-            <option value="" disabled>Choose workspace…</option>
-            {provider?.connections.map((c) => <option key={c.workspaceId} value={c.workspaceId}>{c.workspaceName || c.workspaceId}</option>)}
-          </SelectField>
-        : <Button type="button" size="small" onClick={connect} aria-label={`${verb} ${name} for ${preview.id}`}>{verb}</Button>}
     </div>
   );
 };

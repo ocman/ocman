@@ -252,5 +252,6 @@ func GitLabOAuth(host, clientID, clientSecret, apiBase, authBase string) preview
 			}
 			return []previewauth.Grant{{WorkspaceID: host, WorkspaceName: host, AccountName: u.Username}}, nil
 		},
+		TokenHelp: "Create a personal access token with the read_api scope at https://" + host + "/-/user_settings/personal_access_tokens.",
 	}
 }

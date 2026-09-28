@@ -3,56 +3,73 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 
 function json(body: unknown, status = 200) {
-  return { ok: status < 400, status, json: async () => body } as Response;
+  return { ok: status < 400, status, json: async () => body, text: async () => String(body) } as Response;
 }
 
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-it('shows connection states and disconnects with an immediate reload', async () => {
+const base = { hosts: [], configured: true, token: true, oauth: false, accounts: [] };
+
+it('shows how each provider is set up and saves or removes a token', async () => {
   vi.resetModules();
-  let connections = [
-    { workspaceId: 'w1', workspaceName: 'Acme', accountName: 'alice', sites: [{ id: 's1', name: 'Docs' }], state: 'connected' },
-    { workspaceId: 'w2', workspaceName: 'Beta', accountName: 'alice', sites: [], state: 'expired' },
-  ];
-  const fetchMock = vi.fn().mockImplementation((url: string) => {
-    if (url.startsWith('/api/previews/providers')) {
-      return Promise.resolve(json({
-        providers: [{ id: 'mock', name: 'Tracker', connections }, { id: 'wiki', name: 'Wiki', notice: 'Forgejo OAuth has no granular scopes.', connections: [] }],
-        ownerTokens: [{ provider: 'wiki', name: 'Wiki', host: 'wiki.example.com' }],
-      }));
+  let linearAccounts = [{ workspaceId: 'org', workspaceName: 'Acme', accountName: 'dries', sites: [], state: 'connected' }];
+  const posts: { url: string; body: unknown }[] = [];
+  const fetchMock = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+    if (init?.method === 'POST') {
+      const body = JSON.parse(String(init.body));
+      posts.push({ url, body });
+      if (url === '/api/previews/disconnect') linearAccounts = [];
+      if (url === '/api/previews/token' && body.token === 'bad') return Promise.resolve(json('the provider rejected this token', 400));
+      return Promise.resolve(json(undefined, 204));
     }
-    connections = connections.slice(1);
-    return Promise.resolve(json(undefined, 204));
+    return Promise.resolve(json({
+      providers: [
+        { ...base, id: 'github', name: 'GitHub', source: 'cli', tokenHelp: 'Make a fine-grained token.' },
+        { ...base, id: 'linear', name: 'Linear', accounts: linearAccounts },
+        { ...base, id: 'notion', name: 'Notion', configured: false },
+        { ...base, id: 'slack', name: 'Slack', token: false, oauth: true, configured: false },
+      ],
+      rules: [],
+      hostKinds: [{ kind: 'forgejo', name: 'Forgejo', help: 'Create an access token.' }],
+    }));
   });
   vi.stubGlobal('fetch', fetchMock);
   const { PreviewProviderSettings } = await import('./PreviewProviderSettings');
   render(<PreviewProviderSettings />);
 
-  expect(await screen.findByText('Connected: alice · Acme, Docs')).toBeInTheDocument();
-  expect(screen.getByText('Expired: alice · Beta')).toBeInTheDocument();
-  expect(screen.getByText('Not connected')).toBeInTheDocument();
-  expect(screen.getByText('Forgejo OAuth has no granular scopes.')).toBeInTheDocument();
-  // An owner token for a provider with a sign-in app folds into its row.
-  expect(screen.getByText(/this machine's token still previews public repositories/)).toBeInTheDocument();
-  expect(screen.queryByText('Wiki (wiki.example.com)')).toBeNull();
-  expect(screen.getByRole('button', { name: 'Reconnect Tracker' })).toHaveClass('oc-button');
-  expect(screen.getByRole('button', { name: 'Connect Wiki' })).toBeEnabled();
+  expect(await screen.findByText(/Using this machine's CLI login/)).toBeInTheDocument();
+  expect(screen.getByText('dries · Acme')).toBeInTheDocument();
+  expect(screen.getByText(/Not set up. Links stay plain/)).toBeInTheDocument();
+  expect(screen.getByText('Not set up. Sign in to preview its links.')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Sign in to Slack' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Add token for Slack' })).toBeNull();
 
-  fireEvent.click(screen.getByRole('button', { name: 'Disconnect Tracker Acme' }));
-  await waitFor(() => expect(screen.queryByText(/Acme/)).toBeNull());
-  expect(fetchMock).toHaveBeenCalledWith('/api/previews/disconnect?remoteId=local', expect.objectContaining({
-    method: 'POST', body: JSON.stringify({ provider: 'mock', workspaceId: 'w1' }),
-  }));
+  fireEvent.click(screen.getByRole('button', { name: 'Add token for GitHub' }));
+  expect(screen.getByText('Make a fine-grained token.')).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('GitHub token'), { target: { value: 'bad' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save token' }));
+  expect(await screen.findByRole('alert')).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('GitHub token'), { target: { value: 'ghp_good' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save token' }));
+  await waitFor(() => expect(screen.queryByLabelText('GitHub token')).toBeNull());
+  expect(posts.at(-1)).toEqual({ url: '/api/previews/token', body: { provider: 'github', token: 'ghp_good' } });
+  expect(screen.queryByDisplayValue('ghp_good')).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Remove Linear Acme' }));
+  await waitFor(() => expect(screen.queryByText('dries · Acme')).toBeNull());
+  expect(posts.at(-1)).toEqual({ url: '/api/previews/disconnect', body: { provider: 'linear', workspaceId: 'org' } });
+
+  fireEvent.change(screen.getByRole('textbox', { name: 'Host' }), { target: { value: 'Code.Example.com' } });
+  fireEvent.change(screen.getByLabelText('Forgejo Code.Example.com token'), { target: { value: 'pat' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save token' }));
+  await waitFor(() => expect(posts.at(-1)).toEqual({ url: '/api/previews/token', body: { provider: 'forgejo:code.example.com', token: 'pat' } }));
 });
 
-it('reports a failed consent return and an empty provider list', async () => {
+it('reports a failed sign-in return', async () => {
   vi.resetModules();
   vi.stubGlobal('location', { ...window.location, search: '?previewAuth=error' });
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ providers: [], ownerTokens: [{ provider: 'github', name: 'GitHub', host: 'github.com' }] })));
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ providers: [], rules: [], hostKinds: [] })));
   const { PreviewProviderSettings } = await import('./PreviewProviderSettings');
   render(<PreviewProviderSettings />);
-  expect(await screen.findByText(/No sign-in apps yet/)).toBeInTheDocument();
-  expect(screen.getByText('GitHub (github.com)')).toBeInTheDocument();
-  expect(screen.getByText(/Uses this machine's token/)).toBeInTheDocument();
-  expect(screen.getByRole('alert')).toHaveTextContent('Connecting the provider failed');
+  expect(await screen.findByRole('alert')).toHaveTextContent('Signing in to the provider failed');
 });

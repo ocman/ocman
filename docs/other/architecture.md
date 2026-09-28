@@ -283,59 +283,52 @@ flowchart TD
 - **forge and integrations.** Forge-agnostic types in `internal/forge`, per-forge
   HTTP clients in `internal/forge/{github,forgejo}`. PR/Issue handlers obtain repository
   identity from the owner Host, then use the hub clients for metadata.
-- **internal/previewauth.** Viewer-scoped OAuth consent for private link
-  previews. A *viewer* is one browser (random HttpOnly `ocman_viewer` cookie,
-  only its SHA-256 in `state.db`, registered on the hub), resolved only for a
-  request with app access (auth cookie, or a direct un-proxied loopback client
-  when auth is off). Connect/callback/disconnect use a one-time state bound to
-  viewer and owner, PKCE when the provider supports it, one exact redirect URI
+- **internal/previewauth.** Machine-level credentials for private link
+  previews. ocman is a personal tool, so every token and grant belongs to the
+  hub machine (one fixed viewer ID, `machine`, keyed by this instance's ID),
+  usable by any request with app access (auth cookie, or a direct un-proxied
+  loopback client when auth is off). Personal tokens are pasted in Settings
+  (`POST /api/previews/token`), checked with the provider's identify call and
+  stored without expiry; OAuth sign-in (Slack, Jira, or any provider with an
+  app) uses a one-time state, PKCE when supported, one exact redirect URI
   (`<public base>/api/previews/oauth/callback`) and same-origin return paths.
   Client secrets stay server-side; tokens are AES-GCM sealed per
-  viewer/owner/provider/workspace with the row key as associated data, refreshed
-  under a per-grant singleflight, and deleted on `invalid_grant`, disconnect or
-  sign-out (sign-out spans every owner).
-- **Preview ownership across remotes.** Design: the hub holds every viewer
-  credential and makes every provider call; nothing is routed to the remote.
-  Grants, consent states and cached previews are instead keyed by an explicit
-  owner — the hub's instance ID or a *connected* remote's instance ID taken
-  from `remoteId` — so a grant made for one host never answers for another
-  and hub grants never stand in for remote content. The shared callback
-  stores the grant under the owner recorded at connect time. An explicit
-  `remoteId` that is not connected fails closed with a bare 503 before any
-  credential or cache is touched, and `Router.OnUnregister` purges that
-  owner's cached previews on disconnect. The browser↔hub seam is unchanged.
+  owner/provider/workspace with the row key as associated data, refreshed
+  under a per-grant singleflight, and deleted on `invalid_grant`, a 401 or
+  removal.
+- **Preview ownership across remotes.** The hub holds every credential and
+  makes every provider call, also for a remote's sessions; nothing is routed
+  to the remote. An explicit `remoteId` that is not connected fails closed
+  with a bare 503 before any credential or cache is touched.
 - **internal/linkpreview.** Normalized previews behind
   `POST /api/previews/resolve` (text in, `Preview` list out; TS mirror in
-  `frontend/src/lib/previews.ts`). Registered `Resolver`s recognize known
-  direct URLs and custom link rules carrying a `provider` (the rule's
-  replacement link stays the client-side fallback), deduped by resource and
-  capped at 20 per text. Fetches go only through `linkpreview.API`: the
-  resolver's fixed API hosts, validated path segments, the viewer's token,
-  no redirects, 1 MiB bodies, 10 s timeouts. Results are cached per
-  viewer/owner/provider/workspace/resource with in-flight dedup, 4 concurrent
-  fetches, a 60/min per-grant budget and `Retry-After` backoff (stale data
-  is served only to the same viewer). The grant is checked before the cache,
-  and disconnect/sign-out purge it, so nothing outlives a connection.
-  In the browser, `LinkPreviewStrip` renders these next to the
-  custom-rule cards (owner from `PreviewOwnerContext`), with inline
-  Connect/Reconnect and a workspace chooser for `ambiguous`; the request's
-  `workspaces` map carries that choice. Settings → Link previews lists
-  providers with display names only. Previews live in component state only
-  and are dropped on `ocman:preview-auth-changed` before reloading.
+  `frontend/src/lib/previews.ts`). Only *configured* providers register a
+  `Resolver`; resolvers recognize known direct URLs and custom link rules
+  carrying a `provider` (the rule's replacement link stays the client-side
+  fallback), deduped by resource and capped at 20 per text. Fetches go only
+  through `linkpreview.API`: the resolver's fixed API hosts, validated path
+  segments, the stored token, no redirects, 1 MiB bodies, 10 s timeouts.
+  Results are cached per owner/provider/workspace/resource with in-flight
+  dedup, 4 concurrent fetches, a 60/min per-grant budget and `Retry-After`
+  backoff. With several workspaces for one provider the service tries each
+  and returns the first that previews. `GET /api/previews/providers` is the
+  browser's whole view: each supported provider, whether it is configured,
+  its link hosts, account display names, and the rule patterns routed to a
+  configured provider. `useProviderPreviews` only posts text with a link on
+  a configured host or a routed-rule match, so unconfigured links never cost
+  a request. Cards carry no connect flow; Settings → Link previews manages
+  tokens and sign-ins, and `ocman:preview-auth-changed` reloads previews.
 - **Forge previews** (`linkpreview.Forge`, `internal/server/preview_forges.go`).
-  GitHub and every https Forgejo host (tea logins plus
-  `OCMAN_FORGEJO_PREVIEW_APPS`) resolve PR/issue/commit links through the
-  normalized path; the old `/api/integrations/{github,forgejo}/preview`
-  proxies are gone. A viewer's own grant (GitHub App user grant, Forgejo
-  OAuth per host) wins; without one the resolver is a `linkpreview.Fallback`
-  that uses the owner machine's env/CLI token public-only (repository
-  visibility is checked before the resource is read). Only the owner's own
-  direct loopback request for a hub-owned session gets private results from
-  that token (`WithOwnerAccess`), cached under a separate key. A request
-  without private-preview access still resolves public links, with no viewer.
+  GitHub, every https Forgejo host (tea logins, saved-token hosts and app
+  hosts) and GitLab hosts (`gitlab.com`, saved-token and app hosts) resolve
+  PR/issue/commit links. A saved token or sign-in wins; without one the
+  resolver is a `linkpreview.Fallback` with the machine's env/CLI token
+  (anonymous for GitLab), which previews private repositories for any
+  request with app access (`WithOwnerAccess`) and public ones otherwise
+  (repository visibility is checked before the resource is read).
 - **Slack previews** (`linkpreview.Slack`, opt-in via
   `OCMAN_SLACK_PREVIEW_CLIENT_ID/_SECRET`). A dedicated OAuth app yields a
-  per-viewer *user* token (`user_scope`, bot tokens refused); conversation.v1
+  machine-wide *user* token (`user_scope`, bot tokens refused); conversation.v1
   bot tokens and grants are never used. `/archives/{channel}/p{ts}` links
   (plus `thread_ts` replies) resolve only when `auth.test`'s workspace URL
   matches the link host, and channels Slack reports private/DM/MPIM are
@@ -344,8 +337,8 @@ flowchart TD
 - **Notion previews** (`linkpreview.Notion`, opt-in via
   `OCMAN_NOTION_PREVIEW_CLIENT_ID/_SECRET`). A public connection
   (`owner=user`, JSON token/revoke bodies with Basic auth) stores one grant
-  per viewer and Notion workspace; the viewer's page selection is the whole
-  permission model. Page links on notion.so / notion.com / app.notion.com /
+  per Notion workspace (or an internal integration token, identified via
+  `GET /v1/users/me`); the shared pages are the whole permission model. Page links on notion.so / notion.com / app.notion.com /
   `*.notion.site` resolve by page ID to the API-returned URL; routed ticket
   identifiers run `POST /v1/search` and match titles by whole token. Several
   matches become `Choices` (state `ambiguous`), none is `not_found`. An
@@ -353,21 +346,21 @@ flowchart TD
   401 and forgets the grant.
 - **Linear previews** (`linkpreview.Linear`, opt-in via
   `OCMAN_LINEAR_PREVIEW_CLIENT_ID`). Authorization code + PKCE with the
-  `read` scope; the rotating refresh token is stored per viewer and Linear
-  organization. One GraphQL query returns the organization and the issue;
+  `read` scope; the rotating refresh token is stored per Linear organization; a
+  personal API key (`lin_api_…`, sent without `Bearer`) works without an app. One GraphQL query returns the organization and the issue;
   a link whose workspace `urlKey` differs from the grant's is `not_found`.
   GraphQL error codes (`AUTHENTICATION_ERROR`, `FORBIDDEN`, `RATELIMITED`,
   often on HTTP 400) map onto the shared 401 / 403 / 429 handling.
 - **Jira previews** (`linkpreview.Jira`, opt-in via
   `OCMAN_JIRA_PREVIEW_CLIENT_ID`). Atlassian 3LO authorization code with
-  `read:jira-work read:me offline_access`; one grant per viewer and
+  `read:jira-work read:me offline_access`; one grant per
   Atlassian account (one rotating refresh token spans its sites). Each fetch
   lists `oauth/token/accessible-resources` and calls
   `api.atlassian.com/ex/jira/{cloudid}` for the site matching the link host,
   which is never contacted itself. An identifier found on several sites
   becomes `Choices`.
-- **GitLab previews** (`linkpreview.GitLab`, opt-in per host via
-  `OCMAN_GITLAB_PREVIEW_APPS`). One provider `gitlab:<host>` per instance
+- **GitLab previews** (`linkpreview.GitLab`; `gitlab.com` by default, other
+  hosts once they have a token or an `OCMAN_GITLAB_PREVIEW_APPS` app). One provider `gitlab:<host>` per instance
   (authorization code + PKCE, `read_api`), so grants never cross instances.
   Project paths are sent as one `%2F`-escaped segment
   (`API.WithEncodedSlashes`). Public projects preview anonymously after a

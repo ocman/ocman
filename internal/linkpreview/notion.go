@@ -242,6 +242,25 @@ func NotionOAuth(clientID, clientSecret, apiBase string) previewauth.Provider {
 			}
 			return []previewauth.Grant{{WorkspaceID: ws, WorkspaceName: name, AccountName: account}}, nil
 		},
+		TokenHelp: "Create an internal integration at https://www.notion.so/profile/integrations, then share the pages to preview with it.",
+		IdentifyToken: func(ctx context.Context, client *http.Client, tok previewauth.Token) ([]previewauth.Grant, error) {
+			hosts := map[string]bool{}
+			for _, h := range n.APIHosts() {
+				hosts[strings.ToLower(h)] = true
+			}
+			var me struct {
+				Name string `json:"name"`
+				Bot  struct {
+					WorkspaceID   string `json:"workspace_id"`
+					WorkspaceName string `json:"workspace_name"`
+				} `json:"bot"`
+			}
+			api := (&API{client: client, token: tok.AccessToken, hosts: hosts}).WithHeader("Notion-Version", notionVersion)
+			if err := api.JSON(ctx, http.MethodGet, n.base(), []string{"users", "me"}, nil, nil, &me); err != nil || me.Bot.WorkspaceID == "" {
+				return nil, previewauth.ErrExchange
+			}
+			return []previewauth.Grant{{WorkspaceID: me.Bot.WorkspaceID, WorkspaceName: me.Bot.WorkspaceName, AccountName: me.Name}}, nil
+		},
 	}
 }
 

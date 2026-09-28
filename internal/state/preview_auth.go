@@ -140,45 +140,6 @@ func credentialAAD(c PreviewCredential, field string) string {
 	return fmt.Sprintf("cred\x00%s\x00%s\x00%s\x00%s\x00%s", c.ViewerID, c.OwnerID, c.Provider, c.WorkspaceID, field)
 }
 
-// CreatePreviewViewer registers a viewer (hashed cookie secret) for owner.
-func (d *DB) CreatePreviewViewer(ctx context.Context, viewerID, ownerID string) error {
-	_, err := d.db.ExecContext(ctx, `INSERT OR IGNORE INTO preview_viewer (viewer_id, owner_id, created_at) VALUES (?, ?, ?)`,
-		viewerID, ownerID, time.Now().UnixMilli())
-	return err
-}
-
-// PreviewViewerExists reports whether viewerID is registered for ownerID.
-func (d *DB) PreviewViewerExists(ctx context.Context, viewerID, ownerID string) (bool, error) {
-	var n int
-	err := d.db.QueryRowContext(ctx, `SELECT count(*) FROM preview_viewer WHERE viewer_id=? AND owner_id=?`, viewerID, ownerID).Scan(&n)
-	return n > 0, err
-}
-
-// DeletePreviewViewer forgets a viewer with all its pending states and
-// credentials on every owner (browser sign-out). It returns the deleted
-// credentials so the caller can revoke them at the provider.
-func (d *DB) DeletePreviewViewer(ctx context.Context, viewerID string) ([]PreviewCredential, error) {
-	creds, err := d.previewCredentials(ctx, viewerID, "", "", true)
-	if err != nil {
-		return nil, err
-	}
-	tx, err := d.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = tx.Rollback() }()
-	for _, q := range []string{
-		`DELETE FROM preview_credential WHERE viewer_id=?`,
-		`DELETE FROM preview_oauth_state WHERE viewer_id=?`,
-		`DELETE FROM preview_viewer WHERE viewer_id=?`,
-	} {
-		if _, err := tx.ExecContext(ctx, q, viewerID); err != nil {
-			return nil, err
-		}
-	}
-	return creds, tx.Commit()
-}
-
 // PutPreviewOAuthState stores a pending authorization keyed by the hash of
 // its state parameter. Expired states are pruned on the way.
 func (d *DB) PutPreviewOAuthState(ctx context.Context, stateHash string, s PreviewOAuthState) error {

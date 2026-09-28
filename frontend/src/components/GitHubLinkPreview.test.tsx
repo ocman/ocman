@@ -8,6 +8,7 @@ function jsonResponse(body: unknown, ok = true, status = 200) {
   return { ok, status, json: async () => body } as Response;
 }
 
+const github = { id: 'github', name: 'GitHub', hosts: ['github.com'], configured: true, source: 'public', token: true, oauth: false, accounts: [] };
 let providersStatus = 200;
 let previews: PreviewResult[] = [];
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -18,7 +19,7 @@ beforeEach(() => {
   fetchMock = vi.fn().mockImplementation((url: string) => {
     if (url === '/api/settings/link-preview-rules') return Promise.resolve(jsonResponse({ rules: [] }));
     if (url.startsWith('/api/previews/providers')) {
-      return Promise.resolve(providersStatus === 200 ? jsonResponse({ providers: [] }) : jsonResponse({}, false, providersStatus));
+      return Promise.resolve(providersStatus === 200 ? jsonResponse({ providers: [github], rules: [] }) : jsonResponse({}, false, providersStatus));
     }
     if (url.startsWith('/api/previews/resolve')) return Promise.resolve(jsonResponse({ previews }));
     return Promise.resolve(jsonResponse({}, false, 404));
@@ -58,18 +59,21 @@ it('still resolves public links when private-preview access is refused', async (
   expect(await screen.findByRole('link', { name: /Shared PR/ })).toHaveClass('gh-preview--open');
 });
 
-it('states the access level on a connect card for a private forge link', async () => {
-  fetchMock.mockImplementation((url: string) => {
-    if (url.startsWith('/api/previews/providers')) {
-      return Promise.resolve(jsonResponse({ providers: [{ id: 'github', name: 'GitHub', notice: 'Read-only access.', connections: [] }] }));
-    }
-    if (url.startsWith('/api/previews/resolve')) return Promise.resolve(jsonResponse({ previews: [{ ...pr, title: undefined, state: 'connect' }] }));
-    return Promise.resolve(jsonResponse({ rules: [] }));
-  });
+it('explains how to preview a private forge link, without a connect flow', async () => {
+  previews = [{ ...pr, title: undefined, state: 'connect' }];
   const { LinkPreviewStrip } = await import('./GitHubLinkPreview');
   render(<LinkPreviewStrip text="https://github.com/o/r/pull/1" />);
-  expect(await screen.findByRole('button', { name: 'Connect GitHub for o/r#1' })).toBeInTheDocument();
-  expect(screen.getByText('Read-only access.')).toBeInTheDocument();
+  expect(await screen.findByText(/GitHub: Private. Add a token under Settings/)).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'o/r#1' })).toHaveAttribute('href', pr.url);
+  expect(screen.queryByRole('button')).toBeNull();
+});
+
+it('never sends links on hosts without a configured provider', async () => {
+  const { LinkPreviewStrip } = await import('./GitHubLinkPreview');
+  render(<LinkPreviewStrip text="https://gitlab.example.com/a/b/-/issues/1 https://linear.app/x/issue/ENG-1" />);
+  await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u).startsWith('/api/previews/providers'))).toBe(true));
+  await new Promise((r) => setTimeout(r, 0));
+  expect(resolveCalls()).toHaveLength(0);
 });
 
 it('skips resolving text without links when nothing is configured', async () => {
