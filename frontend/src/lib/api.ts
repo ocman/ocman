@@ -1,10 +1,11 @@
 import { record as recordPerf, templatePath } from './perfRing';
-import type { WebhookInbox, WebhookSubscription } from './api.types';
+import type { ModelFallthroughSettings, WebhookInbox, WebhookSubscription } from './api.types';
 
 // Re-export every wire type from the dedicated types module so existing
 // imports of `'./api'` continue to work unchanged. New code can import
 // from `./api.types` directly.
 export type {
+  ModelFallthroughSettings,
   NotifyEntry,
   ClientActivity,
   Session,
@@ -567,6 +568,11 @@ export const api = {
     fetchJSON<{ enabled: boolean; ttlDays: number }>(`/api/settings/auto-archive`, signal),
   setAutoArchiveSettings: (settings: { enabled: boolean; ttlDays: number }) =>
     postJSON<{ enabled: boolean; ttlDays: number }>(`/api/settings/auto-archive`, settings),
+  // Global cooldown thresholds for project model fallthrough.
+  getModelFallthroughSettings: (signal?: AbortSignal) =>
+    fetchJSON<ModelFallthroughSettings>(`/api/settings/model-fallthrough`, signal),
+  setModelFallthroughSettings: (settings: ModelFallthroughSettings) =>
+    postJSON<ModelFallthroughSettings>(`/api/settings/model-fallthrough`, settings),
   // Every active share link across all sessions.
   listAllShares: (signal?: AbortSignal) =>
     fetchJSON<GlobalShareLink[]>(`/api/shares`, signal),

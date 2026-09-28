@@ -44,9 +44,15 @@ type Hooks struct {
 	// show before the authoritative refetch lands.
 	SessionCreated func(info CreatedSession)
 	// ProjectModels returns the ordered model list configured for dir's
-	// project (nil when none). Its first entry fills a prompt or command
-	// that names no model. Must be cheap: it runs on every such send.
-	ProjectModels func(ctx context.Context, dir string) []string
+	// project (nil when none) and whether its fallthrough is switched
+	// off. Its first entry fills a prompt or command that names no model;
+	// the rest replace a cooled-down provider. Must be cheap: it runs on
+	// every send.
+	ProjectModels func(ctx context.Context, dir string) (models []string, off bool)
+	// CooldownTimes returns the patience threshold (the floor of every
+	// cooldown) and the fallback used when no reset time is known. Read
+	// on each RecordCooldown so settings edits apply immediately.
+	CooldownTimes func(ctx context.Context) (patience, fallback time.Duration)
 }
 
 // CreatedSession is the minimal, I/O-free projection of a just-created
@@ -67,6 +73,7 @@ type Service struct {
 	// sessionDirs caches session ID → directory for project-default
 	// resolution; Move drops the entry.
 	sessionDirs sync.Map
+	cooldowns   cooldowns
 }
 
 // New builds a Service over the given registry.
@@ -142,7 +149,7 @@ func (s *Service) SendMessage(ctx context.Context, platformID string, req platfo
 	if err != nil {
 		return err
 	}
-	req.Model = s.withProjectDefault(ctx, p, req.SessionID, req.Model)
+	req.Model = s.selectModel(ctx, p, req.SessionID, req.Model)
 	return p.SendMessage(ctx, req)
 }
 
@@ -155,7 +162,7 @@ func (s *Service) ExecuteCommand(ctx context.Context, platformID string, req pla
 	if err != nil {
 		return err
 	}
-	req.Model = s.withProjectDefault(ctx, p, req.SessionID, req.Model)
+	req.Model = s.selectModel(ctx, p, req.SessionID, req.Model)
 	return p.ExecuteCommand(ctx, req)
 }
 

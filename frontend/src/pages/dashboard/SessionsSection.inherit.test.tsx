@@ -24,6 +24,8 @@ vi.mock('../../lib/api', () => ({
     setWorktreeInheritPermissions: vi.fn(),
     getAutoArchiveSettings: vi.fn(),
     setAutoArchiveSettings: vi.fn(),
+    getModelFallthroughSettings: vi.fn(),
+    setModelFallthroughSettings: vi.fn(),
   },
 }));
 import { api } from '../../lib/api';
@@ -37,6 +39,7 @@ afterEach(() => {
 function mockDefaults() {
   m.getWorktreeInheritPermissions.mockResolvedValue({ enabled: true });
   m.getAutoArchiveSettings.mockResolvedValue({ enabled: true, ttlDays: 7 });
+  m.getModelFallthroughSettings.mockResolvedValue({ patienceMinutes: 5, fallbackMinutes: 15 });
 }
 
 describe('SessionsSection worktree inherit toggle (#101)', () => {
@@ -96,6 +99,7 @@ describe('SessionsSection auto-archive settings', () => {
   it('disables controls until settings load', () => {
     m.getWorktreeInheritPermissions.mockResolvedValue({ enabled: true });
     m.getAutoArchiveSettings.mockReturnValue(new Promise(() => {}));
+    m.getModelFallthroughSettings.mockReturnValue(new Promise(() => {}));
 
     render(<SessionsSection />);
 
@@ -149,5 +153,31 @@ describe('SessionsSection auto-archive settings', () => {
 
     expect(m.setAutoArchiveSettings).toHaveBeenCalledTimes(1);
     await act(async () => resolveSave({ enabled: true, ttlDays: 14 }));
+  });
+});
+
+describe('SessionsSection model fallthrough thresholds', () => {
+  it('loads and saves both thresholds', async () => {
+    mockDefaults();
+    m.setModelFallthroughSettings.mockResolvedValue({ patienceMinutes: 2, fallbackMinutes: 15 });
+    render(<SessionsSection />);
+
+    const patience = await screen.findByRole('spinbutton', { name: 'Model fallthrough patience in minutes' });
+    expect(patience).toHaveValue(5);
+    expect(screen.getByRole('spinbutton', { name: 'Model fallthrough cooldown in minutes' })).toHaveValue(15);
+
+    fireEvent.change(patience, { target: { value: '2' } });
+    await waitFor(() => expect(m.setModelFallthroughSettings).toHaveBeenCalledWith({ patienceMinutes: 2, fallbackMinutes: 15 }));
+  });
+
+  it('reverts when the save fails', async () => {
+    mockDefaults();
+    m.setModelFallthroughSettings.mockRejectedValue(new Error('boom'));
+    render(<SessionsSection />);
+
+    const cooldown = await screen.findByRole('spinbutton', { name: 'Model fallthrough cooldown in minutes' });
+    fireEvent.change(cooldown, { target: { value: '30' } });
+    await waitFor(() => expect(m.setModelFallthroughSettings).toHaveBeenCalled());
+    await waitFor(() => expect(cooldown).toHaveValue(15));
   });
 });

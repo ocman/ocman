@@ -291,6 +291,7 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 			s.refreshProjectsIndexAsync()
 		},
 		ProjectModels: s.projectModelList,
+		CooldownTimes: s.cooldownTimes,
 	})
 	factorySvc := factory.NewNativeWithExecution(stateDB, factoryProjectResolver{server: s}, factoryPlanningLauncher{server: s}, factoryImplementationLauncher{server: s})
 	s.factory = factorySvc

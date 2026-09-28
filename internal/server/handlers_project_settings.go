@@ -2,11 +2,15 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -67,12 +71,12 @@ func (s *Server) postProjectSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
-// projectModelCache memoizes each project's model list so resolving the
-// project default on a send costs no state.db round trip. The only
-// writer, postProjectSettings, drops the entry it changes.
+// projectModelCache memoizes each project's settings so model selection
+// on a send costs no state.db round trip. The only writer,
+// postProjectSettings, drops the entry it changes.
 type projectModelCache struct {
 	mu     sync.Mutex
-	byRoot map[string][]string
+	byRoot map[string]state.ProjectSettings
 }
 
 func (c *projectModelCache) forget(dir string) {
@@ -82,10 +86,11 @@ func (c *projectModelCache) forget(dir string) {
 }
 
 // projectModelList returns dir's project model list (nil when none or
-// unreadable). Read errors are not cached so a transient failure heals.
-func (s *Server) projectModelList(ctx context.Context, dir string) []string {
+// unreadable) and its fallthrough off switch. Read errors are not cached
+// so a transient failure heals.
+func (s *Server) projectModelList(ctx context.Context, dir string) ([]string, bool) {
 	if s.stateDB == nil {
-		return nil
+		return nil, false
 	}
 	root := state.ProjectRootForDirectory(dir)
 	c := &s.projectModels
@@ -93,24 +98,108 @@ func (s *Server) projectModelList(ctx context.Context, dir string) []string {
 	// be overwritten by a stale value; misses are rare once warm.
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if models, ok := c.byRoot[root]; ok {
-		return models
+	ps, ok := c.byRoot[root]
+	if !ok {
+		var err error
+		if ps, err = s.stateDB.GetProjectSettings(ctx, root); err != nil {
+			return nil, false
+		}
+		if c.byRoot == nil {
+			c.byRoot = map[string]state.ProjectSettings{}
+		}
+		c.byRoot[root] = ps
 	}
-	ps, err := s.stateDB.GetProjectSettings(ctx, root)
-	if err != nil {
-		return nil
-	}
-	if c.byRoot == nil {
-		c.byRoot = map[string][]string{}
-	}
-	c.byRoot[root] = ps.Models
-	return ps.Models
+	return ps.Models, ps.Off
 }
 
 // projectDefaultModel is the first configured model for dir's project.
 func (s *Server) projectDefaultModel(ctx context.Context, dir string) string {
-	if models := s.projectModelList(ctx, dir); len(models) > 0 {
+	if models, _ := s.projectModelList(ctx, dir); len(models) > 0 {
 		return models[0]
 	}
 	return ""
+}
+
+const (
+	modelFallthroughSettingKey = "model_fallthrough"
+	maxFallthroughMinutes      = 24 * 60
+)
+
+// modelFallthroughSettings are the two global cooldown thresholds.
+type modelFallthroughSettings struct {
+	PatienceMinutes int `json:"patienceMinutes"`
+	FallbackMinutes int `json:"fallbackMinutes"`
+}
+
+func (m modelFallthroughSettings) validate() error {
+	if m.PatienceMinutes < 1 || m.PatienceMinutes > maxFallthroughMinutes ||
+		m.FallbackMinutes < 1 || m.FallbackMinutes > maxFallthroughMinutes {
+		return fmt.Errorf("minutes must be between 1 and %d", maxFallthroughMinutes)
+	}
+	return nil
+}
+
+func (s *Server) getModelFallthroughSettings(ctx context.Context) (modelFallthroughSettings, error) {
+	m := modelFallthroughSettings{
+		PatienceMinutes: int(sessionsvc.DefaultPatience / time.Minute),
+		FallbackMinutes: int(sessionsvc.DefaultCooldownFallback / time.Minute),
+	}
+	if s.stateDB == nil {
+		return m, errors.New("state database not available")
+	}
+	raw, ok, err := s.stateDB.GetSetting(ctx, modelFallthroughSettingKey)
+	if err != nil || !ok {
+		return m, err
+	}
+	var stored modelFallthroughSettings
+	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
+		return m, fmt.Errorf("decoding model fallthrough settings: %w", err)
+	}
+	if err := stored.validate(); err != nil {
+		return m, err
+	}
+	return stored, nil
+}
+
+// cooldownTimes feeds sessionsvc.Hooks.CooldownTimes; an unreadable
+// setting falls back to the defaults so detection never stalls.
+func (s *Server) cooldownTimes(ctx context.Context) (time.Duration, time.Duration) {
+	m, _ := s.getModelFallthroughSettings(ctx)
+	return time.Duration(m.PatienceMinutes) * time.Minute, time.Duration(m.FallbackMinutes) * time.Minute
+}
+
+// handleModelFallthroughSettings serves GET/POST
+// /api/settings/model-fallthrough {patienceMinutes, fallbackMinutes}.
+func (s *Server) handleModelFallthroughSettings(w http.ResponseWriter, r *http.Request) {
+	if s.stateDB == nil {
+		http.Error(w, "state database not available", http.StatusServiceUnavailable)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		m, err := s.getModelFallthroughSettings(r.Context())
+		if err != nil {
+			serverError(w, "reading model fallthrough settings", err)
+			return
+		}
+		writeJSON(w, m)
+	case http.MethodPost:
+		var m modelFallthroughSettings
+		if !readAndUnmarshal(w, r, maxRequestBody, &m) {
+			return
+		}
+		if err := m.validate(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		raw, _ := json.Marshal(m)
+		if err := s.stateDB.SetSetting(r.Context(), modelFallthroughSettingKey, string(raw)); err != nil {
+			serverError(w, "saving model fallthrough settings", err)
+			return
+		}
+		writeJSON(w, m)
+	default:
+		w.Header().Set("Allow", "GET, POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }

@@ -425,11 +425,11 @@ func TestRoutineSessionModes(t *testing.T) {
 }
 
 func TestRoutineWithoutModelUsesProjectDefault(t *testing.T) {
-	h := newHarnessWithHooks(t, sessionsvc.Hooks{ProjectModels: func(_ context.Context, dir string) []string {
+	h := newHarnessWithHooks(t, sessionsvc.Hooks{ProjectModels: func(_ context.Context, dir string) ([]string, bool) {
 		if dir == "/repo" {
-			return []string{"prov/project", "prov/fallback"}
+			return []string{"prov/project", "prov/fallback"}, false
 		}
-		return nil
+		return nil, false
 	}})
 	routine, err := h.svc.Create(t.Context(), validInput())
 	if err != nil {

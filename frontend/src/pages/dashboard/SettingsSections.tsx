@@ -8,7 +8,7 @@ import { useState, useEffect } from 'react';
 import { SettingRow, SettingToggle, SettingNumber } from '../../components/SettingRow';
 import { useSettingSave } from '../../lib/useSaveStatus';
 import { useUiStore } from '../../lib/uiStore';
-import { api } from '../../lib/api';
+import { api, type ModelFallthroughSettings } from '../../lib/api';
 import { SpeechSettings } from '../../components/SpeechSettings';
 import {
   notificationsSupported,
@@ -230,6 +230,61 @@ export function SessionsSection() {
           />
         </SettingRow>
       )}
+      <ModelFallthroughSettings />
+    </>
+  );
+}
+
+function ModelFallthroughSettings() {
+  const [times, setTimes] = useState<ModelFallthroughSettings | null>(null);
+  const patienceSave = useSettingSave();
+  const fallbackSave = useSettingSave();
+  useEffect(() => {
+    const ctrl = new AbortController();
+    api.getModelFallthroughSettings(ctrl.signal).then(setTimes).catch(() => { /* best-effort; rows stay hidden */ });
+    return () => ctrl.abort();
+  }, []);
+  if (!times) return null;
+  const save = async (next: ModelFallthroughSettings) => {
+    const previous = times;
+    setTimes(next);
+    try {
+      await api.setModelFallthroughSettings(next);
+    } catch (err) {
+      setTimes(previous);
+      throw err;
+    }
+  };
+  return (
+    <>
+      <SettingRow
+        label="Model fallthrough patience"
+        desc="Minimum time a provider that ran out of quota is skipped before the project model list tries it again."
+      >
+        <SettingNumber
+          ariaLabel="Model fallthrough patience in minutes"
+          unit="min"
+          min={1}
+          max={1440}
+          value={times.patienceMinutes}
+          save={patienceSave}
+          onSave={(patienceMinutes) => save({ ...times, patienceMinutes })}
+        />
+      </SettingRow>
+      <SettingRow
+        label="Model fallthrough cooldown"
+        desc="How long a provider is skipped when it reports no reset time."
+      >
+        <SettingNumber
+          ariaLabel="Model fallthrough cooldown in minutes"
+          unit="min"
+          min={1}
+          max={1440}
+          value={times.fallbackMinutes}
+          save={fallbackSave}
+          onSave={(fallbackMinutes) => save({ ...times, fallbackMinutes })}
+        />
+      </SettingRow>
     </>
   );
 }

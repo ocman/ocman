@@ -1562,3 +1562,9 @@ export interface SystemStats {
   goroutines: number;
   uptime: number;
 }
+
+/** Global cooldown thresholds for project model fallthrough, in minutes. */
+export interface ModelFallthroughSettings {
+  patienceMinutes: number;
+  fallbackMinutes: number;
+}

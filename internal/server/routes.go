@@ -174,6 +174,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// permissions at split time (issue #101; on by default).
 	mux.HandleFunc("/api/settings/worktree-inherit-permissions", s.requireAuth(s.handleWorktreeInheritPermissions))
 	mux.HandleFunc("/api/settings/auto-archive", s.requireAuth(s.handleAutoArchiveSettings))
+	mux.HandleFunc("/api/settings/model-fallthrough", s.requireAuth(s.handleModelFallthroughSettings))
 	// OpenCode database maintenance: stops opencode and rewrites its
 	// database, so every action is localhost-only.
 	mux.HandleFunc("/api/maintenance/opencode-db", s.get(s.handleMaintenanceStatus))

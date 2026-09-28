@@ -3,6 +3,7 @@ package sessionsvc
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -21,9 +22,13 @@ func (p *dirPlatform) Session(_ context.Context, id string, _, _ int) (*platform
 }
 
 func newProjectModelService(lists map[string][]string) (*Service, *dirPlatform) {
+	return newFallthroughService(lists, false)
+}
+
+func newFallthroughService(lists map[string][]string, off bool) (*Service, *dirPlatform) {
 	p := &dirPlatform{fakePlatform: &fakePlatform{id: "opencode", available: true}, dir: "/repo"}
 	reg := &fakeRegistry{byID: map[platforms.ID]platforms.Platform{"opencode": p}, owner: p}
-	return New(reg, Hooks{ProjectModels: func(_ context.Context, dir string) []string { return lists[dir] }}), p
+	return New(reg, Hooks{ProjectModels: func(_ context.Context, dir string) ([]string, bool) { return lists[dir], off }}), p
 }
 
 func TestSendMessageProjectDefault(t *testing.T) {
@@ -82,5 +87,79 @@ func TestProjectDefaultCachesDirectoryUntilMove(t *testing.T) {
 	}
 	if got := send(); got != "prov/o" || p.lookups != 2 {
 		t.Fatalf("after move model = %q lookups = %d", got, p.lookups)
+	}
+}
+
+func TestSendMessageSkipsCooledProvider(t *testing.T) {
+	ctx := context.Background()
+	list := map[string][]string{"/repo": {"a/1", "a/2", "b/1", "c/1"}}
+	for _, tc := range []struct {
+		name, model, want string
+		cooled            []string
+		off               bool
+	}{
+		{"nothing cooled keeps pick", "a/2", "a/2", nil, false},
+		{"cooled default walks to next provider", "", "b/1", []string{"a"}, false},
+		{"explicit pick overridden", "a/2", "b/1", []string{"a"}, false},
+		{"walk skips every cooled provider", "a/1", "c/1", []string{"a", "b"}, false},
+		{"pick outside list replaced", "x/9", "a/1", []string{"x"}, false},
+		{"uncooled pick outside list kept", "x/9", "x/9", []string{"a"}, false},
+		{"nothing usable leaves request untouched", "b/1", "b/1", []string{"a", "b", "c"}, false},
+		{"off disables substitution", "a/1", "a/1", []string{"a"}, true},
+		{"off still fills the default", "", "a/1", []string{"a"}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, p := newFallthroughService(list, tc.off)
+			for _, prov := range tc.cooled {
+				svc.RecordCooldown(ctx, prov, time.Hour)
+			}
+			if err := svc.SendMessage(ctx, "opencode", platforms.SendMessageRequest{SessionID: "s1", Message: "hi", Model: tc.model}); err != nil {
+				t.Fatal(err)
+			}
+			if got := p.sent[0].Model; got != tc.want {
+				t.Fatalf("model = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRecordCooldownClampAndExpiry(t *testing.T) {
+	ctx := context.Background()
+	patience, fallback := 5*time.Minute, 15*time.Minute
+	for _, tc := range []struct {
+		name      string
+		requested time.Duration
+		lasts     time.Duration
+	}{
+		{"short request floored at patience", time.Second, patience},
+		{"zero uses fallback", 0, fallback},
+		{"negative uses fallback", -time.Minute, fallback},
+		{"long request kept", time.Hour, time.Hour},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := New(&fakeRegistry{}, Hooks{CooldownTimes: func(context.Context) (time.Duration, time.Duration) { return patience, fallback }})
+			now := time.Unix(1_000, 0)
+			svc.cooldowns.now = func() time.Time { return now }
+			svc.RecordCooldown(ctx, "a", tc.requested)
+			now = now.Add(tc.lasts - time.Nanosecond)
+			if !svc.cooldowns.cooled("a") {
+				t.Fatal("cooldown ended early")
+			}
+			now = now.Add(time.Nanosecond)
+			if svc.cooldowns.cooled("a") {
+				t.Fatal("expired cooldown still applies")
+			}
+		})
+	}
+}
+
+func TestRecordCooldownDefaultsWithoutHook(t *testing.T) {
+	svc := New(&fakeRegistry{}, Hooks{})
+	now := time.Unix(1_000, 0)
+	svc.cooldowns.now = func() time.Time { return now }
+	svc.RecordCooldown(context.Background(), "a", 0)
+	now = now.Add(DefaultCooldownFallback - time.Second)
+	if !svc.cooldowns.cooled("a") {
+		t.Fatal("default fallback not applied")
 	}
 }

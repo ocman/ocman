@@ -53,7 +53,10 @@ Every recorded cooldown is floored at the patience threshold (default
 5 min). That floor terminates the walk: each failure cools its provider,
 so the chain makes at most one attempt per model, then stops with an
 "all models exhausted" notice. The fallback duration is 15 min when no
-reset time is known. Both are global settings.
+reset time is known. Both are global settings (`setting` key
+`model_fallthrough`, `GET/POST /api/settings/model-fallthrough`
+`{patienceMinutes, fallbackMinutes}`), read on every
+`sessionsvc.Service.RecordCooldown`.
 
 ## Detection
 
