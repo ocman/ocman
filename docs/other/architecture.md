@@ -21,7 +21,7 @@ fragment, so it never reaches the relay.
 
 ```mermaid
 flowchart LR
-    Owner[Owner ocman] -->|sealed completed turns| Relay[ocman-relay]
+    Owner[Owner ocman] -->|sealed completed turns<br/>artifact snapshots| Relay[ocman-relay]
     Relay --> Store[(share.Store)]
     Viewer[Browser viewer] -->|ciphertext poll| Relay
     Viewer -->|WebCrypto decrypt| Thread[Shared conversation]
@@ -37,6 +37,11 @@ flowchart LR
 - Forking fetches and decrypts in the recipient's authenticated local ocman
   UI, lets the recipient choose a local project, and parks the transcript as
   an unsent composer draft. Imported text never runs automatically.
+- Artifact shares reuse the relay but are written once: chunk zero is a sealed
+  manifest (title, links, file list) and later chunks are the sealed file
+  bytes. Ocman checks the relay's per-share byte and chunk limits before
+  uploading, and deletes a half-written share on failure. See
+  [Artifacts](../features/artifacts.md).
 
 ## 1. System context
 
@@ -66,8 +71,9 @@ flowchart LR
   file, and moves old `summary.diffs` patches into a restorable dump.
 - **state.db.** Ocman's own state: archive flags, routines and run history,
   permission approval provenance, live session commit observations, settings,
-  Factory records, Inbox items, remote tokens, and the last local projects-index
-  snapshot. Inbox sends are owner-local and persist until recalled or archived
+  Factory records, Inbox items, artifact metadata, remote tokens, and the last
+  local projects-index snapshot. Artifact file bytes sit beside it in a
+  SHA-256 content-addressed `artifacts/blobs/` directory. Inbox sends are owner-local and persist until recalled or archived
   by the user. Legacy `workflow_*` rows remain inert for manual recovery.
 - **Provider usage APIs.** The subscription usage page reads OpenCode's local
   OAuth credentials server-side and returns only normalized quota windows;

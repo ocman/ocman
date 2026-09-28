@@ -89,7 +89,7 @@ surfaces on the row the user is watching.
 Ocman also embeds an **MCP (Model Context Protocol) server** on its own
 loopback-only listener, `http://127.0.0.1:8227/mcp` (`-mcp-addr`), plus
 the same endpoint on the web UI's port (`:8229`, or `:8228` via the Vite
-dev proxy). This exposes action-based `factory`, `routines`, and
+dev proxy). This exposes action-based `factory`, `routines`, `artifacts`, and
 `sessions` (inspect + create) tools plus `embed_file`. See the **MCP server** section
 below for setup and available tools.
 
@@ -103,6 +103,17 @@ late. Definitions and run history live in `state.db`; successful runs may soft-d
 The `/routines` composer command only inserts a saved prompt for review and
 does not start a routine run. Webhook triggers are deferred. See
 `docs/features/routines.md`.
+
+**Artifacts** are immutable files and links an agent publishes for a project
+(and optionally its session) through the `artifacts` MCP tool
+(`help`/`create`/`list`/`get`, no delete). Metadata lives in `state.db`; file
+bytes are content-addressed by SHA-256 under `<state dir>/artifacts/blobs/`,
+50 MB per file. The `/artifacts` pages and the sidebar Artifacts tab browse
+them, updated live by `ocman.artifact.created`. Sharing uploads a write-once
+encrypted snapshot (manifest chunk + file chunks) to the share relay, checked
+against the relay's size/chunk limits before upload; revoke and artifact
+delete remove the relay copy. Artifacts are local to one ocman instance and
+are not routed to remotes. See `docs/features/artifacts.md`.
 
 Ocman also surfaces **PRs and Issues** from the active project's
 upstream forge (GitHub or Forgejo) in a sidebar pane next to Session
@@ -301,7 +312,7 @@ handlers don't bypass the `Host` seam). User-facing docs:
   / seen sessions). Primary key is `(platform, session_id)` so it
   can scope state per platform.
 - `internal/mcp/` — MCP server implementation. Tool handlers implement the
-  action-based Factory, routine, session (read-only actions plus `create`), and file tools. Mounted at `/mcp` by the server
+  action-based Factory, routine, artifact, session (read-only actions plus `create`), and file tools. Mounted at `/mcp` by the server
   package.
 - `internal/server/` — HTTP server, API handlers, static file serving
   with SPA fallback, OpenCode port discovery via `lsof`.
@@ -346,6 +357,11 @@ handlers don't bypass the `Host` seam). User-facing docs:
   session-settled run completion for saved prompts. Definitions and immutable
   run snapshots are stored by `internal/state`. See
   `docs/features/routines.md`.
+- Artifacts have no package of their own: `internal/state/artifacts*.go`
+  holds the tables and blob store, `internal/server/artifacts*.go` /
+  `handlers_artifacts.go` / `artifact_share.go` the service, REST API and
+  relay sharing, and `internal/mcp/tools_artifacts.go` the `artifacts` tool.
+  See `docs/features/artifacts.md`.
 - `internal/permissions/` — builds the inherited permission ruleset for
   a worktree session (#101).
 - `internal/pricing/` — LiteLLM model-pricing fetch/cache + cost
@@ -635,7 +651,7 @@ minimal and match the surrounding code.
 ## MCP server
 
 Ocman embeds a localhost-only MCP server (`internal/mcp/`, mounted at
-`/mcp` by the server package) exposing `factory`, `routines`,
+`/mcp` by the server package) exposing `factory`, `routines`, `artifacts`,
 `sessions` (inspect + create), and `embed_file`.
 The authoritative tool list is the table in
 [`docs/features/mcp.md`](docs/features/mcp.md#tools) — don't duplicate it here.
