@@ -424,6 +424,31 @@ func (d *DB) GetSessionParentIDs(ctx context.Context, childIDs []string) (map[st
 	return out, rows.Err()
 }
 
+// GetSessionDescendantIDs returns sessionID plus every session below it in
+// the native parent_id tree (subagents of subagents included).
+func (d *DB) GetSessionDescendantIDs(ctx context.Context, sessionID string) ([]string, error) {
+	rows, err := d.db.QueryContext(ctx,
+		`WITH RECURSIVE tree(id) AS (
+			SELECT ?
+			UNION
+			SELECT s.id FROM session s JOIN tree t ON s.parent_id = t.id
+		)
+		SELECT id FROM tree`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // GetSessionsInactiveBefore returns non-subagent sessions last updated before the cutoff.
 func (d *DB) GetSessionsInactiveBefore(ctx context.Context, cutoff int64) ([]SessionArchiveCandidate, error) {
 	rows, err := d.db.QueryContext(ctx, `

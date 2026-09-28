@@ -114,6 +114,8 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	routineHandler := s.requireLocalhost(s.handleRoutines)
 	mux.HandleFunc("/api/routines", routineHandler)
 	mux.HandleFunc("/api/routines/", routineHandler)
+	mux.HandleFunc("/api/artifacts", s.handleArtifacts)
+	mux.HandleFunc("/api/artifacts/", s.handleArtifacts)
 	mux.HandleFunc("/api/factory/status", s.get(s.handleFactoryStatus))
 	mux.HandleFunc("/api/factory/queue", s.get(s.handleFactoryQueue))
 	mux.HandleFunc("/api/factory/recovery-gates/", s.requireAuth(s.handleFactoryRecoveryGate))

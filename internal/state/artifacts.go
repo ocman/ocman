@@ -297,6 +297,13 @@ func (d *DB) TotalArtifactBytes(ctx context.Context) (int64, error) {
 	return n, err
 }
 
+// CountArtifacts returns the number of stored artifacts.
+func (d *DB) CountArtifacts(ctx context.Context) (int, error) {
+	var n int
+	err := d.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM artifact`).Scan(&n)
+	return n, err
+}
+
 // DeleteArtifact removes an artifact, its items and shares, then any blob no
 // other artifact still references.
 func (d *DB) DeleteArtifact(ctx context.Context, id string) error {

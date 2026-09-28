@@ -155,6 +155,9 @@ func TestDeleteArtifactKeepsSharedBlobs(t *testing.T) {
 	if n, err := d.TotalArtifactBytes(ctx); err != nil || n != shared.Size+own.Size {
 		t.Fatalf("total = %d, %v", n, err)
 	}
+	if n, err := d.CountArtifacts(ctx); err != nil || n != 2 {
+		t.Fatalf("count = %d, %v", n, err)
+	}
 	if _, err := d.db.Exec(`INSERT INTO artifact_share (id,artifact_id,relay_id,relay_key,relay_delete_token,relay_url,created_at) VALUES ('s',?,'r','k','d','u',1)`, first.ID); err != nil {
 		t.Fatal(err)
 	}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1950,6 +1951,25 @@ func TestGetSessionParentIDs_ResolvesTopLevelAncestor(t *testing.T) {
 	}
 	if got["mid"] != "top" {
 		t.Errorf("mid ancestor = %q, want top", got["mid"])
+	}
+}
+
+func TestGetSessionDescendantIDs(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "top", "Top", "/project", now, now)
+	insertSession(t, db, "other", "Other", "/project", now, now)
+	insertSubagent(t, db, "mid", "top", "Task", "/project", now, now)
+	insertSubagent(t, db, "leaf", "mid", "Task", "/project", now, now)
+
+	got, err := db.GetSessionDescendantIDs(t.Context(), "mid")
+	slices.Sort(got)
+	if err != nil || !slices.Equal(got, []string{"leaf", "mid"}) {
+		t.Fatalf("descendants(mid) = %v, %v", got, err)
+	}
+	if got, err := db.GetSessionDescendantIDs(t.Context(), "missing"); err != nil || !slices.Equal(got, []string{"missing"}) {
+		t.Fatalf("descendants(missing) = %v, %v", got, err)
 	}
 }
 
