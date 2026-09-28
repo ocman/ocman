@@ -15,6 +15,7 @@ import type { Session, SessionInfoCommit } from '../lib/api';
 import type { MessageBookmark, MessageBookmarkGroup } from '../lib/messageBookmarks';
 import { MessageBookmarksPane } from './MessageBookmarksPane';
 import { BeadsPane } from './BeadsPane';
+import { ArtifactsPane } from './ArtifactsPane';
 import { useBeadsStatus } from '../lib/useBeadsStatus';
 import {
   DndContext,
@@ -65,6 +66,7 @@ const TAB_LABELS: Record<ChangesSidebarTab, string> = {
   bookmarks: 'Bookmarks',
   upstream: 'PRs & Issues',
   beads: 'Beads',
+  artifacts: 'Artifacts',
 };
 
 // Info = info-circle icon (context / MCP / LSP overview).
@@ -80,6 +82,7 @@ const TAB_ICONS: Record<ChangesSidebarTab, string> = {
   bookmarks: 'bi-bookmarks',
   upstream: 'bi-inbox',
   beads: 'bi-diagram-3',
+  artifacts: 'bi-archive',
 };
 
 // Default strip order, used as a fallback when the persisted order
@@ -92,6 +95,7 @@ const DEFAULT_TAB_ORDER: ChangesSidebarTab[] = [
   'bookmarks',
   'upstream',
   'beads',
+  'artifacts',
 ];
 
 // Minimum height fraction a single pane is allowed to occupy. Stops
@@ -621,6 +625,9 @@ function Pane({
               onRefresh={handleRefresh}
               onLoadingChange={handleLoadingChange}
             />
+          )}
+          {tab === 'artifacts' && (
+            <ArtifactsPane sessionId={sessionId} platformId={platformId} directory={directory} />
           )}
         </ErrorBoundary>
       </div>

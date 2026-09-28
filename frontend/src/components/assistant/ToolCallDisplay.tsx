@@ -33,6 +33,8 @@ import {
 } from '../../lib/threadHelpers';
 import type { FC } from 'react';
 import { MarkdownText } from './MarkdownText';
+import { ArtifactToolCard } from './ArtifactToolCard';
+import { parseCreatedArtifact } from '../../lib/artifactsApi';
 
 const ToolDuration: FC<{ startedAt: number; completedAt: number; isRunning: boolean; label?: string }> = ({
   startedAt,
@@ -534,6 +536,8 @@ const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArg
   const lines = (argsText || '').split('\n');
   const toolStatus = lines[0] || 'running';
   const remainingArgs = lines.slice(1).join('\n');
+  const createdArtifact = toolStatus === 'completed' ? parseCreatedArtifact(toolName, result) : null;
+  if (createdArtifact) return <ArtifactToolCard artifact={createdArtifact} />;
 
   // Show tool calls that have content, are completed, or are actively running.
   // Only hide if there's truly nothing to show (no args, no result, no

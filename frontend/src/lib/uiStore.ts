@@ -39,7 +39,8 @@ export type SidebarView = 'recent' | 'projects';
 // it stacks above the change-related panes. 'upstream' is the PR/Issue
 // sidebar (spec/pr-issue-sidebar/), only shown when the current project
 // has a supported GitHub/Forgejo remote.
-export type ChangesSidebarTab = 'info' | 'session' | 'working-tree' | 'bookmarks' | 'upstream' | 'beads';
+export type ChangesSidebarTab = 'info' | 'session' | 'working-tree' | 'bookmarks' | 'upstream' | 'beads' | 'artifacts';
+export type ArtifactsSidebarScope = 'session' | 'project';
 
 // Per-tab height fraction in split mode. Sums to 1 across openTabs.
 // Values are pinned to a minimum of 0.1 so a pane can't be dragged
@@ -168,6 +169,9 @@ type UiStore = {
   // Values for tabs not present in openTabs are ignored. Missing
   // entries default to "even share" (1 / openTabs.length).
   changesSidebarTabSizes: ChangesSidebarTabSizes;
+  // Sub-tab of the Artifacts pane: this session (+ descendants) or the project.
+  artifactsSidebarScope: ArtifactsSidebarScope;
+  setArtifactsSidebarScope: (scope: ArtifactsSidebarScope) => void;
   // Click on a strip icon. Implements:
   //   - tab not open  -> add it (creating a split if another view
   //                      was already open).
@@ -321,9 +325,11 @@ export const useUiStore = create<UiStore>()(
       setPromptSections: (sections) => set({ promptSections: sections }),
 
       changesSidebarOpenTabs: ['session'],
-      changesSidebarTabOrder: ['info', 'session', 'working-tree', 'bookmarks', 'upstream', 'beads'],
+      changesSidebarTabOrder: ['info', 'session', 'working-tree', 'bookmarks', 'upstream', 'beads', 'artifacts'],
       setChangesSidebarTabOrder: (order) => set({ changesSidebarTabOrder: order }),
       changesSidebarTabSizes: {},
+      artifactsSidebarScope: 'session',
+      setArtifactsSidebarScope: (scope) => set({ artifactsSidebarScope: scope }),
       toggleChangesSidebarTab: (tab) =>
         set((s) => {
           const open = s.changesSidebarOpenTabs;
@@ -460,6 +466,7 @@ export const useUiStore = create<UiStore>()(
         changesSidebarOpenTabs: s.changesSidebarOpenTabs,
         changesSidebarTabOrder: s.changesSidebarTabOrder,
         changesSidebarTabSizes: s.changesSidebarTabSizes,
+        artifactsSidebarScope: s.artifactsSidebarScope,
         autoApproveDefault: s.autoApproveDefault,
         autoApproveDelayMs: s.autoApproveDelayMs,
         promptSections: s.promptSections,

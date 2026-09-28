@@ -446,3 +446,25 @@ describe('ToolCallDisplay subagent task', () => {
     expect(container.querySelector('.oc-task-result')?.textContent).not.toContain('<task');
   });
 });
+
+describe('ToolCallDisplay artifact card', () => {
+  const output = JSON.stringify({
+    id: 'art 1', url: 'http://o/artifacts/art%201',
+    items: [{ kind: 'file', name: 'a.png', url: '/x' }, { kind: 'link', url: 'https://x.test' }],
+    markdown: '[Build [report]](http://o/artifacts/art%201)\n- [a.png](/x)',
+  });
+
+  it('renders a compact card for a completed ocman artifacts create call', () => {
+    renderTool({ toolName: 'ocman_artifacts', argsText: 'completed\n{"action":"create"}', result: output });
+    expect(screen.getByTestId('artifact-tool-card')).toHaveTextContent('2 items');
+    expect(screen.getByRole('link', { name: 'Build [report]' })).toHaveAttribute('href', '/artifacts/art%201');
+  });
+
+  it('falls back to the generic renderer while running, for other actions, or bad output', () => {
+    renderTool({ toolName: 'ocman_artifacts', argsText: 'running\n{"action":"create"}', result: output });
+    renderTool({ toolName: 'ocman_artifacts', argsText: 'completed\n{"action":"list"}', result: '{"artifacts":[]}' });
+    renderTool({ toolName: 'ocman_artifacts', argsText: 'completed\n{}', result: 'not json' });
+    renderTool({ toolName: 'other_artifacts', argsText: 'completed\n{}', result: output });
+    expect(screen.queryByTestId('artifact-tool-card')).toBeNull();
+  });
+});

@@ -80,3 +80,21 @@ export function previewKind(item: ArtifactItem): PreviewKind {
   if (TEXT_MIMES.test(mime) || TEXT_EXT.test(name)) return 'text';
   return 'none';
 }
+
+export type CreatedArtifact = { id: string; title: string; items: number };
+
+/**
+ * Reads the output of a completed ocman `artifacts` action=create call.
+ * Only create returns `markdown` (whose first line is `[title](url)`), so
+ * the output shape identifies the action without re-parsing the args.
+ */
+export function parseCreatedArtifact(toolName: string, result: unknown): CreatedArtifact | null {
+  if (!/(^|_)ocman_artifacts$/i.test(toolName) || typeof result !== 'string') return null;
+  let out: { id?: unknown; url?: unknown; items?: unknown; markdown?: unknown };
+  try { out = JSON.parse(result); } catch { return null; }
+  if (!out || typeof out.id !== 'string' || !out.id || typeof out.markdown !== 'string') return null;
+  const first = out.markdown.split('\n')[0];
+  const suffix = typeof out.url === 'string' ? `](${out.url})` : '';
+  const title = suffix && first.startsWith('[') && first.endsWith(suffix) ? first.slice(1, -suffix.length) : out.id;
+  return { id: out.id, title, items: Array.isArray(out.items) ? out.items.length : 0 };
+}
