@@ -173,3 +173,45 @@ func TestMCPConfigInstallRouteIsLocalhostOnly(t *testing.T) {
 		t.Fatalf("GET install: want 405, got %d", rec.Code)
 	}
 }
+
+// Desktop app (ephemeral main port) whose dedicated listener failed:
+// report unavailable with the reason, never the ephemeral URL, and refuse
+// install. A fixed main port keeps offering its URL.
+func TestHandleMCPConfigUnavailableOnEphemeralPort(t *testing.T) {
+	_, path := mcpConfigServer(t)
+	srv := &Server{addr: "127.0.0.1:0", mcpListenErr: "127.0.0.1:8227: address already in use"}
+
+	rec := httptest.NewRecorder()
+	srv.handleMCPConfigStatus(rec, httptest.NewRequest(http.MethodGet, "/api/mcp/config", nil))
+	var got map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["unavailable"] != true || got["editable"] != false || got["wantUrl"] != "" {
+		t.Fatalf("status = %v", got)
+	}
+	if !strings.Contains(got["reason"].(string), "address already in use") {
+		t.Fatalf("reason = %v", got["reason"])
+	}
+
+	rec = httptest.NewRecorder()
+	srv.handleMCPConfigInstall(rec, httptest.NewRequest(http.MethodPost, "/api/mcp/config/install", nil))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("install: %d", rec.Code)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("install must not write a config")
+	}
+
+	for _, s := range []*Server{
+		{addr: "127.0.0.1:8229", mcpListenErr: "busy"},   // CLI: fixed port
+		{addr: "127.0.0.1:0", mcpAddr: "127.0.0.1:8227"}, // listener up
+	} {
+		if r := s.mcpUnavailableReason(); r != "" {
+			t.Errorf("%+v: unexpected reason %q", s.addr, r)
+		}
+	}
+	if (&Server{addr: "127.0.0.1:0"}).mcpUnavailableReason() == "" {
+		t.Error("disabled listener on an ephemeral port must be unavailable")
+	}
+}

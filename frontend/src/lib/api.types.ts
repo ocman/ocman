@@ -769,6 +769,9 @@ export interface McpConfigStatus {
   wantUrl: string;
   editable: boolean;
   reason?: string;
+  // No stable MCP URL exists (desktop app whose dedicated listener did not
+  // bind); `reason` says why and there is nothing to install.
+  unavailable?: boolean;
 }
 
 // Result of writing the ocman entry. `backupPath` is empty when there

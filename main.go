@@ -250,7 +250,8 @@ func main() {
 		openCodeDBPath = *dbPath
 	}
 
-	stateDB, err := state.Open(state.DefaultDBPath())
+	stateDBPath := state.DefaultDBPath()
+	stateDB, err := state.Open(stateDBPath)
 	if err != nil {
 		fatal("Failed to open state database: %v", err)
 	}
@@ -307,7 +308,7 @@ func main() {
 			WithStartupIssues(startupIssues...).
 			WithToolPathError(toolPathErr).
 			WithRemoteAccess(ident.InstanceID, "", false, false)
-		if err := gui.RunGUI(ctx, srv, httpListenAddr, *guiBootTimeout); err != nil {
+		if err := gui.RunGUI(ctx, srv, httpListenAddr, stateDBPath, *guiBootTimeout); err != nil {
 			fatal("GUI error: %v", err)
 		}
 	} else {

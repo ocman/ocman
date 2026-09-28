@@ -9,11 +9,14 @@ package gui
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"html"
 	"html/template"
 	"net"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -21,6 +24,7 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/NoUseFreak/ocman/internal/server"
 )
@@ -34,23 +38,20 @@ import (
 // X-Forwarded-For, and cannot carry WebSocket upgrades at all.
 type bootstrapHandler struct {
 	backend string
-	client  *http.Client
+	timeout time.Duration
 }
 
-func newBootstrapHandler(backend string) *bootstrapHandler {
-	return &bootstrapHandler{backend: backend, client: &http.Client{Timeout: 10 * time.Second}}
+func newBootstrapHandler(backend string, timeout time.Duration) *bootstrapHandler {
+	return &bootstrapHandler{backend: backend, timeout: timeout}
 }
 
 func (h *bootstrapHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
-	// Probe first: a navigation to a dead backend leaves WKWebView blank,
-	// whereas this bounded check yields a readable page with a retry.
-	resp, err := h.client.Get(h.backend + "/")
-	if err == nil {
-		resp.Body.Close()
-	}
-	if err != nil || resp.StatusCode >= 500 {
+	// Wait first: the backend boots in OnStartup, concurrently with this
+	// load, and a navigation to a dead backend leaves WKWebView blank,
+	// whereas this bounded wait yields a readable page with a retry.
+	if err := waitForServer(h.backend, h.timeout); err != nil {
 		log.WithError(err).WithField("backend", h.backend).Error("gui: backend unreachable")
 		w.WriteHeader(http.StatusBadGateway)
 		fmt.Fprintf(w, `<!doctype html><meta charset="utf-8"><title>ocman</title>
@@ -77,19 +78,58 @@ func loopbackURL(addr net.Addr) string {
 	return "http://" + net.JoinHostPort(ip.String(), strconv.Itoa(tcp.Port))
 }
 
+// singleInstanceID derives the Wails single-instance lock ID from the
+// state DB path: two app launches sharing one state.db collapse into one
+// process, while a different state DB may run alongside.
+func singleInstanceID(stateDBPath string) string {
+	if abs, err := filepath.Abs(stateDBPath); err == nil {
+		stateDBPath = abs
+	}
+	sum := sha256.Sum256([]byte(filepath.Clean(stateDBPath)))
+	return "ocman-" + hex.EncodeToString(sum[:8])
+}
+
+// shutdownWait bounds how long quitting waits for the server's graceful
+// shutdown: its own 5s HTTP drain plus headroom for plugin teardown.
+const shutdownWait = 6 * time.Second
+
 // App holds Wails lifecycle state.
 type App struct {
-	ctx context.Context
+	ctx   context.Context
+	start func() // boots the backend; runs only in the instance that holds the lock
+	stop  context.CancelFunc
+	done  chan struct{}
 }
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	a.start()
+}
+
+// focus brings the existing window forward when the app is launched again.
+func (a *App) focus(options.SecondInstanceData) {
+	if a.ctx == nil {
+		return
+	}
+	runtime.WindowUnminimise(a.ctx)
+	runtime.WindowShow(a.ctx)
+}
+
+// shutdown runs on Cmd+Q / window close: cancel the server context so the
+// graceful path in StartOnListener runs, and wait for it (bounded).
+func (a *App) shutdown(context.Context) {
+	a.stop()
+	select {
+	case <-a.done:
+	case <-time.After(shutdownWait):
+		log.Warn("gui: backend did not shut down in time")
+	}
 }
 
 // RunGUI starts the ocman HTTP server on an ephemeral loopback port and opens
 // a Wails window that loads it.  srv must already be fully constructed
 // (New + registered adapters + auth) but not yet started.
-func RunGUI(ctx context.Context, srv *server.Server, listenAddr string, bootTimeout time.Duration) error {
+func RunGUI(ctx context.Context, srv *server.Server, listenAddr, stateDBPath string, bootTimeout time.Duration) error {
 	// Pick an ephemeral port for the backend so the GUI can point at it.
 	// We override the address to 127.0.0.1:0 via a net.Listener, then
 	// read back the actual port before starting Wails.
@@ -100,22 +140,25 @@ func RunGUI(ctx context.Context, srv *server.Server, listenAddr string, bootTime
 	backendURL := loopbackURL(ln.Addr())
 	log.WithField("addr", backendURL).Info("gui: backend listening")
 
-	// Start the server on the pre-bound listener in a background goroutine.
-	// The context passed here is the same signal context used in CLI mode,
-	// so SIGINT/SIGTERM still trigger a graceful shutdown. A failure leaves
-	// the listener bound but unserved, so it is fatal rather than a hang.
-	go func() {
-		if err := srv.StartOnListener(ctx, ln); err != nil {
-			Fatalf("gui: backend server error: %v", err)
-		}
-	}()
-
-	// Don't open a window on a dead backend.
-	if err := waitForServer(backendURL, bootTimeout); err != nil {
-		return err
+	// The server starts from OnStartup, which Wails only reaches after the
+	// single-instance check: a second launch exits before it ever runs
+	// plugins, routines or the MCP bind. serverCtx derives from the signal
+	// context, so SIGINT/SIGTERM and Cmd+Q share one graceful path. A
+	// failure leaves the listener bound but unserved, so it is fatal
+	// rather than a hang.
+	serverCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	app := &App{stop: stop, done: make(chan struct{})}
+	app.start = func() {
+		go func() {
+			defer close(app.done)
+			err := srv.StartOnListener(serverCtx, ln)
+			if err != nil && serverCtx.Err() == nil {
+				Fatalf("gui: backend server error: %v", err)
+			}
+			log.WithError(err).Info("gui: backend stopped")
+		}()
 	}
-
-	app := &App{}
 
 	// platformOptions() is defined in app_darwin.go / app_linux.go /
 	// app_other.go and injects OS-specific Wails window options.
@@ -128,10 +171,15 @@ func RunGUI(ctx context.Context, srv *server.Server, listenAddr string, bootTime
 		AssetServer: &assetserver.Options{
 			// No embedded FS: the handler only redirects the WebView to
 			// the running HTTP server, which serves assets and /api.
-			Handler: newBootstrapHandler(backendURL),
+			Handler: newBootstrapHandler(backendURL, bootTimeout),
 		},
 		BackgroundColour: &options.RGBA{R: 15, G: 15, B: 20, A: 255},
 		OnStartup:        app.startup,
+		OnShutdown:       app.shutdown,
+		SingleInstanceLock: &options.SingleInstanceLock{
+			UniqueId:               singleInstanceID(stateDBPath),
+			OnSecondInstanceLaunch: app.focus,
+		},
 	}
 	platformOptions(opts)
 

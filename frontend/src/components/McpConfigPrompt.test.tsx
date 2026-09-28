@@ -120,6 +120,21 @@ describe('McpConfigPrompt', () => {
     expect(screen.queryByRole('button', { name: 'Install' })).toBeNull();
   });
 
+  it('reports an unavailable listener instead of offering an install', async () => {
+    mocks.getMcpConfig.mockResolvedValue(status({
+      wantUrl: '',
+      editable: false,
+      unavailable: true,
+      reason: 'the dedicated MCP listener is unavailable (address already in use)',
+    }));
+    render(<McpConfigPrompt />);
+    const prompt = await screen.findByTestId('mcp-config-prompt');
+    expect(screen.getByText('ocman MCP unavailable')).toBeInTheDocument();
+    expect(prompt).toHaveTextContent('address already in use');
+    expect(prompt).not.toHaveTextContent('by hand');
+    expect(screen.queryByRole('button', { name: 'Install' })).toBeNull();
+  });
+
   it('stays dismissed for the same URL across remounts, but re-prompts for a new one', async () => {
     mocks.getMcpConfig.mockResolvedValue(status());
     const { unmount } = render(<McpConfigPrompt />);

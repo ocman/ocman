@@ -28,6 +28,16 @@ import (
 // Never fails the request on a config problem: an unreadable or
 // hand-commented config is a status to display, not an error.
 func (s *Server) handleMCPConfigStatus(w http.ResponseWriter, _ *http.Request) {
+	if reason := s.mcpUnavailableReason(); reason != "" {
+		writeJSON(w, map[string]interface{}{
+			"configured":  false,
+			"editable":    false,
+			"unavailable": true,
+			"reason":      reason,
+			"wantUrl":     "",
+		})
+		return
+	}
 	st, err := opencodeconfig.Check(s.mcpServerURL())
 	if err != nil {
 		log.WithError(err).Debug("mcp: cannot resolve opencode config path")
@@ -46,6 +56,10 @@ func (s *Server) handleMCPConfigStatus(w http.ResponseWriter, _ *http.Request) {
 // global config, backing up the original first. Localhost-only: it
 // modifies a file in the user's home directory.
 func (s *Server) handleMCPConfigInstall(w http.ResponseWriter, _ *http.Request) {
+	if reason := s.mcpUnavailableReason(); reason != "" {
+		http.Error(w, reason, http.StatusConflict)
+		return
+	}
 	url := s.mcpServerURL()
 	backup, err := opencodeconfig.Install(url)
 	if err != nil {
@@ -319,6 +333,24 @@ func (s *Server) mcpServerURL() string {
 		addr = "localhost" + addr
 	}
 	return fmt.Sprintf("http://%s/mcp", addr)
+}
+
+// mcpUnavailableReason explains why there is no stable MCP URL to offer,
+// or returns "". That is the case only when the dedicated listener is
+// down and the main port is ephemeral (the desktop app's 127.0.0.1:0):
+// the fallback URL would be dead after the next launch. A fixed main
+// port (CLI mode, or a pinned -gui-addr) stays a valid fallback.
+func (s *Server) mcpUnavailableReason() string {
+	if s.mcpAddr != "" {
+		return ""
+	}
+	if _, port, err := net.SplitHostPort(s.addr); err != nil || port != "0" {
+		return ""
+	}
+	if s.mcpListenErr != "" {
+		return "the dedicated MCP listener is unavailable (" + s.mcpListenErr + "); free the -mcp-addr port and restart ocman"
+	}
+	return "the dedicated MCP listener is disabled (-mcp-addr is empty); set -mcp-addr and restart ocman"
 }
 
 // WithMCPAddr configures the dedicated MCP listener address. Must be

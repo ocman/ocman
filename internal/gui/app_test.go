@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestBootstrapHandlerRedirectsToBackend(t *testing.T) {
@@ -13,7 +14,7 @@ func TestBootstrapHandlerRedirectsToBackend(t *testing.T) {
 	defer backend.Close()
 
 	rec := httptest.NewRecorder()
-	newBootstrapHandler(backend.URL).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "wails://wails/", nil))
+	newBootstrapHandler(backend.URL, time.Second).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "wails://wails/", nil))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -32,7 +33,7 @@ func TestBootstrapHandlerReportsDeadBackend(t *testing.T) {
 	ln.Close()
 
 	rec := httptest.NewRecorder()
-	newBootstrapHandler(dead).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "wails://wails/", nil))
+	newBootstrapHandler(dead, 100*time.Millisecond).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "wails://wails/", nil))
 
 	if rec.Code != http.StatusBadGateway {
 		t.Fatalf("status = %d, want 502", rec.Code)
@@ -55,5 +56,18 @@ func TestLoopbackURL(t *testing.T) {
 		if got := loopbackURL(tc.addr); got != tc.want {
 			t.Errorf("loopbackURL(%v) = %q, want %q", tc.addr, got, tc.want)
 		}
+	}
+}
+
+func TestSingleInstanceID(t *testing.T) {
+	a := singleInstanceID("/home/u/.local/share/ocman/state.db")
+	if a != singleInstanceID("/home/u/.local/share/ocman/../ocman/state.db") {
+		t.Error("equivalent paths must share one lock")
+	}
+	if a == singleInstanceID("/tmp/other/state.db") {
+		t.Error("a different state DB must get its own lock")
+	}
+	if !strings.HasPrefix(a, "ocman-") || len(a) != len("ocman-")+16 {
+		t.Errorf("unexpected id %q", a)
 	}
 }

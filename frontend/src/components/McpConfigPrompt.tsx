@@ -107,10 +107,10 @@ export function McpConfigPrompt() {
           <button type="button" className="oc-prompt-toast-close" aria-label="Not now">×</button>
         </Toast.Close>
         <Toast.Title className="oc-prompt-toast-heading">
-          {stale ? 'ocman MCP is out of date' : 'ocman MCP not configured'}
+          {status.unavailable ? 'ocman MCP unavailable' : stale ? 'ocman MCP is out of date' : 'ocman MCP not configured'}
         </Toast.Title>
         <Toast.Description className="oc-prompt-toast-body" data-testid="mcp-config-prompt">
-          {status.editable
+          {status.unavailable ? status.reason : status.editable
             ? <>Register <code>{status.wantUrl}</code> in {status.path}?</>
             : <>Add <code>{status.wantUrl}</code> to {status.path} by hand — {status.reason}</>}
         </Toast.Description>
