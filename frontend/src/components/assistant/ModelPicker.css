@@ -40,6 +40,8 @@
   padding-top: 10px;
 }
 
+/* Badges are unscoped: ModelSelect's inline list renders them too. */
+
 /* Tight row so the badges line up with the model name and provider-name
    meta line stays compact. */
 .oc-model-picker .oc-model-picker-row .oc-cmd-title {
@@ -49,7 +51,7 @@
   flex-wrap: wrap;
 }
 
-.oc-model-picker .oc-model-picker-badge {
+.oc-model-picker-badge {
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -61,21 +63,21 @@
   color: var(--text-dim);
   font-weight: 500;
 }
-.oc-model-picker .oc-model-picker-badge--star {
+.oc-model-picker-badge--star {
   background: transparent;
   color: var(--yellow);
   padding: 0;
 }
-.oc-model-picker .oc-model-picker-badge--used {
+.oc-model-picker-badge--used {
   background: transparent;
   color: var(--text-dim);
   padding: 0;
 }
-.oc-model-picker .oc-model-picker-badge--default {
+.oc-model-picker-badge--default {
   background: var(--accent-soft);
   color: var(--accent);
 }
-.oc-model-picker .oc-model-picker-badge--archived {
+.oc-model-picker-badge--archived {
   background: var(--surface1);
   color: var(--overlay0);
   opacity: 0.75;

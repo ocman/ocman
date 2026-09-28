@@ -50,3 +50,14 @@ it('fuzzy filters and selects an option', async () => {
   expect(onChange).toHaveBeenCalledWith('banana-frontend');
   expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
 });
+
+it('caps rendered options so huge catalogs open instantly', async () => {
+  const user = userEvent.setup();
+  const options = Array.from({ length: 1000 }, (_, i) => ({ value: `p/m${i}`, label: `p/m${i}` }));
+  render(<SearchSelect value="" options={options} ariaLabel="Model" placeholder="Model" searchLabel="Search" onChange={vi.fn()} />);
+  await user.click(screen.getByRole('combobox'));
+  expect(screen.getAllByRole('option')).toHaveLength(200);
+  expect(screen.getByText('Type to search 800 more…')).toBeInTheDocument();
+  await user.type(screen.getByRole('textbox'), 'm999');
+  expect(screen.getByRole('option', { name: 'p/m999' })).toBeInTheDocument();
+});

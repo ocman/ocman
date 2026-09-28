@@ -1,13 +1,9 @@
-import { implementationModelTier, type useFactoryImplementationModel } from './useFactoryImplementationModel';
-import { SelectField } from './Control';
+import type { useFactoryImplementationModel } from './useFactoryImplementationModel';
+import { ModelSelect } from './ModelSelect';
 
-export function FactoryImplementationModel({ model, models, setModel, loading, error, locked }: ReturnType<typeof useFactoryImplementationModel>) {
+export function FactoryImplementationModel({ model, models, entries, setModel, loading, error, locked }: ReturnType<typeof useFactoryImplementationModel>) {
 	return <span>
-		<label>Implementation model<SelectField value={model} onChange={(event) => setModel(event.target.value)} disabled={loading || locked}>
-			<option value="">Runtime default</option>
-			{model && !models.includes(model) && <option value={model}>{model}</option>}
-			{models.map((value) => <option key={value} value={value}>{value} · {implementationModelTier(value)}</option>)}
-		</SelectField></label>
+		<label>Implementation model<ModelSelect value={model} models={models} modelEntries={entries} onChange={setModel} ariaLabel="Implementation model" defaultLabel="Runtime default" disabled={loading || locked} /></label>
 		<span>Planning: Fable / Astra. Implementation: Opus / Sol recommended; Sonnet / Terra for speed.</span>
 		{loading && <span role="status">Loading available models…</span>}
 		{error && <span role="status">Could not load models. Runtime default is available.</span>}

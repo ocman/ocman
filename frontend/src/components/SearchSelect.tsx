@@ -9,6 +9,8 @@ export interface SearchSelectOption {
   label: string;
   displayLabel?: ReactNode;
   icon?: ReactNode;
+  // Header shown above the first option of each section while not searching.
+  section?: string;
 }
 
 interface SearchSelectProps {
@@ -19,7 +21,12 @@ interface SearchSelectProps {
   searchLabel: string;
   disabled?: boolean;
   onChange: (value: string) => void;
+  // Custom ranking for a non-empty query; defaults to fuzzy label matching.
+  search?: (query: string) => SearchSelectOption[];
 }
+
+// ponytail: fixed render cap keeps huge catalogs (8k+ models) instant; virtualize if scrolling past it matters.
+const MAX_VISIBLE = 200;
 
 export function SearchSelect({
   value,
@@ -29,13 +36,17 @@ export function SearchSelect({
   searchLabel,
   disabled,
   onChange,
+  search: searchOptions,
 }: SearchSelectProps) {
   const id = useId();
   const root = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const visible = query ? options.filter((option) => fuzzyMatch(query, `${option.label} ${option.value}`)) : options;
+  const visible = !query.trim() ? options
+    : searchOptions ? searchOptions(query)
+    : options.filter((option) => fuzzyMatch(query, `${option.label} ${option.value}`));
+  const shown = visible.slice(0, MAX_VISIBLE);
 
   useClickOutside(root, open, () => setOpen(false));
 
@@ -74,7 +85,9 @@ export function SearchSelect({
             onChange={(event) => setQuery(event.target.value)}
           />
           <div id={id} role="listbox">
-            {visible.map((option) => (
+            {shown.map((option, index) => [
+              !query.trim() && option.section && option.section !== shown[index - 1]?.section
+                && <div key={`h:${option.section}`} role="presentation" className="oc-search-select-header">{option.section}</div>,
               <button
                 type="button"
                 role="option"
@@ -86,9 +99,10 @@ export function SearchSelect({
                 }}
               >
                 <span className="oc-search-select-label">{option.icon}{option.displayLabel ?? option.label}</span>
-              </button>
-            ))}
+              </button>,
+            ])}
             {visible.length === 0 && <small>No matches</small>}
+            {visible.length > MAX_VISIBLE && <small>Type to search {visible.length - MAX_VISIBLE} more…</small>}
           </div>
         </div>
       )}

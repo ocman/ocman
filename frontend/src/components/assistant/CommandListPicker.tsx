@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { fuzzyMatch, fuzzyRank, fuzzyScore } from '../../lib/format';
+import { weightedSearch, type SearchKey } from '../../lib/weightedSearch';
 import { Modal } from '../Modal';
 import '../CommandPalette.css';
 import './ModelPicker.css';
@@ -10,8 +10,6 @@ import './ModelPicker.css';
 export interface PickerEntryBase {
   value: string;
 }
-
-type SearchKey<T> = keyof T | { name: keyof T; weight?: number };
 
 // Flat list model: a section header or a selectable entry. Flat so
 // keyboard navigation tracks a single index and headers are skipped.
@@ -155,25 +153,10 @@ export function CommandListPicker<T extends PickerEntryBase>({
   // Normalize whitespace and short-circuit empty queries.
   const extendedQuery = useMemo(() => query.trim().split(/\s+/).filter(Boolean).join(' '), [query]);
 
-  const filteredEntries = useMemo(() => {
-    if (!extendedQuery) return entries;
-    const keys = (fuseKeys ?? ['value'])
-      .map((key) => typeof key === 'object' ? { name: key.name, weight: key.weight ?? 1 } : { name: key, weight: 1 })
-      .filter((key): key is { name: keyof T & string; weight: number } => typeof key.name === 'string');
-    const field = (entry: T, name: string) => String((entry as unknown as Record<string, unknown>)[name] ?? '');
-    // Best weighted per-field score; a match that only exists across fields
-    // (e.g. "anthropic opus") still counts, ranked lowest.
-    const score = (entry: T) => {
-      let best = -1;
-      for (const { name, weight } of keys) {
-        const s = fuzzyScore(extendedQuery, field(entry, name));
-        if (s >= 0) best = Math.max(best, s * weight);
-      }
-      if (best < 0 && fuzzyMatch(extendedQuery, keys.map(({ name }) => field(entry, name)).join(' '))) best = 0;
-      return best;
-    };
-    return fuzzyRank(entries, score, pinned).slice(0, 200);
-  }, [entries, extendedQuery, fuseKeys, pinned]);
+  const filteredEntries = useMemo(
+    () => (extendedQuery ? weightedSearch(entries, extendedQuery, fuseKeys ?? ['value'], pinned).slice(0, 200) : entries),
+    [entries, extendedQuery, fuseKeys, pinned],
+  );
 
   // Section only when not searching; on search show a flat filtered list.
   const items = useMemo(

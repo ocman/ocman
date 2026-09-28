@@ -21,9 +21,12 @@ describe('epic models', () => {
 		vi.mocked(api.getJudgeModelOptions).mockResolvedValue({ models: ['p/fable', 'p/sol', 'p/terra'], default: '' });
 		vi.mocked(postJSON).mockResolvedValue({});
 		mount(<FactoryEpicModels epic={epic} />);
-		expect(screen.getByLabelText('Planning model')).toHaveValue('p/fable');
-		await waitFor(() => expect(screen.getAllByRole('option', { name: 'p/terra · Fast' })).toHaveLength(3));
-		await userEvent.setup().selectOptions(screen.getByLabelText('Verification model'), 'p/terra');
+		expect(screen.getByRole('combobox', { name: 'Planning model' })).toHaveTextContent('p/fable');
+		await waitFor(() => expect(api.getJudgeModelOptions).toHaveBeenCalled());
+		const user = userEvent.setup();
+		await user.click(screen.getByRole('combobox', { name: 'Verification model' }));
+		await user.keyboard('terra');
+		await user.click(await screen.findByRole('option', { name: /terra/ }));
 		expect(postJSON).toHaveBeenCalledWith('/api/factory/epics/epic%2F1/models', { plan: 'p/fable', verification: 'p/terra' });
 		expect(screen.getByText('Changes apply only to work that has not started yet.')).toBeInTheDocument();
 	});
@@ -31,7 +34,7 @@ describe('epic models', () => {
 	it('shows a saved model even when the catalog is unavailable', async () => {
 		vi.mocked(api.getJudgeModelOptions).mockRejectedValue(new Error('offline'));
 		mount(<FactoryEpicModels epic={{ ...epic, models: { implementation: 'x/custom' } }} />);
-		await waitFor(() => expect(screen.getByLabelText('Implementation model')).toHaveValue('x/custom'));
+		await waitFor(() => expect(screen.getByRole('combobox', { name: 'Implementation model' })).toHaveTextContent('x/custom'));
 	});
 
 	it('locks the approval picker to the epic implementation model', () => {

@@ -7,11 +7,20 @@
   justify-content: space-between;
   gap: 8px;
   width: 100%;
-  padding: 7px;
+  min-height: 38px;
+  padding: 0 12px;
   border: 1px solid var(--border);
   color: var(--text);
   background: var(--bg);
   text-align: left;
+}
+.oc-search-select > button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* The closed field shows just the value; badges belong in the list. */
+.oc-search-select > button .oc-model-picker-badge {
+  display: none;
 }
 .oc-search-select > button > span {
   font: inherit;
@@ -43,9 +52,12 @@
   box-sizing: border-box;
   margin-bottom: 4px;
 }
+.oc-search-select-menu input.oc-field:focus-visible {
+  outline-offset: -2px;
+}
 .oc-search-select-menu [role='listbox'] {
   display: grid;
-  max-height: 220px;
+  max-height: 320px;
   overflow: auto;
 }
 .oc-search-select-menu [role='option'] {
@@ -57,11 +69,26 @@
   overflow-wrap: anywhere;
 }
 .oc-search-select-menu [role='option']:hover,
-.oc-search-select-menu [role='option']:focus,
-.oc-search-select-menu [aria-selected='true'] {
+.oc-search-select-menu [role='option']:focus {
   background: var(--bg-hover);
+}
+.oc-search-select-menu [aria-selected='true'] {
+  box-shadow: inset 2px 0 var(--accent);
+  color: var(--accent);
 }
 .oc-search-select-menu small {
   padding: 8px;
   color: var(--text-muted);
+}
+.oc-search-select-header {
+  padding: 8px 7px 4px;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.oc-search-select-header:not(:first-child) {
+  margin-top: 4px;
+  border-top: 1px solid var(--surface1);
 }

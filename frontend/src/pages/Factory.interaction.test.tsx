@@ -385,8 +385,10 @@ describe('Factory interactions', () => {
     renderFactory(<MemoryRouter><FactoryPlanApproval epicID="epic-1" platformID="opencode" sessionID="planning-session" /></MemoryRouter>);
 
     expect(await screen.findByText('Approval starts implementation.')).toBeInTheDocument();
-		await waitFor(() => expect(screen.getByLabelText('Implementation model')).toHaveValue('openai/gpt-5.6-sol'));
-		await user.selectOptions(screen.getByLabelText('Implementation model'), 'anthropic/claude-sonnet-4');
+		await waitFor(() => expect(screen.getByRole('combobox', { name: 'Implementation model' })).toHaveTextContent('openai/gpt-5.6-sol'));
+		await user.click(screen.getByRole('combobox', { name: 'Implementation model' }));
+		await user.keyboard('sonnet');
+		await user.click(await screen.findByRole('option', { name: /claude-sonnet-4/ }));
     await user.click(screen.getByRole('button', { name: 'Approve plan' }));
 
     await waitFor(() => expect(api.factoryPlanGate).toHaveBeenCalledWith('epic-1', 'approve', { expectedRevision: 2, expectedHash: 'hash-2', feedback: undefined, implementationModel: 'anthropic/claude-sonnet-4' }));

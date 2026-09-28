@@ -1,43 +1,46 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, expect, it, vi } from 'vitest';
-import { api } from '../lib/api';
+import { expect, it, vi } from 'vitest';
 import { ModelSelect } from './ModelSelect';
 
-vi.mock('../lib/api', () => ({ api: { models: vi.fn() } }));
-vi.mock('./ModelLogo', () => ({ ModelLogo: () => null }));
+vi.mock('./ModelLogo', () => ({ ModelLabel: ({ children }: { children: React.ReactNode }) => children }));
 
-afterEach(() => vi.clearAllMocks());
+const entries = [
+	{ provider: 'openai', model: 'gpt-opus-mini', isAvailable: true },
+	{ provider: 'anthropic', model: 'claude-opus-4', isAvailable: true, isFavorite: true },
+	{ provider: 'openai', model: 'gpt-5', isAvailable: true, recentRank: 1 },
+];
 
-it('loads unique project models while retaining the current value', async () => {
+it('groups rich entries into the picker sections', async () => {
 	const user = userEvent.setup();
-	let signal: AbortSignal | undefined;
-	vi.mocked(api.models).mockImplementation(async (_query, requestSignal) => {
-		signal = requestSignal;
-		return [{ provider: 'openai', model: 'gpt-5' }, { provider: 'openai', model: 'gpt-5' }] as never;
-	});
-	const onChange = vi.fn();
-	const view = render(<ModelSelect value="custom/model" directory="/repo" onChange={onChange} />);
-
-	await waitFor(() => expect(api.models).toHaveBeenCalledWith({ dir: '/repo' }, expect.any(AbortSignal)));
+	render(<ModelSelect value="" models={[]} modelEntries={entries} onChange={vi.fn()} />);
 	await user.click(screen.getByRole('combobox', { name: 'Model' }));
-	await screen.findByRole('option', { name: 'openai/gpt-5' });
-	expect(screen.getAllByRole('option', { name: 'openai/gpt-5' })).toHaveLength(1);
-	expect(screen.getByRole('option', { name: 'custom/model' })).toBeInTheDocument();
-	await user.click(screen.getByRole('option', { name: 'openai/gpt-5' }));
-	expect(onChange).toHaveBeenCalledWith('openai/gpt-5');
-	view.unmount();
-	expect(signal?.aborted).toBe(true);
+	expect(screen.getByText('Favorites')).toBeInTheDocument();
+	expect(screen.getByText('Recent')).toBeInTheDocument();
+	expect(screen.getByText('All models')).toBeInTheDocument();
 });
 
-it('remains usable when model history fails', async () => {
+it('ranks search results like the picker, pinning favorites first', async () => {
 	const user = userEvent.setup();
 	const onChange = vi.fn();
-	vi.mocked(api.models).mockRejectedValue(new Error('offline'));
-	render(<ModelSelect value="custom/model" onChange={onChange} />);
-	await waitFor(() => expect(api.models).toHaveBeenCalledWith(undefined, expect.any(AbortSignal)));
+	render(<ModelSelect value="" models={[]} modelEntries={entries} onChange={onChange} />);
 	await user.click(screen.getByRole('combobox', { name: 'Model' }));
-	await user.click(screen.getByRole('option', { name: 'Default model' }));
+	await user.keyboard('opus');
+	const options = screen.getAllByRole('option');
+	expect(options.map((o) => o.textContent)).toEqual(['anthropic/claude-opus-4', 'openai/gpt-opus-mini']);
+	expect(screen.queryByText('Favorites')).not.toBeInTheDocument();
+	await user.click(options[0]);
+	expect(onChange).toHaveBeenCalledWith('anthropic/claude-opus-4');
+});
+
+it('keeps an unlisted value selectable and offers the default', async () => {
+	const user = userEvent.setup();
+	const onChange = vi.fn();
+	render(<ModelSelect value="custom/model" models={['openai/gpt-5']} defaultLabel="Runtime default" onChange={onChange} />);
+	expect(screen.getByRole('combobox', { name: 'Model' })).toHaveTextContent('custom/model');
+	await user.click(screen.getByRole('combobox', { name: 'Model' }));
+	expect(screen.getByRole('option', { name: 'custom/model' })).toBeInTheDocument();
+	await user.click(screen.getByRole('option', { name: 'Runtime default' }));
 	expect(onChange).toHaveBeenCalledWith('');
 });
