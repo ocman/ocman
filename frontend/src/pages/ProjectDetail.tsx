@@ -186,6 +186,16 @@ export function ProjectDetail() {
             Worktrees
           </button>
         )}
+        {directory && (
+          <button
+            type="button"
+            className="oc-time-range-btn"
+            onClick={() => navigate(`/project/${encodeURIComponent(directory)}/settings`)}
+            title="Project settings"
+          >
+            Settings
+          </button>
+        )}
       </HeaderPortal>
       <div className="metrics-filters oc-projects-toolbar">
         <input

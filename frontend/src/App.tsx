@@ -6,6 +6,7 @@ import { useHotkeys } from 'react-hotkeys-hook';
 import { AnalyticsTab, DashboardLayout, LegacyAnalyticsRedirect, SessionsTab, ProjectsTab, SettingsTab } from './pages/Dashboard';
 import { ProjectDetail } from './pages/ProjectDetail';
 import { WorktreesView } from './pages/WorktreesView';
+import { ProjectSettingsView } from './pages/ProjectSettingsView';
 import { Routines } from './pages/Routines';
 import { FactoryConfiguration, FactoryEpicDetail, FactoryEpics, FactoryHowTo, FactoryOverview, FactoryQueue } from './pages/Factory';
 import { FactoryIssues } from './pages/FactoryIssues';
@@ -424,6 +425,7 @@ export function AppRoutes() {
           <Route path="/settings" element={<SettingsTab />} />
         </Route>
         <Route path="/project/:dir/worktrees" element={<WorktreesView />} />
+        <Route path="/project/:dir/settings" element={<ProjectSettingsView />} />
         <Route path="/factory" element={<Navigate to="/factory/overview" replace />} />
         <Route path="/factory/overview" element={<FactoryOverview />} />
         <Route path="/factory/how-to" element={<FactoryHowTo />} />

@@ -152,7 +152,7 @@ export function SettingSelect({
   searchLabel,
   disabled,
 }: SettingSelectProps) {
-  const known = options.some((option) => option.value === value);
+  const known = !value || options.some((option) => option.value === value);
   const all = known ? options : [...options, { value, label: value }];
   return (
     <div className="settings-select-input">

@@ -23,6 +23,7 @@ export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
       <>
         <ProjectLabel path={projectDir} />
         {path.endsWith('/worktrees') && ' / Worktrees'}
+        {path.endsWith('/settings') && ' / Settings'}
       </>
     );
   } else if (routeSessionId && sessionInfo.sessionTitle) {

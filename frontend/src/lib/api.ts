@@ -637,6 +637,11 @@ export const api = {
     fetchJSON<ActivityDay[]>(`/api/activity${queryString(params)}`, signal),
   models: (params?: { days?: number; dir?: string }, signal?: AbortSignal) =>
     fetchJSON<ModelUsage[]>(`/api/models${queryString(params)}`, signal),
+  // Per-project ordered model list; models[0] is the project default.
+  projectSettings: (dir: string, signal?: AbortSignal) =>
+    fetchJSON<{ models: string[]; off: boolean }>(`/api/project/settings${queryString({ dir })}`, signal),
+  setProjectSettings: (directory: string, models: string[], off: boolean) =>
+    postJSON<{ ok: boolean }>('/api/project/settings', { directory, models, off }),
   sessionModels: (sessionId: string, platform?: string) =>
     fetchJSON<SessionModelsResponse>(`/api/session/${encodeURIComponent(sessionId)}/models${queryString({ platform })}`),
   // Favorites CRUD. Scoped per-platform because the same (provider,
