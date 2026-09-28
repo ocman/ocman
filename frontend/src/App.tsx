@@ -8,6 +8,8 @@ import { ProjectDetail } from './pages/ProjectDetail';
 import { WorktreesView } from './pages/WorktreesView';
 import { ProjectSettingsView } from './pages/ProjectSettingsView';
 import { Routines } from './pages/Routines';
+import { Artifacts } from './pages/Artifacts';
+import { ArtifactDetail } from './pages/ArtifactDetail';
 import { FactoryConfiguration, FactoryEpicDetail, FactoryEpics, FactoryHowTo, FactoryOverview, FactoryQueue } from './pages/Factory';
 import { FactoryIssues } from './pages/FactoryIssues';
 import { SessionDetail } from './pages/session-detail';
@@ -422,6 +424,8 @@ export function AppRoutes() {
           <Route path="/stats" element={<LegacyAnalyticsRedirect section="performance" />} />
           <Route path="/usage" element={<LegacyAnalyticsRedirect section="overview" />} />
           <Route path="/routines" element={<Routines />} />
+          <Route path="/artifacts" element={<Artifacts />} />
+          <Route path="/artifacts/:id" element={<ArtifactDetail />} />
           <Route path="/settings" element={<SettingsTab />} />
         </Route>
         <Route path="/project/:dir/worktrees" element={<WorktreesView />} />

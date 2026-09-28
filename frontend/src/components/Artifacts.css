@@ -1,0 +1,21 @@
+.artifact-page { flex: 1; min-width: 0; overflow: auto; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 20px; color: var(--text); background: var(--bg); }
+.artifact-page > button { justify-self: start; }
+.artifact-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 18px; }
+.artifact-header p { margin: 0; color: var(--text-muted); }
+.artifact-header h2 { margin: 4px 0; }
+.artifact-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.artifact-filters input, .artifact-filters select { box-sizing: border-box; min-width: 0; padding: 6px 10px; border: 1px solid var(--border); color: var(--text); background: var(--bg); font: inherit; }
+.artifact-table-wrap { min-width: 0; overflow-x: auto; border: 1px solid var(--border); background: var(--bg-card); }
+.artifact-table-wrap table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.artifact-table-wrap th, .artifact-table-wrap td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; }
+.artifact-table-wrap th { color: var(--text-muted); font-size: 11px; font-weight: 600; }
+.artifact-table-wrap tbody tr:last-child td { border-bottom: 0; }
+.artifact-muted { color: var(--text-muted); }
+.artifact-missing, .artifact-delete { color: var(--danger); }
+.artifact-page h3 { margin: 0 0 8px; font-size: 14px; }
+.artifact-files { display: grid; gap: 14px; }
+.artifact-file { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--border); background: var(--bg-card); }
+.artifact-file > header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; }
+.artifact-preview-image { max-width: 100%; max-height: 70vh; object-fit: contain; justify-self: start; }
+.artifact-preview-text { margin: 0; max-height: 70vh; overflow: auto; padding: 10px; background: var(--bg); font: 12px var(--font-mono); white-space: pre; }
+.artifact-preview-markdown { max-height: 70vh; overflow: auto; }

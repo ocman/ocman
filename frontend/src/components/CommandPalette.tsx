@@ -69,6 +69,7 @@ const NAV_ITEMS: NavItem[] = [
   { kind: 'nav', id: 'nav.sessions', label: 'Sessions', path: '/' },
   { kind: 'nav', id: 'nav.projects', label: 'Projects', path: '/projects' },
   { kind: 'nav', id: 'nav.analytics', label: 'Analytics', path: '/analytics/overview' },
+  { kind: 'nav', id: 'nav.artifacts', label: 'Artifacts', path: '/artifacts' },
 ];
 
 const STATIC_COMMANDS: CommandItem[] = [

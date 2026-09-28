@@ -118,6 +118,13 @@ function handleSessionActivity(raw: string): void {
   } catch { /* Ignore malformed SSE payloads. */ }
 }
 const inboxChangedListeners = new Set<() => void>();
+const artifactCreatedListeners = new Set<() => void>();
+
+/** Register a callback fired on every ocman.artifact.created broadcast. */
+export function onArtifactCreated(cb: () => void): () => void {
+  artifactCreatedListeners.add(cb);
+  return () => artifactCreatedListeners.delete(cb);
+}
 
 export function onInboxChanged(cb: () => void): () => void {
   inboxChangedListeners.add(cb);
@@ -219,6 +226,9 @@ function open(): void {
     handleSessionActivity((e as MessageEvent).data);
   });
   next.addEventListener('ocman.projects.changed', handleProjectsChanged);
+  next.addEventListener('ocman.artifact.created', () => {
+    for (const cb of artifactCreatedListeners) cb();
+  });
   next.addEventListener('ocman.queue.updated', (e) => {
     handleQueueUpdated((e as MessageEvent).data);
   });

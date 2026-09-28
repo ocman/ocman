@@ -7,6 +7,7 @@ const TITLES: Record<string, string> = {
   '/subscription-usage': 'Usage',
   '/projects': 'Projects',
   '/routines': 'Routines',
+  '/artifacts': 'Artifacts',
   '/factory/epics': 'Factory',
   '/factory/overview': 'Factory',
 	'/factory/how-to': 'Factory how to',
