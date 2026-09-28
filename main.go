@@ -46,8 +46,11 @@ var sessionsSkill []byte
 //go:embed .opencode/skills/ocman-inbox/SKILL.md
 var inboxSkill []byte
 
+//go:embed .opencode/skills/ocman-artifacts/SKILL.md
+var artifactsSkill []byte
+
 func embeddedSkills() map[string][]byte {
-	return map[string][]byte{"ocman-factory": factorySkill, "ocman-routines": routinesSkill, "ocman-sessions": sessionsSkill, "ocman-inbox": inboxSkill}
+	return map[string][]byte{"ocman-factory": factorySkill, "ocman-routines": routinesSkill, "ocman-sessions": sessionsSkill, "ocman-inbox": inboxSkill, "ocman-artifacts": artifactsSkill}
 }
 
 // authPasswordEnv is the environment variable consulted for the auth

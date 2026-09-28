@@ -19,6 +19,8 @@ type Deps struct {
 	SessionService sessionService
 	// Optional: nil disables owner-local Inbox tools.
 	InboxStore inboxStore
+	// Optional: nil disables the artifacts tool.
+	ArtifactService artifactService
 
 	// SignFile mints a browser-reachable URL for a file on disk, backing
 	// the embed_file tool. Optional: nil makes embed_file report that
@@ -49,6 +51,7 @@ func New(deps Deps) *Server {
 		s.AddTool(tool.Tool, tool.Handler)
 	}
 	addInboxTools(s, &inboxTools{store: deps.InboxStore})
+	addArtifactTools(s, &artifactTools{svc: deps.ArtifactService})
 	addRoutineTools(s, &routineTools{svc: deps.RoutineService})
 	addSessionTools(s, &sessionTools{svc: deps.SessionService})
 
@@ -75,6 +78,7 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 	tools = append(tools, factoryServerTools(&factoryTools{svc: deps.FactoryService})...)
 	tools = append(tools, factoryUnblockServerTools(deps.FactoryService)...)
 	tools = append(tools, inboxServerTools(&inboxTools{store: deps.InboxStore})...)
+	tools = append(tools, artifactServerTools(&artifactTools{svc: deps.ArtifactService})...)
 	tools = append(tools, routineServerTools(&routineTools{svc: deps.RoutineService})...)
 	tools = append(tools, sessionServerTools(&sessionTools{svc: deps.SessionService})...)
 	return tools

@@ -97,7 +97,16 @@ func TestEmbeddedSkillsUseActionContracts(t *testing.T) {
 			t.Errorf("Inbox skill exposes unsupported action %q", forbidden)
 		}
 	}
-	if len(skills) != 4 {
+	artifactsSource := strings.ToLower(string(skills["ocman-artifacts"]))
+	for _, required := range []string{"artifacts", `{"action":"help"}`, `{"action":"create","directory"`, "session_id", "screenshot", "permalink", "commit sha"} {
+		if !strings.Contains(artifactsSource, required) {
+			t.Errorf("Artifacts skill is missing %q", required)
+		}
+	}
+	if strings.Contains(artifactsSource, `"action":"delete"`) {
+		t.Error("Artifacts skill exposes delete")
+	}
+	if len(skills) != 5 {
 		t.Fatalf("embedded skills = %#v", skills)
 	}
 }
@@ -116,6 +125,10 @@ func TestEmbeddedInboxSkillInstalls(t *testing.T) {
 	}
 	if string(content) != string(inboxSkill) {
 		t.Fatal("installed Inbox skill differs from embedded skill")
+	}
+	content, err = os.ReadFile(filepath.Join(configHome, "opencode", "skills", "ocman-artifacts", "SKILL.md"))
+	if err != nil || string(content) != string(artifactsSkill) {
+		t.Fatalf("installed Artifacts skill differs from embedded skill: %v", err)
 	}
 }
 

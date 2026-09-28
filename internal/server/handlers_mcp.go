@@ -146,13 +146,17 @@ func (factoryMCPService) ResolveProjectRequest(context.Context, string, string, 
 }
 
 func (s *Server) buildMCPHandlerFor(factoryService factoryService, routineService *routines.Service, sessionService sessionMCPService) http.Handler {
-	return internalmcp.New(internalmcp.Deps{
+	deps := internalmcp.Deps{
 		SignFile:       s.FileURL,
 		FactoryService: factoryService,
 		InboxStore:     s.stateDB,
 		RoutineService: routineService,
 		SessionService: sessionService,
-	}).Handler()
+	}
+	if s.stateDB != nil {
+		deps.ArtifactService = artifactMCPService{s}
+	}
+	return internalmcp.New(deps).Handler()
 }
 
 type sessionMCPService struct{ server *Server }

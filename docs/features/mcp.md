@@ -74,6 +74,7 @@ production binary. Change it if you moved the listener with `-mcp-addr`.
 |------|-------------|
 | `factory` | Native Factory control surface. Use `action: "help"` for actions, validation, examples, output schemas, and domain errors. Formula actions accept TOML only. Implementation Issues run sequentially on a shared branch; `complete_attempt` records a verified clean, pushed commit checkpoint without `pr_url`. A separate final delivery Issue creates or reuses the review-ready PR and completes with `pr_url`. |
 | `factory_unblock` | Executes a user-approved `reopen` or typed `mutate_graph` action proposed by a read-only Factory unblock session. Ocman configures this tool as `ask`, so OpenCode shows Allow and Reject buttons before execution. |
+| `artifacts` | Publish and inspect project artifacts (reports, screenshots, generated files, links). Actions `help`, `create`, `list`, `get`; there is no delete. `create` needs `directory` and `title`, takes an optional `platform` + `session_id` pair, `files` (`{path}` or `{name, content, mime}`) and `links` (`{url, label}`), and returns the artifact `id`, its ocman UI `url`, item URLs, and a markdown snippet. `list` filters by directory or session and pages with `cursor`/`limit`. Installed skill: `ocman-artifacts`. |
 | `inbox` | Send owner-local Inbox items and recall them by opaque ID. Unknown and already recalled IDs are successful no-ops. Use `action: "help"` for schemas and examples. Agents should send only asynchronous completions needing attention, blocked decisions, or important failures, not routine progress. |
 | `routines` | Create, inspect, update, run, and soft-delete routines. Use `action: "help"` for current inputs, examples, output schemas, and domain errors. |
 | `sessions` | Session listing, search, detail inspection, and creation. Use `action: "help"` for schemas and examples. `list`, `search`, and `get` are read-only; search matches recent session IDs, titles, directories, platforms, and host names. With `content: true` it also scans user and assistant message text (not tool output) from the last `since_days` (default 7). Each hit returns up to five `{partId, messageId, role, snippet}` matches. Content search reads this machine's OpenCode database, so it is slow on large databases (tens of seconds for a week) and never covers remote sessions. `get` needs only `session_id`; it asks for `platform` only when that ID exists on more than one platform. `create` starts a new session. The tool cannot cancel or message existing sessions. |
@@ -223,6 +224,7 @@ MCP interaction guidance lives in:
 .opencode/skills/ocman-routines/SKILL.md
 .opencode/skills/ocman-sessions/SKILL.md
 .opencode/skills/ocman-inbox/SKILL.md
+.opencode/skills/ocman-artifacts/SKILL.md
 ```
 
 At startup, ocman extracts and links the skill into OpenCode's global skill
