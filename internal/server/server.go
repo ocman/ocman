@@ -80,6 +80,11 @@ type Server struct {
 	// on the main port, where password auth applies like everywhere
 	// else. See startMCPListener. Set via WithMCPAddr (-mcp-addr).
 	mcpAddr string
+	// mcpListenErr explains why the dedicated MCP listener did not bind
+	// ("" when it bound or was disabled). Reported by /api/doctor.
+	mcpListenErr string
+	// toolPathErr is the toolpath.Ensure failure, reported by /api/doctor.
+	toolPathErr error
 
 	// mcpHandlerCached is the shared MCP handler. Both the main mux and
 	// the dedicated listener serve the same instance.

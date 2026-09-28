@@ -40,7 +40,17 @@ func (s *Server) newLocalHost() hostsvc.Host {
 		TermCreateWindow: term.CreateWindow,
 		TermKillWindow:   term.KillWindow,
 		TermAttach:       term.AttachLocalPTY,
+		StateDir:         stateDirOrEmpty(s.stateDB),
 	})
+}
+
+// stateDirOrEmpty returns the ocman data directory when a state DB is
+// open, so the doctor only checks a directory ocman actually uses.
+func stateDirOrEmpty(db *state.DB) string {
+	if db == nil {
+		return ""
+	}
+	return state.DefaultDataDir()
 }
 
 // managedStore adapts state.DB to hostlocal.ManagedStore, converting

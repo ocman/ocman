@@ -13,6 +13,7 @@ type stubHost struct{ id string }
 
 func (h stubHost) RemoteID() string       { return h.id }
 func (h stubHost) Capabilities() HostCaps { return HostCaps{} }
+func (h stubHost) Doctor(context.Context) []DoctorCheck { return nil }
 func (h stubHost) BeadsStatus(context.Context, string) (BeadsStatus, error) {
 	return BeadsStatus{}, nil
 }

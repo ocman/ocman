@@ -25,6 +25,9 @@ func newRemoteHost(conn *RemoteConn) *remoteHost { return &remoteHost{conn: conn
 
 func (h *remoteHost) RemoteID() string { return h.conn.RemoteID() }
 
+// Doctor is hub-local only for now; remotes report no checks.
+func (h *remoteHost) Doctor(context.Context) []hostsvc.DoctorCheck { return nil }
+
 func (h *remoteHost) Capabilities() hostsvc.HostCaps {
 	client := h.conn.Client()
 	if client == nil {

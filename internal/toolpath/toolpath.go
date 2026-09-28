@@ -2,6 +2,8 @@ package toolpath
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
@@ -22,20 +24,25 @@ import (
 //
 // We ask the user's login shell for its PATH (the same trick the tmux
 // launcher uses via `sh -lc`) and merge any missing entries into our
-// own PATH. Best-effort: on any error we leave PATH untouched.
-func Ensure() {
+// own PATH. On any error PATH is left untouched and the error returned
+// so the doctor can explain why tools look missing.
+func Ensure() error {
 	if runtime.GOOS == "windows" {
-		return
+		return nil
 	}
 	shellPath, err := loginShellPath()
-	if err != nil || shellPath == "" {
-		return
+	if err != nil {
+		return fmt.Errorf("read login shell PATH: %w", err)
+	}
+	if shellPath == "" {
+		return errors.New("login shell reported an empty PATH")
 	}
 	merged := mergePath(os.Getenv("PATH"), shellPath)
 	if merged != os.Getenv("PATH") {
 		_ = os.Setenv("PATH", merged)
 		log.WithField("path", merged).Debug("augmented PATH from login shell")
 	}
+	return nil
 }
 
 // loginShellPath runs the user's login shell as an interactive login

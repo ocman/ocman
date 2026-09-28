@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -50,7 +51,9 @@ func TestEnsureToolPathRecoversBinary(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err == nil {
 		t.Skip("sh still found under stripped PATH; cannot simulate")
 	}
-	Ensure()
+	if err := Ensure(); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Errorf("Ensure did not restore sh on PATH: %v (PATH=%q)", err, os.Getenv("PATH"))
 	}
@@ -68,5 +71,21 @@ func TestLoginShellCmdDetachedFromTerminal(t *testing.T) {
 	}
 	if cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setpgid {
 		t.Errorf("shell must run in its own process group (Setpgid); got %+v", cmd.SysProcAttr)
+	}
+}
+
+// TestEnsureReturnsLoginShellError guards that a failing login shell is
+// reported to the caller (main -> /api/doctor) instead of swallowed.
+func TestEnsureReturnsLoginShellError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Ensure is a no-op on windows")
+	}
+	t.Setenv("SHELL", "/nonexistent-ocman-shell")
+	before := os.Getenv("PATH")
+	if err := Ensure(); err == nil {
+		t.Fatal("Ensure returned nil for a missing login shell")
+	}
+	if got := os.Getenv("PATH"); got != before {
+		t.Errorf("PATH changed on error: %q", got)
 	}
 }

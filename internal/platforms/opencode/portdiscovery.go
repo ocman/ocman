@@ -326,11 +326,18 @@ func pidCwd(pid string) (string, bool) {
 	return "", false
 }
 
+// lsofWarnOnce rate-limits the lsof failure warning to once per process.
+var lsofWarnOnce sync.Once
+
 // discoverOpenCodeServersUncached performs the actual lsof-based discovery.
 // Two-phase: enumerate listening opencode PIDs, then fan-out to resolve cwds.
 func discoverOpenCodeServersUncached() []openCodeServer {
 	out, err := exec.Command("lsof", "-iTCP", "-sTCP:LISTEN", "-P", "-n").Output()
 	if err != nil {
+		// Once is enough: this runs on every discovery poll.
+		lsofWarnOnce.Do(func() {
+			log.WithError(err).Warn("lsof failed; external OpenCode instance discovery skipped")
+		})
 		return nil
 	}
 

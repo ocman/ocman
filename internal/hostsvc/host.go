@@ -226,6 +226,10 @@ type Host interface {
 	// Capabilities reports which host operations are available.
 	Capabilities() HostCaps
 
+	// Doctor reports the host's prerequisite checks (tools on PATH,
+	// writable state dir, ...). A remote host may return none.
+	Doctor(ctx context.Context) []DoctorCheck
+
 	// BeadsStatus returns the read-only Beads ticket tree for dir. An
 	// unavailable installation or workspace is represented by Available=false.
 	BeadsStatus(ctx context.Context, dir string) (BeadsStatus, error)
@@ -323,4 +327,14 @@ type Host interface {
 	// closes. Runs on the owner (R-C): a remote terminal opens a shell on
 	// the remote machine, not the hub.
 	TermAttach(ctx context.Context, req TermAttachRequest, conn TermConn) error
+}
+
+// DoctorCheck is one prerequisite check in the /api/doctor report.
+type DoctorCheck struct {
+	ID       string `json:"id"`
+	Label    string `json:"label"`
+	Required bool   `json:"required"`
+	OK       bool   `json:"ok"`
+	Detail   string `json:"detail"`
+	Hint     string `json:"hint"`
 }

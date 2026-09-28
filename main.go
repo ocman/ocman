@@ -102,7 +102,7 @@ func main() {
 	// inherits a minimal PATH that omits homebrew and version-manager
 	// shims, so tmux/opencode/git look unavailable. Recover the login
 	// shell's PATH before any exec.LookPath runs.
-	toolpath.Ensure()
+	toolPathErr := toolpath.Ensure()
 
 	addr := flag.String("addr", "127.0.0.1:8228", "listen address")
 	guiMode := flag.Bool("gui", isAppBundle(), "open a native desktop window (Wails) instead of just serving HTTP")
@@ -133,6 +133,9 @@ func main() {
 	// Every startup failure goes through fatal: in GUI mode it shows a
 	// native alert instead of the app silently vanishing.
 	gui.SetFatalContext(*guiMode, logPath)
+	if toolPathErr != nil {
+		log.WithError(toolPathErr).Warn("login shell PATH unavailable; tools may look missing")
+	}
 	fatal := gui.Fatalf
 	if err := opencodeskills.Remove("ocman-session-splitting"); err != nil {
 		log.WithError(err).Warn("removing retired ocman session-splitting skill")
@@ -302,6 +305,7 @@ func main() {
 			WithOpenCodeDBPath(openCodeDBPath).
 			WithLogPath(logPath).
 			WithStartupIssues(startupIssues...).
+			WithToolPathError(toolPathErr).
 			WithRemoteAccess(ident.InstanceID, "", false, false)
 		if err := gui.RunGUI(ctx, srv, httpListenAddr, *guiBootTimeout); err != nil {
 			fatal("GUI error: %v", err)
@@ -315,7 +319,8 @@ func main() {
 			WithMCPAddr(*mcpAddr).
 			WithOpenCodeDBPath(openCodeDBPath).
 			WithLogPath(logPath).
-			WithStartupIssues(startupIssues...)
+			WithStartupIssues(startupIssues...).
+			WithToolPathError(toolPathErr)
 
 		// Start the remote-access gRPC server when -remote-listen is set
 		// (multi-remote support). Off by default so single-host installs

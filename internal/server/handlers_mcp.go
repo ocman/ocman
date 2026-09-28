@@ -349,17 +349,20 @@ func (s *Server) startMCPListener() func() {
 	host, _, err := net.SplitHostPort(s.mcpAddr)
 	if err != nil {
 		log.WithError(err).WithField("addr", s.mcpAddr).Warn("mcp: invalid -mcp-addr, dedicated MCP listener disabled")
+		s.mcpListenErr = fmt.Sprintf("%s: %v", s.mcpAddr, err)
 		s.mcpAddr = ""
 		return noop
 	}
 	if !isLoopbackHostname(strings.Trim(host, "[]")) {
 		log.WithField("addr", s.mcpAddr).Warn("mcp: -mcp-addr must be a loopback address (the endpoint is unauthenticated); dedicated MCP listener disabled")
+		s.mcpListenErr = "-mcp-addr " + s.mcpAddr + " is not a loopback address"
 		s.mcpAddr = ""
 		return noop
 	}
 	ln, err := net.Listen("tcp", s.mcpAddr)
 	if err != nil {
 		log.WithError(err).WithField("addr", s.mcpAddr).Warn("mcp: cannot bind -mcp-addr, dedicated MCP listener disabled")
+		s.mcpListenErr = fmt.Sprintf("%s: %v", s.mcpAddr, err)
 		s.mcpAddr = ""
 		return noop
 	}

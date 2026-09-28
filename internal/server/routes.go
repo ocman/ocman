@@ -60,6 +60,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/hourly", s.get(s.handleHourly))
 	mux.HandleFunc("/api/hourly-tokens", s.get(s.handleHourlyTokens))
 	mux.HandleFunc("/api/capabilities", s.get(s.handleCapabilities))
+	mux.HandleFunc("/api/doctor", s.get(s.handleDoctor))
 	mux.HandleFunc("/api/favorites", s.requireAuth(s.handleFavoritesRoot)) // GET = list, POST = add, DELETE = remove
 	for _, path := range []string{"/api/inbox", "/api/inbox/", "/api/inbox/read", "/api/inbox/open", "/api/inbox/archive", "/api/inbox/archive-all-read"} {
 		mux.HandleFunc(path, s.requireAuth(s.handleInbox))

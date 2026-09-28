@@ -78,6 +78,9 @@ type Deps struct {
 	// TermAttach attaches a local PTY to the selected window and bridges
 	// it to conn until either side closes.
 	TermAttach func(ctx context.Context, req hostsvc.TermAttachRequest, conn hostsvc.TermConn) error
+	// StateDir is ocman's data directory, checked for writability by
+	// Doctor. Empty skips the check.
+	StateDir string
 }
 
 // ValidateFactoryHandoff checks the live worktree without the GitInfo cache.

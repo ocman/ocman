@@ -239,6 +239,13 @@ var defaultWhisper = newWhisper(osExecutor{}, osFileStat{})
 // Available returns true if the whisper binary and model are found.
 func Available() bool { return defaultWhisper.Available() }
 
+// Status returns the resolved whisper binary, model, and ffmpeg paths
+// ("" when not found) for the doctor report.
+func Status() (binary, model, ffmpeg string) {
+	defaultWhisper.init()
+	return defaultWhisper.binary, defaultWhisper.model, defaultWhisper.ffmpeg
+}
+
 // TranscribeFile runs whisper on the given audio file and returns the text.
 func TranscribeFile(audioPath string) (string, error) {
 	return defaultWhisper.Transcribe(context.Background(), audioPath)
