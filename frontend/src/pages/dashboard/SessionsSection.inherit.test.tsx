@@ -113,8 +113,10 @@ describe('SessionsSection auto-archive settings', () => {
 
     render(<SessionsSection />);
 
-    expect(await screen.findByRole('checkbox', { name: 'Automatically archive inactive sessions and projects' })).toBeChecked();
-    expect(screen.getByRole('spinbutton', { name: 'Archive inactive sessions and projects after days' })).toHaveValue(30);
+    // The toggle renders checked (disabled) before settings load, so wait
+    // for the TTL field, which only appears once they have.
+    expect(await screen.findByRole('spinbutton', { name: 'Archive inactive sessions and projects after days' })).toHaveValue(30);
+    expect(screen.getByRole('checkbox', { name: 'Automatically archive inactive sessions and projects' })).toBeChecked();
   });
 
   it('can disable auto-archive and hides the TTL', async () => {
@@ -123,6 +125,8 @@ describe('SessionsSection auto-archive settings', () => {
     render(<SessionsSection />);
 
     const toggle = await screen.findByRole('checkbox', { name: 'Automatically archive inactive sessions and projects' });
+    // A click on the still-disabled toggle (settings not loaded yet) is ignored.
+    await waitFor(() => expect(toggle).toBeEnabled());
     fireEvent.click(toggle);
 
     await waitFor(() => expect(m.setAutoArchiveSettings).toHaveBeenCalledWith({ enabled: false, ttlDays: 7 }));
