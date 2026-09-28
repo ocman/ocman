@@ -159,7 +159,9 @@ describe('SharedConversationView (relay)', () => {
     await screen.findByTestId('shared-artifact');
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Shared report');
     expect(screen.getByRole('link', { name: 'Example' })).toHaveAttribute('href', 'https://example.com');
-    expect(screen.getByRole('link', { name: 'Download data.bin' })).toHaveAttribute('href', 'blob:x');
+    // Object URLs are created in an effect, one render after the artifact
+    // itself appears; wait for it rather than racing the effect flush.
+    expect(await screen.findByRole('link', { name: 'Download data.bin' })).toHaveAttribute('href', 'blob:x');
     expect(screen.queryByTestId('thread')).toBeNull();
 
     await vi.advanceTimersByTimeAsync(10_000);
