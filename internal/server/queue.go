@@ -208,6 +208,9 @@ func (s *Server) onSessionIdle(platformID, sessionID string) {
 	if s.stateDB == nil || platformID == "" {
 		return
 	}
+	// Synchronously, before the flush is enqueued: a held message must
+	// see the dead provider's cooldown when it drains.
+	s.recordQuotaCooldown(context.Background(), platformID, sessionID)
 	s.queueFlushWorker().Enqueue(queueFlush{platformID: platformID, sessionID: sessionID})
 	go runWithRecover("plugin-conversation-reply", func() {
 		s.replyToConversation(context.Background(), platformID, sessionID)

@@ -137,6 +137,9 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 		OnSessionStatus: func(sessionID string, status SessionStatus) {
 			statusType := status.Type
 			w.markSessionDirtyIfKnown(sessionID)
+			if statusType == "retry" && w.svc != nil && w.svc.deps.SessionRetry != nil {
+				w.svc.deps.SessionRetry(sessionID, status)
+			}
 			if statusType == "idle" {
 				idleStatusBroadcast[sessionID] = true
 			} else {

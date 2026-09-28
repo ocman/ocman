@@ -102,6 +102,9 @@ type Deps struct {
 	BroadcastSessionChanged func(sessionID string)
 	BroadcastSessionStatus  func(sessionID string, status db.SessionStatus)
 	BroadcastGlobalEvent    func(event string, data []byte)
+	// SessionRetry fires on every retry status; the consumer decides
+	// whether it is a quota wall.
+	SessionRetry func(sessionID string, status SessionStatus)
 	// RefreshSession updates the list snapshot before a first-sighting
 	// broadcast. Nil keeps the full-invalidation fallback.
 	RefreshSession func(context.Context, string) error

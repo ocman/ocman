@@ -60,6 +60,7 @@ func (s *Server) aaSvc() *autoapprove.Service {
 			PromptNeedsUser:             s.conversationPromptNeedsUser,
 			BroadcastQuestionResolved:   s.broadcastQuestionResolved,
 			BroadcastSessionIdle:        s.onSessionIdle,
+			SessionRetry:                s.onSessionRetry,
 			BroadcastSessionChanged:     s.broadcastSessionChanged,
 			BroadcastSessionStatus:      s.onLocalSessionStatus,
 			BroadcastGlobalEvent:        s.broadcastGlobalEvent,

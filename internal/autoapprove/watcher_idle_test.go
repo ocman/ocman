@@ -61,3 +61,25 @@ func TestWatcherIdlePairReadsStatusOnce(t *testing.T) {
 		})
 	}
 }
+
+// Retry statuses reach SessionRetry with their payload so quota
+// detection runs whether or not auto-approve is enabled.
+func TestWatcherForwardsRetryStatus(t *testing.T) {
+	server := newFakeOpenCodeEventServer([]string{
+		`data: {"type":"session.status","properties":{"sessionID":"ses-1","status":{"type":"busy"}}}` + "\n\n",
+		`data: {"type":"session.status","properties":{"sessionID":"ses-1","status":{"type":"retry","action":{"reason":"free_tier_limit"},"next":42}}}` + "\n\n",
+	})
+	defer server.close()
+	var got []SessionStatus
+	svc := NewService(Deps{SessionRetry: func(id string, st SessionStatus) {
+		if id == "ses-1" {
+			got = append(got, st)
+		}
+	}})
+	if err := newAutoApproveWatcher(svc).streamOnce(context.Background(), server.port()); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].ActionReason != "free_tier_limit" || got[0].Next != 42 {
+		t.Fatalf("retries = %+v", got)
+	}
+}

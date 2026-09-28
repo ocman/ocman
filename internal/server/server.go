@@ -49,6 +49,7 @@ type Server struct {
 	registry           *platforms.Registry
 	sessions           *sessionsvc.Service
 	projectModels      projectModelCache
+	retryNext          sync.Map // session → latest retry next attempt; 429 reset fallback
 	auth               *Auth
 	integrations       *forgeClients
 	previewAuth        previewAuthState

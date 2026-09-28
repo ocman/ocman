@@ -60,7 +60,8 @@ reset time is known. Both are global settings (`setting` key
 
 ## Detection
 
-Fed by the headless event watcher.
+Fed by the headless event watcher (`autoapprove.Deps.SessionRetry` and
+the idle edge), implemented in `internal/server/model_cooldown.go`.
 
 - **Retry park:** `session.status {type:"retry"}` whose `next` is further
   away than the patience threshold, or whose `action.reason` is
