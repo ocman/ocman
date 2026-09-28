@@ -27,6 +27,12 @@ func (s *Server) WithLogPath(path string) *Server {
 	return s
 }
 
+// WithVersion records the build version reported by /api/stats.
+func (s *Server) WithVersion(v string) *Server {
+	s.version = v
+	return s
+}
+
 // LogPath returns the resolved log file path, "" when logging to stderr only.
 func (s *Server) LogPath() string { return s.logPath }
 
@@ -39,6 +45,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		serverError(w, "fetching stats", err)
 		return
 	}
+	stats.Version = s.version
 	writeJSON(w, stats)
 }
 

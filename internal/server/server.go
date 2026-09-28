@@ -179,6 +179,7 @@ type Server struct {
 	// Its gate refuses opencode launches while a job runs.
 	maint             *ocmaint.Runner
 	logPath           string // resolved log file; "" when stderr only
+	version           string // build version (main.version), reported by /api/stats
 	startupIssues     []StartupIssue
 	subscriptionUsage subscriptionUsageClient
 	// Guards the providers against a reopened panel or a repeatedly

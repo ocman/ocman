@@ -104,7 +104,7 @@ func testServer(t *testing.T) *Server {
 // --- Handler integration tests ---
 
 func TestHandleStats_Empty(t *testing.T) {
-	srv := testServer(t)
+	srv := testServer(t).WithVersion("v1.2.3-test")
 	req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
 	rr := httptest.NewRecorder()
 	srv.handleStats(rr, req)
@@ -118,6 +118,9 @@ func TestHandleStats_Empty(t *testing.T) {
 	}
 	if stats["totalSessions"].(float64) != 0 {
 		t.Errorf("expected 0 sessions, got %v", stats["totalSessions"])
+	}
+	if stats["version"] != "v1.2.3-test" {
+		t.Errorf("version = %v, want v1.2.3-test", stats["version"])
 	}
 }
 

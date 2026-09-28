@@ -133,6 +133,7 @@ func main() {
 	// Every startup failure goes through fatal: in GUI mode it shows a
 	// native alert instead of the app silently vanishing.
 	gui.SetFatalContext(*guiMode, logPath)
+	gui.Version = version
 	if toolPathErr != nil {
 		log.WithError(toolPathErr).Warn("login shell PATH unavailable; tools may look missing")
 	}
@@ -305,6 +306,7 @@ func main() {
 			WithMCPAddr(*mcpAddr).
 			WithOpenCodeDBPath(openCodeDBPath).
 			WithLogPath(logPath).
+			WithVersion(version).
 			WithStartupIssues(startupIssues...).
 			WithToolPathError(toolPathErr).
 			WithRemoteAccess(ident.InstanceID, "", false, false)
@@ -320,6 +322,7 @@ func main() {
 			WithMCPAddr(*mcpAddr).
 			WithOpenCodeDBPath(openCodeDBPath).
 			WithLogPath(logPath).
+			WithVersion(version).
 			WithStartupIssues(startupIssues...).
 			WithToolPathError(toolPathErr)
 

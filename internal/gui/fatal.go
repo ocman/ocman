@@ -15,6 +15,9 @@ var (
 	fatalLogPath string
 )
 
+// Version is the build version shown in the macOS About panel; main sets it.
+var Version = "dev"
+
 // runDialog executes the dialog command; a seam so tests never shell out.
 var runDialog = func(argv []string) error { return exec.Command(argv[0], argv[1:]...).Run() }
 

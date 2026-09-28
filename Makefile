@@ -1,5 +1,9 @@
 .PHONY: docs docs-build dev dev-backend dev-remote dev-relay dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop install-plugin installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-platform-branching lint-settings-rows otel-up otel-down otel-logs otel-reset check-caddy-host caddy-up caddy-down caddy-cert install-hooks help
 
+# Build version, stamped into main.version (CLI + desktop) and the macOS
+# bundle's Info.plist. Override: make build VERSION=1.2.3
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+
 # --- OTel dev defaults ----------------------------------------------------
 #
 # Dev targets export the local LGTM stack as the default OTLP endpoint so
@@ -136,7 +140,7 @@ build-frontend:
 	cd frontend && pnpm install --frozen-lockfile && pnpm build
 
 build-backend:
-	go build -o ocman .
+	go build -ldflags "-X main.version=$(VERSION)" -o ocman .
 
 # Bundled plugins are trusted native code built from this checkout; nothing is
 # downloaded. -trimpath keeps the checksum ocman approves reproducible.
@@ -163,7 +167,12 @@ build-desktop: ## Build the Wails desktop app (outputs to build/bin/)
 	cd frontend && pnpm install --frozen-lockfile && pnpm build
 	@mkdir -p build
 	rsvg-convert -w 1024 -h 1024 frontend/public/favicon.svg -o build/appicon.png
-	wails build -skipbindings -s -o ocman-desktop
+	wails build -skipbindings -s -o ocman-desktop -ldflags "-X main.version=$(VERSION)"
+	@# wails.json's productVersion is static; stamp the real version into the bundle.
+	@if [ -f build/bin/ocman.app/Contents/Info.plist ]; then \
+		plutil -replace CFBundleShortVersionString -string "$(VERSION)" build/bin/ocman.app/Contents/Info.plist && \
+		plutil -replace CFBundleVersion -string "$(VERSION)" build/bin/ocman.app/Contents/Info.plist; \
+	fi
 	@# Flush the macOS icon/LaunchServices cache so the Dock shows the
 	@# updated icon immediately without a logout. No-op on non-macOS.
 	@if [ "$$(uname)" = "Darwin" ]; then \

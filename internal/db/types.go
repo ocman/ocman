@@ -316,6 +316,7 @@ type Stats struct {
 	TotalTokensIn    int64   `json:"totalTokensIn"`
 	TotalTokensOut   int64   `json:"totalTokensOut"`
 	TotalCost        float64 `json:"totalCost"`
+	Version          string  `json:"version,omitempty"` // ocman build version; set by the handler
 }
 
 // MetricsSummary holds the dashboard KPI cards for request analytics.
