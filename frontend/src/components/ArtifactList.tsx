@@ -7,7 +7,7 @@ import './Artifacts.css';
 
 export function ArtifactSessionLink({ artifact, known }: { artifact: Artifact; known?: Set<string> }) {
   if (!artifact.sessionId) return <>-</>;
-  if (known && !known.has(artifact.sessionId)) return <span className="artifact-missing" title={artifact.sessionId}>missing</span>;
+  if (known && !known.has(artifact.sessionId)) return <span className="artifact-muted" title={artifact.sessionId}>missing</span>;
   const q = artifact.platform ? `?platform=${encodeURIComponent(artifact.platform)}` : '';
   return <Link to={`/session/${encodeURIComponent(artifact.sessionId)}${q}`} onClick={(e) => e.stopPropagation()}>Session</Link>;
 }
@@ -16,13 +16,12 @@ export function ArtifactSessionLink({ artifact, known }: { artifact: Artifact; k
 export function ArtifactList({ artifacts, compact = false }: { artifacts: Artifact[]; compact?: boolean }) {
   const known = useKnownSessionIds();
   return (
-    <div className="artifact-table-wrap">
-      <DataTable data-testid="artifact-list">
+    <DataTable framed className="artifact-table" data-testid="artifact-list">
         <thead><tr><th>Title</th>{!compact && <th>Project</th>}{!compact && <th>Session</th>}<th>Items</th><th>Size</th><th>Created</th></tr></thead>
         <tbody>
           {artifacts.map((a) => (
             <tr key={a.id} data-testid="artifact-row">
-              <td><Link to={`/artifacts/${encodeURIComponent(a.id)}`}>{a.title}</Link></td>
+              <td><Link className="artifact-title" to={`/artifacts/${encodeURIComponent(a.id)}`}>{a.title}</Link></td>
               {!compact && <td><ProjectLabel path={a.directory} /></td>}
               {!compact && <td><ArtifactSessionLink artifact={a} known={known} /></td>}
               <td>{a.items.length}</td>
@@ -31,7 +30,6 @@ export function ArtifactList({ artifacts, compact = false }: { artifacts: Artifa
             </tr>
           ))}
         </tbody>
-      </DataTable>
-    </div>
+    </DataTable>
   );
 }

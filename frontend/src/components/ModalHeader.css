@@ -9,3 +9,4 @@
 
 .oc-modal-header h2 { margin: 0; }
 .oc-modal-header > .oc-icon-button { flex-shrink: 0; }
+.oc-modal-header p { margin: 4px 0 0; color: var(--text-dim); }

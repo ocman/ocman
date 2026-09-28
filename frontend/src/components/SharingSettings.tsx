@@ -28,7 +28,7 @@ export function SharingSettings() {
   const [relaySource, setRelaySource] = useState<RelaySource>('');
   const [sessions, setSessions] = useState<Session[]>([]);
   const sharingSave = useSettingSave();
-  const state = useShareLinks(api.listAllShares, (link: GlobalShareLink) => link.sessionId);
+  const state = useShareLinks(api.listAllShares, (link: GlobalShareLink) => api.revokeShareLink(link.sessionId, link.token));
   const { setError } = state;
 
   useEffect(() => {

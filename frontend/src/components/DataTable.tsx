@@ -1,8 +1,10 @@
 import type { ComponentProps, ReactNode } from 'react';
 import './DataTable.css';
 
-export function DataTable({ className = '', ...props }: ComponentProps<'table'>) {
-  return <table className={`oc-data-table ${className}`.trim()} {...props} />;
+/** `framed` wraps the table in a bordered card that scrolls horizontally. */
+export function DataTable({ className = '', framed = false, ...props }: ComponentProps<'table'> & { framed?: boolean }) {
+  const table = <table className={`oc-data-table ${className}`.trim()} {...props} />;
+  return framed ? <div className="oc-data-table-frame">{table}</div> : table;
 }
 
 export function DataTableGroupHeader({ className = '', ...props }: ComponentProps<'header'>) {

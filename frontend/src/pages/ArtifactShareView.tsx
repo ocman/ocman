@@ -1,9 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ArtifactPreview } from '../components/ArtifactPreview';
-import { MarkdownContent } from '../components/assistant/MarkdownText';
-import { formatBytes } from '../lib/artifactsApi';
+import { ArtifactContent } from '../components/ArtifactContent';
 import type { ArtifactShare } from '../lib/artifactShare';
-import '../components/Artifacts.css';
 
 /** Read-only rendering of an artifact decrypted from a relay share. */
 export function ArtifactShareView({ artifact }: { artifact: ArtifactShare }) {
@@ -17,6 +14,8 @@ export function ArtifactShareView({ artifact }: { artifact: ArtifactShare }) {
     return () => created.forEach((u) => URL.revokeObjectURL(u));
   }, [artifact]);
 
+  const files = artifact.files.map((f, i) => ({ kind: 'file' as const, name: f.name, mime: f.mime, size: f.size, url: urls[i] }));
+  const links = artifact.links.map((l) => ({ kind: 'link' as const, url: l.url, label: l.label }));
   return (
     <div className="oc-shared-view" data-testid="shared-artifact">
       <header className="oc-shared-header">
@@ -26,26 +25,7 @@ export function ArtifactShareView({ artifact }: { artifact: ArtifactShare }) {
         </div>
       </header>
       <main className="artifact-page">
-        {artifact.description && <section className="artifact-description"><MarkdownContent text={artifact.description} /></section>}
-        {artifact.links.length > 0 && (
-          <section aria-label="Links"><h3>Links</h3><ul>
-            {artifact.links.map((l, i) => <li key={i}><a href={l.url} target="_blank" rel="noopener noreferrer">{l.label || l.url}</a></li>)}
-          </ul></section>
-        )}
-        {artifact.files.length > 0 && (
-          <section aria-label="Files" className="artifact-files"><h3>Files</h3>
-            {artifact.files.map((f, i) => (
-              <article key={i} className="artifact-file" data-testid="artifact-file">
-                <header>
-                  <strong>{f.name}</strong>
-                  <span className="artifact-muted">{f.mime} · {formatBytes(f.size)}</span>
-                  {urls[i] && <a href={urls[i]} download={f.name} aria-label={`Download ${f.name}`}>Download</a>}
-                </header>
-                {urls[i] && <ArtifactPreview item={{ kind: 'file', name: f.name, mime: f.mime, size: f.size, url: urls[i] }} />}
-              </article>
-            ))}
-          </section>
-        )}
+        <ArtifactContent description={artifact.description} links={links} files={files} />
       </main>
     </div>
   );

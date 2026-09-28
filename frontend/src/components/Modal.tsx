@@ -1,6 +1,7 @@
 import { useContext, useEffect, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { ModalReturnFocusContext } from './ModalReturnFocusContext';
+import './Modal.css';
 
 const FOCUSABLE = [
   'a[href]',
@@ -16,8 +17,8 @@ export function Modal({
   onClose,
   canClose = true,
   label,
-  backdropClassName,
-  dialogClassName,
+  backdropClassName = 'oc-modal-backdrop',
+  dialogClassName = 'oc-modal',
   backdropTestId,
   dialogTestId,
 }: {
@@ -25,8 +26,9 @@ export function Modal({
   onClose: () => void;
   canClose?: boolean;
   label: string;
-  backdropClassName: string;
-  dialogClassName: string;
+  /** Defaults to the themed centered dialog in Modal.css. */
+  backdropClassName?: string;
+  dialogClassName?: string;
   backdropTestId?: string;
   dialogTestId?: string;
 }) {

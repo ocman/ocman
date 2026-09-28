@@ -82,7 +82,7 @@ const TAB_ICONS: Record<ChangesSidebarTab, string> = {
   bookmarks: 'bi-bookmarks',
   upstream: 'bi-inbox',
   beads: 'bi-diagram-3',
-  artifacts: 'bi-archive',
+  artifacts: 'bi-box-seam',
 };
 
 // Default strip order, used as a fallback when the persisted order

@@ -52,9 +52,6 @@
   box-sizing: border-box;
   margin-bottom: 4px;
 }
-.oc-search-select-menu input.oc-field:focus-visible {
-  outline-offset: -2px;
-}
 .oc-search-select-menu [role='listbox'] {
   display: grid;
   max-height: 320px;

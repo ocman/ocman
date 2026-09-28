@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ArtifactList } from '../components/ArtifactList';
-import { Button } from '../components/Control';
+import { Button, SearchField, SelectField } from '../components/Control';
 import { EmptyState } from '../components/EmptyState';
+import { LoadingState } from '../components/LoadingState';
 import { api, type Project } from '../lib/api';
 import { artifactsApi, formatBytes, type Artifact, type ArtifactStats } from '../lib/artifactsApi';
+import { shortPath } from '../lib/format';
 import { usePageTitle } from '../lib/headerContext';
 import { onArtifactCreated } from '../lib/useGlobalEvents';
 
@@ -63,15 +65,15 @@ export function Artifacts() {
       <header className="artifact-header">
         <p data-testid="artifact-stats">{stats ? `${stats.count} artifacts · ${formatBytes(stats.totalBytes)} stored` : 'Files and links saved by sessions.'}</p>
         <div className="artifact-filters">
-          <select aria-label="Project" value={directory} onChange={(e) => setDirectory(e.target.value)}>
+          <SearchField aria-label="Search artifacts" placeholder="Search artifacts" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <SelectField aria-label="Project" value={directory} onChange={(e) => setDirectory(e.target.value)}>
             <option value="">All projects</option>
-            {dirs.map((d) => <option key={d} value={d}>{d}</option>)}
-          </select>
-          <input type="search" aria-label="Search artifacts" placeholder="Search artifacts" value={search} onChange={(e) => setSearch(e.target.value)} />
+            {dirs.map((d) => <option key={d} value={d}>{shortPath(d)}</option>)}
+          </SelectField>
         </div>
       </header>
-      {error && <p role="alert" className="artifact-missing">{error}</p>}
-      {loading ? <div className="oc-list-loading" role="status"><div className="oc-spinner" />Loading artifacts...</div>
+      {error && <p role="alert" className="artifact-error">{error}</p>}
+      {loading ? <LoadingState>Loading artifacts...</LoadingState>
         : artifacts.length === 0 ? <EmptyState>No artifacts yet.</EmptyState>
         : <ArtifactList artifacts={artifacts} />}
       {cursor && <Button type="button" disabled={busy} onClick={() => void loadMore()}>Load more</Button>}

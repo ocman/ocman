@@ -66,7 +66,7 @@ export function ArtifactsPane({ sessionId, platformId, directory }: ArtifactsPan
   return (
     <div className="artifact-pane" data-testid="artifacts-pane">
       <SegmentedControl<ArtifactsSidebarScope> label="Artifact scope" options={SCOPES} value={scope} onChange={setScope} />
-      {error && <p role="alert" className="artifact-missing">{error}</p>}
+      {error && <p role="alert" className="artifact-error">{error}</p>}
       {artifacts.length === 0 ? <p className="artifact-muted">No artifacts yet.</p>
         : <ul className="artifact-pane-list">{artifacts.map((a) => <ArtifactRow key={a.id} artifact={a} />)}</ul>}
       {cursor && <Button type="button" disabled={busy} onClick={() => void loadMore()}>Load more</Button>}

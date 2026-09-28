@@ -2,6 +2,9 @@
 .oc-data-table th { padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text-dim); font-size: 12px; letter-spacing: .5px; text-align: left; text-transform: uppercase; }
 .oc-data-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
 .oc-data-table tbody tr:hover { background: var(--bg-hover); cursor: pointer; }
+.oc-data-table-frame { min-width: 0; max-width: 100%; overflow-x: auto; border: 1px solid var(--border); background: var(--bg-card); }
+.oc-data-table-frame > .oc-data-table { margin-bottom: 0; }
+.oc-data-table-frame tbody tr:last-child td { border-bottom: 0; }
 
 .oc-data-table-group-header { display: flex; align-items: center; min-height: 36px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--accent) 4%, var(--bg)); color: var(--text-dim); transition: background .12s ease; }
 .oc-data-table-group > .oc-data-table-group-header { gap: 8px; padding: 0 12px; border-top: 0; }

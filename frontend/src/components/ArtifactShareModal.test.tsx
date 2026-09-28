@@ -3,13 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { artifactsApi, type Artifact } from '../lib/artifactsApi';
+import { copyTextToClipboard } from '../lib/clipboard';
 import { ArtifactShareModal } from './ArtifactShareModal';
 
 vi.mock('../lib/artifactsApi', async (orig) => ({
   ...(await orig<typeof import('../lib/artifactsApi')>()),
   artifactsApi: { shares: vi.fn(), share: vi.fn(), revokeShare: vi.fn() },
 }));
-vi.mock('../lib/clipboard', () => ({ copyToClipboard: vi.fn(async () => true) }));
+vi.mock('../lib/clipboard', () => ({ copyTextToClipboard: vi.fn(async () => true) }));
 
 const artifact: Artifact = {
   id: 'a1', title: 'Report', directory: '/repo', remoteId: 'local', createdAt: '2026-09-01T10:00:00Z',
@@ -37,14 +38,14 @@ describe('ArtifactShareModal', () => {
     expect(screen.getByText('https://ci.test/run/1')).toBeInTheDocument();
     expect(screen.getByText(/big\.bin · 40 MiB/)).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByLabelText('Share link')).toHaveLength(1));
-    expect(screen.getByTestId('artifact-share-size')).toHaveClass('artifact-missing');
+    expect(screen.getByTestId('artifact-share-size')).toHaveClass('artifact-error');
     expect(screen.getByTestId('artifact-share-size')).toHaveTextContent('of the 32 MiB default relay limit');
 
     await user.click(screen.getByRole('button', { name: 'Create share link' }));
     await waitFor(() => expect(screen.getAllByLabelText('Share link')[0]).toHaveValue('https://relay.test/v/r2#k=new'));
 
     await user.click(screen.getAllByRole('button', { name: 'Copy' })[0]);
-    expect(await screen.findByRole('button', { name: 'Copied!' })).toBeInTheDocument();
+    expect(copyTextToClipboard).toHaveBeenCalledWith('https://relay.test/v/r2#k=new');
 
     await user.click(screen.getAllByRole('button', { name: 'Revoke' })[1]);
     expect(artifactsApi.revokeShare).toHaveBeenCalledWith('a1', 's1');

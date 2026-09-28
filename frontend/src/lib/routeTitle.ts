@@ -21,6 +21,7 @@ const TITLES: Record<string, string> = {
 export function routeTitle(path: string, sessionTitle?: string): string {
   if (path === '/analytics' || path.startsWith('/analytics/')) return 'Analytics';
   if (path.startsWith('/factory/')) return TITLES[path] || 'Factory';
+  if (path.startsWith('/artifacts/')) return 'Artifacts';
   if (path.startsWith('/session/')) {
     const id = decodeURIComponent(path.slice('/session/'.length).split('/')[0]);
     return sessionTitle || (id === 'new' ? 'New session' : 'Session');

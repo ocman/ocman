@@ -19,7 +19,7 @@ interface ShareLinkModalProps {
  */
 export function ShareLinkModal({ sessionId, onClose }: ShareLinkModalProps) {
   const load = useCallback(() => api.listShareLinks(sessionId), [sessionId]);
-  const state = useShareLinks(load, () => sessionId);
+  const state = useShareLinks(load, (link) => api.revokeShareLink(sessionId, link.token));
   const { busy, setLinks, setLoaded, run, flashCopied } = state;
 
   const handleCreate = () =>

@@ -12,7 +12,7 @@ const NAV_ITEMS = [
   { to: '/projects', label: 'Projects', icon: 'bi-folder' },
   { to: '/factory/overview', label: 'Factory', icon: 'bi-buildings' },
   { to: '/routines', label: 'Routines', icon: 'bi-clock-history' },
-  { to: '/artifacts', label: 'Artifacts', icon: 'bi-archive' },
+  { to: '/artifacts', label: 'Artifacts', icon: 'bi-box-seam' },
   { to: '/analytics', label: 'Analytics', icon: 'bi-bar-chart' },
 ];
 

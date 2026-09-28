@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api, type ShareLink } from './api';
+import type { ShareLink } from './api';
 import { copyToClipboard } from './clipboard';
 
 /** The subset of a share link every list needs; both link shapes satisfy it. */
@@ -8,12 +8,12 @@ export type ShareLinkLike = Pick<ShareLink, 'token' | 'url'>;
 /**
  * useShareLinks holds the state shared by every public-link list:
  * loading, busy, error, transient copy feedback, and revocation.
- * `revokeSessionId` picks the session a link belongs to, since global
- * lists carry it on the link while a session modal has one fixed id.
+ * `revokeLink` performs the owner-specific revoke call (session links,
+ * artifact shares) so every list shares one UI.
  */
 export function useShareLinks<T extends ShareLinkLike>(
   load: () => Promise<T[]>,
-  revokeSessionId: (link: T) => string,
+  revokeLink: (link: T) => Promise<void>,
 ) {
   const [links, setLinks] = useState<T[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -64,10 +64,10 @@ export function useShareLinks<T extends ShareLinkLike>(
 
   const revoke = useCallback((link: T) =>
     run(async () => {
-      await api.revokeShareLink(revokeSessionId(link), link.token);
+      await revokeLink(link);
       setLinks((prev) => prev.filter((l) => l.token !== link.token));
     }, 'Failed to revoke share link'),
-  [run, revokeSessionId]);
+  [run, revokeLink]);
 
   return { links, setLinks, setLoaded, loaded, busy, error, setError, copied, copy, revoke, run, flashCopied };
 }

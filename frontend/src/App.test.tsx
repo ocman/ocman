@@ -29,6 +29,8 @@ describe('routeTitle', () => {
     ['/analytics/performance', 'Analytics'],
     ['/settings', 'Settings'],
     ['/routines', 'Routines'],
+    ['/artifacts', 'Artifacts'],
+    ['/artifacts/art-1', 'Artifacts'],
     ['/factory/epics', 'Factory'],
     ['/factory/issues', 'Factory'],
     ['/factory/epics/ship-a1b2', 'Factory'],

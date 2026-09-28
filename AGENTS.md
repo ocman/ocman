@@ -698,6 +698,28 @@ detail into the prose below each one.
   `scripts/check-platform-branching.sh`, which `make lint` runs.
   The pragma `// ocman:allow-platform-branch` can suppress false
   positives when the comparison is part of a generic helper.
+- **Consistent UI: reuse shared components before writing markup or CSS.**
+  New pages and panes must look like the existing ones. Before writing any
+  markup, look for a shared component and use it:
+  - controls: `Button` / `AnchorButton` (variants `accent`, `danger`,
+    `ghost`, …), `ButtonGroup`, `TextField`, `SearchField`, `SelectField`,
+    `TextareaField` (`components/Control.tsx`), `CopyButton`, `IconButton`
+  - dialogs: `Modal` (themed by default; leave the class props unset),
+    `ModalHeader`, `ModalFooter`
+  - layout and state: `DataTable` (`framed` for a bordered, scrollable card),
+    `DataTableGroup`/`DataTableRow`, `EmptyState`, `LoadingState`, `Tabs`,
+    `SegmentedControl`, `SettingRow`, `HeaderPortal` for header actions
+  - markdown: wrap `MarkdownContent` in `.oc-md`
+
+  Don't hand-roll raw `<button>`/`<input>`/`<select>` styling, danger
+  colours, or table frames. If the same pattern shows up a second time,
+  extract it into a component instead of copying it. Colours and fonts come
+  only from tokens defined in `frontend/src/tokens.css` (`--bg`, `--bg-card`,
+  `--border`, `--text`, `--text-dim`, `--accent`, `--danger`,
+  `--font-conversation-mono`, …). A `var()` naming a token that doesn't
+  exist (such as `--text-muted`, `--surface`, `--font-mono`) silently falls
+  back to inherited styles, which is how off-theme UI gets in. Add a new page
+  title to `lib/routeTitle.ts` so the app header labels it.
 - **Terminology**: *platform* = the tool that produced the session
   (OpenCode). *Agent* = a composer-level role within a session
   (OpenCode's `build` / `plan` / user-defined subagent).

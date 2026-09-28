@@ -22,8 +22,8 @@ export function ArtifactPreview({ item }: { item: ArtifactItem }) {
 
   if (!item.url || kind === 'none') return null;
   if (kind === 'image') return <img className="artifact-preview-image" src={item.url} alt={item.name ?? ''} data-testid="artifact-preview-image" />;
-  if (error) return <p className="artifact-missing">Preview unavailable.</p>;
+  if (error) return <p className="artifact-error">Preview unavailable.</p>;
   if (text === undefined) return <p className="artifact-muted">Loading preview...</p>;
-  if (kind === 'markdown') return <div className="artifact-preview-markdown" data-testid="artifact-preview-markdown"><MarkdownContent text={text} /></div>;
+  if (kind === 'markdown') return <div className="artifact-preview-markdown oc-md" data-testid="artifact-preview-markdown"><MarkdownContent text={text} /></div>;
   return <pre className="artifact-preview-text" data-testid="artifact-preview-text">{text}</pre>;
 }
