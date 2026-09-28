@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { notifyPromptDismissed } from './useToastNotify';
 import { recheckNotifyData } from './useNotifyData';
+import { markBackendReachable, markBackendUnreachable } from './backendStatus';
 import type { QueuedMessage, Session } from './api';
 
 /**
@@ -204,6 +205,7 @@ function open(): void {
   });
   next.onopen = () => {
     reconnectAttempt = 0;
+    markBackendReachable();
     // Reconcile consumers after the first open and every replacement stream.
     for (const cb of connectListeners) cb();
   };
@@ -236,10 +238,12 @@ function open(): void {
     if (source !== next) return;
     next.close();
     source = null;
+    const delay = nextReconnectDelay();
+    if (delay >= 5_000) markBackendUnreachable('Live event stream disconnected.');
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
       if (refCount > 0) open();
-    }, nextReconnectDelay());
+    }, delay);
   };
 }
 

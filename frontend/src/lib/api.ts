@@ -1,4 +1,5 @@
 import { record as recordPerf, templatePath } from './perfRing';
+import { markBackendReachable, markBackendUnreachable } from './backendStatus';
 import type { ModelFallthroughSettings, WebhookInbox, WebhookSubscription } from './api.types';
 
 // Re-export every wire type from the dedicated types module so existing
@@ -287,12 +288,26 @@ function toBackendError(err: unknown): unknown {
 
 // Internal: fetch that reports network-level failure as
 // BackendUnavailableError. All api.ts call sites go through this.
+// It also drives the global backendStatus flag: a network failure or a
+// gateway error (a proxy with no backend behind it) marks the backend
+// unreachable, any other response clears it. Other 5xx are real backend
+// answers (e.g. 503 remote_not_connected), so they don't count.
 async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
+  let resp: Response;
   try {
-    return await fetch(input, init);
+    resp = await fetch(input, init);
   } catch (err) {
-    throw toBackendError(err);
+    const mapped = toBackendError(err);
+    if (mapped instanceof BackendUnavailableError) markBackendUnreachable(mapped.message);
+    throw mapped;
   }
+  if (resp.status === 502 || resp.status === 504) markBackendUnreachable(statusLine(resp));
+  else markBackendReachable();
+  return resp;
+}
+
+function statusLine(resp: Response): string {
+  return `HTTP ${resp.status} ${resp.statusText}`.trim();
 }
 
 /**
@@ -339,7 +354,8 @@ async function throwForStatus(resp: Response): Promise<never> {
   if (resp.status === 401) {
     throw raiseAuthError(body || 'unauthorized');
   }
-  throw new APIError(envelopeMessage(body) ?? body, resp.status);
+  // An empty body (typically a proxy error page) must not become a blank banner.
+  throw new APIError(envelopeMessage(body) ?? (body || statusLine(resp)), resp.status);
 }
 
 // envelopeMessage returns the human-readable message of a structured

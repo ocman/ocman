@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
-import { MainNav, RootRedirect } from './App';
+import { AuthGate, MainNav, RootRedirect } from './App';
+import { useAuthStore } from './lib/authStore';
 import { useInbox, useSessions, useSubscriptionUsage } from './lib/queries';
 import { routeTitle } from './lib/routeTitle';
 import { useUiStore } from './lib/uiStore';
@@ -206,5 +207,25 @@ describe('RootRedirect', () => {
     renderRootRedirect();
     expect(screen.queryByTestId('location')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('AuthGate', () => {
+  it('replaces the spinner with the backend banner after the boot timeout', () => {
+    vi.useFakeTimers();
+    try {
+      const bootstrap = vi.fn(() => new Promise<void>(() => {}));
+      useAuthStore.setState({ checking: true, bootstrap });
+      render(<AuthGate><p>app</p></AuthGate>);
+      expect(screen.getByText('Checking authentication…')).toBeInTheDocument();
+      act(() => { vi.advanceTimersByTime(8_000); });
+      expect(screen.getByTestId('backend-status-banner')).toHaveTextContent('Backend is not responding.');
+      act(() => { screen.getByRole('button', { name: 'Retry' }).click(); });
+      expect(bootstrap).toHaveBeenCalledTimes(2);
+      act(() => { useAuthStore.setState({ checking: false }); });
+      expect(screen.getByText('app')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

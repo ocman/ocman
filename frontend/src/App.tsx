@@ -32,6 +32,7 @@ import { PromptToastNotify } from './components/PromptToastNotify';
 import { McpConfigPrompt } from './components/McpConfigPrompt';
 import { SetupPrompt } from './components/SetupPrompt';
 import { LaunchProgressOverlay } from './components/LaunchProgressOverlay';
+import { BackendStatusBanner } from './components/BackendStatusBanner';
 import { useAuthStore } from './lib/authStore';
 import { useUiStore } from './lib/uiStore';
 import { useShortcut, useShortcutDispatcher } from './lib/shortcutRegistry';
@@ -290,17 +291,30 @@ function PerfDevHandle() {
  * once the gate decides it's safe — this is also what prevents every
  * store's initial fetch from firing into a 401 storm on page load.
  */
-function AuthGate({ children }: { children: ReactNode }) {
+const AUTH_BOOT_TIMEOUT_MS = 8_000;
+
+export function AuthGate({ children }: { children: ReactNode }) {
   const checking = useAuthStore((s) => s.checking);
   const authRequired = useAuthStore((s) => s.authRequired);
   const authenticated = useAuthStore((s) => s.authenticated);
   const bootstrap = useAuthStore((s) => s.bootstrap);
 
+  const [timedOut, setTimedOut] = useState(false);
+
   useEffect(() => {
     bootstrap();
   }, [bootstrap]);
 
+  // Bound the initial /api/auth/me wait so a hung backend shows the
+  // unreachable banner instead of an endless spinner.
+  useEffect(() => {
+    if (!checking) return;
+    const t = setTimeout(() => setTimedOut(true), AUTH_BOOT_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, [checking]);
+
   if (checking) {
+    if (timedOut) return <BackendStatusBanner force onRetry={() => void bootstrap()} />;
     return <div className="oc-login-bootstrap">Checking authentication…</div>;
   }
   if (authRequired && !authenticated) {
@@ -399,6 +413,7 @@ function AuthenticatedShell() {
           onMobileClose={() => setMobileNavOpen(false)}
         />
         <div className="container">
+          <BackendStatusBanner />
           <AppHeader onOpenNav={() => setMobileNavOpen(true)} />
           <div className="content">
             <RoutesBoundary>
