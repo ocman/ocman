@@ -41,6 +41,7 @@ export function ImportSharedConversation() {
       (async () => {
         const parsed = parseRelayShareURL(shareURL);
         const result = await readRelayShare(parsed.id, parsed.key, 0, controller.signal, parsed.origin);
+        if (result.artifact) throw new Error('This link shares an artifact, not a conversation.');
         return mergeRelayChunks(null, result.chunks);
       })(),
     ]).then(([list, data]) => {

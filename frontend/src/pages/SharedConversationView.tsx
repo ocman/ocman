@@ -8,11 +8,67 @@ import { Button } from '../components/Control';
 import { PrintCollapseContext } from '../lib/printCollapseContext';
 import './SharedConversationView.css';
 import { mergeRelayChunks, readRelayShare, relayKeyFromFragment, relayPollMs } from '../lib/relayShare';
+import type { ArtifactShare } from '../lib/artifactShare';
+import { ArtifactShareView } from './ArtifactShareView';
 
 type LoadState =
   | { status: 'loading' }
   | { status: 'error'; message: string }
-  | { status: 'ready'; data: SharedConversation };
+  | { status: 'ready'; data: SharedConversation }
+  | { status: 'artifact'; data: ArtifactShare };
+
+/** Polls a relay share into state, returning the interval to clear. */
+function pollRelayShare(token: string, key: string, signal: AbortSignal, setState: (s: LoadState) => void): number {
+  let current: SharedConversation | null = null;
+  let next = 0;
+  const poll = async () => {
+    try {
+      const result = await readRelayShare(token, key, next, signal);
+      if (result.artifact) {
+        // Artifact shares are written once; nothing to poll for.
+        window.clearInterval(timer);
+        setState({ status: 'artifact', data: result.artifact });
+        return;
+      }
+      if (result.chunks.length > 0) {
+        current = mergeRelayChunks(current, result.chunks);
+        next = result.last + 1;
+        setState({ status: 'ready', data: current });
+      }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      setState({ status: 'error', message: 'Failed to load or decrypt the shared conversation.' });
+    }
+  };
+  const timer = window.setInterval(() => void poll(), relayPollMs);
+  void poll();
+  return timer;
+}
+
+/** Everything the viewer shows before (or instead of) a conversation. */
+function SharedStatus({ state }: { state: Exclude<LoadState, { status: 'ready' }> }) {
+  if (state.status === 'artifact') return <ArtifactShareView artifact={state.data} />;
+  if (state.status === 'loading') {
+    return (
+      <div className="oc-shared-view" data-testid="shared-loading">
+        <div className="oc-shared-loading">Loading shared conversation…</div>
+      </div>
+    );
+  }
+  return (
+    <div className="oc-shared-view">
+      <div className="oc-shared-error" role="alert" data-testid="shared-error">
+        {state.message}
+      </div>
+    </div>
+  );
+}
+
+function pageTitle(state: LoadState): string {
+  if (state.status === 'artifact') return `${state.data.title} · Shared artifact`;
+  const title = state.status === 'ready' ? state.data.session?.title?.trim() : '';
+  return title ? `${title} · Shared conversation` : 'Shared conversation';
+}
 
 /**
  * SharedConversationView is the public, read-only rendering of a shared
@@ -44,23 +100,7 @@ export function SharedConversationView({ relay = false }: { relay?: boolean }) {
         queueMicrotask(() => setState({ status: 'error', message: 'Missing share decryption key.' }));
         return;
       }
-      let current: SharedConversation | null = null;
-      let next = 0;
-      const poll = async () => {
-        try {
-          const result = await readRelayShare(token, key, next, controller.signal);
-          if (result.chunks.length > 0) {
-            current = mergeRelayChunks(current, result.chunks);
-            next = result.last + 1;
-            setState({ status: 'ready', data: current });
-          }
-        } catch (err) {
-          if (err instanceof DOMException && err.name === 'AbortError') return;
-          setState({ status: 'error', message: 'Failed to load or decrypt the shared conversation.' });
-        }
-      };
-      void poll();
-      const timer = window.setInterval(() => void poll(), relayPollMs);
+      const timer = pollRelayShare(token, key, controller.signal, setState);
       return () => {
         window.clearInterval(timer);
         controller.abort();
@@ -84,31 +124,10 @@ export function SharedConversationView({ relay = false }: { relay?: boolean }) {
   }, [relay, token]);
 
   useEffect(() => {
-    if (state.status === 'ready') {
-      const title = state.data.session?.title?.trim();
-      document.title = title ? `${title} · Shared conversation` : 'Shared conversation';
-    } else {
-      document.title = 'Shared conversation';
-    }
+    document.title = pageTitle(state);
   }, [state]);
 
-  if (state.status === 'loading') {
-    return (
-      <div className="oc-shared-view" data-testid="shared-loading">
-        <div className="oc-shared-loading">Loading shared conversation…</div>
-      </div>
-    );
-  }
-
-  if (state.status === 'error') {
-    return (
-      <div className="oc-shared-view">
-        <div className="oc-shared-error" role="alert" data-testid="shared-error">
-          {state.message}
-        </div>
-      </div>
-    );
-  }
+  if (state.status !== 'ready') return <SharedStatus state={state} />;
 
   const { session, messages, parts } = state.data;
   const title = session?.title?.trim() || 'Shared conversation';

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ArtifactSessionLink } from '../components/ArtifactList';
 import { ArtifactPreview } from '../components/ArtifactPreview';
+import { ArtifactShareModal } from '../components/ArtifactShareModal';
 import { Button } from '../components/Control';
 import { ProjectLabel } from '../components/ProjectLabel';
 import { MarkdownContent } from '../components/assistant/MarkdownText';
@@ -17,6 +18,7 @@ export function ArtifactDetail() {
   const [artifact, setArtifact] = useState<Artifact>();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [sharing, setSharing] = useState(false);
   usePageTitle(artifact?.title ?? 'Artifact');
 
   useEffect(() => {
@@ -53,9 +55,13 @@ export function ArtifactDetail() {
           <h2>{artifact.title}</h2>
           <p className="artifact-muted"><ProjectLabel path={artifact.directory} /> · <ArtifactSessionLink artifact={artifact} known={known} /> · {formatDateTimeShort(Date.parse(artifact.createdAt))}</p>
         </div>
-        <Button type="button" className="artifact-delete" disabled={busy} onClick={() => void remove()}><i className="bi bi-trash" aria-hidden="true" />Delete</Button>
+        <div className="artifact-actions">
+          <Button type="button" onClick={() => setSharing(true)}><i className="bi bi-share" aria-hidden="true" />Share</Button>
+          <Button type="button" className="artifact-delete" disabled={busy} onClick={() => void remove()}><i className="bi bi-trash" aria-hidden="true" />Delete</Button>
+        </div>
       </header>
       {error && <p role="alert" className="artifact-missing">{error}</p>}
+      {sharing && <ArtifactShareModal artifact={artifact} onClose={() => setSharing(false)} />}
       {artifact.description && <section className="artifact-description"><MarkdownContent text={artifact.description} /></section>}
       {links.length > 0 && (
         <section aria-label="Links"><h3>Links</h3><ul>

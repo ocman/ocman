@@ -11,7 +11,8 @@ import (
 )
 
 // handleArtifacts routes /api/artifacts, /api/artifacts/stats,
-// /api/artifacts/{id} and /api/artifacts/{id}/files/{ordinal}.
+// /api/artifacts/{id}, /api/artifacts/{id}/files/{ordinal} and the
+// /api/artifacts/{id}/share(s) relay routes.
 func (s *Server) handleArtifacts(w http.ResponseWriter, r *http.Request) {
 	if s.stateDB == nil {
 		http.Error(w, "state database unavailable", http.StatusServiceUnavailable)
@@ -25,6 +26,10 @@ func (s *Server) handleArtifacts(w http.ResponseWriter, r *http.Request) {
 		requireGET(s.requireAuth(s.handleArtifactStats))(w, r)
 	case len(parts) == 1 && r.Method == http.MethodDelete:
 		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) {
+			if err := s.revokeAllArtifactShares(r.Context(), parts[0]); err != nil {
+				writeArtifactShareError(w, s.relayURL, err)
+				return
+			}
 			if err := s.stateDB.DeleteArtifact(r.Context(), parts[0]); err != nil {
 				writeArtifactError(w, "deleting artifact", err)
 				return
@@ -40,6 +45,13 @@ func (s *Server) handleArtifacts(w http.ResponseWriter, r *http.Request) {
 			}
 			writeJSON(w, artifactView(a))
 		}))(w, r)
+	// Share routes hand out decryption keys, so they are localhost-only.
+	case len(parts) == 2 && parts[1] == "share":
+		requirePOST(s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) { s.handleArtifactShareCreate(w, r, parts[0]) }))(w, r)
+	case len(parts) == 2 && parts[1] == "shares":
+		requireGET(s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) { s.handleArtifactShareList(w, r, parts[0]) }))(w, r)
+	case len(parts) == 3 && parts[1] == "share" && r.Method == http.MethodDelete:
+		s.requireLocalhost(func(w http.ResponseWriter, r *http.Request) { s.handleArtifactShareRevoke(w, r, parts[0], parts[2]) })(w, r)
 	case len(parts) == 3 && parts[1] == "files":
 		requireGET(s.requireAuth(func(w http.ResponseWriter, r *http.Request) {
 			s.serveArtifactFile(w, r, parts[0], parts[2])

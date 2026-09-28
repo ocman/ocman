@@ -24,3 +24,4 @@
 .artifact-pane-row > button { display: flex; gap: 6px; align-items: baseline; width: 100%; padding: 4px 0; border: 0; color: var(--text); background: none; font: inherit; text-align: left; cursor: pointer; }
 .artifact-pane-row > button > span:first-of-type { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .artifact-pane-body { display: grid; gap: 8px; padding: 4px 0 8px 18px; min-width: 0; }
+.artifact-actions { display: flex; gap: 8px; }

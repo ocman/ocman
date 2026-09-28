@@ -1,4 +1,5 @@
 import type { SharedConversation } from './api.types';
+import { assembleArtifactShare, type ArtifactShare, type ArtifactShareManifest } from './artifactShare';
 
 interface RelayChunk {
   seq: number;
@@ -44,18 +45,25 @@ export function relayKeyFromFragment(hash = window.location.hash): string {
   return new URLSearchParams(hash.replace(/^#/, '')).get('k') ?? '';
 }
 
-export async function decryptRelayChunk(
-  keyText: string,
-  id: string,
-  chunk: RelayChunk,
-): Promise<SharedConversation> {
+/** Decrypts one relay chunk to its raw plaintext bytes. */
+export async function decryptRelayBytes(keyText: string, id: string, chunk: RelayChunk): Promise<Uint8Array> {
   const key = await crypto.subtle.importKey('raw', bytes(decodeBase64URL(keyText)), 'AES-GCM', false, ['decrypt']);
   const plain = await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv: bytes(nonce(chunk.seq)), additionalData: bytes(aad(id, chunk.seq)) },
     key,
     bytes(decodeBase64(chunk.data)),
   );
-  return JSON.parse(new TextDecoder().decode(plain)) as SharedConversation;
+  return new Uint8Array(plain);
+}
+
+const parseJSON = (plain: Uint8Array): unknown => JSON.parse(new TextDecoder().decode(plain));
+
+export async function decryptRelayChunk(
+  keyText: string,
+  id: string,
+  chunk: RelayChunk,
+): Promise<SharedConversation> {
+  return parseJSON(await decryptRelayBytes(keyText, id, chunk)) as SharedConversation;
 }
 
 export function mergeRelayChunks(
@@ -78,20 +86,28 @@ export function mergeRelayChunks(
   };
 }
 
+/**
+ * Reads a relay share from `from`. A share whose chunk 0 is an artifact
+ * manifest returns `artifact` (files decrypted as bytes, never parsed) and
+ * no conversation chunks; anything else is a conversation.
+ */
 export async function readRelayShare(
   id: string,
   key: string,
   from: number,
   signal?: AbortSignal,
   origin = '',
-): Promise<{ chunks: SharedConversation[]; last: number }> {
+): Promise<{ chunks: SharedConversation[]; last: number; artifact?: ArtifactShare }> {
   const response = await fetch(`${origin}/s/${encodeURIComponent(id)}?from=${from}`, { signal });
   if (!response.ok) throw new Error(`relay share: ${response.status}`);
   const body = (await response.json()) as RelayReadResponse;
-  return {
-    chunks: await Promise.all(body.chunks.map((chunk) => decryptRelayChunk(key, id, chunk))),
-    last: body.last,
-  };
+  const plain = await Promise.all(body.chunks.map((chunk) => decryptRelayBytes(key, id, chunk)));
+  const head = body.chunks[0]?.seq === 0 ? (parseJSON(plain[0]) as { kind?: unknown }) : null;
+  if (head?.kind === 'artifact') {
+    const bySeq = new Map(body.chunks.map((chunk, i) => [chunk.seq, plain[i]]));
+    return { chunks: [], last: body.last, artifact: assembleArtifactShare(head as ArtifactShareManifest, bySeq) };
+  }
+  return { chunks: plain.map((p) => parseJSON(p) as SharedConversation), last: body.last };
 }
 
 export { POLL_MS as relayPollMs };

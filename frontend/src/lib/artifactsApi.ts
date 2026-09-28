@@ -43,7 +43,15 @@ export const artifactsApi = {
   get: (id: string, signal?: AbortSignal) => fetchJSON<Artifact>(path(id), signal),
   remove: (id: string) => postJSON<void, undefined>(path(id), undefined, { method: 'DELETE', parseJSON: false }),
   stats: (signal?: AbortSignal) => fetchJSON<ArtifactStats>('/api/artifacts/stats', signal),
+  share: (id: string) => postJSON<ArtifactShareLink, undefined>(`${path(id)}/share`, undefined),
+  shares: (id: string, signal?: AbortSignal) => fetchJSON<ArtifactShareList>(`${path(id)}/shares`, signal),
+  revokeShare: (id: string, shareId: string) =>
+    postJSON<void, undefined>(`${path(id)}/share/${encodeURIComponent(shareId)}`, undefined, { method: 'DELETE', parseJSON: false }),
 };
+
+export type ArtifactShareLink = { id: string; url: string; createdAt: number; revokedAt?: number };
+/** maxShareBytes is the relay default; the relay's own limit is checked on share. */
+export type ArtifactShareList = { shares: ArtifactShareLink[]; relayConfigured: boolean; maxShareBytes: number };
 
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;

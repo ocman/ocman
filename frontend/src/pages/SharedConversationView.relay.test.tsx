@@ -141,4 +141,29 @@ describe('SharedConversationView (relay)', () => {
     );
     expect(screen.queryByTestId('shared-download-md')).toBeNull();
   });
+
+  it('renders an artifact share and stops polling', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:x'), revokeObjectURL: vi.fn() }));
+    readRelayShare.mockResolvedValue({
+      chunks: [],
+      last: 1,
+      artifact: {
+        title: 'Shared report',
+        links: [{ url: 'https://example.com', label: 'Example' }],
+        files: [{ name: 'data.bin', mime: 'application/octet-stream', size: 3, blob: new Blob(['abc']) }],
+      },
+    });
+
+    renderRelayView();
+    await screen.findByTestId('shared-artifact');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Shared report');
+    expect(screen.getByRole('link', { name: 'Example' })).toHaveAttribute('href', 'https://example.com');
+    expect(screen.getByRole('link', { name: 'Download data.bin' })).toHaveAttribute('href', 'blob:x');
+    expect(screen.queryByTestId('thread')).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(readRelayShare).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
 });
