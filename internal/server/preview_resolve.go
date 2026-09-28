@@ -19,8 +19,8 @@ func (s *Server) WithPreviewResolvers(resolvers ...linkpreview.Resolver) *Server
 }
 
 func (s *Server) linkPreviews() *linkpreview.Service {
-	s.previewManager()
-	return s.previewAuth.previews
+	_, svc, _ := s.previewBuilt()
+	return svc
 }
 
 // previewIdentifierRules are the custom link rules routed to a provider.

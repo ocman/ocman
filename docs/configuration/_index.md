@@ -115,9 +115,11 @@ locality must not be used to justify `-auth-trust-localhost`.
 | `OCMAN_GITLAB_PREVIEW_APPS` | `host=client_id[:client_secret][,…]`: one GitLab OAuth application per exact host — `gitlab.com` and/or allowlisted self-managed hosts (https only) — with redirect URI `<public base>/api/previews/oauth/callback` and only the `read_api` scope. Ocman uses authorization code + PKCE, so the secret is optional for a non-confidential app, and refreshes the two-hour access tokens. Merge request, issue and commit links on a listed host preview; public projects preview without connecting, others need the viewer's grant for that host. Unlisted hosts are never contacted, redirects are not followed, and API calls refuse loopback and link-local addresses (and private ones for `gitlab.com`), so a self-managed host on `localhost` is not supported. |
 | `OCMAN_ALLOWED_HOSTS` | Vite dev/preview only: comma-separated extra hostnames allowed by the dev server (e.g. `foo.tailnet.ts.net,bar.lan`). |
 
+The `*_PREVIEW_*` sign-in apps can also be added under **Settings → Link previews**; a saved app overrides the environment's for the same provider and host. See [link previews](../features/link-previews/#setup).
+
 ### Forge link previews and the owner-wide token
 
-GitHub and Forgejo links (`/owner/repo/pull|pulls|issues|commit/…` on github.com, the https hosts from your `tea` logins, and hosts in `OCMAN_FORGEJO_PREVIEW_APPS`) render as preview cards. Resolution, in order:
+GitHub and Forgejo links (`/owner/repo/pull|pulls|issues|commit/…` on github.com, the https hosts from your `tea` logins, and hosts in `OCMAN_FORGEJO_PREVIEW_APPS` or added in Settings) render as preview cards. Resolution, in order:
 
 1. The viewer's own connected grant, when they connected one. Only that browser sees the result.
 2. Otherwise the owner machine's forge token (`GITHUB_TOKEN`/`GH_TOKEN`, `gh auth token`, `FORGEJO_TOKEN`/`GITEA_TOKEN`, `tea` login), restricted to **public** repositories. A private repository offers Connect instead (or a plain link when no viewer app is configured).

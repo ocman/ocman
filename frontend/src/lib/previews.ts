@@ -51,13 +51,59 @@ export interface PreviewProvider {
   connections: PreviewConnection[];
 }
 
+/** A forge whose links preview with this machine's own token (env or CLI login). */
+export interface PreviewOwnerToken {
+  provider: string;
+  name: string;
+  host: string;
+}
+
+/** A kind of sign-in app ocman can register (internal/server.previewAppKind). */
+export interface PreviewAppKind {
+  kind: string;
+  name: string;
+  /** One app per host (Forgejo, GitLab). */
+  hosted?: boolean;
+  secretOptional?: boolean;
+  /** Environment variable prefix, or the host list variable for hosted kinds. */
+  env: string;
+}
+
+/** A configured sign-in app. Secrets are write-only and never returned. */
+export interface PreviewApp {
+  id: string;
+  kind: string;
+  host?: string;
+  clientId: string;
+  hasSecret: boolean;
+  source: 'env' | 'settings';
+  /** The environment also defines it: removing the saved app falls back to it. */
+  inEnv: boolean;
+}
+
+export interface PreviewApps {
+  kinds: PreviewAppKind[];
+  apps: PreviewApp[];
+  /** The redirect URI to register with every provider. */
+  callbackUrl: string;
+}
+
+export interface PreviewAppInput {
+  kind: string;
+  host?: string;
+  clientId: string;
+  /** Empty keeps the saved secret. */
+  clientSecret?: string;
+}
+
 /** Fired after connect/disconnect: drop everything viewer-private and reload. */
 export const PREVIEW_AUTH_EVENT = 'ocman:preview-auth-changed';
 
 const q = (remoteId: string) => `?remoteId=${encodeURIComponent(remoteId)}`;
 
 // In-memory only: viewer-private names and choices never touch storage.
-const providerCache = new Map<string, Promise<PreviewProvider[]>>();
+type ProviderStatus = { providers: PreviewProvider[]; ownerTokens: PreviewOwnerToken[] };
+const providerCache = new Map<string, Promise<ProviderStatus>>();
 const workspaceChoice = new Map<string, string>();
 
 /** Forgets viewer-private state and tells mounted previews to reload. */
@@ -67,14 +113,40 @@ export function previewAuthChanged(): void {
   window.dispatchEvent(new Event(PREVIEW_AUTH_EVENT));
 }
 
-export function loadPreviewProviders(remoteId = 'local'): Promise<PreviewProvider[]> {
+function loadStatus(remoteId: string): Promise<ProviderStatus> {
   let p = providerCache.get(remoteId);
   if (!p) {
-    p = fetchJSON<{ providers: PreviewProvider[] }>(`/api/previews/providers${q(remoteId)}`).then((r) => r.providers ?? []);
+    p = fetchJSON<Partial<ProviderStatus>>(`/api/previews/providers${q(remoteId)}`)
+      .then((r) => ({ providers: r.providers ?? [], ownerTokens: r.ownerTokens ?? [] }));
     p.catch(() => providerCache.delete(remoteId));
     providerCache.set(remoteId, p);
   }
   return p;
+}
+
+export function loadPreviewProviders(remoteId = 'local'): Promise<PreviewProvider[]> {
+  return loadStatus(remoteId).then((s) => s.providers);
+}
+
+export function loadPreviewOwnerTokens(remoteId = 'local'): Promise<PreviewOwnerToken[]> {
+  return loadStatus(remoteId).then((s) => s.ownerTokens);
+}
+
+/** Sign-in apps are configured on this ocman (the hub), never per remote. */
+export function loadPreviewApps(): Promise<PreviewApps> {
+  return fetchJSON<PreviewApps>('/api/previews/apps');
+}
+
+export async function savePreviewApp(app: PreviewAppInput): Promise<PreviewApps> {
+  const r = await postJSON<PreviewApps>('/api/previews/apps/save', app);
+  previewAuthChanged();
+  return r;
+}
+
+export async function removePreviewApp(id: string): Promise<PreviewApps> {
+  const r = await postJSON<PreviewApps>('/api/previews/apps/remove', { id });
+  previewAuthChanged();
+  return r;
 }
 
 /** Starts consent in this tab; the provider redirects back to `returnTo`. */

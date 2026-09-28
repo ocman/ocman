@@ -73,8 +73,13 @@ example `https://ocman.example.ts.net`. Without it the redirect URI falls back
 to the listen address. That only works when the browser runs on the same
 machine. Register the URI exactly, including the scheme and any port.
 
-Configure the apps with environment variables on the machine running ocman,
-then restart ocman:
+Add each app under **Settings → Link previews → Add a sign-in app**, which also
+shows the redirect URI to copy. Or set environment variables on the machine
+running ocman and restart it. A saved app overrides the environment's app for
+the same provider (and host). **Use environment** on a saved app removes it and
+falls back to the environment's. Saved client secrets are sealed in `state.db`
+and are never shown again: leave the secret blank when editing to keep it.
+Changes apply immediately, with no restart.
 
 | Provider | Register | Scopes or permissions | Environment |
 | --- | --- | --- | --- |
@@ -96,9 +101,11 @@ explains the owner-token fallback.
 - **GitHub and Forgejo previews of public repositories need no app.** GitHub
   links, and links on the https hosts from your `tea` logins, preview public
   repositories with the owner machine's token. The viewer app only adds
-  private repositories.
-- **Forgejo and GitLab hosts are exact.** List each host (with a port if it has
-  one) in its `*_PREVIEW_APPS` variable. Only https is supported.
+  private repositories. Settings lists these forges as using this machine's
+  token.
+- **Forgejo and GitLab hosts are exact.** Add one app per host (with a port if
+  it has one), in Settings or in its `*_PREVIEW_APPS` variable. Only https is
+  supported.
 - **GitLab refuses loopback and link-local addresses**, and private addresses
   for `gitlab.com`. A self-managed GitLab on `localhost` cannot be previewed.
 - **Jira always goes through `api.atlassian.com`.** Site links preview only for

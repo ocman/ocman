@@ -16,7 +16,10 @@ it('shows connection states and disconnects with an immediate reload', async () 
   ];
   const fetchMock = vi.fn().mockImplementation((url: string) => {
     if (url.startsWith('/api/previews/providers')) {
-      return Promise.resolve(json({ providers: [{ id: 'mock', name: 'Tracker', connections }, { id: 'wiki', name: 'Wiki', notice: 'Forgejo OAuth has no granular scopes.', connections: [] }] }));
+      return Promise.resolve(json({
+        providers: [{ id: 'mock', name: 'Tracker', connections }, { id: 'wiki', name: 'Wiki', notice: 'Forgejo OAuth has no granular scopes.', connections: [] }],
+        ownerTokens: [{ provider: 'wiki', name: 'Wiki', host: 'wiki.example.com' }],
+      }));
     }
     connections = connections.slice(1);
     return Promise.resolve(json(undefined, 204));
@@ -29,6 +32,9 @@ it('shows connection states and disconnects with an immediate reload', async () 
   expect(screen.getByText('Expired: alice · Beta')).toBeInTheDocument();
   expect(screen.getByText('Not connected')).toBeInTheDocument();
   expect(screen.getByText('Forgejo OAuth has no granular scopes.')).toBeInTheDocument();
+  // An owner token for a provider with a sign-in app folds into its row.
+  expect(screen.getByText(/this machine's token still previews public repositories/)).toBeInTheDocument();
+  expect(screen.queryByText('Wiki (wiki.example.com)')).toBeNull();
   expect(screen.getByRole('button', { name: 'Reconnect Tracker' })).toHaveClass('oc-button');
   expect(screen.getByRole('button', { name: 'Connect Wiki' })).toBeEnabled();
 
@@ -42,9 +48,11 @@ it('shows connection states and disconnects with an immediate reload', async () 
 it('reports a failed consent return and an empty provider list', async () => {
   vi.resetModules();
   vi.stubGlobal('location', { ...window.location, search: '?previewAuth=error' });
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ providers: [] })));
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json({ providers: [], ownerTokens: [{ provider: 'github', name: 'GitHub', host: 'github.com' }] })));
   const { PreviewProviderSettings } = await import('./PreviewProviderSettings');
   render(<PreviewProviderSettings />);
-  expect(await screen.findByText('No preview integrations are configured on this server.')).toBeInTheDocument();
+  expect(await screen.findByText(/No sign-in apps yet/)).toBeInTheDocument();
+  expect(screen.getByText('GitHub (github.com)')).toBeInTheDocument();
+  expect(screen.getByText(/Uses this machine's token/)).toBeInTheDocument();
   expect(screen.getByRole('alert')).toHaveTextContent('Connecting the provider failed');
 });

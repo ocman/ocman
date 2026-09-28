@@ -2,38 +2,38 @@ package server
 
 import (
 	"net/url"
-	"os"
 	"strings"
-
-	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/linkpreview"
 	"github.com/NoUseFreak/ocman/internal/previewauth"
 )
 
-// forgePreviews wires GitHub and Forgejo previews. Every forge resolves
-// public links without login using the owner machine's env/CLI token; a
-// viewer OAuth app is added when configured:
-//
-//	OCMAN_GITHUB_PREVIEW_CLIENT_ID / OCMAN_GITHUB_PREVIEW_CLIENT_SECRET
-//	OCMAN_FORGEJO_PREVIEW_APPS=host=client_id:secret[,host=client_id:secret]
-//
-// The allowlist is exact: github.com, the https tea-login hosts, and the
-// hosts named in OCMAN_FORGEJO_PREVIEW_APPS.
-func (s *Server) forgePreviews() ([]previewauth.Provider, []linkpreview.Resolver) {
-	var providers []previewauth.Provider
+// previewOwnerToken names a forge whose links preview with the owner
+// machine's own token (env or CLI login), no viewer app needed.
+type previewOwnerToken struct {
+	Provider string `json:"provider"`
+	Name     string `json:"name"`
+	Host     string `json:"host"`
+}
+
+// previewSetup builds providers and resolvers for apps. GitHub and every
+// https tea-login host resolve public links without any app, using the
+// owner machine's token; an app adds viewer consent for private ones.
+// Forgejo and GitLab hosts are exact: only those logins and app hosts.
+func (s *Server) previewSetup(apps []configuredPreviewApp) ([]previewauth.Provider, []linkpreview.Resolver, []previewOwnerToken) {
 	gh := linkpreview.Forge{ID: "github", Host: "github.com", APIBase: "https://api.github.com"}
 	if s.integrations != nil && s.integrations.GitHub != nil {
 		gh.OwnerToken = s.integrations.GitHub.Token()
 	}
-	if id, secret := os.Getenv("OCMAN_GITHUB_PREVIEW_CLIENT_ID"), os.Getenv("OCMAN_GITHUB_PREVIEW_CLIENT_SECRET"); id != "" && secret != "" {
-		providers = append(providers, linkpreview.GitHubOAuth(id, secret, ""))
-		gh.Connectable = true
-	}
-	resolvers := []linkpreview.Resolver{gh}
-
 	forges := map[string]*linkpreview.Forge{}
 	var hosts []string
+	forgejo := func(host string) *linkpreview.Forge {
+		if forges[host] == nil {
+			forges[host] = &linkpreview.Forge{ID: "forgejo:" + host, Host: host, APIBase: "https://" + host + "/api/v1", Gitea: true}
+			hosts = append(hosts, host)
+		}
+		return forges[host]
+	}
 	if s.integrations != nil && s.integrations.Forgejo != nil {
 		for _, h := range s.integrations.Forgejo.Hosts() {
 			c := s.integrations.Forgejo.ForHost(h)
@@ -41,59 +41,52 @@ func (s *Server) forgePreviews() ([]previewauth.Provider, []linkpreview.Resolver
 			if err != nil || u.Scheme != "https" || u.Host == "" {
 				continue // ponytail: plain-http hosts get no preview; tokens stay off the wire
 			}
-			host := strings.ToLower(u.Host)
-			forges[host] = &linkpreview.Forge{ID: "forgejo:" + host, Host: host, APIBase: strings.TrimRight(c.BaseURL(), "/") + "/api/v1", Gitea: true, OwnerToken: c.Token()}
-			hosts = append(hosts, host)
+			f := forgejo(strings.ToLower(u.Host))
+			f.APIBase, f.OwnerToken = strings.TrimRight(c.BaseURL(), "/")+"/api/v1", c.Token()
 		}
 	}
-	for _, app := range strings.Split(os.Getenv("OCMAN_FORGEJO_PREVIEW_APPS"), ",") {
-		host, creds, _ := strings.Cut(strings.TrimSpace(app), "=")
-		id, secret, _ := strings.Cut(creds, ":")
-		host = strings.ToLower(host)
-		if app == "" {
-			continue
-		}
-		if u, err := url.Parse("https://" + host); err != nil || u.Host != host || id == "" || secret == "" {
-			log.WithField("entry", host).Warn("preview auth: ignoring invalid OCMAN_FORGEJO_PREVIEW_APPS entry")
-			continue
-		}
-		f := forges[host]
-		if f == nil {
-			f = &linkpreview.Forge{ID: "forgejo:" + host, Host: host, APIBase: "https://" + host + "/api/v1", Gitea: true}
-			forges[host] = f
-			hosts = append(hosts, host)
-		}
-		f.Connectable = true
-		providers = append(providers, linkpreview.ForgejoOAuth(host, id, secret))
-	}
-	for _, h := range hosts {
-		resolvers = append(resolvers, *forges[h])
-	}
-	gp, gr := gitlabPreviews()
-	return append(providers, gp...), append(resolvers, gr...)
-}
 
-// gitlabPreviews wires GitLab previews for the exact hosts in
-// OCMAN_GITLAB_PREVIEW_APPS=host=client_id[:secret][,…] (gitlab.com or a
-// self-managed host). Unlisted hosts are never contacted.
-func gitlabPreviews() ([]previewauth.Provider, []linkpreview.Resolver) {
 	var providers []previewauth.Provider
-	var resolvers []linkpreview.Resolver
-	seen := map[string]bool{}
-	for _, app := range strings.Split(os.Getenv("OCMAN_GITLAB_PREVIEW_APPS"), ",") {
-		host, creds, _ := strings.Cut(strings.TrimSpace(app), "=")
-		id, secret, _ := strings.Cut(creds, ":")
-		host = strings.ToLower(host)
-		if app == "" {
-			continue
+	var others []linkpreview.Resolver
+	for _, a := range apps {
+		id, secret := a.ClientID, a.ClientSecret
+		switch a.Kind {
+		case "github":
+			providers = append(providers, linkpreview.GitHubOAuth(id, secret, ""))
+			gh.Connectable = true
+		case "forgejo":
+			forgejo(a.Host).Connectable = true
+			providers = append(providers, linkpreview.ForgejoOAuth(a.Host, id, secret))
+		case "gitlab":
+			providers = append(providers, linkpreview.GitLabOAuth(a.Host, id, secret, "", ""))
+			others = append(others, linkpreview.GitLab{Host: a.Host})
+		case "slack":
+			// A dedicated app for viewer consent, never the conversation.v1 plugin's bot app.
+			providers = append(providers, linkpreview.SlackOAuth(id, secret, ""))
+			others = append(others, linkpreview.Slack{})
+		case "notion":
+			providers = append(providers, linkpreview.NotionOAuth(id, secret, ""))
+			others = append(others, linkpreview.Notion{})
+		case "linear":
+			providers = append(providers, linkpreview.LinearOAuth(id, secret, ""))
+			others = append(others, linkpreview.Linear{})
+		case "jira":
+			providers = append(providers, linkpreview.JiraOAuth(id, secret, "", ""))
+			others = append(others, linkpreview.Jira{})
 		}
-		if u, err := url.Parse("https://" + host); err != nil || u.Host != host || u.Hostname() == "" || id == "" || seen[host] {
-			log.WithField("entry", host).Warn("preview auth: ignoring invalid OCMAN_GITLAB_PREVIEW_APPS entry")
-			continue
-		}
-		seen[host] = true
-		providers = append(providers, linkpreview.GitLabOAuth(host, id, secret, "", ""))
-		resolvers = append(resolvers, linkpreview.GitLab{Host: host})
 	}
-	return providers, resolvers
+
+	var owners []previewOwnerToken
+	if gh.OwnerToken != "" {
+		owners = append(owners, previewOwnerToken{Provider: gh.ID, Name: "GitHub", Host: gh.Host})
+	}
+	resolvers := []linkpreview.Resolver{gh}
+	for _, h := range hosts {
+		f := *forges[h]
+		if f.OwnerToken != "" {
+			owners = append(owners, previewOwnerToken{Provider: f.ID, Name: "Forgejo", Host: f.Host})
+		}
+		resolvers = append(resolvers, f)
+	}
+	return providers, append(resolvers, others...), owners
 }

@@ -10,8 +10,7 @@ import { useUiStore } from '../../lib/uiStore';
 import { useApiStore } from '../../lib/apiStore';
 import { usePwaInstall } from '../../lib/usePwaInstall';
 import { SettingRow } from '../../components/SettingRow';
-import { LinkPreviewSettings } from '../../components/LinkPreviewSettings';
-import { PreviewProviderSettings } from '../../components/PreviewProviderSettings';
+import { LinkPreviewTabs } from '../../components/LinkPreviewTabs';
 import { NotificationsSection, SessionsSection } from './SettingsSections';
 import { AutoApproveSection } from './AutoApproveSection';
 
@@ -129,10 +128,7 @@ export function SettingsTab() {
 
         {active === 'link-previews' && <div className="settings-section">
           <h2 className="settings-section-title">Link previews</h2>
-          <PreviewProviderSettings />
-          <SettingRow block label="Custom link rules" desc="Create link cards for ticket IDs and other text patterns.">
-            <LinkPreviewSettings />
-          </SettingRow>
+          <LinkPreviewTabs />
         </div>}
 
         {showAppSection && (

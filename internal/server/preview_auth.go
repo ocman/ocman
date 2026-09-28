@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -9,7 +10,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -51,12 +51,16 @@ const (
 var errPreviewForbidden = errors.New("forbidden")
 
 type previewAuthState struct {
-	once      sync.Once
+	mu        sync.Mutex
 	client    *http.Client
-	providers []previewauth.Provider
-	manager   *previewauth.Manager
-	resolvers []linkpreview.Resolver
-	previews  *linkpreview.Service
+	providers []previewauth.Provider // from WithPreviewProviders
+	resolvers []linkpreview.Resolver // from WithPreviewResolvers
+	// Built lazily from apps; reset when Settings changes an app.
+	manager  *previewauth.Manager
+	previews *linkpreview.Service
+	owners   []previewOwnerToken
+	hooked   bool
+	appsMu   sync.Mutex // serializes read-modify-write of saved apps
 }
 
 // WithPreviewProviders registers the OAuth applications viewers may connect.
@@ -67,36 +71,38 @@ func (s *Server) WithPreviewProviders(client *http.Client, providers ...previewa
 	return s
 }
 
+// previewBuilt returns the current manager and service, building them from
+// the configured apps on first use or after resetPreviews. In-flight
+// requests keep the instance they got; pending consent lives in state.db,
+// so a rebuilt manager still completes it.
+func (s *Server) previewBuilt() (*previewauth.Manager, *linkpreview.Service, []previewOwnerToken) {
+	st := &s.previewAuth
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.manager == nil {
+		providers, resolvers, owners := s.previewSetup(s.previewApps(context.Background()))
+		st.manager = previewauth.New(s.stateDB, s.publicURL(previewCallback), st.client, append(providers, st.providers...)...)
+		st.previews = linkpreview.New(st.manager, st.manager.Client(), append(resolvers, st.resolvers...)...)
+		st.owners = owners
+		if !st.hooked {
+			st.hooked = true
+			s.router().OnUnregister(func(remoteID string) { s.linkPreviews().Purge("", remoteID, "") })
+		}
+	}
+	return st.manager, st.previews, st.owners
+}
+
+// resetPreviews drops the built providers (and their preview cache) so the
+// next request rebuilds them from the current apps.
+func (s *Server) resetPreviews() {
+	s.previewAuth.mu.Lock()
+	s.previewAuth.manager, s.previewAuth.previews = nil, nil
+	s.previewAuth.mu.Unlock()
+}
+
 func (s *Server) previewManager() *previewauth.Manager {
-	s.previewAuth.once.Do(func() {
-		fp, fr := s.forgePreviews()
-		s.previewAuth.providers = append(fp, s.previewAuth.providers...)
-		s.previewAuth.resolvers = append(fr, s.previewAuth.resolvers...)
-		// Slack previews use a dedicated app the operator registers for
-		// viewer consent, never the conversation.v1 plugin's bot app.
-		if id, secret := os.Getenv("OCMAN_SLACK_PREVIEW_CLIENT_ID"), os.Getenv("OCMAN_SLACK_PREVIEW_CLIENT_SECRET"); id != "" && secret != "" {
-			s.previewAuth.providers = append(s.previewAuth.providers, linkpreview.SlackOAuth(id, secret, ""))
-			s.previewAuth.resolvers = append(s.previewAuth.resolvers, linkpreview.Slack{})
-		}
-		if id, secret := os.Getenv("OCMAN_NOTION_PREVIEW_CLIENT_ID"), os.Getenv("OCMAN_NOTION_PREVIEW_CLIENT_SECRET"); id != "" && secret != "" {
-			s.previewAuth.providers = append(s.previewAuth.providers, linkpreview.NotionOAuth(id, secret, ""))
-			s.previewAuth.resolvers = append(s.previewAuth.resolvers, linkpreview.Notion{})
-		}
-		// Linear uses PKCE, so the client secret is optional.
-		if id := os.Getenv("OCMAN_LINEAR_PREVIEW_CLIENT_ID"); id != "" {
-			s.previewAuth.providers = append(s.previewAuth.providers, linkpreview.LinearOAuth(id, os.Getenv("OCMAN_LINEAR_PREVIEW_CLIENT_SECRET"), ""))
-			s.previewAuth.resolvers = append(s.previewAuth.resolvers, linkpreview.Linear{})
-		}
-		if id, secret := os.Getenv("OCMAN_JIRA_PREVIEW_CLIENT_ID"), os.Getenv("OCMAN_JIRA_PREVIEW_CLIENT_SECRET"); id != "" && secret != "" {
-			s.previewAuth.providers = append(s.previewAuth.providers, linkpreview.JiraOAuth(id, secret, "", ""))
-			s.previewAuth.resolvers = append(s.previewAuth.resolvers, linkpreview.Jira{})
-		}
-		s.previewAuth.manager = previewauth.New(s.stateDB, s.publicURL(previewCallback), s.previewAuth.client, s.previewAuth.providers...)
-		s.previewAuth.previews = linkpreview.New(s.previewAuth.manager, s.previewAuth.manager.Client(), s.previewAuth.resolvers...)
-		previews := s.previewAuth.previews
-		s.router().OnUnregister(func(remoteID string) { previews.Purge("", remoteID, "") })
-	})
-	return s.previewAuth.manager
+	m, _, _ := s.previewBuilt()
+	return m
 }
 
 // directLocalRequest is a loopback peer that did not come through a proxy:
@@ -214,13 +220,17 @@ func (s *Server) handlePreviewProviders(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	status, err := s.previewManager().Status(r.Context(), viewerID, ownerID)
+	m, _, owners := s.previewBuilt()
+	status, err := m.Status(r.Context(), viewerID, ownerID)
 	if err != nil {
 		http.Error(w, "status unavailable", http.StatusInternalServerError)
 		return
 	}
+	if owners == nil {
+		owners = []previewOwnerToken{}
+	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, map[string]any{"providers": status})
+	writeJSON(w, map[string]any{"providers": status, "ownerTokens": owners})
 }
 
 // handlePreviewConnect starts consent and returns the authorize URL.
