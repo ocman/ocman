@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Button, ButtonGroup } from '../components/Control';
 import { CopyButton } from '../components/CopyButton';
 import { EmptyState } from '../components/EmptyState';
@@ -9,6 +9,7 @@ import { ModalFooter } from '../components/ModalFooter';
 import { ProjectLabel } from '../components/ProjectLabel';
 import { DataTable } from '../components/DataTable';
 import { SearchSelect } from '../components/SearchSelect';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/Tabs';
 import { api, type PermissionRule, type Project, type Routine, type RoutineInput, type RoutineRun, type RoutineScheduleKind, type RoutineSessionMode, type Session } from '../lib/api';
 import { PermissionRulesEditor } from '../components/PermissionRulesEditor';
 import { cleanTitle, formatDateTimeShort } from '../lib/format';
@@ -96,6 +97,8 @@ function sessionKey(remoteId: string, sessionId: string) {
 
 export function Routines() {
   usePageTitle('Routines');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = searchParams.get('tab') === 'inboxes' ? 'inboxes' : 'routines';
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -254,10 +257,11 @@ export function Routines() {
 
   return (
     <main className="routine-page">
-      <header className="routine-header">
-        <p>Save a prompt, run it now, or schedule it for later.</p>
-        <Button type="button" variant="accent" onClick={openCreate}><i className="bi bi-plus-lg" aria-hidden="true" />New routine</Button>
-      </header>
+      <Tabs value={tab} onValueChange={(value) => setSearchParams(value === 'inboxes' ? { tab: value } : {}, { replace: true })} className="routine-tabs">
+      <TabsList aria-label="Routine views">
+        <TabsTrigger value="routines">Routines</TabsTrigger>
+        <TabsTrigger value="inboxes">Webhook inboxes</TabsTrigger>
+      </TabsList>
 
       {error && !showForm && <p role="alert" className="routine-error">{error}</p>}
 
@@ -325,6 +329,11 @@ export function Routines() {
         </Modal>
       )}
 
+      <TabsContent value="routines" className="routine-tab-panel">
+      <header className="routine-header">
+        <p>Save a prompt, run it now, or schedule it for later.</p>
+        <Button type="button" variant="accent" onClick={openCreate}><i className="bi bi-plus-lg" aria-hidden="true" />New routine</Button>
+      </header>
       {loading ? <div className="oc-list-loading" role="status"><div className="oc-spinner" />Loading routines...</div> : routines.length === 0 ? <EmptyState>No routines yet.</EmptyState> : (
         <section className="routine-list" aria-label="Saved routines"><div className="routine-table-wrap"><DataTable><thead><tr><th>Name</th><th>Project</th><th>Session</th><th>Schedule</th><th>Next run</th><th>Status</th><th>Actions</th></tr></thead><tbody>{routines.map((routine) => {
           const latest = history[routine.id]?.[0];
@@ -334,16 +343,20 @@ export function Routines() {
           </tr>;
         })}</tbody></DataTable></div></section>
       )}
-      <section aria-labelledby="webhook-inboxes-heading" className="routine-webhooks">
-        <h2 id="webhook-inboxes-heading">Webhook inboxes</h2>
-        <p>Receive encrypted webhooks and dispatch matching deliveries to routines. Relay and owner credentials stay on the server.</p>
-        {routines.map((routine) => {
+      </TabsContent>
+      <TabsContent value="inboxes" className="routine-tab-panel">
+      <section aria-label="Webhook inboxes" className="routine-webhooks">
+        <header className="routine-header"><p>Receive encrypted webhooks and dispatch matching deliveries to routines. Relay and owner credentials stay on the server.</p></header>
+        {loading ? <div className="oc-list-loading" role="status"><div className="oc-spinner" />Loading inboxes...</div> : routines.length === 0 && <EmptyState>Create a routine to attach a webhook inbox.</EmptyState>}
+        {!loading && routines.map((routine) => {
           const inbox = webhooks[routine.id];
           const busyInbox = webhookBusy === routine.id;
           const ingestionUrl = inbox ? new URL(inbox.ingestionUrl, inbox.relayUrl).href : '';
           return <article key={routine.id} className="routine-webhook-card"><div><h3>Inbox: {routine.name}</h3><small>{routine.remoteId || 'local'} owner</small></div>{inbox ? <><label>Ingestion URL<input readOnly value={ingestionUrl} aria-label={`${routine.name} ingestion URL`} onFocus={(event) => event.currentTarget.select()} /></label><p className="routine-webhook-status">Key v{inbox.keyVersion} · {Object.entries(inbox.counts).map(([state, count]) => `${state}: ${count}`).join(' · ') || 'pending: 0'}</p><div className="routine-actions"><CopyButton disabled={busyInbox} label="Copy URL" text={ingestionUrl} /><Button type="button" disabled={busyInbox} onClick={() => { if (window.confirm('Revoke this webhook inbox?')) { setWebhookBusy(routine.id); void api.routines.revokeWebhook(routine.id).then(() => setWebhooks({ ...webhooks, [routine.id]: null })).catch((err) => setError(err.message)).finally(() => setWebhookBusy(undefined)); } }}>Revoke</Button><Button type="button" disabled={busyInbox} onClick={() => { if (window.confirm('Reset the key? Existing pending deliveries will become unreadable.')) { setWebhookBusy(routine.id); void api.routines.rotateWebhook(routine.id, { reset: true }).then(() => api.routines.webhook(routine.id)).then((next) => setWebhooks({ ...webhooks, [routine.id]: next })).catch((err) => setError(err.message)).finally(() => setWebhookBusy(undefined)); } }}>Reset key</Button></div></> : <Button type="button" variant="accent" disabled={busyInbox} onClick={() => { const enrollmentToken = window.prompt('Relay enrollment token'); if (!enrollmentToken) return; const secret = window.prompt('Optional shared secret (leave blank for URL-only validation)') || ''; const secretHeader = secret ? (window.prompt('Header name', 'X-Webhook-Secret') || 'X-Webhook-Secret') : ''; setWebhookBusy(routine.id); void api.routines.createWebhook(routine.id, { enrollmentToken, secret, secretHeader }).then((created) => setWebhooks({ ...webhooks, [routine.id]: created })).catch((err) => setError(err.message)).finally(() => setWebhookBusy(undefined)); }}>Create inbox</Button>}</article>;
         })}
       </section>
+      </TabsContent>
+      </Tabs>
     </main>
   );
 }

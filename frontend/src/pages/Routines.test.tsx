@@ -168,13 +168,25 @@ describe('Routines', () => {
     vi.mocked(api.routines.list).mockResolvedValue([{ ...routine, remoteId: 'box' }]);
     render(<MemoryRouter><Routines /></MemoryRouter>);
 
+    expect(await screen.findByRole('row', { name: 'View Morning check history' })).toBeInTheDocument();
+    expect(screen.queryByText('box owner')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: 'Webhook inboxes' }));
     expect(await screen.findByText('box owner')).toBeInTheDocument();
+    expect(screen.queryByRole('row', { name: 'View Morning check history' })).not.toBeInTheDocument();
     expect(screen.getByLabelText('Morning check ingestion URL')).toHaveValue('https://relay/i/inbox/token');
     expect(screen.getByLabelText('Morning check ingestion URL')).toHaveAttribute('readonly');
     await user.click(screen.getByRole('button', { name: 'Copy URL' }));
     expect(copy).toHaveBeenCalledWith('https://relay/i/inbox/token');
     expect(screen.getByText('Key v2 · terminal: 1 · failure: 2')).toBeInTheDocument();
     expect(screen.queryByText(/management|acknowledgment|identity/i)).not.toBeInTheDocument();
+  });
+
+  it('opens the webhook inboxes tab from the URL', async () => {
+    render(<MemoryRouter initialEntries={['/routines?tab=inboxes']}><Routines /></MemoryRouter>);
+
+    expect(await screen.findByText('Inbox: Morning check')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Webhook inboxes' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.queryByRole('button', { name: 'New routine' })).not.toBeInTheDocument();
   });
 
   it('shortens project paths in the table', async () => {
