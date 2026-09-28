@@ -134,7 +134,8 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 				w.svc.deps.BroadcastQuestionResolved(sessionID, requestID, reason)
 			}
 		},
-		OnSessionStatus: func(sessionID, statusType string) {
+		OnSessionStatus: func(sessionID string, status SessionStatus) {
+			statusType := status.Type
 			w.markSessionDirtyIfKnown(sessionID)
 			if statusType == "idle" {
 				idleStatusBroadcast[sessionID] = true

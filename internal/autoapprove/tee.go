@@ -80,13 +80,13 @@ type Tee struct {
 	// agent finished a turn). Optional — nil means idle isn't observed.
 	OnSessionIdle func(sessionID string)
 	// OnSessionStatus fires when the upstream emits session.status, the
-	// agent's own turn-lifecycle signal. statusType is OpenCode's
+	// agent's own turn-lifecycle signal. status.Type is OpenCode's
 	// SessionStatus discriminator: "busy", "retry" (provider backoff
-	// within a turn) or "idle". This is the authoritative busy/not-busy
+	// within a turn, with the retry fields set) or "idle". This is the authoritative busy/not-busy
 	// answer; ocman's message-shape inference only decides which
 	// terminal state a settled session is in. Optional — nil means turn
 	// state isn't observed on this tee.
-	OnSessionStatus func(sessionID, statusType string)
+	OnSessionStatus func(sessionID string, status SessionStatus)
 	// onSessionChanged fires when the upstream emits session.created or
 	// session.updated. Used to push new-session detection
 	// instead of waiting for the next list poll. Optional — nil means
@@ -618,27 +618,7 @@ func (t *Tee) dispatchSessionStatus(dataJSON string) {
 	if sessionID == "" {
 		return
 	}
-	t.OnSessionStatus(sessionID, sessionStatusType(props.Status))
-}
-
-// sessionStatusType reads the discriminator out of an OpenCode
-// SessionStatus value, accepting either {"type":"busy"} or "busy". An
-// unparseable value yields "", which every consumer treats as not-running.
-func sessionStatusType(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var typed struct {
-		Type string `json:"type"`
-	}
-	if err := json.Unmarshal(raw, &typed); err == nil && typed.Type != "" {
-		return typed.Type
-	}
-	var bare string
-	if err := json.Unmarshal(raw, &bare); err == nil {
-		return bare
-	}
-	return ""
+	t.OnSessionStatus(sessionID, parseSessionStatus(props.Status))
 }
 
 // dispatchSessionChanged extracts the session ID from a session creation or

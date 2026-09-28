@@ -231,10 +231,11 @@ func TestTeeSessionStatus(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var gotSession, gotStatus string
+			var gotFull SessionStatus
 			tee := &Tee{
 				W: &bytes.Buffer{},
-				OnSessionStatus: func(sessionID, statusType string) {
-					gotSession, gotStatus = sessionID, statusType
+				OnSessionStatus: func(sessionID string, status SessionStatus) {
+					gotSession, gotStatus, gotFull = sessionID, status.Type, status
 				},
 			}
 			if _, err := tee.Write([]byte(tc.sseData)); err != nil {
@@ -246,7 +247,28 @@ func TestTeeSessionStatus(t *testing.T) {
 			if gotStatus != tc.wantStatus {
 				t.Errorf("status = %q, want %q", gotStatus, tc.wantStatus)
 			}
+			if gotStatus != "retry" && gotFull != (SessionStatus{Type: gotStatus}) {
+				t.Errorf("non-retry status has extra fields: %+v", gotFull)
+			}
 		})
+	}
+}
+
+// A retry status must reach the callback with its full payload, so a
+// consumer can tell a short backoff from a long park.
+func TestTeeSessionStatusRetryPayload(t *testing.T) {
+	var got SessionStatus
+	tee := &Tee{
+		W:               &bytes.Buffer{},
+		OnSessionStatus: func(_ string, status SessionStatus) { got = status },
+	}
+	event := `{"type":"session.status","properties":{"sessionID":"ses-1","status":{"type":"retry","attempt":3,"message":"rate limited","action":{"reason":"quota"},"next":1760000000000}}}`
+	if _, err := tee.Write([]byte("data: " + event + "\n\n")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	want := SessionStatus{Type: "retry", Attempt: 3, Message: "rate limited", ActionReason: "quota", Next: 1760000000000}
+	if got != want {
+		t.Errorf("status = %+v, want %+v", got, want)
 	}
 }
 
