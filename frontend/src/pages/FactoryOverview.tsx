@@ -9,6 +9,7 @@ import type { FactoryEpic, FactoryIssue, FactoryQueueItem, Session } from '../li
 import { fuzzyMatch } from '../lib/format';
 import { EpicCell, IssueDrawer, ProjectCell, type EpicRef } from './FactoryIssues';
 import { OpenIssueContext } from './factoryHelpers';
+import { FactoryEpicCards } from './FactoryEpicCards';
 import { DispatchExplanation, FactoryDataRow, FactoryPage, InventoryToolbar, QueryError } from './FactoryLayout';
 
 function RecoveryGateItem({ issue, epic }: { issue: FactoryIssue; epic?: EpicRef }) {
@@ -119,6 +120,7 @@ export function FactoryOverview() {
 	const liveStatus = (sessionID?: string) => { const session = sessionID ? sessionByID.get(sessionID) : undefined; return session && session.status !== 'done' ? <StatusBadge status={session.status} pending={session.pendingPermission || session.pendingQuestion} /> : null; };
 	const openIssue = openIssueID ? issues.find((issue) => issue.id === openIssueID) : undefined;
 	return <FactoryPage><OpenIssueContext.Provider value={setOpenIssueID}>
+		<FactoryEpicCards epics={epics.data ?? []} />
 		<h2>Action inbox</h2>
 		<InventoryToolbar label="Find actions" value={actionQuery} onChange={setActionQuery}><label>Action type<SelectField value={actionType} onChange={(event) => setActionType(event.target.value)}><option value="all">All actions</option><option value="planning">Planning</option><option value="review">Plan review</option><option value="project">Project scope</option><option value="recovery">Recovery</option><option value="permission">Permission</option><option value="prompt">Agent prompt</option><option value="failed">Failed work</option><option value="blocked">Blocked work</option><option value="materialization">Materialization</option><option value="stuck">Stuck epic</option></SelectField></label><span className="factory-result-count" aria-live="polite">{inboxCount} action{inboxCount === 1 ? '' : 's'}</span></InventoryToolbar>
 		{epics.isLoading && <p role="status">Loading epics…</p>}
