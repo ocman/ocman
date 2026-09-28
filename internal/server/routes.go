@@ -106,6 +106,8 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	// Project archive state (own state.db; no launch), same auth posture
 	// as the per-session archive endpoint.
 	mux.HandleFunc("/api/project/archive", s.post(s.handleProjectArchive))
+	// Per-project model list (own state.db setting row), same posture.
+	mux.HandleFunc("/api/project/settings", s.requireAuth(s.handleProjectSettings))
 	// Launch endpoint: spawns tmux/opencode, so localhost-only like
 	// the worktree create-and-launch endpoint.
 	mux.HandleFunc("/api/project/handle", requirePOST(s.requireLocalhost(s.handleProjectHandle)))
