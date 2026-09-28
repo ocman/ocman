@@ -116,11 +116,16 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
     };
   }, [directory, open, remoteId, tmuxAvailable]);
 
-  // Opening the panel with no terminals yet creates the first one.
+  // Opening the panel with no terminals yet creates the first one. The
+  // in-flight guard is a ref, not `busy`: depending on `busy` re-ran this
+  // effect as soon as it set it, cancelling its own request and leaving
+  // the panel stuck on "Loading…".
+  const creatingRef = useRef(false);
   useEffect(() => {
-    if (!open || !directory || windows.length > 0 || busy) return;
+    if (!open || !directory || windows.length > 0 || creatingRef.current) return;
     let cancelled = false;
     (async () => {
+      creatingRef.current = true;
       setBusy(true);
       try {
         const { window } = await api.term.createWindow(directory, remoteId);
@@ -130,11 +135,12 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
       } catch (e) {
         if (!cancelled) remoteLog.error('terminal: create window failed', e);
       } finally {
-        if (!cancelled) setBusy(false);
+        creatingRef.current = false;
+        setBusy(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [open, directory, windows.length, busy, remoteId]);
+  }, [open, directory, windows.length, remoteId]);
 
   const handleAdd = useCallback(async () => {
     if (!directory || busy) return;

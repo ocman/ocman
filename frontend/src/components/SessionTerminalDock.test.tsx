@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { TermWindow } from '../lib/api';
 
@@ -94,9 +94,7 @@ describe('SessionTerminalDock tabs', () => {
     render(<SessionTerminalDock tmuxAvailable={true} directory={DIR} />);
 
     const toggle = await screen.findByTitle('Show terminal');
-    await act(async () => {
-      await user.click(toggle);
-    });
+    await user.click(toggle);
 
     await waitFor(() => expect(createWindow).toHaveBeenCalledWith(DIR));
     const pane = await screen.findByTestId('terminal-pane-stub');
@@ -118,9 +116,7 @@ describe('SessionTerminalDock tabs', () => {
     render(<SessionTerminalDock tmuxAvailable={true} directory={DIR} />);
 
     await screen.findByText('1');
-    await act(async () => {
-      await user.click(screen.getByLabelText('New terminal'));
-    });
+    await user.click(screen.getByLabelText('New terminal'));
 
     await waitFor(() => expect(createWindow).toHaveBeenCalledWith(DIR));
     // Both tabs are present after adding.
