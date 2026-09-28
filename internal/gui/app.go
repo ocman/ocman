@@ -10,10 +10,11 @@ package gui
 import (
 	"context"
 	"fmt"
+	"html"
+	"html/template"
 	"net"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
+	"strconv"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -24,19 +25,56 @@ import (
 	"github.com/NoUseFreak/ocman/internal/server"
 )
 
-// proxyHandler forwards every request to the running ocman HTTP server.
-// Wails calls ServeHTTP for both the embedded assets and the /api/* routes,
-// so a single reverse-proxy that points at the full server handles everything.
-type proxyHandler struct {
-	proxy *httputil.ReverseProxy
+// bootstrapHandler answers the WebView's initial wails:// load. It does not
+// proxy: it sends the WebView to the real backend URL, so every later
+// request (assets, API POSTs, SSE, the terminal WebSocket) talks to the
+// loopback server directly with an http Host and Origin the server's
+// host allowlist and CSRF checks already accept. Proxying through the Wails
+// asset server instead presents Host "wails", a wails:// Origin and an
+// X-Forwarded-For, and cannot carry WebSocket upgrades at all.
+type bootstrapHandler struct {
+	backend string
+	client  *http.Client
 }
 
-func newProxyHandler(target *url.URL) *proxyHandler {
-	return &proxyHandler{proxy: httputil.NewSingleHostReverseProxy(target)}
+func newBootstrapHandler(backend string) *bootstrapHandler {
+	return &bootstrapHandler{backend: backend, client: &http.Client{Timeout: 10 * time.Second}}
 }
 
-func (h *proxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	h.proxy.ServeHTTP(w, r)
+func (h *bootstrapHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	// Probe first: a navigation to a dead backend leaves WKWebView blank,
+	// whereas this bounded check yields a readable page with a retry.
+	resp, err := h.client.Get(h.backend + "/")
+	if err == nil {
+		resp.Body.Close()
+	}
+	if err != nil || resp.StatusCode >= 500 {
+		log.WithError(err).WithField("backend", h.backend).Error("gui: backend unreachable")
+		w.WriteHeader(http.StatusBadGateway)
+		fmt.Fprintf(w, `<!doctype html><meta charset="utf-8"><title>ocman</title>
+<body style="background:#0f0f14;color:#ddd;font:14px system-ui;padding:48px">
+<p>The ocman backend at %s is not responding.</p>
+<p><a style="color:#8ab4f8" href="#" onclick="location.reload()">Retry</a></p></body>`, html.EscapeString(h.backend))
+		return
+	}
+	fmt.Fprintf(w, `<!doctype html><meta charset="utf-8"><title>ocman</title>
+<body style="background:#0f0f14"><script>location.replace("%s/")</script></body>`, template.JSEscapeString(h.backend))
+}
+
+// loopbackURL turns the bound listener address into the URL the WebView
+// loads. An unspecified bind (0.0.0.0 / ::) is reachable on loopback.
+func loopbackURL(addr net.Addr) string {
+	tcp, ok := addr.(*net.TCPAddr)
+	if !ok {
+		return "http://" + addr.String()
+	}
+	ip := tcp.IP
+	if ip == nil || ip.IsUnspecified() {
+		ip = net.IPv4(127, 0, 0, 1)
+	}
+	return "http://" + net.JoinHostPort(ip.String(), strconv.Itoa(tcp.Port))
 }
 
 // App holds Wails lifecycle state.
@@ -49,7 +87,7 @@ func (a *App) startup(ctx context.Context) {
 }
 
 // RunGUI starts the ocman HTTP server on an ephemeral loopback port and opens
-// a Wails window that proxies to it.  srv must already be fully constructed
+// a Wails window that loads it.  srv must already be fully constructed
 // (New + registered adapters + auth) but not yet started.
 func RunGUI(ctx context.Context, srv *server.Server, listenAddr string) error {
 	// Pick an ephemeral port for the backend so the GUI can point at it.
@@ -59,13 +97,8 @@ func RunGUI(ctx context.Context, srv *server.Server, listenAddr string) error {
 	if err != nil {
 		return fmt.Errorf("gui: listen: %w", err)
 	}
-	actualAddr := ln.Addr().String()
-	backendURL, err := url.Parse("http://" + actualAddr)
-	if err != nil {
-		return fmt.Errorf("gui: parse backend URL: %w", err)
-	}
-
-	log.WithField("addr", actualAddr).Info("gui: backend listening")
+	backendURL := loopbackURL(ln.Addr())
+	log.WithField("addr", backendURL).Info("gui: backend listening")
 
 	// Start the server on the pre-bound listener in a background goroutine.
 	// The context passed here is the same signal context used in CLI mode,
@@ -79,7 +112,7 @@ func RunGUI(ctx context.Context, srv *server.Server, listenAddr string) error {
 	// Give the server a moment to finish its startup bookkeeping (hook
 	// installation, background loops) before Wails opens the window and
 	// fires the first HTTP request.
-	waitForServer(backendURL.String(), 3*time.Second)
+	waitForServer(backendURL, 3*time.Second)
 
 	app := &App{}
 
@@ -92,9 +125,9 @@ func RunGUI(ctx context.Context, srv *server.Server, listenAddr string) error {
 		MinWidth:  900,
 		MinHeight: 600,
 		AssetServer: &assetserver.Options{
-			// No embedded FS: all requests (assets + /api) are proxied to
-			// the running HTTP server, which already handles both.
-			Handler: newProxyHandler(backendURL),
+			// No embedded FS: the handler only redirects the WebView to
+			// the running HTTP server, which serves assets and /api.
+			Handler: newBootstrapHandler(backendURL),
 		},
 		BackgroundColour: &options.RGBA{R: 15, G: 15, B: 20, A: 255},
 		OnStartup:        app.startup,

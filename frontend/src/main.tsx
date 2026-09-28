@@ -15,14 +15,12 @@ import App from './App'
 import { installRemoteLogHandlers } from './lib/remoteLog'
 import { installAuthIntegration } from './lib/authStore'
 import { registerServiceWorker } from './lib/registerServiceWorker'
+import { installDesktopShell } from './lib/desktopShell'
 
-// When running inside a Wails desktop window, the Go runtime injects
-// `window.runtime`. Tag <body> with `wails-app` so CSS can apply
-// platform-specific styles (traffic-light clearance, drag region, etc.)
-// without any build-time branching.
-if (typeof window !== 'undefined' && 'runtime' in window) {
-  document.body.classList.add('wails-app')
-}
+// Inside the Wails desktop window, tag <body> with `wails-app` so CSS can
+// apply platform-specific styles (traffic-light clearance, drag region,
+// etc.) without any build-time branching.
+if (typeof window !== 'undefined') installDesktopShell()
 
 // A stale tab can hold an old index.html that references a JS chunk whose
 // hash changed after a rebuild, so its dynamic import 404s. Vite fires
