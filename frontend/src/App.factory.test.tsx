@@ -4,7 +4,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppRoutes } from './App';
-import { useAddFactoryIssueComment, useClaimFactoryPlan, useCloseFactoryEpic, useCloseFactoryMol, useCreateWorkEpic, useDecideFactoryPlanGate, useFactoryFormula, useFactoryFormulas, useFactoryGraphIssues, useFactoryIssueComments, useFactoryIssues, useFactoryProposals, useFactoryQueue, useFactoryRemovedIssues, useMaterializeFactoryPlan, useMutateFactoryGraph, usePourFactoryEpic, useProjects, useResolveFactoryAuthorityGate, useResolveFactoryRecoveryGate, useSessions, useSetFactoryEpicPaused, useWorkEpic, useWorkEpics } from './lib/queries';
+import { useAddFactoryIssueComment, useClaimFactoryPlan, useCloseFactoryEpic, useCloseFactoryMol, useCreateWorkEpic, useDecideFactoryPlanGate, useFactoryFormula, useFactoryFormulas, useFactoryGraphIssues, useFactoryIssueComments, useFactoryIssues, useFactoryProposals, useFactoryQueue, useFactoryRemovedIssues, useMaterializeFactoryPlan, useMutateFactoryGraph, useProjects, useResolveFactoryAuthorityGate, useResolveFactoryRecoveryGate, useSessions, useSetFactoryEpicPaused, useWorkEpic, useWorkEpics } from './lib/queries';
 
 vi.mock('./lib/queries', () => ({
   useSessions: vi.fn(),
@@ -28,7 +28,6 @@ vi.mock('./lib/queries', () => ({
   useFactoryFormulas: vi.fn(),
   useProjects: vi.fn(),
   useCreateWorkEpic: vi.fn(),
-  usePourFactoryEpic: vi.fn(),
   useClaimFactoryPlan: vi.fn(),
   useMaterializeFactoryPlan: vi.fn(),
 }));
@@ -59,7 +58,6 @@ beforeEach(() => {
 	vi.mocked(useFactoryFormulas).mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn() } as never);
   vi.mocked(useProjects).mockReturnValue({ data: [], isLoading: false, isError: false, refetch: vi.fn() } as never);
   vi.mocked(useCreateWorkEpic).mockReturnValue({ mutateAsync: vi.fn(), isPending: false } as never);
-  vi.mocked(usePourFactoryEpic).mockReturnValue({ mutate: vi.fn(), isPending: false } as never);
   vi.mocked(useClaimFactoryPlan).mockReturnValue({ mutate: vi.fn(), isPending: false } as never);
   vi.mocked(useMaterializeFactoryPlan).mockReturnValue({ mutate: vi.fn(), isPending: false } as never);
 });

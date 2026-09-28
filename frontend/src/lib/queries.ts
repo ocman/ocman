@@ -251,17 +251,6 @@ export function useCreateWorkEpic() {
   });
 }
 
-export function usePourFactoryEpic(id: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => api.pourFactoryEpic(id),
-		onSuccess: async (issues) => {
-			queryClient.setQueryData(['factory-epics', id, 'issues'], issues);
-			await invalidateFactoryState(queryClient);
-		},
-  });
-}
-
 function invalidateFactoryState(client: QueryClient) {
 	return Promise.all([
 		client.invalidateQueries({ queryKey: ['factory-epics'] }),

@@ -10,7 +10,7 @@ import { MarkdownContent } from './assistant/MarkdownText';
 
 vi.mock('../lib/api', () => ({ api: {
   factoryEpic: vi.fn(), factoryIssues: vi.fn(), reopenFactoryIssue: vi.fn(),
-  factoryClaimPlan: vi.fn(), factoryMaterialize: vi.fn(), pourFactoryEpic: vi.fn(),
+  factoryClaimPlan: vi.fn(), factoryMaterialize: vi.fn(),
   factoryPlanGate: vi.fn(), resolveFactoryRecoveryGate: vi.fn(), resolveFactoryAuthorityGate: vi.fn(), resolveFactoryProjectGate: vi.fn(),
 } }));
 
@@ -252,16 +252,11 @@ describe('Factory human action cards', () => {
     expect(api.factoryMaterialize).toHaveBeenCalledWith('ship', 'ship.2');
   });
 
-  it('pours only an empty open epic and reports failures', async () => {
+  it('offers no pour action, since creating an epic pours its graph', async () => {
     vi.mocked(api.factoryIssues).mockResolvedValue([]);
-    vi.mocked(api.pourFactoryEpic).mockRejectedValueOnce(new Error('Cannot pour')).mockResolvedValue([]);
     renderCard('[Factory actions](/factory/epics/ship?human=1)');
-    fireEvent.click(await screen.findByRole('button', { name: 'Pour graph' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Cannot pour');
-    fireEvent.click(screen.getByRole('button', { name: 'Pour graph' }));
-    expect(await screen.findByText('Graph poured.')).toBeInTheDocument();
-    expect(api.pourFactoryEpic).toHaveBeenCalledWith('ship');
-    expect(screen.getByRole('button', { name: 'Pour graph' })).toBeDisabled();
+    await waitFor(() => expect(api.factoryIssues).toHaveBeenCalledWith('ship', expect.anything()));
+    expect(screen.queryByRole('button', { name: 'Pour graph' })).not.toBeInTheDocument();
   });
 
   it('keeps review and graph controls available', async () => {

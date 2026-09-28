@@ -11,7 +11,6 @@ describe('Factory API', () => {
     await api.factoryEpics();
     await api.factoryEpic('epic/1');
     await api.createFactoryEpic({ instantiationId: 'request-1', goal: 'Ship it', initialProject: '/repo', acknowledgeLocalExecution: true });
-    await api.pourFactoryEpic('epic/1');
 		await api.factoryIssues('epic/1');
 		await api.factoryIssueComments('epic/1', 'issue/1');
 		await api.addFactoryIssueComment('epic/1', 'issue/1', 'Reviewed');
@@ -26,7 +25,6 @@ describe('Factory API', () => {
       '/api/factory/epics',
       '/api/factory/epics/epic%2F1',
       '/api/factory/epics',
-       '/api/factory/epics/epic%2F1/pour',
 			 '/api/factory/epics/epic%2F1/issues',
 			'/api/factory/epics/epic%2F1/issues/issue%2F1/comments',
 			'/api/factory/epics/epic%2F1/issues/issue%2F1/comments',
@@ -38,7 +36,6 @@ describe('Factory API', () => {
       '/api/factory/epics/epic%2F1/proposals',
     ]);
     expect(fetchMock.mock.calls[2][1]).toMatchObject({ method: 'POST' });
-		expect(fetchMock.mock.calls[3][1]).toMatchObject({ method: 'POST', body: undefined });
-		expect(fetchMock.mock.calls[6][1]).toMatchObject({ method: 'POST', body: JSON.stringify({ body: 'Reviewed' }) });
+		expect(fetchMock.mock.calls[5][1]).toMatchObject({ method: 'POST', body: JSON.stringify({ body: 'Reviewed' }) });
   });
 });

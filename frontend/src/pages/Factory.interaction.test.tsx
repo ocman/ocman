@@ -38,7 +38,6 @@ vi.mock('../lib/api', () => ({ api: {
     sessions: vi.fn(),
   factoryEpic: vi.fn(),
    createFactoryEpic: vi.fn(),
-   pourFactoryEpic: vi.fn(),
 		factoryClaimPlan: vi.fn(),
 		factoryMaterialize: vi.fn(),
 		reopenFactoryIssue: vi.fn(),
@@ -90,7 +89,6 @@ beforeEach(() => {
   vi.mocked(api.factoryEpic).mockReset();
   vi.mocked(api.projects).mockReset();
   vi.mocked(api.createFactoryEpic).mockReset();
-   vi.mocked(api.pourFactoryEpic).mockReset();
 		vi.mocked(api.factoryClaimPlan).mockReset();
 		vi.mocked(api.factoryMaterialize).mockReset();
 		vi.mocked(api.reopenFactoryIssue).mockReset();
@@ -619,13 +617,11 @@ describe('Factory interactions', () => {
 			{ id: 'issue-6', epicId: 'epic-1', kind: 'task', title: 'Backlog work', status: 'open' },
 		];
 		vi.mocked(api.factoryEpic).mockResolvedValue({ id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo', projects: [{ path: '/repo', removable: false }, { path: '/docs', removable: true }] } as never);
-		vi.mocked(api.factoryIssues).mockResolvedValueOnce([]).mockResolvedValue(pouredIssues as never);
-		vi.mocked(api.pourFactoryEpic).mockResolvedValue(pouredIssues as never);
+		vi.mocked(api.factoryIssues).mockResolvedValue(pouredIssues as never);
     renderFactory(<MemoryRouter initialEntries={['/factory/epics/epic-1']}><Routes><Route path="/factory/epics/:id" element={<FactoryEpicDetail />} /></Routes></MemoryRouter>);
 
-    await screen.findByText('This epic has no issues yet.');
+		expect(await screen.findByText('Projects')).toBeInTheDocument();
 		expect(screen.getByText('Projects').nextElementSibling).toHaveTextContent('/repo, /docs');
-    await user.click(screen.getByRole('button', { name: 'Pour graph' }));
 
     expect(await screen.findByLabelText('Epic issues by status')).toBeInTheDocument();
 		expect(within(screen.getByRole('region', { name: 'Open issues' })).getByText('Backlog work')).toBeInTheDocument();
@@ -717,9 +713,11 @@ describe('Factory interactions', () => {
     renderFactory(<MemoryRouter initialEntries={['/factory/epics/epic-1']}><Routes><Route path="/factory/epics/:id" element={<FactoryEpicDetail />} /></Routes></MemoryRouter>);
 
     const actions = await screen.findByRole('region', { name: 'Epic actions' });
-    for (const name of ['Approve plan', 'Request revision', 'Reject plan', 'Pour graph', 'Close epic', 'Pause epic']) {
+    for (const name of ['Approve plan', 'Request revision', 'Reject plan', 'Close epic', 'Pause epic']) {
       expect(within(actions).getByRole('button', { name })).toBeInTheDocument();
     }
+    // Creating an epic pours its graph, so there is nothing to pour by hand.
+    expect(within(actions).queryByRole('button', { name: 'Pour graph' })).not.toBeInTheDocument();
     // The gate draws exactly the revision it decides on, so the user sees the to-be plan.
     const preview = await within(actions).findByLabelText('Proposed plan');
     expect(within(preview).getByText('Ship API')).toBeInTheDocument();

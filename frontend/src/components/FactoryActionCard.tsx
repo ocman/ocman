@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useState, type ReactNode } from 'react';
 import type { FactoryAuthorityEscalationGate, FactoryEpic, FactoryIssue, FactoryPlanGate, FactoryProjectRequestGate, FactoryRecoveryGate } from '../lib/api';
-import { useClaimFactoryPlan, useDecideFactoryPlanGate, useFactoryIssues, useMaterializeFactoryPlan, usePourFactoryEpic, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryProjectGate, useResolveFactoryRecoveryGate, useWorkEpic } from '../lib/queries';
+import { useClaimFactoryPlan, useDecideFactoryPlanGate, useFactoryIssues, useMaterializeFactoryPlan, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryProjectGate, useResolveFactoryRecoveryGate, useWorkEpic } from '../lib/queries';
 import { Button } from './Control';
 import { FactoryImplementationModel } from './FactoryImplementationModel';
 import { useFactoryImplementationModel } from './useFactoryImplementationModel';
@@ -73,7 +73,6 @@ function requiresHumanAction(epic: FactoryEpic, issues: FactoryIssue[], issueID:
   const accepts = (...actions: string[]) => !requestedAction || actions.includes(requestedAction);
   if (epic.status === 'closed') return false;
   if (epic.planGate?.resolution === 'open' && accepts('approve_plan', 'revise_plan', 'reject_plan', 'submit_proposal')) return true;
-  if (epic.status === 'open' && !issueID && !issues.length && accepts('pour')) return true;
   if (requestedAction === 'mutate_graph') return epic.status === 'open' && issues.some((issue) => (!issueID || issue.id === issueID) && issue.status === 'open');
   return issues.some((issue) => (!issueID || issue.id === issueID) && requiresIssueAction(epic, issue, requestedAction));
 }
@@ -115,16 +114,12 @@ function IssueActions({ issue, enabled }: { issue: FactoryIssue; enabled: boolea
 }
 
 function EpicActions({ epic, issues, issueID }: { epic: FactoryEpic; issues: FactoryIssue[]; issueID: string }) {
-  const pour = usePourFactoryEpic(epic.id);
   const selected = issues.filter((issue) => !issueID || issue.id === issueID);
   const gate = epic.planGate;
   return <>
     {selected.filter((issue) => requiresIssueAction(epic, issue)).map((issue) => <IssueActions key={issue.id} issue={issue} enabled={epic.status === 'open'} />)}
     {gate?.resolution === 'open' && <><Link to={`/factory/epics/${encodeURIComponent(epic.id)}`}>Review plan</Link><PlanActions key={`${gate.proposalRevision}/${gate.proposalHash}`} epic={epic} gate={gate} /></>}
     {issueID && !selected.length && <span role="status">Issue {issueID} is no longer available.</span>}
-    {epic.status === 'open' && !issues.length && !issueID && <Button type="button" disabled={pour.isPending || pour.isSuccess} onClick={() => pour.mutate()}>{pour.isPending ? 'Pouring…' : 'Pour graph'}</Button>}
-    {pour.isSuccess && <span role="status">Graph poured.</span>}
-    {pour.isError && <span role="alert">{pour.error.message}</span>}
   </>;
 }
 

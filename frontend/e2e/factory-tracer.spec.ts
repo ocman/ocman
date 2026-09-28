@@ -23,13 +23,13 @@ test('Factory tracer approves a plan, checkpoints implementation, delivers a PR,
   await page.route('/api/factory/queue', (route) => route.fulfill({ json: [] }));
   await page.route('/api/projects', (route) => route.fulfill({ json: [{ directory: '/repo', archived: false }] }));
   await page.route('/api/factory/epics', async (route) => {
-    if (route.request().method() === 'POST') return route.fulfill({ status: 201, json: view() });
+    // Creating an epic pours its graph and starts planning in the same step.
+    if (route.request().method() === 'POST') { poured = true; claimed = true; return route.fulfill({ status: 201, json: view() }); }
     return route.fulfill({ json: [view()] });
   });
   await page.route(`/api/factory/epics/${epic.id}`, (route) => route.fulfill({ json: view() }));
   await page.route(`/api/factory/epics/${epic.id}/issues`, (route) => route.fulfill({ json: issues() }));
   await page.route(`/api/factory/epics/${epic.id}/proposals`, (route) => route.fulfill({ json: view().proposal ? [view().proposal] : [] }));
-  await page.route(`/api/factory/epics/${epic.id}/pour`, (route) => { poured = true; claimed = true; return route.fulfill({ status: 201, json: issues() }); });
 	await page.route(`/api/factory/epics/${epic.id}/plans/${epic.id}.1.1`, (route) => { claimed = true; return route.fulfill({ status: 201, json: {} }); });
   let finishApproval!: () => void;
   const approvalPending = new Promise<void>((resolve) => { finishApproval = resolve; });
@@ -61,9 +61,6 @@ test('Factory tracer approves a plan, checkpoints implementation, delivers a PR,
   await page.getByRole('checkbox', { name: 'Allow Factory agents to run commands in this project' }).check();
   await page.getByRole('button', { name: 'Create epic', exact: true }).click();
   await page.getByRole('link', { name: epic.goal }).click();
-  const pouring = posted(`/api/factory/epics/${epic.id}/pour`);
-  await page.getByRole('button', { name: 'Pour graph' }).click();
-  await pouring;
   await page.reload();
   await expect(page.getByRole('link', { name: 'Open session' })).toHaveAttribute('href', '/session/plan-session?factoryEpic=ship-a1b2');
   const approving = posted(`/api/factory/epics/${epic.id}/plan-gate/approve`);
@@ -116,14 +113,15 @@ test('Factory tracer rejects a plan without creating implementation work', async
   await page.route('/api/factory/formulas', (route) => route.fulfill({ json: [] }));
   await page.route('/api/factory/queue', (route) => route.fulfill({ json: [] }));
   await page.route('/api/projects', (route) => route.fulfill({ json: [{ directory: '/repo', archived: false }] }));
-  await page.route('/api/factory/epics', async (route) => route.request().method() === 'POST' ? route.fulfill({ status: 201, json: view() }) : route.fulfill({ json: [view()] }));
+  await page.route('/api/factory/epics', async (route) => {
+    if (route.request().method() !== 'POST') return route.fulfill({ json: [view()] });
+    poured = true; // Creating an epic pours its graph in the same step.
+    return route.fulfill({ status: 201, json: view() });
+  });
   await page.route(`/api/factory/epics/${epic.id}`, (route) => route.fulfill({ json: view() }));
   await page.route(`/api/factory/epics/${epic.id}/issues`, (route) => route.fulfill({ json: issues() }));
   await page.route(`/api/factory/epics/${epic.id}/proposals`, (route) => route.fulfill({ json: poured ? [view().proposal] : [] }));
-  await page.route(`/api/factory/epics/${epic.id}/pour`, (route) => { poured = true; return route.fulfill({ status: 201, json: issues() }); });
   await page.route(`/api/factory/epics/${epic.id}/plan-gate/reject`, (route) => { rejected = true; return route.fulfill({ json: view().planGate }); });
-
-  const posted = (path: string) => page.waitForResponse((response) => response.url().endsWith(path) && response.request().method() === 'POST');
 
   await page.goto('/factory/epics');
   await page.getByRole('button', { name: 'New epic' }).click();
@@ -134,9 +132,6 @@ test('Factory tracer rejects a plan without creating implementation work', async
   await page.getByRole('checkbox', { name: 'Allow Factory agents to run commands in this project' }).check();
   await page.getByRole('button', { name: 'Create epic', exact: true }).click();
   await page.getByRole('link', { name: epic.goal }).click();
-  const pouring = posted(`/api/factory/epics/${epic.id}/pour`);
-  await page.getByRole('button', { name: 'Pour graph' }).click();
-  await pouring;
   await page.reload();
   await page.getByRole('button', { name: 'Reject plan' }).click();
   await expect(page.getByRole('status')).toHaveText('Plan rejected.');

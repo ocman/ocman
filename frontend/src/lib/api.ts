@@ -471,8 +471,6 @@ export const api = {
      fetchJSON<FactoryEpic>(`/api/factory/epics/${encodeURIComponent(id)}`, signal),
    createFactoryEpic: (request: CreateWorkEpicRequest) =>
      postJSON<FactoryEpic, CreateWorkEpicRequest>('/api/factory/epics', request),
-    pourFactoryEpic: (id: string) =>
-      postJSON<FactoryIssue[], undefined>(`/api/factory/epics/${encodeURIComponent(id)}/pour`, undefined),
 		factoryClaimPlan: (id: string, issueID: string) =>
 			postJSON<FactoryClaimedPlan, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/plans/${encodeURIComponent(issueID)}`, undefined),
 		factoryMaterialize: (id: string, issueID: string) =>

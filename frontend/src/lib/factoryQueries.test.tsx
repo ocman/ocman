@@ -4,7 +4,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { api } from './api';
-import { useDecideFactoryPlanGate, useFactoryIssues, useFactoryProposals, usePourFactoryEpic, useResolveFactoryAuthorityGate, useWorkEpic } from './queries';
+import { useDecideFactoryPlanGate, useFactoryIssues, useFactoryProposals, useResolveFactoryAuthorityGate, useWorkEpic } from './queries';
 
 vi.mock('./api', () => ({ api: {
   factoryEpic: vi.fn(),
@@ -12,7 +12,6 @@ vi.mock('./api', () => ({ api: {
   factoryProposals: vi.fn(),
   factoryPlanGate: vi.fn(),
   resolveFactoryAuthorityGate: vi.fn(),
-  pourFactoryEpic: vi.fn(),
 } }));
 
 function setup() {
@@ -44,16 +43,13 @@ describe('Factory query freshness', () => {
   it('refreshes Epics and the queue after mutations', async () => {
     vi.mocked(api.factoryPlanGate).mockResolvedValue({} as never);
     vi.mocked(api.resolveFactoryAuthorityGate).mockResolvedValue({} as never);
-    vi.mocked(api.pourFactoryEpic).mockResolvedValue([]);
     const { client, wrapper } = setup();
     const invalidate = vi.spyOn(client, 'invalidateQueries');
     const gate = renderHook(() => useDecideFactoryPlanGate('epic-1'), { wrapper });
     const authority = renderHook(() => useResolveFactoryAuthorityGate(), { wrapper });
-    const pour = renderHook(() => usePourFactoryEpic('epic-1'), { wrapper });
     await act(() => gate.result.current.mutateAsync({ action: 'approve', expectedRevision: 1, expectedHash: 'hash' }));
     await act(() => authority.result.current.mutateAsync({ id: 'gate-1', action: 'approve' }));
-    await act(() => pour.result.current.mutateAsync());
-    expect(invalidate).toHaveBeenCalledTimes(6);
+    expect(invalidate).toHaveBeenCalledTimes(4);
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['factory-epics'] });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['factory-queue'] });
   });

@@ -13,7 +13,7 @@ import { FactoryStartedToast } from '../components/FactoryStartedToast';
 import { FactoryImplementationModel } from '../components/FactoryImplementationModel';
 import { useFactoryImplementationModel } from '../components/useFactoryImplementationModel';
 import { FactoryEpicModels } from '../components/FactoryEpicModels';
-import { useCloseFactoryEpic, useCloseFactoryMol, useCreateWorkEpic, useDecideFactoryPlanGate, useFactoryFormulas, useFactoryGraphIssues, useFactoryIssues, useFactoryProposals, useFactoryRemovedIssues, useMutateFactoryGraph, usePourFactoryEpic, useProjects, useSetFactoryEpicPaused, useWorkEpic, useWorkEpics } from '../lib/queries';
+import { useCloseFactoryEpic, useCloseFactoryMol, useCreateWorkEpic, useDecideFactoryPlanGate, useFactoryFormulas, useFactoryGraphIssues, useFactoryIssues, useFactoryProposals, useFactoryRemovedIssues, useMutateFactoryGraph, useProjects, useSetFactoryEpicPaused, useWorkEpic, useWorkEpics } from '../lib/queries';
 import type { FactoryAttempt, FactoryEpic, FactoryFormula, FactoryGraphMutation, FactoryIssue } from '../lib/api';
 import { fuzzyMatch } from '../lib/format';
 import { FactoryIssueRow, IssueDrawer } from './FactoryIssues';
@@ -204,7 +204,6 @@ export function FactoryEpicDetail() {
   const { id = '' } = useParams();
   const epic = useWorkEpic(id);
 	const implementation = useFactoryImplementationModel(epic.data);
-  const pour = usePourFactoryEpic(id);
 	const proposals = useFactoryProposals(id);
   const decideGate = useDecideFactoryPlanGate(id);
 	const closeMol = useCloseFactoryMol(id);
@@ -263,14 +262,12 @@ export function FactoryEpicDetail() {
       {gateStatus && <p role="status">{gateStatus}</p>}
       <FactoryEpicModels epic={epic.data} />
       <ButtonGroup label="Epic controls">
-        <Button type="button" onClick={() => pour.mutate()} aria-busy={pour.isPending} disabled={pour.isPending}>{pour.isPending ? 'Pouring…' : 'Pour graph'}</Button>
         <Button type="button" onClick={() => void close()} aria-busy={closeEpic.isPending || closeMol.isPending} disabled={closeEpic.isPending || closeMol.isPending}>{closeEpic.isPending || closeMol.isPending ? 'Closing…' : 'Close epic'}</Button>
         {epic.data.status !== 'closed' && <Button type="button" onClick={() => setPaused.mutate(epic.data!.status !== 'paused')} aria-busy={setPaused.isPending} disabled={setPaused.isPending}>{setPaused.isPending ? (setPaused.variables ? 'Pausing…' : 'Resuming…') : epic.data.status === 'paused' ? 'Resume epic' : 'Pause epic'}</Button>}
       </ButtonGroup>
 		<p>Required work: {progress.requiredSucceeded}/{progress.requiredTotal} complete. Optional work open: {progress.optionalOpen}.</p>
 		{!!progress.projectDeliveries?.length && <ul aria-label="Project deliveries" className="factory-issues">{progress.projectDeliveries.map((delivery) => <li key={delivery.issueId ?? `${delivery.project}:pending`}><ProjectLabel path={delivery.project} />{delivery.lineage && <span>Delivery {delivery.lineage}</span>}<span>{delivery.status === 'ready_for_review' ? 'Ready for review' : delivery.status.replaceAll('_', ' ').replace(/^./, (value) => value.toUpperCase())}</span></li>)}</ul>}
 		{!!progress.closureBlockers?.length && <p>Closure blocked by: {progress.closureBlockers.join(', ')}</p>}
-      {pour.isError && <p role="alert">{pour.error instanceof Error ? pour.error.message : 'Could not pour graph.'}</p>}
       {(closeEpic.isError || setPaused.isError) && <p role="alert">{(closeEpic.error ?? setPaused.error) instanceof Error ? (closeEpic.error ?? setPaused.error)!.message : 'Could not update epic.'}</p>}
     </section>
     <Tabs value={active} onValueChange={setTab} className="factory-epic-views">

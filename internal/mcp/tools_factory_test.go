@@ -231,7 +231,11 @@ func TestFactoryToolActions(t *testing.T) {
 	if got.IsError || !strings.Contains(resultText(got), `"body": "Reviewed"`) {
 		t.Fatalf("comments result = %q", resultText(got))
 	}
-	for _, action := range []string{"pour", "claim_plan", "reopen_issue"} {
+	// Creating an epic pours its graph, so pour is no longer an action.
+	if got := callTool(t, srv, "factory", map[string]any{"action": "pour", "epic_id": "epic-1"}); !got.IsError || resultText(got) != "unknown action" {
+		t.Fatalf("pour result = %q, error = %v", resultText(got), got.IsError)
+	}
+	for _, action := range []string{"claim_plan", "reopen_issue"} {
 		if got := callTool(t, srv, "factory", map[string]any{"action": action, "epic_id": "epic-1"}); !got.IsError || resultText(got) != "factory action is not permitted" {
 			t.Fatalf("%s result = %q, error = %v", action, resultText(got), got.IsError)
 		}
@@ -276,7 +280,7 @@ func TestFactoryActionRegistryKeepsHelpAndValidationConsistent(t *testing.T) {
 			t.Fatalf("decode %s example: %v", action, err)
 		}
 		got := callTool(t, srv, "factory", example)
-		denied := action == "pour" || action == "claim_plan" || action == "reopen_issue"
+		denied := action == "claim_plan" || action == "reopen_issue"
 		if got.IsError != denied {
 			t.Fatalf("%s example = %q, error = %v", action, resultText(got), got.IsError)
 		}
@@ -297,7 +301,6 @@ func TestDeniedFactoryActionsOfferHumanCards(t *testing.T) {
 		args   map[string]any
 		target string
 	}{
-		{map[string]any{"action": "pour", "epic_id": "epic-1"}, "type=factory-epic epic=epic-1"},
 		{map[string]any{"action": "claim_plan", "epic_id": "epic-1", "issue_id": "epic-1.1"}, "type=factory-issue epic=epic-1 issue=epic-1.1"},
 		{map[string]any{"action": "reopen_issue", "epic_id": "epic-1", "issue_id": "epic-1.3"}, "type=factory-issue epic=epic-1 issue=epic-1.3"},
 		{map[string]any{"action": "reopen_issue"}, "type=factory-epic"},
@@ -314,7 +317,7 @@ func TestDeniedFactoryActionsOfferHumanCards(t *testing.T) {
 		{map[string]any{"action": "save_formula", "formula_id": "custom/team", "formula_source": "version = 1"}, "type=factory-epic"},
 		{map[string]any{"action": "set_capacity_policy", "global_capacity": 1, "project_capacity": 1, "project_overrides": map[string]any{}}, "type=factory-epic"},
 		{map[string]any{"action": "mutate_graph", "mutation_json": `{"action":"unlink","epicId":"epic-1","issueId":"epic-1.3","dependsOnId":"epic-1.2"}`}, "type=factory-issue epic=epic-1 issue=epic-1.3"},
-		{map[string]any{"action": "pour", "epic_id": "a)b", "issue_id": "x&y"}, "type=factory-issue epic=a%29b issue=x&y"},
+		{map[string]any{"action": "claim_plan", "epic_id": "a)b", "issue_id": "x&y"}, "type=factory-issue epic=a%29b issue=x&y"},
 	} {
 		t.Run(tc.args["action"].(string)+tc.target, func(t *testing.T) {
 			got := callTool(t, srv, "factory", tc.args)
