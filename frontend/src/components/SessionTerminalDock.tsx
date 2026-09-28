@@ -87,7 +87,8 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
   // command / program-set pane title. Does NOT auto-create — the first
   // window is created when the user opens the panel or clicks a tab/"+".
   useEffect(() => {
-    if (!directory) {
+    // Without tmux the dock renders nothing, so there is nothing to list.
+    if (!directory || !tmuxAvailable) {
       setWindows([]);
       setActive(null);
       return;
@@ -113,7 +114,7 @@ export function SessionTerminalDock({ tmuxAvailable, directory, remoteId }: Sess
       cancelled = true;
       if (id !== undefined) window.clearInterval(id);
     };
-  }, [directory, open, remoteId]);
+  }, [directory, open, remoteId, tmuxAvailable]);
 
   // Opening the panel with no terminals yet creates the first one.
   useEffect(() => {

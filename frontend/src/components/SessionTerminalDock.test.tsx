@@ -53,6 +53,12 @@ describe('SessionTerminalDock gating', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it('does not list windows when tmux is unavailable', async () => {
+    render(<SessionTerminalDock tmuxAvailable={false} directory={DIR} />);
+    await act(async () => {});
+    expect(listWindows).not.toHaveBeenCalled();
+  });
+
   it('renders nothing without a directory', () => {
     const { container } = render(
       <SessionTerminalDock tmuxAvailable={true} directory={undefined} />,
