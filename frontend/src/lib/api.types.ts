@@ -434,6 +434,8 @@ export interface Session {
    * the platform field.
    */
   notice?: SessionNotice;
+  /** First model of the session's project list; what a model-less prompt uses. */
+  projectDefaultModel?: string;
   /**
    * Display-only host attributes for multi-remote support. remoteId is
    * 'local' for the hub's own machine, else the remote's random ID;

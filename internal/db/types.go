@@ -198,6 +198,10 @@ type Session struct {
 	// by the server's applySessionNotice step; nil when no notice
 	// applies. Omitted from JSON when nil.
 	Notice *SessionNotice `json:"notice,omitempty"`
+	// ProjectDefaultModel is the first entry of the session's project
+	// model list, which a prompt naming no model is sent with. Stamped by
+	// the server on the session detail payload; empty when unconfigured.
+	ProjectDefaultModel string `json:"projectDefaultModel,omitempty"`
 	// RemoteID / RemoteName are display-only host attributes stamped by
 	// the owning adapter for multi-remote support (AD-7). RemoteID is
 	// "local" for the hub's own machine, else the remote's random ID;

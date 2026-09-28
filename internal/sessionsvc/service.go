@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -42,6 +43,10 @@ type Hooks struct {
 	// the server can broadcast a provisional list row the frontend can
 	// show before the authoritative refetch lands.
 	SessionCreated func(info CreatedSession)
+	// ProjectModels returns the ordered model list configured for dir's
+	// project (nil when none). Its first entry fills a prompt or command
+	// that names no model. Must be cheap: it runs on every such send.
+	ProjectModels func(ctx context.Context, dir string) []string
 }
 
 // CreatedSession is the minimal, I/O-free projection of a just-created
@@ -59,6 +64,9 @@ type CreatedSession struct {
 type Service struct {
 	registry Registry
 	hooks    Hooks
+	// sessionDirs caches session ID → directory for project-default
+	// resolution; Move drops the entry.
+	sessionDirs sync.Map
 }
 
 // New builds a Service over the given registry.
@@ -134,6 +142,7 @@ func (s *Service) SendMessage(ctx context.Context, platformID string, req platfo
 	if err != nil {
 		return err
 	}
+	req.Model = s.withProjectDefault(ctx, p, req.SessionID, req.Model)
 	return p.SendMessage(ctx, req)
 }
 
@@ -146,6 +155,7 @@ func (s *Service) ExecuteCommand(ctx context.Context, platformID string, req pla
 	if err != nil {
 		return err
 	}
+	req.Model = s.withProjectDefault(ctx, p, req.SessionID, req.Model)
 	return p.ExecuteCommand(ctx, req)
 }
 
@@ -277,6 +287,7 @@ func (s *Service) Move(ctx context.Context, platformID string, req platforms.Mov
 	if err := p.MoveSession(ctx, req); err != nil {
 		return err
 	}
+	s.sessionDirs.Delete(req.SessionID)
 	// A move changes which project row the session belongs to; refresh
 	// the projects index just like session creation does.
 	if s.hooks.SessionCreated != nil {

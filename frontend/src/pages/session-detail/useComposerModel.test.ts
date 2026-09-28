@@ -60,6 +60,14 @@ describe('useComposerModel', () => {
     expect(result.current.activeModel).toBe('prov/remembered');
   });
 
+  it('seeds the project default model for a new session over the remembered pick', () => {
+    saveProjectModel('/repo', 'prov/remembered');
+    const o = opts({ session: { ...session, projectDefaultModel: 'prov/project' } });
+    const { result } = renderHook(() => useComposerModel(o));
+    expect(result.current.activeModel).toBe('prov/project');
+    expect(o.setSelectedModel).toHaveBeenCalledWith('prov/project');
+  });
+
   it('persists a manual model change and resets reasoning', () => {
     const o = opts();
     const { result } = renderHook(() => useComposerModel(o));

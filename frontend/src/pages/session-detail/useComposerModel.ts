@@ -52,7 +52,8 @@ export function useComposerModel({
   }, [id]);
 
   // Prefer the model behind the most recent turn (what OpenCode will keep
-  // using), falling back to the session's default model.
+  // using). A new session seeds the project's configured default, then the
+  // last pick in this project, then the session's default model.
   const turnStatsMap = useMemo(() => computeTurnStats(messages, parts), [messages, parts]);
   const { activeAgent } = useMemo(
     () => deriveActiveModelAndAgent(messages, session),
@@ -61,10 +62,12 @@ export function useComposerModel({
   const activeModel = useMemo(
     () =>
       latestTurnModel(messages, turnStatsMap) ||
-      (messages.length === 0 ? getProjectModel(session?.directory || '') : '') ||
+      (messages.length === 0
+        ? session?.projectDefaultModel || getProjectModel(session?.directory || '')
+        : '') ||
       session?.defaultModel ||
       '',
-    [messages, turnStatsMap, session?.directory, session?.defaultModel],
+    [messages, turnStatsMap, session?.directory, session?.projectDefaultModel, session?.defaultModel],
   );
 
   useEffect(() => {

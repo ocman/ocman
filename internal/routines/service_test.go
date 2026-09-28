@@ -135,6 +135,11 @@ type harness struct {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
+	return newHarnessWithHooks(t, sessionsvc.Hooks{})
+}
+
+func newHarnessWithHooks(t *testing.T, hooks sessionsvc.Hooks) *harness {
+	t.Helper()
 	sdb, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -145,7 +150,7 @@ func newHarness(t *testing.T) *harness {
 	registry := platforms.NewRegistry()
 	registry.Register(h.platform)
 	h.svc = New(Deps{
-		Store: sdb, Router: hostsvc.NewRouter(h.host), Sessions: sessionsvc.New(registry, sessionsvc.Hooks{}), Platforms: registry,
+		Store: sdb, Router: hostsvc.NewRouter(h.host), Sessions: sessionsvc.New(registry, hooks), Platforms: registry,
 		Now: func() time.Time { return time.UnixMilli(h.now.Load()) },
 		NewID: func(prefix string) string {
 			return prefix + "test-" + time.UnixMilli(h.ids.Add(1)).Format("150405.000")
@@ -416,6 +421,27 @@ func TestRoutineSessionModes(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRoutineWithoutModelUsesProjectDefault(t *testing.T) {
+	h := newHarnessWithHooks(t, sessionsvc.Hooks{ProjectModels: func(_ context.Context, dir string) []string {
+		if dir == "/repo" {
+			return []string{"prov/project", "prov/fallback"}
+		}
+		return nil
+	}})
+	routine, err := h.svc.Create(t.Context(), validInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.RunNow(t.Context(), routine.ID); err != nil {
+		t.Fatal(err)
+	}
+	h.platform.mu.Lock()
+	defer h.platform.mu.Unlock()
+	if len(h.platform.sent) != 1 || h.platform.sent[0].Model != "prov/project" {
+		t.Fatalf("sent = %+v, want model prov/project", h.platform.sent)
 	}
 }
 

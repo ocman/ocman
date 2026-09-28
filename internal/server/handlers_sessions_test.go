@@ -714,6 +714,22 @@ func TestHandleSession_UnarchivesOnOpen(t *testing.T) {
 	}
 }
 
+func TestHandleSession_SurfacesProjectDefaultModel(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	sess := &db.Session{ID: "s1", Platform: "opencode", Directory: "/src/foo"}
+	reg.Register(&fakePlatform{id: "opencode", sessions: []db.Session{*sess}, sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+		return &platforms.SessionDetail{Session: sess}, nil
+	}})
+	if err := srv.stateDB.SetProjectSettings(t.Context(), "/src/foo", state.ProjectSettings{Models: []string{"prov/a", "prov/b"}}); err != nil {
+		t.Fatal(err)
+	}
+	rr := httptest.NewRecorder()
+	srv.handleSession(rr, httptest.NewRequest(http.MethodGet, "/api/session/s1", nil))
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"projectDefaultModel":"prov/a"`) {
+		t.Fatalf("status = %d body = %s", rr.Code, rr.Body.String())
+	}
+}
+
 // --- POST /api/session/{id}/auto-approve ---
 
 func TestPromptSessionIDPrefersIssuingChild(t *testing.T) {

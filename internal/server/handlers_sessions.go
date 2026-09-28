@@ -213,6 +213,9 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	}
 	remote := isRemotePlatformID(string(adapter.ID()))
 	s.enrichSessionDetail(r.Context(), string(adapter.ID()), sessionID, detail, !remote)
+	if detail.Session != nil {
+		detail.Session.ProjectDefaultModel = s.projectDefaultModel(r.Context(), detail.Session.Directory)
+	}
 
 	// Opening a session unarchives it (and its project) so the sidebar
 	// shows the project + session tile again and navigation stays

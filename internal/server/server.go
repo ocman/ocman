@@ -48,6 +48,7 @@ type Server struct {
 	addr               string
 	registry           *platforms.Registry
 	sessions           *sessionsvc.Service
+	projectModels      projectModelCache
 	auth               *Auth
 	integrations       *forgeClients
 	previewAuth        previewAuthState
@@ -289,6 +290,7 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 			s.broadcastSessionCreated(info)
 			s.refreshProjectsIndexAsync()
 		},
+		ProjectModels: s.projectModelList,
 	})
 	factorySvc := factory.NewNativeWithExecution(stateDB, factoryProjectResolver{server: s}, factoryPlanningLauncher{server: s}, factoryImplementationLauncher{server: s})
 	s.factory = factorySvc
