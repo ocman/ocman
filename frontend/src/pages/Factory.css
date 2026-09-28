@@ -67,6 +67,11 @@ a.factory-cell:hover { color: var(--accent); }
 @media (max-width: 900px) {
   .factory-list .factory-grid-row { grid-template-columns: 1fr; gap: 6px; padding-block: 9px; }
 }
+/* The live-work and queue columns need ~930px; stack on the list's own width, since the sidebar makes the viewport a poor proxy (iPad landscape). */
+.factory-list { container-type: inline-size; }
+@container (max-width: 960px) {
+  .factory-list:is(.factory-list--actions, .factory-list--queue):not(.factory-list--inbox) .factory-grid-row { grid-template-columns: 1fr; gap: 6px; padding-block: 9px; }
+}
 .factory-list-title-line { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
 .factory-list-id { flex: 0 0 auto; color: var(--text-dim); font: 11px var(--font-conversation-mono); }
 .factory-list-type-icon { flex: 0 0 auto; color: var(--text-dim); font-size: 13px; }
