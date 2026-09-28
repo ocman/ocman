@@ -71,7 +71,6 @@ export function LaunchSplitButton({
       // Brief "Launched" confirmation so the user knows the request landed.
       setLaunched(true);
       window.setTimeout(() => setLaunched(false), 2000);
-      console.info('handle launched:', res);
     } catch (err) {
       if (err instanceof UpstreamApiError && err.envelope?.error.code === 'requires_fetch') {
         const ft = err.envelope.error.fetchTarget ?? '';

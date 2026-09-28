@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSessionWithLaunch } from './createSessionWithLaunch';
 import { useLaunchProgressStore } from './launchProgressStore';
 
+vi.mock('./remoteLog');
+
 function unreachable(): Error & { code: string } {
   const err = new Error('no running platform instance') as Error & { code: string };
   err.code = 'unreachable';

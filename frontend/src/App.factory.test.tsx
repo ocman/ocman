@@ -115,7 +115,7 @@ describe('Factory routes', () => {
   it('renders issues as tickets', () => {
     const epic = { id: 'epic-1', goal: 'Ship Factory', status: 'open', initialProject: '/repo', formulaId: 'ocman/tracer', formulaVersion: 1, formulaRevision: 1, formulaHash: 'hash', formulaOrigin: 'built-in', instantiationId: 'request-1' };
     vi.mocked(useWorkEpics).mockReturnValue({ data: [epic], isLoading: false, isError: false } as never);
-    vi.mocked(useFactoryGraphIssues).mockReturnValue([{ data: [{ id: 'issue-1', epicId: epic.id, kind: 'plan', title: 'Plan Factory', status: 'open' }], isLoading: false, isError: false }] as never);
+    vi.mocked(useFactoryGraphIssues).mockReturnValue([{ data: [{ id: 'issue-1', epicId: epic.id, kind: 'plan', project: '/repo', title: 'Plan Factory', status: 'open' }], isLoading: false, isError: false }] as never);
     renderRoute('/factory/issues');
     expect(screen.getByRole('heading', { name: 'Factory issues' })).toBeInTheDocument();
 		expect(screen.getByText('#issue-1')).toBeInTheDocument();

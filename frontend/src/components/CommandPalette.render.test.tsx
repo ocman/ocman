@@ -38,6 +38,8 @@ const mocks = vi.hoisted(() => {
   return { uiState, apiState };
 });
 
+vi.mock('../lib/remoteLog');
+
 vi.mock('../lib/uiStore', () => {
   const useUiStore = Object.assign(
     (selector?: (state: typeof mocks.uiState) => unknown) => (

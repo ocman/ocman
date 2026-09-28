@@ -933,7 +933,7 @@ describe('Factory interactions', () => {
 			{ id: 'implement-4', epicId: 'epic-4', title: 'Retry implementation', project: '/repo', state: 'retry_wait', retryAt: 1_700_000_000_000, retryAttempts: 2 },
 			{ id: 'implement-5', epicId: 'epic-5', title: 'Skipped recovery', project: '/repo', state: 'not_applicable', blockers: [{ id: 'test-1', reason: 'Passed', outcome: 'succeeded' }] },
 			{ id: 'implement-6', epicId: 'epic-6', title: 'Undelivered optional work', project: '/repo', state: 'not_applicable', outcomeReason: 'Final delivery is complete; this work will not run.' },
-			{ id: 'implement-6', epicId: 'epic-6', title: 'Deferred implementation', project: '/repo', state: 'deferred', outcomeReason: 'waiting for review' },
+			{ id: 'implement-deferred', epicId: 'epic-6', title: 'Deferred implementation', project: '/repo', state: 'deferred', outcomeReason: 'waiting for review' },
 			{ id: 'implement-7', epicId: 'epic-7', title: 'Merge-gated implementation', project: '/app', state: 'waiting', blockers: [{ id: 'delivery-1', type: 'merge_gated', reason: 'Waiting for the Project Delivery PR to merge.', outcome: 'open' }] },
 			{ id: 'implement-8', epicId: 'epic-8', title: 'Unknown blocker', project: '/repo', state: 'terminally_blocked' },
 			{ id: 'implement-9', epicId: 'epic-9', title: 'Conditional work', project: '/repo', state: 'not_applicable' },
