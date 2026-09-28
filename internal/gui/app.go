@@ -89,7 +89,7 @@ func (a *App) startup(ctx context.Context) {
 // RunGUI starts the ocman HTTP server on an ephemeral loopback port and opens
 // a Wails window that loads it.  srv must already be fully constructed
 // (New + registered adapters + auth) but not yet started.
-func RunGUI(ctx context.Context, srv *server.Server, listenAddr string) error {
+func RunGUI(ctx context.Context, srv *server.Server, listenAddr string, bootTimeout time.Duration) error {
 	// Pick an ephemeral port for the backend so the GUI can point at it.
 	// We override the address to 127.0.0.1:0 via a net.Listener, then
 	// read back the actual port before starting Wails.
@@ -102,17 +102,18 @@ func RunGUI(ctx context.Context, srv *server.Server, listenAddr string) error {
 
 	// Start the server on the pre-bound listener in a background goroutine.
 	// The context passed here is the same signal context used in CLI mode,
-	// so SIGINT/SIGTERM still trigger a graceful shutdown.
+	// so SIGINT/SIGTERM still trigger a graceful shutdown. A failure leaves
+	// the listener bound but unserved, so it is fatal rather than a hang.
 	go func() {
 		if err := srv.StartOnListener(ctx, ln); err != nil {
-			log.WithError(err).Error("gui: backend server error")
+			Fatalf("gui: backend server error: %v", err)
 		}
 	}()
 
-	// Give the server a moment to finish its startup bookkeeping (hook
-	// installation, background loops) before Wails opens the window and
-	// fires the first HTTP request.
-	waitForServer(backendURL, 3*time.Second)
+	// Don't open a window on a dead backend.
+	if err := waitForServer(backendURL, bootTimeout); err != nil {
+		return err
+	}
 
 	app := &App{}
 
@@ -140,17 +141,24 @@ func RunGUI(ctx context.Context, srv *server.Server, listenAddr string) error {
 	return nil
 }
 
-// waitForServer polls the backend until it responds or the timeout expires.
-func waitForServer(base string, timeout time.Duration) {
+// waitForServer polls the backend until /api/auth/me (cheap, reachable
+// without a login) answers 200, or fails once timeout expires.
+func waitForServer(base string, timeout time.Duration) error {
 	client := &http.Client{Timeout: 500 * time.Millisecond}
 	deadline := time.Now().Add(timeout)
+	last := "no response"
 	for time.Now().Before(deadline) {
-		resp, err := client.Get(base + "/api/stats")
+		resp, err := client.Get(base + "/api/auth/me")
 		if err == nil {
 			resp.Body.Close()
-			return
+			if resp.StatusCode == http.StatusOK {
+				return nil
+			}
+			last = resp.Status
+		} else {
+			last = err.Error()
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	log.Warn("gui: backend did not respond within timeout; opening window anyway")
+	return fmt.Errorf("gui: backend at %s not ready after %s (%s)", base, timeout, last)
 }

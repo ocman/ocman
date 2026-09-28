@@ -106,6 +106,7 @@ func main() {
 
 	addr := flag.String("addr", "127.0.0.1:8228", "listen address")
 	guiMode := flag.Bool("gui", isAppBundle(), "open a native desktop window (Wails) instead of just serving HTTP")
+	guiBootTimeout := flag.Duration("gui-boot-timeout", 10*time.Second, "how long --gui waits for the backend to answer before showing an error")
 	guiAddr := flag.String("gui-addr", "127.0.0.1:0", "listen address for the backend when --gui is set (default picks an ephemeral port)")
 	dbPath := flag.String("db", db.DefaultDBPath(), "path to opencode.db")
 	platformsFlag := flag.String("platforms", "opencode", "comma-separated list of platforms to enable (opencode)")
@@ -129,6 +130,10 @@ func main() {
 	flag.Parse()
 	home, _ := os.UserHomeDir()
 	logPath := setupLogFile(resolveLogPath(*logFile, runtime.GOOS, home, os.Getenv("XDG_STATE_HOME")))
+	// Every startup failure goes through fatal: in GUI mode it shows a
+	// native alert instead of the app silently vanishing.
+	gui.SetFatalContext(*guiMode, logPath)
+	fatal := gui.Fatalf
 	if err := opencodeskills.Remove("ocman-session-splitting"); err != nil {
 		log.WithError(err).Warn("removing retired ocman session-splitting skill")
 	}
@@ -139,7 +144,7 @@ func main() {
 		log.WithError(err).Warn("installing embedded ocman skills")
 	}
 	if err := validateRemoteTransport(*remoteListen, *remoteTLSCert, *remoteTLSKey, *remoteTrustedOverlay); err != nil {
-		log.Fatal(err)
+		fatal("%v", err)
 	}
 
 	// Refuse to expose an unauthenticated dashboard beyond loopback:
@@ -147,7 +152,7 @@ func main() {
 	// anyone who can reach the port.
 	authPasswordValue, err := resolveAuthPassword(*authPassword, *authPasswordFile)
 	if err != nil {
-		log.Fatalf("Failed to configure auth: %v", err)
+		fatal("Failed to configure auth: %v", err)
 	}
 	httpListenAddr := *addr
 	if *guiMode {
@@ -155,7 +160,7 @@ func main() {
 	}
 	if err := validateListenExposure(httpListenAddr, authPasswordValue != "",
 		*insecureNoAuth || parseBoolEnv(os.Getenv(insecureNoAuthEnv))); err != nil {
-		log.Fatal(err)
+		fatal("%v", err)
 	}
 
 	// Resolve the public base URL: flag wins, then env. Empty leaves
@@ -165,7 +170,7 @@ func main() {
 	// disabling cross-machine sharing.
 	resolvedRelayURL, relaySource, err := share.ResolveRelayURL(*relayURL, os.Getenv(share.RelayURLEnv), share.DefaultRelayURL)
 	if err != nil {
-		log.Fatal(err)
+		fatal("%v", err)
 	}
 	if resolvedRelayURL != "" {
 		log.WithFields(log.Fields{"url": resolvedRelayURL, "source": relaySource}).
@@ -185,14 +190,12 @@ func main() {
 			continue
 		}
 		if !knownPlatforms[name] {
-			fmt.Fprintf(os.Stderr, "Unknown platform: %q (known: opencode)\n", name)
-			os.Exit(1)
+			fatal("Unknown platform: %q (known: opencode)", name)
 		}
 		enabledPlatforms[name] = true
 	}
 	if len(enabledPlatforms) == 0 {
-		fmt.Fprintf(os.Stderr, "No platforms enabled. Use -platforms with at least one of: opencode\n")
-		os.Exit(1)
+		fatal("No platforms enabled. Use -platforms with at least one of: opencode")
 	}
 
 	// Create a context that is cancelled on SIGINT or SIGTERM. Built
@@ -210,7 +213,7 @@ func main() {
 	// LIFO ordering flushes spans/metrics first, then closes DBs.
 	shutdownTel, err := telemetry.Init(ctx, *otelEndpoint, version)
 	if err != nil {
-		log.Fatalf("Failed to initialise telemetry: %v", err)
+		fatal("Failed to initialise telemetry: %v", err)
 	}
 	defer func() {
 		// Use a fresh context with timeout: the main ctx is
@@ -227,15 +230,13 @@ func main() {
 	openCodeDBPath := "" // maintenance is offered only for an opened database
 	if enabledPlatforms[string(opencodeplatform.PlatformID)] {
 		if _, err := os.Stat(*dbPath); os.IsNotExist(err) {
-			fmt.Fprintf(os.Stderr, "OpenCode database not found at: %s\n", *dbPath)
-			fmt.Fprintf(os.Stderr, "Make sure OpenCode is installed and has been used at least once.\n")
-			os.Exit(1)
+			fatal("OpenCode database not found at: %s\nMake sure OpenCode is installed and has been used at least once.", *dbPath)
 		}
 
 		var err error
 		database, err = db.Open(*dbPath)
 		if err != nil {
-			log.Fatalf("Failed to open database: %v", err)
+			fatal("Failed to open database: %v", err)
 		}
 		defer database.Close()
 		openCodeDBPath = *dbPath
@@ -243,13 +244,13 @@ func main() {
 
 	stateDB, err := state.Open(state.DefaultDBPath())
 	if err != nil {
-		log.Fatalf("Failed to open state database: %v", err)
+		fatal("Failed to open state database: %v", err)
 	}
 	defer stateDB.Close()
 
 	opencodePassword, err := resolveOpenCodePassword(*opencodePasswordFile, *opencodeGeneratePassword)
 	if err != nil {
-		log.Fatalf("Failed to configure OpenCode server auth: %v", err)
+		fatal("Failed to configure OpenCode server auth: %v", err)
 	}
 	opencodeAuth := ocapi.New(opencodePassword)
 
@@ -259,7 +260,7 @@ func main() {
 	// gRPC remote-listen server is opt-in via -remote-listen.
 	ident, err := stateDB.InstanceIdentity(ctx)
 	if err != nil {
-		log.Fatalf("Failed to ensure instance identity: %v", err)
+		fatal("Failed to ensure instance identity: %v", err)
 	}
 
 	// Pre-warm the pricing table in the background so the first metrics request
@@ -278,7 +279,7 @@ func main() {
 	}
 	auth, err := buildAuth(ctx, stateDB, *authPassword, *authPasswordFile, *authSessionTTL, *addr, *authTrustLocalhost)
 	if err != nil {
-		log.Fatalf("Failed to configure auth: %v", err)
+		fatal("Failed to configure auth: %v", err)
 	}
 
 	// In GUI mode the server listens on an ephemeral loopback port that
@@ -296,8 +297,8 @@ func main() {
 			WithOpenCodeDBPath(openCodeDBPath).
 			WithLogPath(logPath).
 			WithRemoteAccess(ident.InstanceID, "", false, false)
-		if err := gui.RunGUI(ctx, srv, httpListenAddr); err != nil {
-			log.Fatalf("GUI error: %v", err)
+		if err := gui.RunGUI(ctx, srv, httpListenAddr, *guiBootTimeout); err != nil {
+			fatal("GUI error: %v", err)
 		}
 	} else {
 		srv := server.New(database, stateDB, *addr, registry, auth).
@@ -328,7 +329,7 @@ func main() {
 		go mgr.RunInventoryLoop(ctx, 5*time.Minute)
 
 		if err := srv.Start(ctx); err != nil {
-			log.Fatalf("Server error: %v", err)
+			fatal("Server error: %v", err)
 		}
 	}
 
