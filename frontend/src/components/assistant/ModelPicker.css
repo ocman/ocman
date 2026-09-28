@@ -113,3 +113,8 @@
   color: var(--yellow);
   opacity: 1;
 }
+.oc-model-picker .oc-model-picker-badge--cooldown {
+  background: transparent;
+  color: var(--warning);
+  padding: 0;
+}

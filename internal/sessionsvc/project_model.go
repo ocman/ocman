@@ -32,9 +32,23 @@ func (c *cooldowns) clock() time.Time {
 }
 
 func (c *cooldowns) cooled(provider string) bool {
+	return !c.active(provider).IsZero()
+}
+
+// active returns when provider's cooldown expires; zero when it has none.
+func (c *cooldowns) active(provider string) time.Time {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.clock().Before(c.until[provider])
+	if t := c.until[provider]; c.clock().Before(t) {
+		return t
+	}
+	return time.Time{}
+}
+
+// CooldownUntil returns when provider's active cooldown expires; the
+// zero time when it has none.
+func (s *Service) CooldownUntil(provider string) time.Time {
+	return s.cooldowns.active(provider)
 }
 
 // RecordCooldown cools provider for d, or for the fallback when d <= 0

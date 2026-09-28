@@ -1,6 +1,9 @@
 package platforms
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // This file defines the request/response value types passed across the
 // Platform operation methods. Keeping them here (instead of in
@@ -222,6 +225,9 @@ type SessionModel struct {
 	IsAvailable       bool     `json:"isAvailable,omitempty"`
 	IsFavorite        bool     `json:"isFavorite,omitempty"`
 	Reasoning         []string `json:"reasoning,omitempty"`
+	// CooldownUntil is when the provider's active cooldown expires; nil
+	// when it has none.
+	CooldownUntil *time.Time `json:"cooldownUntil,omitempty"`
 }
 
 // SessionModelsResponse is the full response for the session models

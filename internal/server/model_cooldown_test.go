@@ -198,3 +198,31 @@ func TestQuotaResetIn(t *testing.T) {
 		}
 	}
 }
+
+func TestSessionModelsCarryCooldown(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	reg.Register(&fakePlatform{
+		id:       "opencode",
+		sessions: []db.Session{mkSession("opencode", "s1", "t", 1)},
+		sessionModelsFn: func() *platforms.SessionModelsResponse {
+			return &platforms.SessionModelsResponse{Models: []platforms.SessionModel{
+				{Provider: "a", Model: "x"}, {Provider: "b", Model: "y"},
+			}}
+		},
+	})
+	srv.sessions.RecordCooldown(t.Context(), "a", time.Hour)
+
+	rr := httptest.NewRecorder()
+	srv.handleSessionModels(rr, httptest.NewRequest(http.MethodGet, "/api/session/s1/models", nil))
+	var body platforms.SessionModelsResponse
+	mustUnmarshal(t, rr.Body.Bytes(), &body)
+	if len(body.Models) != 2 {
+		t.Fatalf("models = %+v", body.Models)
+	}
+	if c := body.Models[0].CooldownUntil; c == nil || time.Until(*c) < 50*time.Minute {
+		t.Errorf("a cooldown = %v, want ~1h", c)
+	}
+	if c := body.Models[1].CooldownUntil; c != nil {
+		t.Errorf("b cooldown = %v, want none", c)
+	}
+}

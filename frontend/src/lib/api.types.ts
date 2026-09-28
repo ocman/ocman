@@ -1474,6 +1474,8 @@ export interface SessionModelEntry {
   isAvailable?: boolean;
   isFavorite?: boolean;
   reasoning?: string[];
+  // ISO time the provider's active cooldown expires; absent when none.
+  cooldownUntil?: string;
 }
 
 // FavoriteEntry mirrors internal/server/favorites.go:favoriteEntry.

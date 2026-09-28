@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useReducer } from 'react';
+import { timeUntilISO } from '../../lib/format';
 import type { SessionModelEntry } from '../../lib/api';
 import { ModelLabel } from '../ModelLogo';
 import { CommandListPicker, type PickerEntryBase } from './CommandListPicker';
@@ -38,6 +39,7 @@ interface PickerEntry extends PickerEntryBase {
   isAvailable: boolean;
   isFavorite: boolean;
   isCurrent: boolean;
+  cooldownUntil: string;     // ISO expiry of the provider's cooldown, '' if none
 }
 
 // buildEntriesFromRich turns the backend response into picker rows. The server
@@ -61,6 +63,7 @@ function buildEntriesFromRich(
       isAvailable: !!m.isAvailable,
       isFavorite: !!m.isFavorite,
       isCurrent: !!currentModel && value === currentModel,
+      cooldownUntil: m.cooldownUntil || '',
     };
   });
 }
@@ -85,6 +88,7 @@ function buildEntriesFromStrings(models: string[], currentModel: string | undefi
       isAvailable: false,
       isFavorite: false,
       isCurrent: !!currentModel && m === currentModel,
+      cooldownUntil: '',
     };
   });
   entries.sort((a, b) => {
@@ -130,9 +134,27 @@ export function ModelPicker({
     [useRich, modelEntries, models, currentModel],
   );
 
+  // Re-render every second while a cooldown is running so the countdown
+  // moves and the badge drops the moment it expires.
+  const [, tick] = useReducer((n: number) => n + 1, 0);
+  const cooldownEnd = useMemo(
+    () => Math.max(0, ...entries.map((e) => (e.cooldownUntil ? Date.parse(e.cooldownUntil) || 0 : 0))),
+    [entries],
+  );
+  useEffect(() => {
+    if (!open || cooldownEnd <= Date.now()) return;
+    const id = setInterval(() => {
+      tick();
+      if (Date.now() >= cooldownEnd) clearInterval(id);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [open, cooldownEnd]);
+
   // Render one model row. The check column + click/hover handling live in
   // CommandListPicker; this supplies the model-specific content + favorites.
-  const renderRow = (e: PickerEntry) => (
+  const renderRow = (e: PickerEntry) => {
+    const cooldownLeft = e.cooldownUntil ? timeUntilISO(e.cooldownUntil) : '';
+    return (
     <>
       <div className="oc-cmd-item-content">
         <span className="oc-cmd-title">
@@ -157,6 +179,14 @@ export function ModelPicker({
               archived
             </span>
           )}
+          {cooldownLeft && (
+            <span
+              className="oc-model-picker-badge oc-model-picker-badge--cooldown"
+              title="Provider is cooling down; prompts fall through to the next project model"
+            >
+              <i className="bi bi-hourglass-split" /> unavailable · {cooldownLeft}
+            </span>
+          )}
         </span>
         <span className="oc-cmd-meta">{e.providerName || e.provider || ''}</span>
       </div>
@@ -177,7 +207,8 @@ export function ModelPicker({
         </button>
       )}
     </>
-  );
+    );
+  };
 
   return (
     <CommandListPicker<PickerEntry>

@@ -46,6 +46,13 @@ func (s *Server) handleSessionModels(w http.ResponseWriter, r *http.Request) {
 		if resp == nil {
 			resp = &platforms.SessionModelsResponse{Models: []platforms.SessionModel{}}
 		}
+		if s.sessions != nil {
+			for i := range resp.Models {
+				if t := s.sessions.CooldownUntil(resp.Models[i].Provider); !t.IsZero() {
+					resp.Models[i].CooldownUntil = &t
+				}
+			}
+		}
 		writeJSON(w, resp)
 	})
 }

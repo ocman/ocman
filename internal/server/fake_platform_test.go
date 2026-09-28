@@ -44,6 +44,7 @@ type fakePlatform struct {
 	createSessionFn func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error)
 	// sessionDetailFn, when non-nil, intercepts Session calls.
 	sessionDetailFn func(id string) (*platforms.SessionDetail, error)
+	sessionModelsFn func() *platforms.SessionModelsResponse
 	// proxyEventsFn, when non-nil, intercepts ProxyEvents calls so
 	// SSE-handler tests can drive both the success path (write some
 	// bytes, return nil) and the unreachable path (return
@@ -155,6 +156,9 @@ func (f *fakePlatform) SlashCommands(context.Context, string) ([]platforms.Slash
 }
 
 func (f *fakePlatform) SessionModels(context.Context, string) (*platforms.SessionModelsResponse, error) {
+	if f.sessionModelsFn != nil {
+		return f.sessionModelsFn(), nil
+	}
 	return nil, nil
 }
 
