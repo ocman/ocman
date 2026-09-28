@@ -86,6 +86,16 @@ must tell the model to inspect the working tree before redoing work. That
 sentence is the entire mitigation. Every assistant message already records
 its model, so the switch documents itself.
 
+Implemented in `internal/server/model_continue.go`, driven from the idle
+edge's flush worker: a 429 turn continues on
+`sessionsvc.Service.Fallthrough`'s model, and that edge does not also
+drain the follow-up queue (the held message waits for the continuation's
+turn to end). A retry parked on a cooled provider is aborted once so its
+idle edge can continue; a user's own abort is never continued. Nothing is
+sent when the list is empty or `off`. Notices (`model_switch`,
+`models_exhausted` with `retryAt` = earliest recovery) are held in memory
+and overlaid on the session's `notice`, rendered by `RateLimitBanner`.
+
 ## Explicitly rejected
 
 Revert-and-resend, `ask` mode, per-session override,

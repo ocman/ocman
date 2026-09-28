@@ -33,23 +33,26 @@ func (s *Server) onSessionRetry(sessionID string, st autoapprove.SessionStatus) 
 	}
 	if msg, ok := s.latestAssistant(ctx, string(opencode.PlatformID), sessionID); ok {
 		s.recordCooldown(ctx, msg.ProviderID, wait)
+		s.abortParkedRetry(ctx, sessionID, msg.ProviderID)
 	}
 }
 
-// recordQuotaCooldown cools the provider of a turn that ended in a 429.
+// recordQuotaCooldown cools the provider of a turn that ended in a 429
+// and returns it ("" when the turn did not die on a quota wall).
 // Auth failures and context overflow are deliberately ignored: another
 // model fixes neither, and switching would hide the misconfiguration.
-func (s *Server) recordQuotaCooldown(ctx context.Context, platformID, sessionID string) {
+func (s *Server) recordQuotaCooldown(ctx context.Context, platformID, sessionID string) string {
 	next, _ := s.retryNext.LoadAndDelete(sessionID)
 	msg, ok := s.latestAssistant(ctx, platformID, sessionID)
 	if !ok || msg.Error == nil || msg.Error.Name != "APIError" || msg.Error.Data.StatusCode != http.StatusTooManyRequests {
-		return
+		return ""
 	}
 	d := quotaResetIn(msg.Error.Data.ResponseHeaders, time.Now())
 	if t, ok := next.(time.Time); ok && d <= 0 {
 		d = time.Until(t)
 	}
 	s.recordCooldown(ctx, msg.ProviderID, d)
+	return msg.ProviderID
 }
 
 func (s *Server) recordCooldown(ctx context.Context, provider string, d time.Duration) {

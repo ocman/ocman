@@ -75,6 +75,9 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	// backoff) so the frontend can surface the reason without
 	// platform-specific parsing.
 	applySessionNotice(all)
+	for i := range all {
+		s.applyFallNotice(all[i].Platform, &all[i])
+	}
 
 	// Note: git status info is no longer attached here. The
 	// /api/sessions handler used to fan out up to 8 concurrent
@@ -255,6 +258,7 @@ func (s *Server) enrichSessionDetail(ctx context.Context, platform, sessionID st
 	}
 	if detail.Session != nil {
 		detail.Session.Notice = deriveSessionNotice(*detail.Session)
+		s.applyFallNotice(platform, detail.Session)
 	}
 	if approvals && s.stateDB != nil {
 		// Remote details are enriched on their owner before crossing gRPC;

@@ -22,6 +22,7 @@ const queueSweepInterval = time.Minute
 type queueFlush struct {
 	platformID string
 	sessionID  string
+	cooled     string // provider that just cooled under the session; continue it
 }
 
 // runQueueSweep periodically drains one message from every idle session
@@ -74,6 +75,9 @@ func (s *Server) queueFlushWorker() *worker.Worker[queueFlush] {
 	s.queueWorkerOnce.Do(func() {
 		s.queueWorker = worker.NewKeyed(func(item queueFlush) {
 			runWithRecover("queue-flush", func() {
+				if s.continueSession(context.Background(), item.platformID, item.sessionID, item.cooled) {
+					return
+				}
 				s.queueSvc().Flush(context.Background(), item.platformID, item.sessionID)
 			})
 		}, func(item queueFlush) string { return item.platformID + "\x00" + item.sessionID })
@@ -210,8 +214,11 @@ func (s *Server) onSessionIdle(platformID, sessionID string) {
 	}
 	// Synchronously, before the flush is enqueued: a held message must
 	// see the dead provider's cooldown when it drains.
-	s.recordQuotaCooldown(context.Background(), platformID, sessionID)
-	s.queueFlushWorker().Enqueue(queueFlush{platformID: platformID, sessionID: sessionID})
+	cooled := s.recordQuotaCooldown(context.Background(), platformID, sessionID)
+	if p, ok := s.fallAborted.LoadAndDelete(fallKey(platformID, sessionID)); ok && cooled == "" {
+		cooled = p.(string)
+	}
+	s.queueFlushWorker().Enqueue(queueFlush{platformID: platformID, sessionID: sessionID, cooled: cooled})
 	go runWithRecover("plugin-conversation-reply", func() {
 		s.replyToConversation(context.Background(), platformID, sessionID)
 	})

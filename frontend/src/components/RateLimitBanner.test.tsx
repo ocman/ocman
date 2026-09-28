@@ -35,6 +35,19 @@ describe('RateLimitBanner', () => {
     expect(screen.getByText(/x/)).toBeInTheDocument();
   });
 
+  it('names the model a session switched to', () => {
+    renderBanner(makeNotice({ kind: 'model_switch', message: 'Switched to b/y: a ran out of quota' }));
+    expect(screen.getByText(/Switched model/)).toBeInTheDocument();
+    expect(screen.getByText(/Switched to b\/y/)).toBeInTheDocument();
+  });
+
+  it('counts down to the earliest recovery when every model is cooled down', () => {
+    renderBanner(makeNotice({ kind: 'models_exhausted', message: 'nothing was sent', retryAt: Date.now() + 120_000 }));
+    expect(screen.getByText(/All models cooled down/)).toBeInTheDocument();
+    expect(screen.getByText(/Earliest recovers in/)).toBeInTheDocument();
+    expect(screen.queryByText(/Retrying in/)).not.toBeInTheDocument();
+  });
+
   it('labels live retry notices as retrying', () => {
     renderBanner({ kind: 'retry', message: 'provider request failed', retryAt: 0, attempt: 1 });
     expect(screen.getByText(/Retrying/)).toBeInTheDocument();

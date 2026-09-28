@@ -454,7 +454,7 @@ export interface Session {
  * assistant error matches a known transient pattern.
  */
 export interface SessionNotice {
-  kind: 'rate_limit' | 'provider_overloaded' | string;
+  kind: 'rate_limit' | 'provider_overloaded' | 'model_switch' | 'models_exhausted' | string;
   /** User-facing summary of the condition. */
   message: string;
   /** Unix ms timestamp when retry is expected, or 0 when unknown. */

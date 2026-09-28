@@ -163,3 +163,31 @@ func TestRecordCooldownDefaultsWithoutHook(t *testing.T) {
 		t.Fatal("default fallback not applied")
 	}
 }
+
+func TestFallthrough(t *testing.T) {
+	ctx := context.Background()
+	list := map[string][]string{"/repo": {"a/1", "b/1", "c/1"}}
+	svc, _ := newFallthroughService(list, false)
+	now := time.Unix(1_000, 0)
+	svc.cooldowns.now = func() time.Time { return now }
+	if m, _, ok := svc.Fallthrough(ctx, "opencode", "s1"); !ok || m != "a/1" {
+		t.Fatalf("fresh = %q %v", m, ok)
+	}
+	svc.RecordCooldown(ctx, "a", 2*time.Hour)
+	svc.RecordCooldown(ctx, "c", time.Hour)
+	if m, _, _ := svc.Fallthrough(ctx, "opencode", "s1"); m != "b/1" {
+		t.Fatalf("after a, c = %q", m)
+	}
+	svc.RecordCooldown(ctx, "b", 3*time.Hour)
+	if m, at, ok := svc.Fallthrough(ctx, "opencode", "s1"); !ok || m != "" || !at.Equal(now.Add(time.Hour)) {
+		t.Fatalf("exhausted = %q %v %v", m, at, ok)
+	}
+	for name, svc := range map[string]*Service{
+		"off":     func() *Service { s, _ := newFallthroughService(list, true); return s }(),
+		"no list": func() *Service { s, _ := newFallthroughService(nil, false); return s }(),
+	} {
+		if _, _, ok := svc.Fallthrough(ctx, "opencode", "s1"); ok {
+			t.Errorf("%s: fallthrough reported", name)
+		}
+	}
+}

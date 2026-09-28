@@ -48,6 +48,8 @@ export function RateLimitBanner({ notice, onChangeModel }: RateLimitBannerProps)
   if (notice.kind === 'retry') title = 'Retrying';
   if (notice.kind === 'rate_limit') title = 'Rate limited';
   if (notice.kind === 'provider_overloaded') title = 'Provider overloaded';
+  if (notice.kind === 'model_switch') title = 'Switched model';
+  if (notice.kind === 'models_exhausted') title = 'All models cooled down';
 
   return (
     <Toast.Root
@@ -67,7 +69,7 @@ export function RateLimitBanner({ notice, onChangeModel }: RateLimitBannerProps)
             {notice.message}
             {remaining > 0 && (
               <span className="oc-rate-limit-retry">
-                {' · '}Retrying in ~{formatDuration(remaining)}
+                {' · '}{notice.kind === 'models_exhausted' ? 'Earliest recovers in' : 'Retrying in'} ~{formatDuration(remaining)}
               </span>
             )}
             {notice.attempt > 0 && (

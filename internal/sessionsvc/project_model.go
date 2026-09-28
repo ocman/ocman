@@ -74,14 +74,33 @@ func modelProvider(model string) string {
 //
 // Soft-fails: a lookup error never blocks the prompt.
 func (s *Service) selectModel(ctx context.Context, p platforms.Platform, sessionID, model string) string {
-	if s.hooks.ProjectModels == nil {
+	models, off, ok := s.projectModels(ctx, p, sessionID)
+	if !ok {
 		return model
+	}
+	if model == "" && len(models) > 0 {
+		model = models[0]
+	}
+	if off || model == "" || !s.cooldowns.cooled(modelProvider(model)) {
+		return model
+	}
+	if m := s.firstUsable(models); m != "" {
+		return m
+	}
+	return model
+}
+
+// projectModels returns the model list of the session's project and
+// whether its fallthrough is off; ok is false when it cannot be looked up.
+func (s *Service) projectModels(ctx context.Context, p platforms.Platform, sessionID string) ([]string, bool, bool) {
+	if s.hooks.ProjectModels == nil {
+		return nil, false, false
 	}
 	dir, ok := s.sessionDirs.Load(sessionID)
 	if !ok {
 		detail, err := p.Session(ctx, sessionID, 1, 0)
 		if err != nil || detail == nil || detail.Session == nil || detail.Session.Directory == "" {
-			return model
+			return nil, false, false
 		}
 		dir = detail.Session.Directory
 		// ponytail: unbounded per-session cache, one string per prompted
@@ -89,16 +108,41 @@ func (s *Service) selectModel(ctx context.Context, p platforms.Platform, session
 		s.sessionDirs.Store(sessionID, dir)
 	}
 	models, off := s.hooks.ProjectModels(ctx, dir.(string))
-	if model == "" && len(models) > 0 {
-		model = models[0]
-	}
-	if off || model == "" || !s.cooldowns.cooled(modelProvider(model)) {
-		return model
-	}
+	return models, off, true
+}
+
+func (s *Service) firstUsable(models []string) string {
 	for _, m := range models {
 		if !s.cooldowns.cooled(modelProvider(m)) {
 			return m
 		}
 	}
-	return model
+	return ""
+}
+
+// Fallthrough reports where a continuation of sessionID would go: the
+// first listed model whose provider is not cooled down, or, when every
+// one is, the moment the earliest recovers. ok is false when the project
+// has no list or its fallthrough is off: then nothing continues.
+func (s *Service) Fallthrough(ctx context.Context, platformID, sessionID string) (model string, recovers time.Time, ok bool) {
+	p, err := s.resolve(ctx, sessionID, platformID)
+	if err != nil {
+		return "", time.Time{}, false
+	}
+	models, off, found := s.projectModels(ctx, p, sessionID)
+	if !found || off || len(models) == 0 {
+		return "", time.Time{}, false
+	}
+	if m := s.firstUsable(models); m != "" {
+		return m, time.Time{}, true
+	}
+	c := &s.cooldowns
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, m := range models {
+		if t := c.until[modelProvider(m)]; recovers.IsZero() || t.Before(recovers) {
+			recovers = t
+		}
+	}
+	return "", recovers, true
 }

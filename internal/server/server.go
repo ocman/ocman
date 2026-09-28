@@ -50,6 +50,8 @@ type Server struct {
 	sessions           *sessionsvc.Service
 	projectModels      projectModelCache
 	retryNext          sync.Map // session → latest retry next attempt; 429 reset fallback
+	fallAborted        sync.Map // fallKey → provider whose parked retry ocman aborted
+	fallNotices        sync.Map // fallKey → fallNotice
 	auth               *Auth
 	integrations       *forgeClients
 	previewAuth        previewAuthState

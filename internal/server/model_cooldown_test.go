@@ -22,14 +22,20 @@ type cooldownRig struct {
 	srv  *Server
 	mu   sync.Mutex
 	busy bool
-	last string
-	sent []string
+	last   string
+	sent   []string
+	msgs   []string
+	aborts int
 }
 
 func newCooldownRig(t *testing.T) *cooldownRig {
+	return newCooldownRigWith(t, state.ProjectSettings{Models: []string{"a/x", "b/y"}})
+}
+
+func newCooldownRigWith(t *testing.T, ps state.ProjectSettings) *cooldownRig {
 	t.Helper()
 	srv, reg := newSessionsTestServer(t)
-	if err := srv.stateDB.SetProjectSettings(t.Context(), "/src/foo", state.ProjectSettings{Models: []string{"a/x", "b/y"}}); err != nil {
+	if err := srv.stateDB.SetProjectSettings(t.Context(), "/src/foo", ps); err != nil {
 		t.Fatal(err)
 	}
 	r := &cooldownRig{srv: srv}
@@ -40,6 +46,13 @@ func newCooldownRig(t *testing.T) *cooldownRig {
 			r.mu.Lock()
 			defer r.mu.Unlock()
 			r.sent = append(r.sent, req.Model)
+			r.msgs = append(r.msgs, req.Message)
+			return nil
+		},
+		abortFn: func(platforms.AbortRequest) error {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			r.aborts++
 			return nil
 		},
 		sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
@@ -145,9 +158,21 @@ func TestQueuedMessageSkipsProviderThatJustHitQuota(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.mu.Lock()
+	if len(r.msgs) != 1 || r.msgs[0] != continuationPrompt || r.sent[0] != "b/y" {
+		t.Fatalf("first edge sent %v %q, want only the continuation on b/y", r.sent, r.msgs)
+	}
+	// The continuation's turn ends cleanly; its idle edge drains the
+	// held message, still past the cooled provider.
+	r.last = `{"role":"assistant","providerID":"b","finish":"stop"}`
+	r.mu.Unlock()
+	r.srv.onSessionIdle("opencode", "s1")
+	if err := r.srv.queueFlushWorker().Drain(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	r.mu.Lock()
 	defer r.mu.Unlock()
-	if len(r.sent) != 1 || r.sent[0] != "b/y" {
-		t.Fatalf("sent models = %v, want [b/y]", r.sent)
+	if len(r.msgs) != 2 || r.msgs[1] != "held" || r.sent[1] != "b/y" {
+		t.Fatalf("second edge sent %v %q, want held on b/y", r.sent, r.msgs)
 	}
 }
 
