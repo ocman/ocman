@@ -6,6 +6,7 @@ import { MarkdownContent } from '../components/assistant/MarkdownText';
 import { RelativeTime } from '../components/RelativeTime';
 import { SegmentedControl } from '../components/SegmentedControl';
 import { EmptyState } from '../components/EmptyState';
+import { ArchiveButton } from '../components/ArchiveButton';
 import { useArchiveInboxItems, useInbox, useMarkInboxItemRead, useMarkInboxItemUnread, useRespondInboxPermission } from '../lib/queries';
 import type { InboxItem } from '../lib/api';
 import { fuzzyMatch } from '../lib/format';
@@ -165,6 +166,8 @@ export function Inbox() {
               </span>
               <span className="inbox-preview">{item.body}</span>
             </button>
+            {!archived && <ArchiveButton className="inbox-message-archive" label="Archive" disabled={archive.isPending}
+              onClick={() => archive.mutate([{ id: item.id, remoteId: item.remoteId }], { onSuccess: () => { if (activeKey === itemKey(item)) setActiveKey(null); } })} />}
           </article>)}
         </div>
       </section>

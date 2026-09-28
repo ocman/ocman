@@ -15,6 +15,7 @@ import { DataTable, DataTableGroupHeader } from './DataTable';
 import { projectRootForDirectory } from '../lib/worktrees';
 import { rollupGroupStatus } from '../lib/sidebarHelpers';
 import { remoteLog } from '../lib/remoteLog';
+import { ArchiveButton } from './ArchiveButton';
 
 /**
  * UnreadBadge renders a small "N new" pill on a session row when
@@ -74,14 +75,6 @@ export function GitStatusLine({ info, icon }: { info?: GitInfo | null; icon?: 'b
         >*</span>
       )}
     </span>
-  );
-}
-
-function ArchiveIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M2 3.5h12v2H2zm1 3h10v6H3zm3 2.5h4" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
   );
 }
 
@@ -392,15 +385,8 @@ export function GroupedSessionTable({
                         <td className="mono">{s.messageCount} msgs &middot; {formatDuration(s.durationMs)}</td>
                         <td><span title={new Date(s.timeCreated).toLocaleString()}>{relativeTime(s.timeCreated)}</span></td>
                         <td className="session-action-cell">
-                          <button
-                            className="session-archive-btn"
-                            onClick={(e) => { void handleArchiveSession(e, s); }}
-                            title="Archive session (reappears on new activity)"
-                            aria-label="Archive session"
-                            disabled={archivingSessionIds.has(s.id)}
-                          >
-                            <ArchiveIcon />
-                          </button>
+                          <ArchiveButton iconSize={14} label="Archive session" title="Archive session (reappears on new activity)"
+                            onClick={(e) => { void handleArchiveSession(e, s); }} disabled={archivingSessionIds.has(s.id)} />
                         </td>
                       </tr>
                     );
@@ -518,15 +504,8 @@ export function SessionTable({ sessions, showProject, loading, includeArchived }
               <td className="mono">{s.messageCount} msgs &middot; {formatDuration(s.durationMs)}</td>
               <td><span title={new Date(s.timeCreated).toLocaleString()}>{relativeTime(s.timeCreated)}</span></td>
               <td className="session-action-cell">
-                <button
-                  className="session-archive-btn"
-                  onClick={(e) => handleArchiveSession(e, s)}
-                  title="Archive session (reappears on new activity)"
-                  aria-label="Archive session"
-                  disabled={archivingSessionIds.has(s.id)}
-                >
-                  <ArchiveIcon />
-                </button>
+                <ArchiveButton iconSize={14} label="Archive session" title="Archive session (reappears on new activity)"
+                  onClick={(e) => handleArchiveSession(e, s)} disabled={archivingSessionIds.has(s.id)} />
               </td>
             </tr>
           );

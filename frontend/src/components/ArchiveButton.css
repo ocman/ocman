@@ -1,0 +1,25 @@
+.session-archive-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 0;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.session-archive-btn:hover {
+  background: var(--accent);
+  color: var(--white);
+  border-color: var(--accent);
+}
+
+.session-archive-btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}

@@ -281,26 +281,6 @@ div.session-row-actions {
   text-align: right;
 }
 
-.session-archive-btn {
-  width: 24px;
-  height: 24px;
-  border-radius: 0;
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-dim);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s;
-}
-
-.session-archive-btn:hover {
-  background: var(--accent);
-  color: var(--white);
-  border-color: var(--accent);
-}
-
 /* Tmux client popover */
 .tmux-client-popover {
   position: fixed;

@@ -8,7 +8,7 @@ import { compareSidebarActivity } from '../../lib/sidebarHelpers';
 import { HostBadge } from '../../components/HostBadge';
 import { ProjectLabel } from '../../components/ProjectLabel';
 import { GitStatusLine } from '../../components/SessionTable';
-import { ArchiveIcon } from './SidebarIcons';
+import { ArchiveIcon } from '../../components/ArchiveButton';
 import type { SidebarProjectGroup as ProjectGroup } from './SessionSidebar';
 
 export function SidebarProjectGroup({ group, collapsed, siblingGitInfos, toggleCollapsedProject,

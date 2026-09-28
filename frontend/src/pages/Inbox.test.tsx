@@ -70,6 +70,19 @@ describe('Inbox', () => {
     expect(api.archiveInboxItems).not.toHaveBeenCalled();
   });
 
+  it('archives a row from its inline button and closes the reader when it was open', async () => {
+    renderInbox();
+    const row = (await screen.findByRole('button', { name: /Build.*finished/ })).closest('article')!;
+    await within(screen.getByRole('region', { name: 'Message body' })).findByTestId('inbox-message-header');
+    fireEvent.click(within(row).getByRole('button', { name: 'Archive' }));
+    await waitFor(() => expect(api.archiveInboxItems).toHaveBeenCalledWith([{ id: '1', remoteId: 'local' }]));
+    await waitFor(() => expect(screen.queryByTestId('inbox-message-header')).toBeNull());
+    // Archived rows can't be re-archived.
+    fireEvent.click(statusFilter('Archived'));
+    await waitFor(() => expect(screen.getByRole('button', { name: /Remote note/ })).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Archive' })).toBeNull();
+  });
+
   it('leaves the archived view alone when Delete is pressed', async () => {
     renderInbox();
     await screen.findByText('Remote note');

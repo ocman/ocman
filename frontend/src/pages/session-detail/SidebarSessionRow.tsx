@@ -6,7 +6,7 @@ import { isTerminalStatus } from '../../lib/sessionStatus';
 import { StatusBadge } from '../../components/StatusBadge';
 import { ShortPath, GitStatusLine } from '../../components/SessionTable';
 import { remoteLog } from '../../lib/remoteLog';
-import { ArchiveIcon } from './SidebarIcons';
+import { ArchiveButton } from '../../components/ArchiveButton';
 
 export interface SidebarSessionRowProps {
   session: Session;
@@ -163,16 +163,8 @@ export function SidebarSessionRow({
           >
             <i className={`bi ${sib.pinned ? 'bi-pin-fill' : 'bi-pin'}`} aria-hidden="true" />
           </button>
-          <button
-            type="button"
-            className="session-archive-btn session-sidebar-archive-btn"
-            onClick={(e) => onArchiveSession(e, sib)}
-            title="Archive session"
-            aria-label="Archive session"
-            disabled={archiving}
-          >
-            <ArchiveIcon />
-          </button>
+          <ArchiveButton className="session-sidebar-archive-btn" label="Archive session"
+            onClick={(e) => onArchiveSession(e, sib)} disabled={archiving} />
         </span>
       </span>
     </div>
