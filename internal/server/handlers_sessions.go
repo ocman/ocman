@@ -89,6 +89,9 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	// scoped to "the user is actually looking at this directory"
 	// rather than "every dashboard poll, every 5 seconds".
 
+	if all == nil {
+		all = []db.Session{} // [] not null: the frontend maps over it
+	}
 	writeJSON(w, all)
 }
 

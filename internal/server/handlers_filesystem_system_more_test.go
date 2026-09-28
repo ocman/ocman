@@ -684,7 +684,6 @@ func TestSystemHandlers_RequireDB(t *testing.T) {
 	handlers := map[string]http.HandlerFunc{
 		"stats":         srv.handleStats,
 		"metrics":       srv.handleMetrics,
-		"projects":      srv.handleProjects,
 		"activity":      srv.handleActivity,
 		"models":        srv.handleModels,
 		"hourly":        srv.handleHourly,

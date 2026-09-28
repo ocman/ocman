@@ -99,12 +99,24 @@ func TestHandleSessions_EmptyRegistry(t *testing.T) {
 	if rr.Code != 200 {
 		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body)
 	}
-	var got []db.Session
-	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
-		t.Fatalf("unmarshal: %v; body=%s", err, rr.Body)
+	// Must be [] not null: the frontend calls .map on the result.
+	if body := strings.TrimSpace(rr.Body.String()); body != "[]" {
+		t.Fatalf("body = %s, want []", body)
 	}
-	if len(got) != 0 {
-		t.Fatalf("got %d sessions, want 0", len(got))
+}
+
+// TestHandleProjects_NilDB covers ocman started without opencode.db:
+// the dashboard must get an empty list, not a 501 error banner.
+func TestHandleProjects_NilDB(t *testing.T) {
+	srv, _ := newSessionsTestServer(t)
+	rr := httptest.NewRecorder()
+	srv.handleProjects(rr, httptest.NewRequest(http.MethodGet, "/api/projects", nil))
+
+	if rr.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body)
+	}
+	if body := strings.TrimSpace(rr.Body.String()); body != "[]" {
+		t.Fatalf("body = %s, want []", body)
 	}
 }
 

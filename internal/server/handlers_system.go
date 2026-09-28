@@ -128,10 +128,8 @@ func (s *Server) handlePermissionStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
-	if !s.requireDB(w) {
-		return
-	}
-	// Local hub projects flow through the host seam (AD-16).
+	// Local hub projects flow through the host seam (AD-16). Without an
+	// OpenCode DB the local list is empty but remote projects still show.
 	projects, err := s.router().Local().Projects(r.Context())
 	if err != nil {
 		serverError(w, "fetching projects", err)
@@ -159,6 +157,9 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 	sort.SliceStable(projects, func(i, j int) bool {
 		return projects[i].LastUsed > projects[j].LastUsed
 	})
+	if projects == nil {
+		projects = []db.ProjectStats{} // [] not null for the frontend
+	}
 	writeJSON(w, projects)
 }
 
