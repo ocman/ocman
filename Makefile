@@ -375,9 +375,9 @@ install-e2e-browsers: ## Install Playwright browser binaries
 
 # Run Go tests with the race detector. Frontend tests are not race-detector
 # relevant so they're skipped here — run `make test` for the full suite.
+# -race slows internal/server and internal/state past go test's 10m
+# default on a loaded CI runner, hence the longer timeout.
 test-race: ## Run Go tests with -race
-	# -race slows internal/server and internal/state past go test's 10m
-	# default on a loaded CI runner.
 	go test -race -timeout 30m ./internal/...
 
 # Run every Fuzz* target across internal/ for a short time budget. Fuzzing
