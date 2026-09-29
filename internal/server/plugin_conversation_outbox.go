@@ -173,7 +173,16 @@ func (s *Server) deliverConversationReply(delivery state.PluginConversationDeliv
 	fields := log.Fields{
 		"plugin_id": delivery.Key.PluginID, "delivery_id": delivery.ID, "attempts": delivery.Attempts,
 	}
-	err := s.conversations().Reply(ctx, delivery.Key.PluginID, conversationOutboxOperation(delivery.ID),
+	// A pump may have claimed this row before a concurrent delivery settled it
+	// and left the in-flight set; that stale claim must not post again.
+	current, err := s.stateDB.PluginConversationReplyCurrent(ctx, delivery.ID, delivery.Attempts)
+	if err != nil {
+		log.WithError(err).WithFields(fields).Warn("checking a claimed conversation reply")
+	}
+	if !current {
+		return
+	}
+	err = s.conversations().Reply(ctx, delivery.Key.PluginID, conversationOutboxOperation(delivery.ID),
 		plugins.ConversationReply{AccountID: delivery.Key.AccountID, ThreadID: delivery.Key.ThreadID, Text: delivery.Text})
 	if err == nil {
 		if ack := s.stateDB.AckPluginConversationReply(ctx, delivery.ID); ack != nil {

@@ -99,6 +99,33 @@ func TestConversationReplyReplayedAcrossCrashBoundaries(t *testing.T) {
 	}
 }
 
+// TestConversationStaleClaimIsNotResent covers a pump whose claim was read
+// before a concurrent delivery acknowledged the row: once that delivery leaves
+// the in-flight set, the stale claim must not post the reply again.
+func TestConversationStaleClaimIsNotResent(t *testing.T) {
+	f := newConversationFixture(t)
+	f.install(t, f.project, []string{plugins.ConversationSessionGrant})
+	f.awaitPrompts(t, 1)
+	f.settle(t)
+	f.awaitThread(t, "secondhalf")
+	for deadline := time.Now().Add(20 * time.Second); f.backlog(t).Pending != 0; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("settled reply never acknowledged")
+		}
+	}
+
+	f.appendReply(t, conversationTestThread, "ses-chat:stale", "only once")
+	claimed, err := f.s.stateDB.ClaimPluginConversationReplies(t.Context(), 10)
+	if err != nil || len(claimed) != 1 {
+		t.Fatalf("claim: %v %v", claimed, err)
+	}
+	f.s.deliverConversationReply(claimed[0])
+	f.s.deliverConversationReply(claimed[0]) // the stale snapshot
+	if got := f.countThread("only once"); got != 1 {
+		t.Fatalf("stale claim posted %d times: %q", got, f.replies())
+	}
+}
+
 // TestConversationDeliveryIsolatesFailingConversation is the ordering contract
 // under failure: a conversation whose reply cannot be delivered keeps its own
 // later replies waiting, in order, and holds up nobody else's.

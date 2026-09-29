@@ -175,6 +175,20 @@ func (d *DB) ClaimPluginConversationReplies(ctx context.Context, limit int) ([]P
 	return claimed, nil
 }
 
+// PluginConversationReplyCurrent reports whether a claimed delivery still
+// matches its row: pending, due, and not attempted since the claim. A claim is
+// a lease-free snapshot, so a concurrent delivery may have settled it already.
+func (d *DB) PluginConversationReplyCurrent(ctx context.Context, id int64, attempts int) (bool, error) {
+	var n int
+	err := d.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM plugin_conversation_outbox
+		WHERE id=? AND status='pending' AND attempts=? AND next_attempt_at<=?`,
+		id, attempts, time.Now().UnixMilli()).Scan(&n)
+	if err != nil {
+		return false, ErrPluginState
+	}
+	return n == 1, nil
+}
+
 // AckPluginConversationReply acknowledges a delivered reply. The row stays as a
 // receipt so the same completed turn is never posted again.
 func (d *DB) AckPluginConversationReply(ctx context.Context, id int64) error {
