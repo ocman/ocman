@@ -15,9 +15,10 @@ import (
 )
 
 type fakeRoutineService struct {
-	input routines.Input
-	id    string
-	err   error
+	input  routines.Input
+	id     string
+	err    error
+	stored *state.Routine
 }
 
 func (f *fakeRoutineService) Create(_ context.Context, input routines.Input) (state.Routine, error) {
@@ -30,6 +31,9 @@ func (f *fakeRoutineService) Update(_ context.Context, id string, input routines
 }
 func (f *fakeRoutineService) Get(_ context.Context, id string) (state.Routine, error) {
 	f.id = id
+	if f.stored != nil {
+		return *f.stored, f.err
+	}
 	return state.Routine{ID: id, Name: "Review"}, f.err
 }
 func (f *fakeRoutineService) List(context.Context, bool) ([]state.Routine, error) {
@@ -174,5 +178,59 @@ func TestRoutineToolPermissionRules(t *testing.T) {
 	})
 	if !result.IsError {
 		t.Fatalf("invalid JSON: expected error, got %q", resultText(result))
+	}
+}
+
+func TestRoutineToolPatchKeepsUnspecifiedFields(t *testing.T) {
+	stored := state.Routine{
+		ID: "routine-1", Name: "Review", Prompt: "Old prompt", Directory: "/repo", RemoteID: "local", Agent: "plan", Model: "openai/gpt-5.4",
+		SessionMode: routines.SessionReuse, ScheduleKind: routines.ScheduleCron, ScheduleConfigJSON: `{"cron":"0 9 * * 1-5","timezone":"Europe/Brussels"}`,
+		PermissionRulesJSON: `[{"permission":"bash","pattern":"git diff *","action":"allow"}]`, Enabled: true, ArchiveSessionAfterSuccess: true,
+	}
+	svc := &fakeRoutineService{stored: &stored}
+	srv := routineServer(t, svc)
+
+	patched := callTool(t, srv, "routines", map[string]any{"action": "patch", "routine_id": "routine-1", "prompt": "New prompt", "cron": "0 8 * * *"})
+	in := svc.input
+	if patched.IsError || svc.id != "routine-1" || in.Prompt != "New prompt" || in.Name != "Review" || in.Agent != "plan" || in.Model != "openai/gpt-5.4" ||
+		in.SessionMode != routines.SessionReuse || in.Schedule.Kind != routines.ScheduleCron || in.Schedule.Cron != "0 8 * * *" || in.Schedule.Timezone != "Europe/Brussels" ||
+		!in.Enabled || !in.ArchiveSessionAfterSuccess || len(in.PermissionRules) != 1 || in.PermissionRules[0].Pattern != "git diff *" {
+		t.Fatalf("patch result = %q, input = %#v", resultText(patched), in)
+	}
+
+	if r := callTool(t, srv, "routines", map[string]any{"action": "patch", "routine_id": "routine-1", "enabled": false, "agent": "", "permission_rules": ""}); r.IsError || svc.input.Enabled || svc.input.Agent != "" || len(svc.input.PermissionRules) != 0 || svc.input.Prompt != "Old prompt" {
+		t.Fatalf("clearing patch = %q, input = %#v", resultText(r), svc.input)
+	}
+	if r := callTool(t, srv, "routines", map[string]any{"action": "patch", "routine_id": "routine-1", "schedule_kind": "once", "at": float64(4_000_000_000_000)}); r.IsError || svc.input.Schedule.Kind != routines.ScheduleOnce || svc.input.Schedule.At.UnixMilli() != 4_000_000_000_000 {
+		t.Fatalf("schedule patch = %q, input = %#v", resultText(r), svc.input.Schedule)
+	}
+
+	stored.ScheduleKind, stored.ScheduleConfigJSON = routines.ScheduleTimeout, `{"dueAt":1}`
+	for _, test := range []struct {
+		args map[string]any
+		want string
+	}{
+		{map[string]any{"action": "patch", "routine_id": "routine-1", "name": "x"}, "timeout has already elapsed"},
+		{map[string]any{"action": "patch", "routine_id": "routine-1", "timeout_ms": float64(-1)}, "invalid routine"},
+		{map[string]any{"action": "patch", "routine_id": "routine-1", "timeout_ms": float64(60_000), "permission_rules": "{"}, "permission_rules: invalid JSON"},
+	} {
+		if r := callTool(t, srv, "routines", test.args); !r.IsError || !strings.Contains(resultText(r), test.want) {
+			t.Fatalf("args %#v: %q", test.args, resultText(r))
+		}
+	}
+	if r := callTool(t, srv, "routines", map[string]any{"action": "patch", "routine_id": "routine-1", "timeout_ms": float64(60_000)}); r.IsError || svc.input.Schedule.Timeout.Milliseconds() != 60_000 {
+		t.Fatalf("timeout patch = %q", resultText(r))
+	}
+	stored.ScheduleConfigJSON = "{"
+	if r := callTool(t, srv, "routines", map[string]any{"action": "patch", "routine_id": "routine-1"}); !r.IsError || !strings.Contains(resultText(r), "stored schedule is unreadable") {
+		t.Fatalf("unreadable schedule = %q", resultText(r))
+	}
+	stored.ScheduleConfigJSON, stored.PermissionRulesJSON = "{}", "["
+	if r := callTool(t, srv, "routines", map[string]any{"action": "patch", "routine_id": "routine-1", "timeout_ms": float64(1)}); !r.IsError || !strings.Contains(resultText(r), "stored permission rules are unreadable") {
+		t.Fatalf("unreadable rules = %q", resultText(r))
+	}
+	svc.stored, svc.err = nil, state.ErrRoutineNotFound
+	if r := callTool(t, srv, "routines", map[string]any{"action": "patch", "routine_id": "missing"}); !r.IsError || resultText(r) != "routine not found" {
+		t.Fatalf("missing = %q", resultText(r))
 	}
 }

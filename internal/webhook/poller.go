@@ -3,6 +3,9 @@ package webhook
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -26,16 +29,20 @@ type Poller struct {
 	Routines RoutineDispatcher
 }
 
+// ErrInboxGone stops a poller whose inbox was revoked.
+var ErrInboxGone = errors.New("webhook inbox no longer exists")
+
 func (p *Poller) Run(ctx context.Context) {
 	ticker := time.NewTicker(PollInterval)
 	defer ticker.Stop()
-	_ = p.Poll(ctx)
 	for {
+		if errors.Is(p.Poll(ctx), ErrInboxGone) {
+			return
+		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			_ = p.Poll(ctx)
 		}
 	}
 }
@@ -44,7 +51,26 @@ func Register(ctx context.Context, store *state.DB, routineID, relayURL, enrollm
 	return RegisterWithSecret(ctx, store, routineID, relayURL, enrollmentToken, "", "", client)
 }
 
+// RegisterWithSecret registers a legacy routine-owned inbox and subscribes
+// that routine to every delivery.
 func RegisterWithSecret(ctx context.Context, store *state.DB, routineID, relayURL, enrollmentToken, secret, secretHeader string, client *http.Client) (state.WebhookInbox, error) {
+	inbox, err := register(ctx, store, "", routineID, relayURL, enrollmentToken, secret, secretHeader, client)
+	if err != nil {
+		return state.WebhookInbox{}, err
+	}
+	if err := store.SaveWebhookSubscription(ctx, state.WebhookSubscription{ID: "subscription-" + inbox.ID, InboxID: inbox.ID, RoutineID: routineID}); err != nil {
+		return state.WebhookInbox{}, err
+	}
+	return inbox, nil
+}
+
+// RegisterStandalone registers a named inbox that no routine owns; routines
+// subscribe to it separately.
+func RegisterStandalone(ctx context.Context, store *state.DB, name, relayURL, enrollmentToken, secret, secretHeader string, client *http.Client) (state.WebhookInbox, error) {
+	return register(ctx, store, name, "", relayURL, enrollmentToken, secret, secretHeader, client)
+}
+
+func register(ctx context.Context, store *state.DB, name, routineID, relayURL, enrollmentToken, secret, secretHeader string, client *http.Client) (state.WebhookInbox, error) {
 	identity, err := age.GenerateX25519Identity()
 	if err != nil {
 		return state.WebhookInbox{}, fmt.Errorf("generating webhook identity: %w", err)
@@ -53,14 +79,17 @@ func RegisterWithSecret(ctx context.Context, store *state.DB, routineID, relayUR
 	if err != nil {
 		return state.WebhookInbox{}, err
 	}
-	inbox := state.WebhookInbox{ID: allocation.ID, RoutineID: routineID, RelayURL: relayURL,
+	if routineID == "" {
+		routineID = allocation.ID
+	}
+	inbox := state.WebhookInbox{ID: allocation.ID, Name: name, RoutineID: routineID, RelayURL: relayURL,
 		ManagementToken: allocation.ManagementToken, FetchToken: allocation.FetchToken,
 		AcknowledgmentToken: allocation.AcknowledgmentToken, Identity: identity.String(),
 		IngestionURL: allocation.IngestionURL, KeyVersion: allocation.KeyVersion}
-	if err := store.SaveWebhookInbox(ctx, inbox); err != nil {
-		return state.WebhookInbox{}, err
+	if secret != "" {
+		inbox.SecretHeader = allocation.SecretHeader
 	}
-	if err := store.SaveWebhookSubscription(ctx, state.WebhookSubscription{ID: "subscription-" + allocation.ID, InboxID: allocation.ID, RoutineID: routineID}); err != nil {
+	if err := store.SaveWebhookInbox(ctx, inbox); err != nil {
 		return state.WebhookInbox{}, err
 	}
 	return inbox, nil
@@ -72,6 +101,13 @@ func (p *Poller) Poll(ctx context.Context) error {
 	now := time.Now
 	if p.Now != nil {
 		now = p.Now
+	}
+	// Reload so a key rotation takes effect and a revoked inbox stops polling.
+	switch inbox, err := p.Store.GetWebhookInboxByID(ctx, p.Inbox.ID); {
+	case errors.Is(err, sql.ErrNoRows):
+		return ErrInboxGone
+	case err == nil:
+		p.Inbox = inbox
 	}
 	_ = p.Store.CleanupWebhookHistory(ctx, now().Add(-state.WebhookHistoryRetention).UnixMilli())
 	identity, err := age.ParseX25519Identity(p.Inbox.Identity)
@@ -98,7 +134,8 @@ func (p *Poller) Poll(ctx context.Context) error {
 				var envelope relay.InboxEnvelope
 				envelope, err = relay.DecryptInboxEnvelope(identity, p.Inbox.ID, delivery.ID, ciphertext)
 				if err == nil {
-					if _, dispatchErr := p.Store.AcceptWebhookDelivery(ctx, p.Inbox.ID, delivery.ID, envelope.Request.Method+" webhook", string(envelope.Body), envelope.Request.ReceivedAt); dispatchErr != nil {
+					headers, _ := json.Marshal(envelope.Request.Header) // relay already dropped credential headers
+					if _, dispatchErr := p.Store.AcceptWebhookDelivery(ctx, p.Inbox.ID, delivery.ID, envelope.Request.Method+" webhook", string(envelope.Body), string(headers), envelope.Request.ReceivedAt); dispatchErr != nil {
 						err = dispatchErr
 					} else if p.Routines != nil {
 						err = Dispatch(p.Store, p.Routines, p.Inbox.ID, delivery.ID, envelope, now())

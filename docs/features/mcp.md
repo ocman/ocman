@@ -157,8 +157,8 @@ reopen or graph mutation behind explicit user approval in the conversation.
 ## Routines
 
 Ocman installs the `ocman-routines` skill globally for OpenCode. The
-action-based `routines` tool supports listing, reading, creating, replacing,
-running, soft-deleting, and viewing run history. Its `help` action is the
+action-based `routines` tool supports listing, reading, creating, patching in
+place (only the fields passed change), replacing, running, soft-deleting, and viewing run history. Its `help` action is the
 authoritative contract for agents.
 
 ### Inbox

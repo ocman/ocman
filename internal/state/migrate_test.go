@@ -63,6 +63,10 @@ func TestMigrateV80RepairsMissingWebhookInbox(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("webhook_inbox table count = %d, want 1", count)
 	}
+	// The collision also skipped v77's webhook_delivery; the log query needs it.
+	if _, err := db.Exec(`SELECT delivery_id, item_id, attempts, last_error, next_retry_at, headers_json, accepted_at FROM webhook_delivery`); err != nil {
+		t.Fatalf("webhook_delivery not repaired: %v", err)
+	}
 }
 
 func TestMigrateV57RepairsFormerFactoryClosureMigration(t *testing.T) {

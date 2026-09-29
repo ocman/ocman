@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { SettingToggle, SettingNumber } from './SettingRow';
+import { SettingToggle, SettingNumber, SettingText } from './SettingRow';
 import { useSettingSave } from '../lib/useSaveStatus';
 
 // Wrappers so the control uses the live hook value (state updates re-render).
@@ -40,5 +40,24 @@ describe('SettingNumber', () => {
     render(<NumberFixture onSave={(next) => { saved = next; }} />);
     fireEvent.change(screen.getByLabelText('n'), { target: { value: '2' } });
     await waitFor(() => expect(saved).toBe(48));
+  });
+});
+
+function TextFixture({ onSave }: { onSave: (next: string) => void }) {
+  const save = useSettingSave();
+  return <SettingText ariaLabel="x" value="a" save={save} onSave={onSave} />;
+}
+
+describe('SettingText', () => {
+  it('saves changed values on blur and Enter only', async () => {
+    const saved: string[] = [];
+    render(<TextFixture onSave={(next) => { saved.push(next); }} />);
+    const input = screen.getByLabelText('x');
+    fireEvent.blur(input);
+    fireEvent.change(input, { target: { value: 'b' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    fireEvent.change(input, { target: { value: 'c' } });
+    fireEvent.blur(input);
+    await waitFor(() => expect(saved).toEqual(['b', 'c']));
   });
 });

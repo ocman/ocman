@@ -7,7 +7,7 @@ import (
 
 // v100 adds viewer-scoped preview-provider consent (preview_auth.go).
 // v101 adds artifacts and their relay shares (artifacts.go).
-const latestSchemaVersion = 101
+const latestSchemaVersion = 105
 
 // applyMigration runs the DDL for the given target version.
 func applyMigration(tx *sql.Tx, target int) error {
@@ -228,6 +228,48 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV100(tx)
 	case 101:
 		return migrateToV101(tx)
+	case 102:
+		var exists bool
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='webhook_delivery')`).Scan(&exists); err != nil || !exists {
+			return err
+		}
+		return addColumnIfMissing(tx, "webhook_delivery", "headers_json", "TEXT NOT NULL DEFAULT '{}'")
+	case 103:
+		var exists bool
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='webhook_inbox')`).Scan(&exists); err != nil || !exists {
+			return err
+		}
+		if err := addColumnIfMissing(tx, "webhook_inbox", "name", "TEXT NOT NULL DEFAULT ''"); err != nil {
+			return err
+		}
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='routine')`).Scan(&exists); err != nil || !exists {
+			return err
+		}
+		_, err := tx.Exec(`UPDATE webhook_inbox SET name = COALESCE((SELECT r.name FROM routine r WHERE r.id = webhook_inbox.routine_id), '') WHERE name = ''`)
+		return err
+	case 104:
+		// Databases hit by the v77 schema-version collision got webhook_inbox
+		// back from v79-v81 but never webhook_delivery.
+		_, err := tx.Exec(`CREATE TABLE IF NOT EXISTS webhook_delivery (
+			inbox_id TEXT NOT NULL REFERENCES webhook_inbox(id) ON DELETE CASCADE,
+			delivery_id TEXT NOT NULL,
+			item_id TEXT NOT NULL,
+			attempts INTEGER NOT NULL DEFAULT 0,
+			last_error TEXT NOT NULL DEFAULT '',
+			next_retry_at INTEGER NOT NULL DEFAULT 0,
+			accepted_at INTEGER NOT NULL,
+			headers_json TEXT NOT NULL DEFAULT '{}',
+			PRIMARY KEY (inbox_id, delivery_id)
+		)`)
+		return err
+	case 105:
+		// Empty means no shared secret, or an inbox registered before ocman
+		// recorded the header.
+		var exists bool
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='webhook_inbox')`).Scan(&exists); err != nil || !exists {
+			return err
+		}
+		return addColumnIfMissing(tx, "webhook_inbox", "secret_header", "TEXT NOT NULL DEFAULT ''")
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}

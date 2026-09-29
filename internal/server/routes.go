@@ -115,6 +115,9 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	routineHandler := s.requireLocalhost(s.handleRoutines)
 	mux.HandleFunc("/api/routines", routineHandler)
 	mux.HandleFunc("/api/routines/", routineHandler)
+	webhookInboxHandler := s.requireLocalhost(s.handleWebhookInboxes)
+	mux.HandleFunc("/api/webhook-inboxes", webhookInboxHandler)
+	mux.HandleFunc("/api/webhook-inboxes/", webhookInboxHandler)
 	mux.HandleFunc("/api/artifacts", s.handleArtifacts)
 	mux.HandleFunc("/api/artifacts/", s.handleArtifacts)
 	mux.HandleFunc("/api/factory/status", s.get(s.handleFactoryStatus))
@@ -177,6 +180,7 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/settings/link-preview-rules", s.requireAuth(s.handleLinkPreviewRules))
 	// Master toggle for public session sharing (on by default).
 	mux.HandleFunc("/api/settings/sharing", s.requireAuth(s.handleSharingSetting))
+	mux.HandleFunc("/api/settings/webhook-relay", s.requireLocalhost(s.handleWebhookRelaySetting))
 	// Toggle for worktree sessions inheriting the parent's always-allow
 	// permissions at split time (issue #101; on by default).
 	mux.HandleFunc("/api/settings/worktree-inherit-permissions", s.requireAuth(s.handleWorktreeInheritPermissions))

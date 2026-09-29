@@ -524,3 +524,44 @@ func TestRegisterInboxRejectsNonX25519Recipient(t *testing.T) {
 		t.Fatalf("status %d, want 400", rec.Code)
 	}
 }
+
+func TestInboxSecretCanBeReplacedAndCleared(t *testing.T) {
+	h := newInboxHarness(t, nil)
+	identity, _ := age.GenerateX25519Identity()
+	registered := registerInboxRequest(t, h, inboxRegistrationRequest{Recipient: identity.Recipient().String(), Secret: "old"})
+	ingest := func(header, value string) int {
+		req := httptest.NewRequest(http.MethodPost, registered.IngestionURL, strings.NewReader("payload"))
+		if header != "" {
+			req.Header.Set(header, value)
+		}
+		rec := httptest.NewRecorder()
+		h.srv.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	path := "/inboxes/" + registered.ID + "/secret"
+	if rec := h.do(http.MethodPut, path, []byte(`{"secret":"x"}`), registered.FetchToken); rec.Code != http.StatusNotFound {
+		t.Fatalf("fetch token managed secret: %d", rec.Code)
+	}
+	if rec := h.do(http.MethodPut, path, []byte(`{`), registered.ManagementToken); rec.Code != http.StatusBadRequest {
+		t.Fatalf("malformed: %d", rec.Code)
+	}
+	rec := h.do(http.MethodPut, path, []byte(`{"secret":"Bearer new","secretHeader":"Authorization"}`), registered.ManagementToken)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"secretHeader":"Authorization"`) {
+		t.Fatalf("replace: %d %s", rec.Code, rec.Body)
+	}
+	if got := ingest("X-Webhook-Secret", "old"); got != http.StatusUnauthorized {
+		t.Fatalf("old secret accepted: %d", got)
+	}
+	if got := ingest("Authorization", "Bearer new"); got != http.StatusAccepted {
+		t.Fatalf("new secret rejected: %d", got)
+	}
+	if rec := h.do(http.MethodPut, path, []byte(`{"secret":"s"}`), registered.ManagementToken); !strings.Contains(rec.Body.String(), `"secretHeader":"X-Webhook-Secret"`) {
+		t.Fatalf("default header: %s", rec.Body)
+	}
+	if rec := h.do(http.MethodPut, path, []byte(`{"secret":""}`), registered.ManagementToken); rec.Code != http.StatusOK {
+		t.Fatalf("clear: %d", rec.Code)
+	}
+	if got := ingest("", ""); got != http.StatusAccepted {
+		t.Fatalf("cleared secret still required: %d", got)
+	}
+}

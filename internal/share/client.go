@@ -198,6 +198,36 @@ func (c RelayClient) RotateInbox(ctx context.Context, id, token, recipient strin
 	return out.KeyVersion, nil
 }
 
+// UpdateInboxSecret replaces the inbox's shared secret; an empty secret
+// clears it. It returns the header the relay will check.
+func (c RelayClient) UpdateInboxSecret(ctx context.Context, id, token, secret, secretHeader string) (string, error) {
+	body, err := json.Marshal(map[string]string{"secret": secret, "secretHeader": secretHeader})
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, strings.TrimRight(c.BaseURL, "/")+"/inboxes/"+id+"/secret", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.client().Do(req)
+	if err != nil {
+		return "", relayTransportError("updating inbox secret", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", relayStatusError("updating inbox secret", resp)
+	}
+	var out struct {
+		SecretHeader string `json:"secretHeader"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 64<<10)).Decode(&out); err != nil {
+		return "", err
+	}
+	return out.SecretHeader, nil
+}
+
 func (c RelayClient) RevokeInbox(ctx context.Context, id, token string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, strings.TrimRight(c.BaseURL, "/")+"/inboxes/"+id, nil)
 	if err != nil {

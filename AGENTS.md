@@ -101,7 +101,9 @@ successful run; `error` is a failure, while a session lost across restart is
 `interrupted`. Missed timeout schedules expire on startup instead of running
 late. Definitions and run history live in `state.db`; successful runs may soft-delete their routine.
 The `/routines` composer command only inserts a saved prompt for review and
-does not start a routine run. Webhook triggers are deferred. See
+does not start a routine run. Webhook inboxes (`/api/webhook-inboxes`) only
+capture deliveries; routines subscribe to one with header/JSON-pointer
+filters by choosing the inbox as the routine form's Trigger. See
 `docs/features/routines.md`.
 
 **Artifacts** are immutable files and links an agent publishes for a project

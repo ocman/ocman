@@ -226,6 +226,10 @@ import (
 // 96 - persist plugin conversation thread to session mappings across restarts.
 // 97 - durable outbox for completed conversation replies.
 // 101 - artifacts (files/links), their items and relay shares.
+// 102 - keep filtered webhook request headers for the delivery log.
+// 103 - name webhook inboxes so routines can subscribe to standalone inboxes.
+// 104 - repair webhook_delivery skipped by the v77 schema-version collision.
+// 105 - remember which header a webhook inbox's shared secret uses.
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.

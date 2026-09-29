@@ -299,6 +299,50 @@ func (s *Server) handleRotateInbox(w http.ResponseWriter, r *http.Request) {
 	}{m.KeyVersion})
 }
 
+// handleUpdateInboxSecret replaces or clears the shared secret an ingest
+// request must carry. The ingestion URL and pending deliveries are unchanged.
+func (s *Server) handleUpdateInboxSecret(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if _, ok := s.authoriseInbox(w, r, id, func(m inboxMeta) string { return m.ManagementHash }); !ok {
+		return
+	}
+	var request struct {
+		Secret       string `json:"secret"`
+		SecretHeader string `json:"secretHeader"`
+	}
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&request) != nil {
+		http.Error(w, "invalid secret", http.StatusBadRequest)
+		return
+	}
+	s.mutations.Lock()
+	defer s.mutations.Unlock()
+	// Re-read under the lock so a concurrent rotation is not overwritten.
+	m, found, err := getInboxMeta(r.Context(), s.cfg.Store, id)
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	if !found {
+		http.Error(w, "inbox not found", http.StatusNotFound)
+		return
+	}
+	m.SecretHash, m.SecretHeader = "", ""
+	if request.Secret != "" {
+		m.SecretHash = hashToken(request.Secret)
+		m.SecretHeader = request.SecretHeader
+		if m.SecretHeader == "" {
+			m.SecretHeader = s.cfg.InboxSecretHeader
+		}
+	}
+	if err := putInboxMeta(r.Context(), s.cfg.Store, id, m); err != nil {
+		serverError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		SecretHeader string `json:"secretHeader"`
+	}{m.SecretHeader})
+}
+
 func (s *Server) handleListInboxDeliveries(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if _, ok := s.authoriseInbox(w, r, id, func(m inboxMeta) string { return m.FetchHash }); !ok {

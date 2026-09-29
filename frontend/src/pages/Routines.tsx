@@ -1,7 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Button, ButtonGroup } from '../components/Control';
-import { CopyButton } from '../components/CopyButton';
 import { EmptyState } from '../components/EmptyState';
 import { Modal } from '../components/Modal';
 import { ModalHeader } from '../components/ModalHeader';
@@ -12,6 +11,10 @@ import { SearchSelect } from '../components/SearchSelect';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/Tabs';
 import { api, type PermissionRule, type Project, type Routine, type RoutineInput, type RoutineRun, type RoutineScheduleKind, type RoutineSessionMode, type Session } from '../lib/api';
 import { PermissionRulesEditor } from '../components/PermissionRulesEditor';
+import type { WebhookInbox } from '../lib/api.types';
+import { WebhookInboxDrawer } from './WebhookInboxDrawer';
+import { WebhookTriggerFields } from '../components/WebhookTriggerFields';
+import { saveTrigger, triggerFor, triggerLabel, type Trigger } from '../lib/webhookFilters';
 import { cleanTitle, formatDateTimeShort } from '../lib/format';
 import { usePageTitle } from '../lib/headerContext';
 import './Routines.css';
@@ -114,8 +117,10 @@ export function Routines() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [webhooks, setWebhooks] = useState<Record<string, import('../lib/api.types').WebhookInbox | null>>({});
-  const [webhookBusy, setWebhookBusy] = useState<string>();
+  const [inboxes, setInboxes] = useState<WebhookInbox[]>([]);
+  const [trigger, setTrigger] = useState<Trigger>(() => triggerFor(undefined, []));
+  // undefined = closed, '' = creating a new inbox, otherwise the open inbox ID.
+  const [inboxDrawer, setInboxDrawer] = useState<string>();
 
   const load = async () => {
     const [items, projectItems] = await Promise.all([api.routines.list(), api.projects()]);
@@ -123,8 +128,7 @@ export function Routines() {
     setProjects(projectItems);
     const entries = await Promise.all(items.map(async (item) => [item.id, await api.routines.history(item.id)] as const));
     setHistory(Object.fromEntries(entries));
-    const inboxes = await Promise.all(items.map(async (item) => [item.id, await api.routines.webhook(item.id)] as const));
-    setWebhooks(Object.fromEntries(inboxes));
+    setInboxes(await api.webhookInboxes.list());
   };
 
   useEffect(() => {
@@ -140,8 +144,8 @@ export function Routines() {
          setRoutines(items);
          setProjects(projectItems);
          setHistory(Object.fromEntries(entries));
-          const inboxes = await Promise.all(items.map(async (item) => [item.id, await api.routines.webhook(item.id)] as const));
-          if (active) setWebhooks(Object.fromEntries(inboxes));
+          const inboxItems = await api.webhookInboxes.list();
+          if (active) setInboxes(inboxItems);
         }
       } catch (err) {
         if (active) setError(err instanceof Error ? err.message : 'Could not load routines.');
@@ -188,6 +192,7 @@ export function Routines() {
     setHistoryRoutine(undefined);
     setEditing(undefined);
     setEditingRules([]);
+    setTrigger(triggerFor(undefined, inboxes));
     setForm(emptyForm());
     setShowForm(true);
     setError('');
@@ -197,6 +202,8 @@ export function Routines() {
     setHistoryRoutine(undefined);
     setEditing(routine.id);
     setEditingRules(parsePermissionRules(routine.permissionRulesJSON));
+    setTrigger(triggerFor(routine.id, inboxes));
+    setInboxDrawer(undefined);
     setForm(formFor(routine));
     setShowForm(true);
     setError('');
@@ -209,8 +216,8 @@ export function Routines() {
     try {
       const remoteId = form.remoteId || 'local';
       const input = inputFor(form, remoteId, editingRules);
-      if (editing) await api.routines.update(editing, input);
-      else await api.routines.create(input);
+      const saved = editing ? await api.routines.update(editing, input) : await api.routines.create(input);
+      await saveTrigger(saved.id, trigger, inboxes);
       await load();
       setShowForm(false);
     } catch (err) {
@@ -278,9 +285,21 @@ export function Routines() {
               if (project) setForm({ ...form, directory: project.directory, remoteId: project.remoteId || 'local', sessionId: '', agent: '', model: '' });
             }} />
           </label>
-          <label>Schedule<select value={form.kind} onChange={(event) => setForm({ ...form, kind: event.target.value as RoutineScheduleKind })}>
-            <option value="none">None</option><option value="timeout">Timeout</option><option value="once">Once</option><option value="cron">Cron</option>
-          </select></label>
+          <label>Trigger<select aria-label="Trigger" value={trigger.inboxId ? `webhook:${trigger.inboxId}` : form.kind} onChange={(event) => {
+            const value = event.target.value;
+            if (value.startsWith('webhook:')) {
+              setForm({ ...form, kind: 'none' });
+              setTrigger({ ...trigger, inboxId: value.slice('webhook:'.length) });
+            } else {
+              setForm({ ...form, kind: value as RoutineScheduleKind });
+              setTrigger({ ...trigger, inboxId: '' });
+            }
+          }}>
+            <option value="none">Manual only</option>
+            <optgroup label="Schedule"><option value="timeout">Timeout</option><option value="once">Once</option><option value="cron">Cron</option></optgroup>
+            {inboxes.length > 0 && <optgroup label="Webhook">{inboxes.map((inbox) => <option key={inbox.id} value={`webhook:${inbox.id}`}>Webhook: {inbox.name || inbox.id}</option>)}</optgroup>}
+          </select>{inboxes.length === 0 && <small>Create an inbox on the Webhook inboxes tab to trigger this routine from a webhook.</small>}</label>
+          {trigger.inboxId && <WebhookTriggerFields trigger={trigger} onChange={setTrigger} disabled={busy} />}
           {form.kind === 'timeout' && <label>Minutes from now<input required min="1" type="number" value={form.timeoutMinutes} onChange={(event) => setForm({ ...form, timeoutMinutes: event.target.value })} /></label>}
           {form.kind === 'once' && <label>Run at<input required type="datetime-local" value={form.at} onChange={(event) => setForm({ ...form, at: event.target.value })} /></label>}
           {form.kind === 'cron' && <><label>Cron expression<input required placeholder="0 9 * * *" value={form.cron} onChange={(event) => setForm({ ...form, cron: event.target.value })} /></label><label>Timezone<input required value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} /></label></>}
@@ -329,31 +348,35 @@ export function Routines() {
         </Modal>
       )}
 
+      {inboxDrawer !== undefined && <WebhookInboxDrawer key={inboxDrawer} inbox={inboxes.find((inbox) => inbox.id === inboxDrawer) ?? null} routines={routines} onClose={() => setInboxDrawer(undefined)} onChange={() => void load().catch((err: Error) => setError(err.message))} onEditRoutine={openEdit} />}
+
       <TabsContent value="routines" className="routine-tab-panel">
       <header className="routine-header">
         <p>Save a prompt, run it now, or schedule it for later.</p>
         <Button type="button" variant="accent" onClick={openCreate}><i className="bi bi-plus-lg" aria-hidden="true" />New routine</Button>
       </header>
       {loading ? <div className="oc-list-loading" role="status"><div className="oc-spinner" />Loading routines...</div> : routines.length === 0 ? <EmptyState>No routines yet.</EmptyState> : (
-        <section className="routine-list" aria-label="Saved routines"><DataTable framed><thead><tr><th>Name</th><th>Project</th><th>Session</th><th>Schedule</th><th>Next run</th><th>Status</th><th>Actions</th></tr></thead><tbody>{routines.map((routine) => {
+        <section className="routine-list" aria-label="Saved routines"><DataTable framed><thead><tr><th>Name</th><th>Project</th><th>Session</th><th>Trigger</th><th>Next run</th><th>Status</th><th>Actions</th></tr></thead><tbody>{routines.map((routine) => {
           const latest = history[routine.id]?.[0];
           const status = routine.expiredAt && routine.expiredAt > (latest?.createdAt ?? 0) ? 'expired' : latest?.state ?? (routine.enabled ? 'ready' : 'disabled');
           return <tr key={routine.id} tabIndex={0} aria-label={`View ${routine.name} history`} onClick={() => setHistoryRoutine(routine)} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setHistoryRoutine(routine); } }}>
-            <td><strong>{routine.name}</strong><small>{routine.prompt}</small></td><td><ProjectLabel path={routine.directory} /></td><td>{routine.sessionMode === 'new' ? 'New each run' : routine.sessionMode === 'reuse' ? 'Reuse' : 'Existing'}</td><td>{routine.scheduleKind}</td><td>{routine.nextDueAt ? formatDateTimeShort(routine.nextDueAt) : '-'}</td><td><span className={`routine-state ${status}`}>{status}</span></td><td><ButtonGroup label={`Actions for ${routine.name}`} joined><Button aria-label="Run" title="Run" size="small" disabled={busy} type="button" variant="accent" onClick={(event) => { event.stopPropagation(); void act(() => api.routines.run(routine.id)); }}><i className="bi bi-play-fill" aria-hidden="true" /></Button><Button aria-label="Edit" title="Edit" size="small" disabled={busy} type="button" onClick={(event) => { event.stopPropagation(); openEdit(routine); }}><i className="bi bi-pencil" aria-hidden="true" /></Button><Button aria-label="Delete" title="Delete" size="small" disabled={busy} type="button" variant="danger" onClick={(event) => { event.stopPropagation(); if (window.confirm(`Delete "${routine.name}"?`)) void act(() => api.routines.remove(routine.id)); }}><i className="bi bi-trash" aria-hidden="true" /></Button></ButtonGroup></td>
+            <td><strong>{routine.name}</strong><small>{routine.prompt}</small></td><td><ProjectLabel path={routine.directory} /></td><td>{routine.sessionMode === 'new' ? 'New each run' : routine.sessionMode === 'reuse' ? 'Reuse' : 'Existing'}</td><td>{triggerLabel(routine, inboxes)}</td><td>{routine.nextDueAt ? formatDateTimeShort(routine.nextDueAt) : '-'}</td><td><span className={`routine-state ${status}`}>{status}</span></td><td><ButtonGroup label={`Actions for ${routine.name}`} joined><Button aria-label="Run" title="Run" size="small" disabled={busy} type="button" variant="accent" onClick={(event) => { event.stopPropagation(); void act(() => api.routines.run(routine.id)); }}><i className="bi bi-play-fill" aria-hidden="true" /></Button><Button aria-label="Edit" title="Edit" size="small" disabled={busy} type="button" onClick={(event) => { event.stopPropagation(); openEdit(routine); }}><i className="bi bi-pencil" aria-hidden="true" /></Button><Button aria-label="Delete" title="Delete" size="small" disabled={busy} type="button" variant="danger" onClick={(event) => { event.stopPropagation(); if (window.confirm(`Delete "${routine.name}"?`)) void act(() => api.routines.remove(routine.id)); }}><i className="bi bi-trash" aria-hidden="true" /></Button></ButtonGroup></td>
           </tr>;
         })}</tbody></DataTable></section>
       )}
       </TabsContent>
       <TabsContent value="inboxes" className="routine-tab-panel">
       <section aria-label="Webhook inboxes" className="routine-webhooks">
-        <header className="routine-header"><p>Receive encrypted webhooks and dispatch matching deliveries to routines. Relay and owner credentials stay on the server.</p></header>
-        {loading ? <div className="oc-list-loading" role="status"><div className="oc-spinner" />Loading inboxes...</div> : routines.length === 0 && <EmptyState>Create a routine to attach a webhook inbox.</EmptyState>}
-        {!loading && routines.map((routine) => {
-          const inbox = webhooks[routine.id];
-          const busyInbox = webhookBusy === routine.id;
-          const ingestionUrl = inbox ? new URL(inbox.ingestionUrl, inbox.relayUrl).href : '';
-          return <article key={routine.id} className="routine-webhook-card"><div><h3>Inbox: {routine.name}</h3><small>{routine.remoteId || 'local'} owner</small></div>{inbox ? <><label>Ingestion URL<input readOnly value={ingestionUrl} aria-label={`${routine.name} ingestion URL`} onFocus={(event) => event.currentTarget.select()} /></label><p className="routine-webhook-status">Key v{inbox.keyVersion} · {Object.entries(inbox.counts).map(([state, count]) => `${state}: ${count}`).join(' · ') || 'pending: 0'}</p><div className="routine-actions"><CopyButton disabled={busyInbox} label="Copy URL" text={ingestionUrl} /><Button type="button" disabled={busyInbox} onClick={() => { if (window.confirm('Revoke this webhook inbox?')) { setWebhookBusy(routine.id); void api.routines.revokeWebhook(routine.id).then(() => setWebhooks({ ...webhooks, [routine.id]: null })).catch((err) => setError(err.message)).finally(() => setWebhookBusy(undefined)); } }}>Revoke</Button><Button type="button" disabled={busyInbox} onClick={() => { if (window.confirm('Reset the key? Existing pending deliveries will become unreadable.')) { setWebhookBusy(routine.id); void api.routines.rotateWebhook(routine.id, { reset: true }).then(() => api.routines.webhook(routine.id)).then((next) => setWebhooks({ ...webhooks, [routine.id]: next })).catch((err) => setError(err.message)).finally(() => setWebhookBusy(undefined)); } }}>Reset key</Button></div></> : <Button type="button" variant="accent" disabled={busyInbox} onClick={() => { const enrollmentToken = window.prompt('Relay enrollment token'); if (!enrollmentToken) return; const secret = window.prompt('Optional shared secret (leave blank for URL-only validation)') || ''; const secretHeader = secret ? (window.prompt('Header name', 'X-Webhook-Secret') || 'X-Webhook-Secret') : ''; setWebhookBusy(routine.id); void api.routines.createWebhook(routine.id, { enrollmentToken, secret, secretHeader }).then((created) => setWebhooks({ ...webhooks, [routine.id]: created })).catch((err) => setError(err.message)).finally(() => setWebhookBusy(undefined)); }}>Create inbox</Button>}</article>;
-        })}
+        <header className="routine-header"><p>Inboxes capture encrypted webhook deliveries. Routines subscribe to an inbox and filter which deliveries run them.</p><Button type="button" variant="accent" onClick={() => setInboxDrawer('')}><i className="bi bi-plus-lg" aria-hidden="true" />New inbox</Button></header>
+        {loading ? <div className="oc-list-loading" role="status"><div className="oc-spinner" />Loading inboxes...</div> : inboxes.length === 0 ? <EmptyState>No webhook inboxes yet.</EmptyState> : (
+          <section className="routine-list" aria-label="Saved inboxes"><DataTable framed><thead><tr><th>Name</th><th>Linked routines</th><th>Deliveries</th></tr></thead><tbody>{inboxes.map((inbox) => (
+            <tr key={inbox.id} tabIndex={0} aria-label={`Manage ${inbox.name || inbox.id} inbox`} onClick={() => setInboxDrawer(inbox.id)} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setInboxDrawer(inbox.id); } }}>
+              <td><strong>{inbox.name || inbox.id}</strong><small>Key v{inbox.keyVersion}</small></td>
+              <td>{inbox.subscriptions.map((sub) => routines.find((r) => r.id === sub.routineId)?.name).filter(Boolean).join(', ') || '-'}</td>
+              <td>{Object.entries(inbox.counts).map(([state, count]) => `${state}: ${count}`).join(' · ') || '-'}</td>
+            </tr>
+          ))}</tbody></DataTable></section>
+        )}
       </section>
       </TabsContent>
       </Tabs>

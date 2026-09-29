@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"hash/fnv"
 	"net/http"
 	"net/url"
 	"strings"
@@ -52,23 +51,30 @@ func Dispatch(store *state.DB, svc RoutineDispatcher, inboxID, deliveryID string
 	if err != nil {
 		return err
 	}
-	matched := false
 	for _, sub := range subs {
 		match, err := matches(e, sub)
 		if err != nil {
 			return err
 		}
 		if !match {
+			if err := store.RecordWebhookIgnored(ctx, inboxID, deliveryID, sub.RoutineID, "", now.UnixMilli()); err != nil {
+				return err
+			}
 			continue
 		}
 		routine, err := store.GetRoutine(ctx, sub.RoutineID)
 		if err != nil {
 			return err
 		}
-		if routine.Deleted || !routine.Enabled {
+		if routine.Deleted {
 			continue
 		}
-		matched = true
+		if !routine.Enabled {
+			if err := store.RecordWebhookIgnored(ctx, inboxID, deliveryID, sub.RoutineID, "routine disabled", now.UnixMilli()); err != nil {
+				return err
+			}
+			continue
+		}
 		claimed, err := store.ClaimWebhookDispatch(ctx, inboxID, deliveryID, sub.RoutineID, now.UnixMilli())
 		if err != nil {
 			return err
@@ -76,12 +82,7 @@ func Dispatch(store *state.DB, svc RoutineDispatcher, inboxID, deliveryID string
 		if !claimed {
 			continue
 		}
-		h := fnv.New64a()
-		_, _ = h.Write([]byte(inboxID + ":" + deliveryID))
-		occurrence := int64(h.Sum64() & 0x7fffffffffffffff)
-		if occurrence == 0 {
-			occurrence = 1
-		}
+		occurrence := state.WebhookOccurrence(inboxID, deliveryID)
 		_, err = svc.RunWebhook(ctx, sub.RoutineID, data, occurrence)
 		if err != nil {
 			_ = store.FinishWebhookDispatch(ctx, inboxID, deliveryID, sub.RoutineID, "failure", err.Error(), now.UnixMilli())
@@ -90,9 +91,6 @@ func Dispatch(store *state.DB, svc RoutineDispatcher, inboxID, deliveryID string
 		if err := store.FinishWebhookDispatch(ctx, inboxID, deliveryID, sub.RoutineID, "terminal", "", now.UnixMilli()); err != nil {
 			return err
 		}
-	}
-	if !matched {
-		return store.RecordWebhookIgnored(ctx, inboxID, deliveryID, now.UnixMilli())
 	}
 	return nil
 }

@@ -5,9 +5,10 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { api, type Routine } from '../lib/api';
 import { Routines } from './Routines';
+import type { WebhookInbox } from '../lib/api.types';
 
 vi.mock('../lib/headerContext', () => ({ usePageTitle: vi.fn() }));
-vi.mock('../lib/api', () => ({ api: { projects: vi.fn(), sessions: vi.fn(), agents: vi.fn(), sessionModels: vi.fn(), routines: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), run: vi.fn(), history: vi.fn(), webhook: vi.fn() } } }));
+vi.mock('../lib/api', () => ({ api: { projects: vi.fn(), sessions: vi.fn(), agents: vi.fn(), sessionModels: vi.fn(), routines: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), run: vi.fn(), history: vi.fn() }, webhookInboxes: { list: vi.fn(), deliveries: vi.fn(), subscribe: vi.fn(), unsubscribe: vi.fn() } } }));
 
 const routine: Routine = {
   id: 'routine-1', name: 'Morning check', prompt: 'Inspect the build', directory: '/repo', remoteId: 'local',
@@ -15,6 +16,11 @@ const routine: Routine = {
   sessionMode: 'new', sessionId: '',
   scheduleKind: 'cron', scheduleConfigJSON: '{"cron":"0 9 * * *","timezone":"Europe/Brussels"}', permissionRulesJSON: '[]', nextDueAt: 2_000_000,
   enabled: true, deleted: false, deleteAfterSuccess: false, archiveSessionAfterSuccess: true, createdAt: 1_000, updatedAt: 1_000,
+};
+
+const inbox: WebhookInbox = {
+  id: 'inbox-1', name: 'forgejo', relayUrl: 'https://relay', ingestionUrl: '/i/inbox/token', keyVersion: 2, createdAt: 1_000, secretHeader: '', counts: { terminal: 1, failure: 2 },
+  subscriptions: [{ id: 'sub-1', inboxId: 'inbox-1', routineId: 'routine-1', headerPredicates: '{"x-forgejo-event":{"equals":"pull_request"}}', jsonPredicates: '{"/action":{"oneOf":["opened","synchronized"]}}', createdAt: 1 }],
 };
 
 describe('Routines', () => {
@@ -30,7 +36,10 @@ describe('Routines', () => {
     vi.mocked(api.routines.update).mockResolvedValue(routine);
     vi.mocked(api.routines.remove).mockResolvedValue(undefined);
     vi.mocked(api.routines.run).mockResolvedValue({} as never);
-    vi.mocked(api.routines.webhook).mockResolvedValue(null);
+    vi.mocked(api.webhookInboxes.list).mockResolvedValue([]);
+    vi.mocked(api.webhookInboxes.deliveries).mockResolvedValue([]);
+    vi.mocked(api.webhookInboxes.subscribe).mockResolvedValue({} as never);
+    vi.mocked(api.webhookInboxes.unsubscribe).mockResolvedValue(undefined);
   });
 
   afterEach(() => vi.useRealTimers());
@@ -51,11 +60,11 @@ describe('Routines', () => {
     await user.click(screen.getByRole('option', { name: 'build' }));
     await user.click(screen.getByRole('combobox', { name: 'Model' }));
     await user.click(screen.getByRole('option', { name: 'openai/gpt-5.4' }));
-    await user.selectOptions(screen.getByLabelText('Schedule'), 'once');
+    await user.selectOptions(screen.getByLabelText('Trigger'), 'once');
     expect(screen.getByLabelText('Run at')).toHaveAttribute('type', 'datetime-local');
-    await user.selectOptions(screen.getByLabelText('Schedule'), 'cron');
+    await user.selectOptions(screen.getByLabelText('Trigger'), 'cron');
     expect(screen.getByLabelText('Timezone')).toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText('Schedule'), 'timeout');
+    await user.selectOptions(screen.getByLabelText('Trigger'), 'timeout');
     await user.clear(screen.getByLabelText('Minutes from now'));
     await user.type(screen.getByLabelText('Minutes from now'), '15');
     await user.click(screen.getByText('After a run'));
@@ -115,7 +124,7 @@ describe('Routines', () => {
     const user = userEvent.setup();
     render(<MemoryRouter><Routines /></MemoryRouter>);
     await user.click(await screen.findByRole('button', { name: 'New routine' }));
-    for (const name of ['Name', 'Prompt', 'Project', 'Schedule', 'Enabled']) {
+    for (const name of ['Name', 'Prompt', 'Project', 'Trigger', 'Enabled']) {
       expect(screen.getByLabelText(name)).toBeVisible();
     }
     for (const name of ['Session and model', 'After a run', 'Permissions']) {
@@ -161,32 +170,71 @@ describe('Routines', () => {
     expect(await screen.findByText('expired')).toBeInTheDocument();
   });
 
-  it.each(['/i/inbox/token', 'https://relay/i/inbox/token'])('shows and copies a full read-only webhook URL for %s', async (ingestionUrl) => {
+  it.each(['/i/inbox/token', 'https://relay/i/inbox/token'])('lists inboxes and copies a full read-only webhook URL for %s', async (ingestionUrl) => {
     const user = userEvent.setup();
     const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
-    vi.mocked(api.routines.webhook).mockResolvedValue({ id: 'inbox-1', routineId: routine.id, relayUrl: 'https://relay', ingestionUrl, keyVersion: 2, createdAt: 1_000, counts: { terminal: 1, failure: 2 }, subscriptions: [] });
-    vi.mocked(api.routines.list).mockResolvedValue([{ ...routine, remoteId: 'box' }]);
+    vi.mocked(api.webhookInboxes.list).mockResolvedValue([{ ...inbox, ingestionUrl }]);
     render(<MemoryRouter><Routines /></MemoryRouter>);
 
-    expect(await screen.findByRole('row', { name: 'View Morning check history' })).toBeInTheDocument();
-    expect(screen.queryByText('box owner')).not.toBeInTheDocument();
+    const routineRow = await screen.findByRole('row', { name: 'View Morning check history' });
+    expect(screen.getByRole('columnheader', { name: 'Trigger' })).toBeInTheDocument();
+    expect(within(routineRow).getByText('cron + webhook: forgejo')).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: 'Webhook inboxes' }));
-    expect(await screen.findByText('box owner')).toBeInTheDocument();
-    expect(screen.queryByRole('row', { name: 'View Morning check history' })).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Morning check ingestion URL')).toHaveValue('https://relay/i/inbox/token');
-    expect(screen.getByLabelText('Morning check ingestion URL')).toHaveAttribute('readonly');
+    const row = await screen.findByRole('row', { name: 'Manage forgejo inbox' });
+    expect(within(row).getByText('Morning check')).toBeInTheDocument();
+    expect(within(row).getByText('terminal: 1 · failure: 2')).toBeInTheDocument();
+    await user.click(row);
+    expect(screen.getByLabelText('Ingestion URL')).toHaveValue('https://relay/i/inbox/token');
+    expect(screen.getByLabelText('Ingestion URL')).toHaveAttribute('readonly');
     await user.click(screen.getByRole('button', { name: 'Copy URL' }));
     expect(copy).toHaveBeenCalledWith('https://relay/i/inbox/token');
-    expect(screen.getByText('Key v2 · terminal: 1 · failure: 2')).toBeInTheDocument();
-    expect(screen.queryByText(/management|acknowledgment|identity/i)).not.toBeInTheDocument();
+    // A subscriber jumps to the routine form.
+    await user.click(screen.getByRole('button', { name: 'Morning check' }));
+    expect(screen.getByRole('dialog', { name: 'Edit routine' })).toBeInTheDocument();
   });
 
   it('opens the webhook inboxes tab from the URL', async () => {
     render(<MemoryRouter initialEntries={['/routines?tab=inboxes']}><Routines /></MemoryRouter>);
 
-    expect(await screen.findByText('Inbox: Morning check')).toBeInTheDocument();
+    expect(await screen.findByText('No webhook inboxes yet.')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Webhook inboxes' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.queryByRole('button', { name: 'New routine' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'New inbox' })).toBeInTheDocument();
+  });
+
+  it('subscribes a routine to an inbox with filters and moves it between inboxes', async () => {
+    const user = userEvent.setup();
+    const other = { ...inbox, id: 'inbox-2', name: 'github', subscriptions: [] };
+    vi.mocked(api.webhookInboxes.list).mockResolvedValue([inbox, other]);
+    render(<MemoryRouter><Routines /></MemoryRouter>);
+    await screen.findByText('Morning check');
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    expect(screen.getByLabelText('Trigger')).toHaveValue('webhook:inbox-1');
+    expect(screen.getByLabelText('Header conditions 1 header')).toHaveValue('x-forgejo-event');
+    await user.selectOptions(screen.getByLabelText('Trigger'), 'webhook:inbox-2');
+    await user.click(screen.getByRole('button', { name: 'Add JSON pointer' }));
+    await user.type(screen.getByLabelText('Body conditions 2 JSON pointer'), '/draft');
+    await user.selectOptions(screen.getByLabelText('Body conditions 2 operator'), 'missing');
+    await user.click(screen.getByRole('button', { name: 'Remove header conditions 1' }));
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(api.webhookInboxes.subscribe).toHaveBeenCalledWith('inbox-2', { routineId: routine.id, headerPredicates: '{}', jsonPredicates: '{"/action":{"oneOf":["opened","synchronized"]},"/draft":{"exists":false}}' }));
+    expect(api.webhookInboxes.unsubscribe).toHaveBeenCalledWith('inbox-1', routine.id);
+    // A webhook trigger replaces the schedule.
+    expect(vi.mocked(api.routines.update).mock.calls[0][1].schedule).toEqual({ kind: 'none' });
+  });
+
+  it('removes the subscription when the trigger is cleared', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.webhookInboxes.list).mockResolvedValue([inbox]);
+    render(<MemoryRouter><Routines /></MemoryRouter>);
+    await screen.findByText('Morning check');
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    await user.selectOptions(screen.getByLabelText('Trigger'), 'none');
+    expect(screen.queryByLabelText('Header conditions 1 header')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(api.webhookInboxes.unsubscribe).toHaveBeenCalledWith('inbox-1', routine.id));
+    expect(api.webhookInboxes.subscribe).not.toHaveBeenCalled();
   });
 
   it('shortens project paths in the table', async () => {

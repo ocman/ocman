@@ -34,9 +34,25 @@ session's final assistant message.
 
 ## Webhook deliveries
 
-An accepted encrypted inbox delivery may trigger every matching subscription
-for its owner. The routine prompt is sent unchanged, followed by this fixed
-untrusted-data envelope:
+A webhook inbox only captures deliveries. Routines subscribe to an inbox and
+decide which deliveries run them, so one inbox (for example, every event from
+a Forgejo repository) can drive several routines.
+
+1. Save the relay URL and enrollment token once under **Settings → Webhooks**.
+   An empty relay URL falls back to the share relay.
+2. Open **Routines → Webhook inboxes → New inbox**, name it, and optionally set
+   a shared secret and the header that carries it. Forgejo can send an
+   `Authorization` header: use `Authorization` with a `Bearer …` secret.
+   Copy the ingestion URL into the provider's webhook settings.
+3. Edit a routine and pick the inbox as its **Trigger**, then add
+   conditions. The trigger is either a schedule or one webhook inbox, not
+   both; choosing a webhook clears the schedule.
+
+Conditions combine header and RFC 6901 JSON Pointer predicates with AND.
+They support only `equals`, `is one of`, `exists`, and `is missing`; scripts
+and regular expressions are not evaluated. With no conditions, every delivery
+runs the routine. A matching delivery sends the routine prompt unchanged,
+followed by this fixed untrusted-data envelope:
 
 ```json
 {
@@ -50,11 +66,16 @@ untrusted-data envelope:
 }
 ```
 
-Subscriptions combine header and RFC 6901 JSON Pointer predicates with AND.
-Predicates support only `exists`, `equals`, and `oneOf`; scripts and regular
-expressions are not evaluated. Disabled routines pause dispatch, while deleted
-routines cancel queued dispatches. Delivery and dispatch history is retained
-for 30 days.
+Select an inbox row to open its drawer: the ingestion URL, key reset and
+revoke, renaming, replacing or removing the shared secret (the URL stays the
+same; this needs a relay with the `PUT /inboxes/{id}/secret` endpoint), the subscribed routines, and the ten most recent deliveries with their
+filtered headers, body, and what happened for each subscriber (ran, no match,
+skipped because the routine is disabled, or failed). Use it to check a
+condition against what the provider actually sent.
+
+Disabled routines are skipped, while deleted routines cancel queued
+dispatches. Revoking an inbox removes its subscriptions. Delivery and dispatch
+history is retained for 30 days.
 
 Use **Delete** to remove a routine from the UI and stop future scheduled runs.
 Deletion is soft: ocman retains the routine and its run history in `state.db`.

@@ -498,3 +498,21 @@
   color: var(--text);
   border-color: var(--accent);
 }
+
+/* Free-text setting (e.g. webhook relay URL) */
+.settings-text-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 320px;
+  min-width: 0;
+}
+.settings-text-input input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font: 13px var(--font-conversation-mono);
+}

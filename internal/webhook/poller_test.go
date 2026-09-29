@@ -161,3 +161,21 @@ func TestPollerContinuesPastPoisonAndDeduplicatesAfterAckLoss(t *testing.T) {
 		t.Fatalf("remaining deliveries = %+v, %v", remaining, err)
 	}
 }
+
+func TestPollerStopsWhenInboxRevoked(t *testing.T) {
+	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	done := make(chan struct{})
+	go func() {
+		(&Poller{Store: db, Inbox: state.WebhookInbox{ID: "gone"}}).Run(t.Context())
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("poller kept running for a deleted inbox")
+	}
+}

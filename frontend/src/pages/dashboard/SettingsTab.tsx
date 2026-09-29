@@ -3,6 +3,7 @@ import { usePageTitle } from '../../lib/headerContext';
 import { PromptTemplateSettings } from '../../components/upstream/PromptTemplateSettings';
 import { RemoteSettings } from '../../components/RemoteSettings';
 import { SharingSettings } from '../../components/SharingSettings';
+import { WebhookRelaySettings } from '../../components/WebhookRelaySettings';
 import { PluginSettings } from '../../components/PluginSettings';
 import { MaintenanceSettings } from '../../components/MaintenanceSettings';
 import { useAuthStore } from '../../lib/authStore';
@@ -50,6 +51,7 @@ export function SettingsTab() {
     { id: 'plugins', label: 'Plugins', show: true },
     { id: 'auto-approve', label: 'Auto-approve', show: true },
     { id: 'sharing', label: 'Sharing', show: true },
+    { id: 'webhooks', label: 'Webhooks', show: true },
     { id: 'templates', label: 'PR & Issue templates', show: true },
     { id: 'link-previews', label: 'Link previews', show: true },
     { id: 'maintenance', label: 'Maintenance', show: true },
@@ -111,6 +113,11 @@ export function SettingsTab() {
           <h2 className="settings-section-title">Sharing</h2>
           <SharingSettings />
         </div>
+
+        {active === 'webhooks' && <div className="settings-section">
+          <h2 className="settings-section-title">Webhooks</h2>
+          <WebhookRelaySettings />
+        </div>}
 
         <div className="settings-section" hidden={active !== 'templates'}>
           <h2 className="settings-section-title">PR &amp; Issue templates</h2>

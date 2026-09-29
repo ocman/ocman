@@ -173,6 +173,50 @@ export function SettingSelect({
   );
 }
 
+/**
+ * SettingText is a text input that saves on blur or Enter when the value
+ * changed. Secrets use `type="password"`; pass `value=""` with a placeholder
+ * describing the stored state so the saved value never reaches the page.
+ */
+export function SettingText({
+  value,
+  save,
+  onSave,
+  ariaLabel,
+  placeholder,
+  type = 'text',
+  disabled,
+}: {
+  value: string;
+  save: Save;
+  onSave: (next: string) => void | Promise<unknown>;
+  ariaLabel: string;
+  placeholder?: string;
+  type?: 'text' | 'password' | 'url';
+  disabled?: boolean;
+}) {
+  const commit = (next: string) => {
+    if (next === value) return;
+    void save.track(() => withMinSpinner(() => onSave(next))).catch(() => {});
+  };
+  return (
+    <div className="settings-text-input">
+      <input
+        key={value}
+        type={type}
+        aria-label={ariaLabel}
+        placeholder={placeholder}
+        defaultValue={value}
+        disabled={disabled}
+        autoComplete="off"
+        onBlur={(e) => commit(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') commit(e.currentTarget.value); }}
+      />
+      <SaveStatus state={save.state} />
+    </div>
+  );
+}
+
 /** Hold the spinner briefly so instant (sync) saves still flash it. */
 async function withMinSpinner<T>(run: () => T | Promise<T>): Promise<T> {
   const [result] = await Promise.all([

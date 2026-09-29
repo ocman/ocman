@@ -137,11 +137,13 @@ type Server struct {
 	inboxSourcesFn   func() []string
 	inboxItemsFn     func(context.Context, string) ([]state.InboxItem, error)
 
-	routineSvc        *routines.Service
-	pluginMu          sync.Mutex
-	pluginRecovered   bool
-	pluginDiscovery   []pluginDiscoveryFailure
-	pluginCtx         context.Context
+	routineSvc      *routines.Service
+	pluginMu        sync.Mutex
+	pluginRecovered bool
+	pluginDiscovery []pluginDiscoveryFailure
+	pluginCtx       context.Context
+	// webhookCtx outlives requests so pollers for newly created inboxes keep running.
+	webhookCtx        context.Context
 	pluginProcesses   map[string]*plugins.Process
 	pluginStderr      map[string]string
 	pluginActionsOnce sync.Once
@@ -512,6 +514,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 		if err != nil {
 			return fmt.Errorf("loading webhook inboxes: %w", err)
 		}
+		s.webhookCtx = ctx
 		for _, inbox := range inboxes {
 			go (&webhook.Poller{Store: s.stateDB, Inbox: inbox, Routines: s.routineSvc}).Run(ctx)
 		}

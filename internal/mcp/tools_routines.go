@@ -42,6 +42,7 @@ var routineActions = []routineAction{
 	{name: "get", description: "Gets one routine.", example: `{"action":"get","routine_id":"routine-1"}`, required: []string{"routine_id"}, output: "Routine"},
 	{name: "create", description: "Creates a routine. Defaults to a disabled, unscheduled routine using a new session.", example: `{"action":"create","name":"Daily review","prompt":"Review open work","directory":"/repo"}`, required: routineInputRequired, optional: routineInputOptional, output: "Routine"},
 	{name: "update", description: "Replaces one routine definition. Omitted optional fields use their defaults.", example: `{"action":"update","routine_id":"routine-1","name":"Daily review","prompt":"Review open work","directory":"/repo","enabled":true,"schedule_kind":"cron","cron":"0 9 * * 1-5","timezone":"Europe/Brussels"}`, required: append([]string{"routine_id"}, routineInputRequired...), optional: routineInputOptional, output: "Routine"},
+	{name: "patch", description: "Updates one routine in place: only the fields you pass change, everything else keeps its current value. Passing any schedule field replaces only the schedule fields you pass.", example: `{"action":"patch","routine_id":"routine-1","prompt":"Review open work and summarise"}`, required: []string{"routine_id"}, optional: append(append([]string{}, routineInputRequired...), routineInputOptional...), output: "Routine"},
 	{name: "delete", description: "Soft-deletes one routine and disables future runs.", example: `{"action":"delete","routine_id":"routine-1"}`, required: []string{"routine_id"}, output: map[string]string{"status": "deleted"}},
 	{name: "run", description: "Runs one routine now.", example: `{"action":"run","routine_id":"routine-1"}`, required: []string{"routine_id"}, output: "RoutineRun"},
 	{name: "history", description: "Lists runs for one routine, newest first.", example: `{"action":"history","routine_id":"routine-1"}`, required: []string{"routine_id"}, output: "RoutineRun[]"},
@@ -116,6 +117,21 @@ func (t *routineTools) handle(ctx context.Context, req mcplib.CallToolRequest) (
 			return routineToolError(err), nil
 		}
 		return toolResultJSON(item), nil
+	case "patch":
+		id := req.GetString("routine_id", "")
+		existing, err := t.svc.Get(ctx, id)
+		if err != nil {
+			return routineToolError(err), nil
+		}
+		input, err := patchRoutineInput(existing, req, arguments, time.Now())
+		if err != nil {
+			return routineToolError(err), nil
+		}
+		item, err := t.svc.Update(ctx, id, input)
+		if err != nil {
+			return routineToolError(err), nil
+		}
+		return toolResultJSON(item), nil
 	case "delete":
 		if err := t.svc.Delete(ctx, req.GetString("routine_id", "")); err != nil {
 			return routineToolError(err), nil
@@ -182,6 +198,52 @@ func routineInput(req mcplib.CallToolRequest, arguments map[string]any) (routine
 		ArchiveSessionAfterSuccess: boolArgument(arguments, "archive_session_after_success"),
 		PermissionRules:            permRules,
 	}, nil
+}
+
+// patchRoutineInput overlays the arguments that are present onto the stored
+// routine. Absent keys keep their stored value; an explicit "" clears a string.
+func patchRoutineInput(existing state.Routine, req mcplib.CallToolRequest, arguments map[string]any, now time.Time) (routines.Input, error) {
+	input, err := routines.InputFromRoutine(existing, now)
+	if err != nil {
+		return routines.Input{}, err
+	}
+	has := func(name string) bool { _, ok := arguments[name]; return ok }
+	for name, field := range map[string]*string{
+		"name": &input.Name, "prompt": &input.Prompt, "directory": &input.Directory, "remote_id": &input.RemoteID,
+		"agent": &input.Agent, "model": &input.Model, "session_mode": &input.SessionMode, "session_id": &input.SessionID,
+		"schedule_kind": &input.Schedule.Kind, "cron": &input.Schedule.Cron, "timezone": &input.Schedule.Timezone,
+	} {
+		if has(name) {
+			*field = req.GetString(name, "")
+		}
+	}
+	for name, field := range map[string]*bool{"enabled": &input.Enabled, "delete_after_success": &input.DeleteAfterSuccess, "archive_session_after_success": &input.ArchiveSessionAfterSuccess} {
+		if has(name) {
+			*field = boolArgument(arguments, name)
+		}
+	}
+	if has("timeout_ms") {
+		timeoutMS := int64(req.GetInt("timeout_ms", 0))
+		if timeoutMS > math.MaxInt64/int64(time.Millisecond) || timeoutMS < 0 {
+			return routines.Input{}, routines.ErrValidation
+		}
+		input.Schedule.Timeout = time.Duration(timeoutMS) * time.Millisecond
+	}
+	if has("at") {
+		input.Schedule.At = time.UnixMilli(int64(req.GetInt("at", 0)))
+	}
+	if input.Schedule.Kind == routines.ScheduleTimeout && input.Schedule.Timeout <= 0 {
+		return routines.Input{}, fmt.Errorf("the timeout has already elapsed; pass timeout_ms or another schedule_kind: %w", routines.ErrValidation)
+	}
+	if has("permission_rules") {
+		input.PermissionRules = nil
+		if raw := req.GetString("permission_rules", ""); raw != "" {
+			if err := json.Unmarshal([]byte(raw), &input.PermissionRules); err != nil {
+				return routines.Input{}, fmt.Errorf("permission_rules: invalid JSON: %w", routines.ErrValidation)
+			}
+		}
+	}
+	return input, nil
 }
 
 func boolArgument(arguments map[string]any, name string) bool {

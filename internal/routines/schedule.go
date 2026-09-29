@@ -104,3 +104,37 @@ func encodeSchedule(schedule Schedule, now time.Time) (string, int64, error) {
 		return "", 0, ErrValidation
 	}
 }
+
+// InputFromRoutine turns a stored routine back into an Input, so a caller can
+// change a few fields and Update the rest unchanged. A pending timeout keeps
+// its remaining delay, and therefore its original due time.
+func InputFromRoutine(routine state.Routine, now time.Time) (Input, error) {
+	var config struct {
+		DueAt    int64  `json:"dueAt"`
+		At       int64  `json:"at"`
+		Cron     string `json:"cron"`
+		Timezone string `json:"timezone"`
+	}
+	if err := json.Unmarshal([]byte(routine.ScheduleConfigJSON), &config); err != nil && routine.ScheduleConfigJSON != "" {
+		return Input{}, fmt.Errorf("stored schedule is unreadable: %w", ErrValidation)
+	}
+	var rules []platforms.PermissionRule
+	if routine.PermissionRulesJSON != "" {
+		if err := json.Unmarshal([]byte(routine.PermissionRulesJSON), &rules); err != nil {
+			return Input{}, fmt.Errorf("stored permission rules are unreadable: %w", ErrValidation)
+		}
+	}
+	schedule := Schedule{Kind: routine.ScheduleKind, Cron: config.Cron, Timezone: config.Timezone}
+	if config.At > 0 {
+		schedule.At = time.UnixMilli(config.At)
+	}
+	if routine.ScheduleKind == ScheduleTimeout {
+		schedule.Timeout = time.UnixMilli(config.DueAt).Sub(now)
+	}
+	return Input{
+		Name: routine.Name, Prompt: routine.Prompt, Directory: routine.Directory, RemoteID: routine.RemoteID,
+		Agent: routine.Agent, Model: routine.Model, SessionMode: routine.SessionMode, SessionID: routine.SessionID,
+		Schedule: schedule, Enabled: routine.Enabled, DeleteAfterSuccess: routine.DeleteAfterSuccess,
+		ArchiveSessionAfterSuccess: routine.ArchiveSessionAfterSuccess, PermissionRules: rules,
+	}, nil
+}

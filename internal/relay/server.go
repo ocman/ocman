@@ -175,6 +175,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /inboxes/{id}", s.handleRevokeInbox)
 	s.mux.HandleFunc("POST /inboxes/{id}/rotate", s.handleRotateInbox)
 	s.mux.HandleFunc("PUT /inboxes/{id}/recipient", s.handleRotateInbox)
+	s.mux.HandleFunc("PUT /inboxes/{id}/secret", s.handleUpdateInboxSecret)
 	s.mux.HandleFunc("POST /i/{id}/{token}", s.handleIngestInbox)
 	s.mux.HandleFunc("GET /inboxes/{id}/deliveries", s.handleListInboxDeliveries)
 	s.mux.HandleFunc("GET /inboxes/{id}/deliveries/{deliveryID}", s.handleFetchInboxDelivery)
