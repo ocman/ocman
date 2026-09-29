@@ -124,6 +124,37 @@ describe('MainNav', () => {
 
     expect(screen.getByRole('link', { name: 'Home' })).toHaveClass('active');
   });
+
+  // One row per route in App.tsx: every page highlights exactly its owning destination.
+  it.each([
+    ['/session/sess-1', 'Home'],
+    ['/sessions', 'Sessions'],
+    ['/projects', 'Projects'],
+    ['/project/%2Frepo', 'Projects'],
+    ['/project/%2Frepo/worktrees', 'Projects'],
+    ['/project/%2Frepo/settings', 'Projects'],
+    ['/factory/overview', 'Factory'],
+    ['/factory/how-to', 'Factory'],
+    ['/factory/epics', 'Factory'],
+    ['/factory/epics/epic-1', 'Factory'],
+    ['/factory/issues', 'Factory'],
+    ['/factory/issues/issue-1', 'Factory'],
+    ['/factory/queue', 'Factory'],
+    ['/factory/configuration', 'Factory'],
+    ['/routines', 'Routines'],
+    ['/artifacts', 'Artifacts'],
+    ['/artifacts/a-1', 'Artifacts'],
+    ['/analytics/overview', 'Analytics'],
+    ['/analytics/logs', 'Analytics'],
+    ['/inbox', 'Inbox'],
+    ['/subscription-usage', 'Usage'],
+    ['/settings', 'Settings'],
+  ])('marks only the owning destination active on %s', (path, label) => {
+    render(<MemoryRouter initialEntries={[path]}><MainNav /></MemoryRouter>);
+    const nav = screen.getByRole('navigation', { name: 'Main navigation' });
+    const active = [...nav.querySelectorAll('.active')].map((el) => el.querySelector('span')?.textContent);
+    expect(active).toEqual([label]);
+  });
 });
 
 function LocationMarker() {

@@ -6,11 +6,12 @@ import { useUiStore } from '../lib/uiStore';
 import { SubscriptionUsageContent } from '../pages/SubscriptionUsage';
 import './MainNav.css';
 
-const NAV_ITEMS = [
-  { to: '/', label: 'Home', icon: 'bi-house', activeOnSession: true },
+// activePrefix: sub-pages living outside the link's own path (singular routes, sibling tabs).
+const NAV_ITEMS: { to: string; label: string; icon: string; activePrefix?: string }[] = [
+  { to: '/', label: 'Home', icon: 'bi-house', activePrefix: '/session/' },
   { to: '/sessions', label: 'Sessions', icon: 'bi-collection' },
-  { to: '/projects', label: 'Projects', icon: 'bi-folder' },
-  { to: '/factory/overview', label: 'Factory', icon: 'bi-buildings' },
+  { to: '/projects', label: 'Projects', icon: 'bi-folder', activePrefix: '/project/' },
+  { to: '/factory/overview', label: 'Factory', icon: 'bi-buildings', activePrefix: '/factory/' },
   { to: '/routines', label: 'Routines', icon: 'bi-clock-history' },
   { to: '/artifacts', label: 'Artifacts', icon: 'bi-box-seam' },
   { to: '/analytics', label: 'Analytics', icon: 'bi-bar-chart' },
@@ -42,7 +43,7 @@ export function MainNav({
       aria-label={item.label}
       title={collapsed ? item.label : undefined}
       className={({ isActive }) => [
-        isActive || (item.activeOnSession && location.pathname.startsWith('/session/')) ? 'active' : '',
+        isActive || (item.activePrefix && location.pathname.startsWith(item.activePrefix)) ? 'active' : '',
         className ?? '',
       ].filter(Boolean).join(' ') || undefined}
       onClick={onMobileClose}
@@ -86,7 +87,7 @@ export function MainNav({
           <div className="main-nav-usage-root" ref={usageRoot} onKeyDown={(event) => event.key === 'Escape' && setUsageOpen(false)}>
             <button
               type="button"
-              className={usageOpen ? 'main-nav-usage active' : 'main-nav-usage'}
+              className={usageOpen || location.pathname === '/subscription-usage' ? 'main-nav-usage active' : 'main-nav-usage'}
               aria-label="Usage"
               aria-expanded={usageOpen}
               aria-controls="subscription-usage-popover"
