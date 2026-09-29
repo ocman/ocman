@@ -200,6 +200,19 @@ func (d *DB) DeleteWebhookInbox(ctx context.Context, routineID string) error {
 	return err
 }
 
+// UpdateWebhookInboxMeta changes only the name and secret header, so it can't
+// overwrite a key rotated concurrently or resurrect a revoked inbox.
+func (d *DB) UpdateWebhookInboxMeta(ctx context.Context, id, name, secretHeader string) error {
+	_, err := d.db.ExecContext(ctx, `UPDATE webhook_inbox SET name = ?, secret_header = ? WHERE id = ?`, name, secretHeader, id)
+	return err
+}
+
+// UpdateWebhookInboxKey records a rotated identity and key version only.
+func (d *DB) UpdateWebhookInboxKey(ctx context.Context, id, identity string, keyVersion int) error {
+	_, err := d.db.ExecContext(ctx, `UPDATE webhook_inbox SET identity = ?, key_version = ? WHERE id = ?`, identity, keyVersion, id)
+	return err
+}
+
 // DeleteWebhookInboxByID removes an inbox and its subscriptions. Deletion is
 // explicit because foreign-key enforcement can be off on legacy databases.
 func (d *DB) DeleteWebhookInboxByID(ctx context.Context, id string) error {

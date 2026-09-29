@@ -318,9 +318,12 @@ func (s *Service) finish(ctx context.Context, run state.RoutineRun, runState, er
 		return err
 	}
 	// Only a scheduled occurrence consumes a timeout/once schedule. Manual and
-	// webhook runs leave the routine's enabled state and next due time alone.
+	// webhook runs leave the routine's enabled state and next due time alone,
+	// unless an overdue manual run claimed the due occurrence (RunNow reuses
+	// it): the scheduler could never claim it again, so it must advance here.
+	scheduled := run.Trigger == "schedule" || (routine.NextDueAt > 0 && run.OccurrenceAt == routine.NextDueAt)
 	nextDue, enabled := int64(0), false
-	if run.Trigger != "schedule" {
+	if !scheduled {
 		nextDue, enabled = routine.NextDueAt, routine.Enabled
 	} else if routine.ScheduleKind == ScheduleCron && routine.Enabled && !routine.Deleted {
 		var config struct {

@@ -22,7 +22,9 @@ export function decodeFilters(json: string): FilterRow[] {
   let parsed: Record<string, Predicate>;
   try { parsed = JSON.parse(json || '{}') ?? {}; } catch { return []; }
   return Object.entries(parsed).map(([key, p]) => {
-    if (p.oneOf?.length) return { key, op: 'oneOf', value: p.oneOf.map(String).join(', ') };
+    // Check presence, not length: an empty list matches nothing, and reading
+    // it back as 'exists' would widen the filter on the next save.
+    if (Array.isArray(p.oneOf)) return { key, op: 'oneOf', value: p.oneOf.map(String).join(', ') };
     const equals = p.op === 'equals' ? p.value : p.equals;
     if (equals !== undefined) return { key, op: 'equals', value: String(equals) };
     return { key, op: p.exists === false ? 'missing' : 'exists', value: '' };

@@ -144,6 +144,7 @@ type Server struct {
 	pluginCtx       context.Context
 	// webhookCtx outlives requests so pollers for newly created inboxes keep running.
 	webhookCtx        context.Context
+	webhookKeyMu      sync.Mutex
 	pluginProcesses   map[string]*plugins.Process
 	pluginStderr      map[string]string
 	pluginActionsOnce sync.Once

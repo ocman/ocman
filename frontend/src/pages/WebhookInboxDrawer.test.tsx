@@ -39,6 +39,14 @@ describe('webhook filters', () => {
     ]);
   });
 
+  it('keeps an empty oneOf list instead of widening it to exists', () => {
+    const json = encodeFilters([{ key: '/action', op: 'oneOf', value: ' , ' }]);
+    expect(JSON.parse(json)).toEqual({ '/action': { oneOf: [] } });
+    const rows = decodeFilters(json);
+    expect(rows).toEqual([{ key: '/action', op: 'oneOf', value: '' }]);
+    expect(encodeFilters(rows)).toBe(json);
+  });
+
   it('reads the legacy op/value form and tolerates bad JSON', () => {
     expect(decodeFilters('{"/a":{"op":"equals","value":3}}')).toEqual([{ key: '/a', op: 'equals', value: '3' }]);
     expect(decodeFilters('not json')).toEqual([]);

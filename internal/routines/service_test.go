@@ -963,3 +963,40 @@ func TestManualAndWebhookRunsKeepRoutineEnabled(t *testing.T) {
 		}
 	}
 }
+
+func TestOverdueManualRunConsumesTheDueOccurrence(t *testing.T) {
+	for _, schedule := range []Schedule{
+		{Kind: ScheduleOnce, At: time.Date(2030, 1, 1, 9, 1, 0, 0, time.UTC)},
+		{Kind: ScheduleCron, Cron: "*/5 * * * *", Timezone: "UTC"},
+	} {
+		h := newHarness(t)
+		input := validInput()
+		input.Schedule = schedule
+		routine, err := h.svc.Create(t.Context(), input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.now.Store(routine.NextDueAt + time.Minute.Milliseconds())
+		run, err := h.svc.RunNow(t.Context(), routine.ID)
+		if err != nil || run.OccurrenceAt != routine.NextDueAt {
+			t.Fatalf("%s: manual run = %+v, %v", schedule.Kind, run, err)
+		}
+		h.platform.setStatus(db.StatusDone)
+		for range 3 {
+			if err := h.svc.Tick(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+		}
+		got, _ := h.db.GetRoutine(t.Context(), routine.ID)
+		runs, _ := h.db.ListRoutineRuns(t.Context(), routine.ID)
+		if got.NextDueAt == routine.NextDueAt || runs[0].State != RunSuccess {
+			t.Fatalf("%s stalled on its due occurrence: routine=%+v runs=%+v", schedule.Kind, got, runs)
+		}
+		if schedule.Kind == ScheduleOnce && got.Enabled {
+			t.Fatalf("once schedule not consumed: %+v", got)
+		}
+		if schedule.Kind == ScheduleCron && (!got.Enabled || got.NextDueAt <= h.now.Load()) {
+			t.Fatalf("cron not advanced: %+v", got)
+		}
+	}
+}

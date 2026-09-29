@@ -174,6 +174,16 @@ func (s *Server) handleWebhookInboxItem(w http.ResponseWriter, r *http.Request, 
 		if req.Reset {
 			req.Recipient = ""
 		}
+		// Serialize rotations so two resets can't leave the relay on one
+		// recipient and state.db holding the other identity.
+		s.webhookKeyMu.Lock()
+		defer s.webhookKeyMu.Unlock()
+		fresh, err := s.stateDB.GetWebhookInboxByID(r.Context(), inbox.ID)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		inbox = fresh
 		if req.Recipient == "" {
 			id, err := age.GenerateX25519Identity()
 			if err != nil {
@@ -189,7 +199,7 @@ func (s *Server) handleWebhookInboxItem(w http.ResponseWriter, r *http.Request, 
 			return
 		}
 		inbox.KeyVersion = version
-		if err := s.stateDB.SaveWebhookInbox(r.Context(), inbox); err != nil {
+		if err := s.stateDB.UpdateWebhookInboxKey(r.Context(), inbox.ID, inbox.Identity, version); err != nil {
 			serverError(w, "saving webhook key", err)
 			return
 		}
@@ -229,9 +239,12 @@ func (s *Server) updateWebhookInbox(w http.ResponseWriter, r *http.Request, inbo
 		}
 		inbox.SecretHeader = header
 	}
-	if err := s.stateDB.SaveWebhookInbox(r.Context(), inbox); err != nil {
+	if err := s.stateDB.UpdateWebhookInboxMeta(r.Context(), inbox.ID, inbox.Name, inbox.SecretHeader); err != nil {
 		serverError(w, "saving webhook inbox", err)
 		return
+	}
+	if fresh, err := s.stateDB.GetWebhookInboxByID(r.Context(), inbox.ID); err == nil {
+		inbox = fresh
 	}
 	view, err := s.webhookInboxView(r, inbox)
 	if err != nil {

@@ -223,3 +223,43 @@ func TestWebhookInboxesFailures(t *testing.T) {
 		t.Fatalf("no state: %d", rec.Code)
 	}
 }
+
+func TestWebhookInboxPatchKeepsConcurrentKeyAndRevocation(t *testing.T) {
+	srv, handler, _ := routineHTTPServer(t)
+	srv.relayURL = fakeInboxRelay(t).URL
+	if rec := doRoutineRequest(t, handler, http.MethodPost, "/api/webhook-inboxes", `{"name":"forgejo"}`); rec.Code != http.StatusCreated {
+		t.Fatalf("create: %d", rec.Code)
+	}
+	stale, err := srv.stateDB.GetWebhookInboxByID(t.Context(), "inbox")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A key reset lands while a rename still holds the pre-reset snapshot.
+	if rec := doRoutineRequest(t, handler, http.MethodPut, "/api/webhook-inboxes/inbox", `{"reset":true}`); rec.Code != http.StatusOK {
+		t.Fatalf("reset: %d", rec.Code)
+	}
+	rotated, _ := srv.stateDB.GetWebhookInboxByID(t.Context(), "inbox")
+	rec := httptest.NewRecorder()
+	srv.updateWebhookInbox(rec, httptest.NewRequest(http.MethodPatch, "/", strings.NewReader(`{"name":"renamed","secret":"s"}`)), stale)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch: %d %s", rec.Code, rec.Body.String())
+	}
+	got, _ := srv.stateDB.GetWebhookInboxByID(t.Context(), "inbox")
+	if got.Identity != rotated.Identity || got.KeyVersion != rotated.KeyVersion || got.Identity == stale.Identity || got.Name != "renamed" || got.SecretHeader != "X-Webhook-Secret" {
+		t.Fatalf("patch clobbered the rotated key: stale v%d, rotated v%d, got %+v", stale.KeyVersion, rotated.KeyVersion, got)
+	}
+	var view webhookInboxView
+	if json.Unmarshal(rec.Body.Bytes(), &view) != nil || view.KeyVersion != rotated.KeyVersion {
+		t.Fatalf("view = %s", rec.Body.String())
+	}
+
+	// A rename that races a revoke must not bring the inbox back.
+	if err := srv.stateDB.DeleteWebhookInboxByID(t.Context(), "inbox"); err != nil {
+		t.Fatal(err)
+	}
+	rec = httptest.NewRecorder()
+	srv.updateWebhookInbox(rec, httptest.NewRequest(http.MethodPatch, "/", strings.NewReader(`{"name":"ghost"}`)), stale)
+	if _, err := srv.stateDB.GetWebhookInboxByID(t.Context(), "inbox"); err == nil {
+		t.Fatal("patch resurrected a revoked inbox")
+	}
+}
