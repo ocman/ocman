@@ -79,6 +79,9 @@ enableGitInfo = false
     weight = 3
 
 [params]
+  description = "One dashboard for every coding-agent session: browse, drive and split OpenCode sessions across projects, worktrees and machines."
+  # Preview-card image (og:image / twitter:image); mounted from docs/ above.
+  images = ["sessions.png"]
   # ponytail: default "normal" caps the page at 80rem, which leaves ~670px for
   # content once the two sidebars are subtracted — mermaid diagrams end up tiny.
   [params.page]
