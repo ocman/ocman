@@ -2,7 +2,6 @@ package state
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"os"
 	"path/filepath"
@@ -10,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/NoUseFreak/ocman/internal/testutil"
 	_ "modernc.org/sqlite"
 )
 
@@ -44,20 +44,29 @@ func TestGetSettingCancelledContext(t *testing.T) {
 	}
 }
 
-// openTestStateDB creates an in-memory state database with the schema
-// migrated to the latest version.
+// openTestStateDB opens a fresh state database with the schema migrated
+// to the latest version.
 func openTestStateDB(t *testing.T) *DB {
 	t.Helper()
-	sqlDB, err := sql.Open("sqlite", ":memory:")
+	stateDB, err := Open(templateDBPath(t))
 	if err != nil {
 		t.Fatalf("opening test state db: %v", err)
 	}
-	stateDB := &DB{db: sqlDB}
-	if err := stateDB.init(); err != nil {
-		sqlDB.Close()
-		t.Fatalf("initializing state schema: %v", err)
-	}
+	t.Cleanup(func() { _ = stateDB.Close() })
 	return stateDB
+}
+
+// templateDBPath is statetest.Path for this package's own tests, which
+// cannot import statetest without an import cycle.
+func templateDBPath(t testing.TB) string {
+	t.Helper()
+	return testutil.TemplateCopy(t, "state.db", filepath.Join(t.TempDir(), "state.db"), func(path string) error {
+		db, err := Open(path)
+		if err != nil {
+			return err
+		}
+		return db.Close()
+	})
 }
 
 // k is a tiny shorthand for constructing Key values in tests.

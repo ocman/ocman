@@ -23,6 +23,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/remote"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 // stateSetup describes the state.db rows a test wants pre-populated
@@ -48,8 +49,7 @@ type stateRow struct {
 // state.db. Tests register a fakePlatform via the returned registry.
 func newSessionsTestServer(t *testing.T) (*Server, *platforms.Registry) {
 	t.Helper()
-	tmp := filepath.Join(t.TempDir(), "state.db")
-	stDB, err := state.Open(tmp)
+	stDB, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatalf("state.Open: %v", err)
 	}

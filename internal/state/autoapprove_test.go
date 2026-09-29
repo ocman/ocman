@@ -2,15 +2,13 @@ package state
 
 import (
 	"os"
-	"path/filepath"
 	"reflect"
 	"testing"
 )
 
 func openTestDB(t *testing.T) *DB {
 	t.Helper()
-	dir := t.TempDir()
-	db, err := Open(filepath.Join(dir, "state.db"))
+	db, err := Open(templateDBPath(t))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

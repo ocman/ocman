@@ -4,12 +4,12 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	pb "github.com/NoUseFreak/ocman/internal/remote/proto"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 func TestManagerLocalWebhookLifecycle(t *testing.T) {
@@ -26,7 +26,7 @@ func TestManagerLocalWebhookLifecycle(t *testing.T) {
 	}))
 	defer relay.Close()
 
-	store, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	store, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestRemoteWebhookRPCRoundTrip(t *testing.T) {
 		}
 	}))
 	defer relay.Close()
-	store, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	store, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}

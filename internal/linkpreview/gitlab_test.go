@@ -8,13 +8,13 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"net/url"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/previewauth"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 // gitlabAPI fakes one GitLab instance (API v4 + OAuth endpoints).
@@ -171,7 +171,7 @@ func TestGitLabCardsAndInstanceIsolation(t *testing.T) {
 	client := comSrv.Client()
 	client.Transport.(*http.Transport).TLSClientConfig.RootCAs.AddCert(corpSrv.Certificate())
 	// The real Manager: grants are keyed by provider, i.e. by instance.
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +296,7 @@ func TestGitLabDialGuard(t *testing.T) {
 func TestGitLabConnectRefreshAndRevoke(t *testing.T) {
 	allowLoopback(t)
 	f, srv := newGitLabServer(t)
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}

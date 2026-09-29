@@ -3,13 +3,12 @@ package state
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 )
 
 func TestPreviewCredentialBoundToRowKey(t *testing.T) {
-	d, err := Open(filepath.Join(t.TempDir(), "state.db"))
+	d, err := Open(templateDBPath(t))
 	if err != nil {
 		t.Fatal(err)
 	}

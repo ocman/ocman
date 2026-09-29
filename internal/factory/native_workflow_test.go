@@ -8,10 +8,11 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/factory/model"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 func TestWorkflowChecksEveryChangedProjectBeforeDelivery(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +130,7 @@ func TestCompileWorkflow(t *testing.T) {
 }
 
 func TestWorkflowScopeExpansionFromVerification(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}

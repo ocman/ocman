@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -40,7 +41,7 @@ func TestSQLiteSpansParentUnderRequestSpan(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer opencodeDB.Close()
-	stateDB, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	stateDB, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}

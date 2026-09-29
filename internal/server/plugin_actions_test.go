@@ -13,12 +13,13 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 func TestPluginActionEndpoints(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("OCMAN_PLUGIN_DIR", dir)
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +217,7 @@ func TestPluginActionUnavailableAndErrors(t *testing.T) {
 			t.Fatalf("%s: %d", tc.category, w.Code)
 		}
 	}
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 func TestNativeImportedPlanKeepsApprovalGate(t *testing.T) {
@@ -112,7 +113,7 @@ func TestNativeImportedPlanKeepsApprovalGate(t *testing.T) {
 func TestNativeImportRejectsOwnedOrInvalidPlans(t *testing.T) {
 	for _, scenario := range []string{"claimed", "rejected", "credentials", "partial credentials", "wrong scope", "cycle", "no required work", "no acceptance criteria", "unavailable gate"} {
 		t.Run(scenario, func(t *testing.T) {
-			db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+			db, err := state.Open(statetest.Path(t))
 			if err != nil {
 				t.Fatal(err)
 			}

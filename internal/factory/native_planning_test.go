@@ -3,7 +3,6 @@ package factory
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/factory/model"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 type failingActivationStore struct{ *state.DB }
@@ -87,7 +87,7 @@ func pouredIssueID(t *testing.T, svc *NativeService, epicID, kind string) string
 }
 
 func TestNativePlanClaimPersistsAttemptBeforeLaunching(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +131,7 @@ func TestNativePlanClaimPersistsAttemptBeforeLaunching(t *testing.T) {
 }
 
 func TestNativePlanClaimFailureDoesNotDuplicateAttempt(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestNativePlanClaimFailureDoesNotDuplicateAttempt(t *testing.T) {
 }
 
 func TestNativePlanPromptFailureReopensPlan(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +179,7 @@ func TestNativePlanPromptFailureReopensPlan(t *testing.T) {
 }
 
 func TestNativePlanClaimRaceLaunchesOneSession(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +210,7 @@ func TestNativePlanClaimRaceLaunchesOneSession(t *testing.T) {
 }
 
 func TestNativePlanClaimDisposesSessionWhenAttemptCannotBeActivated(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func TestNativePlanClaimDisposesSessionWhenAttemptCannotBeActivated(t *testing.T
 }
 
 func TestNativeStartPreservesLivePlanningSessionAndTerminatesUnstartedClaim(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +270,7 @@ func TestNativeStartTerminatesUnavailablePlanningSession(t *testing.T) {
 		{name: "unavailable platform", err: errors.New("platform unavailable"), phase: "active"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+			db, err := state.Open(statetest.Path(t))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -295,7 +295,7 @@ func TestNativeStartTerminatesUnavailablePlanningSession(t *testing.T) {
 }
 
 func TestNativeStartAndClaimRaceDoesNotLaunchPreparedPlan(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,7 +324,7 @@ func TestNativeStartAndClaimRaceDoesNotLaunchPreparedPlan(t *testing.T) {
 }
 
 func TestNativeProposalIsImmutableAndScoped(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -371,7 +371,7 @@ func TestNativeProposalIsImmutableAndScoped(t *testing.T) {
 }
 
 func TestNativeProposalCanonicalizesNodeProjectsAndRejectsUndeclaredTargets(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -402,7 +402,7 @@ func TestNativeProposalCanonicalizesNodeProjectsAndRejectsUndeclaredTargets(t *t
 }
 
 func TestNativeProposalAcceptsMultipleImplementationIssuesAndRejectsDependencyCycles(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -451,7 +451,7 @@ func TestNativeProposalAcceptsMultipleImplementationIssuesAndRejectsDependencyCy
 }
 
 func TestNativeProposalMergeGateRequiresDeliveryPlaceholder(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -493,7 +493,7 @@ func TestNativeProposalMergeGateRequiresDeliveryPlaceholder(t *testing.T) {
 // claim time; a token from another Epic (or a forged one) cannot reset that
 // Epic's approval by submitting a proposal for it.
 func TestNativeProposalWithAttemptTokenIsBoundToItsEpic(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -531,7 +531,7 @@ func TestNativeProposalWithAttemptTokenIsBoundToItsEpic(t *testing.T) {
 func TestNativeProposalAttemptTokenExpiresAfterTerminalDecision(t *testing.T) {
 	for _, action := range []string{"approve", "reject"} {
 		t.Run(action, func(t *testing.T) {
-			db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+			db, err := state.Open(statetest.Path(t))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -559,7 +559,7 @@ func TestNativeProposalAttemptTokenExpiresAfterTerminalDecision(t *testing.T) {
 }
 
 func TestNativeProposalReclassificationNeedsApprovalAndPreservesHistory(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -628,7 +628,7 @@ func hasManifestKey(issues []Issue, key string) bool {
 }
 
 func TestNativePlanGateRequiresExactNewProposalAfterRevisionRequest(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -667,7 +667,7 @@ func TestNativePlanGateRequiresExactNewProposalAfterRevisionRequest(t *testing.T
 }
 
 func TestNativePlanGateRejectCancelsOnlyUnstartedWork(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -698,7 +698,7 @@ func TestNativePlanGateRejectCancelsOnlyUnstartedWork(t *testing.T) {
 }
 
 func TestNativeMaterializationCreatesApprovedImplementationAtomically(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -746,7 +746,7 @@ func TestNativeMaterializeRequiresPlanningStoreAndApproval(t *testing.T) {
 	if _, err := NewNative(&nativeStoreFake{}).Materialize(context.Background(), "missing", "issue"); !errors.Is(err, ErrFactoryUnavailable) {
 		t.Fatalf("Materialize without planning store = %v", err)
 	}
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -760,7 +760,7 @@ func TestNativeMaterializeRequiresPlanningStoreAndApproval(t *testing.T) {
 }
 
 func TestNativePlanGateRejectsInvalidAndUnavailableProposals(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -775,7 +775,7 @@ func TestNativePlanGateRejectsInvalidAndUnavailableProposals(t *testing.T) {
 }
 
 func TestNativeServiceIssueControlsAndQueueState(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -821,7 +821,7 @@ func TestNativeServiceIssueControlsAndQueueState(t *testing.T) {
 }
 
 func TestNativeEpicDetailIncludesPlanningAttempt(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}

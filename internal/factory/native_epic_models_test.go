@@ -2,16 +2,16 @@ package factory
 
 import (
 	"errors"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/factory/model"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 func TestEpicPlanModelOverridesPlanningDefault(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestEpicPlanModelOverridesPlanningDefault(t *testing.T) {
 }
 
 func TestEpicModelsApplyToUnstartedWorkOnly(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}

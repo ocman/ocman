@@ -3,12 +3,12 @@ package factory
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/factory/model"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 type promptIssueStore struct {
@@ -22,7 +22,7 @@ func (s promptIssueStore) ListFactoryIssues(context.Context, string) ([]model.Na
 }
 
 func TestFormulaPromptAncestry(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestBuiltInFormulaAsksForDesignAndVerticalSlices(t *testing.T) {
 }
 
 func TestPlanningUsesPinnedFormulaPrompt(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func TestPlanningUsesPinnedFormulaPrompt(t *testing.T) {
 }
 
 func TestDispatchUsesFormulaImplementationAndDeliveryPrompts(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}

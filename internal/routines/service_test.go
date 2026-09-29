@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -17,6 +16,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 type testHost struct {
@@ -140,7 +140,7 @@ func newHarness(t *testing.T) *harness {
 
 func newHarnessWithHooks(t *testing.T, hooks sessionsvc.Hooks) *harness {
 	t.Helper()
-	sdb, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	sdb, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +256,7 @@ func TestRunWebhookAppendsPayload(t *testing.T) {
 }
 
 func TestDefaultsConflictsAndMissingOperations(t *testing.T) {
-	sdb, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	sdb, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}

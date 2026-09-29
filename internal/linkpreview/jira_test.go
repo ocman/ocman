@@ -7,13 +7,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/previewauth"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 // jiraAPI fakes api.atlassian.com and auth.atlassian.com.
@@ -233,7 +233,7 @@ func TestJiraIssueCards(t *testing.T) {
 
 func TestJiraConnectRotateAndRevoke(t *testing.T) {
 	api, srv := newJiraHarness(t)
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}

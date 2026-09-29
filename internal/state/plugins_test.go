@@ -20,7 +20,7 @@ import (
 
 func pluginFixture(t *testing.T) (*DB, plugins.Description, []PluginInstance) {
 	t.Helper()
-	d, err := Open(filepath.Join(t.TempDir(), "state.db"))
+	d, err := Open(templateDBPath(t))
 	if err != nil {
 		t.Fatal(err)
 	}

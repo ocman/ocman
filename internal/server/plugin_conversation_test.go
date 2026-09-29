@@ -24,6 +24,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 	plugin "github.com/NoUseFreak/ocman/sdk/plugin"
 )
 
@@ -163,7 +164,7 @@ func newConversationFixture(t *testing.T) *conversationFixture {
 	t.Helper()
 	pluginDir := t.TempDir()
 	t.Setenv("OCMAN_PLUGIN_DIR", pluginDir)
-	stateDB, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	stateDB, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}

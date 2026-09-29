@@ -2,7 +2,6 @@ package state
 
 import (
 	"errors"
-	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
@@ -10,7 +9,7 @@ import (
 
 func outboxDB(t *testing.T) *DB {
 	t.Helper()
-	d, err := Open(filepath.Join(t.TempDir(), "state.db"))
+	d, err := Open(templateDBPath(t))
 	requirePluginOK(t, err)
 	t.Cleanup(func() { _ = d.Close() })
 	return d

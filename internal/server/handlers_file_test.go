@@ -12,11 +12,12 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 func newFileTestServer(t *testing.T) *Server {
 	t.Helper()
-	stDB, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	stDB, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatalf("state.Open: %v", err)
 	}

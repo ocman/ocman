@@ -44,7 +44,7 @@ func TestPluginConversationSurvivesRestart(t *testing.T) {
 // TestPluginConversationClaimIsAtomic covers concurrent first messages: the
 // insert-if-absent must admit exactly one session as the mapping.
 func TestPluginConversationClaimIsAtomic(t *testing.T) {
-	d, err := Open(filepath.Join(t.TempDir(), "state.db"))
+	d, err := Open(templateDBPath(t))
 	requirePluginOK(t, err)
 	t.Cleanup(func() { _ = d.Close() })
 	key := conversationKey("T1", "C1:1.0")
@@ -84,7 +84,7 @@ func TestPluginConversationClaimIsAtomic(t *testing.T) {
 // another workspace reusing a thread identity, another thread in the same
 // workspace, and another plugin entirely.
 func TestPluginConversationIsolation(t *testing.T) {
-	d, err := Open(filepath.Join(t.TempDir(), "state.db"))
+	d, err := Open(templateDBPath(t))
 	requirePluginOK(t, err)
 	t.Cleanup(func() { _ = d.Close() })
 	keys := []PluginConversationKey{
@@ -112,7 +112,7 @@ func TestPluginConversationIsolation(t *testing.T) {
 }
 
 func TestListPluginConversationSessionsDeduplicates(t *testing.T) {
-	d, err := Open(filepath.Join(t.TempDir(), "state.db"))
+	d, err := Open(templateDBPath(t))
 	requirePluginOK(t, err)
 	t.Cleanup(func() { _ = d.Close() })
 	session := PluginConversationSession{PlatformID: "opencode", SessionID: "ses-1"}
@@ -126,7 +126,7 @@ func TestListPluginConversationSessionsDeduplicates(t *testing.T) {
 }
 
 func TestPluginConversationRejectsIncompleteIdentity(t *testing.T) {
-	d, err := Open(filepath.Join(t.TempDir(), "state.db"))
+	d, err := Open(templateDBPath(t))
 	requirePluginOK(t, err)
 	t.Cleanup(func() { _ = d.Close() })
 	session := PluginConversationSession{PlatformID: "opencode", SessionID: "ses-1"}

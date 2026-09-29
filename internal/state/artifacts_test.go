@@ -13,7 +13,7 @@ import (
 
 func openArtifactDB(t *testing.T) *DB {
 	t.Helper()
-	d, err := Open(filepath.Join(t.TempDir(), "state.db"))
+	d, err := Open(templateDBPath(t))
 	if err != nil {
 		t.Fatal(err)
 	}

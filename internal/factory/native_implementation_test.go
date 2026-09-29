@@ -12,6 +12,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/factory/model"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 type fakeImplementationLauncher struct {
@@ -70,7 +71,7 @@ func (s *deliveryMutationStore) EnsureFactoryDeliveryIssue(ctx context.Context, 
 func TestDeliveryAdmissionUsesCurrentGraph(t *testing.T) {
 	for _, requirement := range []string{"required", "optional"} {
 		t.Run(requirement, func(t *testing.T) {
-			db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+			db, err := state.Open(statetest.Path(t))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -298,7 +299,7 @@ func TestCheckpointFlowDeliversOnlyAfterImplementation(t *testing.T) {
 }
 
 func TestLegacyAttemptCompletesWithoutPRThenAdoptsCheckpoint(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,7 +373,7 @@ func TestTwoProjectFlowWaitsForSDKMergeAndBothDeliveries(t *testing.T) {
 	previousInterval := factoryMergeGatePollInterval
 	factoryMergeGatePollInterval = 0
 	defer func() { factoryMergeGatePollInterval = previousInterval }()
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -473,7 +474,7 @@ func TestTwoProjectFlowWaitsForSDKMergeAndBothDeliveries(t *testing.T) {
 }
 
 func TestProjectDeliveryValidatesItsRecordedIdentity(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -599,7 +600,7 @@ func (s *flakyAuthorityStore) CompleteFactoryAuthorityEscalationGate(ctx context
 }
 
 func TestNativeAuthorityEscalationIsOneTimeAndDoesNotWidenProfile(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -685,7 +686,7 @@ func TestNativeAuthorityEscalationIsOneTimeAndDoesNotWidenProfile(t *testing.T) 
 }
 
 func TestNativeIdentifiesImplementationSessions(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -718,7 +719,7 @@ func hasAuthorityGate(issues []Issue, id, resolution string) bool {
 }
 
 func TestNativeDispatchRunsReadyTask(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -775,7 +776,7 @@ func TestNativeDispatchRunsReadyTask(t *testing.T) {
 }
 
 func TestNativeImplementationDispatchClaimsBeforeWorktreeLaunchAndHonorsCapacity(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -861,7 +862,7 @@ func TestNativeImplementationDispatchClaimsBeforeWorktreeLaunchAndHonorsCapacity
 }
 
 func TestPausedEpicDispatchesOnlyAfterResume(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -915,7 +916,7 @@ func TestPausedEpicDispatchesOnlyAfterResume(t *testing.T) {
 }
 
 func TestNativeImplementationCompletionDispatchesNextReadyWork(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -961,7 +962,7 @@ func TestNativeImplementationCompletionDispatchesNextReadyWork(t *testing.T) {
 }
 
 func TestNativeImplementationLaunchFailureLeavesTerminalAttempt(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1022,7 +1023,7 @@ func TestNativeImplementationLaunchFailureLeavesTerminalAttempt(t *testing.T) {
 }
 
 func TestNativeImplementationDispatchRejectsEmptySession(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1050,7 +1051,7 @@ func TestNativeImplementationDispatchRejectsEmptySession(t *testing.T) {
 }
 
 func TestNativeStartKeepsImplementationAttemptWhenProbeFails(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1082,7 +1083,7 @@ func TestNativeStartKeepsImplementationAttemptWhenProbeFails(t *testing.T) {
 }
 
 func TestNativeImplementationDispatchStopsPartialLaunchAndRecoversDeadSession(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1147,7 +1148,7 @@ func TestNativeImplementationDispatchStopsPartialLaunchAndRecoversDeadSession(t 
 }
 
 func TestNativeRecoveryGateReleasesCapacityAndSurvivesRestart(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1214,7 +1215,7 @@ func TestNativeRecoveryGateReleasesCapacityAndSurvivesRestart(t *testing.T) {
 }
 
 func TestNativeProjectRequestRequiresOwnerAndLaunchesScopePlan(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1293,7 +1294,7 @@ func TestNativeProjectRequestRequiresOwnerAndLaunchesScopePlan(t *testing.T) {
 }
 
 func TestNativeProjectRejectionRetriesWhenSessionWasLost(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1337,7 +1338,7 @@ func TestNativeProjectRejectionRetriesWhenSessionWasLost(t *testing.T) {
 }
 
 func TestNativeProjectRejectionRetriesDelivery(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1381,7 +1382,7 @@ func TestNativeProjectRejectionRetriesDelivery(t *testing.T) {
 }
 
 func TestNativeRecoveryResumeDeliversBeforeClosingGate(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1456,7 +1457,7 @@ func TestNativeRecoveryResumeDeliversBeforeClosingGate(t *testing.T) {
 }
 
 func TestNativeDispatchChargesIssueTargetAndFreezesItsRepository(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1567,7 +1568,7 @@ func hasRecoveryGate(issues []Issue, id, resolution string) bool {
 func TestNativeRecoveryGateRetryAndCancel(t *testing.T) {
 	for _, action := range []string{"retry", "cancel"} {
 		t.Run(action, func(t *testing.T) {
-			db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+			db, err := state.Open(statetest.Path(t))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1617,7 +1618,7 @@ func TestNativeRecoveryGateRetryAndCancel(t *testing.T) {
 // A hand-built graph whose only remaining work exhausted its launch retries
 // must be reported stuck and become dispatchable again after ReopenIssue.
 func TestNativeStuckEpicRecoversThroughReopenIssue(t *testing.T) {
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,6 +8,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/factory/model"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 type approvalListErrorStore struct{ *state.DB }
@@ -19,7 +20,7 @@ func (approvalListErrorStore) ListFactoryIssues(context.Context, string) ([]mode
 func TestApprovalRetriesAfterMaterializationFailure(t *testing.T) {
 	for _, failure := range []string{"list", "materialize"} {
 		t.Run(failure, func(t *testing.T) {
-			db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+			db, err := state.Open(statetest.Path(t))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -114,7 +115,7 @@ func TestNativeFactoryFlowPersistsAndDispatchesOnlyApprovedWork(t *testing.T) {
 	})
 
 	t.Run("rejected proposal creates no implementation", func(t *testing.T) {
-		db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+		db, err := state.Open(statetest.Path(t))
 		if err != nil {
 			t.Fatal(err)
 		}

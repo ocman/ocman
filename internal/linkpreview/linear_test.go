@@ -9,13 +9,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/previewauth"
 	"github.com/NoUseFreak/ocman/internal/state"
+	"github.com/NoUseFreak/ocman/internal/state/statetest"
 )
 
 // linearAPI fakes Linear: each access token belongs to one organization.
@@ -219,7 +219,7 @@ func TestLinearIssueCards(t *testing.T) {
 
 func TestLinearConnectRefreshAndRetry(t *testing.T) {
 	api, srv := newLinearHarness(t)
-	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := state.Open(statetest.Path(t))
 	if err != nil {
 		t.Fatal(err)
 	}

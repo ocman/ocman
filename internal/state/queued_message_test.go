@@ -1,13 +1,12 @@
 package state
 
 import (
-	"path/filepath"
 	"testing"
 )
 
 func openQueueTestDB(t *testing.T) *DB {
 	t.Helper()
-	db, err := Open(filepath.Join(t.TempDir(), "state.db"))
+	db, err := Open(templateDBPath(t))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
