@@ -522,15 +522,14 @@ make coverage SUITE=frontend        # vitest with coverage
 make coverage-check SUITE=frontend  # coverage ratchet vs the gh-pages baseline
 
 # Backend job
-go vet ./...
-golangci-lint run                   # config in .golangci.yml (pinned version)
+golangci-lint run                   # config in .golangci.yml (pinned version, includes govet)
+go build -o /dev/null .             # production binary links
 go test .                           # root package
 make coverage SUITE=go              # internal/... with coverage
 make coverage-check SUITE=go        # coverage ratchet
 
 # Other jobs
-pnpm test:e2e                       # Playwright e2e (chromium)
-make build                          # full production build (frontend + Go)
+pnpm exec vite build && pnpm test:e2e   # Playwright e2e (chromium) against the built bundle
 ```
 
 Locally, `make test` and `make lint` cover the same ground.

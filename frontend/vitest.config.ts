@@ -17,6 +17,11 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: 'node',
+    // Worker threads instead of forked processes: same isolation per
+    // file, ~15% less CPU for the suite (matters on the shared CI
+    // runner). `isolate: false` would cut CPU ~3x more but 57 tests
+    // rely on fresh module state per file.
+    pool: 'threads',
     setupFiles: ['./vitest.setup.ts'],
     // Node 25 ships a global `localStorage` that is unusable without
     // `--localstorage-file`, warns on first access, and shadows jsdom's

@@ -76,19 +76,29 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      # Only the pnpm store was cached. internal/server alone is ~100s
-      # cold, and the suite now runs twice (once for coverage, once
-      # under -race), so a cold build cache costs several minutes.
+          # actions/cache below owns the Go caches; setup-go's built-in
+          # cache restored the same 450 MB a second time and re-saved it
+          # on every run (~1.5 min in "Complete job").
+          cache: false
+      # zstd makes actions/cache tar with zstd instead of gzip: several
+      # times faster on the 450 MB+ Go cache in both directions.
+      - name: Install tmux and zstd
+        run: apt-get update && apt-get install -y tmux zstd
+      # Keyed on the run id so the build cache is re-saved with this
+      # run's compiled packages (instrumented coverage builds, desktop
+      # deps) and the next run restores the freshest prefix match. A
+      # key on go.sum alone was only saved when go.sum changed, so every
+      # PR in between recompiled most of internal/ from scratch.
       - name: Cache Go build and module cache
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/go-build
             ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ hashFiles('go.sum') }}
-          restore-keys: go-${{ runner.os }}-
-      - name: Install tmux
-        run: apt-get update && apt-get install -y tmux
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum') }}-${{ github.run_id }}
+          restore-keys: |
+            go-${{ runner.os }}-${{ hashFiles('go.sum') }}-
+            go-${{ runner.os }}-
       - name: go.mod tidy check
         run: go mod tidy -diff
       # Nothing detected drift between remote.proto and its committed
@@ -124,7 +134,12 @@ jobs:
           git diff --exit-code -- internal/remote/proto
       - name: Desktop build tags compile
         run: go build -tags desktop,exclude_graphdriver_devicemapper ./...
-      - run: go vet ./...
+      # The e2e job used to build this after its frontend build; the
+      # binary is not needed there (specs mock /api), so the production
+      # link check lives here where the Go cache is already warm.
+      - name: Production binary links
+        run: go build -o /dev/null .
+      # go vet is covered by golangci-lint's default govet linter.
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
@@ -180,9 +195,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 25
+      # The runner image ships node 20, enough for the scripts below.
       - name: Download frontend result
         uses: actions/download-artifact@v3
         with:
@@ -234,9 +247,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 25
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
       - name: Install pnpm
         run: npm install -g pnpm@10.11.1
       - name: Cache pnpm store
@@ -245,25 +255,17 @@ jobs:
           path: ~/.local/share/pnpm/store
           key: pnpm-${{ runner.os }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
           restore-keys: pnpm-${{ runner.os }}-
-      - name: Cache Go build and module cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ hashFiles('go.sum') }}
-          restore-keys: go-${{ runner.os }}-
       - name: Install dependencies
         working-directory: frontend
         run: pnpm install --frozen-lockfile
       - name: Install Playwright browsers
         working-directory: frontend
         run: pnpm exec playwright install --with-deps chromium
+      # `pnpm build` is `tsc -b && vite build`; the Frontend job already
+      # typechecks, so only the bundle is needed here.
       - name: Build frontend
         working-directory: frontend
-        run: pnpm build
-      - name: Build production binary
-        run: go build -o ocman .
+        run: pnpm exec vite build
       - name: Run Playwright tests
         working-directory: frontend
         run: pnpm test:e2e
