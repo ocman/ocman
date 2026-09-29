@@ -1066,7 +1066,7 @@
   margin: 8px 0;
 }
 /* Button wrapper around an attached image: no visual of its own, it
-   just makes the image's expand toggle focusable. */
+   just makes the image's preview trigger focusable. */
 .oc-image-toggle {
   display: block;
   padding: 0;
@@ -1081,16 +1081,11 @@
   border-radius: 0;
   border: 1px solid var(--border);
   cursor: pointer;
-  transition: max-width 0.2s, max-height 0.2s;
   display: block;
   object-fit: contain;
 }
 .oc-image:hover {
   border-color: var(--accent);
-}
-.oc-image.oc-image-expanded {
-  max-width: 100%;
-  max-height: none;
 }
 .oc-image-label {
   font-family: 'SF Mono', Consolas, monospace;

@@ -22,7 +22,7 @@ import { trackRender } from '../lib/renderRateMonitor';
 import { useUiStore } from '../lib/uiStore';
 import type { FC } from 'react';
 import { LinkPreviewStrip } from './GitHubLinkPreview';
-import { MarkdownText } from './assistant/MarkdownText';
+import { MarkdownText, ZoomableGraphicModal } from './assistant/MarkdownText';
 import { ToolCallDisplay } from './assistant/ToolCallDisplay';
 import { ModelLabel } from './ModelLogo';
 import { TurnSpeechContext } from '../lib/turnSpeech';
@@ -67,9 +67,8 @@ function MessageBookmarkButton({ messageId }: { messageId: string }) {
  */
 
 /**
- * An attached conversation image. The <img> sits inside a button (the
- * same pattern MarkdownText uses for markdown images) so expanding it
- * works from the keyboard and is announced as a toggle.
+ * An attached conversation image. Clicking it opens the same zoomable
+ * preview modal MarkdownText uses for markdown images.
  *
  * Exported for tests: the thread renders it through assistant-ui's part
  * components, which the suite mocks out.
@@ -82,18 +81,17 @@ export const ImageDisplay: FC<{ image: string; filename?: string }> = ({ image, 
       <button
         type="button"
         className="oc-image-toggle"
-        aria-expanded={expanded}
-        aria-label={`${expanded ? 'Collapse' : 'Expand'} ${label}`}
-        onClick={() => setExpanded(!expanded)}
+        aria-label={`Expand ${label}`}
+        onClick={() => setExpanded(true)}
       >
-        <img
-          src={image}
-          alt={label}
-          className={`oc-image${expanded ? ' oc-image-expanded' : ''}`}
-          loading="lazy"
-        />
+        <img src={image} alt={label} className="oc-image" loading="lazy" />
       </button>
       {filename && <div className="oc-image-label">{filename}</div>}
+      {expanded && (
+        <ZoomableGraphicModal label={label} closeLabel="Close image" maxScale={8} onClose={() => setExpanded(false)}>
+          <img className="oc-image-modal-graphic" src={image} alt={label} />
+        </ZoomableGraphicModal>
+      )}
     </div>
   );
 };

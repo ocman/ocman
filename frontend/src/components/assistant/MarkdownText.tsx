@@ -63,7 +63,7 @@ function nodeText(node: ReactNode): string {
   return '';
 }
 
-function ZoomableGraphicModal({ label, closeLabel, maxScale = 4, onClose, children }: {
+export function ZoomableGraphicModal({ label, closeLabel, maxScale = 4, onClose, children }: {
   label: string;
   closeLabel: string;
   maxScale?: number;

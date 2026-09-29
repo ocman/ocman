@@ -215,21 +215,21 @@ describe('conversation timeline markers', () => {
 });
 
 describe('AssistantThread attached images', () => {
-  it('expands an attached image from the keyboard', async () => {
+  it('opens an attached image in the preview modal from the keyboard', async () => {
     const user = userEvent.setup();
     render(<ImageDisplay image="data:image/png;base64,AA" filename="shot.png" />);
 
-    // Same pattern as MarkdownText's MarkdownImage: the <img> lives inside
-    // a real button, so it is focusable and announced as a toggle.
-    const toggle = screen.getByRole('button', { name: 'Expand shot.png' });
+    const trigger = screen.getByRole('button', { name: 'Expand shot.png' });
     await user.tab();
-    expect(toggle).toHaveFocus();
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(trigger).toHaveFocus();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 
     await user.keyboard('{Enter}');
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByRole('button', { name: 'Collapse shot.png' })).toBe(toggle);
-    expect(screen.getByAltText('shot.png').className).toContain('oc-image-expanded');
+    expect(screen.getByRole('dialog', { name: 'shot.png' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Zoom in' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Close image' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('falls back to a generic label when the attachment has no filename', () => {
