@@ -357,6 +357,14 @@ test('overview renders summary and scoped date filters', async ({ mockedPage: pa
   await expect(page.locator('.label', { hasText: 'Factory attempts' })).toBeVisible();
 });
 
+test('analytics tabs keep their height when the page overflows', async ({ mockedPage: page }) => {
+  await page.setViewportSize({ width: 1280, height: 400 });
+  await page.goto('/analytics/overview');
+  await expect(page.getByRole('link', { name: 'Activity' })).toBeVisible();
+  const box = await page.getByRole('navigation', { name: 'Analytics sections' }).boundingBox();
+  expect(box?.height).toBeGreaterThan(30);
+});
+
 test('phone analytics uses a section selector', async ({ mockedPage: page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/analytics/overview');

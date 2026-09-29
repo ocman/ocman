@@ -124,6 +124,8 @@
   border-bottom: 1px solid var(--border);
   overflow-x: auto;
   scrollbar-width: none;
+  /* A scroll container in the .page-content flex column has min-height 0 and gets crushed to its border. */
+  flex-shrink: 0;
 }
 .nav-tabs::-webkit-scrollbar { display: none; }
 .analytics-section-select { display: none; }
