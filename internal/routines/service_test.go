@@ -633,7 +633,12 @@ func TestMalformedCronSnapshotPreventsCompletion(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := h.svc.RunNow(t.Context(), routine.ID); err != nil {
+		// Fire the scheduled occurrence: only it recomputes the cron schedule.
+		h.now.Add((5 * time.Minute).Milliseconds())
+		if err := h.svc.Tick(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if routine, err = h.db.GetRoutine(t.Context(), routine.ID); err != nil {
 			t.Fatal(err)
 		}
 		routine.ScheduleConfigJSON = config
@@ -676,16 +681,29 @@ func TestTerminalStatusesRecurrenceOneShotsAndAutoDelete(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := h.svc.RunNow(t.Context(), routine.ID); err != nil {
-				t.Fatal(err)
+			// A one-shot is consumed by its scheduled occurrence, so fire that
+			// rather than a manual run (which leaves the schedule pending).
+			oneShot := tc.schedule.Kind == ScheduleOnce || tc.schedule.Kind == ScheduleTimeout
+			if !oneShot {
+				if _, err := h.svc.RunNow(t.Context(), routine.ID); err != nil {
+					t.Fatal(err)
+				}
+			}
+			h.now.Add(time.Minute.Milliseconds())
+			if oneShot {
+				if err := h.svc.Tick(t.Context()); err != nil {
+					t.Fatal(err)
+				}
 			}
 			h.platform.setStatus(tc.status)
-			h.now.Add(time.Minute.Milliseconds())
 			if err := h.svc.Tick(t.Context()); err != nil {
 				t.Fatal(err)
 			}
 			runs, _ := h.db.ListRoutineRuns(t.Context(), routine.ID)
 			got, _ := h.db.GetRoutine(t.Context(), routine.ID)
+			if oneShot && (runs[0].Trigger != "schedule" || got.Enabled) {
+				t.Fatalf("one-shot not consumed: run=%+v routine=%+v", runs[0], got)
+			}
 			if runs[0].State != tc.wantState || runs[0].FinishedAt == 0 || (got.NextDueAt > h.now.Load()) != tc.wantNext || got.Deleted != tc.autoDelete {
 				t.Fatalf("run=%+v routine=%+v", runs[0], got)
 			}
@@ -903,5 +921,45 @@ func TestFinishedRunInboxIncludesFinalAssistantText(t *testing.T) {
 	items, err := h.db.ListInboxItems(t.Context())
 	if err != nil || len(items) != 1 || !strings.Contains(items[0].Body, "All checks passed.") {
 		t.Fatalf("inbox = %+v, %v", items, err)
+	}
+}
+
+func TestManualAndWebhookRunsKeepRoutineEnabled(t *testing.T) {
+	h := newHarness(t)
+	input := validInput()
+	input.Schedule = Schedule{Kind: ScheduleOnce, At: time.UnixMilli(h.now.Load()).Add(time.Hour)}
+	onceRoutine, err := h.svc.Create(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input = validInput()
+	input.Name = "Webhook"
+	webhookRoutine, err := h.svc.Create(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.RunNow(t.Context(), onceRoutine.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.RunWebhook(t.Context(), webhookRoutine.ID, "payload", 7); err != nil {
+		t.Fatal(err)
+	}
+	h.platform.setStatus(db.StatusDone)
+	h.now.Add(time.Minute.Milliseconds())
+	if err := h.svc.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []state.Routine{onceRoutine, webhookRoutine} {
+		got, err := h.db.GetRoutine(t.Context(), want.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runs, _ := h.db.ListRoutineRuns(t.Context(), want.ID)
+		if len(runs) != 1 || runs[0].State != RunSuccess {
+			t.Fatalf("%s runs = %+v", want.Name, runs)
+		}
+		if !got.Enabled || got.NextDueAt != want.NextDueAt {
+			t.Fatalf("%s after a %s run: enabled=%v next=%d, want enabled next=%d", want.Name, runs[0].Trigger, got.Enabled, got.NextDueAt, want.NextDueAt)
+		}
 	}
 }
