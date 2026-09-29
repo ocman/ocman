@@ -67,7 +67,7 @@ func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentTok
 		return fmt.Errorf("%w: factory implementation attempt is not active", ErrInvalidRequest)
 	}
 	if attempt.Phase == model.FactoryAttemptTerminal && attempt.Outcome == model.FactoryAttemptSucceeded {
-		if attempt.Result != nil && attempt.Result.Summary == summary && attempt.Result.PRURL == prURL {
+		if attempt.Result != nil && (attempt.Result.Summary == summary || strings.HasPrefix(attempt.Result.Summary, summary+"\n\nFactory checks passed at ")) && attempt.Result.PRURL == prURL {
 			return nil
 		}
 		return fmt.Errorf("%w: factory implementation attempt already completed with a different result", ErrInvalidRequest)
@@ -116,6 +116,13 @@ func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentTok
 	if err := validate(ctx); err != nil {
 		return factoryHandoffError(err)
 	}
+	if !attempt.FrozenPolicy.Delivery {
+		checks, err := s.gateVerification(ctx, attempt, result.CommitSHA)
+		if err != nil {
+			return err
+		}
+		result.Summary += checks
+	}
 	stopping, err := store.StopFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, time.Now())
 	if err != nil {
 		return err
@@ -143,6 +150,7 @@ func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentTok
 		}
 		return fmt.Errorf("%w: factory implementation attempt is not active", ErrInvalidRequest)
 	}
+	s.forgetVerificationChecks(attemptID)
 	if attempt.FrozenPolicy.Delivery {
 		s.notifyEpicDelivered(context.WithoutCancel(ctx), attempt.EpicID, summary, prURL, attempt.Session.Platform, attempt.Session.ID)
 	}

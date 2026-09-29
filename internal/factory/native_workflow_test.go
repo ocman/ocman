@@ -28,7 +28,7 @@ func TestWorkflowChecksEveryChangedProjectBeforeDelivery(t *testing.T) {
 	if _, err := svc.Pour(t.Context(), epic.ID); err != nil {
 		t.Fatal(err)
 	}
-	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "repo", Type: "implementation", Requirement: "required", Project: "/repo"}, {Key: "other", Type: "implementation", Requirement: "required", Project: "/other"}, {Key: "optional", Type: "implementation", Requirement: "optional", Project: "/repo"}, {Key: "unused", Type: "implementation", Requirement: "optional", Project: "/unused"}}}})
+	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "repo", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}, Project: "/repo"}, {Key: "other", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}, Project: "/other"}, {Key: "optional", Type: "implementation", Requirement: "optional", AcceptanceCriteria: []string{"done"}, Project: "/repo"}, {Key: "unused", Type: "implementation", Requirement: "optional", AcceptanceCriteria: []string{"done"}, Project: "/unused"}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestWorkflowScopeExpansionFromVerification(t *testing.T) {
 	if _, err := svc.Pour(t.Context(), epic.ID); err != nil {
 		t.Fatal(err)
 	}
-	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "one", Type: "implementation", Requirement: "required"}}}})
+	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "one", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestWorkflowScopeExpansionFromVerification(t *testing.T) {
 	}
 	plan := planning.prompts[0]
 	phase := pouredIssueID(t, svc, epic.ID, "phase")
-	if _, err := svc.SubmitScopePlan(t.Context(), SubmitProposalRequest{EpicID: epic.ID, AttemptID: plan.AttemptID, AttemptToken: plan.AgentToken, Manifest: ProposalManifest{EpicID: epic.ID, MolID: phase, Project: "/repo", Nodes: []ManifestNode{{Key: "other", Type: "implementation", Requirement: "required", Project: "/other"}}}}); err != nil {
+	if _, err := svc.SubmitScopePlan(t.Context(), SubmitProposalRequest{EpicID: epic.ID, AttemptID: plan.AttemptID, AttemptToken: plan.AgentToken, Manifest: ProposalManifest{EpicID: epic.ID, MolID: phase, Project: "/repo", Nodes: []ManifestNode{{Key: "other", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}, Project: "/other"}}}}); err != nil {
 		t.Fatal(err)
 	}
 	launcher.result = PlanningSession{Platform: "opencode", ID: "other-work"}
@@ -233,10 +233,10 @@ func TestWorkflowImplementationBarrierAndPostChecks(t *testing.T) {
 	if _, err := svc.Pour(t.Context(), epic.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "work", Type: "implementation", Requirement: "required"}, {Key: "delivery", Type: "delivery", Requirement: "required"}}}}); err == nil {
+	if _, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "work", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}, {Key: "delivery", Type: "delivery", Requirement: "required"}}}}); err == nil {
 		t.Fatal("accepted a delivery node into a workflow plan")
 	}
-	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "one", Type: "implementation", Requirement: "required"}, {Key: "two", Type: "implementation", Requirement: "required"}}}})
+	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "one", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}, {Key: "two", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
 	if err != nil {
 		t.Fatal(err)
 	}

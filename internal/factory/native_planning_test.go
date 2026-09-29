@@ -331,7 +331,7 @@ func TestNativeProposalIsImmutableAndScoped(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	svc := NewNativeWithPlanning(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/wrong": "/wrong"}}, &fakePlanningLauncher{})
 	epic := createPouredWorkEpic(t, svc, "Ship")
-	manifest := ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required"}}}
+	manifest := ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}
 	first, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest, RationaleMarkdown: "# Why"})
 	if err != nil {
 		t.Fatal(err)
@@ -365,7 +365,7 @@ func TestNativeProposalIsImmutableAndScoped(t *testing.T) {
 	if _, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/wrong", Nodes: manifest.Nodes}}); err == nil {
 		t.Fatal("out-of-scope proposal was accepted")
 	}
-	if _, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "one", Type: "implementation", Requirement: "optional"}}}}); err == nil {
+	if _, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "one", Type: "implementation", Requirement: "optional", AcceptanceCriteria: []string{"done"}}}}}); err == nil {
 		t.Fatal("proposal without required implementation was accepted")
 	}
 }
@@ -385,8 +385,8 @@ func TestNativeProposalCanonicalizesNodeProjectsAndRejectsUndeclaredTargets(t *t
 		t.Fatal(err)
 	}
 	manifest := ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{
-		{Key: "default", Type: "implementation", Requirement: "required"},
-		{Key: "other", Type: "implementation", Requirement: "required", Project: "/other/subdir"},
+		{Key: "default", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}},
+		{Key: "other", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}, Project: "/other/subdir"},
 	}}
 	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest})
 	if err != nil {
@@ -414,8 +414,8 @@ func TestNativeProposalAcceptsMultipleImplementationIssuesAndRejectsDependencyCy
 		MolID:   pouredIssueID(t, svc, epic.ID, "mol"),
 		Project: "/repo",
 		Nodes: []ManifestNode{
-			{Key: "backend", Type: "implementation", Requirement: "required", Title: "Build backend", Description: "Add the API."},
-			{Key: "frontend", Type: "implementation", Requirement: "required", Title: "Build frontend", Description: "Add the UI.", DependsOn: []string{"backend"}},
+			{Key: "backend", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}, Title: "Build backend", Description: "Add the API."},
+			{Key: "frontend", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}, Title: "Build frontend", Description: "Add the UI.", DependsOn: []string{"backend"}},
 		},
 	}
 	if _, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest}); err != nil {
@@ -465,9 +465,9 @@ func TestNativeProposalMergeGateRequiresDeliveryPlaceholder(t *testing.T) {
 		t.Fatal(err)
 	}
 	manifest := ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{
-		{Key: "sdk", Type: "implementation", Requirement: "required", Project: "/sdk"},
+		{Key: "sdk", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}, Project: "/sdk"},
 		{Key: "sdk-delivery", Type: "delivery", Requirement: "required", Project: "/sdk"},
-		{Key: "app", Type: "implementation", Requirement: "required", Project: "/repo"},
+		{Key: "app", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}, Project: "/repo"},
 	}, Edges: []ManifestEdge{{From: "app", To: "sdk-delivery", Type: "merge_gated"}}}
 	if _, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest}); err != nil {
 		t.Fatalf("delivery merge gate rejected: %v", err)
@@ -508,7 +508,7 @@ func TestNativeProposalWithAttemptTokenIsBoundToItsEpic(t *testing.T) {
 		t.Fatalf("plan claim minted no attempt token: %#v", claimed.Attempt)
 	}
 	manifestFor := func(epic WorkEpic) ProposalManifest {
-		return ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required"}}}
+		return ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}
 	}
 	if _, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: mine.ID, Manifest: manifestFor(mine), AttemptID: claimed.Attempt.ID, AttemptToken: claimed.Attempt.AgentToken}); err != nil {
 		t.Fatalf("own-epic proposal rejected: %v", err)
@@ -542,7 +542,7 @@ func TestNativeProposalAttemptTokenExpiresAfterTerminalDecision(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			manifest := ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required"}}}
+			manifest := ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}
 			request := SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest, AttemptID: claimed.Attempt.ID, AttemptToken: claimed.Attempt.AgentToken}
 			proposal, err := svc.SubmitProposal(t.Context(), request)
 			if err != nil {
@@ -566,8 +566,8 @@ func TestNativeProposalReclassificationNeedsApprovalAndPreservesHistory(t *testi
 	t.Cleanup(func() { _ = db.Close() })
 	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{})
 	epic := createPouredWorkEpic(t, svc, "Ship")
-	base := ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "first", Type: "implementation", Requirement: "required"}}}
-	if _, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "bad", Type: "implementation", Requirement: "required", Pinned: true}}}}); err == nil {
+	base := ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "first", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}
+	if _, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "bad", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}, Pinned: true}}}}); err == nil {
 		t.Fatal("accepted a pinned executable node")
 	}
 	first, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: base})
@@ -581,7 +581,7 @@ func TestNativeProposalReclassificationNeedsApprovalAndPreservesHistory(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	revised := ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "first", Type: "implementation", Requirement: "reference", Pinned: true}, {Key: "second", Type: "implementation", Requirement: "required"}}}
+	revised := ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "first", Type: "implementation", Requirement: "reference", Pinned: true}, {Key: "second", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}
 	second, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: revised})
 	if err != nil {
 		t.Fatal(err)
@@ -635,7 +635,7 @@ func TestNativePlanGateRequiresExactNewProposalAfterRevisionRequest(t *testing.T
 	t.Cleanup(func() { _ = db.Close() })
 	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{})
 	epic := createPouredWorkEpic(t, svc, "Ship")
-	manifest := ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required"}}}
+	manifest := ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}
 	first, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest})
 	if err != nil {
 		t.Fatal(err)
@@ -674,7 +674,7 @@ func TestNativePlanGateRejectCancelsOnlyUnstartedWork(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{})
 	epic := createPouredWorkEpic(t, svc, "Ship")
-	manifest := ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required"}}}
+	manifest := ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}
 	proposal, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: manifest})
 	if err != nil {
 		t.Fatal(err)
@@ -706,7 +706,7 @@ func TestNativeMaterializationCreatesApprovedImplementationAtomically(t *testing
 	launcher := &fakePlanningLauncher{}
 	svc := NewNativeWithPlanning(db, testProjectResolver{root: "/repo"}, launcher)
 	epic := createPouredWorkEpic(t, svc, "Ship")
-	proposal, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required"}}}})
+	proposal, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -788,7 +788,7 @@ func TestNativeServiceIssueControlsAndQueueState(t *testing.T) {
 		t.Fatalf("GetCapacityPolicy = %#v, %v", policy, err)
 	}
 	epic := createPouredWorkEpic(t, svc, "Ship")
-	proposal, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required"}}}})
+	proposal, err := svc.SubmitProposal(context.Background(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "implement", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
 	if err != nil {
 		t.Fatal(err)
 	}

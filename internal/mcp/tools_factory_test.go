@@ -560,6 +560,12 @@ func TestFactoryToolReturnsActionableRequestErrors(t *testing.T) {
 		t.Fatalf("actionable error result = %q", resultText(got))
 	}
 
+	svc.err = fmt.Errorf("wrapped: %w", factory.ErrVerificationChecksPending)
+	got = callTool(t, srv, "factory", map[string]any{"action": "complete_attempt", "attempt_id": "attempt-1", "attempt_token": "token", "summary": "Verified."})
+	if got.IsError || !strings.Contains(resultText(got), `"status": "checks_running"`) || !strings.Contains(resultText(got), "end your turn") {
+		t.Fatalf("pending checks result = %q (error %v)", resultText(got), got.IsError)
+	}
+
 	svc.err = errors.New("database details")
 	got = callTool(t, srv, "factory", map[string]any{"action": "complete_attempt", "attempt_id": "attempt-1", "attempt_token": "token", "summary": "Implemented.", "pr_url": "https://forge.example/pr/1"})
 	if !got.IsError || resultText(got) != "database details" {

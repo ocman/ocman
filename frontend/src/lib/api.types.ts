@@ -345,7 +345,7 @@ export interface FactoryWorkflowStep {
 	name?: string;
 	needs?: string[];
 	prompt?: string;
-	config?: { model?: string; concurrency?: number; scopeExpansionPrompt?: string };
+	config?: { model?: string; concurrency?: number; scopeExpansionPrompt?: string; commands?: string[] };
 }
 
 export interface FactoryFormulaSaveRequest { id: string; source: string; }

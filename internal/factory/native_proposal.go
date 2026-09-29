@@ -13,14 +13,18 @@ import (
 )
 
 type ManifestNode struct {
-	Key         string   `json:"key"`
-	Type        string   `json:"type"`
-	Requirement string   `json:"requirement"`
-	Title       string   `json:"title,omitempty"`
-	Description string   `json:"description,omitempty"`
-	Project     string   `json:"project,omitempty"`
-	DependsOn   []string `json:"dependsOn,omitempty"`
-	Pinned      bool     `json:"pinned,omitempty"`
+	Key         string `json:"key"`
+	Type        string `json:"type"`
+	Requirement string `json:"requirement"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+	// AcceptanceCriteria is the validation contract, written before any
+	// code. Submit folds it into Description, so the approved and
+	// materialized Issue text carries it.
+	AcceptanceCriteria []string `json:"acceptanceCriteria,omitempty"`
+	Project            string   `json:"project,omitempty"`
+	DependsOn          []string `json:"dependsOn,omitempty"`
+	Pinned             bool     `json:"pinned,omitempty"`
 }
 
 type ManifestEdge struct {
@@ -198,6 +202,8 @@ func (s *NativeService) proposalForRequest(ctx context.Context, req SubmitPropos
 	if err != nil {
 		return model.NativeProposalRevision{}, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
+	// Normalization below rewrites nodes; never mutate the caller's manifest.
+	req.Manifest.Nodes = append([]ManifestNode(nil), req.Manifest.Nodes...)
 	workflow := false
 	for _, issue := range issues {
 		workflow = workflow || issue.Workflow != nil
@@ -208,6 +214,9 @@ func (s *NativeService) proposalForRequest(ctx context.Context, req SubmitPropos
 		}
 		req.Manifest.Nodes[i].Project, err = s.canonicalIssueProject(ctx, epic, req.Manifest.Nodes[i].Project)
 		if err != nil {
+			return model.NativeProposalRevision{}, fmt.Errorf("%w: node %q: %w", ErrInvalidRequest, req.Manifest.Nodes[i].Key, err)
+		}
+		if err := foldAcceptanceCriteria(&req.Manifest.Nodes[i]); err != nil {
 			return model.NativeProposalRevision{}, fmt.Errorf("%w: node %q: %w", ErrInvalidRequest, req.Manifest.Nodes[i].Key, err)
 		}
 	}

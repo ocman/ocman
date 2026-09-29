@@ -150,6 +150,9 @@ func (d *DB) ClaimFactoryImplementation(ctx context.Context, epicID, issueID, pr
 		}
 		if issue.Workflow.Kind == "verification" {
 			epicModel = epicModels.Verification
+			// Without an explicit choice the validator must not inherit the
+			// implementer's model; the launcher picks a different one.
+			attemptPolicy.Model = ""
 		}
 		if issue.Workflow.Config.Model != "" {
 			attemptPolicy.Model = issue.Workflow.Config.Model

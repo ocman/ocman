@@ -276,7 +276,7 @@ func (l factoryImplementationLauncher) LaunchImplementationSession(ctx context.C
 	if err := factoryPlanningLauncher(l).ensureMCP(ctx, ensured); err != nil {
 		return factory.PlanningSession{}, err
 	}
-	rules := []platforms.PermissionRule{{Permission: "read", Pattern: "*", Action: "allow"}, {Permission: "glob", Pattern: "*", Action: "allow"}, {Permission: "grep", Pattern: "*", Action: "allow"}, {Permission: "list", Pattern: "*", Action: "allow"}, {Permission: "bash", Pattern: "*", Action: "allow"}, {Permission: "edit", Pattern: "*", Action: "allow"}, {Permission: "task", Pattern: "*", Action: "allow"}, {Permission: "external_directory", Pattern: "*", Action: "ask"}}
+	rules := factoryImplementationRules(req.Verification)
 	for _, project := range req.Projects {
 		if project != req.Repository {
 			pattern := filepath.Join(project, "**")
@@ -331,10 +331,12 @@ Factory protocol: Search the forge for an existing open pull request from this e
 
 Leave the worktree clean and pushed, then call factory complete_attempt with attempt_id %s, attempt_token %s, summary describing the delivery checks, and pr_url set to the final pull request URL. Factory validates the branch, target, and HEAD. If delivery is blocked, use request_recovery with the same attempt credentials.`, req.EpicID, req.Branch, req.TargetBranch, body, req.AttemptID, req.AgentToken)
 	}
+	model := req.Model
 	if req.Verification {
-		prompt = fmt.Sprintf("Verify Factory step %s in Work Epic %s on the assigned branch %s.\n\n%s\n\nFactory protocol: Run the required checks against the current shared worktree. Do not create or merge a pull request. If any required check fails, call request_recovery with attempt_id %s and attempt_token %s and report the failure; do not claim success. Only when all required checks pass, leave the worktree clean and pushed and call complete_attempt with the same attempt credentials and a summary of the checks. Omit pr_url.", req.WorkID, req.EpicID, req.Branch, body, req.AttemptID, req.AgentToken)
+		prompt = factoryVerificationPrompt(req, body)
+		model = l.verificationModel(ctx, session, model)
 	}
-	return l.server.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt, Model: req.Model})
+	return l.server.sessions.SendMessage(ctx, session.Platform, platforms.SendMessageRequest{SessionID: session.ID, Message: prompt, Model: model})
 }
 
 func (l factoryImplementationLauncher) ResumeImplementationSession(ctx context.Context, session factory.PlanningSession, gateID, response string) error {

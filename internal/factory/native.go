@@ -289,6 +289,10 @@ type NativeService struct {
 	authorityMu       sync.Mutex
 	projectRequestMu  sync.Mutex
 	mergeGateMu       sync.Mutex
+	checksMu          sync.Mutex
+	checks            map[string]verificationCheck // in memory: a restart just reruns the checks
+	idleProbedAt      map[string]time.Time
+	nudged            map[string]bool
 	startOnce         sync.Once
 	closeOnce         sync.Once
 	dispatchWG        sync.WaitGroup
@@ -299,6 +303,7 @@ type NativeService struct {
 type ImplementationSessionRequest struct {
 	Verification                                                                                    bool
 	Prompt                                                                                          string
+	Criteria                                                                                        string // verification only: approved Issues and their acceptance criteria
 	Model                                                                                           string
 	EpicID, WorkID, AttemptID, AgentToken, Repository, Title, Description, Branch, BaseRef, Profile string
 	Projects                                                                                        []string

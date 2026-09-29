@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/factory/model"
+	"github.com/sirupsen/logrus"
 )
 
 // Dispatch admits ready executable Issues in deterministic order until
@@ -126,6 +127,9 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 		request := ImplementationSessionRequest{Model: attempt.FrozenPolicy.Model, EpicID: epic.ID, WorkID: next.issue.ID, AttemptID: attempt.ID, AgentToken: attempt.AgentToken, Repository: repository, Projects: attempt.FrozenPolicy.Projects, Title: next.issue.Title, Description: description, Branch: branch, BaseRef: baseRef, Profile: "factory-implement/v1", TargetBranch: attempt.FrozenPolicy.TargetBranch, Delivery: attempt.FrozenPolicy.Delivery, PermissionRules: attempt.FrozenPolicy.PermissionRules}
 		request.Prompt = prompt
 		request.Verification = next.issue.Workflow != nil && next.issue.Workflow.Kind == "verification"
+		if request.Verification {
+			request.Criteria = s.verificationCriteria(ctx, epic.ID, repository)
+		}
 		session, launchErr := s.implementation.LaunchImplementationSession(ctx, request)
 		if launchErr != nil {
 			if session.ID != "" {
@@ -193,43 +197,71 @@ func (s *NativeService) observeMergeGates(ctx context.Context) error {
 }
 
 func (s *NativeService) reconcileImplementationSessions(ctx context.Context, store nativePlanningStore) error {
+	alive, err := s.reconcileImplementationRuntime(ctx, store)
+	if err != nil {
+		return err
+	}
+	// These read session state; keep them out of implementationMu so a slow
+	// probe never blocks completion or dispatch.
+	s.nudgeRestartedValidators(ctx, alive)
+	for _, attempt := range alive {
+		if err := s.pauseIdleAttempt(ctx, attempt); err != nil {
+			logrus.WithError(err).WithField("attempt", attempt.ID).Warn("Factory could not pause an idle attempt")
+		}
+	}
+	return nil
+}
+
+// reconcileImplementationRuntime fails attempts whose session is gone and
+// returns the live, unpaused ones.
+func (s *NativeService) reconcileImplementationRuntime(ctx context.Context, store nativePlanningStore) ([]model.FactoryAttempt, error) {
 	s.implementationMu.Lock()
 	defer s.implementationMu.Unlock()
 	attempts, err := store.ListFactoryAttempts(ctx, "")
 	if err != nil {
-		return err
+		return nil, err
 	}
+	var alive []model.FactoryAttempt
+	active := map[string]bool{}
 	for _, attempt := range attempts {
 		if attempt.Phase == model.FactoryAttemptStopping && attempt.FrozenPolicy.Profile == "factory-implement/v1" {
+			active[attempt.ID] = true
 			if err := s.implementation.StopImplementationSession(context.WithoutCancel(ctx), attempt.Session); err != nil {
 				continue
 			}
 			if _, err := store.FailFactoryAttempt(ctx, attempt.ID, model.FactoryAttemptFailure{Type: "handoff_finalize_failed", Message: "Implementation handoff did not finish recording"}, time.Now()); err != nil {
-				return fmt.Errorf("recover stopping Implementation attempt: %w", err)
+				return nil, fmt.Errorf("recover stopping Implementation attempt: %w", err)
 			}
 			continue
 		}
 		if attempt.Phase != model.FactoryAttemptActive || attempt.FrozenPolicy.Profile != "factory-implement/v1" || attempt.Session.ID == "" {
 			continue
 		}
+		active[attempt.ID] = true
 		if recovery, ok := s.store.(nativeRecoveryStore); ok {
 			paused, err := recovery.IsFactoryAttemptRecoveryPaused(ctx, attempt.ID)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			if paused {
 				continue
 			}
 		}
-		alive, probeErr := s.implementation.ProbeImplementationSession(ctx, attempt.Session)
-		if probeErr != nil || alive {
+		live, probeErr := s.implementation.ProbeImplementationSession(ctx, attempt.Session)
+		if probeErr != nil {
+			continue
+		}
+		if live {
+			alive = append(alive, attempt)
 			continue
 		}
 		if _, err := store.FailFactoryAttempt(ctx, attempt.ID, model.FactoryAttemptFailure{Type: "interrupted_runtime", Message: "Implementation Session is no longer available"}, time.Now()); err != nil {
-			return fmt.Errorf("recover Implementation attempt: %w", err)
+			return nil, fmt.Errorf("recover Implementation attempt: %w", err)
 		}
+		delete(active, attempt.ID)
 	}
-	return nil
+	s.pruneAttemptState(active)
+	return alive, nil
 }
 
 func (s *NativeService) Queue(ctx context.Context) ([]DispatchItem, error) {

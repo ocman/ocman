@@ -24,8 +24,8 @@ func TestNativeImportedPlanKeepsApprovalGate(t *testing.T) {
 	req := SubmitProposalRequest{Import: true, EpicID: epic.ID, RationaleMarkdown: "Decisions from the original session", Manifest: ProposalManifest{
 		EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo",
 		Nodes: []ManifestNode{
-			{Key: "api", Type: "implementation", Requirement: "required", Title: "API", Description: "Implement and test the endpoint"},
-			{Key: "ui", Type: "implementation", Requirement: "required", Title: "UI", Description: "Connect the form and test submission"},
+			{Key: "api", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}, Title: "API", Description: "Implement and test the endpoint"},
+			{Key: "ui", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}, Title: "UI", Description: "Connect the form and test submission"},
 		},
 		Edges: []ManifestEdge{{From: "ui", To: "api", Type: "blocks"}},
 	}}
@@ -110,7 +110,7 @@ func TestNativeImportedPlanKeepsApprovalGate(t *testing.T) {
 }
 
 func TestNativeImportRejectsOwnedOrInvalidPlans(t *testing.T) {
-	for _, scenario := range []string{"claimed", "rejected", "credentials", "partial credentials", "wrong scope", "cycle", "no required work", "unavailable gate"} {
+	for _, scenario := range []string{"claimed", "rejected", "credentials", "partial credentials", "wrong scope", "cycle", "no required work", "no acceptance criteria", "unavailable gate"} {
 		t.Run(scenario, func(t *testing.T) {
 			db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
 			if err != nil {
@@ -119,7 +119,7 @@ func TestNativeImportRejectsOwnedOrInvalidPlans(t *testing.T) {
 			t.Cleanup(func() { _ = db.Close() })
 			svc := NewNativeWithPlanning(db, testProjectResolver{roots: map[string]string{"/repo": "/repo", "/other": "/other"}}, &fakePlanningLauncher{})
 			epic := createPouredWorkEpic(t, svc, "Import constraints")
-			req := SubmitProposalRequest{Import: true, EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "work", Type: "implementation", Requirement: "required"}}}}
+			req := SubmitProposalRequest{Import: true, EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "work", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}}
 			wantErr := ErrInvalidRequest
 			switch scenario {
 			case "claimed":
@@ -144,6 +144,8 @@ func TestNativeImportRejectsOwnedOrInvalidPlans(t *testing.T) {
 				req.Manifest.Edges = []ManifestEdge{{From: "work", To: "work", Type: "blocks"}}
 			case "no required work":
 				req.Manifest.Nodes[0].Requirement = "optional"
+			case "no acceptance criteria":
+				req.Manifest.Nodes[0].AcceptanceCriteria = nil
 			case "unavailable gate":
 				if err := svc.MutateGraph(t.Context(), GraphMutation{Action: "delete", EpicID: epic.ID, IssueID: pouredIssueID(t, svc, epic.ID, "gate")}); err != nil {
 					t.Fatal(err)

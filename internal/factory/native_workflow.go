@@ -69,6 +69,9 @@ func compileWorkflow(source string) (nativeDefinition, error) {
 		if step.Config.Model != "" && (!strings.Contains(step.Config.Model, "/") || strings.ContainsAny(step.Config.Model, " \t\r\n")) {
 			return nativeDefinition{}, fmt.Errorf("step %s: model must be provider/model", key)
 		}
+		if err := validateStepCommands(key, step); err != nil {
+			return nativeDefinition{}, err
+		}
 		if step.Kind == "approval" && step.Config.Model != "" {
 			return nativeDefinition{}, fmt.Errorf("step %s: approval does not use a model", key)
 		}
@@ -141,6 +144,21 @@ func compileWorkflow(source string) (nativeDefinition, error) {
 	}
 	hash := sha256.Sum256(raw)
 	return nativeDefinition{compiledNativeFormula: result, JSON: string(raw), Hash: hex.EncodeToString(hash[:])}, nil
+}
+
+func validateStepCommands(key string, step model.WorkflowStep) error {
+	if len(step.Config.Commands) == 0 {
+		return nil
+	}
+	if step.Kind != "verification" || len(step.Config.Commands) > 20 {
+		return fmt.Errorf("step %s: commands belong to verification steps and are limited to 20", key)
+	}
+	for _, command := range step.Config.Commands {
+		if strings.TrimSpace(command) == "" || len(command) > 4096 {
+			return fmt.Errorf("step %s: each command must be 1–4096 bytes", key)
+		}
+	}
+	return nil
 }
 
 func workflowDependsOn(steps map[string]model.WorkflowStep, from, to string) bool {

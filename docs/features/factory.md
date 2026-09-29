@@ -43,9 +43,15 @@ The imported proposal still requires **human approval**. Review its tickets,
 choose an implementation model, then approve through the action card or Epic
 page. Importing alone does not materialize tickets or start implementation.
 
-Include the scope, acceptance criteria, verification steps, and relevant decisions
-in the ticket descriptions and proposal rationale. Implementation sessions do
-not inherit the original conversation.
+Include the scope, verification steps, and relevant decisions in the ticket
+descriptions and proposal rationale. Implementation sessions do not inherit the
+original conversation.
+
+Every implementation node that isn't a reference must list `acceptanceCriteria`:
+1–20 verifiable outcomes, written before any code. Factory adds them to the
+Issue description as a checklist, so the approved plan contains them. The
+verification session receives every Issue's checklist and must report each
+criterion as PASS or FAIL. Proposals without criteria are rejected.
 
 Import is available before any Factory attempt has been claimed. It marks
 the planning work complete, so a competing planner cannot start while the proposal is
@@ -82,6 +88,8 @@ steps:
   verify:
     kind: verification
     needs: [implement]
+    config:
+      commands: [make lint, make test]
     prompt: |
       Review the combined changes and run the repository-required checks.
       Request recovery if a required check fails.
@@ -120,7 +128,58 @@ a step a display label. `config.model` accepts a `provider/model` reference and
 overrides the approved implementation model for that step. The implementation
 group supports `config.concurrency: 1`, reflecting the shared workspace's
 sequential execution. Planning can supply `config.scope_expansion_prompt` for
-additive replanning. Other configuration keys are rejected.
+additive replanning. Verification steps can declare `config.commands`
+(described below). Other configuration keys are rejected.
+
+## Verification
+
+A verification session is a **validator**: a fresh session that did not write
+the code. Its profile denies edits. It keeps shell access so it can run checks.
+If the shared branch HEAD moved from the last implementation checkpoint, Factory
+rejects its completion. Unless you pick a verification model (via the Epic's
+**Models** controls or the step's `config.model`), it uses the preferred
+planning model (Fable or Astra), not the implementation model. If neither is
+available, it uses the runtime default. The prompt tells it to review the
+combined diff and check each acceptance criterion. It must also look for work
+that passes checks without doing the task, such as skipped or deleted tests and
+new suppressions.
+
+`config.commands` is a block of shell commands defined in the Formula. The
+agent still does its own review. When it calls `complete_attempt`, Factory:
+
+1. answers `checks_running`, and the agent ends its turn;
+2. runs each command in order with `sh -c` in the project's worktree, with
+   `CI=1` and a one-hour limit for the whole block;
+3. fails the run if the worktree was dirty before it started, or if HEAD or
+   the worktree changed while it ran. Keep build output in `.gitignore`;
+4. scans the diff against the remote-tracking target branch for deleted test
+   files, edited test or lint configuration (`Makefile`, `package.json`,
+   linter, test-runner, and CI config), and newly added skip,
+   lint-suppression, or type-ignore markers;
+5. sends the exit codes, the last 4 KB of output per command, and the scan
+   findings back to the validator as a new message.
+
+With those results, the validator either calls `request_recovery` or calls
+`complete_attempt` again. Factory accepts completion only if every command
+exited 0 at that exact HEAD, and records the passed commands in the Attempt
+summary. A failed result is reported once. The next `complete_attempt` reruns
+the checks, for example after a flaky test or a human resume.
+
+Commands run with ocman's own privileges, not the agent's permission profile.
+Forge tokens (`GITHUB_TOKEN`, `GH_TOKEN`, `FORGEJO_TOKEN`, `GITEA_TOKEN`) and
+`OCMAN_*`/`OTEL_*` variables are removed from their environment. The commands
+come from the Formula revision pinned to the Epic. Agents with the `factory`
+MCP tool can save Formulas and create Epics, so review a Formula's `commands`
+the way you review CI configuration before approving its plan.
+
+A run stops when its attempt ends (retry, cancel, or another terminal outcome)
+and when ocman shuts down; it is never orphaned. Results are kept in memory.
+After a restart, Factory tells every validator started before the restart to
+call `complete_attempt` again, which reruns the checks.
+
+Known limits: the scan is a line-based heuristic that points the validator at
+suspicious changes; it does not block completion. Remote-host projects cannot
+run Formula checks. Factory does not run them on remote hosts yet.
 
 Factory adds runtime context, repository restrictions, attempt credentials, and
 completion instructions to each prompt. Changing a prompt does not bypass
@@ -170,6 +229,14 @@ the branch, target branch, and commit SHA. Before launching the next Issue,
 Ocman checks that the branch still matches that checkpoint. Missing branches,
 dirty worktrees, or unexpected commits require reconciliation rather than a
 silent reset. Checkpoints survive an ocman restart.
+
+An active session that stops making progress without completing or requesting
+recovery is paused by a watchdog. Factory probes live attempts at most once a
+minute. After 30 minutes without activity in the session or its direct
+subagents, it opens a recovery gate: resume with guidance, retry, or cancel.
+The 30 minutes count from the attempt start, or from the last time a human
+resumed it. Sessions waiting on a permission or question prompt, and validators
+waiting on Formula checks, are not counted as idle.
 
 Implementation sessions run in the Issue's target project workspace. They may
 read other projects admitted to the Epic, but path-specific permission rules

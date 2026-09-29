@@ -205,6 +205,10 @@ type WorkflowStepConfig struct {
 	Model                string `json:"model,omitempty" yaml:"model,omitempty"`
 	Concurrency          int    `json:"concurrency,omitempty" yaml:"concurrency,omitempty"`
 	ScopeExpansionPrompt string `json:"scopeExpansionPrompt,omitempty" yaml:"scope_expansion_prompt,omitempty"`
+	// Commands are shell commands ocman itself runs in the verification
+	// worktree after the validator agent asks to complete; the results are
+	// sent back to that agent before completion is accepted.
+	Commands []string `json:"commands,omitempty" yaml:"commands,omitempty"`
 }
 type NativeFormulaEdge struct{ From, To, Type string }
 type NativeFormulaComposition struct {

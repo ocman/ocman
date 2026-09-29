@@ -62,7 +62,7 @@ func TestEpicModelsApplyToUnstartedWorkOnly(t *testing.T) {
 	if _, err := svc.SetEpicModels(t.Context(), epic.ID, model.EpicModels{Implementation: "test/first", Verification: "test/verifier"}); err != nil {
 		t.Fatal(err)
 	}
-	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "one", Type: "implementation", Requirement: "required"}, {Key: "two", Type: "implementation", Requirement: "required"}}}})
+	proposal, err := svc.SubmitProposal(t.Context(), SubmitProposalRequest{EpicID: epic.ID, Manifest: ProposalManifest{EpicID: epic.ID, MolID: pouredIssueID(t, svc, epic.ID, "mol"), Project: "/repo", Nodes: []ManifestNode{{Key: "one", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}, {Key: "two", Type: "implementation", Requirement: "required", AcceptanceCriteria: []string{"done"}}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
