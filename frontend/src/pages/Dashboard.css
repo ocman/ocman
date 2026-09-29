@@ -71,8 +71,8 @@
 .subscription-window { display: grid; gap: 8px; }
 .subscription-window-label { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
 .subscription-window-label span { color: var(--text-dim); font-family: 'SF Mono', Consolas, monospace; }
-.subscription-window progress { width: 100%; height: 8px; border: 0; background: var(--surface0); accent-color: var(--accent); }
-.subscription-window progress::-webkit-progress-bar { background: var(--surface0); }
+.subscription-window progress { width: 100%; height: 8px; border: 0; background: var(--surface1); accent-color: var(--accent); }
+.subscription-window progress::-webkit-progress-bar { background: var(--surface1); }
 .subscription-window progress::-webkit-progress-value { background: var(--accent); }
 .subscription-window progress::-moz-progress-bar { background: var(--accent); }
 .metrics-chart-grid { display: grid; gap: 16px; margin-bottom: 24px; }
