@@ -362,7 +362,10 @@ func TestPluginConfigurationCancellationRollsBack(t *testing.T) {
 	f.call(t, "POST", "/rescan", `{}`, 200)
 	f.call(t, "POST", base+"/configuration", `{"secrets":{"token":"working"}}`, 200)
 	f.call(t, "POST", base+"/enable", f.approval(t), 200)
-	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	// The deadline must land while the plugin hangs (10s), not during the
+	// state writes before it: a loaded CI runner took >150ms to get there,
+	// and an earlier expiry surfaces as a 500 from the state layer.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	r := httptest.NewRequest(http.MethodPost, "http://localhost:8228/api/plugins"+base+"/configuration", strings.NewReader(`{"values":{"mode":"hang"},"secrets":{"token":"candidate"}}`)).WithContext(ctx)
 	r.RemoteAddr = "127.0.0.1:1234"

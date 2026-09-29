@@ -119,17 +119,16 @@ func TestConversationErrorOutcomeReachesThread(t *testing.T) {
 
 	f.s.onSessionIdle("opencode", "ses-chat")
 	f.awaitThread(t, "last turn ended with an error")
+	// The partial answer still reaches the thread: the notice says where the
+	// turn stopped, it does not replace what the turn produced. It is queued
+	// behind the notice, so it lands one delivery later.
+	f.awaitThread(t, "first half")
 
 	// A repeated idle edge for the same failed turn must not report twice.
 	f.s.onSessionIdle("opencode", "ses-chat")
 	time.Sleep(200 * time.Millisecond)
 	if got := f.countThread("last turn ended with an error"); got != 1 {
 		t.Fatalf("repeated idle edge produced %d error notices", got)
-	}
-	// The partial answer still reaches the thread: the notice says where the
-	// turn stopped, it does not replace what the turn produced.
-	if !strings.Contains(f.replies(), "first half") {
-		t.Fatalf("errored turn dropped its assistant text: %q", f.replies())
 	}
 }
 

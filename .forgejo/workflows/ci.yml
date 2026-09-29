@@ -148,19 +148,6 @@ jobs:
         run: go test .
       - name: Test internal packages with coverage
         run: make coverage SUITE=go
-      # ThreadSanitizer aborts on this runner ("unsupported VMA range:
-      # Found 47 - Supported 48"): its arm64 shadow mapping needs a
-      # 48-bit VA kernel and the host has 47. Nothing a container can
-      # change, so skip rather than fail — `make test-race` stays the
-      # local pre-PR check and starts guarding CI the day the runner is
-      # x86_64 or 48-bit.
-      - name: Race detector
-        run: |
-          if [ "$(uname -m)" != x86_64 ]; then
-            echo "skipping: ThreadSanitizer is unsupported on $(uname -m) runners"
-            exit 0
-          fi
-          make test-race
       - name: Fetch coverage baseline
         run: ./scripts/coverage-fetch-baseline.sh baseline
       # Go coverage of background goroutines (SSE loops, watchers, queue

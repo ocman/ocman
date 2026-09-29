@@ -114,13 +114,25 @@ func TestConversationStaleClaimIsNotResent(t *testing.T) {
 		}
 	}
 
-	f.appendReply(t, conversationTestThread, "ses-chat:stale", "only once")
+	id := f.appendReply(t, conversationTestThread, "ses-chat:stale", "only once")
 	claimed, err := f.s.stateDB.ClaimPluginConversationReplies(t.Context(), 10)
 	if err != nil || len(claimed) != 1 {
 		t.Fatalf("claim: %v %v", claimed, err)
 	}
+	// Deliver through the in-flight guard like the pump does: the pump kicked
+	// by the earlier acknowledgment may already hold this row, and two
+	// unguarded deliveries would both pass the currency check.
+	if f.s.beginConversationDelivery(id) {
+		f.s.deliverConversationReply(claimed[0])
+	}
+	f.awaitThread(t, "only once")
+	// The stale snapshot, replayed once no delivery holds the row any more.
+	for deadline := time.Now().Add(20 * time.Second); !f.s.beginConversationDelivery(id); time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the first delivery never left the in-flight set")
+		}
+	}
 	f.s.deliverConversationReply(claimed[0])
-	f.s.deliverConversationReply(claimed[0]) // the stale snapshot
 	if got := f.countThread("only once"); got != 1 {
 		t.Fatalf("stale claim posted %d times: %q", got, f.replies())
 	}

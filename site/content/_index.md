@@ -1,6 +1,7 @@
 ---
 title: ocman
 layout: hextra-home
+description: "One dashboard for every coding-agent session: browse, drive and split OpenCode sessions across projects, worktrees and machines."
 ---
 
 {{< hextra/hero-badge link="https://forgejo.nousefreak.be/dries/ocman/releases" >}}
