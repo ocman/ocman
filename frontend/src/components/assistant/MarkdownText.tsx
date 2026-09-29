@@ -12,7 +12,7 @@ import type { ComponentProps, FC, ReactNode } from 'react';
 import { Link, useInRouterContext } from 'react-router-dom';
 import { LinkPreviewStrip } from '../GitHubLinkPreview';
 import { FactoryActionCard } from '../FactoryActionCard';
-import { FactoryEpicCard } from '../FactoryEpicCard';
+import { FactoryMarkerCard } from '../FactoryMarkerCard';
 import { factoryActionFromHref } from '../factoryEpicStatus';
 import { remarkFactoryCards } from '../factoryCards';
 import { Modal } from '../Modal';
@@ -192,10 +192,7 @@ function MarkdownLink(props: any) {
   const { node: _node, href, children, ...rest } = props;
   const routed = useInRouterContext();
   if (props['data-ocman-card'] && routed) {
-    const epicID = props['data-ocman-epic'];
-    return props['data-ocman-action'] === 'created'
-      ? <FactoryEpicCard epicID={epicID}>{children}</FactoryEpicCard>
-      : <FactoryActionCard key={`${epicID}/${props['data-ocman-issue']}/${props['data-ocman-action']}`} epicID={epicID} issueID={props['data-ocman-issue']} requestedAction={props['data-ocman-action']}>{children}</FactoryActionCard>;
+    return <FactoryMarkerCard epicID={props['data-ocman-epic']} issueID={props['data-ocman-issue']} action={props['data-ocman-action']}>{children}</FactoryMarkerCard>;
   }
   const action = factoryActionFromHref(href);
   if (action && routed) return <FactoryActionCard key={`${action.epicID}/${action.issueID}`} {...action}>{children}</FactoryActionCard>;

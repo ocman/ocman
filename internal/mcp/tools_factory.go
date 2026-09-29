@@ -43,7 +43,13 @@ type factoryTools struct{ svc factoryService }
 
 const factoryFormulaExample = `version = 1\nname = \"Team\"\n\n[[input]]\nkey = \"goal\"\n\n[[input]]\nkey = \"initial_project\"\n\n[[issue]]\nkey = \"plan\"\nkind = \"plan\"\n`
 
-const factoryReplyCards = "Copy the returned [[ocman:card ...]] marker verbatim only in the response that creates an epic or requests a required human action. Do not wrap it in markdown links or code, invent card markers, or repeat it in routine status updates or unrelated replies. Ocman renders the card and hides resolved actions."
+const factoryReplyCards = "Results that create an epic or need a human action carry a [[ocman:card ...]] marker. Ocman shows that card to the user under the tool call and hides it once the action is resolved. When a card asks for a human action, tell the user a card is waiting for them and that they must handle it there. Never copy, invent, or repeat card markers in your replies."
+
+// Ocman renders cards from the tool result, so agents explain them instead of copying markers.
+const (
+	factoryCardNoCopy  = "Do not copy the marker into your reply."
+	factoryCardHandoff = "Ocman now shows the user a card for this action under this tool call. Tell the user a card is waiting for them and that they must handle it there; you cannot do it for them. " + factoryCardNoCopy
+)
 
 type factoryAction struct {
 	name, description, example string
@@ -86,8 +92,8 @@ var factoryActions = []factoryAction{
 	{name: "reject_authority", description: "Rejects one out-of-profile permission request exactly once.", example: `{"action":"reject_authority","authority_gate_id":"gate-1"}`, required: []string{"authority_gate_id"}, output: "AuthorityEscalationGate", errors: []string{"authority_gate_id is required", "factory request failed"}},
 	{name: "mutate_graph", description: "Creates, edits, reparents, links, unlinks, or soft-deletes local Factory Issues unless they are in progress or closed. Dependency types are blocks, on_failure, and merge_gated; merge_gated must target another project's Delivery.", example: `{"action":"mutate_graph","mutation_json":"{\"action\":\"create\",\"epicId\":\"epic-1\",\"parentId\":\"epic-1.1\",\"kind\":\"task\",\"title\":\"Implement the change\"}"}`, required: []string{"mutation_json"}, output: map[string]string{"status": "ok"}, errors: []string{"mutation_json is required", "mutation_json is invalid", "factory request failed"}},
 	{name: "create", description: "Creates and pours a Factory Work Epic with the built-in tracer Formula. For an already-planned ticket breakdown, use issues then import_proposal to skip the planning session while keeping human approval. goal is the Epic's title: one short clear line of at most 80 characters, e.g. \"Prettify Factory Epic IDs\" — never a paragraph. Put context, constraints and decisions in brief instead. Always pass epic_id: a short human-friendly kebab-case name for the work (2-40 lowercase letters, digits and dashes), e.g. pretty-epic-ids. If it comes back taken, call create again with a different name.", example: `{"action":"create","epic_id":"pretty-epic-ids","goal":"Prettify Factory Epic IDs","brief":"IDs are built from initials today.","initial_project":"/repo","acknowledge_local_execution":true,"projects":[{"path":"/other","acknowledgeLocalExecution":true}]}`, required: []string{"goal", "initial_project", "acknowledge_local_execution"}, optional: []string{"epic_id", "brief", "instantiation_id", "projects"}, output: "WorkEpic", errors: []string{"goal is required", "initial_project is required", "acknowledge_local_execution must be true", "goal must be a short clear title of at most 80 characters; move the detail into brief", "factory epic id already taken: pick another human-friendly id", "factory action is not permitted", "factory request failed"}},
-	{name: "claim_plan", description: "Claiming Factory Planning Work is a human action. Copy the returned card marker verbatim in this response so the user can click the action.", example: `{"action":"claim_plan","epic_id":"epic-1","issue_id":"epic-1.1"}`, optional: []string{"epic_id", "issue_id"}, output: "Denial with a human action card marker", errors: []string{"factory action is not permitted"}},
-	{name: "reopen_issue", description: "Reopening failed or cancelled work is a human action. Pass epic_id and issue_id, then copy the returned card marker verbatim in this response so the user can click Reopen issue. Do not retry the denied action.", example: `{"action":"reopen_issue","epic_id":"epic-1","issue_id":"epic-1.3"}`, optional: []string{"epic_id", "issue_id"}, output: "Denial with a human action card marker", errors: []string{"factory action is not permitted"}},
+	{name: "claim_plan", description: "Claiming Factory Planning Work is a human action. Ocman shows the user a card to handle it; tell them it is waiting and do not copy its marker.", example: `{"action":"claim_plan","epic_id":"epic-1","issue_id":"epic-1.1"}`, optional: []string{"epic_id", "issue_id"}, output: "Denial with a human action card marker", errors: []string{"factory action is not permitted"}},
+	{name: "reopen_issue", description: "Reopening failed or cancelled work is a human action. Pass epic_id and issue_id, then tell the user the Reopen issue card Ocman shows is waiting for them; do not copy its marker. Do not retry the denied action.", example: `{"action":"reopen_issue","epic_id":"epic-1","issue_id":"epic-1.3"}`, optional: []string{"epic_id", "issue_id"}, output: "Denial with a human action card marker", errors: []string{"factory action is not permitted"}},
 }
 
 func factoryActionFor(name string) (factoryAction, bool) {
@@ -170,7 +176,7 @@ func factoryHumanActionResult(ctx context.Context, svc factoryService, req mcpli
 	if action == "create" {
 		epicID, issueID = "", ""
 	}
-	result.Content = append(result.Content, mcplib.NewTextContent("This action needs a human. Copy this marker verbatim into this response, outside code or links: "+factoryCardMarker(epicID, issueID, action)+". The user must click a button; do not retry the denied action. Do not repeat the marker in unrelated later replies or after the action is resolved."))
+	result.Content = append(result.Content, mcplib.NewTextContent("This action needs a human: "+factoryCardMarker(epicID, issueID, action)+". Do not retry the denied action. "+factoryCardHandoff))
 	return result
 }
 
@@ -238,7 +244,7 @@ func (t *factoryTools) handleAction(ctx context.Context, req mcplib.CallToolRequ
 			return factoryToolError(err), nil
 		}
 		result := toolResultJSON(epic)
-		result.Content = append(result.Content, mcplib.NewTextContent("Only in this creation response, copy this marker verbatim outside code or links: "+factoryCardMarker(epic.ID, "", "created")+". Do not repeat it in later replies; include another card marker only when a human action is required."))
+		result.Content = append(result.Content, mcplib.NewTextContent("Ocman shows the user the created epic card under this tool call: "+factoryCardMarker(epic.ID, "", "created")+". "+factoryCardNoCopy))
 		return result, nil
 	case "complete_attempt":
 		attemptID, _ := req.RequireString("attempt_id")
@@ -282,7 +288,7 @@ func (t *factoryTools) handleAction(ctx context.Context, req mcplib.CallToolRequ
 			return factoryToolError(err), nil
 		}
 		result := toolResultJSON(gate)
-		result.Content = append(result.Content, mcplib.NewTextContent("Copy this marker verbatim into this response so the user can decide: "+factoryCardMarker(gate.EpicID, gate.IssueID, "request_project")))
+		result.Content = append(result.Content, mcplib.NewTextContent("The project request needs a human decision: "+factoryCardMarker(gate.EpicID, gate.IssueID, "request_project")+". "+factoryCardHandoff))
 		return result, nil
 	case "submit_scope_plan":
 		service, ok := t.svc.(interface {
@@ -499,7 +505,7 @@ func (t *factoryTools) handleAction(ctx context.Context, req mcplib.CallToolRequ
 		}
 		result = toolResultJSON(proposal)
 		if imported {
-			result.Content = append(result.Content, mcplib.NewTextContent("The imported plan awaits human approval. Copy this marker verbatim into this response, outside code or links: "+factoryCardMarker(id, "", "approve_plan")+". Do not approve or start implementation on the user's behalf."))
+			result.Content = append(result.Content, mcplib.NewTextContent("The imported plan awaits human approval: "+factoryCardMarker(id, "", "approve_plan")+". Do not approve or start implementation on the user's behalf. "+factoryCardHandoff))
 		}
 		return result, nil
 	case "proposal":

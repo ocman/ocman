@@ -7,6 +7,8 @@ import { api, type FactoryEpic, type FactoryIssue } from '../lib/api';
 import { FactoryActionCard } from './FactoryActionCard';
 import { factoryActionFromHref } from './factoryEpicStatus';
 import { MarkdownContent } from './assistant/MarkdownText';
+import { ToolCallDisplay } from './assistant/ToolCallDisplay';
+import type { ComponentProps } from 'react';
 
 vi.mock('../lib/api', () => ({ api: {
   factoryEpic: vi.fn(), factoryIssues: vi.fn(), reopenFactoryIssue: vi.fn(),
@@ -103,6 +105,15 @@ describe('Factory human action cards', () => {
     await screen.findByRole('button', { name: 'Approve plan' });
     act(() => client.setQueryData(['factory-epics', 'ship'], { ...epic, planGate: { ...gate, resolution: 'approved' } }));
     await waitFor(() => expect(screen.queryByLabelText('Factory human actions')).not.toBeInTheDocument());
+  });
+
+  it('renders the card from a denied factory tool result', async () => {
+    vi.mocked(api.factoryEpic).mockResolvedValue({ ...epic, planGate: { issueId: 'gate', resolution: 'open', proposalRevision: 1, proposalHash: 'hash' } });
+    const result = 'factory action is not permitted\n\nThis action needs a human. Copy this marker verbatim: [[ocman:card type=factory-epic epic=ship action=approve_plan]].';
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const tool = (toolName: string) => <ToolCallDisplay {...({ toolName, argsText: 'error\n{"action":"approve_plan"}', result } as ComponentProps<typeof ToolCallDisplay>)} />;
+    render(<QueryClientProvider client={client}><MemoryRouter>{tool('ocman_factory')}{tool('mcp_other')}</MemoryRouter></QueryClientProvider>);
+    expect(await screen.findAllByRole('button', { name: 'Approve plan' })).toHaveLength(1);
   });
 
   it('keeps a graph-edit marker only while its target can be edited', async () => {

@@ -1,17 +1,11 @@
-// Per-tool-call rendering: the ToolCallDisplay dispatcher plus its
-// private renderers (inline diffs, patches, ANSI shell output,
-// answered questions). Extracted from
-// AssistantThread.tsx so thread mechanics and tool renderers grow
-// independently.
-import React, { useState, useEffect, useId, useRef, Suspense } from 'react';
-import { Link } from 'react-router-dom';
-import { MultiFileDiff, PatchDiff } from '@pierre/diffs/react';
-import { DIFF_OPTIONS } from '../diffOptions';
+// Per-tool-call rendering: the ToolCallDisplay dispatcher. Output
+// renderers live in toolRenderers.tsx, subagent tasks in TaskToolCard.tsx,
+// and approval footnotes in ApprovalFootnote.tsx.
+import React, { useState } from 'react';
 import { type ToolCallMessagePartProps } from '@assistant-ui/react';
 import { parseTodos } from '../../lib/todos';
 import { TodoList } from '../TodoList';
 import { isMutedLineTool } from '../../lib/mutedTools';
-import { parseAnsi, hasAnsi, hasStyle, type AnsiSegment } from '../../lib/ansi';
 import { useIsPrinting } from '../../lib/useIsPrinting';
 import { usePrintCollapse } from '../../lib/printCollapseContext';
 import {
@@ -19,338 +13,22 @@ import {
   extractPatchPayload,
   splitToolArgs,
   summarizeToolArgs,
-  shortenPatchPath,
   summarizePatch,
-  applyPatchToUnifiedFileDiffs,
   parseQuestionAnswers,
   parseQuestions,
   parseToolTime,
   parseShellDescription,
-  formatToolDuration,
-  type ApplyPatchFileDiff,
-  type QuestionData,
   type ToolApproval,
 } from '../../lib/threadHelpers';
 import type { FC } from 'react';
-import { MarkdownText } from './MarkdownText';
 import { ArtifactToolCard } from './ArtifactToolCard';
 import { parseCreatedArtifact } from '../../lib/artifactsApi';
-
-const ToolDuration: FC<{ startedAt: number; completedAt: number; isRunning: boolean; label?: string }> = ({
-  startedAt,
-  completedAt,
-  isRunning,
-  label,
-}) => {
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    if (!isRunning) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [isRunning]);
-
-  const elapsed = isRunning
-    ? now - startedAt
-    : completedAt > startedAt
-      ? completedAt - startedAt
-      : 0;
-  if (label) {
-    const duration = elapsed > 0 ? ` (${formatToolDuration(elapsed)})` : '';
-    return <span className="oc-tool-label">{label}{duration}</span>;
-  }
-  if (elapsed <= 0) return null;
-  return <span className="oc-tool-duration">{formatToolDuration(elapsed)}</span>;
-};
-
-const bashSpinnerFrames = ['⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷'];
-
-const BashPrompt: FC<{ running: boolean }> = ({ running }) => {
-  const [frame, setFrame] = useState(0);
-  useEffect(() => {
-    if (!running) return;
-    const id = setInterval(() => setFrame((current) => (current + 1) % bashSpinnerFrames.length), 80);
-    return () => clearInterval(id);
-  }, [running]);
-
-  return <span className="oc-shell-prompt" data-testid={running ? 'bash-spinner' : undefined} title={running ? 'Running' : undefined}>{running ? bashSpinnerFrames[frame] : '$'}</span>;
-};
-
-// Structured diff payload emitted by convertMessages.ts for edit/write tools.
-interface DiffPayload {
-  __diff: true;
-  filePath: string;
-  before: string;
-  after: string;
-}
-
-function parseDiffPayload(result: string | null | undefined): DiffPayload | null {
-  if (!result) return null;
-  try {
-    const obj = JSON.parse(result);
-    if (obj && obj.__diff === true) return obj as DiffPayload;
-  } catch { /* not JSON */ }
-  return null;
-}
-
-// Renders a before/after diff using @pierre/diffs.
-function InlineDiff({ payload }: { payload: DiffPayload }) {
-  const name = payload.filePath || 'file';
-  return (
-    <Suspense fallback={null}>
-      <MultiFileDiff
-        oldFile={{ name, contents: payload.before }}
-        newFile={{ name, contents: payload.after }}
-        options={DIFF_OPTIONS}
-        disableWorkerPool
-      />
-    </Suspense>
-  );
-}
-
-function renderOutput(text: string, languageHint?: string) {
-  // Detect file read output: various XML formats from MCP read tools
-  // Handles: <path>...</path> with optional <type>...</type> and <content>...</content>
-  // Also handles truncated output where </content> may be missing
-  const fileMatch = text.match(/<path>([^<]+)<\/path>/);
-  const contentMatch = text.match(/<content>\n?([\s\S]*?)(?:\n?<\/content>|$)/);
-  if (fileMatch && contentMatch) {
-    const content = contentMatch[1];
-    const lines = content.split('\n').map(l => l.replace(/^\d+: /, ''));
-    return (
-      <>
-        {lines.map((line, i) => <span key={i}>{line}{'\n'}</span>)}
-      </>
-    );
-  }
-
-  // Detect diff output (lines with line numbers + op marker)
-  const diffLines = text.split('\n');
-  // Match format: " 1   2    content" or "         ..."
-  const diffPattern = /^(\s*\d*)\s{2}(\s*\d*)\s{2}([+ -])\s(.*)$/;
-  const hasDiff = diffLines.some(l => diffPattern.test(l));
-  if (!hasDiff) return text;
-
-  return (
-    <div className="oc-diff-table">
-      {diffLines.map((line, i) => {
-        const m = line.match(diffPattern);
-        if (!m) {
-          // Context separator (...)
-          if (line.trim() === '...') {
-            return (
-              <div key={i} className="oc-diff-row oc-diff-sep">
-                <span className="oc-diff-ln" />
-                <span className="oc-diff-ln" />
-                <span className="oc-diff-code">...</span>
-              </div>
-            );
-          }
-          return null;
-        }
-        const [, oldLn, newLn, op, code] = m;
-        let cls = 'oc-diff-row';
-        if (op === '+') cls += ' oc-diff-add';
-        else if (op === '-') cls += ' oc-diff-del';
-        return (
-          <div key={i} className={cls}>
-            <span className="oc-diff-ln">{oldLn.trim()}</span>
-            <span className="oc-diff-ln">{newLn.trim()}</span>
-            {code
-              ? <span className="oc-diff-code" dangerouslySetInnerHTML={{ __html: highlightDiffCode(code, languageHint) }} />
-              : <span className="oc-diff-code">{' '}</span>}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function patchActionMeta(action: ApplyPatchFileDiff['action']): { label: string; text: string } {
-  switch (action) {
-    case 'add': return { label: 'A', text: 'Added' };
-    case 'delete': return { label: 'D', text: 'Deleted' };
-    case 'rename': return { label: 'R', text: 'Renamed' };
-    case 'update': return { label: 'M', text: 'Modified' };
-  }
-}
-
-function renderPatch(patchText: string) {
-  const fileDiffs = applyPatchToUnifiedFileDiffs(patchText);
-  if (fileDiffs.length > 0) {
-    return (
-      <Suspense fallback={null}>
-        <div className="oc-patch-diffs">
-          {fileDiffs.map((file, index) => {
-            const meta = patchActionMeta(file.action);
-            return (
-              <div key={`${file.action}:${file.oldPath || ''}:${file.path}:${index}`} className="oc-patch-diff-file">
-                <div className={`oc-patch-diff-header oc-patch-diff-header-${file.action}`}>
-                  <span className="oc-patch-diff-badge">{meta.label}</span>
-                  <span className="oc-patch-diff-action">{meta.text}</span>
-                  <span className="oc-patch-diff-path">
-                    {file.oldPath ? `${shortenPatchPath(file.oldPath)} -> ${shortenPatchPath(file.path)}` : shortenPatchPath(file.path)}
-                  </span>
-                </div>
-                <PatchDiff
-                  patch={file.patch}
-                  options={{ ...DIFF_OPTIONS, disableFileHeader: true }}
-                  disableWorkerPool
-                />
-              </div>
-            );
-          })}
-        </div>
-      </Suspense>
-    );
-  }
-
-  const lines = patchText.split('\n');
-  return (
-    <div className="oc-patch-block">
-      {lines.map((line, i) => {
-        let cls = 'oc-patch-line';
-        if (/^\*\*\* (Add|Update|Delete) File: /.test(line)) cls += ' oc-patch-file';
-        else if (line.startsWith('*** Begin Patch') || line.startsWith('*** End Patch') || line.startsWith('*** Move to:')) cls += ' oc-patch-meta';
-        else if (line.startsWith('@@')) cls += ' oc-patch-hunk';
-        else if (line.startsWith('+')) cls += ' oc-patch-add';
-        else if (line.startsWith('-')) cls += ' oc-patch-del';
-
-        const fileMatch = line.match(/^\*\*\* (Add|Update|Delete) File: (.+)$/);
-        const displayLine = fileMatch ? `*** ${fileMatch[1]} File: ${shortenPatchPath(fileMatch[2])}` : line;
-
-        return <div key={i} className={cls}>{displayLine || ' '}</div>;
-      })}
-    </div>
-  );
-}
-
-function AnsweredQuestionBlock({ questions, answers }: { questions: QuestionData[]; answers: string[] }) {
-  return (
-    <div className="oc-question-list">
-      {questions.map((q, index) => (
-        <div key={index} className="oc-question-card oc-question-answered-card">
-          <div className="oc-question-text">{q.question}</div>
-          <div className="oc-question-answer">{answers[index] || ''}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-
-// Renders shell output that may contain ANSI escape sequences. Falls
-// back to a plain text node when no escapes are present so we don't
-// pay any DOM-overhead cost on uncolored output (the common case for
-// successful commands).
-function AnsiText({ text }: { text: string }) {
-  if (!hasAnsi(text)) return <>{text}</>;
-  const segments = parseAnsi(text);
-  return (
-    <>
-      {segments.map((seg, i) => {
-        if (!hasStyle(seg)) return <React.Fragment key={i}>{seg.text}</React.Fragment>;
-        return (
-          <span key={i} className={ansiClassNames(seg)}>{seg.text}</span>
-        );
-      })}
-    </>
-  );
-}
-
-function ansiClassNames(seg: AnsiSegment): string {
-  const classes: string[] = ['oc-ansi'];
-  if (seg.fg) classes.push(`oc-ansi-fg-${seg.fg}`);
-  if (seg.bg) classes.push(`oc-ansi-bg-${seg.bg}`);
-  if (seg.bold) classes.push('oc-ansi-bold');
-  if (seg.dim) classes.push('oc-ansi-dim');
-  if (seg.italic) classes.push('oc-ansi-italic');
-  if (seg.underline) classes.push('oc-ansi-underline');
-  return classes.join(' ');
-}
-
-function taskActivity(
-  liveTools: { toolName: string; summary?: string }[],
-  parts: import('../../lib/api').Part[],
-) {
-  const liveTool = liveTools.at(-1);
-  if (liveTool) return `${liveTool.toolName}${liveTool.summary ? `: ${liveTool.summary}` : ''}`;
-
-  for (let i = parts.length - 1; i >= 0; i--) {
-    const data = parts[i].data;
-    const part = typeof data === 'string'
-      ? (() => { try { return JSON.parse(data) as import('../../lib/api').PartData; } catch { return null; } })()
-      : data;
-    if (!part || part.type === 'reasoning') continue;
-    if (part.type === 'tool' && part.tool) {
-      return part.state?.title ? `${part.tool}: ${part.state.title}` : `Using ${part.tool}`;
-    }
-    const text = part.text;
-    if (text?.trim()) return text.replace(/\s+/g, ' ').trim();
-  }
-  return 'Waiting for activity...';
-}
-
-/**
- * Permission approval shown under the tool call it unblocked. AI
- * approvals reveal the judge's reasoning when clicked.
- */
-function ApprovalFootnote({ approvals }: { approvals: ToolApproval[] }) {
-  const [openState, setOpen] = useState(false);
-  const detailId = useId();
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const isPrinting = useIsPrinting();
-  const printCollapse = usePrintCollapse();
-  const open = openState || (isPrinting && !printCollapse);
-  const aiApprovals = approvals.filter((approval) => approval.approvedBy === 'ai');
-  const userApproved = approvals.some((approval) => approval.approvedBy === 'user');
-  return (
-    <div className="oc-ai-approval-footnote">
-      {userApproved && <div>Approved by user</div>}
-      {aiApprovals.length > 0 && (
-        <button
-          ref={triggerRef}
-          type="button"
-          className="oc-ai-approval-toggle"
-          aria-expanded={open}
-          aria-controls={detailId}
-          onClick={() => setOpen(!openState)}
-          onKeyDown={(event) => {
-            if (event.key !== 'Escape' || !openState) return;
-            event.preventDefault();
-            setOpen(false);
-            triggerRef.current?.focus();
-          }}
-        >
-          Approved by AI
-        </button>
-      )}
-      {open && aiApprovals.length > 0 && (
-        <div
-          className="oc-ai-approval-detail"
-          data-testid="ai-approval-detail"
-          id={detailId}
-          role="region"
-          aria-label="AI approval reason"
-        >
-          {aiApprovals.map((approval, i) => (
-            <div className="oc-ai-approval-entry" key={i}>
-              {approval.permission && (
-                <div className="oc-ai-approval-permission">{approval.permission}</div>
-              )}
-              {approval.patterns.length > 0 && (
-                <div className="oc-ai-approval-patterns">{approval.patterns.join(', ')}</div>
-              )}
-              {approval.reasoning && (
-                <div className="oc-ai-approval-reasoning">{approval.reasoning}</div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
+import { ApprovalFootnote } from './ApprovalFootnote';
+import { TaskToolCard } from './TaskToolCard';
+import { FactoryMarkerCard } from '../FactoryMarkerCard';
+import { factoryCardFromToolResult } from '../factoryCards';
+import { AnsiText, AnsweredQuestionBlock, BashPrompt, InlineDiff, ToolDuration } from './toolRenderers';
+import { parseDiffPayload, renderOutput, renderPatch, shellOutputIsLong, shellOutputPreview, toolOutputPreview } from './toolOutputFormat';
 /**
  * Tool-call renderer. Validated Ocman approval artifacts render below the
  * tool body; argsText remains entirely user-visible and untrusted.
@@ -380,6 +58,7 @@ export const ToolCallDisplay: FC<ToolCallMessagePartProps> = (props) => {
   );
 };
 
+
 function toolApprovals(artifact: unknown): ToolApproval[] {
   if (!artifact || typeof artifact !== 'object' || Array.isArray(artifact)) return [];
   const approvals = (artifact as { ocmanApprovals?: unknown }).ocmanApprovals;
@@ -397,7 +76,6 @@ function toolApprovals(artifact: unknown): ToolApproval[] {
 
 const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArgsText, artifact, result }) => {
   const [expandedState, setExpanded] = useState(false);
-  const [taskExpandedState, setTaskExpanded] = useState(false);
   // While printing / saving to PDF, force every block open so the
   // exported transcript is complete. CSS lifts the max-height caps
   // (see the @media print block in tokens.css); this additionally
@@ -412,7 +90,6 @@ const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArg
   const printCollapse = usePrintCollapse();
   const forcePrintExpand = isPrinting && !printCollapse;
   const expanded = expandedState || forcePrintExpand;
-  const taskExpanded = taskExpandedState || forcePrintExpand;
 
   // Extract timing data from the @time: line, if present.
   const timeInfo = parseToolTime(rawArgsText || '');
@@ -453,65 +130,7 @@ const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArg
   }
 
   // Subagent tasks render their final result as a short markdown preview.
-  if (toolName === '__task__') {
-    const lines = (argsText || '').split('\n');
-    const taskStatus = lines[0] || 'running';
-    const label = lines.slice(1).join(' ').trim() || 'Subagent task';
-
-    let sessionId = '';
-    let taskOutput = '';
-    type LiveTool = { toolName: string; summary?: string; subagentId?: string; startedAt?: string };
-    let liveTools: LiveTool[] = [];
-    let subParts: import('../../lib/api').Part[] = [];
-    try {
-      const parsed = JSON.parse(typeof result === 'string' ? result : '{}');
-      sessionId = parsed.taskId || '';
-      const rawTaskOutput = parsed.taskOutput || '';
-      taskOutput = (rawTaskOutput.match(/<task_result(?:\s[^>]*)?>([\s\S]*?)(?:<\/task_result>|$)/i)?.[1] ?? rawTaskOutput).trim();
-      if (Array.isArray(parsed.liveTools)) liveTools = parsed.liveTools as LiveTool[];
-      if (parsed.subSession) {
-        const sub = parsed.subSession as { parts?: unknown[] };
-        if (Array.isArray(sub.parts)) subParts = sub.parts as import('../../lib/api').Part[];
-      }
-    } catch { /* ignore */ }
-
-    let statusClass = 'oc-tool-running';
-    let statusTitle = 'Running';
-    if (taskStatus === 'completed') { statusClass = 'oc-tool-done'; statusTitle = 'Completed'; }
-    else if (taskStatus === 'error') { statusClass = 'oc-tool-error'; statusTitle = 'Error'; }
-
-    const activity = taskActivity(liveTools, subParts);
-
-    return (
-      <div className={`oc-tool oc-tool-task ${statusClass} ${taskExpanded ? 'oc-tool-expanded' : ''}`}>
-        <div className="oc-tool-header">
-          <span className="oc-tool-label">{label}</span>
-          <span className={`oc-task-status ${statusClass}`}>{statusTitle}</span>
-          {timeInfo && <ToolDuration startedAt={timeInfo.startedAt} completedAt={timeInfo.completedAt} isRunning={taskStatus === 'running'} />}
-          {sessionId && <Link className="oc-task-link" to={`/session/${encodeURIComponent(sessionId)}`} aria-label="Open detailed subagent session">{'\u2197'}</Link>}
-        </div>
-        {taskOutput ? (
-          <div
-            className={`oc-task-result oc-md ${taskExpanded ? 'oc-task-result-expanded' : ''}`}
-            role="button"
-            tabIndex={0}
-            aria-expanded={taskExpanded}
-            aria-label={`${taskExpanded ? 'Collapse' : 'Expand'} subagent task result`}
-            onClick={() => setTaskExpanded((expanded) => !expanded)}
-            onKeyDown={(event) => {
-              if (event.key !== 'Enter' && event.key !== ' ') return;
-              event.preventDefault();
-              setTaskExpanded((expanded) => !expanded);
-            }}
-          >
-            <MarkdownText text={taskOutput} />
-          </div>
-        ) : (
-          <div className="oc-task-activity" data-testid="subagent-activity" title={activity} aria-live="polite">{activity}</div>
-        )}
-      </div>
-    );
-  }
+  if (toolName === '__task__') return <TaskToolCard argsText={argsText} result={result} timeInfo={timeInfo} />;
 
   // Questions are answered in the composer slot. While pending, show a muted
   // summary. Once answered, repeat the question and answer in a compact block.
@@ -727,6 +346,7 @@ const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArg
     expanded ? 'oc-tool-compact-expanded' : '',
   ].filter(Boolean).join(' ');
   const hasBody = !!(detail || outputDisplay);
+  const factoryCard = factoryCardFromToolResult(toolName, outputDisplay);
   const compactLine = (
     <>
       <span className="oc-read-arrow" aria-hidden="true" title={statusTitle}>{arrowIcon}</span>
@@ -736,7 +356,7 @@ const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArg
     </>
   );
 
-  return (
+  const row = (
     <div className={compactClass}>
       {/* A button only when there is something to reveal; an inert line
           otherwise, so nothing focusable does nothing. */}
@@ -763,20 +383,7 @@ const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArg
       )}
     </div>
   );
+  // Outside the compact row so a denied call's error colour doesn't tint the card.
+  if (!factoryCard) return row;
+  return <>{row}<div><FactoryMarkerCard epicID={factoryCard.epicID} issueID={factoryCard.issueID} action={factoryCard.action} /></div></>;
 };
-
-const TOOL_OUTPUT_PREVIEW_CHARS = 5000;
-const SHELL_OUTPUT_PREVIEW_LINES = 12;
-
-function toolOutputPreview(output: string, expanded: boolean): string {
-  if (expanded || output.length <= TOOL_OUTPUT_PREVIEW_CHARS) return output;
-  return `${output.slice(0, TOOL_OUTPUT_PREVIEW_CHARS)}\n... (${output.length} chars total)`;
-}
-
-function shellOutputIsLong(output: string): boolean {
-  return output.length > TOOL_OUTPUT_PREVIEW_CHARS || output.split('\n').length > SHELL_OUTPUT_PREVIEW_LINES;
-}
-
-function shellOutputPreview(output: string): string {
-  return output.split('\n').slice(0, SHELL_OUTPUT_PREVIEW_LINES).join('\n').slice(0, TOOL_OUTPUT_PREVIEW_CHARS);
-}

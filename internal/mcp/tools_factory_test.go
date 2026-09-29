@@ -254,7 +254,7 @@ func TestFactoryActionRegistryKeepsHelpAndValidationConsistent(t *testing.T) {
 	if err := json.Unmarshal([]byte(resultText(help)), &documented); err != nil {
 		t.Fatalf("decode help: %v", err)
 	}
-	if guidance, ok := documented["reply_cards"].(string); !ok || !strings.Contains(guidance, "Do not") || !strings.Contains(guidance, "[[ocman:card") {
+	if guidance, ok := documented["reply_cards"].(string); !ok || !strings.Contains(guidance, "Never copy") || !strings.Contains(guidance, "[[ocman:card") {
 		t.Fatalf("missing card emission guidance: %#v", documented["reply_cards"])
 	}
 	actions, ok := documented["actions"].([]any)
@@ -326,7 +326,7 @@ func TestDeniedFactoryActionsOfferHumanCards(t *testing.T) {
 			}
 			card := got.Content[1].(mcplib.TextContent).Text
 			marker := "[[ocman:card " + tc.target + " action=" + tc.args["action"].(string) + "]]"
-			if !strings.Contains(card, marker) || !strings.Contains(card, "human") {
+			if !strings.Contains(card, marker) || !strings.Contains(card, "human") || !strings.Contains(card, "they must handle it there") || !strings.Contains(card, "Do not copy the marker") {
 				t.Fatalf("card = %q, want %q", card, marker)
 			}
 		})
@@ -353,7 +353,7 @@ func TestFactoryToolCreatesEpicForPreplannedGraph(t *testing.T) {
 		t.Fatalf("create = %q", resultText(got))
 	}
 	guidance := got.Content[1].(mcplib.TextContent).Text
-	if !strings.Contains(guidance, "Only in this creation response") || !strings.Contains(guidance, "Do not repeat") || !strings.Contains(guidance, "[[ocman:card type=factory-epic epic=epic-1 action=created]]") {
+	if !strings.Contains(guidance, "Do not copy the marker") || !strings.Contains(guidance, "[[ocman:card type=factory-epic epic=epic-1 action=created]]") {
 		t.Fatalf("creation card guidance must be scoped to this response: %q", guidance)
 	}
 	if svc.createReq.Goal != "Ship" || svc.createReq.Brief != "Already broken down" || svc.createReq.InitialProject != "/repo" || !svc.createReq.AcknowledgeLocalExecution || svc.createReq.FormulaID != "" || svc.createReq.EpicID != "pretty-epic-ids" || !reflect.DeepEqual(svc.createReq.Projects, []factory.ProjectAdmission{{Path: "/docs", AcknowledgeLocalExecution: true}}) {

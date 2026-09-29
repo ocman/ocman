@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import { useState, type ReactNode } from 'react';
 import type { FactoryAuthorityEscalationGate, FactoryEpic, FactoryIssue, FactoryPlanGate, FactoryProjectRequestGate, FactoryRecoveryGate } from '../lib/api';
 import { useClaimFactoryPlan, useDecideFactoryPlanGate, useFactoryIssues, useMaterializeFactoryPlan, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryProjectGate, useResolveFactoryRecoveryGate, useWorkEpic } from '../lib/queries';
-import { Button } from './Control';
+import { Button, SelectField, TextField } from './Control';
 import { FactoryImplementationModel } from './FactoryImplementationModel';
 import { useFactoryImplementationModel } from './useFactoryImplementationModel';
 import './FactoryEpicCard.css';
@@ -14,7 +14,7 @@ function PlanActions({ epic, gate }: { epic: FactoryEpic; gate: FactoryPlanGate 
   const [feedback, setFeedback] = useState('');
   return <span className="oc-factory-action-issue">
     <span>Plan revision {gate.proposalRevision}. Approval starts implementation.</span>
-    <label>Plan feedback<input value={feedback} onChange={(event) => setFeedback(event.target.value)} /></label>
+    <label>Plan feedback<TextField value={feedback} onChange={(event) => setFeedback(event.target.value)} /></label>
     <FactoryImplementationModel {...implementation} />
     <span className="oc-factory-action-buttons">{(['approve', 'revise', 'reject'] as const).map((action) => <Button key={action} type="button" disabled={decide.isPending || decide.isSuccess || (action === 'approve' && implementation.loading)} onClick={() => decide.mutate({ action, expectedRevision: gate.proposalRevision, expectedHash: gate.proposalHash, feedback, ...(action === 'approve' && implementation.model && { implementationModel: implementation.model }) })}>{action === 'approve' ? 'Approve plan' : action === 'revise' ? 'Request revision' : 'Reject plan'}</Button>)}</span>
     {decide.isPending && <span role="status">Saving decision…</span>}
@@ -29,7 +29,7 @@ function RecoveryActions({ gate }: { gate: FactoryRecoveryGate }) {
   const actions = gate.resolution === 'resume_pending' ? ['resume'] as const : ['resume', 'retry', 'cancel'] as const;
   return <span className="oc-factory-action-issue">
     <strong>{gate.question}</strong><span>{gate.reason}</span>
-    <label>Recovery response{gate.choices?.length ? <select value={response} onChange={(event) => setResponse(event.target.value)}>{gate.choices.map((choice) => <option key={choice}>{choice}</option>)}</select> : <input value={response} onChange={(event) => setResponse(event.target.value)} />}</label>
+    <label>Recovery response{gate.choices?.length ? <SelectField value={response} onChange={(event) => setResponse(event.target.value)}>{gate.choices.map((choice) => <option key={choice}>{choice}</option>)}</SelectField> : <TextField value={response} onChange={(event) => setResponse(event.target.value)} />}</label>
     <span className="oc-factory-action-buttons">{actions.map((action) => <Button key={action} type="button" disabled={resolve.isPending || resolve.isSuccess} onClick={() => resolve.mutate({ id: gate.issueId, action, response: action === 'resume' ? response : '' })}>{action === 'resume' ? 'Resume work' : action === 'retry' ? 'Retry work' : 'Cancel work'}</Button>)}</span>
     {resolve.isPending && <span role="status">Saving recovery decision…</span>}
     {resolve.isSuccess && <span role="status">Recovery decision saved.</span>}
@@ -131,7 +131,7 @@ export function FactoryActionCard({ epicID, issueID = '', requestedAction, child
   const link = <Link to={issueID ? `/factory/issues/${encodeURIComponent(issueID)}` : to}>{children}</Link>;
   if (!epicID) return link;
   if (!epic.isSuccess || !issues.isSuccess) return <>
-    {(epic.isError || issues.isError) && <span role="alert">Could not load Factory actions. {link} <button type="button" onClick={() => { void epic.refetch(); void issues.refetch(); }}>Retry</button></span>}
+    {(epic.isError || issues.isError) && <span role="alert">Could not load Factory actions. {link} <Button type="button" onClick={() => { void epic.refetch(); void issues.refetch(); }}>Retry</Button></span>}
   </>;
   if (!requiresHumanAction(epic.data, issues.data, issueID, requestedAction)) return null;
   return <span className="oc-epic-card oc-factory-action-card" aria-label="Factory human actions">

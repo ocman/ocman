@@ -1,4 +1,4 @@
-.oc-epic-card { display: inline-grid; gap: 2px; max-width: 100%; margin: 4px 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-card); vertical-align: top; }
+.oc-epic-card { display: inline-grid; gap: 2px; max-width: 100%; margin: 4px 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 0; background: var(--bg-card); vertical-align: top; }
 .oc-epic-card-goal { font-weight: 600; }
 .oc-epic-card-status { font-size: 12px; }
 .oc-epic-card-status--action { color: var(--peach); }
@@ -8,3 +8,4 @@
 .oc-factory-action-card { gap: 8px; min-width: min(300px, 100%); }
 .oc-factory-action-issue { display: grid; gap: 4px; border-top: 1px solid var(--border); padding-top: 8px; }
 .oc-factory-action-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.oc-factory-action-issue > label:not(:has(input[type="checkbox"])) { display: grid; gap: 4px; }

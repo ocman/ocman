@@ -84,10 +84,10 @@ production binary. Change it if you moved the listener with `-mcp-addr`.
 
 Ocman installs the `ocman-factory` skill globally for OpenCode. It teaches the
 single action-based `factory` tool and directs agents to `action: "help"`
-before using detailed actions. Agents copy the returned `[[ocman:card ...]]`
-marker verbatim in the response that creates an epic or requests a required
-human action, not as a footer on every turn or routine status update. Markers
-must appear as normal text, outside code blocks or markdown links.
+before using detailed actions. When a result creates an epic or needs a human
+action, it carries a `[[ocman:card ...]]` marker and Ocman renders the card under
+that tool call. The tool text tells the agent a card is waiting for the user and
+that the user must handle it there; agents do not copy the marker into replies.
 
 Factory tool errors intentionally contain only domain-level guidance. Open
 Factory at `/factory` to inspect the native Issue graph.
@@ -102,11 +102,12 @@ available through `mutate_graph`; `create` can create Epics after explicitly
 acknowledging local execution and uses the built-in tracer Formula. `save_formula`,
 `set_capacity_policy`, Plan decisions, recovery decisions, authority
 decisions, and `reopen_issue` (returning failed work to the queue) are
-refused. Each permission denial returns a card marker for the agent's reply.
+refused. Each permission denial returns a card marker that renders with the tool call.
 Ocman interprets its type, target IDs, and action, then reads the live state to
 decide whether to render a card. Action markers show nothing while loading or
-after that action is resolved. Creation markers remain visible. Ordinary markdown
-links stay links; markers inside code examples are displayed literally.
+after that action is resolved. Creation markers remain visible. A marker written
+in assistant text also renders; ordinary markdown links stay links and markers
+inside code examples are displayed literally.
 
 For example:
 
