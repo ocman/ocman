@@ -102,7 +102,7 @@ func BuiltInTracerFormula() TracerFormula {
 	if err != nil {
 		panic("invalid built-in tracer Formula: " + err.Error())
 	}
-	return TracerFormula{ID: "ocman/tracer", Version: 3, Source: tracerWorkflowSource, Hash: compiled.Hash}
+	return TracerFormula{ID: "ocman/tracer", Version: 4, Source: tracerWorkflowSource, Hash: compiled.Hash}
 }
 
 func sourceHash(source string) string {

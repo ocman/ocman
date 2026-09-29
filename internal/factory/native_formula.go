@@ -22,6 +22,9 @@ func (s *NativeService) GetFormula(ctx context.Context, id string, version int) 
 	if id == formula.ID && version == 1 {
 		formula.Version, formula.Source = 1, tracerFormulaSource
 	}
+	if id == formula.ID && version == 3 {
+		formula.Version, formula.Source = 3, tracerWorkflowV3Source
+	}
 	if id == formula.ID && version == 2 {
 		formula.Version, formula.Source = 2, tracerFormulaV2Source
 	}
@@ -201,8 +204,11 @@ func (s *NativeService) compositionErrors(ctx context.Context, root string, revi
 }
 
 func (s *NativeService) compositionSource(ctx context.Context, id string, revision int) (string, error) {
-	if id == "ocman/tracer" && revision == 3 {
+	if id == "ocman/tracer" && revision == 4 {
 		return tracerWorkflowSource, nil
+	}
+	if id == "ocman/tracer" && revision == 3 {
+		return tracerWorkflowV3Source, nil
 	}
 	if id == "ocman/tracer" && revision == 2 {
 		return tracerFormulaV2Source, nil

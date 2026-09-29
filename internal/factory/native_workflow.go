@@ -15,8 +15,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-//go:embed tracer-v3.yaml
+//go:embed tracer-v4.yaml
 var tracerWorkflowSource string
+
+//go:embed tracer-v3.yaml
+var tracerWorkflowV3Source string
 
 func (definition compiledNativeFormula) viewPrompts() map[string]string {
 	if definition.Steps != nil {

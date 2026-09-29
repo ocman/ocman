@@ -1,0 +1,57 @@
+version: 2
+name: Tracer
+
+steps:
+  plan:
+    kind: planning
+    prompt: |
+      Inspect the repository and clarify the goal, scope, and non-goals with the user.
+      Ask one question at a time. Wait for the user to proceed before proposing work.
+      Write the design into rationale_markdown so approval covers it, not only the task list:
+      - Product: the problem, the desired behavior, and the non-goals.
+      - Architecture: component contracts, data models, and constraints.
+      - Program design: the new or changed types, function signatures, and call flow.
+      Split the work into tracer-bullet vertical slices. Each slice cuts through every
+      layer it needs and can be verified on its own; avoid horizontal layer-by-layer tasks.
+      Give each task acceptance criteria, explicit dependencies, and the part of the
+      program design it implements, because implementation sessions only see their task.
+      Recap the proposed tasks after submission.
+    config:
+      scope_expansion_prompt: |
+        Inspect the retained graph and propose only the newly required work as vertical slices.
+        Preserve completed work and make the interrupted task wait for its new prerequisites.
+
+  approve:
+    kind: approval
+    needs: [plan]
+
+  implement:
+    kind: implementation
+    needs: [approve]
+    config:
+      concurrency: 1
+    prompt: |
+      Implement the assigned task with the smallest correct change.
+      Follow the approved program design; if it cannot work, say why in your summary.
+      Run the relevant checks and leave the shared worktree on a clean commit.
+
+  verify:
+    kind: verification
+    needs: [implement]
+    prompt: |
+      Read the approved design: list the Epic's factory proposals, then read the approved
+      revision's rationale. Review the project's combined changes against it and the plan.
+      Report every departure from the approved types, signatures, and structure.
+      Run the repository-required checks. Report failures through request_recovery.
+      Only complete this step when all required checks pass.
+
+  deliver:
+    kind: delivery
+    needs: [verify]
+    prompt: |
+      Read the approved design from the Epic's approved factory proposal rationale.
+      Write the pull request so a reviewer can confirm it matches what was approved.
+      List departures from the approved design first, with the reason for each.
+      Then map each change to the design item and acceptance criterion it satisfies,
+      followed by the verification results.
+      Create or reuse the project's final pull request and mark it ready for review.

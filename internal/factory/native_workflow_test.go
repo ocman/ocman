@@ -22,7 +22,7 @@ func TestWorkflowChecksEveryChangedProjectBeforeDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if epic.FormulaVersion != 3 {
+	if epic.FormulaVersion != 4 {
 		t.Fatal("new epics do not use YAML")
 	}
 	if _, err := svc.Pour(t.Context(), epic.ID); err != nil {

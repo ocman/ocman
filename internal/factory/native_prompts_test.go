@@ -114,7 +114,7 @@ func TestBuiltInFormulaContainsItsPrompts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if current.Version != 3 || len(compiled.Steps) != 5 {
+	if current.Version != 4 || len(compiled.Steps) != 5 {
 		t.Fatalf("built-in = %#v", view)
 	}
 	for key, step := range view.Steps {
@@ -134,11 +134,37 @@ func TestBuiltInFormulaContainsItsPrompts(t *testing.T) {
 		t.Fatal("legacy revision was rewritten")
 	}
 	listed, err := svc.ListFormulas(t.Context())
-	if err != nil || len(listed) == 0 || listed[0].Version != 3 {
+	if err != nil || len(listed) == 0 || listed[0].Version != 4 {
 		t.Fatalf("listed = %#v, %v", listed, err)
 	}
 	if source, err := svc.compositionSource(t.Context(), current.ID, current.Version); err != nil || source != view.Source {
 		t.Fatalf("composition source = %q, %v", source, err)
+	}
+	v3, err := svc.GetFormula(t.Context(), current.ID, 3)
+	if err != nil || v3.Source != tracerWorkflowV3Source || v3.Hash == current.Hash {
+		t.Fatalf("v3 revision was rewritten: %v", err)
+	}
+	if source, err := svc.compositionSource(t.Context(), current.ID, 3); err != nil || source != tracerWorkflowV3Source {
+		t.Fatalf("v3 composition source = %v", err)
+	}
+}
+
+func TestBuiltInFormulaAsksForDesignAndVerticalSlices(t *testing.T) {
+	compiled, err := compileNativeFormula(tracerWorkflowSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for step, want := range map[string][]string{
+		"plan":      {"rationale_markdown", "Program design", "vertical slices"},
+		"implement": {"approved program design"},
+		"verify":    {"approved design", "departure"},
+		"deliver":   {"approved design", "departures", "acceptance criterion"},
+	} {
+		for _, phrase := range want {
+			if !strings.Contains(compiled.Steps[step].Prompt, phrase) {
+				t.Errorf("%s prompt lacks %q", step, phrase)
+			}
+		}
 	}
 }
 

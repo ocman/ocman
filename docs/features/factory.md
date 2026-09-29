@@ -101,11 +101,20 @@ steps:
 ```
 
 Use **Customize Tracer** in Factory configuration to start from the current
-built-in workflow, `ocman/tracer@3`. Expand **Formula source** to edit the YAML
+built-in workflow, `ocman/tracer@4`. Expand **Formula source** to edit the YAML
 in a full-width, 15-line editor that can be resized vertically. Validate and
 preview it before saving an immutable revision. The graph includes implementation
 and every post-implementation check. Expand the implementation phase in an Epic's
 graph to see its planned tasks.
+
+The built-in planner writes the design into the proposal rationale before
+approval: the problem and desired behaviour, the contracts and data models, and
+the program design (new or changed types, signatures, and call flow). It splits
+the work into vertical slices, each of which can be checked on its own.
+Verification reads that approved rationale and reports where the code departs
+from it. The delivery PR lists those departures first, then maps each change to
+its design item and acceptance criterion. Epics pinned to `ocman/tracer@3` keep
+their original prompts.
 
 The first version supports one planning step, one implementation group, and one
 final delivery step. An initial plan approval must precede implementation. Add
