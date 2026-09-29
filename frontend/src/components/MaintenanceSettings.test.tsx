@@ -70,6 +70,21 @@ describe('MaintenanceSettings', () => {
     expect(screen.getByRole('button', { name: 'Restore' })).toBeEnabled();
   });
 
+  it('shows the clicked button busy while the request is in flight', async () => {
+    let finish!: (s: MaintenanceStatus) => void;
+    m.status.mockResolvedValue(status({ dumpBytes: 1e9 }));
+    m.deleteDump.mockReturnValue(new Promise<MaintenanceStatus>((resolve) => { finish = resolve; }));
+    render(<MaintenanceSettings />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete dump' }));
+    const button = screen.getByRole('button', { name: 'Delete dump' });
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(button).toBeDisabled();
+
+    await act(async () => { finish(status()); });
+    expect(await screen.findByText('No dump yet.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Delete dump' })).toHaveAttribute('aria-busy', 'false');
+  });
+
   it('does nothing when the confirmation is declined', async () => {
     vi.mocked(window.confirm).mockReturnValue(false);
     m.status.mockResolvedValue(status({ dumpBytes: 1e9 }));

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { maintenance, type MaintenanceStatus } from '../lib/maintenance';
+import { SubmitButton } from './Control';
 import { SettingRow } from './SettingRow';
 import './MaintenanceSettings.css';
 
@@ -60,7 +61,7 @@ export function MaintenanceSettings() {
   const { job } = status;
   return <>
     <SettingRow label="OpenCode database" desc={<><code>{status.dbPath}</code> · {gb(status.dbBytes)}</>}>
-      <button type="button" className="vscode-btn" disabled={running} onClick={() => { void refresh(); }}>Refresh</button>
+      <SubmitButton size="small" disabled={running} onClick={() => refresh()}>Refresh</SubmitButton>
     </SettingRow>
     <SettingRow
       label="Remove old diffs"
@@ -71,29 +72,26 @@ export function MaintenanceSettings() {
         such as an opencode you started yourself, has the database open. A full backup exists while the job runs;
         the removed patches are kept in a dump so they can be restored.</>}
     >
-      <button
-        type="button"
-        className="vscode-btn"
+      <SubmitButton
+        size="small"
         disabled={running}
-        onClick={() => { void act(`Stop opencode and remove diffs older than ${status.cutoffDays} days?`, maintenance.cleanup); }}
-      >Clean up</button>
+        onClick={() => act(`Stop opencode and remove diffs older than ${status.cutoffDays} days?`, maintenance.cleanup)}
+      >Clean up</SubmitButton>
     </SettingRow>
     <SettingRow
       label="Removed diffs"
       desc={hasDump ? <><code>{status.dumpPath}</code> · {gb(status.dumpBytes)}</> : 'No dump yet.'}
     >
-      <button
-        type="button"
-        className="vscode-btn"
+      <SubmitButton
+        size="small"
         disabled={running || !hasDump}
-        onClick={() => { void act('Stop opencode and put the removed diffs back?', maintenance.restore); }}
-      >Restore</button>
-      <button
-        type="button"
-        className="vscode-btn"
+        onClick={() => act('Stop opencode and put the removed diffs back?', maintenance.restore)}
+      >Restore</SubmitButton>
+      <SubmitButton
+        size="small"
         disabled={running || !hasDump}
-        onClick={() => { void act('Delete the dump? The removed diffs can no longer be restored.', maintenance.deleteDump); }}
-      >Delete dump</button>
+        onClick={() => act('Delete the dump? The removed diffs can no longer be restored.', maintenance.deleteDump)}
+      >Delete dump</SubmitButton>
     </SettingRow>
     {error && <p role="alert">{error}</p>}
     {job.steps.length > 0 && (

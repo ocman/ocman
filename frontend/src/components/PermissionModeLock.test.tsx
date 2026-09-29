@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PermissionModeLock } from './PermissionModeLock';
 import { PERMISSION_MODES } from '../lib/permissionModes';
@@ -84,6 +84,23 @@ describe('PermissionModeLock', () => {
         PERMISSION_MODES.find((m) => m.id === 'yolo')!.rules,
       ),
     );
+    expect(screen.getByLabelText('Permission mode: YOLO')).toBeInTheDocument();
+  });
+
+  it('keeps the confirmation open and busy until yolo is saved', async () => {
+    let finish!: () => void;
+    getPermissionRules.mockResolvedValue({ rules: [] });
+    setPermissionRules.mockReturnValue(new Promise<void>((resolve) => { finish = resolve; }));
+    render(<PermissionModeLock sessionId="s1" />);
+    await userEvent.click(await screen.findByLabelText('Permission mode: Default'));
+
+    await userEvent.click(screen.getByText('YOLO'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
+    const dialog = screen.getByRole('dialog', { name: 'Confirm permission mode' });
+    expect(within(dialog).getByRole('button', { name: 'Applying…' })).toHaveAttribute('aria-busy', 'true');
+
+    finish();
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Confirm permission mode' })).not.toBeInTheDocument());
     expect(screen.getByLabelText('Permission mode: YOLO')).toBeInTheDocument();
   });
 });
