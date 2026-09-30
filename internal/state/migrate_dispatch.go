@@ -7,7 +7,8 @@ import (
 
 // v100 adds viewer-scoped preview-provider consent (preview_auth.go).
 // v101 adds artifacts and their relay shares (artifacts.go).
-const latestSchemaVersion = 101
+// v102 adds viewer-scoped Inbox item pins.
+const latestSchemaVersion = 102
 
 // applyMigration runs the DDL for the given target version.
 func applyMigration(tx *sql.Tx, target int) error {
@@ -228,6 +229,14 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV100(tx)
 	case 101:
 		return migrateToV101(tx)
+	case 102:
+		_, err := tx.Exec(`CREATE TABLE IF NOT EXISTS pinned_inbox_item (
+			remote_id TEXT NOT NULL,
+			item_id TEXT NOT NULL,
+			pinned_at INTEGER NOT NULL,
+			PRIMARY KEY (remote_id, item_id)
+		)`)
+		return err
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}

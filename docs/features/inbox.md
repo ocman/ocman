@@ -15,6 +15,8 @@ while the others show icons with hover titles. Each message in the sidebar also
 shows its category icon before the title. Older messages appear under Primary.
 
 Opening a message marks it read. Mark unread returns it to the unread list.
+Pinning is a user-only action that keeps selected messages above the rest, in
+most-recently-pinned order. Agents cannot pin or unpin messages through MCP.
 Messages show their source machine in the reading pane, but there is no machine
 filter. Every detail header includes the originating session link, or
 "Originating session unavailable" for messages without recorded session metadata.
