@@ -124,6 +124,29 @@ func (d *DB) ListRunningRoutineRuns(ctx context.Context) ([]RoutineRun, error) {
 	return runs, rows.Err()
 }
 
+// RoutineSessions maps each session a routine launched to its routine ID.
+// Sessions a routine merely prompted (session mode "existing") belong to the
+// user and are not tagged.
+// ponytail: full scan of routine_run per session list; index (platform, session_id) if history grows large.
+func (d *DB) RoutineSessions(ctx context.Context) (map[Key]string, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT platform, session_id, routine_id FROM routine_run
+		WHERE session_id != '' AND session_mode != 'existing' ORDER BY created_at`)
+	if err != nil {
+		return nil, fmt.Errorf("listing routine sessions: %w", err)
+	}
+	defer rows.Close()
+	sessions := make(map[Key]string)
+	for rows.Next() {
+		var key Key
+		var routineID string
+		if err := rows.Scan(&key.Platform, &key.SessionID, &routineID); err != nil {
+			return nil, fmt.Errorf("scanning routine session: %w", err)
+		}
+		sessions[key] = routineID
+	}
+	return sessions, rows.Err()
+}
+
 func (d *DB) LinkRoutineRun(ctx context.Context, id, platform, sessionID string, startedAt int64, bindRoutine bool) error {
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {

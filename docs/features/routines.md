@@ -10,6 +10,12 @@ Choose how each routine uses OpenCode sessions:
 - **Reuse session** starts a session on the first run and continues it later.
 - **Existing session** continues a session you select from the project.
 
+A session a routine starts is titled with the routine's name and launch time (for example
+`Daily check 2026-09-30 15:04`) and tagged as a
+routine session. The session sidebar hides routine sessions and their children
+until you check **Show routines** under **Filter sessions**. Existing sessions a
+routine continues stay yours and are not tagged.
+
 ## Create and manage routines
 
 Open **Routines** from the main navigation, then select **New routine**. Enter

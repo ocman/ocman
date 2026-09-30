@@ -215,6 +215,7 @@ func TestHandleSessions_StateOverlay_AppliesArchivedSeenPinned(t *testing.T) {
 			mkSession("fake", "arch", "a", 1000),
 			mkSession("fake", "seen", "b", 1000),
 			mkSession("fake", "pin", "c", 1000),
+			mkSession("fake", "routine", "d", 1000),
 		},
 	})
 	applyStateSetup(t, srv.stateDB, stateSetup{
@@ -222,6 +223,15 @@ func TestHandleSessions_StateOverlay_AppliesArchivedSeenPinned(t *testing.T) {
 		seen:     []stateRow{{"fake", "seen", 1000}}, // seenAt >= timeUpdated → seen
 		pinned:   []stateRow{{"fake", "pin", 0}},
 	})
+	if err := srv.stateDB.CreateRoutine(t.Context(), state.Routine{ID: "rt", Name: "Nightly", Prompt: "p", Directory: "/d", RemoteID: "local", SessionMode: "new", ScheduleKind: "none", ScheduleConfigJSON: "{}", CreatedAt: 1, UpdatedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := srv.stateDB.ClaimRoutineRun(t.Context(), state.RoutineRun{ID: "run", RoutineID: "rt", Trigger: "manual", State: "running", OccurrenceAt: 1, CreatedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.stateDB.LinkRoutineRun(t.Context(), "run", "fake", "routine", 2, false); err != nil {
+		t.Fatal(err)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
 	rr := httptest.NewRecorder()
@@ -243,6 +253,9 @@ func TestHandleSessions_StateOverlay_AppliesArchivedSeenPinned(t *testing.T) {
 	}
 	if !byID["pin"].Pinned {
 		t.Errorf("session pin: expected Pinned=true")
+	}
+	if byID["routine"].RoutineID != "rt" || byID["pin"].RoutineID != "" {
+		t.Errorf("routine tags = %q/%q, want rt/empty", byID["routine"].RoutineID, byID["pin"].RoutineID)
 	}
 }
 

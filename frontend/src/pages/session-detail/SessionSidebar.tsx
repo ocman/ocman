@@ -120,17 +120,24 @@ export function SessionSidebar({
   useSidebarReorder(sidebarListRef, sidebarView);
   const [showChildren, setShowChildren] = useState(true);
   const [showFactory, setShowFactory] = useState(false);
+  const [showRoutines, setShowRoutines] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const draftSessionIds = useDraftSessionIds();
   const { data: workEpics } = useWorkEpics();
-  const factorySessions = useMemo(() => {
-    const keys = new Set(
-      (workEpics ?? []).flatMap((epic) =>
-        (epic.attempts ?? []).map(({ session }) => `${session.platform}\0${session.id}`),
-      ),
-    );
+  // Sessions hidden by the Factory/routine filters, including descendants.
+  const hiddenSessions = useMemo(() => {
+    const all = [...recentSessions, ...sidebarProjectGroups.flatMap((group) => group.sessions)];
+    const keys = new Set<string>();
+    if (!showFactory) {
+      for (const epic of workEpics ?? []) {
+        for (const { session } of epic.attempts ?? []) keys.add(`${session.platform}\0${session.id}`);
+      }
+    }
+    if (!showRoutines) {
+      for (const session of all) if (session.routineId) keys.add(`${session.platform}\0${session.id}`);
+    }
     const children = new Map<string, string[]>();
-    for (const session of [...recentSessions, ...sidebarProjectGroups.flatMap((group) => group.sessions)]) {
+    for (const session of all) {
       if (!session.parentId) continue;
       const parent = `${session.platform}\0${session.parentId}`;
       const siblings = children.get(parent) ?? [];
@@ -144,7 +151,7 @@ export function SessionSidebar({
       }
     }
     return keys;
-  }, [workEpics, recentSessions, sidebarProjectGroups]);
+  }, [workEpics, recentSessions, sidebarProjectGroups, showFactory, showRoutines]);
 
   // Reveal the selection on navigation or initial load. Live activity must
   // not repeatedly pull the user away from a manually scrolled position.
@@ -194,29 +201,29 @@ export function SessionSidebar({
   // the remaining project groups are drag-sortable.
   const filteredProjectGroups = useMemo(() => {
     const query = searchQuery.trim();
-    if (showChildren && showFactory && !query) return sidebarProjectGroups;
+    if (showChildren && hiddenSessions.size === 0 && !query) return sidebarProjectGroups;
     return sidebarProjectGroups.flatMap((group) => {
       const projectMatches = !!query && fuzzyMatch(query, group.directory);
       const sessions = group.sessions.filter((session) =>
-        (showFactory || !factorySessions.has(`${session.platform}\0${session.id}`)) &&
+        !hiddenSessions.has(`${session.platform}\0${session.id}`) &&
         (showChildren || !session.parentId) &&
         (!query || projectMatches || matchesSessionSearch(query, session, siblingGitInfos[session.directory])),
       );
       return query && !projectMatches && sessions.length === 0 ? [] : [{ ...group, sessions }];
     });
-  }, [sidebarProjectGroups, searchQuery, showChildren, showFactory, siblingGitInfos, factorySessions]);
+  }, [sidebarProjectGroups, searchQuery, showChildren, siblingGitInfos, hiddenSessions]);
 
   const filteredPinnedSessions = useMemo(() => {
     const query = searchQuery.trim();
     return recentSessions
       .filter((session) => session.pinned)
       .filter((session) =>
-        (showFactory || !factorySessions.has(`${session.platform}\0${session.id}`)) &&
+        !hiddenSessions.has(`${session.platform}\0${session.id}`) &&
         (showChildren || !session.parentId) &&
         (!query || matchesSessionSearch(query, session, siblingGitInfos[session.directory])),
       )
       .sort((a, b) => b.pinnedAt - a.pinnedAt);
-  }, [recentSessions, searchQuery, showChildren, showFactory, siblingGitInfos, factorySessions]);
+  }, [recentSessions, searchQuery, showChildren, siblingGitInfos, hiddenSessions]);
   const sortableGroups = useMemo(
     () => filteredProjectGroups.filter((g) => !g.isPinned),
     [filteredProjectGroups],
@@ -292,7 +299,7 @@ export function SessionSidebar({
   const renderFlatView = () => {
     const query = searchQuery.trim();
     const visible = recentSessions.filter((session) =>
-      (showFactory || !factorySessions.has(`${session.platform}\0${session.id}`)) &&
+      !hiddenSessions.has(`${session.platform}\0${session.id}`) &&
       (showChildren || !session.parentId) &&
       (!query || matchesSessionSearch(query, session, siblingGitInfos[session.directory])),
     );
@@ -324,6 +331,8 @@ export function SessionSidebar({
         setShowChildren={setShowChildren}
         showFactory={showFactory}
         setShowFactory={setShowFactory}
+        showRoutines={showRoutines}
+        setShowRoutines={setShowRoutines}
         sidebarView={sidebarView}
         setSidebarView={setSidebarView}
         onNewSession={onNewSession}

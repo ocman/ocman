@@ -418,6 +418,8 @@ export interface Session {
   seen: boolean;
   pinned: boolean;
   pinnedAt: number;
+  /** Routine that launched this session; absent for other sessions. */
+  routineId?: string;
   /**
    * The session's timeUpdated at the moment the user last viewed it.
    * Zero when the user has never opened the session. Used to compute

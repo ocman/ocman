@@ -416,6 +416,30 @@ describe('SessionSidebar', () => {
     expect(screen.queryByText('Factory grandchild')).not.toBeInTheDocument();
   });
 
+  it.each(['projects', 'recent'] as const)('hides routine sessions until enabled in the %s view', (sidebarView) => {
+    vi.mocked(useWorkEpics).mockReturnValue({ data: [] } as never);
+    const group: SidebarProjectGroup = {
+      directory: '/repo',
+      sessions: [
+        session(),
+        session({ id: 'routine', title: 'Nightly check', routineId: 'rt' }),
+        session({ id: 'routine-child', title: 'Routine child', parentId: 'routine' }),
+      ],
+      lastUpdated: 1,
+      aggregate: { kind: 'none' },
+    };
+
+    renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), sidebarView);
+
+    expect(screen.queryByText('Nightly check')).not.toBeInTheDocument();
+    expect(screen.queryByText('Routine child')).not.toBeInTheDocument();
+    expect(screen.getByText('Fix thing')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Show routines' }));
+    expect(screen.getByText('Nightly check')).toBeInTheDocument();
+    expect(screen.getByText('Routine child')).toBeInTheDocument();
+  });
+
   it.each(['projects', 'recent'] as const)('hides Factory descendants when the attempt is absent in the %s view', (sidebarView) => {
     vi.mocked(useWorkEpics).mockReturnValue({
       data: [{ attempts: [{ session: { platform: 'opencode', id: 'factory' } }] }],

@@ -241,7 +241,7 @@ func (s *Service) claimAndDispatchPrompt(ctx context.Context, routine state.Rout
 		if err := json.Unmarshal([]byte(routine.PermissionRulesJSON), &rules); err != nil || rules == nil {
 			rules = []platforms.PermissionRule{}
 		}
-		result, err := s.sessions.CreateConfigured(ctx, platformID, platforms.CreateSessionRequest{Directory: run.Directory, Port: ensured.Port()}, rules)
+		result, err := s.sessions.CreateConfigured(ctx, platformID, platforms.CreateSessionRequest{Directory: run.Directory, Title: run.RoutineName + " " + s.now().Format("2006-01-02 15:04"), Port: ensured.Port()}, rules)
 		if err != nil {
 			return s.failDispatch(ctx, run, err)
 		}

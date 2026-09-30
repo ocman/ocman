@@ -11,6 +11,8 @@ export interface SidebarHeaderProps {
   setShowChildren: (show: boolean) => void;
   showFactory: boolean;
   setShowFactory: (show: boolean) => void;
+  showRoutines: boolean;
+  setShowRoutines: (show: boolean) => void;
   sidebarView: 'recent' | 'projects';
   setSidebarView: (view: 'recent' | 'projects') => void;
   onNewSession: () => void;
@@ -26,6 +28,8 @@ export function SidebarHeader({
   setShowChildren,
   showFactory,
   setShowFactory,
+  showRoutines,
+  setShowRoutines,
   sidebarView,
   setSidebarView,
   onNewSession,
@@ -63,7 +67,7 @@ export function SidebarHeader({
         </button>
         <button
           type="button"
-          className={`session-sidebar-new${showArchivedRecent || !showChildren || showFactory ? ' active' : ''}`}
+          className={`session-sidebar-new${showArchivedRecent || !showChildren || showFactory || showRoutines ? ' active' : ''}`}
           onClick={() => setFiltersOpen((open) => !open)}
           title="Filter sessions"
           aria-label="Filter sessions"
@@ -107,6 +111,14 @@ export function SidebarHeader({
                 onChange={(event) => setShowFactory(event.target.checked)}
               />
               <span>Show factory</span>
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={showRoutines}
+                onChange={(event) => setShowRoutines(event.target.checked)}
+              />
+              <span>Show routines</span>
             </label>
           </div>
         )}

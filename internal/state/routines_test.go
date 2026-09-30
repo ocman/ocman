@@ -287,6 +287,9 @@ func TestRoutineDueRunningLinkAndIdempotentFinish(t *testing.T) {
 	if got, err := db.GetRoutineRun(t.Context(), run.ID); err != nil || got.Platform != "opencode" || got.SessionID != "session" || got.StartedAt != 3 {
 		t.Fatalf("linked run = %+v, %v", got, err)
 	}
+	if tagged, err := db.RoutineSessions(t.Context()); err != nil || len(tagged) != 1 || tagged[Key{Platform: "opencode", SessionID: "session"}] != routine.ID {
+		t.Fatalf("routine sessions = %+v, %v", tagged, err)
+	}
 	if running, err := db.ListRunningRoutineRuns(t.Context()); err != nil || len(running) != 1 || running[0].ID != run.ID {
 		t.Fatalf("running = %+v, %v", running, err)
 	}

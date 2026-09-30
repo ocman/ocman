@@ -192,6 +192,10 @@ func (s *Server) applySessionStateWithWrites(ctx context.Context, sessions []db.
 	if err != nil {
 		return err
 	}
+	routineSessions, err := s.stateDB.RoutineSessions(ctx)
+	if err != nil {
+		return err
+	}
 	// Build the per-platform "I want unread counts for these sessions
 	// at this cutoff" maps. Skip sessions that are fully seen
 	// (Seen==true) — their count would be zero by definition.
@@ -222,6 +226,7 @@ func (s *Server) applySessionStateWithWrites(ctx context.Context, sessions []db.
 			sessions[i].Pinned = true
 			sessions[i].PinnedAt = pinnedAt
 		}
+		sessions[i].RoutineID = routineSessions[key]
 
 		// Queue unread-count lookup for unseen sessions. The
 		// cutoff is the user's last-seen time_updated for this

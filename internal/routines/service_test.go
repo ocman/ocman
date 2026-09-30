@@ -53,6 +53,7 @@ type testPlatform struct {
 	createErr       error
 	sendErr         error
 	created         int
+	titles          []string
 	sent            []platforms.SendMessageRequest
 	directory       string
 	permissionRules []platforms.PermissionRule
@@ -68,10 +69,11 @@ func (p *testPlatform) ID() platforms.ID {
 }
 func (p *testPlatform) Available(context.Context) bool    { return true }
 func (p *testPlatform) Owns(context.Context, string) bool { return true }
-func (p *testPlatform) CreateSession(context.Context, platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+func (p *testPlatform) CreateSession(_ context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.created++
+	p.titles = append(p.titles, req.Title)
 	if p.createErr != nil {
 		return nil, p.createErr
 	}
@@ -320,6 +322,9 @@ func TestManualAndDueDispatchShareAtomicClaim(t *testing.T) {
 	created, sent := h.platform.counts()
 	if created != 1 || sent != 1 || h.host.calls.Load() != 1 {
 		t.Fatalf("ensure=%d created=%d sent=%d", h.host.calls.Load(), created, sent)
+	}
+	if want := "Daily check " + time.UnixMilli(routine.NextDueAt).Format("2006-01-02 15:04"); len(h.platform.titles) != 1 || h.platform.titles[0] != want {
+		t.Fatalf("session titles = %q, want %q", h.platform.titles, want)
 	}
 	if request := h.platform.sent[0]; request.Agent != "build" || request.Model != "openai/gpt-5.4" {
 		t.Fatalf("send request = %+v", request)
