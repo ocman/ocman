@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import { remoteLog } from '../../lib/remoteLog';
 import { Modal } from '../../components/Modal';
+import { Button, ButtonGroup, SubmitButton } from '../../components/Control';
 
 export interface RenameModalProps {
   sessionId: string;
@@ -16,14 +17,19 @@ export interface RenameModalProps {
  */
 export function RenameModal({ sessionId, initialTitle, onClose, onRenamed }: RenameModalProps) {
   const [renameTitle, setRenameTitle] = useState(initialTitle);
+  const submitRef = useRef<HTMLButtonElement>(null);
+  const [saving, setSaving] = useState(false);
 
   const handleSubmit = async () => {
+    setSaving(true);
     try {
       await api.renameSession(sessionId, renameTitle.trim());
       onRenamed(renameTitle.trim());
       onClose();
     } catch (err) {
       remoteLog.error('Failed to rename session', err);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -33,6 +39,7 @@ export function RenameModal({ sessionId, initialTitle, onClose, onRenamed }: Ren
       dialogClassName="oc-rename-dialog"
       label="Rename Session"
       onClose={onClose}
+      canClose={!saving}
     >
       <h3>Rename Session</h3>
       <input
@@ -43,22 +50,19 @@ export function RenameModal({ sessionId, initialTitle, onClose, onRenamed }: Ren
         placeholder="Session title"
         autoFocus
         onFocus={e => e.target.select()}
-        onKeyDown={async e => {
-          if (e.key === 'Enter') {
-            await handleSubmit();
-          }
+        onKeyDown={e => {
+          if (e.key === 'Enter') submitRef.current?.click();
         }}
       />
       <div className="oc-rename-actions">
-        <button
-          className="oc-rename-btn oc-rename-btn-submit"
-          onClick={handleSubmit}
-        >
-          Rename
-        </button>
-        <button className="oc-rename-btn oc-rename-btn-cancel" onClick={onClose}>
-          Cancel
-        </button>
+        <ButtonGroup label="Rename actions">
+          <SubmitButton ref={submitRef} variant="accent" size="small" pendingLabel="Renaming…" onClick={handleSubmit}>
+            Rename
+          </SubmitButton>
+          <Button size="small" disabled={saving} onClick={onClose}>
+            Cancel
+          </Button>
+        </ButtonGroup>
       </div>
     </Modal>
   );

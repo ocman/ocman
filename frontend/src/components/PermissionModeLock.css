@@ -31,15 +31,3 @@
 .oc-permission-confirm { width: 380px; }
 .oc-permission-confirm-body { display: flex; gap: 12px; padding: 16px; border-bottom: 1px solid var(--border); }
 .oc-permission-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; }
-.oc-permission-confirm-cancel,
-.oc-permission-confirm-ok {
-  border: 1px solid var(--surface2);
-  background: var(--surface1);
-  color: var(--text);
-  padding: 5px 10px;
-  font: inherit;
-  cursor: pointer;
-}
-.oc-permission-confirm-cancel:hover,
-.oc-permission-confirm-ok:hover { background: var(--bg-hover); }
-.oc-permission-confirm-ok { color: color-mix(in srgb, var(--yellow) 70%, var(--text)); }

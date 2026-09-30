@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, type PermissionRule } from '../lib/api';
 import { classifyPermissionMode, PERMISSION_MODES, type PermissionMode } from '../lib/permissionModes';
+import { Button, SubmitButton } from './Control';
 import { CommandListPicker } from './assistant/CommandListPicker';
 import { Modal } from './Modal';
 import './PermissionModeLock.css';
@@ -56,7 +57,6 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
       return;
     }
     setSaving(true);
-    setConfirmMode(null);
     setError('');
     try {
       await api.setPermissionRules(sessionId, target.rules);
@@ -65,6 +65,7 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
       setError(e instanceof Error ? e.message : 'failed to set permission mode');
     } finally {
       setSaving(false);
+      setConfirmMode(null);
     }
   }, [confirmMode, saving, sessionId]);
 
@@ -114,6 +115,7 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
           backdropClassName="oc-cmd-backdrop"
           dialogClassName="oc-cmd-palette oc-permission-confirm"
           onClose={() => setConfirmMode(null)}
+          canClose={!saving}
         >
           <div className="oc-permission-confirm-body">
             <span className="oc-permission-mode-icon oc-permission-mode-yolo" aria-hidden="true"><i className="bi bi-exclamation-triangle" /></span>
@@ -123,8 +125,8 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
             </div>
           </div>
           <div className="oc-permission-confirm-actions">
-            <button type="button" className="oc-permission-confirm-cancel" onClick={() => setConfirmMode(null)}>Cancel</button>
-            <button type="button" className="oc-permission-confirm-ok" onClick={() => { void apply(confirmMode.id); }}>Confirm</button>
+            <Button size="small" disabled={saving} onClick={() => setConfirmMode(null)}>Cancel</Button>
+            <SubmitButton size="small" variant="danger" pendingLabel="Applying…" onClick={() => apply(confirmMode.id)}>Confirm</SubmitButton>
           </div>
         </Modal>
       )}
