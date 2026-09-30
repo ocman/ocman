@@ -110,10 +110,10 @@ func TestDispatchReferencesBodyFile(t *testing.T) {
 	}
 	body := `{"action":"opened","number":7}`
 	svc := &sessionDispatcher{db: db}
-	if err := Dispatch(db, svc, "inbox", "../d1", relay.InboxEnvelope{InboxID: "inbox", DeliveryID: "../d1", Body: []byte(body)}, time.UnixMilli(5)); err != nil {
+	if err := Dispatch(db, svc, "inbox", "../d1", relay.InboxEnvelope{InboxID: "inbox", DeliveryID: "../d1", Body: []byte(body), Request: relay.InboxRequest{Header: http.Header{"x-forgejo-event": {"pull_request"}}}}, time.UnixMilli(5)); err != nil {
 		t.Fatal(err)
 	}
-	if len(svc.payloads) != 1 || strings.Contains(svc.payloads[0], "bodyBase64") {
+	if len(svc.payloads) != 1 || strings.Contains(svc.payloads[0], "bodyBase64") || strings.Contains(svc.payloads[0], "pull_request") {
 		t.Fatalf("payloads = %q", svc.payloads)
 	}
 	raw := strings.TrimSuffix(strings.SplitN(svc.payloads[0], "```json\n", 2)[1], "\n```")
@@ -124,6 +124,10 @@ func TestDispatchReferencesBodyFile(t *testing.T) {
 	data, err := os.ReadFile(got.BodyPath)
 	if err != nil || string(data) != body || got.BodyBytes != len(body) {
 		t.Fatalf("body file %q = %q, %v (bytes %d)", got.BodyPath, data, err, got.BodyBytes)
+	}
+	headers, err := os.ReadFile(got.HeadersPath)
+	if err != nil || string(headers) != `{"X-Forgejo-Event":["pull_request"]}` {
+		t.Fatalf("headers file %q = %q, %v", got.HeadersPath, headers, err)
 	}
 	if !filepath.IsAbs(got.BodyPath) || strings.Contains(filepath.Base(got.BodyPath), "d1") {
 		t.Fatalf("body path %q is not an absolute hashed name", got.BodyPath)

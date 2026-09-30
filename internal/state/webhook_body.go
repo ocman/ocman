@@ -32,23 +32,33 @@ func (d *DB) webhookBodies() (*os.Root, string, error) {
 	return root, dir, err
 }
 
-// WriteWebhookBody stores a delivery's raw body as a file a routine session can
-// read, and returns its absolute path. The name is a hash, so relay-supplied
-// IDs never shape the path.
-func (d *DB) WriteWebhookBody(inboxID, deliveryID string, body []byte) (string, error) {
+// Webhook delivery file kinds.
+const (
+	WebhookBodyFile    = "body"
+	WebhookHeadersFile = "headers"
+)
+
+// WriteWebhookFile stores one part of a delivery (WebhookBodyFile or
+// WebhookHeadersFile) as a file a routine session can read, and returns its
+// absolute path. The name is a hash, so relay-supplied IDs never shape the
+// path; both parts of a delivery share it and differ only in extension.
+func (d *DB) WriteWebhookFile(inboxID, deliveryID, kind string, data []byte) (string, error) {
+	if kind != WebhookBodyFile && kind != WebhookHeadersFile {
+		return "", fmt.Errorf("unknown webhook file kind %q", kind)
+	}
 	root, dir, err := d.webhookBodies()
 	if err != nil {
 		return "", err
 	}
 	defer root.Close()
 	sum := sha256.Sum256([]byte(inboxID + ":" + deliveryID))
-	name := hex.EncodeToString(sum[:]) + ".body"
+	name := hex.EncodeToString(sum[:]) + "." + kind
 	tmp := ".tmp-" + rand.Text()
 	f, err := root.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return "", err
 	}
-	_, err = f.Write(body)
+	_, err = f.Write(data)
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
@@ -62,7 +72,7 @@ func (d *DB) WriteWebhookBody(inboxID, deliveryID string, body []byte) (string, 
 	return filepath.Join(dir, name), nil
 }
 
-// cleanupWebhookBodies removes body files last written before cutoff, the same
+// cleanupWebhookBodies removes delivery files last written before cutoff, the same
 // retention as the delivery rows they belong to.
 func (d *DB) cleanupWebhookBodies(before int64) error {
 	if d.dataDir == "" {

@@ -19,23 +19,23 @@ type RoutineDispatcher interface {
 	RunWebhook(context.Context, string, string, int64) (state.RoutineRun, error)
 }
 
-// DispatchPayload is the documented, fixed data suffix sent to a routine. The
-// body is not inlined: BodyPath names a file holding the raw request body, so
-// a session reads only the fields it needs (for example with jq) instead of
-// carrying the whole payload in its prompt.
+// DispatchPayload is the documented, fixed data suffix sent to a routine.
+// Headers and body are not inlined: HeadersPath and BodyPath name files a
+// session queries for just the fields it needs (for example with jq) instead
+// of carrying the whole request in its prompt.
 type DispatchPayload struct {
-	InboxID    string      `json:"inboxId"`
-	DeliveryID string      `json:"deliveryId"`
-	Method     string      `json:"method"`
-	Headers    http.Header `json:"headers"`
-	Query      url.Values  `json:"query"`
-	ReceivedAt int64       `json:"receivedAt"`
-	BodyPath   string      `json:"bodyPath"`
-	BodyBytes  int         `json:"bodyBytes"`
+	InboxID     string     `json:"inboxId"`
+	DeliveryID  string     `json:"deliveryId"`
+	Method      string     `json:"method"`
+	Query       url.Values `json:"query"`
+	ReceivedAt  int64      `json:"receivedAt"`
+	HeadersPath string     `json:"headersPath"`
+	BodyPath    string     `json:"bodyPath"`
+	BodyBytes   int        `json:"bodyBytes"`
 }
 
-func dispatchText(e relay.InboxEnvelope, bodyPath string) (string, error) {
-	b, err := json.Marshal(DispatchPayload{e.InboxID, e.DeliveryID, e.Request.Method, e.Request.Header, e.Request.Query, e.Request.ReceivedAt, bodyPath, len(e.Body)})
+func dispatchText(e relay.InboxEnvelope, headersPath, bodyPath string) (string, error) {
+	b, err := json.Marshal(DispatchPayload{e.InboxID, e.DeliveryID, e.Request.Method, e.Request.Query, e.Request.ReceivedAt, headersPath, bodyPath, len(e.Body)})
 	if err != nil {
 		return "", err
 	}
@@ -52,11 +52,11 @@ func Dispatch(store *state.DB, svc RoutineDispatcher, inboxID, deliveryID string
 	if len(subs) == 0 {
 		return nil
 	}
-	bodyPath, err := store.WriteWebhookBody(inboxID, deliveryID, e.Body)
+	headersPath, bodyPath, err := writeDeliveryFiles(store, inboxID, deliveryID, e)
 	if err != nil {
-		return fmt.Errorf("writing webhook body: %w", err)
+		return err
 	}
-	data, err := dispatchText(e, bodyPath)
+	data, err := dispatchText(e, headersPath, bodyPath)
 	if err != nil {
 		return err
 	}
@@ -118,6 +118,29 @@ func Dispatch(store *state.DB, svc RoutineDispatcher, inboxID, deliveryID string
 		}
 	}
 	return nil
+}
+
+// writeDeliveryFiles stores the headers (a JSON object of canonical header name
+// to values, e.g. {"X-Forgejo-Event":["pull_request"]}) and the raw body.
+func writeDeliveryFiles(store *state.DB, inboxID, deliveryID string, e relay.InboxEnvelope) (string, string, error) {
+	headers := http.Header{}
+	for name, values := range e.Request.Header {
+		key := http.CanonicalHeaderKey(name)
+		headers[key] = append(headers[key], values...)
+	}
+	raw, err := json.Marshal(headers)
+	if err != nil {
+		return "", "", err
+	}
+	headersPath, err := store.WriteWebhookFile(inboxID, deliveryID, state.WebhookHeadersFile, raw)
+	if err != nil {
+		return "", "", fmt.Errorf("writing webhook headers: %w", err)
+	}
+	bodyPath, err := store.WriteWebhookFile(inboxID, deliveryID, state.WebhookBodyFile, e.Body)
+	if err != nil {
+		return "", "", fmt.Errorf("writing webhook body: %w", err)
+	}
+	return headersPath, bodyPath, nil
 }
 
 // IsLocal reports whether a routine's remoteId names this machine.

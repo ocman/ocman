@@ -68,20 +68,22 @@ followed by this fixed untrusted-data envelope:
   "inboxId": "...",
   "deliveryId": "...",
   "method": "POST",
-  "headers": {},
   "query": {},
   "receivedAt": 0,
+  "headersPath": "/…/ocman/webhook-bodies/<hash>.headers",
   "bodyPath": "/…/ocman/webhook-bodies/<hash>.body",
   "bodyBytes": 0
 }
 ```
 
-The body is not inlined. `bodyPath` is an absolute path to a `0600` file holding
-the raw request body, so the session reads only what it needs, for example
-`jq -r .number "<bodyPath>"`. Allow the routine's session to read
-`<state dir>/webhook-bodies/*` (an `external_directory` permission rule), and
-query the file with `jq` rather than reading it whole. Body files follow the
-30-day history retention below.
+Headers and body are not inlined. Both paths are absolute `0600` files:
+`headersPath` holds a JSON object of canonical header name to values (for
+example `{"X-Forgejo-Event":["pull_request"]}`) and `bodyPath` holds the raw
+request body. The session reads only what it needs, for example
+`jq -r '."X-Forgejo-Event"[0]' "<headersPath>"` or `jq -r .number "<bodyPath>"`.
+Allow the routine's session to read `<state dir>/webhook-bodies/*` (an
+`external_directory` permission rule), and query the files with `jq` rather
+than reading them whole. The files follow the 30-day history retention below.
 
 A webhook runs its routine on the machine that received it. A subscription can
 only point at a routine that runs on this machine; a routine later moved to a

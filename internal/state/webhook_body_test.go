@@ -3,13 +3,14 @@ package state
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
 
 func TestWebhookBodyFileIsWrittenAndPruned(t *testing.T) {
 	d := openTestDB(t)
-	path, err := d.WriteWebhookBody("inbox", "../../escape", []byte("hello"))
+	path, err := d.WriteWebhookFile("inbox", "../../escape", WebhookBodyFile, []byte("hello"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,10 +24,17 @@ func TestWebhookBodyFileIsWrittenAndPruned(t *testing.T) {
 		t.Fatalf("body mode = %v, %v", info, err)
 	}
 	// Rewriting the same delivery replaces it in place.
-	if again, err := d.WriteWebhookBody("inbox", "../../escape", []byte("again")); err != nil || again != path {
+	if again, err := d.WriteWebhookFile("inbox", "../../escape", WebhookBodyFile, []byte("again")); err != nil || again != path {
 		t.Fatalf("rewrite = %q, %v", again, err)
 	}
-	keep, err := d.WriteWebhookBody("inbox", "new", []byte("new"))
+	headers, err := d.WriteWebhookFile("inbox", "../../escape", WebhookHeadersFile, []byte("{}"))
+	if err != nil || headers != strings.TrimSuffix(path, ".body")+".headers" {
+		t.Fatalf("headers = %q, %v", headers, err)
+	}
+	if _, err := d.WriteWebhookFile("inbox", "d", "../x", nil); err == nil {
+		t.Fatal("wrote an unknown file kind")
+	}
+	keep, err := d.WriteWebhookFile("inbox", "new", WebhookBodyFile, []byte("new"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +56,7 @@ func TestWebhookBodyFileIsWrittenAndPruned(t *testing.T) {
 func TestWebhookBodyNeedsDataDir(t *testing.T) {
 	d := openTestDB(t)
 	d.dataDir = ""
-	if _, err := d.WriteWebhookBody("inbox", "d", nil); err == nil {
+	if _, err := d.WriteWebhookFile("inbox", "d", WebhookBodyFile, nil); err == nil {
 		t.Fatal("wrote a body without a data directory")
 	}
 	if err := d.cleanupWebhookBodies(1); err != nil {
