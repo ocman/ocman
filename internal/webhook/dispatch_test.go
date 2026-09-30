@@ -2,6 +2,7 @@ package webhook
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"testing"
@@ -35,11 +36,49 @@ func TestMatchesInvalidJSONIsIgnored(t *testing.T) {
 }
 
 func TestDispatchRecordsEachSubscriberOutcome(t *testing.T) {
+	db := dispatchFixture(t)
+	ctx := t.Context()
+	got, err := db.ListWebhookDeliveries(ctx, "inbox", 10)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("deliveries = %+v, %v", got, err)
+	}
+	assertDispatches(t, got[0])
+}
+
+// A redelivery runs every matching subscriber again under a new delivery,
+// leaving the original's log entry as it was.
+func TestRedeliverRunsTheDeliveryAgain(t *testing.T) {
+	db := dispatchFixture(t)
+	first, _ := db.ListRoutineRuns(t.Context(), "runs")
+	if _, err := db.FinishRoutineRun(t.Context(), first[0].ID, "success", "", "", 8, 0, false, false); err != nil {
+		t.Fatal(err)
+	}
+	newID, err := Redeliver(db, &sessionDispatcher{db: db}, "inbox", "d1", time.UnixMilli(9))
+	if err != nil || newID == "d1" {
+		t.Fatalf("redeliver = %q, %v", newID, err)
+	}
+	got, err := db.ListWebhookDeliveries(t.Context(), "inbox", 10)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("deliveries = %+v, %v", got, err)
+	}
+	for _, delivery := range got {
+		assertDispatches(t, delivery)
+	}
+	if runs, _ := db.ListRoutineRuns(t.Context(), "runs"); len(runs) != 2 {
+		t.Fatalf("routine did not run again: %+v", runs)
+	}
+	if _, err := Redeliver(db, &sessionDispatcher{db: db}, "inbox", "missing", time.UnixMilli(10)); err == nil {
+		t.Fatal("unknown delivery redelivered")
+	}
+}
+
+func dispatchFixture(t *testing.T) *state.DB {
+	t.Helper()
 	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	t.Cleanup(func() { _ = db.Close() })
 	ctx := t.Context()
 	for _, r := range []state.Routine{
 		{ID: "bad", Enabled: true}, {ID: "runs", Enabled: true}, {ID: "filtered", Enabled: true}, {ID: "off"}, {ID: "deleted", Enabled: true, Deleted: true, DeletedAt: 1},
@@ -60,7 +99,7 @@ func TestDispatchRecordsEachSubscriberOutcome(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := db.AcceptWebhookDelivery(ctx, "inbox", "d1", "POST webhook", "{}", "{}", 1); err != nil {
+	if _, err := db.AcceptWebhookDelivery(ctx, "inbox", "d1", "POST webhook", `{"action":"opened"}`, "{}", 1); err != nil {
 		t.Fatal(err)
 	}
 	svc := &sessionDispatcher{db: db}
@@ -68,10 +107,12 @@ func TestDispatchRecordsEachSubscriberOutcome(t *testing.T) {
 	if err := Dispatch(db, svc, "inbox", "d1", e, time.UnixMilli(5)); err != nil {
 		t.Fatal(err)
 	}
-	got, err := db.ListWebhookDeliveries(ctx, "inbox", 10)
-	if err != nil || len(got) != 1 {
-		t.Fatalf("deliveries = %+v, %v", got, err)
-	}
+	return db
+}
+
+func assertDispatches(t *testing.T, delivery state.WebhookDelivery) {
+	t.Helper()
+	got := []state.WebhookDelivery{delivery}
 	want := []state.WebhookDispatchResult{{RoutineID: "bad", State: "ignored", Error: "invalid predicates"}, {RoutineID: "filtered", State: "ignored"}, {RoutineID: "off", State: "ignored", Error: "routine disabled"}, {RoutineID: "runs", State: "terminal", Platform: "opencode", SessionID: "ses-1"}}
 	if len(got[0].Dispatches) != len(want) {
 		t.Fatalf("dispatches = %+v", got[0].Dispatches)
@@ -88,7 +129,7 @@ func TestDispatchRecordsEachSubscriberOutcome(t *testing.T) {
 type sessionDispatcher struct{ db *state.DB }
 
 func (d *sessionDispatcher) RunWebhook(ctx context.Context, routineID, _ string, occurrence int64) (state.RoutineRun, error) {
-	run, _, err := d.db.ClaimRoutineRun(ctx, state.RoutineRun{ID: "run-" + routineID, RoutineID: routineID, RoutineUpdatedAt: 1, RoutineName: routineID, Prompt: "p", Directory: "/repo", RemoteID: "local", SessionMode: "new", Trigger: "webhook", State: "running", OccurrenceAt: occurrence, CreatedAt: 1})
+	run, _, err := d.db.ClaimRoutineRun(ctx, state.RoutineRun{ID: fmt.Sprintf("run-%s-%d", routineID, occurrence), RoutineID: routineID, RoutineUpdatedAt: 1, RoutineName: routineID, Prompt: "p", Directory: "/repo", RemoteID: "local", SessionMode: "new", Trigger: "webhook", State: "running", OccurrenceAt: occurrence, CreatedAt: 1})
 	if err != nil {
 		return run, err
 	}

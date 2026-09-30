@@ -149,6 +149,23 @@ func TestWebhookInboxesLifecycle(t *testing.T) {
 	if d := byID["d0"]; d.LastError != "decrypt failed" || len(d.Dispatches) != 0 {
 		t.Fatalf("d0 = %+v", d)
 	}
+	redeliver := base + "/inbox/redeliver"
+	for _, tc := range []struct {
+		method, body string
+		code         int
+	}{
+		{http.MethodGet, "", http.StatusMethodNotAllowed},
+		{http.MethodPost, `{"`, http.StatusBadRequest},
+		{http.MethodPost, `{"deliveryId":"d0"}`, http.StatusNotFound}, // never accepted
+		{http.MethodPost, `{"deliveryId":"d1"}`, http.StatusOK},
+	} {
+		if rec := doRoutineRequest(t, handler, tc.method, redeliver, tc.body); rec.Code != tc.code {
+			t.Fatalf("redeliver %s %s: %d %s", tc.method, tc.body, rec.Code, rec.Body.String())
+		}
+	}
+	if got, _ := db.ListWebhookDeliveries(t.Context(), "inbox", 10); len(got) != 3 || !strings.HasPrefix(got[0].DeliveryID, "d1-redelivery-") || got[0].Body != `{"action":"opened"}` {
+		t.Fatalf("redelivered log = %+v", got)
+	}
 
 	if rec := doRoutineRequest(t, handler, http.MethodDelete, subs, `{"routineId":"`+routine.ID+`"}`); rec.Code != http.StatusNoContent {
 		t.Fatalf("delete sub: %d", rec.Code)

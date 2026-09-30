@@ -61,6 +61,7 @@ type Input struct {
 	Enabled                    bool
 	DeleteAfterSuccess         bool
 	ArchiveSessionAfterSuccess bool
+	NotifyOnSuccess            bool
 	PermissionRules            []platforms.PermissionRule
 	// KeepSchedule makes Update ignore Schedule and keep the stored schedule
 	// and next due time, for edits that don't touch the schedule.

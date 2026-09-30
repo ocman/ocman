@@ -25,6 +25,7 @@ type routineRequest struct {
 	Enabled                    bool                       `json:"enabled"`
 	DeleteAfterSuccess         bool                       `json:"deleteAfterSuccess"`
 	ArchiveSessionAfterSuccess bool                       `json:"archiveSessionAfterSuccess"`
+	NotifyOnSuccess            bool                       `json:"notifyOnSuccess"`
 	PermissionRules            []platforms.PermissionRule `json:"permissionRules"`
 }
 
@@ -48,6 +49,7 @@ func (req routineRequest) input() (routines.Input, error) {
 		},
 		Enabled: req.Enabled, DeleteAfterSuccess: req.DeleteAfterSuccess,
 		ArchiveSessionAfterSuccess: req.ArchiveSessionAfterSuccess,
+		NotifyOnSuccess:            req.NotifyOnSuccess,
 		PermissionRules:            req.PermissionRules,
 	}, nil
 }

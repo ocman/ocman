@@ -38,11 +38,12 @@ type FormState = {
   enabled: boolean;
   deleteAfterSuccess: boolean;
   archiveSessionAfterSuccess: boolean;
+  notifyOnSuccess: boolean;
 };
 
 const emptyForm = (): FormState => ({
   name: '', prompt: '', directory: '', agent: '', model: '', sessionMode: 'new', sessionId: '', remoteId: '', kind: 'none', timeoutMinutes: '30', at: '', cron: '', timezone,
-  enabled: true, deleteAfterSuccess: false, archiveSessionAfterSuccess: false,
+  enabled: true, deleteAfterSuccess: false, archiveSessionAfterSuccess: false, notifyOnSuccess: false,
 });
 
 function formFor(routine: Routine): FormState {
@@ -64,6 +65,7 @@ function formFor(routine: Routine): FormState {
     enabled: routine.enabled,
     deleteAfterSuccess: routine.deleteAfterSuccess,
     archiveSessionAfterSuccess: routine.archiveSessionAfterSuccess,
+    notifyOnSuccess: routine.notifyOnSuccess,
   };
 }
 
@@ -86,6 +88,7 @@ function inputFor(form: FormState, remoteId: string, permissionRules: RoutineInp
     enabled: form.enabled,
     deleteAfterSuccess: form.deleteAfterSuccess,
     archiveSessionAfterSuccess: form.archiveSessionAfterSuccess,
+    notifyOnSuccess: form.notifyOnSuccess,
     permissionRules,
   };
 }
@@ -328,6 +331,7 @@ export function Routines() {
           <div className="routine-form-group-fields">
           <label className="routine-check"><input type="checkbox" checked={form.deleteAfterSuccess} onChange={(event) => setForm({ ...form, deleteAfterSuccess: event.target.checked })} /> Delete after a successful run</label>
           <label className="routine-check"><input type="checkbox" checked={form.archiveSessionAfterSuccess} onChange={(event) => setForm({ ...form, archiveSessionAfterSuccess: event.target.checked })} /> Archive session after a successful run</label>
+          <label className="routine-check"><input type="checkbox" checked={form.notifyOnSuccess} onChange={(event) => setForm({ ...form, notifyOnSuccess: event.target.checked })} /> Notify in the Inbox after a successful run<small>Runs that fail or are interrupted always notify.</small></label>
           </div>
           </details>
           <details className="routine-form-group">

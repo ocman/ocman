@@ -230,6 +230,8 @@ import (
 // 103 - name webhook inboxes so routines can subscribe to standalone inboxes.
 // 104 - repair webhook_delivery skipped by the v77 schema-version collision.
 // 105 - remember which header a webhook inbox's shared secret uses.
+// 106 - webhook deliveries keep their own title/body instead of an Inbox item.
+// 107 - routines post an Inbox item for a successful run only when they opt in.
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.

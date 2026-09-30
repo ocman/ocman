@@ -908,7 +908,9 @@ func TestEmptyPermissionRulesPassedToNewSession(t *testing.T) {
 
 func TestFinishedRunInboxIncludesFinalAssistantText(t *testing.T) {
 	h := newHarness(t)
-	routine, err := h.svc.Create(t.Context(), validInput())
+	input := validInput()
+	input.NotifyOnSuccess = true // a success is only reported when opted in
+	routine, err := h.svc.Create(t.Context(), input)
 	if err != nil {
 		t.Fatal(err)
 	}

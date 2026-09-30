@@ -152,9 +152,21 @@ func TestPollerContinuesPastPoisonAndDeduplicatesAfterAckLoss(t *testing.T) {
 		t.Fatalf("lost acknowledgement rescheduled %d routine runs", secondDispatcher.count)
 	}
 	secondDispatcher.mu.Unlock()
-	items, err := db.ListInboxItems(t.Context())
-	if err != nil || len(items) != 1 {
-		t.Fatalf("durable inbox items = %+v, %v", items, err)
+	logged, err := db.ListWebhookDeliveries(t.Context(), allocation.ID, 10)
+	accepted := 0
+	for _, delivery := range logged {
+		// The corrupted delivery is whichever the relay lists first, so count
+		// acceptances rather than matching a body.
+		if delivery.Accepted {
+			accepted++
+		}
+	}
+	if err != nil || accepted != 1 {
+		t.Fatalf("durable deliveries = %+v, %v", logged, err)
+	}
+	// Traffic and a still-retrying poison delivery stay out of the Inbox.
+	if items, err := db.ListInboxItems(t.Context()); err != nil || len(items) != 0 {
+		t.Fatalf("inbox items = %+v, %v", items, err)
 	}
 	remaining, err := (share.RelayClient{BaseURL: relayServer.URL}).ListInboxDeliveries(t.Context(), allocation.ID, allocation.FetchToken, "")
 	if err != nil || len(remaining.Deliveries) != 1 || remaining.Deliveries[0].ID != poisonID {

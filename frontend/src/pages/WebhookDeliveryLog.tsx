@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Button } from '../components/Control';
 import { EmptyState } from '../components/EmptyState';
 import { RefreshButton } from '../components/RefreshButton';
 import { api } from '../lib/api';
@@ -21,6 +22,19 @@ export function WebhookDeliveryLog({ inboxId, routineName }: { inboxId: string; 
     try { setDeliveries(await api.webhookInboxes.deliveries(inboxId)); } catch (err) { setError(err instanceof Error ? err.message : 'Could not load deliveries.'); } finally { setLoading(false); }
   }, [inboxId]);
   useEffect(() => { void load(); }, [load]);
+  const redeliver = async (deliveryId: string) => {
+    if (!window.confirm('Redeliver this webhook? Every matching routine runs again.')) return;
+    setLoading(true);
+    setError('');
+    try {
+      await api.webhookInboxes.redeliver(inboxId, deliveryId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not redeliver.');
+      setLoading(false);
+      return;
+    }
+    await load();
+  };
 
   return (
     <section className="webhook-deliveries" aria-labelledby="webhook-deliveries-heading">
@@ -41,10 +55,11 @@ export function WebhookDeliveryLog({ inboxId, routineName }: { inboxId: string; 
                 : <span key={o.label} className={`routine-state ${o.tone}`}>{o.label}</span>)}</span>
             </summary>
             {errors.map((message) => <p key={message} className="routine-error">{message}</p>)}
+            {d.accepted && <div className="routine-actions"><Button type="button" size="small" disabled={loading} onClick={() => void redeliver(d.deliveryId)}>Redeliver</Button></div>}
             <h4>Headers</h4>
             <pre>{pretty(d.headers)}</pre>
             <h4>Body</h4>
-            <pre>{d.body ? pretty(d.body) : '(not decrypted)'}</pre>
+            <pre>{d.accepted ? pretty(d.body) || '(empty)' : '(not decrypted)'}</pre>
           </details>
         );
       })}

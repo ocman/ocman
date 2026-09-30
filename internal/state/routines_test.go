@@ -22,6 +22,7 @@ func TestRoutineCompletionCreatesOneCategorizedInboxItem(t *testing.T) {
 			db := openTestStateDB(t)
 			defer db.Close()
 			routine := testRoutine("routine", "Daily checks", 1)
+			routine.NotifyOnSuccess = true
 			if err := db.CreateRoutine(t.Context(), routine); err != nil {
 				t.Fatal(err)
 			}
@@ -471,9 +472,9 @@ func TestRoutineAgentModelAndSessionMigration(t *testing.T) {
 	}
 	for _, table := range []string{"routine", "routine_run"} {
 		var agent, model string
-		var archive bool
-		if err := raw.QueryRow(`SELECT archive_session_after_success FROM ` + table).Scan(&archive); err != nil || archive {
-			t.Fatalf("%s archive default = %v, %v", table, archive, err)
+		var archive, notify bool
+		if err := raw.QueryRow(`SELECT archive_session_after_success, notify_on_success FROM `+table).Scan(&archive, &notify); err != nil || archive || notify {
+			t.Fatalf("%s archive/notify default = %v %v, %v", table, archive, notify, err)
 		}
 		if err := raw.QueryRow(`SELECT agent, model FROM `+table).Scan(&agent, &model); err != nil || agent != "" || model != "" {
 			t.Fatalf("%s defaults = agent %q model %q, %v", table, agent, model, err)
@@ -577,5 +578,30 @@ func TestUnscheduledFinishLeavesTheScheduleVersion(t *testing.T) {
 	}
 	if got, _ := db.GetRoutine(t.Context(), "remove"); !got.Deleted {
 		t.Fatalf("delete-after-success routine kept: %+v", got)
+	}
+}
+
+// By default only a run that did not succeed is worth an Inbox item.
+func TestRoutineCompletionNotifiesOnlyFailuresByDefault(t *testing.T) {
+	for outcome, want := range map[string]int{"success": 0, "failure": 1, "interrupted": 1} {
+		db := openTestStateDB(t)
+		routine := testRoutine("routine", "Daily checks", 1)
+		routine.DeleteAfterSuccess = false
+		if err := db.CreateRoutine(t.Context(), routine); err != nil {
+			t.Fatal(err)
+		}
+		if got, _ := db.GetRoutine(t.Context(), routine.ID); got.NotifyOnSuccess {
+			t.Fatalf("notify on success defaults on: %+v", got)
+		}
+		if _, _, err := db.ClaimRoutineRun(t.Context(), RoutineRun{ID: "run", RoutineID: routine.ID, State: "running", Trigger: "manual", OccurrenceAt: 2, CreatedAt: 2}); err != nil {
+			t.Fatal(err)
+		}
+		if finished, err := db.FinishRoutineRun(t.Context(), "run", outcome, "", "", 3, 0, false, false); err != nil || !finished {
+			t.Fatalf("%s: finish = %v, %v", outcome, finished, err)
+		}
+		if items, err := db.ListInboxItems(t.Context()); err != nil || len(items) != want {
+			t.Fatalf("%s: inbox items = %+v, %v; want %d", outcome, items, err, want)
+		}
+		_ = db.Close()
 	}
 }

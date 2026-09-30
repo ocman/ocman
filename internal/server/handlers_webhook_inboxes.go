@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"filippo.io/age"
 	"github.com/NoUseFreak/ocman/internal/share"
@@ -85,6 +86,8 @@ func (s *Server) handleWebhookInboxes(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, deliveries)
 	case "subscriptions":
 		s.handleWebhookSubscriptions(w, r, inbox)
+	case "redeliver":
+		s.redeliverWebhook(w, r, inbox)
 	default:
 		http.NotFound(w, r)
 	}
@@ -251,6 +254,31 @@ func (s *Server) updateWebhookInbox(w http.ResponseWriter, r *http.Request, inbo
 		return
 	}
 	writeJSON(w, view)
+}
+
+// redeliverWebhook replays a logged delivery to the inbox's subscribers as if
+// it had just arrived.
+func (s *Server) redeliverWebhook(w http.ResponseWriter, r *http.Request, inbox state.WebhookInbox) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		DeliveryID string `json:"deliveryId"`
+	}
+	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+		return
+	}
+	id, err := webhook.Redeliver(s.stateDB, s.routineSvc, inbox.ID, req.DeliveryID, time.Now())
+	if errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, "delivery not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		serverError(w, "redelivering webhook", err)
+		return
+	}
+	writeJSON(w, map[string]string{"deliveryId": id})
 }
 
 func (s *Server) handleWebhookSubscriptions(w http.ResponseWriter, r *http.Request, inbox state.WebhookInbox) {

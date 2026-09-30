@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 )
 
 var (
@@ -32,10 +31,13 @@ type Routine struct {
 	Deleted                    bool   `json:"deleted"`
 	DeleteAfterSuccess         bool   `json:"deleteAfterSuccess"`
 	ArchiveSessionAfterSuccess bool   `json:"archiveSessionAfterSuccess"`
-	CreatedAt                  int64  `json:"createdAt"`
-	UpdatedAt                  int64  `json:"updatedAt"`
-	DeletedAt                  int64  `json:"deletedAt,omitempty"`
-	ExpiredAt                  int64  `json:"expiredAt,omitempty"`
+	// NotifyOnSuccess also posts an Inbox item for a successful run; by
+	// default only runs that don't succeed are reported.
+	NotifyOnSuccess bool  `json:"notifyOnSuccess"`
+	CreatedAt       int64 `json:"createdAt"`
+	UpdatedAt       int64 `json:"updatedAt"`
+	DeletedAt       int64 `json:"deletedAt,omitempty"`
+	ExpiredAt       int64 `json:"expiredAt,omitempty"`
 }
 
 type RoutineRun struct {
@@ -60,10 +62,11 @@ type RoutineRun struct {
 	StartedAt                  int64  `json:"startedAt,omitempty"`
 	FinishedAt                 int64  `json:"finishedAt,omitempty"`
 	ArchiveSessionAfterSuccess bool   `json:"archiveSessionAfterSuccess"`
+	NotifyOnSuccess            bool   `json:"notifyOnSuccess"`
 }
 
 const routineColumns = `id, name, prompt, directory, remote_id, agent, model, session_mode, session_id, schedule_kind, schedule_config_json, permission_rules_json,
-	next_due_at, enabled, deleted, delete_after_success, created_at, updated_at, deleted_at, expired_at, archive_session_after_success`
+	next_due_at, enabled, deleted, delete_after_success, created_at, updated_at, deleted_at, expired_at, archive_session_after_success, notify_on_success`
 
 type routineScanner interface{ Scan(...any) error }
 
@@ -71,15 +74,15 @@ func scanRoutine(row routineScanner) (Routine, error) {
 	var routine Routine
 	err := row.Scan(&routine.ID, &routine.Name, &routine.Prompt, &routine.Directory, &routine.RemoteID,
 		&routine.Agent, &routine.Model, &routine.SessionMode, &routine.SessionID, &routine.ScheduleKind, &routine.ScheduleConfigJSON, &routine.PermissionRulesJSON, &routine.NextDueAt, &routine.Enabled,
-		&routine.Deleted, &routine.DeleteAfterSuccess, &routine.CreatedAt, &routine.UpdatedAt, &routine.DeletedAt, &routine.ExpiredAt, &routine.ArchiveSessionAfterSuccess)
+		&routine.Deleted, &routine.DeleteAfterSuccess, &routine.CreatedAt, &routine.UpdatedAt, &routine.DeletedAt, &routine.ExpiredAt, &routine.ArchiveSessionAfterSuccess, &routine.NotifyOnSuccess)
 	return routine, err
 }
 
 func (d *DB) CreateRoutine(ctx context.Context, routine Routine) error {
-	_, err := d.db.ExecContext(ctx, `INSERT INTO routine (`+routineColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err := d.db.ExecContext(ctx, `INSERT INTO routine (`+routineColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		routine.ID, routine.Name, routine.Prompt, routine.Directory, routine.RemoteID, routine.Agent, routine.Model, routine.SessionMode, routine.SessionID, routine.ScheduleKind,
 		routine.ScheduleConfigJSON, routine.PermissionRulesJSON, routine.NextDueAt, routine.Enabled, routine.Deleted, routine.DeleteAfterSuccess,
-		routine.CreatedAt, routine.UpdatedAt, routine.DeletedAt, routine.ExpiredAt, routine.ArchiveSessionAfterSuccess)
+		routine.CreatedAt, routine.UpdatedAt, routine.DeletedAt, routine.ExpiredAt, routine.ArchiveSessionAfterSuccess, routine.NotifyOnSuccess)
 	if err != nil {
 		return fmt.Errorf("creating routine: %w", err)
 	}
@@ -123,10 +126,10 @@ func (d *DB) UpdateRoutine(ctx context.Context, routine Routine) error {
 	result, err := d.db.ExecContext(ctx, `UPDATE routine SET name = ?, prompt = ?, directory = ?, remote_id = ?,
 		agent = ?, model = ?, session_mode = ?, session_id = CASE
 			WHEN ? = 'reuse' AND session_mode = 'reuse' AND directory = ? AND remote_id = ? THEN session_id ELSE ? END,
-		schedule_kind = ?, schedule_config_json = ?, permission_rules_json = ?, next_due_at = ?, enabled = ?, delete_after_success = ?, archive_session_after_success = ?, updated_at = ?, expired_at = 0
+		schedule_kind = ?, schedule_config_json = ?, permission_rules_json = ?, next_due_at = ?, enabled = ?, delete_after_success = ?, archive_session_after_success = ?, notify_on_success = ?, updated_at = ?, expired_at = 0
 		WHERE id = ? AND deleted = 0`, routine.Name, routine.Prompt, routine.Directory, routine.RemoteID,
 		routine.Agent, routine.Model, routine.SessionMode, routine.SessionMode, routine.Directory, routine.RemoteID, routine.SessionID, routine.ScheduleKind, routine.ScheduleConfigJSON, routine.PermissionRulesJSON, routine.NextDueAt, routine.Enabled, routine.DeleteAfterSuccess,
-		routine.ArchiveSessionAfterSuccess, routine.UpdatedAt, routine.ID)
+		routine.ArchiveSessionAfterSuccess, routine.NotifyOnSuccess, routine.UpdatedAt, routine.ID)
 	if err != nil {
 		return fmt.Errorf("updating routine: %w", err)
 	}
@@ -166,105 +169,6 @@ func requireRoutineChange(result sql.Result) error {
 	return nil
 }
 
-const routineRunColumns = `id, routine_id, routine_updated_at, routine_name, prompt, directory, remote_id, agent, model, session_mode, target_session_id, trigger,
-	platform, session_id, state, error, occurrence_at, created_at, started_at, finished_at, archive_session_after_success`
-
-func scanRoutineRun(row routineScanner) (RoutineRun, error) {
-	var run RoutineRun
-	err := row.Scan(&run.ID, &run.RoutineID, &run.RoutineUpdatedAt, &run.RoutineName, &run.Prompt, &run.Directory, &run.RemoteID,
-		&run.Agent, &run.Model, &run.SessionMode, &run.TargetSessionID, &run.Trigger, &run.Platform, &run.SessionID, &run.State, &run.Error, &run.OccurrenceAt,
-		&run.CreatedAt, &run.StartedAt, &run.FinishedAt, &run.ArchiveSessionAfterSuccess)
-	return run, err
-}
-
-// ClaimRoutineRun creates the occurrence and its definition snapshot together.
-// A competing claimant for the same routine occurrence receives claimed=false.
-func (d *DB) ClaimRoutineRun(ctx context.Context, run RoutineRun) (RoutineRun, bool, error) {
-	tx, err := d.db.BeginTx(ctx, nil)
-	if err != nil {
-		return RoutineRun{}, false, fmt.Errorf("beginning routine run claim: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	routine, err := scanRoutine(tx.QueryRowContext(ctx, `SELECT `+routineColumns+` FROM routine WHERE id = ? AND deleted = 0`, run.RoutineID))
-	if errors.Is(err, sql.ErrNoRows) {
-		return RoutineRun{}, false, ErrRoutineNotFound
-	}
-	if err != nil {
-		return RoutineRun{}, false, fmt.Errorf("reading routine for claim: %w", err)
-	}
-	run.RoutineUpdatedAt, run.RoutineName, run.Prompt, run.Directory, run.RemoteID, run.Agent, run.Model, run.SessionMode, run.TargetSessionID = routine.UpdatedAt, routine.Name, routine.Prompt, routine.Directory, routine.RemoteID, routine.Agent, routine.Model, routine.SessionMode, routine.SessionID
-	run.ArchiveSessionAfterSuccess = routine.ArchiveSessionAfterSuccess
-	result, err := tx.ExecContext(ctx, `INSERT INTO routine_run (`+routineRunColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT DO NOTHING`, run.ID, run.RoutineID, run.RoutineUpdatedAt, run.RoutineName, run.Prompt,
-		run.Directory, run.RemoteID, run.Agent, run.Model, run.SessionMode, run.TargetSessionID, run.Trigger, run.Platform, run.SessionID, run.State, run.Error,
-		run.OccurrenceAt, run.CreatedAt, run.StartedAt, run.FinishedAt, run.ArchiveSessionAfterSuccess)
-	if err != nil {
-		return RoutineRun{}, false, fmt.Errorf("claiming routine run: %w", err)
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return RoutineRun{}, false, err
-	}
-	if changed == 0 {
-		run, err = scanRoutineRun(tx.QueryRowContext(ctx, `SELECT `+routineRunColumns+` FROM routine_run WHERE routine_id = ? AND occurrence_at = ?`, run.RoutineID, run.OccurrenceAt))
-		if errors.Is(err, sql.ErrNoRows) {
-			return RoutineRun{}, false, ErrRoutineRunActive
-		}
-		return run, false, err
-	}
-	if err := tx.Commit(); err != nil {
-		return RoutineRun{}, false, fmt.Errorf("committing routine run claim: %w", err)
-	}
-	return run, true, nil
-}
-
-func (d *DB) GetRoutineRun(ctx context.Context, id string) (RoutineRun, error) {
-	run, err := scanRoutineRun(d.db.QueryRowContext(ctx, `SELECT `+routineRunColumns+` FROM routine_run WHERE id = ?`, id))
-	if errors.Is(err, sql.ErrNoRows) {
-		return RoutineRun{}, ErrRoutineRunNotFound
-	}
-	if err != nil {
-		return RoutineRun{}, fmt.Errorf("getting routine run: %w", err)
-	}
-	return run, nil
-}
-
-func (d *DB) ListRoutineRuns(ctx context.Context, routineID string) ([]RoutineRun, error) {
-	rows, err := d.db.QueryContext(ctx, `SELECT `+routineRunColumns+` FROM routine_run WHERE routine_id = ? ORDER BY created_at DESC, id DESC`, routineID)
-	if err != nil {
-		return nil, fmt.Errorf("listing routine runs: %w", err)
-	}
-	defer rows.Close()
-	var runs []RoutineRun
-	for rows.Next() {
-		run, err := scanRoutineRun(rows)
-		if err != nil {
-			return nil, fmt.Errorf("scanning routine run: %w", err)
-		}
-		runs = append(runs, run)
-	}
-	return runs, rows.Err()
-}
-
-func (d *DB) UpdateRoutineRun(ctx context.Context, run RoutineRun) error {
-	result, err := d.db.ExecContext(ctx, `UPDATE routine_run SET platform = ?, session_id = ?, state = ?, error = ?,
-		started_at = CASE WHEN ? = 0 THEN started_at ELSE ? END,
-		finished_at = CASE WHEN ? = 0 THEN finished_at ELSE ? END WHERE id = ?`,
-		run.Platform, run.SessionID, run.State, run.Error, run.StartedAt, run.StartedAt, run.FinishedAt, run.FinishedAt, run.ID)
-	if err != nil {
-		return fmt.Errorf("updating routine run: %w", err)
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if changed == 0 {
-		return ErrRoutineRunNotFound
-	}
-	return nil
-}
-
 func (d *DB) ListDueRoutines(ctx context.Context, now int64) ([]Routine, error) {
 	rows, err := d.db.QueryContext(ctx, `SELECT `+routineColumns+` FROM routine
 		WHERE enabled = 1 AND deleted = 0 AND next_due_at > 0 AND next_due_at <= ?
@@ -293,114 +197,4 @@ func (d *DB) ExpireOverdueTimeoutRoutines(ctx context.Context, now int64) error 
 		return fmt.Errorf("expiring overdue timeout routines: %w", err)
 	}
 	return nil
-}
-
-func (d *DB) ListRunningRoutineRuns(ctx context.Context) ([]RoutineRun, error) {
-	rows, err := d.db.QueryContext(ctx, `SELECT `+routineRunColumns+` FROM routine_run WHERE state = 'running' ORDER BY created_at, id`)
-	if err != nil {
-		return nil, fmt.Errorf("listing running routine runs: %w", err)
-	}
-	defer rows.Close()
-	var runs []RoutineRun
-	for rows.Next() {
-		run, err := scanRoutineRun(rows)
-		if err != nil {
-			return nil, fmt.Errorf("scanning running routine run: %w", err)
-		}
-		runs = append(runs, run)
-	}
-	return runs, rows.Err()
-}
-
-func (d *DB) LinkRoutineRun(ctx context.Context, id, platform, sessionID string, startedAt int64, bindRoutine bool) error {
-	tx, err := d.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("beginning routine run link: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	if bindRoutine {
-		if _, err := tx.ExecContext(ctx, `UPDATE routine SET session_id = ? WHERE id = (
-			SELECT routine_id FROM routine_run WHERE id = ? AND session_mode = 'reuse' AND target_session_id = ''
-		) AND directory = (SELECT directory FROM routine_run WHERE id = ?) AND remote_id = (SELECT remote_id FROM routine_run WHERE id = ?)
-		AND session_mode = 'reuse' AND session_id = ''`, sessionID, id, id, id); err != nil {
-			return fmt.Errorf("binding routine session: %w", err)
-		}
-	}
-	result, err := tx.ExecContext(ctx, `UPDATE routine_run SET platform = ?, session_id = ?, started_at = ? WHERE id = ? AND state = 'running'`, platform, sessionID, startedAt, id)
-	if err != nil {
-		return fmt.Errorf("linking routine run: %w", err)
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if changed == 0 {
-		return ErrRoutineRunNotFound
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("committing routine run link: %w", err)
-	}
-	return nil
-}
-
-// FinishRoutineRun settles a claimed occurrence and advances its routine in
-// one transaction. Successful delete-after-success routines are soft deleted.
-// reply, the session's final assistant text, is only shown in the Inbox item.
-//
-// advance is false for a run that did not consume a scheduled occurrence
-// (manual, webhook). Such a run leaves next_due_at, enabled and updated_at
-// alone, so it cannot invalidate the routine version an overlapping scheduled
-// run captured and must match to consume its occurrence.
-func (d *DB) FinishRoutineRun(ctx context.Context, id, runState, errorText, reply string, finishedAt, nextDueAt int64, enabled, advance bool) (bool, error) {
-	tx, err := d.db.BeginTx(ctx, nil)
-	if err != nil {
-		return false, fmt.Errorf("beginning routine run finish: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	var routineID string
-	var routineUpdatedAt int64
-	if err := tx.QueryRowContext(ctx, `SELECT routine_id, routine_updated_at FROM routine_run WHERE id = ? AND state = 'running'`, id).Scan(&routineID, &routineUpdatedAt); errors.Is(err, sql.ErrNoRows) {
-		return false, nil
-	} else if err != nil {
-		return false, fmt.Errorf("reading routine run for finish: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `UPDATE routine_run SET state = ?, error = ?, finished_at = ? WHERE id = ? AND state = 'running'`, runState, errorText, finishedAt, id); err != nil {
-		return false, fmt.Errorf("finishing routine run: %w", err)
-	}
-	if !advance {
-		if runState == "success" {
-			if _, err := tx.ExecContext(ctx, `UPDATE routine SET next_due_at = 0, enabled = 0, deleted = 1, deleted_at = ?, updated_at = ?
-				WHERE id = ? AND deleted = 0 AND delete_after_success = 1 AND updated_at = ?`, finishedAt, finishedAt, routineID, routineUpdatedAt); err != nil {
-				return false, fmt.Errorf("deleting successful routine: %w", err)
-			}
-		}
-	} else if runState == "success" {
-		if _, err := tx.ExecContext(ctx, `UPDATE routine SET
-			next_due_at = CASE WHEN delete_after_success = 1 THEN 0 ELSE ? END,
-			enabled = CASE WHEN delete_after_success = 1 THEN 0 ELSE ? END,
-			deleted = CASE WHEN delete_after_success = 1 THEN 1 ELSE deleted END,
-			deleted_at = CASE WHEN delete_after_success = 1 THEN ? ELSE deleted_at END,
-			updated_at = ? WHERE id = ? AND deleted = 0 AND updated_at = ?`, nextDueAt, enabled, finishedAt, finishedAt, routineID, routineUpdatedAt); err != nil {
-			return false, fmt.Errorf("advancing successful routine: %w", err)
-		}
-	} else if _, err := tx.ExecContext(ctx, `UPDATE routine SET next_due_at = ?, enabled = ?, updated_at = ? WHERE id = ? AND deleted = 0 AND updated_at = ?`, nextDueAt, enabled, finishedAt, routineID, routineUpdatedAt); err != nil {
-		return false, fmt.Errorf("advancing failed routine: %w", err)
-	}
-	body := fmt.Sprintf("Run %s finished with status **%s**.\n\n", id, runState)
-	for _, section := range []string{errorText, reply} {
-		if section = strings.TrimSpace(section); section != "" {
-			body += section + "\n\n"
-		}
-	}
-	body += "[View routines](/routines)"
-	if _, err := tx.ExecContext(ctx, `INSERT INTO inbox_item (id, title, body, created_at, category, session_json)
-		SELECT ?, routine_name || ': ' || ?, ?, ?, 'routine',
-		CASE WHEN platform <> '' AND session_id <> '' THEN json_object('platform', platform, 'sessionId', session_id) ELSE '' END
-		FROM routine_run WHERE id = ?`, "routine-"+id, runState, body, finishedAt, id); err != nil {
-		return false, fmt.Errorf("notifying routine completion: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return false, fmt.Errorf("committing routine run finish: %w", err)
-	}
-	return true, nil
 }

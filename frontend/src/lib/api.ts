@@ -586,6 +586,7 @@ export const api = {
     revoke: (id: string) => postJSON<void>(`/api/webhook-inboxes/${encodeURIComponent(id)}`, undefined, { method: 'DELETE', parseJSON: false }),
     deliveries: (id: string, signal?: AbortSignal) => fetchJSON<WebhookDelivery[]>(`/api/webhook-inboxes/${encodeURIComponent(id)}/deliveries`, signal),
     subscribe: (id: string, input: { routineId: string; headerPredicates: string; jsonPredicates: string }) => postJSON<WebhookSubscription>(`/api/webhook-inboxes/${encodeURIComponent(id)}/subscriptions`, input, { method: 'PUT' }),
+    redeliver: (id: string, deliveryId: string) => postJSON<{ deliveryId: string }>(`/api/webhook-inboxes/${encodeURIComponent(id)}/redeliver`, { deliveryId }),
     unsubscribe: (id: string, routineId: string) => postJSON<void>(`/api/webhook-inboxes/${encodeURIComponent(id)}/subscriptions`, { routineId }, { method: 'DELETE', parseJSON: false }),
   },
   // Webhook relay + enrollment token for new inboxes. The token is

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { api, type Routine } from '../lib/api';
@@ -8,7 +8,7 @@ import type { WebhookDelivery, WebhookInbox } from '../lib/api.types';
 import { WebhookInboxDrawer } from './WebhookInboxDrawer';
 import { decodeFilters, deliveryHint, describeFilters, encodeFilters, outcomes, triggerFor, triggerLabel } from '../lib/webhookFilters';
 
-vi.mock('../lib/api', () => ({ api: { getWebhookRelay: vi.fn(), webhookInboxes: { create: vi.fn(), update: vi.fn(), rotate: vi.fn(), revoke: vi.fn(), deliveries: vi.fn() } } }));
+vi.mock('../lib/api', () => ({ api: { getWebhookRelay: vi.fn(), webhookInboxes: { create: vi.fn(), update: vi.fn(), rotate: vi.fn(), revoke: vi.fn(), deliveries: vi.fn(), redeliver: vi.fn() } } }));
 
 const routine = { id: 'r1', name: 'Review', enabled: true } as Routine;
 const inbox: WebhookInbox = {
@@ -16,7 +16,7 @@ const inbox: WebhookInbox = {
   subscriptions: [{ id: 'sub-1', inboxId: 'inbox-1', routineId: 'r1', headerPredicates: '{"x-forgejo-event":{"equals":"pull_request"}}', jsonPredicates: '', createdAt: 1 }],
 };
 const delivery: WebhookDelivery = {
-  deliveryId: 'd1', acceptedAt: 1_000, attempts: 0, lastError: '', headers: '{"X-Forgejo-Event":["pull_request"]}', body: '{"action":"opened","number":7}',
+  deliveryId: 'd1', accepted: true, acceptedAt: 1_000, attempts: 0, lastError: '', headers: '{"X-Forgejo-Event":["pull_request"]}', body: '{"action":"opened","number":7}',
   dispatches: [{ routineId: 'r1', state: 'terminal', error: '', platform: 'opencode', sessionId: 'ses-1' }, { routineId: 'gone', state: 'failure', error: 'no session', platform: '', sessionId: '' }],
 };
 
@@ -144,6 +144,26 @@ describe('WebhookInboxDrawer', () => {
     expect(within(linked).getByText('enabled')).toBeInTheDocument();
     await user.click(within(linked).getByRole('button', { name: 'Review' }));
     expect(props.onEditRoutine).toHaveBeenCalledWith(routine);
+  });
+
+  it('redelivers an accepted delivery after confirmation and reloads the log', async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValue(true);
+    vi.mocked(api.webhookInboxes.deliveries).mockResolvedValue([delivery, { ...delivery, deliveryId: 'd0', accepted: false, body: '', dispatches: [], lastError: 'bad key', attempts: 8 }]);
+    vi.mocked(api.webhookInboxes.redeliver).mockResolvedValueOnce({ deliveryId: 'd1-redelivery-1' }).mockRejectedValueOnce(new Error('relay gone'));
+    renderDrawer();
+
+    const buttons = await screen.findAllByRole('button', { name: 'Redeliver' });
+    expect(buttons).toHaveLength(1); // the undecrypted delivery has nothing to replay
+    expect(screen.getByText('(not decrypted)')).toBeInTheDocument();
+    await user.click(buttons[0]);
+    expect(api.webhookInboxes.redeliver).not.toHaveBeenCalled();
+    await user.click(buttons[0]);
+    expect(api.webhookInboxes.redeliver).toHaveBeenCalledWith('inbox-1', 'd1');
+    await waitFor(() => expect(api.webhookInboxes.deliveries).toHaveBeenCalledTimes(2));
+    await user.click(await screen.findByRole('button', { name: 'Redeliver' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('relay gone');
+    confirm.mockRestore();
   });
 
   it('shows an empty subscriber list, action errors, and revokes after confirmation', async () => {

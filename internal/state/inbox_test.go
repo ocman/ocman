@@ -3,6 +3,7 @@ package state
 import (
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -373,9 +374,36 @@ func TestWebhookDeliveryAcceptanceIsIdempotent(t *testing.T) {
 	if err != nil || accepted {
 		t.Fatalf("duplicate acceptance = %v, %v", accepted, err)
 	}
+	// An empty body is a valid webhook; the Inbox item's CHECK used to reject it.
+	if accepted, err := db.AcceptWebhookDelivery(t.Context(), "inbox", "empty", "POST webhook", "", "{}", 11); err != nil || !accepted {
+		t.Fatalf("empty body acceptance = %v, %v", accepted, err)
+	}
+	// A delivery is logged, not announced: only failures reach the Inbox.
 	items, err := db.ListInboxItems(t.Context())
-	if err != nil || len(items) != 1 {
+	if err != nil || len(items) != 0 {
 		t.Fatalf("items = %v, %v", items, err)
+	}
+	if title, _, body, err := db.GetWebhookDelivery(t.Context(), "inbox", "delivery"); err != nil || title != "POST webhook" || body != "body" {
+		t.Fatalf("stored delivery = %q %q, %v", title, body, err)
+	}
+	if err := db.FinishWebhookDispatch(t.Context(), "inbox", "dispatched", "routine", "failure", "no host", 12); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err = db.ClaimWebhookDispatch(t.Context(), "inbox", "failing", "routine", 13)
+	if err != nil || !claimed {
+		t.Fatalf("claim = %v, %v", claimed, err)
+	}
+	for range 2 { // a retried failure notifies once
+		if err := db.FinishWebhookDispatch(t.Context(), "inbox", "failing", "routine", "failure", "no host", 14); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ClaimWebhookDispatch(t.Context(), "inbox", "failing", "routine", 15); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items, err = db.ListInboxItems(t.Context())
+	if err != nil || len(items) != 1 || items[0].Category != InboxRoutine || !strings.Contains(items[0].Body, "no host") {
+		t.Fatalf("failure items = %+v, %v", items, err)
 	}
 }
 
@@ -395,6 +423,11 @@ func TestWebhookDeliveryErrorBackoffIsBounded(t *testing.T) {
 	allowed, err := db.WebhookDeliveryRetryAllowed(t.Context(), "inbox", "delivery", now)
 	if err != nil || allowed {
 		t.Fatalf("retry after max attempts = %v, %v", allowed, err)
+	}
+	// Retries are quiet; giving up is announced once.
+	items, err := db.ListInboxItems(t.Context())
+	if err != nil || len(items) != 1 || !strings.Contains(items[0].Body, "bad ciphertext") {
+		t.Fatalf("give-up items = %+v, %v", items, err)
 	}
 }
 

@@ -15,7 +15,7 @@ const routine: Routine = {
   agent: 'plan', model: 'anthropic/claude-sonnet-4',
   sessionMode: 'new', sessionId: '',
   scheduleKind: 'cron', scheduleConfigJSON: '{"cron":"0 9 * * *","timezone":"Europe/Brussels"}', permissionRulesJSON: '[]', nextDueAt: 2_000_000,
-  enabled: true, deleted: false, deleteAfterSuccess: false, archiveSessionAfterSuccess: true, createdAt: 1_000, updatedAt: 1_000,
+  enabled: true, deleted: false, deleteAfterSuccess: false, archiveSessionAfterSuccess: true, notifyOnSuccess: true, createdAt: 1_000, updatedAt: 1_000,
 };
 
 const inbox: WebhookInbox = {
@@ -77,6 +77,7 @@ describe('Routines', () => {
       name: 'Deploy check', directory: '/repo', remoteId: 'local', agent: 'build', model: 'openai/gpt-5.4', sessionMode: 'new', sessionId: '', deleteAfterSuccess: true,
       schedule: { kind: 'timeout', timeoutMs: 900_000 },
       archiveSessionAfterSuccess: true,
+      notifyOnSuccess: false, // successes stay out of the Inbox unless opted in
     })));
   }, 15_000);
 
@@ -294,11 +295,13 @@ describe('Routines', () => {
     expect(screen.getByLabelText('Cron expression')).toHaveValue('0 9 * * *');
     expect(screen.getByLabelText('Archive session after a successful run')).toBeChecked();
     await user.click(screen.getByLabelText('Archive session after a successful run'));
+    expect(screen.getByLabelText(/Notify in the Inbox after a successful run/)).toBeChecked();
+    await user.click(screen.getByLabelText(/Notify in the Inbox after a successful run/));
     expect(screen.queryByRole('heading', { name: 'History' })).not.toBeInTheDocument();
     await user.clear(screen.getByLabelText('Name'));
     await user.type(screen.getByLabelText('Name'), 'Renamed');
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
-    await waitFor(() => expect(api.routines.update).toHaveBeenCalledWith(routine.id, expect.objectContaining({ name: 'Renamed', archiveSessionAfterSuccess: false })));
+    await waitFor(() => expect(api.routines.update).toHaveBeenCalledWith(routine.id, expect.objectContaining({ name: 'Renamed', archiveSessionAfterSuccess: false, notifyOnSuccess: false })));
   });
 
   it('confirms before deleting a routine', async () => {

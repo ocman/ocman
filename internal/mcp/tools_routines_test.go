@@ -79,9 +79,9 @@ func TestRoutineToolActions(t *testing.T) {
 	created := callTool(t, srv, "routines", map[string]any{
 		"action": "create", "name": "Review", "prompt": "Review work", "directory": "/repo",
 		"session_mode": "reuse", "schedule_kind": "cron", "cron": "0 9 * * 1-5", "timezone": "Europe/Brussels",
-		"enabled": true, "delete_after_success": true, "archive_session_after_success": true,
+		"enabled": true, "delete_after_success": true, "archive_session_after_success": true, "notify_on_success": true,
 	})
-	if created.IsError || svc.input.SessionMode != routines.SessionReuse || svc.input.Schedule.Kind != routines.ScheduleCron || !svc.input.Enabled || !svc.input.DeleteAfterSuccess || !svc.input.ArchiveSessionAfterSuccess {
+	if created.IsError || svc.input.SessionMode != routines.SessionReuse || svc.input.Schedule.Kind != routines.ScheduleCron || !svc.input.Enabled || !svc.input.DeleteAfterSuccess || !svc.input.ArchiveSessionAfterSuccess || !svc.input.NotifyOnSuccess {
 		t.Fatalf("create result = %q, input = %#v", resultText(created), svc.input)
 	}
 

@@ -69,6 +69,42 @@ func TestMigrateV80RepairsMissingWebhookInbox(t *testing.T) {
 	}
 }
 
+func TestMigrateV106MovesWebhookBodiesOutOfTheInbox(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for version := 1; version <= 105; version++ {
+		if err := applyMigration(tx, version); err != nil {
+			t.Fatalf("apply v%d: %v", version, err)
+		}
+	}
+	if _, err := tx.Exec(`INSERT INTO webhook_inbox (id, routine_id, relay_url, management_token, fetch_token, acknowledgment_token, identity, created_at) VALUES ('in', 'in', 'https://relay', 'm', 'f', 'a', 'id', 1);
+		INSERT INTO inbox_item (id, title, body, created_at) VALUES ('in:d1', 'POST webhook', '{"a":1}', 1), ('other', 'Kept', 'kept', 1);
+		INSERT INTO webhook_delivery (inbox_id, delivery_id, item_id, accepted_at) VALUES ('in', 'd1', 'in:d1', 1), ('in', 'd0', '', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := applyMigration(tx, 106); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	var title, body string
+	if err := db.QueryRow(`SELECT title, body FROM webhook_delivery WHERE delivery_id = 'd1'`).Scan(&title, &body); err != nil || title != "POST webhook" || body != `{"a":1}` {
+		t.Fatalf("backfill = %q %q, %v", title, body, err)
+	}
+	var ids string
+	if err := db.QueryRow(`SELECT group_concat(id) FROM inbox_item`).Scan(&ids); err != nil || ids != "other" {
+		t.Fatalf("inbox items after migration = %q, %v", ids, err)
+	}
+}
+
 func TestMigrateV57RepairsFormerFactoryClosureMigration(t *testing.T) {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {

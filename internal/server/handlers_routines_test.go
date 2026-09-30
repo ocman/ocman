@@ -74,7 +74,7 @@ func TestRoutineHTTPLifecycle(t *testing.T) {
 		t.Fatalf("empty list: %d %s", rec.Code, rec.Body.String())
 	}
 
-	create := doRoutineRequest(t, handler, http.MethodPost, "/api/routines", strings.Replace(validRoutineBody, `"enabled":true`, `"enabled":true,"archiveSessionAfterSuccess":true`, 1))
+	create := doRoutineRequest(t, handler, http.MethodPost, "/api/routines", strings.Replace(validRoutineBody, `"enabled":true`, `"enabled":true,"archiveSessionAfterSuccess":true,"notifyOnSuccess":true`, 1))
 	if create.Code != http.StatusCreated {
 		t.Fatalf("create: %d %s", create.Code, create.Body.String())
 	}
@@ -82,7 +82,7 @@ func TestRoutineHTTPLifecycle(t *testing.T) {
 	if err := json.Unmarshal(create.Body.Bytes(), &created); err != nil || created.ID == "" || created.Name != "Daily check" || created.SessionMode != routines.SessionNew || !strings.Contains(create.Body.String(), `"agent":"build"`) || !strings.Contains(create.Body.String(), `"model":"openai/gpt-5.4"`) {
 		t.Fatalf("created=%+v err=%v", created, err)
 	}
-	if !created.ArchiveSessionAfterSuccess {
+	if !created.ArchiveSessionAfterSuccess || !created.NotifyOnSuccess {
 		t.Fatal("archive setting was not saved")
 	}
 

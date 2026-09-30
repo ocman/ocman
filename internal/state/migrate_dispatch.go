@@ -7,7 +7,7 @@ import (
 
 // v100 adds viewer-scoped preview-provider consent (preview_auth.go).
 // v101 adds artifacts and their relay shares (artifacts.go).
-const latestSchemaVersion = 105
+const latestSchemaVersion = 107
 
 // applyMigration runs the DDL for the given target version.
 func applyMigration(tx *sql.Tx, target int) error {
@@ -270,6 +270,40 @@ func applyMigration(tx *sql.Tx, target int) error {
 			return err
 		}
 		return addColumnIfMissing(tx, "webhook_inbox", "secret_header", "TEXT NOT NULL DEFAULT ''")
+	case 106:
+		// The delivery log keeps its own request title and body; deliveries no
+		// longer post Inbox items, and the ones they did post move out.
+		var exists bool
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='webhook_delivery')`).Scan(&exists); err != nil || !exists {
+			return err
+		}
+		for _, column := range []string{"title", "body"} {
+			if err := addColumnIfMissing(tx, "webhook_delivery", column, "TEXT NOT NULL DEFAULT ''"); err != nil {
+				return err
+			}
+		}
+		_, err := tx.Exec(`UPDATE webhook_delivery SET
+				title = COALESCE((SELECT i.title FROM inbox_item i WHERE i.id = webhook_delivery.item_id), ''),
+				body = COALESCE((SELECT i.body FROM inbox_item i WHERE i.id = webhook_delivery.item_id), '')
+			WHERE item_id != '';
+			DELETE FROM inbox_item WHERE id IN (SELECT item_id FROM webhook_delivery WHERE item_id != '')`)
+		return err
+	case 107:
+		// Routines report only runs that don't succeed unless they opt in; the
+		// run keeps the choice in force when it started, like its other options.
+		for _, table := range []string{"routine", "routine_run"} {
+			var exists bool
+			if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?)`, table).Scan(&exists); err != nil {
+				return err
+			}
+			if !exists {
+				continue
+			}
+			if err := addColumnIfMissing(tx, table, "notify_on_success", "INTEGER NOT NULL DEFAULT 0 CHECK (notify_on_success IN (0, 1))"); err != nil {
+				return err
+			}
+		}
+		return nil
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}

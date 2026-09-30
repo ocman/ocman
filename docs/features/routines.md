@@ -29,8 +29,11 @@ model, and trigger recorded when each run started.
 Select a routine row to open its editable settings and run history in the side
 drawer.
 
-When a run finishes, ocman adds an Inbox item with the run status and the
-session's final assistant message.
+When a run fails or is interrupted, ocman adds an Inbox item with the run
+status and the session's final assistant message. Successful runs stay out of
+the Inbox unless you turn on **Notify in the Inbox after a successful run**
+under **After a run** (`notify_on_success` in the MCP `routines` tool). A run
+uses the setting that was in force when it started.
 
 ## Webhook deliveries
 
@@ -71,7 +74,14 @@ revoke, renaming, replacing or removing the shared secret (the URL stays the
 same; this needs a relay with the `PUT /inboxes/{id}/secret` endpoint), the subscribed routines, and the ten most recent deliveries with their
 filtered headers, body, and what happened for each subscriber (ran, no match,
 skipped because the routine is disabled, or failed). Use it to check a
-condition against what the provider actually sent.
+condition against what the provider actually sent. **Redeliver** replays a
+logged delivery as a new one: every subscriber is matched and run again, and
+the replay gets its own log entry. The log keeps no query string, so a
+replayed delivery has none.
+
+Deliveries are logged, not posted to the Inbox. The Inbox only hears about
+failures: a delivery ocman gave up on after 8 attempts, or a routine that
+could not be started for a delivery.
 
 Disabled routines are skipped, while deleted routines cancel queued
 dispatches. Revoking an inbox removes its subscriptions. Delivery and dispatch

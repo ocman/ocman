@@ -60,6 +60,7 @@ func buildRoutine(input Input, now time.Time) (state.Routine, error) {
 		ScheduleKind: input.Schedule.Kind, ScheduleConfigJSON: config, NextDueAt: due,
 		Enabled: input.Enabled, DeleteAfterSuccess: input.DeleteAfterSuccess,
 		ArchiveSessionAfterSuccess: input.ArchiveSessionAfterSuccess,
+		NotifyOnSuccess:            input.NotifyOnSuccess,
 		PermissionRulesJSON:        string(rulesJSON),
 	}, nil
 }
@@ -139,6 +140,6 @@ func InputFromRoutine(routine state.Routine, now time.Time) (Input, error) {
 		Name: routine.Name, Prompt: routine.Prompt, Directory: routine.Directory, RemoteID: routine.RemoteID,
 		Agent: routine.Agent, Model: routine.Model, SessionMode: routine.SessionMode, SessionID: routine.SessionID,
 		Schedule: schedule, Enabled: routine.Enabled, DeleteAfterSuccess: routine.DeleteAfterSuccess,
-		ArchiveSessionAfterSuccess: routine.ArchiveSessionAfterSuccess, PermissionRules: rules,
+		ArchiveSessionAfterSuccess: routine.ArchiveSessionAfterSuccess, NotifyOnSuccess: routine.NotifyOnSuccess, PermissionRules: rules,
 	}, nil
 }
