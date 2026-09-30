@@ -232,7 +232,15 @@ func patchRoutineInput(existing state.Routine, req mcplib.CallToolRequest, argum
 	if has("at") {
 		input.Schedule.At = time.UnixMilli(int64(req.GetInt("at", 0)))
 	}
-	if input.Schedule.Kind == routines.ScheduleTimeout && input.Schedule.Timeout <= 0 {
+	// Without a schedule argument the stored schedule and due time are kept
+	// as-is; rebuilding would skip an overdue cron or reject a spent one-shot.
+	input.KeepSchedule = true
+	for _, name := range []string{"schedule_kind", "cron", "timezone", "timeout_ms", "at"} {
+		if has(name) {
+			input.KeepSchedule = false
+		}
+	}
+	if !input.KeepSchedule && input.Schedule.Kind == routines.ScheduleTimeout && input.Schedule.Timeout <= 0 {
 		return routines.Input{}, fmt.Errorf("the timeout has already elapsed; pass timeout_ms or another schedule_kind: %w", routines.ErrValidation)
 	}
 	if has("permission_rules") {

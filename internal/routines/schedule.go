@@ -37,9 +37,13 @@ func buildRoutine(input Input, now time.Time) (state.Routine, error) {
 	default:
 		return state.Routine{}, fmt.Errorf("invalid session mode: %w", ErrValidation)
 	}
-	config, due, err := encodeSchedule(input.Schedule, now)
-	if err != nil {
-		return state.Routine{}, fmt.Errorf("invalid schedule: %w", ErrValidation)
+	var config string
+	var due int64
+	if !input.KeepSchedule {
+		var err error
+		if config, due, err = encodeSchedule(input.Schedule, now); err != nil {
+			return state.Routine{}, fmt.Errorf("invalid schedule: %w", ErrValidation)
+		}
 	}
 	rules := input.PermissionRules
 	if rules == nil {

@@ -2,7 +2,6 @@ package server
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -254,12 +253,6 @@ func (s *Server) updateWebhookInbox(w http.ResponseWriter, r *http.Request, inbo
 	writeJSON(w, view)
 }
 
-// validPredicates accepts an empty string or a JSON object of predicates.
-func validPredicates(raw string) bool {
-	var m map[string]json.RawMessage
-	return raw == "" || json.Unmarshal([]byte(raw), &m) == nil
-}
-
 func (s *Server) handleWebhookSubscriptions(w http.ResponseWriter, r *http.Request, inbox state.WebhookInbox) {
 	switch r.Method {
 	case http.MethodGet:
@@ -277,8 +270,8 @@ func (s *Server) handleWebhookSubscriptions(w http.ResponseWriter, r *http.Reque
 		if !readAndUnmarshal(w, r, maxRequestBody, &sub) {
 			return
 		}
-		if !validPredicates(sub.HeaderPredicatesJSON) || !validPredicates(sub.JSONPredicatesJSON) {
-			http.Error(w, "predicates must be a JSON object", http.StatusBadRequest)
+		if !webhook.ValidPredicates(sub.HeaderPredicatesJSON) || !webhook.ValidPredicates(sub.JSONPredicatesJSON) {
+			http.Error(w, "predicates must be a JSON object of predicate objects", http.StatusBadRequest)
 			return
 		}
 		if _, err := s.routineSvc.Get(r.Context(), sub.RoutineID); err != nil {

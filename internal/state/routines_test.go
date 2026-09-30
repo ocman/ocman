@@ -30,7 +30,7 @@ func TestRoutineCompletionCreatesOneCategorizedInboxItem(t *testing.T) {
 				t.Fatalf("claim: %v, %v", claimed, err)
 			}
 			for range 2 {
-				if _, err := db.FinishRoutineRun(t.Context(), "run", outcome, "details", "All checks passed.", 3, 0, false); err != nil {
+				if _, err := db.FinishRoutineRun(t.Context(), "run", outcome, "details", "All checks passed.", 3, 0, false, true); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -290,11 +290,11 @@ func TestRoutineDueRunningLinkAndIdempotentFinish(t *testing.T) {
 		t.Fatalf("running = %+v, %v", running, err)
 	}
 
-	finished, err := db.FinishRoutineRun(t.Context(), run.ID, "failure", "interrupted", "", 4, 200, true)
+	finished, err := db.FinishRoutineRun(t.Context(), run.ID, "failure", "interrupted", "", 4, 200, true, true)
 	if err != nil || !finished {
 		t.Fatalf("finish = %v, %v", finished, err)
 	}
-	finished, err = db.FinishRoutineRun(t.Context(), run.ID, "success", "", "", 5, 300, true)
+	finished, err = db.FinishRoutineRun(t.Context(), run.ID, "success", "", "", 5, 300, true, true)
 	if err != nil || finished {
 		t.Fatalf("second finish = %v, %v", finished, err)
 	}
@@ -332,7 +332,7 @@ func TestRoutineStoreErrorsAfterClose(t *testing.T) {
 		{"list running", func() error { _, err := db.ListRunningRoutineRuns(t.Context()); return err }},
 		{"link run", func() error { return db.LinkRoutineRun(t.Context(), run.ID, "opencode", "session", 2, false) }},
 		{"finish run", func() error {
-			_, err := db.FinishRoutineRun(t.Context(), run.ID, "failure", "", "", 2, 0, false)
+			_, err := db.FinishRoutineRun(t.Context(), run.ID, "failure", "", "", 2, 0, false, true)
 			return err
 		}},
 	}
@@ -370,7 +370,7 @@ func TestRoutineRunWriteFailuresRollback(t *testing.T) {
 	if _, err := db.db.Exec(`CREATE TRIGGER reject_run_finish BEFORE UPDATE ON routine_run BEGIN SELECT RAISE(ABORT, 'reject finish'); END`); err != nil {
 		t.Fatal(err)
 	}
-	if finished, err := db.FinishRoutineRun(t.Context(), run.ID, "failure", "", "", 2, 0, false); err == nil || finished {
+	if finished, err := db.FinishRoutineRun(t.Context(), run.ID, "failure", "", "", 2, 0, false, true); err == nil || finished {
 		t.Fatalf("finish with rejected run update = %v, %v", finished, err)
 	}
 	if _, err := db.db.Exec(`DROP TRIGGER reject_run_finish`); err != nil {
@@ -382,7 +382,7 @@ func TestRoutineRunWriteFailuresRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, runState := range []string{"success", "failure"} {
-		if finished, err := db.FinishRoutineRun(t.Context(), run.ID, runState, "", "", 3, 0, false); err == nil || finished {
+		if finished, err := db.FinishRoutineRun(t.Context(), run.ID, runState, "", "", 3, 0, false, true); err == nil || finished {
 			t.Fatalf("%s with rejected routine update = %v, %v", runState, finished, err)
 		}
 	}
@@ -553,5 +553,29 @@ func TestRoutineRunAllowsOnlyOneActiveSharedSession(t *testing.T) {
 	}
 	if err := db.LinkRoutineRun(t.Context(), first.ID, "opencode", "shared", 4, true); err == nil {
 		t.Fatal("linked a second active run to the shared session")
+	}
+}
+
+func TestUnscheduledFinishLeavesTheScheduleVersion(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	keep, remove := testRoutine("keep", "Keep", 1), testRoutine("remove", "Remove", 1)
+	keep.DeleteAfterSuccess = false
+	for _, r := range []Routine{keep, remove} {
+		if err := db.CreateRoutine(t.Context(), r); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := db.ClaimRoutineRun(t.Context(), RoutineRun{ID: "run-" + r.ID, RoutineID: r.ID, Trigger: "manual", State: "running", OccurrenceAt: 50, CreatedAt: 2}); err != nil {
+			t.Fatal(err)
+		}
+		if finished, err := db.FinishRoutineRun(t.Context(), "run-"+r.ID, "success", "", "", 4, 0, false, false); err != nil || !finished {
+			t.Fatalf("finish %s = %v, %v", r.ID, finished, err)
+		}
+	}
+	if got, _ := db.GetRoutine(t.Context(), "keep"); got.NextDueAt != 100 || !got.Enabled || got.UpdatedAt != 1 {
+		t.Fatalf("manual finish touched the schedule: %+v", got)
+	}
+	if got, _ := db.GetRoutine(t.Context(), "remove"); !got.Deleted {
+		t.Fatalf("delete-after-success routine kept: %+v", got)
 	}
 }

@@ -194,11 +194,11 @@ func TestRoutineToolPatchKeepsUnspecifiedFields(t *testing.T) {
 	in := svc.input
 	if patched.IsError || svc.id != "routine-1" || in.Prompt != "New prompt" || in.Name != "Review" || in.Agent != "plan" || in.Model != "openai/gpt-5.4" ||
 		in.SessionMode != routines.SessionReuse || in.Schedule.Kind != routines.ScheduleCron || in.Schedule.Cron != "0 8 * * *" || in.Schedule.Timezone != "Europe/Brussels" ||
-		!in.Enabled || !in.ArchiveSessionAfterSuccess || len(in.PermissionRules) != 1 || in.PermissionRules[0].Pattern != "git diff *" {
+		!in.Enabled || !in.ArchiveSessionAfterSuccess || len(in.PermissionRules) != 1 || in.PermissionRules[0].Pattern != "git diff *" || in.KeepSchedule {
 		t.Fatalf("patch result = %q, input = %#v", resultText(patched), in)
 	}
 
-	if r := callTool(t, srv, "routines", map[string]any{"action": "patch", "routine_id": "routine-1", "enabled": false, "agent": "", "permission_rules": ""}); r.IsError || svc.input.Enabled || svc.input.Agent != "" || len(svc.input.PermissionRules) != 0 || svc.input.Prompt != "Old prompt" {
+	if r := callTool(t, srv, "routines", map[string]any{"action": "patch", "routine_id": "routine-1", "enabled": false, "agent": "", "permission_rules": ""}); r.IsError || svc.input.Enabled || svc.input.Agent != "" || len(svc.input.PermissionRules) != 0 || svc.input.Prompt != "Old prompt" || !svc.input.KeepSchedule {
 		t.Fatalf("clearing patch = %q, input = %#v", resultText(r), svc.input)
 	}
 	if r := callTool(t, srv, "routines", map[string]any{"action": "patch", "routine_id": "routine-1", "schedule_kind": "once", "at": float64(4_000_000_000_000)}); r.IsError || svc.input.Schedule.Kind != routines.ScheduleOnce || svc.input.Schedule.At.UnixMilli() != 4_000_000_000_000 {
@@ -210,13 +210,16 @@ func TestRoutineToolPatchKeepsUnspecifiedFields(t *testing.T) {
 		args map[string]any
 		want string
 	}{
-		{map[string]any{"action": "patch", "routine_id": "routine-1", "name": "x"}, "timeout has already elapsed"},
+		{map[string]any{"action": "patch", "routine_id": "routine-1", "schedule_kind": "timeout"}, "timeout has already elapsed"},
 		{map[string]any{"action": "patch", "routine_id": "routine-1", "timeout_ms": float64(-1)}, "invalid routine"},
 		{map[string]any{"action": "patch", "routine_id": "routine-1", "timeout_ms": float64(60_000), "permission_rules": "{"}, "permission_rules: invalid JSON"},
 	} {
 		if r := callTool(t, srv, "routines", test.args); !r.IsError || !strings.Contains(resultText(r), test.want) {
 			t.Fatalf("args %#v: %q", test.args, resultText(r))
 		}
+	}
+	if r := callTool(t, srv, "routines", map[string]any{"action": "patch", "routine_id": "routine-1", "name": "x"}); r.IsError || !svc.input.KeepSchedule {
+		t.Fatalf("name-only patch on an elapsed timeout = %q", resultText(r))
 	}
 	if r := callTool(t, srv, "routines", map[string]any{"action": "patch", "routine_id": "routine-1", "timeout_ms": float64(60_000)}); r.IsError || svc.input.Schedule.Timeout.Milliseconds() != 60_000 {
 		t.Fatalf("timeout patch = %q", resultText(r))

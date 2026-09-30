@@ -346,7 +346,12 @@ func (d *DB) LinkRoutineRun(ctx context.Context, id, platform, sessionID string,
 // FinishRoutineRun settles a claimed occurrence and advances its routine in
 // one transaction. Successful delete-after-success routines are soft deleted.
 // reply, the session's final assistant text, is only shown in the Inbox item.
-func (d *DB) FinishRoutineRun(ctx context.Context, id, runState, errorText, reply string, finishedAt, nextDueAt int64, enabled bool) (bool, error) {
+//
+// advance is false for a run that did not consume a scheduled occurrence
+// (manual, webhook). Such a run leaves next_due_at, enabled and updated_at
+// alone, so it cannot invalidate the routine version an overlapping scheduled
+// run captured and must match to consume its occurrence.
+func (d *DB) FinishRoutineRun(ctx context.Context, id, runState, errorText, reply string, finishedAt, nextDueAt int64, enabled, advance bool) (bool, error) {
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, fmt.Errorf("beginning routine run finish: %w", err)
@@ -362,7 +367,14 @@ func (d *DB) FinishRoutineRun(ctx context.Context, id, runState, errorText, repl
 	if _, err := tx.ExecContext(ctx, `UPDATE routine_run SET state = ?, error = ?, finished_at = ? WHERE id = ? AND state = 'running'`, runState, errorText, finishedAt, id); err != nil {
 		return false, fmt.Errorf("finishing routine run: %w", err)
 	}
-	if runState == "success" {
+	if !advance {
+		if runState == "success" {
+			if _, err := tx.ExecContext(ctx, `UPDATE routine SET next_due_at = 0, enabled = 0, deleted = 1, deleted_at = ?, updated_at = ?
+				WHERE id = ? AND deleted = 0 AND delete_after_success = 1 AND updated_at = ?`, finishedAt, finishedAt, routineID, routineUpdatedAt); err != nil {
+				return false, fmt.Errorf("deleting successful routine: %w", err)
+			}
+		}
+	} else if runState == "success" {
 		if _, err := tx.ExecContext(ctx, `UPDATE routine SET
 			next_due_at = CASE WHEN delete_after_success = 1 THEN 0 ELSE ? END,
 			enabled = CASE WHEN delete_after_success = 1 THEN 0 ELSE ? END,

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -563,5 +564,48 @@ func TestInboxSecretCanBeReplacedAndCleared(t *testing.T) {
 	}
 	if got := ingest("", ""); got != http.StatusAccepted {
 		t.Fatalf("cleared secret still required: %d", got)
+	}
+}
+
+// interleavingStore runs hook once, right after the first read of an inbox's
+// metadata, so a second request lands between a handler's read and its write.
+type interleavingStore struct {
+	share.Store
+	hook  func()
+	fired atomic.Bool
+}
+
+func (s *interleavingStore) Get(ctx context.Context, key string) ([]byte, error) {
+	data, err := s.Store.Get(ctx, key)
+	if s.hook != nil && strings.HasSuffix(key, "/meta") && s.fired.CompareAndSwap(false, true) {
+		s.hook()
+	}
+	return data, err
+}
+
+func TestInboxRotationKeepsConcurrentSecretUpdate(t *testing.T) {
+	store := &interleavingStore{}
+	h := newInboxHarness(t, func(cfg *Config) {
+		store.Store = cfg.Store
+		cfg.Store = store
+	})
+	identity, _ := age.GenerateX25519Identity()
+	registered := registerInboxRequest(t, h, inboxRegistrationRequest{Recipient: identity.Recipient().String()})
+	store.hook = func() {
+		rec := h.do(http.MethodPut, "/inboxes/"+registered.ID+"/secret", []byte(`{"secret":"new"}`), registered.ManagementToken)
+		if rec.Code != http.StatusOK {
+			t.Errorf("secret update: %d %s", rec.Code, rec.Body)
+		}
+	}
+	next, _ := age.GenerateX25519Identity()
+	body, _ := json.Marshal(inboxRotationRequest{Recipient: next.Recipient().String()})
+	if rec := h.do(http.MethodPost, "/inboxes/"+registered.ID+"/rotate", body, registered.ManagementToken); rec.Code != http.StatusOK {
+		t.Fatalf("rotate: %d %s", rec.Code, rec.Body)
+	}
+	req := httptest.NewRequest(http.MethodPost, registered.IngestionURL, strings.NewReader("payload"))
+	rec := httptest.NewRecorder()
+	h.srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("rotation dropped the concurrent secret: ingest without secret got %d", rec.Code)
 	}
 }

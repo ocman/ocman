@@ -45,6 +45,7 @@ type testPlatform struct {
 	mu              sync.Mutex
 	id              platforms.ID
 	status          db.SessionStatus
+	statuses        map[string]db.SessionStatus // per-session override of status
 	sessionErr      error
 	emptySession    bool
 	onSession       func()
@@ -97,7 +98,11 @@ func (p *testPlatform) Session(_ context.Context, id string, _, _ int) (*platfor
 	if p.onSession != nil {
 		p.onSession()
 	}
-	return &platforms.SessionDetail{Session: &db.Session{ID: id, Directory: p.directory, Status: p.status, TimeUpdated: 1234}, Messages: p.messages, Parts: p.parts}, nil
+	status := p.status
+	if override, ok := p.statuses[id]; ok {
+		status = override
+	}
+	return &platforms.SessionDetail{Session: &db.Session{ID: id, Directory: p.directory, Status: status, TimeUpdated: 1234}, Messages: p.messages, Parts: p.parts}, nil
 }
 func (p *testPlatform) setStatus(status db.SessionStatus) {
 	p.mu.Lock()
@@ -997,6 +1002,83 @@ func TestOverdueManualRunConsumesTheDueOccurrence(t *testing.T) {
 		}
 		if schedule.Kind == ScheduleCron && (!got.Enabled || got.NextDueAt <= h.now.Load()) {
 			t.Fatalf("cron not advanced: %+v", got)
+		}
+	}
+}
+
+// A manual run that finishes while a scheduled run is still busy must not
+// invalidate the scheduled run's routine version, or the scheduled completion
+// is rejected and the occurrence is never consumed.
+func TestManualRunFinishingDuringScheduledRunKeepsItsOccurrence(t *testing.T) {
+	h := newHarness(t)
+	input := validInput()
+	input.Schedule = Schedule{Kind: ScheduleOnce, At: time.Date(2030, 1, 1, 9, 1, 0, 0, time.UTC)}
+	routine, err := h.svc.Create(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manual, err := h.svc.RunNow(t.Context(), routine.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.now.Store(routine.NextDueAt + time.Minute.Milliseconds())
+	if err := h.svc.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	runs, _ := h.db.ListRoutineRuns(t.Context(), routine.ID)
+	if len(runs) != 2 {
+		t.Fatalf("scheduled run did not start alongside the manual one: %+v", runs)
+	}
+	h.platform.mu.Lock()
+	h.platform.statuses = map[string]db.SessionStatus{manual.SessionID: db.StatusDone}
+	h.platform.mu.Unlock()
+	if err := h.svc.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	h.platform.setStatus(db.StatusDone)
+	for range 2 {
+		if err := h.svc.Tick(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, _ := h.db.GetRoutine(t.Context(), routine.ID)
+	runs, _ = h.db.ListRoutineRuns(t.Context(), routine.ID)
+	if got.Enabled || len(runs) != 2 {
+		t.Fatalf("scheduled occurrence not consumed: routine=%+v runs=%+v", got, runs)
+	}
+	for _, run := range runs {
+		if run.State != RunSuccess {
+			t.Fatalf("run %s = %s", run.ID, run.State)
+		}
+	}
+}
+
+// An edit that leaves the schedule alone must not rebuild it: an overdue cron
+// occurrence would be skipped, and a completed one-shot rejected as past.
+func TestUpdateKeepScheduleLeavesAStaleScheduleAlone(t *testing.T) {
+	for _, schedule := range []Schedule{
+		{Kind: ScheduleCron, Cron: "*/5 * * * *", Timezone: "UTC"},
+		{Kind: ScheduleOnce, At: time.Date(2030, 1, 1, 9, 1, 0, 0, time.UTC)},
+	} {
+		h := newHarness(t)
+		input := validInput()
+		input.Schedule = schedule
+		routine, err := h.svc.Create(t.Context(), input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.now.Store(routine.NextDueAt + time.Hour.Milliseconds())
+		patch, err := InputFromRoutine(routine, time.UnixMilli(h.now.Load()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		patch.Prompt, patch.KeepSchedule = "new prompt", true
+		got, err := h.svc.Update(t.Context(), routine.ID, patch)
+		if err != nil {
+			t.Fatalf("%s: prompt-only update: %v", schedule.Kind, err)
+		}
+		if got.Prompt != "new prompt" || got.NextDueAt != routine.NextDueAt || got.ScheduleConfigJSON != routine.ScheduleConfigJSON || got.ScheduleKind != routine.ScheduleKind {
+			t.Fatalf("%s: schedule changed: before=%+v after=%+v", schedule.Kind, routine, got)
 		}
 	}
 }

@@ -53,11 +53,14 @@ func Dispatch(store *state.DB, svc RoutineDispatcher, inboxID, deliveryID string
 	}
 	for _, sub := range subs {
 		match, err := matches(e, sub)
-		if err != nil {
-			return err
-		}
-		if !match {
-			if err := store.RecordWebhookIgnored(ctx, inboxID, deliveryID, sub.RoutineID, "", now.UnixMilli()); err != nil {
+		if err != nil || !match {
+			// A malformed row (saved before validation) is skipped, not
+			// fatal, so it cannot block the inbox's other subscribers.
+			reason := ""
+			if err != nil {
+				reason = "invalid predicates"
+			}
+			if err := store.RecordWebhookIgnored(ctx, inboxID, deliveryID, sub.RoutineID, reason, now.UnixMilli()); err != nil {
 				return err
 			}
 			continue
@@ -101,6 +104,24 @@ type predicate struct {
 	OneOf  []json.RawMessage `json:"oneOf,omitempty"`
 	Op     string            `json:"op,omitempty"`
 	Value  json.RawMessage   `json:"value,omitempty"`
+}
+
+// ValidPredicates reports whether raw is empty or an object whose every value
+// is a predicate object that matches can decode.
+func ValidPredicates(raw string) bool {
+	if raw == "" {
+		return true
+	}
+	var m map[string]*predicate
+	if json.Unmarshal([]byte(raw), &m) != nil || m == nil {
+		return false
+	}
+	for _, p := range m {
+		if p == nil {
+			return false
+		}
+	}
+	return true
 }
 
 func matches(e relay.InboxEnvelope, sub state.WebhookSubscription) (bool, error) {

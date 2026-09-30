@@ -164,6 +164,16 @@ describe('Routines', () => {
     expect(edit).toHaveFocus();
   });
 
+  it('closes the form once saved even when the refresh fails', async () => {
+    const user = userEvent.setup();
+    render(<MemoryRouter><Routines /></MemoryRouter>);
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+    vi.mocked(api.webhookInboxes.list).mockRejectedValueOnce(new Error('inboxes unavailable'));
+    await user.click(within(screen.getByRole('group', { name: 'Routine form actions' })).getByRole('button', { name: 'Save changes' }));
+    expect(await screen.findByText('inboxes unavailable')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Edit routine' })).not.toBeInTheDocument();
+  });
+
   it('shows missed timeout schedules as expired', async () => {
     vi.mocked(api.routines.list).mockResolvedValue([{ ...routine, enabled: false, expiredAt: Date.now() }]);
     render(<MemoryRouter><Routines /></MemoryRouter>);

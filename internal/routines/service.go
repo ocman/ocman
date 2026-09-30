@@ -62,6 +62,9 @@ type Input struct {
 	DeleteAfterSuccess         bool
 	ArchiveSessionAfterSuccess bool
 	PermissionRules            []platforms.PermissionRule
+	// KeepSchedule makes Update ignore Schedule and keep the stored schedule
+	// and next due time, for edits that don't touch the schedule.
+	KeepSchedule bool
 }
 
 type Deps struct {
@@ -99,6 +102,9 @@ func randomID(prefix string) string {
 }
 
 func (s *Service) Create(ctx context.Context, input Input) (state.Routine, error) {
+	if input.KeepSchedule {
+		return state.Routine{}, fmt.Errorf("a new routine has no schedule to keep: %w", ErrValidation)
+	}
 	now := s.now()
 	routine, err := buildRoutine(input, now)
 	if err != nil {
@@ -121,6 +127,9 @@ func (s *Service) Update(ctx context.Context, id string, input Input) (state.Rou
 	routine, err := buildRoutine(input, now)
 	if err != nil {
 		return state.Routine{}, err
+	}
+	if input.KeepSchedule {
+		routine.ScheduleKind, routine.ScheduleConfigJSON, routine.NextDueAt = existing.ScheduleKind, existing.ScheduleConfigJSON, existing.NextDueAt
 	}
 	routine.ID, routine.CreatedAt, routine.UpdatedAt = id, existing.CreatedAt, now.UnixMilli()
 	if err := s.store.UpdateRoutine(ctx, routine); err != nil {
@@ -323,9 +332,7 @@ func (s *Service) finish(ctx context.Context, run state.RoutineRun, runState, er
 	// it): the scheduler could never claim it again, so it must advance here.
 	scheduled := run.Trigger == "schedule" || (routine.NextDueAt > 0 && run.OccurrenceAt == routine.NextDueAt)
 	nextDue, enabled := int64(0), false
-	if !scheduled {
-		nextDue, enabled = routine.NextDueAt, routine.Enabled
-	} else if routine.ScheduleKind == ScheduleCron && routine.Enabled && !routine.Deleted {
+	if scheduled && routine.ScheduleKind == ScheduleCron && routine.Enabled && !routine.Deleted {
 		var config struct {
 			Cron     string `json:"cron"`
 			Timezone string `json:"timezone"`
@@ -339,6 +346,6 @@ func (s *Service) finish(ctx context.Context, run state.RoutineRun, runState, er
 		}
 		enabled = true
 	}
-	_, err = s.store.FinishRoutineRun(ctx, run.ID, runState, errorText, reply, s.now().UnixMilli(), nextDue, enabled)
+	_, err = s.store.FinishRoutineRun(ctx, run.ID, runState, errorText, reply, s.now().UnixMilli(), nextDue, enabled, scheduled)
 	return err
 }

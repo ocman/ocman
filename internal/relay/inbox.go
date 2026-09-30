@@ -268,8 +268,7 @@ func (s *Server) handleIngestInbox(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRotateInbox(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	m, ok := s.authoriseInbox(w, r, id, func(m inboxMeta) string { return m.ManagementHash })
-	if !ok {
+	if _, ok := s.authoriseInbox(w, r, id, func(m inboxMeta) string { return m.ManagementHash }); !ok {
 		return
 	}
 	var request inboxRotationRequest
@@ -284,6 +283,16 @@ func (s *Server) handleRotateInbox(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mutations.Lock()
 	defer s.mutations.Unlock()
+	// Re-read under the lock so a concurrent secret update is not overwritten.
+	m, found, err := getInboxMeta(r.Context(), s.cfg.Store, id)
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	if !found {
+		http.Error(w, "inbox not found", http.StatusNotFound)
+		return
+	}
 	m.KeyVersion++
 	if m.Recipients == nil {
 		m.Recipients = map[int]string{1: m.Recipient}

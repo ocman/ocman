@@ -218,13 +218,16 @@ export function Routines() {
       const input = inputFor(form, remoteId, editingRules);
       const saved = editing ? await api.routines.update(editing, input) : await api.routines.create(input);
       await saveTrigger(saved.id, trigger, inboxes);
-      await load();
-      setShowForm(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save routine.');
-    } finally {
       setBusy(false);
+      return;
     }
+    // The routine is saved: close before reloading, so a failed refresh can't
+    // leave the form open for a second, duplicate Create.
+    setBusy(false);
+    setShowForm(false);
+    await load().catch((err: Error) => setError(err.message));
   };
 
   const act = async (action: () => Promise<unknown>) => {

@@ -50,6 +50,7 @@ describe('webhook filters', () => {
   it('reads the legacy op/value form and tolerates bad JSON', () => {
     expect(decodeFilters('{"/a":{"op":"equals","value":3}}')).toEqual([{ key: '/a', op: 'equals', value: '3' }]);
     expect(decodeFilters('not json')).toEqual([]);
+    expect(decodeFilters('{"/a":null,"/b":5,"/c":{"exists":true}}')).toEqual([{ key: '/c', op: 'exists', value: '' }]);
     expect(decodeFilters('')).toEqual([]);
   });
 

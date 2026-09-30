@@ -14,9 +14,9 @@ test('creates and runs a routine', async ({ mockedPage: page }) => {
     return route.fulfill({ json: routines });
   });
   await page.route('/api/routines/routine-1/history', (route) => route.fulfill({ json: runs }));
-  await page.route('/api/routines/routine-1/webhook-inbox', async (route) => {
+  await page.route('/api/webhook-inboxes', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 500));
-    await route.fulfill({ json: null });
+    await route.fulfill({ json: [] });
   });
   await page.route('/api/routines/routine-1/run', (route) => {
     const run = { id: 'run-1', routineId: 'routine-1', routineUpdatedAt: Date.now(), routineName: 'Release check', prompt: 'Check release health', directory: '/home/user/projects/myapp', remoteId: 'local', trigger: 'manual', platform: 'opencode', sessionId: 'routine-session', state: 'running', occurrenceAt: Date.now(), createdAt: Date.now() };

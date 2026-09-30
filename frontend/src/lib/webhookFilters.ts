@@ -21,7 +21,9 @@ export function encodeFilters(rows: FilterRow[]): string {
 export function decodeFilters(json: string): FilterRow[] {
   let parsed: Record<string, Predicate>;
   try { parsed = JSON.parse(json || '{}') ?? {}; } catch { return []; }
-  return Object.entries(parsed).map(([key, p]) => {
+  // A non-object predicate (null, 5) can't be shown as a row; the server
+  // rejects them on save, so only rows stored earlier are skipped here.
+  return Object.entries(parsed).filter(([, p]) => p !== null && typeof p === 'object').map(([key, p]) => {
     // Check presence, not length: an empty list matches nothing, and reading
     // it back as 'exists' would widen the filter on the next save.
     if (Array.isArray(p.oneOf)) return { key, op: 'oneOf', value: p.oneOf.map(String).join(', ') };
