@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '../components/Control';
 import { EmptyState } from '../components/EmptyState';
+import { NoticeToast } from '../components/FactoryStartedToast';
 import { RefreshButton } from '../components/RefreshButton';
+import { Spinner } from '../components/Spinner';
 import { api } from '../lib/api';
 import type { WebhookDelivery } from '../lib/api.types';
 import { formatDateTimeShort } from '../lib/format';
@@ -16,6 +18,8 @@ export function WebhookDeliveryLog({ inboxId, routineName }: { inboxId: string; 
   const [deliveries, setDeliveries] = useState<WebhookDelivery[]>();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [redelivering, setRedelivering] = useState('');
+  const [redelivered, setRedelivered] = useState(false);
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -24,15 +28,17 @@ export function WebhookDeliveryLog({ inboxId, routineName }: { inboxId: string; 
   useEffect(() => { void load(); }, [load]);
   const redeliver = async (deliveryId: string) => {
     if (!window.confirm('Redeliver this webhook? Every matching routine runs again.')) return;
-    setLoading(true);
+    setRedelivering(deliveryId);
     setError('');
     try {
       await api.webhookInboxes.redeliver(inboxId, deliveryId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not redeliver.');
-      setLoading(false);
       return;
+    } finally {
+      setRedelivering('');
     }
+    setRedelivered(true);
     await load();
   };
 
@@ -55,7 +61,7 @@ export function WebhookDeliveryLog({ inboxId, routineName }: { inboxId: string; 
                 : <span key={o.label} className={`routine-state ${o.tone}`}>{o.label}</span>)}</span>
             </summary>
             {errors.map((message) => <p key={message} className="routine-error">{message}</p>)}
-            {d.accepted && <div className="routine-actions"><Button type="button" size="small" disabled={loading} onClick={() => void redeliver(d.deliveryId)}>Redeliver</Button></div>}
+            {d.accepted && <div className="routine-actions"><Button type="button" size="small" disabled={loading || !!redelivering} aria-busy={redelivering === d.deliveryId} onClick={() => void redeliver(d.deliveryId)}>{redelivering === d.deliveryId && <Spinner />}Redeliver</Button></div>}
             <h4>Headers</h4>
             <pre>{pretty(d.headers)}</pre>
             <h4>Body</h4>
@@ -63,6 +69,7 @@ export function WebhookDeliveryLog({ inboxId, routineName }: { inboxId: string; 
           </details>
         );
       })}
+      <NoticeToast open={redelivered} onOpenChange={setRedelivered} message="Webhook redelivered." />
     </section>
   );
 }

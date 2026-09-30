@@ -181,9 +181,28 @@ describe('WebhookInboxDrawer', () => {
     await user.click(buttons[0]);
     expect(api.webhookInboxes.redeliver).toHaveBeenCalledWith('inbox-1', 'd1');
     await waitFor(() => expect(api.webhookInboxes.deliveries).toHaveBeenCalledTimes(2));
+    expect((await screen.findAllByText('Webhook redelivered.')).length).toBeGreaterThan(0);
     await user.click(await screen.findByRole('button', { name: 'Redeliver' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('relay gone');
     confirm.mockRestore();
+  });
+
+  it('shows a busy Redeliver button while the request runs', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.mocked(api.webhookInboxes.deliveries).mockResolvedValue([delivery]);
+    let finish: (v: { deliveryId: string }) => void = () => {};
+    vi.mocked(api.webhookInboxes.redeliver).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    renderDrawer();
+
+    const button = await screen.findByRole('button', { name: 'Redeliver' });
+    await user.click(button);
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    expect(button).toBeDisabled();
+    expect(screen.queryByText('Webhook redelivered.')).not.toBeInTheDocument();
+    finish({ deliveryId: 'd1-redelivery-1' });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Redeliver' })).toHaveAttribute('aria-busy', 'false'));
+    expect((await screen.findAllByText('Webhook redelivered.')).length).toBeGreaterThan(0);
   });
 
   it('shows an empty subscriber list, action errors, and revokes after confirmation', async () => {
