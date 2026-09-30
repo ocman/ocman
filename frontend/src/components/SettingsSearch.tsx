@@ -23,6 +23,7 @@ export function SettingsSearchResults({
             <span className="settings-search-result-group">{groupLabels[r.group]}</span>
             <span className="settings-row-label">{r.title}</span>
             <span className="settings-row-desc">{r.description}</span>
+            {r.requires && <span className="settings-row-desc">{r.requires}</span>}
           </button>
         </li>
       ))}

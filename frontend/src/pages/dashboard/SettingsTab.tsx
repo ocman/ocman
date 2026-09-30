@@ -12,7 +12,7 @@ import { usePwaInstall } from '../../lib/usePwaInstall';
 import { SettingRow } from '../../components/SettingRow';
 import { SearchField } from '../../components/Control';
 import { SettingsSearchResults } from '../../components/SettingsSearch';
-import { useRevealSetting } from '../../lib/useRevealSetting';
+import { useRevealSetting, type RevealRequest } from '../../lib/useRevealSetting';
 import { settingEntry, type SettingId, type SettingsGroupId } from '../../lib/settingsCatalog';
 import { LinkPreviewTabs } from '../../components/LinkPreviewTabs';
 import { NotificationsSection, SessionsSection } from './SettingsSections';
@@ -62,15 +62,16 @@ export function SettingsTab() {
   ] satisfies Array<{ id: SettingsGroupId; label: string; show: boolean }>).filter((g) => g.show);
   const [active, setActive] = useState<SettingsGroupId>(groups[0].id);
   const [query, setQuery] = useState('');
-  const [target, setTarget] = useState<SettingId | null>(null);
+  const [target, setTarget] = useState<RevealRequest | null>(null);
   const searching = query.trim() !== '';
   const groupLabels = Object.fromEntries(groups.map((g) => [g.id, g.label]));
-  useRevealSetting(target);
+  const found = useRevealSetting(target);
+  const missing = target && !found ? settingEntry(target.id) : null;
 
   const pick = (id: SettingId) => {
     setQuery('');
     setActive(settingEntry(id).group);
-    setTarget(id);
+    setTarget((prev) => ({ id, seq: (prev?.seq ?? 0) + 1 }));
   };
 
   return (
@@ -99,6 +100,11 @@ export function SettingsTab() {
       <div className="settings-content">
         {searching && <SettingsSearchResults query={query} groupLabels={groupLabels} onPick={pick} />}
         <div hidden={searching}>
+        {missing?.requires && (
+          <p className="settings-row-desc" role="status">
+            <strong>{missing.title}</strong> is not shown right now. {missing.requires}
+          </p>
+        )}
         {active === 'plugins' && <div className="settings-section">
           <h2 className="settings-section-title">Plugins</h2>
           <PluginSettings />
@@ -143,7 +149,7 @@ export function SettingsTab() {
 
         {active === 'link-previews' && <div className="settings-section">
           <h2 className="settings-section-title">Link previews</h2>
-          <LinkPreviewTabs key={target ?? ''} tab={target ? settingEntry(target).tab : undefined} />
+          <LinkPreviewTabs key={target?.seq ?? ''} tab={target ? settingEntry(target.id).tab : undefined} />
         </div>}
 
         {showAppSection && (

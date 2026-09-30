@@ -21,6 +21,11 @@ export type SettingEntry = {
   keywords?: string;
   /** Link previews tab the row lives on. */
   tab?: 'accounts' | 'apps' | 'rules';
+  /**
+   * When the row is shown only under some condition, the condition in a
+   * sentence. Search shows it, and a jump that finds no row explains it.
+   */
+  requires?: string;
 };
 
 export const SETTINGS = {
@@ -30,6 +35,7 @@ export const SETTINGS = {
     description: 'Show a desktop notification when a session finishes or needs your input. Works best after installing ocman as an app.',
     example: 'A long refactor finishes while you are in another app: a "Session done" notification appears, and clicking it opens the session.',
     keywords: 'desktop alert push',
+    requires: 'Shown only in browsers that support notifications.',
   },
   'bell-sound': {
     group: 'notifications',
@@ -72,6 +78,7 @@ export const SETTINGS = {
     description: 'The voice used to read answers aloud. Local voices stay on your device. Online voices may send answer text to the voice service.',
     example: 'Pick "Samantha (en-US, local)" to keep answer text on this machine.',
     keywords: 'speech tts',
+    requires: 'Shown only in browsers that support speech playback.',
   },
   'reading-speed': {
     group: 'sessions',
@@ -79,6 +86,7 @@ export const SETTINGS = {
     description: 'Playback rate for answers read aloud, from 0.5× to 2×. Use Preview voice to hear it.',
     example: '1.3× reads a long summary noticeably faster while staying easy to follow.',
     keywords: 'speech tts rate',
+    requires: 'Shown only in browsers that support speech playback.',
   },
   'worktree-inherit-permissions': {
     group: 'sessions',
@@ -100,6 +108,7 @@ export const SETTINGS = {
     description: 'Number of days without activity before a session or project is archived.',
     example: '30 days keeps a month of work visible before it is archived.',
     keywords: 'ttl days inactive',
+    requires: 'Shown only when automatic archiving is turned on.',
   },
   'model-fallthrough-patience': {
     group: 'sessions',
@@ -142,6 +151,7 @@ export const SETTINGS = {
     description: 'Completed replies are stored before they are sent, so a disconnect or a restart retries them instead of losing them.',
     example: 'Slack was unreachable for a minute: "2 waiting · 1 retrying" until the replies are posted.',
     keywords: 'conversation outbox slack delivery',
+    requires: 'Shown only for an installed conversation plugin, such as Slack.',
   },
   'plugin-backlog-limits': {
     group: 'plugins',
@@ -149,6 +159,7 @@ export const SETTINGS = {
     description: 'At either limit, new conversation work pauses instead of replies being dropped.',
     example: '"40 of 500 replies · 12 of 1024 KiB" means there is plenty of room left.',
     keywords: 'conversation outbox pause',
+    requires: 'Shown only for an installed conversation plugin, such as Slack.',
   },
   'plugin-dead-letters': {
     group: 'plugins',
@@ -156,6 +167,7 @@ export const SETTINGS = {
     description: 'These exhausted their retries. Later replies in the same conversation wait until each one is retried or discarded.',
     example: 'A reply to a deleted Slack thread failed 6 times; discard it so the conversation continues.',
     keywords: 'dead letter retry discard',
+    requires: 'Shown only when a conversation plugin has replies that exhausted their retries.',
   },
   'auto-approve-default': {
     group: 'auto-approve',
@@ -244,6 +256,7 @@ export const SETTINGS = {
     description: 'Preview a self-hosted Forgejo or GitLab with a personal token.',
     example: 'Type Forgejo, host "git.example.com", and a token to preview its PR links.',
     keywords: 'forgejo gitlab token provider',
+    requires: 'Shown only when a provider supports self-hosted instances.',
   },
   'opencode-database': {
     group: 'maintenance',
