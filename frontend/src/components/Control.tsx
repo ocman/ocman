@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 import type { AnchorHTMLAttributes, ComponentPropsWithRef, HTMLAttributes, InputHTMLAttributes, MouseEvent, ReactNode, SelectHTMLAttributes } from 'react';
-import { remoteLog } from '../lib/remoteLog';
 import './Control.css';
 
 type Variant = 'accent' | 'muted' | 'default' | 'link' | 'ghost' | 'danger';
@@ -46,7 +45,7 @@ export function SubmitButton({ onClick, pending = false, pendingLabel, disabled,
 			setRunning(false);
 		}
 	};
-	return <Button {...props} type={type} aria-busy={busy} disabled={disabled || busy} onClick={(event) => { run(event).catch((err: unknown) => remoteLog.error('Button action failed', err)); }}>{busy && pendingLabel ? pendingLabel : children}</Button>;
+	return <Button {...props} type={type} aria-busy={busy} disabled={disabled || busy} onClick={(event) => { run(event).catch((err: unknown) => console.error('Button action failed', err)); }}>{busy && pendingLabel ? pendingLabel : children}</Button>;
 }
 
 /** A link styled as a Button, for navigation and downloads. */

@@ -98,6 +98,8 @@ describe('PermissionModeLock', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Confirm' }));
     const dialog = screen.getByRole('dialog', { name: 'Confirm permission mode' });
     expect(within(dialog).getByRole('button', { name: 'Applying…' })).toHaveAttribute('aria-busy', 'true');
+    await userEvent.keyboard('{Escape}');
+    expect(screen.getByRole('dialog', { name: 'Confirm permission mode' })).toBeInTheDocument();
 
     finish();
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Confirm permission mode' })).not.toBeInTheDocument());

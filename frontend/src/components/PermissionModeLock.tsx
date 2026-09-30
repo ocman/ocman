@@ -114,7 +114,7 @@ export function PermissionModeLock({ sessionId }: { sessionId: string }) {
           label="Confirm permission mode"
           backdropClassName="oc-cmd-backdrop"
           dialogClassName="oc-cmd-palette oc-permission-confirm"
-          onClose={() => setConfirmMode(null)}
+          onClose={() => { if (!saving) setConfirmMode(null); }}
         >
           <div className="oc-permission-confirm-body">
             <span className="oc-permission-mode-icon oc-permission-mode-yolo" aria-hidden="true"><i className="bi bi-exclamation-triangle" /></span>

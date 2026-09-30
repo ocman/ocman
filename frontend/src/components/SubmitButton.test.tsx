@@ -3,9 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SubmitButton } from './Control';
-import { remoteLog } from '../lib/remoteLog';
 
-vi.mock('../lib/remoteLog', () => ({ remoteLog: { error: vi.fn() } }));
 
 function deferred() {
   let resolve!: () => void;
@@ -46,10 +44,12 @@ describe('SubmitButton', () => {
 
   it('recovers and logs after a rejected action', async () => {
     const err = new Error('boom');
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
     render(<SubmitButton onClick={() => Promise.reject(err)}>Save</SubmitButton>);
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
-    expect(remoteLog.error).toHaveBeenCalledWith('Button action failed', err);
+    expect(log).toHaveBeenCalledWith('Button action failed', err);
+    log.mockRestore();
   });
 
   it('shows the caller-owned pending state and blocks clicks', async () => {
