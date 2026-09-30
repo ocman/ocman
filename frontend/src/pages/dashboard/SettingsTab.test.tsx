@@ -56,6 +56,17 @@ describe('SettingsTab actions', () => {
     promptInstall.mockReset();
   });
 
+  it('searches settings and jumps to the matching group', () => {
+    render(<SettingsTab />);
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'disk space' } });
+    fireEvent.click(screen.getByRole('button', { name: /Remove old diffs/ }));
+    expect(screen.getByRole('searchbox', { name: 'Search settings' })).toHaveValue('');
+    expect(screen.getByText('Database maintenance')).toBeVisible();
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'nothing-like-this' } });
+    expect(screen.getByRole('status')).toHaveTextContent('No settings match');
+  });
+
   it('keeps install and sign-out actions working inside setting rows', () => {
     render(<SettingsTab />);
 

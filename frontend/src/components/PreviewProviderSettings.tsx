@@ -100,7 +100,7 @@ export function PreviewProviderSettings() {
   const kind = config.hostKinds.find((k) => k.kind === hostKind);
   return <>
     {config.providers.map((p) => <ProviderRow key={p.id} p={p} busy={busy} run={run} />)}
-    {config.hostKinds.length > 0 && <SettingRow block label="Add a host" desc="Preview a self-hosted Forgejo or GitLab with a personal token.">
+    {config.hostKinds.length > 0 && <SettingRow block setting="preview-add-host">
       <SelectField aria-label="Host type" value={hostKind} onChange={(e) => setHostKind(e.target.value)}>
         {config.hostKinds.map((k) => <option key={k.kind} value={k.kind}>{k.name}</option>)}
       </SelectField>

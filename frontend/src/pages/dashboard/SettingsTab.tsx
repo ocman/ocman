@@ -10,6 +10,10 @@ import { useUiStore } from '../../lib/uiStore';
 import { useApiStore } from '../../lib/apiStore';
 import { usePwaInstall } from '../../lib/usePwaInstall';
 import { SettingRow } from '../../components/SettingRow';
+import { SearchField } from '../../components/Control';
+import { SettingsSearchResults } from '../../components/SettingsSearch';
+import { useRevealSetting } from '../../lib/useRevealSetting';
+import { settingEntry, type SettingId, type SettingsGroupId } from '../../lib/settingsCatalog';
 import { LinkPreviewTabs } from '../../components/LinkPreviewTabs';
 import { NotificationsSection, SessionsSection } from './SettingsSections';
 import { AutoApproveSection } from './AutoApproveSection';
@@ -43,7 +47,7 @@ export function SettingsTab() {
 
   // Sidebar groups. Conditional groups (App, Account) are filtered out so
   // the nav only lists what's actually rendered.
-  const groups = [
+  const groups = ([
     { id: 'notifications', label: 'Notifications', show: true },
     { id: 'sessions', label: 'Sessions', show: true },
     { id: 'remotes', label: 'Remotes', show: true },
@@ -55,25 +59,46 @@ export function SettingsTab() {
     { id: 'maintenance', label: 'Maintenance', show: true },
     { id: 'app', label: 'App', show: showAppSection },
     { id: 'account', label: 'Account', show: authRequired },
-  ].filter((g) => g.show);
-  const [active, setActive] = useState(groups[0].id);
+  ] satisfies Array<{ id: SettingsGroupId; label: string; show: boolean }>).filter((g) => g.show);
+  const [active, setActive] = useState<SettingsGroupId>(groups[0].id);
+  const [query, setQuery] = useState('');
+  const [target, setTarget] = useState<SettingId | null>(null);
+  const searching = query.trim() !== '';
+  const groupLabels = Object.fromEntries(groups.map((g) => [g.id, g.label]));
+  useRevealSetting(target);
+
+  const pick = (id: SettingId) => {
+    setQuery('');
+    setActive(settingEntry(id).group);
+    setTarget(id);
+  };
 
   return (
     <div className="settings-page">
       <nav className="settings-nav" aria-label="Settings groups">
+        <SearchField
+          className="settings-search"
+          aria-label="Search settings"
+          placeholder="Search settings"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Escape') setQuery(''); }}
+        />
         {groups.map((g) => (
           <button
             key={g.id}
             type="button"
-            className={`settings-nav-item${active === g.id ? ' active' : ''}`}
-            aria-current={active === g.id ? 'page' : undefined}
-            onClick={() => setActive(g.id)}
+            className={`settings-nav-item${active === g.id && !searching ? ' active' : ''}`}
+            aria-current={active === g.id && !searching ? 'page' : undefined}
+            onClick={() => { setQuery(''); setTarget(null); setActive(g.id); }}
           >
             {g.label}
           </button>
         ))}
       </nav>
       <div className="settings-content">
+        {searching && <SettingsSearchResults query={query} groupLabels={groupLabels} onPick={pick} />}
+        <div hidden={searching}>
         {active === 'plugins' && <div className="settings-section">
           <h2 className="settings-section-title">Plugins</h2>
           <PluginSettings />
@@ -94,12 +119,9 @@ export function SettingsTab() {
 
         <div className="settings-section" hidden={active !== 'remotes'}>
           <h2 className="settings-section-title">Remotes</h2>
-          <div className="settings-row-desc" style={{ marginBottom: 8 }}>
-            Attach other ocman instances to manage their sessions from here.
-            Copy a remote&rsquo;s access token from its own Settings page (run it
-            with <code>-remote-listen</code>) and paste it below.
-          </div>
-          <RemoteSettings />
+          <SettingRow block setting="remotes">
+            <RemoteSettings />
+          </SettingRow>
         </div>
 
         <div className="settings-section" hidden={active !== 'auto-approve'}>
@@ -114,31 +136,24 @@ export function SettingsTab() {
 
         <div className="settings-section" hidden={active !== 'templates'}>
           <h2 className="settings-section-title">PR &amp; Issue templates</h2>
-          <SettingRow
-            block
-            label="Launch prompt templates"
-            desc={<>The prompt sent to a new agent session when you click
-              &ldquo;Handle this PR/Issue&rdquo; in the sidebar. Edit the
-              templates below; placeholders are substituted at launch
-              time.</>}
-          >
+          <SettingRow block setting="launch-prompt-templates">
             <PromptTemplateSettings />
           </SettingRow>
         </div>
 
         {active === 'link-previews' && <div className="settings-section">
           <h2 className="settings-section-title">Link previews</h2>
-          <LinkPreviewTabs />
+          <LinkPreviewTabs key={target ?? ''} tab={target ? settingEntry(target).tab : undefined} />
         </div>}
 
         {showAppSection && (
           <div className="settings-section" hidden={active !== 'app'}>
             <h2 className="settings-section-title">App</h2>
             <SettingRow
-              label="Install ocman"
+              setting="install-app"
               desc={installed
                 ? 'ocman is installed as an app on this device. Launch it from your dock or app launcher to use it in its own window.'
-                : 'Install ocman as a standalone app with its own window and dock icon. The web version keeps working in any browser tab.'}
+                : undefined}
             >
               <button
                 type="button"
@@ -155,7 +170,7 @@ export function SettingsTab() {
         {authRequired && (
           <div className="settings-section" hidden={active !== 'account'}>
             <h2 className="settings-section-title">Account</h2>
-            <SettingRow label="Session" desc="Sign out of the current session.">
+            <SettingRow setting="sign-out">
               <button
                 type="button"
                 className="vscode-btn"
@@ -166,6 +181,7 @@ export function SettingsTab() {
             </SettingRow>
           </div>
         )}
+        </div>
       </div>
     </div>
   );

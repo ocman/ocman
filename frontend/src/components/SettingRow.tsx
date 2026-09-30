@@ -1,7 +1,9 @@
 import { type ReactNode } from 'react';
 import { SaveStatus } from './SaveStatus';
+import './SettingRow.css';
 import { SearchSelect, type SearchSelectOption } from './SearchSelect';
 import { useSettingSave } from '../lib/useSaveStatus';
+import { settingAnchor, settingEntry, type SettingId } from '../lib/settingsCatalog';
 
 /**
  * SettingRow + its typed controls are the ONLY sanctioned way to render a
@@ -13,27 +15,52 @@ import { useSettingSave } from '../lib/useSaveStatus';
 
 type Save = ReturnType<typeof useSettingSave>;
 
+/**
+ * A configurable setting passes `setting`: its title, description and example
+ * come from the settings catalog (so it is searchable), and `label`/`desc`
+ * only override them for live state. Rows without an id are informational
+ * or generated from data (plugin fields, provider accounts) and pass `label`.
+ */
+type RowCopy =
+  | { setting: SettingId; label?: ReactNode; desc?: ReactNode }
+  | { setting?: undefined; label: ReactNode; desc?: ReactNode };
+
 export function SettingRow({
+  setting,
   label,
   desc,
+  detail,
   block,
   children,
-}: {
-  label: ReactNode;
-  desc?: ReactNode;
+}: RowCopy & {
+  /** Live status shown under the description, e.g. a path and size. */
+  detail?: ReactNode;
   block?: boolean;
   children: ReactNode;
 }) {
+  const entry = setting ? settingEntry(setting) : undefined;
+  const description = desc ?? entry?.description;
   return (
-    <div className={block ? 'settings-row settings-row--block' : 'settings-row'}>
+    <div
+      id={setting ? settingAnchor(setting) : undefined}
+      className={block ? 'settings-row settings-row--block' : 'settings-row'}
+    >
       <div className="settings-row-info">
-        <div className="settings-row-label">{label}</div>
-        {desc != null && <div className="settings-row-desc">{desc}</div>}
+        <div className="settings-row-label">{label ?? entry?.title}</div>
+        {description != null && <div className="settings-row-desc">{description}</div>}
+        {detail != null && <div className="settings-row-desc">{detail}</div>}
+        {entry && (
+          <details className="settings-row-example">
+            <summary>Example</summary>
+            <p>{entry.example}</p>
+          </details>
+        )}
       </div>
       {children}
     </div>
   );
 }
+
 
 /**
  * SettingToggle is a checkbox that runs `onSave(next)` and shows save status.

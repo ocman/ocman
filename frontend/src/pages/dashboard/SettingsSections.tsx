@@ -57,10 +57,10 @@ export function NotificationsSection() {
     <>
       {notifSupported && (
         <SettingRow
-          label="System notifications"
+          setting="system-notifications"
           desc={notifBlocked
             ? 'Notifications are blocked by your browser. Allow them in your browser\u2019s site settings to enable this option.'
-            : 'Show a desktop notification when a session finishes or needs your input. Works best after installing ocman as an app.'}
+            : undefined}
         >
           <SettingToggle
             ariaLabel="System notifications"
@@ -71,10 +71,7 @@ export function NotificationsSection() {
           />
         </SettingRow>
       )}
-      <SettingRow
-        label="Bell sound"
-        desc="Play a bell sound when the app is not in focus and a session finishes or asks a question."
-      >
+      <SettingRow setting="bell-sound">
         <SettingToggle
           ariaLabel="Bell sound"
           checked={bellEnabled}
@@ -150,10 +147,7 @@ export function SessionsSection() {
 
   return (
     <>
-      <SettingRow
-        label="Start screen time range"
-        desc="Default lookback window for the Sessions list on the start screen. The time-range buttons still override it for the current view."
-      >
+      <SettingRow setting="start-screen-time-range">
         <SettingNumber
           ariaLabel="Start screen time range in days"
           unit="days"
@@ -165,10 +159,7 @@ export function SessionsSection() {
           onSave={(next) => setDashboardTimeRangeDefault(next)}
         />
       </SettingRow>
-      <SettingRow
-        label="Recent sessions window"
-        desc={<>How far back the &ldquo;Recent sessions&rdquo; sidebar looks while you&apos;re inside a session.</>}
-      >
+      <SettingRow setting="recent-sessions-window">
         <SettingNumber
           ariaLabel="Recent sessions window in days"
           unit="days"
@@ -180,10 +171,7 @@ export function SessionsSection() {
           onSave={(next) => setSidebarRecentHours(next)}
         />
       </SettingRow>
-      <SettingRow
-        label="Message section metadata"
-        desc="Show timestamp, duration, speed, and model after each assistant message section. The summary between turns stays visible."
-      >
+      <SettingRow setting="message-metadata">
         <SettingToggle
           ariaLabel="Show metadata between message sections"
           checked={showMessageMetadata}
@@ -192,10 +180,7 @@ export function SessionsSection() {
         />
       </SettingRow>
       <SpeechSettings />
-      <SettingRow
-        label="Worktree sessions inherit parent permissions"
-        desc="When you split a session into a worktree, seed the new session with the permissions you already approved with &ldquo;Allow always&rdquo; in the parent, so it doesn't re-prompt for them."
-      >
+      <SettingRow setting="worktree-inherit-permissions">
         <SettingToggle
           testId="worktree-inherit-toggle"
           ariaLabel="Worktree sessions inherit parent permissions"
@@ -204,10 +189,7 @@ export function SessionsSection() {
           onSave={(next) => handleInheritToggle(next)}
         />
       </SettingRow>
-      <SettingRow
-        label="Automatically archive inactive sessions and projects"
-        desc="Hide inactive sessions and projects after the configured number of days. Archived items remain available and can be restored."
-      >
+      <SettingRow setting="auto-archive">
         <SettingToggle
           ariaLabel="Automatically archive inactive sessions and projects"
           checked={autoArchive.enabled}
@@ -217,7 +199,7 @@ export function SessionsSection() {
         />
       </SettingRow>
       {autoArchiveLoaded && autoArchive.enabled && (
-        <SettingRow label="Archive after">
+        <SettingRow setting="auto-archive-after">
           <SettingNumber
             ariaLabel="Archive inactive sessions and projects after days"
             unit="days"
@@ -257,10 +239,7 @@ function ModelFallthroughSettings() {
   };
   return (
     <>
-      <SettingRow
-        label="Model fallthrough patience"
-        desc="Minimum time a provider that ran out of quota is skipped before the project model list tries it again."
-      >
+      <SettingRow setting="model-fallthrough-patience">
         <SettingNumber
           ariaLabel="Model fallthrough patience in minutes"
           unit="min"
@@ -271,10 +250,7 @@ function ModelFallthroughSettings() {
           onSave={(patienceMinutes) => save({ ...times, patienceMinutes })}
         />
       </SettingRow>
-      <SettingRow
-        label="Model fallthrough cooldown"
-        desc="How long a provider is skipped when it reports no reset time."
-      >
+      <SettingRow setting="model-fallthrough-cooldown">
         <SettingNumber
           ariaLabel="Model fallthrough cooldown in minutes"
           unit="min"
