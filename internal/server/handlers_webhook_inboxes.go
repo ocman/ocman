@@ -320,8 +320,13 @@ func (s *Server) handleWebhookSubscriptions(w http.ResponseWriter, r *http.Reque
 			http.Error(w, "predicates must be a JSON object of predicate objects", http.StatusBadRequest)
 			return
 		}
-		if _, err := s.routineSvc.Get(r.Context(), sub.RoutineID); err != nil {
+		routine, err := s.routineSvc.Get(r.Context(), sub.RoutineID)
+		if err != nil {
 			s.writeRoutineError(w, "getting routine", err)
+			return
+		}
+		if !webhook.IsLocal(routine.RemoteID) {
+			http.Error(w, "a webhook can only trigger a routine on this machine", http.StatusBadRequest)
 			return
 		}
 		sub.InboxID = inbox.ID

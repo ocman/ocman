@@ -47,8 +47,8 @@ unreadable; revoke and register a new inbox when recovery is not possible.
 
 The UI exposes only the ingestion URL, key version, owner, and aggregate
 delivery states. Management, fetch, acknowledgment, enrollment, and private
-identity credentials stay server-side. Local and remote owners use the same
-owner API; the hub routes registration and polling to the owning ocman.
+identity credentials stay server-side. An inbox, its polling, and the routines
+it triggers all stay on the machine that owns the inbox.
 
 ## Non-goals
 

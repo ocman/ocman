@@ -3,7 +3,6 @@ package webhook
 import (
 	"cmp"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,7 +19,10 @@ type RoutineDispatcher interface {
 	RunWebhook(context.Context, string, string, int64) (state.RoutineRun, error)
 }
 
-// DispatchPayload is the documented, fixed data suffix sent to a routine.
+// DispatchPayload is the documented, fixed data suffix sent to a routine. The
+// body is not inlined: BodyPath names a file holding the raw request body, so
+// a session reads only the fields it needs (for example with jq) instead of
+// carrying the whole payload in its prompt.
 type DispatchPayload struct {
 	InboxID    string      `json:"inboxId"`
 	DeliveryID string      `json:"deliveryId"`
@@ -28,11 +30,12 @@ type DispatchPayload struct {
 	Headers    http.Header `json:"headers"`
 	Query      url.Values  `json:"query"`
 	ReceivedAt int64       `json:"receivedAt"`
-	BodyBase64 string      `json:"bodyBase64"`
+	BodyPath   string      `json:"bodyPath"`
+	BodyBytes  int         `json:"bodyBytes"`
 }
 
-func dispatchText(e relay.InboxEnvelope) (string, error) {
-	b, err := json.Marshal(DispatchPayload{e.InboxID, e.DeliveryID, e.Request.Method, e.Request.Header, e.Request.Query, e.Request.ReceivedAt, base64.StdEncoding.EncodeToString(e.Body)})
+func dispatchText(e relay.InboxEnvelope, bodyPath string) (string, error) {
+	b, err := json.Marshal(DispatchPayload{e.InboxID, e.DeliveryID, e.Request.Method, e.Request.Header, e.Request.Query, e.Request.ReceivedAt, bodyPath, len(e.Body)})
 	if err != nil {
 		return "", err
 	}
@@ -49,7 +52,11 @@ func Dispatch(store *state.DB, svc RoutineDispatcher, inboxID, deliveryID string
 	if len(subs) == 0 {
 		return nil
 	}
-	data, err := dispatchText(e)
+	bodyPath, err := store.WriteWebhookBody(inboxID, deliveryID, e.Body)
+	if err != nil {
+		return fmt.Errorf("writing webhook body: %w", err)
+	}
+	data, err := dispatchText(e, bodyPath)
 	if err != nil {
 		return err
 	}
@@ -74,8 +81,17 @@ func Dispatch(store *state.DB, svc RoutineDispatcher, inboxID, deliveryID string
 		if routine.Deleted {
 			continue
 		}
-		if !routine.Enabled {
-			if err := store.RecordWebhookIgnored(ctx, inboxID, deliveryID, sub.RoutineID, "routine disabled", now.UnixMilli()); err != nil {
+		reason := ""
+		switch {
+		case !routine.Enabled:
+			reason = "routine disabled"
+		case !IsLocal(routine.RemoteID):
+			// A webhook runs its routine on the machine that received it; the
+			// body file and the session live together. Remotes are view-only.
+			reason = "routine runs on another machine"
+		}
+		if reason != "" {
+			if err := store.RecordWebhookIgnored(ctx, inboxID, deliveryID, sub.RoutineID, reason, now.UnixMilli()); err != nil {
 				return err
 			}
 			continue
@@ -102,6 +118,11 @@ func Dispatch(store *state.DB, svc RoutineDispatcher, inboxID, deliveryID string
 		}
 	}
 	return nil
+}
+
+// IsLocal reports whether a routine's remoteId names this machine.
+func IsLocal(remoteID string) bool {
+	return remoteID == "" || remoteID == state.LocalRemoteID
 }
 
 type predicate struct {

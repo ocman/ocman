@@ -208,6 +208,10 @@ func TestWebhookInboxesFailures(t *testing.T) {
 	if err := srv.stateDB.SaveWebhookInbox(t.Context(), state.WebhookInbox{ID: "other", RoutineID: "other", RelayURL: relay.URL, Identity: "identity"}); err != nil {
 		t.Fatal(err)
 	}
+	// A webhook runs its routine where it was received, never on a remote.
+	if err := srv.stateDB.CreateRoutine(t.Context(), state.Routine{ID: "far", Name: "far", Directory: "/repo", RemoteID: "r1", ScheduleKind: "none", ScheduleConfigJSON: "{}"}); err != nil {
+		t.Fatal(err)
+	}
 	for _, tc := range []struct {
 		method, path, body string
 		code               int
@@ -224,6 +228,7 @@ func TestWebhookInboxesFailures(t *testing.T) {
 		{http.MethodPut, base + "/other/subscriptions", `{"routineId":"other","headerPredicates":"{\"X-Event\":5}"}`, http.StatusBadRequest},
 		{http.MethodPut, base + "/other/subscriptions", `{"routineId":"other","headerPredicates":"{\"X-Event\":{\"exists\":\"yes\"}}"}`, http.StatusBadRequest},
 		{http.MethodPut, base + "/other/subscriptions", `{"routineId":"other","jsonPredicates":"{\"/a\":null}"}`, http.StatusBadRequest},
+		{http.MethodPut, base + "/other/subscriptions", `{"routineId":"far"}`, http.StatusBadRequest},
 		{http.MethodPut, base + "/other", `{"`, http.StatusBadRequest},
 		{http.MethodPut, base + "/other", `{"recipient":"r"}`, http.StatusInternalServerError},
 		{http.MethodDelete, base + "/other", "", http.StatusInternalServerError},

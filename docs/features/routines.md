@@ -71,9 +71,21 @@ followed by this fixed untrusted-data envelope:
   "headers": {},
   "query": {},
   "receivedAt": 0,
-  "bodyBase64": "..."
+  "bodyPath": "/…/ocman/webhook-bodies/<hash>.body",
+  "bodyBytes": 0
 }
 ```
+
+The body is not inlined. `bodyPath` is an absolute path to a `0600` file holding
+the raw request body, so the session reads only what it needs, for example
+`jq -r .number "<bodyPath>"`. Allow the routine's session to read
+`<state dir>/webhook-bodies/*` (an `external_directory` permission rule), and
+query the file with `jq` rather than reading it whole. Body files follow the
+30-day history retention below.
+
+A webhook runs its routine on the machine that received it. A subscription can
+only point at a routine that runs on this machine; a routine later moved to a
+remote is skipped with "routine runs on another machine".
 
 Select an inbox row to open its drawer: the ingestion URL, key reset and
 revoke, renaming, replacing or removing the shared secret (the URL stays the
@@ -137,7 +149,8 @@ Scheduled runs use the same session behavior as manual runs.
 
 The scheduler checks due routines every five seconds. Disable a routine to
 stop automatic runs without deleting it. Webhook delivery polling is
-independent of the scheduler and runs on the owner of the inbox.
+independent of the scheduler and runs on the machine that owns the inbox,
+which also runs the subscribed routines.
 
 ## Completion and history
 
