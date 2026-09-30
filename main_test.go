@@ -92,7 +92,7 @@ func TestEmbeddedSkillsUseActionContracts(t *testing.T) {
 			t.Errorf("Inbox skill is missing %q", required)
 		}
 	}
-	for _, forbidden := range []string{"list", "read", "archive"} {
+	for _, forbidden := range []string{"list", "read", "archive", "pin", "unpin"} {
 		if strings.Contains(inboxSource, `"action":"`+forbidden+`"`) {
 			t.Errorf("Inbox skill exposes unsupported action %q", forbidden)
 		}

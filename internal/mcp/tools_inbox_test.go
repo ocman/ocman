@@ -47,6 +47,8 @@ func TestInboxToolDiscoveryAndActions(t *testing.T) {
 	}{
 		{args: map[string]any{}, want: "action is required"},
 		{args: map[string]any{"action": "unknown"}, want: "unknown action"},
+		{args: map[string]any{"action": "pin", "item_id": "id"}, want: "unknown action"},
+		{args: map[string]any{"action": "unpin", "item_id": "id"}, want: "unknown action"},
 		{args: map[string]any{"action": "recall", "item_id": " "}, want: "item_id is required"},
 	} {
 		result := callTool(t, srv, "inbox", test.args)

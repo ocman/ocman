@@ -119,10 +119,7 @@ export function AutoApproveSection() {
 
   return (
     <>
-      <SettingRow
-        label="Enable by default"
-        desc="Automatically start the AI permission reviewer for every new session. You can also enable or disable it per session from the permission prompt."
-      >
+      <SettingRow setting="auto-approve-default">
         <SettingToggle
           ariaLabel="Enable auto-approve by default"
           checked={autoApproveDefault}
@@ -130,10 +127,7 @@ export function AutoApproveSection() {
           onSave={(next) => setAutoApproveDefault(next)}
         />
       </SettingRow>
-      <SettingRow
-        label="Human review window"
-        desc="How long to wait after a permission prompt appears before the AI reviewer starts. Gives you time to approve or reject manually."
-      >
+      <SettingRow setting="human-review-window">
         <SettingNumber
           ariaLabel="Human review window in seconds"
           unit="s"
@@ -148,10 +142,7 @@ export function AutoApproveSection() {
           }}
         />
       </SettingRow>
-      <SettingRow
-        label="Reviewer model"
-        desc="The model that judges permission prompts. A fast, cheap model is usually the right pick."
-      >
+      <SettingRow setting="reviewer-model">
         <SettingSelect
           ariaLabel="Auto-approve reviewer model"
           placeholder="Default"
@@ -168,15 +159,13 @@ export function AutoApproveSection() {
 
       <SettingRow
         block
+        setting="reviewer-prompt-sections"
         label={
           <>
             Reviewer prompt sections
             <SaveStatus state={sectionsSave.state} />
           </>
         }
-        desc={<>Extra rules appended to the AI reviewer&apos;s prompt. Each section
-          appears as a named block the model reads before deciding. Use this
-          to allow or deny specific patterns your team knows are safe.</>}
       >
         <div className="settings-prompt-sections">
           {promptSections.map((section, i) => (

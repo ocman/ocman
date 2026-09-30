@@ -36,6 +36,7 @@ describe('Inbox', () => {
     vi.spyOn(api, 'inbox').mockResolvedValue({ items, unreadTotal: 1 });
     vi.spyOn(api, 'markInboxItemRead').mockResolvedValue(undefined);
     vi.spyOn(api, 'markInboxItemUnread').mockResolvedValue(undefined);
+    vi.spyOn(api, 'pinInboxItem').mockResolvedValue(undefined);
     vi.spyOn(api, 'respondPermission').mockResolvedValue(undefined);
     vi.spyOn(api, 'archiveInboxItems').mockResolvedValue(undefined);
   });
@@ -81,6 +82,26 @@ describe('Inbox', () => {
     fireEvent.click(statusFilter('Archived'));
     await waitFor(() => expect(screen.getByRole('button', { name: /Remote note/ })).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'Archive' })).toBeNull();
+  });
+
+  it('pins and unpins a message from its row', async () => {
+    vi.mocked(api.inbox).mockResolvedValue({ items: [{ ...items[0], pinned: false }, { ...items[1], pinned: true, pinnedAt: Date.now() }], unreadTotal: 1 });
+    renderInbox();
+    const first = (await screen.findByRole('button', { name: /Build.*finished/ })).closest('article')!;
+    fireEvent.click(within(first).getByRole('button', { name: 'Pin message' }));
+    await waitFor(() => expect(api.pinInboxItem).toHaveBeenCalledWith('1', 'local', true));
+    const second = screen.getByRole('button', { name: /Remote note/ }).closest('article')!;
+    fireEvent.click(within(second).getByRole('button', { name: 'Unpin message' }));
+    await waitFor(() => expect(api.pinInboxItem).toHaveBeenCalledWith('2', 'laptop', false));
+  });
+
+  it('moves a newly pinned message to the top immediately', async () => {
+    renderInbox();
+    const first = await screen.findByRole('button', { name: /Build.*finished/ });
+    const second = screen.getByRole('button', { name: /Remote note/ });
+    vi.mocked(api.inbox).mockImplementation(() => new Promise(() => {}));
+    fireEvent.click(within(second.closest('article')!).getByRole('button', { name: 'Pin message' }));
+    await waitFor(() => expect(second.compareDocumentPosition(first)).toBe(Node.DOCUMENT_POSITION_FOLLOWING));
   });
 
   it('leaves the archived view alone when Delete is pressed', async () => {

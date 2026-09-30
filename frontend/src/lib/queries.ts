@@ -80,6 +80,24 @@ export function useMarkInboxItemUnread() {
   });
 }
 
+export function usePinInboxItem() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, remoteId, pinned }: Pick<InboxItem, 'id' | 'remoteId'> & { pinned: boolean }) => api.pinInboxItem(id, remoteId, pinned),
+    onSuccess: (_result, { id, remoteId, pinned }) => client.setQueryData<InboxResponse>(['inbox'], (data) => data && {
+      ...data,
+      items: data.items
+        .map((item) => item.id === id && item.remoteId === remoteId ? { ...item, pinned, pinnedAt: pinned ? Date.now() : undefined } : item)
+        .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned))
+          || (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0)
+          || b.createdAt - a.createdAt
+          || b.id.localeCompare(a.id)
+          || b.remoteId.localeCompare(a.remoteId)),
+    }),
+    onSettled: () => client.invalidateQueries({ queryKey: ['inbox'] }),
+  });
+}
+
 export function useRespondInboxPermission() {
   const client = useQueryClient();
   return useMutation({

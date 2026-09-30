@@ -86,11 +86,7 @@ export function ProjectSettingsView() {
   return (
     <div className="settings-section" data-testid="project-settings">
       {error && <div className="oc-share-menu-error" role="alert">{error}</div>}
-      <SettingRow
-        block
-        label="Models"
-        desc="The first model is the project default, used when a prompt names no model. When a provider runs out of tokens, the session continues on the next model in the list."
-      >
+      <SettingRow block setting="project-models">
         {models.length === 0 ? (
           <div className="oc-share-menu-empty" data-testid="project-models-empty">
             No models configured. Sessions use OpenCode's own default model and never switch provider when one runs out of tokens.
@@ -123,7 +119,7 @@ export function ProjectSettingsView() {
           </div>
         )}
       </SettingRow>
-      <SettingRow label="Add model" desc="Choices come from a session in this project, or the models it has used before.">
+      <SettingRow setting="project-add-model">
         <SettingSelect
           value=""
           options={options.filter((o) => !models.includes(o.value))}
@@ -135,10 +131,7 @@ export function ProjectSettingsView() {
           disabled={models.length >= 10}
         />
       </SettingRow>
-      <SettingRow
-        label="Disable fallthrough"
-        desc="Keep the list and its project default, but never switch to another model when a provider runs out of tokens."
-      >
+      <SettingRow setting="project-disable-fallthrough">
         <SettingToggle
           testId="project-fallthrough-off"
           ariaLabel="Disable fallthrough"

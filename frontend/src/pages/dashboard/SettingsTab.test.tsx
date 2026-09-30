@@ -16,6 +16,9 @@ vi.mock('./SettingsSections', () => ({
   NotificationsSection: () => null,
   SessionsSection: () => null,
 }));
+vi.mock('../../components/PreviewProviderSettings', () => ({ PreviewProviderSettings: () => null }));
+vi.mock('../../components/PreviewAppSettings', () => ({ PreviewAppSettings: () => null }));
+vi.mock('../../components/LinkPreviewSettings', () => ({ LinkPreviewSettings: () => null }));
 vi.mock('./AutoApproveSection', () => ({ AutoApproveSection: () => null }));
 vi.mock('../../lib/authStore', () => ({
   useAuthStore: (selector: (state: { authRequired: boolean; logout: typeof logout }) => unknown) =>
@@ -54,6 +57,41 @@ describe('SettingsTab actions', () => {
   beforeEach(() => {
     logout.mockReset();
     promptInstall.mockReset();
+  });
+
+  it('searches settings and jumps to the matching group', () => {
+    render(<SettingsTab />);
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'disk space' } });
+    fireEvent.click(screen.getByRole('button', { name: /Remove old diffs/ }));
+    expect(screen.getByRole('searchbox', { name: 'Search settings' })).toHaveValue('');
+    expect(screen.getByText('Database maintenance')).toBeVisible();
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'nothing-like-this' } });
+    expect(screen.getByRole('status')).toHaveTextContent('No settings match');
+  });
+
+  it('reopens the right tab when the same result is picked again', () => {
+    render(<SettingsTab />);
+    const search = () => {
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'Custom link rules' } });
+      fireEvent.click(screen.getByRole('button', { name: /Custom link rules/ }));
+    };
+    search();
+    expect(screen.getByRole('tab', { name: 'Link rules' })).toHaveAttribute('aria-selected', 'true');
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'Providers' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Providers' }));
+    expect(screen.getByRole('tab', { name: 'Providers' })).toHaveAttribute('aria-selected', 'true');
+    search();
+    expect(screen.getByRole('tab', { name: 'Link rules' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('explains why a conditional setting is missing', () => {
+    // SessionsSection is mocked empty, as it renders with auto-archive off.
+    render(<SettingsTab />);
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search settings' }), { target: { value: 'Archive after' } });
+    expect(screen.getByRole('button', { name: /Archive after/ })).toHaveTextContent('automatic archiving is turned on');
+    fireEvent.click(screen.getByRole('button', { name: /Archive after/ }));
+    expect(screen.getByRole('status')).toHaveTextContent('Archive after is not shown right now. Shown only when automatic archiving is turned on.');
   });
 
   it('keeps install and sign-out actions working inside setting rows', () => {

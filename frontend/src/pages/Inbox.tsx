@@ -7,7 +7,8 @@ import { RelativeTime } from '../components/RelativeTime';
 import { SegmentedControl } from '../components/SegmentedControl';
 import { EmptyState } from '../components/EmptyState';
 import { ArchiveButton } from '../components/ArchiveButton';
-import { useArchiveInboxItems, useInbox, useMarkInboxItemRead, useMarkInboxItemUnread, useRespondInboxPermission } from '../lib/queries';
+import { IconButton } from '../components/IconButton';
+import { useArchiveInboxItems, useInbox, useMarkInboxItemRead, useMarkInboxItemUnread, usePinInboxItem, useRespondInboxPermission } from '../lib/queries';
 import type { InboxItem } from '../lib/api';
 import { fuzzyMatch } from '../lib/format';
 import { useClickOutside } from '../lib/useClickOutside';
@@ -57,6 +58,7 @@ export function Inbox() {
   const archive = useArchiveInboxItems();
   const markRead = useMarkInboxItemRead();
   const markUnread = useMarkInboxItemUnread();
+  const pin = usePinInboxItem();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -131,6 +133,7 @@ export function Inbox() {
     {archive.isError && <p role="alert">Could not archive messages. Please try again.</p>}
     {markRead.isError && <p role="alert">Could not mark the message as read. Open it again to retry.</p>}
     {markUnread.isError && <p role="alert">Could not mark the message as unread. Please try again.</p>}
+    {pin.isError && <p role="alert">Could not update the pinned message. Please try again.</p>}
     <div className={`inbox-workspace${activeItem ? ' has-active-message' : ''}`}>
       <section className="inbox-mailbox" aria-label="Inbox messages">
         <div className="inbox-filters">
@@ -166,8 +169,12 @@ export function Inbox() {
               </span>
               <span className="inbox-preview">{item.body}</span>
             </button>
-            {!archived && <ArchiveButton className="inbox-message-archive" label="Archive" disabled={archive.isPending}
-              onClick={() => archive.mutate([{ id: item.id, remoteId: item.remoteId }], { onSuccess: () => { if (activeKey === itemKey(item)) setActiveKey(null); } })} />}
+            <span className={`inbox-message-actions${item.pinned ? ' pinned' : ''}`}>
+              <IconButton className="inbox-message-pin" label={item.pinned ? 'Unpin message' : 'Pin message'} icon={item.pinned ? 'bi-pin-fill' : 'bi-pin'} disabled={pin.isPending}
+                onClick={() => pin.mutate({ id: item.id, remoteId: item.remoteId, pinned: !item.pinned })} />
+              {!archived && <ArchiveButton className="inbox-message-archive" label="Archive" disabled={archive.isPending}
+                onClick={() => archive.mutate([{ id: item.id, remoteId: item.remoteId }], { onSuccess: () => { if (activeKey === itemKey(item)) setActiveKey(null); } })} />}
+            </span>
           </article>)}
         </div>
       </section>

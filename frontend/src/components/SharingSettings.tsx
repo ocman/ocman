@@ -57,10 +57,7 @@ export function SharingSettings() {
 
   return (
     <div data-testid="sharing-settings">
-      <SettingRow
-        label="Allow public sharing"
-        desc="Let sessions be shared via public, read-only links. When off, no new share links can be created; existing links keep working until revoked below."
-      >
+      <SettingRow setting="public-sharing">
         <SettingToggle
           testId="sharing-toggle"
           ariaLabel="Allow public sharing"
@@ -71,7 +68,7 @@ export function SharingSettings() {
       </SettingRow>
 
       <SettingRow
-        label="Share relay"
+        setting="share-relay"
         desc={
           relayUrl
             ? <>Conversations shared from this instance are stored on this relay,
@@ -88,12 +85,7 @@ export function SharingSettings() {
         </output>
       </SettingRow>
 
-      <SettingRow
-        block
-        label="Shared sessions"
-        desc={<>Every active public share link. Open the session to inspect it, or
-          revoke a link to make it stop working immediately.</>}
-      >
+      <SettingRow block setting="shared-sessions">
         {state.error && <div className="oc-share-menu-error" role="alert">{state.error}</div>}
         {state.loaded && state.links.length === 0 && <div className="oc-share-menu-empty">No shared sessions.</div>}
         {state.links.length > 0 && <DataTable aria-label="Shared sessions">

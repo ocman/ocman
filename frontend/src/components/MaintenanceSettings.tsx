@@ -60,11 +60,11 @@ export function MaintenanceSettings() {
   const hasDump = status.dumpBytes > 0;
   const { job } = status;
   return <>
-    <SettingRow label="OpenCode database" desc={<><code>{status.dbPath}</code> · {gb(status.dbBytes)}</>}>
+    <SettingRow setting="opencode-database" detail={<><code>{status.dbPath}</code> · {gb(status.dbBytes)}</>}>
       <SubmitButton size="small" disabled={running} onClick={() => refresh()}>Refresh</SubmitButton>
     </SettingRow>
     <SettingRow
-      label="Remove old diffs"
+      setting="remove-old-diffs"
       desc={<>OpenCode keeps a full patch of every changed file on each user message, and repeats it in its event log.
         This removes those patches from sessions not updated for {status.cutoffDays} days, then compacts the database.
         Only OpenCode&rsquo;s web per-turn changes view reads them. ocman stops its managed opencode instances
@@ -79,8 +79,8 @@ export function MaintenanceSettings() {
       >Clean up</SubmitButton>
     </SettingRow>
     <SettingRow
-      label="Removed diffs"
-      desc={hasDump ? <><code>{status.dumpPath}</code> · {gb(status.dumpBytes)}</> : 'No dump yet.'}
+      setting="removed-diffs"
+      detail={hasDump ? <><code>{status.dumpPath}</code> · {gb(status.dumpBytes)}</> : 'No dump yet.'}
     >
       <SubmitButton
         size="small"

@@ -146,6 +146,41 @@ func TestInboxHTTPListAndMutations(t *testing.T) {
 	}
 }
 
+func TestInboxHTTPPinsItemsAboveNewerMessages(t *testing.T) {
+	srv := testServer(t)
+	srv.inboxSourcesFn = func() []string { return []string{"local", "laptop"} }
+	srv.inboxItemsFn = func(_ context.Context, source string) ([]state.InboxItem, error) {
+		return []state.InboxItem{{ID: "same-id", Title: source, Body: "body", CreatedAt: map[string]int64{"local": 2, "laptop": 1}[source]}}, nil
+	}
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pin := httptest.NewRecorder()
+	mux.ServeHTTP(pin, httptest.NewRequest(http.MethodPost, "/api/inbox/pin", bytes.NewBufferString(`{"remoteId":"laptop","id":"same-id","pinned":true}`)))
+	if pin.Code != http.StatusNoContent {
+		t.Fatalf("pin status = %d, want 204: %s", pin.Code, pin.Body.String())
+	}
+
+	list := httptest.NewRecorder()
+	mux.ServeHTTP(list, httptest.NewRequest(http.MethodGet, "/api/inbox", nil))
+	var response struct {
+		Items []inboxItemView `json:"items"`
+	}
+	if err := json.Unmarshal(list.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Items) != 2 || response.Items[0].RemoteID != "laptop" || !response.Items[0].Pinned || response.Items[1].Pinned {
+		t.Fatalf("items = %+v", response.Items)
+	}
+
+	unpin := httptest.NewRecorder()
+	mux.ServeHTTP(unpin, httptest.NewRequest(http.MethodPost, "/api/inbox/pin", bytes.NewBufferString(`{"remoteId":"laptop","id":"same-id","pinned":false}`)))
+	if unpin.Code != http.StatusNoContent {
+		t.Fatalf("unpin status = %d, want 204", unpin.Code)
+	}
+}
+
 func TestInboxHTTPRejectsMalformedRequests(t *testing.T) {
 	srv := testServer(t)
 	mux, err := srv.routes()
@@ -159,6 +194,7 @@ func TestInboxHTTPRejectsMalformedRequests(t *testing.T) {
 		{"/api/inbox/open", "{"},
 		{"/api/inbox/unread", "{"},
 		{"/api/inbox/unread", `{}`},
+		{"/api/inbox/pin", `{}`},
 		{"/api/inbox/archive", `{"items":[{"id":"x"}]}`},
 		{"/api/inbox/archive-all-read", `{}`},
 	} {
@@ -192,6 +228,23 @@ func TestInboxHTTPUnavailableOwnerDoesNotFallbackLocally(t *testing.T) {
 	}
 	if len(items) != 1 || items[0].ReadAt != 0 {
 		t.Fatalf("local item changed after unavailable owner: %+v", items)
+	}
+}
+
+func TestInboxHTTPPinUnavailableOwnerDoesNotCreatePin(t *testing.T) {
+	srv := testServer(t)
+	mux, err := srv.routes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/inbox/pin", bytes.NewBufferString(`{"remoteId":"gone","id":"item","pinned":true}`)))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unavailable owner status = %d, want 503", rec.Code)
+	}
+	pinned, err := srv.stateDB.PinnedInboxItems(t.Context())
+	if err != nil || len(pinned) != 0 {
+		t.Fatalf("pins = %+v, %v", pinned, err)
 	}
 }
 
