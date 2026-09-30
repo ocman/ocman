@@ -546,6 +546,16 @@ func TestInboxSecretCanBeReplacedAndCleared(t *testing.T) {
 	if rec := h.do(http.MethodPut, path, []byte(`{`), registered.ManagementToken); rec.Code != http.StatusBadRequest {
 		t.Fatalf("malformed: %d", rec.Code)
 	}
+	// Only an explicit "secret":"" clears the secret; an incomplete request
+	// must not silently turn authentication off.
+	for _, body := range []string{`{}`, `null`, `{"secret":null}`, `{"secretHeader":"X-Other"}`} {
+		if rec := h.do(http.MethodPut, path, []byte(body), registered.ManagementToken); rec.Code != http.StatusBadRequest {
+			t.Fatalf("incomplete %s: %d", body, rec.Code)
+		}
+		if got := ingest("", ""); got != http.StatusUnauthorized {
+			t.Fatalf("incomplete %s cleared the secret: ingest %d", body, got)
+		}
+	}
 	rec := h.do(http.MethodPut, path, []byte(`{"secret":"Bearer new","secretHeader":"Authorization"}`), registered.ManagementToken)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"secretHeader":"Authorization"`) {
 		t.Fatalf("replace: %d %s", rec.Code, rec.Body)

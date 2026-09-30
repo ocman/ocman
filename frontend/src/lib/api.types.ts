@@ -91,7 +91,7 @@ export interface WebhookSubscription { id: string; inboxId: string; routineId: s
 export interface WebhookRelaySettings { relayUrl: string; defaultRelayUrl: string; hasEnrollmentToken: boolean }
 export interface WebhookDispatchResult { routineId: string; state: string; error: string; platform: string; sessionId: string }
 export interface WebhookDelivery { deliveryId: string; accepted: boolean; acceptedAt: number; attempts: number; lastError: string; headers: string; body: string; dispatches: WebhookDispatchResult[] }
-export interface WebhookInbox { id: string; name: string; relayUrl: string; ingestionUrl: string; keyVersion: number; createdAt: number; secretHeader: string; counts: Record<string, number>; subscriptions: WebhookSubscription[] }
+export interface WebhookInbox { id: string; name: string; relayUrl: string; ingestionUrl: string; keyVersion: number; createdAt: number; secretHeader: string; secret: string; counts: Record<string, number>; subscriptions: WebhookSubscription[] }
 
 export interface RoutineRun {
   id: string;

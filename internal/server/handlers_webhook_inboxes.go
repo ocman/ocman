@@ -18,6 +18,7 @@ import (
 const webhookDeliveryLogSize = 10
 
 // webhookInboxView is an inbox without its relay credentials or private key.
+// Secret is the user's own shared secret, shown back so it can be checked.
 type webhookInboxView struct {
 	ID            string                      `json:"id"`
 	Name          string                      `json:"name"`
@@ -26,6 +27,7 @@ type webhookInboxView struct {
 	KeyVersion    int                         `json:"keyVersion"`
 	CreatedAt     int64                       `json:"createdAt"`
 	SecretHeader  string                      `json:"secretHeader"`
+	Secret        string                      `json:"secret"`
 	Counts        map[string]int              `json:"counts"`
 	Subscriptions []state.WebhookSubscription `json:"subscriptions"`
 }
@@ -42,7 +44,7 @@ func (s *Server) webhookInboxView(r *http.Request, inbox state.WebhookInbox) (we
 	if subs == nil {
 		subs = []state.WebhookSubscription{}
 	}
-	return webhookInboxView{inbox.ID, inbox.Name, inbox.RelayURL, inbox.IngestionURL, inbox.KeyVersion, inbox.CreatedAt, inbox.SecretHeader, counts, subs}, nil
+	return webhookInboxView{inbox.ID, inbox.Name, inbox.RelayURL, inbox.IngestionURL, inbox.KeyVersion, inbox.CreatedAt, inbox.SecretHeader, inbox.Secret, counts, subs}, nil
 }
 
 // handleWebhookInboxes serves /api/webhook-inboxes[/{id}[/deliveries|/subscriptions]].
@@ -239,9 +241,9 @@ func (s *Server) updateWebhookInbox(w http.ResponseWriter, r *http.Request, inbo
 			http.Error(w, "the relay could not update the secret; it may need upgrading", http.StatusBadGateway)
 			return
 		}
-		inbox.SecretHeader = header
+		inbox.SecretHeader, inbox.Secret = header, *req.Secret
 	}
-	if err := s.stateDB.UpdateWebhookInboxMeta(r.Context(), inbox.ID, inbox.Name, inbox.SecretHeader); err != nil {
+	if err := s.stateDB.UpdateWebhookInboxMeta(r.Context(), inbox.ID, inbox.Name, inbox.SecretHeader, inbox.Secret); err != nil {
 		serverError(w, "saving webhook inbox", err)
 		return
 	}

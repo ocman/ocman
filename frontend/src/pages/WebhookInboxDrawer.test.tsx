@@ -12,7 +12,7 @@ vi.mock('../lib/api', () => ({ api: { getWebhookRelay: vi.fn(), webhookInboxes: 
 
 const routine = { id: 'r1', name: 'Review', enabled: true } as Routine;
 const inbox: WebhookInbox = {
-  id: 'inbox-1', name: 'forgejo', relayUrl: 'https://relay', ingestionUrl: '/i/x', keyVersion: 1, createdAt: 1, secretHeader: '', counts: {},
+  id: 'inbox-1', name: 'forgejo', relayUrl: 'https://relay', ingestionUrl: '/i/x', keyVersion: 1, createdAt: 1, secretHeader: '', secret: '', counts: {},
   subscriptions: [{ id: 'sub-1', inboxId: 'inbox-1', routineId: 'r1', headerPredicates: '{"x-forgejo-event":{"equals":"pull_request"}}', jsonPredicates: '', createdAt: 1 }],
 };
 const delivery: WebhookDelivery = {
@@ -29,7 +29,7 @@ describe('webhook filters', () => {
       { key: '/number', op: 'exists' as const, value: '' },
       { key: ' ', op: 'equals' as const, value: 'dropped' },
     ];
-    const json = encodeFilters(rows);
+    const json = encodeFilters(rows, 'pointer');
     expect(JSON.parse(json)).toEqual({ 'x-event': { equals: 'push' }, '/action': { oneOf: ['opened', 'synchronized'] }, '/draft': { exists: false }, '/number': { exists: true } });
     expect(decodeFilters(json)).toMatchObject([
       { key: 'x-event', op: 'equals', value: 'push' },
@@ -40,11 +40,11 @@ describe('webhook filters', () => {
   });
 
   it('keeps an empty oneOf list instead of widening it to exists', () => {
-    const json = encodeFilters([{ key: '/action', op: 'oneOf', value: ' , ' }]);
+    const json = encodeFilters([{ key: '/action', op: 'oneOf', value: ' , ' }], 'pointer');
     expect(JSON.parse(json)).toEqual({ '/action': { oneOf: [] } });
     const rows = decodeFilters(json);
     expect(rows).toMatchObject([{ key: '/action', op: 'oneOf', value: '' }]);
-    expect(encodeFilters(rows)).toBe(json);
+    expect(encodeFilters(rows, 'pointer')).toBe(json);
   });
 
   it('saves untouched conditions exactly as stored', () => {
@@ -52,10 +52,19 @@ describe('webhook filters', () => {
     // lossless comma-list form; an unedited row must not be rewritten.
     const stored = '{"/value":{"oneOf":["a,b",""," x "]},"/n":{"equals":5},"/legacy":{"op":"equals","value":true}}';
     const rows = decodeFilters(stored);
-    expect(JSON.parse(encodeFilters(rows))).toEqual(JSON.parse(stored));
+    expect(JSON.parse(encodeFilters(rows, 'pointer'))).toEqual(JSON.parse(stored));
     // A renamed key keeps its predicate; an edited value is re-encoded.
     const edited = rows.map((row) => (row.key === '/value' ? { ...row, key: '/v' } : row.key === '/n' ? { ...row, value: '6' } : row));
-    expect(JSON.parse(encodeFilters(edited))).toEqual({ '/v': { oneOf: ['a,b', '', ' x '] }, '/n': { equals: '6' }, '/legacy': { op: 'equals', value: true } });
+    expect(JSON.parse(encodeFilters(edited, 'pointer'))).toEqual({ '/v': { oneOf: ['a,b', '', ' x '] }, '/n': { equals: '6' }, '/legacy': { op: 'equals', value: true } });
+  });
+
+  it('keeps JSON pointers verbatim and trims only header names', () => {
+    // "" is the root pointer and "/name " a different property than "/name".
+    const stored = '{"":{"equals":"ping"},"/name ":{"exists":true}}';
+    expect(JSON.parse(encodeFilters(decodeFilters(stored), 'pointer'))).toEqual(JSON.parse(stored));
+    // A new, unfinished row is still dropped; header names are trimmed.
+    expect(encodeFilters([{ key: '', op: 'equals', value: 'x' }], 'pointer')).toBe('{}');
+    expect(encodeFilters([{ key: ' X-Event ', op: 'equals', value: 'push' }, { key: ' ', op: 'exists', value: '' }], 'header')).toBe('{"X-Event":{"equals":"push"}}');
   });
 
   it('reads the legacy op/value form and tolerates bad JSON', () => {
@@ -200,7 +209,7 @@ describe('WebhookInboxDrawer', () => {
     vi.mocked(api.webhookInboxes.update).mockResolvedValue(inbox);
     const props = renderDrawer();
 
-    expect(screen.getByText(/No shared secret recorded/)).toBeInTheDocument();
+    expect(screen.getByText(/No shared secret: anyone with the URL/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Rename' })).toBeDisabled();
     await user.clear(screen.getByLabelText('Name'));
     await user.type(screen.getByLabelText('Name'), 'forgejo-prs');
@@ -210,11 +219,11 @@ describe('WebhookInboxDrawer', () => {
 
     expect(screen.getByLabelText('Secret header')).toHaveValue('Authorization');
     expect(screen.getByRole('button', { name: 'Update secret' })).toBeDisabled();
-    await user.type(screen.getByLabelText('New shared secret'), 'Bearer abc');
+    await user.type(screen.getByLabelText('Shared secret'), 'Bearer abc');
     await user.click(screen.getByRole('button', { name: 'Update secret' }));
     expect(api.webhookInboxes.update).toHaveBeenCalledWith('inbox-1', { secret: 'Bearer abc', secretHeader: 'Authorization' });
     expect(await screen.findByText('Secret updated.')).toBeInTheDocument();
-    expect(screen.getByLabelText('New shared secret')).toHaveValue('');
+    expect(screen.getByLabelText('Shared secret')).toHaveValue('Bearer abc');
 
     await user.click(screen.getByRole('button', { name: 'Remove secret' }));
     expect(api.webhookInboxes.update).toHaveBeenCalledWith('inbox-1', { secret: '' });
@@ -225,5 +234,26 @@ describe('WebhookInboxDrawer', () => {
     renderDrawer({ inbox: { ...inbox, secretHeader: 'X-Hook' } });
     expect(screen.getByText('X-Hook')).toBeInTheDocument();
     expect(screen.getByLabelText('Secret header')).toHaveValue('X-Hook');
+    // An inbox from before v108: the relay enforces a secret ocman never kept.
+    expect(screen.getByText(/predates ocman keeping it/)).toBeInTheDocument();
+  });
+
+  it('fills in the stored secret, masked, and saves it only once changed', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.webhookInboxes.update).mockResolvedValue(inbox);
+    renderDrawer({ inbox: { ...inbox, secretHeader: 'Authorization', secret: 'Bearer s3cret' } });
+
+    const field = screen.getByLabelText('Shared secret');
+    expect(field).toHaveValue('Bearer s3cret');
+    expect(field).toHaveAttribute('type', 'password');
+    await user.click(screen.getByRole('button', { name: 'Show secret' }));
+    expect(field).toHaveAttribute('type', 'text');
+    expect(screen.getByRole('button', { name: 'Update secret' })).toBeDisabled();
+
+    // A header-only change still sends the unchanged secret, never an empty one.
+    await user.clear(screen.getByLabelText('Secret header'));
+    await user.type(screen.getByLabelText('Secret header'), 'X-Token');
+    await user.click(screen.getByRole('button', { name: 'Update secret' }));
+    expect(api.webhookInboxes.update).toHaveBeenCalledWith('inbox-1', { secret: 'Bearer s3cret', secretHeader: 'X-Token' });
   });
 });

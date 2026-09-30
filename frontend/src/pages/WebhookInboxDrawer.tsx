@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, TextField } from '../components/Control';
 import { CopyButton } from '../components/CopyButton';
+import { SecretField } from '../components/SecretField';
 import { DataTable } from '../components/DataTable';
 import { EmptyState } from '../components/EmptyState';
 import { Modal } from '../components/Modal';
@@ -67,7 +68,7 @@ export function WebhookInboxDrawer({ inbox, routines, onClose, onChange, onEditR
             <Button type="button" disabled={busy} onClick={() => { if (window.confirm('Reset the key? Existing pending deliveries will become unreadable.')) void run(async () => { await api.webhookInboxes.rotate(inbox.id, { reset: true }); onChange(); }); }}>Reset key</Button>
             <Button type="button" variant="danger" disabled={busy} onClick={() => { if (window.confirm('Revoke this webhook inbox? Linked routines stop receiving its deliveries.')) void run(async () => { await api.webhookInboxes.revoke(inbox.id); onChange(); onClose(); }); }}>Revoke</Button>
           </div>
-          <WebhookInboxSettings key={`${inbox.name}:${inbox.secretHeader}`} inbox={inbox} run={(action) => void run(action)} busy={busy} onChange={onChange} />
+          <WebhookInboxSettings key={`${inbox.name}:${inbox.secretHeader}:${inbox.secret}`} inbox={inbox} run={(action) => void run(action)} busy={busy} onChange={onChange} />
           <section aria-labelledby="webhook-subscribers-heading" className="webhook-subscribers">
             <h3 id="webhook-subscribers-heading">Linked routines</h3>
             {subscribers.length === 0 ? <EmptyState>No routine uses this inbox yet. Pick it as the Trigger of a routine.</EmptyState> : (
@@ -88,7 +89,7 @@ export function WebhookInboxDrawer({ inbox, routines, onClose, onChange, onEditR
           <label>Name<TextField required value={name} placeholder="forgejo" onChange={(e) => setName(e.target.value)} /></label>
           <p>Relay: <code>{relay?.relayUrl || relay?.defaultRelayUrl || 'not configured'}</code>. {storedToken ? 'Using the enrollment token from' : 'Save the relay and enrollment token once in'} <Link to="/settings">Settings → Webhooks</Link>.</p>
           {!storedToken && <label>Relay enrollment token<TextField required type="password" autoComplete="off" value={enrollmentToken} onChange={(e) => setEnrollmentToken(e.target.value)} /></label>}
-          <label>Shared secret<TextField type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} /><small>Optional. The relay rejects requests whose header doesn&apos;t carry this exact value. Leave blank to rely on the URL alone.</small></label>
+          <label>Shared secret<SecretField value={secret} onChange={(e) => setSecret(e.target.value)} /><small>Optional. The relay rejects requests whose header doesn&apos;t carry this exact value. Leave blank to rely on the URL alone.</small></label>
           {secret && <label>Secret header<TextField required value={secretHeader} onChange={(e) => setSecretHeader(e.target.value)} /><small>For Forgejo, keep Authorization and use a &quot;Bearer …&quot; secret. Use another header name for providers that send one.</small></label>}
           <ModalFooter label="Webhook inbox actions"><Button type="submit" variant="accent" disabled={busy || !name.trim() || (!storedToken && !enrollmentToken)}>Create inbox</Button><Button type="button" disabled={busy} onClick={onClose}>Cancel</Button></ModalFooter>
         </>}

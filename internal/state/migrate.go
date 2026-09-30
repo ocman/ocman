@@ -232,6 +232,7 @@ import (
 // 105 - remember which header a webhook inbox's shared secret uses.
 // 106 - webhook deliveries keep their own title/body instead of an Inbox item.
 // 107 - routines post an Inbox item for a successful run only when they opt in.
+// 108 - keep a webhook inbox's shared secret so the UI can show it back.
 
 // migrate brings the state database up to latestSchemaVersion. Safe to
 // call on every startup: idempotent, no-op once already current.

@@ -19,7 +19,7 @@ const routine: Routine = {
 };
 
 const inbox: WebhookInbox = {
-  id: 'inbox-1', name: 'forgejo', relayUrl: 'https://relay', ingestionUrl: '/i/inbox/token', keyVersion: 2, createdAt: 1_000, secretHeader: '', counts: { terminal: 1, failure: 2 },
+  id: 'inbox-1', name: 'forgejo', relayUrl: 'https://relay', ingestionUrl: '/i/inbox/token', keyVersion: 2, createdAt: 1_000, secretHeader: '', secret: '', counts: { terminal: 1, failure: 2 },
   subscriptions: [{ id: 'sub-1', inboxId: 'inbox-1', routineId: 'routine-1', headerPredicates: '{"x-forgejo-event":{"equals":"pull_request"}}', jsonPredicates: '{"/action":{"oneOf":["opened","synchronized"]}}', createdAt: 1 }],
 };
 

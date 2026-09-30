@@ -74,7 +74,11 @@ revoke, renaming, replacing or removing the shared secret (the URL stays the
 same; this needs a relay with the `PUT /inboxes/{id}/secret` endpoint), the subscribed routines, and the ten most recent deliveries with their
 filtered headers, body, and what happened for each subscriber (ran, no match,
 skipped because the routine is disabled, or failed). Use it to check a
-condition against what the provider actually sent. **Redeliver** replays a
+condition against what the provider actually sent. The shared secret is filled in and
+masked; use the eye button to inspect it. Inboxes created before ocman kept
+the secret show that one is set but can't display it until you enter it again.
+The relay only removes a secret on an explicit `"secret": ""`; a request
+without a `secret` field is rejected. **Redeliver** replays a
 logged delivery as a new one: every subscriber is matched and run again, and
 the replay gets its own log entry. The log keeps no query string, so a
 replayed delivery has none.

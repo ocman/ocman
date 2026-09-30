@@ -146,6 +146,10 @@ type WebhookInbox struct {
 	KeyVersion          int    `json:"keyVersion"`
 	CreatedAt           int64  `json:"createdAt"`
 	SecretHeader        string `json:"secretHeader"`
+	// Secret is the shared secret deliveries must carry, kept so the UI can
+	// show it back. Empty either means none, or an inbox older than v108 whose
+	// secret only the relay knows (as a hash); SecretHeader tells them apart.
+	Secret string `json:"secret"`
 }
 
 func (d *DB) SaveWebhookInbox(ctx context.Context, inbox WebhookInbox) error {
@@ -159,14 +163,14 @@ func (d *DB) SaveWebhookInbox(ctx context.Context, inbox WebhookInbox) error {
 		inbox.CreatedAt = time.Now().UnixMilli()
 	}
 	_, err := d.db.ExecContext(ctx, `INSERT INTO webhook_inbox
-		(id, name, routine_id, relay_url, management_token, fetch_token, acknowledgment_token, identity, ingestion_url, key_version, created_at, secret_header)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		(id, name, routine_id, relay_url, management_token, fetch_token, acknowledgment_token, identity, ingestion_url, key_version, created_at, secret_header, secret)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(routine_id) DO UPDATE SET id=excluded.id, name=excluded.name, relay_url=excluded.relay_url,
 		management_token=excluded.management_token, fetch_token=excluded.fetch_token,
 		acknowledgment_token=excluded.acknowledgment_token, identity=excluded.identity,
-		key_version=excluded.key_version, ingestion_url=excluded.ingestion_url, secret_header=excluded.secret_header`, inbox.ID, inbox.Name, inbox.RoutineID, inbox.RelayURL,
+		key_version=excluded.key_version, ingestion_url=excluded.ingestion_url, secret_header=excluded.secret_header, secret=excluded.secret`, inbox.ID, inbox.Name, inbox.RoutineID, inbox.RelayURL,
 		inbox.ManagementToken, inbox.FetchToken, inbox.AcknowledgmentToken, inbox.Identity, inbox.IngestionURL,
-		inbox.KeyVersion, inbox.CreatedAt, inbox.SecretHeader)
+		inbox.KeyVersion, inbox.CreatedAt, inbox.SecretHeader, inbox.Secret)
 	if err != nil {
 		return fmt.Errorf("saving webhook inbox: %w", err)
 	}
@@ -185,9 +189,9 @@ func (d *DB) GetWebhookInboxByID(ctx context.Context, id string) (WebhookInbox, 
 func (d *DB) getWebhookInbox(ctx context.Context, column, value string) (WebhookInbox, error) {
 	var inbox WebhookInbox
 	err := d.db.QueryRowContext(ctx, `SELECT id, name, routine_id, relay_url, management_token, fetch_token,
-		acknowledgment_token, identity, ingestion_url, key_version, created_at, secret_header FROM webhook_inbox WHERE `+column+` = ?`, value).
+		acknowledgment_token, identity, ingestion_url, key_version, created_at, secret_header, secret FROM webhook_inbox WHERE `+column+` = ?`, value).
 		Scan(&inbox.ID, &inbox.Name, &inbox.RoutineID, &inbox.RelayURL, &inbox.ManagementToken, &inbox.FetchToken,
-			&inbox.AcknowledgmentToken, &inbox.Identity, &inbox.IngestionURL, &inbox.KeyVersion, &inbox.CreatedAt, &inbox.SecretHeader)
+			&inbox.AcknowledgmentToken, &inbox.Identity, &inbox.IngestionURL, &inbox.KeyVersion, &inbox.CreatedAt, &inbox.SecretHeader, &inbox.Secret)
 	if err != nil {
 		return WebhookInbox{}, err
 	}
@@ -196,7 +200,7 @@ func (d *DB) getWebhookInbox(ctx context.Context, column, value string) (Webhook
 
 func (d *DB) ListWebhookInboxes(ctx context.Context) ([]WebhookInbox, error) {
 	rows, err := d.db.QueryContext(ctx, `SELECT id, name, routine_id, relay_url, management_token, fetch_token,
-		acknowledgment_token, identity, ingestion_url, key_version, created_at, secret_header FROM webhook_inbox ORDER BY name COLLATE NOCASE, id`)
+		acknowledgment_token, identity, ingestion_url, key_version, created_at, secret_header, secret FROM webhook_inbox ORDER BY name COLLATE NOCASE, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -205,7 +209,7 @@ func (d *DB) ListWebhookInboxes(ctx context.Context) ([]WebhookInbox, error) {
 	for rows.Next() {
 		var inbox WebhookInbox
 		if err := rows.Scan(&inbox.ID, &inbox.Name, &inbox.RoutineID, &inbox.RelayURL, &inbox.ManagementToken, &inbox.FetchToken,
-			&inbox.AcknowledgmentToken, &inbox.Identity, &inbox.IngestionURL, &inbox.KeyVersion, &inbox.CreatedAt, &inbox.SecretHeader); err != nil {
+			&inbox.AcknowledgmentToken, &inbox.Identity, &inbox.IngestionURL, &inbox.KeyVersion, &inbox.CreatedAt, &inbox.SecretHeader, &inbox.Secret); err != nil {
 			return nil, err
 		}
 		result = append(result, inbox)
@@ -218,10 +222,10 @@ func (d *DB) DeleteWebhookInbox(ctx context.Context, routineID string) error {
 	return err
 }
 
-// UpdateWebhookInboxMeta changes only the name and secret header, so it can't
+// UpdateWebhookInboxMeta changes only the name and shared secret, so it can't
 // overwrite a key rotated concurrently or resurrect a revoked inbox.
-func (d *DB) UpdateWebhookInboxMeta(ctx context.Context, id, name, secretHeader string) error {
-	_, err := d.db.ExecContext(ctx, `UPDATE webhook_inbox SET name = ?, secret_header = ? WHERE id = ?`, name, secretHeader, id)
+func (d *DB) UpdateWebhookInboxMeta(ctx context.Context, id, name, secretHeader, secret string) error {
+	_, err := d.db.ExecContext(ctx, `UPDATE webhook_inbox SET name = ?, secret_header = ?, secret = ? WHERE id = ?`, name, secretHeader, secret, id)
 	return err
 }
 

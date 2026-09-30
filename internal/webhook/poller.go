@@ -87,7 +87,7 @@ func register(ctx context.Context, store *state.DB, name, routineID, relayURL, e
 		AcknowledgmentToken: allocation.AcknowledgmentToken, Identity: identity.String(),
 		IngestionURL: allocation.IngestionURL, KeyVersion: allocation.KeyVersion}
 	if secret != "" {
-		inbox.SecretHeader = allocation.SecretHeader
+		inbox.SecretHeader, inbox.Secret = allocation.SecretHeader, secret
 	}
 	if err := store.SaveWebhookInbox(ctx, inbox); err != nil {
 		return state.WebhookInbox{}, err

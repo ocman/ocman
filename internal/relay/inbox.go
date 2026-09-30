@@ -316,11 +316,13 @@ func (s *Server) handleUpdateInboxSecret(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var request struct {
-		Secret       string `json:"secret"`
-		SecretHeader string `json:"secretHeader"`
+		// A pointer, so an absent or null secret is refused rather than read
+		// as "clear it": only an explicit "" removes authentication.
+		Secret       *string `json:"secret"`
+		SecretHeader string  `json:"secretHeader"`
 	}
-	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&request) != nil {
-		http.Error(w, "invalid secret", http.StatusBadRequest)
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&request) != nil || request.Secret == nil {
+		http.Error(w, "invalid secret: pass \"secret\", or \"\" to remove it", http.StatusBadRequest)
 		return
 	}
 	s.mutations.Lock()
@@ -336,8 +338,8 @@ func (s *Server) handleUpdateInboxSecret(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	m.SecretHash, m.SecretHeader = "", ""
-	if request.Secret != "" {
-		m.SecretHash = hashToken(request.Secret)
+	if *request.Secret != "" {
+		m.SecretHash = hashToken(*request.Secret)
 		m.SecretHeader = request.SecretHeader
 		if m.SecretHeader == "" {
 			m.SecretHeader = s.cfg.InboxSecretHeader

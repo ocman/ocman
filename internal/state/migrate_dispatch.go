@@ -7,7 +7,7 @@ import (
 
 // v100 adds viewer-scoped preview-provider consent (preview_auth.go).
 // v101 adds artifacts and their relay shares (artifacts.go).
-const latestSchemaVersion = 107
+const latestSchemaVersion = 108
 
 // applyMigration runs the DDL for the given target version.
 func applyMigration(tx *sql.Tx, target int) error {
@@ -304,6 +304,14 @@ func applyMigration(tx *sql.Tx, target int) error {
 			}
 		}
 		return nil
+	case 108:
+		// Keep the inbox shared secret so the UI can show it back. Older inboxes
+		// stay empty: only the relay knows their secret, as a hash.
+		var exists bool
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='webhook_inbox')`).Scan(&exists); err != nil || !exists {
+			return err
+		}
+		return addColumnIfMissing(tx, "webhook_inbox", "secret", "TEXT NOT NULL DEFAULT ''")
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}

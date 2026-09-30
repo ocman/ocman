@@ -64,7 +64,9 @@ func TestWebhookInboxesLifecycle(t *testing.T) {
 	}
 	rec := doRoutineRequest(t, handler, http.MethodPost, base, `{"name":"forgejo","enrollmentToken":"enroll","secret":"Bearer s","secretHeader":"Authorization"}`)
 	var view webhookInboxView
-	if rec.Code != http.StatusCreated || json.Unmarshal(rec.Body.Bytes(), &view) != nil || view.Name != "forgejo" || view.SecretHeader != "Authorization" || len(view.Subscriptions) != 0 {
+	// The shared secret is the user's own value, shown back so they can check
+	// it; relay credentials and the private key never are.
+	if rec.Code != http.StatusCreated || json.Unmarshal(rec.Body.Bytes(), &view) != nil || view.Name != "forgejo" || view.SecretHeader != "Authorization" || view.Secret != "Bearer s" || len(view.Subscriptions) != 0 {
 		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
 	}
 	stored, err := srv.stateDB.GetWebhookInboxByID(t.Context(), "inbox")
@@ -81,14 +83,14 @@ func TestWebhookInboxesLifecycle(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		body, name, header string
-		code               int
+		body, name, header, secret string
+		code                       int
 	}{
-		{`{"name":" "}`, "", "", http.StatusBadRequest},
-		{`{"name":" renamed "}`, "renamed", "Authorization", http.StatusOK},
-		{`{"secret":"s2"}`, "renamed", "X-Webhook-Secret", http.StatusOK},
-		{`{"secret":"Bearer t","secretHeader":" Authorization "}`, "renamed", "Authorization", http.StatusOK},
-		{`{"secret":""}`, "renamed", "", http.StatusOK},
+		{`{"name":" "}`, "", "", "", http.StatusBadRequest},
+		{`{"name":" renamed "}`, "renamed", "Authorization", "Bearer s", http.StatusOK}, // an omitted secret is kept
+		{`{"secret":"s2"}`, "renamed", "X-Webhook-Secret", "s2", http.StatusOK},
+		{`{"secret":"Bearer t","secretHeader":" Authorization "}`, "renamed", "Authorization", "Bearer t", http.StatusOK},
+		{`{"secret":""}`, "renamed", "", "", http.StatusOK},
 	} {
 		rec := doRoutineRequest(t, handler, http.MethodPatch, base+"/inbox", tc.body)
 		if rec.Code != tc.code {
@@ -98,7 +100,7 @@ func TestWebhookInboxesLifecycle(t *testing.T) {
 			continue
 		}
 		got, _ := srv.stateDB.GetWebhookInboxByID(t.Context(), "inbox")
-		if got.Name != tc.name || got.SecretHeader != tc.header || got.IngestionURL != "/i/inbox/token" {
+		if got.Name != tc.name || got.SecretHeader != tc.header || got.Secret != tc.secret || got.IngestionURL != "/i/inbox/token" {
 			t.Fatalf("patch %s stored %+v", tc.body, got)
 		}
 	}

@@ -6,18 +6,23 @@ type Predicate = { exists?: boolean; equals?: unknown; oneOf?: unknown[]; op?: s
 // stored is the predicate a row was decoded from, with the op and value it was
 // shown as. The comma-separated value is lossy (commas, empty strings, spaces,
 // numbers), so an unedited row saves the stored predicate unchanged.
-export type FilterRow = { key: string; op: Op; value: string; stored?: { op: Op; value: string; predicate: Predicate } };
+export type FilterRow = { key: string; op: Op; value: string; stored?: { key: string; op: Op; value: string; predicate: Predicate } };
 
 // Every value is stored as a JSON string: the matcher compares fmt.Sprint of
 // both sides, so "5" still matches a numeric 5 and "true" a boolean.
-export function encodeFilters(rows: FilterRow[]): string {
+// Header names are trimmed. JSON pointers are exact: "" is the document root
+// and "/name " another property than "/name". A blank pointer is only kept
+// when it was stored that way; a new blank row is an unfinished one.
+export function encodeFilters(rows: FilterRow[], kind: 'header' | 'pointer'): string {
   const out: Record<string, Predicate> = {};
-  for (const { key, op, value, stored } of rows) {
-    if (!key.trim()) continue;
-    if (stored && stored.op === op && stored.value === value) out[key.trim()] = stored.predicate;
-    else if (op === 'exists' || op === 'missing') out[key.trim()] = { exists: op === 'exists' };
-    else if (op === 'equals') out[key.trim()] = { equals: value };
-    else out[key.trim()] = { oneOf: value.split(',').map((v) => v.trim()).filter(Boolean) };
+  for (const { key: raw, op, value, stored } of rows) {
+    const key = kind === 'header' ? raw.trim() : raw;
+    const keep = kind === 'header' ? key !== '' : raw.trim() !== '' || stored?.key === raw;
+    if (!keep) continue;
+    if (stored && stored.op === op && stored.value === value) out[key] = stored.predicate;
+    else if (op === 'exists' || op === 'missing') out[key] = { exists: op === 'exists' };
+    else if (op === 'equals') out[key] = { equals: value };
+    else out[key] = { oneOf: value.split(',').map((v) => v.trim()).filter(Boolean) };
   }
   return JSON.stringify(out);
 }
@@ -29,7 +34,7 @@ export function decodeFilters(json: string): FilterRow[] {
   // rejects them on save, so only rows stored earlier are skipped here.
   return Object.entries(parsed).filter(([, p]) => p !== null && typeof p === 'object').map(([key, p]) => {
     const row = shown(p);
-    return { key, ...row, stored: { ...row, predicate: p } };
+    return { key, ...row, stored: { key, ...row, predicate: p } };
   });
 }
 
@@ -84,7 +89,7 @@ export async function saveTrigger(routineId: string, trigger: Trigger, inboxes: 
   for (const inbox of inboxes) {
     if (inbox.id !== trigger.inboxId && inbox.subscriptions.some((sub) => sub.routineId === routineId)) await api.webhookInboxes.unsubscribe(inbox.id, routineId);
   }
-  if (trigger.inboxId) await api.webhookInboxes.subscribe(trigger.inboxId, { routineId, headerPredicates: encodeFilters(trigger.headers), jsonPredicates: encodeFilters(trigger.fields) });
+  if (trigger.inboxId) await api.webhookInboxes.subscribe(trigger.inboxId, { routineId, headerPredicates: encodeFilters(trigger.headers, 'header'), jsonPredicates: encodeFilters(trigger.fields, 'pointer') });
 }
 
 // triggerLabel summarises what starts a routine: its schedule, its webhook
