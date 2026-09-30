@@ -70,8 +70,8 @@ followed by this fixed untrusted-data envelope:
   "method": "POST",
   "query": {},
   "receivedAt": 0,
-  "headersPath": "/…/ocman/webhook-bodies/<hash>.headers",
-  "bodyPath": "/…/ocman/webhook-bodies/<hash>.body",
+  "headersPath": "/…/ocman/webhook-deliveries/<hash>.headers",
+  "bodyPath": "/…/ocman/webhook-deliveries/<hash>.body",
   "bodyBytes": 0
 }
 ```
@@ -81,7 +81,7 @@ Headers and body are not inlined. Both paths are absolute `0600` files:
 example `{"X-Forgejo-Event":["pull_request"]}`) and `bodyPath` holds the raw
 request body. The session reads only what it needs, for example
 `jq -r '."X-Forgejo-Event"[0]' "<headersPath>"` or `jq -r .number "<bodyPath>"`.
-Allow the routine's session to read `<state dir>/webhook-bodies/*` (an
+Allow the routine's session to read `<state dir>/webhook-deliveries/*` (an
 `external_directory` permission rule), and query the files with `jq` rather
 than reading them whole. The files follow the 30-day history retention below.
 

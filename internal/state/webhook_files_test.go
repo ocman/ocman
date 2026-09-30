@@ -8,13 +8,13 @@ import (
 	"time"
 )
 
-func TestWebhookBodyFileIsWrittenAndPruned(t *testing.T) {
+func TestWebhookFilesAreWrittenAndPruned(t *testing.T) {
 	d := openTestDB(t)
 	path, err := d.WriteWebhookFile("inbox", "../../escape", WebhookBodyFile, []byte("hello"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if filepath.Dir(path) != filepath.Join(d.dataDir, webhookBodyDir) {
+	if filepath.Dir(path) != filepath.Join(d.dataDir, webhookFileDir) {
 		t.Fatalf("body written outside the store: %s", path)
 	}
 	if data, err := os.ReadFile(path); err != nil || string(data) != "hello" {
@@ -53,13 +53,13 @@ func TestWebhookBodyFileIsWrittenAndPruned(t *testing.T) {
 	}
 }
 
-func TestWebhookBodyNeedsDataDir(t *testing.T) {
+func TestWebhookFilesNeedDataDir(t *testing.T) {
 	d := openTestDB(t)
 	d.dataDir = ""
 	if _, err := d.WriteWebhookFile("inbox", "d", WebhookBodyFile, nil); err == nil {
 		t.Fatal("wrote a body without a data directory")
 	}
-	if err := d.cleanupWebhookBodies(1); err != nil {
+	if err := d.cleanupWebhookFiles(1); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -33,7 +33,7 @@ func (d *DB) CleanupWebhookHistory(ctx context.Context, before int64) error {
 	if _, err = d.db.ExecContext(ctx, `DELETE FROM webhook_delivery WHERE accepted_at > 0 AND accepted_at < ?`, before); err != nil {
 		return err
 	}
-	return d.cleanupWebhookBodies(before)
+	return d.cleanupWebhookFiles(before)
 }
 
 func (d *DB) SaveWebhookSubscription(ctx context.Context, sub WebhookSubscription) error {

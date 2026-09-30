@@ -11,14 +11,14 @@ import (
 	"time"
 )
 
-const webhookBodyDir = "webhook-bodies"
+const webhookFileDir = "webhook-deliveries"
 
-// webhookBodies opens <dataDir>/webhook-bodies, creating it 0700.
-func (d *DB) webhookBodies() (*os.Root, string, error) {
+// webhookFiles opens <dataDir>/webhook-deliveries, creating it 0700.
+func (d *DB) webhookFiles() (*os.Root, string, error) {
 	if d.dataDir == "" {
-		return nil, "", errors.New("webhook bodies need a data directory")
+		return nil, "", errors.New("webhook files need a data directory")
 	}
-	dir, err := filepath.Abs(filepath.Join(d.dataDir, webhookBodyDir))
+	dir, err := filepath.Abs(filepath.Join(d.dataDir, webhookFileDir))
 	if err != nil {
 		return nil, "", err
 	}
@@ -26,7 +26,7 @@ func (d *DB) webhookBodies() (*os.Root, string, error) {
 		return nil, "", err
 	}
 	if info, err := os.Lstat(dir); err != nil || !info.IsDir() {
-		return nil, "", fmt.Errorf("webhook body store %s is not a directory", dir)
+		return nil, "", fmt.Errorf("webhook file store %s is not a directory", dir)
 	}
 	root, err := os.OpenRoot(dir)
 	return root, dir, err
@@ -46,7 +46,7 @@ func (d *DB) WriteWebhookFile(inboxID, deliveryID, kind string, data []byte) (st
 	if kind != WebhookBodyFile && kind != WebhookHeadersFile {
 		return "", fmt.Errorf("unknown webhook file kind %q", kind)
 	}
-	root, dir, err := d.webhookBodies()
+	root, dir, err := d.webhookFiles()
 	if err != nil {
 		return "", err
 	}
@@ -72,13 +72,13 @@ func (d *DB) WriteWebhookFile(inboxID, deliveryID, kind string, data []byte) (st
 	return filepath.Join(dir, name), nil
 }
 
-// cleanupWebhookBodies removes delivery files last written before cutoff, the same
+// cleanupWebhookFiles removes delivery files last written before cutoff, the same
 // retention as the delivery rows they belong to.
-func (d *DB) cleanupWebhookBodies(before int64) error {
+func (d *DB) cleanupWebhookFiles(before int64) error {
 	if d.dataDir == "" {
 		return nil
 	}
-	dir := filepath.Join(d.dataDir, webhookBodyDir)
+	dir := filepath.Join(d.dataDir, webhookFileDir)
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
