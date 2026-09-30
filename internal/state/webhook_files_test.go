@@ -1,6 +1,7 @@
 package state
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,6 +51,56 @@ func TestWebhookFilesAreWrittenAndPruned(t *testing.T) {
 	}
 	if _, err := os.Stat(keep); err != nil {
 		t.Fatalf("fresh body pruned: %v", err)
+	}
+}
+
+// Every inbox poller calls cleanup every 15s; the directory is swept at most
+// once per interval, and a sweep walks past one read batch.
+func TestWebhookFilesSweepIsThrottledAndBatched(t *testing.T) {
+	d := openTestDB(t)
+	old := time.Now().Add(-48 * time.Hour)
+	var paths []string
+	for i := range webhookFilesGCBatch + 44 {
+		path, err := d.WriteWebhookFile("inbox", fmt.Sprint(i), WebhookBodyFile, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, old, old); err != nil {
+			t.Fatal(err)
+		}
+		paths = append(paths, path)
+	}
+	cutoff := time.Now().Add(-24 * time.Hour).UnixMilli()
+	if err := d.CleanupWebhookHistory(t.Context(), cutoff); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range paths {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("expired file kept past a batch: %s", path)
+		}
+	}
+	late, err := d.WriteWebhookFile("inbox", "late", WebhookBodyFile, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(late, old, old); err != nil {
+		t.Fatal(err)
+	}
+	// Other pollers within the interval must not rescan.
+	for range 3 {
+		if err := d.CleanupWebhookHistory(t.Context(), cutoff); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := os.Stat(late); err != nil {
+		t.Fatalf("swept again within the interval: %v", err)
+	}
+	d.webhookFilesGCAt.Store(time.Now().Add(-webhookFilesGCInterval).UnixMilli())
+	if err := d.CleanupWebhookHistory(t.Context(), cutoff); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(late); !os.IsNotExist(err) {
+		t.Fatalf("not swept after the interval: %v", err)
 	}
 }
 

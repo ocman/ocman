@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -72,29 +73,51 @@ func (d *DB) WriteWebhookFile(inboxID, deliveryID, kind string, data []byte) (st
 	return filepath.Join(dir, name), nil
 }
 
-// cleanupWebhookFiles removes delivery files last written before cutoff, the same
-// retention as the delivery rows they belong to.
+// webhookFilesGCInterval spaces delivery-file sweeps. Pollers call cleanup
+// every 15s per inbox; the sweep only needs to keep up with a 30-day retention.
+const webhookFilesGCInterval = time.Hour
+
+// webhookFilesGCBatch bounds how many directory entries one read allocates.
+const webhookFilesGCBatch = 256
+
+// cleanupWebhookFiles removes delivery files last written before cutoff, the
+// same retention as the delivery rows they belong to. It runs at most once per
+// webhookFilesGCInterval per DB, whichever inbox poller gets there first.
 func (d *DB) cleanupWebhookFiles(before int64) error {
 	if d.dataDir == "" {
 		return nil
 	}
+	now := time.Now().UnixMilli()
+	last := d.webhookFilesGCAt.Load()
+	if now-last < webhookFilesGCInterval.Milliseconds() || !d.webhookFilesGCAt.CompareAndSwap(last, now) {
+		return nil
+	}
 	dir := filepath.Join(d.dataDir, webhookFileDir)
-	entries, err := os.ReadDir(dir)
+	f, err := os.Open(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
+	defer f.Close()
 	cutoff := time.UnixMilli(before)
-	for _, entry := range entries {
-		info, err := entry.Info()
-		if err != nil || !info.Mode().IsRegular() || !info.ModTime().Before(cutoff) {
-			continue
+	for {
+		entries, err := f.ReadDir(webhookFilesGCBatch)
+		for _, entry := range entries {
+			info, err := entry.Info()
+			if err != nil || !info.Mode().IsRegular() || !info.ModTime().Before(cutoff) {
+				continue
+			}
+			if err := os.Remove(filepath.Join(dir, entry.Name())); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
 		}
-		if err := os.Remove(filepath.Join(dir, entry.Name())); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if errors.Is(err, io.EOF) || len(entries) == 0 {
+			return nil
+		}
+		if err != nil {
 			return err
 		}
 	}
-	return nil
 }

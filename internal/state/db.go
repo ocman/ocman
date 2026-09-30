@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 
 	"github.com/XSAM/otelsql"
 	log "github.com/sirupsen/logrus"
@@ -30,6 +31,9 @@ type DB struct {
 	// artifactMu orders blob writes, artifact inserts and blob GC so a delete
 	// never removes a blob a concurrent create is about to reference.
 	artifactMu sync.Mutex
+	// webhookFilesGCAt is the unix-ms time of the last delivery-file sweep,
+	// shared by every inbox poller so the directory is scanned once per interval.
+	webhookFilesGCAt atomic.Int64
 }
 
 // DefaultDBPath returns the default path to the ocman state database.

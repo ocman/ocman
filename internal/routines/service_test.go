@@ -385,6 +385,29 @@ func TestRemoteDispatchUsesCompoundPlatform(t *testing.T) {
 	}
 }
 
+// A routine moved to a remote after the webhook dispatcher checked it must
+// still not run remotely: the delivery files exist only on this machine.
+func TestRunWebhookRefusesRemoteRoutine(t *testing.T) {
+	h := newHarness(t)
+	remoteHost := &testHost{remoteID: "remote"}
+	remotePlatform := &testPlatform{id: "r-remote:opencode", status: db.StatusBusy, directory: "/repo"}
+	h.svc.router.RegisterRemote("remote", remoteHost)
+	h.svc.platforms.Register(remotePlatform)
+	input := validInput()
+	input.RemoteID = "remote"
+	routine, err := h.svc.Create(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.svc.RunWebhook(t.Context(), routine.ID, "payload", 7)
+	if err != nil || run.State != RunFailure || run.Error != "routine runs on another machine" {
+		t.Fatalf("RunWebhook = %+v, %v", run, err)
+	}
+	if remoteHost.calls.Load() != 0 || remotePlatform.created != 0 || len(remotePlatform.sent) != 0 {
+		t.Fatalf("remote touched: ensure=%d created=%d sent=%d", remoteHost.calls.Load(), remotePlatform.created, len(remotePlatform.sent))
+	}
+}
+
 func TestRoutineSessionModes(t *testing.T) {
 	for _, tc := range []struct {
 		name          string

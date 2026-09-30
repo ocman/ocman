@@ -222,6 +222,12 @@ func (s *Service) claimAndDispatchPrompt(ctx context.Context, routine state.Rout
 	if err != nil || !claimed {
 		return run, err
 	}
+	// A webhook's delivery files live on this machine, so its run must too.
+	// The claimed run is the authoritative snapshot: an edit that moved the
+	// routine after the dispatcher's own check still lands here.
+	if trigger == "webhook" && run.RemoteID != "" && run.RemoteID != state.LocalRemoteID {
+		return s.failDispatch(ctx, run, errors.New("routine runs on another machine"))
+	}
 	host, ok := s.router.LookupRemote(run.RemoteID)
 	if !ok {
 		return s.failDispatch(ctx, run, fmt.Errorf("routine target %q is unavailable", run.RemoteID))
