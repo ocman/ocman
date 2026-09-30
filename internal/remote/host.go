@@ -101,6 +101,37 @@ func (h *remoteHost) GitBranches(ctx context.Context, dir string) ([]string, err
 	return out, unmarshalJSON(resp.Payload, &out)
 }
 
+func (h *remoteHost) ListRepoFiles(ctx context.Context, dir string) (*git.FileList, error) {
+	var out git.FileList
+	return &out, h.callFiles(ctx, git.ErrNotARepo, &out, func(c pb.OcmanClient, req *pb.JsonReq) (*pb.JsonResp, error) {
+		return c.ListRepoFiles(ctx, req)
+	}, map[string]string{"dir": dir})
+}
+
+func (h *remoteHost) ReadRepoFile(ctx context.Context, dir, path string) (*git.FileContent, error) {
+	var out git.FileContent
+	return &out, h.callFiles(ctx, git.ErrFileNotFound, &out, func(c pb.OcmanClient, req *pb.JsonReq) (*pb.JsonResp, error) {
+		return c.ReadRepoFile(ctx, req)
+	}, map[string]string{"dir": dir, "path": path})
+}
+
+// callFiles runs a file RPC, restoring notFound from codes.NotFound.
+func (h *remoteHost) callFiles(ctx context.Context, notFound error, out any, call func(pb.OcmanClient, *pb.JsonReq) (*pb.JsonResp, error), args map[string]string) error {
+	client := h.conn.Client()
+	if client == nil {
+		return ErrRemoteOffline
+	}
+	b, _ := marshalJSON(args)
+	resp, err := call(client, &pb.JsonReq{Payload: b})
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return errors.Join(notFound, err)
+		}
+		return err
+	}
+	return unmarshalJSON(resp.Payload, out)
+}
+
 func (h *remoteHost) GitCheckout(ctx context.Context, dir, branch string) error {
 	client := h.conn.Client()
 	if client == nil {

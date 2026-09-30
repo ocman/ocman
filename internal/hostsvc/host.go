@@ -244,6 +244,14 @@ type Host interface {
 	// containing dir, current branch first.
 	GitBranches(ctx context.Context, dir string) ([]string, error)
 
+	// ListRepoFiles lists the non-ignored files of the repo containing dir,
+	// relative to its root.
+	ListRepoFiles(ctx context.Context, dir string) (*git.FileList, error)
+
+	// ReadRepoFile reads one listed file of the repo containing dir.
+	// Returns git.ErrFileNotFound for anything ListRepoFiles would not show.
+	ReadRepoFile(ctx context.Context, dir, path string) (*git.FileContent, error)
+
 	// GitCheckout switches the working tree in dir to branch. Returns
 	// git.ErrDirtyCheckout when git refuses due to local changes.
 	GitCheckout(ctx context.Context, dir, branch string) error

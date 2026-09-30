@@ -122,6 +122,8 @@ export type {
 
 // Type imports used by the api object below.
 import type {
+  RepoFileList,
+  RepoFileContent,
   AuthMe,
   CapabilitiesResponse,
   DoctorReport,
@@ -655,6 +657,17 @@ export const api = {
   },
   // List local branches for the repo containing dir, current branch
   // first. Empty for a non-repo directory.
+  // Every non-ignored file of the repo containing dir, root-relative.
+  repoFiles: (dir: string, remoteId: string, signal?: AbortSignal) =>
+    fetchJSON<RepoFileList>(
+      `/api/git/files?dir=${encodeURIComponent(dir)}&remoteId=${encodeURIComponent(remoteId)}`,
+      signal,
+    ),
+  repoFile: (dir: string, path: string, remoteId: string, signal?: AbortSignal) =>
+    fetchJSON<RepoFileContent>(
+      `/api/git/file?dir=${encodeURIComponent(dir)}&path=${encodeURIComponent(path)}&remoteId=${encodeURIComponent(remoteId)}`,
+      signal,
+    ),
   gitBranches: (dir: string, signal?: AbortSignal) =>
     fetchJSON<{ branches: string[] }>(
       `/api/git/branches?dir=${encodeURIComponent(dir)}`,

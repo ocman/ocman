@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useHeaderInfo } from '../lib/headerContext';
@@ -5,6 +6,8 @@ import { routeProjectDir, routeTitle } from '../lib/routeTitle';
 import { ProjectLabel } from './ProjectLabel';
 import { PlatformBadge } from './PlatformBadge';
 import { HostBadge } from './HostBadge';
+import { IconButton } from './IconButton';
+import { ExploreModal } from './ExploreModal';
 import './AppHeader.css';
 
 export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
@@ -15,6 +18,8 @@ export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
     ? decodeURIComponent(path.slice('/session/'.length).split('/')[0])
     : undefined;
   const sessionInfo = routeSessionId && info.sessionId === routeSessionId ? info : {};
+  const [exploring, setExploring] = useState(false);
+  const exploreDir = routeSessionId ? sessionInfo.sessionProjectFull : undefined;
 
   let breadcrumb: ReactNode = routeTitle(path, sessionInfo.sessionTitle);
   const projectDir = routeProjectDir(path);
@@ -55,6 +60,16 @@ export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
         <span className="header-breadcrumb">{breadcrumb}</span>
       </h1>
       <div className="header-right">
+        {exploreDir && (
+          <IconButton icon="bi-folder2-open" label="Explore files" variant="ghost" size="compact" onClick={() => setExploring(true)} />
+        )}
+        {exploring && exploreDir && (
+          <ExploreModal
+            dir={exploreDir}
+            remoteId={sessionInfo.sessionRemoteId || 'local'}
+            onClose={() => setExploring(false)}
+          />
+        )}
         {routeSessionId && sessionInfo.sessionProject && (
           <span
             className="header-project"

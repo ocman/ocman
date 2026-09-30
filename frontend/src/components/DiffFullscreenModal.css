@@ -65,11 +65,14 @@
   flex-shrink: 0;
   height: 100%;
   border-right: 1px solid var(--border);
-  --trees-bg-override: transparent;
+  /* Opaque on purpose: the flattened-path truncation markers paint this
+     colour over the clipped text, so transparent lets it show through. */
+  --trees-bg-override: var(--bg-card);
+  --trees-input-bg-override: var(--bg);
   --trees-fg-override: var(--text);
   --trees-fg-muted-override: var(--overlay0);
   --trees-accent-override: var(--accent);
-  --trees-selected-bg-override: var(--bg-active);
+  --trees-selected-bg-override: var(--bg-hover);
   --trees-selected-fg-override: var(--text);
   --trees-border-color-override: var(--border);
   --trees-font-family-override: 'SF Mono', Consolas, monospace;

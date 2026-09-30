@@ -56,6 +56,8 @@ service Ocman {
   rpc GitInfo(JsonReq) returns (JsonResp);
   rpc GitDiff(JsonReq) returns (JsonResp);
   rpc GitBranches(JsonReq) returns (JsonResp);
+  rpc ListRepoFiles(JsonReq) returns (JsonResp);   // *git.FileList
+  rpc ReadRepoFile(JsonReq) returns (JsonResp);    // *git.FileContent
   rpc GitCheckout(JsonReq) returns (Empty);
   rpc ProjectUpstreams(JsonReq) returns (JsonResp);
   rpc FetchPRHead(JsonReq) returns (JsonResp);

@@ -496,6 +496,22 @@ export interface GitInfo {
   dirty: boolean;
 }
 
+/** GET /api/git/files — the Explore modal's file list. */
+export interface RepoFileList {
+  root: string;
+  files: string[];
+  truncated?: boolean;
+}
+
+/** GET /api/git/file — one file, capped at 1 MiB. */
+export interface RepoFileContent {
+  path: string;
+  content: string;
+  size: number;
+  binary?: boolean;
+  truncated?: boolean;
+}
+
 export interface Message {
   id: string;
   sessionId: string;

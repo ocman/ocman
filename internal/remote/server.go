@@ -507,6 +507,35 @@ func (s *Server) GitBranches(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp
 	return jsonResp(s.host.GitBranches(ctx, args.Dir))
 }
 
+func (s *Server) ListRepoFiles(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
+	var args struct {
+		Dir string `json:"dir"`
+	}
+	if err := unmarshalJSON(req.Payload, &args); err != nil {
+		return nil, err
+	}
+	return jsonResp(notFoundStatus(s.host.ListRepoFiles(ctx, args.Dir)))
+}
+
+func (s *Server) ReadRepoFile(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
+	var args struct {
+		Dir  string `json:"dir"`
+		Path string `json:"path"`
+	}
+	if err := unmarshalJSON(req.Payload, &args); err != nil {
+		return nil, err
+	}
+	return jsonResp(notFoundStatus(s.host.ReadRepoFile(ctx, args.Dir, args.Path)))
+}
+
+// notFoundStatus carries the git not-found sentinels across gRPC.
+func notFoundStatus[T any](v T, err error) (T, error) {
+	if errors.Is(err, git.ErrNotARepo) || errors.Is(err, git.ErrFileNotFound) {
+		return v, status.Error(codes.NotFound, err.Error())
+	}
+	return v, err
+}
+
 func (s *Server) GitCheckout(ctx context.Context, req *pb.JsonReq) (*pb.Empty, error) {
 	var args struct {
 		Dir    string `json:"dir"`

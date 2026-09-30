@@ -4,7 +4,7 @@
 // A small unsafeCSS block fine-tunes the diff-specific colours that the
 // theme doesn't control (row tints, line numbers, font).
 
-import type { MultiFileDiffProps } from '@pierre/diffs/react';
+import type { FileProps, MultiFileDiffProps } from '@pierre/diffs/react';
 
 const CATPPUCCIN_CSS = `
   :host {
@@ -34,5 +34,12 @@ export const DIFF_OPTIONS: NonNullable<MultiFileDiffProps<undefined>['options']>
   disableFileHeader: true,
   overflow: 'wrap',
   diffIndicators: 'none',
+  unsafeCSS: CATPPUCCIN_CSS,
+};
+
+// Same look for a single full file (Explore modal).
+export const FILE_OPTIONS: NonNullable<FileProps<undefined>['options']> = {
+  theme: 'catppuccin-mocha',
+  overflow: 'scroll',
   unsafeCSS: CATPPUCCIN_CSS,
 };

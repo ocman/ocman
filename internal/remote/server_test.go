@@ -198,6 +198,15 @@ func (localStubHost) GitBranches(context.Context, string) ([]string, error) {
 	return []string{"main"}, nil
 }
 func (localStubHost) GitCheckout(context.Context, string, string) error { return nil }
+func (localStubHost) ListRepoFiles(_ context.Context, dir string) (*git.FileList, error) {
+	return &git.FileList{Root: dir, Files: []string{"a.go"}}, nil
+}
+func (localStubHost) ReadRepoFile(_ context.Context, _, path string) (*git.FileContent, error) {
+	if path != "a.go" {
+		return nil, git.ErrFileNotFound
+	}
+	return &git.FileContent{Path: path, Content: "package a", Size: 9}, nil
+}
 func (localStubHost) ProjectUpstreams(context.Context, string) (*hostsvc.ProjectUpstreams, error) {
 	return &hostsvc.ProjectUpstreams{}, nil
 }
