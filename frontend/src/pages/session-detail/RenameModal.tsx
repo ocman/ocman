@@ -18,14 +18,18 @@ export interface RenameModalProps {
 export function RenameModal({ sessionId, initialTitle, onClose, onRenamed }: RenameModalProps) {
   const [renameTitle, setRenameTitle] = useState(initialTitle);
   const submitRef = useRef<HTMLButtonElement>(null);
+  const [saving, setSaving] = useState(false);
 
   const handleSubmit = async () => {
+    setSaving(true);
     try {
       await api.renameSession(sessionId, renameTitle.trim());
       onRenamed(renameTitle.trim());
       onClose();
     } catch (err) {
       remoteLog.error('Failed to rename session', err);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -35,6 +39,7 @@ export function RenameModal({ sessionId, initialTitle, onClose, onRenamed }: Ren
       dialogClassName="oc-rename-dialog"
       label="Rename Session"
       onClose={onClose}
+      canClose={!saving}
     >
       <h3>Rename Session</h3>
       <input
@@ -54,7 +59,7 @@ export function RenameModal({ sessionId, initialTitle, onClose, onRenamed }: Ren
           <SubmitButton ref={submitRef} variant="accent" size="small" pendingLabel="Renaming…" onClick={handleSubmit}>
             Rename
           </SubmitButton>
-          <Button size="small" onClick={onClose}>
+          <Button size="small" disabled={saving} onClick={onClose}>
             Cancel
           </Button>
         </ButtonGroup>

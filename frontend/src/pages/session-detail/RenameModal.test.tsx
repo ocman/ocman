@@ -21,6 +21,8 @@ describe('RenameModal', () => {
     const busy = screen.getByRole('button', { name: 'Renaming…' });
     expect(busy).toHaveAttribute('aria-busy', 'true');
     await userEvent.click(busy);
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    await userEvent.keyboard('{Escape}');
     expect(renameSession).toHaveBeenCalledOnce();
     expect(onClose).not.toHaveBeenCalled();
 
