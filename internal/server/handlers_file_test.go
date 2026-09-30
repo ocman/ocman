@@ -152,11 +152,23 @@ func TestHandleFileProxy(t *testing.T) {
 		if cd := rec.Header().Get("Content-Disposition"); !strings.HasPrefix(cd, "inline;") {
 			t.Errorf("Content-Disposition = %q, want inline", cd)
 		}
-		if rec.Header().Get("Content-Security-Policy") != "sandbox" {
+		if rec.Header().Get("Content-Security-Policy") != "sandbox; frame-ancestors 'self'" {
 			t.Errorf("missing sandbox CSP: %q", rec.Header().Get("Content-Security-Policy"))
 		}
 		if rec.Header().Get("X-Content-Type-Options") != "nosniff" {
 			t.Error("missing nosniff")
+		}
+	})
+
+	t.Run("can be framed by the dashboard despite the global DENY", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, filePathPrefix+signFilePath(key, png), nil)
+		withSecurityHeaders(http.HandlerFunc(s.handleFileProxy)).ServeHTTP(rec, req)
+		if got := rec.Header().Get("X-Frame-Options"); got != "SAMEORIGIN" {
+			t.Errorf("X-Frame-Options = %q, want SAMEORIGIN", got)
+		}
+		if got := rec.Header().Get("Content-Security-Policy"); got != "sandbox; frame-ancestors 'self'" {
+			t.Errorf("Content-Security-Policy = %q", got)
 		}
 	})
 

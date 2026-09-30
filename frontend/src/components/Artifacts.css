@@ -19,6 +19,7 @@
 .artifact-file > header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .artifact-file > header .oc-button-group { margin-left: auto; }
 .artifact-preview-image { max-width: 100%; max-height: 70vh; object-fit: contain; justify-self: start; }
+.artifact-preview-html { width: 100%; height: 70vh; border: 1px solid var(--border); background: var(--white); }
 .artifact-preview-text { margin: 0; max-height: 70vh; overflow: auto; padding: 10px; border: 1px solid var(--border); background: var(--bg); font: 12px/1.5 var(--font-conversation-mono); white-space: pre; }
 .artifact-preview-markdown { max-height: 70vh; overflow: auto; }
 .artifact-pane { display: grid; gap: 8px; align-content: start; padding: 8px; overflow: auto; height: 100%; box-sizing: border-box; }

@@ -24,6 +24,7 @@ const artifact: Artifact = {
     file(1, 'notes.md', 'text/markdown'),
     file(2, 'main.go', 'text/x-go'),
     file(3, 'bundle.zip', 'application/zip'),
+    file(4, 'report.html', 'text/html'),
     { kind: 'link', url: 'https://ci.test/run/1', label: 'CI run' },
   ],
 };
@@ -51,6 +52,9 @@ describe('ArtifactDetail', () => {
     expect(screen.getByText('today').tagName).toBe('STRONG');
     expect(screen.getByRole('link', { name: 'CI run' })).toHaveAttribute('target', '_blank');
     expect(screen.getByTestId('artifact-preview-image')).toHaveAttribute('src', '/api/artifacts/a1/files/0');
+    const frame = screen.getByTestId('artifact-preview-html');
+    expect(frame).toHaveAttribute('src', '/api/artifacts/a1/files/4');
+    expect(frame).toHaveAttribute('sandbox', '');
     expect(await screen.findByRole('heading', { name: 'Heading' })).toBeInTheDocument();
     expect(await screen.findByTestId('artifact-preview-text')).toHaveTextContent('package main');
     const zip = screen.getAllByTestId('artifact-file')[3];
@@ -72,6 +76,13 @@ describe('ArtifactDetail', () => {
     confirm.mockRestore();
   });
 
+  it('navigates back to the list', async () => {
+    renderPage();
+    await screen.findByRole('heading', { name: 'Release notes' });
+    await userEvent.click(screen.getByRole('button', { name: 'Back to artifacts' }));
+    expect(await screen.findByText('list page')).toBeInTheDocument();
+  });
+
   it('shows load errors', async () => {
     vi.mocked(artifactsApi.get).mockRejectedValue(new Error('artifact not found'));
     renderPage();
@@ -80,6 +91,8 @@ describe('ArtifactDetail', () => {
 
   it('classifies preview kinds', () => {
     expect(previewKind({ kind: 'file', mime: 'image/svg+xml' })).toBe('image');
+    expect(previewKind({ kind: 'file', mime: 'text/html; charset=utf-8', size: 5 * 1024 * 1024 })).toBe('html');
+    expect(previewKind({ kind: 'file', mime: 'application/octet-stream', name: 'x.html' })).toBe('text');
     expect(previewKind({ kind: 'file', mime: 'application/json' })).toBe('text');
     expect(previewKind({ kind: 'file', mime: 'application/octet-stream', name: 'x.ts' })).toBe('text');
     expect(previewKind({ kind: 'file', mime: 'text/plain', size: 5 * 1024 * 1024 })).toBe('none');

@@ -77,12 +77,15 @@ const MAX_TEXT_PREVIEW = 1024 * 1024;
 const TEXT_MIMES = /^(text\/|application\/(json|xml|javascript|x-yaml|yaml|x-sh|toml|sql)\b)/;
 const TEXT_EXT = /\.(txt|log|json|ya?ml|toml|xml|csv|sh|go|ts|tsx|js|jsx|py|rs|rb|java|c|h|cpp|css|html|sql|diff|patch)$/i;
 
-export type PreviewKind = 'image' | 'markdown' | 'text' | 'none';
+export type PreviewKind = 'image' | 'html' | 'markdown' | 'text' | 'none';
 
 export function previewKind(item: ArtifactItem): PreviewKind {
   const mime = (item.mime ?? '').split(';')[0].trim().toLowerCase();
   const name = item.name ?? '';
   if (mime.startsWith('image/')) return 'image';
+  // By MIME only: the file is served with nosniff, so a .html named as
+  // octet-stream would never render in the frame.
+  if (mime === 'text/html') return 'html';
   if ((item.size ?? 0) > MAX_TEXT_PREVIEW) return 'none';
   if (mime === 'text/markdown' || /\.(md|markdown)$/i.test(name)) return 'markdown';
   if (TEXT_MIMES.test(mime) || TEXT_EXT.test(name)) return 'text';

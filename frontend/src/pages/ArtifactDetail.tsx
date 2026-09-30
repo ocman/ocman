@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { ArtifactContent } from '../components/ArtifactContent';
 import { ArtifactSessionLink } from '../components/ArtifactList';
 import { ArtifactShareModal } from '../components/ArtifactShareModal';
@@ -40,12 +40,15 @@ export function ArtifactDetail() {
     }
   };
 
+  const back = <Button type="button" size="small" variant="ghost" onClick={() => navigate('/artifacts')}><i className="bi bi-arrow-left" aria-hidden="true" />Back to artifacts</Button>;
+
   if (!artifact) {
-    return <main className="artifact-page">{error ? <p role="alert" className="artifact-error">{error}</p> : <LoadingState>Loading artifact...</LoadingState>}<Link to="/artifacts">Back to artifacts</Link></main>;
+    return <main className="artifact-page">{back}{error ? <p role="alert" className="artifact-error">{error}</p> : <LoadingState>Loading artifact...</LoadingState>}</main>;
   }
 
   return (
     <main className="artifact-page">
+      {back}
       <header className="artifact-header">
         <div>
           <h2>{artifact.title}</h2>

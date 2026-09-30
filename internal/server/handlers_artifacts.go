@@ -142,10 +142,7 @@ func (s *Server) serveArtifactFile(w http.ResponseWriter, r *http.Request, id, o
 		disposition = "attachment"
 	}
 	w.Header().Set("Content-Type", item.MIME)
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	// Same posture as handleFileProxy: active content (SVG, HTML) must not
-	// run with the dashboard's origin when opened as a document.
-	w.Header().Set("Content-Security-Policy", "sandbox")
+	setInertFileHeaders(w)
 	w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": item.Name}))
 	http.ServeContent(w, r, "", a.CreatedAt, f)
 }

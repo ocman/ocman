@@ -22,6 +22,9 @@ export function ArtifactPreview({ item }: { item: ArtifactItem }) {
 
   if (!item.url || kind === 'none') return null;
   if (kind === 'image') return <img className="artifact-preview-image" src={item.url} alt={item.name ?? ''} data-testid="artifact-preview-image" />;
+  // Empty sandbox: opaque origin, no scripts. The file response also sends
+  // `Content-Security-Policy: sandbox`, so this holds even when opened directly.
+  if (kind === 'html') return <iframe className="artifact-preview-html" src={item.url} sandbox="" title={item.name ?? 'HTML preview'} data-testid="artifact-preview-html" />;
   if (error) return <p className="artifact-error">Preview unavailable.</p>;
   if (text === undefined) return <p className="artifact-muted">Loading preview...</p>;
   if (kind === 'markdown') return <div className="artifact-preview-markdown oc-md" data-testid="artifact-preview-markdown"><MarkdownContent text={text} /></div>;

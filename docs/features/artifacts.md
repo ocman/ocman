@@ -49,7 +49,8 @@ time.
   pagination. The command palette opens the same page.
 - An artifact's page (`/artifacts/<id>`) previews its files, lists its links,
   links back to the originating session, and offers download, share, and
-  delete.
+  delete. HTML files (`text/html`) render in a sandboxed frame with scripts
+  disabled.
 - The **Artifacts** tab in the session sidebar shows artifacts from this
   session and its subagents, or from the whole project. New artifacts appear
   live through the `ocman.artifact.created` event.

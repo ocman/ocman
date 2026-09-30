@@ -250,7 +250,7 @@ func TestArtifactFileServing(t *testing.T) {
 	rec := do(http.MethodGet, ArtifactFilePath(a.ID, 0))
 	h := rec.Header()
 	if rec.Code != http.StatusOK || rec.Body.String() != "<svg/>" || h.Get("Content-Type") != "image/svg+xml" ||
-		h.Get("X-Content-Type-Options") != "nosniff" || h.Get("Content-Security-Policy") != "sandbox" ||
+		h.Get("X-Content-Type-Options") != "nosniff" || h.Get("Content-Security-Policy") != "sandbox; frame-ancestors 'self'" || h.Get("X-Frame-Options") != "SAMEORIGIN" ||
 		h.Get("Content-Disposition") != "inline; filename=pic.svg" {
 		t.Fatalf("inline = %d %v %q", rec.Code, h, rec.Body)
 	}
