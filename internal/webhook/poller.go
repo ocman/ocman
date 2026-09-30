@@ -109,7 +109,6 @@ func (p *Poller) Poll(ctx context.Context) error {
 	case err == nil:
 		p.Inbox = inbox
 	}
-	_ = p.Store.CleanupWebhookHistory(ctx, now().Add(-state.WebhookHistoryRetention).UnixMilli())
 	identity, err := age.ParseX25519Identity(p.Inbox.Identity)
 	if err != nil {
 		return fmt.Errorf("parsing webhook identity: %w", err)

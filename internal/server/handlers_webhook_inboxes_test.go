@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -354,5 +355,26 @@ func TestWebhookSecretChangesPersistInRelayOrder(t *testing.T) {
 	defer mu.Unlock()
 	if got.Secret != last {
 		t.Fatalf("ocman stored %q but the relay enforces %q", got.Secret, last)
+	}
+}
+
+// Delivery files expire even after the last inbox is revoked, when no poller
+// is left running.
+func TestWebhookHistoryCleanupRunsWithoutInboxes(t *testing.T) {
+	srv, _, _ := routineHTTPServer(t)
+	path, err := srv.stateDB.WriteWebhookFile("gone", "d1", state.WebhookBodyFile, []byte("secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-state.WebhookHistoryRetention - time.Hour)
+	if err := os.Chtimes(path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if inboxes, _ := srv.stateDB.ListWebhookInboxes(t.Context()); len(inboxes) != 0 {
+		t.Fatalf("inboxes = %+v", inboxes)
+	}
+	srv.cleanWebhookHistory(t.Context())
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expired delivery file kept: %v", err)
 	}
 }

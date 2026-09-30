@@ -73,23 +73,13 @@ func (d *DB) WriteWebhookFile(inboxID, deliveryID, kind string, data []byte) (st
 	return filepath.Join(dir, name), nil
 }
 
-// webhookFilesGCInterval spaces delivery-file sweeps. Pollers call cleanup
-// every 15s per inbox; the sweep only needs to keep up with a 30-day retention.
-const webhookFilesGCInterval = time.Hour
-
 // webhookFilesGCBatch bounds how many directory entries one read allocates.
 const webhookFilesGCBatch = 256
 
 // cleanupWebhookFiles removes delivery files last written before cutoff, the
-// same retention as the delivery rows they belong to. It runs at most once per
-// webhookFilesGCInterval per DB, whichever inbox poller gets there first.
+// same retention as the delivery rows they belong to.
 func (d *DB) cleanupWebhookFiles(before int64) error {
 	if d.dataDir == "" {
-		return nil
-	}
-	now := time.Now().UnixMilli()
-	last := d.webhookFilesGCAt.Load()
-	if now-last < webhookFilesGCInterval.Milliseconds() || !d.webhookFilesGCAt.CompareAndSwap(last, now) {
 		return nil
 	}
 	dir := filepath.Join(d.dataDir, webhookFileDir)

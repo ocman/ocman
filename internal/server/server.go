@@ -521,6 +521,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 		for _, inbox := range inboxes {
 			go (&webhook.Poller{Store: s.stateDB, Inbox: inbox, Routines: s.routineSvc}).Run(ctx)
 		}
+		go s.runWebhookHistoryCleanup(ctx)
 	}
 
 	go s.runAutoArchiveLoop(ctx)
