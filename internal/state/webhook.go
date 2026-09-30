@@ -107,6 +107,13 @@ func (d *DB) FinishWebhookDispatch(ctx context.Context, inboxID, deliveryID, rou
 	if n, err := updated.RowsAffected(); err != nil || n == 0 {
 		return err
 	}
+	// A run that started and failed posts its own notice; only a routine that
+	// never got a run needs one from here.
+	var hasRun bool
+	if err := d.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM routine_run WHERE routine_id = ? AND occurrence_at = ?)`,
+		routineID, WebhookOccurrence(inboxID, deliveryID)).Scan(&hasRun); err != nil || hasRun {
+		return err
+	}
 	var name string
 	_ = d.db.QueryRowContext(ctx, `SELECT name FROM routine WHERE id = ?`, routineID).Scan(&name)
 	if name == "" {

@@ -2,16 +2,20 @@ import { api } from './api';
 import type { WebhookDelivery, WebhookInbox } from './api.types';
 
 export type Op = 'equals' | 'oneOf' | 'exists' | 'missing';
-export type FilterRow = { key: string; op: Op; value: string };
 type Predicate = { exists?: boolean; equals?: unknown; oneOf?: unknown[]; op?: string; value?: unknown };
+// stored is the predicate a row was decoded from, with the op and value it was
+// shown as. The comma-separated value is lossy (commas, empty strings, spaces,
+// numbers), so an unedited row saves the stored predicate unchanged.
+export type FilterRow = { key: string; op: Op; value: string; stored?: { op: Op; value: string; predicate: Predicate } };
 
 // Every value is stored as a JSON string: the matcher compares fmt.Sprint of
 // both sides, so "5" still matches a numeric 5 and "true" a boolean.
 export function encodeFilters(rows: FilterRow[]): string {
   const out: Record<string, Predicate> = {};
-  for (const { key, op, value } of rows) {
+  for (const { key, op, value, stored } of rows) {
     if (!key.trim()) continue;
-    if (op === 'exists' || op === 'missing') out[key.trim()] = { exists: op === 'exists' };
+    if (stored && stored.op === op && stored.value === value) out[key.trim()] = stored.predicate;
+    else if (op === 'exists' || op === 'missing') out[key.trim()] = { exists: op === 'exists' };
     else if (op === 'equals') out[key.trim()] = { equals: value };
     else out[key.trim()] = { oneOf: value.split(',').map((v) => v.trim()).filter(Boolean) };
   }
@@ -24,13 +28,18 @@ export function decodeFilters(json: string): FilterRow[] {
   // A non-object predicate (null, 5) can't be shown as a row; the server
   // rejects them on save, so only rows stored earlier are skipped here.
   return Object.entries(parsed).filter(([, p]) => p !== null && typeof p === 'object').map(([key, p]) => {
-    // Check presence, not length: an empty list matches nothing, and reading
-    // it back as 'exists' would widen the filter on the next save.
-    if (Array.isArray(p.oneOf)) return { key, op: 'oneOf', value: p.oneOf.map(String).join(', ') };
-    const equals = p.op === 'equals' ? p.value : p.equals;
-    if (equals !== undefined) return { key, op: 'equals', value: String(equals) };
-    return { key, op: p.exists === false ? 'missing' : 'exists', value: '' };
+    const row = shown(p);
+    return { key, ...row, stored: { ...row, predicate: p } };
   });
+}
+
+function shown(p: Predicate): { op: Op; value: string } {
+  // Check presence, not length: an empty list matches nothing, and reading
+  // it back as 'exists' would widen the filter on the next save.
+  if (Array.isArray(p.oneOf)) return { op: 'oneOf', value: p.oneOf.map(String).join(', ') };
+  const equals = p.op === 'equals' ? p.value : p.equals;
+  if (equals !== undefined) return { op: 'equals', value: String(equals) };
+  return { op: p.exists === false ? 'missing' : 'exists', value: '' };
 }
 
 const OUTCOME: Record<string, string> = { terminal: 'ran', ignored: 'no match', failure: 'failed', queued: 'queued' };

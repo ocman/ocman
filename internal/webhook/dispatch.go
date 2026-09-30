@@ -1,9 +1,11 @@
 package webhook
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -86,7 +88,11 @@ func Dispatch(store *state.DB, svc RoutineDispatcher, inboxID, deliveryID string
 			continue
 		}
 		occurrence := state.WebhookOccurrence(inboxID, deliveryID)
-		_, err = svc.RunWebhook(ctx, sub.RoutineID, data, occurrence)
+		run, err := svc.RunWebhook(ctx, sub.RoutineID, data, occurrence)
+		if err == nil && run.State == "failure" {
+			// A launch failure comes back as a failed run, not an error.
+			err = errors.New(cmp.Or(run.Error, "routine run failed to start"))
+		}
 		if err != nil {
 			_ = store.FinishWebhookDispatch(ctx, inboxID, deliveryID, sub.RoutineID, "failure", err.Error(), now.UnixMilli())
 			continue

@@ -160,6 +160,11 @@ func (d *DB) LinkRoutineRun(ctx context.Context, id, platform, sessionID string,
 // reply, the session's final assistant text, is only shown in the Inbox item,
 // which is posted for a successful run only when the run's routine opted in.
 //
+// A consuming run advances the routine if it is unchanged since the claim or
+// still due at this run's occurrence: an edit that kept the schedule (a
+// prompt-only patch) must not strand the occurrence, while a schedule edit
+// moves next_due_at and is left alone.
+//
 // advance is false for a run that did not consume a scheduled occurrence
 // (manual, webhook). Such a run leaves next_due_at, enabled and updated_at
 // alone, so it cannot invalidate the routine version an overlapping scheduled
@@ -171,8 +176,8 @@ func (d *DB) FinishRoutineRun(ctx context.Context, id, runState, errorText, repl
 	}
 	defer func() { _ = tx.Rollback() }()
 	var routineID string
-	var routineUpdatedAt int64
-	if err := tx.QueryRowContext(ctx, `SELECT routine_id, routine_updated_at FROM routine_run WHERE id = ? AND state = 'running'`, id).Scan(&routineID, &routineUpdatedAt); errors.Is(err, sql.ErrNoRows) {
+	var routineUpdatedAt, occurrenceAt int64
+	if err := tx.QueryRowContext(ctx, `SELECT routine_id, routine_updated_at, occurrence_at FROM routine_run WHERE id = ? AND state = 'running'`, id).Scan(&routineID, &routineUpdatedAt, &occurrenceAt); errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	} else if err != nil {
 		return false, fmt.Errorf("reading routine run for finish: %w", err)
@@ -193,10 +198,10 @@ func (d *DB) FinishRoutineRun(ctx context.Context, id, runState, errorText, repl
 			enabled = CASE WHEN delete_after_success = 1 THEN 0 ELSE ? END,
 			deleted = CASE WHEN delete_after_success = 1 THEN 1 ELSE deleted END,
 			deleted_at = CASE WHEN delete_after_success = 1 THEN ? ELSE deleted_at END,
-			updated_at = ? WHERE id = ? AND deleted = 0 AND updated_at = ?`, nextDueAt, enabled, finishedAt, finishedAt, routineID, routineUpdatedAt); err != nil {
+			updated_at = ? WHERE id = ? AND deleted = 0 AND (updated_at = ? OR next_due_at = ?)`, nextDueAt, enabled, finishedAt, finishedAt, routineID, routineUpdatedAt, occurrenceAt); err != nil {
 			return false, fmt.Errorf("advancing successful routine: %w", err)
 		}
-	} else if _, err := tx.ExecContext(ctx, `UPDATE routine SET next_due_at = ?, enabled = ?, updated_at = ? WHERE id = ? AND deleted = 0 AND updated_at = ?`, nextDueAt, enabled, finishedAt, routineID, routineUpdatedAt); err != nil {
+	} else if _, err := tx.ExecContext(ctx, `UPDATE routine SET next_due_at = ?, enabled = ?, updated_at = ? WHERE id = ? AND deleted = 0 AND (updated_at = ? OR next_due_at = ?)`, nextDueAt, enabled, finishedAt, routineID, routineUpdatedAt, occurrenceAt); err != nil {
 		return false, fmt.Errorf("advancing failed routine: %w", err)
 	}
 	body := fmt.Sprintf("Run %s finished with status **%s**.\n\n", id, runState)

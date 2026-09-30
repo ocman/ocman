@@ -216,14 +216,22 @@ export function Routines() {
     event.preventDefault();
     setBusy(true);
     setError('');
+    let created = false;
     try {
       const remoteId = form.remoteId || 'local';
       const input = inputFor(form, remoteId, editingRules);
       const saved = editing ? await api.routines.update(editing, input) : await api.routines.create(input);
+      if (!editing) {
+        // Created: a retry after a failed trigger save must update this
+        // routine, not create a second one with the same name.
+        setEditing(saved.id);
+        created = true;
+      }
       await saveTrigger(saved.id, trigger, inboxes);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save routine.');
       setBusy(false);
+      if (created) void load().catch(() => undefined); // list the routine that now exists
       return;
     }
     // The routine is saved: close before reloading, so a failed refresh can't

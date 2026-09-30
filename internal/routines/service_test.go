@@ -1084,3 +1084,73 @@ func TestUpdateKeepScheduleLeavesAStaleScheduleAlone(t *testing.T) {
 		}
 	}
 }
+
+// An edit that keeps the schedule must not stop an already-running scheduled
+// run from consuming its occurrence, or every later tick finds that run and
+// the routine never advances.
+func TestKeepScheduleEditDuringScheduledRunStillConsumesIt(t *testing.T) {
+	for _, schedule := range []Schedule{
+		{Kind: ScheduleOnce, At: time.Date(2030, 1, 1, 9, 1, 0, 0, time.UTC)},
+		{Kind: ScheduleCron, Cron: "*/5 * * * *", Timezone: "UTC"},
+	} {
+		h := newHarness(t)
+		input := validInput()
+		input.Schedule = schedule
+		routine, err := h.svc.Create(t.Context(), input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.now.Store(routine.NextDueAt)
+		if err := h.svc.Tick(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		h.now.Add(time.Second.Milliseconds())
+		patch, _ := InputFromRoutine(routine, time.UnixMilli(h.now.Load()))
+		patch.Prompt, patch.KeepSchedule = "edited while running", true
+		if _, err := h.svc.Update(t.Context(), routine.ID, patch); err != nil {
+			t.Fatal(err)
+		}
+		h.platform.setStatus(db.StatusDone)
+		for range 2 {
+			if err := h.svc.Tick(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+		}
+		got, _ := h.db.GetRoutine(t.Context(), routine.ID)
+		if schedule.Kind == ScheduleOnce && got.Enabled {
+			t.Fatalf("once not consumed after a mid-run edit: %+v", got)
+		}
+		if schedule.Kind == ScheduleCron && got.NextDueAt == routine.NextDueAt {
+			t.Fatalf("cron stalled after a mid-run edit: %+v", got)
+		}
+	}
+}
+
+// A schedule edit during a run wins: the finishing run must not overwrite the
+// due time the edit computed.
+func TestScheduleEditDuringScheduledRunIsKept(t *testing.T) {
+	h := newHarness(t)
+	input := validInput()
+	input.Schedule = Schedule{Kind: ScheduleCron, Cron: "*/5 * * * *", Timezone: "UTC"}
+	routine, err := h.svc.Create(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.now.Store(routine.NextDueAt)
+	if err := h.svc.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	h.now.Add(time.Second.Milliseconds())
+	input.Schedule.Cron = "0 12 * * *"
+	edited, err := h.svc.Update(t.Context(), routine.ID, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.platform.setStatus(db.StatusDone)
+	if err := h.svc.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := h.db.GetRoutine(t.Context(), routine.ID); got.NextDueAt != edited.NextDueAt {
+		t.Fatalf("run overwrote the edited schedule: next due %d, edited %d", got.NextDueAt, edited.NextDueAt)
+	}
+}

@@ -235,6 +235,31 @@ describe('Routines', () => {
     expect(vi.mocked(api.routines.update).mock.calls[0][1].schedule).toEqual({ kind: 'none' });
   });
 
+  it('retries a failed subscription on the routine it already created', async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.webhookInboxes.list).mockResolvedValue([{ ...inbox, subscriptions: [] }]);
+    vi.mocked(api.routines.create).mockResolvedValue({ ...routine, id: 'routine-new', name: 'Deploy hook' });
+    vi.mocked(api.webhookInboxes.subscribe).mockRejectedValueOnce(new Error('subscription failed'));
+    render(<MemoryRouter><Routines /></MemoryRouter>);
+    await screen.findByText('Morning check');
+    await user.click(screen.getByRole('button', { name: 'New routine' }));
+    await user.type(screen.getByLabelText('Name'), 'Deploy hook');
+    await user.type(screen.getByLabelText('Prompt'), 'Check it');
+    await user.click(screen.getByRole('combobox', { name: 'Project' }));
+    await user.click(screen.getByRole('option', { name: '/repo' }));
+    await user.selectOptions(screen.getByLabelText('Trigger'), 'webhook:inbox-1');
+    await user.click(screen.getByRole('button', { name: 'Create routine' }));
+    expect(await screen.findByText('subscription failed')).toBeInTheDocument();
+
+    // The routine exists now: the retry saves it instead of creating a second.
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(api.webhookInboxes.subscribe).toHaveBeenCalledTimes(2));
+    expect(api.routines.create).toHaveBeenCalledTimes(1);
+    expect(api.routines.update).toHaveBeenCalledWith('routine-new', expect.objectContaining({ name: 'Deploy hook' }));
+    expect(vi.mocked(api.webhookInboxes.subscribe).mock.calls[1][0]).toBe('inbox-1');
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
   it('removes the subscription when the trigger is cleared', async () => {
     const user = userEvent.setup();
     vi.mocked(api.webhookInboxes.list).mockResolvedValue([inbox]);

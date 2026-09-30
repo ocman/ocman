@@ -31,7 +31,7 @@ describe('webhook filters', () => {
     ];
     const json = encodeFilters(rows);
     expect(JSON.parse(json)).toEqual({ 'x-event': { equals: 'push' }, '/action': { oneOf: ['opened', 'synchronized'] }, '/draft': { exists: false }, '/number': { exists: true } });
-    expect(decodeFilters(json)).toEqual([
+    expect(decodeFilters(json)).toMatchObject([
       { key: 'x-event', op: 'equals', value: 'push' },
       { key: '/action', op: 'oneOf', value: 'opened, synchronized' },
       { key: '/draft', op: 'missing', value: '' },
@@ -43,19 +43,30 @@ describe('webhook filters', () => {
     const json = encodeFilters([{ key: '/action', op: 'oneOf', value: ' , ' }]);
     expect(JSON.parse(json)).toEqual({ '/action': { oneOf: [] } });
     const rows = decodeFilters(json);
-    expect(rows).toEqual([{ key: '/action', op: 'oneOf', value: '' }]);
+    expect(rows).toMatchObject([{ key: '/action', op: 'oneOf', value: '' }]);
     expect(encodeFilters(rows)).toBe(json);
   });
 
+  it('saves untouched conditions exactly as stored', () => {
+    // Commas, empty strings, surrounding spaces and non-string values have no
+    // lossless comma-list form; an unedited row must not be rewritten.
+    const stored = '{"/value":{"oneOf":["a,b",""," x "]},"/n":{"equals":5},"/legacy":{"op":"equals","value":true}}';
+    const rows = decodeFilters(stored);
+    expect(JSON.parse(encodeFilters(rows))).toEqual(JSON.parse(stored));
+    // A renamed key keeps its predicate; an edited value is re-encoded.
+    const edited = rows.map((row) => (row.key === '/value' ? { ...row, key: '/v' } : row.key === '/n' ? { ...row, value: '6' } : row));
+    expect(JSON.parse(encodeFilters(edited))).toEqual({ '/v': { oneOf: ['a,b', '', ' x '] }, '/n': { equals: '6' }, '/legacy': { op: 'equals', value: true } });
+  });
+
   it('reads the legacy op/value form and tolerates bad JSON', () => {
-    expect(decodeFilters('{"/a":{"op":"equals","value":3}}')).toEqual([{ key: '/a', op: 'equals', value: '3' }]);
+    expect(decodeFilters('{"/a":{"op":"equals","value":3}}')).toMatchObject([{ key: '/a', op: 'equals', value: '3' }]);
     expect(decodeFilters('not json')).toEqual([]);
-    expect(decodeFilters('{"/a":null,"/b":5,"/c":{"exists":true}}')).toEqual([{ key: '/c', op: 'exists', value: '' }]);
+    expect(decodeFilters('{"/a":null,"/b":5,"/c":{"exists":true}}')).toMatchObject([{ key: '/c', op: 'exists', value: '' }]);
     expect(decodeFilters('')).toEqual([]);
   });
 
   it('finds a routine trigger', () => {
-    expect(triggerFor('r1', [inbox])).toEqual({ inboxId: 'inbox-1', headers: [{ key: 'x-forgejo-event', op: 'equals', value: 'pull_request' }], fields: [] });
+    expect(triggerFor('r1', [inbox])).toMatchObject({ inboxId: 'inbox-1', headers: [{ key: 'x-forgejo-event', op: 'equals', value: 'pull_request' }], fields: [] });
     expect(triggerFor('other', [inbox]).inboxId).toBe('');
     expect(triggerFor(undefined, [inbox]).inboxId).toBe('');
   });
