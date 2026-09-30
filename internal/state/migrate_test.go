@@ -69,7 +69,7 @@ func TestMigrateV80RepairsMissingWebhookInbox(t *testing.T) {
 	}
 }
 
-func TestMigrateV106MovesWebhookBodiesOutOfTheInbox(t *testing.T) {
+func TestMigrateV107MovesWebhookBodiesOutOfTheInbox(t *testing.T) {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatal(err)
@@ -79,7 +79,7 @@ func TestMigrateV106MovesWebhookBodiesOutOfTheInbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for version := 1; version <= 105; version++ {
+	for version := 1; version <= 106; version++ {
 		if err := applyMigration(tx, version); err != nil {
 			t.Fatalf("apply v%d: %v", version, err)
 		}
@@ -89,7 +89,7 @@ func TestMigrateV106MovesWebhookBodiesOutOfTheInbox(t *testing.T) {
 		INSERT INTO webhook_delivery (inbox_id, delivery_id, item_id, accepted_at) VALUES ('in', 'd1', 'in:d1', 1), ('in', 'd0', '', 1)`); err != nil {
 		t.Fatal(err)
 	}
-	if err := applyMigration(tx, 106); err != nil {
+	if err := applyMigration(tx, 107); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.Commit(); err != nil {

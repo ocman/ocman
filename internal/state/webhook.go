@@ -147,7 +147,7 @@ type WebhookInbox struct {
 	CreatedAt           int64  `json:"createdAt"`
 	SecretHeader        string `json:"secretHeader"`
 	// Secret is the shared secret deliveries must carry, kept so the UI can
-	// show it back. Empty either means none, or an inbox older than v108 whose
+	// show it back. Empty either means none, or an inbox older than v109 whose
 	// secret only the relay knows (as a hash); SecretHeader tells them apart.
 	Secret string `json:"secret"`
 }

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { SettingToggle, SettingNumber, SettingText } from './SettingRow';
+import { SettingRow, SettingToggle, SettingNumber, SettingText } from './SettingRow';
 import { useSettingSave } from '../lib/useSaveStatus';
 
 // Wrappers so the control uses the live hook value (state updates re-render).
@@ -59,5 +59,24 @@ describe('SettingText', () => {
     fireEvent.change(input, { target: { value: 'c' } });
     fireEvent.blur(input);
     await waitFor(() => expect(saved).toEqual(['b', 'c']));
+  });
+});
+
+describe('SettingRow', () => {
+  it('renders catalog copy with a collapsed example and a jump anchor', () => {
+    const { container } = render(<SettingRow setting="bell-sound"><span /></SettingRow>);
+    expect(screen.getByText('Bell sound')).toBeTruthy();
+    expect(screen.getByText(/Play a bell sound/)).toBeTruthy();
+    const details = container.querySelector('details');
+    expect(details?.open).toBe(false);
+    expect(screen.getByText('Example').tagName).toBe('SUMMARY');
+    expect(container.querySelector('#setting-bell-sound')).toBeTruthy();
+  });
+
+  it('lets live state override the description and adds detail', () => {
+    render(<SettingRow setting="bell-sound" desc="Blocked" detail="extra"><span /></SettingRow>);
+    expect(screen.getByText('Blocked')).toBeTruthy();
+    expect(screen.getByText('extra')).toBeTruthy();
+    expect(screen.queryByText(/Play a bell sound/)).toBeNull();
   });
 });

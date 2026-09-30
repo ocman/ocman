@@ -20,7 +20,7 @@ export function PluginSettings() {
   const selected = owner || hosts?.[0]?.remoteId || '';
   const host = hosts?.find((entry) => entry.remoteId === selected);
   return <>
-    <SettingRow label="Plugin owner" desc="Plugins and their data belong to the selected machine.">
+    <SettingRow setting="plugin-owner">
       <select aria-label="Plugin owner" value={selected} onChange={(event) => setOwner(event.target.value)}>
         {hosts?.map((entry) => <option key={entry.remoteId} value={entry.remoteId}>{entry.remoteName}</option>)}
         {owner && !host && <option value={owner}>{owner} (unavailable)</option>}
@@ -60,7 +60,7 @@ function PluginCatalog({ owner }: { owner: string }) {
   }
 
   return <>
-    <SettingRow label="Discovery" desc="Rescan the selected owner's plugin directory for new or changed executables.">
+    <SettingRow setting="plugin-discovery">
       <button type="button" className="vscode-btn" disabled={busy || (catalog === null && !error)} onClick={() => { void refresh(true); }}>Rescan plugins</button>
       <button type="button" className="vscode-btn" disabled={busy || (catalog === null && !error)} onClick={() => { void refresh(); }}>Refresh health</button>
     </SettingRow>

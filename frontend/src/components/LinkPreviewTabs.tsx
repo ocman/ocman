@@ -5,9 +5,9 @@ import { SettingRow } from './SettingRow';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './Tabs';
 
 /** Settings → Link previews, split into accounts, sign-in apps and link rules. */
-export function LinkPreviewTabs() {
+export function LinkPreviewTabs({ tab = 'accounts' }: { tab?: 'accounts' | 'apps' | 'rules' }) {
   return (
-    <Tabs defaultValue="accounts">
+    <Tabs defaultValue={tab}>
       <TabsList aria-label="Link preview settings">
         <TabsTrigger value="accounts">Providers</TabsTrigger>
         <TabsTrigger value="apps">Sign-in apps</TabsTrigger>
@@ -22,7 +22,7 @@ export function LinkPreviewTabs() {
         <PreviewAppSettings />
       </TabsContent>
       <TabsContent value="rules">
-        <SettingRow block label="Custom link rules" desc="Create link cards for ticket IDs and other text patterns.">
+        <SettingRow block setting="custom-link-rules">
           <LinkPreviewSettings />
         </SettingRow>
       </TabsContent>

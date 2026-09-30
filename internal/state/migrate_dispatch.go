@@ -7,7 +7,8 @@ import (
 
 // v100 adds viewer-scoped preview-provider consent (preview_auth.go).
 // v101 adds artifacts and their relay shares (artifacts.go).
-const latestSchemaVersion = 109
+// v102 adds viewer-scoped Inbox item pins.
+const latestSchemaVersion = 110
 
 // applyMigration runs the DDL for the given target version.
 func applyMigration(tx *sql.Tx, target int) error {
@@ -229,12 +230,20 @@ func applyMigration(tx *sql.Tx, target int) error {
 	case 101:
 		return migrateToV101(tx)
 	case 102:
+		_, err := tx.Exec(`CREATE TABLE IF NOT EXISTS pinned_inbox_item (
+			remote_id TEXT NOT NULL,
+			item_id TEXT NOT NULL,
+			pinned_at INTEGER NOT NULL,
+			PRIMARY KEY (remote_id, item_id)
+		)`)
+		return err
+	case 103:
 		var exists bool
 		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='webhook_delivery')`).Scan(&exists); err != nil || !exists {
 			return err
 		}
 		return addColumnIfMissing(tx, "webhook_delivery", "headers_json", "TEXT NOT NULL DEFAULT '{}'")
-	case 103:
+	case 104:
 		var exists bool
 		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='webhook_inbox')`).Scan(&exists); err != nil || !exists {
 			return err
@@ -247,7 +256,7 @@ func applyMigration(tx *sql.Tx, target int) error {
 		}
 		_, err := tx.Exec(`UPDATE webhook_inbox SET name = COALESCE((SELECT r.name FROM routine r WHERE r.id = webhook_inbox.routine_id), '') WHERE name = ''`)
 		return err
-	case 104:
+	case 105:
 		// Databases hit by the v77 schema-version collision got webhook_inbox
 		// back from v79-v81 but never webhook_delivery.
 		_, err := tx.Exec(`CREATE TABLE IF NOT EXISTS webhook_delivery (
@@ -262,7 +271,7 @@ func applyMigration(tx *sql.Tx, target int) error {
 			PRIMARY KEY (inbox_id, delivery_id)
 		)`)
 		return err
-	case 105:
+	case 106:
 		// Empty means no shared secret, or an inbox registered before ocman
 		// recorded the header.
 		var exists bool
@@ -270,7 +279,7 @@ func applyMigration(tx *sql.Tx, target int) error {
 			return err
 		}
 		return addColumnIfMissing(tx, "webhook_inbox", "secret_header", "TEXT NOT NULL DEFAULT ''")
-	case 106:
+	case 107:
 		// The delivery log keeps its own request title and body; deliveries no
 		// longer post Inbox items, and the ones they did post move out.
 		var exists bool
@@ -288,7 +297,7 @@ func applyMigration(tx *sql.Tx, target int) error {
 			WHERE item_id != '';
 			DELETE FROM inbox_item WHERE id IN (SELECT item_id FROM webhook_delivery WHERE item_id != '')`)
 		return err
-	case 107:
+	case 108:
 		// Routines report only runs that don't succeed unless they opt in; the
 		// run keeps the choice in force when it started, like its other options.
 		for _, table := range []string{"routine", "routine_run"} {
@@ -304,7 +313,7 @@ func applyMigration(tx *sql.Tx, target int) error {
 			}
 		}
 		return nil
-	case 108:
+	case 109:
 		// Keep the inbox shared secret so the UI can show it back. Older inboxes
 		// stay empty: only the relay knows their secret, as a hash.
 		var exists bool
@@ -312,7 +321,7 @@ func applyMigration(tx *sql.Tx, target int) error {
 			return err
 		}
 		return addColumnIfMissing(tx, "webhook_inbox", "secret", "TEXT NOT NULL DEFAULT ''")
-	case 109:
+	case 110:
 		// Keep the request query too, so a redelivery replays it: the routine
 		// prompt carries it. Deliveries logged earlier replay without one.
 		var exists bool

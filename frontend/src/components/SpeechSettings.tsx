@@ -26,14 +26,12 @@ export function SpeechSettings() {
   }, [supported]);
 
   return <>
-    <SettingRow label="Read answers aloud" desc={supported
-      ? 'Automatically read new final answers in the focused session tab. Off by default. Code blocks, reasoning, and tool output are skipped. Saved for this browser.'
-      : 'Speech playback is unavailable in this browser.'}>
+    <SettingRow setting="read-aloud" desc={supported ? undefined : 'Speech playback is unavailable in this browser.'}>
       <SettingToggle ariaLabel="Automatically read answers aloud" checked={autoRead} disabled={!supported}
         save={autoSave} onSave={setAutoRead} />
     </SettingRow>
     {supported && <>
-      <SettingRow label="Reading voice" desc="Local voices stay on your device. Online voices may send answer text to the voice service.">
+      <SettingRow setting="reading-voice">
         <select aria-label="Reading voice" value={voiceURI} onChange={(event) => {
           const value = event.target.value;
           stop();
@@ -46,7 +44,7 @@ export function SpeechSettings() {
         </select>
         <SaveStatus state={voiceSave.state} />
       </SettingRow>
-      <SettingRow label="Reading speed">
+      <SettingRow setting="reading-speed">
         <SettingNumber ariaLabel="Reading speed" value={rate} unit="×" min={0.5} max={2} step={0.1}
           save={rateSave} onSave={setRate} />
         <button type="button" onClick={() => speakingId ? stop() : play('preview', 'This is how your final answers will sound.')}>

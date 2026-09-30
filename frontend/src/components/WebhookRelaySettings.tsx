@@ -27,10 +27,10 @@ export function WebhookRelaySettings() {
   return (
     <div data-testid="webhook-relay-settings">
       {error && <p role="alert" className="routine-error">{error}</p>}
-      <SettingRow label="Webhook relay" desc={<>Relay that receives provider webhooks for new inboxes. Leave empty to use the share relay{view.defaultRelayUrl ? <> (<code>{view.defaultRelayUrl}</code>)</> : ''}. Existing inboxes keep their relay.</>}>
+      <SettingRow setting="webhook-relay" detail={view.defaultRelayUrl ? <>Share relay: <code>{view.defaultRelayUrl}</code></> : undefined}>
         <SettingText type="url" ariaLabel="Webhook relay" value={view.relayUrl} placeholder={view.defaultRelayUrl || 'https://relay.example.com'} save={relaySave} onSave={(relayUrl) => save({ relayUrl })} />
       </SettingRow>
-      <SettingRow label="Enrollment token" desc="Authorizes inbox registration on the relay. Stored on this machine and never shown again.">
+      <SettingRow setting="webhook-enrollment-token">
         <SettingText key={tokenKey} type="password" ariaLabel="Enrollment token" value="" placeholder={view.hasEnrollmentToken ? 'Saved; type to replace' : 'Not set'} save={tokenSave} onSave={(enrollmentToken) => (enrollmentToken ? save({ enrollmentToken }).then(() => setTokenKey((k) => k + 1)) : undefined)} />
         {view.hasEnrollmentToken && <Button type="button" size="small" variant="ghost" onClick={() => void tokenSave.track(() => save({ enrollmentToken: '' })).catch(() => {})}>Clear</Button>}
       </SettingRow>

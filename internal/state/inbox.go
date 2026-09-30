@@ -54,6 +54,11 @@ type InboxItem struct {
 	Session    *InboxSession    `json:"session,omitempty"`
 }
 
+type InboxKey struct {
+	RemoteID string
+	ItemID   string
+}
+
 const inboxItemColumns = `id, title, body, created_at, read_at, archived_at, category, permission_json, session_json`
 
 func scanInboxItem(scanner interface{ Scan(...any) error }) (InboxItem, error) {
@@ -199,6 +204,34 @@ func (d *DB) CountUnreadInboxItems(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("counting unread Inbox items: %w", err)
 	}
 	return count, nil
+}
+
+func (d *DB) PinInboxItem(ctx context.Context, remoteID, itemID string) error {
+	_, err := d.db.ExecContext(ctx, `INSERT INTO pinned_inbox_item (remote_id, item_id, pinned_at) VALUES (?, ?, ?) ON CONFLICT(remote_id, item_id) DO NOTHING`, remoteID, itemID, time.Now().UnixMilli())
+	return err
+}
+
+func (d *DB) UnpinInboxItem(ctx context.Context, remoteID, itemID string) error {
+	_, err := d.db.ExecContext(ctx, `DELETE FROM pinned_inbox_item WHERE remote_id = ? AND item_id = ?`, remoteID, itemID)
+	return err
+}
+
+func (d *DB) PinnedInboxItems(ctx context.Context) (map[InboxKey]int64, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT remote_id, item_id, pinned_at FROM pinned_inbox_item`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	pinned := map[InboxKey]int64{}
+	for rows.Next() {
+		var key InboxKey
+		var pinnedAt int64
+		if err := rows.Scan(&key.RemoteID, &key.ItemID, &pinnedAt); err != nil {
+			return nil, err
+		}
+		pinned[key] = pinnedAt
+	}
+	return pinned, rows.Err()
 }
 
 // MarkInboxItemUnread clears the read state of an active item. Missing IDs are no-ops.

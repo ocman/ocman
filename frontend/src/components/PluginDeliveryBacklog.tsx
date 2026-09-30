@@ -54,19 +54,18 @@ export function PluginDeliveryBacklog({ plugin, owner }: { plugin: PluginRegistr
   const deadLetters = backlog?.deadLetters ?? [];
   return <fieldset disabled={busy} style={{ border: 0, padding: 0 }}>
     <legend>Reply delivery</legend>
-    <SettingRow label="Undelivered replies"
-      desc="Completed replies are stored before they are sent, so a disconnect or a restart retries them instead of losing them.">
+    <SettingRow setting="plugin-undelivered-replies">
       {backlog
         ? <>{backlog.pending} waiting · {backlog.retrying} retrying · {backlog.dead} needing a decision</>
         : <span role="status">Loading…</span>}
       <button type="button" className="vscode-btn" onClick={() => { void load(); }}>Reload status</button>
     </SettingRow>
-    {backlog && <SettingRow label="Backlog limits" desc="At either limit, new conversation work pauses instead of replies being dropped.">
+    {backlog && <SettingRow setting="plugin-backlog-limits">
       {backlog.pending + backlog.dead} of {backlog.maxRows} replies · {Math.round(backlog.bytes / 1024)} of {Math.round(backlog.maxBytes / 1024)} KiB · oldest {age(backlog.oldestUnsent)}
     </SettingRow>}
     {backlog?.paused && <p role="alert">New conversation messages are paused: the reply backlog is at its limit. Retry or discard the replies below, or wait for delivery to catch up.</p>}
     {error && <p role="alert">{error}</p>}
-    {deadLetters.length > 0 && <SettingRow label="Replies awaiting a decision" desc="These exhausted their retries. Later replies in the same conversation wait until each one is retried or discarded." block>
+    {deadLetters.length > 0 && <SettingRow setting="plugin-dead-letters" block>
       <ul>
         {deadLetters.map((letter) => <li key={letter.id}>
           <code>{letter.threadId}</code> in <code>{letter.accountId}</code> · {letter.attempts} attempts · {letter.lastError}

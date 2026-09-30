@@ -483,6 +483,8 @@ export const api = {
      postJSON<void, { id: string; remoteId: string }>('/api/inbox/open', { id, remoteId }, { parseJSON: false }),
    markInboxItemUnread: (id: string, remoteId: string) =>
      postJSON<void, { id: string; remoteId: string }>('/api/inbox/unread', { id, remoteId }, { parseJSON: false }),
+   pinInboxItem: (id: string, remoteId: string, pinned: boolean) =>
+     postJSON<void, { id: string; remoteId: string; pinned: boolean }>('/api/inbox/pin', { id, remoteId, pinned }, { parseJSON: false }),
    archiveInboxItems: (items: Pick<InboxItem, 'id' | 'remoteId'>[]) =>
      postJSON<void, { items: Pick<InboxItem, 'id' | 'remoteId'>[] }>('/api/inbox/archive', { items }, { parseJSON: false }),
    factoryEpic: (id: string, signal?: AbortSignal) =>

@@ -5,6 +5,8 @@ export interface InboxItem {
   createdAt: number;
   readAt?: number;
   archivedAt?: number;
+  pinned?: boolean;
+  pinnedAt?: number;
   remoteId: string;
   category?: 'permission' | 'factory' | 'routine' | 'general';
   session?: {

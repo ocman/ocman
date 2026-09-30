@@ -48,7 +48,7 @@ export function PreviewAppSettings() {
   };
 
   return <>
-    <SettingRow label="Redirect URI" desc="Register this exact URL with every provider app.">
+    <SettingRow setting="preview-redirect-uri">
       <code>{data.callbackUrl}</code>
       <CopyButton text={data.callbackUrl} label="Copy redirect URI" iconOnly />
     </SettingRow>
@@ -64,8 +64,8 @@ export function PreviewAppSettings() {
       </SettingRow>;
     })}
     <form onSubmit={submit} aria-label="Sign-in app">
-      <SettingRow block label={draft.editing ? `Edit ${appName(kind, draft)}` : 'Add a sign-in app'}
-        desc={kind && <>Or set <code>{envHint(kind)}</code>.</>}>
+      <SettingRow block setting="preview-sign-in-app" label={draft.editing ? `Edit ${appName(kind, draft)}` : undefined}
+        detail={kind && <>Or set <code>{envHint(kind)}</code>.</>}>
         <SelectField aria-label="Provider" value={draft.kind} disabled={draft.editing}
           onChange={(e) => setDraft({ ...draft, kind: e.target.value })}>
           {data.kinds.map((k) => <option key={k.kind} value={k.kind}>{k.name}</option>)}
