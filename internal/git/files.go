@@ -1,6 +1,7 @@
 package git
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -9,19 +10,23 @@ import (
 	"os"
 	"strings"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/NoUseFreak/ocman/internal/gitexec"
 )
 
 // ErrFileNotFound means the requested path is not a readable,
-// non-ignored file of the repository.
+// non-ignored regular file of the repository.
 var ErrFileNotFound = errors.New("file not found in repository")
 
-const (
-	// MaxListedFiles caps a listing so a giant monorepo cannot produce an
-	// unbounded response.
+// Limits are vars so tests can lower them.
+var (
+	// MaxListedFiles and MaxListedBytes bound a listing while it is read,
+	// so a giant untracked tree cannot be buffered whole.
 	MaxListedFiles = 100_000
+	MaxListedBytes = 8 << 20
 	// MaxFileBytes caps how much of one file is returned.
-	MaxFileBytes = 1 << 20
+	MaxFileBytes int64 = 1 << 20
 )
 
 // FileList is every tracked or untracked-but-not-ignored file of the
@@ -41,21 +46,37 @@ type FileContent struct {
 	Truncated bool   `json:"truncated,omitempty"`
 }
 
-// lsFiles lists the files git would show, relative to root. Extra args
-// (a pathspec) narrow the listing.
-func lsFiles(ctx context.Context, root string, extra ...string) ([]string, error) {
+// lsFiles lists the files git would show, relative to root, stopping at
+// the count and byte budgets. Extra args (a pathspec) narrow the listing.
+func lsFiles(ctx context.Context, root string, extra ...string) (files []string, truncated bool, err error) {
 	args := append([]string{"-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--deduplicate"}, extra...)
-	out, err := gitexec.Command(ctx, args...).Output()
-	if err != nil {
-		return nil, fmt.Errorf("git ls-files: %w", err)
-	}
-	var files []string
-	for _, f := range strings.Split(string(out), "\x00") {
-		if f != "" {
-			files = append(files, f)
+	err = gitexec.Command(ctx, args...).Stream(func(r io.Reader) error {
+		sc := bufio.NewScanner(r)
+		sc.Buffer(make([]byte, 64<<10), 64<<10)
+		sc.Split(func(data []byte, atEOF bool) (int, []byte, error) {
+			if i := bytes.IndexByte(data, 0); i >= 0 {
+				return i + 1, data[:i], nil
+			}
+			if atEOF && len(data) > 0 {
+				return len(data), data, nil
+			}
+			return 0, nil, nil
+		})
+		size := 0
+		for sc.Scan() {
+			size += len(sc.Bytes())
+			if len(files) == MaxListedFiles || size > MaxListedBytes {
+				truncated = true
+				return gitexec.ErrStopStream
+			}
+			files = append(files, sc.Text())
 		}
+		return sc.Err()
+	})
+	if err != nil {
+		return nil, false, fmt.Errorf("git ls-files: %w", err)
 	}
-	return files, nil
+	return files, truncated, nil
 }
 
 // ListFiles lists the repository containing dir from its root.
@@ -64,46 +85,79 @@ func ListFiles(ctx context.Context, dir string) (*FileList, error) {
 	if err != nil {
 		return nil, err
 	}
-	files, err := lsFiles(ctx, root)
+	files, truncated, err := lsFiles(ctx, root)
 	if err != nil {
 		return nil, err
 	}
-	list := &FileList{Root: root, Files: files}
-	if len(files) > MaxListedFiles {
-		list.Files, list.Truncated = files[:MaxListedFiles], true
+	if files == nil {
+		files = []string{}
 	}
-	if list.Files == nil {
-		list.Files = []string{}
+	return &FileList{Root: root, Files: files, Truncated: truncated}, nil
+}
+
+// openNoFollow opens rel under root one component at a time, refusing a
+// symlink anywhere on the path. The allowlist authorizes a *name*, so
+// following a listed link (public.txt -> .env, or into .git) would read
+// a file the listing hides. O_NONBLOCK keeps a FIFO from hanging the open.
+func openNoFollow(root, rel string) (*os.File, error) {
+	fd, err := unix.Open(root, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
 	}
-	return list, nil
+	parts := strings.Split(rel, "/")
+	for i, part := range parts {
+		if part == "" || part == "." || part == ".." {
+			_ = unix.Close(fd)
+			return nil, ErrFileNotFound
+		}
+		flags := unix.O_RDONLY | unix.O_NOFOLLOW | unix.O_CLOEXEC | unix.O_NONBLOCK
+		if i < len(parts)-1 {
+			flags |= unix.O_DIRECTORY
+		}
+		next, err := unix.Openat(fd, part, flags, 0)
+		_ = unix.Close(fd)
+		if errors.Is(err, unix.ELOOP) || errors.Is(err, unix.ENOENT) || errors.Is(err, unix.ENOTDIR) {
+			return nil, errors.Join(ErrFileNotFound, err)
+		}
+		if err != nil {
+			return nil, err
+		}
+		fd = next
+	}
+	return os.NewFile(uintptr(fd), rel), nil
 }
 
 // ReadFile reads path (relative to the root of the repository containing
-// dir). Only files ListFiles would return are readable, and the read
-// cannot leave the root, so ignored secrets (.env) and symlink escapes
-// are refused.
+// dir). Only regular files ListFiles would return are readable, reached
+// without following symlinks, so ignored secrets (.env), git metadata and
+// anything outside the root are refused.
 func ReadFile(ctx context.Context, dir, path string) (*FileContent, error) {
 	root, err := ResolveRepoRoot(ctx, dir)
 	if err != nil {
 		return nil, err
 	}
-	// Literal pathspec: no globbing, and git refuses paths outside root.
-	listed, err := lsFiles(ctx, root, "--", ":(literal)"+path)
-	if err != nil || len(listed) != 1 || listed[0] != path {
+	// Literal pathspec: no globbing. git rejects paths outside the root
+	// with an error, which is a refusal, not an operational failure.
+	if strings.HasPrefix(path, "/") || strings.Contains("/"+path+"/", "/../") {
 		return nil, ErrFileNotFound
 	}
-	r, err := os.OpenRoot(root)
+	listed, _, err := lsFiles(ctx, root, "--", ":(literal)"+path)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = r.Close() }()
-	f, err := r.Open(path)
+	if len(listed) != 1 || listed[0] != path {
+		return nil, ErrFileNotFound
+	}
+	f, err := openNoFollow(root, path)
 	if err != nil {
-		return nil, errors.Join(ErrFileNotFound, err)
+		return nil, err
 	}
 	defer func() { _ = f.Close() }()
 	info, err := f.Stat()
-	if err != nil || !info.Mode().IsRegular() {
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
 		return nil, ErrFileNotFound
 	}
 	data, err := io.ReadAll(io.LimitReader(f, MaxFileBytes))

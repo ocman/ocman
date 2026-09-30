@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -104,16 +105,22 @@ func (h *remoteHost) GitBranches(ctx context.Context, dir string) ([]string, err
 func (h *remoteHost) ListRepoFiles(ctx context.Context, dir string) (*git.FileList, error) {
 	var out git.FileList
 	return &out, h.callFiles(ctx, git.ErrNotARepo, &out, func(c pb.OcmanClient, req *pb.JsonReq) (*pb.JsonResp, error) {
-		return c.ListRepoFiles(ctx, req)
+		return c.ListRepoFiles(ctx, req, grpc.MaxCallRecvMsgSize(maxRepoResponseBytes))
 	}, map[string]string{"dir": dir})
 }
 
 func (h *remoteHost) ReadRepoFile(ctx context.Context, dir, path string) (*git.FileContent, error) {
 	var out git.FileContent
 	return &out, h.callFiles(ctx, git.ErrFileNotFound, &out, func(c pb.OcmanClient, req *pb.JsonReq) (*pb.JsonResp, error) {
-		return c.ReadRepoFile(ctx, req)
+		return c.ReadRepoFile(ctx, req, grpc.MaxCallRecvMsgSize(maxRepoResponseBytes))
 	}, map[string]string{"dir": dir, "path": path})
 }
+
+// maxRepoResponseBytes lifts gRPC's 4 MiB default for the file RPCs. The
+// producer bounds the payload: git.MaxListedBytes (8 MiB) of paths or
+// git.MaxFileBytes (1 MiB) of content, and JSON escaping grows a byte to
+// at most 6 (\u003c), plus per-entry quotes and commas.
+const maxRepoResponseBytes = 6*8<<20 + 16<<20
 
 // callFiles runs a file RPC, restoring notFound from codes.NotFound.
 func (h *remoteHost) callFiles(ctx context.Context, notFound error, out any, call func(pb.OcmanClient, *pb.JsonReq) (*pb.JsonResp, error), args map[string]string) error {

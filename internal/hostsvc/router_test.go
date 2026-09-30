@@ -23,12 +23,12 @@ func (h stubHost) GitInfo(context.Context, []string) (map[string]git.Info, error
 func (h stubHost) GitDiff(context.Context, string, GitDiffOptions) (*git.Diff, error) {
 	return nil, nil
 }
-func (h stubHost) GitBranches(context.Context, string) ([]string, error) { return nil, nil }
+func (h stubHost) GitBranches(context.Context, string) ([]string, error)        { return nil, nil }
 func (h stubHost) ListRepoFiles(context.Context, string) (*git.FileList, error) { return nil, nil }
 func (h stubHost) ReadRepoFile(context.Context, string, string) (*git.FileContent, error) {
 	return nil, nil
 }
-func (h stubHost) GitCheckout(context.Context, string, string) error     { return nil }
+func (h stubHost) GitCheckout(context.Context, string, string) error { return nil }
 func (h stubHost) ProjectUpstreams(context.Context, string) (*ProjectUpstreams, error) {
 	return nil, nil
 }

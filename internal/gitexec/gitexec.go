@@ -21,6 +21,8 @@ package gitexec
 
 import (
 	"context"
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -97,6 +99,36 @@ func (c *Cmd) CombinedOutput() ([]byte, error) {
 func (c *Cmd) Run() error {
 	_, err := withSlot(c.ctx, func() (struct{}, error) {
 		return struct{}{}, c.cmd.Run()
+	})
+	return err
+}
+
+// ErrStopStream, returned by a Stream reader, ends the command early
+// without error: the process is killed and its exit status ignored.
+var ErrStopStream = errors.New("stop stream")
+
+// Stream runs the command and hands its stdout to read, so a caller can
+// stop on a budget instead of buffering the whole output.
+func (c *Cmd) Stream(read func(io.Reader) error) error {
+	_, err := withSlot(c.ctx, func() (struct{}, error) {
+		out, err := c.cmd.StdoutPipe()
+		if err != nil {
+			return struct{}{}, err
+		}
+		if err := c.cmd.Start(); err != nil {
+			return struct{}{}, err
+		}
+		rerr := read(out)
+		if rerr != nil {
+			// Kill so Wait cannot block on a writer stuck on a full pipe.
+			_ = c.cmd.Process.Kill()
+			_ = c.cmd.Wait()
+			if errors.Is(rerr, ErrStopStream) {
+				return struct{}{}, nil
+			}
+			return struct{}{}, rerr
+		}
+		return struct{}{}, c.cmd.Wait()
 	})
 	return err
 }
