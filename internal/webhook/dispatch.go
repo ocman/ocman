@@ -268,27 +268,32 @@ func pointerValue(root any, pointer string) (any, bool) {
 // Redeliver replays a logged delivery as a fresh one: a new delivery ID, so
 // every subscriber is matched, claimed and run again, and the log shows it
 // as its own entry. It returns the new delivery ID.
-// ponytail: the log keeps no query string or raw method, so the method comes
-// from the "<METHOD> webhook" title and the query is empty; store both if a
-// routine ever filters on them.
+// ponytail: the method comes from the "<METHOD> webhook" title the poller
+// writes; store it separately if titles ever change.
 func Redeliver(store *state.DB, svc RoutineDispatcher, inboxID, deliveryID string, now time.Time) (string, error) {
 	ctx := context.Background()
-	title, headersJSON, body, err := store.GetWebhookDelivery(ctx, inboxID, deliveryID)
+	title, headersJSON, queryJSON, body, err := store.GetWebhookDelivery(ctx, inboxID, deliveryID)
 	if err != nil {
 		return "", err
 	}
 	var header http.Header
-	if headersJSON != "" {
-		if err := json.Unmarshal([]byte(headersJSON), &header); err != nil {
-			return "", fmt.Errorf("stored headers are unreadable: %w", err)
+	var query url.Values
+	for _, stored := range []struct {
+		raw  string
+		into any
+	}{{headersJSON, &header}, {queryJSON, &query}} {
+		if stored.raw != "" {
+			if err := json.Unmarshal([]byte(stored.raw), stored.into); err != nil {
+				return "", fmt.Errorf("stored request is unreadable: %w", err)
+			}
 		}
 	}
 	newID := fmt.Sprintf("%s-redelivery-%d", deliveryID, now.UnixMilli())
-	if _, err := store.AcceptWebhookDelivery(ctx, inboxID, newID, title, body, headersJSON, now.UnixMilli()); err != nil {
+	if _, err := store.AcceptWebhookDelivery(ctx, inboxID, newID, title, body, headersJSON, queryJSON, now.UnixMilli()); err != nil {
 		return "", err
 	}
 	envelope := relay.InboxEnvelope{InboxID: inboxID, DeliveryID: newID, Body: []byte(body), Request: relay.InboxRequest{
-		Method: strings.TrimSuffix(title, " webhook"), Header: header, ReceivedAt: now.UnixMilli(),
+		Method: strings.TrimSuffix(title, " webhook"), Header: header, Query: query, ReceivedAt: now.UnixMilli(),
 	}}
 	return newID, Dispatch(store, svc, inboxID, newID, envelope, now)
 }

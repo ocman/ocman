@@ -135,7 +135,8 @@ func (p *Poller) Poll(ctx context.Context) error {
 				envelope, err = relay.DecryptInboxEnvelope(identity, p.Inbox.ID, delivery.ID, ciphertext)
 				if err == nil {
 					headers, _ := json.Marshal(envelope.Request.Header) // relay already dropped credential headers
-					if _, dispatchErr := p.Store.AcceptWebhookDelivery(ctx, p.Inbox.ID, delivery.ID, envelope.Request.Method+" webhook", string(envelope.Body), string(headers), envelope.Request.ReceivedAt); dispatchErr != nil {
+					query, _ := json.Marshal(envelope.Request.Query)
+					if _, dispatchErr := p.Store.AcceptWebhookDelivery(ctx, p.Inbox.ID, delivery.ID, envelope.Request.Method+" webhook", string(envelope.Body), string(headers), string(query), envelope.Request.ReceivedAt); dispatchErr != nil {
 						err = dispatchErr
 					} else if p.Routines != nil {
 						err = Dispatch(p.Store, p.Routines, p.Inbox.ID, delivery.ID, envelope, now())

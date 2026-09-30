@@ -143,7 +143,9 @@ type Server struct {
 	pluginDiscovery []pluginDiscoveryFailure
 	pluginCtx       context.Context
 	// webhookCtx outlives requests so pollers for newly created inboxes keep running.
-	webhookCtx        context.Context
+	webhookCtx context.Context
+	// webhookKeyMu serializes relay-side inbox mutations (key resets, secret
+	// changes) with their local record.
 	webhookKeyMu      sync.Mutex
 	pluginProcesses   map[string]*plugins.Process
 	pluginStderr      map[string]string

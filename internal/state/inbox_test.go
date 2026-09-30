@@ -366,16 +366,16 @@ func TestWebhookDeliveryAcceptanceIsIdempotent(t *testing.T) {
 	if err != nil || counts["ignored"] != 1 || counts["success"] != 1 {
 		t.Fatalf("dispatch counts = %+v, %v", counts, err)
 	}
-	accepted, err := db.AcceptWebhookDelivery(t.Context(), "inbox", "delivery", "POST webhook", "body", "{}", 10)
+	accepted, err := db.AcceptWebhookDelivery(t.Context(), "inbox", "delivery", "POST webhook", "body", "{}", "", 10)
 	if err != nil || !accepted {
 		t.Fatalf("first acceptance = %v, %v", accepted, err)
 	}
-	accepted, err = db.AcceptWebhookDelivery(t.Context(), "inbox", "delivery", "POST webhook", "body", "{}", 10)
+	accepted, err = db.AcceptWebhookDelivery(t.Context(), "inbox", "delivery", "POST webhook", "body", "{}", "", 10)
 	if err != nil || accepted {
 		t.Fatalf("duplicate acceptance = %v, %v", accepted, err)
 	}
 	// An empty body is a valid webhook; the Inbox item's CHECK used to reject it.
-	if accepted, err := db.AcceptWebhookDelivery(t.Context(), "inbox", "empty", "POST webhook", "", "{}", 11); err != nil || !accepted {
+	if accepted, err := db.AcceptWebhookDelivery(t.Context(), "inbox", "empty", "POST webhook", "", "{}", "", 11); err != nil || !accepted {
 		t.Fatalf("empty body acceptance = %v, %v", accepted, err)
 	}
 	// A delivery is logged, not announced: only failures reach the Inbox.
@@ -383,7 +383,7 @@ func TestWebhookDeliveryAcceptanceIsIdempotent(t *testing.T) {
 	if err != nil || len(items) != 0 {
 		t.Fatalf("items = %v, %v", items, err)
 	}
-	if title, _, body, err := db.GetWebhookDelivery(t.Context(), "inbox", "delivery"); err != nil || title != "POST webhook" || body != "body" {
+	if title, _, _, body, err := db.GetWebhookDelivery(t.Context(), "inbox", "delivery"); err != nil || title != "POST webhook" || body != "body" {
 		t.Fatalf("stored delivery = %q %q, %v", title, body, err)
 	}
 	if err := db.FinishWebhookDispatch(t.Context(), "inbox", "dispatched", "routine", "failure", "no host", 12); err != nil {
@@ -457,7 +457,7 @@ func TestWebhookStoreReportsClosedDatabase(t *testing.T) {
 		"delete inbox": func() error { return db.DeleteWebhookInbox(ctx, "routine") },
 		"counts":       func() error { _, err := db.WebhookDispatchCounts(ctx, "inbox"); return err },
 		"accept": func() error {
-			_, err := db.AcceptWebhookDelivery(ctx, "inbox", "delivery", "title", "body", "{}", 1)
+			_, err := db.AcceptWebhookDelivery(ctx, "inbox", "delivery", "title", "body", "{}", "", 1)
 			return err
 		},
 		"record error": func() error { return db.RecordWebhookDeliveryError(ctx, "inbox", "delivery", "error", time.Now()) },

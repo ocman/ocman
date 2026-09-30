@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,6 +73,21 @@ func TestRedeliverRunsTheDeliveryAgain(t *testing.T) {
 	}
 }
 
+// The routine prompt carries the request query, so a replay must too.
+func TestRedeliverKeepsTheQuery(t *testing.T) {
+	db := dispatchFixture(t)
+	if _, err := db.AcceptWebhookDelivery(t.Context(), "inbox", "q1", "POST webhook", `{"action":"closed"}`, "{}", `{"ref":["main"]}`, 1); err != nil {
+		t.Fatal(err)
+	}
+	svc := &sessionDispatcher{db: db}
+	if _, err := Redeliver(db, svc, "inbox", "q1", time.UnixMilli(9)); err != nil {
+		t.Fatal(err)
+	}
+	if len(svc.payloads) == 0 || !strings.Contains(svc.payloads[0], `"query":{"ref":["main"]}`) {
+		t.Fatalf("replayed payloads = %q", svc.payloads)
+	}
+}
+
 func dispatchFixture(t *testing.T) *state.DB {
 	t.Helper()
 	db, err := state.Open(filepath.Join(t.TempDir(), "state.db"))
@@ -99,7 +115,7 @@ func dispatchFixture(t *testing.T) *state.DB {
 			t.Fatal(err)
 		}
 	}
-	if _, err := db.AcceptWebhookDelivery(ctx, "inbox", "d1", "POST webhook", `{"action":"opened"}`, "{}", 1); err != nil {
+	if _, err := db.AcceptWebhookDelivery(ctx, "inbox", "d1", "POST webhook", `{"action":"opened"}`, "{}", "", 1); err != nil {
 		t.Fatal(err)
 	}
 	svc := &sessionDispatcher{db: db}
@@ -126,9 +142,13 @@ func assertDispatches(t *testing.T, delivery state.WebhookDelivery) {
 
 // sessionDispatcher records a routine run linked to a session, like the real
 // routine service, so the delivery log can join it back.
-type sessionDispatcher struct{ db *state.DB }
+type sessionDispatcher struct {
+	db       *state.DB
+	payloads []string
+}
 
-func (d *sessionDispatcher) RunWebhook(ctx context.Context, routineID, _ string, occurrence int64) (state.RoutineRun, error) {
+func (d *sessionDispatcher) RunWebhook(ctx context.Context, routineID, payload string, occurrence int64) (state.RoutineRun, error) {
+	d.payloads = append(d.payloads, payload)
 	run, _, err := d.db.ClaimRoutineRun(ctx, state.RoutineRun{ID: fmt.Sprintf("run-%s-%d", routineID, occurrence), RoutineID: routineID, RoutineUpdatedAt: 1, RoutineName: routineID, Prompt: "p", Directory: "/repo", RemoteID: "local", SessionMode: "new", Trigger: "webhook", State: "running", OccurrenceAt: occurrence, CreatedAt: 1})
 	if err != nil {
 		return run, err

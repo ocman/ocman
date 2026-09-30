@@ -222,10 +222,16 @@ func (d *DB) DeleteWebhookInbox(ctx context.Context, routineID string) error {
 	return err
 }
 
-// UpdateWebhookInboxMeta changes only the name and shared secret, so it can't
-// overwrite a key rotated concurrently or resurrect a revoked inbox.
-func (d *DB) UpdateWebhookInboxMeta(ctx context.Context, id, name, secretHeader, secret string) error {
-	_, err := d.db.ExecContext(ctx, `UPDATE webhook_inbox SET name = ?, secret_header = ?, secret = ? WHERE id = ?`, name, secretHeader, secret, id)
+// RenameWebhookInbox and UpdateWebhookInboxSecret each change only their own
+// columns, so neither can overwrite a key rotated concurrently, a secret or
+// name changed meanwhile, or resurrect a revoked inbox.
+func (d *DB) RenameWebhookInbox(ctx context.Context, id, name string) error {
+	_, err := d.db.ExecContext(ctx, `UPDATE webhook_inbox SET name = ? WHERE id = ?`, name, id)
+	return err
+}
+
+func (d *DB) UpdateWebhookInboxSecret(ctx context.Context, id, secretHeader, secret string) error {
+	_, err := d.db.ExecContext(ctx, `UPDATE webhook_inbox SET secret_header = ?, secret = ? WHERE id = ?`, secretHeader, secret, id)
 	return err
 }
 

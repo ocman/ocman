@@ -17,7 +17,7 @@ const webhookMaxAttempts = 8
 // AcceptWebhookDelivery logs a delivery with its relay identity. item_id marks
 // it accepted, so a retry after a lost acknowledgement is not a duplicate.
 // A delivery is only logged; the Inbox hears about failures, not traffic.
-func (d *DB) AcceptWebhookDelivery(ctx context.Context, inboxID, deliveryID, title, body, headersJSON string, createdAt int64) (bool, error) {
+func (d *DB) AcceptWebhookDelivery(ctx context.Context, inboxID, deliveryID, title, body, headersJSON, queryJSON string, createdAt int64) (bool, error) {
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
@@ -36,8 +36,8 @@ func (d *DB) AcceptWebhookDelivery(ctx context.Context, inboxID, deliveryID, tit
 	if !errors.Is(err, sql.ErrNoRows) {
 		return false, err
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO webhook_delivery (inbox_id, delivery_id, item_id, title, body, headers_json, accepted_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		inboxID, deliveryID, inboxID+":"+deliveryID, title, body, headersJSON, time.Now().UnixMilli()); err != nil {
+	if _, err = tx.ExecContext(ctx, `INSERT INTO webhook_delivery (inbox_id, delivery_id, item_id, title, body, headers_json, query_json, accepted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		inboxID, deliveryID, inboxID+":"+deliveryID, title, body, headersJSON, queryJSON, time.Now().UnixMilli()); err != nil {
 		return false, fmt.Errorf("recording webhook delivery: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -173,10 +173,11 @@ func (d *DB) ListWebhookDeliveries(ctx context.Context, inboxID string, limit in
 	return result, nil
 }
 
-// GetWebhookDelivery returns one logged delivery's request title, headers and
-// body, for replaying it. ErrNoRows when it is unknown or was never accepted.
-func (d *DB) GetWebhookDelivery(ctx context.Context, inboxID, deliveryID string) (title, headersJSON, body string, err error) {
-	err = d.db.QueryRowContext(ctx, `SELECT title, headers_json, body FROM webhook_delivery
-		WHERE inbox_id = ? AND delivery_id = ? AND item_id != ''`, inboxID, deliveryID).Scan(&title, &headersJSON, &body)
-	return title, headersJSON, body, err
+// GetWebhookDelivery returns one logged delivery's request title, headers,
+// query and body, for replaying it. ErrNoRows when it is unknown or was never
+// accepted.
+func (d *DB) GetWebhookDelivery(ctx context.Context, inboxID, deliveryID string) (title, headersJSON, queryJSON, body string, err error) {
+	err = d.db.QueryRowContext(ctx, `SELECT title, headers_json, query_json, body FROM webhook_delivery
+		WHERE inbox_id = ? AND delivery_id = ? AND item_id != ''`, inboxID, deliveryID).Scan(&title, &headersJSON, &queryJSON, &body)
+	return title, headersJSON, queryJSON, body, err
 }

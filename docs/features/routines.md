@@ -80,8 +80,8 @@ the secret show that one is set but can't display it until you enter it again.
 The relay only removes a secret on an explicit `"secret": ""`; a request
 without a `secret` field is rejected. **Redeliver** replays a
 logged delivery as a new one: every subscriber is matched and run again, and
-the replay gets its own log entry. The log keeps no query string, so a
-replayed delivery has none.
+the replay gets its own log entry. It carries the original headers, query and
+body; deliveries logged before the query was kept replay without one.
 
 Deliveries are logged, not posted to the Inbox. The Inbox only hears about
 failures: a delivery ocman gave up on after 8 attempts, or a routine that

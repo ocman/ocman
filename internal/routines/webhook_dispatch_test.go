@@ -27,7 +27,7 @@ func TestWebhookLaunchFailureIsLoggedAsFailure(t *testing.T) {
 	if err := h.db.SaveWebhookSubscription(ctx, state.WebhookSubscription{ID: "sub", InboxID: "inbox", RoutineID: routine.ID}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.db.AcceptWebhookDelivery(ctx, "inbox", "d1", "POST webhook", "{}", "{}", 1); err != nil {
+	if _, err := h.db.AcceptWebhookDelivery(ctx, "inbox", "d1", "POST webhook", "{}", "{}", "", 1); err != nil {
 		t.Fatal(err)
 	}
 	e := relay.InboxEnvelope{InboxID: "inbox", DeliveryID: "d1", Body: []byte("{}")}

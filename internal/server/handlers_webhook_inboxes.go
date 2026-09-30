@@ -216,6 +216,26 @@ func (s *Server) handleWebhookInboxItem(w http.ResponseWriter, r *http.Request, 
 	}
 }
 
+// replaceWebhookSecret changes the secret on the relay, then records it. The
+// lock spans both, so the stored secret is always the last one the relay took.
+// ponytail: one lock for every inbox's key and secret changes; per-inbox locks if that contends.
+func (s *Server) replaceWebhookSecret(w http.ResponseWriter, r *http.Request, inbox state.WebhookInbox, secret, header string) bool {
+	s.webhookKeyMu.Lock()
+	defer s.webhookKeyMu.Unlock()
+	stored, err := (&share.RelayClient{BaseURL: inbox.RelayURL}).UpdateInboxSecret(r.Context(), inbox.ID, inbox.ManagementToken, secret, header)
+	if err != nil {
+		// An older relay has no secret endpoint (404/405); say so rather than 500.
+		log.WithError(err).Warn("updating webhook secret")
+		http.Error(w, "the relay could not update the secret; it may need upgrading", http.StatusBadGateway)
+		return false
+	}
+	if err := s.stateDB.UpdateWebhookInboxSecret(r.Context(), inbox.ID, stored, secret); err != nil {
+		serverError(w, "saving webhook secret", err)
+		return false
+	}
+	return true
+}
+
 // updateWebhookInbox renames an inbox and, when secret is present, replaces
 // or clears its shared secret on the relay. The ingestion URL is unchanged.
 func (s *Server) updateWebhookInbox(w http.ResponseWriter, r *http.Request, inbox state.WebhookInbox) {
@@ -227,24 +247,20 @@ func (s *Server) updateWebhookInbox(w http.ResponseWriter, r *http.Request, inbo
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
 		return
 	}
+	// Each field is written on its own, so a request snapshot can never put
+	// back a value another request changed meanwhile.
 	if req.Name != nil {
-		if inbox.Name = strings.TrimSpace(*req.Name); inbox.Name == "" {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" {
 			http.Error(w, "name is required", http.StatusBadRequest)
 			return
 		}
-	}
-	if req.Secret != nil {
-		header, err := (&share.RelayClient{BaseURL: inbox.RelayURL}).UpdateInboxSecret(r.Context(), inbox.ID, inbox.ManagementToken, *req.Secret, strings.TrimSpace(req.SecretHeader))
-		if err != nil {
-			// An older relay has no secret endpoint (404/405); say so rather than 500.
-			log.WithError(err).Warn("updating webhook secret")
-			http.Error(w, "the relay could not update the secret; it may need upgrading", http.StatusBadGateway)
+		if err := s.stateDB.RenameWebhookInbox(r.Context(), inbox.ID, name); err != nil {
+			serverError(w, "saving webhook inbox", err)
 			return
 		}
-		inbox.SecretHeader, inbox.Secret = header, *req.Secret
 	}
-	if err := s.stateDB.UpdateWebhookInboxMeta(r.Context(), inbox.ID, inbox.Name, inbox.SecretHeader, inbox.Secret); err != nil {
-		serverError(w, "saving webhook inbox", err)
+	if req.Secret != nil && !s.replaceWebhookSecret(w, r, inbox, *req.Secret, strings.TrimSpace(req.SecretHeader)) {
 		return
 	}
 	if fresh, err := s.stateDB.GetWebhookInboxByID(r.Context(), inbox.ID); err == nil {

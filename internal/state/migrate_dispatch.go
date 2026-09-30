@@ -7,7 +7,7 @@ import (
 
 // v100 adds viewer-scoped preview-provider consent (preview_auth.go).
 // v101 adds artifacts and their relay shares (artifacts.go).
-const latestSchemaVersion = 108
+const latestSchemaVersion = 109
 
 // applyMigration runs the DDL for the given target version.
 func applyMigration(tx *sql.Tx, target int) error {
@@ -312,6 +312,14 @@ func applyMigration(tx *sql.Tx, target int) error {
 			return err
 		}
 		return addColumnIfMissing(tx, "webhook_inbox", "secret", "TEXT NOT NULL DEFAULT ''")
+	case 109:
+		// Keep the request query too, so a redelivery replays it: the routine
+		// prompt carries it. Deliveries logged earlier replay without one.
+		var exists bool
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='webhook_delivery')`).Scan(&exists); err != nil || !exists {
+			return err
+		}
+		return addColumnIfMissing(tx, "webhook_delivery", "query_json", "TEXT NOT NULL DEFAULT ''")
 	default:
 		return fmt.Errorf("no migration registered for v%d", target)
 	}
