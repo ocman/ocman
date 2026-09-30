@@ -12,8 +12,11 @@ it reads that machine's files.
 ## What is shown
 
 Explore lists what `git ls-files --cached --others --exclude-standard` lists:
-tracked files plus untracked files that are not ignored. Ignored files such as
-`.env` or `node_modules/` never appear and cannot be opened.
+every tracked file, plus untracked files that are not ignored. Ignore rules
+only filter *untracked* files: an untracked `.env` or `node_modules/` never
+appears, but a file that is already committed stays listed and readable even
+if its name is later added to `.gitignore`. Ignore rules are not an access
+control; `git rm --cached` a file to hide it.
 
 A file opens only if it is one of those listed names and is a regular file
 reached without following a symlink. A symlink, a FIFO, a `../` path, or a

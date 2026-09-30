@@ -65,6 +65,8 @@ export function AppHeader({ onOpenNav }: { onOpenNav: () => void }) {
         )}
         {exploring && exploreDir && (
           <ExploreModal
+            // Remount per repository so a stale selection never shows under a new root.
+            key={JSON.stringify([sessionInfo.sessionRemoteId || 'local', exploreDir])}
             dir={exploreDir}
             remoteId={sessionInfo.sessionRemoteId || 'local'}
             onClose={() => setExploring(false)}

@@ -16,15 +16,19 @@ function tree() {
   return within(screen.getByTestId('explore-tree').shadowRoot as unknown as HTMLElement);
 }
 
-function renderHeader(remoteId?: string) {
-  const info = { sessionId: 's1', sessionTitle: 'T', sessionProject: 'repo', sessionProjectFull: '/repo/wt', sessionRemoteId: remoteId };
-  render(
+function header(remoteId?: string, dir = '/repo/wt') {
+  const info = { sessionId: 's1', sessionTitle: 'T', sessionProject: 'repo', sessionProjectFull: dir, sessionRemoteId: remoteId };
+  return (
     <MemoryRouter initialEntries={['/session/s1']}>
       <HeaderContext.Provider value={{ info, setInfo: vi.fn() }}>
         <AppHeader onOpenNav={vi.fn()} />
       </HeaderContext.Provider>
-    </MemoryRouter>,
+    </MemoryRouter>
   );
+}
+
+function renderHeader(remoteId?: string) {
+  return render(header(remoteId));
 }
 
 beforeEach(() => {
@@ -64,4 +68,20 @@ it('defaults the owner to local and surfaces a listing error', async () => {
   await user.click(screen.getByRole('button', { name: 'Explore files' }));
   expect(await screen.findByText('not a repo')).toBeInTheDocument();
   expect(api.repoFiles).toHaveBeenCalledWith('/repo/wt', 'local', expect.anything());
+});
+
+it.each([
+  ['directory', 'rem1', '/repo/other'],
+  ['owner', 'rem2', '/repo/wt'],
+])('drops the open file when the %s changes', async (_what, remoteId, dir) => {
+  const user = userEvent.setup();
+  const { rerender } = renderHeader('rem1');
+  await user.click(screen.getByRole('button', { name: 'Explore files' }));
+  await waitFor(() => expect(tree().getByRole('treeitem', { name: 'img.png' })).toBeInTheDocument());
+  await user.click(tree().getByRole('treeitem', { name: 'img.png' }));
+  expect(await screen.findByText('Binary file, not shown.')).toBeInTheDocument();
+
+  rerender(header(remoteId, dir));
+  await waitFor(() => expect(screen.queryByText('Binary file, not shown.')).not.toBeInTheDocument());
+  expect(api.repoFiles).toHaveBeenLastCalledWith(dir, remoteId, expect.anything());
 });
