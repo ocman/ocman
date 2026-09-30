@@ -43,6 +43,10 @@
   border-left-color: var(--warning);
 }
 
+.oc-prompt-toast[data-kind='error'] {
+  border-left-color: var(--danger);
+}
+
 .oc-prompt-toast[data-state='open'] {
   animation: oc-prompt-toast-slide-in 0.18s ease-out;
 }

@@ -17,8 +17,8 @@ describe('BackendStatusBanner', () => {
     render(<BackendStatusBanner />);
     expect(screen.queryByTestId('backend-status-banner')).toBeNull();
     act(() => useBackendStatus.setState({ unreachable: true, since: 1, error: 'HTTP 502 Bad Gateway' }));
-    expect(screen.getByRole('alert').textContent).toContain('Backend is not responding.');
-    expect(screen.getByRole('alert').textContent).toContain('HTTP 502 Bad Gateway');
+    expect(screen.getByTestId('backend-status-banner').textContent).toContain('Backend is not responding.');
+    expect(screen.getByTestId('backend-status-banner').textContent).toContain('HTTP 502 Bad Gateway');
   });
 
   it('forced mode renders and Retry invokes the handler', () => {
