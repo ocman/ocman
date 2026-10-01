@@ -138,6 +138,14 @@ export function formatDate(ts: number): string {
   });
 }
 
+/** Unambiguous timestamp for tooltips, e.g. "Thu, Oct 1, 2026, 16:32:05". */
+export function formatFullDateTime(ts: number): string {
+  return new Date(ts).toLocaleString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  });
+}
+
 export function formatSubscriptionResetDate(ts: string): string {
   const date = new Date(ts);
   if (Number.isNaN(date.getTime())) return 'Invalid Date';

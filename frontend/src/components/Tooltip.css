@@ -1,0 +1,10 @@
+.oc-tooltip {
+  z-index: 1100;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  background: var(--surface0);
+  color: var(--text);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 30%);
+  font-size: 12px;
+  white-space: nowrap;
+}

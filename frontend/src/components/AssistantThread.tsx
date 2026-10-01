@@ -9,7 +9,8 @@ import {
 
 // assistant-ui 0.15 dropped `useMessage`; same selector shape over the aui store.
 const useMessage = <T,>(selector: (m: MessageState) => T): T => useAuiState((s) => selector(s.message));
-import { formatSeconds, formatTokensPerSecond, formatCompactNumber, formatCurrency } from '../lib/format';
+import { formatSeconds, formatTokensPerSecond, formatCompactNumber, formatCurrency, formatFullDateTime } from '../lib/format';
+import { Tooltip } from './Tooltip';
 import { useModelLabel, useTurnStats } from '../lib/turnStats';
 import { shouldRenderAssistantMessage } from './assistantMessageVisibility';
 import { useAgentColor } from '../lib/agentColor';
@@ -153,7 +154,9 @@ const TimelineMarker: FC<{ timestamp: number }> = ({ timestamp }) => {
   return (
     <div className="oc-timeline-marker">
       <hr />
-      <time dateTime={date.toISOString()}>{formatTimelineMarker(timestamp, now)}</time>
+      <Tooltip content={formatFullDateTime(timestamp)}>
+        <time dateTime={date.toISOString()}>{formatTimelineMarker(timestamp, now)}</time>
+      </Tooltip>
     </div>
   );
 };
@@ -349,7 +352,9 @@ function AssistantMeta() {
           style={isError ? { background: 'var(--danger)' } : undefined}
           title={isError ? 'Error' : agent ? `agent: ${agent}` : 'Message group'}
         />
-        <span>{time}</span>
+        <Tooltip content={formatFullDateTime(createdAt.getTime())}>
+          <time dateTime={createdAt.toISOString()}>{time}</time>
+        </Tooltip>
         {durationSec !== null && (
           <>
             <span className="oc-meta-sep">·</span>
@@ -417,9 +422,9 @@ function TurnSummaryBar({ messageId }: { messageId: string }) {
   const items: React.ReactNode[] = [];
   if (!isLive) {
     items.push(
-      <span key="time" className="oc-turn-stat">
-        {time}
-      </span>
+      <Tooltip key="time" content={formatFullDateTime(startedAt)}>
+        <span className="oc-turn-stat">{time}</span>
+      </Tooltip>
     );
   }
   if (wallSec !== null) {
