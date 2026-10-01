@@ -321,11 +321,17 @@ func closeFactoryDescendants(ctx context.Context, tx *sql.Tx, molID string) erro
 // CloseFactoryEpic requires the root Mol to have been explicitly closed unless
 // the operator explicitly overrides the remaining work guard.
 func (d *DB) CloseFactoryEpic(ctx context.Context, epicID string, force bool) error {
-	result, err := d.db.ExecContext(ctx, `UPDATE factory_epic SET status = 'closed', updated_at = ?
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	now := time.Now().UnixMilli()
+	result, err := tx.ExecContext(ctx, `UPDATE factory_epic SET status = 'closed', updated_at = ?
 		WHERE id = ? AND status IN ('open', 'paused') AND (? OR EXISTS (
 			SELECT 1 FROM factory_issue i WHERE i.epic_id = factory_epic.id AND i.kind = 'mol' AND i.status = 'closed' AND i.outcome = 'succeeded'
 				AND NOT EXISTS (SELECT 1 FROM factory_issue_hierarchy h WHERE h.child_issue_id = i.id)
-		))`, time.Now().UnixMilli(), epicID, force)
+		))`, now, epicID, force)
 	if err != nil {
 		return err
 	}
@@ -333,7 +339,11 @@ func (d *DB) CloseFactoryEpic(ctx context.Context, epicID string, force bool) er
 	if err != nil || changed != 1 {
 		return fmt.Errorf("%w: close the root Mol successfully before closing the Epic", model.ErrEpicClosureBlocked)
 	}
-	return nil
+	// A closed Epic has nothing left to watch; sweep every session it spawned.
+	if err := archiveFactorySessionsTx(ctx, tx, now, `epic_id = ?`, epicID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (d *DB) SetFactoryEpicPaused(ctx context.Context, epicID string, paused bool) error {

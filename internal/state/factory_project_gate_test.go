@@ -127,6 +127,9 @@ func TestFactoryProjectRequestGateApprovalExpandsScopeAtomically(t *testing.T) {
 	if err != nil || applied.Revision == 0 {
 		t.Fatalf("apply scope Plan = %#v, %v", applied, err)
 	}
+	if archived, err := db.IsSessionArchived(ctx, "opencode", "scope-plan"); err != nil || !archived {
+		t.Fatalf("scope plan session archived = %v, %v", archived, err)
+	}
 	original = issueByID(t, db, epic.ID, workID)
 	if original.Status != "open" || original.DispatchState != "waiting" || len(original.DependsOn) != 2 {
 		t.Fatalf("replanned original = %#v", original)

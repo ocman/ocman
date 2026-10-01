@@ -239,6 +239,12 @@ Ocman checks that the branch still matches that checkpoint. Missing branches,
 dirty worktrees, or unexpected commits require reconciliation rather than a
 silent reset. Checkpoints survive an ocman restart.
 
+Factory archives its sessions once their work is finished: an implementation
+or delivery session when its Attempt completes, a planning session when its
+plan is approved or applied as a scope replan, and every remaining Factory
+session of an Epic when that Epic is closed. Later replies from the agent do
+not unarchive them.
+
 An active session that stops making progress without completing or requesting
 recovery is paused by a watchdog. Factory probes live attempts at most once a
 minute. After 30 minutes without activity in the session or its direct

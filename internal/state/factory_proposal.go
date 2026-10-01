@@ -203,6 +203,9 @@ func (d *DB) ApplyFactoryScopePlan(ctx context.Context, proposal model.NativePro
 	if _, err := tx.ExecContext(ctx, `UPDATE factory_attempt SET phase = 'terminal', terminal_outcome = 'succeeded', finished_at = ?, updated_at = ? WHERE id = ?`, now, now, attemptID); err != nil {
 		return model.NativeProposalRevision{}, err
 	}
+	if err := archiveFactorySessionsTx(ctx, tx, now, `id = ?`, attemptID); err != nil {
+		return model.NativeProposalRevision{}, err
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'open', outcome_reason = '' WHERE id = ? AND status = 'deferred'`, originalID); err != nil {
 		return model.NativeProposalRevision{}, err
 	}

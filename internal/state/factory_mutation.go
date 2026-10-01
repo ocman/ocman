@@ -277,6 +277,9 @@ func closePlanOnApprovalTx(ctx context.Context, tx *sql.Tx, epicID string, now i
 		WHERE epic_id = ? AND kind = 'plan' AND status IN ('open', 'in_progress')`, epicID); err != nil {
 		return fmt.Errorf("closing approved Factory Plan: %w", err)
 	}
+	if err := archiveFactorySessionsTx(ctx, tx, now, `epic_id = ? AND phase IN ('prepared', 'active', 'stopping') AND json_extract(frozen_policy_json, '$.profile') = 'factory-plan/v1'`, epicID); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE factory_attempt SET phase = 'terminal', terminal_outcome = 'succeeded', finished_at = ?, updated_at = ?
 		WHERE epic_id = ? AND phase IN ('prepared', 'active', 'stopping') AND json_extract(frozen_policy_json, '$.profile') = 'factory-plan/v1'`, now, now, epicID); err != nil {
 		return fmt.Errorf("completing approved Factory Plan attempt: %w", err)

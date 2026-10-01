@@ -551,6 +551,9 @@ func TestPlanApprovalClosesPlanAndHandBuiltMaterialization(t *testing.T) {
 	if err != nil || len(attempts) != 1 || attempts[0].Phase != model.FactoryAttemptTerminal || attempts[0].Outcome != "succeeded" {
 		t.Fatalf("plan attempt after approval = %#v, %v", attempts, err)
 	}
+	if archived, err := db.IsSessionArchived(ctx, "opencode", "plan"); err != nil || !archived {
+		t.Fatalf("approved plan session archived = %v, %v", archived, err)
+	}
 }
 
 func TestMutateGraphCreateSatisfiesApprovedMaterialization(t *testing.T) {
@@ -633,5 +636,35 @@ func TestMigrateToV68RepairsApprovedEpics(t *testing.T) {
 	attempts, err := db.ListFactoryAttempts(ctx, epic.ID)
 	if err != nil || len(attempts) != 1 || attempts[0].Phase != model.FactoryAttemptTerminal {
 		t.Fatalf("repaired plan attempt = %#v, %v", attempts, err)
+	}
+}
+
+func TestCloseFactoryEpicArchivesItsSessions(t *testing.T) {
+	db := openTestStateDB(t)
+	defer db.Close()
+	ctx := context.Background()
+	now := time.Now()
+	epic, err := db.CreateFactoryEpic(ctx, "", "Epic", "", "/repo", "", nativeTracerFormula(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, attempt, err := db.ClaimFactoryPlan(ctx, epic.ID, factoryIssueID(t, db, epic.ID, "plan"), "factory-plan/v1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ActivateFactoryAttempt(ctx, attempt.ID, model.PlanningSession{Platform: "opencode", ID: "epic-plan"}, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.CloseFactoryEpic(ctx, epic.ID, false); err == nil {
+		t.Fatal("unforced close succeeded")
+	}
+	if archived, _ := db.IsSessionArchived(ctx, "opencode", "epic-plan"); archived {
+		t.Fatal("blocked close archived the session")
+	}
+	if err := db.CloseFactoryEpic(ctx, epic.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if archived, err := db.IsSessionArchived(ctx, "opencode", "epic-plan"); err != nil || !archived {
+		t.Fatalf("closed epic session archived = %v, %v", archived, err)
 	}
 }
