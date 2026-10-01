@@ -227,8 +227,19 @@ export function useSidebarSessions({
             hiddenSessions.add(sessionID);
             return;
           }
+          // The activity time is stamped on receipt, so a new instance's replayed
+          // events would make idle old sessions look recent. Trust it only while
+          // the session is live; otherwise keep the row's own time and window.
+          const live = row.status === 'busy';
+          const since = Date.now() - sidebarRecentHoursRef.current * 60 * 60 * 1000;
+          if (!live && row.timeUpdated < since) {
+            hiddenSessions.add(sessionID);
+            return;
+          }
           const current = useApiStore.getState().recentSessions;
-          const updated = { ...row, timeUpdated: Math.max(row.timeUpdated, pendingActivity.get(sessionID) ?? 0) };
+          const updated = live
+            ? { ...row, timeUpdated: Math.max(row.timeUpdated, pendingActivity.get(sessionID) ?? 0) }
+            : row;
           const next = mergeSidebarSessions([updated, ...current.filter((s) => s.id !== sessionID)], current, id);
           storeSetRecentSessions(next, computeSidebarHash(next));
         }).catch((err) => remoteLog.error('Failed to refresh active session', err))

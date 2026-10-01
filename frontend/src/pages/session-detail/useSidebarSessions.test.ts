@@ -169,6 +169,21 @@ describe('useSidebarSessions live refresh', () => {
     expect(getSessions).not.toHaveBeenCalled();
   });
 
+  it('does not resurface an idle old session on replayed activity from a new instance', async () => {
+    // A freshly launched instance emits message events for old sessions; the
+    // backend stamps them "now". An idle row must keep its real timestamp.
+    const getSession = vi.fn().mockResolvedValue({ session: {
+      id: 'stale', timeUpdated: 1, directory: '/repo', status: 'waiting',
+    } as Session });
+    useApiStore.setState({ getSession, recentSessions: [], recentSessionsHash: '' });
+    renderHook(() => useSidebarSessions({
+      id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
+      abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
+    }));
+    await act(async () => { sessionActivity?.('stale', Date.now()); });
+    expect(useApiStore.getState().recentSessions).toEqual([]);
+  });
+
   it('refreshes on session changes and SSE reconnects', async () => {
     const abortController = new AbortController();
     renderHook(() => useSidebarSessions({
