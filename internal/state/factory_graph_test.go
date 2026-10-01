@@ -1317,7 +1317,11 @@ func TestFactoryPlanRejectionClosesPendingWork(t *testing.T) {
 		t.Fatal(err)
 	}
 	planID := factoryIssueID(t, db, epic.ID, "plan")
-	if _, err := db.db.Exec(`UPDATE factory_issue SET status = 'in_progress' WHERE id = ?`, planID); err != nil {
+	_, attempt, err := db.ClaimFactoryPlan(ctx, epic.ID, planID, "factory-plan/v1", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ActivateFactoryAttempt(ctx, attempt.ID, model.PlanningSession{Platform: "opencode", ID: "rejected-plan"}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	proposal, err := db.SaveFactoryProposalRevision(ctx, model.NativeProposalRevision{EpicID: epic.ID, MolID: factoryIssueID(t, db, epic.ID, "mol"), Project: "/repo", ManifestJSON: `{}`, ContentHash: "rejected"})
@@ -1331,6 +1335,9 @@ func TestFactoryPlanRejectionClosesPendingWork(t *testing.T) {
 	got, err := db.GetFactoryEpic(ctx, epic.ID)
 	if err != nil || got.Status != "closed" {
 		t.Fatalf("rejected Epic = %#v, %v", got, err)
+	}
+	if archived, err := db.IsSessionArchived(ctx, "opencode", "rejected-plan"); err != nil || !archived {
+		t.Fatalf("rejected plan session archived = %v, %v", archived, err)
 	}
 	if repeated, err := db.DecideFactoryPlanGate(ctx, epic.ID, "reject", proposal.Revision, proposal.ContentHash, "ignored"); err != nil || repeated.Resolution != rejected.Resolution || repeated.Outcome != rejected.Outcome {
 		t.Fatalf("repeated rejection = %#v, %v", repeated, err)

@@ -272,7 +272,11 @@ func (d *DB) DecideFactoryPlanGate(ctx context.Context, epicID, action string, r
 		if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = 'closed', outcome = 'cancelled', outcome_reason = 'Plan rejected' WHERE epic_id = ? AND status = 'open' AND id <> ?`, epicID, gate.IssueID); err != nil {
 			return model.NativePlanGate{}, err
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE factory_epic SET status = 'closed', updated_at = ? WHERE id = ?`, time.Now().UnixMilli(), epicID); err != nil {
+		now := time.Now().UnixMilli()
+		if _, err := tx.ExecContext(ctx, `UPDATE factory_epic SET status = 'closed', updated_at = ? WHERE id = ?`, now, epicID); err != nil {
+			return model.NativePlanGate{}, err
+		}
+		if err := archiveFactorySessionsTx(ctx, tx, now, `epic_id = ?`, epicID); err != nil {
 			return model.NativePlanGate{}, err
 		}
 	}
