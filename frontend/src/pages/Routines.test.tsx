@@ -298,6 +298,8 @@ describe('Routines', () => {
     render(<MemoryRouter><Routines /></MemoryRouter>);
     const row = (await screen.findByText(routine.name)).closest('tr')!;
     expect(screen.getByRole('columnheader', { name: 'Actions' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Last run' })).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Next run' })).not.toBeInTheDocument();
     const runButton = within(row).getByRole('button', { name: 'Run' });
     expect(runButton.querySelector('i')).toHaveClass('bi-play-fill');
     expect(within(row).getByRole('button', { name: 'Edit' }).querySelector('i')).toHaveClass('bi-pencil');
@@ -308,6 +310,7 @@ describe('Routines', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     await user.click(row);
     expect(screen.getByRole('dialog', { name: 'Morning check history' })).toBeInTheDocument();
+    expect(screen.getByText(/^Next run: /)).not.toHaveTextContent('Next run: -');
     expect(screen.getByRole('link', { name: 'Open' })).toHaveAttribute('href', '/session/session-1?platform=opencode');
     expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Close routine history' }));
