@@ -21,7 +21,9 @@ Evidence labels used below:
 
 Context7 was queried with `library "Docker Sandboxes"`, then `docs /docker/docs`, two commands total. Current official pages and public source were then read directly. `main` links are retrieval-date snapshots, not guarantees that all fields exist in release 0.43.0. The published CLI reference and prose already differ in places, so discovery against a pinned binary is a prerequisite.
 
-Ocman baseline: the supplied Factory status says contracts/probes completed at `ca047aecb`, identity foundation at `213294d8b`, image work active, and sandbox dispatch disabled. No fresh Factory status query was made. Read-only inspection of the provided worktree's `docs/adr/0009-persist-worktree-sandboxes-with-api-fed-history.md` and `scripts/sandbox-contract/README.md` confirms the revision-2 contracts and records macOS Docker Desktop probe evidence, but no native Linux qualification. Those existing container probes do not qualify `sbx`.
+Ocman baseline: the supplied Factory status says contracts/probes completed at `ca047aecb`, identity foundation at `213294d8b`, image work active, and sandbox dispatch disabled. No fresh Factory status query was made. Read-only inspection of `docs/adr/0009-persist-worktree-sandboxes-with-api-fed-history.md` and `scripts/sandbox-contract/README.md` at commit `ca047aecbf0244aceb12f736becda69c43e3e0bb` (branch `factory/docker-worktree-isolation`, not yet on `main`) confirms the revision-2 contracts and records macOS Docker Desktop probe evidence, but no native Linux qualification. Those existing container probes do not qualify `sbx`.
+
+"Revision 2" throughout means Factory Epic `docker-worktree-isolation`, approved proposal revision 2 (hash `db711eaaa637fb1ad678c3ee2325cf6ff0fbe71023073e595d9d7edfcc86ebee`). Retrieve it with `git show ca047aecb:<path>` for the files above and the Factory `proposal` action (`epic_id=docker-worktree-isolation`, `revision=2`) for the plan.
 
 ## 1. Product generations, licensing, and supported hosts
 

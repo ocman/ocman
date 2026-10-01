@@ -2,6 +2,18 @@
 
 Companion to [`architecture.md`](architecture.md).
 
+> **Historical.** Written against `99d63ffff` (2026-09-28), before the
+> project-settings implementation landed (`86e940809`..`1eee2177b`).
+> File/line references point at that baseline. Status as of `e9bb953e5`:
+>
+> - **1, 2: done.** `Tee.OnSessionStatus` now passes a parsed
+>   `SessionStatus` (`autoapprove/tee.go`); `onSessionIdle` records the
+>   quota cooldown before enqueuing the flush and the flush continues the
+>   cooled session (`server/queue.go`, `627cf50f1`, `b747f0a12`).
+> - **4: superseded.** `architecture.md` scopes project settings to
+>   local-only (no remote RPCs), so there is no remote 503 to surface.
+> - **Others: not re-verified.** Check the code before acting on them.
+
 1. **The Go tee drops the retry payload.** `Tee.OnSessionStatus` is
    `func(sessionID, statusType string)` (`tee.go:621`,
    `live_status.go:97` stores only `busy bool`). Trigger A needs
