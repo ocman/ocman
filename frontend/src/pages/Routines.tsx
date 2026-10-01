@@ -115,7 +115,7 @@ export function Routines() {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [editing, setEditing] = useState<string>();
   const [editingRules, setEditingRules] = useState<PermissionRule[]>([]);
-  const [historyRoutine, setHistoryRoutine] = useState<Routine>();
+  const [historyId, setHistoryId] = useState<string>();
   const [showForm, setShowForm] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -192,7 +192,7 @@ export function Routines() {
   }, [form.directory, form.remoteId, sessions, showForm]);
 
   const openCreate = () => {
-    setHistoryRoutine(undefined);
+    setHistoryId(undefined);
     setEditing(undefined);
     setEditingRules([]);
     setTrigger(triggerFor(undefined, inboxes));
@@ -202,7 +202,7 @@ export function Routines() {
   };
 
   const openEdit = (routine: Routine) => {
-    setHistoryRoutine(undefined);
+    setHistoryId(undefined);
     setEditing(routine.id);
     setEditingRules(parsePermissionRules(routine.permissionRulesJSON));
     setTrigger(triggerFor(routine.id, inboxes));
@@ -274,6 +274,8 @@ export function Routines() {
   }
   const agentOptions = ['', ...new Set([...catalog.agents, form.agent].filter(Boolean))].map((agent) => ({ value: agent, label: agent || 'Default agent' }));
   const modelOptions = ['', ...new Set([...catalog.models, form.model].filter(Boolean))].map((model) => ({ value: model, label: model || 'Default model' }));
+  // Resolve against the live list so a refresh updates the open drawer (Next run).
+  const historyRoutine = routines.find((routine) => routine.id === historyId);
   const selectedRuns = historyRoutine ? history[historyRoutine.id] ?? [] : [];
 
   return (
@@ -355,9 +357,9 @@ export function Routines() {
       )}
 
       {historyRoutine && (
-        <Modal label={`${historyRoutine.name} history`} onClose={() => setHistoryRoutine(undefined)} backdropClassName="routine-drawer-backdrop" dialogClassName="routine-drawer" backdropTestId="routine-drawer-backdrop">
+        <Modal label={`${historyRoutine.name} history`} onClose={() => setHistoryId(undefined)} backdropClassName="routine-drawer-backdrop" dialogClassName="routine-drawer" backdropTestId="routine-drawer-backdrop">
           <div className="routine-form">
-            <ModalHeader title={historyRoutine.name} onClose={() => setHistoryRoutine(undefined)} closeLabel="Close routine history" />
+            <ModalHeader title={historyRoutine.name} onClose={() => setHistoryId(undefined)} closeLabel="Close routine history" />
             <p className="routine-detail-next">Next run: {historyRoutine.nextDueAt ? formatDateTimeShort(historyRoutine.nextDueAt) : '-'}</p>
             <section className="routine-detail-history" aria-labelledby="routine-history-heading"><h3 id="routine-history-heading">History</h3>{selectedRuns.length === 0 ? <EmptyState>No runs yet.</EmptyState> : <DataTable framed><thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Session</th></tr></thead><tbody>{selectedRuns.map((run) => <tr key={run.id}><td>{formatDateTimeShort(run.startedAt || run.createdAt)}</td><td>{run.trigger}</td><td><span className={`routine-state ${run.state}`}>{run.state}</span>{run.error && <small className="routine-error">{run.error}</small>}</td><td>{run.sessionId ? <Link to={`/session/${encodeURIComponent(run.sessionId)}?platform=${encodeURIComponent(run.platform ?? '')}`}>Open</Link> : '-'}</td></tr>)}</tbody></DataTable>}</section>
           </div>
@@ -375,7 +377,7 @@ export function Routines() {
         <section className="routine-list" aria-label="Saved routines"><DataTable framed><thead><tr><th>Name</th><th>Project</th><th>Session</th><th>Trigger</th><th>Last run</th><th>Status</th><th>Actions</th></tr></thead><tbody>{routines.map((routine) => {
           const latest = history[routine.id]?.[0];
           const status = routine.expiredAt && routine.expiredAt > (latest?.createdAt ?? 0) ? 'expired' : latest?.state ?? (routine.enabled ? 'ready' : 'disabled');
-          return <tr key={routine.id} tabIndex={0} aria-label={`View ${routine.name} history`} onClick={() => setHistoryRoutine(routine)} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setHistoryRoutine(routine); } }}>
+          return <tr key={routine.id} tabIndex={0} aria-label={`View ${routine.name} history`} onClick={() => setHistoryId(routine.id)} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setHistoryId(routine.id); } }}>
             <td><strong>{routine.name}</strong><small>{routine.prompt}</small></td><td><ProjectLabel path={routine.directory} /></td><td>{routine.sessionMode === 'new' ? 'New each run' : routine.sessionMode === 'reuse' ? 'Reuse' : 'Existing'}</td><td>{triggerLabel(routine, inboxes)}</td><td>{latest ? formatDateTimeShort(latest.startedAt || latest.createdAt) : '-'}</td><td><span className={`routine-state ${status}`}>{status}</span></td><td><ButtonGroup label={`Actions for ${routine.name}`} joined><Button aria-label="Run" title="Run" size="small" disabled={busy} type="button" variant="accent" onClick={(event) => { event.stopPropagation(); void act(() => api.routines.run(routine.id)); }}><i className="bi bi-play-fill" aria-hidden="true" /></Button><Button aria-label="Edit" title="Edit" size="small" disabled={busy} type="button" onClick={(event) => { event.stopPropagation(); openEdit(routine); }}><i className="bi bi-pencil" aria-hidden="true" /></Button><Button aria-label="Delete" title="Delete" size="small" disabled={busy} type="button" variant="danger" onClick={(event) => { event.stopPropagation(); if (window.confirm(`Delete "${routine.name}"?`)) void act(() => api.routines.remove(routine.id)); }}><i className="bi bi-trash" aria-hidden="true" /></Button></ButtonGroup></td>
           </tr>;
         })}</tbody></DataTable></section>

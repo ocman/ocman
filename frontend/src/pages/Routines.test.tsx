@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { api, type Routine } from '../lib/api';
 import { Routines } from './Routines';
-import type { WebhookInbox } from '../lib/api.types';
+import { formatDateTimeShort } from '../lib/format';
+import type { RoutineRun, WebhookInbox } from '../lib/api.types';
 
 vi.mock('../lib/headerContext', () => ({ usePageTitle: vi.fn() }));
 vi.mock('../lib/api', () => ({ api: { projects: vi.fn(), sessions: vi.fn(), agents: vi.fn(), sessionModels: vi.fn(), routines: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), run: vi.fn(), history: vi.fn() }, webhookInboxes: { list: vi.fn(), deliveries: vi.fn(), subscribe: vi.fn(), unsubscribe: vi.fn() } } }));
@@ -310,7 +311,7 @@ describe('Routines', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     await user.click(row);
     expect(screen.getByRole('dialog', { name: 'Morning check history' })).toBeInTheDocument();
-    expect(screen.getByText(/^Next run: /)).not.toHaveTextContent('Next run: -');
+    expect(screen.getByText(/^Next run: /)).toHaveTextContent(`Next run: ${formatDateTimeShort(routine.nextDueAt)}`);
     expect(screen.getByRole('link', { name: 'Open' })).toHaveAttribute('href', '/session/session-1?platform=opencode');
     expect(screen.queryByLabelText('Name')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Close routine history' }));
@@ -382,5 +383,36 @@ describe('Routines', () => {
     unmount();
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     expect(api.routines.list).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows the newest run start in Last run, falling back to its creation time', async () => {
+    const run = { routineUpdatedAt: 1, routineName: '', prompt: '', directory: '/repo', remoteId: 'local', agent: '', model: '', sessionMode: 'new', targetSessionId: '', trigger: 'manual', state: 'success', occurrenceAt: 1 } as const;
+    vi.mocked(api.routines.list).mockResolvedValue([routine, { ...routine, id: 'queued', name: 'Queued' }, { ...routine, id: 'never', name: 'Never' }]);
+    vi.mocked(api.routines.history).mockImplementation(async (id) => ({
+      'routine-1': [{ ...run, id: 'a', routineId: id, createdAt: 3_000_000, startedAt: 4_000_000 }],
+      queued: [{ ...run, id: 'b', routineId: id, createdAt: 5_000_000 }],
+      never: [],
+    } as Record<string, RoutineRun[]>)[id]);
+    render(<MemoryRouter><Routines /></MemoryRouter>);
+    const lastRun = async (name: string) => (await screen.findByText(name)).closest('tr')!.children[4];
+    expect(await lastRun('Morning check')).toHaveTextContent(formatDateTimeShort(4_000_000));
+    expect(await lastRun('Queued')).toHaveTextContent(formatDateTimeShort(5_000_000));
+    expect(await lastRun('Never')).toHaveTextContent(/^-$/);
+  });
+
+  it('updates Next run in the open drawer when the list refreshes', async () => {
+    vi.useFakeTimers();
+    render(<MemoryRouter><Routines /></MemoryRouter>);
+    await act(async () => {});
+    fireEvent.click(screen.getByText(routine.name).closest('tr')!);
+    expect(screen.getByText(/^Next run: /)).toHaveTextContent(`Next run: ${formatDateTimeShort(2_000_000)}`);
+
+    vi.mocked(api.routines.list).mockResolvedValue([{ ...routine, nextDueAt: 9_000_000 }]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(screen.getByText(/^Next run: /)).toHaveTextContent(`Next run: ${formatDateTimeShort(9_000_000)}`);
+
+    vi.mocked(api.routines.list).mockResolvedValue([{ ...routine, nextDueAt: 0 }]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(screen.getByText(/^Next run: /)).toHaveTextContent(/^Next run: -$/);
   });
 });
