@@ -69,6 +69,40 @@ func TestMigrateV80RepairsMissingWebhookInbox(t *testing.T) {
 	}
 }
 
+// A database that took v102 from the webhook-inbox branch before the pin
+// migration claimed that slot never got pinned_inbox_item.
+func TestMigrateV111RepairsMissingPinnedInboxItem(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for version := 1; version <= 110; version++ {
+		if err := applyMigration(tx, version); err != nil {
+			t.Fatalf("apply v%d: %v", version, err)
+		}
+	}
+	if _, err := tx.Exec(`DROP TABLE pinned_inbox_item`); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`CREATE TABLE schema_version (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL); INSERT INTO schema_version VALUES (110, 0)`); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`SELECT remote_id, item_id, pinned_at FROM pinned_inbox_item`); err != nil {
+		t.Fatalf("pinned_inbox_item not repaired: %v", err)
+	}
+}
+
 func TestMigrateV107MovesWebhookBodiesOutOfTheInbox(t *testing.T) {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {

@@ -8,7 +8,7 @@ import (
 // v100 adds viewer-scoped preview-provider consent (preview_auth.go).
 // v101 adds artifacts and their relay shares (artifacts.go).
 // v102 adds viewer-scoped Inbox item pins.
-const latestSchemaVersion = 110
+const latestSchemaVersion = 111
 
 // applyMigration runs the DDL for the given target version.
 func applyMigration(tx *sql.Tx, target int) error {
@@ -229,7 +229,9 @@ func applyMigration(tx *sql.Tx, target int) error {
 		return migrateToV100(tx)
 	case 101:
 		return migrateToV101(tx)
-	case 102:
+	case 102, 111:
+		// v111 repeats v102 for databases that took v102 from the webhook-inbox
+		// branch before the pin migration claimed that slot.
 		_, err := tx.Exec(`CREATE TABLE IF NOT EXISTS pinned_inbox_item (
 			remote_id TEXT NOT NULL,
 			item_id TEXT NOT NULL,
