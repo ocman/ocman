@@ -20,13 +20,19 @@ import './WorktreesView.css';
 export function WorktreesView() {
   const { dir } = useParams();
   const projectDir = dir ? decodeURIComponent(dir) : '';
-  usePageTitle(projectDir ? `${shortPath(projectDir)} · Worktrees` : 'Worktrees');
-
   // The owning machine travels in `?remoteId=` (absent = this machine) and
   // is sent explicitly on every request, so an identical path on another
   // host can never be listed, deleted, or launched into by inference.
   const [searchParams] = useSearchParams();
   const remoteId = searchParams.get('remoteId') || 'local';
+  // Keyed by (owner, project): rows, in-flight responses, and delete /
+  // force-delete consent all belong to one machine's project, so switching
+  // either remounts with fresh state instead of carrying them across.
+  return <WorktreesContent key={`${remoteId}\n${projectDir}`} projectDir={projectDir} remoteId={remoteId} />;
+}
+
+function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remoteId: string }) {
+  usePageTitle(projectDir ? `${shortPath(projectDir)} · Worktrees` : 'Worktrees');
   const ownerQuery = remoteId === 'local' ? '' : `?remoteId=${encodeURIComponent(remoteId)}`;
 
   const navigate = useNavigate();

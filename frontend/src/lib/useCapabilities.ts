@@ -1,4 +1,8 @@
 import { useEffect, useState } from 'react';
+
+// How often a mounted consumer waiting on an absent host re-asks the
+// backend, so a remote that connects later appears without a reload.
+const HOST_MISS_RETRY_MS = 10_000;
 import { api, type CapabilitiesResponse, type PlatformCapabilities, type PlatformCapabilityEntry } from './api';
 
 /**
@@ -37,14 +41,14 @@ const subscribers = new Set<(c: CapabilitiesResponse) => void>();
 const refetchedFor = new Set<string>();
 
 /**
- * Drop the module cache and refetch /api/capabilities. Used when a
- * platform id isn't present in the cached response — a remote that
- * connected after the initial fetch (or whose capabilities weren't
- * resolvable yet) would otherwise stay hidden until a full reload.
+ * Refetch /api/capabilities and push the result to every mounted
+ * consumer. Used when a platform or host id isn't present in the cached
+ * response — a remote that connected after the initial fetch (or whose
+ * capabilities weren't resolvable yet) would otherwise stay hidden until
+ * a full reload. The stale response stays readable while it refetches.
  */
 function invalidateAndReload() {
-  cached = null;
-  loadCapabilities().catch(() => {});
+  loadCapabilities(true).catch(() => {});
 }
 
 /**
@@ -53,8 +57,8 @@ function invalidateAndReload() {
  * the result is shared across hook instances so the network call happens
  * exactly once.
  */
-function loadCapabilities(): Promise<CapabilitiesResponse> {
-  if (cached) return Promise.resolve(cached);
+function loadCapabilities(force = false): Promise<CapabilitiesResponse> {
+  if (cached && !force) return Promise.resolve(cached);
   if (inflight) return inflight;
   inflight = api.capabilities()
     .then((resp) => {
@@ -88,16 +92,14 @@ export function useCapabilities(): CapabilitiesResponse | null {
   const [state, setState] = useState<CapabilitiesResponse | null>(() => cached);
 
   useEffect(() => {
-    // Already cached: nothing to subscribe to. Lazy initializer above
-    // ensured `state` is already the cached value.
-    if (cached) return;
-
+    // Subscribe even when warm, so a later refetch (a remote connecting)
+    // reaches consumers that mounted after the initial load.
     let cancelled = false;
     const handler = (c: CapabilitiesResponse) => {
       if (!cancelled) setState(c);
     };
     subscribers.add(handler);
-    loadCapabilities().catch(() => {
+    if (!cached) loadCapabilities().catch(() => {
       // Network errors leave state at null. Components defaulting
       // through usePlatformCapabilities will treat that as "no
       // capabilities available", matching the conservative default.
@@ -195,9 +197,20 @@ export function useWorktreeSessions(): boolean {
 export function useOpencodeLaunch(remoteId?: string): boolean {
   const all = useCapabilities();
   const hosts = all?.hosts ?? [];
-  const host = remoteId && remoteId !== 'local'
+  const named = !!remoteId && remoteId !== 'local';
+  const host = named
     ? hosts.find((h) => h.remoteId === remoteId)
     : hosts.find((h) => h.remoteId === 'local') ?? hosts[0];
+  // A named owner missing from the snapshot may simply have connected
+  // after it was taken: re-ask now and then every HOST_MISS_RETRY_MS
+  // while this consumer is mounted and the owner is still absent.
+  const missing = named && !!all && !host;
+  useEffect(() => {
+    if (!missing) return;
+    invalidateAndReload();
+    const timer = setInterval(invalidateAndReload, HOST_MISS_RETRY_MS);
+    return () => clearInterval(timer);
+  }, [missing, remoteId]);
   return host?.capabilities.opencodeLaunch === true;
 }
 

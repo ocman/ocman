@@ -108,6 +108,16 @@ list with its host badge.
 - **PRs and issues.** The project sidebar sends the owning `remoteId` for
   upstream detection, lists, checks, identity lookups, branch highlighting,
   and session/worktree launches. Repository work runs on the owner.
+- **Worktrees.** The project Worktrees page (`/project/<dir>/worktrees`)
+  belongs to one machine, named by `?remoteId=<id>`; without it the page is
+  this machine's. Listing, creating, deleting, session counts and *Open
+  session* stay on that machine even when another has the same path. When
+  that remote is not connected, the page shows as unavailable instead of
+  falling back to this machine. It becomes available when the remote
+  reconnects, without a reload.
+- **Relaunch.** When a send finds a session's OpenCode instance gone, the
+  instance is relaunched on the machine that owns the session, never on
+  another machine that happens to have the same directory.
 
 ## Managing remotes
 

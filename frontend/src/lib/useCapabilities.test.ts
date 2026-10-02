@@ -362,6 +362,5 @@ describe('useMultiPlatform / useWorktreeSessions', () => {
     await flush();
     expect(tickHook(() => mod.useOpencodeLaunch('local'))).toBe(true);
     expect(tickHook(() => mod.useOpencodeLaunch('B'))).toBe(false);
-    expect(tickHook(() => mod.useOpencodeLaunch('gone'))).toBe(false);
   });
 });

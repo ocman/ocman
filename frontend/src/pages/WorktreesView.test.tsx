@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { WorktreesView } from './WorktreesView';
 import { api } from '../lib/api';
 import type { Session, WorktreeEntry } from '../lib/api';
@@ -47,10 +47,16 @@ function SessionLocation() {
   return <div data-testid="session-location">{location.pathname + location.search}</div>;
 }
 
-function renderView(entry = '/project/%2Frepo/worktrees') {
+function SwitchTo({ to }: { to: string }) {
+  const navigate = useNavigate();
+  return <button type="button" onClick={() => navigate(to)}>switch owner</button>;
+}
+
+function renderView(entry = '/project/%2Frepo/worktrees', switchTo?: string) {
   return render(
     <MemoryRouter initialEntries={[entry]}>
       <div id="header-actions-slot" />
+      {switchTo && <SwitchTo to={switchTo} />}
       <Routes>
         <Route path="/project/:dir/worktrees" element={<WorktreesView />} />
         <Route path="/session/:id" element={<SessionLocation />} />
@@ -228,6 +234,41 @@ describe('WorktreesView', () => {
 
       fireEvent.click(screen.getAllByRole('button', { name: 'Open session' })[1]);
       expect(await screen.findByTestId('session-location')).toHaveTextContent('/session/ses_b_new?platform=r-B%3Aopencode');
+    });
+
+    // Same path on A and B: Force delete consent given on A must not
+    // survive a switch to B, where it would discard B's changes.
+    it('drops delete consent when the owner changes', async () => {
+      const remove = vi.spyOn(api.worktree, 'remove').mockRejectedValueOnce(new Error('worktree has uncommitted changes'));
+      renderView('/project/%2Frepo/worktrees?remoteId=A', '/project/%2Frepo/worktrees?remoteId=B');
+      await screen.findByText('feature');
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Confirm delete' }));
+      await screen.findByRole('button', { name: 'Force delete' });
+
+      fireEvent.click(screen.getByRole('button', { name: 'switch owner' }));
+      await waitFor(() => expect(api.worktree.list).toHaveBeenLastCalledWith('/repo', 'B'));
+      expect(await screen.findByRole('button', { name: 'Delete' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Force delete' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Confirm delete' })).not.toBeInTheDocument();
+      expect(remove).toHaveBeenCalledTimes(1);
+      expect(remove).toHaveBeenCalledWith(expect.objectContaining({ remoteId: 'A' }));
+    });
+
+    it("ignores the previous owner's late list response", async () => {
+      let resolveA!: (v: { worktrees: WorktreeEntry[] }) => void;
+      vi.mocked(api.worktree.list).mockImplementation((_dir, owner) => (owner === 'A'
+        ? new Promise((resolve) => { resolveA = resolve; })
+        : Promise.resolve({ worktrees: [wt({ branch: 'b-branch' })] })));
+      renderView('/project/%2Frepo/worktrees?remoteId=A', '/project/%2Frepo/worktrees?remoteId=B');
+      await waitFor(() => expect(api.worktree.list).toHaveBeenCalledWith('/repo', 'A'));
+
+      fireEvent.click(screen.getByRole('button', { name: 'switch owner' }));
+      expect(await screen.findByText('b-branch')).toBeInTheDocument();
+      resolveA({ worktrees: [wt({ branch: 'a-branch' })] });
+      await new Promise((r) => setTimeout(r, 0));
+      expect(screen.queryByText('a-branch')).not.toBeInTheDocument();
+      expect(screen.getByText('b-branch')).toBeInTheDocument();
     });
 
     it('shows a disconnected owner as unavailable instead of using this machine', async () => {
