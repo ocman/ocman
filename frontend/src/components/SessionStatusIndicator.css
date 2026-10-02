@@ -37,11 +37,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 10px;
-  height: 10px;
   color: var(--danger);
   background: transparent;
 }
+
+/* The 10px icon overflows the shared 8px box evenly, so every state takes
+   the same layout space and rows don't jump when the state changes. */
+.session-status-indicator > svg { flex-shrink: 0; }
 
 .session-status-indicator[data-state="permission"] {
   color: var(--accent4);
