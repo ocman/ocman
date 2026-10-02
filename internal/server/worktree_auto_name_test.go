@@ -16,6 +16,8 @@ type autoWorktreeOwner struct {
 	request hostsvc.WorktreeSessionRequest
 }
 
+func (h *autoWorktreeOwner) RemoteID() string { return "machine" }
+
 func (h *autoWorktreeOwner) CreateWorktreeSession(_ context.Context, request hostsvc.WorktreeSessionRequest) (*hostsvc.WorktreeSessionResult, error) {
 	h.request = request
 	return &hostsvc.WorktreeSessionResult{SessionID: "child", Branch: "fix-login-1234", WorktreePath: "/remote/worktree"}, nil
