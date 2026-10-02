@@ -369,13 +369,18 @@ describe('Routines', () => {
     await waitFor(() => expect(api.routines.update).toHaveBeenCalledWith(routine.id, expect.objectContaining({ remoteId: 'local' })));
   });
 
-  it('refreshes routines and history every five seconds while mounted', async () => {
+  const mkRun = (id: string, createdAt: number, extra: Partial<RoutineRun> = {}): RoutineRun => ({ id, routineId: routine.id, routineUpdatedAt: 1, routineName: routine.name, prompt: '', directory: '/repo', remoteId: 'local', agent: '', model: '', sessionMode: 'new', targetSessionId: '', trigger: 'manual', state: 'success', occurrenceAt: createdAt, createdAt, ...extra });
+  const requestCount = () => [api.routines.list, api.routines.history, api.projects, api.webhookInboxes.list].reduce((sum, fn) => sum + vi.mocked(fn).mock.calls.length, 0);
+
+  it('refreshes routines and their latest run every five seconds while mounted', async () => {
     vi.useFakeTimers();
+    vi.mocked(api.routines.list).mockResolvedValue([{ ...routine, latestRun: mkRun('run-1', 1_000, { state: 'running' }) }]);
     const { unmount } = render(<MemoryRouter><Routines /></MemoryRouter>);
     await act(async () => {});
     expect(api.routines.list).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('running')).toBeInTheDocument();
 
-    vi.mocked(api.routines.history).mockResolvedValue([{ id: 'run-2', routineId: routine.id, routineUpdatedAt: routine.updatedAt, routineName: routine.name, prompt: routine.prompt, directory: '/repo', remoteId: 'local', agent: routine.agent, model: routine.model, sessionMode: 'new', targetSessionId: '', trigger: 'schedule', state: 'success', occurrenceAt: 2_000, createdAt: 2_000 }]);
+    vi.mocked(api.routines.list).mockResolvedValue([{ ...routine, latestRun: mkRun('run-1', 1_000, { state: 'success' }) }]);
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
 
     expect(api.routines.list).toHaveBeenCalledTimes(2);
@@ -385,19 +390,107 @@ describe('Routines', () => {
     expect(api.routines.list).toHaveBeenCalledTimes(2);
   });
 
-  it('shows the newest run start in Last run, falling back to its creation time', async () => {
-    const run = { routineUpdatedAt: 1, routineName: '', prompt: '', directory: '/repo', remoteId: 'local', agent: '', model: '', sessionMode: 'new', targetSessionId: '', trigger: 'manual', state: 'success', occurrenceAt: 1 } as const;
-    vi.mocked(api.routines.list).mockResolvedValue([routine, { ...routine, id: 'queued', name: 'Queued' }, { ...routine, id: 'never', name: 'Never' }]);
-    vi.mocked(api.routines.history).mockImplementation(async (id) => ({
-      'routine-1': [{ ...run, id: 'a', routineId: id, createdAt: 3_000_000, startedAt: 4_000_000 }],
-      queued: [{ ...run, id: 'b', routineId: id, createdAt: 5_000_000 }],
-      never: [],
-    } as Record<string, RoutineRun[]>)[id]);
+  it.each([1, 25])('polls with a constant request count and no history fetches for %i routines', async (count) => {
+    vi.useFakeTimers();
+    vi.mocked(api.routines.list).mockResolvedValue(Array.from({ length: count }, (_, i) => ({ ...routine, id: `r-${i}`, name: `Routine ${i}`, latestRun: mkRun(`run-${i}`, 1_000) })));
     render(<MemoryRouter><Routines /></MemoryRouter>);
-    const lastRun = async (name: string) => (await screen.findByText(name)).closest('tr')!.children[4];
-    expect(await lastRun('Morning check')).toHaveTextContent(formatDateTimeShort(4_000_000));
-    expect(await lastRun('Queued')).toHaveTextContent(formatDateTimeShort(5_000_000));
-    expect(await lastRun('Never')).toHaveTextContent(/^-$/);
+    await act(async () => {});
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(api.routines.list).toHaveBeenCalledTimes(3);
+    // routines + inboxes per cycle, whatever the routine count; projects only feed the form.
+    expect(requestCount()).toBe(6);
+    expect(api.routines.history).not.toHaveBeenCalled();
+    expect(api.projects).not.toHaveBeenCalled();
+  });
+
+  it('loads projects when the form opens', async () => {
+    const user = userEvent.setup();
+    render(<MemoryRouter><Routines /></MemoryRouter>);
+    await screen.findByText(routine.name);
+    expect(api.projects).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'New routine' }));
+    await user.click(screen.getByRole('combobox', { name: 'Project' }));
+    expect(await screen.findByRole('option', { name: '/repo' })).toBeInTheDocument();
+    expect(api.projects).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows status and Last run from the latest run for empty, active, completed and failed routines', async () => {
+    vi.mocked(api.routines.list).mockResolvedValue([
+      { ...routine, latestRun: mkRun('a', 3_000_000, { startedAt: 4_000_000, state: 'failure', error: 'boom' }) },
+      { ...routine, id: 'queued', name: 'Queued', latestRun: mkRun('b', 5_000_000, { state: 'running' }) },
+      { ...routine, id: 'done', name: 'Done', latestRun: mkRun('c', 6_000_000, { startedAt: 6_500_000 }) },
+      { ...routine, id: 'never', name: 'Never' },
+      { ...routine, id: 'off', name: 'Off', enabled: false },
+    ]);
+    render(<MemoryRouter><Routines /></MemoryRouter>);
+    const cells = async (name: string) => (await screen.findByText(name)).closest('tr')!.children;
+    expect((await cells('Morning check'))[4]).toHaveTextContent(formatDateTimeShort(4_000_000));
+    expect((await cells('Morning check'))[5]).toHaveTextContent('failure');
+    expect((await cells('Queued'))[4]).toHaveTextContent(formatDateTimeShort(5_000_000));
+    expect((await cells('Queued'))[5]).toHaveTextContent('running');
+    expect((await cells('Done'))[5]).toHaveTextContent('success');
+    expect((await cells('Never'))[4]).toHaveTextContent(/^-$/);
+    expect((await cells('Never'))[5]).toHaveTextContent('ready');
+    expect((await cells('Off'))[5]).toHaveTextContent('disabled');
+    expect(api.routines.history).not.toHaveBeenCalled();
+  });
+
+  it('pages the open history and keeps older runs across refreshes', async () => {
+    const user = userEvent.setup();
+    const all = Array.from({ length: 60 }, (_, i) => mkRun(`run-${String(60 - i).padStart(2, '0')}`, 100_000 - i * 1_000));
+    vi.mocked(api.routines.history).mockImplementation(async (_id, page) => {
+      const from = page.before ? all.findIndex((run) => run.id === page.before!.id) + 1 : 0;
+      return all.slice(from, from + page.limit);
+    });
+    render(<MemoryRouter><Routines /></MemoryRouter>);
+    await user.click(await screen.findByRole('row', { name: 'View Morning check history' }));
+    const dialog = screen.getByRole('dialog', { name: 'Morning check history' });
+    await waitFor(() => expect(within(dialog).getAllByText('manual')).toHaveLength(50));
+    expect(api.routines.history).toHaveBeenCalledWith(routine.id, { limit: 50 });
+    expect(within(dialog).getAllByText('manual')).toHaveLength(50);
+
+    await user.click(within(dialog).getByRole('button', { name: 'Load older runs' }));
+    await waitFor(() => expect(within(dialog).getAllByText('manual')).toHaveLength(60));
+    expect(api.routines.history).toHaveBeenLastCalledWith(routine.id, { limit: 50, before: all[49] });
+    expect(within(dialog).queryByRole('button', { name: 'Load older runs' })).not.toBeInTheDocument();
+
+    // A manual run refreshes the newest page: the new head run appears and the older runs stay.
+    all.unshift(mkRun('run-61', 200_000, { trigger: 'schedule', state: 'running' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run', hidden: true }));
+    await waitFor(() => expect(within(dialog).getByText('running')).toBeInTheDocument());
+    expect(api.routines.run).toHaveBeenCalledWith(routine.id);
+    expect(within(dialog).getAllByText('manual')).toHaveLength(60);
+  });
+
+  it('refreshes the open drawer without dropping loaded older runs', async () => {
+    vi.useFakeTimers();
+    const all = Array.from({ length: 55 }, (_, i) => mkRun(`run-${String(55 - i).padStart(2, '0')}`, 100_000 - i * 1_000));
+    vi.mocked(api.routines.history).mockImplementation(async (_id, page) => {
+      const from = page.before ? all.findIndex((run) => run.id === page.before!.id) + 1 : 0;
+      return all.slice(from, from + page.limit);
+    });
+    render(<MemoryRouter><Routines /></MemoryRouter>);
+    await act(async () => {});
+    fireEvent.click(screen.getByText(routine.name).closest('tr')!);
+    await act(async () => {});
+    const dialog = screen.getByRole('dialog', { name: 'Morning check history' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Load older runs' }));
+    await act(async () => {});
+    expect(within(dialog).getAllByText('manual')).toHaveLength(55);
+
+    all.unshift(mkRun('run-56', 200_000, { trigger: 'schedule', state: 'running' }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(within(dialog).getByText('running')).toBeInTheDocument();
+    expect(within(dialog).getAllByText('manual')).toHaveLength(55);
+    expect(within(dialog).getAllByRole('row')).toHaveLength(57);
+  });
+
+  it('shows a history load error inside the drawer', async () => {
+    vi.mocked(api.routines.history).mockRejectedValue(new Error('history failed'));
+    const user = userEvent.setup();
+    render(<MemoryRouter><Routines /></MemoryRouter>);
+    await user.click(await screen.findByRole('row', { name: 'View Morning check history' }));
+    expect(await within(screen.getByRole('dialog', { name: 'Morning check history' })).findByRole('alert')).toHaveTextContent('history failed');
   });
 
   it('updates Next run in the open drawer when the list refreshes', async () => {

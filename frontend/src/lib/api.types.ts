@@ -85,6 +85,8 @@ export interface Routine {
   updatedAt: number;
   deletedAt?: number;
   expiredAt?: number;
+  /** Newest run, attached by the list endpoint. */
+  latestRun?: RoutineRun;
 }
 
 export interface WebhookSubscription { id: string; inboxId: string; routineId: string; headerPredicates: string; jsonPredicates: string; createdAt: number }

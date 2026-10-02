@@ -38,6 +38,8 @@ type Routine struct {
 	UpdatedAt       int64 `json:"updatedAt"`
 	DeletedAt       int64 `json:"deletedAt,omitempty"`
 	ExpiredAt       int64 `json:"expiredAt,omitempty"`
+	// LatestRun is the newest run; only the REST list fills it.
+	LatestRun *RoutineRun `json:"latestRun,omitempty"`
 }
 
 type RoutineRun struct {

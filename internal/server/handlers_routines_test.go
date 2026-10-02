@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -232,5 +233,77 @@ func TestRoutineHTTPUnexpectedStoreError(t *testing.T) {
 		if rec := doRoutineRequest(t, handler, request.method, request.path, request.body); rec.Code != http.StatusInternalServerError {
 			t.Fatalf("%s %s: %d %s", request.method, request.path, rec.Code, rec.Body.String())
 		}
+	}
+}
+
+func TestRoutineHTTPListCarriesLatestRunAndHistoryIsPaged(t *testing.T) {
+	_, handler, _ := routineHTTPServer(t)
+	created := doRoutineRequest(t, handler, http.MethodPost, "/api/routines", validRoutineBody)
+	var routine state.Routine
+	if created.Code != http.StatusCreated || json.Unmarshal(created.Body.Bytes(), &routine) != nil {
+		t.Fatalf("create: %d %s", created.Code, created.Body.String())
+	}
+	if rec := doRoutineRequest(t, handler, http.MethodGet, "/api/routines", ""); strings.Contains(rec.Body.String(), "latestRun") {
+		t.Fatalf("routine without runs has latestRun: %s", rec.Body.String())
+	}
+	var runIDs []string
+	for range 3 {
+		rec := doRoutineRequest(t, handler, http.MethodPost, "/api/routines/"+routine.ID+"/run", "")
+		var run state.RoutineRun
+		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &run) != nil {
+			t.Fatalf("run: %d %s", rec.Code, rec.Body.String())
+		}
+		runIDs = append(runIDs, run.ID)
+	}
+
+	var listed []state.Routine
+	if rec := doRoutineRequest(t, handler, http.MethodGet, "/api/routines", ""); json.Unmarshal(rec.Body.Bytes(), &listed) != nil || len(listed) != 1 || listed[0].LatestRun == nil || listed[0].LatestRun.ID != runIDs[2] {
+		t.Fatalf("list latestRun: %s", rec.Body.String())
+	}
+
+	page := func(query string) []state.RoutineRun {
+		t.Helper()
+		rec := doRoutineRequest(t, handler, http.MethodGet, "/api/routines/"+routine.ID+"/history"+query, "")
+		var runs []state.RoutineRun
+		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &runs) != nil {
+			t.Fatalf("history %s: %d %s", query, rec.Code, rec.Body.String())
+		}
+		return runs
+	}
+	first := page("?limit=2")
+	if len(first) != 2 || first[0].ID != runIDs[2] || first[1].ID != runIDs[1] {
+		t.Fatalf("first page = %+v", first)
+	}
+	older := page("?limit=2&beforeCreatedAt=" + strconv.FormatInt(first[1].CreatedAt, 10) + "&beforeId=" + first[1].ID)
+	if len(older) != 1 || older[0].ID != runIDs[0] {
+		t.Fatalf("older page = %+v", older)
+	}
+	if all := page(""); len(all) != 3 {
+		t.Fatalf("default page = %d runs", len(all))
+	}
+	for _, query := range []string{"?limit=0", "?limit=201", "?limit=x", "?beforeId=a", "?beforeCreatedAt=1", "?beforeCreatedAt=x&beforeId=a"} {
+		if rec := doRoutineRequest(t, handler, http.MethodGet, "/api/routines/"+routine.ID+"/history"+query, ""); rec.Code != http.StatusBadRequest {
+			t.Fatalf("history %s: %d %s", query, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestRoutineHTTPHistoryDefaultPageIsBounded(t *testing.T) {
+	srv, handler, _ := routineHTTPServer(t)
+	created := doRoutineRequest(t, handler, http.MethodPost, "/api/routines", validRoutineBody)
+	var routine state.Routine
+	if json.Unmarshal(created.Body.Bytes(), &routine) != nil {
+		t.Fatal(created.Body.String())
+	}
+	for i := range defaultRoutineHistoryLimit + 5 {
+		at := int64(10 + i)
+		if _, _, err := srv.stateDB.ClaimRoutineRun(t.Context(), state.RoutineRun{ID: "seed-" + strconv.Itoa(i), RoutineID: routine.ID, Trigger: "ui", State: "success", OccurrenceAt: at, CreatedAt: at}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var runs []state.RoutineRun
+	rec := doRoutineRequest(t, handler, http.MethodGet, "/api/routines/"+routine.ID+"/history", "")
+	if json.Unmarshal(rec.Body.Bytes(), &runs) != nil || len(runs) != defaultRoutineHistoryLimit {
+		t.Fatalf("default history returned %d runs, want %d", len(runs), defaultRoutineHistoryLimit)
 	}
 }

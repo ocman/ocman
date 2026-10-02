@@ -4,6 +4,7 @@ import (
 	"errors"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -89,7 +90,12 @@ func (s *Server) handleRoutines(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		runs, err := s.routineSvc.History(r.Context(), id)
+		limit, before, ok := routineHistoryPage(r)
+		if !ok {
+			http.Error(w, "invalid history page", http.StatusBadRequest)
+			return
+		}
+		runs, err := s.routineSvc.HistoryPage(r.Context(), id, limit, before)
 		if err != nil {
 			s.writeRoutineError(w, "listing routine history", err)
 			return
@@ -101,6 +107,34 @@ func (s *Server) handleRoutines(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+const (
+	defaultRoutineHistoryLimit = 50
+	maxRoutineHistoryLimit     = 200
+)
+
+// routineHistoryPage reads ?limit=&beforeCreatedAt=&beforeId=. History is
+// always bounded; older runs are reached by passing the last run's cursor.
+func routineHistoryPage(r *http.Request) (int, state.RoutineRunCursor, bool) {
+	q := r.URL.Query()
+	limit := defaultRoutineHistoryLimit
+	if raw := q.Get("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 || n > maxRoutineHistoryLimit {
+			return 0, state.RoutineRunCursor{}, false
+		}
+		limit = n
+	}
+	before := state.RoutineRunCursor{ID: q.Get("beforeId")}
+	if raw := q.Get("beforeCreatedAt"); raw != "" || before.ID != "" {
+		n, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || before.ID == "" {
+			return 0, state.RoutineRunCursor{}, false
+		}
+		before.CreatedAt = n
+	}
+	return limit, before, true
 }
 
 func cutRoutinePath(path string) (first, second, rest string) {
@@ -118,7 +152,7 @@ func cutRoutinePath(path string) (first, second, rest string) {
 func (s *Server) handleRoutineCollection(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		items, err := s.routineSvc.List(r.Context(), false)
+		items, err := s.routineSvc.ListWithLatestRun(r.Context())
 		if err != nil {
 			s.writeRoutineError(w, "listing routines", err)
 			return

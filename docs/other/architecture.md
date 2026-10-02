@@ -451,8 +451,9 @@ flowchart TD
   Enabling requires checksum and grant review. Secret inputs are write-only,
   and failed configuration activation reloads persisted configuration and health.
 - **Client state.** Shared Zustand stores hold broad session state. The
-  Routines page loads definitions and history over REST and keeps its form and
-  selected edits locally.
+  Routines page polls definitions (each with its latest run) and webhook
+  inboxes over REST, pages history only for the open drawer, and keeps its form
+  and selected edits locally.
 - **Plugin actions.** The command palette merges `action.v1` contributions for
   global, project, and session contexts. It sends opaque IDs and core route names
   through the authenticated backend, resolving older contexts independently of

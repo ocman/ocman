@@ -158,6 +158,33 @@ func (s *Service) History(ctx context.Context, id string) ([]state.RoutineRun, e
 	return s.store.ListRoutineRuns(ctx, id)
 }
 
+// ListWithLatestRun lists live routines with their newest run attached, so a
+// list view needs no per-routine history request.
+func (s *Service) ListWithLatestRun(ctx context.Context) ([]state.Routine, error) {
+	items, err := s.store.ListRoutines(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	latest, err := s.store.LatestRoutineRuns(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		if run, ok := latest[items[i].ID]; ok {
+			items[i].LatestRun = &run
+		}
+	}
+	return items, nil
+}
+
+// HistoryPage returns one bounded page of a routine's runs, newest first.
+func (s *Service) HistoryPage(ctx context.Context, id string, limit int, before state.RoutineRunCursor) ([]state.RoutineRun, error) {
+	if _, err := s.store.GetRoutine(ctx, id); err != nil {
+		return nil, err
+	}
+	return s.store.ListRoutineRunsPage(ctx, id, limit, before)
+}
+
 func normalizeWriteError(err error) error {
 	if strings.Contains(err.Error(), "UNIQUE constraint failed: routine.name") {
 		return fmt.Errorf("%w: %w", ErrNameConflict, err)

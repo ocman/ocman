@@ -73,7 +73,45 @@ func (d *DB) GetRoutineRun(ctx context.Context, id string) (RoutineRun, error) {
 }
 
 func (d *DB) ListRoutineRuns(ctx context.Context, routineID string) ([]RoutineRun, error) {
-	rows, err := d.db.QueryContext(ctx, `SELECT `+routineRunColumns+` FROM routine_run WHERE routine_id = ? ORDER BY created_at DESC, id DESC`, routineID)
+	return d.queryRoutineRuns(ctx, `SELECT `+routineRunColumns+` FROM routine_run WHERE routine_id = ? ORDER BY created_at DESC, id DESC`, routineID)
+}
+
+// RoutineRunCursor is the (created_at, id) of the oldest run already shown;
+// the zero value starts at the newest run.
+type RoutineRunCursor struct {
+	CreatedAt int64
+	ID        string
+}
+
+// ListRoutineRunsPage returns at most limit runs, newest first, strictly older
+// than before. Keyset paging keeps pages stable while new runs are inserted.
+func (d *DB) ListRoutineRunsPage(ctx context.Context, routineID string, limit int, before RoutineRunCursor) ([]RoutineRun, error) {
+	if before.ID == "" {
+		return d.queryRoutineRuns(ctx, `SELECT `+routineRunColumns+` FROM routine_run WHERE routine_id = ?
+			ORDER BY created_at DESC, id DESC LIMIT ?`, routineID, limit)
+	}
+	return d.queryRoutineRuns(ctx, `SELECT `+routineRunColumns+` FROM routine_run WHERE routine_id = ? AND (created_at, id) < (?, ?)
+		ORDER BY created_at DESC, id DESC LIMIT ?`, routineID, before.CreatedAt, before.ID, limit)
+}
+
+// LatestRoutineRuns maps each live routine to its newest run, one indexed
+// lookup per routine (routine_run_history_idx).
+func (d *DB) LatestRoutineRuns(ctx context.Context) (map[string]RoutineRun, error) {
+	runs, err := d.queryRoutineRuns(ctx, `SELECT `+routineRunColumns+` FROM routine_run WHERE id IN (
+		SELECT (SELECT id FROM routine_run WHERE routine_id = routine.id ORDER BY created_at DESC, id DESC LIMIT 1)
+		FROM routine WHERE deleted = 0)`)
+	if err != nil {
+		return nil, err
+	}
+	latest := make(map[string]RoutineRun, len(runs))
+	for _, run := range runs {
+		latest[run.RoutineID] = run
+	}
+	return latest, nil
+}
+
+func (d *DB) queryRoutineRuns(ctx context.Context, query string, args ...any) ([]RoutineRun, error) {
+	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("listing routine runs: %w", err)
 	}

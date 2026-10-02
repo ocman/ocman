@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { Button, ButtonGroup } from '../components/Control';
 import { EmptyState } from '../components/EmptyState';
 import { Modal } from '../components/Modal';
@@ -9,9 +9,10 @@ import { ProjectLabel } from '../components/ProjectLabel';
 import { DataTable } from '../components/DataTable';
 import { SearchSelect } from '../components/SearchSelect';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/Tabs';
-import { api, type PermissionRule, type Project, type Routine, type RoutineInput, type RoutineRun, type RoutineScheduleKind, type RoutineSessionMode, type Session } from '../lib/api';
+import { api, type PermissionRule, type Project, type Routine, type RoutineInput, type RoutineScheduleKind, type RoutineSessionMode, type Session } from '../lib/api';
 import { PermissionRulesEditor } from '../components/PermissionRulesEditor';
 import type { WebhookInbox } from '../lib/api.types';
+import { RoutineHistoryDrawer } from './RoutineHistoryDrawer';
 import { WebhookInboxDrawer } from './WebhookInboxDrawer';
 import { WebhookTriggerFields } from '../components/WebhookTriggerFields';
 import { saveTrigger, triggerFor, triggerLabel, type Trigger } from '../lib/webhookFilters';
@@ -111,7 +112,8 @@ export function Routines() {
   const [catalog, setCatalog] = useState({ agents: [] as string[], models: [] as string[] });
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [sessionsLoading, setSessionsLoading] = useState(false);
-  const [history, setHistory] = useState<Record<string, RoutineRun[]>>({});
+  // Bumped after each list refresh so the open history drawer refetches its newest page.
+  const [refreshKey, setRefreshKey] = useState(0);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [editing, setEditing] = useState<string>();
   const [editingRules, setEditingRules] = useState<PermissionRule[]>([]);
@@ -125,13 +127,12 @@ export function Routines() {
   // undefined = closed, '' = creating a new inbox, otherwise the open inbox ID.
   const [inboxDrawer, setInboxDrawer] = useState<string>();
 
+  // Two requests however many routines: the list carries each latest run.
   const load = async () => {
-    const [items, projectItems] = await Promise.all([api.routines.list(), api.projects()]);
+    const [items, inboxItems] = await Promise.all([api.routines.list(), api.webhookInboxes.list()]);
     setRoutines(items);
-    setProjects(projectItems);
-    const entries = await Promise.all(items.map(async (item) => [item.id, await api.routines.history(item.id)] as const));
-    setHistory(Object.fromEntries(entries));
-    setInboxes(await api.webhookInboxes.list());
+    setInboxes(inboxItems);
+    setRefreshKey((key) => key + 1);
   };
 
   useEffect(() => {
@@ -141,14 +142,11 @@ export function Routines() {
       if (refreshing) return;
       refreshing = true;
       try {
-        const [items, projectItems] = await Promise.all([api.routines.list(), api.projects()]);
-        const entries = await Promise.all(items.map(async (item) => [item.id, await api.routines.history(item.id)] as const));
+        const [items, inboxItems] = await Promise.all([api.routines.list(), api.webhookInboxes.list()]);
         if (active) {
-         setRoutines(items);
-         setProjects(projectItems);
-         setHistory(Object.fromEntries(entries));
-          const inboxItems = await api.webhookInboxes.list();
-          if (active) setInboxes(inboxItems);
+          setRoutines(items);
+          setInboxes(inboxItems);
+          setRefreshKey((key) => key + 1);
         }
       } catch (err) {
         if (active) setError(err instanceof Error ? err.message : 'Could not load routines.');
@@ -161,6 +159,14 @@ export function Routines() {
     const interval = window.setInterval(() => void refresh(), 5_000);
     return () => { active = false; window.clearInterval(interval); };
   }, []);
+
+  // Projects only feed the form's picker: load them when it opens, not every poll.
+  useEffect(() => {
+    if (!showForm) return;
+    let active = true;
+    api.projects().then((items) => { if (active) setProjects(items); }, (err) => { if (active) setError(err instanceof Error ? err.message : 'Could not load projects.'); });
+    return () => { active = false; };
+  }, [showForm]);
 
   useEffect(() => {
     if (!showForm || !form.directory) {
@@ -276,7 +282,6 @@ export function Routines() {
   const modelOptions = ['', ...new Set([...catalog.models, form.model].filter(Boolean))].map((model) => ({ value: model, label: model || 'Default model' }));
   // Resolve against the live list so a refresh updates the open drawer (Next run).
   const historyRoutine = routines.find((routine) => routine.id === historyId);
-  const selectedRuns = historyRoutine ? history[historyRoutine.id] ?? [] : [];
 
   return (
     <main className="routine-page">
@@ -356,15 +361,7 @@ export function Routines() {
         </Modal>
       )}
 
-      {historyRoutine && (
-        <Modal label={`${historyRoutine.name} history`} onClose={() => setHistoryId(undefined)} backdropClassName="routine-drawer-backdrop" dialogClassName="routine-drawer" backdropTestId="routine-drawer-backdrop">
-          <div className="routine-form">
-            <ModalHeader title={historyRoutine.name} onClose={() => setHistoryId(undefined)} closeLabel="Close routine history" />
-            <p className="routine-detail-next">Next run: {historyRoutine.nextDueAt ? formatDateTimeShort(historyRoutine.nextDueAt) : '-'}</p>
-            <section className="routine-detail-history" aria-labelledby="routine-history-heading"><h3 id="routine-history-heading">History</h3>{selectedRuns.length === 0 ? <EmptyState>No runs yet.</EmptyState> : <DataTable framed><thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Session</th></tr></thead><tbody>{selectedRuns.map((run) => <tr key={run.id}><td>{formatDateTimeShort(run.startedAt || run.createdAt)}</td><td>{run.trigger}</td><td><span className={`routine-state ${run.state}`}>{run.state}</span>{run.error && <small className="routine-error">{run.error}</small>}</td><td>{run.sessionId ? <Link to={`/session/${encodeURIComponent(run.sessionId)}?platform=${encodeURIComponent(run.platform ?? '')}`}>Open</Link> : '-'}</td></tr>)}</tbody></DataTable>}</section>
-          </div>
-        </Modal>
-      )}
+      {historyRoutine && <RoutineHistoryDrawer key={historyRoutine.id} routine={historyRoutine} refreshKey={refreshKey} onClose={() => setHistoryId(undefined)} />}
 
       {inboxDrawer !== undefined && <WebhookInboxDrawer key={inboxDrawer} inbox={inboxes.find((inbox) => inbox.id === inboxDrawer) ?? null} routines={routines} onClose={() => setInboxDrawer(undefined)} onChange={() => void load().catch((err: Error) => setError(err.message))} onEditRoutine={openEdit} />}
 
@@ -375,7 +372,7 @@ export function Routines() {
       </header>
       {loading ? <div className="oc-list-loading" role="status"><div className="oc-spinner" />Loading routines...</div> : routines.length === 0 ? <EmptyState>No routines yet.</EmptyState> : (
         <section className="routine-list" aria-label="Saved routines"><DataTable framed><thead><tr><th>Name</th><th>Project</th><th>Session</th><th>Trigger</th><th>Last run</th><th>Status</th><th>Actions</th></tr></thead><tbody>{routines.map((routine) => {
-          const latest = history[routine.id]?.[0];
+          const latest = routine.latestRun;
           const status = routine.expiredAt && routine.expiredAt > (latest?.createdAt ?? 0) ? 'expired' : latest?.state ?? (routine.enabled ? 'ready' : 'disabled');
           return <tr key={routine.id} tabIndex={0} aria-label={`View ${routine.name} history`} onClick={() => setHistoryId(routine.id)} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setHistoryId(routine.id); } }}>
             <td><strong>{routine.name}</strong><small>{routine.prompt}</small></td><td><ProjectLabel path={routine.directory} /></td><td>{routine.sessionMode === 'new' ? 'New each run' : routine.sessionMode === 'reuse' ? 'Reuse' : 'Existing'}</td><td>{triggerLabel(routine, inboxes)}</td><td>{latest ? formatDateTimeShort(latest.startedAt || latest.createdAt) : '-'}</td><td><span className={`routine-state ${status}`}>{status}</span></td><td><ButtonGroup label={`Actions for ${routine.name}`} joined><Button aria-label="Run" title="Run" size="small" disabled={busy} type="button" variant="accent" onClick={(event) => { event.stopPropagation(); void act(() => api.routines.run(routine.id)); }}><i className="bi bi-play-fill" aria-hidden="true" /></Button><Button aria-label="Edit" title="Edit" size="small" disabled={busy} type="button" onClick={(event) => { event.stopPropagation(); openEdit(routine); }}><i className="bi bi-pencil" aria-hidden="true" /></Button><Button aria-label="Delete" title="Delete" size="small" disabled={busy} type="button" variant="danger" onClick={(event) => { event.stopPropagation(); if (window.confirm(`Delete "${routine.name}"?`)) void act(() => api.routines.remove(routine.id)); }}><i className="bi bi-trash" aria-hidden="true" /></Button></ButtonGroup></td>

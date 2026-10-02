@@ -169,7 +169,14 @@ produce a failed history entry.
 
 Open a routine row to see when each run started, whether it was manual or
 scheduled, and its current result. Failed runs show their error. Runs with a
-linked session include an **Open** link.
+linked session include an **Open** link. The drawer shows the newest 50 runs;
+**Load older runs** pages further back.
+
+The routine list refreshes every five seconds. `GET /api/routines` includes
+each routine's newest run as `latestRun`, so the list's status and **Last run**
+columns need no history request. `GET /api/routines/{id}/history` returns one
+page, newest first: `limit` (default 50, at most 200), and for older runs the
+last shown run's `beforeCreatedAt` and `beforeId`.
 
 Run records preserve their routine snapshot and remain available after a
 restart. Ocman resumes observing linked running sessions after startup. If a

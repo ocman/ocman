@@ -966,7 +966,12 @@ export const api = {
 		update: (id: string, input: RoutineInput) => postJSON<Routine, RoutineInput>(`/api/routines/${encodeURIComponent(id)}`, input, { method: 'PUT' }),
 		remove: (id: string) => postJSON<void, undefined>(`/api/routines/${encodeURIComponent(id)}`, undefined, { method: 'DELETE', parseJSON: false }),
 		run: (id: string) => postJSON<RoutineRun, undefined>(`/api/routines/${encodeURIComponent(id)}/run`, undefined),
-    history: (id: string, signal?: AbortSignal) => fetchJSON<RoutineRun[]>(`/api/routines/${encodeURIComponent(id)}/history`, signal),
+    /** One bounded page, newest first; pass the oldest shown run as `before` for older runs. */
+    history: (id: string, page: { limit: number; before?: Pick<RoutineRun, 'createdAt' | 'id'> }, signal?: AbortSignal) => {
+      const query = new URLSearchParams({ limit: String(page.limit) });
+      if (page.before) { query.set('beforeCreatedAt', String(page.before.createdAt)); query.set('beforeId', page.before.id); }
+      return fetchJSON<RoutineRun[]>(`/api/routines/${encodeURIComponent(id)}/history?${query}`, signal);
+    },
 	},
   compactSession: (sessionId: string, providerID: string, modelID: string) =>
     postJSON<void>(
