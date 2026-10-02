@@ -65,7 +65,6 @@ export function ProjectDetail() {
   usePageTitle(projectName);
   const navigate = useNavigate();
   const tmux = useTmux();
-  const launchAllowed = useOpencodeLaunch();
   const matchingTmuxSession = directory ? tmux.findSession(directory) : undefined;
   const [pendingTmuxSession, setPendingTmuxSession] = useState<string | null>(null);
   const [pickerPos, setPickerPos] = useState<{ top: number; left: number } | null>(null);
@@ -79,6 +78,10 @@ export function ProjectDetail() {
   const [searchParams, setSearchParams] = useSearchParams();
   const timeRange = parseInt(searchParams.get('t') || String(DEFAULT_TIME_RANGE), 10);
   const excludeArchived = searchParams.get('a') === '1';
+  // Carry an explicit owner on to the Worktrees view (absent = this machine).
+  const ownerId = searchParams.get('remoteId');
+  const ownerQuery = ownerId ? `?remoteId=${encodeURIComponent(ownerId)}` : '';
+  const launchAllowed = useOpencodeLaunch(ownerId ?? undefined);
 
   const setTimeRange = useCallback((v: number) => {
     setSearchParams((p) => { p.set('t', String(v)); return p; }, { replace: true });
@@ -180,7 +183,7 @@ export function ProjectDetail() {
           <button
             type="button"
             className="oc-time-range-btn"
-            onClick={() => navigate(`/project/${encodeURIComponent(directory)}/worktrees`)}
+            onClick={() => navigate(`/project/${encodeURIComponent(directory)}/worktrees${ownerQuery}`)}
             title="View project worktrees"
           >
             Worktrees

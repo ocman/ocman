@@ -12,6 +12,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/queuesvc"
+	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/worker"
 )
 
@@ -158,10 +159,13 @@ func (s *Server) sendNow(ctx context.Context, platformID string, req platforms.S
 }
 
 // relaunchOpencodeForSession resolves the session's project root and runs
-// EnsureProjectOpencode through the owning host (ForDir — a remote
-// session relaunches on its own machine; probe-reuse makes it a no-op
-// when the instance is actually healthy). Returns whether the instance is
-// now usable. Soft-fail: any resolution or launch error returns false and
+// EnsureProjectOpencode on the host that owns the session's adapter
+// (probe-reuse makes it a no-op when the instance is actually healthy).
+// The owner comes from the adapter's compound platform id, never from
+// directory inference: the same path can exist on several machines, and
+// a missing or stale inventory would relaunch on the wrong one. A
+// disconnected owner fails closed. Returns whether the instance is now
+// usable. Soft-fail: any resolution or launch error returns false and
 // leaves the caller's original error intact.
 func (s *Server) relaunchOpencodeForSession(ctx context.Context, platformID, sessionID string) bool {
 	adapter, ok := s.adapterForSession(ctx, platformID, sessionID)
@@ -175,7 +179,14 @@ func (s *Server) relaunchOpencodeForSession(ctx context.Context, platformID, ses
 	// Worktree sessions run on the project's shared instance rooted at
 	// the main checkout; fold the worktree path back to it.
 	dir := projectRootForDirectory(detail.Session.Directory)
-	res, err := s.router().ForDir(dir).EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir})
+	owner, _ := remote.SplitPlatformID(string(adapter.ID()))
+	host, ok := s.router().LookupRemote(owner)
+	if !ok {
+		log.WithFields(log.Fields{"sessionID": sessionID, "remoteId": owner}).
+			Warn("not relaunching opencode: session owner is not connected")
+		return false
+	}
+	res, err := host.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: dir})
 	if err != nil {
 		log.WithError(err).WithFields(log.Fields{"sessionID": sessionID, "directory": dir}).
 			Warn("relaunching opencode for unreachable session")

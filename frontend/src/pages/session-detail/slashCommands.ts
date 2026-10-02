@@ -40,7 +40,7 @@ export interface CommandContext {
   seedNewSession: (id: string, directory: string, platform: string, title?: string, remoteId?: string) => void;
   navigate: (to: string) => void;
   navigateToSession: (id: string) => void;
-  openWorktreeForm: (opts: { projectDir: string; branch?: string; parentSessionId?: string }) => void;
+  openWorktreeForm: (opts: { projectDir: string; branch?: string; parentSessionId?: string; remoteId?: string }) => void;
   handleCompact: () => Promise<void>;
   handleNewSession: (title?: string) => Promise<void>;
   handleTmuxShortcut: () => void;
@@ -97,6 +97,8 @@ const worktree: SlashCommand = {
       branch: args.trim() || undefined,
       // Inherit this session's always-allow permissions (#101).
       parentSessionId: session.id,
+      // Create on the session's own machine, not whichever host shares its path.
+      remoteId: session.remoteId || 'local',
     });
   },
 };

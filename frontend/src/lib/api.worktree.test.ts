@@ -23,6 +23,20 @@ describe('api.worktree', () => {
     expect(captured).toBe('/api/worktree/list?dir=%2Fpath%20with%20space');
   });
 
+  it('list and defaultBaseRef carry an explicit owner', async () => {
+    const urls: string[] = [];
+    stubFetch((url) => {
+      urls.push(url);
+      return new Response(JSON.stringify({ worktrees: [], baseRef: 'main' }), { status: 200 });
+    });
+    await api.worktree.list('/repo', 'local');
+    await api.worktree.defaultBaseRef('/repo', 'box a');
+    expect(urls).toEqual([
+      '/api/worktree/list?dir=%2Frepo&remoteId=local',
+      '/api/worktree/default-base-ref?dir=%2Frepo&remoteId=box%20a',
+    ]);
+  });
+
   it('list returns parsed worktree entries', async () => {
     stubFetch(() => new Response(JSON.stringify({
       worktrees: [

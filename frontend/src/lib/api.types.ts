@@ -1438,6 +1438,8 @@ export interface WorktreeCreateRequest {
    * permissions at split time (#101).
    */
   parentSessionId?: string;
+  /** Owning machine ('local' or a remote id). Omit only when unknown. */
+  remoteId?: string;
 }
 
 /**
@@ -1449,6 +1451,7 @@ export interface WorktreeRemoveRequest {
   projectDir: string;
   path: string;
   force?: boolean;
+  remoteId?: string;
 }
 
 /**
@@ -1469,6 +1472,10 @@ export interface WorktreeRemoveRequest {
  */
 export interface WorktreeCreateResponse {
   sessionId: string;
+  /** Platform id of the owning machine's adapter (compound for remotes). */
+  platform?: string;
+  /** Owning machine: 'local' or the remote id. */
+  remoteId?: string;
   worktreePath: string;
   branch: string;
   reused: boolean;

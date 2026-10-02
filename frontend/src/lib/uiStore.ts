@@ -220,7 +220,9 @@ type UiStore = {
   // (#101). Undefined for project-scoped launches (command palette,
   // Worktrees view) that have no "current session".
   worktreeFormParentSessionId: string | undefined;
-  openWorktreeForm: (opts?: { projectDir?: string; branch?: string; parentSessionId?: string }) => void;
+  // Owning machine of worktreeFormProject; undefined = unknown (backend infers).
+  worktreeFormRemoteId: string | undefined;
+  openWorktreeForm: (opts?: { projectDir?: string; branch?: string; parentSessionId?: string; remoteId?: string }) => void;
   closeWorktreeForm: () => void;
 };
 
@@ -395,12 +397,14 @@ export const useUiStore = create<UiStore>()(
       worktreeFormProject: undefined,
       worktreeFormBranch: undefined,
       worktreeFormParentSessionId: undefined,
+      worktreeFormRemoteId: undefined,
       openWorktreeForm: (opts) => set((s) => ({
         worktreeFormOpen: true,
         worktreeFormGen: s.worktreeFormGen + 1,
         worktreeFormProject: opts?.projectDir,
         worktreeFormBranch: opts?.branch,
         worktreeFormParentSessionId: opts?.parentSessionId,
+        worktreeFormRemoteId: opts?.remoteId,
         // Close the palette if it happened to be open — the modal
         // takes over the focus.
         paletteOpen: false,
@@ -410,6 +414,7 @@ export const useUiStore = create<UiStore>()(
         worktreeFormProject: undefined,
         worktreeFormBranch: undefined,
         worktreeFormParentSessionId: undefined,
+        worktreeFormRemoteId: undefined,
       }),
     }),
     {

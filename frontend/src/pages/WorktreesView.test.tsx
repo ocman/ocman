@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { WorktreesView } from './WorktreesView';
 import { api } from '../lib/api';
-import type { WorktreeEntry } from '../lib/api';
+import type { Session, WorktreeEntry } from '../lib/api';
 
 // The view pulls in several hooks/stores that hit the network or the
 // browser. Mock them to thin, deterministic stubs so the test can focus
@@ -12,24 +12,23 @@ import type { WorktreeEntry } from '../lib/api';
 vi.mock('../lib/headerContext', () => ({ usePageTitle: () => {} }));
 // Launch affordances gate on opencodeLaunch (AD-8 / #393), not tmux.
 // `launchAllowed` lets individual tests flip the flag.
-const launchState = { allowed: true };
-vi.mock('../lib/useCapabilities', () => ({ useOpencodeLaunch: () => launchState.allowed }));
+const launchState = { allowed: true, askedFor: [] as (string | undefined)[] };
+vi.mock('../lib/useCapabilities', () => ({
+  useOpencodeLaunch: (remoteId?: string) => {
+    launchState.askedFor.push(remoteId);
+    return launchState.allowed;
+  },
+}));
 vi.mock('../lib/shortcuts', () => ({ openVSCode: () => {} }));
+const openWorktreeForm = vi.fn();
 vi.mock('../lib/uiStore', () => ({
   useUiStore: (selector: (s: { openWorktreeForm: () => void }) => unknown) =>
-    selector({ openWorktreeForm: vi.fn() }),
+    selector({ openWorktreeForm }),
 }));
-vi.mock('../lib/apiStore', () => {
-  const store = { cachedSessions: [], refreshCachedSessions: () => Promise.resolve([]) };
-  return {
-    useApiStore: (selector: (s: typeof store) => unknown) => selector(store),
-  };
-});
-
-vi.mock('react-router-dom', async () => {
-  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
-  return { ...actual, useParams: () => ({ dir: encodeURIComponent('/repo') }) };
-});
+const store = { cachedSessions: [] as Session[], refreshCachedSessions: () => Promise.resolve([]) };
+vi.mock('../lib/apiStore', () => ({
+  useApiStore: (selector: (s: typeof store) => unknown) => selector(store),
+}));
 
 function wt(overrides: Partial<WorktreeEntry> = {}): WorktreeEntry {
   return {
@@ -43,18 +42,33 @@ function wt(overrides: Partial<WorktreeEntry> = {}): WorktreeEntry {
   };
 }
 
-function renderView() {
+function SessionLocation() {
+  const location = useLocation();
+  return <div data-testid="session-location">{location.pathname + location.search}</div>;
+}
+
+function renderView(entry = '/project/%2Frepo/worktrees') {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[entry]}>
       <div id="header-actions-slot" />
-      <WorktreesView />
+      <Routes>
+        <Route path="/project/:dir/worktrees" element={<WorktreesView />} />
+        <Route path="/session/:id" element={<SessionLocation />} />
+      </Routes>
     </MemoryRouter>,
   );
+}
+
+function session(id: string, remoteId: string, platform: string, timeUpdated: number): Session {
+  return { id, remoteId, platform, timeUpdated, directory: '/repo/.worktrees/repo/feature' } as Session;
 }
 
 describe('WorktreesView', () => {
   beforeEach(() => {
     launchState.allowed = true;
+    launchState.askedFor = [];
+    store.cachedSessions = [];
+    openWorktreeForm.mockClear();
     vi.spyOn(api.worktree, 'list').mockResolvedValue({
       worktrees: [wt({ path: '/repo', branch: 'main', main: true }), wt()],
     });
@@ -125,6 +139,7 @@ describe('WorktreesView', () => {
         projectDir: '/repo',
         path: '/repo/.worktrees/repo/feature',
         force: false,
+        remoteId: 'local',
       }),
     );
   });
@@ -148,6 +163,7 @@ describe('WorktreesView', () => {
       projectDir: '/repo',
       path: '/repo/.worktrees/repo/feature',
       force: true,
+      remoteId: 'local',
     });
   });
 
@@ -164,5 +180,62 @@ describe('WorktreesView', () => {
       expect(document.querySelector('.oc-list-error')?.textContent).toBe('boom'),
     );
     expect(screen.queryByRole('button', { name: 'Force delete' })).not.toBeInTheDocument();
+  });
+
+  // Identical paths exist on this machine and on remote "B". The view
+  // must act only on its owner: no request, count, or link may leak to
+  // the other machine through directory inference.
+  describe('machine ownership', () => {
+    beforeEach(() => {
+      store.cachedSessions = [
+        session('ses_local', 'local', 'opencode', 300),
+        session('ses_b_old', 'B', 'r-B:opencode', 100),
+        session('ses_b_new', 'B', 'r-B:opencode', 200),
+      ];
+    });
+
+    it('defaults to this machine and links the local session', async () => {
+      renderView();
+      await screen.findByText('feature');
+      expect(api.worktree.list).toHaveBeenCalledWith('/repo', 'local');
+      expect(launchState.askedFor).toContain('local');
+      expect(screen.getByTitle('ses_local')).toHaveTextContent('1');
+      fireEvent.click(screen.getAllByRole('button', { name: 'Open session' })[1]);
+      expect(await screen.findByTestId('session-location')).toHaveTextContent('/session/ses_local?platform=opencode');
+    });
+
+    it('scopes list, sessions, links, create, and delete to the named owner', async () => {
+      const remove = vi.spyOn(api.worktree, 'remove').mockResolvedValue({ removed: true });
+      renderView('/project/%2Frepo/worktrees?remoteId=B');
+      await screen.findByText('feature');
+      expect(api.worktree.list).toHaveBeenCalledWith('/repo', 'B');
+      expect(launchState.askedFor).toContain('B');
+      expect(launchState.askedFor).not.toContain(undefined);
+      expect(screen.getByRole('link', { name: 'Back to project' })).toHaveAttribute('href', '/project/%2Frepo?remoteId=B');
+
+      fireEvent.click(screen.getByRole('button', { name: 'New worktree session' }));
+      expect(openWorktreeForm).toHaveBeenCalledWith({ projectDir: '/repo', remoteId: 'B' });
+
+      // Only B's two sessions belong to this worktree; the newer one opens.
+      expect(screen.getByTitle('ses_b_old, ses_b_new')).toHaveTextContent('2');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Confirm delete' }));
+      await waitFor(() => expect(remove).toHaveBeenCalledWith({
+        projectDir: '/repo', path: '/repo/.worktrees/repo/feature', force: false, remoteId: 'B',
+      }));
+      await screen.findByRole('button', { name: 'Delete' });
+
+      fireEvent.click(screen.getAllByRole('button', { name: 'Open session' })[1]);
+      expect(await screen.findByTestId('session-location')).toHaveTextContent('/session/ses_b_new?platform=r-B%3Aopencode');
+    });
+
+    it('shows a disconnected owner as unavailable instead of using this machine', async () => {
+      launchState.allowed = false;
+      renderView('/project/%2Frepo/worktrees?remoteId=gone');
+      expect(await screen.findByText(/unavailable on this host/i)).toBeInTheDocument();
+      expect(launchState.askedFor).toContain('gone');
+      expect(launchState.askedFor).not.toContain('local');
+    });
   });
 });

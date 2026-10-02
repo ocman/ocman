@@ -26,6 +26,21 @@ describe('sessionsForWorktree', () => {
     expect(stats.lastActivity).toBe(300);
   });
 
+  // The same absolute path can exist on several machines: only sessions
+  // on the worktree's owner belong to it (local by default).
+  it('associates sessions by owner as well as directory', () => {
+    const sessions = [
+      { id: 'local', directory: '/repo/.worktrees/feature', remoteId: 'local', timeUpdated: 100 } as Session,
+      { id: 'legacy', directory: '/repo/.worktrees/feature', timeUpdated: 150 } as Session,
+      { id: 'b', directory: '/repo/.worktrees/feature', remoteId: 'B', timeUpdated: 300 } as Session,
+    ];
+    expect(sessionsForWorktree(wt, sessions).sessions.map((s) => s.id)).toEqual(['local', 'legacy']);
+    const remote = sessionsForWorktree(wt, sessions, 'B');
+    expect(remote.sessions.map((s) => s.id)).toEqual(['b']);
+    expect(remote.lastActivity).toBe(300);
+    expect(sessionsForWorktree(wt, sessions, 'A').sessions).toEqual([]);
+  });
+
   it('returns empty stats when sessions are null', () => {
     const stats = sessionsForWorktree(wt, null);
     expect(stats.sessions).toEqual([]);

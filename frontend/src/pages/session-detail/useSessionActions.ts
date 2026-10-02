@@ -75,7 +75,7 @@ export interface UseSessionActionsOptions {
   pending: UsePendingSendResult;
   navigate: (to: string) => void;
   navigateToSession: (id: string) => void;
-  openWorktreeForm: (opts: { projectDir: string; branch?: string; parentSessionId?: string }) => void;
+  openWorktreeForm: (opts: { projectDir: string; branch?: string; parentSessionId?: string; remoteId?: string }) => void;
   handleCompact: () => Promise<void>;
   handleNewSession: (title?: string) => Promise<void>;
   handleTmuxShortcut: () => void;

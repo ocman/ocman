@@ -6,14 +6,19 @@ export interface WorktreeSessionStats {
 }
 
 // sessionsForWorktree returns the sessions rooted at the worktree path
-// plus the most recent activity timestamp among them. The association is
-// purely directory equality (AD-3): a session belongs to a worktree when
-// session.directory === worktree.path.
+// on the owning machine, plus the most recent activity timestamp among
+// them. A session belongs to a worktree when session.directory ===
+// worktree.path (AD-3) *and* it lives on the same owner: the same
+// absolute path can exist on several machines, so directory alone would
+// attribute another host's sessions to this worktree.
 export function sessionsForWorktree(
   worktree: WorktreeEntry,
   sessions: Session[] | null,
+  remoteId = 'local',
 ): WorktreeSessionStats {
-  const matches = (sessions ?? []).filter((s) => s.directory === worktree.path);
+  const matches = (sessions ?? []).filter(
+    (s) => s.directory === worktree.path && (s.remoteId || 'local') === remoteId,
+  );
   let lastActivity: number | null = null;
   for (const session of matches) {
     if (lastActivity === null || session.timeUpdated > lastActivity) {

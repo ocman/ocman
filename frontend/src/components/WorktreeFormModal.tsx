@@ -44,8 +44,9 @@ export function WorktreeFormModal() {
   const initialProject = useUiStore((s) => s.worktreeFormProject);
   const initialBranch = useUiStore((s) => s.worktreeFormBranch);
   const parentSessionId = useUiStore((s) => s.worktreeFormParentSessionId);
+  const remoteId = useUiStore((s) => s.worktreeFormRemoteId);
   const close = useUiStore((s) => s.closeWorktreeForm);
-  const allowed = useOpencodeLaunch();
+  const allowed = useOpencodeLaunch(remoteId);
 
   if (!open) return null;
 
@@ -82,6 +83,7 @@ export function WorktreeFormModal() {
       initialProject={initialProject}
       initialBranch={initialBranch}
       parentSessionId={parentSessionId}
+      remoteId={remoteId}
       close={close}
     />
   );
@@ -95,10 +97,12 @@ interface WorktreeFormProps {
   initialProject: string | undefined;
   initialBranch: string | undefined;
   parentSessionId: string | undefined;
+  /** Owning machine of the project; undefined lets the backend infer it. */
+  remoteId: string | undefined;
   close: () => void;
 }
 
-function WorktreeForm({ initialProject, initialBranch, parentSessionId, close }: WorktreeFormProps) {
+function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId, close }: WorktreeFormProps) {
   const projectsLoader = useApiStore((s) => s.getProjects);
   const seedNewSession = useApiStore((s) => s.seedNewSession);
   const navigate = useNavigate();
@@ -135,13 +139,13 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, close }:
     if (!projectDir) return;
     const ctrl = new AbortController();
     api.worktree
-      .defaultBaseRef(projectDir, ctrl.signal)
+      .defaultBaseRef(projectDir, remoteId, ctrl.signal)
       .then((r) => setBaseRef(r.baseRef))
       .catch(() => {
         // Non-fatal: leave the field empty; user can fill it in.
       });
     return () => ctrl.abort();
-  }, [projectDir]);
+  }, [projectDir, remoteId]);
 
   // When launched from a session, look up how many always-allow
   // permissions would be inherited (#101) so the form can show a hint.
@@ -196,6 +200,7 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, close }:
         newBranch,
         baseRef: newBranch ? baseRef.trim() : undefined,
         parentSessionId,
+        remoteId,
       });
     } catch (err) {
       setStage('idle');
@@ -222,8 +227,9 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, close }:
     setStage('idle');
     close();
     if (resp.sessionId) {
-      seedNewSession(resp.sessionId, resp.worktreePath, '', branch.trim(), 'local');
-      navigate(`/session/${resp.sessionId}`);
+      const platform = resp.platform ?? '';
+      seedNewSession(resp.sessionId, resp.worktreePath, platform, branch.trim(), resp.remoteId ?? remoteId ?? 'local');
+      navigate(`/session/${encodeURIComponent(resp.sessionId)}${platform ? `?platform=${encodeURIComponent(platform)}` : ''}`);
     } else {
       navigate(`/project/${encodeURIComponent(resp.worktreePath)}`);
     }

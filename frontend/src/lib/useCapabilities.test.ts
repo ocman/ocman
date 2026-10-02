@@ -347,4 +347,21 @@ describe('useMultiPlatform / useWorktreeSessions', () => {
     await off.flush();
     expect(off.tickHook(() => off.mod.useOpencodeLaunch())).toBe(false);
   });
+
+  // A named owner reads its own host entry; a disconnected one fails
+  // closed rather than borrowing the local host's answer.
+  it('useOpencodeLaunch(remoteId) reads that owner and fails closed when it is absent', async () => {
+    const caps = (opencodeLaunch: boolean) => ({ gitDiff: true, worktrees: true, tmux: true, projects: true, whisper: true, opencodeLaunch });
+    const { mod, tickHook, flush } = await loadFreshModule(makeResponse({
+      hosts: [
+        { remoteId: 'local', remoteName: 'This machine', capabilities: caps(true) },
+        { remoteId: 'B', remoteName: 'Box', capabilities: caps(false) },
+      ],
+    }));
+    tickHook(() => mod.useCapabilities());
+    await flush();
+    expect(tickHook(() => mod.useOpencodeLaunch('local'))).toBe(true);
+    expect(tickHook(() => mod.useOpencodeLaunch('B'))).toBe(false);
+    expect(tickHook(() => mod.useOpencodeLaunch('gone'))).toBe(false);
+  });
 });

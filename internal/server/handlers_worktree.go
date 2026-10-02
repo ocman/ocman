@@ -49,6 +49,8 @@ func worktreeSessionsAvailable(reg *platforms.Registry) bool {
 //
 // Query parameters:
 //   - `dir` (required): absolute path inside a git git.
+//   - `remoteId` (optional): explicit owner; fails closed (503) when it
+//     is not connected. Empty falls back to directory inference.
 //
 // Response 200:
 //
@@ -65,7 +67,11 @@ func (s *Server) handleWorktreeList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entries, err := s.router().ForDir(dir).ListWorktrees(r.Context(), dir)
+	host, ok := s.resolveOwner(w, dir, r.URL.Query().Get("remoteId"))
+	if !ok {
+		return
+	}
+	entries, err := host.ListWorktrees(r.Context(), dir)
 	if err != nil {
 		if errors.Is(err, git.ErrNotARepo) {
 			http.Error(w, "directory is not a git repository", http.StatusNotFound)
@@ -88,7 +94,11 @@ func (s *Server) handleWorktreeDefaultBaseRef(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	baseRef, err := s.router().ForDir(dir).WorktreeDefaultBaseRef(r.Context(), dir)
+	host, ok := s.resolveOwner(w, dir, r.URL.Query().Get("remoteId"))
+	if !ok {
+		return
+	}
+	baseRef, err := host.WorktreeDefaultBaseRef(r.Context(), dir)
 	if err != nil {
 		if errors.Is(err, git.ErrNotARepo) {
 			http.Error(w, "directory is not a git repository", http.StatusNotFound)
@@ -274,6 +284,8 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 
 	writeJSON(w, map[string]interface{}{
 		"sessionId":                 res.SessionID,
+		"platform":                  opencodePlatformForHost(host),
+		"remoteId":                  host.RemoteID(),
 		"worktreePath":              res.WorktreePath,
 		"branch":                    res.Branch,
 		"reused":                    res.Reused,

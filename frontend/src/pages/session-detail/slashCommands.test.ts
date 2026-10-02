@@ -41,6 +41,12 @@ describe('runSlashCommand', () => {
     expect(await runSlashCommand(ctx(), 'unknown', '')).toBe(false);
   });
 
+  it('/wt creates the worktree on the session owner, not by path', async () => {
+    const c = ctx({ session: { id: 's1', platform: 'r-B:opencode', remoteId: 'B', directory: '/repo', timeUpdated: 1 } });
+    await runSlashCommand(c, 'wt', '');
+    expect(c.openWorktreeForm).toHaveBeenCalledWith(expect.objectContaining({ projectDir: '/repo', remoteId: 'B' }));
+  });
+
   it('silently swallows live commands when the port is down', async () => {
     const c = ctx({ portAvailable: false });
     expect(await runSlashCommand(c, 'compact', '')).toBe(true);
@@ -55,7 +61,7 @@ describe('runSlashCommand', () => {
     expect(c.setShowMovePicker).not.toHaveBeenCalled();
 
     await runSlashCommand(c, 'wt', ' feat/x ');
-    expect(c.openWorktreeForm).toHaveBeenCalledWith({ projectDir: '/repo', branch: 'feat/x', parentSessionId: 's1' });
+    expect(c.openWorktreeForm).toHaveBeenCalledWith({ projectDir: '/repo', branch: 'feat/x', parentSessionId: 's1', remoteId: 'local' });
     expect(SLASH_COMMANDS.resume).toBe(SLASH_COMMANDS.sessions);
     expect(SLASH_COMMANDS.redo).toBe(SLASH_COMMANDS.undo);
   });

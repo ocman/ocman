@@ -462,6 +462,8 @@ function queryString(params?: Record<string, string | number | undefined | null>
   return qs ? '?' + qs : '';
 }
 
+const ownerParam = (remoteId?: string) => (remoteId ? `&remoteId=${encodeURIComponent(remoteId)}` : '');
+
 export const api = {
   ...settingsApi(fetchJSON, postJSON),
   clientActivity: (activity: ClientActivity) =>
@@ -941,14 +943,16 @@ export const api = {
    * spec/worktree-sessions/architecture.md for the design.
    */
   worktree: {
-    list: (dir: string, signal?: AbortSignal) =>
+    // remoteId names the owning machine; the backend fails closed (503)
+    // when it is not connected. Omit only when the owner is unknown.
+    list: (dir: string, remoteId?: string, signal?: AbortSignal) =>
       fetchJSON<{ worktrees: WorktreeEntry[] }>(
-        `/api/worktree/list?dir=${encodeURIComponent(dir)}`,
+        `/api/worktree/list?dir=${encodeURIComponent(dir)}${ownerParam(remoteId)}`,
         signal,
       ),
-    defaultBaseRef: (dir: string, signal?: AbortSignal) =>
+    defaultBaseRef: (dir: string, remoteId?: string, signal?: AbortSignal) =>
       fetchJSON<{ baseRef: string }>(
-        `/api/worktree/default-base-ref?dir=${encodeURIComponent(dir)}`,
+        `/api/worktree/default-base-ref?dir=${encodeURIComponent(dir)}${ownerParam(remoteId)}`,
         signal,
       ),
     createAndLaunch: (req: WorktreeCreateRequest): Promise<WorktreeCreateResponse> =>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import type { WorktreeEntry } from '../lib/api';
 import { api } from '../lib/api';
 import { useApiStore } from '../lib/apiStore';
@@ -22,8 +22,15 @@ export function WorktreesView() {
   const projectDir = dir ? decodeURIComponent(dir) : '';
   usePageTitle(projectDir ? `${shortPath(projectDir)} · Worktrees` : 'Worktrees');
 
+  // The owning machine travels in `?remoteId=` (absent = this machine) and
+  // is sent explicitly on every request, so an identical path on another
+  // host can never be listed, deleted, or launched into by inference.
+  const [searchParams] = useSearchParams();
+  const remoteId = searchParams.get('remoteId') || 'local';
+  const ownerQuery = remoteId === 'local' ? '' : `?remoteId=${encodeURIComponent(remoteId)}`;
+
   const navigate = useNavigate();
-  const allowed = useOpencodeLaunch();
+  const allowed = useOpencodeLaunch(remoteId);
   const openWorktreeForm = useUiStore((s) => s.openWorktreeForm);
   const cachedSessions = useApiStore((s) => s.cachedSessions);
   const refreshCachedSessions = useApiStore((s) => s.refreshCachedSessions);
@@ -48,7 +55,7 @@ export function WorktreesView() {
     setError(null);
     try {
       const [wtResp] = await Promise.all([
-        api.worktree.list(projectDir),
+        api.worktree.list(projectDir, remoteId),
         refreshCachedSessions().catch(() => []),
       ]);
       setWorktrees(wtResp.worktrees);
@@ -57,7 +64,7 @@ export function WorktreesView() {
     } finally {
       setLoading(false);
     }
-  }, [projectDir, refreshCachedSessions]);
+  }, [projectDir, remoteId, refreshCachedSessions]);
 
   useEffect(() => {
     void load();
@@ -68,7 +75,7 @@ export function WorktreesView() {
       setRemoving(wt.path);
       setError(null);
       try {
-        await api.worktree.remove({ projectDir: projectDir, path: wt.path, force });
+        await api.worktree.remove({ projectDir, path: wt.path, force, remoteId });
         setConfirmPath(null);
         setDirtyPath(null);
         await load();
@@ -89,16 +96,16 @@ export function WorktreesView() {
         setRemoving(null);
       }
     },
-    [projectDir, load],
+    [projectDir, remoteId, load],
   );
 
   const rows = useMemo(
     () =>
       worktrees.map((wt) => {
-        const stats = sessionsForWorktree(wt, cachedSessions);
+        const stats = sessionsForWorktree(wt, cachedSessions, remoteId);
         return { wt, stats };
       }),
-    [worktrees, cachedSessions],
+    [worktrees, cachedSessions, remoteId],
   );
 
   if (!allowed) {
@@ -112,14 +119,14 @@ export function WorktreesView() {
   return (
     <div>
       <HeaderPortal>
-        <Link className="oc-time-range-btn" to={`/project/${encodeURIComponent(projectDir)}`}>
+        <Link className="oc-time-range-btn" to={`/project/${encodeURIComponent(projectDir)}${ownerQuery}`}>
           Back to project
         </Link>
         <RefreshButton size="small" variant="default" onClick={() => void load()} loading={loading} />
         <button
           className="oc-time-range-btn active"
           type="button"
-          onClick={() => openWorktreeForm({ projectDir })}
+          onClick={() => openWorktreeForm({ projectDir, remoteId })}
         >
           New worktree session
         </button>
@@ -183,7 +190,7 @@ export function WorktreesView() {
                         onClick={() => {
                           if (stats.sessions.length === 0) return;
                           const newest = [...stats.sessions].sort((a, b) => b.timeUpdated - a.timeUpdated)[0];
-                          navigate(`/session/${newest.id}`);
+                          navigate(`/session/${encodeURIComponent(newest.id)}?platform=${encodeURIComponent(newest.platform)}`);
                         }}
                       >
                         Open session

@@ -186,14 +186,19 @@ export function useWorktreeSessions(): boolean {
  * (AD-8, #393).
  *
  * Reads the local host entry ("local"); falls back to the first host
- * when that id isn't present (defensive). False during the initial
- * load — same conservative default as every other capability flag.
+ * when that id isn't present (defensive). Pass `remoteId` to ask about a
+ * specific owner instead: a remote that isn't connected reports false
+ * (fail closed) rather than borrowing the local host's answer. False
+ * during the initial load — same conservative default as every other
+ * capability flag.
  */
-export function useOpencodeLaunch(): boolean {
+export function useOpencodeLaunch(remoteId?: string): boolean {
   const all = useCapabilities();
   const hosts = all?.hosts ?? [];
-  const local = hosts.find((h) => h.remoteId === 'local') ?? hosts[0];
-  return local?.capabilities.opencodeLaunch === true;
+  const host = remoteId && remoteId !== 'local'
+    ? hosts.find((h) => h.remoteId === remoteId)
+    : hosts.find((h) => h.remoteId === 'local') ?? hosts[0];
+  return host?.capabilities.opencodeLaunch === true;
 }
 
 /**
