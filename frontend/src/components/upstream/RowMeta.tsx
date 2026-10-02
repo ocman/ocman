@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { Label, ForgeUser } from '../../lib/upstreamApi';
 import { styleForLabel } from './labelStyle';
 import { RelativeTime } from '../RelativeTime';
@@ -7,6 +8,7 @@ interface RowMetaProps {
   updatedAt: string;
   labels?: Label[] | null;
   assignees?: ForgeUser[] | null;
+  badges?: ReactNode;
 }
 
 /**
@@ -15,10 +17,10 @@ interface RowMetaProps {
  * separate from the row components so PR and Issue share the same
  * pixel layout without code duplication.
  */
-export function RowMeta({ author, updatedAt, labels, assignees }: RowMetaProps) {
+export function RowMeta({ author, updatedAt, labels, assignees, badges }: RowMetaProps) {
   return (
     <div className="oc-upstream-row-meta">
-      <span className="oc-upstream-row-author">by {author}</span>
+      {badges}
       {labels && labels.length > 0 ? (
         <span className="oc-upstream-row-labels">
           {labels.map((l) => (
@@ -33,6 +35,7 @@ export function RowMeta({ author, updatedAt, labels, assignees }: RowMetaProps) 
           ))}
         </span>
       ) : null}
+      <span className="oc-upstream-row-author">by {author}</span>
       <span className="oc-upstream-row-time"><RelativeTime iso={updatedAt} /></span>
       {assignees && assignees.length > 0 ? (
         <span className="oc-upstream-row-assignees">

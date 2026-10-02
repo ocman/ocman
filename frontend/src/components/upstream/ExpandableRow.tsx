@@ -77,12 +77,19 @@ export function ExpandableRow({
           {summaryPrefix}
           <span className="oc-upstream-row-number">#{number}</span>
           <span className="oc-upstream-row-title">{title}</span>
-          {summarySuffix}
-          <span className={`oc-upstream-status oc-upstream-status-${status}`}>{status}</span>
         </button>
         <OpenInBrowser url={url} host={host} testId={`${rowId}-open`} />
       </div>
-      <RowMeta author={author} updatedAt={updatedAt} labels={labels} assignees={assignees} />
+      <RowMeta
+        author={author}
+        updatedAt={updatedAt}
+        labels={labels}
+        assignees={assignees}
+        badges={<>
+          {summarySuffix}
+          <span className={`oc-upstream-status oc-upstream-status-${status}`}>{status}</span>
+        </>}
+      />
       {expanded && (
         <div className="oc-upstream-row-detail" data-testid={`${type}-detail-${number}`}>
           <a className="oc-upstream-row-link" href={url} target="_blank" rel="noreferrer noopener">
