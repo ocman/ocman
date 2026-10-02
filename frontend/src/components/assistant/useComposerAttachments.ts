@@ -31,39 +31,46 @@ function readFileAsDataURL(file: File): Promise<string> {
 export function useComposerAttachments(sessionIdRef: MutableRefObject<string | undefined>, disabled: boolean | undefined) {
   const [images, setImages] = useState<AttachedImage[]>([]);
   const [files, setFiles] = useState<AttachedFileRef[]>([]);
+  const [pending, setPending] = useState(0);
 
   const addFiles = useCallback(async (all: File[]) => {
-    const imageFiles = all.filter((f) => f.type.startsWith('image/'));
-    const newImages: AttachedImage[] = [];
-    for (const file of imageFiles) {
-      try {
-        const url = await readFileAsDataURL(file);
-        newImages.push({ url, mime: file.type });
-      } catch (err) {
-        remoteLog.error('Failed to read image', err);
+    if (disabled) return;
+    setPending((count) => count + 1);
+    try {
+      const imageFiles = all.filter((f) => f.type.startsWith('image/'));
+      const newImages: AttachedImage[] = [];
+      for (const file of imageFiles) {
+        try {
+          const url = await readFileAsDataURL(file);
+          newImages.push({ url, mime: file.type });
+        } catch (err) {
+          remoteLog.error('Failed to read image', err);
+        }
       }
-    }
-    if (newImages.length > 0) setImages((prev) => [...prev, ...newImages]);
+      if (newImages.length > 0) setImages((prev) => [...prev, ...newImages]);
 
-    const otherFiles = all.filter((f) => !f.type.startsWith('image/'));
-    if (otherFiles.length === 0) return;
-    const sid = sessionIdRef.current;
-    if (!sid) return;
-    const newFiles: AttachedFileRef[] = [];
-    for (const file of otherFiles) {
-      try {
-        const saved = await api.uploadComposerAttachment(sid, file);
-        newFiles.push({
-          path: saved.path,
-          name: saved.name || file.name,
-          mime: saved.mime || file.type || 'application/octet-stream',
-        });
-      } catch (err) {
-        remoteLog.error('Failed to save attachment', err);
+      const otherFiles = all.filter((f) => !f.type.startsWith('image/'));
+      if (otherFiles.length === 0) return;
+      const sid = sessionIdRef.current;
+      if (!sid) return;
+      const newFiles: AttachedFileRef[] = [];
+      for (const file of otherFiles) {
+        try {
+          const saved = await api.uploadComposerAttachment(sid, file);
+          newFiles.push({
+            path: saved.path,
+            name: saved.name || file.name,
+            mime: saved.mime || file.type || 'application/octet-stream',
+          });
+        } catch (err) {
+          remoteLog.error('Failed to save attachment', err);
+        }
       }
+      if (newFiles.length > 0) setFiles((prev) => [...prev, ...newFiles]);
+    } finally {
+      setPending((count) => count - 1);
     }
-    if (newFiles.length > 0) setFiles((prev) => [...prev, ...newFiles]);
-  }, [sessionIdRef]);
+  }, [sessionIdRef, disabled]);
 
   const removeImage = useCallback((index: number) => {
     setImages((prev) => prev.filter((_, i) => i !== index));
@@ -104,5 +111,5 @@ export function useComposerAttachments(sessionIdRef: MutableRefObject<string | u
     ? `Attached files saved on disk:\n${files.map((f) => `- ${f.path} (${f.mime})`).join('\n')}`
     : '';
 
-  return { images, files, addFiles, removeImage, removeFile, clear, handlePaste, handleDragOver, handleDrop, fileReferenceText };
+  return { images, files, pending, addFiles, removeImage, removeFile, clear, handlePaste, handleDragOver, handleDrop, fileReferenceText };
 }

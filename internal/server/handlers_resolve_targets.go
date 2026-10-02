@@ -63,8 +63,9 @@ func (s *Server) handleResolveTargets(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, upstream := range project.Remotes {
-			if upstream.Name == "origin" {
-				origin = upstream.URL
+			if upstream.Name == "origin" && upstream.Host != "" && upstream.Repo != "" {
+				// Raw URLs are redacted by the RPC; host/repo retain the identity.
+				origin = "https://" + upstream.Host + "/" + upstream.Repo
 				break
 			}
 		}

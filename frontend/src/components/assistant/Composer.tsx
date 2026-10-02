@@ -53,7 +53,7 @@ function ComposerBody({
   const sessionIdRef = useRef(sessionId);
   const { clearDraftNow, scheduleDraftSave } = useComposerDrafts(inputRef, sessionId, sessionIdRef);
   const visibleDurationMs = useRunningDuration(activeDurationMs, isRunning);
-  const attachments = useComposerAttachments(sessionIdRef, disabled);
+  const attachments = useComposerAttachments(sessionIdRef, disabled || sending || switchingMachine);
   const { images, files } = attachments;
 
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
@@ -268,7 +268,7 @@ function ComposerBody({
   useShortcut(dictationShortcut);
   useShortcut(reasoningCycleShortcut);
 
-  const uiDisabled = disabled || sending || switchingMachine;
+  const uiDisabled = disabled || sending || switchingMachine || attachments.pending > 0;
   const shellQueueID = '__shell__';
   const queueItems = [...(queuedMessages || []), ...(queuedShellCommand ? [{
     id: shellQueueID, text: `!${queuedShellCommand}`, hasImages: false,
@@ -330,7 +330,7 @@ function ComposerBody({
               key={`${sessionId}:${directory}:${remoteId}`}
               directory={directory}
               remoteId={remoteId}
-              disabled={sending || switchingMachine || images.length > 0 || files.length > 0}
+              disabled={sending || switchingMachine || attachments.pending > 0 || images.length > 0 || files.length > 0}
               onSelect={async (machine) => {
                 setSwitchingMachine(true);
                 try {

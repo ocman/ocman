@@ -29,3 +29,30 @@ it('does not offer to move a conversation that already has messages', () => {
   expect(screen.queryByRole('combobox', { name: 'Session machine' })).not.toBeInTheDocument();
   expect(resolve).not.toHaveBeenCalled();
 });
+
+it('locks machine selection for an upload still in flight', async () => {
+  vi.spyOn(api, 'resolveTargets').mockResolvedValue({ candidates: [target], remotes: [target] });
+  vi.spyOn(api, 'gitBranches').mockResolvedValue({ branches: [] });
+  let finish!: (value: Awaited<ReturnType<typeof api.uploadComposerAttachment>>) => void;
+  vi.spyOn(api, 'uploadComposerAttachment').mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+  render(<Composer isRunning={false} newConversation directory="/local/project" sessionId="upload-test" onMachineChange={vi.fn()} />);
+  const machine = await screen.findByRole('combobox', { name: 'Session machine' });
+  fireEvent.drop(screen.getByRole('textbox'), { dataTransfer: { files: [new File(['hello'], 'note.txt', { type: 'text/plain' })] } });
+  expect(machine).toBeDisabled();
+  await act(async () => finish({ path: '/source/note.txt', name: 'note.txt', mime: 'text/plain', size: 5 }));
+  expect(machine).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: /Remove attached file/ }));
+  expect(machine).not.toBeDisabled();
+});
+
+it('rejects file drops while switching machines', async () => {
+  vi.spyOn(api, 'resolveTargets').mockResolvedValue({ candidates: [target], remotes: [target] });
+  vi.spyOn(api, 'gitBranches').mockResolvedValue({ branches: [] });
+  const upload = vi.spyOn(api, 'uploadComposerAttachment');
+  let complete!: () => void;
+  render(<Composer isRunning={false} newConversation directory="/local/project" sessionId="switch-test" onMachineChange={() => new Promise<void>((resolve) => { complete = resolve; })} />);
+  fireEvent.change(await screen.findByRole('combobox', { name: 'Session machine' }), { target: { value: 'box' } });
+  fireEvent.drop(screen.getByRole('textbox'), { dataTransfer: { files: [new File(['hello'], 'note.txt', { type: 'text/plain' })] } });
+  expect(upload).not.toHaveBeenCalled();
+  await act(async () => complete());
+});

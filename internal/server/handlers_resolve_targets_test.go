@@ -10,10 +10,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/forge"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/testutil"
 )
@@ -67,19 +70,19 @@ func TestHandleResolveTargets_RemoteOrigin(t *testing.T) {
 	// The same absolute path on two hosts is not proof of project identity.
 	host := &projectHandleRemoteHost{upstreams: &hostsvc.ProjectUpstreams{
 		RepoRoot: repo,
-		Remotes:  []forge.Remote{{Name: "origin", URL: "git@example.com:org/repo.git"}},
+		Remotes:  []forge.Remote{{Name: "origin", Host: "example.com", Repo: "org/repo"}},
 	}}
 	srv.router().RegisterRemote("rem1", host)
 	for _, tc := range []struct {
 		name, origin string
 		want         int
 	}{
-		{"matching origin", "git@example.com:org/repo.git", 1},
-		{"different origin same path", "git@example.com:other/repo.git", 0},
+		{"matching origin", "org/repo", 1},
+		{"different origin same path", "other/repo", 0},
 		{"no origin", "", 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			host.upstreams.Remotes[0].URL = tc.origin
+			host.upstreams.Remotes[0].Repo = tc.origin
 			rr := httptest.NewRecorder()
 			srv.handleResolveTargets(rr, httptest.NewRequest(http.MethodPost, "/api/sessions/resolve-targets", bytes.NewBufferString(`{"dir":"`+repo+`","remoteId":"rem1"}`)))
 			var resp struct {
@@ -115,6 +118,57 @@ func TestHandleResolveTargets_RemoteReadFailure(t *testing.T) {
 	srv.handleResolveTargets(rr, httptest.NewRequest(http.MethodPost, "/api/sessions/resolve-targets", bytes.NewBufferString(`{"dir":"/remote/repo","remoteId":"rem1"}`)))
 	if rr.Code != http.StatusBadGateway {
 		t.Fatalf("status %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestHandleResolveTargets_RemoteRPCRoundTrip(t *testing.T) {
+	localRepo, remoteRepo := initOriginRepo(t), initOriginRepo(t)
+	srv := testServer(t)
+	srv.projects.mu.Lock()
+	srv.projects.data = []db.ProjectStats{{Directory: localRepo}}
+	srv.projects.loaded = true
+	srv.projects.mu.Unlock()
+	registry := platforms.NewRegistry()
+	registry.Register(&fakePlatform{id: "opencode"})
+	service := remote.NewServer(registry, hostlocal.New(hostlocal.Deps{ProjectUpstreams: srv.hostProjectUpstreams}), "machine", "test")
+	listener, err := remote.NewListener(remote.ListenConfig{Addr: "127.0.0.1:0", Token: "token", TrustedOverlay: true}, service)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() { _ = listener.Serve() }()
+	t.Cleanup(listener.Stop)
+	mgr := remote.NewManager(platforms.NewRegistry(), srv.router(), srv.stateDB, "opencode")
+	srv.SetRemoteManager(mgr)
+	t.Cleanup(mgr.Stop)
+	if _, err := mgr.Add(t.Context(), "grpc://"+listener.Addr(), "token", "Remote"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	owner, connected := srv.router().LookupRemote("machine")
+	for !connected {
+		if time.Now().After(deadline) {
+			t.Fatal("remote did not connect")
+		}
+		time.Sleep(5 * time.Millisecond)
+		owner, connected = srv.router().LookupRemote("machine")
+	}
+	upstreams, err := owner.ProjectUpstreams(t.Context(), remoteRepo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(upstreams.Remotes) != 1 || upstreams.Remotes[0].URL != "" {
+		t.Fatalf("expected redacted origin, got %+v", upstreams)
+	}
+	rr := httptest.NewRecorder()
+	srv.handleResolveTargets(rr, httptest.NewRequest(http.MethodPost, "/api/sessions/resolve-targets", bytes.NewBufferString(`{"dir":"`+remoteRepo+`","remoteId":"machine"}`)))
+	var resp struct {
+		Candidates []remote.TargetCandidate `json:"candidates"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Candidates) != 1 || resp.Candidates[0].Dir != localRepo || resp.Candidates[0].RemoteID != "local" {
+		t.Fatalf("status %d, candidates %+v; want local %s", rr.Code, resp.Candidates, localRepo)
 	}
 }
 

@@ -52,11 +52,17 @@ describe('useComposerAttachments', () => {
     } as unknown as React.ClipboardEvent<HTMLTextAreaElement>;
     act(() => result.current.handlePaste(paste));
     expect(preventDefault).not.toHaveBeenCalled();
+    await act(() => result.current.addFiles([img, doc]));
+    expect(result.current.pending).toBe(0);
+    expect(result.current.images).toEqual([]);
+    expect(api.uploadComposerAttachment).not.toHaveBeenCalled();
 
     rerender({ disabled: false });
     act(() => result.current.handlePaste(paste));
     expect(preventDefault).toHaveBeenCalled();
+    expect(result.current.pending).toBe(1);
     await waitFor(() => expect(result.current.images).toHaveLength(1));
+    expect(result.current.pending).toBe(0);
 
     const drop = { preventDefault: vi.fn(), stopPropagation: vi.fn(), dataTransfer: { files: [img] } } as unknown as React.DragEvent;
     act(() => result.current.handleDrop(drop));
