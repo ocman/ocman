@@ -682,6 +682,15 @@ Implementation notes:
 User-facing setup and the full tool table are documented in
 `docs/features/mcp.md`.
 
+The owner-local `webhooks` MCP tool creates and inspects inboxes, saves or
+removes routine subscriptions, and reads recent deliveries. It invokes the
+existing inbox HTTP handler in-process through `Deps.WebhookHandler`, using
+only fixed routes after MCP authentication. Relay registration and polling,
+predicate validation, and local-routine checks stay in that handler. It uses
+saved relay settings and omits shared secrets from inbox results. Subscription
+actions do not alter routine schedules or enabled state; agents use `routines`
+to set those explicitly.
+
 ## Architecture doc
 
 `docs/other/architecture.md` holds the Mermaid architecture diagrams (system

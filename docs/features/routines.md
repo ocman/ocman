@@ -47,6 +47,10 @@ A webhook inbox only captures deliveries. Routines subscribe to an inbox and
 decide which deliveries run them, so one inbox (for example, every event from
 a Forgejo repository) can drive several routines.
 
+Agents can also create inboxes and subscribe routines through the `webhooks`
+MCP tool. See [Webhook triggers](../mcp/#webhook-triggers) for the setup sequence
+and author-only GitHub PR filters.
+
 1. Save the relay URL and enrollment token once under **Settings → Webhooks**.
    An empty relay URL falls back to the share relay.
 2. Open **Routines → Webhook inboxes → New inbox**, name it, and optionally set

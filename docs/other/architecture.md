@@ -130,6 +130,7 @@ flowchart TD
     MCP --> Factory
     MCP --> Inbox[Inbox<br/>state + owner routing]
     MCP --> Routines
+    MCP -->|webhook inbox actions, in-process| Server
     MCP --> Registry
     Registry --> OC[platforms/opencode + internal/db<br/>adapter and read-only queries]
     Registry --> RP[internal/remote<br/>platform adapter + owner RPCs]
@@ -269,7 +270,7 @@ flowchart TD
   cannot be converted losslessly to one routine prompt, so recovery is a
   manual read-only SQLite export.
 - **internal/mcp.** MCP handlers expose action-based `factory`,
-  permission-gated `factory_unblock`, `inbox`, and `routines` tools, read-only
+  permission-gated `factory_unblock`, `inbox`, `webhooks`, and `routines` tools, read-only
   session inspection, and `embed_file`. File embedding uses signed tokens
   persisted in `state.db`.
 - **Inbox.** The `inbox` MCP tool is deliberately limited to `help`, `send`, and

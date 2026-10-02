@@ -21,6 +21,8 @@ type Deps struct {
 	InboxStore inboxStore
 	// Optional: nil disables the artifacts tool.
 	ArtifactService artifactService
+	// Optional: owner-local inbox handler, called in-process after MCP authentication.
+	WebhookHandler http.Handler
 
 	// SignFile mints a browser-reachable URL for a file on disk, backing
 	// the embed_file tool. Optional: nil makes embed_file report that
@@ -53,6 +55,9 @@ func New(deps Deps) *Server {
 	addInboxTools(s, &inboxTools{store: deps.InboxStore})
 	addArtifactTools(s, &artifactTools{svc: deps.ArtifactService})
 	addRoutineTools(s, &routineTools{svc: deps.RoutineService})
+	for _, tool := range webhookServerTools(deps.WebhookHandler) {
+		s.AddTool(tool.Tool, tool.Handler)
+	}
 	addSessionTools(s, &sessionTools{svc: deps.SessionService})
 
 	httpHandler := mcpserver.NewStreamableHTTPServer(s,
@@ -80,6 +85,7 @@ func ServerTools(deps Deps) []mcpserver.ServerTool {
 	tools = append(tools, inboxServerTools(&inboxTools{store: deps.InboxStore})...)
 	tools = append(tools, artifactServerTools(&artifactTools{svc: deps.ArtifactService})...)
 	tools = append(tools, routineServerTools(&routineTools{svc: deps.RoutineService})...)
+	tools = append(tools, webhookServerTools(deps.WebhookHandler)...)
 	tools = append(tools, sessionServerTools(&sessionTools{svc: deps.SessionService})...)
 	return tools
 }

@@ -77,6 +77,7 @@ production binary. Change it if you moved the listener with `-mcp-addr`.
 | `artifacts` | Publish and inspect project artifacts (reports, screenshots, generated files, links). Actions `help`, `create`, `list`, `get`; there is no delete. `create` needs `directory` and `title`, takes an optional `platform` + `session_id` pair, `files` (`{path}` or `{name, content, mime}`) and `links` (`{url, label}`), and returns the artifact `id`, its ocman UI `url`, item URLs, and a markdown snippet. `list` filters by directory or session and pages with `cursor`/`limit`. Installed skill: `ocman-artifacts`. |
 | `inbox` | Send owner-local Inbox items and recall them by opaque ID. Unknown and already recalled IDs are successful no-ops. Use `action: "help"` for schemas and examples. Agents should send only asynchronous completions needing attention, blocked decisions, or important failures, not routine progress. |
 | `routines` | Create, inspect, update, run, and soft-delete routines. Use `action: "help"` for current inputs, examples, output schemas, and domain errors. |
+| `webhooks` | Create and inspect owner-local webhook inboxes, subscribe or unsubscribe routines, and inspect recent deliveries. Actions `help`, `list`, `get`, `create`, `subscribe`, `unsubscribe`, `deliveries`. Uses the saved relay settings. Ingestion URLs are credentials; shared secrets and relay management credentials are omitted. |
 | `sessions` | Session listing, search, detail inspection, and creation. Use `action: "help"` for schemas and examples. `list`, `search`, and `get` are read-only; search matches recent session IDs, titles, directories, platforms, and host names. With `content: true` it also scans user and assistant message text (not tool output) from the last `since_days` (default 7). Each hit returns up to five `{partId, messageId, role, snippet}` matches. Content search reads this machine's OpenCode database, so it is slow on large databases (tens of seconds for a week) and never covers remote sessions. `get` needs only `session_id`; it asks for `platform` only when that ID exists on more than one platform. `create` starts a new session. The tool cannot cancel or message existing sessions. |
 | `embed_file` | Make a file on disk viewable to the user in the ocman UI. Takes an absolute `path` (plus an optional `label`) and returns a signed URL and a markdown snippet the agent pastes into its reply. Images and SVGs render inline in the conversation; PDFs and other types open or download in the browser. See [Embedding generated assets](#embedding-generated-assets). |
 
@@ -160,6 +161,39 @@ Ocman installs the `ocman-routines` skill globally for OpenCode. The
 action-based `routines` tool supports listing, reading, creating, patching in
 place (only the fields passed change), replacing, running, soft-deleting, and viewing run history. Its `help` action is the
 authoritative contract for agents.
+
+### Webhook triggers
+
+Use `webhooks` with `action: "help"` for the current schema and a GitHub PR
+filter example. Configure the relay URL and enrollment token once in
+**Settings → Webhooks**, then:
+
+1. Create a disabled routine with `routines`, or disable an existing one and
+   set its `schedule_kind` to `none`.
+2. Use `webhooks` `list` to reuse an inbox, or `create` with a `name`.
+   The result includes the provider's ingestion URL. Treat it as a credential.
+3. Call `subscribe` with `inbox_id`, `routine_id`, `header_predicates`, and
+   `json_predicates`. Both predicate arguments are **JSON strings** containing
+   objects keyed by header name or RFC 6901 JSON pointer. Use explicit `"{}"`
+   for an unfiltered source. Conditions combine with AND and support
+   `equals`, `oneOf`, and `exists`.
+4. Register the URL with the provider, then enable the routine with
+   `routines` `patch`. Use `webhooks` `deliveries` to inspect recent outcomes.
+
+For an author-only GitHub review, filter `X-GitHub-Event` to `pull_request`,
+`/repository/owner/login` to the organization, `/pull_request/user/login` to
+the author, `/pull_request/draft` to boolean `false`, and `/action` to
+`opened`, `synchronize`, `reopened`, or `ready_for_review`. Filtering `sender`
+would select whoever caused the event, not the PR author.
+
+Subscribing updates the filters for that inbox/routine pair. It does not change
+the routine's schedule, enabled state, or other subscriptions. Unsubscribe the
+old inbox when switching triggers. Remote routines are rejected.
+
+The optional `secret` and `secret_header` on `create` describe a literal header
+value. They do not validate GitHub's HMAC signatures. Without a shared header,
+the relay authenticates ingestion using the token in the URL. Delivery payloads
+are untrusted data, not instructions.
 
 ### Inbox
 

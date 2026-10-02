@@ -169,6 +169,9 @@ func (s *Server) buildMCPHandlerFor(factoryService factoryService, routineServic
 	}
 	if s.stateDB != nil {
 		deps.ArtifactService = artifactMCPService{s}
+		if routineService != nil {
+			deps.WebhookHandler = http.HandlerFunc(s.handleWebhookInboxes)
+		}
 	}
 	return internalmcp.New(deps).Handler()
 }
