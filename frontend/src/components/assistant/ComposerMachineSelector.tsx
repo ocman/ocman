@@ -1,0 +1,61 @@
+import { useEffect, useState } from 'react';
+import { api } from '../../lib/api';
+import type { ResolveTargetsResponse, TargetCandidate } from '../../lib/api.types';
+import { SelectField } from '../Control';
+
+export function ComposerMachineSelector({ directory, remoteId = 'local', disabled, onSelect }: {
+  directory: string;
+  remoteId?: string;
+  disabled?: boolean;
+  onSelect: (target: TargetCandidate) => Promise<void>;
+}) {
+  const [targets, setTargets] = useState<ResolveTargetsResponse | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let ignore = false;
+    const refresh = () => {
+      api.resolveTargets(directory, remoteId).then((result) => {
+        if (!ignore) { setTargets(result); setError(''); }
+      }).catch(() => {
+        if (!ignore) setError('Could not load machines');
+      });
+    };
+    refresh();
+    window.addEventListener('focus', refresh);
+    return () => { ignore = true; window.removeEventListener('focus', refresh); };
+  }, [directory, remoteId]);
+
+  const remotes = targets?.remotes ?? [];
+  if (remotes.length === 0 && !error) return null;
+  const candidates = targets?.candidates ?? [];
+  const machines = [{ remoteId: 'local', remoteName: 'This machine' }, ...remotes];
+  if (!machines.some((m) => m.remoteId === remoteId)) {
+    machines.push({ remoteId, remoteName: 'Current machine' });
+  }
+  return <>
+    <SelectField
+      aria-label="Session machine"
+      title="Start a new conversation on this machine"
+      className="oc-bar-select"
+      style={{ height: 'auto' }}
+      value={remoteId}
+      disabled={disabled || !targets}
+      onClick={(event) => event.stopPropagation()}
+      onChange={(event) => {
+        const target = candidates.find((c) => c.remoteId === event.target.value);
+        if (!target || target.remoteId === remoteId) return;
+        setError('');
+        void onSelect(target).catch(() => setError('Could not start a session on that machine'));
+      }}
+    >
+      {machines.map((machine) => {
+        const current = machine.remoteId === remoteId;
+        const matched = candidates.some((c) => c.remoteId === machine.remoteId);
+        return <option key={machine.remoteId} value={machine.remoteId} disabled={!current && !matched}>
+          {machine.remoteName}{current ? ' (current)' : !matched ? ' · no matching project' : ''}
+        </option>;
+      })}
+    </SelectField>
+    {error && <span role="alert">{error}</span>}
+  </>;
+}

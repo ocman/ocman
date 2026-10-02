@@ -563,7 +563,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     setSelectedReasoning,
   });
 
-  const { handleNewSessionInDirectory, handleNewSession, handleCompact } = useSessionCreation({
+  const { handleNewSessionInDirectory, handleNewSession, handleCompact, handleMachineChange } = useSessionCreation({
     session,
     portAvailable,
     caps,
@@ -1004,6 +1004,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
                         launching: launchingOpencode,
                         directory: session.directory,
                         newConversation: totalMessages === 0,
+                        remoteId: session.remoteId,
+                        onMachineChange: handleMachineChange,
                         worktreesSupported,
                         permissionControl,
                       } : null}

@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/forge"
+	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/testutil"
 )
@@ -50,6 +53,68 @@ func TestHandleResolveTargets_RequiresDir(t *testing.T) {
 	srv.handleResolveTargets(rr, req)
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rr.Code)
+	}
+}
+
+func TestHandleResolveTargets_RemoteOrigin(t *testing.T) {
+	repo := initOriginRepo(t)
+	srv := testServer(t)
+	withManager(t, srv)
+	srv.projects.mu.Lock()
+	srv.projects.data = []db.ProjectStats{{Directory: repo}}
+	srv.projects.loaded = true
+	srv.projects.mu.Unlock()
+	// The same absolute path on two hosts is not proof of project identity.
+	host := &projectHandleRemoteHost{upstreams: &hostsvc.ProjectUpstreams{
+		RepoRoot: repo,
+		Remotes:  []forge.Remote{{Name: "origin", URL: "git@example.com:org/repo.git"}},
+	}}
+	srv.router().RegisterRemote("rem1", host)
+	for _, tc := range []struct {
+		name, origin string
+		want         int
+	}{
+		{"matching origin", "git@example.com:org/repo.git", 1},
+		{"different origin same path", "git@example.com:other/repo.git", 0},
+		{"no origin", "", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			host.upstreams.Remotes[0].URL = tc.origin
+			rr := httptest.NewRecorder()
+			srv.handleResolveTargets(rr, httptest.NewRequest(http.MethodPost, "/api/sessions/resolve-targets", bytes.NewBufferString(`{"dir":"`+repo+`","remoteId":"rem1"}`)))
+			var resp struct {
+				Candidates []remote.TargetCandidate `json:"candidates"`
+			}
+			if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+				t.Fatal(err)
+			}
+			if rr.Code != http.StatusOK || len(resp.Candidates) != tc.want {
+				t.Fatalf("status %d candidates %+v, want %d", rr.Code, resp.Candidates, tc.want)
+			}
+			if tc.want == 1 && resp.Candidates[0].Dir != repo {
+				t.Fatalf("wrong target: %+v", resp.Candidates)
+			}
+		})
+	}
+}
+
+func TestHandleResolveTargets_RejectsDisconnectedOwner(t *testing.T) {
+	srv := testServer(t)
+	rr := httptest.NewRecorder()
+	srv.handleResolveTargets(rr, httptest.NewRequest(http.MethodPost, "/api/sessions/resolve-targets", bytes.NewBufferString(`{"dir":"/remote/repo","remoteId":"gone"}`)))
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestHandleResolveTargets_RemoteReadFailure(t *testing.T) {
+	srv := testServer(t)
+	withManager(t, srv)
+	srv.router().RegisterRemote("rem1", &projectHandleRemoteHost{upstreamErr: errors.New("offline")})
+	rr := httptest.NewRecorder()
+	srv.handleResolveTargets(rr, httptest.NewRequest(http.MethodPost, "/api/sessions/resolve-targets", bytes.NewBufferString(`{"dir":"/remote/repo","remoteId":"rem1"}`)))
+	if rr.Code != http.StatusBadGateway {
+		t.Fatalf("status %d: %s", rr.Code, rr.Body.String())
 	}
 }
 

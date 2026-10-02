@@ -19,6 +19,7 @@ import { KNOWN_AGENTS, modelHasVariants } from '../../lib/commands/builtinComman
 import { ModalReturnFocusContext } from '../ModalReturnFocusContext';
 import type { ComposerProps } from './composerTypes';
 import { WorktreeStart } from './WorktreeStart';
+import { ComposerMachineSelector } from './ComposerMachineSelector';
 
 export type { AttachedImage } from './useComposerAttachments';
 export type { ComposerHandle } from './composerTypes';
@@ -40,11 +41,13 @@ function ComposerBody({
   tokenStats, estimatedCost, sessionTreeStats, selectedReasoning, onReasoningChange,
   disabledHint, onLaunchRequest, launching, directory, newConversation,
   worktreesSupported, permissionControl, composerRef, target, onTargetChange,
+  remoteId, onMachineChange,
 }: ComposerProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [sending, setSending] = useState(false);
+  const [switchingMachine, setSwitchingMachine] = useState(false);
   const sendingRef = useRef(false);
   const mountedRef = useRef(true);
   const sessionIdRef = useRef(sessionId);
@@ -265,7 +268,7 @@ function ComposerBody({
   useShortcut(dictationShortcut);
   useShortcut(reasoningCycleShortcut);
 
-  const uiDisabled = disabled || sending;
+  const uiDisabled = disabled || sending || switchingMachine;
   const shellQueueID = '__shell__';
   const queueItems = [...(queuedMessages || []), ...(queuedShellCommand ? [{
     id: shellQueueID, text: `!${queuedShellCommand}`, hasImages: false,
@@ -322,6 +325,22 @@ function ComposerBody({
             micError={micError} clearMicError={() => setMicError(null)} isRunning={isRunning} onAbort={onAbort} sending={sending} submit={submit} />
         </div>
         <ComposerFooter directory={directory} newConversation={newConversation} worktreesSupported={worktreesSupported}
+          machineControl={newConversation && directory && onMachineChange && (
+            <ComposerMachineSelector
+              key={`${sessionId}:${directory}:${remoteId}`}
+              directory={directory}
+              remoteId={remoteId}
+              disabled={sending || switchingMachine || images.length > 0 || files.length > 0}
+              onSelect={async (machine) => {
+                setSwitchingMachine(true);
+                try {
+                  await onMachineChange(machine, inputRef.current?.value ?? '');
+                } finally {
+                  setSwitchingMachine(false);
+                }
+              }}
+            />
+          )}
           sessionId={sessionId} disabled={disabled} targetDisabled={uiDisabled} target={target} onTargetChange={onTargetChange} isRunning={isRunning} effectiveAgent={effectiveAgent} agentsLoaded={agentsLoaded}
           agents={agents} tokensPerSecond={tokensPerSecond} onAbort={onAbort} tokenStats={tokenStats} estimatedCost={estimatedCost}
           sessionTreeStats={sessionTreeStats} contextTokens={contextTokens} effectiveModel={effectiveModel}

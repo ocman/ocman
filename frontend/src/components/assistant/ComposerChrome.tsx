@@ -11,6 +11,7 @@ import { TargetSelector } from './ComposerSelectorRow';
 import type { SessionTarget } from './ComposerSelectorRow';
 
 interface ComposerFooterProps {
+  machineControl?: ReactNode;
   directory?: string;
   newConversation?: boolean;
   worktreesSupported?: boolean;
@@ -43,6 +44,7 @@ interface ComposerFooterProps {
 }
 
 export function ComposerFooter({
+  machineControl,
   directory, newConversation, worktreesSupported, target, onTargetChange, targetDisabled, disabled, isRunning,
   effectiveAgent, agentsLoaded, agents, tokensPerSecond, onAbort, tokenStats,
   estimatedCost, sessionTreeStats, contextTokens, effectiveModel, timeCreated,
@@ -62,6 +64,7 @@ export function ComposerFooter({
   return (
     <div className="oc-composer-footer">
       <span className="oc-composer-footer-left">
+        {machineControl}
         {directory && newConversation && (
           <TargetSelector directory={directory} worktreesSupported={!!worktreesSupported} target={target} onTargetChange={onTargetChange} disabled={targetDisabled} />
         )}

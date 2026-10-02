@@ -20,6 +20,7 @@ vi.mock('../../lib/apiStore', () => ({
 
 import { api } from '../../lib/api';
 import { useSessionCreation, type UseSessionCreationOptions } from './useSessionCreation';
+import { getDraft } from '../../lib/composerDraft';
 
 const session = { id: 's1', directory: '/repo/a', platform: 'r-x:opencode', remoteId: 'r-x' } as SessionMetadata;
 
@@ -71,6 +72,28 @@ describe('useSessionCreation', () => {
     const { result } = renderHook(() => useSessionCreation(o));
     await act(() => result.current.handleNewSession('title'));
     expect(o.onCreateError).toHaveBeenCalled();
+    expect(o.navigateToSession).not.toHaveBeenCalled();
+  });
+
+  it('launches on the selected machine and carries the draft to its session', async () => {
+    createSessionWithLaunch.mockResolvedValueOnce({ id: 'remote-new' });
+    const o = opts();
+    const { result } = renderHook(() => useSessionCreation(o));
+    await act(() => result.current.handleMachineChange({ remoteId: 'box', remoteName: 'Box', platform: 'r-box:opencode', dir: '/different/checkout' }, 'unsent prompt'));
+    expect(createSessionWithLaunch).toHaveBeenCalledWith(expect.anything(), {
+      directory: '/different/checkout', remoteId: 'box', platform: 'r-box:opencode',
+    });
+    expect(seedNewSession).toHaveBeenCalledWith('remote-new', '/different/checkout', 'r-box:opencode', undefined, 'box');
+    expect(getDraft('remote-new')).toBe('unsent prompt');
+    expect(o.navigateToSession).toHaveBeenCalledWith('remote-new');
+  });
+
+  it('leaves the current session in place when a machine launch fails', async () => {
+    createSessionWithLaunch.mockRejectedValueOnce(new Error('disconnected'));
+    const o = opts();
+    const { result } = renderHook(() => useSessionCreation(o));
+    await expect(result.current.handleMachineChange({ remoteId: 'box', remoteName: 'Box', platform: 'r-box:opencode', dir: '/remote/repo' }, 'keep me')).rejects.toThrow('disconnected');
+    expect(seedNewSession).not.toHaveBeenCalled();
     expect(o.navigateToSession).not.toHaveBeenCalled();
   });
 

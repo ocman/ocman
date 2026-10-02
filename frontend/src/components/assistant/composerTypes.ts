@@ -2,6 +2,7 @@ import type { ReactNode, Ref } from 'react';
 import type { AgentInfo, SessionModelEntry } from '../../lib/api';
 import type { AttachedImage } from './useComposerAttachments';
 import type { SessionTarget } from './ComposerSelectorRow';
+import type { TargetCandidate } from '../../lib/api.types';
 
 export interface ComposerHandle {
   openModelPicker: (query?: string) => void;
@@ -75,4 +76,6 @@ export interface ComposerProps {
   onTargetChange?: (target: SessionTarget) => void;
   permissionControl?: ReactNode;
   composerRef?: Ref<ComposerHandle>;
+  remoteId?: string;
+  onMachineChange?: (target: TargetCandidate, draft: string) => Promise<void>;
 }

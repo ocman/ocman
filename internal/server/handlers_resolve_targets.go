@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"slices"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -34,6 +35,10 @@ func (s *Server) handleResolveTargets(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "dir is required", http.StatusBadRequest)
 		return
 	}
+	owner, ok := s.resolveOwner(w, req.Dir, req.RemoteID)
+	if !ok {
+		return
+	}
 
 	// With no remote manager (single-host), the only candidate is local.
 	if s.remotes == nil {
@@ -49,14 +54,33 @@ func (s *Server) handleResolveTargets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	origin := localGitOrigin(r, req.Dir)
-	localIdents := s.localProjectMatch(r, req.Dir, origin)
-	candidates := s.remotes.ResolveTargets(req.Dir, origin, localIdents)
-	// Log the resolution so a mis-targeted launch (e.g. a remote path the
-	// hub can't stat, yielding a basename-only identity that matches
-	// nothing) is diagnosable. A remote dir with origin="" here means the
-	// path doesn't exist on the hub — the caller should pass remoteId
-	// directly instead of round-tripping through the resolver.
+	origin := ""
+	matchDir := req.Dir
+	if req.RemoteID != "" && req.RemoteID != "local" {
+		project, err := owner.ProjectUpstreams(r.Context(), req.Dir)
+		if err != nil {
+			http.Error(w, "Could not read the source project's git remotes", http.StatusBadGateway)
+			return
+		}
+		for _, upstream := range project.Remotes {
+			if upstream.Name == "origin" {
+				origin = upstream.URL
+				break
+			}
+		}
+		// Identical paths on different hosts do not identify the same project.
+		matchDir = ""
+	} else {
+		origin = localGitOrigin(r, req.Dir)
+	}
+	candidates := []remote.TargetCandidate{}
+	if matchDir != "" || origin != "" {
+		localIdents := s.localProjectMatch(r, matchDir, origin)
+		candidates = s.remotes.ResolveTargets(req.Dir, origin, localIdents)
+		if origin == "" {
+			candidates = slices.DeleteFunc(candidates, func(c remote.TargetCandidate) bool { return c.RemoteID != "local" })
+		}
+	}
 	log.WithFields(log.Fields{
 		"dir":        req.Dir,
 		"origin":     origin,

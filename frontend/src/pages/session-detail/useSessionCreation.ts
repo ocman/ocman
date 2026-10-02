@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { api } from '../../lib/api';
-import type { PlatformCapabilities } from '../../lib/api';
+import type { PlatformCapabilities, TargetCandidate } from '../../lib/api.types';
+import { saveDraft } from '../../lib/composerDraft';
 import { useApiStore } from '../../lib/apiStore';
 import { createSessionWithLaunch } from '../../lib/createSessionWithLaunch';
 import { projectRootForDirectory } from '../../lib/worktrees';
@@ -25,6 +26,7 @@ export interface UseSessionCreationResult {
   handleNewSessionInDirectory: (directory: string, remoteId?: string, platform?: string, title?: string) => Promise<void>;
   handleNewSession: (title?: string) => Promise<void>;
   handleCompact: () => Promise<void>;
+  handleMachineChange: (target: TargetCandidate, draft: string) => Promise<void>;
 }
 
 /** New-session and `/compact` actions for the open session. */
@@ -78,6 +80,16 @@ export function useSessionCreation({
     await handleNewSessionInDirectory(session.directory, session.remoteId, session.platform, title);
   }, [session, handleNewSessionInDirectory]);
 
+  const handleMachineChange = useCallback(async (target: TargetCandidate, draft: string) => {
+    const res = await createSessionWithLaunch(
+      { createSession, launchOpencodeInTmux, tmuxAvailable },
+      { directory: target.dir, platform: target.platform, remoteId: target.remoteId },
+    );
+    seedNewSession(res.id, res.directory ?? target.dir, target.platform, undefined, target.remoteId);
+    saveDraft(res.id, draft);
+    navigateToSession(res.id);
+  }, [createSession, launchOpencodeInTmux, tmuxAvailable, seedNewSession, navigateToSession]);
+
   const handleCompact = useCallback(async () => {
     if (!session || !portAvailable || !caps.compact) return;
     const model = selectedModel || activeModel || '';
@@ -93,5 +105,5 @@ export function useSessionCreation({
     }
   }, [activeAgent, activeModel, caps.compact, portAvailable, selectedAgent, selectedModel, session, setSelectedAgent]);
 
-  return { handleNewSessionInDirectory, handleNewSession, handleCompact };
+  return { handleNewSessionInDirectory, handleNewSession, handleCompact, handleMachineChange };
 }

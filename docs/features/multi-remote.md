@@ -119,6 +119,15 @@ list with its host badge.
   instance is relaunched on the machine that owns the session, never on
   another machine that happens to have the same directory.
 
+Before a conversation has messages, its composer shows a machine selector
+when a remote is connected. It defaults to the session's current machine.
+Choosing another machine opens a new session in that machine's matching
+checkout and carries over the draft text. Matching uses the Git `origin`
+URL, so checkout paths can differ. Machines without a matching project are
+disabled. Remove any attachments before switching machines; uploaded files
+belong to the original host. Once messages have been sent, the session stays
+on its owner.
+
 ## Managing remotes
 
 The hub's **Settings → Remotes** page lists each attached remote with
