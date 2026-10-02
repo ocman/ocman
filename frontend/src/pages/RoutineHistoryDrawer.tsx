@@ -27,6 +27,24 @@ function mergeNewestPage(newest: RoutineRun[], shown: Shown): Shown {
   return { runs: [...newest, ...shown.runs.filter((run) => !ids.has(run.id) && olderThan(run, last))], exhausted: shown.exhausted };
 }
 
+/**
+ * Run state and session linkage change until a run settles. Retained rows past
+ * the newest page are otherwise never refetched, so re-read the pages covering
+ * any still-running ones (one bounded request per 50 rows), oldest-first cursor.
+ */
+async function refetchRunning(routineId: string, runs: RoutineRun[], from: number): Promise<Map<string, RoutineRun>> {
+  const updates = new Map<string, RoutineRun>();
+  let i = runs.findIndex((run, index) => index >= from && run.state === 'running');
+  while (i > 0) {
+    const page = await api.routines.history(routineId, { limit: HISTORY_PAGE_SIZE, before: runs[i - 1] });
+    for (const run of page) updates.set(run.id, run);
+    if (page.length < HISTORY_PAGE_SIZE) break;
+    const covered = i + page.length;
+    i = runs.findIndex((run, index) => index >= covered && run.state === 'running');
+  }
+  return updates;
+}
+
 type Props = {
   routine: Routine;
   /** Bumped by the page after each list refresh; refetches the newest page. */
@@ -36,7 +54,10 @@ type Props = {
 
 // Mount with key={routine.id} so switching routines starts a fresh history.
 export function RoutineHistoryDrawer({ routine, refreshKey, onClose }: Props) {
-  const [{ runs, exhausted }, setShown] = useState<Shown>({ runs: [], exhausted: false });
+  const [shown, setShown] = useState<Shown>({ runs: [], exhausted: false });
+  const { runs, exhausted } = shown;
+  const shownRef = useRef(shown);
+  useEffect(() => { shownRef.current = shown; }, [shown]);
   const [loaded, setLoaded] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [error, setError] = useState('');
@@ -49,12 +70,17 @@ export function RoutineHistoryDrawer({ routine, refreshKey, onClose }: Props) {
   useEffect(() => {
     if (refreshing.current) return;
     refreshing.current = true;
-    api.routines.history(routine.id, { limit: HISTORY_PAGE_SIZE }).then((newest) => {
+    const refresh = async () => {
+      const newest = await api.routines.history(routine.id, { limit: HISTORY_PAGE_SIZE });
       if (!mounted.current) return;
-      setShown((shown) => mergeNewestPage(newest, shown));
+      const merged = mergeNewestPage(newest, shownRef.current);
+      setShown((current) => mergeNewestPage(newest, current));
       setLoaded(true);
       setError('');
-    }, (err: unknown) => { if (mounted.current) setError(err instanceof Error ? err.message : 'Could not load history.'); })
+      const updates = await refetchRunning(routine.id, merged.runs, newest.length);
+      if (mounted.current && updates.size > 0) setShown((current) => ({ ...current, runs: current.runs.map((run) => updates.get(run.id) ?? run) }));
+    };
+    refresh().catch((err: unknown) => { if (mounted.current) setError(err instanceof Error ? err.message : 'Could not load history.'); })
       .finally(() => { refreshing.current = false; });
   }, [routine.id, refreshKey]);
 

@@ -531,6 +531,38 @@ describe('Routines', () => {
     expect(within(dialog).getAllByText('manual')).toHaveLength(30);
   });
 
+  it('updates retained older runs that were still running, then stops refetching them', async () => {
+    vi.useFakeTimers();
+    let all = Array.from({ length: 60 }, (_, i) => mkRun(`run-${String(60 - i).padStart(2, '0')}`, 100_000 - i * 1_000, { state: 'running' }));
+    vi.mocked(api.routines.history).mockImplementation(async (_id, page) => {
+      const from = page.before ? all.findIndex((run) => run.id === page.before!.id) + 1 : 0;
+      return all.slice(from, from + page.limit);
+    });
+    render(<MemoryRouter><Routines /></MemoryRouter>);
+    await act(async () => {});
+    fireEvent.click(screen.getByText(routine.name).closest('tr')!);
+    await act(async () => {});
+    const dialog = screen.getByRole('dialog', { name: 'Morning check history' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Load older runs' }));
+    await act(async () => {});
+    expect(within(dialog).getAllByText('running')).toHaveLength(60);
+
+    // Everything settles; the oldest run (outside the newest page) fails with a linked session.
+    all = all.map((run) => run.id === 'run-01' ? { ...run, state: 'failure', error: 'agent stopped', platform: 'opencode', sessionId: 'late-session' } : { ...run, state: 'success' });
+    vi.mocked(api.routines.history).mockClear();
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(within(dialog).queryByText('running')).not.toBeInTheDocument();
+    expect(within(dialog).getByText('failure')).toBeInTheDocument();
+    expect(within(dialog).getByText('agent stopped')).toBeInTheDocument();
+    expect(within(dialog).getByRole('link', { name: 'Open' })).toHaveAttribute('href', '/session/late-session?platform=opencode');
+    expect(api.routines.history).toHaveBeenCalledTimes(2);
+    expect(api.routines.history).toHaveBeenLastCalledWith(routine.id, { limit: 50, before: expect.objectContaining({ id: 'run-11' }) });
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(api.routines.history).toHaveBeenCalledTimes(3);
+    expect(within(dialog).getAllByRole('row')).toHaveLength(61);
+  });
+
   it('shows a history load error inside the drawer', async () => {
     vi.mocked(api.routines.history).mockRejectedValue(new Error('history failed'));
     const user = userEvent.setup();
