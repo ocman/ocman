@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { chromeURL, installExternalLinks, isIOS, setOpenInChrome } from './externalLinks'
 
 const BASE = 'https://ocman.local:8228/sessions'
@@ -31,19 +31,56 @@ describe('isIOS', () => {
 })
 
 describe('installExternalLinks', () => {
-  afterEach(() => { localStorage.clear(); document.body.innerHTML = '' })
+  // Same origin as jsdom's document, so relative hrefs resolve consistently.
+  const HERE = window.location.href
+  const loc = { href: HERE }
+  beforeAll(() => installExternalLinks())
+  beforeEach(() => {
+    loc.href = HERE
+    vi.stubGlobal('location', loc)
+    setOpenInChrome(true)
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+    localStorage.clear()
+    document.body.innerHTML = ''
+  })
+
+  const asIOS = () => vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (iPhone)')
+
+  // Dispatches a click on the link; returns whether the listener cancelled it.
+  function click(html: string, init: MouseEventInit = {}): boolean {
+    document.body.innerHTML = html
+    const ev = new MouseEvent('click', { bubbles: true, cancelable: true, ...init })
+    // Cancel at the target as well so jsdom never tries to navigate.
+    const a = document.querySelector('a')!
+    let prevented = false
+    a.addEventListener('click', (e) => { prevented = e.defaultPrevented; e.preventDefault() })
+    a.dispatchEvent(ev)
+    return prevented
+  }
 
   it('ignores the saved setting off iOS', () => {
-    // jsdom is not iOS, so a restored "on" must not intercept the click.
-    setOpenInChrome(true)
-    installExternalLinks()
-    document.body.innerHTML = '<a href="https://github.com/">x</a>'
-    let prevented: boolean | undefined
-    // Record, then cancel, so jsdom does not try to navigate.
-    const stop = (e: Event) => { prevented = e.defaultPrevented; e.preventDefault() }
-    window.addEventListener('click', stop)
-    document.querySelector('a')!.click()
-    window.removeEventListener('click', stop)
-    expect(prevented).toBe(false)
+    expect(click('<a href="https://github.com/">x</a>')).toBe(false)
+    expect(loc.href).toBe(HERE)
+  })
+
+  it('opens external links in Chrome even when an ancestor stops propagation', () => {
+    asIOS()
+    document.body.innerHTML = '<div id="stop"><a href="https://github.com/a">x</a></div>'
+    document.getElementById('stop')!.addEventListener('click', (e) => e.stopPropagation())
+    const a = document.querySelector('a')!
+    const ev = new MouseEvent('click', { bubbles: true, cancelable: true })
+    a.addEventListener('click', (e) => e.preventDefault())
+    a.dispatchEvent(ev)
+    expect(loc.href).toBe('googlechromes://github.com/a')
+  })
+
+  it('leaves modifier clicks and same-origin links alone on iOS', () => {
+    asIOS()
+    expect(click('<a href="https://github.com/">x</a>', { metaKey: true })).toBe(false)
+    expect(click('<a href="/settings">x</a>')).toBe(false)
+    expect(loc.href).toBe(HERE)
   })
 })

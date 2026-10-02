@@ -54,15 +54,19 @@ export function rewriteExternal(href: string): string | null {
   return chromeURL(href, location.href)
 }
 
-/** Install the one delegated click listener. Call once at startup. */
+/**
+ * Install the one delegated click listener. Call once at startup. It runs in
+ * the capture phase so React handlers that stopPropagation (PR/Issue
+ * open-in-browser icons, links inside dialogs) cannot hide the click.
+ */
 export function installExternalLinks(doc: Document = document): void {
   doc.addEventListener('click', (e) => {
-    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
     const a = (e.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null
     if (!a) return
     const chrome = rewriteExternal(a.href)
     if (!chrome) return
     e.preventDefault()
     location.href = chrome
-  })
+  }, true)
 }
