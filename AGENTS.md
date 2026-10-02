@@ -13,6 +13,15 @@ Platforms are wired through a common `Platform` adapter interface
 new adapter + registry entry; see
 `spec/multi-agent-support/architecture.md` for the design.
 
+New conversations in the main checkout default to an automatically named
+worktree. `WorktreeStart` resolves repository status from the git-info branch
+and queries the owning host's worktrees before the first execution. An empty
+session already in a linked worktree stays on that selected workspace, including
+after reload; non-repositories stay in their current directory. Prompts, custom
+slash commands, and shell submissions share the same target resolution, while
+ocman UI/session commands retain their existing handlers. Worktree naming uses
+the owner's `small_model` or Haiku with a unique fallback, without a naming form.
+
 Ocman also supports **on-demand OpenCode worktree sessions** via the
 `/wt` command in the command palette and the per-project Worktrees
 view (`/project/<dir>/worktrees`). The feature shells out to

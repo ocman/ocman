@@ -12,9 +12,9 @@ export interface ComposerProps {
   /** Ctrl/Cmd+Enter holds the prompt for the next idle edge. */
   onSend?: (text: string, images?: AttachedImage[], queue?: boolean) => void | Promise<void>;
   onRetryChange?: (delaySeconds: number | null) => void;
-  onCommand?: (command: string, args: string) => void;
+  onCommand?: (command: string, args: string) => void | Promise<void>;
   /** Shell commands arrive with the leading ! removed. */
-  onShell?: (command: string) => void;
+  onShell?: (command: string) => void | Promise<void>;
   shellExec?: boolean;
   queuedShellCommand?: string | null;
   onCancelQueuedShell?: () => void;

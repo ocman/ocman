@@ -5,9 +5,11 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComposerProps } from './composerTypes';
 
-const mocks = vi.hoisted(() => ({ session: vi.fn(), info: vi.fn(), create: vi.fn(), send: vi.fn(), seed: vi.fn() }));
+const mocks = vi.hoisted(() => ({ session: vi.fn(), info: vi.fn(), worktrees: vi.fn(), create: vi.fn(), send: vi.fn(), seed: vi.fn() }));
 vi.mock('../../lib/api', () => ({
-  api: { session: mocks.session, sendMessage: mocks.send }, fetchJSON: mocks.info, postJSON: mocks.create,
+  api: { session: mocks.session, sendMessage: mocks.send },
+  fetchJSON: (url: string, signal?: AbortSignal) => url.startsWith('/api/worktree/list') ? mocks.worktrees(url, signal) : mocks.info(url, signal),
+  postJSON: mocks.create,
 }));
 vi.mock('../../lib/apiStore', () => ({ useApiStore: { getState: () => ({ seedNewSession: mocks.seed }) } }));
 import { WorktreeStart } from './WorktreeStart';
@@ -30,6 +32,7 @@ describe('automatic worktree start', () => {
     vi.clearAllMocks();
     mocks.session.mockResolvedValue({ session: { id: 'parent', platform: 'r-machine:opencode', remoteId: 'machine' } });
     mocks.info.mockResolvedValue({ '/repo': { branch: 'main' } });
+    mocks.worktrees.mockResolvedValue({ worktrees: [{ path: '/repo', branch: 'main', main: true }] });
     mocks.create.mockResolvedValue({ sessionId: 'child', worktreePath: '/worktrees/fix', branch: 'fix-1234' });
     mocks.send.mockResolvedValue(undefined);
   });
@@ -82,13 +85,33 @@ describe('automatic worktree start', () => {
   });
 
   it('uses the current directory for a non-repository', async () => {
-    mocks.info.mockResolvedValue({});
+    mocks.info.mockResolvedValue({ '/repo': { branch: '', ahead: 0, behind: 0, dirty: false } });
     mount();
     await waitFor(() => expect(composer.disabled).toBe(false));
     expect(composer.worktreesSupported).toBe(false);
     await act(() => composer.onSend!('hello'));
     expect(originalSend).toHaveBeenCalledWith('hello', undefined, undefined);
     expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it('preserves the workspace selected by manual worktree creation, including after reload', async () => {
+    mocks.info.mockResolvedValue({ '/repo/feature': { branch: 'feature', ahead: 0, behind: 0, dirty: false } });
+    mocks.worktrees.mockResolvedValue({ worktrees: [
+      { path: '/repo', branch: 'main', main: true },
+      { path: '/repo/feature', branch: 'feature', main: false },
+    ] });
+    const view = mount({ directory: '/repo/feature' });
+    await waitFor(() => expect(composer.disabled).toBe(false));
+    expect(composer.target).toBe('current');
+    expect(composer.worktreesSupported).toBe(false);
+    await act(() => composer.onSend!('Continue feature'));
+    expect(originalSend).toHaveBeenCalledWith('Continue feature', undefined, undefined);
+    expect(mocks.create).not.toHaveBeenCalled();
+    view.unmount();
+    mount({ directory: '/repo/feature' });
+    await waitFor(() => expect(composer.disabled).toBe(false));
+    expect(composer.target).toBe('current');
+    expect(mocks.worktrees).toHaveBeenCalledWith('/api/worktree/list?dir=%2Frepo%2Ffeature&remoteId=machine', expect.any(AbortSignal));
   });
 
   it('leaves an established conversation on its existing send path', async () => {

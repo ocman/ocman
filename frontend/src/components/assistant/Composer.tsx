@@ -3,7 +3,7 @@ import './Composer.css';
 import { useComposerDrafts } from './useComposerDrafts';
 import { useShortcut } from '../../lib/shortcutRegistry';
 import { BackendUnavailableError, type SlashCommand } from '../../lib/api';
-import { useComposerAttachments, type AttachedImage } from './useComposerAttachments';
+import { useComposerAttachments } from './useComposerAttachments';
 import { useSlashMenu } from './useSlashMenu';
 import { useComposerPickers } from './useComposerPickers';
 import { useRunningDuration } from './useRunningDuration';
@@ -136,7 +136,7 @@ function ComposerBody({
     if (sid) clearDraftNow(sid);
   };
 
-  const runSend = async (text: string, imgs?: AttachedImage[], queue?: boolean) => {
+  const runSubmit = async (execute: () => void | Promise<void>, retryBackend = false) => {
     const el = inputRef.current;
     if (!el) return;
     const hadFocus = document.activeElement === el;
@@ -147,11 +147,12 @@ function ComposerBody({
     const MAX_BACKEND_RETRIES = 5;
     while (mountedRef.current) {
       try {
-        await onSend?.(text, imgs, queue);
+        const submitted = execute();
+        if (submitted) await submitted;
         clearAfterSubmit();
         break;
       } catch (err) {
-        if (!(err instanceof BackendUnavailableError) || retries >= MAX_BACKEND_RETRIES) break;
+        if (!retryBackend || !(err instanceof BackendUnavailableError) || retries >= MAX_BACKEND_RETRIES) break;
         retries += 1;
         const delaySeconds = 2 ** (retries - 1);
         onRetryChange?.(delaySeconds);
@@ -185,14 +186,12 @@ function ComposerBody({
     const withFileReferences = (text: string) => [text, attachments.fileReferenceText].filter(Boolean).join('\n\n');
     if (route.kind === 'command' && onCommand) {
       if (openClientCommand(route.command, route.args)) return;
-      onCommand(route.command, route.args);
-      clearAfterSubmit();
+      void runSubmit(() => onCommand(route.command, route.args));
     } else if (route.kind === 'shell' && onShell) {
-      onShell(route.command);
-      clearAfterSubmit();
+      void runSubmit(() => onShell(route.command));
     } else {
       const text = route.kind === 'send' ? route.text : route.kind === 'noop' ? '' : raw.trim();
-      void runSend(withFileReferences(text), images.length > 0 ? images : undefined, queue);
+      void runSubmit(() => onSend?.(withFileReferences(text), images.length > 0 ? images : undefined, queue), true);
     }
   };
 

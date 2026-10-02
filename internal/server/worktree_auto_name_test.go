@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 )
 
@@ -45,5 +46,38 @@ func TestWorktreeAutomaticNameRejectsDisconnectedOwner(t *testing.T) {
 	srv.handleWorktreeCreateAndLaunch(w, r)
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
+	}
+}
+
+type selectedWorkspaceOwner struct {
+	hostsvc.Host
+	calls int
+}
+
+func (h *selectedWorkspaceOwner) ListWorktrees(context.Context, string) ([]git.Worktree, error) {
+	h.calls++
+	return []git.Worktree{{Path: "/repo/feature", Branch: "feature"}}, nil
+}
+
+func TestWorktreeListResolvesSelectedWorkspaceOnExplicitOwner(t *testing.T) {
+	local, remote := &selectedWorkspaceOwner{}, &selectedWorkspaceOwner{}
+	srv := &Server{hostRouter: hostsvc.NewRouter(local)}
+	srv.hostRouter.RegisterRemote("machine", remote)
+	for _, tc := range []struct {
+		owner  string
+		status int
+	}{
+		{"machine", http.StatusOK},
+		{"gone", http.StatusServiceUnavailable},
+	} {
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodGet, "/api/worktree/list?dir=/repo/feature&remoteId="+tc.owner, nil)
+		srv.handleWorktreeList(w, r)
+		if w.Code != tc.status {
+			t.Fatalf("owner %s: status %d, want %d: %s", tc.owner, w.Code, tc.status, w.Body.String())
+		}
+	}
+	if local.calls != 0 || remote.calls != 1 {
+		t.Fatalf("wrong owner called: local=%d remote=%d", local.calls, remote.calls)
 	}
 }
