@@ -309,7 +309,11 @@ const sessionsTTL = 15 * time.Second
 // quickly a change is picked up in between.
 const sessionsReconcileInterval = 5 * time.Minute
 
-const sessionsDemandRetry = 4 * time.Second
+// sessionsDemandRetry is how long the refresher waits before re-checking
+// demand, and the cooldown after a failed pass so a fast-failing database
+// is retried at this pace instead of in a tight loop. A var only so tests
+// can shorten it.
+var sessionsDemandRetry = 4 * time.Second
 
 // sessionsFlightKey is the single singleflight slot for the snapshot
 // refresh. One constant key is correct because there is exactly one
@@ -464,12 +468,22 @@ func StartSessionsRefresher(ctx context.Context, d dbGetSessions, hasDemand func
 	sessionsRefreshWG.Add(1)
 	go func() {
 		defer sessionsRefreshWG.Done()
+		// A failed pass leaves its dirty work queued and lastFullRefresh
+		// unchanged, so the next reconcile delay would be zero. Hold every
+		// path (startup, event, timer) off until retryAt instead.
+		var retryAt time.Time
+		refresh := func() time.Duration {
+			if _, err := refreshSessionsIncremental(ctx, d); err != nil {
+				retryAt = time.Now().Add(sessionsDemandRetry)
+				return sessionsDemandRetry
+			}
+			return nextSessionsReconcileDelay()
+		}
 		delay := sessionsDemandRetry
 		if hasDemand == nil || hasDemand("sessions") {
 			// Warm immediately so the first request after startup hits cache.
 			// The snapshot is cold, so this pass is a full scan.
-			refreshSessionsIncremental(ctx, d)
-			delay = nextSessionsReconcileDelay()
+			delay = refresh()
 		}
 		timer := time.NewTimer(delay)
 		defer timer.Stop()
@@ -482,18 +496,21 @@ func StartSessionsRefresher(ctx context.Context, d dbGetSessions, hasDemand func
 					resetTimer(timer, sessionsDemandRetry)
 					continue
 				}
+				if time.Now().Before(retryAt) {
+					// Cooling down after a failure; the timer is already
+					// set for retryAt and the dirty work is still queued.
+					continue
+				}
 				if !waitForSessionsRefreshBudget(ctx) {
 					return
 				}
-				refreshSessionsIncremental(ctx, d)
-				resetTimer(timer, nextSessionsReconcileDelay())
+				resetTimer(timer, refresh())
 			case <-timer.C:
 				if hasDemand != nil && !hasDemand("sessions") {
 					resetTimer(timer, sessionsDemandRetry)
 					continue
 				}
-				refreshSessionsIncremental(ctx, d)
-				resetTimer(timer, nextSessionsReconcileDelay())
+				resetTimer(timer, refresh())
 			}
 		}
 	}()
@@ -655,13 +672,12 @@ func getSessionsCached(ctx context.Context, d dbGetSessions, directory string, s
 	if have && !invalidated {
 		// Stale-while-revalidate: the last good snapshot answers now,
 		// one background refresh (singleflighted, so concurrent stale
-		// readers share it) replaces it later. A failed refresh leaves
-		// the snapshot expired, so the next read retries.
-		sessionsRefreshWG.Add(1)
-		go func() {
-			defer sessionsRefreshWG.Done()
-			_, _ = refreshSessions(context.Background(), d)
-		}()
+		// readers share it) replaces it later. The refresh is
+		// incremental: with nothing dirty it only renews freshness, and
+		// it escalates to a full scan when the reconciliation is due. A
+		// failed refresh leaves the snapshot expired, so the next read
+		// retries.
+		startBackgroundSessionsRefresh(d)
 		return filterSessions(snapshot, directory, since), nil
 	}
 
@@ -755,31 +771,6 @@ func refreshSessionNow(ctx context.Context, d dbGetSessions, sessionID string) e
 	}
 }
 
-// refreshSessions runs the global unfiltered GetSessions query and
-// overwrites the snapshot on success. Concurrent callers coalesce
-// through the one singleflight slot, so an in-flight refresh is never
-// duplicated. The snapshot is only replaced on success, so a
-// slow/failed fetch leaves the previous good value in place for
-// getSessionsCached's stale-on-busy fallback.
-func refreshSessions(ctx context.Context, d dbGetSessions) ([]db.Session, error) {
-	if afterTopLevelMiss != nil {
-		afterTopLevelMiss()
-	}
-	return doSessionsFlight(ctx, func() ([]db.Session, error) {
-		// Re-check inside the flight slot: a concurrent caller may
-		// have just refreshed it.
-		sessionsMu.RLock()
-		if sessionsHave && !time.Now().After(sessionsExpiresAt) {
-			out := sessionsSnapshot
-			sessionsMu.RUnlock()
-			return out, nil
-		}
-		sessionsMu.RUnlock()
-
-		return runFullSessionsRefresh(context.WithoutCancel(ctx), d)
-	})
-}
-
 // refreshSessionsIncremental brings the snapshot up to date with the
 // least work that is still exact. It recomputes the sessions the event
 // stream marked dirty and merges them; it escalates to a full scan when
@@ -787,7 +778,7 @@ func refreshSessions(ctx context.Context, d dbGetSessions) ([]db.Session, error)
 // attributed to a session, when an explicit invalidation is pending, or
 // when the periodic reconciliation is due.
 //
-// It shares refreshSessions' singleflight slot, so an incremental pass
+// It shares the request path's singleflight slot, so an incremental pass
 // and a full one can never run against the snapshot at the same time.
 func refreshSessionsIncremental(ctx context.Context, d dbGetSessions) ([]db.Session, error) {
 	if afterTopLevelMiss != nil {

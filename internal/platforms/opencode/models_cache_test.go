@@ -608,6 +608,14 @@ func expireSessionsCache() {
 	sessionsMu.Unlock()
 }
 
+// expireSessionsCacheForScan expires the snapshot and makes the periodic
+// reconciliation due, so the background revalidation is a real full scan
+// rather than the query-free freshness renewal of a clean expiry.
+func expireSessionsCacheForScan() {
+	expireSessionsCache()
+	makeReconcileDue()
+}
+
 // drainSessionsRefresh blocks until every background refresh this
 // package started has finished. Tests use it instead of sleeping, both
 // to assert post-refresh state deterministically and to stop one test's
@@ -724,7 +732,7 @@ func TestGetSessionsCached_StaleReadReturnsWhileBackgroundRefreshRuns(t *testing
 	if _, err := getSessionsCached(t.Context(), d, "", 0); err != nil {
 		t.Fatalf("warm: %v", err)
 	}
-	expireSessionsCache()
+	expireSessionsCacheForScan()
 	release := make(chan struct{})
 	d.set([]db.Session{{ID: "fresh"}}, nil, release)
 
@@ -757,7 +765,7 @@ func TestGetSessionsCached_ConcurrentStaleReadsStartOneRefresh(t *testing.T) {
 	if _, err := getSessionsCached(t.Context(), d, "", 0); err != nil {
 		t.Fatalf("warm: %v", err)
 	}
-	expireSessionsCache()
+	expireSessionsCacheForScan()
 	release := make(chan struct{})
 	d.set([]db.Session{{ID: "fresh"}}, nil, release)
 
@@ -799,7 +807,7 @@ func TestGetSessionsCached_FailedBackgroundRefreshRetainsStaleAndRetries(t *test
 	if _, err := getSessionsCached(t.Context(), d, "", 0); err != nil {
 		t.Fatalf("warm: %v", err)
 	}
-	expireSessionsCache()
+	expireSessionsCacheForScan()
 	releaseFailure := make(chan struct{})
 	d.set(nil, errors.New("database is locked"), releaseFailure)
 
@@ -885,7 +893,7 @@ func TestInvalidateSessionsCache_ForcesSynchronousFreshRead(t *testing.T) {
 
 	// The successful refresh clears the invalidation, so plain TTL
 	// expiry is non-blocking again.
-	expireSessionsCache()
+	expireSessionsCacheForScan()
 	blockNext := make(chan struct{})
 	d.set([]db.Session{{ID: "newer"}}, nil, blockNext)
 	stale := readSessionsAsync(d, "")
@@ -1224,7 +1232,7 @@ func TestGetSessionsCached_ServesStaleOnError(t *testing.T) {
 	}
 
 	// Expire the snapshot and make the DB start failing.
-	expireSessionsCache()
+	expireSessionsCacheForScan()
 	d.setErr(errors.New("database is locked"))
 
 	got, err := getSessionsCached(t.Context(), d, "/repo", 0)
@@ -1255,8 +1263,9 @@ func TestGetSessionsCached_ExpiresAfterTTL(t *testing.T) {
 		t.Fatalf("first call: %v", err)
 	}
 
-	// Force the snapshot to expire.
-	expireSessionsCache()
+	// Force the snapshot to expire with the reconciliation due; a clean
+	// expiry runs no query (TestGetSessionsCached_CleanTTLExpiryRunsNoQuery).
+	expireSessionsCacheForScan()
 
 	if _, err := getSessionsCached(t.Context(), d, "/repo", 0); err != nil {
 		t.Fatalf("second call: %v", err)

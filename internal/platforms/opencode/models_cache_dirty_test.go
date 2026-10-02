@@ -33,6 +33,7 @@ type fakeSessionStore struct {
 	readMu     sync.Mutex
 	summaryIDs []string
 	summaryErr error
+	fullErr    error
 }
 
 func newFakeSessionStore(rows ...db.Session) *fakeSessionStore {
@@ -63,7 +64,19 @@ func listed(s db.Session) bool {
 
 func (f *fakeSessionStore) GetSessions(context.Context, string, int64) ([]db.Session, error) {
 	f.fullScans.Add(1)
+	f.readMu.Lock()
+	err := f.fullErr
+	f.readMu.Unlock()
+	if err != nil {
+		return nil, err
+	}
 	return f.listRows(), nil
+}
+
+func (f *fakeSessionStore) failFullScans(err error) {
+	f.readMu.Lock()
+	defer f.readMu.Unlock()
+	f.fullErr = err
 }
 
 // listRows is GetSessions without the call accounting, so a test can
