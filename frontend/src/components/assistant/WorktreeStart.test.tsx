@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComposerProps } from './composerTypes';
+import { useWorktreeSubmission } from './worktreeSubmission';
 
 const mocks = vi.hoisted(() => ({ session: vi.fn(), info: vi.fn(), worktrees: vi.fn(), create: vi.fn(), send: vi.fn(), seed: vi.fn() }));
 vi.mock('../../lib/api', () => ({
@@ -30,6 +31,7 @@ function mount(extra: Partial<ComposerProps> = {}) {
 describe('automatic worktree start', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useWorktreeSubmission.setState({ entries: {} });
     mocks.session.mockResolvedValue({ session: { id: 'parent', platform: 'r-machine:opencode', remoteId: 'machine' } });
     mocks.info.mockResolvedValue({ '/repo': { branch: 'main' } });
     mocks.worktrees.mockResolvedValue({ worktrees: [{ path: '/repo', branch: 'main', main: true }] });
@@ -54,15 +56,22 @@ describe('automatic worktree start', () => {
     expect(originalSend).not.toHaveBeenCalled();
   });
 
-  it('retains the created worktree when sending fails and the user retries', async () => {
+  it('retains the submission on the child when sending fails and the user retries', async () => {
     mocks.send.mockRejectedValueOnce(new Error('send failed'));
-    mount();
+    const images = [{ url: 'data:image/png;base64,abc', mime: 'image/png' }];
+    const view = mount();
     await waitFor(() => expect(composer.disabled).toBe(false));
-    await act(async () => { await expect(composer.onSend!('Fix login')).rejects.toThrow('send failed'); });
+    await act(() => composer.onSend!('Fix login', images));
+    expect(screen.getByText('/session/child')).toBeInTheDocument();
+    view.unmount();
+    mount({ sessionId: 'child', directory: '/worktrees/fix', selectedModel: 'other/model', selectedAgent: 'build', selectedReasoning: 'low' });
+    await waitFor(() => expect(composer.disabled).toBe(false));
     expect(screen.getByRole('alert')).toHaveTextContent('send failed');
-    await act(() => composer.onSend!('Fix login'));
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
     expect(mocks.create).toHaveBeenCalledTimes(1);
     expect(mocks.send).toHaveBeenCalledTimes(2);
+    expect(mocks.send).toHaveBeenLastCalledWith('child', 'Fix login', images, 'provider/big', 'plan', 'high', 'r-machine:opencode', undefined);
   });
 
   it('keeps a creation error visible without sending to the original checkout', async () => {

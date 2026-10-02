@@ -1,14 +1,16 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useParams, useLocation } from 'react-router-dom';
 import { Composer } from './Composer';
+import { useWorktreeSubmission } from './worktreeSubmission';
 
 const originalCommand = vi.fn();
 const originalShell = vi.fn();
 let requests: { path: string; body: Record<string, unknown> }[];
 let creation: Promise<Response> | undefined;
 let executionFailure: boolean;
+let execution: Promise<Response> | undefined;
 const json = (value: unknown) => new Response(JSON.stringify(value), { headers: { 'Content-Type': 'application/json' } });
 
 beforeEach(() => {
@@ -16,7 +18,9 @@ beforeEach(() => {
   requests = [];
   creation = undefined;
   executionFailure = false;
+  execution = undefined;
   localStorage.clear();
+  useWorktreeSubmission.setState({ entries: {} });
   Element.prototype.scrollIntoView = vi.fn();
   vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
     const path = String(input);
@@ -26,21 +30,32 @@ beforeEach(() => {
         return creation ?? json({ sessionId: 'child', worktreePath: '/worktrees/fix', branch: 'fix-1234' });
       }
       if (executionFailure) return new Response('backend unavailable', { status: 503 });
+      if (execution) return execution;
       return new Response(null, { status: 204 });
     }
-    if (path.startsWith('/api/git/info')) return json({ '/repo': { branch: 'main', ahead: 0, behind: 0, dirty: false } });
-    if (path.startsWith('/api/worktree/list')) return json({ worktrees: [{ path: '/repo', main: true, branch: 'main' }] });
+    if (path.startsWith('/api/git/info')) return json({ '/repo': { branch: 'main', ahead: 0, behind: 0, dirty: false }, '/worktrees/fix': { branch: 'fix-1234' } });
+    if (path.startsWith('/api/worktree/list')) return json({ worktrees: [{ path: '/repo', main: true, branch: 'main' }, { path: '/worktrees/fix', main: false, branch: 'fix-1234' }] });
     if (path.includes('/commands')) return json([{ name: 'implement', description: 'Implement a feature' }]);
-    if (path.startsWith('/api/session/parent')) return json({ session: { id: 'parent', directory: '/repo', remoteId: 'machine', platform: 'r-machine:opencode' } });
+    if (path.startsWith('/api/session/')) {
+      const id = path.split('/')[3].split('?')[0];
+      return json({ session: { id, directory: id === 'parent' ? '/repo' : '/worktrees/fix', remoteId: 'machine', platform: 'r-machine:opencode' } });
+    }
     return json([]);
   }));
 });
 afterEach(() => vi.unstubAllGlobals());
 
-async function start() {
-  render(<MemoryRouter><Composer sessionId="parent" directory="/repo" newConversation worktreesSupported
+function SessionComposer() {
+  const { id } = useParams();
+  return <><output>{useLocation().pathname}</output><Composer sessionId={id} directory={id === 'parent' ? '/repo' : '/worktrees/fix'} newConversation worktreesSupported
     isRunning={false} shellExec selectedModel="provider/big" selectedAgent="plan" selectedReasoning="high"
-    onCommand={originalCommand} onShell={originalShell} /></MemoryRouter>);
+    onCommand={originalCommand} onShell={originalShell} onAbort={() => {}} /></>;
+}
+
+async function start() {
+  render(<MemoryRouter initialEntries={['/session/parent']}><Routes>
+    <Route path="/session/:id" element={<SessionComposer />} />
+  </Routes></MemoryRouter>);
   await waitFor(() => expect(screen.getByRole('textbox')).toBeEnabled());
 }
 
@@ -50,6 +65,18 @@ function submit(text: string) {
 }
 
 describe('composer worktree execution', () => {
+  it.each(['/implement login', '!sleep 60', 'Fix login'])('opens the child while %s is still executing', async (text) => {
+    let finish!: (response: Response) => void;
+    execution = new Promise((resolve) => { finish = resolve; });
+    await start();
+    submit(text);
+    await waitFor(() => expect(requests).toHaveLength(2));
+    expect(screen.getByText('/session/child')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Stop generation' })).toBeInTheDocument();
+    await act(async () => { finish(new Response(null, { status: 204 })); });
+    await waitFor(() => expect(screen.getByRole('textbox')).toBeEnabled());
+    expect(screen.getByRole('textbox')).toHaveValue('');
+  });
   it.each([
     ['/implement login', 'command', { command: 'implement', arguments: 'login', model: 'provider/big', agent: 'plan', reasoning: 'high' }],
     ['!touch feature.txt', 'shell', { command: 'touch feature.txt', agent: 'plan' }],
@@ -91,12 +118,14 @@ describe('composer worktree execution', () => {
     await start();
     submit(text);
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
-    expect(screen.getByRole('textbox')).toBeEnabled();
-    expect(screen.getByRole('textbox')).toHaveValue(text);
+    await waitFor(() => expect(screen.getByRole('textbox')).toBeEnabled());
+    expect(screen.getByText('/session/child')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent(text);
+    expect(useWorktreeSubmission.getState().entries.child.text).toBe(text);
     expect(requests).toHaveLength(2);
     executionFailure = false;
-    submit(text);
-    await waitFor(() => expect(screen.getByRole('textbox')).toHaveValue(''));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
     expect(requests.filter((request) => request.path.startsWith('/api/worktree/create-and-launch'))).toHaveLength(1);
     expect(requests).toHaveLength(3);
   });

@@ -430,7 +430,11 @@ flowchart TD
   worktree list. Sessions already in a linked worktree keep that selected
   workspace, even after reload. Prompts, custom slash commands, and shell
   submissions share target resolution before executing on the returned session;
-  ocman UI/session commands retain their existing handlers. The host generates
+  ocman UI/session commands retain their existing handlers. The child opens
+  immediately after creation. Its first submission and any execution failure
+  stay in child-keyed client state, keeping the transcript, approval controls,
+  and explicit retry available while the request is pending or has failed.
+  The host generates
   a branch name using its configured `small_model`
   or Haiku, in a temporary tool-denied session, and appends a unique suffix.
   Naming failures use `session-<suffix>` without opening a form. Users can

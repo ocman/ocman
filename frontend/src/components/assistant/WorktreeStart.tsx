@@ -6,6 +6,7 @@ import { BUILTIN_COMMANDS } from '../../lib/commands/builtinCommands';
 import type { ComposerProps } from './composerTypes';
 import type { SessionTarget } from './ComposerSelectorRow';
 import { InlineAlert } from '../InlineAlert';
+import { clearWorktreeSubmission, startWorktreeSubmission, useWorktreeSubmission } from './worktreeSubmission';
 
 export function WorktreeStart({ children, ...props }: ComposerProps & {
   children: (props: ComposerProps) => ReactNode;
@@ -19,6 +20,7 @@ export function WorktreeStart({ children, ...props }: ComposerProps & {
   const created = useRef<WorktreeCreateResponse | undefined>(undefined);
   const inFlight = useRef(false);
   const { sessionId, directory, newConversation } = props;
+  const submission = useWorktreeSubmission((state) => state.entries[sessionId ?? '']);
 
   useEffect(() => {
     if (!newConversation) return;
@@ -52,12 +54,16 @@ export function WorktreeStart({ children, ...props }: ComposerProps & {
     current: () => void | Promise<void>,
     execute: (sessionId: string, platform: string) => Promise<void>,
   ) => {
-    if (!newConversation) return current();
+    const runCurrent = () => {
+      clearWorktreeSubmission(sessionId!);
+      return current();
+    };
+    if (!newConversation) return runCurrent();
     if (routeSessionId !== undefined && routeSessionId !== sessionId) {
       throw new Error('Session changed; wait for the current conversation to load');
     }
     if (!resolved) throw new Error('Session target is still loading');
-    if (!resolved.canCreate || target === 'current') return current();
+    if (!resolved.canCreate || target === 'current') return runCurrent();
     if (inFlight.current) return;
     inFlight.current = true;
     setError('');
@@ -76,9 +82,9 @@ export function WorktreeStart({ children, ...props }: ComposerProps & {
       }
       const child = created.current;
       if (!child.sessionId) throw new Error('Worktree creation returned no session');
-      await execute(child.sessionId, session.platform);
       useApiStore.getState().seedNewSession(child.sessionId, child.worktreePath, session.platform, child.branch, session.remoteId || 'local');
       navigate(`/session/${encodeURIComponent(child.sessionId)}`);
+      startWorktreeSubmission(child.sessionId, text, () => execute(child.sessionId!, session.platform));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       throw err;
@@ -110,11 +116,15 @@ export function WorktreeStart({ children, ...props }: ComposerProps & {
 
   return <>
     {error && <InlineAlert onRetry={!resolved ? () => { setError(''); setAttempt((value) => value + 1); } : undefined}>{error}</InlineAlert>}
+    {submission?.error && <InlineAlert onRetry={() => startWorktreeSubmission(sessionId!, submission.text, submission.execute)}>
+      {submission.error} First submission: <code>{submission.text}</code>
+    </InlineAlert>}
     {children({ ...props, onSend,
       onCommand: props.onCommand ? onCommand : undefined, onShell: props.onShell ? onShell : undefined,
       target: resolved && !resolved.canCreate ? 'current' : target, onTargetChange: setTarget,
       worktreesSupported: resolved?.canCreate ?? true,
-      disabled: props.disabled || (!!newConversation && !resolved),
+      isRunning: props.isRunning || !!submission?.pending,
+      disabled: props.disabled || !!submission?.pending || (!!newConversation && !resolved),
       disabledHint: newConversation && !resolved ? 'Checking session target…' : props.disabledHint,
       onLaunchRequest: !newConversation || resolved ? props.onLaunchRequest : undefined,
     })}

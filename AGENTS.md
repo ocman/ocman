@@ -19,7 +19,11 @@ and queries the owning host's worktrees before the first execution. An empty
 session already in a linked worktree stays on that selected workspace, including
 after reload; non-repositories stay in their current directory. Prompts, custom
 slash commands, and shell submissions share the same target resolution, while
-ocman UI/session commands retain their existing handlers. Worktree naming uses
+ocman UI/session commands retain their existing handlers. The new child opens
+as soon as workspace creation succeeds. Its first submission, including its
+retry payload and any execution error, belongs to child-keyed client state so
+long-running commands do not hide the child's transcript or approval controls.
+Worktree naming uses
 the owner's `small_model` or Haiku with a unique fallback, without a naming form.
 
 Ocman also supports **on-demand OpenCode worktree sessions** via the
