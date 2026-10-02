@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MemoryRouter, Route, Routes, useParams, useLocation } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useParams, useLocation, useNavigate } from 'react-router-dom';
 import { Composer } from './Composer';
 import { useWorktreeSubmission } from './worktreeSubmission';
 
@@ -47,7 +47,8 @@ afterEach(() => vi.unstubAllGlobals());
 
 function SessionComposer() {
   const { id } = useParams();
-  return <><output>{useLocation().pathname}</output><Composer sessionId={id} directory={id === 'parent' ? '/repo' : '/worktrees/fix'} newConversation worktreesSupported
+  const navigate = useNavigate();
+  return <><output>{useLocation().pathname}</output><button onClick={() => navigate('/session/other')}>Switch session</button><Composer sessionId={id} directory={id === 'parent' ? '/repo' : '/worktrees/fix'} newConversation worktreesSupported
     isRunning={false} shellExec selectedModel="provider/big" selectedAgent="plan" selectedReasoning="high"
     onCommand={originalCommand} onShell={originalShell} onAbort={() => {}} /></>;
 }
@@ -65,6 +66,20 @@ function submit(text: string) {
 }
 
 describe('composer worktree execution', () => {
+  it('keeps the user on their newer route when workspace creation completes', async () => {
+    let finish!: (response: Response) => void;
+    creation = new Promise((resolve) => { finish = resolve; });
+    await start();
+    submit('/implement login');
+    await waitFor(() => expect(requests).toHaveLength(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Switch session' }));
+    expect(await screen.findByText('/session/other')).toBeInTheDocument();
+    await act(async () => { finish(json({ sessionId: 'child', worktreePath: '/worktrees/fix', branch: 'fix-1234' })); });
+    await waitFor(() => expect(requests).toHaveLength(2));
+    expect(screen.getByText('/session/other')).toBeInTheDocument();
+    expect(requests[1].path).toBe('/api/session/child/command?platform=r-machine%3Aopencode');
+  });
+
   it.each(['/implement login', '!sleep 60', 'Fix login'])('opens the child while %s is still executing', async (text) => {
     let finish!: (response: Response) => void;
     execution = new Promise((resolve) => { finish = resolve; });

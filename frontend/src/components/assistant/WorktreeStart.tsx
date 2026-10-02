@@ -13,6 +13,11 @@ export function WorktreeStart({ children, ...props }: ComposerProps & {
 }) {
   const navigate = useNavigate();
   const { id: routeSessionId } = useParams();
+  const visibleRoute = useRef<{ mounted: boolean; id?: string }>({ mounted: false });
+  useEffect(() => {
+    visibleRoute.current = { mounted: true, id: routeSessionId };
+    return () => { visibleRoute.current.mounted = false; };
+  }, [routeSessionId]);
   const [target, setTarget] = useState<SessionTarget>('worktree');
   const [resolved, setResolved] = useState<{ session: Session; canCreate: boolean }>();
   const [error, setError] = useState('');
@@ -83,7 +88,9 @@ export function WorktreeStart({ children, ...props }: ComposerProps & {
       const child = created.current;
       if (!child.sessionId) throw new Error('Worktree creation returned no session');
       useApiStore.getState().seedNewSession(child.sessionId, child.worktreePath, session.platform, child.branch, session.remoteId || 'local');
-      navigate(`/session/${encodeURIComponent(child.sessionId)}`);
+      if (visibleRoute.current.mounted && (visibleRoute.current.id === undefined || visibleRoute.current.id === sessionId)) {
+        navigate(`/session/${encodeURIComponent(child.sessionId)}`);
+      }
       startWorktreeSubmission(child.sessionId, text, () => execute(child.sessionId!, session.platform));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
