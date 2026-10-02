@@ -1,0 +1,273 @@
+package db
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	log "github.com/sirupsen/logrus"
+)
+
+// The analytics mirror is a disposable SQLite copy of the message and session
+// columns the analytics queries read. OpenCode stores user-message attachments
+// inline in message.data (2 GB of a 2.1 GB table in the wild), so any query
+// that has to inspect role reads all of it. The mirror keeps assistant data
+// minus fields analytics never reads, and replaces every other row with
+// {"role": ...}, so the same SQL runs against a ~10x smaller table. Tables and index keep OpenCode's names,
+// which is what lets the analytics queries run unchanged on either handle.
+//
+// It is derived data: delete the file and it rebuilds. A schema bump or a
+// different source database wipes it the same way.
+const mirrorSchemaVersion = 1
+
+const mirrorSchema = `
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS session (
+	id TEXT PRIMARY KEY,
+	parent_id TEXT,
+	directory TEXT NOT NULL,
+	title TEXT NOT NULL,
+	time_created INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS message (
+	id TEXT PRIMARY KEY,
+	session_id TEXT NOT NULL,
+	time_created INTEGER NOT NULL,
+	settled INTEGER NOT NULL,
+	data TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS message_session_time_created_id_idx ON message (session_id, time_created, id);
+CREATE INDEX IF NOT EXISTS message_settled_idx ON message (settled, time_created);
+`
+
+const (
+	// mirrorMaxStaleness bounds how old the mirror may be when a query reads
+	// it; older triggers an incremental sync first.
+	mirrorMaxStaleness = 5 * time.Second
+	// mirrorFullRebuildEvery re-copies everything, catching what the
+	// incremental window cannot see: deleted old messages and rows inserted
+	// with old timestamps (imports).
+	mirrorFullRebuildEvery = 6 * time.Hour
+	// mirrorSlack re-reads a margin before the newest copied message, for
+	// rows committed slightly out of time_created order.
+	mirrorSlack = 10 * time.Minute
+	// mirrorUnsettledMaxAge stops re-reading a turn that never finished
+	// (crashed or interrupted); the full rebuild still refreshes it.
+	mirrorUnsettledMaxAge = 24 * time.Hour
+)
+
+type analyticsMirror struct {
+	db       *sql.DB
+	mu       sync.Mutex // serialises syncs; readers never take it
+	ready    atomic.Bool
+	building atomic.Bool
+	lastSync atomic.Int64 // unix nanos of the last successful sync
+	lastFull time.Time    // guarded by mu
+}
+
+// EnableAnalyticsMirror opens (or creates) the mirror at path. source
+// identifies the OpenCode database; a mirror built from another source is
+// wiped. Until the first build completes, analytics read OpenCode directly.
+func (d *DB) EnableAnalyticsMirror(path, source string) error {
+	mdb, err := sql.Open("sqlite", "file:"+path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
+	if err != nil {
+		return fmt.Errorf("opening analytics mirror: %w", err)
+	}
+	if err := initMirror(mdb, source); err != nil {
+		mdb.Close()
+		return err
+	}
+	m := &analyticsMirror{db: mdb}
+	var built string
+	_ = mdb.QueryRow(`SELECT value FROM meta WHERE key = 'built'`).Scan(&built)
+	m.ready.Store(built == "1")
+	// The copy may predate this process; a full rebuild is due soon, but the
+	// incremental sync keeps it current until then.
+	m.lastFull = time.Now()
+	d.mirror = m
+	return nil
+}
+
+func initMirror(mdb *sql.DB, source string) error {
+	var version int
+	if err := mdb.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
+		return fmt.Errorf("reading analytics mirror version: %w", err)
+	}
+	var have string
+	if version == mirrorSchemaVersion {
+		_ = mdb.QueryRow(`SELECT value FROM meta WHERE key = 'source'`).Scan(&have)
+	}
+	if version != mirrorSchemaVersion || have != source {
+		if _, err := mdb.Exec(`DROP TABLE IF EXISTS meta; DROP TABLE IF EXISTS session; DROP TABLE IF EXISTS message;`); err != nil {
+			return fmt.Errorf("resetting analytics mirror: %w", err)
+		}
+	}
+	if _, err := mdb.Exec(mirrorSchema); err != nil {
+		return fmt.Errorf("creating analytics mirror schema: %w", err)
+	}
+	_, err := mdb.Exec(fmt.Sprintf(`PRAGMA user_version = %d; INSERT OR REPLACE INTO meta (key, value) VALUES ('source', ?)`, mirrorSchemaVersion), source)
+	return err
+}
+
+// analytics returns the handle analytics queries should read: the mirror
+// when built (synced first if stale), else OpenCode itself.
+func (d *DB) analytics(ctx context.Context) *sql.DB {
+	m := d.mirror
+	if m == nil {
+		return d.db
+	}
+	if !m.ready.Load() {
+		if m.building.CompareAndSwap(false, true) {
+			go func() {
+				defer m.building.Store(false)
+				if err := d.SyncAnalyticsMirror(context.Background()); err != nil {
+					log.WithError(err).Warn("building analytics mirror")
+				}
+			}()
+		}
+		return d.db
+	}
+	if time.Since(time.Unix(0, m.lastSync.Load())) > mirrorMaxStaleness {
+		if err := d.SyncAnalyticsMirror(ctx); err != nil {
+			log.WithError(err).Warn("syncing analytics mirror; reading OpenCode directly")
+			return d.db
+		}
+	}
+	return m.db
+}
+
+// SyncAnalyticsMirror brings the mirror up to date with OpenCode. Concurrent
+// callers wait for one sync instead of each running their own.
+func (d *DB) SyncAnalyticsMirror(ctx context.Context) error {
+	m := d.mirror
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.ready.Load() && time.Since(time.Unix(0, m.lastSync.Load())) <= mirrorMaxStaleness {
+		return nil // another caller just synced
+	}
+	full := !m.ready.Load() || time.Since(m.lastFull) > mirrorFullRebuildEvery
+	since := int64(0)
+	if !full {
+		var err error
+		if since, err = m.windowStart(ctx); err != nil {
+			return err
+		}
+	}
+	start := time.Now()
+	if err := d.copyToMirror(ctx, since); err != nil {
+		return err
+	}
+	if full {
+		m.lastFull = start
+		m.ready.Store(true)
+		log.WithField("took", time.Since(start)).Info("analytics mirror rebuilt")
+	}
+	m.lastSync.Store(start.UnixNano())
+	return nil
+}
+
+// windowStart is the oldest time_created the incremental sync must re-read:
+// the oldest recent unfinished turn, or the newest copied message, less slack.
+func (m *analyticsMirror) windowStart(ctx context.Context) (int64, error) {
+	var newest, unsettled sql.NullInt64
+	cutoff := time.Now().Add(-mirrorUnsettledMaxAge).UnixMilli()
+	err := m.db.QueryRowContext(ctx, `SELECT
+		(SELECT max(time_created) FROM message),
+		(SELECT min(time_created) FROM message WHERE settled = 0 AND time_created > ?)`, cutoff).Scan(&newest, &unsettled)
+	if err != nil {
+		return 0, err
+	}
+	since := newest.Int64
+	if unsettled.Valid && unsettled.Int64 < since {
+		since = unsettled.Int64
+	}
+	since -= mirrorSlack.Milliseconds()
+	if since < 1 {
+		since = 1 // never 0: that means "all time" to messagesFrom
+	}
+	return since, nil
+}
+
+// copyToMirror replaces the mirror's messages created at or after since
+// (0 = everything) and all sessions, in one transaction so readers never see
+// a half-applied sync. Rows stream from OpenCode straight into the
+// transaction, so a full rebuild never holds the copy in memory. Messages go
+// before sessions: a session created in between is still copied, and one
+// deleted in between takes its messages with it via the orphan cleanup.
+func (d *DB) copyToMirror(ctx context.Context, since int64) error {
+	tx, err := d.mirror.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Re-copying the whole window (not upserting) also drops messages
+	// OpenCode deleted inside it, e.g. on revert.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM message WHERE time_created >= ?`, since); err != nil {
+		return err
+	}
+	q := `SELECT m.id, m.session_id, m.time_created,
+			CASE WHEN json_extract(m.data, '$.role') = 'assistant'
+				THEN json_remove(m.data, '$.path', '$.parentID') -- ~40% of the row, unused here
+				ELSE json_object('role', json_extract(m.data, '$.role')) END,
+			json_extract(m.data, '$.role') != 'assistant'
+				OR json_extract(m.data, '$.time.completed') IS NOT NULL
+				OR json_extract(m.data, '$.finish') IS NOT NULL
+				OR json_extract(m.data, '$.error') IS NOT NULL
+		FROM ` + messagesFrom(since, false)
+	var args []any
+	if since > 0 {
+		q += ` WHERE m.time_created >= ?`
+		args = append(args, since)
+	}
+	if err := copyRows(ctx, d.db, tx, q, args,
+		`INSERT OR REPLACE INTO message (id, session_id, time_created, data, settled) VALUES (?, ?, ?, ?, ?)`, 5); err != nil {
+		return fmt.Errorf("copying messages to analytics mirror: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM session`); err != nil {
+		return err
+	}
+	if err := copyRows(ctx, d.db, tx, `SELECT id, parent_id, directory, title, time_created FROM session`, nil,
+		`INSERT INTO session (id, parent_id, directory, title, time_created) VALUES (?, ?, ?, ?, ?)`, 5); err != nil {
+		return fmt.Errorf("copying sessions to analytics mirror: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM message WHERE session_id NOT IN (SELECT id FROM session)`); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO meta (key, value) VALUES ('built', '1')`); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// copyRows streams the n-column result of query on src into insert on tx.
+func copyRows(ctx context.Context, src *sql.DB, tx *sql.Tx, query string, args []any, insert string, n int) error {
+	rows, err := src.QueryContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	ins, err := tx.PrepareContext(ctx, insert)
+	if err != nil {
+		return err
+	}
+	defer ins.Close()
+	vals := make([]any, n)
+	ptrs := make([]any, n)
+	for i := range vals {
+		ptrs[i] = &vals[i]
+	}
+	for rows.Next() {
+		if err := rows.Scan(ptrs...); err != nil {
+			return err
+		}
+		if _, err := ins.ExecContext(ctx, vals...); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}

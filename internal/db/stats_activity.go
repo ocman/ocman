@@ -83,7 +83,7 @@ func (d *DB) GetDailyActivity(ctx context.Context, since int64, modelFilter, dir
 	query2 += groupBy + `
 		ORDER BY day
 	`
-	rows2, err := d.db.QueryContext(ctx, query2, args2...)
+	rows2, err := d.analytics(ctx).QueryContext(ctx, query2, args2...)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +145,7 @@ func (d *DB) GetDailyActivity(ctx context.Context, since int64, modelFilter, dir
 		GROUP BY day
 		ORDER BY day
 	`
-	rows3, err := d.db.QueryContext(ctx, query3, args3...)
+	rows3, err := d.analytics(ctx).QueryContext(ctx, query3, args3...)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +206,7 @@ func (d *DB) GetHourlyTokensByModel(ctx context.Context, windowDays int, since i
 		query += "\n		  AND " + dirFrag
 		args = append(args, dirArgs...)
 	}
-	rows, err := d.db.QueryContext(ctx, query, args...)
+	rows, err := d.analytics(ctx).QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -257,6 +258,22 @@ func main() {
 		fatal("Failed to open state database: %v", err)
 	}
 	defer stateDB.Close()
+
+	if database != nil {
+		// Disposable copy of the analytics columns next to state.db; see
+		// internal/db/analytics_mirror.go. Failure only costs speed.
+		mirrorPath := filepath.Join(filepath.Dir(stateDBPath), "analytics-cache.db")
+		source, _ := filepath.Abs(*dbPath)
+		if err := database.EnableAnalyticsMirror(mirrorPath, source); err != nil {
+			log.WithError(err).Warn("analytics mirror disabled; analytics read OpenCode directly")
+		} else {
+			go func() {
+				if err := database.SyncAnalyticsMirror(ctx); err != nil {
+					log.WithError(err).Warn("syncing analytics mirror")
+				}
+			}()
+		}
+	}
 
 	opencodePassword, err := resolveOpenCodePassword(*opencodePasswordFile, *opencodeGeneratePassword)
 	if err != nil {

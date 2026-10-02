@@ -195,7 +195,7 @@ func (d *DB) scanDashboardRows(ctx context.Context, opts MetricsDashboardOptions
 	query += `
 		ORDER BY m.time_created ASC
 	`
-	rows, qErr := d.db.QueryContext(ctx, query, args...)
+	rows, qErr := d.analytics(ctx).QueryContext(ctx, query, args...)
 	if qErr != nil {
 		return nil, nil, nil, qErr
 	}

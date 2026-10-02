@@ -80,7 +80,7 @@ func (d *DB) GetStats(ctx context.Context) (*Stats, error) {
 	if err != nil {
 		return nil, err
 	}
-	err = d.db.QueryRowContext(ctx, `SELECT count(*) FROM message WHERE json_extract(data, '$.role') = 'user'`).Scan(&s.TotalMessages)
+	err = d.analytics(ctx).QueryRowContext(ctx, `SELECT count(*) FROM message WHERE json_extract(data, '$.role') = 'user'`).Scan(&s.TotalMessages)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,9 @@ func (d *DB) GetStats(ctx context.Context) (*Stats, error) {
 	totals := `
 		SELECT COALESCE(SUM(tokens_input), 0), COALESCE(SUM(tokens_output), 0), COALESCE(SUM(cost), 0)
 		FROM session`
+	totalsDB := d.db
 	if !d.sessionTotals {
+		totalsDB = d.analytics(ctx)
 		totals = `
 		SELECT
 			COALESCE(SUM(COALESCE(json_extract(data, '$.tokens.input'), 0)), 0),
@@ -104,7 +106,7 @@ func (d *DB) GetStats(ctx context.Context) (*Stats, error) {
 		FROM message
 		WHERE json_extract(data, '$.role') = 'assistant'`
 	}
-	err = d.db.QueryRowContext(ctx, totals).Scan(&s.TotalTokensIn, &s.TotalTokensOut, &s.TotalCost)
+	err = totalsDB.QueryRowContext(ctx, totals).Scan(&s.TotalTokensIn, &s.TotalTokensOut, &s.TotalCost)
 	if err != nil {
 		return nil, err
 	}

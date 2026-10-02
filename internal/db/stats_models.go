@@ -23,7 +23,7 @@ func (d *DB) GetModelUsage(ctx context.Context, since int64, dir string) ([]Mode
 		query += "\n		  AND " + dirFrag
 		args = append(args, dirArgs...)
 	}
-	rows, err := d.db.QueryContext(ctx, query, args...)
+	rows, err := d.analytics(ctx).QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

@@ -75,6 +75,11 @@ flowchart LR
   local projects-index snapshot. Artifact file bytes sit beside it in a
   SHA-256 content-addressed `artifacts/blobs/` directory. Inbox sends are owner-local and persist until recalled or archived
   by the user. Legacy `workflow_*` rows remain inert for manual recovery.
+  `analytics-cache.db`, also beside it, is a disposable copy of opencode.db's
+  message and session rows for the analytics queries. User-message attachments
+  are stripped from the copy. It syncs incrementally before an analytics read,
+  does a full rebuild every 6 hours, and is recreated if deleted
+  (`internal/db/analytics_mirror.go`).
 - **Provider usage APIs.** The subscription usage page reads OpenCode's local
   OAuth credentials server-side and returns only normalized quota windows;
   provider tokens and account identifiers never reach the browser.
