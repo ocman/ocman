@@ -39,7 +39,12 @@ func TestAutomaticWorktreeNamesAreFresh(t *testing.T) {
 					}
 					_, _ = w.Write([]byte(`{"id":"name"}`))
 				case r.URL.Path == "/session/name/message":
-					_, _ = w.Write([]byte(`{"parts":[{"type":"text","text":"fix-login"}]}`))
+					// The title agent sees only the user's task, never naming instructions.
+					body, _ := io.ReadAll(r.Body)
+					if strings.Contains(string(body), "branch") || !strings.Contains(string(body), `"text":"Fix login"`) {
+						t.Errorf("naming input is not the bare prompt: %s", body)
+					}
+					_, _ = w.Write([]byte(`{"parts":[{"type":"text","text":"Fix Login\n"}]}`))
 				case r.Method == http.MethodPatch:
 					body, _ := io.ReadAll(r.Body)
 					mu.Lock()
@@ -58,8 +63,8 @@ func TestAutomaticWorktreeNamesAreFresh(t *testing.T) {
 					if req.Directory == repo {
 						t.Fatal("session remained in current checkout")
 					}
-					if req.Title == "" || !strings.HasPrefix(req.Title, provisionalPrefix) {
-						t.Fatalf("title not provisional: %q", req.Title)
+					if req.Title != "" {
+						t.Fatalf("automatic session got title %q; OpenCode should title it", req.Title)
 					}
 					id := ids[0]
 					ids = ids[1:]
@@ -93,11 +98,8 @@ func TestAutomaticWorktreeNamesAreFresh(t *testing.T) {
 			}
 			mu.Lock()
 			defer mu.Unlock()
-			if namingAvailable && !strings.Contains(titles["one"], want) {
-				t.Fatalf("title not renamed: %v", titles)
-			}
-			if !namingAvailable && len(titles) != 0 {
-				t.Fatalf("title renamed without a model name: %v", titles)
+			if len(titles) != 0 {
+				t.Fatalf("session retitled with the branch name: %v", titles)
 			}
 		})
 	}

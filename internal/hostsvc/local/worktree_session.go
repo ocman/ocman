@@ -76,7 +76,9 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 		return nil, fmt.Errorf("CreateWorktreeSession: CreateSession dep not wired")
 	}
 	request := platforms.CreateSessionRequest{Directory: res.Path, Port: port, Title: req.Title}
-	if request.Title == "" {
+	// Automatic sessions keep OpenCode's default title so OpenCode titles
+	// them from the first message; the branch name is no title.
+	if request.Title == "" && !req.AutoName {
 		request.Title = req.Branch
 	}
 	var created *platforms.CreateSessionResponse
@@ -99,7 +101,7 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 			defer h.background.Done()
 			bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 			defer cancel()
-			h.nameWorktree(bg, port, repoRoot, created.ID, req.Branch, suffix, req.Title == "", req.Prompt)
+			h.nameWorktree(bg, port, repoRoot, req.Branch, suffix, req.Prompt)
 		}()
 	}
 	return &hostsvc.WorktreeSessionResult{
@@ -109,9 +111,8 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 }
 
 // nameWorktree asks the small model for a descriptive name and renames the
-// provisional branch (and the session title when it mirrors the branch).
-// Best-effort: on any failure the provisional name simply stays.
-func (h *Host) nameWorktree(ctx context.Context, port, repoRoot, sessionID, branch, suffix string, retitle bool, prompt string) {
+// provisional branch. Best-effort: on any failure the provisional name stays.
+func (h *Host) nameWorktree(ctx context.Context, port, repoRoot, branch, suffix, prompt string) {
 	name, err := opencode.WorktreeName(ctx, port, repoRoot, prompt)
 	if err != nil {
 		log.WithError(err).Warn("worktree: keeping provisional name")
@@ -120,12 +121,5 @@ func (h *Host) nameWorktree(ctx context.Context, port, repoRoot, sessionID, bran
 	renamed := name + "-" + suffix
 	if err := git.RenameBranch(ctx, repoRoot, branch, renamed); err != nil {
 		log.WithError(err).Warn("worktree: renaming provisional branch")
-		return
-	}
-	if !retitle {
-		return
-	}
-	if err := opencode.SetSessionTitle(ctx, port, sessionID, renamed); err != nil {
-		log.WithError(err).Warn("worktree: renaming provisional session title")
 	}
 }

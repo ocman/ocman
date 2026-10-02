@@ -27,8 +27,10 @@ permissions are applied; the response reports `firstMessageSent` /
 child-keyed client state so long-running commands do not hide the child's
 transcript or approval controls. The worktree starts as `session-<id8>`, so no
 LLM call sits on the first message's path; the owner then names it in the
-background with its `small_model` or Haiku and renames the branch and title
-(`git branch -m`, the path stays). A naming failure keeps the provisional name. The naming session is titled
+background: OpenCode's `title` agent (its `small_model` or Haiku) titles the
+bare prompt and the title is slugged into the branch (`git branch -m`, the path
+stays). The session keeps OpenCode's default title so OpenCode titles it from
+the first message; the branch name is never used as the title. A naming failure keeps the provisional name. The naming session is titled
 `(worktree-name subagent)` so the session list hides it, and the empty
 conversation the first message was typed in is archived once the child exists
 (`discardEmptyParent`). It is never deleted: the emptiness read can be stale, so

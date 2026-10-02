@@ -51,7 +51,7 @@ describe('automatic worktree start', () => {
       projectDir: '/repo', autoName: true, prompt: 'Fix login', parentSessionId: 'parent', remoteId: 'machine', discardEmptyParent: true,
     });
     expect(mocks.send).toHaveBeenCalledWith('child', 'Fix login', images, 'provider/big', 'plan', 'high', 'r-machine:opencode', true);
-    expect(mocks.seed).toHaveBeenCalledWith('child', '/worktrees/fix', 'r-machine:opencode', 'fix-1234', 'machine');
+    expect(mocks.seed).toHaveBeenCalledWith('child', '/worktrees/fix', 'r-machine:opencode', undefined, 'machine');
     expect(screen.getByText('/session/child')).toBeInTheDocument();
     expect(originalSend).not.toHaveBeenCalled();
   });

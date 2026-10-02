@@ -102,7 +102,8 @@ export function WorktreeStart({ children, ...props }: ComposerProps & {
       }
       const child = created.current;
       if (!child.sessionId) throw new Error('Worktree creation returned no session');
-      useApiStore.getState().seedNewSession(child.sessionId, child.worktreePath, session.platform, child.branch, session.remoteId || 'local');
+      // No title: OpenCode titles the session from its first message.
+      useApiStore.getState().seedNewSession(child.sessionId, child.worktreePath, session.platform, undefined, session.remoteId || 'local');
       if (visibleRoute.current.mounted && (visibleRoute.current.id === undefined || visibleRoute.current.id === sessionId)) {
         navigate(`/session/${encodeURIComponent(child.sessionId)}`);
       }

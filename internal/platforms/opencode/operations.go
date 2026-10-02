@@ -898,7 +898,7 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 
 	// Older OpenCode builds ignored the create-time title; fall back to a PATCH.
 	if req.Title != "" && parsed.Title != req.Title {
-		if err := SetSessionTitle(ctx, port, parsed.ID, req.Title); err != nil {
+		if err := setSessionTitle(ctx, port, parsed.ID, req.Title); err != nil {
 			log.WithError(err).Warn("failed to set custom title on new session")
 			// Don't fail the entire creation if title setting fails.
 		}
@@ -908,8 +908,8 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 	return &platforms.CreateSessionResponse{ID: parsed.ID}, nil
 }
 
-// SetSessionTitle renames a session on a known OpenCode port.
-func SetSessionTitle(ctx context.Context, port, sessionID, title string) error {
+// setSessionTitle renames a session on a known OpenCode port.
+func setSessionTitle(ctx context.Context, port, sessionID, title string) error {
 	payload, err := marshalRequest(map[string]string{"title": title})
 	if err != nil {
 		return err

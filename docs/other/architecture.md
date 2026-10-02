@@ -435,9 +435,10 @@ flowchart TD
   stay in child-keyed client state, keeping the transcript, approval controls,
   and explicit retry available while the request is pending or has failed.
   The worktree is created as `session-<suffix>` and a plain first prompt is
-  delivered by the server inside the same request. Afterwards the host
-  generates a name using its configured `small_model` or Haiku, in a temporary
-  tool-denied session, and renames the branch and session title in place.
+  delivered by the server inside the same request. Afterwards the host has the
+  `title` agent (its `small_model` or Haiku, in a temporary tool-denied session)
+  title the bare prompt and renames the branch to that slug in place. The
+  session title is left to OpenCode's own first-message titling.
   Naming failures keep `session-<suffix>` without opening a form. Users can
   select Current checkout; non-repository directories use it automatically.
   Composer layout, dialogs, and props live in separate modules.
