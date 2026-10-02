@@ -71,8 +71,8 @@ describe('composer worktree execution', () => {
     await start();
     submit(text);
     await waitFor(() => expect(requests).toHaveLength(2));
-    expect(screen.getByText('/session/child')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Stop generation' })).toBeInTheDocument();
+    expect(await screen.findByText('/session/child')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Stop generation' })).toBeInTheDocument();
     await act(async () => { finish(new Response(null, { status: 204 })); });
     await waitFor(() => expect(screen.getByRole('textbox')).toBeEnabled());
     expect(screen.getByRole('textbox')).toHaveValue('');
