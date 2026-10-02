@@ -102,18 +102,18 @@ func (h *remoteHost) GitBranches(ctx context.Context, dir string) ([]string, err
 	return out, unmarshalJSON(resp.Payload, &out)
 }
 
-func (h *remoteHost) ListRepoFiles(ctx context.Context, dir string) (*git.FileList, error) {
+func (h *remoteHost) ListRepoFiles(ctx context.Context, dir string, ignored bool) (*git.FileList, error) {
 	var out git.FileList
 	return &out, h.callFiles(ctx, git.ErrNotARepo, &out, func(c pb.OcmanClient, req *pb.JsonReq) (*pb.JsonResp, error) {
 		return c.ListRepoFiles(ctx, req, grpc.MaxCallRecvMsgSize(maxRepoResponseBytes))
-	}, map[string]string{"dir": dir})
+	}, map[string]any{"dir": dir, "ignored": ignored})
 }
 
-func (h *remoteHost) ReadRepoFile(ctx context.Context, dir, path string) (*git.FileContent, error) {
+func (h *remoteHost) ReadRepoFile(ctx context.Context, dir, path string, ignored bool) (*git.FileContent, error) {
 	var out git.FileContent
 	return &out, h.callFiles(ctx, git.ErrFileNotFound, &out, func(c pb.OcmanClient, req *pb.JsonReq) (*pb.JsonResp, error) {
 		return c.ReadRepoFile(ctx, req, grpc.MaxCallRecvMsgSize(maxRepoResponseBytes))
-	}, map[string]string{"dir": dir, "path": path})
+	}, map[string]any{"dir": dir, "path": path, "ignored": ignored})
 }
 
 // maxRepoResponseBytes lifts gRPC's 4 MiB default for the file RPCs. The
@@ -123,7 +123,7 @@ func (h *remoteHost) ReadRepoFile(ctx context.Context, dir, path string) (*git.F
 const maxRepoResponseBytes = 6*8<<20 + 16<<20
 
 // callFiles runs a file RPC, restoring notFound from codes.NotFound.
-func (h *remoteHost) callFiles(ctx context.Context, notFound error, out any, call func(pb.OcmanClient, *pb.JsonReq) (*pb.JsonResp, error), args map[string]string) error {
+func (h *remoteHost) callFiles(ctx context.Context, notFound error, out any, call func(pb.OcmanClient, *pb.JsonReq) (*pb.JsonResp, error), args map[string]any) error {
 	client := h.conn.Client()
 	if client == nil {
 		return ErrRemoteOffline

@@ -509,23 +509,25 @@ func (s *Server) GitBranches(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp
 
 func (s *Server) ListRepoFiles(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
 	var args struct {
-		Dir string `json:"dir"`
+		Dir     string `json:"dir"`
+		Ignored bool   `json:"ignored"`
 	}
 	if err := unmarshalJSON(req.Payload, &args); err != nil {
 		return nil, err
 	}
-	return jsonResp(notFoundStatus(s.host.ListRepoFiles(ctx, args.Dir)))
+	return jsonResp(notFoundStatus(s.host.ListRepoFiles(ctx, args.Dir, args.Ignored)))
 }
 
 func (s *Server) ReadRepoFile(ctx context.Context, req *pb.JsonReq) (*pb.JsonResp, error) {
 	var args struct {
-		Dir  string `json:"dir"`
-		Path string `json:"path"`
+		Dir     string `json:"dir"`
+		Path    string `json:"path"`
+		Ignored bool   `json:"ignored"`
 	}
 	if err := unmarshalJSON(req.Payload, &args); err != nil {
 		return nil, err
 	}
-	return jsonResp(notFoundStatus(s.host.ReadRepoFile(ctx, args.Dir, args.Path)))
+	return jsonResp(notFoundStatus(s.host.ReadRepoFile(ctx, args.Dir, args.Path, args.Ignored)))
 }
 
 // notFoundStatus carries the git not-found sentinels across gRPC.

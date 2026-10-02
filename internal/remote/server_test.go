@@ -198,11 +198,11 @@ func (localStubHost) GitBranches(context.Context, string) ([]string, error) {
 	return []string{"main"}, nil
 }
 func (localStubHost) GitCheckout(context.Context, string, string) error { return nil }
-func (localStubHost) ListRepoFiles(_ context.Context, dir string) (*git.FileList, error) {
+func (localStubHost) ListRepoFiles(_ context.Context, dir string, _ bool) (*git.FileList, error) {
 	return &git.FileList{Root: dir, Files: []string{"a.go"}}, nil
 }
-func (localStubHost) ReadRepoFile(_ context.Context, _, path string) (*git.FileContent, error) {
-	if path != "a.go" {
+func (localStubHost) ReadRepoFile(_ context.Context, _, path string, ignored bool) (*git.FileContent, error) {
+	if path != "a.go" && (!ignored || path != ".env") {
 		return nil, git.ErrFileNotFound
 	}
 	return &git.FileContent{Path: path, Content: "package a", Size: 9}, nil

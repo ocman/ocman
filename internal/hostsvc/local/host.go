@@ -208,12 +208,12 @@ func (h *Host) GitBranches(ctx context.Context, dir string) ([]string, error) {
 	return git.ListBranches(ctx, dir)
 }
 
-func (h *Host) ListRepoFiles(ctx context.Context, dir string) (*git.FileList, error) {
-	return git.ListFiles(ctx, dir)
+func (h *Host) ListRepoFiles(ctx context.Context, dir string, ignored bool) (*git.FileList, error) {
+	return git.ListFiles(ctx, dir, ignored)
 }
 
-func (h *Host) ReadRepoFile(ctx context.Context, dir, path string) (*git.FileContent, error) {
-	return git.ReadFile(ctx, dir, path)
+func (h *Host) ReadRepoFile(ctx context.Context, dir, path string, ignored bool) (*git.FileContent, error) {
+	return git.ReadFile(ctx, dir, path, ignored)
 }
 
 func (h *Host) GitCheckout(ctx context.Context, dir, branch string) error {

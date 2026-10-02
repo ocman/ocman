@@ -18,6 +18,11 @@ appears, but a file that is already committed stays listed and readable even
 if its name is later added to `.gitignore`. Ignore rules are not an access
 control; `git rm --cached` a file to hide it.
 
+The **Show ignored files** checkbox above the tree adds ignored files (off by default, reset
+each time Explore opens). They are listed after every other file, so a large
+ignored tree such as `node_modules/` is what gets cut off at the listing limit.
+With it on, ignored secrets like `.env` become readable.
+
 A file opens only if it is one of those listed names and is a regular file
 reached without following a symlink. A symlink, a FIFO, a `../` path, or a
 path into `.git` is refused, even when the link's own name is listed.
@@ -33,6 +38,8 @@ path into `.git` is refused, even when the link's own name is listed.
 
 - `GET /api/git/files?dir=<abs>&remoteId=<id>` lists the files.
 - `GET /api/git/file?dir=<abs>&path=<rel>&remoteId=<id>` reads one.
+
+Add `&ignored=1` to either to include ignored files.
 
 Both need an explicit `remoteId` (`local` for the hub) and return 503 when that
 remote is disconnected, and 404 for a directory outside a repository or a

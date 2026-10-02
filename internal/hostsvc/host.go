@@ -245,12 +245,12 @@ type Host interface {
 	GitBranches(ctx context.Context, dir string) ([]string, error)
 
 	// ListRepoFiles lists the non-ignored files of the repo containing dir,
-	// relative to its root.
-	ListRepoFiles(ctx context.Context, dir string) (*git.FileList, error)
+	// relative to its root; ignored files are appended when ignored is set.
+	ListRepoFiles(ctx context.Context, dir string, ignored bool) (*git.FileList, error)
 
 	// ReadRepoFile reads one listed file of the repo containing dir.
 	// Returns git.ErrFileNotFound for anything ListRepoFiles would not show.
-	ReadRepoFile(ctx context.Context, dir, path string) (*git.FileContent, error)
+	ReadRepoFile(ctx context.Context, dir, path string, ignored bool) (*git.FileContent, error)
 
 	// GitCheckout switches the working tree in dir to branch. Returns
 	// git.ErrDirtyCheckout when git refuses due to local changes.

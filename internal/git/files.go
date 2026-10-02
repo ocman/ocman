@@ -30,7 +30,8 @@ var (
 )
 
 // FileList is every tracked or untracked-but-not-ignored file of the
-// repository containing a directory, relative to the repository root.
+// repository containing a directory (plus ignored ones on request),
+// relative to the repository root.
 type FileList struct {
 	Root      string   `json:"root"`
 	Files     []string `json:"files"`
@@ -47,9 +48,24 @@ type FileContent struct {
 }
 
 // lsFiles lists the files git would show, relative to root, stopping at
-// the count and byte budgets. Extra args (a pathspec) narrow the listing.
-func lsFiles(ctx context.Context, root string, extra ...string) (files []string, truncated bool, err error) {
-	args := append([]string{"-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--deduplicate"}, extra...)
+// the count and byte budgets. Ignored files, when included, come after
+// the rest so a huge ignored tree (node_modules) cannot crowd out real
+// files. A pathspec narrows the listing.
+func lsFiles(ctx context.Context, root string, ignored bool, pathspec ...string) ([]string, bool, error) {
+	files, truncated, err := lsFilesInto(ctx, root, nil, append([]string{"--cached", "--others", "--exclude-standard", "--deduplicate"}, pathspec...))
+	if err != nil || truncated || !ignored {
+		return files, truncated, err
+	}
+	return lsFilesInto(ctx, root, files, append([]string{"--others", "--ignored", "--exclude-standard"}, pathspec...))
+}
+
+// lsFilesInto appends one ls-files listing to files, sharing the budgets.
+func lsFilesInto(ctx context.Context, root string, files, mode []string) (_ []string, truncated bool, err error) {
+	args := append([]string{"-C", root, "ls-files", "-z"}, mode...)
+	size := 0
+	for _, f := range files {
+		size += len(f)
+	}
 	err = gitexec.Command(ctx, args...).Stream(func(r io.Reader) error {
 		sc := bufio.NewScanner(r)
 		sc.Buffer(make([]byte, 64<<10), 64<<10)
@@ -79,13 +95,14 @@ func lsFiles(ctx context.Context, root string, extra ...string) (files []string,
 	return files, truncated, nil
 }
 
-// ListFiles lists the repository containing dir from its root.
-func ListFiles(ctx context.Context, dir string) (*FileList, error) {
+// ListFiles lists the repository containing dir from its root, with
+// ignored files appended when ignored is set.
+func ListFiles(ctx context.Context, dir string, ignored bool) (*FileList, error) {
 	root, err := ResolveRepoRoot(ctx, dir)
 	if err != nil {
 		return nil, err
 	}
-	files, truncated, err := lsFiles(ctx, root)
+	files, truncated, err := lsFiles(ctx, root, ignored)
 	if err != nil {
 		return nil, err
 	}
@@ -129,9 +146,9 @@ func openNoFollow(root, rel string) (*os.File, error) {
 
 // ReadFile reads path (relative to the root of the repository containing
 // dir). Only regular files ListFiles would return are readable, reached
-// without following symlinks, so ignored secrets (.env), git metadata and
-// anything outside the root are refused.
-func ReadFile(ctx context.Context, dir, path string) (*FileContent, error) {
+// without following symlinks, so git metadata, anything outside the root
+// and (unless ignored is set) ignored files such as .env are refused.
+func ReadFile(ctx context.Context, dir, path string, ignored bool) (*FileContent, error) {
 	root, err := ResolveRepoRoot(ctx, dir)
 	if err != nil {
 		return nil, err
@@ -141,7 +158,7 @@ func ReadFile(ctx context.Context, dir, path string) (*FileContent, error) {
 	if strings.HasPrefix(path, "/") || strings.Contains("/"+path+"/", "/../") {
 		return nil, ErrFileNotFound
 	}
-	listed, _, err := lsFiles(ctx, root, "--", ":(literal)"+path)
+	listed, _, err := lsFiles(ctx, root, ignored, "--", ":(literal)"+path)
 	if err != nil {
 		return nil, err
 	}

@@ -657,15 +657,16 @@ export const api = {
   },
   // List local branches for the repo containing dir, current branch
   // first. Empty for a non-repo directory.
-  // Every non-ignored file of the repo containing dir, root-relative.
-  repoFiles: (dir: string, remoteId: string, signal?: AbortSignal) =>
+  // Every non-ignored file of the repo containing dir, root-relative;
+  // gitignored files are appended when `ignored` is set.
+  repoFiles: (dir: string, remoteId: string, signal?: AbortSignal, ignored = false) =>
     fetchJSON<RepoFileList>(
-      `/api/git/files?dir=${encodeURIComponent(dir)}&remoteId=${encodeURIComponent(remoteId)}`,
+      `/api/git/files?dir=${encodeURIComponent(dir)}&remoteId=${encodeURIComponent(remoteId)}${ignored ? '&ignored=1' : ''}`,
       signal,
     ),
-  repoFile: (dir: string, path: string, remoteId: string, signal?: AbortSignal) =>
+  repoFile: (dir: string, path: string, remoteId: string, signal?: AbortSignal, ignored = false) =>
     fetchJSON<RepoFileContent>(
-      `/api/git/file?dir=${encodeURIComponent(dir)}&path=${encodeURIComponent(path)}&remoteId=${encodeURIComponent(remoteId)}`,
+      `/api/git/file?dir=${encodeURIComponent(dir)}&path=${encodeURIComponent(path)}&remoteId=${encodeURIComponent(remoteId)}${ignored ? '&ignored=1' : ''}`,
       signal,
     ),
   gitBranches: (dir: string, signal?: AbortSignal) =>

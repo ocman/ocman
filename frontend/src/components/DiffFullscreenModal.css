@@ -86,3 +86,29 @@
   padding: 8px 4px;
 }
 
+
+/* Explore: options strip above the file tree. */
+.oc-explore-side {
+  display: flex;
+  flex-direction: column;
+}
+
+.oc-explore-options {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.oc-explore-options label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.oc-explore-tree {
+  flex: 1;
+  min-height: 0;
+}

@@ -47,7 +47,7 @@ it('opens from the header and shows the selected file', async () => {
   await user.click(screen.getByRole('button', { name: 'Explore files' }));
 
   await waitFor(() => expect(tree().getByRole('treeitem', { name: 'src' })).toBeInTheDocument());
-  expect(api.repoFiles).toHaveBeenCalledWith('/repo/wt', 'rem1', expect.anything());
+  expect(api.repoFiles).toHaveBeenCalledWith('/repo/wt', 'rem1', expect.anything(), false);
   expect(screen.getByText(/3 files/)).toBeInTheDocument();
   expect(screen.getByText('Select a file to view it.')).toBeInTheDocument();
 
@@ -55,7 +55,7 @@ it('opens from the header and shows the selected file', async () => {
   expect(await screen.findByText('Binary file, not shown.')).toBeInTheDocument();
   await user.click(tree().getByRole('treeitem', { name: 'big.txt' }));
   expect(await screen.findByText('Showing the first 1 MiB of this file.')).toBeInTheDocument();
-  expect(api.repoFile).toHaveBeenLastCalledWith('/repo/wt', 'big.txt', 'rem1', expect.anything());
+  expect(api.repoFile).toHaveBeenLastCalledWith('/repo/wt', 'big.txt', 'rem1', expect.anything(), false);
 
   await user.click(screen.getByRole('button', { name: 'Close' }));
   expect(screen.queryByTestId('explore-modal')).not.toBeInTheDocument();
@@ -67,7 +67,7 @@ it('defaults the owner to local and surfaces a listing error', async () => {
   renderHeader();
   await user.click(screen.getByRole('button', { name: 'Explore files' }));
   expect(await screen.findByText('not a repo')).toBeInTheDocument();
-  expect(api.repoFiles).toHaveBeenCalledWith('/repo/wt', 'local', expect.anything());
+  expect(api.repoFiles).toHaveBeenCalledWith('/repo/wt', 'local', expect.anything(), false);
 });
 
 it.each([
@@ -83,5 +83,25 @@ it.each([
 
   rerender(header(remoteId, dir));
   await waitFor(() => expect(screen.queryByText('Binary file, not shown.')).not.toBeInTheDocument());
-  expect(api.repoFiles).toHaveBeenLastCalledWith(dir, remoteId, expect.anything());
+  expect(api.repoFiles).toHaveBeenLastCalledWith(dir, remoteId, expect.anything(), false);
+});
+
+it('toggles gitignored files', async () => {
+  const user = userEvent.setup();
+  renderHeader('rem1');
+  await user.click(screen.getByRole('button', { name: 'Explore files' }));
+  await waitFor(() => expect(tree().getByRole('treeitem', { name: 'img.png' })).toBeInTheDocument());
+  expect(api.repoFiles).toHaveBeenLastCalledWith('/repo/wt', 'rem1', expect.anything(), false);
+
+  vi.mocked(api.repoFiles).mockResolvedValue({ root: '/repo/wt', files: ['src/a.ts', '.env'] });
+  await user.click(screen.getByRole('checkbox', { name: 'Show ignored files' }));
+  await waitFor(() => expect(tree().getByRole('treeitem', { name: '.env' })).toBeInTheDocument());
+  expect(api.repoFiles).toHaveBeenLastCalledWith('/repo/wt', 'rem1', expect.anything(), true);
+  await user.click(tree().getByRole('treeitem', { name: '.env' }));
+  await waitFor(() => expect(api.repoFile).toHaveBeenLastCalledWith('/repo/wt', '.env', 'rem1', expect.anything(), true));
+
+  await user.click(screen.getByRole('checkbox', { name: 'Show ignored files' }));
+  expect(screen.getByRole('checkbox', { name: 'Show ignored files' })).not.toBeChecked();
+  expect(screen.getByText('Select a file to view it.')).toBeInTheDocument();
+  expect(api.repoFiles).toHaveBeenLastCalledWith('/repo/wt', 'rem1', expect.anything(), false);
 });

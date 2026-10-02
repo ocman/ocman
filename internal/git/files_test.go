@@ -42,7 +42,7 @@ func TestListAndReadFiles(t *testing.T) {
 	ctx := context.Background()
 
 	// Listing from a subdirectory is still rooted at the repo root.
-	list, err := ListFiles(ctx, filepath.Join(dir, "src"))
+	list, err := ListFiles(ctx, filepath.Join(dir, "src"), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,19 +52,19 @@ func TestListAndReadFiles(t *testing.T) {
 		t.Fatalf("files = %v, want %v", list.Files, want)
 	}
 
-	got, err := ReadFile(ctx, dir, "src/main.go")
+	got, err := ReadFile(ctx, dir, "src/main.go", false)
 	if err != nil || got.Content != "package main" || got.Size != 12 {
 		t.Fatalf("ReadFile = %+v, %v", got, err)
 	}
-	if got, err := ReadFile(ctx, dir, "bin.dat"); err != nil || !got.Binary || got.Content != "" {
+	if got, err := ReadFile(ctx, dir, "bin.dat", false); err != nil || !got.Binary || got.Content != "" {
 		t.Fatalf("binary = %+v, %v", got, err)
 	}
 	for _, p := range []string{".env", "../secret", "link", "src", "missing.go", "src/*.go", outside} {
-		if _, err := ReadFile(ctx, dir, p); !errors.Is(err, ErrFileNotFound) {
+		if _, err := ReadFile(ctx, dir, p, false); !errors.Is(err, ErrFileNotFound) {
 			t.Errorf("ReadFile(%q) err = %v, want ErrFileNotFound", p, err)
 		}
 	}
-	if _, err := ListFiles(ctx, t.TempDir()); !errors.Is(err, ErrNotARepo) {
+	if _, err := ListFiles(ctx, t.TempDir(), false); !errors.Is(err, ErrNotARepo) {
 		t.Errorf("non-repo err = %v", err)
 	}
 }
@@ -98,7 +98,7 @@ func TestReadFileRefusesHiddenTargets(t *testing.T) {
 
 	for _, p := range []string{"public.txt", "cfg", "docs/HEAD", "pipe"} {
 		done := make(chan error, 1)
-		go func() { _, err := ReadFile(ctx, dir, p); done <- err }()
+		go func() { _, err := ReadFile(ctx, dir, p, false); done <- err }()
 		select {
 		case err := <-done:
 			if !errors.Is(err, ErrFileNotFound) {
@@ -111,7 +111,7 @@ func TestReadFileRefusesHiddenTargets(t *testing.T) {
 
 	// A git failure is an error, not a 404.
 	must(os.WriteFile(filepath.Join(dir, ".git", "index"), []byte("garbage"), 0o644))
-	if _, err := ReadFile(ctx, dir, ".gitignore"); err == nil || errors.Is(err, ErrFileNotFound) {
+	if _, err := ReadFile(ctx, dir, ".gitignore", false); err == nil || errors.Is(err, ErrFileNotFound) {
 		t.Errorf("corrupt index err = %v, want an operational error", err)
 	}
 }
@@ -128,17 +128,56 @@ func TestListFilesStopsAtBudget(t *testing.T) {
 	ctx := context.Background()
 
 	MaxListedFiles = 3
-	list, err := ListFiles(ctx, dir)
+	list, err := ListFiles(ctx, dir, false)
 	if err != nil || len(list.Files) != 3 || !list.Truncated {
 		t.Fatalf("count cap: %+v, %v", list, err)
 	}
 	MaxListedFiles, MaxListedBytes = 100, 5 // foo.txt (7 bytes) alone overflows
-	list, err = ListFiles(ctx, dir)
+	list, err = ListFiles(ctx, dir, false)
 	if err != nil || !list.Truncated || len(list.Files) > 2 {
 		t.Fatalf("byte cap: %+v, %v", list, err)
 	}
 	MaxListedBytes = 1 << 20
-	if list, err = ListFiles(ctx, dir); err != nil || list.Truncated || len(list.Files) != 6 {
+	if list, err = ListFiles(ctx, dir, false); err != nil || list.Truncated || len(list.Files) != 6 {
 		t.Fatalf("under cap: %+v, %v", list, err)
+	}
+}
+
+func TestListAndReadIgnoredFiles(t *testing.T) {
+	dir := t.TempDir()
+	gitInit(t, dir)
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(os.WriteFile(filepath.Join(dir, ".gitignore"), []byte(".env\nbuild/\n"), 0o644))
+	must(os.WriteFile(filepath.Join(dir, ".env"), []byte("TOKEN=x"), 0o644))
+	must(os.MkdirAll(filepath.Join(dir, "build", "out"), 0o755))
+	must(os.WriteFile(filepath.Join(dir, "build", "out", "a.js"), []byte("js"), 0o644))
+	ctx := context.Background()
+
+	list, err := ListFiles(ctx, dir, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Non-ignored files first, ignored ones (as files, not dirs) after.
+	want := []string{".gitignore", "foo.txt", ".env", "build/out/a.js"}
+	if !slices.Equal(list.Files, want) {
+		t.Fatalf("files = %v, want %v", list.Files, want)
+	}
+	if got, err := ReadFile(ctx, dir, "build/out/a.js", true); err != nil || got.Content != "js" {
+		t.Fatalf("ReadFile ignored = %+v, %v", got, err)
+	}
+	if _, err := ReadFile(ctx, dir, ".env", false); !errors.Is(err, ErrFileNotFound) {
+		t.Fatalf("ReadFile(.env, false) err = %v, want ErrFileNotFound", err)
+	}
+
+	// Ignored files share the budget and are dropped first.
+	defer func(n int) { MaxListedFiles = n }(MaxListedFiles)
+	MaxListedFiles = 3
+	if list, err = ListFiles(ctx, dir, true); err != nil || !list.Truncated || !slices.Equal(list.Files, want[:3]) {
+		t.Fatalf("capped = %+v, %v", list, err)
 	}
 }

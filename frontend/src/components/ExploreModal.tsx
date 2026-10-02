@@ -45,7 +45,7 @@ function RepoTree({ files, onSelect }: { files: string[]; onSelect: (path: strin
       if (file) onSelectRef.current(file);
     },
   });
-  return <FileTree model={model} className="oc-diff-fs-files" aria-label="Project files" data-testid="explore-tree" />;
+  return <FileTree model={model} className="oc-explore-tree" aria-label="Project files" data-testid="explore-tree" />;
 }
 
 function FileBody({ file }: { file: RepoFileContent }) {
@@ -59,11 +59,14 @@ function FileBody({ file }: { file: RepoFileContent }) {
 }
 
 // ExploreModal browses every non-ignored file of the repository that
-// contains `dir`, rooted at the repo (or worktree) root.
+// contains `dir`, rooted at the repo (or worktree) root. A toggle adds
+// gitignored files.
 export function ExploreModal({ dir, remoteId, onClose }: { dir: string; remoteId: string; onClose: () => void }) {
-  const list = useLoad<RepoFileList>(dir, (signal) => api.repoFiles(dir, remoteId, signal));
+  const [ignored, setIgnored] = useState(false);
+  const list = useLoad<RepoFileList>(`${ignored}:${dir}`, (signal) => api.repoFiles(dir, remoteId, signal, ignored));
   const [selected, setSelected] = useState<string | null>(null);
-  const file = useLoad<RepoFileContent>(selected, (signal) => api.repoFile(dir, selected ?? '', remoteId, signal));
+  const file = useLoad<RepoFileContent>(selected, (signal) => api.repoFile(dir, selected ?? '', remoteId, signal, ignored));
+  const toggleIgnored = () => { setIgnored((v) => !v); setSelected(null); };
 
   return (
     <Modal onClose={onClose} label="Explore" backdropClassName="oc-diff-fs-backdrop" dialogClassName="oc-diff-fs-modal" dialogTestId="explore-modal">
@@ -75,9 +78,17 @@ export function ExploreModal({ dir, remoteId, onClose }: { dir: string; remoteId
         <IconButton icon="bi-x-lg" label="Close" variant="ghost" size="compact" onClick={onClose} />
       </header>
       <div className="oc-diff-fs-cols">
-        {list.data ? <RepoTree files={list.data.files} onSelect={setSelected} />
-          : list.error ? <EmptyState className="oc-diff-fs-files">{list.error}</EmptyState>
-          : <LoadingState className="oc-diff-fs-files">Loading files…</LoadingState>}
+        <div className="oc-diff-fs-files oc-explore-side">
+          <div className="oc-explore-options">
+            <label>
+              <input type="checkbox" checked={ignored} onChange={toggleIgnored} />
+              Show ignored files
+            </label>
+          </div>
+          {list.data ? <RepoTree key={String(ignored)} files={list.data.files} onSelect={setSelected} />
+            : list.error ? <EmptyState className="oc-explore-tree">{list.error}</EmptyState>
+            : <LoadingState className="oc-explore-tree">Loading files…</LoadingState>}
+        </div>
         <div className="oc-diff-fs-diff">
           {file.data ? <FileBody file={file.data} />
             : file.error ? <EmptyState>{file.error}</EmptyState>

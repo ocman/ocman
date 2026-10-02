@@ -48,6 +48,24 @@ func TestHandleRepoFiles(t *testing.T) {
 		t.Fatalf("file status = %d, body = %s", rr.Code, rr.Body.String())
 	}
 
+	// ignored=1 lists and reads gitignored files; without it they are 404.
+	if err := os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("*.log\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "x.log"), []byte("log"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rr = get(srv.handleRepoFiles, q("dir", dir, "remoteId", "local", "ignored", "1"))
+	if rr.Code != http.StatusOK || json.Unmarshal(rr.Body.Bytes(), &list) != nil || list.Files[len(list.Files)-1] != "x.log" {
+		t.Fatalf("ignored list status = %d, body = %s", rr.Code, rr.Body.String())
+	}
+	if rr = get(srv.handleRepoFile, q("dir", dir, "remoteId", "local", "path", "x.log", "ignored", "1")); rr.Code != http.StatusOK {
+		t.Fatalf("ignored read status = %d", rr.Code)
+	}
+	if rr = get(srv.handleRepoFile, q("dir", dir, "remoteId", "local", "path", "x.log")); rr.Code != http.StatusNotFound {
+		t.Fatalf("hidden read status = %d", rr.Code)
+	}
+
 	cases := []struct {
 		name  string
 		h     http.HandlerFunc
