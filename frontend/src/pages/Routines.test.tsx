@@ -485,6 +485,52 @@ describe('Routines', () => {
     expect(within(dialog).getAllByRole('row')).toHaveLength(57);
   });
 
+  it('keeps a slow history response instead of refetching over it', async () => {
+    vi.useFakeTimers();
+    let resolve!: (runs: RoutineRun[]) => void;
+    vi.mocked(api.routines.history).mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    render(<MemoryRouter><Routines /></MemoryRouter>);
+    await act(async () => {});
+    fireEvent.click(screen.getByText(routine.name).closest('tr')!);
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+    expect(api.routines.list).toHaveBeenCalledTimes(4);
+    expect(api.routines.history).toHaveBeenCalledTimes(1);
+
+    await act(async () => { resolve([mkRun('slow', 1_000, { state: 'failure' })]); });
+    expect(within(screen.getByRole('dialog', { name: 'Morning check history' })).getByText('failure')).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(api.routines.history).toHaveBeenCalledTimes(2);
+  });
+
+  it('resets to the newest page when more than a page of runs arrives, keeping paging contiguous', async () => {
+    vi.useFakeTimers();
+    let all = Array.from({ length: 60 }, (_, i) => mkRun(`old-${String(60 - i).padStart(3, '0')}`, 100_000 - i * 1_000));
+    vi.mocked(api.routines.history).mockImplementation(async (_id, page) => {
+      const from = page.before ? all.findIndex((run) => run.id === page.before!.id) + 1 : 0;
+      return all.slice(from, from + page.limit);
+    });
+    render(<MemoryRouter><Routines /></MemoryRouter>);
+    await act(async () => {});
+    fireEvent.click(screen.getByText(routine.name).closest('tr')!);
+    await act(async () => {});
+    const dialog = screen.getByRole('dialog', { name: 'Morning check history' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Load older runs' }));
+    await act(async () => {});
+    expect(within(dialog).getAllByText('manual')).toHaveLength(60);
+    expect(within(dialog).queryByRole('button', { name: 'Load older runs' })).not.toBeInTheDocument();
+
+    // 70 new runs: the newest page no longer overlaps what is shown.
+    all = [...Array.from({ length: 70 }, (_, i) => mkRun(`new-${String(70 - i).padStart(3, '0')}`, 300_000 - i * 1_000, { trigger: 'schedule' })), ...all];
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(within(dialog).getAllByText('schedule')).toHaveLength(50);
+    expect(within(dialog).queryByText('manual')).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Load older runs' }));
+    await act(async () => {});
+    expect(api.routines.history).toHaveBeenLastCalledWith(routine.id, { limit: 50, before: all[49] });
+    expect(within(dialog).getAllByText('schedule')).toHaveLength(70);
+    expect(within(dialog).getAllByText('manual')).toHaveLength(30);
+  });
+
   it('shows a history load error inside the drawer', async () => {
     vi.mocked(api.routines.history).mockRejectedValue(new Error('history failed'));
     const user = userEvent.setup();

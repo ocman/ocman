@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '../components/Control';
 import { DataTable } from '../components/DataTable';
@@ -12,12 +12,19 @@ const HISTORY_PAGE_SIZE = 50;
 
 const olderThan = (run: RoutineRun, last: RoutineRun) => run.createdAt < last.createdAt || (run.createdAt === last.createdAt && run.id < last.id);
 
-/** Replace the newest page, keeping any older pages the user already loaded. */
-function mergeNewestPage(newest: RoutineRun[], shown: RoutineRun[]): RoutineRun[] {
-  const last = newest[newest.length - 1];
-  if (newest.length < HISTORY_PAGE_SIZE || !last) return newest;
+type Shown = { runs: RoutineRun[]; exhausted: boolean };
+
+/**
+ * Replace the newest page. Older pages already loaded are kept only when the
+ * new page overlaps them; otherwise (more than a page of new runs) they would
+ * leave an unreachable gap, so the view resets to the newest page.
+ */
+function mergeNewestPage(newest: RoutineRun[], shown: Shown): Shown {
+  if (newest.length < HISTORY_PAGE_SIZE) return { runs: newest, exhausted: true };
   const ids = new Set(newest.map((run) => run.id));
-  return [...newest, ...shown.filter((run) => !ids.has(run.id) && olderThan(run, last))];
+  if (!shown.runs.some((run) => ids.has(run.id))) return { runs: newest, exhausted: false };
+  const last = newest[newest.length - 1];
+  return { runs: [...newest, ...shown.runs.filter((run) => !ids.has(run.id) && olderThan(run, last))], exhausted: shown.exhausted };
 }
 
 type Props = {
@@ -29,22 +36,26 @@ type Props = {
 
 // Mount with key={routine.id} so switching routines starts a fresh history.
 export function RoutineHistoryDrawer({ routine, refreshKey, onClose }: Props) {
-  const [runs, setRuns] = useState<RoutineRun[]>([]);
+  const [{ runs, exhausted }, setShown] = useState<Shown>({ runs: [], exhausted: false });
   const [loaded, setLoaded] = useState(false);
-  const [exhausted, setExhausted] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [error, setError] = useState('');
+  const mounted = useRef(true);
+  const refreshing = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
+  // One newest-page fetch at a time: a refresh that lands mid-flight is skipped
+  // (the next one catches up), so a slow response is never discarded.
   useEffect(() => {
-    let active = true;
+    if (refreshing.current) return;
+    refreshing.current = true;
     api.routines.history(routine.id, { limit: HISTORY_PAGE_SIZE }).then((newest) => {
-      if (!active) return;
-      setRuns((shown) => mergeNewestPage(newest, shown));
-      if (newest.length < HISTORY_PAGE_SIZE) setExhausted(true);
+      if (!mounted.current) return;
+      setShown((shown) => mergeNewestPage(newest, shown));
       setLoaded(true);
       setError('');
-    }, (err: unknown) => { if (active) setError(err instanceof Error ? err.message : 'Could not load history.'); });
-    return () => { active = false; };
+    }, (err: unknown) => { if (mounted.current) setError(err instanceof Error ? err.message : 'Could not load history.'); })
+      .finally(() => { refreshing.current = false; });
   }, [routine.id, refreshKey]);
 
   const loadOlder = async () => {
@@ -53,12 +64,13 @@ export function RoutineHistoryDrawer({ routine, refreshKey, onClose }: Props) {
     setLoadingOlder(true);
     try {
       const page = await api.routines.history(routine.id, { limit: HISTORY_PAGE_SIZE, before });
-      setRuns((shown) => [...shown, ...page.filter((run) => olderThan(run, shown[shown.length - 1] ?? before))]);
-      if (page.length < HISTORY_PAGE_SIZE) setExhausted(true);
+      if (!mounted.current) return;
+      // Drop the page if a refresh reset the view meanwhile; it would not be contiguous.
+      setShown((shown) => shown.runs[shown.runs.length - 1]?.id !== before.id ? shown : { runs: [...shown.runs, ...page], exhausted: page.length < HISTORY_PAGE_SIZE });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load older runs.');
+      if (mounted.current) setError(err instanceof Error ? err.message : 'Could not load older runs.');
     } finally {
-      setLoadingOlder(false);
+      if (mounted.current) setLoadingOlder(false);
     }
   };
 

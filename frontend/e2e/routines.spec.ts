@@ -11,9 +11,9 @@ test('creates and runs a routine', async ({ mockedPage: page }) => {
       routines = [routine];
       return route.fulfill({ status: 201, json: routine });
     }
-    return route.fulfill({ json: routines });
+    return route.fulfill({ json: routines.map((routine) => ({ ...routine, latestRun: runs[0] })) });
   });
-  await page.route('/api/routines/routine-1/history', (route) => route.fulfill({ json: runs }));
+  await page.route('/api/routines/routine-1/history*', (route) => route.fulfill({ json: runs }));
   await page.route('/api/webhook-inboxes', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 500));
     await route.fulfill({ json: [] });
@@ -38,4 +38,5 @@ test('creates and runs a routine', async ({ mockedPage: page }) => {
   await routine.click();
   await expect(page.getByRole('dialog', { name: 'Release check history' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Open' })).toHaveAttribute('href', '/session/routine-session?platform=opencode');
+  await expect(routine.getByText('running')).toBeVisible();
 });
