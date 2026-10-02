@@ -30,6 +30,7 @@ import { SidebarProjectGroup as ProjectGroup } from './SidebarProjectGroup';
 import { SidebarSessionRow } from './SidebarSessionRow';
 import { useSidebarReorder } from './useSidebarReorder';
 import { SidebarHeader } from './SidebarHeader';
+import { useSidebarFilter } from './useSidebarFilter';
 import { TmuxClientPopover } from './TmuxClientPopover';
 import type { TmuxState } from '../../lib/useTmux';
 import type { GitInfo } from '../../lib/api';
@@ -118,9 +119,9 @@ export function SessionSidebar({
 }: SessionSidebarProps) {
   const sidebarListRef = useRef<HTMLDivElement>(null);
   useSidebarReorder(sidebarListRef, sidebarView);
-  const [showChildren, setShowChildren] = useState(true);
-  const [showFactory, setShowFactory] = useState(false);
-  const [showRoutines, setShowRoutines] = useState(false);
+  const [showChildren, setShowChildren] = useSidebarFilter('children', true);
+  const [showFactory, setShowFactory] = useSidebarFilter('factory', false);
+  const [showRoutines, setShowRoutines] = useSidebarFilter('routines', false);
   const [searchQuery, setSearchQuery] = useState('');
   const draftSessionIds = useDraftSessionIds();
   const { data: workEpics } = useWorkEpics();

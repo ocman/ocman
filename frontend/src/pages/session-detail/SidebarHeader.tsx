@@ -67,7 +67,7 @@ export function SidebarHeader({
         </button>
         <button
           type="button"
-          className={`session-sidebar-new${showArchivedRecent || !showChildren || showFactory || showRoutines ? ' active' : ''}`}
+          className="session-sidebar-new"
           onClick={() => setFiltersOpen((open) => !open)}
           title="Filter sessions"
           aria-label="Filter sessions"

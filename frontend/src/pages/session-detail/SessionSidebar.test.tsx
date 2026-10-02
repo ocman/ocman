@@ -89,7 +89,25 @@ function renderSidebar(
 
 describe('SessionSidebar', () => {
   beforeEach(() => {
+    localStorage.clear();
     vi.mocked(useWorkEpics).mockReturnValue({ data: [] } as never);
+  });
+
+  it('restores filter selections after the sidebar remounts', () => {
+    const group: SidebarProjectGroup = {
+      directory: '/repo', sessions: [session()], lastUpdated: 1, aggregate: { kind: 'none' },
+    };
+    const first = renderSidebar(group, {});
+    fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
+    for (const name of ['Show children', 'Show factory', 'Show routines']) {
+      fireEvent.click(screen.getByRole('checkbox', { name }));
+    }
+    first.unmount();
+    renderSidebar(group, {});
+    fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
+    expect(screen.getByRole('checkbox', { name: 'Show children' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Show factory' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Show routines' })).toBeChecked();
   });
 
   it('uses compact relative times', () => {

@@ -9,6 +9,7 @@ import { projectRootForDirectory } from '../../lib/worktrees';
 import { remoteLog } from '../../lib/remoteLog';
 import { onSessionActivity, onSessionChanged, onSseConnect } from '../../lib/useGlobalEvents';
 import { useActivityScope } from '../../lib/activityScopes';
+import { useSidebarFilter } from './useSidebarFilter';
 
 /**
  * Reconciliation backstop for events missed while disconnected. Normal
@@ -106,7 +107,7 @@ export function useSidebarSessions({
 
   const [loadingRecentSessions, setLoadingRecentSessions] = useState(true);
   const [archivingSessionIds, setArchivingSessionIds] = useState<Set<string>>(new Set());
-  const [showArchivedRecent, setShowArchivedRecent] = useState(false);
+  const [showArchivedRecent, setShowArchivedRecent] = useSidebarFilter('archived', false);
 
   const archiveTimeoutsRef = useRef<Record<string, number>>({});
   const showArchivedRecentRef = useRef(showArchivedRecent);
