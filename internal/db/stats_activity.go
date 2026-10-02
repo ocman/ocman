@@ -72,8 +72,7 @@ func (d *DB) GetDailyActivity(ctx context.Context, since int64, modelFilter, dir
 		SELECT
 			date(m.time_created / 1000, 'unixepoch', 'localtime') as day,
 			` + selectExpr + `
-		FROM message m
-		JOIN session s ON s.id = m.session_id
+		FROM ` + messagesFrom(cutoff, true) + `
 		WHERE json_extract(m.data, '$.role') = 'assistant'
 		  AND m.time_created >= ?`
 	args2 := []interface{}{cutoff}
@@ -133,8 +132,7 @@ func (d *DB) GetDailyActivity(ctx context.Context, since int64, modelFilter, dir
 		SELECT
 			date(m.time_created / 1000, 'unixepoch', 'localtime') as day,
 			count(*) as user_messages
-		FROM message m
-		JOIN session s ON s.id = m.session_id
+		FROM ` + messagesFrom(cutoff, true) + `
 		WHERE json_extract(m.data, '$.role') = 'user'
 		  AND m.time_created >= ?
 		  AND s.title NOT LIKE '%(% subagent)'`
@@ -200,12 +198,7 @@ func (d *DB) GetHourlyTokensByModel(ctx context.Context, windowDays int, since i
 		SELECT
 			strftime('%Y-%m-%d %H', m.time_created / 1000, 'unixepoch', 'localtime') as datetime,
 			m.data
-		FROM message m`
-	if dirFrag != "" {
-		query += `
-		JOIN session s ON s.id = m.session_id`
-	}
-	query += `
+		FROM ` + messagesFrom(cutoff, dirFrag != "") + `
 		WHERE json_extract(m.data, '$.role') = 'assistant'
 		  AND m.time_created >= ?`
 	args := []interface{}{cutoff}

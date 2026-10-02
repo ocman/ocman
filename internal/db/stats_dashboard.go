@@ -181,17 +181,13 @@ func (d *DB) scanDashboardRows(ctx context.Context, opts MetricsDashboardOptions
 	dirFrag, dirArgs := directoryWhere(opts.Dir)
 	query := `
 		SELECT m.id, m.session_id, m.time_created, m.data
-		FROM message m`
-	if dirFrag != "" {
-		// Join only when scoping; preserves the existing query plan for the
-		// unfiltered case.
-		query += `
-		JOIN session s ON s.id = m.session_id`
+		FROM ` + messagesFrom(opts.Since, dirFrag != "") + `
+		WHERE json_extract(m.data, '$.role') = 'assistant'`
+	var args []interface{}
+	if opts.Since > 0 {
+		query += "\n		  AND m.time_created >= ?"
+		args = append(args, opts.Since)
 	}
-	query += `
-		WHERE json_extract(m.data, '$.role') = 'assistant'
-		  AND (? <= 0 OR m.time_created >= ?)`
-	args := []interface{}{opts.Since, opts.Since}
 	if dirFrag != "" {
 		query += "\n		  AND " + dirFrag
 		args = append(args, dirArgs...)

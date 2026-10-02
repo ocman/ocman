@@ -1059,6 +1059,38 @@ func TestGetStats(t *testing.T) {
 	}
 }
 
+// TestGetStatsUsesSessionTotals: with OpenCode's denormalised session
+// columns present, totals come from them rather than a message-blob scan
+// (the message row deliberately disagrees to prove which source is read).
+func TestGetStatsUsesSessionTotals(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	if _, err := db.db.Exec(`
+		ALTER TABLE session ADD COLUMN cost REAL NOT NULL DEFAULT 0;
+		ALTER TABLE session ADD COLUMN tokens_input INTEGER NOT NULL DEFAULT 0;
+		ALTER TABLE session ADD COLUMN tokens_output INTEGER NOT NULL DEFAULT 0;`); err != nil {
+		t.Fatal(err)
+	}
+	db.detectSessionTotals()
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s1", "Session 1", "/a", now, now)
+	insertSession(t, db, "s2", "Session 2", "/b", now, now)
+	if _, err := db.db.Exec(`UPDATE session SET tokens_input = 300, tokens_output = 70, cost = 1.5`); err != nil {
+		t.Fatal(err)
+	}
+	insertMessage(t, db, "m1", "s1", now, map[string]interface{}{
+		"role": "assistant", "tokens": map[string]interface{}{"input": 1, "output": 1}, "cost": 0.01,
+	})
+
+	stats, err := db.GetStats(t.Context())
+	if err != nil {
+		t.Fatalf("GetStats: %v", err)
+	}
+	if stats.TotalTokensIn != 600 || stats.TotalTokensOut != 140 || stats.TotalCost != 3 {
+		t.Errorf("totals = %d/%d/%v, want 600/140/3", stats.TotalTokensIn, stats.TotalTokensOut, stats.TotalCost)
+	}
+}
+
 func TestGetMetricsDashboard(t *testing.T) {
 	db := openTestDB(t)
 	defer db.Close()

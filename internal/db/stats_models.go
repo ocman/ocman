@@ -12,17 +12,13 @@ import (
 // window (since) and directory prefix (dir; see directoryWhere).
 func (d *DB) GetModelUsage(ctx context.Context, since int64, dir string) ([]ModelUsage, error) {
 	dirFrag, dirArgs := directoryWhere(dir)
-	query := `SELECT m.data FROM message m`
-	if dirFrag != "" {
-		// Only join when scoping; preserves the existing query plan
-		// for the unfiltered case.
-		query += `
-		JOIN session s ON s.id = m.session_id`
+	query := `SELECT m.data FROM ` + messagesFrom(since, dirFrag != "") + `
+		WHERE json_extract(m.data, '$.role') = 'assistant'`
+	var args []interface{}
+	if since > 0 {
+		query += "\n		  AND m.time_created >= ?"
+		args = append(args, since)
 	}
-	query += `
-		WHERE json_extract(m.data, '$.role') = 'assistant'
-		  AND (? <= 0 OR m.time_created >= ?)`
-	args := []interface{}{since, since}
 	if dirFrag != "" {
 		query += "\n		  AND " + dirFrag
 		args = append(args, dirArgs...)

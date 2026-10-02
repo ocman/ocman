@@ -89,15 +89,22 @@ func (d *DB) GetStats(ctx context.Context) (*Stats, error) {
 		return nil, err
 	}
 
-	// Aggregate tokens and cost via SQL instead of deserializing every message in Go.
-	err = d.db.QueryRowContext(ctx, `
+	// Aggregate tokens and cost via SQL instead of deserializing every message
+	// in Go. OpenCode's denormalised session totals make this index-only;
+	// older schemas fall back to scanning every message blob.
+	totals := `
+		SELECT COALESCE(SUM(tokens_input), 0), COALESCE(SUM(tokens_output), 0), COALESCE(SUM(cost), 0)
+		FROM session`
+	if !d.sessionTotals {
+		totals = `
 		SELECT
 			COALESCE(SUM(COALESCE(json_extract(data, '$.tokens.input'), 0)), 0),
 			COALESCE(SUM(COALESCE(json_extract(data, '$.tokens.output'), 0)), 0),
 			COALESCE(SUM(COALESCE(json_extract(data, '$.cost'), 0)), 0)
 		FROM message
-		WHERE json_extract(data, '$.role') = 'assistant'
-	`).Scan(&s.TotalTokensIn, &s.TotalTokensOut, &s.TotalCost)
+		WHERE json_extract(data, '$.role') = 'assistant'`
+	}
+	err = d.db.QueryRowContext(ctx, totals).Scan(&s.TotalTokensIn, &s.TotalTokensOut, &s.TotalCost)
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +198,7 @@ func (d *DB) GetProjects(ctx context.Context) ([]ProjectStats, error) {
 func (d *DB) GetNewAssistantMessages(ctx context.Context, since int64) ([]LLMMessageRow, int64, error) {
 	rows, err := d.db.QueryContext(ctx, `
 		SELECT m.time_created, m.session_id, m.data
-		FROM message m
+		FROM `+messagesFrom(since, false)+`
 		WHERE json_extract(m.data, '$.role') = 'assistant'
 		  AND m.time_created > ?
 		ORDER BY m.time_created ASC
