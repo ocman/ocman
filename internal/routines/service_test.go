@@ -832,7 +832,10 @@ func TestArchiveSessionAfterSuccessfulRun(t *testing.T) {
 				t.Fatal(err)
 			}
 			stamp, ok := archived[state.Key{Platform: run.Platform, SessionID: run.SessionID}]
-			if ok != tc.wantArchive || (ok && stamp != 1234) {
+			// The stamp is the settle time, not the session's last update
+			// (1234): OpenCode writes the session once more after the turn
+			// ends, and that write must not resurface the archived session.
+			if ok != tc.wantArchive || (ok && stamp != h.now.Load()) {
 				t.Fatalf("archives = %+v", archived)
 			}
 			got, err := h.svc.Get(t.Context(), routine.ID)

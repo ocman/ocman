@@ -340,7 +340,11 @@ func (s *Service) settleRunning(ctx context.Context, recoverOrphans bool) error 
 		switch detail.Session.Status {
 		case db.StatusDone, db.StatusWaiting:
 			if run.ArchiveSessionAfterSuccess {
-				if err := s.store.ArchiveSession(ctx, run.Platform, run.SessionID, detail.Session.TimeUpdated); err != nil {
+				// Stamp at settle time: OpenCode writes the session once more
+				// after the turn ends (summary), and an archive stamped with
+				// the pre-write time_updated resurfaces on the next list poll.
+				stamp := max(detail.Session.TimeUpdated, s.now().UnixMilli())
+				if err := s.store.ArchiveSession(ctx, run.Platform, run.SessionID, stamp); err != nil {
 					result = errors.Join(result, err)
 					continue
 				}
