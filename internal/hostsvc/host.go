@@ -95,6 +95,10 @@ type GitDiffOptions struct {
 type ProjectUpstreams struct {
 	RepoRoot string         `json:"repoRoot"`
 	Remotes  []forge.Remote `json:"remotes"`
+	// Identity is the origin's credential-free project identity key
+	// (remote.NormalizeProjectIdentity), computed on the owner before URL
+	// redaction; "" when there is no origin.
+	Identity string `json:"identity,omitempty"`
 }
 
 // FetchPRHeadRequest identifies a cross-fork PR head to fetch on the owner.

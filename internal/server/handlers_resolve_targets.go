@@ -54,7 +54,7 @@ func (s *Server) handleResolveTargets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	origin := ""
+	var origin string
 	matchDir := req.Dir
 	if req.RemoteID != "" && req.RemoteID != "local" {
 		project, err := owner.ProjectUpstreams(r.Context(), req.Dir)
@@ -62,13 +62,10 @@ func (s *Server) handleResolveTargets(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Could not read the source project's git remotes", http.StatusBadGateway)
 			return
 		}
-		for _, upstream := range project.Remotes {
-			if upstream.Name == "origin" && upstream.Host != "" && upstream.Repo != "" {
-				// Raw URLs are redacted by the RPC; host/repo retain the identity.
-				origin = "https://" + upstream.Host + "/" + upstream.Repo
-				break
-			}
-		}
+		// Raw URLs are redacted by the RPC; the owner-computed identity key
+		// is credential-free and normalizes to itself, so it stands in for
+		// the origin below.
+		origin = project.Identity
 		// Identical paths on different hosts do not identify the same project.
 		matchDir = ""
 	} else {

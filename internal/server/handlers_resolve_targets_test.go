@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -77,12 +79,12 @@ func TestHandleResolveTargets_RemoteOrigin(t *testing.T) {
 		name, origin string
 		want         int
 	}{
-		{"matching origin", "org/repo", 1},
-		{"different origin same path", "other/repo", 0},
+		{"matching origin", "example.com/org/repo", 1},
+		{"different origin same path", "example.com/other/repo", 0},
 		{"no origin", "", 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			host.upstreams.Remotes[0].Repo = tc.origin
+			host.upstreams.Identity = tc.origin
 			rr := httptest.NewRecorder()
 			srv.handleResolveTargets(rr, httptest.NewRequest(http.MethodPost, "/api/sessions/resolve-targets", bytes.NewBufferString(`{"dir":"`+repo+`","remoteId":"rem1"}`)))
 			var resp struct {
@@ -121,8 +123,11 @@ func TestHandleResolveTargets_RemoteReadFailure(t *testing.T) {
 	}
 }
 
+// The nested origin is one forge.Detect cannot parse; matching must still
+// work in both directions, using the owner-computed identity.
 func TestHandleResolveTargets_RemoteRPCRoundTrip(t *testing.T) {
-	localRepo, remoteRepo := initOriginRepo(t), initOriginRepo(t)
+	const origin = "https://gitlab.com/group/subgroup/repo.git"
+	localRepo, remoteRepo := initOriginRepoURL(t, origin), initOriginRepoURL(t, origin)
 	srv := testServer(t)
 	srv.projects.mu.Lock()
 	srv.projects.data = []db.ProjectStats{{Directory: localRepo}}
@@ -130,7 +135,12 @@ func TestHandleResolveTargets_RemoteRPCRoundTrip(t *testing.T) {
 	srv.projects.mu.Unlock()
 	registry := platforms.NewRegistry()
 	registry.Register(&fakePlatform{id: "opencode"})
-	service := remote.NewServer(registry, hostlocal.New(hostlocal.Deps{ProjectUpstreams: srv.hostProjectUpstreams}), "machine", "test")
+	service := remote.NewServer(registry, hostlocal.New(hostlocal.Deps{
+		ProjectUpstreams: srv.hostProjectUpstreams,
+		Projects: func(context.Context) ([]db.ProjectStats, error) {
+			return []db.ProjectStats{{Directory: remoteRepo}}, nil
+		},
+	}), "machine", "test")
 	listener, err := remote.NewListener(remote.ListenConfig{Addr: "127.0.0.1:0", Token: "token", TrustedOverlay: true}, service)
 	if err != nil {
 		t.Fatal(err)
@@ -156,25 +166,43 @@ func TestHandleResolveTargets_RemoteRPCRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(upstreams.Remotes) != 1 || upstreams.Remotes[0].URL != "" {
-		t.Fatalf("expected redacted origin, got %+v", upstreams)
+	for _, r := range upstreams.Remotes {
+		if r.URL != "" {
+			t.Fatalf("expected redacted origin, got %+v", upstreams)
+		}
 	}
-	rr := httptest.NewRecorder()
-	srv.handleResolveTargets(rr, httptest.NewRequest(http.MethodPost, "/api/sessions/resolve-targets", bytes.NewBufferString(`{"dir":"`+remoteRepo+`","remoteId":"machine"}`)))
-	var resp struct {
-		Candidates []remote.TargetCandidate `json:"candidates"`
+	mgr.RefreshInventories(t.Context())
+	resolve := func(body string) []remote.TargetCandidate {
+		t.Helper()
+		rr := httptest.NewRecorder()
+		srv.handleResolveTargets(rr, httptest.NewRequest(http.MethodPost, "/api/sessions/resolve-targets", bytes.NewBufferString(body)))
+		var resp struct {
+			Candidates []remote.TargetCandidate `json:"candidates"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("status %d: %s", rr.Code, rr.Body.String())
+		}
+		return resp.Candidates
 	}
-	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
-		t.Fatal(err)
+	has := func(cands []remote.TargetCandidate, remoteID, dir string) bool {
+		return slices.ContainsFunc(cands, func(c remote.TargetCandidate) bool { return c.RemoteID == remoteID && c.Dir == dir })
 	}
-	if len(resp.Candidates) != 1 || resp.Candidates[0].Dir != localRepo || resp.Candidates[0].RemoteID != "local" {
-		t.Fatalf("status %d, candidates %+v; want local %s", rr.Code, resp.Candidates, localRepo)
+	if c := resolve(`{"dir":"` + remoteRepo + `","remoteId":"machine"}`); !has(c, "local", localRepo) || !has(c, "machine", remoteRepo) {
+		t.Fatalf("remote source: candidates %+v; want local %s and machine %s", c, localRepo, remoteRepo)
+	}
+	if c := resolve(`{"dir":"` + localRepo + `"}`); !has(c, "local", localRepo) || !has(c, "machine", remoteRepo) {
+		t.Fatalf("local source: candidates %+v; want local %s and machine %s", c, localRepo, remoteRepo)
 	}
 }
 
 // initOriginRepo creates a git repo with an origin remote so
 // localGitOrigin returns a non-empty URL.
 func initOriginRepo(t *testing.T) string {
+	t.Helper()
+	return initOriginRepoURL(t, "https://example.com/org/repo.git")
+}
+
+func initOriginRepoURL(t *testing.T, origin string) string {
 	t.Helper()
 	testutil.RequireGit(t)
 	dir := t.TempDir()
@@ -189,7 +217,7 @@ func initOriginRepo(t *testing.T) string {
 		}
 	}
 	run("init", "-b", "main")
-	run("remote", "add", "origin", "https://example.com/org/repo.git")
+	run("remote", "add", "origin", origin)
 	if err := os.WriteFile(filepath.Join(dir, "f"), []byte("x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

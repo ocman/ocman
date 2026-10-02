@@ -4,11 +4,14 @@ import (
 	"context"
 	"net/http"
 	"os/exec"
+	"strings"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/forge"
 	"github.com/NoUseFreak/ocman/internal/git"
+	"github.com/NoUseFreak/ocman/internal/gitexec"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/tmux"
 	"github.com/NoUseFreak/ocman/internal/whisper"
 )
@@ -106,7 +109,13 @@ func (s *Server) hostProjectUpstreams(ctx context.Context, dir string) (*hostsvc
 		return nil, err
 	}
 	remotes, err := forge.Detect(ctx, repoRoot, anyForgejoHost{})
-	return &hostsvc.ProjectUpstreams{RepoRoot: repoRoot, Remotes: remotes}, err
+	out := &hostsvc.ProjectUpstreams{RepoRoot: repoRoot, Remotes: remotes}
+	// Same normalizer as the project inventory, so origins forge.Detect
+	// can't parse (e.g. nested GitLab groups) still match.
+	if origin, oerr := gitexec.Output(ctx, dir, "remote", "get-url", "origin"); oerr == nil && strings.TrimSpace(origin) != "" { // ocman:allow-host-helper
+		out.Identity = remote.NormalizeProjectIdentity(origin, dir)
+	}
+	return out, err
 }
 
 type anyForgejoHost struct{}
