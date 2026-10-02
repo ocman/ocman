@@ -44,7 +44,7 @@ describe('automatic worktree start', () => {
     expect(composer.disabled).toBe(true);
     await waitFor(() => expect(composer.disabled).toBe(false));
     expect(composer.target).toBe('worktree');
-    expect(mocks.info).toHaveBeenCalledWith('/api/git/info?dirs=%2Frepo&remoteId=machine', expect.any(AbortSignal));
+    expect(mocks.info).toHaveBeenCalledWith('/api/git/info?dir=%2Frepo&remoteId=machine', expect.any(AbortSignal));
     const images = [{ url: 'data:image/png;base64,abc', mime: 'image/png' }];
     await act(() => composer.onSend!('Fix login', images, true));
     expect(mocks.create).toHaveBeenCalledWith('/api/worktree/create-and-launch?platform=r-machine%3Aopencode', {
@@ -82,6 +82,15 @@ describe('automatic worktree start', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('remote disconnected');
     expect(mocks.send).not.toHaveBeenCalled();
     expect(originalSend).not.toHaveBeenCalled();
+  });
+
+  it('looks up comma-containing paths as a literal directory', async () => {
+    mocks.info.mockResolvedValue({ '/repo/foo,bar': { branch: 'main' } });
+    mount({ directory: '/repo/foo,bar' });
+    await waitFor(() => expect(composer.disabled).toBe(false));
+    expect(mocks.info).toHaveBeenCalledWith('/api/git/info?dir=%2Frepo%2Ffoo%2Cbar&remoteId=machine', expect.any(AbortSignal));
+    await act(() => composer.onSend!('Fix login'));
+    expect(mocks.create).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ projectDir: '/repo/foo,bar' }));
   });
 
   it('allows an explicit current-checkout choice', async () => {

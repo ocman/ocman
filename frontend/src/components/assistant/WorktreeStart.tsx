@@ -34,7 +34,7 @@ export function WorktreeStart({ children, ...props }: ComposerProps & {
       try {
         const detail = await api.session(sessionId!, undefined, undefined, controller.signal);
         const session = detail.session;
-        const query = new URLSearchParams({ dirs: directory!, remoteId: session.remoteId || 'local' });
+        const query = new URLSearchParams({ dir: directory!, remoteId: session.remoteId || 'local' });
         const info = await fetchJSON<Record<string, GitInfo>>(`/api/git/info?${query}`, controller.signal);
         const repo = !!info[directory!]?.branch;
         let alreadyChosen = false;

@@ -21,7 +21,9 @@ import (
 // docs/other/profiling.md).
 //
 // Query parameters:
-//   - `dirs` (required): comma-separated absolute paths. At least
+//   - `dir`: one literal absolute path, preserving commas and spaces. Takes
+//     precedence over `dirs` when provided.
+//   - `dirs` (required without `dir`): comma-separated absolute paths. At least
 //     one path must be present and every path must be absolute,
 //     mirroring handleGitDiff. A relative path anywhere in the list
 //     rejects the whole request — partial trust is confusing.
@@ -42,14 +44,23 @@ import (
 //	400 Bad Req    — `dirs` empty, or a path is relative
 func (s *Server) handleGitInfo(w http.ResponseWriter, r *http.Request) {
 	raw := r.URL.Query().Get("dirs")
+	literal := r.URL.Query().Get("dir")
+	if literal != "" {
+		raw = literal
+	}
 	if raw == "" {
 		http.Error(w, "dirs query parameter is required", http.StatusBadRequest)
 		return
 	}
-	parts := strings.Split(raw, ",")
+	parts := []string{raw}
+	if literal == "" {
+		parts = strings.Split(raw, ",")
+	}
 	dirs := make([]string, 0, len(parts))
 	for _, p := range parts {
-		p = strings.TrimSpace(p)
+		if literal == "" {
+			p = strings.TrimSpace(p)
+		}
 		if p == "" {
 			continue
 		}
