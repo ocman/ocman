@@ -3,8 +3,9 @@ package db
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
-	"sync"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -60,12 +61,27 @@ const (
 )
 
 type analyticsMirror struct {
-	db       *sql.DB
-	mu       sync.Mutex // serialises syncs; readers never take it
+	db *sql.DB
+	// gate serialises syncs (capacity 1). A channel rather than a mutex so
+	// waiting honours the caller's context.
+	gate     chan struct{}
 	ready    atomic.Bool
 	building atomic.Bool
 	lastSync atomic.Int64 // unix nanos of the last successful sync
-	lastFull time.Time    // guarded by mu
+	// lastFull is the unix millis of the last full rebuild, persisted in
+	// meta.full_at so a restart cannot postpone reconciliation.
+	lastFull atomic.Int64
+}
+
+// errMirrorBusy reports that another sync holds the gate.
+var errMirrorBusy = errors.New("analytics mirror sync in progress")
+
+func (m *analyticsMirror) fresh() bool {
+	return time.Since(time.Unix(0, m.lastSync.Load())) <= mirrorMaxStaleness
+}
+
+func (m *analyticsMirror) fullDue() bool {
+	return time.Since(time.UnixMilli(m.lastFull.Load())) > mirrorFullRebuildEvery
 }
 
 // EnableAnalyticsMirror opens (or creates) the mirror at path. source
@@ -80,13 +96,13 @@ func (d *DB) EnableAnalyticsMirror(path, source string) error {
 		mdb.Close()
 		return err
 	}
-	m := &analyticsMirror{db: mdb}
-	var built string
-	_ = mdb.QueryRow(`SELECT value FROM meta WHERE key = 'built'`).Scan(&built)
-	m.ready.Store(built == "1")
-	// The copy may predate this process; a full rebuild is due soon, but the
-	// incremental sync keeps it current until then.
-	m.lastFull = time.Now()
+	m := &analyticsMirror{db: mdb, gate: make(chan struct{}, 1)}
+	var fullAt string
+	_ = mdb.QueryRow(`SELECT value FROM meta WHERE key = 'full_at'`).Scan(&fullAt)
+	if ms, err := strconv.ParseInt(fullAt, 10, 64); err == nil && ms > 0 {
+		m.lastFull.Store(ms)
+		m.ready.Store(true)
+	}
 	d.mirror = m
 	return nil
 }
@@ -113,42 +129,72 @@ func initMirror(mdb *sql.DB, source string) error {
 }
 
 // analytics returns the handle analytics queries should read: the mirror
-// when built (synced first if stale), else OpenCode itself.
+// when built, else OpenCode itself. A stale mirror gets a quick incremental
+// sync first. A read never waits on another caller's sync: while one runs,
+// it reads the mirror as it stands. Full builds and the periodic rebuild
+// (~14s on a large database) run in the background.
 func (d *DB) analytics(ctx context.Context) *sql.DB {
 	m := d.mirror
-	if m == nil {
+	switch {
+	case m == nil:
+		return d.db
+	case !m.ready.Load():
+		d.rebuildMirrorInBackground()
+		return d.db
+	case m.fullDue():
+		d.rebuildMirrorInBackground()
+		return m.db
+	case m.fresh():
+		return m.db
+	}
+	switch err := d.syncMirror(ctx, false); {
+	case err == nil, errors.Is(err, errMirrorBusy):
+		return m.db
+	default:
+		log.WithError(err).Warn("syncing analytics mirror; reading OpenCode directly")
 		return d.db
 	}
-	if !m.ready.Load() {
-		if m.building.CompareAndSwap(false, true) {
-			go func() {
-				defer m.building.Store(false)
-				if err := d.SyncAnalyticsMirror(context.Background()); err != nil {
-					log.WithError(err).Warn("building analytics mirror")
-				}
-			}()
-		}
-		return d.db
-	}
-	if time.Since(time.Unix(0, m.lastSync.Load())) > mirrorMaxStaleness {
-		if err := d.SyncAnalyticsMirror(ctx); err != nil {
-			log.WithError(err).Warn("syncing analytics mirror; reading OpenCode directly")
-			return d.db
-		}
-	}
-	return m.db
 }
 
-// SyncAnalyticsMirror brings the mirror up to date with OpenCode. Concurrent
-// callers wait for one sync instead of each running their own.
-func (d *DB) SyncAnalyticsMirror(ctx context.Context) error {
+func (d *DB) rebuildMirrorInBackground() {
 	m := d.mirror
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.ready.Load() && time.Since(time.Unix(0, m.lastSync.Load())) <= mirrorMaxStaleness {
+	if !m.building.CompareAndSwap(false, true) {
+		return
+	}
+	go func() {
+		defer m.building.Store(false)
+		if err := d.SyncAnalyticsMirror(context.Background()); err != nil {
+			log.WithError(err).Warn("building analytics mirror")
+		}
+	}()
+}
+
+// SyncAnalyticsMirror brings the mirror up to date with OpenCode, waiting
+// (until ctx ends) for any sync already running.
+func (d *DB) SyncAnalyticsMirror(ctx context.Context) error {
+	return d.syncMirror(ctx, true)
+}
+
+func (d *DB) syncMirror(ctx context.Context, wait bool) error {
+	m := d.mirror
+	if wait {
+		select {
+		case m.gate <- struct{}{}:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	} else {
+		select {
+		case m.gate <- struct{}{}:
+		default:
+			return errMirrorBusy
+		}
+	}
+	defer func() { <-m.gate }()
+	full := !m.ready.Load() || m.fullDue()
+	if !full && m.fresh() {
 		return nil // another caller just synced
 	}
-	full := !m.ready.Load() || time.Since(m.lastFull) > mirrorFullRebuildEvery
 	since := int64(0)
 	if !full {
 		var err error
@@ -157,11 +203,11 @@ func (d *DB) SyncAnalyticsMirror(ctx context.Context) error {
 		}
 	}
 	start := time.Now()
-	if err := d.copyToMirror(ctx, since); err != nil {
+	if err := d.copyToMirror(ctx, since, start); err != nil {
 		return err
 	}
 	if full {
-		m.lastFull = start
+		m.lastFull.Store(start.UnixMilli())
 		m.ready.Store(true)
 		log.WithField("took", time.Since(start)).Info("analytics mirror rebuilt")
 	}
@@ -192,12 +238,12 @@ func (m *analyticsMirror) windowStart(ctx context.Context) (int64, error) {
 }
 
 // copyToMirror replaces the mirror's messages created at or after since
-// (0 = everything) and all sessions, in one transaction so readers never see
+// (0 = everything, recorded as a full rebuild at start) and all sessions, in one transaction so readers never see
 // a half-applied sync. Rows stream from OpenCode straight into the
 // transaction, so a full rebuild never holds the copy in memory. Messages go
 // before sessions: a session created in between is still copied, and one
 // deleted in between takes its messages with it via the orphan cleanup.
-func (d *DB) copyToMirror(ctx context.Context, since int64) error {
+func (d *DB) copyToMirror(ctx context.Context, since int64, start time.Time) error {
 	tx, err := d.mirror.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -238,8 +284,13 @@ func (d *DB) copyToMirror(ctx context.Context, since int64) error {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM message WHERE session_id NOT IN (SELECT id FROM session)`); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO meta (key, value) VALUES ('built', '1')`); err != nil {
-		return err
+	if since == 0 {
+		// Committed with the copy itself: full_at never claims a rebuild
+		// that did not land.
+		if _, err := tx.ExecContext(ctx, `INSERT OR REPLACE INTO meta (key, value) VALUES ('full_at', ?)`,
+			strconv.FormatInt(start.UnixMilli(), 10)); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }

@@ -1,8 +1,12 @@
 package db
 
 import (
+	"context"
+	"database/sql"
+	"errors"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -190,5 +194,111 @@ func TestAnalyticsMirrorBuildsInBackground(t *testing.T) {
 	}
 	if d.mirror.ready.Load() || len(mirrorIDs(t, d)) != 0 {
 		t.Fatal("mirror from another source should be wiped")
+	}
+}
+
+// TestAnalyticsMirrorReopenKeepsRebuildAge: the full-rebuild age survives a
+// restart, so restarts cannot postpone reconciling changes the incremental
+// window never sees (here, deleting a 50-day-old message).
+func TestAnalyticsMirrorReopenKeepsRebuildAge(t *testing.T) {
+	now := time.Now().UnixMilli()
+	d, path := openMirrored(t)
+	seedMirrorSource(t, d, now)
+	if err := d.SyncAnalyticsMirror(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.db.Exec(`DELETE FROM message WHERE id = 'u-old'`); err != nil {
+		t.Fatal(err)
+	}
+	reopen := func(fullAt int64) {
+		t.Helper()
+		if _, err := d.mirror.db.Exec(`UPDATE meta SET value = ? WHERE key = 'full_at'`, fullAt); err != nil {
+			t.Fatal(err)
+		}
+		d.mirror.db.Close()
+		if err := d.EnableAnalyticsMirror(path, "src-a"); err != nil {
+			t.Fatal(err)
+		}
+		if err := d.SyncAnalyticsMirror(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	reopen(time.Now().Add(-time.Hour).UnixMilli()) // rebuilt recently: incremental only
+	if ids := mirrorIDs(t, d); !slices.Contains(ids, "u-old") {
+		t.Fatalf("recent rebuild should not have re-copied history: %v", ids)
+	}
+	reopen(time.Now().Add(-mirrorFullRebuildEvery - time.Hour).UnixMilli()) // overdue
+	if ids := mirrorIDs(t, d); slices.Contains(ids, "u-old") {
+		t.Fatalf("overdue rebuild after restart kept a deleted message: %v", ids)
+	}
+	var fullAt int64
+	if err := d.mirror.db.QueryRow(`SELECT value FROM meta WHERE key = 'full_at'`).Scan(&fullAt); err != nil {
+		t.Fatal(err)
+	}
+	if time.Since(time.UnixMilli(fullAt)) > time.Minute {
+		t.Fatalf("full_at not advanced by the rebuild: %d", fullAt)
+	}
+}
+
+// TestAnalyticsMirrorNeverBlocksOnBusySync: with a sync holding the gate, a
+// cancelled SyncAnalyticsMirror returns at once and a stale analytics read
+// serves the current mirror instead of waiting.
+func TestAnalyticsMirrorNeverBlocksOnBusySync(t *testing.T) {
+	d, _ := openMirrored(t)
+	if err := d.SyncAnalyticsMirror(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	d.mirror.gate <- struct{}{} // a long sync is running
+	defer func() { <-d.mirror.gate }()
+	forceStale(d)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- d.SyncAnalyticsMirror(ctx) }()
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("err = %v, want context.Canceled", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("cancelled waiter stayed blocked behind the running sync")
+	}
+
+	got := make(chan *sql.DB, 1)
+	go func() { got <- d.analytics(t.Context()) }()
+	select {
+	case h := <-got:
+		if h != d.mirror.db {
+			t.Fatal("busy sync should serve the current mirror")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("analytics read blocked behind the running sync")
+	}
+}
+
+// TestAnalyticsMirrorOverdueRebuildRunsInBackground: an overdue full rebuild
+// never runs inside the reader's request.
+func TestAnalyticsMirrorOverdueRebuildRunsInBackground(t *testing.T) {
+	d, _ := openMirrored(t)
+	if err := d.SyncAnalyticsMirror(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	d.mirror.gate <- struct{}{} // hold it so the background rebuild cannot finish
+	d.mirror.lastFull.Store(time.Now().Add(-mirrorFullRebuildEvery - time.Minute).UnixMilli())
+	if h := d.analytics(t.Context()); h != d.mirror.db {
+		t.Fatal("overdue rebuild should keep serving the mirror")
+	}
+	if !d.mirror.building.Load() {
+		t.Fatal("overdue rebuild was not started in the background")
+	}
+	<-d.mirror.gate
+	deadline := time.Now().Add(5 * time.Second)
+	for d.mirror.fullDue() || d.mirror.building.Load() {
+		if time.Now().After(deadline) {
+			t.Fatal("background rebuild never finished")
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }

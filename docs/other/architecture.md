@@ -53,6 +53,7 @@ flowchart LR
     Agent[AI agents<br/>MCP clients] -->|/mcp| Ocman
     Ocman -->|read-only SQLite<br/>maintenance writes| OCDB[(opencode.db)]
     Ocman -->|read/write SQLite<br/>Inbox + state| StateDB[(state.db)]
+    Ocman -->|read/write SQLite<br/>analytics copy of opencode.db| Cache[(analytics-cache.db)]
     Ocman -->|Authenticated HTTP/SSE proxy| OCInst[Running OpenCode<br/>instances]
     Ocman -->|exec| Shell[git / tmux / lsof / bd<br/>host tools]
     Ocman -->|describe + supervised serve / NDJSON| PluginExec[Trusted native plugin processes]
@@ -75,10 +76,13 @@ flowchart LR
   local projects-index snapshot. Artifact file bytes sit beside it in a
   SHA-256 content-addressed `artifacts/blobs/` directory. Inbox sends are owner-local and persist until recalled or archived
   by the user. Legacy `workflow_*` rows remain inert for manual recovery.
-  `analytics-cache.db`, also beside it, is a disposable copy of opencode.db's
-  message and session rows for the analytics queries. User-message attachments
-  are stripped from the copy. It syncs incrementally before an analytics read,
-  does a full rebuild every 6 hours, and is recreated if deleted
+- **analytics-cache.db.** A disposable copy of opencode.db's message and
+  session rows, stored beside state.db, which the analytics queries read.
+  User-message attachments are stripped from the copy. A stale copy gets a
+  quick incremental sync before an analytics read; a read never waits on a
+  sync already running. The first build and the 6-hourly full rebuild run in
+  the background, and the rebuild time is persisted so restarts cannot
+  postpone it. Delete the file and it is rebuilt
   (`internal/db/analytics_mirror.go`).
 - **Provider usage APIs.** The subscription usage page reads OpenCode's local
   OAuth credentials server-side and returns only normalized quota windows;

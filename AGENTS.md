@@ -556,6 +556,12 @@ minimal and match the surrounding code.
   sessions older than 30 days into `<db>.ocman-diffs` so they can be restored.
   Ocman's own state DB is writable (`~/.local/share/ocman/state.db`),
   auto-creates its schema, and runs a versioned migration on startup.
+  A third, disposable file, `analytics-cache.db` beside state.db, is a slim
+  copy of OpenCode's message/session rows that the analytics queries read
+  (`internal/db/analytics_mirror.go`). It uses OpenCode's table names, so the
+  same SQL runs against either database, and it falls back to opencode.db
+  until the first build finishes. It has no migrations: a schema bump or a
+  different `-db` wipes and rebuilds it.
 - **OpenCode port discovery** uses `lsof` to find processes named
   `opencode` listening on TCP, then resolves their cwd. macOS/Linux
   only. Cached with a 10-second TTL.
