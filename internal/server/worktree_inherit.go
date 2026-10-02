@@ -83,10 +83,15 @@ func (w worktreeLiveRuleReader) PermissionRules(_ string, sessionID string) ([]p
 	return w.adapter.PermissionRules(w.ctx, sessionID)
 }
 
-// discardEmptySession deletes the placeholder conversation a worktree child
-// replaced. It re-reads the session and only deletes it while it still has
-// no messages, so a conversation the user did write in is never lost.
-func (s *Server) discardEmptySession(ctx context.Context, platform, sessionID string) {
+// archiveEmptySession archives the placeholder conversation a worktree
+// child replaced. Archiving is non-destructive: the read may be stale and a
+// message can land after it, so nothing is deleted. The archive marker stores
+// the time_updated that was read, and any later activity unarchives the
+// session, so a conversation written in concurrently resurfaces on its own.
+func (s *Server) archiveEmptySession(ctx context.Context, platform, sessionID string) {
+	if s.stateDB == nil {
+		return
+	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	adapter, ok := s.registry.Get(platforms.ID(platform))
@@ -97,7 +102,11 @@ func (s *Server) discardEmptySession(ctx context.Context, platform, sessionID st
 	if err != nil || detail == nil || detail.Session == nil || detail.Session.MessageCount > 0 || detail.TotalMessages > 0 || len(detail.Messages) > 0 {
 		return
 	}
-	if err := s.sessions.Dispose(ctx, platform, platforms.DisposeSessionRequest{SessionID: sessionID}); err != nil {
-		log.WithError(err).WithField("session_id", sessionID).Warn("worktree: discarding empty parent session")
+	// ponytail: the read time_updated, never clamped to now; a stale value only
+	// makes the session easier to resurface.
+	if err := s.stateDB.ArchiveSession(ctx, platform, sessionID, detail.Session.TimeUpdated); err != nil {
+		log.WithError(err).WithField("session_id", sessionID).Warn("worktree: archiving empty parent session")
+		return
 	}
+	s.broadcastSessionChanged(sessionID)
 }

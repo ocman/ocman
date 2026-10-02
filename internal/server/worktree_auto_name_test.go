@@ -13,6 +13,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 type autoWorktreeOwner struct {
@@ -132,31 +133,49 @@ func TestWorktreeCreateAndLaunchSendsFirstMessage(t *testing.T) {
 	}
 }
 
-// The placeholder conversation a worktree child replaces is deleted only
-// while it is still empty; a session the user wrote in is kept.
-func TestDiscardEmptySessionOnlyDeletesEmptyConversations(t *testing.T) {
+// The placeholder conversation a worktree child replaces is archived, never
+// deleted: a stale-empty read followed by a concurrent message must not lose
+// history, and that message resurfaces the conversation.
+func TestArchiveEmptySessionNeverDeletes(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		messages int
-		want     bool
+		archived bool
 	}{{"empty", 0, true}, {"written", 2, false}} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, reg := newSessionsTestServer(t)
-			var disposed []string
 			reg.Register(&fakePlatform{
 				id:       "opencode",
-				sessions: []db.Session{mkSession("opencode", "parent", "t", 1)},
+				sessions: []db.Session{mkSession("opencode", "parent", "t", 1000)},
 				sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
-					return &platforms.SessionDetail{Session: &db.Session{ID: id, MessageCount: tc.messages}, TotalMessages: tc.messages}, nil
+					// A possibly stale snapshot: what the cache last saw.
+					return &platforms.SessionDetail{Session: &db.Session{ID: id, TimeUpdated: 1000, MessageCount: tc.messages}, TotalMessages: tc.messages}, nil
 				},
-				disposeFn: func(req platforms.DisposeSessionRequest) error {
-					disposed = append(disposed, req.SessionID)
+				disposeFn: func(platforms.DisposeSessionRequest) error {
+					t.Fatal("placeholder conversation was deleted")
 					return nil
 				},
 			})
-			srv.discardEmptySession(t.Context(), "opencode", "parent")
-			if got := len(disposed) == 1 && disposed[0] == "parent"; got != tc.want {
-				t.Fatalf("disposed = %v, want deleted=%v", disposed, tc.want)
+			srv.archiveEmptySession(t.Context(), "opencode", "parent")
+			archived, err := srv.stateDB.ArchivedSessions(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			at, ok := archived[state.Key{Platform: "opencode", SessionID: "parent"}]
+			if ok != tc.archived {
+				t.Fatalf("archived = %v, want %v", ok, tc.archived)
+			}
+			if !ok {
+				return
+			}
+			if at != 1000 {
+				t.Fatalf("archived at %d, want the read time_updated 1000", at)
+			}
+			// A message written after the stale read resurfaces the session.
+			written := mkSession("opencode", "parent", "t", 2000)
+			written.Status = db.StatusDone
+			if !shouldResurfaceSession(written, at, "halt") {
+				t.Fatal("a concurrent message did not resurface the archived session")
 			}
 		})
 	}

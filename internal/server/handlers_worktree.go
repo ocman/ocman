@@ -326,7 +326,7 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 	}
 
 	if req.DiscardEmptyParent && req.ParentSessionID != "" {
-		go s.discardEmptySession(context.WithoutCancel(r.Context()), platform, req.ParentSessionID)
+		go s.archiveEmptySession(context.WithoutCancel(r.Context()), platform, req.ParentSessionID)
 	}
 
 	writeJSON(w, map[string]interface{}{

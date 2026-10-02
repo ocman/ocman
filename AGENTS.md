@@ -30,8 +30,9 @@ LLM call sits on the first message's path; the owner then names it in the
 background with its `small_model` or Haiku and renames the branch and title
 (`git branch -m`, the path stays). A naming failure keeps the provisional name. The naming session is titled
 `(worktree-name subagent)` so the session list hides it, and the empty
-conversation the first message was typed in is deleted once the child exists
-(`discardEmptyParent`, re-checked server-side to still have no messages).
+conversation the first message was typed in is archived once the child exists
+(`discardEmptyParent`). It is never deleted: the emptiness read can be stale, so
+the archive keeps the read `time_updated` and any later message resurfaces it.
 
 Ocman also supports **on-demand OpenCode worktree sessions** via the
 `/wt` command in the command palette and the per-project Worktrees
