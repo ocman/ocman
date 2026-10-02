@@ -110,6 +110,13 @@ export const SETTINGS = {
     keywords: 'ttl days inactive',
     requires: 'Shown only when automatic archiving is turned on.',
   },
+  'archive-resurface': {
+    group: 'sessions',
+    title: 'Show archived sessions again',
+    description: 'Choose when new activity brings an archived session back to the sidebar. Session halts waits until it is done, waiting, errored, or interrupted.',
+    example: 'Archive a running session to hide it until its turn stops.',
+    keywords: 'unarchive resurface halt activity done error',
+  },
   'model-fallthrough-patience': {
     group: 'sessions',
     title: 'Model fallthrough patience',

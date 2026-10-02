@@ -26,6 +26,8 @@ vi.mock('../../lib/api', () => ({
     setAutoArchiveSettings: vi.fn(),
     getModelFallthroughSettings: vi.fn(),
     setModelFallthroughSettings: vi.fn(),
+    getArchiveResurface: vi.fn().mockResolvedValue({ mode: 'halt' }),
+    setArchiveResurface: vi.fn(),
   },
 }));
 import { api } from '../../lib/api';
@@ -37,10 +39,49 @@ afterEach(() => {
 });
 
 function mockDefaults() {
+  m.getArchiveResurface.mockResolvedValue({ mode: 'halt' });
   m.getWorktreeInheritPermissions.mockResolvedValue({ enabled: true });
   m.getAutoArchiveSettings.mockResolvedValue({ enabled: true, ttlDays: 7 });
   m.getModelFallthroughSettings.mockResolvedValue({ patienceMinutes: 5, fallbackMinutes: 15 });
 }
+
+describe('Archived session resurfacing', () => {
+  it('keeps the setting disabled if loading fails', async () => {
+    mockDefaults();
+    m.getArchiveResurface.mockRejectedValue(new Error('offline'));
+    render(<SessionsSection />);
+    await act(async () => {});
+    expect(screen.getByRole('combobox', { name: 'Show archived sessions again' })).toBeDisabled();
+  });
+
+  it('keeps the saved choice if saving fails', async () => {
+    mockDefaults();
+    m.getArchiveResurface.mockResolvedValue({ mode: 'activity' });
+    m.setArchiveResurface.mockRejectedValue(new Error('offline'));
+    render(<SessionsSection />);
+    const select = screen.getByRole('combobox', { name: 'Show archived sessions again' });
+    await waitFor(() => expect(select).toBeEnabled());
+    expect(select).toHaveTextContent('Any activity');
+    fireEvent.click(select);
+    fireEvent.click(screen.getByRole('option', { name: 'Session halts (default)' }));
+    await waitFor(() => expect(m.setArchiveResurface).toHaveBeenCalledWith('halt'));
+    await waitFor(() => expect(select).toBeEnabled());
+    expect(select).toHaveTextContent('Any activity');
+  });
+
+  it('loads the default and saves any activity', async () => {
+    mockDefaults();
+    m.setArchiveResurface.mockResolvedValue({ mode: 'activity' });
+    render(<SessionsSection />);
+    const select = screen.getByRole('combobox', { name: 'Show archived sessions again' });
+    await waitFor(() => expect(select).toBeEnabled());
+    expect(select).toHaveTextContent('Session halts (default)');
+    fireEvent.click(select);
+    fireEvent.click(screen.getByRole('option', { name: 'Any activity' }));
+    await waitFor(() => expect(m.setArchiveResurface).toHaveBeenCalledWith('activity'));
+    await waitFor(() => expect(select).toHaveTextContent('Any activity'));
+  });
+});
 
 describe('SessionsSection worktree inherit toggle (#101)', () => {
   it('reflects the loaded enabled state', async () => {

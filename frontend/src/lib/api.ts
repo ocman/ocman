@@ -1,6 +1,7 @@
 import { record as recordPerf, templatePath } from './perfRing';
 import { markBackendReachable, markBackendUnreachable } from './backendStatus';
-import type { ModelFallthroughSettings, WebhookDelivery, WebhookRelaySettings, WebhookInbox, WebhookSubscription } from './api.types';
+import type { WebhookDelivery, WebhookInbox, WebhookSubscription } from './api.types';
+import { settingsApi } from './api.settings';
 
 // Re-export every wire type from the dedicated types module so existing
 // imports of `'./api'` continue to work unchanged. New code can import
@@ -170,7 +171,6 @@ import type {
   ShareLink,
   GlobalShareLink,
   SharedConversation,
-  SharingSettings,
   PermissionRule,
   RemoteStatus,
   RemoteAccessStatus,
@@ -463,6 +463,7 @@ function queryString(params?: Record<string, string | number | undefined | null>
 }
 
 export const api = {
+  ...settingsApi(fetchJSON, postJSON),
   clientActivity: (activity: ClientActivity) =>
     postJSON<void, ClientActivity>('/api/client-activity', activity, { parseJSON: false }),
   stats: (signal?: AbortSignal) => fetchJSON<Stats>('/api/stats', signal),
@@ -573,14 +574,6 @@ export const api = {
   installMcpConfig: () =>
     postJSON<McpConfigInstallResult>('/api/mcp/config/install', undefined),
 
-  // --- Global sharing settings + list (Settings page) ---
-  // Whether public sharing is allowed (master toggle, on by default).
-  // Also reports the relay this instance is configured to use, which is
-  // set on the command line and therefore read-only here.
-  getSharingEnabled: (signal?: AbortSignal) =>
-    fetchJSON<SharingSettings>(`/api/settings/sharing`, signal),
-  setSharingEnabled: (enabled: boolean) =>
-    postJSON<SharingSettings>(`/api/settings/sharing`, { enabled }),
   // Webhook inboxes capture deliveries; routines subscribe with filters.
   webhookInboxes: {
     list: (signal?: AbortSignal) => fetchJSON<WebhookInbox[]>('/api/webhook-inboxes', signal),
@@ -593,27 +586,6 @@ export const api = {
     redeliver: (id: string, deliveryId: string) => postJSON<{ deliveryId: string }>(`/api/webhook-inboxes/${encodeURIComponent(id)}/redeliver`, { deliveryId }),
     unsubscribe: (id: string, routineId: string) => postJSON<void>(`/api/webhook-inboxes/${encodeURIComponent(id)}/subscriptions`, { routineId }, { method: 'DELETE', parseJSON: false }),
   },
-  // Webhook relay + enrollment token for new inboxes. The token is
-  // write-only: the server reports only whether one is stored.
-  getWebhookRelay: (signal?: AbortSignal) =>
-    fetchJSON<WebhookRelaySettings>(`/api/settings/webhook-relay`, signal),
-  setWebhookRelay: (input: { relayUrl?: string; enrollmentToken?: string }) =>
-    postJSON<WebhookRelaySettings>(`/api/settings/webhook-relay`, input),
-  // Whether worktree sessions inherit the parent's always-allow
-  // permissions at split time (#101; on by default).
-  getWorktreeInheritPermissions: (signal?: AbortSignal) =>
-    fetchJSON<{ enabled: boolean }>(`/api/settings/worktree-inherit-permissions`, signal),
-  setWorktreeInheritPermissions: (enabled: boolean) =>
-    postJSON<{ enabled: boolean }>(`/api/settings/worktree-inherit-permissions`, { enabled }),
-  getAutoArchiveSettings: (signal?: AbortSignal) =>
-    fetchJSON<{ enabled: boolean; ttlDays: number }>(`/api/settings/auto-archive`, signal),
-  setAutoArchiveSettings: (settings: { enabled: boolean; ttlDays: number }) =>
-    postJSON<{ enabled: boolean; ttlDays: number }>(`/api/settings/auto-archive`, settings),
-  // Global cooldown thresholds for project model fallthrough.
-  getModelFallthroughSettings: (signal?: AbortSignal) =>
-    fetchJSON<ModelFallthroughSettings>(`/api/settings/model-fallthrough`, signal),
-  setModelFallthroughSettings: (settings: ModelFallthroughSettings) =>
-    postJSON<ModelFallthroughSettings>(`/api/settings/model-fallthrough`, settings),
   // Every active share link across all sessions.
   listAllShares: (signal?: AbortSignal) =>
     fetchJSON<GlobalShareLink[]>(`/api/shares`, signal),

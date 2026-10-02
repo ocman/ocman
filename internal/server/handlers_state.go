@@ -157,8 +157,8 @@ func (s *Server) handlePinSession(w http.ResponseWriter, r *http.Request) {
 }
 
 // applySessionState overlays archive/seen/pin flags from state.db onto a
-// session slice. Auto-unarchives sessions that have been updated since they
-// were archived.
+// session slice. Newer activity resurfaces archived sessions according to
+// the user's preference: any activity, or only after the session halts.
 func (s *Server) applySessionState(ctx context.Context, sessions []db.Session) error {
 	return s.applySessionStateWithWrites(ctx, sessions, true)
 }
@@ -168,6 +168,10 @@ func (s *Server) applySessionStateReadOnly(ctx context.Context, sessions []db.Se
 }
 
 func (s *Server) applySessionStateWithWrites(ctx context.Context, sessions []db.Session, write bool) error {
+	mode, err := s.archiveResurfaceMode(ctx)
+	if err != nil {
+		return err
+	}
 	archived, err := s.stateDB.ArchivedSessions(ctx)
 	if err != nil {
 		return err
@@ -242,7 +246,7 @@ func (s *Server) applySessionStateWithWrites(ctx context.Context, sessions []db.
 
 		archivedAtUpdate, ok := archived[key]
 		if ok {
-			if sessions[i].TimeUpdated > archivedAtUpdate {
+			if shouldResurfaceSession(sessions[i], archivedAtUpdate, mode) {
 				if write {
 					if err := s.stateDB.UnarchiveSession(ctx, key.Platform, key.SessionID); err != nil {
 						return err
@@ -293,6 +297,10 @@ func (s *Server) applySessionStateWithWrites(ctx context.Context, sessions []db.
 // sessions are still listed), and the per-session unread counts, which
 // cost a message aggregate scan per unseen session.
 func (s *Server) applyNotifySessionState(ctx context.Context, sessions []db.Session) error {
+	mode, err := s.archiveResurfaceMode(ctx)
+	if err != nil {
+		return err
+	}
 	seen, err := s.stateDB.SeenSessions(ctx)
 	if err != nil {
 		return err
@@ -312,11 +320,9 @@ func (s *Server) applyNotifySessionState(ctx context.Context, sessions []db.Sess
 			}
 		}
 
-		// Same rule as applySessionState: activity strictly after the
-		// archive click resurfaces the session. notify polls far more
-		// often than the dashboard, so this is a live path, not a
-		// theoretical one.
-		if archivedAtUpdate, ok := archived[key]; ok && sessions[i].TimeUpdated > archivedAtUpdate {
+		// Use the same resurfacing policy as the full list: notify polls
+		// must not unarchive busy sessions behind the sidebar's back.
+		if archivedAtUpdate, ok := archived[key]; ok && shouldResurfaceSession(sessions[i], archivedAtUpdate, mode) {
 			if err := s.stateDB.UnarchiveSession(ctx, key.Platform, key.SessionID); err != nil {
 				return err
 			}

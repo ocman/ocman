@@ -5,7 +5,7 @@
  * a thin nav + layout shell.
  */
 import { useState, useEffect } from 'react';
-import { SettingRow, SettingToggle, SettingNumber } from '../../components/SettingRow';
+import { SettingRow, SettingToggle, SettingNumber, SettingSelect } from '../../components/SettingRow';
 import { useSettingSave } from '../../lib/useSaveStatus';
 import { useUiStore } from '../../lib/uiStore';
 import { api, type ModelFallthroughSettings } from '../../lib/api';
@@ -213,7 +213,42 @@ export function SessionsSection() {
         </SettingRow>
       )}
       <ModelFallthroughSettings />
+      <ArchiveResurfaceSetting />
     </>
+  );
+}
+
+function ArchiveResurfaceSetting() {
+  const [mode, setMode] = useState('halt');
+  const [loaded, setLoaded] = useState(false);
+  const save = useSettingSave();
+  useEffect(() => {
+    const ctrl = new AbortController();
+    api.getArchiveResurface(ctrl.signal).then((value) => {
+      setMode(value.mode);
+      setLoaded(true);
+    }).catch(() => { /* Keep disabled until the saved preference is known. */ });
+    return () => ctrl.abort();
+  }, []);
+  return (
+    <SettingRow setting="archive-resurface">
+      <SettingSelect
+        ariaLabel="Show archived sessions again"
+        placeholder="Session halts (default)"
+        searchLabel="Search archive behavior"
+        value={mode}
+        options={[
+          { value: 'activity', label: 'Any activity' },
+          { value: 'halt', label: 'Session halts (default)' },
+        ]}
+        disabled={!loaded || save.state === 'saving'}
+        save={save}
+        onSave={async (next) => {
+          const result = await api.setArchiveResurface(next);
+          setMode(result.mode);
+        }}
+      />
+    </SettingRow>
   );
 }
 

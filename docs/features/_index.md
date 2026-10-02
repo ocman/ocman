@@ -11,6 +11,10 @@ sidebar:
 are grouped by project with status indicators and a `+` button to start new
 ones. Sessions and projects with no activity for seven days are archived by
 default. The delay and auto-archive toggle are available in Settings.
+Under Settings → Sessions → **Show archived sessions again**, choose when
+new activity restores an archived session to the sidebar: **Session halts**
+is the default and waits for done, waiting, error, or interrupted status;
+**Any activity** restores it even while it is running.
 
 **Status you can trust.** A session's status comes from the agent's own turn
 lifecycle rather than a guess about stored messages: **busy** while a turn
