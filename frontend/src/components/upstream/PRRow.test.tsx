@@ -26,6 +26,24 @@ function makePR(overrides: Partial<PR> = {}): PR {
 }
 
 describe('PRRow current-branch highlight', () => {
+  it('keeps current, status, and label badges before the author on the metadata line', () => {
+    render(<PRRow pr={makePR({ labels: [{ name: 'bug', color: 'ff0000' }] })} directory="/repo" remoteId="local" remote="origin" currentBranch="tighten-slug" />);
+
+    const summary = screen.getByRole('button', { expanded: false });
+    const author = screen.getByText('by dries');
+    const current = screen.getByTestId('pr-row-42-current-branch');
+    const status = screen.getByText('open');
+    const label = screen.getByText('bug');
+    expect(current.parentElement).toBe(author.parentElement);
+    expect(status.parentElement).toBe(author.parentElement);
+    for (const badge of [current, status, label]) {
+      expect(summary).not.toContainElement(badge);
+      expect(author.parentElement).toContainElement(badge);
+      expect(badge.compareDocumentPosition(author) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    expect(summary).toContainElement(screen.getByText('Tighten slug'));
+  });
+
   it('highlights the row when the PR branch matches the current branch', () => {
     render(<PRRow pr={makePR()} directory="/repo" remoteId="local" remote="origin" currentBranch="tighten-slug" />);
 

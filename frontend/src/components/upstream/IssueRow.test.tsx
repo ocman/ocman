@@ -24,6 +24,18 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
 afterEach(() => cleanup());
 
 describe('IssueRow', () => {
+  it('keeps the status before the author on the metadata line, outside the title button', () => {
+    render(<IssueRow issue={makeIssue()} directory="/repo" remoteId="local" remote="origin" />);
+
+    const summary = screen.getByRole('button', { expanded: false });
+    const status = screen.getByText('open');
+    const author = screen.getByText('by carol');
+    expect(summary).not.toContainElement(status);
+    expect(status.parentElement).toBe(author.parentElement);
+    expect(status.compareDocumentPosition(author) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(summary).toContainElement(screen.getByText('Something is broken'));
+  });
+
   it('renders the number, title, and status', () => {
     render(<IssueRow issue={makeIssue()} directory="/repo" remoteId="local" remote="origin" />);
     expect(screen.getByTestId('issue-row-7')).toBeInTheDocument();
