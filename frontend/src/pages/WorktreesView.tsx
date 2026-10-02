@@ -72,9 +72,11 @@ function WorktreesContent({ projectDir, remoteId }: { projectDir: string; remote
     }
   }, [projectDir, remoteId, refreshCachedSessions]);
 
+  // Only list once the owner can serve it: a disconnected owner would 503,
+  // and when capability polling reports it back the rows load by themselves.
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (allowed) void load();
+  }, [allowed, load]);
 
   const remove = useCallback(
     async (wt: WorktreeEntry, force: boolean) => {
