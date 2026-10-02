@@ -265,6 +265,16 @@ func DeleteBranch(ctx context.Context, repoRoot, branch string) error {
 	return nil
 }
 
+// RenameBranch runs `git branch -m old new`; git also updates the HEAD of
+// the worktree that has old checked out, so its path stays valid.
+func RenameBranch(ctx context.Context, repoRoot, oldName, newName string) error {
+	out, err := gitexec.Command(ctx, "-C", repoRoot, "branch", "-m", "--", oldName, newName).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("rename branch: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 // RemoveWorktree runs `git worktree remove [--force] <path>` for a worktree in
 // repoRoot. git itself enforces the important guards — it refuses the
 // main checkout and refuses a dirty tree unless --force is given — so we

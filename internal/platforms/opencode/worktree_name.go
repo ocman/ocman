@@ -34,7 +34,9 @@ func WorktreeName(ctx context.Context, port, directory, prompt string) (string, 
 	if !ok || provider == "" || modelID == "" {
 		return "", errors.New("invalid small_model")
 	}
-	created, err := postJSONReturning(ctx, port, "/session"+query, []byte(`{"title":"Worktree name","permission":[{"permission":"*","pattern":"*","action":"deny"}]}`))
+	// The " subagent)" title suffix hides a parentless internal session from
+	// every listing (db.scanSessionRow), like the auto-approve judge's.
+	created, err := postJSONReturning(ctx, port, "/session"+query, []byte(`{"title":"(worktree-name subagent)","permission":[{"permission":"*","pattern":"*","action":"deny"}]}`))
 	if err != nil {
 		return "", err
 	}

@@ -80,7 +80,15 @@ describe('composer worktree execution', () => {
     expect(requests[1].path).toBe('/api/session/child/command?platform=r-machine%3Aopencode');
   });
 
-  it.each(['/implement login', '!sleep 60', 'Fix login'])('opens the child while %s is still executing', async (text) => {
+  it('sends a plain first prompt inside the creation request', async () => {
+    await start();
+    submit('Fix login');
+    expect(await screen.findByText('/session/child')).toBeInTheDocument();
+    expect(requests).toHaveLength(1);
+    expect(requests[0].body.send).toEqual({ message: 'Fix login', model: 'provider/big', agent: 'plan', reasoning: 'high' });
+  });
+
+  it.each(['/implement login', '!sleep 60'])('opens the child while %s is still executing', async (text) => {
     let finish!: (response: Response) => void;
     execution = new Promise((resolve) => { finish = resolve; });
     await start();

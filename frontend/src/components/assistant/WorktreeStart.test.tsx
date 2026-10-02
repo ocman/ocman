@@ -48,7 +48,7 @@ describe('automatic worktree start', () => {
     const images = [{ url: 'data:image/png;base64,abc', mime: 'image/png' }];
     await act(() => composer.onSend!('Fix login', images, true));
     expect(mocks.create).toHaveBeenCalledWith('/api/worktree/create-and-launch?platform=r-machine%3Aopencode', {
-      projectDir: '/repo', autoName: true, prompt: 'Fix login', parentSessionId: 'parent', remoteId: 'machine',
+      projectDir: '/repo', autoName: true, prompt: 'Fix login', parentSessionId: 'parent', remoteId: 'machine', discardEmptyParent: true,
     });
     expect(mocks.send).toHaveBeenCalledWith('child', 'Fix login', images, 'provider/big', 'plan', 'high', 'r-machine:opencode', true);
     expect(mocks.seed).toHaveBeenCalledWith('child', '/worktrees/fix', 'r-machine:opencode', 'fix-1234', 'machine');
@@ -56,8 +56,22 @@ describe('automatic worktree start', () => {
     expect(originalSend).not.toHaveBeenCalled();
   });
 
+  it('delivers a plain first prompt with the create request, without a second send', async () => {
+    mocks.create.mockResolvedValue({ sessionId: 'child', worktreePath: '/worktrees/fix', branch: 'fix-1234', firstMessageSent: true });
+    mount();
+    await waitFor(() => expect(composer.disabled).toBe(false));
+    const images = [{ url: 'data:image/png;base64,abc', mime: 'image/png' }];
+    await act(() => composer.onSend!('Fix login', images));
+    expect(mocks.create).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      send: { message: 'Fix login', images, model: 'provider/big', agent: 'plan', reasoning: 'high' },
+    }));
+    expect(mocks.send).not.toHaveBeenCalled();
+    expect(screen.getByText('/session/child')).toBeInTheDocument();
+    expect(useWorktreeSubmission.getState().entries.child).toBeUndefined();
+  });
+
   it('retains the submission on the child when sending fails and the user retries', async () => {
-    mocks.send.mockRejectedValueOnce(new Error('send failed'));
+    mocks.create.mockResolvedValue({ sessionId: 'child', worktreePath: '/worktrees/fix', branch: 'fix-1234', firstMessageSent: false, firstMessageError: 'send failed' });
     const images = [{ url: 'data:image/png;base64,abc', mime: 'image/png' }];
     const view = mount();
     await waitFor(() => expect(composer.disabled).toBe(false));
@@ -70,7 +84,7 @@ describe('automatic worktree start', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
     expect(mocks.create).toHaveBeenCalledTimes(1);
-    expect(mocks.send).toHaveBeenCalledTimes(2);
+    expect(mocks.send).toHaveBeenCalledTimes(1);
     expect(mocks.send).toHaveBeenLastCalledWith('child', 'Fix login', images, 'provider/big', 'plan', 'high', 'r-machine:opencode', undefined);
   });
 

@@ -191,3 +191,20 @@ func TestFallthrough(t *testing.T) {
 		}
 	}
 }
+
+// A session created through the service already knows its directory, so
+// the first prompt does not fetch the session to find project defaults.
+func TestCreatedSessionSkipsDirectoryLookupOnFirstSend(t *testing.T) {
+	ctx := context.Background()
+	svc, p := newProjectModelService(map[string][]string{"/wt": {"prov/w"}})
+	created, err := svc.Create(ctx, "opencode", platforms.CreateSessionRequest{Directory: "/wt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SendMessage(ctx, "opencode", platforms.SendMessageRequest{SessionID: created.ID, Message: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+	if p.lookups != 0 || p.sent[0].Model != "prov/w" {
+		t.Fatalf("lookups = %d, model = %q", p.lookups, p.sent[0].Model)
+	}
+}

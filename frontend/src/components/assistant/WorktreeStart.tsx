@@ -6,7 +6,14 @@ import { BUILTIN_COMMANDS } from '../../lib/commands/builtinCommands';
 import type { ComposerProps } from './composerTypes';
 import type { SessionTarget } from './ComposerSelectorRow';
 import { InlineAlert } from '../InlineAlert';
-import { clearWorktreeSubmission, startWorktreeSubmission, useWorktreeSubmission } from './worktreeSubmission';
+import { clearWorktreeSubmission, failWorktreeSubmission, startWorktreeSubmission, useWorktreeSubmission } from './worktreeSubmission';
+
+// Either run the first submission on the child, or record the outcome of the
+// server's attempt so a failure stays retryable there.
+function settleFirstSubmission(child: WorktreeCreateResponse, text: string, run: () => Promise<void>, sentByServer: boolean) {
+  if (!sentByServer) startWorktreeSubmission(child.sessionId, text, run);
+  else if (!child.firstMessageSent) failWorktreeSubmission(child.sessionId, text, run, child.firstMessageError || 'First message was not sent.');
+}
 
 export function WorktreeStart({ children, ...props }: ComposerProps & {
   children: (props: ComposerProps) => ReactNode;
@@ -35,12 +42,15 @@ export function WorktreeStart({ children, ...props }: ComposerProps & {
         const detail = await api.session(sessionId!, undefined, undefined, controller.signal);
         const session = detail.session;
         const query = new URLSearchParams({ dir: directory!, remoteId: session.remoteId || 'local' });
+        // Both reads only need the owner; fetch them together. The list is
+        // ignored (and may fail) when the directory is not a repository.
+        const list = fetchJSON<{ worktrees: WorktreeEntry[] }>(`/api/worktree/list?${query}`, controller.signal);
+        list.catch(() => undefined);
         const info = await fetchJSON<Record<string, GitInfo>>(`/api/git/info?${query}`, controller.signal);
         const repo = !!info[directory!]?.branch;
         let alreadyChosen = false;
         if (repo) {
-          const worktreeQuery = new URLSearchParams({ dir: directory!, remoteId: session.remoteId || 'local' });
-          const { worktrees } = await fetchJSON<{ worktrees: WorktreeEntry[] }>(`/api/worktree/list?${worktreeQuery}`, controller.signal);
+          const { worktrees } = await list;
           // Read the owner's actual workspaces, so manual selection survives reloads
           // and also covers worktrees outside ocman's managed directory layout.
           alreadyChosen = worktrees.some((tree) => !tree.main &&
@@ -58,6 +68,9 @@ export function WorktreeStart({ children, ...props }: ComposerProps & {
     text: string,
     current: () => void | Promise<void>,
     execute: (sessionId: string, platform: string) => Promise<void>,
+    // A plain prompt rides on the create request so the server delivers it
+    // without a second browser round trip.
+    send?: Record<string, unknown>,
   ) => {
     const runCurrent = () => {
       clearWorktreeSubmission(sessionId!);
@@ -74,16 +87,18 @@ export function WorktreeStart({ children, ...props }: ComposerProps & {
     setError('');
     const { session } = resolved;
     try {
+      let sentByServer = false;
       if (!created.current) {
         // Creation is not retried automatically after an uncertain transport failure.
         try {
           created.current = await postJSON<WorktreeCreateResponse>(
             `/api/worktree/create-and-launch?platform=${encodeURIComponent(session.platform)}`,
-            { projectDir: directory, autoName: true, prompt: text, parentSessionId: sessionId, remoteId: session.remoteId || 'local' },
+            { projectDir: directory, autoName: true, prompt: text, parentSessionId: sessionId, remoteId: session.remoteId || 'local', send, discardEmptyParent: true },
           );
         } catch (err) {
           throw new Error(err instanceof Error ? err.message : String(err));
         }
+        sentByServer = !!send;
       }
       const child = created.current;
       if (!child.sessionId) throw new Error('Worktree creation returned no session');
@@ -91,7 +106,7 @@ export function WorktreeStart({ children, ...props }: ComposerProps & {
       if (visibleRoute.current.mounted && (visibleRoute.current.id === undefined || visibleRoute.current.id === sessionId)) {
         navigate(`/session/${encodeURIComponent(child.sessionId)}`);
       }
-      startWorktreeSubmission(child.sessionId, text, () => execute(child.sessionId!, session.platform));
+      settleFirstSubmission(child, text, () => execute(child.sessionId, session.platform), sentByServer);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       throw err;
@@ -100,10 +115,15 @@ export function WorktreeStart({ children, ...props }: ComposerProps & {
     }
   };
 
-  const onSend: ComposerProps['onSend'] = (text, images, queue) => dispatch(text,
-    () => props.onSend?.(text, images, queue),
-    (id, platform) => api.sendMessage(id, text, images, props.selectedModel,
-      props.selectedAgent || props.activeAgent, props.selectedReasoning, platform, queue));
+  const onSend: ComposerProps['onSend'] = (text, images, queue) => {
+    const agent = props.selectedAgent || props.activeAgent;
+    return dispatch(text,
+      () => props.onSend?.(text, images, queue),
+      (id, platform) => api.sendMessage(id, text, images, props.selectedModel,
+        agent, props.selectedReasoning, platform, queue),
+      // A queued first message keeps the client path: the server only sends now.
+      queue ? undefined : { message: text, images, model: props.selectedModel, agent, reasoning: props.selectedReasoning });
+  };
 
   const onCommand: ComposerProps['onCommand'] = (command, args) => {
     // Ocman's session/UI actions keep their existing handlers. Custom agent

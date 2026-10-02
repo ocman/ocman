@@ -20,11 +20,18 @@ session already in a linked worktree stays on that selected workspace, including
 after reload; non-repositories stay in their current directory. Prompts, custom
 slash commands, and shell submissions share the same target resolution, while
 ocman UI/session commands retain their existing handlers. The new child opens
-as soon as workspace creation succeeds. Its first submission, including its
-retry payload and any execution error, belongs to child-keyed client state so
-long-running commands do not hide the child's transcript or approval controls.
-Worktree naming uses
-the owner's `small_model` or Haiku with a unique fallback, without a naming form.
+as soon as workspace creation succeeds. A plain (non-queued) first prompt rides
+on `create-and-launch` (`send`) and is delivered server-side after inherited
+permissions are applied; the response reports `firstMessageSent` /
+`firstMessageError`. Commands, shell, and a failed send's retry belong to
+child-keyed client state so long-running commands do not hide the child's
+transcript or approval controls. The worktree starts as `session-<id8>`, so no
+LLM call sits on the first message's path; the owner then names it in the
+background with its `small_model` or Haiku and renames the branch and title
+(`git branch -m`, the path stays). A naming failure keeps the provisional name. The naming session is titled
+`(worktree-name subagent)` so the session list hides it, and the empty
+conversation the first message was typed in is deleted once the child exists
+(`discardEmptyParent`, re-checked server-side to still have no messages).
 
 Ocman also supports **on-demand OpenCode worktree sessions** via the
 `/wt` command in the command palette and the per-project Worktrees

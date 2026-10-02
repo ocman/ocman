@@ -1,6 +1,7 @@
 package opencode
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -324,6 +326,7 @@ func (a *Adapter) SendMessage(ctx context.Context, req platforms.SendMessageRequ
 		return err
 	}
 	forgetSessionPort(req.SessionID, port)
+	v2Probes.Delete(port)
 	InvalidateOpenCodePortCache()
 	retryPort, _, retryResolveErr := a.resolvePortCtx(ctx, req.SessionID)
 	if retryResolveErr == nil && retryPort != "" && retryPort != port {
@@ -350,15 +353,33 @@ func sendMessageOnPort(ctx context.Context, port string, req platforms.SendMessa
 	return sendMessageLegacy(ctx, port, req)
 }
 
+type v2Probe struct {
+	ok bool
+	at time.Time
+}
+
+// v2Probes caches the per-port /api/health answer so every send doesn't pay
+// an extra round trip. ponytail: 1-minute TTL, ports are reallocated per launch.
+var v2Probes sync.Map
+
+const v2ProbeTTL = time.Minute
+
 func serverAdvertisesV2(ctx context.Context, port string) bool {
+	if v, ok := v2Probes.Load(port); ok && time.Since(v.(v2Probe).at) < v2ProbeTTL {
+		return v.(v2Probe).ok
+	}
 	body, err := getJSON(ctx, port, "/api/health")
-	if err != nil {
-		return false
+	var transport *url.Error
+	if errors.As(err, &transport) {
+		return false // unreachable isn't an answer; the next send re-probes
 	}
 	var health struct {
 		PID int `json:"pid"`
 	}
-	return json.Unmarshal(body, &health) == nil && health.PID > 0
+	// A legacy server's 404/HTML answer is cached as "not V2".
+	ok := err == nil && json.Unmarshal(body, &health) == nil && health.PID > 0
+	v2Probes.Store(port, v2Probe{ok: ok, at: time.Now()})
+	return ok
 }
 
 func v2SessionMatches(body []byte, req platforms.SendMessageRequest) bool {
@@ -820,7 +841,16 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 
 	createPhase := srvtiming.Begin(ctx, "http_create")
 	apiURL := fmt.Sprintf("http://127.0.0.1:%s/session", port)
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, strings.NewReader("{}"))
+	create := map[string]string{}
+	if req.Title != "" {
+		// OpenCode accepts the title at creation; no follow-up PATCH.
+		create["title"] = req.Title
+	}
+	createBody, err := marshalRequest(create)
+	if err != nil {
+		return nil, err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(createBody))
 	if err != nil {
 		return nil, err
 	}
@@ -845,7 +875,8 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 		return nil, fmt.Errorf("opencode create-session: upstream HTTP %d", resp.StatusCode)
 	}
 	var parsed struct {
-		ID string `json:"id"`
+		ID    string `json:"id"`
+		Title string `json:"title"`
 	}
 	body, readErr := readLimited(resp.Body, maxUpstreamErrorBytes)
 	if readErr != nil {
@@ -865,16 +896,9 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 	}
 	createPhase.EndWithDesc("opencode POST /session")
 
-	// If a custom title was provided, set it immediately after creation.
-	if req.Title != "" {
-		titlePhase := srvtiming.Begin(ctx, "http_title")
-		payload, err := marshalRequest(map[string]string{"title": req.Title})
-		if err != nil {
-			return nil, err
-		}
-		err = patchJSON(ctx, port, fmt.Sprintf("/session/%s", parsed.ID), payload)
-		titlePhase.EndWithDesc("opencode PATCH /session/{id} (title)")
-		if err != nil {
+	// Older OpenCode builds ignored the create-time title; fall back to a PATCH.
+	if req.Title != "" && parsed.Title != req.Title {
+		if err := SetSessionTitle(ctx, port, parsed.ID, req.Title); err != nil {
 			log.WithError(err).Warn("failed to set custom title on new session")
 			// Don't fail the entire creation if title setting fails.
 		}
@@ -882,6 +906,19 @@ func (a *Adapter) CreateSession(ctx context.Context, req platforms.CreateSession
 	rememberSessionPort(parsed.ID, port)
 
 	return &platforms.CreateSessionResponse{ID: parsed.ID}, nil
+}
+
+// SetSessionTitle renames a session on a known OpenCode port.
+func SetSessionTitle(ctx context.Context, port, sessionID, title string) error {
+	payload, err := marshalRequest(map[string]string{"title": title})
+	if err != nil {
+		return err
+	}
+	if err := patchJSON(ctx, port, "/session/"+url.PathEscape(sessionID), payload); err != nil {
+		return err
+	}
+	sessionCache.invalidate(port, "/session/"+sessionID)
+	return nil
 }
 
 // parseOpenCodeModelRefInternal is the non-exported version used by

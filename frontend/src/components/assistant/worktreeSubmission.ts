@@ -34,3 +34,9 @@ export function startWorktreeSubmission(sessionId: string, text: string, execute
     }
   })();
 }
+
+// The server attempted the first send and reported a failure; keep the draft
+// and a retry on the child, exactly as a failed client-side send would.
+export function failWorktreeSubmission(sessionId: string, text: string, execute: () => Promise<void>, error: string) {
+  useWorktreeSubmission.setState(({ entries }) => ({ entries: { ...entries, [sessionId]: { text, pending: false, error, execute } } }));
+}

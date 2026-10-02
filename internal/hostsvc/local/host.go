@@ -133,6 +133,10 @@ type Host struct {
 	// repo root into a single launch (AD-9). ensure keys on repoRoot.
 	sf singleflight.Group
 
+	// background tracks detached post-launch work (worktree naming) so
+	// tests can wait for it before their temp repos are removed.
+	background sync.WaitGroup
+
 	// instances is the in-memory managed-instance registry, keyed by repo
 	// root. It is a hot cache in front of the persisted store (#391): when
 	// a store is wired, recovery works from the store alone on a fresh

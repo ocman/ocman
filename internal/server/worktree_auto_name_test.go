@@ -2,13 +2,17 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
 type autoWorktreeOwner struct {
@@ -81,5 +85,79 @@ func TestWorktreeListResolvesSelectedWorkspaceOnExplicitOwner(t *testing.T) {
 	}
 	if local.calls != 0 || remote.calls != 1 {
 		t.Fatalf("wrong owner called: local=%d remote=%d", local.calls, remote.calls)
+	}
+}
+
+// The first message rides on create-and-launch and is delivered to the
+// owner's session server-side; a send failure is reported, not fatal.
+func TestWorktreeCreateAndLaunchSendsFirstMessage(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(map[bool]string{false: "sent", true: "failed"}[fail], func(t *testing.T) {
+			srv, reg := newSessionsTestServer(t)
+			srv.hostRouter = hostsvc.NewRouter(nil)
+			srv.hostRouter.RegisterRemote("machine", &autoWorktreeOwner{})
+			var got platforms.SendMessageRequest
+			reg.Register(&fakePlatform{
+				id:       "r-machine:opencode",
+				sessions: []db.Session{mkSession("r-machine:opencode", "child", "t", 1)},
+				sendMessageFn: func(req platforms.SendMessageRequest) error {
+					got = req
+					if fail {
+						return errors.New("boom")
+					}
+					return nil
+				},
+			})
+			body := `{"projectDir":"/remote/repo","remoteId":"machine","autoName":true,"prompt":"Fix login",` +
+				`"send":{"message":"Fix login","agent":"build","images":[{"url":"data:x","mime":"image/png"}]}}`
+			w := httptest.NewRecorder()
+			srv.handleWorktreeCreateAndLaunch(w, httptest.NewRequest(http.MethodPost, "/api/worktree/create-and-launch", strings.NewReader(body)))
+			if w.Code != http.StatusOK {
+				t.Fatalf("status %d: %s", w.Code, w.Body.String())
+			}
+			if got.SessionID != "child" || got.Message != "Fix login" || got.Agent != "build" || len(got.Images) != 1 {
+				t.Fatalf("send = %+v", got)
+			}
+			var resp struct {
+				Sent bool   `json:"firstMessageSent"`
+				Err  string `json:"firstMessageError"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatal(err)
+			}
+			if resp.Sent == fail || (resp.Err != "") != fail {
+				t.Fatalf("response = %+v", resp)
+			}
+		})
+	}
+}
+
+// The placeholder conversation a worktree child replaces is deleted only
+// while it is still empty; a session the user wrote in is kept.
+func TestDiscardEmptySessionOnlyDeletesEmptyConversations(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		messages int
+		want     bool
+	}{{"empty", 0, true}, {"written", 2, false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, reg := newSessionsTestServer(t)
+			var disposed []string
+			reg.Register(&fakePlatform{
+				id:       "opencode",
+				sessions: []db.Session{mkSession("opencode", "parent", "t", 1)},
+				sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+					return &platforms.SessionDetail{Session: &db.Session{ID: id, MessageCount: tc.messages}, TotalMessages: tc.messages}, nil
+				},
+				disposeFn: func(req platforms.DisposeSessionRequest) error {
+					disposed = append(disposed, req.SessionID)
+					return nil
+				},
+			})
+			srv.discardEmptySession(t.Context(), "opencode", "parent")
+			if got := len(disposed) == 1 && disposed[0] == "parent"; got != tc.want {
+				t.Fatalf("disposed = %v, want deleted=%v", disposed, tc.want)
+			}
+		})
 	}
 }
