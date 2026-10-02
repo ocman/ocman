@@ -64,6 +64,8 @@ type RecordingCtx = WhisperCtx | SpeechCtx;
 
 export interface ComposerAudioControls {
   isRecording: boolean;
+  /** Recording or transcribing: text may still be appended to the input. */
+  isBusy: boolean;
   micError: string | null;
   setMicError: (err: string | null) => void;
   micRef: React.RefObject<HTMLButtonElement | null>;
@@ -107,7 +109,8 @@ export function useComposerAudio({
   disabled: boolean | undefined;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
 }): ComposerAudioControls {
-  const [isRecording, setIsRecording] = useState(false);
+  const [micState, setMicStateValue] = useState<'idle' | 'recording' | 'transcribing'>('idle');
+  const isRecording = micState === 'recording';
   const [micError, setMicError] = useState<string | null>(null);
   const micRef = useRef<HTMLButtonElement | null>(null);
   const recordingRef = useRef<RecordingCtx | null>(null);
@@ -121,7 +124,7 @@ export function useComposerAudio({
   // -------------------------------------------------------------------------
 
   const setMicState = useCallback((state: 'idle' | 'recording' | 'transcribing') => {
-    setIsRecording(state === 'recording');
+    setMicStateValue(state);
     const btn = micRef.current;
     if (!btn) return;
     const icon = btn.querySelector('.oc-mic-icon');
@@ -404,6 +407,7 @@ export function useComposerAudio({
 
   return {
     isRecording,
+    isBusy: micState !== 'idle',
     micError,
     setMicError,
     micRef,

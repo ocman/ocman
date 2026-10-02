@@ -129,7 +129,9 @@ function ComposerBody({
     slash.close();
   }, [clearComposerInput, openModelPicker, openAgentPicker, openSkillPicker, openRoutinePicker, pickers, slash]);
 
-  const { isRecording, micError, setMicError, micRef, handleMicClick, isDictationSupported } = useComposerAudio({ whisperAvailable, disabled, inputRef });
+  // Switching machines captures the draft once, so no new dictation may start mid-switch.
+  const audioDisabled = disabled || switchingMachine;
+  const { isRecording, isBusy: audioBusy, micError, setMicError, micRef, handleMicClick, isDictationSupported } = useComposerAudio({ whisperAvailable, disabled: audioDisabled, inputRef });
   const clearAfterSubmit = () => {
     if (inputRef.current) inputRef.current.value = '';
     slash.close();
@@ -251,9 +253,9 @@ function ComposerBody({
   const dictationShortcut = useMemo(() => ({
     id: 'composer.dictation', scope: 'composer' as const, keys: { code: 'KeyD', alt: true },
     description: 'Start dictation (voice input)',
-    enabled: () => !!(isDictationSupported && !isRecording && !disabled),
+    enabled: () => !!(isDictationSupported && !isRecording && !audioDisabled),
     handler: () => { void handleMicClick(); },
-  }), [isDictationSupported, isRecording, disabled, handleMicClick]);
+  }), [isDictationSupported, isRecording, audioDisabled, handleMicClick]);
   const reasoningCycleShortcut = useMemo(() => ({
     id: 'composer.reasoning-cycle', scope: 'composer' as const, keys: { code: 'KeyR', alt: true },
     description: 'Cycle reasoning level',
@@ -330,7 +332,7 @@ function ComposerBody({
               key={`${sessionId}:${directory}:${remoteId}`}
               directory={directory}
               remoteId={remoteId}
-              disabled={sending || switchingMachine || attachments.pending > 0 || images.length > 0 || files.length > 0}
+              disabled={sending || switchingMachine || audioBusy || attachments.pending > 0 || images.length > 0 || files.length > 0}
               onSelect={async (machine) => {
                 setSwitchingMachine(true);
                 try {
