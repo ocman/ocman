@@ -1,0 +1,123 @@
+// @vitest-environment jsdom
+import { act, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import userEvent from '@testing-library/user-event';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ComposerProps } from './composerTypes';
+
+const mocks = vi.hoisted(() => ({ session: vi.fn(), info: vi.fn(), create: vi.fn(), send: vi.fn(), seed: vi.fn() }));
+vi.mock('../../lib/api', () => ({
+  api: { session: mocks.session, sendMessage: mocks.send }, fetchJSON: mocks.info, postJSON: mocks.create,
+}));
+vi.mock('../../lib/apiStore', () => ({ useApiStore: { getState: () => ({ seedNewSession: mocks.seed }) } }));
+import { WorktreeStart } from './WorktreeStart';
+
+function Location() { return <output>{useLocation().pathname}</output>; }
+let composer: ComposerProps;
+const originalSend = vi.fn();
+function mount(extra: Partial<ComposerProps> = {}) {
+  return render(<MemoryRouter>
+    <WorktreeStart sessionId="parent" directory="/repo" isRunning={false} newConversation worktreesSupported
+      selectedModel="provider/big" selectedAgent="plan" selectedReasoning="high" onSend={originalSend} {...extra}>
+      {(props) => { composer = props; return <span>{props.target}</span>; }}
+    </WorktreeStart>
+    <Location />
+  </MemoryRouter>);
+}
+
+describe('automatic worktree start', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.session.mockResolvedValue({ session: { id: 'parent', platform: 'r-machine:opencode', remoteId: 'machine' } });
+    mocks.info.mockResolvedValue({ '/repo': { branch: 'main' } });
+    mocks.create.mockResolvedValue({ sessionId: 'child', worktreePath: '/worktrees/fix', branch: 'fix-1234' });
+    mocks.send.mockResolvedValue(undefined);
+  });
+
+  it('creates on the same owner and sends the original prompt and selections', async () => {
+    mount();
+    expect(composer.disabled).toBe(true);
+    await waitFor(() => expect(composer.disabled).toBe(false));
+    expect(composer.target).toBe('worktree');
+    expect(mocks.info).toHaveBeenCalledWith('/api/git/info?dirs=%2Frepo&remoteId=machine', expect.any(AbortSignal));
+    const images = [{ url: 'data:image/png;base64,abc', mime: 'image/png' }];
+    await act(() => composer.onSend!('Fix login', images, true));
+    expect(mocks.create).toHaveBeenCalledWith('/api/worktree/create-and-launch?platform=r-machine%3Aopencode', {
+      projectDir: '/repo', autoName: true, prompt: 'Fix login', parentSessionId: 'parent', remoteId: 'machine',
+    });
+    expect(mocks.send).toHaveBeenCalledWith('child', 'Fix login', images, 'provider/big', 'plan', 'high', 'r-machine:opencode', true);
+    expect(mocks.seed).toHaveBeenCalledWith('child', '/worktrees/fix', 'r-machine:opencode', 'fix-1234', 'machine');
+    expect(screen.getByText('/session/child')).toBeInTheDocument();
+    expect(originalSend).not.toHaveBeenCalled();
+  });
+
+  it('retains the created worktree when sending fails and the user retries', async () => {
+    mocks.send.mockRejectedValueOnce(new Error('send failed'));
+    mount();
+    await waitFor(() => expect(composer.disabled).toBe(false));
+    await act(async () => { await expect(composer.onSend!('Fix login')).rejects.toThrow('send failed'); });
+    expect(screen.getByRole('alert')).toHaveTextContent('send failed');
+    await act(() => composer.onSend!('Fix login'));
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+    expect(mocks.send).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a creation error visible without sending to the original checkout', async () => {
+    mocks.create.mockRejectedValue(new Error('remote disconnected'));
+    mount();
+    await waitFor(() => expect(composer.disabled).toBe(false));
+    await act(async () => { await expect(composer.onSend!('Fix login')).rejects.toThrow('remote disconnected'); });
+    expect(screen.getByRole('alert')).toHaveTextContent('remote disconnected');
+    expect(mocks.send).not.toHaveBeenCalled();
+    expect(originalSend).not.toHaveBeenCalled();
+  });
+
+  it('allows an explicit current-checkout choice', async () => {
+    mount();
+    await waitFor(() => expect(composer.disabled).toBe(false));
+    act(() => composer.onTargetChange!('current'));
+    await act(() => composer.onSend!('hello', undefined, false));
+    expect(originalSend).toHaveBeenCalledWith('hello', undefined, false);
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it('uses the current directory for a non-repository', async () => {
+    mocks.info.mockResolvedValue({});
+    mount();
+    await waitFor(() => expect(composer.disabled).toBe(false));
+    expect(composer.worktreesSupported).toBe(false);
+    await act(() => composer.onSend!('hello'));
+    expect(originalSend).toHaveBeenCalledWith('hello', undefined, undefined);
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it('leaves an established conversation on its existing send path', async () => {
+    mount({ newConversation: false });
+    await act(() => composer.onSend!('continue'));
+    expect(originalSend).toHaveBeenCalledWith('continue', undefined, undefined);
+    expect(mocks.session).not.toHaveBeenCalled();
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it('offers a retry after owner lookup fails instead of silently using the hub', async () => {
+    mocks.session.mockRejectedValueOnce(new Error('owner unavailable'));
+    mount();
+    expect(await screen.findByRole('alert')).toHaveTextContent('owner unavailable');
+    expect(composer.disabled).toBe(true);
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(composer.disabled).toBe(false));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('does not create a worktree from stale session props after a route change', async () => {
+    render(<MemoryRouter initialEntries={['/session/other']}><Routes>
+      <Route path="/session/:id" element={<WorktreeStart sessionId="parent" directory="/repo" isRunning={false} newConversation>
+        {(props) => { composer = props; return null; }}
+      </WorktreeStart>} />
+    </Routes></MemoryRouter>);
+    await waitFor(() => expect(composer.disabled).toBe(false));
+    await expect(composer.onSend!('Fix login')).rejects.toThrow('Session changed');
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.send).not.toHaveBeenCalled();
+  });
+});

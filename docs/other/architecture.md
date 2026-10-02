@@ -392,6 +392,7 @@ flowchart TD
     Pages --> Stores[Client state<br/>TanStack Query + Zustand]
     Comp --> Stores
     Comp -->|plugin Settings + palette actions: explicit ownerId| API
+    Comp -->|first prompt: automatic worktree, then send on same owner| API
     Stores --> API[lib/ API client]
     Stores --> SSE[SSE subscription]
     Pages --> Scopes[Ref-counted activity scopes]
@@ -424,6 +425,14 @@ flowchart TD
   loading, stale-data, error, and empty-state decisions.
 - **Capability gating.** The UI never branches on platform identity. Features
   toggle via `/api/capabilities`, enforced by a lint script.
+- **New session target.** A new conversation in a repository defaults to a new
+  worktree. On the first prompt, `WorktreeStart` asks the owning host to create
+  it, then sends the unchanged prompt and model selections to the returned
+  session. The host generates a branch name using its configured `small_model`
+  or Haiku, in a temporary tool-denied session, and appends a unique suffix.
+  Naming failures use `session-<suffix>` without opening a form. Users can
+  select Current checkout; non-repository directories use it automatically.
+  Composer layout, dialogs, and props live in separate modules.
 - **Read aloud.** Turn-end controls select original final-answer text parts and
   use browser speech synthesis. Opt-in autoplay waits for the idle reconciliation
   in the focused session tab. Voice preferences stay in browser storage; audio

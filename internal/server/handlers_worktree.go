@@ -195,6 +195,8 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 		Branch     string `json:"branch"`
 		NewBranch  bool   `json:"newBranch"`
 		BaseRef    string `json:"baseRef"`
+		AutoName   bool   `json:"autoName"`
+		Prompt     string `json:"prompt"`
 		// RemoteID, when set, runs the worktree create on the owning
 		// remote host (FR-10/AD-16b). Empty / "local" = this machine.
 		RemoteID string `json:"remoteId"`
@@ -232,11 +234,11 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 		http.Error(w, "projectDir must be an absolute path", http.StatusBadRequest)
 		return
 	}
-	if req.Branch == "" {
+	if !req.AutoName && req.Branch == "" {
 		http.Error(w, "branch is required", http.StatusBadRequest)
 		return
 	}
-	if req.NewBranch && req.BaseRef == "" {
+	if !req.AutoName && req.NewBranch && req.BaseRef == "" {
 		http.Error(w, "baseRef is required when newBranch is true", http.StatusBadRequest)
 		return
 	}
@@ -261,6 +263,8 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 		Branch:     req.Branch,
 		NewBranch:  req.NewBranch,
 		BaseRef:    req.BaseRef,
+		AutoName:   req.AutoName,
+		Prompt:     req.Prompt,
 	})
 	if err != nil {
 		switch {
