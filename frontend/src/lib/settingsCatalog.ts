@@ -8,7 +8,7 @@
 
 export type SettingsGroupId =
   | 'notifications' | 'sessions' | 'remotes' | 'plugins' | 'auto-approve' | 'sharing'
-  | 'webhooks' | 'templates' | 'link-previews' | 'maintenance' | 'app' | 'account'
+  | 'webhooks' | 'templates' | 'link-previews' | 'maintenance' | 'behaviour' | 'app' | 'account'
   /** Per-project settings page; not part of the global Settings search. */
   | 'project';
 
@@ -292,6 +292,14 @@ export const SETTINGS = {
     description: 'The dump of patches removed by the cleanup. Restore puts them back; deleting the dump makes the cleanup permanent.',
     example: 'Restore if OpenCode\'s per-turn changes view is missing a diff you need.',
     keywords: 'dump restore',
+  },
+  'open-links-in-chrome': {
+    group: 'behaviour',
+    title: 'Open external links in Chrome',
+    description: 'Requires Google Chrome to be installed. Links will fail to open if it isn\'t.',
+    example: 'Installed on an iPad Home Screen, tapping a GitHub link opens it in Chrome instead of Safari.',
+    keywords: 'browser safari ios ipad iphone',
+    requires: 'Shown only on iPhone and iPad.',
   },
   'install-app': {
     group: 'app',

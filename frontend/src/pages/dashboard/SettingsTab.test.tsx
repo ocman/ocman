@@ -5,6 +5,11 @@ import { SettingsTab } from './SettingsTab';
 
 const logout = vi.fn();
 const promptInstall = vi.fn();
+const ios = vi.hoisted(() => ({ value: false }));
+vi.mock('../../lib/externalLinks', async (orig) => ({
+  ...(await orig<typeof import('../../lib/externalLinks')>()),
+  isIOS: () => ios.value,
+}));
 
 vi.mock('../../lib/headerContext', () => ({ usePageTitle: vi.fn() }));
 vi.mock('../../components/upstream/PromptTemplateSettings', () => ({ PromptTemplateSettings: () => null }));
@@ -104,5 +109,23 @@ describe('SettingsTab actions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Account' }));
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
     expect(logout).toHaveBeenCalledOnce();
+  });
+
+  it('shows the Behaviour tab and Chrome toggle only on iOS', async () => {
+    ios.value = false;
+    const { unmount } = render(<SettingsTab />);
+    expect(screen.queryByRole('button', { name: 'Behaviour' })).not.toBeInTheDocument();
+    unmount();
+
+    ios.value = true;
+    render(<SettingsTab />);
+    fireEvent.click(screen.getByRole('button', { name: 'Behaviour' }));
+    const toggle = screen.getByRole('checkbox', { name: 'Open external links in Chrome' });
+    expect(toggle).not.toBeChecked();
+    fireEvent.click(toggle);
+    expect(toggle).toBeChecked();
+    expect(localStorage.getItem('ocman:open-links-in-chrome')).toBe('1');
+    ios.value = false;
+    localStorage.clear();
   });
 });

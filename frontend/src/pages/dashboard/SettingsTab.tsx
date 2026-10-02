@@ -10,7 +10,9 @@ import { useAuthStore } from '../../lib/authStore';
 import { useUiStore } from '../../lib/uiStore';
 import { useApiStore } from '../../lib/apiStore';
 import { usePwaInstall } from '../../lib/usePwaInstall';
-import { SettingRow } from '../../components/SettingRow';
+import { SettingRow, SettingToggle } from '../../components/SettingRow';
+import { useSettingSave } from '../../lib/useSaveStatus';
+import { getOpenInChrome, isIOS, setOpenInChrome } from '../../lib/externalLinks';
 import { SearchField } from '../../components/Control';
 import { SettingsSearchResults } from '../../components/SettingsSearch';
 import { useRevealSetting, type RevealRequest } from '../../lib/useRevealSetting';
@@ -45,6 +47,10 @@ export function SettingsTab() {
   // browser has decided the page is installable the section is hidden
   // entirely, keeping the settings page tidy.
   const showAppSection = canInstall || installed;
+  // Behaviour holds only the iOS-only Chrome toggle, so it is hidden elsewhere.
+  const showBehaviour = isIOS();
+  const [openInChrome, setOpenInChromeState] = useState(getOpenInChrome);
+  const chromeSave = useSettingSave();
 
   // Sidebar groups. Conditional groups (App, Account) are filtered out so
   // the nav only lists what's actually rendered.
@@ -59,6 +65,7 @@ export function SettingsTab() {
     { id: 'templates', label: 'PR & Issue templates', show: true },
     { id: 'link-previews', label: 'Link previews', show: true },
     { id: 'maintenance', label: 'Maintenance', show: true },
+    { id: 'behaviour', label: 'Behaviour', show: showBehaviour },
     { id: 'app', label: 'App', show: showAppSection },
     { id: 'account', label: 'Account', show: authRequired },
   ] satisfies Array<{ id: SettingsGroupId; label: string; show: boolean }>).filter((g) => g.show);
@@ -158,6 +165,20 @@ export function SettingsTab() {
           <h2 className="settings-section-title">Link previews</h2>
           <LinkPreviewTabs key={target?.seq ?? ''} tab={target ? settingEntry(target.id).tab : undefined} />
         </div>}
+
+        {showBehaviour && (
+          <div className="settings-section" hidden={active !== 'behaviour'}>
+            <h2 className="settings-section-title">Behaviour</h2>
+            <SettingRow setting="open-links-in-chrome">
+              <SettingToggle
+                ariaLabel="Open external links in Chrome"
+                checked={openInChrome}
+                save={chromeSave}
+                onSave={(next) => { setOpenInChrome(next); setOpenInChromeState(next); }}
+              />
+            </SettingRow>
+          </div>
+        )}
 
         {showAppSection && (
           <div className="settings-section" hidden={active !== 'app'}>

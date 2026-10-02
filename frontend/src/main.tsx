@@ -16,11 +16,15 @@ import { installRemoteLogHandlers } from './lib/remoteLog'
 import { installAuthIntegration } from './lib/authStore'
 import { registerServiceWorker } from './lib/registerServiceWorker'
 import { installDesktopShell } from './lib/desktopShell'
+import { installExternalLinks } from './lib/externalLinks'
 
 // Inside the Wails desktop window, tag <body> with `wails-app` so CSS can
 // apply platform-specific styles (traffic-light clearance, drag region,
 // etc.) without any build-time branching.
 if (typeof window !== 'undefined') installDesktopShell()
+
+// Optional iOS rewrite of external links to Chrome (Settings → Behaviour).
+installExternalLinks()
 
 // A stale tab can hold an old index.html that references a JS chunk whose
 // hash changed after a rebuild, so its dynamic import 404s. Vite fires
