@@ -58,6 +58,10 @@ const (
 	// mirrorUnsettledMaxAge stops re-reading a turn that never finished
 	// (crashed or interrupted); the full rebuild still refreshes it.
 	mirrorUnsettledMaxAge = 24 * time.Hour
+	// mirrorRetryAfter spaces out full-build attempts after one fails, so a
+	// persistent failure (full disk, unwritable file) does not re-copy the
+	// database on every read.
+	mirrorRetryAfter = 5 * time.Minute
 )
 
 type analyticsMirror struct {
@@ -71,6 +75,9 @@ type analyticsMirror struct {
 	// lastFull is the unix millis of the last full rebuild, persisted in
 	// meta.full_at so a restart cannot postpone reconciliation.
 	lastFull atomic.Int64
+	// failedAt is the unix millis of the last failed full build, 0 after a
+	// success. While set, an overdue mirror is not trusted.
+	failedAt atomic.Int64
 }
 
 // errMirrorBusy reports that another sync holds the gate.
@@ -143,6 +150,11 @@ func (d *DB) analytics(ctx context.Context) *sql.DB {
 		return d.db
 	case m.fullDue():
 		d.rebuildMirrorInBackground()
+		if m.failedAt.Load() != 0 {
+			// Rebuilds are failing, so the copy may stay stale for good:
+			// cost speed, not correctness, until one succeeds.
+			return d.db
+		}
 		return m.db
 	case m.fresh():
 		return m.db
@@ -158,6 +170,9 @@ func (d *DB) analytics(ctx context.Context) *sql.DB {
 
 func (d *DB) rebuildMirrorInBackground() {
 	m := d.mirror
+	if failed := m.failedAt.Load(); failed != 0 && time.Since(time.UnixMilli(failed)) < mirrorRetryAfter {
+		return
+	}
 	if !m.building.CompareAndSwap(false, true) {
 		return
 	}
@@ -204,9 +219,13 @@ func (d *DB) syncMirror(ctx context.Context, wait bool) error {
 	}
 	start := time.Now()
 	if err := d.copyToMirror(ctx, since, start); err != nil {
+		if full && ctx.Err() == nil {
+			m.failedAt.Store(time.Now().UnixMilli())
+		}
 		return err
 	}
 	if full {
+		m.failedAt.Store(0)
 		m.lastFull.Store(start.UnixMilli())
 		m.ready.Store(true)
 		log.WithField("took", time.Since(start)).Info("analytics mirror rebuilt")

@@ -302,3 +302,83 @@ func TestAnalyticsMirrorOverdueRebuildRunsInBackground(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 }
+
+func waitIdle(t *testing.T, m *analyticsMirror) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for m.building.Load() {
+		if time.Now().After(deadline) {
+			t.Fatal("background build never finished")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// TestAnalyticsMirrorFailedRebuildFallsBack: when an overdue rebuild fails,
+// reads go to OpenCode instead of the stale copy, retries are spaced out
+// rather than re-run per read, and a later success restores the mirror.
+func TestAnalyticsMirrorFailedRebuildFallsBack(t *testing.T) {
+	now := time.Now().UnixMilli()
+	d, _ := openMirrored(t)
+	seedMirrorSource(t, d, now)
+	if err := d.SyncAnalyticsMirror(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	m := d.mirror
+	if _, err := m.db.Exec(`DROP TABLE session`); err != nil { // every copy now fails
+		t.Fatal(err)
+	}
+	m.lastFull.Store(time.Now().Add(-mirrorFullRebuildEvery - time.Minute).UnixMilli())
+
+	d.analytics(t.Context())
+	waitIdle(t, m)
+	if m.failedAt.Load() == 0 {
+		t.Fatal("failed rebuild was not recorded")
+	}
+	if h := d.analytics(t.Context()); h != d.db {
+		t.Fatal("after a failed rebuild, reads should use OpenCode, not the stale copy")
+	}
+	if m.building.Load() {
+		t.Fatal("a failed rebuild was retried immediately instead of backing off")
+	}
+
+	if _, err := m.db.Exec(mirrorSchema); err != nil { // the cause goes away
+		t.Fatal(err)
+	}
+	m.failedAt.Store(time.Now().Add(-mirrorRetryAfter - time.Second).UnixMilli())
+	d.analytics(t.Context())
+	waitIdle(t, m)
+	if m.failedAt.Load() != 0 || m.fullDue() {
+		t.Fatal("retry after the backoff did not rebuild the mirror")
+	}
+	if h := d.analytics(t.Context()); h != m.db {
+		t.Fatal("recovered mirror should serve reads again")
+	}
+}
+
+// TestAnalyticsMirrorIncrementalFailureFallsBack: a failing incremental sync
+// costs speed only; the read goes to OpenCode.
+func TestAnalyticsMirrorIncrementalFailureFallsBack(t *testing.T) {
+	d, _ := openMirrored(t)
+	if err := d.SyncAnalyticsMirror(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.mirror.db.Exec(`DROP TABLE message`); err != nil {
+		t.Fatal(err)
+	}
+	forceStale(d)
+	if h := d.analytics(t.Context()); h != d.db {
+		t.Fatal("failed incremental sync should fall back to OpenCode")
+	}
+}
+
+func TestEnableAnalyticsMirrorBadPath(t *testing.T) {
+	d := openTestDB(t)
+	defer d.Close()
+	if err := d.EnableAnalyticsMirror(filepath.Join(t.TempDir(), "missing", "analytics-cache.db"), "src"); err == nil {
+		t.Fatal("expected an error for an unwritable mirror path")
+	}
+	if d.mirror != nil {
+		t.Fatal("a mirror that failed to open must not be enabled")
+	}
+}
