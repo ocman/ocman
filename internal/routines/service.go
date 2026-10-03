@@ -343,10 +343,10 @@ func (s *Service) settleRunning(ctx context.Context, recoverOrphans bool) error 
 		switch detail.Session.Status {
 		case db.StatusDone, db.StatusWaiting:
 			if run.ArchiveSessionAfterSuccess {
-				// OpenCode writes once more after the turn goes idle, and any
-				// write newer than the stamp resurfaces the session: wait until
-				// it's quiet, then stamp now. Remote TimeUpdated is on the
-				// remote's clock, so neither applies there.
+				// OpenCode writes once more after the turn goes idle; any newer
+				// write resurfaces the session, so wait until it's quiet, then
+				// stamp now. ponytail: heuristic, no upstream ordering bound; a
+				// write >5s late still resurfaces. Remote: owner clock, as-is.
 				stamp := detail.Session.TimeUpdated
 				if remoteID, _ := remote.SplitPlatformID(run.Platform); remoteID == "" {
 					if stamp = s.now().UnixMilli(); stamp-detail.Session.TimeUpdated < settleQuietPeriod.Milliseconds() {
