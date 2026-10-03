@@ -52,11 +52,10 @@ describe('useSessionCreation', () => {
   });
 
   it('does not inherit a remote platform for an explicitly local checkout at the same path', async () => {
-    const { result } = renderHook(() => useSessionCreation(opts()));
+    const o = opts();
+    const { result } = renderHook(() => useSessionCreation(o));
     await act(() => result.current.handleNewSessionInDirectory('/repo/a', 'local'));
-    expect(createSessionWithLaunch).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({
-      directory: '/repo/a', remoteId: 'local', platform: undefined,
-    }));
+    expect(o.navigate).toHaveBeenLastCalledWith('/session/new?dir=%2Frepo%2Fa');
   });
 
   it('resolves the main checkout from the owner for a worktree outside the managed layout', async () => {
