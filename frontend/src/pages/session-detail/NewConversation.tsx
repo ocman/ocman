@@ -43,6 +43,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
   const eligibility = useWorktreeEligibility(directory, remoteId);
 
   const [catalog, setCatalog] = useState<PrepareSessionResponse>();
+  const [catalogError, setCatalogError] = useState('');
   const [catalogAttempt, setCatalogAttempt] = useState(0);
   const platform = catalog?.platform || params.platform;
   const caps = usePlatformCapabilities(platform);
@@ -52,6 +53,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
   useEffect(() => {
     const controller = new AbortController();
     setCatalog(undefined);
+    setCatalogError('');
     launchProgressReporter.begin(directory, { skipLaunch: true });
     api.prepareSession({ directory, platform: params.platform }, controller.signal).then((result) => {
       if (controller.signal.aborted) return;
@@ -59,7 +61,9 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
       launchProgressReporter.succeed();
     }).catch((err) => {
       if (controller.signal.aborted) return;
-      launchProgressReporter.fail(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setCatalogError(message);
+      launchProgressReporter.fail(message);
     });
     return () => controller.abort();
   }, [directory, params.platform, catalogAttempt]);
@@ -127,6 +131,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
     send: StartSessionRequest['send'] | undefined,
     execute?: (sessionId: string, platform: string) => Promise<void>,
   ) => {
+    if (!catalog) throw new Error('Session catalog is still loading');
     if (inFlight.current) return;
     const sourceGeneration = generation.current;
     const stillCurrent = () => active.current && generation.current === sourceGeneration;
@@ -164,7 +169,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
     } finally {
       inFlight.current = false;
     }
-  }, [directory, platform, title, canWorktree, target, seedNewSession, navigateToSession]);
+  }, [directory, platform, title, canWorktree, target, seedNewSession, navigateToSession, catalog]);
 
   const onSend = (text: string, images?: AttachedImage[], _queue?: boolean, files?: File[]) => {
     const send = { message: text, images, model: selectedModel, agent: effectiveAgent || undefined, reasoning: selectedReasoning || undefined };
@@ -194,10 +199,11 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
     navigate(newSessionPath({ directory: machine.dir, remoteId: machine.remoteId, platform: machine.platform, title }));
   };
 
-  const resolving = !eligibility.resolved;
+  const resolving = !eligibility.resolved || !catalog;
   return (
     <div className="oc-new-conversation" data-testid="new-conversation">
       {eligibility.error && <InlineAlert onRetry={eligibility.retry}>{eligibility.error}</InlineAlert>}
+      {catalogError && <InlineAlert onRetry={() => setCatalogAttempt((value) => value + 1)}>{catalogError}</InlineAlert>}
       {error && <InlineAlert>{error}</InlineAlert>}
       <Composer
         key={`${remoteId}:${directory}:${params.platform}:${title}`}
@@ -208,7 +214,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
         shellExec={caps.shellExec}
         isRunning={false}
         disabled={resolving}
-        disabledHint={resolving ? 'Checking session target…' : undefined}
+        disabledHint={!catalog ? 'Preparing session…' : resolving ? 'Checking session target…' : undefined}
         whisperAvailable={whisperAvailable}
         models={models}
         modelEntries={catalog?.models.models ?? []}

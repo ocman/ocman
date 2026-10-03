@@ -1,13 +1,17 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
 vi.mock('../../components/FactoryPlanApproval', () => ({ FactoryPlanApproval: () => null }));
-vi.mock('../../components/session/PermissionPrompt', () => ({ PermissionPrompt: () => <div>permission-prompt</div> }));
+vi.mock('../../components/session/PermissionPrompt', () => ({ PermissionPrompt: ({ disabled, onReply }: { disabled?: boolean; onReply?: () => void }) =>
+  <button disabled={disabled} onClick={() => onReply?.()}>permission-prompt</button> }));
 vi.mock('../../components/session/QuestionPrompt', () => ({ QuestionPrompt: () => <div>question-prompt</div> }));
 vi.mock('../../components/assistant/Composer', () => ({ Composer: () => <div>composer</div> }));
 
 import { SessionComposerSlot, type SessionComposerSlotProps } from './SessionComposerSlot';
+import { useFirstSubmission } from './firstSubmission';
+
+beforeEach(() => useFirstSubmission.setState({ entries: {} }));
 
 function renderSlot(over: Partial<SessionComposerSlotProps> = {}) {
   const props: SessionComposerSlotProps = {
@@ -31,6 +35,15 @@ const question = {} as NonNullable<SessionComposerSlotProps['question']>;
 const composer = { isRunning: false } as NonNullable<SessionComposerSlotProps['composer']>;
 
 describe('SessionComposerSlot', () => {
+  it('keeps permission approval available during a pending first submission', () => {
+    useFirstSubmission.setState({ entries: { s1: { text: '!ls', pending: true, execute: vi.fn() } } });
+    const onReply = vi.fn();
+    renderSlot({ permission: { ...permission, disabled: false, onReply }, composer });
+    const approve = screen.getByRole('button', { name: 'permission-prompt' });
+    expect(approve).not.toBeDisabled();
+    fireEvent.click(approve);
+    expect(onReply).toHaveBeenCalledTimes(1);
+  });
   it('renders permission over question over composer', () => {
     renderSlot({ permission, question, composer });
     expect(screen.getByText('permission-prompt')).toBeInTheDocument();

@@ -19,7 +19,8 @@ placeholder exists before that, so the machine and target can still change
 freely. Opening it calls `POST /api/sessions/prepare`, which ensures the
 project's instance on the owning machine and returns the directory's agent,
 command and model catalogs via `Platform.DirectoryCatalog` (a `PlatformJsonReq`
-RPC for remotes); `useWorktreeEligibility` reads the git-info branch and the
+RPC for remotes). Submission waits for that catalog, with visible retry on a
+prepare failure; `useWorktreeEligibility` reads the git-info branch and the
 owner's worktree list, so a directory already inside a linked worktree, or a
 non-repository, uses the current checkout. The composer's machine selector only
 re-points the route; the draft lives under the shared `new` key (`draftKey`
@@ -35,7 +36,9 @@ the complete payload (text, images and selections) in `failedSends` for the
 real session's retry controls. Non-image files stay as browser Files until
 creation, then upload before the first send; upload/delivery failures and
 command/shell failures live in child-keyed `firstSubmission` state with a
-visible retry, without overwriting the child's draft. Start transport failures
+visible retry, without overwriting the child's draft. While first delivery is
+pending, the child composer blocks further submissions so follow-ups cannot
+overtake it; permission and question controls remain available. Start transport failures
 are never automatically replayed, and completion only navigates/clears the
 initiating draft while that route generation is still active. The owner then
 names the worktree in the background: OpenCode's `title` agent (its `small_model` or Haiku) titles the

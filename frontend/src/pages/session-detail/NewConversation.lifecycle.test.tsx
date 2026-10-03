@@ -67,7 +67,7 @@ function Child() {
     </div>)}
     <SessionComposerSlot sessionId="child" platformId="opencode" factoryEpicID=""
     firstUnreadMessageId={null} unreadMessageCount={0} onJumpToUnread={() => {}} permission={null} question={null}
-    composer={{ sessionId: 'child', isRunning: false, onSend: vi.fn() }} />
+    composer={{ sessionId: 'child', isRunning: false, onSend: actions.handleSend }} />
   </>;
 }
 
@@ -95,6 +95,64 @@ beforeEach(() => {
 });
 
 describe('new-conversation submission lifecycle', () => {
+  it('waits for the catalog even when workspace eligibility resolves first', async () => {
+    const catalog = deferred<typeof prepared & { defaultAgent: string; defaultModel: string }>();
+    vi.mocked(api.prepareSession).mockReturnValue(catalog.promise);
+    saveDraft('new', 'start in plan mode');
+    render(<Flow />);
+    await screen.findByRole('option', { name: 'New worktree' });
+    const input = screen.getByRole('textbox');
+    expect(input).toBeDisabled();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(api.startSession).not.toHaveBeenCalled();
+    await act(async () => catalog.resolve({ ...prepared, defaultAgent: 'plan', defaultModel: 'p/model' }));
+    await waitFor(() => expect(input).not.toBeDisabled());
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(api.startSession).toHaveBeenCalledWith(expect.objectContaining({
+      send: expect.objectContaining({ message: 'start in plan mode', agent: 'plan', model: 'p/model' }),
+    })));
+  });
+
+  it('offers a prepare retry while leaving the draft intact and submission disabled', async () => {
+    vi.mocked(api.prepareSession).mockRejectedValueOnce(new Error('prepare offline'));
+    saveDraft('new', 'keep my draft');
+    render(<Flow />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('prepare offline');
+    const input = screen.getByRole('textbox');
+    expect(input).toBeDisabled();
+    expect(input).toHaveValue('keep my draft');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(input).not.toBeDisabled());
+    expect(input).toHaveValue('keep my draft');
+    expect(api.prepareSession).toHaveBeenCalledTimes(2);
+    expect(api.startSession).not.toHaveBeenCalled();
+  });
+
+  it('does not let a follow-up overtake a pending first upload', async () => {
+    const upload = deferred<Awaited<ReturnType<typeof api.uploadComposerAttachment>>>();
+    vi.mocked(api.uploadComposerAttachment).mockReturnValueOnce(upload.promise);
+    render(<Flow />);
+    const input = screen.getByRole('textbox');
+    await waitFor(() => expect(input).not.toBeDisabled());
+    fireEvent.drop(input, { dataTransfer: { files: [new File(['note'], 'note.txt', { type: 'text/plain' })] } });
+    await screen.findByText('note.txt');
+    fireEvent.input(input, { target: { value: 'first prompt' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(screen.getByTestId('route')).toHaveTextContent('child'));
+    const childInput = screen.getByRole('textbox');
+    expect(childInput).toBeDisabled();
+    fireEvent.input(childInput, { target: { value: 'follow-up' } });
+    fireEvent.keyDown(childInput, { key: 'Enter' });
+    expect(api.sendMessage).not.toHaveBeenCalled();
+    await act(async () => upload.resolve({ path: '/child/note.txt', name: 'note.txt', mime: 'text/plain', size: 4 }));
+    await waitFor(() => expect(childInput).not.toBeDisabled());
+    expect(api.sendMessage).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(api.sendMessage).mock.calls[0][1]).toContain('first prompt');
+    fireEvent.keyDown(childInput, { key: 'Enter' });
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(api.sendMessage).mock.calls[1][1]).toBe('follow-up');
+  });
+
   it('does not automatically replay an uncertain creation', async () => {
     vi.mocked(api.startSession).mockRejectedValue(new BackendUnavailableError());
     render(<Flow />);

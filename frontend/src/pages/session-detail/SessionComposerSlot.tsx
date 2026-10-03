@@ -5,6 +5,7 @@ import { QuestionPrompt } from '../../components/session/QuestionPrompt';
 import { FactoryPlanApproval } from '../../components/FactoryPlanApproval';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { FirstSubmissionNotice } from './FirstSubmissionNotice';
+import { useFirstSubmission } from './firstSubmission';
 
 export interface SessionComposerSlotProps {
   sessionId: string;
@@ -36,6 +37,7 @@ export function SessionComposerSlot({
   question,
   composer,
 }: SessionComposerSlotProps) {
+  const firstPending = useFirstSubmission((state) => !!state.entries[sessionId]?.pending);
   return (
     <ErrorBoundary name="session:composer" inline resetKey={sessionId}>
       <FactoryPlanApproval epicID={factoryEpicID} platformID={platformId} sessionID={sessionId} />
@@ -59,7 +61,10 @@ export function SessionComposerSlot({
       ) : composer ? (
         <>
           <FirstSubmissionNotice sessionId={sessionId} />
-          <Composer {...composer} />
+          <Composer {...composer}
+            disabled={composer.disabled || firstPending}
+            disabledHint={firstPending ? 'Waiting for the first submission…' : composer.disabledHint}
+            onLaunchRequest={firstPending ? undefined : composer.onLaunchRequest} />
         </>
       ) : null}
     </ErrorBoundary>
