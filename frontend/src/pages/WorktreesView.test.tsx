@@ -271,6 +271,27 @@ describe('WorktreesView', () => {
       expect(screen.getByText('b-branch')).toBeInTheDocument();
     });
 
+    // Opened while B is disconnected: no doomed 503 list request, and once
+    // capabilities report B connected the rows load without a Refresh.
+    it('loads worktrees when a disconnected owner reconnects', async () => {
+      launchState.allowed = false;
+      const view = renderView('/project/%2Frepo/worktrees?remoteId=B');
+      expect(await screen.findByText(/unavailable on this host/i)).toBeInTheDocument();
+      expect(api.worktree.list).not.toHaveBeenCalled();
+
+      launchState.allowed = true;
+      view.rerender(
+        <MemoryRouter initialEntries={['/project/%2Frepo/worktrees?remoteId=B']}>
+          <div id="header-actions-slot" />
+          <Routes>
+            <Route path="/project/:dir/worktrees" element={<WorktreesView />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+      expect(await screen.findByText('feature')).toBeInTheDocument();
+      expect(api.worktree.list).toHaveBeenCalledWith('/repo', 'B');
+    });
+
     it('shows a disconnected owner as unavailable instead of using this machine', async () => {
       launchState.allowed = false;
       renderView('/project/%2Frepo/worktrees?remoteId=gone');

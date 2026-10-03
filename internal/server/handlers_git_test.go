@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,12 +19,39 @@ import (
 type gitInfoOwner struct {
 	hostsvc.Host
 	calls int
+	dirs  []string
 }
 
 func (h *gitInfoOwner) RemoteID() string { return "rem1" }
-func (h *gitInfoOwner) GitInfo(context.Context, []string) (map[string]git.Info, error) {
+func (h *gitInfoOwner) GitInfo(_ context.Context, dirs []string) (map[string]git.Info, error) {
 	h.calls++
+	h.dirs = dirs
 	return map[string]git.Info{}, nil
+}
+
+func TestHandleGitInfo_LiteralDirectory(t *testing.T) {
+	for _, dir := range []string{"/repo/foo,bar", "/repo/ spaced "} {
+		t.Run(dir, func(t *testing.T) {
+			host := &gitInfoOwner{}
+			srv := &Server{hostRouter: hostsvc.NewRouter(&ownerSpy{})}
+			srv.hostRouter.RegisterRemote("rem1", host)
+			query := url.Values{"dir": {dir}, "remoteId": {"rem1"}}
+			w := httptest.NewRecorder()
+			srv.handleGitInfo(w, httptest.NewRequest(http.MethodGet, "/api/git/info?"+query.Encode(), nil))
+			if w.Code != http.StatusOK || len(host.dirs) != 1 || host.dirs[0] != dir {
+				t.Fatalf("status %d, owner directories %q; want one literal directory %q", w.Code, host.dirs, dir)
+			}
+		})
+	}
+}
+
+func TestHandleGitInfo_LiteralDirectoryRejectsRelative(t *testing.T) {
+	w := httptest.NewRecorder()
+	srv := &Server{}
+	srv.handleGitInfo(w, httptest.NewRequest(http.MethodGet, "/api/git/info?dir=relative,dir&remoteId=local", nil))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status %d, want 400", w.Code)
+	}
 }
 
 // gitInitForServerTest is a copy of the helper in the git package's

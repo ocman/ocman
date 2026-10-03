@@ -1430,3 +1430,77 @@ func TestRespondPrompt_UpstreamNotFoundDropsRegistryEntry(t *testing.T) {
 		t.Fatalf("question still listed after upstream 404: %v", got)
 	}
 }
+
+// Current OpenCode takes the title in the POST /session body; when it echoes
+// it back no follow-up PATCH is spent.
+func TestCreateSession_TitleInCreateBodySkipsPatch(t *testing.T) {
+	const dir = "/tmp/test-create-session-title-body"
+	var patches int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPatch {
+			atomic.AddInt32(&patches, 1)
+		}
+		var body map[string]string
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"ses_body","title":"` + body["title"] + `"}`))
+	}))
+	defer srv.Close()
+	withTestPort(t, dir, strings.TrimPrefix(srv.URL, "http://127.0.0.1:"))
+
+	if _, err := (&Adapter{}).CreateSession(context.Background(), platforms.CreateSessionRequest{Directory: dir, Title: "wt"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := atomic.LoadInt32(&patches); got != 0 {
+		t.Fatalf("PATCH called %d times, want 0", got)
+	}
+}
+
+// The V2 health probe is answered from cache within its TTL; transport
+// failures are not cached.
+func TestServerAdvertisesV2_CachesPerPort(t *testing.T) {
+	var probes int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&probes, 1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"pid":42}`))
+	}))
+	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	t.Cleanup(func() { v2Probes.Delete(port) })
+	for range 3 {
+		if !serverAdvertisesV2(context.Background(), port) {
+			t.Fatal("want V2")
+		}
+	}
+	if got := atomic.LoadInt32(&probes); got != 1 {
+		t.Fatalf("probed %d times, want 1", got)
+	}
+	srv.Close()
+	v2Probes.Delete(port)
+	if serverAdvertisesV2(context.Background(), port) {
+		t.Fatal("closed server reported V2")
+	}
+	if _, cached := v2Probes.Load(port); cached {
+		t.Fatal("transport failure was cached")
+	}
+}
+
+// A legacy server's 404 is an answer: cached as "not V2", not re-probed.
+func TestServerAdvertisesV2_CachesLegacyAnswer(t *testing.T) {
+	var probes int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&probes, 1)
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
+	t.Cleanup(func() { v2Probes.Delete(port) })
+	for range 2 {
+		if serverAdvertisesV2(context.Background(), port) {
+			t.Fatal("legacy server reported V2")
+		}
+	}
+	if got := atomic.LoadInt32(&probes); got != 1 {
+		t.Fatalf("probed %d times, want 1", got)
+	}
+}

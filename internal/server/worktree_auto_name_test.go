@@ -2,19 +2,26 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 type autoWorktreeOwner struct {
 	hostsvc.Host
 	request hostsvc.WorktreeSessionRequest
 }
+
+func (h *autoWorktreeOwner) RemoteID() string { return "machine" }
 
 func (h *autoWorktreeOwner) CreateWorktreeSession(_ context.Context, request hostsvc.WorktreeSessionRequest) (*hostsvc.WorktreeSessionResult, error) {
 	h.request = request
@@ -79,5 +86,97 @@ func TestWorktreeListResolvesSelectedWorkspaceOnExplicitOwner(t *testing.T) {
 	}
 	if local.calls != 0 || remote.calls != 1 {
 		t.Fatalf("wrong owner called: local=%d remote=%d", local.calls, remote.calls)
+	}
+}
+
+// The first message rides on create-and-launch and is delivered to the
+// owner's session server-side; a send failure is reported, not fatal.
+func TestWorktreeCreateAndLaunchSendsFirstMessage(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(map[bool]string{false: "sent", true: "failed"}[fail], func(t *testing.T) {
+			srv, reg := newSessionsTestServer(t)
+			srv.hostRouter = hostsvc.NewRouter(nil)
+			srv.hostRouter.RegisterRemote("machine", &autoWorktreeOwner{})
+			var got platforms.SendMessageRequest
+			reg.Register(&fakePlatform{
+				id:       "r-machine:opencode",
+				sessions: []db.Session{mkSession("r-machine:opencode", "child", "t", 1)},
+				sendMessageFn: func(req platforms.SendMessageRequest) error {
+					got = req
+					if fail {
+						return errors.New("boom")
+					}
+					return nil
+				},
+			})
+			body := `{"projectDir":"/remote/repo","remoteId":"machine","autoName":true,"prompt":"Fix login",` +
+				`"send":{"message":"Fix login","agent":"build","images":[{"url":"data:x","mime":"image/png"}]}}`
+			w := httptest.NewRecorder()
+			srv.handleWorktreeCreateAndLaunch(w, httptest.NewRequest(http.MethodPost, "/api/worktree/create-and-launch", strings.NewReader(body)))
+			if w.Code != http.StatusOK {
+				t.Fatalf("status %d: %s", w.Code, w.Body.String())
+			}
+			if got.SessionID != "child" || got.Message != "Fix login" || got.Agent != "build" || len(got.Images) != 1 {
+				t.Fatalf("send = %+v", got)
+			}
+			var resp struct {
+				Sent bool   `json:"firstMessageSent"`
+				Err  string `json:"firstMessageError"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatal(err)
+			}
+			if resp.Sent == fail || (resp.Err != "") != fail {
+				t.Fatalf("response = %+v", resp)
+			}
+		})
+	}
+}
+
+// The placeholder conversation a worktree child replaces is archived, never
+// deleted: a stale-empty read followed by a concurrent message must not lose
+// history, and that message resurfaces the conversation.
+func TestArchiveEmptySessionNeverDeletes(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		messages int
+		archived bool
+	}{{"empty", 0, true}, {"written", 2, false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, reg := newSessionsTestServer(t)
+			reg.Register(&fakePlatform{
+				id:       "opencode",
+				sessions: []db.Session{mkSession("opencode", "parent", "t", 1000)},
+				sessionDetailFn: func(id string) (*platforms.SessionDetail, error) {
+					// A possibly stale snapshot: what the cache last saw.
+					return &platforms.SessionDetail{Session: &db.Session{ID: id, TimeUpdated: 1000, MessageCount: tc.messages}, TotalMessages: tc.messages}, nil
+				},
+				disposeFn: func(platforms.DisposeSessionRequest) error {
+					t.Fatal("placeholder conversation was deleted")
+					return nil
+				},
+			})
+			srv.archiveEmptySession(t.Context(), "opencode", "parent")
+			archived, err := srv.stateDB.ArchivedSessions(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			at, ok := archived[state.Key{Platform: "opencode", SessionID: "parent"}]
+			if ok != tc.archived {
+				t.Fatalf("archived = %v, want %v", ok, tc.archived)
+			}
+			if !ok {
+				return
+			}
+			if at != 1000 {
+				t.Fatalf("archived at %d, want the read time_updated 1000", at)
+			}
+			// A message written after the stale read resurfaces the session.
+			written := mkSession("opencode", "parent", "t", 2000)
+			written.Status = db.StatusDone
+			if !shouldResurfaceSession(written, at, "halt") {
+				t.Fatal("a concurrent message did not resurface the archived session")
+			}
+		})
 	}
 }

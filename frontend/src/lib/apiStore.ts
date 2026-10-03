@@ -107,6 +107,8 @@ type ApiStore = {
   getSessions: (params?: { dir?: string; since?: number; limit?: number }, signal?: AbortSignal) => Promise<Session[]>;
   refreshCachedSessions: (signal?: AbortSignal) => Promise<Session[]>;
   getSession: (id: string, limit?: number, offset?: number, signal?: AbortSignal) => Promise<SessionDetail>;
+  /** Reads a session without opening it, so it is not unarchived. */
+  peekSession: (id: string, signal?: AbortSignal) => Promise<SessionDetail>;
   getSessionChanges: (id: string, signal?: AbortSignal) => Promise<SessionChanges>;
   getSessionInfo: (id: string, signal?: AbortSignal, platform?: string) => Promise<SessionInfo>;
   getGitDiff: (dir: string, opts?: { fresh?: boolean }, signal?: AbortSignal) => Promise<WorkingTreeDiff>;
@@ -334,6 +336,7 @@ export const useApiStore = create<ApiStore>((set, get) => ({
     });
   },
   getSession: (id, limit = 50, offset = 0, signal) => get().runRequest(`session:get:${id}`, () => api.session(id, limit, offset, signal)),
+  peekSession: (id, signal) => get().runRequest(`session:peek:${id}`, () => api.session(id, 1, 0, signal, undefined, true)),
   getSessionChanges: (id, signal) => get().runRequest(`session:changes:${id}`, () => api.sessionChanges(id, signal)),
   getSessionInfo: (id, signal, platform) => get().runRequest(
     `session:info:${platform ?? 'local'}:${id}`,

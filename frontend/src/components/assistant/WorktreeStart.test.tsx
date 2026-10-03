@@ -44,20 +44,34 @@ describe('automatic worktree start', () => {
     expect(composer.disabled).toBe(true);
     await waitFor(() => expect(composer.disabled).toBe(false));
     expect(composer.target).toBe('worktree');
-    expect(mocks.info).toHaveBeenCalledWith('/api/git/info?dirs=%2Frepo&remoteId=machine', expect.any(AbortSignal));
+    expect(mocks.info).toHaveBeenCalledWith('/api/git/info?dir=%2Frepo&remoteId=machine', expect.any(AbortSignal));
     const images = [{ url: 'data:image/png;base64,abc', mime: 'image/png' }];
     await act(() => composer.onSend!('Fix login', images, true));
     expect(mocks.create).toHaveBeenCalledWith('/api/worktree/create-and-launch?platform=r-machine%3Aopencode', {
-      projectDir: '/repo', autoName: true, prompt: 'Fix login', parentSessionId: 'parent', remoteId: 'machine',
+      projectDir: '/repo', autoName: true, prompt: 'Fix login', parentSessionId: 'parent', remoteId: 'machine', discardEmptyParent: true,
     });
     expect(mocks.send).toHaveBeenCalledWith('child', 'Fix login', images, 'provider/big', 'plan', 'high', 'r-machine:opencode', true);
-    expect(mocks.seed).toHaveBeenCalledWith('child', '/worktrees/fix', 'r-machine:opencode', 'fix-1234', 'machine');
+    expect(mocks.seed).toHaveBeenCalledWith('child', '/worktrees/fix', 'r-machine:opencode', undefined, 'machine');
     expect(screen.getByText('/session/child')).toBeInTheDocument();
     expect(originalSend).not.toHaveBeenCalled();
   });
 
+  it('delivers a plain first prompt with the create request, without a second send', async () => {
+    mocks.create.mockResolvedValue({ sessionId: 'child', worktreePath: '/worktrees/fix', branch: 'fix-1234', firstMessageSent: true });
+    mount();
+    await waitFor(() => expect(composer.disabled).toBe(false));
+    const images = [{ url: 'data:image/png;base64,abc', mime: 'image/png' }];
+    await act(() => composer.onSend!('Fix login', images));
+    expect(mocks.create).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      send: { message: 'Fix login', images, model: 'provider/big', agent: 'plan', reasoning: 'high' },
+    }));
+    expect(mocks.send).not.toHaveBeenCalled();
+    expect(screen.getByText('/session/child')).toBeInTheDocument();
+    expect(useWorktreeSubmission.getState().entries.child).toBeUndefined();
+  });
+
   it('retains the submission on the child when sending fails and the user retries', async () => {
-    mocks.send.mockRejectedValueOnce(new Error('send failed'));
+    mocks.create.mockResolvedValue({ sessionId: 'child', worktreePath: '/worktrees/fix', branch: 'fix-1234', firstMessageSent: false, firstMessageError: 'send failed' });
     const images = [{ url: 'data:image/png;base64,abc', mime: 'image/png' }];
     const view = mount();
     await waitFor(() => expect(composer.disabled).toBe(false));
@@ -70,7 +84,7 @@ describe('automatic worktree start', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
     expect(mocks.create).toHaveBeenCalledTimes(1);
-    expect(mocks.send).toHaveBeenCalledTimes(2);
+    expect(mocks.send).toHaveBeenCalledTimes(1);
     expect(mocks.send).toHaveBeenLastCalledWith('child', 'Fix login', images, 'provider/big', 'plan', 'high', 'r-machine:opencode', undefined);
   });
 
@@ -82,6 +96,15 @@ describe('automatic worktree start', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('remote disconnected');
     expect(mocks.send).not.toHaveBeenCalled();
     expect(originalSend).not.toHaveBeenCalled();
+  });
+
+  it('looks up comma-containing paths as a literal directory', async () => {
+    mocks.info.mockResolvedValue({ '/repo/foo,bar': { branch: 'main' } });
+    mount({ directory: '/repo/foo,bar' });
+    await waitFor(() => expect(composer.disabled).toBe(false));
+    expect(mocks.info).toHaveBeenCalledWith('/api/git/info?dir=%2Frepo%2Ffoo%2Cbar&remoteId=machine', expect.any(AbortSignal));
+    await act(() => composer.onSend!('Fix login'));
+    expect(mocks.create).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ projectDir: '/repo/foo,bar' }));
   });
 
   it('allows an explicit current-checkout choice', async () => {

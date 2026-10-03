@@ -623,7 +623,7 @@ func expireSessionsCacheForScan() {
 // test. Callers must first release anything those refreshes block on
 // (and cancel any running refresher).
 func drainSessionsRefresh() {
-	sessionsRefreshWG.Wait()
+	waitSessionsRefresh()
 }
 
 type sessionsResult struct {

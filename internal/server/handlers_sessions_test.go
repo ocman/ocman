@@ -739,6 +739,73 @@ func TestHandleSession_UnarchivesOnOpen(t *testing.T) {
 	}
 }
 
+// A peek (sidebar probing a session that showed activity) follows the
+// resurface policy: a busy archived session stays archived, a halted one
+// resurfaces.
+func TestHandleSession_PeekFollowsResurfacePolicy(t *testing.T) {
+	for _, tc := range []struct {
+		platform     string
+		status       db.SessionStatus
+		wantArchived bool
+	}{
+		{"opencode", db.StatusBusy, true},
+		{"opencode", db.StatusDone, false},
+		{"opencode", db.StatusWaiting, false},
+		// Remote sessions use the hub's archive state, keyed by compound platform.
+		{"r-box:opencode", db.StatusBusy, true},
+		{"r-box:opencode", db.StatusDone, false},
+	} {
+		t.Run(tc.platform+"/"+string(tc.status), func(t *testing.T) {
+			srv, _ := newPeekTestServer(t, tc.platform, tc.status)
+			if err := srv.stateDB.ArchiveSession(t.Context(), tc.platform, "s1", 1000); err != nil {
+				t.Fatal(err)
+			}
+			rr := httptest.NewRecorder()
+			srv.handleSession(rr, httptest.NewRequest(http.MethodGet, "/api/session/s1?peek=1", nil))
+			if rr.Code != http.StatusOK {
+				t.Fatalf("status = %d", rr.Code)
+			}
+			var body struct{ Session db.Session }
+			if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			archived, _ := srv.stateDB.ArchivedSessions(t.Context())
+			_, stored := archived[state.Key{Platform: tc.platform, SessionID: "s1"}]
+			if stored != tc.wantArchived || body.Session.Archived != tc.wantArchived {
+				t.Fatalf("stored=%v response=%v, want %v", stored, body.Session.Archived, tc.wantArchived)
+			}
+		})
+	}
+}
+
+// A failed state read must not report an archived session as visible.
+func TestHandleSession_PeekStateErrorFails(t *testing.T) {
+	srv, _ := newPeekTestServer(t, "opencode", db.StatusBusy)
+	if err := srv.stateDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+	rr := httptest.NewRecorder()
+	srv.handleSession(rr, httptest.NewRequest(http.MethodGet, "/api/session/s1?peek=1", nil))
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rr.Code)
+	}
+}
+
+func newPeekTestServer(t *testing.T, platform string, status db.SessionStatus) (*Server, *platforms.Registry) {
+	t.Helper()
+	srv, reg := newSessionsTestServer(t)
+	sess := db.Session{ID: "s1", Platform: platform, Directory: "/src/foo", TimeUpdated: 2000, Status: status}
+	reg.Register(&fakePlatform{
+		id:       platform,
+		sessions: []db.Session{sess},
+		sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+			cp := sess
+			return &platforms.SessionDetail{Session: &cp}, nil
+		},
+	})
+	return srv, reg
+}
+
 func TestHandleSession_SurfacesProjectDefaultModel(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	sess := &db.Session{ID: "s1", Platform: "opencode", Directory: "/src/foo"}

@@ -11,7 +11,6 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/permissions"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/tmux"
 )
@@ -204,8 +203,25 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 		// setting is on, seeds the new session with the parent's
 		// accumulated always-allow permissions (issue #101).
 		ParentSessionID string `json:"parentSessionId"`
+		// DiscardEmptyParent removes the parent once the child exists, when
+		// it is the still-empty conversation the first message was typed in.
+		DiscardEmptyParent bool `json:"discardEmptyParent"`
+		// Send, when set, is delivered to the new session before the
+		// response returns, saving the client a second round trip on the
+		// first message. Failures are reported, never fatal to the launch.
+		Send *struct {
+			Message string `json:"message"`
+			Images  []struct {
+				URL  string `json:"url"`
+				Mime string `json:"mime"`
+			} `json:"images"`
+			Model     string `json:"model"`
+			Agent     string `json:"agent"`
+			Reasoning string `json:"reasoning"`
+		} `json:"send"`
 	}
-	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
+	// The first message may carry image attachments.
+	if !readAndUnmarshal(w, r, maxSendMessageBody, &req) {
 		return
 	}
 
@@ -258,6 +274,9 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
+	// Parent permission reads don't depend on the worktree; overlap them.
+	inherited := make(chan inheritedRules, 1)
+	go func() { inherited <- s.buildInheritedPermissions(r, req.ParentSessionID) }()
 	res, err := host.CreateWorktreeSession(r.Context(), hostsvc.WorktreeSessionRequest{
 		ProjectDir: req.ProjectDir,
 		Branch:     req.Branch,
@@ -284,11 +303,37 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 	// always-allow permissions (issue #101). Soft-fail: never turn a
 	// successful worktree launch into an error; surface any problem via
 	// the response fields instead.
-	inheritedCount, inheritErr := s.applyInheritedPermissions(r, req.ParentSessionID, res.SessionID)
+	inheritedCount, inheritErr := s.applyInheritedPermissions(r, <-inherited, res.SessionID)
+
+	// Permissions first, then the prompt, so the first turn already runs
+	// under the inherited posture.
+	platform := opencodePlatformForHost(host)
+	sent, sendErr := false, ""
+	if req.Send != nil {
+		images := make([]platforms.ImageAttachment, 0, len(req.Send.Images))
+		for _, img := range req.Send.Images {
+			images = append(images, platforms.ImageAttachment{URL: img.URL, Mime: img.Mime})
+		}
+		if err := s.sendNow(r.Context(), platform, platforms.SendMessageRequest{
+			SessionID: res.SessionID, Message: req.Send.Message, Images: images,
+			Model: req.Send.Model, Agent: req.Send.Agent, Reasoning: req.Send.Reasoning,
+		}); err != nil {
+			log.WithError(err).Warn("worktree: sending first message")
+			sendErr = err.Error()
+		} else {
+			sent = true
+		}
+	}
+
+	if req.DiscardEmptyParent && req.ParentSessionID != "" {
+		go s.archiveEmptySession(context.WithoutCancel(r.Context()), platform, req.ParentSessionID)
+	}
 
 	writeJSON(w, map[string]interface{}{
 		"sessionId":                 res.SessionID,
-		"platform":                  opencodePlatformForHost(host),
+		"platform":                  platform,
+		"firstMessageSent":          sent,
+		"firstMessageError":         sendErr,
 		"remoteId":                  host.RemoteID(),
 		"worktreePath":              res.WorktreePath,
 		"branch":                    res.Branch,
@@ -298,62 +343,4 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 		"permissionsInheritedCount": inheritedCount,
 		"permissionsInheritError":   inheritErr,
 	})
-}
-
-// applyInheritedPermissions builds the parent's always-allow ruleset
-// and applies it to the freshly-created worktree session when the
-// worktree.inherit_permissions setting is on and a parent was named.
-// Returns the number of rules applied and a soft-fail note (empty on
-// success or when inheritance was skipped). Never blocks the launch.
-func (s *Server) applyInheritedPermissions(r *http.Request, parentSessionID, childSessionID string) (int, string) {
-	if s.stateDB == nil || parentSessionID == "" || childSessionID == "" {
-		return 0, ""
-	}
-	on, err := s.stateDB.GetWorktreeInheritPermissions(r.Context())
-	if err != nil {
-		log.WithError(err).Warn("worktree: reading inherit-permissions setting")
-		return 0, "reading setting: " + err.Error()
-	}
-	if !on {
-		return 0, ""
-	}
-	// The /wt flow is OpenCode-only (AD-7) and doesn't pass ?platform=;
-	// approvals are recorded under the platform id, so default to
-	// "opencode" when no explicit hint is present.
-	platform := platformHint(r)
-	if platform == "" {
-		platform = "opencode"
-	}
-	var reader permissions.LiveRuleReader
-	if adapter, ok := s.registry.Get(platforms.ID(platform)); ok {
-		reader = worktreeLiveRuleReader{adapter: adapter, ctx: r.Context()}
-	}
-	rules, count, err := permissions.BuildInheritedRulesWithLive(r.Context(), s.stateDB, reader, platform, parentSessionID)
-	if err != nil {
-		log.WithError(err).Warn("worktree: building inherited permission rules")
-		return 0, "building rules: " + err.Error()
-	}
-	if count == 0 {
-		return 0, ""
-	}
-	if err := s.sessions.SetPermissionRules(r.Context(), platform, platforms.SetPermissionRulesRequest{
-		SessionID: childSessionID,
-		Rules:     rules,
-	}); err != nil {
-		log.WithError(err).Warn("worktree: applying inherited permission rules")
-		return 0, "applying rules: " + err.Error()
-	}
-	return count, ""
-}
-
-// worktreeLiveRuleReader adapts a platforms.Platform to the
-// permissions.LiveRuleReader shape so a worktree child inherits the
-// parent's live YOLO/custom posture, not just its recorded approvals.
-type worktreeLiveRuleReader struct {
-	adapter platforms.Platform
-	ctx     context.Context
-}
-
-func (w worktreeLiveRuleReader) PermissionRules(_ string, sessionID string) ([]platforms.PermissionRule, error) {
-	return w.adapter.PermissionRules(w.ctx, sessionID)
 }

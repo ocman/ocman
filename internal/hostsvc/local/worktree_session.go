@@ -3,6 +3,7 @@ package local
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
@@ -13,28 +14,40 @@ import (
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 )
 
+// provisionalPrefix names an automatic worktree until the small model has
+// picked a descriptive name in the background.
+const provisionalPrefix = "session-"
+
 // CreateWorktreeSession runs on the owning host and uses the project's single
 // managed OpenCode instance. Automatic names always create a fresh branch.
+//
+// Automatic names start provisional (session-<id8>) so the LLM naming call
+// never sits on the first message's critical path; nameWorktree renames the
+// branch and title afterwards while the worktree path stays put.
 func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSessionRequest) (*hostsvc.WorktreeSessionResult, error) {
 	repoRoot, err := git.ResolveRepoRoot(ctx, req.ProjectDir)
 	if err != nil {
 		return nil, err
 	}
+	suffix := ""
 	if req.AutoName {
-		ensured, err := h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: repoRoot})
-		if err != nil {
-			return nil, fmt.Errorf("ensuring project opencode: %w", err)
-		}
-		name, err := opencode.WorktreeName(ctx, ensured.Port(), repoRoot, req.Prompt)
-		if err != nil {
-			// ponytail: naming is best-effort; a random suffix still isolates every session.
-			log.WithError(err).Warn("worktree: using fallback name")
-			name = "session"
-		}
-		req.Branch = name + "-" + uuid.NewString()[:8]
+		suffix = uuid.NewString()[:8]
+		req.Branch = provisionalPrefix + suffix
 		req.NewBranch = true
 		req.MustCreateBranch = true
 	}
+
+	// The instance probe and the checkout are independent; overlap them.
+	type ensureResult struct {
+		res *hostsvc.EnsureProjectOpencodeResult
+		err error
+	}
+	ensuredCh := make(chan ensureResult, 1)
+	go func() {
+		res, err := h.sfDoDetached(ctx, repoRoot, h.ensureLocked)
+		ensuredCh <- ensureResult{res, err}
+	}()
+
 	baseRef := req.BaseRef
 	if req.NewBranch && baseRef == "" {
 		baseRef = git.ResolveBaseRef(ctx, repoRoot)
@@ -43,6 +56,7 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 		RepoRoot: repoRoot, Branch: req.Branch, NewBranch: req.NewBranch,
 		BaseRef: baseRef, MustCreateBranch: req.MustCreateBranch,
 	})
+	ensured := <-ensuredCh
 	if err != nil {
 		return nil, err
 	}
@@ -52,17 +66,19 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 			_ = git.DeleteBranch(context.WithoutCancel(ctx), repoRoot, req.Branch)
 		}
 	}
-	ensured, err := h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: repoRoot})
-	if err != nil {
+	if ensured.err != nil {
 		rollback()
-		return nil, fmt.Errorf("ensuring project opencode: %w", err)
+		return nil, fmt.Errorf("ensuring project opencode: %w", ensured.err)
 	}
+	port := ensured.res.Port()
 	if h.deps.CreateSession == nil {
 		rollback()
 		return nil, fmt.Errorf("CreateWorktreeSession: CreateSession dep not wired")
 	}
-	request := platforms.CreateSessionRequest{Directory: res.Path, Port: ensured.Port(), Title: req.Title}
-	if request.Title == "" {
+	request := platforms.CreateSessionRequest{Directory: res.Path, Port: port, Title: req.Title}
+	// Automatic sessions keep OpenCode's default title so OpenCode titles
+	// them from the first message; the branch name is no title.
+	if request.Title == "" && !req.AutoName {
 		request.Title = req.Branch
 	}
 	var created *platforms.CreateSessionResponse
@@ -79,8 +95,31 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 		rollback()
 		return nil, fmt.Errorf("creating worktree session: %w", err)
 	}
+	if req.AutoName {
+		h.background.Add(1)
+		go func() {
+			defer h.background.Done()
+			bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			defer cancel()
+			h.nameWorktree(bg, port, repoRoot, req.Branch, suffix, req.Prompt)
+		}()
+	}
 	return &hostsvc.WorktreeSessionResult{
 		SessionID: created.ID, WorktreePath: res.Path, Branch: res.Branch,
 		Reused: res.Reused, BranchExisted: res.BranchExisted,
 	}, nil
+}
+
+// nameWorktree asks the small model for a descriptive name and renames the
+// provisional branch. Best-effort: on any failure the provisional name stays.
+func (h *Host) nameWorktree(ctx context.Context, port, repoRoot, branch, suffix, prompt string) {
+	name, err := opencode.WorktreeName(ctx, port, repoRoot, prompt)
+	if err != nil {
+		log.WithError(err).Warn("worktree: keeping provisional name")
+		return
+	}
+	renamed := name + "-" + suffix
+	if err := git.RenameBranch(ctx, repoRoot, branch, renamed); err != nil {
+		log.WithError(err).Warn("worktree: renaming provisional branch")
+	}
 }

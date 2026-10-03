@@ -1495,6 +1495,10 @@ export interface WorktreeCreateResponse {
    * launch still succeeded (soft-fail).
    */
   permissionsInheritError?: string;
+  /** True when the server delivered the request's `send` message. */
+  firstMessageSent?: boolean;
+  /** Non-empty when the server tried the `send` message and it failed. */
+  firstMessageError?: string;
 }
 
 export interface SlashCommand {

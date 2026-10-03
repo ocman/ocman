@@ -600,10 +600,19 @@ func InvalidateSessionsCache() {
 // Exported (capitalised) so the server-package integration tests can
 // reach it without a circular import. Production code never needs it
 // — the TTLs handle eventual freshness on their own.
+// waitSessionsRefresh waits for the refresher goroutines and for any scan
+// still in the singleflight slot: a canceled caller leaves its scan running
+// (it is detached from ctx), and a later caller would join it and inherit
+// its result.
+func waitSessionsRefresh() {
+	sessionsRefreshWG.Wait()
+	_, _, _ = sessionsFlight.Do(sessionsFlightKey, func() (interface{}, error) { return nil, nil })
+}
+
 func ResetCachesForTests() {
 	// Wait out any background refresh first, or it would repopulate the
 	// snapshot we are about to clear.
-	sessionsRefreshWG.Wait()
+	waitSessionsRefresh()
 
 	recentModelsMu.Lock()
 	recentModelsCached = recentModelsEntry{}
