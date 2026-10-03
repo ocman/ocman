@@ -3,6 +3,8 @@ package local
 import (
 	"context"
 	"errors"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -10,6 +12,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/git"
+	"github.com/NoUseFreak/ocman/internal/gitexec"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
 )
@@ -199,6 +202,37 @@ func TestEnsureProjectOpencode_ReusesHealthyInstance(t *testing.T) {
 	}
 	if second.Endpoint != first.Endpoint {
 		t.Errorf("reused endpoint = %q; want first endpoint %q", second.Endpoint, first.Endpoint)
+	}
+}
+
+// A linked worktree outside the managed .worktrees layout shares the main
+// checkout's instance: ensuring it reuses that instance instead of
+// launching a second one rooted at the worktree.
+func TestEnsureProjectOpencode_UnmanagedWorktreeReusesMainInstance(t *testing.T) {
+	repo := initRepo(t)
+	wt := filepath.Join(t.TempDir(), "repo-feature")
+	cmd := exec.Command("git", "-C", repo, "worktree", "add", "-b", "feature", wt)
+	cmd.Env = gitexec.CleanEnv()
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add: %v\n%s", err, out)
+	}
+	rt := &fakeRuntime{}
+	h := New(Deps{Runtime: rt})
+	ctx := context.Background()
+
+	main, err := h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: repo})
+	if err != nil {
+		t.Fatalf("main checkout: %v", err)
+	}
+	linked, err := h.EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: wt})
+	if err != nil {
+		t.Fatalf("linked worktree: %v", err)
+	}
+	if rt.launchCount() != 1 || linked.Launched {
+		t.Fatalf("launches = %d, linked.Launched = %v; want the main instance reused", rt.launchCount(), linked.Launched)
+	}
+	if linked.RepoRoot != main.RepoRoot {
+		t.Fatalf("linked RepoRoot = %q; want main checkout %q", linked.RepoRoot, main.RepoRoot)
 	}
 }
 

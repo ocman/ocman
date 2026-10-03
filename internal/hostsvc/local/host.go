@@ -276,7 +276,7 @@ func (h *Host) LaunchTmux(ctx context.Context, req hostsvc.LaunchTmuxRequest) (*
 // checkout. It is the only code path that launches opencode for a project
 // (spec/one-opencode-per-project D-1/D-4).
 func (h *Host) EnsureProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
-	repoRoot, err := git.ResolveRepoRoot(ctx, req.ProjectDir)
+	repoRoot, err := projectOpencodeRoot(ctx, req.ProjectDir)
 	if err != nil {
 		return nil, err
 	}
@@ -329,7 +329,7 @@ func (h *Host) sfDoDetached(ctx context.Context, repoRoot string, fn func(contex
 }
 
 func (h *Host) StopProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) error {
-	repoRoot, err := git.ResolveRepoRoot(ctx, req.ProjectDir)
+	repoRoot, err := projectOpencodeRoot(ctx, req.ProjectDir)
 	if err != nil {
 		if errors.Is(err, git.ErrNotARepo) {
 			return nil
@@ -360,7 +360,7 @@ func (h *Host) StopProjectOpencode(ctx context.Context, req hostsvc.EnsureProjec
 // directly (never EnsureProjectOpencode, which would sf.Do the same key
 // and deadlock).
 func (h *Host) RestartProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
-	repoRoot, err := git.ResolveRepoRoot(ctx, req.ProjectDir)
+	repoRoot, err := projectOpencodeRoot(ctx, req.ProjectDir)
 	if err != nil {
 		return nil, err
 	}
