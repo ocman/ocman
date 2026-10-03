@@ -1148,6 +1148,9 @@ func TestGetSessionsCached_CanceledCallerLeavesCacheRefreshRunning(t *testing.T)
 		t.Fatalf("error = %v, want context.Canceled", err)
 	}
 	close(d.release)
+	// Join the detached refresh: reading while it is between storing the
+	// snapshot and leaving the flight slot would start a second query.
+	waitSessionsRefresh()
 	if _, err := getSessionsCached(t.Context(), d, "", 0); err != nil {
 		t.Fatalf("cache read after canceled caller: %v", err)
 	}
