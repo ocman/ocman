@@ -1,10 +1,15 @@
-export type SessionTarget = 'current' | 'worktree';
+/** `dir:<path>` starts the conversation in an existing linked worktree. */
+export type SessionTarget = 'current' | 'worktree' | `dir:${string}`;
+
+export interface TargetWorktree { path: string; branch: string }
 
 export function TargetSelector({
-  directory, worktreesSupported, target = 'worktree', onTargetChange, disabled,
+  directory, worktreesSupported, worktrees = [], target = 'worktree', onTargetChange, disabled,
 }: {
   directory?: string;
   worktreesSupported: boolean;
+  /** Existing linked worktrees offered as alternative targets. */
+  worktrees?: TargetWorktree[];
   target?: SessionTarget;
   onTargetChange?: (target: SessionTarget) => void;
   disabled?: boolean;
@@ -19,6 +24,11 @@ export function TargetSelector({
           onChange={(e) => onTargetChange?.(e.target.value as SessionTarget)}>
           <option value="current">Current checkout</option>
           {worktreesSupported && <option value="worktree">New worktree</option>}
+          {worktreesSupported && worktrees.map((tree) => (
+            <option key={tree.path} value={`dir:${tree.path}`}>
+              Worktree {tree.branch || tree.path.split('/').pop()}
+            </option>
+          ))}
         </select>
       </div>
     </div>

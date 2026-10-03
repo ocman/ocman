@@ -40,7 +40,7 @@ function ComposerBody({
   activeDurationMs, timeCreated, durationMs, sessionId, tokensPerSecond,
   tokenStats, estimatedCost, sessionTreeStats, selectedReasoning, onReasoningChange,
   disabledHint, onLaunchRequest, launching, directory, newConversation,
-  worktreesSupported, permissionControl, composerRef, target, onTargetChange,
+  worktreesSupported, worktrees, permissionControl, composerRef, target, onTargetChange,
   remoteId, onMachineChange,
 }: ComposerProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -326,7 +326,7 @@ function ComposerBody({
             isDictationSupported={isDictationSupported} micRef={micRef} handleMicClick={() => { void handleMicClick(); }}
             micError={micError} clearMicError={() => setMicError(null)} isRunning={isRunning} onAbort={onAbort} sending={sending} submit={submit} />
         </div>
-        <ComposerFooter directory={directory} newConversation={newConversation} worktreesSupported={worktreesSupported}
+        <ComposerFooter directory={directory} newConversation={newConversation} worktreesSupported={worktreesSupported} worktrees={worktrees}
           machineControl={newConversation && directory && onMachineChange && (
             <ComposerMachineSelector
               key={`${sessionId}:${directory}:${remoteId}`}

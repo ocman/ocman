@@ -77,7 +77,9 @@ export function useSessionCreation({
 
   const handleNewSession = useCallback(async (title?: string) => {
     if (!session) return;
-    await handleNewSessionInDirectory(session.directory, session.remoteId, session.platform, title);
+    // Start from the main checkout: a session already inside a linked worktree
+    // would make the composer skip its "New worktree" target (the default).
+    await handleNewSessionInDirectory(projectRootForDirectory(session.directory), session.remoteId, session.platform, title);
   }, [session, handleNewSessionInDirectory]);
 
   const handleMachineChange = useCallback(async (target: TargetCandidate, draft: string) => {

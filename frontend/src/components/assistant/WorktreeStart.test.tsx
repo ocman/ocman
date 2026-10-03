@@ -6,9 +6,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComposerProps } from './composerTypes';
 import { useWorktreeSubmission } from './worktreeSubmission';
 
-const mocks = vi.hoisted(() => ({ session: vi.fn(), info: vi.fn(), worktrees: vi.fn(), create: vi.fn(), send: vi.fn(), seed: vi.fn() }));
+const mocks = vi.hoisted(() => ({ session: vi.fn(), info: vi.fn(), worktrees: vi.fn(), create: vi.fn(), send: vi.fn(), seed: vi.fn(), createSession: vi.fn() }));
 vi.mock('../../lib/api', () => ({
-  api: { session: mocks.session, sendMessage: mocks.send },
+  api: { session: mocks.session, sendMessage: mocks.send, createSession: mocks.createSession },
   fetchJSON: (url: string, signal?: AbortSignal) => url.startsWith('/api/worktree/list') ? mocks.worktrees(url, signal) : mocks.info(url, signal),
   postJSON: mocks.create,
 }));
@@ -114,6 +114,26 @@ describe('automatic worktree start', () => {
     await act(() => composer.onSend!('hello', undefined, false));
     expect(originalSend).toHaveBeenCalledWith('hello', undefined, false);
     expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it('starts in an existing linked worktree when chosen', async () => {
+    mocks.worktrees.mockResolvedValue({ worktrees: [
+      { path: '/repo', branch: 'main', main: true },
+      { path: '/worktrees/feat', branch: 'feat', main: false },
+    ] });
+    mocks.createSession.mockResolvedValue({ id: 'in-feat' });
+    mount();
+    await waitFor(() => expect(composer.disabled).toBe(false));
+    expect(composer.target).toBe('worktree');
+    expect(composer.worktrees).toEqual([{ path: '/worktrees/feat', branch: 'feat' }]);
+    act(() => composer.onTargetChange!('dir:/worktrees/feat'));
+    await act(() => composer.onSend!('Continue', undefined, false));
+    expect(mocks.createSession).toHaveBeenCalledWith('/worktrees/feat', 'r-machine:opencode');
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.seed).toHaveBeenCalledWith('in-feat', '/worktrees/feat', 'r-machine:opencode', 'feat', 'machine');
+    expect(mocks.send).toHaveBeenCalledWith('in-feat', 'Continue', undefined, 'provider/big', 'plan', 'high', 'r-machine:opencode', false);
+    expect(screen.getByText('/session/in-feat')).toBeInTheDocument();
+    expect(originalSend).not.toHaveBeenCalled();
   });
 
   it('uses the current directory for a non-repository', async () => {

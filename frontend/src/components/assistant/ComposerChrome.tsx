@@ -8,13 +8,14 @@ import { getContextWindow, formatTokenCount } from '../../lib/models/contextWind
 import { formatCurrency, formatDate, formatDuration, formatTokensPerSecond } from '../../lib/format';
 import { ModelLabel } from '../ModelLogo';
 import { TargetSelector } from './ComposerSelectorRow';
-import type { SessionTarget } from './ComposerSelectorRow';
+import type { SessionTarget, TargetWorktree } from './ComposerSelectorRow';
 
 interface ComposerFooterProps {
   machineControl?: ReactNode;
   directory?: string;
   newConversation?: boolean;
   worktreesSupported?: boolean;
+  worktrees?: TargetWorktree[];
   sessionId?: string;
   target?: SessionTarget;
   onTargetChange?: (target: SessionTarget) => void;
@@ -45,7 +46,7 @@ interface ComposerFooterProps {
 
 export function ComposerFooter({
   machineControl,
-  directory, newConversation, worktreesSupported, target, onTargetChange, targetDisabled, disabled, isRunning,
+  directory, newConversation, worktreesSupported, worktrees, target, onTargetChange, targetDisabled, disabled, isRunning,
   effectiveAgent, agentsLoaded, agents, tokensPerSecond, onAbort, tokenStats,
   estimatedCost, sessionTreeStats, contextTokens, effectiveModel, timeCreated,
   durationMs, visibleDurationMs,
@@ -65,7 +66,7 @@ export function ComposerFooter({
     <div className="oc-composer-footer">
       <span className="oc-composer-footer-left">
         {directory && newConversation && (
-          <TargetSelector directory={directory} worktreesSupported={!!worktreesSupported} target={target} onTargetChange={onTargetChange} disabled={targetDisabled} />
+          <TargetSelector directory={directory} worktreesSupported={!!worktreesSupported} worktrees={worktrees} target={target} onTargetChange={onTargetChange} disabled={targetDisabled} />
         )}
         {machineControl}
         {!disabled && isRunning && (

@@ -66,6 +66,16 @@ describe('useSessionCreation', () => {
     );
   });
 
+  it('starts a new session from the main checkout so the worktree target is offered', async () => {
+    const o = opts({ session: { ...session, directory: '/src/.worktrees/repo/feat' } });
+    const { result } = renderHook(() => useSessionCreation(o));
+    await act(() => result.current.handleNewSession());
+    expect(createSessionWithLaunch).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ directory: '/src/repo', platform: 'r-x:opencode', remoteId: 'r-x' }),
+    );
+  });
+
   it('reports create failures through onCreateError', async () => {
     createSessionWithLaunch.mockRejectedValueOnce(new Error('nope'));
     const o = opts();

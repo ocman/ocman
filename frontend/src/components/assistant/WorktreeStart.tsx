@@ -4,15 +4,38 @@ import { api, fetchJSON, postJSON, type GitInfo, type Session, type WorktreeCrea
 import { useApiStore } from '../../lib/apiStore';
 import { BUILTIN_COMMANDS } from '../../lib/commands/builtinCommands';
 import type { ComposerProps } from './composerTypes';
-import type { SessionTarget } from './ComposerSelectorRow';
+import type { SessionTarget, TargetWorktree } from './ComposerSelectorRow';
 import { InlineAlert } from '../InlineAlert';
 import { clearWorktreeSubmission, failWorktreeSubmission, startWorktreeSubmission, useWorktreeSubmission } from './worktreeSubmission';
 
+type ChildSession = Pick<WorktreeCreateResponse, 'sessionId' | 'worktreePath' | 'firstMessageSent' | 'firstMessageError'>;
+
 // Either run the first submission on the child, or record the outcome of the
 // server's attempt so a failure stays retryable there.
-function settleFirstSubmission(child: WorktreeCreateResponse, text: string, run: () => Promise<void>, sentByServer: boolean) {
+function settleFirstSubmission(child: ChildSession, text: string, run: () => Promise<void>, sentByServer: boolean) {
   if (!sentByServer) startWorktreeSubmission(child.sessionId, text, run);
   else if (!child.firstMessageSent) failWorktreeSubmission(child.sessionId, text, run, child.firstMessageError || 'First message was not sent.');
+}
+
+/**
+ * Creates the target workspace's session: an existing worktree or a new one.
+ * Only a new worktree delivers `send` server-side; an existing one leaves the
+ * first submission to the client.
+ */
+async function createChild(
+  target: SessionTarget, text: string, session: Session,
+  projectDir: string, parentSessionId: string, send?: Record<string, unknown>,
+): Promise<{ child: ChildSession; sentByServer: boolean }> {
+  if (target.startsWith('dir:')) {
+    const path = target.slice(4);
+    const { id } = await api.createSession(path, session.platform, undefined, parentSessionId);
+    return { child: { sessionId: id, worktreePath: path }, sentByServer: false };
+  }
+  const child = await postJSON<WorktreeCreateResponse>(
+    `/api/worktree/create-and-launch?platform=${encodeURIComponent(session.platform)}`,
+    { projectDir, autoName: true, prompt: text, parentSessionId, remoteId: session.remoteId || 'local', send, discardEmptyParent: true },
+  );
+  return { child, sentByServer: !!send };
 }
 
 export function WorktreeStart({ children, ...props }: ComposerProps & {
@@ -26,10 +49,12 @@ export function WorktreeStart({ children, ...props }: ComposerProps & {
     return () => { visibleRoute.current.mounted = false; };
   }, [routeSessionId]);
   const [target, setTarget] = useState<SessionTarget>('worktree');
-  const [resolved, setResolved] = useState<{ session: Session; canCreate: boolean }>();
+  const [resolved, setResolved] = useState<{ session: Session; canCreate: boolean; worktrees: TargetWorktree[] }>();
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
-  const created = useRef<WorktreeCreateResponse | undefined>(undefined);
+  // Keyed by target so switching targets after a failed send never reuses
+  // a session created for a different workspace.
+  const created = useRef<{ target: SessionTarget; child: ChildSession } | undefined>(undefined);
   const inFlight = useRef(false);
   const { sessionId, directory, newConversation } = props;
   const submission = useWorktreeSubmission((state) => state.entries[sessionId ?? '']);
@@ -49,14 +74,18 @@ export function WorktreeStart({ children, ...props }: ComposerProps & {
         const info = await fetchJSON<Record<string, GitInfo>>(`/api/git/info?${query}`, controller.signal);
         const repo = !!info[directory!]?.branch;
         let alreadyChosen = false;
+        let linked: TargetWorktree[] = [];
         if (repo) {
           const { worktrees } = await list;
           // Read the owner's actual workspaces, so manual selection survives reloads
           // and also covers worktrees outside ocman's managed directory layout.
           alreadyChosen = worktrees.some((tree) => !tree.main &&
             (directory === tree.path || directory!.startsWith(`${tree.path}/`)));
+          // ponytail: every linked worktree is offered; filter if lists get long.
+          linked = worktrees.filter((tree) => !tree.main && !tree.bare)
+            .map((tree) => ({ path: tree.path, branch: tree.branch }));
         }
-        if (!controller.signal.aborted) setResolved({ session, canCreate: repo && !alreadyChosen });
+        if (!controller.signal.aborted) setResolved({ session, canCreate: repo && !alreadyChosen, worktrees: linked });
       } catch (err) {
         if (!controller.signal.aborted) setError(err instanceof Error ? err.message : String(err));
       }
@@ -88,19 +117,17 @@ export function WorktreeStart({ children, ...props }: ComposerProps & {
     const { session } = resolved;
     try {
       let sentByServer = false;
-      if (!created.current) {
+      if (created.current?.target !== target) {
         // Creation is not retried automatically after an uncertain transport failure.
         try {
-          created.current = await postJSON<WorktreeCreateResponse>(
-            `/api/worktree/create-and-launch?platform=${encodeURIComponent(session.platform)}`,
-            { projectDir: directory, autoName: true, prompt: text, parentSessionId: sessionId, remoteId: session.remoteId || 'local', send, discardEmptyParent: true },
-          );
+          const res = await createChild(target, text, session, directory!, sessionId!, send);
+          created.current = { target, child: res.child };
+          sentByServer = res.sentByServer;
         } catch (err) {
           throw new Error(err instanceof Error ? err.message : String(err));
         }
-        sentByServer = !!send;
       }
-      const child = created.current;
+      const { child } = created.current;
       if (!child.sessionId) throw new Error('Worktree creation returned no session');
       // No title: OpenCode titles the session from its first message.
       useApiStore.getState().seedNewSession(child.sessionId, child.worktreePath, session.platform, undefined, session.remoteId || 'local');
@@ -151,6 +178,7 @@ export function WorktreeStart({ children, ...props }: ComposerProps & {
       onCommand: props.onCommand ? onCommand : undefined, onShell: props.onShell ? onShell : undefined,
       target: resolved && !resolved.canCreate ? 'current' : target, onTargetChange: setTarget,
       worktreesSupported: resolved?.canCreate ?? true,
+      worktrees: resolved?.worktrees,
       isRunning: props.isRunning || !!submission?.pending,
       disabled: props.disabled || !!submission?.pending || (!!newConversation && !resolved),
       disabledHint: newConversation && !resolved ? 'Checking session target…' : props.disabledHint,

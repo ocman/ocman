@@ -19,8 +19,19 @@ describe('TargetSelector', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
+  it('offers existing worktrees while keeping a new worktree as the default', async () => {
+    const onTargetChange = vi.fn();
+    render(<TargetSelector directory="/a" worktreesSupported onTargetChange={onTargetChange}
+      worktrees={[{ path: '/wt/feat', branch: 'feat' }, { path: '/wt/detached', branch: '' }]} />);
+    expect(screen.getByRole('combobox')).toHaveValue('worktree');
+    expect(screen.getByRole('option', { name: 'Worktree detached' })).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByRole('combobox'), 'Worktree feat');
+    expect(onTargetChange).toHaveBeenCalledWith('dir:/wt/feat');
+  });
+
   it('only offers current checkout when worktrees are unavailable', () => {
-    render(<TargetSelector directory="/a" worktreesSupported={false} />);
+    render(<TargetSelector directory="/a" worktreesSupported={false} worktrees={[{ path: '/wt/feat', branch: 'feat' }]} />);
+    expect(screen.queryByRole('option', { name: 'Worktree feat' })).not.toBeInTheDocument();
     expect(screen.getByRole('combobox')).toHaveValue('current');
     expect(screen.queryByRole('option', { name: 'New worktree' })).not.toBeInTheDocument();
   });

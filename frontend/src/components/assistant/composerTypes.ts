@@ -1,7 +1,7 @@
 import type { ReactNode, Ref } from 'react';
 import type { AgentInfo, SessionModelEntry } from '../../lib/api';
 import type { AttachedImage } from './useComposerAttachments';
-import type { SessionTarget } from './ComposerSelectorRow';
+import type { SessionTarget, TargetWorktree } from './ComposerSelectorRow';
 import type { TargetCandidate } from '../../lib/api.types';
 
 export interface ComposerHandle {
@@ -72,6 +72,7 @@ export interface ComposerProps {
   /** The session target can change only before its first message. */
   newConversation?: boolean;
   worktreesSupported?: boolean;
+  worktrees?: TargetWorktree[];
   target?: SessionTarget;
   onTargetChange?: (target: SessionTarget) => void;
   permissionControl?: ReactNode;
