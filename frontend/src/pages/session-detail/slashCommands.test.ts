@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { runSlashCommand, SLASH_COMMANDS, type CommandContext } from './slashCommands';
 
 vi.mock('../../lib/api', () => ({ api: {} }));
+vi.mock('../../lib/remoteLog', () => ({ remoteLog: { error: vi.fn() } }));
 
 function ctx(over: Partial<CommandContext> = {}): CommandContext {
   return {
@@ -33,6 +34,19 @@ function ctx(over: Partial<CommandContext> = {}): CommandContext {
 }
 
 describe('runSlashCommand', () => {
+  it('/clear archives the session and opens a draft route on the same owner', async () => {
+    const c = ctx({ session: { id: 's1', platform: 'r-box:opencode', remoteId: 'box', directory: '/repo', timeUpdated: 1 } });
+    await runSlashCommand(c, 'clear', 'Next task');
+    expect(c.archiveSession).toHaveBeenCalledWith('r-box:opencode', 's1', 1, true);
+    expect(c.navigate).toHaveBeenCalledWith('/session/new?dir=%2Frepo&remoteId=box&platform=r-box%3Aopencode&title=Next+task');
+  });
+
+  it('/clear still opens the draft when archival fails', async () => {
+    const c = ctx({ archiveSession: vi.fn().mockRejectedValue(new Error('offline')) });
+    await runSlashCommand(c, 'clear', '');
+    expect(c.navigate).toHaveBeenCalledWith('/session/new?dir=%2Frepo&platform=opencode');
+  });
+
   it('returns false for commands the platform should handle', async () => {
     expect(await runSlashCommand(ctx(), 'unknown', '')).toBe(false);
   });

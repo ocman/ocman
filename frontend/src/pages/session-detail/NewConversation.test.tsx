@@ -3,6 +3,7 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComposerProps } from '../../components/assistant/composerTypes';
 import { clearDraft, getDraft, saveDraft } from '../../lib/composerDraft';
+import { useLaunchProgressStore } from '../../lib/launchProgressStore';
 
 const mocks = vi.hoisted(() => ({
   prepare: vi.fn(), start: vi.fn(), info: vi.fn(), worktrees: vi.fn(), post: vi.fn(), seed: vi.fn(),
@@ -41,6 +42,8 @@ describe('NewConversation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     clearDraft('new');
+    clearDraft('child');
+    window.localStorage.removeItem('ocman.projectModels.v1');
     mocks.prepare.mockResolvedValue({
       platform: 'r-machine:opencode', liveConnection: true, defaultAgent: 'plan', defaultModel: 'prov/default',
       agents: [{ name: 'build' }, { name: 'plan', model: 'prov/plan-model' }], commands: [{ name: 'review', description: 'Review', source: 'command' }],
@@ -49,6 +52,43 @@ describe('NewConversation', () => {
     mocks.info.mockResolvedValue({ '/repo': { branch: 'main' } });
     mocks.worktrees.mockResolvedValue({ worktrees: [{ path: '/repo', branch: 'main', main: true }] });
     mocks.start.mockResolvedValue({ sessionId: 'child', platform: 'r-machine:opencode', remoteId: 'machine', directory: '/worktrees/fix', firstMessageSent: true, firstMessageError: '' });
+  });
+
+  it('refreshes the owner catalog after changing favorites and preserves manual model selection', async () => {
+    mount();
+    await waitFor(() => expect(composer.agentsLoaded).toBe(true));
+    act(() => composer.onModelChange!('prov/manual'));
+    expect(composer.selectedModel).toBe('prov/manual');
+    await act(async () => { await composer.onToggleFavorite!('prov', 'manual', true); });
+    expect(mocks.addFavorite).toHaveBeenCalledWith('r-machine:opencode', 'prov', 'manual');
+    await waitFor(() => expect(composer.agentsLoaded).toBe(true));
+    expect(composer.selectedModel).toBe('prov/manual');
+    await act(async () => { await composer.onToggleFavorite!('prov', 'manual', false); });
+    expect(mocks.removeFavorite).toHaveBeenCalledWith('r-machine:opencode', 'prov', 'manual');
+    mocks.addFavorite.mockRejectedValueOnce(new Error('offline'));
+    const calls = mocks.prepare.mock.calls.length;
+    await act(async () => { await composer.onToggleFavorite!('prov', 'manual', true); });
+    expect(mocks.prepare).toHaveBeenCalledTimes(calls);
+    act(() => composer.onRefreshModels!());
+    await waitFor(() => expect(mocks.prepare).toHaveBeenCalledTimes(calls + 1));
+  });
+
+  it('reports catalog preparation failures and permits a subsequent refresh', async () => {
+    mocks.prepare.mockRejectedValueOnce(new Error('catalog offline'));
+    mount();
+    await waitFor(() => expect(useLaunchProgressStore.getState().error).toBe('catalog offline'));
+    expect(composer.agentsLoaded).toBe(false);
+    act(() => composer.onRefreshModels!());
+    await waitFor(() => expect(composer.agentsLoaded).toBe(true));
+  });
+
+  it('keeps a failed custom command as the real session’s draft', async () => {
+    mocks.post.mockRejectedValueOnce(new Error('command offline'));
+    mount();
+    await waitFor(() => expect(composer.disabled).toBe(false));
+    await act(() => composer.onCommand!('review', 'main'));
+    await waitFor(() => expect(getDraft('child')).toBe('/review main'));
+    expect(navigateToSession).toHaveBeenCalledWith('child');
   });
 
   it('prepares the directory on its owner and offers its catalog before any session exists', async () => {
