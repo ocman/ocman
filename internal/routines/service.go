@@ -343,7 +343,12 @@ func (s *Service) settleRunning(ctx context.Context, recoverOrphans bool) error 
 				// Stamp at settle time: OpenCode writes the session once more
 				// after the turn ends (summary), and an archive stamped with
 				// the pre-write time_updated resurfaces on the next list poll.
-				stamp := max(detail.Session.TimeUpdated, s.now().UnixMilli())
+				// Local only: a remote's TimeUpdated is on its own clock, and
+				// the hub's now would hide later activity on a lagging remote.
+				stamp := detail.Session.TimeUpdated
+				if remoteID, _ := remote.SplitPlatformID(run.Platform); remoteID == "" {
+					stamp = max(stamp, s.now().UnixMilli())
+				}
 				if err := s.store.ArchiveSession(ctx, run.Platform, run.SessionID, stamp); err != nil {
 					result = errors.Join(result, err)
 					continue

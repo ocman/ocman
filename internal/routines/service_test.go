@@ -385,6 +385,38 @@ func TestRemoteDispatchUsesCompoundPlatform(t *testing.T) {
 	}
 }
 
+// A remote session's TimeUpdated is on the remote's clock, so its archive
+// stamp must stay there: clamping to the hub's now would hide later activity
+// on a remote whose clock runs behind.
+func TestRemoteArchiveKeepsOwnerClock(t *testing.T) {
+	h := newHarness(t)
+	h.svc.router.RegisterRemote("remote", &testHost{remoteID: "remote"})
+	remotePlatform := &testPlatform{id: "r-remote:opencode", status: db.StatusBusy, directory: "/repo"}
+	h.svc.platforms.Register(remotePlatform)
+	input := validInput()
+	input.RemoteID = "remote"
+	input.ArchiveSessionAfterSuccess = true
+	routine, err := h.svc.Create(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.svc.RunNow(t.Context(), routine.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remotePlatform.setStatus(db.StatusDone)
+	if err := h.svc.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	archived, err := h.db.ArchivedSessions(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stamp := archived[state.Key{Platform: run.Platform, SessionID: run.SessionID}]; stamp != 1234 {
+		t.Fatalf("remote archive stamp = %d, want owner TimeUpdated 1234", stamp)
+	}
+}
+
 // A routine moved to a remote after the webhook dispatcher checked it must
 // still not run remotely: the delivery files exist only on this machine.
 func TestRunWebhookRefusesRemoteRoutine(t *testing.T) {
