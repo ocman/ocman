@@ -239,6 +239,30 @@ type SessionModelsResponse struct {
 	Models           []SessionModel    `json:"models"`
 }
 
+// DirectoryCatalogRequest names the directory a new conversation will start
+// in. Port, when known (the caller just ensured the instance), pins the
+// instance so a freshly launched one is not missed by cached discovery.
+type DirectoryCatalogRequest struct {
+	Directory string `json:"directory"`
+	Port      string `json:"port,omitempty"`
+}
+
+// DirectoryCatalog is the composer catalog for a directory that has no
+// session yet: what the new-conversation composer offers before the first
+// prompt creates the session.
+type DirectoryCatalog struct {
+	Agents   []AgentCatalogEntry    `json:"agents"`
+	Commands []SlashCommandEntry    `json:"commands"`
+	Models   *SessionModelsResponse `json:"models"`
+	// DefaultAgent / DefaultModel mirror SessionDetail's fields for a
+	// directory without a session (most recent use in that directory).
+	DefaultAgent string `json:"defaultAgent,omitempty"`
+	DefaultModel string `json:"defaultModel,omitempty"`
+	// LiveConnection reports whether an instance was reachable for the
+	// directory; false leaves the catalogs at their historical fallbacks.
+	LiveConnection bool `json:"liveConnection"`
+}
+
 // LivePrompt is one pending permission/question prompt from a running
 // platform instance.
 type LivePrompt map[string]interface{}

@@ -41,7 +41,7 @@ import { checkoutKey } from '../../lib/projectIdentity';
 import { useTmux } from '../../lib/useTmux';
 import { useApiStore } from '../../lib/apiStore';
 import { useGitInfo } from '../../lib/useGitInfo';
-import { usePlatformCapabilities, useOpencodeLaunch } from '../../lib/useCapabilities';
+import { usePlatformCapabilities } from '../../lib/useCapabilities';
 import {
   isSessionRunning,
   computeLiveTokens,
@@ -49,6 +49,8 @@ import {
   aggregateSessionTreeStats,
 } from '../../lib/sessionStatus';
 import { useSubagentTracking } from './useSubagentTracking';
+import { NewConversation } from './NewConversation';
+import { NEW_SESSION_ID, parseNewSessionParams } from '../../lib/newSessionPath';
 import { useTmuxActions } from './useTmuxActions';
 import { useSessionStatus } from './useSessionStatus';
 import { useSidebarSessions } from './useSidebarSessions';
@@ -123,6 +125,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const openAgentPicker = useCallback(() => composerRef.current?.openAgentPicker(), []);
   const [searchParams] = useSearchParams();
   const debugMode = searchParams.has('debug');
+  const newConversation = id === NEW_SESSION_ID ? parseNewSessionParams(searchParams) : null;
   const factoryEpicID = searchParams.get('factoryEpic') ?? '';
   const [scrollToMessageBookmark, setScrollToMessageBookmark] = useState<{ sessionId: string; id: string; tick: number } | null>(null);
   const [commitSourceJump, setCommitSourceJump] = useState<{
@@ -295,7 +298,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
 
   // Capability flags for the owning platform.
   const caps = usePlatformCapabilities(session?.platform);
-  const worktreesSupported = useOpencodeLaunch();
 
   const [whisperAvailable, setWhisperAvailable] = useState(false);
 
@@ -413,7 +415,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const tmux = useTmux();
   const openWorktreeForm = useUiStore((s) => s.openWorktreeForm);
   const toasts = useSessionToasts();
-  const { setShowRenameToast, setRestartToastMessage, setShowCreateSessionErrorToast, setSendRetryDelaySeconds } = toasts.setters;
+  const { setShowRenameToast, setRestartToastMessage, setSendRetryDelaySeconds } = toasts.setters;
   // A failed OpenCode launch surfaces via the restart toast, so the user
   // isn't left with a button that appears to do nothing.
   const tmuxActions = useTmuxActions(tmux, session?.directory, setRestartToastMessage, {
@@ -504,7 +506,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     }
 
     getWhisperStatus().then((s) => setWhisperAvailable(s.available)).catch(() => setWhisperAvailable(false));
-    if (id) refreshModels(signal);
+    if (id && id !== NEW_SESSION_ID) refreshModels(signal);
 
     return () => controller.abort();
   }, [id, getWhisperStatus, refreshModels, setSelectedAgent, setSelectedModel, setSelectedReasoning]);
@@ -566,18 +568,16 @@ export function SessionDetail({ id }: SessionDetailProps) {
     setSelectedReasoning,
   });
 
-  const { handleNewSessionInDirectory, handleNewSession, handleCompact, handleMachineChange } = useSessionCreation({
+  const { handleNewSessionInDirectory, handleNewSession, handleCompact } = useSessionCreation({
     session,
     portAvailable,
     caps,
-    tmuxAvailable: tmux.available,
     selectedModel,
     activeModel,
     selectedAgent,
     activeAgent,
     setSelectedAgent,
-    navigateToSession,
-    onCreateError: () => setShowCreateSessionErrorToast(true),
+    navigate,
   });
 
   // Kept in sync with `isRunning` (computed below) so handleShell can
@@ -629,7 +629,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
     messagesRef,
     partsRef,
     isRunningRef,
-    tmuxAvailable: tmux.available,
     failedSends,
     setFailedSends,
     pending,
@@ -882,7 +881,16 @@ export function SessionDetail({ id }: SessionDetailProps) {
               {loadError}
               <button onClick={() => { void reload(); }}>Retry</button>
             </div>
-          ) : id === 'new' && !session ? (
+          ) : newConversation && !session ? (
+            <NewConversation
+              key={`${newConversation.remoteId}:${newConversation.directory}`}
+              params={newConversation}
+              whisperAvailable={whisperAvailable}
+              composerRef={composerRef}
+              navigate={navigate}
+              navigateToSession={navigateToSession}
+            />
+          ) : id === NEW_SESSION_ID && !session ? (
             <div className="oc-empty-detail" data-testid="empty-detail" style={{ margin: 24, opacity: 0.7 }}>
               <p>No session open.</p>
               <p>Pick a session from the sidebar, or press <kbd>⌘K</kbd> and run <code>/new</code> to start one.</p>
@@ -1006,10 +1014,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                         onLaunchRequest: launchHintActive ? () => { void handleLaunchOpencode(); } : undefined,
                         launching: launchingOpencode,
                         directory: session.directory,
-                        newConversation: totalMessages === 0,
                         remoteId: session.remoteId,
-                        onMachineChange: handleMachineChange,
-                        worktreesSupported,
                         permissionControl,
                       } : null}
                     />

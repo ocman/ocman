@@ -243,6 +243,12 @@ type Platform interface {
 	// SessionModels returns the session's model picker list.
 	SessionModels(ctx context.Context, sessionID string) (*SessionModelsResponse, error)
 
+	// DirectoryCatalog returns the agent, command and model catalogs for
+	// a directory that has no session yet (the new-conversation
+	// composer). Platforms without live catalogs return the historical
+	// model list with LiveConnection=false.
+	DirectoryCatalog(ctx context.Context, req DirectoryCatalogRequest) (*DirectoryCatalog, error)
+
 	// ListPermissions returns pending permission prompts for the session.
 	ListPermissions(ctx context.Context, sessionID string) ([]LivePrompt, error)
 

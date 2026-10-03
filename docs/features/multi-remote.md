@@ -101,10 +101,11 @@ list with its host badge.
 - **Open and drive.** Click any remote session to stream its transcript and
   use the composer, permission replies, abort and compact. These route to the
   owning remote and run there.
-- **New session.** A session started from the project picker opens on the
-  project's own machine (this machine for local projects). Use the
-  composer's machine selector before the first prompt to move it to another
-  machine that has the project.
+- **New session.** A new conversation started from the project picker
+  targets the project's own machine (this machine for local projects), but
+  nothing is created until the first prompt. Use the composer's machine
+  selector before that prompt to start it on another machine that has the
+  project instead.
 - **PRs and issues.** The project sidebar sends the owning `remoteId` for
   upstream detection, lists, checks, identity lookups, branch highlighting,
   and session/worktree launches. Repository work runs on the owner.
@@ -119,16 +120,17 @@ list with its host badge.
   instance is relaunched on the machine that owns the session, never on
   another machine that happens to have the same directory.
 
-Before a conversation has messages, its composer shows a machine selector
-when a remote is connected. It defaults to the session's current machine.
-Choosing another machine opens a new session in that machine's matching
-checkout and carries over the draft text. Matching uses every Git fetch remote,
+Before its first prompt, a new conversation's composer shows a machine
+selector when a remote is connected. It defaults to the machine the
+conversation was opened for. Choosing another machine re-points the
+conversation at that machine's matching checkout; the draft text stays and
+no session is created by the switch. Matching uses every Git fetch remote,
 so checkout paths and remote names can differ. One shared upstream is enough,
 including when a fork's `upstream` matches another checkout's `origin`.
-Machines without a matching project are
-disabled. Remove any attachments before switching machines; uploaded files
-belong to the original host. Once messages have been sent, the session stays
-on its owner.
+Machines without a matching project are disabled.
+Remove any attachments before switching machines; uploaded files belong to
+the original host. The first prompt creates the session on the selected
+machine, and from then on it stays on its owner.
 
 ## Managing remotes
 

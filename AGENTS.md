@@ -13,28 +13,33 @@ Platforms are wired through a common `Platform` adapter interface
 new adapter + registry entry; see
 `spec/multi-agent-support/architecture.md` for the design.
 
-New conversations in the main checkout default to an automatically named
-worktree. `WorktreeStart` resolves repository status from the git-info branch
-and queries the owning host's worktrees before the first execution. An empty
-session already in a linked worktree stays on that selected workspace, including
-after reload; non-repositories stay in their current directory. Prompts, custom
-slash commands, and shell submissions share the same target resolution, while
-ocman UI/session commands retain their existing handlers. The new child opens
-as soon as workspace creation succeeds. A plain (non-queued) first prompt rides
-on `create-and-launch` (`send`) and is delivered server-side after inherited
-permissions are applied; the response reports `firstMessageSent` /
-`firstMessageError`. Commands, shell, and a failed send's retry belong to
-child-keyed client state so long-running commands do not hide the child's
-transcript or approval controls. The worktree starts as `session-<id8>`, so no
-LLM call sits on the first message's path; the owner then names it in the
+A new conversation is a client-only route (`/session/new?dir=…&remoteId=…
+&platform=…`) until its first prompt: no OpenCode session, worktree or
+placeholder exists before that, so the machine and target can still change
+freely. Opening it calls `POST /api/sessions/prepare`, which ensures the
+project's instance on the owning machine and returns the directory's agent,
+command and model catalogs via `Platform.DirectoryCatalog` (a `PlatformJsonReq`
+RPC for remotes); `useWorktreeEligibility` reads the git-info branch and the
+owner's worktree list, so a directory already inside a linked worktree, or a
+non-repository, uses the current checkout. The composer's machine selector only
+re-points the route; the draft lives under the shared `new` key (`draftKey`
+prop) and survives. The first submission calls `POST /api/sessions/start`
+`{directory, platform, worktree, title, prompt, send}`: a worktree target
+creates `session-<id8>` on the owner (`CreateWorktreeSession`, no LLM call on
+the first message's path) and a current-checkout target creates in the
+directory on the project's instance; a plain prompt is delivered server-side
+in the same request (`firstMessageSent` / `firstMessageError`), custom slash
+commands and shell submissions are run by the client on the returned session,
+and ocman built-ins need an existing conversation. A failed first send keeps
+the text as the new session's draft. The owner then names the worktree in the
 background: OpenCode's `title` agent (its `small_model` or Haiku) titles the
 bare prompt and the title is slugged into the branch (`git branch -m`, the path
 stays). The session keeps OpenCode's default title so OpenCode titles it from
-the first message; the branch name is never used as the title. A naming failure keeps the provisional name. The naming session is titled
-`(worktree-name subagent)` so the session list hides it, and the empty
-conversation the first message was typed in is archived once the child exists
-(`discardEmptyParent`). It is never deleted: the emptiness read can be stale, so
-the archive keeps the read `time_updated` and any later message resurfaces it.
+the first message; the branch name is never used as the title. A naming
+failure keeps the provisional name. The naming session is titled
+`(worktree-name subagent)` so the session list hides it. `/wt` from an existing
+session still uses `create-and-launch` with `parentSessionId` for permission
+inheritance; a brand-new conversation has no parent to inherit from.
 
 Ocman also supports **on-demand OpenCode worktree sessions** via the
 `/wt` command in the command palette and the per-project Worktrees

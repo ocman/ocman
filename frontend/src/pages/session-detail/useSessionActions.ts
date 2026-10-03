@@ -66,7 +66,6 @@ export interface UseSessionActionsOptions {
    * generating). SessionDetail keeps this ref in sync with `isRunning`.
    */
   isRunningRef: MutableRefObject<boolean>;
-  tmuxAvailable: boolean;
   failedSends: FailedSend[];
   setFailedSends: Dispatch<SetStateAction<FailedSend[]>>;
   /** Pending-slot hook output. handleSend records the optimistic
@@ -160,7 +159,6 @@ export function useSessionActions({
   messagesRef,
   partsRef,
   isRunningRef,
-  tmuxAvailable,
   failedSends,
   setFailedSends,
   pending,
@@ -206,9 +204,6 @@ export function useSessionActions({
   const sendMessage = useApiStore((state) => state.sendMessage);
   const abortSession = useApiStore((state) => state.abortSession);
   const archiveSession = useApiStore((state) => state.archiveSession);
-  const createSession = useApiStore((state) => state.createSession);
-  const launchOpencodeInTmux = useApiStore((state) => state.launchOpencodeInTmux);
-  const seedNewSession = useApiStore((state) => state.seedNewSession);
 
   // Internal send. Drives both `handleSend` (fresh prompt) and
   // `handleRetrySend` (replay of a previously failed send) so the
@@ -429,15 +424,11 @@ export function useSessionActions({
       session,
       portAvailable,
       caps,
-      tmuxAvailable,
       pending,
       recentSessionsRef,
       messagesRef,
       partsRef,
       archiveSession,
-      createSession,
-      launchOpencodeInTmux,
-      seedNewSession,
       navigate,
       navigateToSession,
       openWorktreeForm,
@@ -478,7 +469,7 @@ export function useSessionActions({
       remoteLog.error('Failed to execute command', e);
       pending.fail(e instanceof Error ? e.message : 'Unknown error');
     }
-  }, [activeAgent, archiveSession, caps, createSession, launchOpencodeInTmux, tmuxAvailable, seedNewSession, handleCompact, handleNewSession, handleTmuxShortcut, handleVSCodeShortcut, navigate, navigateToSession, openWorktreeForm, portAvailable, recentSessionsRef, messagesRef, partsRef, refreshThread, selectedAgent, selectedModel, session, setShowForkPicker, setShowDisconnectedToast, setShowMovePicker, setShowRenameModal, setShowRenameToast, setRestartToastMessage, reloadCapabilities, setCopyToastMessage, pending]);
+  }, [activeAgent, archiveSession, caps, handleCompact, handleNewSession, handleTmuxShortcut, handleVSCodeShortcut, navigate, navigateToSession, openWorktreeForm, portAvailable, recentSessionsRef, messagesRef, partsRef, refreshThread, selectedAgent, selectedModel, session, setShowForkPicker, setShowDisconnectedToast, setShowMovePicker, setShowRenameModal, setShowRenameToast, setRestartToastMessage, reloadCapabilities, setCopyToastMessage, pending]);
 
   return {
     awaitingAssistantResponse,

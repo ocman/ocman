@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"net/http"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -81,32 +80,4 @@ type worktreeLiveRuleReader struct {
 
 func (w worktreeLiveRuleReader) PermissionRules(_ string, sessionID string) ([]platforms.PermissionRule, error) {
 	return w.adapter.PermissionRules(w.ctx, sessionID)
-}
-
-// archiveEmptySession archives the placeholder conversation a worktree
-// child replaced. Archiving is non-destructive: the read may be stale and a
-// message can land after it, so nothing is deleted. The archive marker stores
-// the time_updated that was read, and any later activity unarchives the
-// session, so a conversation written in concurrently resurfaces on its own.
-func (s *Server) archiveEmptySession(ctx context.Context, platform, sessionID string) {
-	if s.stateDB == nil {
-		return
-	}
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	adapter, ok := s.registry.Get(platforms.ID(platform))
-	if !ok {
-		return
-	}
-	detail, err := adapter.Session(ctx, sessionID, 1, 0)
-	if err != nil || detail == nil || detail.Session == nil || detail.Session.MessageCount > 0 || detail.TotalMessages > 0 || len(detail.Messages) > 0 {
-		return
-	}
-	// ponytail: the read time_updated, never clamped to now; a stale value only
-	// makes the session easier to resurface.
-	if err := s.stateDB.ArchiveSession(ctx, platform, sessionID, detail.Session.TimeUpdated); err != nil {
-		log.WithError(err).WithField("session_id", sessionID).Warn("worktree: archiving empty parent session")
-		return
-	}
-	s.broadcastSessionChanged(sessionID)
 }

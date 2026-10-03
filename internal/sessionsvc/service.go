@@ -404,30 +404,63 @@ func (s *Service) CreateConfigured(ctx context.Context, platformID string, req p
 	return s.create(ctx, platformID, req, rules)
 }
 
-func (s *Service) create(ctx context.Context, platformID string, req platforms.CreateSessionRequest, rules []platforms.PermissionRule) (*platforms.CreateSessionResponse, error) {
-	if req.Directory == "" {
-		return nil, validation("directory is required")
-	}
-	var adapter platforms.Platform
+// pickAdapter resolves platformID, auto-picking when it is empty and
+// exactly one platform is available.
+func (s *Service) pickAdapter(ctx context.Context, platformID string) (platforms.Platform, error) {
 	if platformID != "" {
 		p, ok := s.registry.Get(platforms.ID(platformID))
 		if !ok {
 			return nil, validation("unknown platform")
 		}
-		adapter = p
-	} else {
-		for _, p := range s.registry.Platforms() {
-			if !p.Available(ctx) {
-				continue
-			}
-			if adapter != nil {
-				return nil, validation("multiple platforms available — specify ?platform=<id>")
-			}
-			adapter = p
+		return p, nil
+	}
+	var adapter platforms.Platform
+	for _, p := range s.registry.Platforms() {
+		if !p.Available(ctx) {
+			continue
 		}
+		if adapter != nil {
+			return nil, validation("multiple platforms available — specify ?platform=<id>")
+		}
+		adapter = p
 	}
 	if adapter == nil {
 		return nil, ErrNoPlatformAvailable
+	}
+	return adapter, nil
+}
+
+// ResolvePlatformID returns the platform id Create would use for
+// platformID (auto-picked when empty).
+func (s *Service) ResolvePlatformID(ctx context.Context, platformID string) (string, error) {
+	adapter, err := s.pickAdapter(ctx, platformID)
+	if err != nil {
+		return "", err
+	}
+	return string(adapter.ID()), nil
+}
+
+// DirectoryCatalog returns the new-conversation composer catalog for a
+// directory, resolving the platform the same way Create does.
+func (s *Service) DirectoryCatalog(ctx context.Context, platformID string, req platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, string, error) {
+	if req.Directory == "" {
+		return nil, "", validation("directory is required")
+	}
+	adapter, err := s.pickAdapter(ctx, platformID)
+	if err != nil {
+		return nil, "", err
+	}
+	catalog, err := adapter.DirectoryCatalog(ctx, req)
+	return catalog, string(adapter.ID()), err
+}
+
+func (s *Service) create(ctx context.Context, platformID string, req platforms.CreateSessionRequest, rules []platforms.PermissionRule) (*platforms.CreateSessionResponse, error) {
+	if req.Directory == "" {
+		return nil, validation("directory is required")
+	}
+	adapter, err := s.pickAdapter(ctx, platformID)
+	if err != nil {
+		return nil, err
 	}
 	var disposer platforms.SessionDisposer
 	if rules != nil {

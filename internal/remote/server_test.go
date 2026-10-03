@@ -121,6 +121,9 @@ func (f *fakePlatform) SlashCommands(context.Context, string) ([]platforms.Slash
 func (f *fakePlatform) SessionModels(context.Context, string) (*platforms.SessionModelsResponse, error) {
 	return &platforms.SessionModelsResponse{}, nil
 }
+func (f *fakePlatform) DirectoryCatalog(_ context.Context, req platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, error) {
+	return &platforms.DirectoryCatalog{Models: &platforms.SessionModelsResponse{}, DefaultModel: "dir:" + req.Directory + ":" + req.Port}, nil
+}
 func (f *fakePlatform) ListPermissions(context.Context, string) ([]platforms.LivePrompt, error) {
 	return nil, nil
 }

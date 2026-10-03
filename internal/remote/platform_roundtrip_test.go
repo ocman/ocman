@@ -74,6 +74,9 @@ func TestRemotePlatform_AllReadMethods(t *testing.T) {
 	if _, err := rp.SessionModels(ctx, "s1"); err != nil {
 		t.Errorf("SessionModels: %v", err)
 	}
+	if catalog, err := rp.DirectoryCatalog(ctx, platforms.DirectoryCatalogRequest{Directory: "/repo", Port: "4096"}); err != nil || catalog.DefaultModel != "dir:/repo:4096" {
+		t.Errorf("DirectoryCatalog = %+v, %v", catalog, err)
+	}
 	if _, err := rp.ListPermissions(ctx, "s1"); err != nil {
 		t.Errorf("ListPermissions: %v", err)
 	}

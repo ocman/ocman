@@ -1,5 +1,5 @@
 import type { ReactNode, Ref } from 'react';
-import type { AgentInfo, SessionModelEntry } from '../../lib/api';
+import type { AgentInfo, SessionModelEntry, SlashCommand } from '../../lib/api';
 import type { AttachedImage } from './useComposerAttachments';
 import type { SessionTarget, TargetWorktree } from './ComposerSelectorRow';
 import type { TargetCandidate } from '../../lib/api.types';
@@ -40,11 +40,15 @@ export interface ComposerProps {
   agents?: AgentInfo[];
   /** Accent colours remain muted until the authoritative catalog resolves. */
   agentsLoaded?: boolean;
+  /** Platform slash commands when there is no session to fetch them for. */
+  commands?: SlashCommand[];
   contextTokens?: number;
   activeDurationMs?: number;
   timeCreated?: number;
   durationMs?: number;
   sessionId?: string;
+  /** Draft storage key; defaults to sessionId. A new conversation has no session yet. */
+  draftKey?: string;
   tokensPerSecond?: number;
   tokenStats?: {
     input: number;
@@ -78,5 +82,5 @@ export interface ComposerProps {
   permissionControl?: ReactNode;
   composerRef?: Ref<ComposerHandle>;
   remoteId?: string;
-  onMachineChange?: (target: TargetCandidate, draft: string) => Promise<void>;
+  onMachineChange?: (target: TargetCandidate) => Promise<void>;
 }

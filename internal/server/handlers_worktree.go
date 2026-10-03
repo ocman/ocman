@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"os/exec"
@@ -203,9 +202,6 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 		// setting is on, seeds the new session with the parent's
 		// accumulated always-allow permissions (issue #101).
 		ParentSessionID string `json:"parentSessionId"`
-		// DiscardEmptyParent removes the parent once the child exists, when
-		// it is the still-empty conversation the first message was typed in.
-		DiscardEmptyParent bool `json:"discardEmptyParent"`
 		// Send, when set, is delivered to the new session before the
 		// response returns, saving the client a second round trip on the
 		// first message. Failures are reported, never fatal to the launch.
@@ -286,16 +282,7 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 		Prompt:     req.Prompt,
 	})
 	if err != nil {
-		switch {
-		case errors.Is(err, git.ErrNotARepo):
-			http.Error(w, "projectDir is not a git repository", http.StatusNotFound)
-		case errors.Is(err, git.ErrBranchCheckedOutElsewhere),
-			errors.Is(err, git.ErrPathConflict):
-			http.Error(w, err.Error(), http.StatusConflict)
-		default:
-			log.WithError(err).Warn("worktree: create and launch")
-			http.Error(w, "worktree create/launch failed: "+err.Error(), http.StatusBadGateway)
-		}
+		writeWorktreeCreateError(w, err)
 		return
 	}
 
@@ -323,10 +310,6 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 		} else {
 			sent = true
 		}
-	}
-
-	if req.DiscardEmptyParent && req.ParentSessionID != "" {
-		go s.archiveEmptySession(context.WithoutCancel(r.Context()), platform, req.ParentSessionID)
 	}
 
 	writeJSON(w, map[string]interface{}{

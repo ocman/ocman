@@ -118,7 +118,6 @@ type ApiStore = {
   pinSession: (platform: string, sessionId: string, pinned: boolean) => Promise<{ ok: boolean }>;
   getModels: (signal?: AbortSignal) => Promise<ModelUsage[]>;
   getCapabilities: (signal?: AbortSignal) => Promise<CapabilitiesResponse>;
-  createSession: (directory: string, platform?: string, title?: string) => Promise<{ id: string }>;
   sendMessage: (sessionId: string, message: string, images?: { url: string; mime: string }[], model?: string, agent?: string, reasoning?: string, platform?: string, queue?: boolean) => Promise<void>;
   listPermissions: (sessionId: string) => Promise<unknown[]>;
   respondPermission: (sessionId: string, permissionId: string, reply: 'once' | 'always' | 'reject') => Promise<void>;
@@ -349,7 +348,6 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   pinSession: (platform, sessionId, pinned) => get().runRequest(`session:pin:${sessionId}`, () => api.pinSession(platform, sessionId, pinned)),
   getModels: (signal) => get().runRequest('models:get', () => api.models(undefined, signal)),
   getCapabilities: (signal) => get().runRequest('capabilities:get', () => api.capabilities(signal)),
-  createSession: (directory, platform, title) => get().runRequest('session:create', () => api.createSession(directory, platform, title)),
   sendMessage: (sessionId, message, images, model, agent, reasoning, platform, queue) => {
     const previous = get().recentSessions.find((s) => s.id === sessionId)?.timeUpdated;
     const now = Math.max(Date.now(), previous ?? 0);

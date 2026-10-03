@@ -475,61 +475,11 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		"platform":  req.Platform,
 		"directory": req.Directory,
 	}).Info("hub: create session request")
-	// The project's opencode instance must be running before Create.
-	// Adapter-side port discovery only *finds* an instance, so an
-	// instance killed outside ocman left every subsequent create failing
-	// with "no running OpenCode instance for directory" — ensure is what
-	// relaunches it. Route to the platform's owning host via the compound
-	// id (the authoritative owner). A platform without a compound id is
-	// the hub's own adapter, so the ensure is pinned to the local host —
-	// never ForDir inference, which could map the directory to a remote
-	// (the same absolute path can exist on an attached machine) and
-	// launch opencode there while Create targets the hub.
-	//
-	// A remote ensure failure is fatal: the remote has no discovery
-	// fallback, so Create would fail anyway. A local ensure failure is
-	// soft — a non-repo directory (or a host that can't launch) can't be
-	// ensured, but discovery may still find a usable instance.
 	var port string
-	remoteID, _ := remote.SplitPlatformID(req.Platform)
 	if req.Directory != "" {
-		owner := remoteID
-		if owner == "" {
-			owner = "local"
-		}
-		host, ok := s.resolveOwner(w, req.Directory, owner)
-		if !ok {
+		var ok bool
+		if _, port, ok = s.ensureProjectForCreate(w, r, req.Platform, req.Directory); !ok {
 			return
-		}
-		// Validate the platform before the ensure side effect (#533): an
-		// unknown platform must not launch a managed opencode instance
-		// (locally or on the remote) only for Create to reject the
-		// request below. Asked of the service so the check reads the
-		// same registry Create will.
-		if !s.sessions.KnownPlatform(req.Platform) {
-			http.Error(w, "unknown platform", http.StatusBadRequest)
-			return
-		}
-		// A worktree runs on the project's shared instance rooted at the
-		// main checkout; fold the path back so ensuring a worktree
-		// directory can't launch a second instance for the same project.
-		ensureDir := projectRootForDirectory(req.Directory)
-		ensured, err := host.EnsureProjectOpencode(r.Context(), hostsvc.EnsureProjectOpencodeRequest{ProjectDir: ensureDir})
-		switch {
-		case err != nil && remoteID != "":
-			log.WithError(err).WithFields(log.Fields{
-				"platform":  req.Platform,
-				"directory": req.Directory,
-			}).Warn("hub: ensure project opencode failed")
-			writeSessionSvcError(w, "creating session", err)
-			return
-		case err != nil:
-			log.WithError(err).WithFields(log.Fields{
-				"platform":  req.Platform,
-				"directory": req.Directory,
-			}).Debug("hub: ensure project opencode failed; falling back to port discovery")
-		default:
-			port = ensured.Port()
 		}
 	}
 	resp, err := s.sessions.Create(r.Context(), req.Platform, platforms.CreateSessionRequest{

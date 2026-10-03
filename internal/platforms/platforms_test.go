@@ -65,6 +65,9 @@ func (f *fakePlatform) SlashCommands(context.Context, string) ([]SlashCommandEnt
 func (f *fakePlatform) SessionModels(context.Context, string) (*SessionModelsResponse, error) {
 	return nil, ErrUnsupported
 }
+func (f *fakePlatform) DirectoryCatalog(context.Context, DirectoryCatalogRequest) (*DirectoryCatalog, error) {
+	return nil, ErrUnsupported
+}
 func (f *fakePlatform) ListPermissions(context.Context, string) ([]LivePrompt, error) {
 	return nil, nil
 }

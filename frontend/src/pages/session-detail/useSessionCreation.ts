@@ -1,9 +1,7 @@
 import { useCallback } from 'react';
 import { api } from '../../lib/api';
-import type { PlatformCapabilities, TargetCandidate } from '../../lib/api.types';
-import { saveDraft } from '../../lib/composerDraft';
-import { useApiStore } from '../../lib/apiStore';
-import { createSessionWithLaunch } from '../../lib/createSessionWithLaunch';
+import type { PlatformCapabilities } from '../../lib/api.types';
+import { newSessionPath } from '../../lib/newSessionPath';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { remoteLog } from '../../lib/remoteLog';
 import type { SessionMetadata } from '../../lib/sessionReducer';
@@ -12,21 +10,18 @@ export interface UseSessionCreationOptions {
   session: SessionMetadata | null;
   portAvailable: boolean;
   caps: Pick<PlatformCapabilities, 'compact'>;
-  tmuxAvailable: boolean;
   selectedModel: string;
   activeModel: string;
   selectedAgent: string;
   activeAgent: string;
   setSelectedAgent: (agent: string) => void;
-  navigateToSession: (id: string) => void;
-  onCreateError: () => void;
+  navigate: (path: string) => void;
 }
 
 export interface UseSessionCreationResult {
-  handleNewSessionInDirectory: (directory: string, remoteId?: string, platform?: string, title?: string) => Promise<void>;
+  handleNewSessionInDirectory: (directory: string, remoteId?: string, platform?: string, title?: string) => void;
   handleNewSession: (title?: string) => Promise<void>;
   handleCompact: () => Promise<void>;
-  handleMachineChange: (target: TargetCandidate, draft: string) => Promise<void>;
 }
 
 /**
@@ -50,20 +45,16 @@ export function useSessionCreation({
   session,
   portAvailable,
   caps,
-  tmuxAvailable,
   selectedModel,
   activeModel,
   selectedAgent,
   activeAgent,
   setSelectedAgent,
-  navigateToSession,
-  onCreateError,
+  navigate,
 }: UseSessionCreationOptions): UseSessionCreationResult {
-  const createSession = useApiStore((state) => state.createSession);
-  const launchOpencodeInTmux = useApiStore((state) => state.launchOpencodeInTmux);
-  const seedNewSession = useApiStore((state) => state.seedNewSession);
-
-  const handleNewSessionInDirectory = useCallback(async (directory: string, remoteId?: string, platform?: string, title?: string) => {
+  // A new conversation is a route, not a session: nothing is created until
+  // its first prompt, so the machine and target can still change freely.
+  const handleNewSessionInDirectory = useCallback((directory: string, remoteId?: string, platform?: string, title?: string) => {
     // Prefer the target project's own platform/host (e.g. a remote
     // project group) over the currently-open session's, so a "+" on a
     // remote project actually targets that remote instead of falling
@@ -76,21 +67,8 @@ export function useSessionCreation({
     const sameProject = !!session && (remoteId === undefined || remoteId === (session.remoteId || 'local'))
       && projectRootForDirectory(directory) === projectRootForDirectory(session.directory);
     const targetPlatform = platform ?? (sameProject ? session?.platform : undefined);
-    try {
-      const res = await createSessionWithLaunch(
-        { createSession, launchOpencodeInTmux, tmuxAvailable },
-        { directory, fallbackDirectory: projectRootForDirectory(directory), platform: targetPlatform, remoteId, title },
-      );
-      if (res.id) {
-        const sessionDirectory = res.directory ?? directory;
-        seedNewSession(res.id, sessionDirectory, targetPlatform ?? '', title, remoteId);
-        navigateToSession(res.id);
-      }
-    } catch (e) {
-      remoteLog.error('Failed to create session', e);
-      onCreateError();
-    }
-  }, [createSession, launchOpencodeInTmux, tmuxAvailable, navigateToSession, seedNewSession, session, onCreateError]);
+    navigate(newSessionPath({ directory, remoteId, platform: targetPlatform, title }));
+  }, [navigate, session]);
 
   const handleNewSession = useCallback(async (title?: string) => {
     if (!session) return;
@@ -98,16 +76,6 @@ export function useSessionCreation({
     // would make the composer skip its "New worktree" target (the default).
     await handleNewSessionInDirectory(await mainCheckout(session), session.remoteId, session.platform, title);
   }, [session, handleNewSessionInDirectory]);
-
-  const handleMachineChange = useCallback(async (target: TargetCandidate, draft: string) => {
-    const res = await createSessionWithLaunch(
-      { createSession, launchOpencodeInTmux, tmuxAvailable },
-      { directory: target.dir, platform: target.platform, remoteId: target.remoteId },
-    );
-    seedNewSession(res.id, res.directory ?? target.dir, target.platform, undefined, target.remoteId);
-    saveDraft(res.id, draft);
-    navigateToSession(res.id);
-  }, [createSession, launchOpencodeInTmux, tmuxAvailable, seedNewSession, navigateToSession]);
 
   const handleCompact = useCallback(async () => {
     if (!session || !portAvailable || !caps.compact) return;
@@ -124,5 +92,5 @@ export function useSessionCreation({
     }
   }, [activeAgent, activeModel, caps.compact, portAvailable, selectedAgent, selectedModel, session, setSelectedAgent]);
 
-  return { handleNewSessionInDirectory, handleNewSession, handleCompact, handleMachineChange };
+  return { handleNewSessionInDirectory, handleNewSession, handleCompact };
 }

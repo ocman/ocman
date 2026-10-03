@@ -18,26 +18,18 @@ import { routeComposerSubmit } from './composerSubmit';
 import { KNOWN_AGENTS, modelHasVariants } from '../../lib/commands/builtinCommands';
 import { ModalReturnFocusContext } from '../ModalReturnFocusContext';
 import type { ComposerProps } from './composerTypes';
-import { WorktreeStart } from './WorktreeStart';
 import { ComposerMachineSelector } from './ComposerMachineSelector';
 
 export type { AttachedImage } from './useComposerAttachments';
 export type { ComposerHandle } from './composerTypes';
 
-export function Composer(props: ComposerProps) {
-  if (props.worktreesSupported && props.directory && props.sessionId) {
-    return <WorktreeStart key={props.sessionId} {...props}>{(resolved) => <ComposerBody {...resolved} />}</WorktreeStart>;
-  }
-  return <ComposerBody {...props} />;
-}
-
-function ComposerBody({
+export function Composer({
   onSend, onRetryChange, onCommand, onShell, shellExec, queuedShellCommand,
   onCancelQueuedShell, queuedMessages, onRemoveQueuedMessage, onMoveQueuedMessage,
   onAbort, isRunning, disabled, whisperAvailable, models, modelEntries,
   selectedModel, onModelChange, onToggleFavorite, onRefreshModels, activeAgent,
-  selectedAgent, onAgentChange, agents, agentsLoaded, contextTokens,
-  activeDurationMs, timeCreated, durationMs, sessionId, tokensPerSecond,
+  selectedAgent, onAgentChange, agents, agentsLoaded, commands, contextTokens,
+  activeDurationMs, timeCreated, durationMs, sessionId, draftKey: draftKeyProp, tokensPerSecond,
   tokenStats, estimatedCost, sessionTreeStats, selectedReasoning, onReasoningChange,
   disabledHint, onLaunchRequest, launching, directory, newConversation,
   worktreesSupported, worktrees, permissionControl, composerRef, target, onTargetChange,
@@ -51,12 +43,17 @@ function ComposerBody({
   const sendingRef = useRef(false);
   const mountedRef = useRef(true);
   const sessionIdRef = useRef(sessionId);
-  const { clearDraftNow, scheduleDraftSave } = useComposerDrafts(inputRef, sessionId, sessionIdRef);
+  // Drafts are keyed separately from the session: a new conversation keeps
+  // one shared draft while it has no session to attach it to.
+  const draftKey = draftKeyProp ?? sessionId;
+  const draftKeyRef = useRef(draftKey);
+  const { clearDraftNow, scheduleDraftSave } = useComposerDrafts(inputRef, draftKey, draftKeyRef);
   const visibleDurationMs = useRunningDuration(activeDurationMs, isRunning);
   const attachments = useComposerAttachments(sessionIdRef, disabled || sending || switchingMachine);
   const { images, files } = attachments;
 
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
+  useEffect(() => { draftKeyRef.current = draftKey; }, [draftKey]);
   useEffect(() => { sendingRef.current = sending; }, [sending]);
   useEffect(() => {
     mountedRef.current = true;
@@ -98,9 +95,9 @@ function ComposerBody({
   const agentOptions = Array.from(new Set([activeAgent, ...cyclableAgents].filter((a): a is string => !!a)));
   const effectiveAgent = selectedAgent || activeAgent || '';
   const hasVariants = modelHasVariants(selectedModel, modelEntries);
-  const slash = useSlashMenu(sessionId, { hasModels, hasAgents, activeAgent, hasVariants });
+  const slash = useSlashMenu(sessionId, { hasModels, hasAgents, activeAgent, hasVariants }, commands);
   const pickers = useComposerPickers({
-    inputRef, sessionIdRef, scheduleDraftSave, models, agents, agentOptions,
+    inputRef, sessionIdRef: draftKeyRef, scheduleDraftSave, models, agents, agentOptions,
     onModelChange, onAgentChange, onRefreshModels,
   });
   const { openModelPicker, openAgentPicker, openSkillPicker, openRoutinePicker } = pickers;
@@ -111,8 +108,8 @@ function ComposerBody({
     if (!el) return;
     el.value = '';
     slash.close();
-    const sid = sessionIdRef.current;
-    if (sid) clearDraftNow(sid);
+    const key = draftKeyRef.current;
+    if (key) clearDraftNow(key);
   }, [clearDraftNow, slash]);
 
   const selectSlashCommand = useCallback((cmd: SlashCommand) => {
@@ -137,8 +134,8 @@ function ComposerBody({
     slash.close();
     setIsBashMode(false);
     attachments.clear();
-    const sid = sessionIdRef.current;
-    if (sid) clearDraftNow(sid);
+    const key = draftKeyRef.current;
+    if (key) clearDraftNow(key);
   };
 
   const runSubmit = async (execute: () => void | Promise<void>, retryBackend = false) => {
@@ -235,8 +232,8 @@ function ComposerBody({
     const el = e.currentTarget;
     setIsBashMode(el.value.startsWith('!') && !!shellExec);
     slash.syncToInput(el.value);
-    const sid = sessionIdRef.current;
-    if (sid) scheduleDraftSave(sid, () => el.value);
+    const key = draftKeyRef.current;
+    if (key) scheduleDraftSave(key, () => el.value);
   };
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -336,7 +333,7 @@ function ComposerBody({
               onSelect={async (machine) => {
                 setSwitchingMachine(true);
                 try {
-                  await onMachineChange(machine, inputRef.current?.value ?? '');
+                  await onMachineChange(machine);
                 } finally {
                   setSwitchingMachine(false);
                 }

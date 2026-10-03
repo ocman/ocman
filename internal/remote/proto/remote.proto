@@ -28,6 +28,7 @@ service Ocman {
   rpc AgentCatalog(SessionRef) returns (JsonResp);
   rpc SlashCommands(SessionRef) returns (JsonResp);
   rpc SessionModels(SessionRef) returns (JsonResp);
+  rpc DirectoryCatalog(PlatformJsonReq) returns (JsonResp); // *platforms.DirectoryCatalog
   rpc ListPermissions(SessionRef) returns (JsonResp);
   rpc ListQuestions(SessionRef) returns (JsonResp);
   rpc PermissionRules(SessionRef) returns (JsonResp);     // []platforms.PermissionRule

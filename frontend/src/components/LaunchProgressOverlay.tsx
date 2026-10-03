@@ -9,7 +9,6 @@ import './LaunchProgressOverlay.css';
 const STEP_LABELS: Record<LaunchStepId, string> = {
   launch: 'Starting OpenCode in tmux',
   wait: 'Waiting for OpenCode to come up',
-  create: 'Creating session',
 };
 
 // How long the card lingers after the flow finishes. Success is a
@@ -28,11 +27,10 @@ function StepIcon({ state }: { state: StepState }) {
 }
 
 /**
- * Global fixed-position card that shows step-by-step progress while
- * createSessionWithLaunch boots a fresh opencode instance (tmux
- * launch → wait for opencode → create session). Mounted once in App
- * so the feedback survives palette close and route changes, and every
- * launch surface (command palette, /new, /clear) gets it for free.
+ * Global fixed-position card that shows step-by-step progress while a
+ * fresh opencode instance boots for a project (tmux launch → wait for
+ * opencode). Mounted once in App so the feedback survives route changes,
+ * and every launch surface (new conversation, launch button) gets it.
  */
 export function LaunchProgressOverlay() {
   const phase = useLaunchProgressStore((s) => s.phase);
@@ -58,10 +56,10 @@ export function LaunchProgressOverlay() {
 
   const title =
     phase === 'success'
-      ? 'Session ready'
+      ? 'OpenCode ready'
       : phase === 'error'
-      ? 'Failed to start session'
-      : `Starting session in ${projectName}…`;
+      ? 'Failed to start OpenCode'
+      : `Starting OpenCode in ${projectName}…`;
 
   return (
     <div

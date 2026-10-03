@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Project } from '../lib/api';
-import { useLaunchProgressStore } from '../lib/launchProgressStore';
-import { LaunchProgressOverlay } from './LaunchProgressOverlay';
+
+function LocationProbe() {
+  const location = useLocation();
+  return <output data-testid="location">{location.pathname + location.search}</output>;
+}
 
 const mocks = vi.hoisted(() => {
   const uiState = {
@@ -26,9 +29,6 @@ const mocks = vi.hoisted(() => {
     getProjects: vi.fn(async (): Promise<Project[]> => []),
     browseDirectories: vi.fn(),
     searchDirectories: vi.fn(),
-    createSession: vi.fn(),
-    launchOpencodeInTmux: vi.fn(),
-    seedNewSession: vi.fn(),
     refreshCachedSessions: vi.fn(async () => []),
     getTmuxSessions: vi.fn(async () => ({ available: false, sessions: [] })),
     getTmuxClients: vi.fn(async () => ({ available: false, clients: [] })),
@@ -64,24 +64,22 @@ function renderPalette() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
   const tree = () => (
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
         <CommandPalette />
-        <LaunchProgressOverlay />
+        <LocationProbe />
       </MemoryRouter>
     </QueryClientProvider>
   );
   const view = render(tree());
-  return { queryClient, invalidateQueries, rerenderPalette: () => view.rerender(tree()) };
+  return { queryClient, rerenderPalette: () => view.rerender(tree()) };
 }
 
 describe('CommandPalette project mode', () => {
   afterEach(() => vi.restoreAllMocks());
   beforeEach(() => {
     vi.clearAllMocks();
-    useLaunchProgressStore.getState().dismiss();
     Element.prototype.scrollIntoView = vi.fn();
     mocks.uiState.paletteOpen = true;
     mocks.uiState.paletteMode = 'project';
@@ -187,7 +185,6 @@ describe('CommandPalette project mode', () => {
         ],
       };
     });
-    mocks.apiState.createSession.mockReset().mockResolvedValue({ id: 'new-session' });
     mocks.apiState.getTmuxSessions.mockResolvedValue({ available: false, sessions: [] });
     mocks.apiState.getTmuxClients.mockResolvedValue({ available: false, clients: [] });
   });
@@ -216,17 +213,17 @@ describe('CommandPalette project mode', () => {
     expect(mocks.apiState.browseDirectories.mock.calls[1][0]).toBe('/Users/peter/workspace');
   });
 
-  it('creates a session and refreshes projects for the selected browsed directory', async () => {
-    const { invalidateQueries } = renderPalette();
+  // Nothing is created yet: the browsed directory opens the new-conversation
+  // route, and the first prompt creates the session where the composer points.
+  it('opens a new conversation for the selected browsed directory', async () => {
+    renderPalette();
 
     fireEvent.click(await screen.findByText('Use this directory'));
 
     await waitFor(() => {
-      expect(mocks.apiState.createSession).toHaveBeenCalledWith('/Users/peter', 'opencode', undefined);
+      expect(screen.getByTestId('location')).toHaveTextContent('/session/new?dir=%2FUsers%2Fpeter');
     });
-    expect(mocks.apiState.seedNewSession).toHaveBeenCalledWith('new-session', '/Users/peter', 'opencode', undefined, 'local');
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['projects'] });
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: ['sessions'] });
+    expect(mocks.uiState.closePalette).toHaveBeenCalled();
   });
 
   it('searches below the current browsed directory while typing', async () => {
@@ -309,7 +306,7 @@ describe('CommandPalette project mode', () => {
     expect(screen.getByPlaceholderText('Select a project to start a session...')).toHaveFocus();
   });
 
-  it('creates a session from a local project on this machine without a machine prompt', async () => {
+  it('opens a new conversation for a local project on this machine', async () => {
     mocks.uiState.paletteMode = 'project-session';
 
     renderPalette();
@@ -317,36 +314,11 @@ describe('CommandPalette project mode', () => {
     fireEvent.click(await screen.findByText('workspace/ocman'));
 
     await waitFor(() => {
-      expect(mocks.apiState.createSession).toHaveBeenCalledWith('/Users/peter/workspace/ocman', 'opencode', undefined);
+      expect(screen.getByTestId('location')).toHaveTextContent('/session/new?dir=%2FUsers%2Fpeter%2Fworkspace%2Focman');
     });
-    expect(mocks.apiState.seedNewSession).toHaveBeenCalledWith('new-session', '/Users/peter/workspace/ocman', 'opencode', undefined, 'local');
   });
 
-  it('shows progress immediately, through session creation', async () => {
-    mocks.uiState.paletteMode = 'project-session';
-    let resolveSession!: (session: { id: string }) => void;
-    mocks.apiState.createSession.mockReturnValueOnce(new Promise((resolve) => { resolveSession = resolve; }));
-    renderPalette();
-
-    fireEvent.click(await screen.findByText('workspace/ocman'));
-
-    expect(await screen.findByRole('status')).toHaveTextContent('Starting session in ocman');
-    const startedAt = useLaunchProgressStore.getState().startedAt;
-    vi.spyOn(Date, 'now').mockReturnValue(startedAt + 5000);
-    await act(async () => { resolveSession({ id: 'new-session' }); });
-    expect(screen.getByRole('status')).toHaveTextContent('Session ready');
-  });
-
-  it('shows an error if session creation fails', async () => {
-    mocks.uiState.paletteMode = 'project-session';
-    mocks.apiState.createSession.mockRejectedValueOnce(new Error('Machine unavailable'));
-    renderPalette();
-    fireEvent.click(await screen.findByText('workspace/ocman'));
-    expect(await screen.findByText('Machine unavailable')).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('Failed to start session');
-  });
-
-  it('seeds a new session with the selected project owner', async () => {
+  it('opens a new conversation on the selected project owner', async () => {
     mocks.uiState.paletteMode = 'project-session';
     mocks.apiState.getProjects.mockResolvedValue([{
       directory: '/remote/repo', remoteId: 'box', platform: 'r-box:opencode',
@@ -356,9 +328,9 @@ describe('CommandPalette project mode', () => {
     renderPalette();
     fireEvent.click(await screen.findByText('remote/repo'));
 
-    await waitFor(() => expect(mocks.apiState.seedNewSession).toHaveBeenCalledWith(
-      'new-session', '/remote/repo', 'r-box:opencode', undefined, 'box',
-    ));
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent('/session/new?dir=%2Fremote%2Frepo&remoteId=box&platform=r-box%3Aopencode');
+    });
   });
 
   it('shows "Create new project" at the end of the known-project picker, even when search matches nothing', async () => {

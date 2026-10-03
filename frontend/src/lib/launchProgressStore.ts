@@ -1,41 +1,40 @@
 import { create } from 'zustand';
 
 /**
- * Global progress state for the "create a session in a closed project"
- * slow path (createSessionWithLaunch). When ocman has to spawn a fresh
- * opencode instance in tmux, the whole dance — tmux launch, opencode
- * boot, port bind, lsof cache expiry, session create — can take 10-20
+ * Global progress state for the "open a closed project" slow path. When
+ * ocman has to spawn a fresh opencode instance in tmux, the whole dance —
+ * tmux launch, opencode boot, port bind, health probe — can take 10-20
  * seconds. This store tracks which step is running so the
  * LaunchProgressOverlay can show the user what's happening, regardless
- * of which surface kicked the launch off (command palette, /new,
- * /clear, worktree flow).
+ * of which surface kicked the launch off (a new conversation's prepare,
+ * the composer's launch button).
  */
 
-export type LaunchStepId = 'launch' | 'wait' | 'create';
+export type LaunchStepId = 'launch' | 'wait';
 
 export type LaunchPhase = 'idle' | 'running' | 'success' | 'error';
 
 /** Ordered step list; the overlay renders steps in this order. */
-export const LAUNCH_STEP_ORDER: readonly LaunchStepId[] = ['launch', 'wait', 'create'];
+export const LAUNCH_STEP_ORDER: readonly LaunchStepId[] = ['launch', 'wait'];
 
 /**
- * Progress begins before the very first createSession call so the user
- * is informed the moment the process is invoked. When opencode is
- * already running that call returns almost instantly; a flow that
- * finishes within this window drops straight back to idle instead of
- * flashing "Session ready". The progress card itself appears immediately.
+ * Progress begins before the first request so the user is informed the
+ * moment the process is invoked. When opencode is already running that
+ * request returns almost instantly; a flow that finishes within this
+ * window drops straight back to idle instead of flashing "ready". The
+ * progress card itself appears immediately.
  */
 export const LAUNCH_QUICK_MS = 400;
 
 type LaunchProgressStore = {
   phase: LaunchPhase;
-  /** Directory the session is being created in. */
+  /** Project directory being opened. */
   directory: string;
   /** Date.now() at begin(); drives the quick-success suppression. */
   startedAt: number;
   /** Active step while phase === 'running' (or the step that failed). */
   step: LaunchStepId;
-  /** 1-based retry attempt for the wait/create loop; 0 = not started. */
+  /** 1-based retry attempt for the wait loop; 0 = not started. */
   attempt: number;
   maxAttempts: number;
   /**

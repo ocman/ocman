@@ -9,21 +9,9 @@ vi.mock('../../lib/api', () => ({
   api: { compactSession: vi.fn().mockResolvedValue(undefined), worktree: { list: (...args: unknown[]) => listWorktrees(...args) } },
 }));
 vi.mock('../../lib/remoteLog', () => ({ remoteLog: { error: vi.fn(), warn: vi.fn() } }));
-const createSessionWithLaunch = vi.fn();
-vi.mock('../../lib/createSessionWithLaunch', () => ({
-  createSessionWithLaunch: (...args: unknown[]) => createSessionWithLaunch(...args),
-}));
-const createSession = vi.fn();
-const launchOpencodeInTmux = vi.fn();
-const seedNewSession = vi.fn();
-vi.mock('../../lib/apiStore', () => ({
-  useApiStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ createSession, launchOpencodeInTmux, seedNewSession }),
-}));
 
 import { api } from '../../lib/api';
 import { useSessionCreation, type UseSessionCreationOptions } from './useSessionCreation';
-import { getDraft } from '../../lib/composerDraft';
 
 const session = { id: 's1', directory: '/repo/a', platform: 'r-x:opencode', remoteId: 'r-x' } as SessionMetadata;
 
@@ -32,14 +20,12 @@ function opts(over: Partial<UseSessionCreationOptions> = {}): UseSessionCreation
     session,
     portAvailable: true,
     caps: { compact: true },
-    tmuxAvailable: true,
     selectedModel: '',
     activeModel: 'prov/model',
     selectedAgent: '',
     activeAgent: 'build',
     setSelectedAgent: vi.fn(),
-    navigateToSession: vi.fn(),
-    onCreateError: vi.fn(),
+    navigate: vi.fn(),
     ...over,
   };
 }
@@ -47,27 +33,22 @@ function opts(over: Partial<UseSessionCreationOptions> = {}): UseSessionCreation
 describe('useSessionCreation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    createSessionWithLaunch.mockResolvedValue({ id: 'new-1', directory: '/repo/a/wt' });
     listWorktrees.mockRejectedValue(new Error('not a git repository'));
   });
 
-  it('inherits the open session platform only for the same project', async () => {
+  // A new conversation is a route: no session exists until the first prompt.
+  it('opens the new-conversation route, inheriting the platform only for the same project', () => {
     const o = opts();
     const { result } = renderHook(() => useSessionCreation(o));
 
-    await act(() => result.current.handleNewSessionInDirectory('/repo/.worktrees/a/feat'));
-    expect(createSessionWithLaunch).toHaveBeenLastCalledWith(
-      { createSession, launchOpencodeInTmux, tmuxAvailable: true },
-      expect.objectContaining({ directory: '/repo/.worktrees/a/feat', platform: 'r-x:opencode' }),
-    );
-    expect(seedNewSession).toHaveBeenCalledWith('new-1', '/repo/a/wt', 'r-x:opencode', undefined, undefined);
-    expect(o.navigateToSession).toHaveBeenCalledWith('new-1');
+    act(() => result.current.handleNewSessionInDirectory('/repo/.worktrees/a/feat'));
+    expect(o.navigate).toHaveBeenLastCalledWith('/session/new?dir=%2Frepo%2F.worktrees%2Fa%2Ffeat&platform=r-x%3Aopencode');
 
-    await act(() => result.current.handleNewSessionInDirectory('/repo/other'));
-    expect(createSessionWithLaunch).toHaveBeenLastCalledWith(
-      expect.anything(),
-      expect.objectContaining({ directory: '/repo/other', platform: undefined }),
-    );
+    act(() => result.current.handleNewSessionInDirectory('/repo/other'));
+    expect(o.navigate).toHaveBeenLastCalledWith('/session/new?dir=%2Frepo%2Fother');
+
+    act(() => result.current.handleNewSessionInDirectory('/remote/repo', 'box', 'r-box:opencode'));
+    expect(o.navigate).toHaveBeenLastCalledWith('/session/new?dir=%2Fremote%2Frepo&remoteId=box&platform=r-box%3Aopencode');
   });
 
   it('does not inherit a remote platform for an explicitly local checkout at the same path', async () => {
@@ -87,51 +68,26 @@ describe('useSessionCreation', () => {
     const { result } = renderHook(() => useSessionCreation(o));
     await act(() => result.current.handleNewSession());
     expect(listWorktrees).toHaveBeenCalledWith('/src/repo-feature', 'r-x');
-    expect(createSessionWithLaunch).toHaveBeenLastCalledWith(
-      expect.anything(),
-      expect.objectContaining({ directory: '/src/repo', remoteId: 'r-x' }),
-    );
+    expect(o.navigate).toHaveBeenLastCalledWith('/session/new?dir=%2Fsrc%2Frepo&remoteId=r-x&platform=r-x%3Aopencode');
   });
 
   it('falls back to the directory layout when the worktree lookup fails', async () => {
     const o = opts({ session: { ...session, directory: '/src/.worktrees/repo/feat' } });
     const { result } = renderHook(() => useSessionCreation(o));
     await act(() => result.current.handleNewSession());
-    expect(createSessionWithLaunch).toHaveBeenLastCalledWith(
-      expect.anything(),
-      expect.objectContaining({ directory: '/src/repo', platform: 'r-x:opencode', remoteId: 'r-x' }),
-    );
+    expect(o.navigate).toHaveBeenLastCalledWith('/session/new?dir=%2Fsrc%2Frepo&remoteId=r-x&platform=r-x%3Aopencode');
   });
 
-  it('reports create failures through onCreateError', async () => {
-    createSessionWithLaunch.mockRejectedValueOnce(new Error('nope'));
+  it('starts a new conversation beside the open session, with an optional title', async () => {
     const o = opts();
     const { result } = renderHook(() => useSessionCreation(o));
-    await act(() => result.current.handleNewSession('title'));
-    expect(o.onCreateError).toHaveBeenCalled();
-    expect(o.navigateToSession).not.toHaveBeenCalled();
-  });
+    await act(() => result.current.handleNewSession('Fix login'));
+    expect(o.navigate).toHaveBeenCalledWith('/session/new?dir=%2Frepo%2Fa&remoteId=r-x&platform=r-x%3Aopencode&title=Fix+login');
 
-  it('launches on the selected machine and carries the draft to its session', async () => {
-    createSessionWithLaunch.mockResolvedValueOnce({ id: 'remote-new' });
-    const o = opts();
-    const { result } = renderHook(() => useSessionCreation(o));
-    await act(() => result.current.handleMachineChange({ remoteId: 'box', remoteName: 'Box', platform: 'r-box:opencode', dir: '/different/checkout' }, 'unsent prompt'));
-    expect(createSessionWithLaunch).toHaveBeenCalledWith(expect.anything(), {
-      directory: '/different/checkout', remoteId: 'box', platform: 'r-box:opencode',
-    });
-    expect(seedNewSession).toHaveBeenCalledWith('remote-new', '/different/checkout', 'r-box:opencode', undefined, 'box');
-    expect(getDraft('remote-new')).toBe('unsent prompt');
-    expect(o.navigateToSession).toHaveBeenCalledWith('remote-new');
-  });
-
-  it('leaves the current session in place when a machine launch fails', async () => {
-    createSessionWithLaunch.mockRejectedValueOnce(new Error('disconnected'));
-    const o = opts();
-    const { result } = renderHook(() => useSessionCreation(o));
-    await expect(result.current.handleMachineChange({ remoteId: 'box', remoteName: 'Box', platform: 'r-box:opencode', dir: '/remote/repo' }, 'keep me')).rejects.toThrow('disconnected');
-    expect(seedNewSession).not.toHaveBeenCalled();
-    expect(o.navigateToSession).not.toHaveBeenCalled();
+    const none = opts({ session: null });
+    const { result: r2 } = renderHook(() => useSessionCreation(none));
+    await act(() => r2.current.handleNewSession());
+    expect(none.navigate).not.toHaveBeenCalled();
   });
 
   it('compacts with the selected model and restores the agent', async () => {

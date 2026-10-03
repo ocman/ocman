@@ -119,6 +119,10 @@ export type {
   SubscriptionUsageResponse,
   InboxItem,
   InboxResponse,
+  NewSessionTarget,
+  PrepareSessionResponse,
+  StartSessionRequest,
+  StartSessionResponse,
 } from './api.types';
 
 // Type imports used by the api object below.
@@ -175,6 +179,10 @@ import type {
   RemoteStatus,
   RemoteAccessStatus,
   ResolveTargetsResponse,
+  NewSessionTarget,
+  PrepareSessionResponse,
+  StartSessionRequest,
+  StartSessionResponse,
 	Routine,
 	RoutineRun,
 	RoutineInput,
@@ -713,6 +721,10 @@ export const api = {
     postJSON<{ ok: boolean }>(`/api/remotes/${localId}/reconnect`, undefined),
   resolveTargets: (dir: string, remoteId?: string) =>
     postJSON<ResolveTargetsResponse>('/api/sessions/resolve-targets', { dir, ...(remoteId ? { remoteId } : {}) }),
+  prepareSession: (target: NewSessionTarget, signal?: AbortSignal) =>
+    postJSON<PrepareSessionResponse>('/api/sessions/prepare', target, { signal }),
+  startSession: (req: StartSessionRequest) =>
+    postJSON<StartSessionResponse>('/api/sessions/start', req),
   /** parentSessionId seeds the new session with that session's permission posture. */
   createSession: async (directory: string, platform?: string, title?: string, parentSessionId?: string) => {
     const resp = await apiFetch('/api/sessions', {

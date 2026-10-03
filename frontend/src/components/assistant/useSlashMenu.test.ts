@@ -75,3 +75,14 @@ describe('useSlashMenu', () => {
     expect(names).toContain('variants');
   });
 });
+
+describe('useSlashMenu without a session', () => {
+  it('uses the provided platform commands instead of fetching', () => {
+    commands.mockClear();
+    const provided = [{ name: 'review', description: 'Review', source: 'command' } as SlashCommand];
+    const { result } = renderHook(() => useSlashMenu(undefined, vis, provided));
+    expect(commands).not.toHaveBeenCalled();
+    expect(result.current.commands.some((c) => c.name === 'review')).toBe(true);
+    expect(result.current.commands.some((c) => c.name === 'new')).toBe(true);
+  });
+});

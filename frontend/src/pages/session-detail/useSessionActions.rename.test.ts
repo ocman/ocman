@@ -20,9 +20,6 @@ vi.mock('../../lib/apiStore', () => ({
         sendMessage: vi.fn().mockResolvedValue(undefined),
         abortSession: vi.fn().mockResolvedValue(undefined),
         archiveSession: vi.fn().mockResolvedValue(undefined),
-        createSession: vi.fn().mockResolvedValue(undefined),
-        launchOpencodeInTmux: vi.fn().mockResolvedValue(undefined),
-        seedNewSession: vi.fn(),
       }),
     { getState: () => ({ pushClosedSession: vi.fn(), patchRecentSession }) },
   ),
@@ -49,7 +46,6 @@ function makeOptions(): UseSessionActionsOptions {
     messagesRef: { current: [] },
     partsRef: { current: [] },
     isRunningRef: { current: false },
-    tmuxAvailable: false,
     failedSends: [],
     setFailedSends: vi.fn(),
     pending: {

@@ -232,6 +232,18 @@ func (s *Server) SessionModels(ctx context.Context, req *pb.SessionRef) (*pb.Jso
 	return jsonResp(p.SessionModels(ctx, req.SessionId))
 }
 
+func (s *Server) DirectoryCatalog(ctx context.Context, req *pb.PlatformJsonReq) (*pb.JsonResp, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	var in platforms.DirectoryCatalogRequest
+	if err := unmarshalJSON(req.Payload, &in); err != nil {
+		return nil, err
+	}
+	return jsonResp(p.DirectoryCatalog(ctx, in))
+}
+
 func (s *Server) ListPermissions(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
 	p, err := s.platformFor(req.Platform)
 	if err != nil {

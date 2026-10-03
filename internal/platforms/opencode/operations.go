@@ -154,17 +154,23 @@ func (a *Adapter) AgentCatalog(ctx context.Context, sessionID string) ([]platfor
 			Debug("opencode: agent catalog unavailable (no live port)")
 		return nil, nil
 	}
+	return agentCatalogAt(ctx, port, sessionID), nil
+}
+
+// agentCatalogAt reads /agent from one instance. Failures return nil so
+// the frontend keeps rendering an empty catalog; see AgentCatalog.
+func agentCatalogAt(ctx context.Context, port, sessionID string) []platforms.AgentCatalogEntry {
 	body, fetchErr := getJSONCached(ctx, port, "/agent")
 	if fetchErr != nil {
 		logFetchFailure(fetchErr, log.Fields{"sessionID": sessionID, "port": port, "endpoint": "/agent"},
 			"opencode: agent catalog fetch failed; returning empty list")
-		return nil, nil
+		return nil
 	}
 	var raw []map[string]interface{}
 	if err := json.Unmarshal(body, &raw); err != nil {
 		log.WithFields(log.Fields{"sessionID": sessionID, "port": port, "error": err}).
 			Warn("opencode: agent catalog decode failed; returning empty list")
-		return nil, nil
+		return nil
 	}
 	entries := make([]platforms.AgentCatalogEntry, 0, len(raw))
 	for _, r := range raw {
@@ -180,7 +186,7 @@ func (a *Adapter) AgentCatalog(ctx context.Context, sessionID string) ([]platfor
 			BuiltIn:     boolField(r, "native"),
 		})
 	}
-	return entries, nil
+	return entries
 }
 
 // SlashCommands returns the OpenCode /command catalog for the session.
@@ -196,17 +202,22 @@ func (a *Adapter) SlashCommands(ctx context.Context, sessionID string) ([]platfo
 			Debug("opencode: slash commands unavailable (no live port)")
 		return nil, nil
 	}
+	return slashCommandsAt(ctx, port, sessionID), nil
+}
+
+// slashCommandsAt reads /command from one instance; failures return nil.
+func slashCommandsAt(ctx context.Context, port, sessionID string) []platforms.SlashCommandEntry {
 	body, fetchErr := getJSONCached(ctx, port, "/command")
 	if fetchErr != nil {
 		logFetchFailure(fetchErr, log.Fields{"sessionID": sessionID, "port": port, "endpoint": "/command"},
 			"opencode: slash commands fetch failed; returning empty list")
-		return nil, nil
+		return nil
 	}
 	var raw []map[string]interface{}
 	if err := json.Unmarshal(body, &raw); err != nil {
 		log.WithFields(log.Fields{"sessionID": sessionID, "port": port, "error": err}).
 			Warn("opencode: slash commands decode failed; returning empty list")
-		return nil, nil
+		return nil
 	}
 	entries := make([]platforms.SlashCommandEntry, 0, len(raw))
 	for _, r := range raw {
@@ -217,7 +228,40 @@ func (a *Adapter) SlashCommands(ctx context.Context, sessionID string) ([]platfo
 			Source:      stringField(r, "source"),
 		})
 	}
-	return entries, nil
+	return entries
+}
+
+// DirectoryCatalog serves the new-conversation composer: the catalogs of
+// the directory's instance (worktree paths fold to the project's single
+// instance) plus the directory's most recent agent/model as defaults.
+func (a *Adapter) DirectoryCatalog(ctx context.Context, req platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, error) {
+	if a.db == nil {
+		return nil, platforms.ErrNotFound
+	}
+	directory := req.Directory
+	port := req.Port
+	if port == "" {
+		port = discoverOpenCodePortCtx(ctx, directory)
+	}
+	models, defaults := a.modelsFor(ctx, "", directory, port)
+	out := &platforms.DirectoryCatalog{
+		Agents:         []platforms.AgentCatalogEntry{},
+		Commands:       []platforms.SlashCommandEntry{},
+		Models:         models,
+		DefaultAgent:   defaults.Agent,
+		DefaultModel:   defaults.Model,
+		LiveConnection: port != "",
+	}
+	if port == "" {
+		return out, nil
+	}
+	if agents := agentCatalogAt(ctx, port, ""); agents != nil {
+		out.Agents = agents
+	}
+	if commands := slashCommandsAt(ctx, port, ""); commands != nil {
+		out.Commands = commands
+	}
+	return out, nil
 }
 
 // SessionModels builds the per-session model picker list, merging
@@ -233,7 +277,17 @@ func (a *Adapter) SessionModels(ctx context.Context, sessionID string) (*platfor
 	if err != nil {
 		return nil, platforms.ErrNotFound
 	}
+	port := resolveOpenCodePortForSessionCtx(ctx, sessionID, session.Directory)
+	models, _ := a.modelsFor(ctx, sessionID, session.Directory, port)
+	return models, nil
+}
 
+// modelsFor merges DB recents, favorites, the instance's /provider data
+// (when port is non-empty) and the directory's defaults, excluding
+// excludeSessionID from the default lookup. Shared by SessionModels and
+// DirectoryCatalog so the two lists cannot drift.
+func (a *Adapter) modelsFor(ctx context.Context, excludeSessionID, directory, port string) (*platforms.SessionModelsResponse, db.SessionDefaults) {
+	sessionID := excludeSessionID
 	// recents and favorites are global (same answer regardless of
 	// which session is open) and slowly-changing, so we route them
 	// through process-global TTL caches with singleflight. See
@@ -247,7 +301,7 @@ func (a *Adapter) SessionModels(ctx context.Context, sessionID string) (*platfor
 		log.WithError(err).Warn("opencode: fetching recent models")
 	}
 	defaultsPhase := srvtiming.Begin(ctx, "db_session_defaults")
-	defaults, err := getSessionDefaultsCached(ctx, a.db, sessionID, session.Directory)
+	defaults, err := getSessionDefaultsCached(ctx, a.db, sessionID, directory)
 	defaultsPhase.End()
 	if err != nil {
 		log.WithFields(log.Fields{"sessionID": sessionID, "error": err}).Warn("opencode: fetching session defaults")
@@ -266,7 +320,7 @@ func (a *Adapter) SessionModels(ctx context.Context, sessionID string) (*platfor
 
 	var providers OpenCodeProvidersResponse
 	hasProviders := false
-	if port := resolveOpenCodePortForSessionCtx(ctx, sessionID, session.Directory); port != "" {
+	if port != "" {
 		providersPhase := srvtiming.Begin(ctx, "http_provider")
 		providers, hasProviders = fetchOpenCodeProviders(port)
 		providersPhase.EndWithDesc("GET /provider")
@@ -289,7 +343,7 @@ func (a *Adapter) SessionModels(ctx context.Context, sessionID string) (*platfor
 		ProviderDefaults: connectedDefaults,
 		HasProviders:     hasProviders,
 		Models:           entries,
-	}, nil
+	}, defaults
 }
 
 // --- Mutating operations ---

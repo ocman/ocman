@@ -16,8 +16,8 @@ export interface SlashMenuVisibility {
  * filter/highlight state driven by the textarea, and hides commands
  * whose feature isn't available on this session.
  */
-export function useSlashMenu(sessionId: string | undefined, vis: SlashMenuVisibility) {
-  const [commands, setCommands] = useState<SlashCommand[]>(BUILTIN_COMMANDS);
+export function useSlashMenu(sessionId: string | undefined, vis: SlashMenuVisibility, provided?: SlashCommand[]) {
+  const [fetched, setFetched] = useState<SlashCommand[]>([]);
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState('');
   const [index, setIndex] = useState(0);
@@ -27,18 +27,20 @@ export function useSlashMenu(sessionId: string | undefined, vis: SlashMenuVisibi
     if (!sessionId) return;
     let cancelled = false;
     api.commands(sessionId).then((cmds) => {
-      if (!cancelled) {
-        const fetched = cmds || [];
-        setCommands([
-          ...BUILTIN_COMMANDS.filter((b) => !fetched.some((f) => f.name === b.name)),
-          ...fetched,
-        ]);
-      }
+      if (!cancelled) setFetched(cmds || []);
     }).catch(() => {
-      setCommands(BUILTIN_COMMANDS);
+      setFetched([]);
     });
     return () => { cancelled = true; };
   }, [sessionId]);
+
+  // Platform commands come from the session's catalog, or from the caller
+  // when there is no session yet; built-ins fill the rest.
+  const platformCommands = provided ?? fetched;
+  const commands = [
+    ...BUILTIN_COMMANDS.filter((b) => !platformCommands.some((f) => f.name === b.name)),
+    ...platformCommands,
+  ];
 
   const hasSkills = commands.some((c) => c.source === 'skill');
   const q = filter.toLowerCase();

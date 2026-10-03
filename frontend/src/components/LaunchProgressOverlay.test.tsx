@@ -36,10 +36,9 @@ describe('LaunchProgressOverlay', () => {
       useLaunchProgressStore.getState().begin('/home/u/src/myproject');
     });
 
-    expect(screen.getByText(/Starting session in myproject/)).toBeInTheDocument();
+    expect(screen.getByText(/Starting OpenCode in myproject/)).toBeInTheDocument();
     expect(screen.getByTestId('launch-step-launch')).toHaveClass('active');
     expect(screen.getByTestId('launch-step-wait')).toHaveClass('pending');
-    expect(screen.getByTestId('launch-step-create')).toHaveClass('pending');
   });
 
   it('marks earlier steps done and shows the attempt counter', () => {
@@ -75,7 +74,7 @@ describe('LaunchProgressOverlay', () => {
       s.fail('OpenCode did not start in time.');
     });
 
-    expect(screen.getByText('Failed to start session')).toBeInTheDocument();
+    expect(screen.getByText('Failed to start OpenCode')).toBeInTheDocument();
     expect(screen.getByText('OpenCode did not start in time.')).toBeInTheDocument();
     expect(screen.getByTestId('launch-step-wait')).toHaveClass('error');
   });
@@ -104,7 +103,7 @@ describe('LaunchProgressOverlay', () => {
       s.succeed();
     });
 
-    expect(screen.getByText('Session ready')).toBeInTheDocument();
+    expect(screen.getByText('OpenCode ready')).toBeInTheDocument();
     act(() => {
       vi.advanceTimersByTime(2000);
     });

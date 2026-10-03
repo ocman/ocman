@@ -1,17 +1,13 @@
 import { useState, useEffect, useId, useRef, useMemo, useCallback } from 'react';
 import './CommandPalette.css';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
 import { useApiStore } from '../lib/apiStore';
 import { useUiStore } from '../lib/uiStore';
 import { useOpencodeLaunch } from '../lib/useCapabilities';
 import { cleanTitle, fuzzyMatch, fuzzyRank, fuzzyScore, relativeTime, shortPath } from '../lib/format';
 import { isTerminalStatus } from '../lib/sessionStatus';
 import type { Session, Project, DirectoryBrowseEntry, DirectorySearchEntry } from '../lib/api';
-import { useTmux } from '../lib/useTmux';
-import { createSessionWithLaunch } from '../lib/createSessionWithLaunch';
-import { useLaunchProgressStore } from '../lib/launchProgressStore';
-import { remoteLog } from '../lib/remoteLog';
+import { newSessionPath } from '../lib/newSessionPath';
 import { usePluginActions } from '../lib/usePluginActions';
 import type { PluginActionRequest } from '../lib/plugins';
 import { PluginActionDialog } from './PluginActionDialog';
@@ -156,16 +152,11 @@ export function CommandPalette() {
   });
   const navigate = useNavigate();
   const location = useLocation();
-  const queryClient = useQueryClient();
   const sessions = useApiStore((s) => s.cachedSessions);
   const projects = useApiStore((s) => s.getProjects);
   const browseDirectories = useApiStore((s) => s.browseDirectories);
   const searchDirectories = useApiStore((s) => s.searchDirectories);
-  const createSession = useApiStore((s) => s.createSession);
-  const launchOpencodeInTmux = useApiStore((s) => s.launchOpencodeInTmux);
-  const seedNewSession = useApiStore((s) => s.seedNewSession);
   const refreshCachedSessions = useApiStore((s) => s.refreshCachedSessions);
-  const tmux = useTmux();
   const launchAllowed = useOpencodeLaunch();
   const openWorktreeForm = useUiStore((s) => s.openWorktreeForm);
   const {
@@ -527,28 +518,12 @@ export function CommandPalette() {
     projectDir: string,
     opts?: { remoteId?: string; platform?: string },
   ) {
-    const progress = useLaunchProgressStore.getState();
-    progress.begin(projectDir);
     closePalette();
     // A project row that carries its owning remote targets that machine;
-    // everything else starts here. The composer can move the first prompt
-    // to another machine that has the project.
-    const remoteId = opts?.remoteId || 'local';
-    const chosenPlatform = opts?.platform || (opts?.remoteId ? '' : 'opencode');
-    void createSessionWithLaunch(
-      { createSession, launchOpencodeInTmux, tmuxAvailable: tmux.available },
-      { directory: projectDir, platform: chosenPlatform || undefined, remoteId, progressStarted: true },
-    ).then((res) => {
-      if (res.id) {
-        seedNewSession(res.id, res.directory ?? projectDir, chosenPlatform, undefined, remoteId);
-        void queryClient.invalidateQueries({ queryKey: ['projects'] });
-        void queryClient.invalidateQueries({ queryKey: ['sessions'] });
-        navigate(`/session/${res.id}`);
-      }
-    }).catch((err) => {
-      progress.fail(err instanceof Error ? err.message : String(err));
-      remoteLog.error('Failed to create session', err);
-    });
+    // everything else starts here. Nothing is created yet: the composer
+    // can still move the first prompt to another machine that has the
+    // project, or into a fresh worktree.
+    navigate(newSessionPath({ directory: projectDir, remoteId: opts?.remoteId || 'local', platform: opts?.platform }));
   }
 
   function handleSelect(item: ResultItem) {

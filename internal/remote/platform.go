@@ -233,6 +233,16 @@ func (p *remotePlatform) SessionModels(ctx context.Context, sessionID string) (*
 	}, &platforms.SessionModelsResponse{})
 }
 
+func (p *remotePlatform) DirectoryCatalog(ctx context.Context, req platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, error) {
+	b, err := marshalJSON(req)
+	if err != nil {
+		return nil, err
+	}
+	return jsonCall(ctx, p, func(c pb.OcmanClient) (*pb.JsonResp, error) {
+		return c.DirectoryCatalog(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: b})
+	}, &platforms.DirectoryCatalog{})
+}
+
 func (p *remotePlatform) ListPermissions(ctx context.Context, sessionID string) ([]platforms.LivePrompt, error) {
 	return sliceCall[platforms.LivePrompt](p, func(c pb.OcmanClient) (*pb.JsonResp, error) {
 		return c.ListPermissions(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})

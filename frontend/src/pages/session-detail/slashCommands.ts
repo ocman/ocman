@@ -7,12 +7,11 @@
 import type { MutableRefObject } from 'react';
 import { flushSync } from 'react-dom';
 import { api, type Message, type Part, type PlatformCapabilities } from '../../lib/api';
-import { createSessionWithLaunch } from '../../lib/createSessionWithLaunch';
+import { newSessionPath } from '../../lib/newSessionPath';
 import { useApiStore } from '../../lib/apiStore';
 import { useUiStore } from '../../lib/uiStore';
 import { copyTextToClipboard, copyToClipboard } from '../../lib/clipboard';
 import { remoteLog } from '../../lib/remoteLog';
-import { projectRootForDirectory } from '../../lib/worktrees';
 import { downloadSessionMarkdown, serializeSessionMarkdown } from '../../lib/exportMarkdown';
 import type { UsePendingSendResult } from './usePendingSend';
 
@@ -29,15 +28,11 @@ export interface CommandContext {
   session: CommandSession;
   portAvailable: boolean;
   caps: Pick<PlatformCapabilities, 'fork' | 'move'>;
-  tmuxAvailable: boolean;
   pending: UsePendingSendResult;
   recentSessionsRef: MutableRefObject<Array<{ id: string }>>;
   messagesRef: MutableRefObject<Message[]>;
   partsRef: MutableRefObject<Part[]>;
   archiveSession: (platform: string, id: string, timeUpdated: number, archive: boolean) => Promise<unknown>;
-  createSession: (directory: string, platform?: string, title?: string) => Promise<{ id: string }>;
-  launchOpencodeInTmux: (directory: string, remoteId?: string) => Promise<{ session: string }>;
-  seedNewSession: (id: string, directory: string, platform: string, title?: string, remoteId?: string) => void;
   navigate: (to: string) => void;
   navigateToSession: (id: string) => void;
   openWorktreeForm: (opts: { projectDir: string; branch?: string; parentSessionId?: string; remoteId?: string }) => void;
@@ -232,39 +227,19 @@ const newSession: SlashCommand = {
   run: ({ handleNewSession }, args) => handleNewSession(args.trim() || undefined),
 };
 
+// Archive, then open a new conversation in the same place; the session
+// itself is created by the first prompt.
 const clear: SlashCommand = {
   live: true,
-  run: async (ctx, args) => {
-    const { session, createSession, launchOpencodeInTmux, tmuxAvailable, archiveSession, seedNewSession, navigateToSession } = ctx;
-    let newId: string | undefined;
-    let newDirectory = session.directory;
-    const clearTitle = args.trim() || undefined;
-    try {
-      const res = await createSessionWithLaunch(
-        { createSession, launchOpencodeInTmux, tmuxAvailable },
-        {
-          directory: session.directory,
-          fallbackDirectory: projectRootForDirectory(session.directory),
-          platform: session.platform,
-          remoteId: session.remoteId,
-          title: clearTitle,
-        },
-      );
-      newId = res.id;
-      newDirectory = res.directory ?? session.directory;
-    } catch (e) {
-      remoteLog.error('Failed to create session', e);
-      return;
-    }
+  run: async ({ session, archiveSession, navigate }, args) => {
     try {
       await archiveSession(session.platform, session.id, session.timeUpdated, true);
     } catch (e) {
       remoteLog.error('Failed to archive session', e);
     }
-    if (newId) {
-      seedNewSession(newId, newDirectory, session.platform, clearTitle, session.remoteId);
-      navigateToSession(newId);
-    }
+    navigate(newSessionPath({
+      directory: session.directory, remoteId: session.remoteId, platform: session.platform, title: args.trim() || undefined,
+    }));
   },
 };
 

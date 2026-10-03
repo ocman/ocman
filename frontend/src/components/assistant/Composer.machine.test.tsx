@@ -13,7 +13,7 @@ function WithShortcuts(props: React.ComponentProps<typeof Composer>) {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 const target = { remoteId: 'box', remoteName: 'Build box', platform: 'r-box:opencode', dir: '/remote/project' };
 
-it('switches a new conversation with its current draft and locks sending during launch', async () => {
+it('switches a new conversation, keeping its typed draft, and locks sending during the switch', async () => {
   vi.spyOn(api, 'resolveTargets').mockResolvedValue({ candidates: [target], remotes: [target] });
   vi.spyOn(api, 'gitBranches').mockResolvedValue({ branches: [] });
   let complete!: () => void;
@@ -22,7 +22,9 @@ it('switches a new conversation with its current draft and locks sending during 
   const input = screen.getByRole('textbox');
   fireEvent.input(input, { target: { value: 'a draft just typed' } });
   fireEvent.change(await screen.findByRole('combobox', { name: 'Session machine' }), { target: { value: 'box' } });
-  expect(onMachineChange).toHaveBeenCalledWith(target, 'a draft just typed');
+  expect(onMachineChange).toHaveBeenCalledWith(target);
+  // The composer stays mounted across the switch, so the text survives.
+  expect(input).toHaveValue('a draft just typed');
   expect(input).toBeDisabled();
   expect(screen.getByRole('combobox', { name: 'Session machine' })).toBeDisabled();
   await act(async () => complete());

@@ -1406,6 +1406,53 @@ export interface ResolveTargetsResponse {
   remotes: TargetCandidate[];
 }
 
+/** Where a new conversation will live once its first prompt is sent. */
+export interface NewSessionTarget {
+  directory: string;
+  /** Platform id of the owning machine's adapter (compound for remotes); empty = auto. */
+  platform?: string;
+}
+
+/** Response from POST /api/sessions/prepare: the composer catalog for a directory without a session. */
+export interface PrepareSessionResponse {
+  platform: string;
+  agents: AgentInfo[];
+  commands: SlashCommand[];
+  models: SessionModelsResponse;
+  defaultAgent?: string;
+  defaultModel?: string;
+  projectDefaultModel?: string;
+  liveConnection: boolean;
+}
+
+/** Request body for POST /api/sessions/start. */
+export interface StartSessionRequest extends NewSessionTarget {
+  /** Create the session in a fresh automatically named worktree. */
+  worktree?: boolean;
+  title?: string;
+  /** First submission text; names an automatic worktree. */
+  prompt?: string;
+  /** First prompt, delivered server-side. Omit for commands the client runs itself. */
+  send?: {
+    message: string;
+    images?: { url: string; mime: string }[];
+    model?: string;
+    agent?: string;
+    reasoning?: string;
+  };
+}
+
+export interface StartSessionResponse {
+  sessionId: string;
+  platform: string;
+  remoteId: string;
+  directory: string;
+  worktreePath?: string;
+  branch?: string;
+  firstMessageSent: boolean;
+  firstMessageError: string;
+}
+
 /** This instance's own remote-access surface (GET /api/settings/remote-access). */
 export interface RemoteAccessStatus {
   instanceId: string;

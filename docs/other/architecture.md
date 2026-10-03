@@ -448,26 +448,31 @@ flowchart TD
   loading, stale-data, error, and empty-state decisions.
 - **Capability gating.** The UI never branches on platform identity. Features
   toggle via `/api/capabilities`, enforced by a lint script.
-- **New session target.** A new conversation in the main checkout defaults to a
-  new worktree. `WorktreeStart` reads the git-info branch and the owning host's
-  worktree list. Sessions already in a linked worktree keep that selected
-  workspace, even after reload. Prompts, custom slash commands, and shell
-  submissions share target resolution before executing on the returned session;
-  ocman UI/session commands retain their existing handlers. The child opens
-  immediately after creation. Its first submission and any execution failure
-  stay in child-keyed client state, keeping the transcript, approval controls,
-  and explicit retry available while the request is pending or has failed.
-  The worktree is created as `session-<suffix>` and a plain first prompt is
-  delivered by the server inside the same request. Afterwards the host has the
-  `title` agent (its `small_model` or Haiku, in a temporary tool-denied session)
-  title the bare prompt and renames the branch to that slug in place. The
-  session title is left to OpenCode's own first-message titling.
-  Naming failures keep `session-<suffix>` without opening a form. Users can
-  select Current checkout; non-repository directories use it automatically.
-  They can also pick an existing linked worktree, which creates the session there
-  with the parent's inherited permissions (`parentSessionId` on `/api/sessions`).
-  New sessions started from a worktree session (Opt+T, `/new`) open on the main
-  checkout resolved from the owner's worktree list, so every target stays available.
+- **New session target.** A new conversation is a client-only route,
+  `/session/new?dir=…&remoteId=…&platform=…`, until its first prompt: no
+  session, worktree or placeholder exists before that. `NewConversation`
+  calls `POST /api/sessions/prepare`, which ensures the project's instance on
+  the owning machine and returns the directory's agent, command and model
+  catalogs (`Platform.DirectoryCatalog`, routed over gRPC for remotes), and
+  `useWorktreeEligibility` reads the git-info branch and the owner's worktree
+  list to decide whether "New worktree" is offered. The composer's machine and
+  target selectors only change the route, so the draft (stored under the
+  shared `new` key) and selections survive. The first submission calls
+  `POST /api/sessions/start`, which creates the session at the chosen target
+  (an automatically named `session-<suffix>` worktree, or the current
+  checkout), delivers a plain prompt server-side in the same request, and
+  returns the real id; the client then navigates once. Custom slash commands
+  and shell submissions create the session the same way and run on it from
+  the client; ocman built-ins need an existing conversation. A failed first
+  send keeps the text as the new session's draft. Afterwards the host has the
+  `title` agent (its `small_model` or Haiku, in a temporary tool-denied
+  session) title the bare prompt and renames the branch to that slug in
+  place; the session title is left to OpenCode's own first-message titling.
+  Naming failures keep `session-<suffix>`. Non-repository directories and
+  directories already inside a linked worktree use the current checkout.
+  Existing linked worktrees are also selectable. New conversations started
+  from a worktree session open on the owner's main checkout, so every target
+  stays available.
   Composer layout, dialogs, and props live in separate modules.
 - **Read aloud.** Turn-end controls select original final-answer text parts and
   use browser speech synthesis. Opt-in autoplay waits for the idle reconciliation

@@ -43,8 +43,9 @@ type fakePlatform struct {
 	// session is launched without spinning up a real OpenCode).
 	createSessionFn func(req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error)
 	// sessionDetailFn, when non-nil, intercepts Session calls.
-	sessionDetailFn func(id string) (*platforms.SessionDetail, error)
-	sessionModelsFn func() *platforms.SessionModelsResponse
+	sessionDetailFn    func(id string) (*platforms.SessionDetail, error)
+	sessionModelsFn    func() *platforms.SessionModelsResponse
+	directoryCatalogFn func(req platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, error)
 	// proxyEventsFn, when non-nil, intercepts ProxyEvents calls so
 	// SSE-handler tests can drive both the success path (write some
 	// bytes, return nil) and the unreachable path (return
@@ -160,6 +161,13 @@ func (f *fakePlatform) SessionModels(context.Context, string) (*platforms.Sessio
 		return f.sessionModelsFn(), nil
 	}
 	return nil, nil
+}
+
+func (f *fakePlatform) DirectoryCatalog(_ context.Context, req platforms.DirectoryCatalogRequest) (*platforms.DirectoryCatalog, error) {
+	if f.directoryCatalogFn != nil {
+		return f.directoryCatalogFn(req)
+	}
+	return &platforms.DirectoryCatalog{Agents: []platforms.AgentCatalogEntry{}, Commands: []platforms.SlashCommandEntry{}, Models: &platforms.SessionModelsResponse{Models: []platforms.SessionModel{}}}, nil
 }
 
 func (f *fakePlatform) ListPermissions(_ context.Context, sessionID string) ([]platforms.LivePrompt, error) {
