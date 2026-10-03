@@ -74,7 +74,8 @@ sequenceDiagram
   open session re-reads its title on such an event and drops a response that a
   newer title event or fetch has overtaken. The hub keeps each session's events
   in publish order: once one is parked, later ones are parked behind it, and
-  the writer sends buffered events before parked ones. The watcher publishes
+  the writer takes buffered then parked events as one batch under the same
+  lock producers use to decide between buffering and parking. The watcher publishes
   titles one at a time, so an older title is never sent after a newer one.
 - Reconnecting and the slow reconciliation poll recover missed events.
 

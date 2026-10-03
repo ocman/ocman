@@ -99,7 +99,9 @@ func TestBroadcastHubKeepsSessionOrderAcrossBufferAndPark(t *testing.T) {
 			titles = append(titles, p.Patch.Title)
 		}
 	}
-	writeOrdered(sub, collect)
+	for _, ev := range sub.takeBatch() {
+		collect(ev)
+	}
 	// "Old" was the slot freed above; what remains must end on the newest.
 	if len(titles) != 1 || titles[0] != "Newest" {
 		t.Fatalf("titles written = %v, want [Newest]", titles)
@@ -112,9 +114,38 @@ func TestBroadcastHubKeepsSessionOrderAcrossBufferAndPark(t *testing.T) {
 	}
 	srv.broadcastSessionTitle("s1", "B")
 	titles = nil
-	writeOrdered(sub, collect)
+	for _, ev := range sub.takeBatch() {
+		collect(ev)
+	}
 	if len(titles) != 2 || titles[0] != "A" || titles[1] != "B" {
 		t.Fatalf("titles written = %v, want [A B]", titles)
+	}
+
+	// Events published while the writer is still writing a batch: a session
+	// first seen mid-flush gains a buffered A and a parked B. They must still
+	// be written A before B.
+	for len(sub.ch) < cap(sub.ch) {
+		srv.broadcastGlobalEvent("filler", []byte(`{}`))
+	}
+	srv.broadcastSessionTitle("other", "parked")
+	titles = nil
+	for i, ev := range sub.takeBatch() {
+		if i == 0 {
+			for len(sub.ch) < cap(sub.ch)-1 {
+				srv.broadcastGlobalEvent("filler", []byte(`{}`))
+			}
+			srv.broadcastSessionTitle("x", "A") // last free slot
+			srv.broadcastSessionTitle("x", "B") // parked
+		}
+		_ = ev
+	}
+	for _, ev := range sub.takeBatch() {
+		if coalesceKey(ev.event, ev.data) == "ocman.session.changed\x00x" {
+			collect(ev)
+		}
+	}
+	if len(titles) != 2 || titles[0] != "A" || titles[1] != "B" {
+		t.Fatalf("mid-flush titles written = %v, want [A B]", titles)
 	}
 }
 

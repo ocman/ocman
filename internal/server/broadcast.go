@@ -141,44 +141,36 @@ func (h *broadcastHub) broadcast(event string, data []byte) {
 
 // deliver queues ev on the subscriber's buffer, or parks it when it is a
 // coalescing event that doesn't fit. Once a key is parked, later events
-// for it are parked too until the writer drains them: sending one through
-// the buffer instead could overtake the older parked payload. Together
-// with the writer emptying the buffer before draining parked events, this
-// keeps each key's events in publish order.
+// for it are parked too until the writer takes them: sending one through
+// the buffer could overtake the older parked payload. The whole decision
+// runs under s.mu, and the writer takes buffer and parked events as one
+// batch under the same lock (takeBatch), so each key's events reach the
+// client in publish order.
 func (s *broadcastSub) deliver(ev broadcastEvent) {
 	coalescing := coalescingEvents[ev.event]
 	key := ""
 	if coalescing {
 		key = coalesceKey(ev.event, ev.data)
-		s.mu.Lock()
-		_, parked := s.pending[key]
+	}
+	s.mu.Lock()
+	if s.closed {
 		s.mu.Unlock()
-		if parked {
-			s.park(key, ev)
+		return
+	}
+	if _, parked := s.pending[key]; !coalescing || !parked {
+		select {
+		case s.ch <- ev:
+			s.mu.Unlock()
 			return
+		default:
 		}
 	}
-	select {
-	case s.ch <- ev:
-	default:
-		if coalescing {
-			s.park(key, ev)
-			return
-		}
+	if !coalescing {
+		s.mu.Unlock()
 		// Non-coalescing edge event — drop (notify poll backstop).
 		// Logged so a systematic backlog is visible instead of
 		// presenting as unexplained lag (#490).
 		log.WithField("event", ev.event).Debug("global SSE: dropped event for slow subscriber")
-	}
-}
-
-// park stores the latest coalesced event for a key and signals the
-// writer. A newer payload overwrites an older pending one (last-write-
-// wins), so a burst collapses to a single freshest snapshot.
-func (s *broadcastSub) park(key string, ev broadcastEvent) {
-	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
 		return
 	}
 	if old, ok := s.pending[key]; ok && ev.event == "ocman.session.changed" {
@@ -225,22 +217,22 @@ func mergeSessionPatches(older, newer []byte) []byte {
 	return out
 }
 
-// writeOrdered writes what is buffered, then what is parked. Only the
-// events buffered at entry are needed: while a key is parked, no newer
-// event for it enters the buffer (see deliver). Returns false once the
-// subscription is closed.
-func writeOrdered(sub *broadcastSub, write func(broadcastEvent)) bool {
-	for n := len(sub.ch); n > 0; n-- {
-		ev, open := <-sub.ch
-		if !open {
-			return false
-		}
-		write(ev)
+// takeBatch atomically removes everything buffered, then everything
+// parked, in that order. Buffered events for a key are always older than
+// its parked one, and no producer can interleave while the batch is taken.
+// The caller writes the batch outside the lock.
+func (s *broadcastSub) takeBatch() []broadcastEvent {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var batch []broadcastEvent
+	for n := len(s.ch); n > 0; n-- {
+		batch = append(batch, <-s.ch)
 	}
-	for _, ev := range sub.drainPending() {
-		write(ev)
+	for k, ev := range s.pending {
+		batch = append(batch, ev)
+		delete(s.pending, k)
 	}
-	return true
+	return batch
 }
 
 // drainPending returns and clears the subscriber's pending coalesced
@@ -458,10 +450,8 @@ func (s *Server) handleGlobalEvents(w http.ResponseWriter, r *http.Request) {
 			// flush the freshest snapshot per key so state (e.g. the queue
 			// list) is never lost under load. Buffered events are older than
 			// any parked one for the same key, so write them first.
-			if !writeOrdered(sub, func(ev broadcastEvent) {
+			for _, ev := range sub.takeBatch() {
 				autoapprove.WriteSSEEvent(w, flusher.Flush, ev.event, ev.data)
-			}) {
-				return
 			}
 		case ev, open := <-sub.ch:
 			if !open {
