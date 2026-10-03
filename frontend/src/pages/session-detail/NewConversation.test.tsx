@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComposerProps } from '../../components/assistant/composerTypes';
 import { clearDraft, getDraft, saveDraft } from '../../lib/composerDraft';
 import { useLaunchProgressStore } from '../../lib/launchProgressStore';
+import { listFailedSends, clearFailedSends } from '../../lib/failedSends';
+import { useFirstSubmission } from './firstSubmission';
 
 const mocks = vi.hoisted(() => ({
   prepare: vi.fn(), start: vi.fn(), info: vi.fn(), worktrees: vi.fn(), post: vi.fn(), seed: vi.fn(),
@@ -43,6 +45,8 @@ describe('NewConversation', () => {
     vi.clearAllMocks();
     clearDraft('new');
     clearDraft('child');
+    clearFailedSends('s2');
+    useFirstSubmission.setState({ entries: {} });
     window.localStorage.removeItem('ocman.projectModels.v1');
     mocks.prepare.mockResolvedValue({
       platform: 'r-machine:opencode', liveConnection: true, defaultAgent: 'plan', defaultModel: 'prov/default',
@@ -82,12 +86,12 @@ describe('NewConversation', () => {
     await waitFor(() => expect(composer.agentsLoaded).toBe(true));
   });
 
-  it('keeps a failed custom command as the real session’s draft', async () => {
+  it('keeps a failed custom command as child-keyed retry state', async () => {
     mocks.post.mockRejectedValueOnce(new Error('command offline'));
     mount();
     await waitFor(() => expect(composer.disabled).toBe(false));
     await act(() => composer.onCommand!('review', 'main'));
-    await waitFor(() => expect(getDraft('child')).toBe('/review main'));
+    await waitFor(() => expect(useFirstSubmission.getState().entries.child).toMatchObject({ text: '/review main', error: 'command offline' }));
     expect(navigateToSession).toHaveBeenCalledWith('child');
   });
 
@@ -107,6 +111,17 @@ describe('NewConversation', () => {
     expect(composer.sessionId).toBeUndefined();
     expect(composer.draftKey).toBe('new');
     expect(mocks.start).not.toHaveBeenCalled();
+  });
+
+  it('does not overwrite a deliberate model or agent selection with a delayed catalog', async () => {
+    let finish!: (catalog: unknown) => void;
+    mocks.prepare.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    mount();
+    act(() => composer.onModelChange!('p/manual'));
+    act(() => composer.onAgentChange!('plan'));
+    await act(async () => finish({ platform: 'r-machine:opencode', agents: [], commands: [], models: { models: [] }, projectDefaultModel: 'p/configured' }));
+    expect(composer.selectedModel).toBe('p/manual');
+    expect(composer.selectedAgent).toBe('plan');
   });
 
   it('creates the session at the target with the first prompt and moves there', async () => {
@@ -129,14 +144,15 @@ describe('NewConversation', () => {
     expect(getDraft('child')).toBe('');
   });
 
-  it('honours the current-checkout target and keeps an unsent prompt as the session draft', async () => {
+  it('honours the current-checkout target and preserves an unsent prompt for retry', async () => {
     mocks.start.mockResolvedValue({ sessionId: 's2', platform: 'r-machine:opencode', remoteId: 'machine', directory: '/repo', firstMessageSent: false, firstMessageError: 'boom' });
     mount();
     await waitFor(() => expect(composer.disabled).toBe(false));
     act(() => composer.onTargetChange!('current'));
+    act(() => composer.onReasoningChange!('high'));
     await act(() => composer.onSend!('Fix login'));
     expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ worktree: false }));
-    expect(getDraft('s2')).toBe('Fix login');
+    expect(listFailedSends('s2')).toEqual([expect.objectContaining({ text: 'Fix login', error: 'boom', reasoning: 'high' })]);
     expect(navigateToSession).toHaveBeenCalledWith('s2');
   });
 
@@ -154,13 +170,14 @@ describe('NewConversation', () => {
   });
 
   it('cannot start in a worktree from a linked worktree or a non-repository', async () => {
+    mocks.prepare.mockResolvedValue({ platform: 'opencode', agents: [], commands: [], models: { models: [] }, liveConnection: true });
     mocks.worktrees.mockResolvedValue({ worktrees: [{ path: '/repo', branch: 'main', main: true }, { path: '/wt/feat', branch: 'feat' }] });
     mount({ directory: '/wt/feat/sub', remoteId: 'local', platform: undefined });
     await waitFor(() => expect(composer.disabled).toBe(false));
     expect(composer.worktreesSupported).toBe(false);
     expect(composer.target).toBe('current');
     await act(() => composer.onSend!('hi'));
-    expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ worktree: false, platform: undefined }));
+    expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ worktree: false, platform: 'opencode' }));
   });
 
   it('runs a platform command on the new session itself, and surfaces start failures', async () => {

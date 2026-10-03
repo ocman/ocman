@@ -455,16 +455,23 @@ flowchart TD
   the owning machine and returns the directory's agent, command and model
   catalogs (`Platform.DirectoryCatalog`, routed over gRPC for remotes), and
   `useWorktreeEligibility` reads the git-info branch and the owner's worktree
-  list to decide whether "New worktree" is offered. The composer's machine and
-  target selectors only change the route, so the draft (stored under the
-  shared `new` key) and selections survive. The first submission calls
+  list to decide whether "New worktree" is offered. The machine selector
+  re-points the route; the target selector changes client state. Neither
+  creates a session, and the draft survives under the shared `new` key.
+  The first submission calls
   `POST /api/sessions/start`, which creates the session at the chosen target
   (an automatically named `session-<suffix>` worktree, or the current
   checkout), delivers a plain prompt server-side in the same request, and
   returns the real id; the client then navigates once. Custom slash commands
   and shell submissions create the session the same way and run on it from
   the client; ocman built-ins need an existing conversation. A failed first
-  send keeps the text as the new session's draft. Afterwards the host has the
+  send retains text, images, selections and error in the existing failed-send
+  recovery path. Non-image files are retained until creation, uploaded to
+  the real session, then sent; file/command/shell execution lives in
+  child-keyed retry state, independently of the child's draft. Uncertain
+  creation is never automatically replayed, and a late completion cannot
+  override a newer route or clear its draft. Prepare/start preserve the
+  localhost host-control guard. Afterwards the host has the
   `title` agent (its `small_model` or Haiku, in a temporary tool-denied
   session) title the bare prompt and renames the branch to that slug in
   place; the session title is left to OpenCode's own first-message titling.

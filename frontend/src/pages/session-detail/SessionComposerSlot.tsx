@@ -4,6 +4,7 @@ import { PermissionPrompt } from '../../components/session/PermissionPrompt';
 import { QuestionPrompt } from '../../components/session/QuestionPrompt';
 import { FactoryPlanApproval } from '../../components/FactoryPlanApproval';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
+import { FirstSubmissionNotice } from './FirstSubmissionNotice';
 
 export interface SessionComposerSlotProps {
   sessionId: string;
@@ -56,7 +57,10 @@ export function SessionComposerSlot({
       ) : question ? (
         <QuestionPrompt {...question} />
       ) : composer ? (
-        <Composer {...composer} />
+        <>
+          <FirstSubmissionNotice sessionId={sessionId} />
+          <Composer {...composer} />
+        </>
       ) : null}
     </ErrorBoundary>
   );

@@ -173,7 +173,7 @@ describe('Composer input', () => {
     fireEvent.keyDown(input, { key: 'Enter', ...modifiers });
     await act(async () => {});
 
-    expect(onSend).toHaveBeenCalledWith('follow up', undefined, expected);
+    expect(onSend).toHaveBeenCalledWith('follow up', undefined, expected, undefined);
   });
 
   // The textarea is disabled while sending, and a real browser blurs a

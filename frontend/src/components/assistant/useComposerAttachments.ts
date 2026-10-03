@@ -12,6 +12,8 @@ export interface AttachedFileRef {
   path: string;
   name: string;
   mime: string;
+  /** No session exists yet; retain the browser file until the first start. */
+  file?: File;
 }
 
 function readFileAsDataURL(file: File): Promise<string> {
@@ -52,7 +54,10 @@ export function useComposerAttachments(sessionIdRef: MutableRefObject<string | u
       const otherFiles = all.filter((f) => !f.type.startsWith('image/'));
       if (otherFiles.length === 0) return;
       const sid = sessionIdRef.current;
-      if (!sid) return;
+      if (!sid) {
+        setFiles((prev) => [...prev, ...otherFiles.map((file) => ({ path: '', name: file.name, mime: file.type || 'application/octet-stream', file }))]);
+        return;
+      }
       const newFiles: AttachedFileRef[] = [];
       for (const file of otherFiles) {
         try {
@@ -107,9 +112,11 @@ export function useComposerAttachments(sessionIdRef: MutableRefObject<string | u
   }, [disabled, addFiles]);
 
   /** Prompt suffix listing on-disk attachments, or ''. */
-  const fileReferenceText = files.length > 0
-    ? `Attached files saved on disk:\n${files.map((f) => `- ${f.path} (${f.mime})`).join('\n')}`
+  const uploaded = files.filter((file) => !file.file);
+  const fileReferenceText = uploaded.length > 0
+    ? `Attached files saved on disk:\n${uploaded.map((f) => `- ${f.path} (${f.mime})`).join('\n')}`
     : '';
 
-  return { images, files, pending, addFiles, removeImage, removeFile, clear, handlePaste, handleDragOver, handleDrop, fileReferenceText };
+  const deferredFiles = files.flatMap((file) => file.file ? [file.file] : []);
+  return { images, files, deferredFiles, pending, addFiles, removeImage, removeFile, clear, handlePaste, handleDragOver, handleDrop, fileReferenceText };
 }

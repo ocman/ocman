@@ -31,8 +31,14 @@ directory on the project's instance; a plain prompt is delivered server-side
 in the same request (`firstMessageSent` / `firstMessageError`), custom slash
 commands and shell submissions are run by the client on the returned session,
 and ocman built-ins need an existing conversation. A failed first send keeps
-the text as the new session's draft. The owner then names the worktree in the
-background: OpenCode's `title` agent (its `small_model` or Haiku) titles the
+the complete payload (text, images and selections) in `failedSends` for the
+real session's retry controls. Non-image files stay as browser Files until
+creation, then upload before the first send; upload/delivery failures and
+command/shell failures live in child-keyed `firstSubmission` state with a
+visible retry, without overwriting the child's draft. Start transport failures
+are never automatically replayed, and completion only navigates/clears the
+initiating draft while that route generation is still active. The owner then
+names the worktree in the background: OpenCode's `title` agent (its `small_model` or Haiku) titles the
 bare prompt and the title is slugged into the branch (`git branch -m`, the path
 stays). The session keeps OpenCode's default title so OpenCode titles it from
 the first message; the branch name is never used as the title. A naming

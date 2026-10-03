@@ -151,7 +151,7 @@ export function Composer({
       try {
         const submitted = execute();
         if (submitted) await submitted;
-        clearAfterSubmit();
+        if (mountedRef.current) clearAfterSubmit();
         break;
       } catch (err) {
         if (!retryBackend || !(err instanceof BackendUnavailableError) || retries >= MAX_BACKEND_RETRIES) break;
@@ -193,7 +193,8 @@ export function Composer({
       void runSubmit(() => onShell(route.command));
     } else {
       const text = route.kind === 'send' ? route.text : route.kind === 'noop' ? '' : raw.trim();
-      void runSubmit(() => onSend?.(withFileReferences(text), images.length > 0 ? images : undefined, queue), true);
+      void runSubmit(() => onSend?.(withFileReferences(text), images.length > 0 ? images : undefined, queue,
+        attachments.deferredFiles.length > 0 ? attachments.deferredFiles : undefined), true);
     }
   };
 
@@ -302,7 +303,7 @@ export function Composer({
               <button type="button" className="oc-composer-image-remove" title={`Remove image attachment ${i + 1}`}
                 aria-label={`Remove image attachment ${i + 1}`} onClick={() => attachments.removeImage(i)}>{'\u00D7'}</button>
             </div>)}
-            {files.map((file, i) => <div key={file.path} className="oc-composer-file-thumb" title={file.path}>
+            {files.map((file, i) => <div key={`${file.path || file.name}:${i}`} className="oc-composer-file-thumb" title={file.path || file.name}>
               <span className="oc-composer-file-icon">file</span><span className="oc-composer-file-name">{file.name}</span>
               <button type="button" className="oc-composer-image-remove" title={`Remove attached file ${file.name}, attachment ${i + 1}`}
                 aria-label={`Remove attached file ${file.name}, attachment ${i + 1}`} onClick={() => attachments.removeFile(i)}>{'\u00D7'}</button>

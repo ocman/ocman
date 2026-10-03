@@ -8,7 +8,8 @@ import { api, postJSON, type PrepareSessionResponse, type StartSessionRequest } 
 import type { TargetCandidate } from '../../lib/api.types';
 import { useApiStore } from '../../lib/apiStore';
 import { BUILTIN_COMMANDS } from '../../lib/commands/builtinCommands';
-import { clearDraft, saveDraft } from '../../lib/composerDraft';
+import { clearDraft } from '../../lib/composerDraft';
+import { recordFailedSend } from '../../lib/failedSends';
 import { launchProgressReporter } from '../../lib/launchProgressStore';
 import { NEW_SESSION_ID, newSessionPath, type NewSessionParams } from '../../lib/newSessionPath';
 import { getProjectModel, saveProjectModel } from '../../lib/projectModel';
@@ -22,6 +23,8 @@ import type { AttachedImage } from '../../components/assistant/useComposerAttach
 import type { SessionTarget } from '../../components/assistant/ComposerSelectorRow';
 import { InlineAlert } from '../../components/InlineAlert';
 import { useWorktreeEligibility } from './useWorktreeEligibility';
+import { startFirstSubmission } from './firstSubmission';
+import { sendFirstFiles } from './sendFirstFiles';
 
 export interface NewConversationProps {
   params: NewSessionParams;
@@ -67,16 +70,23 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
   const [target, setTarget] = useState<SessionTarget>('worktree');
   const [error, setError] = useState('');
   const inFlight = useRef(false);
+  const active = useRef(false);
+  const generation = useRef(0);
+  useEffect(() => {
+    generation.current++;
+    active.current = true;
+    return () => { active.current = false; };
+  }, [directory, remoteId, params.platform, title]);
 
   // Same precedence as an existing empty session: project setting, then
   // the last pick in this project, then the directory's most recent model.
   const activeModel = catalog?.projectDefaultModel || getProjectModel(directory) || catalog?.defaultModel || '';
   const seeded = useRef<string>('');
   useEffect(() => {
-    if (!activeModel || seeded.current === directory) return;
+    if (!catalog || !activeModel || seeded.current === directory) return;
     seeded.current = directory;
     setSelectedModel(activeModel);
-  }, [activeModel, directory]);
+  }, [activeModel, directory, catalog]);
 
   const models = useMemo(() => {
     const entries = catalog?.models.models ?? [];
@@ -85,15 +95,17 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
   const agents = useMemo(() => catalog?.agents ?? [], [catalog]);
 
   const handleModelChange = useCallback((model: string) => {
+    seeded.current = directory;
     setSelectedModel(model);
     setSelectedReasoning('');
     saveProjectModel(directory, model);
   }, [directory]);
   const handleAgentChange = useCallback((agent: string) => {
+    seeded.current = directory;
     setSelectedAgent(agent);
     const agentModel = agentModelRef(agents.find((a) => a.name === agent));
     if (agentModel) { setSelectedModel(agentModel); setSelectedReasoning(''); }
-  }, [agents]);
+  }, [agents, directory]);
   const handleToggleFavorite = useCallback(async (provider: string, model: string, next: boolean) => {
     if (!platform) return;
     try {
@@ -108,50 +120,56 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
   const effectiveAgent = selectedAgent || catalog?.defaultAgent || '';
 
   // Create the session at the target, then either the server has sent the
-  // prompt or the client runs `execute` on the new session. A send failure
-  // keeps the text as the new session's draft so nothing is lost.
+  // prompt or the client runs `execute` on the new session. Failures stay
+  // retryable on that session, independently of the next composer draft.
   const start = useCallback(async (
     text: string,
     send: StartSessionRequest['send'] | undefined,
     execute?: (sessionId: string, platform: string) => Promise<void>,
   ) => {
     if (inFlight.current) return;
+    const sourceGeneration = generation.current;
+    const stillCurrent = () => active.current && generation.current === sourceGeneration;
     inFlight.current = true;
     setError('');
     try {
       const res = await api.startSession({
         directory: target.startsWith('dir:') ? target.slice(4) : directory,
-        platform: params.platform, title, prompt: text, send,
+        platform, title, prompt: text, send,
         worktree: canWorktree && target === 'worktree',
       });
       if (!res.sessionId) throw new Error('Session creation returned no session');
       // No title: OpenCode titles the session from its first message.
       seedNewSession(res.sessionId, res.directory, res.platform, title, res.remoteId);
       if (send && !res.firstMessageSent) {
-        remoteLog.error('First message was not sent', res.firstMessageError);
-        saveDraft(res.sessionId, text);
-      }
-      navigateToSession(res.sessionId);
-      // The composer unmounted during navigation and flushed its text as
-      // the shared new-conversation draft; that text now belongs to the session.
-      clearDraft(NEW_SESSION_ID);
-      if (execute) {
-        execute(res.sessionId, res.platform).catch((err) => {
-          remoteLog.error('First submission failed', err);
-          saveDraft(res.sessionId, text);
+        recordFailedSend(res.sessionId, {
+          id: crypto.randomUUID(), text, images: send.images, model: send.model, agent: send.agent, reasoning: send.reasoning,
+          error: res.firstMessageError || 'First message was not sent.', failedAt: Date.now(),
         });
       }
+      if (execute) {
+        startFirstSubmission(res.sessionId, text, () => execute(res.sessionId, res.platform));
+      }
+      if (stillCurrent()) {
+        navigateToSession(res.sessionId);
+        // Only the initiating draft may be cleared, never a newer route's draft.
+        clearDraft(NEW_SESSION_ID);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      throw err;
+      const message = err instanceof Error ? err.message : String(err);
+      if (stillCurrent()) setError(message);
+      // Creation is non-idempotent: a lost response must never enter the
+      // existing Composer's BackendUnavailableError automatic replay loop.
+      throw new Error(message);
     } finally {
       inFlight.current = false;
     }
-  }, [directory, params.platform, title, canWorktree, target, seedNewSession, navigateToSession]);
+  }, [directory, platform, title, canWorktree, target, seedNewSession, navigateToSession]);
 
-  const onSend = (text: string, images?: AttachedImage[]) => start(text, {
-    message: text, images, model: selectedModel, agent: effectiveAgent || undefined, reasoning: selectedReasoning || undefined,
-  });
+  const onSend = (text: string, images?: AttachedImage[], _queue?: boolean, files?: File[]) => {
+    const send = { message: text, images, model: selectedModel, agent: effectiveAgent || undefined, reasoning: selectedReasoning || undefined };
+    return files?.length ? start(text, undefined, sendFirstFiles(send, files)) : start(text, send);
+  };
 
   const onCommand = (command: string, args: string) => {
     if (command === 'wt' || command === 'worktree') {
@@ -171,8 +189,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
     postJSON<void>(`/api/session/${encodeURIComponent(id)}/shell?platform=${encodeURIComponent(sessionPlatform)}`,
       { command, agent: effectiveAgent }, { parseJSON: false }));
 
-  // Switching machines only re-points the route: the composer stays
-  // mounted, so the draft and selections survive.
+  // Switching machines only re-points the route; the shared draft survives.
   const onMachineChange = async (machine: TargetCandidate) => {
     navigate(newSessionPath({ directory: machine.dir, remoteId: machine.remoteId, platform: machine.platform, title }));
   };
@@ -183,6 +200,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
       {eligibility.error && <InlineAlert onRetry={eligibility.retry}>{eligibility.error}</InlineAlert>}
       {error && <InlineAlert>{error}</InlineAlert>}
       <Composer
+        key={`${remoteId}:${directory}:${params.platform}:${title}`}
         composerRef={composerRef}
         onSend={onSend}
         onCommand={onCommand}

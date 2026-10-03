@@ -11,7 +11,7 @@ export interface ComposerHandle {
 
 export interface ComposerProps {
   /** Ctrl/Cmd+Enter holds the prompt for the next idle edge. */
-  onSend?: (text: string, images?: AttachedImage[], queue?: boolean) => void | Promise<void>;
+  onSend?: (text: string, images?: AttachedImage[], queue?: boolean, files?: File[]) => void | Promise<void>;
   onRetryChange?: (delaySeconds: number | null) => void;
   onCommand?: (command: string, args: string) => void | Promise<void>;
   /** Shell commands arrive with the leading ! removed. */
