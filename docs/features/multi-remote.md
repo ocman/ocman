@@ -101,10 +101,10 @@ list with its host badge.
 - **Open and drive.** Click any remote session to stream its transcript and
   use the composer, permission replies, abort and compact. These route to the
   owning remote and run there.
-- **New session.** When you start a session for a project, the hub looks up
-  which machines already have that project checked out. On exactly one
-  machine it starts there automatically; on several it asks you to pick; on
-  none it asks which machine to start on.
+- **New session.** A session started from the project picker opens on the
+  project's own machine (this machine for local projects). Use the
+  composer's machine selector before the first prompt to move it to another
+  machine that has the project.
 - **PRs and issues.** The project sidebar sends the owning `remoteId` for
   upstream detection, lists, checks, identity lookups, branch highlighting,
   and session/worktree launches. Repository work runs on the owner.

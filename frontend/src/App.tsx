@@ -21,7 +21,6 @@ import { onInboxChanged, onProjectsChanged, onSessionChanged } from './lib/useGl
 import { HeaderProvider } from './lib/HeaderProvider';
 import { CommandPalette } from './components/CommandPalette';
 import { WorktreeFormModal } from './components/WorktreeFormModal';
-import { MachinePickerModal } from './components/MachinePickerModal';
 import { AppHeader } from './components/AppHeader';
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -208,7 +207,6 @@ function GlobalHotkeys() {
     <>
       <CommandPalette />
       <WorktreeFormModal />
-      <MachinePickerModal />
       <KeyboardShortcutsDialog open={shortcutsOpen} onClose={closeShortcuts} />
     </>
   );

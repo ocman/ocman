@@ -193,7 +193,8 @@ Host-local
 actions (tmux, worktrees) execute on the owning host. The browser still
 talks REST/SSE to the hub only; the hub re-emits remote gRPC event streams
 as SSE. New-session creation is machine-aware via
-`POST /api/sessions/resolve-targets` + a frontend machine picker. The
+`POST /api/sessions/resolve-targets` + the new-conversation composer's
+machine selector (sessions start on the local machine by default). The
 frontend stays host-agnostic (host badge + capability flags, no
 remote-identity branching; `scripts/check-host-helpers.sh` enforces that
 handlers don't bypass the `Host` seam). User-facing docs:

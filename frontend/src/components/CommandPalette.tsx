@@ -11,7 +11,6 @@ import type { Session, Project, DirectoryBrowseEntry, DirectorySearchEntry } fro
 import { useTmux } from '../lib/useTmux';
 import { createSessionWithLaunch } from '../lib/createSessionWithLaunch';
 import { useLaunchProgressStore } from '../lib/launchProgressStore';
-import { resolveTargetForDir } from '../lib/machinePicker';
 import { remoteLog } from '../lib/remoteLog';
 import { usePluginActions } from '../lib/usePluginActions';
 import type { PluginActionRequest } from '../lib/plugins';
@@ -526,49 +525,26 @@ export function CommandPalette() {
 
   function startSessionInDirectory(
     projectDir: string,
-    opts?: { local?: boolean; remoteId?: string; platform?: string },
+    opts?: { remoteId?: string; platform?: string },
   ) {
     const progress = useLaunchProgressStore.getState();
     progress.begin(projectDir);
     closePalette();
-    // Machine-aware create (multi-remote support, AD-15): ask the hub
-    // which machine should run this project. Auto-resolves silently on
-    // single-host / single-match; prompts when the project lives on
-    // several machines or none. Paths picked from the local filesystem
-    // browser bypass the resolver because they can only live here.
-    // A project row that already carries its owning remote (from the
-    // project list inventory) targets that machine directly.
-    const target = opts?.remoteId
-      ? Promise.resolve({ platform: opts.platform ?? '', remoteId: opts.remoteId })
-      : opts?.local
-        ? Promise.resolve({ platform: 'opencode', remoteId: 'local' })
-        : resolveTargetForDir(projectDir);
-    void target.then((selectedTarget) => {
-      if (selectedTarget === null) {
-        progress.dismiss();
-        return;
+    // A project row that carries its owning remote targets that machine;
+    // everything else starts here. The composer can move the first prompt
+    // to another machine that has the project.
+    const remoteId = opts?.remoteId || 'local';
+    const chosenPlatform = opts?.platform || (opts?.remoteId ? '' : 'opencode');
+    void createSessionWithLaunch(
+      { createSession, launchOpencodeInTmux, tmuxAvailable: tmux.available },
+      { directory: projectDir, platform: chosenPlatform || undefined, remoteId, progressStarted: true },
+    ).then((res) => {
+      if (res.id) {
+        seedNewSession(res.id, res.directory ?? projectDir, chosenPlatform, undefined, remoteId);
+        void queryClient.invalidateQueries({ queryKey: ['projects'] });
+        void queryClient.invalidateQueries({ queryKey: ['sessions'] });
+        navigate(`/session/${res.id}`);
       }
-      // Fall back to inferring the platform from an existing session
-      // when the resolver returned the empty (local-default) sentinel.
-      const chosenPlatform =
-        selectedTarget.platform || sessions?.find((s) => s.directory === projectDir)?.platform || '';
-      return createSessionWithLaunch(
-        {
-          createSession,
-          launchOpencodeInTmux,
-          tmuxAvailable: tmux.available,
-        },
-        { directory: projectDir, platform: chosenPlatform || undefined, remoteId: selectedTarget.remoteId, progressStarted: true },
-      )
-        .then((res) => {
-          if (res.id) {
-            const sessionDir = res.directory ?? projectDir;
-            seedNewSession(res.id, sessionDir, chosenPlatform, undefined, selectedTarget.remoteId);
-            void queryClient.invalidateQueries({ queryKey: ['projects'] });
-            void queryClient.invalidateQueries({ queryKey: ['sessions'] });
-            navigate(`/session/${res.id}`);
-          }
-        });
     }).catch((err) => {
       progress.fail(err instanceof Error ? err.message : String(err));
       remoteLog.error('Failed to create session', err);
@@ -705,7 +681,7 @@ export function CommandPalette() {
               <button
                 type="button"
                 className="oc-cmd-browser-use"
-                onClick={() => startSessionInDirectory(projectBrowser.directory, { local: true })}
+                onClick={() => startSessionInDirectory(projectBrowser.directory)}
               >
                 Use this directory
               </button>
