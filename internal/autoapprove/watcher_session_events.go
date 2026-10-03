@@ -75,15 +75,16 @@ func (w *autoApproveWatcher) handleSessionChanged(ctx context.Context, sessionID
 }
 
 // handleSessionTitle pushes a rename to the UI. The first title seen for a
-// session is only recorded: its first sighting already broadcasts the row.
-// The snapshot is refreshed first so a refetch triggered by the broadcast
-// cannot read the old title back.
+// session is pushed too: the watcher may start after the session was
+// opened, so that first event can itself be a rename. The snapshot is
+// refreshed first so a refetch triggered by the broadcast cannot read the
+// old title back.
 func (w *autoApproveWatcher) handleSessionTitle(ctx context.Context, sessionID, title string) {
 	w.seenMu.Lock()
 	prev, known := w.titles[sessionID]
 	w.titles[sessionID] = title
 	w.seenMu.Unlock()
-	if !known || prev == title || w.svc == nil || w.svc.deps.BroadcastSessionTitle == nil {
+	if (known && prev == title) || w.svc == nil || w.svc.deps.BroadcastSessionTitle == nil {
 		return
 	}
 	go func() {

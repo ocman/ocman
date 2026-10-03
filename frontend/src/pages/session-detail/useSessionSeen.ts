@@ -74,13 +74,35 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
     return () => clearTimeout(timer);
   }, [sessionSeenId, sessionSeenPlatform, sessionSeenUpdated, markSeen, patchSession]);
 
-  // Upstream renames (OpenCode auto-title, TUI /rename, another tab).
+  // Upstream renames (OpenCode auto-title, TUI /rename, another tab). The
+  // hub merges patches for a slow client, but an identity-only change can
+  // still supersede a title patch, so re-read the title on those. Status-only
+  // patches are frequent and never carry a lost title, so they are ignored.
+  const peekSession = useApiStore((state) => state.peekSession);
   useEffect(() => {
     if (!sessionSeenId) return;
-    return onSessionChanged((changedId, _session, patch) => {
-      if (changedId === sessionSeenId && patch?.title) patchSession({ title: patch.title });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const controller = new AbortController();
+    const unsubscribe = onSessionChanged((changedId, _session, patch) => {
+      if (changedId !== sessionSeenId) return;
+      if (patch?.title) {
+        patchSession({ title: patch.title });
+        return;
+      }
+      if (patch || timer !== undefined) return;
+      timer = setTimeout(() => {
+        timer = undefined;
+        peekSession(sessionSeenId, controller.signal)
+          .then(({ session: row }) => { if (row.title) patchSession({ title: row.title }); })
+          .catch((err) => { if (!controller.signal.aborted) remoteLog.error('Failed to refresh session title', err); });
+      }, 250);
     });
-  }, [sessionSeenId, patchSession]);
+    return () => {
+      unsubscribe();
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [sessionSeenId, patchSession, peekSession]);
 
   // Header info.
   useEffect(() => {

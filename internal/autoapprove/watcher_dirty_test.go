@@ -226,8 +226,10 @@ func TestHandleSessionChangedDoesNotBroadcastAfterCancellation(t *testing.T) {
 	}
 }
 
-// TestHandleSessionTitleBroadcastsRenames pins that only a changed title is
-// pushed, after the snapshot refresh, carrying the new title.
+// TestHandleSessionTitleBroadcastsRenames pins that a title is pushed, after
+// the snapshot refresh, whenever it is new to the watcher — including the
+// first one observed, which may be a rename of an already-open session —
+// and never when it is unchanged.
 func TestHandleSessionTitleBroadcastsRenames(t *testing.T) {
 	var refreshed []string
 	broadcast := make(chan string, 4)
@@ -240,21 +242,26 @@ func TestHandleSessionTitleBroadcastsRenames(t *testing.T) {
 		broadcast <- sessionID + "=" + title
 	}
 	w := newAutoApproveWatcher(svc)
-
-	w.handleSessionTitle(t.Context(), "ses-1", "First")  // first sighting: record only
-	w.handleSessionTitle(t.Context(), "ses-1", "First")  // unchanged
-	w.handleSessionTitle(t.Context(), "ses-1", "Second") // rename
-
-	select {
-	case got := <-broadcast:
-		if got != "ses-1=Second" {
-			t.Fatalf("broadcast = %q, want ses-1=Second", got)
+	expect := func(want string) {
+		t.Helper()
+		select {
+		case got := <-broadcast:
+			if got != want {
+				t.Fatalf("broadcast = %q, want %q", got, want)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("timed out waiting for %q", want)
 		}
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for rename broadcast")
 	}
-	if len(refreshed) != 1 {
-		t.Errorf("refreshes = %v, want one before the broadcast", refreshed)
+
+	w.handleSessionTitle(t.Context(), "ses-1", "Renamed in TUI") // first observed
+	expect("ses-1=Renamed in TUI")
+	w.handleSessionTitle(t.Context(), "ses-1", "Renamed in TUI") // unchanged
+	w.handleSessionTitle(t.Context(), "ses-1", "Second")         // rename
+	expect("ses-1=Second")
+
+	if len(refreshed) != 2 {
+		t.Errorf("refreshes = %v, want one before each broadcast", refreshed)
 	}
 	select {
 	case got := <-broadcast:

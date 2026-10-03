@@ -160,12 +160,43 @@ func (s *broadcastSub) park(key string, ev broadcastEvent) {
 		s.mu.Unlock()
 		return
 	}
+	if old, ok := s.pending[key]; ok && ev.event == "ocman.session.changed" {
+		ev.data = mergeSessionPatches(old.data, ev.data)
+	}
 	s.pending[key] = ev
 	s.mu.Unlock()
 	select {
 	case s.wake <- struct{}{}:
 	default:
 	}
+}
+
+// mergeSessionPatches folds an older pending patch into a newer one, so a
+// status patch cannot erase a title patch still waiting for a slow
+// subscriber. Only patch-on-patch merges: an identity-only payload asks the
+// consumer to refetch and must stay that way.
+func mergeSessionPatches(older, newer []byte) []byte {
+	var o, n map[string]json.RawMessage
+	if json.Unmarshal(older, &o) != nil || json.Unmarshal(newer, &n) != nil || o["patch"] == nil || n["patch"] == nil {
+		return newer
+	}
+	var op, np map[string]json.RawMessage
+	if json.Unmarshal(o["patch"], &op) != nil || json.Unmarshal(n["patch"], &np) != nil {
+		return newer
+	}
+	for k, v := range np {
+		op[k] = v
+	}
+	merged, err := json.Marshal(op)
+	if err != nil {
+		return newer
+	}
+	n["patch"] = merged
+	out, err := json.Marshal(n)
+	if err != nil {
+		return newer
+	}
+	return out
 }
 
 // drainPending returns and clears the subscriber's pending coalesced

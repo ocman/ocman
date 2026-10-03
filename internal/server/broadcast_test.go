@@ -45,6 +45,31 @@ func TestBroadcastSessionTitleCarriesPatch(t *testing.T) {
 	}
 }
 
+// A full buffer must not let a later status patch erase a pending title.
+func TestBroadcastHubMergesParkedSessionPatches(t *testing.T) {
+	srv := &Server{broadcastHub: newBroadcastHub()}
+	sub, unsubscribe := srv.broadcastHub.subscribe()
+	defer unsubscribe()
+	for i := 0; i < cap(sub.ch); i++ {
+		srv.broadcastGlobalEvent("filler", []byte(`{}`))
+	}
+
+	srv.broadcastSessionTitle("s1", "Renamed")
+	srv.broadcastSessionStatus("s1", db.StatusBusy)
+	pending := sub.drainPending()
+	if len(pending) != 1 || string(pending[0].data) != `{"patch":{"status":"busy","title":"Renamed"},"sessionID":"s1"}` {
+		t.Fatalf("pending = %+v", pending)
+	}
+
+	// An identity-only event asks for a refetch and is never turned into a patch.
+	srv.broadcastSessionTitle("s1", "Again")
+	srv.broadcastSessionChanged("s1")
+	pending = sub.drainPending()
+	if len(pending) != 1 || string(pending[0].data) != `{"sessionID":"s1"}` {
+		t.Fatalf("pending = %+v", pending)
+	}
+}
+
 func TestBroadcastHubFanOut(t *testing.T) {
 	h := newBroadcastHub()
 

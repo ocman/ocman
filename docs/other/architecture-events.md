@@ -64,6 +64,13 @@ sequenceDiagram
   wait until sent. Failed sends restore the old timestamp unless newer SSE
   activity has arrived. Reorders use a 180 ms native animation and respect
   reduced-motion preferences. Pinned ordering and manual project ordering remain.
+- A changed session title (OpenCode auto-title, a TUI rename, another
+  client) refreshes that session's list row, then broadcasts
+  `ocman.session.changed` with `patch: {title}`. The sidebar and the open
+  session's header apply it in place. For a subscriber that has fallen behind,
+  the hub merges pending patches for a session so a later status patch keeps
+  the title. An identity-only change replaces any pending patch, so the open
+  session re-reads its title when one arrives.
 - Reconnecting and the slow reconciliation poll recover missed events.
 
 Ocman never persists session status. The live turn signal from the running

@@ -85,6 +85,25 @@ describe('useSessionSeen', () => {
     expect(changedListeners.size).toBe(0);
   });
 
+  it('re-reads the title when an identity-only change may have superseded a rename', async () => {
+    vi.useFakeTimers();
+    const peekSession = vi.fn(async () => ({ session: { ...session, title: 'Renamed' } }));
+    useApiStore.setState({ peekSession } as never);
+    const patchSession = vi.fn();
+    const { unmount } = renderHook(() => useSessionSeen({ session, patchSession }), { wrapper });
+    patchSession.mockClear();
+    for (const cb of changedListeners) {
+      cb('s1', undefined, { status: 'busy' } as never); // status-only: no fetch
+      cb('s1');
+      cb('s1'); // coalesced into one fetch
+    }
+    await act(async () => vi.advanceTimersByTime(250));
+    expect(peekSession).toHaveBeenCalledTimes(1);
+    expect(peekSession).toHaveBeenCalledWith('s1', expect.any(AbortSignal));
+    expect(patchSession).toHaveBeenCalledWith({ title: 'Renamed' });
+    unmount();
+  });
+
   it('does nothing until the session has loaded', () => {
     renderHook(() => useSessionSeen({ session: null, patchSession: vi.fn() }), { wrapper });
     expect(markSessionSeen).not.toHaveBeenCalled();
