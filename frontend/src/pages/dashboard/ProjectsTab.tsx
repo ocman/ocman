@@ -5,6 +5,7 @@ import { ProjectLabel } from '../../components/ProjectLabel';
 import { usePageTitle } from '../../lib/headerContext';
 import { GettingStartedEmpty } from '../../components/GettingStartedEmpty';
 import { matchesScope } from '../../lib/projectTree';
+import { groupProjects } from '../../lib/projectIdentity';
 import { useUiStore } from '../../lib/uiStore';
 import { useDashboard as useDashboardCtx } from './context';
 import { DashboardToolbar } from './DashboardToolbar';
@@ -29,12 +30,12 @@ export function ProjectsTab() {
   // active scope. matchesScope mirrors the SQL predicate used by the
   // backend (see spec/stats-project-filter/architecture.md, AD-7).
   const q = search.trim();
-  const visibleProjects = projects
+  const visibleProjects = groupProjects(projects
     // Remote projects carry no session aggregates (inventory-only), so
     // don't drop them on the sessionCount>0 gate that hides empty locals.
     .filter((p) => p.remoteId || p.sessionCount > 0)
     .filter((p) => matchesScope(p.directory, dirScope))
-    .filter((p) => !q || fuzzyMatch(q, p.directory));
+    .filter((p) => !q || fuzzyMatch(q, p.directory)));
 
   if (projectsLoading && projects.length === 0) {
     return <LoadingState>Loading projects...</LoadingState>;

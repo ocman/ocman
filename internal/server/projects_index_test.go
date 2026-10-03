@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -129,7 +130,7 @@ func TestLoadProjectsIndexCache(t *testing.T) {
 
 	srv.loadProjectsIndexCache(t.Context())
 	projects, loaded, dirty := srv.projectsSnapshotState()
-	if !loaded || !dirty || len(projects) != 1 || projects[0] != want[0] {
+	if !loaded || !dirty || len(projects) != 1 || !reflect.DeepEqual(projects[0], want[0]) {
 		t.Fatalf("loaded=%v dirty=%v projects=%#v", loaded, dirty, projects)
 	}
 	if !srv.projects.refreshedAt.Equal(refreshedAt) {

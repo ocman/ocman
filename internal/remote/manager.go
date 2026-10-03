@@ -755,44 +755,11 @@ type TargetCandidate struct {
 // frontend chooser: 1 candidate -> auto-select, >1 -> prompt, 0 -> pick a
 // remote.
 func (m *Manager) ResolveTargets(dir, origin string, localProjects []ProjectIdentity) []TargetCandidate {
-	key := NormalizeProjectIdentity(origin, dir)
-	var out []TargetCandidate
-
-	// Local machine.
-	for _, p := range localProjects {
-		if p.Key == key {
-			out = append(out, TargetCandidate{
-				RemoteID:   "local",
-				RemoteName: "This machine",
-				Platform:   m.base,
-				Dir:        p.Dir,
-			})
-			break
-		}
+	source := db.ProjectStats{Directory: dir}
+	if origin != "" {
+		source.UpstreamKeys = []string{NormalizeProjectIdentity(origin, dir)}
 	}
-
-	// Remotes.
-	m.invMu.RLock()
-	inv := make(map[string][]ProjectIdentity, len(m.inventory))
-	for id, idents := range m.inventory {
-		inv[id] = idents
-	}
-	m.invMu.RUnlock()
-
-	for remoteID, idents := range inv {
-		for _, p := range idents {
-			if p.Key == key {
-				out = append(out, TargetCandidate{
-					RemoteID:   remoteID,
-					RemoteName: m.nameForRemoteID(remoteID),
-					Platform:   CompoundPlatformID(remoteID, m.base),
-					Dir:        p.Dir,
-				})
-				break
-			}
-		}
-	}
-	return out
+	return m.ResolveProjectTargets(source, localProjects)
 }
 
 // EnabledRemotes returns the connected remotes as picker candidates,
@@ -835,6 +802,7 @@ func (m *Manager) RemoteProjects() []db.ProjectStats {
 		for _, p := range idents {
 			out = append(out, db.ProjectStats{
 				Directory:      p.Dir,
+				UpstreamKeys:   identityUpstreams(p),
 				SessionCount:   p.SessionCount,
 				MessageCount:   p.MessageCount,
 				LastUsed:       p.LastUsed,

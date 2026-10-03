@@ -16,6 +16,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/forge"
+	"github.com/NoUseFreak/ocman/internal/gitexec"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	hostlocal "github.com/NoUseFreak/ocman/internal/hostsvc/local"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -127,7 +128,10 @@ func TestHandleResolveTargets_RemoteReadFailure(t *testing.T) {
 // work in both directions, using the owner-computed identity.
 func TestHandleResolveTargets_RemoteRPCRoundTrip(t *testing.T) {
 	const origin = "https://gitlab.com/group/subgroup/repo.git"
-	localRepo, remoteRepo := initOriginRepoURL(t, origin), initOriginRepoURL(t, origin)
+	localRepo, remoteRepo := initOriginRepoURL(t, "https://gitlab.com/my/fork.git"), initOriginRepoURL(t, origin)
+	if _, err := gitexec.Output(t.Context(), localRepo, "remote", "add", "upstream", origin); err != nil {
+		t.Fatal(err)
+	}
 	srv := testServer(t)
 	srv.projects.mu.Lock()
 	srv.projects.data = []db.ProjectStats{{Directory: localRepo}}
@@ -171,6 +175,9 @@ func TestHandleResolveTargets_RemoteRPCRoundTrip(t *testing.T) {
 			t.Fatalf("expected redacted origin, got %+v", upstreams)
 		}
 	}
+	if !slices.Contains(upstreams.UpstreamKeys, "gitlab.com/group/subgroup/repo") {
+		t.Fatalf("RPC lost common upstream keys: %+v", upstreams)
+	}
 	mgr.RefreshInventories(t.Context())
 	resolve := func(body string) []remote.TargetCandidate {
 		t.Helper()
@@ -192,6 +199,15 @@ func TestHandleResolveTargets_RemoteRPCRoundTrip(t *testing.T) {
 	}
 	if c := resolve(`{"dir":"` + localRepo + `"}`); !has(c, "local", localRepo) || !has(c, "machine", remoteRepo) {
 		t.Fatalf("local source: candidates %+v; want local %s and machine %s", c, localRepo, remoteRepo)
+	}
+	rr := httptest.NewRecorder()
+	srv.handleProjects(rr, httptest.NewRequest(http.MethodGet, "/api/projects", nil))
+	var projects []db.ProjectStats
+	if err := json.Unmarshal(rr.Body.Bytes(), &projects); err != nil {
+		t.Fatal(err)
+	}
+	if rr.Code != http.StatusOK || len(projects) != 2 || projects[0].ProjectKey != projects[1].ProjectKey {
+		t.Fatalf("cross-owner project grouping = %s", rr.Body.String())
 	}
 }
 
@@ -289,15 +305,14 @@ func TestHandleResolveTargets_ExactLocalDirWins(t *testing.T) {
 	}
 }
 
-// TestLocalGitOrigin covers the origin lookup helper directly.
-func TestLocalGitOrigin(t *testing.T) {
+func TestHostProjectUpstreamsIdentity(t *testing.T) {
 	repo := initOriginRepo(t)
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	if got := localGitOrigin(req, repo); got != "https://example.com/org/repo.git" {
-		t.Errorf("localGitOrigin = %q", got)
+	srv := testServer(t)
+	got, err := srv.hostProjectUpstreams(t.Context(), repo)
+	if err != nil || got.Identity != "example.com/org/repo" || !slices.Equal(got.UpstreamKeys, []string{"example.com/org/repo"}) {
+		t.Fatalf("owner upstreams = %+v, %v", got, err)
 	}
-	// A non-repo dir yields the empty string.
-	if got := localGitOrigin(req, t.TempDir()); got != "" {
-		t.Errorf("localGitOrigin(non-repo) = %q, want empty", got)
+	if _, err := srv.hostProjectUpstreams(t.Context(), t.TempDir()); err == nil {
+		t.Fatal("non-repo directory accepted")
 	}
 }

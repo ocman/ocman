@@ -6,15 +6,15 @@ import (
 )
 
 // ProjectIdentity describes one project known to a host, used for the
-// new-session machine-picker matching (FR-12 / AD-9). Key is the
-// normalized identity used for cross-host matching; Origin/Basename are
-// kept for display and fallback; Dir is the absolute path on the owning
-// host.
+// new-session machine-picker matching. UpstreamKeys contains every normalized
+// fetch remote; Key and Origin retain a credential-free single-remote identity
+// for older hubs. Dir is the absolute path on the owning host.
 type ProjectIdentity struct {
-	Key      string `json:"key"`
-	Origin   string `json:"origin"`
-	Basename string `json:"basename"`
-	Dir      string `json:"dir"`
+	Key          string   `json:"key"`
+	Origin       string   `json:"origin"`
+	Basename     string   `json:"basename"`
+	Dir          string   `json:"dir"`
+	UpstreamKeys []string `json:"upstreamKeys,omitempty"`
 
 	// Aggregate stats carried across the wire so the hub's project list
 	// can show real counts for remote projects (not just identities).

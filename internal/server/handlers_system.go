@@ -16,6 +16,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/pricing"
+	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/state"
 	"github.com/NoUseFreak/ocman/internal/whisper"
 )
@@ -161,6 +162,7 @@ func (s *Server) handleProjects(w http.ResponseWriter, r *http.Request) {
 	// Fold worktree directories into their repo root and merge duplicate
 	// rows so each project appears once, then sort by last activity.
 	projects = foldWorktreeProjects(projects)
+	remote.AssignProjectKeys(projects)
 	sort.SliceStable(projects, func(i, j int) bool {
 		return projects[i].LastUsed > projects[j].LastUsed
 	})
@@ -190,6 +192,7 @@ func foldWorktreeProjects(projects []db.ProjectStats) []db.ProjectStats {
 			continue
 		}
 		agg.SessionCount += p.SessionCount
+		agg.UpstreamKeys = append(agg.UpstreamKeys, p.UpstreamKeys...)
 		agg.MessageCount += p.MessageCount
 		agg.TotalTokensIn += p.TotalTokensIn
 		agg.TotalTokensOut += p.TotalTokensOut

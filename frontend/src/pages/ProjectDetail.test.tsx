@@ -5,11 +5,17 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ProjectDetail } from './ProjectDetail';
 
 vi.mock('../lib/queries', () => ({
+  useProjects: () => ({ isLoading: false, data: [
+    { directory: '/repos/ocman', projectKey: 'git:shared' },
+    { directory: '/remote/clone', remoteId: 'other', projectKey: 'git:shared' },
+  ] }),
   useSessions: () => ({
     isLoading: false,
     data: [
       { id: 'a', title: 'Fix header', directory: '/repos/ocman' },
       { id: 'b', title: 'Add search', directory: '/repos/ocman' },
+      { id: 'c', title: 'Remote change', directory: '/remote/clone', remoteId: 'other' },
+      { id: 'd', title: 'Unrelated', directory: '/elsewhere' },
     ],
   }),
 }));
@@ -29,7 +35,7 @@ it('filters project sessions by search and portals actions into the header', () 
     </MemoryRouter>,
   );
   expect(screen.getByTestId('header-slot')).toHaveTextContent('Worktrees');
-  expect(screen.getAllByRole('listitem')).toHaveLength(2);
+  expect(screen.getAllByRole('listitem').map(li => li.textContent)).toEqual(['Fix header', 'Add search', 'Remote change']);
   fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: 'search' } });
   expect(screen.getAllByRole('listitem').map((li) => li.textContent)).toEqual(['Add search']);
 });

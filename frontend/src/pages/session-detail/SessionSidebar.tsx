@@ -34,8 +34,10 @@ import { useSidebarFilter } from './useSidebarFilter';
 import { TmuxClientPopover } from './TmuxClientPopover';
 import type { TmuxState } from '../../lib/useTmux';
 import type { GitInfo } from '../../lib/api';
+import { checkoutKey } from '../../lib/projectIdentity';
 
 export interface SidebarProjectGroup {
+  key?: string;
   directory: string;
   sessions: Session[];
   lastUpdated: number;
@@ -191,7 +193,7 @@ export function SessionSidebar({
       archiving={archivingSessionIds.has(sib.id)}
       draft={draftSessionIds.has(sib.id)}
       debugMode={debugMode}
-      gitInfo={siblingGitInfos[sib.directory]}
+      gitInfo={siblingGitInfos[checkoutKey(sib.directory, sib.remoteId)] ?? siblingGitInfos[sib.directory]}
       onNavigateToSession={onNavigateToSession}
       onArchiveSession={onArchiveSession}
       onPinSession={onPinSession}
@@ -208,7 +210,7 @@ export function SessionSidebar({
       const sessions = group.sessions.filter((session) =>
         !hiddenSessions.has(`${session.platform}\0${session.id}`) &&
         (showChildren || !session.parentId) &&
-        (!query || projectMatches || matchesSessionSearch(query, session, siblingGitInfos[session.directory])),
+        (!query || projectMatches || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory])),
       );
       return query && !projectMatches && sessions.length === 0 ? [] : [{ ...group, sessions }];
     });
@@ -221,7 +223,7 @@ export function SessionSidebar({
       .filter((session) =>
         !hiddenSessions.has(`${session.platform}\0${session.id}`) &&
         (showChildren || !session.parentId) &&
-        (!query || matchesSessionSearch(query, session, siblingGitInfos[session.directory])),
+        (!query || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory])),
       )
       .sort((a, b) => b.pinnedAt - a.pinnedAt);
   }, [recentSessions, searchQuery, showChildren, siblingGitInfos, hiddenSessions]);
@@ -240,7 +242,7 @@ export function SessionSidebar({
     (event: DragEndEvent) => {
       const { active, over } = event;
       if (!over || active.id === over.id) return;
-      const dirs = sidebarProjectGroups.filter((group) => !group.isPinned).map((group) => group.directory);
+      const dirs = sidebarProjectGroups.filter((group) => !group.isPinned).map((group) => group.key ?? group.directory);
       const from = dirs.indexOf(active.id as string);
       const to = dirs.indexOf(over.id as string);
       if (from === -1 || to === -1) return;
@@ -277,14 +279,14 @@ export function SessionSidebar({
         onDragEnd={handleGroupDragEnd}
       >
         <SortableContext
-          items={sortableGroups.map((g) => g.directory || '__empty__')}
+          items={sortableGroups.map((g) => g.key ?? (g.directory || '__empty__'))}
           strategy={verticalListSortingStrategy}
         >
           {sortableGroups.map((group) => (
             <ProjectGroup
-              key={group.directory || '__empty__'}
+              key={group.key ?? (group.directory || '__empty__')}
               group={group}
-              collapsed={collapsedProjectSet.has(group.directory)}
+              collapsed={collapsedProjectSet.has(group.key ?? group.directory)}
               siblingGitInfos={siblingGitInfos}
               toggleCollapsedProject={toggleCollapsedProject}
               onNewSessionInDirectory={onNewSessionInDirectory}
@@ -302,7 +304,7 @@ export function SessionSidebar({
     const visible = recentSessions.filter((session) =>
       !hiddenSessions.has(`${session.platform}\0${session.id}`) &&
       (showChildren || !session.parentId) &&
-      (!query || matchesSessionSearch(query, session, siblingGitInfos[session.directory])),
+      (!query || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory])),
     );
     const unpinned = visible.filter((session) => !session.pinned);
     return (

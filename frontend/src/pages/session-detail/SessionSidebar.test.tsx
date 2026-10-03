@@ -93,6 +93,20 @@ describe('SessionSidebar', () => {
     vi.mocked(useWorkEpics).mockReturnValue({ data: [] } as never);
   });
 
+  it('keeps same-path checkout buttons and branch labels scoped to their owner', () => {
+    const onNew = vi.fn();
+    renderSidebar({ key: 'git:shared', directory: '/repo', remoteId: 'local', lastUpdated: 1,
+      aggregate: { kind: 'none' }, sessions: [session(), session({ id: 'remote', remoteId: 'other', platform: 'r-other:opencode' })],
+    }, {
+      '["local","/repo"]': gitInfo('local-main'),
+      '["other","/repo"]': gitInfo('remote-main'),
+    }, onNew);
+    fireEvent.click(screen.getByRole('button', { name: 'New session on remote-main' }));
+    expect(onNew).toHaveBeenLastCalledWith('/repo', 'other', 'r-other:opencode');
+    fireEvent.click(screen.getByRole('button', { name: 'New session in /repo' }));
+    expect(onNew).toHaveBeenLastCalledWith('/repo', 'local', undefined);
+  });
+
   it('restores filter selections after the sidebar remounts', () => {
     const group: SidebarProjectGroup = {
       directory: '/repo', sessions: [session()], lastUpdated: 1, aggregate: { kind: 'none' },

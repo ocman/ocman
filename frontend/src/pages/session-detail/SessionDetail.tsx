@@ -37,6 +37,7 @@ import { SessionWarningBanner } from '../../components/SessionWarningBanner';
 import { McpAuthBanner } from '../../components/McpAuthBanner';
 import { useUiStore } from '../../lib/uiStore';
 import { projectRootForDirectory } from '../../lib/worktrees';
+import { checkoutKey } from '../../lib/projectIdentity';
 import { useTmux } from '../../lib/useTmux';
 import { useApiStore } from '../../lib/apiStore';
 import { useGitInfo } from '../../lib/useGitInfo';
@@ -391,13 +392,15 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const gitInfoRemoteId = session?.remoteId
     ?? recentSessions.find((candidate) => candidate.id === id)?.remoteId
     ?? 'local';
-  const { infos: siblingGitInfos } = useGitInfo(
+  const { infos: ownerGitInfos } = useGitInfo(
     recentSessions
       .filter((candidate) => (candidate.remoteId || 'local') === gitInfoRemoteId)
       .map((candidate) => candidate.directory)
       .filter(Boolean),
     gitInfoRemoteId,
   );
+  const siblingGitInfos = useMemo(() => Object.fromEntries(Object.entries(ownerGitInfos)
+    .map(([directory, info]) => [checkoutKey(directory, gitInfoRemoteId), info])), [ownerGitInfos, gitInfoRemoteId]);
   const {
     bookmarkedMessageIds,
     selectedMessageBookmarkKey,

@@ -12,7 +12,7 @@ import { filterVisibleSessions } from '../lib/sessionVisibility';
 import { nestSessions } from '../lib/nestSessions';
 import { SessionTableSkeleton } from './Skeleton';
 import { DataTable, DataTableGroupHeader } from './DataTable';
-import { projectRootForDirectory } from '../lib/worktrees';
+import { projectIdentityIndex } from '../lib/projectIdentity';
 import { rollupGroupStatus } from '../lib/sidebarHelpers';
 import { remoteLog } from '../lib/remoteLog';
 import { ArchiveButton } from './ArchiveButton';
@@ -103,7 +103,7 @@ interface GroupedProps {
    */
   projects?: Project[];
   /** Called when a placeholder project's "Add session" is clicked. */
-  onAddSession?: (directory: string) => void;
+  onAddSession?: (directory: string, remoteId?: string) => void;
   /**
    * Show placeholder rows for known projects with no visible sessions.
    * The dashboard Sessions tab sets this false so it only lists projects
@@ -146,6 +146,7 @@ export function GroupedSessionTable({
   // Optimistic project archive overlay so the UI reacts before the next
   // /api/projects refetch lands. Maps folded root -> archived?.
   const [localProjectArchived, setLocalProjectArchived] = useState<Map<string, boolean>>(new Map());
+  const identity = useMemo(() => projectIdentityIndex(projects ?? []), [projects]);
 
   const handleArchiveSession = async (e: React.MouseEvent, session: Session) => {
     e.stopPropagation();
@@ -166,14 +167,17 @@ export function GroupedSessionTable({
   };
 
   const handleArchiveProject = async (directory: string, archived: boolean, remoteId?: string) => {
-    setLocalProjectArchived(prev => new Map(prev).set(directory, archived));
+    const key = identity(directory, remoteId).key;
+    const members = (projects ?? []).filter(p => identity(p.directory, p.remoteId).key === key);
+    setLocalProjectArchived(prev => new Map(prev).set(key, archived));
     try {
-      await archiveProject(directory, archived, remoteId);
+      await Promise.all((members.length ? members : [{ directory, remoteId }]).map(p =>
+        archiveProject(p.directory, archived, p.remoteId)));
     } catch (err) {
       remoteLog.error('Failed to archive project', err);
       setLocalProjectArchived(prev => {
         const next = new Map(prev);
-        next.delete(directory);
+        next.delete(key);
         return next;
       });
     }
@@ -183,13 +187,16 @@ export function GroupedSessionTable({
   const archivedRoots = useMemo(() => {
     const set = new Set<string>();
     for (const p of projects ?? []) {
-      if (p.archived) set.add(projectRootForDirectory(p.directory));
+      if (p.archived) set.add(identity(p.directory, p.remoteId).key);
+    }
+    for (const p of projects ?? []) {
+      if (!p.archived) set.delete(identity(p.directory, p.remoteId).key);
     }
     for (const [root, archived] of localProjectArchived) {
       if (archived) set.add(root); else set.delete(root);
     }
     return set;
-  }, [projects, localProjectArchived]);
+  }, [projects, localProjectArchived, identity]);
 
   const groups = useMemo(() => {
     const visible = (includeArchived ? sessions : filterVisibleSessions(sessions))
@@ -197,17 +204,21 @@ export function GroupedSessionTable({
 
     const buckets = new Map<string, Session[]>();
     for (const s of visible) {
-      const key = projectRootForDirectory(s.directory || '');
+      const key = identity(s.directory || '', s.remoteId).key;
       const existing = buckets.get(key);
       if (existing) existing.push(s);
       else buckets.set(key, [s]);
     }
 
     const sessionGroups = Array.from(buckets.entries())
-      .map(([directory, groupSessions]) => {
+      .map(([key, groupSessions]) => {
         const sorted = [...groupSessions].sort((a, b) => b.timeUpdated - a.timeUpdated);
+        const target = identity(sorted[0].directory || '', sorted[0].remoteId);
         return {
-          directory,
+          ...target,
+          remoteId: target.remoteId || 'local',
+          remoteName: target.remoteName ?? sorted.find(s => (s.remoteId || 'local') === (target.remoteId || 'local'))?.remoteName,
+          key,
           sessions: sorted,
           lastUpdated: sorted[0]?.timeUpdated ?? 0,
           aggregate: rollupGroupStatus(sorted),
@@ -220,17 +231,19 @@ export function GroupedSessionTable({
     // Only shown alongside real session groups — when the whole list is
     // empty we fall through to the plain "No sessions found" empty state
     // rather than papering it over with project placeholders.
-    const haveSessions = new Set(sessionGroups.map(g => g.directory));
+    const haveSessions = new Set(sessionGroups.map(g => g.key));
     const placeholders: typeof sessionGroups = [];
     const seenRoots = new Set<string>();
     if (showEmptyProjects && sessionGroups.length > 0) {
       for (const p of projects ?? []) {
-        const root = projectRootForDirectory(p.directory);
-        if (haveSessions.has(root) || seenRoots.has(root)) continue;
-        if (archivedRoots.has(root)) continue;
-        seenRoots.add(root);
+        const target = identity(p.directory, p.remoteId);
+        if (haveSessions.has(target.key) || seenRoots.has(target.key)) continue;
+        if (archivedRoots.has(target.key)) continue;
+        seenRoots.add(target.key);
         placeholders.push({
-          directory: root,
+          ...target,
+          remoteId: target.remoteId || 'local',
+          remoteName: target.remoteName,
           sessions: [],
           lastUpdated: p.lastUsed,
           aggregate: rollupGroupStatus([]),
@@ -241,9 +254,9 @@ export function GroupedSessionTable({
 
     return [...sessionGroups, ...placeholders]
       // Hide archived projects' session groups unless showing archived.
-      .filter(g => includeArchived || !archivedRoots.has(g.directory))
+      .filter(g => includeArchived || !archivedRoots.has(g.key))
       .sort((a, b) => b.lastUpdated - a.lastUpdated);
-  }, [sessions, includeArchived, locallyArchivedSessionIds, projects, archivedRoots, showEmptyProjects]);
+  }, [sessions, includeArchived, locallyArchivedSessionIds, projects, archivedRoots, showEmptyProjects, identity]);
 
   if (loading) {
     return <SessionTableSkeleton rows={5} showProject={false} />;
@@ -266,7 +279,7 @@ export function GroupedSessionTable({
   return (
     <>
       {groups.map(group => {
-        const collapsed = collapsedProjects.has(group.directory);
+        const collapsed = collapsedProjects.has(group.key);
         const agg = group.aggregate;
         const remoteSession = group.sessions.find(s => s.remoteId && s.remoteId !== 'local');
         const dotStatus: Session['status'] =
@@ -274,23 +287,23 @@ export function GroupedSessionTable({
           agg.kind === 'pending' ? 'waiting' :
           agg.kind;
         const dotPending = agg.kind === 'pending';
-        const archived = archivedRoots.has(group.directory);
+        const archived = archivedRoots.has(group.key);
 
         return (
-          <div key={group.directory || '__empty__'} className="oc-session-group">
+          <div key={group.key || '__empty__'} className="oc-session-group">
             <DataTableGroupHeader className="oc-session-group-header-row">
               <button
                 type="button"
                 className={`oc-session-group-header${collapsed ? ' collapsed' : ''}`}
                 aria-expanded={!collapsed}
                 title={group.directory || 'Unknown project'}
-                onClick={() => toggleCollapsedProject(group.directory)}
+                onClick={() => toggleCollapsedProject(group.key)}
               >
                 <span className="oc-session-group-status">
                   <StatusBadge status={dotStatus} compact pending={dotPending} />
                 </span>
                 <span className="oc-session-group-label">
-                  <HostBadge remoteName={remoteSession?.remoteName} remoteId={remoteSession?.remoteId} stale={remoteSession?.stale} />
+                  <HostBadge remoteName={group.remoteName} remoteId={group.remoteId} stale={remoteSession?.stale} />
                   <ProjectLabel path={group.directory} />
                 </span>
                 <span className="oc-session-group-count">{group.sessions.length}</span>
@@ -312,7 +325,7 @@ export function GroupedSessionTable({
                         className="oc-project-menu-item"
                         onClick={(e) => {
                           (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open');
-                          onAddSession(group.directory);
+                          onAddSession(group.directory, group.remoteId);
                         }}
                       >Add session</button>
                     )}
@@ -322,7 +335,7 @@ export function GroupedSessionTable({
                       className="oc-project-menu-item"
                       onClick={(e) => {
                         (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open');
-                        void handleArchiveProject(group.directory, !archived, remoteSession?.remoteId);
+                        void handleArchiveProject(group.directory, !archived, group.remoteId);
                       }}
                     >{archived ? 'Unarchive project' : 'Archive project'}</button>
                   </div>
@@ -337,7 +350,7 @@ export function GroupedSessionTable({
                     <button
                       type="button"
                       className="oc-session-group-placeholder-add"
-                      onClick={() => onAddSession(group.directory)}
+                      onClick={() => onAddSession(group.directory, group.remoteId)}
                     >
                       <i className="bi bi-plus-lg" aria-hidden="true" /> Add session
                     </button>

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"slices"
 	"sync"
 	"time"
@@ -182,7 +183,7 @@ func (s *Server) refreshProjectsIndexOnce() error {
 
 	refreshedAt := time.Now()
 	s.projects.mu.Lock()
-	changed := !s.projects.loaded || !slices.Equal(s.projects.data, projects)
+	changed := !s.projects.loaded || !reflect.DeepEqual(s.projects.data, projects)
 	s.projects.data = cloneProjectStats(projects)
 	s.projects.loaded = true
 	s.projects.refreshedAt = refreshedAt
@@ -258,5 +259,8 @@ func cloneProjectStats(projects []db.ProjectStats) []db.ProjectStats {
 	}
 	cloned := make([]db.ProjectStats, len(projects))
 	copy(cloned, projects)
+	for i := range cloned {
+		cloned[i].UpstreamKeys = slices.Clone(projects[i].UpstreamKeys)
+	}
 	return cloned
 }

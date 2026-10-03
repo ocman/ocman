@@ -544,13 +544,15 @@ type ModelCostPoint struct {
 
 // ProjectStats holds per-directory aggregated data.
 type ProjectStats struct {
-	Directory      string  `json:"directory"`
-	SessionCount   int     `json:"sessionCount"`
-	MessageCount   int     `json:"messageCount"`
-	LastUsed       int64   `json:"lastUsed"`
-	TotalTokensIn  int64   `json:"totalTokensIn"`
-	TotalTokensOut int64   `json:"totalTokensOut"`
-	TotalCost      float64 `json:"totalCost"`
+	ProjectKey     string   `json:"projectKey,omitempty"`
+	UpstreamKeys   []string `json:"upstreamKeys,omitempty"`
+	Directory      string   `json:"directory"`
+	SessionCount   int      `json:"sessionCount"`
+	MessageCount   int      `json:"messageCount"`
+	LastUsed       int64    `json:"lastUsed"`
+	TotalTokensIn  int64    `json:"totalTokensIn"`
+	TotalTokensOut int64    `json:"totalTokensOut"`
+	TotalCost      float64  `json:"totalCost"`
 	// Archived is set by the server layer (not the DB query) from
 	// ocman's own state.db: true when the project's folded root is
 	// archived and no session is newer than the archive time.

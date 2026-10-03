@@ -1,10 +1,11 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Project, Session, SessionStatus } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
 import { useUiStore } from '../../lib/uiStore';
 import { useProjects } from '../../lib/queries';
 import { shortPath } from '../../lib/format';
 import { projectRootForDirectory } from '../../lib/worktrees';
+import { projectIdentityIndex } from '../../lib/projectIdentity';
 import { compareSidebarActivity, rollupGroupStatus } from '../../lib/sidebarHelpers';
 import { remoteLog } from '../../lib/remoteLog';
 import type { SidebarProjectGroup } from './SessionSidebar';
@@ -38,10 +39,22 @@ export function useSidebarProjectGroups({
 }: UseSidebarProjectGroupsOptions): UseSidebarProjectGroupsResult {
   const projectOrder = useUiStore((state) => state.projectOrder);
   const setProjectOrder = useUiStore((state) => state.setProjectOrder);
+  const expandProjects = useUiStore((state) => state.expandProjects);
   // All known projects — the sidebar "projects" view lists every
   // unarchived project, even ones with no session in the recent window.
   const projectsQuery = useProjects();
   const allProjects = projectsQuery.data;
+  const identity = useMemo(() => projectIdentityIndex(allProjects ?? []), [allProjects]);
+  const expanded = useRef('');
+  useEffect(() => {
+    const current = recentSessions.find(s => s.id === id);
+    if (!current) return;
+    const key = identity(current.directory || '', current.remoteId).key;
+    const opened = `${id}:${key}`;
+    if (expanded.current === opened) return;
+    expanded.current = opened;
+    expandProjects([key]);
+  }, [id, recentSessions, identity, expandProjects]);
   const archiveProject = useApiStore((state) => state.archiveProject);
   // Optimistically-archived project roots: hides the group immediately
   // while /api/projects refetches (project-archive state isn't carried
@@ -51,7 +64,7 @@ export function useSidebarProjectGroups({
   const sidebarProjectGroups = useMemo<SidebarProjectGroup[]>(() => {
     const buckets = new Map<string, Session[]>();
     for (const s of recentSessions) {
-      const key = projectRootForDirectory(s.directory || '');
+      const key = identity(s.directory || '', s.remoteId).key;
       const existing = buckets.get(key);
       if (existing) existing.push(s);
       else buckets.set(key, [s]);
@@ -61,17 +74,19 @@ export function useSidebarProjectGroups({
       s.id === id ? displayStatus : s.status;
     const rollup = (sessions: Session[]) => rollupGroupStatus(sessions, effectiveStatus);
 
-    const groups: SidebarProjectGroup[] = Array.from(buckets.entries()).map(([directory, sessions]) => {
+    const groups: SidebarProjectGroup[] = Array.from(buckets.entries()).map(([key, sessions]) => {
       const sorted = [...sessions].sort(compareSidebarActivity);
-      const remote = sorted.find((s) => s.remoteId && s.remoteId !== 'local');
+      const target = identity(sorted[0].directory || '', sorted[0].remoteId);
+      const representative = sorted.find((s) => (s.remoteId || 'local') === (target.remoteId || 'local'));
       return {
-        directory,
+        key,
+        directory: target.directory,
         sessions: sorted,
         lastUpdated: Math.max(...sorted.map((s) => s.timeUpdated)),
         aggregate: rollup(sorted),
-        remoteId: remote?.remoteId,
-        remoteName: remote?.remoteName,
-        platform: remote?.platform,
+        remoteId: target.remoteId || 'local',
+        remoteName: target.remoteName ?? representative?.remoteName,
+        platform: target.platform ?? representative?.platform,
       };
     });
 
@@ -80,7 +95,7 @@ export function useSidebarProjectGroups({
     // too, since session payloads don't carry project-archive state.
     const visibleGroups = archivedProjectRoots.size === 0
       ? groups
-      : groups.filter((g) => !archivedProjectRoots.has(g.directory));
+      : groups.filter((g) => !archivedProjectRoots.has(g.key ?? g.directory));
 
     // Add empty groups for known unarchived projects that have no
     // session in the recent poll window, so the projects view lists
@@ -88,17 +103,18 @@ export function useSidebarProjectGroups({
     // auto-archived stale ones) stay hidden.
     for (const p of allProjects ?? []) {
       if (p.archived) continue;
-      const root = projectRootForDirectory(p.directory);
-      if (buckets.has(root) || archivedProjectRoots.has(root)) continue;
-      buckets.set(root, []);
+      const target = identity(p.directory, p.remoteId);
+      if (buckets.has(target.key) || archivedProjectRoots.has(target.key)) continue;
+      buckets.set(target.key, []);
       visibleGroups.push({
-        directory: root,
+        key: target.key,
+        directory: target.directory,
         sessions: [],
         lastUpdated: p.lastUsed,
         aggregate: rollup([]),
-        remoteId: p.remoteId,
-        remoteName: p.remoteName,
-        platform: p.platform,
+        remoteId: target.remoteId || 'local',
+        remoteName: target.remoteName,
+        platform: target.platform,
       });
     }
     // Sort project groups alphabetically by their short display path
@@ -114,8 +130,8 @@ export function useSidebarProjectGroups({
     if (projectOrder.length > 0) {
       const rank = new Map(projectOrder.map((dir, i) => [dir, i]));
       visibleGroups.sort((a, b) => {
-        const ra = rank.get(a.directory);
-        const rb = rank.get(b.directory);
+        const ra = rank.get(a.key ?? a.directory) ?? rank.get(a.directory);
+        const rb = rank.get(b.key ?? b.directory) ?? rank.get(b.directory);
         if (ra === undefined && rb === undefined) return 0; // keep alphabetical
         if (ra === undefined) return 1; // unordered after ordered
         if (rb === undefined) return -1;
@@ -137,7 +153,7 @@ export function useSidebarProjectGroups({
     }
 
     return visibleGroups;
-  }, [recentSessions, id, displayStatus, projectOrder, allProjects, archivedProjectRoots]);
+  }, [recentSessions, id, displayStatus, projectOrder, allProjects, archivedProjectRoots, identity]);
 
   // Persist a new drag-and-drop order of the (non-pinned) project
   // groups. The synthetic "__pinned__" group is excluded — it always
@@ -155,19 +171,22 @@ export function useSidebarProjectGroups({
     (directory: string, remoteId?: string) => {
       const root = projectRootForDirectory(directory);
       if (!root) return;
-      setArchivedProjectRoots((prev) => new Set(prev).add(root));
-      archiveProject(root, true, remoteId)
+      const key = identity(root, remoteId).key;
+      const members = (allProjects ?? []).filter((p) => identity(p.directory, p.remoteId).key === key);
+      setArchivedProjectRoots((prev) => new Set(prev).add(key));
+      Promise.all((members.length ? members : [{ directory: root, remoteId }]).map((p) =>
+        archiveProject(p.directory, true, p.remoteId)))
         .then(() => projectsQuery.refetch())
         .catch((err) => {
           remoteLog.error('Failed to archive project', err);
           setArchivedProjectRoots((prev) => {
             const next = new Set(prev);
-            next.delete(root);
+            next.delete(key);
             return next;
           });
         });
     },
-    [archiveProject, projectsQuery],
+    [archiveProject, projectsQuery, identity, allProjects],
   );
 
   return { allProjects, sidebarProjectGroups, handleReorderProjects, handleArchiveProjectFromSidebar };

@@ -2,12 +2,11 @@ package server
 
 import (
 	"net/http"
-	"slices"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/NoUseFreak/ocman/internal/gitexec"
+	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/remote"
 )
 
@@ -55,29 +54,27 @@ func (s *Server) handleResolveTargets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var origin string
-	matchDir := req.Dir
-	if req.RemoteID != "" && req.RemoteID != "local" {
-		project, err := owner.ProjectUpstreams(r.Context(), req.Dir)
-		if err != nil {
-			http.Error(w, "Could not read the source project's git remotes", http.StatusBadGateway)
-			return
-		}
-		// Raw URLs are redacted by the RPC; the owner-computed identity key
-		// is credential-free and normalizes to itself, so it stands in for
-		// the origin below.
+	var keys []string
+	project, err := owner.ProjectUpstreams(r.Context(), req.Dir)
+	if err != nil && req.RemoteID != "" && req.RemoteID != "local" {
+		http.Error(w, "Could not read the source project's git remotes", http.StatusBadGateway)
+		return
+	}
+	if err == nil && project != nil {
+		// Older owners send only the credential-free origin identity.
 		origin = project.Identity
-		// Identical paths on different hosts do not identify the same project.
-		matchDir = ""
-	} else {
-		origin = localGitOrigin(r, req.Dir)
+		keys = project.UpstreamKeys
+	}
+	if len(keys) == 0 && origin != "" {
+		keys = []string{origin}
 	}
 	candidates := []remote.TargetCandidate{}
-	if matchDir != "" || origin != "" {
-		localIdents := s.localProjectMatch(r, matchDir, origin)
-		candidates = s.remotes.ResolveTargets(req.Dir, origin, localIdents)
-		if origin == "" {
-			candidates = slices.DeleteFunc(candidates, func(c remote.TargetCandidate) bool { return c.RemoteID != "local" })
+	if projects, err := s.router().Local().Projects(r.Context()); err == nil {
+		local := make([]remote.ProjectIdentity, 0, len(projects))
+		for _, p := range projects {
+			local = append(local, remote.ProjectIdentity{Dir: p.Directory, UpstreamKeys: p.UpstreamKeys})
 		}
+		candidates = s.remotes.ResolveProjectTargets(db.ProjectStats{Directory: req.Dir, RemoteID: req.RemoteID, UpstreamKeys: keys}, local)
 	}
 	log.WithFields(log.Fields{
 		"dir":        req.Dir,
@@ -88,44 +85,4 @@ func (s *Server) handleResolveTargets(w http.ResponseWriter, r *http.Request) {
 		"candidates": candidates,
 		"remotes":    s.remotes.EnabledRemotes(),
 	})
-}
-
-// localProjectMatch returns the local project matching dir's
-// identity (AD-9), or nil. ResolveTargets only uses the first local match,
-// so this stops there: an exact directory match needs no git call, and
-// otherwise origins are read one project at a time until one matches.
-// ponytail: a dir with no local match still shells out once per project;
-// cache origins by dir if resolving remote-only projects gets slow.
-func (s *Server) localProjectMatch(r *http.Request, dir, origin string) []remote.ProjectIdentity {
-	projects, err := s.router().Local().Projects(r.Context())
-	if err != nil {
-		return nil
-	}
-	key := remote.NormalizeProjectIdentity(origin, dir)
-	for _, p := range projects {
-		if p.Directory == dir {
-			return []remote.ProjectIdentity{{Key: key, Origin: origin, Dir: dir}}
-		}
-	}
-	for _, p := range projects {
-		o := localGitOrigin(r, p.Directory)
-		if k := remote.NormalizeProjectIdentity(o, p.Directory); k == key {
-			return []remote.ProjectIdentity{{Key: k, Origin: o, Dir: p.Directory}}
-		}
-	}
-	return nil
-}
-
-// localGitOrigin returns the git origin URL for a local directory, or ""
-// when the dir has no origin / isn't a repo.
-func localGitOrigin(r *http.Request, dir string) string {
-	// Deliberately local: the caller is localProjectMatch, which
-	// enumerates *this* machine's checkouts so ResolveTargets can offer
-	// the hub as a candidate. Routing it through a Host would ask the
-	// wrong machine.
-	out, err := gitexec.Output(r.Context(), dir, "remote", "get-url", "origin") // ocman:allow-host-helper
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(out)
 }

@@ -73,7 +73,8 @@ export function useSessionCreation({
     // same project — otherwise a "+" on a *different* project (whose
     // group didn't carry a platform) leaks the current session's
     // (possibly remote) platform onto it, mis-targeting the host.
-    const sameProject = !!session && projectRootForDirectory(directory) === projectRootForDirectory(session.directory);
+    const sameProject = !!session && (remoteId === undefined || remoteId === (session.remoteId || 'local'))
+      && projectRootForDirectory(directory) === projectRootForDirectory(session.directory);
     const targetPlatform = platform ?? (sameProject ? session?.platform : undefined);
     try {
       const res = await createSessionWithLaunch(

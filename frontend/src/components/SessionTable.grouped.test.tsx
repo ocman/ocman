@@ -66,7 +66,7 @@ describe('GroupedSessionTable project archive', () => {
 
     const add = screen.getByRole('button', { name: /Add session/i });
     fireEvent.click(add);
-    expect(onAddSession).toHaveBeenCalledWith('/src/empty');
+    expect(onAddSession).toHaveBeenCalledWith('/src/empty', 'local');
   });
 
   it('suppresses placeholders when showEmptyProjects is false (dashboard)', () => {
@@ -127,7 +127,7 @@ describe('GroupedSessionTable project archive', () => {
     details.open = true;
     fireEvent.click(screen.getByText('Archive project'));
     // No remote session in the group → the local host owns this project.
-    expect(mocks.apiState.archiveProject).toHaveBeenCalledWith('/src/foo', true, undefined);
+    expect(mocks.apiState.archiveProject).toHaveBeenCalledWith('/src/foo', true, 'local');
   });
 
   it('names the owning host when archiving a remote project', () => {

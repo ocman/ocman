@@ -10,7 +10,8 @@ import { useClickOutside } from '../lib/useClickOutside';
 import { cleanTitle, fuzzyMatch, shortPath } from '../lib/format';
 import { openVSCode } from '../lib/shortcuts';
 import { useShortcut } from '../lib/shortcutRegistry';
-import { useSessions } from '../lib/queries';
+import { useProjects, useSessions } from '../lib/queries';
+import { projectIdentityIndex } from '../lib/projectIdentity';
 import { remoteLog } from '../lib/remoteLog';
 import type { TmuxClient } from '../lib/api';
 // ProjectDetail is mounted outside DashboardLayout, so we need to pull in
@@ -102,12 +103,15 @@ export function ProjectDetail() {
   // sinceHours produces a stable query key; the actual timestamp is
   // computed inside the queryFn at fetch time.
   const sinceHours = timeRange > 0 ? timeRange : undefined;
+  const projectsQ = useProjects();
+  const identity = useMemo(() => projectIdentityIndex(projectsQ.data ?? []), [projectsQ.data]);
   const sessionsQ = useSessions(
-    { dir: directory, sinceHours },
+    { sinceHours },
     { refetchInterval: 5000, enabled: !!directory },
   );
-  const sessions = sessionsQ.data ?? [];
-  const sessionsLoaded = !sessionsQ.isLoading;
+  const projectKey = identity(directory ?? '', ownerId ?? undefined).key;
+  const sessions = (sessionsQ.data ?? []).filter(s => identity(s.directory || '', s.remoteId).key === projectKey);
+  const sessionsLoaded = !sessionsQ.isLoading && !projectsQ.isLoading;
   const [search, setSearch] = useState('');
   const q = search.trim();
   const filteredSessions = q

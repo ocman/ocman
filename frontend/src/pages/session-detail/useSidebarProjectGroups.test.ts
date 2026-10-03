@@ -36,6 +36,55 @@ const session = (over: Partial<Session>): Session => ({
 } as Session);
 
 describe('useSidebarProjectGroups', () => {
+  it('keeps the local action target when only a remote checkout has recent sessions', () => {
+    projects.push({ directory: '/local/repo', projectKey: 'git:shared' } as Project,
+      { directory: '/remote/clone', remoteId: 'other', projectKey: 'git:shared' } as Project);
+    try {
+      const { result } = renderHook(() => useSidebarProjectGroups({ id: undefined, displayStatus: 'done', recentSessions: [
+        session({ directory: '/remote/clone', remoteId: 'other', remoteName: 'Other', platform: 'r-other:opencode' }),
+      ] }));
+      expect(result.current.sidebarProjectGroups.find(g => g.key === 'git:shared')).toMatchObject({
+        directory: '/local/repo', remoteId: 'local', remoteName: undefined, platform: undefined,
+      });
+    } finally {
+      projects.splice(-2);
+    }
+  });
+  it('groups shared upstream checkouts across hosts and archives each owning checkout', async () => {
+    const shared = [
+      { directory: '/local/repo', projectKey: 'git:shared', lastUsed: 1 },
+      { directory: '/remote/clone', remoteId: 'other', projectKey: 'git:shared', lastUsed: 2 },
+    ] as Project[];
+    projects.push(...shared);
+    const archiveProject = vi.fn(async () => ({ ok: true }));
+    useApiStore.setState({ archiveProject });
+    try {
+      const recentSessions = [
+        session({ id: 'local', directory: '/local/repo' }),
+        session({ id: 'remote', directory: '/remote/clone', remoteId: 'other', platform: 'r-other:opencode' }),
+      ];
+      const { result } = renderHook(() => useSidebarProjectGroups({ id: 'local', recentSessions, displayStatus: 'done' }));
+      const groups = result.current.sidebarProjectGroups.filter(g => g.sessions.length);
+      expect(groups).toHaveLength(1);
+      expect(groups[0]).toMatchObject({ key: 'git:shared', directory: '/local/repo', remoteId: 'local' });
+      expect(groups[0].sessions).toHaveLength(2);
+      await act(async () => { result.current.handleArchiveProjectFromSidebar('/local/repo'); });
+      expect(archiveProject).toHaveBeenCalledWith('/local/repo', true, undefined);
+      expect(archiveProject).toHaveBeenCalledWith('/remote/clone', true, 'other');
+      expect(result.current.sidebarProjectGroups.some(g => g.key === 'git:shared')).toBe(false);
+    } finally {
+      projects.splice(-shared.length);
+    }
+  });
+
+  it('keeps unrelated sessions at identical paths on different owners separate', () => {
+    const { result } = renderHook(() => useSidebarProjectGroups({ id: undefined, displayStatus: 'done', recentSessions: [
+      session({ id: 'local' }), session({ id: 'remote', remoteId: 'other' }),
+    ] }));
+    const groups = result.current.sidebarProjectGroups.filter(g => g.sessions.length);
+    expect(groups).toHaveLength(2);
+    expect(new Set(groups.map(g => g.key)).size).toBe(2);
+  });
   it('buckets sessions, adds empty unarchived projects, pins on top, honours saved order', () => {
     useUiStore.setState({ projectOrder: ['/repo/quiet', '/repo/a'] });
     const recentSessions = [

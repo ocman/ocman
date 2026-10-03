@@ -70,6 +70,14 @@ describe('useSessionCreation', () => {
     );
   });
 
+  it('does not inherit a remote platform for an explicitly local checkout at the same path', async () => {
+    const { result } = renderHook(() => useSessionCreation(opts()));
+    await act(() => result.current.handleNewSessionInDirectory('/repo/a', 'local'));
+    expect(createSessionWithLaunch).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({
+      directory: '/repo/a', remoteId: 'local', platform: undefined,
+    }));
+  });
+
   it('resolves the main checkout from the owner for a worktree outside the managed layout', async () => {
     listWorktrees.mockResolvedValue({ worktrees: [
       { path: '/src/repo', branch: 'main', main: true, bare: false },

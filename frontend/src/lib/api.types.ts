@@ -1174,6 +1174,8 @@ export interface ModelCostPoint {
 }
 
 export interface Project {
+  projectKey?: string;
+  upstreamKeys?: string[];
   directory: string;
   sessionCount: number;
   messageCount: number;
