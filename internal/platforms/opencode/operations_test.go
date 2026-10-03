@@ -1465,8 +1465,12 @@ func TestServerAdvertisesV2_CachesPerPort(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"pid":42}`))
 	}))
+	defer srv.Close()
 	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
 	t.Cleanup(func() { v2Probes.Delete(port) })
+	// Reproduce an ephemeral port recycled from an earlier fixture.
+	v2Probes.Store(port, v2Probe{ok: true, at: time.Now()})
+	v2Probes.Delete(port) // This fixture must start with its own probe answer.
 	for range 3 {
 		if !serverAdvertisesV2(context.Background(), port) {
 			t.Fatal("want V2")
@@ -1495,6 +1499,9 @@ func TestServerAdvertisesV2_CachesLegacyAnswer(t *testing.T) {
 	defer srv.Close()
 	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
 	t.Cleanup(func() { v2Probes.Delete(port) })
+	// The earlier fixture may have advertised V2 on this same port.
+	v2Probes.Store(port, v2Probe{ok: true, at: time.Now()})
+	v2Probes.Delete(port) // Isolate the legacy answer from previous fixtures.
 	for range 2 {
 		if serverAdvertisesV2(context.Background(), port) {
 			t.Fatal("legacy server reported V2")
