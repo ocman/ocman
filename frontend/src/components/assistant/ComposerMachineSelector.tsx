@@ -32,7 +32,8 @@ export function ComposerMachineSelector({ directory, remoteId = 'local', disable
   if (!machines.some((m) => m.remoteId === remoteId)) {
     machines.push({ remoteId, remoteName: 'Current machine' });
   }
-  return <>
+  return <span className="oc-composer-selectors oc-composer-selectors-left" data-testid="composer-machine-selector">
+    <span className="oc-selector-icon" aria-hidden="true"><i className="bi bi-pc-display" /></span>
     <SelectField
       aria-label="Session machine"
       title="Start a new conversation on this machine"
@@ -57,5 +58,5 @@ export function ComposerMachineSelector({ directory, remoteId = 'local', disable
       })}
     </SelectField>
     {error && <span role="alert">{error}</span>}
-  </>;
+  </span>;
 }

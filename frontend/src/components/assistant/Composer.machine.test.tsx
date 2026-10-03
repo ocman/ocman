@@ -29,6 +29,15 @@ it('switches a new conversation with its current draft and locks sending during 
   await waitFor(() => expect(input).not.toBeDisabled());
 });
 
+it('renders the machine selector with an icon after the worktree selector', async () => {
+  vi.spyOn(api, 'resolveTargets').mockResolvedValue({ candidates: [target], remotes: [target] });
+  render(<Composer isRunning={false} newConversation directory="/local/project" sessionId="order-test" onMachineChange={vi.fn()} />);
+  const machine = await screen.findByTestId('composer-machine-selector');
+  const worktree = screen.getByTestId('composer-target-selector');
+  expect(worktree.compareDocumentPosition(machine) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(machine.querySelector('.bi-pc-display')).not.toBeNull();
+});
+
 it('does not offer to move a conversation that already has messages', () => {
   const resolve = vi.spyOn(api, 'resolveTargets');
   render(<Composer isRunning={false} directory="/local/project" onMachineChange={vi.fn()} />);

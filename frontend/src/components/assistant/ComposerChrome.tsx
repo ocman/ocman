@@ -64,10 +64,10 @@ export function ComposerFooter({
   return (
     <div className="oc-composer-footer">
       <span className="oc-composer-footer-left">
-        {machineControl}
         {directory && newConversation && (
           <TargetSelector directory={directory} worktreesSupported={!!worktreesSupported} target={target} onTargetChange={onTargetChange} disabled={targetDisabled} />
         )}
+        {machineControl}
         {!disabled && isRunning && (
           <>
             <span
