@@ -253,9 +253,9 @@ function ComposerBody({
   const dictationShortcut = useMemo(() => ({
     id: 'composer.dictation', scope: 'composer' as const, keys: { code: 'KeyD', alt: true },
     description: 'Start dictation (voice input)',
-    enabled: () => !!(isDictationSupported && !isRecording && !audioDisabled),
+    enabled: () => !!(isDictationSupported && !audioBusy && !audioDisabled),
     handler: () => { void handleMicClick(); },
-  }), [isDictationSupported, isRecording, audioDisabled, handleMicClick]);
+  }), [isDictationSupported, audioBusy, audioDisabled, handleMicClick]);
   const reasoningCycleShortcut = useMemo(() => ({
     id: 'composer.reasoning-cycle', scope: 'composer' as const, keys: { code: 'KeyR', alt: true },
     description: 'Cycle reasoning level',

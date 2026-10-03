@@ -2,7 +2,13 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { api } from '../../lib/api';
+import { useShortcutDispatcher } from '../../lib/shortcutRegistry';
 import { Composer } from './Composer';
+
+function WithShortcuts(props: React.ComponentProps<typeof Composer>) {
+  useShortcutDispatcher();
+  return <Composer {...props} />;
+}
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 const target = { remoteId: 'box', remoteName: 'Build box', platform: 'r-box:opencode', dir: '/remote/project' };
@@ -136,10 +142,36 @@ it('does not start dictation while switching machines', async () => {
   vi.spyOn(api, 'resolveTargets').mockResolvedValue({ candidates: [target], remotes: [target] });
   vi.spyOn(api, 'gitBranches').mockResolvedValue({ branches: [] });
   let complete!: () => void;
-  render(<Composer isRunning={false} newConversation directory="/local/project" sessionId="switch-mic-test" onMachineChange={() => new Promise<void>((resolve) => { complete = resolve; })} />);
+  render(<WithShortcuts isRunning={false} newConversation directory="/local/project" sessionId="switch-mic-test" onMachineChange={() => new Promise<void>((resolve) => { complete = resolve; })} />);
   fireEvent.change(await screen.findByRole('combobox', { name: 'Session machine' }), { target: { value: 'box' } });
   await act(async () => fireEvent.click(screen.getByTitle('Record voice message')));
-  fireEvent.keyDown(window, { code: 'KeyD', altKey: true });
+  fireEvent.keyDown(screen.getByRole('textbox'), { code: 'KeyD', altKey: true });
   expect(recognition.start).not.toHaveBeenCalled();
   await act(async () => complete());
+});
+
+it('does not start a second dictation while a transcription is pending', async () => {
+  const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] });
+  Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } });
+  const node = { connect: vi.fn(), disconnect: vi.fn(), onaudioprocess: null };
+  vi.stubGlobal('AudioContext', function Ctx() {
+    return { sampleRate: 16000, destination: {}, close: vi.fn(), createMediaStreamSource: () => node, createScriptProcessor: () => node };
+  });
+  let finish!: (text: string) => void;
+  vi.spyOn(api, 'transcribe').mockReturnValue(new Promise((resolve) => { finish = resolve; }));
+  vi.spyOn(api, 'resolveTargets').mockResolvedValue({ candidates: [target], remotes: [target] });
+  vi.spyOn(api, 'gitBranches').mockResolvedValue({ branches: [] });
+  render(<WithShortcuts isRunning={false} newConversation whisperAvailable directory="/local/project" sessionId="overlap-test" onMachineChange={vi.fn()} />);
+  const machine = await screen.findByRole('combobox', { name: 'Session machine' });
+  const input = screen.getByRole('textbox');
+  await act(async () => fireEvent.keyDown(input, { code: 'KeyD', altKey: true }));
+  expect(getUserMedia).toHaveBeenCalledTimes(1);
+  (node.onaudioprocess as unknown as (e: unknown) => void)({ inputBuffer: { getChannelData: () => new Float32Array(1600) } });
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Stop recording' })));
+  await act(async () => fireEvent.keyDown(input, { code: 'KeyD', altKey: true }));
+  await act(async () => fireEvent.click(screen.getByTitle('Record voice message')));
+  expect(getUserMedia).toHaveBeenCalledTimes(1);
+  await act(async () => finish('first take'));
+  expect(machine).not.toBeDisabled();
+  delete (navigator as { mediaDevices?: unknown }).mediaDevices;
 });

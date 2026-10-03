@@ -113,6 +113,8 @@ export function useComposerAudio({
   // 'starting' = awaiting microphone access; 'transcribing' also covers a
   // stopped speech recognition still delivering its final results.
   const [micState, setMicStateValue] = useState<MicState>('idle');
+  // Synchronous copy: a click/shortcut must see 'starting'/'transcribing' before re-render.
+  const micStateRef = useRef<MicState>('idle');
   const isRecording = micState === 'recording';
   const [micError, setMicError] = useState<string | null>(null);
   const micRef = useRef<HTMLButtonElement | null>(null);
@@ -127,6 +129,7 @@ export function useComposerAudio({
   // -------------------------------------------------------------------------
 
   const setMicState = useCallback((state: MicState) => {
+    micStateRef.current = state;
     setMicStateValue(state);
     const btn = micRef.current;
     if (!btn) return;
@@ -367,6 +370,8 @@ export function useComposerAudio({
 
   const handleMicClick = useCallback(async () => {
     if (disabledRef.current) return;
+    // One dictation at a time: a start or transcription in flight owns the state.
+    if (micStateRef.current === 'starting' || micStateRef.current === 'transcribing') return;
 
     if (recordingRef.current) {
       await stopRecording();
