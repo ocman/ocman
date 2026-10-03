@@ -131,7 +131,8 @@ docs: ## Serve the docs site with live reload and open it (DOCS_BIND/DOCS_HOST/D
 		--baseURL http://$(DOCS_HOST) --openBrowser --navigateToChanged
 
 docs-build: ## Build the static docs site into site/public
-	cd site && hugo --minify --gc
+	cd site && hugo --minify --gc --cleanDestinationDir
+	test ! -e site/public/docs/adr
 
 # Production build
 build: build-frontend build-backend

@@ -3,6 +3,8 @@ name: Pages
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -35,6 +37,7 @@ jobs:
       # ponytail: force-push a single commit; the pages branch is a build
       # artifact, not history. Keep history if you ever need rollbacks.
       - name: Publish to pages branch
+        if: github.event_name != 'pull_request'
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
