@@ -228,12 +228,15 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	// consistent. The user can re-archive from the sidebar. Skipped for
 	// remote sessions (AD-14b): their archive state lives in the remote's
 	// state.db, not the hub's. A peek (the sidebar probing a session that
-	// just showed activity) is not an open: it follows the resurface policy,
-	// so an archived session stays archived while it is still working.
-	if s.stateDB != nil && detail.Session != nil && !remote && r.URL.Query().Get("peek") == "1" {
+	// just showed activity) is not an open: it applies the same hub overlay
+	// and resurface policy as the session list (remote sessions included,
+	// keyed by their compound platform), so an archived session stays
+	// archived while it is still working.
+	if s.stateDB != nil && detail.Session != nil && r.URL.Query().Get("peek") == "1" {
 		row := []db.Session{*detail.Session}
 		if err := s.applySessionState(r.Context(), row); err != nil {
-			log.Printf("applying session state on peek: %v", err)
+			serverError(w, "applying session state on peek", err)
+			return
 		}
 		detail.Session.Archived = row[0].Archived
 	} else if s.stateDB != nil && detail.Session != nil && !remote {
