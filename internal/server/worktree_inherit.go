@@ -23,7 +23,8 @@ type inheritedRules struct {
 // buildInheritedPermissions reads the parent's always-allow approvals and
 // live ruleset when the worktree.inherit_permissions setting is on and a
 // parent was named. It needs no child, so it runs alongside creation.
-func (s *Server) buildInheritedPermissions(r *http.Request, parentSessionID string) inheritedRules {
+// platform names the adapter owning both sessions; empty means "opencode".
+func (s *Server) buildInheritedPermissions(r *http.Request, platform, parentSessionID string) inheritedRules {
 	if s.stateDB == nil || parentSessionID == "" {
 		return inheritedRules{}
 	}
@@ -38,7 +39,6 @@ func (s *Server) buildInheritedPermissions(r *http.Request, parentSessionID stri
 	// The /wt flow is OpenCode-only (AD-7) and doesn't pass ?platform=;
 	// approvals are recorded under the platform id, so default to
 	// "opencode" when no explicit hint is present.
-	platform := platformHint(r)
 	if platform == "" {
 		platform = "opencode"
 	}

@@ -464,6 +464,9 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		Platform  string `json:"platform"`
 		Directory string `json:"directory"`
 		Title     string `json:"title"`
+		// ParentSessionID seeds the new session with that session's
+		// permission posture, as /wt does for a new worktree.
+		ParentSessionID string `json:"parentSessionId"`
 	}
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) {
 		return
@@ -542,6 +545,8 @@ func (s *Server) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		writeSessionSvcError(w, "creating session", err)
 		return
 	}
+	// Soft-fail like /wt: inheritance never turns a created session into an error.
+	s.applyInheritedPermissions(r, s.buildInheritedPermissions(r, req.Platform, req.ParentSessionID), resp.ID)
 	writeJSON(w, resp)
 }
 

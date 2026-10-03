@@ -449,6 +449,10 @@ flowchart TD
   session title is left to OpenCode's own first-message titling.
   Naming failures keep `session-<suffix>` without opening a form. Users can
   select Current checkout; non-repository directories use it automatically.
+  They can also pick an existing linked worktree, which creates the session there
+  with the parent's inherited permissions (`parentSessionId` on `/api/sessions`).
+  New sessions started from a worktree session (Opt+T, `/new`) open on the main
+  checkout resolved from the owner's worktree list, so every target stays available.
   Composer layout, dialogs, and props live in separate modules.
 - **Read aloud.** Turn-end controls select original final-answer text parts and
   use browser speech synthesis. Opt-in autoplay waits for the idle reconciliation

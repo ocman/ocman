@@ -128,9 +128,9 @@ describe('automatic worktree start', () => {
     expect(composer.worktrees).toEqual([{ path: '/worktrees/feat', branch: 'feat' }]);
     act(() => composer.onTargetChange!('dir:/worktrees/feat'));
     await act(() => composer.onSend!('Continue', undefined, false));
-    expect(mocks.createSession).toHaveBeenCalledWith('/worktrees/feat', 'r-machine:opencode');
+    expect(mocks.createSession).toHaveBeenCalledWith('/worktrees/feat', 'r-machine:opencode', undefined, 'parent');
     expect(mocks.create).not.toHaveBeenCalled();
-    expect(mocks.seed).toHaveBeenCalledWith('in-feat', '/worktrees/feat', 'r-machine:opencode', 'feat', 'machine');
+    expect(mocks.seed).toHaveBeenCalledWith('in-feat', '/worktrees/feat', 'r-machine:opencode', undefined, 'machine');
     expect(mocks.send).toHaveBeenCalledWith('in-feat', 'Continue', undefined, 'provider/big', 'plan', 'high', 'r-machine:opencode', false);
     expect(screen.getByText('/session/in-feat')).toBeInTheDocument();
     expect(originalSend).not.toHaveBeenCalled();

@@ -276,7 +276,7 @@ func (s *Server) handleWorktreeCreateAndLaunch(w http.ResponseWriter, r *http.Re
 	}
 	// Parent permission reads don't depend on the worktree; overlap them.
 	inherited := make(chan inheritedRules, 1)
-	go func() { inherited <- s.buildInheritedPermissions(r, req.ParentSessionID) }()
+	go func() { inherited <- s.buildInheritedPermissions(r, platformHint(r), req.ParentSessionID) }()
 	res, err := host.CreateWorktreeSession(r.Context(), hostsvc.WorktreeSessionRequest{
 		ProjectDir: req.ProjectDir,
 		Branch:     req.Branch,

@@ -587,6 +587,59 @@ func TestHandleWorktreeCreateAndLaunch_NoParentNoInherit(t *testing.T) {
 	}
 }
 
+// A session started in an existing worktree via POST /api/sessions must
+// carry the parent's live posture (here a restrictive deny), like /wt.
+func TestHandleCreateSession_InheritsParentPermissions(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		inherit bool
+		parent  string
+		want    int
+	}{
+		{name: "inherits live rules", inherit: true, parent: "parent-wt", want: 1},
+		{name: "setting off", inherit: false, parent: "parent-wt", want: 0},
+		{name: "no parent", inherit: true, parent: "", want: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, reg := newSessionsTestServer(t)
+			var captured []platforms.SetPermissionRulesRequest
+			deny := platforms.PermissionRule{Permission: "bash", Pattern: "*", Action: "deny"}
+			reg.Register(&fakePlatform{
+				id: "opencode",
+				createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+					return &platforms.CreateSessionResponse{ID: "ses_child"}, nil
+				},
+				permissionRulesFn: func(id string) ([]platforms.PermissionRule, error) {
+					if id != "parent-wt" {
+						t.Errorf("live rules read for %q; want parent-wt", id)
+					}
+					return []platforms.PermissionRule{deny}, nil
+				},
+				setPermissionRulesFn: func(req platforms.SetPermissionRulesRequest) error {
+					captured = append(captured, req)
+					return nil
+				},
+			})
+			if err := srv.stateDB.SetWorktreeInheritPermissions(t.Context(), tc.inherit); err != nil {
+				t.Fatalf("SetWorktreeInheritPermissions: %v", err)
+			}
+
+			body := `{"platform":"opencode","directory":"/repo/feat","parentSessionId":"` + tc.parent + `"}`
+			rr := httptest.NewRecorder()
+			srv.handleCreateSession(rr, httptest.NewRequest(http.MethodPost, "/api/sessions", strings.NewReader(body)))
+			if rr.Code != http.StatusOK {
+				t.Fatalf("status = %d; body = %q", rr.Code, rr.Body.String())
+			}
+			if len(captured) != tc.want {
+				t.Fatalf("SetPermissionRules calls = %d, want %d", len(captured), tc.want)
+			}
+			if tc.want == 1 && (captured[0].SessionID != "ses_child" || len(captured[0].Rules) != 1 || captured[0].Rules[0] != deny) {
+				t.Fatalf("unexpected applied rules: %+v", captured[0])
+			}
+		})
+	}
+}
+
 func TestHandleWorktreeCreateAndLaunch_InheritDisabled(t *testing.T) {
 	var captured []platforms.SetPermissionRulesRequest
 	srv, repo := worktreeInheritTestServer(t, &captured)

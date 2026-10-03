@@ -29,6 +29,22 @@ export interface UseSessionCreationResult {
   handleMachineChange: (target: TargetCandidate, draft: string) => Promise<void>;
 }
 
+/**
+ * Resolves the session's main checkout from the owner's worktree list, so
+ * worktrees outside ocman's `.worktrees/<repo>/<slug>` layout are covered.
+ * A failed lookup (e.g. not a repository) keeps the layout-based guess.
+ */
+async function mainCheckout(session: SessionMetadata): Promise<string> {
+  try {
+    const { worktrees } = await api.worktree.list(session.directory, session.remoteId || 'local');
+    const main = worktrees.find((tree) => tree.main && !tree.bare)?.path;
+    if (main) return main;
+  } catch (e) {
+    remoteLog.warn('Resolving main checkout failed; using directory layout', e);
+  }
+  return projectRootForDirectory(session.directory);
+}
+
 /** New-session and `/compact` actions for the open session. */
 export function useSessionCreation({
   session,
@@ -79,7 +95,7 @@ export function useSessionCreation({
     if (!session) return;
     // Start from the main checkout: a session already inside a linked worktree
     // would make the composer skip its "New worktree" target (the default).
-    await handleNewSessionInDirectory(projectRootForDirectory(session.directory), session.remoteId, session.platform, title);
+    await handleNewSessionInDirectory(await mainCheckout(session), session.remoteId, session.platform, title);
   }, [session, handleNewSessionInDirectory]);
 
   const handleMachineChange = useCallback(async (target: TargetCandidate, draft: string) => {

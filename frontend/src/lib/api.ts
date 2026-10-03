@@ -713,7 +713,8 @@ export const api = {
     postJSON<{ ok: boolean }>(`/api/remotes/${localId}/reconnect`, undefined),
   resolveTargets: (dir: string, remoteId?: string) =>
     postJSON<ResolveTargetsResponse>('/api/sessions/resolve-targets', { dir, ...(remoteId ? { remoteId } : {}) }),
-  createSession: async (directory: string, platform?: string, title?: string) => {
+  /** parentSessionId seeds the new session with that session's permission posture. */
+  createSession: async (directory: string, platform?: string, title?: string, parentSessionId?: string) => {
     const resp = await apiFetch('/api/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -721,6 +722,7 @@ export const api = {
         directory,
         ...(platform ? { platform } : {}),
         ...(title ? { title } : {}),
+        ...(parentSessionId ? { parentSessionId } : {}),
       }),
     });
     if (!resp.ok) {

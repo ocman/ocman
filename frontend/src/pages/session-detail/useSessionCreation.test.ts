@@ -4,8 +4,11 @@ import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionMetadata } from '../../lib/sessionReducer';
 
-vi.mock('../../lib/api', () => ({ api: { compactSession: vi.fn().mockResolvedValue(undefined) } }));
-vi.mock('../../lib/remoteLog', () => ({ remoteLog: { error: vi.fn() } }));
+const listWorktrees = vi.fn();
+vi.mock('../../lib/api', () => ({
+  api: { compactSession: vi.fn().mockResolvedValue(undefined), worktree: { list: (...args: unknown[]) => listWorktrees(...args) } },
+}));
+vi.mock('../../lib/remoteLog', () => ({ remoteLog: { error: vi.fn(), warn: vi.fn() } }));
 const createSessionWithLaunch = vi.fn();
 vi.mock('../../lib/createSessionWithLaunch', () => ({
   createSessionWithLaunch: (...args: unknown[]) => createSessionWithLaunch(...args),
@@ -45,6 +48,7 @@ describe('useSessionCreation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     createSessionWithLaunch.mockResolvedValue({ id: 'new-1', directory: '/repo/a/wt' });
+    listWorktrees.mockRejectedValue(new Error('not a git repository'));
   });
 
   it('inherits the open session platform only for the same project', async () => {
@@ -66,7 +70,22 @@ describe('useSessionCreation', () => {
     );
   });
 
-  it('starts a new session from the main checkout so the worktree target is offered', async () => {
+  it('resolves the main checkout from the owner for a worktree outside the managed layout', async () => {
+    listWorktrees.mockResolvedValue({ worktrees: [
+      { path: '/src/repo', branch: 'main', main: true, bare: false },
+      { path: '/src/repo-feature', branch: 'feature', main: false, bare: false },
+    ] });
+    const o = opts({ session: { ...session, directory: '/src/repo-feature' } });
+    const { result } = renderHook(() => useSessionCreation(o));
+    await act(() => result.current.handleNewSession());
+    expect(listWorktrees).toHaveBeenCalledWith('/src/repo-feature', 'r-x');
+    expect(createSessionWithLaunch).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ directory: '/src/repo', remoteId: 'r-x' }),
+    );
+  });
+
+  it('falls back to the directory layout when the worktree lookup fails', async () => {
     const o = opts({ session: { ...session, directory: '/src/.worktrees/repo/feat' } });
     const { result } = renderHook(() => useSessionCreation(o));
     await act(() => result.current.handleNewSession());
