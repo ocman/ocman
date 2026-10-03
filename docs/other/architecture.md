@@ -108,8 +108,13 @@ flowchart LR
   Plugin catalog, management, health, actions and artifact reads use the same
   authenticated connection. Each machine discovers its own binaries and stores
   its own configuration and secrets. The hub never installs remote binaries.
-- **Project identity.** Each owner reads every Git fetch remote and caches the
-  result for five minutes. Credential-free upstream keys normalize SSH and HTTP
+- **Project identity.** Each owner enriches its project snapshot with Git fetch
+  remotes inside the existing singleflight refresh. Loaded snapshots return
+  immediately while background discovery runs; inventory projection reuses the
+  enriched rows without running Git. Per-directory discovery also coalesces
+  concurrent callers and caches successful results for five minutes. A failed
+  refresh preserves the previous keys and snapshot and can retry immediately.
+  Credential-free upstream keys normalize SSH and HTTP
   transport syntax, `.git` suffixes, host casing and default ports. The hub assigns
   a shared `projectKey` to checkouts connected by any common upstream, including
   chains through a checkout with multiple remotes. `/api/projects` keeps each

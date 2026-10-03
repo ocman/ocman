@@ -38,7 +38,6 @@ type Server struct {
 	inboxStore        *state.DB
 	instanceID        string
 	version           string
-	origins           *originCache
 	enrichSession     func(context.Context, string, string, *platforms.SessionDetail)
 	proxyEvents       func(context.Context, string, string, platforms.Platform, io.Writer, io.Writer, func()) error
 	webhookDispatcher webhook.RoutineDispatcher
@@ -66,7 +65,6 @@ func NewServer(registry *platforms.Registry, host hostsvc.Host, instanceID, vers
 		host:       host,
 		instanceID: instanceID,
 		version:    version,
-		origins:    newOriginCache(),
 	}
 }
 
@@ -824,5 +822,5 @@ func (s *Server) Projects(ctx context.Context, _ *pb.Empty) (*pb.JsonResp, error
 	if err != nil {
 		return nil, err
 	}
-	return jsonResp(projectIdentities(ctx, s.origins, projects), nil)
+	return jsonResp(projectIdentities(projects), nil)
 }

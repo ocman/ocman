@@ -66,8 +66,12 @@ func TestHandleResolveTargets_RemoteOrigin(t *testing.T) {
 	repo := initOriginRepo(t)
 	srv := testServer(t)
 	withManager(t, srv)
+	localStats := []db.ProjectStats{{Directory: repo}}
+	if err := remote.EnrichProjectStats(t.Context(), localStats); err != nil {
+		t.Fatal(err)
+	}
 	srv.projects.mu.Lock()
-	srv.projects.data = []db.ProjectStats{{Directory: repo}}
+	srv.projects.data = localStats
 	srv.projects.loaded = true
 	srv.projects.mu.Unlock()
 	// The same absolute path on two hosts is not proof of project identity.
@@ -133,8 +137,15 @@ func TestHandleResolveTargets_RemoteRPCRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv := testServer(t)
+	localStats := []db.ProjectStats{{Directory: localRepo}}
+	remoteStats := []db.ProjectStats{{Directory: remoteRepo}}
+	for _, stats := range [][]db.ProjectStats{localStats, remoteStats} {
+		if err := remote.EnrichProjectStats(t.Context(), stats); err != nil {
+			t.Fatal(err)
+		}
+	}
 	srv.projects.mu.Lock()
-	srv.projects.data = []db.ProjectStats{{Directory: localRepo}}
+	srv.projects.data = localStats
 	srv.projects.loaded = true
 	srv.projects.mu.Unlock()
 	registry := platforms.NewRegistry()
@@ -142,7 +153,7 @@ func TestHandleResolveTargets_RemoteRPCRoundTrip(t *testing.T) {
 	service := remote.NewServer(registry, hostlocal.New(hostlocal.Deps{
 		ProjectUpstreams: srv.hostProjectUpstreams,
 		Projects: func(context.Context) ([]db.ProjectStats, error) {
-			return []db.ProjectStats{{Directory: remoteRepo}}, nil
+			return remoteStats, nil
 		},
 	}), "machine", "test")
 	listener, err := remote.NewListener(remote.ListenConfig{Addr: "127.0.0.1:0", Token: "token", TrustedOverlay: true}, service)

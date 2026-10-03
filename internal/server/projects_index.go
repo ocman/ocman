@@ -12,6 +12,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/telemetry"
 )
 
@@ -33,7 +34,8 @@ type projectsIndexState struct {
 
 	// fetch overrides the db.GetProjects query. Nil in production;
 	// tests set it to control timing, failures, and call counts.
-	fetch func() ([]db.ProjectStats, error)
+	fetch  func() ([]db.ProjectStats, error)
+	enrich func(context.Context, []db.ProjectStats) error // nil uses owner-local discovery
 }
 
 // projectsIndexTickFn is the refresh body of runProjectsIndexLoop,
@@ -169,6 +171,13 @@ func (s *Server) refreshProjectsIndexOnce() error {
 
 	start := time.Now()
 	projects, err := s.getProjects(ctx)
+	if err == nil {
+		enrich := s.projects.enrich
+		if enrich == nil {
+			enrich = remote.EnrichProjectStats
+		}
+		err = enrich(ctx, projects)
+	}
 	dur := time.Since(start)
 	if projectsIndexRefreshDuration != nil {
 		projectsIndexRefreshDuration.Record(ctx, float64(dur.Microseconds())/1000.0)

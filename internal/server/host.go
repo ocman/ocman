@@ -4,12 +4,10 @@ import (
 	"context"
 	"net/http"
 	"os/exec"
-	"strings"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/forge"
 	"github.com/NoUseFreak/ocman/internal/git"
-	"github.com/NoUseFreak/ocman/internal/gitexec"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/remote"
 	"github.com/NoUseFreak/ocman/internal/tmux"
@@ -90,7 +88,7 @@ func (s *Server) hostTmuxSessions(ctx context.Context) ([]hostsvc.TmuxSession, e
 }
 
 // hostProjects returns stale data immediately while a dirty index refreshes.
-func (s *Server) hostProjects(ctx context.Context) ([]db.ProjectStats, error) {
+func (s *Server) hostProjects(_ context.Context) ([]db.ProjectStats, error) {
 	projects, loaded, dirty := s.projectsSnapshotState()
 	if !loaded {
 		if err := s.refreshProjectsIndex(); err != nil {
@@ -100,7 +98,6 @@ func (s *Server) hostProjects(ctx context.Context) ([]db.ProjectStats, error) {
 	} else if dirty {
 		s.triggerProjectsIndexRefresh()
 	}
-	remote.EnrichProjectStats(ctx, projects)
 	return projects, nil
 }
 
@@ -112,13 +109,11 @@ func (s *Server) hostProjectUpstreams(ctx context.Context, dir string) (*hostsvc
 	remotes, err := forge.Detect(ctx, repoRoot, anyForgejoHost{})
 	out := &hostsvc.ProjectUpstreams{RepoRoot: repoRoot, Remotes: remotes}
 	stats := []db.ProjectStats{{Directory: dir}}
-	remote.EnrichProjectStats(ctx, stats)
-	out.UpstreamKeys = stats[0].UpstreamKeys
-	// Same normalizer as the project inventory, so origins forge.Detect
-	// can't parse (e.g. nested GitLab groups) still match.
-	if origin, oerr := gitexec.Output(ctx, dir, "remote", "get-url", "origin"); oerr == nil && strings.TrimSpace(origin) != "" { // ocman:allow-host-helper
-		out.Identity = remote.NormalizeUpstream(origin)
+	if err := remote.EnrichProjectStats(ctx, stats); err != nil {
+		return nil, err
 	}
+	out.UpstreamKeys = stats[0].UpstreamKeys
+	out.Identity = stats[0].UpstreamOrigin
 	return out, err
 }
 

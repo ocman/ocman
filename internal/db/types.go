@@ -546,6 +546,7 @@ type ModelCostPoint struct {
 type ProjectStats struct {
 	ProjectKey     string   `json:"projectKey,omitempty"`
 	UpstreamKeys   []string `json:"upstreamKeys,omitempty"`
+	UpstreamOrigin string   `json:"upstreamOrigin,omitempty"`
 	Directory      string   `json:"directory"`
 	SessionCount   int      `json:"sessionCount"`
 	MessageCount   int      `json:"messageCount"`
