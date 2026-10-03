@@ -50,10 +50,10 @@ describe('useSidebarProjectGroups', () => {
       projects.splice(-2);
     }
   });
-  it('groups shared upstream checkouts across hosts and archives each owning checkout', async () => {
+  it('groups same-path checkouts across hosts and archives each explicit owner', async () => {
     const shared = [
       { directory: '/local/repo', projectKey: 'git:shared', lastUsed: 1 },
-      { directory: '/remote/clone', remoteId: 'other', projectKey: 'git:shared', lastUsed: 2 },
+      { directory: '/local/repo', remoteId: 'other', projectKey: 'git:shared', lastUsed: 2 },
     ] as Project[];
     projects.push(...shared);
     const archiveProject = vi.fn(async () => ({ ok: true }));
@@ -61,7 +61,7 @@ describe('useSidebarProjectGroups', () => {
     try {
       const recentSessions = [
         session({ id: 'local', directory: '/local/repo' }),
-        session({ id: 'remote', directory: '/remote/clone', remoteId: 'other', platform: 'r-other:opencode' }),
+        session({ id: 'remote', directory: '/local/repo', remoteId: 'other', platform: 'r-other:opencode' }),
       ];
       const { result } = renderHook(() => useSidebarProjectGroups({ id: 'local', recentSessions, displayStatus: 'done' }));
       const groups = result.current.sidebarProjectGroups.filter(g => g.sessions.length);
@@ -69,8 +69,8 @@ describe('useSidebarProjectGroups', () => {
       expect(groups[0]).toMatchObject({ key: 'git:shared', directory: '/local/repo', remoteId: 'local' });
       expect(groups[0].sessions).toHaveLength(2);
       await act(async () => { result.current.handleArchiveProjectFromSidebar('/local/repo'); });
-      expect(archiveProject).toHaveBeenCalledWith('/local/repo', true, undefined);
-      expect(archiveProject).toHaveBeenCalledWith('/remote/clone', true, 'other');
+      expect(archiveProject).toHaveBeenCalledWith('/local/repo', true, 'local');
+      expect(archiveProject).toHaveBeenCalledWith('/local/repo', true, 'other');
       expect(result.current.sidebarProjectGroups.some(g => g.key === 'git:shared')).toBe(false);
     } finally {
       projects.splice(-shared.length);
@@ -125,7 +125,7 @@ describe('useSidebarProjectGroups', () => {
     expect(useUiStore.getState().projectOrder).toEqual(['/repo/a']);
 
     await act(async () => { result.current.handleArchiveProjectFromSidebar('/repo/a'); });
-    expect(archiveProject).toHaveBeenCalledWith('/repo/a', true, undefined);
+    expect(archiveProject).toHaveBeenCalledWith('/repo/a', true, 'local');
     expect(refetch).toHaveBeenCalled();
     expect(result.current.sidebarProjectGroups.map((g) => g.directory)).toEqual(['/repo/quiet']);
   });

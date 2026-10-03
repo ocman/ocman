@@ -175,7 +175,7 @@ export function useSidebarProjectGroups({
       const members = (allProjects ?? []).filter((p) => identity(p.directory, p.remoteId).key === key);
       setArchivedProjectRoots((prev) => new Set(prev).add(key));
       Promise.all((members.length ? members : [{ directory: root, remoteId }]).map((p) =>
-        archiveProject(p.directory, true, p.remoteId)))
+        archiveProject(p.directory, true, p.remoteId || 'local')))
         .then(() => projectsQuery.refetch())
         .catch((err) => {
           remoteLog.error('Failed to archive project', err);

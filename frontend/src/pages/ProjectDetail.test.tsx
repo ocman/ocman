@@ -1,24 +1,28 @@
 // @vitest-environment jsdom
-import { expect, it, vi } from 'vitest';
+import { beforeEach, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { ProjectDetail } from './ProjectDetail';
+
+const history = vi.hoisted(() => ({ sessions: [
+  { id: 'a', title: 'Fix header', directory: '/repos/ocman' },
+  { id: 'b', title: 'Add search', directory: '/repos/ocman' },
+  { id: 'c', title: 'Remote change', directory: '/remote/clone', remoteId: 'other' },
+  { id: 'd', title: 'Unrelated', directory: '/elsewhere' },
+] }));
 
 vi.mock('../lib/queries', () => ({
   useProjects: () => ({ isLoading: false, data: [
     { directory: '/repos/ocman', projectKey: 'git:shared' },
     { directory: '/remote/clone', remoteId: 'other', projectKey: 'git:shared' },
   ] }),
-  useSessions: () => ({
+  useSessions: (params?: { limit?: number }) => ({
     isLoading: false,
-    data: [
-      { id: 'a', title: 'Fix header', directory: '/repos/ocman' },
-      { id: 'b', title: 'Add search', directory: '/repos/ocman' },
-      { id: 'c', title: 'Remote change', directory: '/remote/clone', remoteId: 'other' },
-      { id: 'd', title: 'Unrelated', directory: '/elsewhere' },
-    ],
+    data: params?.limit === 0 ? history.sessions : history.sessions.slice(0, params?.limit ?? 500),
   }),
 }));
+
+beforeEach(() => { history.sessions = history.sessions.filter(s => !s.id.startsWith('unrelated-')); });
 vi.mock('../lib/useTmux', () => ({ useTmux: () => ({ findSession: () => undefined, clients: [] }) }));
 vi.mock('../lib/useCapabilities', () => ({ useOpencodeLaunch: () => true }));
 vi.mock('../components/SessionTable', () => ({
@@ -38,4 +42,19 @@ it('filters project sessions by search and portals actions into the header', () 
   expect(screen.getAllByRole('listitem').map(li => li.textContent)).toEqual(['Fix header', 'Add search', 'Remote change']);
   fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: 'search' } });
   expect(screen.getAllByRole('listitem').map((li) => li.textContent)).toEqual(['Add search']);
+});
+
+it('keeps project sessions beyond 500 newer unrelated sessions in both time-range and All views', () => {
+  history.sessions.unshift(...Array.from({ length: 500 }, (_, i) => ({
+    id: `unrelated-${i}`, title: `Unrelated ${i}`, directory: '/elsewhere',
+  })));
+  render(
+    <MemoryRouter initialEntries={['/project/%2Frepos%2Focman']}>
+      <Routes><Route path="/project/:dir" element={<ProjectDetail />} /></Routes>
+    </MemoryRouter>,
+  );
+  const expected = ['Fix header', 'Add search', 'Remote change'];
+  expect(screen.getAllByRole('listitem').map(li => li.textContent)).toEqual(expected);
+  fireEvent.click(screen.getByRole('radio', { name: 'All' }));
+  expect(screen.getAllByRole('listitem').map(li => li.textContent)).toEqual(expected);
 });

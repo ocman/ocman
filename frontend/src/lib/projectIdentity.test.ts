@@ -27,15 +27,17 @@ describe('projectIdentityIndex', () => {
     expect(index('/remote/repo', 'other')).toMatchObject({ directory: '/local/repo', remoteId: undefined });
   });
 
-  it('aggregates project rows without mutating checkout stats', () => {
+  it.each(['local-first', 'remote-first'])('aggregates %s project rows without mutating checkout stats', (order) => {
     const projects = [
       { directory: '/a', projectKey: 'git:shared', sessionCount: 2, messageCount: 3, totalTokensIn: 4, totalTokensOut: 5, lastUsed: 6, archived: true },
       { directory: '/b', remoteId: 'other', projectKey: 'git:shared', sessionCount: 10, messageCount: 20, totalTokensIn: 30, totalTokensOut: 40, lastUsed: 50, archived: false },
     ] as Project[];
+    if (order === 'remote-first') projects.reverse();
     expect(groupProjects(projects)).toEqual([expect.objectContaining({
       directory: '/a', sessionCount: 12, messageCount: 23, totalTokensIn: 34, totalTokensOut: 45, lastUsed: 50, archived: false,
     })]);
-    expect(projects[0].sessionCount).toBe(2);
+    expect(projects.find(p => p.directory === '/a')?.sessionCount).toBe(2);
+    expect(projects.find(p => p.directory === '/b')?.sessionCount).toBe(10);
     expect(groupProjects([])).toEqual([]);
   });
 });

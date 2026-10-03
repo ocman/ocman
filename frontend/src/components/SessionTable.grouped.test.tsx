@@ -142,6 +142,22 @@ describe('GroupedSessionTable project archive', () => {
     expect(mocks.apiState.archiveProject).toHaveBeenCalledWith('/src/foo', true, 'r1');
   });
 
+  it.each([false, true])('preserves explicit owners for same-path archive fan-out, archived=%s', (archived) => {
+    const directory = '/src/foo';
+    const projects = [
+      { directory, projectKey: 'git:shared', archived },
+      { directory, projectKey: 'git:shared', archived, remoteId: 'r1' },
+    ] as Project[];
+    renderGrouped({ projects, includeArchived: true, sessions: [
+      makeSession({ id: 'local', directory }),
+      makeSession({ id: 'remote', directory, remoteId: 'r1' }),
+    ] });
+    fireEvent.click(screen.getByText(archived ? 'Unarchive project' : 'Archive project'));
+    expect(mocks.apiState.archiveProject).toHaveBeenCalledWith(directory, !archived, 'local');
+    expect(mocks.apiState.archiveProject).toHaveBeenCalledWith(directory, !archived, 'r1');
+    expect(mocks.apiState.archiveProject).toHaveBeenCalledTimes(2);
+  });
+
   it('folds worktree sessions to the repo root group', () => {
     const sessions = [
       makeSession({ id: 's1', directory: '/src/foo' }),

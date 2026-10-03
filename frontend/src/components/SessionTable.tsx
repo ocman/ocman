@@ -172,7 +172,7 @@ export function GroupedSessionTable({
     setLocalProjectArchived(prev => new Map(prev).set(key, archived));
     try {
       await Promise.all((members.length ? members : [{ directory, remoteId }]).map(p =>
-        archiveProject(p.directory, archived, p.remoteId)));
+        archiveProject(p.directory, archived, p.remoteId || 'local')));
     } catch (err) {
       remoteLog.error('Failed to archive project', err);
       setLocalProjectArchived(prev => {

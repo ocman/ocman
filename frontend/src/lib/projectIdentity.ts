@@ -18,7 +18,8 @@ export function projectIdentityIndex(projects: Checkout[]) {
     byCheckout.set(checkoutKey(directory, project.remoteId), key);
     const previous = representatives.get(key);
     if (!previous || (previous.remoteId && previous.remoteId !== 'local' && (!project.remoteId || project.remoteId === 'local'))) {
-      representatives.set(key, { ...project, directory, remoteId: project.remoteId, key });
+      representatives.set(key, { directory, remoteId: project.remoteId,
+        remoteName: project.remoteName, platform: project.platform, projectKey: project.projectKey, key });
     }
   }
   return (directory: string, remoteId?: string): ProjectIdentity => {
