@@ -59,13 +59,17 @@ it('rejects file drops while switching machines', async () => {
 
 function fakeSpeechRecognition() {
   vi.stubGlobal('isSecureContext', true);
-  const recognition = { start: vi.fn(), stop: vi.fn(), abort: vi.fn(), onend: null as null | (() => void) };
+  const recognition = {
+    start: vi.fn(), stop: vi.fn(), abort: vi.fn(),
+    onend: null as null | (() => void),
+    onresult: null as null | ((e: unknown) => void),
+  };
   vi.stubGlobal('webkitSpeechRecognition', function Recognition() { return recognition; });
   return recognition;
 }
 
-it('locks machine selection while dictation is listening', async () => {
-  fakeSpeechRecognition();
+it('locks machine selection until dictation delivers its final result', async () => {
+  const recognition = fakeSpeechRecognition();
   vi.spyOn(api, 'resolveTargets').mockResolvedValue({ candidates: [target], remotes: [target] });
   vi.spyOn(api, 'gitBranches').mockResolvedValue({ branches: [] });
   render(<Composer isRunning={false} newConversation directory="/local/project" sessionId="dictation-test" onMachineChange={vi.fn()} />);
@@ -73,7 +77,33 @@ it('locks machine selection while dictation is listening', async () => {
   await act(async () => fireEvent.click(screen.getByTitle('Record voice message')));
   expect(machine).toBeDisabled();
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Stop recording' })));
+  // The final result arrives after stop(); switching before it would drop it.
+  expect(machine).toBeDisabled();
+  const final = Object.assign([{ transcript: 'last words' }], { isFinal: true });
+  act(() => recognition.onresult!({ resultIndex: 0, results: [final] }));
+  act(() => recognition.onend!());
+  expect(screen.getByRole('textbox')).toHaveValue('last words');
   expect(machine).not.toBeDisabled();
+});
+
+it('locks machine selection while microphone access is pending', async () => {
+  let grant!: (stream: unknown) => void;
+  Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: () => new Promise((resolve) => { grant = resolve; }) } });
+  vi.spyOn(api, 'resolveTargets').mockResolvedValue({ candidates: [target], remotes: [target] });
+  vi.spyOn(api, 'gitBranches').mockResolvedValue({ branches: [] });
+  render(<Composer isRunning={false} newConversation whisperAvailable directory="/local/project" sessionId="acquire-test" onMachineChange={vi.fn()} />);
+  const machine = await screen.findByRole('combobox', { name: 'Session machine' });
+  await act(async () => fireEvent.click(screen.getByTitle('Record voice message')));
+  expect(machine).toBeDisabled();
+  const node = { connect: vi.fn(), disconnect: vi.fn(), onaudioprocess: null };
+  vi.stubGlobal('AudioContext', function Ctx() {
+    return { sampleRate: 16000, destination: {}, close: vi.fn(), createMediaStreamSource: () => node, createScriptProcessor: () => node };
+  });
+  await act(async () => grant({ getTracks: () => [{ stop: vi.fn() }] }));
+  expect(screen.getByRole('button', { name: 'Stop recording' })).toBeInTheDocument();
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Stop recording' })));
+  expect(machine).not.toBeDisabled();
+  delete (navigator as { mediaDevices?: unknown }).mediaDevices;
 });
 
 it('locks machine selection until a transcription lands', async () => {

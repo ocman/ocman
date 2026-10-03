@@ -61,6 +61,7 @@ interface SpeechCtx {
 }
 
 type RecordingCtx = WhisperCtx | SpeechCtx;
+type MicState = 'idle' | 'starting' | 'recording' | 'transcribing';
 
 export interface ComposerAudioControls {
   isRecording: boolean;
@@ -109,7 +110,9 @@ export function useComposerAudio({
   disabled: boolean | undefined;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
 }): ComposerAudioControls {
-  const [micState, setMicStateValue] = useState<'idle' | 'recording' | 'transcribing'>('idle');
+  // 'starting' = awaiting microphone access; 'transcribing' also covers a
+  // stopped speech recognition still delivering its final results.
+  const [micState, setMicStateValue] = useState<MicState>('idle');
   const isRecording = micState === 'recording';
   const [micError, setMicError] = useState<string | null>(null);
   const micRef = useRef<HTMLButtonElement | null>(null);
@@ -123,14 +126,14 @@ export function useComposerAudio({
   // Button visual state
   // -------------------------------------------------------------------------
 
-  const setMicState = useCallback((state: 'idle' | 'recording' | 'transcribing') => {
+  const setMicState = useCallback((state: MicState) => {
     setMicStateValue(state);
     const btn = micRef.current;
     if (!btn) return;
     const icon = btn.querySelector('.oc-mic-icon');
     if (!(icon instanceof HTMLElement)) return;
     btn.classList.remove('oc-mic-recording', 'oc-mic-transcribing');
-    btn.disabled = state === 'transcribing' || !!disabledRef.current;
+    btn.disabled = state === 'transcribing' || state === 'starting' || !!disabledRef.current;
     icon.className = 'bi oc-mic-icon';
     if (state === 'recording') {
       btn.classList.add('oc-mic-recording');
@@ -224,9 +227,14 @@ export function useComposerAudio({
   const stopSpeechRecognition = useCallback(() => {
     const ctx = recordingRef.current;
     if (!ctx || ctx.kind !== 'speech') return;
-    recordingRef.current = null;
-    try { ctx.recognition.stop(); } catch { /* ignore */ }
-    setMicState('idle');
+    // Final results arrive after stop(); stay busy until onend confirms them.
+    setMicState('transcribing');
+    try {
+      ctx.recognition.stop();
+    } catch {
+      recordingRef.current = null;
+      setMicState('idle');
+    }
   }, [setMicState]);
 
   // -------------------------------------------------------------------------
@@ -311,7 +319,7 @@ export function useComposerAudio({
       if (event.error === 'no-speech' || event.error === 'aborted') return;
       remoteLog.error('SpeechRecognition error', event.error);
       setMicError('Dictation error: ' + event.error);
-      recordingRef.current = null;
+      if (recordingRef.current === ctx) recordingRef.current = null;
       setMicState('idle');
     };
 
@@ -319,7 +327,7 @@ export function useComposerAudio({
       // onend fires both on manual stop and on natural silence timeout.
       // If we still hold a reference, the recognition ended by itself —
       // clean up and go idle.
-      if (recordingRef.current?.kind === 'speech') {
+      if (recordingRef.current === ctx) {
         recordingRef.current = null;
         setMicState('idle');
       }
@@ -334,6 +342,7 @@ export function useComposerAudio({
       setMicError('Dictation is not supported in this browser. Please use a modern browser like Chrome or Edge.');
       return;
     }
+    setMicState('starting');
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
     const source = audioCtx.createMediaStreamSource(stream);
