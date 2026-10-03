@@ -59,6 +59,8 @@ service Ocman {
   rpc GitBranches(JsonReq) returns (JsonResp);
   rpc ListRepoFiles(JsonReq) returns (JsonResp);   // *git.FileList
   rpc ReadRepoFile(JsonReq) returns (JsonResp);    // *git.FileContent
+  // First payload is attachment metadata JSON; subsequent payloads are bytes.
+  rpc SaveComposerAttachment(stream JsonReq) returns (JsonResp);
   rpc GitCheckout(JsonReq) returns (Empty);
   rpc ProjectUpstreams(JsonReq) returns (JsonResp);
   rpc FetchPRHead(JsonReq) returns (JsonResp);

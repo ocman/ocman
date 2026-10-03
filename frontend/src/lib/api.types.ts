@@ -1409,6 +1409,8 @@ export interface ResolveTargetsResponse {
 /** Where a new conversation will live once its first prompt is sent. */
 export interface NewSessionTarget {
   directory: string;
+  /** Explicit owning machine; omitted = infer from platform, otherwise local. */
+  remoteId?: string;
   /** Platform id of the owning machine's adapter (compound for remotes); empty = auto. */
   platform?: string;
 }

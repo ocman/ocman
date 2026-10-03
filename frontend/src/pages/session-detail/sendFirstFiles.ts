@@ -8,7 +8,7 @@ export function sendFirstFiles(send: NonNullable<StartSessionRequest['send']>, f
   return async (sessionId: string, platform: string) => {
     for (let i = uploaded.length; i < files.length; i++) {
       const file = files[i];
-      const saved = await api.uploadComposerAttachment(sessionId, file);
+      const saved = await api.uploadComposerAttachment(sessionId, file, platform);
       uploaded.push({ path: saved.path, name: saved.name || file.name, mime: saved.mime || file.type || 'application/octet-stream' });
     }
     const references = `Attached files saved on disk:\n${uploaded.map((file) => `- ${file.path} (${file.mime})`).join('\n')}`;

@@ -21,7 +21,7 @@ describe('useComposerAttachments', () => {
     await act(() => result.current.addFiles([img, doc]));
     await waitFor(() => expect(result.current.files).toHaveLength(1));
     expect(result.current.images[0].url).toMatch(/^data:image\/png/);
-    expect(api.uploadComposerAttachment).toHaveBeenCalledWith('s1', doc);
+    expect(api.uploadComposerAttachment).toHaveBeenCalledWith('s1', doc, undefined);
     expect(result.current.fileReferenceText).toBe('Attached files saved on disk:\n- /att/notes.txt (text/plain)');
 
     act(() => result.current.removeImage(0));

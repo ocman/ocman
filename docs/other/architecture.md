@@ -157,7 +157,8 @@ flowchart TD
     MCP --> Registry
     Registry --> OC[platforms/opencode + internal/db<br/>adapter and read-only queries]
     Registry --> RP[internal/remote<br/>platform adapter + owner RPCs]
-    Router --> Local[hostsvc/local<br/>git, tmux, worktree, Beads, runtimes]
+    Router --> Local[hostsvc/local + composerattachments<br/>host operations + attachment cache]
+    Router -->|streamed attachment writes on owner| RP
     Server --> State[internal/state<br/>state.db]
     Inbox --> State
     Inbox -.->|remote RPC| Router
@@ -267,6 +268,12 @@ flowchart TD
   adopt a healthy instance that started before its managed registry entry
   existed. `RestartProjectOpencode` stops and relaunches the tracked
   instance.
+- **internal/composerattachments.** Owner-local attachment cache storage and
+  seven-day cleanup. HTTP uploads stream through `Host.SaveComposerAttachment`;
+  remote owners receive a metadata packet followed by bounded byte chunks over
+  gRPC, avoiding the unary message limit. Only the owner writes the file, and
+  its returned path is referenced in the prompt. Interrupted/oversize uploads
+  remove their partial file; multipart bodies are not spooled on the hub.
 - **internal/ocruntime.** The runtime abstraction behind the managed launch
   path. A `Runtime` interface (`Launch`/`Probe`/`Stop`) hides how a project's
   opencode is hosted; the native-tmux implementation runs `opencode --port N`

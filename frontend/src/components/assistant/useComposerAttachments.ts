@@ -30,7 +30,7 @@ function readFileAsDataURL(file: File): Promise<string> {
  * the prompt; other files are uploaded to the session's attachment dir
  * and referenced by path in the prompt text.
  */
-export function useComposerAttachments(sessionIdRef: MutableRefObject<string | undefined>, disabled: boolean | undefined) {
+export function useComposerAttachments(sessionIdRef: MutableRefObject<string | undefined>, disabled: boolean | undefined, platform?: string) {
   const [images, setImages] = useState<AttachedImage[]>([]);
   const [files, setFiles] = useState<AttachedFileRef[]>([]);
   const [pending, setPending] = useState(0);
@@ -61,7 +61,7 @@ export function useComposerAttachments(sessionIdRef: MutableRefObject<string | u
       const newFiles: AttachedFileRef[] = [];
       for (const file of otherFiles) {
         try {
-          const saved = await api.uploadComposerAttachment(sid, file);
+          const saved = await api.uploadComposerAttachment(sid, file, platform);
           newFiles.push({
             path: saved.path,
             name: saved.name || file.name,
@@ -75,7 +75,7 @@ export function useComposerAttachments(sessionIdRef: MutableRefObject<string | u
     } finally {
       setPending((count) => count - 1);
     }
-  }, [sessionIdRef, disabled]);
+  }, [sessionIdRef, disabled, platform]);
 
   const removeImage = useCallback((index: number) => {
     setImages((prev) => prev.filter((_, i) => i !== index));

@@ -47,6 +47,8 @@ export interface ComposerProps {
   timeCreated?: number;
   durationMs?: number;
   sessionId?: string;
+  /** Owning adapter for session-scoped uploads (compound id on remotes). */
+  platform?: string;
   /** Draft storage key; defaults to sessionId. A new conversation has no session yet. */
   draftKey?: string;
   tokensPerSecond?: number;

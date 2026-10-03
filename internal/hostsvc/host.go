@@ -18,6 +18,7 @@ package hostsvc
 
 import (
 	"context"
+	"io"
 	"net/url"
 
 	"github.com/NoUseFreak/ocman/internal/db"
@@ -258,6 +259,9 @@ type Host interface {
 	// ReadRepoFile reads one listed file of the repo containing dir.
 	// Returns git.ErrFileNotFound for anything ListRepoFiles would not show.
 	ReadRepoFile(ctx context.Context, dir, path string, ignored bool) (*git.FileContent, error)
+
+	// SaveComposerAttachment stores streamed bytes in the owning host's cache.
+	SaveComposerAttachment(ctx context.Context, req ComposerAttachmentRequest, reader io.Reader) (*ComposerAttachment, error)
 
 	// GitCheckout switches the working tree in dir to branch. Returns
 	// git.ErrDirtyCheckout when git refuses due to local changes.

@@ -840,10 +840,10 @@ export const api = {
     await raiseForUnauthorized(resp);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   },
-  uploadComposerAttachment: async (sessionId: string, file: File) => {
+  uploadComposerAttachment: async (sessionId: string, file: File, platform?: string) => {
     const form = new FormData();
     form.append('file', file);
-    const resp = await apiFetch(`/api/session/${encodeURIComponent(sessionId)}/attachment`, {
+    const resp = await apiFetch(`/api/session/${encodeURIComponent(sessionId)}/attachment${queryString({ platform })}`, {
       method: 'POST',
       body: form,
     });

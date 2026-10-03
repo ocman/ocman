@@ -53,6 +53,7 @@ const (
 	Ocman_GitBranches_FullMethodName            = "/ocman.remote.v1.Ocman/GitBranches"
 	Ocman_ListRepoFiles_FullMethodName          = "/ocman.remote.v1.Ocman/ListRepoFiles"
 	Ocman_ReadRepoFile_FullMethodName           = "/ocman.remote.v1.Ocman/ReadRepoFile"
+	Ocman_SaveComposerAttachment_FullMethodName = "/ocman.remote.v1.Ocman/SaveComposerAttachment"
 	Ocman_GitCheckout_FullMethodName            = "/ocman.remote.v1.Ocman/GitCheckout"
 	Ocman_ProjectUpstreams_FullMethodName       = "/ocman.remote.v1.Ocman/ProjectUpstreams"
 	Ocman_FetchPRHead_FullMethodName            = "/ocman.remote.v1.Ocman/FetchPRHead"
@@ -139,6 +140,8 @@ type OcmanClient interface {
 	GitBranches(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	ListRepoFiles(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	ReadRepoFile(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
+	// First payload is attachment metadata JSON; subsequent payloads are bytes.
+	SaveComposerAttachment(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[JsonReq, JsonResp], error)
 	GitCheckout(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*Empty, error)
 	ProjectUpstreams(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	FetchPRHead(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*JsonResp, error)
@@ -534,6 +537,19 @@ func (c *ocmanClient) ReadRepoFile(ctx context.Context, in *JsonReq, opts ...grp
 	return out, nil
 }
 
+func (c *ocmanClient) SaveComposerAttachment(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[JsonReq, JsonResp], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &Ocman_ServiceDesc.Streams[1], Ocman_SaveComposerAttachment_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[JsonReq, JsonResp]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Ocman_SaveComposerAttachmentClient = grpc.ClientStreamingClient[JsonReq, JsonResp]
+
 func (c *ocmanClient) GitCheckout(ctx context.Context, in *JsonReq, opts ...grpc.CallOption) (*Empty, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Empty)
@@ -796,7 +812,7 @@ func (c *ocmanClient) TermKillWindow(ctx context.Context, in *JsonReq, opts ...g
 
 func (c *ocmanClient) TerminalStream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[TermClientMsg, TermServerMsg], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Ocman_ServiceDesc.Streams[1], Ocman_TerminalStream_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Ocman_ServiceDesc.Streams[2], Ocman_TerminalStream_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -819,7 +835,7 @@ func (c *ocmanClient) Projects(ctx context.Context, in *Empty, opts ...grpc.Call
 
 func (c *ocmanClient) WatchProjects(ctx context.Context, in *Empty, opts ...grpc.CallOption) (grpc.ServerStreamingClient[JsonResp], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	stream, err := c.cc.NewStream(ctx, &Ocman_ServiceDesc.Streams[2], Ocman_WatchProjects_FullMethodName, cOpts...)
+	stream, err := c.cc.NewStream(ctx, &Ocman_ServiceDesc.Streams[3], Ocman_WatchProjects_FullMethodName, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -891,6 +907,8 @@ type OcmanServer interface {
 	GitBranches(context.Context, *JsonReq) (*JsonResp, error)
 	ListRepoFiles(context.Context, *JsonReq) (*JsonResp, error)
 	ReadRepoFile(context.Context, *JsonReq) (*JsonResp, error)
+	// First payload is attachment metadata JSON; subsequent payloads are bytes.
+	SaveComposerAttachment(grpc.ClientStreamingServer[JsonReq, JsonResp]) error
 	GitCheckout(context.Context, *JsonReq) (*Empty, error)
 	ProjectUpstreams(context.Context, *JsonReq) (*JsonResp, error)
 	FetchPRHead(context.Context, *JsonReq) (*JsonResp, error)
@@ -1038,6 +1056,9 @@ func (UnimplementedOcmanServer) ListRepoFiles(context.Context, *JsonReq) (*JsonR
 }
 func (UnimplementedOcmanServer) ReadRepoFile(context.Context, *JsonReq) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReadRepoFile not implemented")
+}
+func (UnimplementedOcmanServer) SaveComposerAttachment(grpc.ClientStreamingServer[JsonReq, JsonResp]) error {
+	return status.Error(codes.Unimplemented, "method SaveComposerAttachment not implemented")
 }
 func (UnimplementedOcmanServer) GitCheckout(context.Context, *JsonReq) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method GitCheckout not implemented")
@@ -1751,6 +1772,13 @@ func _Ocman_ReadRepoFile_Handler(srv interface{}, ctx context.Context, dec func(
 	}
 	return interceptor(ctx, in, info, handler)
 }
+
+func _Ocman_SaveComposerAttachment_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(OcmanServer).SaveComposerAttachment(&grpc.GenericServerStream[JsonReq, JsonResp]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type Ocman_SaveComposerAttachmentServer = grpc.ClientStreamingServer[JsonReq, JsonResp]
 
 func _Ocman_GitCheckout_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(JsonReq)
@@ -2509,6 +2537,11 @@ var Ocman_ServiceDesc = grpc.ServiceDesc{
 			StreamName:    "StreamEvents",
 			Handler:       _Ocman_StreamEvents_Handler,
 			ServerStreams: true,
+		},
+		{
+			StreamName:    "SaveComposerAttachment",
+			Handler:       _Ocman_SaveComposerAttachment_Handler,
+			ClientStreams: true,
 		},
 		{
 			StreamName:    "TerminalStream",

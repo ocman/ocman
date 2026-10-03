@@ -55,7 +55,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
     setCatalog(undefined);
     setCatalogError('');
     launchProgressReporter.begin(directory, { skipLaunch: true });
-    api.prepareSession({ directory, platform: params.platform }, controller.signal).then((result) => {
+    api.prepareSession({ directory, remoteId, platform: params.platform }, controller.signal).then((result) => {
       if (controller.signal.aborted) return;
       setCatalog(result);
       launchProgressReporter.succeed();
@@ -66,7 +66,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
       launchProgressReporter.fail(message);
     });
     return () => controller.abort();
-  }, [directory, params.platform, catalogAttempt]);
+  }, [directory, remoteId, params.platform, catalogAttempt]);
 
   const [selectedModel, setSelectedModel] = useState('');
   const [selectedAgent, setSelectedAgent] = useState('');
@@ -140,7 +140,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
     try {
       const res = await api.startSession({
         directory: target.startsWith('dir:') ? target.slice(4) : directory,
-        platform, title, prompt: text, send,
+        platform, remoteId, title, prompt: text, send,
         worktree: canWorktree && target === 'worktree',
       });
       if (!res.sessionId) throw new Error('Session creation returned no session');
@@ -169,7 +169,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
     } finally {
       if (inFlight.current === sourceGeneration) inFlight.current = undefined;
     }
-  }, [directory, platform, title, canWorktree, target, seedNewSession, navigateToSession, catalog]);
+  }, [directory, remoteId, platform, title, canWorktree, target, seedNewSession, navigateToSession, catalog]);
 
   const onSend = (text: string, images?: AttachedImage[], _queue?: boolean, files?: File[]) => {
     const send = { message: text, images, model: selectedModel, agent: effectiveAgent || undefined, reasoning: selectedReasoning || undefined };
@@ -231,6 +231,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
         selectedReasoning={selectedReasoning}
         onReasoningChange={setSelectedReasoning}
         directory={directory}
+        platform={platform}
         newConversation
         worktreesSupported={canWorktree}
         worktrees={eligibility.resolved?.worktrees}

@@ -75,6 +75,27 @@ func (s *Server) ensureProjectForCreate(w http.ResponseWriter, r *http.Request, 
 type newSessionTarget struct {
 	Platform  string `json:"platform"`
 	Directory string `json:"directory"`
+	RemoteID  string `json:"remoteId"`
+}
+
+// An explicit owner is authoritative, even when both machines share a path.
+// Older callers may omit it and retain the platform's owner (or local).
+func (t *newSessionTarget) resolvePlatform(s *Server, w http.ResponseWriter) bool {
+	if t.RemoteID == "" {
+		t.RemoteID = remoteIDForPlatform(t.Platform)
+	}
+	if t.Platform != "" && remoteIDForPlatform(t.Platform) != t.RemoteID {
+		http.Error(w, "platform does not belong to remoteId", http.StatusBadRequest)
+		return false
+	}
+	host, ok := s.resolveOwner(w, t.Directory, t.RemoteID)
+	if !ok {
+		return false
+	}
+	if t.Platform == "" {
+		t.Platform = opencodePlatformForHost(host)
+	}
+	return true
 }
 
 func (t newSessionTarget) validate(w http.ResponseWriter) bool {
@@ -96,8 +117,8 @@ func (s *Server) handlePrepareSession(w http.ResponseWriter, r *http.Request) {
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) || !req.validate(w) {
 		return
 	}
-	if req.Platform == "" {
-		req.Platform = opencodePlatformForHost(s.router().Local())
+	if !req.resolvePlatform(s, w) {
+		return
 	}
 	_, port, ok := s.ensureProjectForCreate(w, r, req.Platform, req.Directory)
 	if !ok {
@@ -173,8 +194,8 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	if !readAndUnmarshal(w, r, maxSendMessageBody, &req) || !req.validate(w) {
 		return
 	}
-	if req.Platform == "" {
-		req.Platform = opencodePlatformForHost(s.router().Local())
+	if !req.resolvePlatform(s, w) {
+		return
 	}
 	log.WithFields(log.Fields{"platform": req.Platform, "directory": req.Directory, "worktree": req.Worktree}).Info("hub: start session")
 

@@ -99,7 +99,7 @@ describe('NewConversation', () => {
     mount();
     expect(composer.disabled).toBe(true);
     await waitFor(() => expect(composer.disabled).toBe(false));
-    expect(mocks.prepare).toHaveBeenCalledWith({ directory: '/repo', platform: 'r-machine:opencode' }, expect.any(AbortSignal));
+    expect(mocks.prepare).toHaveBeenCalledWith({ directory: '/repo', remoteId: 'machine', platform: 'r-machine:opencode' }, expect.any(AbortSignal));
     expect(mocks.info).toHaveBeenCalledWith('/api/git/info?dir=%2Frepo&remoteId=machine', expect.any(AbortSignal));
     await waitFor(() => expect(composer.agentsLoaded).toBe(true));
     expect(composer.target).toBe('worktree');
@@ -134,7 +134,7 @@ describe('NewConversation', () => {
     saveDraft('new', 'Fix login');
     await act(() => composer.onSend!('Fix login', images));
     expect(mocks.start).toHaveBeenCalledWith({
-      directory: '/repo', platform: 'r-machine:opencode', title: 'Login', prompt: 'Fix login', worktree: true,
+      directory: '/repo', remoteId: 'machine', platform: 'r-machine:opencode', title: 'Login', prompt: 'Fix login', worktree: true,
       send: { message: 'Fix login', images, model: 'prov/plan-model', agent: 'plan', reasoning: undefined },
     });
     expect(mocks.seed).toHaveBeenCalledWith('child', '/worktrees/fix', 'r-machine:opencode', 'Login', 'machine');

@@ -183,6 +183,10 @@ func (f *fakePlatform) ProxyEvents(_ context.Context, _ string, w io.Writer, flu
 // empty results for everything except Projects/Capabilities.
 type localStubHost struct{}
 
+func (localStubHost) SaveComposerAttachment(context.Context, hostsvc.ComposerAttachmentRequest, io.Reader) (*hostsvc.ComposerAttachment, error) {
+	return nil, nil
+}
+
 func (localStubHost) RemoteID() string                             { return "local" }
 func (localStubHost) Doctor(context.Context) []hostsvc.DoctorCheck { return nil }
 func (localStubHost) Capabilities() hostsvc.HostCaps {

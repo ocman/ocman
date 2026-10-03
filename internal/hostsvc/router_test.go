@@ -2,6 +2,7 @@ package hostsvc
 
 import (
 	"context"
+	"io"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
@@ -10,6 +11,10 @@ import (
 
 // stubHost is a minimal Host that records its identity for routing tests.
 type stubHost struct{ id string }
+
+func (h stubHost) SaveComposerAttachment(context.Context, ComposerAttachmentRequest, io.Reader) (*ComposerAttachment, error) {
+	return nil, nil
+}
 
 func (h stubHost) RemoteID() string                     { return h.id }
 func (h stubHost) Capabilities() HostCaps               { return HostCaps{} }

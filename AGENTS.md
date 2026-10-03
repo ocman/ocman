@@ -25,7 +25,9 @@ owner's worktree list, so a directory already inside a linked worktree, or a
 non-repository, uses the current checkout. The composer's machine selector only
 re-points the route; the draft lives under the shared `new` key (`draftKey`
 prop) and survives. The first submission calls `POST /api/sessions/start`
-`{directory, platform, worktree, title, prompt, send}`: a worktree target
+`{directory, remoteId, platform, worktree, title, prompt, send}`: an explicit
+owner is authoritative, an omitted platform is derived from it, and a mismatch
+is rejected before launch. A worktree target
 creates `session-<id8>` on the owner (`CreateWorktreeSession`, no LLM call on
 the first message's path) and a current-checkout target creates in the
 directory on the project's instance; a plain prompt is delivered server-side
@@ -36,7 +38,10 @@ the complete payload (text, images and selections) in a shared in-memory
 `failedSends` mirror for the real session's retry controls; the localStorage
 copy remains capped and best-effort, so quota errors cannot erase live recovery.
 Non-image files stay as browser Files until
-creation, then upload before the first send; upload/delivery failures and
+creation, then upload before the first send. Upload requests carry the session's
+compound platform and stream bytes through `Host.SaveComposerAttachment` to
+the owning machine's `internal/composerattachments` cache; remote writes use a
+client-streaming gRPC RPC and return an owner-local path. Upload/delivery failures and
 command/shell failures live in child-keyed `firstSubmission` state with a
 visible retry, without overwriting the child's draft. While first delivery is
 pending, the child composer blocks further submissions so follow-ups cannot

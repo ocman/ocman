@@ -14,6 +14,7 @@ import { useFailedSendRehydrate } from './useFailedSendRehydrate';
 import { usePendingSend } from './usePendingSend';
 import { useSessionActions, type UseSessionActionsOptions } from './useSessionActions';
 import { useFirstSubmission } from './firstSubmission';
+import type { NewSessionParams } from '../../lib/newSessionPath';
 
 vi.mock('../../lib/useCapabilities', () => ({
   useOpencodeLaunch: () => true,
@@ -71,12 +72,12 @@ function Child() {
   </>;
 }
 
-function Flow() {
+function Flow({ params = { directory: '/repo', platform: 'opencode' } }: { params?: NewSessionParams } = {}) {
   const [route, setRoute] = useState('new');
   return <>
     <output data-testid="route">{route}</output>
     <button onClick={() => setRoute('other')}>Leave draft</button>
-    {route === 'new' ? <NewConversation params={{ directory: '/repo', platform: 'opencode' }} composerRef={null}
+    {route === 'new' ? <NewConversation params={params} composerRef={null}
       whisperAvailable={false} navigate={setRoute} navigateToSession={setRoute} /> : route === 'child' ? <Child />
       : <Composer draftKey="new" isRunning={false} />}
   </>;
@@ -96,6 +97,24 @@ beforeEach(() => {
 });
 
 describe('new-conversation submission lifecycle', () => {
+  it('preserves an explicit remote owner with no platform and references its uploaded path', async () => {
+    vi.mocked(api.prepareSession).mockResolvedValue({ ...prepared, platform: 'r-box:opencode' });
+    vi.mocked(api.startSession).mockResolvedValue({ ...created, platform: 'r-box:opencode', remoteId: 'box' });
+    vi.mocked(api.uploadComposerAttachment).mockResolvedValue({ path: '/box-cache/note.txt', name: 'note.txt', mime: 'text/plain', size: 4 });
+    render(<Flow params={{ directory: '/repo', remoteId: 'box' }} />);
+    const input = screen.getByRole('textbox');
+    await waitFor(() => expect(input).not.toBeDisabled());
+    expect(api.prepareSession).toHaveBeenCalledWith({ directory: '/repo', remoteId: 'box', platform: undefined }, expect.any(AbortSignal));
+    const file = new File(['note'], 'note.txt', { type: 'text/plain' });
+    fireEvent.drop(input, { dataTransfer: { files: [file] } });
+    await screen.findByText('note.txt');
+    fireEvent.input(input, { target: { value: 'read on the build box' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
+    expect(api.startSession).toHaveBeenCalledWith(expect.objectContaining({ remoteId: 'box', platform: 'r-box:opencode', send: undefined }));
+    expect(api.uploadComposerAttachment).toHaveBeenCalledWith('child', file, 'r-box:opencode');
+    expect(api.sendMessage).toHaveBeenCalledWith('child', expect.stringContaining('/box-cache/note.txt'), undefined, '', undefined, undefined, 'r-box:opencode');
+  });
   it('waits for the catalog even when workspace eligibility resolves first', async () => {
     const catalog = deferred<typeof prepared & { defaultAgent: string; defaultModel: string }>();
     vi.mocked(api.prepareSession).mockReturnValue(catalog.promise);
@@ -183,7 +202,7 @@ describe('new-conversation submission lifecycle', () => {
     await waitFor(() => expect(api.startSession).toHaveBeenCalledTimes(1));
     expect(vi.mocked(api.startSession).mock.calls[0][0].send).toBeUndefined();
     await act(async () => launch.resolve(created));
-    await waitFor(() => expect(api.uploadComposerAttachment).toHaveBeenCalledWith('child', file));
+    await waitFor(() => expect(api.uploadComposerAttachment).toHaveBeenCalledWith('child', file, 'opencode'));
     await waitFor(() => expect(api.sendMessage).toHaveBeenCalledWith('child', expect.stringContaining('/child/note.txt'), undefined,
       '', undefined, undefined, 'opencode'));
   });
@@ -343,7 +362,7 @@ describe('new-conversation submission lifecycle', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
     expect(api.startSession).toHaveBeenCalledTimes(1);
-    expect(api.uploadComposerAttachment).toHaveBeenLastCalledWith('child', file);
+    expect(api.uploadComposerAttachment).toHaveBeenLastCalledWith('child', file, 'opencode');
   });
 
   it('shows a delayed shell failure on the child and retries without overwriting its draft', async () => {

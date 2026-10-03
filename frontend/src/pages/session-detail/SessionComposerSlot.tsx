@@ -62,6 +62,7 @@ export function SessionComposerSlot({
         <>
           <FirstSubmissionNotice sessionId={sessionId} />
           <Composer {...composer}
+            platform={platformId}
             disabled={composer.disabled || firstPending}
             disabledHint={firstPending ? 'Waiting for the first submission…' : composer.disabledHint}
             onLaunchRequest={firstPending ? undefined : composer.onLaunchRequest} />
