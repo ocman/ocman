@@ -466,7 +466,11 @@ flowchart TD
   and shell submissions create the session the same way and run on it from
   the client; ocman built-ins need an existing conversation. A failed first
   send retains text, images, selections and error in the existing failed-send
-  recovery path. Non-image files are retained until creation, uploaded to
+  recovery path. Complete failed payloads stay in shared memory and notify
+  mounted session views; only the best-effort localStorage copy is size-capped.
+  Start locks are scoped to the draft generation so an older request cannot
+  discard or unlock a newer draft's submission. Non-image files are retained
+  until creation, uploaded to
   the real session, then sent; file/command/shell execution lives in
   child-keyed retry state, independently of the child's draft. Uncertain
   creation is never automatically replayed, and a late completion cannot

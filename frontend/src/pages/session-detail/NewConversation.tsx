@@ -73,7 +73,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
   const [selectedReasoning, setSelectedReasoning] = useState('');
   const [target, setTarget] = useState<SessionTarget>('worktree');
   const [error, setError] = useState('');
-  const inFlight = useRef(false);
+  const inFlight = useRef<number | undefined>(undefined);
   const active = useRef(false);
   const generation = useRef(0);
   useEffect(() => {
@@ -132,10 +132,10 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
     execute?: (sessionId: string, platform: string) => Promise<void>,
   ) => {
     if (!catalog) throw new Error('Session catalog is still loading');
-    if (inFlight.current) return;
     const sourceGeneration = generation.current;
+    if (inFlight.current === sourceGeneration) throw new Error('Session creation is already in progress');
     const stillCurrent = () => active.current && generation.current === sourceGeneration;
-    inFlight.current = true;
+    inFlight.current = sourceGeneration;
     setError('');
     try {
       const res = await api.startSession({
@@ -167,7 +167,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
       // existing Composer's BackendUnavailableError automatic replay loop.
       throw new Error(message);
     } finally {
-      inFlight.current = false;
+      if (inFlight.current === sourceGeneration) inFlight.current = undefined;
     }
   }, [directory, platform, title, canWorktree, target, seedNewSession, navigateToSession, catalog]);
 

@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BackendUnavailableError, api } from '../../lib/api';
 import { clearDraft, getDraft, saveDraft } from '../../lib/composerDraft';
-import { listFailedSends } from '../../lib/failedSends';
+import { clearFailedSends, listFailedSends } from '../../lib/failedSends';
 import { saveProjectModel } from '../../lib/projectModel';
 import { useApiStore } from '../../lib/apiStore';
 import { Composer } from '../../components/assistant/Composer';
@@ -86,10 +86,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   useFirstSubmission.setState({ entries: {} });
   window.localStorage.clear();
+  clearFailedSends('child');
   clearDraft('new');
   vi.spyOn(useApiStore.getState(), 'seedNewSession').mockImplementation(() => {});
   vi.mocked(api.prepareSession).mockResolvedValue(prepared);
-  vi.mocked(api.startSession).mockResolvedValue(created);
+  vi.mocked(api.startSession).mockReset().mockResolvedValue(created);
   vi.mocked(api.sendMessage).mockResolvedValue(undefined);
   vi.mocked(postJSON).mockResolvedValue(undefined);
 });
@@ -240,6 +241,69 @@ describe('new-conversation submission lifecycle', () => {
     await act(async () => launch.resolve(created));
     expect(navigate).not.toHaveBeenCalled();
     expect(getDraft('new')).toBe('new task');
+  });
+
+  it('accepts a re-pointed draft while the previous generation is still starting', async () => {
+    const oldStart = deferred<typeof created>();
+    const newStart = deferred<typeof created>();
+    vi.mocked(api.startSession).mockReturnValueOnce(oldStart.promise).mockReturnValueOnce(newStart.promise);
+    const navigate = vi.fn();
+    const props = { params: { directory: '/repo', platform: 'opencode', title: 'old' }, composerRef: null,
+      whisperAvailable: false, navigate: vi.fn(), navigateToSession: navigate };
+    const view = render(<NewConversation {...props} />);
+    const oldInput = screen.getByRole('textbox');
+    await waitFor(() => expect(oldInput).not.toBeDisabled());
+    fireEvent.input(oldInput, { target: { value: 'old prompt' } });
+    fireEvent.keyDown(oldInput, { key: 'Enter' });
+    view.rerender(<NewConversation {...props} params={{ ...props.params, title: 'new' }} />);
+    const newInput = screen.getByRole('textbox');
+    fireEvent.input(newInput, { target: { value: 'new prompt' } });
+    fireEvent.keyDown(newInput, { key: 'Enter' });
+    await act(async () => {
+      oldStart.resolve({ ...created, sessionId: 'old-child' });
+      newStart.resolve({ ...created, sessionId: 'new-child' });
+    });
+    expect(api.startSession).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(api.startSession).mock.calls[1][0]).toMatchObject({ title: 'new', send: { message: 'new prompt' } });
+    expect(navigate).toHaveBeenCalledExactlyOnceWith('new-child');
+  });
+
+  it('keeps a failed first prompt visible and retryable when localStorage is full', async () => {
+    vi.mocked(api.startSession).mockResolvedValue({ ...created, firstMessageSent: false, firstMessageError: 'upstream failed' });
+    render(<Flow />);
+    const input = screen.getByRole('textbox');
+    await waitFor(() => expect(input).not.toBeDisabled());
+    fireEvent.input(input, { target: { value: 'unsent prompt' } });
+    const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('full', 'QuotaExceededError'); });
+    try {
+      fireEvent.keyDown(input, { key: 'Enter' });
+      expect(await screen.findByRole('alert')).toHaveTextContent('upstream failed');
+      fireEvent.click(screen.getByRole('button', { name: 'Retry message' }));
+      await waitFor(() => expect(api.sendMessage).toHaveBeenCalledWith('child', 'unsent prompt', undefined,
+        '', undefined, undefined, 'opencode', undefined));
+      await waitFor(() => expect(listFailedSends('child')).toEqual([]));
+    } finally {
+      write.mockRestore();
+    }
+  });
+
+  it('retains large image-only failures in memory while capping the persisted copy', async () => {
+    vi.mocked(api.startSession).mockResolvedValue({ ...created, firstMessageSent: false, firstMessageError: 'upstream failed' });
+    render(<Flow />);
+    const input = screen.getByRole('textbox');
+    await waitFor(() => expect(input).not.toBeDisabled());
+    const image = new File([new Uint8Array(3 * 1024 * 1024 + 64 * 1024)], 'large.png', { type: 'image/png' });
+    fireEvent.drop(input, { dataTransfer: { files: [image] } });
+    await screen.findByAltText('Attachment 1');
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(await screen.findByRole('alert')).toHaveTextContent('upstream failed');
+    expect(listFailedSends('child')[0].images?.[0].url.length).toBeGreaterThan(4 * 1024 * 1024);
+    const persisted = JSON.parse(window.localStorage.getItem('ocman.failedSends.v1')!);
+    expect(persisted.child[0].imagesDropped).toBe(true);
+    expect(persisted.child[0].images).toBeUndefined();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry message' }));
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
+    expect(vi.mocked(api.sendMessage).mock.calls[0][2]?.[0].url.length).toBeGreaterThan(4 * 1024 * 1024);
   });
 
   it('retains successful uploads and retries a failed delivery on the same child', async () => {

@@ -216,6 +216,26 @@ describe('NewConversation', () => {
     expect(mocks.start).not.toHaveBeenCalled();
   });
 
+  it('does not let an older completion unlock the current generation’s start', async () => {
+    let finishOld!: (result: unknown) => void;
+    let finishNew!: (result: unknown) => void;
+    mocks.start.mockReturnValueOnce(new Promise((resolve) => { finishOld = resolve; }))
+      .mockReturnValueOnce(new Promise((resolve) => { finishNew = resolve; }));
+    const view = mount({ directory: '/repo', platform: 'r-machine:opencode', remoteId: 'machine', title: 'old' });
+    await waitFor(() => expect(composer.disabled).toBe(false));
+    let oldRequest!: void | Promise<void>;
+    act(() => { oldRequest = composer.onSend!('old prompt'); });
+    view.rerender(<NewConversation params={{ directory: '/repo', platform: 'r-machine:opencode', remoteId: 'machine', title: 'new' }}
+      whisperAvailable={false} composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
+    let newRequest!: void | Promise<void>;
+    act(() => { newRequest = composer.onSend!('new prompt'); });
+    const child = { sessionId: 'child', platform: 'r-machine:opencode', remoteId: 'machine', directory: '/repo', firstMessageSent: true };
+    await act(async () => { finishOld(child); await oldRequest; });
+    await expect(composer.onSend!('duplicate prompt')).rejects.toThrow('already in progress');
+    expect(mocks.start).toHaveBeenCalledTimes(2);
+    await act(async () => { finishNew(child); await newRequest; });
+  });
+
   it('reports a failed target lookup with a retry', async () => {
     mocks.info.mockRejectedValueOnce(new Error('offline'));
     mount();

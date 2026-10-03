@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   listFailedSends,
   recordFailedSend,
@@ -43,10 +43,29 @@ describe('failedSends storage', () => {
   let storage: ReturnType<typeof installLocalStorageStub>;
   beforeEach(() => {
     storage = installLocalStorageStub();
+    for (const sessionId of [SESSION, 's1', 's2']) clearFailedSends(sessionId);
   });
 
   it('returns an empty array when nothing is stored', () => {
     expect(listFailedSends(SESSION)).toEqual([]);
+  });
+
+  it('loads existing persisted failures when there is no live entry', () => {
+    storage.setItem('ocman.failedSends.v1', JSON.stringify({ cold: [makeEntry()] }));
+    expect(listFailedSends('cold')).toEqual([makeEntry()]);
+  });
+
+  it.each(['remove', 'clear'])('does not resurrect a dismissed failure when %s cannot persist', (action) => {
+    recordFailedSend(SESSION, makeEntry());
+    const write = vi.spyOn(storage, 'setItem').mockImplementation(() => { throw new Error('storage full'); });
+    try {
+      if (action === 'remove') removeFailedSend(SESSION, 'fs-1');
+      else clearFailedSends(SESSION);
+      expect(listFailedSends(SESSION)).toEqual([]);
+      expect(JSON.parse(storage.getItem('ocman.failedSends.v1')!)[SESSION]).toHaveLength(1);
+    } finally {
+      write.mockRestore();
+    }
   });
 
   it('persists a recorded entry across calls', () => {
@@ -96,16 +115,19 @@ describe('failedSends storage', () => {
     expect(listFailedSends(SESSION)[0].images).toEqual(images);
   });
 
-  it('drops images and marks imagesDropped when the entry exceeds the size cap', () => {
+  it('caps persisted images but retains the full payload in memory', () => {
     // Build a >4MB data URL by repeating a chunk.
     const big = 'a'.repeat(5 * 1024 * 1024);
     const images = [{ url: `data:image/png;base64,${big}`, mime: 'image/png' }];
     recordFailedSend(SESSION, makeEntry({ images }));
     const list = listFailedSends(SESSION);
     expect(list).toHaveLength(1);
-    expect(list[0].images).toBeUndefined();
-    expect(list[0].imagesDropped).toBe(true);
+    expect(list[0].images).toEqual(images);
+    expect(list[0].imagesDropped).toBeUndefined();
     expect(list[0].text).toBe('hello');
+    const persisted = JSON.parse(storage.getItem('ocman.failedSends.v1')!)[SESSION][0];
+    expect(persisted.images).toBeUndefined();
+    expect(persisted.imagesDropped).toBe(true);
   });
 
   it('survives malformed json in storage', () => {

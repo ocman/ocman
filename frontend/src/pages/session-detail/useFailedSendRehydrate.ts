@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import type { Message, Part } from '../../lib/api';
-import { listFailedSends, type FailedSend } from '../../lib/failedSends';
+import { listFailedSends, subscribeFailedSends, type FailedSend } from '../../lib/failedSends';
 import type { UsePendingSendResult } from './usePendingSend';
 
 export interface UseFailedSendRehydrateOptions {
@@ -45,6 +45,9 @@ export function useFailedSendRehydrate({
   // `state.list` is always the current session's list by the time
   // effects run.
   const failedSends = state.list;
+  useEffect(() => subscribeFailedSends((sessionId) => {
+    if (sessionId === id) setState({ id, list: listFailedSends(sessionId) });
+  }), [id]);
   const setFailedSends = useCallback<Dispatch<SetStateAction<FailedSend[]>>>((update) => {
     setState((prev) => ({
       id: prev.id,

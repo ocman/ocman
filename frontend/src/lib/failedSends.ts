@@ -7,7 +7,8 @@
 //   2. Survive a page refresh — the prompt stays retryable until the user
 //      explicitly retries or dismisses it.
 //
-// State is kept in localStorage under a single key, scoped per session id.
+// Complete payloads stay in memory for the page lifetime. A best-effort
+// localStorage copy, scoped per session id, provides reload recovery.
 // Image data URLs can be large (multi-MB base64), so per-entry storage is
 // capped: when an entry exceeds the limit we drop the images but keep the
 // text retryable, with `imagesDropped` flagging the loss for the UI.
@@ -42,6 +43,18 @@ export interface FailedSend {
 
 type Store = Record<string, FailedSend[]>;
 
+const live: Store = Object.create(null);
+const listeners = new Set<(sessionId: string) => void>();
+
+export function subscribeFailedSends(listener: (sessionId: string) => void) {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+
+function notify(sessionId: string) {
+  for (const listener of listeners) listener(sessionId);
+}
+
 function loadStore(): Store {
   if (typeof window === 'undefined') return {};
   try {
@@ -61,7 +74,7 @@ function saveStore(data: Store) {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch {
     // Quota exceeded / private mode / disabled storage. Nothing we can do
-    // here; the in-memory state in SessionDetail still reflects the failure
+    // here; the shared in-memory state still reflects the failure
     // for the current page lifetime.
   }
 }
@@ -84,39 +97,42 @@ function fitEntry(entry: FailedSend): FailedSend {
 }
 
 export function listFailedSends(sessionId: string): FailedSend[] {
+  if (live[sessionId]) return live[sessionId];
   const store = loadStore();
   const list = store[sessionId];
   return Array.isArray(list) ? list : [];
 }
 
 export function recordFailedSend(sessionId: string, entry: FailedSend) {
+  const existing = listFailedSends(sessionId);
+  const idx = existing.findIndex((e) => e.id === entry.id);
+  live[sessionId] = idx >= 0
+    ? existing.map((e, i) => (i === idx ? entry : e))
+    : [...existing, entry];
   const store = loadStore();
-  const fitted = fitEntry(entry);
-  const existing = Array.isArray(store[sessionId]) ? store[sessionId] : [];
-  const idx = existing.findIndex((e) => e.id === fitted.id);
-  const next = idx >= 0
-    ? existing.map((e, i) => (i === idx ? fitted : e))
-    : [...existing, fitted];
-  store[sessionId] = next;
+  store[sessionId] = live[sessionId].map(fitEntry);
   saveStore(store);
+  notify(sessionId);
 }
 
 export function removeFailedSend(sessionId: string, id: string) {
+  const next = listFailedSends(sessionId).filter((e) => e.id !== id);
+  // Keep an empty live list as a tombstone if the persistence write fails.
+  live[sessionId] = next;
   const store = loadStore();
-  const existing = store[sessionId];
-  if (!Array.isArray(existing)) return;
-  const next = existing.filter((e) => e.id !== id);
   if (next.length === 0) {
     delete store[sessionId];
   } else {
-    store[sessionId] = next;
+    store[sessionId] = next.map(fitEntry);
   }
   saveStore(store);
+  notify(sessionId);
 }
 
 export function clearFailedSends(sessionId: string) {
+  live[sessionId] = [];
   const store = loadStore();
-  if (!(sessionId in store)) return;
   delete store[sessionId];
   saveStore(store);
+  notify(sessionId);
 }

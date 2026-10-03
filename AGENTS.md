@@ -32,8 +32,10 @@ directory on the project's instance; a plain prompt is delivered server-side
 in the same request (`firstMessageSent` / `firstMessageError`), custom slash
 commands and shell submissions are run by the client on the returned session,
 and ocman built-ins need an existing conversation. A failed first send keeps
-the complete payload (text, images and selections) in `failedSends` for the
-real session's retry controls. Non-image files stay as browser Files until
+the complete payload (text, images and selections) in a shared in-memory
+`failedSends` mirror for the real session's retry controls; the localStorage
+copy remains capped and best-effort, so quota errors cannot erase live recovery.
+Non-image files stay as browser Files until
 creation, then upload before the first send; upload/delivery failures and
 command/shell failures live in child-keyed `firstSubmission` state with a
 visible retry, without overwriting the child's draft. While first delivery is

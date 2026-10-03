@@ -3,7 +3,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Message, Part } from '../../lib/api';
-import { recordFailedSend, type FailedSend } from '../../lib/failedSends';
+import { clearFailedSends, recordFailedSend, removeFailedSend, type FailedSend } from '../../lib/failedSends';
 import type { UsePendingSendResult } from './usePendingSend';
 import { useFailedSendRehydrate, type UseFailedSendRehydrateOptions } from './useFailedSendRehydrate';
 
@@ -18,7 +18,22 @@ function opts(over: Partial<UseFailedSendRehydrateOptions> = {}): UseFailedSendR
 }
 
 describe('useFailedSendRehydrate', () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => {
+    localStorage.clear();
+    clearFailedSends('s1');
+    clearFailedSends('s2');
+  });
+
+  it('shows a failure recorded after the child has mounted and removes it on success', () => {
+    const o = opts();
+    const { result } = renderHook(() => useFailedSendRehydrate(o));
+    expect(result.current.failedSends).toEqual([]);
+    act(() => recordFailedSend('s1', entry('late', 'late failure')));
+    expect(result.current.failedSends).toEqual([entry('late', 'late failure')]);
+    expect(o.pending.fail).toHaveBeenCalledWith('boom');
+    act(() => removeFailedSend('s1', 'late'));
+    expect(result.current.failedSends).toEqual([]);
+  });
 
   it('loads the persisted list for the route id and replays the first ghost once', () => {
     recordFailedSend('s1', entry('f1', 'hello'));
