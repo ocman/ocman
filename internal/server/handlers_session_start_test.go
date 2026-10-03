@@ -204,3 +204,57 @@ func TestStartSessionWorktreeRejectsUnknownPlatformBeforeCreation(t *testing.T) 
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
 }
+
+func TestSessionLaunchRoutesRejectUntrustedClients(t *testing.T) {
+	for _, path := range []string{"/api/sessions/prepare", "/api/sessions/start"} {
+		for _, peer := range []string{"192.0.2.1:1234", "127.0.0.1:1234"} {
+			t.Run(path+peer, func(t *testing.T) {
+				calls := 0
+				srv, reg := startTestServer(t, &ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+					calls++
+					return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:7788", RepoRoot: req.ProjectDir}, nil
+				}})
+				reg.Register(&fakePlatform{id: "opencode"})
+				mux, err := srv.routes()
+				if err != nil {
+					t.Fatal(err)
+				}
+				r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"directory":"/repo","platform":"opencode"}`))
+				r.RemoteAddr = peer
+				if peer == "127.0.0.1:1234" {
+					r.Header.Set("Origin", "https://evil.example")
+				}
+				w := httptest.NewRecorder()
+				mux.ServeHTTP(w, r)
+				if w.Code != http.StatusForbidden || calls != 0 {
+					t.Fatalf("status=%d host calls=%d: %s", w.Code, calls, w.Body.String())
+				}
+			})
+		}
+	}
+}
+
+func TestLocalSessionLaunchWithConnectedRemote(t *testing.T) {
+	for _, prepare := range []bool{true, false} {
+		t.Run(map[bool]string{true: "prepare", false: "start"}[prepare], func(t *testing.T) {
+			srv, reg := startTestServer(t, nil)
+			reg.Register(&fakePlatform{id: "opencode", createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+				return &platforms.CreateSessionResponse{ID: "local-created"}, nil
+			}})
+			reg.Register(&fakePlatform{id: "r-box:opencode", createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+				t.Fatal("local draft must never create on the remote")
+				return nil, nil
+			}})
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"directory":"/repo"}`))
+			if prepare {
+				srv.handlePrepareSession(w, r)
+			} else {
+				srv.handleStartSession(w, r)
+			}
+			if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"platform":"opencode"`) {
+				t.Fatalf("status %d: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}

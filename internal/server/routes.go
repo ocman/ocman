@@ -206,8 +206,8 @@ func (s *Server) routes() (*http.ServeMux, error) {
 	mux.HandleFunc("/api/remotes/", s.requireAuth(s.handleRemoteByID))
 	// New-session machine picker resolver (multi-remote support).
 	mux.HandleFunc("/api/sessions/resolve-targets", s.post(s.handleResolveTargets))
-	mux.HandleFunc("/api/sessions/prepare", s.post(s.handlePrepareSession))
-	mux.HandleFunc("/api/sessions/start", s.post(s.handleStartSession))
+	mux.HandleFunc("/api/sessions/prepare", s.post(s.requireLocalhost(s.handlePrepareSession)))
+	mux.HandleFunc("/api/sessions/start", s.post(s.requireLocalhost(s.handleStartSession)))
 
 	// Best-effort remote-logging sink for the frontend. Localhost-only so
 	// it can't be used to flood logs from the network. See

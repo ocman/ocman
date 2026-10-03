@@ -96,6 +96,9 @@ func (s *Server) handlePrepareSession(w http.ResponseWriter, r *http.Request) {
 	if !readAndUnmarshal(w, r, maxRequestBody, &req) || !req.validate(w) {
 		return
 	}
+	if req.Platform == "" {
+		req.Platform = opencodePlatformForHost(s.router().Local())
+	}
 	_, port, ok := s.ensureProjectForCreate(w, r, req.Platform, req.Directory)
 	if !ok {
 		return
@@ -169,6 +172,9 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	// The first message may carry image attachments.
 	if !readAndUnmarshal(w, r, maxSendMessageBody, &req) || !req.validate(w) {
 		return
+	}
+	if req.Platform == "" {
+		req.Platform = opencodePlatformForHost(s.router().Local())
 	}
 	log.WithFields(log.Fields{"platform": req.Platform, "directory": req.Directory, "worktree": req.Worktree}).Info("hub: start session")
 
