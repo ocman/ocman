@@ -35,6 +35,9 @@ const (
 	SessionExisting = "existing"
 )
 
+// settleQuietPeriod: a local session's write-free time before archiving.
+const settleQuietPeriod = 5 * time.Second
+
 var (
 	ErrValidation   = errors.New("invalid routine")
 	ErrNameConflict = errors.New("routine name already exists")
@@ -340,14 +343,15 @@ func (s *Service) settleRunning(ctx context.Context, recoverOrphans bool) error 
 		switch detail.Session.Status {
 		case db.StatusDone, db.StatusWaiting:
 			if run.ArchiveSessionAfterSuccess {
-				// Stamp at settle time: OpenCode writes the session once more
-				// after the turn ends (summary), and an archive stamped with
-				// the pre-write time_updated resurfaces on the next list poll.
-				// Local only: a remote's TimeUpdated is on its own clock, and
-				// the hub's now would hide later activity on a lagging remote.
+				// OpenCode writes once more after the turn goes idle, and any
+				// write newer than the stamp resurfaces the session: wait until
+				// it's quiet, then stamp now. Remote TimeUpdated is on the
+				// remote's clock, so neither applies there.
 				stamp := detail.Session.TimeUpdated
 				if remoteID, _ := remote.SplitPlatformID(run.Platform); remoteID == "" {
-					stamp = max(stamp, s.now().UnixMilli())
+					if stamp = s.now().UnixMilli(); stamp-detail.Session.TimeUpdated < settleQuietPeriod.Milliseconds() {
+						continue
+					}
 				}
 				if err := s.store.ArchiveSession(ctx, run.Platform, run.SessionID, stamp); err != nil {
 					result = errors.Join(result, err)

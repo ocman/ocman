@@ -59,6 +59,7 @@ type testPlatform struct {
 	permissionRules []platforms.PermissionRule
 	messages        []db.Message
 	parts           []db.Part
+	timeUpdated     int64 // 0 means 1234
 }
 
 func (p *testPlatform) ID() platforms.ID {
@@ -104,7 +105,11 @@ func (p *testPlatform) Session(_ context.Context, id string, _, _ int) (*platfor
 	if override, ok := p.statuses[id]; ok {
 		status = override
 	}
-	return &platforms.SessionDetail{Session: &db.Session{ID: id, Directory: p.directory, Status: status, TimeUpdated: 1234}, Messages: p.messages, Parts: p.parts}, nil
+	timeUpdated := p.timeUpdated
+	if timeUpdated == 0 {
+		timeUpdated = 1234
+	}
+	return &platforms.SessionDetail{Session: &db.Session{ID: id, Directory: p.directory, Status: status, TimeUpdated: timeUpdated}, Messages: p.messages, Parts: p.parts}, nil
 }
 func (p *testPlatform) setStatus(status db.SessionStatus) {
 	p.mu.Lock()
@@ -382,6 +387,45 @@ func TestRemoteDispatchUsesCompoundPlatform(t *testing.T) {
 	run, err := h.svc.RunNow(t.Context(), routine.ID)
 	if err != nil || run.Platform != "r-remote:opencode" || run.SessionID != "session-1" {
 		t.Fatalf("RunNow = %+v, %v", run, err)
+	}
+}
+
+// OpenCode can write the session once more just after the turn goes idle.
+// Archiving the moment done is observed would stamp before that write and
+// let it resurface the session, so a run that archives waits until the
+// session has been quiet for a full tick.
+func TestArchiveWaitsForQuietSession(t *testing.T) {
+	h := newHarness(t)
+	input := validInput()
+	input.ArchiveSessionAfterSuccess = true
+	routine, err := h.svc.Create(t.Context(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.svc.RunNow(t.Context(), routine.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.platform.mu.Lock()
+	h.platform.timeUpdated = h.now.Load() - 1 // written just now
+	h.platform.mu.Unlock()
+	h.platform.setStatus(db.StatusDone)
+	if err := h.svc.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	key := state.Key{Platform: run.Platform, SessionID: run.SessionID}
+	archived, _ := h.db.ArchivedSessions(t.Context())
+	if got, _ := h.svc.store.GetRoutineRun(t.Context(), run.ID); got.State != RunRunning || len(archived) != 0 {
+		t.Fatalf("settled a just-written session: state=%s archives=%v", got.State, archived)
+	}
+
+	h.now.Add(settleQuietPeriod.Milliseconds())
+	if err := h.svc.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	archived, _ = h.db.ArchivedSessions(t.Context())
+	if got, _ := h.svc.store.GetRoutineRun(t.Context(), run.ID); got.State != RunSuccess || archived[key] != h.now.Load() {
+		t.Fatalf("quiet session: state=%s archives=%v", got.State, archived)
 	}
 }
 
