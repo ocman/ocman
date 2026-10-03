@@ -277,14 +277,22 @@ func (s *Server) broadcastSessionChanged(sessionID string) {
 }
 
 func (s *Server) broadcastSessionStatus(sessionID string, status db.SessionStatus) {
+	s.broadcastSessionPatch(sessionID, map[string]interface{}{"status": status})
+}
+
+// broadcastSessionTitle pushes an upstream rename so open views relabel
+// the session without a reload.
+func (s *Server) broadcastSessionTitle(sessionID, title string) {
+	s.broadcastSessionPatch(sessionID, map[string]interface{}{"title": title})
+}
+
+func (s *Server) broadcastSessionPatch(sessionID string, patch map[string]interface{}) {
 	if sessionID == "" {
 		return
 	}
 	payload, err := json.Marshal(map[string]interface{}{
 		"sessionID": sessionID,
-		"patch": map[string]interface{}{
-			"status": status,
-		},
+		"patch":     patch,
 	})
 	if err == nil {
 		s.broadcastGlobalEvent("ocman.session.changed", payload)

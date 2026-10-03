@@ -112,6 +112,10 @@ type autoApproveWatcher struct {
 	// for the list view. ponytail: unbounded set, fine for the session
 	// count on one machine; switch to an LRU if it ever isn't.
 	seenSessions map[string]struct{}
+	// titles is the last title seen per session, so a rename (a
+	// session.updated whose title differs) is pushed to the UI.
+	// Guarded by seenMu; same ceiling as seenSessions.
+	titles map[string]string
 }
 
 // newAutoApproveWatcher constructs a watcher wired against the real
@@ -131,6 +135,7 @@ func newAutoApproveWatcher(svc *Service) *autoApproveWatcher {
 		reconnectDelay:    autoApproveReconnectDelay,
 		subs:              make(map[string]context.CancelFunc),
 		seenSessions:      make(map[string]struct{}),
+		titles:            make(map[string]string),
 		markSessionDirty:  opencode.MarkSessionDirty,
 		markSessionsDirty: opencode.MarkSessionsDirty,
 	}

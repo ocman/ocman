@@ -166,6 +166,9 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 		OnSessionChanged: func(sessionID string) {
 			w.handleSessionChanged(streamCtx, sessionID)
 		},
+		OnSessionTitle: func(sessionID, title string) {
+			w.handleSessionTitle(streamCtx, sessionID, title)
+		},
 		OnSessionDataChanged: w.handleSessionDataChanged,
 		OnTerminalPart: func(part terminalPart) {
 			select {

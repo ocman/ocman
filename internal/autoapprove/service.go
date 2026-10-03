@@ -101,6 +101,7 @@ type Deps struct {
 	BroadcastSessionIdle    func(platformID, sessionID string)
 	BroadcastSessionChanged func(sessionID string)
 	BroadcastSessionStatus  func(sessionID string, status db.SessionStatus)
+	BroadcastSessionTitle   func(sessionID, title string)
 	BroadcastGlobalEvent    func(event string, data []byte)
 	// SessionRetry fires on every retry status; the consumer decides
 	// whether it is a quota wall.

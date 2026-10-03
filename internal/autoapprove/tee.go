@@ -94,6 +94,9 @@ type Tee struct {
 	// frequently (per turn / token); the consumer is expected to
 	// dedupe (e.g. only act on first-seen session IDs).
 	OnSessionChanged func(sessionID string)
+	// OnSessionTitle fires after OnSessionChanged with the title carried
+	// by the session record, when it has one. Optional.
+	OnSessionTitle func(sessionID, title string)
 	// OnSessionDataChanged fires for upstream events that mutate the
 	// rows the session list aggregates over — message and part
 	// create/update/delta/remove — and for session.deleted.
@@ -624,7 +627,7 @@ func (t *Tee) dispatchSessionStatus(dataJSON string) {
 // dispatchSessionChanged extracts the session ID from a session creation or
 // update event and fires onSessionChanged.
 func (t *Tee) dispatchSessionChanged(dataJSON string) {
-	if t.OnSessionChanged == nil {
+	if t.OnSessionChanged == nil && t.OnSessionTitle == nil {
 		return
 	}
 	props := parseSessionRef(dataJSON)
@@ -635,7 +638,12 @@ func (t *Tee) dispatchSessionChanged(dataJSON string) {
 	if sessionID == "" {
 		return
 	}
-	t.OnSessionChanged(sessionID)
+	if t.OnSessionChanged != nil {
+		t.OnSessionChanged(sessionID)
+	}
+	if t.OnSessionTitle != nil && props.Info != nil && props.Info.Title != "" {
+		t.OnSessionTitle(sessionID, props.Info.Title)
+	}
 }
 
 // sessionRefProps is every place OpenCode puts the owning session ID on
@@ -656,6 +664,8 @@ type sessionRefChild struct {
 	// to be a session id.
 	ID        string `json:"id"`
 	SessionID string `json:"sessionID"`
+	// Title is only meaningful on a session record.
+	Title string `json:"title"`
 }
 
 // parseSessionRef reads the enveloped shape, falling back to the flat

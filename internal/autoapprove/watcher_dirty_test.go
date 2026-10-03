@@ -226,6 +226,43 @@ func TestHandleSessionChangedDoesNotBroadcastAfterCancellation(t *testing.T) {
 	}
 }
 
+// TestHandleSessionTitleBroadcastsRenames pins that only a changed title is
+// pushed, after the snapshot refresh, carrying the new title.
+func TestHandleSessionTitleBroadcastsRenames(t *testing.T) {
+	var refreshed []string
+	broadcast := make(chan string, 4)
+	svc := &Service{}
+	svc.deps.RefreshSession = func(_ context.Context, sessionID string) error {
+		refreshed = append(refreshed, sessionID)
+		return nil
+	}
+	svc.deps.BroadcastSessionTitle = func(sessionID, title string) {
+		broadcast <- sessionID + "=" + title
+	}
+	w := newAutoApproveWatcher(svc)
+
+	w.handleSessionTitle(t.Context(), "ses-1", "First")  // first sighting: record only
+	w.handleSessionTitle(t.Context(), "ses-1", "First")  // unchanged
+	w.handleSessionTitle(t.Context(), "ses-1", "Second") // rename
+
+	select {
+	case got := <-broadcast:
+		if got != "ses-1=Second" {
+			t.Fatalf("broadcast = %q, want ses-1=Second", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for rename broadcast")
+	}
+	if len(refreshed) != 1 {
+		t.Errorf("refreshes = %v, want one before the broadcast", refreshed)
+	}
+	select {
+	case got := <-broadcast:
+		t.Fatalf("unexpected extra broadcast %q", got)
+	case <-time.After(20 * time.Millisecond):
+	}
+}
+
 // TestHandleSessionDataChangedMarksDirty covers the message/part and
 // deletion events: an identified session marks just that session, and an
 // unattributable one marks the whole snapshot rather than approximating.

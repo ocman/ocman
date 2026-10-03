@@ -4,6 +4,7 @@ import { useUiStore } from '../../lib/uiStore';
 import { cleanTitle, shortPath } from '../../lib/format';
 import { useHeaderInfo, usePageTitle } from '../../lib/headerContext';
 import { recheckFaviconNotify } from '../../lib/useFaviconNotify';
+import { onSessionChanged } from '../../lib/useGlobalEvents';
 import { remoteLog } from '../../lib/remoteLog';
 import type { SessionMetadata } from '../../lib/sessionReducer';
 
@@ -72,6 +73,14 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
     }, 500);
     return () => clearTimeout(timer);
   }, [sessionSeenId, sessionSeenPlatform, sessionSeenUpdated, markSeen, patchSession]);
+
+  // Upstream renames (OpenCode auto-title, TUI /rename, another tab).
+  useEffect(() => {
+    if (!sessionSeenId) return;
+    return onSessionChanged((changedId, _session, patch) => {
+      if (changedId === sessionSeenId && patch?.title) patchSession({ title: patch.title });
+    });
+  }, [sessionSeenId, patchSession]);
 
   // Header info.
   useEffect(() => {

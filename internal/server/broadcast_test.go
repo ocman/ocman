@@ -33,6 +33,18 @@ func TestBroadcastSessionStatusCarriesPatch(t *testing.T) {
 	}
 }
 
+func TestBroadcastSessionTitleCarriesPatch(t *testing.T) {
+	srv := &Server{broadcastHub: newBroadcastHub()}
+	sub, unsubscribe := srv.broadcastHub.subscribe()
+	defer unsubscribe()
+
+	srv.broadcastSessionTitle("s1", "Renamed")
+	ev := <-sub.ch
+	if ev.event != "ocman.session.changed" || string(ev.data) != `{"patch":{"title":"Renamed"},"sessionID":"s1"}` {
+		t.Fatalf("unexpected event: %s %s", ev.event, ev.data)
+	}
+}
+
 func TestBroadcastHubFanOut(t *testing.T) {
 	h := newBroadcastHub()
 

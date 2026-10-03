@@ -18,6 +18,14 @@ vi.hoisted(() => {
 
 const recheckFaviconNotify = vi.fn();
 vi.mock('../../lib/useFaviconNotify', () => ({ recheckFaviconNotify: () => recheckFaviconNotify() }));
+type ChangedListener = (id: string, session?: unknown, patch?: { title?: string }) => void;
+const changedListeners = new Set<ChangedListener>();
+vi.mock('../../lib/useGlobalEvents', () => ({
+  onSessionChanged: (cb: ChangedListener) => {
+    changedListeners.add(cb);
+    return () => changedListeners.delete(cb);
+  },
+}));
 
 import { useApiStore } from '../../lib/apiStore';
 import { useUiStore } from '../../lib/uiStore';
@@ -61,6 +69,20 @@ describe('useSessionSeen', () => {
 
     unmount();
     expect(setInfo).toHaveBeenLastCalledWith({});
+  });
+
+  it('applies an upstream rename of the open session only', () => {
+    const patchSession = vi.fn();
+    const { unmount } = renderHook(() => useSessionSeen({ session, patchSession }), { wrapper });
+    patchSession.mockClear();
+    for (const cb of changedListeners) {
+      cb('other', undefined, { title: 'Nope' });
+      cb('s1', undefined, {});
+      cb('s1', undefined, { title: 'Renamed' });
+    }
+    expect(patchSession.mock.calls).toEqual([[{ title: 'Renamed' }]]);
+    unmount();
+    expect(changedListeners.size).toBe(0);
   });
 
   it('does nothing until the session has loaded', () => {

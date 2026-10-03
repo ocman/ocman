@@ -74,6 +74,36 @@ func (w *autoApproveWatcher) handleSessionChanged(ctx context.Context, sessionID
 	}
 }
 
+// handleSessionTitle pushes a rename to the UI. The first title seen for a
+// session is only recorded: its first sighting already broadcasts the row.
+// The snapshot is refreshed first so a refetch triggered by the broadcast
+// cannot read the old title back.
+func (w *autoApproveWatcher) handleSessionTitle(ctx context.Context, sessionID, title string) {
+	w.seenMu.Lock()
+	prev, known := w.titles[sessionID]
+	w.titles[sessionID] = title
+	w.seenMu.Unlock()
+	if !known || prev == title || w.svc == nil || w.svc.deps.BroadcastSessionTitle == nil {
+		return
+	}
+	go func() {
+		if refresh := w.svc.deps.RefreshSession; refresh != nil {
+			if err := refresh(ctx, sessionID); err != nil && ctx.Err() == nil {
+				log.WithError(err).WithField("session_id", sessionID).Warn("failed to refresh renamed session")
+			}
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		// Send the latest title, not the captured one: two quick renames
+		// may finish their refreshes out of order.
+		w.seenMu.Lock()
+		latest := w.titles[sessionID]
+		w.seenMu.Unlock()
+		w.svc.deps.BroadcastSessionTitle(sessionID, latest)
+	}()
+}
+
 func (w *autoApproveWatcher) forgetSession(sessionID string) {
 	w.seenMu.Lock()
 	delete(w.seenSessions, sessionID)

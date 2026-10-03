@@ -63,6 +63,7 @@ func (s *Server) aaSvc() *autoapprove.Service {
 			SessionRetry:                s.onSessionRetry,
 			BroadcastSessionChanged:     s.broadcastSessionChanged,
 			BroadcastSessionStatus:      s.onLocalSessionStatus,
+			BroadcastSessionTitle:       s.broadcastSessionTitle,
 			BroadcastGlobalEvent:        s.broadcastGlobalEvent,
 			DefaultEnabled:              s.autoApproveDefault,
 		}

@@ -162,6 +162,24 @@ func TestSsePermissionTeeSessionChanged(t *testing.T) {
 	}
 }
 
+// TestTeeSessionTitle verifies the tee reports the title a session record
+// carries and stays silent when the record has none.
+func TestTeeSessionTitle(t *testing.T) {
+	var got []string
+	tee := &Tee{
+		W:              &bytes.Buffer{},
+		OnSessionTitle: func(sessionID, title string) { got = append(got, sessionID+"="+title) },
+	}
+	data := "data: " + `{"type":"session.updated","properties":{"info":{"id":"ses-1","title":"Renamed"}}}` + "\n\n" +
+		"data: " + `{"type":"session.updated","properties":{"info":{"id":"ses-2"}}}` + "\n\n"
+	if _, err := tee.Write([]byte(data)); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if len(got) != 1 || got[0] != "ses-1=Renamed" {
+		t.Errorf("titles = %v, want [ses-1=Renamed]", got)
+	}
+}
+
 // TestTeeSessionStatus verifies the tee parses session.status — the agent's
 // own turn-lifecycle signal — out of every payload shape OpenCode uses, and
 // drops shapes it can't read instead of guessing.
