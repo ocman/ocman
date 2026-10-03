@@ -72,7 +72,10 @@ sequenceDiagram
   the title. If an identity-only change is involved, the pending event stays
   identity-only: it asks for a refetch, which a later patch cannot cancel. The
   open session re-reads its title on such an event and drops a response that a
-  newer title event or fetch has overtaken.
+  newer title event or fetch has overtaken. The hub keeps each session's events
+  in publish order: once one is parked, later ones are parked behind it, and
+  the writer sends buffered events before parked ones. The watcher publishes
+  titles one at a time, so an older title is never sent after a newer one.
 - Reconnecting and the slow reconciliation poll recover missed events.
 
 Ocman never persists session status. The live turn signal from the running

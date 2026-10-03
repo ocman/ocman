@@ -103,12 +103,15 @@ func (w *autoApproveWatcher) handleSessionTitle(ctx context.Context, sessionID, 
 			w.seenMu.Unlock()
 			return
 		}
-		// Send the latest title, not the captured one: two quick renames
-		// may finish their refreshes out of order.
+		// Send the latest title, not the captured one, and publish under
+		// the lock: two quick renames may finish their refreshes out of
+		// order, and an older read published after a newer one would
+		// regress the UI. The broadcast never blocks.
 		w.seenMu.Lock()
-		latest := w.titles[sessionID]
-		w.seenMu.Unlock()
-		w.svc.deps.BroadcastSessionTitle(sessionID, latest)
+		defer w.seenMu.Unlock()
+		if latest := w.titles[sessionID]; latest != "" {
+			w.svc.deps.BroadcastSessionTitle(sessionID, latest)
+		}
 	}()
 }
 

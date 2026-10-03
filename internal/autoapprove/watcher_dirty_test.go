@@ -319,6 +319,49 @@ func TestHandleSessionTitleRetriesAfterCancellation(t *testing.T) {
 	}
 }
 
+// TestHandleSessionTitleNeverPublishesAnOlderTitleLast pins that a
+// publisher preempted between reading the latest title and publishing it
+// cannot land after a newer rename's publication. The first broadcast call
+// stalls to model that preemption.
+func TestHandleSessionTitleNeverPublishesAnOlderTitleLast(t *testing.T) {
+	stalled := make(chan struct{})
+	release := make(chan struct{})
+	published := make(chan string, 4)
+	svc := &Service{}
+	svc.deps.BroadcastSessionTitle = func(_, title string) {
+		if title == "A" {
+			close(stalled)
+			<-release
+		}
+		published <- title
+	}
+	w := newAutoApproveWatcher(svc)
+
+	w.handleSessionTitle(t.Context(), "ses-1", "A")
+	<-stalled
+	go w.handleSessionTitle(t.Context(), "ses-1", "B")
+	// Give an unserialized B the chance to overtake the stalled A.
+	select {
+	case got := <-published:
+		t.Fatalf("%q published while an older publication was in flight", got)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+
+	var order []string
+	for len(order) < 2 {
+		select {
+		case got := <-published:
+			order = append(order, got)
+		case <-time.After(time.Second):
+			t.Fatalf("publications = %v, want two", order)
+		}
+	}
+	if order[1] != "B" {
+		t.Fatalf("publication order = %v, want the newest title last", order)
+	}
+}
+
 // TestHandleSessionDataChangedMarksDirty covers the message/part and
 // deletion events: an identified session marks just that session, and an
 // unattributable one marks the whole snapshot rather than approximating.

@@ -135,19 +135,40 @@ func (h *broadcastHub) broadcast(event string, data []byte) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for sub := range h.subs {
-		ev := broadcastEvent{event: event, data: data}
-		select {
-		case sub.ch <- ev:
-		default:
-			if coalescingEvents[event] {
-				sub.park(coalesceKey(event, data), ev)
-				continue
-			}
-			// Non-coalescing edge event — drop (notify poll backstop).
-			// Logged so a systematic backlog is visible instead of
-			// presenting as unexplained lag (#490).
-			log.WithField("event", event).Debug("global SSE: dropped event for slow subscriber")
+		sub.deliver(broadcastEvent{event: event, data: data})
+	}
+}
+
+// deliver queues ev on the subscriber's buffer, or parks it when it is a
+// coalescing event that doesn't fit. Once a key is parked, later events
+// for it are parked too until the writer drains them: sending one through
+// the buffer instead could overtake the older parked payload. Together
+// with the writer emptying the buffer before draining parked events, this
+// keeps each key's events in publish order.
+func (s *broadcastSub) deliver(ev broadcastEvent) {
+	coalescing := coalescingEvents[ev.event]
+	key := ""
+	if coalescing {
+		key = coalesceKey(ev.event, ev.data)
+		s.mu.Lock()
+		_, parked := s.pending[key]
+		s.mu.Unlock()
+		if parked {
+			s.park(key, ev)
+			return
 		}
+	}
+	select {
+	case s.ch <- ev:
+	default:
+		if coalescing {
+			s.park(key, ev)
+			return
+		}
+		// Non-coalescing edge event — drop (notify poll backstop).
+		// Logged so a systematic backlog is visible instead of
+		// presenting as unexplained lag (#490).
+		log.WithField("event", ev.event).Debug("global SSE: dropped event for slow subscriber")
 	}
 }
 
@@ -202,6 +223,24 @@ func mergeSessionPatches(older, newer []byte) []byte {
 		return newer
 	}
 	return out
+}
+
+// writeOrdered writes what is buffered, then what is parked. Only the
+// events buffered at entry are needed: while a key is parked, no newer
+// event for it enters the buffer (see deliver). Returns false once the
+// subscription is closed.
+func writeOrdered(sub *broadcastSub, write func(broadcastEvent)) bool {
+	for n := len(sub.ch); n > 0; n-- {
+		ev, open := <-sub.ch
+		if !open {
+			return false
+		}
+		write(ev)
+	}
+	for _, ev := range sub.drainPending() {
+		write(ev)
+	}
+	return true
 }
 
 // drainPending returns and clears the subscriber's pending coalesced
@@ -417,9 +456,12 @@ func (s *Server) handleGlobalEvents(w http.ResponseWriter, r *http.Request) {
 		case <-sub.wake:
 			// Coalesced last-write-wins events that didn't fit the buffer —
 			// flush the freshest snapshot per key so state (e.g. the queue
-			// list) is never lost under load.
-			for _, ev := range sub.drainPending() {
+			// list) is never lost under load. Buffered events are older than
+			// any parked one for the same key, so write them first.
+			if !writeOrdered(sub, func(ev broadcastEvent) {
 				autoapprove.WriteSSEEvent(w, flusher.Flush, ev.event, ev.data)
+			}) {
+				return
 			}
 		case ev, open := <-sub.ch:
 			if !open {

@@ -72,6 +72,52 @@ func TestBroadcastHubMergesParkedSessionPatches(t *testing.T) {
 	}
 }
 
+// A slow client must see a session's changes in publish order: an older
+// buffered title must not be written after a newer parked one, and once a
+// key is parked a later event for it must not overtake via the buffer.
+func TestBroadcastHubKeepsSessionOrderAcrossBufferAndPark(t *testing.T) {
+	srv := &Server{broadcastHub: newBroadcastHub()}
+	sub, unsubscribe := srv.broadcastHub.subscribe()
+	defer unsubscribe()
+
+	srv.broadcastSessionTitle("s1", "Old") // buffered
+	for len(sub.ch) < cap(sub.ch) {
+		srv.broadcastGlobalEvent("filler", []byte(`{}`))
+	}
+	srv.broadcastSessionTitle("s1", "New")    // parked
+	<-sub.ch                                  // the writer frees one slot...
+	srv.broadcastSessionTitle("s1", "Newest") // ...but s1 stays parked
+
+	var titles []string
+	collect := func(ev broadcastEvent) {
+		var p struct {
+			Patch struct {
+				Title string `json:"title"`
+			} `json:"patch"`
+		}
+		if ev.event == "ocman.session.changed" && json.Unmarshal(ev.data, &p) == nil {
+			titles = append(titles, p.Patch.Title)
+		}
+	}
+	writeOrdered(sub, collect)
+	// "Old" was the slot freed above; what remains must end on the newest.
+	if len(titles) != 1 || titles[0] != "Newest" {
+		t.Fatalf("titles written = %v, want [Newest]", titles)
+	}
+
+	// Old buffered + new parked: the buffered one is written first.
+	srv.broadcastSessionTitle("s1", "A")
+	for len(sub.ch) < cap(sub.ch) {
+		srv.broadcastGlobalEvent("filler", []byte(`{}`))
+	}
+	srv.broadcastSessionTitle("s1", "B")
+	titles = nil
+	writeOrdered(sub, collect)
+	if len(titles) != 2 || titles[0] != "A" || titles[1] != "B" {
+		t.Fatalf("titles written = %v, want [A B]", titles)
+	}
+}
+
 func TestBroadcastHubFanOut(t *testing.T) {
 	h := newBroadcastHub()
 
