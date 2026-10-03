@@ -39,7 +39,9 @@ func (h *remoteHost) SaveComposerAttachment(ctx context.Context, req hostsvc.Com
 		if n > 0 {
 			if err := stream.Send(&pb.JsonReq{Payload: bytes.Clone(buffer[:n])}); err != nil {
 				if errors.Is(err, io.EOF) {
-					_, err = stream.CloseAndRecv()
+					if _, replyErr := stream.CloseAndRecv(); replyErr != nil {
+						err = replyErr
+					}
 				}
 				return nil, attachmentRPCError(err)
 			}

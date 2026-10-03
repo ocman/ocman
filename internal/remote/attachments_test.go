@@ -25,10 +25,15 @@ type attachmentWireHost struct {
 	request hostsvc.ComposerAttachmentRequest
 	data    []byte
 	err     error
+	early   bool
 }
 
 func (h *attachmentWireHost) SaveComposerAttachment(_ context.Context, req hostsvc.ComposerAttachmentRequest, reader io.Reader) (*hostsvc.ComposerAttachment, error) {
 	h.request = req
+	if h.early {
+		_, _ = reader.Read(make([]byte, attachmentChunkBytes))
+		return &hostsvc.ComposerAttachment{Path: "/owner/cache/incomplete"}, nil
+	}
 	var err error
 	h.data, err = io.ReadAll(reader)
 	if err != nil {
@@ -96,6 +101,16 @@ func TestComposerAttachmentStreamPropagatesOwnerLimit(t *testing.T) {
 	_, err = newRemoteHost(&RemoteConn{}).SaveComposerAttachment(t.Context(), hostsvc.ComposerAttachmentRequest{}, bytes.NewReader(nil))
 	if !errors.Is(err, ErrRemoteOffline) {
 		t.Fatalf("offline error=%v", err)
+	}
+}
+
+func TestComposerAttachmentEarlyReplyDoesNotReportSuccess(t *testing.T) {
+	owner := &attachmentWireHost{early: true}
+	host := newRemoteHost(&RemoteConn{client: attachmentWire(t, owner)})
+	saved, err := host.SaveComposerAttachment(t.Context(), hostsvc.ComposerAttachmentRequest{Directory: "/repo", SessionID: "s1"},
+		bytes.NewReader(make([]byte, 8<<20)))
+	if err == nil || saved != nil {
+		t.Fatalf("incomplete upload reported success: saved=%+v error=%v", saved, err)
 	}
 }
 
