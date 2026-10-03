@@ -585,6 +585,7 @@ export interface PartData {
   filename?: string;
   state?: {
     status?: string;
+    time?: { start?: number; end?: number };
     input?: Record<string, unknown>;
     output?: unknown;
     error?: string;

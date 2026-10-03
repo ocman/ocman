@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react';
-import type { Message, Part } from './api';
+import type { Message, Part, PartData } from './api';
 import { formatModelRef } from './sessionStatus';
+import { throughputSample } from './throughput';
 
 /**
  * Aggregated stats for a single "turn" — one user prompt plus all the
@@ -37,7 +38,7 @@ export interface TurnAggregate {
   cost: number;
   /** Number of tool-call parts across all assistant messages in the turn. */
   toolCalls: number;
-  /** Average output tok/s across LLM calls in the turn that have timing. */
+  /** Estimated output tok/s, excluding recorded tool and approval waits. */
   tps: number | null;
   /** True when the last assistant message has neither finished nor completed. */
   isLive: boolean;
@@ -108,10 +109,12 @@ export function computeTurnStats(
 
   // Build a quick index: messageId → count of tool parts
   const toolCountByMsg: Record<string, number> = {};
+  const toolsByMsg: Record<string, PartData[]> = {};
   for (const p of parts) {
     const data = typeof p.data === 'string' ? tryParse(p.data) : p.data;
     if (data && typeof data === 'object' && 'type' in data && data.type === 'tool') {
       toolCountByMsg[p.messageId] = (toolCountByMsg[p.messageId] ?? 0) + 1;
+      (toolsByMsg[p.messageId] ??= []).push(data as PartData);
     }
   }
 
@@ -166,15 +169,9 @@ export function computeTurnStats(
       const ref = messageModelRef(a);
       if (ref) model = ref;
 
-      const t = a.data.time;
-      const out = a.data.tokens?.output;
-      if (t?.created && t?.completed && out) {
-        const d = (t.completed - t.created) / 1000;
-        if (d > 0) {
-          totalTpsNumerator += out;
-          totalTpsDenominator += d;
-        }
-      }
+      const [out, duration] = throughputSample(a, toolsByMsg[a.id] ?? []);
+      totalTpsNumerator += out;
+      totalTpsDenominator += duration / 1000;
     }
 
     const tps =

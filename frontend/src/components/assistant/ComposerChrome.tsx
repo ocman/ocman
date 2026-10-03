@@ -76,7 +76,7 @@ export function ComposerFooter({
               <span className="oc-thinking-dot" /><span className="oc-thinking-dot" /><span className="oc-thinking-dot" /><span className="oc-thinking-dot" /><span className="oc-thinking-dot" />
             </span>
             {tokensPerSecond != null && tokensPerSecond > 0 && (
-              <span className="oc-tps-hint">{formatTokensPerSecond(tokensPerSecond)} tok/s</span>
+              <span className="oc-tps-hint" title="Estimated output tokens per model-request second, excluding tool and approval waits. Based on completed messages; includes request startup latency.">{formatTokensPerSecond(tokensPerSecond)} tok/s</span>
             )}
             <button type="button" className="oc-stop-btn" onClick={onAbort} title="Stop generation (Esc)">
               <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">

@@ -776,6 +776,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const { displayStatus, liveTokensPerSecond } = useSessionStatus({
     lastMsg,
     messages,
+    parts,
+    taskLiveOutput,
     subagentTokens,
     setSubagentTokens,
     sessionStatus: session?.status,

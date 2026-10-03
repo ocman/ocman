@@ -453,7 +453,7 @@ function TurnSummaryBar({ messageId }: { messageId: string }) {
   }
   if (tps !== null) {
     items.push(
-      <span key="tps" className="oc-turn-stat">
+      <span key="tps" className="oc-turn-stat" title="Estimated output tokens per model-request second, excluding recorded tool and approval waits; includes startup latency.">
         {formatTokensPerSecond(tps)} tok/s
       </span>
     );

@@ -171,7 +171,7 @@ const ENTITY_HEADERS = (
     <th>Input</th>
     <th>Output</th>
     <th>Cache</th>
-    <th>Tok/s</th>
+    <th title="Estimated output tokens per model-request second, excluding recorded tool and approval waits; includes startup latency.">Tok/s</th>
     <th>Duration</th>
     <th title="Platform-billed cost; falls back to the token-based estimate when the plan reports $0">Cost</th>
     <th title="Platform-reported (billed) / token-based estimate">Reported / Est.</th>
@@ -300,7 +300,7 @@ export function RequestLogTable({
             <th>Input</th>
             <th>Output</th>
             <th>Cache</th>
-            <th>Tok/s</th>
+            <th title="Estimated output tokens per model-request second, excluding recorded tool and approval waits; includes startup latency.">Tok/s</th>
             <th>Duration</th>
             <th title="Platform-billed cost; falls back to the token-based estimate when the plan reports $0">Cost</th>
             <th title="Platform-reported (billed) / token-based estimate">Reported / Est.</th>

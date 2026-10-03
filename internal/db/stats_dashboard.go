@@ -27,6 +27,7 @@ type requestRow struct {
 	estimatedCostByType CostByType
 	completed           bool
 	isError             bool
+	modelStarted        int64
 }
 
 // MetricsDashboardOptions groups the inputs to GetMetricsDashboard
@@ -255,13 +256,11 @@ func (d *DB) scanDashboardRows(ctx context.Context, opts MetricsDashboardOptions
 		}
 		if md.Time != nil && md.Time.Completed > md.Time.Created {
 			entry.DurationMs = md.Time.Completed - md.Time.Created
+			entry.modelStarted = md.Time.Created
 		}
 		finish := strings.TrimSpace(md.Finish)
 		entry.isError = finish == "error" || persistedError(md.Error)
 		entry.completed = finish != "" || entry.isError
-		if entry.DurationMs > 0 {
-			entry.TokensPerSecond = float64(entry.OutputTokens) / (float64(entry.DurationMs) / 1000)
-		}
 		entry.StopReason = finish
 		if entry.StopReason == "" {
 			entry.StopReason = "none"
@@ -286,6 +285,10 @@ func (d *DB) scanDashboardRows(ctx context.Context, opts MetricsDashboardOptions
 	if err := rows.Err(); err != nil {
 		return nil, nil, nil, err
 	}
+	rows.Close()
+	if err := d.applyThroughput(ctx, filtered); err != nil {
+		return nil, nil, nil, err
+	}
 	return filtered, agentSet, modelSet, nil
 }
 
@@ -297,6 +300,7 @@ type bucketAcc struct {
 	cacheWriteTokens     int64
 	outputTokens         int64
 	totalOutputTokSec    float64
+	throughputCount      int
 	totalDurationMs      float64
 	totalCacheEff        float64
 	totalCost            float64
@@ -335,6 +339,7 @@ func (d *DB) aggregateSummaryAndBuckets(dashboard *MetricsDashboard, filtered []
 	buckets := make(map[string]*bucketAcc)
 	stopCounts := make(map[string]int)
 	validDurationCount := 0
+	validThroughputCount := 0
 	durations := make([]int64, 0, len(filtered))
 	agents := make(map[string]*AgentMetrics)
 
@@ -363,9 +368,12 @@ func (d *DB) aggregateSummaryAndBuckets(dashboard *MetricsDashboard, filtered []
 		if entry.DurationMs > 0 {
 			durations = append(durations, entry.DurationMs)
 			dashboard.Summary.AvgDurationMs += float64(entry.DurationMs)
-			dashboard.Summary.AvgTokensPerSec += entry.TokensPerSecond
 			dashboard.Summary.TotalDurationMs += entry.DurationMs
 			validDurationCount++
+		}
+		if entry.TokensPerSecond > 0 {
+			dashboard.Summary.AvgTokensPerSec += entry.TokensPerSecond
+			validThroughputCount++
 		}
 		stopCounts[entry.StopReason]++
 
@@ -385,6 +393,9 @@ func (d *DB) aggregateSummaryAndBuckets(dashboard *MetricsDashboard, filtered []
 		b.cacheWriteTokens += entry.CacheWriteTokens
 		b.outputTokens += entry.OutputTokens
 		b.totalOutputTokSec += entry.TokensPerSecond
+		if entry.TokensPerSecond > 0 {
+			b.throughputCount++
+		}
 		if entry.DurationMs > 0 {
 			b.totalDurationMs += float64(entry.DurationMs)
 			b.durations = append(b.durations, entry.DurationMs)
@@ -430,7 +441,9 @@ func (d *DB) aggregateSummaryAndBuckets(dashboard *MetricsDashboard, filtered []
 
 	if validDurationCount > 0 {
 		dashboard.Summary.AvgDurationMs /= float64(validDurationCount)
-		dashboard.Summary.AvgTokensPerSec /= float64(validDurationCount)
+	}
+	if validThroughputCount > 0 {
+		dashboard.Summary.AvgTokensPerSec /= float64(validThroughputCount)
 	}
 	if tc := dashboard.Summary.CacheReadTokens + dashboard.Summary.CacheWriteTokens; tc > 0 {
 		dashboard.Summary.CacheHitRate = float64(dashboard.Summary.CacheReadTokens) / float64(tc)
@@ -511,7 +524,7 @@ func buildDashboardSeries(buckets map[string]*bucketAcc, bucketOrder []string, b
 			}
 			pt = MetricsPoint{
 				Label:                   label,
-				AvgOutputTokensSec:      b.totalOutputTokSec / float64(n),
+				AvgOutputTokensSec:      b.totalOutputTokSec / float64(max(1, b.throughputCount)),
 				CumulativeCost:          cumCost,
 				CumulativeCalcCost:      cumCalcCost,
 				CumulativeEffectiveCost: cumEffectiveCost,
@@ -781,7 +794,7 @@ func (d *DB) populateSessionLog(ctx context.Context, dashboard *MetricsDashboard
 		acc.entry.Cost += entry.Cost
 		acc.entry.CalcCost += entry.CalcCost
 		acc.entry.EffectiveCost += entry.EffectiveCost
-		if entry.DurationMs > 0 {
+		if entry.TokensPerSecond > 0 {
 			acc.tokPerSecTotal += entry.TokensPerSecond
 			acc.durationCount++
 		}
@@ -893,7 +906,7 @@ func (d *DB) populateProjectLog(ctx context.Context, dashboard *MetricsDashboard
 		acc.entry.Cost += r.Cost
 		acc.entry.CalcCost += r.CalcCost
 		acc.entry.EffectiveCost += r.EffectiveCost
-		if r.DurationMs > 0 {
+		if r.TokensPerSecond > 0 {
 			acc.tokPerSecTotal += r.TokensPerSecond
 			acc.durationCount++
 		}
