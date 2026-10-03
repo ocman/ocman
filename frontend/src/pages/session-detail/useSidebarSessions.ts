@@ -90,6 +90,7 @@ export function useSidebarSessions({
   useActivityScope('sessions');
   const getSessions = useApiStore((s) => s.getSessions);
   const getSession = useApiStore((s) => s.getSession);
+  const peekSession = useApiStore((s) => s.peekSession);
   const archiveSession = useApiStore((s) => s.archiveSession);
   const pinSession = useApiStore((s) => s.pinSession);
   const recentSessions = useApiStore((s) => s.recentSessions);
@@ -221,7 +222,7 @@ export function useSidebarSessions({
         if (pending !== undefined) return;
         // Fetch the exact row: the list snapshot may not yet include an old
         // session that just became active. Coalesce its streaming events.
-        getSession(sessionID, 1, 0, abortSignalRef.current?.signal).then(({ session: row }) => {
+        peekSession(sessionID, abortSignalRef.current?.signal).then(({ session: row }) => {
           if (!subscribed) return;
           const candidates = filterInactiveChildren([row], id);
           if (!candidates.length || (!showArchivedRecentRef.current && !filterVisibleSessions(candidates).length)) {
@@ -253,7 +254,7 @@ export function useSidebarSessions({
       unsubscribeActivity();
       subscribed = false;
     };
-  }, [loadRecentSessions, abortSignalRef, patchRecentSession, getSession, id, storeSetRecentSessions]);
+  }, [loadRecentSessions, abortSignalRef, patchRecentSession, peekSession, id, storeSetRecentSessions]);
 
   // Slow reconciliation loop, paused while the tab is hidden.
   useEffect(() => {

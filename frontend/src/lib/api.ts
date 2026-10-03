@@ -545,9 +545,12 @@ export const api = {
     fetchJSON<Session[]>(`/api/sessions${queryString(params)}`, signal),
   sessionsNotify: (params?: { since?: number; limit?: number }, signal?: AbortSignal) =>
     fetchJSON<NotifyEntry[]>(`/api/sessions/notify${queryString(params)}`, signal),
-  session: (id: string, limit = 50, offset = 0, signal?: AbortSignal, platform?: string) => {
+  // peek reads without "opening": the server applies the archive resurface
+  // policy instead of unconditionally unarchiving the session.
+  session: (id: string, limit = 50, offset = 0, signal?: AbortSignal, platform?: string, peek = false) => {
     const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     if (platform) query.set('platform', platform);
+    if (peek) query.set('peek', '1');
     return fetchJSON<SessionDetail>(`/api/session/${id}?${query.toString()}`, signal);
   },
   // --- Conversation export / share ---

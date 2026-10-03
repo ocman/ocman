@@ -227,8 +227,16 @@ func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
 	// shows the project + session tile again and navigation stays
 	// consistent. The user can re-archive from the sidebar. Skipped for
 	// remote sessions (AD-14b): their archive state lives in the remote's
-	// state.db, not the hub's.
-	if s.stateDB != nil && detail.Session != nil && !remote {
+	// state.db, not the hub's. A peek (the sidebar probing a session that
+	// just showed activity) is not an open: it follows the resurface policy,
+	// so an archived session stays archived while it is still working.
+	if s.stateDB != nil && detail.Session != nil && !remote && r.URL.Query().Get("peek") == "1" {
+		row := []db.Session{*detail.Session}
+		if err := s.applySessionState(r.Context(), row); err != nil {
+			log.Printf("applying session state on peek: %v", err)
+		}
+		detail.Session.Archived = row[0].Archived
+	} else if s.stateDB != nil && detail.Session != nil && !remote {
 		if err := s.stateDB.UnarchiveSession(r.Context(), string(adapter.ID()), sessionID); err != nil {
 			log.Printf("unarchiving session on open: %v", err)
 		}

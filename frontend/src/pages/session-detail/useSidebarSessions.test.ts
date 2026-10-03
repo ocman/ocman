@@ -156,14 +156,14 @@ describe('useSidebarSessions live refresh', () => {
 
   it('loads an unknown active session once and applies its latest streaming timestamp', async () => {
     let resolve!: (value: { session: Session }) => void;
-    const getSession = vi.fn(() => new Promise<{ session: Session }>((done) => { resolve = done; }));
-    useApiStore.setState({ getSession: getSession as never, recentSessions: [] });
+    const peekSession = vi.fn(() => new Promise<{ session: Session }>((done) => { resolve = done; }));
+    useApiStore.setState({ peekSession: peekSession as never, recentSessions: [] });
     renderHook(() => useSidebarSessions({
       id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
       abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
     }));
     act(() => { sessionActivity?.('old', 180_000); sessionActivity?.('old', 180_001); });
-    expect(getSession).toHaveBeenCalledOnce();
+    expect(peekSession).toHaveBeenCalledOnce();
     await act(async () => { resolve({ session: { id: 'old', timeUpdated: 1, directory: '/repo', status: 'busy' } as Session }); });
     expect(useApiStore.getState().recentSessions[0]).toMatchObject({ id: 'old', timeUpdated: 180_001 });
     expect(getSessions).not.toHaveBeenCalled();
@@ -172,15 +172,29 @@ describe('useSidebarSessions live refresh', () => {
   it('does not resurface an idle old session on replayed activity from a new instance', async () => {
     // A freshly launched instance emits message events for old sessions; the
     // backend stamps them "now". An idle row must keep its real timestamp.
-    const getSession = vi.fn().mockResolvedValue({ session: {
+    const peekSession = vi.fn().mockResolvedValue({ session: {
       id: 'stale', timeUpdated: 1, directory: '/repo', status: 'waiting',
     } as Session });
-    useApiStore.setState({ getSession, recentSessions: [], recentSessionsHash: '' });
+    useApiStore.setState({ peekSession, recentSessions: [], recentSessionsHash: '' });
     renderHook(() => useSidebarSessions({
       id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
       abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
     }));
     await act(async () => { sessionActivity?.('stale', Date.now()); });
+    expect(useApiStore.getState().recentSessions).toEqual([]);
+  });
+
+  it('keeps a busy archived session hidden on activity', async () => {
+    const peekSession = vi.fn().mockResolvedValue({ session: {
+      id: 'archived', timeUpdated: Date.now(), directory: '/repo', status: 'busy', archived: true,
+    } as Session });
+    useApiStore.setState({ peekSession, recentSessions: [], recentSessionsHash: '' });
+    renderHook(() => useSidebarSessions({
+      id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
+      abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
+    }));
+    await act(async () => { sessionActivity?.('archived', Date.now()); });
+    expect(peekSession).toHaveBeenCalledWith('archived', expect.anything());
     expect(useApiStore.getState().recentSessions).toEqual([]);
   });
 
@@ -210,10 +224,10 @@ describe('useSidebarSessions live refresh', () => {
 
   it.each(['(auto-approve subagent)', 'Research (@explore subagent)'])(
     'keeps hidden internal session %s out when SSE announces activity', async (title) => {
-      const getSession = vi.fn().mockResolvedValue({ session: {
+      const peekSession = vi.fn().mockResolvedValue({ session: {
         id: 'internal', title, parentId: '', directory: '/repo', status: 'busy', timeUpdated: 1,
       } as Session });
-      useApiStore.setState({ getSession, recentSessions: [], recentSessionsHash: '' });
+      useApiStore.setState({ peekSession, recentSessions: [], recentSessionsHash: '' });
       renderHook(() => useSidebarSessions({
         id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
         abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
@@ -221,7 +235,7 @@ describe('useSidebarSessions live refresh', () => {
       await act(async () => { sessionActivity?.('internal', 180_000); });
       expect(useApiStore.getState().recentSessions).toEqual([]);
       await act(async () => { sessionActivity?.('internal', 180_001); });
-      expect(getSession).toHaveBeenCalledOnce();
+      expect(peekSession).toHaveBeenCalledOnce();
     },
   );
 });
