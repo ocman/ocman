@@ -69,8 +69,10 @@ sequenceDiagram
   `ocman.session.changed` with `patch: {title}`. The sidebar and the open
   session's header apply it in place. For a subscriber that has fallen behind,
   the hub merges pending patches for a session so a later status patch keeps
-  the title. An identity-only change replaces any pending patch, so the open
-  session re-reads its title when one arrives.
+  the title. If an identity-only change is involved, the pending event stays
+  identity-only: it asks for a refetch, which a later patch cannot cancel. The
+  open session re-reads its title on such an event and drops a response that a
+  newer title event or fetch has overtaken.
 - Reconnecting and the slow reconciliation poll recover missed events.
 
 Ocman never persists session status. The live turn signal from the running

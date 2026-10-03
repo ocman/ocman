@@ -171,27 +171,32 @@ func (s *broadcastSub) park(key string, ev broadcastEvent) {
 	}
 }
 
-// mergeSessionPatches folds an older pending patch into a newer one, so a
-// status patch cannot erase a title patch still waiting for a slow
-// subscriber. Only patch-on-patch merges: an identity-only payload asks the
-// consumer to refetch and must stay that way.
+// mergeSessionPatches folds an older pending session change into a newer
+// one for a slow subscriber, so nothing the older one asked for is lost:
+// two patches merge field by field (a status patch keeps a pending title),
+// and if either side is identity-only the result stays identity-only, since
+// that asks the consumer to refetch and a refetch subsumes any patch.
 func mergeSessionPatches(older, newer []byte) []byte {
 	var o, n map[string]json.RawMessage
-	if json.Unmarshal(older, &o) != nil || json.Unmarshal(newer, &n) != nil || o["patch"] == nil || n["patch"] == nil {
+	if json.Unmarshal(older, &o) != nil || json.Unmarshal(newer, &n) != nil {
 		return newer
 	}
-	var op, np map[string]json.RawMessage
-	if json.Unmarshal(o["patch"], &op) != nil || json.Unmarshal(n["patch"], &np) != nil {
-		return newer
+	if o["patch"] == nil || n["patch"] == nil {
+		delete(n, "patch")
+	} else {
+		var op, np map[string]json.RawMessage
+		if json.Unmarshal(o["patch"], &op) != nil || json.Unmarshal(n["patch"], &np) != nil {
+			return newer
+		}
+		for k, v := range np {
+			op[k] = v
+		}
+		merged, err := json.Marshal(op)
+		if err != nil {
+			return newer
+		}
+		n["patch"] = merged
 	}
-	for k, v := range np {
-		op[k] = v
-	}
-	merged, err := json.Marshal(op)
-	if err != nil {
-		return newer
-	}
-	n["patch"] = merged
 	out, err := json.Marshal(n)
 	if err != nil {
 		return newer

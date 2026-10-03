@@ -104,6 +104,35 @@ describe('useSessionSeen', () => {
     unmount();
   });
 
+  it('drops a title fetch that a newer rename or fetch overtook', async () => {
+    vi.useFakeTimers();
+    const resolvers: Array<(title: string) => void> = [];
+    const peekSession = vi.fn(() => new Promise((resolve) => {
+      resolvers.push((title) => resolve({ session: { ...session, title } }));
+    }));
+    useApiStore.setState({ peekSession } as never);
+    const patchSession = vi.fn();
+    const { unmount } = renderHook(() => useSessionSeen({ session, patchSession }), { wrapper });
+    const emit = (patch?: { title?: string }) => { for (const cb of changedListeners) cb('s1', undefined, patch); };
+    patchSession.mockClear();
+
+    emit();
+    await act(async () => vi.advanceTimersByTime(250));
+    emit({ title: 'Newest' }); // arrives while the fetch is in flight
+    await act(async () => resolvers[0]('Stale'));
+    expect(patchSession.mock.calls).toEqual([[{ title: 'Newest' }]]);
+
+    emit();
+    await act(async () => vi.advanceTimersByTime(250));
+    emit();
+    await act(async () => vi.advanceTimersByTime(250));
+    await act(async () => resolvers[2]('Second fetch'));
+    await act(async () => resolvers[1]('First fetch')); // resolves out of order
+    expect(patchSession).toHaveBeenLastCalledWith({ title: 'Second fetch' });
+    expect(patchSession).toHaveBeenCalledTimes(2);
+    unmount();
+  });
+
   it('does nothing until the session has loaded', () => {
     renderHook(() => useSessionSeen({ session: null, patchSession: vi.fn() }), { wrapper });
     expect(markSessionSeen).not.toHaveBeenCalled();

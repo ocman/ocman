@@ -94,6 +94,13 @@ func (w *autoApproveWatcher) handleSessionTitle(ctx context.Context, sessionID, 
 			}
 		}
 		if ctx.Err() != nil {
+			// Undelivered: let the same title through after reconnect,
+			// unless a newer title has claimed the entry meanwhile.
+			w.seenMu.Lock()
+			if w.titles[sessionID] == title {
+				delete(w.titles, sessionID)
+			}
+			w.seenMu.Unlock()
 			return
 		}
 		// Send the latest title, not the captured one: two quick renames

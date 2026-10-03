@@ -270,6 +270,55 @@ func TestHandleSessionTitleBroadcastsRenames(t *testing.T) {
 	}
 }
 
+// TestHandleSessionTitleRetriesAfterCancellation pins that a title whose
+// delivery was cancelled mid-refresh is not deduplicated against itself
+// once the stream reconnects.
+func TestHandleSessionTitleRetriesAfterCancellation(t *testing.T) {
+	refreshStarted := make(chan struct{}, 2)
+	release := make(chan struct{})
+	broadcast := make(chan string, 2)
+	svc := &Service{}
+	svc.deps.RefreshSession = func(ctx context.Context, _ string) error {
+		refreshStarted <- struct{}{}
+		select {
+		case <-release:
+		case <-ctx.Done():
+		}
+		return ctx.Err()
+	}
+	svc.deps.BroadcastSessionTitle = func(sessionID, title string) { broadcast <- sessionID + "=" + title }
+	w := newAutoApproveWatcher(svc)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	w.handleSessionTitle(ctx, "ses-1", "Renamed")
+	<-refreshStarted
+	cancel()
+	deadline := time.Now().Add(time.Second)
+	for {
+		w.seenMu.Lock()
+		_, held := w.titles["ses-1"]
+		w.seenMu.Unlock()
+		if !held {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("cancelled delivery kept the title deduplicated")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	close(release)
+	w.handleSessionTitle(t.Context(), "ses-1", "Renamed")
+	select {
+	case got := <-broadcast:
+		if got != "ses-1=Renamed" {
+			t.Fatalf("broadcast = %q", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("same title was not retried after reconnect")
+	}
+}
+
 // TestHandleSessionDataChangedMarksDirty covers the message/part and
 // deletion events: an identified session marks just that session, and an
 // unattributable one marks the whole snapshot rather than approximating.

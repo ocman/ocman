@@ -61,9 +61,11 @@ func TestBroadcastHubMergesParkedSessionPatches(t *testing.T) {
 		t.Fatalf("pending = %+v", pending)
 	}
 
-	// An identity-only event asks for a refetch and is never turned into a patch.
+	// An identity-only event asks for a refetch, and that request survives
+	// a later patch.
 	srv.broadcastSessionTitle("s1", "Again")
 	srv.broadcastSessionChanged("s1")
+	srv.broadcastSessionStatus("s1", db.StatusDone)
 	pending = sub.drainPending()
 	if len(pending) != 1 || string(pending[0].data) != `{"sessionID":"s1"}` {
 		t.Fatalf("pending = %+v", pending)
@@ -205,8 +207,10 @@ func TestBroadcastHubCoalescesSessionEventsOnFullBuffer(t *testing.T) {
 	for _, ev := range pending {
 		byKey[coalesceKey(ev.event, ev.data)] = string(ev.data)
 	}
-	if got := byKey["ocman.session.changed\x00s1"]; got != `{"sessionID":"s1","patch":{"status":"busy"}}` {
-		t.Fatalf("changed s1 payload = %q, want the latest (patch) payload", got)
+	// The pending refetch request outlives the later patch: a refetch
+	// already re-reads the status the patch carried.
+	if got := byKey["ocman.session.changed\x00s1"]; got != `{"sessionID":"s1"}` {
+		t.Fatalf("changed s1 payload = %q, want the identity-only refetch request", got)
 	}
 	if _, ok := byKey["ocman.session.idle\x00s1"]; !ok {
 		t.Fatal("idle s1 was dropped instead of parked")

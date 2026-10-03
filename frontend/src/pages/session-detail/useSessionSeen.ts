@@ -74,26 +74,31 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
     return () => clearTimeout(timer);
   }, [sessionSeenId, sessionSeenPlatform, sessionSeenUpdated, markSeen, patchSession]);
 
-  // Upstream renames (OpenCode auto-title, TUI /rename, another tab). The
-  // hub merges patches for a slow client, but an identity-only change can
-  // still supersede a title patch, so re-read the title on those. Status-only
-  // patches are frequent and never carry a lost title, so they are ignored.
+  // Upstream renames (OpenCode auto-title, TUI /rename, another tab). For a
+  // slow client the hub merges patches, and collapses anything involving an
+  // identity-only change into one identity-only event, so re-read the title
+  // on those. Status-only patches never hide a title and are ignored.
   const peekSession = useApiStore((state) => state.peekSession);
   useEffect(() => {
     if (!sessionSeenId) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // Bumped by every title event and every fetch; a response applies only
+    // if nothing newer happened while it was in flight.
+    let revision = 0;
     const controller = new AbortController();
     const unsubscribe = onSessionChanged((changedId, _session, patch) => {
       if (changedId !== sessionSeenId) return;
       if (patch?.title) {
+        revision++;
         patchSession({ title: patch.title });
         return;
       }
       if (patch || timer !== undefined) return;
       timer = setTimeout(() => {
         timer = undefined;
+        const requested = ++revision;
         peekSession(sessionSeenId, controller.signal)
-          .then(({ session: row }) => { if (row.title) patchSession({ title: row.title }); })
+          .then(({ session: row }) => { if (row.title && requested === revision) patchSession({ title: row.title }); })
           .catch((err) => { if (!controller.signal.aborted) remoteLog.error('Failed to refresh session title', err); });
       }, 250);
     });
