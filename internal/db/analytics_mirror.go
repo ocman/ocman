@@ -22,7 +22,7 @@ import (
 //
 // It is derived data: delete the file and it rebuilds. A schema bump or a
 // different source database wipes it the same way.
-const mirrorSchemaVersion = 1
+const mirrorSchemaVersion = 2
 
 const mirrorSchema = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -42,6 +42,8 @@ CREATE TABLE IF NOT EXISTS message (
 );
 CREATE INDEX IF NOT EXISTS message_session_time_created_id_idx ON message (session_id, time_created, id);
 CREATE INDEX IF NOT EXISTS message_settled_idx ON message (settled, time_created);
+CREATE TABLE IF NOT EXISTS tool_timing (message_id TEXT NOT NULL, time TEXT);
+CREATE INDEX IF NOT EXISTS tool_timing_message_idx ON tool_timing (message_id);
 `
 
 const (
@@ -124,7 +126,7 @@ func initMirror(mdb *sql.DB, source string) error {
 		_ = mdb.QueryRow(`SELECT value FROM meta WHERE key = 'source'`).Scan(&have)
 	}
 	if version != mirrorSchemaVersion || have != source {
-		if _, err := mdb.Exec(`DROP TABLE IF EXISTS meta; DROP TABLE IF EXISTS session; DROP TABLE IF EXISTS message;`); err != nil {
+		if _, err := mdb.Exec(`DROP TABLE IF EXISTS meta; DROP TABLE IF EXISTS session; DROP TABLE IF EXISTS message; DROP TABLE IF EXISTS tool_timing;`); err != nil {
 			return fmt.Errorf("resetting analytics mirror: %w", err)
 		}
 	}
@@ -292,6 +294,9 @@ func (d *DB) copyToMirror(ctx context.Context, since int64, start time.Time) err
 		`INSERT OR REPLACE INTO message (id, session_id, time_created, data, settled) VALUES (?, ?, ?, ?, ?)`, 5); err != nil {
 		return fmt.Errorf("copying messages to analytics mirror: %w", err)
 	}
+	if err := d.copyToolTimings(ctx, tx, since); err != nil {
+		return fmt.Errorf("copying tool timings to analytics mirror: %w", err)
+	}
 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM session`); err != nil {
 		return err
@@ -301,6 +306,9 @@ func (d *DB) copyToMirror(ctx context.Context, since int64, start time.Time) err
 		return fmt.Errorf("copying sessions to analytics mirror: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM message WHERE session_id NOT IN (SELECT id FROM session)`); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM tool_timing WHERE message_id NOT IN (SELECT id FROM message)`); err != nil {
 		return err
 	}
 	if since == 0 {

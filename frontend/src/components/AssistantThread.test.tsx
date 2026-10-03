@@ -310,6 +310,16 @@ describe('AssistantThread message jumps', () => {
 });
 
 describe('AssistantThread message metadata', () => {
+  it('renders adjusted throughput while keeping elapsed duration', () => {
+    useUiStore.getState().setShowMessageMetadata(true);
+    message.metadata.custom = {
+      time: { created: 1000, completed: 11000 }, tokens: { output: 200 }, tokensPerSecond: 100,
+    };
+    render(<AssistantThread />);
+    expect(screen.getByText('100 tok/s')).toBeInTheDocument();
+    expect(screen.queryByText('20 tok/s')).not.toBeInTheDocument();
+    expect(screen.getByText('10s')).toBeInTheDocument();
+  });
   it('hides per-message metadata by default but keeps the between-turn summary', () => {
     const { container } = render(<AssistantThread />);
 

@@ -196,7 +196,8 @@ func (d *DB) scanDashboardRows(ctx context.Context, opts MetricsDashboardOptions
 	query += `
 		ORDER BY m.time_created ASC
 	`
-	rows, qErr := d.analytics(ctx).QueryContext(ctx, query, args...)
+	source := d.analytics(ctx)
+	rows, qErr := source.QueryContext(ctx, query, args...)
 	if qErr != nil {
 		return nil, nil, nil, qErr
 	}
@@ -286,7 +287,7 @@ func (d *DB) scanDashboardRows(ctx context.Context, opts MetricsDashboardOptions
 		return nil, nil, nil, err
 	}
 	rows.Close()
-	if err := d.applyThroughput(ctx, filtered); err != nil {
+	if err := d.applyThroughput(ctx, source, filtered); err != nil {
 		return nil, nil, nil, err
 	}
 	return filtered, agentSet, modelSet, nil

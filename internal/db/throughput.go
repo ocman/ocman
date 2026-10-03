@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -33,9 +34,9 @@ func modelDuration(start, end int64, tools []toolTiming) int64 {
 	return end - start - waiting
 }
 
-// Tool payloads stay in the source DB, not the compact analytics mirror.
-// Read only timing fields in bounded batches using the message_id index.
-func (d *DB) applyThroughput(ctx context.Context, requests []requestRow) error {
+// Read the compact mirror projection, falling back to source payloads only
+// when the message scan also uses the source (e.g. before the initial build).
+func (d *DB) applyThroughput(ctx context.Context, source *sql.DB, requests []requestRow) error {
 	const batchSize = 400
 	for offset := 0; offset < len(requests); offset += batchSize {
 		batch := requests[offset:min(offset+batchSize, len(requests))]
@@ -46,7 +47,10 @@ func (d *DB) applyThroughput(ctx context.Context, requests []requestRow) error {
 		query := `SELECT message_id, json_extract(data, '$.state.time') FROM part
 			WHERE message_id IN (` + strings.TrimSuffix(strings.Repeat("?,", len(batch)), ",") + `)
 			AND json_extract(data, '$.type') = 'tool'`
-		rows, err := d.db.QueryContext(ctx, query, args...)
+		if source != d.db {
+			query = `SELECT message_id, time FROM tool_timing WHERE message_id IN (` + strings.TrimSuffix(strings.Repeat("?,", len(batch)), ",") + `)`
+		}
+		rows, err := source.QueryContext(ctx, query, args...)
 		if err != nil {
 			return fmt.Errorf("reading throughput timings: %w", err)
 		}
@@ -85,4 +89,23 @@ func (d *DB) applyThroughput(ctx context.Context, requests []requestRow) error {
 		}
 	}
 	return nil
+}
+
+// Refresh exactly the message-copy window in the same transaction. The mirror
+// stores only the timing JSON, retaining null/invalid values as unknown samples.
+func (d *DB) copyToolTimings(ctx context.Context, tx *sql.Tx, since int64) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM tool_timing WHERE message_id IN
+		(SELECT id FROM message WHERE time_created >= ?)`, since); err != nil {
+		return err
+	}
+	query := `SELECT p.message_id, json_extract(p.data, '$.state.time')
+		FROM ` + messagesFrom(since, false) + ` JOIN part p ON p.message_id = m.id
+		WHERE json_extract(m.data, '$.role') = 'assistant' AND json_extract(p.data, '$.type') = 'tool'`
+	var args []any
+	if since > 0 {
+		query += ` AND m.time_created >= ?`
+		args = append(args, since)
+	}
+	return copyRows(ctx, d.db, tx, query, args,
+		`INSERT INTO tool_timing (message_id, time) VALUES (?, ?)`, 2)
 }

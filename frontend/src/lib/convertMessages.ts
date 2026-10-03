@@ -1,5 +1,6 @@
 import type { ThreadMessageLike } from '@assistant-ui/react';
 import type { Message, Part, PartData, TaskSessionData } from './api';
+import { throughputSample } from './throughput';
 import type { FailedSend } from './failedSends';
 import { messageModelRef } from './turnStats';
 import { formatSeconds } from './format';
@@ -671,7 +672,9 @@ export function createConvertMessages(): ConvertMessagesFn {
 
     const failedEntry = role === 'user' ? failedById?.[m.id] : undefined;
     const model = role === 'assistant' ? messageModelRef(m) : '';
+    const [output, modelMs] = throughputSample(m, msgParts);
     const customMeta = {
+      ...(role === 'assistant' ? { tokensPerSecond: modelMs > 0 ? output / (modelMs / 1000) : null } : {}),
       ...(m.data.tokens ? { tokens: m.data.tokens } : {}),
       ...(m.data.time ? { time: m.data.time } : {}),
       ...(m.data.error ? { errorName: m.data.error.name || 'Error' } : {}),

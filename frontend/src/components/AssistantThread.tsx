@@ -323,16 +323,14 @@ function AssistantMeta() {
   const errorName = custom?.errorName as string | undefined;
   const isAbort = errorName === 'MessageAbortedError' || errorName === 'AbortError';
 
-  // Compute duration and tokens-per-second from per-message timing data when available.
+  // Duration is elapsed time; TPS comes from the tool-adjusted sample.
   const msgTime = custom?.time as { created?: number; completed?: number } | undefined;
-  const msgTokens = custom?.tokens as { output?: number } | undefined;
   let durationSec: number | null = null;
-  let tps: number | null = null;
+  const tps = typeof custom?.tokensPerSecond === 'number' ? custom.tokensPerSecond : null;
   if (msgTime?.created && msgTime?.completed) {
     const d = (msgTime.completed - msgTime.created) / 1000;
     if (d > 0) {
       durationSec = d;
-      if (msgTokens?.output) tps = msgTokens.output / d;
     }
   }
 
@@ -364,7 +362,7 @@ function AssistantMeta() {
         {tps !== null && (
           <>
             <span className="oc-meta-sep">·</span>
-            <span className="oc-meta-tps">{formatTokensPerSecond(tps)} tok/s</span>
+            <span className="oc-meta-tps" title="Estimated output tokens per model-request second, excluding recorded tool and approval waits; includes startup latency.">{formatTokensPerSecond(tps)} tok/s</span>
           </>
         )}
         {model && (

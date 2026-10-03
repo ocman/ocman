@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestModelDuration(t *testing.T) {
@@ -96,6 +97,11 @@ func TestThroughputExcludesToolWaits(t *testing.T) {
 				if err := db.SyncAnalyticsMirror(t.Context()); err != nil {
 					t.Fatal(err)
 				}
+				// Warm reads must use the compact timing projection, even if
+				// historical source payloads are no longer accessible.
+				if _, err := db.db.Exec(`DROP TABLE part`); err != nil {
+					t.Fatal(err)
+				}
 			}
 			metrics, err := db.GetMetricsDashboard(t.Context(), MetricsDashboardOptions{})
 			if err != nil {
@@ -107,6 +113,58 @@ func TestThroughputExcludesToolWaits(t *testing.T) {
 			if metrics.Requests[0].DurationMs != 10000 {
 				t.Fatal("request latency must retain tool time")
 			}
+			if mirror {
+				if _, err := db.GetMetricsPerformance(t.Context(), MetricsDashboardOptions{}); err != nil {
+					t.Fatalf("repeated warm read: %v", err)
+				}
+			}
 		})
 	}
+}
+
+func TestMirrorRefreshesToolTimings(t *testing.T) {
+	db := openTestDB(t)
+	defer db.Close()
+	now := time.Now().UnixMilli()
+	insertSession(t, db, "s", "test", "/a", now, now)
+	insertMessage(t, db, "m", "s", now, map[string]any{
+		"role": "assistant", "time": map[string]any{"created": now, "completed": now + 10000},
+		"tokens": map[string]any{"output": 200},
+	})
+	insertPart(t, db, "p", "m", "s", now, map[string]any{
+		"type": "tool", "state": map[string]any{"time": map[string]any{"start": now + 2000}},
+	})
+	if err := db.EnableAnalyticsMirror(filepath.Join(t.TempDir(), "analytics.db"), "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SyncAnalyticsMirror(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	check := func(want float64) {
+		t.Helper()
+		metrics, err := db.GetMetricsPerformance(t.Context(), MetricsDashboardOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if metrics.Summary.AvgTokensPerSec != want {
+			t.Fatalf("got %v, want %v", metrics.Summary.AvgTokensPerSec, want)
+		}
+	}
+	check(0) // Missing end remains unknown after projection.
+	if _, err := db.db.Exec(`UPDATE part SET data = json_set(data, '$.state.time.end', ?)`, now+10000); err != nil {
+		t.Fatal(err)
+	}
+	db.mirror.lastSync.Store(0)
+	if err := db.SyncAnalyticsMirror(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	check(100)
+	if _, err := db.db.Exec(`DELETE FROM part`); err != nil {
+		t.Fatal(err)
+	}
+	db.mirror.lastSync.Store(0)
+	if err := db.SyncAnalyticsMirror(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	check(20) // A deleted part must not leave a cached wait behind.
 }

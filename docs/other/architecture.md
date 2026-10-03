@@ -78,7 +78,15 @@ flowchart LR
   by the user. Legacy `workflow_*` rows remain inert for manual recovery.
 - **analytics-cache.db.** A disposable copy of opencode.db's message and
   session rows, stored beside state.db, which the analytics queries read.
-  User-message attachments are stripped from the copy. A stale copy gets a
+  User-message attachments are stripped from the copy. A minimal tool-timing
+  projection is refreshed in the same sync transaction as its messages,
+  so warm analytics reads do not parse historical tool outputs. TPS divides
+  output tokens by completed message time minus the union of tool intervals,
+  including recorded permission/question waits. Missing tool timing excludes
+  the sample. This is request throughput, including startup/prefill latency,
+  rather than provider-side decode speed; elapsed-duration metrics keep tool time.
+  Session message metadata, turn summaries, and the composer use the same
+  calculation on loaded messages and parts. A stale copy gets a
   quick incremental sync before an analytics read; a read never waits on a
   sync already running. The first build and the 6-hourly full rebuild run in
   the background, and the rebuild time is persisted so restarts cannot

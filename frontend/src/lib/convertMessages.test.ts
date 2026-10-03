@@ -36,6 +36,20 @@ function asContentArray(content: ThreadMessageLike['content']): ContentItem[] {
   return content as ContentItem[];
 }
 
+describe('message throughput metadata', () => {
+  it('passes tool-adjusted throughput through message metadata', () => {
+    const message = makeMessage('tps', {
+      role: 'assistant', time: { created: 1000, completed: 11000 }, tokens: { input: 0, output: 200 },
+    });
+    const parts = [makePart('tps', { type: 'tool', tool: 'bash', state: {
+      status: 'completed', time: { start: 3000, end: 11000 },
+    } })];
+    const result = createConvertMessages()([message], parts);
+    expect(result[0].metadata?.custom?.tokensPerSecond).toBe(100);
+    expect(result[0].metadata?.custom?.time).toEqual({ created: 1000, completed: 11000 });
+  });
+});
+
 describe('isImageMime', () => {
   it.each([
     ['image/png', true],
