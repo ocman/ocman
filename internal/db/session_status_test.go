@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"errors"
+	"slices"
 	"testing"
 )
 
@@ -43,15 +44,27 @@ func TestGetSessionStatus(t *testing.T) {
 	}
 }
 
-func TestRecentSessionDirectories(t *testing.T) {
+func TestStatusCandidateDirectories(t *testing.T) {
 	d := openTestDB(t)
 	defer d.Close()
 	if _, err := d.db.Exec(`INSERT INTO session(id,directory,time_updated) VALUES
-		('a','/new',200), ('b','/new',300), ('c','/old',50)`); err != nil {
+		('a','/new',200), ('b','/new',300), ('c','/old',50),
+		('d','/r/.worktrees/p/tools',10), ('e','/r/.worktrees/p/stop',10),
+		('f','/r/root-tools',10), ('g','/r/.worktrees/p/later',10)`); err != nil {
 		t.Fatal(err)
 	}
-	got, err := d.RecentSessionDirectories(t.Context(), 100)
-	if err != nil || len(got) != 1 || got[0] != "/new" {
-		t.Fatalf("RecentSessionDirectories = %v, %v; want [/new]", got, err)
+	if _, err := d.db.Exec(`INSERT INTO message(id,session_id,time_created,data) VALUES
+		('m1','d',1,'{"role":"assistant","finish":"tool-calls"}'),
+		('m2','e',1,'{"role":"assistant","finish":"stop"}'),
+		('m3','f',1,'{"role":"assistant","finish":"tool-calls"}'),
+		('m4','g',1,'{"role":"assistant","finish":"tool-calls"}'),
+		('m5','g',2,'{"role":"assistant","finish":"stop"}')`); err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.StatusCandidateDirectories(t.Context(), 100)
+	slices.Sort(got)
+	want := []string{"/new", "/r/.worktrees/p/tools"}
+	if err != nil || !slices.Equal(got, want) {
+		t.Fatalf("StatusCandidateDirectories = %v, %v; want %v", got, err, want)
 	}
 }

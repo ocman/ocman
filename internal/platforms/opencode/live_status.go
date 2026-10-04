@@ -306,17 +306,16 @@ func fetchSessionStatusSnapshot(ctx context.Context, port, directory string) (ma
 // regardless of their stored status. A just-started turn infers as "done"
 // (its last message is the user's prompt), so inferred status alone cannot
 // pick the candidates after a restart. OpenCode boots an instance for every
-// directory it is asked about, so the set must stay bounded.
-// ponytail: an older session outside the window is not read. Inferred-busy
-// rows are already candidates (promptDirectories), and for any other
-// inferred status SettleSessionStatus gives the same answer whether the
-// turn is settled or unobserved, so per-directory seeding would change no
-// reported status.
+// directory it is asked about (and never evicts it), so the set must stay
+// bounded. Older sessions are still read when their last message leaves the
+// turn open (see db.StatusCandidateDirectories).
+// ponytail: an older user-last turn is not read; OpenCode writes the
+// assistant message as soon as a step starts, so that state does not last.
 const statusActiveWindow = 24 * time.Hour
 
 // statusDirectories is promptDirectories plus every existing worktree
-// directory on this port with a session updated inside statusActiveWindow.
-// The window is read straight from the session table, not the cached
+// directory on this port that db.StatusCandidateDirectories says may hold a
+// running turn. Candidates are read straight from the tables, not the cached
 // snapshot, which may predate a turn started while the watcher was away.
 // A read failure is returned rather than degraded: seeding from an
 // incomplete set would settle the busy worktree sessions it could not see.
@@ -325,7 +324,7 @@ func (a *Adapter) statusDirectories(port string, discovered []string) ([]string,
 	if a.db == nil {
 		return out, nil
 	}
-	recent, err := a.db.RecentSessionDirectories(context.Background(), time.Now().Add(-statusActiveWindow).UnixMilli())
+	recent, err := a.db.StatusCandidateDirectories(context.Background(), time.Now().Add(-statusActiveWindow).UnixMilli())
 	if err != nil {
 		return nil, err
 	}

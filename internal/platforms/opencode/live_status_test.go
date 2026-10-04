@@ -300,6 +300,35 @@ func TestSeedSessionStatusFromInstance_IgnoresStaleSessionsCache(t *testing.T) {
 	}
 }
 
+// A turn blocked for over a day (e.g. on a permission after a tool-call step)
+// has an old session and a last message with finish "tool-calls", which
+// infers as a terminal state. OpenCode treats that finish as non-terminal, so
+// the directory must still be read, or the session reads waiting while busy.
+func TestSeedSessionStatusFromInstance_ReadsOldWorktreeWithOpenToolCallTurn(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	worktree := filepath.Join(base, ".worktrees", "project", "blocked")
+	for _, dir := range []string{root, worktree} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ResetCachesForTests()
+	fake := newOpencodeFake(t)
+	fake.turnStatus = map[string]string{}
+	fake.turnStatusByDir = map[string]map[string]string{worktree: {"ses-blocked": "busy"}}
+	a := New(newTestDBWithSessions(t, []testSession{
+		{id: "ses-blocked", directory: worktree, messageData: `{"role":"assistant","finish":"tool-calls"}`},
+	}), nil)
+	port := fake.Port()
+	if !a.SeedSessionStatusFromInstance(context.Background(), port, 0, []string{root}) {
+		t.Fatal("SeedSessionStatusFromInstance reported failure")
+	}
+	if got := a.turns.turnStateForPort("ses-blocked", port); got != db.TurnRunning {
+		t.Errorf("old open-turn worktree turnState = %v, want TurnRunning", got)
+	}
+}
+
 // If the session list cannot be read, the worktree candidates are unknown;
 // seeding from the root read alone would settle busy worktree sessions.
 func TestSeedSessionStatusFromInstance_SessionListFailureLeavesPortUnseeded(t *testing.T) {

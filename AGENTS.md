@@ -650,8 +650,9 @@ minimal and match the surrounding code.
     `GET /session/status` (`{sessionID: {type: "busy"|"retry"|"idle"}}`),
     seeded per instance when the autoapprove watcher connects (OpenCode
     scopes it per directory, so the seed also reads each existing worktree
-    with an unfinished turn or a session updated in the last 24h; one
-    failed read leaves the port unseeded) and kept
+    with a session updated in the last 24h or whose last message left the
+    turn open (`finish` `tool-calls`/`unknown`, which OpenCode's loop treats
+    as non-terminal); one failed read leaves the port unseeded) and kept
     current from `session.status` events on `/global/event`. It lives in
     `internal/platforms/opencode/live_status.go`, keyed by instance port,
     and is dropped wholesale when a port disappears. Nothing is
