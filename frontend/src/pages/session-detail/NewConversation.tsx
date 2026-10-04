@@ -9,6 +9,8 @@ import type { TargetCandidate } from '../../lib/api.types';
 import { useApiStore } from '../../lib/apiStore';
 import { BUILTIN_COMMANDS } from '../../lib/commands/builtinCommands';
 import { clearDraft } from '../../lib/composerDraft';
+import { shortPath } from '../../lib/format';
+import { useHeaderInfo } from '../../lib/headerContext';
 import { recordFailedSend } from '../../lib/failedSends';
 import { launchProgressReporter } from '../../lib/launchProgressStore';
 import { NEW_SESSION_ID, newSessionPath, type NewSessionParams } from '../../lib/newSessionPath';
@@ -47,6 +49,18 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
   const [catalogAttempt, setCatalogAttempt] = useState(0);
   const platform = catalog?.platform || params.platform;
   const caps = usePlatformCapabilities(platform);
+
+  // Header shows the project (worktrees fold to their main checkout).
+  const { setInfo } = useHeaderInfo();
+  useEffect(() => {
+    setInfo({
+      sessionId: NEW_SESSION_ID,
+      sessionProject: shortPath(projectRootForDirectory(directory)),
+      sessionProjectFull: directory,
+      sessionRemoteId: remoteId,
+    });
+    return () => setInfo({});
+  }, [directory, remoteId, setInfo]);
 
   // Prepare boots the project's instance when it is closed (10-20 s), so
   // the launch overlay reports it; the catalog fills in when it lands.

@@ -46,6 +46,19 @@ it.each([false, true])('shows matching session metadata, with optional platform 
   expect(container.querySelector('#header-actions-slot')).toBeInTheDocument();
 });
 
+it('shows the project on a new conversation while keeping the route title', () => {
+  const info: HeaderInfo = { sessionId: 'new', sessionProject: 'src/repo', sessionProjectFull: '/src/repo' };
+  render(
+    <MemoryRouter initialEntries={['/session/new?dir=%2Fsrc%2Frepo']}>
+      <HeaderContext.Provider value={{ info, setInfo: vi.fn() }}>
+        <AppHeader onOpenNav={vi.fn()} />
+      </HeaderContext.Provider>
+    </MemoryRouter>,
+  );
+  expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('New session');
+  expect(screen.getByText('src/repo')).toHaveAttribute('title', '/src/repo');
+});
+
 it.each([
   ['/project/%2Frepos%2Focman', 'repos/ocman'],
   ['/project/%2Frepos%2Focman/worktrees', 'repos/ocman / Worktrees'],

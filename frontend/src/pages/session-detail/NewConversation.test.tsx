@@ -6,6 +6,7 @@ import { clearDraft, getDraft, saveDraft } from '../../lib/composerDraft';
 import { useLaunchProgressStore } from '../../lib/launchProgressStore';
 import { listFailedSends, clearFailedSends } from '../../lib/failedSends';
 import { useFirstSubmission } from './firstSubmission';
+import { HeaderContext } from '../../lib/headerContext';
 
 const mocks = vi.hoisted(() => ({
   prepare: vi.fn(), start: vi.fn(), info: vi.fn(), worktrees: vi.fn(), post: vi.fn(), seed: vi.fn(),
@@ -75,6 +76,22 @@ describe('NewConversation', () => {
     expect(mocks.prepare).toHaveBeenCalledTimes(calls);
     act(() => composer.onRefreshModels!());
     await waitFor(() => expect(mocks.prepare).toHaveBeenCalledTimes(calls + 1));
+  });
+
+  it('publishes the project (not the worktree) to the header', async () => {
+    const setInfo = vi.fn();
+    const { unmount } = render(
+      <HeaderContext.Provider value={{ info: {}, setInfo }}>
+        <NewConversation params={{ directory: '/src/.worktrees/repo/feat', remoteId: 'machine' }}
+          whisperAvailable={false} composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />
+      </HeaderContext.Provider>,
+    );
+    expect(setInfo).toHaveBeenCalledWith({
+      sessionId: 'new', sessionProject: 'src/repo', sessionProjectFull: '/src/.worktrees/repo/feat', sessionRemoteId: 'machine',
+    });
+    await waitFor(() => expect(composer.agentsLoaded).toBe(true));
+    unmount();
+    expect(setInfo).toHaveBeenLastCalledWith({});
   });
 
   it('reports catalog preparation failures and permits a subsequent refresh', async () => {

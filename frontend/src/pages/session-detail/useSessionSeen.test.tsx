@@ -71,6 +71,14 @@ describe('useSessionSeen', () => {
     expect(setInfo).toHaveBeenLastCalledWith({});
   });
 
+  it('labels a worktree session with its project, not the worktree', () => {
+    const wt = { ...session, directory: '/src/.worktrees/repo/feat' };
+    renderHook(() => useSessionSeen({ session: wt, patchSession: vi.fn() }), { wrapper });
+    expect(setInfo).toHaveBeenCalledWith(expect.objectContaining<HeaderInfo>({
+      sessionProject: 'src/repo', sessionProjectFull: '/src/.worktrees/repo/feat',
+    }));
+  });
+
   it('applies an upstream rename of the open session only', () => {
     const patchSession = vi.fn();
     const { unmount } = renderHook(() => useSessionSeen({ session, patchSession }), { wrapper });

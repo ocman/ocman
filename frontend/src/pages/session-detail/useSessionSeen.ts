@@ -6,6 +6,7 @@ import { useHeaderInfo, usePageTitle } from '../../lib/headerContext';
 import { recheckFaviconNotify } from '../../lib/useFaviconNotify';
 import { onSessionChanged } from '../../lib/useGlobalEvents';
 import { remoteLog } from '../../lib/remoteLog';
+import { projectRootForDirectory } from '../../lib/worktrees';
 import type { SessionMetadata } from '../../lib/sessionReducer';
 
 export interface UseSessionSeenOptions {
@@ -117,7 +118,7 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
       sessionId: s.id,
       sessionTitle: cleanTitle(s.title) || 'Untitled',
       sessionPlatform: s.platform,
-      sessionProject: shortPath(s.directory),
+      sessionProject: shortPath(projectRootForDirectory(s.directory)),
       sessionProjectFull: s.directory,
       sessionRemoteId: s.remoteId,
       sessionRemoteName: s.remoteName,
