@@ -4,6 +4,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { SessionSidebar, type SidebarProjectGroup } from './SessionSidebar';
 import type { GitInfo, Session } from '../../lib/api';
 import { useWorkEpics } from '../../lib/queries';
+import { visibleSidebarSessions } from '../../lib/sidebarHelpers';
 
 vi.mock('../../components/BackendStats', () => ({
   BackendStats: () => null,
@@ -470,6 +471,56 @@ describe('SessionSidebar', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Show routines' }));
     expect(screen.getByText('Nightly check')).toBeInTheDocument();
     expect(screen.getByText('Routine child')).toBeInTheDocument();
+  });
+
+  it.each(['projects', 'recent'] as const)('publishes only filtered rows, in order, as archive candidates in the %s view', (sidebarView) => {
+    const group: SidebarProjectGroup = {
+      directory: '/repo',
+      sessions: [
+        session({ id: 'a', title: 'Alpha' }),
+        session({ id: 'routine', title: 'Nightly check', routineId: 'rt' }),
+        session({ id: 'b', title: 'Beta' }),
+      ],
+      lastUpdated: 1,
+      aggregate: { kind: 'none' },
+    };
+
+    const { unmount } = renderSidebar(group, {}, vi.fn(), vi.fn(), vi.fn(), sidebarView);
+    expect(visibleSidebarSessions.current?.map((s) => s.id)).toEqual(['a', 'b']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Show routines' }));
+    expect(visibleSidebarSessions.current?.map((s) => s.id)).toEqual(['a', 'routine', 'b']);
+
+    unmount();
+    expect(visibleSidebarSessions.current).toBeNull();
+  });
+
+  it('publishes a pinned session once although it also sits in its project group', () => {
+    const pinned = session({ id: 'p', pinned: true, pinnedAt: 1 });
+    renderSidebar({ directory: '/repo', sessions: [pinned, session({ id: 'o' })], lastUpdated: 1, aggregate: { kind: 'none' } }, {});
+    expect(visibleSidebarSessions.current?.map((s) => s.id)).toEqual(['p', 'o']);
+  });
+
+  it('leaves collapsed project groups out of the archive candidates', () => {
+    render(
+      <SessionSidebar
+        activeId="a" sidebarWidth={300} sidebarView="projects" setSidebarView={vi.fn()}
+        showArchivedRecent={false} setShowArchivedRecent={vi.fn()} loadingRecentSessions={false}
+        recentSessions={[session({ id: 'a' }), session({ id: 'b', directory: '/other' })]}
+        sidebarProjectGroups={[
+          { directory: '/repo', sessions: [session({ id: 'a' })], lastUpdated: 2, aggregate: { kind: 'none' } },
+          { directory: '/other', sessions: [session({ id: 'b', directory: '/other' })], lastUpdated: 1, aggregate: { kind: 'none' } },
+        ]}
+        onReorderProjects={vi.fn()} archivingSessionIds={new Set()} collapsedProjectSet={new Set(['/other'])}
+        toggleCollapsedProject={vi.fn()} siblingGitInfos={{}} activeDisplayStatus="done" debugMode={false}
+        pendingTmuxSession={null} pickerPos={null} pickerRef={{ current: null }}
+        tmux={{ available: false, isLocal: true, sessions: [], clients: [], switchSession: vi.fn(), findSession: vi.fn(), launchOpencode: vi.fn() }}
+        onNavigateToSession={vi.fn()} onArchiveSession={vi.fn()} onPinSession={vi.fn()} onNewSession={vi.fn()}
+        onClientSelect={vi.fn()} onNewSessionInDirectory={vi.fn()} onArchiveProject={vi.fn()}
+      />,
+    );
+    expect(visibleSidebarSessions.current?.map((s) => s.id)).toEqual(['a']);
   });
 
   it.each(['projects', 'recent'] as const)('hides Factory descendants when the attempt is absent in the %s view', (sidebarView) => {

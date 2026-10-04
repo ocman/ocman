@@ -130,6 +130,9 @@ describe('computeSidebarHash', () => {
 });
 
 describe('pickNextSessionAfterArchive', () => {
+  const pick = (sessions: Session[], id: string, view: 'recent' | 'projects', directory = '') =>
+    pickNextSessionAfterArchive(sessions, sessions.find((s) => s.id === id) ?? makeSession({ id, directory }), view);
+
   describe('recent (flat) view', () => {
     it('picks the row directly below the archived session', () => {
       const sessions = [
@@ -137,7 +140,7 @@ describe('pickNextSessionAfterArchive', () => {
         makeSession({ id: 'b' }),
         makeSession({ id: 'c' }),
       ];
-      expect(pickNextSessionAfterArchive(sessions, 'b', 'recent')?.id).toBe('c');
+      expect(pick(sessions, 'b', 'recent')?.id).toBe('c');
     });
 
     it('falls back to the row above when the archived session is last', () => {
@@ -146,17 +149,17 @@ describe('pickNextSessionAfterArchive', () => {
         makeSession({ id: 'b' }),
         makeSession({ id: 'c' }),
       ];
-      expect(pickNextSessionAfterArchive(sessions, 'c', 'recent')?.id).toBe('b');
+      expect(pick(sessions, 'c', 'recent')?.id).toBe('b');
     });
 
     it('returns undefined when the archived session is the only one', () => {
       const sessions = [makeSession({ id: 'a' })];
-      expect(pickNextSessionAfterArchive(sessions, 'a', 'recent')).toBeUndefined();
+      expect(pick(sessions, 'a', 'recent')).toBeUndefined();
     });
 
-    it('returns undefined when the target is not present', () => {
-      const sessions = [makeSession({ id: 'a' })];
-      expect(pickNextSessionAfterArchive(sessions, 'missing', 'recent')).toBeUndefined();
+    it('opens the first row when a filter hides the archived session', () => {
+      const sessions = [makeSession({ id: 'a' }), makeSession({ id: 'b' })];
+      expect(pick(sessions, 'hidden', 'recent')?.id).toBe('a');
     });
   });
 
@@ -170,7 +173,7 @@ describe('pickNextSessionAfterArchive', () => {
       ];
       // Even though 'bar' is the most recent overall, we stay in /src/foo
       // and pick its newest remaining sibling.
-      expect(pickNextSessionAfterArchive(sessions, 'cur', 'projects')?.id).toBe('foo-new');
+      expect(pick(sessions, 'cur', 'projects')?.id).toBe('foo-new');
     });
 
     it('treats worktrees as part of the same project', () => {
@@ -183,7 +186,7 @@ describe('pickNextSessionAfterArchive', () => {
         }),
         makeSession({ id: 'bar', directory: '/src/bar', timeUpdated: 999 }),
       ];
-      expect(pickNextSessionAfterArchive(sessions, 'cur', 'projects')?.id).toBe('wt');
+      expect(pick(sessions, 'cur', 'projects')?.id).toBe('wt');
     });
 
     it('falls back to the newest remaining session when the project has no other sessions', () => {
@@ -192,12 +195,15 @@ describe('pickNextSessionAfterArchive', () => {
         makeSession({ id: 'bar-old', directory: '/src/bar', timeUpdated: 100 }),
         makeSession({ id: 'bar-new', directory: '/src/bar', timeUpdated: 300 }),
       ];
-      expect(pickNextSessionAfterArchive(sessions, 'cur', 'projects')?.id).toBe('bar-new');
+      expect(pick(sessions, 'cur', 'projects')?.id).toBe('bar-new');
     });
 
-    it('returns undefined when the target is not present', () => {
-      const sessions = [makeSession({ id: 'a', directory: '/src/foo' })];
-      expect(pickNextSessionAfterArchive(sessions, 'missing', 'projects')).toBeUndefined();
+    it('still prefers the project of an archived session a filter hides', () => {
+      const sessions = [
+        makeSession({ id: 'bar', directory: '/src/bar', timeUpdated: 999 }),
+        makeSession({ id: 'foo', directory: '/src/foo', timeUpdated: 100 }),
+      ];
+      expect(pick(sessions, 'hidden', 'projects', '/src/foo')?.id).toBe('foo');
     });
   });
 });

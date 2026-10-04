@@ -14,7 +14,7 @@ import { openVSCode } from '../../lib/shortcuts';
 import type { UsePendingSendResult } from './usePendingSend';
 import { remoteLog } from '../../lib/remoteLog';
 import { runSlashCommand } from './slashCommands';
-import type { Message, Part } from '../../lib/api';
+import type { Message, Part, Session } from '../../lib/api';
 
 // Narrowed session shape — only the fields needed by these handlers.
 interface ActionSession {
@@ -53,7 +53,7 @@ export interface UseSessionActionsOptions {
   selectedReasoning: string;
   activeAgent: string;
   /** Mutable ref to the recent sessions list — read inside handleCommand. */
-  recentSessionsRef: MutableRefObject<Array<{ id: string }>>;
+  recentSessionsRef: MutableRefObject<Session[]>;
   /** Mutable refs to the current transcript — read by `/export`. Refs
    *  (not values) so handleCommand doesn't re-bind on every message. */
   messagesRef: MutableRefObject<Message[]>;

@@ -252,6 +252,21 @@ func (s *Server) ListPermissions(ctx context.Context, req *pb.SessionRef) (*pb.J
 	return jsonResp(p.ListPermissions(ctx, req.SessionId))
 }
 
+// RefreshPermissions serves an authoritative permission list. A platform
+// without one fails rather than falling back to the observed cache, whose
+// absence would not mean resolved.
+func (s *Server) RefreshPermissions(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	live, ok := p.(platforms.PermissionRefresher)
+	if !ok {
+		return nil, status.Error(codes.Unimplemented, "platform has no authoritative permission list")
+	}
+	return jsonResp(live.RefreshPermissions(ctx, req.SessionId))
+}
+
 func (s *Server) ListQuestions(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
 	p, err := s.platformFor(req.Platform)
 	if err != nil {

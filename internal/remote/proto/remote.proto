@@ -30,6 +30,9 @@ service Ocman {
   rpc SessionModels(SessionRef) returns (JsonResp);
   rpc DirectoryCatalog(PlatformJsonReq) returns (JsonResp); // *platforms.DirectoryCatalog
   rpc ListPermissions(SessionRef) returns (JsonResp);
+  // Authoritative: re-reads the owner's live permission list instead of
+  // ocman's observed-prompt cache, so absence means resolved.
+  rpc RefreshPermissions(SessionRef) returns (JsonResp);
   rpc ListQuestions(SessionRef) returns (JsonResp);
   rpc PermissionRules(SessionRef) returns (JsonResp);     // []platforms.PermissionRule
   rpc Capabilities(PlatformRef) returns (JsonResp);       // platforms.Capabilities

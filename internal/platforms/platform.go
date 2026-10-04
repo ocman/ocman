@@ -169,6 +169,13 @@ type LiveTool struct {
 // platform that doesn't support them. Handlers will have already
 // filtered these by consulting Capabilities(), but the adapter is
 // still expected to fail safely if they don't.
+// PermissionRefresher is implemented by platforms that can re-read the
+// owner's live permission list. Unlike ListPermissions, which may serve an
+// observed cache, a successful result's absence means the prompt resolved.
+type PermissionRefresher interface {
+	RefreshPermissions(ctx context.Context, sessionID string) ([]LivePrompt, error)
+}
+
 type Platform interface {
 	// ID returns the stable string identifier used in URLs and state.db.
 	ID() ID

@@ -4,7 +4,7 @@ import type { Session } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
 import { useUiStore } from '../../lib/uiStore';
 import { filterVisibleSessions } from '../../lib/sessionVisibility';
-import { compareSidebarActivity, computeSidebarHash, filterInactiveChildren, mergeSidebarSessions, pickNextSessionAfterArchive, resolveOpenSession } from '../../lib/sidebarHelpers';
+import { compareSidebarActivity, computeSidebarHash, filterInactiveChildren, mergeSidebarSessions, pickNextSessionAfterArchive, resolveOpenSession, sidebarNavigableSessions } from '../../lib/sidebarHelpers';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { remoteLog } from '../../lib/remoteLog';
 import { onSessionActivity, onSessionChanged, onSseConnect } from '../../lib/useGlobalEvents';
@@ -306,7 +306,7 @@ export function useSidebarSessions({
     // where they were working. See pickNextSessionAfterArchive.
     const isCurrent = target.id === id;
     const nextSession = isCurrent
-      ? pickNextSessionAfterArchive(recentSessions, target.id, sidebarView)
+      ? pickNextSessionAfterArchive(sidebarNavigableSessions(recentSessions), target, sidebarView)
       : undefined;
     setArchivingSessionIds((prev) => new Set(prev).add(target.id));
     archiveTimeoutsRef.current[target.id] = window.setTimeout(() => {

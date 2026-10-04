@@ -54,6 +54,7 @@ export function usePromptSync({
 }: UsePromptSyncOptions): void {
   const patchRecentSession = useApiStore((state) => state.patchRecentSession);
   const listPermissions = useApiStore((state) => state.listPermissions);
+  const refreshPermissions = useApiStore((state) => state.refreshPermissions);
   const listQuestions = useApiStore((state) => state.listQuestions);
 
   // Mirror pending prompt flags into the sidebar row so the badge
@@ -167,6 +168,39 @@ export function usePromptSync({
       window.clearInterval(timer);
     };
   }, [id, pendingQuestionRequestId, portAvailable, listQuestions, clearPrompt]);
+
+  // Same fallback for permissions. A reply that lands while the stream
+  // is down (sleep, judge auto-approval, another tab) is never replayed,
+  // and a reconnect's reconcile keeps the in-memory prompt. Only the
+  // authoritative refresh may prove absence: ocman's observed-prompt cache
+  // can miss a prompt the session stream delivered. A failed refresh keeps
+  // the prompt, and a miss must repeat on the next poll before dismissal.
+  const pendingPermissionId = pendingPermission?.permissionId ?? null;
+  const pendingPermissionSessionId = pendingPermission?.sessionId || id;
+  // Descendants run on the viewed session's owner.
+  const ownerPlatform = session?.platform;
+  useEffect(() => {
+    if (!pendingPermissionSessionId || !pendingPermissionId || !ownerPlatform || !portAvailable) return;
+    let cancelled = false;
+    let misses = 0;
+    const timer = window.setInterval(() => {
+      if (document.hidden) return;
+      refreshPermissions(pendingPermissionSessionId, ownerPlatform)
+        .then((permissions) => {
+          if (cancelled) return;
+          const stillPending = permissions.some((raw) =>
+            extractPendingPermission({ type: 'permission.asked', properties: raw as Record<string, unknown> })
+              ?.permissionId === pendingPermissionId);
+          misses = stillPending ? 0 : misses + 1;
+          if (misses >= 2) clearPrompt('permission', pendingPermissionId);
+        })
+        .catch(() => { /* leave the prompt up; the next tick retries */ });
+    }, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [pendingPermissionSessionId, pendingPermissionId, ownerPlatform, portAvailable, refreshPermissions, clearPrompt]);
 
   // Restore pending question from sessionStorage when navigating
   // back to a page whose parts still show a pending question tool.

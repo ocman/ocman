@@ -856,6 +856,13 @@ export const api = {
   },
   listPermissions: (sessionId: string) =>
     fetchJSON<unknown[]>(`/api/session/${encodeURIComponent(sessionId)}/permissions`),
+  /**
+   * Authoritative list from the owner's live instance; absence means
+   * resolved. `platform` pins the owner, since a session id alone can
+   * resolve to another machine.
+   */
+  refreshPermissions: (sessionId: string, platform: string) =>
+    fetchJSON<unknown[]>(`/api/session/${encodeURIComponent(sessionId)}/permissions${queryString({ refresh: 1, platform })}`),
   respondPermission: (
     sessionId: string,
     permissionId: string,

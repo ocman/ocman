@@ -29,6 +29,7 @@ import {
 } from '../../lib/sessionReducer';
 import { computeReconnectDelay } from './sseBackoff';
 import { createSessionSse, reduceBatchedSessionView } from './sessionSse';
+import { onPageResume } from '../../lib/pageResume';
 import { remoteLog } from '../../lib/remoteLog';
 import { useActivityScope } from '../../lib/activityScopes';
 
@@ -579,9 +580,13 @@ export function useSession(
 
     void doFetch();
     connect();
+    // After an absence the stream may be half-open with missed events, or
+    // stuck behind a long backoff; reconnecting reconciles in onopen.
+    const unsubscribeResume = onPageResume(() => retryNowRef.current());
 
     return () => {
       cancelled = true;
+      unsubscribeResume();
       const pending = events.dispose();
       // The mirror cleanup has already saved the last rendered view. Preserve
       // events still waiting for a frame without dispatching into the next session.

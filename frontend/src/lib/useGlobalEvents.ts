@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { notifyPromptDismissed } from './useToastNotify';
 import { recheckNotifyData } from './useNotifyData';
 import { markBackendReachable, markBackendUnreachable } from './backendStatus';
+import { onPageResume } from './pageResume';
 import type { QueuedMessage, Session } from './api';
 
 /**
@@ -32,6 +33,7 @@ let source: EventSource | null = null;
 let refCount = 0;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempt = 0;
+let unsubscribeResume: (() => void) | null = null;
 
 const reconnectBaseMs = 1_000;
 const reconnectMaxMs = 60_000;
@@ -247,6 +249,16 @@ function open(): void {
   };
 }
 
+/**
+ * Replace the stream after the user returns: it may be half-open with
+ * missed events, or waiting out a long backoff. The new stream's onopen
+ * runs the connect listeners, which reconcile the gap.
+ */
+function recycle(): void {
+  close();
+  open();
+}
+
 function close(): void {
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
@@ -265,17 +277,26 @@ function close(): void {
 export function useGlobalEvents(): void {
   useEffect(() => {
     refCount += 1;
-    if (refCount === 1) open();
+    if (refCount === 1) {
+      open();
+      unsubscribeResume = onPageResume(recycle);
+    }
     return () => {
       refCount = Math.max(0, refCount - 1);
-      if (refCount === 0) close();
+      if (refCount === 0) stop();
     };
   }, []);
 }
 
+function stop(): void {
+  unsubscribeResume?.();
+  unsubscribeResume = null;
+  close();
+}
+
 /** Test-only: tear down the shared connection and reset refcount. */
 export function __resetForTests(): void {
-  close();
+  stop();
   refCount = 0;
 }
 

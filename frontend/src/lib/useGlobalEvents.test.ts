@@ -52,6 +52,18 @@ class FakeEventSource {
 
 (globalThis as unknown as { EventSource: typeof FakeEventSource }).EventSource = FakeEventSource;
 
+let hidden = false;
+Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+
+/** Hide the tab, let `ms` pass, then bring it back. */
+async function awayFor(ms: number) {
+  hidden = true;
+  act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+  await act(() => vi.advanceTimersByTimeAsync(ms));
+  hidden = false;
+  act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+}
+
 describe('useGlobalEvents connection', () => {
   it('delivers activity timestamps and ignores malformed payloads', () => {
     const activity = vi.fn();
@@ -126,6 +138,43 @@ describe('useGlobalEvents connection', () => {
     }
 
     random.mockRestore();
+    unmount();
+  });
+
+  // Sleep or a network change can leave the socket half-open: the
+  // EventSource still reports open, so no error fires and nothing ever
+  // reconciles the events broadcast meanwhile.
+  it('replaces a silently dead stream and reconciles when the user returns', async () => {
+    const reconcile = vi.fn();
+    const unsubscribe = onSseConnect(reconcile);
+    const { unmount } = renderHook(() => useGlobalEvents());
+    act(() => FakeEventSource.instances[0].open());
+    reconcile.mockClear();
+
+    await awayFor(5 * 60_000);
+
+    expect(FakeEventSource.instances).toHaveLength(2);
+    act(() => FakeEventSource.instances[1].open());
+    expect(reconcile).toHaveBeenCalledOnce();
+    unsubscribe();
+    unmount();
+  });
+
+  it('reconnects at once on return instead of waiting out a long backoff', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(1);
+    const { unmount } = renderHook(() => useGlobalEvents());
+    for (let i = 0; i < 7; i++) {
+      act(() => FakeEventSource.instances.at(-1)!.error());
+      await act(() => vi.runOnlyPendingTimersAsync());
+    }
+    act(() => FakeEventSource.instances.at(-1)!.error());
+    const count = FakeEventSource.instances.length;
+
+    // Away for less than the pending 60s backoff.
+    await awayFor(45_000);
+
+    expect(FakeEventSource.instances).toHaveLength(count + 1);
+    vi.mocked(Math.random).mockRestore();
     unmount();
   });
 

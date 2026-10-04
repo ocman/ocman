@@ -20,6 +20,7 @@ vi.hoisted(() => {
 import type { Session } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
 import { useUiStore } from '../../lib/uiStore';
+import { visibleSidebarSessions } from '../../lib/sidebarHelpers';
 
 let sessionChanged: ((sessionId: string, session?: Session, patch?: Partial<Session>) => void) | undefined;
 let sseConnect: (() => void) | undefined;
@@ -287,5 +288,27 @@ describe('useSidebarSessions project collapse', () => {
       useApiStore.getState().patchRecentSession('session-1', { status: 'busy' });
     });
     expect(useUiStore.getState().collapsedProjects).toContain(DIR);
+  });
+});
+
+describe('useSidebarSessions archive navigation', () => {
+  it('opens the next row the filtered sidebar shows, not a hidden session', async () => {
+    vi.useFakeTimers();
+    const sessions = ['cur', 'hidden', 'next'].map((id) => ({ id, platform: 'opencode', timeUpdated: 1 } as Session));
+    useApiStore.setState({ recentSessions: sessions, recentSessionsHash: '', archiveSession: vi.fn().mockResolvedValue(undefined) });
+    visibleSidebarSessions.current = [sessions[0], sessions[2]];
+    const navigate = vi.fn();
+    try {
+      const { result } = renderHook(() => useSidebarSessions({
+        id: 'cur', sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
+        abortSignalRef: { current: new AbortController() }, navigate,
+      }));
+      act(() => result.current.handleArchiveSession({ stopPropagation: vi.fn() } as never, sessions[0]));
+      await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+      expect(navigate).toHaveBeenCalledWith('/session/next');
+    } finally {
+      visibleSidebarSessions.current = null;
+      vi.useRealTimers();
+    }
   });
 });

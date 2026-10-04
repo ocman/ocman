@@ -59,7 +59,20 @@ func (s *Server) handleSessionModels(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSessionPermissions(w http.ResponseWriter, r *http.Request) {
 	s.withSessionAdapter(w, r, func(w http.ResponseWriter, r *http.Request, sessionID, _ string, adapter platforms.Platform) {
-		entries, err := adapter.ListPermissions(r.Context(), sessionID)
+		var entries []platforms.LivePrompt
+		var err error
+		if r.URL.Query().Get("refresh") == "1" {
+			// Authoritative read: the observed cache can miss a prompt the
+			// session stream delivered, so only this read may prove absence.
+			live, ok := adapter.(platforms.PermissionRefresher)
+			if !ok {
+				http.Error(w, "authoritative permission list unavailable", http.StatusNotImplemented)
+				return
+			}
+			entries, err = live.RefreshPermissions(r.Context(), sessionID)
+		} else {
+			entries, err = adapter.ListPermissions(r.Context(), sessionID)
+		}
 		if err != nil {
 			writePlatformError(w, "listing permissions", err)
 			return

@@ -126,6 +126,19 @@ export function mergeSidebarSessions(
 }
 
 /**
+ * Sessions the sidebar currently shows, in rendered order, after every
+ * filter (search, children, Factory, routines, archived, collapsed
+ * groups). Written by SessionSidebar; null while it is not mounted.
+ */
+// ponytail: module-level ref, there is one sidebar. Move to a store if a second one appears.
+export const visibleSidebarSessions: { current: readonly Session[] | null } = { current: null };
+
+/** Candidates for "the next session": what the sidebar shows, else `fallback`. */
+export function sidebarNavigableSessions(fallback: readonly Session[]): readonly Session[] {
+  return visibleSidebarSessions.current ?? fallback;
+}
+
+/**
  * Pick the session to navigate to after archiving the active session
  * from the sidebar.
  *
@@ -138,34 +151,27 @@ export function mergeSidebarSessions(
  *     sessions we fall back to the most recent remaining session
  *     anywhere (mirroring how `/` opens the latest session).
  *
- * Returns `undefined` when there is no suitable next session, in which
- * case the caller should navigate to the dashboard.
+ * The archived session may be absent from `sessions` (a filter hides it):
+ * the flat view then opens the first row and the grouped view still
+ * prefers its project. Returns `undefined` when `sessions` holds nothing
+ * else, in which case the caller opens an empty conversation.
  */
 export function pickNextSessionAfterArchive(
   sessions: readonly Session[],
-  targetId: string,
+  target: Pick<Session, 'id' | 'directory'>,
   view: 'recent' | 'projects',
 ): Session | undefined {
+  const others = sessions.filter((s) => s.id !== target.id);
   if (view === 'projects') {
-    const target = sessions.find((s) => s.id === targetId);
-    if (!target) return undefined;
+    const newest = (list: Session[]) => list.sort((a, b) => b.timeUpdated - a.timeUpdated)[0];
     const targetRoot = projectRootForDirectory(target.directory || '');
-    const sameProject = sessions
-      .filter(
-        (s) =>
-          s.id !== targetId &&
-          projectRootForDirectory(s.directory || '') === targetRoot,
-      )
-      .sort((a, b) => b.timeUpdated - a.timeUpdated)[0];
-    if (sameProject) return sameProject;
     // Last session in the project: fall back to the newest remaining
     // session anywhere so we open a session instead of the dashboard.
-    return sessions
-      .filter((s) => s.id !== targetId)
-      .sort((a, b) => b.timeUpdated - a.timeUpdated)[0];
+    return newest(others.filter((s) => projectRootForDirectory(s.directory || '') === targetRoot))
+      ?? newest(others);
   }
-  const idx = sessions.findIndex((s) => s.id === targetId);
-  if (idx < 0) return undefined;
+  const idx = sessions.findIndex((s) => s.id === target.id);
+  if (idx < 0) return others[0];
   return sessions[idx + 1] ?? sessions[idx - 1];
 }
 

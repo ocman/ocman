@@ -744,6 +744,53 @@ describe('useSession — SSE event dispatch', () => {
   });
 });
 
+describe('useSession — returning to the tab', () => {
+  let hidden = false;
+  beforeEach(() => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+  });
+  afterEach(() => { hidden = false; });
+
+  async function awayFor(ms: number) {
+    hidden = true;
+    act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+    await act(() => vi.advanceTimersByTimeAsync(ms));
+    hidden = false;
+    act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+  }
+
+  // Sleep can leave the stream half-open: no error fires, the turn's
+  // events never arrive, and the conversation stays frozen.
+  it('replaces a silently dead stream and refetches after a long absence', async () => {
+    vi.useFakeTimers();
+    const fetchSession = vi.fn().mockResolvedValue(makeDetail());
+    renderHook(() => useSession(SID, { fetchSession, reconnectDelay: () => 10 }));
+    await vi.waitFor(() => expect(fetchSession).toHaveBeenCalledTimes(1));
+    const first = FakeEventSource.latest()!;
+    act(() => first.open());
+
+    await awayFor(5 * 60_000);
+
+    expect(first.closed).toBe(true);
+    expect(FakeEventSource.instances).toHaveLength(2);
+    await act(async () => FakeEventSource.latest()!.open());
+    expect(fetchSession).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the stream across a brief tab switch', async () => {
+    vi.useFakeTimers();
+    const fetchSession = vi.fn().mockResolvedValue(makeDetail());
+    renderHook(() => useSession(SID, { fetchSession, reconnectDelay: () => 10 }));
+    await vi.waitFor(() => expect(fetchSession).toHaveBeenCalledTimes(1));
+    act(() => FakeEventSource.latest()!.open());
+
+    await awayFor(5_000);
+
+    expect(FakeEventSource.instances).toHaveLength(1);
+    expect(fetchSession).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('useSession — reconnect after error', () => {
   it('reopens the EventSource and refetches state on reconnect', async () => {
     vi.useFakeTimers();
