@@ -21,8 +21,12 @@ func TestWorktreeName_V2EmptySmallModelSendsNoModel(t *testing.T) {
 			writeJSONBody(w, `{"data":{"id":"naming"}}`)
 		case "GET /api/session/naming":
 			writeJSONBody(w, `{"data":{"id":"naming","agent":"build"}}`)
+		case "POST /api/session/naming/prompt":
+			writeJSONBody(w, `{"data":{"id":"msg_0"}}`)
+		case "GET /api/session/active":
+			writeJSONBody(w, `{"data":{}}`)
 		case "POST /api/session/naming/agent", "POST /api/session/naming/model",
-			"POST /api/session/naming/prompt", "POST /api/experimental/session/naming/wait",
+			"POST /api/experimental/session/naming/wait",
 			"POST /api/session/naming/interrupt", "DELETE /api/session/naming":
 			writeJSONBody(w, `{}`)
 		case "GET /api/session/naming/message":

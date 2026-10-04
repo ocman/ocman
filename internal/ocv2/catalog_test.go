@@ -72,12 +72,12 @@ func TestV1Commands(t *testing.T) {
 func TestV1Providers(t *testing.T) {
 	providers := convList(t, `[{"id":"anthropic","name":"Anthropic"},{"id":"openai","name":"OpenAI"}]`)
 	models := convList(t, `[
-		{"providerID":"anthropic","modelID":"claude","name":"Claude","status":"active",
+		{"providerID":"anthropic","id":"claude","modelID":"claude-provider-name","name":"Claude","status":"active",
 		 "variants":[{"id":"high"},{"id":"low"}],"limit":{"context":200000,"output":8000}},
-		{"providerID":"openai","modelID":"gpt","name":"GPT","enabled":false},
-		{"providerID":"local","modelID":"llama","name":"Llama","enabled":true}
+		{"providerID":"openai","id":"gpt","modelID":"gpt","name":"GPT","enabled":false},
+		{"providerID":"local","id":"llama","modelID":"llama","name":"Llama","enabled":true}
 	]`)
-	got := V1Providers(providers, models, map[string]any{"providerID": "anthropic", "modelID": "claude"})
+	got := V1Providers(providers, models, map[string]any{"providerID": "anthropic", "id": "claude", "modelID": "claude-provider-name"})
 	convEqual(t, "providers", got, `{
 		"all":[
 			{"id":"anthropic","name":"Anthropic","models":{

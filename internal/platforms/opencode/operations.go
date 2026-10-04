@@ -400,7 +400,14 @@ func sendMessageOnPort(ctx context.Context, port string, req platforms.SendMessa
 	if req.Delivery != "" && !ocv2.IsV2(ctx, port) {
 		return platforms.ErrUnsupported
 	}
-	return sendMessageLegacy(ctx, port, req)
+	err := sendMessageLegacy(ctx, port, req)
+	// The v2 translation refuses (412) a held prompt that needs an agent
+	// or model switch: nothing was admitted, so ocman's queue may take it.
+	var upstream *platforms.UpstreamError
+	if req.Delivery != "" && errors.As(err, &upstream) && upstream.Status == http.StatusPreconditionFailed {
+		return platforms.ErrUnsupported
+	}
+	return err
 }
 
 func sendMessageLegacy(ctx context.Context, port string, req platforms.SendMessageRequest) error {

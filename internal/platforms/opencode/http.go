@@ -272,9 +272,10 @@ func extractOpenCodeErrorMessage(body []byte) string {
 		return ""
 	}
 	var parsed struct {
-		Name string                 `json:"name"`
-		Tag  string                 `json:"_tag"`
-		Data map[string]interface{} `json:"data"`
+		Name    string                 `json:"name"`
+		Tag     string                 `json:"_tag"`
+		Message string                 `json:"message"`
+		Data    map[string]interface{} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return trimmed
@@ -289,6 +290,11 @@ func extractOpenCodeErrorMessage(body []byte) string {
 	}
 	if msg, ok := parsed.Data["message"].(string); ok && msg != "" {
 		return msg
+	}
+	// OpenCode v2 errors carry the message at the top level:
+	// {"_tag":"SessionBusyError","message":"Session is busy: …"}.
+	if parsed.Message != "" {
+		return parsed.Message
 	}
 	// Build "<Name>: k=v, k=v" from the structured data so callers
 	// see something useful for errors that don't carry a message

@@ -275,3 +275,26 @@ func TestSendMessageQueueDelivery_V2(t *testing.T) {
 		t.Fatalf("session port = %q, want %q", got, f.Port())
 	}
 }
+
+// A held prompt the v2 translation refuses (412: it would need an agent
+// or model switch) was never admitted, so it reports ErrUnsupported and
+// ocman's own queue takes it.
+func TestSendMessage_QueuedSelectionRefusalIsUnsupported(t *testing.T) {
+	defer ocv2.SetInstalledV2(true)()
+	const sid, dir = "sess-nq-412", "/tmp/proj-nq-412"
+	f := newV2Fake(t, true, func(w http.ResponseWriter, r *http.Request) bool {
+		if r.URL.Path == "/api/session/"+sid {
+			writeJSONBody(w, `{"data":{"id":"`+sid+`","agent":"build"}}`)
+			return true
+		}
+		return false
+	})
+	a := nativeQueueAdapter(t, sid, dir, f)
+	err := a.SendMessage(context.Background(), platforms.SendMessageRequest{SessionID: sid, Message: "later", Agent: "plan", Delivery: "queue"})
+	if !errors.Is(err, platforms.ErrUnsupported) {
+		t.Fatalf("err = %v, want ErrUnsupported", err)
+	}
+	if _, ok := f.find(http.MethodPost, "/api/session/"+sid+"/prompt"); ok {
+		t.Fatal("prompt must not be admitted")
+	}
+}

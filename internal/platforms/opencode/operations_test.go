@@ -922,7 +922,12 @@ func TestExtractOpenCodeErrorMessage(t *testing.T) {
 		{
 			"effect-style _tag discriminator (PermissionNotFoundError)",
 			`{"_tag":"PermissionNotFoundError","requestID":"per_abc","message":"Permission request not found: per_abc"}`,
-			"PermissionNotFoundError",
+			"Permission request not found: per_abc",
+		},
+		{
+			"effect-style _tag without message",
+			`{"_tag":"SessionBusyError"}`,
+			"SessionBusyError",
 		},
 	}
 	for _, tt := range tests {
@@ -1229,4 +1234,3 @@ func TestCreateSession_TitleInCreateBodySkipsPatch(t *testing.T) {
 		t.Fatalf("PATCH called %d times, want 0", got)
 	}
 }
-

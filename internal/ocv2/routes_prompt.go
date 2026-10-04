@@ -2,6 +2,7 @@ package ocv2
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"strings"
@@ -22,10 +23,25 @@ type v1ModelRef struct {
 	Variant    string `json:"variant"`
 }
 
+// errQueuedSelection: a held (delivery "queue") prompt asked for an agent
+// or model the session is not on. v2 keeps agent and model as session
+// state, not per inbox item, so switching now would change the running
+// turn. Answered as 412 so the adapter falls back to ocman's queue,
+// which applies the selection when it delivers.
+var errQueuedSelection = errors.New("queued prompt needs an agent or model switch")
+
+func normVariant(v string) string {
+	if v == "default" {
+		return ""
+	}
+	return v
+}
+
 // v2 takes agent and model as session state, not per prompt: switch
 // them first, and only when they differ, since every switch is recorded
-// in the transcript.
-func (c *compat) selectAgentModel(ctx context.Context, sessionID, agent string, model *v1ModelRef) error {
+// in the transcript. With queued set nothing is switched; a needed
+// switch is reported as errQueuedSelection.
+func (c *compat) selectAgentModel(ctx context.Context, sessionID, agent string, model *v1ModelRef, queued bool) error {
 	if agent == "" && (model == nil || model.ModelID == "") {
 		return nil
 	}
@@ -33,25 +49,28 @@ func (c *compat) selectAgentModel(ctx context.Context, sessionID, agent string, 
 	if err != nil {
 		return err
 	}
+	switchAgent := agent != "" && agent != str(s, "agent")
+	var ref map[string]any
+	if model != nil && model.ModelID != "" {
+		variant := normVariant(model.Variant)
+		cur := obj(s, "model")
+		if str(cur, "providerID") != model.ProviderID || str(cur, "id") != model.ModelID || normVariant(str(cur, "variant")) != variant {
+			ref = map[string]any{"providerID": model.ProviderID, "id": model.ModelID}
+			if variant != "" {
+				ref["variant"] = variant
+			}
+		}
+	}
+	if queued && (switchAgent || ref != nil) {
+		return errQueuedSelection
+	}
 	path := "/api/session/" + url.PathEscape(sessionID)
-	if agent != "" && agent != str(s, "agent") {
+	if switchAgent {
 		if err := c.call(ctx, http.MethodPost, path+"/agent", nil, map[string]any{"agent": agent}, nil); err != nil {
 			return err
 		}
 	}
-	if model == nil || model.ModelID == "" {
-		return nil
-	}
-	ref := map[string]any{"providerID": model.ProviderID, "id": model.ModelID}
-	variant := model.Variant
-	if variant == "default" {
-		variant = ""
-	}
-	if variant != "" {
-		ref["variant"] = variant
-	}
-	cur := obj(s, "model")
-	if str(cur, "providerID") == model.ProviderID && str(cur, "id") == model.ModelID && str(cur, "variant") == variant {
+	if ref == nil {
 		return nil
 	}
 	return c.call(ctx, http.MethodPost, path+"/model", nil, map[string]any{"model": ref}, nil)
@@ -89,11 +108,17 @@ func promptAsync(c *compat, r *http.Request, m []string) (*http.Response, error)
 	if err := readBody(r, &in); err != nil {
 		return nil, err
 	}
-	if err := c.selectAgentModel(r.Context(), m[1], in.Agent, in.Model); err != nil {
+	queued := in.Delivery == "queue"
+	if err := c.selectAgentModel(r.Context(), m[1], in.Agent, in.Model, queued); err != nil {
+		if errors.Is(err, errQueuedSelection) {
+			return reply(r, http.StatusPreconditionFailed, map[string]any{
+				"name": "QueuedSelectionError", "data": map[string]any{"message": err.Error()},
+			}), nil
+		}
 		return finish(r, 0, nil, err)
 	}
 	body := promptBody(in.Parts)
-	if in.Delivery == "queue" || in.Delivery == "steer" {
+	if queued || in.Delivery == "steer" {
 		body["delivery"] = in.Delivery
 	}
 	err := c.call(r.Context(), http.MethodPost, "/api/session/"+url.PathEscape(m[1])+"/prompt", nil, body, nil)
@@ -101,7 +126,8 @@ func promptAsync(c *compat, r *http.Request, m []string) (*http.Response, error)
 }
 
 // postMessageSync emulates v1's synchronous POST /session/{id}/message:
-// prompt, wait for the session to go idle, return the last reply.
+// prompt, then wait until the turn that prompt started has finished, and
+// return its last reply.
 func postMessageSync(c *compat, r *http.Request, m []string) (*http.Response, error) {
 	var in struct {
 		Parts []v1Part    `json:"parts"`
@@ -112,45 +138,49 @@ func postMessageSync(c *compat, r *http.Request, m []string) (*http.Response, er
 		return nil, err
 	}
 	ctx := r.Context()
-	if err := c.selectAgentModel(ctx, m[1], in.Agent, in.Model); err != nil {
+	if err := c.selectAgentModel(ctx, m[1], in.Agent, in.Model, false); err != nil {
 		return finish(r, 0, nil, err)
 	}
 	path := "/api/session/" + url.PathEscape(m[1])
-	if err := c.call(ctx, http.MethodPost, path+"/prompt", nil, promptBody(in.Parts), nil); err != nil {
+	var admitted data[map[string]any]
+	if err := c.call(ctx, http.MethodPost, path+"/prompt", nil, promptBody(in.Parts), &admitted); err != nil {
 		return finish(r, 0, nil, err)
 	}
-	if err := c.waitIdle(ctx, m[1]); err != nil {
-		return finish(r, 0, nil, err)
-	}
-	msgs, err := c.messages(ctx, m[1])
+	answer, err := c.waitReply(ctx, m[1], str(admitted.Data, "id"))
 	if err != nil {
 		return finish(r, 0, nil, err)
 	}
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Info["role"] == "assistant" {
-			return reply(r, http.StatusOK, msgs[i]), nil
-		}
-	}
-	return reply(r, http.StatusOK, V1Message{Info: map[string]any{"role": "assistant"}, Parts: []map[string]any{}}), nil
+	return reply(r, http.StatusOK, answer), nil
 }
 
-// waitIdle blocks until the session has no active execution. The
-// experimental wait endpoint is used when present; otherwise poll.
-func (c *compat) waitIdle(ctx context.Context, sessionID string) error {
-	if c.call(ctx, http.MethodPost, "/api/experimental/session/"+url.PathEscape(sessionID)+"/wait", nil, nil, nil) == nil {
-		return nil
-	}
+// waitReply blocks until the session is idle and holds an assistant
+// message newer than the admitted prompt (message ids are ascending), so
+// an idle reading taken before v2 scheduled the turn is never mistaken
+// for its end. Bounded by ctx.
+func (c *compat) waitReply(ctx context.Context, sessionID, promptID string) (V1Message, error) {
+	// The wait barrier saves polling while the turn runs; its answer is
+	// verified below either way.
+	_ = c.call(ctx, http.MethodPost, "/api/experimental/session/"+url.PathEscape(sessionID)+"/wait", nil, nil, nil)
 	for {
-		var resp data[map[string]any]
-		if err := c.call(ctx, http.MethodGet, "/api/session/active", nil, nil, &resp); err != nil {
-			return err
+		var active data[map[string]any]
+		if err := c.call(ctx, http.MethodGet, "/api/session/active", nil, nil, &active); err != nil {
+			return V1Message{}, err
 		}
-		if _, busy := resp.Data[sessionID]; !busy {
-			return nil
+		if _, busy := active.Data[sessionID]; !busy {
+			msgs, err := c.messages(ctx, sessionID)
+			if err != nil {
+				return V1Message{}, err
+			}
+			for i := len(msgs) - 1; i >= 0; i-- {
+				id, _ := msgs[i].Info["id"].(string)
+				if msgs[i].Info["role"] == "assistant" && id > promptID {
+					return msgs[i], nil
+				}
+			}
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return V1Message{}, ctx.Err()
 		case <-time.After(250 * time.Millisecond):
 		}
 	}
@@ -183,7 +213,7 @@ func runCommand(c *compat, r *http.Request, m []string) (*http.Response, error) 
 		id, variant, _ := strings.Cut(rest, "#")
 		model = &v1ModelRef{ProviderID: p, ModelID: id, Variant: variant}
 	}
-	if err := c.selectAgentModel(r.Context(), m[1], in.Agent, model); err != nil {
+	if err := c.selectAgentModel(r.Context(), m[1], in.Agent, model, false); err != nil {
 		return finish(r, 0, nil, err)
 	}
 	err := c.call(r.Context(), http.MethodPost, "/api/session/"+url.PathEscape(m[1])+"/command", nil,

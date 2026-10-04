@@ -364,9 +364,9 @@ func TestCompatProviders(t *testing.T) {
 	f := fakeServer(t)
 	f.json("GET /api/provider", http.StatusOK, `{"data":[{"id":"openai","name":"OpenAI"},{"id":"empty","name":"Empty"}]}`)
 	f.json("GET /api/model", http.StatusOK, `{"data":[
-		{"providerID":"openai","modelID":"gpt","name":"GPT","status":"active","variants":[{"id":"high"}],"limit":{"context":100,"output":10}},
-		{"providerID":"openai","modelID":"off","enabled":false}]}`)
-	f.json("GET /api/model/default", http.StatusOK, `{"data":{"providerID":"openai","modelID":"gpt"}}`)
+		{"providerID":"openai","id":"gpt","modelID":"gpt-upstream","name":"GPT","status":"active","variants":[{"id":"high"}],"limit":{"context":100,"output":10}},
+		{"providerID":"openai","id":"off","modelID":"off","enabled":false}]}`)
+	f.json("GET /api/model/default", http.StatusOK, `{"data":{"providerID":"openai","id":"gpt","modelID":"gpt-upstream"}}`)
 	got := cmpOK(t, http.MethodGet, f.URL+"/provider?directory=/d", "")
 	cmpJSON(t, "providers", got, `{
 		"all":[
@@ -531,7 +531,7 @@ func TestCompatPromptAsyncSwitchesAgentAndModel(t *testing.T) {
 		f.json(k, http.StatusOK, `{}`)
 	}
 	status, b := cmpDo(t, http.MethodPost, f.URL+"/session/s1/prompt_async", nil, `{
-		"agent":"plan","model":{"providerID":"openai","modelID":"gpt","variant":"high"},"delivery":"queue",
+		"agent":"plan","model":{"providerID":"openai","modelID":"gpt","variant":"high"},"delivery":"steer",
 		"parts":[{"type":"text","text":"a"},{"type":"file","url":"file:///x.png","mime":"image/png","filename":"x.png"},{"type":"text","text":"b"}]}`)
 	if status != http.StatusNoContent || len(b) != 0 {
 		t.Fatalf("got %d %q", status, b)
@@ -540,7 +540,29 @@ func TestCompatPromptAsyncSwitchesAgentAndModel(t *testing.T) {
 	cmpJSON(t, "agent", f.one("POST /api/session/s1/agent").Body, `{"agent":"plan"}`)
 	cmpJSON(t, "model", f.one("POST /api/session/s1/model").Body, `{"model":{"providerID":"openai","id":"gpt","variant":"high"}}`)
 	cmpJSON(t, "prompt", f.one("POST /api/session/s1/prompt").Body,
-		`{"text":"a\n\nb","files":[{"uri":"file:///x.png","name":"x.png"}],"delivery":"queue"}`)
+		`{"text":"a\n\nb","files":[{"uri":"file:///x.png","name":"x.png"}],"delivery":"steer"}`)
+}
+
+// A held prompt must not switch agent or model now: that would change the
+// running turn. It is refused (412) so ocman's own queue holds it; a held
+// prompt that matches the session is queued natively.
+func TestCompatQueuedPromptNeverSwitchesSelection(t *testing.T) {
+	defer SetInstalledV2(true)()
+	f := fakeServer(t)
+	f.json("GET /api/session/s1", http.StatusOK, `{"data":{"id":"s1","agent":"build","model":{"providerID":"anthropic","id":"claude"}}}`)
+	f.json("POST /api/session/s1/prompt", http.StatusOK, `{}`)
+	status, _ := cmpDo(t, http.MethodPost, f.URL+"/session/s1/prompt_async", nil,
+		`{"agent":"plan","delivery":"queue","parts":[{"type":"text","text":"later"}]}`)
+	if status != http.StatusPreconditionFailed {
+		t.Fatalf("status = %d, want 412", status)
+	}
+	cmpKeys(t, f, "GET /api/session/s1")
+	status, _ = cmpDo(t, http.MethodPost, f.URL+"/session/s1/prompt_async", nil,
+		`{"agent":"build","model":{"providerID":"anthropic","modelID":"claude"},"delivery":"queue","parts":[{"type":"text","text":"later"}]}`)
+	if status != http.StatusNoContent {
+		t.Fatalf("matching queued prompt status = %d", status)
+	}
+	cmpJSON(t, "prompt", f.one("POST /api/session/s1/prompt").Body, `{"text":"later","delivery":"queue"}`)
 }
 
 func TestCompatPromptAsyncNoSwitchWhenCurrent(t *testing.T) {
@@ -583,38 +605,42 @@ const fakeHistory = `{"data":[
 func TestCompatMessageSyncWaits(t *testing.T) {
 	defer SetInstalledV2(true)()
 	f := fakeServer(t)
-	f.json("POST /api/session/s1/prompt", http.StatusOK, `{}`)
+	f.json("POST /api/session/s1/prompt", http.StatusOK, `{"data":{"id":"msg1"}}`)
 	f.json("POST /api/experimental/session/s1/wait", http.StatusOK, `{}`)
+	f.json("GET /api/session/active", http.StatusOK, `{"data":{}}`)
 	f.json("GET /api/session/s1/message", http.StatusOK, fakeHistory)
 	got := cmpOK(t, http.MethodPost, f.URL+"/session/s1/message", `{"parts":[{"type":"text","text":"q"}]}`)
 	m, _ := got.(map[string]any)
 	if info := obj(m, "info"); info["id"] != "msg2" || info["role"] != "assistant" {
 		t.Fatalf("reply = %v", got)
 	}
-	cmpKeys(t, f, "POST /api/session/s1/prompt", "POST /api/experimental/session/s1/wait", "GET /api/session/s1/message")
 }
 
-func TestCompatMessageSyncPollsWithoutWait(t *testing.T) {
+// Idle before the prompt's turn produced a reply (v2 had not scheduled it
+// yet) must keep waiting, not return an older or empty answer.
+func TestCompatMessageSyncWaitsForItsOwnReply(t *testing.T) {
 	defer SetInstalledV2(true)()
 	f := fakeServer(t)
-	f.json("POST /api/session/s1/prompt", http.StatusOK, `{}`)
+	f.json("POST /api/session/s1/prompt", http.StatusOK, `{"data":{"id":"msg5"}}`)
+	f.json("POST /api/experimental/session/s1/wait", http.StatusNotFound, `{}`)
+	f.json("GET /api/session/active", http.StatusOK, `{"data":{}}`)
 	var mu sync.Mutex
-	polls := 0
-	f.on("GET /api/session/active", func(fakeCall) (int, any) {
+	reads := 0
+	f.on("GET /api/session/s1/message", func(fakeCall) (int, any) {
 		mu.Lock()
 		defer mu.Unlock()
-		polls++
-		if polls == 1 {
-			return http.StatusOK, json.RawMessage(`{"data":{"s1":{}}}`)
+		reads++
+		old := `{"id":"msg2","type":"assistant","agent":"build","model":{"providerID":"p","id":"m"},"time":{"created":2},"finish":"stop","content":[]}`
+		if reads == 1 {
+			return http.StatusOK, json.RawMessage(`{"data":[` + old + `,{"id":"msg5","type":"user","text":"q"}]}`)
 		}
-		return http.StatusOK, json.RawMessage(`{"data":{"other":{}}}`)
+		return http.StatusOK, json.RawMessage(`{"data":[` + old + `,{"id":"msg5","type":"user","text":"q"},
+			{"id":"msg6","type":"assistant","agent":"build","model":{"providerID":"p","id":"m"},"time":{"created":6},"finish":"stop","content":[{"type":"text","text":"new"}]}]}`)
 	})
-	f.json("GET /api/session/s1/message", http.StatusOK, `{"data":[{"id":"msg1","type":"user","text":"q"}]}`)
 	got := cmpOK(t, http.MethodPost, f.URL+"/session/s1/message", `{"parts":[{"type":"text","text":"q"}]}`)
-	// No assistant reply: an empty assistant message is returned.
-	cmpJSON(t, "reply", got, `{"info":{"role":"assistant"},"parts":[]}`)
-	cmpKeys(t, f, "POST /api/session/s1/prompt", "POST /api/experimental/session/s1/wait",
-		"GET /api/session/active", "GET /api/session/active", "GET /api/session/s1/message")
+	if info := obj(got.(map[string]any), "info"); info["id"] != "msg6" {
+		t.Fatalf("reply = %v, want the turn's own reply msg6", got)
+	}
 }
 
 func TestCompatMessageSyncErrors(t *testing.T) {
@@ -625,14 +651,14 @@ func TestCompatMessageSyncErrors(t *testing.T) {
 		t.Errorf("prompt failure status = %d", status)
 	}
 	f2 := fakeServer(t)
-	f2.json("POST /api/session/s1/prompt", http.StatusOK, `{}`)
+	f2.json("POST /api/session/s1/prompt", http.StatusOK, `{"data":{"id":"msg1"}}`)
 	f2.json("GET /api/session/active", http.StatusBadGateway, `{"name":"Gateway"}`)
 	if status, _ := cmpDo(t, http.MethodPost, f2.URL+"/session/s1/message", nil, `{}`); status != http.StatusBadGateway {
 		t.Errorf("poll failure status = %d", status)
 	}
 	f3 := fakeServer(t)
-	f3.json("POST /api/session/s1/prompt", http.StatusOK, `{}`)
-	f3.json("POST /api/experimental/session/s1/wait", http.StatusOK, `{}`)
+	f3.json("POST /api/session/s1/prompt", http.StatusOK, `{"data":{"id":"msg1"}}`)
+	f3.json("GET /api/session/active", http.StatusOK, `{"data":{}}`)
 	f3.json("GET /api/session/s1/message", http.StatusGone, `{"name":"Gone"}`)
 	if status, _ := cmpDo(t, http.MethodPost, f3.URL+"/session/s1/message", nil, `{}`); status != http.StatusGone {
 		t.Errorf("messages failure status = %d", status)

@@ -91,7 +91,9 @@ func V1Providers(providers, models []any, def map[string]any) map[string]any {
 			variants[str(vm, "id")] = map[string]any{}
 		}
 		limit := obj(m, "limit")
-		modelID := str(m, "modelID")
+		// Model.Ref (session model, POST …/model) addresses a model by
+		// Model.Info.id; modelID is the provider's own name for it.
+		modelID := str(m, "id")
 		e.models[modelID] = map[string]any{
 			"id": modelID, "name": str(m, "name"), "status": str(m, "status"),
 			"variants": variants, "limit": map[string]any{"context": limit["context"], "output": limit["output"]},
@@ -109,7 +111,7 @@ func V1Providers(providers, models []any, def map[string]any) map[string]any {
 	}
 	defaults := map[string]any{}
 	if def != nil {
-		defaults[str(def, "providerID")] = str(def, "modelID")
+		defaults[str(def, "providerID")] = str(def, "id")
 	}
 	return map[string]any{"all": all, "connected": connected, "default": defaults}
 }
