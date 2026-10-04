@@ -120,7 +120,7 @@ describe('new-conversation submission lifecycle', () => {
     vi.mocked(api.prepareSession).mockReturnValue(catalog.promise);
     saveDraft('new', 'start in plan mode');
     render(<Flow />);
-    await screen.findByRole('option', { name: 'New worktree' });
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Session target' })).toHaveTextContent('New worktree'));
     const input = screen.getByRole('textbox');
     expect(input).toBeDisabled();
     fireEvent.keyDown(input, { key: 'Enter' });

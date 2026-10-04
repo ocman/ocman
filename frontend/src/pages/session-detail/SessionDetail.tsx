@@ -1071,11 +1071,11 @@ export function SessionDetail({ id }: SessionDetailProps) {
               />
             </OcmanRuntimeProvider>
           )}
-          {session && (
+          {(session ?? newConversation) && (
             <SessionTerminalDock
               tmuxAvailable={tmux.available}
-              directory={session.directory}
-              remoteId={session.remoteId}
+              directory={session?.directory ?? newConversation?.directory}
+              remoteId={session?.remoteId ?? newConversation?.remoteId}
             />
           )}
         </div>
