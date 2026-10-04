@@ -21,14 +21,14 @@ func TestProjectCatalog(t *testing.T) {
 	}))
 	defer server.Close()
 
-	agents, models, err := ProjectCatalog(context.Background(), server.URL)
+	agents, models, err := ProjectCatalog(context.Background(), server.URL, "/repo")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(agents) != 2 || agents[0] != "build" || len(models) != 1 || models[0] != "openai/gpt-5" {
 		t.Fatalf("catalog = %v, %v", agents, models)
 	}
-	if _, _, err := ProjectCatalog(context.Background(), "http://example.com:80"); err == nil {
+	if _, _, err := ProjectCatalog(context.Background(), "http://example.com:80", ""); err == nil {
 		t.Fatal("expected non-loopback endpoint rejection")
 	}
 }

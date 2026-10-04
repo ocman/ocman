@@ -128,7 +128,7 @@ func (a *Adapter) SessionInfo(ctx context.Context, sessionID string) (*platforms
 	go func() {
 		defer wg.Done()
 		p := srvtiming.Begin(ctx, "http_provider")
-		prov, hasPrv = fetchOpenCodeProviders(port)
+		prov, hasPrv = fetchOpenCodeProviders(ctx, port, dbSession.Directory)
 		p.EndWithDesc("GET /provider")
 	}()
 	go func() {

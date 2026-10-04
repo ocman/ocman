@@ -96,12 +96,14 @@ func resolveOpenCodePortBySession(ctx context.Context, sessionID string) (string
 // --- Catalogs ---
 
 // ProjectCatalog reads catalogs from a managed project before it has a session.
-func ProjectCatalog(ctx context.Context, endpoint string) (agents, models []string, err error) {
+// directory scopes the read on an OpenCode v2 server, which serves every
+// project; "" reads the server's default location.
+func ProjectCatalog(ctx context.Context, endpoint, directory string) (agents, models []string, err error) {
 	u, err := url.Parse(endpoint)
 	if err != nil || u.Port() == "" || net.ParseIP(u.Hostname()) == nil || !net.ParseIP(u.Hostname()).IsLoopback() {
 		return nil, nil, errors.New("invalid OpenCode endpoint")
 	}
-	body, err := getJSONCached(ctx, u.Port(), "/agent")
+	body, err := getJSONCached(ctx, u.Port(), scopedPath(ctx, u.Port(), "/agent", directory))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -114,7 +116,7 @@ func ProjectCatalog(ctx context.Context, endpoint string) (agents, models []stri
 			agents = append(agents, name)
 		}
 	}
-	body, err = getJSONCached(ctx, u.Port(), "/provider")
+	body, err = getJSONCached(ctx, u.Port(), scopedPath(ctx, u.Port(), "/provider", directory))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -145,7 +147,7 @@ func ProjectCatalog(ctx context.Context, endpoint string) (agents, models []stri
 // observable to the maintainer, each branch logs a single WARN line
 // (FR-9) including the upstream port + the underlying error.
 func (a *Adapter) AgentCatalog(ctx context.Context, sessionID string) ([]platforms.AgentCatalogEntry, error) {
-	port, _, err := a.resolvePortCtx(ctx, sessionID)
+	port, session, err := a.resolvePortCtx(ctx, sessionID)
 	if err != nil {
 		// Common: no live OpenCode instance for this session's
 		// directory. Logged at DEBUG to avoid spamming the noise
@@ -154,13 +156,13 @@ func (a *Adapter) AgentCatalog(ctx context.Context, sessionID string) ([]platfor
 			Debug("opencode: agent catalog unavailable (no live port)")
 		return nil, nil
 	}
-	return agentCatalogAt(ctx, port, sessionID), nil
+	return agentCatalogAt(ctx, port, sessionID, session.Directory), nil
 }
 
 // agentCatalogAt reads /agent from one instance. Failures return nil so
 // the frontend keeps rendering an empty catalog; see AgentCatalog.
-func agentCatalogAt(ctx context.Context, port, sessionID string) []platforms.AgentCatalogEntry {
-	body, fetchErr := getJSONCached(ctx, port, "/agent")
+func agentCatalogAt(ctx context.Context, port, sessionID, directory string) []platforms.AgentCatalogEntry {
+	body, fetchErr := getJSONCached(ctx, port, scopedPath(ctx, port, "/agent", directory))
 	if fetchErr != nil {
 		logFetchFailure(fetchErr, log.Fields{"sessionID": sessionID, "port": port, "endpoint": "/agent"},
 			"opencode: agent catalog fetch failed; returning empty list")
@@ -196,18 +198,18 @@ func agentCatalogAt(ctx context.Context, port, sessionID string) []platforms.Age
 // Like [AgentCatalog], upstream failures return `(nil, nil)` for
 // frontend compat but emit a single WARN line per failure (FR-9).
 func (a *Adapter) SlashCommands(ctx context.Context, sessionID string) ([]platforms.SlashCommandEntry, error) {
-	port, _, err := a.resolvePortCtx(ctx, sessionID)
+	port, session, err := a.resolvePortCtx(ctx, sessionID)
 	if err != nil {
 		log.WithFields(log.Fields{"sessionID": sessionID, "error": err}).
 			Debug("opencode: slash commands unavailable (no live port)")
 		return nil, nil
 	}
-	return slashCommandsAt(ctx, port, sessionID), nil
+	return slashCommandsAt(ctx, port, sessionID, session.Directory), nil
 }
 
 // slashCommandsAt reads /command from one instance; failures return nil.
-func slashCommandsAt(ctx context.Context, port, sessionID string) []platforms.SlashCommandEntry {
-	body, fetchErr := getJSONCached(ctx, port, "/command")
+func slashCommandsAt(ctx context.Context, port, sessionID, directory string) []platforms.SlashCommandEntry {
+	body, fetchErr := getJSONCached(ctx, port, scopedPath(ctx, port, "/command", directory))
 	if fetchErr != nil {
 		logFetchFailure(fetchErr, log.Fields{"sessionID": sessionID, "port": port, "endpoint": "/command"},
 			"opencode: slash commands fetch failed; returning empty list")
@@ -255,10 +257,10 @@ func (a *Adapter) DirectoryCatalog(ctx context.Context, req platforms.DirectoryC
 	if port == "" {
 		return out, nil
 	}
-	if agents := agentCatalogAt(ctx, port, ""); agents != nil {
+	if agents := agentCatalogAt(ctx, port, "", directory); agents != nil {
 		out.Agents = agents
 	}
-	if commands := slashCommandsAt(ctx, port, ""); commands != nil {
+	if commands := slashCommandsAt(ctx, port, "", directory); commands != nil {
 		out.Commands = commands
 	}
 	return out, nil
@@ -322,7 +324,7 @@ func (a *Adapter) modelsFor(ctx context.Context, excludeSessionID, directory, po
 	hasProviders := false
 	if port != "" {
 		providersPhase := srvtiming.Begin(ctx, "http_provider")
-		providers, hasProviders = fetchOpenCodeProviders(port)
+		providers, hasProviders = fetchOpenCodeProviders(ctx, port, directory)
 		providersPhase.EndWithDesc("GET /provider")
 	}
 

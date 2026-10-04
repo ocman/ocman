@@ -218,7 +218,7 @@ var judgeModelOptions = defaultJudgeModelOptions
 // config, not of the directory the instance happens to serve.
 func defaultJudgeModelOptions(ctx context.Context) []string {
 	for _, port := range opencode.DiscoverOpenCodePorts() {
-		_, models, err := opencode.ProjectCatalog(ctx, "http://127.0.0.1:"+port)
+		_, models, err := opencode.ProjectCatalog(ctx, "http://127.0.0.1:"+port, "")
 		if err == nil && len(models) > 0 {
 			return models
 		}

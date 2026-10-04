@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/ocapi"
+	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/srvtiming"
 )
@@ -132,10 +134,11 @@ type OpenCodeProvidersResponse struct {
 	Default   map[string]string  `json:"default"`
 }
 
-// fetchOpenCodeProviders calls GET /provider on the running OpenCode instance.
-func fetchOpenCodeProviders(port string) (OpenCodeProvidersResponse, bool) {
+// fetchOpenCodeProviders calls GET /provider on the running OpenCode
+// instance, scoped to directory on an OpenCode v2 server.
+func fetchOpenCodeProviders(ctx context.Context, port, directory string) (OpenCodeProvidersResponse, bool) {
 	var empty OpenCodeProvidersResponse
-	body, err := getJSONCached(context.Background(), port, "/provider")
+	body, err := getJSONCached(ctx, port, scopedPath(ctx, port, "/provider", directory))
 	if err != nil {
 		logFetchFailure(err, log.Fields{"port": port, "endpoint": "/provider"},
 			"opencode: provider catalog fetch failed")
@@ -326,4 +329,16 @@ func (a *Adapter) fetchSessionFromOpenCodeCtx(ctx context.Context, sessionID str
 		DefaultModel:      defaults.Model,
 		Warnings:          sessionWarningsForDirectory(dbSession.Directory),
 	}, true
+}
+
+// scopedPath adds the directory scope to a catalog path on an OpenCode v2
+// server: one v2 server serves every project, and agents, commands and
+// models are per-project configuration. The path is also the cache key,
+// so projects never share an entry. v1 instances serve one project and
+// keep the bare path.
+func scopedPath(ctx context.Context, port, path, directory string) string {
+	if directory == "" || !ocv2.IsV2(ctx, port) {
+		return path
+	}
+	return path + "?directory=" + url.QueryEscape(directory)
 }

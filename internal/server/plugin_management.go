@@ -69,7 +69,7 @@ func (s *Server) pluginProjectCatalog(ctx context.Context, input remote.PluginIn
 	if err != nil || ensured == nil {
 		return nil, err
 	}
-	agents, models, err := opencode.ProjectCatalog(ctx, ensured.Endpoint)
+	agents, models, err := opencode.ProjectCatalog(ctx, ensured.Endpoint, directory)
 	if err != nil {
 		return nil, err
 	}
