@@ -120,7 +120,7 @@ type ApiStore = {
   getCapabilities: (signal?: AbortSignal) => Promise<CapabilitiesResponse>;
   sendMessage: (sessionId: string, message: string, images?: { url: string; mime: string }[], model?: string, agent?: string, reasoning?: string, platform?: string, queue?: boolean) => Promise<void>;
   listPermissions: (sessionId: string) => Promise<unknown[]>;
-  refreshPermissions: (sessionId: string) => Promise<unknown[]>;
+  refreshPermissions: (sessionId: string, platform: string) => Promise<unknown[]>;
   respondPermission: (sessionId: string, permissionId: string, reply: 'once' | 'always' | 'reject') => Promise<void>;
   listQuestions: (sessionId: string) => Promise<unknown[]>;
   respondQuestion: (sessionId: string, requestId: string, answers: string[][]) => Promise<void>;
@@ -365,7 +365,7 @@ export const useApiStore = create<ApiStore>((set, get) => ({
     });
   },
   listPermissions: (sessionId) => get().runRequest(`permissions:list:${sessionId}`, () => api.listPermissions(sessionId)),
-  refreshPermissions: (sessionId) => get().runRequest(`permissions:refresh:${sessionId}`, () => api.refreshPermissions(sessionId)),
+  refreshPermissions: (sessionId, platform) => get().runRequest(`permissions:refresh:${platform}:${sessionId}`, () => api.refreshPermissions(sessionId, platform)),
   respondPermission: (sessionId, permissionId, reply) => get().runRequest(`permission:respond:${sessionId}`, () => api.respondPermission(sessionId, permissionId, reply)),
   listQuestions: (sessionId) => get().runRequest(`questions:list:${sessionId}`, () => api.listQuestions(sessionId)),
   respondQuestion: (sessionId, requestId, answers) => get().runRequest(`question:respond:${sessionId}`, () => api.respondQuestion(sessionId, requestId, answers)),

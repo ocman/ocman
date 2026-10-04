@@ -33,7 +33,7 @@ const pendingQ: PendingQuestion = {
 function opts(over: Partial<UsePromptSyncOptions> = {}): UsePromptSyncOptions {
   return {
     id: 'sess-1',
-    session: { id: 'sess-1' } as Session,
+    session: { id: 'sess-1', platform: 'r-box:opencode' } as Session,
     parts: [],
     recentSessions: [],
     portAvailable: true,
@@ -110,7 +110,7 @@ describe('usePromptSync', () => {
     renderHook(() => usePromptSync(o));
     // One miss may be the observed-prompt cache trailing the stream.
     await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
-    expect(refreshPermissions).toHaveBeenCalledWith('child-1');
+    expect(refreshPermissions).toHaveBeenCalledWith('child-1', 'r-box:opencode');
     expect(o.clearPrompt).not.toHaveBeenCalled();
     await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
     expect(o.clearPrompt).toHaveBeenCalledWith('permission', 'perm-1');
@@ -126,6 +126,18 @@ describe('usePromptSync', () => {
     const o = opts({ pendingPermission: perm });
     renderHook(() => usePromptSync(o));
     await act(async () => { await vi.advanceTimersByTimeAsync(9000); });
+    expect(o.clearPrompt).not.toHaveBeenCalled();
+  });
+
+  // A bare id can resolve to another machine with the same session id,
+  // whose empty list would wrongly dismiss the prompt.
+  it('pins the refresh to the session owner and skips it when unknown', async () => {
+    vi.useFakeTimers();
+    const perm = { permissionId: 'perm-1', permission: 'Run shell', patterns: [], sessionId: 'child-1', askedAt: 0 };
+    const o = opts({ pendingPermission: perm, session: { id: 'sess-1' } as Session });
+    renderHook(() => usePromptSync(o));
+    await act(async () => { await vi.advanceTimersByTimeAsync(9000); });
+    expect(refreshPermissions).not.toHaveBeenCalled();
     expect(o.clearPrompt).not.toHaveBeenCalled();
   });
 

@@ -177,13 +177,15 @@ export function usePromptSync({
   // the prompt, and a miss must repeat on the next poll before dismissal.
   const pendingPermissionId = pendingPermission?.permissionId ?? null;
   const pendingPermissionSessionId = pendingPermission?.sessionId || id;
+  // Descendants run on the viewed session's owner.
+  const ownerPlatform = session?.platform;
   useEffect(() => {
-    if (!pendingPermissionSessionId || !pendingPermissionId || !portAvailable) return;
+    if (!pendingPermissionSessionId || !pendingPermissionId || !ownerPlatform || !portAvailable) return;
     let cancelled = false;
     let misses = 0;
     const timer = window.setInterval(() => {
       if (document.hidden) return;
-      refreshPermissions(pendingPermissionSessionId)
+      refreshPermissions(pendingPermissionSessionId, ownerPlatform)
         .then((permissions) => {
           if (cancelled) return;
           const stillPending = permissions.some((raw) =>
@@ -198,7 +200,7 @@ export function usePromptSync({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [pendingPermissionSessionId, pendingPermissionId, portAvailable, refreshPermissions, clearPrompt]);
+  }, [pendingPermissionSessionId, pendingPermissionId, ownerPlatform, portAvailable, refreshPermissions, clearPrompt]);
 
   // Restore pending question from sessionStorage when navigating
   // back to a page whose parts still show a pending question tool.
