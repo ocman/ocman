@@ -164,7 +164,7 @@ func TestSeedSessionStatusFromInstance(t *testing.T) {
 
 	a := newTestAdapter()
 	port := fake.Port()
-	if !a.SeedSessionStatusFromInstance(context.Background(), port, 0) {
+	if !a.SeedSessionStatusFromInstance(context.Background(), port, 0, nil) {
 		t.Fatal("SeedSessionStatusFromInstance reported failure")
 	}
 	ports := map[string]string{"/work": port}
@@ -173,6 +173,49 @@ func TestSeedSessionStatusFromInstance(t *testing.T) {
 	}
 	if got := a.turns.turnState("s2", "/work", ports); got != db.TurnSettled {
 		t.Errorf("seeded idle session = %v, want TurnSettled", got)
+	}
+}
+
+// OpenCode scopes /session/status per directory, so the unscoped read on a
+// project instance never lists its worktree sessions. Seeding from it alone
+// marked the port seeded and settled a busy worktree session (e.g. a `!`
+// shell still running) as done.
+func TestSeedSessionStatusFromInstance_IncludesWorktreeDirectories(t *testing.T) {
+	const (
+		root     = "/repo/project"
+		worktree = "/repo/.worktrees/project/feature"
+	)
+	ResetCachesForTests()
+	fake := newOpencodeFake(t)
+	fake.turnStatus = map[string]string{}
+	fake.turnStatusByDir = map[string]map[string]string{
+		root:     {},
+		worktree: {"ses-worktree": "busy"},
+	}
+	a := New(newTestDBWithSessions(t, []testSession{
+		{id: "ses-root", directory: root},
+		{id: "ses-worktree", directory: worktree, busy: true},
+	}), nil)
+	port := fake.Port()
+	if !a.SeedSessionStatusFromInstance(context.Background(), port, 0, []string{root}) {
+		t.Fatal("SeedSessionStatusFromInstance reported failure")
+	}
+	if got := a.turns.turnStateForPort("ses-worktree", port); got != db.TurnRunning {
+		t.Errorf("worktree session turnState = %v, want TurnRunning", got)
+	}
+
+	// A failed worktree read must leave the port unseeded rather than
+	// settle the sessions it could not see.
+	fake.turnStatusDirCode = 500
+	b := New(newTestDBWithSessions(t, []testSession{
+		{id: "ses-worktree", directory: worktree, busy: true},
+	}), nil)
+	ResetCachesForTests()
+	if b.SeedSessionStatusFromInstance(context.Background(), port, 0, []string{root}) {
+		t.Fatal("SeedSessionStatusFromInstance reported success with a failed directory read")
+	}
+	if got := b.turns.turnStateForPort("ses-worktree", port); got != db.TurnUnobserved {
+		t.Errorf("turnState after failed directory read = %v, want TurnUnobserved", got)
 	}
 }
 
@@ -205,7 +248,7 @@ func TestSeedSessionStatusFromInstance_FailureLeavesPortUnseeded(t *testing.T) {
 
 	a := newTestAdapter()
 	port := fake.Port()
-	if a.SeedSessionStatusFromInstance(context.Background(), port, 0) {
+	if a.SeedSessionStatusFromInstance(context.Background(), port, 0, nil) {
 		t.Fatal("SeedSessionStatusFromInstance reported success on HTTP 500")
 	}
 	if got := a.turns.turnState("s1", "/work", map[string]string{"/work": port}); got != db.TurnUnobserved {

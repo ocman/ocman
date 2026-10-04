@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -262,13 +264,18 @@ func portForDirectory(ports map[string]string, directory string) string {
 }
 
 // fetchSessionStatusSnapshot reads GET /session/status from one instance and
-// flattens it to sessionID -> status type. The bool reports whether the
-// snapshot can be trusted; on false the caller must not mark the port
-// seeded, or every session on it would read as settled.
-func fetchSessionStatusSnapshot(ctx context.Context, port string) (map[string]string, bool) {
+// flattens it to sessionID -> status type. OpenCode keeps status per
+// directory, so an empty directory only covers the instance's launch
+// directory; worktree sessions need their own directory-scoped read. The
+// bool reports whether the snapshot can be trusted; on false the caller must
+// not mark the port seeded, or every session on it would read as settled.
+func fetchSessionStatusSnapshot(ctx context.Context, port, directory string) (map[string]string, bool) {
 	requestCtx, cancel := context.WithTimeout(ctx, statusSnapshotTimeout)
 	defer cancel()
 	endpoint := fmt.Sprintf("http://127.0.0.1:%s/session/status", port)
+	if directory != "" {
+		endpoint += "?directory=" + url.QueryEscape(directory)
+	}
 	req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, false
@@ -296,16 +303,30 @@ func fetchSessionStatusSnapshot(ctx context.Context, port string) (map[string]st
 
 // SeedSessionStatusFromInstance fetches and applies one instance's status
 // snapshot. Called by the event watcher each time it connects to a port.
-func (a *Adapter) SeedSessionStatusFromInstance(ctx context.Context, port string, generation uint64) bool {
+//
+// One instance serves the project root and every worktree session on it,
+// but OpenCode scopes status per directory. The snapshot therefore merges
+// the unscoped read with one read per candidate directory (the discovered
+// ones plus worktrees with an unfinished turn, the same set prompt
+// reconciliation uses). Any failed read leaves the port unseeded.
+func (a *Adapter) SeedSessionStatusFromInstance(ctx context.Context, port string, generation uint64, directories []string) bool {
 	if a == nil || a.turns == nil || port == "" {
 		return false
 	}
 	// Capture the sequence first: everything an event writes from here on
 	// is newer than the snapshot we are about to read.
 	seq := a.statusSeq()
-	statuses, ok := fetchSessionStatusSnapshot(ctx, port)
+	statuses, ok := fetchSessionStatusSnapshot(ctx, port, "")
 	if !ok {
 		return false
+	}
+	// ponytail: sequential reads; candidates are only live directories.
+	for _, directory := range a.promptDirectories(port, directories) {
+		scoped, ok := fetchSessionStatusSnapshot(ctx, port, directory)
+		if !ok {
+			return false
+		}
+		maps.Copy(statuses, scoped)
 	}
 	a.SeedSessionStatus(port, generation, seq, statuses)
 	return true

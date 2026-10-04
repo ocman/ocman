@@ -39,10 +39,10 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 		portGeneration = ocAdapter.PromptPortGeneration(port)
 		// Seed upstream turn state before processing live events.
 		statusGeneration = ocAdapter.StatusPortGeneration(port)
-		if !ocAdapter.SeedSessionStatusFromInstance(streamCtx, port, statusGeneration) {
+		directories := w.directoriesForPort(port)
+		if !ocAdapter.SeedSessionStatusFromInstance(streamCtx, port, statusGeneration, directories) {
 			log.WithField("port", port).Debug("autoapprove-watcher: /session/status snapshot unavailable, turn state stays unobserved")
 		}
-		directories := w.directoriesForPort(port)
 		onPermission := func(prompt platforms.LivePrompt) {
 			w.svc.ObservePermissionPrompt(opencode.PlatformID, "", prompt)
 			if w.onPermission == nil {
