@@ -496,6 +496,12 @@ describe('SessionSidebar', () => {
     expect(visibleSidebarSessions.current).toBeNull();
   });
 
+  it('publishes a pinned session once although it also sits in its project group', () => {
+    const pinned = session({ id: 'p', pinned: true, pinnedAt: 1 });
+    renderSidebar({ directory: '/repo', sessions: [pinned, session({ id: 'o' })], lastUpdated: 1, aggregate: { kind: 'none' } }, {});
+    expect(visibleSidebarSessions.current?.map((s) => s.id)).toEqual(['p', 'o']);
+  });
+
   it('leaves collapsed project groups out of the archive candidates', () => {
     render(
       <SessionSidebar

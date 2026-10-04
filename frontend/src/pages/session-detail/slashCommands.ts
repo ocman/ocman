@@ -6,11 +6,11 @@
 
 import type { MutableRefObject } from 'react';
 import { flushSync } from 'react-dom';
-import { api, type Message, type Part, type PlatformCapabilities } from '../../lib/api';
+import { api, type Message, type Part, type PlatformCapabilities, type Session } from '../../lib/api';
 import { newSessionPath } from '../../lib/newSessionPath';
 import { useApiStore } from '../../lib/apiStore';
 import { useUiStore } from '../../lib/uiStore';
-import { visibleSidebarSessions } from '../../lib/sidebarHelpers';
+import { pickNextSessionAfterArchive, sidebarNavigableSessions } from '../../lib/sidebarHelpers';
 import { copyTextToClipboard, copyToClipboard } from '../../lib/clipboard';
 import { remoteLog } from '../../lib/remoteLog';
 import { downloadSessionMarkdown, serializeSessionMarkdown } from '../../lib/exportMarkdown';
@@ -30,7 +30,7 @@ export interface CommandContext {
   portAvailable: boolean;
   caps: Pick<PlatformCapabilities, 'fork' | 'move'>;
   pending: UsePendingSendResult;
-  recentSessionsRef: MutableRefObject<Array<{ id: string }>>;
+  recentSessionsRef: MutableRefObject<Session[]>;
   messagesRef: MutableRefObject<Message[]>;
   partsRef: MutableRefObject<Part[]>;
   archiveSession: (platform: string, id: string, timeUpdated: number, archive: boolean) => Promise<unknown>;
@@ -60,10 +60,12 @@ export interface SlashCommand {
 
 const archive: SlashCommand = {
   run: async ({ session, recentSessionsRef, archiveSession, navigateToSession, navigate }) => {
-    // The row below in the sidebar as the user sees it (filters applied).
-    const recentSessions: readonly { id: string }[] = visibleSidebarSessions.current ?? recentSessionsRef.current;
-    const idx = recentSessions.findIndex((s) => s.id === session.id);
-    const nextSession = recentSessions[idx + 1] ?? recentSessions[idx - 1];
+    // Same choice as the sidebar's archive button, among the rows it shows.
+    const nextSession = pickNextSessionAfterArchive(
+      sidebarNavigableSessions(recentSessionsRef.current),
+      session.id,
+      useUiStore.getState().sidebarView,
+    );
     try {
       await archiveSession(session.platform, session.id, session.timeUpdated, true);
     } catch (e) {

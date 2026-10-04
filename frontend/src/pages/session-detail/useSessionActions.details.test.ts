@@ -27,6 +27,7 @@ vi.hoisted(() => {
 import { renderHook, act } from '@testing-library/react';
 import { createRef } from 'react';
 import type { MutableRefObject } from 'react';
+import type { Session } from '../../lib/api';
 import { useSessionActions, type UseSessionActionsOptions } from './useSessionActions';
 import { useUiStore } from '../../lib/uiStore';
 
@@ -58,7 +59,7 @@ function makeOptions(over: Partial<UseSessionActionsOptions> = {}): UseSessionAc
     selectedAgent: '',
     selectedReasoning: '',
     activeAgent: '',
-    recentSessionsRef: createRef<Array<{ id: string }>>() as MutableRefObject<Array<{ id: string }>>,
+    recentSessionsRef: createRef<Session[]>() as MutableRefObject<Session[]>,
     messagesRef: { current: [] },
     partsRef: { current: [] },
     isRunningRef: { current: false },

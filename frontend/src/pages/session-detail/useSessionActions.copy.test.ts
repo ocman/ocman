@@ -11,7 +11,7 @@ import { createRef } from 'react';
 import type { MutableRefObject } from 'react';
 import { useSessionActions, type UseSessionActionsOptions } from './useSessionActions';
 import { copyTextToClipboard } from '../../lib/clipboard';
-import type { Message, Part } from '../../lib/api';
+import type { Message, Part, Session } from '../../lib/api';
 
 vi.mock('../../lib/apiStore', () => ({
   useApiStore: Object.assign(
@@ -44,7 +44,7 @@ function makeOptions(over: Partial<UseSessionActionsOptions> = {}): UseSessionAc
     selectedAgent: '',
     selectedReasoning: '',
     activeAgent: '',
-    recentSessionsRef: createRef<Array<{ id: string }>>() as MutableRefObject<Array<{ id: string }>>,
+    recentSessionsRef: createRef<Session[]>() as MutableRefObject<Session[]>,
     messagesRef: { current: messages },
     partsRef: { current: parts },
     isRunningRef: { current: false },

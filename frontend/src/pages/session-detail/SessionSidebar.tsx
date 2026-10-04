@@ -252,7 +252,17 @@ export function SessionSidebar({
           .filter((group) => !collapsedProjectSet.has(group.key ?? group.directory))
           .map((group) => group.sessions),
       ];
-    visibleSidebarSessions.current = sections.flatMap((rows) => nestSessions(rows).map(({ session }) => session));
+    // Pinned rows also sit in their project group; keep the first so a
+    // duplicate can never be picked as the archived session's successor.
+    const seen = new Set<string>();
+    visibleSidebarSessions.current = sections
+      .flatMap((rows) => nestSessions(rows).map(({ session }) => session))
+      .filter((session) => {
+        const key = `${session.platform}\0${session.id}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
   }, [sidebarView, filteredPinnedSessions, flatUnpinned, sortableGroups, collapsedProjectSet]);
   useEffect(() => () => { visibleSidebarSessions.current = null; }, []);
 
