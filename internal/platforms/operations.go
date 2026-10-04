@@ -33,6 +33,36 @@ type SendMessageRequest struct {
 	// (e.g. "high", "max", "low"). Empty = platform default. Only
 	// meaningful when the model exposes variants.
 	Reasoning string
+	// Delivery "queue" asks the platform to hold the message natively
+	// until the session's turn ends. Platforms without a native
+	// follow-up queue return ErrUnsupported and the caller falls back to
+	// ocman's own queue. Empty = deliver now.
+	Delivery string `json:",omitempty"`
+}
+
+// NativeQueue is implemented by adapters whose platform can hold
+// follow-up messages itself (OpenCode v2's session inbox). The handlers
+// list and cancel those alongside ocman's own queue.
+type NativeQueue interface {
+	// NativeQueued lists the session's natively held follow-ups, oldest
+	// first. ErrUnsupported when the session's platform has no queue.
+	NativeQueued(ctx context.Context, sessionID string) ([]NativeQueuedMessage, error)
+	// CancelNativeQueued drops one held follow-up.
+	CancelNativeQueued(ctx context.Context, req CancelNativeQueuedRequest) error
+}
+
+// NativeQueuedMessage is one follow-up held by the platform.
+type NativeQueuedMessage struct {
+	ID        string `json:"id"`
+	Text      string `json:"text"`
+	HasImages bool   `json:"hasImages"`
+	CreatedAt int64  `json:"createdAt"`
+}
+
+// CancelNativeQueuedRequest drops a natively held follow-up.
+type CancelNativeQueuedRequest struct {
+	SessionID string
+	ID        string
 }
 
 // ImageAttachment is one inline image included with a composer message.

@@ -415,6 +415,13 @@ func OpencodeCommandForPort(port int) string {
 	return fmt.Sprintf("exec %s opencode --port %d", opencodeNoWarnings, port)
 }
 
+// OpencodeServeCommandForPort is the OpenCode v2 equivalent: v2 dropped
+// `--port` from the TUI, and `opencode serve` runs the headless server
+// that serves every project on the machine.
+func OpencodeServeCommandForPort(port int) string {
+	return fmt.Sprintf("exec %s opencode serve --port %d", opencodeNoWarnings, port)
+}
+
 // LaunchOpencodeCmdEnvWith is the env-aware, idempotent launcher that
 // runs an explicit pane command (e.g. one carrying a specific --port).
 // It is the port-threading analogue of LaunchOpencodeEnvWith: same

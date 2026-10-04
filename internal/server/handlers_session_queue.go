@@ -46,7 +46,7 @@ func (s *Server) handleSessionQueueList(w http.ResponseWriter, r *http.Request) 
 		for _, m := range msgs {
 			out = append(out, toQueuedMessageView(m))
 		}
-		writeJSON(w, out)
+		writeJSON(w, append(out, s.nativeQueuedViews(r.Context(), platformHint(r), sessionID)...))
 	})
 }
 
@@ -60,6 +60,15 @@ func (s *Server) handleSessionQueueDelete(w http.ResponseWriter, r *http.Request
 		qmid := strings.TrimPrefix(rest, "queue/")
 		if !validateID(qmid) {
 			http.Error(w, "invalid queued message ID", http.StatusBadRequest)
+			return
+		}
+		if handled, err := s.cancelNativeQueued(r.Context(), platformHint(r), sessionID, qmid); handled {
+			if err != nil {
+				log.WithError(err).WithField("queued", qmid).Error("cancelling native follow-up")
+				http.Error(w, "failed to remove queued message", http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		if _, err := s.queueSvc().Remove(r.Context(), sessionID, qmid); err != nil {

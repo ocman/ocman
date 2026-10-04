@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/ocv2"
 )
 
 // WorktreeName uses the owner's small model in a temporary, tool-denied session.
@@ -27,12 +29,18 @@ func WorktreeName(ctx context.Context, port, directory, prompt string) (string, 
 		return "", err
 	}
 	model := cfg.SmallModel
-	if model == "" {
+	// OpenCode v2's title agent picks a small model of the session's
+	// provider itself; only v1 needs a fallback.
+	if model == "" && !ocv2.IsV2(ctx, port) {
 		model = "anthropic/claude-haiku-4-5"
 	}
-	provider, modelID, ok := strings.Cut(model, "/")
-	if !ok || provider == "" || modelID == "" {
-		return "", errors.New("invalid small_model")
+	var modelRef map[string]string
+	if model != "" {
+		provider, modelID, ok := strings.Cut(model, "/")
+		if !ok || provider == "" || modelID == "" {
+			return "", errors.New("invalid small_model")
+		}
+		modelRef = map[string]string{"providerID": provider, "modelID": modelID}
 	}
 	// The " subagent)" title suffix hides a parentless internal session from
 	// every listing (db.scanSessionRow), like the auto-approve judge's.
@@ -62,11 +70,14 @@ func WorktreeName(ctx context.Context, port, directory, prompt string) (string, 
 	if len(runes) > 2000 {
 		runes = runes[:2000]
 	}
-	payload, err := json.Marshal(map[string]any{
+	body := map[string]any{
 		"agent": "title",
-		"model": map[string]string{"providerID": provider, "modelID": modelID},
 		"parts": []map[string]string{{"type": "text", "text": string(runes)}},
-	})
+	}
+	if modelRef != nil {
+		body["model"] = modelRef
+	}
+	payload, err := json.Marshal(body)
 	if err != nil {
 		return "", err
 	}

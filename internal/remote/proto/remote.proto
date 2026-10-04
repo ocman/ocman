@@ -55,6 +55,8 @@ service Ocman {
   rpc ForkSession(PlatformJsonReq) returns (JsonResp);    // *CreateSessionResponse
   rpc MoveSession(PlatformJsonReq) returns (Empty);
   rpc CreateSession(PlatformJsonReq) returns (JsonResp);  // *CreateSessionResponse
+  rpc NativeQueued(SessionRef) returns (JsonResp);         // []platforms.NativeQueuedMessage
+  rpc CancelNativeQueued(PlatformJsonReq) returns (Empty); // platforms.CancelNativeQueuedRequest
 
   // --- Streaming events (tunneled to hub SSE) ---
   rpc StreamEvents(SessionRef) returns (stream EventChunk);

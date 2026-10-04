@@ -600,6 +600,14 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // clients via the ocman.queue.updated broadcast (reliable full-state).
   const { queue: queuedMessages, refresh: refreshMessageQueue, remove: removeQueuedMessage, move: moveQueuedMessage } =
     useMessageQueue(session?.id, session?.platform);
+  // A platform-held follow-up (OpenCode v2's inbox) leaves the queue when
+  // the platform delivers it at a turn boundary, which no ocman queue
+  // event reports: reconcile whenever the turn state changes.
+  const sessionStatusForQueue = session?.status;
+  const hasQueuedMessages = queuedMessages.length > 0;
+  useEffect(() => {
+    if (hasQueuedMessages) refreshMessageQueue();
+  }, [sessionStatusForQueue, hasQueuedMessages, refreshMessageQueue]);
 
   const {
     awaitingAssistantResponse,

@@ -278,6 +278,19 @@ func (p *remotePlatform) RejectQuestion(ctx context.Context, req platforms.Rejec
 	})
 }
 
+func (p *remotePlatform) NativeQueued(ctx context.Context, sessionID string) ([]platforms.NativeQueuedMessage, error) {
+	return sliceCall[platforms.NativeQueuedMessage](p, func(c pb.OcmanClient) (*pb.JsonResp, error) {
+		return c.NativeQueued(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})
+	})
+}
+
+func (p *remotePlatform) CancelNativeQueued(ctx context.Context, req platforms.CancelNativeQueuedRequest) error {
+	return p.mutate(ctx, req, func(c pb.OcmanClient, b []byte) error {
+		_, err := c.CancelNativeQueued(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: b})
+		return err
+	})
+}
+
 func (p *remotePlatform) Abort(ctx context.Context, req platforms.AbortRequest) error {
 	return p.mutate(ctx, req, func(c pb.OcmanClient, b []byte) error {
 		_, err := c.Abort(ctx, &pb.PlatformJsonReq{Platform: p.base, Payload: b})
@@ -423,8 +436,11 @@ func remotePlatformError(err error) error {
 	if err == nil {
 		return nil
 	}
-	if status.Code(err) == codes.Unavailable {
+	switch status.Code(err) {
+	case codes.Unavailable:
 		return errors.Join(platforms.ErrPlatformUnreachable, err)
+	case codes.Unimplemented: // includes a remote too old to know the RPC
+		return errors.Join(platforms.ErrUnsupported, err)
 	}
 	return err
 }

@@ -14,6 +14,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/NoUseFreak/ocman/internal/ocv2"
 )
 
 // ServerName is the key ocman owns under the config's "mcp" object.
@@ -120,6 +122,9 @@ func Check(wantURL string) (Status, error) {
 	}
 	st.CurrentURL = entry.URL
 	st.Configured = entry.URL == wantURL && enabled(entry)
+	if ocv2.InstalledV2() && (entry.Codemode == nil || *entry.Codemode) {
+		st.Configured = false // installed for v1: v2 would hide ocman's tools behind Code Mode
+	}
 	return st, nil
 }
 
@@ -193,6 +198,8 @@ type mcpServer struct {
 	Type    string `json:"type"`
 	URL     string `json:"url"`
 	Enabled *bool  `json:"enabled"`
+	// Codemode false exposes the tools directly under OpenCode v2.
+	Codemode *bool `json:"codemode"`
 }
 
 // enabled treats a missing "enabled" as true, matching OpenCode, which
@@ -221,11 +228,17 @@ func setMCPEntry(doc map[string]json.RawMessage, url string) error {
 			return fmt.Errorf("%w: \"mcp\" is not an object: %w", ErrNotEditable, err)
 		}
 	}
-	entry, err := json.Marshal(map[string]interface{}{
+	fields := map[string]interface{}{
 		"type":    "remote",
 		"url":     url,
 		"enabled": true,
-	})
+	}
+	if ocv2.InstalledV2() {
+		// v2 hides MCP tools behind its Code Mode `execute` tool by
+		// default; ocman's tools are meant to be called directly.
+		fields["codemode"] = false
+	}
+	entry, err := json.Marshal(fields)
 	if err != nil {
 		return err
 	}

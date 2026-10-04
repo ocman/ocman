@@ -18,6 +18,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/sync/singleflight"
 
+	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/srvtiming"
 )
 
@@ -332,6 +333,9 @@ var lsofWarnOnce sync.Once
 // discoverOpenCodeServersUncached performs the actual lsof-based discovery.
 // Two-phase: enumerate listening opencode PIDs, then fan-out to resolve cwds.
 func discoverOpenCodeServersUncached() []openCodeServer {
+	if ocv2.InstalledV2() {
+		return machineServers()
+	}
 	out, err := exec.Command("lsof", "-iTCP", "-sTCP:LISTEN", "-P", "-n").Output()
 	if err != nil {
 		// Once is enough: this runs on every discovery poll.
@@ -477,11 +481,12 @@ func lookupPortWithWorktreeFold(ports map[string]string, directory string) strin
 	if port := ports[normalizePortDirectory(directory)]; port != "" {
 		return port
 	}
-	root := foldWorktreeToProjectRoot(directory)
-	if root == directory {
-		return ""
+	if root := foldWorktreeToProjectRoot(directory); root != directory {
+		if port := ports[normalizePortDirectory(root)]; port != "" {
+			return port
+		}
 	}
-	return ports[normalizePortDirectory(root)]
+	return MachineServerPort()
 }
 
 // discoverOpenCodePortFresh performs an uncached scan for a single

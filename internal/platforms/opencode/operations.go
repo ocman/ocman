@@ -13,13 +13,13 @@ import (
 	"net/url"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/ocapi"
+	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/srvtiming"
 	"github.com/NoUseFreak/ocman/internal/state"
@@ -358,8 +358,9 @@ func marshalRequest(v any) ([]byte, error) {
 	return payload, nil
 }
 
-// SendMessage submits a composer message through OpenCode's V2 steering API
-// when the session is available there, falling back to the legacy async API.
+// SendMessage submits a composer message via POST /session/{id}/prompt_async.
+// On an OpenCode v2 server the ocv2 transport translates it to v2's prompt
+// API (agent/model switches, delivery).
 func (a *Adapter) SendMessage(ctx context.Context, req platforms.SendMessageRequest) error {
 	lockIndex := crc32.ChecksumIEEE([]byte(req.SessionID)) % uint32(len(a.sendLock))
 	sendMu := &a.sendLock[lockIndex]
@@ -376,11 +377,10 @@ func (a *Adapter) SendMessage(ctx context.Context, req platforms.SendMessageRequ
 		return nil
 	}
 	var upstream *platforms.UpstreamError
-	if errors.As(err, &upstream) {
+	if errors.As(err, &upstream) || errors.Is(err, platforms.ErrUnsupported) {
 		return err
 	}
 	forgetSessionPort(req.SessionID, port)
-	v2Probes.Delete(port)
 	InvalidateOpenCodePortCache()
 	retryPort, _, retryResolveErr := a.resolvePortCtx(ctx, req.SessionID)
 	if retryResolveErr == nil && retryPort != "" && retryPort != port {
@@ -393,96 +393,12 @@ func (a *Adapter) SendMessage(ctx context.Context, req platforms.SendMessageRequ
 }
 
 func sendMessageOnPort(ctx context.Context, port string, req platforms.SendMessageRequest) error {
-	if !serverAdvertisesV2(ctx, port) {
-		return sendMessageLegacy(ctx, port, req)
-	}
-	v2Path := fmt.Sprintf("/api/session/%s", req.SessionID)
-	if body, err := getJSON(ctx, port, v2Path); err == nil && v2SessionMatches(body, req) {
-		err := sendMessageV2(ctx, port, req)
-		var upstream *platforms.UpstreamError
-		if !errors.As(err, &upstream) || (upstream.Status != http.StatusNotFound && upstream.Status != http.StatusMethodNotAllowed) {
-			return err
-		}
+	// Only an OpenCode v2 server holds follow-ups itself (its session
+	// inbox); everything else uses ocman's queue.
+	if req.Delivery != "" && !ocv2.IsV2(ctx, port) {
+		return platforms.ErrUnsupported
 	}
 	return sendMessageLegacy(ctx, port, req)
-}
-
-type v2Probe struct {
-	ok bool
-	at time.Time
-}
-
-// v2Probes caches the per-port /api/health answer so every send doesn't pay
-// an extra round trip. ponytail: 1-minute TTL, ports are reallocated per launch.
-var v2Probes sync.Map
-
-const v2ProbeTTL = time.Minute
-
-func serverAdvertisesV2(ctx context.Context, port string) bool {
-	if v, ok := v2Probes.Load(port); ok && time.Since(v.(v2Probe).at) < v2ProbeTTL {
-		return v.(v2Probe).ok
-	}
-	body, err := getJSON(ctx, port, "/api/health")
-	var transport *url.Error
-	if errors.As(err, &transport) {
-		return false // unreachable isn't an answer; the next send re-probes
-	}
-	var health struct {
-		PID int `json:"pid"`
-	}
-	// A legacy server's 404/HTML answer is cached as "not V2".
-	ok := err == nil && json.Unmarshal(body, &health) == nil && health.PID > 0
-	v2Probes.Store(port, v2Probe{ok: ok, at: time.Now()})
-	return ok
-}
-
-func v2SessionMatches(body []byte, req platforms.SendMessageRequest) bool {
-	mr := parseOpenCodeModelRefInternal(req.Model)
-	if mr != nil && mr.ProviderID == "" {
-		return false
-	}
-	var response struct {
-		Data struct {
-			Agent string `json:"agent"`
-			Model struct {
-				ID         string `json:"id"`
-				ProviderID string `json:"providerID"`
-				Variant    string `json:"variant"`
-			} `json:"model"`
-		} `json:"data"`
-	}
-	if json.Unmarshal(body, &response) != nil {
-		return false
-	}
-	if req.Agent != "" && response.Data.Agent != req.Agent {
-		return false
-	}
-	if mr != nil && (response.Data.Model.ID != mr.ModelID || response.Data.Model.ProviderID != mr.ProviderID) {
-		return false
-	}
-	if req.Reasoning != "" {
-		return response.Data.Model.Variant == req.Reasoning
-	}
-	if mr != nil {
-		return response.Data.Model.Variant == "" || response.Data.Model.Variant == "default"
-	}
-	return true
-}
-
-func sendMessageV2(ctx context.Context, port string, req platforms.SendMessageRequest) error {
-	prompt := map[string]any{"text": req.Message}
-	if len(req.Images) > 0 {
-		files := make([]map[string]string, 0, len(req.Images))
-		for _, img := range req.Images {
-			files = append(files, map[string]string{"uri": img.URL})
-		}
-		prompt["files"] = files
-	}
-	payload, err := marshalRequest(map[string]any{"prompt": prompt, "delivery": "steer"})
-	if err != nil {
-		return err
-	}
-	return postJSON(ctx, port, fmt.Sprintf("/api/session/%s/prompt", req.SessionID), payload)
 }
 
 func sendMessageLegacy(ctx context.Context, port string, req platforms.SendMessageRequest) error {
@@ -502,6 +418,9 @@ func sendMessageLegacy(ctx context.Context, port string, req platforms.SendMessa
 	}
 	if req.Agent != "" {
 		body["agent"] = req.Agent
+	}
+	if req.Delivery != "" {
+		body["delivery"] = req.Delivery // read by the ocv2 translation only
 	}
 	payload, err := marshalRequest(body)
 	if err != nil {

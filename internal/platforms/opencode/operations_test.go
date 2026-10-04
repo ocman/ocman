@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -222,162 +221,21 @@ func TestAdapterAuthenticatesHTTPAndSSE(t *testing.T) {
 	}
 }
 
-func TestSendMessageUsesV2SteeringWhenSessionIsAvailable(t *testing.T) {
-	const sid, dir = "sess-v2-steer", "/tmp/proj-v2-steer"
-	var paths []string
-	var prompt map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		paths = append(paths, r.Method+" "+r.URL.Path)
-		switch r.Method + " " + r.URL.Path {
-		case http.MethodGet + " /api/health":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"pid":123}`))
-		case http.MethodGet + " /api/session/" + sid:
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"data":{"id":"` + sid + `","agent":"build","model":{"id":"gpt-5","providerID":"openai","variant":"high"}}}`))
-		case http.MethodPost + " /api/session/" + sid + "/prompt":
-			if err := json.NewDecoder(r.Body).Decode(&prompt); err != nil {
-				t.Fatal(err)
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"data":{"id":"msg-1"}}`))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-
-	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
-	withTestPort(t, dir, port)
-	a := New(newTestDBWithSession(t, sid, dir), nil)
-	if err := a.SendMessage(context.Background(), platforms.SendMessageRequest{
-		SessionID: sid,
-		Message:   "steer this",
-		Images:    []platforms.ImageAttachment{{URL: "data:image/png;base64,AA==", Mime: "image/png"}},
-		Model:     "openai/gpt-5",
-		Agent:     "build",
-		Reasoning: "high",
-	}); err != nil {
-		t.Fatalf("SendMessage: %v", err)
-	}
-
-	wantPaths := []string{
-		"GET /api/health",
-		"GET /api/session/" + sid,
-		"POST /api/session/" + sid + "/prompt",
-	}
-	if !reflect.DeepEqual(paths, wantPaths) {
-		t.Fatalf("requests = %v, want %v", paths, wantPaths)
-	}
-	if prompt["delivery"] != "steer" {
-		t.Fatalf("delivery = %v, want steer", prompt["delivery"])
-	}
-	promptBody, ok := prompt["prompt"].(map[string]any)
-	if !ok || promptBody["text"] != "steer this" {
-		t.Fatalf("prompt = %#v", prompt["prompt"])
-	}
-	files, ok := promptBody["files"].([]any)
-	if !ok || len(files) != 1 || files[0].(map[string]any)["uri"] != "data:image/png;base64,AA==" {
-		t.Fatalf("files = %#v", promptBody["files"])
-	}
-}
-
-func TestSendMessageFallsBackToLegacyWhenV2SelectionDiffers(t *testing.T) {
-	const sid, dir = "sess-v2-selection", "/tmp/proj-v2-selection"
-	var paths []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		paths = append(paths, r.Method+" "+r.URL.Path)
-		switch r.Method + " " + r.URL.Path {
-		case http.MethodGet + " /api/health":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"pid":123}`))
-		case http.MethodGet + " /api/session/" + sid:
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"data":{"id":"` + sid + `","agent":"plan","model":{"id":"gpt-5","providerID":"openai","variant":"high"}}}`))
-		case http.MethodPost + " /session/" + sid + "/prompt_async":
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-
-	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
-	withTestPort(t, dir, port)
-	a := New(newTestDBWithSession(t, sid, dir), nil)
-	if err := a.SendMessage(context.Background(), platforms.SendMessageRequest{
-		SessionID: sid,
-		Message:   "use build",
-		Model:     "openai/gpt-5",
-		Agent:     "build",
-		Reasoning: "high",
-	}); err != nil {
-		t.Fatalf("SendMessage: %v", err)
-	}
-
-	wantPaths := []string{"GET /api/health", "GET /api/session/" + sid, "POST /session/" + sid + "/prompt_async"}
-	if !reflect.DeepEqual(paths, wantPaths) {
-		t.Fatalf("requests = %v, want %v", paths, wantPaths)
-	}
-}
-
-func TestV2SessionMatches(t *testing.T) {
-	const matching = `{"data":{"agent":"build","model":{"id":"gpt-5","providerID":"openai","variant":"high"}}}`
-	base := platforms.SendMessageRequest{Agent: "build", Model: "openai/gpt-5", Reasoning: "high"}
-	tests := []struct {
-		name string
-		body string
-		req  platforms.SendMessageRequest
-		want bool
-	}{
-		{name: "match", body: matching, req: base, want: true},
-		{name: "implicit variant rejects active override", body: matching, req: platforms.SendMessageRequest{Agent: "build", Model: "openai/gpt-5"}, want: false},
-		{name: "default variant", body: `{"data":{"agent":"build","model":{"id":"gpt-5","providerID":"openai","variant":"default"}}}`, req: platforms.SendMessageRequest{Agent: "build", Model: "openai/gpt-5"}, want: true},
-		{name: "missing selection uses current defaults", body: matching, req: platforms.SendMessageRequest{}, want: true},
-		{name: "model without provider", body: matching, req: platforms.SendMessageRequest{Agent: "build", Model: "gpt-5"}, want: false},
-		{name: "malformed response", body: `{`, req: base, want: false},
-		{name: "different agent", body: matching, req: platforms.SendMessageRequest{Agent: "plan", Model: "openai/gpt-5", Reasoning: "high"}, want: false},
-		{name: "different model", body: matching, req: platforms.SendMessageRequest{Agent: "build", Model: "openai/gpt-4", Reasoning: "high"}, want: false},
-		{name: "different variant", body: matching, req: platforms.SendMessageRequest{Agent: "build", Model: "openai/gpt-5", Reasoning: "low"}, want: false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := v2SessionMatches([]byte(tt.body), tt.req); got != tt.want {
-				t.Fatalf("v2SessionMatches() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestSendMessageSerializesV2SelectionAndPromptPerSession(t *testing.T) {
-	const sid, dir = "sess-v2-serialized", "/tmp/proj-v2-serialized"
+func TestSendMessageSerializesPromptsPerSession(t *testing.T) {
+	const sid, dir = "sess-serialized", "/tmp/proj-serialized"
 	firstPrompt := make(chan struct{})
 	release := make(chan struct{})
-	secondProbe := make(chan struct{})
-	var probes atomic.Int32
+	var prompts atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method + " " + r.URL.Path {
-		case http.MethodGet + " /api/health":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"pid":123}`))
-		case http.MethodGet + " /api/session/" + sid:
-			if probes.Add(1) == 2 {
-				close(secondProbe)
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"data":{"agent":"build","model":{"id":"gpt-5","providerID":"openai","variant":"default"}}}`))
-		case http.MethodPost + " /api/session/" + sid + "/prompt":
-			select {
-			case <-firstPrompt:
-			default:
-				close(firstPrompt)
-				<-release
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"data":{"id":"msg"}}`))
-		default:
+		if r.Method != http.MethodPost || r.URL.Path != "/session/"+sid+"/prompt_async" {
 			http.NotFound(w, r)
+			return
 		}
+		if prompts.Add(1) == 1 {
+			close(firstPrompt)
+			<-release
+		}
+		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
 
@@ -388,16 +246,10 @@ func TestSendMessageSerializesV2SelectionAndPromptPerSession(t *testing.T) {
 	errs := make(chan error, 2)
 	go func() { errs <- a.SendMessage(context.Background(), req) }()
 	<-firstPrompt
-	secondStarted := make(chan struct{})
-	go func() {
-		close(secondStarted)
-		errs <- a.SendMessage(context.Background(), req)
-	}()
-	<-secondStarted
-	select {
-	case <-secondProbe:
-		t.Fatal("second send probed V2 before the first prompt completed")
-	case <-time.After(50 * time.Millisecond):
+	go func() { errs <- a.SendMessage(context.Background(), req) }()
+	time.Sleep(50 * time.Millisecond)
+	if n := prompts.Load(); n != 1 {
+		t.Fatalf("second send reached OpenCode before the first finished (%d prompts)", n)
 	}
 	close(release)
 	for range 2 {
@@ -405,86 +257,8 @@ func TestSendMessageSerializesV2SelectionAndPromptPerSession(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-}
-
-func TestSendMessageUsesLegacyWhenHealthDoesNotAdvertiseV2(t *testing.T) {
-	const sid, dir = "sess-v1-steer", "/tmp/proj-v1-steer"
-	var paths []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		paths = append(paths, r.Method+" "+r.URL.Path)
-		if r.Method == http.MethodGet && r.URL.Path == "/api/health" {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"healthy":true}`))
-			return
-		}
-		if r.Method == http.MethodPost && r.URL.Path == "/session/"+sid+"/prompt_async" {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		http.NotFound(w, r)
-	}))
-	defer server.Close()
-
-	port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
-	withTestPort(t, dir, port)
-	a := New(newTestDBWithSession(t, sid, dir), nil)
-	if err := a.SendMessage(context.Background(), platforms.SendMessageRequest{SessionID: sid, Message: "legacy"}); err != nil {
-		t.Fatalf("SendMessage: %v", err)
-	}
-
-	wantPaths := []string{"GET /api/health", "POST /session/" + sid + "/prompt_async"}
-	if !reflect.DeepEqual(paths, wantPaths) {
-		t.Fatalf("requests = %v, want %v", paths, wantPaths)
-	}
-}
-
-func TestSendMessageFallsBackWhenV2PromptIsUnavailable(t *testing.T) {
-	for _, status := range []int{http.StatusNotFound, http.StatusMethodNotAllowed} {
-		t.Run(http.StatusText(status), func(t *testing.T) {
-			const sid, dir = "sess-partial-v2", "/tmp/proj-partial-v2"
-			var paths []string
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				paths = append(paths, r.Method+" "+r.URL.Path)
-				switch r.Method + " " + r.URL.Path {
-				case http.MethodGet + " /api/health":
-					w.Header().Set("Content-Type", "application/json")
-					_, _ = w.Write([]byte(`{"pid":123}`))
-				case http.MethodGet + " /api/session/" + sid:
-					w.Header().Set("Content-Type", "application/json")
-					_, _ = w.Write([]byte(`{"data":{"agent":"build","model":{"id":"gpt-5","providerID":"openai","variant":"default"}}}`))
-				case http.MethodPost + " /api/session/" + sid + "/prompt":
-					w.WriteHeader(status)
-				case http.MethodPost + " /session/" + sid + "/prompt_async":
-					w.WriteHeader(http.StatusNoContent)
-				default:
-					http.NotFound(w, r)
-				}
-			}))
-			defer server.Close()
-
-			port := strings.TrimPrefix(server.URL, "http://127.0.0.1:")
-			withTestPort(t, dir, port)
-			a := New(newTestDBWithSession(t, sid, dir), nil)
-			err := a.SendMessage(context.Background(), platforms.SendMessageRequest{
-				SessionID: sid,
-				Message:   "fallback",
-				Model:     "openai/gpt-5",
-				Agent:     "build",
-			})
-			if err != nil {
-				t.Fatalf("SendMessage: %v", err)
-			}
-
-			wantPaths := []string{
-				"GET /api/health",
-				"GET /api/session/" + sid,
-				"POST /api/session/" + sid + "/prompt",
-				"POST /session/" + sid + "/prompt_async",
-			}
-			if !reflect.DeepEqual(paths, wantPaths) {
-				t.Fatalf("requests = %v, want %v", paths, wantPaths)
-			}
-		})
+	if n := prompts.Load(); n != 2 {
+		t.Fatalf("prompts = %d, want 2", n)
 	}
 }
 
@@ -1456,58 +1230,3 @@ func TestCreateSession_TitleInCreateBodySkipsPatch(t *testing.T) {
 	}
 }
 
-// The V2 health probe is answered from cache within its TTL; transport
-// failures are not cached.
-func TestServerAdvertisesV2_CachesPerPort(t *testing.T) {
-	var probes int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&probes, 1)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"pid":42}`))
-	}))
-	defer srv.Close()
-	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
-	t.Cleanup(func() { v2Probes.Delete(port) })
-	// Reproduce an ephemeral port recycled from an earlier fixture.
-	v2Probes.Store(port, v2Probe{ok: true, at: time.Now()})
-	v2Probes.Delete(port) // This fixture must start with its own probe answer.
-	for range 3 {
-		if !serverAdvertisesV2(context.Background(), port) {
-			t.Fatal("want V2")
-		}
-	}
-	if got := atomic.LoadInt32(&probes); got != 1 {
-		t.Fatalf("probed %d times, want 1", got)
-	}
-	srv.Close()
-	v2Probes.Delete(port)
-	if serverAdvertisesV2(context.Background(), port) {
-		t.Fatal("closed server reported V2")
-	}
-	if _, cached := v2Probes.Load(port); cached {
-		t.Fatal("transport failure was cached")
-	}
-}
-
-// A legacy server's 404 is an answer: cached as "not V2", not re-probed.
-func TestServerAdvertisesV2_CachesLegacyAnswer(t *testing.T) {
-	var probes int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&probes, 1)
-		http.NotFound(w, r)
-	}))
-	defer srv.Close()
-	port := strings.TrimPrefix(srv.URL, "http://127.0.0.1:")
-	t.Cleanup(func() { v2Probes.Delete(port) })
-	// The earlier fixture may have advertised V2 on this same port.
-	v2Probes.Store(port, v2Probe{ok: true, at: time.Now()})
-	v2Probes.Delete(port) // Isolate the legacy answer from previous fixtures.
-	for range 2 {
-		if serverAdvertisesV2(context.Background(), port) {
-			t.Fatal("legacy server reported V2")
-		}
-	}
-	if got := atomic.LoadInt32(&probes); got != 1 {
-		t.Fatalf("probed %d times, want 1", got)
-	}
-}

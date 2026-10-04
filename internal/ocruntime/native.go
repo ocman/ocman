@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/tmux"
@@ -61,12 +62,21 @@ func (r *NativeRuntime) Launch(ctx context.Context, spec LaunchSpec) (*Instance,
 	}
 
 	env := map[string]string{}
-	if spec.PermissionJSON != "" {
+	if spec.PermissionJSON != "" && !spec.V2 { // v2 has no OPENCODE_PERMISSION
 		env["OPENCODE_PERMISSION"] = spec.PermissionJSON
 	}
 	r.auth.AddServerEnv(env)
 
 	command := tmux.OpencodeCommandForPort(spec.Port)
+	if spec.V2 {
+		command = tmux.OpencodeServeCommandForPort(spec.Port)
+		// tmux panes inherit the tmux server's environment, not ocman's:
+		// carry an OPENCODE_DB override so ocman reads the database the
+		// server it launched writes.
+		if db := os.Getenv("OPENCODE_DB"); db != "" {
+			env["OPENCODE_DB"] = db
+		}
+	}
 	session, err := r.launch(ctx, spec.RepoRoot, command, env)
 	if err != nil {
 		return nil, fmt.Errorf("ocruntime: launch native tmux opencode: %w", err)

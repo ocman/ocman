@@ -20,6 +20,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/gui"
 	"github.com/NoUseFreak/ocman/internal/ocapi"
+	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/opencodeskills"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	opencodeplatform "github.com/NoUseFreak/ocman/internal/platforms/opencode"
@@ -278,6 +279,11 @@ func main() {
 	opencodePassword, err := resolveOpenCodePassword(*opencodePasswordFile, *opencodeGeneratePassword)
 	if err != nil {
 		fatal("Failed to configure OpenCode server auth: %v", err)
+	}
+	if opencodePassword == "" && ocv2.InstalledV2() {
+		if opencodePassword, err = v2ServerPassword(ctx, stateDB); err != nil {
+			fatal("Failed to configure OpenCode v2 server auth: %v", err)
+		}
 	}
 	opencodeAuth := ocapi.New(opencodePassword)
 

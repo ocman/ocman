@@ -257,11 +257,12 @@ func portForDirectory(ports map[string]string, directory string) string {
 	if port, ok := ports[resolveSessionDirectory(directory)]; ok {
 		return port
 	}
-	root := foldWorktreeToProjectRoot(directory)
-	if root == directory {
-		return ""
+	if root := foldWorktreeToProjectRoot(directory); root != directory {
+		if port := ports[resolveSessionDirectory(root)]; port != "" {
+			return port
+		}
 	}
-	return ports[resolveSessionDirectory(root)]
+	return MachineServerPort()
 }
 
 // fetchSessionStatusSnapshot reads GET /session/status from one instance and

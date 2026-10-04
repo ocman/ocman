@@ -16,6 +16,8 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
+
+	"github.com/NoUseFreak/ocman/internal/ocv2"
 )
 
 // CutoffAge is how old a session's last update must be before its diffs
@@ -119,7 +121,14 @@ func (r *Runner) DeleteDump() error {
 	return nil
 }
 
+// ErrV2 refuses maintenance on OpenCode v2, whose history lives in
+// session_message/session_v2: the v1 diff layout this job moves is gone.
+var ErrV2 = errors.New("database maintenance supports OpenCode v1 only")
+
 func (r *Runner) start(job string, names []string, body func(context.Context, *jobRun) error) error {
+	if ocv2.InstalledV2() {
+		return ErrV2
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.status.Running {

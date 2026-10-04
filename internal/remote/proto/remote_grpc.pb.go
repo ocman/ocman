@@ -49,6 +49,8 @@ const (
 	Ocman_ForkSession_FullMethodName            = "/ocman.remote.v1.Ocman/ForkSession"
 	Ocman_MoveSession_FullMethodName            = "/ocman.remote.v1.Ocman/MoveSession"
 	Ocman_CreateSession_FullMethodName          = "/ocman.remote.v1.Ocman/CreateSession"
+	Ocman_NativeQueued_FullMethodName           = "/ocman.remote.v1.Ocman/NativeQueued"
+	Ocman_CancelNativeQueued_FullMethodName     = "/ocman.remote.v1.Ocman/CancelNativeQueued"
 	Ocman_StreamEvents_FullMethodName           = "/ocman.remote.v1.Ocman/StreamEvents"
 	Ocman_GitInfo_FullMethodName                = "/ocman.remote.v1.Ocman/GitInfo"
 	Ocman_GitDiff_FullMethodName                = "/ocman.remote.v1.Ocman/GitDiff"
@@ -140,6 +142,8 @@ type OcmanClient interface {
 	ForkSession(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*JsonResp, error)
 	MoveSession(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*Empty, error)
 	CreateSession(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*JsonResp, error)
+	NativeQueued(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*JsonResp, error)
+	CancelNativeQueued(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*Empty, error)
 	// --- Streaming events (tunneled to hub SSE) ---
 	StreamEvents(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (grpc.ServerStreamingClient[EventChunk], error)
 	// --- Host services (directory-scoped) ---
@@ -490,6 +494,26 @@ func (c *ocmanClient) CreateSession(ctx context.Context, in *PlatformJsonReq, op
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(JsonResp)
 	err := c.cc.Invoke(ctx, Ocman_CreateSession_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *ocmanClient) NativeQueued(ctx context.Context, in *SessionRef, opts ...grpc.CallOption) (*JsonResp, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(JsonResp)
+	err := c.cc.Invoke(ctx, Ocman_NativeQueued_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *ocmanClient) CancelNativeQueued(ctx context.Context, in *PlatformJsonReq, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Ocman_CancelNativeQueued_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -933,6 +957,8 @@ type OcmanServer interface {
 	ForkSession(context.Context, *PlatformJsonReq) (*JsonResp, error)
 	MoveSession(context.Context, *PlatformJsonReq) (*Empty, error)
 	CreateSession(context.Context, *PlatformJsonReq) (*JsonResp, error)
+	NativeQueued(context.Context, *SessionRef) (*JsonResp, error)
+	CancelNativeQueued(context.Context, *PlatformJsonReq) (*Empty, error)
 	// --- Streaming events (tunneled to hub SSE) ---
 	StreamEvents(*SessionRef, grpc.ServerStreamingServer[EventChunk]) error
 	// --- Host services (directory-scoped) ---
@@ -1078,6 +1104,12 @@ func (UnimplementedOcmanServer) MoveSession(context.Context, *PlatformJsonReq) (
 }
 func (UnimplementedOcmanServer) CreateSession(context.Context, *PlatformJsonReq) (*JsonResp, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateSession not implemented")
+}
+func (UnimplementedOcmanServer) NativeQueued(context.Context, *SessionRef) (*JsonResp, error) {
+	return nil, status.Error(codes.Unimplemented, "method NativeQueued not implemented")
+}
+func (UnimplementedOcmanServer) CancelNativeQueued(context.Context, *PlatformJsonReq) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method CancelNativeQueued not implemented")
 }
 func (UnimplementedOcmanServer) StreamEvents(*SessionRef, grpc.ServerStreamingServer[EventChunk]) error {
 	return status.Error(codes.Unimplemented, "method StreamEvents not implemented")
@@ -1744,6 +1776,42 @@ func _Ocman_CreateSession_Handler(srv interface{}, ctx context.Context, dec func
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(OcmanServer).CreateSession(ctx, req.(*PlatformJsonReq))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Ocman_NativeQueued_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SessionRef)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).NativeQueued(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_NativeQueued_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).NativeQueued(ctx, req.(*SessionRef))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Ocman_CancelNativeQueued_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PlatformJsonReq)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(OcmanServer).CancelNativeQueued(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Ocman_CancelNativeQueued_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(OcmanServer).CancelNativeQueued(ctx, req.(*PlatformJsonReq))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2486,6 +2554,14 @@ var Ocman_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateSession",
 			Handler:    _Ocman_CreateSession_Handler,
+		},
+		{
+			MethodName: "NativeQueued",
+			Handler:    _Ocman_NativeQueued_Handler,
+		},
+		{
+			MethodName: "CancelNativeQueued",
+			Handler:    _Ocman_CancelNativeQueued_Handler,
 		},
 		{
 			MethodName: "GitInfo",

@@ -28,6 +28,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
+	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -53,6 +54,9 @@ type Deps struct {
 	// DiscoverPort returns the port of an already-running OpenCode server
 	// rooted at the project, or "" when none exists.
 	DiscoverPort func(directory string) string
+	// SetMachineServer publishes the port of the OpenCode v2 server that
+	// serves every directory on this machine ("" when there is none).
+	SetMachineServer func(port string)
 	// ManagedStore persists managed-instance records so a project's
 	// opencode survives an ocman restart (#391, AD-5). Optional: when nil
 	// the host falls back to the in-memory map alone. When present, the
@@ -276,6 +280,9 @@ func (h *Host) LaunchTmux(ctx context.Context, req hostsvc.LaunchTmuxRequest) (*
 // checkout. It is the only code path that launches opencode for a project
 // (spec/one-opencode-per-project D-1/D-4).
 func (h *Host) EnsureProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	if ocv2.InstalledV2() {
+		return h.ensureMachine(ctx, req.ProjectDir, h.ensureLocked)
+	}
 	repoRoot, err := projectOpencodeRoot(ctx, req.ProjectDir)
 	if err != nil {
 		return nil, err
@@ -330,6 +337,10 @@ func (h *Host) sfDoDetached(ctx context.Context, repoRoot string, fn func(contex
 
 func (h *Host) StopProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) error {
 	repoRoot, err := projectOpencodeRoot(ctx, req.ProjectDir)
+	if ocv2.InstalledV2() {
+		repoRoot, err = machineRoot(), nil
+		h.publishMachineServer("")
+	}
 	if err != nil {
 		if errors.Is(err, git.ErrNotARepo) {
 			return nil
@@ -360,6 +371,9 @@ func (h *Host) StopProjectOpencode(ctx context.Context, req hostsvc.EnsureProjec
 // directly (never EnsureProjectOpencode, which would sf.Do the same key
 // and deadlock).
 func (h *Host) RestartProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
+	if ocv2.InstalledV2() {
+		return h.ensureMachine(ctx, req.ProjectDir, h.restartLocked)
+	}
 	repoRoot, err := projectOpencodeRoot(ctx, req.ProjectDir)
 	if err != nil {
 		return nil, err
@@ -486,6 +500,7 @@ func (h *Host) launchAndTrack(ctx context.Context, repoRoot string) (*hostsvc.En
 		Host:           "127.0.0.1",
 		Port:           port,
 		PermissionJSON: permJSON,
+		V2:             ocv2.InstalledV2(),
 	})
 	if err != nil {
 		log.WithError(err).WithField("repoRoot", repoRoot).Error("host: failed to launch project opencode")

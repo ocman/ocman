@@ -21,7 +21,9 @@ func (s *Server) newLocalHost() hostsvc.Host {
 		LaunchTmux:   s.gateLaunchTmux(tmux.LaunchOpencode),
 		Runtime:      s.gatedRuntime(),
 		DiscoverPort: opencode.DiscoverOpenCodePortFresh,
-		ManagedStore: managedStoreOrNil(s.stateDB),
+		// OpenCode v2: one server per machine, published to discovery.
+		SetMachineServer: opencode.SetMachineServer,
+		ManagedStore:     managedStoreOrNil(s.stateDB),
 		// CreateSession routes worktree-session creation through the shared
 		// session-mutation service (same validated path + hooks as REST/gRPC).
 		// Resolved lazily: s.sessions is assigned after newLocalHost runs.

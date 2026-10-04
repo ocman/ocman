@@ -275,6 +275,7 @@ func (s *Server) broadcastQueueUpdated(ctx context.Context, platform, sessionID 
 			messages = append(messages, toQueuedMessageView(m))
 		}
 	}
+	messages = append(messages, s.nativeQueuedViews(ctx, platform, sessionID)...)
 	payload, err := json.Marshal(map[string]interface{}{
 		"sessionID": sessionID,
 		"messages":  messages,

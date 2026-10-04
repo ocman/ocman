@@ -105,6 +105,9 @@ func svcErr(err error) error {
 	if errors.Is(err, platforms.ErrPlatformUnreachable) {
 		return status.Error(codes.Unavailable, err.Error())
 	}
+	if errors.Is(err, platforms.ErrUnsupported) {
+		return status.Error(codes.Unimplemented, err.Error())
+	}
 	return err
 }
 
@@ -339,6 +342,38 @@ func (s *Server) RejectQuestion(ctx context.Context, req *pb.PlatformJsonReq) (*
 		return nil, err
 	}
 	return &pb.Empty{}, svcErr(s.sessions.RejectQuestion(ctx, req.Platform, rr))
+}
+
+func (s *Server) NativeQueued(ctx context.Context, req *pb.SessionRef) (*pb.JsonResp, error) {
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	nq, ok := p.(platforms.NativeQueue)
+	if !ok {
+		return nil, svcErr(platforms.ErrUnsupported)
+	}
+	msgs, err := nq.NativeQueued(ctx, req.SessionId)
+	if err != nil {
+		return nil, svcErr(err)
+	}
+	return jsonResp(msgs, nil)
+}
+
+func (s *Server) CancelNativeQueued(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {
+	var cr platforms.CancelNativeQueuedRequest
+	if err := unmarshalJSON(req.Payload, &cr); err != nil {
+		return nil, err
+	}
+	p, err := s.platformFor(req.Platform)
+	if err != nil {
+		return nil, err
+	}
+	nq, ok := p.(platforms.NativeQueue)
+	if !ok {
+		return nil, svcErr(platforms.ErrUnsupported)
+	}
+	return &pb.Empty{}, svcErr(nq.CancelNativeQueued(ctx, cr))
 }
 
 func (s *Server) Abort(ctx context.Context, req *pb.PlatformJsonReq) (*pb.Empty, error) {

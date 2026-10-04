@@ -12,6 +12,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 	_ "modernc.org/sqlite"
+
+	"github.com/NoUseFreak/ocman/internal/ocv2"
 )
 
 // DB wraps the SQLite connection.
@@ -24,6 +26,9 @@ type DB struct {
 	// mirror, when enabled, serves the analytics queries; see
 	// analytics_mirror.go.
 	mirror *analyticsMirror
+	// v2 is true when OpenCode v2 is installed and reads go through the
+	// v1 views over its schema (v2views.go).
+	v2 bool
 }
 
 // detectSessionTotals probes the session schema once. Older OpenCode
@@ -111,6 +116,10 @@ func DefaultDBPath() string {
 // WAL.
 func Open(path string) (*DB, error) {
 	dsn := fmt.Sprintf("file:%s?mode=ro&_journal_mode=WAL&_query_only=1&_busy_timeout=5000", path)
+	v2 := ocv2.InstalledV2()
+	if v2 {
+		useV2Views(dsn)
+	}
 	// otelsql.Open wraps the underlying sqlite3 driver so every
 	// database/sql operation produces a span and increments the
 	// standard db.client.* metrics. When telemetry is disabled the
@@ -143,10 +152,13 @@ func Open(path string) (*DB, error) {
 			attribute.String("db.name", "opencode"),
 		),
 	)
-	d := &DB{db: db}
+	d := &DB{db: db, v2: v2}
 	d.detectSessionTotals()
 	return d, nil
 }
+
+// V2 reports whether the database is read through the OpenCode v2 views.
+func (d *DB) V2() bool { return d.v2 }
 
 // OpenReadWrite opens the database in read-write mode. This is intended for
 // test setup where schema creation must happen before read-only access.

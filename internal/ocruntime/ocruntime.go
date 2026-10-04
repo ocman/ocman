@@ -29,6 +29,9 @@ type LaunchSpec struct {
 	Host           string // host to bind/reach (e.g. "127.0.0.1")
 	Port           int    // ocman-allocated port
 	PermissionJSON string // seeded as OPENCODE_PERMISSION (empty = none)
+	// V2 launches OpenCode v2's headless `opencode serve` (one server for
+	// the whole machine) instead of the v1 TUI.
+	V2 bool
 }
 
 // Instance is a launched OpenCode instance.

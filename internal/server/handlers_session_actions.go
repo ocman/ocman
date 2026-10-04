@@ -59,7 +59,7 @@ func (s *Server) handleSessionMessage(w http.ResponseWriter, r *http.Request) {
 		// it to finish. Both paths validate message-or-images.
 		var err error
 		if req.Queue {
-			err = s.queueSvc().Enqueue(r.Context(), platformHint(r), true, send)
+			err = s.enqueueFollowUp(r.Context(), platformHint(r), send)
 		} else {
 			err = s.sendNow(r.Context(), platformHint(r), send)
 		}

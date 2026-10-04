@@ -529,6 +529,10 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	go s.runLLMMetricsLoop(ctx)
 	go s.runDatabaseSizeLoop(ctx)
 	go s.runQueueSweep(ctx)
+	// OpenCode v2 runs one server per machine; keep it online.
+	if sup, ok := s.router().Local().(interface{ RunMachineSupervisor(context.Context) }); ok {
+		go sup.RunMachineSupervisor(ctx)
+	}
 	// Replays conversation replies left unacknowledged by a disconnect or a
 	// crash, and is the clock for their bounded retries.
 	go s.runConversationDeliveryPump(ctx)

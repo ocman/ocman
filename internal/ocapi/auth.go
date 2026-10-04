@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+
+	"github.com/NoUseFreak/ocman/internal/ocv2"
 )
 
 const DefaultUsername = "opencode"
@@ -29,14 +31,23 @@ func (a Auth) AddServerEnv(env map[string]string) {
 	if a.password != "" {
 		env["OPENCODE_SERVER_USERNAME"] = DefaultUsername
 		env["OPENCODE_SERVER_PASSWORD"] = a.password
+		env["OPENCODE_PASSWORD"] = a.password // v2 name; v1 ignores it
 	}
 }
 
-// Transport scopes Basic Auth and 401/403 classification to OpenCode calls.
+// Enabled reports whether a password is configured.
+func (a Auth) Enabled() bool { return a.password != "" }
+
+// Transport scopes Basic Auth and 401/403 classification to OpenCode
+// calls, and translates v1 routes for OpenCode v2 servers (ocv2.Wrap).
 func (a Auth) Transport(base http.RoundTripper) http.RoundTripper {
 	if base == nil {
 		base = http.DefaultTransport
 	}
+	return ocv2.Wrap(a.basic(base))
+}
+
+func (a Auth) basic(base http.RoundTripper) http.RoundTripper {
 	return roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		clone := req.Clone(req.Context())
 		clone.Header = req.Header.Clone()

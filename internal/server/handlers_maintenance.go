@@ -126,7 +126,7 @@ func (s *Server) maintenanceAction(action func(*ocmaint.Runner) error) http.Hand
 		}
 		if err := action(s.maint); err != nil {
 			status := http.StatusConflict
-			if !errors.Is(err, ocmaint.ErrBusy) && !errors.Is(err, os.ErrNotExist) {
+			if !errors.Is(err, ocmaint.ErrBusy) && !errors.Is(err, ocmaint.ErrV2) && !errors.Is(err, os.ErrNotExist) {
 				status = http.StatusInternalServerError
 			}
 			http.Error(w, err.Error(), status)
