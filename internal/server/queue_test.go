@@ -815,6 +815,40 @@ type lifecycleFake struct {
 	calls     int
 }
 
+func TestQueueBusyEmptyLifecycle(t *testing.T) {
+	for _, path := range []string{"enqueue", "sweep", "flush"} {
+		t.Run(path, func(t *testing.T) {
+			srv, reg := newSessionsTestServer(t)
+			sends := 0
+			reg.Register(&lifecycleFake{
+				fakePlatform: &fakePlatform{
+					id: "fake",
+					sendMessageFn: func(platforms.SendMessageRequest) error {
+						sends++
+						return nil
+					},
+				},
+				lifecycle: &platforms.SessionLifecycle{Status: db.StatusBusy},
+			})
+			queue := srv.queueSvc()
+			if err := queue.Enqueue(t.Context(), "fake", path != "enqueue", platforms.SendMessageRequest{SessionID: "s1", Message: "held"}); err != nil {
+				t.Fatal(err)
+			}
+			want := 0
+			switch path {
+			case "sweep":
+				queue.Sweep(t.Context())
+			case "flush":
+				queue.Flush(t.Context(), "fake", "s1")
+				want = 1 // An authoritative idle edge still wins over busy.
+			}
+			if sends != want {
+				t.Fatalf("%s sent %d messages, want %d", path, sends, want)
+			}
+		})
+	}
+}
+
 func (f *lifecycleFake) SessionLifecycle(context.Context, string) (*platforms.SessionLifecycle, error) {
 	f.calls++
 	return f.lifecycle, f.err

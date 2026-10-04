@@ -1,15 +1,57 @@
 package opencode
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
+
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
+
+func TestSessionLifecycleReadsOneMetadataQuery(t *testing.T) {
+	withTestPort(t, "/repo", "7777")
+	exporter := tracetest.NewInMemoryExporter()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
+	previous := otel.GetTracerProvider()
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		otel.SetTracerProvider(previous)
+		_ = provider.Shutdown(context.Background())
+	})
+	a := New(newLifecycleFixtureDB(t, 10000, false), nil)
+	exporter.Reset() // Exclude schema detection and setup reads.
+	if _, err := a.SessionLifecycle(t.Context(), "s"); err != nil {
+		t.Fatal(err)
+	}
+	queries := 0
+	for _, span := range exporter.GetSpans() {
+		if span.Name != "sql.conn.query" {
+			continue
+		}
+		queries++
+		var statement string
+		for _, attr := range span.Attributes {
+			if string(attr.Key) == "db.statement" {
+				statement = attr.Value.AsString()
+			}
+		}
+		if !strings.Contains(statement, "LIMIT 1") || strings.Contains(statement, "part") || strings.Contains(statement, "parent_id") {
+			t.Fatalf("unexpected lifecycle query: %s", statement)
+		}
+	}
+	if queries != 1 {
+		t.Fatalf("lifecycle read made %d DB queries, want one metadata query", queries)
+	}
+}
 
 func TestSessionLifecycleSettlesLatestMessage(t *testing.T) {
 	withTestPort(t, "/repo", "7777")

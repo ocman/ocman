@@ -220,127 +220,9 @@ func (s *Service) Enqueue(ctx context.Context, platformID string, forceQueue boo
 
 	// Idle send fast path — see doc comment.
 	if _, guarded := s.currentDrainGuard(key); existing == 0 && !guarded {
-		s.drainHead(ctx, key, false)
+		s.drainHead(ctx, key, false, nil)
 	}
 	return nil
-}
-
-// Flush sends the single oldest queued message for a session, provided
-// the session is idle. It is a no-op when the session is busy or the
-// queue is empty. Exactly one message is sent per call: that send starts
-// a new turn, and the *next* session.idle edge flushes the next message
-// (one follow-up per turn, matching the feature's intent). On a send
-// error the message stays at the head so a later idle edge retries it.
-//
-// Serialized per-session by a lock so an enqueue-driven flush and an
-// idle-driven flush can never send the same head twice.
-//
-// platformID is required: a session's identity is (platform, sessionID),
-// and the same bare id can exist on several machines. Flushing on the bare
-// id let a local instance's idle edge drain a remote session's queue.
-func (s *Service) Flush(ctx context.Context, platformID, sessionID string) {
-	key := sessionKey{Platform: platformID, SessionID: sessionID}
-	unlock := s.lockFor(key)
-	defer unlock()
-	// A real idle edge re-arms the enqueue fast-path: the previous turn
-	// has genuinely finished, so the next drained message starts a fresh
-	// turn.
-	s.clearDrainedSinceIdle(key)
-	// trustIdle=true: session.idle IS the authoritative turn-finished
-	// signal, so the flush acts on the edge alone.
-	//
-	// Since #488 the status gate this skips is no longer a guess derived
-	// from the last message's shape — it reads the agent's own turn state
-	// — so the old "never derive from inferred status" caveat is gone.
-	// Trusting the edge outright still matters for a narrower reason: it
-	// makes the drain independent of the order in which session.idle and
-	// session.status arrive, and of a failed status snapshot. A gate that
-	// read busy at this instant for either reason would swallow the drain
-	// and strand the queue, since no second idle edge is coming.
-	s.drainHead(ctx, key, true)
-}
-
-// drainHead sends the single oldest queued message. The caller MUST hold
-// the per-session lock. No-op when the queue is empty, or (when
-// trustIdle is false) when the session still reads as busy. On a send
-// error the message stays at the head for a later retry.
-//
-// trustIdle distinguishes the two callers: Flush (session.idle edge)
-// passes true because the edge itself proves the turn ended; the enqueue
-// fast-path passes false because it has no such proof and must gate on
-// the session's reported status.
-func (s *Service) drainHead(ctx context.Context, key sessionKey, trustIdle bool) {
-	sessionID := key.SessionID
-	completion, hasCompletion := s.status.(completionInferer)
-	// Busy gate: never send into a running turn — but only when we don't
-	// already have an authoritative idle signal (see Flush). The completion
-	// read below reports running too, so it is the decision's only read.
-	if !trustIdle && !hasCompletion {
-		if running, ok := s.status.TurnRunning(ctx, key.Platform, sessionID); ok && running {
-			return
-		}
-	}
-
-	head, err := s.store.HeadQueuedMessage(ctx, key.Platform, sessionID)
-	if err != nil {
-		log.WithError(err).WithField("sessionID", sessionID).
-			Warn("queuesvc: reading queue head")
-		return
-	}
-	if head == nil {
-		return // queue empty
-	}
-
-	req := platforms.SendMessageRequest{
-		SessionID: head.SessionID,
-		Message:   head.Text,
-		Images:    decodeImages(head.ImagesJSON),
-		Model:     head.Model,
-		Agent:     head.Agent,
-		Reasoning: head.Reasoning,
-	}
-	messageID := ""
-	messageCreatedAt := int64(0)
-	if hasCompletion {
-		var running, resolved bool
-		messageID, messageCreatedAt, running, _, resolved = completion.LatestMessageState(ctx, head.Platform, sessionID)
-		if !resolved && !trustIdle {
-			return
-		}
-		if running && !trustIdle {
-			return
-		}
-	}
-	if err := s.sender.SendNow(ctx, head.Platform, req); err != nil {
-		// Leave the message at the head; a later idle edge retries. But
-		// count the failure: the drain is strictly head-first, so a
-		// message that can never send (deleted session, unregistered
-		// platform) would otherwise block every later message on this
-		// session forever, with only a log line to show for it.
-		blocked, recErr := s.store.RecordQueuedMessageFailure(ctx, head.ID, err.Error())
-		if recErr != nil {
-			log.WithError(recErr).WithField("messageID", head.ID).
-				Warn("queuesvc: recording send failure")
-		}
-		entry := log.WithError(err).WithField("sessionID", sessionID)
-		if blocked {
-			entry.WithField("messageID", head.ID).
-				Error("queuesvc: queued message set aside after repeated send failures")
-			s.fireNotify(ctx, key)
-		} else {
-			entry.Warn("queuesvc: sending queued message")
-		}
-		return
-	}
-	if _, err := s.store.DeleteQueuedMessage(ctx, head.ID); err != nil {
-		log.WithError(err).WithField("messageID", head.ID).
-			Warn("queuesvc: dequeuing sent message")
-		return
-	}
-	// This send started a turn; block the enqueue fast-path until a real
-	// session.idle edge confirms it finished.
-	s.markDrained(key, messageID, messageCreatedAt)
-	s.fireNotify(ctx, key)
 }
 
 // Sweep drains one message from every session whose queue is non-empty
@@ -368,13 +250,15 @@ func (s *Service) Sweep(ctx context.Context) {
 		// message proves the prior turn ended even if its idle edge was missed.
 		key := sessionKey{Platform: q.Platform, SessionID: q.SessionID}
 		guard, guarded := s.currentDrainGuard(key)
+		var prior *completionState
 		if guarded {
 			completion, supported := s.status.(completionInferer)
 			if !supported {
 				continue
 			}
-			messageID, createdAt, _, completed, ok := completion.LatestMessageState(ctx, q.Platform, q.SessionID)
-			if !ok || !completed || messageID == "" || createdAt <= guard.createdAt || messageID == guard.messageID {
+			prior = &completionState{}
+			prior.messageID, prior.createdAt, prior.running, prior.completed, prior.ok = completion.LatestMessageState(ctx, q.Platform, q.SessionID)
+			if !prior.ok || !prior.completed || prior.messageID == "" || prior.createdAt <= guard.createdAt || prior.messageID == guard.messageID {
 				continue
 			}
 		}
@@ -387,7 +271,7 @@ func (s *Service) Sweep(ctx context.Context) {
 		if stillGuarded {
 			s.clearDrainedSinceIdle(key)
 		}
-		s.drainHead(ctx, key, false)
+		s.drainHead(ctx, key, false, prior)
 		unlock()
 	}
 }

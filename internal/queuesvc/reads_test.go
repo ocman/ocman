@@ -81,6 +81,26 @@ func TestDrainGatesOnTurnRunningWithoutCompletion(t *testing.T) {
 	}
 }
 
+func TestGuardedSweepReadsLifecycleOnce(t *testing.T) {
+	status := &countingStatus{statusStub: statusStub{ok: true, messageID: "user-1", createdAt: 1}}
+	sender := &recSender{}
+	svc := New(&memStore{}, sender, status, nil)
+	for _, message := range []string{"one", "two"} {
+		if err := svc.Enqueue(t.Context(), "opencode", false, platforms.SendMessageRequest{SessionID: "s1", Message: message}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	status.messageID, status.createdAt, status.completed = "assistant-1", 2, true
+	status.reads.Store(0)
+	svc.Sweep(t.Context())
+	if got := status.reads.Load(); got != 1 {
+		t.Fatalf("guarded sweep made %d lifecycle reads, want 1", got)
+	}
+	if got := sender.messages(); len(got) != 2 || got[1] != "two" {
+		t.Fatalf("sent %v, want [one two]", got)
+	}
+}
+
 type onlyTurn struct{ running bool }
 
 func (o onlyTurn) TurnRunning(context.Context, string, string) (bool, bool) { return o.running, true }

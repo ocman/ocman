@@ -156,7 +156,7 @@ flowchart TD
     MCP -->|webhook inbox actions, in-process| Server
     MCP --> Registry
     Registry --> OC[platforms/opencode + internal/db<br/>adapter and read-only queries]
-    Registry --> RP[internal/remote<br/>platform adapter + owner RPCs]
+    Registry -->|session detail + bounded lifecycle reads| RP[internal/remote<br/>platform adapter + owner RPCs]
     Router --> Local[hostsvc/local + composerattachments<br/>host operations + attachment cache]
     Router -->|streamed attachment writes on owner| RP
     Server --> State[internal/state<br/>state.db]
@@ -172,6 +172,14 @@ flowchart TD
 
 - **internal/server.** The HTTP mux, SSE broadcast and fanout, around 60
   handler files, plus tmux, terminal, whisper, auto-approve and routine ticks.
+- **Follow-up queue.** `internal/queuesvc` drains one held message per turn.
+  Each decision uses `platforms.LifecycleReader` for settled status and the
+  latest message identity. The local adapter reads one session and its newest
+  message, without parts, tree or costs. Remotes settle on the owner and return
+  that same bounded DTO through `SessionLifecycle`. Older owners without the
+  RPC fall back to session detail. A guarded sweep reuses its read only after
+  checking the guard generation under the session lock; idle-edge flushes
+  still trust the edge regardless of the status read.
 - **internal/plugins.** External wire DTOs, bounded NDJSON, version negotiation,
   handshake and stream-order validation, executable discovery, and description
   validation. `Server.StartOnListener` scans once; `RescanPlugins` repeats the scan

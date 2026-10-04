@@ -140,10 +140,10 @@ func (i *sessionStatusReader) LatestMessageState(ctx context.Context, platform, 
 	if !ok {
 		return "", 0, false, false, false
 	}
-	if l.LatestMessageID == "" {
-		return "", 0, false, true, true
-	}
 	running := l.Status == db.StatusBusy
+	if l.LatestMessageID == "" {
+		return "", 0, running, !running, true
+	}
 	return l.LatestMessageID, l.LatestMessageCreated, running, l.LatestMessageRole == "assistant" && !running, true
 }
 
