@@ -152,6 +152,23 @@ it('locks machine selection until a transcription lands', async () => {
   delete (navigator as { mediaDevices?: unknown }).mediaDevices;
 });
 
+it('closes an open machine menu when dictation starts', async () => {
+  fakeSpeechRecognition();
+  vi.spyOn(api, 'resolveTargets').mockResolvedValue({ candidates: [target], remotes: [target] });
+  vi.spyOn(api, 'gitBranches').mockResolvedValue({ branches: [] });
+  const onMachineChange = vi.fn();
+  render(<WithShortcuts isRunning={false} newConversation directory="/local/project" sessionId="open-menu-dictation" onMachineChange={onMachineChange} />);
+  const machine = await screen.findByRole('combobox', { name: 'Session machine' });
+  const input = screen.getByRole('textbox');
+  fireEvent.click(machine);
+  const option = screen.getByRole('option', { name: 'Build box' });
+  await act(async () => fireEvent.keyDown(input, { code: 'KeyD', altKey: true }));
+  expect(machine).toBeDisabled();
+  expect(screen.queryByRole('option', { name: 'Build box' })).not.toBeInTheDocument();
+  option.click();
+  expect(onMachineChange).not.toHaveBeenCalled();
+});
+
 it('does not start dictation while switching machines', async () => {
   const recognition = fakeSpeechRecognition();
   vi.spyOn(api, 'resolveTargets').mockResolvedValue({ candidates: [target], remotes: [target] });

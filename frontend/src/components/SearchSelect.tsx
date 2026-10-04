@@ -46,7 +46,10 @@ export function SearchSelect({
   const id = useId();
   const root = useRef<HTMLSpanElement>(null);
   const search = useRef<HTMLInputElement>(null);
-  const [open, setOpen] = useState(false);
+  const [menuOpen, setOpen] = useState(false);
+  // A control disabled while open (e.g. a busy lock) must not stay selectable.
+  const open = menuOpen && !disabled;
+  if (disabled && menuOpen) setOpen(false);
   const [query, setQuery] = useState('');
   const visible = !query.trim() ? options
     : searchOptions ? searchOptions(query)
@@ -101,6 +104,7 @@ export function SearchSelect({
                 disabled={option.disabled}
                 key={option.value}
                 onClick={() => {
+                  if (disabled || option.disabled) return;
                   onChange(option.value);
                   setOpen(false);
                 }}

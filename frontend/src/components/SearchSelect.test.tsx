@@ -91,3 +91,19 @@ it('renders disabled options as unselectable', async () => {
   await user.click(screen.getByRole('option', { name: 'B' }));
   expect(onChange).not.toHaveBeenCalled();
 });
+
+it('closes an open menu when disabled, and keeps it closed after re-enabling', async () => {
+  const user = userEvent.setup();
+  const onChange = vi.fn();
+  const props = { value: 'a', options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }], ariaLabel: 'Pick', placeholder: 'Pick', searchLabel: 'Search', onChange };
+  const { rerender } = render(<SearchSelect {...props} />);
+  await user.click(screen.getByRole('combobox'));
+  const option = screen.getByRole('option', { name: 'B' });
+  rerender(<SearchSelect {...props} disabled />);
+  expect(screen.queryByRole('option')).not.toBeInTheDocument();
+  expect(screen.getByRole('combobox')).toHaveAttribute('aria-expanded', 'false');
+  option.click();
+  expect(onChange).not.toHaveBeenCalled();
+  rerender(<SearchSelect {...props} />);
+  expect(screen.queryByRole('option')).not.toBeInTheDocument();
+});
