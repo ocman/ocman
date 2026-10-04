@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
 import { runSlashCommand, SLASH_COMMANDS, type CommandContext } from './slashCommands';
+import { visibleSidebarSessions } from '../../lib/sidebarHelpers';
+import type { Session } from '../../lib/api';
 
 vi.mock('../../lib/api', () => ({ api: {} }));
 vi.mock('../../lib/remoteLog', () => ({ remoteLog: { error: vi.fn() } }));
@@ -45,6 +47,17 @@ describe('runSlashCommand', () => {
     const c = ctx({ archiveSession: vi.fn().mockRejectedValue(new Error('offline')) });
     await runSlashCommand(c, 'clear', '');
     expect(c.navigate).toHaveBeenCalledWith('/session/new?dir=%2Frepo&platform=opencode');
+  });
+
+  it('/archive moves to the next row the sidebar shows, skipping filtered sessions', async () => {
+    visibleSidebarSessions.current = [{ id: 's1' }, { id: 's3' }] as Session[];
+    try {
+      const c = ctx({ recentSessionsRef: { current: [{ id: 's1' }, { id: 'hidden' }, { id: 's3' }] } });
+      await runSlashCommand(c, 'archive', '');
+      expect(c.navigateToSession).toHaveBeenCalledWith('s3');
+    } finally {
+      visibleSidebarSessions.current = null;
+    }
   });
 
   it('returns false for commands the platform should handle', async () => {

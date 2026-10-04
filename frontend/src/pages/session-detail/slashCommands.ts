@@ -10,6 +10,7 @@ import { api, type Message, type Part, type PlatformCapabilities } from '../../l
 import { newSessionPath } from '../../lib/newSessionPath';
 import { useApiStore } from '../../lib/apiStore';
 import { useUiStore } from '../../lib/uiStore';
+import { visibleSidebarSessions } from '../../lib/sidebarHelpers';
 import { copyTextToClipboard, copyToClipboard } from '../../lib/clipboard';
 import { remoteLog } from '../../lib/remoteLog';
 import { downloadSessionMarkdown, serializeSessionMarkdown } from '../../lib/exportMarkdown';
@@ -59,7 +60,8 @@ export interface SlashCommand {
 
 const archive: SlashCommand = {
   run: async ({ session, recentSessionsRef, archiveSession, navigateToSession, navigate }) => {
-    const recentSessions = recentSessionsRef.current;
+    // The row below in the sidebar as the user sees it (filters applied).
+    const recentSessions: readonly { id: string }[] = visibleSidebarSessions.current ?? recentSessionsRef.current;
     const idx = recentSessions.findIndex((s) => s.id === session.id);
     const nextSession = recentSessions[idx + 1] ?? recentSessions[idx - 1];
     try {

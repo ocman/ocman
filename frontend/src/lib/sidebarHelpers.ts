@@ -126,6 +126,19 @@ export function mergeSidebarSessions(
 }
 
 /**
+ * Sessions the sidebar currently shows, in rendered order, after every
+ * filter (search, children, Factory, routines, archived, collapsed
+ * groups). Written by SessionSidebar; null while it is not mounted.
+ */
+// ponytail: module-level ref, there is one sidebar. Move to a store if a second one appears.
+export const visibleSidebarSessions: { current: readonly Session[] | null } = { current: null };
+
+/** Candidates for "the next session": what the sidebar shows, else `fallback`. */
+export function sidebarNavigableSessions(fallback: readonly Session[]): readonly Session[] {
+  return visibleSidebarSessions.current ?? fallback;
+}
+
+/**
  * Pick the session to navigate to after archiving the active session
  * from the sidebar.
  *

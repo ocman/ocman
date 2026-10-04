@@ -22,7 +22,7 @@ import { BackendStats } from '../../components/BackendStats';
 import { SidebarResizer } from '../../components/SidebarResizer';
 import { SessionSidebarListSkeleton } from '../../components/Skeleton';
 import { GettingStartedEmpty } from '../../components/GettingStartedEmpty';
-import { rollupGroupStatus } from '../../lib/sidebarHelpers';
+import { rollupGroupStatus, visibleSidebarSessions } from '../../lib/sidebarHelpers';
 import { nestSessions } from '../../lib/nestSessions';
 import { useDraftSessionIds } from '../../lib/composerDraft';
 import { useWorkEpics } from '../../lib/queries';
@@ -231,6 +231,30 @@ export function SessionSidebar({
     () => filteredProjectGroups.filter((g) => !g.isPinned),
     [filteredProjectGroups],
   );
+  const flatUnpinned = useMemo(() => {
+    const query = searchQuery.trim();
+    return recentSessions.filter((session) =>
+      !session.pinned &&
+      !hiddenSessions.has(`${session.platform}\0${session.id}`) &&
+      (showChildren || !session.parentId) &&
+      (!query || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory])),
+    );
+  }, [recentSessions, searchQuery, showChildren, siblingGitInfos, hiddenSessions]);
+
+  // Publish what is on screen, in order, so archiving picks the next
+  // session among the rows the user can actually see.
+  useEffect(() => {
+    const sections = sidebarView === 'recent'
+      ? [filteredPinnedSessions, flatUnpinned]
+      : [
+        filteredPinnedSessions,
+        ...sortableGroups
+          .filter((group) => !collapsedProjectSet.has(group.key ?? group.directory))
+          .map((group) => group.sessions),
+      ];
+    visibleSidebarSessions.current = sections.flatMap((rows) => nestSessions(rows).map(({ session }) => session));
+  }, [sidebarView, filteredPinnedSessions, flatUnpinned, sortableGroups, collapsedProjectSet]);
+  useEffect(() => () => { visibleSidebarSessions.current = null; }, []);
 
   const dndSensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
@@ -300,13 +324,7 @@ export function SessionSidebar({
   );
 
   const renderFlatView = () => {
-    const query = searchQuery.trim();
-    const visible = recentSessions.filter((session) =>
-      !hiddenSessions.has(`${session.platform}\0${session.id}`) &&
-      (showChildren || !session.parentId) &&
-      (!query || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory])),
-    );
-    const unpinned = visible.filter((session) => !session.pinned);
+    const unpinned = flatUnpinned;
     return (
       <>
         {filteredPinnedSessions.length > 0 && (
