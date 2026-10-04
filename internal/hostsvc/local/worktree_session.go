@@ -2,7 +2,9 @@ package local
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -122,29 +124,53 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 // config dir without node_modules and, with plugins configured, holds session
 // creation on it (~2.5s); a present node_modules whose lock lists the plugin
 // package is skipped. Best-effort: a failure only costs that install.
+//
+// Only a real, checked-out .opencode directory is seeded (a tracked symlink
+// could redirect writes outside the worktree), existing entries are never
+// replaced, and everything is staged first so a failed copy publishes nothing.
 func seedOpencodeDeps(ctx context.Context, repoRoot, worktree string) {
 	src, dst := filepath.Join(repoRoot, ".opencode"), filepath.Join(worktree, ".opencode")
 	if _, err := os.Stat(filepath.Join(src, "node_modules")); err != nil {
 		return
 	}
-	if err := os.MkdirAll(dst, 0o755); err != nil {
+	if fi, err := os.Lstat(dst); err != nil || !fi.IsDir() {
 		return
 	}
+	var names []string
 	for _, name := range []string{"node_modules", "package.json", "package-lock.json"} {
-		from, to := filepath.Join(src, name), filepath.Join(dst, name)
-		if _, err := os.Stat(from); err != nil {
-			continue
+		_, srcErr := os.Stat(filepath.Join(src, name))
+		_, dstErr := os.Lstat(filepath.Join(dst, name))
+		if srcErr == nil && errors.Is(dstErr, fs.ErrNotExist) {
+			names = append(names, name)
 		}
-		if _, err := os.Stat(to); err == nil {
-			continue
-		}
+	}
+	if len(names) == 0 || names[0] != "node_modules" {
+		return
+	}
+	stage, err := os.MkdirTemp(dst, ".ocman-seed-")
+	if err != nil {
+		return
+	}
+	defer func() { _ = os.RemoveAll(stage) }()
+	for _, name := range names {
 		// -c clones on APFS (falls back to a copy); -R keeps symlinks as links.
-		args := []string{"-R", from, to}
+		args := []string{"-R", filepath.Join(src, name), filepath.Join(stage, name)}
 		if runtime.GOOS == "darwin" {
 			args = append([]string{"-c"}, args...)
 		}
 		if out, err := exec.CommandContext(ctx, "cp", args...).CombinedOutput(); err != nil {
 			log.WithError(err).WithField("output", string(out)).Debug("worktree: seeding .opencode dependencies")
+			return
+		}
+	}
+	// node_modules lands first and the lock last: a tree without its lock
+	// still makes OpenCode reinstall rather than trust it.
+	for _, name := range names {
+		if _, err := os.Lstat(filepath.Join(dst, name)); !errors.Is(err, fs.ErrNotExist) {
+			return
+		}
+		if err := os.Rename(filepath.Join(stage, name), filepath.Join(dst, name)); err != nil {
+			return
 		}
 	}
 }
