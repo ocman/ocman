@@ -42,3 +42,16 @@ func TestGetSessionStatus(t *testing.T) {
 		})
 	}
 }
+
+func TestRecentSessionDirectories(t *testing.T) {
+	d := openTestDB(t)
+	defer d.Close()
+	if _, err := d.db.Exec(`INSERT INTO session(id,directory,time_updated) VALUES
+		('a','/new',200), ('b','/new',300), ('c','/old',50)`); err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.RecentSessionDirectories(t.Context(), 100)
+	if err != nil || len(got) != 1 || got[0] != "/new" {
+		t.Fatalf("RecentSessionDirectories = %v, %v; want [/new]", got, err)
+	}
+}

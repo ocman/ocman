@@ -22,3 +22,23 @@ func (d *DB) GetSessionStatus(ctx context.Context, sessionID string) (SessionSta
 	}
 	return InferSessionStatus(role, finish, lastError, false), nil
 }
+
+// RecentSessionDirectories returns the distinct directories of sessions
+// updated at or after sinceMs. It reads the session table directly, never
+// the cached snapshot, so a turn started moments ago is included.
+func (d *DB) RecentSessionDirectories(ctx context.Context, sinceMs int64) ([]string, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT DISTINCT directory FROM session WHERE time_updated >= ?`, sinceMs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var directory string
+		if err := rows.Scan(&directory); err != nil {
+			return nil, err
+		}
+		out = append(out, directory)
+	}
+	return out, rows.Err()
+}

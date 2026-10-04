@@ -265,6 +265,41 @@ func TestSeedSessionStatusFromInstance_ReadsRecentWorktreeWithSettledStoredStatu
 	}
 }
 
+// A warm sessions snapshot can predate a turn started while the watcher was
+// disconnected: it still shows the worktree's row as old and settled. The
+// window must come from the database, not that snapshot.
+func TestSeedSessionStatusFromInstance_IgnoresStaleSessionsCache(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	worktree := filepath.Join(base, ".worktrees", "project", "feature")
+	for _, dir := range []string{root, worktree} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ResetCachesForTests()
+	stale := newTestDBWithSessions(t, []testSession{
+		{id: "ses-worktree", directory: worktree, messageData: `{"role":"assistant","finish":"stop"}`},
+	})
+	if _, err := getSessionsCached(context.Background(), stale, "", 0); err != nil {
+		t.Fatal(err)
+	}
+	fresh := newTestDBWithSessions(t, []testSession{
+		{id: "ses-worktree", directory: worktree, busy: true, updated: time.Now().UnixMilli()},
+	})
+	fake := newOpencodeFake(t)
+	fake.turnStatus = map[string]string{}
+	fake.turnStatusByDir = map[string]map[string]string{worktree: {"ses-worktree": "busy"}}
+	a := New(fresh, nil)
+	port := fake.Port()
+	if !a.SeedSessionStatusFromInstance(context.Background(), port, 0, []string{root}) {
+		t.Fatal("SeedSessionStatusFromInstance reported failure")
+	}
+	if got := a.turns.turnStateForPort("ses-worktree", port); got != db.TurnRunning {
+		t.Errorf("worktree turnState with stale cache = %v, want TurnRunning", got)
+	}
+}
+
 // If the session list cannot be read, the worktree candidates are unknown;
 // seeding from the root read alone would settle busy worktree sessions.
 func TestSeedSessionStatusFromInstance_SessionListFailureLeavesPortUnseeded(t *testing.T) {

@@ -316,19 +316,19 @@ const statusActiveWindow = 24 * time.Hour
 
 // statusDirectories is promptDirectories plus every existing worktree
 // directory on this port with a session updated inside statusActiveWindow.
-// A session-list failure is returned rather than degraded: seeding from an
+// The window is read straight from the session table, not the cached
+// snapshot, which may predate a turn started while the watcher was away.
+// A read failure is returned rather than degraded: seeding from an
 // incomplete set would settle the busy worktree sessions it could not see.
 func (a *Adapter) statusDirectories(port string, discovered []string) ([]string, error) {
+	out := a.promptDirectories(port, discovered)
 	if a.db == nil {
-		return a.promptDirectories(port, discovered), nil
+		return out, nil
 	}
-	// Read first so promptDirectories, which swallows errors, hits the
-	// same warm cache.
-	sessions, err := getSessionsCached(context.Background(), a.db, "", 0)
+	recent, err := a.db.RecentSessionDirectories(context.Background(), time.Now().Add(-statusActiveWindow).UnixMilli())
 	if err != nil {
 		return nil, err
 	}
-	out := a.promptDirectories(port, discovered)
 	seen := make(map[string]bool, len(out))
 	for _, directory := range out {
 		seen[normalizePortDirectory(directory)] = true
@@ -337,17 +337,16 @@ func (a *Adapter) statusDirectories(port string, discovered []string) ([]string,
 	for _, directory := range discovered {
 		roots[normalizePortDirectory(directory)] = true
 	}
-	cutoff := time.Now().Add(-statusActiveWindow).UnixMilli()
-	for _, session := range sessions {
-		dir := normalizePortDirectory(session.Directory)
-		if session.TimeUpdated < cutoff || seen[dir] || !roots[normalizePortDirectory(foldWorktreeToProjectRoot(session.Directory))] {
+	for _, directory := range recent {
+		dir := normalizePortDirectory(directory)
+		if seen[dir] || !roots[normalizePortDirectory(foldWorktreeToProjectRoot(directory))] {
 			continue
 		}
-		if info, err := os.Stat(session.Directory); err != nil || !info.IsDir() {
+		if info, err := os.Stat(directory); err != nil || !info.IsDir() {
 			continue
 		}
 		seen[dir] = true
-		out = append(out, session.Directory)
+		out = append(out, directory)
 	}
 	return out, nil
 }
