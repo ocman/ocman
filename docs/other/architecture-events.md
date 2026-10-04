@@ -78,6 +78,22 @@ sequenceDiagram
   lock producers use to decide between buffering and parking. The watcher publishes
   titles one at a time, so an older title is never sent after a newer one.
 - Reconnecting and the slow reconciliation poll recover missed events.
+  Sleep or a network change can leave a stream half-open, so it never
+  errors and never reconnects. The browser therefore replaces both the
+  global and the session stream when the user returns: the tab becomes
+  visible after 30 s hidden, the browser comes back `online`, or the clock
+  jumps while visible (the machine slept). The new stream's open runs the
+  usual reconnect reconciliation and skips any pending backoff.
+- A permission reply that lands while the stream is down is never replayed.
+  While a permission prompt is open, the page polls
+  `GET /api/session/{id}/permissions?refresh=1&platform=…`. The `platform`
+  parameter pins the owner, because a bare session id can resolve to another
+  machine. `refresh=1` calls `Platform.RefreshPermissions`, which re-reads
+  OpenCode's live list instead of ocman's observed-prompt cache, which the
+  session stream can bypass. Remotes serve it over the `RefreshPermissions`
+  RPC, and an owner without a live list fails instead of returning its
+  cache. The prompt is dismissed only after two consecutive successful
+  reads that omit it, and stays up whenever a read fails.
 
 Ocman never persists session status. The live turn signal from the running
 OpenCode instance decides whether a session is busy; the last stored message
