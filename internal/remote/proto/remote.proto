@@ -22,6 +22,9 @@ service Ocman {
   // --- Session reads ---
   rpc Sessions(SessionsReq) returns (JsonResp);           // []db.Session
   rpc Session(SessionReq) returns (JsonResp);             // *SessionDetail
+  // Bounded status + latest message for queue decisions. Additive: an older
+  // owner answers Unimplemented and the hub falls back to Session.
+  rpc SessionLifecycle(SessionRef) returns (JsonResp);    // *platforms.SessionLifecycle
   rpc SessionsInactiveBefore(CutoffReq) returns (JsonResp);
   rpc SessionChanges(SessionRef) returns (JsonResp);
   rpc SessionInfo(SessionRef) returns (JsonResp);

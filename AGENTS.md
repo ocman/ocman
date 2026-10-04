@@ -356,6 +356,9 @@ handlers don't bypass the `Host` seam). User-facing docs:
   never leaves the head stranded. A periodic one-minute `Sweep`
   (`runQueueSweep`) is only a recovery backstop: it drains one message from
   each idle session with a standing backlog after a missed edge or crash.
+  Each drain decision makes one owner-routed `platforms.LifecycleReader`
+  read (settled status + latest message; no parts, tree or costs; the
+  `SessionLifecycle` RPC for remotes), never a transcript-sized `Session`.
   Wired in `internal/server/queue.go`.
 - `internal/db/` — read-only SQLite queries against OpenCode's
   `session`, `message`, `part` tables; uses `json_extract` heavily.

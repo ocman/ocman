@@ -271,9 +271,11 @@ func (s *Service) Flush(ctx context.Context, platformID, sessionID string) {
 // the session's reported status.
 func (s *Service) drainHead(ctx context.Context, key sessionKey, trustIdle bool) {
 	sessionID := key.SessionID
+	completion, hasCompletion := s.status.(completionInferer)
 	// Busy gate: never send into a running turn — but only when we don't
-	// already have an authoritative idle signal (see Flush).
-	if !trustIdle {
+	// already have an authoritative idle signal (see Flush). The completion
+	// read below reports running too, so it is the decision's only read.
+	if !trustIdle && !hasCompletion {
 		if running, ok := s.status.TurnRunning(ctx, key.Platform, sessionID); ok && running {
 			return
 		}
@@ -299,7 +301,7 @@ func (s *Service) drainHead(ctx context.Context, key sessionKey, trustIdle bool)
 	}
 	messageID := ""
 	messageCreatedAt := int64(0)
-	if completion, ok := s.status.(completionInferer); ok {
+	if hasCompletion {
 		var running, resolved bool
 		messageID, messageCreatedAt, running, _, resolved = completion.LatestMessageState(ctx, head.Platform, sessionID)
 		if !resolved && !trustIdle {

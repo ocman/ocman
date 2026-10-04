@@ -345,3 +345,21 @@ type Platform interface {
 type UnreadCounter interface {
 	UnreadCounts(ctx context.Context, cutoffs map[string]int64) (map[string]int, error)
 }
+
+// SessionLifecycle is the bounded read behind follow-up queue decisions:
+// the settled status plus the latest message's identity. No parts, no
+// session tree, no costs.
+type SessionLifecycle struct {
+	Status               db.SessionStatus `json:"status"`
+	LatestMessageID      string           `json:"latestMessageId,omitempty"`
+	LatestMessageCreated int64            `json:"latestMessageCreated,omitempty"`
+	LatestMessageRole    string           `json:"latestMessageRole,omitempty"`
+}
+
+// LifecycleReader is optional: adapters that can read a session's
+// lifecycle in time independent of transcript size implement it. An owner
+// that cannot answer (an older remote) returns ErrUnsupported and callers
+// fall back to Session.
+type LifecycleReader interface {
+	SessionLifecycle(ctx context.Context, sessionID string) (*SessionLifecycle, error)
+}

@@ -44,6 +44,26 @@ func TestGetSessionStatus(t *testing.T) {
 	}
 }
 
+func TestGetSessionLifecycle(t *testing.T) {
+	d := openTestDB(t)
+	defer d.Close()
+	if _, err := d.db.Exec(`INSERT INTO session(id,directory) VALUES ('s','/repo'), ('empty','/e')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.db.Exec(`INSERT INTO message(id,session_id,time_created,data) VALUES
+		('old','s',1,'invalid JSON'), ('a','s',2,'invalid JSON'), ('z','s',2,'{"role":"assistant","finish":"stop"}')`); err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.GetSessionLifecycle(t.Context(), "s")
+	want := SessionLifecycle{Directory: "/repo", Status: StatusWaiting, LatestMessageID: "z", LatestMessageCreated: 2, LatestMessageRole: "assistant"}
+	if err != nil || got != want {
+		t.Fatalf("lifecycle = %+v, %v; want %+v", got, err, want)
+	}
+	if got, err := d.GetSessionLifecycle(t.Context(), "empty"); err != nil || got != (SessionLifecycle{Directory: "/e", Status: StatusDone}) {
+		t.Fatalf("empty = %+v, %v", got, err)
+	}
+}
+
 func TestStatusCandidateDirectories(t *testing.T) {
 	d := openTestDB(t)
 	defer d.Close()

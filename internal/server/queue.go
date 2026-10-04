@@ -93,46 +93,58 @@ type queueSender struct{ s *Server }
 
 type sessionStatusReader struct{ s *Server }
 
-func (i *sessionStatusReader) sessionDetail(ctx context.Context, platform, sessionID string) (*platforms.SessionDetail, bool) {
-	var p platforms.Platform
-	var found bool
-	if platform != "" {
-		p, found = i.s.registry.Get(platforms.ID(platform))
-	} else {
-		p, found = i.s.registry.PlatformForSession(ctx, sessionID)
-	}
+// lifecycle makes one owner-routed read of the session's settled status and
+// latest message. It uses the bounded LifecycleReader so the cost does not
+// grow with the transcript; Session(id, 1, 0) limits only the returned page.
+func (i *sessionStatusReader) lifecycle(ctx context.Context, platform, sessionID string) (*platforms.SessionLifecycle, bool) {
+	p, found := i.s.adapterForSession(ctx, platform, sessionID)
 	if !found {
 		return nil, false
 	}
+	if reader, ok := p.(platforms.LifecycleReader); ok {
+		l, err := reader.SessionLifecycle(ctx, sessionID)
+		if !errors.Is(err, platforms.ErrUnsupported) {
+			return l, err == nil && l != nil
+		}
+	}
+	// ponytail: full detail read for owners without the bounded read (an
+	// older remote); drop once every remote serves SessionLifecycle.
 	detail, err := p.Session(ctx, sessionID, 1, 0)
-	return detail, err == nil && detail != nil && detail.Session != nil
+	if err != nil || detail == nil || detail.Session == nil {
+		return nil, false
+	}
+	l := &platforms.SessionLifecycle{Status: detail.Session.Status}
+	if len(detail.Messages) > 0 {
+		message := detail.Messages[0]
+		var data struct {
+			Role string `json:"role"`
+		}
+		if json.Unmarshal(message.Data, &data) != nil {
+			return nil, false
+		}
+		l.LatestMessageID, l.LatestMessageCreated, l.LatestMessageRole = message.ID, message.TimeCreated, data.Role
+	}
+	return l, true
 }
 
 func (i *sessionStatusReader) TurnRunning(ctx context.Context, platform, sessionID string) (bool, bool) {
-	detail, ok := i.sessionDetail(ctx, platform, sessionID)
+	l, ok := i.lifecycle(ctx, platform, sessionID)
 	if !ok {
 		return false, false
 	}
-	return detail.Session.Status == db.StatusBusy, true
+	return l.Status == db.StatusBusy, true
 }
 
 func (i *sessionStatusReader) LatestMessageState(ctx context.Context, platform, sessionID string) (string, int64, bool, bool, bool) {
-	detail, ok := i.sessionDetail(ctx, platform, sessionID)
+	l, ok := i.lifecycle(ctx, platform, sessionID)
 	if !ok {
 		return "", 0, false, false, false
 	}
-	if len(detail.Messages) == 0 {
+	if l.LatestMessageID == "" {
 		return "", 0, false, true, true
 	}
-	message := detail.Messages[0]
-	var data struct {
-		Role string `json:"role"`
-	}
-	if json.Unmarshal(message.Data, &data) != nil {
-		return "", 0, false, false, false
-	}
-	running := detail.Session.Status == db.StatusBusy
-	return message.ID, message.TimeCreated, running, data.Role == "assistant" && !running, true
+	running := l.Status == db.StatusBusy
+	return l.LatestMessageID, l.LatestMessageCreated, running, l.LatestMessageRole == "assistant" && !running, true
 }
 
 func (q *queueSender) SendNow(ctx context.Context, platformID string, req platforms.SendMessageRequest) error {

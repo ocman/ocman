@@ -806,3 +806,63 @@ func TestSessionMessage_EmptyRejected(t *testing.T) {
 		t.Fatalf("status = %d, want 400 for empty message; body=%s", rr.Code, rr.Body)
 	}
 }
+
+// lifecycleFake is a fakePlatform that serves the bounded lifecycle read.
+type lifecycleFake struct {
+	*fakePlatform
+	lifecycle *platforms.SessionLifecycle
+	err       error
+	calls     int
+}
+
+func (f *lifecycleFake) SessionLifecycle(context.Context, string) (*platforms.SessionLifecycle, error) {
+	f.calls++
+	return f.lifecycle, f.err
+}
+
+func TestSessionStatusReaderUsesBoundedLifecycle(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	detailReads := 0
+	fake := &lifecycleFake{
+		fakePlatform: &fakePlatform{
+			id:       "fake",
+			sessions: []db.Session{mkSession("fake", "s1", "t", 1)},
+			sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+				detailReads++
+				return &platforms.SessionDetail{Session: &db.Session{ID: "s1", Status: db.StatusBusy}}, nil
+			},
+		},
+		lifecycle: &platforms.SessionLifecycle{Status: db.StatusWaiting, LatestMessageID: "m2", LatestMessageCreated: 200, LatestMessageRole: "assistant"},
+	}
+	reg.Register(fake)
+	inferer := &sessionStatusReader{s: srv}
+
+	if id, createdAt, running, completed, ok := inferer.LatestMessageState(t.Context(), "fake", "s1"); id != "m2" || createdAt != 200 || running || !completed || !ok {
+		t.Fatalf("latest = (%q, %d, %v, %v, %v), want completed m2", id, createdAt, running, completed, ok)
+	}
+	fake.lifecycle = &platforms.SessionLifecycle{Status: db.StatusBusy, LatestMessageID: "m2", LatestMessageRole: "assistant"}
+	if running, ok := inferer.TurnRunning(t.Context(), "fake", "s1"); !running || !ok {
+		t.Fatalf("turn = (%v, %v), want running", running, ok)
+	}
+	if _, _, running, completed, ok := inferer.LatestMessageState(t.Context(), "", "s1"); !running || completed || !ok {
+		t.Fatalf("reverse-lookup busy = (%v, %v, %v), want running", running, completed, ok)
+	}
+	fake.lifecycle = &platforms.SessionLifecycle{Status: db.StatusDone}
+	if id, _, running, completed, ok := inferer.LatestMessageState(t.Context(), "fake", "s1"); id != "" || running || !completed || !ok {
+		t.Fatalf("empty = (%q, %v, %v, %v), want resolved idle baseline", id, running, completed, ok)
+	}
+	if fake.calls != 4 || detailReads != 0 {
+		t.Fatalf("lifecycle calls = %d, detail reads = %d; want one bounded read per call and no detail reads", fake.calls, detailReads)
+	}
+
+	// A failed bounded read fails closed instead of paying for a detail read.
+	fake.lifecycle, fake.err = nil, platforms.ErrNotFound
+	if _, ok := inferer.TurnRunning(t.Context(), "fake", "s1"); ok || detailReads != 0 {
+		t.Fatalf("not-found resolved=%v detail reads=%d, want unresolved without detail read", ok, detailReads)
+	}
+	// An owner that cannot serve it (an older remote) falls back to Session.
+	fake.err = errors.Join(platforms.ErrUnsupported, errors.New("unimplemented"))
+	if running, ok := inferer.TurnRunning(t.Context(), "fake", "s1"); !running || !ok || detailReads != 1 {
+		t.Fatalf("fallback = (%v, %v) after %d detail reads, want busy from Session", running, ok, detailReads)
+	}
+}
