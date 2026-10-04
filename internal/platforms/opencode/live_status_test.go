@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 )
@@ -216,6 +219,49 @@ func TestSeedSessionStatusFromInstance_IncludesWorktreeDirectories(t *testing.T)
 	}
 	if got := b.turns.turnStateForPort("ses-worktree", port); got != db.TurnUnobserved {
 		t.Errorf("turnState after failed directory read = %v, want TurnUnobserved", got)
+	}
+}
+
+// After a restart the registry is cold, and a just-started worktree turn
+// infers as "done" (its last message is the user's prompt). It must still get
+// a scoped read; a long-idle or deleted worktree must not, since OpenCode
+// boots an instance for every directory it is asked about.
+func TestSeedSessionStatusFromInstance_ReadsRecentWorktreeWithSettledStoredStatus(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	active := filepath.Join(base, ".worktrees", "project", "active")
+	stale := filepath.Join(base, ".worktrees", "project", "stale")
+	deleted := filepath.Join(base, ".worktrees", "project", "deleted")
+	for _, dir := range []string{root, active, stale} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ResetCachesForTests()
+	fake := newOpencodeFake(t)
+	fake.turnStatus = map[string]string{}
+	fake.turnStatusByDir = map[string]map[string]string{active: {"ses-active": "busy"}}
+	now := time.Now().UnixMilli()
+	userLast := `{"role":"user"}`
+	a := New(newTestDBWithSessions(t, []testSession{
+		{id: "ses-root", directory: root, updated: now},
+		{id: "ses-active", directory: active, messageData: userLast, updated: now},
+		{id: "ses-stale", directory: stale, messageData: userLast},
+		{id: "ses-deleted", directory: deleted, messageData: userLast, updated: now},
+	}), nil)
+	port := fake.Port()
+	if !a.SeedSessionStatusFromInstance(context.Background(), port, 0, []string{root}) {
+		t.Fatal("SeedSessionStatusFromInstance reported failure")
+	}
+	if got := a.turns.turnStateForPort("ses-active", port); got != db.TurnRunning {
+		t.Errorf("recent worktree session turnState = %v, want TurnRunning", got)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	for _, hit := range fake.dirHits {
+		if hit == stale || hit == deleted {
+			t.Errorf("queried inactive worktree %q", hit)
+		}
 	}
 }
 

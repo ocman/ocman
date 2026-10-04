@@ -41,6 +41,8 @@ type opencodeFake struct {
 	// only directory-scoped reads; zero = 200.
 	turnStatusByDir   map[string]map[string]string
 	turnStatusDirCode int
+	// dirHits records the directory of every scoped status read.
+	dirHits []string
 	// failJSON, when set, causes the next response to be malformed.
 	failJSON bool
 	// agentBody, when set, is served verbatim for GET /agent.
@@ -85,6 +87,7 @@ func (f *opencodeFake) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		status := f.turnStatusCode
 		turns := f.turnStatus
 		if directory := r.URL.Query().Get("directory"); directory != "" {
+			f.dirHits = append(f.dirHits, directory)
 			turns = f.turnStatusByDir[directory]
 			if f.turnStatusDirCode != 0 {
 				status = f.turnStatusDirCode
@@ -227,6 +230,8 @@ type testSession struct {
 	busy        bool
 	messageData string
 	messages    []string
+	// updated is session.time_updated in ms; zero means 1000.
+	updated int64
 }
 
 func newTestDBWithSessions(t *testing.T, sessions []testSession) *db.DB {
@@ -269,10 +274,14 @@ func newTestDBWithSessions(t *testing.T, sessions []testSession) *db.DB {
 		t.Fatalf("creating schema: %v", err)
 	}
 	for _, session := range sessions {
+		updated := session.updated
+		if updated == 0 {
+			updated = 1000
+		}
 		if _, err := setup.Exec(
 			`INSERT INTO session (id, parent_id, title, directory, time_created, time_updated)
 			 VALUES (?, ?, ?, ?, ?, ?)`,
-			session.id, session.parentID, "test", session.directory, 1000, 1000,
+			session.id, session.parentID, "test", session.directory, 1000, updated,
 		); err != nil {
 			setup.Close()
 			t.Fatalf("seed session: %v", err)

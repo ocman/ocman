@@ -7,6 +7,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"os"
 	"sync"
 	"time"
 
@@ -301,14 +302,56 @@ func fetchSessionStatusSnapshot(ctx context.Context, port, directory string) (ma
 	return out, true
 }
 
+// statusActiveWindow bounds which worktree sessions get a scoped status read
+// regardless of their stored status. A just-started turn infers as "done"
+// (its last message is the user's prompt), so inferred status alone cannot
+// pick the candidates after a restart. OpenCode boots an instance for every
+// directory it is asked about, so the set must stay bounded.
+// ponytail: a turn that has written nothing for a day is missed until its
+// next status event; track per-directory seeding if that matters.
+const statusActiveWindow = 24 * time.Hour
+
+// statusDirectories is promptDirectories plus every existing worktree
+// directory on this port with a session updated inside statusActiveWindow.
+func (a *Adapter) statusDirectories(port string, discovered []string) []string {
+	out := a.promptDirectories(port, discovered)
+	if a.db == nil {
+		return out
+	}
+	seen := make(map[string]bool, len(out))
+	for _, directory := range out {
+		seen[normalizePortDirectory(directory)] = true
+	}
+	roots := make(map[string]bool, len(discovered))
+	for _, directory := range discovered {
+		roots[normalizePortDirectory(directory)] = true
+	}
+	sessions, err := getSessionsCached(context.Background(), a.db, "", 0)
+	if err != nil {
+		return out
+	}
+	cutoff := time.Now().Add(-statusActiveWindow).UnixMilli()
+	for _, session := range sessions {
+		dir := normalizePortDirectory(session.Directory)
+		if session.TimeUpdated < cutoff || seen[dir] || !roots[normalizePortDirectory(foldWorktreeToProjectRoot(session.Directory))] {
+			continue
+		}
+		if info, err := os.Stat(session.Directory); err != nil || !info.IsDir() {
+			continue
+		}
+		seen[dir] = true
+		out = append(out, session.Directory)
+	}
+	return out
+}
+
 // SeedSessionStatusFromInstance fetches and applies one instance's status
 // snapshot. Called by the event watcher each time it connects to a port.
 //
 // One instance serves the project root and every worktree session on it,
 // but OpenCode scopes status per directory. The snapshot therefore merges
-// the unscoped read with one read per candidate directory (the discovered
-// ones plus worktrees with an unfinished turn, the same set prompt
-// reconciliation uses). Any failed read leaves the port unseeded.
+// the unscoped read with one read per statusDirectories candidate. Any
+// failed read leaves the port unseeded.
 func (a *Adapter) SeedSessionStatusFromInstance(ctx context.Context, port string, generation uint64, directories []string) bool {
 	if a == nil || a.turns == nil || port == "" {
 		return false
@@ -320,8 +363,8 @@ func (a *Adapter) SeedSessionStatusFromInstance(ctx context.Context, port string
 	if !ok {
 		return false
 	}
-	// ponytail: sequential reads; candidates are only live directories.
-	for _, directory := range a.promptDirectories(port, directories) {
+	// ponytail: sequential reads; candidates are only recently active directories.
+	for _, directory := range a.statusDirectories(port, directories) {
 		scoped, ok := fetchSessionStatusSnapshot(ctx, port, directory)
 		if !ok {
 			return false
