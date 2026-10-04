@@ -313,30 +313,30 @@ func fetchSessionStatusSnapshot(ctx context.Context, port, directory string) (ma
 // assistant message as soon as a step starts, so that state does not last.
 const statusActiveWindow = 24 * time.Hour
 
-// statusDirectories is promptDirectories plus every existing worktree
-// directory on this port that db.StatusCandidateDirectories says may hold a
-// running turn. Candidates are read straight from the tables, not the cached
-// snapshot, which may predate a turn started while the watcher was away.
-// A read failure is returned rather than degraded: seeding from an
+// statusDirectories is the discovered roots plus every existing directory on
+// this port that promptDirectories or db.StatusCandidateDirectories says may
+// hold a running turn. Candidates are read straight from the tables, not the
+// cached snapshot, which may predate a turn started while the watcher was
+// away. Non-root candidates must still exist: OpenCode would boot state for
+// a deleted worktree, and its failed read would block the whole seed. A
+// table read failure is returned rather than degraded: seeding from an
 // incomplete set would settle the busy worktree sessions it could not see.
 func (a *Adapter) statusDirectories(port string, discovered []string) ([]string, error) {
-	out := a.promptDirectories(port, discovered)
-	if a.db == nil {
-		return out, nil
-	}
-	recent, err := a.db.StatusCandidateDirectories(context.Background(), time.Now().Add(-statusActiveWindow).UnixMilli())
-	if err != nil {
-		return nil, err
-	}
-	seen := make(map[string]bool, len(out))
-	for _, directory := range out {
-		seen[normalizePortDirectory(directory)] = true
+	candidates := a.promptDirectories(port, discovered)
+	if a.db != nil {
+		recent, err := a.db.StatusCandidateDirectories(context.Background(), time.Now().Add(-statusActiveWindow).UnixMilli())
+		if err != nil {
+			return nil, err
+		}
+		candidates = append(candidates, recent...)
 	}
 	roots := make(map[string]bool, len(discovered))
 	for _, directory := range discovered {
 		roots[normalizePortDirectory(directory)] = true
 	}
-	for _, directory := range recent {
+	out := append([]string(nil), discovered...)
+	seen := maps.Clone(roots)
+	for _, directory := range candidates {
 		dir := normalizePortDirectory(directory)
 		if seen[dir] || !roots[normalizePortDirectory(foldWorktreeToProjectRoot(directory))] {
 			continue

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -183,11 +184,17 @@ func TestSeedSessionStatusFromInstance(t *testing.T) {
 // project instance never lists its worktree sessions. Seeding from it alone
 // marked the port seeded and settled a busy worktree session (e.g. a `!`
 // shell still running) as done.
+//
+// A busy row in a deleted worktree must not be read: OpenCode would boot
+// state for it, and its failed read would block the whole seed.
 func TestSeedSessionStatusFromInstance_IncludesWorktreeDirectories(t *testing.T) {
-	const (
-		root     = "/repo/project"
-		worktree = "/repo/.worktrees/project/feature"
-	)
+	base := t.TempDir()
+	root := filepath.Join(base, "project")
+	worktree := filepath.Join(base, ".worktrees", "project", "feature")
+	deleted := filepath.Join(base, ".worktrees", "project", "deleted")
+	if err := os.MkdirAll(worktree, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	ResetCachesForTests()
 	fake := newOpencodeFake(t)
 	fake.turnStatus = map[string]string{}
@@ -198,6 +205,7 @@ func TestSeedSessionStatusFromInstance_IncludesWorktreeDirectories(t *testing.T)
 	a := New(newTestDBWithSessions(t, []testSession{
 		{id: "ses-root", directory: root},
 		{id: "ses-worktree", directory: worktree, busy: true},
+		{id: "ses-deleted", directory: deleted, busy: true},
 	}), nil)
 	port := fake.Port()
 	if !a.SeedSessionStatusFromInstance(context.Background(), port, 0, []string{root}) {
@@ -206,6 +214,11 @@ func TestSeedSessionStatusFromInstance_IncludesWorktreeDirectories(t *testing.T)
 	if got := a.turns.turnStateForPort("ses-worktree", port); got != db.TurnRunning {
 		t.Errorf("worktree session turnState = %v, want TurnRunning", got)
 	}
+	fake.mu.Lock()
+	if slices.Contains(fake.dirHits, deleted) {
+		t.Errorf("queried deleted worktree %q", deleted)
+	}
+	fake.mu.Unlock()
 
 	// A failed worktree read must leave the port unseeded rather than
 	// settle the sessions it could not see.
