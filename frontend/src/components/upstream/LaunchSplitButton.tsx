@@ -4,7 +4,8 @@ import { useApiStore } from '../../lib/apiStore';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '../DropdownMenu';
 
 interface LaunchSplitButtonProps {
-  directory: string;
+  /** Undefined disables every launch (the active session is unresolved). */
+  directory: string | undefined;
   remoteId: string;
   remote: string;
   type: 'pr' | 'issue';
@@ -44,7 +45,10 @@ export function LaunchSplitButton({
   // Track the mode/action to retry with after a cross-fork fetch confirm.
   const [pendingAction, setPendingAction] = useState<Action>('handle');
 
+  const disabled = busy || !directory;
+
   const run = async (mode: Mode, action: Action = 'handle', fetchHead = false) => {
+    if (!directory) return;
     setBusy(true);
     setError(null);
     setLaunched(false);
@@ -93,7 +97,7 @@ export function LaunchSplitButton({
         <div className="oc-upstream-launch-confirm-buttons">
           <button
             type="button"
-            disabled={busy}
+            disabled={disabled}
             onClick={() => {
               setConfirmFetch(null);
               void run('worktree', pendingAction, true);
@@ -115,7 +119,7 @@ export function LaunchSplitButton({
       <button
         type="button"
         className="oc-upstream-launch-main"
-        disabled={busy}
+        disabled={disabled}
         onClick={() => void run('session', 'handle')}
         data-testid="launch-default"
       >
@@ -124,7 +128,7 @@ export function LaunchSplitButton({
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger
           className="oc-upstream-launch-chevron"
-          disabled={busy}
+          disabled={disabled}
           title="More launch options"
           aria-label="More launch options"
           data-testid="launch-menu-toggle"
@@ -133,7 +137,7 @@ export function LaunchSplitButton({
         </DropdownMenuTrigger>
         <DropdownMenuContent data-testid="launch-menu">
           <DropdownMenuItem
-            disabled={busy}
+            disabled={disabled}
             onSelect={() => void run('worktree', 'handle')}
             data-testid="launch-worktree"
           >
@@ -143,7 +147,7 @@ export function LaunchSplitButton({
           {type === 'pr' && (
             <>
               <DropdownMenuItem
-                disabled={busy}
+                disabled={disabled}
                 onSelect={() => void run('worktree', 'review')}
                 data-testid="launch-review-worktree"
               >
@@ -151,7 +155,7 @@ export function LaunchSplitButton({
                 {crossFork && <span className="oc-upstream-launch-hint"> (fetches PR ref)</span>}
               </DropdownMenuItem>
               <DropdownMenuItem
-                disabled={busy}
+                disabled={disabled}
                 onSelect={() => void run('session', 'review')}
                 data-testid="launch-review-session"
               >

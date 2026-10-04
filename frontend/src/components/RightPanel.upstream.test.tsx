@@ -102,3 +102,42 @@ it('treats unrelated non-git directories as different projects', async () => {
 
   await waitFor(() => expect(upstreamApi.fetchUpstreams).toHaveBeenCalledTimes(2));
 });
+
+it('disables launches while the next session is unresolved', async () => {
+  const postHandle = vi.spyOn(upstreamApi, 'postHandle').mockResolvedValue({} as upstreamApi.HandleResponse);
+  const { rerender } = render(panel(session('s1', '/wt/repo/a', 'proj')));
+  await userEvent.click(await screen.findByText('PR 1'));
+  expect(screen.getByTestId('launch-default')).toBeEnabled();
+
+  // Still loading, then a stale copy of the previous session for the new id.
+  for (const pending of [panel(undefined, 's2'), panel(session('s1', '/wt/repo/a', 'proj'), 's2')]) {
+    rerender(pending);
+    expect(screen.getByText('PR 1')).toBeInTheDocument();
+    expect(screen.getByTestId('launch-default')).toBeDisabled();
+    await userEvent.click(screen.getByTestId('launch-default'));
+  }
+  expect(postHandle).not.toHaveBeenCalled();
+
+  rerender(panel(session('s2', '/wt/repo/b', 'proj')));
+  await userEvent.click(screen.getByTestId('launch-default'));
+  expect(postHandle).toHaveBeenCalledWith(expect.objectContaining({ dir: '/wt/repo/b', number: 1 }));
+});
+
+it('keeps loaded CI checks across a sibling switch', async () => {
+  vi.mocked(upstreamApi.fetchPRs).mockResolvedValue({
+    prs: [{ ...pr(1, 'feat-a'), headSha: 'abc' }],
+    pagination: { page: 1, hasMore: false },
+    rateLimit: { limited: false },
+  });
+  const fetchChecks = vi.spyOn(upstreamApi, 'fetchPRChecks').mockResolvedValue({
+    state: 'success', checks: [{ name: 'build', state: 'success' }],
+  });
+  const { rerender } = render(panel(session('s1', '/wt/repo/a', 'proj')));
+  await userEvent.click(await screen.findByText('PR 1'));
+  expect(await screen.findByText('build')).toBeInTheDocument();
+
+  rerender(panel(session('s2', '/wt/repo/b', 'proj')));
+
+  expect(screen.getByText('build')).toBeInTheDocument();
+  expect(fetchChecks).toHaveBeenCalledTimes(1);
+});

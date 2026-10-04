@@ -3,7 +3,7 @@ import { ExpandableRow } from './ExpandableRow';
 
 interface IssueRowProps {
   issue: Issue;
-  directory: string;
+  directory: string | undefined;
   remoteId: string;
   remote: string;
 }

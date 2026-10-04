@@ -192,6 +192,7 @@ export function Pane({
             <UpstreamPane
               directory={upstreamTarget.directory}
               currentDirectory={directory}
+              actionsEnabled={session?.id === sessionId && !!directory}
               remoteId={upstreamTarget.remoteId}
               upstreams={upstreams}
               embedded

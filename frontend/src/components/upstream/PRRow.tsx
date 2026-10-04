@@ -5,7 +5,13 @@ import { ExpandableRow } from './ExpandableRow';
 
 interface PRRowProps {
   pr: PR;
-  directory: string;
+  /** Where launches run; undefined disables them. */
+  directory: string | undefined;
+  /**
+   * Directory the CI checks are fetched for. Defaults to `directory`; pinned
+   * to the project so a sibling-worktree switch keeps loaded checks.
+   */
+  checksDirectory?: string;
   remoteId: string;
   remote: string;
   /**
@@ -27,8 +33,8 @@ interface PRRowProps {
  * doesn't enforce single-expansion in v1 (matches the "best-effort"
  * note in FR-7; can be tightened later).
  */
-export function PRRow({ pr, directory, remoteId, remote, currentBranch }: PRRowProps) {
-  const checks = usePRChecks(pr, directory, remoteId, remote);
+export function PRRow({ pr, directory, checksDirectory = directory ?? '', remoteId, remote, currentBranch }: PRRowProps) {
+  const checks = usePRChecks(pr, checksDirectory, remoteId, remote);
 
   // Cross-fork PRs share their head branch name with the user's
   // local tree by coincidence at best (different repo entirely), so

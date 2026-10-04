@@ -18,7 +18,7 @@ interface ExpandableRowProps {
   assignees?: ForgeUser[] | null;
   url: string;
   host: string;
-  directory: string;
+  directory: string | undefined;
   remoteId: string;
   remote: string;
   crossFork: boolean;

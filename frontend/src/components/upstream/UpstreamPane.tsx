@@ -1,16 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import './UpstreamPane.css';
-import { useUpstreamList } from '../../lib/useUpstreamList';
-import type { PR, Issue, StateFilter, Upstream } from '../../lib/upstreamApi';
+import type { StateFilter, Upstream } from '../../lib/upstreamApi';
 import type { PaneSummary } from '../SessionChangesSidebar';
-import { useForgeUser } from '../../lib/useForgeUser';
 import { useGitInfo } from '../../lib/useGitInfo';
-import { PRRow } from './PRRow';
-import { IssueRow } from './IssueRow';
-import { RemoteErrorBanner } from './RemoteErrorBanner';
-import { UpstreamApiError } from '../../lib/upstreamApi';
 import { ProjectLabel } from '../ProjectLabel';
-import { Pagination } from '../Pagination';
+import { UpstreamRemoteGroup } from './UpstreamRemoteGroup';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../Tabs';
 
 interface UpstreamPaneProps {
@@ -22,6 +16,12 @@ interface UpstreamPaneProps {
    * `directory`. Changing it alone never reloads the lists.
    */
   currentDirectory?: string;
+  /**
+   * False while the active session is unresolved: the retained list stays
+   * visible but launches are disabled so they can't target the previous
+   * checkout or owner.
+   */
+  actionsEnabled?: boolean;
   remoteId: string;
   upstreams: Upstream[];
   embedded?: boolean;
@@ -54,6 +54,7 @@ type Tab = 'prs' | 'issues';
 export function UpstreamPane({
   directory,
   currentDirectory = directory,
+  actionsEnabled = true,
   remoteId,
   upstreams,
   onRefresh,
@@ -62,6 +63,7 @@ export function UpstreamPane({
 }: UpstreamPaneProps) {
   const { infos: gitInfos } = useGitInfo(currentDirectory && upstreams.length > 0 ? [currentDirectory] : [], remoteId);
   const currentBranch = currentDirectory ? gitInfos[currentDirectory]?.branch : undefined;
+  const launchDirectory = actionsEnabled ? currentDirectory : undefined;
 
   // Independent filter state per tab.
   const [prState, setPRState] = useState<StateFilter>('open');
@@ -98,7 +100,7 @@ export function UpstreamPane({
           key="prs"
           kind="prs"
           directory={directory}
-          rowDirectory={currentDirectory}
+          launchDirectory={launchDirectory}
           remoteId={remoteId}
           upstreams={upstreams}
           state={prState}
@@ -115,7 +117,7 @@ export function UpstreamPane({
           key="issues"
           kind="issues"
           directory={directory}
-          rowDirectory={currentDirectory}
+          launchDirectory={launchDirectory}
           remoteId={remoteId}
           upstreams={upstreams}
           state={issueState}
@@ -134,7 +136,7 @@ export function UpstreamPane({
 interface UpstreamTabContentProps {
   kind: Tab;
   directory: string | undefined;
-  rowDirectory: string | undefined;
+  launchDirectory: string | undefined;
   remoteId: string;
   upstreams: Upstream[];
   state: StateFilter;
@@ -149,7 +151,7 @@ interface UpstreamTabContentProps {
 function UpstreamTabContent({
   kind,
   directory,
-  rowDirectory,
+  launchDirectory,
   remoteId,
   upstreams,
   state,
@@ -203,7 +205,7 @@ function UpstreamTabContent({
           kind={kind}
           upstream={u}
           directory={directory!}
-          rowDirectory={rowDirectory ?? directory!}
+          launchDirectory={launchDirectory}
           remoteId={remoteId}
           state={state}
           mine={mine}
@@ -258,150 +260,6 @@ function FilterStrip({ state, onStateChange, mine, onMineChange }: FilterStripPr
       </label>
     </div>
   );
-}
-
-interface UpstreamRemoteGroupProps {
-  kind: Tab;
-  upstream: Upstream;
-  directory: string;
-  rowDirectory: string;
-  remoteId: string;
-  state: StateFilter;
-  mine: boolean;
-  registerRefresh: (fn: () => void) => () => void;
-  onLoadingChange: (loading: boolean) => void;
-  showHeader: boolean;
-  currentBranch?: string;
-}
-
-function UpstreamRemoteGroup({
-  kind,
-  upstream,
-  directory,
-  rowDirectory,
-  remoteId,
-  state,
-  mine,
-  registerRefresh,
-  onLoadingChange,
-  showHeader,
-  currentBranch,
-}: UpstreamRemoteGroupProps) {
-  // Resolve the "mine" identity for this remote's host. null means
-  // the forge has no credential — disable the mine toggle visually
-  // and don't send the filter parameter.
-  const identity = useForgeUser(mine ? directory : undefined, mine ? upstream.remote : undefined, remoteId);
-  const mineFilter = mine && identity.login ? identity.login : undefined;
-
-  const list = useUpstreamList<PR | Issue>({
-    kind,
-    dir: directory,
-    remoteId,
-    remote: upstream.remote,
-    state,
-    mine: mineFilter,
-    enabled: !mine || (identity.ready && !!identity.login),
-  });
-
-  // Push our refresh callback up; unregister on unmount.
-  useEffect(() => {
-    const unregister = registerRefresh(list.refresh);
-    return unregister;
-  }, [registerRefresh, list.refresh]);
-
-  // Refocus the PR for the checked-out branch when it (or the list) changes.
-  const sectionRef = useRef<HTMLElement>(null);
-  useEffect(() => scrollToCurrentBranch(sectionRef.current), [currentBranch, list.items]);
-
-  // Mirror loading flag up.
-  useEffect(() => {
-    if (!list.loading) return;
-    onLoadingChange(true);
-    return () => onLoadingChange(false);
-  }, [list.loading, onLoadingChange]);
-
-  return (
-    <section ref={sectionRef} className="oc-upstream-group" data-testid={`upstream-group-${upstream.host}`}>
-      {showHeader && (
-        <header className="oc-upstream-group-header">
-          <span className="oc-upstream-group-host">{upstream.host}</span>
-          <span className="oc-upstream-group-repo">{upstream.repo}</span>
-        </header>
-      )}
-      {list.error ? (
-        <RemoteErrorBanner error={list.error} onRetry={list.refresh} />
-      ) : null}
-      {list.rateLimit.limited ? (
-        <RemoteErrorBanner
-          error={
-            new UpstreamApiError(
-              {
-                error: {
-                  code: 'rate_limited',
-                  message: 'Rate limited',
-                  retryAfter: list.rateLimit.resetAt,
-                },
-              },
-              429,
-            )
-          }
-          onRetry={list.refresh}
-        />
-      ) : null}
-      {mine && identity.loading ? (
-        <div className="oc-upstream-empty">Resolving forge identity…</div>
-      ) : mine && identity.ready && !identity.login ? (
-        <div className="oc-upstream-empty">Mine requires forge authentication.</div>
-      ) : !list.error && list.items.length === 0 && !list.loading ? (
-        <div className="oc-upstream-empty">No {kind === 'prs' ? 'pull requests' : 'issues'}.</div>
-      ) : null}
-      <ul className="oc-upstream-list" data-testid={`upstream-${kind}-list`}>
-        {list.items.map((item) => {
-          if (kind === 'prs') {
-            return (
-              <PRRow
-                key={`${remoteId}/${item.number}`}
-                pr={item as PR}
-                directory={rowDirectory}
-                remoteId={remoteId}
-                remote={upstream.remote}
-                currentBranch={currentBranch}
-              />
-            );
-          }
-          return (
-            <IssueRow
-              key={`${remoteId}/${item.number}`}
-              issue={item as Issue}
-              directory={rowDirectory}
-              remoteId={remoteId}
-              remote={upstream.remote}
-            />
-          );
-        })}
-      </ul>
-      {(list.page !== 1 || list.pagination.hasMore) && (
-        <Pagination
-          className="oc-upstream-pagination"
-          previousLabel="‹ Prev"
-          nextLabel="Next ›"
-          previousDisabled={list.page <= 1}
-          nextDisabled={!list.pagination.hasMore}
-          onPrevious={() => list.setPage(Math.max(1, list.page - 1))}
-          onNext={() => list.setPage(list.page + 1)}
-          previousTestId="upstream-page-prev"
-          nextTestId="upstream-page-next"
-        >
-          <span className="oc-upstream-pagination-page">page {list.page}</span>
-        </Pagination>
-      )}
-    </section>
-  );
-}
-
-// jsdom has no scrollIntoView, hence the optional call.
-function scrollToCurrentBranch(section: HTMLElement | null) {
-  section?.querySelector('.current-branch')?.scrollIntoView?.({ block: 'nearest' });
 }
 
 /**

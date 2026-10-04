@@ -186,6 +186,11 @@ metadata and launches sessions on the owner's compound platform.
 The frontend carries that owner through upstream lists, checks, forge-user
 identity, git branch highlighting, and optimistic session seeding. Successful
 forge-user identities survive PR/Issue tab remounts; failures remain retryable.
+The pane's lists are keyed on the session's owner + OpenCode `projectId`
+(`useProjectTarget`), so switching between sibling worktrees keeps lists,
+filters and loaded CI checks; only the current-branch highlight and the
+launch directory follow the session, and launches stay disabled until the
+active session has resolved.
 
 Ocman also supports **multi-remote**: one "hub" ocman attaches to other
 ocman instances over a long-lived gRPC channel and manages every
