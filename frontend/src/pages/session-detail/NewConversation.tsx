@@ -201,46 +201,51 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
 
   const resolving = !eligibility.resolved || !catalog;
   return (
-    <div className="oc-new-conversation" data-testid="new-conversation">
-      {eligibility.error && <InlineAlert onRetry={eligibility.retry}>{eligibility.error}</InlineAlert>}
-      {catalogError && <InlineAlert onRetry={() => setCatalogAttempt((value) => value + 1)}>{catalogError}</InlineAlert>}
-      {error && <InlineAlert>{error}</InlineAlert>}
-      <Composer
-        key={`${remoteId}:${directory}:${params.platform}:${title}`}
-        composerRef={composerRef}
-        onSend={onSend}
-        onCommand={onCommand}
-        onShell={caps.shellExec ? onShell : undefined}
-        shellExec={caps.shellExec}
-        isRunning={false}
-        disabled={resolving}
-        disabledHint={!catalog ? 'Preparing session…' : resolving ? 'Checking session target…' : undefined}
-        whisperAvailable={whisperAvailable}
-        models={models}
-        modelEntries={catalog?.models.models ?? []}
-        selectedModel={selectedModel}
-        onModelChange={handleModelChange}
-        onToggleFavorite={handleToggleFavorite}
-        onRefreshModels={() => setCatalogAttempt((value) => value + 1)}
-        activeAgent={catalog?.defaultAgent}
-        selectedAgent={selectedAgent}
-        onAgentChange={handleAgentChange}
-        agents={agents}
-        agentsLoaded={!!catalog}
-        commands={catalog?.commands}
-        selectedReasoning={selectedReasoning}
-        onReasoningChange={setSelectedReasoning}
-        directory={directory}
-        platform={platform}
-        newConversation
-        worktreesSupported={canWorktree}
-        worktrees={eligibility.resolved?.worktrees}
-        target={canWorktree ? target : 'current'}
-        onTargetChange={setTarget}
-        remoteId={remoteId}
-        onMachineChange={onMachineChange}
-        draftKey={NEW_SESSION_ID}
-      />
+    // Same shell as AssistantThread: an empty viewport pushes the composer
+    // to the bottom with the thread's padding.
+    <div className="oc-thread" data-testid="new-conversation">
+      <div className="oc-thread-viewport" />
+      <div className="oc-viewport-footer" data-testid="conversation-composer">
+        {eligibility.error && <InlineAlert onRetry={eligibility.retry}>{eligibility.error}</InlineAlert>}
+        {catalogError && <InlineAlert onRetry={() => setCatalogAttempt((value) => value + 1)}>{catalogError}</InlineAlert>}
+        {error && <InlineAlert>{error}</InlineAlert>}
+        <Composer
+          key={`${remoteId}:${directory}:${params.platform}:${title}`}
+          composerRef={composerRef}
+          onSend={onSend}
+          onCommand={onCommand}
+          onShell={caps.shellExec ? onShell : undefined}
+          shellExec={caps.shellExec}
+          isRunning={false}
+          disabled={resolving}
+          disabledHint={!catalog ? 'Preparing session…' : resolving ? 'Checking session target…' : undefined}
+          whisperAvailable={whisperAvailable}
+          models={models}
+          modelEntries={catalog?.models.models ?? []}
+          selectedModel={selectedModel}
+          onModelChange={handleModelChange}
+          onToggleFavorite={handleToggleFavorite}
+          onRefreshModels={() => setCatalogAttempt((value) => value + 1)}
+          activeAgent={catalog?.defaultAgent}
+          selectedAgent={selectedAgent}
+          onAgentChange={handleAgentChange}
+          agents={agents}
+          agentsLoaded={!!catalog}
+          commands={catalog?.commands}
+          selectedReasoning={selectedReasoning}
+          onReasoningChange={setSelectedReasoning}
+          directory={directory}
+          platform={platform}
+          newConversation
+          worktreesSupported={canWorktree}
+          worktrees={eligibility.resolved?.worktrees}
+          target={canWorktree ? target : 'current'}
+          onTargetChange={setTarget}
+          remoteId={remoteId}
+          onMachineChange={onMachineChange}
+          draftKey={NEW_SESSION_ID}
+        />
+      </div>
     </div>
   );
 }
