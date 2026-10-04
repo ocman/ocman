@@ -4,6 +4,8 @@ import {
   recordFailedSend,
   removeFailedSend,
   clearFailedSends,
+  handleFailedSendsStorageEvent,
+  subscribeFailedSends,
   type FailedSend,
 } from './failedSends';
 
@@ -65,6 +67,47 @@ describe('failedSends storage', () => {
       expect(JSON.parse(storage.getItem('ocman.failedSends.v1')!)[SESSION]).toHaveLength(1);
     } finally {
       write.mockRestore();
+    }
+  });
+
+  it('never erases a failure another tab persisted', () => {
+    recordFailedSend(SESSION, makeEntry({ id: 'a' }));
+    removeFailedSend(SESSION, 'a');
+    // Another tab writes its own failure for the same session.
+    storage.setItem('ocman.failedSends.v1', JSON.stringify({ [SESSION]: [makeEntry({ id: 'b', failedAt: 2 })] }));
+    expect(listFailedSends(SESSION).map((e) => e.id)).toEqual(['b']);
+    recordFailedSend(SESSION, makeEntry({ id: 'c', failedAt: 3 }));
+    expect(JSON.parse(storage.getItem('ocman.failedSends.v1')!)[SESSION].map((e: FailedSend) => e.id)).toEqual(['b', 'c']);
+    removeFailedSend(SESSION, 'c');
+    expect(JSON.parse(storage.getItem('ocman.failedSends.v1')!)[SESSION].map((e: FailedSend) => e.id)).toEqual(['b']);
+  });
+
+  it('drops a persisted failure another tab retried or dismissed', () => {
+    recordFailedSend(SESSION, makeEntry({ id: 'a' }));
+    storage.setItem('ocman.failedSends.v1', JSON.stringify({}));
+    expect(listFailedSends(SESSION)).toEqual([]);
+  });
+
+  it('keeps an unpersisted failure when storage is unavailable', () => {
+    const write = vi.spyOn(storage, 'setItem').mockImplementation(() => { throw new Error('storage full'); });
+    try {
+      recordFailedSend(SESSION, makeEntry({ id: 'a' }));
+    } finally {
+      write.mockRestore();
+    }
+    expect(listFailedSends(SESSION).map((e) => e.id)).toEqual(['a']);
+  });
+
+  it('notifies subscribers about another tab\'s changes', () => {
+    const seen: string[] = [];
+    const unsubscribe = subscribeFailedSends((id) => seen.push(id));
+    try {
+      const event = new Event('storage') as Event & { key: string; oldValue: string | null; newValue: string };
+      Object.assign(event, { key: 'ocman.failedSends.v1', oldValue: null, newValue: JSON.stringify({ other: [makeEntry()] }) });
+      handleFailedSendsStorageEvent(event);
+      expect(seen).toContain('other');
+    } finally {
+      unsubscribe();
     }
   });
 

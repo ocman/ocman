@@ -58,24 +58,22 @@ function notify(sessionId: string) {
 function loadStore(): Store {
   if (typeof window === 'undefined') return {};
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-    return parsed as Store;
+    return parseStore(window.localStorage.getItem(STORAGE_KEY));
   } catch {
     return {};
   }
 }
 
-function saveStore(data: Store) {
-  if (typeof window === 'undefined') return;
+function saveStore(data: Store): boolean {
+  if (typeof window === 'undefined') return false;
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    return true;
   } catch {
     // Quota exceeded / private mode / disabled storage. Nothing we can do
     // here; the shared in-memory state still reflects the failure
     // for the current page lifetime.
+    return false;
   }
 }
 
@@ -96,43 +94,83 @@ function fitEntry(entry: FailedSend): FailedSend {
   return { ...entry, images: undefined, imagesDropped: true };
 }
 
-export function listFailedSends(sessionId: string): FailedSend[] {
-  if (live[sessionId]) return live[sessionId];
-  const store = loadStore();
+// localStorage is shared by every tab, so it stays the list of record and
+// is merged per entry id; only this page's own payloads and removals
+// overlay it.
+const key = (sessionId: string, id: string) => `${sessionId}\0${id}`;
+// Entry keys this page removed: hidden even if their storage write failed.
+const removed = new Set<string>();
+// Entry keys this page persisted: absent from storage means another tab
+// retried or dismissed them.
+const synced = new Set<string>();
+
+function persisted(store: Store, sessionId: string): FailedSend[] {
   const list = store[sessionId];
   return Array.isArray(list) ? list : [];
 }
 
-export function recordFailedSend(sessionId: string, entry: FailedSend) {
-  const existing = listFailedSends(sessionId);
-  const idx = existing.findIndex((e) => e.id === entry.id);
-  live[sessionId] = idx >= 0
-    ? existing.map((e, i) => (i === idx ? entry : e))
-    : [...existing, entry];
+export function listFailedSends(sessionId: string): FailedSend[] {
+  const mine = live[sessionId] ?? [];
+  const stored = persisted(loadStore(), sessionId).filter((e) => !removed.has(key(sessionId, e.id)));
+  const storedIds = new Set(stored.map((e) => e.id));
+  // Prefer this page's complete payload over the capped stored copy.
+  const merged = stored.map((e) => mine.find((m) => m.id === e.id) ?? e);
+  const unpersisted = mine.filter((e) => !storedIds.has(e.id) && !synced.has(key(sessionId, e.id)));
+  live[sessionId] = mine.filter((e) => storedIds.has(e.id) || !synced.has(key(sessionId, e.id)));
+  return [...merged, ...unpersisted].sort((a, b) => a.failedAt - b.failedAt);
+}
+
+function writeSession(sessionId: string, list: FailedSend[]) {
   const store = loadStore();
-  store[sessionId] = live[sessionId].map(fitEntry);
-  saveStore(store);
+  if (list.length === 0) delete store[sessionId];
+  else store[sessionId] = list.map(fitEntry);
+  if (!saveStore(store)) return;
+  for (const e of list) synced.add(key(sessionId, e.id));
+}
+
+export function recordFailedSend(sessionId: string, entry: FailedSend) {
+  removed.delete(key(sessionId, entry.id));
+  synced.delete(key(sessionId, entry.id));
+  live[sessionId] = [...(live[sessionId] ?? []).filter((e) => e.id !== entry.id), entry];
+  writeSession(sessionId, listFailedSends(sessionId));
+  notify(sessionId);
+}
+
+function forget(sessionId: string, ids: string[]) {
+  for (const id of ids) {
+    removed.add(key(sessionId, id));
+    synced.delete(key(sessionId, id));
+  }
+  live[sessionId] = (live[sessionId] ?? []).filter((e) => !ids.includes(e.id));
+  writeSession(sessionId, listFailedSends(sessionId));
   notify(sessionId);
 }
 
 export function removeFailedSend(sessionId: string, id: string) {
-  const next = listFailedSends(sessionId).filter((e) => e.id !== id);
-  // Keep an empty live list as a tombstone if the persistence write fails.
-  live[sessionId] = next;
-  const store = loadStore();
-  if (next.length === 0) {
-    delete store[sessionId];
-  } else {
-    store[sessionId] = next.map(fitEntry);
-  }
-  saveStore(store);
-  notify(sessionId);
+  forget(sessionId, [id]);
 }
 
 export function clearFailedSends(sessionId: string) {
-  live[sessionId] = [];
-  const store = loadStore();
-  delete store[sessionId];
-  saveStore(store);
-  notify(sessionId);
+  forget(sessionId, listFailedSends(sessionId).map((e) => e.id));
+}
+
+function parseStore(raw: string | null): Store {
+  try {
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Re-publishes sessions another tab changed (native `storage` event). */
+export function handleFailedSendsStorageEvent(event: StorageEvent | Event) {
+  const { key: changed, oldValue, newValue } = event as StorageEvent;
+  if (changed !== STORAGE_KEY && changed !== null) return;
+  const sessions = new Set([...Object.keys(parseStore(oldValue)), ...Object.keys(parseStore(newValue)), ...Object.keys(live)]);
+  for (const sessionId of sessions) notify(sessionId);
+}
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('storage', handleFailedSendsStorageEvent);
 }
