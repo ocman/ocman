@@ -28,7 +28,7 @@ import { throughputSample } from './throughput';
  *   (still streaming), so the bar can show a "live" indicator.
  */
 export interface TurnAggregate {
-  /** Unix ms from user message creation to last assistant message completion. */
+  /** Ms from user message creation to last assistant message completion. */
   wallClockMs: number | null;
   /** Sum of output tokens across all assistant messages in the turn. */
   tokensOut: number;
@@ -188,11 +188,11 @@ export function computeTurnStats(
         ? isRunning || !lastAsst.data.finish
         : !lastAsst.data.finish;
 
-    // Wall-clock end: use the message row's timeCreated (when the DB row was
-    // written) rather than data.time.completed (which only covers the final
-    // LLM call, not tool-execution time between calls). Fall back to null
+    // Wall-clock end: when the turn's final reply completed. Measured from
+    // the user message, so tool time between calls is included. Falls back
+    // to the reply's creation when no completion was recorded, and to null
     // while the turn is still live.
-    const wallClockEnd = isLive ? null : lastAsst.timeCreated;
+    const wallClockEnd = isLive ? null : lastAsst.data.time?.completed ?? lastAsst.timeCreated;
     const wallClockMs =
       wallClockEnd !== null ? wallClockEnd - userMsg.timeCreated : null;
     const promptCacheRebuilt = !isLive && hadCompletedCacheRead

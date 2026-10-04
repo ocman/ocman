@@ -86,6 +86,24 @@ describe('computeTurnStats — completion', () => {
 
     expect(computeTurnStats(messages, []).get('a')?.isLive).toBe(false);
   });
+
+  it('ends the wall clock at the last reply completion, not its creation', () => {
+    const messages = [
+      makeMessage('u', { role: 'user' }, 1000),
+      makeMessage('a1', { role: 'assistant', finish: 'tool-calls', time: { created: 2000, completed: 3000 } }, 2000),
+      makeMessage('a2', { role: 'assistant', finish: 'stop', time: { created: 61_000, completed: 181_000 } }, 61_000),
+    ];
+    const stats = computeTurnStats(messages, []).get('a2')!;
+    expect(stats.startedAt + stats.wallClockMs!).toBe(181_000);
+  });
+
+  it('falls back to the last reply creation when completion is missing', () => {
+    const messages = [
+      makeMessage('u', { role: 'user' }, 1000),
+      makeMessage('a', { role: 'assistant', finish: 'stop' }, 5000),
+    ];
+    expect(computeTurnStats(messages, []).get('a')?.wallClockMs).toBe(4000);
+  });
 });
 
 describe('computeTurnStats — prompt cache', () => {

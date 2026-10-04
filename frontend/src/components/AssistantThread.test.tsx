@@ -95,6 +95,7 @@ vi.mock('../lib/turnStats', () => ({
 
 import { AssistantThread, ImageDisplay } from './AssistantThread';
 import { formatTimelineMarker } from '../lib/conversationTimeline';
+import { formatFullDateTime } from '../lib/format';
 import { useUiStore } from '../lib/uiStore';
 import { TurnSpeechContext } from '../lib/turnSpeech';
 
@@ -335,15 +336,18 @@ describe('AssistantThread message metadata', () => {
     expect(container.querySelector('.oc-msg-meta')).not.toBeNull();
   });
 
-  it('stamps the turn summary with the time the turn ended', () => {
+  it('stamps the turn summary with the time the turn ended', async () => {
     const started = turnStats.startedAt;
     turnStats.wallClockMs = 3 * 60 * 60 * 1000;
     try {
       const { container } = render(<AssistantThread />);
+      const ended = started + turnStats.wallClockMs;
       const fmt = (ms: number) => new Date(ms).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
       const stats = container.querySelector('.oc-turn-stats')!;
-      expect(stats).toHaveTextContent(fmt(started + turnStats.wallClockMs));
+      expect(stats).toHaveTextContent(fmt(ended));
       expect(stats).not.toHaveTextContent(fmt(started));
+      await userEvent.hover(screen.getByText(fmt(ended)));
+      expect(await screen.findByRole('tooltip')).toHaveTextContent(formatFullDateTime(ended));
     } finally {
       turnStats.wallClockMs = 1000;
     }
