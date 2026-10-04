@@ -336,10 +336,18 @@ func (h *Host) sfDoDetached(ctx context.Context, repoRoot string, fn func(contex
 }
 
 func (h *Host) StopProjectOpencode(ctx context.Context, req hostsvc.EnsureProjectOpencodeRequest) error {
+	if ocv2.InstalledV2() {
+		// The v2 server serves every project: stopping it for one (project
+		// archive) would interrupt the others. Only the machine scope,
+		// reported by ManagedOpencodes, tears it down.
+		if filepath.Clean(req.ProjectDir) != machineRoot() {
+			return nil
+		}
+		h.publishMachineServer("")
+	}
 	repoRoot, err := projectOpencodeRoot(ctx, req.ProjectDir)
 	if ocv2.InstalledV2() {
 		repoRoot, err = machineRoot(), nil
-		h.publishMachineServer("")
 	}
 	if err != nil {
 		if errors.Is(err, git.ErrNotARepo) {
@@ -391,7 +399,7 @@ func (h *Host) ManagedOpencodes(ctx context.Context) ([]hostsvc.ManagedOpencode,
 	}
 	out := make([]hostsvc.ManagedOpencode, 0, len(instances))
 	for root := range instances {
-		out = append(out, hostsvc.ManagedOpencode{RepoRoot: root})
+		out = append(out, hostsvc.ManagedOpencode{RepoRoot: root, Machine: root == machineRoot()})
 	}
 	return out, nil
 }

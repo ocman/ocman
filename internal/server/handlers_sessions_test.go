@@ -1567,3 +1567,38 @@ func TestHandleSessionsNotify_SkipsUnreadCounts(t *testing.T) {
 		t.Errorf("/api/sessions made %d unread-count lookups, want 1 (control)", n)
 	}
 }
+
+// OpenCode v2 runs one machine-scoped server for every project. Restarting
+// a session's instance must find it, and must wait for busy sessions in
+// any project it serves, not just the requesting one.
+func TestHandleSessionRestartOpencode_MachineScopedServer(t *testing.T) {
+	for _, all := range []bool{false, true} {
+		t.Run(map[bool]string{false: "session", true: "all"}[all], func(t *testing.T) {
+			srv, reg := newSessionsTestServer(t)
+			host := &restartTestHost{managed: []hostsvc.ManagedOpencode{{RepoRoot: "/home/u/.local/share/ocman/opencode-v2", Machine: true}}}
+			srv.hostRouter = hostsvc.NewRouter(host)
+			reg.Register(&fakePlatform{
+				id:       "opencode",
+				sessions: []db.Session{
+					{ID: "s1", Directory: "/src/repo", RemoteID: "local", Status: db.StatusDone},
+					{ID: "other", Directory: "/src/other", RemoteID: "local", Status: db.StatusBusy},
+				},
+				sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
+					return &platforms.SessionDetail{Session: &db.Session{ID: "s1", Directory: "/src/repo"}}, nil
+				},
+			})
+			url := "/api/session/s1/restart-opencode?force=true"
+			if all {
+				url += "&all=true"
+			}
+			req := httptest.NewRequest(http.MethodPost, url, nil)
+			req.RemoteAddr = "127.0.0.1:1234"
+			rr := httptest.NewRecorder()
+			srv.handleSessionRestartOpencode(rr, req)
+			// The busy session in another project blocks the shared restart.
+			if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "confirmationRequired") || len(host.restarted) != 0 {
+				t.Fatalf("status=%d body=%s restarted=%v, want confirmation for the busy sibling", rr.Code, rr.Body.String(), host.restarted)
+			}
+		})
+	}
+}

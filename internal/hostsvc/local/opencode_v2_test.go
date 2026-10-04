@@ -122,7 +122,21 @@ func TestV2RestartAndStopMachineServer(t *testing.T) {
 		t.Errorf("restart launched %q; want machine root", rt.spec().RepoRoot)
 	}
 
+	// A project-scoped stop (project archive) must leave the shared server
+	// running: other projects may be mid-turn on it.
 	if err := h.StopProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: repo}); err != nil {
+		t.Fatalf("project stop: %v", err)
+	}
+	if rt.stopCount() != 1 || rec.last() == "" {
+		t.Fatalf("project stop stopped the shared server: stops=%d published=%q", rt.stopCount(), rec.last())
+	}
+	// The managed inventory reports the shared server as machine-scoped.
+	inv, err := h.ManagedOpencodes(ctx)
+	if err != nil || len(inv) != 1 || !inv[0].Machine {
+		t.Fatalf("inventory = %+v, %v; want one machine-scoped instance", inv, err)
+	}
+	// Only a machine-scoped stop tears it down.
+	if err := h.StopProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: inv[0].RepoRoot}); err != nil {
 		t.Fatalf("stop: %v", err)
 	}
 	if rt.stopCount() != 2 {

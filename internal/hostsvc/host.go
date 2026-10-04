@@ -181,6 +181,9 @@ type EnsureProjectOpencodeResult struct {
 // ManagedOpencode identifies a project with a managed OpenCode instance.
 type ManagedOpencode struct {
 	RepoRoot string `json:"repoRoot"`
+	// Machine marks the OpenCode v2 server that serves every project on
+	// the host; RepoRoot is then only its working directory.
+	Machine bool `json:"machine,omitempty"`
 }
 
 // Port returns the TCP port from the instance Endpoint, or "" when the

@@ -151,6 +151,8 @@ func (s *Server) handleSessionRestartOpencode(w http.ResponseWriter, r *http.Req
 type restartTarget struct {
 	host hostsvc.Host
 	root string
+	// machine: the instance serves every project on the host (OpenCode v2).
+	machine bool
 }
 
 func (s *Server) restartTargets(ctx context.Context, dir, remoteID string, all bool) ([]restartTarget, error) {
@@ -178,8 +180,8 @@ func (s *Server) restartTargets(ctx context.Context, dir, remoteID string, all b
 			return nil, err
 		}
 		for _, instance := range instances {
-			if all || sameProject(instance.RepoRoot, dir) {
-				targets = append(targets, restartTarget{host: host, root: instance.RepoRoot})
+			if all || instance.Machine || sameProject(instance.RepoRoot, dir) {
+				targets = append(targets, restartTarget{host: host, root: instance.RepoRoot, machine: instance.Machine})
 			}
 		}
 	}
@@ -216,7 +218,7 @@ func (s *Server) restartBusySessions(ctx context.Context, targets []restartTarge
 				owner = "local"
 			}
 			for _, target := range targets {
-				if target.host.RemoteID() != owner || !sameProject(target.root, session.Directory) {
+				if target.host.RemoteID() != owner || (!target.machine && !sameProject(target.root, session.Directory)) {
 					continue
 				}
 				busy = append(busy, session.ID)
