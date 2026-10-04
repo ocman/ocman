@@ -265,6 +265,24 @@ func TestSeedSessionStatusFromInstance_ReadsRecentWorktreeWithSettledStoredStatu
 	}
 }
 
+// If the session list cannot be read, the worktree candidates are unknown;
+// seeding from the root read alone would settle busy worktree sessions.
+func TestSeedSessionStatusFromInstance_SessionListFailureLeavesPortUnseeded(t *testing.T) {
+	ResetCachesForTests()
+	fake := newOpencodeFake(t)
+	fake.turnStatus = map[string]string{}
+	database := newTestDBWithSessions(t, nil)
+	a := New(database, nil)
+	_ = database.Close()
+	port := fake.Port()
+	if a.SeedSessionStatusFromInstance(context.Background(), port, 0, []string{"/repo/project"}) {
+		t.Fatal("SeedSessionStatusFromInstance reported success without a session list")
+	}
+	if got := a.turns.turnStateForPort("ses-worktree", port); got != db.TurnUnobserved {
+		t.Errorf("turnState after failed session list = %v, want TurnUnobserved", got)
+	}
+}
+
 // A failed snapshot must not mark the port seeded: treating every session
 // on a wedged instance as settled would report finished turns as done.
 // An event that lands while the snapshot is in flight describes a newer

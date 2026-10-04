@@ -307,17 +307,28 @@ func fetchSessionStatusSnapshot(ctx context.Context, port, directory string) (ma
 // (its last message is the user's prompt), so inferred status alone cannot
 // pick the candidates after a restart. OpenCode boots an instance for every
 // directory it is asked about, so the set must stay bounded.
-// ponytail: a turn that has written nothing for a day is missed until its
-// next status event; track per-directory seeding if that matters.
+// ponytail: an older session outside the window is not read. Inferred-busy
+// rows are already candidates (promptDirectories), and for any other
+// inferred status SettleSessionStatus gives the same answer whether the
+// turn is settled or unobserved, so per-directory seeding would change no
+// reported status.
 const statusActiveWindow = 24 * time.Hour
 
 // statusDirectories is promptDirectories plus every existing worktree
 // directory on this port with a session updated inside statusActiveWindow.
-func (a *Adapter) statusDirectories(port string, discovered []string) []string {
-	out := a.promptDirectories(port, discovered)
+// A session-list failure is returned rather than degraded: seeding from an
+// incomplete set would settle the busy worktree sessions it could not see.
+func (a *Adapter) statusDirectories(port string, discovered []string) ([]string, error) {
 	if a.db == nil {
-		return out
+		return a.promptDirectories(port, discovered), nil
 	}
+	// Read first so promptDirectories, which swallows errors, hits the
+	// same warm cache.
+	sessions, err := getSessionsCached(context.Background(), a.db, "", 0)
+	if err != nil {
+		return nil, err
+	}
+	out := a.promptDirectories(port, discovered)
 	seen := make(map[string]bool, len(out))
 	for _, directory := range out {
 		seen[normalizePortDirectory(directory)] = true
@@ -325,10 +336,6 @@ func (a *Adapter) statusDirectories(port string, discovered []string) []string {
 	roots := make(map[string]bool, len(discovered))
 	for _, directory := range discovered {
 		roots[normalizePortDirectory(directory)] = true
-	}
-	sessions, err := getSessionsCached(context.Background(), a.db, "", 0)
-	if err != nil {
-		return out
 	}
 	cutoff := time.Now().Add(-statusActiveWindow).UnixMilli()
 	for _, session := range sessions {
@@ -342,7 +349,7 @@ func (a *Adapter) statusDirectories(port string, discovered []string) []string {
 		seen[dir] = true
 		out = append(out, session.Directory)
 	}
-	return out
+	return out, nil
 }
 
 // SeedSessionStatusFromInstance fetches and applies one instance's status
@@ -363,8 +370,12 @@ func (a *Adapter) SeedSessionStatusFromInstance(ctx context.Context, port string
 	if !ok {
 		return false
 	}
+	candidates, err := a.statusDirectories(port, directories)
+	if err != nil {
+		return false
+	}
 	// ponytail: sequential reads; candidates are only recently active directories.
-	for _, directory := range a.statusDirectories(port, directories) {
+	for _, directory := range candidates {
 		scoped, ok := fetchSessionStatusSnapshot(ctx, port, directory)
 		if !ok {
 			return false
