@@ -35,10 +35,12 @@ new adapter + registry entry; see
 A new conversation is a client-only route (`/session/new?dir=…&remoteId=…
 &platform=…`) until its first prompt: no OpenCode session, worktree or
 placeholder exists before that, so the machine and target can still change
-freely. Opening it calls `POST /api/sessions/prepare`, which ensures the
-project's instance on the owning machine and returns the directory's agent,
-command and model catalogs via `Platform.DirectoryCatalog` (a `PlatformJsonReq`
-RPC for remotes). Submission waits for that catalog, with visible retry on a
+freely. Opening it calls `POST /api/sessions/prepare`, which returns the
+directory's agent, command and model catalogs via `Platform.DirectoryCatalog`
+(a `PlatformJsonReq` RPC for remotes). It never launches OpenCode, so opening
+the composer or picking a machine starts nothing: the catalogs come from an
+instance that is already running, else the historical models, and the first
+submission (`/start`) launches the instance behind the launch overlay. Submission waits for that catalog, with visible retry on a
 prepare failure; `useWorktreeEligibility` reads the git-info branch and the
 owner's worktree list, so a directory already inside a linked worktree, or a
 non-repository, uses the current checkout. The composer's machine selector only

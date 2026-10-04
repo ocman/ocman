@@ -37,7 +37,14 @@ import (
 // directory (or a host that can't launch) can't be ensured, but discovery
 // may still find a usable instance. Returns ok=false after writing the
 // HTTP error.
-func (s *Server) ensureProjectForCreate(w http.ResponseWriter, r *http.Request, platform, directory string) (hostsvc.Host, string, bool) {
+// resolveDraftOwner checks that the platform's owner is connected and the
+// platform known, writing the rejection otherwise.
+func (s *Server) resolveDraftOwner(w http.ResponseWriter, platform, directory string) bool {
+	_, ok := s.draftOwner(w, platform, directory)
+	return ok
+}
+
+func (s *Server) draftOwner(w http.ResponseWriter, platform, directory string) (hostsvc.Host, bool) {
 	remoteID, _ := remote.SplitPlatformID(platform)
 	owner := remoteID
 	if owner == "" {
@@ -45,13 +52,22 @@ func (s *Server) ensureProjectForCreate(w http.ResponseWriter, r *http.Request, 
 	}
 	host, ok := s.resolveOwner(w, directory, owner)
 	if !ok {
-		return nil, "", false
+		return nil, false
 	}
-	// Validate the platform before the ensure side effect (#533): an
-	// unknown platform must not launch a managed opencode instance only
-	// for Create to reject the request afterwards.
+	// Validate the platform before any side effect (#533): an unknown
+	// platform must not launch a managed opencode instance only for
+	// Create to reject the request afterwards.
 	if !s.sessions.KnownPlatform(platform) {
 		http.Error(w, "unknown platform", http.StatusBadRequest)
+		return nil, false
+	}
+	return host, true
+}
+
+func (s *Server) ensureProjectForCreate(w http.ResponseWriter, r *http.Request, platform, directory string) (hostsvc.Host, string, bool) {
+	remoteID, _ := remote.SplitPlatformID(platform)
+	host, ok := s.draftOwner(w, platform, directory)
+	if !ok {
 		return nil, "", false
 	}
 	// A worktree runs on the project's shared instance rooted at the main
@@ -120,13 +136,13 @@ func (s *Server) handlePrepareSession(w http.ResponseWriter, r *http.Request) {
 	if !req.resolvePlatform(s, w) {
 		return
 	}
-	_, port, ok := s.ensureProjectForCreate(w, r, req.Platform, req.Directory)
-	if !ok {
+	// Opening the composer or picking a machine must not launch OpenCode:
+	// the catalogs come from an instance that is already running, else the
+	// historical models. The first submission (/start) launches it.
+	if !s.resolveDraftOwner(w, req.Platform, req.Directory) {
 		return
 	}
-	// The ensured port pins the instance: a just-launched one is not yet in
-	// the cached port scan, and discovery would otherwise report no catalog.
-	catalog, platformID, err := s.sessions.DirectoryCatalog(r.Context(), req.Platform, platforms.DirectoryCatalogRequest{Directory: req.Directory, Port: port})
+	catalog, platformID, err := s.sessions.DirectoryCatalog(r.Context(), req.Platform, platforms.DirectoryCatalogRequest{Directory: req.Directory})
 	if err != nil {
 		writeSessionSvcError(w, "preparing session", err)
 		return

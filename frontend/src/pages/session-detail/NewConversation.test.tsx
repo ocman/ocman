@@ -97,7 +97,9 @@ describe('NewConversation', () => {
   it('reports catalog preparation failures and permits a subsequent refresh', async () => {
     mocks.prepare.mockRejectedValueOnce(new Error('catalog offline'));
     mount();
-    await waitFor(() => expect(useLaunchProgressStore.getState().error).toBe('catalog offline'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('catalog offline');
+    // Preparing only reads catalogs: it never reports an instance launch.
+    expect(useLaunchProgressStore.getState().error).not.toBe('catalog offline');
     expect(composer.agentsLoaded).toBe(false);
     act(() => composer.onRefreshModels!());
     await waitFor(() => expect(composer.agentsLoaded).toBe(true));
@@ -213,6 +215,8 @@ describe('NewConversation', () => {
     await act(async () => { await Promise.resolve(composer.onSend!('again')).catch((err: unknown) => { failure = err; }); });
     expect(String(failure)).toContain('worktree create/launch failed');
     expect(screen.getByRole('alert')).toHaveTextContent('worktree create/launch failed');
+    // The first submission is what launches OpenCode, so it owns the overlay.
+    expect(useLaunchProgressStore.getState().error).toBe('worktree create/launch failed');
   });
 
   it('keeps ocman built-ins out of the first submission and opens the worktree form for /wt', async () => {

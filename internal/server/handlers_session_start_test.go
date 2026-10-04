@@ -26,10 +26,13 @@ func startTestServer(t *testing.T, ensure *ensureHost) (*Server, *platforms.Regi
 	return srv, reg
 }
 
-func TestPrepareSessionEnsuresAndReturnsCatalog(t *testing.T) {
-	var ensured string
+// Opening the new-conversation composer (or picking another machine)
+// only reads catalogs: it must never launch OpenCode. The instance starts
+// with the first submission (/api/sessions/start).
+func TestPrepareSessionReturnsCatalogWithoutLaunching(t *testing.T) {
+	ensures := 0
 	srv, reg := startTestServer(t, &ensureHost{ensure: func(_ context.Context, req hostsvc.EnsureProjectOpencodeRequest) (*hostsvc.EnsureProjectOpencodeResult, error) {
-		ensured = req.ProjectDir
+		ensures++
 		return &hostsvc.EnsureProjectOpencodeResult{Endpoint: "http://127.0.0.1:7788", RepoRoot: req.ProjectDir}, nil
 	}})
 	var asked platforms.DirectoryCatalogRequest
@@ -40,16 +43,15 @@ func TestPrepareSessionEnsuresAndReturnsCatalog(t *testing.T) {
 			DefaultAgent: "plan", DefaultModel: "anthropic/claude", LiveConnection: true,
 		}, nil
 	}})
-	// A worktree path prepares on the project's single instance.
 	w := httptest.NewRecorder()
 	srv.handlePrepareSession(w, httptest.NewRequest(http.MethodPost, "/api/sessions/prepare",
 		strings.NewReader(`{"platform":"opencode","directory":"/src/.worktrees/repo/feat"}`)))
 	if w.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
-	// The catalog is read from the instance the ensure just reported.
-	if ensured != "/src/repo" || asked.Directory != "/src/.worktrees/repo/feat" || asked.Port != "7788" {
-		t.Fatalf("ensured %q, catalog for %+v", ensured, asked)
+	// Catalogs come from whatever instance is already running (discovery).
+	if ensures != 0 || asked.Directory != "/src/.worktrees/repo/feat" || asked.Port != "" {
+		t.Fatalf("ensures=%d, catalog for %+v", ensures, asked)
 	}
 	var resp struct {
 		Platform     string                          `json:"platform"`

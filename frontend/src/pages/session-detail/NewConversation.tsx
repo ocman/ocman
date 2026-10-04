@@ -62,22 +62,18 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
     return () => setInfo({});
   }, [directory, remoteId, setInfo]);
 
-  // Prepare boots the project's instance when it is closed (10-20 s), so
-  // the launch overlay reports it; the catalog fills in when it lands.
+  // Prepare only reads catalogs (a running instance's, else history); it
+  // never launches OpenCode, so picking a machine starts nothing there.
   useEffect(() => {
     const controller = new AbortController();
     setCatalog(undefined);
     setCatalogError('');
-    launchProgressReporter.begin(directory, { skipLaunch: true });
     api.prepareSession({ directory, remoteId, platform: params.platform }, controller.signal).then((result) => {
       if (controller.signal.aborted) return;
       setCatalog(result);
-      launchProgressReporter.succeed();
     }).catch((err) => {
       if (controller.signal.aborted) return;
-      const message = err instanceof Error ? err.message : String(err);
-      setCatalogError(message);
-      launchProgressReporter.fail(message);
+      setCatalogError(err instanceof Error ? err.message : String(err));
     });
     return () => controller.abort();
   }, [directory, remoteId, params.platform, catalogAttempt]);
@@ -151,12 +147,16 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
     const stillCurrent = () => active.current && generation.current === sourceGeneration;
     inFlight.current = sourceGeneration;
     setError('');
+    // The first submission launches the instance when it is closed
+    // (10-20 s); the overlay reports it (quick starts stay silent).
+    launchProgressReporter.begin(directory, { skipLaunch: true });
     try {
       const res = await api.startSession({
         directory: target.startsWith('dir:') ? target.slice(4) : directory,
         platform, remoteId, title, prompt: text, send,
         worktree: canWorktree && target === 'worktree',
       });
+      launchProgressReporter.succeed();
       if (!res.sessionId) throw new Error('Session creation returned no session');
       // No title: OpenCode titles the session from its first message.
       seedNewSession(res.sessionId, res.directory, res.platform, title, res.remoteId);
@@ -176,6 +176,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      launchProgressReporter.fail(message);
       if (stillCurrent()) setError(message);
       // Creation is non-idempotent: a lost response must never enter the
       // existing Composer's BackendUnavailableError automatic replay loop.

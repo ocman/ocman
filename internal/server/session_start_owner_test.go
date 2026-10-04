@@ -66,8 +66,12 @@ func TestDraftLaunchExplicitOwner(t *testing.T) {
 				if local.ensures != 0 {
 					t.Fatalf("hub launched %d times", local.ensures)
 				}
+				wantEnsures := 1
+				if endpoint == "prepare" {
+					wantEnsures = 0 // prepare never launches
+				}
 				if tc.status == http.StatusOK {
-					if owner.ensures != 1 || !strings.Contains(w.Body.String(), `"platform":"r-box:opencode"`) {
+					if owner.ensures != wantEnsures || !strings.Contains(w.Body.String(), `"platform":"r-box:opencode"`) {
 						t.Fatalf("owner calls=%d: %s", owner.ensures, w.Body.String())
 					}
 				} else if owner.ensures != 0 {
