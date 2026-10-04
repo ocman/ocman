@@ -91,56 +91,22 @@ func (p *remotePlatform) Capabilities() platforms.Capabilities {
 	return caps
 }
 
-// stamp annotates sessions with host identity + ID, recording ownership.
-func (p *remotePlatform) stamp(sessions []db.Session, stale bool) []db.Session {
-	rid := p.remoteID()
-	name := p.nameFn()
-	owned := make(map[string]struct{}, len(sessions))
-	for i := range sessions {
-		sessions[i].Platform = string(p.ID())
-		sessions[i].RemoteID = rid
-		sessions[i].RemoteName = name
-		sessions[i].Stale = stale
-		owned[sessions[i].ID] = struct{}{}
-	}
-	if !stale {
-		p.mu.Lock()
-		p.owned = owned
-		p.lastSess = sessions
-		p.mu.Unlock()
-	}
-	return sessions
-}
-
 func (p *remotePlatform) Sessions(ctx context.Context, dir string, since int64) ([]db.Session, error) {
 	client := p.conn.Client()
 	if client == nil {
-		return p.staleSessions(), nil
+		return p.staleSessions(dir, since), nil
 	}
 	resp, err := client.Sessions(ctx, &pb.SessionsReq{Platform: p.base, Dir: dir, Since: since})
 	if err != nil {
 		p.conn.markOffline()
-		return p.staleSessions(), nil
+		return p.staleSessions(dir, since), nil
 	}
 	p.conn.markSeen()
 	var sessions []db.Session
 	if err := unmarshalJSON(resp.Payload, &sessions); err != nil {
 		return nil, err
 	}
-	return p.stamp(sessions, false), nil
-}
-
-// staleSessions returns the last-known sessions flagged stale (Phase 5).
-func (p *remotePlatform) staleSessions() []db.Session {
-	p.mu.RLock()
-	last := p.lastSess
-	p.mu.RUnlock()
-	out := make([]db.Session, len(last))
-	copy(out, last)
-	for i := range out {
-		out[i].Stale = true
-	}
-	return out
+	return p.stamp(sessions, dir, since), nil
 }
 
 func (p *remotePlatform) Session(ctx context.Context, id string, limit, offset int) (*platforms.SessionDetail, error) {
