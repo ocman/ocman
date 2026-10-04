@@ -11,6 +11,10 @@ function WithShortcuts(props: React.ComponentProps<typeof Composer>) {
 }
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+async function pickMachine(name: string) {
+  fireEvent.click(await screen.findByRole('combobox', { name: 'Session machine' }));
+  fireEvent.click(screen.getByRole('option', { name }));
+}
 const target = { remoteId: 'box', remoteName: 'Build box', platform: 'r-box:opencode', dir: '/remote/project' };
 
 it('switches a new conversation, keeping its typed draft, and locks sending during the switch', async () => {
@@ -21,7 +25,7 @@ it('switches a new conversation, keeping its typed draft, and locks sending duri
   render(<Composer isRunning={false} newConversation directory="/local/project" sessionId="machine-test" onMachineChange={onMachineChange} />);
   const input = screen.getByRole('textbox');
   fireEvent.input(input, { target: { value: 'a draft just typed' } });
-  fireEvent.change(await screen.findByRole('combobox', { name: 'Session machine' }), { target: { value: 'box' } });
+  await pickMachine('Build box');
   expect(onMachineChange).toHaveBeenCalledWith(target);
   // The composer stays mounted across the switch, so the text survives.
   expect(input).toHaveValue('a draft just typed');
@@ -68,7 +72,7 @@ it('rejects file drops while switching machines', async () => {
   const upload = vi.spyOn(api, 'uploadComposerAttachment');
   let complete!: () => void;
   render(<Composer isRunning={false} newConversation directory="/local/project" sessionId="switch-test" onMachineChange={() => new Promise<void>((resolve) => { complete = resolve; })} />);
-  fireEvent.change(await screen.findByRole('combobox', { name: 'Session machine' }), { target: { value: 'box' } });
+  await pickMachine('Build box');
   fireEvent.drop(screen.getByRole('textbox'), { dataTransfer: { files: [new File(['hello'], 'note.txt', { type: 'text/plain' })] } });
   expect(upload).not.toHaveBeenCalled();
   await act(async () => complete());
@@ -154,7 +158,7 @@ it('does not start dictation while switching machines', async () => {
   vi.spyOn(api, 'gitBranches').mockResolvedValue({ branches: [] });
   let complete!: () => void;
   render(<WithShortcuts isRunning={false} newConversation directory="/local/project" sessionId="switch-mic-test" onMachineChange={() => new Promise<void>((resolve) => { complete = resolve; })} />);
-  fireEvent.change(await screen.findByRole('combobox', { name: 'Session machine' }), { target: { value: 'box' } });
+  await pickMachine('Build box');
   await act(async () => fireEvent.click(screen.getByTitle('Record voice message')));
   fireEvent.keyDown(screen.getByRole('textbox'), { code: 'KeyD', altKey: true });
   expect(recognition.start).not.toHaveBeenCalled();

@@ -1,3 +1,5 @@
+import { SearchSelect } from '../SearchSelect';
+
 /** `dir:<path>` starts the conversation in an existing linked worktree. */
 export type SessionTarget = 'current' | 'worktree' | `dir:${string}`;
 
@@ -15,21 +17,25 @@ export function TargetSelector({
   disabled?: boolean;
 }) {
   if (!directory) return null;
+  const options = [
+    { value: 'current', label: 'Current checkout' },
+    ...(worktreesSupported ? [
+      { value: 'worktree', label: 'New worktree' },
+      ...worktrees.map((tree) => ({
+        value: `dir:${tree.path}`,
+        label: `Worktree ${tree.branch || tree.path.split('/').pop()}`,
+        section: 'Existing worktrees',
+      })),
+    ] : []),
+  ];
   return (
     <div className="oc-composer-selectors" data-testid="composer-target-selector">
       <div className="oc-composer-selectors-left">
         <span className="oc-selector-icon" aria-hidden="true"><i className="bi bi-folder" /></span>
-        <select className="oc-bar-select" aria-label="Session target" title="Where to start this conversation"
+        <SearchSelect className="oc-bar-search" ariaLabel="Session target" title="Where to start this conversation"
+          placeholder="Current checkout" searchLabel="Search worktrees" options={options}
           disabled={disabled} value={worktreesSupported ? target : 'current'}
-          onChange={(e) => onTargetChange?.(e.target.value as SessionTarget)}>
-          <option value="current">Current checkout</option>
-          {worktreesSupported && <option value="worktree">New worktree</option>}
-          {worktreesSupported && worktrees.map((tree) => (
-            <option key={tree.path} value={`dir:${tree.path}`}>
-              Worktree {tree.branch || tree.path.split('/').pop()}
-            </option>
-          ))}
-        </select>
+          onChange={(value) => onTargetChange?.(value as SessionTarget)} />
       </div>
     </div>
   );

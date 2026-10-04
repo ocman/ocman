@@ -79,3 +79,15 @@ it('uses phrasing content only, so it can render inside a paragraph', async () =
   await user.click(screen.getByRole('combobox'));
   expect(container.querySelector('p div')).toBeNull();
 });
+
+it('renders disabled options as unselectable', async () => {
+  const user = userEvent.setup();
+  const onChange = vi.fn();
+  render(<SearchSelect value="a" options={[{ value: 'a', label: 'A' }, { value: 'b', label: 'B', disabled: true }]}
+    ariaLabel="Pick" placeholder="Pick" searchLabel="Search" className="extra" onChange={onChange} />);
+  expect(screen.getByRole('combobox').parentElement).toHaveClass('oc-search-select', 'extra');
+  await user.click(screen.getByRole('combobox'));
+  expect(screen.getByRole('option', { name: 'B' })).toBeDisabled();
+  await user.click(screen.getByRole('option', { name: 'B' }));
+  expect(onChange).not.toHaveBeenCalled();
+});

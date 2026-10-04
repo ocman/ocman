@@ -30,15 +30,18 @@ test('machine selection re-points the new conversation and the first prompt crea
 
   await page.goto(`/session/new?dir=${encodeURIComponent(source.directory)}&platform=${encodeURIComponent(source.platform)}`);
   const machine = page.getByRole('combobox', { name: 'Session machine' });
-  await expect(machine).toHaveValue('local');
-  await expect(machine.getByRole('option', { name: 'Other · no matching project' })).toBeDisabled();
+  await expect(machine).toHaveText('This machine');
+  await machine.click();
+  await expect(page.getByRole('option', { name: 'Other · no matching project' })).toBeDisabled();
+  await machine.click();
   const composer = page.getByRole('textbox');
   await composer.fill('Continue on the build box');
-  await machine.selectOption('box');
+  await machine.click();
+  await page.getByRole('option', { name: 'Build box' }).click();
   // No session was created by the switch; the route now names the machine.
   await expect(page).toHaveURL(/\/session\/new\?.*remoteId=box/);
   await expect(composer).toHaveValue('Continue on the build box');
-  await expect(machine).toHaveValue('box');
+  await expect(machine).toHaveText('Build box');
   const start = page.waitForRequest((request) => request.url().endsWith('/api/sessions/start') && request.method() === 'POST');
   await composer.press('Enter');
   const body = (await start).postDataJSON();

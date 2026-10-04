@@ -476,6 +476,30 @@
 }
 .oc-selector-icon { color: var(--overlay0); font-size: 11px; display: inline-flex; }
 
+/* SearchSelect styled as plain bar text; the composer sits at the bottom of
+   the page, so the menu opens upward. */
+.oc-search-select.oc-bar-search { display: inline-block; }
+.oc-search-select.oc-bar-search > button {
+  min-height: 0;
+  padding: 2px;
+  border: none;
+  background: transparent;
+  max-width: 200px;
+  cursor: pointer;
+}
+.oc-search-select.oc-bar-search > button > span {
+  font-family: 'SF Mono', Consolas, monospace;
+  font-size: 11px;
+}
+.oc-search-select.oc-bar-search > button:hover:not(:disabled) { color: var(--accent); }
+.oc-search-select.oc-bar-search > button .bi-chevron-down { font-size: 9px; color: var(--overlay0); }
+.oc-search-select.oc-bar-search .oc-search-select-menu {
+  top: auto;
+  bottom: calc(100% + 4px);
+  min-width: 220px;
+  font-size: 12px;
+}
+
 /* Send button (turns into a stop button while generating) */
 .oc-bar-send {
   width: 32px;

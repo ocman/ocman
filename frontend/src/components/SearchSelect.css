@@ -92,3 +92,7 @@
   margin-top: 4px;
   border-top: 1px solid var(--surface1);
 }
+.oc-search-select-menu [role='option']:disabled {
+  color: var(--text-dim);
+  cursor: not-allowed;
+}

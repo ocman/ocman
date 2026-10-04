@@ -11,6 +11,7 @@ export interface SearchSelectOption {
   icon?: ReactNode;
   // Header shown above the first option of each section while not searching.
   section?: string;
+  disabled?: boolean;
 }
 
 interface SearchSelectProps {
@@ -20,6 +21,8 @@ interface SearchSelectProps {
   placeholder: string;
   searchLabel: string;
   disabled?: boolean;
+  className?: string;
+  title?: string;
   onChange: (value: string) => void;
   // Custom ranking for a non-empty query; defaults to fuzzy label matching.
   search?: (query: string) => SearchSelectOption[];
@@ -35,6 +38,8 @@ export function SearchSelect({
   placeholder,
   searchLabel,
   disabled,
+  className,
+  title,
   onChange,
   search: searchOptions,
 }: SearchSelectProps) {
@@ -58,11 +63,12 @@ export function SearchSelect({
   const selected = options.find((option) => option.value === value);
 
   return (
-    <span className="oc-search-select" ref={root} onKeyDown={(event) => event.key === 'Escape' && setOpen(false)}>
+    <span className={className ? `oc-search-select ${className}` : 'oc-search-select'} ref={root} onKeyDown={(event) => event.key === 'Escape' && setOpen(false)}>
       <button
         type="button"
         role="combobox"
         aria-label={ariaLabel}
+        title={title}
         aria-expanded={open}
         aria-controls={id}
         disabled={disabled}
@@ -92,6 +98,7 @@ export function SearchSelect({
                 type="button"
                 role="option"
                 aria-selected={option.value === value}
+                disabled={option.disabled}
                 key={option.value}
                 onClick={() => {
                   onChange(option.value);

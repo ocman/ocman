@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import type { ResolveTargetsResponse, TargetCandidate } from '../../lib/api.types';
-import { SelectField } from '../Control';
+import { SearchSelect } from '../SearchSelect';
 
 export function ComposerMachineSelector({ directory, remoteId = 'local', disabled, onSelect }: {
   directory: string;
@@ -34,29 +34,32 @@ export function ComposerMachineSelector({ directory, remoteId = 'local', disable
   }
   return <span className="oc-composer-selectors oc-composer-selectors-left" data-testid="composer-machine-selector">
     <span className="oc-selector-icon" aria-hidden="true"><i className="bi bi-pc-display" /></span>
-    <SelectField
-      aria-label="Session machine"
-      title="Start a new conversation on this machine"
-      className="oc-bar-select"
-      style={{ height: 'auto' }}
-      value={remoteId}
-      disabled={disabled || !targets}
-      onClick={(event) => event.stopPropagation()}
-      onChange={(event) => {
-        const target = candidates.find((c) => c.remoteId === event.target.value);
-        if (!target || target.remoteId === remoteId) return;
-        setError('');
-        void onSelect(target).catch(() => setError('Could not start a session on that machine'));
-      }}
-    >
-      {machines.map((machine) => {
-        const current = machine.remoteId === remoteId;
-        const matched = candidates.some((c) => c.remoteId === machine.remoteId);
-        return <option key={machine.remoteId} value={machine.remoteId} disabled={!current && !matched}>
-          {machine.remoteName}{current ? ' (current)' : !matched ? ' · no matching project' : ''}
-        </option>;
-      })}
-    </SelectField>
+    <span onClick={(event) => event.stopPropagation()}>
+      <SearchSelect
+        className="oc-bar-search"
+        ariaLabel="Session machine"
+        title="Start a new conversation on this machine"
+        placeholder="Machine"
+        searchLabel="Search machines"
+        value={remoteId}
+        disabled={disabled || !targets}
+        options={machines.map((machine) => {
+          const current = machine.remoteId === remoteId;
+          const matched = candidates.some((c) => c.remoteId === machine.remoteId);
+          return {
+            value: machine.remoteId,
+            label: `${machine.remoteName}${!current && !matched ? ' · no matching project' : ''}`,
+            disabled: !current && !matched,
+          };
+        })}
+        onChange={(value) => {
+          const target = candidates.find((c) => c.remoteId === value);
+          if (!target || target.remoteId === remoteId) return;
+          setError('');
+          void onSelect(target).catch(() => setError('Could not start a session on that machine'));
+        }}
+      />
+    </span>
     {error && <span role="alert">{error}</span>}
   </span>;
 }
