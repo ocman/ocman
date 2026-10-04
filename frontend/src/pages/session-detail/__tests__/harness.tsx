@@ -146,12 +146,14 @@ const mockState: {
   assistantThreadCrashMessage: string | null;
   assistantThreadCrashCount: number;
   sessionInfo: SessionInfo | null;
+  tmuxAvailable: boolean;
 } = {
   caps: fullCaps(),
   apiStub: makeApiStub(),
   assistantThreadCrashMessage: null,
   assistantThreadCrashCount: 0,
   sessionInfo: null,
+  tmuxAvailable: false,
 };
 
 /**
@@ -231,7 +233,7 @@ vi.mock('../../../lib/useCapabilities', () => ({
 
 vi.mock('../../../lib/useTmux', () => ({
   useTmux: () => ({
-    available: false,
+    available: mockState.tmuxAvailable,
     isLocal: false,
     sessions: [],
     clients: [],
@@ -410,6 +412,8 @@ export interface RenderOptions {
   assistantThreadCrashMessage?: string;
   assistantThreadCrashCount?: number;
   sessionInfo?: SessionInfo | null;
+  /** Report tmux as available so the real terminal dock renders. */
+  tmuxAvailable?: boolean;
   /** Override apiStore actions individually. */
   storeOverrides?: Record<string, unknown>;
   /** Override module-level api.* functions (e.g. `session`). The
@@ -464,6 +468,7 @@ export function renderSessionPage(opts: RenderOptions = {}): RenderHandle {
   mockState.assistantThreadCrashMessage = opts.assistantThreadCrashMessage ?? null;
   mockState.assistantThreadCrashCount = opts.assistantThreadCrashCount ?? 0;
   mockState.sessionInfo = opts.sessionInfo ?? null;
+  mockState.tmuxAvailable = opts.tmuxAvailable ?? false;
 
   const detail =
     opts.detail ?? makeSessionDetail(makeSession({ id: opts.sessionId ?? 'sess_1' }));
