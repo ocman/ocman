@@ -98,6 +98,33 @@ describe('usePromptSync', () => {
     expect(o.clearPrompt).not.toHaveBeenCalled();
   });
 
+  // A reply that lands while the stream is down (laptop asleep, judge
+  // auto-approves, answered in another tab) is never replayed, and a
+  // reconnect's reconcile keeps the in-memory prompt.
+  it('dismisses a pending permission once OpenCode no longer lists it', async () => {
+    vi.useFakeTimers();
+    listPermissions.mockResolvedValue([]);
+    const perm = { permissionId: 'perm-1', permission: 'Run shell', patterns: [], sessionId: 'child-1', askedAt: 0 };
+    const o = opts({ pendingPermission: perm });
+    renderHook(() => usePromptSync(o));
+    // One miss may be the observed-prompt cache trailing the stream.
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(listPermissions).toHaveBeenCalledWith('child-1');
+    expect(o.clearPrompt).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
+    expect(o.clearPrompt).toHaveBeenCalledWith('permission', 'perm-1');
+  });
+
+  it('keeps the permission while OpenCode still lists it', async () => {
+    vi.useFakeTimers();
+    listPermissions.mockResolvedValue([{ ...rawPermission, sessionID: 'child-1' }]);
+    const perm = { permissionId: 'perm-1', permission: 'Run shell', patterns: [], sessionId: 'child-1', askedAt: 0 };
+    const o = opts({ pendingPermission: perm });
+    renderHook(() => usePromptSync(o));
+    await act(async () => { await vi.advanceTimersByTimeAsync(9000); });
+    expect(o.clearPrompt).not.toHaveBeenCalled();
+  });
+
   it('restores a stored question when parts still show a pending question tool', () => {
     storePendingQuestion('sess-1', pendingQ);
     const parts = [{

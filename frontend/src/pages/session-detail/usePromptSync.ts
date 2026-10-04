@@ -168,6 +168,36 @@ export function usePromptSync({
     };
   }, [id, pendingQuestionRequestId, portAvailable, listQuestions, clearPrompt]);
 
+  // Same fallback for permissions. A reply that lands while the stream
+  // is down (sleep, judge auto-approval, another tab) is never replayed,
+  // and a reconnect's reconcile keeps the in-memory prompt. The list is
+  // ocman's observed-prompt cache, which can trail the session stream by
+  // a moment, so only a miss on two consecutive polls dismisses.
+  const pendingPermissionId = pendingPermission?.permissionId ?? null;
+  const pendingPermissionSessionId = pendingPermission?.sessionId || id;
+  useEffect(() => {
+    if (!pendingPermissionSessionId || !pendingPermissionId || !portAvailable) return;
+    let cancelled = false;
+    let misses = 0;
+    const timer = window.setInterval(() => {
+      if (document.hidden) return;
+      listPermissions(pendingPermissionSessionId)
+        .then((permissions) => {
+          if (cancelled) return;
+          const stillPending = permissions.some((raw) =>
+            extractPendingPermission({ type: 'permission.asked', properties: raw as Record<string, unknown> })
+              ?.permissionId === pendingPermissionId);
+          misses = stillPending ? 0 : misses + 1;
+          if (misses >= 2) clearPrompt('permission', pendingPermissionId);
+        })
+        .catch(() => { /* leave the prompt up; the next tick retries */ });
+    }, 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [pendingPermissionSessionId, pendingPermissionId, portAvailable, listPermissions, clearPrompt]);
+
   // Restore pending question from sessionStorage when navigating
   // back to a page whose parts still show a pending question tool.
   useEffect(() => {
