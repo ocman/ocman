@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync/atomic"
-	"time"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
@@ -62,27 +60,16 @@ func (a *Adapter) ProxyEvents(ctx context.Context, sessionID string, w io.Writer
 	}
 	rememberSessionPort(sessionID, port)
 
-	// OpenCode sends a server.heartbeat event every 10 seconds, so
-	// under normal operation the read below unblocks well within this
-	// window. The 60 s idle timeout exists to reclaim the goroutine
-	// when the upstream TCP connection goes half-open (e.g. the
-	// OpenCode process was killed without a clean FIN): the OS
-	// keepalive would eventually fire, but 60 s is a tighter bound.
-	// On timeout the body is closed, Read returns an error, and the
+	// On idle timeout the body is closed, Read returns an error, and the
 	// SSE handler's context-aware reconnect logic re-establishes.
-	const sseIdleTimeout = 60 * time.Second
-	var idleExpired atomic.Bool
-	timer := time.AfterFunc(sseIdleTimeout, func() {
-		idleExpired.Store(true)
-		resp.Body.Close()
-	})
-	defer timer.Stop()
+	idle := platforms.NewIdleWatchdog(platforms.SSEIdleTimeout, func() { resp.Body.Close() })
+	defer idle.Stop()
+	body := idle.Reader(resp.Body)
 
 	buf := make([]byte, 4096)
 	for {
-		n, readErr := resp.Body.Read(buf)
+		n, readErr := body.Read(buf)
 		if n > 0 {
-			timer.Reset(sseIdleTimeout)
 			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
 				return writeErr
 			}
@@ -94,7 +81,7 @@ func (a *Adapter) ProxyEvents(ctx context.Context, sessionID string, w io.Writer
 			if readErr == io.EOF {
 				return nil
 			}
-			if idleExpired.Load() {
+			if idle.Expired() {
 				return platforms.ErrSSEIdleTimeout
 			}
 			return readErr

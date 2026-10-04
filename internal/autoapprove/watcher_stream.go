@@ -21,8 +21,17 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 	if err != nil {
 		return fmt.Errorf("build /global/event request: %w", err)
 	}
+	// Discovery leaves a listed port's stream alone, so a stream that
+	// stops producing bytes (heartbeats included) without closing must end
+	// here, or the reconnect that reseeds status and prompts never runs.
+	// Armed before Do, so it also bounds the wait for headers.
+	idle := platforms.NewIdleWatchdog(w.idleTimeout, cancelStream)
+	defer idle.Stop()
 	resp, err := w.httpClient.Do(req)
 	if err != nil {
+		if idle.Expired() {
+			return fmt.Errorf("connect /global/event: %w", platforms.ErrSSEIdleTimeout)
+		}
 		return fmt.Errorf("connect /global/event: %w", err)
 	}
 	defer resp.Body.Close()
@@ -40,9 +49,13 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 		// Seed upstream turn state before processing live events.
 		statusGeneration = ocAdapter.StatusPortGeneration(port)
 		directories := w.directoriesForPort(port)
+		// The seed does not read the stream (one bounded read per
+		// directory), so it must not count as stream silence.
+		idle.Stop()
 		if !ocAdapter.SeedSessionStatusFromInstance(streamCtx, port, statusGeneration, directories) {
 			log.WithField("port", port).Debug("autoapprove-watcher: /session/status snapshot unavailable, turn state stays unobserved")
 		}
+		idle.Touch()
 		onPermission := func(prompt platforms.LivePrompt) {
 			w.svc.ObservePermissionPrompt(opencode.PlatformID, "", prompt)
 			if w.onPermission == nil {
@@ -179,10 +192,13 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 			}
 		},
 	}
-	_, err = io.Copy(tee, resp.Body)
+	_, err = io.Copy(tee, idle.Reader(resp.Body))
 	close(commitParts)
 	<-commitDone
 	<-firstReconciliationFinished
+	if idle.Expired() && ctx.Err() == nil {
+		return fmt.Errorf("read /global/event: %w", platforms.ErrSSEIdleTimeout)
+	}
 	if err != nil && ctx.Err() == nil {
 		return fmt.Errorf("read /global/event: %w", err)
 	}

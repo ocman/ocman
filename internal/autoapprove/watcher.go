@@ -93,6 +93,9 @@ type autoApproveWatcher struct {
 	// constants.
 	rescanInterval time.Duration
 	reconnectDelay time.Duration
+	// idleTimeout drops a stream that delivered no bytes (heartbeats
+	// included) for this long, and bounds the wait for its headers.
+	idleTimeout time.Duration
 
 	// mu guards subs.
 	mu sync.Mutex
@@ -133,6 +136,7 @@ func newAutoApproveWatcher(svc *Service) *autoApproveWatcher {
 		httpClient:        &http.Client{Transport: auth.Transport(http.DefaultTransport)}, // no timeout — SSE is long-lived
 		rescanInterval:    autoApproveRescanInterval,
 		reconnectDelay:    autoApproveReconnectDelay,
+		idleTimeout:       platforms.SSEIdleTimeout,
 		subs:              make(map[string]context.CancelFunc),
 		seenSessions:      make(map[string]struct{}),
 		titles:            make(map[string]string),
