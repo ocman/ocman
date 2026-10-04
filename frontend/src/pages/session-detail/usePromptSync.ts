@@ -54,6 +54,7 @@ export function usePromptSync({
 }: UsePromptSyncOptions): void {
   const patchRecentSession = useApiStore((state) => state.patchRecentSession);
   const listPermissions = useApiStore((state) => state.listPermissions);
+  const refreshPermissions = useApiStore((state) => state.refreshPermissions);
   const listQuestions = useApiStore((state) => state.listQuestions);
 
   // Mirror pending prompt flags into the sidebar row so the badge
@@ -170,9 +171,10 @@ export function usePromptSync({
 
   // Same fallback for permissions. A reply that lands while the stream
   // is down (sleep, judge auto-approval, another tab) is never replayed,
-  // and a reconnect's reconcile keeps the in-memory prompt. The list is
-  // ocman's observed-prompt cache, which can trail the session stream by
-  // a moment, so only a miss on two consecutive polls dismisses.
+  // and a reconnect's reconcile keeps the in-memory prompt. Only the
+  // authoritative refresh may prove absence: ocman's observed-prompt cache
+  // can miss a prompt the session stream delivered. A failed refresh keeps
+  // the prompt, and a miss must repeat on the next poll before dismissal.
   const pendingPermissionId = pendingPermission?.permissionId ?? null;
   const pendingPermissionSessionId = pendingPermission?.sessionId || id;
   useEffect(() => {
@@ -181,7 +183,7 @@ export function usePromptSync({
     let misses = 0;
     const timer = window.setInterval(() => {
       if (document.hidden) return;
-      listPermissions(pendingPermissionSessionId)
+      refreshPermissions(pendingPermissionSessionId)
         .then((permissions) => {
           if (cancelled) return;
           const stillPending = permissions.some((raw) =>
@@ -196,7 +198,7 @@ export function usePromptSync({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [pendingPermissionSessionId, pendingPermissionId, portAvailable, listPermissions, clearPrompt]);
+  }, [pendingPermissionSessionId, pendingPermissionId, portAvailable, refreshPermissions, clearPrompt]);
 
   // Restore pending question from sessionStorage when navigating
   // back to a page whose parts still show a pending question tool.

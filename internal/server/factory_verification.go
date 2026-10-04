@@ -99,9 +99,7 @@ func (l factoryImplementationLauncher) ImplementationActivity(ctx context.Contex
 		return time.Time{}, false, errors.New("implementation session is unavailable")
 	}
 	permissions := platform.ListPermissions
-	if live, ok := platform.(interface {
-		RefreshPermissions(context.Context, string) ([]platforms.LivePrompt, error)
-	}); ok {
+	if live, ok := platform.(platforms.PermissionRefresher); ok {
 		// The observed-prompt cache is empty after a restart; ask the instance.
 		permissions = live.RefreshPermissions
 	}

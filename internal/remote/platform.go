@@ -249,6 +249,13 @@ func (p *remotePlatform) ListPermissions(ctx context.Context, sessionID string) 
 	})
 }
 
+// RefreshPermissions asks the owner for an authoritative permission list.
+func (p *remotePlatform) RefreshPermissions(ctx context.Context, sessionID string) ([]platforms.LivePrompt, error) {
+	return sliceCall[platforms.LivePrompt](p, func(c pb.OcmanClient) (*pb.JsonResp, error) {
+		return c.RefreshPermissions(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})
+	})
+}
+
 func (p *remotePlatform) ListQuestions(ctx context.Context, sessionID string) ([]platforms.LivePrompt, error) {
 	return sliceCall[platforms.LivePrompt](p, func(c pb.OcmanClient) (*pb.JsonResp, error) {
 		return c.ListQuestions(ctx, &pb.SessionRef{Platform: p.base, SessionId: sessionID})

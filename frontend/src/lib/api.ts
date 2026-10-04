@@ -856,6 +856,9 @@ export const api = {
   },
   listPermissions: (sessionId: string) =>
     fetchJSON<unknown[]>(`/api/session/${encodeURIComponent(sessionId)}/permissions`),
+  /** Authoritative list from the owner's live instance; absence means resolved. */
+  refreshPermissions: (sessionId: string) =>
+    fetchJSON<unknown[]>(`/api/session/${encodeURIComponent(sessionId)}/permissions?refresh=1`),
   respondPermission: (
     sessionId: string,
     permissionId: string,

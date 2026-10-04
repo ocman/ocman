@@ -64,9 +64,7 @@ func (s *Server) reconcilePermissionInbox(ctx context.Context) {
 			readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			var prompts []platforms.LivePrompt
 			var err error
-			if live, ok := adapter.(interface {
-				RefreshPermissions(context.Context, string) ([]platforms.LivePrompt, error)
-			}); ok {
+			if live, ok := adapter.(platforms.PermissionRefresher); ok {
 				prompts, err = live.RefreshPermissions(readCtx, key.sessionID)
 			} else {
 				prompts, err = adapter.ListPermissions(readCtx, key.sessionID)

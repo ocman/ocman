@@ -8,10 +8,11 @@ import type { PendingQuestion } from '../../components/session/QuestionPrompt';
 const patchRecentSession = vi.fn();
 const listPermissions = vi.fn<(sid?: string) => Promise<unknown[]>>(async () => []);
 const listQuestions = vi.fn(async (): Promise<unknown[]> => []);
+const refreshPermissions = vi.fn<(sid?: string) => Promise<unknown[]>>(async () => []);
 
 vi.mock('../../lib/apiStore', () => ({
   useApiStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ patchRecentSession, listPermissions, listQuestions }),
+    selector({ patchRecentSession, listPermissions, listQuestions, refreshPermissions }),
 }));
 
 import { usePromptSync, type UsePromptSyncOptions } from './usePromptSync';
@@ -103,21 +104,34 @@ describe('usePromptSync', () => {
   // reconnect's reconcile keeps the in-memory prompt.
   it('dismisses a pending permission once OpenCode no longer lists it', async () => {
     vi.useFakeTimers();
-    listPermissions.mockResolvedValue([]);
+    refreshPermissions.mockResolvedValue([]);
     const perm = { permissionId: 'perm-1', permission: 'Run shell', patterns: [], sessionId: 'child-1', askedAt: 0 };
     const o = opts({ pendingPermission: perm });
     renderHook(() => usePromptSync(o));
     // One miss may be the observed-prompt cache trailing the stream.
     await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
-    expect(listPermissions).toHaveBeenCalledWith('child-1');
+    expect(refreshPermissions).toHaveBeenCalledWith('child-1');
     expect(o.clearPrompt).not.toHaveBeenCalled();
     await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
     expect(o.clearPrompt).toHaveBeenCalledWith('permission', 'perm-1');
   });
 
-  it('keeps the permission while OpenCode still lists it', async () => {
+  // The session stream can deliver a prompt the observed cache missed;
+  // an empty cached list must never dismiss it.
+  it('keeps the permission while the live list has it, even if the cache is empty', async () => {
     vi.useFakeTimers();
-    listPermissions.mockResolvedValue([{ ...rawPermission, sessionID: 'child-1' }]);
+    listPermissions.mockResolvedValue([]);
+    refreshPermissions.mockResolvedValue([{ ...rawPermission, sessionID: 'child-1' }]);
+    const perm = { permissionId: 'perm-1', permission: 'Run shell', patterns: [], sessionId: 'child-1', askedAt: 0 };
+    const o = opts({ pendingPermission: perm });
+    renderHook(() => usePromptSync(o));
+    await act(async () => { await vi.advanceTimersByTimeAsync(9000); });
+    expect(o.clearPrompt).not.toHaveBeenCalled();
+  });
+
+  it('keeps the permission when the authoritative refresh fails', async () => {
+    vi.useFakeTimers();
+    refreshPermissions.mockRejectedValue(new Error('unreachable'));
     const perm = { permissionId: 'perm-1', permission: 'Run shell', patterns: [], sessionId: 'child-1', askedAt: 0 };
     const o = opts({ pendingPermission: perm });
     renderHook(() => usePromptSync(o));
