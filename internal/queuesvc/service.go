@@ -250,20 +250,29 @@ func (s *Service) Sweep(ctx context.Context) {
 		// message proves the prior turn ended even if its idle edge was missed.
 		key := sessionKey{Platform: q.Platform, SessionID: q.SessionID}
 		guard, guarded := s.currentDrainGuard(key)
+		// Read lifecycle only after acquiring the queue lock: a direct send
+		// may start a turn while Sweep waits, without changing this guard.
+		unlock := s.lockFor(key)
+		current, stillGuarded := s.currentDrainGuard(key)
+		if guarded != stillGuarded || (guarded && current.generation != guard.generation) {
+			unlock()
+			continue
+		}
 		var prior *completionState
 		if guarded {
 			completion, supported := s.status.(completionInferer)
 			if !supported {
+				unlock()
 				continue
 			}
 			prior = &completionState{}
 			prior.messageID, prior.createdAt, prior.running, prior.completed, prior.ok = completion.LatestMessageState(ctx, q.Platform, q.SessionID)
 			if !prior.ok || !prior.completed || prior.messageID == "" || prior.createdAt <= guard.createdAt || prior.messageID == guard.messageID {
+				unlock()
 				continue
 			}
 		}
-		unlock := s.lockFor(key)
-		current, stillGuarded := s.currentDrainGuard(key)
+		current, stillGuarded = s.currentDrainGuard(key)
 		if guarded != stillGuarded || (guarded && current.generation != guard.generation) {
 			unlock()
 			continue

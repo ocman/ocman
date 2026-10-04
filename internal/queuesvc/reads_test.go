@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
@@ -98,6 +99,74 @@ func TestGuardedSweepReadsLifecycleOnce(t *testing.T) {
 	}
 	if got := sender.messages(); len(got) != 2 || got[1] != "two" {
 		t.Fatalf("sent %v, want [one two]", got)
+	}
+}
+
+type transitionStatus struct{ busy atomic.Bool }
+
+func (s *transitionStatus) TurnRunning(context.Context, string, string) (bool, bool) {
+	return s.busy.Load(), true
+}
+
+func (s *transitionStatus) LatestMessageState(context.Context, string, string) (string, int64, bool, bool, bool) {
+	busy := s.busy.Load()
+	return "assistant-2", 2, busy, !busy, true
+}
+
+func TestGuardedSweepReadsAfterWaitingForLock(t *testing.T) {
+	for _, change := range []string{"busy turn", "replacement guard"} {
+		t.Run(change, func(t *testing.T) { testGuardedSweepLockWait(t, change) })
+	}
+}
+
+func testGuardedSweepLockWait(t *testing.T, change string) {
+	t.Helper()
+	status := &transitionStatus{}
+	sender := &recSender{}
+	svc := New(&memStore{}, sender, status, nil)
+	key := sessionKey{Platform: "opencode", SessionID: "s1"}
+	if err := svc.Enqueue(t.Context(), key.Platform, true, platforms.SendMessageRequest{SessionID: key.SessionID, Message: "held"}); err != nil {
+		t.Fatal(err)
+	}
+	svc.markDrained(key, "user-1", 1)
+	unlock := svc.lockFor(key)
+	defer func() {
+		if unlock != nil {
+			unlock()
+		}
+	}()
+	done := make(chan struct{})
+	go func() { svc.Sweep(t.Context()); close(done) }()
+	// Wait until Sweep is blocked on the per-session lock. A direct Enter
+	// send or a native prompt can start a turn without changing the guard.
+	deadline := time.After(5 * time.Second)
+	for {
+		svc.mu.Lock()
+		waiting := svc.locks[key].refs == 2
+		svc.mu.Unlock()
+		if waiting {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("sweep did not wait for the session lock")
+		case <-time.After(time.Millisecond):
+		}
+	}
+	if change == "busy turn" {
+		status.busy.Store(true)
+	} else {
+		svc.markDrained(key, "replacement", 3)
+	}
+	unlock()
+	unlock = nil
+	select {
+	case <-done:
+	case <-deadline:
+		t.Fatal("sweep did not finish")
+	}
+	if got := sender.messages(); len(got) != 0 {
+		t.Fatalf("sent %v after %s while sweep waited for the lock", got, change)
 	}
 }
 

@@ -177,9 +177,9 @@ flowchart TD
   latest message identity. The local adapter reads one session and its newest
   message, without parts, tree or costs. Remotes settle on the owner and return
   that same bounded DTO through `SessionLifecycle`. Older owners without the
-  RPC fall back to session detail. A guarded sweep reuses its read only after
-  checking the guard generation under the session lock; idle-edge flushes
-  still trust the edge regardless of the status read.
+  RPC fall back to session detail. A guarded sweep reads lifecycle under the
+  session lock and checks guard generation before reusing that read.
+  Idle-edge flushes still trust the edge regardless of the status read.
 - **internal/plugins.** External wire DTOs, bounded NDJSON, version negotiation,
   handshake and stream-order validation, executable discovery, and description
   validation. `Server.StartOnListener` scans once; `RescanPlugins` repeats the scan
