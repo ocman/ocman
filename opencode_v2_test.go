@@ -1,8 +1,12 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/NoUseFreak/ocman/internal/db"
 
 	"github.com/NoUseFreak/ocman/internal/state"
 )
@@ -35,5 +39,28 @@ func TestV2ServerPasswordGeneratesOnceAndPersists(t *testing.T) {
 	defer st.Close()
 	if got, err := v2ServerPassword(ctx, st); err != nil || got != first {
 		t.Fatalf("after reopen = %q, %v; want %q", got, err, first)
+	}
+}
+
+func TestPinOpenCodeDB(t *testing.T) {
+	for _, tc := range []struct{ name, env, path, want string }{
+		{"default path leaves it unset", "", db.DefaultDBPath(), ""},
+		{"custom path is exported absolute", "", "rel/oc.db", "ABS:rel/oc.db"},
+		{"explicit env wins", "/set/oc.db", "/other.db", "/set/oc.db"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("OPENCODE_DB", tc.env)
+			if tc.env == "" {
+				_ = os.Unsetenv("OPENCODE_DB")
+			}
+			pinOpenCodeDB(tc.path)
+			want := tc.want
+			if rel, ok := strings.CutPrefix(want, "ABS:"); ok {
+				want, _ = filepath.Abs(rel)
+			}
+			if got := os.Getenv("OPENCODE_DB"); got != want {
+				t.Fatalf("OPENCODE_DB = %q, want %q", got, want)
+			}
+		})
 	}
 }

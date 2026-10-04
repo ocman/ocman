@@ -235,6 +235,7 @@ func main() {
 	var database *db.DB
 	openCodeDBPath := "" // maintenance is offered only for an opened database
 	var startupIssues []server.StartupIssue
+	pinOpenCodeDB(*dbPath)
 	if enabledPlatforms[string(opencodeplatform.PlatformID)] {
 		var issue *server.StartupIssue
 		database, issue, err = openOpenCodeDB(*dbPath)
