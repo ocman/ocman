@@ -313,13 +313,64 @@ func TestEnqueueFollowUp_DoesNotOvertakeOcmanQueue(t *testing.T) {
 func TestEnqueueFollowUp_UncertainNativeSendIsNotReplayed(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	p := newNativeQueuePlatform()
-	p.sendErr = platforms.ErrPlatformUnreachable
+	// Simulate the remote durably accepting the input, then losing the
+	// gRPC response. The hub cannot tell whether admission happened.
+	p.fakePlatform.sendMessageFn = func(req platforms.SendMessageRequest) error {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		p.sends = append(p.sends, req)
+		p.held = append(p.held, platforms.NativeQueuedMessage{ID: "msg_accepted", Text: req.Message})
+		return platforms.ErrPlatformUnreachable
+	}
 	reg.Register(p)
-	if rr := postMessage(t, srv, "s1", `{"message":"later","queue":true}`); rr.Code < 400 {
-		t.Fatalf("status = %d, want an error for an uncertain send", rr.Code)
+	if rr := postMessage(t, srv, "s1", `{"message":"later","queue":true}`); rr.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want non-replayable HTTP 422 for an uncertain send", rr.Code)
 	}
 	if n := ocmanQueued(t, srv); n != 0 {
 		t.Fatalf("ocman queue = %d, want 0 (no replay of an uncertain send)", n)
+	}
+	sends, _ := p.snapshot()
+	if len(sends) != 1 {
+		t.Fatalf("native admissions = %d, want exactly one", len(sends))
+	}
+	if held, err := p.NativeQueued(t.Context(), "s1"); err != nil || len(held) != 1 {
+		t.Fatalf("remote-held items = %+v, %v; original admission must remain", held, err)
+	}
+}
+
+// A selection-changing head must remain held without spending its retry
+// budget while older native follow-ups remain. Once they drain it sends.
+func TestQueueFlush_SelectionChangeWaitsForNativeBacklog(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	p := newNativeQueuePlatform()
+	p.listErr = platforms.ErrUnsupported
+	reg.Register(p)
+	postMessage(t, srv, "s1", `{"message":"C","queue":true,"agent":"plan"}`)
+	p.mu.Lock()
+	p.listErr = nil
+	p.sendErr = platforms.ErrUnsupported
+	p.held = []platforms.NativeQueuedMessage{{ID: "msg_b", Text: "B", CreatedAt: 1}}
+	p.mu.Unlock()
+	for range 6 {
+		srv.queueSvc().Flush(t.Context(), "fake", "s1")
+	}
+	head, err := srv.stateDB.HeadQueuedMessage(t.Context(), "fake", "s1")
+	if err != nil || head == nil || head.Attempts != 0 {
+		t.Fatalf("head = %+v, %v; want held with no failures", head, err)
+	}
+	sends, _ := p.snapshot()
+	for _, send := range sends {
+		if send.Delivery != "queue" {
+			t.Fatalf("head overtook backlog: %+v", send)
+		}
+	}
+	p.mu.Lock()
+	p.held = nil
+	p.sendErr = nil
+	p.mu.Unlock()
+	srv.queueSvc().Flush(t.Context(), "fake", "s1")
+	if n := ocmanQueued(t, srv); n != 0 {
+		t.Fatalf("queue = %d after native backlog drained", n)
 	}
 }
 

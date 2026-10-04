@@ -2,6 +2,7 @@ package queuesvc
 
 import (
 	"context"
+	"errors"
 
 	log "github.com/sirupsen/logrus"
 
@@ -75,6 +76,9 @@ func (s *Service) drainHead(ctx context.Context, key sessionKey, trustIdle bool,
 		Reasoning: head.Reasoning,
 	}
 	if err := s.sender.SendNow(ctx, head.Platform, req); err != nil {
+		if errors.Is(err, ErrDeferred) {
+			return // ordering wait, not a delivery failure
+		}
 		// Count failures so an unsendable head cannot block every later
 		// message forever. The head remains queued for retry until set aside.
 		blocked, recErr := s.store.RecordQueuedMessageFailure(ctx, head.ID, err.Error())

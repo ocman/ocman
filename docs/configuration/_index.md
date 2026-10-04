@@ -200,9 +200,10 @@ On a v2 machine, OpenCode runs one server for every project. Ocman follows that:
   agent calls ocman's tools directly instead of through v2's Code Mode `execute` tool.
 - **Settings → Maintenance** is not available on v2; it only knows the v1 storage layout.
 
-If you point ocman at a non-default database with `-db`, ocman exports it as `OPENCODE_DB` for the
-v2 server it launches, so both use the same file. Without `-db`, an `OPENCODE_DB` you set yourself is
-used for both.
+On v2, ocman resolves one absolute database path and exports it as `OPENCODE_DB` for the server,
+so both read and write the same file. An explicit `-db` wins (including the default path); otherwise
+`OPENCODE_DB` wins, then the default. Relative paths are resolved from ocman's working directory
+before launching the server. On v1, `-db` alone selects the reader's database as before.
 
 ### OpenCode server authentication
 

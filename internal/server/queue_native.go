@@ -3,12 +3,14 @@ package server
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/platforms"
+	"github.com/NoUseFreak/ocman/internal/queuesvc"
 )
 
 // Follow-ups (Ctrl/Cmd+Enter) prefer the platform's own queue when it
@@ -38,6 +40,9 @@ func (s *Server) sendHeld(ctx context.Context, platformID string, req platforms.
 		if !errors.Is(err, platforms.ErrUnsupported) {
 			return err
 		}
+		// The selection cannot be changed while older native inputs remain.
+		// Keep this head for the next idle edge without spending retries.
+		return queuesvc.ErrDeferred
 	}
 	return s.sendNow(ctx, platformID, req)
 }
@@ -65,6 +70,15 @@ func (s *Server) enqueueFollowUp(ctx context.Context, platformID string, send pl
 			// have been accepted already; queuing again could deliver the
 			// prompt twice, so it is surfaced instead.
 			if !errors.Is(err, platforms.ErrUnsupported) {
+				var upstream *platforms.UpstreamError
+				if !errors.As(err, &upstream) {
+					// HTTP 5xx is automatically replayed by the composer. A
+					// lost response after native admission has an unknown
+					// outcome, so use the non-replayable upstream-error path
+					// (REST 422) instead, retaining definite upstream errors.
+					return &platforms.UpstreamError{Status: http.StatusConflict,
+						Message: "Follow-up delivery could not be confirmed. Check the conversation and queue before retrying."}
+				}
 				return err
 			}
 		}

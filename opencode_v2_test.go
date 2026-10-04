@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
+	"github.com/NoUseFreak/ocman/internal/ocv2"
 
 	"github.com/NoUseFreak/ocman/internal/state"
 )
@@ -42,6 +43,7 @@ func TestV2ServerPasswordGeneratesOnceAndPersists(t *testing.T) {
 }
 
 func TestPinOpenCodeDB(t *testing.T) {
+	defer ocv2.SetInstalledV2(true)()
 	absRel, _ := filepath.Abs("rel/oc.db")
 	for _, tc := range []struct {
 		name, env, path string
@@ -49,7 +51,9 @@ func TestPinOpenCodeDB(t *testing.T) {
 		wantPath        string
 		wantEnv         string
 	}{
-		{"default path leaves env unset", "", db.DefaultDBPath(), false, db.DefaultDBPath(), ""},
+		{"default path pins writer", "", db.DefaultDBPath(), false, db.DefaultDBPath(), db.DefaultDBPath()},
+		{"explicit default overrides environment", "/set/oc.db", db.DefaultDBPath(), true, db.DefaultDBPath(), db.DefaultDBPath()},
+		{"relative environment is resolved before launch", "rel/oc.db", db.DefaultDBPath(), false, absRel, absRel},
 		{"custom path is exported absolute", "", "rel/oc.db", true, absRel, absRel},
 		{"user OPENCODE_DB is read when -db is not given", "/set/oc.db", db.DefaultDBPath(), false, "/set/oc.db", "/set/oc.db"},
 		{"explicit -db overrides OPENCODE_DB", "/set/oc.db", "/other.db", true, "/other.db", "/other.db"},
@@ -66,5 +70,13 @@ func TestPinOpenCodeDB(t *testing.T) {
 				t.Errorf("OPENCODE_DB = %q, want %q", got, tc.wantEnv)
 			}
 		})
+	}
+}
+
+func TestPinOpenCodeDBKeepsV1ReaderSelection(t *testing.T) {
+	defer ocv2.SetInstalledV2(false)()
+	t.Setenv("OPENCODE_DB", "/other.db")
+	if got := pinOpenCodeDB(db.DefaultDBPath(), false); got != db.DefaultDBPath() {
+		t.Fatalf("v1 reader = %q, want its -db selection", got)
 	}
 }

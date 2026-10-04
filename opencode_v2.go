@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/NoUseFreak/ocman/internal/db"
-
+	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
@@ -38,11 +38,14 @@ func v2ServerPassword(ctx context.Context, st *state.DB) (string, error) {
 // the user set is read too, instead of the default path. It returns the
 // database path ocman opens. v1 ignores OPENCODE_DB.
 func pinOpenCodeDB(path string, explicit bool) string {
-	if env := os.Getenv("OPENCODE_DB"); env != "" && !explicit {
-		return env
+	if !ocv2.InstalledV2() {
+		return path // v1's reader remains selected solely by -db
 	}
-	if path == "" || path == db.DefaultDBPath() {
-		return path
+	if env := os.Getenv("OPENCODE_DB"); env != "" && !explicit {
+		path = env
+	}
+	if path == "" {
+		path = db.DefaultDBPath()
 	}
 	if abs, err := filepath.Abs(path); err == nil {
 		path = abs

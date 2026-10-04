@@ -3,7 +3,7 @@ import { createRef } from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Composer, type ComposerHandle } from './Composer';
-import { BackendUnavailableError } from '../../lib/api';
+import { api, BackendUnavailableError } from '../../lib/api';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -43,6 +43,27 @@ describe('Composer queue', () => {
 });
 
 describe('Composer input', () => {
+  it('does not replay a queued send when REST reports uncertain native admission', async () => {
+    vi.useFakeTimers();
+    // The remote accepted the prompt but its response was lost. REST
+    // returns 422, rather than the retryable 503 unavailable response.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+      'Follow-up delivery could not be confirmed. Check the conversation and queue before retrying.',
+      { status: 422 },
+    )));
+    const onSend = vi.fn((text: string, _images: unknown, queue?: boolean) =>
+      api.sendMessage('s1', text, undefined, undefined, undefined, undefined, 'r-box:opencode', queue));
+    render(<Composer isRunning onSend={onSend} />);
+    const input = screen.getByRole('textbox');
+    fireEvent.input(input, { target: { value: 'later' } });
+    fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true });
+    await act(async () => {});
+    await act(async () => { vi.advanceTimersByTime(120_000); });
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(onSend.mock.calls[0][2]).toBe(true);
+    expect(input).toHaveValue('later');
+    expect(input).not.toBeDisabled();
+  });
   it.each([
     ['touch-only', true, false, false],
     ['fine-pointer', false, true, true],
