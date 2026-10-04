@@ -315,7 +315,7 @@ func TestEnqueueFollowUp_UncertainNativeSendIsNotReplayed(t *testing.T) {
 	p := newNativeQueuePlatform()
 	// Simulate the remote durably accepting the input, then losing the
 	// gRPC response. The hub cannot tell whether admission happened.
-	p.fakePlatform.sendMessageFn = func(req platforms.SendMessageRequest) error {
+	p.sendMessageFn = func(req platforms.SendMessageRequest) error {
 		p.mu.Lock()
 		defer p.mu.Unlock()
 		p.sends = append(p.sends, req)
