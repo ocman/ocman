@@ -21,7 +21,8 @@ func webhookServerTools(handler http.Handler) []server.ServerTool {
 		mcplib.WithDescription("Create and inspect owner-local webhook inboxes and subscribe routines. Use action help for schemas and examples. Ingestion URLs are credentials."),
 		mcplib.WithString("action", mcplib.Required()), mcplib.WithString("inbox_id"),
 		mcplib.WithString("name"), mcplib.WithString("secret"), mcplib.WithString("secret_header"),
-		mcplib.WithString("routine_id"), mcplib.WithString("header_predicates"), mcplib.WithString("json_predicates")),
+		mcplib.WithString("routine_id"), mcplib.WithString("header_predicates"), mcplib.WithString("json_predicates"),
+		mcplib.WithString("delivery_id")),
 		Handler: func(ctx context.Context, req mcplib.CallToolRequest) (*mcplib.CallToolResult, error) {
 			return handleWebhookTool(ctx, handler, req), nil
 		}}}
@@ -88,7 +89,7 @@ func webhookToolRequest(action string, req mcplib.CallToolRequest) (method, path
 			err = fmt.Errorf("name is required")
 			return
 		}
-	case "get", "deliveries", "subscribe", "unsubscribe":
+	case "get", "deliveries", "subscribe", "unsubscribe", "redeliver":
 		id, e := req.RequireString("inbox_id")
 		// Reject path/query escapes instead of letting an ID choose a route.
 		if e != nil || id == "" || strings.ContainsAny(id, "/\\?#%") || strings.Contains(id, "..") || strings.TrimSpace(id) != id {
@@ -98,6 +99,15 @@ func webhookToolRequest(action string, req mcplib.CallToolRequest) (method, path
 		path += "/" + id
 		if action == "deliveries" {
 			path += "/deliveries"
+		}
+		if action == "redeliver" {
+			path += "/redeliver"
+			method = http.MethodPost
+			fields["delivery_id"] = "deliveryId"
+			if id, e := req.RequireString("delivery_id"); e != nil || strings.TrimSpace(id) == "" {
+				err = fmt.Errorf("delivery_id is required")
+				return
+			}
 		}
 		if action == "subscribe" || action == "unsubscribe" {
 			path += "/subscriptions"
@@ -140,7 +150,8 @@ func webhookToolRequest(action string, req mcplib.CallToolRequest) (method, path
 
 func webhookToolHelp() *mcplib.CallToolResult {
 	return toolResultJSON(map[string]any{
-		"actions":     []string{"help", "list", "get", "create", "subscribe", "unsubscribe", "deliveries"},
+		"actions":     []string{"help", "list", "get", "create", "subscribe", "unsubscribe", "deliveries", "redeliver"},
+		"redeliver":   map[string]any{"required": []string{"inbox_id", "delivery_id"}, "example": `{"action":"redeliver","inbox_id":"inbox-1","delivery_id":"d1"}`, "output": "deliveryId of the new delivery; replays any stored delivery, including ones no longer in the recent list, to the inbox's current subscribers"},
 		"list":        map[string]any{"required": []string{}, "output": "Inbox views, including ingestion URLs and subscriptions; no shared secrets or relay management credentials"},
 		"get":         map[string]any{"required": []string{"inbox_id"}, "output": "Inbox view"},
 		"create":      map[string]any{"required": []string{"name"}, "optional": []string{"secret", "secret_header"}, "example": `{"action":"create","name":"GitHub PRs"}`, "output": "Created inbox view with ingestionUrl"},

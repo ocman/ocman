@@ -28,6 +28,8 @@ func TestWebhookToolValidation(t *testing.T) {
 		{"action": "subscribe", "inbox_id": "inbox", "routine_id": "routine"},
 		{"action": "subscribe", "inbox_id": "inbox", "routine_id": "routine", "header_predicates": "{}"},
 		{"action": "subscribe", "inbox_id": "inbox", "routine_id": "routine", "header_predicates": "{}", "json_predicates": " "},
+		{"action": "redeliver", "inbox_id": "inbox"}, {"action": "redeliver", "inbox_id": "inbox", "delivery_id": " "},
+		{"action": "redeliver", "delivery_id": "d1"},
 	} {
 		t.Run(string(mustJSON(t, args)), func(t *testing.T) {
 			handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("invalid input reached handler") })
@@ -59,6 +61,7 @@ func TestWebhookToolRoutes(t *testing.T) {
 		{"subscribe", "PUT", "/api/webhook-inboxes/inbox/subscriptions", `{"routineId":"routine"}`, 200},
 		{"unsubscribe", "DELETE", "/api/webhook-inboxes/inbox/subscriptions", "", 204},
 		{"deliveries", "GET", "/api/webhook-inboxes/inbox/deliveries", `[{"body":"untrusted"}]`, 200},
+		{"redeliver", "POST", "/api/webhook-inboxes/inbox/redeliver", `{"deliveryId":"d1-redelivery-1"}`, 200},
 	} {
 		t.Run(tc.action, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
@@ -77,6 +80,9 @@ func TestWebhookToolRoutes(t *testing.T) {
 				if tc.action == "create" && (body["secretHeader"] != "Authorization" || body["secret"] != "hidden") {
 					t.Fatalf("create body: %+v", body)
 				}
+				if (tc.action == "redeliver") != (body["deliveryId"] == "d1") {
+					t.Fatalf("delivery body: %+v", body)
+				}
 				if _, ok := body["enrollmentToken"]; ok {
 					t.Fatal("unlisted argument was forwarded")
 				}
@@ -90,7 +96,7 @@ func TestWebhookToolRoutes(t *testing.T) {
 			result, err := tools[0].Handler(ctx, webhookRequest(map[string]any{
 				"action": tc.action, "name": "test", "inbox_id": "inbox", "routine_id": "routine",
 				"secret": "hidden", "secret_header": "Authorization", "enrollmentToken": "ignored",
-				"header_predicates": "{}", "json_predicates": "{}",
+				"header_predicates": "{}", "json_predicates": "{}", "delivery_id": "d1",
 			}))
 			if err != nil || result.IsError || strings.Contains(string(mustJSON(t, result)), "hidden") {
 				t.Fatalf("result: %+v, %v", result, err)

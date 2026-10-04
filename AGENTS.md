@@ -728,7 +728,8 @@ User-facing setup and the full tool table are documented in
 `docs/features/mcp.md`.
 
 The owner-local `webhooks` MCP tool creates and inspects inboxes, saves or
-removes routine subscriptions, and reads recent deliveries. It invokes the
+removes routine subscriptions, reads recent deliveries, and redelivers a
+stored delivery by ID (including ones past the recent list). It invokes the
 existing inbox HTTP handler in-process through `Deps.WebhookHandler`, using
 only fixed routes after MCP authentication. Relay registration and polling,
 predicate validation, and local-routine checks stay in that handler. It uses
