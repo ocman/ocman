@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './UpstreamPane.css';
 import { useUpstreamList } from '../../lib/useUpstreamList';
 import type { PR, Issue, StateFilter, Upstream } from '../../lib/upstreamApi';
@@ -14,7 +14,14 @@ import { Pagination } from '../Pagination';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../Tabs';
 
 interface UpstreamPaneProps {
+  /** Project directory the upstreams were detected for; keys the lists. */
   directory: string | undefined;
+  /**
+   * The session's own checkout (e.g. a sibling worktree). Drives the
+   * current-branch highlight and where row actions launch. Defaults to
+   * `directory`. Changing it alone never reloads the lists.
+   */
+  currentDirectory?: string;
   remoteId: string;
   upstreams: Upstream[];
   embedded?: boolean;
@@ -46,14 +53,15 @@ type Tab = 'prs' | 'issues';
  */
 export function UpstreamPane({
   directory,
+  currentDirectory = directory,
   remoteId,
   upstreams,
   onRefresh,
   onLoadingChange,
   onSummaryChange,
 }: UpstreamPaneProps) {
-  const { infos: gitInfos } = useGitInfo(directory && upstreams.length > 0 ? [directory] : [], remoteId);
-  const currentBranch = directory ? gitInfos[directory]?.branch : undefined;
+  const { infos: gitInfos } = useGitInfo(currentDirectory && upstreams.length > 0 ? [currentDirectory] : [], remoteId);
+  const currentBranch = currentDirectory ? gitInfos[currentDirectory]?.branch : undefined;
 
   // Independent filter state per tab.
   const [prState, setPRState] = useState<StateFilter>('open');
@@ -90,6 +98,7 @@ export function UpstreamPane({
           key="prs"
           kind="prs"
           directory={directory}
+          rowDirectory={currentDirectory}
           remoteId={remoteId}
           upstreams={upstreams}
           state={prState}
@@ -106,6 +115,7 @@ export function UpstreamPane({
           key="issues"
           kind="issues"
           directory={directory}
+          rowDirectory={currentDirectory}
           remoteId={remoteId}
           upstreams={upstreams}
           state={issueState}
@@ -124,6 +134,7 @@ export function UpstreamPane({
 interface UpstreamTabContentProps {
   kind: Tab;
   directory: string | undefined;
+  rowDirectory: string | undefined;
   remoteId: string;
   upstreams: Upstream[];
   state: StateFilter;
@@ -138,6 +149,7 @@ interface UpstreamTabContentProps {
 function UpstreamTabContent({
   kind,
   directory,
+  rowDirectory,
   remoteId,
   upstreams,
   state,
@@ -191,6 +203,7 @@ function UpstreamTabContent({
           kind={kind}
           upstream={u}
           directory={directory!}
+          rowDirectory={rowDirectory ?? directory!}
           remoteId={remoteId}
           state={state}
           mine={mine}
@@ -251,6 +264,7 @@ interface UpstreamRemoteGroupProps {
   kind: Tab;
   upstream: Upstream;
   directory: string;
+  rowDirectory: string;
   remoteId: string;
   state: StateFilter;
   mine: boolean;
@@ -264,6 +278,7 @@ function UpstreamRemoteGroup({
   kind,
   upstream,
   directory,
+  rowDirectory,
   remoteId,
   state,
   mine,
@@ -294,6 +309,10 @@ function UpstreamRemoteGroup({
     return unregister;
   }, [registerRefresh, list.refresh]);
 
+  // Refocus the PR for the checked-out branch when it (or the list) changes.
+  const sectionRef = useRef<HTMLElement>(null);
+  useEffect(() => scrollToCurrentBranch(sectionRef.current), [currentBranch, list.items]);
+
   // Mirror loading flag up.
   useEffect(() => {
     if (!list.loading) return;
@@ -302,7 +321,7 @@ function UpstreamRemoteGroup({
   }, [list.loading, onLoadingChange]);
 
   return (
-    <section className="oc-upstream-group" data-testid={`upstream-group-${upstream.host}`}>
+    <section ref={sectionRef} className="oc-upstream-group" data-testid={`upstream-group-${upstream.host}`}>
       {showHeader && (
         <header className="oc-upstream-group-header">
           <span className="oc-upstream-group-host">{upstream.host}</span>
@@ -343,7 +362,7 @@ function UpstreamRemoteGroup({
               <PRRow
                 key={`${remoteId}/${item.number}`}
                 pr={item as PR}
-                directory={directory}
+                directory={rowDirectory}
                 remoteId={remoteId}
                 remote={upstream.remote}
                 currentBranch={currentBranch}
@@ -354,7 +373,7 @@ function UpstreamRemoteGroup({
             <IssueRow
               key={`${remoteId}/${item.number}`}
               issue={item as Issue}
-              directory={directory}
+              directory={rowDirectory}
               remoteId={remoteId}
               remote={upstream.remote}
             />
@@ -378,6 +397,11 @@ function UpstreamRemoteGroup({
       )}
     </section>
   );
+}
+
+// jsdom has no scrollIntoView, hence the optional call.
+function scrollToCurrentBranch(section: HTMLElement | null) {
+  section?.querySelector('.current-branch')?.scrollIntoView?.({ block: 'nearest' });
 }
 
 /**
