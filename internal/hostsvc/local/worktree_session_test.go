@@ -5,14 +5,65 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/NoUseFreak/ocman/internal/gitexec"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
+
+// A new worktree inherits the main checkout's untracked .opencode
+// dependencies before its session exists, so OpenCode skips the npm install
+// it would otherwise run (and block plugin loading on) for the new directory.
+func TestWorktreeSessionSeedsOpencodeDeps(t *testing.T) {
+	repo := initRepo(t)
+	write := func(rel, body string) {
+		p := filepath.Join(repo, ".opencode", rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("opencode.json", "{}")
+	write(".gitignore", "node_modules\npackage.json\npackage-lock.json\n")
+	git := exec.Command("git", "-C", repo, "add", ".opencode")
+	git.Env = gitexec.CleanEnv()
+	if out, err := git.CombinedOutput(); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	git = exec.Command("git", "-C", repo, "-c", "user.name=t", "-c", "user.email=t@e", "commit", "-qm", "opencode")
+	git.Env = gitexec.CleanEnv()
+	if out, err := git.CombinedOutput(); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	write("node_modules/@opencode-ai/plugin/index.js", "x")
+	write("package.json", `{"dependencies":{"@opencode-ai/plugin":"1"}}`)
+	write("package-lock.json", "{}")
+
+	h := New(Deps{
+		Runtime: &fakeRuntime{endpoint: "http://127.0.0.1:4242"},
+		CreateSession: func(_ context.Context, req platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+			for _, rel := range []string{"node_modules/@opencode-ai/plugin/index.js", "package.json", "package-lock.json"} {
+				if _, err := os.Stat(filepath.Join(req.Directory, ".opencode", rel)); err != nil {
+					t.Errorf("%s not seeded before session create: %v", rel, err)
+				}
+			}
+			return &platforms.CreateSessionResponse{ID: "s"}, nil
+		},
+	})
+	if _, err := h.CreateWorktreeSession(context.Background(), hostsvc.WorktreeSessionRequest{
+		ProjectDir: repo, Branch: "feature", NewBranch: true, BaseRef: "main",
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // Automatic worktrees return a provisional name at once; the model's name is
 // applied afterwards to the branch and the session title, keeping the path.

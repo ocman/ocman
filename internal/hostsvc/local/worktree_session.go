@@ -3,6 +3,10 @@ package local
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/google/uuid"
@@ -70,6 +74,9 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 		rollback()
 		return nil, fmt.Errorf("ensuring project opencode: %w", ensured.err)
 	}
+	if !res.Reused {
+		seedOpencodeDeps(ctx, repoRoot, res.Path)
+	}
 	port := ensured.res.Port()
 	if h.deps.CreateSession == nil {
 		rollback()
@@ -108,6 +115,38 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 		SessionID: created.ID, WorktreePath: res.Path, Branch: res.Branch,
 		Reused: res.Reused, BranchExisted: res.BranchExisted,
 	}, nil
+}
+
+// seedOpencodeDeps copies the main checkout's untracked .opencode
+// dependencies into a fresh worktree. OpenCode runs an npm install for any
+// config dir without node_modules and, with plugins configured, holds session
+// creation on it (~2.5s); a present node_modules whose lock lists the plugin
+// package is skipped. Best-effort: a failure only costs that install.
+func seedOpencodeDeps(ctx context.Context, repoRoot, worktree string) {
+	src, dst := filepath.Join(repoRoot, ".opencode"), filepath.Join(worktree, ".opencode")
+	if _, err := os.Stat(filepath.Join(src, "node_modules")); err != nil {
+		return
+	}
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return
+	}
+	for _, name := range []string{"node_modules", "package.json", "package-lock.json"} {
+		from, to := filepath.Join(src, name), filepath.Join(dst, name)
+		if _, err := os.Stat(from); err != nil {
+			continue
+		}
+		if _, err := os.Stat(to); err == nil {
+			continue
+		}
+		// -c clones on APFS (falls back to a copy); -R keeps symlinks as links.
+		args := []string{"-R", from, to}
+		if runtime.GOOS == "darwin" {
+			args = append([]string{"-c"}, args...)
+		}
+		if out, err := exec.CommandContext(ctx, "cp", args...).CombinedOutput(); err != nil {
+			log.WithError(err).WithField("output", string(out)).Debug("worktree: seeding .opencode dependencies")
+		}
+	}
 }
 
 // nameWorktree asks the small model for a descriptive name and renames the
