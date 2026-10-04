@@ -40,6 +40,8 @@ it('drops a pending terminal from the previous machine after a machine switch', 
   // Same path on both machines: the stale name would address an m2 shell.
   await act(async () => page.navigate('/session/new?dir=%2Frepo&remoteId=m2'));
   expect(await screen.findByRole('tab', { name: /m2 shell/ })).toBeInTheDocument();
+  // The dock and NewConversation are siblings; colliding keys duplicate the thread.
+  expect(screen.getAllByTestId('new-conversation')).toHaveLength(1);
   await act(async () => api.finishCreate('ocman-x-1'));
   const terminals = within(screen.getByRole('tablist', { name: 'Terminals' }));
   expect(terminals.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['m2 shell']);

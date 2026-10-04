@@ -1075,7 +1075,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
             <SessionTerminalDock
               // Remount per owner + directory so tabs and in-flight
               // terminal calls never leak onto another machine's shells.
-              key={`${session?.remoteId ?? newConversation?.remoteId ?? 'local'}:${session?.directory ?? newConversation?.directory}`}
+              // Prefixed: NewConversation is a sibling keyed by owner:dir.
+              key={`terminal:${session?.remoteId ?? newConversation?.remoteId ?? 'local'}:${session?.directory ?? newConversation?.directory}`}
               tmuxAvailable={tmux.available}
               directory={session?.directory ?? newConversation?.directory}
               remoteId={session?.remoteId ?? newConversation?.remoteId}
