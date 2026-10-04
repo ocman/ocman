@@ -70,6 +70,30 @@ describe('runSlashCommand', () => {
     }
   });
 
+  it('/archive opens a visible session when a filter hides the archived one', async () => {
+    useUiStore.setState({ sidebarView: 'projects' });
+    visibleSidebarSessions.current = [{ id: 'other', directory: '/b', timeUpdated: 5 }] as Session[];
+    try {
+      const c = ctx();
+      await runSlashCommand(c, 'archive', '');
+      expect(c.navigateToSession).toHaveBeenCalledWith('other');
+    } finally {
+      visibleSidebarSessions.current = null;
+    }
+  });
+
+  it('/archive opens an empty conversation, not the unfiltered root, after the last visible row', async () => {
+    visibleSidebarSessions.current = [{ id: 's1', directory: '/repo', timeUpdated: 1 }] as Session[];
+    try {
+      const c = ctx({ recentSessionsRef: { current: [{ id: 's1' }, { id: 'hidden' }] as Session[] } });
+      await runSlashCommand(c, 'archive', '');
+      expect(c.navigateToSession).not.toHaveBeenCalled();
+      expect(c.navigate).toHaveBeenCalledWith('/session/new');
+    } finally {
+      visibleSidebarSessions.current = null;
+    }
+  });
+
   it('/archive falls back to the recent list while the sidebar is not mounted', async () => {
     useUiStore.setState({ sidebarView: 'recent' });
     const c = ctx({ recentSessionsRef: { current: [{ id: 's1' }, { id: 's2' }] as Session[] } });

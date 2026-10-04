@@ -63,7 +63,7 @@ const archive: SlashCommand = {
     // Same choice as the sidebar's archive button, among the rows it shows.
     const nextSession = pickNextSessionAfterArchive(
       sidebarNavigableSessions(recentSessionsRef.current),
-      session.id,
+      session,
       useUiStore.getState().sidebarView,
     );
     try {
@@ -82,8 +82,9 @@ const archive: SlashCommand = {
     if (nextSession) {
       navigateToSession(nextSession.id);
     } else {
+      // Not '/': its redirect ignores the sidebar filters.
       flushSync(() => {
-        navigate('/');
+        navigate('/session/new');
       });
     }
   },

@@ -306,7 +306,7 @@ export function useSidebarSessions({
     // where they were working. See pickNextSessionAfterArchive.
     const isCurrent = target.id === id;
     const nextSession = isCurrent
-      ? pickNextSessionAfterArchive(sidebarNavigableSessions(recentSessions), target.id, sidebarView)
+      ? pickNextSessionAfterArchive(sidebarNavigableSessions(recentSessions), target, sidebarView)
       : undefined;
     setArchivingSessionIds((prev) => new Set(prev).add(target.id));
     archiveTimeoutsRef.current[target.id] = window.setTimeout(() => {
