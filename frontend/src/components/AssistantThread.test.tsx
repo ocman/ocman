@@ -335,6 +335,20 @@ describe('AssistantThread message metadata', () => {
     expect(container.querySelector('.oc-msg-meta')).not.toBeNull();
   });
 
+  it('stamps the turn summary with the time the turn ended', () => {
+    const started = turnStats.startedAt;
+    turnStats.wallClockMs = 3 * 60 * 60 * 1000;
+    try {
+      const { container } = render(<AssistantThread />);
+      const fmt = (ms: number) => new Date(ms).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+      const stats = container.querySelector('.oc-turn-stats')!;
+      expect(stats).toHaveTextContent(fmt(started + turnStats.wallClockMs));
+      expect(stats).not.toHaveTextContent(fmt(started));
+    } finally {
+      turnStats.wallClockMs = 1000;
+    }
+  });
+
   it('shows a prompt cache rebuild warning once in the turn summary', () => {
     turnStats.promptCacheRebuilt = true;
 

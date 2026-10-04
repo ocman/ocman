@@ -413,14 +413,16 @@ function TurnSummaryBar({ messageId }: { messageId: string }) {
 
   const totalTokens = tokensIn + tokensOut;
 
-  const time = new Date(startedAt).toLocaleTimeString('en-US', {
+  // Stamp a finished turn with when it ended, not when it was sent.
+  const endedAt = startedAt + (wallClockMs ?? 0);
+  const time = new Date(endedAt).toLocaleTimeString('en-US', {
     hour: '2-digit', minute: '2-digit', hour12: false,
   });
 
   const items: React.ReactNode[] = [];
   if (!isLive) {
     items.push(
-      <Tooltip key="time" content={formatFullDateTime(startedAt)}>
+      <Tooltip key="time" content={formatFullDateTime(endedAt)}>
         <span className="oc-turn-stat">{time}</span>
       </Tooltip>
     );
