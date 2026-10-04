@@ -1578,7 +1578,7 @@ func TestHandleSessionRestartOpencode_MachineScopedServer(t *testing.T) {
 			host := &restartTestHost{managed: []hostsvc.ManagedOpencode{{RepoRoot: "/home/u/.local/share/ocman/opencode-v2", Machine: true}}}
 			srv.hostRouter = hostsvc.NewRouter(host)
 			reg.Register(&fakePlatform{
-				id:       "opencode",
+				id: "opencode",
 				sessions: []db.Session{
 					{ID: "s1", Directory: "/src/repo", RemoteID: "local", Status: db.StatusDone},
 					{ID: "other", Directory: "/src/other", RemoteID: "local", Status: db.StatusBusy},
@@ -1600,5 +1600,23 @@ func TestHandleSessionRestartOpencode_MachineScopedServer(t *testing.T) {
 				t.Fatalf("status=%d body=%s restarted=%v, want confirmation for the busy sibling", rr.Code, rr.Body.String(), host.restarted)
 			}
 		})
+	}
+}
+
+// A host with the shared v2 server is restarted once, even if leftover
+// per-project rows are still listed.
+func TestRestartTargets_MachineServerIsTheOnlyTarget(t *testing.T) {
+	srv, _ := newSessionsTestServer(t)
+	host := &restartTestHost{managed: []hostsvc.ManagedOpencode{
+		{RepoRoot: "/src/repo"},
+		{RepoRoot: "/home/u/.local/share/ocman/opencode-v2", Machine: true},
+		{RepoRoot: "/src/other"},
+	}}
+	srv.hostRouter = hostsvc.NewRouter(host)
+	for _, all := range []bool{false, true} {
+		targets, err := srv.restartTargets(context.Background(), "/src/repo", "", all)
+		if err != nil || len(targets) != 1 || !targets[0].machine {
+			t.Fatalf("all=%v: targets = %+v, %v; want only the machine server", all, targets, err)
+		}
 	}
 }

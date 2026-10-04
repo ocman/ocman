@@ -41,7 +41,7 @@ func convResetInstalled(t *testing.T, out string, err error) *atomic.Int32 {
 	}
 	reset := func() {
 		installed.mu.Lock()
-		installed.at = time.Time{}
+		installed.done = false
 		installed.v2 = false
 		installed.mu.Unlock()
 	}
@@ -81,15 +81,19 @@ func TestInstalledV2(t *testing.T) {
 	}
 }
 
-func TestInstalledV2Expires(t *testing.T) {
-	calls := convResetInstalled(t, "2.0.0", nil)
-	InstalledV2()
-	installed.mu.Lock()
-	installed.at = time.Now().Add(-2 * installedTTL)
-	installed.mu.Unlock()
-	InstalledV2()
-	if n := calls.Load(); n != 2 {
-		t.Errorf("version command ran %d times, want 2 after TTL", n)
+// The version is read once: a later upgrade must not flip the answer
+// mid-run (the password, DB views and managed server were chosen for it).
+func TestInstalledV2IsFixedForTheProcess(t *testing.T) {
+	calls := convResetInstalled(t, "1.18.0", nil)
+	if InstalledV2() {
+		t.Fatal("want v1")
+	}
+	versionCommand = func(context.Context) ([]byte, error) { calls.Add(1); return []byte("opencode v2.0.22"), nil }
+	if InstalledV2() || calls.Load() != 1 {
+		t.Fatalf("InstalledV2 changed mid-run (calls=%d)", calls.Load())
+	}
+	if v2, ok := readInstalledV2(); !ok || !v2 {
+		t.Fatalf("readInstalledV2 = %v %v, want the new version for the watcher", v2, ok)
 	}
 }
 

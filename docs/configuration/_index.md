@@ -174,8 +174,9 @@ features stay disabled.
 
 ### OpenCode v2
 
-Ocman supports OpenCode v1 and v2. It checks `opencode --version` on every machine (once a
-minute), so one ocman can run v1 locally while a remote runs v2. Nothing needs configuring.
+Ocman supports OpenCode v1 and v2. Each ocman checks `opencode --version` at startup, so one ocman
+can run v1 locally while a remote runs v2. Nothing needs configuring. After upgrading or downgrading
+OpenCode, restart ocman (it logs a warning when it notices the change).
 
 On a v2 machine, OpenCode runs one server for every project. Ocman follows that:
 
@@ -200,7 +201,8 @@ On a v2 machine, OpenCode runs one server for every project. Ocman follows that:
 - **Settings → Maintenance** is not available on v2; it only knows the v1 storage layout.
 
 If you point ocman at a non-default database with `-db`, ocman exports it as `OPENCODE_DB` for the
-v2 server it launches, so both use the same file. An `OPENCODE_DB` you set yourself takes precedence.
+v2 server it launches, so both use the same file. Without `-db`, an `OPENCODE_DB` you set yourself is
+used for both.
 
 ### OpenCode server authentication
 

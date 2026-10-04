@@ -397,9 +397,13 @@ func (h *Host) ManagedOpencodes(ctx context.Context) ([]hostsvc.ManagedOpencode,
 	if err != nil {
 		return nil, err
 	}
+	v2, machine := ocv2.InstalledV2(), machineRoot()
 	out := make([]hostsvc.ManagedOpencode, 0, len(instances))
 	for root := range instances {
-		out = append(out, hostsvc.ManagedOpencode{RepoRoot: root, Machine: root == machineRoot()})
+		if v2 && root != machine {
+			continue // stale on v2: reaped by RunMachineSupervisor, serves nothing
+		}
+		out = append(out, hostsvc.ManagedOpencode{RepoRoot: root, Machine: root == machine})
 	}
 	return out, nil
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/NoUseFreak/ocman/internal/db"
@@ -43,23 +42,28 @@ func TestV2ServerPasswordGeneratesOnceAndPersists(t *testing.T) {
 }
 
 func TestPinOpenCodeDB(t *testing.T) {
-	for _, tc := range []struct{ name, env, path, want string }{
-		{"default path leaves it unset", "", db.DefaultDBPath(), ""},
-		{"custom path is exported absolute", "", "rel/oc.db", "ABS:rel/oc.db"},
-		{"explicit env wins", "/set/oc.db", "/other.db", "/set/oc.db"},
+	absRel, _ := filepath.Abs("rel/oc.db")
+	for _, tc := range []struct {
+		name, env, path string
+		explicit        bool
+		wantPath        string
+		wantEnv         string
+	}{
+		{"default path leaves env unset", "", db.DefaultDBPath(), false, db.DefaultDBPath(), ""},
+		{"custom path is exported absolute", "", "rel/oc.db", true, absRel, absRel},
+		{"user OPENCODE_DB is read when -db is not given", "/set/oc.db", db.DefaultDBPath(), false, "/set/oc.db", "/set/oc.db"},
+		{"explicit -db overrides OPENCODE_DB", "/set/oc.db", "/other.db", true, "/other.db", "/other.db"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("OPENCODE_DB", tc.env)
 			if tc.env == "" {
 				_ = os.Unsetenv("OPENCODE_DB")
 			}
-			pinOpenCodeDB(tc.path)
-			want := tc.want
-			if rel, ok := strings.CutPrefix(want, "ABS:"); ok {
-				want, _ = filepath.Abs(rel)
+			if got := pinOpenCodeDB(tc.path, tc.explicit); got != tc.wantPath {
+				t.Errorf("path = %q, want %q", got, tc.wantPath)
 			}
-			if got := os.Getenv("OPENCODE_DB"); got != want {
-				t.Fatalf("OPENCODE_DB = %q, want %q", got, want)
+			if got := os.Getenv("OPENCODE_DB"); got != tc.wantEnv {
+				t.Errorf("OPENCODE_DB = %q, want %q", got, tc.wantEnv)
 			}
 		})
 	}

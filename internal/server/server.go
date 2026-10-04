@@ -22,6 +22,7 @@ import (
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/ocmaint"
 	"github.com/NoUseFreak/ocman/internal/ocruntime"
+	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
 	"github.com/NoUseFreak/ocman/internal/plugins"
@@ -529,6 +530,7 @@ func (s *Server) StartOnListener(ctx context.Context, ln net.Listener) error {
 	go s.runLLMMetricsLoop(ctx)
 	go s.runDatabaseSizeLoop(ctx)
 	go s.runQueueSweep(ctx)
+	go ocv2.WatchInstalledVersion(ctx)
 	// OpenCode v2 runs one server per machine; keep it online.
 	if sup, ok := s.router().Local().(interface{ RunMachineSupervisor(context.Context) }); ok {
 		go sup.RunMachineSupervisor(ctx)

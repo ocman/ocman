@@ -220,3 +220,30 @@ func TestV2MachineServerIsBoundToItsDatabase(t *testing.T) {
 		t.Fatalf("launches = %d, want database A's server reused", rt.launchCount())
 	}
 }
+
+// After an upgrade, v1 per-project rows (and v2 servers for another
+// database) are stopped and forgotten, and only the machine server is
+// reported, so a restart never hits the shared server once per stale row.
+func TestV2SupervisorReapsNonMachineInstances(t *testing.T) {
+	h, rt, store, _, root := v2Host(t)
+	ctx := context.Background()
+	_ = store.Upsert(ctx, "/src/old-v1-project", ManagedInstance{Endpoint: "http://127.0.0.1:9", RuntimeID: "old"})
+	_ = store.Upsert(ctx, root+"-deadbeef", ManagedInstance{Endpoint: "http://127.0.0.1:8", RuntimeID: "otherdb"})
+
+	inv, err := h.ManagedOpencodes(ctx)
+	if err != nil || len(inv) != 0 {
+		t.Fatalf("before the machine server exists: inventory = %+v, %v; stale rows must be hidden", inv, err)
+	}
+	runSupervisorBriefly(t, h, rt)
+	if rt.stopCount() != 2 {
+		t.Errorf("stops = %d, want both stale instances stopped", rt.stopCount())
+	}
+	rows, _ := store.List(ctx)
+	if _, ok := rows["/src/old-v1-project"]; ok || len(rows) != 1 {
+		t.Fatalf("rows after reap = %v, want only the machine server", rows)
+	}
+	inv, _ = h.ManagedOpencodes(ctx)
+	if len(inv) != 1 || !inv[0].Machine || inv[0].RepoRoot != root {
+		t.Fatalf("inventory = %+v, want the machine server only", inv)
+	}
+}

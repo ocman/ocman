@@ -9,8 +9,8 @@ A web dashboard for viewing coding-agent session data. Ocman supports:
   API.
 
 OpenCode **v1 and v2** are both supported (`internal/ocv2`). The installed
-version is read from `opencode --version` (`ocv2.InstalledV2`, cached for a
-minute), so a hub on v1 and a remote on v2 work side by side; each ocman only
+version is read once from `opencode --version` (`ocv2.InstalledV2`; a later
+change only logs "restart ocman"), so a hub on v1 and a remote on v2 work side by side; each ocman only
 speaks to its own machine's OpenCode. For v2, the rest of ocman still talks v1:
 `ocapi.Auth.Transport` wraps every OpenCode client in `ocv2.Wrap`, which
 answers the v1 routes and event streams with v2 `/api/*` calls and translates

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
+	"github.com/NoUseFreak/ocman/internal/ocruntime"
 	"github.com/NoUseFreak/ocman/internal/ocv2"
 )
 
@@ -29,9 +31,8 @@ import (
 // ocman sets from -db): a persisted server for another database is never
 // reused, so reads and writes always hit the same file.
 //
-// ponytail: a server for a database ocman no longer uses keeps running
-// until stopped by hand; reap stale machine rows if switching -db becomes
-// common.
+// Servers for other databases, and v1 per-project instances left from
+// before an upgrade, are reaped by RunMachineSupervisor.
 func machineRoot() string {
 	base, err := os.UserHomeDir()
 	if err != nil {
@@ -45,9 +46,7 @@ func machineRoot() string {
 		sum := sha256.Sum256([]byte(filepath.Clean(dbPath)))
 		name += "-" + hex.EncodeToString(sum[:4])
 	}
-	dir := filepath.Join(base, ".local", "share", "ocman", name)
-	_ = os.MkdirAll(dir, 0o755)
-	return dir
+	return filepath.Join(base, ".local", "share", "ocman", name)
 }
 
 // ensureMachine ensures the machine's v2 server and reports it for
@@ -55,8 +54,14 @@ func machineRoot() string {
 // sessions or name worktrees keep working per project.
 func (h *Host) ensureMachine(ctx context.Context, projectDir string,
 	fn func(context.Context, string) (*hostsvc.EnsureProjectOpencodeResult, error)) (*hostsvc.EnsureProjectOpencodeResult, error) {
-	res, err := h.sfDoDetached(ctx, machineRoot(), fn)
+	root := machineRoot()
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		return nil, fmt.Errorf("creating OpenCode v2 working directory: %w", err)
+	}
+	res, err := h.sfDoDetached(ctx, root, fn)
 	if err != nil {
+		// Don't keep routing every directory to a server that is gone.
+		h.publishMachineServer("")
 		return nil, err
 	}
 	h.publishMachineServer(res.Endpoint)
@@ -93,6 +98,9 @@ const machineSupervisorInterval = 30 * time.Second
 // the server at startup and then periodically, relaunching it when the
 // probe fails. A no-op loop while the installed OpenCode is v1.
 func (h *Host) RunMachineSupervisor(ctx context.Context) {
+	if ocv2.InstalledV2() {
+		h.reapNonMachineInstances(ctx)
+	}
 	tick := time.NewTicker(machineSupervisorInterval)
 	defer tick.Stop()
 	for {
@@ -106,5 +114,38 @@ func (h *Host) RunMachineSupervisor(ctx context.Context) {
 			return
 		case <-tick.C:
 		}
+	}
+}
+
+// reapNonMachineInstances stops and forgets every managed instance other
+// than this machine's v2 server: v1 per-project instances left from before
+// an upgrade, and v2 servers for another database. Nothing routes to them
+// any more, and keeping their rows would make restarts target the shared
+// server once per stale row.
+func (h *Host) reapNonMachineInstances(ctx context.Context) {
+	if h.store == nil {
+		return
+	}
+	rows, err := h.store.List(ctx)
+	if err != nil {
+		log.WithError(err).Warn("host: listing managed opencode instances")
+		return
+	}
+	keep := machineRoot()
+	for root, mi := range rows {
+		if root == keep {
+			continue
+		}
+		_, _, _ = h.sf.Do(root, func() (any, error) {
+			inst := &ocruntime.Instance{Endpoint: mi.Endpoint, Kind: mi.Kind, ID: mi.RuntimeID, PID: mi.PID, RepoRoot: root}
+			if err := h.runtime.Stop(ctx, inst); err != nil {
+				log.WithError(err).WithField("repoRoot", root).Debug("host: stopping stale managed opencode")
+			}
+			h.clearInstance(root)
+			if err := h.store.Delete(ctx, root); err != nil {
+				log.WithError(err).WithField("repoRoot", root).Warn("host: deleting stale managed opencode row")
+			}
+			return nil, nil
+		})
 	}
 }

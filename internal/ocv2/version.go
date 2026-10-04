@@ -10,16 +10,21 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
-// installedTTL bounds how long the `opencode --version` answer is
-// reused, so an upgrade or downgrade is picked up without a restart.
-const installedTTL = time.Minute
+// versionCheckInterval is how often the installed version is re-read
+// to warn about an upgrade or downgrade. The answer ocman acts on is
+// fixed at the first read: the server password, the database views and
+// the managed server are all chosen for one version at startup, so
+// switching mid-run would leave them inconsistent.
+const versionCheckInterval = time.Minute
 
 var installed struct {
-	mu sync.Mutex
-	v2 bool
-	at time.Time
+	mu   sync.Mutex
+	v2   bool
+	done bool
 }
 
 var installedOverride atomic.Pointer[bool]
@@ -29,24 +34,55 @@ var versionCommand = func(ctx context.Context) ([]byte, error) {
 	return exec.CommandContext(ctx, "opencode", "--version").Output()
 }
 
+// readInstalledV2 runs `opencode --version`; ok is false when it failed.
+func readInstalledV2() (v2, ok bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := versionCommand(ctx)
+	if err != nil {
+		return false, false
+	}
+	return Major(string(out)) >= 2, true
+}
+
 // InstalledV2 reports whether the opencode binary on PATH is v2 or
 // later. v1 and v2 are not installed side by side, so this decides how
-// this machine launches and reads OpenCode.
+// this machine launches and reads OpenCode. It is read once per process
+// (a missing binary reads as v1); a later change only logs a warning
+// asking for a restart (see WatchInstalledVersion).
 func InstalledV2() bool {
 	if v := installedOverride.Load(); v != nil {
 		return *v
 	}
 	installed.mu.Lock()
 	defer installed.mu.Unlock()
-	if !installed.at.IsZero() && time.Since(installed.at) < installedTTL {
-		return installed.v2
+	if !installed.done {
+		installed.v2, _ = readInstalledV2()
+		installed.done = true
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	out, err := versionCommand(ctx)
-	installed.v2 = err == nil && Major(string(out)) >= 2
-	installed.at = time.Now()
 	return installed.v2
+}
+
+// WatchInstalledVersion re-reads the installed version until ctx ends
+// and warns when it no longer matches the one ocman runs with. A failed
+// read (slow or missing binary) is ignored rather than taken as a change.
+func WatchInstalledVersion(ctx context.Context) {
+	current := InstalledV2()
+	warned := false
+	tick := time.NewTicker(versionCheckInterval)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+		if v2, ok := readInstalledV2(); ok && v2 != current && !warned {
+			warned = true
+			log.WithFields(log.Fields{"runningAsV2": current, "installedV2": v2}).
+				Warn("the installed OpenCode major version changed; restart ocman to switch")
+		}
+	}
 }
 
 // SetInstalledV2 pins InstalledV2 (tests and the -opencode-v2 override).

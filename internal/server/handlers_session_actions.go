@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -180,8 +181,15 @@ func (s *Server) restartTargets(ctx context.Context, dir, remoteID string, all b
 			return nil, err
 		}
 		for _, instance := range instances {
-			if all || instance.Machine || sameProject(instance.RepoRoot, dir) {
-				targets = append(targets, restartTarget{host: host, root: instance.RepoRoot, machine: instance.Machine})
+			if instance.Machine {
+				// One shared server serves every project on the host:
+				// restart it once, whatever else is listed.
+				targets = slices.DeleteFunc(targets, func(t restartTarget) bool { return t.host == host })
+				targets = append(targets, restartTarget{host: host, root: instance.RepoRoot, machine: true})
+				break
+			}
+			if all || sameProject(instance.RepoRoot, dir) {
+				targets = append(targets, restartTarget{host: host, root: instance.RepoRoot})
 			}
 		}
 	}
