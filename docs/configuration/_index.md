@@ -181,7 +181,8 @@ On a v2 machine, OpenCode runs one server for every project. Ocman follows that:
 
 - **One server per machine.** Ocman starts `opencode serve` on a loopback port it picks and
   keeps it running, relaunching it within 30 seconds if it stops. It runs in a tmux session
-  with its own working directory under `~/.local/share/ocman/opencode-v2`. Ocman does not
+  with its own working directory under `~/.local/share/ocman/opencode-v2` (one per database, so
+  a different `-db` never reuses a server writing another file). Ocman does not
   use OpenCode's own background service (`opencode service`) or v2 servers you start
   yourself. To use ocman's server from the TUI, run `opencode --server http://127.0.0.1:<port>`.
 - **Always authenticated.** v2 requires a password. When none is configured (see below), ocman

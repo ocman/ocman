@@ -45,6 +45,7 @@ func v2Host(t *testing.T) (*Host, *fakeRuntime, *fakeStore, *portRecorder, strin
 	t.Cleanup(ocv2.SetInstalledV2(true))
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("OPENCODE_DB", "")
 	rt := &fakeRuntime{endpoint: "http://127.0.0.1:7777"}
 	store := newFakeStore()
 	rec := &portRecorder{}
@@ -183,5 +184,39 @@ func TestRunMachineSupervisorNoopWhenV1(t *testing.T) {
 	runSupervisorBriefly(t, h, rt)
 	if rt.launchCount() != 0 {
 		t.Fatalf("launches = %d; want 0 on v1", rt.launchCount())
+	}
+}
+
+// A machine server writes one database. After ocman restarts on another
+// database (-db / OPENCODE_DB), the persisted server for the first one must
+// not be reused: ocman would read B while the server keeps writing A.
+func TestV2MachineServerIsBoundToItsDatabase(t *testing.T) {
+	_, rt, store, _, defaultRoot := v2Host(t)
+	ctx := context.Background()
+	repo := initRepo(t)
+	newHost := func() *Host { return New(Deps{Runtime: rt, ManagedStore: store}) }
+
+	t.Setenv("OPENCODE_DB", "/data/a.db")
+	if _, err := newHost().EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: repo}); err != nil {
+		t.Fatal(err)
+	}
+	rootA := rt.spec().RepoRoot
+	t.Setenv("OPENCODE_DB", "/data/b.db")
+	if _, err := newHost().EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: repo}); err != nil {
+		t.Fatal(err)
+	}
+	if rt.launchCount() != 2 {
+		t.Fatalf("launches = %d, want a fresh server for database B", rt.launchCount())
+	}
+	if rootB := rt.spec().RepoRoot; rootA == rootB || rootA == defaultRoot || rootB == defaultRoot {
+		t.Fatalf("roots A=%q B=%q default=%q, want one per database", rootA, rootB, defaultRoot)
+	}
+	// The same database maps to the same server again.
+	t.Setenv("OPENCODE_DB", "/data/a.db")
+	if _, err := newHost().EnsureProjectOpencode(ctx, hostsvc.EnsureProjectOpencodeRequest{ProjectDir: repo}); err != nil {
+		t.Fatal(err)
+	}
+	if rt.launchCount() != 2 {
+		t.Fatalf("launches = %d, want database A's server reused", rt.launchCount())
 	}
 }

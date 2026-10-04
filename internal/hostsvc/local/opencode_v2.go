@@ -2,6 +2,8 @@ package local
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net/url"
 	"os"
@@ -23,12 +25,27 @@ import (
 // from killing) a session the user opened in, say, their home directory.
 
 // machineRoot is the key and working directory of the v2 machine server.
+// It is bound to the database the server writes (OPENCODE_DB, which
+// ocman sets from -db): a persisted server for another database is never
+// reused, so reads and writes always hit the same file.
+//
+// ponytail: a server for a database ocman no longer uses keeps running
+// until stopped by hand; reap stale machine rows if switching -db becomes
+// common.
 func machineRoot() string {
 	base, err := os.UserHomeDir()
 	if err != nil {
 		base = os.TempDir()
 	}
-	dir := filepath.Join(base, ".local", "share", "ocman", "opencode-v2")
+	name := "opencode-v2"
+	if dbPath := os.Getenv("OPENCODE_DB"); dbPath != "" {
+		if abs, err := filepath.Abs(dbPath); err == nil {
+			dbPath = abs
+		}
+		sum := sha256.Sum256([]byte(filepath.Clean(dbPath)))
+		name += "-" + hex.EncodeToString(sum[:4])
+	}
+	dir := filepath.Join(base, ".local", "share", "ocman", name)
 	_ = os.MkdirAll(dir, 0o755)
 	return dir
 }

@@ -19,7 +19,8 @@ layer, the SSE translator and the database's TEMP views (`internal/db/v2views.go
 `session`/`message`/`part` over `session_v2`/`session_message`) all go through it,
 so part ids (`prt<msg suffix><index>`) agree everywhere. Never add a second
 converter. On v2, `EnsureProjectOpencode` runs **one `opencode serve` per machine**
-(working directory `~/.local/share/ocman/opencode-v2`). Discovery skips `lsof` and
+(working directory `~/.local/share/ocman/opencode-v2[-<db hash>]`, keyed by the
+effective `OPENCODE_DB` so a server writing another database is never reused). Discovery skips `lsof` and
 resolves every directory to that port (`opencode.SetMachineServer`). The server's
 password is generated once and stored in `state.db` when none is configured,
 because v2 always requires one. Ctrl/Cmd+Enter follow-ups use v2's native session
