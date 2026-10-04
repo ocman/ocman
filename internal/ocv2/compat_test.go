@@ -878,3 +878,24 @@ func TestCompatRoundTripClosesRequestBody(t *testing.T) {
 		}
 	}
 }
+
+// A failed lookup is not proof the prompt is gone: relaying a 404 would
+// make the adapter forget a prompt the agent is still waiting on.
+func TestCompatPromptLookupErrorsAreRelayed(t *testing.T) {
+	defer SetInstalledV2(true)()
+	f := fakeServer(t)
+	f.json("GET /api/form", http.StatusOK, `{"data":[{"id":"que_cmp_err","sessionID":"s9","metadata":{"kind":"question"}}]}`)
+	f.json("GET /api/session/s9/form/que_cmp_err", http.StatusInternalServerError, `{"message":"boom"}`)
+	if status, _ := cmpDo(t, http.MethodPost, f.URL+"/question/que_cmp_err/reply", nil, `{"answers":[["x"]]}`); status != http.StatusInternalServerError {
+		t.Errorf("form fetch 500: reply status = %d, want 500", status)
+	}
+
+	g := fakeServer(t)
+	g.json("GET /api/permission/request", http.StatusInternalServerError, `{"message":"down"}`)
+	g.json("GET /api/form", http.StatusInternalServerError, `{"message":"down"}`)
+	for _, p := range []string{"/permission/per_cmp_lookup/reply", "/question/que_cmp_lookup/reply", "/question/que_cmp_lookup/reject"} {
+		if status, _ := cmpDo(t, http.MethodPost, g.URL+p, nil, `{"reply":"once","answers":[]}`); status != http.StatusInternalServerError {
+			t.Errorf("%s with a failing list: status = %d, want 500", p, status)
+		}
+	}
+}

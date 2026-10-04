@@ -2,6 +2,7 @@ package ocv2
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"sync"
@@ -70,20 +71,25 @@ func listQuestions(c *compat, r *http.Request, _ []string) (*http.Response, erro
 }
 
 // promptSession resolves the session owning a prompt, refreshing the
-// directory's list on a miss. "" means the prompt is already gone.
-func (c *compat) promptSession(ctx context.Context, id, dir string, question bool) string {
+// directory's list on a miss. "" with a nil error means a successful list
+// proved the prompt is gone; a failed list is an error, never "gone".
+func (c *compat) promptSession(ctx context.Context, id, dir string, question bool) (string, error) {
 	if s, ok := promptSessions.Load(id); ok {
-		return s.(string)
+		return s.(string), nil
 	}
+	var err error
 	if question {
-		_, _ = c.questionForms(ctx, dir)
+		_, err = c.questionForms(ctx, dir)
 	} else {
-		_, _ = c.permissionRequests(ctx, dir)
+		_, err = c.permissionRequests(ctx, dir)
+	}
+	if err != nil {
+		return "", err
 	}
 	if s, ok := promptSessions.Load(id); ok {
-		return s.(string)
+		return s.(string), nil
 	}
-	return ""
+	return "", nil
 }
 
 func gone(r *http.Request) (*http.Response, error) {
@@ -98,7 +104,10 @@ func replyPermission(c *compat, r *http.Request, m []string) (*http.Response, er
 	if err := readBody(r, &in); err != nil {
 		return nil, err
 	}
-	session := c.promptSession(r.Context(), m[1], requestDirectory(r), false)
+	session, err := c.promptSession(r.Context(), m[1], requestDirectory(r), false)
+	if err != nil {
+		return finish(r, 0, nil, err)
+	}
 	if session == "" {
 		return gone(r)
 	}
@@ -106,21 +115,26 @@ func replyPermission(c *compat, r *http.Request, m []string) (*http.Response, er
 	if in.Message != "" {
 		body["message"] = in.Message
 	}
-	err := c.call(r.Context(), http.MethodPost,
+	err = c.call(r.Context(), http.MethodPost,
 		"/api/session/"+url.PathEscape(session)+"/permission/"+url.PathEscape(m[1])+"/reply", nil, body, nil)
 	return finish(r, http.StatusOK, true, err)
 }
 
-func (c *compat) questionForm(ctx context.Context, id, dir string) (map[string]any, string) {
-	session := c.promptSession(ctx, id, dir, true)
-	if session == "" {
-		return nil, ""
+// questionForm fetches a pending question form. A nil form with a nil
+// error means the prompt is gone (absent from a successful list, or an
+// upstream 404); any other failure is returned.
+func (c *compat) questionForm(ctx context.Context, id, dir string) (map[string]any, string, error) {
+	session, err := c.promptSession(ctx, id, dir, true)
+	if err != nil || session == "" {
+		return nil, "", err
 	}
 	var resp data[map[string]any]
-	if c.call(ctx, http.MethodGet, "/api/session/"+url.PathEscape(session)+"/form/"+url.PathEscape(id), nil, nil, &resp) != nil {
-		return nil, session
+	err = c.call(ctx, http.MethodGet, "/api/session/"+url.PathEscape(session)+"/form/"+url.PathEscape(id), nil, nil, &resp)
+	var ue *upstreamError
+	if errors.As(err, &ue) && ue.resp.StatusCode == http.StatusNotFound {
+		return nil, session, nil
 	}
-	return resp.Data, session
+	return resp.Data, session, err
 }
 
 func replyQuestion(c *compat, r *http.Request, m []string) (*http.Response, error) {
@@ -130,22 +144,28 @@ func replyQuestion(c *compat, r *http.Request, m []string) (*http.Response, erro
 	if err := readBody(r, &in); err != nil {
 		return nil, err
 	}
-	form, session := c.questionForm(r.Context(), m[1], requestDirectory(r))
+	form, session, err := c.questionForm(r.Context(), m[1], requestDirectory(r))
+	if err != nil {
+		return finish(r, 0, nil, err)
+	}
 	if form == nil {
 		return gone(r)
 	}
-	err := c.call(r.Context(), http.MethodPost,
+	err = c.call(r.Context(), http.MethodPost,
 		"/api/session/"+url.PathEscape(session)+"/form/"+url.PathEscape(m[1])+"/reply", nil,
 		map[string]any{"answer": FormAnswer(form, in.Answers)}, nil)
 	return finish(r, http.StatusOK, true, err)
 }
 
 func rejectQuestion(c *compat, r *http.Request, m []string) (*http.Response, error) {
-	session := c.promptSession(r.Context(), m[1], requestDirectory(r), true)
+	session, err := c.promptSession(r.Context(), m[1], requestDirectory(r), true)
+	if err != nil {
+		return finish(r, 0, nil, err)
+	}
 	if session == "" {
 		return gone(r)
 	}
-	err := c.call(r.Context(), http.MethodDelete,
+	err = c.call(r.Context(), http.MethodDelete,
 		"/api/session/"+url.PathEscape(session)+"/form/"+url.PathEscape(m[1]), nil, nil, nil)
 	return finish(r, http.StatusOK, true, err)
 }
