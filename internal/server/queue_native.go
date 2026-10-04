@@ -34,7 +34,11 @@ func (s *Server) enqueueFollowUp(ctx context.Context, platformID string, send pl
 				s.broadcastQueueUpdated(ctx, platformID, send.SessionID)
 				return nil
 			}
-			if !errors.Is(err, platforms.ErrUnsupported) && !errors.Is(err, platforms.ErrPlatformUnreachable) {
+			// Only a definitive "no native queue" falls back. Any other
+			// failure (a lost remote response reads as unreachable) may
+			// have been accepted already; queuing again could deliver the
+			// prompt twice, so it is surfaced instead.
+			if !errors.Is(err, platforms.ErrUnsupported) {
 				return err
 			}
 		}

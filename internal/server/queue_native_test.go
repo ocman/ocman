@@ -142,7 +142,6 @@ func TestEnqueueFollowUp_NativeFallbacks(t *testing.T) {
 	}{
 		{"native listing unsupported", platforms.ErrUnsupported, nil, false},
 		{"native send unsupported", nil, platforms.ErrUnsupported, true},
-		{"native send unreachable", nil, platforms.ErrPlatformUnreachable, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv, reg := newSessionsTestServer(t)
@@ -291,17 +290,34 @@ func TestSessionQueueDelete_MsgIDWithoutNativeQueue(t *testing.T) {
 func TestEnqueueFollowUp_DoesNotOvertakeOcmanQueue(t *testing.T) {
 	srv, reg := newSessionsTestServer(t)
 	p := newNativeQueuePlatform()
-	p.sendErr = platforms.ErrPlatformUnreachable
+	p.listErr = platforms.ErrPlatformUnreachable // instance down: nothing sent yet
 	reg.Register(p)
 	postMessage(t, srv, "s1", `{"message":"first","queue":true}`) // falls back to ocman
 
 	p.mu.Lock()
-	p.sendErr = nil // instance back
+	p.listErr = nil // instance back
 	p.mu.Unlock()
 	postMessage(t, srv, "s1", `{"message":"second","queue":true}`)
 
 	if n := ocmanQueued(t, srv); n != 2 {
 		sends, _ := p.snapshot()
 		t.Fatalf("ocman queue = %d, want 2 (second queued behind first); sends = %+v", n, sends)
+	}
+}
+
+// A native send that fails after it may have reached the platform (a lost
+// response from a remote reads as unreachable) has an unknown outcome:
+// queuing it again in ocman's queue could deliver the prompt twice. It is
+// surfaced to the user instead.
+func TestEnqueueFollowUp_UncertainNativeSendIsNotReplayed(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	p := newNativeQueuePlatform()
+	p.sendErr = platforms.ErrPlatformUnreachable
+	reg.Register(p)
+	if rr := postMessage(t, srv, "s1", `{"message":"later","queue":true}`); rr.Code < 400 {
+		t.Fatalf("status = %d, want an error for an uncertain send", rr.Code)
+	}
+	if n := ocmanQueued(t, srv); n != 0 {
+		t.Fatalf("ocman queue = %d, want 0 (no replay of an uncertain send)", n)
 	}
 }
