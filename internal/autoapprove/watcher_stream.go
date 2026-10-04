@@ -183,6 +183,11 @@ func (w *autoApproveWatcher) streamOnce(ctx context.Context, port string) error 
 			w.handleSessionTitle(streamCtx, sessionID, title)
 		},
 		OnSessionDataChanged: w.handleSessionDataChanged,
+		OnQueueChanged: func(sessionID string) {
+			if w.svc != nil && w.svc.deps.BroadcastQueueChanged != nil {
+				w.svc.deps.BroadcastQueueChanged(string(opencode.PlatformID), sessionID)
+			}
+		},
 		OnTerminalPart: func(part terminalPart) {
 			select {
 			case commitParts <- part:

@@ -24,6 +24,13 @@ func (t *translator) assistant(ev v2Event, sessionID, dir string) error {
 	msg := t.msgs[mid]
 	if ev.Type == "session.step.started" {
 		if msg == nil {
+			// A retried step reuses its message and keeps the earlier
+			// attempt's content; load it so new parts get the indexes the
+			// stored message will have. Unknown (new) messages start empty.
+			delete(t.unseeded, mid)
+			msg = t.seed(sessionID, mid)
+		}
+		if msg == nil {
 			msg = map[string]any{"id": mid, "type": "assistant", "sessionID": sessionID, "content": []any{}}
 			t.msgs[mid] = msg
 		}
@@ -35,8 +42,12 @@ func (t *translator) assistant(ev v2Event, sessionID, dir string) error {
 		return t.emitMessage(sessionID, dir, msg, 0, true)
 	}
 	if msg == nil {
+		if t.unseeded[mid] {
+			return nil
+		}
 		seeded := t.seed(sessionID, mid)
 		if seeded == nil {
+			t.unseeded[mid] = true
 			return nil
 		}
 		msg = seeded
@@ -98,6 +109,10 @@ func (t *translator) assistant(ev v2Event, sessionID, dir string) error {
 			if v, ok := d[k]; ok {
 				msg[k] = v
 			}
+		}
+		// OpenCode's projector records a failed step as finish "error".
+		if ev.Type == "session.step.failed" && str(d, "finish") == "" {
+			msg["finish"] = "error"
 		}
 		if tm != nil {
 			tm["completed"] = ev.Created

@@ -12,6 +12,11 @@ import (
 	"strings"
 )
 
+// QueueChangedEvent tells ocman a session's native follow-up queue (v2
+// inbox) changed, so it can push the new list to clients. It is ocman's
+// own event type; v1 OpenCode never sends it.
+const QueueChangedEvent = "ocman.queue.changed"
+
 func init() {
 	handle(http.MethodGet, `/event`, func(c *compat, r *http.Request, _ []string) (*http.Response, error) {
 		return c.stream(r, false)
@@ -39,7 +44,7 @@ func (c *compat) stream(r *http.Request, global bool) (*http.Response, error) {
 		return resp, nil
 	}
 	pr, pw := io.Pipe()
-	t := &translator{c: c, ctx: r.Context(), global: global, out: pw, msgs: map[string]map[string]any{}}
+	t := &translator{c: c, ctx: r.Context(), global: global, out: pw, msgs: map[string]map[string]any{}, unseeded: map[string]bool{}}
 	if !global {
 		t.dir = requestDirectory(r)
 	}
@@ -72,6 +77,9 @@ type translator struct {
 	dir    string
 	out    io.Writer
 	msgs   map[string]map[string]any // assistant message id -> v2 message
+	// unseeded marks in-flight messages whose fetch failed, so a missed
+	// message costs one GET, not one per streamed delta.
+	unseeded map[string]bool
 }
 
 type v2Event struct {
@@ -138,6 +146,11 @@ func (t *translator) handle(ev v2Event) error {
 	d := ev.Data
 	sessionID := str(d, "sessionID")
 	dir := str(ev.Location, "directory")
+	// One v2 server serves the whole machine: skip other directories
+	// before doing any work (fetches, projections), not just on output.
+	if !t.global && t.dir != "" && dir != "" && filepath.Clean(dir) != filepath.Clean(t.dir) {
+		return nil
+	}
 	emit := func(typ string, props map[string]any) error { return t.emit(sessionID, dir, typ, props) }
 	switch ev.Type {
 	case "server.connected":
@@ -150,6 +163,7 @@ func (t *translator) handle(ev v2Event) error {
 				delete(t.msgs, id)
 			}
 		}
+		clear(t.unseeded)
 		if err := emit("session.status", map[string]any{"status": map[string]any{"type": "idle"}}); err != nil {
 			return err
 		}
@@ -172,7 +186,14 @@ func (t *translator) handle(ev v2Event) error {
 		return t.emit(sessionID, firstNonEmpty(dir, str(obj(s, "location"), "directory")), typ, map[string]any{"info": V1Session(s)})
 	case "session.deleted":
 		return emit("session.deleted", map[string]any{"info": map[string]any{"id": sessionID}})
-	case "session.inbox.delivered", "session.synthetic", "session.skill.activated",
+	case "session.inbox.enqueued", "session.inbox.cancelled", "session.inbox.delivery.changed":
+		return emit(QueueChangedEvent, map[string]any{})
+	case "session.inbox.delivered":
+		if err := t.emitRecent(sessionID, dir); err != nil {
+			return err
+		}
+		return emit(QueueChangedEvent, map[string]any{})
+	case "session.synthetic", "session.skill.activated",
 		"session.shell.started", "session.shell.ended",
 		"session.compaction.started", "session.compaction.ended", "session.compaction.failed":
 		return t.emitRecent(sessionID, dir)

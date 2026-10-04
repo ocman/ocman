@@ -98,7 +98,10 @@ type Deps struct {
 	// BroadcastSessionIdle carries the platform the edge came from: a
 	// session's identity is (platform, sessionID), and the consumer drains
 	// that session's message queue with it.
-	BroadcastSessionIdle    func(platformID, sessionID string)
+	BroadcastSessionIdle func(platformID, sessionID string)
+	// BroadcastQueueChanged pushes a session's follow-up queue to clients
+	// after the platform's own queue changed. Optional.
+	BroadcastQueueChanged   func(platformID, sessionID string)
 	BroadcastSessionChanged func(sessionID string)
 	BroadcastSessionStatus  func(sessionID string, status db.SessionStatus)
 	BroadcastSessionTitle   func(sessionID, title string)

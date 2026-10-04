@@ -16,6 +16,10 @@ var _ platforms.NativeQueue = (*Adapter)(nil)
 // v2Port resolves the session's server and requires it to be OpenCode
 // v2, the only version with a native follow-up queue (its inbox).
 func (a *Adapter) v2Port(ctx context.Context, sessionID string) (string, error) {
+	// Cheap check first: on a v1 machine this runs on every queue change.
+	if !ocv2.InstalledV2() {
+		return "", platforms.ErrUnsupported
+	}
 	port, _, err := a.resolvePortCtx(ctx, sessionID)
 	if err != nil {
 		return "", err

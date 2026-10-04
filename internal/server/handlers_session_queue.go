@@ -46,7 +46,7 @@ func (s *Server) handleSessionQueueList(w http.ResponseWriter, r *http.Request) 
 		for _, m := range msgs {
 			out = append(out, toQueuedMessageView(m))
 		}
-		writeJSON(w, append(out, s.nativeQueuedViews(r.Context(), platformHint(r), sessionID)...))
+		writeJSON(w, mergeQueued(out, s.nativeQueuedViews(r.Context(), platformHint(r), sessionID)))
 	})
 }
 

@@ -115,3 +115,18 @@ func TestTeeSessionDataChangedGlobalEnvelope(t *testing.T) {
 		t.Errorf("session = %q, want ses-g", got)
 	}
 }
+
+// The v2 translation announces native queue changes so the server can push
+// the session's follow-up list to clients.
+func TestTeeQueueChanged(t *testing.T) {
+	var got []string
+	tee := &Tee{W: &bytes.Buffer{}, OnQueueChanged: func(sessionID string) { got = append(got, sessionID) }}
+	data := "data: " + `{"directory":"/repo","payload":{"type":"ocman.queue.changed","properties":{"sessionID":"ses-q"}}}` + "\n\n" +
+		"data: " + `{"type":"ocman.queue.changed","properties":{}}` + "\n\n"
+	if _, err := tee.Write([]byte(data)); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if len(got) != 1 || got[0] != "ses-q" {
+		t.Fatalf("OnQueueChanged = %v, want [ses-q]", got)
+	}
+}

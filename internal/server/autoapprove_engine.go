@@ -60,12 +60,15 @@ func (s *Server) aaSvc() *autoapprove.Service {
 			PromptNeedsUser:             s.conversationPromptNeedsUser,
 			BroadcastQuestionResolved:   s.broadcastQuestionResolved,
 			BroadcastSessionIdle:        s.onSessionIdle,
-			SessionRetry:                s.onSessionRetry,
-			BroadcastSessionChanged:     s.broadcastSessionChanged,
-			BroadcastSessionStatus:      s.onLocalSessionStatus,
-			BroadcastSessionTitle:       s.broadcastSessionTitle,
-			BroadcastGlobalEvent:        s.broadcastGlobalEvent,
-			DefaultEnabled:              s.autoApproveDefault,
+			BroadcastQueueChanged: func(platformID, sessionID string) {
+				s.broadcastQueueUpdated(context.Background(), platformID, sessionID)
+			},
+			SessionRetry:            s.onSessionRetry,
+			BroadcastSessionChanged: s.broadcastSessionChanged,
+			BroadcastSessionStatus:  s.onLocalSessionStatus,
+			BroadcastSessionTitle:   s.broadcastSessionTitle,
+			BroadcastGlobalEvent:    s.broadcastGlobalEvent,
+			DefaultEnabled:          s.autoApproveDefault,
 		}
 		if s.db != nil {
 			deps.RefreshSession = func(ctx context.Context, sessionID string) error {

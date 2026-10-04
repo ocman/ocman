@@ -216,9 +216,10 @@ func TestSessionQueueList_MergesNativeItems(t *testing.T) {
 
 	for _, query := range []string{"?platform=fake", ""} {
 		got := listQueue(t, srv, query)
-		if len(got) != 2 || got[0].Text != "ocman item" ||
-			got[1] != (queuedMessageView{ID: "msg_n1", Text: "native item", HasImages: true, CreatedAt: 7}) {
-			t.Fatalf("list%s = %+v, want [ocman item, native item]", query, got)
+		// Delivery order: the platform's queue drains first.
+		if len(got) != 2 || got[1].Text != "ocman item" ||
+			got[0] != (queuedMessageView{ID: "msg_n1", Text: "native item", HasImages: true, CreatedAt: 7}) {
+			t.Fatalf("list%s = %+v, want [native item, ocman item]", query, got)
 		}
 	}
 
@@ -319,5 +320,32 @@ func TestEnqueueFollowUp_UncertainNativeSendIsNotReplayed(t *testing.T) {
 	}
 	if n := ocmanQueued(t, srv); n != 0 {
 		t.Fatalf("ocman queue = %d, want 0 (no replay of an uncertain send)", n)
+	}
+}
+
+// A message held in ocman's queue while the platform still holds older
+// follow-ups natively joins the back of the native queue on the idle
+// edge instead of being sent at once (which would overtake them).
+func TestQueueFlush_JoinsNativeQueueBehindOlderItems(t *testing.T) {
+	srv, reg := newSessionsTestServer(t)
+	p := newNativeQueuePlatform()
+	p.listErr = platforms.ErrPlatformUnreachable // instance blipped: held by ocman
+	reg.Register(p)
+	postMessage(t, srv, "s1", `{"message":"C","queue":true}`)
+	p.mu.Lock()
+	p.listErr = nil
+	p.held = []platforms.NativeQueuedMessage{{ID: "msg_b", Text: "B", CreatedAt: 1}}
+	p.mu.Unlock()
+
+	srv.onSessionIdle("fake", "s1")
+	if err := srv.queueFlushWorker().Drain(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	sends, _ := p.snapshot()
+	if len(sends) != 1 || sends[0].Message != "C" || sends[0].Delivery != "queue" {
+		t.Fatalf("sends = %+v, want C appended to the native queue", sends)
+	}
+	if n := ocmanQueued(t, srv); n != 0 {
+		t.Fatalf("ocman queue = %d, want drained", n)
 	}
 }

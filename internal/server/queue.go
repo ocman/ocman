@@ -148,7 +148,7 @@ func (i *sessionStatusReader) LatestMessageState(ctx context.Context, platform, 
 }
 
 func (q *queueSender) SendNow(ctx context.Context, platformID string, req platforms.SendMessageRequest) error {
-	return q.s.sendNow(ctx, platformID, req)
+	return q.s.sendHeld(ctx, platformID, req)
 }
 
 // sendNow delivers a message to the platform immediately, retrying once
@@ -275,7 +275,9 @@ func (s *Server) broadcastQueueUpdated(ctx context.Context, platform, sessionID 
 			messages = append(messages, toQueuedMessageView(m))
 		}
 	}
-	messages = append(messages, s.nativeQueuedViews(ctx, platform, sessionID)...)
+	if messages != nil { // a failed read omits messages: never send a partial list
+		messages = mergeQueued(messages, s.nativeQueuedViews(ctx, platform, sessionID))
+	}
 	payload, err := json.Marshal(map[string]interface{}{
 		"sessionID": sessionID,
 		"messages":  messages,

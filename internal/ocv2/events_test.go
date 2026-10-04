@@ -144,8 +144,10 @@ func TestEventsAssistantFlow(t *testing.T) {
 	if p := cmpPart(evs[15]); p["id"] != PartID("msg01", 5) || p["type"] != "step-finish" || p["reason"] != "stop" {
 		t.Errorf("step-finish = %v", p)
 	}
-	if n := len(f.find("GET /api/session/s1/message/msg01")); n != 0 {
-		t.Errorf("a started message was seeded %d times", n)
+	// step.started looks the message up once (a retry keeps earlier
+	// content); every later event reuses the projection.
+	if n := len(f.find("GET /api/session/s1/message/msg01")); n != 1 {
+		t.Errorf("a started message was fetched %d times, want 1", n)
 	}
 }
 
@@ -205,8 +207,60 @@ func TestEventsExecutionEndForgetsMessages(t *testing.T) {
 	}
 	evs := cmpStream(t, f.URL+"/event")
 	cmpTypeSeq(t, evs, "message.updated", "message.part.updated", "session.status", "session.idle")
-	if n := len(f.find("GET /api/session/s1/message/msg01")); n != 1 {
-		t.Errorf("forgotten message refetched %d times, want 1", n)
+	// Once on step.started, once after the execution ended and forgot it.
+	if n := len(f.find("GET /api/session/s1/message/msg01")); n != 2 {
+		t.Errorf("message fetched %d times, want 2", n)
+	}
+}
+
+// A retried step reuses its message id and OpenCode keeps the first
+// attempt's content: a stream that missed the first attempt must load it
+// so the retry's parts get the stored indexes.
+func TestEventsRetriedStepKeepsStoredIndexes(t *testing.T) {
+	defer SetInstalledV2(true)()
+	f := fakeServer(t)
+	f.json("GET /api/session/s1/message/msg01", http.StatusOK, `{"data":{"id":"msg01","type":"assistant","agent":"build",
+		"model":{"providerID":"p","id":"m"},"time":{"created":1},"content":[{"type":"text","text":"first attempt"}]}}`)
+	f.events = []string{
+		fakeEv("session.step.started", 1, "", `{"sessionID":"s1","assistantMessageID":"msg01","started":5}`),
+		fakeEv("session.text.started", 2, "", `{"sessionID":"s1","assistantMessageID":"msg01"}`),
+		fakeEv("session.step.failed", 3, "", `{"sessionID":"s1","assistantMessageID":"msg01","error":{"type":"x","message":"boom"}}`),
+	}
+	evs := cmpStream(t, f.URL+"/event")
+	if p := cmpPart(evs[2]); p["id"] != PartID("msg01", 2) {
+		t.Errorf("retry text part = %v, want index 2", p["id"])
+	}
+	if info := obj(obj(evs[3], "properties"), "info"); info["finish"] != "error" {
+		t.Errorf("failed step info = %v, want finish error", info)
+	}
+}
+
+// A message whose fetch failed is not refetched for every later delta.
+func TestEventsFailedSeedIsNotRetriedPerDelta(t *testing.T) {
+	defer SetInstalledV2(true)()
+	f := fakeServer(t)
+	f.events = []string{
+		fakeEv("session.text.delta", 1, "", `{"sessionID":"s1","assistantMessageID":"msgX","delta":"a"}`),
+		fakeEv("session.text.delta", 2, "", `{"sessionID":"s1","assistantMessageID":"msgX","delta":"b"}`),
+		fakeEv("session.text.delta", 3, "", `{"sessionID":"s1","assistantMessageID":"msgX","delta":"c"}`),
+	}
+	cmpStream(t, f.URL+"/event")
+	if n := len(f.find("GET /api/session/s1/message/msgX")); n != 1 {
+		t.Errorf("failed seed fetched %d times, want 1", n)
+	}
+}
+
+// Events from other directories cost nothing on a directory stream.
+func TestEventsOtherDirectoryDoesNoWork(t *testing.T) {
+	defer SetInstalledV2(true)()
+	f := fakeServer(t)
+	f.events = []string{
+		fakeEv("session.created", 1, "/other", `{"sessionID":"s9"}`),
+		fakeEv("session.text.delta", 2, "/other", `{"sessionID":"s9","assistantMessageID":"msgY","delta":"a"}`),
+	}
+	cmpStream(t, f.URL+"/event?directory=/mine")
+	if n := len(f.find("GET /api/session/s9")) + len(f.find("GET /api/session/s9/message/msgY")); n != 0 {
+		t.Errorf("other-directory events made %d fetches", n)
 	}
 }
 
@@ -227,7 +281,7 @@ func TestEventsSessionEvents(t *testing.T) {
 	}
 	evs := cmpStream(t, f.URL+"/event")
 	cmpTypeSeq(t, evs, "session.created", "session.updated", "session.deleted",
-		"message.updated", "message.part.updated", "message.updated", "message.part.updated")
+		"message.updated", "message.part.updated", "message.updated", "message.part.updated", QueueChangedEvent)
 	v1 := `{"id":"s3","projectID":"","directory":"/d","title":"T","version":"2","time":{"created":1,"updated":2},"permission":[]}`
 	cmpJSON(t, "created", evs[0]["properties"], `{"sessionID":"s3","info":`+v1+`}`)
 	cmpJSON(t, "updated", evs[1]["properties"], `{"sessionID":"s3","info":`+v1+`}`)

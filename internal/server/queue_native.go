@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -15,6 +16,31 @@ import (
 // per idle boundary itself. Platforms without one (OpenCode v1, an
 // unreachable instance) go to ocman's queue (#58) instead. Both kinds
 // are listed together, so the composer shows one queue.
+
+// nativeQueueTimeout bounds a native queue lookup on the queue paths.
+const nativeQueueTimeout = 3 * time.Second
+
+// mergeQueued lists held follow-ups in delivery order: the platform's
+// own queue drains first (ocman's items join its back, see sendHeld),
+// then ocman's queue in its user-chosen order.
+func mergeQueued(ocman, native []queuedMessageView) []queuedMessageView {
+	return append(append([]queuedMessageView{}, native...), ocman...)
+}
+
+// sendHeld delivers one message from ocman's queue. While the platform
+// still holds older follow-ups natively, it joins the back of that queue
+// instead of being sent at once, so it cannot overtake them.
+func (s *Server) sendHeld(ctx context.Context, platformID string, req platforms.SendMessageRequest) error {
+	if len(s.nativeQueuedViews(ctx, platformID, req.SessionID)) > 0 {
+		native := req
+		native.Delivery = "queue"
+		err := s.sessions.SendMessage(ctx, platformID, native)
+		if !errors.Is(err, platforms.ErrUnsupported) {
+			return err
+		}
+	}
+	return s.sendNow(ctx, platformID, req)
+}
 
 // enqueueFollowUp holds send for the session's next idle edge.
 func (s *Server) enqueueFollowUp(ctx context.Context, platformID string, send platforms.SendMessageRequest) error {
@@ -63,6 +89,9 @@ func (s *Server) nativeQueuedViews(ctx context.Context, platformID, sessionID st
 	if nq == nil {
 		return nil
 	}
+	// Runs inside queue notifications, under the session's queue lock.
+	ctx, cancel := context.WithTimeout(ctx, nativeQueueTimeout)
+	defer cancel()
 	msgs, err := nq.NativeQueued(ctx, sessionID)
 	if err != nil {
 		if !errors.Is(err, platforms.ErrUnsupported) {

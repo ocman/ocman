@@ -11,6 +11,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/NoUseFreak/ocman/internal/ocv2"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
@@ -108,6 +109,10 @@ type Tee struct {
 	// puts wrong numbers in front of the user while a full
 	// reconciliation only costs time. Optional.
 	OnSessionDataChanged func(sessionID string)
+	// OnQueueChanged fires when the platform's own follow-up queue for a
+	// session changed (OpenCode v2 inbox, ocv2.QueueChangedEvent).
+	// Optional.
+	OnQueueChanged func(sessionID string)
 	// OnTerminalPart receives completed or errored bash parts only when their
 	// captured output is available. It is fed solely from live SSE events.
 	OnTerminalPart func(part terminalPart)
@@ -294,6 +299,12 @@ func (t *Tee) dispatchEventInDirectory(eventType, dataJSON, directory string) {
 		}
 	case "session.deleted":
 		t.dispatchSessionDataChanged(deletedSessionID(dataJSON))
+	case ocv2.QueueChangedEvent:
+		if t.OnQueueChanged != nil {
+			if sid := messageEventSessionID(dataJSON); sid != "" {
+				t.OnQueueChanged(sid)
+			}
+		}
 	}
 }
 
