@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -234,5 +235,24 @@ func TestOpenV2InstalledOnV1SchemaDoesNotError(t *testing.T) {
 	msgs, err := d.GetSessionMessages(t.Context(), "s1")
 	if err != nil || len(msgs) != 1 {
 		t.Fatalf("GetSessionMessages = %v, %v; want 1 message", msgs, err)
+	}
+}
+
+// A view column referenced several times in one query converts the row
+// once; a changed row converts again.
+func TestV2ViewConversionIsMemoized(t *testing.T) {
+	calls := 0
+	convert := func() (driver.Value, error) { calls++; return "x", nil }
+	args := []driver.Value{"msg_1", "ses_1", "assistant", []byte(`{"a":1}`)}
+	for range 3 {
+		if v, err := memoized("message", args, convert); err != nil || v != "x" {
+			t.Fatalf("memoized = %v, %v", v, err)
+		}
+	}
+	changed := []driver.Value{"msg_1", "ses_1", "assistant", []byte(`{"a":2}`)}
+	_, _ = memoized("message", changed, convert)
+	_, _ = memoized("parts", args, convert)
+	if calls != 3 {
+		t.Fatalf("conversions = %d, want 3 (first, changed row, other function)", calls)
 	}
 }

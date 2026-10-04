@@ -5,6 +5,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"sync"
 
 	sqlite "modernc.org/sqlite"
@@ -21,9 +22,12 @@ import (
 // ocv2.ConvertMessage, the converter the HTTP layer uses, so ids agree
 // between the database and the live API.
 //
-// ponytail: every query over these views re-converts message JSON in Go.
-// Fine for typical databases; materialise into the analytics mirror if a
-// large v2 history makes the list query slow.
+// SQLite evaluates a view column once per reference, so a query reading
+// `data` five times converts the row five times; convMemo makes the
+// repeats map lookups.
+//
+// ponytail: a bounded memo, cleared when full. Materialise into the
+// analytics mirror if a large v2 history still makes the list query slow.
 
 var v2DSNs sync.Map // DSN -> true for databases opened with v2 views
 
@@ -45,26 +49,73 @@ var v2ViewDDL = []string{
 		WHERE m.type IN ` + v2Visible,
 }
 
+// convMemo caches converted rows by a hash of the function and its
+// arguments (the stored JSON included, so an updated row misses).
+var convMemo = struct {
+	sync.Mutex
+	m map[uint64]driver.Value
+}{m: map[uint64]driver.Value{}}
+
+const convMemoMax = 8192
+
+func memoized(fn string, args []driver.Value, convert func() (driver.Value, error)) (driver.Value, error) {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(fn))
+	for _, a := range args {
+		_, _ = h.Write([]byte{0})
+		switch v := a.(type) {
+		case string:
+			_, _ = h.Write([]byte(v))
+		case []byte:
+			_, _ = h.Write(v)
+		default:
+			_, _ = fmt.Fprint(h, v)
+		}
+	}
+	key := h.Sum64()
+	convMemo.Lock()
+	v, ok := convMemo.m[key]
+	convMemo.Unlock()
+	if ok {
+		return v, nil
+	}
+	v, err := convert()
+	if err != nil {
+		return v, err
+	}
+	convMemo.Lock()
+	if len(convMemo.m) >= convMemoMax {
+		convMemo.m = map[uint64]driver.Value{}
+	}
+	convMemo.m[key] = v
+	convMemo.Unlock()
+	return v, nil
+}
+
 func init() {
 	sqlite.MustRegisterDeterministicScalarFunction("ocman_v1_message", 4, func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
-		v1, ok := convertRow(args)
-		if !ok {
-			return nil, nil
-		}
-		info := v1.Info
-		delete(info, "id")
-		delete(info, "sessionID")
-		b, err := json.Marshal(info)
-		return string(b), err
+		return memoized("message", args, func() (driver.Value, error) {
+			v1, ok := convertRow(args)
+			if !ok {
+				return nil, nil
+			}
+			info := v1.Info
+			delete(info, "id")
+			delete(info, "sessionID")
+			b, err := json.Marshal(info)
+			return string(b), err
+		})
 	})
 	sqlite.MustRegisterDeterministicScalarFunction("ocman_v1_parts", 4, func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
-		v1, _ := convertRow(args)
-		parts := v1.Parts
-		if parts == nil {
-			parts = []map[string]any{}
-		}
-		b, err := json.Marshal(parts)
-		return string(b), err
+		return memoized("parts", args, func() (driver.Value, error) {
+			v1, _ := convertRow(args)
+			parts := v1.Parts
+			if parts == nil {
+				parts = []map[string]any{}
+			}
+			b, err := json.Marshal(parts)
+			return string(b), err
+		})
 	})
 	sqlite.RegisterConnectionHook(func(c sqlite.ExecQuerierContext, dsn string) error {
 		if _, ok := v2DSNs.Load(dsn); !ok {
