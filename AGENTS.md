@@ -8,6 +8,25 @@ A web dashboard for viewing coding-agent session data. Ocman supports:
   proxies live data from running OpenCode instances via their HTTP
   API.
 
+OpenCode **v1 and v2** are both supported (`internal/ocv2`). The installed
+version is read from `opencode --version` (`ocv2.InstalledV2`, cached for a
+minute), so a hub on v1 and a remote on v2 work side by side; each ocman only
+speaks to its own machine's OpenCode. For v2, the rest of ocman still talks v1:
+`ocapi.Auth.Transport` wraps every OpenCode client in `ocv2.Wrap`, which
+answers the v1 routes and event streams with v2 `/api/*` calls and translates
+the shapes. `ocv2.ConvertMessage` is the only v2→v1 message converter. The HTTP
+layer, the SSE translator and the database's TEMP views (`internal/db/v2views.go`:
+`session`/`message`/`part` over `session_v2`/`session_message`) all go through it,
+so part ids (`prt<msg suffix><index>`) agree everywhere. Never add a second
+converter. On v2, `EnsureProjectOpencode` runs **one `opencode serve` per machine**
+(working directory `~/.local/share/ocman/opencode-v2`). Discovery skips `lsof` and
+resolves every directory to that port (`opencode.SetMachineServer`). The server's
+password is generated once and stored in `state.db` when none is configured,
+because v2 always requires one. Ctrl/Cmd+Enter follow-ups use v2's native session
+inbox (`platforms.NativeQueue`, `delivery: "queue"`) unless ocman's own queue
+already holds messages for that session. Tests pin the version with
+`ocv2.SetInstalledV2` (a `TestMain` per package) and never run the real binary.
+
 Platforms are wired through a common `Platform` adapter interface
 (`internal/platforms/`). Adding a new platform (e.g. Codex) is a
 new adapter + registry entry; see
@@ -337,6 +356,10 @@ handlers don't bypass the `Host` seam). User-facing docs:
   tells operators to set it before pointing a plugin at a remote provider.
 - `internal/platforms/opencode/` — OpenCode adapter wrapping the DB
   + HTTP proxy client.
+- `internal/ocv2/` — OpenCode v2 compatibility: version detection, the
+  v1-on-v2 RoundTripper (`compat.go`, `routes_*.go`), the event translator
+  (`events*.go`) and the v2→v1 converters (`message.go`, `tools.go`,
+  `catalog.go`).
 - `internal/sessionsvc/` — session mutation service (validation,
   adapter selection, side-effect hooks). REST handlers and the remote
   gRPC server delegate session mutations to it

@@ -70,6 +70,9 @@ flowchart LR
   user-started maintenance job (`internal/ocmaint`, Settings → Maintenance).
   It stops the managed instances, refuses while any other process holds the
   file, and moves old `summary.diffs` patches into a restorable dump.
+  On an OpenCode v2 machine each connection gets TEMP views named `session`,
+  `message` and `part` over v2's `session_v2`/`session_message` tables, so
+  every query keeps its v1 SQL (`internal/db/v2views.go`).
 - **state.db.** Ocman's own state: archive flags, routines and run history,
   permission approval provenance, live session commit observations, settings,
   Factory records, Inbox items, artifact metadata, remote tokens, and the last
@@ -285,9 +288,19 @@ flowchart TD
 - **internal/ocruntime.** The runtime abstraction behind the managed launch
   path. A `Runtime` interface (`Launch`/`Probe`/`Stop`) hides how a project's
   opencode is hosted; the native-tmux implementation runs `opencode --port N`
-  on an ocman-allocated loopback port and probes authenticated
-  `GET {endpoint}/config` for health. It is where the container runtime (epic
+  (v1, one per project) or `opencode serve --port N` (v2, one per machine,
+  kept up by `RunMachineSupervisor`) on an ocman-allocated loopback port and
+  probes authenticated `GET {endpoint}/config` for health. It is where the container runtime (epic
   #375) plugs in as a second implementation.
+- **internal/ocv2.** OpenCode v2 compatibility. `ocapi.Auth.Transport` wraps
+  every OpenCode HTTP client in `ocv2.Wrap`. On a machine whose `opencode` is v2,
+  the wrapper answers v1 routes (sessions, messages, prompts, permissions,
+  questions as v2 forms, catalogs, `/event` and `/global/event`) with v2
+  `/api/*` calls. The SSE translator re-projects v2's typed events into v1
+  `message.*`/`session.*` events. `ConvertMessage` is the single v2→v1 message
+  converter: the HTTP layer, the event translator and `internal/db`'s TEMP
+  views over `session_v2`/`session_message` all use it, so part ids agree
+  everywhere. v1 servers are never probed.
 - **platforms/opencode.** Wraps the read-only DB queries (`internal/db`) plus
   an HTTP client that attaches to live instances, with `lsof`-based discovery
   for instances started outside ocman. One process-wide `/global/event` stream

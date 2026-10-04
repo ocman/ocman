@@ -160,7 +160,8 @@ not trust the client-supplied `X-Forwarded-Proto` header for this decision.
 Sessions launched from ocman (command palette, Worktrees view, PR/Issue sidebar) are interactive
 out of the box: ocman manages one OpenCode instance per project on a port it allocates itself.
 
-For OpenCode instances you start yourself, use an explicit port so ocman can discover them:
+For OpenCode v1 instances you start yourself, use an explicit port so ocman can discover them
+(OpenCode v2 works differently; see [OpenCode v2](#opencode-v2)):
 
 ```sh
 opencode --port 0   # let OpenCode pick a free port
@@ -170,6 +171,35 @@ opencode --port 0   # let OpenCode pick a free port
 Ocman finds listening OpenCode processes with `lsof` and connects automatically. Without
 `--port`, externally launched sessions are still readable from the database but interactive
 features stay disabled.
+
+### OpenCode v2
+
+Ocman supports OpenCode v1 and v2. It checks `opencode --version` on every machine (once a
+minute), so one ocman can run v1 locally while a remote runs v2. Nothing needs configuring.
+
+On a v2 machine, OpenCode runs one server for every project. Ocman follows that:
+
+- **One server per machine.** Ocman starts `opencode serve` on a loopback port it picks and
+  keeps it running, relaunching it within 30 seconds if it stops. It runs in a tmux session
+  with its own working directory under `~/.local/share/ocman/opencode-v2`. Ocman does not
+  use OpenCode's own background service (`opencode service`) or v2 servers you start
+  yourself. To use ocman's server from the TUI, run `opencode --server http://127.0.0.1:<port>`.
+- **Always authenticated.** v2 requires a password. When none is configured (see below), ocman
+  generates one, stores it encrypted in `state.db`, and reuses it across restarts. This keeps
+  the server running across an ocman restart.
+- **Native follow-up queue.** Ctrl/Cmd+Enter hands the message to v2's own session inbox, which
+  delivers it when the turn ends. The composer lists these messages with ocman's own queued
+  messages. You can delete them but not reorder them. If ocman's own queue already holds
+  messages for the session, a new one joins that queue instead, so the order stays the same.
+- **History.** v2 stores conversations in new tables (`session_v2`, `session_message`). Ocman
+  reads them through read-only views with the v1 names, so the session list, transcripts,
+  search and analytics work unchanged.
+- **MCP.** Installing ocman's MCP entry on a v2 machine also sets `"codemode": false`, so the
+  agent calls ocman's tools directly instead of through v2's Code Mode `execute` tool.
+- **Settings → Maintenance** is not available on v2; it only knows the v1 storage layout.
+
+If you point ocman at a non-default database with `-db`, also export `OPENCODE_DB` with the same
+path: ocman passes it to the v2 server it launches, so both use the same file.
 
 ### OpenCode server authentication
 

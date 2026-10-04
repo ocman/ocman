@@ -9,6 +9,9 @@ the patch again in every `message.updated` event in its event log. A checkout
 that moves across a large upstream change can add hundreds of megabytes in a
 single turn.
 
+This page applies to OpenCode v1. OpenCode v2 stores history differently, and
+ocman refuses to run these jobs on a v2 machine.
+
 **Settings → Maintenance** removes those patches from sessions that haven't
 been updated for 30 days, then compacts the database. The patches are kept in
 a dump, so you can put them back.
