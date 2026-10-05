@@ -19,7 +19,7 @@ describe('LazyInlineDiff', () => {
       observe() {}
       disconnect() {}
     });
-    const { container } = render(<LazyInlineDiff payload={{ filePath: 'a.ts', before: 'a', after: 'b' }} />);
+    const { container } = render(<LazyInlineDiff payload={{ __diff: true, filePath: 'a.ts', before: 'a', after: 'b' }} />);
     expect(container.firstElementChild).toHaveClass('oc-tool-output');
     expect(diffProps.at(-1)!.oldFile.lang).toBe('text');
     expect(diffProps.at(-1)!.newFile.lang).toBe('text');
