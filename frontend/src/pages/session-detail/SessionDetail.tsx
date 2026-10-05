@@ -36,6 +36,7 @@ import { PermissionModeLock } from '../../components/PermissionModeLock';
 import { SessionWarningBanner } from '../../components/SessionWarningBanner';
 import { McpAuthBanner } from '../../components/McpAuthBanner';
 import { useUiStore } from '../../lib/uiStore';
+import { shortcutLabel, useShortcutRegistry } from '../../lib/shortcutRegistry';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { checkoutKey } from '../../lib/projectIdentity';
 import { useTmux } from '../../lib/useTmux';
@@ -479,6 +480,11 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const getWhisperStatus = useApiStore((state) => state.getWhisperStatus);
 
   const sidebarWidth = useUiStore((state) => state.sidebarWidth);
+  // A string selector, so re-registrations elsewhere don't re-render the page.
+  const paletteShortcutLabel = useShortcutRegistry((state) => {
+    const shortcut = state.shortcuts.get('site.command-palette');
+    return shortcut ? shortcutLabel(shortcut) : 'Alt+Space';
+  });
   const toggleCollapsedProject = useUiStore((state) => state.toggleCollapsedProject);
 
   const threadBoundaryRecoveryRef = useRef<{ sessionId: string | undefined; message: string; at: number } | null>(null);
@@ -894,7 +900,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
           ) : id === NEW_SESSION_ID && !session ? (
             <div className="oc-empty-detail" data-testid="empty-detail" style={{ margin: 24, opacity: 0.7 }}>
               <p>No session open.</p>
-              <p>Pick a session from the sidebar, or press <kbd>⌘K</kbd> and run <code>/new</code> to start one.</p>
+              <p>Pick a session from the sidebar, or press <kbd>{paletteShortcutLabel}</kbd> and run <code>/new</code> to start one.</p>
             </div>
           ) : session && (
             <OcmanRuntimeProvider
