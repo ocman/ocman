@@ -69,6 +69,18 @@ it('cleans Markdown with its parser, dropping fences, indented code, images, and
   expect(speechText('```\nunterminated code')).toBe('');
 });
 
+it('renders each distinct answer once and bounds the cache', () => {
+  const parse = vi.spyOn(DOMParser.prototype, 'parseFromString');
+  expect(speechText('cached *answer* one')).toBe('cached answer one');
+  expect(speechText('cached *answer* one')).toBe('cached answer one');
+  expect(parse).toHaveBeenCalledTimes(1);
+  for (let i = 0; i < 500; i++) speechText(`evict ${i}`);
+  parse.mockClear();
+  speechText('cached *answer* one'); // evicted, rendered again
+  expect(parse).toHaveBeenCalledTimes(1);
+  parse.mockRestore();
+});
+
 describe('speech playback', () => {
   it('prefers local voices, applies preferences, stops and ignores stale callbacks', () => {
     const { result, unmount } = renderHook(useSpeechPlayback);

@@ -24,7 +24,23 @@ export function finalAnswers(messages: Message[], parts: Part[], turns: TurnStat
   return answers;
 }
 
+// speechText renders markdown to static HTML; finalAnswers re-runs for every
+// settled answer on each transcript change (every streamed token), so cache
+// by source text. ponytail: insertion-order eviction, LRU if hit rates matter.
+const SPEECH_CACHE_MAX = 500;
+const speechCache = new Map<string, string>();
+
 export function speechText(markdown: string): string {
+  let prose = speechCache.get(markdown);
+  if (prose === undefined) {
+    prose = renderSpeechText(markdown);
+    if (speechCache.size >= SPEECH_CACHE_MAX) speechCache.delete(speechCache.keys().next().value!);
+    speechCache.set(markdown, prose);
+  }
+  return prose;
+}
+
+function renderSpeechText(markdown: string): string {
   // Reuse the installed Markdown parser: regex stripping can leak fenced commands.
   const html = renderToStaticMarkup(<Markdown remarkPlugins={[remarkGfm]} components={{
     pre: () => null,
