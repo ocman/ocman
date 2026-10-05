@@ -170,8 +170,13 @@ test('interaction bench', async ({ mockedPage: page }) => {
   // PERF_SCENARIOS=stream,switch runs a subset (same order).
   const only = process.env.PERF_SCENARIOS?.split(',');
   const scenarios: [string, () => Promise<void>][] = [
-    // Stream a long markdown answer.
-    ['stream', () => play(page, id(0), streamFrames(id(0)))],
+    // Stream a long markdown answer; the thread must stay pinned to the bottom.
+    ['stream', async () => {
+      await play(page, id(0), streamFrames(id(0)));
+      await settle(page);
+      const gap = await page.locator('.oc-thread-viewport').evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight);
+      expect(gap).toBeLessThan(40);
+    }],
     // Type in the composer while streaming.
     ['typeWhileStreaming', async () => {
       const composer = page.locator('[data-perf="composer"] textarea');
