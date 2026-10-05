@@ -468,3 +468,15 @@ describe('ToolCallDisplay artifact card', () => {
     expect(screen.queryByTestId('artifact-tool-card')).toBeNull();
   });
 });
+
+describe('ToolCallDisplay generic diff output', () => {
+  it('highlights diff lines with the language of the file-path argument', () => {
+    const { container } = renderTool({
+      toolName: 'custom_tool',
+      argsText: 'completed\n{"filePath":"main.go"}',
+      result: '  1    1   - func old() {}\n  2    2   + func next() {}',
+    });
+    fireEvent.click(screen.getByRole('button', { expanded: false }));
+    expect(container.querySelectorAll('.oc-diff-code .hljs-keyword')).toHaveLength(2);
+  });
+});

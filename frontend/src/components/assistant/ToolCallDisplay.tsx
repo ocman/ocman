@@ -10,6 +10,7 @@ import { useIsPrinting } from '../../lib/useIsPrinting';
 import { usePrintCollapse } from '../../lib/printCollapseContext';
 import {
   highlightDiffCode,
+  toolOutputLanguage,
   extractPatchPayload,
   splitToolArgs,
   summarizeToolArgs,
@@ -377,7 +378,7 @@ const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArg
         <div className="oc-tool-compact-body">
           {detail && <pre className="oc-tool-pre">{detail}</pre>}
           {outputDisplay && (
-            <pre className="oc-tool-pre oc-tool-output">{renderOutput(outputPreview)}</pre>
+            <pre className="oc-tool-pre oc-tool-output">{renderOutput(outputPreview, toolOutputLanguage(parsedTitle, detail || ''))}</pre>
           )}
         </div>
       )}

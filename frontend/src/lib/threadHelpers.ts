@@ -123,9 +123,22 @@ export function inferDiffLanguage(title: string, detail: string): string | undef
 }
 
 /**
- * Run highlight.js on a snippet, preferring the explicit
- * `languageHint` when present and falling back to autodetect. Errors
- * during highlighting fall back to HTML-escaped raw text so we never
+ * Language hint for a tool's output: the title's path, else a file-path
+ * argument in the JSON args.
+ */
+export function toolOutputLanguage(title: string, detail: string): string | undefined {
+  const fromTitle = inferDiffLanguage(title, '');
+  if (fromTitle) return fromTitle;
+  const args = parseJsonObject(detail);
+  const path = args?.filePath ?? args?.file_path ?? args?.path ?? args?.file;
+  return typeof path === 'string' ? inferLanguageFromPath(path) : undefined;
+}
+
+/**
+ * Run highlight.js on a snippet with the explicit `languageHint`.
+ * Without a known hint the code is only escaped: autodetection runs
+ * every grammar and this is called once per diff line. Errors during
+ * highlighting also fall back to HTML-escaped raw text so we never
  * inject unhighlighted markup with unescaped angle brackets.
  */
 export function highlightDiffCode(code: string, languageHint?: string): string {
@@ -135,10 +148,8 @@ export function highlightDiffCode(code: string, languageHint?: string): string {
     if (languageHint && hljs.getLanguage(languageHint)) {
       return hljs.highlight(code, { language: languageHint, ignoreIllegals: true }).value;
     }
-    return hljs.highlightAuto(code).value;
-  } catch {
-    return escapeHtml(code);
-  }
+  } catch { /* fall through to escaped text */ }
+  return escapeHtml(code);
 }
 
 /**

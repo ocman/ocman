@@ -1,10 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import hljs from 'highlight.js/lib/common';
 import {
   EXTENSION_LANGUAGE_MAP,
   escapeHtml,
   inferLanguageFromPath,
   inferDiffLanguage,
   highlightDiffCode,
+  toolOutputLanguage,
   parseJsonObject,
   parseJsonObjectFromMixedText,
   extractPatchPayload,
@@ -93,9 +95,28 @@ describe('highlightDiffCode', () => {
     expect(result.length).toBeGreaterThan(0);
   });
 
-  it('falls back to autodetect when the hint is unknown', () => {
-    const result = highlightDiffCode('hello world', 'no-such-language');
-    expect(typeof result).toBe('string');
+  it('escapes instead of autodetecting when the hint is missing or unknown', () => {
+    // highlightAuto runs every grammar; per diff line that dominated
+    // tool-output rendering.
+    const auto = vi.spyOn(hljs, 'highlightAuto');
+    expect(highlightDiffCode('<b>x</b>', 'no-such-language')).toBe('&lt;b&gt;x&lt;/b&gt;');
+    expect(highlightDiffCode('<b>x</b>')).toBe('&lt;b&gt;x&lt;/b&gt;');
+    expect(auto).not.toHaveBeenCalled();
+    auto.mockRestore();
+  });
+});
+
+describe('toolOutputLanguage', () => {
+  it('derives the language from the title or the file-path argument', () => {
+    expect(toolOutputLanguage('Edit src/foo.go', '')).toBe('go');
+    expect(toolOutputLanguage('', '{"filePath": "app/main.py", "oldString": "x"}')).toBe('python');
+    expect(toolOutputLanguage('', '{"file_path": "lib/a.rs"}')).toBe('rust');
+    expect(toolOutputLanguage('', '{"path": "Dockerfile"}')).toBe('dockerfile');
+  });
+
+  it('returns undefined when no path is known', () => {
+    expect(toolOutputLanguage('', '{"query": "x"}')).toBeUndefined();
+    expect(toolOutputLanguage('', 'not json')).toBeUndefined();
   });
 });
 
