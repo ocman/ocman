@@ -499,6 +499,41 @@ describe('useSession — initial load', () => {
     expect(result.current.pendingQuestion).not.toBeNull();
   });
 
+  it('keeps a remote session on its owner when prefetches evict its cache entry', async () => {
+    const remote = makeDetail({ session: { ...makeDetail().session, platform: 'r-m2:opencode' } });
+    useApiStore.getState().setCachedSession(SID, remote);
+    const fetchSession = vi.fn().mockResolvedValue(remote);
+    const { result } = renderHook(() => useSession(SID, { fetchSession }));
+    await waitFor(() => expect(result.current.refreshing).toBe(false));
+    const sse = FakeEventSource.latest()!;
+    expect(sse.url).toContain('platform=r-m2');
+    act(() => sse.emitMessage({
+      type: 'message.part.delta',
+      properties: { sessionID: SID, messageID: 'm', partID: 'p', field: 'text', delta: 'live' },
+    }));
+    await waitFor(() => expect(result.current.parts.some((p) => p.id === 'p')).toBe(true));
+
+    // Ten hover prefetches push the active entry out of the LRU.
+    for (let i = 0; i < 10; i++) useApiStore.getState().setCachedSession(`other-${i}`, makeDetail());
+    expect(useApiStore.getState().getCachedSession(SID)).toBeNull();
+    act(() => sse.emitMessage({
+      type: 'message.part.delta',
+      properties: { sessionID: SID, messageID: 'm', partID: 'p', field: 'text', delta: '!' },
+    }));
+
+    const text = () => {
+      const data = result.current.parts.find((p) => p.id === 'p')?.data;
+      return (typeof data === 'string' ? JSON.parse(data) : data)?.text;
+    };
+    await waitFor(() => expect(text()).toBe('live!'));
+    await act(async () => {});
+    expect(text()).toBe('live!');
+    expect(FakeEventSource.latest()).toBe(sse);
+    expect(sse.closed).toBe(false);
+    expect(fetchSession).toHaveBeenCalledTimes(1);
+    expect(fetchSession).toHaveBeenLastCalledWith(SID, expect.any(Number), 0, expect.anything(), 'r-m2:opencode');
+  });
+
   it('caches only the newest page of a long view', async () => {
     const messages = Array.from({ length: 5 }, (_, i) => ({ id: `m${i}`, sessionId: SID, timeCreated: i, data: { role: 'user' as const } }));
     const parts = messages.map((m) => ({ id: `${m.id}-p`, messageId: m.id, sessionId: SID, data: { type: 'text', text: m.id } }));

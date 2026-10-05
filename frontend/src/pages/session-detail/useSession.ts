@@ -221,7 +221,14 @@ export function useSession(
   // not a reactive subscription. Subscribing here would cause every
   // cache write (mirror effect) to re-run this hook's setup.
   const cached = sessionId ? useApiStore.getState().getCachedSession(sessionId) : null;
-  const cachedPlatform = cached?.session.platform;
+  // Pin the owner per session id: the cache is an evictable LRU (hover
+  // prefetches can push the open session out), and losing the hint would
+  // re-run the effect below and restart the stream without it. It may
+  // still be learned once (first fetch caches the platform), never dropped.
+  const ownerRef = useRef<{ id: string | undefined; platform: string | undefined }>({ id: sessionId, platform: undefined });
+  if (ownerRef.current.id !== sessionId) ownerRef.current = { id: sessionId, platform: undefined };
+  if (cached?.session.platform) ownerRef.current.platform = cached.session.platform;
+  const cachedPlatform = ownerRef.current.platform;
   const routedPlatform = cachedPlatform?.startsWith('r-') ? cachedPlatform : undefined;
   const initialView: SessionView = cached
     ? {
