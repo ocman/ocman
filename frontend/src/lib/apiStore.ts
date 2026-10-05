@@ -49,6 +49,13 @@ export const CLOSED_SESSION_STACK_MAX = 10;
  */
 export const SESSION_CACHE_MAX = 10;
 
+let whisperStatus: Promise<{ available: boolean }> | null = null;
+
+/** Test hook: forget the cached whisper status. */
+export function resetWhisperStatusCache() {
+  whisperStatus = null;
+}
+
 type ApiStore = {
   requests: Record<string, RequestStatus>;
   // Cached list of all sessions (no directory filter). `null` means never
@@ -384,7 +391,13 @@ export const useApiStore = create<ApiStore>((set, get) => ({
   getTmuxSessions: (signal) => get().runRequest('tmux-sessions:get', () => api.tmuxSessions(signal)),
   switchTmuxSession: (session, client) => get().runRequest(`tmux:switch:${session}`, () => api.tmuxSwitch(session, client)),
   launchOpencodeInTmux: (directory, remoteId) => get().runRequest(`tmux:launch-opencode:${remoteId || 'local'}:${directory}`, () => api.tmuxLaunchOpencode(directory, remoteId)),
-  getWhisperStatus: (signal) => get().runRequest('whisper-status:get', () => api.whisperStatus(signal)),
+  getWhisperStatus: (signal) => {
+    // Whisper availability is machine state, so one successful read per
+    // app load serves every session switch. A failure is not cached.
+    whisperStatus ??= get().runRequest('whisper-status:get', () => api.whisperStatus(signal))
+      .catch((err) => { whisperStatus = null; throw err; });
+    return whisperStatus;
+  },
   transcribe: (audio) => get().runRequest('transcribe:post', () => api.transcribe(audio)),
   getSystemStats: (signal) => get().runRequest('system-stats:get', () => api.systemStats(signal)),
 }));

@@ -1,6 +1,6 @@
-import { beforeEach, describe, it, expect } from 'vitest';
-import { SESSION_CACHE_MAX, useApiStore } from './apiStore';
-import type { SessionDetail, Session } from './api';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+import { SESSION_CACHE_MAX, resetWhisperStatusCache, useApiStore } from './apiStore';
+import { api, type SessionDetail, type Session } from './api';
 
 function makeSessionDetail(id: string, overrides: Partial<SessionDetail> = {}): SessionDetail {
   const session: Session = {
@@ -212,5 +212,27 @@ describe('seedNewSession', () => {
     useApiStore.getState().seedNewSession('dup', '/repo', 'opencode');
     const recent = useApiStore.getState().recentSessions;
     expect(recent.filter((s) => s.id === 'dup')).toHaveLength(1);
+  });
+});
+
+describe('getWhisperStatus', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('fetches the machine whisper status once per app load', async () => {
+    resetWhisperStatusCache();
+    const request = vi.spyOn(api, 'whisperStatus').mockResolvedValue({ available: true });
+    await expect(useApiStore.getState().getWhisperStatus()).resolves.toEqual({ available: true });
+    await expect(useApiStore.getState().getWhisperStatus()).resolves.toEqual({ available: true });
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries after a failed status read', async () => {
+    resetWhisperStatusCache();
+    const request = vi.spyOn(api, 'whisperStatus')
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue({ available: false });
+    await expect(useApiStore.getState().getWhisperStatus()).rejects.toThrow('offline');
+    await expect(useApiStore.getState().getWhisperStatus()).resolves.toEqual({ available: false });
+    expect(request).toHaveBeenCalledTimes(2);
   });
 });
