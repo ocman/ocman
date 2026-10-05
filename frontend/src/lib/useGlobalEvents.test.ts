@@ -24,6 +24,7 @@ import {
   __resetForTests,
   onSessionChanged,
   onSessionActivity,
+  onSessionStartProgress,
   onQueueUpdated,
   onProjectsChanged,
   onInboxChanged,
@@ -65,6 +66,21 @@ async function awayFor(ms: number) {
 }
 
 describe('useGlobalEvents connection', () => {
+  it('delivers session start progress and ignores malformed payloads', () => {
+    const progress = vi.fn();
+    const unsubscribe = onSessionStartProgress(progress);
+    const { unmount } = renderHook(() => useGlobalEvents());
+    const emit = FakeEventSource.instances.at(-1)!.listeners.get('ocman.session.start.progress')!;
+    act(() => {
+      emit({ data: '{' });
+      emit({ data: '{"startId":"a","step":"opencode"}' });
+      emit({ data: '{"startId":"a","step":"opencode","state":"active"}' });
+    });
+    expect(progress).toHaveBeenCalledExactlyOnceWith('a', 'opencode', 'active');
+    unsubscribe();
+    unmount();
+  });
+
   it('delivers activity timestamps and ignores malformed payloads', () => {
     const activity = vi.fn();
     const unsubscribe = onSessionActivity(activity);

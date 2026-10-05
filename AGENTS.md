@@ -41,7 +41,11 @@ directory's agent, command and model catalogs via `Platform.DirectoryCatalog`
 (a `PlatformJsonReq` RPC for remotes). It never launches OpenCode, so opening
 the composer or picking a machine starts nothing: the catalogs come from an
 instance that is already running, else the historical models, and the first
-submission (`/start`) launches the instance, with progress shown in the conversation above the composer. Submission waits for that catalog, with visible retry on a
+submission (`/start`) launches the instance. Until it returns, the prompt renders as the first message
+with the server's steps beneath it (OpenCode, worktree, session, prompt; parallel
+ones together), sent as `ocman.session.start.progress` SSE events tagged with the
+request's `startId` and reported through `hostsvc.WithProgress` on the context
+(which does not cross gRPC, so the hub reports a remote's worktree start around the call). Submission waits for that catalog, with visible retry on a
 prepare failure; `useWorktreeEligibility` reads the git-info branch and the
 owner's worktree list, so a directory already inside a linked worktree, or a
 non-repository, uses the current checkout. The composer's machine selector only

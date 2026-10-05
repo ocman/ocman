@@ -260,3 +260,40 @@ func TestLocalSessionLaunchWithConnectedRemote(t *testing.T) {
 		})
 	}
 }
+
+// With a startId, each step is broadcast as it happens for that client.
+func TestStartSessionBroadcastsProgress(t *testing.T) {
+	srv, reg := startTestServer(t, nil)
+	reg.Register(&fakePlatform{
+		id:       "opencode",
+		sessions: []db.Session{mkSession("opencode", "s1", "t", 1)},
+		createSessionFn: func(platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+			return &platforms.CreateSessionResponse{ID: "s1"}, nil
+		},
+		sendMessageFn: func(platforms.SendMessageRequest) error { return nil },
+	})
+	sub, unsub := srv.broadcastHub.subscribe()
+	defer unsub()
+	body := `{"directory":"/repo","startId":"st1","send":{"message":"hi"}}`
+	w := httptest.NewRecorder()
+	srv.handleStartSession(w, httptest.NewRequest(http.MethodPost, "/api/sessions/start", strings.NewReader(body)))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", w.Code, w.Body.String())
+	}
+	var got []string
+	for len(sub.ch) > 0 {
+		ev := <-sub.ch
+		if ev.event != "ocman.session.start.progress" {
+			continue
+		}
+		var p struct{ StartID, Step, State string }
+		if err := json.Unmarshal(ev.data, &p); err != nil || p.StartID != "st1" {
+			t.Fatalf("payload %s: %v", ev.data, err)
+		}
+		got = append(got, p.Step+":"+p.State)
+	}
+	want := "opencode:active opencode:done session:active session:done prompt:active prompt:done"
+	if strings.Join(got, " ") != want {
+		t.Fatalf("progress = %v, want %s", got, want)
+	}
+}

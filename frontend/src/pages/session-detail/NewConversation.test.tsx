@@ -11,6 +11,13 @@ import { HeaderContext } from '../../lib/headerContext';
 const mocks = vi.hoisted(() => ({
   prepare: vi.fn(), start: vi.fn(), info: vi.fn(), worktrees: vi.fn(), post: vi.fn(), seed: vi.fn(),
   openWorktreeForm: vi.fn(), addFavorite: vi.fn(), removeFavorite: vi.fn(), caps: { shellExec: true },
+  progress: new Set<(id: string, step: string, state: string) => void>(),
+}));
+vi.mock('../../lib/useGlobalEvents', () => ({
+  onSessionStartProgress: (cb: (id: string, step: string, state: string) => void) => {
+    mocks.progress.add(cb);
+    return () => mocks.progress.delete(cb);
+  },
 }));
 vi.mock('../../lib/api', () => ({
   api: { prepareSession: mocks.prepare, startSession: mocks.start, addFavorite: mocks.addFavorite, removeFavorite: mocks.removeFavorite },
@@ -153,7 +160,7 @@ describe('NewConversation', () => {
     saveDraft('new', 'Fix login');
     await act(() => composer.onSend!('Fix login', images));
     expect(mocks.start).toHaveBeenCalledWith({
-      directory: '/repo', remoteId: 'machine', platform: 'r-machine:opencode', title: 'Login', prompt: 'Fix login', worktree: true,
+      directory: '/repo', remoteId: 'machine', platform: 'r-machine:opencode', title: 'Login', prompt: 'Fix login', worktree: true, startId: expect.any(String),
       send: { message: 'Fix login', images, model: 'prov/plan-model', agent: 'plan', reasoning: undefined },
     });
     expect(mocks.seed).toHaveBeenCalledWith('child', '/worktrees/fix', 'r-machine:opencode', 'Login', 'machine');
@@ -215,8 +222,35 @@ describe('NewConversation', () => {
     await act(async () => { await Promise.resolve(composer.onSend!('again')).catch((err: unknown) => { failure = err; }); });
     expect(String(failure)).toContain('worktree create/launch failed');
     expect(screen.getByRole('alert')).toHaveTextContent('worktree create/launch failed');
-    // The first submission is what launches OpenCode, so it owns the launch progress card.
-    expect(useLaunchProgressStore.getState().error).toBe('worktree create/launch failed');
+    // A failed start removes the pending prompt; the draft stays in the composer.
+    expect(screen.queryByTestId('pending-prompt')).not.toBeInTheDocument();
+  });
+
+  it('shows the prompt as the first message with the server-reported steps until the session exists', async () => {
+    let finish!: (value: unknown) => void;
+    mocks.start.mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    mount();
+    await waitFor(() => expect(composer.disabled).toBe(false));
+    let sent!: Promise<void>;
+    act(() => { sent = Promise.resolve(composer.onSend!('Fix login')); });
+    expect(screen.getByTestId('pending-prompt')).toHaveTextContent('Fix login');
+    expect(screen.getByTestId('start-progress')).toHaveTextContent('Starting session');
+    const { startId } = mocks.start.mock.calls[0][0];
+    act(() => {
+      for (const cb of mocks.progress) {
+        cb('someone-else', 'session', 'active');
+        cb(startId, 'opencode', 'active');
+        cb(startId, 'worktree', 'active');
+        cb(startId, 'worktree', 'done');
+      }
+    });
+    // Parallel steps render together, in a fixed order.
+    expect(screen.getByTestId('start-step-opencode')).toHaveTextContent('Starting OpenCode');
+    expect(screen.getByTestId('start-step-worktree')).toHaveTextContent('Worktree ready');
+    expect(screen.queryByTestId('start-step-session')).not.toBeInTheDocument();
+    await act(async () => { finish({ sessionId: 'child', platform: 'r-machine:opencode', remoteId: 'machine', directory: '/wt', firstMessageSent: true }); await sent; });
+    expect(navigateToSession).toHaveBeenCalledWith('child');
+    expect(mocks.progress.size).toBe(0);
   });
 
   it('keeps ocman built-ins out of the first submission and opens the worktree form for /wt', async () => {

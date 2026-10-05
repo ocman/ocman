@@ -1434,6 +1434,8 @@ export interface StartSessionRequest extends NewSessionTarget {
   title?: string;
   /** First submission text; names an automatic worktree. */
   prompt?: string;
+  /** Tags ocman.session.start.progress broadcasts for this request. */
+  startId?: string;
   /** First prompt, delivered server-side. Omit for commands the client runs itself. */
   send?: {
     message: string;

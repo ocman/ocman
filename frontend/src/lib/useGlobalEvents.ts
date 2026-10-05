@@ -121,6 +121,24 @@ function handleSessionActivity(raw: string): void {
   } catch { /* Ignore malformed SSE payloads. */ }
 }
 const inboxChangedListeners = new Set<() => void>();
+
+export type StartStep = 'opencode' | 'worktree' | 'session' | 'prompt';
+export type StartStepState = 'active' | 'done' | 'error';
+const startProgressListeners = new Set<(startId: string, step: StartStep, state: StartStepState) => void>();
+
+/** Register a callback fired on every ocman.session.start.progress broadcast. */
+export function onSessionStartProgress(cb: (startId: string, step: StartStep, state: StartStepState) => void): () => void {
+  startProgressListeners.add(cb);
+  return () => startProgressListeners.delete(cb);
+}
+
+function handleStartProgress(raw: string): void {
+  try {
+    const { startId, step, state } = JSON.parse(raw);
+    if (typeof startId !== 'string' || typeof step !== 'string' || typeof state !== 'string') return;
+    for (const cb of startProgressListeners) cb(startId, step as StartStep, state as StartStepState);
+  } catch { /* Ignore malformed SSE payloads. */ }
+}
 const artifactCreatedListeners = new Set<() => void>();
 
 /** Register a callback fired on every ocman.artifact.created broadcast. */
@@ -232,6 +250,9 @@ function open(): void {
   next.addEventListener('ocman.projects.changed', handleProjectsChanged);
   next.addEventListener('ocman.artifact.created', () => {
     for (const cb of artifactCreatedListeners) cb();
+  });
+  next.addEventListener('ocman.session.start.progress', (e) => {
+    handleStartProgress((e as MessageEvent).data);
   });
   next.addEventListener('ocman.queue.updated', (e) => {
     handleQueueUpdated((e as MessageEvent).data);

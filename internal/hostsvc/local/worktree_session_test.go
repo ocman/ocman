@@ -155,3 +155,32 @@ func TestAutomaticWorktreeNamesAreFresh(t *testing.T) {
 		})
 	}
 }
+
+// Every step of a worktree start is reported on the request's context, so
+// the new conversation can show the instance and checkout in parallel.
+func TestWorktreeSessionReportsProgress(t *testing.T) {
+	repo := initRepo(t)
+	var mu sync.Mutex
+	got := map[string][]string{}
+	ctx := hostsvc.WithProgress(context.Background(), func(step, state string) {
+		mu.Lock()
+		got[step] = append(got[step], state)
+		mu.Unlock()
+	})
+	h := New(Deps{
+		Runtime: &fakeRuntime{endpoint: "http://127.0.0.1:4242"},
+		CreateSession: func(context.Context, platforms.CreateSessionRequest) (*platforms.CreateSessionResponse, error) {
+			return &platforms.CreateSessionResponse{ID: "s"}, nil
+		},
+	})
+	if _, err := h.CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{
+		ProjectDir: repo, Branch: "feature", NewBranch: true, BaseRef: "main",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, step := range []string{hostsvc.StepOpencode, hostsvc.StepWorktree, hostsvc.StepSession} {
+		if strings.Join(got[step], ",") != "active,done" {
+			t.Errorf("%s = %v, want active,done", step, got[step])
+		}
+	}
+}

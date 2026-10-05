@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"os/exec"
@@ -205,6 +206,9 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// text even when that submission is a command the client runs itself.
 		Prompt string         `json:"prompt"`
 		Send   *startSendBody `json:"send"`
+		// StartID, when set, tags ocman.session.start.progress broadcasts
+		// so the submitting client can show each step as it happens.
+		StartID string `json:"startId"`
 	}
 	// The first message may carry image attachments.
 	if !readAndUnmarshal(w, r, maxSendMessageBody, &req) || !req.validate(w) {
@@ -214,6 +218,11 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.WithFields(log.Fields{"platform": req.Platform, "directory": req.Directory, "worktree": req.Worktree}).Info("hub: start session")
+	ctx := r.Context()
+	if req.StartID != "" {
+		ctx = hostsvc.WithProgress(ctx, s.startProgress(req.StartID))
+		r = r.WithContext(ctx)
+	}
 
 	var (
 		platform, sessionID, directory, worktreePath, branch string
@@ -236,9 +245,20 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "unknown platform", http.StatusBadRequest)
 			return
 		}
-		res, err := host.CreateWorktreeSession(r.Context(), hostsvc.WorktreeSessionRequest{
+		// Progress does not cross the gRPC seam: report a remote's parallel
+		// checkout and instance around the call; the local host reports its own.
+		remoteHost := remoteID != "local"
+		if remoteHost {
+			hostsvc.ReportProgress(ctx, hostsvc.StepOpencode, hostsvc.StepActive)
+			hostsvc.ReportProgress(ctx, hostsvc.StepWorktree, hostsvc.StepActive)
+		}
+		res, err := host.CreateWorktreeSession(ctx, hostsvc.WorktreeSessionRequest{
 			ProjectDir: req.Directory, AutoName: true, Prompt: req.Prompt, Title: req.Title,
 		})
+		if remoteHost {
+			hostsvc.FinishStep(ctx, hostsvc.StepOpencode, err)
+			hostsvc.FinishStep(ctx, hostsvc.StepWorktree, err)
+		}
 		if err != nil {
 			writeWorktreeCreateError(w, err)
 			return
@@ -250,11 +270,16 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 			writeSessionSvcError(w, "creating session", err)
 			return
 		}
+		hostsvc.ReportProgress(ctx, hostsvc.StepOpencode, hostsvc.StepActive)
 		_, port, ok := s.ensureProjectForCreate(w, r, resolved, req.Directory)
 		if !ok {
+			hostsvc.ReportProgress(ctx, hostsvc.StepOpencode, hostsvc.StepError)
 			return
 		}
-		resp, err := s.sessions.Create(r.Context(), resolved, platforms.CreateSessionRequest{Directory: req.Directory, Title: req.Title, Port: port})
+		hostsvc.ReportProgress(ctx, hostsvc.StepOpencode, hostsvc.StepDone)
+		hostsvc.ReportProgress(ctx, hostsvc.StepSession, hostsvc.StepActive)
+		resp, err := s.sessions.Create(ctx, resolved, platforms.CreateSessionRequest{Directory: req.Directory, Title: req.Title, Port: port})
+		hostsvc.FinishStep(ctx, hostsvc.StepSession, err)
 		if err != nil {
 			log.WithError(err).WithFields(log.Fields{"platform": resolved, "directory": req.Directory}).Warn("hub: start session failed")
 			writeSessionSvcError(w, "creating session", err)
@@ -269,10 +294,13 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		for _, img := range req.Send.Images {
 			images = append(images, platforms.ImageAttachment{URL: img.URL, Mime: img.Mime})
 		}
-		if err := s.sendNow(r.Context(), platform, platforms.SendMessageRequest{
+		hostsvc.ReportProgress(ctx, hostsvc.StepPrompt, hostsvc.StepActive)
+		err := s.sendNow(ctx, platform, platforms.SendMessageRequest{
 			SessionID: sessionID, Message: req.Send.Message, Images: images,
 			Model: req.Send.Model, Agent: req.Send.Agent, Reasoning: req.Send.Reasoning,
-		}); err != nil {
+		})
+		hostsvc.FinishStep(ctx, hostsvc.StepPrompt, err)
+		if err != nil {
 			log.WithError(err).Warn("hub: sending first message")
 			sendErr = err.Error()
 		} else {
@@ -289,6 +317,17 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		"firstMessageSent":  sent,
 		"firstMessageError": sendErr,
 	})
+}
+
+// startProgress broadcasts a new conversation's start steps to every client;
+// only the one holding startId renders them.
+func (s *Server) startProgress(startID string) hostsvc.ProgressFunc {
+	return func(step, state string) {
+		payload, err := json.Marshal(map[string]string{"startId": startID, "step": step, "state": state})
+		if err == nil {
+			s.broadcastGlobalEvent("ocman.session.start.progress", payload)
+		}
+	}
 }
 
 func remoteIDForPlatform(platform string) string {

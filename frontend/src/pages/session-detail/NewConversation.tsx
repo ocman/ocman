@@ -12,22 +12,22 @@ import { clearDraft } from '../../lib/composerDraft';
 import { shortPath } from '../../lib/format';
 import { useHeaderInfo } from '../../lib/headerContext';
 import { recordFailedSend } from '../../lib/failedSends';
-import { launchProgressReporter } from '../../lib/launchProgressStore';
 import { NEW_SESSION_ID, newSessionPath, type NewSessionParams } from '../../lib/newSessionPath';
 import { getProjectModel, saveProjectModel } from '../../lib/projectModel';
 import { remoteLog } from '../../lib/remoteLog';
 import { agentModelRef, formatModelRef } from '../../lib/sessionStatus';
 import { useUiStore } from '../../lib/uiStore';
 import { useOpencodeLaunch, usePlatformCapabilities } from '../../lib/useCapabilities';
+import { onSessionStartProgress } from '../../lib/useGlobalEvents';
 import { projectRootForDirectory } from '../../lib/worktrees';
 import { Composer, type ComposerHandle } from '../../components/assistant/Composer';
 import type { AttachedImage } from '../../components/assistant/useComposerAttachments';
 import type { SessionTarget } from '../../components/assistant/ComposerSelectorRow';
 import { InlineAlert } from '../../components/InlineAlert';
-import { LaunchProgressCard } from '../../components/LaunchProgressCard';
 import { useWorktreeEligibility } from './useWorktreeEligibility';
 import { startFirstSubmission } from './firstSubmission';
 import { sendFirstFiles } from './sendFirstFiles';
+import { StartProgress, type StartSteps } from './StartProgress';
 
 export interface NewConversationProps {
   params: NewSessionParams;
@@ -84,6 +84,10 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
   const [selectedReasoning, setSelectedReasoning] = useState('');
   const [target, setTarget] = useState<SessionTarget>('worktree');
   const [error, setError] = useState('');
+  // The submitted prompt, shown as the conversation's first message while
+  // the session starts. Keyed by route so a machine switch mid-start hides it.
+  const routeKey = `${remoteId}:${directory}:${params.platform}:${title}`;
+  const [pending, setPending] = useState<{ key: string; text: string; startId: string; steps: StartSteps }>();
   const inFlight = useRef<number | undefined>(undefined);
   const active = useRef(false);
   const generation = useRef(0);
@@ -148,16 +152,20 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
     const stillCurrent = () => active.current && generation.current === sourceGeneration;
     inFlight.current = sourceGeneration;
     setError('');
-    // The first submission launches the instance when it is closed
-    // (10-20 s); the card above the composer reports it (quick starts stay silent).
-    launchProgressReporter.begin(directory, { skipLaunch: true, remoteId });
+    // The server reports each step (instance, worktree, session, prompt)
+    // under the pending prompt; it all goes away with this page.
+    const startId = crypto.randomUUID();
+    setPending({ key: routeKey, text, startId, steps: {} });
+    // Subscribed before the request so the first step can't be missed.
+    const unsubscribe = onSessionStartProgress((id, step, state) => {
+      if (id === startId) setPending((p) => p?.startId === id ? { ...p, steps: { ...p.steps, [step]: state } } : p);
+    });
     try {
       const res = await api.startSession({
         directory: target.startsWith('dir:') ? target.slice(4) : directory,
-        platform, remoteId, title, prompt: text, send,
+        platform, remoteId, title, prompt: text, send, startId,
         worktree: canWorktree && target === 'worktree',
       });
-      launchProgressReporter.succeed();
       if (!res.sessionId) throw new Error('Session creation returned no session');
       // No title: OpenCode titles the session from its first message.
       seedNewSession(res.sessionId, res.directory, res.platform, title, res.remoteId);
@@ -177,15 +185,16 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      launchProgressReporter.fail(message);
+      setPending(undefined);
       if (stillCurrent()) setError(message);
       // Creation is non-idempotent: a lost response must never enter the
       // existing Composer's BackendUnavailableError automatic replay loop.
       throw new Error(message);
     } finally {
+      unsubscribe();
       if (inFlight.current === sourceGeneration) inFlight.current = undefined;
     }
-  }, [directory, remoteId, platform, title, canWorktree, target, seedNewSession, navigateToSession, catalog]);
+  }, [directory, remoteId, platform, title, routeKey, canWorktree, target, seedNewSession, navigateToSession, catalog]);
 
   const onSend = (text: string, images?: AttachedImage[], _queue?: boolean, files?: File[]) => {
     const send = { message: text, images, model: selectedModel, agent: effectiveAgent || undefined, reasoning: selectedReasoning || undefined };
@@ -220,14 +229,15 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
     // Same shell as AssistantThread: an empty viewport pushes the composer
     // to the bottom with the thread's padding.
     <div className="oc-thread" data-testid="new-conversation">
-      <div className="oc-thread-viewport" />
+      <div className="oc-thread-viewport">
+        {pending?.key === routeKey && <StartProgress prompt={pending.text} steps={pending.steps} />}
+      </div>
       <div className="oc-viewport-footer" data-testid="conversation-composer">
         {eligibility.error && <InlineAlert onRetry={eligibility.retry}>{eligibility.error}</InlineAlert>}
         {catalogError && <InlineAlert onRetry={() => setCatalogAttempt((value) => value + 1)}>{catalogError}</InlineAlert>}
         {error && <InlineAlert>{error}</InlineAlert>}
-        <LaunchProgressCard directory={directory} remoteId={remoteId} />
         <Composer
-          key={`${remoteId}:${directory}:${params.platform}:${title}`}
+          key={routeKey}
           composerRef={composerRef}
           onSend={onSend}
           onCommand={onCommand}

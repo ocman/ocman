@@ -49,8 +49,10 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 		err error
 	}
 	ensuredCh := make(chan ensureResult, 1)
+	hostsvc.ReportProgress(ctx, hostsvc.StepOpencode, hostsvc.StepActive)
 	go func() {
 		res, err := h.sfDoDetached(ctx, repoRoot, h.ensureLocked)
+		hostsvc.FinishStep(ctx, hostsvc.StepOpencode, err)
 		ensuredCh <- ensureResult{res, err}
 	}()
 
@@ -58,10 +60,12 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 	if req.NewBranch && baseRef == "" {
 		baseRef = git.ResolveBaseRef(ctx, repoRoot)
 	}
+	hostsvc.ReportProgress(ctx, hostsvc.StepWorktree, hostsvc.StepActive)
 	res, err := git.CreateWorktree(ctx, git.CreateWorktreeRequest{
 		RepoRoot: repoRoot, Branch: req.Branch, NewBranch: req.NewBranch,
 		BaseRef: baseRef, MustCreateBranch: req.MustCreateBranch,
 	})
+	hostsvc.FinishStep(ctx, hostsvc.StepWorktree, err)
 	ensured := <-ensuredCh
 	if err != nil {
 		return nil, err
@@ -91,6 +95,7 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 		request.Title = req.Branch
 	}
 	var created *platforms.CreateSessionResponse
+	hostsvc.ReportProgress(ctx, hostsvc.StepSession, hostsvc.StepActive)
 	if req.PermissionRules != nil {
 		if h.deps.CreateConfiguredSession == nil {
 			rollback()
@@ -100,6 +105,7 @@ func (h *Host) CreateWorktreeSession(ctx context.Context, req hostsvc.WorktreeSe
 	} else {
 		created, err = h.deps.CreateSession(ctx, request)
 	}
+	hostsvc.FinishStep(ctx, hostsvc.StepSession, err)
 	if err != nil {
 		rollback()
 		return nil, fmt.Errorf("creating worktree session: %w", err)
