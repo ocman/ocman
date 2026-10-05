@@ -87,8 +87,8 @@ export async function resolveOpenSession(opts: {
 /**
  * Merge a fresh /api/sessions poll result over the current store rows.
  *
- * Seen and activity timestamps are monotonic: a stale response must not
- * undo a live activity update or mark a session unseen again.
+ * Read watermarks and activity timestamps are monotonic. A stale response
+ * must not undo a local read, but newer activity must become unread again.
  *
  * `status` is not sticky either: sticky-busy used to live here because
  * the server derived status from the last message's shape and could not
@@ -118,7 +118,8 @@ export function mergeSidebarSessions(
     if (!live) return unarchived;
     return {
       ...unarchived,
-      seen: live.seen || s.seen,
+      seen: s.seen || (live.seen && live.seenTimeUpdated >= s.timeUpdated),
+      seenTimeUpdated: Math.max(live.seenTimeUpdated, s.seenTimeUpdated),
       timeUpdated: Math.max(live.timeUpdated, s.timeUpdated),
     };
   }).sort((a, b) => compareSidebarActivity(a, b) ||

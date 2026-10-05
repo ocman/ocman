@@ -53,12 +53,49 @@ describe('useSessionSeen', () => {
 
   afterEach(() => vi.useRealTimers());
 
+  it('does not acknowledge content while hidden, and marks the latest content when visible', async () => {
+    vi.useFakeTimers();
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+    const patchSession = vi.fn();
+    const { rerender, unmount } = renderHook(
+      ({ value }) => useSessionSeen({ session: value, patchSession }),
+      { wrapper, initialProps: { value: session } },
+    );
+    rerender({ value: { ...session, timeUpdated: 200 } });
+    await act(async () => vi.advanceTimersByTime(500));
+    expect(markSessionSeen).not.toHaveBeenCalled();
+    expect(patchRecentSession).not.toHaveBeenCalled();
+    expect(patchSession).not.toHaveBeenCalled();
+    hidden.mockReturnValue(false);
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    expect(markSessionSeen).toHaveBeenLastCalledWith('opencode', 's1', 200);
+    unmount();
+    hidden.mockRestore();
+  });
+
+  it('does not flush a pending read after the tab becomes hidden', () => {
+    vi.useFakeTimers();
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false);
+    const patchSession = vi.fn();
+    const { rerender, unmount } = renderHook(
+      ({ value }) => useSessionSeen({ session: value, patchSession }),
+      { wrapper, initialProps: { value: session } },
+    );
+    rerender({ value: { ...session, timeUpdated: 200 } });
+    hidden.mockReturnValue(true);
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    unmount();
+    expect(markSessionSeen).toHaveBeenCalledTimes(1);
+    expect(markSessionSeen).toHaveBeenCalledWith('opencode', 's1', 42);
+    hidden.mockRestore();
+  });
+
   it('marks seen everywhere, records the open, and publishes header info', async () => {
     const patchSession = vi.fn();
     const { unmount } = renderHook(() => useSessionSeen({ session, patchSession }), { wrapper });
 
     expect(patchSession).toHaveBeenCalledWith({ seen: true, archived: false });
-    expect(patchRecentSession).toHaveBeenCalledWith('s1', { seen: true, archived: false });
+    expect(patchRecentSession).toHaveBeenCalledWith('s1', { seen: true, seenTimeUpdated: 42, archived: false });
     expect(markSessionSeen).toHaveBeenCalledWith('opencode', 's1', 42);
     await waitFor(() => expect(recheckFaviconNotify).toHaveBeenCalled());
     expect(useUiStore.getState().lastOpenedSessionId).toBe('s1');
@@ -186,7 +223,7 @@ describe('useSessionSeen', () => {
     await act(async () => vi.advanceTimersByTime(1));
     expect(markSessionSeen).toHaveBeenCalledTimes(2);
     expect(markSessionSeen).toHaveBeenLastCalledWith('opencode', 's1', 200);
-    expect(patchRecentSession).toHaveBeenLastCalledWith('s1', { seen: true, archived: false });
+    expect(patchRecentSession).toHaveBeenLastCalledWith('s1', { seen: true, seenTimeUpdated: 200, archived: false });
     expect(recheckFaviconNotify).toHaveBeenCalledTimes(2);
     rerender({ value: { ...session, timeUpdated: 200 } });
     await act(async () => vi.advanceTimersByTime(1000));

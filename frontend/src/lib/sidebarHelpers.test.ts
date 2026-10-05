@@ -377,6 +377,21 @@ describe('resolveOpenSession', () => {
 });
 
 describe('mergeSidebarSessions', () => {
+  it('restores unread status for a session completed while away, even after live activity', () => {
+    const current = [makeSession({ id: 'a', status: 'busy', seen: true, seenTimeUpdated: 100, timeUpdated: 200 })];
+    const next = [makeSession({ id: 'a', status: 'done', seen: false, seenTimeUpdated: 100, timeUpdated: 200, unreadCount: 1 })];
+    const merged = mergeSidebarSessions(next, current);
+    expect(merged[0].status).toBe('done');
+    expect(merged[0].seen).toBe(false);
+    expect(merged[0].unreadCount).toBe(1);
+  });
+
+  it('keeps an optimistic read watermark when a stale poll arrives', () => {
+    const current = [makeSession({ seen: true, seenTimeUpdated: 200, timeUpdated: 200 })];
+    const next = [makeSession({ seen: false, seenTimeUpdated: 100, timeUpdated: 200 })];
+    expect(mergeSidebarSessions(next, current)[0]).toMatchObject({ seen: true, seenTimeUpdated: 200 });
+  });
+
   it('clears a pending permission flag once the server reports it answered', () => {
     const current = [makeSession({ id: 'a', pendingPermission: true, pendingQuestion: true })];
     const next = [makeSession({ id: 'a', pendingPermission: false, pendingQuestion: false })];

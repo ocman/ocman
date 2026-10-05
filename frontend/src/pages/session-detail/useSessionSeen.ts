@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useApiStore } from '../../lib/apiStore';
 import { useUiStore } from '../../lib/uiStore';
 import { cleanTitle, shortPath } from '../../lib/format';
@@ -20,6 +20,12 @@ export interface UseSessionSeenOptions {
  * info + document title.
  */
 export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions): void {
+  const [visible, setVisible] = useState(() => !document.hidden);
+  useEffect(() => {
+    const onVisibility = () => setVisible(!document.hidden);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
   const recordOpenedSession = useUiStore((state) => state.recordOpenedSession);
   const markSessionSeen = useApiStore((state) => state.markSessionSeen);
   const patchRecentSession = useApiStore((state) => state.patchRecentSession);
@@ -36,8 +42,9 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
   const lastMarked = useRef(0);
   const pendingMark = useRef<(() => void) | null>(null);
   const markSeen = useCallback((platform: string, id: string, updated: number) => {
+    if (document.hidden) return;
     lastMarked.current = updated;
-    patchRecentSession(id, { seen: true, archived: false });
+    patchRecentSession(id, { seen: true, seenTimeUpdated: updated, archived: false });
     void markSessionSeen(platform, id, updated)
       .then(() => {
         recheckFaviconNotify();
@@ -46,7 +53,7 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
   }, [markSessionSeen, patchRecentSession]);
 
   useEffect(() => {
-    if (!sessionSeenId || !sessionSeenPlatform) return;
+    if (!visible || !sessionSeenId || !sessionSeenPlatform) return;
     recordOpenedSession(sessionSeenId);
     patchSession({ seen: true, archived: false });
     markSeen(sessionSeenPlatform, sessionSeenId, sessionSeenUpdated);
@@ -57,23 +64,24 @@ export function useSessionSeen({ session, patchSession }: UseSessionSeenOptions)
     };
   // Entry bookkeeping runs once per identity, not on every streamed update.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionSeenId, sessionSeenPlatform]);
+  }, [sessionSeenId, sessionSeenPlatform, visible]);
 
   // The entry can come from cache. Coalesce newer authoritative/streamed
   // timestamps so its stale watermark does not leave the open session unread.
   useEffect(() => {
-    if (!sessionSeenId || !sessionSeenPlatform || sessionSeenUpdated <= lastMarked.current) return;
+    if (!visible || !sessionSeenId || !sessionSeenPlatform || sessionSeenUpdated <= lastMarked.current) return;
     const mark = () => {
       markSeen(sessionSeenPlatform, sessionSeenId, sessionSeenUpdated);
       pendingMark.current = null;
     };
     pendingMark.current = mark;
     const timer = setTimeout(() => {
+      if (document.hidden) return;
       mark();
       patchSession({ seen: true, archived: false });
     }, 500);
     return () => clearTimeout(timer);
-  }, [sessionSeenId, sessionSeenPlatform, sessionSeenUpdated, markSeen, patchSession]);
+  }, [sessionSeenId, sessionSeenPlatform, sessionSeenUpdated, markSeen, patchSession, visible]);
 
   // Upstream renames (OpenCode auto-title, TUI /rename, another tab). For a
   // slow client the hub merges patches, and collapses anything involving an
