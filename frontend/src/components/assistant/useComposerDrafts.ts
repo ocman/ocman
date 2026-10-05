@@ -4,16 +4,14 @@ import { getDraft, saveDraft, clearDraft } from '../../lib/composerDraft';
 /**
  * Owns per-session composer draft persistence: loading the saved draft
  * into the textarea when the session changes, debounced autosave while
- * typing, and a final save on unmount. Extracted from Composer to keep
- * the draft timer + its four call sites in one place.
- *
- * The returned helpers replace the repeated inline
- * `clearTimeout(timer); clearDraft(sid)` / `setTimeout(saveDraft)` blocks.
+ * typing, and a final save when the session changes or the composer
+ * unmounts. `inFlightRef` holds the prompt currently being sent: it is
+ * never parked as a draft, or it reappears after the send lands.
  */
 export function useComposerDrafts(
   inputRef: RefObject<HTMLTextAreaElement | null>,
   sessionId: string | undefined,
-  sessionIdRef: RefObject<string | undefined>,
+  inFlightRef: RefObject<string | null>,
 ) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -40,28 +38,21 @@ export function useComposerDrafts(
     }, 300);
   }, [cancelPending]);
 
-  // Load the saved draft into the textarea whenever the session changes.
+  // Load the session's draft; flush the text under the same session when it
+  // changes or the composer unmounts (before the next load overwrites it).
   useEffect(() => {
     const el = inputRef.current;
     if (!el || !sessionId) return;
-    const draft = getDraft(sessionId);
-    el.value = draft;
-  }, [sessionId, inputRef]);
-
-  // Flush the current text to storage on unmount.
-  useEffect(() => {
-    const el = inputRef.current;
-    const sidRef = sessionIdRef;
+    el.value = getDraft(sessionId);
     return () => {
       cancelPending();
-      const sid = sidRef.current;
-      if (el && sid) {
-        const text = el.value.trim();
-        if (text) saveDraft(sid, text);
-        else clearDraft(sid);
-      }
+      const text = el.value.trim();
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- the live in-flight prompt is wanted here
+      if (text && text === inFlightRef.current) return;
+      if (text) saveDraft(sessionId, text);
+      else clearDraft(sessionId);
     };
-  }, [inputRef, sessionIdRef, cancelPending]);
+  }, [sessionId, inputRef, inFlightRef, cancelPending]);
 
   return { clearDraftNow, scheduleDraftSave };
 }

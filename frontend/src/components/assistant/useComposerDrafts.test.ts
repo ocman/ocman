@@ -9,9 +9,8 @@ function setup(sessionId: string | undefined, el: HTMLTextAreaElement) {
   return renderHook(
     ({ sid }: { sid: string | undefined }) => {
       const inputRef = useRef<HTMLTextAreaElement | null>(el);
-      const sessionIdRef = useRef<string | undefined>(sid);
-      sessionIdRef.current = sid;
-      return useComposerDrafts(inputRef, sid, sessionIdRef);
+      const inFlightRef = useRef<string | null>(null);
+      return useComposerDrafts(inputRef, sid, inFlightRef);
     },
     { initialProps: { sid: sessionId } },
   );

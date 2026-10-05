@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, useImperativeHandle } from 'react';
 import './Composer.css';
 import { useComposerDrafts } from './useComposerDrafts';
+import { getDraft, saveDraft } from '../../lib/composerDraft';
 import { useShortcut } from '../../lib/shortcutRegistry';
 import { BackendUnavailableError, type SlashCommand } from '../../lib/api';
 import { useComposerAttachments } from './useComposerAttachments';
@@ -47,7 +48,8 @@ export function Composer({
   // one shared draft while it has no session to attach it to.
   const draftKey = draftKeyProp ?? sessionId;
   const draftKeyRef = useRef(draftKey);
-  const { clearDraftNow, scheduleDraftSave } = useComposerDrafts(inputRef, draftKey, draftKeyRef);
+  const inFlightRef = useRef<string | null>(null);
+  const { clearDraftNow, scheduleDraftSave } = useComposerDrafts(inputRef, draftKey, inFlightRef);
   const visibleDurationMs = useRunningDuration(activeDurationMs, isRunning);
   const attachments = useComposerAttachments(sessionIdRef, disabled || sending || switchingMachine, platform);
   const { images, files } = attachments;
@@ -142,6 +144,12 @@ export function Composer({
     const el = inputRef.current;
     if (!el) return;
     const hadFocus = document.activeElement === el;
+    // The prompt is in flight, not a draft: drop it now so neither an unmount
+    // nor a session switch mid-send parks it, and restore it only on failure.
+    const key = draftKeyRef.current;
+    const text = el.value.trim();
+    inFlightRef.current = text;
+    if (key) clearDraftNow(key);
     sendingRef.current = true;
     setSending(true);
     onRetryChange?.(null);
@@ -151,9 +159,12 @@ export function Composer({
       try {
         const submitted = execute();
         if (submitted) await submitted;
-        if (mountedRef.current) clearAfterSubmit();
+        // Re-pointed mid-send: the textarea now holds another session's draft.
+        if (mountedRef.current && draftKeyRef.current === key) clearAfterSubmit();
+        else if (mountedRef.current) attachments.clear();
         break;
       } catch (err) {
+        if (key && text && !getDraft(key)) saveDraft(key, text);
         if (!retryBackend || !(err instanceof BackendUnavailableError) || retries >= MAX_BACKEND_RETRIES) break;
         retries += 1;
         const delaySeconds = 2 ** (retries - 1);
@@ -161,6 +172,7 @@ export function Composer({
         await new Promise(resolve => window.setTimeout(resolve, 1_000 * delaySeconds));
       }
     }
+    inFlightRef.current = null;
     if (mountedRef.current) {
       onRetryChange?.(null);
       sendingRef.current = false;
