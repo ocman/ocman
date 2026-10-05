@@ -1,7 +1,7 @@
 // Markdown rendering for assistant text parts and tool output:
 // react-markdown wired with stable plugin/component references plus a
 // copy-button code block. Extracted from AssistantThread.tsx.
-import { isValidElement, useEffect, useId, useState } from 'react';
+import { Fragment, isValidElement, memo, useEffect, useId, useState } from 'react';
 import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -17,6 +17,7 @@ import { factoryActionFromHref } from '../factoryEpicStatus';
 import { remarkFactoryCards } from '../factoryCards';
 import { Modal } from '../Modal';
 import { CopyButton } from '../CopyButton';
+import { splitMarkdownBlocks } from './markdownBlocks';
 
 let mermaidPromise: Promise<typeof import('mermaid')['default']> | undefined;
 function loadMermaid() {
@@ -220,8 +221,9 @@ const REMARK_PLUGINS_WITH_BREAKS = [...REMARK_PLUGINS, remarkBreaks];
 const REHYPE_PLUGINS = [rehypeHighlight];
 const MARKDOWN_COMPONENTS = { pre: CodeBlockPre, a: MarkdownLink, img: MarkdownImage, table: MarkdownTable };
 
-export const MarkdownContent: FC<{ text: string; preserveLineBreaks?: boolean }> = ({ text, preserveLineBreaks = false }) => {
-  if (!text.trim()) return null;
+// One independently parsed chunk. memo: while an answer streams only the
+// last chunk's text changes, so earlier chunks skip re-parsing.
+const MarkdownBlock = memo(function MarkdownBlock({ text, preserveLineBreaks }: { text: string; preserveLineBreaks: boolean }) {
   return (
     <ReactMarkdown
       remarkPlugins={preserveLineBreaks ? REMARK_PLUGINS_WITH_BREAKS : REMARK_PLUGINS}
@@ -231,6 +233,18 @@ export const MarkdownContent: FC<{ text: string; preserveLineBreaks?: boolean }>
       {text}
     </ReactMarkdown>
   );
+});
+
+export const MarkdownContent: FC<{ text: string; preserveLineBreaks?: boolean }> = ({ text, preserveLineBreaks = false }) => {
+  if (!text.trim()) return null;
+  // The '\n' between chunks is the whitespace node a single parse emits
+  // between top-level blocks, so the DOM is identical.
+  return splitMarkdownBlocks(text).map((block, i) => (
+    <Fragment key={i}>
+      {i > 0 && '\n'}
+      <MarkdownBlock text={block} preserveLineBreaks={preserveLineBreaks} />
+    </Fragment>
+  ));
 };
 
 export const MarkdownText: FC<{ text: string }> = ({ text }) => (
