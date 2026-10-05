@@ -37,7 +37,8 @@ export function readModelCatalog(platform: string | undefined, directory: string
 
 /** Favorites and recents from the newest catalog of the platform, for a
  *  directory with none yet (a new worktree). They are global, but another
- *  project's provider state is not, so availability is left unknown. */
+ *  project's provider state (availability, defaults, reasoning variants) is
+ *  not, so it is dropped. */
 export function readModelShortlist(platform: string | undefined): SessionModelEntry[] | undefined {
   if (!platform) return undefined;
   const prefix = `${platform}\n`;
@@ -49,7 +50,7 @@ export function readModelShortlist(platform: string | undefined): SessionModelEn
   const disk = stored && newest(Object.keys(stored));
   const entries = mem ? memory.get(mem) : disk ? stored[disk] : undefined;
   const pinned = entries?.filter((e) => e.isFavorite || (e.recentRank ?? 0) > 0)
-    .map((e) => ({ ...e, isSessionDefault: false, isProviderDefault: false }));
+    .map((e) => ({ ...e, isSessionDefault: false, isProviderDefault: false, reasoning: undefined }));
   return pinned?.length ? availabilityUnknown(pinned) : undefined;
 }
 

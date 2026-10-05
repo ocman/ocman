@@ -177,9 +177,10 @@ describe('useSessionCapabilities model catalog cache', () => {
     writeModelCatalog('opencode', '/proj', [...live.models, { provider: 'gone', model: 'y', recentRank: 2 }]);
     expect(readModelCatalog('opencode', '/proj/.worktrees/x')).toBeUndefined();
     expect(readModelShortlist('opencode')).toEqual([
-      { ...live.models[0], isSessionDefault: false, isProviderDefault: false, isAvailable: true },
+      { ...live.models[0], isSessionDefault: false, isProviderDefault: false, isAvailable: true, reasoning: undefined },
       { provider: 'gone', model: 'y', recentRank: 2, isSessionDefault: false, isProviderDefault: false, isAvailable: true },
     ]);
+    expect(readModelShortlist('opencode')?.[0]).not.toHaveProperty('reasoning', ['high']);
     expect(readModelShortlist('other')).toBeUndefined();
   });
 
