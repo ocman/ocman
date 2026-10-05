@@ -34,6 +34,7 @@ export default defineConfig({
       '**/node_modules/**',
       '**/dist/**',
       'e2e/**',
+      'perf/**', // Playwright interaction bench (`pnpm perf`).
     ],
     coverage: {
       // @vitest/coverage-v8 is a devDependency. The CI coverage

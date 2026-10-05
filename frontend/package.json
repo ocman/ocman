@@ -16,7 +16,8 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",
-    "test:e2e:report": "playwright show-report"
+    "test:e2e:report": "playwright show-report",
+    "perf": "OCMAN_PROFILE=1 vite build --outDir perf/dist && playwright test -c playwright.perf.config.ts"
   },
   "dependencies": {
     "@assistant-ui/react": "^0.15.21",

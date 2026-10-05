@@ -87,6 +87,9 @@ import { useFailedSendRehydrate } from './useFailedSendRehydrate';
 import { useAutoApprove } from '../../lib/useAutoApprove';
 import { ThreadSkeleton } from '../../components/Skeleton';
 import { PreviewOwnerContext } from '../../lib/previews';
+import { markSessionSwitchRendered, markSessionSwitchStart } from '../../lib/perfMonitor';
+import { trackRender } from '../../lib/renderRateMonitor';
+import { PerfProfiler } from '../../components/PerfProfiler';
 
 /** Memory bound on the in-memory message list. */
 const MAX_RETAINED_MESSAGES = 200;
@@ -141,6 +144,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   // the SSE lifecycle (keyed off the route id) tears down before
   // any further work races the click.
   const navigateToSession = useCallback((nextId: string) => {
+    markSessionSwitchStart(nextId, !!useApiStore.getState().getCachedSession(nextId));
     flushSync(() => {
       navigate(`/session/${nextId}`);
     });
@@ -746,6 +750,12 @@ export function SessionDetail({ id }: SessionDetailProps) {
     },
   });
 
+  trackRender('SessionDetail');
+  // Perf monitoring: a switch has painted once the new thread is rendered.
+  useEffect(() => {
+    if (id && session?.id === id && !loading) markSessionSwitchRendered(id);
+  }, [id, session?.id, loading]);
+
   const hasMore = platformMessageCount(messages) < totalMessages;
   const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
   const sessionId = session?.id;
@@ -821,6 +831,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   } = useSidebarProjectGroups({ id, recentSessions, displayStatus });
 
   return (
+    <PerfProfiler id="SessionPage">
     <Toast.Provider swipeDirection="right">
       <div
         className={`session-layout${mobilePanel === 'sidebar' ? ' mobile-sidebar-open' : ''}${mobilePanel === 'details' ? ' mobile-details-open' : ''}`}
@@ -831,6 +842,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
           toggleMobileSidebar={toggleMobileSidebar}
           toggleMobileDetails={toggleMobileDetails}
         />
+        <PerfProfiler id="SessionSidebar">
         <SessionSidebar
           activeId={id}
           sidebarWidth={sidebarWidth}
@@ -862,6 +874,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
           onNewSessionInDirectory={handleNewSessionInDirectory}
           onArchiveProject={handleArchiveProjectFromSidebar}
         />
+        </PerfProfiler>
         <div className="session-main" data-testid="session-main">
           {session && mobilePanel !== 'sidebar' && <HeaderPortal>
             <SessionActionsMenu
@@ -903,6 +916,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
               <p>Pick a session from the sidebar, or press <kbd>{paletteShortcutLabel}</kbd> and run <code>/new</code> to start one.</p>
             </div>
           ) : session && (
+            <PerfProfiler id="Thread">
             <OcmanRuntimeProvider
               key={session.id}
               messages={messages}
@@ -1079,6 +1093,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                 })}
               />
             </OcmanRuntimeProvider>
+            </PerfProfiler>
           )}
           {(session ?? newConversation) && (
             <SessionTerminalDock
@@ -1093,6 +1108,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
           )}
         </div>
         {id && (
+          <PerfProfiler id="RightPanel">
           <RightPanel
             sessionId={id}
             platformId={session?.platform}
@@ -1106,6 +1122,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
             onNavigateCommit={showCommitSource}
             commitSourceStatus={commitSourceStatus && commitSourceStatus.sessionId === session?.id && commitSourceStatus.platformId === session?.platform ? commitSourceStatus.message : null}
           />
+          </PerfProfiler>
         )}
         {session && (
           <>
@@ -1137,5 +1154,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
         />
       </div>
     </Toast.Provider>
+    </PerfProfiler>
   );
 }

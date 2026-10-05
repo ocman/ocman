@@ -277,7 +277,7 @@ export function Composer({
 
   return (
     <ModalReturnFocusContext value={inputRef}>
-      <div className={`oc-composer-wrap${uiDisabled ? ' oc-composer-disabled' : ''}`} ref={wrapRef}
+      <div className={`oc-composer-wrap${uiDisabled ? ' oc-composer-disabled' : ''}`} ref={wrapRef} data-perf="composer"
         onDragOver={attachments.handleDragOver} onDrop={attachments.handleDrop}
         onClick={disabled && onLaunchRequest ? onLaunchRequest : undefined}
         style={disabled && onLaunchRequest ? { cursor: 'pointer' } : undefined}>

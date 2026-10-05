@@ -25,6 +25,8 @@ export interface PerfEntry {
   durationMs: number;
   /** performance.now() value at request start. */
   startedAt: number;
+  /** Server-Timing phases for this request (perf monitoring only). */
+  serverTiming?: { name: string; durationMs: number }[];
 }
 
 export interface PerfSummaryRow {
@@ -88,6 +90,26 @@ export function record(entry: PerfEntry): void {
     ring[writeCursor] = entry;
     writeCursor = (writeCursor + 1) % PERF_RING_CAPACITY;
   }
+}
+
+/**
+ * attachServerTiming copies a resource-timing entry's Server-Timing
+ * phases onto the newest matching ring entry, so `entries()` shows the
+ * server/client split. Matches by templated path and a start time within
+ * 50 ms (fetch start vs. resource start differ by scheduling only).
+ */
+export function attachServerTiming(
+  pathTemplate: string,
+  startTime: number,
+  timings: { name: string; durationMs: number }[],
+): void {
+  let best: PerfEntry | undefined;
+  for (const e of ring) {
+    if (e.pathTemplate !== pathTemplate || e.serverTiming) continue;
+    const delta = Math.abs(e.startedAt - startTime);
+    if (delta < 50 && (!best || delta < Math.abs(best.startedAt - startTime))) best = e;
+  }
+  if (best) best.serverTiming = timings;
 }
 
 /**
@@ -172,6 +194,9 @@ declare global {
       summary: () => PerfSummaryRow[];
       clear: () => void;
       capacity: number;
+      /** Interaction metrics (perfMonitor), present when enabled. */
+      metrics?: () => unknown;
+      resetMetrics?: () => void;
     };
   }
 }

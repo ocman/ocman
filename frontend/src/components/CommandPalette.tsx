@@ -602,7 +602,7 @@ export function CommandPalette() {
 
   return (
     <div className="oc-cmd-backdrop" onClick={closePalette}>
-      <div className="oc-cmd-palette" onClick={(e) => e.stopPropagation()}>
+      <div className="oc-cmd-palette" data-perf="palette" onClick={(e) => e.stopPropagation()}>
         <div className="oc-cmd-input-wrap">
           <i className="bi bi-search oc-cmd-search-icon" />
           <input

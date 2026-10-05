@@ -40,7 +40,7 @@ import { remoteLog } from './lib/remoteLog';
 import { usePerformanceCleanup } from './lib/usePerformanceCleanup';
 import { useMemoryMonitor } from './lib/useMemoryMonitor';
 import { useLongTaskMonitor } from './lib/useLongTaskMonitor';
-import { installDevHandle as installPerfDevHandle } from './lib/perfRing';
+import { installPerfMonitor } from './lib/perfMonitor';
 import { ClientActivityReporter } from './lib/ClientActivityReporter';
 import { Inbox } from './pages/Inbox';
 import { MainNav } from './components/MainNav';
@@ -271,10 +271,11 @@ function LongTaskMonitor() {
 //
 // The ring is populated by every fetchJSON / postJSON call (see
 // lib/api.ts), so it works as soon as the app has made at least one
-// request.
+// request. With `?debug` or localStorage `ocman:perf=1` it also adds
+// interaction metrics (`__ocmanPerf.metrics()`, see lib/perfMonitor.ts).
 function PerfDevHandle() {
   useEffect(() => {
-    installPerfDevHandle();
+    installPerfMonitor();
   }, []);
   return null;
 }

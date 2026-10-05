@@ -53,7 +53,7 @@ export const ToolCallDisplay: FC<ToolCallMessagePartProps> = (props) => {
     );
   }
   return (
-    <div className="oc-tool-source" data-tool-call-id={props.toolCallId}>
+    <div className="oc-tool-source" data-perf="tool-call" data-tool-call-id={props.toolCallId}>
       {body}
     </div>
   );

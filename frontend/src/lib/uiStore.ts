@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { labelInteraction } from './perfMonitor';
 
 export const SIDEBAR_MIN_WIDTH = 180;
 export const SIDEBAR_MAX_WIDTH = 600;
@@ -370,7 +371,7 @@ export const useUiStore = create<UiStore>()(
       paletteOpen: false,
       paletteMode: 'command',
       projectSessionInitialDirectory: undefined,
-      openCommandPalette: () => set({ paletteOpen: true, paletteMode: 'command' }),
+      openCommandPalette: () => { labelInteraction('palette-open'); set({ paletteOpen: true, paletteMode: 'command' }); },
       openSearchPalette: () => set({ paletteOpen: true, paletteMode: 'search' }),
       openProjectPalette: () => set({ paletteOpen: true, paletteMode: 'project' }),
       openProjectSessionPalette: (initialDirectory) => set({
@@ -378,11 +379,10 @@ export const useUiStore = create<UiStore>()(
         paletteMode: 'project-session',
         projectSessionInitialDirectory: initialDirectory,
       }),
-      openPalette: (mode: PaletteMode) => set({
-        paletteOpen: true,
-        paletteMode: mode,
-        projectSessionInitialDirectory: undefined,
-      }),
+      openPalette: (mode: PaletteMode) => {
+        labelInteraction('palette-open');
+        set({ paletteOpen: true, paletteMode: mode, projectSessionInitialDirectory: undefined });
+      },
       closePalette: () => set({
         paletteOpen: false,
         paletteCommand: null,

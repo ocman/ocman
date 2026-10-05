@@ -35,6 +35,7 @@ import { TmuxClientPopover } from './TmuxClientPopover';
 import type { TmuxState } from '../../lib/useTmux';
 import type { GitInfo } from '../../lib/api';
 import { checkoutKey } from '../../lib/projectIdentity';
+import { trackRender } from '../../lib/renderRateMonitor';
 
 export interface SidebarProjectGroup {
   key?: string;
@@ -119,6 +120,7 @@ export function SessionSidebar({
   onNewSessionInDirectory,
   onArchiveProject,
 }: SessionSidebarProps) {
+  trackRender('SessionSidebar');
   const sidebarListRef = useRef<HTMLDivElement>(null);
   useSidebarReorder(sidebarListRef, sidebarView);
   const [showChildren, setShowChildren] = useSidebarFilter('children', true);

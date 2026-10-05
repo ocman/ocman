@@ -89,6 +89,10 @@ function stripTestIdsPlugin(): Plugin {
 // Wails dist dir so `wails build` picks it up.  The normal `make build`
 // still targets ../internal/webui/static (the go:embed source).
 const isWailsBuild = process.env.WAILS_BUILD === '1'
+
+// OCMAN_PROFILE=1 builds against React's profiling renderer so <Profiler>
+// reports commit timings in a production bundle (used by `pnpm perf`).
+const profileBuild = process.env.OCMAN_PROFILE === '1'
 const buildOutDir = isWailsBuild ? '../frontend/dist' : '../internal/webui/static'
 
 export default defineConfig({
@@ -102,6 +106,7 @@ export default defineConfig({
     // bugs that have plagued this codebase (see commits a1d1140 etc).
     babel({ presets: [reactCompilerPreset()] }),
   ],
+  resolve: profileBuild ? { alias: { 'react-dom/client': 'react-dom/profiling' } } : undefined,
   build: {
     outDir: buildOutDir,
     emptyOutDir: true,

@@ -9,6 +9,7 @@ import type { Session, SessionInfoCommit } from '../lib/api';
 import type { MessageBookmark, MessageBookmarkGroup } from '../lib/messageBookmarks';
 import { useBeadsStatus } from '../lib/useBeadsStatus';
 import { Pane } from './RightPanelPane';
+import { trackRender } from '../lib/renderRateMonitor';
 import { TAB_ICONS, TAB_LABELS, normaliseSizes, reconcileTabOrder } from './rightPanelTabs';
 import {
   DndContext,
@@ -84,6 +85,7 @@ export function RightPanel({
   onNavigateCommit,
   commitSourceStatus,
 }: RightPanelProps) {
+  trackRender('RightPanel');
   const openTabs = useUiStore((s) => s.changesSidebarOpenTabs);
   const sizes = useUiStore((s) => s.changesSidebarTabSizes);
   const persistedOrder = useUiStore((s) => s.changesSidebarTabOrder);
@@ -321,6 +323,7 @@ function SortableStripIcon({
       {...attributes}
       {...listeners}
       role="tab"
+      data-perf="panel-tab"
       aria-selected={active}
       aria-label={TAB_LABELS[tab]}
     >

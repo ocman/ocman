@@ -25,11 +25,14 @@
 //   __ocmanRenderRates.reset()      // zero everything
 //   __ocmanRenderRates.setBudget(n) // change the warn threshold
 //
+// Enabled by `?debug` or localStorage `ocman:perf=1` (see perfMonitor).
+//
 // Logs are intentionally rate-limited: after a key trips the warn
 // budget once we suppress further warnings for that key for 2s so
 // the console doesn't drown in repeats while the loop is active.
 
 import { remoteLog } from './remoteLog';
+import { countRender, perfEnabled } from './perfMonitor';
 
 const WINDOW_MS = 1000;
 // Browser paint rate is capped at ~60 Hz; we want to warn only when a
@@ -54,17 +57,7 @@ let budget = DEFAULT_BUDGET;
 let enabled: boolean | null = null;
 
 function isEnabled(): boolean {
-  if (enabled !== null) return enabled;
-  if (typeof window === 'undefined') {
-    enabled = false;
-    return false;
-  }
-  try {
-    const sp = new URLSearchParams(window.location.search);
-    enabled = sp.has('debug');
-  } catch {
-    enabled = false;
-  }
+  if (enabled === null) enabled = perfEnabled();
   return enabled;
 }
 
@@ -79,6 +72,7 @@ function isEnabled(): boolean {
  */
 export function trackRender(key: string, props?: unknown): void {
   if (!isEnabled()) return;
+  countRender(key);
   const now = Date.now();
   let entry = state.get(key);
   if (!entry) {

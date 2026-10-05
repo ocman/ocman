@@ -268,6 +268,7 @@ export function ComposerToolbar({
           <button
             type="button"
             className={`oc-bar-send${sending ? ' oc-bar-send-sending' : ''}`}
+            data-perf="composer-send"
             disabled={uiDisabled}
             title={sending ? 'Sending message' : 'Send (Enter) · Queue for next idle (Ctrl+Enter)'}
             aria-label={sending ? 'Sending message' : 'Send message'}

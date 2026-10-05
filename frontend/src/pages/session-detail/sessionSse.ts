@@ -1,13 +1,17 @@
 import { reduceSessionView, type SessionAction, type SessionView, type SseEvent } from '../../lib/sessionReducer';
 import { truncateSseData } from '../../lib/sseHelpers';
 import type { SseDebugEvent } from './useSession';
+import { markSseFlush, timeSseBatch } from '../../lib/perfMonitor';
 
 type BatchedSessionAction = SessionAction | { type: 'sseBatch'; events: SseEvent[] };
 
 export function reduceBatchedSessionView(view: SessionView, action: BatchedSessionAction): SessionView {
-  return action.type === 'sseBatch'
-    ? action.events.reduce((state, event) => reduceSessionView(state, { type: 'sse', event }), view)
-    : reduceSessionView(view, action);
+  if (action.type !== 'sseBatch') return reduceSessionView(view, action);
+  return timeSseBatch(
+    action.events.length,
+    () => action.events.reduce((state, event) => reduceSessionView(state, { type: 'sse', event }), view),
+    (out) => [out.messages.length, out.parts.length],
+  );
 }
 
 function normalizeEnvelope(event: SseEvent): SseEvent {
@@ -93,6 +97,7 @@ export function createSessionSse(options: {
   const flush = () => {
     const events = take();
     if (events.length) {
+      markSseFlush();
       options.dispatch({ type: 'sseBatch', events });
       if (events.some((event) => {
         if (event.type === 'session.diff' || event.type === 'ocman.session.changed') return true;

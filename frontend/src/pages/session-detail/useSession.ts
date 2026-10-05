@@ -19,7 +19,7 @@
 //   populated when the caller opts in),
 // - the loadMore pagination shim against the same reducer.
 
-import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
 import { api, type Message, type Part, type SessionDetail } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
 import {
@@ -32,6 +32,7 @@ import { createSessionSse, reduceBatchedSessionView } from './sessionSse';
 import { onPageResume } from '../../lib/pageResume';
 import { remoteLog } from '../../lib/remoteLog';
 import { useActivityScope } from '../../lib/activityScopes';
+import { markSseCommit } from '../../lib/perfMonitor';
 
 /** Live-pipeline status surfaced to the page. */
 export type UseSessionStatus = 'loading' | 'live' | 'reconnecting' | 'error';
@@ -262,6 +263,8 @@ export function useSession(
   // assignment. `loadMore` reads from it without taking a dep.
   const viewRef = useRef(view);
   viewRef.current = view;
+  // Perf monitoring: closes the SSE flush→commit span (no-op when off).
+  useLayoutEffect(markSseCommit, [view]);
 
   const reload = useCallback(async () => reloadRef.current(), []);
   const retryNow = useCallback(() => retryNowRef.current(), []);

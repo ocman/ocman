@@ -70,6 +70,7 @@ export function SidebarSessionRow({
   return (
     <div
       role="button"
+      data-perf="session-row"
       data-session-key={`${inGroup ? 'group' : 'recent'}:${sib.platform}:${sib.id}`}
       tabIndex={0}
       aria-selected={active}
