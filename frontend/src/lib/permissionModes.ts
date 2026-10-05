@@ -61,8 +61,15 @@ function sameRuleset(a: PermissionRule[], b: PermissionRule[]): boolean {
  * Maps a session's current ruleset back to a preset id, or 'custom'
  * when it doesn't match any preset (e.g. hand-written rules or rules
  * set by another tool). Order-insensitive.
+ *
+ * OpenCode appends a PATCHed ruleset to the session's existing rules and
+ * evaluates the last match, so after switching modes the ruleset ends with
+ * the latest preset (e.g. auto-edit rules followed by YOLO's `* allow`).
+ * A preset found at the tail is the mode in effect.
  */
 export function classifyPermissionMode(rules: PermissionRule[]): string {
-  const match = PERMISSION_MODES.find((m) => sameRuleset(m.rules, rules));
+  const match =
+    PERMISSION_MODES.find((m) => sameRuleset(m.rules, rules)) ??
+    PERMISSION_MODES.find((m) => m.rules.length > 0 && sameRuleset(m.rules, rules.slice(-m.rules.length)));
   return match ? match.id : 'custom';
 }

@@ -30,6 +30,17 @@ describe('classifyPermissionMode', () => {
     expect(classifyPermissionMode(rules)).toBe('custom');
   });
 
+  // OpenCode appends PATCHed rules to the session's ruleset instead of
+  // replacing it, and the last matching rule wins, so the mode picked last
+  // is the ruleset's tail.
+  it('classifies by the most recently appended preset', () => {
+    const autoEdit = PERMISSION_MODES.find((m) => m.id === 'auto-edit')!;
+    const yolo = PERMISSION_MODES.find((m) => m.id === 'yolo')!;
+    const plan = PERMISSION_MODES.find((m) => m.id === 'plan')!;
+    expect(classifyPermissionMode([...autoEdit.rules, ...yolo.rules])).toBe('yolo');
+    expect(classifyPermissionMode([...yolo.rules, ...plan.rules])).toBe('plan');
+  });
+
   it('marks only yolo as dangerous', () => {
     const dangerous = PERMISSION_MODES.filter((m) => m.dangerous).map((m) => m.id);
     expect(dangerous).toEqual(['yolo']);
