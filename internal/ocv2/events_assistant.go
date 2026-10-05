@@ -22,6 +22,24 @@ func (t *translator) assistant(ev v2Event, sessionID, dir string) error {
 		return nil
 	}
 	msg := t.msgs[mid]
+	if t.snapshots[mid] {
+		started, _ := d["started"].(float64)
+		created, _ := obj(msg, "time")["created"].(float64)
+		if ev.Type == "session.step.started" && started > created {
+			// A later attempt can stream normally from this known prefix.
+			delete(t.snapshots, mid)
+		} else {
+			// ponytail: ambiguous buffered events follow durable snapshots
+			// until the next attempt; never guess a retry's content boundary.
+			if ephemeral[ev.Type] || obj(msg, "time")["completed"] != nil {
+				return nil
+			}
+			if fresh := t.seed(sessionID, mid); fresh != nil {
+				return t.emitMessage(sessionID, dir, fresh, -1, true)
+			}
+			return nil
+		}
+	}
 	if ev.Type == "session.step.started" {
 		if msg == nil {
 			// A retried step reuses its message and keeps the earlier
@@ -30,11 +48,12 @@ func (t *translator) assistant(ev v2Event, sessionID, dir string) error {
 			delete(t.unseeded, mid)
 			msg = t.seed(sessionID, mid)
 			// The GET can be ahead of this buffered event, especially for a
-			// fast remote reply. Rebuild this attempt from its events instead
-			// of appending them to its already-projected content. A snapshot
-			// from an earlier attempt still supplies the retry's part indexes.
-			if msg != nil && d["started"] != nil && num(obj(msg, "time"), "created") == num(d, "started") {
-				msg["content"] = []any{}
+			// fast remote reply. OpenCode also updates time.created on retry
+			// while retaining earlier content, so follow the stored snapshot
+			// rather than clearing it or appending buffered parts to it.
+			if msg != nil && len(arr(msg, "content")) > 0 && d["started"] != nil && num(obj(msg, "time"), "created") == num(d, "started") {
+				t.snapshots[mid] = true
+				return t.emitMessage(sessionID, dir, msg, -1, true)
 			}
 		}
 		if msg == nil {

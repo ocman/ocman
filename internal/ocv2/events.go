@@ -44,7 +44,7 @@ func (c *compat) stream(r *http.Request, global bool) (*http.Response, error) {
 		return resp, nil
 	}
 	pr, pw := io.Pipe()
-	t := &translator{c: c, ctx: r.Context(), global: global, out: pw, msgs: map[string]map[string]any{}, unseeded: map[string]bool{}}
+	t := &translator{c: c, ctx: r.Context(), global: global, out: pw, msgs: map[string]map[string]any{}, unseeded: map[string]bool{}, snapshots: map[string]bool{}}
 	if !global {
 		t.dir = requestDirectory(r)
 	}
@@ -80,6 +80,9 @@ type translator struct {
 	// unseeded marks in-flight messages whose fetch failed, so a missed
 	// message costs one GET, not one per streamed delta.
 	unseeded map[string]bool
+	// snapshots marks attempts already partly projected before step.started
+	// arrived. Their earlier retry prefix cannot be inferred from timestamps.
+	snapshots map[string]bool
 }
 
 type v2Event struct {
@@ -161,6 +164,7 @@ func (t *translator) handle(ev v2Event) error {
 		for id, m := range t.msgs {
 			if m["sessionID"] == sessionID {
 				delete(t.msgs, id)
+				delete(t.snapshots, id)
 			}
 		}
 		clear(t.unseeded)
