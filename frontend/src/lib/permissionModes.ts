@@ -53,8 +53,10 @@ const ruleKey = (r: PermissionRule) => `${r.permission}\u0000${r.pattern}\u0000$
 
 function sameRuleset(a: PermissionRule[], b: PermissionRule[]): boolean {
   if (a.length !== b.length) return false;
-  const keys = new Set(a.map(ruleKey));
-  return b.every((r) => keys.has(ruleKey(r)));
+  // Compare as multisets: a repeated rule must not stand in for a missing one.
+  const sortedKeys = (rules: PermissionRule[]) => rules.map(ruleKey).sort();
+  const keysB = sortedKeys(b);
+  return sortedKeys(a).every((key, i) => key === keysB[i]);
 }
 
 /**

@@ -41,6 +41,12 @@ describe('classifyPermissionMode', () => {
     expect(classifyPermissionMode([...yolo.rules, ...plan.rules])).toBe('plan');
   });
 
+  it('does not let a repeated rule stand in for a missing preset rule', () => {
+    const bashDeny: PermissionRule = { permission: 'bash', pattern: '*', action: 'deny' };
+    const rules: PermissionRule[] = [{ permission: '*', pattern: '*', action: 'allow' }, bashDeny, bashDeny];
+    expect(classifyPermissionMode(rules)).toBe('custom');
+  });
+
   it('marks only yolo as dangerous', () => {
     const dangerous = PERMISSION_MODES.filter((m) => m.dangerous).map((m) => m.id);
     expect(dangerous).toEqual(['yolo']);
