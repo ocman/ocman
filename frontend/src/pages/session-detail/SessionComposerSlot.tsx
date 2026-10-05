@@ -11,6 +11,9 @@ import { useFirstSubmission } from './firstSubmission';
 export interface SessionComposerSlotProps {
   sessionId: string;
   platformId: string;
+  /** Session directory + owner; scope the launch progress card. */
+  directory?: string;
+  remoteId?: string;
   factoryEpicID: string;
   /** Unread pill; hidden when null / 0. */
   firstUnreadMessageId: string | null;
@@ -30,6 +33,8 @@ export interface SessionComposerSlotProps {
 export function SessionComposerSlot({
   sessionId,
   platformId,
+  directory,
+  remoteId,
   factoryEpicID,
   firstUnreadMessageId,
   unreadMessageCount,
@@ -55,6 +60,8 @@ export function SessionComposerSlot({
           {unreadMessageCount} new message{unreadMessageCount === 1 ? '' : 's'}
         </button>
       )}
+      {/* Above the prompt branches: a launch can start while a prompt is shown. */}
+      <LaunchProgressCard directory={directory} remoteId={remoteId} />
       {permission ? (
         <PermissionPrompt {...permission} />
       ) : question ? (
@@ -62,7 +69,6 @@ export function SessionComposerSlot({
       ) : composer ? (
         <>
           <FirstSubmissionNotice sessionId={sessionId} />
-          <LaunchProgressCard directory={composer.directory} />
           <Composer {...composer}
             platform={platformId}
             disabled={composer.disabled || firstPending}

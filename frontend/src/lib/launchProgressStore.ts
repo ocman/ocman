@@ -30,6 +30,8 @@ type LaunchProgressStore = {
   phase: LaunchPhase;
   /** Project directory being opened. */
   directory: string;
+  /** Machine that owns `directory` ('local' for the hub). */
+  remoteId: string;
   /** Date.now() at begin(); drives the quick-success suppression. */
   startedAt: number;
   /** Active step while phase === 'running' (or the step that failed). */
@@ -44,7 +46,7 @@ type LaunchProgressStore = {
   skipLaunch: boolean;
   error: string | null;
 
-  begin: (directory: string, opts?: { skipLaunch?: boolean }) => void;
+  begin: (directory: string, opts?: LaunchBeginOpts) => void;
   setStep: (step: LaunchStepId) => void;
   setAttempt: (attempt: number, maxAttempts: number) => void;
   succeed: () => void;
@@ -52,9 +54,16 @@ type LaunchProgressStore = {
   dismiss: () => void;
 };
 
+export interface LaunchBeginOpts {
+  skipLaunch?: boolean;
+  /** Owner of the directory; omitted = 'local'. */
+  remoteId?: string;
+}
+
 export const useLaunchProgressStore = create<LaunchProgressStore>((set) => ({
   phase: 'idle',
   directory: '',
+  remoteId: 'local',
   startedAt: 0,
   step: 'launch',
   attempt: 0,
@@ -66,6 +75,7 @@ export const useLaunchProgressStore = create<LaunchProgressStore>((set) => ({
     set({
       phase: 'running',
       directory,
+      remoteId: opts?.remoteId || 'local',
       startedAt: Date.now(),
       step: opts?.skipLaunch ? 'wait' : 'launch',
       attempt: 0,
@@ -97,7 +107,7 @@ export const useLaunchProgressStore = create<LaunchProgressStore>((set) => ({
  * can opt out via `reportProgress: false`.
  */
 export interface LaunchProgressReporter {
-  begin(directory: string, opts?: { skipLaunch?: boolean }): void;
+  begin(directory: string, opts?: LaunchBeginOpts): void;
   step(step: LaunchStepId): void;
   attempt(attempt: number, maxAttempts: number): void;
   succeed(): void;

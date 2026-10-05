@@ -10,8 +10,12 @@ vi.mock('../../components/assistant/Composer', () => ({ Composer: () => <div>com
 
 import { SessionComposerSlot, type SessionComposerSlotProps } from './SessionComposerSlot';
 import { useFirstSubmission } from './firstSubmission';
+import { useLaunchProgressStore } from '../../lib/launchProgressStore';
 
-beforeEach(() => useFirstSubmission.setState({ entries: {} }));
+beforeEach(() => {
+  useFirstSubmission.setState({ entries: {} });
+  useLaunchProgressStore.getState().dismiss();
+});
 
 function renderSlot(over: Partial<SessionComposerSlotProps> = {}) {
   const props: SessionComposerSlotProps = {
@@ -67,5 +71,16 @@ describe('SessionComposerSlot', () => {
     expect(pill).toHaveTextContent('3 new messages');
     fireEvent.click(pill);
     expect(p.onJumpToUnread).toHaveBeenCalledWith('m7');
+  });
+
+  it.each([
+    ['running', () => undefined],
+    ['failed', () => useLaunchProgressStore.getState().fail('boom')],
+  ])('keeps a %s launch visible while a permission replaces the composer', (_, settle) => {
+    useLaunchProgressStore.getState().begin('/repo', { remoteId: 'r1' });
+    settle();
+    renderSlot({ permission, composer, directory: '/repo', remoteId: 'r1' });
+    expect(screen.getByText('permission-prompt')).toBeInTheDocument();
+    expect(screen.getByTestId('launch-progress')).toBeInTheDocument();
   });
 });

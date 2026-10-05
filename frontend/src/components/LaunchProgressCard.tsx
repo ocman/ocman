@@ -32,9 +32,13 @@ function StepIcon({ state }: { state: StepState }) {
  * opencode). Renders only in the conversation for the launching
  * directory; the store is global so progress survives remounts.
  */
-export function LaunchProgressCard({ directory: conversationDir }: { directory?: string }) {
+export function LaunchProgressCard({ directory: conversationDir, remoteId: conversationOwner }: {
+  directory?: string;
+  remoteId?: string;
+}) {
   const phase = useLaunchProgressStore((s) => s.phase);
   const directory = useLaunchProgressStore((s) => s.directory);
+  const owner = useLaunchProgressStore((s) => s.remoteId);
   const step = useLaunchProgressStore((s) => s.step);
   const attempt = useLaunchProgressStore((s) => s.attempt);
   const maxAttempts = useLaunchProgressStore((s) => s.maxAttempts);
@@ -48,7 +52,8 @@ export function LaunchProgressCard({ directory: conversationDir }: { directory?:
     return () => clearTimeout(t);
   }, [phase, dismiss]);
 
-  if (phase === 'idle' || !conversationDir || directory !== conversationDir) return null;
+  if (phase === 'idle' || !conversationDir || directory !== conversationDir
+    || owner !== (conversationOwner || 'local')) return null;
 
   const steps = LAUNCH_STEP_ORDER.filter((id) => !(skipLaunch && id === 'launch'));
   const activeIndex = steps.indexOf(step);

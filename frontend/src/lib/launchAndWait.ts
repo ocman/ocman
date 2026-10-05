@@ -18,6 +18,8 @@ export interface LaunchAndWaitDeps {
   reload: () => Promise<void>;
   /** Read current live-connection status after a reload. */
   isLive: () => boolean;
+  /** Owner of the directory, so progress shows in the right conversation. */
+  remoteId?: string;
   /** Progress reporter (defaults to the global launch-progress store). */
   progress?: LaunchProgressReporter;
   /** Injectable sleep for tests. */
@@ -38,7 +40,7 @@ export async function launchAndWait(
   const progress = deps.progress ?? launchProgressReporter;
   const wait = deps.wait ?? sleep;
 
-  progress.begin(directory, { skipLaunch: false });
+  progress.begin(directory, { skipLaunch: false, remoteId: deps.remoteId });
   progress.step('launch');
   try {
     await deps.launch(directory);

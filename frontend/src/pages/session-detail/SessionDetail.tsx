@@ -421,6 +421,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const tmuxActions = useTmuxActions(tmux, session?.directory, setRestartToastMessage, {
     reload,
     isLive: () => portAvailableRef.current,
+    remoteId: session?.remoteId,
   });
   const {
     matchingTmuxSession,
@@ -943,6 +944,8 @@ export function SessionDetail({ id }: SessionDetailProps) {
                     <SessionComposerSlot
                       sessionId={session.id}
                       platformId={session.platform}
+                      directory={session.directory}
+                      remoteId={session.remoteId}
                       factoryEpicID={factoryEpicID}
                       firstUnreadMessageId={firstUnreadMessageId}
                       unreadMessageCount={unreadMessageCount}

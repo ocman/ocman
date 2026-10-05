@@ -150,7 +150,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
     setError('');
     // The first submission launches the instance when it is closed
     // (10-20 s); the card above the composer reports it (quick starts stay silent).
-    launchProgressReporter.begin(directory, { skipLaunch: true });
+    launchProgressReporter.begin(directory, { skipLaunch: true, remoteId });
     try {
       const res = await api.startSession({
         directory: target.startsWith('dir:') ? target.slice(4) : directory,
@@ -225,7 +225,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
         {eligibility.error && <InlineAlert onRetry={eligibility.retry}>{eligibility.error}</InlineAlert>}
         {catalogError && <InlineAlert onRetry={() => setCatalogAttempt((value) => value + 1)}>{catalogError}</InlineAlert>}
         {error && <InlineAlert>{error}</InlineAlert>}
-        <LaunchProgressCard directory={directory} />
+        <LaunchProgressCard directory={directory} remoteId={remoteId} />
         <Composer
           key={`${remoteId}:${directory}:${params.platform}:${title}`}
           composerRef={composerRef}

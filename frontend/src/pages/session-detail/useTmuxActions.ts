@@ -84,6 +84,8 @@ export function useTmuxActions(
     reload: () => Promise<void>;
     /** Read the current live-connection status (latest value). */
     isLive: () => boolean;
+    /** Owner of `directory`; scopes the progress card to this conversation. */
+    remoteId?: string;
   },
 ): UseTmuxActionsResult {
   const [pendingTmuxSession, setPendingTmuxSession] = useState<string | null>(null);
@@ -131,6 +133,7 @@ export function useTmuxActions(
           launch: tmux.launchOpencode,
           reload: waitDeps.reload,
           isLive: waitDeps.isLive,
+          remoteId: waitDeps.remoteId,
         });
       } else {
         await tmux.launchOpencode(directory);

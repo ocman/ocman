@@ -10,6 +10,7 @@ function resetStore() {
   useLaunchProgressStore.setState({
     phase: 'idle',
     directory: '',
+    remoteId: 'local',
     step: 'launch',
     attempt: 0,
     maxAttempts: 0,
@@ -131,5 +132,21 @@ describe('LaunchProgressCard', () => {
       useLaunchProgressStore.getState().begin(DIR);
     });
     expect(screen.queryByTestId('launch-progress')).not.toBeInTheDocument();
+  });
+
+  it('does not show a launch on another machine at the same path', () => {
+    render(<LaunchProgressCard directory={DIR} remoteId="local" />);
+    act(() => {
+      useLaunchProgressStore.getState().begin(DIR, { remoteId: 'r1' });
+    });
+    expect(screen.queryByTestId('launch-progress')).not.toBeInTheDocument();
+  });
+
+  it('shows a launch for the same machine and path', () => {
+    render(<LaunchProgressCard directory={DIR} remoteId="r1" />);
+    act(() => {
+      useLaunchProgressStore.getState().begin(DIR, { remoteId: 'r1' });
+    });
+    expect(screen.getByTestId('launch-progress')).toBeInTheDocument();
   });
 });
