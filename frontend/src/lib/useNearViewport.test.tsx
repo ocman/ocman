@@ -6,7 +6,7 @@ import { useNearViewport } from './useNearViewport';
 
 function Probe() {
   const ref = useRef<HTMLDivElement>(null);
-  const near = useNearViewport(ref, 500);
+  const near = useNearViewport(ref, '.scroller', 500);
   return <div ref={ref}>{near ? 'near' : 'far'}</div>;
 }
 
@@ -28,7 +28,7 @@ describe('useNearViewport', () => {
       observe() {}
       disconnect = disconnect;
     });
-    render(<div style={{ overflowY: 'auto' }} data-testid="scroller"><Probe /></div>);
+    render(<div className="scroller" data-testid="scroller"><Probe /></div>);
     expect(screen.getByText('far')).toBeInTheDocument();
     expect(init[0]).toEqual({ root: screen.getByTestId('scroller'), rootMargin: '500px 0px' });
     act(() => fire([{ isIntersecting: false }]));

@@ -12,7 +12,7 @@ import type { DiffPayload } from './toolOutputFormat';
  */
 export function LazyInlineDiff({ payload }: { payload: DiffPayload }) {
   const ref = useRef<HTMLDivElement>(null);
-  const near = useNearViewport(ref);
+  const near = useNearViewport(ref, '.oc-thread-viewport');
   const printing = useIsPrinting();
   return (
     <div ref={ref} className="oc-tool-output">
