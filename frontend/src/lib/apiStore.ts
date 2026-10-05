@@ -43,11 +43,11 @@ export const CLOSED_SESSION_STACK_MAX = 10;
 /**
  * Maximum number of session detail responses to keep in the client-side
  * cache. Entries are evicted in LRU order when this limit is exceeded.
- * Kept small because each entry can hold hundreds of messages and their
- * parts; 3 is enough for back-and-forth navigation without unbounded
+ * Each entry holds one page of messages (150-200) and their parts, so 10
+ * covers switching between a working set of sessions without unbounded
  * memory growth. See spec/session-switch-cache/architecture.md.
  */
-export const SESSION_CACHE_MAX = 3;
+export const SESSION_CACHE_MAX = 10;
 
 type ApiStore = {
   requests: Record<string, RequestStatus>;

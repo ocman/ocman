@@ -70,6 +70,14 @@ describe('session cache', () => {
     }
   });
 
+  it('keeps the ten most recently viewed sessions', () => {
+    const store = useApiStore.getState();
+    for (let i = 0; i < 11; i++) store.setCachedSession(`s${i}`, makeSessionDetail(`s${i}`));
+    expect(useApiStore.getState().getCachedSession('s0')).toBeNull();
+    expect(useApiStore.getState().getCachedSession('s1')).not.toBeNull();
+    expect(useApiStore.getState().sessionCacheOrder).toHaveLength(10);
+  });
+
   it('promotes an entry to most-recent on setCachedSession', () => {
     const store = useApiStore.getState();
     for (let i = 0; i < SESSION_CACHE_MAX; i++) {
