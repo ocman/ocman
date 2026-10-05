@@ -20,6 +20,7 @@ import { useUiStore } from '../../lib/uiStore';
 import { useOpencodeLaunch, usePlatformCapabilities } from '../../lib/useCapabilities';
 import { onSessionStartProgress } from '../../lib/useGlobalEvents';
 import { projectRootForDirectory } from '../../lib/worktrees';
+import { randomId } from '../../lib/randomId';
 import { Composer, type ComposerHandle } from '../../components/assistant/Composer';
 import type { AttachedImage } from '../../components/assistant/useComposerAttachments';
 import type { SessionTarget } from '../../components/assistant/ComposerSelectorRow';
@@ -154,7 +155,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
     setError('');
     // The server reports each step (instance, worktree, session, prompt)
     // under the pending prompt; it all goes away with this page.
-    const startId = crypto.randomUUID();
+    const startId = randomId();
     setPending({ key: routeKey, text, startId, steps: {} });
     // Subscribed before the request so the first step can't be missed.
     const unsubscribe = onSessionStartProgress((id, step, state) => {
@@ -171,7 +172,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
       seedNewSession(res.sessionId, res.directory, res.platform, title, res.remoteId);
       if (send && !res.firstMessageSent) {
         recordFailedSend(res.sessionId, {
-          id: crypto.randomUUID(), text, images: send.images, model: send.model, agent: send.agent, reasoning: send.reasoning,
+          id: randomId(), text, images: send.images, model: send.model, agent: send.agent, reasoning: send.reasoning,
           error: res.firstMessageError || 'First message was not sent.', failedAt: Date.now(),
         });
       }

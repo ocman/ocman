@@ -227,6 +227,19 @@ describe('NewConversation', () => {
     expect(screen.queryByTestId('pending-prompt')).not.toBeInTheDocument();
   });
 
+  it('starts without crypto.randomUUID (plain-HTTP, non-secure context)', async () => {
+    vi.stubGlobal('crypto', { getRandomValues: (values: Uint32Array) => values.fill(1) });
+    try {
+      mount();
+      await waitFor(() => expect(composer.disabled).toBe(false));
+      await act(() => composer.onSend!('Fix login'));
+      expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ startId: '00000001'.repeat(4) }));
+      expect(navigateToSession).toHaveBeenCalledWith('child');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('keeps a newer start’s prompt when an older start fails afterwards', async () => {
     let failOld!: (err: Error) => void;
     mocks.start.mockReturnValueOnce(new Promise((_, reject) => { failOld = reject; }));

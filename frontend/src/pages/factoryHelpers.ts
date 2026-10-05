@@ -1,11 +1,10 @@
 import { createContext } from 'react';
 import type { FactoryIssue } from '../lib/api';
+import { randomId } from '../lib/randomId';
 
 export const TRACER_FORMULA_ID = 'ocman/tracer';
 
-export function newInstantiationID() {
-  return crypto.randomUUID?.() ?? Array.from(crypto.getRandomValues(new Uint32Array(4)), (value) => value.toString(16).padStart(8, '0')).join('');
-}
+export const newInstantiationID = randomId;
 
 export const isClosed = (status: string) => status === 'closed' || status === 'completed';
 export const statusLabel = (status: string) => status.replaceAll('_', ' ').replace(/^./, (letter) => letter.toUpperCase());
