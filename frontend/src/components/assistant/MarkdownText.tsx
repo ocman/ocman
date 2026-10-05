@@ -218,7 +218,12 @@ function MarkdownTable({ node: _node, ...props }: ComponentProps<'table'> & { no
 // internal unified-processor cache on every streaming chunk.
 const REMARK_PLUGINS = [remarkGfm, remarkFactoryCards];
 const REMARK_PLUGINS_WITH_BREAKS = [...REMARK_PLUGINS, remarkBreaks];
-const REHYPE_PLUGINS = [rehypeHighlight];
+// rehype-highlight builds a lowlight instance and registers ~37 languages
+// each time it is attached, and react-markdown attaches plugins on every
+// render; reuse one transformer.
+let highlightTransformer: ReturnType<typeof rehypeHighlight> | undefined;
+const sharedRehypeHighlight = () => (highlightTransformer ??= rehypeHighlight());
+const REHYPE_PLUGINS = [sharedRehypeHighlight];
 const MARKDOWN_COMPONENTS = { pre: CodeBlockPre, a: MarkdownLink, img: MarkdownImage, table: MarkdownTable };
 
 // One independently parsed chunk. memo: while an answer streams only the
