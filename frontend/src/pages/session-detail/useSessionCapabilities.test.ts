@@ -8,7 +8,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useSessionCapabilities } from './useSessionCapabilities';
 import { api } from '../../lib/api';
-import { clearModelCatalogCache, readModelCatalog, writeModelCatalog } from '../../lib/modelCatalogCache';
+import {
+  clearModelCatalogCache, mergeWithCatalog, readModelCatalog, readModelShortlist, writeModelCatalog,
+} from '../../lib/modelCatalogCache';
 
 // The state object must be stable across renders: an unstable
 // getModels would re-create refreshModels and re-run the fetch effect
@@ -124,7 +126,13 @@ describe('useSessionCapabilities.reloadCapabilities', () => {
 });
 
 describe('useSessionCapabilities model catalog cache', () => {
-  const live = { hasProviders: true, models: [{ provider: 'anthropic', model: 'opus', isAvailable: true, isFavorite: true }] };
+  const live = {
+    hasProviders: true,
+    models: [
+      { provider: 'anthropic', model: 'opus', modelName: 'Opus', isAvailable: true, isFavorite: true, isProviderDefault: true, reasoning: ['high'] },
+      { provider: 'openai', model: 'gpt', isAvailable: true },
+    ],
+  };
   const render = (id: string, directory = '/proj') => renderHook(() => useSessionCapabilities({
     id, platform: 'opencode', liveConnection: true, directory, sessionLoaded: true,
   }));
@@ -137,29 +145,49 @@ describe('useSessionCapabilities model catalog cache', () => {
     expect(result.current.modelEntries[0].isAvailable).toBe(true);
   });
 
-  it('keeps the last live catalog when a refresh has no provider data', async () => {
+  it('opens with the cached catalog and keeps its provider details when a refresh has none', async () => {
     clearModelCatalogCache();
     vi.mocked(api.sessionModels).mockResolvedValueOnce(live);
     const first = render('s1');
     await waitFor(() => expect(first.result.current.modelEntries).toEqual(live.models));
     first.unmount();
 
-    // The next session in the project opens with the cached list, and a
-    // response without providers does not replace it.
     let resolve!: (v: unknown) => void;
     vi.mocked(api.sessionModels).mockReturnValueOnce(new Promise((r) => { resolve = r; }) as never);
     const { result } = render('s2');
     expect(result.current.modelEntries).toEqual(live.models);
-    await act(async () => { resolve({ hasProviders: false, models: [{ provider: 'anthropic', model: 'opus' }] }); });
-    expect(result.current.modelEntries).toEqual(live.models);
+    // The response is authoritative for favorites and the session default:
+    // opus was unstarred and gpt is this session's model.
+    await act(async () => { resolve({ hasProviders: false, models: [{ provider: 'openai', model: 'gpt', isSessionDefault: true }, { provider: 'anthropic', model: 'opus' }] }); });
+    expect(result.current.modelEntries).toEqual([
+      { provider: 'openai', model: 'gpt', isSessionDefault: true, isAvailable: true, isProviderDefault: undefined, providerName: undefined, modelName: undefined, reasoning: undefined },
+      { provider: 'anthropic', model: 'opus', modelName: 'Opus', isAvailable: true, isProviderDefault: true, providerName: undefined, reasoning: ['high'] },
+    ]);
   });
 
-  it('seeds a new worktree from the newest catalog and survives a reload', () => {
+  it('merges fresh rows first and keeps cached-only rows without stale pins', () => {
+    const merged = mergeWithCatalog([{ provider: 'new', model: 'x', recentRank: 1 }], live.models);
+    expect(merged.map((e) => [e.provider, e.isAvailable, e.isFavorite ?? false])).toEqual([
+      ['new', true, false], ['anthropic', true, false], ['openai', true, false],
+    ]);
+  });
+
+  it('seeds a new worktree with only global pins and unknown availability', () => {
+    clearModelCatalogCache();
+    writeModelCatalog('opencode', '/proj', [...live.models, { provider: 'gone', model: 'y', recentRank: 2 }]);
+    expect(readModelCatalog('opencode', '/proj/.worktrees/x')).toBeUndefined();
+    expect(readModelShortlist('opencode')).toEqual([
+      { ...live.models[0], isSessionDefault: false, isProviderDefault: false, isAvailable: true },
+      { provider: 'gone', model: 'y', recentRank: 2, isSessionDefault: false, isProviderDefault: false, isAvailable: true },
+    ]);
+    expect(readModelShortlist('other')).toBeUndefined();
+  });
+
+  it('reads the pinned list back from storage after a reload', () => {
     clearModelCatalogCache();
     writeModelCatalog('opencode', '/proj', live.models);
-    expect(readModelCatalog('opencode', '/proj/.worktrees/x')).toEqual(live.models);
-    expect(readModelCatalog('other', '/proj')).toBeUndefined();
-    const stored = JSON.parse(localStorage.getItem('ocman.modelCatalog.v1')!);
-    expect(stored['opencode\n/proj']).toEqual(live.models);
+    clearModelCatalogCache(true);
+    expect(readModelCatalog('opencode', '/proj')).toEqual([live.models[0]]);
+    expect(readModelShortlist('opencode')?.map((e) => e.model)).toEqual(['opus']);
   });
 });

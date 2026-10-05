@@ -3,11 +3,9 @@ import { api } from '../../lib/api';
 import type { SessionModelEntry, SessionModelsResponse } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
 import { formatModelRef } from '../../lib/sessionStatus';
-import { readModelCatalog, writeModelCatalog } from '../../lib/modelCatalogCache';
-
-// Without the provider catalog nobody knows what is available; treat every
-// entry as usable rather than flagging (and archiving) all of them.
-const availabilityUnknown = (entries: SessionModelEntry[]) => entries.map((e) => ({ ...e, isAvailable: true }));
+import {
+  availabilityUnknown, mergeWithCatalog, readModelCatalog, readModelShortlist, writeModelCatalog,
+} from '../../lib/modelCatalogCache';
 
 const refsOf = (entries: SessionModelEntry[]) => Array.from(new Set(entries.map((m) => formatModelRef(m.provider, m.model))));
 
@@ -32,15 +30,15 @@ export function useModelCatalog(id: string | undefined, platform: string | undef
   // the fetch replaces it.
   useEffect(() => {
     if (!sessionLoaded) return;
-    const cached = readModelCatalog(platform, directory);
+    const cached = readModelCatalog(platform, directory) ?? readModelShortlist(platform);
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (cached) applyModels(cached);
   }, [sessionLoaded, platform, directory, applyModels]);
 
   // Only a response with the live provider catalog says which models are
-  // available. Without it, keep the last live catalog; failing that, show
-  // the list without flagging every model as unavailable, which is what
-  // put a warning on the model of a session that was running fine.
+  // available. Without it, complete the response from this directory's last
+  // live catalog; failing that, show it without flagging every model as
+  // unavailable, which put a warning on the model of a running session.
   const receiveModels = useCallback((resp: SessionModelsResponse) => {
     const entries = resp.models || [];
     if (resp.hasProviders) {
@@ -48,7 +46,8 @@ export function useModelCatalog(id: string | undefined, platform: string | undef
       applyModels(entries);
       return;
     }
-    applyModels(readModelCatalog(platform, directory) ?? availabilityUnknown(entries));
+    const cached = readModelCatalog(platform, directory);
+    applyModels(cached ? mergeWithCatalog(entries, cached) : availabilityUnknown(entries));
   }, [platform, directory, applyModels]);
 
   const refreshModels = useCallback((signal?: AbortSignal) => {
@@ -58,7 +57,7 @@ export function useModelCatalog(id: string | undefined, platform: string | undef
     }).catch(() => {
       if (signal?.aborted) return;
       // Fallback: the cached catalog, else the historical-only list.
-      const cached = readModelCatalog(platform, directory);
+      const cached = readModelCatalog(platform, directory) ?? readModelShortlist(platform);
       if (cached) {
         seedModels(cached);
         return;
