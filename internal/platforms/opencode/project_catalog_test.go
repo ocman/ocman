@@ -14,7 +14,9 @@ func TestProjectCatalog(t *testing.T) {
 		case "/agent":
 			_, _ = w.Write([]byte(`[{"name":"build"},{"name":"plan"}]`))
 		case "/provider":
-			_, _ = w.Write([]byte(`{"all":[{"id":"openai","models":{"gpt-5":{}}}]}`))
+			// 302ai sorts before every real provider; listing it would push
+			// connected providers past the picker's render cap.
+			_, _ = w.Write([]byte(`{"all":[{"id":"302ai","models":{"claude-opus-5-5":{}}},{"id":"openai","models":{"gpt-5":{}}}],"connected":["openai"]}`))
 		default:
 			http.NotFound(w, r)
 		}

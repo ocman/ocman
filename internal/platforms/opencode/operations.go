@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -124,7 +125,12 @@ func ProjectCatalog(ctx context.Context, endpoint, directory string) (agents, mo
 	if err := json.Unmarshal(body, &providers); err != nil {
 		return nil, nil, err
 	}
+	// Only connected providers: "all" is the whole models.dev catalog (thousands
+	// of models), and unusable providers like 302ai sort ahead of anthropic.
 	for _, provider := range providers.All {
+		if !slices.Contains(providers.Connected, provider.ID) {
+			continue
+		}
 		for model := range provider.Models {
 			models = append(models, provider.ID+"/"+model)
 		}
