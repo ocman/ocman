@@ -112,7 +112,11 @@ async function metrics(page: Page, scenario: string) {
     mkdirSync(OUT_DIR, { recursive: true });
     writeFileSync(resolve(OUT_DIR, `${LABEL}-${scenario}.cpuprofile`), JSON.stringify(profile));
   }
-  return page.evaluate(() => (window as unknown as { __ocmanPerf: { metrics: () => unknown } }).__ocmanPerf.metrics());
+  // API calls per endpoint during the scenario, from the perfRing.
+  return page.evaluate(() => {
+    const perf = (window as unknown as { __ocmanPerf: { metrics: () => object; summary: () => { pathTemplate: string; count: number }[] } }).__ocmanPerf;
+    return { ...perf.metrics(), api: Object.fromEntries(perf.summary().map((r) => [r.pathTemplate, r.count])) };
+  });
 }
 
 type Cdp = Awaited<ReturnType<ReturnType<Page['context']>['newCDPSession']>>;
@@ -122,7 +126,11 @@ let cdp: Cdp;
 async function reset(page: Page) {
   await settle(page);
   if (CPU_PROFILE) { await cdp.send('Profiler.enable'); await cdp.send('Profiler.start'); }
-  await page.evaluate(() => (window as unknown as { __ocmanPerf: { resetMetrics: () => void } }).__ocmanPerf.resetMetrics());
+  await page.evaluate(() => {
+    const perf = (window as unknown as { __ocmanPerf: { resetMetrics: () => void; clear: () => void } }).__ocmanPerf;
+    perf.resetMetrics();
+    perf.clear();
+  });
 }
 
 async function play(page: Page, sessionId: string, frames: unknown) {
@@ -202,6 +210,8 @@ test('interaction bench', async ({ mockedPage: page }) => {
         await settle(page);
       }
     }],
+    // Sit idle on the session page: background polls only.
+    ['idle', () => page.waitForTimeout(30_000)],
     // Stream while a subagent runs (task poll + foreign events).
     ['streamWithSubagent', () => play(page, id(1), streamFrames(id(1), { foreignId: SUBAGENT }))],
   ];
