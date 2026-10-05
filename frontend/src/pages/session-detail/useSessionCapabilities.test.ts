@@ -8,6 +8,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useSessionCapabilities } from './useSessionCapabilities';
 import { api } from '../../lib/api';
+import { clearModelCatalogCache, readModelCatalog, writeModelCatalog } from '../../lib/modelCatalogCache';
 
 // The state object must be stable across renders: an unstable
 // getModels would re-create refreshModels and re-run the fetch effect
@@ -118,6 +119,47 @@ describe('useSessionCapabilities.reloadCapabilities', () => {
     }));
     act(() => result.current.refreshModels());
     await waitFor(() => expect(result.current.modelOptions).toEqual(['history/recent']));
-    expect(result.current.modelEntries[0]).toEqual({ provider: 'history', model: 'recent' });
+    expect(result.current.modelEntries[0]).toEqual({ provider: 'history', model: 'recent', isAvailable: true });
+  });
+});
+
+describe('useSessionCapabilities model catalog cache', () => {
+  const live = { hasProviders: true, models: [{ provider: 'anthropic', model: 'opus', isAvailable: true, isFavorite: true }] };
+  const render = (id: string, directory = '/proj') => renderHook(() => useSessionCapabilities({
+    id, platform: 'opencode', liveConnection: true, directory, sessionLoaded: true,
+  }));
+
+  it('does not flag models unavailable when the provider catalog is missing', async () => {
+    clearModelCatalogCache();
+    vi.mocked(api.sessionModels).mockResolvedValueOnce({ hasProviders: false, models: [{ provider: 'anthropic', model: 'opus' }] });
+    const { result } = render('s1');
+    await waitFor(() => expect(result.current.modelEntries).toHaveLength(1));
+    expect(result.current.modelEntries[0].isAvailable).toBe(true);
+  });
+
+  it('keeps the last live catalog when a refresh has no provider data', async () => {
+    clearModelCatalogCache();
+    vi.mocked(api.sessionModels).mockResolvedValueOnce(live);
+    const first = render('s1');
+    await waitFor(() => expect(first.result.current.modelEntries).toEqual(live.models));
+    first.unmount();
+
+    // The next session in the project opens with the cached list, and a
+    // response without providers does not replace it.
+    let resolve!: (v: unknown) => void;
+    vi.mocked(api.sessionModels).mockReturnValueOnce(new Promise((r) => { resolve = r; }) as never);
+    const { result } = render('s2');
+    expect(result.current.modelEntries).toEqual(live.models);
+    await act(async () => { resolve({ hasProviders: false, models: [{ provider: 'anthropic', model: 'opus' }] }); });
+    expect(result.current.modelEntries).toEqual(live.models);
+  });
+
+  it('seeds a new worktree from the newest catalog and survives a reload', () => {
+    clearModelCatalogCache();
+    writeModelCatalog('opencode', '/proj', live.models);
+    expect(readModelCatalog('opencode', '/proj/.worktrees/x')).toEqual(live.models);
+    expect(readModelCatalog('other', '/proj')).toBeUndefined();
+    const stored = JSON.parse(localStorage.getItem('ocman.modelCatalog.v1')!);
+    expect(stored['opencode\n/proj']).toEqual(live.models);
   });
 });

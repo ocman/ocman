@@ -2,9 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { api } from '../../lib/api';
 import type { AgentInfo, SessionModelEntry } from '../../lib/api';
-import { useApiStore } from '../../lib/apiStore';
-import { formatModelRef } from '../../lib/sessionStatus';
 import { NEW_SESSION_ID } from '../../lib/newSessionPath';
+import { useModelCatalog } from './useModelCatalog';
 
 export interface UseSessionCapabilitiesOptions {
   /** Active session id from the URL. */
@@ -78,11 +77,10 @@ export function useSessionCapabilities({
   directory,
   sessionLoaded,
 }: UseSessionCapabilitiesOptions): UseSessionCapabilitiesResult {
-  const getModels = useApiStore((s) => s.getModels);
-
   const [portAvailable, setPortAvailable] = useState(false);
-  const [modelOptions, setModelOptions] = useState<string[]>([]);
-  const [modelEntries, setModelEntries] = useState<SessionModelEntry[]>([]);
+  const {
+    modelOptions, setModelOptions, modelEntries, setModelEntries, refreshModels, handleToggleFavorite,
+  } = useModelCatalog(id, platform, directory, sessionLoaded);
   const [selectedModel, setSelectedModel] = useState('');
   const [selectedAgent, setSelectedAgent] = useState('');
   const [selectedReasoning, setSelectedReasoning] = useState('');
@@ -150,36 +148,6 @@ export function useSessionCapabilities({
   }, [id, directory, portAvailable, reloadNonce]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  const refreshModels = useCallback((signal?: AbortSignal) => {
-    if (!id) return;
-    api.sessionModels(id).then((resp) => {
-      if (signal?.aborted) return;
-      setModelEntries(resp.models || []);
-      setModelOptions(
-        Array.from(new Set((resp.models || []).map((m) => formatModelRef(m.provider, m.model)))),
-      );
-    }).catch(() => {
-      if (signal?.aborted) return;
-      // Fallback: historical-only list. Only seed empties when we
-      // don't already have data so a transient picker-open refresh
-      // failure doesn't wipe out the catalog the user is currently
-      // looking at.
-      getModels()
-        .then((models) => {
-          if (signal?.aborted) return;
-          const ordered = [...models]
-            .sort((a, b) => b.count - a.count)
-            .map((m) => formatModelRef(m.provider, m.model));
-          setModelEntries((prev) => prev.length > 0 ? prev : models.map((m) => ({
-            provider: m.provider,
-            model: m.model,
-          })));
-          setModelOptions((prev) => prev.length > 0 ? prev : Array.from(new Set(ordered)));
-        })
-        .catch(() => { /* keep existing data on failure */ });
-    });
-  }, [id, getModels]);
-
   // Fetch the session-scoped model list once the session has loaded,
   // and once more if OpenCode becomes reachable afterwards so the
   // picker picks up the full /config/providers catalog. A ref gates
@@ -211,34 +179,6 @@ export function useSessionCapabilities({
     setReloadNonce((n) => n + 1);
     refreshModels();
   }, [refreshModels]);
-
-  // Toggle a favorite model. Optimistic flip in the picker first,
-  // then re-fetch for authoritative ordering. On error revert.
-  const handleToggleFavorite = useCallback(async (
-    provider: string,
-    model: string,
-    nextFavorite: boolean,
-  ) => {
-    if (!platform || !id) return;
-    setModelEntries((prev) => prev.map((e) =>
-      e.provider === provider && e.model === model ? { ...e, isFavorite: nextFavorite } : e,
-    ));
-    try {
-      if (nextFavorite) {
-        await api.addFavorite(platform, provider, model);
-      } else {
-        await api.removeFavorite(platform, provider, model);
-      }
-      // Re-fetch for authoritative ordering.
-      const resp = await api.sessionModels(id);
-      setModelEntries(resp.models || []);
-    } catch {
-      // Revert on error.
-      setModelEntries((prev) => prev.map((e) =>
-        e.provider === provider && e.model === model ? { ...e, isFavorite: !nextFavorite } : e,
-      ));
-    }
-  }, [platform, id]);
 
   return {
     portAvailable,
