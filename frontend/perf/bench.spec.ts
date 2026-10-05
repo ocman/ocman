@@ -43,7 +43,18 @@ const INIT = () => {
     close() { this.readyState = 2; }
   }
   (window as unknown as { EventSource: unknown }).EventSource = FakeES;
+  let lastLongFrameEnd = 0;
+  new PerformanceObserver((list) => {
+    for (const e of list.getEntries()) lastLongFrameEnd = Math.max(lastLongFrameEnd, e.startTime + e.duration);
+  }).observe({ type: 'long-animation-frame' });
   (window as unknown as { __bench: unknown }).__bench = {
+    /** Resolves once no long frame has ended for `quietMs`. */
+    idle(quietMs: number) {
+      return new Promise<void>((done) => {
+        const check = () => (performance.now() - lastLongFrameEnd > quietMs ? done() : setTimeout(check, 100));
+        setTimeout(check, 100);
+      });
+    },
     play(sessionId: string, frames: [string, string][][], intervalMs: number) {
       return new Promise<void>((done) => {
         const start = performance.now();
@@ -85,7 +96,7 @@ async function installBenchRoutes(page: Page) {
   await page.route('/api/session/**', async (route) => {
     const url = new URL(route.request().url());
     const [, , , sid, sub] = url.pathname.split('/');
-    if (sub === 'tasks') return route.fulfill(json({ tasks: { [SUBAGENT]: taskSnapshot(SUBAGENT, taskStep++) } }));
+    if (sub === 'tasks') return route.fulfill(json({ tasks: { [SUBAGENT]: taskSnapshot(SUBAGENT, Math.min(taskStep++, 20)) } }));
     if (sub) return route.fallback();
     const f = fixtureFor(decodeURIComponent(sid));
     // Simulated server latency so a cache miss pays a realistic fetch.
@@ -95,7 +106,7 @@ async function installBenchRoutes(page: Page) {
 }
 
 async function metrics(page: Page, scenario: string) {
-  await page.waitForTimeout(600); // let PerformanceObservers deliver
+  await settle(page); // finish trailing work, let PerformanceObservers deliver
   if (CPU_PROFILE) {
     const { profile } = await cdp.send('Profiler.stop');
     mkdirSync(OUT_DIR, { recursive: true });
@@ -107,8 +118,9 @@ async function metrics(page: Page, scenario: string) {
 type Cdp = Awaited<ReturnType<ReturnType<Page['context']>['newCDPSession']>>;
 let cdp: Cdp;
 
-/** Reset metrics and, with PERF_CPUPROFILE=1, start a CPU profile. */
+/** Settle, reset metrics and, with PERF_CPUPROFILE=1, start a CPU profile. */
 async function reset(page: Page) {
+  await settle(page);
   if (CPU_PROFILE) { await cdp.send('Profiler.enable'); await cdp.send('Profiler.start'); }
   await page.evaluate(() => (window as unknown as { __ocmanPerf: { resetMetrics: () => void } }).__ocmanPerf.resetMetrics());
 }
@@ -117,10 +129,15 @@ async function play(page: Page, sessionId: string, frames: unknown) {
   await page.evaluate(([sid, f, ms]) => (window as unknown as { __bench: { play: (a: unknown, b: unknown, c: unknown) => Promise<void> } }).__bench.play(sid, f, ms), [sessionId, frames, FRAME_MS] as const);
 }
 
+/** Wait for the main thread to go quiet so scenarios don't overlap. */
+async function settle(page: Page) {
+  await page.evaluate(() => (window as unknown as { __bench: { idle: (ms: number) => Promise<void> } }).__bench.idle(1000));
+}
+
 async function open(page: Page, sessionId: string) {
   await page.goto(`/session/${sessionId}`);
   await expect(page.getByText('Please continue with step 148').first()).toBeAttached({ timeout: 30_000 });
-  await page.waitForTimeout(1500);
+  await settle(page);
 }
 
 async function switchCount(page: Page) {
@@ -131,7 +148,7 @@ async function switchCount(page: Page) {
 }
 
 test.describe.configure({ mode: 'serial' });
-test.setTimeout(240_000);
+test.setTimeout(600_000);
 
 test('interaction bench', async ({ mockedPage: page }) => {
   await page.addInitScript(INIT);
@@ -142,61 +159,62 @@ test('interaction bench', async ({ mockedPage: page }) => {
   await open(page, id(0));
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: CPU_RATE });
 
-  // 1. Stream a long markdown answer.
-  await reset(page);
-  await play(page, id(0), streamFrames(id(0)));
-  results.stream = await metrics(page, 'stream');
-
-  // 5. Type in the composer while streaming.
-  await reset(page);
-  const composer = page.locator('[data-perf="composer"] textarea');
-  await composer.click();
-  const typing = composer.pressSequentially('the quick brown fox jumps over the lazy dog '.repeat(2), { delay: 60 });
-  await Promise.all([play(page, id(0), streamFrames(id(0), { chars: 5000 }).map((f, i) => i === 0 ? f : f.map(([c, d]) => [c, d.replace(/_live/g, '_live2')] as [string, string]))), typing]);
-  results.typeWhileStreaming = await metrics(page, 'typeWhileStreaming');
-  await composer.fill('');
-
-  // 4. Expand tool calls / diffs.
-  await reset(page);
-  for (let i = 0; i < 12; i++) {
-    const header = page.locator('[data-perf="tool-call"] button[aria-expanded="false"]').last();
-    await header.scrollIntoViewIfNeeded();
-    await header.click();
-    await page.waitForTimeout(250);
+  // PERF_SCENARIOS=stream,switch runs a subset (same order).
+  const only = process.env.PERF_SCENARIOS?.split(',');
+  const scenarios: [string, () => Promise<void>][] = [
+    // Stream a long markdown answer.
+    ['stream', () => play(page, id(0), streamFrames(id(0)))],
+    // Type in the composer while streaming.
+    ['typeWhileStreaming', async () => {
+      const composer = page.locator('[data-perf="composer"] textarea');
+      await composer.click();
+      const typing = composer.pressSequentially('the quick brown fox jumps over the lazy dog '.repeat(2), { delay: 60 });
+      const frames = streamFrames(id(0), { chars: 5000 }).map((f) => f.map(([c, d]) => [c, d.replace(/_live/g, '_live2')] as [string, string]));
+      await Promise.all([play(page, id(0), frames), typing]);
+      await composer.fill('');
+    }],
+    // Expand tool calls / diffs.
+    ['expandTools', async () => {
+      for (let i = 0; i < 12; i++) {
+        const header = page.locator('[data-perf="tool-call"] button[aria-expanded="false"]').last();
+        await header.scrollIntoViewIfNeeded();
+        await header.click();
+        await page.waitForTimeout(250);
+      }
+    }],
+    // Scroll the thread up and back down.
+    ['scroll', async () => {
+      const box = (await page.getByTestId('session-main').boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      for (let i = 0; i < 25; i++) { await page.mouse.wheel(0, -500); await page.waitForTimeout(60); }
+      for (let i = 0; i < 25; i++) { await page.mouse.wheel(0, 500); await page.waitForTimeout(60); }
+    }],
+    // Switch sessions. The session cache holds 3 entries: rows 2..5 rotate
+    // through it (miss), then 0 ⇄ 5 alternate inside it (hit).
+    ['switch', async () => {
+      for (const i of [2, 3, 4, 5, 0, 5, 0, 5, 0, 5, 0, 5]) {
+        const before = await switchCount(page);
+        await page.locator(`[data-session-key$=":opencode:${id(i)}"]`).first().click();
+        await page.waitForFunction((n) => {
+          const m = (window as unknown as { __ocmanPerf: { metrics: () => { metrics: Record<string, Record<string, { count: number }>> } } }).__ocmanPerf.metrics().metrics.switch ?? {};
+          return Object.values(m).reduce((c, s) => c + s.count, 0) > n;
+        }, before, { timeout: 60_000 });
+        await settle(page);
+      }
+    }],
+    // Stream while a subagent runs (task poll + foreign events).
+    ['streamWithSubagent', () => play(page, id(1), streamFrames(id(1), { foreignId: SUBAGENT }))],
+  ];
+  for (const [name, run] of scenarios) {
+    if (only && !only.includes(name)) continue;
+    if (name === 'streamWithSubagent') {
+      await page.locator(`[data-session-key$=":opencode:${id(1)}"]`).first().click();
+      await expect(page.getByText('Please continue with step 148').first()).toBeAttached({ timeout: 60_000 });
+    }
+    await reset(page);
+    await run();
+    results[name] = await metrics(page, name);
   }
-  results.expandTools = await metrics(page, 'expandTools');
-
-  // 6. Scroll the thread.
-  await reset(page);
-  const box = (await page.getByTestId('session-main').boundingBox())!;
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  for (let i = 0; i < 25; i++) { await page.mouse.wheel(0, -500); await page.waitForTimeout(60); }
-  for (let i = 0; i < 25; i++) { await page.mouse.wheel(0, 500); await page.waitForTimeout(60); }
-  results.scroll = await metrics(page, 'scroll');
-
-  // 3. Switch sessions: first visits miss the cache, revisits hit it.
-  await reset(page);
-  // The session cache holds 3 entries: rows 2..5 rotate through it (miss),
-  // then 0 ⇄ 2 alternate inside it (hit).
-  const order = [2, 3, 4, 5, 0, 5, 0, 5, 0, 5, 0, 5];
-  for (const i of order) {
-    const before = await switchCount(page);
-    await page.locator(`[data-session-key$=":opencode:${id(i)}"]`).first().click();
-    await page.waitForFunction((n) => {
-      const m = (window as unknown as { __ocmanPerf: { metrics: () => { metrics: Record<string, Record<string, { count: number }>> } } }).__ocmanPerf.metrics().metrics.switch ?? {};
-      return Object.values(m).reduce((c, s) => c + s.count, 0) > n;
-    }, before, { timeout: 30_000 });
-    await page.waitForTimeout(400);
-  }
-  results.switch = await metrics(page, 'switch');
-
-  // 2. Stream while a subagent runs (task poll + foreign events).
-  await page.locator(`[data-session-key$=":opencode:${id(1)}"]`).first().click();
-  await expect(page.getByText('Please continue with step 148').first()).toBeAttached({ timeout: 30_000 });
-  await page.waitForTimeout(1500);
-  await reset(page);
-  await play(page, id(1), streamFrames(id(1), { foreignId: SUBAGENT }));
-  results.streamWithSubagent = await metrics(page, 'streamWithSubagent');
 
   const out = resolve(OUT_DIR, `${LABEL}.json`);
   mkdirSync(OUT_DIR, { recursive: true });

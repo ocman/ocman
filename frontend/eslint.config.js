@@ -9,7 +9,7 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 export default defineConfig([
   globalIgnores([
     'dist',
-    'perf/dist', // `pnpm perf` profiling build.
+    'perf/dist*', // `pnpm perf` profiling builds.
     'src/wailsjs/**', // Wails-generated bindings/runtime.
   ]),
   {

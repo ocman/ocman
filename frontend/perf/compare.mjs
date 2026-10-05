@@ -1,15 +1,25 @@
 #!/usr/bin/env node
-// Markdown before/after table for two `pnpm perf` result files.
+// Markdown before/after table for `pnpm perf` result files.
 //   node perf/compare.mjs ../tmp/perf/base.json ../tmp/perf/after.json
-// One file prints a single column.
+// Each argument may be a comma-separated list of runs; every cell is then
+// the median across those runs (use interleaved A/B runs on a busy box).
 import { readFileSync } from 'node:fs';
 
-const files = process.argv.slice(2);
-if (files.length === 0) {
-  console.error('usage: compare.mjs <base.json> [after.json]');
+const args = process.argv.slice(2);
+if (args.length === 0) {
+  console.error('usage: compare.mjs <base.json[,base2.json…]> [after.json[,…]]');
   process.exit(1);
 }
-const runs = files.map((f) => JSON.parse(readFileSync(f, 'utf8')));
+const median = (xs) => {
+  const s = xs.filter((x) => x !== undefined).sort((a, b) => a - b);
+  return s.length ? s[Math.floor((s.length - 1) / 2)] : undefined;
+};
+const runs = args.map((arg) => {
+  const group = arg.split(',').map((f) => JSON.parse(readFileSync(f, 'utf8')));
+  const get = (scenario, metric, series, stat) =>
+    median(group.map((r) => r.results[scenario]?.metrics?.[metric]?.[series]?.[stat]));
+  return { label: group[0].label.replace(/\d+$/, '') + (group.length > 1 ? ` (median of ${group.length})` : ''), results: group[0].results, get };
+});
 
 // [label, metric, series label, stat]
 const ROWS = [
@@ -40,7 +50,7 @@ console.log(`| ${head.join(' | ')} |`);
 console.log(`|${head.map(() => ' --- ').join('|')}|`);
 for (const scenario of Object.keys(runs[0].results)) {
   for (const [label, metric, series, stat] of ROWS) {
-    const vals = runs.map((r) => r.results[scenario]?.metrics?.[metric]?.[series]?.[stat]);
+    const vals = runs.map((r) => r.get(scenario, metric, series, stat));
     if (vals.every((v) => v === undefined)) continue;
     const cells = [scenario, label, ...vals.map(fmt)];
     if (runs.length === 2) {
