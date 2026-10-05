@@ -4,6 +4,7 @@ import { api } from '../../lib/api';
 import type { AgentInfo, SessionModelEntry } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
 import { formatModelRef } from '../../lib/sessionStatus';
+import { NEW_SESSION_ID } from '../../lib/newSessionPath';
 
 export interface UseSessionCapabilitiesOptions {
   /** Active session id from the URL. */
@@ -15,6 +16,10 @@ export interface UseSessionCapabilitiesOptions {
   liveConnection: boolean;
   /** Session's working directory; agents are scoped per-directory. */
   directory: string | undefined;
+  /** Whether the loaded session belongs to `id`. Right after a switch
+   *  the page still holds the previous session, whose live bit would
+   *  make the model fetch run twice. */
+  sessionLoaded: boolean;
 }
 
 export interface UseSessionCapabilitiesResult {
@@ -71,6 +76,7 @@ export function useSessionCapabilities({
   platform,
   liveConnection,
   directory,
+  sessionLoaded,
 }: UseSessionCapabilitiesOptions): UseSessionCapabilitiesResult {
   const getModels = useApiStore((s) => s.getModels);
 
@@ -174,16 +180,26 @@ export function useSessionCapabilities({
     });
   }, [id, getModels]);
 
-  // Re-fetch the session-scoped model list once OpenCode becomes
-  // reachable so the picker picks up the full /config/providers
-  // catalog. The initial fetch in the load() flow may have run
-  // before discovery completed.
+  // Fetch the session-scoped model list once the session has loaded,
+  // and once more if OpenCode becomes reachable afterwards so the
+  // picker picks up the full /config/providers catalog. A ref gates
+  // the effect because the live bit can settle after the first fetch;
+  // an effect-scoped abort would cancel the only request on that churn.
+  const live = portAvailable || liveConnection;
+  const modelsFetchRef = useRef<{ id: string; live: boolean; controller: AbortController } | null>(null);
   useEffect(() => {
-    if (!id || !portAvailable) return;
+    if (!id || id === NEW_SESSION_ID || !sessionLoaded) return;
+    const last = modelsFetchRef.current;
+    if (last?.id === id && (last.live || !live)) return;
+    last?.controller.abort();
     const controller = new AbortController();
+    modelsFetchRef.current = { id, live, controller };
     refreshModels(controller.signal);
-    return () => controller.abort();
-  }, [id, portAvailable, refreshModels]);
+  }, [id, live, sessionLoaded, refreshModels]);
+  useEffect(() => () => {
+    modelsFetchRef.current?.controller.abort();
+    modelsFetchRef.current = null;
+  }, []);
 
   const reloadCapabilities = useCallback(() => {
     setReloadNonce((n) => n + 1);

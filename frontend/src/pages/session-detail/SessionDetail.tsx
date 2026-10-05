@@ -325,6 +325,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
     platform: session?.platform,
     liveConnection: session?.liveConnection ?? false,
     directory: session?.directory,
+    sessionLoaded: !!id && session?.id === id,
   });
 
   // SSE connectivity by itself is not enough to enable the composer:
@@ -487,7 +488,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   }, [showArchivedRecent, showArchivedRecentRef]);
 
   // Per-session-change side effects: rehydrate failed sends,
-  // refresh whisper, refresh models, reset model/agent selection.
+  // refresh whisper, reset model/agent selection.
   // The view reducer + cache seed are handled inside useSession.
   // The setState calls below are intentional resets keyed on
   // `id`; they're the canonical "reset state on key change" pattern
@@ -497,7 +498,6 @@ export function SessionDetail({ id }: SessionDetailProps) {
     abortControllerRef.current?.abort();
     const controller = new AbortController();
     abortControllerRef.current = controller;
-    const signal = controller.signal;
 
     if (resetSessionIdRef.current !== id) {
       resetSessionIdRef.current = id;
@@ -507,10 +507,10 @@ export function SessionDetail({ id }: SessionDetailProps) {
     }
 
     getWhisperStatus().then((s) => setWhisperAvailable(s.available)).catch(() => setWhisperAvailable(false));
-    if (id && id !== NEW_SESSION_ID) refreshModels(signal);
+    // The model catalog is fetched by useSessionCapabilities.
 
     return () => controller.abort();
-  }, [id, getWhisperStatus, refreshModels, setSelectedAgent, setSelectedModel, setSelectedReasoning]);
+  }, [id, getWhisperStatus, setSelectedAgent, setSelectedModel, setSelectedReasoning]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const { failedSends, setFailedSends } = useFailedSendRehydrate({

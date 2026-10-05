@@ -34,6 +34,7 @@ describe('useSessionCapabilities.reloadCapabilities', () => {
       platform: 'opencode',
       liveConnection: true,
       directory: '/p',
+      sessionLoaded: true,
     }));
 
     await waitFor(() => expect(result.current.agentsLoaded).toBe(true));
@@ -48,7 +49,7 @@ describe('useSessionCapabilities.reloadCapabilities', () => {
 
   it('reconciles favorite changes with the owning platform and reverts failed changes', async () => {
     const { result } = renderHook(() => useSessionCapabilities({
-      id: 'remote-session', platform: 'r-box:opencode', liveConnection: true, directory: '/repo',
+      id: 'remote-session', platform: 'r-box:opencode', liveConnection: true, directory: '/repo', sessionLoaded: true,
     }));
     await waitFor(() => expect(result.current.modelEntries).toHaveLength(1));
     await act(() => result.current.handleToggleFavorite('p', 'm', true));
@@ -60,11 +61,31 @@ describe('useSessionCapabilities.reloadCapabilities', () => {
     expect(result.current.modelEntries[0].isFavorite).toBe(false);
   });
 
+  it('fetches models once a session loads and again only when it goes live', async () => {
+    vi.mocked(api.sessionModels).mockClear();
+    const { rerender } = renderHook(
+      (props: { id: string; live: boolean; loaded: boolean }) => useSessionCapabilities({
+        id: props.id, platform: 'opencode', liveConnection: props.live, directory: '/repo', sessionLoaded: props.loaded,
+      }),
+      { initialProps: { id: 'a', live: false, loaded: false } },
+    );
+    const calls = () => vi.mocked(api.sessionModels).mock.calls.map((c) => c[0]);
+    expect(calls()).toEqual([]);
+    rerender({ id: 'a', live: false, loaded: true });
+    rerender({ id: 'a', live: false, loaded: true });
+    expect(calls()).toEqual(['a']);
+    rerender({ id: 'a', live: true, loaded: true });
+    rerender({ id: 'a', live: false, loaded: true });
+    expect(calls()).toEqual(['a', 'a']);
+    rerender({ id: 'b', live: true, loaded: true });
+    expect(calls()).toEqual(['a', 'a', 'b']);
+  });
+
   it('falls back to historical models when the live catalog is unavailable', async () => {
     vi.mocked(api.sessionModels).mockRejectedValueOnce(new Error('offline'));
     storeState.getModels.mockResolvedValueOnce([{ provider: 'history', model: 'recent', count: 5 }]);
     const { result } = renderHook(() => useSessionCapabilities({
-      id: 'offline-session', platform: 'opencode', liveConnection: false, directory: '/repo',
+      id: 'offline-session', platform: 'opencode', liveConnection: false, directory: '/repo', sessionLoaded: false,
     }));
     act(() => result.current.refreshModels());
     await waitFor(() => expect(result.current.modelOptions).toEqual(['history/recent']));
