@@ -21,6 +21,25 @@ function trimSubagentTokens(
   return new Map(entries.slice(entries.length - MAX_SUBAGENT_TOKEN_ENTRIES));
 }
 
+/**
+ * Merge fetched task data into the cache, returning `prev` when nothing
+ * changed. taskLiveOutput is part of convertMessages' per-message cache
+ * key, so a fresh object per poll would re-convert every message.
+ */
+function mergeTaskData(
+  prev: Record<string, TaskSessionData>,
+  entries: [string, TaskSessionData][],
+): Record<string, TaskSessionData> {
+  let next: Record<string, TaskSessionData> | null = null;
+  for (const [id, data] of entries) {
+    // ponytail: JSON compare, O(sub-session size) every 2s; fine at 150-200 messages.
+    if (prev[id] && JSON.stringify(prev[id]) === JSON.stringify(data)) continue;
+    next ??= { ...prev };
+    next[id] = data;
+  }
+  return next ?? prev;
+}
+
 /** One row of an in-flight task's status. */
 export interface RunningTaskEntry {
   taskId: string;
@@ -166,13 +185,7 @@ export function useSubagentTracking(
         const tasks = resp.tasks || {};
         const entries = Object.entries(tasks);
         if (entries.length > 0) {
-          setTaskLiveOutput((prev) => {
-            const next = { ...prev };
-            for (const [id, data] of entries) {
-              next[id] = data;
-            }
-            return next;
-          });
+          setTaskLiveOutput((prev) => mergeTaskData(prev, entries));
         }
       } catch {
         /* ignore poll errors — next tick retries */
@@ -229,13 +242,7 @@ export function useSubagentTracking(
           for (const [id] of entries) {
             fetchedCompletedRef.current.add(id);
           }
-          setTaskLiveOutput((prev) => {
-            const next = { ...prev };
-            for (const [id, data] of entries) {
-              next[id] = data;
-            }
-            return next;
-          });
+          setTaskLiveOutput((prev) => mergeTaskData(prev, entries));
         }
       } catch {
         /* ignore — will retry on next parts change */

@@ -129,6 +129,28 @@ describe('useSubagentTracking', () => {
     expect(request.mock.calls.at(-1)?.[1]).toEqual(['second']);
   });
 
+  it('keeps the taskLiveOutput reference when a poll returns unchanged data', async () => {
+    // taskLiveOutput is part of convertMessages' per-message cache key,
+    // so a fresh object every 2s poll re-converts every message.
+    vi.useFakeTimers();
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false });
+    vi.spyOn(api, 'sessionTasks').mockImplementation(async () => ({
+      tasks: { ses_child: { messages: [], parts: [] } },
+    }));
+    const part = {
+      id: 'tool-1', messageId: 'message-1', sessionId: 'parent-1', timeCreated: 1000,
+      data: { type: 'tool', tool: 'task', state: { status: 'running', metadata: { taskId: 'ses_child' } } },
+    } as Part;
+
+    const { result } = renderHook(() => useSubagentTracking([part], 'parent-1'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    const first = result.current.taskLiveOutput;
+    expect(first.ses_child).toBeDefined();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(result.current.taskLiveOutput).toBe(first);
+  });
+
   it('clears task state when the session changes', async () => {
     const { result, rerender } = renderHook(
       ({ sessionId }) => useSubagentTracking([], sessionId),
