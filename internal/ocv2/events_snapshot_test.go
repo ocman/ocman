@@ -40,8 +40,8 @@ func TestEventsStartedSnapshotDoesNotDuplicateReply(t *testing.T) {
 // OpenCode updates time.created on retry without clearing the old content.
 func TestEventsAheadRetrySnapshotKeepsEarlierParts(t *testing.T) {
 	defer SetInstalledV2(true)()
-	for _, tc := range []struct{ completed, refreshFails bool }{{}, {completed: true}, {refreshFails: true}} {
-		t.Run(fmt.Sprintf("completed=%v/refreshFails=%v", tc.completed, tc.refreshFails), func(t *testing.T) {
+	for _, tc := range []struct{ completed, refreshFails, olderStart bool }{{}, {completed: true}, {refreshFails: true}, {completed: true, olderStart: true}} {
+		t.Run(fmt.Sprintf("completed=%v/refreshFails=%v/olderStart=%v", tc.completed, tc.refreshFails, tc.olderStart), func(t *testing.T) {
 			f := fakeServer(t)
 			end := ""
 			if tc.completed {
@@ -57,8 +57,12 @@ func TestEventsAheadRetrySnapshotKeepsEarlierParts(t *testing.T) {
 					"time":{"created":5` + end + `},"content":[{"type":"text","text":"first attempt"},{"type":"text","text":"retry reply"}]}}`)
 			})
 			const d = `"sessionID":"s1","assistantMessageID":"msg01"`
+			started := 5
+			if tc.olderStart {
+				started = 1
+			}
 			f.events = []string{
-				fakeEv("session.step.started", 5, "", `{`+d+`,"started":5}`),
+				fakeEv("session.step.started", float64(started), "", fmt.Sprintf(`{%s,"started":%d}`, d, started)),
 				fakeEv("session.text.started", 6, "", `{`+d+`}`),
 				fakeEv("session.text.delta", 7, "", `{`+d+`,"delta":"retry reply"}`),
 				fakeEv("session.text.ended", 8, "", `{`+d+`,"text":"retry reply"}`),

@@ -51,7 +51,9 @@ func (t *translator) assistant(ev v2Event, sessionID, dir string) error {
 			// fast remote reply. OpenCode also updates time.created on retry
 			// while retaining earlier content, so follow the stored snapshot
 			// rather than clearing it or appending buffered parts to it.
-			if msg != nil && len(arr(msg, "content")) > 0 && d["started"] != nil && num(obj(msg, "time"), "created") == num(d, "started") {
+			started, hasStart := d["started"].(float64)
+			created, _ := obj(msg, "time")["created"].(float64)
+			if msg != nil && len(arr(msg, "content")) > 0 && hasStart && created >= started {
 				t.snapshots[mid] = true
 				return t.emitMessage(sessionID, dir, msg, -1, true)
 			}
