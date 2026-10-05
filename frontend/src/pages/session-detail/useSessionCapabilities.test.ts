@@ -81,6 +81,35 @@ describe('useSessionCapabilities.reloadCapabilities', () => {
     expect(calls()).toEqual(['a', 'a', 'b']);
   });
 
+  it('drops the previous session catalog when the route changes before the next loads', async () => {
+    let resolveA!: (value: { models: { provider: string; model: string }[] }) => void;
+    vi.mocked(api.sessionModels).mockClear();
+    vi.mocked(api.sessionModels).mockReturnValueOnce(new Promise((resolve) => { resolveA = resolve; }) as never);
+    const { result, rerender } = renderHook(
+      (props: { id: string; loaded: boolean }) => useSessionCapabilities({
+        id: props.id, platform: 'opencode', liveConnection: true, directory: '/repo', sessionLoaded: props.loaded,
+      }),
+      { initialProps: { id: 'a', loaded: true } },
+    );
+    rerender({ id: 'b', loaded: false });
+    await act(async () => { resolveA({ models: [{ provider: 'from', model: 'a' }] }); });
+    expect(result.current.modelOptions).toEqual([]);
+  });
+
+  it('refetches when a session goes live after loading offline behind a live one', () => {
+    vi.mocked(api.sessionModels).mockClear();
+    const { rerender } = renderHook(
+      (props: { id: string; live: boolean }) => useSessionCapabilities({
+        id: props.id, platform: 'opencode', liveConnection: props.live, directory: '/repo', sessionLoaded: true,
+      }),
+      { initialProps: { id: 'a', live: true } },
+    );
+    // B arrives cached and offline while the port state still says A was live.
+    rerender({ id: 'b', live: false });
+    rerender({ id: 'b', live: true });
+    expect(vi.mocked(api.sessionModels).mock.calls.map((c) => c[0])).toEqual(['a', 'b', 'b']);
+  });
+
   it('falls back to historical models when the live catalog is unavailable', async () => {
     vi.mocked(api.sessionModels).mockRejectedValueOnce(new Error('offline'));
     storeState.getModels.mockResolvedValueOnce([{ provider: 'history', model: 'recent', count: 5 }]);

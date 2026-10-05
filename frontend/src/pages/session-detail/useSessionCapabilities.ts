@@ -185,8 +185,18 @@ export function useSessionCapabilities({
   // picker picks up the full /config/providers catalog. A ref gates
   // the effect because the live bit can settle after the first fetch;
   // an effect-scoped abort would cancel the only request on that churn.
-  const live = portAvailable || liveConnection;
+  // `liveConnection` belongs to the loaded session; `portAvailable` can
+  // still hold the previous session's bit for a render, and only ever
+  // turns true when `liveConnection` is.
+  const live = liveConnection;
   const modelsFetchRef = useRef<{ id: string; live: boolean; controller: AbortController } | null>(null);
+  // A route change cancels the outgoing request at once, even while the
+  // next session is still loading, so its response cannot reach the
+  // next session's picker.
+  useEffect(() => () => {
+    modelsFetchRef.current?.controller.abort();
+    modelsFetchRef.current = null;
+  }, [id]);
   useEffect(() => {
     if (!id || id === NEW_SESSION_ID || !sessionLoaded) return;
     const last = modelsFetchRef.current;
@@ -196,10 +206,6 @@ export function useSessionCapabilities({
     modelsFetchRef.current = { id, live, controller };
     refreshModels(controller.signal);
   }, [id, live, sessionLoaded, refreshModels]);
-  useEffect(() => () => {
-    modelsFetchRef.current?.controller.abort();
-    modelsFetchRef.current = null;
-  }, []);
 
   const reloadCapabilities = useCallback(() => {
     setReloadNonce((n) => n + 1);
