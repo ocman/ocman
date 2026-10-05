@@ -10,10 +10,15 @@ import { MarkdownContent } from './assistant/MarkdownText';
 import { ToolCallDisplay } from './assistant/ToolCallDisplay';
 import type { ComponentProps } from 'react';
 
+vi.mock('@xyflow/react', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@xyflow/react')>(),
+  ReactFlow: () => <div data-testid="react-flow" />,
+}));
+
 vi.mock('../lib/api', () => ({ api: {
   factoryEpic: vi.fn(), factoryIssues: vi.fn(), reopenFactoryIssue: vi.fn(),
   factoryClaimPlan: vi.fn(), factoryMaterialize: vi.fn(),
-  factoryPlanGate: vi.fn(), resolveFactoryRecoveryGate: vi.fn(), resolveFactoryAuthorityGate: vi.fn(), resolveFactoryProjectGate: vi.fn(),
+  factoryPlanGate: vi.fn(), factoryProposals: vi.fn(), resolveFactoryRecoveryGate: vi.fn(), resolveFactoryAuthorityGate: vi.fn(), resolveFactoryProjectGate: vi.fn(),
 } }));
 
 const epic: FactoryEpic = {
@@ -33,9 +38,27 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(api.factoryEpic).mockResolvedValue(epic);
   vi.mocked(api.factoryIssues).mockResolvedValue([issue]);
+  vi.mocked(api.factoryProposals).mockResolvedValue([]);
 });
 
 describe('Factory human action cards', () => {
+  it('draws the gated plan revision and expands it into a modal', async () => {
+    vi.mocked(api.factoryEpic).mockResolvedValue({ ...epic, planGate: { issueId: 'gate', resolution: 'open', proposalRevision: 2, proposalHash: 'hash' } });
+    const manifest = (title: string) => ({ epicId: 'ship', molId: 'mol', project: '/repo', nodes: [{ key: 'api', type: 'implementation', requirement: 'required', title }, { key: 'ui', type: 'implementation', requirement: 'required', title: 'Build UI', dependsOn: ['api'] }] });
+    vi.mocked(api.factoryProposals).mockResolvedValue([{ revision: 1, contentHash: 'old', manifest: manifest('Old API') }, { revision: 2, contentHash: 'hash', manifest: manifest('Build API') }]);
+    renderCard('[[ocman:card type=factory-epic epic=ship action=approve_plan]]');
+    const thumbnail = await screen.findByRole('button', { name: 'Expand plan graph' });
+    expect(screen.getByRole('img', { name: 'Plan graph with 2 steps' })).toBeInTheDocument();
+    expect(thumbnail.querySelectorAll('line')).toHaveLength(1);
+    expect(screen.getByText('Build API', { selector: 'text' })).toBeInTheDocument();
+    expect(screen.queryByText('Old API')).not.toBeInTheDocument();
+    fireEvent.click(thumbnail);
+    expect(screen.getByRole('dialog', { name: 'Plan graph' })).toBeInTheDocument();
+    expect(screen.getByTestId('react-flow')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close plan graph' }));
+    expect(screen.queryByRole('dialog', { name: 'Plan graph' })).not.toBeInTheDocument();
+  });
+
   it('shows the epic and pending decisions without listing the work graph', async () => {
     vi.mocked(api.factoryEpic).mockResolvedValue({ ...epic, planGate: { issueId: 'gate', resolution: 'open', proposalRevision: 1, proposalHash: 'hash' } });
     vi.mocked(api.factoryIssues).mockResolvedValue([

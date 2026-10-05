@@ -1,0 +1,15 @@
+.oc-factory-plan-graph { display: block; width: 100%; max-height: 240px; padding: 8px; color: inherit; background: var(--bg); border: 1px solid var(--border); cursor: zoom-in; }
+.oc-factory-plan-graph svg { display: block; width: 100%; max-height: 222px; }
+.oc-factory-plan-graph rect { stroke: currentColor; stroke-width: 2; fill: var(--bg-card); }
+.oc-factory-plan-graph g { color: var(--overlay1); }
+.oc-factory-plan-graph text { fill: var(--text); font-size: 18px; dominant-baseline: middle; }
+.oc-factory-plan-graph g.factory-node-box--ready { color: var(--teal); }
+.oc-factory-plan-graph g.factory-node-box--done { color: var(--green); }
+.oc-factory-plan-graph g.factory-node-box--failed { color: var(--red); }
+.oc-factory-plan-graph g.factory-node-box--running { color: var(--blue); }
+.oc-factory-plan-graph g.factory-node-box--blocked { color: var(--peach); }
+.oc-factory-plan-graph-edge { stroke: var(--text-dim); stroke-width: 2; }
+.oc-factory-plan-graph-edge.on_failure { stroke: var(--peach); }
+.oc-factory-plan-graph-edge.merge_gated { stroke: var(--blue); stroke-dasharray: 6 3; }
+.oc-factory-plan-graph-modal .factory-graph { flex: 1 1 auto; min-height: 0; grid-template-rows: auto 1fr; padding: 12px; }
+.oc-factory-plan-graph-modal .factory-graph-canvas { height: auto; min-height: 0; }

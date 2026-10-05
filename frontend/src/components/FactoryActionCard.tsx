@@ -1,9 +1,11 @@
 import { Link } from 'react-router-dom';
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import type { FactoryAuthorityEscalationGate, FactoryEpic, FactoryIssue, FactoryPlanGate, FactoryProjectRequestGate, FactoryRecoveryGate } from '../lib/api';
-import { useClaimFactoryPlan, useDecideFactoryPlanGate, useFactoryIssues, useMaterializeFactoryPlan, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryProjectGate, useResolveFactoryRecoveryGate, useWorkEpic } from '../lib/queries';
+import { useClaimFactoryPlan, useDecideFactoryPlanGate, useFactoryIssues, useFactoryProposals, useMaterializeFactoryPlan, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryProjectGate, useResolveFactoryRecoveryGate, useWorkEpic } from '../lib/queries';
 import { Button, SelectField, TextField } from './Control';
 import { FactoryImplementationModel } from './FactoryImplementationModel';
+import { FactoryPlanGraph } from './FactoryPlanGraph';
+import { proposalIssues } from '../pages/factoryGraph';
 import { useFactoryImplementationModel } from './useFactoryImplementationModel';
 import './FactoryEpicCard.css';
 
@@ -12,8 +14,13 @@ function PlanActions({ epic, gate }: { epic: FactoryEpic; gate: FactoryPlanGate 
 	const implementation = useFactoryImplementationModel(epic);
   const decide = useDecideFactoryPlanGate(epicID);
   const [feedback, setFeedback] = useState('');
+  const proposals = useFactoryProposals(epicID);
+  // The gate decides one exact revision; draw that one, not whatever is newest.
+  const proposal = (proposals.data ?? (epic.proposal ? [epic.proposal] : [])).find((candidate) => candidate.revision === gate.proposalRevision);
+  const planIssues = useMemo(() => proposal && proposalIssues(proposal.manifest), [proposal]);
   return <span className="oc-factory-action-issue">
     <span>Plan revision {gate.proposalRevision}. Approval starts implementation.</span>
+    {planIssues && <FactoryPlanGraph issues={planIssues} />}
     <label>Plan feedback<TextField value={feedback} onChange={(event) => setFeedback(event.target.value)} /></label>
     <FactoryImplementationModel {...implementation} />
     <span className="oc-factory-action-buttons">{(['approve', 'revise', 'reject'] as const).map((action) => <Button key={action} type="button" disabled={decide.isPending || decide.isSuccess || (action === 'approve' && implementation.loading)} onClick={() => decide.mutate({ action, expectedRevision: gate.proposalRevision, expectedHash: gate.proposalHash, feedback, ...(action === 'approve' && implementation.model && { implementationModel: implementation.model }) })}>{action === 'approve' ? 'Approve plan' : action === 'revise' ? 'Request revision' : 'Reject plan'}</Button>)}</span>
