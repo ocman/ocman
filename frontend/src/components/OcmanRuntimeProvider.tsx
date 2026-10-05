@@ -15,6 +15,7 @@ import { computeIsRunning, createConvertMessages, parsePart } from '../lib/conve
 import { computeTurnStats, ModelLabelsContext, TurnStatsContext } from '../lib/turnStats';
 import { formatModelRef } from '../lib/sessionStatus';
 import { TurnSpeechContext, useTurnSpeech } from '../lib/turnSpeech';
+import { convertThreadMessage } from '../lib/threadMessageAdapter';
 
 interface Props {
   messages: Message[];
@@ -166,7 +167,7 @@ export function OcmanRuntimeProvider({
   const store = useMemo(() => ({
     messages: converted,
     isRunning,
-    convertMessage: (m: ThreadMessageLike) => m,
+    convertMessage: convertThreadMessage,
     onNew,
   }), [converted, isRunning, onNew]);
 
