@@ -26,7 +26,9 @@ machine rebooted) so the turn can never complete.
 a running session from the browser. Streaming output renders live. Plain
 <kbd>Enter</kbd> sends immediately, mid-turn included.
 <kbd>Ctrl/⌘+Enter</kbd> holds the message and delivers it one per turn as the
-session goes idle.
+session goes idle. Changing a session's permission mode takes effect at once:
+switching to YOLO answers the prompts already waiting, and any the running
+turn or its subagents still raise.
 
 **Bash mode.** Prefix a message with `!` to run a shell command in the
 session's working directory and capture the output in the thread.

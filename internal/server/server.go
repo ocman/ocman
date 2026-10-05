@@ -303,6 +303,7 @@ func New(database *db.DB, stateDB *state.DB, addr string, registry *platforms.Re
 			s.aaSvc().HandleDirectPermissionReply(ctx, req.SessionID, req.PermissionID, req.Reply)
 			s.resolvePermissionInbox(ctx, string(platform), req.SessionID, req.PermissionID)
 		},
+		PermissionRulesChanged: s.applyRulesToPending,
 		SessionCreated: func(info sessionsvc.CreatedSession) {
 			s.broadcastSessionCreated(info)
 			s.refreshProjectsIndexAsync()

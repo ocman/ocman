@@ -103,6 +103,28 @@ func (s *Server) resumeAutoApproveForPending(ctx context.Context, adapter platfo
 	}
 }
 
+// applyRulesToPending approves every prompt pending on the session, or on a
+// subagent of it, that its new permission rules allow. A remote owner runs
+// this itself when the hub forwards the rules change.
+func (s *Server) applyRulesToPending(ctx context.Context, adapter platforms.Platform, sessionID string) {
+	if isRemotePlatformID(string(adapter.ID())) {
+		return
+	}
+	entries, err := adapter.ListPermissions(ctx, sessionID)
+	if err != nil {
+		log.WithError(err).WithField("sessionID", sessionID).Warn("permission rules: failed to list pending permissions")
+		return
+	}
+	for _, entry := range entries {
+		permissionID, _ := entry["id"].(string)
+		permission, _ := entry["permission"].(string)
+		if permissionID == "" || permission == "" {
+			continue
+		}
+		s.aaSvc().ApplySessionRules(ctx, adapter.ID(), adapter, promptSessionID(entry, sessionID), permissionID, permission, extractPermissionPatterns(entry), extractPermissionMetadata(entry))
+	}
+}
+
 // handleSessionApprovedPermissions handles GET /api/session/{id}/approved-permissions.
 // Returns all permissions that were auto-approved by the LLM judge for this
 // session, ordered by approval time. Used by the frontend to re-inject

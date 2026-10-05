@@ -63,6 +63,10 @@ type autoApproveStatus struct {
 	judgeCompletedAt     int64
 	manualResolvedAt     int64
 	manualResolution     state.PermissionResolution
+
+	// rulesApproved marks a prompt answered because the session's
+	// permission rules allow it (see ApplySessionRules).
+	rulesApproved bool
 }
 
 // autoApproveKey is the registry key for a single permission record.

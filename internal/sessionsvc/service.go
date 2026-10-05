@@ -38,6 +38,9 @@ type Hooks struct {
 	// complete reply. Its bounded detached context preserves audit capture
 	// when the initiating request is canceled immediately after success.
 	PermissionReplySucceeded func(context.Context, platforms.ID, platforms.RespondPermissionRequest)
+	// PermissionRulesChanged fires after a session's permission rules were
+	// written, so prompts already pending can be re-evaluated against them.
+	PermissionRulesChanged func(ctx context.Context, p platforms.Platform, sessionID string)
 	// SessionCreated fires after a session is successfully created or
 	// moved. Info carries what the service knows without extra I/O so
 	// the server can broadcast a provisional list row the frontend can
@@ -313,7 +316,13 @@ func (s *Service) SetPermissionRules(ctx context.Context, platformID string, req
 	if err != nil {
 		return err
 	}
-	return p.SetPermissionRules(ctx, req)
+	if err := p.SetPermissionRules(ctx, req); err != nil {
+		return err
+	}
+	if s.hooks.PermissionRulesChanged != nil {
+		s.hooks.PermissionRulesChanged(ctx, p, req.SessionID)
+	}
+	return nil
 }
 
 func normalizePermissionRules(rules []platforms.PermissionRule) error {

@@ -115,6 +115,12 @@ func (s *Service) backgroundAutoApprove(
 		"sessionID":    sessionID,
 		"permissionID": permissionID,
 	})
+	// The session's rules apply whether or not the judge is enabled: OpenCode
+	// only rereads them at the next turn, but a mode change is meant now.
+	if s.allowedBySessionRules(ctx, adapter, sessionID, permission, patterns) {
+		s.approveBySessionRules(platformID, adapter, sessionID, permissionID, asked)
+		return
+	}
 	asked, enabled := s.prepareAutoApprove(ctx, platformID, sessionID, permissionID, asked)
 	logger.WithFields(log.Fields{
 		"enabled":            enabled,

@@ -133,6 +133,57 @@ func TestSessionPermissionRules_PutEmptyRestoresDefaults(t *testing.T) {
 	}
 }
 
+// TestSessionPermissionRules_PutYoloAnswersPendingPrompts: OpenCode reads the
+// rules once per turn, so switching to YOLO must clear what is already asked,
+// including a subagent's prompt, rather than wait for the next turn.
+func TestSessionPermissionRules_PutYoloAnswersPendingPrompts(t *testing.T) {
+	var rules []platforms.PermissionRule
+	var replied []platforms.RespondPermissionRequest
+	fake := &fakePlatform{
+		id:   "fake",
+		caps: platforms.Capabilities{PermissionRules: true},
+		setPermissionRulesFn: func(req platforms.SetPermissionRulesRequest) error {
+			rules = req.Rules
+			return nil
+		},
+		permissionRulesFn: func(sessionID string) ([]platforms.PermissionRule, error) {
+			if sessionID != "sess-1" {
+				return nil, nil
+			}
+			return rules, nil
+		},
+		listPermissionsFn: func(string) ([]platforms.LivePrompt, error) {
+			return []platforms.LivePrompt{
+				{"id": "p1", "sessionID": "sess-1", "permission": "bash", "patterns": []any{"rm -rf build"}},
+				{"id": "p2", "sessionID": "sess-1", "permission": "edit", "patterns": []any{"main.go"}},
+			}, nil
+		},
+		respondPermissionFn: func(req platforms.RespondPermissionRequest) error {
+			replied = append(replied, req)
+			return nil
+		},
+	}
+	srv := newPermissionRulesTestServer(t, fake)
+
+	put := func(body string) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPut, "/api/session/sess-1/permission-rules", strings.NewReader(body))
+		rr := httptest.NewRecorder()
+		srv.dispatchSessionSubpath(rr, req)
+		if rr.Code != http.StatusNoContent {
+			t.Fatalf("status = %d, want 204; body=%s", rr.Code, rr.Body)
+		}
+	}
+	put(`{"rules":[{"permission":"edit","pattern":"*","action":"allow"},{"permission":"bash","pattern":"*","action":"ask"}]}`)
+	if len(replied) != 1 || replied[0].PermissionID != "p2" || replied[0].Reply != "once" {
+		t.Fatalf("auto-edit replies = %+v, want only p2 once", replied)
+	}
+	put(`{"rules":[{"permission":"*","pattern":"*","action":"allow"}]}`)
+	if len(replied) != 2 || replied[1].PermissionID != "p1" {
+		t.Fatalf("yolo replies = %+v, want p1 answered once more", replied)
+	}
+}
+
 func TestSessionPermissionRules_PutValidation(t *testing.T) {
 	cases := []struct {
 		name string

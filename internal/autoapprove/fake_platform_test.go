@@ -20,6 +20,18 @@ type fakePlatform struct {
 	// respondPermissionFn, when non-nil, intercepts RespondPermission
 	// calls so tests can observe replies without a real adapter.
 	respondPermissionFn func(req platforms.RespondPermissionRequest) error
+
+	// rules, when non-nil, enables the PermissionRules capability and
+	// maps a session ID to its permission ruleset.
+	rules map[string][]platforms.PermissionRule
+}
+
+func (f *fakePlatform) Capabilities() platforms.Capabilities {
+	return platforms.Capabilities{PermissionRules: f.rules != nil}
+}
+
+func (f *fakePlatform) PermissionRules(_ context.Context, sessionID string) ([]platforms.PermissionRule, error) {
+	return f.rules[sessionID], nil
 }
 
 func (f *fakePlatform) ID() platforms.ID {
