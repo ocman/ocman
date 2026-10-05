@@ -28,7 +28,8 @@ import { ApprovalFootnote } from './ApprovalFootnote';
 import { TaskToolCard } from './TaskToolCard';
 import { FactoryMarkerCard } from '../FactoryMarkerCard';
 import { factoryCardFromToolResult } from '../factoryCards';
-import { AnsiText, AnsweredQuestionBlock, BashPrompt, InlineDiff, ToolDuration } from './toolRenderers';
+import { AnsiText, AnsweredQuestionBlock, BashPrompt, ToolDuration } from './toolRenderers';
+import { LazyInlineDiff } from './LazyInlineDiff';
 import { parseDiffPayload, renderOutput, renderPatch, shellOutputIsLong, shellOutputPreview, toolOutputPreview } from './toolOutputFormat';
 /**
  * Tool-call renderer. Validated Ocman approval artifacts render below the
@@ -279,7 +280,7 @@ const ToolCallBody: FC<ToolCallMessagePartProps> = ({ toolName, argsText: rawArg
         {(diffPayload || outputDisplay) && (
           <div className="oc-tool-content" onClick={() => !expanded && !diffPayload && setExpanded(true)} style={!expanded && !diffPayload ? { cursor: 'pointer' } : undefined}>
             {diffPayload
-              ? <div className="oc-tool-output"><InlineDiff payload={diffPayload} /></div>
+              ? <LazyInlineDiff payload={diffPayload} />
               : <pre className="oc-tool-pre oc-tool-output">{outputPreview}</pre>
             }
             {!expanded && !diffPayload && isLong && (

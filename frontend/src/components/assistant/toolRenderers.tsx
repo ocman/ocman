@@ -46,14 +46,16 @@ export const BashPrompt: FC<{ running: boolean }> = ({ running }) => {
   return <span className="oc-shell-prompt" data-testid={running ? 'bash-spinner' : undefined} title={running ? 'Running' : undefined}>{running ? bashSpinnerFrames[frame] : '$'}</span>;
 };
 
-// Renders a before/after diff using @pierre/diffs.
-export function InlineDiff({ payload }: { payload: DiffPayload }) {
+// Renders a before/after diff using @pierre/diffs. `plain` skips syntax
+// highlighting (same rows and height) for diffs far from the viewport.
+export function InlineDiff({ payload, plain = false }: { payload: DiffPayload; plain?: boolean }) {
   const name = payload.filePath || 'file';
+  const lang = plain ? 'text' : undefined;
   return (
     <Suspense fallback={null}>
       <MultiFileDiff
-        oldFile={{ name, contents: payload.before }}
-        newFile={{ name, contents: payload.after }}
+        oldFile={{ name, contents: payload.before, lang }}
+        newFile={{ name, contents: payload.after, lang }}
         options={DIFF_OPTIONS}
         disableWorkerPool
       />
