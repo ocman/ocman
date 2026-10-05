@@ -169,6 +169,8 @@ export function Composer({
         break;
       } catch (err) {
         if (key && text && !getDraft(key)) saveDraft(key, text);
+        // Back on the initiating key with an empty box: show the failed prompt again.
+        if (mountedRef.current && draftKeyRef.current === key && !el.value.trim()) el.value = text;
         if (!retryBackend || !(err instanceof BackendUnavailableError) || retries >= MAX_BACKEND_RETRIES) break;
         retries += 1;
         const delaySeconds = 2 ** (retries - 1);

@@ -14,6 +14,10 @@ export function useComposerDrafts(
   inFlightRef: RefObject<string | null>,
 ) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // What this hook last loaded or persisted for the current key. An unchanged
+  // textarea must not overwrite storage someone else updated meanwhile (a
+  // failed send restoring its prompt, another tab).
+  const persistedRef = useRef('');
 
   const cancelPending = useCallback(() => {
     if (timerRef.current) {
@@ -26,6 +30,7 @@ export function useComposerDrafts(
   const clearDraftNow = useCallback((sid: string) => {
     cancelPending();
     clearDraft(sid);
+    persistedRef.current = '';
   }, [cancelPending]);
 
   /** Debounced autosave (300ms). Empty text clears the draft instead. */
@@ -35,6 +40,7 @@ export function useComposerDrafts(
       const text = getText().trim();
       if (text) saveDraft(sid, text);
       else clearDraft(sid);
+      persistedRef.current = text;
     }, 300);
   }, [cancelPending]);
 
@@ -43,10 +49,11 @@ export function useComposerDrafts(
   useEffect(() => {
     const el = inputRef.current;
     if (!el || !sessionId) return;
-    el.value = getDraft(sessionId);
+    el.value = persistedRef.current = getDraft(sessionId);
     return () => {
       cancelPending();
       const text = el.value.trim();
+      if (text === persistedRef.current) return;
       // eslint-disable-next-line react-hooks/exhaustive-deps -- the live in-flight prompt is wanted here
       if (text && text === inFlightRef.current) return;
       if (text) saveDraft(sessionId, text);

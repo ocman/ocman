@@ -90,3 +90,33 @@ it('clears the old session draft when a backend retry lands after a re-point', a
     vi.useRealTimers();
   }
 });
+
+it('keeps a late-restored draft after returning to the session before the send fails', async () => {
+  vi.spyOn(api, 'commands').mockResolvedValue([]);
+  let reject!: (e: Error) => void;
+  const onSend = vi.fn(() => new Promise<void>((_, r) => { reject = r; }));
+  const view = render(<Composer isRunning={false} sessionId="s1" onSend={onSend} />);
+  const input = screen.getByRole('textbox');
+  fireEvent.input(input, { target: { value: 'ship it' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  view.rerender(<Composer isRunning={false} sessionId="s2" onSend={onSend} />);
+  view.rerender(<Composer isRunning={false} sessionId="s1" onSend={onSend} />);
+  await act(async () => { reject(new Error('boom')); });
+  expect(input).toHaveValue('ship it');
+  view.rerender(<Composer isRunning={false} sessionId="s2" onSend={onSend} />);
+  expect(getDraft('s1')).toBe('ship it');
+});
+
+it('keeps a late-restored new-conversation draft after a remount', async () => {
+  let reject!: (e: Error) => void;
+  const onSend = vi.fn(() => new Promise<void>((_, r) => { reject = r; }));
+  const first = render(<Composer isRunning={false} directory="/repo" newConversation draftKey="new" onSend={onSend} />);
+  const input = screen.getByRole('textbox');
+  fireEvent.input(input, { target: { value: 'ship it' } });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  first.unmount();
+  const second = render(<Composer isRunning={false} directory="/repo" newConversation draftKey="new" />);
+  await act(async () => { reject(new Error('boom')); });
+  second.unmount();
+  expect(getDraft('new')).toBe('ship it');
+});
