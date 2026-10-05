@@ -4,7 +4,7 @@ import {
   useLaunchProgressStore,
   type LaunchStepId,
 } from '../lib/launchProgressStore';
-import './LaunchProgressOverlay.css';
+import './LaunchProgressCard.css';
 
 const STEP_LABELS: Record<LaunchStepId, string> = {
   launch: 'Starting OpenCode in tmux',
@@ -13,7 +13,7 @@ const STEP_LABELS: Record<LaunchStepId, string> = {
 
 // How long the card lingers after the flow finishes. Success is a
 // quick confirmation; errors stay long enough to read but still
-// auto-dismiss so a stale card never blocks the corner forever.
+// auto-dismiss so a stale card never sits above the composer forever.
 const SUCCESS_HIDE_MS = 1800;
 const ERROR_HIDE_MS = 10_000;
 
@@ -27,12 +27,12 @@ function StepIcon({ state }: { state: StepState }) {
 }
 
 /**
- * Global fixed-position card that shows step-by-step progress while a
- * fresh opencode instance boots for a project (tmux launch → wait for
- * opencode). Mounted once in App so the feedback survives route changes,
- * and every launch surface (new conversation, launch button) gets it.
+ * Inline card above the conversation's composer that shows step-by-step
+ * progress while a fresh opencode instance boots (tmux launch → wait for
+ * opencode). Renders only in the conversation for the launching
+ * directory; the store is global so progress survives remounts.
  */
-export function LaunchProgressOverlay() {
+export function LaunchProgressCard({ directory: conversationDir }: { directory?: string }) {
   const phase = useLaunchProgressStore((s) => s.phase);
   const directory = useLaunchProgressStore((s) => s.directory);
   const step = useLaunchProgressStore((s) => s.step);
@@ -48,7 +48,7 @@ export function LaunchProgressOverlay() {
     return () => clearTimeout(t);
   }, [phase, dismiss]);
 
-  if (phase === 'idle') return null;
+  if (phase === 'idle' || !conversationDir || directory !== conversationDir) return null;
 
   const steps = LAUNCH_STEP_ORDER.filter((id) => !(skipLaunch && id === 'launch'));
   const activeIndex = steps.indexOf(step);
@@ -63,8 +63,8 @@ export function LaunchProgressOverlay() {
 
   return (
     <div
-      className={`oc-launch-overlay ${phase}`}
-      data-testid="launch-progress-overlay"
+      className={`oc-launch-card ${phase}`}
+      data-testid="launch-progress"
       role="status"
       aria-live="polite"
     >

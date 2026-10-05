@@ -215,7 +215,7 @@ describe('NewConversation', () => {
     await act(async () => { await Promise.resolve(composer.onSend!('again')).catch((err: unknown) => { failure = err; }); });
     expect(String(failure)).toContain('worktree create/launch failed');
     expect(screen.getByRole('alert')).toHaveTextContent('worktree create/launch failed');
-    // The first submission is what launches OpenCode, so it owns the overlay.
+    // The first submission is what launches OpenCode, so it owns the launch progress card.
     expect(useLaunchProgressStore.getState().error).toBe('worktree create/launch failed');
   });
 

@@ -5,6 +5,7 @@ import { QuestionPrompt } from '../../components/session/QuestionPrompt';
 import { FactoryPlanApproval } from '../../components/FactoryPlanApproval';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { FirstSubmissionNotice } from './FirstSubmissionNotice';
+import { LaunchProgressCard } from '../../components/LaunchProgressCard';
 import { useFirstSubmission } from './firstSubmission';
 
 export interface SessionComposerSlotProps {
@@ -61,6 +62,7 @@ export function SessionComposerSlot({
       ) : composer ? (
         <>
           <FirstSubmissionNotice sessionId={sessionId} />
+          <LaunchProgressCard directory={composer.directory} />
           <Composer {...composer}
             platform={platformId}
             disabled={composer.disabled || firstPending}

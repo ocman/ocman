@@ -18,7 +18,7 @@ export interface LaunchAndWaitDeps {
   reload: () => Promise<void>;
   /** Read current live-connection status after a reload. */
   isLive: () => boolean;
-  /** Progress reporter (defaults to the global overlay store). */
+  /** Progress reporter (defaults to the global launch-progress store). */
   progress?: LaunchProgressReporter;
   /** Injectable sleep for tests. */
   wait?: (ms: number) => Promise<void>;
@@ -26,7 +26,7 @@ export interface LaunchAndWaitDeps {
 
 /**
  * Launch opencode in tmux for `directory`, then poll until the session's
- * live connection comes up, driving the LaunchProgressOverlay so the user
+ * live connection comes up, driving the LaunchProgressCard so the user
  * sees progress. On success the caller's liveConnection mirror flips and
  * the composer re-enables automatically. Throws on launch failure or if
  * the instance never becomes reachable within the retry budget.

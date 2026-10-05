@@ -24,6 +24,7 @@ import { Composer, type ComposerHandle } from '../../components/assistant/Compos
 import type { AttachedImage } from '../../components/assistant/useComposerAttachments';
 import type { SessionTarget } from '../../components/assistant/ComposerSelectorRow';
 import { InlineAlert } from '../../components/InlineAlert';
+import { LaunchProgressCard } from '../../components/LaunchProgressCard';
 import { useWorktreeEligibility } from './useWorktreeEligibility';
 import { startFirstSubmission } from './firstSubmission';
 import { sendFirstFiles } from './sendFirstFiles';
@@ -148,7 +149,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
     inFlight.current = sourceGeneration;
     setError('');
     // The first submission launches the instance when it is closed
-    // (10-20 s); the overlay reports it (quick starts stay silent).
+    // (10-20 s); the card above the composer reports it (quick starts stay silent).
     launchProgressReporter.begin(directory, { skipLaunch: true });
     try {
       const res = await api.startSession({
@@ -224,6 +225,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
         {eligibility.error && <InlineAlert onRetry={eligibility.retry}>{eligibility.error}</InlineAlert>}
         {catalogError && <InlineAlert onRetry={() => setCatalogAttempt((value) => value + 1)}>{catalogError}</InlineAlert>}
         {error && <InlineAlert>{error}</InlineAlert>}
+        <LaunchProgressCard directory={directory} />
         <Composer
           key={`${remoteId}:${directory}:${params.platform}:${title}`}
           composerRef={composerRef}

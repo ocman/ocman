@@ -126,7 +126,7 @@ export function useTmuxActions(
     try {
       if (waitDeps) {
         // Launch, then poll until the new instance is reachable so the
-        // composer re-enables on its own. Progress shows in the overlay.
+        // composer re-enables on its own. Progress shows above the composer.
         await launchAndWait(directory, {
           launch: tmux.launchOpencode,
           reload: waitDeps.reload,
@@ -137,8 +137,8 @@ export function useTmuxActions(
       }
     } catch (e) {
       remoteLog.error('Failed to launch opencode in tmux', e);
-      // launchAndWait already reports into the progress overlay; only
-      // surface via the toast fallback when we didn't drive the overlay.
+      // launchAndWait already reports into the progress card; only
+      // surface via the toast fallback when we didn't drive the card.
       if (!waitDeps) {
         onLaunchError?.(e instanceof Error ? e.message : 'Failed to launch OpenCode in tmux.');
       }

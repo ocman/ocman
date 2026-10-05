@@ -1,22 +1,15 @@
-/* ── Global session-launch progress card ────────────────── */
-/* Sits above the toast viewport area (bottom-right) so launch
- * feedback is visible from any route. */
-.oc-launch-overlay {
-  position: fixed;
-  bottom: 22px;
-  right: 22px;
-  width: 320px;
-  max-width: calc(100vw - 44px);
+/* ── Session-launch progress card ───────────────────────── */
+/* Inline above the conversation's composer while OpenCode boots. */
+.oc-launch-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
   padding: 12px 14px;
-  z-index: 2147483646;
+  margin-bottom: 8px;
   font-size: 13px;
   color: var(--text);
 }
 
-.oc-launch-overlay.error {
+.oc-launch-card.error {
   border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
 }
 
@@ -35,11 +28,11 @@
   white-space: nowrap;
 }
 
-.oc-launch-overlay.error .oc-launch-title {
+.oc-launch-card.error .oc-launch-title {
   color: var(--danger);
 }
 
-.oc-launch-overlay.success .oc-launch-title {
+.oc-launch-card.success .oc-launch-title {
   color: var(--accent2);
 }
 

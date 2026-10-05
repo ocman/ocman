@@ -5,7 +5,7 @@ import { create } from 'zustand';
  * ocman has to spawn a fresh opencode instance in tmux, the whole dance —
  * tmux launch, opencode boot, port bind, health probe — can take 10-20
  * seconds. This store tracks which step is running so the
- * LaunchProgressOverlay can show the user what's happening, regardless
+ * LaunchProgressCard can show the user what's happening, regardless
  * of which surface kicked the launch off (a new conversation's prepare,
  * the composer's launch button).
  */
@@ -14,7 +14,7 @@ export type LaunchStepId = 'launch' | 'wait';
 
 export type LaunchPhase = 'idle' | 'running' | 'success' | 'error';
 
-/** Ordered step list; the overlay renders steps in this order. */
+/** Ordered step list; the card renders steps in this order. */
 export const LAUNCH_STEP_ORDER: readonly LaunchStepId[] = ['launch', 'wait'];
 
 /**

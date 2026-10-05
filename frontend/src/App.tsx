@@ -30,7 +30,6 @@ import { useNotificationNotify } from './lib/useNotificationNotify';
 import { PromptToastNotify } from './components/PromptToastNotify';
 import { McpConfigPrompt } from './components/McpConfigPrompt';
 import { SetupPrompt } from './components/SetupPrompt';
-import { LaunchProgressOverlay } from './components/LaunchProgressOverlay';
 import { BackendStatusBanner } from './components/BackendStatusBanner';
 import { useAuthStore } from './lib/authStore';
 import { useUiStore } from './lib/uiStore';
@@ -398,7 +397,6 @@ function AuthenticatedShell() {
       <PromptToastNotify />
       <McpConfigPrompt />
       <SetupPrompt />
-      <LaunchProgressOverlay />
       <ServiceWorkerNavListener />
       <PerformanceCleanup />
       <MemoryMonitor />

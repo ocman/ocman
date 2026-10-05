@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
-import { LaunchProgressOverlay } from './LaunchProgressOverlay';
+import { LaunchProgressCard } from './LaunchProgressCard';
 import { LAUNCH_QUICK_MS, useLaunchProgressStore } from '../lib/launchProgressStore';
+
+const DIR = '/home/u/src/myproject';
 
 function resetStore() {
   useLaunchProgressStore.setState({
@@ -16,7 +18,7 @@ function resetStore() {
   });
 }
 
-describe('LaunchProgressOverlay', () => {
+describe('LaunchProgressCard', () => {
   beforeEach(() => {
     resetStore();
   });
@@ -26,14 +28,14 @@ describe('LaunchProgressOverlay', () => {
   });
 
   it('renders nothing while idle', () => {
-    const { container } = render(<LaunchProgressOverlay />);
+    const { container } = render(<LaunchProgressCard directory={DIR} />);
     expect(container.innerHTML).toBe('');
   });
 
   it('shows the project name and all steps while running', () => {
-    render(<LaunchProgressOverlay />);
+    render(<LaunchProgressCard directory={DIR} />);
     act(() => {
-      useLaunchProgressStore.getState().begin('/home/u/src/myproject');
+      useLaunchProgressStore.getState().begin(DIR);
     });
 
     expect(screen.getByText(/Starting OpenCode in myproject/)).toBeInTheDocument();
@@ -42,10 +44,10 @@ describe('LaunchProgressOverlay', () => {
   });
 
   it('marks earlier steps done and shows the attempt counter', () => {
-    render(<LaunchProgressOverlay />);
+    render(<LaunchProgressCard directory={DIR} />);
     act(() => {
       const s = useLaunchProgressStore.getState();
-      s.begin('/tmp/foo');
+      s.begin(DIR);
       s.setStep('wait');
       s.setAttempt(2, 5);
     });
@@ -56,9 +58,9 @@ describe('LaunchProgressOverlay', () => {
   });
 
   it('hides the launch step when opencode was launched externally', () => {
-    render(<LaunchProgressOverlay />);
+    render(<LaunchProgressCard directory={DIR} />);
     act(() => {
-      useLaunchProgressStore.getState().begin('/tmp/foo', { skipLaunch: true });
+      useLaunchProgressStore.getState().begin(DIR, { skipLaunch: true });
     });
 
     expect(screen.queryByTestId('launch-step-launch')).not.toBeInTheDocument();
@@ -66,10 +68,10 @@ describe('LaunchProgressOverlay', () => {
   });
 
   it('shows the error message and marks the failing step', () => {
-    render(<LaunchProgressOverlay />);
+    render(<LaunchProgressCard directory={DIR} />);
     act(() => {
       const s = useLaunchProgressStore.getState();
-      s.begin('/tmp/foo');
+      s.begin(DIR);
       s.setStep('wait');
       s.fail('OpenCode did not start in time.');
     });
@@ -81,24 +83,24 @@ describe('LaunchProgressOverlay', () => {
 
   it('skips the success card when the flow finishes quickly', () => {
     vi.useFakeTimers({ shouldAdvanceTime: false });
-    render(<LaunchProgressOverlay />);
+    render(<LaunchProgressCard directory={DIR} />);
     act(() => {
       const s = useLaunchProgressStore.getState();
-      s.begin('/tmp/foo');
+      s.begin(DIR);
       vi.advanceTimersByTime(LAUNCH_QUICK_MS - 1);
       s.succeed();
     });
 
-    expect(screen.queryByTestId('launch-progress-overlay')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('launch-progress')).not.toBeInTheDocument();
     expect(useLaunchProgressStore.getState().phase).toBe('idle');
   });
 
   it('auto-dismisses shortly after success', () => {
     vi.useFakeTimers({ shouldAdvanceTime: false });
-    render(<LaunchProgressOverlay />);
+    render(<LaunchProgressCard directory={DIR} />);
     act(() => {
       const s = useLaunchProgressStore.getState();
-      s.begin('/tmp/foo');
+      s.begin(DIR);
       vi.advanceTimersByTime(LAUNCH_QUICK_MS);
       s.succeed();
     });
@@ -107,19 +109,27 @@ describe('LaunchProgressOverlay', () => {
     act(() => {
       vi.advanceTimersByTime(2000);
     });
-    expect(screen.queryByTestId('launch-progress-overlay')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('launch-progress')).not.toBeInTheDocument();
     expect(useLaunchProgressStore.getState().phase).toBe('idle');
   });
 
   it('can be dismissed manually', () => {
-    render(<LaunchProgressOverlay />);
+    render(<LaunchProgressCard directory={DIR} />);
     act(() => {
-      useLaunchProgressStore.getState().begin('/tmp/foo');
+      useLaunchProgressStore.getState().begin(DIR);
     });
 
     act(() => {
       screen.getByLabelText('Dismiss launch progress').click();
     });
-    expect(screen.queryByTestId('launch-progress-overlay')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('launch-progress')).not.toBeInTheDocument();
+  });
+
+  it('renders only in the conversation for the launching directory', () => {
+    render(<LaunchProgressCard directory="/somewhere/else" />);
+    act(() => {
+      useLaunchProgressStore.getState().begin(DIR);
+    });
+    expect(screen.queryByTestId('launch-progress')).not.toBeInTheDocument();
   });
 });
