@@ -465,6 +465,82 @@ order if/when we come back to them:
 These are deliberately not in the B-numbered list because the
 backend wins are larger and unblock more user pain.
 
+## Interaction measurement (frontend)
+
+Opt-in client metrics for interaction latency, which matters more than
+initial load. Off by default; when off, each hook point does one cached
+boolean check.
+
+**Enable:** open any page with `?debug`, or run
+`localStorage.setItem('ocman:perf', '1')` and reload. Use the
+localStorage flag when measuring a session page: `?debug` also turns on
+the SSE debug overlay, which adds its own cost.
+
+**Read** from the devtools console:
+
+```js
+__ocmanPerf.metrics()       // p50/p95/max/count per metric and label
+__ocmanPerf.resetMetrics()  // start fresh before reproducing something
+console.table(__ocmanPerf.entries())  // API calls, now with serverTiming
+```
+
+`metrics()` reports:
+
+- `interaction`: Event Timing durations (16 ms threshold), keyed by
+  `pointer|keyboard:<label>`. The label is the nearest `data-perf`
+  attribute: `session-row`, `tool-call`, `composer`, `composer-send`,
+  `palette`, `panel-tab`, or `palette-open` for the palette hotkeys.
+- `loaf`: long-animation-frame duration and blocking time. `topLoafScripts`
+  lists the scripts that took the most time.
+- `sse.batch`: reducer time, events, messages and parts per SSE batch.
+  `sse.commit` is the time from flush to React commit.
+- `render`: React Profiler `actualDuration` for `SessionPage`, `Thread`,
+  `SessionSidebar` and `RightPanel`. Production bundles report it only
+  when built with `OCMAN_PROFILE=1`.
+- `switch`: time from a session switch to the first frame after the new
+  thread renders, labelled `hit` or `miss` depending on the session cache.
+- `counters`: commit counts and `trackRender` counts per component.
+
+When the tab is hidden, the summary is sent to `POST /api/debug/log` and
+written to the backend log as `[ocman:perf] summary`. Entries come from
+PerformanceObservers, so `usePerformanceCleanup` clearing the performance
+buffer does not lose them.
+
+**Bench** (`frontend/perf/`, separate from the e2e suite):
+
+```sh
+cd frontend
+pnpm perf                                  # profiling build + all scenarios
+PERF_SCENARIOS=stream,switch PERF_LABEL=x pnpm exec playwright test -c playwright.perf.config.ts
+PERF_DIST=perf/dist-base ...               # serve another build, e.g. a baseline
+PERF_CPUPROFILE=1 ...                      # also save a .cpuprofile per scenario
+node perf/compare.mjs ../tmp/perf/a1.json,../tmp/perf/a2.json ../tmp/perf/b1.json,../tmp/perf/b2.json
+```
+
+It serves the bundle on port 8338 with every `/api` route mocked and no
+backend. It replaces `EventSource` with an in-page replay at a fixed rate
+and applies a 4x CPU throttle. The fixtures are large: 150 messages, 300
+tool calls including 75 edit diffs, 200 sidebar sessions, a 9 kB streamed
+markdown answer and a running subagent. The scenarios are stream, type
+while streaming, expand tool calls, scroll, switch sessions (cache hit and
+miss), idle, and stream with a subagent. Results are written to
+`tmp/perf/<label>.json`.
+
+On a loaded machine, compare interleaved A/B runs: pass comma-separated
+runs to `compare.mjs`, and it prints the median of each cell.
+
+Findings that are easy to miss:
+
+- assistant-ui drops its conversion cache whenever the `convertMessage`
+  function changes identity. Keep it module-level.
+- `rehype-highlight` builds a lowlight instance with ~37 languages every
+  time it is attached, and react-markdown attaches plugins on every
+  render. Keep one shared transformer.
+- `content-visibility: auto` on message rows cut streaming blocking time
+  by ~70%. It was not adopted because jump-to-message computes offsets from
+  estimated row heights and missed its target by ~3600 px. Revisit only
+  with a scroll-to-target that re-aligns after rows render.
+
 ## Open questions / things to revisit
 
 - **Does B4 actually break composer freshness?** Needs a controlled
@@ -508,5 +584,7 @@ backend wins are larger and unblock more user pain.
 - `frontend/src/pages/SessionDetail.tsx`: the polling jungle.
 - `frontend/src/lib/api.ts`: `fetchJSON` / `postJSON` (instrumented).
 - `frontend/src/lib/perfRing.ts`: perf ring buffer.
+- `frontend/src/lib/perfMonitor.ts`: interaction metrics (`__ocmanPerf.metrics()`).
+- `frontend/perf/`: interaction bench (`pnpm perf`).
 - `frontend/src/lib/useLongTaskMonitor.ts`: long-task observer.
 - `frontend/src/components/BackendStats.tsx`: footer display.

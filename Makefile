@@ -1,4 +1,4 @@
-.PHONY: docs docs-build dev dev-backend dev-remote dev-relay dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop install-plugin installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-platform-branching lint-settings-rows otel-up otel-down otel-logs otel-reset check-caddy-host caddy-up caddy-down caddy-cert install-hooks help
+.PHONY: docs docs-build dev dev-backend dev-remote dev-relay dev-frontend dev-prod dev-prod-watch kill-dev build build-desktop install-plugin installer-mac installer-linux run clean test test-all-fast test-backend test-frontend test-e2e test-e2e-dev perf install-e2e-browsers test-race test-fuzz test-coverage coverage coverage-check lint lint-backend lint-frontend lint-platform-branching lint-settings-rows otel-up otel-down otel-logs otel-reset check-caddy-host caddy-up caddy-down caddy-cert install-hooks help
 
 # Build version, stamped into main.version (CLI + desktop) and the macOS
 # bundle's Info.plist. Override: make build VERSION=1.2.3
@@ -369,6 +369,10 @@ test-e2e: ## Run Playwright end-to-end tests
 # Use this when a regression reproduces only in local dev mode.
 test-e2e-dev: ## Run Playwright end-to-end tests against Vite dev mode
 	cd frontend && E2E_USE_DEV_SERVER=1 pnpm test:e2e
+
+# Interaction bench: profiling build, mocked API, 4x CPU throttle (docs/other/profiling.md).
+perf: ## Run the frontend interaction-latency bench
+	cd frontend && pnpm perf
 
 # Install Playwright browser binaries used by e2e tests.
 install-e2e-browsers: ## Install Playwright browser binaries
