@@ -144,3 +144,74 @@ func TestEventsAheadSnapshotPreservesLiveToolProgress(t *testing.T) {
 		})
 	}
 }
+
+func TestEventsSnapshotRefreshRetainsProgressUntilToolCompletes(t *testing.T) {
+	defer SetInstalledV2(true)()
+	f := fakeServer(t)
+	calls := 0
+	f.on("GET /api/session/s1/message/msg01", func(fakeCall) (int, any) {
+		calls++
+		status, metadata := "running", `{}`
+		if calls == 3 {
+			status, metadata = "completed", `{"outcome":"done"}`
+		}
+		return http.StatusOK, json.RawMessage(fmt.Sprintf(`{"data":{"id":"msg01","type":"assistant",
+			"time":{"created":5},"content":[{"type":"tool","id":"call1","name":"task",
+			"state":{"status":%q,"input":{},"metadata":%s}}]}}`, status, metadata))
+	})
+	const d = `"sessionID":"s1","assistantMessageID":"msg01"`
+	f.events = []string{
+		fakeEv("session.step.started", 5, "", `{`+d+`,"started":5}`),
+		fakeEv("session.tool.progress", 6, "", `{`+d+`,"id":"call1","metadata":{"sessionId":"child"}}`),
+		fakeEv("session.text.started", 7, "", `{`+d+`}`),
+		fakeEv("session.tool.success", 8, "", `{`+d+`,"id":"call1"}`),
+	}
+	var states []map[string]any
+	for _, ev := range cmpStream(t, f.URL+"/event") {
+		if p := cmpPart(ev); p["type"] == "tool" {
+			states = append(states, obj(p, "state"))
+		}
+	}
+	if len(states) != 4 {
+		t.Fatalf("tool updates = %d, want 4", len(states))
+	}
+	for _, i := range []int{1, 2} {
+		if str(obj(states[i], "metadata"), "sessionId") != "child" {
+			t.Fatalf("running tool update %d lost child link: %v", i, states[i])
+		}
+	}
+	terminal := obj(states[3], "metadata")
+	if str(terminal, "sessionId") != "" || str(terminal, "outcome") != "done" {
+		t.Fatalf("terminal metadata = %v, want authoritative completion", terminal)
+	}
+}
+
+func TestEventsSnapshotRefreshAcceptsStoredMetadataWithoutLiveProgress(t *testing.T) {
+	defer SetInstalledV2(true)()
+	f := fakeServer(t)
+	calls := 0
+	f.on("GET /api/session/s1/message/msg01", func(fakeCall) (int, any) {
+		calls++
+		metadata := `{}`
+		if calls > 1 {
+			metadata = `{"sessionId":"stored-child"}`
+		}
+		return http.StatusOK, json.RawMessage(fmt.Sprintf(`{"data":{"id":"msg01","type":"assistant",
+			"time":{"created":5},"content":[{"type":"tool","id":"call1","name":"task",
+			"state":{"status":"running","input":{},"metadata":%s}}]}}`, metadata))
+	})
+	const d = `"sessionID":"s1","assistantMessageID":"msg01"`
+	f.events = []string{
+		fakeEv("session.step.started", 5, "", `{`+d+`,"started":5}`),
+		fakeEv("session.text.started", 7, "", `{`+d+`}`),
+	}
+	var child string
+	for _, ev := range cmpStream(t, f.URL+"/event") {
+		if p := cmpPart(ev); p["type"] == "tool" {
+			child = str(obj(obj(p, "state"), "metadata"), "sessionId")
+		}
+	}
+	if child != "stored-child" {
+		t.Fatalf("stored tool metadata lost on refresh: %q", child)
+	}
+}

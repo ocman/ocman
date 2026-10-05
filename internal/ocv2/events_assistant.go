@@ -35,6 +35,24 @@ func (t *translator) assistant(ev v2Event, sessionID, dir string) error {
 				return nil
 			}
 			if fresh := t.seed(sessionID, mid); fresh != nil {
+				for _, value := range arr(fresh, "content") {
+					item, _ := value.(map[string]any)
+					state := obj(item, "state")
+					if str(item, "type") != "tool" || str(state, "status") != "running" {
+						continue
+					}
+					// ponytail: message-sized scan; index calls if large tool-heavy
+					// replies make snapshot refreshes expensive.
+					for _, previous := range arr(msg, "content") {
+						old, _ := previous.(map[string]any)
+						if str(old, "type") == "tool" && str(old, "id") == str(item, "id") && old["_liveProgress"] != nil {
+							// Progress metadata is live-only; terminal snapshots win.
+							state["metadata"] = old["_liveProgress"]
+							item["_liveProgress"] = old["_liveProgress"]
+							break
+						}
+					}
+				}
 				return t.emitMessage(sessionID, dir, fresh, -1, true)
 			}
 			return nil
@@ -199,6 +217,7 @@ func (t *translator) assistant(ev v2Event, sessionID, dir string) error {
 				return nil
 			}
 			state["metadata"] = d["metadata"]
+			item["_liveProgress"] = d["metadata"] // translator-local; ConvertMessage omits it
 		case "session.tool.success":
 			item["state"] = map[string]any{"status": "completed", "input": input, "content": d["content"], "metadata": d["metadata"]}
 			timeOf(item)["completed"] = ev.Created
