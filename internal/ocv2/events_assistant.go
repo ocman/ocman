@@ -22,7 +22,7 @@ func (t *translator) assistant(ev v2Event, sessionID, dir string) error {
 		return nil
 	}
 	msg := t.msgs[mid]
-	if t.snapshots[mid] {
+	if t.snapshots[mid] && ev.Type != "session.tool.progress" {
 		started, _ := d["started"].(float64)
 		created, _ := obj(msg, "time")["created"].(float64)
 		if ev.Type == "session.step.started" && started > created {
@@ -195,6 +195,9 @@ func (t *translator) assistant(ev v2Event, sessionID, dir string) error {
 			item["state"] = map[string]any{"status": "running", "input": d["input"], "metadata": map[string]any{}}
 			timeOf(item)["ran"] = ev.Created
 		case "session.tool.progress":
+			if str(state, "status") != "running" {
+				return nil
+			}
 			state["metadata"] = d["metadata"]
 		case "session.tool.success":
 			item["state"] = map[string]any{"status": "completed", "input": input, "content": d["content"], "metadata": d["metadata"]}

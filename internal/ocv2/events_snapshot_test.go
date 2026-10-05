@@ -114,3 +114,33 @@ func TestEventsLaterAttemptStreamsAfterAheadSnapshot(t *testing.T) {
 		t.Fatal("later attempt did not resume delta streaming")
 	}
 }
+
+func TestEventsAheadSnapshotPreservesLiveToolProgress(t *testing.T) {
+	defer SetInstalledV2(true)()
+	for _, status := range []string{"running", "completed"} {
+		t.Run(status, func(t *testing.T) {
+			f := fakeServer(t)
+			f.json("GET /api/session/s1/message/msg01", http.StatusOK, fmt.Sprintf(`{"data":{"id":"msg01","type":"assistant",
+				"time":{"created":5},"content":[{"type":"tool","id":"call1","name":"task",
+				"state":{"status":%q,"input":{},"metadata":{}}}]}}`, status))
+			const d = `"sessionID":"s1","assistantMessageID":"msg01"`
+			f.events = []string{
+				fakeEv("session.step.started", 5, "", `{`+d+`,"started":5}`),
+				fakeEv("session.tool.progress", 6, "", `{`+d+`,"id":"call1","metadata":{"sessionId":"child"}}`),
+			}
+			var state map[string]any
+			for _, ev := range cmpStream(t, f.URL+"/event") {
+				if p := cmpPart(ev); p["type"] == "tool" {
+					state = obj(p, "state")
+				}
+			}
+			if state == nil {
+				t.Fatal("missing tool part")
+			}
+			got := str(obj(state, "metadata"), "sessionId")
+			if (status == "running" && got != "child") || (status == "completed" && got != "") {
+				t.Fatalf("%s tool child session = %q", status, got)
+			}
+		})
+	}
+}
