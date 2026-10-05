@@ -45,13 +45,13 @@ describe('Factory human action cards', () => {
   it('draws the gated plan revision and expands it into a modal', async () => {
     vi.mocked(api.factoryEpic).mockResolvedValue({ ...epic, planGate: { issueId: 'gate', resolution: 'open', proposalRevision: 2, proposalHash: 'hash' } });
     const manifest = (title: string) => ({ epicId: 'ship', molId: 'mol', project: '/repo', nodes: [{ key: 'api', type: 'implementation', requirement: 'required', title }, { key: 'ui', type: 'implementation', requirement: 'required', title: 'Build UI', dependsOn: ['api'] }] });
-    vi.mocked(api.factoryProposals).mockResolvedValue([{ revision: 1, contentHash: 'old', manifest: manifest('Old API') }, { revision: 2, contentHash: 'hash', manifest: manifest('Build API') }]);
+    vi.mocked(api.factoryProposals).mockResolvedValue([{ revision: 1, contentHash: 'old', manifest: manifest('Old API') }, { revision: 2, contentHash: 'hash', manifest: manifest('Build API') }, { revision: 3, contentHash: 'new', manifest: manifest('New API') }]);
     renderCard('[[ocman:card type=factory-epic epic=ship action=approve_plan]]');
     const thumbnail = await screen.findByRole('button', { name: 'Expand plan graph' });
     expect(screen.getByRole('img', { name: 'Plan graph with 2 steps' })).toBeInTheDocument();
     expect(thumbnail.querySelectorAll('line')).toHaveLength(1);
     expect(screen.getByText('Build API', { selector: 'text' })).toBeInTheDocument();
-    expect(screen.queryByText('Old API')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Old API|New API/)).not.toBeInTheDocument();
     fireEvent.click(thumbnail);
     expect(screen.getByRole('dialog', { name: 'Plan graph' })).toBeInTheDocument();
     expect(screen.getByTestId('react-flow')).toBeInTheDocument();
