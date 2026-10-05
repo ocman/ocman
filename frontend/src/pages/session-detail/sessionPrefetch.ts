@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { api } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
+import { latestPage } from './useSession';
 
 /** Hover dwell before a sidebar row warms its session. Filters a pointer sweep. */
 export const PREFETCH_DELAY_MS = 150;
@@ -28,6 +29,9 @@ export async function prefetchSession(id: string, platform?: string): Promise<vo
     if (useApiStore.getState().getCachedSession(id)) return;
     useApiStore.getState().setCachedSession(id, {
       ...detail,
+      // limit doesn't cap the arrays (approval notices are appended after
+      // pagination), so bound the entry like useSession's mirror does.
+      ...latestPage(detail.messages ?? [], detail.parts ?? [], PREFETCH_PAGE_SIZE),
       session: { ...detail.session, contextTokenCount: detail.session.contextTokenCount ?? detail.contextTokenCount },
       totalMessages: detail.totalMessages || detail.session.messageCount || 0,
     });

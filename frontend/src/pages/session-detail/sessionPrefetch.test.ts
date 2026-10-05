@@ -35,6 +35,17 @@ describe('prefetchSession', () => {
     expect(cached?.session.contextTokenCount).toBe(7);
   });
 
+  it('trims an oversized response to the newest page', async () => {
+    const messages = Array.from({ length: 35 }, (_, i) => ({ id: `m${i}`, sessionId: 'a', timeCreated: i, data: { role: 'user' } }));
+    const parts = messages.map((m) => ({ id: `${m.id}-p`, messageId: m.id, sessionId: 'a', data: { type: 'text', text: '' } }));
+    vi.spyOn(api, 'session').mockResolvedValue({ ...detail('a'), messages, parts } as unknown as SessionDetail);
+    await prefetchSession('a');
+    const cached = useApiStore.getState().getCachedSession('a')!;
+    expect(cached.messages).toHaveLength(30);
+    expect(cached.messages[0].id).toBe('m5');
+    expect(cached.parts).toHaveLength(30);
+  });
+
   it('routes remote sessions to their owner', async () => {
     const spy = vi.spyOn(api, 'session').mockResolvedValue(detail('a', 'r-m2:opencode'));
     await prefetchSession('a', 'r-m2:opencode');
