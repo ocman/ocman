@@ -13,15 +13,14 @@ export function compareSidebarActivity(a: Pick<Session, 'timeUpdated'>, b: Pick<
  * SessionDetail page rebuilds its memoised project groups whenever
  * `recentSessions` changes, so avoiding spurious re-renders matters.
  *
- * Hash format: pipe-separated `(id, status, timeUpdated, p?, q?)` per
- * session, joined by commas. Two arrays produce the same hash iff
- * every entry has the same id / status / timestamp / pending flags.
+ * Includes status, activity, prompt flags, notices and read metadata so
+ * an unread correction is applied even when SSE already updated activity.
  */
 export function computeSidebarHash(sessions: readonly Session[]): string {
   return sessions
     .map(
       (s) =>
-        `${s.id}|${s.status}|${s.timeUpdated}|${s.pendingPermission ? 'p' : ''}${s.pendingQuestion ? 'q' : ''}${s.notice ? `|n:${s.notice.kind}:${s.notice.retryAt}:${s.notice.attempt}` : ''}`,
+        `${s.id}|${s.status}|${s.timeUpdated}|${s.pendingPermission ? 'p' : ''}${s.pendingQuestion ? 'q' : ''}${s.notice ? `|n:${s.notice.kind}:${s.notice.retryAt}:${s.notice.attempt}` : ''}|${s.seen}|${s.seenTimeUpdated}|${s.unreadCount}`,
     )
     .join(',');
 }

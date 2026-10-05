@@ -2,7 +2,7 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { api, type Session } from './api';
 import { useApiStore } from './apiStore';
-import { mergeSidebarSessions } from './sidebarHelpers';
+import { computeSidebarHash, mergeSidebarSessions } from './sidebarHelpers';
 
 const sessions = [
   { id: 'newer', platform: 'opencode', timeUpdated: 120_000 },
@@ -12,6 +12,16 @@ const sessions = [
 beforeEach(() => {
   vi.restoreAllMocks();
   useApiStore.setState({ recentSessions: sessions, recentSessionsHash: '' });
+});
+
+it('stores unread corrections when hidden-tab SSE already updated status and activity', () => {
+  const current = [{ ...sessions[0], status: 'done', seen: true, seenTimeUpdated: 60_000, unreadCount: 0 }] as Session[];
+  const store = useApiStore.getState();
+  store.setRecentSessions(current, computeSidebarHash(current));
+  const next = [{ ...current[0], seen: false, unreadCount: 1 }];
+  const merged = mergeSidebarSessions(next, useApiStore.getState().recentSessions);
+  store.setRecentSessions(merged, computeSidebarHash(merged));
+  expect(useApiStore.getState().recentSessions[0]).toMatchObject({ seen: false, unreadCount: 1 });
 });
 
 it('reorders immediately when an SSE patch advances activity', () => {

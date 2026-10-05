@@ -48,6 +48,7 @@ describe('useSidebarSessions project visibility', () => {
     const sessions = Array.from({ length: 25 }, (_, i) => ({
       id: `session-${i}`, platform: 'opencode', directory: '/repo/busy',
       title: `Work ${i}`, status: 'waiting', timeUpdated: Date.now() - i * 1000,
+      seen: false, seenTimeUpdated: 0, unreadCount: 0,
     } as Session));
     const quiet = { ...sessions[0], id: 'dev-stack', directory: '/repo/dev-stack', timeUpdated: Date.now() - 60_000 };
     const all = [...sessions, quiet];
@@ -73,6 +74,7 @@ describe('useSidebarSessions project visibility', () => {
     const sessions = Array.from({ length: 25 }, (_, i) => ({
       id: `session-${i}`, platform: 'opencode', directory: '/repo/busy',
       title: `Work ${i}`, status: 'waiting', timeUpdated: Date.now(),
+      seen: false, seenTimeUpdated: 0, unreadCount: 0,
     } as Session));
     const open = { ...sessions[0], id: 'older-open', directory: '/repo/older', timeUpdated: Date.now() - 96 * 60 * 60 * 1000 };
     useApiStore.setState({
@@ -95,6 +97,7 @@ describe('useSidebarSessions project visibility', () => {
       id: `session-${i}`, platform: 'opencode', directory: '/repo',
       title: `Work ${i}`, status: 'waiting', timeUpdated: Date.now() - i * 1000,
       pinned: i === 24, pinnedAt: i === 24 ? 1 : 0,
+      seen: false, seenTimeUpdated: 0, unreadCount: 0,
     } as Session));
     const getSessions = vi.fn(async ({ limit }: { limit?: number } = {}) =>
       sessions.slice(0, limit === 0 ? undefined : (limit ?? 500)));
