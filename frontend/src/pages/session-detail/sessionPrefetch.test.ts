@@ -28,7 +28,8 @@ describe('prefetchSession', () => {
   it('caches the first page with the same shape useSession writes', async () => {
     const spy = vi.spyOn(api, 'session').mockResolvedValue(detail('a'));
     await prefetchSession('a', 'opencode');
-    expect(spy).toHaveBeenCalledWith('a', 30, 0, undefined, undefined);
+    // peek (last arg) so a hover never unarchives the session.
+    expect(spy).toHaveBeenCalledWith('a', 30, 0, undefined, undefined, true);
     const cached = useApiStore.getState().getCachedSession('a');
     expect(cached?.totalMessages).toBe(4);
     expect(cached?.session.contextTokenCount).toBe(7);
@@ -37,7 +38,7 @@ describe('prefetchSession', () => {
   it('routes remote sessions to their owner', async () => {
     const spy = vi.spyOn(api, 'session').mockResolvedValue(detail('a', 'r-m2:opencode'));
     await prefetchSession('a', 'r-m2:opencode');
-    expect(spy).toHaveBeenCalledWith('a', 30, 0, undefined, 'r-m2:opencode');
+    expect(spy).toHaveBeenCalledWith('a', 30, 0, undefined, 'r-m2:opencode', true);
   });
 
   it('skips cached and in-flight sessions', async () => {

@@ -1,3 +1,5 @@
+import { Button } from '../../components/Control';
+
 export interface SessionSyncIndicatorProps {
   refreshing: boolean;
   refreshError: string | null;
@@ -22,7 +24,7 @@ export function SessionSyncIndicator({ refreshing, refreshError, onRetry }: Sess
   return (
     <div className="oc-sse-indicator oc-sse-indicator-reconnecting oc-sync-indicator-failed" role="alert" data-testid="session-sync-failed">
       <span>Couldn't refresh, this conversation may be out of date ({refreshError})</span>
-      <button type="button" className="oc-sse-indicator-retry" onClick={onRetry}>Retry</button>
+      <Button variant="link" size="compact" onClick={onRetry}>Retry</Button>
     </div>
   );
 }
