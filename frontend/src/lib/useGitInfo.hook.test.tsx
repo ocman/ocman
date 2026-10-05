@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { useGitInfo } from './useGitInfo';
 
@@ -24,4 +24,19 @@ it('clears branch data when the owner changes', async () => {
   rerender({ remoteId: 'new-owner' });
   await waitFor(() => expect(result.current.infos).toEqual({}));
   expect(snapshots).not.toContainEqual({ owner: 'new-owner', branch: 'old' });
+});
+
+it('keeps the infos reference when a poll returns the same data', async () => {
+  // A fresh object per 30s poll re-rendered every sidebar row.
+  const body = JSON.stringify({ '/repo': { branch: 'main' } });
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { status: 200 })));
+  const { result } = renderHook(() => useGitInfo(['/repo'], 'local'));
+  await waitFor(() => expect(result.current.infos['/repo']?.branch).toBe('main'));
+  const first = result.current.infos;
+
+  act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  await act(async () => { await Promise.resolve(); });
+  expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
+  expect(result.current.infos).toBe(first);
 });

@@ -154,7 +154,9 @@ export function useGitInfo(dirs: string[] | undefined, remoteId: string): UseGit
       fetchGitInfoOnce(dirList, remoteId, controller.signal)
         .then((res) => {
           if (controller.signal.aborted) return;
-          setInfos(res);
+          // Keep the old reference when nothing changed so consumers
+          // keyed on it (every sidebar row) skip the 30 s re-render.
+          setInfos((prev) => JSON.stringify(prev) === JSON.stringify(res) ? prev : res);
           setError(null);
           setLoading(false);
         })
