@@ -168,7 +168,7 @@ test('interaction bench', async ({ mockedPage: page }) => {
   await cdp.send('Emulation.setCPUThrottlingRate', { rate: CPU_RATE });
 
   // PERF_SCENARIOS=stream,switch runs a subset (same order).
-  const only = process.env.PERF_SCENARIOS?.split(',');
+  const only = process.env.PERF_SCENARIOS ? process.env.PERF_SCENARIOS.split(',') : undefined;
   const scenarios: [string, () => Promise<void>][] = [
     // Stream a long markdown answer; the thread must stay pinned to the bottom.
     ['stream', async () => {
