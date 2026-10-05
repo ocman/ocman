@@ -50,7 +50,18 @@ sequenceDiagram
     B->>S: REST Inbox list/read/archive and session permission reply
     S-->>B: categorized Inbox JSON with permission actions
     E-->>B: SSE (ocman.inbox.changed); polling fallback
+    B->>S: POST /api/sessions/start (startId)
+    S->>E: step progress via hostsvc.WithProgress
+    E-->>B: SSE (ocman.session.start.progress)
 ```
+
+- A new conversation's first submission sends a random `startId`. The server
+  reports each start step (OpenCode, worktree, session, prompt) through the
+  request context's progress callback and broadcasts it as
+  `ocman.session.start.progress`; only the tab holding that `startId` renders
+  it, beneath the pending prompt. The callback does not cross gRPC, so for a
+  remote worktree start the hub reports OpenCode and the worktree around the
+  whole call.
 
 - The local watcher broadcasts activity for identified message/part mutations
   on the shared `/api/events` stream. The sidebar updates known rows directly,

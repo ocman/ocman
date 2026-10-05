@@ -490,7 +490,10 @@ flowchart TD
   `POST /api/sessions/start`, which creates the session at the chosen target
   (an automatically named `session-<suffix>` worktree, or the current
   checkout), delivers a plain prompt server-side in the same request, and
-  returns the real id; the client then navigates once. Custom slash commands
+  returns the real id; the client then navigates once. Until then the prompt
+  renders as the conversation's first message with the server-reported start
+  steps beneath it (`ocman.session.start.progress`, see the event flow); a
+  failure removes only that request's prompt. Custom slash commands
   and shell submissions create the session the same way and run on it from
   the client; ocman built-ins need an existing conversation. A failed first
   send retains text, images, selections and error in the existing failed-send

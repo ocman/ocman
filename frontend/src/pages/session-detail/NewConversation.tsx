@@ -185,7 +185,8 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      setPending(undefined);
+      // Only this request's prompt: a newer start may be pending already.
+      setPending((p) => p?.startId === startId ? undefined : p);
       if (stillCurrent()) setError(message);
       // Creation is non-idempotent: a lost response must never enter the
       // existing Composer's BackendUnavailableError automatic replay loop.

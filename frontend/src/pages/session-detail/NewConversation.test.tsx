@@ -51,6 +51,7 @@ function mount(params = { directory: '/repo', remoteId: 'machine', platform: 'r-
 describe('NewConversation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.progress.clear();
     clearDraft('new');
     clearDraft('child');
     clearFailedSends('s2');
@@ -224,6 +225,24 @@ describe('NewConversation', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('worktree create/launch failed');
     // A failed start removes the pending prompt; the draft stays in the composer.
     expect(screen.queryByTestId('pending-prompt')).not.toBeInTheDocument();
+  });
+
+  it('keeps a newer start’s prompt when an older start fails afterwards', async () => {
+    let failOld!: (err: Error) => void;
+    mocks.start.mockReturnValueOnce(new Promise((_, reject) => { failOld = reject; }));
+    mocks.start.mockReturnValueOnce(new Promise(() => {}));
+    const view = mount({ directory: '/repo', remoteId: 'machine', platform: 'r-machine:opencode', title: 'A' });
+    await waitFor(() => expect(composer.disabled).toBe(false));
+    let old!: Promise<void>;
+    act(() => { old = Promise.resolve(composer.onSend!('first')).catch(() => {}); });
+    // Re-point the same mounted page (new title), then start again.
+    view.rerender(<NewConversation params={{ directory: '/repo', remoteId: 'machine', platform: 'r-machine:opencode', title: 'B' }}
+      whisperAvailable={false} composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
+    await waitFor(() => expect(composer.disabled).toBe(false));
+    act(() => { void Promise.resolve(composer.onSend!('second')).catch(() => {}); });
+    expect(screen.getByTestId('pending-prompt')).toHaveTextContent('second');
+    await act(async () => { failOld(new Error('old failed')); await old; });
+    expect(screen.getByTestId('pending-prompt')).toHaveTextContent('second');
   });
 
   it('shows the prompt as the first message with the server-reported steps until the session exists', async () => {
