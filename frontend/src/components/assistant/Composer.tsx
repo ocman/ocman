@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, useImperativeHandle } from 'react';
 import './Composer.css';
 import { useComposerDrafts } from './useComposerDrafts';
-import { getDraft, saveDraft } from '../../lib/composerDraft';
+import { clearDraft, getDraft, saveDraft } from '../../lib/composerDraft';
 import { useShortcut } from '../../lib/shortcutRegistry';
 import { BackendUnavailableError, type SlashCommand } from '../../lib/api';
 import { useComposerAttachments } from './useComposerAttachments';
@@ -161,7 +161,11 @@ export function Composer({
         if (submitted) await submitted;
         // Re-pointed mid-send: the textarea now holds another session's draft.
         if (mountedRef.current && draftKeyRef.current === key) clearAfterSubmit();
-        else if (mountedRef.current) attachments.clear();
+        else {
+          // A failed attempt may have restored the draft before a retry landed.
+          if (key && getDraft(key) === text) clearDraft(key);
+          if (mountedRef.current) attachments.clear();
+        }
         break;
       } catch (err) {
         if (key && text && !getDraft(key)) saveDraft(key, text);

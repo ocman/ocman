@@ -2,7 +2,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { clearDraft, getDraft, saveDraft } from '../../lib/composerDraft';
-import { api } from '../../lib/api';
+import { api, BackendUnavailableError } from '../../lib/api';
 import { Composer } from './Composer';
 
 beforeEach(() => { clearDraft('new'); clearDraft('s1'); vi.spyOn(api, 'resolveTargets').mockResolvedValue({ candidates: [], remotes: [] }); });
@@ -70,4 +70,23 @@ it('restores the draft when a send fails after unmount', async () => {
   view.unmount();
   await act(async () => { reject(new Error('boom')); });
   expect(getDraft('new')).toBe('ship it');
+});
+
+it('clears the old session draft when a backend retry lands after a re-point', async () => {
+  vi.useFakeTimers();
+  try {
+    vi.spyOn(api, 'commands').mockResolvedValue([]);
+    let calls = 0;
+    const onSend = vi.fn(async () => { if (calls++ === 0) throw new BackendUnavailableError(); });
+    const view = render(<Composer isRunning={false} sessionId="s1" onSend={onSend} />);
+    const input = screen.getByRole('textbox');
+    fireEvent.input(input, { target: { value: 'ship it' } });
+    await act(async () => { fireEvent.keyDown(input, { key: 'Enter' }); });
+    view.rerender(<Composer isRunning={false} sessionId="s2" onSend={onSend} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+    expect(onSend).toHaveBeenCalledTimes(2);
+    expect(getDraft('s1')).toBe('');
+  } finally {
+    vi.useRealTimers();
+  }
 });
