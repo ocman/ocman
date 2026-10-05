@@ -65,6 +65,7 @@ import { useSessionSeen } from './useSessionSeen';
 import { useSessionShortcuts } from './useSessionShortcuts';
 import { usePaletteCommands } from './usePaletteCommands';
 import { SseStatusIndicator } from './SseStatusIndicator';
+import { SessionSyncIndicator } from './SessionSyncIndicator';
 import { remoteLog } from '../../lib/remoteLog';
 import { isRecoverableThreadBoundaryError } from './threadBoundaryRecovery';
 import { useUnreadMarker } from './useUnreadMarker';
@@ -765,6 +766,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   );
   const showSseNotice = portAvailable && !sseActive;
   const showSseDebug = debugMode && sseDebugEvents.length > 0;
+  const showSync = view.refreshing || !!view.refreshError;
 
   useEffect(() => {
     setAwaitingAssistantResponse(false);
@@ -1042,8 +1044,15 @@ export function SessionDetail({ id }: SessionDetailProps) {
                       } : null}
                     />
                   )}
-                  footer={showSseNotice || showSseDebug ? (
+                  footer={showSync || showSseNotice || showSseDebug ? (
                     <>
+                      {showSync && (
+                        <SessionSyncIndicator
+                          refreshing={view.refreshing}
+                          refreshError={view.refreshError}
+                          onRetry={() => { void reload(); }}
+                        />
+                      )}
                       {showSseNotice && (
                         <SseStatusIndicator
                           active={sseActive}

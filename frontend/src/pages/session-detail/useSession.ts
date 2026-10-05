@@ -91,8 +91,12 @@ export interface UseSessionResult extends SessionView {
   loading: boolean;
   /** True while a loadMore is in flight. */
   loadingMore: boolean;
-  /** Error message from the most recent failed fetch, or null. */
+  /** Error from a failed fetch with nothing on screen to keep, or null. */
   loadError: string | null;
+  /** True while a cached render waits for its first refresh. */
+  refreshing: boolean;
+  /** Error from a failed refresh while content stays on screen, or null. */
+  refreshError: string | null;
   /** Total messages on the server (from the most recent load). */
   totalMessages: number;
   /** True between `onerror` and the next successful reconnect. */
@@ -238,6 +242,8 @@ export function useSession(
   const [loading, setLoading] = useState<boolean>(!cached);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState<boolean>(!!cached);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [totalMessages, setTotalMessages] = useState<number>(
     cached?.totalMessages || cached?.session.messageCount || 0,
   );
@@ -370,8 +376,7 @@ export function useSession(
         ...prev,
         session: sessionForCache,
         sessionTree: view.sessionTree,
-        messages: view.messages,
-        parts: view.parts,
+        ...latestPage(view.messages, view.parts, pageSize),
         totalMessages: Math.max(prev.totalMessages ?? 0, totalMessages),
       }));
     };
@@ -381,7 +386,7 @@ export function useSession(
         mirrorWriteRef.current?.();
       }, CACHE_MIRROR_DEBOUNCE_MS);
     }
-  }, [sessionId, view.sessionId, view.session, view.sessionTree, view.messages, view.parts, totalMessages, updateCachedSession]);
+  }, [sessionId, view.sessionId, view.session, view.sessionTree, view.messages, view.parts, totalMessages, updateCachedSession, pageSize]);
 
   // Flush the pending mirror on unmount and on session switch, so the
   // cache is current when the user navigates away mid-stream. Cleanup
@@ -411,6 +416,8 @@ export function useSession(
       setStatus('live');
       setLoading(false);
       setLoadError(null);
+      setRefreshing(false);
+      setRefreshError(null);
       setTotalMessages(0);
       return;
     }
@@ -450,6 +457,10 @@ export function useSession(
     setStatus(nextCached ? 'live' : 'loading');
     setLoading(!nextCached);
     setLoadError(null);
+    // A cached render is shown at once but may be stale: flag it until
+    // the first refresh lands so the page can say it is still syncing.
+    setRefreshing(!!nextCached);
+    setRefreshError(null);
     setTotalMessages(nextCached?.totalMessages || nextCached?.session.messageCount || 0);
 
     let cancelled = false;
@@ -486,6 +497,8 @@ export function useSession(
         dispatch({ type: 'load', view: viewFromDetail(sessionId, detail), mode });
         setTotalMessages(detail.totalMessages || detail.session.messageCount || 0);
         setLoadError(null);
+        setRefreshing(false);
+        setRefreshError(null);
 
         setCachedSession(sessionId, {
           session: {
@@ -509,12 +522,21 @@ export function useSession(
       } catch (err) {
         if (cancelled || controller.signal.aborted) return false;
         if (err instanceof DOMException && err.name === 'AbortError') return false;
-        setLoadError(err instanceof Error ? err.message : 'Failed to load session');
-        setStatus('error');
+        const message = err instanceof Error ? err.message : 'Failed to load session';
+        setRefreshing(false);
         setLoading(false);
+        // Content on screen (cache or an earlier load) stays visible; the
+        // failure is reported beside it instead of replacing the thread.
+        if (hasContent()) {
+          setRefreshError(message);
+          return false;
+        }
+        setLoadError(message);
+        setStatus('error');
         return false;
       }
     };
+    const hasContent = () => viewRef.current.sessionId === sessionId && viewRef.current.session !== null;
 
     const events = createSessionSse({
       sessionId,
@@ -528,7 +550,10 @@ export function useSession(
     // wholesale-replace mode so the user sees a true authoritative
     // refresh (matches the URL-bar refresh affordance the user
     // would otherwise use).
-    reloadRef.current = async () => { await doFetch('replace'); };
+    reloadRef.current = async () => {
+      if (hasContent()) setRefreshing(true);
+      await doFetch('replace');
+    };
 
     const connect = () => {
       if (cancelled) return;
@@ -596,7 +621,7 @@ export function useSession(
       if (pending.length && viewRef.current.sessionId === sessionId) {
         const outgoing = reduceBatchedSessionView(viewRef.current, { type: 'sseBatch', events: pending });
         updateCachedSession(sessionId, (prev) => ({
-          ...prev, messages: outgoing.messages, parts: outgoing.parts,
+          ...prev, ...latestPage(outgoing.messages, outgoing.parts, pageSize),
         }));
       }
       abortRef.current?.abort();
@@ -716,6 +741,8 @@ export function useSession(
     loading,
     loadingMore,
     loadError,
+    refreshing,
+    refreshError,
     totalMessages,
     sseReconnecting,
     sseReconnectAttempt,
@@ -729,6 +756,18 @@ export function useSession(
     patchSession,
     dispatch,
   };
+}
+
+/**
+ * The newest `keep` messages and their parts. The session cache stores only
+ * this page so an entry's size stays bounded however far the user scrolled
+ * back; a revisit renders the tail and paginates older history as usual.
+ */
+export function latestPage(messages: Message[], parts: Part[], keep: number): { messages: Message[]; parts: Part[] } {
+  if (messages.length <= keep) return { messages, parts };
+  const kept = messages.slice(-keep);
+  const ids = new Set(kept.map((m) => m.id));
+  return { messages: kept, parts: parts.filter((p) => ids.has(p.messageId)) };
 }
 
 export function platformMessageCount(messages: Message[]): number {

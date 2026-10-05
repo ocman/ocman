@@ -43,9 +43,9 @@ export const CLOSED_SESSION_STACK_MAX = 10;
 /**
  * Maximum number of session detail responses to keep in the client-side
  * cache. Entries are evicted in LRU order when this limit is exceeded.
- * Each entry holds one page of messages (150-200) and their parts, so 10
- * covers switching between a working set of sessions without unbounded
- * memory growth. See spec/session-switch-cache/architecture.md.
+ * useSession stores only the newest page of each session (`latestPage`), so
+ * an entry stays small; 10 covers recent navigation plus sessions warmed by
+ * a sidebar hover. See spec/session-switch-cache/architecture.md.
  */
 export const SESSION_CACHE_MAX = 10;
 

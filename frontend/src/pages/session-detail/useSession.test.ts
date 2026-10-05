@@ -436,8 +436,12 @@ describe('useSession — initial load', () => {
     await waitFor(() => expect(result.current.session?.id).toBe(SID));
 
     rerender({ id: targetId });
-    await waitFor(() => expect(result.current.loadError).toBe('refetch failed'));
+    await waitFor(() => expect(result.current.refreshError).toBe('refetch failed'));
 
+    // The cache stays on screen: the failure is a refresh error, not a load error.
+    expect(result.current.loadError).toBeNull();
+    expect(result.current.refreshing).toBe(false);
+    expect(result.current.status).not.toBe('error');
     expect(result.current.session?.id).toBe(targetId);
     expect(result.current.sessionTree.find((session) => session.id === SID)?.title).toBe('Parent session');
     expect(aggregateSessionTreeStats(target, result.current.sessionTree, {
@@ -448,6 +452,54 @@ describe('useSession — initial load', () => {
       cacheWrite: 0,
       totalCost: target.totalCost,
     })).toEqual({ input: 80, output: 100, totalCost: 0.5, totalEstCost: 0, totalEffectiveCost: 0.5, sessions: 2 });
+  });
+
+  it('flags a cached render as refreshing until the refresh lands, and on reload', async () => {
+    useApiStore.getState().setCachedSession(SID, makeDetail());
+    let resolve: (d: SessionDetail) => void = () => {};
+    const fetchSession = vi.fn(() => new Promise<SessionDetail>((r) => { resolve = r; }));
+    const { result } = renderHook(() => useSession(SID, { fetchSession }));
+
+    expect(result.current.session?.id).toBe(SID);
+    expect(result.current.loading).toBe(false);
+    expect(result.current.refreshing).toBe(true);
+    await act(async () => resolve(makeDetail()));
+    expect(result.current.refreshing).toBe(false);
+
+    let reload: Promise<void> = Promise.resolve();
+    act(() => { reload = result.current.reload(); });
+    expect(result.current.refreshing).toBe(true);
+    await act(async () => { resolve(makeDetail()); await reload; });
+    expect(result.current.refreshing).toBe(false);
+  });
+
+  it('caches only the newest page of a long view', async () => {
+    const messages = Array.from({ length: 5 }, (_, i) => ({ id: `m${i}`, sessionId: SID, timeCreated: i, data: { role: 'user' as const } }));
+    const parts = messages.map((m) => ({ id: `${m.id}-p`, messageId: m.id, sessionId: SID, data: { type: 'text', text: m.id } }));
+    useApiStore.getState().setCachedSession(SID, makeDetail());
+    const { result, unmount } = renderHook(() => useSession(SID, {
+      fetchSession: vi.fn().mockResolvedValue(makeDetail({ messages, parts, totalMessages: 5 })),
+      pageSize: 2,
+    }));
+    await waitFor(() => expect(result.current.messages).toHaveLength(5));
+    unmount();
+    const cached = useApiStore.getState().getCachedSession(SID)!;
+    expect(cached.messages.map((m) => m.id)).toEqual(['m3', 'm4']);
+    expect(cached.parts.map((p) => p.messageId)).toEqual(['m3', 'm4']);
+    expect(cached.totalMessages).toBe(5);
+  });
+
+  it('clears a refresh error once a retry succeeds', async () => {
+    useApiStore.getState().setCachedSession(SID, makeDetail());
+    const fetchSession = vi.fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue(makeDetail());
+    const { result } = renderHook(() => useSession(SID, { fetchSession }));
+    await waitFor(() => expect(result.current.refreshError).toBe('offline'));
+
+    await act(async () => { await result.current.reload(); });
+    expect(result.current.refreshError).toBeNull();
+    expect(result.current.session?.id).toBe(SID);
   });
 
   it('hydrates fetched history so an unloaded message can be scrolled to', async () => {

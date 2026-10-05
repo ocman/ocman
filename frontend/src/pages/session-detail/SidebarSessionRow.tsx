@@ -7,6 +7,7 @@ import { StatusBadge } from '../../components/StatusBadge';
 import { ShortPath, GitStatusLine } from '../../components/SessionTable';
 import { remoteLog } from '../../lib/remoteLog';
 import { ArchiveButton } from '../../components/ArchiveButton';
+import { useHoverPrefetch } from './sessionPrefetch';
 
 export interface SidebarSessionRowProps {
   session: Session;
@@ -51,6 +52,7 @@ export function SidebarSessionRow({
   // using the poll value here would leave the sidebar pulse running
   // after the composer has already gone idle).
   const displayStatus = active ? activeDisplayStatus : sib.status;
+  const prefetch = useHoverPrefetch(sib.id, sib.platform);
   // Grouped rows no longer carry their own git line — the directory
   // sub-header above them shows the branch/worktree once for all
   // siblings. Ungrouped rows (the pinned group) keep the project
@@ -75,6 +77,7 @@ export function SidebarSessionRow({
       tabIndex={0}
       aria-selected={active}
       className={`session-sidebar-item ${active ? 'active' : ''}${archiving ? ' archiving' : ''}${inGroup ? ' in-group' : ''}${flat ? ' flat' : ''}${depth > 0 ? ' session-sidebar-item-child' : ''}`}
+      {...(active ? {} : prefetch)}
       onClick={() => {
         if (debugMode) {
           remoteLog.info('[ocman:nav] sidebar click', {

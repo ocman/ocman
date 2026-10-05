@@ -1212,6 +1212,10 @@
   color: var(--warning);
 }
 
+.oc-sync-indicator-failed {
+  color: var(--danger);
+}
+
 .oc-sse-indicator-dot {
   display: inline-block;
   width: 6px;
