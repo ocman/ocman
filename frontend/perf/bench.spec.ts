@@ -197,8 +197,8 @@ test('interaction bench', async ({ mockedPage: page }) => {
       for (let i = 0; i < 25; i++) { await page.mouse.wheel(0, -500); await page.waitForTimeout(60); }
       for (let i = 0; i < 25; i++) { await page.mouse.wheel(0, 500); await page.waitForTimeout(60); }
     }],
-    // Switch sessions. The session cache holds 3 entries: rows 2..5 rotate
-    // through it (miss), then 0 ⇄ 5 alternate inside it (hit).
+    // Switch sessions: first visits to rows 2..5 miss the session cache,
+    // then 0 ⇄ 5 alternate inside it (hit).
     ['switch', async () => {
       for (const i of [2, 3, 4, 5, 0, 5, 0, 5, 0, 5, 0, 5]) {
         const before = await switchCount(page);
