@@ -33,9 +33,10 @@ Optional:
 | whisper-cpp + ffmpeg | voice input in the composer | `brew install whisper-cpp`, `brew install ffmpeg` (without ffmpeg only wav/mp3/ogg/flac work) |
 
 Apps launched from Finder get a minimal PATH. Ocman merges in your login
-shell's PATH; when that fails it reports: "Launched from Finder? Your login
-shell PATH could not be read; install tools in /usr/local/bin or
-/opt/homebrew/bin".
+shell's PATH at startup; when that fails (the shell exits with an error or
+takes longer than 10 seconds) the setup banner shows the reason. Fix the
+shell or install tools in /usr/local/bin or /opt/homebrew/bin, then restart
+ocman.
 
 ## Install
 

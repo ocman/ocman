@@ -85,13 +85,16 @@ export function SetupPrompt() {
   const key = failing.map((c) => c.id).sort().join(',');
   if (dismissed === key) return null;
   const optional = failing.filter((c) => c.id !== 'login-shell-path');
-  const pathFailed = optional.length !== failing.length;
+  const pathCheck = failing.find((c) => c.id === 'login-shell-path');
   return (
     <div className="oc-error-banner oc-setup-banner" data-testid="setup-banner" role="status">
       <div>
         {optional.length > 0 && <>Some optional tools are missing:<CheckList checks={optional} /></>}
-        {pathFailed && (
-          <div>Launched from Finder? Apps started that way get a minimal PATH, so tools in your shell may not be found.</div>
+        {pathCheck && (
+          <div>
+            Could not read your login shell PATH, so tools in your shell may not be found. Launched from Finder? Apps started that way get a minimal PATH.
+            {pathCheck.detail && <div className="oc-setup-detail">{pathCheck.detail}</div>}
+          </div>
         )}
       </div>
       {recheck}

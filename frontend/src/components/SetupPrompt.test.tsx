@@ -66,13 +66,14 @@ describe('SetupPrompt', () => {
   it('shows a banner for missing optional tools with unlocks, hint and PATH note', async () => {
     mocks.getDoctor.mockResolvedValue(report(
       check('tmux', { ok: false, hint: 'brew install tmux' }),
-      check('login-shell-path', { ok: false }),
+      check('login-shell-path', { ok: false, detail: 'read login shell PATH: /bin/zsh timed out after 10s' }),
     ));
     renderPrompt();
     const banner = await screen.findByTestId('setup-banner');
     expect(banner.textContent).toContain('brew install tmux');
     expect(banner.textContent).toContain('unlocks launching managed OpenCode sessions');
     expect(banner.textContent).toContain('minimal PATH');
+    expect(banner.textContent).toContain('timed out after 10s');
     expect(screen.queryByTestId('setup-panel')).toBeNull();
   });
 

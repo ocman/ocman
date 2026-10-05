@@ -4,9 +4,11 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestMergePath(t *testing.T) {
@@ -71,6 +73,26 @@ func TestLoginShellCmdDetachedFromTerminal(t *testing.T) {
 	}
 	if cmd.SysProcAttr == nil || !cmd.SysProcAttr.Setpgid {
 		t.Errorf("shell must run in its own process group (Setpgid); got %+v", cmd.SysProcAttr)
+	}
+}
+
+// TestEnsureReportsTimeout guards that a slow login shell is reported as
+// a timeout rather than the opaque "signal: killed".
+func TestEnsureReportsTimeout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Ensure is a no-op on windows")
+	}
+	shell := filepath.Join(t.TempDir(), "slowsh")
+	if err := os.WriteFile(shell, []byte("#!/bin/sh\nexec sleep 5\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SHELL", shell)
+	old := shellTimeout
+	shellTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { shellTimeout = old })
+	err := Ensure()
+	if err == nil || !strings.Contains(err.Error(), "timed out after 100ms") {
+		t.Fatalf("Ensure error = %v; want a timeout", err)
 	}
 }
 

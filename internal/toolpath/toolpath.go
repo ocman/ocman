@@ -45,6 +45,12 @@ func Ensure() error {
 	return nil
 }
 
+// shellTimeout bounds the login shell. A healthy interactive zsh takes
+// well under a second, but under load (an air rebuild, a cold mise
+// cache) it overran the old 3s limit; 10s caps the startup cost of a
+// genuinely hung rc file.
+var shellTimeout = 10 * time.Second
+
 // loginShellPath runs the user's login shell as an interactive login
 // shell and captures the PATH it produces.
 func loginShellPath() (string, error) {
@@ -52,9 +58,12 @@ func loginShellPath() (string, error) {
 	if shell == "" {
 		shell = "/bin/sh"
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), shellTimeout)
 	defer cancel()
 	out, err := loginShellCmd(ctx, shell).Output()
+	if ctx.Err() != nil {
+		return "", fmt.Errorf("%s timed out after %s", shell, shellTimeout)
+	}
 	if err != nil {
 		return "", err
 	}
