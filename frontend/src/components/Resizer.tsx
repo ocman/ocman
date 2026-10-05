@@ -25,8 +25,9 @@ export interface ResizerProps {
  * Vertical pointer/keyboard drag handle for resizing a sidebar.
  *
  * Pointer-based so mouse, touch and pen all work. While dragging we set
- * a body-wide class that pins the cursor and blocks text selection; the
- * computed width is clamped + persisted by the supplied `setWidth`.
+ * a body-wide class that pins the cursor and blocks text selection. The
+ * handle must be a direct child of the panel it sizes: the drag previews
+ * the width on that parent and calls `setWidth` once on release.
  *
  * Keyboard: when focused, arrows resize in KEYBOARD_STEP increments;
  * Home/End jump to min/max; double-click resets to `defaultWidth`. When
@@ -37,6 +38,8 @@ export function Resizer({ width, setWidth, min, max, defaultWidth, mirrored, ari
   const [dragging, setDragging] = useState(false);
   const startXRef = useRef(0);
   const startWidthRef = useRef(width);
+  // Width previewed during a drag; null until the pointer moves.
+  const dragWidthRef = useRef<number | null>(null);
   const sign = mirrored ? -1 : 1;
 
   const onPointerDown = useCallback(
@@ -46,6 +49,7 @@ export function Resizer({ width, setWidth, min, max, defaultWidth, mirrored, ari
       e.preventDefault();
       startXRef.current = e.clientX;
       startWidthRef.current = width;
+      dragWidthRef.current = null;
       setDragging(true);
       // Capture so we keep getting move events even if the pointer
       // leaves the handle (e.g. during a fast drag).
@@ -54,24 +58,33 @@ export function Resizer({ width, setWidth, min, max, defaultWidth, mirrored, ari
     [width],
   );
 
+  // The drag only previews the width on the sized panel (the handle's
+  // parent). Writing the persisted store per pointermove would hit
+  // localStorage and re-render the whole session page on every event,
+  // so the store gets the final width once, on release.
   const onPointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       if (!dragging) return;
       const delta = e.clientX - startXRef.current;
-      setWidth(startWidthRef.current + sign * delta);
+      const next = Math.min(max, Math.max(min, startWidthRef.current + sign * delta));
+      dragWidthRef.current = next;
+      const panel = e.currentTarget.parentElement;
+      if (panel) panel.style.width = `${next}px`;
     },
-    [dragging, setWidth, sign],
+    [dragging, sign, min, max],
   );
 
   const endDrag = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (!dragging) return;
     setDragging(false);
+    if (dragWidthRef.current !== null) setWidth(dragWidthRef.current);
+    dragWidthRef.current = null;
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
     } catch {
       // ignore — capture may already be lost
     }
-  }, [dragging]);
+  }, [dragging, setWidth]);
 
   // Toggle a body class while dragging so we can force the cursor and
   // kill text selection across the whole page (not just the handle).
