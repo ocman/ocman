@@ -361,3 +361,21 @@ describe('AssistantThread message metadata', () => {
     expect(screen.getAllByText('Prompt cache rebuilt')).toHaveLength(1);
   });
 });
+
+describe('composer footer observer', () => {
+  it('disconnects the footer ResizeObserver on unmount', () => {
+    const footerObservers: { disconnected: boolean }[] = [];
+    class TrackingResizeObserver {
+      disconnected = false;
+      observe(el: Element) {
+        if (el.getAttribute('data-testid') === 'conversation-composer') footerObservers.push(this);
+      }
+      disconnect() { this.disconnected = true; }
+    }
+    vi.stubGlobal('ResizeObserver', TrackingResizeObserver);
+    const { unmount } = render(<AssistantThread />);
+    expect(footerObservers.length).toBeGreaterThan(0);
+    unmount();
+    expect(footerObservers.every((o) => o.disconnected)).toBe(true);
+  });
+});

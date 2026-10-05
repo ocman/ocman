@@ -792,6 +792,10 @@ export function AssistantThread({
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
+    return () => {
+      ro.disconnect();
+      cancelAnimationFrame(rafId);
+    };
   }, []);
 
   const bookmarkContextValue = useMemo(() => ({
