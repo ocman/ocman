@@ -29,6 +29,13 @@ func (t *translator) assistant(ev v2Event, sessionID, dir string) error {
 			// stored message will have. Unknown (new) messages start empty.
 			delete(t.unseeded, mid)
 			msg = t.seed(sessionID, mid)
+			// The GET can be ahead of this buffered event, especially for a
+			// fast remote reply. Rebuild this attempt from its events instead
+			// of appending them to its already-projected content. A snapshot
+			// from an earlier attempt still supplies the retry's part indexes.
+			if msg != nil && d["started"] != nil && num(obj(msg, "time"), "created") == num(d, "started") {
+				msg["content"] = []any{}
+			}
 		}
 		if msg == nil {
 			msg = map[string]any{"id": mid, "type": "assistant", "sessionID": sessionID, "content": []any{}}
