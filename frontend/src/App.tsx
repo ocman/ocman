@@ -61,12 +61,10 @@ function RoutesBoundary({ children }: { children: ReactNode }) {
 
 export { MainNav };
 
-function GlobalHotkeys() {
-  const {
-    shortcutsOpen,
-    toggleShortcuts,
-    closeShortcuts,
-  } = useUiStore();
+export function GlobalHotkeys() {
+  const shortcutsOpen = useUiStore((s) => s.shortcutsOpen);
+  const toggleShortcuts = useUiStore((s) => s.toggleShortcuts);
+  const closeShortcuts = useUiStore((s) => s.closeShortcuts);
   const navigate = useNavigate();
 
   // Single dispatcher for every shortcut registered via useShortcut.

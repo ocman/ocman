@@ -159,15 +159,13 @@ export function CommandPalette() {
   const refreshCachedSessions = useApiStore((s) => s.refreshCachedSessions);
   const launchAllowed = useOpencodeLaunch();
   const openWorktreeForm = useUiStore((s) => s.openWorktreeForm);
-  const {
-    paletteOpen,
-    paletteMode,
-    projectSessionInitialDirectory,
-    closePalette: rawClosePalette,
-    openProjectSessionPalette,
-    openProjectPalette,
-    openShortcuts,
-  } = useUiStore();
+  const paletteOpen = useUiStore((s) => s.paletteOpen);
+  const paletteMode = useUiStore((s) => s.paletteMode);
+  const projectSessionInitialDirectory = useUiStore((s) => s.projectSessionInitialDirectory);
+  const rawClosePalette = useUiStore((s) => s.closePalette);
+  const openProjectSessionPalette = useUiStore((s) => s.openProjectSessionPalette);
+  const openProjectPalette = useUiStore((s) => s.openProjectPalette);
+  const openShortcuts = useUiStore((s) => s.openShortcuts);
   const mode = paletteMode;
   const [actionInvocation, setActionInvocation] = useState<{ label: string; request: PluginActionRequest } | null>(null);
 
