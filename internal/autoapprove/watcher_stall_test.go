@@ -2,6 +2,7 @@ package autoapprove
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
@@ -204,8 +205,10 @@ func TestStreamOnceCancellationLeavesNoGoroutines(t *testing.T) {
 	cancel()
 	select {
 	case err := <-done:
-		if err != nil {
-			t.Fatalf("cancelled streamOnce = %v, want nil", err)
+		// The server counts the connection before the client receives headers.
+		// Cancellation may therefore finish either the connect or the read.
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatalf("cancelled streamOnce = %v, want nil or context.Canceled", err)
 		}
 	case <-time.After(waitTimeout):
 		t.Fatal("streamOnce did not return after cancellation")
