@@ -1050,7 +1050,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
                         <SessionSyncIndicator
                           refreshing={view.refreshing}
                           refreshError={view.refreshError}
-                          onRetry={() => { void reload(); }}
+                          onRetry={() => { void view.refresh(); }}
                         />
                       )}
                       {showSseNotice && (

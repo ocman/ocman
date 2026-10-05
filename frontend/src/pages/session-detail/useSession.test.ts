@@ -473,6 +473,32 @@ describe('useSession — initial load', () => {
     expect(result.current.refreshing).toBe(false);
   });
 
+  it('retries a failed refresh without discarding live content or prompts', async () => {
+    useApiStore.getState().setCachedSession(SID, makeDetail());
+    const fetchSession = vi.fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue(makeDetail()); // older snapshot: lacks the streamed part
+    const { result } = renderHook(() => useSession(SID, { fetchSession }));
+    await waitFor(() => expect(result.current.refreshError).toBe('offline'));
+
+    const sse = FakeEventSource.latest()!;
+    act(() => sse.emitMessage({
+      type: 'message.part.delta',
+      properties: { sessionID: SID, messageID: 'm', partID: 'p', field: 'text', delta: 'live' },
+    }));
+    act(() => sse.emitMessage({
+      type: 'question.asked',
+      properties: { id: 'q1', sessionID: SID, questions: [{ question: 'ok?', header: 'h', options: [] }] },
+    }));
+    await waitFor(() => expect(result.current.parts.some((p) => p.id === 'p')).toBe(true));
+    expect(result.current.pendingQuestion).not.toBeNull();
+
+    await act(async () => { await result.current.refresh(); });
+    expect(result.current.refreshError).toBeNull();
+    expect(result.current.parts.some((p) => p.id === 'p')).toBe(true);
+    expect(result.current.pendingQuestion).not.toBeNull();
+  });
+
   it('caches only the newest page of a long view', async () => {
     const messages = Array.from({ length: 5 }, (_, i) => ({ id: `m${i}`, sessionId: SID, timeCreated: i, data: { role: 'user' as const } }));
     const parts = messages.map((m) => ({ id: `${m.id}-p`, messageId: m.id, sessionId: SID, data: { type: 'text', text: m.id } }));

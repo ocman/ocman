@@ -83,6 +83,8 @@ export interface UseSessionResult extends SessionView {
   status: UseSessionStatus;
   /** Force-refetch /api/session/{id} and replace state. */
   reload: () => Promise<void>;
+  /** Retry a failed refresh without discarding live content (reconcile). */
+  refresh: () => Promise<void>;
   /** Prepend an older page. Idempotent across overlapping ids. */
   loadMore: () => Promise<void>;
   /** Merge fetched history into the live message set for an explicit jump. */
@@ -264,6 +266,7 @@ export function useSession(
   const loadMoreAbortRef = useRef<AbortController | null>(null);
   const loadMoreInFlightRef = useRef(false);
   const reloadRef = useRef<() => Promise<void>>(async () => {});
+  const refreshRef = useRef<() => Promise<void>>(async () => {});
   const retryNowRef = useRef<() => void>(() => {});
   // Snapshot of the latest view, kept current via render-phase
   // assignment. `loadMore` reads from it without taking a dep.
@@ -273,6 +276,7 @@ export function useSession(
   useLayoutEffect(markSseCommit, [view]);
 
   const reload = useCallback(async () => reloadRef.current(), []);
+  const refresh = useCallback(async () => refreshRef.current(), []);
   const retryNow = useCallback(() => retryNowRef.current(), []);
   const clearPrompt = useCallback(
     (kind: 'permission' | 'question', id: string) => {
@@ -554,6 +558,12 @@ export function useSession(
       if (hasContent()) setRefreshing(true);
       await doFetch('replace');
     };
+    // The stale-view Retry shows while content (possibly mid-stream) is on
+    // screen, so it reconciles: a lagging snapshot must not erase SSE text.
+    refreshRef.current = async () => {
+      if (hasContent()) setRefreshing(true);
+      await doFetch('reconcile');
+    };
 
     const connect = () => {
       if (cancelled) return;
@@ -736,6 +746,7 @@ export function useSession(
     ...view,
     status,
     reload,
+    refresh,
     loadMore,
     hydrateHistory,
     loading,
