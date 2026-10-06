@@ -275,6 +275,7 @@ describe('NewConversation', () => {
     act(() => { sent = Promise.resolve(composer.onSend!('Fix login')); });
     expect(screen.getByTestId('pending-prompt')).toHaveTextContent('Fix login');
     expect(screen.getByTestId('start-progress')).toHaveTextContent('Starting session');
+    await waitFor(() => expect(mocks.start).toHaveBeenCalled());
     const { startId } = mocks.start.mock.calls[0][0];
     act(() => {
       for (const cb of mocks.progress) {
