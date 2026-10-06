@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 class ResizeObserver {
@@ -127,6 +127,35 @@ describe('MarkdownText', () => {
 
     await user.click(screen.getByRole('link', { name: 'Plan session' }));
     expect(await screen.findByText('Landed on the plan session')).toBeInTheDocument();
+  });
+
+  it('routes absolute artifact links inside the app and preserves query and fragment', async () => {
+    const user = userEvent.setup();
+    function ArtifactDestination() {
+      const location = useLocation();
+      return <p>{location.pathname + location.search + location.hash}</p>;
+    }
+    render(<MemoryRouter initialEntries={['/session/one']}>
+      <Routes>
+        <Route path="/session/one" element={<MarkdownText text={`[Report](${window.location.origin}/artifacts/report?file=0#preview)`} />} />
+        <Route path="/artifacts/report" element={<ArtifactDestination />} />
+      </Routes>
+    </MemoryRouter>);
+
+    const link = screen.getByRole('link', { name: 'Report' });
+    expect(link).not.toHaveAttribute('target');
+    await user.click(link);
+    expect(await screen.findByText('/artifacts/report?file=0#preview')).toBeInTheDocument();
+  });
+
+  it('keeps artifacts on other origins external, including protocol-relative links', () => {
+    render(<MemoryRouter>
+      <MarkdownText text="[Other report](https://example.com/artifacts/report) [Protocol relative](//example.com/artifacts/report) [Section](#section)" />
+    </MemoryRouter>);
+
+    expect(screen.getByRole('link', { name: 'Other report' })).toHaveAttribute('target', '_blank');
+    expect(screen.getByRole('link', { name: 'Protocol relative' })).toHaveAttribute('target', '_blank');
+    expect(screen.getByRole('link', { name: 'Section' })).not.toHaveAttribute('target');
   });
 
   it('shows the source when Mermaid cannot render it', async () => {

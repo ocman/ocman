@@ -190,14 +190,22 @@ function CodeBlockPre(props: any) {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function MarkdownLink(props: any) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { node: _node, href, children, ...rest } = props;
+  const { node: _node, href: originalHref, children, ...rest } = props;
+  let href = originalHref;
   const routed = useInRouterContext();
   if (props['data-ocman-card'] && routed) {
     return <FactoryMarkerCard epicID={props['data-ocman-epic']} issueID={props['data-ocman-issue']} action={props['data-ocman-action']}>{children}</FactoryMarkerCard>;
   }
   const action = factoryActionFromHref(href);
   if (action && routed) return <FactoryActionCard key={`${action.epicID}/${action.issueID}`} {...action}>{children}</FactoryActionCard>;
-  const internal = href?.startsWith('/');
+  // MCP artifact links are absolute, but same-origin URLs still belong in the app.
+  if (href && URL.canParse(href, window.location.href)) {
+    const url = new URL(href, window.location.href);
+    if (url.origin === window.location.origin && !href.startsWith('#')) {
+      href = url.pathname + url.search + url.hash;
+    }
+  }
+  const internal = href?.startsWith('/') && !href.startsWith('//');
   // In-app paths must not reload the page; anchors and externals stay plain.
   if (internal && routed) return <Link {...rest} to={href}>{children}</Link>;
   const local = internal || href?.startsWith('#');
