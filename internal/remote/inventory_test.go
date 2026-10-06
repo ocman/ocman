@@ -22,6 +22,8 @@ func newStateDB(t *testing.T) *state.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Each :memory: connection has its own schema; serialize Manager access.
+	raw.SetMaxOpenConns(1)
 	t.Cleanup(func() { raw.Close() })
 	d, err := state.OpenFromSQL(raw)
 	if err != nil {
