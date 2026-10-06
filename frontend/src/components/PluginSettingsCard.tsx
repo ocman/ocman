@@ -3,6 +3,7 @@ import { hasConversationCapability, plugins, type PluginInput, type PluginMutati
 import { SettingRow } from './SettingRow';
 import { PluginConfiguration } from './PluginConfiguration';
 import { PluginDeliveryBacklog } from './PluginDeliveryBacklog';
+import { Button } from './Control';
 
 function PluginMetadata({ plugin: p }: { plugin: PluginRegistration }) {
   const d = p.description;
@@ -70,31 +71,31 @@ export function PluginSettingsCard({ plugin: p, owner, refresh }: {
       <legend>Manage {d.name}</legend>
       <SettingRow label="Lifecycle" block>
         <div className="remote-row-actions">
-          <button type="button" className="vscode-btn" disabled={p.enabled || blocked} onClick={() => setReview(true)}>Enable</button>
-          <button type="button" className="vscode-btn" disabled={!p.enabled} onClick={() => { void mutate('disable'); }}>Disable</button>
-          <button type="button" className="vscode-btn" disabled={!p.enabled || blocked} onClick={() => { void mutate('retry'); }}>Retry</button>
-          <button type="button" className="vscode-btn" disabled={!p.enabled || blocked} onClick={() => { void mutate('restart'); }}>Restart</button>
-          <button type="button" className="vscode-btn" onClick={() => setConfigure(!configure)}>Configure</button>
-          <button type="button" className="vscode-btn" disabled={!p.grants?.length} onClick={() => { void mutate('grants', { grants: [] }); }}>Revoke grants</button>
-          <button type="button" className="vscode-btn" disabled={p.enabled} onClick={() => setRemove(true)}>Remove data</button>
+          <Button type="button" size="small" disabled={p.enabled || blocked} onClick={() => setReview(true)}>Enable</Button>
+          <Button type="button" size="small" disabled={!p.enabled} onClick={() => { void mutate('disable'); }}>Disable</Button>
+          <Button type="button" size="small" disabled={!p.enabled || blocked} onClick={() => { void mutate('retry'); }}>Retry</Button>
+          <Button type="button" size="small" disabled={!p.enabled || blocked} onClick={() => { void mutate('restart'); }}>Restart</Button>
+          <Button type="button" size="small" onClick={() => setConfigure(!configure)}>Configure</Button>
+          <Button type="button" size="small" disabled={!p.grants?.length} onClick={() => { void mutate('grants', { grants: [] }); }}>Revoke grants</Button>
+          <Button type="button" size="small" variant="danger" disabled={p.enabled} onClick={() => setRemove(true)}>Remove data</Button>
         </div>
       </SettingRow>
       {review && <SettingRow label="Review grants before enabling" block>
         <p>This native executable runs on {owner} with {d.scope} scope. Approve checksum <code>{p.checksum}</code> and these requested grants:</p>
         <ul>{(d.requestedGrants ?? []).map((grant) => <li key={grant}>{grant}</li>)}</ul>
         {!d.requestedGrants?.length && <p>No grants requested.</p>}
-        <button type="button" className="vscode-btn" onClick={() => { void mutate('enable', { approval: p.approval, grants: d.requestedGrants ?? [] }); }}>Approve grants and enable</button>
-        <button type="button" className="vscode-btn" onClick={() => setReview(false)}>Cancel approval</button>
+        <Button type="button" size="small" variant="accent" onClick={() => { void mutate('enable', { approval: p.approval, grants: d.requestedGrants ?? [] }); }}>Approve grants and enable</Button>
+        <Button type="button" size="small" onClick={() => setReview(false)}>Cancel approval</Button>
       </SettingRow>}
       {configure && <PluginConfiguration key={JSON.stringify(p.configuration)} plugin={p} save={(input) => mutate('configuration', input)} />}
       {remove && <SettingRow label="Permanently remove plugin data" block>
         <p>Delete configuration, secrets, grants, and private data for {d.id} on {owner}. This cannot be undone. The executable is not deleted.</p>
-        <button type="button" className="vscode-btn" onClick={() => { void mutate('remove-data'); }}>Confirm permanent removal</button>
-        <button type="button" className="vscode-btn" onClick={() => setRemove(false)}>Cancel removal</button>
+        <Button type="button" size="small" variant="danger" onClick={() => { void mutate('remove-data'); }}>Confirm permanent removal</Button>
+        <Button type="button" size="small" onClick={() => setRemove(false)}>Cancel removal</Button>
       </SettingRow>}
       {hasConversationCapability(p) && <PluginDeliveryBacklog plugin={p} owner={owner} />}
       <SettingRow label="Recent stderr" desc="Bounded diagnostic output from the selected owner." block>
-        <button type="button" className="vscode-btn" onClick={() => { void loadLogs(); }}>Load recent stderr</button>
+        <Button type="button" size="small" onClick={() => { void loadLogs(); }}>Load recent stderr</Button>
         {logs !== null && <pre aria-label="Recent stderr" style={{ maxHeight: 240, overflow: 'auto', whiteSpace: 'pre-wrap' }}>{logs || 'No recent stderr.'}</pre>}
       </SettingRow>
     </fieldset>

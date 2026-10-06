@@ -1,4 +1,5 @@
 import { EmptyState } from './EmptyState';
+import { Button } from './Control';
 import { searchSettings, type SettingId, type SettingsGroupId } from '../lib/settingsCatalog';
 
 /** Results for a Settings search; picking one jumps to its row. */
@@ -19,12 +20,12 @@ export function SettingsSearchResults({
     <ul className="settings-search-results" aria-label="Matching settings">
       {results.map((r) => (
         <li key={r.id}>
-          <button type="button" className="settings-search-result" onClick={() => onPick(r.id)}>
+          <Button type="button" variant="ghost" className="settings-search-result" onClick={() => onPick(r.id)}>
             <span className="settings-search-result-group">{groupLabels[r.group]}</span>
             <span className="settings-row-label">{r.title}</span>
             <span className="settings-row-desc">{r.description}</span>
             {r.requires && <span className="settings-row-desc">{r.requires}</span>}
-          </button>
+          </Button>
         </li>
       ))}
     </ul>

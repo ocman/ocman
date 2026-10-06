@@ -11,7 +11,7 @@
   gap: 12px;
   padding: 10px 12px;
   border: 1px solid var(--border);
-  background: var(--surface-alt);
+  background: var(--bg-card);
 }
 
 .remote-row-self {
@@ -31,7 +31,7 @@
 
 .remote-row-meta {
   font-size: 0.75rem;
-  color: var(--muted);
+  color: var(--text-dim);
   margin-top: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -50,12 +50,12 @@
   letter-spacing: 0.04em;
   padding: 1px 6px;
   border: 1px solid var(--border);
-  color: var(--muted);
+  color: var(--text-dim);
 }
 
 .remote-health-connected {
-  color: var(--ok);
-  border-color: color-mix(in srgb, var(--ok) 40%, transparent);
+  color: var(--accent2);
+  border-color: color-mix(in srgb, var(--accent2) 40%, transparent);
 }
 
 .remote-health-offline,
@@ -68,34 +68,6 @@
 
 .remote-health-disabled {
   opacity: 0.7;
-}
-
-.remote-btn {
-  padding: 4px 10px;
-  font-size: 0.78rem;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--fg);
-  cursor: pointer;
-}
-
-.remote-btn:hover:not(:disabled) {
-  background: var(--surface-alt);
-}
-
-.remote-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.remote-btn-primary {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.remote-btn-danger {
-  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
-  color: var(--danger);
 }
 
 .remote-add-form {
@@ -116,21 +88,11 @@
 .remote-input {
   flex: 1 1 180px;
   min-width: 140px;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--fg);
-  font-size: 0.82rem;
 }
 
 .remote-token-reveal {
   width: 280px;
   max-width: 40vw;
-  padding: 4px 8px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--fg);
-  font-size: 0.72rem;
 }
 
 .remote-enabled-toggle {

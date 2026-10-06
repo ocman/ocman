@@ -7,6 +7,8 @@ import { useSettingSave } from '../lib/useSaveStatus';
 import { SettingRow, SettingSelect, SettingToggle } from '../components/SettingRow';
 import { SaveStatus } from '../components/SaveStatus';
 import type { SearchSelectOption } from '../components/SearchSelect';
+import { Button } from '../components/Control';
+import { IconButton } from '../components/IconButton';
 import './Dashboard.css';
 
 /** Model choices: the catalogue of any session in the project, else the
@@ -98,15 +100,11 @@ export function ProjectSettingsView() {
                 <span className="mono">{m}</span>
                 {i === 0 && <small data-testid="project-default-badge">Project default</small>}
                 <div>
-                  <button type="button" aria-label={`Move ${m} up`} disabled={i === 0} onClick={() => move(i, -1)}>
-                    <i className="bi bi-arrow-up" aria-hidden="true" />
-                  </button>
-                  <button type="button" aria-label={`Move ${m} down`} disabled={i === models.length - 1} onClick={() => move(i, 1)}>
-                    <i className="bi bi-arrow-down" aria-hidden="true" />
-                  </button>
-                  <button type="button" aria-label={`Remove ${m}`} onClick={() => edit(models.filter((x) => x !== m))}>
+                  <IconButton icon="bi-arrow-up" label={`Move ${m} up`} disabled={i === 0} onClick={() => move(i, -1)} />
+                  <IconButton icon="bi-arrow-down" label={`Move ${m} down`} disabled={i === models.length - 1} onClick={() => move(i, 1)} />
+                  <Button type="button" size="small" variant="danger" aria-label={`Remove ${m}`} onClick={() => edit(models.filter((x) => x !== m))}>
                     Remove
-                  </button>
+                  </Button>
                 </div>
               </li>
             ))}
@@ -114,7 +112,7 @@ export function ProjectSettingsView() {
         )}
         {models.length > 0 && (
           <div>
-            <button type="button" onClick={() => edit([])}>Clear list</button>
+            <Button type="button" size="small" variant="danger" onClick={() => edit([])}>Clear list</Button>
             <SaveStatus state={listSave.state} />
           </div>
         )}

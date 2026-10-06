@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { plugins, type PluginBacklog, type PluginRegistration } from '../lib/plugins';
 import { SettingRow } from './SettingRow';
+import { Button } from './Control';
 
 function age(since: number) {
   if (!since) return 'none waiting';
@@ -58,7 +59,7 @@ export function PluginDeliveryBacklog({ plugin, owner }: { plugin: PluginRegistr
       {backlog
         ? <>{backlog.pending} waiting · {backlog.retrying} retrying · {backlog.dead} needing a decision</>
         : <span role="status">Loading…</span>}
-      <button type="button" className="vscode-btn" onClick={() => { void load(); }}>Reload status</button>
+      <Button type="button" size="small" onClick={() => { void load(); }}>Reload status</Button>
     </SettingRow>
     {backlog && <SettingRow setting="plugin-backlog-limits">
       {backlog.pending + backlog.dead} of {backlog.maxRows} replies · {Math.round(backlog.bytes / 1024)} of {Math.round(backlog.maxBytes / 1024)} KiB · oldest {age(backlog.oldestUnsent)}
@@ -69,12 +70,12 @@ export function PluginDeliveryBacklog({ plugin, owner }: { plugin: PluginRegistr
       <ul>
         {deadLetters.map((letter) => <li key={letter.id}>
           <code>{letter.threadId}</code> in <code>{letter.accountId}</code> · {letter.attempts} attempts · {letter.lastError}
-          <button type="button" className="vscode-btn" onClick={() => { void decide('conversations/retry', letter.id); }}>
+          <Button type="button" size="small" onClick={() => { void decide('conversations/retry', letter.id); }}>
             Retry delivery
-          </button>
-          <button type="button" className="vscode-btn" onClick={() => { void decide('conversations/discard', letter.id); }}>
+          </Button>
+          <Button type="button" size="small" variant="danger" onClick={() => { void decide('conversations/discard', letter.id); }}>
             Discard reply
-          </button>
+          </Button>
         </li>)}
       </ul>
     </SettingRow>}

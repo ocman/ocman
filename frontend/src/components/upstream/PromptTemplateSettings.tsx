@@ -6,6 +6,8 @@ import {
 } from '../../lib/upstreamApi';
 import { SaveStatus } from '../SaveStatus';
 import { useSaveStatus } from '../../lib/useSaveStatus';
+import { Button, TextareaField } from '../Control';
+import './PromptTemplateSettings.css';
 
 // Defaults match the Go constants in internal/server/handlers_prompt_templates.go.
 // Kept in sync manually — these strings are *user-facing defaults*, so a
@@ -150,11 +152,12 @@ function TemplateEditor({ label, value, onSave, onReset, placeholdersNote, testI
       <div className="settings-prompt-template-header">
         <label>{label}</label>
         <SaveStatus state={state} />
-        <button type="button" onClick={() => void track(() => onReset())} data-testid={`prompt-template-${testId}-reset`}>
+        <Button type="button" size="small" onClick={() => void track(() => onReset())} data-testid={`prompt-template-${testId}-reset`}>
           Reset to default
-        </button>
+        </Button>
       </div>
-      <textarea
+      <TextareaField
+        aria-label={label}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={() => {

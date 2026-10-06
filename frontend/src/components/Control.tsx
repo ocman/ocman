@@ -69,6 +69,10 @@ export function TextField({ className, ...props }: ComponentPropsWithRef<'input'
 	return <input {...props} className={classes('oc-field', className)} />;
 }
 
+export function CheckboxField({ className, ...props }: Omit<ComponentPropsWithRef<'input'>, 'type'>) {
+	return <input {...props} type="checkbox" className={classes('oc-checkbox', className)} />;
+}
+
 export function TextareaField({ className, ...props }: ComponentPropsWithRef<'textarea'>) {
 	return <textarea {...props} className={classes('oc-field', 'oc-field--textarea', className)} />;
 }

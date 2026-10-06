@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react';
 import { SaveStatus } from './SaveStatus';
 import './SettingRow.css';
+import { CheckboxField, TextField } from './Control';
 import { SearchSelect, type SearchSelectOption } from './SearchSelect';
 import { useSettingSave } from '../lib/useSaveStatus';
 import { settingAnchor, settingEntry, type SettingId } from '../lib/settingsCatalog';
@@ -86,8 +87,7 @@ export function SettingToggle({
   return (
     <>
       <label className="settings-toggle">
-        <input
-          type="checkbox"
+        <CheckboxField
           aria-label={ariaLabel}
           data-testid={testId}
           checked={checked}
@@ -133,7 +133,7 @@ export function SettingNumber({
 }) {
   return (
     <div className="settings-delay-input">
-      <input
+      <TextField
         type="number"
         min={min}
         max={max}
@@ -228,7 +228,7 @@ export function SettingText({
   };
   return (
     <div className="settings-text-input">
-      <input
+      <TextField
         key={value}
         type={type}
         aria-label={ariaLabel}

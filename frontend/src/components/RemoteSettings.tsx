@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import './RemoteSettings.css';
 import { api } from '../lib/api';
 import type { RemoteStatus, RemoteAccessStatus } from '../lib/api.types';
-import { Button } from './Control';
+import { Button, CheckboxField, TextField } from './Control';
 
 /**
  * RemoteSettings is the hub-side remote-management UI (multi-remote
@@ -52,7 +52,7 @@ export function RemoteSettings() {
           </div>
           <div className="remote-row-actions">
             {revealed ? (
-              <input
+              <TextField
                 className="remote-token-reveal mono"
                 readOnly
                 value={revealed}
@@ -60,14 +60,13 @@ export function RemoteSettings() {
                 aria-label="Remote-access token"
               />
             ) : (
-              <button
+              <Button size="small"
                 type="button"
-                className="remote-btn"
                 onClick={() => { void revealToken(); }}
                 disabled={!access.tokenSet}
               >
                 Reveal token
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -136,18 +135,18 @@ function RemoteRow({ remote, onChanged }: { remote: RemoteStatus; onChanged: () 
           })); }}>
           {remote.enabled ? 'Disable' : 'Enable'}
         </Button>
-        <button type="button" className="remote-btn" disabled={busy || !remote.enabled}
+        <Button type="button" size="small" disabled={busy || !remote.enabled}
           onClick={() => { void act(() => api.reconnectRemote(remote.localId)); }}>
           Reconnect
-        </button>
-        <button type="button" className="remote-btn" disabled={busy}
+        </Button>
+        <Button type="button" size="small" disabled={busy}
           onClick={() => setEditing(true)}>
           Edit
-        </button>
-        <button type="button" className="remote-btn remote-btn-danger" disabled={busy}
+        </Button>
+        <Button type="button" size="small" variant="danger" disabled={busy}
           onClick={() => { void act(() => api.removeRemote(remote.localId)); }}>
           Remove
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -181,16 +180,16 @@ function AddRemoteForm({ onAdded }: { onAdded: () => void }) {
     <form className="remote-add-form" onSubmit={(e) => { void submit(e); }}>
       <div className="remote-add-title">Attach a remote</div>
       {err && <div className="remote-settings-error" role="alert">{err}</div>}
-      <input className="remote-input" placeholder="host:port (e.g. ws.local:8230)"
+      <TextField className="remote-input" placeholder="host:port (e.g. ws.local:8230)"
         value={address} onChange={(e) => setAddress(e.target.value)} aria-label="Remote address" />
-      <input className="remote-input" placeholder="remote-access token" type="password"
+      <TextField className="remote-input" placeholder="remote-access token" type="password"
         value={token} onChange={(e) => setToken(e.target.value)} aria-label="Remote-access token" />
-      <input className="remote-input" placeholder="display name (optional)"
+      <TextField className="remote-input" placeholder="display name (optional)"
         value={displayName} onChange={(e) => setDisplayName(e.target.value)} aria-label="Display name" />
-      <button type="submit" className="remote-btn remote-btn-primary"
+      <Button type="submit" size="small" variant="accent"
         disabled={busy || !address.trim() || !token.trim()}>
         {busy ? 'Connecting…' : 'Add remote'}
-      </button>
+      </Button>
     </form>
   );
 }
@@ -224,18 +223,18 @@ function EditRemoteForm({ remote, onDone, onCancel }: {
 
   return (
     <form className="remote-add-form" onSubmit={(e) => { void submit(e); }}>
-      <input className="remote-input" value={displayName}
+      <TextField className="remote-input" value={displayName}
         onChange={(e) => setDisplayName(e.target.value)} aria-label="Display name" placeholder="display name" />
-      <input className="remote-input" value={address}
+      <TextField className="remote-input" value={address}
         onChange={(e) => setAddress(e.target.value)} aria-label="Remote address" placeholder="host:port" />
-      <input className="remote-input" type="password" value={token}
+      <TextField className="remote-input" type="password" value={token}
         onChange={(e) => setToken(e.target.value)} aria-label="Replace token" placeholder="replace token (leave blank to keep)" />
       <label className="remote-enabled-toggle">
-        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Enabled
+        <CheckboxField checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Enabled
       </label>
       <div className="remote-row-actions">
-        <button type="submit" className="remote-btn remote-btn-primary" disabled={busy}>Save</button>
-        <button type="button" className="remote-btn" onClick={onCancel}>Cancel</button>
+        <Button type="submit" size="small" variant="accent" disabled={busy}>Save</Button>
+        <Button type="button" size="small" onClick={onCancel}>Cancel</Button>
       </div>
     </form>
   );

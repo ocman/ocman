@@ -19,6 +19,7 @@ a.oc-button, a.oc-button:hover { text-decoration: none; }
 .oc-button--compact { height: 22px; padding: 0 4px; font-size: 12px; }
 .oc-button--large { height: 52px; padding: 0 22px; font-size: 16px; font-weight: 700; }
 .oc-field { min-width: 0; padding: 0 12px; }
+.oc-checkbox { accent-color: var(--accent); }
 .oc-field:disabled { opacity: .5; cursor: not-allowed; }
 .oc-field:is([aria-invalid="true"], [aria-invalid="grammar"], [aria-invalid="spelling"]) { border-color: var(--danger); }
 .oc-field--textarea { height: auto; padding: 8px 12px; resize: vertical; line-height: 1.5; }

@@ -13,7 +13,7 @@ import { usePwaInstall } from '../../lib/usePwaInstall';
 import { SettingRow, SettingToggle } from '../../components/SettingRow';
 import { useSettingSave } from '../../lib/useSaveStatus';
 import { getOpenInChrome, isIOS, setOpenInChrome } from '../../lib/externalLinks';
-import { SearchField } from '../../components/Control';
+import { Button, SearchField } from '../../components/Control';
 import { SettingsSearchResults } from '../../components/SettingsSearch';
 import { useRevealSetting, type RevealRequest } from '../../lib/useRevealSetting';
 import { settingEntry, type SettingId, type SettingsGroupId } from '../../lib/settingsCatalog';
@@ -95,7 +95,7 @@ export function SettingsTab() {
           onKeyDown={(e) => { if (e.key === 'Escape') setQuery(''); }}
         />
         {groups.map((g) => (
-          <button
+          <Button variant="ghost"
             key={g.id}
             type="button"
             className={`settings-nav-item${active === g.id && !searching ? ' active' : ''}`}
@@ -103,7 +103,7 @@ export function SettingsTab() {
             onClick={() => { setQuery(''); setTarget(null); setActive(g.id); }}
           >
             {g.label}
-          </button>
+          </Button>
         ))}
       </nav>
       <div className="settings-content">
@@ -189,14 +189,13 @@ export function SettingsTab() {
                 ? 'ocman is installed as an app on this device. Launch it from your dock or app launcher to use it in its own window.'
                 : undefined}
             >
-              <button
+              <Button size="small"
                 type="button"
-                className="vscode-btn"
                 disabled={installed || !canInstall}
                 onClick={() => { void promptInstall(); }}
               >
                 {installed ? 'Installed' : 'Install'}
-              </button>
+              </Button>
             </SettingRow>
           </div>
         )}
@@ -205,13 +204,12 @@ export function SettingsTab() {
           <div className="settings-section" hidden={active !== 'account'}>
             <h2 className="settings-section-title">Account</h2>
             <SettingRow setting="sign-out">
-              <button
+              <Button size="small"
                 type="button"
-                className="vscode-btn"
                 onClick={() => { void logout(); }}
               >
                 Sign out
-              </button>
+              </Button>
             </SettingRow>
           </div>
         )}

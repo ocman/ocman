@@ -4,6 +4,7 @@ import { useSpeechPlayback } from '../lib/turnSpeech';
 import { useSettingSave } from '../lib/useSaveStatus';
 import { SettingNumber, SettingRow, SettingToggle } from './SettingRow';
 import { SaveStatus } from './SaveStatus';
+import { Button, SelectField } from './Control';
 
 export function SpeechSettings() {
   const autoRead = useUiStore((s) => s.autoReadAnswers);
@@ -32,7 +33,7 @@ export function SpeechSettings() {
     </SettingRow>
     {supported && <>
       <SettingRow setting="reading-voice">
-        <select aria-label="Reading voice" value={voiceURI} onChange={(event) => {
+        <SelectField aria-label="Reading voice" value={voiceURI} onChange={(event) => {
           const value = event.target.value;
           stop();
           void voiceSave.track(async () => setVoiceURI(value)).catch(() => {});
@@ -41,15 +42,15 @@ export function SpeechSettings() {
           {voices.map((voice) => <option key={voice.voiceURI} value={voice.voiceURI}>
             {voice.name} ({voice.lang}, {voice.localService ? 'local' : 'online'})
           </option>)}
-        </select>
+        </SelectField>
         <SaveStatus state={voiceSave.state} />
       </SettingRow>
       <SettingRow setting="reading-speed">
         <SettingNumber ariaLabel="Reading speed" value={rate} unit="×" min={0.5} max={2} step={0.1}
           save={rateSave} onSave={setRate} />
-        <button type="button" onClick={() => speakingId ? stop() : play('preview', 'This is how your final answers will sound.')}>
+        <Button type="button" size="small" onClick={() => speakingId ? stop() : play('preview', 'This is how your final answers will sound.')}>
           {speakingId ? 'Stop preview' : 'Preview voice'}
-        </button>
+        </Button>
       </SettingRow>
       {error && <p role="status">{error}</p>}
     </>}

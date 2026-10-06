@@ -8,6 +8,8 @@ import { SettingRow, SettingToggle, SettingNumber, SettingSelect } from '../../c
 import { useSaveStatus, useSettingSave } from '../../lib/useSaveStatus';
 import { useUiStore } from '../../lib/uiStore';
 import { useApiStore } from '../../lib/apiStore';
+import { Button, CheckboxField, TextareaField, TextField } from '../../components/Control';
+import { IconButton } from '../../components/IconButton';
 
 type PromptSection = { title: string; content: string; enabled?: boolean };
 // ---------------------------------------------------------------------------
@@ -30,34 +32,28 @@ function PromptSectionEditor({
   return (
     <div className="settings-prompt-section">
       <div className="settings-prompt-section-header">
-        <label className="settings-prompt-section-toggle">
-          <input
-            type="checkbox"
+        <label className="settings-toggle">
+          <CheckboxField
             checked={enabled}
             aria-label="Enable rule"
             onChange={(e) => onChange({ ...section, enabled: e.target.checked })}
           />
-          <span aria-hidden="true" />
+          <span className="settings-toggle-track" aria-hidden="true" />
         </label>
-        <input
+        <TextField
           type="text"
           className="settings-prompt-section-title"
           placeholder="Section title"
+          aria-label="Section title"
           value={section.title}
           onChange={(e) => onChange({ ...section, title: e.target.value })}
         />
-        <button
-          type="button"
-          className="settings-prompt-section-remove"
-          aria-label="Remove section"
-          onClick={onRemove}
-        >
-          &#x2715;
-        </button>
+        <IconButton icon="bi-x-lg" label="Remove section" variant="danger" onClick={onRemove} />
       </div>
-      <textarea
+      <TextareaField
         ref={textareaRef}
         className="settings-prompt-section-content"
+        aria-label="Section content"
         placeholder="Describe the rule in plain language. The AI reviewer will follow this as an additional instruction."
         value={section.content}
         rows={3}
@@ -180,13 +176,12 @@ export function AutoApproveSection() {
               onRemove={() => saveSections(promptSections.filter((_, j) => j !== i))}
             />
           ))}
-          <button
+          <Button
             type="button"
-            className="settings-prompt-add"
             onClick={() => saveSections([...promptSections, { title: '', content: '' }])}
           >
             + Add section
-          </button>
+          </Button>
         </div>
       </SettingRow>
     </>

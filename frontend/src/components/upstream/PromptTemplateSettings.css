@@ -1,0 +1,42 @@
+.settings-prompt-templates {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+  width: 100%;
+}
+
+.settings-prompt-template {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-prompt-template-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-prompt-template-header label {
+  font-weight: 500;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.settings-prompt-template textarea {
+  width: 100%;
+  font-family: var(--font-conversation-mono);
+}
+
+.settings-prompt-template-note {
+  font-family: var(--font-conversation-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.settings-prompt-templates-error {
+  font-family: var(--font-conversation-mono);
+  font-size: 11px;
+  color: var(--danger);
+}

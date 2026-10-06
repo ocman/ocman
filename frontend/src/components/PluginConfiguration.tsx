@@ -4,6 +4,7 @@ import type { PluginInput, PluginRegistration } from '../lib/plugins';
 import { plugins } from '../lib/plugins';
 import { SearchSelect } from './SearchSelect';
 import { SettingRow } from './SettingRow';
+import { Button, CheckboxField, SelectField, TextField } from './Control';
 
 const emptyCatalog = { agents: [] as string[], models: [] as string[] };
 
@@ -56,14 +57,14 @@ export function PluginConfiguration({ plugin, save }: { plugin: PluginRegistrati
   }}>
     {settings.map((s) => <SettingRow key={s.key} label={s.label} desc={s.secret ? 'Write-only. Leave blank to keep the current secret.' : s.required ? 'Required' : undefined}>
       {s.secret ? <>
-        <input aria-label={s.label} type="password" autoComplete="new-password" value={secrets[s.key] ?? ''}
+        <TextField aria-label={s.label} type="password" autoComplete="new-password" value={secrets[s.key] ?? ''}
           required={s.required && !plugin.configuration.secrets?.[s.key]}
           onChange={(event) => setSecrets((previous) => {
             const next = { ...previous };
             if (event.target.value) next[s.key] = event.target.value; else delete next[s.key];
             return next;
           })} />
-        {!s.required && <label><input type="checkbox" checked={secrets[s.key] === ''} onChange={(event) => setSecrets((previous) => {
+        {!s.required && <label><CheckboxField checked={secrets[s.key] === ''} onChange={(event) => setSecrets((previous) => {
           const next = { ...previous };
           if (event.target.checked) next[s.key] = ''; else delete next[s.key];
           return next;
@@ -74,19 +75,19 @@ export function PluginConfiguration({ plugin, save }: { plugin: PluginRegistrati
       : slack && (s.key === 'agent' || s.key === 'model') ? <SearchSelect ariaLabel={s.label} searchLabel={`Search ${s.key}s`} placeholder={`Default ${s.key}`} disabled={!values.project}
         value={String(values[s.key] ?? '')} options={selectOptions(s.key === 'agent' ? options.agents : options.models, String(values[s.key] ?? ''), `Default ${s.key}`)}
         onChange={(value) => selectValue(s.key, value)} />
-      : s.type === 'boolean' ? <select aria-label={s.label} required={s.required} value={String(values[s.key] ?? '')} onChange={(event) => setValues((previous) => {
+      : s.type === 'boolean' ? <SelectField aria-label={s.label} required={s.required} value={String(values[s.key] ?? '')} onChange={(event) => setValues((previous) => {
         const next = { ...previous };
         if (event.target.value === '') delete next[s.key]; else next[s.key] = event.target.value === 'true';
         return next;
       })}>
         <option value="">Not set</option><option value="true">Yes</option><option value="false">No</option>
-      </select> : s.enum?.length ? <select aria-label={s.label} required={s.required} value={String(values[s.key] ?? '')} onChange={(event) => setValues((previous) => {
+      </SelectField> : s.enum?.length ? <SelectField aria-label={s.label} required={s.required} value={String(values[s.key] ?? '')} onChange={(event) => setValues((previous) => {
         const next = { ...previous };
         if (event.target.value === '') delete next[s.key]; else next[s.key] = event.target.value;
         return next;
       })}>
         <option value="">Select a value</option>{s.enum.map((option) => <option key={option}>{option}</option>)}
-      </select> : <input aria-label={s.label} type={s.type === 'string' ? 'text' : 'number'} step={s.type === 'integer' ? 1 : 'any'} required={s.required}
+      </SelectField> : <TextField aria-label={s.label} type={s.type === 'string' ? 'text' : 'number'} step={s.type === 'integer' ? 1 : 'any'} required={s.required}
         value={String(values[s.key] ?? '')} onChange={(event) => setValues((previous) => {
           const next = { ...previous };
           if (s.type === 'string') next[s.key] = event.target.value;
@@ -96,6 +97,6 @@ export function PluginConfiguration({ plugin, save }: { plugin: PluginRegistrati
         })} />}
     </SettingRow>)}
     {!settings.length && <p>No configuration settings.</p>}
-    <button type="submit" className="vscode-btn">Save configuration</button>
+    <Button type="submit" size="small" variant="accent">Save configuration</Button>
   </form>;
 }

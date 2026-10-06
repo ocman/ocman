@@ -4,6 +4,7 @@ import type { HostCapabilityEntry } from '../lib/api.types';
 import { plugins, type PluginRegistration } from '../lib/plugins';
 import { SettingRow } from './SettingRow';
 import { PluginSettingsCard } from './PluginSettingsCard';
+import { Button, SelectField } from './Control';
 
 export function PluginSettings() {
   const [hosts, setHosts] = useState<HostCapabilityEntry[] | null>(null);
@@ -21,11 +22,11 @@ export function PluginSettings() {
   const host = hosts?.find((entry) => entry.remoteId === selected);
   return <>
     <SettingRow setting="plugin-owner">
-      <select aria-label="Plugin owner" value={selected} onChange={(event) => setOwner(event.target.value)}>
+      <SelectField aria-label="Plugin owner" value={selected} onChange={(event) => setOwner(event.target.value)}>
         {hosts?.map((entry) => <option key={entry.remoteId} value={entry.remoteId}>{entry.remoteName}</option>)}
         {owner && !host && <option value={owner}>{owner} (unavailable)</option>}
-      </select>
-      <button type="button" className="vscode-btn" onClick={() => setRevision((n) => n + 1)}>Refresh owners</button>
+      </SelectField>
+      <Button type="button" size="small" onClick={() => setRevision((n) => n + 1)}>Refresh owners</Button>
     </SettingRow>
     {error ? <p role="alert">Could not load plugin owners. Refresh owners to retry.</p>
       : !hosts ? <p role="status">Loading plugin owners…</p>
@@ -61,8 +62,8 @@ function PluginCatalog({ owner }: { owner: string }) {
 
   return <>
     <SettingRow setting="plugin-discovery">
-      <button type="button" className="vscode-btn" disabled={busy || (catalog === null && !error)} onClick={() => { void refresh(true); }}>Rescan plugins</button>
-      <button type="button" className="vscode-btn" disabled={busy || (catalog === null && !error)} onClick={() => { void refresh(); }}>Refresh health</button>
+      <Button type="button" size="small" disabled={busy || (catalog === null && !error)} onClick={() => { void refresh(true); }}>Rescan plugins</Button>
+      <Button type="button" size="small" disabled={busy || (catalog === null && !error)} onClick={() => { void refresh(); }}>Refresh health</Button>
     </SettingRow>
     {discovery.map((failure) => <p role="alert" key={failure.filename}>{failure.filename}: {failure.error}</p>)}
     {error ? <p role="alert">Could not load plugins for this owner. Refresh health to retry.</p>

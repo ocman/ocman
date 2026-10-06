@@ -6,6 +6,7 @@ import { SettingRow, SettingToggle } from './SettingRow';
 import { useSettingSave } from '../lib/useSaveStatus';
 import { DataTable } from './DataTable';
 import { useShareLinks } from '../lib/useShareLinks';
+import { Button, ButtonGroup } from './Control';
 
 /**
  * SharingSettings renders the master "allow sharing" toggle plus a
@@ -95,10 +96,10 @@ export function SharingSettings() {
             return <tr key={link.token}>
               <td><Link to={`/session/${encodeURIComponent(link.sessionId)}?platform=${encodeURIComponent(link.platform)}`}>{cleanTitle(session?.title ?? '') || link.sessionId}</Link></td>
               <td><time dateTime={new Date(link.createdAt).toISOString()}>{formatDateTimeShort(link.createdAt)}</time></td>
-              <td><div className="oc-share-menu-link-actions">
-                <button type="button" onClick={() => void state.copy(link)} data-testid="share-copy-link">{state.copied === link.token ? 'Copied!' : 'Copy URL'}</button>
-                <button type="button" className="oc-share-menu-revoke" onClick={() => void state.revoke(link)} disabled={state.busy} data-testid="share-revoke-link">Revoke</button>
-              </div></td>
+              <td><ButtonGroup label="Share actions">
+                <Button type="button" size="small" onClick={() => void state.copy(link)} data-testid="share-copy-link">{state.copied === link.token ? 'Copied!' : 'Copy URL'}</Button>
+                <Button type="button" size="small" variant="danger" onClick={() => void state.revoke(link)} disabled={state.busy} data-testid="share-revoke-link">Revoke</Button>
+              </ButtonGroup></td>
             </tr>;
           })}</tbody>
         </DataTable>}

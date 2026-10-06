@@ -102,11 +102,14 @@ describe('SettingsTab actions', () => {
   it('keeps install and sign-out actions working inside setting rows', () => {
     render(<SettingsTab />);
 
+    expect(screen.getByRole('button', { name: 'App' })).toHaveClass('oc-button');
     fireEvent.click(screen.getByRole('button', { name: 'App' }));
+    expect(screen.getByRole('button', { name: 'Install' })).toHaveClass('oc-button');
     fireEvent.click(screen.getByRole('button', { name: 'Install' }));
     expect(promptInstall).toHaveBeenCalledOnce();
 
     fireEvent.click(screen.getByRole('button', { name: 'Account' }));
+    expect(screen.getByRole('button', { name: 'Sign out' })).toHaveClass('oc-button');
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
     expect(logout).toHaveBeenCalledOnce();
   });
