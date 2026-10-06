@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import type { AnchorHTMLAttributes, ComponentPropsWithRef, HTMLAttributes, InputHTMLAttributes, MouseEvent, ReactNode, SelectHTMLAttributes } from 'react';
+import { Link } from 'react-router-dom';
 import './Control.css';
 
 type Variant = 'accent' | 'muted' | 'default' | 'link' | 'ghost' | 'danger';
@@ -51,6 +52,11 @@ export function SubmitButton({ onClick, pending = false, pendingLabel, disabled,
 /** A link styled as a Button, for navigation and downloads. */
 export function AnchorButton({ className, variant = 'default', size = 'normal', ...props }: AnchorHTMLAttributes<HTMLAnchorElement> & { variant?: Variant; size?: Size }) {
 	return <a {...props} className={classes('oc-button', `oc-button--${variant}`, `oc-button--${size}`, className)} />;
+}
+
+/** A client-side route link with the same appearance as an action button. */
+export function RouteButton({ className, variant = 'default', size = 'normal', ...props }: ComponentPropsWithRef<typeof Link> & { variant?: Variant; size?: Size }) {
+	return <Link {...props} className={classes('oc-button', `oc-button--${variant}`, `oc-button--${size}`, className)} />;
 }
 
 export function ButtonGroup({ label, joined = false, className, ...props }: Omit<HTMLAttributes<HTMLDivElement>, 'role' | 'aria-label'> & { label: string; joined?: boolean }) {

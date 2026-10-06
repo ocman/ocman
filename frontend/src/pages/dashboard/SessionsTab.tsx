@@ -8,6 +8,8 @@ import { matchesScope } from '../../lib/projectTree';
 import { useUiStore } from '../../lib/uiStore';
 import { useDashboard as useDashboardCtx } from './context';
 import { DashboardToolbar } from './DashboardToolbar';
+import { Button, ButtonGroup } from '../../components/Control';
+import styles from './SessionsTab.module.css';
 
 // ---------------------------------------------------------------------------
 // Sessions tab
@@ -43,13 +45,12 @@ export function SessionsTab() {
         actionTitle="Create a new OpenCode session in a known project"
         onAction={openProjectSessionPalette}
       />
-      <div className="oc-time-range">
+      <ButtonGroup label="Session filters" className={styles.filters}>
         <TimeRangeControl value={timeRange} onChange={setTimeRange} />
-        <button
-          className={`oc-time-range-btn${showArchived ? ' active' : ''}`}
+        <Button type="button" size="small" variant={showArchived ? 'accent' : 'default'} aria-pressed={showArchived}
           onClick={() => setShowArchived(!showArchived)}
-        >Include archived</button>
-      </div>
+        >Include archived</Button>
+      </ButtonGroup>
       <SessionTable
         sessions={filteredSessions}
         showProject

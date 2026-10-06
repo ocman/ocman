@@ -14,7 +14,7 @@ import { useProjects, useSessions } from '../lib/queries';
 import { projectIdentityIndex } from '../lib/projectIdentity';
 import { remoteLog } from '../lib/remoteLog';
 import type { TmuxClient } from '../lib/api';
-import { SearchField } from '../components/Control';
+import { Button, ButtonGroup, SearchField } from '../components/Control';
 import styles from './ProjectDetail.module.css';
 
 const DEFAULT_TIME_RANGE = 168; // 7d
@@ -170,37 +170,39 @@ export function ProjectDetail() {
         />
       )}
       <HeaderPortal>
-        {matchingTmuxSession && (
-          <button
-            type="button"
-            className="tmux-switch-btn"
-            onClick={(e) => handleTmuxSwitch(e.currentTarget)}
-            title={`Switch tmux to ${shortPath(matchingTmuxSession.name)} (T)`}
-          >tmux</button>
-        )}
-        {directory && (
-          <button type="button" className="vscode-btn" onClick={handleOpenVSCode} title="Open in VS Code (V)">VS Code</button>
-        )}
-        {directory && launchAllowed && (
-          <button
-            type="button"
-            className="oc-time-range-btn"
-            onClick={() => navigate(`/project/${encodeURIComponent(directory)}/worktrees${ownerQuery}`)}
-            title="View project worktrees"
-          >
-            Worktrees
-          </button>
-        )}
-        {directory && (
-          <button
-            type="button"
-            className="oc-time-range-btn"
-            onClick={() => navigate(`/project/${encodeURIComponent(directory)}/settings`)}
-            title="Project settings"
-          >
-            Settings
-          </button>
-        )}
+        <ButtonGroup label="Project actions">
+          {matchingTmuxSession && (
+            <Button
+              type="button"
+              size="small"
+              onClick={(e) => handleTmuxSwitch(e.currentTarget)}
+              title={`Switch tmux to ${shortPath(matchingTmuxSession.name)} (T)`}
+            >tmux</Button>
+          )}
+          {directory && (
+            <Button type="button" size="small" onClick={handleOpenVSCode} title="Open in VS Code (V)">VS Code</Button>
+          )}
+          {directory && launchAllowed && (
+            <Button
+              type="button"
+              size="small"
+              onClick={() => navigate(`/project/${encodeURIComponent(directory)}/worktrees${ownerQuery}`)}
+              title="View project worktrees"
+            >
+              Worktrees
+            </Button>
+          )}
+          {directory && (
+            <Button
+              type="button"
+              size="small"
+              onClick={() => navigate(`/project/${encodeURIComponent(directory)}/settings`)}
+              title="Project settings"
+            >
+              Settings
+            </Button>
+          )}
+        </ButtonGroup>
       </HeaderPortal>
       <div className={styles.searchBar}>
         <SearchField className={styles.search}
@@ -210,13 +212,12 @@ export function ProjectDetail() {
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
-      <div className={styles.range}>
+      <ButtonGroup label="Project session filters" className={styles.range}>
         <TimeRangeControl value={timeRange} onChange={setTimeRange} />
-        <button
-          className={`oc-time-range-btn${excludeArchived ? ' active' : ''}`}
+        <Button type="button" size="small" variant={excludeArchived ? 'accent' : 'default'} aria-pressed={excludeArchived}
           onClick={() => setExcludeArchived(!excludeArchived)}
-        >Exclude archived</button>
-      </div>
+        >Exclude archived</Button>
+      </ButtonGroup>
       <SessionTable sessions={filteredSessions} showProject={false} loading={!sessionsLoaded} includeArchived={!excludeArchived} />
     </div>
   );

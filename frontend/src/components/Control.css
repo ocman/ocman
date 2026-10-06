@@ -36,8 +36,3 @@ a.oc-button, a.oc-button:hover { text-decoration: none; }
 .oc-icon-button[aria-busy="true"]::before { content: none; }
 .oc-icon-button[aria-busy="true"] > i { animation: oc-button-spin .8s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .oc-icon-button[aria-busy="true"] > i { animation: none; } }
-/* ponytail: existing compact actions share these rules until their callers migrate to Button. */
-.oc-time-range-btn { background: transparent; color: var(--text-dim); border: 1px solid var(--border); border-radius: 0; padding: 3px 10px; cursor: pointer; font-family: 'SF Mono', Consolas, monospace; font-size: 11px; transition: all .15s; }
-.oc-time-range-btn:hover { color: var(--text); border-color: var(--overlay0); }
-.oc-time-range-btn.active { color: var(--accent); border-color: var(--accent); }
-.oc-time-range-btn:disabled { opacity: .35; cursor: default; pointer-events: none; }

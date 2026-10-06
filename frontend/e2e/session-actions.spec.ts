@@ -256,7 +256,7 @@ test('project detail page renders directory path', async ({ mockedPage: page }) 
 
 test('project detail page shows VS Code button', async ({ mockedPage: page }) => {
   await page.goto(`/project/${encodeURIComponent(MOCK_PROJECT.directory)}`);
-  await expect(page.locator('button.vscode-btn', { hasText: 'VS Code' })).toBeVisible({ timeout: 5_000 });
+  await expect(page.getByRole('button', { name: 'VS Code', exact: true })).toBeVisible({ timeout: 5_000 });
 });
 
 test('project detail shows sessions from the mocked sessions API', async ({ mockedPage: page }) => {
@@ -326,7 +326,7 @@ test('project detail "Exclude archived" toggle hides locally-archived sessions',
   await expect(page.locator('.session-title', { hasText: MOCK_SESSION_2.title })).toBeVisible();
 
   // Click the toggle — archived row disappears.
-  await page.locator('.oc-time-range-btn', { hasText: 'Exclude archived' }).click();
+  await page.getByRole('button', { name: 'Exclude archived', exact: true }).click();
   await expect(page.locator('.session-title', { hasText: MOCK_SESSION.title })).toBeVisible();
   await expect(page.locator('.session-title', { hasText: MOCK_SESSION_2.title })).not.toBeVisible();
 });

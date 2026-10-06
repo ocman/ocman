@@ -162,6 +162,7 @@ describe('WorktreesView', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Confirm delete' }));
 
     const force = await screen.findByRole('button', { name: 'Force delete' });
+    expect(force).toHaveClass('oc-button--danger');
     fireEvent.click(force);
 
     await waitFor(() => expect(remove).toHaveBeenCalledTimes(2));
@@ -218,6 +219,9 @@ describe('WorktreesView', () => {
       expect(launchState.askedFor).toContain('B');
       expect(launchState.askedFor).not.toContain(undefined);
       expect(screen.getByRole('link', { name: 'Back to project' })).toHaveAttribute('href', '/project/%2Frepo?remoteId=B');
+      expect(screen.getByRole('link', { name: 'Back to project' })).toHaveClass('oc-button');
+      expect(screen.getByRole('button', { name: 'New worktree session' })).toHaveClass('oc-button--accent');
+      for (const button of screen.getAllByRole('button', { name: 'VS Code' })) expect(button).toHaveClass('oc-button');
 
       fireEvent.click(screen.getByRole('button', { name: 'New worktree session' }));
       expect(openWorktreeForm).toHaveBeenCalledWith({ projectDir: '/repo', remoteId: 'B' });
