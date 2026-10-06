@@ -68,6 +68,9 @@ in your browser across projects, pane reopening, and page reloads. Controls
 stay visible during upstream detection and hide when no supported upstream
 is found, without clearing your preferences.
 
+Refreshing keeps existing rows, expanded details, and CI badges visible until
+the new results arrive. A failed refresh leaves the list available for retry.
+
 Each PR shows its CI status as soon as its row is visible. A running build is
 re-checked every 5 seconds while the row stays on screen. Once every check
 has finished, the result is remembered for that commit (also across reloads)

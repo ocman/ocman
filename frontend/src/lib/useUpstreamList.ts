@@ -27,7 +27,7 @@ export interface UseUpstreamListResult<T extends UpstreamListItem> {
  * useUpstreamList fetches one page of PRs or Issues for a single
  * remote. Re-fetches when any of (dir, remoteId, remote, state, mine, page)
  * change, and exposes a manual `refresh()` callback for the toolbar
- * refresh button.
+ * refresh button. Same-query refreshes keep existing rows visible.
  */
 export function useUpstreamList<T extends UpstreamListItem>(opts: {
   kind: 'prs' | 'issues';
@@ -49,8 +49,9 @@ export function useUpstreamList<T extends UpstreamListItem>(opts: {
   // refreshCounter increments to force a re-run of the effect even
   // when none of the dependencies changed (manual refresh button).
   const [refreshCounter, setRefreshCounter] = useState(0);
-  const requestKey = JSON.stringify([kind, dir, remoteId, remote, state, mine, page, refreshCounter, enabled]);
+  const requestKey = JSON.stringify([kind, dir, remoteId, remote, state, mine, page, enabled]);
   const [activeKey, setActiveKey] = useState(requestKey);
+  const lastRequestKey = useRef(requestKey);
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -66,6 +67,7 @@ export function useUpstreamList<T extends UpstreamListItem>(opts: {
   useEffect(() => {
     if (!enabled || !dir || !remote) {
       const reset = () => {
+        lastRequestKey.current = requestKey;
         setActiveKey(requestKey);
         setItems([]);
         setLoading(false);
@@ -83,11 +85,14 @@ export function useUpstreamList<T extends UpstreamListItem>(opts: {
       abortRef.current?.abort();
       const ctrl = new AbortController();
       abortRef.current = ctrl;
+      if (lastRequestKey.current !== requestKey) {
+        setItems([]);
+        setPagination({ page: 1, hasMore: false });
+      }
+      lastRequestKey.current = requestKey;
       setActiveKey(requestKey);
-      setItems([]);
       setLoading(true);
       setError(null);
-      setPagination({ page: 1, hasMore: false });
       setRateLimit({ limited: false });
 
       const params = { dir, remoteId, remote, state, mine, page, signal: ctrl.signal };
@@ -129,7 +134,7 @@ export function useUpstreamList<T extends UpstreamListItem>(opts: {
     return () => {
       abortRef.current?.abort();
     };
-  }, [enabled, dir, remoteId, remote, state, mine, page, kind, refreshCounter]);
+  }, [enabled, dir, remoteId, remote, state, mine, page, kind, refreshCounter, requestKey]);
 
   const refresh = useCallback(() => {
     setRefreshCounter((n) => n + 1);

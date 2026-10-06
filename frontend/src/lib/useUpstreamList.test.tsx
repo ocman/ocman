@@ -37,7 +37,7 @@ it('clears rows when the project changes', async () => {
   expect(snapshots).not.toContainEqual({ dir: '/new', titles: ['old project'] });
 });
 
-it('clears pagination and rate limits while refreshing', async () => {
+it('retains rows and pagination while refreshing and clears stale rate limits', async () => {
   vi.spyOn(api, 'fetchPRs')
     .mockResolvedValueOnce({
       prs: [{ number: 7, title: 'old page' } as api.PR],
@@ -51,9 +51,11 @@ it('clears pagination and rate limits while refreshing', async () => {
   }));
   await waitFor(() => expect(result.current.rateLimit.limited).toBe(true));
 
-  result.current.refresh();
+  const items = result.current.items;
+  act(() => result.current.refresh());
   await waitFor(() => expect(result.current.loading).toBe(true));
-  expect(result.current.pagination).toEqual({ page: 1, hasMore: false });
+  expect(result.current.items).toBe(items);
+  expect(result.current.pagination).toEqual({ page: 1, hasMore: true });
   expect(result.current.rateLimit).toEqual({ limited: false });
 });
 
@@ -116,4 +118,32 @@ it('does not expose rows from the previous page', async () => {
   act(() => result.current.setPage(2));
   expect(result.current.items).toEqual([]);
   expect(snapshots).not.toContainEqual({ page: 2, titles: ['page one'] });
+});
+
+it.each(['prs', 'issues'] as const)('keeps %s visible on refresh failure and updates them on retry', async (kind) => {
+  const item = { number: 7, title: 'original' } as api.PR & api.Issue;
+  const pagination = { page: 1, hasMore: true };
+  const rateLimit = { limited: false };
+  const fetcher = kind === 'prs' ? vi.spyOn(api, 'fetchPRs') : vi.spyOn(api, 'fetchIssues');
+  fetcher.mockResolvedValueOnce({ prs: [item], issues: [item], pagination, rateLimit })
+    .mockRejectedValueOnce(new Error('offline'))
+    .mockResolvedValueOnce({ prs: [{ ...item, title: 'updated' }], issues: [{ ...item, title: 'updated' }], pagination, rateLimit });
+  const snapshots: string[][] = [];
+  const { result } = renderHook(() => {
+    const value = useUpstreamList<api.PR | api.Issue>({
+      kind, dir: '/repo', remoteId: 'local', remote: 'origin', state: 'open', mine: undefined, enabled: true,
+    });
+    snapshots.push(value.items.map((item) => item.title));
+    return value;
+  });
+  await waitFor(() => expect(result.current.items).toEqual([item]));
+  snapshots.length = 0;
+  act(() => result.current.refresh());
+  await waitFor(() => expect(result.current.error?.message).toBe('offline'));
+  expect(result.current.items).toEqual([item]);
+  expect(result.current.pagination).toEqual(pagination);
+  act(() => result.current.refresh());
+  await waitFor(() => expect(result.current.items[0]?.title).toBe('updated'));
+  expect(result.current.error).toBeNull();
+  expect(snapshots).not.toContainEqual([]);
 });
