@@ -13,7 +13,8 @@ Choose how each routine uses OpenCode sessions:
 A session a routine starts is titled with the routine's name and launch time (for example
 `Daily check 2026-09-30 15:04`) and tagged as a
 routine session. The session sidebar hides routine sessions and their children
-until you check **Show routines** under **Filter sessions**. Existing sessions a
+until you check **Show routines** under **Filter sessions**. Opened and pinned
+sessions always stay visible, even when filters or search would hide them. Existing sessions a
 routine continues stay yours and are not tagged.
 
 ## Create and manage routines

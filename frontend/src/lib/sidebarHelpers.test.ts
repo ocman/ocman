@@ -87,7 +87,7 @@ describe('computeSidebarHash', () => {
       makeSession({ id: 'a', status: 'busy', timeUpdated: 100 }),
       makeSession({ id: 'b', status: 'done', timeUpdated: 200, pendingPermission: true }),
     ];
-    expect(computeSidebarHash(sessions)).toBe('a|busy|100||true|0|0,b|done|200|p|true|0|0');
+    expect(computeSidebarHash(sessions)).toBe('a|busy|100||true|0|0|false,b|done|200|p|true|0|0|false');
   });
 
   it('marks both pending flags when set', () => {
@@ -98,7 +98,7 @@ describe('computeSidebarHash', () => {
       pendingPermission: true,
       pendingQuestion: true,
     });
-    expect(computeSidebarHash([session])).toBe('a|waiting|50|pq|true|0|0');
+    expect(computeSidebarHash([session])).toBe('a|waiting|50|pq|true|0|0|false');
   });
 
   it('produces stable output across calls with identical input', () => {

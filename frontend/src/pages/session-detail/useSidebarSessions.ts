@@ -320,9 +320,8 @@ export function useSidebarSessions({
             timeUpdated: target.timeUpdated,
           });
           const { recentSessions: current, setRecentSessions: storeSetter, recentSessionsHash } = useApiStore.getState();
-          const next = showArchivedRecentRef.current
-            ? current.map((session) => (session.id === target.id ? { ...session, archived: true } : session))
-            : current.filter((session) => session.id !== target.id);
+          const next = current.flatMap((session) => session.id !== target.id ? [session]
+            : showArchivedRecentRef.current || session.pinned ? [{ ...session, archived: true }] : []);
           // Only write if something actually changed.
           if (next !== current) storeSetter(next, computeSidebarHash(next));
           // Suppress TS: recentSessionsHash is read to satisfy the linter,

@@ -20,7 +20,7 @@ vi.hoisted(() => {
 import type { Session } from '../../lib/api';
 import { useApiStore } from '../../lib/apiStore';
 import { useUiStore } from '../../lib/uiStore';
-import { visibleSidebarSessions } from '../../lib/sidebarHelpers';
+import { computeSidebarHash, visibleSidebarSessions } from '../../lib/sidebarHelpers';
 
 let sessionChanged: ((sessionId: string, session?: Session, patch?: Partial<Session>) => void) | undefined;
 let sseConnect: (() => void) | undefined;
@@ -326,6 +326,28 @@ describe('useSidebarSessions project collapse', () => {
 });
 
 describe('useSidebarSessions archive navigation', () => {
+  it('retains a pinned session after archiving and reloading with archived hidden', async () => {
+    vi.useFakeTimers();
+    const pinned = { id: 'pin', platform: 'opencode', pinned: true, archived: false,
+      timeUpdated: 1, seen: false, seenTimeUpdated: 0, unreadCount: 0 } as Session;
+    const archived = { ...pinned, archived: true };
+    useApiStore.setState({ recentSessions: [pinned], recentSessionsHash: computeSidebarHash([pinned]),
+      getSessions: vi.fn().mockResolvedValue([archived]), archiveSession: vi.fn().mockResolvedValue(undefined) });
+    try {
+      const { result } = renderHook(() => useSidebarSessions({
+        id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
+        abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
+      }));
+      act(() => result.current.handleArchiveSession({ stopPropagation: vi.fn() } as never, pinned));
+      await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+      expect(result.current.recentSessions).toEqual([archived]);
+      await act(async () => { await result.current.loadRecentSessions(); });
+      expect(result.current.recentSessions).toEqual([archived]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('opens the next row the filtered sidebar shows, not a hidden session', async () => {
     vi.useFakeTimers();
     const sessions = ['cur', 'hidden', 'next'].map((id) => ({ id, platform: 'opencode', timeUpdated: 1 } as Session));
