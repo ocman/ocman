@@ -117,7 +117,7 @@ func (s *Server) publicURL(path string) string {
 	return strings.TrimRight(base, "/") + path
 }
 
-// FileURL returns an absolute, browser-reachable URL that serves the file at
+// FileURL returns an origin-relative URL that serves the file at
 // absPath. Used by the MCP embed_file tool so an agent can hand the
 // user a viewable link to an asset it generated on disk.
 func (s *Server) FileURL(ctx context.Context, absPath string) (string, error) {
@@ -125,7 +125,7 @@ func (s *Server) FileURL(ctx context.Context, absPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return s.publicURL(filePathPrefix + signFilePath(key, absPath)), nil
+	return filePathPrefix + signFilePath(key, absPath), nil
 }
 
 // handleFileProxy serves GET /api/file/{token}: the bytes of a file an

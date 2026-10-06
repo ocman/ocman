@@ -152,19 +152,31 @@ function MermaidDiagram({ source }: { source: string }) {
   );
 }
 
+// Older transcripts contain absolute ocman file URLs from before proxy-safe embeds.
+function relativeFileURL(href: string | undefined): string | undefined {
+  if (!href || href.startsWith('#') || !URL.canParse(href, window.location.href)) return href;
+  const url = new URL(href, window.location.href);
+  if (!['http:', 'https:'].includes(url.protocol)) return href;
+  if (url.origin === window.location.origin || /^\/api\/(?:file\/[^/]+$|artifacts\/[^/]+\/files\/\d+$)/.test(url.pathname)) {
+    return url.pathname + url.search + url.hash;
+  }
+  return href;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-function MarkdownImage({ node: _node, alt = '', ...props }: ComponentProps<'img'> & { node?: unknown }) {
+function MarkdownImage({ node: _node, alt = '', src, ...props }: ComponentProps<'img'> & { node?: unknown }) {
   const [expanded, setExpanded] = useState(false);
   const label = alt || 'Image';
+  const image = relativeFileURL(src);
 
   return (
     <>
       <button type="button" className="oc-md-image" aria-label={`Expand ${label}`} onClick={() => setExpanded(true)}>
-        <img alt={alt} {...props} />
+        <img alt={alt} src={image} {...props} />
       </button>
       {expanded && (
         <ZoomableGraphicModal label={label} closeLabel="Close image" maxScale={8} onClose={() => setExpanded(false)}>
-          <img className="oc-image-modal-graphic" alt={alt} {...props} />
+          <img className="oc-image-modal-graphic" alt={alt} src={image} {...props} />
         </ZoomableGraphicModal>
       )}
     </>
@@ -191,20 +203,13 @@ function CodeBlockPre(props: any) {
 function MarkdownLink(props: any) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { node: _node, href: originalHref, children, ...rest } = props;
-  let href = originalHref;
+  const href = relativeFileURL(originalHref);
   const routed = useInRouterContext();
   if (props['data-ocman-card'] && routed) {
     return <FactoryMarkerCard epicID={props['data-ocman-epic']} issueID={props['data-ocman-issue']} action={props['data-ocman-action']}>{children}</FactoryMarkerCard>;
   }
   const action = factoryActionFromHref(href);
   if (action && routed) return <FactoryActionCard key={`${action.epicID}/${action.issueID}`} {...action}>{children}</FactoryActionCard>;
-  // MCP artifact links are absolute, but same-origin URLs still belong in the app.
-  if (href && URL.canParse(href, window.location.href)) {
-    const url = new URL(href, window.location.href);
-    if (url.origin === window.location.origin && !href.startsWith('#')) {
-      href = url.pathname + url.search + url.hash;
-    }
-  }
   const internal = href?.startsWith('/') && !href.startsWith('//') && !/^\/api(?:\/|$)/.test(href);
   // In-app paths must not reload the page; anchors and externals stay plain.
   if (internal && routed) return <Link {...rest} to={href}>{children}</Link>;

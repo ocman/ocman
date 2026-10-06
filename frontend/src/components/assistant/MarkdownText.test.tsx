@@ -102,6 +102,34 @@ describe('MarkdownText', () => {
     await waitFor(() => expect(screen.queryByText('100%')).not.toBeInTheDocument());
   });
 
+  it.each([
+    ['http://127.0.0.1:8228/api/file/token', '/api/file/token'],
+    ['https://old.ocman.example/api/artifacts/report/files/0?download=1#preview', '/api/artifacts/report/files/0?download=1#preview'],
+    [`${window.location.origin}/images/chart.png`, '/images/chart.png'],
+    ['/api/file/token', '/api/file/token'],
+    ['//old.ocman.example/api/file/token', '/api/file/token'],
+    ['https://example.com/chart.png', 'https://example.com/chart.png'],
+    ['https://example.com/api/file/token/extra', 'https://example.com/api/file/token/extra'],
+  ])('renders image %s with source %s in both previews', async (url, expected) => {
+    render(<MarkdownContent text={`![Chart](${url})`} />);
+    expect(screen.getByRole('img', { name: 'Chart' })).toHaveAttribute('src', expected);
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Expand Chart' }));
+    for (const image of screen.getAllByRole('img', { name: 'Chart' })) {
+      expect(image).toHaveAttribute('src', expected);
+    }
+  });
+
+  it('uses the proxy origin for existing embedded file links', () => {
+    render(<MarkdownContent text="[Report](http://localhost:8228/api/file/token)" />);
+    expect(screen.getByRole('link', { name: 'Report' })).toHaveAttribute('href', '/api/file/token');
+  });
+
+  it('preserves email links and malformed URLs', () => {
+    render(<MarkdownContent text="[Email](mailto:user@example.com) [Invalid](http://%invalid)" />);
+    expect(screen.getByRole('link', { name: 'Email' })).toHaveAttribute('href', 'mailto:user@example.com');
+    expect(screen.getByRole('link', { name: 'Invalid' })).toHaveAttribute('href', 'http://%invalid');
+  });
+
   it('keeps ordinary code blocks unchanged', () => {
     render(<MarkdownText text={'```ts\nconst answer = 42\n```'} />);
 

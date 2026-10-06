@@ -89,13 +89,13 @@ func TestFileTokenSecret_StableAcrossCalls(t *testing.T) {
 	}
 }
 
-func TestFileURL_AbsoluteAndVerifiable(t *testing.T) {
+func TestFileURL_RelativeAndVerifiable(t *testing.T) {
 	s := newFileTestServer(t)
 	url, err := s.FileURL(t.Context(), "/tmp/chart.png")
 	if err != nil {
 		t.Fatalf("FileURL: %v", err)
 	}
-	const want = "http://127.0.0.1:8228/api/file/"
+	const want = "/api/file/"
 	if !strings.HasPrefix(url, want) {
 		t.Fatalf("FileURL = %q, want prefix %q", url, want)
 	}
@@ -105,9 +105,9 @@ func TestFileURL_AbsoluteAndVerifiable(t *testing.T) {
 	}
 
 	s.publicBaseURL = "https://ocman.example.com"
-	url, _ = s.FileURL(t.Context(), "/tmp/chart.png")
-	if !strings.HasPrefix(url, "https://ocman.example.com/api/file/") {
-		t.Errorf("FileURL ignored publicBaseURL: %q", url)
+	configuredURL, _ := s.FileURL(t.Context(), "/tmp/chart.png")
+	if configuredURL != url {
+		t.Errorf("FileURL depends on publicBaseURL: %q", configuredURL)
 	}
 }
 
