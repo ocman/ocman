@@ -6,6 +6,20 @@
 - Component styles live beside their component. `AppHeader.css` owns the app
   header and its action slots; `MainNav.css` owns navigation, including mobile
   and native-window variants.
+- Always split CSS by its owning component. When touching a stylesheet that
+  mixes several components, move their rules into separate owner-local files.
+- Use `Component.module.css` for new and migrated component styles. Import its
+  classes in the owning component; keep theme variables in `tokens.css`.
+  Local styles own layout, while shared controls own control appearance and
+  interaction states. Avoid parent selectors that restyle child controls:
+  CSS Modules scopes class names, but descendant selectors still cross component
+  boundaries. Do not use another feature's classes as shared helpers.
+- Use `SecretField` for secret inputs. `allowReveal` controls the eye button;
+  `protect` marks a stored secret whose blank replacement means no change.
+  `onReset` enables the trash button and `resetPending` marks an explicit clear
+  awaiting save. The form owns serialization: omit unchanged secrets and send
+  its API's clear value only after an explicit reset. Reveal shows newly entered
+  text, not a fetched stored secret.
 - Page styles own page layout. Scope element selectors to the owning class:
   `.app-header`, never a global `header` rule for application chrome.
 - `src/shared.css` holds existing cross-page helpers. Prefer the existing

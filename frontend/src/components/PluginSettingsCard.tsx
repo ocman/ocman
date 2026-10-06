@@ -3,14 +3,15 @@ import { hasConversationCapability, plugins, type PluginInput, type PluginMutati
 import { SettingRow } from './SettingRow';
 import { PluginConfiguration } from './PluginConfiguration';
 import { PluginDeliveryBacklog } from './PluginDeliveryBacklog';
-import { Button } from './Control';
+import { Button, ButtonGroup } from './Control';
+import styles from './PluginSettingsCard.module.css';
 
 function PluginMetadata({ plugin: p }: { plugin: PluginRegistration }) {
   const d = p.description;
   return <>
     <SettingRow label="Immutable ID"><code>{d.id}</code></SettingRow>
     <SettingRow label="Version">{d.version}</SettingRow>
-    <SettingRow label="Checksum" block><code style={{ overflowWrap: 'anywhere' }}>{p.checksum}</code></SettingRow>
+    <SettingRow label="Checksum" block><code className={styles.checksum}>{p.checksum}</code></SettingRow>
     <SettingRow label="Capabilities">{d.capabilities?.map((c) => `${c.name} v${c.version.major}.${c.version.minor}`).join(', ') || 'None'}</SettingRow>
     <SettingRow label="Execution scope">{d.scope}</SettingRow>
     <SettingRow label="Requested grants">{d.requestedGrants?.join(', ') || 'None'}</SettingRow>
@@ -63,40 +64,44 @@ export function PluginSettingsCard({ plugin: p, owner, refresh }: {
     finally { setBusy(false); }
   }
 
-  return <section aria-label={`${d.name} plugin`}>
-    <h3>{d.name}</h3>
+  return <section className={styles.card} aria-label={`${d.name} plugin`}>
+    <h3 className={styles.title}>{d.name}</h3>
     <PluginMetadata plugin={p} />
     {error && <p role="alert">{error}</p>}
-    <fieldset disabled={busy} style={{ border: 0, padding: 0 }}>
+    <fieldset disabled={busy} className={styles.management}>
       <legend>Manage {d.name}</legend>
       <SettingRow label="Lifecycle" block>
-        <div className="remote-row-actions">
-          <Button type="button" size="small" disabled={p.enabled || blocked} onClick={() => setReview(true)}>Enable</Button>
+        <ButtonGroup label="Plugin lifecycle actions">
+          <Button type="button" size="small" variant="accent" disabled={p.enabled || blocked} onClick={() => setReview(true)}>Enable</Button>
           <Button type="button" size="small" disabled={!p.enabled} onClick={() => { void mutate('disable'); }}>Disable</Button>
           <Button type="button" size="small" disabled={!p.enabled || blocked} onClick={() => { void mutate('retry'); }}>Retry</Button>
           <Button type="button" size="small" disabled={!p.enabled || blocked} onClick={() => { void mutate('restart'); }}>Restart</Button>
           <Button type="button" size="small" onClick={() => setConfigure(!configure)}>Configure</Button>
-          <Button type="button" size="small" disabled={!p.grants?.length} onClick={() => { void mutate('grants', { grants: [] }); }}>Revoke grants</Button>
+          <Button type="button" size="small" variant="danger" disabled={!p.grants?.length} onClick={() => { void mutate('grants', { grants: [] }); }}>Revoke grants</Button>
           <Button type="button" size="small" variant="danger" disabled={p.enabled} onClick={() => setRemove(true)}>Remove data</Button>
-        </div>
+        </ButtonGroup>
       </SettingRow>
       {review && <SettingRow label="Review grants before enabling" block>
         <p>This native executable runs on {owner} with {d.scope} scope. Approve checksum <code>{p.checksum}</code> and these requested grants:</p>
         <ul>{(d.requestedGrants ?? []).map((grant) => <li key={grant}>{grant}</li>)}</ul>
         {!d.requestedGrants?.length && <p>No grants requested.</p>}
-        <Button type="button" size="small" variant="accent" onClick={() => { void mutate('enable', { approval: p.approval, grants: d.requestedGrants ?? [] }); }}>Approve grants and enable</Button>
-        <Button type="button" size="small" onClick={() => setReview(false)}>Cancel approval</Button>
+        <ButtonGroup label="Plugin approval actions">
+          <Button type="button" variant="accent" onClick={() => { void mutate('enable', { approval: p.approval, grants: d.requestedGrants ?? [] }); }}>Approve grants and enable</Button>
+          <Button type="button" onClick={() => setReview(false)}>Cancel approval</Button>
+        </ButtonGroup>
       </SettingRow>}
       {configure && <PluginConfiguration key={JSON.stringify(p.configuration)} plugin={p} save={(input) => mutate('configuration', input)} />}
       {remove && <SettingRow label="Permanently remove plugin data" block>
         <p>Delete configuration, secrets, grants, and private data for {d.id} on {owner}. This cannot be undone. The executable is not deleted.</p>
-        <Button type="button" size="small" variant="danger" onClick={() => { void mutate('remove-data'); }}>Confirm permanent removal</Button>
-        <Button type="button" size="small" onClick={() => setRemove(false)}>Cancel removal</Button>
+        <ButtonGroup label="Plugin removal actions">
+          <Button type="button" variant="danger" onClick={() => { void mutate('remove-data'); }}>Confirm permanent removal</Button>
+          <Button type="button" onClick={() => setRemove(false)}>Cancel removal</Button>
+        </ButtonGroup>
       </SettingRow>}
       {hasConversationCapability(p) && <PluginDeliveryBacklog plugin={p} owner={owner} />}
       <SettingRow label="Recent stderr" desc="Bounded diagnostic output from the selected owner." block>
         <Button type="button" size="small" onClick={() => { void loadLogs(); }}>Load recent stderr</Button>
-        {logs !== null && <pre aria-label="Recent stderr" style={{ maxHeight: 240, overflow: 'auto', whiteSpace: 'pre-wrap' }}>{logs || 'No recent stderr.'}</pre>}
+        {logs !== null && <pre aria-label="Recent stderr" className={styles.logs}>{logs || 'No recent stderr.'}</pre>}
       </SettingRow>
     </fieldset>
   </section>;

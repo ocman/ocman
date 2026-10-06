@@ -57,6 +57,9 @@ it('offers an explicit retry and discard for a reply that gave up', async () => 
   open();
   expect(await screen.findByText('C1:1700000000.000100')).toBeVisible();
   expect(screen.getByText(/6 attempts · unavailable/)).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Reload status' })).toHaveClass('oc-button');
+  expect(screen.getByRole('button', { name: 'Retry delivery' })).toHaveClass('oc-button');
+  expect(screen.getByRole('button', { name: 'Discard reply' })).toHaveClass('oc-button--danger');
 
   click('Retry delivery');
   await waitFor(() => expect(plugins.mutate).toHaveBeenCalledWith('local', 'org.example.chatops', 'conversations/retry', { deliveryId: 7 }));

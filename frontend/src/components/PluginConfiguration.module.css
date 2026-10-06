@@ -1,0 +1,3 @@
+.form { min-width: 0; }
+.control { display: grid; gap: 8px; width: 50%; max-width: 320px; min-width: 0; }
+.save { margin-top: 14px; }

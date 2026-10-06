@@ -1,0 +1,20 @@
+import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { Modal } from './Modal';
+import { ModalHeader } from './ModalHeader';
+import styles from './Drawer.module.css';
+
+export function Drawer({ title, onClose, canClose = true, children }: {
+  title: string;
+  onClose: () => void;
+  canClose?: boolean;
+  children: ReactNode;
+}) {
+  return createPortal(
+    <Modal label={title} onClose={onClose} canClose={canClose} backdropClassName={styles.backdrop} dialogClassName={styles.drawer}>
+      <ModalHeader title={title} onClose={onClose} canClose={canClose} closeLabel={`Close ${title}`} />
+      {children}
+    </Modal>,
+    document.body,
+  );
+}

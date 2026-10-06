@@ -51,6 +51,19 @@ async function open() {
 }
 const click = (name: string) => fireEvent.click(screen.getByRole('button', { name }));
 
+it('uses shared controls for owner selection, lifecycle, configuration and confirmations', async () => {
+  await open();
+  click('Configure');
+  for (const button of screen.getAllByRole('button')) expect(button).toHaveClass('oc-button');
+  for (const field of screen.getAllByRole('combobox')) expect(field).toHaveClass('oc-field');
+  for (const label of ['Token', 'Name', 'Count', 'Ratio']) expect(screen.getByLabelText(label)).toHaveClass('oc-field');
+  expect(screen.getByRole('button', { name: 'Reset Token' })).toBeInTheDocument();
+  click('Enable');
+  expect(screen.getByRole('button', { name: 'Approve grants and enable' })).toHaveClass('oc-button--accent');
+  click('Remove data');
+  expect(screen.getByRole('button', { name: 'Confirm permanent removal' })).toHaveClass('oc-button--danger');
+});
+
 it('shows rejected discovery diagnostics for the selected owner and clears them after rescan', async () => {
   vi.mocked(plugins.discovery).mockResolvedValue([{ filename: 'ocman-plugin-broken', error: 'invalid plugin message' }]);
   await open();
@@ -212,9 +225,9 @@ it('clears optional secrets explicitly and can undo clearing or editing', async 
   const token = screen.getByLabelText('Token');
   fireEvent.change(token, { target: { value: 'temporary' } });
   fireEvent.change(token, { target: { value: '' } });
-  fireEvent.click(screen.getByLabelText('Clear Token'));
-  fireEvent.click(screen.getByLabelText('Clear Token'));
-  fireEvent.click(screen.getByLabelText('Clear Token'));
+  click('Reset Token');
+  click('Undo reset Token');
+  click('Reset Token');
   click('Save configuration');
   await waitFor(() => expect(plugins.mutate).toHaveBeenCalledWith('local', plugin.description.id, 'configuration', { values: { mode: 'good' }, secrets: { token: '' } }));
 });
@@ -251,7 +264,7 @@ it('renders defaults, required secrets and optional boolean/numeric omissions', 
   click('Configure');
   expect(screen.getByLabelText('Mode')).toHaveValue('good');
   expect(screen.getByLabelText('Token')).toBeRequired();
-  expect(screen.queryByLabelText('Clear Token')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Reset Token' })).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Token'), { target: { value: 'new-secret' } });
   for (const [label, value] of [['Active', 'true'], ['Count', '1']]) {
     fireEvent.change(screen.getByLabelText(label), { target: { value } });
