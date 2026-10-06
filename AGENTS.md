@@ -709,12 +709,13 @@ minimal and match the surrounding code.
   for 7+ days (checked every 24 h). Runs against all registered
   platforms.
 - **OpenTelemetry (optional)**: `--otel=<endpoint>` /
-  `OTEL_EXPORTER_OTLP_ENDPOINT` ships traces + metrics to an OTLP
+  `OTEL_EXPORTER_OTLP_ENDPOINT` ships traces + metrics + logs to an OTLP
   collector; empty = no-op (zero overhead). Implementation in
   `internal/telemetry`: `otelhttp` on the mux + outbound clients,
   `otelsql` on both SQLite handles, custom spans/metrics around the
   auto-archive loop, projects-index refresh, SSE streams, and
-  `srvtiming` boundaries; a logrus hook stamps `trace_id`/`span_id`.
+  `srvtiming` boundaries; a logrus hook stamps `trace_id`/`span_id`, and
+  an OTLP log hook exports batched records while preserving console output.
   `make otel-up` runs the bundled Grafana LGTM stack and the `make dev*`
   targets auto-export the dev endpoint. User-facing config (URL scheme →
   transport, `OTEL_*` vars, dashboard) is in `docs/configuration/_index.md`;

@@ -251,7 +251,7 @@ for the full step-by-step guide, security notes, and troubleshooting.
 
 ## OpenTelemetry (optional)
 
-Pass `--otel=<endpoint>` (or set `OTEL_EXPORTER_OTLP_ENDPOINT`) to ship traces and metrics to
+Pass `--otel=<endpoint>` (or set `OTEL_EXPORTER_OTLP_ENDPOINT`) to ship traces, metrics, and logs to
 an OTLP collector. Empty or unset disables telemetry export.
 
 The URL scheme selects the transport:
@@ -264,6 +264,17 @@ All other configuration uses standard `OTEL_*` env vars (`OTEL_SERVICE_NAME`,
 For local dev, `make otel-up` starts a bundled Grafana LGTM stack on `:3000`, `:4317` and
 `:4318`. The `make dev*` targets export `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`
 and `OTEL_SERVICE_NAME=ocman-dev` for you. See `observability/` for dashboard provisioning.
+
+Logrus logs are exported in batches using the same endpoint and transport, while
+console logging stays enabled. Export respects the configured log level and
+includes structured fields and the service resource. Logs with an active span
+carry its trace and span IDs; logs outside spans are exported too. Shutdown flushes
+pending logs. The existing log-to-span-event hook remains enabled.
+
+With the bundled stack, open Grafana Explore, select Loki, and query
+`{service_name="ocman-dev"}` for dev runs or `{service_name="ocman"}` for the default
+service name. Logs begin arriving after restarting ocman with this build and
+telemetry enabled; earlier console logs are not imported.
 
 The dashboard's Database section shows query rate and p95 latency by SQL fingerprint.
 All SQLite handles are instrumented: OpenCode, ocman state, the analytics cache, and

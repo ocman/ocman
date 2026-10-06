@@ -6,11 +6,14 @@ import (
 	"net/url"
 	"strings"
 
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 )
 
@@ -30,6 +33,29 @@ type target struct {
 	insecure bool   // true when the URL scheme is plaintext.
 }
 
+// newLogExporter uses the same endpoint and transport as traces and metrics.
+func newLogExporter(ctx context.Context, t target) (sdklog.Exporter, error) {
+	switch t.protocol {
+	case protoHTTP:
+		opts := []otlploghttp.Option{otlploghttp.WithEndpoint(t.endpoint)}
+		if t.insecure {
+			opts = append(opts, otlploghttp.WithInsecure())
+		}
+		if t.urlPath != "" && t.urlPath != "/" {
+			opts = append(opts, otlploghttp.WithURLPath(t.urlPath))
+		}
+		return otlploghttp.New(ctx, opts...)
+	case protoGRPC:
+		opts := []otlploggrpc.Option{otlploggrpc.WithEndpoint(t.endpoint)}
+		if t.insecure {
+			opts = append(opts, otlploggrpc.WithInsecure())
+		}
+		return otlploggrpc.New(ctx, opts...)
+	default:
+		return nil, fmt.Errorf("unknown protocol %q", t.protocol)
+	}
+}
+
 // parseEndpoint inspects the URL scheme to decide between OTLP/HTTP
 // and OTLP/gRPC. The OTel exporter constructors take the host:port
 // part directly, not a full URL, so we strip the scheme after deciding.
@@ -38,7 +64,7 @@ type target struct {
 //   - http://, https://       -> OTLP/HTTP (TLS implied by https://)
 //   - grpc://, grpcs://       -> OTLP/gRPC (TLS for grpcs://)
 //   - bare host[:port]        -> OTLP/gRPC, insecure (matches the
-//                                spec's default for OTLP/gRPC).
+//     spec's default for OTLP/gRPC).
 //
 // The collector port hint isn't enforced — operators occasionally
 // front a collector with their own ingress and use 443/80 instead

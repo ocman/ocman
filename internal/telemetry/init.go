@@ -10,16 +10,18 @@ import (
 	"github.com/google/uuid"
 	log "github.com/sirupsen/logrus"
 	"github.com/uptrace/opentelemetry-go-extra/otellogrus"
+	otlplogrus "go.opentelemetry.io/contrib/bridges/otellogrus"
 	"go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-// ShutdownFunc flushes both providers and releases their resources.
+// ShutdownFunc flushes all providers and releases their resources.
 // Safe to call exactly once; subsequent calls are no-ops.
 type ShutdownFunc func(context.Context) error
 
@@ -72,6 +74,16 @@ func Init(ctx context.Context, endpoint, version string) (ShutdownFunc, error) {
 		_ = traceExp.Shutdown(ctx)
 		return noop, fmt.Errorf("creating metric exporter: %w", err)
 	}
+	logExp, err := newLogExporter(ctx, target)
+	if err != nil {
+		_ = traceExp.Shutdown(ctx)
+		_ = metricExp.Shutdown(ctx)
+		return noop, fmt.Errorf("creating log exporter: %w", err)
+	}
+	lp := sdklog.NewLoggerProvider(
+		sdklog.WithProcessor(sdklog.NewBatchProcessor(logExp)),
+		sdklog.WithResource(res),
+	)
 
 	// Trace provider: BatchSpanProcessor is the production default;
 	// it batches spans before export to amortise the network cost.
@@ -120,6 +132,11 @@ func Init(ctx context.Context, endpoint, version string) (ShutdownFunc, error) {
 		log.WarnLevel,
 		log.InfoLevel,
 	)))
+	// Export ordinary logrus records too, including logs outside active spans.
+	// A hook preserves the existing console output and logger's level filtering.
+	log.AddHook(otlplogrus.NewHook("github.com/NoUseFreak/ocman",
+		otlplogrus.WithLoggerProvider(lp),
+	))
 
 	log.WithFields(log.Fields{
 		"endpoint": endpoint,
@@ -129,6 +146,9 @@ func Init(ctx context.Context, endpoint, version string) (ShutdownFunc, error) {
 
 	shutdown := func(ctx context.Context) error {
 		var errs []error
+		if err := lp.Shutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("log provider shutdown: %w", err))
+		}
 		if err := tp.Shutdown(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("trace provider shutdown: %w", err))
 		}

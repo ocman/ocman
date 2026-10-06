@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	log "github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel/attribute"
 )
 
@@ -14,6 +15,7 @@ import (
 // telemetry disabled and returns a working no-op shutdown.
 func TestInitNoEndpointNoOp(t *testing.T) {
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+	hooksBefore := len(log.StandardLogger().Hooks[log.InfoLevel])
 
 	shutdown, err := Init(context.Background(), "", "test")
 	if err != nil {
@@ -21,6 +23,9 @@ func TestInitNoEndpointNoOp(t *testing.T) {
 	}
 	if shutdown == nil {
 		t.Fatal("Init returned nil shutdown")
+	}
+	if got := len(log.StandardLogger().Hooks[log.InfoLevel]); got != hooksBefore {
+		t.Fatal("disabled telemetry installed a logging hook")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)

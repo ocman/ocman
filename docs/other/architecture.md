@@ -60,12 +60,16 @@ flowchart LR
     Ocman -->|REST| APIs[GitHub / Forgejo<br/>provider usage APIs]
     Ocman <-->|gRPC + token: sessions, upstream identities, hosts, plugins| Remotes[Remote ocman<br/>instances]
     Ocman -->|encrypted webhook poll| Relay[ocman-relay<br/>ciphertext persistence]
-    Ocman -.->|OTLP, optional| Otel[Telemetry collector]
+    Ocman -.->|OTLP traces, metrics, logs, optional| Otel[Telemetry collector]
 ```
 
 - **Browser SPA.** The only UI. It talks REST/SSE to the hub, never to
   remotes directly. `:8228` is the production `-addr` default; in dev the
   Vite server on :8228 proxies `/api` to the air backend on :8229.
+- **Telemetry collector.** Optional OTLP/HTTP or gRPC export of traces, metrics,
+  and batched Logrus logs through `internal/telemetry`. Logs retain structured
+  fields and span context, console output stays enabled, and shutdown flushes
+  all three signals. The bundled LGTM stack routes logs to Loki.
 - **opencode.db.** Foreign data, opened read-only. The one exception is the
   user-started maintenance job (`internal/ocmaint`, Settings → Maintenance).
   It stops the managed instances, refuses while any other process holds the
