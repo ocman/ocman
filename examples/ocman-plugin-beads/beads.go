@@ -122,6 +122,9 @@ func (h *beadsReader) readBeadsStatus(ctx context.Context, dir string) (beadsSta
 	}
 	if !applyBeadsParents(result.Tickets, deps) {
 		result.Error = "status_unavailable"
+		for i := range result.Tickets {
+			result.Tickets[i].ParentID = ""
+		}
 	}
 	return result, nil
 }

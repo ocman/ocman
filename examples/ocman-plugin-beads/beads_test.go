@@ -211,3 +211,25 @@ func TestPaneHandlerNormalizesDisplayText(t *testing.T) {
 		})
 	}
 }
+
+func TestMalformedDependencyPrefixReturnsRecoverableTree(t *testing.T) {
+	runner := &fakeBeadsRunner{runs: supportedBeadsRuns(
+		beadsRun{out: `{"schema_version":1,"data":{"path":".beads"}}`},
+		beadsRun{out: `[{"id":"a","title":"A","status":"open","priority":1},{"id":"b","title":"B","status":"open","priority":2}]`},
+		beadsRun{out: `[{"issue_id":"a","depends_on_id":"b","type":"parent-child"},{"issue_id":"b","depends_on_id":"a","type":"parent-child"},{}]`},
+	)}
+	reader := &beadsReader{beadsRunner: runner}
+	handler := plugin.PaneHandler(description(), func(ctx context.Context, r plugin.PaneRead) (plugin.PaneTree, error) {
+		return readTree(ctx, reader, r)
+	})
+	data, err := handler(t.Context(), plugin.Call{Capability: "pane", Version: plugin.PaneCapability.Version, Method: "read", Params: json.RawMessage(`{"paneId":"tickets","directory":"/repo"}`)}, nil)
+	var tree plugin.PaneTree
+	if err != nil || json.Unmarshal(data, &tree) != nil || !tree.Available || !tree.Warning || len(tree.Nodes) != 2 {
+		t.Fatalf("initial malformed read = %s, %v", data, err)
+	}
+	for _, node := range tree.Nodes {
+		if node.ParentID != "" {
+			t.Fatalf("partial parent leaked: %+v", node)
+		}
+	}
+}
