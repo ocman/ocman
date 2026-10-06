@@ -2,6 +2,19 @@ package remote
 
 import "github.com/NoUseFreak/ocman/internal/db"
 
+// CachedSession supplies identity for best-effort refresh hints without an RPC
+// or transcript read. A session absent from the last listing yields no hint.
+func (p *remotePlatform) CachedSession(sessionID string) (db.Session, bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	for _, session := range p.lastSess {
+		if session.ID == sessionID {
+			return session, true
+		}
+	}
+	return db.Session{}, false
+}
+
 // stamp annotates live sessions with host identity and records them for
 // Owns and the offline fallback. Only an unfiltered listing is complete,
 // so only it replaces the fallback snapshot and the ownership set; a

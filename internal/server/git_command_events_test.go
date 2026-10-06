@@ -3,25 +3,63 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/platforms"
 )
 
+type gitIdentityPlatform struct {
+	*fakePlatform
+	identity db.Session
+	found    bool
+}
+
+func (p *gitIdentityPlatform) CachedSession(string) (db.Session, bool) {
+	return p.identity, p.found
+}
+
+func TestGitHintDoesNotLookUpTranscriptOrBlockRemoteStream(t *testing.T) {
+	const event = "data: " + `{"type":"message.part.updated","properties":{"part":{"id":"p","sessionID":"s1","messageID":"m","type":"tool","tool":"bash","state":{"status":"completed","input":{"command":"git push"}}}}}` + "\n\n"
+	blocked := make(chan struct{})
+	defer close(blocked)
+	adapter := &gitIdentityPlatform{fakePlatform: &fakePlatform{id: "r-box:opencode",
+		sessionDetailFn: func(string) (*platforms.SessionDetail, error) { <-blocked; return nil, nil },
+		proxyEventsFn: func(_ context.Context, _ string, w io.Writer, _ func()) error {
+			_, err := io.WriteString(w, event)
+			return err
+		},
+	}, identity: db.Session{RemoteID: "box", ProjectID: "p", Directory: "/repo"}, found: true}
+	reg := platforms.NewRegistry()
+	reg.Register(adapter)
+	srv := &Server{registry: reg, broadcastHub: newBroadcastHub()}
+	w := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		srv.serveSessionEvents(w, httptest.NewRequest(http.MethodGet, "/", nil), "s1", adapter)
+	}()
+	select {
+	case <-done:
+		if w.Body.String() != event {
+			t.Fatalf("raw event missing: %q", w.Body.String())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("optional git identity lookup blocked the remote stream")
+	}
+}
+
 func TestRemoteStreamBroadcastsGitHintAndPreservesRawEvent(t *testing.T) {
 	const event = "data: " + `{"type":"message.part.updated","properties":{"part":{"id":"p","sessionID":"s1","messageID":"m","type":"tool","tool":"bash","state":{"status":"completed","input":{"command":"git push"}}}}}` + "\n\n"
 	reg := platforms.NewRegistry()
-	adapter := &fakePlatform{id: "r-box:opencode", sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
-		return &platforms.SessionDetail{Session: &db.Session{RemoteID: "box", ProjectID: "p", Directory: "/repo"}}, nil
-	}, proxyEventsFn: func(_ context.Context, _ string, w io.Writer, _ func()) error {
+	adapter := &gitIdentityPlatform{fakePlatform: &fakePlatform{id: "r-box:opencode", proxyEventsFn: func(_ context.Context, _ string, w io.Writer, _ func()) error {
 		_, err := io.WriteString(w, event)
 		return err
-	}}
+	}}, identity: db.Session{RemoteID: "box", ProjectID: "p", Directory: "/repo"}, found: true}
 	reg.Register(adapter)
 	srv := &Server{registry: reg, broadcastHub: newBroadcastHub()}
 	sub, unsubscribe := srv.broadcastHub.subscribe()
@@ -49,7 +87,7 @@ func TestBroadcastGitCommand(t *testing.T) {
 		{name: "local", action: "commit"},
 		{name: "remote", owner: "box", action: "push"},
 		{name: "unknown session", action: "push", missing: true},
-		{name: "read failure", action: "push", fail: true},
+		{name: "adapter without cached identity", action: "push", fail: true},
 		{name: "other action", action: "status"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -58,15 +96,12 @@ func TestBroadcastGitCommand(t *testing.T) {
 			if tc.owner != "" {
 				id = "r-" + tc.owner + ":opencode"
 			}
-			reg.Register(&fakePlatform{id: id, sessionDetailFn: func(string) (*platforms.SessionDetail, error) {
-				if tc.fail {
-					return nil, errors.New("unavailable")
-				}
-				if tc.missing {
-					return nil, nil
-				}
-				return &platforms.SessionDetail{Session: &db.Session{ID: "s1", Directory: "/repo", ProjectID: "project", RemoteID: tc.owner}}, nil
-			}})
+			if tc.fail {
+				reg.Register(&fakePlatform{id: id})
+			} else {
+				reg.Register(&gitIdentityPlatform{fakePlatform: &fakePlatform{id: id}, found: !tc.missing,
+					identity: db.Session{ID: "s1", Directory: "/repo", ProjectID: "project", RemoteID: tc.owner}})
+			}
 			srv := &Server{registry: reg, broadcastHub: newBroadcastHub()}
 			sub, unsubscribe := srv.broadcastHub.subscribe()
 			defer unsubscribe()

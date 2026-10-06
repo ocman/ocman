@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './UpstreamPane.css';
 import type { StateFilter, Upstream } from '../../lib/upstreamApi';
 import type { PaneSummary } from '../SessionChangesSidebar';
@@ -175,6 +175,7 @@ function UpstreamTabContent({
   // owns its own fetch hook (via UpstreamRemoteGroup below) so a
   // failure in one host doesn't block the other.
   const groupRefreshers = useMemo<Array<() => void>>(() => [], []);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Compose a single refresh callback that fans out to every group.
   const refreshAll = useCallback(() => {
@@ -184,16 +185,18 @@ function UpstreamTabContent({
   }, [groupRefreshers]);
 
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
     const unsubscribe = onGitCommand((hint) => {
       if (hint.remoteId !== remoteId) return;
       const sameProject = projectId && projectId !== 'global' && hint.projectId === projectId;
       if (!sameProject && hint.directory !== directory && hint.directory !== launchDirectory) return;
-      clearTimeout(timer);
-      timer = setTimeout(refreshAll, 750);
+      clearTimeout(refreshTimer.current);
+      refreshTimer.current = setTimeout(refreshAll, 750);
     });
-    return () => { unsubscribe(); clearTimeout(timer); };
+    return unsubscribe;
   }, [directory, launchDirectory, projectId, remoteId, refreshAll]);
+
+  // The retained list owns the timer, not the active sibling checkout.
+  useEffect(() => () => clearTimeout(refreshTimer.current), [directory, remoteId]);
 
   useEffect(() => {
     onRefresh?.(refreshAll);

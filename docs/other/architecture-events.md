@@ -77,7 +77,9 @@ sequenceDiagram
   `projectId`, `directory`, and `action`, never command arguments or output.
   The local headless watcher observes these without a browser or enabled
   permission judge. Remote hints are observed by the hub while proxying a
-  remote session stream. The visible PR/Issue tab refreshes its lists and CI
+  remote session stream, using only the remote adapter's last cached session
+  identity. Unknown identities are skipped; no transcript read or RPC delays
+  the stream. The visible PR/Issue tab refreshes its lists and CI
   checks after a 750 ms debounce, scoped by owner and project, including sibling
   worktrees. This is a command-string heuristic, not proof that git succeeded;
   commands run outside agent bash tools are not observed.

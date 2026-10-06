@@ -16,6 +16,8 @@ func terminalCommandPayload(command, status string) string {
 func TestTerminalGitCommandHints(t *testing.T) {
 	for _, tc := range []struct{ command, status, want string }{
 		{"git push origin HEAD", "completed", "push"},
+		{"git push; gh pr view", "completed", "push"},
+		{"git push&&printf done", "completed", "push"},
 		{"git commit -m change", "completed", "commit"},
 		{"git -C /repo push", "error", "push"},
 		{"git -c core.hooksPath=/tmp commit -m change", "completed", "commit"},

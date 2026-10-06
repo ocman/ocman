@@ -48,7 +48,7 @@ beforeEach(() => {
 
 describe('UpstreamPane owner-scoped resources', () => {
   it('debounces same-project git hints including sibling worktrees, and cancels on unmount', async () => {
-    const { unmount } = render(<UpstreamPane directory="/repo" projectId="p" remoteId="box" upstreams={[upstreams[0]]} />);
+    const { unmount, rerender } = render(<UpstreamPane directory="/repo" currentDirectory="/first" projectId="p" remoteId="box" upstreams={[upstreams[0]]} />);
     await act(async () => {});
     vi.useFakeTimers();
     try {
@@ -62,6 +62,7 @@ describe('UpstreamPane owner-scoped resources', () => {
       expect(upstreamListMock.refresh).not.toHaveBeenCalled();
       emit();
       emit({ action: 'commit' });
+      rerender(<UpstreamPane directory="/repo" currentDirectory="/second" projectId="p" remoteId="box" upstreams={[upstreams[0]]} />);
       act(() => vi.advanceTimersByTime(750));
       expect(upstreamListMock.refresh).toHaveBeenCalledOnce();
       emit();

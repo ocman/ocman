@@ -22,8 +22,13 @@ func (s *Server) broadcastGitCommand(ctx context.Context, platformID, sessionID,
 		session, _ = s.db.GetSession(ctx, sessionID)
 	} else if s.registry != nil {
 		if adapter, ok := s.registry.Get(platforms.ID(platformID)); ok {
-			if detail, err := adapter.Session(ctx, sessionID, 1, 0); err == nil && detail != nil {
-				session = detail.Session
+			// Hints must never trigger transcript reads or RPCs in the stream.
+			if cached, ok := adapter.(interface {
+				CachedSession(string) (db.Session, bool)
+			}); ok {
+				if row, found := cached.CachedSession(sessionID); found {
+					session = &row
+				}
 			}
 		}
 	}

@@ -7,7 +7,7 @@ import (
 
 // ponytail: refresh hints, not shell parsing. Quoting/wrappers can be missed;
 // false positives only refetch. Add a shell parser if accuracy becomes necessary.
-var gitCommandHint = regexp.MustCompile(`(?:^|[;&|(\n])\s*(?:command\s+)?git\s+(?:(?:-C|-c|--git-dir|--work-tree)\s+\S+\s+)*(commit|push)(?:\s|$)`)
+var gitCommandHint = regexp.MustCompile(`(?:^|[;&|(\n])\s*(?:command\s+)?git\s+(?:(?:-C|-c|--git-dir|--work-tree)\s+\S+\s+)*(commit|push)\b`)
 
 func (t *Tee) dispatchTerminalPart(dataJSON string) {
 	if t.OnTerminalPart == nil && t.OnGitCommand == nil {
