@@ -77,3 +77,45 @@ func TestAgentNamesCancellationWhileCacheFetchIsInFlight(t *testing.T) {
 		t.Fatal("agent read ignored cancellation while waiting on the shared cache")
 	}
 }
+
+func TestAgentNamesCanceledLeaderPreservesComposerCatalog(t *testing.T) {
+	started, release, canceled := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		select {
+		case <-release:
+			writeJSONBody(w, `[{"name":"custom-agent","mode":"primary"}]`)
+		case <-r.Context().Done():
+			close(canceled)
+		}
+	}))
+	defer server.Close()
+	u, _ := url.Parse(server.URL)
+	t.Cleanup(func() { catalogCache.invalidatePort(u.Port()) })
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	leader := make(chan []string, 1)
+	go func() { leader <- AgentNames(ctx, u.Port(), "/repo") }()
+	<-started
+	key := u.Port() + "|" + scopedPath(context.Background(), u.Port(), "/agent", "/repo")
+	waiter := catalogCache.flight.DoChan(key, func() (any, error) {
+		t.Error("composer did not join the in-flight catalog read")
+		return nil, errFetchFailed
+	})
+	cancel()
+	if names := <-leader; len(names) != 0 {
+		t.Error(names)
+	}
+	select {
+	case <-canceled:
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	if result := <-waiter; result.Err != nil {
+		t.Fatalf("Settings cancellation failed the composer's shared fetch: %v", result.Err)
+	}
+	agents := agentCatalogAt(context.Background(), u.Port(), "composer", "/repo")
+	if len(agents) != 1 || agents[0].Name != "custom-agent" {
+		t.Fatalf("composer lost its agent catalog: %v", agents)
+	}
+}

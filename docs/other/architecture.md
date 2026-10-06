@@ -502,6 +502,8 @@ flowchart TD
   directories on cancellation, so an unresponsive instance still leaves fallback
   choices available. Shared port scans have an independent ten-second deadline;
   canceling a caller only cancels its wait, preserving other clients' live status.
+  Settings-owned shared agent fetches also use an independent ten-second deadline,
+  so leaving Settings cannot cancel a composer's joined catalog read.
   A failed scan preserves the last successful snapshot for liveness readers and
   the auto-approval watcher without renewing the cache TTL. A successful empty
   scan still removes disappeared instances.
