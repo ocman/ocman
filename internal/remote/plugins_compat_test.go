@@ -38,7 +38,7 @@ func TestLegacyPluginRequestsOmitPaneEnvelope(t *testing.T) {
 }
 
 func TestPaneRequestsKeepNonzeroEnvelope(t *testing.T) {
-	request := PluginRequest{Operation: "panes", Pane: plugins.PaneRequest{OwnerID: "machine"}}
+	request := PluginRequest{Operation: "pane-read", Pane: plugins.PaneRequest{OwnerID: "machine"}}
 	data, err := json.Marshal(request)
 	if err != nil {
 		t.Fatal(err)

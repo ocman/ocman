@@ -68,7 +68,7 @@ func (s *Server) PluginOperation(ctx context.Context, req *pb.JsonReq) (*pb.Json
 		(operation.Action.Context.OwnerID != s.instanceID || (operation.Action.OwnerID != "" && operation.Action.OwnerID != s.instanceID)) {
 		return jsonResp(PluginResponse{Error: &plugins.WireError{Category: plugins.ErrorPermissionDenied}}, nil)
 	}
-	if (operation.Operation == "panes" || operation.Operation == "pane-read") && operation.Pane.OwnerID != s.instanceID {
+	if operation.Operation == "pane-read" && operation.Pane.OwnerID != s.instanceID {
 		return jsonResp(PluginResponse{Error: &plugins.WireError{Category: plugins.ErrorPermissionDenied}}, nil)
 	}
 	return jsonResp(s.plugins(ctx, operation), nil)

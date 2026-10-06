@@ -71,8 +71,6 @@ func pluginResponse(value any, err error) remote.PluginResponse {
 func (s *Server) localPluginOperation(ctx context.Context, req remote.PluginRequest, fromRemote bool) remote.PluginResponse {
 	ctx = context.WithValue(ctx, pluginExecutionKey{}, pluginExecution{remote: fromRemote, owner: req.Action.Context.OwnerID})
 	switch req.Operation {
-	case "panes":
-		return pluginResponse(s.localPluginPanes(ctx))
 	case "pane-read":
 		return pluginResponse(s.readLocalPluginPane(ctx, req.Pane))
 	case "project-catalog":
@@ -170,15 +168,6 @@ func (s *Server) routePluginOperation(ctx context.Context, owner string, req rem
 	}
 	// Qualify at the hub, never trust an owner identity from a remote response.
 	switch req.Operation {
-	case "panes":
-		var panes []listedPluginPane
-		if err := json.Unmarshal(response.Value, &panes); err != nil {
-			return pluginResponse(nil, err)
-		}
-		for i := range panes {
-			panes[i].OwnerID = owner
-		}
-		return pluginResponse(panes, nil)
 	case "catalog", "rescan":
 		var catalog []ownedPlugin
 		if err := json.Unmarshal(response.Value, &catalog); err != nil {

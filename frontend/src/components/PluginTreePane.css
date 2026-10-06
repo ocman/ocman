@@ -82,6 +82,7 @@
 }
 .oc-plugin-tree-status.blocked { background: var(--danger); color: var(--danger); }
 .oc-plugin-tree-status.deferred { color: var(--accent); }
+.oc-plugin-tree-status.closed { background: var(--text-dim); color: var(--text-dim); }
 
 .oc-plugin-tree-content {
   min-width: 0;

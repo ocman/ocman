@@ -4,6 +4,7 @@ import { expect, test } from '@playwright/test';
 const css = readFileSync(new URL('../src/components/PluginTreePane.css', import.meta.url), 'utf8');
 
 type TicketOptions = {
+  status?: 'open' | 'closed';
   depth?: number;
   isLast?: boolean;
   ancestorContinues?: boolean[];
@@ -12,7 +13,7 @@ type TicketOptions = {
 
 const ticket = (
   id: string,
-  { depth = 0, isLast = true, ancestorContinues = [], children = '' }: TicketOptions = {},
+  { status = 'open', depth = 0, isLast = true, ancestorContinues = [], children = '' }: TicketOptions = {},
 ) => {
   const trunk = depth * 12;
   return `
@@ -22,7 +23,7 @@ const ticket = (
           ${ancestorContinues.map((continues, level) => continues ? `<span class="oc-plugin-tree-guide" style="left:${level * 12}px"></span>` : '').join('')}
           <span class="oc-plugin-tree-branch${isLast ? '' : ' continues'}" data-testid="branch-${id}" style="left:${trunk}px"></span>
           ${children ? `<span class="oc-plugin-tree-child-bridge" data-testid="child-bridge-${id}" style="left:${trunk + 12}px"></span>` : ''}
-          <span class="oc-plugin-tree-status open" data-testid="status-${id}" style="left:${trunk + 7}px" aria-label="open"></span>
+          <span class="oc-plugin-tree-status ${status}" data-testid="status-${id}" style="left:${trunk + 7}px" aria-label="${status}"></span>
         </span>
         <div class="oc-plugin-tree-content">
           <div class="oc-plugin-tree-main"><span>P1</span><span class="oc-plugin-tree-title">Item ${id}</span></div>
@@ -87,4 +88,20 @@ test('tree connectors meet circle borders and stop at final branches', async ({ 
   expect(geometry.first.continues).toBe(true);
   expect(geometry.last.continues).toBe(false);
   expect(geometry.finalRoot.continues).toBe(false);
+});
+
+test('closed tree items have a distinct muted marker', async ({ page }) => {
+  await page.setContent(`<style>:root { --border: #666; --accent2: #0f0; --text-dim: #999; } ${css}</style>
+    <ul class="oc-plugin-tree-list">${ticket('active')}${ticket('done', { status: 'closed' })}</ul>`);
+  const closed = await page.getByLabel('closed').evaluate((node) => ({
+    color: getComputedStyle(node).color,
+    background: getComputedStyle(node).backgroundColor,
+  }));
+  const open = await page.getByLabel('open').evaluate((node) => ({
+    color: getComputedStyle(node).color,
+    background: getComputedStyle(node).backgroundColor,
+  }));
+  expect(closed.color).toBe('rgb(153, 153, 153)');
+  expect(closed.background).toBe(closed.color);
+  expect(closed).not.toEqual(open);
 });

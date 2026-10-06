@@ -538,6 +538,10 @@ instance ID and never forwards pane operations to another machine. Pane listing
 returns `{pluginId, ownerId, pane: {id, label}}`, with owner identity qualified
 by the hub.
 
+Discovery projects pane declarations from the owner's existing `catalog`
+operation. Older protocol-7 owners therefore contribute no panes without
+breaking plugin management or displaying a false owner-disconnection error.
+
 Read authorization is checked against the current registration while admitting
 the call under the lifecycle lock, and checked again before returning results.
 The `pane.project` grant authorizes sending the selected directory to the

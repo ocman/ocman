@@ -10,6 +10,7 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/plugins"
 	"github.com/NoUseFreak/ocman/internal/remote"
+	"github.com/NoUseFreak/ocman/internal/state"
 )
 
 type listedPluginPane struct {
@@ -24,7 +25,19 @@ func (s *Server) handlePluginPanes(w http.ResponseWriter, r *http.Request) {
 		writePluginResponse(w, pluginResponse(nil, plugins.ErrInvalidMessage))
 		return
 	}
-	writePluginResponse(w, s.routePluginOperation(r.Context(), owner, remote.PluginRequest{Operation: "panes", Pane: plugins.PaneRequest{OwnerID: owner}}))
+	// Catalog is supported by older protocol-7 owners; their descriptions simply
+	// have no pane declarations. Discovery must not require a new RPC envelope.
+	response := s.routePluginOperation(r.Context(), owner, remote.PluginRequest{Operation: "catalog"})
+	if response.Error != nil {
+		writePluginResponse(w, response)
+		return
+	}
+	var registrations []state.PluginRegistration
+	if err := json.Unmarshal(response.Value, &registrations); err != nil {
+		writePluginResponse(w, pluginResponse(nil, err))
+		return
+	}
+	writePluginResponse(w, pluginResponse(pluginPaneDeclarations(registrations, owner), nil))
 }
 
 func (s *Server) handlePluginPaneRead(w http.ResponseWriter, r *http.Request) {
@@ -38,26 +51,19 @@ func (s *Server) handlePluginPaneRead(w http.ResponseWriter, r *http.Request) {
 }
 
 // Listing declarations never invokes plugins or probes a project's tools.
-func (s *Server) localPluginPanes(ctx context.Context) ([]listedPluginPane, error) {
+func pluginPaneDeclarations(registrations []state.PluginRegistration, owner string) []listedPluginPane {
 	panes := []listedPluginPane{}
-	if s.stateDB == nil {
-		return panes, nil
-	}
-	registrations, err := s.stateDB.ListPlugins(ctx)
-	if err != nil {
-		return nil, err
-	}
 	for _, p := range registrations {
 		if !p.Enabled || p.Removed || p.Health.Status == "conflict" {
 			continue
 		}
 		for _, pane := range p.Description.Panes {
 			if p.Description.PaneAllowed(pane.ID, p.Grants) {
-				panes = append(panes, listedPluginPane{PluginID: p.Description.ID, OwnerID: "local", Pane: pane})
+				panes = append(panes, listedPluginPane{PluginID: p.Description.ID, OwnerID: owner, Pane: pane})
 			}
 		}
 	}
-	return panes, nil
+	return panes
 }
 
 func (s *Server) readLocalPluginPane(ctx context.Context, request plugins.PaneRequest) (plugins.PaneTree, error) {
