@@ -63,7 +63,8 @@ describe('RateLimitBanner', () => {
   it('renders the message and attempt', () => {
     renderBanner(makeNotice({ message: 'too fast', attempt: 2 }));
     expect(screen.getByText(/too fast/)).toBeInTheDocument();
-    expect(screen.getByText(/attempt 2/)).toBeInTheDocument();
+    expect(screen.getByText('(2/n)')).toBeInTheDocument();
+    expect(screen.getByTitle('Rate limited — too fast (2/n)')).toBeInTheDocument();
   });
 
   it('suggests changing the model for rate limits', () => {

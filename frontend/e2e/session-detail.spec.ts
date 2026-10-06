@@ -20,7 +20,7 @@ import { test, expect, MOCK_SESSION, MOCK_SESSION_2, mockSessionWithLiveConnecti
 const SESSION_URL = `/session/${MOCK_SESSION.id}`;
 
 for (const width of [1280, 390]) {
-  test(`composer notice row fits its content at ${width}px`, async ({ mockedPage: page }) => {
+  test(`composer notice row truncates and bottom-aligns at ${width}px`, async ({ mockedPage: page }) => {
     await page.setViewportSize({ width, height: 720 });
     let notice: Record<string, unknown> | undefined = undefined;
     await page.route(new RegExp(`/api/session/${MOCK_SESSION.id}(\\?|$)`), (route) =>
@@ -36,20 +36,37 @@ for (const width of [1280, 390]) {
     const reservedHeight = (await notices.boundingBox())!.height;
     expect(reservedHeight).toBeGreaterThan(0);
     expect(reservedHeight).toBeLessThanOrEqual(24);
+    expect(await composer.evaluate(el => getComputedStyle(el, '::before').content)).toBe('none');
     notice = { kind: 'error', message: 'Provider unavailable.', retryAt: 0, attempt: 0 };
     await page.reload();
     await expect(composer.getByRole('textbox')).toBeVisible();
     await expect(notices.getByTestId('rate-limit-banner')).toBeAttached();
+    expect(await composer.evaluate(el => getComputedStyle(el, '::before').backgroundImage))
+      .toContain('linear-gradient');
+    expect(await composer.evaluate(el => {
+      const fade = getComputedStyle(el, '::before');
+      return parseFloat(fade.top) + parseFloat(fade.height);
+    })).toBe(0);
     const singleLineHeight = (await notices.boundingBox())!.height;
     expect(singleLineHeight).toBeLessThanOrEqual(24);
+    await notices.evaluate(el => { el.style.minHeight = '80px'; });
+    const noticeBox = (await notices.boundingBox())!;
+    const bannerBox = (await notices.getByTestId('rate-limit-banner').boundingBox())!;
+    expect(bannerBox.y + bannerBox.height).toBeCloseTo(noticeBox.y + noticeBox.height, 0);
+    await notices.evaluate(el => { el.style.minHeight = ''; });
     notice = { kind: 'error', message: 'Provider unavailable.\nPlease retry.\nCheck your connection.', retryAt: 0, attempt: 0 };
     await page.reload();
     await expect(notices.getByTestId('rate-limit-banner')).toBeAttached();
-    expect((await notices.boundingBox())!.height).toBeGreaterThan(singleLineHeight * 2);
+    expect((await notices.boundingBox())!.height).toBe(singleLineHeight);
+    await expect(notices.getByTestId('rate-limit-banner').locator('span[title]').first())
+      .toHaveAttribute('title', 'Error — Provider unavailable.\nPlease retry.\nCheck your connection.');
     notice = { kind: 'rate_limit', message: 'Provider quota exceeded. '.repeat(30), retryAt: 0, attempt: 2 };
     await page.reload();
     await expect(notices.getByTestId('rate-limit-banner')).toBeAttached();
-    expect((await notices.boundingBox())!.height).toBeGreaterThan(reservedHeight);
+    expect((await notices.boundingBox())!.height).toBeLessThanOrEqual(32);
+    const text = notices.getByTestId('rate-limit-banner').locator('span[title]').first();
+    expect(await text.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true);
+    await expect(text).toHaveCSS('text-overflow', 'ellipsis');
     expect(await notices.evaluate(el => el.scrollHeight)).toBe(await notices.evaluate(el => el.clientHeight));
     await expect(notices.getByRole('button', { name: 'Change model' })).toBeAttached();
   });
@@ -73,6 +90,18 @@ for (const width of [1280, 390]) {
     await expect(composer.getByRole('textbox')).toBeVisible();
     await expect.poll(() => viewport.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
     const initialComposer = (await composer.boundingBox())!;
+    const backdrop = await composer.evaluate(el => {
+      const solid = getComputedStyle(el);
+      const fade = getComputedStyle(el, '::before');
+      return {
+        background: solid.backgroundColor,
+        backgroundImage: solid.backgroundImage,
+        fadeImage: fade.backgroundImage,
+      };
+    });
+    expect(backdrop.background).not.toBe('rgba(0, 0, 0, 0)');
+    expect(backdrop.backgroundImage).toBe('none');
+    expect(backdrop.fadeImage).toBe('none');
     for (const position of [0, 0.5, 1]) {
       await viewport.evaluate((el, fraction) => {
         el.scrollTop = fraction * (el.scrollHeight - el.clientHeight);

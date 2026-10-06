@@ -52,7 +52,8 @@ describe('SseStatusIndicator', () => {
 
     // Attempt count surfaces so users can see how long we've been
     // disconnected.
-    expect(screen.getByText(/attempt 3/i)).toBeInTheDocument();
+    expect(screen.getByText(/\(3\/n\)/i)).toBeInTheDocument();
+    expect(screen.getByTitle('Reconnecting to live updates (3/n) — retrying in 4s')).toBeInTheDocument();
     // The countdown rounds *up* to whole seconds so it never reads "0s"
     // before the retry actually fires.
     expect(screen.getByText(/retrying in 4s/i)).toBeInTheDocument();

@@ -48,28 +48,33 @@ export function RateLimitBanner({ notice, onChangeModel }: RateLimitBannerProps)
   if (notice.kind === 'model_switch') title = 'Switched model';
   if (notice.kind === 'models_exhausted') title = 'All models cooled down';
 
+  const retryText = remaining > 0
+    ? ` · ${notice.kind === 'models_exhausted' ? 'Earliest recovers in' : 'Retrying in'} ~${formatDuration(remaining)}`
+    : '';
+  const attemptText = notice.attempt > 0 ? ` (${notice.attempt}/n)` : '';
+
   return (
     <div className={`oc-sse-indicator oc-sse-indicator-reconnecting${title === 'Error' ? ' oc-sync-indicator-failed' : ''}`} role={title === 'Error' ? 'alert' : 'status'} data-testid="rate-limit-banner">
-      <span>
+      <span title={`${title} — ${notice.message}${retryText}${attemptText}`}>
         <i className="bi bi-hourglass-split" aria-hidden="true" />
         {' '}
         <strong>{title}</strong>
         {' — '}
         {notice.message}
-        {remaining > 0 && (
-          <span className="oc-rate-limit-retry">
-            {' · '}{notice.kind === 'models_exhausted' ? 'Earliest recovers in' : 'Retrying in'} ~{formatDuration(remaining)}
-          </span>
-        )}
-        {notice.attempt > 0 && (
-          <span className="oc-rate-limit-attempt">
-            {' · '}attempt {notice.attempt}
-          </span>
-        )}
       </span>
+      {remaining > 0 && (
+        <span className="oc-rate-limit-retry" title={retryText.trim()}>
+          {retryText}
+        </span>
+      )}
+      {notice.attempt > 0 && (
+        <span className="oc-rate-limit-attempt" title={attemptText.trim()}>
+          {attemptText}
+        </span>
+      )}
       {notice.kind === 'rate_limit' && onChangeModel && (
         <>
-          <span>Try another model to continue.</span>
+          <span title="Try another model to continue.">Try another model to continue.</span>
           <Button variant="link" size="compact" onClick={onChangeModel}>Change model</Button>
         </>
       )}

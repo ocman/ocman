@@ -59,6 +59,7 @@ export function SseStatusIndicator({
 
   if (reconnecting) {
     const remaining = secondsUntil(nextRetryAt);
+    const message = `Reconnecting to live updates${attempt > 0 ? ` (${attempt}/n)` : ''}${remaining > 0 ? ` — retrying in ${remaining}s` : '…'}`;
     return (
       <div
         className="oc-sse-indicator oc-sse-indicator-reconnecting"
@@ -66,11 +67,7 @@ export function SseStatusIndicator({
         data-testid="sse-reconnecting-indicator"
       >
         <span className="oc-sse-indicator-dot" aria-hidden="true" />
-        <span>
-          Reconnecting to live updates
-          {attempt > 0 ? ` (attempt ${attempt})` : ''}
-          {remaining > 0 ? ` — retrying in ${remaining}s` : '…'}
-        </span>
+        <span title={message}>{message}</span>
         <button
           type="button"
           className="oc-sse-indicator-retry"
@@ -87,7 +84,7 @@ export function SseStatusIndicator({
   // (handled in useSessionSSE).
   return (
     <div className="oc-sse-indicator">
-      Live updates unavailable -- polling every 10s
+      <span title="Live updates unavailable -- polling every 10s">Live updates unavailable -- polling every 10s</span>
     </div>
   );
 }

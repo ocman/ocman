@@ -16,14 +16,15 @@ export function SessionSyncIndicator({ refreshing, refreshError, onRetry }: Sess
     return (
       <div className="oc-sse-indicator oc-sse-indicator-reconnecting" role="status" data-testid="session-syncing">
         <span className="oc-sse-indicator-dot" aria-hidden="true" />
-        <span>Checking for updates…</span>
+        <span title="Checking for updates…">Checking for updates…</span>
       </div>
     );
   }
   if (!refreshError) return null;
+  const message = `Couldn't refresh, this conversation may be out of date (${refreshError})`;
   return (
     <div className="oc-sse-indicator oc-sse-indicator-reconnecting oc-sync-indicator-failed" role="alert" data-testid="session-sync-failed">
-      <span>Couldn't refresh, this conversation may be out of date ({refreshError})</span>
+      <span title={message}>{message}</span>
       <Button variant="link" size="compact" onClick={onRetry}>Retry</Button>
     </div>
   );

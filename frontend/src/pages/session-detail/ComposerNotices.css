@@ -1,6 +1,15 @@
 .oc-viewport-footer:has(.oc-composer-notices) {
   margin-top: -1.25rem;
-  background: linear-gradient(to bottom, transparent 0, var(--bg) 1.25rem);
+  background: var(--bg);
+}
+
+.oc-viewport-footer:has(.oc-composer-notices:not(:empty))::before {
+  content: '';
+  position: absolute;
+  inset: -1.25rem 0 auto;
+  height: 1.25rem;
+  background: linear-gradient(to bottom, transparent, var(--bg));
+  pointer-events: none;
 }
 
 /* Keep the last message clear of the overlaid notification area. */
@@ -8,7 +17,14 @@
   padding-bottom: 1.25rem;
 }
 
+.oc-viewport-footer:has(.oc-composer-notices) .oc-composer-wrap {
+  padding-top: 4px;
+}
+
 .oc-composer-notices {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
   min-height: 1.25rem;
   flex-shrink: 0;
   padding-inline: 1rem;
@@ -16,14 +32,23 @@
 }
 
 .oc-composer-notices .oc-sse-indicator {
+  display: flex;
+  min-width: 0;
   margin: 0;
   padding: 0.25rem 0;
   text-align: left;
   justify-content: flex-start;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
 }
 
-.oc-composer-notices button {
+.oc-composer-notices .oc-sse-indicator > span[title] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oc-composer-notices button,
+.oc-composer-notices .oc-rate-limit-attempt,
+.oc-composer-notices .oc-sse-indicator-dot {
   flex-shrink: 0;
 }
