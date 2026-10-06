@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -26,7 +27,7 @@ func TestRemoteStreamBroadcastsGitHintAndPreservesRawEvent(t *testing.T) {
 	sub, unsubscribe := srv.broadcastHub.subscribe()
 	defer unsubscribe()
 	w := httptest.NewRecorder()
-	srv.serveSessionEvents(w, httptest.NewRequest("GET", "/api/session/s1/events", nil), "s1", adapter)
+	srv.serveSessionEvents(w, httptest.NewRequest(http.MethodGet, "/api/session/s1/events", nil), "s1", adapter)
 	if w.Body.String() != event {
 		t.Fatalf("raw stream changed: %q", w.Body.String())
 	}
