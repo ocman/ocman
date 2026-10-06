@@ -301,6 +301,23 @@ func TestFactoryUnblockLauncherCreatesReadOnlyConversation(t *testing.T) {
 	if token == "" || !srv.consumeFactoryUnblock(token, "epic-1") || srv.consumeFactoryUnblock(token, "epic-1") {
 		t.Fatal("unblock token was not scoped and single-use")
 	}
+
+	// A lost send response may mean the prompt was accepted. Keep its history.
+	platform.disposeFn = func(platforms.DisposeSessionRequest) error {
+		t.Fatal("failed unblock prompt deleted session history")
+		return nil
+	}
+	aborted := false
+	platform.abortFn = func(req platforms.AbortRequest) error { aborted = req.SessionID == "unblock-1"; return nil }
+	platform.sendMessageFn = func(platforms.SendMessageRequest) error { return errors.New("response lost after acceptance") }
+	session, err := srv.launchFactoryUnblockSession(t.Context(), "epic-1", "issue-1")
+	if err == nil || session.ID != "unblock-1" || !aborted {
+		t.Fatalf("failed unblock = %#v, %v, aborted = %v", session, err, aborted)
+	}
+	srv.factoryUnblockTokens.Range(func(_, _ any) bool {
+		t.Error("failed unblock retained its authorization token")
+		return true
+	})
 }
 
 func TestFactoryPlanningLauncherReturnsRestrictedSessionWhenCleanupFails(t *testing.T) {

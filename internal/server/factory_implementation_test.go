@@ -449,13 +449,13 @@ func TestFactoryImplementationLauncherProbe(t *testing.T) {
 }
 
 func TestFactorySessionLaunchersDelegateSessionControls(t *testing.T) {
-	var disposed platforms.DisposeSessionRequest
+	var aborted platforms.AbortRequest
 	var replied platforms.RespondPermissionRequest
 	var sent platforms.SendMessageRequest
 	sends := 0
 	detail := &platforms.SessionDetail{}
 	platform := &fakePlatform{id: "opencode", sessions: []db.Session{{ID: "session"}}}
-	platform.disposeFn = func(request platforms.DisposeSessionRequest) error { disposed = request; return nil }
+	platform.abortFn = func(request platforms.AbortRequest) error { aborted = request; return nil }
 	platform.respondPermissionFn = func(request platforms.RespondPermissionRequest) error { replied = request; return nil }
 	platform.sendMessageFn = func(request platforms.SendMessageRequest) error { sent = request; sends++; return nil }
 	platform.sessionDetailFn = func(string) (*platforms.SessionDetail, error) { return detail, nil }
@@ -467,8 +467,8 @@ func TestFactorySessionLaunchersDelegateSessionControls(t *testing.T) {
 	srv := New(nil, nil, "", registry, nil)
 	session := factory.PlanningSession{Platform: "opencode", ID: "session"}
 
-	if err := (factoryImplementationLauncher{server: srv}).StopImplementationSession(context.Background(), session); err != nil || disposed.SessionID != "session" {
-		t.Fatalf("StopImplementationSession = %v, %#v", err, disposed)
+	if err := (factoryImplementationLauncher{server: srv}).StopImplementationSession(context.Background(), session); err != nil || aborted.SessionID != "session" {
+		t.Fatalf("StopImplementationSession = %v, %#v", err, aborted)
 	}
 	if err := (factoryImplementationLauncher{server: srv}).RespondImplementationPermission(context.Background(), session, "permission", "always"); err != nil || replied.SessionID != "session" || replied.PermissionID != "permission" || replied.Reply != "always" {
 		t.Fatalf("RespondImplementationPermission = %v, %#v", err, replied)
