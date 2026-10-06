@@ -297,6 +297,7 @@ type NativeService struct {
 	closeOnce         sync.Once
 	dispatchWG        sync.WaitGroup
 	dispatchWake      chan struct{}
+	activeSessions    sync.Map // PlanningSession -> struct{}, no DB read on idle events
 	stop              chan struct{}
 }
 

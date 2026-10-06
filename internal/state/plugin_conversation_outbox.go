@@ -103,6 +103,20 @@ type PluginConversationDeadLetter struct {
 // exact; only the itemized list is capped.
 const deadLetterListLimit = 50
 
+// HasPluginConversationReply includes pending, dead and delivered receipts, so
+// recovery never needs to reread a transcript whose reply is already durable.
+func (d *DB) HasPluginConversationReply(ctx context.Context, key PluginConversationKey, operationID string) (bool, error) {
+	if !key.valid() || operationID == "" {
+		return false, ErrPluginInvalid
+	}
+	var exists bool
+	err := d.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM plugin_conversation_outbox WHERE plugin_id = ? AND operation_id = ?)`, key.PluginID, operationID).Scan(&exists)
+	if err != nil {
+		return false, ErrPluginState
+	}
+	return exists, nil
+}
+
 // AppendPluginConversationReply records one completed reply for delivery and
 // returns its immutable delivery id. The insert is idempotent on
 // (plugin, operation): a repeated idle edge for the same turn appends nothing

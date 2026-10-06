@@ -16,7 +16,11 @@ func (s *NativeService) DeferIssue(ctx context.Context, epicID, issueID, reason 
 	if !ok {
 		return ErrFactoryUnavailable
 	}
-	return store.DeferFactoryIssue(ctx, epicID, issueID, strings.TrimSpace(reason))
+	err := store.DeferFactoryIssue(ctx, epicID, issueID, strings.TrimSpace(reason))
+	if err == nil {
+		s.wakeDispatch()
+	}
+	return err
 }
 
 func (s *NativeService) ResumeIssue(ctx context.Context, epicID, issueID string) error {
@@ -24,7 +28,11 @@ func (s *NativeService) ResumeIssue(ctx context.Context, epicID, issueID string)
 	if !ok {
 		return ErrFactoryUnavailable
 	}
-	return store.ResumeFactoryIssue(ctx, epicID, issueID)
+	err := store.ResumeFactoryIssue(ctx, epicID, issueID)
+	if err == nil {
+		s.wakeDispatch()
+	}
+	return err
 }
 
 func (s *NativeService) RetryIssueAt(ctx context.Context, epicID, issueID string, wakeAt time.Time) error {
@@ -35,7 +43,11 @@ func (s *NativeService) RetryIssueAt(ctx context.Context, epicID, issueID string
 	if !wakeAt.After(time.Now()) {
 		return errors.New("retry time must be in the future")
 	}
-	return store.RetryFactoryIssueAt(ctx, epicID, issueID, wakeAt)
+	err := store.RetryFactoryIssueAt(ctx, epicID, issueID, wakeAt)
+	if err == nil {
+		s.wakeDispatch()
+	}
+	return err
 }
 
 func (s *NativeService) CreateRecoveryGate(ctx context.Context, attemptID, agentToken, question, reason string, choices []string) (RecoveryGate, error) {
@@ -258,6 +270,7 @@ func (s *NativeService) ResolveRecoveryGate(ctx context.Context, gateID, action,
 	}
 	if action == "retry" {
 		_ = s.Dispatch(ctx)
+		s.wakeDispatch()
 	}
 	return gate, nil
 }

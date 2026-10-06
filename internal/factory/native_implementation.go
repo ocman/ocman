@@ -151,6 +151,7 @@ func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentTok
 		return fmt.Errorf("%w: factory implementation attempt is not active", ErrInvalidRequest)
 	}
 	s.forgetVerificationChecks(attemptID)
+	s.activeSessions.Delete(attempt.Session)
 	if attempt.FrozenPolicy.Delivery {
 		s.notifyEpicDelivered(context.WithoutCancel(ctx), attempt.EpicID, summary, prURL, attempt.Session.Platform, attempt.Session.ID)
 	}

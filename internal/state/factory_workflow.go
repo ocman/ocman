@@ -152,8 +152,10 @@ func (d *DB) reconcileFactoryWorkflow(ctx context.Context, epicID string) (bool,
 		if count == 0 {
 			status, outcome = "open", ""
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = ?, outcome = ? WHERE id = ?`, status, outcome, issue.ID); err != nil {
-			return true, err
+		if issue.Status != status || issue.Outcome != outcome {
+			if _, err := tx.ExecContext(ctx, `UPDATE factory_issue SET status = ?, outcome = ? WHERE id = ?`, status, outcome, issue.ID); err != nil {
+				return true, err
+			}
 		}
 	}
 	paths := make([]string, 0, len(projects))
@@ -235,6 +237,16 @@ func (d *DB) reconcileFactoryWorkflow(ctx context.Context, epicID string) (bool,
 		for _, need := range step.Needs {
 			for _, blocker := range issues {
 				if blocker.ParentID == issue.ParentID && steps[blocker.ID] != nil && steps[blocker.ID].Key == need {
+					present := false
+					for _, dependency := range issue.DependsOn {
+						if dependency.ID == blocker.ID && dependency.Type == "blocks" {
+							present = true
+							break
+						}
+					}
+					if present {
+						continue
+					}
 					if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO factory_issue_dependency(issue_id, depends_on_issue_id, type) VALUES (?, ?, 'blocks')`, issue.ID, blocker.ID); err != nil {
 						return true, err
 					}

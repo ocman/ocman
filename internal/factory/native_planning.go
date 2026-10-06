@@ -40,6 +40,7 @@ func (s *NativeService) DecidePlanGate(ctx context.Context, epicID, action strin
 			}
 		}
 		_ = s.Dispatch(ctx)
+		s.wakeDispatch()
 	}
 	return nativePlanGate(gate), err
 }
@@ -58,6 +59,7 @@ func (s *NativeService) Materialize(ctx context.Context, epicID, issueID string)
 	}
 	if err == nil {
 		_ = s.Dispatch(ctx)
+		s.wakeDispatch()
 	}
 	return Materialization{ID: materialization.ID, IssueID: materialization.IssueID, ProposalRevision: materialization.ProposalRevision, ProposalHash: materialization.ProposalHash, ManifestKey: materialization.ManifestKey, ImplementationID: materialization.ImplementationID, Issues: materialization.Issues}, err
 }

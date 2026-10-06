@@ -137,7 +137,16 @@ func getFactoryEpicPermissionRules(ctx context.Context, tx *sql.Tx, epicID strin
 }
 
 func (d *DB) ListFactoryEpics(ctx context.Context) ([]model.NativeEpic, error) {
-	rows, err := d.db.QueryContext(ctx, `SELECT id, status, goal, brief, project_path, instantiation_id, formula_id, formula_version, formula_hash FROM factory_epic ORDER BY created_at, id`)
+	return d.listFactoryEpics(ctx, false)
+}
+
+// ListFactoryDispatchEpics excludes historical and paused work before loading projects.
+func (d *DB) ListFactoryDispatchEpics(ctx context.Context) ([]model.NativeEpic, error) {
+	return d.listFactoryEpics(ctx, true)
+}
+
+func (d *DB) listFactoryEpics(ctx context.Context, dispatchOnly bool) ([]model.NativeEpic, error) {
+	rows, err := d.db.QueryContext(ctx, `SELECT id, status, goal, brief, project_path, instantiation_id, formula_id, formula_version, formula_hash FROM factory_epic WHERE (? = 0 OR status = 'open') ORDER BY created_at, id`, dispatchOnly)
 	if err != nil {
 		return nil, fmt.Errorf("listing Factory Epics: %w", err)
 	}
@@ -156,13 +165,30 @@ func (d *DB) ListFactoryEpics(ctx context.Context) ([]model.NativeEpic, error) {
 	if err := rows.Close(); err != nil {
 		return nil, err
 	}
+	if len(epics) == 0 {
+		return epics, nil
+	}
+	projects, err := d.db.QueryContext(ctx, `SELECT p.epic_id, `+factoryProjectColumns+` FROM factory_epic_project p JOIN factory_epic e ON e.id = p.epic_id WHERE (? = 0 OR e.status = 'open') ORDER BY p.is_epic DESC, p.project_path`, dispatchOnly)
+	if err != nil {
+		return nil, err
+	}
+	defer projects.Close()
+	byID := make(map[string]int, len(epics))
 	for i := range epics {
-		epics[i].Projects, err = d.listFactoryEpicProjects(ctx, epics[i].ID)
-		if err != nil {
+		byID[epics[i].ID] = i
+		epics[i].Projects = []model.EpicProject{}
+	}
+	for projects.Next() {
+		var id string
+		var project model.EpicProject
+		if err := projects.Scan(&id, &project.Path, &project.Removable); err != nil {
 			return nil, err
 		}
+		if i, exists := byID[id]; exists {
+			epics[i].Projects = append(epics[i].Projects, project)
+		}
 	}
-	return epics, nil
+	return epics, projects.Err()
 }
 
 func (d *DB) GetFactoryEpic(ctx context.Context, id string) (model.NativeEpic, error) {
@@ -188,14 +214,16 @@ type factoryProjectQueryer interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }
 
-func listFactoryEpicProjectsWith(ctx context.Context, queryer factoryProjectQueryer, epicID string) ([]model.EpicProject, error) {
-	rows, err := queryer.QueryContext(ctx, `SELECT p.project_path, p.is_epic = 0 AND NOT EXISTS (
+const factoryProjectColumns = `p.project_path, p.is_epic = 0 AND NOT EXISTS (
 		SELECT 1 FROM factory_attempt a WHERE a.epic_id = p.epic_id AND a.started_at > 0 AND json_extract(a.frozen_policy_json, '$.repository') = p.project_path
 	) AND NOT EXISTS (
 		SELECT 1 FROM factory_delivery d WHERE d.epic_id = p.epic_id AND d.project_id = p.project_path
 	) AND NOT EXISTS (
 		SELECT 1 FROM factory_issue i WHERE i.epic_id = p.epic_id AND i.project_path = p.project_path AND i.status <> 'closed' AND i.kind IN ('implementation', 'task', 'delivery') AND NOT EXISTS (SELECT 1 FROM factory_removed_issue WHERE issue_id = i.id)
-	) FROM factory_epic_project p WHERE p.epic_id = ? ORDER BY p.is_epic DESC, p.project_path`, epicID)
+	)`
+
+func listFactoryEpicProjectsWith(ctx context.Context, queryer factoryProjectQueryer, epicID string) ([]model.EpicProject, error) {
+	rows, err := queryer.QueryContext(ctx, `SELECT `+factoryProjectColumns+` FROM factory_epic_project p WHERE p.epic_id = ? ORDER BY p.is_epic DESC, p.project_path`, epicID)
 	if err != nil {
 		return nil, fmt.Errorf("listing Factory Epic projects: %w", err)
 	}

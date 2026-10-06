@@ -232,6 +232,9 @@ func (s *Server) adapterForSession(ctx context.Context, platformID, sessionID st
 // this machine drain a remote session that happened to share the id.
 func (s *Server) onSessionIdle(platformID, sessionID string) {
 	s.broadcastSessionIdle(sessionID)
+	if notifier, ok := s.factory.(interface{ NotifySessionIdle(string, string) }); ok {
+		notifier.NotifySessionIdle(platformID, sessionID)
+	}
 	if s.stateDB == nil || platformID == "" {
 		return
 	}

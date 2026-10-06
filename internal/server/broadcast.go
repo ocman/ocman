@@ -10,8 +10,6 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/NoUseFreak/ocman/internal/autoapprove"
-	"github.com/NoUseFreak/ocman/internal/db"
-	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 )
 
 // --- Global broadcast hub ---
@@ -305,95 +303,6 @@ func (s *Server) broadcastQuestionResolved(sessionID, requestID, reason string) 
 		return
 	}
 	s.broadcastGlobalEvent("ocman.question.resolved", payload)
-}
-
-// broadcastSessionIdle broadcasts that a session went idle (the agent
-// finished a turn). Lets the bell / favicon / completed-but-unseen
-// indicators surface promptly instead of waiting for the notify poll.
-func (s *Server) broadcastSessionIdle(sessionID string) {
-	if sessionID == "" {
-		return
-	}
-	payload, err := json.Marshal(map[string]interface{}{
-		"sessionID": sessionID,
-	})
-	if err != nil {
-		return
-	}
-	s.broadcastGlobalEvent("ocman.session.idle", payload)
-}
-
-// broadcastSessionChanged broadcasts that a session was created or
-// changed upstream, so the session list
-// refreshes immediately instead of waiting for the next poll. This is
-// what makes a freshly-created session appear near-instantly.
-func (s *Server) broadcastSessionChanged(sessionID string) {
-	if sessionID == "" {
-		return
-	}
-	payload, err := json.Marshal(map[string]interface{}{
-		"sessionID": sessionID,
-	})
-	if err != nil {
-		return
-	}
-	s.broadcastGlobalEvent("ocman.session.changed", payload)
-	// OpenCode occasionally emits the terminal changed event without a matching
-	// idle edge. The durable outbox makes this recovery call idempotent.
-	s.replyToConversation(context.Background(), "opencode", sessionID)
-}
-
-func (s *Server) broadcastSessionStatus(sessionID string, status db.SessionStatus) {
-	s.broadcastSessionPatch(sessionID, map[string]interface{}{"status": status})
-}
-
-// broadcastSessionTitle pushes an upstream rename so open views relabel
-// the session without a reload.
-func (s *Server) broadcastSessionTitle(sessionID, title string) {
-	s.broadcastSessionPatch(sessionID, map[string]interface{}{"title": title})
-}
-
-func (s *Server) broadcastSessionPatch(sessionID string, patch map[string]interface{}) {
-	if sessionID == "" {
-		return
-	}
-	payload, err := json.Marshal(map[string]interface{}{
-		"sessionID": sessionID,
-		"patch":     patch,
-	})
-	if err == nil {
-		s.broadcastGlobalEvent("ocman.session.changed", payload)
-	}
-}
-
-// broadcastSessionCreated broadcasts a freshly-created (or moved)
-// session with a provisional list row the frontend can insert
-// immediately, ahead of the authoritative refetch the same event
-// triggers. The row is built from what the service knew without extra
-// I/O (id, platform, directory, title); missing fields default to a
-// harmless "waiting" row that the refetch overwrites.
-func (s *Server) broadcastSessionCreated(info sessionsvc.CreatedSession) {
-	if info.ID == "" {
-		return
-	}
-	now := time.Now().UnixMilli()
-	session := db.Session{
-		ID:          info.ID,
-		Platform:    info.Platform,
-		Directory:   info.Directory,
-		Title:       info.Title,
-		TimeCreated: now,
-		TimeUpdated: now,
-		Status:      db.StatusWaiting,
-	}
-	payload, err := json.Marshal(map[string]interface{}{
-		"sessionID": info.ID,
-		"session":   session,
-	})
-	if err != nil {
-		return
-	}
-	s.broadcastGlobalEvent("ocman.session.changed", payload)
 }
 
 // globalEventsKeepaliveInterval is how often we send an SSE comment to

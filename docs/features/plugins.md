@@ -229,6 +229,11 @@ a restart of ocman retries the reply instead of losing it. Each delivery has an
 immutable id that doubles as its sequence number and is passed to the plugin as
 the call's `operationId`.
 
+Idle and terminal-change events record replies immediately. A startup scan and
+five-minute recovery scan catch missed events. Before loading a transcript,
+ocman checks the session lifecycle and durable receipt to skip replies already
+recorded in the outbox.
+
 - **Ordering.** Replies for one conversation are delivered strictly in
   sequence, one at a time: a later reply never overtakes an earlier one. Every
   conversation is its own ordering group, so one failing thread never holds up

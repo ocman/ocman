@@ -12,7 +12,12 @@ import (
 )
 
 func (d *DB) ListFactoryIssues(ctx context.Context, epicID string) ([]model.NativeIssue, error) {
-	if _, err := d.GetFactoryEpic(ctx, epicID); err != nil {
+	var exists int
+	err := d.db.QueryRowContext(ctx, `SELECT 1 FROM factory_epic WHERE id = ?`, epicID).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, model.ErrNativeEpicNotFound
+	}
+	if err != nil {
 		return nil, err
 	}
 	return listFactoryIssues(ctx, d.db, epicID)

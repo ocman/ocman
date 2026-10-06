@@ -106,34 +106,39 @@ func (s *NativeService) Start(ctx context.Context) error {
 			s.dispatchWG.Add(1)
 			go func() {
 				defer s.dispatchWG.Done()
-				s.runDispatch()
+				s.runDispatch(factoryDispatchRecoveryInterval)
 			}()
 		})
 	}
 	return nil
 }
-func (s *NativeService) runDispatch() {
+func (s *NativeService) runDispatch(recoveryInterval time.Duration) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() {
 		<-s.stop
 		cancel()
 	}()
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
+	timer := time.NewTimer(0) // Reconcile persisted work immediately after startup.
+	defer timer.Stop()
 	for {
 		select {
-		case <-ticker.C:
-			if err := s.Dispatch(ctx); err != nil && ctx.Err() == nil {
-				logrus.WithError(err).Error("Factory dispatch failed")
-			}
+		case <-timer.C:
 		case <-s.dispatchWake:
-			if err := s.Dispatch(ctx); err != nil && ctx.Err() == nil {
-				logrus.WithError(err).Error("Factory dispatch failed")
-			}
 		case <-s.stop:
 			return
 		}
+		var delay time.Duration
+		if err := s.Dispatch(ctx); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			logrus.WithError(err).Error("Factory dispatch failed")
+			delay = min(recoveryInterval, factoryDispatchRetryInterval)
+		} else {
+			delay = s.nextDispatchDelay(ctx, recoveryInterval)
+		}
+		timer.Reset(delay)
 	}
 }
 func (s *NativeService) Close() {
@@ -180,6 +185,7 @@ func (s *NativeService) SetCapacityPolicy(ctx context.Context, policy CapacityPo
 	if err := store.SetFactoryCapacityPolicy(ctx, policy); err != nil {
 		return CapacityPolicy{}, err
 	}
+	s.wakeDispatch()
 	return policy, nil
 }
 

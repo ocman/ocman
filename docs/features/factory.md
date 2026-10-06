@@ -8,6 +8,12 @@ repositories. It keeps an independent shared branch and workspace for each
 project, then runs a separate Project Delivery session for every changed
 project. This model is defined by [ADR 0008](../adr/0008-coordinate-factory-work-across-projects.md).
 
+Dispatch wakes on completion, implementation-session idle events, and changes
+that make work ready, such as approval, resume, graph edits, or capacity changes.
+A startup scan and five-minute recovery scan catch missed events. Retry deadlines
+and outstanding merge gates retain their own timers; they do not wait five minutes.
+Factory views refresh every 15 seconds.
+
 ## Projects and Issue targets
 
 Every Work Epic has an **Epic project set**. Its original Epic project is the

@@ -23,7 +23,7 @@ import (
 // reply. Only the newest assistant message is used.
 const conversationFetchLimit = 20
 
-const conversationReconcileInterval = 5 * time.Second
+const conversationReconcileInterval = 5 * time.Minute
 
 // conversationInboundPrefix namespaces inbound delivery receipts in the shared
 // plugin operation table, so a message's event id can never collide with an
@@ -238,6 +238,12 @@ func (s *Server) replyToConversation(ctx context.Context, platformID, sessionID 
 	if !ok {
 		return
 	}
+	if skip, err := s.conversationReplyAlreadyRecorded(ctx, adapter, key, sessionID); err != nil {
+		log.WithError(err).WithField("session_id", sessionID).Warn("checking conversation reply receipt")
+		return
+	} else if skip {
+		return
+	}
 	detail, err := adapter.Session(ctx, sessionID, conversationFetchLimit, 0)
 	if err != nil || detail == nil {
 		log.WithError(err).WithField("session_id", sessionID).Warn("reading completed turn for conversation reply")
@@ -281,8 +287,8 @@ func conversationReplyReady(status db.SessionStatus) bool {
 
 // runConversationReplyReconciliation is the backstop for OpenCode instances
 // that omit terminal idle/changed events. The outbox's session:message key
-// makes repeated scans harmless. ponytail: global scan; add dirty-session
-// tracking if conversation volume makes this measurable.
+// makes recovery safe. Idle/changed events handle normal delivery; this scan
+// runs at startup and every five minutes to recover missed events.
 func (s *Server) runConversationReplyReconciliation(ctx context.Context) {
 	s.reconcileConversationReplies(ctx)
 	ticker := time.NewTicker(conversationReconcileInterval)

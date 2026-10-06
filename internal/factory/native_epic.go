@@ -114,10 +114,13 @@ func (s *NativeService) ListWorkEpics(ctx context.Context) ([]WorkEpic, error) {
 	epics, err := s.store.ListFactoryEpics(ctx)
 	result := nativeEpics(epics)
 	if store, ok := s.store.(nativePlanningStore); ok {
+		attempts, _ := store.ListFactoryAttempts(ctx, "")
+		byEpic := make(map[string][]model.FactoryAttempt)
+		for _, attempt := range attempts {
+			byEpic[attempt.EpicID] = append(byEpic[attempt.EpicID], attempt)
+		}
 		for i := range result {
-			if attempts, attemptsErr := store.ListFactoryAttempts(ctx, result[i].ID); attemptsErr == nil {
-				result[i].Attempts = attempts
-			}
+			result[i].Attempts = byEpic[result[i].ID]
 			if gate, gateErr := store.GetFactoryPlanGate(ctx, result[i].ID); gateErr == nil {
 				decoded := nativePlanGate(gate)
 				result[i].PlanGate = &decoded
@@ -140,7 +143,11 @@ func (s *NativeService) CloseMol(ctx context.Context, epicID, molID string) erro
 	if !ok {
 		return ErrFactoryUnavailable
 	}
-	return store.CloseFactoryMol(ctx, epicID, molID)
+	err := store.CloseFactoryMol(ctx, epicID, molID)
+	if err == nil {
+		s.wakeDispatch()
+	}
+	return err
 }
 
 func (s *NativeService) CloseEpic(ctx context.Context, epicID string, force bool) error {
@@ -148,7 +155,11 @@ func (s *NativeService) CloseEpic(ctx context.Context, epicID string, force bool
 	if !ok {
 		return ErrFactoryUnavailable
 	}
-	return store.CloseFactoryEpic(ctx, epicID, force)
+	err := store.CloseFactoryEpic(ctx, epicID, force)
+	if err == nil {
+		s.wakeDispatch()
+	}
+	return err
 }
 
 func (s *NativeService) SetEpicPaused(ctx context.Context, epicID string, paused bool) error {
@@ -159,6 +170,7 @@ func (s *NativeService) SetEpicPaused(ctx context.Context, epicID string, paused
 	if err := store.SetFactoryEpicPaused(ctx, epicID, paused); err != nil {
 		return err
 	}
+	defer s.wakeDispatch()
 	if !paused {
 		if err := s.Dispatch(ctx); err != nil {
 			select {
@@ -179,6 +191,7 @@ func (s *NativeService) ReopenIssue(ctx context.Context, epicID, issueID string)
 	if err := store.ReopenFactoryIssue(ctx, epicID, issueID); err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
+	defer s.wakeDispatch()
 	if err := s.Dispatch(ctx); err != nil {
 		select {
 		case s.dispatchWake <- struct{}{}:
@@ -209,6 +222,9 @@ func (s *NativeService) MutateGraph(ctx context.Context, mutation GraphMutation)
 	err = store.MutateFactoryGraph(ctx, mutation)
 	if errors.Is(err, model.ErrInvalidGraphMutation) {
 		return fmt.Errorf("%w: %w", ErrInvalidRequest, err)
+	}
+	if err == nil {
+		s.wakeDispatch()
 	}
 	return err
 }

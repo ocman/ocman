@@ -35,7 +35,7 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 		epic  model.NativeEpic
 	}
 	var ready []candidate
-	epics, err := s.store.ListFactoryEpics(ctx)
+	epics, err := s.dispatchEpics(ctx)
 	if err != nil {
 		return err
 	}
@@ -142,7 +142,13 @@ func (s *NativeService) Dispatch(ctx context.Context) error {
 			_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "launch_failed", Message: "Implementation Session returned no session"}, time.Now())
 			continue
 		}
-		if activated, err := store.ActivateFactoryAttempt(ctx, attempt.ID, session, time.Now()); err != nil || !activated {
+		s.implementationMu.Lock()
+		activated, activationErr := store.ActivateFactoryAttempt(ctx, attempt.ID, session, time.Now())
+		if activationErr == nil && activated {
+			s.activeSessions.Store(session, struct{}{})
+		}
+		s.implementationMu.Unlock()
+		if activationErr != nil || !activated {
 			_ = s.implementation.StopImplementationSession(context.WithoutCancel(ctx), session)
 			_, _ = store.FailFactoryAttempt(context.WithoutCancel(ctx), attempt.ID, model.FactoryAttemptFailure{Type: "activation_failed", Message: "Implementation Session could not be recorded"}, time.Now())
 			continue
@@ -221,6 +227,7 @@ func (s *NativeService) reconcileImplementationRuntime(ctx context.Context, stor
 	if err != nil {
 		return nil, err
 	}
+	s.rememberImplementationSessions(attempts)
 	var alive []model.FactoryAttempt
 	active := map[string]bool{}
 	for _, attempt := range attempts {
@@ -262,6 +269,15 @@ func (s *NativeService) reconcileImplementationRuntime(ctx context.Context, stor
 	}
 	s.pruneAttemptState(active)
 	return alive, nil
+}
+
+func (s *NativeService) dispatchEpics(ctx context.Context) ([]model.NativeEpic, error) {
+	if store, ok := s.store.(interface {
+		ListFactoryDispatchEpics(context.Context) ([]model.NativeEpic, error)
+	}); ok {
+		return store.ListFactoryDispatchEpics(ctx)
+	}
+	return s.store.ListFactoryEpics(ctx)
 }
 
 func (s *NativeService) Queue(ctx context.Context) ([]DispatchItem, error) {

@@ -517,7 +517,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (db_name, method) (rate(db_sql_latency_milliseconds_count{service_name=\"$service\"}[5m]))",
+          "expr": "sum by (db_name, method) (rate(db_sql_latency_milliseconds_count{service_name=\"$service\",method=~\"sql.conn.query|sql.conn.exec\"}[5m]))",
           "legendFormat": "{{db_name}} / {{method}}"
         }
       ],
@@ -532,7 +532,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum by (le, db_name) (rate(db_sql_latency_milliseconds_bucket{service_name=\"$service\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, db_name) (rate(db_sql_latency_milliseconds_bucket{service_name=\"$service\",method=~\"sql.conn.query|sql.conn.exec\"}[5m])))",
           "legendFormat": "{{db_name}}"
         }
       ],
