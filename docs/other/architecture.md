@@ -395,8 +395,9 @@ flowchart TD
   The preview service caches checks for 15 seconds and retains its per-grant
   budget, concurrency limit and rate-limit backoff.
   Explicit refresh bypasses that checks snapshot while retaining grant and
-  rate controls. Checks HTTP 401/403 retain their status for token revocation
+  rate controls. Checks HTTP 401 and ordinary 403 retain their status for token revocation
   and denial classification, and provider retry deadlines reach the backoff.
+  Quota/secondary-limit 403 responses are classified as rate limits instead.
 - **Slack previews** (`linkpreview.Slack`, opt-in via
   `OCMAN_SLACK_PREVIEW_CLIENT_ID/_SECRET`). A dedicated OAuth app yields a
   machine-wide *user* token (`user_scope`, bot tokens refused); conversation.v1

@@ -134,3 +134,59 @@ it('sends the server refresh flag only on the first fetch of a refresh cycle', a
   await act(async () => { await vi.advanceTimersByTimeAsync(CI_POLL_MS); });
   expect(JSON.parse(fetch.mock.calls[1][1].body).refreshChecks).toBeUndefined();
 });
+
+it('renders nullable empty provider checks as normal unknown CI', async () => {
+  vi.useFakeTimers();
+  const fetch = vi.fn().mockResolvedValue(response({ state: 'unknown', checks: null }));
+  vi.stubGlobal('fetch', fetch);
+  render(<ProviderPreview providers={[]} preview={preview} />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  expect(screen.getByLabelText('No CI status')).toBeInTheDocument();
+  expect(screen.queryByLabelText('Failed to load checks')).toBeNull();
+});
+
+it('reuses settled results after refresh across visibility and request-key changes', async () => {
+  let onVisible: (entries: { isIntersecting: boolean }[]) => void = () => {};
+  vi.stubGlobal('IntersectionObserver', class {
+    constructor(callback: typeof onVisible) { onVisible = callback; }
+    observe() {}
+    disconnect() {}
+  });
+  const settled = { state: 'success' as const, checks: [{ name: 'build', state: 'success' as const }] };
+  cachePRChecks(key, settled);
+  const fetch = vi.fn().mockResolvedValue(response(settled));
+  vi.stubGlobal('fetch', fetch);
+  const { rerender } = render(<ProviderPreview providers={[]} preview={preview} />);
+  await act(async () => onVisible([{ isIntersecting: true }]));
+  expect(fetch).not.toHaveBeenCalled();
+  await act(async () => clearPRChecksCache());
+  expect(fetch).toHaveBeenCalledTimes(1);
+  await act(async () => onVisible([{ isIntersecting: false }]));
+  await act(async () => onVisible([{ isIntersecting: true }]));
+  expect(fetch).toHaveBeenCalledTimes(1);
+  cachePRChecks(prChecksCacheKey('code.example', 'o/r', 'def456'), settled);
+  rerender(<ProviderPreview providers={[]} preview={{ ...preview, headSha: 'def456' }} />);
+  await screen.findByLabelText('All checks passed');
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+
+it('holds an offscreen refresh until visible and consumes it even when the request aborts', async () => {
+  let onVisible: (entries: { isIntersecting: boolean }[]) => void = () => {};
+  vi.stubGlobal('IntersectionObserver', class {
+    constructor(callback: typeof onVisible) { onVisible = callback; }
+    observe() {}
+    disconnect() {}
+  });
+  const fetch = vi.fn().mockImplementationOnce(() => new Promise(() => {})).mockResolvedValue(response(done));
+  vi.stubGlobal('fetch', fetch);
+  render(<ProviderPreview providers={[]} preview={preview} />);
+  await act(async () => clearPRChecksCache());
+  expect(fetch).not.toHaveBeenCalled();
+  await act(async () => onVisible([{ isIntersecting: true }]));
+  expect(JSON.parse(fetch.mock.calls[0][1].body).refreshChecks).toBe(true);
+  await act(async () => onVisible([{ isIntersecting: false }]));
+  expect(fetch.mock.calls[0][1].signal.aborted).toBe(true);
+  await act(async () => onVisible([{ isIntersecting: true }]));
+  expect(JSON.parse(fetch.mock.calls[1][1].body).refreshChecks).toBeUndefined();
+  expect(screen.getByLabelText('All checks passed')).toBeInTheDocument();
+});

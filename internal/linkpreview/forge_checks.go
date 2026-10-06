@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/NoUseFreak/ocman/internal/forge"
+	"github.com/NoUseFreak/ocman/internal/forge/forgehttp"
 	"github.com/NoUseFreak/ocman/internal/forge/forgejo"
 	"github.com/NoUseFreak/ocman/internal/forge/github"
 )
@@ -29,7 +30,15 @@ func (t checksAuthTransport) RoundTrip(req *http.Request) (*http.Response, error
 	}
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		resp.Body.Close()
-		return nil, &HTTPError{Status: resp.StatusCode}
+		he := &HTTPError{Status: resp.StatusCode}
+		if resp.StatusCode == http.StatusForbidden && (resp.Header.Get("Retry-After") != "" || resp.Header.Get("X-RateLimit-Remaining") == "0") {
+			he.Status = http.StatusTooManyRequests
+			limit := forgehttp.ParseRateLimit(resp.Header, true)
+			if !limit.ResetAt.IsZero() {
+				he.RetryAfter = time.Until(limit.ResetAt)
+			}
+		}
+		return nil, he
 	}
 	return resp, nil
 }
@@ -59,6 +68,9 @@ func (f Forge) fetchChecks(ctx context.Context, api *API, repo, sha string) (Pre
 			retryAfter = time.Until(limit.ResetAt)
 		}
 		return Preview{}, &HTTPError{Status: http.StatusTooManyRequests, RetryAfter: retryAfter}
+	}
+	if status.Checks == nil {
+		status.Checks = []forge.Check{}
 	}
 	return Preview{Checks: &status}, nil
 }

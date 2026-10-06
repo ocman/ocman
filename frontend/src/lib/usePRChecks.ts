@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CIState, Check, PRChecks } from './upstreamApi';
 import { CI_POLL_MS, PR_CHECKS_REFRESH_EVENT, cachePRChecks, getCachedPRChecks, isSettled } from './prChecksCache';
 
@@ -13,6 +13,7 @@ export interface ChecksState {
 /** Both PR rows and conversation previews share the repository + SHA cache. */
 export function usePRChecks(cacheKey: string, requestKey: string, visible: boolean, fetchChecks: (signal: AbortSignal, refresh: boolean) => Promise<PRChecks>): ChecksState {
   const [generation, setGeneration] = useState(0);
+  const consumedRefresh = useRef(0);
   useEffect(() => {
     const refresh = () => setGeneration((g) => g + 1);
     window.addEventListener(PR_CHECKS_REFRESH_EVENT, refresh);
@@ -23,7 +24,7 @@ export function usePRChecks(cacheKey: string, requestKey: string, visible: boole
     if (!visible) return;
     const ctrl = new AbortController();
     let timer: number | undefined;
-    let refresh = generation > 0;
+    let refresh = generation > consumedRefresh.current;
     const run = () => {
       const cached = refresh ? undefined : getCachedPRChecks(cacheKey);
       if (cached) {
@@ -32,6 +33,7 @@ export function usePRChecks(cacheKey: string, requestKey: string, visible: boole
       }
       setResult((prev) => ({ key: requestKey, data: prev.key === requestKey ? prev.data : null, loading: true, error: false }));
       const request = fetchChecks(ctrl.signal, refresh);
+      if (refresh) consumedRefresh.current = generation;
       refresh = false;
       request.then((res) => {
         if (ctrl.signal.aborted) return;

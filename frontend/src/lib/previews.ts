@@ -207,5 +207,5 @@ export async function fetchPreviewChecks(url: string, sha: string, remoteId: str
   const { previews } = await postJSON<{ previews: PreviewResult[] }>(`/api/previews/resolve${q(remoteId)}`, { text: url, checksSha: sha, ...(refresh ? { refreshChecks: true } : {}) }, { signal });
   const preview = previews[0];
   if (preview?.state !== 'ok' || preview.stale || !preview.checks) throw new Error('Checks unavailable');
-  return preview.checks;
+  return { ...preview.checks, checks: preview.checks.checks ?? [] };
 }
