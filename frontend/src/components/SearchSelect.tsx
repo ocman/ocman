@@ -80,7 +80,7 @@ export function SearchSelect({
           setOpen((current) => !current);
         }}
       >
-        <span className="oc-search-select-label">{selected?.icon}{selected?.displayLabel ?? selected?.label ?? (value || placeholder)}</span>
+        <span className="oc-search-select-label">{selected?.icon}<span className="oc-search-select-text">{selected?.displayLabel ?? selected?.label ?? (value || placeholder)}</span></span>
         <i className="bi bi-chevron-down" aria-hidden="true" />
       </Button>
       {open && (

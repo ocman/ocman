@@ -50,6 +50,11 @@ func (h *ownerHost) WorktreeDefaultBaseRef(context.Context, string) (string, err
 	return h.id + "/main", nil
 }
 
+func (h *ownerHost) GitBranches(_ context.Context, dir string) ([]string, error) {
+	h.record("branches:" + dir)
+	return []string{h.id + "/main"}, nil
+}
+
 func (h *ownerHost) RemoveWorktree(context.Context, hostsvc.RemoveWorktreeRequest) error {
 	h.record("remove")
 	return nil

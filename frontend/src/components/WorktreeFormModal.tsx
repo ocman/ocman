@@ -9,9 +9,10 @@ import { useOpencodeLaunch } from '../lib/useCapabilities';
 import { Modal } from './Modal';
 import { ModalHeader } from './ModalHeader';
 import { ModalFooter } from './ModalFooter';
-import { Button, SelectField, TextField } from './Control';
+import { Button, TextField } from './Control';
 import { CheckboxField } from './CheckboxField';
 import { InlineAlert } from './InlineAlert';
+import { SearchSelect } from './SearchSelect';
 
 // Submit progress states surfaced to the user. The modal stays open
 // across all of them so submit feels like a single waiting step rather
@@ -117,6 +118,9 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId
   const [branch, setBranch] = useState(initialBranch ?? '');
   const [newBranch, setNewBranch] = useState(true);
   const [baseRef, setBaseRef] = useState('');
+  const [baseRefs, setBaseRefs] = useState<string[]>([]);
+  const [refError, setRefError] = useState<string | null>(null);
+  const [refRevision, setRefRevision] = useState(0);
   const [stage, setStage] = useState<SubmitStage>('idle');
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
@@ -126,14 +130,17 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId
   const branchInputRef = useRef<HTMLInputElement>(null);
 
   const submitting = stage !== 'idle';
+  const owner = remoteId || 'local';
+  const projectOptions = [...new Set([
+    projectDir,
+    ...projectList.filter((project) => (project.remoteId || 'local') === owner).map((project) => project.directory),
+  ].filter(Boolean))].map((value) => ({ value, label: value }));
 
   // Focus the branch input and load the project list on mount.
   useEffect(() => {
     requestAnimationFrame(() => branchInputRef.current?.focus());
-    if (!initialProject) {
-      projectsLoader().then(setProjectList).catch(() => setProjectList([]));
-    }
-  }, [initialProject, projectsLoader]);
+    projectsLoader().then(setProjectList).catch(() => setProjectList([]));
+  }, [projectsLoader]);
 
   // Once we know which project we're working with, fetch its default
   // base ref to pre-fill the input. setState inside `.then()` is fine
@@ -141,14 +148,21 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId
   useEffect(() => {
     if (!projectDir) return;
     const ctrl = new AbortController();
-    api.worktree
-      .defaultBaseRef(projectDir, remoteId, ctrl.signal)
-      .then((r) => setBaseRef(r.baseRef))
+    Promise.all([
+      api.worktree.defaultBaseRef(projectDir, owner, ctrl.signal),
+      api.gitBranches(projectDir, ctrl.signal, owner).catch(() => ({ branches: [] })),
+    ])
+      .then(([result, { branches }]) => {
+        if (ctrl.signal.aborted) return;
+        setBaseRef(result.baseRef);
+        setBaseRefs([...new Set([result.baseRef, ...branches].filter(Boolean))]);
+        setRefError(null);
+      })
       .catch(() => {
-        // Non-fatal: leave the field empty; user can fill it in.
+        if (!ctrl.signal.aborted) setRefError('Could not load base refs.');
       });
     return () => ctrl.abort();
-  }, [projectDir, remoteId]);
+  }, [projectDir, owner, refRevision]);
 
   // When launched from a session, look up how many always-allow
   // permissions would be inherited (#101) so the form can show a hint.
@@ -203,7 +217,7 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId
         newBranch,
         baseRef: newBranch ? baseRef.trim() : undefined,
         parentSessionId,
-        remoteId,
+        remoteId: owner,
       });
     } catch (err) {
       setStage('idle');
@@ -231,7 +245,7 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId
     close();
     if (resp.sessionId) {
       const platform = resp.platform ?? '';
-      seedNewSession(resp.sessionId, resp.worktreePath, platform, branch.trim(), resp.remoteId ?? remoteId ?? 'local');
+      seedNewSession(resp.sessionId, resp.worktreePath, platform, branch.trim(), resp.remoteId ?? owner);
       navigate(`/session/${encodeURIComponent(resp.sessionId)}${platform ? `?platform=${encodeURIComponent(platform)}` : ''}`);
     } else {
       navigate(`/project/${encodeURIComponent(resp.worktreePath)}`);
@@ -252,32 +266,14 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId
         <ModalHeader title="New worktree session" onClose={handleClose} canClose={!submitting} closeLabel="Close worktree session dialog" />
 
         <div className={styles.body}>
-          {/* Project: read-only when pre-filled, dropdown when not */}
-          <label className={styles.field}>
+          <div className={styles.field}>
             <span>Project</span>
-            {initialProject ? (
-              <TextField className={styles.readOnly}
-                type="text"
-                value={initialProject}
-                readOnly
-                aria-label="Project directory"
-              />
-            ) : (
-              <SelectField
-                value={projectDir}
-                onChange={(e) => setProjectDir(e.target.value)}
-                disabled={submitting}
-                aria-label="Pick a project"
-              >
-                <option value="">— pick a project —</option>
-                {projectList.map((p) => (
-                  <option key={p.directory} value={p.directory}>
-                    {p.directory}
-                  </option>
-                ))}
-              </SelectField>
-            )}
-          </label>
+            <SearchSelect ariaLabel="Project" searchLabel="Search projects" placeholder="Pick a project"
+              value={projectDir} title={projectDir} options={projectOptions} disabled={submitting} onChange={(directory) => {
+                if (directory === projectDir) return;
+                setProjectDir(directory); setBaseRef(''); setBaseRefs([]); setRefError(null);
+              }} />
+          </div>
 
           <label className={styles.field}>
             <span>Branch</span>
@@ -302,19 +298,15 @@ function WorktreeForm({ initialProject, initialBranch, parentSessionId, remoteId
           />
 
           {newBranch && (
-            <label className={styles.field}>
+            <div className={styles.field}>
               <span>Base ref</span>
-              <TextField
-                type="text"
-                value={baseRef}
-                onChange={(e) => setBaseRef(e.target.value)}
-                placeholder="main"
-                disabled={submitting}
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </label>
+              <SearchSelect ariaLabel="Base ref" searchLabel="Search base refs" placeholder="Select a base ref"
+                value={baseRef} options={baseRefs.map((value) => ({ value, label: value }))}
+                onChange={setBaseRef} disabled={submitting || baseRefs.length === 0} />
+            </div>
           )}
+
+          {newBranch && refError && <InlineAlert onRetry={() => setRefRevision((revision) => revision + 1)}>{refError}</InlineAlert>}
 
           {inheritCount !== null && inheritCount > 0 && (
             <div className={styles.hint} data-testid="worktree-inherit-hint">

@@ -23,7 +23,7 @@ export const hostApi = {
     fetchJSON<RepoFileList>(`/api/git/files?dir=${encodeURIComponent(dir)}&remoteId=${encodeURIComponent(remoteId)}${ignored ? '&ignored=1' : ''}`, signal),
   repoFile: (dir: string, path: string, remoteId: string, signal?: AbortSignal, ignored = false) =>
     fetchJSON<RepoFileContent>(`/api/git/file?dir=${encodeURIComponent(dir)}&path=${encodeURIComponent(path)}&remoteId=${encodeURIComponent(remoteId)}${ignored ? '&ignored=1' : ''}`, signal),
-  gitBranches: (dir: string, signal?: AbortSignal) => fetchJSON<{ branches: string[] }>(`/api/git/branches?dir=${encodeURIComponent(dir)}`, signal),
+  gitBranches: (dir: string, signal?: AbortSignal, remoteId?: string) => fetchJSON<{ branches: string[] }>(`/api/git/branches?dir=${encodeURIComponent(dir)}${remoteId ? `&remoteId=${encodeURIComponent(remoteId)}` : ''}`, signal),
   gitCheckout: (dir: string, branch: string) => postJSON<{ branch: string }>('/api/git/checkout', { dir, branch }),
   remoteAccess: (signal?: AbortSignal) => fetchJSON<RemoteAccessStatus>('/api/settings/remote-access', signal),
   revealRemoteToken: () => postJSON<{ token: string }>('/api/settings/remote-access/reveal-token', undefined),

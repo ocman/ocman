@@ -2,6 +2,7 @@
   /* Spans, not divs, so the picker stays valid inside a paragraph. */
   display: block;
   position: relative;
+  min-width: 0;
 }
 .oc-search-select > button {
   display: flex;
@@ -24,6 +25,8 @@
   align-items: center;
   gap: 0.35em;
 }
+.oc-search-select > button .oc-search-select-label { flex: 1; min-width: 0; }
+.oc-search-select > button .oc-search-select-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .oc-search-select-menu {
   position: absolute;
   z-index: 20;

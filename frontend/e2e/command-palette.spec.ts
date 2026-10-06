@@ -132,12 +132,22 @@ test('typing "stat" filters results to the Stats command alias', async ({ mocked
 });
 
 test('selecting wt opens the worktree form modal', async ({ mockedPage: page }) => {
+  await page.route('**/api/worktree/default-base-ref?**', (route) => route.fulfill({ json: { baseRef: 'main' } }));
+  await page.route('**/api/git/branches?**', (route) => route.fulfill({ json: { branches: ['feature/current', 'main', 'develop'] } }));
   await page.goto('/sessions');
   await openPaletteStore(page);
   await page.fill('.oc-cmd-input', '>wt');
   await page.keyboard.press('Enter');
   await expect(page.getByRole('dialog', { name: 'New worktree session', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'New worktree session', exact: true })).toBeVisible();
+  await page.getByRole('combobox', { name: 'Project', exact: true }).click();
+  await page.getByRole('option', { name: '/home/user/projects/myapp', exact: true }).click();
+  const base = page.getByRole('combobox', { name: 'Base ref', exact: true });
+  await expect(base).toHaveText('main');
+  await base.click();
+  await page.getByRole('textbox', { name: 'Search base refs' }).fill('develop');
+  await page.getByRole('option', { name: 'develop', exact: true }).click();
+  await expect(base).toHaveText('develop');
 });
 
 test('"> " prefix shows only command items (no session status indicators)', async ({

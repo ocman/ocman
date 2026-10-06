@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { WorktreeFormModal } from './WorktreeFormModal';
 
@@ -13,6 +14,7 @@ vi.mock('../lib/uiStore', () => ({
 }));
 vi.mock('../lib/api', () => ({
   api: {
+    gitBranches: vi.fn().mockResolvedValue({ branches: ['main', 'develop'] }),
     worktree: {
       defaultBaseRef: vi.fn().mockResolvedValue({ baseRef: 'main' }),
       createAndLaunch: vi.fn(),
@@ -27,9 +29,10 @@ vi.mock('../lib/useCapabilities', () => ({
   },
 }));
 const seedNewSession = vi.fn();
+const projectsLoader = vi.hoisted(() => vi.fn());
 vi.mock('../lib/apiStore', () => ({
   useApiStore: (sel: (s: Record<string, unknown>) => unknown) =>
-    sel({ getProjects: vi.fn().mockResolvedValue([]), seedNewSession }),
+    sel({ getProjects: projectsLoader, seedNewSession }),
 }));
 
 import { api } from '../lib/api';
@@ -37,6 +40,14 @@ const wt = api.worktree as unknown as {
   defaultBaseRef: ReturnType<typeof vi.fn>;
   createAndLaunch: ReturnType<typeof vi.fn>;
 };
+
+beforeEach(() => {
+  wt.defaultBaseRef.mockResolvedValue({ baseRef: 'main' });
+  projectsLoader.mockResolvedValue([
+    { directory: '/repo', remoteId: 'B' }, { directory: '/other', remoteId: 'B' },
+    { directory: '/local' }, { directory: '/foreign', remoteId: 'A' },
+  ]);
+});
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -75,16 +86,16 @@ describe('WorktreeFormModal machine ownership', () => {
     expect(within(dialog).getByTestId('modal-header')).toBeInTheDocument();
     for (const button of within(dialog).getAllByRole('button')) expect(button).toHaveClass('oc-button');
     for (const input of within(dialog).getAllByRole('textbox')) expect(input).toHaveClass('oc-field');
-    expect(screen.getByLabelText('Project directory')).toHaveAttribute('readonly');
+    expect(screen.getByRole('combobox', { name: 'Project' })).toHaveTextContent('/repo');
     expect(screen.getByRole('button', { name: 'Create & launch' })).toHaveClass('oc-button--accent');
-    await waitFor(() => expect(screen.getByLabelText('Base ref')).toHaveValue('main'));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Base ref' })).toHaveTextContent('main'));
   });
 
   it('blocks all dismissal actions and edits while creation is pending', async () => {
     let reject!: (error: unknown) => void;
     wt.createAndLaunch.mockImplementation(() => new Promise((_, fail) => { reject = fail; }));
     openFor('B');
-    await waitFor(() => expect(screen.getByLabelText('Base ref')).toHaveValue('main'));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Base ref' })).toHaveTextContent('main'));
     fireEvent.change(screen.getByLabelText('Branch'), { target: { value: 'feature/settings' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create & launch' }));
     expect(screen.getByLabelText('Branch')).toBeDisabled();
@@ -98,13 +109,63 @@ describe('WorktreeFormModal machine ownership', () => {
   });
 
   it('keeps base-ref validation when creating a new branch', async () => {
+    wt.defaultBaseRef.mockReturnValue(new Promise(() => {}));
     openFor('B');
-    await waitFor(() => expect(screen.getByLabelText('Base ref')).toHaveValue('main'));
     fireEvent.change(screen.getByLabelText('Branch'), { target: { value: 'feature/settings' } });
-    fireEvent.change(screen.getByLabelText('Base ref'), { target: { value: '' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create & launch' }));
     expect(screen.getByRole('alert')).toHaveTextContent('Base ref is required');
     expect(wt.createAndLaunch).not.toHaveBeenCalled();
+  });
+
+  it('searches owner-local projects and base refs, defaults to the default branch, and preserves an explicit ref on reselect', async () => {
+    const user = userEvent.setup();
+    wt.defaultBaseRef.mockImplementation(async (dir: string) => ({ baseRef: dir === '/other' ? 'trunk' : 'main' }));
+    openFor('B');
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Base ref' })).toHaveTextContent('main'));
+    expect(api.gitBranches).toHaveBeenCalledWith('/repo', expect.any(AbortSignal), 'B');
+    await user.click(screen.getByRole('combobox', { name: 'Project' }));
+    expect(screen.queryByRole('option', { name: '/local' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: '/foreign' })).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText('Search projects'), 'other');
+    await user.click(screen.getByRole('option', { name: '/other' }));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Base ref' })).toHaveTextContent('trunk'));
+    await user.click(screen.getByRole('combobox', { name: 'Base ref' }));
+    await user.type(screen.getByLabelText('Search base refs'), 'develop');
+    await user.click(screen.getByRole('option', { name: 'develop' }));
+    await user.click(screen.getByRole('combobox', { name: 'Project' }));
+    await user.click(screen.getByRole('option', { name: '/other' }));
+    expect(screen.getByRole('combobox', { name: 'Base ref' })).toHaveTextContent('develop');
+    expect(wt.defaultBaseRef).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores a previous project default arriving after a project switch', async () => {
+    const user = userEvent.setup();
+    let resolve!: (value: { baseRef: string }) => void;
+    wt.defaultBaseRef.mockImplementation((dir: string) => dir === '/repo'
+      ? new Promise((done) => { resolve = done; }) : Promise.resolve({ baseRef: 'trunk' }));
+    openFor('B');
+    await user.click(screen.getByRole('combobox', { name: 'Project' }));
+    await user.click(await screen.findByRole('option', { name: '/other' }));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Base ref' })).toHaveTextContent('trunk'));
+    await act(async () => { resolve({ baseRef: 'old-main' }); });
+    expect(screen.getByRole('combobox', { name: 'Base ref' })).toHaveTextContent('trunk');
+  });
+
+  it('offers the default branch when the optional branch catalog fails', async () => {
+    vi.mocked(api.gitBranches).mockRejectedValueOnce(new Error('branch catalog unavailable'));
+    openFor('B');
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Base ref' })).toHaveTextContent('main'));
+    expect(screen.getByRole('combobox', { name: 'Base ref' })).toBeEnabled();
+  });
+
+  it('lets the user retry loading the default branch without recreating the dialog', async () => {
+    wt.defaultBaseRef.mockRejectedValueOnce(new Error('default branch unavailable'));
+    openFor('B');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not load base refs');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Base ref' })).toHaveTextContent('main'));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(wt.defaultBaseRef).toHaveBeenCalledTimes(2);
   });
 
   it('creates on the named remote and opens the session there', async () => {
@@ -116,12 +177,22 @@ describe('WorktreeFormModal machine ownership', () => {
     await waitFor(() => expect(wt.defaultBaseRef).toHaveBeenCalledWith('/repo', 'B', expect.anything()));
     expect(askedFor).toContain('B');
     fireEvent.change(screen.getByPlaceholderText('feature/login'), { target: { value: 'x' } });
-    await waitFor(() => expect(screen.getByPlaceholderText('main')).toHaveValue('main'));
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Base ref' })).toHaveTextContent('main'));
     fireEvent.click(screen.getByRole('button', { name: 'Create & launch' }));
 
     expect(await screen.findByTestId('where')).toHaveTextContent('/session/ses_b?platform=r-B%3Aopencode');
     expect(wt.createAndLaunch).toHaveBeenCalledWith(expect.objectContaining({ projectDir: '/repo', remoteId: 'B' }));
     expect(seedNewSession).toHaveBeenCalledWith('ses_b', '/.worktrees/repo/x', 'r-B:opencode', 'x', 'B');
+  });
+
+  it('keeps a local project on the local owner even when no remote id was supplied', async () => {
+    wt.createAndLaunch.mockResolvedValue({ sessionId: 'ses_local', worktreePath: '/.worktrees/repo/x', platform: 'opencode' });
+    openFor(undefined);
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Base ref' })).toHaveTextContent('main'));
+    fireEvent.change(screen.getByLabelText('Branch'), { target: { value: 'feature/local' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create & launch' }));
+    await waitFor(() => expect(wt.createAndLaunch).toHaveBeenCalledWith(expect.objectContaining({ remoteId: 'local' })));
+    expect(seedNewSession).toHaveBeenCalledWith('ses_local', '/.worktrees/repo/x', 'opencode', 'feature/local', 'local');
   });
 
   it('refuses to open for a disconnected owner instead of using this machine', async () => {
