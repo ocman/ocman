@@ -36,9 +36,12 @@ it('does not invalidate caches after a rejected save', async () => {
   expect(clearSettingsCache).not.toHaveBeenCalled();
 });
 
-it('does not allow overwriting an unreadable setting', async () => {
+it('shows a failed load and lets the user retry before editing', async () => {
   vi.mocked(fetchJSON).mockRejectedValueOnce(new Error('offline'));
   render(<DefaultAgentSetting />);
-  await waitFor(() => expect(fetchJSON).toHaveBeenCalled());
+  expect(await screen.findByRole('alert')).toHaveTextContent('offline');
   expect(screen.getByRole('textbox', { name: 'Default agent' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Default agent' })).toBeEnabled());
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 });

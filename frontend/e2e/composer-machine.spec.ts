@@ -45,6 +45,6 @@ test('machine selection re-points the new conversation and the first prompt crea
   const start = page.waitForRequest((request) => request.url().endsWith('/api/sessions/start') && request.method() === 'POST');
   await composer.press('Enter');
   const body = (await start).postDataJSON();
-  expect(body).toMatchObject({ directory: target.dir, platform: target.platform, worktree: false, send: { message: 'Continue on the build box' } });
+  expect(body).toMatchObject({ directory: target.dir, platform: target.platform, worktree: false, send: { message: 'Continue on the build box', agent: 'build' } });
   await expect(page).toHaveURL(/\/session\/remote-created/);
 });

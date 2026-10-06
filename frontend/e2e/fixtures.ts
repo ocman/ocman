@@ -340,8 +340,14 @@ async function installDefaultRoutes(page: Page) {
   // explicitly stubbed below returns an empty object so it can never
   // escape to the proxy and 401 the auth store. Specific stubs
   // registered afterwards take priority (later page.route wins).
+  await page.route('/api/project/settings?*', (route: Route) =>
+    route.fulfill({ json: { models: [], off: false, defaultAgent: 'build' } }),
+  );
   await page.route('/api/settings/**', (route: Route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({}) }),
+  );
+  await page.route('/api/settings/default-agent', (route: Route) =>
+    route.fulfill({ json: { defaultAgent: 'build' } }),
   );
   // Every assistant text block loads the custom link rules.
   await page.route('/api/settings/link-preview-rules', (route: Route) =>
