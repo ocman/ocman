@@ -410,6 +410,40 @@ describe('SessionSidebar', () => {
     expect(screen.getByText('Fix thing')).toBeInTheDocument();
   });
 
+  describe.each(['projects', 'recent'] as const)('always-visible sessions in the %s view', (sidebarView) => {
+    it.each(['children', 'factory', 'factory descendants', 'routines', 'search'] as const)('keeps opened and pinned sessions despite the %s filter', (filter) => {
+      const overrides: Partial<Session> = filter === 'children' ? { parentId: 'parent' }
+        : filter === 'factory descendants' ? { parentId: 'factory' }
+        : filter === 'routines' ? { routineId: 'rt' } : {};
+      const rows = [
+        session({ ...overrides, title: 'Opened task' }),
+        session({ ...overrides, id: 'pin', title: 'Pinned task', pinned: true, pinnedAt: 1 }),
+        session({ ...overrides, id: 'other', title: 'Hidden task' }),
+      ];
+      if (filter === 'factory') {
+        vi.mocked(useWorkEpics).mockReturnValue({
+          data: [{ attempts: rows.map(({ id, platform }) => ({ session: { id, platform } })) }],
+        } as never);
+      } else if (filter === 'factory descendants') {
+        vi.mocked(useWorkEpics).mockReturnValue({
+          data: [{ attempts: [{ session: { id: 'factory', platform: 'opencode' } }] }],
+        } as never);
+      }
+      renderSidebar({ directory: '/repo', sessions: rows, lastUpdated: 1, aggregate: { kind: 'none' } },
+        {}, vi.fn(), vi.fn(), vi.fn(), sidebarView);
+      if (filter === 'children') {
+        fireEvent.click(screen.getByRole('button', { name: 'Filter sessions' }));
+        fireEvent.click(screen.getByRole('checkbox', { name: 'Show children' }));
+      } else if (filter === 'search') {
+        fireEvent.change(screen.getByRole('searchbox', { name: 'Search sessions' }), { target: { value: 'no-match' } });
+      }
+      expect(screen.getByText('Opened task')).toBeInTheDocument();
+      expect(screen.getAllByText('Pinned task').length).toBeGreaterThan(0);
+      expect(screen.queryByText('Hidden task')).not.toBeInTheDocument();
+      expect(visibleSidebarSessions.current?.map((row) => row.id)).toEqual(['pin', 's']);
+    });
+  });
+
   it.each(['projects', 'recent'] as const)('hides Factory sessions until enabled in the %s view', (sidebarView) => {
     vi.mocked(useWorkEpics).mockReturnValue({
       data: [{ attempts: [{ session: { platform: 'opencode', id: 'factory' } }] }],
@@ -418,7 +452,7 @@ describe('SessionSidebar', () => {
       directory: '/repo',
       sessions: [
         session(),
-        session({ id: 'grandchild', title: 'Factory grandchild', parentId: 'child', pinned: true }),
+        session({ id: 'grandchild', title: 'Factory grandchild', parentId: 'child' }),
         session({ id: 'child', title: 'Factory child', parentId: 'factory' }),
         session({ id: 'factory', title: 'Factory task' }),
         session({ id: 'normal-child', title: 'Normal child', parentId: 's' }),
@@ -442,7 +476,7 @@ describe('SessionSidebar', () => {
     fireEvent.click(showFactory);
     expect(screen.getByText('Factory task')).toBeInTheDocument();
     expect(screen.getByText('Factory child')).toBeInTheDocument();
-    expect(screen.getAllByText('Factory grandchild')).toHaveLength(sidebarView === 'projects' ? 2 : 1);
+    expect(screen.getByText('Factory grandchild')).toBeInTheDocument();
 
     fireEvent.click(showFactory);
     expect(screen.queryByText('Factory child')).not.toBeInTheDocument();
@@ -531,7 +565,7 @@ describe('SessionSidebar', () => {
       directory: '/repo',
       sessions: [
         session(),
-        session({ id: 'grandchild', title: 'Factory grandchild', parentId: 'child', pinned: true }),
+        session({ id: 'grandchild', title: 'Factory grandchild', parentId: 'child' }),
         session({ id: 'child', title: 'Factory child', parentId: 'factory' }),
       ],
       lastUpdated: 1,

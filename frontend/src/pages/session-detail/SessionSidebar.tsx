@@ -210,25 +210,20 @@ export function SessionSidebar({
     return sidebarProjectGroups.flatMap((group) => {
       const projectMatches = !!query && fuzzyMatch(query, group.directory);
       const sessions = group.sessions.filter((session) =>
+        session.id === activeId || session.pinned ||
         !hiddenSessions.has(`${session.platform}\0${session.id}`) &&
         (showChildren || !session.parentId) &&
         (!query || projectMatches || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory])),
       );
       return query && !projectMatches && sessions.length === 0 ? [] : [{ ...group, sessions }];
     });
-  }, [sidebarProjectGroups, searchQuery, showChildren, siblingGitInfos, hiddenSessions]);
+  }, [sidebarProjectGroups, searchQuery, showChildren, siblingGitInfos, hiddenSessions, activeId]);
 
   const filteredPinnedSessions = useMemo(() => {
-    const query = searchQuery.trim();
     return recentSessions
       .filter((session) => session.pinned)
-      .filter((session) =>
-        !hiddenSessions.has(`${session.platform}\0${session.id}`) &&
-        (showChildren || !session.parentId) &&
-        (!query || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory])),
-      )
       .sort((a, b) => b.pinnedAt - a.pinnedAt);
-  }, [recentSessions, searchQuery, showChildren, siblingGitInfos, hiddenSessions]);
+  }, [recentSessions]);
   const sortableGroups = useMemo(
     () => filteredProjectGroups.filter((g) => !g.isPinned),
     [filteredProjectGroups],
@@ -237,11 +232,11 @@ export function SessionSidebar({
     const query = searchQuery.trim();
     return recentSessions.filter((session) =>
       !session.pinned &&
-      !hiddenSessions.has(`${session.platform}\0${session.id}`) &&
+      (session.id === activeId || !hiddenSessions.has(`${session.platform}\0${session.id}`) &&
       (showChildren || !session.parentId) &&
-      (!query || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory])),
+      (!query || matchesSessionSearch(query, session, siblingGitInfos[checkoutKey(session.directory, session.remoteId)] ?? siblingGitInfos[session.directory]))),
     );
-  }, [recentSessions, searchQuery, showChildren, siblingGitInfos, hiddenSessions]);
+  }, [recentSessions, searchQuery, showChildren, siblingGitInfos, hiddenSessions, activeId]);
 
   // Publish what is on screen, in order, so archiving picks the next
   // session among the rows the user can actually see.

@@ -44,6 +44,25 @@ vi.mock('../../lib/useGlobalEvents', () => ({
 import { useSidebarSessions } from './useSidebarSessions';
 
 describe('useSidebarSessions project visibility', () => {
+  it('keeps pinned archived sessions and completed children while excluding unpinned rows', async () => {
+    const fixtures: Partial<Session>[] = [
+      { id: 'open', archived: true },
+      { id: 'pin-archived', pinned: true, archived: true },
+      { id: 'pin-child', pinned: true, parentId: 'parent', status: 'done' as const },
+      { id: 'hidden-archived', archived: true },
+      { id: 'hidden-child', parentId: 'parent', status: 'done' as const },
+    ];
+    const rows = fixtures.map((row) => ({ platform: 'opencode', directory: '/repo', timeUpdated: 1,
+      seen: false, seenTimeUpdated: 0, unreadCount: 0, ...row } as Session));
+    useApiStore.setState({ getSessions: vi.fn().mockResolvedValue(rows), recentSessions: [], recentSessionsHash: '' });
+    const { result } = renderHook(() => useSidebarSessions({
+      id: 'open', sessionId: 'open', collapsedProjects: [], sidebarView: 'recent',
+      abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
+    }));
+    await act(async () => { await result.current.loadRecentSessions(); });
+    expect(result.current.recentSessions.map((row) => row.id)).toEqual(['open', 'pin-archived', 'pin-child']);
+  });
+
   it('keeps a quiet project after newer sessions, including when switching views', async () => {
     const sessions = Array.from({ length: 25 }, (_, i) => ({
       id: `session-${i}`, platform: 'opencode', directory: '/repo/busy',
@@ -171,6 +190,18 @@ describe('useSidebarSessions live refresh', () => {
     await act(async () => { resolve({ session: { id: 'old', timeUpdated: 1, directory: '/repo', status: 'busy' } as Session }); });
     expect(useApiStore.getState().recentSessions[0]).toMatchObject({ id: 'old', timeUpdated: 180_001 });
     expect(getSessions).not.toHaveBeenCalled();
+  });
+
+  it('keeps an old archived pinned child discovered through activity', async () => {
+    const row = { id: 'pin', pinned: true, archived: true, parentId: 'parent',
+      timeUpdated: 1, directory: '/repo', status: 'done' } as Session;
+    useApiStore.setState({ peekSession: vi.fn().mockResolvedValue({ session: row }), recentSessions: [] });
+    renderHook(() => useSidebarSessions({
+      id: undefined, sessionId: undefined, collapsedProjects: [], sidebarView: 'recent',
+      abortSignalRef: { current: new AbortController() }, navigate: vi.fn(),
+    }));
+    await act(async () => { sessionActivity?.('pin', Date.now()); });
+    expect(useApiStore.getState().recentSessions).toEqual([row]);
   });
 
   it('does not resurface an idle old session on replayed activity from a new instance', async () => {

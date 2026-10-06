@@ -137,7 +137,7 @@ export function useSidebarSessions({
       // Child sessions are useful while active; completed output has
       // already bubbled up to the parent.
       const rooted = filterInactiveChildren(result, id);
-      const visible = showArchivedRecentRef.current ? rooted : filterVisibleSessions(rooted);
+      const visible = showArchivedRecentRef.current ? rooted : rooted.filter((s) => s.pinned || !s.archived);
       // When the open session is older than the recent window, fetch it once
       // by id so it is always present in the sidebar.
       const resolved = await resolveOpenSession({
@@ -225,7 +225,7 @@ export function useSidebarSessions({
         peekSession(sessionID, abortSignalRef.current?.signal).then(({ session: row }) => {
           if (!subscribed) return;
           const candidates = filterInactiveChildren([row], id);
-          if (!candidates.length || (!showArchivedRecentRef.current && !filterVisibleSessions(candidates).length)) {
+          if (!candidates.length || (!row.pinned && row.id !== id && !showArchivedRecentRef.current && !filterVisibleSessions(candidates).length)) {
             hiddenSessions.add(sessionID);
             return;
           }
@@ -234,7 +234,7 @@ export function useSidebarSessions({
           // the session is live; otherwise keep the row's own time and window.
           const live = row.status === 'busy';
           const since = Date.now() - sidebarRecentHoursRef.current * 60 * 60 * 1000;
-          if (!live && row.timeUpdated < since) {
+          if (!row.pinned && row.id !== id && !live && row.timeUpdated < since) {
             hiddenSessions.add(sessionID);
             return;
           }

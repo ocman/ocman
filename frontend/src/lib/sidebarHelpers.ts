@@ -40,10 +40,11 @@ export function filterInactiveChildren(
   const isActive = (s: Session) =>
     s.status === 'busy' || s.pendingPermission || s.pendingQuestion;
   return sessions.filter((s) => {
+    if (s.id === currentId || s.pinned) return true;
     // Match the backend list's internal-session exclusion. SSE can fetch
     // details directly, which also exposes parentless auto-approve judges.
     if (!s.parentId && s.title?.endsWith(' subagent)')) return false;
-    return !s.parentId || s.id === currentId || isActive(s);
+    return !s.parentId || isActive(s);
   });
 }
 
