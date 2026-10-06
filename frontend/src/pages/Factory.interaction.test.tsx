@@ -31,7 +31,7 @@ steps:
     prompt: Open the pull request.
 `;
 
-vi.mock('../lib/api', () => ({ api: {
+vi.mock('../lib/api', () => ({ fetchJSON: vi.fn().mockResolvedValue({ total: { tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, cost: 0, estCost: 0 }, phases: Object.fromEntries(['plan', 'implement', 'verify', 'deliver'].map((phase) => [phase, { tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, cost: 0, estCost: 0 }])), attempts: [], incomplete: false }), api: {
 		sessionModels: vi.fn(),
     factoryEpics: vi.fn(),
     projects: vi.fn(),
@@ -69,6 +69,12 @@ function renderFactory(children: ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={client}>{children}</QueryClientProvider>);
 }
+
+it('shows Queue usage for a planning-only Epic', async () => {
+	vi.mocked(api.factoryEpics).mockResolvedValue([{ id: 'planning-epic', goal: 'Planning only', status: 'open', initialProject: '/repo', progress: { requiredTotal: 1, requiredSucceeded: 0, optionalOpen: 0 }, attempts: [{ id: 'plan-attempt', workId: 'planning-epic.1', phase: 'active', session: { platform: 'opencode', id: 'plan-session' } }] }] as never);
+	renderFactory(<MemoryRouter><FactoryQueue /></MemoryRouter>);
+	expect(await screen.findByRole('table', { name: 'Phase usage for planning-epic' })).toBeInTheDocument();
+});
 
 function LocationMarker() {
 	const location = useLocation();

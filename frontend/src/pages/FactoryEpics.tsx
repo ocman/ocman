@@ -13,6 +13,7 @@ import { FactoryStartedToast } from '../components/FactoryStartedToast';
 import { FactoryImplementationModel } from '../components/FactoryImplementationModel';
 import { useFactoryImplementationModel } from '../components/useFactoryImplementationModel';
 import { FactoryEpicModels } from '../components/FactoryEpicModels';
+import { FactoryUsage } from '../components/FactoryUsage';
 import { useCloseFactoryEpic, useCloseFactoryMol, useCreateWorkEpic, useDecideFactoryPlanGate, useFactoryFormulas, useFactoryGraphIssues, useFactoryIssues, useFactoryProposals, useFactoryRemovedIssues, useMutateFactoryGraph, useProjects, useSetFactoryEpicPaused, useWorkEpic, useWorkEpics } from '../lib/queries';
 import type { FactoryAttempt, FactoryEpic, FactoryFormula, FactoryGraphMutation, FactoryIssue } from '../lib/api';
 import { fuzzyMatch } from '../lib/format';
@@ -270,6 +271,7 @@ export function FactoryEpicDetail() {
 		{!!progress.closureBlockers?.length && <p>Closure blocked by: {progress.closureBlockers.join(', ')}</p>}
       {(closeEpic.isError || setPaused.isError) && <p role="alert">{(closeEpic.error ?? setPaused.error) instanceof Error ? (closeEpic.error ?? setPaused.error)!.message : 'Could not update epic.'}</p>}
     </section>
+    <FactoryUsage epicID={id} />
     <Tabs value={active} onValueChange={setTab} className="factory-epic-views">
     <TabsList aria-label="Epic views">
       <TabsTrigger value="board">Board</TabsTrigger>

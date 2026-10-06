@@ -159,6 +159,7 @@ flowchart TD
     MCP -->|webhook inbox actions, in-process| Server
     MCP --> Registry
     Registry --> OC[platforms/opencode + internal/db<br/>adapter and read-only queries]
+    Server -->|Factory usage via platforms.UsageReader| OC
     Registry -->|session detail + bounded lifecycle reads| RP[internal/remote<br/>platform adapter + owner RPCs]
     Router --> Local[hostsvc/local + composerattachments<br/>host operations + attachment cache]
     Router -->|streamed attachment writes on owner| RP
@@ -175,6 +176,12 @@ flowchart TD
 
 - **internal/server.** The HTTP mux, SSE broadcast and fanout, around 60
   handler files, plus tmux, terminal, whisper, auto-approve and routine ticks.
+- **Factory usage.** `/api/factory/epics/{id}/usage` joins durable attempt
+  identities to `platforms.UsageReader`. The local OpenCode adapter reads
+  descendant message metadata and reuses token and pricing calculations.
+  The server deduplicates owner-qualified session IDs for Epic phase totals,
+  retains retry history per Attempt, and flags unavailable reads as incomplete.
+  Epic and Queue views poll these totals every ten seconds.
 - **Follow-up queue.** `internal/queuesvc` drains one held message per turn.
   Each decision uses `platforms.LifecycleReader` for settled status and the
   latest message identity. The local adapter reads one session and its newest

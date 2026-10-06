@@ -33,6 +33,10 @@ func (s *Server) handleFactoryEpic(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, epic)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "usage" && r.Method == http.MethodGet {
+		s.handleFactoryUsage(w, r, parts[0])
+		return
+	}
 	if len(parts) == 2 && parts[1] == "projects" {
 		if r.Method != http.MethodDelete {
 			w.Header().Set("Allow", http.MethodDelete)

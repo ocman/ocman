@@ -3,6 +3,20 @@ title: Factory delivery
 weight: 9
 ---
 
+## Cost and token usage
+
+The Epic page shows input, output, cache-read and cache-write tokens, recorded
+billing, and estimated model-price cost. Totals include the attempt's session
+and all its subagent descendants, split into Plan, Implement, Verify and
+Deliver. Expand **Attempts** to inspect each run, including retries and failed
+attempts. The Queue shows the same Epic phase totals and the current Attempt's
+usage beside active work.
+
+Recorded billing stays separate from the estimate, since subscription sessions
+may record zero billing while still consuming tokens. Usage refreshes every ten
+seconds. If a session is unavailable or deleted, the page marks totals incomplete
+instead of presenting its usage as zero. Attempts that never launched have zero
+usage.
 Factory implements a Work Epic sequentially across one or more local Git
 repositories. It keeps an independent shared branch and workspace for each
 project, then runs a separate Project Delivery session for every changed

@@ -6,6 +6,7 @@ import { EmptyState } from '../components/EmptyState';
 import { DataTableGroup, DataTableRow } from '../components/DataTable';
 import { useClaimFactoryPlan, useFactoryCapacityPolicy, useFactoryGraphIssues, useFactoryQueue, useInvestigateFactoryUnblock, useMaterializeFactoryPlan, useMutateFactoryGraph, useReopenFactoryIssue, useResolveFactoryAuthorityGate, useResolveFactoryProjectGate, useSessions, useWorkEpics } from '../lib/queries';
 import { FactoryRecoveryActions } from '../components/FactoryRecoveryActions';
+import { FactoryUsage } from '../components/FactoryUsage';
 import type { FactoryEpic, FactoryIssue, FactoryQueueItem, Session } from '../lib/api';
 import { fuzzyMatch } from '../lib/format';
 import { EpicCell, IssueDrawer, ProjectCell, type EpicRef } from './FactoryIssues';
@@ -166,13 +167,15 @@ export function FactoryHowTo() {
 
 function QueueTable({ label, items, epicByID }: { label: string; items: FactoryQueueItem[]; epicByID: Map<string, FactoryEpic> }) {
   const marker = label === 'Active work' ? 'factory-status-dot--in-progress' : label === 'Waiting work' ? 'factory-status-dot--waiting' : '';
-  return <DataTableGroup label={label} noun="items" count={items.length} markerClassName={marker}>{items.map((item) => <DataTableRow key={item.id} className="factory-grid-row" primary={<strong>{item.title}</strong>} secondary={<><span className="oc-data-table-field-label">Issue </span><Link to={`/factory/epics/${encodeURIComponent(item.epicId)}`}>{item.id}</Link></>} meta={<><ProjectCell path={item.project} /><EpicCell id={item.epicId} goal={epicByID.get(item.epicId)?.goal} /><div className="factory-row-detail"><DispatchExplanation item={{ ...item, dispatchState: item.state }} />{item.session?.id && <Link to={`/session/${encodeURIComponent(item.session.id)}`} aria-label={`Open session ${item.session.id}`}>Open session</Link>}</div></>} />)}</DataTableGroup>;
+  return <DataTableGroup label={label} noun="items" count={items.length} markerClassName={marker}>{items.map((item) => <DataTableRow key={item.id} className="factory-grid-row" primary={<strong>{item.title}</strong>} secondary={<><span className="oc-data-table-field-label">Issue </span><Link to={`/factory/epics/${encodeURIComponent(item.epicId)}`}>{item.id}</Link></>} meta={<><ProjectCell path={item.project} /><EpicCell id={item.epicId} goal={epicByID.get(item.epicId)?.goal} /><div className="factory-row-detail"><DispatchExplanation item={{ ...item, dispatchState: item.state }} />{item.attemptId && <FactoryUsage epicID={item.epicId} attemptID={item.attemptId} />}{item.session?.id && <Link to={`/session/${encodeURIComponent(item.session.id)}`} aria-label={`Open session ${item.session.id}`}>Open session</Link>}</div></>} />)}</DataTableGroup>;
 }
 
 export function FactoryQueue() {
   const queue = useFactoryQueue();
-  const epicByID = new Map((useWorkEpics().data ?? []).map((epic) => [epic.id, epic]));
+  const epics = useWorkEpics();
+  const epicByID = new Map((epics.data ?? []).map((epic) => [epic.id, epic]));
   const capacity = useFactoryCapacityPolicy();
+  const usageEpicIDs = [...new Set([...(queue.data?.map((item) => item.epicId) ?? []), ...(epics.data?.filter((epic) => epic.status !== 'closed' && epic.attempts?.length).map((epic) => epic.id) ?? [])])];
   const active = queue.data?.filter((item) => item.state === 'running') ?? [];
   const next = queue.data?.filter((item) => item.state === 'ready') ?? [];
   const waiting = queue.data?.filter((item) => item.state !== 'running' && item.state !== 'ready' && item.state !== 'completed') ?? [];
@@ -186,5 +189,6 @@ export function FactoryQueue() {
     {queue.isError && <QueryError error={queue.error} retry={() => void queue.refetch()} />}
     {!queue.isLoading && !queue.isError && !visible && <EmptyState>No implementation work is active or waiting.</EmptyState>}
     {!!visible && <div className="factory-list factory-list--queue" aria-label="Execution queue">{!!active.length && <QueueTable label="Active work" items={active} epicByID={epicByID} />}{!!next.length && <QueueTable label="Next up" items={next} epicByID={epicByID} />}{!!waiting.length && <QueueTable label="Waiting work" items={waiting} epicByID={epicByID} />}</div>}
+    {usageEpicIDs.map((epicID) => <section key={epicID}><h3><Link to={`/factory/epics/${encodeURIComponent(epicID)}`}>{epicByID.get(epicID)?.goal ?? epicID}</Link></h3><FactoryUsage epicID={epicID} compact /></section>)}
   </FactoryPage>;
 }

@@ -73,6 +73,11 @@ async function installDefaultRoutes(page: Page) {
     route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'not mocked' }) }),
   );
 
+  const zeroUsage = { tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, cost: 0, estCost: 0 };
+  await page.route(/\/api\/factory\/epics\/[^/]+\/usage$/, (route) => route.fulfill({ json: {
+    total: zeroUsage, phases: { plan: zeroUsage, implement: zeroUsage, verify: zeroUsage, deliver: zeroUsage }, attempts: [], incomplete: false,
+  } }));
+
   // Auth: no auth required (open access)
   await page.route('/api/auth/me', (route: Route) =>
     route.fulfill({
