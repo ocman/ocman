@@ -36,9 +36,9 @@ describe('backendStatus store', () => {
 describe('api.ts backend status wiring', () => {
   it('flags a second network failure in a row and clears on the next success', async () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new TypeError('Failed to fetch'))));
-    await expect(fetchJSON('/api/x')).rejects.toThrow('Backend is not responding');
+    await expect(fetchJSON('/api/x')).rejects.toThrow('Could not connect to ocman');
     expect(useBackendStatus.getState().unreachable).toBe(false);
-    await expect(fetchJSON('/api/x')).rejects.toThrow('Backend is not responding');
+    await expect(fetchJSON('/api/x')).rejects.toThrow('Could not connect to ocman');
     expect(useBackendStatus.getState().unreachable).toBe(true);
 
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('{}', { status: 200 }))));

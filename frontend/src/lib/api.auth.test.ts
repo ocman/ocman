@@ -147,11 +147,26 @@ describe('api.sessionInfo', () => {
 });
 
 describe('backend-down error classification', () => {
+  it.each(['fetch', 'json'] as const)('explains Safari DOMException failures from %s', async (stage) => {
+    const error = new DOMException('The string did not match the expected pattern.', 'SyntaxError');
+    if (stage === 'fetch') {
+      vi.stubGlobal('fetch', vi.fn(() => Promise.reject(error)));
+    } else {
+      const response = new Response('', { status: 200 });
+      vi.spyOn(response, 'json').mockRejectedValue(error);
+      stubFetch(() => response);
+    }
+    const err = await fetchJSON('/api/thing').catch((e) => e);
+    expect((err as Error).message).not.toContain('expected pattern');
+    expect((err as Error).message).toMatch(stage === 'fetch' ? /connect.*ocman/i : /invalid response.*ocman/i);
+    expect((err as Error).message).toMatch(/retry|reload/i);
+  });
+
   it('fetchJSON maps a network failure (TypeError) to BackendUnavailableError', async () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new TypeError('Load failed'))));
     const err = await fetchJSON('/api/thing').catch((e) => e);
     expect(err).toBeInstanceOf(BackendUnavailableError);
-    expect((err as Error).message).toMatch(/backend is not responding/i);
+    expect((err as Error).message).toMatch(/could not connect to ocman/i);
   });
 
   it('fetchJSON maps a non-JSON 200 body (SyntaxError) to BackendUnavailableError', async () => {
@@ -176,6 +191,39 @@ describe('backend-down error classification', () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(abortErr)));
     const err = await fetchJSON('/api/thing').catch((e) => e);
     expect(err).toBe(abortErr);
+  });
+
+  it('preserves unrelated DOMExceptions', async () => {
+    const error = new DOMException('Not allowed', 'SecurityError');
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(error)));
+    await expect(fetchJSON('/api/thing')).rejects.toBe(error);
+  });
+
+  it('preserves unexpected response errors', async () => {
+    const error = new Error('Unexpected failure');
+    const response = new Response('', { status: 200 });
+    vi.spyOn(response, 'json').mockRejectedValue(error);
+    stubFetch(() => response);
+    await expect(fetchJSON('/api/thing')).rejects.toBe(error);
+  });
+
+  it('preserves the browser error as a diagnostic cause', async () => {
+    const error = new DOMException('Connection lost', 'NetworkError');
+    vi.stubGlobal('fetch', vi.fn(() => Promise.reject(error)));
+    const err = await fetchJSON('/api/thing').catch((e) => e);
+    expect(err).toBeInstanceOf(BackendUnavailableError);
+    expect((err as Error).cause).toBe(error);
+  });
+
+  it.each([
+    ['createSession', () => api.createSession('/dir')],
+    ['queuedMessages', () => api.queuedMessages('s1')],
+    ['uploadComposerAttachment', () => api.uploadComposerAttachment('s1', new File(['x'], 'x.png'))],
+    ['term.createWindow', () => api.term.createWindow('/dir')],
+    ['transcribe', () => api.transcribe(new Blob(['x'], { type: 'audio/webm' }))],
+  ])('explains invalid responses from %s', async (_name, call) => {
+    stubFetch(() => new Response('<html>Proxy page</html>', { status: 200 }));
+    await expect(call()).rejects.toThrow(/invalid response from ocman/i);
   });
 
   it('keeps server error bodies intact on non-2xx', async () => {

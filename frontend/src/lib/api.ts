@@ -1,593 +1,104 @@
-import { record as recordPerf, templatePath } from './perfRing';
-import { markBackendReachable, markBackendUnreachable, reportNetworkFailure } from './backendStatus';
-import type { WebhookDelivery, WebhookInbox, WebhookSubscription } from './api.types';
+import { fetchJSON, postJSON, queryString } from './api.requests';
 import { settingsApi } from './api.settings';
-
-// Re-export every wire type from the dedicated types module so existing
-// imports of `'./api'` continue to work unchanged. New code can import
-// from `./api.types` directly.
-export type {
-  ModelFallthroughSettings,
-  NotifyEntry,
-  ClientActivity,
-  Session,
-  SessionStatus,
-  GitInfo,
-  Message,
-  Part,
-  FilePart,
-  PartData,
-  SessionDetail,
-  TaskSessionData,
-  SessionEdit,
-  FileChange,
-  WorkingTreeFile,
-  WorkingTreeDiff,
-  SessionChanges,
-  MCPServer,
-  LSPServer,
-  SessionInfoContext,
-  SessionInfoTokens,
-  SessionInfoTodo,
-  SessionInfoMessages,
-  SessionInfoCommit,
-  SessionInfo,
-  Stats,
-  MetricsSummary,
-  MetricsPoint,
-  StopReasonCount,
-  RequestMetricsRow,
-  SessionLogEntry,
-  ProjectLogEntry,
-  MetricsDashboard,
-  MetricsPerformance,
-  AgentMetrics,
-  AnalyticsOverview,
-  DatabaseSizeSample,
-  MetricsLog,
-  MetricsLogKind,
-  PermissionEvaluationResult,
-  PermissionStats,
-  PermissionStatsDay,
-  MetricsCostByModel,
-  ModelCostPoint,
-  Project,
-  DirectoryBrowseEntry,
-  DirectoryBrowseResponse,
-  DirectorySearchEntry,
-  DirectorySearchResponse,
-  ActivityDay,
-  ModelUsage,
-  HourlyData,
-  HourlyTokensByModel,
-  PlatformCapabilities,
-  PlatformCapabilityEntry,
-  PermissionRule,
-  CapabilitiesResponse,
-  WorktreeEntry,
-  WorktreeCreateRequest,
-  WorktreeCreateResponse,
-  WorktreeRemoveRequest,
-  SlashCommand,
-  SessionModelEntry,
-  FavoriteEntry,
-  SessionModelsResponse,
-  AgentInfo,
-  WebhookDelivery,
-  WebhookInbox,
-  WebhookSubscription,
-  QueuedMessage,
-  TmuxClient,
-  TmuxSession,
-  TermWindow,
-  AuthMe,
-  SystemStats,
-  SessionNotice,
-  SessionWarning,
-  ShareLink,
-  GlobalShareLink,
-  SharedConversation,
-  SharingSettings,
-  RelaySource,
-	Routine,
-	RoutineRun,
-	RoutineInput,
-	RoutineScheduleKind,
-	RoutineSessionMode,
-  FactoryEpic,
-  FactoryAttempt,
-  FactoryClaimedPlan,
-  FactoryMaterialization,
-  CreateWorkEpicRequest,
-	FactoryIssue,
-	FactoryIssueComment,
-	FactoryQueueItem,
-    FactoryProposal,
-	FactoryFormula,
-	FactoryFormulaSaveRequest,
-	FactoryFormulaValidationRequest,
-	FactoryCapacityPolicy,
-	FactoryPlanGate,
-	FactoryPlanGateDecisionRequest,
-	FactoryGraphMutation,
-	FactoryRecoveryGate,
-  FactoryAuthorityEscalationGate,
-	FactoryProjectRequestGate,
-  SubscriptionProviderStatus,
-  SubscriptionUsageWindow,
-  SubscriptionProviderUsage,
-  SubscriptionUsageResponse,
-  InboxItem,
-  InboxResponse,
-  NewSessionTarget,
-  PrepareSessionResponse,
-  StartSessionRequest,
-  StartSessionResponse,
-} from './api.types';
-
-// Type imports used by the api object below.
+import { sessionApi } from './api.sessions';
+import { hostApi } from './api.host';
 import type {
-  RepoFileList,
-  RepoFileContent,
-  AuthMe,
-  CapabilitiesResponse,
-  DoctorReport,
-  FavoriteEntry,
-  McpConfigStatus,
-  McpConfigInstallResult,
-  MetricsPerformance,
-  AnalyticsOverview,
-  DatabaseSizeSample,
-  SubscriptionUsageResponse,
-  InboxItem,
-  InboxResponse,
-  MetricsLog,
-  MetricsLogKind,
-  PermissionStats,
-  DirectoryBrowseResponse,
-  DirectorySearchResponse,
-  ModelUsage,
-  NotifyEntry,
-  ClientActivity,
-  Project,
-  Session,
-  SessionChanges,
-  SessionDetail,
-  SessionInfo,
-  SessionModelsResponse,
-  SlashCommand,
-  Stats,
-  SystemStats,
-  TaskSessionData,
-  TmuxClient,
-  TmuxSession,
-  TermWindow,
-  WorktreeCreateRequest,
-  WorktreeCreateResponse,
-  WorktreeRemoveRequest,
-  WorktreeEntry,
-  WorkingTreeDiff,
-  AgentInfo,
-  QueuedMessage,
-  ActivityDay,
-  HourlyData,
-  HourlyTokensByModel,
-  ShareLink,
-  GlobalShareLink,
-  SharedConversation,
-  PermissionRule,
-  RemoteStatus,
-  RemoteAccessStatus,
-  ResolveTargetsResponse,
-  NewSessionTarget,
-  PrepareSessionResponse,
-  StartSessionRequest,
-  StartSessionResponse,
-	Routine,
-	RoutineRun,
-	RoutineInput,
-  FactoryEpic,
-  FactoryClaimedPlan,
-  FactoryMaterialization,
-  CreateWorkEpicRequest,
-	FactoryIssue,
-	FactoryIssueComment,
-	FactoryQueueItem,
-    FactoryProposal,
-	FactoryFormula,
-	FactoryFormulaSaveRequest,
-	FactoryFormulaValidationRequest,
-	FactoryCapacityPolicy,
-	FactoryPlanGate,
-	FactoryPlanGateDecisionRequest,
-	FactoryGraphMutation,
-	FactoryRecoveryGate,
-	FactoryAuthorityEscalationGate,
-	FactoryProjectRequestGate,
+  WebhookDelivery, WebhookInbox, WebhookSubscription, ClientActivity, Stats, MetricsPerformance,
+  AnalyticsOverview, DatabaseSizeSample, SubscriptionUsageResponse, MetricsLog, MetricsLogKind,
+  PermissionStats, Project, InboxResponse, InboxItem, FactoryEpic, CreateWorkEpicRequest,
+  FactoryClaimedPlan, FactoryMaterialization, FactoryIssue, FactoryIssueComment, FactoryGraphMutation,
+  FactoryQueueItem, FactoryRecoveryGate, FactoryAuthorityEscalationGate, FactoryProjectRequestGate,
+  FactoryProposal, FactoryPlanGateDecisionRequest, FactoryPlanGate, FactoryFormula,
+  FactoryFormulaValidationRequest, FactoryFormulaSaveRequest, FactoryCapacityPolicy, DoctorReport,
+  McpConfigStatus, McpConfigInstallResult, ActivityDay, ModelUsage, FavoriteEntry, HourlyData,
+  HourlyTokensByModel, CapabilitiesResponse, Routine, RoutineInput, RoutineRun, SystemStats, AuthMe,
 } from './api.types';
 
-/**
- * Absolute URL for downloading a session's conversation as Markdown.
- * Used directly as an <a href> / download target. Auth-gated (the
- * browser sends the auth cookie automatically).
- */
+// Keep existing consumers on the same public module.
+export type * from './api.types';
+export { APIError, AuthError, BackendUnavailableError, fetchJSON, postJSON,
+  registerAuthErrorHandler, raiseAuthError, raiseForUnauthorized } from './api.requests';
+
 export function sessionExportMarkdownUrl(id: string): string {
   return `/api/session/${encodeURIComponent(id)}/export.md`;
 }
 
-/**
- * Absolute URL for the public Markdown export of a shared conversation.
- * Unauthenticated — usable from the read-only share page.
- */
 export function sharedExportMarkdownUrl(token: string): string {
   return `/api/share/${encodeURIComponent(token)}/export.md`;
 }
 
-/**
- * AuthError is thrown when the backend reports that the client is
- * unauthenticated (HTTP 401). It's a distinct error type so callers —
- * and in particular the global fetch wrappers — can fan out into the
- * lockscreen flow rather than surfacing an opaque "unauthorized"
- * message in a red banner.
- *
- * The `authStore.handleAuthError` hook (installed at app boot) sees
- * instances of this class and flips the authenticated flag so the
- * router re-renders the login page.
- */
-export class AuthError extends Error {
-  constructor(message = 'unauthorized') {
-    super(message);
-    this.name = 'AuthError';
-  }
-}
-
-// Pluggable 401 hook. authStore installs itself here at boot so it
-// doesn't need to live inside api.ts itself (would be an import cycle).
-// The default is a no-op; replacing it is explicit opt-in.
-type AuthErrorHandler = (err: AuthError) => void;
-let onAuthError: AuthErrorHandler = () => {};
-
-/**
- * registerAuthErrorHandler installs a callback that runs whenever any
- * call through fetchJSON / postJSON observes a 401. The callback
- * should not re-throw; it's fire-and-forget state plumbing.
- * Returns the previous handler so callers can chain or restore.
- */
-export function registerAuthErrorHandler(handler: AuthErrorHandler): AuthErrorHandler {
-  const previous = onAuthError;
-  onAuthError = handler;
-  return previous;
-}
-
-/**
- * BackendUnavailableError replaces the cryptic browser errors that a
- * dead/unreachable backend produces — Safari's "Load failed" /
- * "The string did not match the expected pattern.", Chrome's
- * "Failed to fetch" — with one clear, user-facing message. Error
- * banners render `err.message` verbatim, so the friendly copy lives
- * in the message itself.
- */
-export class BackendUnavailableError extends Error {
-  constructor() {
-    super('Backend is not responding. Check that ocman is running, then reload the page.');
-    this.name = 'BackendUnavailableError';
-  }
-}
-
-export class APIError extends Error {
-  readonly status: number;
-
-  constructor(message: string, status: number) {
-    super(message);
-    this.name = 'APIError';
-    this.status = status;
-  }
-}
-
-// Internal: classify a fetch/parse failure. A network-level failure
-// (fetch rejects with TypeError) or a non-JSON body on an OK response
-// (resp.json() rejects with SyntaxError, e.g. a proxy serving an HTML
-// error page) both mean the backend is down or unhealthy. Aborts and
-// everything else pass through untouched.
-function toBackendError(err: unknown): unknown {
-  if (err instanceof DOMException) return err; // AbortError etc.
-  if (err instanceof TypeError || err instanceof SyntaxError) {
-    return new BackendUnavailableError();
-  }
-  return err;
-}
-
-// Internal: fetch that reports network-level failure as
-// BackendUnavailableError. All api.ts call sites go through this.
-// It also drives the global backendStatus flag: a network failure or a
-// gateway error (a proxy with no backend behind it) marks the backend
-// unreachable, any other response clears it. Other 5xx are real backend
-// answers (e.g. 503 remote_not_connected), so they don't count.
-async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
-  let resp: Response;
-  try {
-    resp = await fetch(input, init);
-  } catch (err) {
-    const mapped = toBackendError(err);
-    if (mapped instanceof BackendUnavailableError) reportNetworkFailure(mapped.message);
-    throw mapped;
-  }
-  if (resp.status === 502 || resp.status === 504) markBackendUnreachable(statusLine(resp));
-  else markBackendReachable();
-  return resp;
-}
-
-function statusLine(resp: Response): string {
-  return `HTTP ${resp.status} ${resp.statusText}`.trim();
-}
-
-/**
- * raiseAuthError reports an expired ocman session and returns the
- * AuthError for the caller to throw. Use it from the few call sites
- * that cannot go through fetchJSON / postJSON because they need the
- * raw Response (upstreamApi keeps the backend's structured error
- * envelopes to drive its rate-limit / forge-auth banners). Without
- * this fan-out those panes render a generic error on an expired
- * cookie instead of redirecting to the lockscreen.
- */
-export function raiseAuthError(message = 'unauthorized'): AuthError {
-  const err = new AuthError(message);
-  onAuthError(err);
-  return err;
-}
-
-/**
- * raiseForUnauthorized is the one guard every raw-Response endpoint
- * must run *before* its own status handling. Endpoints that need the
- * raw body (to tag 409/422/503, to read FormData replies) can't go
- * through fetchJSON / postJSON, but they still have to participate in
- * the AuthError fan-out — otherwise an expired cookie renders a
- * generic error instead of the lockscreen (see authStore.ts).
- */
-export async function raiseForUnauthorized(resp: Response): Promise<void> {
-  if (resp.status !== 401) return;
-  // An empty body has to fall through to raiseAuthError's default: ''
-  // would produce a message-less AuthError.
-  throw raiseAuthError((await resp.text().catch(() => '')) || undefined);
-}
-
-// Internal: surface a 401 as an AuthError and notify the registered
-// handler. Callers that catch this will receive an AuthError; anyone
-// who doesn't catch still lets the handler update global auth state.
-//
-// Structured error envelopes ({"error":{"code","message"}}, as returned
-// by resolveOwner's remote_not_connected and handle-worktree's
-// requires_fetch) are unwrapped to their message: callers render
-// err.message straight into the UI, so a raw JSON blob would leak.
-// Anything else keeps the plain-text body verbatim.
-async function throwForStatus(resp: Response): Promise<never> {
-  const body = await resp.text().catch(() => '');
-  if (resp.status === 401) {
-    throw raiseAuthError(body || 'unauthorized');
-  }
-  // An empty body (typically a proxy error page) must not become a blank banner.
-  throw new APIError(envelopeMessage(body) ?? (body || statusLine(resp)), resp.status);
-}
-
-// envelopeMessage returns the human-readable message of a structured
-// error envelope, or undefined when the body isn't one.
-function envelopeMessage(body: string): string | undefined {
-  try {
-    const parsed = JSON.parse(body) as { error?: { message?: unknown } };
-    const msg = parsed?.error?.message;
-    return typeof msg === 'string' && msg !== '' ? msg : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-export async function fetchJSON<T>(url: string, signal?: AbortSignal): Promise<T> {
-  const startedAt = performance.now();
-  let status = 0;
-  try {
-    const resp = await apiFetch(url, signal ? { signal } : undefined);
-    status = resp.status;
-    if (!resp.ok) await throwForStatus(resp);
-    return await resp.json().catch((err) => {
-      throw toBackendError(err);
-    });
-  } finally {
-    // Record after the JSON parse so durationMs reflects the user-
-    // visible cost, not just the HTTP round-trip. Errors and aborts
-    // also land here (status=0 for aborts, or the real status for
-    // a non-2xx that threw via throwForStatus).
-    recordPerf({
-      pathTemplate: templatePath(url),
-      method: 'GET',
-      status,
-      durationMs: performance.now() - startedAt,
-      startedAt,
-    });
-  }
-}
-
-/**
- * postJSON is the mutation counterpart to fetchJSON: JSON body in,
- * JSON body out, with identical 401 handling and perf recording. Use
- * it for every mutating call so they all participate in the AuthError
- * fan-out and the perf ring.
- *
- * Options:
- * - `method`: override the HTTP verb (defaults to POST; pass DELETE /
- *   PATCH as needed).
- * - `body`: omit (pass `undefined`) for verb-only requests that send
- *   no JSON body; the Content-Type header is then dropped too.
- * - `parseJSON`: set false when the server returns 204 No Content
- *   (login returns a body, but logout doesn't).
- * - `acceptStatus`: parse this non-2xx response as the endpoint's typed body.
- */
-export async function postJSON<TResp, TReq = unknown>(
-  url: string,
-  body: TReq,
-  opts?: { signal?: AbortSignal; parseJSON?: boolean; method?: 'POST' | 'PATCH' | 'PUT' | 'DELETE'; acceptStatus?: number },
-): Promise<TResp> {
-  const method = opts?.method ?? 'POST';
-  const startedAt = performance.now();
-  let status = 0;
-  try {
-    const hasBody = body !== undefined;
-    const resp = await apiFetch(url, {
-      method,
-      headers: hasBody ? { 'Content-Type': 'application/json' } : undefined,
-      body: hasBody ? JSON.stringify(body) : undefined,
-      signal: opts?.signal,
-    });
-    status = resp.status;
-    if (!resp.ok && resp.status !== opts?.acceptStatus) await throwForStatus(resp);
-    if (opts?.parseJSON === false || resp.status === 204) {
-      return undefined as unknown as TResp;
-    }
-    return await resp.json().catch((err) => {
-      throw toBackendError(err);
-    });
-  } finally {
-    recordPerf({
-      pathTemplate: templatePath(url),
-      method,
-      status,
-      durationMs: performance.now() - startedAt,
-      startedAt,
-    });
-  }
-}
-
-
-// Build a `?a=1&b=2` query suffix from a params object. Skips
-// undefined/null values and empty strings (so absent filters don't
-// appear in the URL), and returns '' when nothing is set.
-function queryString(params?: Record<string, string | number | undefined | null>): string {
-  const q = new URLSearchParams();
-  for (const [k, v] of Object.entries(params ?? {})) {
-    if (v == null || v === '') continue;
-    q.set(k, String(v));
-  }
-  const qs = q.toString();
-  return qs ? '?' + qs : '';
-}
-
-const ownerParam = (remoteId?: string) => (remoteId ? `&remoteId=${encodeURIComponent(remoteId)}` : '');
-
 export const api = {
   ...settingsApi(fetchJSON, postJSON),
+  ...sessionApi,
+  ...hostApi,
   clientActivity: (activity: ClientActivity) =>
     postJSON<void, ClientActivity>('/api/client-activity', activity, { parseJSON: false }),
   stats: (signal?: AbortSignal) => fetchJSON<Stats>('/api/stats', signal),
   metrics: (params?: { agent?: string; model?: string; days?: number; dir?: string }, signal?: AbortSignal) =>
     fetchJSON<MetricsPerformance>(`/api/metrics/performance${queryString(params)}`, signal),
-  analyticsOverview: (signal?: AbortSignal) =>
-    fetchJSON<AnalyticsOverview>('/api/analytics/overview', signal),
+  analyticsOverview: (signal?: AbortSignal) => fetchJSON<AnalyticsOverview>('/api/analytics/overview', signal),
   databaseSizes: (params?: { days?: number }, signal?: AbortSignal) =>
     fetchJSON<DatabaseSizeSample[]>(`/api/analytics/database-sizes${queryString(params)}`, signal),
-  subscriptionUsage: (signal?: AbortSignal) =>
-    fetchJSON<SubscriptionUsageResponse>('/api/subscription-usage', signal),
+  subscriptionUsage: (signal?: AbortSignal) => fetchJSON<SubscriptionUsageResponse>('/api/subscription-usage', signal),
   metricLogs: (params: { kind: MetricsLogKind; agent?: string; model?: string; days?: number; limit?: number; offset?: number; sessionLimit?: number; sessionOffset?: number; projectLimit?: number; projectOffset?: number; dir?: string }, signal?: AbortSignal) =>
     fetchJSON<MetricsLog>(`/api/metric-logs${queryString(params)}`, signal),
   permissionStats: (params?: { days?: number; dir?: string }, signal?: AbortSignal) =>
     fetchJSON<PermissionStats>(`/api/permission-stats${queryString(params)}`, signal),
   projects: (signal?: AbortSignal) => fetchJSON<Project[]>('/api/projects', signal),
-   factoryEpics: (signal?: AbortSignal) => fetchJSON<FactoryEpic[]>('/api/factory/epics', signal),
-   inbox: (signal?: AbortSignal, archived = false) => fetchJSON<InboxResponse>(`/api/inbox${archived ? '?archived=true' : ''}`, signal),
-   markInboxItemRead: (id: string, remoteId: string) =>
-     postJSON<void, { id: string; remoteId: string }>('/api/inbox/open', { id, remoteId }, { parseJSON: false }),
-   markInboxItemUnread: (id: string, remoteId: string) =>
-     postJSON<void, { id: string; remoteId: string }>('/api/inbox/unread', { id, remoteId }, { parseJSON: false }),
-   pinInboxItem: (id: string, remoteId: string, pinned: boolean) =>
-     postJSON<void, { id: string; remoteId: string; pinned: boolean }>('/api/inbox/pin', { id, remoteId, pinned }, { parseJSON: false }),
-   archiveInboxItems: (items: Pick<InboxItem, 'id' | 'remoteId'>[]) =>
-     postJSON<void, { items: Pick<InboxItem, 'id' | 'remoteId'>[] }>('/api/inbox/archive', { items }, { parseJSON: false }),
-   factoryEpic: (id: string, signal?: AbortSignal) =>
-     fetchJSON<FactoryEpic>(`/api/factory/epics/${encodeURIComponent(id)}`, signal),
-   createFactoryEpic: (request: CreateWorkEpicRequest) =>
-     postJSON<FactoryEpic, CreateWorkEpicRequest>('/api/factory/epics', request),
-		factoryClaimPlan: (id: string, issueID: string) =>
-			postJSON<FactoryClaimedPlan, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/plans/${encodeURIComponent(issueID)}`, undefined),
-		factoryMaterialize: (id: string, issueID: string) =>
-			postJSON<FactoryMaterialization, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/materializations/${encodeURIComponent(issueID)}`, undefined),
-		reopenFactoryIssue: (id: string, issueID: string) =>
-			postJSON<unknown, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/issues/${encodeURIComponent(issueID)}/reopen`, undefined),
-		investigateFactoryUnblock: (id: string, issueID: string) =>
-			postJSON<{ platform: string; id: string }, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/issues/${encodeURIComponent(issueID)}/unblock`, undefined),
-		factoryIssues: (id: string, signal?: AbortSignal) =>
-		 fetchJSON<FactoryIssue[]>(`/api/factory/epics/${encodeURIComponent(id)}/issues`, signal),
-		factoryIssueComments: (epicID: string, issueID: string, signal?: AbortSignal) =>
-			fetchJSON<FactoryIssueComment[]>(`/api/factory/epics/${encodeURIComponent(epicID)}/issues/${encodeURIComponent(issueID)}/comments`, signal),
-		addFactoryIssueComment: (epicID: string, issueID: string, body: string) =>
-			postJSON<FactoryIssueComment, { body: string }>(`/api/factory/epics/${encodeURIComponent(epicID)}/issues/${encodeURIComponent(issueID)}/comments`, { body }),
-     factoryRemovedIssues: (id: string, signal?: AbortSignal) =>
-       fetchJSON<FactoryIssue[]>(`/api/factory/epics/${encodeURIComponent(id)}/removed-issues`, signal),
-    mutateFactoryGraph: (id: string, mutation: FactoryGraphMutation) =>
-      postJSON<void, FactoryGraphMutation>(`/api/factory/epics/${encodeURIComponent(id)}/mutations`, mutation, { parseJSON: false }),
-    factoryQueue: (signal?: AbortSignal) => fetchJSON<FactoryQueueItem[]>('/api/factory/queue', signal),
-		resolveFactoryRecoveryGate: (id: string, action: 'resume' | 'retry' | 'cancel', response: string) => postJSON<FactoryRecoveryGate, { response: string }>(`/api/factory/recovery-gates/${encodeURIComponent(id)}/${action}`, { response }),
-		resolveFactoryAuthorityGate: (id: string, action: 'approve' | 'reject') => postJSON<FactoryAuthorityEscalationGate, Record<string, never>>(`/api/factory/authority-gates/${encodeURIComponent(id)}/${action}`, {}),
-		resolveFactoryProjectGate: (id: string, action: 'approve' | 'reject', response: string, acknowledgeLocalExecution: boolean) => postJSON<FactoryProjectRequestGate, { response: string; acknowledgeLocalExecution: boolean }>(`/api/factory/project-gates/${encodeURIComponent(id)}/${action}`, { response, acknowledgeLocalExecution }),
-   factoryProposals: (id: string, signal?: AbortSignal) =>
-      fetchJSON<FactoryProposal[]>(`/api/factory/epics/${encodeURIComponent(id)}/proposals`, signal),
-	 factoryPlanGate: (id: string, action: 'approve' | 'revise' | 'reject', request: FactoryPlanGateDecisionRequest) =>
-		postJSON<FactoryPlanGate, FactoryPlanGateDecisionRequest>(`/api/factory/epics/${encodeURIComponent(id)}/plan-gate/${action}`, request),
-	 factoryCloseMol: (id: string, molID: string) => postJSON<void, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/mols/${encodeURIComponent(molID)}/close`, undefined, { parseJSON: false }),
-	 factoryCloseEpic: (id: string, force: boolean) => postJSON<void, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/close${force ? '?force=true' : ''}`, undefined, { parseJSON: false }),
-	 factorySetEpicPaused: (id: string, paused: boolean) => postJSON<void, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/${paused ? 'pause' : 'resume'}`, undefined, { parseJSON: false }),
-		factoryFormula: (id: string, version: number, signal?: AbortSignal) =>
-		fetchJSON<FactoryFormula>(`/api/factory/formulas/${encodeURIComponent(id)}/${version}`, signal),
-	 factoryFormulas: (signal?: AbortSignal) => fetchJSON<FactoryFormula[]>('/api/factory/formulas', signal),
-	 validateFactoryFormula: (request: FactoryFormulaValidationRequest) => postJSON<FactoryFormula, FactoryFormulaValidationRequest>('/api/factory/formulas/validate', request),
-	 previewFactoryFormula: (request: FactoryFormulaValidationRequest) => postJSON<FactoryFormula, FactoryFormulaValidationRequest>('/api/factory/formulas/preview', request),
-	 saveFactoryFormula: (request: FactoryFormulaSaveRequest) => postJSON<FactoryFormula, FactoryFormulaSaveRequest>('/api/factory/formulas', request),
-	 factoryCapacityPolicy: (signal?: AbortSignal) => fetchJSON<FactoryCapacityPolicy>('/api/factory/configuration', signal),
-	 setFactoryCapacityPolicy: (policy: FactoryCapacityPolicy) => postJSON<FactoryCapacityPolicy, FactoryCapacityPolicy>('/api/factory/configuration', policy),
-  browseDirectories: (dir?: string, signal?: AbortSignal) =>
-    fetchJSON<DirectoryBrowseResponse>(`/api/filesystem/directories${queryString({ dir })}`, signal),
-  searchDirectories: (root: string | undefined, query: string, limit?: number, signal?: AbortSignal) => {
-    const q = new URLSearchParams({ q: query });
-    if (root) q.set('root', root);
-    if (limit) q.set('limit', String(limit));
-    return fetchJSON<DirectorySearchResponse>(`/api/filesystem/directory-search?${q.toString()}`, signal);
-  },
-  sessions: (params?: { dir?: string; since?: number; limit?: number }, signal?: AbortSignal) =>
-    fetchJSON<Session[]>(`/api/sessions${queryString(params)}`, signal),
-  sessionsNotify: (params?: { since?: number; limit?: number }, signal?: AbortSignal) =>
-    fetchJSON<NotifyEntry[]>(`/api/sessions/notify${queryString(params)}`, signal),
-  // peek reads without "opening": the server applies the archive resurface
-  // policy instead of unconditionally unarchiving the session.
-  session: (id: string, limit = 50, offset = 0, signal?: AbortSignal, platform?: string, peek = false) => {
-    const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
-    if (platform) query.set('platform', platform);
-    if (peek) query.set('peek', '1');
-    return fetchJSON<SessionDetail>(`/api/session/${id}?${query.toString()}`, signal);
-  },
-  // --- Conversation export / share ---
-  // List the active public share links for a session.
-  listShareLinks: (id: string, signal?: AbortSignal) =>
-    fetchJSON<ShareLink[]>(`/api/session/${encodeURIComponent(id)}/shares`, signal),
-  // Mint a new public, read-only share link for a session.
-  createShareLink: (id: string) =>
-    postJSON<ShareLink>(`/api/session/${encodeURIComponent(id)}/share`, undefined),
-  // Revoke a previously created share link.
-  revokeShareLink: (id: string, token: string) =>
-    postJSON<void>(
-      `/api/session/${encodeURIComponent(id)}/share/${encodeURIComponent(token)}`,
-      undefined,
-      { method: 'DELETE', parseJSON: false },
-    ),
-  // --- MCP registration in OpenCode's global config ---
-  // Whether OpenCode's global config points at ocman's MCP endpoint.
-  // Prerequisite checks (tools on PATH, OpenCode DB, ...) for onboarding.
-  getDoctor: (signal?: AbortSignal) =>
-    fetchJSON<DoctorReport>('/api/doctor', signal),
-  getMcpConfig: (signal?: AbortSignal) =>
-    fetchJSON<McpConfigStatus>('/api/mcp/config', signal),
-  // Write the ocman entry into that config (backs the original up
-  // first). Localhost-only on the server.
-  installMcpConfig: () =>
-    postJSON<McpConfigInstallResult>('/api/mcp/config/install', undefined),
-
-  // Webhook inboxes capture deliveries; routines subscribe with filters.
+  factoryEpics: (signal?: AbortSignal) => fetchJSON<FactoryEpic[]>('/api/factory/epics', signal),
+  inbox: (signal?: AbortSignal, archived = false) => fetchJSON<InboxResponse>(`/api/inbox${archived ? '?archived=true' : ''}`, signal),
+  markInboxItemRead: (id: string, remoteId: string) =>
+    postJSON<void, { id: string; remoteId: string }>('/api/inbox/open', { id, remoteId }, { parseJSON: false }),
+  markInboxItemUnread: (id: string, remoteId: string) =>
+    postJSON<void, { id: string; remoteId: string }>('/api/inbox/unread', { id, remoteId }, { parseJSON: false }),
+  pinInboxItem: (id: string, remoteId: string, pinned: boolean) =>
+    postJSON<void, { id: string; remoteId: string; pinned: boolean }>('/api/inbox/pin', { id, remoteId, pinned }, { parseJSON: false }),
+  archiveInboxItems: (items: Pick<InboxItem, 'id' | 'remoteId'>[]) =>
+    postJSON<void, { items: Pick<InboxItem, 'id' | 'remoteId'>[] }>('/api/inbox/archive', { items }, { parseJSON: false }),
+  factoryEpic: (id: string, signal?: AbortSignal) => fetchJSON<FactoryEpic>(`/api/factory/epics/${encodeURIComponent(id)}`, signal),
+  createFactoryEpic: (request: CreateWorkEpicRequest) => postJSON<FactoryEpic, CreateWorkEpicRequest>('/api/factory/epics', request),
+  factoryClaimPlan: (id: string, issueID: string) =>
+    postJSON<FactoryClaimedPlan, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/plans/${encodeURIComponent(issueID)}`, undefined),
+  factoryMaterialize: (id: string, issueID: string) =>
+    postJSON<FactoryMaterialization, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/materializations/${encodeURIComponent(issueID)}`, undefined),
+  reopenFactoryIssue: (id: string, issueID: string) =>
+    postJSON<unknown, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/issues/${encodeURIComponent(issueID)}/reopen`, undefined),
+  investigateFactoryUnblock: (id: string, issueID: string) =>
+    postJSON<{ platform: string; id: string }, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/issues/${encodeURIComponent(issueID)}/unblock`, undefined),
+  factoryIssues: (id: string, signal?: AbortSignal) => fetchJSON<FactoryIssue[]>(`/api/factory/epics/${encodeURIComponent(id)}/issues`, signal),
+  factoryIssueComments: (epicID: string, issueID: string, signal?: AbortSignal) =>
+    fetchJSON<FactoryIssueComment[]>(`/api/factory/epics/${encodeURIComponent(epicID)}/issues/${encodeURIComponent(issueID)}/comments`, signal),
+  addFactoryIssueComment: (epicID: string, issueID: string, body: string) =>
+    postJSON<FactoryIssueComment, { body: string }>(`/api/factory/epics/${encodeURIComponent(epicID)}/issues/${encodeURIComponent(issueID)}/comments`, { body }),
+  factoryRemovedIssues: (id: string, signal?: AbortSignal) => fetchJSON<FactoryIssue[]>(`/api/factory/epics/${encodeURIComponent(id)}/removed-issues`, signal),
+  mutateFactoryGraph: (id: string, mutation: FactoryGraphMutation) =>
+    postJSON<void, FactoryGraphMutation>(`/api/factory/epics/${encodeURIComponent(id)}/mutations`, mutation, { parseJSON: false }),
+  factoryQueue: (signal?: AbortSignal) => fetchJSON<FactoryQueueItem[]>('/api/factory/queue', signal),
+  resolveFactoryRecoveryGate: (id: string, action: 'resume' | 'retry' | 'cancel', response: string) =>
+    postJSON<FactoryRecoveryGate, { response: string }>(`/api/factory/recovery-gates/${encodeURIComponent(id)}/${action}`, { response }),
+  resolveFactoryAuthorityGate: (id: string, action: 'approve' | 'reject') =>
+    postJSON<FactoryAuthorityEscalationGate, Record<string, never>>(`/api/factory/authority-gates/${encodeURIComponent(id)}/${action}`, {}),
+  resolveFactoryProjectGate: (id: string, action: 'approve' | 'reject', response: string, acknowledgeLocalExecution: boolean) =>
+    postJSON<FactoryProjectRequestGate, { response: string; acknowledgeLocalExecution: boolean }>(`/api/factory/project-gates/${encodeURIComponent(id)}/${action}`, { response, acknowledgeLocalExecution }),
+  factoryProposals: (id: string, signal?: AbortSignal) => fetchJSON<FactoryProposal[]>(`/api/factory/epics/${encodeURIComponent(id)}/proposals`, signal),
+  factoryPlanGate: (id: string, action: 'approve' | 'revise' | 'reject', request: FactoryPlanGateDecisionRequest) =>
+    postJSON<FactoryPlanGate, FactoryPlanGateDecisionRequest>(`/api/factory/epics/${encodeURIComponent(id)}/plan-gate/${action}`, request),
+  factoryCloseMol: (id: string, molID: string) =>
+    postJSON<void, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/mols/${encodeURIComponent(molID)}/close`, undefined, { parseJSON: false }),
+  factoryCloseEpic: (id: string, force: boolean) =>
+    postJSON<void, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/close${force ? '?force=true' : ''}`, undefined, { parseJSON: false }),
+  factorySetEpicPaused: (id: string, paused: boolean) =>
+    postJSON<void, undefined>(`/api/factory/epics/${encodeURIComponent(id)}/${paused ? 'pause' : 'resume'}`, undefined, { parseJSON: false }),
+  factoryFormula: (id: string, version: number, signal?: AbortSignal) => fetchJSON<FactoryFormula>(`/api/factory/formulas/${encodeURIComponent(id)}/${version}`, signal),
+  factoryFormulas: (signal?: AbortSignal) => fetchJSON<FactoryFormula[]>('/api/factory/formulas', signal),
+  validateFactoryFormula: (request: FactoryFormulaValidationRequest) => postJSON<FactoryFormula, FactoryFormulaValidationRequest>('/api/factory/formulas/validate', request),
+  previewFactoryFormula: (request: FactoryFormulaValidationRequest) => postJSON<FactoryFormula, FactoryFormulaValidationRequest>('/api/factory/formulas/preview', request),
+  saveFactoryFormula: (request: FactoryFormulaSaveRequest) => postJSON<FactoryFormula, FactoryFormulaSaveRequest>('/api/factory/formulas', request),
+  factoryCapacityPolicy: (signal?: AbortSignal) => fetchJSON<FactoryCapacityPolicy>('/api/factory/configuration', signal),
+  setFactoryCapacityPolicy: (policy: FactoryCapacityPolicy) => postJSON<FactoryCapacityPolicy, FactoryCapacityPolicy>('/api/factory/configuration', policy),
+  getDoctor: (signal?: AbortSignal) => fetchJSON<DoctorReport>('/api/doctor', signal),
+  getMcpConfig: (signal?: AbortSignal) => fetchJSON<McpConfigStatus>('/api/mcp/config', signal),
+  installMcpConfig: () => postJSON<McpConfigInstallResult>('/api/mcp/config/install', undefined),
   webhookInboxes: {
     list: (signal?: AbortSignal) => fetchJSON<WebhookInbox[]>('/api/webhook-inboxes', signal),
     create: (input: { name: string; enrollmentToken?: string; secret?: string; secretHeader?: string }) => postJSON<WebhookInbox>('/api/webhook-inboxes', input),
@@ -599,572 +110,47 @@ export const api = {
     redeliver: (id: string, deliveryId: string) => postJSON<{ deliveryId: string }>(`/api/webhook-inboxes/${encodeURIComponent(id)}/redeliver`, { deliveryId }),
     unsubscribe: (id: string, routineId: string) => postJSON<void>(`/api/webhook-inboxes/${encodeURIComponent(id)}/subscriptions`, { routineId }, { method: 'DELETE', parseJSON: false }),
   },
-  // Every active share link across all sessions.
-  listAllShares: (signal?: AbortSignal) =>
-    fetchJSON<GlobalShareLink[]>(`/api/shares`, signal),
-  // Fetch a shared conversation by token. UNAUTHENTICATED endpoint:
-  // the token is the only credential. Used by the public /share/:token
-  // page.
-  sharedConversation: (token: string, signal?: AbortSignal) =>
-    fetchJSON<SharedConversation>(`/api/share/${encodeURIComponent(token)}`, signal),
-  // Aggregated per-file change summary for a session. Returns
-  // supported=false (with HTTP 200) when the owning platform doesn't
-  // implement aggregation.
-  sessionChanges: (id: string, signal?: AbortSignal) =>
-    fetchJSON<SessionChanges>(`/api/session/${encodeURIComponent(id)}/changes`, signal),
-  // Per-session info snapshot consumed by the right-hand "Session info"
-  // panel: context-window usage, configured MCP servers and their
-  // status, configured LSP servers and their status. Returns
-  // supported=false (HTTP 200) when the owning platform can't produce
-  // a meaningful snapshot (e.g. OpenCode without a live port).
-  sessionInfo: (id: string, signal?: AbortSignal, platform?: string) =>
-    fetchJSON<SessionInfo>(
-      `/api/session/${encodeURIComponent(id)}/info${queryString({ platform })}`,
-      signal,
-    ),
-  /**
-   * Batch-fetch sub-session data for multiple task sessions. Returns
-   * messages + parts per task so the frontend can render an embedded
-   * thread preview inside Task tool cards.
-   */
-  sessionTasks: (sessionId: string, taskIds: string[], signal?: AbortSignal) =>
-    fetchJSON<{ tasks: Record<string, TaskSessionData> }>(
-      `/api/session/${encodeURIComponent(sessionId)}/tasks?ids=${taskIds.map(encodeURIComponent).join(',')}`,
-      signal,
-    ),
-  // Working-tree git diff for an absolute directory. fresh=1 bypasses
-  // the backend's tiny in-process cache; the SSE-driven refetch path
-  // sets it so an edit-event-triggered refresh is never stale.
-  gitDiff: (dir: string, opts?: { fresh?: boolean }, signal?: AbortSignal) => {
-    const q = new URLSearchParams({ dir });
-    if (opts?.fresh) q.set('fresh', '1');
-    return fetchJSON<WorkingTreeDiff>(`/api/git/diff?${q.toString()}`, signal);
-  },
-  // List local branches for the repo containing dir, current branch
-  // first. Empty for a non-repo directory.
-  // Every non-ignored file of the repo containing dir, root-relative;
-  // gitignored files are appended when `ignored` is set.
-  repoFiles: (dir: string, remoteId: string, signal?: AbortSignal, ignored = false) =>
-    fetchJSON<RepoFileList>(
-      `/api/git/files?dir=${encodeURIComponent(dir)}&remoteId=${encodeURIComponent(remoteId)}${ignored ? '&ignored=1' : ''}`,
-      signal,
-    ),
-  repoFile: (dir: string, path: string, remoteId: string, signal?: AbortSignal, ignored = false) =>
-    fetchJSON<RepoFileContent>(
-      `/api/git/file?dir=${encodeURIComponent(dir)}&path=${encodeURIComponent(path)}&remoteId=${encodeURIComponent(remoteId)}${ignored ? '&ignored=1' : ''}`,
-      signal,
-    ),
-  gitBranches: (dir: string, signal?: AbortSignal) =>
-    fetchJSON<{ branches: string[] }>(
-      `/api/git/branches?dir=${encodeURIComponent(dir)}`,
-      signal,
-    ),
-  // Switch the working tree in dir to branch. Rejects (409 → thrown
-  // Error whose message names the dirty tree) when uncommitted changes
-  // would be overwritten.
-  gitCheckout: (dir: string, branch: string) =>
-    postJSON<{ branch: string }>('/api/git/checkout', { dir, branch }),
-  archiveSession: (platform: string, sessionId: string, timeUpdated: number, archived = true) =>
-    postJSON<{ ok: boolean }>('/api/session/archive', { platform, sessionId, timeUpdated, archived }),
-  // A project is identified by (remoteId, directory): the same absolute
-  // path exists on every attached machine, so the owning host has to ride
-  // along or the hub archives its own copy instead.
-  archiveProject: (directory: string, archived = true, remoteId?: string) =>
-    postJSON<{ ok: boolean }>('/api/project/archive', { directory, archived, remoteId }),
-  markSessionSeen: (platform: string, sessionId: string, timeUpdated: number) =>
-    postJSON<{ ok: boolean }>('/api/session/seen', { platform, sessionId, timeUpdated }),
-  pinSession: (platform: string, sessionId: string, pinned: boolean) =>
-    postJSON<{ ok: boolean }>('/api/session/pin', { platform, sessionId, pinned }),
-  calcCost: (req: { modelID: string; input: number; output: number; cacheRead: number; cacheWrite: number }) =>
-    postJSON<{ cost: number; known: boolean }>('/api/cost/calc', req),
-  activity: (params?: { days?: number; model?: string; dir?: string }, signal?: AbortSignal) =>
-    fetchJSON<ActivityDay[]>(`/api/activity${queryString(params)}`, signal),
-  models: (params?: { days?: number; dir?: string }, signal?: AbortSignal) =>
-    fetchJSON<ModelUsage[]>(`/api/models${queryString(params)}`, signal),
-  // Per-project ordered model list; models[0] is the project default.
-  projectSettings: (dir: string, signal?: AbortSignal) =>
-    fetchJSON<{ models: string[]; off: boolean }>(`/api/project/settings${queryString({ dir })}`, signal),
-  setProjectSettings: (directory: string, models: string[], off: boolean) =>
-    postJSON<{ ok: boolean }>('/api/project/settings', { directory, models, off }),
-  sessionModels: (sessionId: string, platform?: string) =>
-    fetchJSON<SessionModelsResponse>(`/api/session/${encodeURIComponent(sessionId)}/models${queryString({ platform })}`),
-  // Favorites CRUD. Scoped per-platform because the same (provider,
-  // model) pair can legitimately be a favorite under one platform but
-  // not another — matches the DB's composite key.
-  listFavorites: (platform: string) =>
-    fetchJSON<FavoriteEntry[]>(`/api/favorites?platform=${encodeURIComponent(platform)}`),
-  addFavorite: (platform: string, provider: string, model: string) =>
-    postJSON<void>('/api/favorites', { platform, provider, model }, { parseJSON: false }),
-  removeFavorite: (platform: string, provider: string, model: string) =>
-    postJSON<void>('/api/favorites', { platform, provider, model }, { method: 'DELETE', parseJSON: false }),
-  hourly: (params?: { days?: number; dir?: string }, signal?: AbortSignal) =>
-    fetchJSON<HourlyData[]>(`/api/hourly${queryString(params)}`, signal),
-  hourlyTokens: (params?: { days?: number; model?: string; dir?: string }, signal?: AbortSignal) =>
-    fetchJSON<HourlyTokensByModel[]>(`/api/hourly-tokens${queryString(params)}`, signal),
+  // Project ownership accompanies archives to avoid mutating the hub's copy.
+  archiveProject: (directory: string, archived = true, remoteId?: string) => postJSON<{ ok: boolean }>('/api/project/archive', { directory, archived, remoteId }),
+  calcCost: (req: { modelID: string; input: number; output: number; cacheRead: number; cacheWrite: number }) => postJSON<{ cost: number; known: boolean }>('/api/cost/calc', req),
+  activity: (params?: { days?: number; model?: string; dir?: string }, signal?: AbortSignal) => fetchJSON<ActivityDay[]>(`/api/activity${queryString(params)}`, signal),
+  models: (params?: { days?: number; dir?: string }, signal?: AbortSignal) => fetchJSON<ModelUsage[]>(`/api/models${queryString(params)}`, signal),
+  projectSettings: (dir: string, signal?: AbortSignal) => fetchJSON<{ models: string[]; off: boolean }>(`/api/project/settings${queryString({ dir })}`, signal),
+  setProjectSettings: (directory: string, models: string[], off: boolean) => postJSON<{ ok: boolean }>('/api/project/settings', { directory, models, off }),
+  listFavorites: (platform: string) => fetchJSON<FavoriteEntry[]>(`/api/favorites?platform=${encodeURIComponent(platform)}`),
+  addFavorite: (platform: string, provider: string, model: string) => postJSON<void>('/api/favorites', { platform, provider, model }, { parseJSON: false }),
+  removeFavorite: (platform: string, provider: string, model: string) => postJSON<void>('/api/favorites', { platform, provider, model }, { method: 'DELETE', parseJSON: false }),
+  hourly: (params?: { days?: number; dir?: string }, signal?: AbortSignal) => fetchJSON<HourlyData[]>(`/api/hourly${queryString(params)}`, signal),
+  hourlyTokens: (params?: { days?: number; model?: string; dir?: string }, signal?: AbortSignal) => fetchJSON<HourlyTokensByModel[]>(`/api/hourly-tokens${queryString(params)}`, signal),
   capabilities: (signal?: AbortSignal) => fetchJSON<CapabilitiesResponse>('/api/capabilities', signal),
-
-  // --- Multi-remote support ---
-  remoteAccess: (signal?: AbortSignal) =>
-    fetchJSON<RemoteAccessStatus>('/api/settings/remote-access', signal),
-  revealRemoteToken: () =>
-    postJSON<{ token: string }>('/api/settings/remote-access/reveal-token', undefined),
-  listRemotes: (signal?: AbortSignal) => fetchJSON<RemoteStatus[]>('/api/remotes', signal),
-  addRemote: (body: { address: string; token: string; displayName?: string }) =>
-    postJSON<RemoteStatus>('/api/remotes', body),
-  updateRemote: (
-    localId: number,
-    body: { address: string; displayName: string; enabled: boolean; token?: string | null },
-  ) => postJSON<{ ok: boolean }>(`/api/remotes/${localId}`, body, { method: 'PUT' }),
-  removeRemote: (localId: number) =>
-    postJSON<{ ok: boolean }>(`/api/remotes/${localId}`, undefined, { method: 'DELETE', parseJSON: false }),
-  reconnectRemote: (localId: number) =>
-    postJSON<{ ok: boolean }>(`/api/remotes/${localId}/reconnect`, undefined),
-  resolveTargets: (dir: string, remoteId?: string) =>
-    postJSON<ResolveTargetsResponse>('/api/sessions/resolve-targets', { dir, ...(remoteId ? { remoteId } : {}) }),
-  prepareSession: (target: NewSessionTarget, signal?: AbortSignal) =>
-    postJSON<PrepareSessionResponse>('/api/sessions/prepare', target, { signal }),
-  startSession: (req: StartSessionRequest) =>
-    postJSON<StartSessionResponse>('/api/sessions/start', req),
-  /** parentSessionId seeds the new session with that session's permission posture. */
-  createSession: async (directory: string, platform?: string, title?: string, parentSessionId?: string) => {
-    const resp = await apiFetch('/api/sessions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        directory,
-        ...(platform ? { platform } : {}),
-        ...(title ? { title } : {}),
-        ...(parentSessionId ? { parentSessionId } : {}),
-      }),
-    });
-    if (!resp.ok) {
-      await raiseForUnauthorized(resp);
-      const body = (await resp.text()).trim();
-      // 503 maps to platforms.ErrPlatformUnreachable on the backend —
-      // the directory is known but no live instance is running. Tag
-      // the error so callers (SessionDetail, CommandPalette) can
-      // trigger the auto-launch-in-tmux flow.
-      if (resp.status === 503) {
-        const err = new Error(body || 'No running platform instance for this directory.');
-        (err as Error & { code?: string }).code = 'unreachable';
-        throw err;
-      }
-      throw new Error(body || `HTTP ${resp.status}`);
-    }
-    return resp.json() as Promise<{ id: string }>;
-  },
-  sendMessage: async (
-    sessionId: string,
-    message: string,
-    images?: { url: string; mime: string }[],
-    model?: string,
-    agent?: string,
-    reasoning?: string,
-    platform?: string,
-    // queue=true holds the message in the follow-up queue for the
-    // session's next idle edge instead of sending it now (#58). Set from
-    // the user's explicit Ctrl/Cmd+Enter gesture. Without it the server
-    // sends immediately, mid-turn included.
-    queue?: boolean,
-  ) => {
-    const query = platform ? `?platform=${encodeURIComponent(platform)}` : '';
-    const resp = await apiFetch(`/api/session/${encodeURIComponent(sessionId)}/message${query}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, images, model, agent, reasoning, queue }),
-    });
-    if (resp.status === 204) return;
-    if (resp.ok || [500, 502, 503, 504].includes(resp.status)) {
-      throw new BackendUnavailableError();
-    }
-    if (!resp.ok) {
-      await raiseForUnauthorized(resp);
-      const body = (await resp.text()).trim();
-      // 409 Conflict is AD-13's busy-guard: the target session is
-      // mid-turn and accepting this prompt would fork its history.
-      // Surface a friendlier message and tag the error so callers
-      // can render a distinct UI if they want.
-      if (resp.status === 409) {
-        const err = new Error(
-          body || 'The session is still responding to a previous prompt. Try again in a moment.',
-        );
-        (err as Error & { code?: string }).code = 'busy';
-        throw err;
-      }
-      // 422 Unprocessable Entity carries upstream-rejected errors.
-      // When the body matches a rate-limit pattern, tag the error so
-      // the failed-send banner can show rate-limit-specific copy.
-      if (resp.status === 422 && /rate.limit|would exceed your account/i.test(body)) {
-        const err = new Error(body);
-        (err as Error & { code?: string }).code = 'rate_limit';
-        throw err;
-      }
-      throw new Error(body || `HTTP ${resp.status}`);
-    }
-  },
-  // --- Follow-up message queue (#58) ---
-  // Prompts submitted while a session is mid-turn are queued server-side
-  // and drain one per turn on idle. These endpoints let the composer show
-  // and manage that shared queue.
-  queuedMessages: async (sessionId: string, platform?: string): Promise<QueuedMessage[]> => {
-    const query = platform ? `?platform=${encodeURIComponent(platform)}` : '';
-    const resp = await apiFetch(`/api/session/${encodeURIComponent(sessionId)}/queue${query}`);
-    await raiseForUnauthorized(resp);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    return resp.json() as Promise<QueuedMessage[]>;
-  },
-  deleteQueuedMessage: async (sessionId: string, queuedId: string, platform?: string) => {
-    const query = platform ? `?platform=${encodeURIComponent(platform)}` : '';
-    const resp = await apiFetch(
-      `/api/session/${encodeURIComponent(sessionId)}/queue/${encodeURIComponent(queuedId)}${query}`,
-      { method: 'DELETE' },
-    );
-    await raiseForUnauthorized(resp);
-    if (!resp.ok && resp.status !== 404) throw new Error(`HTTP ${resp.status}`);
-  },
-  moveQueuedMessage: async (
-    sessionId: string,
-    queuedId: string,
-    direction: -1 | 1,
-    platform?: string,
-  ) => {
-    const query = platform ? `?platform=${encodeURIComponent(platform)}` : '';
-    const resp = await apiFetch(
-      `/api/session/${encodeURIComponent(sessionId)}/queue/${encodeURIComponent(queuedId)}/move${query}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ direction }),
-      },
-    );
-    await raiseForUnauthorized(resp);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-  },
-  uploadComposerAttachment: async (sessionId: string, file: File, platform?: string) => {
-    const form = new FormData();
-    form.append('file', file);
-    const resp = await apiFetch(`/api/session/${encodeURIComponent(sessionId)}/attachment${queryString({ platform })}`, {
-      method: 'POST',
-      body: form,
-    });
-    if (!resp.ok) {
-      await raiseForUnauthorized(resp);
-      const body = (await resp.text()).trim();
-      throw new Error(body || `HTTP ${resp.status}`);
-    }
-    return resp.json() as Promise<{ path: string; name: string; mime: string; size: number }>;
-  },
-  listPermissions: (sessionId: string) =>
-    fetchJSON<unknown[]>(`/api/session/${encodeURIComponent(sessionId)}/permissions`),
-  /**
-   * Authoritative list from the owner's live instance; absence means
-   * resolved. `platform` pins the owner, since a session id alone can
-   * resolve to another machine.
-   */
-  refreshPermissions: (sessionId: string, platform: string) =>
-    fetchJSON<unknown[]>(`/api/session/${encodeURIComponent(sessionId)}/permissions${queryString({ refresh: 1, platform })}`),
-  respondPermission: (
-    sessionId: string,
-    permissionId: string,
-    reply: 'once' | 'always' | 'reject',
-    platform?: string,
-  ) =>
-    postJSON<void>(
-      `/api/session/${encodeURIComponent(sessionId)}/permissions/${encodeURIComponent(permissionId)}${queryString({ platform })}`,
-      { reply },
-      { parseJSON: false },
-    ),
-  getPermissionRules: (sessionId: string) =>
-    fetchJSON<{ rules: PermissionRule[] }>(
-      `/api/session/${encodeURIComponent(sessionId)}/permission-rules`,
-    ),
-  setPermissionRules: (sessionId: string, rules: PermissionRule[]) =>
-    postJSON<void>(
-      `/api/session/${encodeURIComponent(sessionId)}/permission-rules`,
-      { rules },
-      { method: 'PUT', parseJSON: false },
-    ),
-  listQuestions: (sessionId: string) =>
-    fetchJSON<unknown[]>(`/api/session/${encodeURIComponent(sessionId)}/questions`),
-  respondQuestion: (
-    sessionId: string,
-    requestId: string,
-    answers: string[][],
-  ) =>
-    postJSON<void>(
-      `/api/session/${encodeURIComponent(sessionId)}/questions/${encodeURIComponent(requestId)}`,
-      { answers },
-      { parseJSON: false },
-    ),
-  rejectQuestion: (sessionId: string, requestId: string) =>
-    postJSON<void>(
-      `/api/session/${encodeURIComponent(sessionId)}/questions/${encodeURIComponent(requestId)}/reject`,
-      undefined,
-      { parseJSON: false },
-    ),
-  abortSession: (sessionId: string) =>
-    postJSON<void>(
-      `/api/session/${encodeURIComponent(sessionId)}/abort`,
-      undefined,
-      { parseJSON: false },
-    ),
-  revertSession: (sessionId: string, messageID: string) =>
-    postJSON<void>(
-      `/api/session/${encodeURIComponent(sessionId)}/revert`,
-      { messageID },
-      { parseJSON: false },
-    ),
-  unrevertSession: (sessionId: string) =>
-    postJSON<void>(
-      `/api/session/${encodeURIComponent(sessionId)}/unrevert`,
-      undefined,
-      { parseJSON: false },
-    ),
-  tmuxClients: (signal?: AbortSignal) => fetchJSON<{ available: boolean; clients: TmuxClient[] }>('/api/tmux/clients', signal),
-  tmuxSessions: (signal?: AbortSignal) => fetchJSON<{ available: boolean; sessions: TmuxSession[] }>('/api/tmux/sessions', signal),
-  tmuxSwitch: (session: string, client?: string) => {
-    const body: Record<string, string> = { session };
-    if (client) body.client = client;
-    return postJSON<void>('/api/tmux/switch', body, { parseJSON: false });
-  },
-  tmuxLaunchOpencode: (directory: string, remoteId?: string): Promise<{ session: string }> =>
-    postJSON<{ session: string }>('/api/tmux/launch-opencode', { directory, ...(remoteId ? { remoteId } : {}) }),
-  /**
-   * In-app terminal windows. Each entry is a dedicated tmux window
-   * (`ocman-term-<slug>-<n>`) backing a terminal tab in the UI.
-   */
-  term: {
-    listWindows: (dir: string, remoteId?: string, signal?: AbortSignal) => {
-      const params = new URLSearchParams({ dir });
-      if (remoteId && remoteId !== 'local') params.set('remoteId', remoteId);
-      return fetchJSON<{ windows: TermWindow[] }>(
-        `/api/term/windows?${params.toString()}`,
-        signal,
-      );
-    },
-    createWindow: async (dir: string, remoteId?: string): Promise<{ window: string }> => {
-      const resp = await apiFetch('/api/term/windows', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dir, ...(remoteId && remoteId !== 'local' ? { remoteId } : {}) }),
-      });
-      await raiseForUnauthorized(resp);
-      if (!resp.ok) throw new Error(await resp.text());
-      return resp.json();
-    },
-    killWindow: async (dir: string, window: string, remoteId?: string): Promise<void> => {
-      const resp = await apiFetch('/api/term/windows', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dir, window, ...(remoteId && remoteId !== 'local' ? { remoteId } : {}) }),
-      });
-      await raiseForUnauthorized(resp);
-      if (!resp.ok) throw new Error(await resp.text());
-    },
-  },
-  /**
-   * Worktree-sessions endpoints (the /wt flow). See
-   * spec/worktree-sessions/architecture.md for the design.
-   */
-  worktree: {
-    // remoteId names the owning machine; the backend fails closed (503)
-    // when it is not connected. Omit only when the owner is unknown.
-    list: (dir: string, remoteId?: string, signal?: AbortSignal) =>
-      fetchJSON<{ worktrees: WorktreeEntry[] }>(
-        `/api/worktree/list?dir=${encodeURIComponent(dir)}${ownerParam(remoteId)}`,
-        signal,
-      ),
-    defaultBaseRef: (dir: string, remoteId?: string, signal?: AbortSignal) =>
-      fetchJSON<{ baseRef: string }>(
-        `/api/worktree/default-base-ref?dir=${encodeURIComponent(dir)}${ownerParam(remoteId)}`,
-        signal,
-      ),
-    createAndLaunch: (req: WorktreeCreateRequest): Promise<WorktreeCreateResponse> =>
-      postJSON<WorktreeCreateResponse>('/api/worktree/create-and-launch', req),
-    remove: (req: WorktreeRemoveRequest): Promise<{ removed: boolean }> =>
-      postJSON<{ removed: boolean }>('/api/worktree/remove', req),
-  },
   routines: {
-		list: (signal?: AbortSignal) => fetchJSON<Routine[]>('/api/routines', signal),
-		create: (input: RoutineInput) => postJSON<Routine, RoutineInput>('/api/routines', input),
-		update: (id: string, input: RoutineInput) => postJSON<Routine, RoutineInput>(`/api/routines/${encodeURIComponent(id)}`, input, { method: 'PUT' }),
-		remove: (id: string) => postJSON<void, undefined>(`/api/routines/${encodeURIComponent(id)}`, undefined, { method: 'DELETE', parseJSON: false }),
-		run: (id: string) => postJSON<RoutineRun, undefined>(`/api/routines/${encodeURIComponent(id)}/run`, undefined),
-    /** One bounded page, newest first; pass the oldest shown run as `before` for older runs. */
+    list: (signal?: AbortSignal) => fetchJSON<Routine[]>('/api/routines', signal),
+    create: (input: RoutineInput) => postJSON<Routine, RoutineInput>('/api/routines', input),
+    update: (id: string, input: RoutineInput) => postJSON<Routine, RoutineInput>(`/api/routines/${encodeURIComponent(id)}`, input, { method: 'PUT' }),
+    remove: (id: string) => postJSON<void, undefined>(`/api/routines/${encodeURIComponent(id)}`, undefined, { method: 'DELETE', parseJSON: false }),
+    run: (id: string) => postJSON<RoutineRun, undefined>(`/api/routines/${encodeURIComponent(id)}/run`, undefined),
     history: (id: string, page: { limit: number; before?: Pick<RoutineRun, 'createdAt' | 'id'> }, signal?: AbortSignal) => {
       const query = new URLSearchParams({ limit: String(page.limit) });
       if (page.before) { query.set('beforeCreatedAt', String(page.before.createdAt)); query.set('beforeId', page.before.id); }
       return fetchJSON<RoutineRun[]>(`/api/routines/${encodeURIComponent(id)}/history?${query}`, signal);
     },
-	},
-  compactSession: (sessionId: string, providerID: string, modelID: string) =>
-    postJSON<void>(
-      `/api/session/${encodeURIComponent(sessionId)}/compact`,
-      { providerID, modelID },
-      { parseJSON: false },
-    ),
-  // Fork a session into a new child session, optionally from a specific
-  // message. Returns the new session's ID.
-  forkSession: (sessionId: string, messageID?: string) =>
-    postJSON<{ id: string }>(
-      `/api/session/${encodeURIComponent(sessionId)}/fork`,
-      { messageID: messageID ?? '' },
-    ),
-  // Move a session to another project directory on the same host.
-  moveSession: (sessionId: string, directory: string) =>
-    postJSON<void>(
-      `/api/session/${encodeURIComponent(sessionId)}/move`,
-      { directory },
-      { parseJSON: false },
-    ),
-  commands: (sessionId: string, signal?: AbortSignal) =>
-    fetchJSON<SlashCommand[]>(`/api/session/${encodeURIComponent(sessionId)}/commands`, signal),
-  agents: (sessionId: string, signal?: AbortSignal, platform?: string) =>
-    fetchJSON<AgentInfo[]>(`/api/session/${encodeURIComponent(sessionId)}/agents${queryString({ platform })}`, signal),
-  executeCommand: (
-    sessionId: string,
-    command: string,
-    args: string,
-    model?: string,
-    agent?: string,
-  ) =>
-    postJSON<void>(
-      `/api/session/${encodeURIComponent(sessionId)}/command`,
-      { command, arguments: args, model, agent },
-      { parseJSON: false },
-    ),
-  restartOpencode: (
-    sessionId: string,
-    options: { all?: boolean; force?: boolean; confirmed?: boolean } = {},
-  ): Promise<{ restarted?: number; confirmationRequired?: boolean; busySessions?: string[] }> => {
-    const query = new URLSearchParams();
-    if (options.all) query.set('all', 'true');
-    if (options.force) query.set('force', 'true');
-    if (options.confirmed) query.set('confirmed', 'true');
-    const suffix = query.size ? `?${query}` : '';
-    return postJSON(`/api/session/${encodeURIComponent(sessionId)}/restart-opencode${suffix}`, undefined);
   },
-  /**
-   * Run a raw shell command in the session's working directory,
-   * bypassing the LLM. Backed by the platform's shell-tool primitive
-   * (OpenCode: POST /session/{id}/shell). Used by the composer to
-   * route `!`-prefixed input on platforms that report
-   * caps.shellExec. The backend defaults `agent` to "build" when
-   * blank.
-   */
-  runShell: (sessionId: string, command: string, agent?: string) =>
-    postJSON<void>(
-      `/api/session/${encodeURIComponent(sessionId)}/shell`,
-      { command, agent },
-      { parseJSON: false },
-    ),
-  renameSession: (sessionId: string, title: string) =>
-    postJSON<void>(
-      `/api/session/${encodeURIComponent(sessionId)}`,
-      { title },
-      { method: 'PATCH', parseJSON: false },
-    ),
-  // Best-effort remote log. Used by remoteLog.* to ship debug output to the
-  // backend when browser devtools aren't reachable (e.g. on iPad). Errors
-  // are swallowed so a failing log call never breaks the caller.
+  // Best-effort logging must never interrupt the caller.
   debugLog: async (level: 'debug' | 'info' | 'warn' | 'error', message: string, data?: unknown): Promise<void> => {
     try {
-      await fetch('/api/debug/log', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ level, message, data }),
-        // `keepalive` lets the request survive page unload — handy when the
-        // log call sits right before a navigation or a crash.
-        keepalive: true,
-      });
-    } catch {
-      // Deliberately ignored.
-    }
+      await fetch('/api/debug/log', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ level, message, data }), keepalive: true });
+    } catch { /* Deliberately ignored. */ }
   },
-  whisperStatus: (signal?: AbortSignal) => fetchJSON<{ available: boolean }>('/api/whisper/status', signal),
-  transcribe: async (audio: Blob): Promise<string> => {
-    // Pick a filename extension the backend can use to identify the format
-    const extMap: Record<string, string> = {
-      'audio/webm': '.webm',
-      'audio/webm;codecs=opus': '.webm',
-      'audio/ogg': '.ogg',
-      'audio/ogg;codecs=opus': '.ogg',
-      'audio/mp4': '.m4a',
-      'audio/wav': '.wav',
-      'audio/x-wav': '.wav',
-    };
-    const ext = extMap[audio.type] || '.webm';
-    const form = new FormData();
-    form.append('audio', audio, `recording${ext}`);
-    const resp = await apiFetch('/api/transcribe', { method: 'POST', body: form });
-    await raiseForUnauthorized(resp);
-    if (!resp.ok) throw new Error(await resp.text());
-    const data = await resp.json() as { text: string };
-    return data.text;
-  },
-
-  async systemStats(signal?: AbortSignal): Promise<SystemStats> {
-    return fetchJSON<SystemStats>('/api/system/stats', signal);
-  },
-
-  /**
-   * Auth endpoints — see internal/server/auth.go.
-   *
-   * `authMe` reports the global auth state; the frontend calls it
-   * once at boot to decide whether to render the lockscreen.
-   * `authLogin` posts a password and sets the cookie on success;
-   * `authLogout` clears it. Neither endpoint itself returns 401 on
-   * anonymous access (that's the whole point of /me), so they
-   * intentionally don't participate in the AuthError fan-out.
-   */
+  async systemStats(signal?: AbortSignal): Promise<SystemStats> { return fetchJSON<SystemStats>('/api/system/stats', signal); },
   authMe: () => fetchJSON<AuthMe>('/api/auth/me'),
-  authLogin: (password: string) =>
-    postJSON<{ ok: boolean }, { password: string }>('/api/auth/login', { password }),
+  authLogin: (password: string) => postJSON<{ ok: boolean }, { password: string }>('/api/auth/login', { password }),
   authLogout: () => postJSON<void, Record<string, never>>('/api/auth/logout', {}, { parseJSON: false }),
-
-  approvedPermissions: (sessionId: string) =>
-    fetchJSON<Array<{
-      permissionId: string;
-      permission: string;
-      patterns: string[];
-      reasoning: string;
-      approvedAt: number;
-    }>>(`/api/session/${encodeURIComponent(sessionId)}/approved-permissions`),
-
-  getAutoApprove: (sessionId: string) =>
-    fetchJSON<{ enabled: boolean; overridden: boolean }>(
-      `/api/session/${encodeURIComponent(sessionId)}/auto-approve`,
-    ),
-
-  setAutoApprove: (sessionId: string, enabled: boolean): Promise<void> =>
-    postJSON<void>(
-      `/api/session/${encodeURIComponent(sessionId)}/auto-approve`,
-      { enabled },
-      { parseJSON: false },
-    ),
-
-  getPromptSections: () =>
-    fetchJSON<Array<{ title: string; content: string; enabled?: boolean }>>(
-      '/api/settings/prompt-sections',
-    ),
-
-  setPromptSections: (
-    sections: Array<{ title: string; content: string; enabled?: boolean }>,
-  ): Promise<void> =>
-    postJSON<void>('/api/settings/prompt-sections', sections, { parseJSON: false }),
-
-  getJudgeDelay: () =>
-    fetchJSON<{ delayMs: number }>('/api/settings/judge-delay').then((r) => r.delayMs),
-
-  setJudgeDelay: (delayMs: number): Promise<void> =>
-    postJSON<void>('/api/settings/judge-delay', { delayMs }, { parseJSON: false }),
-
-  getJudgeModel: () =>
-    fetchJSON<{ model: string }>('/api/settings/judge-model').then((r) => r.model),
-
-  setJudgeModel: (model: string): Promise<void> =>
-    postJSON<void>('/api/settings/judge-model', { model }, { parseJSON: false }),
-
-  getJudgeModelOptions: (signal?: AbortSignal) =>
-    fetchJSON<{ models: string[]; default: string }>('/api/settings/judge-model/options', signal),
+  getPromptSections: () => fetchJSON<Array<{ title: string; content: string; enabled?: boolean }>>('/api/settings/prompt-sections'),
+  setPromptSections: (sections: Array<{ title: string; content: string; enabled?: boolean }>): Promise<void> => postJSON<void>('/api/settings/prompt-sections', sections, { parseJSON: false }),
+  getJudgeDelay: () => fetchJSON<{ delayMs: number }>('/api/settings/judge-delay').then((r) => r.delayMs),
+  setJudgeDelay: (delayMs: number): Promise<void> => postJSON<void>('/api/settings/judge-delay', { delayMs }, { parseJSON: false }),
+  getJudgeModel: () => fetchJSON<{ model: string }>('/api/settings/judge-model').then((r) => r.model),
+  setJudgeModel: (model: string): Promise<void> => postJSON<void>('/api/settings/judge-model', { model }, { parseJSON: false }),
+  getJudgeModelOptions: (signal?: AbortSignal) => fetchJSON<{ models: string[]; default: string }>('/api/settings/judge-model/options', signal),
 };

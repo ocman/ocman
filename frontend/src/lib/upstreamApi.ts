@@ -2,6 +2,7 @@
 // Backend contract: see spec/pr-issue-sidebar/architecture.md (API design).
 
 import { fetchJSON, postJSON, raiseAuthError } from './api';
+import { apiFetch, readJSON } from './api.requests';
 
 export type RemoteType = 'github' | 'forgejo';
 
@@ -138,14 +139,14 @@ export interface PromptTemplates {
 // upstream — the caller hides the pane in that case.
 export async function fetchUpstreams(dir: string, remoteId: string, signal?: AbortSignal): Promise<Upstream[]> {
   const url = `/api/project/upstreams?dir=${encodeURIComponent(dir)}&remoteId=${encodeURIComponent(remoteId)}`;
-  const resp = await fetch(url, { signal });
+  const resp = await apiFetch(url, { signal });
   if (!resp.ok) {
     // 404 = not a git repo; treat as "no upstreams" rather than an error.
     if (resp.status === 404) return [];
     if (resp.status === 401) throw raiseAuthError();
     throw new Error(`upstreams: ${resp.status}`);
   }
-  const json = (await resp.json()) as { upstreams: Upstream[] };
+  const json = await readJSON<{ upstreams: Upstream[] }>(resp);
   return json.upstreams ?? [];
 }
 
@@ -166,13 +167,13 @@ export async function fetchPRs(opts: {
     page: String(opts.page),
   });
   if (opts.mine) q.set('mine', opts.mine);
-  const resp = await fetch(`/api/project/prs?${q.toString()}`, { signal: opts.signal });
+  const resp = await apiFetch(`/api/project/prs?${q.toString()}`, { signal: opts.signal });
   if (!resp.ok) {
     const env = await safeError(resp);
     if (sessionExpired(resp, env)) throw raiseAuthError();
     throw new UpstreamApiError(env, resp.status);
   }
-  return (await resp.json()) as ListPRsResponse;
+  return readJSON<ListPRsResponse>(resp);
 }
 
 export async function fetchIssues(opts: {
@@ -192,13 +193,13 @@ export async function fetchIssues(opts: {
     page: String(opts.page),
   });
   if (opts.mine) q.set('mine', opts.mine);
-  const resp = await fetch(`/api/project/issues?${q.toString()}`, { signal: opts.signal });
+  const resp = await apiFetch(`/api/project/issues?${q.toString()}`, { signal: opts.signal });
   if (!resp.ok) {
     const env = await safeError(resp);
     if (sessionExpired(resp, env)) throw raiseAuthError();
     throw new UpstreamApiError(env, resp.status);
   }
-  return (await resp.json()) as ListIssuesResponse;
+  return readJSON<ListIssuesResponse>(resp);
 }
 
 // fetchPRChecks returns the combined CI/build status for a PR's head
@@ -216,13 +217,13 @@ export async function fetchPRChecks(opts: {
     remote: opts.remote,
     sha: opts.sha,
   });
-  const resp = await fetch(`/api/project/pr-checks?${q.toString()}`, { signal: opts.signal });
+  const resp = await apiFetch(`/api/project/pr-checks?${q.toString()}`, { signal: opts.signal });
   if (!resp.ok) {
     const env = await safeError(resp);
     if (sessionExpired(resp, env)) throw raiseAuthError();
     throw new UpstreamApiError(env, resp.status);
   }
-  return (await resp.json()) as PRChecks;
+  return readJSON<PRChecks>(resp);
 }
 
 export async function fetchForgeUser(opts: {
@@ -232,7 +233,7 @@ export async function fetchForgeUser(opts: {
   signal?: AbortSignal;
 }): Promise<{ login: string; host: string } | null> {
   const q = new URLSearchParams({ dir: opts.dir, remoteId: opts.remoteId, remote: opts.remote });
-  const resp = await fetch(`/api/project/forge-user?${q.toString()}`, { signal: opts.signal });
+  const resp = await apiFetch(`/api/project/forge-user?${q.toString()}`, { signal: opts.signal });
   if (resp.status === 401) {
     // A forge-level 401 always carries an error envelope; a bare 401 is
     // ocman's own auth middleware telling us the cookie expired.
@@ -240,11 +241,11 @@ export async function fetchForgeUser(opts: {
     return null; // unauthenticated — disable "mine" for this remote
   }
   if (!resp.ok) throw new Error(`forge-user: ${resp.status}`);
-  return (await resp.json()) as { login: string; host: string };
+  return readJSON<{ login: string; host: string }>(resp);
 }
 
 export async function postHandle(req: HandleRequest): Promise<HandleResponse> {
-  const resp = await fetch('/api/project/handle', {
+  const resp = await apiFetch('/api/project/handle', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
@@ -254,7 +255,7 @@ export async function postHandle(req: HandleRequest): Promise<HandleResponse> {
     if (sessionExpired(resp, env)) throw raiseAuthError();
     throw new UpstreamApiError(env, resp.status);
   }
-  return (await resp.json()) as HandleResponse;
+  return readJSON<HandleResponse>(resp);
 }
 
 export async function fetchPromptTemplates(): Promise<PromptTemplates> {

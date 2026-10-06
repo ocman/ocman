@@ -21,6 +21,31 @@ describe('upstreamApi', () => {
     vi.restoreAllMocks();
   });
 
+  const requests: Array<[string, () => Promise<unknown>]> = [
+    ['upstreams', () => fetchUpstreams('/x', 'local')],
+    ['PRs', () => fetchPRs({ dir: '/x', remoteId: 'local', remote: 'origin', state: 'open', mine: undefined, page: 1 })],
+    ['issues', () => fetchIssues({ dir: '/x', remoteId: 'local', remote: 'origin', state: 'open', mine: undefined, page: 1 })],
+    ['checks', () => fetchPRChecks({ dir: '/x', remoteId: 'local', remote: 'origin', sha: 'abc' })],
+    ['forge user', () => fetchForgeUser({ dir: '/x', remoteId: 'local', remote: 'origin' })],
+    ['handle PR', () => postHandle({ dir: '/x', remoteId: 'local', remote: 'origin', type: 'pr', number: 1, mode: 'session' })],
+  ];
+
+  it.each(requests)('explains browser connection failures for %s', async (_name, call) => {
+    fetchSpy.mockRejectedValue(new DOMException('The string did not match the expected pattern.', 'SyntaxError'));
+    await expect(call()).rejects.toThrow(/could not connect to ocman/i);
+  });
+
+  it.each(requests)('explains invalid success responses for %s', async (_name, call) => {
+    fetchSpy.mockResolvedValue(new Response('<html>Proxy page</html>', { status: 200 }));
+    await expect(call()).rejects.toThrow(/invalid response from ocman/i);
+  });
+
+  it('preserves cancellation in the PR pane', async () => {
+    const error = new DOMException('Cancelled', 'AbortError');
+    fetchSpy.mockRejectedValue(error);
+    await expect(fetchUpstreams('/x', 'local')).rejects.toBe(error);
+  });
+
   describe('fetchUpstreams', () => {
     it('includes explicit project ownership', async () => {
       fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ upstreams: [] }), { status: 200 }));
