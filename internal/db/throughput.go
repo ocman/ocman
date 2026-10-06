@@ -94,7 +94,7 @@ func (d *DB) applyThroughput(ctx context.Context, source *sql.DB, requests []req
 // Reconcile timings in the message-copy window, independently of message data:
 // a tool may finish without its message changing. Null timings stay unknown.
 func (d *DB) copyToolTimings(ctx context.Context, tx *sql.Tx, since int64) error {
-	query := `SELECT p.message_id, json_extract(p.data, '$.state.time')
+	query := `SELECT p.message_id, CAST(json_extract(p.data, '$.state.time') AS TEXT)
 		FROM ` + messagesFrom(since, false) + ` JOIN part p ON p.message_id = m.id
 		WHERE json_extract(m.data, '$.role') = 'assistant' AND json_extract(p.data, '$.type') = 'tool'`
 	var args []any

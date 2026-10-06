@@ -27,7 +27,11 @@ func TestAnalyticsMirrorUnchangedSyncDoesNotRewriteRows(t *testing.T) {
 	insertMessage(t, d, "running", "s2", now-2*time.Hour.Milliseconds(), map[string]any{"role": "assistant"})
 	insertMessage(t, d, "recent", "s2", now, map[string]any{"role": "assistant", "finish": "stop"})
 	if _, err := d.db.Exec(`INSERT INTO part (id, message_id, session_id, data)
-		VALUES ('tool', 'recent', 's2', '{"type":"tool","state":{"time":{"start":1,"end":2}}}')`); err != nil {
+		VALUES ('tool', 'recent', 's2', '{"type":"tool","state":{"time":{"start":1,"end":2}}}'),
+		('numeric', 'recent', 's2', '{"type":"tool","state":{"time":2}}'),
+		('boolean', 'recent', 's2', '{"type":"tool","state":{"time":true}}'),
+		('string', 'recent', 's2', '{"type":"tool","state":{"time":"10"}}'),
+		('null', 'recent', 's2', '{"type":"tool","state":{"time":null}}')`); err != nil {
 		t.Fatal(err)
 	}
 	if err := d.SyncAnalyticsMirror(t.Context()); err != nil {
