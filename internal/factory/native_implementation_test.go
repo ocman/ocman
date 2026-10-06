@@ -1016,10 +1016,18 @@ func TestNativeImplementationLaunchFailureLeavesTerminalAttempt(t *testing.T) {
 	if err := svc.Dispatch(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	attempts, err = db.ListFactoryAttempts(context.Background(), epic.ID)
-	if err != nil || len(attempts) != 2 || attempts[1].Phase != model.FactoryAttemptActive {
-		t.Fatalf("recovered attempts = %#v, %v", attempts, err)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		attempts, err = db.ListFactoryAttempts(context.Background(), epic.ID)
+		if err == nil && len(attempts) == 2 && attempts[1].Phase == model.FactoryAttemptActive {
+			break
+		}
+		if err != nil || time.Now().After(deadline) {
+			t.Fatalf("recovered attempts = %#v, %v", attempts, err)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
+	svc.Close() // Join startup dispatch before reading the launcher's writes.
 	if len(launcher.calls) != 2 || launcher.calls[0].Repository != "/other" || launcher.calls[1].Repository != "/other" || !reflect.DeepEqual(launcher.prepared, []string{"/other:", "/other:"}) {
 		t.Fatalf("recovered workspaces = %#v, prepared = %#v", launcher.calls, launcher.prepared)
 	}
