@@ -59,12 +59,16 @@ func TestFetchSessionFromOpenCodeCtxPreservesCompletedTurn(t *testing.T) {
 	// A failed live fetch takes the DB fallback, whose detail must carry
 	// the same timestamp without broadening metadata-only lookups.
 	fake.SetSession(sid, nil)
+	sessionCache.invalidate(fake.Port(), "/session/"+sid)
 	fallback, err := New(database, nil).Session(t.Context(), sid, 1, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if fallback.Session.LastTurnCompletedAt != 2000 {
 		t.Fatalf("fallback completion = %d, want 2000", fallback.Session.LastTurnCompletedAt)
+	}
+	if len(fallback.Messages) != 1 || fallback.Messages[0].ID != "msg-completion-1" {
+		t.Fatalf("expected the DB fallback message, got %+v", fallback.Messages)
 	}
 }
 
