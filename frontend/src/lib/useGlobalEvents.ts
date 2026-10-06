@@ -106,6 +106,30 @@ const sessionChangedListeners = new Set<(
 ) => void>();
 
 const projectsChangedListeners = new Set<() => void>();
+export type GitCommandHint = {
+  sessionID: string;
+  action: 'push' | 'commit';
+  remoteId: string;
+  projectId: string;
+  directory: string;
+};
+const gitCommandListeners = new Set<(hint: GitCommandHint) => void>();
+
+export function onGitCommand(cb: (hint: GitCommandHint) => void): () => void {
+  gitCommandListeners.add(cb);
+  return () => gitCommandListeners.delete(cb);
+}
+
+function handleGitCommand(raw: string): void {
+  try {
+    const hint = JSON.parse(raw);
+    if (!hint || typeof hint.sessionID !== 'string' || !hint.sessionID ||
+        (hint.action !== 'push' && hint.action !== 'commit') ||
+        typeof hint.remoteId !== 'string' || !hint.remoteId ||
+        typeof hint.projectId !== 'string' || typeof hint.directory !== 'string') return;
+    for (const cb of gitCommandListeners) cb(hint);
+  } catch { /* Ignore malformed SSE payloads. */ }
+}
 const sessionActivityListeners = new Set<(sessionId: string, timeUpdated: number) => void>();
 
 export function onSessionActivity(cb: (sessionId: string, timeUpdated: number) => void): () => void {
@@ -251,6 +275,9 @@ function open(): void {
     handleSessionActivity((e as MessageEvent).data);
   });
   next.addEventListener('ocman.projects.changed', handleProjectsChanged);
+  next.addEventListener('ocman.git.command', (e) => {
+    handleGitCommand((e as MessageEvent).data);
+  });
   next.addEventListener('ocman.artifact.created', () => {
     for (const cb of artifactCreatedListeners) cb();
   });

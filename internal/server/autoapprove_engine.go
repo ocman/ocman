@@ -68,7 +68,10 @@ func (s *Server) aaSvc() *autoapprove.Service {
 			BroadcastSessionStatus:  s.onLocalSessionStatus,
 			BroadcastSessionTitle:   s.broadcastSessionTitle,
 			BroadcastGlobalEvent:    s.broadcastGlobalEvent,
-			DefaultEnabled:          s.autoApproveDefault,
+			BroadcastGitCommand: func(sessionID, action string) {
+				s.broadcastGitCommand(context.Background(), string(opencode.PlatformID), sessionID, action)
+			},
+			DefaultEnabled: s.autoApproveDefault,
 		}
 		if s.db != nil {
 			deps.RefreshSession = func(ctx context.Context, sessionID string) error {

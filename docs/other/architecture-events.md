@@ -27,6 +27,9 @@ sequenceDiagram
     D-->>E: watcher observes message/part mutation
     E-->>B: /api/events: ocman.session.activity (id, timestamp)
     B->>B: patch activity; stable minute-bucket sort; animate moved rows
+    D-->>S: settled bash part containing git commit/push
+    S->>E: ocman.git.command (session, owner, project, action)
+    E-->>B: debounce matching PR/Issue refresh
     B->>S: GET /api/projects
     I-->>S: cached local projects snapshot
     S-->>B: cached projects JSON
@@ -68,6 +71,16 @@ sequenceDiagram
   fetching a single session only when it is missing. This avoids list refetches
   on each token. The broadcast hub keeps the latest activity per session when
   a subscriber falls behind.
+- Settled bash tools containing `git commit` or `git push` emit best-effort
+  `ocman.git.command` hints on `/api/events`, including failed commands and
+  commands without output. The payload carries `sessionID`, `remoteId`,
+  `projectId`, `directory`, and `action`, never command arguments or output.
+  The local headless watcher observes these without a browser or enabled
+  permission judge. Remote hints are observed by the hub while proxying a
+  remote session stream. The visible PR/Issue tab refreshes its lists and CI
+  checks after a 750 ms debounce, scoped by owner and project, including sibling
+  worktrees. This is a command-string heuristic, not proof that git succeeded;
+  commands run outside agent bash tools are not observed.
 - Activity timestamps stay exact, but sorting uses one-minute buckets with
   stable ties. Concurrent streams in the same minute do not continually swap
   places. Stale list responses cannot roll activity timestamps backwards.

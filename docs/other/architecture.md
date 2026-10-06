@@ -453,6 +453,8 @@ See [Session and event data flow](../architecture-events/) for the sequence
 diagram covering session reads, SSE activity updates, remote streams, and
 routine dispatch. Sidebar activity updates arrive over global SSE and sort
 within stable one-minute buckets, with reduced-motion-aware reorder animation.
+Settled agent bash commands also produce `ocman.git.command` refresh hints for
+the owning project's PR/Issue pane.
 
 ## 4. Frontend composition
 

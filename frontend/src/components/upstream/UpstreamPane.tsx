@@ -8,10 +8,12 @@ import { UpstreamRemoteGroup } from './UpstreamRemoteGroup';
 import { clearPRChecksCache } from '../../lib/prChecksCache';
 import { useUpstreamPreferences } from '../../lib/upstreamPreferences';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../Tabs';
+import { onGitCommand } from '../../lib/useGlobalEvents';
 
 interface UpstreamPaneProps {
   /** Project directory the upstreams were detected for; keys the lists. */
   directory: string | undefined;
+  projectId?: string;
   /**
    * The session's own checkout (e.g. a sibling worktree). Drives the
    * current-branch highlight and where row actions launch. Defaults to
@@ -57,6 +59,7 @@ type Tab = 'prs' | 'issues';
  */
 export function UpstreamPane({
   directory,
+  projectId,
   currentDirectory = directory,
   actionsEnabled = true,
   remoteId,
@@ -102,6 +105,7 @@ export function UpstreamPane({
           key="prs"
           kind="prs"
           directory={directory}
+          projectId={projectId}
           launchDirectory={launchDirectory}
           remoteId={remoteId}
           upstreams={upstreams}
@@ -119,6 +123,7 @@ export function UpstreamPane({
           key="issues"
           kind="issues"
           directory={directory}
+          projectId={projectId}
           launchDirectory={launchDirectory}
           remoteId={remoteId}
           upstreams={upstreams}
@@ -138,6 +143,7 @@ export function UpstreamPane({
 interface UpstreamTabContentProps {
   kind: Tab;
   directory: string | undefined;
+  projectId?: string;
   launchDirectory: string | undefined;
   remoteId: string;
   upstreams: Upstream[];
@@ -153,6 +159,7 @@ interface UpstreamTabContentProps {
 function UpstreamTabContent({
   kind,
   directory,
+  projectId,
   launchDirectory,
   remoteId,
   upstreams,
@@ -175,6 +182,18 @@ function UpstreamTabContent({
     clearPRChecksCache();
     for (const r of groupRefreshers) r();
   }, [groupRefreshers]);
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = onGitCommand((hint) => {
+      if (hint.remoteId !== remoteId) return;
+      const sameProject = projectId && projectId !== 'global' && hint.projectId === projectId;
+      if (!sameProject && hint.directory !== directory && hint.directory !== launchDirectory) return;
+      clearTimeout(timer);
+      timer = setTimeout(refreshAll, 750);
+    });
+    return () => { unsubscribe(); clearTimeout(timer); };
+  }, [directory, launchDirectory, projectId, remoteId, refreshAll]);
 
   useEffect(() => {
     onRefresh?.(refreshAll);

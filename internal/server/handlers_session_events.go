@@ -76,11 +76,14 @@ func (s *Server) serveSessionEvents(w http.ResponseWriter, r *http.Request, sess
 	// For remote sessions, auto-approve is the owner's responsibility
 	// (AD-14): the remote runs the judge with its own settings and emits
 	// ocman.permission.* events into the stream, which the gRPC tunnel
-	// forwards verbatim. The hub must NOT tee a remote stream into its
-	// own judge, so we write events straight through.
+	// forwards verbatim. The hub observes git refresh hints without invoking
+	// its own judge.
 	var err error
 	if isRemotePlatformID(string(adapter.ID())) {
-		err = adapter.ProxyEvents(ctx, sessionID, lw, flush)
+		tee := &autoapprove.Tee{W: lw, Flush: flush, OnGitCommand: func(id, action string) {
+			s.broadcastGitCommand(ctx, string(adapter.ID()), id, action)
+		}}
+		err = adapter.ProxyEvents(ctx, sessionID, tee, flush)
 	} else {
 		err = s.proxyOwnerSessionEvents(ctx, sessionID, adapter, lw, lw, flush)
 	}

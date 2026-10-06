@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { UpstreamPane } from './UpstreamPane';
@@ -8,8 +8,16 @@ import { useGitInfo } from '../../lib/useGitInfo';
 import { _resetForgeUserCacheForTests } from '../../lib/useForgeUser';
 import { cachePRChecks, getCachedPRChecks } from '../../lib/prChecksCache';
 import { useUpstreamPreferences } from '../../lib/upstreamPreferences';
+import type { GitCommandHint } from '../../lib/useGlobalEvents';
 
-const upstreamListMock = vi.hoisted(() => ({ items: [] as unknown[], page: 1, hasMore: false, setPage: vi.fn() }));
+const upstreamListMock = vi.hoisted(() => ({ items: [] as unknown[], page: 1, hasMore: false, setPage: vi.fn(), refresh: vi.fn() }));
+const gitHints = vi.hoisted(() => new Set<(hint: GitCommandHint) => void>());
+vi.mock('../../lib/useGlobalEvents', () => ({
+  onGitCommand: (cb: (hint: GitCommandHint) => void) => {
+    gitHints.add(cb);
+    return () => gitHints.delete(cb);
+  },
+}));
 
 vi.mock('../../lib/useGitInfo', () => ({
   useGitInfo: vi.fn(() => ({ infos: {}, loading: false, error: null })),
@@ -18,7 +26,7 @@ vi.mock('../../lib/useUpstreamList', () => ({
   useUpstreamList: () => ({
     items: upstreamListMock.items, loading: false, error: null, page: upstreamListMock.page,
     pagination: { page: upstreamListMock.page, hasMore: upstreamListMock.hasMore }, rateLimit: { limited: false },
-    refresh: vi.fn(), setPage: upstreamListMock.setPage,
+    refresh: upstreamListMock.refresh, setPage: upstreamListMock.setPage,
   }),
 }));
 
@@ -39,6 +47,30 @@ beforeEach(() => {
 });
 
 describe('UpstreamPane owner-scoped resources', () => {
+  it('debounces same-project git hints including sibling worktrees, and cancels on unmount', async () => {
+    const { unmount } = render(<UpstreamPane directory="/repo" projectId="p" remoteId="box" upstreams={[upstreams[0]]} />);
+    await act(async () => {});
+    vi.useFakeTimers();
+    try {
+      const emit = (patch: Partial<GitCommandHint> = {}) => {
+        const hint: GitCommandHint = { sessionID: 's', action: 'push', remoteId: 'box', projectId: 'p', directory: '/sibling', ...patch };
+        act(() => { for (const cb of gitHints) cb(hint); });
+      };
+      emit({ remoteId: 'other' });
+      emit({ projectId: 'other' });
+      act(() => vi.advanceTimersByTime(1000));
+      expect(upstreamListMock.refresh).not.toHaveBeenCalled();
+      emit();
+      emit({ action: 'commit' });
+      act(() => vi.advanceTimersByTime(750));
+      expect(upstreamListMock.refresh).toHaveBeenCalledOnce();
+      emit();
+      unmount();
+      act(() => vi.advanceTimersByTime(1000));
+      expect(upstreamListMock.refresh).toHaveBeenCalledOnce();
+      expect(gitHints.size).toBe(0);
+    } finally { vi.useRealTimers(); }
+  });
   it('keeps the selected tab and independent filters across projects and pane reopening', async () => {
     const user = userEvent.setup();
     const { unmount } = render(<UpstreamPane directory="/repo" remoteId="box" upstreams={upstreams} />);

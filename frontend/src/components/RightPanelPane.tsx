@@ -201,6 +201,7 @@ export function Pane({
           {tab === 'upstream' && (
             <UpstreamPane
               directory={upstreamTarget.directory}
+              projectId={session?.projectId}
               currentDirectory={directory}
               actionsEnabled={session?.id === sessionId && !!directory}
               remoteId={upstreamTarget.remoteId}

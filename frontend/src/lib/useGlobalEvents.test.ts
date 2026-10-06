@@ -25,6 +25,7 @@ import {
   __handleProjectsChangedForTests,
   __resetForTests,
   onSessionChanged,
+  onGitCommand,
   onSessionActivity,
   onSessionStartProgress,
   onQueueUpdated,
@@ -76,6 +77,21 @@ describe('useGlobalEvents connection', () => {
     expect(clearSettingsCache).toHaveBeenCalledTimes(1);
     act(() => source.open());
     expect(clearSettingsCache).toHaveBeenCalledTimes(2);
+    unmount();
+  });
+  it('delivers git hints, rejects malformed payloads, and unsubscribes', () => {
+    const changed = vi.fn();
+    const unsubscribe = onGitCommand(changed);
+    const { unmount } = renderHook(() => useGlobalEvents());
+    const emit = FakeEventSource.instances.at(-1)!.listeners.get('ocman.git.command')!;
+    const hint = { sessionID: 's', action: 'push', remoteId: 'box', projectId: 'p', directory: '/repo' };
+    for (const value of ['{', 'null', '{}', JSON.stringify({ ...hint, action: 'status' }), JSON.stringify(hint)]) {
+      emit({ data: value });
+    }
+    expect(changed).toHaveBeenCalledExactlyOnceWith(hint);
+    unsubscribe();
+    emit({ data: JSON.stringify(hint) });
+    expect(changed).toHaveBeenCalledOnce();
     unmount();
   });
   it('delivers session start progress and ignores malformed payloads', () => {

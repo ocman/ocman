@@ -116,6 +116,9 @@ type Tee struct {
 	// OnTerminalPart receives completed or errored bash parts only when their
 	// captured output is available. It is fed solely from live SSE events.
 	OnTerminalPart func(part terminalPart)
+	// OnGitCommand reports best-effort commit/push hints after a bash tool settles.
+	OnGitCommand    func(sessionID, action string)
+	gitCommandHints map[string]bool
 }
 
 type terminalPart struct {
@@ -306,69 +309,6 @@ func (t *Tee) dispatchEventInDirectory(eventType, dataJSON, directory string) {
 			}
 		}
 	}
-}
-
-func (t *Tee) dispatchTerminalPart(dataJSON string) {
-	if t.OnTerminalPart == nil {
-		return
-	}
-	type toolState struct {
-		Status   string `json:"status"`
-		Output   string `json:"output"`
-		Metadata struct {
-			Output string `json:"output"`
-		} `json:"metadata"`
-		Input struct {
-			Command string `json:"command"`
-		} `json:"input"`
-	}
-	type part struct {
-		ID        string    `json:"id"`
-		MessageID string    `json:"messageID"`
-		SessionID string    `json:"sessionID"`
-		CallID    string    `json:"callID"`
-		Type      string    `json:"type"`
-		Tool      string    `json:"tool"`
-		State     toolState `json:"state"`
-	}
-	type holder struct {
-		Part *part `json:"part"`
-	}
-	var envelope struct {
-		Properties *holder `json:"properties"`
-		Data       *holder `json:"data"`
-		Part       *part   `json:"part"`
-	}
-	if err := json.Unmarshal([]byte(dataJSON), &envelope); err != nil {
-		return
-	}
-	var value *part
-	switch {
-	case envelope.Properties != nil:
-		value = envelope.Properties.Part
-	case envelope.Data != nil:
-		value = envelope.Data.Part
-	default:
-		value = envelope.Part
-	}
-	if value == nil {
-		var raw part
-		if err := json.Unmarshal([]byte(dataJSON), &raw); err == nil {
-			value = &raw
-		}
-	}
-	if value == nil || value.Type != "tool" || value.Tool != "bash" ||
-		(value.State.Status != "completed" && value.State.Status != "error") {
-		return
-	}
-	output := value.State.Output
-	if output == "" {
-		output = value.State.Metadata.Output
-	}
-	if output == "" || value.SessionID == "" || value.MessageID == "" || value.ID == "" {
-		return
-	}
-	t.OnTerminalPart(terminalPart{value.SessionID, value.MessageID, value.ID, value.CallID, value.State.Input.Command, output})
 }
 
 // dispatchPermissionAsked parses a permission.asked payload and fires
