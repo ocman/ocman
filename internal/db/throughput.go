@@ -104,7 +104,8 @@ func (d *DB) copyToolTimings(ctx context.Context, tx *sql.Tx, since int64) error
 		_, err := reconcileMirrorRows(ctx, d.db, tx, query+` ORDER BY p.message_id, 2`, args,
 			`SELECT t.message_id, t.time FROM tool_timing t JOIN message m ON m.id = t.message_id
 			WHERE m.time_created >= ? ORDER BY t.message_id, t.time`,
-			`INSERT INTO tool_timing (message_id, time) VALUES (?, ?)`,
+			`INSERT INTO tool_timing (message_id, time)
+			SELECT ?1, ?2 WHERE EXISTS (SELECT 1 FROM message WHERE id = ?1)`,
 			`DELETE FROM tool_timing WHERE message_id = ?`, 2)
 		return err
 	}

@@ -210,3 +210,49 @@ func TestAnalyticsMirrorDeltaRollsBack(t *testing.T) {
 		t.Fatalf("failed sync changed session: %q", title)
 	}
 }
+
+func TestAnalyticsMirrorTimingsIgnoreInterScanMessage(t *testing.T) {
+	d, _ := openMirrored(t)
+	now := time.Now().UnixMilli()
+	insertSession(t, d, "s", "test", "/p", now, now)
+	insertMessage(t, d, "existing", "s", now, map[string]any{"role": "user"})
+	if err := d.SyncAnalyticsMirror(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := d.mirror.db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	// The message phase has already copied its source snapshot. OpenCode creates
+	// a message and tool before the timing phase reads its separate snapshot.
+	insertMessage(t, d, "between", "s", now+1, map[string]any{"role": "assistant"})
+	insertPart(t, d, "tool", "between", "s", now, map[string]any{"type": "tool"})
+	if err := d.copyToolTimings(t.Context(), tx, now-1); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := tx.QueryRow(`SELECT count(*) FROM tool_timing`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("inter-scan message left %d orphan timings", count)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	// A revert before the next message scan must not strand those timings.
+	if _, err := d.db.Exec(`DELETE FROM message WHERE id = 'between'; DELETE FROM part WHERE id = 'tool'`); err != nil {
+		t.Fatal(err)
+	}
+	forceStale(d)
+	if err := d.SyncAnalyticsMirror(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.mirror.db.QueryRow(`SELECT count(*) FROM tool_timing`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("reverted inter-scan message left %d orphan timings", count)
+	}
+}
