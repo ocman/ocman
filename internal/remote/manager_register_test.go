@@ -13,6 +13,70 @@ import (
 	"github.com/NoUseFreak/ocman/internal/state"
 )
 
+func TestManager_DisablePreservesConfigAndRemovesAvailability(t *testing.T) {
+	raw, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { raw.Close() })
+	store, err := state.OpenFromSQL(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	id, err := store.AddRemote(ctx, "grpc://127.0.0.1:59999", "saved-token", "Box")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg := platforms.NewRegistry()
+	router := hostsvc.NewRouter(localStubHost{})
+	mgr := NewManager(reg, router, store, "opencode")
+	t.Cleanup(mgr.Stop)
+	mr := &managedRemote{localID: id, conn: connectedConn("remote-1", "host-1"), name: "Box"}
+	mgr.remotes[id] = mr
+	platform := newRemotePlatform(mr.conn, mgr.base, func() string { return "Box" })
+	if !mgr.publishAdapters(id, mr, platform, newRemoteHost(mr.conn)) {
+		t.Fatal("publish failed")
+	}
+	mgr.inventory["remote-1"] = []ProjectIdentity{{Dir: "/remote/project"}}
+
+	if err := mgr.Update(ctx, id, "Box", "grpc://127.0.0.1:59999", false, nil); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := store.GetRemote(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Enabled || saved.Address != "grpc://127.0.0.1:59999" || saved.DisplayName != "Box" {
+		t.Fatalf("config changed: %+v", saved)
+	}
+	if token, err := store.RemoteToken(ctx, id); err != nil || token != "saved-token" {
+		t.Fatalf("token = %q, error = %v", token, err)
+	}
+	if _, ok := mgr.Conn(id); ok {
+		t.Fatal("disabled remote still managed")
+	}
+	if _, ok := reg.Get(platform.ID()); ok {
+		t.Fatal("disabled platform still registered")
+	}
+	if len(router.Remotes()) != 0 || len(mgr.EnabledRemotes()) != 0 || len(mgr.RemoteProjects()) != 0 {
+		t.Fatal("disabled remote still available")
+	}
+	if err := mgr.Reconnect(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	mgr.Start(ctx)
+	if _, ok := mgr.Conn(id); ok {
+		t.Fatal("reconnect or startup dialed disabled remote")
+	}
+	if err := mgr.Update(ctx, id, saved.DisplayName, saved.Address, true, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := mgr.Conn(id); !ok {
+		t.Fatal("enabled remote was not dialed")
+	}
+}
+
 // TestManager_DoesNotRegisterAdaptersForAnUnmanagedRemote reproduces the
 // stale-adapter leak: the supervisor published and registered a connected
 // remote's adapters without rechecking ownership, so a disconnect landing

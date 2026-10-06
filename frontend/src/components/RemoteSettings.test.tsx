@@ -30,6 +30,53 @@ function seed(remotes: unknown[] = []) {
 }
 
 describe('RemoteSettings', () => {
+  it.each([true, false])('toggles an enabled=%s remote without replacing its connection settings', async (enabled) => {
+    const remote = {
+      localId: 1, remoteId: 'abc', displayName: 'Box', address: 'grpc://ws:8230',
+      enabled, health: 'connected', hostname: 'ws.host', protocolVersion: 1,
+      lastSeen: 0, sessionCount: 2,
+    };
+    seed([remote]);
+    m.updateRemote.mockImplementation(async () => {
+      m.listRemotes.mockResolvedValue([{ ...remote, enabled: !enabled }]);
+      return { ok: true };
+    });
+    render(<RemoteSettings />);
+    const toggle = await screen.findByRole('button', { name: enabled ? 'Disable' : 'Enable' });
+    fireEvent.click(toggle);
+    await waitFor(() => expect(m.updateRemote).toHaveBeenCalledWith(1, {
+      address: remote.address, displayName: remote.displayName, enabled: !enabled,
+    }));
+    await screen.findByRole('button', { name: enabled ? 'Enable' : 'Disable' });
+    expect(screen.getByText('Box')).toBeInTheDocument();
+    expect(m.removeRemote).not.toHaveBeenCalled();
+    if (enabled) {
+      expect(screen.getByText('disabled')).toBeInTheDocument();
+      expect(screen.queryByText('connected')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Reconnect' })).toBeDisabled();
+    }
+  });
+
+  it.each([
+    [new Error('Remote update failed'), 'Remote update failed'],
+    ['failure', 'Failed to update remote.'],
+  ])('keeps the toggle busy during a failed update and shows %s', async (failure, message) => {
+    seed([{
+      localId: 1, displayName: 'Box', address: 'grpc://ws:8230', enabled: true, health: 'connected',
+    }]);
+    let reject!: (error: unknown) => void;
+    m.updateRemote.mockImplementation(() => new Promise((_, fail) => { reject = fail; }));
+    render(<RemoteSettings />);
+    const toggle = await screen.findByRole('button', { name: 'Disable' });
+    fireEvent.click(toggle);
+    expect(toggle).toBeDisabled();
+    await act(async () => { reject(failure); });
+    expect(screen.getByRole('alert')).toHaveTextContent(message);
+    expect(toggle).toBeEnabled();
+    expect(m.listRemotes).toHaveBeenCalledOnce();
+    expect(screen.getByText('connected')).toBeInTheDocument();
+  });
+
   it('shows the non-removable "This machine" entry with listen status', async () => {
     seed();
     render(<RemoteSettings />);

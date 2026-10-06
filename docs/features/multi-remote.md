@@ -138,6 +138,11 @@ The hub's **Settings → Remotes** page lists each attached remote with
 its health, hostname, reported instance ID, session count, and last-seen
 time. Per-remote actions:
 
+- **Disable / Enable.** Disconnect the remote without deleting its address,
+  token, or display name. While disabled it is unavailable for sessions and
+  host actions, and the hub stops reconnecting to it, including after a restart.
+  Click **Enable** to connect again with the saved settings. Disabling the
+  connection does not stop agents running on the remote machine.
 - **Reconnect.** Force a fresh dial. This also happens automatically with
   backoff after a transient drop.
 - **Edit.** Change the display name or address, replace the token, or

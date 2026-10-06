@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import './RemoteSettings.css';
 import { api } from '../lib/api';
 import type { RemoteStatus, RemoteAccessStatus } from '../lib/api.types';
+import { Button } from './Control';
 
 /**
  * RemoteSettings is the hub-side remote-management UI (multi-remote
@@ -84,12 +85,16 @@ export function RemoteSettings() {
 function RemoteRow({ remote, onChanged }: { remote: RemoteStatus; onChanged: () => void }) {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function act(fn: () => Promise<unknown>) {
     setBusy(true);
+    setError(null);
     try {
       await fn();
       onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to update remote.');
     } finally {
       setBusy(false);
     }
@@ -110,10 +115,9 @@ function RemoteRow({ remote, onChanged }: { remote: RemoteStatus; onChanged: () 
       <div className="remote-row-main">
         <div className="remote-row-name">
           {remote.displayName || remote.hostname || remote.address}
-          <span className={`remote-health remote-health-${remote.health || 'unknown'}`}>
-            {remote.health || 'unknown'}
+          <span className={`remote-health remote-health-${remote.enabled ? remote.health || 'unknown' : 'disabled'}`}>
+            {remote.enabled ? remote.health || 'unknown' : 'disabled'}
           </span>
-          {!remote.enabled && <span className="remote-health remote-health-disabled">disabled</span>}
         </div>
         <div className="remote-row-meta mono">
           {remote.address}
@@ -121,9 +125,18 @@ function RemoteRow({ remote, onChanged }: { remote: RemoteStatus; onChanged: () 
           {remote.sessionCount ? ` · ${remote.sessionCount} sessions` : ''}
           {remote.lastSeen ? ` · seen ${new Date(remote.lastSeen).toLocaleString()}` : ''}
         </div>
+        {error && <div className="remote-settings-error" role="alert">{error}</div>}
       </div>
       <div className="remote-row-actions">
-        <button type="button" className="remote-btn" disabled={busy}
+        <Button type="button" size="small" disabled={busy}
+          onClick={() => { void act(() => api.updateRemote(remote.localId, {
+            address: remote.address,
+            displayName: remote.displayName,
+            enabled: !remote.enabled,
+          })); }}>
+          {remote.enabled ? 'Disable' : 'Enable'}
+        </Button>
+        <button type="button" className="remote-btn" disabled={busy || !remote.enabled}
           onClick={() => { void act(() => api.reconnectRemote(remote.localId)); }}>
           Reconnect
         </button>
