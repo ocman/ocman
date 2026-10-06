@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -15,24 +14,42 @@ func TestKnownAgentOptions(t *testing.T) {
 	ports, catalog := defaultAgentPorts, defaultAgentCatalog
 	t.Cleanup(func() { defaultAgentPorts, defaultAgentCatalog = ports, catalog })
 	defaultAgentPorts = func() map[string]string { return map[string]string{"/a": "1001", "/b": "1002", "/c": "1003"} }
-	defaultAgentCatalog = func(_ context.Context, endpoint, directory string) ([]string, []string, error) {
-		if directory != "" {
-			t.Fatal(directory)
-		}
-		switch endpoint {
-		case "http://127.0.0.1:1001":
-			return []string{"build", "review"}, nil, nil
-		case "http://127.0.0.1:1002":
-			return []string{"review", "custom"}, nil, nil
+	defaultAgentCatalog = func(_ context.Context, port, _ string) []string {
+		switch port {
+		case "1001":
+			return []string{"build", "review"}
+		case "1002":
+			return []string{"review", "custom"}
 		default:
-			return nil, nil, errors.New("offline")
+			return nil
 		}
 	}
-	if got := knownAgentOptions(context.Background()); !reflect.DeepEqual(got, []string{"build", "custom", "plan", "review"}) {
+	if got := knownAgentOptions(context.Background(), nil); !reflect.DeepEqual(got, []string{"build", "custom", "plan", "review"}) {
 		t.Fatal(got)
 	}
 	defaultAgentPorts = func() map[string]string { return nil }
-	if got := knownAgentOptions(context.Background()); !reflect.DeepEqual(got, []string{"build", "plan"}) {
+	if got := knownAgentOptions(context.Background(), nil); !reflect.DeepEqual(got, []string{"build", "plan"}) {
+		t.Fatal(got)
+	}
+}
+
+func TestKnownAgentOptionsScopesDirectoriesSharingPort(t *testing.T) {
+	ports, catalog, port := defaultAgentPorts, defaultAgentCatalog, defaultAgentPort
+	t.Cleanup(func() { defaultAgentPorts, defaultAgentCatalog, defaultAgentPort = ports, catalog, port })
+	defaultAgentPorts = func() map[string]string { return map[string]string{"/alpha": "1001"} }
+	defaultAgentPort = func(directory string) string {
+		if directory == "/offline" {
+			return ""
+		}
+		return "1001"
+	}
+	defaultAgentCatalog = func(_ context.Context, port, directory string) []string {
+		if port != "1001" || (directory != "/alpha" && directory != "/beta") {
+			t.Fatalf("unexpected catalog target %s %s", port, directory)
+		}
+		return []string{strings.TrimPrefix(directory, "/") + "-agent"}
+	}
+	if got := knownAgentOptions(context.Background(), []string{"/alpha", "/beta", "/offline"}); !reflect.DeepEqual(got, []string{"alpha-agent", "beta-agent", "build", "plan"}) {
 		t.Fatal(got)
 	}
 }
@@ -46,10 +63,43 @@ func TestProjectSettingsDefaultAgent(t *testing.T) {
 	}
 }
 
+func TestDefaultAgentOptionsIncludeLocalDatabaseDirectories(t *testing.T) {
+	srv, raw := testServerWithRawDB(t)
+	defer raw.Close()
+	if _, err := raw.Exec(`INSERT INTO session (id, directory, time_updated) VALUES ('a', '/alpha', 1), ('b', '/beta', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	previous := defaultAgentOptions
+	t.Cleanup(func() { defaultAgentOptions = previous })
+	defaultAgentOptions = func(_ context.Context, directories []string) []string {
+		if len(directories) != 2 || !strings.Contains(strings.Join(directories, ","), "/alpha") || !strings.Contains(strings.Join(directories, ","), "/beta") {
+			t.Fatal(directories)
+		}
+		return []string{"custom"}
+	}
+	rec := httptest.NewRecorder()
+	srv.handleDefaultAgent(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"agents":["custom"]`) {
+		t.Fatal(rec.Body)
+	}
+	srv.db.Close()
+	defaultAgentOptions = func(_ context.Context, directories []string) []string {
+		if len(directories) != 0 {
+			t.Fatal(directories)
+		}
+		return []string{"build", "plan"}
+	}
+	rec = httptest.NewRecorder()
+	srv.handleDefaultAgent(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"agents":["build","plan"]`) {
+		t.Fatal(rec.Body)
+	}
+}
+
 func TestDefaultAgentSetting(t *testing.T) {
 	previous := defaultAgentOptions
 	t.Cleanup(func() { defaultAgentOptions = previous })
-	defaultAgentOptions = func(context.Context) []string { return []string{"build", "plan", "custom-agent"} }
+	defaultAgentOptions = func(context.Context, []string) []string { return []string{"build", "plan", "custom-agent"} }
 	srv := &Server{stateDB: openTestStateDB(t)}
 	for _, tc := range []struct {
 		method, body, want string

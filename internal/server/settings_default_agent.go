@@ -8,22 +8,30 @@ import (
 	"unicode"
 
 	"github.com/NoUseFreak/ocman/internal/platforms/opencode"
+	log "github.com/sirupsen/logrus"
 )
 
 const defaultAgentKey = "session.default_agent"
 
 var defaultAgentOptions = knownAgentOptions
 var defaultAgentPorts = opencode.DiscoverOpenCodePorts
-var defaultAgentCatalog = opencode.ProjectCatalog
+var defaultAgentCatalog = opencode.AgentNames
+var defaultAgentPort = opencode.DiscoverOpenCodePort
 
-func knownAgentOptions(ctx context.Context) []string {
+func knownAgentOptions(ctx context.Context, directories []string) []string {
 	known := map[string]bool{"build": true, "plan": true}
-	for _, port := range defaultAgentPorts() {
-		agents, _, err := defaultAgentCatalog(ctx, "http://127.0.0.1:"+port, "")
-		if err == nil {
-			for _, agent := range agents {
-				known[agent] = true
-			}
+	targets := defaultAgentPorts()
+	if targets == nil {
+		targets = make(map[string]string)
+	}
+	for _, directory := range directories {
+		if port := defaultAgentPort(directory); port != "" {
+			targets[directory] = port
+		}
+	}
+	for directory, port := range targets {
+		for _, agent := range defaultAgentCatalog(ctx, port, directory) {
+			known[agent] = true
 		}
 	}
 	agents := make([]string, 0, len(known))
@@ -54,7 +62,14 @@ func (s *Server) handleDefaultAgent(w http.ResponseWriter, r *http.Request) {
 			serverError(w, "reading default agent", err)
 			return
 		}
-		writeJSON(w, map[string]any{"defaultAgent": agent, "agents": defaultAgentOptions(r.Context())})
+		var directories []string
+		if s.db != nil {
+			directories, err = s.db.StatusCandidateDirectories(r.Context(), 0)
+			if err != nil {
+				log.WithError(err).Warn("reading local directories for default-agent options")
+			}
+		}
+		writeJSON(w, map[string]any{"defaultAgent": agent, "agents": defaultAgentOptions(r.Context(), directories)})
 	case http.MethodPost:
 		var body struct {
 			DefaultAgent string `json:"defaultAgent"`

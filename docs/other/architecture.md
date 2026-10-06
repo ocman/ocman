@@ -492,7 +492,13 @@ flowchart TD
   `Pagination` shares previous/next controls while callers own indexing, page
   boundaries, totals, and requests.
 - **New-conversation settings.** Settings → Sessions → Default agent starts at
-  `build` and accepts a project agent name. An explicit composer selection wins.
+  `build` and uses the shared searchable agent picker. Options come from agent-only
+  reads of running local instances, scoped to their discovered directories and
+  known local session directories. This includes project-defined agents on v2's
+  single machine server without launching an instance. Hidden helpers and
+  subagent-only agents are excluded. With no reachable instance, `build`, `plan`,
+  and the saved preference remain selectable; remote-only catalogs are not read.
+  An explicit composer selection wins.
   `projectSettingsCache` shares the project settings fetch across conversations
   and sibling worktrees, keyed by owner and project root. Successful global or
   project setting saves broadcast `ocman.settings.changed`, which clears every
