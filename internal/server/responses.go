@@ -7,6 +7,8 @@ import (
 	"net/http"
 
 	log "github.com/sirupsen/logrus"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
@@ -34,11 +36,12 @@ func writeJSONStatus(w http.ResponseWriter, status int, data interface{}) {
 	}
 }
 
-// writeCancellation keeps abandoned requests out of server-error telemetry.
+// writeCancellation keeps abandoned requests out of server-error telemetry,
+// including the gRPC status returned by remote Host and Platform adapters.
 // 499 is the conventional client-closed-request status; deadlines still use
 // each handler's failure path because they indicate work that took too long.
 func writeCancellation(w http.ResponseWriter, msg string, err error) bool {
-	if !errors.Is(err, context.Canceled) {
+	if !errors.Is(err, context.Canceled) && status.Code(err) != codes.Canceled {
 		return false
 	}
 	log.WithError(err).Debug(msg)

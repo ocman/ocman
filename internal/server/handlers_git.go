@@ -198,7 +198,9 @@ func (s *Server) handleGitDiff(w http.ResponseWriter, r *http.Request) {
 
 	d, err := s.router().ForDir(dir).GitDiff(r.Context(), dir, hostsvc.GitDiffOptions{Force: fresh})
 	if err != nil {
-		if writeCancellation(w, "git diff canceled", err) {
+		// Git can replace cancellation with ErrNotRepo or a killed-process
+		// exit error, so check the request before interpreting its result.
+		if writeCancellation(w, "git diff canceled", r.Context().Err()) || writeCancellation(w, "git diff canceled", err) {
 			return
 		}
 		if errors.Is(err, git.ErrNotRepo) {

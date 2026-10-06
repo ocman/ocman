@@ -6,12 +6,18 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/NoUseFreak/ocman/internal/git"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
 	log "github.com/sirupsen/logrus"
 	logtest "github.com/sirupsen/logrus/hooks/test"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestErrorResponsesClassifyCancellation(t *testing.T) {
@@ -31,6 +37,8 @@ func TestErrorResponsesClassifyCancellation(t *testing.T) {
 		}{
 			{"canceled", context.Canceled, 499},
 			{"wrapped cancellation", fmt.Errorf("reading state: %w", context.Canceled), 499},
+			{"RPC cancellation", status.Error(codes.Canceled, "request canceled"), 499},
+			{"RPC deadline", status.Error(codes.DeadlineExceeded, "request timed out"), responder.code},
 			{"deadline", context.DeadlineExceeded, responder.code},
 			{"failure", errors.New("database unavailable"), responder.code},
 		} {
@@ -67,6 +75,69 @@ func TestErrorResponsesClassifyCancellation(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestLocalGitDiffCancellation(t *testing.T) {
+	srv := testServer(t)
+	dir := t.TempDir()
+	gitInitForServerTest(t, dir)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	req := httptest.NewRequest(http.MethodGet, "/api/git/diff?dir="+dir+"&fresh=1", nil).WithContext(ctx)
+	w := httptest.NewRecorder()
+	srv.handleGitDiff(w, req)
+	if w.Code != 499 {
+		t.Fatalf("status = %d, want 499; body=%s", w.Code, w.Body)
+	}
+}
+
+func TestRunningLocalGitDiffCancellation(t *testing.T) {
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range []string{"rev-parse", "diff"} {
+		t.Run(command, func(t *testing.T) {
+			srv := testServer(t)
+			dir := t.TempDir()
+			gitInitForServerTest(t, dir)
+			bin := t.TempDir()
+			started := filepath.Join(bin, "started")
+			// Block inside the subprocess, not a Host stub. Other commands
+			// still use real git so the complete local diff path runs.
+			script := fmt.Sprintf("#!/bin/sh\nif [ \"$3\" = %q ]; then\n  touch %q\n  exec sleep 30\nfi\nexec %q \"$@\"\n", command, started, realGit)
+			if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			req := httptest.NewRequest(http.MethodGet, "/api/git/diff?dir="+dir+"&fresh=1", nil).WithContext(ctx)
+			w := httptest.NewRecorder()
+			done := make(chan struct{})
+			go func() {
+				srv.handleGitDiff(w, req)
+				close(done)
+			}()
+			deadline := time.Now().Add(5 * time.Second)
+			for {
+				if _, err := os.Stat(started); err == nil {
+					break
+				}
+				if time.Now().After(deadline) {
+					cancel()
+					<-done
+					t.Fatal("git subprocess did not reach the blocking command")
+				}
+				time.Sleep(5 * time.Millisecond)
+			}
+			cancel()
+			<-done
+			if w.Code != 499 {
+				t.Fatalf("status = %d, want 499; body=%s", w.Code, w.Body)
+			}
+		})
 	}
 }
 
