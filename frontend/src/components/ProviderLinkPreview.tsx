@@ -18,13 +18,16 @@ const FallbackLink: FC<{ preview: PreviewResult }> = ({ preview }) => preview.ur
 const STATUS_CLASS: Record<string, string> = { Open: 'open', Merged: 'merged', Closed: 'closed' };
 
 const RichCard: FC<{ preview: PreviewResult; refreshChecks?: boolean }> = ({ preview, refreshChecks }) => {
-  const cls = `gh-preview gh-preview--${STATUS_CLASS[preview.status ?? ''] ?? 'commit'}`;
+  const statusClass = STATUS_CLASS[preview.status ?? ''];
+  const cls = `gh-preview gh-preview--${statusClass ?? 'commit'}`;
   const body = <>
     <span className="gh-preview__icon"><i className={`bi ${preview.icon || 'bi-link-45deg'}`} aria-hidden="true" /></span>
     <span className="gh-preview__body">
       <span className="gh-preview__title">{label(preview)}</span>
       <span className="gh-preview__meta">
-        {[preview.status, ...(preview.meta ?? [])].filter(Boolean).join(' · ')}
+        {statusClass ? <span className={`gh-preview__state gh-preview__state--${statusClass}`}>{preview.status}</span> : preview.status}
+        {preview.status && preview.meta?.some(Boolean) && ' · '}
+        {preview.meta?.filter(Boolean).join(' · ')}
         {preview.updatedAt && <> · <RelativeTime iso={preview.updatedAt} /></>}
         {preview.stale && ' · cached'}
       </span>

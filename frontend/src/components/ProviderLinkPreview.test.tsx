@@ -30,6 +30,30 @@ beforeEach(() => {
 
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
+it.each(['Open', 'Merged', 'Closed'])('colors the %s PR status independently of its metadata', async (status) => {
+  const { ProviderPreview } = await import('./ProviderLinkPreview');
+  render(<ProviderPreview providers={[]} preview={{
+    provider: 'github', kind: 'pr', id: 'owner/repo#1',
+    url: 'https://github.com/owner/repo/pull/1', title: 'Fix',
+    state: 'ok', status, meta: ['alice'],
+  }} />);
+  expect(screen.getByText(status)).toHaveClass(`gh-preview__state--${status.toLowerCase()}`);
+  expect(screen.getByTestId('provider-preview-card')).toHaveClass(`gh-preview--${status.toLowerCase()}`);
+  expect(screen.getByText(/alice/)).toBeInTheDocument();
+});
+
+it.each([
+  { status: 'Open', meta: [], text: 'Open' },
+  { status: 'Open', meta: ['', 'alice'], text: 'Open · alice' },
+  { status: 'In progress', meta: ['alice'], text: 'In progress · alice' },
+  { status: undefined, meta: ['alice'], text: 'alice' },
+])('preserves metadata separators for $text', async ({ status, meta, text }) => {
+  const { ProviderPreview } = await import('./ProviderLinkPreview');
+  render(<ProviderPreview providers={[]} preview={{ ...ref, title: 'Fix', state: 'ok', status, meta }} />);
+  expect(screen.getByTestId('provider-preview-card').querySelector('.gh-preview__meta')).toHaveTextContent(text);
+  if (status !== 'Open') expect(screen.queryByText(status ?? 'alice', { selector: '.gh-preview__state' })).toBeNull();
+});
+
 const ref = { provider: 'mock', kind: 'issue', id: 'ABC-1', url: 'https://tracker.example.com/browse/ABC-1' };
 const resolveBodies = () => fetchMock.mock.calls
   .filter(([u]) => String(u).startsWith('/api/previews/resolve'))
