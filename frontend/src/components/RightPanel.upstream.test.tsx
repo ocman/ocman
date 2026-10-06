@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { RightPanel } from './RightPanel';
@@ -92,6 +92,38 @@ it('reloads for a session of a different project', async () => {
 
   await waitFor(() => expect(upstreamApi.fetchUpstreams).toHaveBeenCalledTimes(2));
   expect(vi.mocked(upstreamApi.fetchUpstreams).mock.calls[1][0]).toBe('/other');
+});
+
+it('does not flash upstream detection during a fast project switch', async () => {
+  const { rerender } = render(panel(session('s1', '/wt/repo/a', 'proj')));
+  await screen.findByText('PR 1');
+  let resolve!: (upstreams: upstreamApi.Upstream[]) => void;
+  vi.mocked(upstreamApi.fetchUpstreams).mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+
+  rerender(panel(session('s2', '/other', 'other-proj')));
+  expect(screen.queryByText('Detecting upstreams…')).not.toBeInTheDocument();
+  await act(async () => resolve([{ remote: 'origin', host: 'github.com', type: 'github', repo: 'other/repo' }]));
+  await screen.findByText('PR 1');
+  expect(screen.queryByText('Detecting upstreams…')).not.toBeInTheDocument();
+});
+
+it('shows upstream detection for a slow request and resets it on the next project', async () => {
+  const { rerender } = render(panel(session('s1', '/wt/repo/a', 'proj')));
+  await screen.findByText('PR 1');
+  vi.mocked(upstreamApi.fetchUpstreams).mockReturnValue(new Promise(() => {}));
+  vi.useFakeTimers();
+  try {
+    rerender(panel(session('s2', '/other', 'other-proj')));
+    expect(screen.queryByText('Detecting upstreams…')).not.toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(200));
+    expect(screen.getByText('Detecting upstreams…')).toHaveAttribute('role', 'status');
+    rerender(panel(session('s3', '/third', 'third-proj')));
+    expect(screen.queryByText('Detecting upstreams…')).not.toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(200));
+    expect(screen.getByText('Detecting upstreams…')).toHaveAttribute('role', 'status');
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it('treats unrelated non-git directories as different projects', async () => {

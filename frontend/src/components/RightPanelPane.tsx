@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChangesSidebarTab } from '../lib/uiStore';
 import { SessionChangesSidebar, type PaneSummary } from './SessionChangesSidebar';
 import { WorkingTreeChangesSidebar } from './WorkingTreeChangesSidebar';
@@ -13,6 +13,16 @@ import { ArtifactsPane } from './ArtifactsPane';
 import type { useBeadsStatus } from '../lib/useBeadsStatus';
 import type { ProjectTarget } from '../lib/useProjectTarget';
 import { PaneHeader } from './RightPanelPaneHeader';
+
+function UpstreamDetectionStatus() {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    // ponytail: delay only the status; upstream detection still starts immediately.
+    const timeout = setTimeout(() => setVisible(true), 200);
+    return () => clearTimeout(timeout);
+  }, []);
+  return visible ? <div role="status">Detecting upstreams…</div> : null;
+}
 
 export interface PaneProps {
   tab: ChangesSidebarTab;
@@ -182,7 +192,7 @@ export function Pane({
               onScrollToMessage={onScrollToMessageBookmark}
             />
           )}
-          {tab === 'upstream' && upstreamLoading && <div role="status">Detecting upstreams…</div>}
+          {tab === 'upstream' && upstreamLoading && <UpstreamDetectionStatus key={`${upstreamTarget.remoteId}\0${upstreamTarget.directory}`} />}
           {tab === 'upstream' && upstreamError && (
             <div role="alert">
               {upstreamError} <button type="button" onClick={refreshUpstreams}>Retry</button>
