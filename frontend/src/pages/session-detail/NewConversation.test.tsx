@@ -40,7 +40,7 @@ vi.mock('../../components/assistant/Composer', () => ({
   Composer: (props: ComposerProps) => { composer = props; return <span>{props.target}:{String(props.disabled)}</span>; },
 }));
 import { NewConversation } from './NewConversation';
-import { startHandoffs } from './StartProgress';
+import { startHandoffs } from './startHandoffs';
 
 const navigate = vi.fn();
 const navigateToSession = vi.fn();

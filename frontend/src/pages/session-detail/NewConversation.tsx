@@ -28,7 +28,8 @@ import { InlineAlert } from '../../components/InlineAlert';
 import { useWorktreeEligibility } from './useWorktreeEligibility';
 import { startFirstSubmission } from './firstSubmission';
 import { sendFirstFiles } from './sendFirstFiles';
-import { StartProgress, startHandoffs, type StartSteps } from './StartProgress';
+import { StartProgress, type StartSteps } from './StartProgress';
+import { startHandoffs } from './startHandoffs';
 
 export interface NewConversationProps {
   params: NewSessionParams;
