@@ -28,7 +28,7 @@ export function StartProgress({ prompt, steps }: { prompt: string; steps: StartS
       <div className="oc-msg oc-msg-user" data-testid="pending-prompt">
         <div className="oc-msg-body oc-md">{prompt}</div>
       </div>
-      <ul className="oc-launch-steps" role="status" aria-live="polite" data-testid="start-progress">
+      <ul className="oc-launch-steps oc-start-steps" role="status" aria-live="polite" data-testid="start-progress">
         {shown.length === 0 && (
           // Before the first step arrives (or without the event stream).
           <li className="oc-launch-step"><Icon state="active" /><span>Starting session</span></li>

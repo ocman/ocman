@@ -124,6 +124,28 @@
   }
 }
 
+/* A new conversation's start steps sit in the thread: muted and sized like
+   tool-call headers (.oc-tool-header / .oc-tool-label). */
+.oc-start-steps {
+  gap: 4px;
+  margin: 8px 0;
+  font-family: var(--font-conversation-mono);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.oc-start-steps .oc-launch-step .oc-launch-step-label {
+  color: var(--text-dim);
+}
+
+.oc-start-steps .oc-launch-step.error .oc-launch-step-label {
+  color: var(--danger);
+}
+
+.oc-start-steps .oc-launch-icon {
+  opacity: 0.6;
+}
+
 .oc-launch-error {
   margin-top: 8px;
   color: var(--danger);
