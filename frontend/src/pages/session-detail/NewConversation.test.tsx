@@ -141,7 +141,7 @@ describe('NewConversation', () => {
     expect(composer.target).toBe('worktree');
     expect(composer.worktreesSupported).toBe(true);
     expect(composer.activeAgent).toBe('build');
-    expect(composer.selectedModel).toBe('prov/default');
+    await waitFor(() => expect(composer.selectedModel).toBe('prov/default'));
     expect(composer.models).toEqual(['prov/default', 'prov/big']);
     expect(composer.commands).toEqual([{ name: 'review', description: 'Review', source: 'command' }]);
     expect(composer.sessionId).toBeUndefined();
