@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -17,11 +16,8 @@ import (
 
 	"github.com/NoUseFreak/ocman/internal/db"
 	"github.com/NoUseFreak/ocman/internal/hostsvc"
-	"github.com/NoUseFreak/ocman/internal/ocapi"
 	"github.com/NoUseFreak/ocman/internal/platforms"
-	"github.com/NoUseFreak/ocman/internal/queuesvc"
 	"github.com/NoUseFreak/ocman/internal/remote"
-	"github.com/NoUseFreak/ocman/internal/sessionsvc"
 )
 
 // maxRequestBody is the maximum allowed request body size (1 MB).
@@ -160,61 +156,6 @@ func (s *Server) withSessionPath(w http.ResponseWriter, r *http.Request, fn func
 // (AD-2b: remote sessions are addressed by their compound platform key).
 func platformHint(r *http.Request) string {
 	return strings.TrimSpace(r.URL.Query().Get("platform"))
-}
-
-// writeSessionSvcError maps a sessionsvc error to an HTTP response.
-func writeSessionSvcError(w http.ResponseWriter, msg string, err error) {
-	var ve *sessionsvc.ValidationError
-	if errors.As(err, &ve) {
-		http.Error(w, ve.Error(), http.StatusBadRequest)
-		return
-	}
-	if errors.Is(err, queuesvc.ErrEmptyMessage) {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if errors.Is(err, sessionsvc.ErrNoPlatformAvailable) {
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
-		return
-	}
-	writePlatformError(w, msg, err)
-}
-
-// writePlatformError maps a Platform error to an appropriate HTTP response.
-func writePlatformError(w http.ResponseWriter, msg string, err error) {
-	if errors.Is(err, platforms.ErrUnsupported) {
-		http.Error(w, "operation not supported by this platform", http.StatusNotImplemented)
-		return
-	}
-	if errors.Is(err, platforms.ErrNotFound) {
-		http.Error(w, "session not found", http.StatusNotFound)
-		return
-	}
-	if errors.Is(err, platforms.ErrBusy) {
-		http.Error(w, "session is currently processing a prompt; try again in a moment", http.StatusConflict)
-		return
-	}
-	if errors.Is(err, platforms.ErrPlatformUnreachable) {
-		http.Error(w, "no running platform instance for this location", http.StatusServiceUnavailable)
-		return
-	}
-	if errors.Is(err, ocapi.ErrAuthentication) {
-		log.WithError(err).Error(msg)
-		http.Error(w, "OpenCode authentication failed; check the configured server password", http.StatusBadGateway)
-		return
-	}
-	if errors.Is(err, platforms.ErrUpstreamRejected) {
-		log.WithError(err).Warn(msg)
-		var ue *platforms.UpstreamError
-		body := "the platform rejected the request"
-		if errors.As(err, &ue) && ue.Message != "" {
-			body = ue.Message
-		}
-		http.Error(w, body, http.StatusUnprocessableEntity)
-		return
-	}
-	log.WithError(err).Error(msg)
-	http.Error(w, "failed to reach platform instance", http.StatusBadGateway)
 }
 
 // requireDB returns true if s.db is available, or writes a 501 error

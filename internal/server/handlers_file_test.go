@@ -225,8 +225,8 @@ func TestHandleFileProxyUsesRequestContext(t *testing.T) {
 
 	s.handleFileProxy(rec, req.WithContext(ctx))
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want 500", rec.Code)
+	if rec.Code != 499 {
+		t.Fatalf("status = %d, want 499", rec.Code)
 	}
 }
 

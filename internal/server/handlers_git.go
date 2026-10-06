@@ -198,6 +198,9 @@ func (s *Server) handleGitDiff(w http.ResponseWriter, r *http.Request) {
 
 	d, err := s.router().ForDir(dir).GitDiff(r.Context(), dir, hostsvc.GitDiffOptions{Force: fresh})
 	if err != nil {
+		if writeCancellation(w, "git diff canceled", err) {
+			return
+		}
 		if errors.Is(err, git.ErrNotRepo) {
 			http.Error(w, "directory is not a git worktree", http.StatusNotFound)
 			return
