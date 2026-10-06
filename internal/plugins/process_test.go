@@ -41,6 +41,8 @@ func TestServeHelper(t *testing.T) {
 		e.Hello.Description.Name = "Changed"
 	case "crash":
 		os.Exit(1)
+	case "slow-hello":
+		time.Sleep(4 * time.Second)
 	case "partial":
 		fmt.Print(`{"type":`)
 		time.Sleep(10 * time.Second)
@@ -179,10 +181,18 @@ func processFixture(t *testing.T, mode string) LaunchConfig {
 	return LaunchConfig{Candidate: Discovery{Path: path, Checksum: checksum, Description: *hello(ModeServe).Hello.Description}, DataDir: dir, Supported: []Capability{{Name: "action", Version: Version{1, 0}}}}
 }
 
+// testProcess allows a generous handshake: a loaded CI runner can take more
+// than the production 3s to exec the coverage-instrumented test binary, and a
+// fixture without restarts would then never become ready.
 func testProcess(t *testing.T, mode string, restarts int) (*Process, LaunchConfig) {
 	t.Helper()
+	return testProcessWith(t, mode, processPolicy{15 * time.Second, 500 * time.Millisecond, 20 * time.Millisecond, 40 * time.Millisecond, restarts})
+}
+
+func testProcessWith(t *testing.T, mode string, policy processPolicy) (*Process, LaunchConfig) {
+	t.Helper()
 	config := processFixture(t, mode)
-	p, err := startProcess(context.Background(), config, processPolicy{3 * time.Second, 500 * time.Millisecond, 20 * time.Millisecond, 40 * time.Millisecond, restarts})
+	p, err := startProcess(context.Background(), config, policy)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +202,7 @@ func testProcess(t *testing.T, mode string, restarts int) (*Process, LaunchConfi
 
 func await(t *testing.T, predicate func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for !predicate() {
 		if time.Now().After(deadline) {
 			t.Fatal("condition timed out")
@@ -250,10 +260,18 @@ func TestProcessReadinessAndMultiplexing(t *testing.T) {
 	}
 }
 
+// A loaded runner can start the helper slower than the production 3s window;
+// fixtures without restarts must still become ready (CI flake on #852).
+func TestProcessFixtureToleratesSlowStart(t *testing.T) {
+	p, _ := testProcess(t, "slow-hello", 0)
+	await(t, func() bool { return p.Health().Status == "ready" })
+}
+
 func TestProcessReadinessFailuresAndRestartCutoff(t *testing.T) {
 	for _, mode := range []string{"no-hello", "partial", "bad-token", "changed-offer", "crash"} {
 		t.Run(mode, func(t *testing.T) {
-			p, config := testProcess(t, mode, 1)
+			// The readiness timeout itself is under test here, so keep it short.
+			p, config := testProcessWith(t, mode, processPolicy{3 * time.Second, 500 * time.Millisecond, 20 * time.Millisecond, 40 * time.Millisecond, 1})
 			await(t, func() bool { return p.Health().Status == "unhealthy" })
 			h := p.Health()
 			if h.RestartCount != 1 || h.LastError == "" {
