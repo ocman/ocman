@@ -52,6 +52,20 @@ describe('PermissionPrompt', () => {
     expect(onReply).not.toHaveBeenCalled();
   });
 
+  it('focuses Confirm after the always-allow hotkey and submits with Enter', async () => {
+    const onReply = vi.fn();
+    const user = userEvent.setup();
+    render(<PermissionPrompt permission={permission} onReply={onReply} />);
+    await sleepPastSettle();
+
+    await user.keyboard('{Shift>}a{/Shift}');
+
+    expect(screen.getByRole('button', { name: 'Confirm' })).toHaveFocus();
+    expect(onReply).not.toHaveBeenCalled();
+    await user.keyboard('{Enter}');
+    expect(onReply).toHaveBeenCalledExactlyOnceWith('always');
+  });
+
   describe('mount-time settle window', () => {
     beforeEach(() => { vi.useFakeTimers(); });
     afterEach(() => { vi.useRealTimers(); });

@@ -39,14 +39,12 @@ const CHOICES: { reply: Reply; label: string; hotkey: string }[] = [
   { reply: 'reject', label: 'Reject', hotkey: 'r' },
 ];
 
-// Confirmation step (shown after the user picks "Allow always"). Mirrors
-// OpenCode's TUI: Cancel is focused by default so an accidental Enter
-// doesn't commit a broad allow-rule.
+// Confirmation step shown after the user picks "Allow always".
 const CONFIRM_CHOICES: { action: 'confirm' | 'cancel'; label: string }[] = [
   { action: 'confirm', label: 'Confirm' },
   { action: 'cancel', label: 'Cancel' },
 ];
-const CONFIRM_DEFAULT_IDX = 1; // Cancel
+const CONFIRM_DEFAULT_IDX = 0; // Confirm
 
 // Mount-time "settle" window. For this many milliseconds after the prompt
 // first appears (or a new permission is pushed in), affirmative actions
@@ -194,7 +192,7 @@ export function PermissionPrompt({
   // Auto-focus on mount and when the step changes so keys work without a click.
   useLayoutEffect(() => {
     if (step === 'confirm-always') {
-      cancelButtonRef.current?.focus();
+      confirmButtonRef.current?.focus();
       return;
     }
     wrapRef.current?.focus();
