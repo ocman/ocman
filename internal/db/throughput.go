@@ -91,13 +91,9 @@ func (d *DB) applyThroughput(ctx context.Context, source *sql.DB, requests []req
 	return nil
 }
 
-// Refresh exactly the message-copy window in the same transaction. The mirror
-// stores only the timing JSON, retaining null/invalid values as unknown samples.
+// Reconcile timings in the message-copy window, independently of message data:
+// a tool may finish without its message changing. Null timings stay unknown.
 func (d *DB) copyToolTimings(ctx context.Context, tx *sql.Tx, since int64) error {
-	if _, err := tx.ExecContext(ctx, `DELETE FROM tool_timing WHERE message_id IN
-		(SELECT id FROM message WHERE time_created >= ?)`, since); err != nil {
-		return err
-	}
 	query := `SELECT p.message_id, json_extract(p.data, '$.state.time')
 		FROM ` + messagesFrom(since, false) + ` JOIN part p ON p.message_id = m.id
 		WHERE json_extract(m.data, '$.role') = 'assistant' AND json_extract(p.data, '$.type') = 'tool'`
@@ -105,6 +101,12 @@ func (d *DB) copyToolTimings(ctx context.Context, tx *sql.Tx, since int64) error
 	if since > 0 {
 		query += ` AND m.time_created >= ?`
 		args = append(args, since)
+		_, err := reconcileMirrorRows(ctx, d.db, tx, query+` ORDER BY p.message_id, 2`, args,
+			`SELECT t.message_id, t.time FROM tool_timing t JOIN message m ON m.id = t.message_id
+			WHERE m.time_created >= ? ORDER BY t.message_id, t.time`,
+			`INSERT INTO tool_timing (message_id, time) VALUES (?, ?)`,
+			`DELETE FROM tool_timing WHERE message_id = ?`, 2)
+		return err
 	}
 	return copyRows(ctx, d.db, tx, query, args,
 		`INSERT INTO tool_timing (message_id, time) VALUES (?, ?)`, 2)

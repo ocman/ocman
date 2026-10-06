@@ -259,11 +259,10 @@ func (m *analyticsMirror) windowStart(ctx context.Context) (int64, error) {
 	return since, nil
 }
 
-// copyToMirror replaces the mirror's messages created at or after since
-// (0 = everything, recorded as a full rebuild at start) and all sessions, in one transaction so readers never see
-// a half-applied sync. Rows stream from OpenCode straight into the
-// transaction, so a full rebuild never holds the copy in memory. Messages go
-// before sessions: a session created in between is still copied, and one
+// copyToMirror reconciles messages created at or after since and all sessions
+// in one transaction, writing only changed rows on incremental syncs.
+// Zero since rebuilds everything using a streaming copy, recorded at start.
+// Messages go before sessions: a session created in between is still copied, and one
 // deleted in between takes its messages with it via the orphan cleanup.
 func (d *DB) copyToMirror(ctx context.Context, since int64, start time.Time) error {
 	tx, err := d.mirror.db.BeginTx(ctx, nil)
@@ -272,10 +271,10 @@ func (d *DB) copyToMirror(ctx context.Context, since int64, start time.Time) err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Re-copying the whole window (not upserting) also drops messages
-	// OpenCode deleted inside it, e.g. on revert.
-	if _, err := tx.ExecContext(ctx, `DELETE FROM message WHERE time_created >= ?`, since); err != nil {
-		return err
+	if since == 0 {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM message; DELETE FROM tool_timing; DELETE FROM session`); err != nil {
+			return err
+		}
 	}
 	q := `SELECT m.id, m.session_id, m.time_created,
 			CASE WHEN json_extract(m.data, '$.role') = 'assistant'
@@ -291,26 +290,49 @@ func (d *DB) copyToMirror(ctx context.Context, since int64, start time.Time) err
 		q += ` WHERE m.time_created >= ?`
 		args = append(args, since)
 	}
-	if err := copyRows(ctx, d.db, tx, q, args,
-		`INSERT OR REPLACE INTO message (id, session_id, time_created, data, settled) VALUES (?, ?, ?, ?, ?)`, 5); err != nil {
+	messageInsert := `INSERT OR REPLACE INTO message (id, session_id, time_created, data, settled) VALUES (?, ?, ?, ?, ?)`
+	removed := since == 0
+	if since == 0 {
+		err = copyRows(ctx, d.db, tx, q, args, messageInsert, 5)
+	} else {
+		removed, err = reconcileMirrorRows(ctx, d.db, tx, q, args,
+			`SELECT id, session_id, time_created, data, settled FROM message WHERE time_created >= ?`,
+			messageInsert, `DELETE FROM message WHERE id = ?`, 5)
+	}
+	if err != nil {
 		return fmt.Errorf("copying messages to analytics mirror: %w", err)
 	}
 	if err := d.copyToolTimings(ctx, tx, since); err != nil {
 		return fmt.Errorf("copying tool timings to analytics mirror: %w", err)
 	}
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM session`); err != nil {
-		return err
+	sessionQuery := `SELECT id, parent_id, directory, title, time_created FROM session`
+	sessionInsert := `INSERT INTO session (id, parent_id, directory, title, time_created) VALUES (?, ?, ?, ?, ?)`
+	if since == 0 {
+		err = copyRows(ctx, d.db, tx, sessionQuery, nil, sessionInsert, 5)
+	} else {
+		var sessionsRemoved bool
+		sessionsRemoved, err = reconcileMirrorRows(ctx, d.db, tx, sessionQuery, nil,
+			sessionQuery, sessionInsert, `DELETE FROM session WHERE id = ?`, 5)
+		removed = removed || sessionsRemoved
 	}
-	if err := copyRows(ctx, d.db, tx, `SELECT id, parent_id, directory, title, time_created FROM session`, nil,
-		`INSERT INTO session (id, parent_id, directory, title, time_created) VALUES (?, ?, ?, ?, ?)`, 5); err != nil {
+	if err != nil {
 		return fmt.Errorf("copying sessions to analytics mirror: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM message WHERE session_id NOT IN (SELECT id FROM session)`); err != nil {
+	// Source reads are separate snapshots: a newly copied session can disappear
+	// before the session scan, even when no previously mirrored session was removed.
+	result, err := tx.ExecContext(ctx, `DELETE FROM message WHERE session_id NOT IN (SELECT id FROM session)`)
+	if err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM tool_timing WHERE message_id NOT IN (SELECT id FROM message)`); err != nil {
+	orphans, err := result.RowsAffected()
+	if err != nil {
 		return err
+	}
+	if removed || orphans > 0 {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM tool_timing WHERE message_id NOT IN (SELECT id FROM message)`); err != nil {
+			return err
+		}
 	}
 	if since == 0 {
 		// Committed with the copy itself: full_at never claims a rebuild
