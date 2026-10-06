@@ -85,7 +85,7 @@ import { useMessageQueue } from '../../lib/useMessageQueue';
 import { platformMessageCount, useSession } from './useSession';
 import { usePendingSend } from './usePendingSend';
 import { StartProgress } from './StartProgress';
-import { startHandoffs } from './startHandoffs';
+import { useStartHandoff } from './startHandoffs';
 import { useFailedSendRehydrate } from './useFailedSendRehydrate';
 import { useAutoApprove } from '../../lib/useAutoApprove';
 import { ThreadSkeleton } from '../../components/Skeleton';
@@ -210,7 +210,7 @@ export function SessionDetail({ id }: SessionDetailProps) {
   const pending = usePendingSend(id);
   // A conversation just started here keeps its prompt and steps on screen
   // until the first message lands, instead of flashing an empty thread.
-  const startHandoff = id ? startHandoffs.get(id) : undefined;
+  const startHandoff = useStartHandoff(id, messages.length);
   // Auto-clear pending when SSE delivers the real user message.
   // Runs in an effect (not render) so the pending → null setState
   // is properly batched and React doesn't see a setState during

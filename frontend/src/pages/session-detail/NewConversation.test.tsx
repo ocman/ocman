@@ -187,6 +187,8 @@ describe('NewConversation', () => {
     expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({ worktree: false }));
     expect(listFailedSends('s2')).toEqual([expect.objectContaining({ text: 'Fix login', error: 'boom', reasoning: 'high' })]);
     expect(navigateToSession).toHaveBeenCalledWith('s2');
+    // Failed-send recovery owns the prompt; a handoff would resurrect it on Dismiss.
+    expect(startHandoffs.has('s2')).toBe(false);
   });
 
   it('starts in an existing worktree selected from the owner’s list', async () => {

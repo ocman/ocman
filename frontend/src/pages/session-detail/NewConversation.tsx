@@ -215,7 +215,7 @@ export function NewConversation({ params, whisperAvailable, composerRef, navigat
       if (execute) {
         startFirstSubmission(res.sessionId, text, () => execute(res.sessionId, res.platform));
       }
-      startHandoffs.set(res.sessionId, { prompt: text, steps });
+      if (send && res.firstMessageSent) startHandoffs.set(res.sessionId, { prompt: text, steps });
       if (stillCurrent()) {
         navigateToSession(res.sessionId);
         // Only the initiating draft may be cleared, never a newer route's draft.
