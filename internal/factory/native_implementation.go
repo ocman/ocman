@@ -32,7 +32,11 @@ func (s *NativeService) EscalatePermission(ctx context.Context, session, request
 	if session == "" || requestID == "" || permission == "" {
 		return AuthorityEscalationGate{}, false, errors.New("session, request, and permission are required")
 	}
-	return store.CreateFactoryAuthorityEscalationGate(ctx, session, requestID, permission, target, time.Now())
+	gate, handled, err := store.CreateFactoryAuthorityEscalationGate(ctx, session, requestID, permission, target, time.Now())
+	if err == nil && handled {
+		s.wakeDispatch()
+	}
+	return gate, handled, err
 }
 
 func (s *NativeService) CompleteAttempt(ctx context.Context, attemptID, agentToken, summary, prURL string) error {

@@ -69,7 +69,11 @@ func (s *NativeService) CreateRecoveryGate(ctx context.Context, attemptID, agent
 	if !valid {
 		return RecoveryGate{}, fmt.Errorf("%w: factory implementation attempt token is invalid", ErrInvalidRequest)
 	}
-	return store.CreateFactoryRecoveryGate(ctx, attemptID, strings.TrimSpace(question), strings.TrimSpace(reason), choices, time.Now())
+	gate, err := store.CreateFactoryRecoveryGate(ctx, attemptID, strings.TrimSpace(question), strings.TrimSpace(reason), choices, time.Now())
+	if err == nil {
+		s.wakeDispatch()
+	}
+	return gate, err
 }
 
 func (s *NativeService) RequestProject(ctx context.Context, attemptID, agentToken, project, reason string) (ProjectRequestGate, error) {
@@ -92,7 +96,11 @@ func (s *NativeService) RequestProject(ctx context.Context, attemptID, agentToke
 	if !valid {
 		return ProjectRequestGate{}, ErrActionNotPermitted
 	}
-	return store.CreateFactoryProjectRequestGate(ctx, attemptID, project, reason, time.Now())
+	gate, err := store.CreateFactoryProjectRequestGate(ctx, attemptID, project, reason, time.Now())
+	if err == nil {
+		s.wakeDispatch()
+	}
+	return gate, err
 }
 
 func (s *NativeService) ResolveProjectRequest(ctx context.Context, gateID, action, response string, acknowledge bool) (ProjectRequestGate, error) {
