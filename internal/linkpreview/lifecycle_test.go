@@ -269,7 +269,7 @@ func TestProviderLifecycle(t *testing.T) {
 				}
 				u, _ := url.Parse(authURL)
 				q := u.Query()
-				if q.Get("redirect_uri") != lifecycleCallback || q.Get("client_id") != "cid" || strings.Contains(authURL, "sec") ||
+				if q.Get("redirect_uri") != lifecycleCallback || q.Get("client_id") != "cid" || q.Has("client_secret") ||
 					p.PKCE != (q.Get("code_challenge_method") == "S256") {
 					t.Fatalf("authorize URL = %s", authURL)
 				}
