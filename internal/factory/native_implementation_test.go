@@ -1157,7 +1157,9 @@ func TestNativeRecoveryGateReleasesCapacityAndSurvivesRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	launcher := &fakeImplementationLauncher{}
-	svc := NewNativeWithExecution(db, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
+	store := &recoveryWakeStore{DB: db, settled: make(chan struct{}, 1)}
+	svc := NewNativeWithExecution(store, testProjectResolver{root: "/repo"}, &fakePlanningLauncher{}, launcher)
+	t.Cleanup(svc.Close)
 	first := createPouredWorkEpic(t, svc, "First")
 	second := createPouredWorkEpic(t, svc, "Second")
 	for _, epic := range []WorkEpic{first, second} {
@@ -1196,15 +1198,23 @@ func TestNativeRecoveryGateReleasesCapacityAndSurvivesRestart(t *testing.T) {
 		}
 	}
 	launcher.dead = true
+	// Startup dispatch owns admission after restart. Drain setup wakes so it
+	// settles once, rather than racing another dispatch against the dead fake.
+	for len(svc.dispatchWake) > 0 {
+		<-svc.dispatchWake
+	}
 	if err := svc.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	select {
+	case <-store.settled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("startup dispatch did not settle")
+	}
+	svc.Close() // Join the dispatcher before inspecting its unsynchronized fake.
 	attempts, err = db.ListFactoryAttempts(context.Background(), first.ID)
 	if err != nil || attempts[0].Phase != model.FactoryAttemptActive {
 		t.Fatalf("paused attempt after restart = %#v, %v", attempts, err)
-	}
-	if err := svc.Dispatch(context.Background()); err != nil {
-		t.Fatal(err)
 	}
 	if len(launcher.calls) != 2 {
 		t.Fatalf("launches after recovery = %#v", launcher.calls)
