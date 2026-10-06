@@ -2,7 +2,7 @@
 // Backend contract: see spec/pr-issue-sidebar/architecture.md (API design).
 
 import { fetchJSON, postJSON, raiseAuthError } from './api';
-import { apiFetch, readJSON } from './api.requests';
+import { fetchResponse, readJSON } from './api.requests';
 
 export type RemoteType = 'github' | 'forgejo';
 
@@ -139,7 +139,7 @@ export interface PromptTemplates {
 // upstream — the caller hides the pane in that case.
 export async function fetchUpstreams(dir: string, remoteId: string, signal?: AbortSignal): Promise<Upstream[]> {
   const url = `/api/project/upstreams?dir=${encodeURIComponent(dir)}&remoteId=${encodeURIComponent(remoteId)}`;
-  const resp = await apiFetch(url, { signal });
+  const resp = await fetchResponse(url, { signal });
   if (!resp.ok) {
     // 404 = not a git repo; treat as "no upstreams" rather than an error.
     if (resp.status === 404) return [];
@@ -167,7 +167,7 @@ export async function fetchPRs(opts: {
     page: String(opts.page),
   });
   if (opts.mine) q.set('mine', opts.mine);
-  const resp = await apiFetch(`/api/project/prs?${q.toString()}`, { signal: opts.signal });
+  const resp = await fetchResponse(`/api/project/prs?${q.toString()}`, { signal: opts.signal });
   if (!resp.ok) {
     const env = await safeError(resp);
     if (sessionExpired(resp, env)) throw raiseAuthError();
@@ -193,7 +193,7 @@ export async function fetchIssues(opts: {
     page: String(opts.page),
   });
   if (opts.mine) q.set('mine', opts.mine);
-  const resp = await apiFetch(`/api/project/issues?${q.toString()}`, { signal: opts.signal });
+  const resp = await fetchResponse(`/api/project/issues?${q.toString()}`, { signal: opts.signal });
   if (!resp.ok) {
     const env = await safeError(resp);
     if (sessionExpired(resp, env)) throw raiseAuthError();
@@ -217,7 +217,7 @@ export async function fetchPRChecks(opts: {
     remote: opts.remote,
     sha: opts.sha,
   });
-  const resp = await apiFetch(`/api/project/pr-checks?${q.toString()}`, { signal: opts.signal });
+  const resp = await fetchResponse(`/api/project/pr-checks?${q.toString()}`, { signal: opts.signal });
   if (!resp.ok) {
     const env = await safeError(resp);
     if (sessionExpired(resp, env)) throw raiseAuthError();
@@ -233,7 +233,7 @@ export async function fetchForgeUser(opts: {
   signal?: AbortSignal;
 }): Promise<{ login: string; host: string } | null> {
   const q = new URLSearchParams({ dir: opts.dir, remoteId: opts.remoteId, remote: opts.remote });
-  const resp = await apiFetch(`/api/project/forge-user?${q.toString()}`, { signal: opts.signal });
+  const resp = await fetchResponse(`/api/project/forge-user?${q.toString()}`, { signal: opts.signal });
   if (resp.status === 401) {
     // A forge-level 401 always carries an error envelope; a bare 401 is
     // ocman's own auth middleware telling us the cookie expired.
@@ -245,7 +245,7 @@ export async function fetchForgeUser(opts: {
 }
 
 export async function postHandle(req: HandleRequest): Promise<HandleResponse> {
-  const resp = await apiFetch('/api/project/handle', {
+  const resp = await fetchResponse('/api/project/handle', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),

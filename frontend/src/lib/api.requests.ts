@@ -45,17 +45,20 @@ function toBackendError(err: unknown, stage: 'connect' | 'response'): unknown {
   return err;
 }
 
-// Raw-response endpoints share network classification without losing their
-// structured error envelopes or endpoint-specific HTTP status handling.
-export async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
-  let resp: Response;
+// Forge endpoints can return their own 502/504 envelopes. Share connection
+// error handling without interpreting those statuses as an ocman outage.
+export async function fetchResponse(input: string, init?: RequestInit): Promise<Response> {
   try {
-    resp = await fetch(input, init);
+    return await fetch(input, init);
   } catch (err) {
     const mapped = toBackendError(err, 'connect');
     if (mapped instanceof BackendUnavailableError) reportNetworkFailure(mapped.message);
     throw mapped;
   }
+}
+
+export async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
+  const resp = await fetchResponse(input, init);
   if (resp.status === 502 || resp.status === 504) markBackendUnreachable(statusLine(resp));
   else markBackendReachable();
   return resp;

@@ -10,6 +10,7 @@ import {
   type ListPRsResponse,
 } from './upstreamApi';
 import { AuthError, registerAuthErrorHandler } from './api';
+import { markBackendReachable, useBackendStatus } from './backendStatus';
 
 describe('upstreamApi', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
@@ -38,6 +39,15 @@ describe('upstreamApi', () => {
   it.each(requests)('explains invalid success responses for %s', async (_name, call) => {
     fetchSpy.mockResolvedValue(new Response('<html>Proxy page</html>', { status: 200 }));
     await expect(call()).rejects.toThrow(/invalid response from ocman/i);
+  });
+
+  it.each(requests)('does not report a forge gateway failure as an ocman outage for %s', async (_name, call) => {
+    markBackendReachable();
+    fetchSpy.mockResolvedValue(new Response(JSON.stringify({
+      error: { code: 'upstream_status', message: 'The forge is unavailable.' },
+    }), { status: 502 }));
+    await expect(call()).rejects.toThrow();
+    expect(useBackendStatus.getState().unreachable).toBe(false);
   });
 
   it('preserves cancellation in the PR pane', async () => {
