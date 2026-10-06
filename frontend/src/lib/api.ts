@@ -1,5 +1,5 @@
 import { record as recordPerf, templatePath } from './perfRing';
-import { markBackendReachable, markBackendUnreachable } from './backendStatus';
+import { markBackendReachable, markBackendUnreachable, reportNetworkFailure } from './backendStatus';
 import type { WebhookDelivery, WebhookInbox, WebhookSubscription } from './api.types';
 import { settingsApi } from './api.settings';
 
@@ -309,7 +309,7 @@ async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
     resp = await fetch(input, init);
   } catch (err) {
     const mapped = toBackendError(err);
-    if (mapped instanceof BackendUnavailableError) markBackendUnreachable(mapped.message);
+    if (mapped instanceof BackendUnavailableError) reportNetworkFailure(mapped.message);
     throw mapped;
   }
   if (resp.status === 502 || resp.status === 504) markBackendUnreachable(statusLine(resp));
