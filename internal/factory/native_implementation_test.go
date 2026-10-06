@@ -33,6 +33,7 @@ type fakeImplementationLauncher struct {
 	onPrompt       func(ImplementationSessionRequest)
 	launched       chan struct{}
 	dead           bool
+	deadSession    string
 	handoffErr     error
 	prErr          error
 	handoffs       int
@@ -50,6 +51,21 @@ type fakeImplementationLauncher struct {
 	observationSHA string
 	observationErr error
 	observations   int
+}
+
+func waitForActiveAttempts(t *testing.T, db *state.DB, epicID string, count int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		attempts, err := db.ListFactoryAttempts(context.Background(), epicID)
+		if err == nil && len(attempts) == count && attempts[count-1].Phase == model.FactoryAttemptActive {
+			return
+		}
+		if err != nil || time.Now().After(deadline) {
+			t.Fatalf("recovered attempts = %#v, %v", attempts, err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 type deliveryMutationStore struct {
@@ -561,8 +577,8 @@ func (f *fakeImplementationLauncher) LaunchImplementationSession(_ context.Conte
 	}
 	return PlanningSession{Platform: "opencode", ID: "implementation-1"}, nil
 }
-func (f *fakeImplementationLauncher) ProbeImplementationSession(context.Context, PlanningSession) (bool, error) {
-	return !f.dead, f.probeErr
+func (f *fakeImplementationLauncher) ProbeImplementationSession(_ context.Context, session PlanningSession) (bool, error) {
+	return !f.dead && (f.deadSession == "" || f.deadSession != session.ID), f.probeErr
 }
 func (f *fakeImplementationLauncher) StopImplementationSession(_ context.Context, session PlanningSession) error {
 	f.stops = append(f.stops, session)
@@ -1016,17 +1032,7 @@ func TestNativeImplementationLaunchFailureLeavesTerminalAttempt(t *testing.T) {
 	if err := svc.Dispatch(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		attempts, err = db.ListFactoryAttempts(context.Background(), epic.ID)
-		if err == nil && len(attempts) == 2 && attempts[1].Phase == model.FactoryAttemptActive {
-			break
-		}
-		if err != nil || time.Now().After(deadline) {
-			t.Fatalf("recovered attempts = %#v, %v", attempts, err)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	waitForActiveAttempts(t, db, epic.ID, 2)
 	svc.Close() // Join startup dispatch before reading the launcher's writes.
 	if len(launcher.calls) != 2 || launcher.calls[0].Repository != "/other" || launcher.calls[1].Repository != "/other" || !reflect.DeepEqual(launcher.prepared, []string{"/other:", "/other:"}) {
 		t.Fatalf("recovered workspaces = %#v, prepared = %#v", launcher.calls, launcher.prepared)
@@ -1210,12 +1216,14 @@ func TestNativeRecoveryGateReleasesCapacityAndSurvivesRestart(t *testing.T) {
 			t.Fatalf("listed recovery issue = %#v", issue)
 		}
 	}
-	launcher.dead = true
+	launcher.deadSession = attempts[0].Session.ID
+	launcher.result = PlanningSession{Platform: "opencode", ID: "implementation-2"}
 	// Dispatch is driven explicitly below; startup's worker would race these assertions.
 	svc.startOnce.Do(func() {})
 	if err := svc.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(svc.Close)
 	attempts, err = db.ListFactoryAttempts(context.Background(), first.ID)
 	if err != nil || attempts[0].Phase != model.FactoryAttemptActive {
 		t.Fatalf("paused attempt after restart = %#v, %v", attempts, err)
@@ -1223,6 +1231,8 @@ func TestNativeRecoveryGateReleasesCapacityAndSurvivesRestart(t *testing.T) {
 	if err := svc.Dispatch(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	waitForActiveAttempts(t, db, second.ID, 1)
+	svc.Close()
 	if len(launcher.calls) != 2 {
 		t.Fatalf("launches after recovery = %#v", launcher.calls)
 	}
