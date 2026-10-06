@@ -55,7 +55,7 @@ const ready = () => waitFor(() => {
 
 describe('NewConversation', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     mocks.progress.clear();
     clearDraft('new');
     clearDraft('child');
@@ -256,11 +256,13 @@ describe('NewConversation', () => {
     await ready();
     let old!: Promise<void>;
     act(() => { old = Promise.resolve(composer.onSend!('first')).catch(() => {}); });
+    await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1));
     // Re-point the same mounted page (new title), then start again.
     view.rerender(<NewConversation params={{ directory: '/repo', remoteId: 'machine', platform: 'r-machine:opencode', title: 'B' }}
       whisperAvailable={false} composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
     await ready();
     act(() => { void Promise.resolve(composer.onSend!('second')).catch(() => {}); });
+    await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(2));
     expect(screen.getByTestId('pending-prompt')).toHaveTextContent('second');
     await act(async () => { failOld(new Error('old failed')); await old; });
     expect(screen.getByTestId('pending-prompt')).toHaveTextContent('second');
@@ -323,10 +325,13 @@ describe('NewConversation', () => {
     await ready();
     let oldRequest!: void | Promise<void>;
     act(() => { oldRequest = composer.onSend!('old prompt'); });
+    await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(1));
     view.rerender(<NewConversation params={{ directory: '/repo', platform: 'r-machine:opencode', remoteId: 'machine', title: 'new' }}
       whisperAvailable={false} composerRef={null} navigate={navigate} navigateToSession={navigateToSession} />);
+    await ready();
     let newRequest!: void | Promise<void>;
     act(() => { newRequest = composer.onSend!('new prompt'); });
+    await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(2));
     const child = { sessionId: 'child', platform: 'r-machine:opencode', remoteId: 'machine', directory: '/repo', firstMessageSent: true };
     await act(async () => { finishOld(child); await oldRequest; });
     await expect(composer.onSend!('duplicate prompt')).rejects.toThrow('already in progress');
